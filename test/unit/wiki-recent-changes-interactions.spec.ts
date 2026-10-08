@@ -1,9 +1,11 @@
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { graphActivityV2 } from './fixtures/graph-activity-v2';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
 import WikiRecentChanges, { type WikiRecentChangesProps } from '../../client/src/features/matter/WikiRecentChanges';
+import EngineeringTimelinePage from '../../client/src/pages/EngineeringTimelinePage/EngineeringTimelinePage';
+import { validateActivityEntry } from '../../client/src/pages/DocumentParsingPage/document-activity-entry';
 import { conversation, jobAidWork, matterWork, sourceReading } from './helpers/wiki-recent-changes.fixture';
 
 const mockReview = jest.fn();
@@ -19,7 +21,13 @@ jest.mock('@client/src/api/canonical-host', () => ({
   readDocumentParsingStatus: (...args: unknown[]) => mockStatus(...args),
   readDocumentActivityReading: (...args: unknown[]) => mockActivity(...args),
   getCanonicalHostClientSessionGeneration: () => mockGeneration,
+  subscribeCanonicalHostClientSession: () => () => {},
+  getCanonicalLibraryDocuments: jest.fn(),
 }));
+jest.mock('@client/src/api/engineering-matter', () => ({ getEngineeringMatter: jest.fn() }));
+jest.mock('@lark-apaas/client-toolkit/logger', () => ({ logger: { error: jest.fn() } }));
+jest.mock('@client/src/pages/DocumentParsingPage/DocumentActivityReadingView', () => ({ __esModule: true, default: () => null }));
+jest.mock('@client/src/features/trinity/DocumentActivityGraphView', () => ({ __esModule: true, default: () => null }));
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({
   useCurrentUserSession: () => ({ sessionGeneration: mockGeneration, authenticationRequired: mockAuthenticationRequired }),
 }));
@@ -141,6 +149,14 @@ describe('Wiki embedding of existing reads (DOM + mocked HTTP boundaries)', () =
     const link = container.querySelector('a[href^="/app/timeline?"]')!;
     const query = new URLSearchParams(link.getAttribute('href')!.split('?')[1]);
     expect(Object.fromEntries(query)).toMatchObject({ documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: '2', runRef: 'DA1' });
+    await act(async () => {
+      link.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true }));
+      (link as HTMLAnchorElement).focus();
+    });
+    expect(dom.window.document.activeElement).toBe(link);
+    expect(routerLocation).toBe('/wiki');
+    expect(mockActivity).toHaveBeenCalledTimes(1);
+    expect(mockStatus).not.toHaveBeenCalled();
     const window = container.querySelector('button[data-window="current-year"]')!;
     await act(async () => window.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
     expect(mockActivity).toHaveBeenCalledTimes(1);
@@ -154,6 +170,92 @@ describe('Wiki embedding of existing reads (DOM + mocked HTTP boundaries)', () =
     expect(mockStatus).toHaveBeenCalledWith('DV1', expect.any(AbortSignal));
     expect(mockActivity.mock.calls[0][0]).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1', acceptCandidateSchemaV2: true });
     expect(container.querySelector('a[href^="/app/timeline?"]')?.getAttribute('href')).toContain('runRef=DA1');
+  });
+
+  it('activates the exact standalone href with a keyboard click and preserves the selected window', async () => {
+    await render(); await expand(); await select();
+    await act(async () => container.querySelector<HTMLButtonElement>('button[data-window="current-year"]')!.click());
+    const link = container.querySelector<HTMLAnchorElement>('a[href^="/app/timeline?"]')!;
+    const href = link.getAttribute('href')!;
+    const event = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0, detail: 0 });
+    await act(async () => link.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+    expect('/app' + routerLocation).toBe(href);
+    expect(Object.fromEntries(new URL(href, 'https://example.test').searchParams)).toEqual({
+      documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: '2', runRef: 'DA1', window: 'current-year',
+    });
+    expect(mockActivity).toHaveBeenCalledTimes(1);
+    expect(mockStatus).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['control', { ctrlKey: true }], ['command', { metaKey: true }],
+    ['shift', { shiftKey: true }], ['alt', { altKey: true }], ['middle', { button: 1 }],
+  ] as const)('preserves native %s activation of the standalone link', async (_name, options) => {
+    await render(); await expand(); await select();
+    const link = container.querySelector<HTMLAnchorElement>('a[href^="/app/timeline?"]')!;
+    const href = link.getAttribute('href');
+    let routerPreventedDefault: boolean | undefined;
+    // Observe after React; suppress only JSDOM's unsupported native navigation.
+    dom.window.document.addEventListener('click', event => {
+      routerPreventedDefault = event.defaultPrevented;
+      event.preventDefault();
+    }, { once: true });
+    await act(async () => link.dispatchEvent(new dom.window.MouseEvent('click', {
+      bubbles: true, cancelable: true, ...options,
+    })));
+    expect(routerPreventedDefault).toBe(false);
+    expect(routerLocation).toBe('/wiki');
+    expect(link.getAttribute('href')).toBe(href);
+    expect(mockActivity).toHaveBeenCalledTimes(1);
+    expect(mockStatus).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('routes exact encoded source/statement pins and window (anchor=%s)', async openAnchor => {
+    const pins = { documentVersionId: 'DV_1-main', parseRunId: 'PR/一 &?#', runRef: 'DA/一 &?#', statementId: 'S/一 &?#', anchor: 'A/一 &?#' };
+    const reading = graphActivityV2(pins.documentVersionId, pins.parseRunId, 'F1', pins.runRef, 12);
+    reading.candidate.statements[0].statementId = pins.statementId;
+    reading.candidate.statements[0].quotes[0].anchorId = pins.anchor;
+    reading.candidate.sourceAnchors[0].anchorId = pins.anchor;
+    mockActivity.mockResolvedValue(reading);
+    await render({ ...props, sources: [{ label: '编码来源', documentVersionId: pins.documentVersionId,
+      parseRunId: pins.parseRunId, runRef: pins.runRef, candidateRevision: 12 }] });
+    await expand(); await select();
+    await act(async () => container.querySelector<HTMLButtonElement>('button[data-window="current-year"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('.activity-timeline-select')!.click());
+    const action = [...container.querySelectorAll('button')].find(button =>
+      button.textContent === (openAnchor ? `锚点 ${pins.anchor}` : '阅读原文依据'))!;
+    await act(async () => action.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, detail: 0 })));
+    const target = new URL(routerLocation, 'https://example.test');
+    expect(target.pathname).toBe(`/document-versions/${encodeURIComponent(pins.documentVersionId)}/activities`);
+    expect(Object.fromEntries(target.searchParams)).toEqual({ documentVersionId: pins.documentVersionId,
+      parseRunId: pins.parseRunId, candidateRevision: '12', runRef: pins.runRef, statementId: pins.statementId,
+      window: 'current-year', ...(openAnchor ? { anchor: pins.anchor } : {}),
+    });
+    expect(validateActivityEntry(target.searchParams)).toEqual({ ok: true, parseRunId: pins.parseRunId,
+      candidateRevision: 12, runRef: pins.runRef, statementId: pins.statementId, anchor: openAnchor ? pins.anchor : null,
+    });
+    expect(mockActivity).toHaveBeenCalledTimes(1);
+    expect(mockStatus).not.toHaveBeenCalled();
+  });
+
+  it('opens a copied standalone href through the actual timeline Router entry with no prior Wiki reads', async () => {
+    await render(); await expand(); await select();
+    await act(async () => container.querySelector<HTMLButtonElement>('button[data-window="current-year"]')!.click());
+    const href = container.querySelector<HTMLAnchorElement>('a[href^="/app/timeline?"]')!.getAttribute('href')!;
+    act(() => root.unmount());
+    root = createRoot(container);
+    mockActivity.mockClear(); mockStatus.mockClear(); mockReview.mockClear();
+    await act(async () => root.render(createElement(MemoryRouter, { basename: '/app', initialEntries: [href] },
+      createElement(RouteProbe), createElement(Routes, null,
+        createElement(Route, { path: '/timeline', element: createElement(EngineeringTimelinePage) })))));
+    expect('/app' + routerLocation).toBe(href);
+    expect(mockReview).not.toHaveBeenCalled();
+    expect(mockStatus).not.toHaveBeenCalled();
+    expect(mockActivity).toHaveBeenCalledTimes(1);
+    expect(mockActivity).toHaveBeenCalledWith({ documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: 2, acceptCandidateSchemaV2: true }, expect.any(AbortSignal));
+    expect(container.querySelector('.activity-timeline-item')).not.toBeNull();
+    expect(new URL(routerLocation, 'https://example.test').searchParams.get('window')).toBe('current-year');
   });
 
   it('renders all saved v2 times and routes source/anchor/timeline through the basename without a page reload', async () => {

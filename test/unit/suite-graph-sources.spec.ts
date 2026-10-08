@@ -273,6 +273,45 @@ describe('useSuiteGraphSources exact event restoration', () => {
     await act(async () => root.render(createElement(Probe, { sources: [{ document: { documentVersionId: 'dv-a' }, familyId: 'family-a' }] })));
     expect(current.activities.size).toBe(0);
     expect(current.sources[0].status).toBe('unavailable');
+    mockReadActivity.mockResolvedValue({ familyId: 'family-a', binding: { documentVersionId: 'dv-a', parseRunId: 'parse-a' }, candidate: null });
+    await act(async () => current.expandSource('dv-a'));
+    expect(mockReadActivity).toHaveBeenCalledTimes(2);
+    expect(current.sources[0].status).toBe('empty');
+    expect(current.activities.size).toBe(0);
+  });
+
+  it('keeps a revoked selected source without reading or substituting the other registered source', async () => {
+    const rejected = jest.fn();
+    const sources = ['a', 'b'].map(id => ({ document: { documentVersionId: `dv-${id}` }, familyId: `family-${id}` }));
+    mockReadStatus.mockResolvedValueOnce({ publishedRun: null }).mockResolvedValueOnce({ publishedRun: { parseRunId: 'parse-b' } });
+    mockReadActivity.mockRejectedValue(Object.assign(new Error('revoked'), { statusCode: 403 }));
+    await act(async () => root.render(createElement(Probe, { sources, onAccessRejected: rejected })));
+    await act(async () => current.selectSource('dv-b'));
+    expect(current.activeSourceId).toBe('dv-b');
+    expect(current.sources.find(source => source.documentVersionId === 'dv-b')?.status).toBe('unavailable');
+    expect(current.sources.find(source => source.documentVersionId === 'dv-a')?.status).toBe('unparsed');
+    expect(current.activities.size).toBe(0);
+    expect(rejected).toHaveBeenCalledWith('dv-b');
+    expect(mockReadStatus.mock.calls.map(([id]) => id)).toEqual(['dv-a', 'dv-b']);
+    expect(mockReadActivity).toHaveBeenCalledTimes(1);
+    expect(mockReadActivity.mock.calls[0][0].documentVersionId).toBe('dv-b');
+  });
+
+  it('drops a late candidate from the prior Matter source list after the authorized list is replaced', async () => {
+    let resolve!: (value: unknown) => void;
+    mockReadStatus.mockResolvedValueOnce({ publishedRun: { parseRunId: 'parse-a' } })
+      .mockResolvedValueOnce({ publishedRun: { parseRunId: 'parse-c' } });
+    mockReadActivity.mockReturnValueOnce(new Promise(value => { resolve = value; }))
+      .mockResolvedValueOnce(graphActivityV2('dv-c', 'parse-c', 'family-c', 'run-c', 3));
+    await act(async () => root.render(createElement(Probe, { sources: [{ document: { documentVersionId: 'dv-a' }, familyId: 'family-a' }] })));
+    await act(async () => root.render(createElement(Probe, { sources: [{ document: { documentVersionId: 'dv-c' }, familyId: 'family-c' }] })));
+    await act(async () => resolve(graphActivityV2('dv-a', 'parse-a', 'family-a', 'run-a', 2)));
+    expect(current.activeSourceId).toBe('dv-c');
+    expect(current.sources.map(source => source.documentVersionId)).toEqual(['dv-c']);
+    expect([...current.activities.keys()]).toEqual(['dv-c']);
+    expect(current.activities.get('dv-c')?.candidate.runRef).toBe('run-c');
+    expect(mockReadStatus.mock.calls.map(([id]) => id)).toEqual(['dv-a', 'dv-c']);
+    expect(mockReadActivity).toHaveBeenCalledTimes(2);
   });
 
   it('does not substitute the default source when exact returned source is absent', async () => {
