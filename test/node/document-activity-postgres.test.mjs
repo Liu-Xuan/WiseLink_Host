@@ -26,10 +26,10 @@ const clients = [];
 const exactBinding = { original: { documentVersionId: 'DV-test', parseRunId: 'PR-test', parseRevision: 1,
   sourceArtifactId: 'ART-test', sourceSha256: 'a'.repeat(64), sourceByteLength: 1234 }, semanticRevision: 1 };
 const rawV2Statement = { statementId: 'DAS-v2-source', statementKey: 'source-local', label: 'Source raw semantics',
-  quotes: [{ anchorId: 'a1', start: 0, end: 4, text: 'TBD.' }], subject: null, action: null, modality: null,
+  quotes: [{ anchorId: 'a1', start: 0, end: 18, text: 'TBD after approval' }], subject: null, action: null, modality: null,
   status: { raw: 'TBD', quoteIndex: 0, meaning: 'UNKNOWN' },
   times: [{ raw: 'TBD', quoteIndex: 0, role: 'TARGET', precision: 'UNKNOWN', expression: 'TBD' },
-    { raw: 'after approval', quoteIndex: 0, role: 'CONDITION', precision: 'RELATIVE', expression: 'after approval' }],
+    { raw: 'after approval', quoteIndex: 0, role: 'CONDITION', precision: 'UNKNOWN', expression: 'RELATIVE' }],
   technicalIds: [], scope: { sectionIds: ['section-test'], conditions: [], completeness: 'DELIVERED_SCOPE_ONLY' },
   limitations: ['Constructed SQL storage fixture only.'] };
 let legacyBefore;
