@@ -83,6 +83,33 @@ describe('canonical host assessment client', () => {
     await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse' })).rejects.toThrow('OBSOLETE');
   });
 
+  it('accepts saved v2 only with explicit opt-in and a matching response discriminator', async () => {
+    const binding = { documentVersionId: 'DV', parseRunId: 'parse' };
+    const candidate = { schemaVersion: 'wiselink.document.activity-candidate.v2', sourceBinding: { original: binding }, candidateRevision: 7, candidateOnly: true };
+    request.mockResolvedValue({ status: 200, data: { familyId: 'family', binding, candidate, sourceSchemaVersion: candidate.schemaVersion } });
+    await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', candidateRevision: 7, acceptCandidateSchemaV2: true }))
+      .resolves.toHaveProperty('candidate.schemaVersion', candidate.schemaVersion);
+    expect(request).toHaveBeenLastCalledWith(expect.objectContaining({
+      url: '/api/document-management/document-versions/DV/activity-reading?parseRunId=parse&candidateRevision=7&acceptCandidateSchemaV2=true', method: 'GET',
+    }));
+    await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', candidateRevision: 7 }))
+      .rejects.toThrow('SCHEMA_UNSUPPORTED');
+    expect(request.mock.calls.at(-1)[0].url).not.toContain('acceptCandidateSchemaV2');
+    for (const sourceSchemaVersion of ['wiselink.document.activity-candidate.v1', undefined]) {
+      request.mockResolvedValue({ status: 200, data: { familyId: 'family', binding, candidate, sourceSchemaVersion } });
+      await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', acceptCandidateSchemaV2: true }))
+        .rejects.toThrow('SCHEMA_MISMATCH');
+    }
+  });
+
+  it.each(['wiselink.document.activity-candidate.v99', undefined])('rejects an unknown or absent saved discriminator %s even with v2 opt-in', async schemaVersion => {
+    const binding = { documentVersionId: 'DV', parseRunId: 'parse' };
+    const candidate = { schemaVersion, sourceBinding: { original: binding }, candidateRevision: 7, candidateOnly: true };
+    request.mockResolvedValue({ status: 200, data: { familyId: 'family', binding, candidate, sourceSchemaVersion: schemaVersion } });
+    await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', acceptCandidateSchemaV2: true }))
+      .rejects.toThrow('SCHEMA_UNSUPPORTED');
+  });
+
   it('discovers a saved semantic revision without assuming revision 1 and preserves the absent state', async () => {
     const binding = { documentVersionId: 'DV', parseRunId: 'parse' };
     request.mockResolvedValue({ status: 200, data: { binding, semanticMap: { binding, semanticRevision: 3 } } });
