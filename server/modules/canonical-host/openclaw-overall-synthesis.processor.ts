@@ -6,6 +6,7 @@ import type {
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import type { FeishuNativeOemSearchRun } from '../external-discovery/feishu-native-oem-monitoring-ingress';
 import type { UnifiedArtifactReadScope } from '../unified-reader/unified-artifact-read-scope';
 import {
@@ -19,8 +20,10 @@ import {
 } from './selective-overall-resynthesis';
 import {
   overallModelEvidenceRegistry,
+  OVERALL_EVIDENCE_SOURCE_CONTEXT_VERSION,
   validateOverallAssessmentReading,
   type OverallModelEvidence,
+  type OverallEvidenceProjectionVersion,
 } from './overall-assessment-reading';
 
 export type {
@@ -95,6 +98,8 @@ export interface OpenClawOverallSynthesisInput {
   commonContext?: CanonicalCommonAssessmentContext;
   /** Sanitized premises actually included in this model call. */
   evidenceRegistry?: OverallModelEvidence[];
+  /** Explicit new projection; absent versions retain the original sealed shape. */
+  evidenceProjectionVersion?: OverallEvidenceProjectionVersion;
 }
 
 export interface OpenClawOverallApplicabilityResult {
@@ -298,7 +303,10 @@ export function buildOpenClawOverallSynthesisInput(input: {
     selectiveResynthesis: summarizeSelectiveOverallResynthesis(plan),
     ...(input.readingEvidence
       ? {
-          evidenceRegistry: overallModelEvidenceRegistry(input.readingEvidence),
+          evidenceProjectionVersion: OVERALL_EVIDENCE_SOURCE_CONTEXT_VERSION,
+          evidenceRegistry: overallModelEvidenceRegistry(
+            input.readingEvidence, OVERALL_EVIDENCE_SOURCE_CONTEXT_VERSION,
+          ),
         }
       : {}),
     ...(input.commonContext
@@ -378,6 +386,10 @@ export function consumeOpenClawOverallSynthesisOutput(
   output: string,
   readingEvidence?: AssessmentEvidence[],
 ): Record<string, unknown> {
+  if (input.evidenceProjectionVersion !== undefined) {
+    overallModelEvidenceRegistry([], input.evidenceProjectionVersion);
+    if (!input.evidenceRegistry) throw new Error('OVERALL_READING_EVIDENCE_REGISTRY_REQUIRED');
+  }
   const parsed = parseObject(
     new TextEncoder().encode(output),
     'OVERALL_OUTPUT_JSON_INVALID',
@@ -475,7 +487,7 @@ export function consumeOpenClawOverallSynthesisOutput(
     if (!readingEvidence || !input.evidenceRegistry) {
       throw new Error('OVERALL_READING_EVIDENCE_REGISTRY_REQUIRED');
     }
-    const expectedRegistry = overallModelEvidenceRegistry(readingEvidence);
+    const expectedRegistry = overallModelEvidenceRegistry(readingEvidence, input.evidenceProjectionVersion);
     same(
       input.evidenceRegistry.length,
       expectedRegistry.length,
@@ -492,7 +504,10 @@ export function consumeOpenClawOverallSynthesisOutput(
         'OVERALL_READING_EVIDENCE_INPUT',
       );
       for (const [key, value] of Object.entries(expected)) {
-        same(actual[key], value, 'OVERALL_READING_EVIDENCE_INPUT_MISMATCH');
+        const structured = ['sourceContext', 'queryProvenance', 'sourceWork',
+          'sourceStatement', 'originalEvidenceRefs'].includes(key);
+        same(structured ? canonicalJson(actual[key]) : actual[key],
+          structured ? canonicalJson(value) : value, 'OVERALL_READING_EVIDENCE_INPUT_MISMATCH');
       }
     });
     const content = validateOverallAssessmentReading(

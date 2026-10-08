@@ -20,6 +20,7 @@ import { projectCommonAssessmentContext } from '../../server/modules/canonical-h
 import { canonicalJson } from '../../server/modules/action-attempt/action-attempt-envelope';
 import {
   buildOverallReadingEvidence,
+  overallModelEvidenceRegistry,
   projectOverallAssessmentReading,
   type OverallAssessmentReadingSummary,
 } from '../../server/modules/canonical-host/overall-assessment-reading';
@@ -477,7 +478,7 @@ describe('Overall v2 reading content and actual premises', () => {
         readingEvidence,
       ),
     ).toThrow('OVERALL_READING_SUMMARY_VERSION_REQUIRED');
-    const { evidenceRegistry: _registry, ...historicalInput } = input;
+    const { evidenceRegistry: _registry, evidenceProjectionVersion: _version, ...historicalInput } = input;
     expect(() =>
       consumeOpenClawOverallSynthesisOutput(
         historicalInput,
@@ -1185,3 +1186,78 @@ function artifact(ref: string, sha256: string) {
     mediaType: 'application/json' as const,
   };
 }
+
+
+describe('Overall source-context projection versions', () => {
+  const time = '2026-08-31T23:30:00-08:00';
+  function carriers(): AssessmentEvidence[] {
+    const common = { title: '来源语义', versionLabel: null, excerpt: '保留条件与限制。' };
+    return [
+      { ...common, evidenceRef: 'query', kind: 'QUERY_RECEIPT', receiptRef: 'receipt',
+        checkedScope: 'selected scope', queriedAt: time, coverage: 'PARTIAL',
+        queryProvenance: { origin: 'AILY_RETRIEVAL', queryText: 'scope', status: 'COMPLETED', originalDocumentsVerified: false } },
+      { ...common, evidenceRef: 'conversation', kind: 'ENGINEER_STATEMENT', origin: 'REVIEW_CONVERSATION',
+        reviewConversationId: 'conversation', reviewTurnId: 'turn', engineerSuppliedInputId: 'input', recordedAt: time },
+      { ...common, evidenceRef: 'ledger', kind: 'ENGINEER_STATEMENT', origin: 'ENGINEER_REVIEW_LEDGER',
+        workItemId: 'WI-1', reviewRevision: 3, sequence: 2, sourceRefId: 'source', locator: 'ledger:2', recordedAt: time },
+      { ...common, evidenceRef: 'fact', kind: 'HOST_FACT', workItemId: 'WI-1', workItemRevision: 7, factRef: 'fact', recordedAt: time },
+      { ...common, evidenceRef: 'prior', kind: 'PRIOR_RESULT', resultRef: 'result', resultRevision: 4,
+        originalEvidenceRefs: ['root'], sourceWork: { subjectKind: 'ENGINEERING_MATTER', subjectId: 'matter', workRef: 'work', issueKey: 'issue' } },
+    ];
+  }
+
+  it('projects source-declared V1 timestamps and revisions without authority or acquisition fields', () => {
+    const rows = overallModelEvidenceRegistry(carriers(), 'SOURCE_CONTEXT_V1');
+    expect(rows.map(row => row.sourceContext)).toEqual([
+      { receiptRef: 'receipt', checkedScope: 'selected scope', queriedAt: time, coverage: 'PARTIAL' },
+      { origin: 'REVIEW_CONVERSATION', recordedAt: time },
+      { origin: 'ENGINEER_REVIEW_LEDGER', recordedAt: time, reviewRevision: 3, sequence: 2 },
+      { factRef: 'fact', workItemRevision: 7, recordedAt: time },
+      { resultRef: 'result', resultRevision: 4 },
+    ]);
+  });
+
+  it('keeps S1 V2 non-prior projections and undefined legacy projections unchanged', () => {
+    const source = carriers(); const legacy = overallModelEvidenceRegistry(source);
+    const v2 = overallModelEvidenceRegistry(source, 'SOURCE_CONTEXT_V2');
+    expect(v2.slice(0, 4)).toEqual(legacy.slice(0, 4));
+    expect(v2[4]).toEqual({ ...legacy[4], sourceContext: { resultRef: 'result', resultRevision: 4 } });
+    expect(legacy.every(row => row.sourceContext === undefined)).toBe(true);
+    const query = source[0]; if (query.kind !== 'QUERY_RECEIPT') throw new Error('fixture');
+    query.queriedAt = 'legacy-declared-time';
+    expect(() => overallModelEvidenceRegistry(source, 'SOURCE_CONTEXT_V2')).not.toThrow();
+    expect(() => overallModelEvidenceRegistry(source, 'SOURCE_CONTEXT_V1')).toThrow('CONTEXT_TIME_INVALID');
+  });
+
+  it('rejects impossible local dates and nonpositive source revisions in V1', () => {
+    const source = carriers(); const query = source[0]; if (query.kind !== 'QUERY_RECEIPT') throw new Error('fixture');
+    query.queriedAt = '2026-02-30T12:00:00Z';
+    expect(() => overallModelEvidenceRegistry(source, 'SOURCE_CONTEXT_V1')).toThrow('CONTEXT_TIME_INVALID');
+    const other = carriers(); const fact = other[3]; if (fact.kind !== 'HOST_FACT') throw new Error('fixture');
+    fact.workItemRevision = 0;
+    expect(() => overallModelEvidenceRegistry(other, 'SOURCE_CONTEXT_V1')).toThrow('CONTEXT_REVISION_INVALID');
+  });
+
+  it('produces explicit V1 and validates reordered sealed nested source facts by value', () => {
+    const fixture = readingFixture(); const evidence = [...fixture.readingEvidence, ...carriers()];
+    const input = buildRealInput(real737Package, real737Bytes, [real737Package.sourceRefs[0]], [], undefined, evidence);
+    expect(input.evidenceProjectionVersion).toBe('SOURCE_CONTEXT_V1');
+    const restored = JSON.parse(canonicalJson(input));
+    expect(() => consumeOpenClawOverallSynthesisOutput(restored, synthesisOutput(input, fixture.summary), evidence)).not.toThrow();
+    const forged = JSON.parse(canonicalJson(input));
+    forged.evidenceRegistry.find((row: { evidenceRef: string }) => row.evidenceRef === 'fact').sourceContext.workItemRevision++;
+    expect(() => consumeOpenClawOverallSynthesisOutput(forged, synthesisOutput(input, fixture.summary), evidence))
+      .toThrow('OVERALL_READING_EVIDENCE_INPUT_MISMATCH');
+  });
+
+  it('dispatches unversioned sealed inputs unchanged and rejects incomplete or unknown explicit versions', () => {
+    const { input, readingEvidence, summary } = readingFixture();
+    const legacy = { ...input, evidenceRegistry: overallModelEvidenceRegistry(readingEvidence) };
+    delete legacy.evidenceProjectionVersion;
+    expect(() => consumeOpenClawOverallSynthesisOutput(legacy, synthesisOutput(input, summary), readingEvidence)).not.toThrow();
+    const missing = { ...input }; delete missing.evidenceRegistry;
+    expect(() => consumeOpenClawOverallSynthesisOutput(missing, synthesisOutput(input, summary), readingEvidence)).toThrow('REGISTRY_REQUIRED');
+    const unknown = JSON.parse(JSON.stringify(input)); unknown.evidenceProjectionVersion = 'SOURCE_CONTEXT_V3';
+    expect(() => consumeOpenClawOverallSynthesisOutput(unknown, synthesisOutput(input, summary), readingEvidence)).toThrow('PROJECTION_VERSION_INVALID');
+  });
+});

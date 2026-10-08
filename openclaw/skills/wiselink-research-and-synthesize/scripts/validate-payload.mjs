@@ -1364,7 +1364,7 @@ function validateSynthesisInput(input) {
       'engineerReviewContext',
       'selectiveResynthesis',
     ],
-    ['commonContext', 'evidenceRegistry'],
+    ['commonContext', 'evidenceRegistry', 'evidenceProjectionVersion'],
     'synthesis input',
   );
   equal(
@@ -1378,7 +1378,13 @@ function validateSynthesisInput(input) {
   validateUnifiedSourceContext(input.unifiedSourceContext);
   validateAdoptedDocumentVersions(input.adoptedDocumentVersions);
   validateEngineerReviewContext(input.engineerReviewContext);
-  if (input.evidenceRegistry !== undefined) validateOverallEvidenceRegistry(input.evidenceRegistry);
+  if (input.evidenceProjectionVersion !== undefined) {
+    if (!['SOURCE_CONTEXT_V1', 'SOURCE_CONTEXT_V2'].includes(input.evidenceProjectionVersion))
+      fail('OVERALL_EVIDENCE_PROJECTION_VERSION_INVALID');
+    if (input.evidenceRegistry === undefined) fail('OVERALL_READING_EVIDENCE_REGISTRY_REQUIRED');
+  }
+  if (input.evidenceRegistry !== undefined)
+    validateOverallEvidenceRegistry(input.evidenceRegistry, input.evidenceProjectionVersion);
   assertObject(input.selectiveResynthesis, 'selective resynthesis');
   array(input.externalDiscoveryResults, 'SYNTHESIS_DISCOVERY_RESULTS_INVALID');
   for (const result of input.externalDiscoveryResults)
@@ -1423,12 +1429,18 @@ function validateSynthesisInput(input) {
   }
 }
 
-function validateOverallEvidenceRegistry(values) {
+function validateOverallEvidenceRegistry(values, projectionVersion) {
   array(values, 'OVERALL_READING_EVIDENCE_REGISTRY_INVALID');
   const seen = new Set();
   for (const item of values) {
     assertObject(item, 'Overall model evidence');
-    exactKeys(item, ['evidenceRef', 'kind', 'title', 'versionLabel', 'excerpt', 'locator'], [], 'Overall model evidence');
+    const contextRequired = projectionVersion === 'SOURCE_CONTEXT_V1'
+      ? ['QUERY_RECEIPT', 'ENGINEER_STATEMENT', 'HOST_FACT', 'PRIOR_RESULT'].includes(item.kind)
+      : projectionVersion === 'SOURCE_CONTEXT_V2' && item.kind === 'PRIOR_RESULT';
+    const optional = item.kind === 'QUERY_RECEIPT' ? ['queryProvenance']
+      : item.kind === 'PRIOR_RESULT' ? ['originalEvidenceRefs', 'sourceWork', ...(projectionVersion==='SOURCE_CONTEXT_V2'?['sourceStatement']:[])] : [];
+    exactKeys(item, ['evidenceRef', 'kind', 'title', 'versionLabel', 'excerpt', 'locator',
+      ...(contextRequired ? ['sourceContext'] : [])], optional, 'Overall model evidence');
     nonEmpty(item.evidenceRef, 'OVERALL_EVIDENCE_REF_INVALID');
     if (seen.has(item.evidenceRef)) fail('OVERALL_DUPLICATE_EVIDENCE_REF');
     seen.add(item.evidenceRef);
@@ -1437,7 +1449,68 @@ function validateOverallEvidenceRegistry(values) {
     nullableText(item.versionLabel, 'OVERALL_EVIDENCE_VERSION_INVALID');
     nonEmpty(item.excerpt, 'OVERALL_EVIDENCE_EXCERPT_INVALID');
     nullableText(item.locator, 'OVERALL_EVIDENCE_LOCATOR_INVALID');
+    if (contextRequired) validateOverallEvidenceSourceContext(item.kind, item.sourceContext);
+    if (item.kind === 'QUERY_RECEIPT' && item.queryProvenance !== undefined) {
+      const provenance = item.queryProvenance;
+      exactKeys(provenance, ['origin', 'queryText', 'status', 'originalDocumentsVerified'], [], 'Overall query provenance');
+      equal(provenance.origin, 'AILY_RETRIEVAL', 'OVERALL_QUERY_PROVENANCE_INVALID');
+      nonEmpty(provenance.queryText, 'OVERALL_QUERY_PROVENANCE_INVALID');
+      if (!['COMPLETED', 'FAILED', 'UNKNOWN'].includes(provenance.status) || provenance.originalDocumentsVerified !== false)
+        fail('OVERALL_QUERY_PROVENANCE_INVALID');
+    }
+    if (item.kind === 'PRIOR_RESULT') {
+      if(item.sourceStatement!==undefined) {
+        if(item.sourceWork!==undefined) fail('ASSESSMENT_SOURCE_PROVENANCE_AMBIGUOUS');
+        validateSourceStatementProvenance(item.sourceStatement);
+        const ref=item.sourceStatement.reference;
+        equal(item.evidenceRef, `DOCUMENT_ACTIVITY:${ref.runRef}:${ref.candidateRevision}:${ref.statementId}`, 'ASSESSMENT_SOURCE_STATEMENT_INVALID');
+        equal(item.sourceContext.resultRef, ref.runRef, 'ASSESSMENT_SOURCE_STATEMENT_INVALID');
+        equal(item.sourceContext.resultRevision, ref.candidateRevision, 'ASSESSMENT_SOURCE_STATEMENT_INVALID');
+      }
+      if (item.originalEvidenceRefs !== undefined)
+        uniqueTextArray(item.originalEvidenceRefs, 'OVERALL_PRIOR_EVIDENCE_REFS_INVALID');
+      if (item.sourceWork !== undefined) {
+        exactKeys(item.sourceWork, ['subjectKind', 'subjectId', 'workRef', 'issueKey'], [], 'Overall source work');
+        equal(item.sourceWork.subjectKind, 'ENGINEERING_MATTER', 'OVERALL_SOURCE_WORK_INVALID');
+        for (const key of ['subjectId', 'workRef', 'issueKey']) nonEmpty(item.sourceWork[key], 'OVERALL_SOURCE_WORK_INVALID');
+      }
+    }
   }
+}
+
+/** Model-safe fields only: no Host authority bindings, inferred dates or new providers. */
+function validateOverallEvidenceSourceContext(kind, context) {
+  assertObject(context, 'Overall evidence source context');
+  const keys = {
+    QUERY_RECEIPT: ['receiptRef', 'checkedScope', 'queriedAt', 'coverage'],
+    ENGINEER_STATEMENT: context.origin === 'REVIEW_CONVERSATION'
+      ? ['origin', 'recordedAt'] : ['origin', 'recordedAt', 'reviewRevision', 'sequence'],
+    HOST_FACT: ['factRef', 'workItemRevision', 'recordedAt'],
+    PRIOR_RESULT: ['resultRef', 'resultRevision'],
+  }[kind];
+  exactKeys(context, keys, [], 'Overall evidence source context');
+  for (const key of keys) {
+    if (['reviewRevision', 'sequence', 'workItemRevision', 'resultRevision'].includes(key))
+      integerInRange(context[key], 1, Number.MAX_SAFE_INTEGER, 'OVERALL_EVIDENCE_CONTEXT_REVISION_INVALID');
+    else if (['recordedAt', 'queriedAt'].includes(key)) sourceContextTime(context[key]);
+    else nonEmpty(context[key], 'OVERALL_EVIDENCE_CONTEXT_INVALID');
+  }
+  if (kind === 'QUERY_RECEIPT' && !['COMPLETE', 'PARTIAL'].includes(context.coverage))
+    fail('OVERALL_EVIDENCE_QUERY_COVERAGE_INVALID');
+  if (kind === 'ENGINEER_STATEMENT' && !['REVIEW_CONVERSATION', 'ENGINEER_REVIEW_LEDGER'].includes(context.origin))
+    fail('OVERALL_EVIDENCE_ENGINEER_ORIGIN_INVALID');
+}
+
+/** Local source-context contract only; historical date readers stay unchanged. */
+function sourceContextTime(value) {
+  const syntax = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/u;
+  if (typeof value !== 'string' || !syntax.test(value) || !Number.isFinite(Date.parse(value)))
+    fail('OVERALL_EVIDENCE_CONTEXT_TIME_INVALID');
+  // Validate the original local date, not the offset-converted UTC day.
+  const date = value.slice(0, 10);
+  if (new Date(`${date}T00:00:00.000Z`).toISOString().slice(0, 10) !== date)
+    fail('OVERALL_EVIDENCE_CONTEXT_TIME_INVALID');
+  return value;
 }
 
 function validateEngineerReviewContext(context) {
