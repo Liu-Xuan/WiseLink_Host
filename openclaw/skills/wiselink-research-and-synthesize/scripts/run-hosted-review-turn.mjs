@@ -191,11 +191,16 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
         ambiguousCommit: false,
         perform: async () => {
           modelExecuted = true;
+          // Preserve observations from a proven non-dispatch attempt on recovery.
+          const observationSuffix = await checkpoint.readOptional('model.recovery')
+            ? '-recovery' : '';
           const readSourceRefBatches = [];
           const generated = await invokeModel(structuredClone(generationInput), {
             sessionDiscriminator: sha256(normalized.requestId),
             nativeSessionKey,
             executionModel: beginResult?.task?.executionModel,
+            maxCompletionTokens: normalized.maxCompletionTokens,
+            maxModelRequests: normalized.maxModelRequests,
             observeProgress: async (reviewProgress) => {
               if (beginResult?.status !== 'RUNNING') throw new Error('REVIEW_PROGRESS_ATTEMPT_NOT_RUNNING');
               const name = 'heartbeat_action_attempt';
@@ -213,7 +218,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
                 Date.parse(renewed.leaseExpiresAt) <= Date.now()) {
                 throw new Error('REVIEW_PROGRESS_LEASE_NOT_RENEWED');
               }
-              await checkpoint.writeOnce(`runtime-progress-${count}`, {
+              await checkpoint.writeOnce(`runtime-progress-${count}${observationSuffix}`, {
                 ...reviewProgress, observedAt: new Date().toISOString(),
               });
             },
@@ -247,14 +252,14 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
             candidateSourceRefIds: (output) => reviewCandidateSourceRefIds(
               beginResult.task.modelInput, bindHostedReviewCandidate(beginResult, output, isMatter, isJobAid)),
             observeCandidateRejection: (value) => checkpoint.writeOnce(
-              `candidate-rejection-${value.correctionNo}`,
+              `candidate-rejection-${value.correctionNo}${observationSuffix}`,
               { schemaVersion: 'wiselink.3_1.review_candidate_validation.v1', argsHash: modelArgsHash,
                 reviewTurnRef: beginResult.task.modelInput.reviewTurnRef,
                 attemptRef: beginResult.attemptRef,
                 observedAt: new Date().toISOString(), ...value },
             ),
             observeOutputShape: async (value, round = 1) =>
-              checkpoint.writeOnce(round === 1 ? 'model.output-shape' : `model.output-shape-${round}`, {
+              checkpoint.writeOnce(round === 1 ? `model.output-shape${observationSuffix}` : `model.output-shape-${round}${observationSuffix}`, {
                 schemaVersion: DRIVER_SCHEMA,
                 step: 'model',
                 argsHash: modelArgsHash,
@@ -362,10 +367,19 @@ export function isUnpreparedReviewAttempt(value, attemptRef) {
 
 export async function invokeHostedReviewModel(input, options = {}, dependencies = {}) {
   const modelHeaders = executionModelHeaders(options);
-  const maxCompletionTokens = options.executionModel?.modelRef === 'miaoda/minimax-m3'
+  const defaultMaxCompletionTokens = options.executionModel?.modelRef === 'miaoda/minimax-m3'
     ? M3_MAX_COMPLETION_TOKENS
     : options.executionModel?.modelRef === 'm3probe/minimax-m3'
       ? M3_PROBE_REVIEW_MAX_COMPLETION_TOKENS : undefined;
+  const requestedMaxCompletionTokens = optionalPositiveSafeInteger(
+    options.maxCompletionTokens, 'REVIEW_MAX_COMPLETION_TOKENS_INVALID');
+  const maxModelRequests = optionalPositiveSafeInteger(
+    options.maxModelRequests, 'REVIEW_MAX_MODEL_REQUESTS_INVALID');
+  if (defaultMaxCompletionTokens !== undefined &&
+    requestedMaxCompletionTokens > defaultMaxCompletionTokens) {
+    throw new Error('REVIEW_MAX_COMPLETION_TOKENS_EXCEEDS_ROUTE_LIMIT');
+  }
+  const maxCompletionTokens = requestedMaxCompletionTokens ?? defaultMaxCompletionTokens;
   const gatewayUrl = requiredUrl(
     options.gatewayUrl,
     'REVIEW_GATEWAY_URL_REQUIRED',
@@ -438,6 +452,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   const requestGateway = createHostedReviewRequester({
     requestGateway: dependencies.requestGateway ?? requestHostedGateway,
     observeProgress: options.observeProgress,
+    maxModelRequests,
     wait: dependencies.wait,
   });
   let round = 0;
@@ -2347,7 +2362,12 @@ function isReadableActualModel(value) {
 
 function normalizeRunOptions(value) {
   if (!isRecord(value)) throw new Error('REVIEW_DRIVER_OPTIONS_REQUIRED');
+  const maxCompletionTokens = optionalPositiveSafeInteger(
+    value.maxCompletionTokens, 'REVIEW_MAX_COMPLETION_TOKENS_INVALID');
+  const maxModelRequests = optionalPositiveSafeInteger(
+    value.maxModelRequests, 'REVIEW_MAX_MODEL_REQUESTS_INVALID');
   return {
+    maxCompletionTokens, maxModelRequests,
     ...(value.workItemId ? { workItemId: requiredText(value.workItemId, 'REVIEW_WORK_ITEM_ID_REQUIRED') } : {}),
     reviewConversationRef: requiredText(
       value.reviewConversationRef,
@@ -2568,6 +2588,22 @@ function positiveInteger(value, fallback) {
   return value;
 }
 
+function optionalPositiveSafeInteger(value, code) {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(code);
+  return value;
+}
+
+function cliPositiveSafeInteger(argv, name, code) {
+  if (argv.some((value) => value.startsWith(`${name}=`))) throw new Error(code);
+  const positions = argv.flatMap((value, index) => value === name ? [index] : []);
+  if (positions.length === 0) return undefined;
+  if (positions.length !== 1 || !/^[1-9][0-9]*$/u.test(argv[positions[0] + 1] ?? '')) {
+    throw new Error(code);
+  }
+  return optionalPositiveSafeInteger(Number(argv[positions[0] + 1]), code);
+}
+
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -2579,6 +2615,7 @@ function isRecord(value) {
 function usage() {
   return [
     'Usage: node scripts/run-hosted-review-turn.mjs --review-conversation-ref RC-... --request-id ... --checkpoint-dir /private/path',
+    'Optional: --max-completion-tokens POSITIVE_INTEGER --max-model-requests POSITIVE_INTEGER (M3 routes keep their existing output ceilings).',
     'Known non-dispatch recovery: --recover-known-model-nondispatch REVIEW_GATEWAY_INVALID_JSON_HTTP_404 --failure-evidence-file /private/log',
     'Runtime config is read from OpenClaw. Explicit env overrides: WL_REVIEW_HOST_MCP_URL, WL_REVIEW_HOST_MCP_HEADERS_JSON, WL_REVIEW_GATEWAY_URL, WL_REVIEW_GATEWAY_TOKEN.',
   ].join('\n');
@@ -2586,7 +2623,14 @@ function usage() {
 
 export function reviewCliModelOptions(runtime, hooks, argv) {
   const requestedTimeout = option(argv, '--timeout-ms');
+  const maxCompletionTokens = cliPositiveSafeInteger(
+    argv, '--max-completion-tokens', 'REVIEW_MAX_COMPLETION_TOKENS_INVALID')
+    ?? optionalPositiveSafeInteger(hooks.maxCompletionTokens, 'REVIEW_MAX_COMPLETION_TOKENS_INVALID');
+  const maxModelRequests = cliPositiveSafeInteger(
+    argv, '--max-model-requests', 'REVIEW_MAX_MODEL_REQUESTS_INVALID')
+    ?? optionalPositiveSafeInteger(hooks.maxModelRequests, 'REVIEW_MAX_MODEL_REQUESTS_INVALID');
   return {
+    maxCompletionTokens, maxModelRequests,
     gatewayUrl: runtime.gatewayUrl,
     gatewayToken: runtime.gatewayToken,
     agentId: option(argv, '--agent') || WISELINK_PROFILE_REF,
@@ -2617,7 +2661,12 @@ async function main(argv, env) {
     reviewConversationRef: option(argv, '--review-conversation-ref'),
     requestId: option(argv, '--request-id'),
     checkpointDir: option(argv, '--checkpoint-dir'),
+    maxCompletionTokens: cliPositiveSafeInteger(argv, '--max-completion-tokens',
+      'REVIEW_MAX_COMPLETION_TOKENS_INVALID'),
+    maxModelRequests: cliPositiveSafeInteger(argv, '--max-model-requests',
+      'REVIEW_MAX_MODEL_REQUESTS_INVALID'),
   };
+  normalizeRunOptions(options);
   const runtime = await resolveRuntimeConfig(argv, env);
   assertHostedModelGatewayReady(runtime);
   const recoveryFailureCode = option(argv, '--recover-known-model-nondispatch');
