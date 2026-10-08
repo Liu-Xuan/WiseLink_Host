@@ -13,6 +13,7 @@ import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.servic
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
 import { findDocumentOriginalEvidence } from './document-original-engineering-reading';
 import { buildMatterWorkReference } from './matter-work-reference';
+import { contextWorkNotices } from './derived-summary-current-context';
 import { summaryError, summaryMemberRef } from './derived-summary.validation';
 
 export interface SummaryActor { tenantId: string; actorUserId: string }
@@ -56,13 +57,17 @@ export class DerivedSummaryMembersService {
     const evidenceRef = summaryMemberRef(member);
     if (ancestors.has(evidenceRef)) throw summaryError('DERIVED_SUMMARY_LINEAGE_CYCLE');
     const path = new Set(ancestors).add(evidenceRef);
-    if (member.kind === 'DERIVED_SUMMARY') return this.readSummary(member, actor, database, path);
+    if (member.kind === 'DERIVED_SUMMARY') {
+      if (ancestors.has(member.summaryId)) throw summaryError('DERIVED_SUMMARY_LINEAGE_CYCLE');
+      return this.readSummary(member, actor, database, path.add(member.summaryId));
+    }
     let headline: string;
     let understanding: string;
     let body: string;
     let issues: JobAidProblemIssue[];
     let evidence: AssessmentEvidence[];
     let current: boolean;
+    let correctionLimitations: string[] = [];
     let overviewStatus: DerivedSummaryMemberReading['overviewStatus'];
     if (member.kind === 'WORK_ITEM_WORK') {
       const saved = await this.jobAid.readSummaryMemberInTransaction({ ...actor,
@@ -86,6 +91,15 @@ export class DerivedSummaryMembersService {
       if (!saved || saved.workingRevision !== member.workRevision) throw summaryError('DERIVED_SUMMARY_MEMBER_VERSION_MISMATCH');
       await this.matters.authorizeRuntimeInputs({ ...actor, matterId: member.matterId,
         basedOnMatterRevisionId: saved.basedOnMatterRevisionId }, database);
+      const notices = contextWorkNotices(saved);
+      correctionLimitations = [
+        ...notices.correctionNotices.map(notice => `已登记问题更正请求${notice.attemptRef}（${notice.attemptStatus}）：${notice.reason}；${notice.correctedWorkRef ? '已有精确更正工作，不能默认本成员已覆盖。' : notice.unchanged ? '对照后保留原工作。' : '本成员尚无已核更正结果。'}`),
+        ...notices.overviewCorrectionNotices.map(notice => `已登记概述复核请求${notice.attemptRef}（${notice.attemptStatus}）：${notice.reason}；${notice.savedWorkRef ? '已有保存工作，覆盖需按准确引用核对。' : '尚无已保存复核结果。'}`),
+        ...notices.referenceWorkNotices.flatMap(notice => [
+          ...notice.correctionNotices.map(correction => `引用工作${notice.evidenceRef}有更正请求${correction.attemptRef}（${correction.attemptStatus}）：${correction.reason}。`),
+          ...(notice.overviewCorrectionNotices ?? []).map(correction => `引用工作${notice.evidenceRef}有概述复核请求${correction.attemptRef}（${correction.attemptStatus}）：${correction.reason}。`),
+        ]),
+      ];
       const content = saved.state.problemWork;
       if (!content) throw summaryError('DERIVED_SUMMARY_COMPLETE_MEMBER_WORK_UNAVAILABLE');
       headline = content.headline;
@@ -110,6 +124,7 @@ export class DerivedSummaryMembersService {
       ...(!current ? ['固定成员已有较新的保存工作；本次仍使用明确选取的版本。'] : []),
       ...(overviewStatus !== 'CURRENT' ? [`成员概述状态为${overviewStatus}，不能视为现行完整概述。`] : []),
       ...(member.issueKeys.length ? [`只选取问题：${member.issueKeys.join('、')}；其余问题不在本次覆盖内。`] : []),
+      ...correctionLimitations,
       ...await this.sourceVersionNotices(evidence, actor, database),
     ];
     return { member, evidenceRef, headline, understanding, body, issues, evidence, rootRefs: roots.rootRefs,
@@ -130,6 +145,11 @@ export class DerivedSummaryMembersService {
     const children = await this.readAll(saved.members.map(item => item.member), actor, database, path);
     for (let i = 0; i < children.length; i++) assertMemberSnapshot(saved.members[i]!, children[i]!);
     const leaves = uniqueMembers(children.flatMap(item => item.leaves));
+    const evidence = mergeSummaryEvidence(children.flatMap(item => item.evidence));
+    const ordered = (items: AssessmentEvidence[]) => [...items].sort((a, b) => a.evidenceRef.localeCompare(b.evidenceRef));
+    const refs = new Set([...children.map(item => item.evidenceRef), ...evidence.map(item => item.evidenceRef)]);
+    if (canonicalJson(ordered(saved.evidence)) !== canonicalJson(ordered(evidence)) ||
+        saved.usedEvidenceRefs.some(ref => !refs.has(ref))) throw summaryError('DERIVED_SUMMARY_PERSISTENCE_INVALID');
     return { member, evidenceRef: summaryMemberRef(member), headline: saved.content.headline, body: saved.content.body,
       issues: [], evidence: saved.evidence, rootRefs: [...new Set(children.flatMap(item => item.rootRefs))],
       limitations: ['这是派生候选摘要，不是新增独立证据。仅覆盖已保存的精确成员。', ...saved.content.limitations,
@@ -153,14 +173,14 @@ export class DerivedSummaryMembersService {
       const row = rows.find(item => item.documentVersionId === id);
       if (!row) throw summaryError('DERIVED_SUMMARY_SOURCE_VERSION_UNAVAILABLE', 404);
       if (!row.currentDocumentVersionId) {
-        notices.push(`来源版本${id}的当前正式版指针未确定；不能将选中版本视为当前正式版。`);
+        notices.push(`来源版本${id}的本地目录选择指针未确定；发布方现行有效状态未核。`);
       } else if (row.currentDocumentVersionId !== id) {
         const [access] = await database.execute<{ allowed: boolean }>(sql`SELECT
           engineering_matter_document_owned_by_actor(${actor.tenantId}, ${row.currentDocumentVersionId}) AS allowed`);
         notices.push(access?.allowed === true
-          ? `来源版本${id}为历史正式版；当前正式版${row.currentDocumentVersionId}${selected.includes(row.currentDocumentVersionId) ? '另有显式选取来源，两个版本保持分开。' : '未被本成员覆盖。'}`
-          : `来源版本${id}为历史正式版；当前正式版未被本成员覆盖，且本次无权展开其来源。`);
-      } else notices.push(`来源版本${id}是当前正式版；此标记不代表适用性、正式采用或其他版本覆盖。`);
+          ? `来源版本${id}与本地目录当前选择${row.currentDocumentVersionId}不同；${selected.includes(row.currentDocumentVersionId) ? '另有显式选取来源，两个版本保持分开。' : '目录所选版本未被本成员覆盖。'}发布方现行有效状态未核。`
+          : `来源版本${id}与本地目录选择不同；目录所选版本未被本成员覆盖，且本次无权展开其来源。发布方现行有效状态未核。`);
+      } else notices.push(`来源版本${id}是本地目录当前选择；发布方现行有效状态未核，不代表适用性、正式采用或其他版本覆盖。`);
     }
     return notices;
   }

@@ -16,6 +16,7 @@ import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, type CanonicalServiceScopeAuthor
 import type { CanonicalHostActor } from './canonical-host.types';
 import { DerivedSummaryRepository, type SummaryAttempt, type SummaryHead } from './derived-summary.repository';
 import { assertMemberSnapshot, DerivedSummaryMembersService, mergeSummaryEvidence, type SummaryActor } from './derived-summary-members.service';
+import { assertSummaryContextBasis, assertSummaryContextUnchanged, publicSummaryRevision, summaryContextStatus } from './derived-summary-current-context';
 import { assertSummaryReplay, summaryError } from './derived-summary.validation';
 
 export interface DerivedSummaryRuntimeTask extends DerivedSummaryTask {
@@ -44,14 +45,14 @@ export class DerivedSummaryService {
         eq(derivedSummary.tenantId, owner.tenantId), eq(derivedSummary.actorUserId, owner.actorUserId),
         eq(derivedSummary.createRequestId, input.requestId))).limit(1);
       if (!existing) throw summaryError('DERIVED_SUMMARY_RESERVATION_FAILED');
-      const head = await this.repository.head(existing.summaryId, owner, database, true);
+      const head = await this.repository.head(existing.summaryId, owner, database);
       return this.reserve({ ...input, expectedSummaryRevision: 0 }, owner, head, database);
     });
   }
 
   request(summaryId: string, input: RequestDerivedSummaryUpdate, actor: CanonicalHostActor): Promise<DerivedSummaryRequestReceipt> {
     return this.repository.browser(actor, async (database, owner) => {
-      const head = await this.repository.head(summaryId, owner, database, true);
+      const head = await this.repository.head(summaryId, owner, database);
       return this.reserve(input, owner, head, database);
     });
   }
@@ -65,7 +66,7 @@ export class DerivedSummaryService {
     if (prior?.attemptRef) {
       const saved = await this.repository.attempt(head.summaryId, prior.attemptRef, owner.tenantId, database);
       assertSummaryReplay(JSON.parse(saved.requestCommandJson!), input);
-      await this.members.readAll(input.members, owner, database);
+      await this.checkTaskAccess(checkedSummaryTask(saved), owner, database);
       return receipt(head.summaryId, saved, false);
     }
     if (head.currentRevision !== input.expectedSummaryRevision) throw summaryError('DERIVED_SUMMARY_REVISION_CONFLICT');
@@ -76,6 +77,34 @@ export class DerivedSummaryService {
     const readings = await this.members.readAll(input.members, owner, database, new Set([head.summaryId]));
     if (input.members.some(member => member.kind === 'DERIVED_SUMMARY' && member.summaryId === head.summaryId))
       throw summaryError('DERIVED_SUMMARY_SELF_MEMBER', 400);
+    const contextBasis = await this.repository.contextBasis(readings, owner, database);
+    await this.repository.lockContext(contextBasis, owner, database, head.summaryId);
+    head = await this.repository.head(head.summaryId, owner, database);
+    // Concurrent reservation can commit while the dependency locks are awaited.
+    // Replay and active/CAS checks must therefore run again under the target lock.
+    const [serializedPrior] = await database.select({ attemptRef: actionAttempt.operationRef }).from(actionAttempt).where(and(
+      eq(actionAttempt.tenantId, owner.tenantId), eq(actionAttempt.actorUserId, owner.actorUserId),
+      eq(actionAttempt.idempotencyKey, idempotencyKey))).limit(1);
+    if (serializedPrior?.attemptRef) {
+      const saved = await this.repository.attempt(head.summaryId, serializedPrior.attemptRef, owner.tenantId, database);
+      assertSummaryReplay(JSON.parse(saved.requestCommandJson!), input);
+      await this.checkTaskAccess(checkedSummaryTask(saved), owner, database);
+      return receipt(head.summaryId, saved, false);
+    }
+    if (head.currentRevision !== input.expectedSummaryRevision) throw summaryError('DERIVED_SUMMARY_REVISION_CONFLICT');
+    const [serializedActive] = await database.select({ ref: actionAttempt.operationRef }).from(actionAttempt)
+      .where(and(eq(actionAttempt.tenantId, owner.tenantId), sql`action_attempt.summary_id = ${head.summaryId}`,
+        inArray(actionAttempt.status, ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING']))).limit(1);
+    if (serializedActive) throw summaryError('DERIVED_SUMMARY_REQUEST_ACTIVE');
+    // A pre-lock read is never a coherent seal. Repeat exact ACL/body and all
+    // mutable observations after the supported head locks have been acquired.
+    const locked = await this.members.readAll(contextBasis.memberNotices.map(item => item.member), owner, database, new Set([head.summaryId]));
+    for (const item of readings) {
+      const fresh = locked.find(value => canonicalJson(value.member) === canonicalJson(item.member));
+      if (!fresh) throw summaryError('DERIVED_SUMMARY_CONTEXT_CHANGED');
+      assertMemberSnapshot(item, fresh);
+    }
+    assertSummaryContextUnchanged(contextBasis, await this.repository.contextBasis(locked, owner, database));
     const scope = await this.authorization.authorizeOpenClawAutoWorkItemQueue();
     if (scope.appId !== 'app_17bzc551rsg' || scope.tenantId !== owner.tenantId || !scope.principalId)
       throw summaryError('DERIVED_SUMMARY_EXECUTOR_UNAVAILABLE', 503);
@@ -91,7 +120,7 @@ export class DerivedSummaryService {
       taskType: 'OPENCLAW_DERIVED_SUMMARY' as const, subject: { kind: 'DERIVED_SUMMARY' as const, summaryId: head.summaryId },
       expectedSummaryRevision: input.expectedSummaryRevision, requestId: input.requestId,
       actionAttemptId: attemptId, operationRef: attemptRef, deadlineAt: deadline.toISOString(),
-      executionModel: taskModelSelection(input.modelRef, now),
+      executionModel: taskModelSelection(input.modelRef, now), contextBasis,
       modelInput: { scope: input.scope, classificationStatus: 'CANDIDATE' as const,
         instruction: input.instruction, members: readings, evidence, limitations } };
     const task: DerivedSummaryRuntimeTask = { ...taskBasis, taskInputHash: canonicalSha256(taskBasis) };
@@ -130,7 +159,8 @@ export class DerivedSummaryService {
       const saved = await this.repository.saved(summaryId, summaryRef, owner, database);
       const selected = await this.checkRevision(saved, owner, database);
       return { summaryId, currentSummaryRef: head.currentSummaryRef, currentRevision: head.currentRevision,
-        revision: saved, memberNotices: selected.map(memberNotice) };
+        revision: publicSummaryRevision(saved), memberNotices: selected.map(memberNotice),
+        contextStatus: await this.revisionContextStatus(saved, owner, database) };
     });
   }
 
@@ -139,14 +169,40 @@ export class DerivedSummaryService {
       await this.repository.head(summaryId, owner, database);
       const attempt = await this.repository.attempt(summaryId, attemptRef, owner.tenantId, database);
       if (attempt.actorUserId !== owner.actorUserId) throw summaryError('DERIVED_SUMMARY_ATTEMPT_UNAVAILABLE', 404);
-      await this.members.readAll(checkedSummaryTask(attempt).modelInput.members.map(item => item.member), owner, database);
+      await this.checkTaskAccess(checkedSummaryTask(attempt), owner, database);
       return summaryRequestStatus(summaryId, attempt, database);
     });
   }
 
+  /** Current exact work is reauthorized; a generation fence is not a read permission cache. */
+  async checkTaskAccess(task: DerivedSummaryRuntimeTask, owner: SummaryActor, database: PostgresJsDatabase,
+    options: { requireCurrentContext?: boolean } = {}) {
+    if (options.requireCurrentContext && task.contextBasis)
+      await this.repository.lockContext(task.contextBasis, owner, database);
+    const current = await this.members.readAll(task.modelInput.members.map(item => item.member), owner, database,
+      new Set([task.subject.summaryId]));
+    for (let i = 0; i < current.length; i++) assertMemberSnapshot(task.modelInput.members[i]!, current[i]!);
+    if (options.requireCurrentContext) {
+      if (!task.contextBasis) throw summaryError('DERIVED_SUMMARY_CONTEXT_BASIS_REQUIRED');
+      assertSummaryContextUnchanged(task.contextBasis, await this.repository.contextBasis(current, owner, database));
+    }
+    return current;
+  }
+
+  async revisionContextStatus(saved: DerivedSummaryRevision, owner: SummaryActor, database: PostgresJsDatabase) {
+    if (!saved.contextBasis) return summaryContextStatus(undefined);
+    const fresh = await this.members.readAll(saved.contextBasis.memberNotices.map(item => item.member), owner, database, new Set([saved.summaryId]));
+    return summaryContextStatus(saved.contextBasis, await this.repository.contextBasis(fresh, owner, database));
+  }
+
   async checkRevision(saved: DerivedSummaryRevision, owner: SummaryActor, database: PostgresJsDatabase) {
-    const current = await this.members.readAll(saved.members.map(item => item.member), owner, database);
+    const current = await this.members.readAll(saved.members.map(item => item.member), owner, database, new Set([saved.summaryId]));
     for (let i = 0; i < current.length; i++) assertMemberSnapshot(saved.members[i]!, current[i]!);
+    const evidence = mergeSummaryEvidence(current.flatMap(item => item.evidence));
+    const orderedEvidence = (items: typeof evidence) => [...items].sort((a, b) => a.evidenceRef.localeCompare(b.evidenceRef));
+    const refs = new Set([...current.map(item => item.evidenceRef), ...evidence.map(item => item.evidenceRef)]);
+    if (canonicalJson(orderedEvidence(saved.evidence)) !== canonicalJson(orderedEvidence(evidence)) ||
+      saved.usedEvidenceRefs.some(ref => !refs.has(ref))) throw summaryError('DERIVED_SUMMARY_PERSISTENCE_INVALID');
     return current;
   }
 
@@ -154,8 +210,9 @@ export class DerivedSummaryService {
     const current = head.currentSummaryRef ? await this.repository.saved(head.summaryId, head.currentSummaryRef, owner, database) : null;
     const members = current ? await this.checkRevision(current, owner, database) : await this.members.readAll(head.membersJson, owner, database);
     return { summaryId: head.summaryId, scope: head.scopeJson, classificationStatus: 'CANDIDATE',
-      currentSummaryRef: head.currentSummaryRef, currentRevision: head.currentRevision, current,
-      memberNotices: members.map(memberNotice) };
+      currentSummaryRef: head.currentSummaryRef, currentRevision: head.currentRevision, current: current ? publicSummaryRevision(current) : null,
+      memberNotices: members.map(memberNotice),
+      contextStatus: current ? await this.revisionContextStatus(current, owner, database) : summaryContextStatus(undefined) };
   }
 }
 
@@ -184,6 +241,7 @@ export function checkedSummaryTask(attempt: SummaryAttempt): DerivedSummaryRunti
     task.expectedSummaryRevision !== attempt.inputRevision || task.deadlineAt !== attempt.deadlineAt?.toISOString() ||
     taskInputHash !== attempt.taskInputHash || canonicalSha256(basis) !== taskInputHash ||
     canonicalJson(task.executionModel) !== attempt.executionModelJson) throw summaryError('DERIVED_SUMMARY_TASK_INVALID');
+  if (task.contextBasis !== undefined) assertSummaryContextBasis(task.contextBasis);
   return task;
 }
 

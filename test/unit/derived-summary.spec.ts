@@ -19,7 +19,7 @@ describe('Explicit candidate aggregate admission', () => {
     expect(parseSummaryRequest(request)).toEqual(request);
     expect(parseSummaryRequest({ ...request, expectedSummaryRevision: 1 }, true)).toMatchObject({ expectedSummaryRevision: 1 });
   });
-  it.each(['tenantId', 'actorUserId', 'modelInput', 'producer', 'authority'])('rejects caller %s authority/content', key => {
+  it.each(['tenantId', 'actorUserId', 'modelInput', 'producer', 'authority', 'contextBasis'])('rejects caller %s authority/content', key => {
     expect(() => parseSummaryRequest({ ...request, [key]: 'forged' })).toThrow('DERIVED_SUMMARY_INPUT_INVALID');
   });
   it('rejects node/Matter impersonation, invalid ATA parentage and duplicate exact members', () => {
@@ -136,5 +136,26 @@ describe('Exact optional work understanding', () => {
       expect(matters.readByRef).toHaveBeenCalledWith({ tenantId: actor.tenantId, matterId: 'MAT-exact', workRef: 'MWR-exact' }, database);
       expect(matters.authorizeRuntimeInputs).toHaveBeenLastCalledWith({ ...actor, matterId: 'MAT-exact', basedOnMatterRevisionId: 'MR-exact' }, database);
     }
+  });
+});
+
+
+describe('Selected catalog notices and summary identity cycles', () => {
+  const actor = { tenantId: 'tenant-notice', actorUserId: 'actor-notice' };
+  function service() { return new DerivedSummaryMembersService({} as never, {} as never); }
+  it('rejects the same summary identity even when its exact revision differs', async () => {
+    const reader = service(); jest.spyOn(reader, 'authorizeActor').mockResolvedValue(undefined);
+    await expect(reader.readAll([{ kind: 'DERIVED_SUMMARY', summaryId: 'DS-cycle', summaryRef: 'DSR-old',
+      summaryRevision: 1 }], actor, {} as never, new Set(['DS-cycle'])))
+      .rejects.toThrow('DERIVED_SUMMARY_LINEAGE_CYCLE');
+  });
+  it.each([null, 'DV-old', 'DV-new'])('qualifies local catalog selection %s without publisher authority', async head => {
+    const rows = [{ documentVersionId: 'DV-old', currentDocumentVersionId: head }];
+    const chain = { from: jest.fn().mockReturnThis(), innerJoin: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue(rows) };
+    const database = { select: jest.fn().mockReturnValue(chain), execute: jest.fn().mockResolvedValue([{ allowed: false }]) };
+    const reader = service() as unknown as { sourceVersionNotices: (evidence: AssessmentEvidence[], owner: typeof actor, db: unknown) => Promise<string[]> };
+    const notices = await reader.sourceVersionNotices([source], actor, database);
+    expect(notices.join('')).toContain('本地目录'); expect(notices.join('')).toContain('发布方现行有效状态未核');
+    expect(notices.join('')).not.toContain('当前正式版'); expect(notices.join('')).not.toContain('DV-new');
   });
 });

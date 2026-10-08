@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import type { DerivedSummaryContextStatus } from '@shared/derived-summary.interface';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { readDerivedSummary, readDerivedSummaryRequest, readDerivedSummaryExact } from '@client/src/api/derived-summary';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
@@ -27,7 +28,7 @@ function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?:
     const selected = refPin
       ? readDerivedSummaryExact(id, refPin, signal).then(exact => ({ ...exact, scope: exact.revision.scope }))
       : readDerivedSummary(id, signal).then(head => ({ summaryId: head.summaryId, currentSummaryRef: head.currentSummaryRef,
-        currentRevision: head.currentRevision, revision: head.current, memberNotices: head.memberNotices, scope: head.scope }));
+        currentRevision: head.currentRevision, revision: head.current, memberNotices: head.memberNotices, contextStatus: head.contextStatus, scope: head.scope }));
     const [reading, status] = await Promise.all([selected,
       attempt ? readDerivedSummaryRequest(id, attempt, signal) : Promise.resolve(null)]);
     return { reading, status };
@@ -46,10 +47,11 @@ function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?:
       {value.status.savedSummaryRefs.map(ref => <Link className="mr-3 underline" key={ref} to={`/summaries/${encodeURIComponent(id)}?${new URLSearchParams({ summaryRef: ref, attemptRef: value.status!.attemptRef })}`}>阅读该次确切保存版本</Link>)}
     </section> : null}
     {value && !revision ? <><h1 className="text-2xl font-semibold">{value.reading.scope.title}</h1><p>尚无已保存的概述正文。可重新读取本次进度。</p>
-      {value.status && ['FAILED', 'CANCELLED'].includes(value.status.status)
+      {value.status && ['FAILED', 'CANCELLED', 'CONFLICT'].includes(value.status.status)
         ? <Link className="underline" to={`/summaries/${encodeURIComponent(id)}/update`}>明确重新选取范围与成员，发起新请求</Link> : null}
     </> : null}
     {revision && value ? <article className="space-y-5" data-summary-ref={revision.summaryRef} data-summary-revision={revision.revision}>
+      <SummaryContextStatus status={value.reading.contextStatus} />
       <header className="space-y-2"><h1 className="text-2xl font-semibold">{revision.content.headline}</h1>
         <p>{revision.scope.title} · {revision.scope.kind} · 分类候选待核 · 正文候选</p>
         <p>{revision.summaryRef === value.reading.currentSummaryRef ? '当前保存修订' : '历史保存修订'} {revision.revision} · {new Date(revision.createdAt).toLocaleString('zh-CN')}</p>
@@ -89,4 +91,31 @@ function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?:
       </section>
     </article> : null}
   </>;
+}
+
+
+const contextReasonLabels: Record<string, string> = {
+  NO_SAVED_CONTEXT_BASIS: '此保存版本未记录上下文依据。',
+  CHANGED_MEMBERNOTICES: '选取成员的状态或限制已变化。',
+  CHANGED_SOURCES: '本地来源目录、解析或语义登记已变化。',
+  CHANGED_WORKITEMS: '相关工作或结果状态已变化。',
+  CHANGED_MATTERS: '事务工作、成员或更正记录已变化。',
+  CHANGED_SUMMARIES: '子概述的保存指针已变化。',
+  SELECTED_HISTORY_OR_INCOMPLETE_COVERAGE: '选取含历史依据或尚未完整覆盖的工作。',
+  CORRECTION_REVIEW_PENDING: '存在待核对的更正或复核请求。',
+  DOCUMENT_LIFECYCLE_NOT_FENCED: '文档生命周期变化尚未纳入此核对。',
+  NATIVE_CURRENTNESS_NOT_CONNECTED: '原生来源现行性尚未接入此核对。',
+  PUBLISHER_CURRENTNESS_UNKNOWN: '发布方现行有效状态未核。',
+};
+function SummaryContextStatus({ status }: { status?: DerivedSummaryContextStatus }) {
+  const state = status?.state ?? 'LEGACY_UNCHECKED';
+  const label = state === 'UNCHANGED_HOST_CONTEXT' ? '已记录的 Host 上下文未变化'
+    : state === 'RECHECK_REQUIRED' ? '保存依据上下文需要重新核对' : '此保存版本的上下文依据尚未核对';
+  return <section aria-label="保存依据上下文" className="space-y-2 border border-border p-3">
+    <h2 className="font-semibold" role={state === 'RECHECK_REQUIRED' ? 'alert' : undefined}>{label}</h2>
+    <p>来源为本地目录选取；发布方现行有效状态未核（UNKNOWN）。仅覆盖实际选取成员。</p>
+    <p>保存指针与上下文核对分别判断；已有正文保留其确切版本。</p>
+    <ul className="list-disc pl-5">{(status?.reasons ?? ['NO_SAVED_CONTEXT_BASIS']).map((reason, index) =>
+      <li key={`${reason}:${index}`}>{contextReasonLabels[reason] ?? '另有尚未闭合的上下文限制，需重新核对。'}</li>)}</ul>
+  </section>;
 }
