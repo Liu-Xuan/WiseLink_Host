@@ -1,3 +1,4 @@
+import { activateLibraryGraphReturnSession } from './library-graph-return-memory';
 import type { Core } from 'cytoscape';
 import type { CytoscapeSuiteElement } from './suite-graph-model';
 
@@ -13,6 +14,7 @@ const finitePoint = (point: Point) => [point.x, point.y].every(n => Number.isFin
 
 /** Display geometry only, never source data or an authorization decision. */
 export function activateGraphLayoutSession(session: number, denied: boolean) {
+  activateLibraryGraphReturnSession(session, denied);
   if (session !== activeSession || denied) entries.clear();
   activeSession = session;
 }

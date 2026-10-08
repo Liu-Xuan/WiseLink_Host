@@ -65,10 +65,6 @@ export function DocumentSourceReadingWorkspace({
   const [visiblePdfPage, setVisiblePdfPage] = useState(initialPage ?? 1);
   const [tocOpen, setTocOpen] = useState(() => typeof window === 'undefined' ||
     typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 761px)').matches);
-  const [compact, setCompact] = useState(() => typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia('(max-width: 760px)').matches);
-  const [mobileSecondary, setMobileSecondary] = useState(false);
   const [activeUnitId, setActiveUnitId] = useState<string | null>(initialUnitId ?? null);
   const [fullscreen, setFullscreen] = useState(false);
   const [fullscreenMessage, setFullscreenMessage] = useState<string | null>(null);
@@ -95,15 +91,6 @@ export function DocumentSourceReadingWorkspace({
       });
     }
   }, [initialUnitId, initialLocationRequest]);
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const media: MediaQueryList = window.matchMedia('(max-width: 760px)');
-    const update = (): void => setCompact(media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
 
   useEffect(() => {
     const update = () => setFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -160,8 +147,7 @@ export function DocumentSourceReadingWorkspace({
   } as CSSProperties;
   const showText = mode === 'dual' || mode === 'original';
   const showPdf = mode === 'dual' || mode === 'pdf';
-  const pdfActive = workspaceActive && showPdf
-    && (!compact || mode === 'pdf' || mobileSecondary);
+  const pdfActive = workspaceActive && showPdf;
   const showTranslation = mode === 'bilingual' || mode === 'translation';
   const targetBoxes = useMemo(() => {
     if (!activeUnitId) return null;
@@ -195,7 +181,7 @@ export function DocumentSourceReadingWorkspace({
         </Button>
         <div className="source-reader-mode-tabs" aria-label="阅读模式">
           {READER_MODES.map(item => <button key={item.value} type="button" aria-pressed={mode === item.value}
-            onClick={() => { setMobileSecondary(false); onModeChange(item.value); }}>{item.label}</button>)}
+            onClick={() => onModeChange(item.value)}>{item.label}</button>)}
         </div>
         <Button type="button" size="sm" variant="ghost" onClick={() => void toggleFullscreen()}>
           {fullscreen ? <Minimize aria-hidden="true" /> : <Expand aria-hidden="true" />}{fullscreen ? '退出全屏' : '全屏'}
@@ -203,8 +189,6 @@ export function DocumentSourceReadingWorkspace({
         <Button asChild size="sm" variant="outline" className="source-reader-return">
           <Link to={returnRoute}><ArrowLeft aria-hidden="true" />{returnLabel}</Link>
         </Button>
-        {mode === 'dual' ? <Button type="button" size="sm" variant="outline" className="source-reader-mobile-switch"
-          onClick={() => setMobileSecondary(value => !value)}>{mobileSecondary ? '查看原文' : '查看原件'}</Button> : null}
       </header>
       {fullscreenMessage ? <p className="source-reader-fullscreen-message" role="status">{fullscreenMessage}</p> : null}
 
@@ -240,7 +224,7 @@ export function DocumentSourceReadingWorkspace({
           <div className="source-reader-bilingual">{bilingualContent}</div>
         </div>
         <div
-          className={`source-reader-columns${showText && showPdf ? '' : ' is-single'}${mobileSecondary ? ' show-secondary' : ''}`}
+          className={`source-reader-columns${showText && showPdf ? '' : ' is-single'}`}
           style={columnStyle}
           hidden={showTranslation}
         >
@@ -276,7 +260,7 @@ export function DocumentSourceReadingWorkspace({
                     original.binding.sourceArtifactId, original.binding.sourceSha256])}
                   onVisiblePageChange={setVisiblePdfPage}
                   page={page}
-                  autoLoad={Boolean(initialPage)}
+                  autoLoad
                   targetSignal={`${activeUnitId ?? ''}:${initialLocationRequest}`}
                   targetBoxes={targetBoxes}
                 />}

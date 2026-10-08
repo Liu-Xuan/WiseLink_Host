@@ -23,12 +23,16 @@ export interface SuiteGraphRelation {
   target: string;
   type: string;
   label: string;
+  /** Omitted on legacy edges; source declarations never imply Host adoption. */
+  authority?: 'SOURCE_EXPLICIT' | 'CANDIDATE_ONLY' | 'HOST_RECORDED' | 'UNKNOWN';
+  /** Host selection is not proof of the latest official source version. */
+  currentness?: 'SELECTED_HOST_OBSERVATION' | 'HISTORICAL_HOST_OBSERVATION' | 'UNKNOWN';
 }
 
 export interface SuiteGraphMatter {
   id: string;
   title: string;
-  rootKind: 'matter' | 'display';
+  rootKind: 'matter' | 'document' | 'display';
   code?: string;
   picture?: string;
   groups: SuiteGraphGroup[];
@@ -95,7 +99,7 @@ export interface SuiteGraphPresentation {
     eligible: { groups: number; items: number };
     page: { index: number; size: number; count: number; pageCount: number };
     shown: { groups: number; items: number; cards: number };
-    represented: { relationships: number };
+    represented: { relationships: number; displayConnections?: number; businessRelationships?: number };
   };
   omittedRelationships: Array<{ id: string; reason: 'missingEndpoint' | 'hiddenGroup' | 'offPage' | 'cardOverflow' }>;
   bounds: { x1: number; y1: number; x2: number; y2: number; w: number; h: number };

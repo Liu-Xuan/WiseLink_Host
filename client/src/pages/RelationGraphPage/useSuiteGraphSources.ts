@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ENGINEERING_MATTER_QUERY_ROOT, useEngineeringMatterQueryIdentity } from '@client/src/features/matter/useEngineeringMatter';
-import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
+import { matterDocumentSourceLabel, type MatterDocumentSource } from '@client/src/features/matter/matter-document-sources';
 import {
   getCanonicalHostClientSessionGeneration,
   readDocumentActivityReading,
@@ -18,15 +18,16 @@ interface SourceRecord {
   status: SuiteGraphTimelineSourceStatus;
   notice: string | null;
   candidate: SuiteGraphActivityCandidate | null;
+  accessRejected?: boolean;
 }
 
 const EMPTY_RECORDS: ReadonlyMap<string, SourceRecord> = new Map();
 
-const labelFor = (entry: EngineeringMatterCatalogEntry): string =>
-  `${entry.document.documentCode} · ${entry.document.businessRevision}`;
+const labelFor = matterDocumentSourceLabel;
 
 /**
- * Loads saved source-declared activity candidates for authorized catalog documents.
+ * Loads saved source-declared activity candidates for exact registered documents.
+ * Native materials and legacy catalog entries share the per-document ACL reads.
  * Only the selected source is read by default; other sources load on explicit user
  * expand. GET reads never generate candidates and never call BEGIN. Responses whose
  * binding does not match the exact request are discarded; session changes abort
@@ -36,12 +37,13 @@ const labelFor = (entry: EngineeringMatterCatalogEntry): string =>
  * is cached. An unmounted subscriber cannot publish a late result.
  */
 export function useSuiteGraphSources(input: {
-  catalog: EngineeringMatterCatalogEntry[];
+  catalog: MatterDocumentSource[];
   /** False for exact historical work views: no current reads are attached then. */
   enabled: boolean;
   session: number;
   denied: boolean;
   restorePins?: SuiteGraphTimelineEventPins;
+  onAccessRejected?: (documentVersionId: string) => void;
 }) {
   const queryClient = useQueryClient();
   const { identity: resolvedIdentity, identityQuery } = useEngineeringMatterQueryIdentity(input.enabled && !input.denied, input.session);
@@ -50,7 +52,7 @@ export function useSuiteGraphSources(input: {
   const key = useMemo(
     () => JSON.stringify([
       identityKey,
-      input.catalog.map((entry) => entry.document.documentVersionId),
+      input.catalog.map((entry) => [entry.document.documentVersionId, entry.familyId ?? null]),
       input.session,
       input.enabled,
       input.denied,
@@ -78,7 +80,7 @@ export function useSuiteGraphSources(input: {
   }, [key]);
 
   const loadSource = useCallback((
-    entry: EngineeringMatterCatalogEntry,
+    entry: MatterDocumentSource,
     exactPins?: SuiteGraphTimelineEventPins,
     force = false,
   ) => {
@@ -97,6 +99,13 @@ export function useSuiteGraphSources(input: {
     const finish = (record: SourceRecord) => {
       if (controller.signal.aborted) return;
       if (generation !== generationRef.current || getCanonicalHostClientSessionGeneration() !== input.session) return;
+      if (record.accessRejected) {
+        // A denied read is not a reusable permission decision. Explicit retry
+        // must reach the source endpoint even inside the normal freshness window.
+        queryClient.removeQueries({ queryKey: [...ENGINEERING_MATTER_QUERY_ROOT, 'graph-source', identity.appId,
+          identity.tenantId, identity.actorId, input.session, documentVersionId, entry.familyId ?? null, exactPins ?? null], exact: true });
+        input.onAccessRejected?.(documentVersionId);
+      }
       setRecords((current) => new Map(current).set(documentVersionId, record));
       setLoadingIds((current) => {
         const next = new Set(current);
@@ -116,6 +125,7 @@ export function useSuiteGraphSources(input: {
           || reading.binding.parseRunId !== exactPins.parseRunId
           || reading.candidate?.candidateRevision !== exactPins.candidateRevision
           || reading.familyId !== exactPins.familyId
+          || (entry.familyId && reading.familyId !== entry.familyId)
           || !reading.candidate
           || reading.candidate.runRef !== exactPins.runRef
           || !reading.candidate.statements.some(
@@ -146,7 +156,7 @@ export function useSuiteGraphSources(input: {
         { documentVersionId, parseRunId: publishedRun.parseRunId },
         signal,
       );
-      if (reading.binding.documentVersionId !== documentVersionId || reading.binding.parseRunId !== publishedRun.parseRunId) {
+      if (reading.binding.documentVersionId !== documentVersionId || reading.binding.parseRunId !== publishedRun.parseRunId || (entry.familyId && reading.familyId !== entry.familyId)) {
         return { status: 'unavailable', notice: '读取响应与请求来源不一致，已丢弃。', candidate: null };
       }
       if (!reading.candidate) {
@@ -160,7 +170,7 @@ export function useSuiteGraphSources(input: {
     };
     void queryClient.fetchQuery({
       queryKey: [...ENGINEERING_MATTER_QUERY_ROOT, 'graph-source', identity.appId,
-        identity.tenantId, identity.actorId, input.session, documentVersionId, exactPins ?? null],
+        identity.tenantId, identity.actorId, input.session, documentVersionId, entry.familyId ?? null, exactPins ?? null],
       staleTime: force ? 0 : 30_000,
       gcTime: 5 * 60_000,
       retry: false,
@@ -176,14 +186,14 @@ export function useSuiteGraphSources(input: {
           const message = cause instanceof Error ? cause.message : '';
           const statusCode = cause && typeof cause === 'object' && 'statusCode' in cause ? cause.statusCode : null;
           const revoked = [401, 403, 404].includes(Number(statusCode)) || /401|403|404|UNAUTHORIZED|FORBIDDEN|NOT_FOUND/u.test(message);
-          return { status: 'unavailable', candidate: null,
+          return { status: 'unavailable', candidate: null, accessRejected: revoked,
             notice: revoked ? '该来源当前不可读，相关声明已从列表清除。' : '读取该来源声明失败，可重试。' };
         }
       },
     }).then(finish).catch(() => {
       finish({ status: 'unavailable', candidate: null, notice: '读取该来源声明失败，可重试。' });
     });
-  }, [input.enabled, input.denied, input.session, identity, queryClient]);
+  }, [input.enabled, input.denied, input.session, input.onAccessRejected, identity, queryClient]);
 
   const restorableSourceId = input.restorePins
     && input.catalog.some(
@@ -191,9 +201,9 @@ export function useSuiteGraphSources(input: {
     )
     ? input.restorePins.documentVersionId
     : null;
-  const defaultSourceId = restorableSourceId
-    ?? input.catalog[0]?.document.documentVersionId
-    ?? null;
+  const defaultSourceId = input.restorePins
+    ? restorableSourceId
+    : input.catalog[0]?.document.documentVersionId ?? null;
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   useEffect(() => {
     setSelectedSourceId(null);

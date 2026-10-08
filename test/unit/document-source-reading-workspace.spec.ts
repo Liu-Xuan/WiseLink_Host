@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 
 import { DocumentSourceReadingWorkspace } from '../../client/src/pages/DocumentParsingPage/DocumentSourceReadingWorkspace';
+import RetainedWorkbenchPanel from '../../client/src/features/workbench/RetainedWorkbenchPanel';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 
 jest.mock('@client/src/pages/WorkspaceHomePage/DocumentOriginalPreview', () => ({
@@ -16,12 +17,12 @@ jest.mock('../../client/src/pages/DocumentParsingPage/DocumentOriginalCanvasPrev
   const React = require('react');
   return {
     __esModule: true,
-    default: ({ page, readingScope, onVisiblePageChange }: { page: number; readingScope?: string; onVisiblePageChange?: (page: number) => void }) => {
+    default: ({ page, autoLoad, readingScope, onVisiblePageChange }: { page: number; autoLoad?: boolean; readingScope?: string; onVisiblePageChange?: (page: number) => void }) => {
       React.useEffect(() => {
         mockPdfMounts += 1;
         return () => { mockPdfUnmounts += 1; };
       }, []);
-      return React.createElement('div', { 'data-pdf-page': page, 'data-reading-scope': readingScope, onClick: () => onVisiblePageChange?.(3) }, 'PDF');
+      return React.createElement('div', { 'data-pdf-page': page, 'data-auto-load': String(autoLoad), 'data-reading-scope': readingScope, onClick: () => onVisiblePageChange?.(3) }, 'PDF');
     },
   };
 });
@@ -164,13 +165,17 @@ describe('document source reading workspace', () => {
     expect(mockPdfUnmounts).toBe(1);
   });
 
-  it('defers the PDF on compact screens until the engineer opens it', async () => {
+  it.each([
+    ...([375, 760, 761, 899, 900] as const).flatMap(width =>
+      (['dual', 'pdf', 'original', 'bilingual', 'translation'] as const).flatMap(mode =>
+        ([true, false] as const).map(active => [width, mode, active] as const))),
+  ] as const)('mounts PDF on ordinary %ipx entry only when mode %s and workspace active %s allow it', async (width, initialMode, initialActive) => {
     const { JSDOM } = require('jsdom');
     const dom = new JSDOM('<div id="root"></div>');
     Object.defineProperty(dom.window, 'matchMedia', {
       configurable: true,
       value: (query: string) => ({
-        matches: query === '(max-width: 760px)',
+        matches: query === '(max-width: 760px)' ? width <= 760 : width >= 761,
         media: query,
         onchange: null,
         addEventListener: () => undefined,
@@ -192,18 +197,22 @@ describe('document source reading workspace', () => {
     }
     const original = originalFixture();
     function CompactWorkspace() {
-      const [mode, setMode] = useState<'dual' | 'bilingual' | 'translation' | 'original' | 'pdf'>('dual');
-      return createElement(MemoryRouter, null, createElement(DocumentSourceReadingWorkspace, {
-        original,
-        documentVersionId: original.binding.documentVersionId,
-        mode,
-        onModeChange: setMode,
-        bilingualContent: createElement('div', null, '已保存中英内容'),
-        returnRoute: '/library?mode=document',
-        returnLabel: '返回文档库',
-        title: 'SB-A R02.pdf',
-        initialPage: 3,
-      }));
+      const [mode, setMode] = useState<'dual' | 'bilingual' | 'translation' | 'original' | 'pdf'>(initialMode);
+      const [active, setActive] = useState(initialActive);
+      return createElement(MemoryRouter, null,
+        createElement('button', { onClick: () => setActive(true) }, '显示工作区'),
+        createElement(RetainedWorkbenchPanel, { active, children:
+          createElement(DocumentSourceReadingWorkspace, {
+            original,
+            documentVersionId: original.binding.documentVersionId,
+            mode,
+            onModeChange: setMode,
+            bilingualContent: createElement('div', null, '已保存中英内容'),
+            returnRoute: '/library?mode=document',
+            returnLabel: '返回文档库',
+            title: 'SB-A R02.pdf',
+          }),
+        }));
     }
     const container = dom.window.document.getElementById('root')!;
     const root = createRoot(container);
@@ -211,13 +220,26 @@ describe('document source reading workspace', () => {
     mockPdfUnmounts = 0;
     try {
       await act(async () => root.render(createElement(CompactWorkspace)));
-      expect(mockPdfMounts).toBe(0);
-      const switchButton = [...container.querySelectorAll('button')]
-        .find((item) => item.textContent === '查看原件');
-      await act(async () => switchButton?.dispatchEvent(
-        new dom.window.MouseEvent('click', { bubbles: true }),
-      ));
+      const initiallyShowsPdf = initialMode === 'dual' || initialMode === 'pdf';
+      expect(mockPdfMounts).toBe(initialActive && initiallyShowsPdf ? 1 : 0);
+      expect(container.textContent).not.toContain('查看原件');
+      if (!initialActive) {
+        await act(async () => [...container.querySelectorAll('button')]
+          .find((item) => item.textContent === '显示工作区')!.click());
+      }
+      expect(mockPdfMounts).toBe(initiallyShowsPdf ? 1 : 0);
+      if (!initiallyShowsPdf) {
+        expect(container.querySelector('[data-pdf-page]')).toBeNull();
+        await act(async () => [...container.querySelectorAll('button')]
+          .find((item) => item.textContent === '仅原件')!.click());
+      }
       expect(mockPdfMounts).toBe(1);
+      const pdf = container.querySelector('[data-pdf-page="1"]')!;
+      expect(pdf.getAttribute('data-auto-load')).toBe('true');
+      expect(pdf.closest('[hidden]')).toBeNull();
+      if (initialMode === 'dual') {
+        expect(container.querySelector('.source-reader-primary')?.closest('[hidden]')).toBeNull();
+      }
       expect(mockPdfUnmounts).toBe(0);
     } finally {
       await act(async () => root.unmount());
@@ -229,4 +251,40 @@ describe('document source reading workspace', () => {
     }
     expect(mockPdfUnmounts).toBe(1);
   });
+});
+
+it.each([375, 760, 761, 899, 900])('keeps both dual surfaces in the CSS cascade at %ipx without a mobile reveal gate', width => {
+  const { readFileSync } = require('node:fs');
+  const { join } = require('node:path');
+  const postcss = require('postcss');
+  const { JSDOM } = require('jsdom');
+  const css = postcss.parse(readFileSync(join(__dirname,
+    '../../client/src/pages/DocumentParsingPage/document-version-reading.css'), 'utf8'));
+  // JSDOM does not evaluate media widths or layout. Resolve the declared width
+  // branches only, then check display/visibility; this is not visual QA.
+  css.walkAtRules((rule: import('postcss').AtRule) => {
+    if (rule.name === 'import') { rule.remove(); return; }
+    if (rule.name !== 'media') return;
+    const match = /^\((max|min)-width: (\d+)px\)$/.exec(rule.params);
+    if (!match || (match[1] === 'max' ? width > Number(match[2]) : width < Number(match[2]))) {
+      rule.remove(); return;
+    }
+    rule.replaceWith(...(rule.nodes ?? []));
+  });
+  const dom = new JSDOM(markup().replace('source-reader-workspace', 'source-reader-workspace no-toc'));
+  const style = dom.window.document.createElement('style');
+  style.textContent = css.toString();
+  dom.window.document.head.appendChild(style);
+  try {
+    for (const selector of ['.source-reader-primary', '.source-reader-pdf-pane']) {
+      const element = dom.window.document.querySelector(selector)!;
+      expect(dom.window.getComputedStyle(element).display).toBe('flex');
+      expect(dom.window.getComputedStyle(element).visibility).not.toBe('hidden');
+    }
+    const stage = dom.window.document.querySelector('.source-reader-stage')!;
+    expect(dom.window.getComputedStyle(stage).display).not.toBe('none');
+    const columns = dom.window.document.querySelector('.source-reader-columns')!;
+    expect(dom.window.getComputedStyle(columns).display).toBe(width <= 760 ? 'flex' : 'grid');
+    if (width <= 760) expect(dom.window.getComputedStyle(columns).flexDirection).toBe('column');
+  } finally { dom.window.close(); }
 });

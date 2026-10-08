@@ -1,3 +1,4 @@
+import type { CanonicalLibraryGraphRequest, CanonicalLibraryGraphResponse } from '@shared/library-graph.interface';
 import type { DocumentParsingSettingsReadModel, UpdateDocumentParsingSettingsRequest } from '@shared/document-parsing-settings.interface';
 import type { DocumentRevisionReadingRequest, DocumentRevisionReadingResponse } from '@shared/document-revision-reading.interface';
 import type { DocumentSemanticReadingRequest, DocumentSemanticReadingResponse } from '@shared/document-semantic-map.interface';
@@ -474,6 +475,14 @@ export async function getCanonicalLibraryDocuments(
   });
 }
 
+/** Lightweight metadata graph page; no file or model operation. */
+export async function getCanonicalLibraryGraph(input: CanonicalLibraryGraphRequest, signal?: AbortSignal): Promise<CanonicalLibraryGraphResponse> {
+  const params = input.level === 'families' && input.clusterValue === null
+    ? (() => { const {clusterValue: _missing, ...rest} = input; return {...rest, clusterMissing: 'true'}; })()
+    : input;
+  return readCanonicalLibrary<CanonicalLibraryGraphResponse>({url: '/api/canonical-host/library/graph', params, signal});
+}
+
 export async function getCanonicalLibraryQuicklook(
   workItemId: string,
   signal?: AbortSignal,
@@ -511,7 +520,7 @@ export async function getCanonicalLibraryTasks(
 
 async function readCanonicalLibrary<T>(input: {
   url: string;
-  params?: CanonicalLibraryTasksRequest | DocumentMetadataReadQuery;
+  params?: CanonicalLibraryTasksRequest | DocumentMetadataReadQuery | CanonicalLibraryGraphRequest | (Omit<CanonicalLibraryGraphRequest, 'clusterValue'> & {clusterMissing: string});
   signal?: AbortSignal;
   method?: 'GET' | 'POST';
   data?: DocumentUploadRequest | DocumentHistoricalImportRequest | DocumentMetadataReextractRequest | StartDocumentParseRequest;
@@ -1305,6 +1314,7 @@ export async function getStructuredContentPage(
 export async function getRelatedContextPreview(
   workItemId: string,
   expectedRevision?: number,
+  signal?: AbortSignal,
 ): Promise<CanonicalRelatedContextPreviewResponse> {
   const requestGeneration = clientSessionGeneration;
   try {
@@ -1312,6 +1322,7 @@ export async function getRelatedContextPreview(
       await axiosForBackend<CanonicalRelatedContextPreviewResponse>({
         url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/related-context/explicit-preview`,
         method: 'GET',
+        signal,
         ...(expectedRevision === undefined
           ? {}
           : { params: { expectedRevision } }),
