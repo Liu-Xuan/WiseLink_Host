@@ -1,6 +1,8 @@
 import type { CanonicalLibraryDocumentSummary, CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
-import catalog from '@client/src/features/atlas/data/ata-catalog.json';
+// Generated from the complete Atlas catalog; keep this synchronous title-only
+// projection out of the full definitions catalog's lazy route dependency.
+import catalog from './library-ata-titles.generated.json';
 import { documentClassificationValues, type LibraryCatalogFilters } from './library-classification';
 import { matchesLibraryFleet } from './library-fleet-classification';
 
