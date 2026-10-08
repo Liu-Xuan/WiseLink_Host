@@ -492,6 +492,740 @@ test(
 );
 
 test(
+  'WorkItem link and material revision serialize before reserving the next revision key',
+  { skip: !databaseUrl, concurrency: false, timeout: 20000 },
+  async t => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    const connections = [];
+    const locked = Promise.withResolvers();
+    const resume = Promise.withResolvers();
+    let armed = false;
+    let operations = [];
+    try {
+      const fixtures = await loadRealDocumentFixtures();
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, fixtures);
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+      const editor = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test', async query => {
+        if (armed && /SELECT current_matter_revision_id, current_revision_no\s+FROM engineering_matter/u.test(query)
+            && /FOR UPDATE/u.test(query)) {
+          locked.resolve();
+          await resume.promise;
+        }
+      });
+      const linker = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test');
+      connections.push(editor, linker);
+      const source = { tenantId: 'tenant-A', actorUserId: 'actor-A', documentVersionId: fixtures.ftd.documentVersionId };
+      const { matterId } = await editor.service.organizeDocumentIntake(source);
+      const scope = { tenantId: 'tenant-A', matterId };
+      const original = await editor.matters.readMaterials(scope);
+      const [{ pid: editorPid }] = await editor.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+      const [{ pid: linkerPid }] = await linker.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+      const editCommand = { requestId: 'link-race-edit', expectedMatterRevision: 1,
+        changeSummary: 'Synthetic competing material edit.',
+        upserts: [{ ...original.materials[0], origin: 'ENGINEER', scope: 'Synthetic edited scope survives linking.' }] };
+      const linkCommand = { requestId: 'link-race-link', expectedMatterRevision: 1,
+        workItemId: SB_WORK_ITEM_ID, changeSummary: 'Synthetic competing WorkItem link.' };
+      armed = true;
+      operations = [editor.service.reviseMaterials(matterId, editCommand, editor.actor)
+        .then(value => ({ value }), error => ({ error }))];
+      await Promise.race([locked.promise, operations[0].then(result => {
+        if (result.error) throw result.error;
+        assert.fail('Material writer completed without reaching its real Matter lock');
+      })]);
+      operations.push(linker.service.linkWorkItem(matterId, linkCommand, linker.actor)
+        .then(value => ({ value }), error => ({ error })));
+      const waiting = await observedMatterBlocker(sql, linkerPid, editorPid);
+      t.diagnostic(JSON.stringify({ event: 'link-versus-material-wait', editorPid, linkerPid, ...waiting }));
+      resume.resolve();
+      const [edited, linked] = await Promise.all(operations);
+      t.diagnostic(JSON.stringify({ event: 'link-versus-material-outcomes', outcomes: [edited, linked].map(result =>
+        result.error ? { code: result.error.cause?.code ?? result.error.code,
+          message: result.error.cause?.message ?? result.error.message,
+          detail: result.error.cause?.detail ?? result.error.detail } : { status: 'fulfilled' }) }));
+      if (edited.error) throw edited.error;
+      assert.equal(linked.error?.code, 'ENGINEERING_MATTER_CAS_CONFLICT');
+      assert.equal(edited.value.materials.matterRevision, 2);
+      assert.deepEqual(await editor.matters.readMaterials(scope), edited.value.materials);
+      assert.equal((await sql`SELECT count(*)::int AS count FROM engineering_matter_revision WHERE matter_id = ${matterId}`)[0].count, 2);
+      assert.equal((await sql`SELECT count(*)::int AS count FROM engineering_matter_revision_work_item WHERE matter_id = ${matterId}`)[0].count, 0);
+      armed = false;
+      const retried = await linker.service.linkWorkItem(matterId, { ...linkCommand, expectedMatterRevision: 2 }, linker.actor);
+      assert.equal(retried.linked, true);
+      assert.equal(retried.matter.currentRevision.revisionNo, 3);
+      const fresh = await editor.matters.loadCurrent(scope);
+      assert.deepEqual(fresh.materials, edited.value.materials.materials);
+      assert.deepEqual(fresh.links, [{ workItemId: SB_WORK_ITEM_ID, ordinal: 1, relationRole: 'RELATED', linkedAtWorkItemRevision: 6 }]);
+      assert.deepEqual((await sql`SELECT material_json FROM engineering_matter_material_link
+        WHERE matter_revision_id = ${original.matterRevisionId}`).map(row => JSON.parse(row.material_json)), original.materials,
+      'the historical pre-edit material composition is unchanged');
+      assert.deepEqual((await sql`SELECT material_json FROM engineering_matter_material_link
+        WHERE matter_revision_id = ${edited.value.materials.matterRevisionId}`).map(row => JSON.parse(row.material_json)), edited.value.materials.materials,
+      'linking copies the exact committed material composition without rewriting it');
+    } finally {
+      resume.resolve();
+      await Promise.allSettled(operations);
+      for (const connection of connections.reverse()) await connection.release();
+      await sql.end({ timeout: 5 });
+    }
+  },
+);
+
+test(
+  'WorkItem link interleavings preserve exact replay, CAS and historical material snapshots',
+  { skip: !databaseUrl, concurrency: false, timeout: 60000 },
+  async t => {
+    for (const scenario of ['link-first-material', 'link-first-intake', 'intake-first-link',
+      'same-request-replay', 'same-request-mismatch', 'different-link-stale']) {
+      await t.test(scenario, async child => {
+        assertSafeIsolatedDatabase(databaseUrl);
+        const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+        const connections = [];
+        const locked = Promise.withResolvers();
+        const resume = Promise.withResolvers();
+        let armed = false;
+        let operations = [];
+        try {
+          const fixtures = await loadRealDocumentFixtures();
+          await resetDatabase(sql);
+          await seedRealDocumentWorkItems(sql, fixtures);
+          await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+          const first = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test', async query => {
+            const isLock = scenario === 'intake-first-link'
+              ? /SELECT m\.matter_id/u.test(query) && /FOR UPDATE OF m/u.test(query)
+              : /SELECT matter_id\s+FROM engineering_matter/u.test(query) && /FOR UPDATE/u.test(query);
+            if (armed && isLock) { locked.resolve(); await resume.promise; }
+          });
+          const second = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test');
+          connections.push(first, second);
+          const source = { tenantId: 'tenant-A', actorUserId: 'actor-A', documentVersionId: fixtures.ftd.documentVersionId };
+          const { matterId } = await first.service.organizeDocumentIntake(source);
+          const scope = { tenantId: 'tenant-A', matterId };
+          const original = await first.matters.readMaterials(scope);
+          const historyBefore = await readLinkRaceHistory(sql, matterId);
+          const newer = scenario.includes('intake')
+            ? await seedMatterSuccessor(sql, fixtures.ftd.documentVersionId, scenario) : null;
+          const link = { requestId: 'interleaved-link', expectedMatterRevision: 1,
+            workItemId: SB_WORK_ITEM_ID, changeSummary: 'Synthetic interleaved link.' };
+          const edit = { requestId: 'interleaved-material', expectedMatterRevision: 1,
+            changeSummary: 'Synthetic interleaved material edit.',
+            upserts: [{ ...original.materials[0], origin: 'ENGINEER', scope: 'Synthetic later material scope.' }] };
+          const [{ pid: firstPid }] = await first.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+          const [{ pid: secondPid }] = await second.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+          const settle = promise => promise.then(value => ({ value }), error => ({ error }));
+          armed = true;
+          operations = [settle(scenario === 'intake-first-link'
+            ? first.service.organizeDocumentIntake({ ...source, documentVersionId: newer })
+            : first.service.linkWorkItem(matterId, link, first.actor))];
+          await Promise.race([locked.promise, operations[0].then(result => {
+            if (result.error) throw result.error;
+            assert.fail('First writer completed without reaching its real Matter lock');
+          })]);
+          operations.push(settle(scenario === 'link-first-material'
+            ? second.service.reviseMaterials(matterId, edit, second.actor)
+            : scenario === 'link-first-intake'
+              ? second.service.organizeDocumentIntake({ ...source, documentVersionId: newer })
+              : second.service.linkWorkItem(matterId, {
+                ...link,
+                ...(scenario === 'same-request-mismatch' ? { changeSummary: 'Changed replay is rejected.' } : {}),
+                ...(scenario === 'different-link-stale' ? { requestId: 'other-link', workItemId: FTD_WORK_ITEM_ID } : {}),
+              }, second.actor)));
+          const waiting = await observedMatterBlocker(sql, secondPid, firstPid);
+          child.diagnostic(JSON.stringify({ event: 'workitem-link-interleaving-wait', scenario, firstPid, secondPid, ...waiting }));
+          assert.match(waiting.query, /SELECT (?:current_matter_revision_id, current_revision_no|(?:m\.)?matter_id)[\s\S]+FOR UPDATE/u);
+          resume.resolve();
+          const [one, two] = await Promise.all(operations);
+          child.diagnostic(JSON.stringify({ event: 'workitem-link-interleaving-outcomes', scenario,
+            outcomes: [one, two].map(result => result.error
+              ? { code: result.error.cause?.code ?? result.error.code, message: result.error.cause?.message ?? result.error.message }
+              : { status: 'fulfilled' }) }));
+          if (one.error) throw one.error;
+          armed = false;
+          if (scenario === 'link-first-intake') {
+            if (two.error) throw two.error;
+            assert.equal(two.value.matterId, matterId);
+            assert.equal(two.value.created, false);
+            const current = await first.matters.loadCurrent(scope);
+            assert.equal(current.currentRevisionNo, 3);
+            assert.equal(current.materials[0].documentVersionId, newer);
+            assert.deepEqual(current.links, [{ workItemId: SB_WORK_ITEM_ID, ordinal: 1, relationRole: 'RELATED', linkedAtWorkItemRevision: 6 }]);
+            const historical = await readLinkRaceHistory(sql, matterId);
+            assert.equal(historical.materials.find(row => row.revision_no === 2).document_version_id, fixtures.ftd.documentVersionId);
+          } else if (scenario === 'same-request-replay') {
+            if (two.error) throw two.error;
+            assert.equal(one.value.linked, true);
+            assert.equal(two.value.linked, false);
+            assert.equal(two.value.replayed, true);
+            assert.equal(two.value.matter.currentRevision.matterRevisionId, one.value.matter.currentRevision.matterRevisionId);
+          } else if (scenario === 'same-request-mismatch') {
+            assert.equal(two.error?.code, 'ENGINEERING_MATTER_REQUEST_REPLAY_MISMATCH');
+          } else {
+            assert.equal(two.error?.code, 'ENGINEERING_MATTER_CAS_CONFLICT');
+            if (scenario === 'link-first-material') {
+              const retried = await second.service.reviseMaterials(matterId, { ...edit, expectedMatterRevision: 2 }, second.actor);
+              assert.equal(retried.materials.matterRevision, 3);
+              assert.equal(retried.materials.materials[0].scope, edit.upserts[0].scope);
+              assert.deepEqual((await first.matters.loadCurrent(scope)).links,
+                [{ workItemId: SB_WORK_ITEM_ID, ordinal: 1, relationRole: 'RELATED', linkedAtWorkItemRevision: 6 }]);
+            } else {
+              const retried = await second.service.linkWorkItem(matterId, {
+                ...link, expectedMatterRevision: 2,
+                ...(scenario === 'different-link-stale' ? { requestId: 'other-link', workItemId: FTD_WORK_ITEM_ID } : {}),
+              }, second.actor);
+              assert.equal(retried.linked, true);
+              assert.equal(retried.matter.currentRevision.revisionNo, 3);
+              const current = await first.matters.loadCurrent(scope);
+              if (newer) assert.equal(current.materials[0].documentVersionId, newer);
+              assert.deepEqual(current.links.map(row => [row.workItemId, row.linkedAtWorkItemRevision]),
+                scenario === 'different-link-stale' ? [[SB_WORK_ITEM_ID, 6], [FTD_WORK_ITEM_ID, 4]] : [[SB_WORK_ITEM_ID, 6]]);
+            }
+          }
+          const historyAfter = await readLinkRaceHistory(sql, matterId);
+          for (const key of Object.keys(historyBefore))
+            assert.deepEqual(historyAfter[key].filter(row => row.revision_no === 1), [...historyBefore[key]],
+              `${scenario}: the historical revision must remain byte-for-byte unchanged`);
+          const expectedRevisions = scenario.startsWith('same-request') ? 2 : 3;
+          assert.equal(historyAfter.revisions.length, expectedRevisions);
+          assert.deepEqual(historyAfter.revisions.map(row => row.revision_no), Array.from({ length: expectedRevisions }, (_, i) => i + 1));
+        } finally {
+          resume.resolve();
+          await Promise.allSettled(operations);
+          for (const connection of connections.reverse()) await connection.release();
+          await sql.end({ timeout: 5 });
+        }
+      });
+    }
+  },
+);
+
+test(
+  'WorkItem link rechecks actor and source authorization after a real lock wait',
+  { skip: !databaseUrl, concurrency: false, timeout: 20000 },
+  async t => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    const connections = [];
+    const locked = Promise.withResolvers();
+    const resume = Promise.withResolvers();
+    let armed = false;
+    let operations = [];
+    try {
+      const fixtures = await loadRealDocumentFixtures();
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, fixtures);
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+      const first = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test', async query => {
+        if (armed && /SELECT matter_id\s+FROM engineering_matter/u.test(query) && /FOR UPDATE/u.test(query)) {
+          locked.resolve(); await resume.promise;
+        }
+      });
+      const second = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test');
+      const outsider = await reserveActorService('actor-B', 'tenant-A', 'authenticated_wiselink_r10_test');
+      connections.push(first, second, outsider);
+      const { matterId } = await first.service.organizeDocumentIntake({ tenantId: 'tenant-A', actorUserId: 'actor-A',
+        documentVersionId: fixtures.ftd.documentVersionId });
+      const link = { requestId: 'authorized-link', expectedMatterRevision: 1,
+        workItemId: SB_WORK_ITEM_ID, changeSummary: 'Synthetic authorized source link.' };
+      await first.service.linkWorkItem(matterId, link, first.actor);
+      const direct = { ...link, tenantId: 'tenant-A', actorUserId: 'actor-A', matterId,
+        expectedMatterRevision: 2, requestId: 'rejected-link', workItemId: REQUEST_REUSE_WORK_ITEM_ID, workItemRevision: 4 };
+      const before = await readLinkRaceHistory(sql, matterId);
+      for (const [repository, input] of [
+        [first.matters, { ...direct, actorUserId: 'actor-B' }],
+        [first.matters, { ...direct, tenantId: 'tenant-B' }],
+        [outsider.matters, direct],
+      ]) await assert.rejects(repository.linkWorkItem(input), { code: 'ENGINEERING_MATTER_NOT_FOUND' });
+      const [{ pid: firstPid }] = await first.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+      const [{ pid: secondPid }] = await second.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+      armed = true;
+      operations = [first.service.linkWorkItem(matterId, link, first.actor)
+        .then(value => ({ value }), error => ({ error }))];
+      await Promise.race([locked.promise, operations[0].then(result => {
+        if (result.error) throw result.error;
+        assert.fail('Replay completed without acquiring its real Matter lock');
+      })]);
+      const candidate = { requestId: 'revoked-while-waiting', expectedMatterRevision: 2,
+        workItemId: REQUEST_REUSE_WORK_ITEM_ID, changeSummary: 'Synthetic revocation race.' };
+      operations.push(second.service.linkWorkItem(matterId, candidate, second.actor)
+        .then(value => ({ value }), error => ({ error })));
+      const waiting = await observedMatterBlocker(sql, secondPid, firstPid);
+      t.diagnostic(JSON.stringify({ event: 'workitem-link-authorization-wait', firstPid, secondPid, ...waiting }));
+      await sql`UPDATE work_item SET requested_by_user_id = 'actor-B'
+        WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+      resume.resolve();
+      const [replay, rejected] = await Promise.all(operations);
+      if (replay.error) throw replay.error;
+      assert.equal(replay.value.replayed, true);
+      assert.equal(rejected.error?.cause?.code ?? rejected.error?.code, '42501',
+        'the persisted source RLS check rejects an authorization revoked after service preflight');
+      t.diagnostic(JSON.stringify({ event: 'workitem-link-authorization-denied', code: rejected.error.cause?.code ?? rejected.error.code }));
+      assert.deepEqual(await readLinkRaceHistory(sql, matterId), before,
+        'denied actors and revoked sources do not leave revision, link or material rows');
+      armed = false;
+      await assert.rejects(second.service.linkWorkItem(matterId, candidate, second.actor));
+      await sql`UPDATE work_item SET requested_by_user_id = 'actor-A', revision = 5
+        WHERE work_item_id = ${REQUEST_REUSE_WORK_ITEM_ID}`;
+      const retried = await second.service.linkWorkItem(matterId, candidate, second.actor);
+      assert.equal(retried.linked, true);
+      const current = await first.matters.loadCurrent({ tenantId: 'tenant-A', matterId });
+      assert.equal(current.currentRevisionNo, 3);
+      assert.deepEqual(current.links.map(row => [row.workItemId, row.linkedAtWorkItemRevision]),
+        [[SB_WORK_ITEM_ID, 6], [REQUEST_REUSE_WORK_ITEM_ID, 5]], 'store the exact freshly authorized WorkItem revision');
+      for (const key of Object.keys(before))
+        assert.deepEqual((await readLinkRaceHistory(sql, matterId))[key].filter(row => row.revision_no <= 2), [...before[key]]);
+    } finally {
+      resume.resolve();
+      await Promise.allSettled(operations);
+      for (const connection of connections.reverse()) await connection.release();
+      await sql.end({ timeout: 5 });
+    }
+  },
+);
+
+test(
+  'WorkItem link loses Matter visibility when a current source is revoked during its lock wait',
+  { skip: !databaseUrl, concurrency: false, timeout: 30000 },
+  async t => {
+    for (const scenario of ['current-linked-workitem', 'current-material']) {
+      await t.test(scenario, async child => {
+        assertSafeIsolatedDatabase(databaseUrl);
+        const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+        const connections = [];
+        const locked = Promise.withResolvers();
+        const resume = Promise.withResolvers();
+        let armed = false;
+        let operations = [];
+        try {
+          const fixtures = await loadRealDocumentFixtures();
+          await resetDatabase(sql);
+          await seedRealDocumentWorkItems(sql, fixtures);
+          await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+          const first = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test', async query => {
+            if (armed && /SELECT matter_id\s+FROM engineering_matter/u.test(query) && /FOR UPDATE/u.test(query)) {
+              locked.resolve(); await resume.promise;
+            }
+          });
+          const second = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test');
+          connections.push(first, second);
+          const { matterId } = await first.service.organizeDocumentIntake({ tenantId: 'tenant-A', actorUserId: 'actor-A',
+            documentVersionId: fixtures.ftd.documentVersionId });
+          const link = { requestId: 'current-source-link', expectedMatterRevision: 1,
+            workItemId: SB_WORK_ITEM_ID, changeSummary: 'Synthetic current-source fixture.' };
+          await first.service.linkWorkItem(matterId, link, first.actor);
+          const before = await readLinkRaceHistory(sql, matterId);
+          const [{ pid: firstPid }] = await first.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+          const [{ pid: secondPid }] = await second.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+          const settle = promise => promise.then(value => ({ value }), error => ({ error }));
+          armed = true;
+          operations = [settle(first.service.linkWorkItem(matterId, link, first.actor))];
+          await Promise.race([locked.promise, operations[0].then(result => {
+            if (result.error) throw result.error;
+            assert.fail('Replay completed without acquiring its real Matter lock');
+          })]);
+          operations.push(settle(second.service.linkWorkItem(matterId, {
+            requestId: 'current-source-waiter', expectedMatterRevision: 2,
+            workItemId: REQUEST_REUSE_WORK_ITEM_ID, changeSummary: 'Synthetic waiting link.',
+          }, second.actor)));
+          const waiting = await observedMatterBlocker(sql, secondPid, firstPid);
+          child.diagnostic(JSON.stringify({ event: 'workitem-link-current-source-wait', scenario, firstPid, secondPid, ...waiting }));
+          if (scenario === 'current-linked-workitem')
+            await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE work_item_id = ${SB_WORK_ITEM_ID}`;
+          else
+            await sql`UPDATE work_item SET requested_by_user_id = 'actor-B' WHERE document_version_id = ${fixtures.ftd.documentVersionId}`;
+          resume.resolve();
+          const results = await Promise.all(operations);
+          assert.deepEqual(results.map(result => result.error?.code),
+            ['ENGINEERING_MATTER_NOT_FOUND', 'ENGINEERING_MATTER_NOT_FOUND'],
+            'fresh post-lock RLS visibility fails closed for both replay and waiting writer');
+          assert.deepEqual(await readLinkRaceHistory(sql, matterId), before);
+          child.diagnostic(JSON.stringify({ event: 'workitem-link-current-source-denied', scenario,
+            codes: results.map(result => result.error.code), historicalRowsUnchanged: true }));
+        } finally {
+          resume.resolve();
+          await Promise.allSettled(operations);
+          for (const connection of connections.reverse()) await connection.release();
+          await sql.end({ timeout: 5 });
+        }
+      });
+    }
+  },
+);
+
+async function readLinkRaceHistory(sql, matterId) {
+  return {
+    revisions: await sql`SELECT revision_no, matter_revision_id, request_id, change_kind, change_summary,
+      changed_work_item_id, created_by_user_id, material_command_json
+      FROM engineering_matter_revision WHERE matter_id = ${matterId} ORDER BY revision_no`,
+    links: await sql`SELECT r.revision_no, l.matter_revision_id, l.work_item_id, l.ordinal, l.relation_role, l.linked_at_work_item_revision
+      FROM engineering_matter_revision_work_item l JOIN engineering_matter_revision r USING (matter_revision_id)
+      WHERE r.matter_id = ${matterId} ORDER BY r.revision_no, l.ordinal`,
+    materials: await sql`SELECT r.revision_no, l.matter_revision_id, l.material_id, l.document_version_id, l.material_json
+      FROM engineering_matter_material_link l JOIN engineering_matter_revision r USING (matter_revision_id)
+      WHERE r.matter_id = ${matterId} ORDER BY r.revision_no, l.material_id`,
+  };
+}
+
+test(
+  'material revision and browser intake serialize without an FK lock cycle',
+  { skip: !databaseUrl, concurrency: false, timeout: 20000 },
+  async (t) => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    const connections = [];
+    const matterLocked = Promise.withResolvers();
+    const resumeRevision = Promise.withResolvers();
+    let operations = [];
+    try {
+      const fixtures = await loadRealDocumentFixtures();
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, fixtures);
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+      const revisionOwner = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test');
+      const intakeOwner = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test');
+      connections.push(revisionOwner, intakeOwner);
+      const source = { tenantId: 'tenant-A', actorUserId: 'actor-A', documentVersionId: fixtures.ftd.documentVersionId };
+      const { matterId } = await revisionOwner.service.organizeDocumentIntake(source);
+      const initial = await revisionOwner.matters.readMaterials({ tenantId: 'tenant-A', matterId });
+      const [{ pid: revisionPid }] = await revisionOwner.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+      const [{ pid: intakePid }] = await intakeOwner.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+      // Pause only after the real SELECT has returned and acquired its row lock.
+      // Neither endpoint's SQL or transaction boundaries are replaced by a mock.
+      const instrument = database => observeMatterStatements(database, async text => {
+        if (/SELECT current_matter_revision_id, current_revision_no\s+FROM engineering_matter/u.test(text)
+            && /FOR (?:NO KEY )?UPDATE/u.test(text)) {
+          matterLocked.resolve();
+          await resumeRevision.promise;
+        }
+      });
+      const revision = new EngineeringMatterRepository(instrument(revisionOwner.database)).reviseMaterials({
+        tenantId: 'tenant-A', actorUserId: 'actor-A', matterId,
+        command: { requestId: 'concurrent-material-edit', expectedMatterRevision: 1,
+          changeSummary: 'Synthetic concurrent scope edit.',
+          upserts: [{ ...initial.materials[0], scope: 'Synthetic edited scope.' }] },
+      });
+      // Attach handlers immediately so the intentional red run is not an unhandled rejection.
+      operations = [revision.then(value => ({ status: 'fulfilled', value }), error => ({ status: 'rejected', error }))];
+      await matterLocked.promise;
+      const intake = intakeOwner.service.organizeDocumentIntake(source);
+      operations.push(intake.then(value => ({ status: 'fulfilled', value }), error => ({ status: 'rejected', error })));
+      const deadline = Date.now() + 5000;
+      let blocked;
+      do {
+        [blocked] = await sql`SELECT pid, wait_event_type, wait_event, query, pg_blocking_pids(pid) AS blockers
+          FROM pg_stat_activity WHERE pid = ${intakePid}`;
+        if (blocked.blockers.includes(revisionPid)) break;
+        await new Promise(resolve => setImmediate(resolve));
+      } while (Date.now() < deadline);
+      assert.ok(blocked.blockers.includes(revisionPid), 'observe the intake waiting on the real revision connection');
+      t.diagnostic(JSON.stringify({ event: 'observed-lock-wait', revisionPid, intakePid, ...blocked }));
+      resumeRevision.resolve();
+      const results = await Promise.all(operations);
+      const outcomes = results.map(result => result.status === 'fulfilled' ? { status: result.status } : {
+        status: result.status, code: result.error.cause?.code ?? result.error.code,
+        message: result.error.cause?.message ?? result.error.message,
+        detail: result.error.cause?.detail ?? result.error.detail,
+      });
+      t.diagnostic(JSON.stringify({ event: 'writer-outcomes', outcomes }));
+      assert.deepEqual(outcomes, [{ status: 'fulfilled' }, { status: 'fulfilled' }]);
+      const current = await revisionOwner.matters.readMaterials({ tenantId: 'tenant-A', matterId });
+      assert.equal(current.matterRevision, 2);
+      assert.equal(current.materials[0].scope, 'Synthetic edited scope.');
+      assert.equal(results[1].value.matterId, matterId);
+      assert.equal(results[1].value.created, false);
+    } finally {
+      resumeRevision.resolve();
+      await Promise.allSettled(operations);
+      for (const connection of connections.reverse()) await connection.release();
+      await sql.end({ timeout: 5 });
+    }
+  },
+);
+
+test(
+  'material writer family locks cover added, replaced, excluded and default-only memberships',
+  { skip: !databaseUrl, concurrency: false, timeout: 30000 },
+  async t => {
+    for (const scenario of ['added', 'replaced', 'excluded', 'default-only']) {
+      await t.test(scenario, async child => {
+        assertSafeIsolatedDatabase(databaseUrl);
+        const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+        const connections = [];
+        const locked = Promise.withResolvers();
+        const resume = Promise.withResolvers();
+        let armed = false;
+        let operations = [];
+        try {
+          const fixtures = await loadRealDocumentFixtures();
+          await resetDatabase(sql);
+          await seedRealDocumentWorkItems(sql, fixtures);
+          await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+          const owner = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test', async query => {
+            if (armed && /SELECT current_matter_revision_id, current_revision_no\s+FROM engineering_matter/u.test(query)
+                && /FOR UPDATE/u.test(query)) {
+              locked.resolve();
+              await resume.promise;
+            }
+          });
+          const intake = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test');
+          connections.push(owner, intake);
+          const [{ family_id: ftdFamily }] = await sql`SELECT family_id FROM dm_document_version WHERE document_version_id = ${fixtures.ftd.documentVersionId}`;
+          const [{ family_id: sbFamily }] = await sql`SELECT family_id FROM dm_document_version WHERE document_version_id = ${fixtures.sb.documentVersionId}`;
+          const source = { tenantId: 'tenant-A', actorUserId: 'actor-A', documentVersionId: fixtures.ftd.documentVersionId };
+          const member = { materialId: 'explicit-member', kind: 'MEMBER', familyId: ftdFamily,
+            documentVersionId: fixtures.ftd.documentVersionId, scope: 'Synthetic explicit scope.',
+            contribution: 'Synthetic fixture.', basis: [], origin: 'ENGINEER', disposition: 'INCLUDED' };
+          let matterId;
+          if (scenario === 'default-only') {
+            ({ matterId } = await owner.service.organizeDocumentIntake(source));
+            const initial = await owner.matters.readMaterials({ tenantId: 'tenant-A', matterId });
+            await owner.matters.reviseMaterials({ ...source, matterId, command: {
+              requestId: 'replace-default-material', expectedMatterRevision: 1, changeSummary: 'Synthetic default-marker fixture.',
+              upserts: [{ ...member, materialId: initial.materials[0].materialId,
+                familyId: sbFamily, documentVersionId: fixtures.sb.documentVersionId }] } });
+          } else {
+            const created = await owner.service.create({ requestId: 'explicit-membership-fixture',
+              title: 'Synthetic explicit Matter', primaryWorkItemId: fixtures.ftd.workItemId }, owner.actor);
+            matterId = created.matter.matterId;
+            await owner.matters.reviseMaterials({ ...source, matterId, command: {
+              requestId: 'add-initial-member', expectedMatterRevision: 1, changeSummary: 'Synthetic initial member.', upserts: [member] } });
+          }
+          const current = await owner.matters.readMaterials({ tenantId: 'tenant-A', matterId });
+          const upsert = scenario === 'default-only' ? { ...current.materials[0], scope: 'Synthetic default-only edit.' }
+            : scenario === 'excluded' ? { ...member, disposition: 'EXCLUDED' }
+            : { ...member, materialId: scenario === 'added' ? 'new-member' : member.materialId,
+              familyId: sbFamily, documentVersionId: fixtures.sb.documentVersionId };
+          const [{ pid: writerPid }] = await owner.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+          const [{ pid: intakePid }] = await intake.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+          armed = true;
+          operations = [owner.service.reviseMaterials(matterId, { requestId: `membership-${scenario}`,
+            expectedMatterRevision: 2, changeSummary: 'Synthetic membership race.', upserts: [upsert] }, owner.actor)
+            .then(value => ({ value }), error => ({ error }))];
+          await locked.promise;
+          operations.push(intake.service.organizeDocumentIntake({ ...source,
+            documentVersionId: scenario === 'added' ? fixtures.sb.documentVersionId : fixtures.ftd.documentVersionId })
+            .then(value => ({ value }), error => ({ error })));
+          const waiting = await observedMatterBlocker(sql, intakePid, writerPid);
+          assert.match(waiting.query, /FROM dm_document_version v JOIN dm_publication_family f/u,
+            'membership discovery must wait at the family before reading Matter');
+          child.diagnostic(JSON.stringify({ event: 'family-membership-wait', scenario, ...waiting }));
+          resume.resolve();
+          const [edited, organized] = await Promise.all(operations);
+          if (edited.error) throw edited.error;
+          if (organized.error) throw organized.error;
+          assert.equal(edited.value.materials.matterRevision, 3);
+          const createsDefault = scenario === 'replaced' || scenario === 'excluded';
+          assert.equal(organized.value.created, createsDefault);
+          if (createsDefault) assert.notEqual(organized.value.matterId, matterId);
+          else assert.equal(organized.value.matterId, matterId);
+          const [{ count }] = await sql`SELECT count(*)::int AS count FROM engineering_matter`;
+          assert.equal(count, createsDefault ? 2 : 1);
+          assert.deepEqual(await owner.matters.readMaterials({ tenantId: 'tenant-A', matterId }), edited.value.materials);
+        } finally {
+          resume.resolve();
+          await Promise.allSettled(operations);
+          for (const connection of connections.reverse()) await connection.release();
+          await sql.end({ timeout: 5 });
+        }
+      });
+    }
+  },
+);
+
+test(
+  'concurrent material writers preserve exact replay and stale CAS after a row wait',
+  { skip: !databaseUrl, concurrency: false, timeout: 20000 },
+  async t => {
+    for (const scenario of ['same-request', 'stale-revision']) {
+      await t.test(scenario, async child => {
+        assertSafeIsolatedDatabase(databaseUrl);
+        const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+        const connections = [];
+        const locked = Promise.withResolvers();
+        const resume = Promise.withResolvers();
+        let armed = false;
+        let operations = [];
+        try {
+          const fixtures = await loadRealDocumentFixtures();
+          await resetDatabase(sql);
+          await seedRealDocumentWorkItems(sql, fixtures);
+          await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+          const first = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test', async query => {
+            if (armed && /SELECT current_matter_revision_id, current_revision_no\s+FROM engineering_matter/u.test(query)
+                && /FOR UPDATE/u.test(query)) {
+              locked.resolve();
+              await resume.promise;
+            }
+          });
+          const second = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test');
+          connections.push(first, second);
+          const source = { tenantId: 'tenant-A', actorUserId: 'actor-A', documentVersionId: fixtures.ftd.documentVersionId };
+          const { matterId } = await first.service.organizeDocumentIntake(source);
+          const initial = await first.matters.readMaterials({ tenantId: 'tenant-A', matterId });
+          const command = { requestId: 'same-material-request', expectedMatterRevision: 1,
+            changeSummary: 'Synthetic edit with exact replay.', upserts: [{ ...initial.materials[0], origin: 'ENGINEER', scope: 'Synthetic revised scope.' }] };
+          const [{ pid: firstPid }] = await first.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+          const [{ pid: secondPid }] = await second.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+          armed = true;
+          operations = [first.service.reviseMaterials(matterId, command, first.actor).then(value => ({ value }), error => ({ error }))];
+          await locked.promise;
+          operations.push(second.service.reviseMaterials(matterId,
+            scenario === 'same-request' ? command : { ...command, requestId: 'stale-material-request' }, second.actor)
+            .then(value => ({ value }), error => ({ error })));
+          child.diagnostic(JSON.stringify({ event: 'observed-editor-wait', scenario,
+            ...await observedMatterBlocker(sql, secondPid, firstPid) }));
+          resume.resolve();
+          const [saved, following] = await Promise.all(operations);
+          if (saved.error) throw saved.error;
+          if (scenario === 'same-request') {
+            if (following.error) throw following.error;
+            assert.equal(following.value.replayed, true);
+            assert.deepEqual(following.value.materials, saved.value.materials);
+          } else assert.equal(following.error?.code, 'ENGINEERING_MATTER_CAS_CONFLICT');
+          const [{ count }] = await sql`SELECT count(*)::int AS count FROM engineering_matter_revision WHERE matter_id = ${matterId}`;
+          assert.equal(count, 2);
+        } finally {
+          resume.resolve();
+          await Promise.allSettled(operations);
+          for (const connection of connections.reverse()) await connection.release();
+          await sql.end({ timeout: 5 });
+        }
+      });
+    }
+  },
+);
+
+test(
+  'cross-family browser intakes refresh one explicit Matter after a shared row wait',
+  { skip: !databaseUrl, concurrency: false, timeout: 20000 },
+  async t => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    const connections = [];
+    const locked = Promise.withResolvers();
+    const resume = Promise.withResolvers();
+    let armed = false;
+    let operations = [];
+    try {
+      const fixtures = await loadRealDocumentFixtures();
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, fixtures);
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+      const first = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test', async query => {
+        if (armed && /SELECT m.matter_id/u.test(query) && /FOR UPDATE OF m/u.test(query)) {
+          locked.resolve();
+          await resume.promise;
+        }
+      });
+      const second = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test');
+      connections.push(first, second);
+      const source = { tenantId: 'tenant-A', actorUserId: 'actor-A', documentVersionId: fixtures.ftd.documentVersionId };
+      const { matterId } = await first.service.organizeDocumentIntake(source);
+      const initial = await first.matters.readMaterials({ tenantId: 'tenant-A', matterId });
+      const [{ family_id: sbFamily }] = await sql`SELECT family_id FROM dm_document_version WHERE document_version_id = ${fixtures.sb.documentVersionId}`;
+      await first.matters.reviseMaterials({ ...source, matterId, command: { requestId: 'cross-family-member', expectedMatterRevision: 1,
+        changeSummary: 'Synthetic second member.', upserts: [{ ...initial.materials[0], materialId: 'second-family',
+          familyId: sbFamily, documentVersionId: fixtures.sb.documentVersionId, origin: 'ENGINEER' }] } });
+      await sql`UPDATE engineering_matter SET default_family_id = NULL WHERE matter_id = ${matterId}`;
+      const ftdNext = await seedMatterSuccessor(sql, fixtures.ftd.documentVersionId, 'ftd-r2');
+      const sbNext = await seedMatterSuccessor(sql, fixtures.sb.documentVersionId, 'sb-r2');
+      const [{ pid: firstPid }] = await first.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+      const [{ pid: secondPid }] = await second.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+      armed = true;
+      operations = [first.service.organizeDocumentIntake({ ...source, documentVersionId: ftdNext })
+        .then(value => ({ value }), error => ({ error }))];
+      await locked.promise;
+      operations.push(second.service.organizeDocumentIntake({ ...source, documentVersionId: sbNext })
+        .then(value => ({ value }), error => ({ error })));
+      t.diagnostic(JSON.stringify({ event: 'observed-cross-family-wait',
+        ...await observedMatterBlocker(sql, secondPid, firstPid) }));
+      resume.resolve();
+      const results = await Promise.all(operations);
+      for (const result of results) {
+        if (result.error) throw result.error;
+        assert.deepEqual(result.value, { matterId, created: false });
+      }
+      const current = await first.matters.readMaterials({ tenantId: 'tenant-A', matterId });
+      assert.equal(current.matterRevision, 4);
+      assert.deepEqual(current.materials.map(item => item.documentVersionId).sort(), [ftdNext, sbNext].sort());
+      assert.equal((await sql`SELECT count(*)::int AS count FROM engineering_matter`)[0].count, 1);
+      await second.service.organizeDocumentIntake(source);
+      assert.deepEqual(await first.matters.readMaterials({ tenantId: 'tenant-A', matterId }), current,
+        'late older intake cannot roll back either selected family version');
+    } finally {
+      resume.resolve();
+      await Promise.allSettled(operations);
+      for (const connection of connections.reverse()) await connection.release();
+      await sql.end({ timeout: 5 });
+    }
+  },
+);
+
+test(
+  'browser intake retains the family current-head lock until its material refresh commits',
+  { skip: !databaseUrl, concurrency: false, timeout: 20000 },
+  async t => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    const sourceLocked = Promise.withResolvers();
+    const resume = Promise.withResolvers();
+    const writerStarted = Promise.withResolvers();
+    let armed = false;
+    let owner;
+    let operations = [];
+    try {
+      const fixtures = await loadRealDocumentFixtures();
+      await resetDatabase(sql);
+      await seedRealDocumentWorkItems(sql, fixtures);
+      await sql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+      owner = await reserveActorService('actor-A', 'tenant-A', 'authenticated_wiselink_r10_test', async query => {
+        if (armed && /FOR NO KEY UPDATE OF f/u.test(query)) {
+          sourceLocked.resolve();
+          await resume.promise;
+        }
+      });
+      const source = { tenantId: 'tenant-A', actorUserId: 'actor-A', documentVersionId: fixtures.ftd.documentVersionId };
+      const { matterId } = await owner.service.organizeDocumentIntake(source);
+      const nextVersion = await seedMatterSuccessor(sql, fixtures.ftd.documentVersionId, 'head-r2');
+      const laterVersion = await seedMatterSuccessor(sql, fixtures.ftd.documentVersionId, 'head-r3', false);
+      const [{ pid: intakePid }] = await owner.database.execute(drizzleSql`SELECT pg_backend_pid() AS pid`);
+      armed = true;
+      operations = [owner.service.organizeDocumentIntake({ ...source, documentVersionId: nextVersion })
+        .then(value => ({ value }), error => ({ error }))];
+      await sourceLocked.promise;
+      operations.push(sql.begin(async tx => {
+        const [{ pid }] = await tx`SELECT pg_backend_pid() AS pid`;
+        writerStarted.resolve(pid);
+        await tx`UPDATE dm_publication_family SET current_document_version_id = ${laterVersion}, current_generation = current_generation + 1
+          WHERE current_document_version_id = ${nextVersion}`;
+      }).then(value => ({ value }), error => ({ error })));
+      const writerPid = await writerStarted.promise;
+      t.diagnostic(JSON.stringify({ event: 'observed-current-head-wait',
+        ...await observedMatterBlocker(sql, writerPid, intakePid) }));
+      resume.resolve();
+      for (const result of await Promise.all(operations)) if (result.error) throw result.error;
+      const refreshed = await owner.matters.readMaterials({ tenantId: 'tenant-A', matterId });
+      assert.equal(refreshed.matterRevision, 2);
+      assert.equal(refreshed.materials[0].documentVersionId, nextVersion);
+      const [{ current_document_version_id: familyHead }] = await sql`SELECT current_document_version_id FROM dm_publication_family
+        WHERE family_id = ${refreshed.materials[0].familyId}`;
+      assert.equal(familyHead, laterVersion);
+      await owner.service.organizeDocumentIntake(source);
+      assert.deepEqual(await owner.matters.readMaterials({ tenantId: 'tenant-A', matterId }), refreshed);
+      await owner.service.organizeDocumentIntake({ ...source, documentVersionId: laterVersion });
+      const latest = await owner.matters.readMaterials({ tenantId: 'tenant-A', matterId });
+      assert.equal(latest.matterRevision, 3);
+      assert.equal(latest.materials[0].documentVersionId, laterVersion);
+    } finally {
+      resume.resolve();
+      await Promise.allSettled(operations);
+      if (owner) await owner.release();
+      await sql.end({ timeout: 5 });
+    }
+  },
+);
+
+test(
   'v5 direct family materials preserve scope, expectations, replay and full-source authorization',
   { skip: !databaseUrl, concurrency: false },
   async () => {
@@ -2022,13 +2756,13 @@ async function profileSavedRead(owner, name, operation) {
   return result;
 }
 
-async function reserveActorService(actorId, tenantId = 'tenant-A', databaseRole = 'authenticated') {
+async function reserveActorService(actorId, tenantId = 'tenant-A', databaseRole = 'authenticated', afterStatement) {
   const connection = postgres(databaseUrl, { max: 1, onnotice: () => {} });
   try {
     await connection.unsafe(`SET ROLE ${databaseRole}`);
     await connection`SELECT set_config('app.user_id', ${actorId}, false)`;
     const queryMetrics = { noticeSaveQueries: 0, queries: [] };
-    const db = drizzle(connection, { logger: { logQuery(query) {
+    const rawDatabase = drizzle(connection, { logger: { logQuery(query) {
       if (process.env.WL_PROFILE_SAVED_READS === '1') queryMetrics.queries.push(query);
       const selection = query.slice(0, query.indexOf(' from '));
       if (selection.includes('"matter_work_revision_id"') && selection.includes('"working_revision"')
@@ -2037,6 +2771,7 @@ async function reserveActorService(actorId, tenantId = 'tenant-A', databaseRole 
         queryMetrics.noticeSaveQueries++;
       }
     } } });
+    const db = afterStatement ? observeMatterStatements(rawDatabase, afterStatement) : rawDatabase;
     const workItems = new MiaodaWorkItemRepository(db);
     const objectAccess = new MiaodaHostedCanonicalObjectAccessAdapter(
       workItems,
@@ -4863,3 +5598,55 @@ test('Matter projection rebuild POST reauthorizes exact saved work under persist
       }
     }
   });
+
+
+function observeMatterStatements(database, afterStatement) {
+  const { PgDialect } = require('drizzle-orm/pg-core');
+  const dialect = new PgDialect();
+  return new Proxy(database, {
+    get(target, property) {
+      if (property === 'transaction') return (callback, ...args) =>
+        target.transaction(tx => callback(observeMatterStatements(tx, afterStatement)), ...args);
+      if (property === 'execute') return async query => {
+        const rows = await target.execute(query);
+        await afterStatement(dialect.sqlToQuery(query).sql, rows);
+        return rows;
+      };
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+async function observedMatterBlocker(sql, blockedPid, blockerPid) {
+  const deadline = Date.now() + 5000;
+  let activity;
+  do {
+    [activity] = await sql`SELECT pid, wait_event_type, wait_event, query, pg_blocking_pids(pid) AS blockers
+      FROM pg_stat_activity WHERE pid = ${blockedPid}`;
+    if (activity?.blockers.includes(blockerPid)) return activity;
+    await new Promise(resolve => setImmediate(resolve));
+  } while (Date.now() < deadline);
+  assert.fail(`Expected backend ${blockedPid} to wait on ${blockerPid}: ${JSON.stringify(activity)}`);
+}
+
+async function seedMatterSuccessor(sql, originalVersionId, suffix, advance = true) {
+  const documentVersionId = `document_version_lock_${suffix}`;
+  const acquisitionId = `acquisition_lock_${suffix}`;
+  await sql`INSERT INTO dm_document_version
+    SELECT (jsonb_populate_record(NULL::dm_document_version, to_jsonb(v) || jsonb_build_object(
+      'id', gen_random_uuid(), 'document_version_id', ${documentVersionId}::text,
+      'revision_id', ${suffix}::text, 'canonical_revision_identity', ${suffix}::text,
+      'business_revision', ${suffix}::text, 'acquisition_id', ${acquisitionId}::text))).*
+    FROM dm_document_version v WHERE v.document_version_id = ${originalVersionId}`;
+  await sql`INSERT INTO dm_acquisition
+    SELECT (jsonb_populate_record(NULL::dm_acquisition, to_jsonb(a) || jsonb_build_object(
+      'id', gen_random_uuid(), 'acquisition_id', ${acquisitionId}::text,
+      'document_version_id', ${documentVersionId}::text, 'status', 'COMMITTED_CANONICAL',
+      'idempotency_key', ${`tenant:tenant-A:request:lock-${suffix}`}::text))).*
+    FROM dm_acquisition a WHERE a.document_version_id = ${originalVersionId}`;
+  if (advance) await sql`UPDATE dm_publication_family SET current_document_version_id = ${documentVersionId},
+    current_generation = current_generation + 1
+    WHERE family_id = (SELECT family_id FROM dm_document_version WHERE document_version_id = ${originalVersionId})`;
+  return documentVersionId;
+}

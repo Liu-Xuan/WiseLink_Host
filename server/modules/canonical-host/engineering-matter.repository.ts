@@ -54,6 +54,13 @@ export interface EngineeringMatterLinkResult {
   replayed: boolean;
 }
 
+interface ReviseMaterialsInput {
+  tenantId: string;
+  actorUserId: string;
+  matterId: string;
+  command: ReviseMatterMaterialsRequest;
+}
+
 @Injectable()
 export class EngineeringMatterRepository {
   constructor(
@@ -81,10 +88,27 @@ export class EngineeringMatterRepository {
           AND engineering_matter_document_owned_by_actor(${input.tenantId}::varchar, v.document_version_id)
           AND current_setting('app.user_id', true) = ${input.actorUserId}
           AND v.lifecycle_status = 'COMMITTED_IMMUTABLE'
-        FOR UPDATE OF f`);
+        -- The family head must remain stable while its Matters are refreshed,
+        -- but material snapshots only reference its immutable family key. Keep
+        -- those FK KEY SHARE locks compatible with an intake waiting on Matter.
+        FOR NO KEY UPDATE OF f`);
       if (!source) throw matterNotFound();
       // Discover current explicit membership before creating a default. Related
       // scopes follow source changes too, but do not imply membership.
+      const affectedScope = sql`
+        FROM engineering_matter m
+        WHERE m.tenant_id = ${input.tenantId} AND m.created_by_user_id = ${input.actorUserId}
+          AND (m.default_family_id = ${source.family_id} OR EXISTS (
+            SELECT 1 FROM engineering_matter_material_link l
+            WHERE l.matter_revision_id = m.current_matter_revision_id
+              AND l.family_id = ${source.family_id}
+              AND l.material_json::jsonb ->> 'disposition' = 'INCLUDED'
+          ))`;
+      // A waiting SELECT FOR UPDATE can recheck a newer Matter head against
+      // its old material-link/RLS snapshot. Acquire locks first, then discover
+      // membership in a new READ COMMITTED statement after all waits finish.
+      await database.execute(sql`
+        SELECT m.matter_id ${affectedScope} ORDER BY m.matter_id FOR UPDATE OF m`);
       const affected = await database.execute<{
         matter_id: string;
         is_member: boolean;
@@ -96,16 +120,7 @@ export class EngineeringMatterRepository {
               AND l.family_id = ${source.family_id} AND l.kind = 'MEMBER'
               AND l.material_json::jsonb ->> 'disposition' = 'INCLUDED'
           )) IS TRUE AS is_member
-        FROM engineering_matter m
-        WHERE m.tenant_id = ${input.tenantId} AND m.created_by_user_id = ${input.actorUserId}
-          AND (m.default_family_id = ${source.family_id} OR EXISTS (
-            SELECT 1 FROM engineering_matter_material_link l
-            WHERE l.matter_revision_id = m.current_matter_revision_id
-              AND l.family_id = ${source.family_id}
-              AND l.material_json::jsonb ->> 'disposition' = 'INCLUDED'
-          ))
-        ORDER BY m.matter_id
-        FOR UPDATE OF m`);
+        ${affectedScope} ORDER BY m.matter_id`);
       for (const existing of affected) {
         if (source.current_document_version_id !== input.documentVersionId)
           continue;
@@ -129,7 +144,7 @@ export class EngineeringMatterRepository {
               }) as MatterMaterialLink,
           );
         if (upserts.length)
-          await this.reviseMaterials(
+          await this.reviseMaterialsInTransaction(
             {
               ...input,
               matterId: existing.matter_id,
@@ -207,12 +222,7 @@ export class EngineeringMatterRepository {
   }
 
   async reviseMaterials(
-    input: {
-      tenantId: string;
-      actorUserId: string;
-      matterId: string;
-      command: ReviseMatterMaterialsRequest;
-    },
+    input: ReviseMaterialsInput,
     executor: PostgresJsDatabase = this.db,
   ): Promise<{ materials: MatterMaterialsReadModel; replayed: boolean }> {
     const command = input.command;
@@ -229,86 +239,125 @@ export class EngineeringMatterRepository {
       throw new Error('MATTER_MATERIAL_COMMAND_INVALID');
     }
     command.upserts.forEach(parseMatterMaterial);
-    const commandJson = canonicalJson(command);
     return executor.transaction(async (database) => {
-      const [matter] = await database.execute<{
-        current_matter_revision_id: string;
-        current_revision_no: number;
-      }>(sql`
-        SELECT current_matter_revision_id, current_revision_no FROM engineering_matter
-        WHERE tenant_id = ${input.tenantId} AND matter_id = ${input.matterId}
-          AND created_by_user_id = ${input.actorUserId}
-          AND current_setting('app.user_id', true) = ${input.actorUserId}
-        FOR UPDATE`);
-      if (!matter) throw matterNotFound();
-      const [replay] = await database.execute<{
-        matter_revision_id: string;
-        revision_no: number;
-        material_command_json: string | null;
-      }>(sql`
-        SELECT matter_revision_id, revision_no, material_command_json FROM engineering_matter_revision
-        WHERE tenant_id = ${input.tenantId} AND matter_id = ${input.matterId} AND request_id = ${command.requestId}`);
-      if (replay) {
-        if (replay.material_command_json !== commandJson)
-          throw matterRequestReplayMismatch();
-        return {
-          replayed: true,
-          materials: {
-            matterId: input.matterId,
-            matterRevisionId: replay.matter_revision_id,
-            matterRevision: replay.revision_no,
-            materials: await loadMaterials(
-              database,
-              input.tenantId,
-              input.matterId,
-              replay.matter_revision_id,
-            ),
-          },
-        };
-      }
-      if (matter.current_revision_no !== command.expectedMatterRevision)
-        throw matterCasConflict();
-      const before = await loadMaterials(
-        database,
-        input.tenantId,
-        input.matterId,
-        matter.current_matter_revision_id,
-      );
-      const materials = mergeMatterMaterials(before, command.upserts);
-      const revisionId = `MREV-${randomUUID()}`;
-      const revisionNo = matter.current_revision_no + 1;
-      await database.execute(sql`INSERT INTO engineering_matter_revision
-        (matter_revision_id, matter_id, tenant_id, revision_no, request_id, change_kind, change_summary,
-         changed_work_item_id, created_by_user_id, material_command_json)
-        VALUES (${revisionId}, ${input.matterId}, ${input.tenantId}, ${revisionNo}, ${command.requestId},
-          'MATERIALS_REVISED', ${command.changeSummary}, NULL, ${input.actorUserId}, ${commandJson})`);
-      await database.execute(sql`INSERT INTO engineering_matter_revision_work_item
-        (matter_revision_id, matter_id, tenant_id, work_item_id, ordinal, relation_role, linked_at_work_item_revision)
-        SELECT ${revisionId}, matter_id, tenant_id, work_item_id, ordinal, relation_role, linked_at_work_item_revision
-        FROM engineering_matter_revision_work_item WHERE tenant_id = ${input.tenantId}
-          AND matter_id = ${input.matterId} AND matter_revision_id = ${matter.current_matter_revision_id}`);
-      await insertMaterials(database, { ...input, revisionId }, materials);
-      const updated = await database.execute(sql`UPDATE engineering_matter
-        SET current_matter_revision_id = ${revisionId}, current_revision_no = ${revisionNo}, updated_at = CURRENT_TIMESTAMP
-        WHERE tenant_id = ${input.tenantId} AND matter_id = ${input.matterId}
-          AND current_revision_no = ${command.expectedMatterRevision}
-          AND current_matter_revision_id = ${matter.current_matter_revision_id} RETURNING matter_id`);
-      if (updated.length !== 1) throw matterCasConflict();
+      // Lock every old and requested family before Matter. The expected
+      // revision is immutable; the CAS below proves it is still the head.
+      // Include the default marker even if its material has been replaced.
+      // SHARE conflicts with intake's NO KEY UPDATE, but not another editor
+      // or the FK KEY SHARE locks used by an intake's nested revision.
+      await database.execute(sql`
+        SELECT f.family_id FROM dm_publication_family f
+        WHERE current_setting('app.user_id', true) = ${input.actorUserId}
+          AND f.family_id IN (
+            SELECT m.default_family_id FROM engineering_matter m
+            WHERE m.tenant_id = ${input.tenantId} AND m.matter_id = ${input.matterId}
+              AND m.created_by_user_id = ${input.actorUserId}
+            UNION
+            SELECT l.family_id FROM engineering_matter_revision r
+            JOIN engineering_matter_material_link l ON l.matter_revision_id = r.matter_revision_id
+            WHERE r.tenant_id = ${input.tenantId} AND r.matter_id = ${input.matterId}
+              AND r.revision_no = ${command.expectedMatterRevision}
+            UNION
+            SELECT item ->> 'familyId'
+            FROM jsonb_array_elements(${canonicalJson(command.upserts)}::jsonb) item
+            WHERE engineering_matter_material_owned_by_actor(${input.tenantId}::varchar, item)
+          )
+        ORDER BY f.family_id FOR SHARE OF f`);
+      return this.reviseMaterialsInTransaction(input, database);
+    });
+  }
+
+  // Intake already holds its source family and all affected Matters. Its
+  // automatic refresh changes version IDs only, so acquiring other family
+  // SHARE locks here would invert concurrent cross-family intake lock order.
+  private async reviseMaterialsInTransaction(
+    input: ReviseMaterialsInput,
+    database: PostgresJsDatabase,
+  ): Promise<{ materials: MatterMaterialsReadModel; replayed: boolean }> {
+    const command = input.command;
+    const commandJson = canonicalJson(command);
+    const matterScope = sql`
+      FROM engineering_matter
+      WHERE tenant_id = ${input.tenantId} AND matter_id = ${input.matterId}
+        AND created_by_user_id = ${input.actorUserId}
+        AND current_setting('app.user_id', true) = ${input.actorUserId}`;
+    await database.execute(sql`
+      SELECT current_matter_revision_id, current_revision_no ${matterScope} FOR UPDATE`);
+    // A concurrent editor can append while this lock statement waits. Re-read
+    // after the wait so RLS sees that editor's material snapshot for replay/CAS.
+    const [matter] = await database.execute<{
+      current_matter_revision_id: string;
+      current_revision_no: number;
+    }>(sql`
+      SELECT current_matter_revision_id, current_revision_no ${matterScope}`);
+    if (!matter) throw matterNotFound();
+    const [replay] = await database.execute<{
+      matter_revision_id: string;
+      revision_no: number;
+      material_command_json: string | null;
+    }>(sql`
+      SELECT matter_revision_id, revision_no, material_command_json FROM engineering_matter_revision
+      WHERE tenant_id = ${input.tenantId} AND matter_id = ${input.matterId} AND request_id = ${command.requestId}`);
+    if (replay) {
+      if (replay.material_command_json !== commandJson)
+        throw matterRequestReplayMismatch();
       return {
-        replayed: false,
+        replayed: true,
         materials: {
           matterId: input.matterId,
-          matterRevisionId: revisionId,
-          matterRevision: revisionNo,
+          matterRevisionId: replay.matter_revision_id,
+          matterRevision: replay.revision_no,
           materials: await loadMaterials(
             database,
             input.tenantId,
             input.matterId,
-            revisionId,
+            replay.matter_revision_id,
           ),
         },
       };
-    });
+    }
+    if (matter.current_revision_no !== command.expectedMatterRevision)
+      throw matterCasConflict();
+    const before = await loadMaterials(
+      database,
+      input.tenantId,
+      input.matterId,
+      matter.current_matter_revision_id,
+    );
+    const materials = mergeMatterMaterials(before, command.upserts);
+    const revisionId = `MREV-${randomUUID()}`;
+    const revisionNo = matter.current_revision_no + 1;
+    await database.execute(sql`INSERT INTO engineering_matter_revision
+      (matter_revision_id, matter_id, tenant_id, revision_no, request_id, change_kind, change_summary,
+       changed_work_item_id, created_by_user_id, material_command_json)
+      VALUES (${revisionId}, ${input.matterId}, ${input.tenantId}, ${revisionNo}, ${command.requestId},
+        'MATERIALS_REVISED', ${command.changeSummary}, NULL, ${input.actorUserId}, ${commandJson})`);
+    await database.execute(sql`INSERT INTO engineering_matter_revision_work_item
+      (matter_revision_id, matter_id, tenant_id, work_item_id, ordinal, relation_role, linked_at_work_item_revision)
+      SELECT ${revisionId}, matter_id, tenant_id, work_item_id, ordinal, relation_role, linked_at_work_item_revision
+      FROM engineering_matter_revision_work_item WHERE tenant_id = ${input.tenantId}
+        AND matter_id = ${input.matterId} AND matter_revision_id = ${matter.current_matter_revision_id}`);
+    await insertMaterials(database, { ...input, revisionId }, materials);
+    const updated = await database.execute(sql`UPDATE engineering_matter
+      SET current_matter_revision_id = ${revisionId}, current_revision_no = ${revisionNo}, updated_at = CURRENT_TIMESTAMP
+      WHERE tenant_id = ${input.tenantId} AND matter_id = ${input.matterId}
+        AND current_revision_no = ${command.expectedMatterRevision}
+        AND current_matter_revision_id = ${matter.current_matter_revision_id} RETURNING matter_id`);
+    if (updated.length !== 1) throw matterCasConflict();
+    return {
+      replayed: false,
+      materials: {
+        matterId: input.matterId,
+        matterRevisionId: revisionId,
+        matterRevision: revisionNo,
+        materials: await loadMaterials(
+          database,
+          input.tenantId,
+          input.matterId,
+          revisionId,
+        ),
+      },
+    };
   }
 
   async create(input: {
@@ -388,43 +437,65 @@ export class EngineeringMatterRepository {
     workItemRevision: number;
     changeSummary: string;
   }): Promise<EngineeringMatterLinkResult> {
-    const current: EngineeringMatterSnapshot | null = await this.loadCurrent({
-      tenantId: input.tenantId,
-      matterId: input.matterId,
-    });
-    if (!current) throw matterNotFound();
-    const replayedRequest: EngineeringMatterRevisionRequest | null =
-      await this.revisionRequest({
-        matterId: input.matterId,
-        requestId: input.requestId,
-      });
-    if (replayedRequest !== null) {
-      if (
-        replayedRequest.changeKind !== 'WORK_ITEM_LINKED' ||
-        replayedRequest.changedWorkItemId !== input.workItemId ||
-        replayedRequest.changeSummary !== input.changeSummary
-      ) {
-        throw matterRequestReplayMismatch();
-      }
-      return { snapshot: current, linked: false, replayed: true };
-    }
-    if (
-      current.links.some(
-        (link: EngineeringMatterRevisionLinkSnapshot) =>
-          link.workItemId === input.workItemId,
-      )
-    ) {
-      throw matterWorkItemAlreadyLinked();
-    }
-    if (current.currentRevisionNo !== input.expectedMatterRevision) {
-      throw matterCasConflict();
-    }
-
-    const nextRevisionNo: number = current.currentRevisionNo + 1;
-    const nextMatterRevisionId: string = `MREV-${randomUUID()}`;
-    const now: Date = new Date();
     try {
-      await this.db.transaction(async (transaction) => {
+      return await this.db.transaction(async (transaction) => {
+        const matterScope = sql`
+          FROM engineering_matter
+          WHERE tenant_id = ${input.tenantId} AND matter_id = ${input.matterId}
+            AND created_by_user_id = ${input.actorUserId}
+            AND current_setting('app.user_id', true) = ${input.actorUserId}`;
+        // Reserve the Matter head before its next revision's unique key,
+        // matching material/intake writers. Otherwise each can hold the lock
+        // the other needs. Re-read after any wait to refresh RLS visibility.
+        await transaction.execute(
+          sql`SELECT matter_id ${matterScope} FOR UPDATE`,
+        );
+        const [authorized] = await transaction.execute(
+          sql`SELECT matter_id ${matterScope}`,
+        );
+        if (!authorized) throw matterNotFound();
+        const current: EngineeringMatterSnapshot | null =
+          await this.loadCurrent(
+            {
+              tenantId: input.tenantId,
+              matterId: input.matterId,
+            },
+            transaction,
+          );
+        if (!current) throw matterNotFound();
+        const replayedRequest: EngineeringMatterRevisionRequest | null =
+          await this.revisionRequest(
+            {
+              matterId: input.matterId,
+              requestId: input.requestId,
+            },
+            transaction,
+          );
+        if (replayedRequest !== null) {
+          if (
+            replayedRequest.changeKind !== 'WORK_ITEM_LINKED' ||
+            replayedRequest.changedWorkItemId !== input.workItemId ||
+            replayedRequest.changeSummary !== input.changeSummary
+          ) {
+            throw matterRequestReplayMismatch();
+          }
+          return { snapshot: current, linked: false, replayed: true };
+        }
+        if (
+          current.links.some(
+            (link: EngineeringMatterRevisionLinkSnapshot) =>
+              link.workItemId === input.workItemId,
+          )
+        ) {
+          throw matterWorkItemAlreadyLinked();
+        }
+        if (current.currentRevisionNo !== input.expectedMatterRevision) {
+          throw matterCasConflict();
+        }
+
+        const nextRevisionNo: number = current.currentRevisionNo + 1;
+        const nextMatterRevisionId: string = `MREV-${randomUUID()}`;
+        const now: Date = new Date();
         await transaction.insert(engineeringMatterRevision).values({
           matterRevisionId: nextMatterRevisionId,
           matterId: input.matterId,
@@ -495,6 +566,13 @@ export class EngineeringMatterRepository {
           )
           .returning({ matterId: engineeringMatter.matterId });
         if (updated.length !== 1) throw matterCasConflict();
+        const snapshot: EngineeringMatterSnapshot | null =
+          await this.loadCurrent(
+            { tenantId: input.tenantId, matterId: input.matterId },
+            transaction,
+          );
+        if (!snapshot) throw matterPersistenceError();
+        return { snapshot, linked: true, replayed: false };
       });
     } catch (error: unknown) {
       if (isUniqueConflict(error)) {
@@ -525,13 +603,6 @@ export class EngineeringMatterRepository {
       }
       throw error;
     }
-
-    const snapshot: EngineeringMatterSnapshot | null = await this.loadCurrent({
-      tenantId: input.tenantId,
-      matterId: input.matterId,
-    });
-    if (!snapshot) throw matterPersistenceError();
-    return { snapshot, linked: true, replayed: false };
   }
 
   async loadCurrent(
@@ -658,11 +729,11 @@ export class EngineeringMatterRepository {
     });
   }
 
-  private async revisionRequest(input: {
-    matterId: string;
-    requestId: string;
-  }): Promise<EngineeringMatterRevisionRequest | null> {
-    const [row] = await this.db
+  private async revisionRequest(
+    input: { matterId: string; requestId: string },
+    executor: PostgresJsDatabase = this.db,
+  ): Promise<EngineeringMatterRevisionRequest | null> {
+    const [row] = await executor
       .select({
         changedWorkItemId: engineeringMatterRevision.changedWorkItemId,
         changeKind: engineeringMatterRevision.changeKind,
