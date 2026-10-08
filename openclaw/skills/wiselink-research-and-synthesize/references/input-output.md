@@ -490,3 +490,11 @@ JobAid c5 模型函数只要求 answer；未提出条目的 sourceRefs、missing
 显式 `context.purpose=UPDATE_ASSESSMENT` 必须返回非空 `jobAidWorkingDelta` 或 `matterWorkingDelta`，将相关讨论实际写入候选工作更新并保留未知项。仅在 answer 中描述“已更新”不构成更新；Host 与驱动均拒绝缺少增量的成功候选。普通复核答复的无增量语义不变。
 
 JobAid 显式更新若返回引用本轮未读来源的候选，驱动可按该候选的来源声明，通过现有 Host 读取回调取得最多 100 个本轮授权片段，作为拒绝反馈交给模型重新核对和提交。包含越界引用时整批不读；读取失败或回读不完整时停止。读取不代表接受旧候选，不改写模型内容，不放宽最终来源校验，仍使用同一回合、租约、期限与最多两次纠正。
+
+### 隔离完整 Review 候选（显式 opt-in）
+
+`run-hosted-review-turn.mjs --isolated-candidate` / API `isolatedCandidate: true` 必须绑定确切 `workItemId`、新的私有 checkpoint 目录，以及显式正安全整数 `maxCompletionTokens`、`maxModelRequests`。`timeoutMs` 省略时为 480000 ms，实际期限取该总预算与 Host Task deadline 的较早者；临时 provider 的等待和可选 `reasoningEffort` 同样受本次绑定约束。普通 Review 继续使用当前模型来源选择、V2 保存陈述、纠正与 checkpoint 恢复路径。包中存在该入口不代表已授权运行；真实 Host、SecretRef、原生 Gateway 或模型调用须有本次执行授权。
+
+隔离路径只接受 Host 冻结的 JobAid `UPDATE_ASSESSMENT`。先执行 `begin_review_turn`、`get_review_turn_context`，再按目录顺序分批实际读取全部可读 `DOCUMENT_PASSAGE`；目录、sourceCatalog、resourceRefs、回执 attempt、正文和版本必须精确对应，不接受调用方预装来源。完整 context、previousWork、已保存 sourceStatements、activityContexts、必要根原文和本轮已读来源共同送入 Host 选定且已登记的路由，只提供候选输出函数。未知终态、截断、候选越界、超时、租约失效或预算耗尽停止，不以重发取得替代证据。已知错误的有界恢复还须满足当前 provider ordinal 的终态证明及剩余实际 dispatch 预算；Gateway 内部尝试也计入 adapter ledger。
+
+成功生成返回 `ok:false`、`outcome:CANDIDATE_NOT_SAVED`、未保存候选及最后观察的 Host attempt 状态，在 ResultEnvelope seal/commit 之前返回；不调用 `commit_review_turn_candidate` 或 FINISH。begin、context、READ 和 heartbeat 仍会产生真实 Host 活动，attempt 可能继续为 RUNNING。返回候选和客户端中止均不证明 Host attempt 已结束；后续执行安排须读回准确终态并按既有 owner 协调。普通与隔离 checkpoint 不可互换，已完成的隔离候选只重放保存结果，不重新准备 Gateway 或派发模型。临时 Gateway 同时服务现有 Summary CLI，准备器及合成证据边界见 [临时 Gateway](native-temporary-review-gateway.md)。

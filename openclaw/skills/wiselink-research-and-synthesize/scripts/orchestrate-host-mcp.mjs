@@ -1021,6 +1021,7 @@ export async function runInteractiveReviewTurn({
   requestId,
   callTool,
   respond,
+  isolatedCandidate = false,
 }) {
   if (mode !== 'INTERACTIVE_REVIEW') {
     throw new Error('INTERACTIVE_REVIEW_MODE_REQUIRED');
@@ -1038,6 +1039,7 @@ export async function runInteractiveReviewTurn({
   assertBegin(begin, 'OPENCLAW_INTERACTIVE_REVIEW');
   const task = validateReviewTask(begin.task.modelInput);
   if (begin.status === 'COMMITTING') {
+    if (isolatedCandidate) throw new Error('REVIEW_ISOLATED_COMMITTING_FORBIDDEN');
     return recoverReviewCommitting(begin, callTool);
   }
   const contextResult = await callTool('get_review_turn_context', {
@@ -1090,6 +1092,13 @@ export async function runInteractiveReviewTurn({
     }),
   );
   const candidate = validateCandidate(execution.output);
+  if (isolatedCandidate) {
+    return {
+      ok: false, mode: 'INTERACTIVE_REVIEW', operation: 'REVIEW_TURN',
+      outcome: 'CANDIDATE_NOT_SAVED', candidate,
+      provenance: execution.provenance,
+    };
+  }
   const result = sealResultEnvelope({
     task: begin.task,
     modelOutput: candidate,
