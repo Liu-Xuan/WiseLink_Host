@@ -1,4 +1,5 @@
 import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 import { IdentityRepository } from '../../server/modules/identity/identity.repository';
 import { HOST_SESSION_ABSOLUTE_TTL_MS } from '../../server/modules/identity/session.store';
@@ -36,5 +37,14 @@ describe('IdentityRepository session issuance clock', () => {
     expect(written.lastSeenAt).toBeInstanceOf(SQL);
     expect(written.updatedAt).toBe(written.lastSeenAt);
     expect(written.expiresAt).not.toBeInstanceOf(Date);
+
+    const dialect = new PgDialect();
+    const expiryQuery = dialect.sqlToQuery(written.expiresAt);
+    expect(expiryQuery.sql).toBe(
+      "date_trunc('milliseconds', CURRENT_TIMESTAMP) + ($1::bigint * interval '1 millisecond')",
+    );
+    expect(expiryQuery.params).toEqual([HOST_SESSION_ABSOLUTE_TTL_MS]);
+    expect(dialect.sqlToQuery(written.lastSeenAt).sql).toBe('CURRENT_TIMESTAMP');
+    expect(dialect.sqlToQuery(written.lastSeenAt).params).toEqual([]);
   });
 });

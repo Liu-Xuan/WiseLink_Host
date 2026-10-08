@@ -172,7 +172,7 @@ export class IdentityRepository {
     ailyAccessTokenExpiresAt?: Date;
   }): Promise<{ sessionId: string; revision: number; expiresAt: Date }> {
     const issuedAt = sql`CURRENT_TIMESTAMP`;
-    const expiresAt = sql`CURRENT_TIMESTAMP + (${input.absoluteTtlMs}::bigint * interval '1 millisecond')`;
+    const expiresAt = sql`date_trunc('milliseconds', CURRENT_TIMESTAMP) + (${input.absoluteTtlMs}::bigint * interval '1 millisecond')`;
     const [created] = await this.db
       .insert(identitySession)
       .values({
