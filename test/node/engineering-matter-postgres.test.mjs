@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -19,7 +19,20 @@ const { drizzle } = require('drizzle-orm/postgres-js');
 const { sql: drizzleSql } = require('drizzle-orm');
 const {
   SqlExecutionContextMiddleware,
+  UserContextMiddleware,
+  CsrfMiddleware,
 } = require('@lark-apaas/fullstack-nestjs-core');
+const { Test } = require('@nestjs/testing');
+const { Reflector } = require('@nestjs/core');
+const { AuthNPaasGuard } = require('@lark-apaas/nestjs-authnpaas');
+const cookieParser = require('cookie-parser');
+const { GlobalExceptionFilter } = require('../../server/common/filters/exception.filter.ts');
+const { IdentityRepository } = require('../../server/modules/identity/identity.repository.ts');
+const { SessionStore } = require('../../server/modules/identity/session.store.ts');
+const { SessionResolver } = require('../../server/modules/identity/session-resolver.service.ts');
+const { DialogueBrowserScope } = require('../../server/modules/canonical-host/dialogue-browser-scope.service.ts');
+const { ProductionMiaodaBrowserObjectIngressGuard } = require('../../server/modules/work-item/production-miaoda-browser-ingress.ts');
+const { EngineeringIssueSearchController } = require('../../server/modules/canonical-host/engineering-issue-search.controller.ts');
 const {
   EngineeringMatterRepository,
 } = require('../../server/modules/canonical-host/engineering-matter.repository.ts');
@@ -1144,9 +1157,11 @@ function assertSafeIsolatedDatabase(value) {
     ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname),
     'PostgreSQL integration test must use localhost',
   );
+  const ownedName = process.env.ENGINEERING_MATTER_OWNED_TEST_DATABASE_NAME;
+  if (ownedName) assert.match(ownedName, /^wiselink_engineering_matter_test_[a-f0-9]{16}$/u);
   assert.equal(
     parsed.pathname,
-    '/wiselink_engineering_matter_test',
+    `/${ownedName ?? 'wiselink_engineering_matter_test'}`,
     'PostgreSQL integration test requires the exact isolated database name',
   );
 }
@@ -4498,4 +4513,353 @@ test('targeted correction uses real PostgreSQL fences, durable generation and ex
         'a non-object modelInput remains a non-match, rather than failing the whole historical read');
 
     } finally { for (const connection of connections) await connection.release(); await sql.end({ timeout: 5 }); }
+  });
+
+// The base Matter fixture predates opaque browser sessions. Add only the
+// identity columns/table needed by the real SessionStore and reuse the browser
+// policies from the production migrations in this disposable database.
+async function prepareMatterOpaqueSessionFixture(sql) {
+  await sql.unsafe(`ALTER TABLE identity_subject_mapping
+    ADD COLUMN feishu_open_id varchar(255), ADD COLUMN feishu_tenant_key varchar(255),
+    ADD COLUMN feishu_user_id varchar(255), ADD COLUMN revision integer DEFAULT 1,
+    ADD COLUMN _created_by user_profile, ADD COLUMN _updated_by user_profile;
+    CREATE TABLE identity_session (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      session_token_hash varchar(64) NOT NULL UNIQUE,
+      subject_mapping_id uuid NOT NULL REFERENCES identity_subject_mapping(id),
+      aily_access_token_sealed text, aily_access_token_expires_at timestamptz(3),
+      feishu_user_id varchar(255), revision integer NOT NULL DEFAULT 1,
+      expires_at timestamptz(3) NOT NULL, revoked_at timestamptz(3),
+      last_seen_at timestamptz(3) NOT NULL,
+      _created_at timestamptz(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      _created_by user_profile DEFAULT (CASE WHEN current_setting('app.user_id', TRUE) = '' THEN NULL
+        ELSE concat('(', current_setting('app.user_id', TRUE), ')')::user_profile END),
+      _updated_at timestamptz(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      _updated_by user_profile DEFAULT (CASE WHEN current_setting('app.user_id', TRUE) = '' THEN NULL
+        ELSE concat('(', current_setting('app.user_id', TRUE), ')')::user_profile END));
+    ALTER TABLE identity_session ENABLE ROW LEVEL SECURITY;
+    GRANT SELECT, INSERT, UPDATE ON identity_session TO authenticated;`);
+  const rls = await readFile(resolve(process.cwd(), 'migrations/0005_identity_oauth_authenticated_rls.sql'), 'utf8');
+  const rebound = await readFile(resolve(process.cwd(), 'migrations/0008_identity_session_authenticated_role_rebind.sql'), 'utf8');
+  for (const [body, name] of [[rls, 'identity_session_authenticated_read'],
+    [rls, 'identity_session_authenticated_update'], [rebound, 'identity_session_authenticated_issue_runtime']]) {
+    const policy = body.match(new RegExp(`CREATE POLICY ${name}[\\s\\S]+?\\n  \\);`, 'u'));
+    assert.ok(policy, `missing ${name} from actual identity migration`);
+    await sql.unsafe(policy[0]);
+  }
+}
+
+test('Matter projection rebuild POST reauthorizes exact saved work under persisted browser session',
+  { skip: !databaseUrl, concurrency: false, timeout: 120000 }, async (t) => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const fixtureSql = postgres(databaseUrl, { max: 8, onnotice() {} });
+    const httpSql = postgres(databaseUrl, { max: 1, onnotice() {} });
+    const envKeys = ['MIAODA_LOCAL_DEV', 'FORCE_FRAMEWORK_ENVIRONMENT', 'SANDBOX_ID', 'WL_ENGINEERING_SEARCH_PROJECTION'];
+    const oldEnv = new Map(envKeys.map(key => [key, process.env[key]]));
+    let owner;
+    let app;
+    try {
+      await resetDatabase(fixtureSql);
+      await prepareMatterOpaqueSessionFixture(fixtureSql);
+      await seedRealDocumentWorkItems(fixtureSql, await loadRealDocumentFixtures());
+      await fixtureSql`UPDATE dm_publication_family SET canonical_identity_key = 'tenant:tenant-A:family:' || canonical_identity_key`;
+      owner = await reserveActorService('actor-A');
+      const created = await owner.service.create({ requestId: 'matter-http-rebuild', title: 'Matter HTTP rebuild fixture',
+        primaryWorkItemId: FTD_WORK_ITEM_ID }, owner.actor);
+      const matterId = created.matter.matterId;
+      await assertWorkingRevisionFlow(fixtureSql, owner, matterId, created.matter.currentRevision.matterRevisionId);
+      const [saved] = await fixtureSql`SELECT matter_work_revision_id, created_by_user_id, state_json
+        FROM engineering_matter_work_revision WHERE matter_id=${matterId}`;
+      assert.equal(saved.created_by_user_id, 'actor-A');
+      const workRef = saved.matter_work_revision_id;
+      const content = JSON.parse(saved.state_json).problemWork;
+      const [pending] = await fixtureSql`SELECT owner_kind,owner_id,subject_id,attempts,last_error
+        FROM engineering_search_projection_pending WHERE exact_revision_ref=${workRef}`;
+      assert.deepEqual(pending, { owner_kind: 'MATTER', owner_id: 'actor-A', subject_id: matterId,
+        attempts: 0, last_error: '' });
+      assert.equal((await fixtureSql`SELECT count(*)::int AS n FROM engineering_search_projection
+        WHERE exact_revision_ref=${workRef}`)[0].n, 0);
+
+      const sqlContext = new SqlExecutionContextMiddleware({ roleSchema: 'wiselink_r10_test' });
+      const db = drizzle(httpSql);
+      const transactionHooks = { afterCommit: null, afterRollback: null };
+      const projectionDb = new Proxy(db, { get(target, property) {
+        if (property === 'transaction') return async (operation, ...args) => {
+          let result;
+          try { result = await target.transaction(operation, ...args); }
+          catch (error) { await transactionHooks.afterRollback?.(); throw error; }
+          await transactionHooks.afterCommit?.();
+          return result;
+        };
+        const value = Reflect.get(target, property);
+        return typeof value === 'function' ? value.bind(target) : value;
+      } });
+      const projection = new EngineeringSearchProjectionWriter(projectionDb);
+      const originalIndex = projection.indexMatterRevision.bind(projection);
+      let injectedProjectionFailure = false;
+      projection.indexMatterRevision = async input => {
+        await originalIndex(input);
+        if (injectedProjectionFailure) {
+          injectedProjectionFailure = false;
+          await input.database.execute(drizzleSql`UPDATE engineering_search_projection
+            SET original_or_work_text='SYNTHETIC_UNCOMMITTED_WRITE'
+            WHERE exact_revision_ref=${input.revisionRef}`);
+          throw Object.assign(new Error('synthetic unsafe body must never enter diagnostics'), { code: 'XX001' });
+        }
+      };
+      const matterRepository = new EngineeringMatterRepository(db);
+      const workItems = new MiaodaWorkItemRepository(db);
+      const objectAccess = new MiaodaHostedCanonicalObjectAccessAdapter(workItems);
+      const working = new EngineeringMatterWorkingRepository(db, sqlContext,
+        { roleSchema: 'wiselink_r10_test' }, projection);
+      const matters = new EngineeringMatterWorkingService(matterRepository, working, workItems, objectAccess);
+      const sessionStore = new SessionStore(new IdentityRepository(db));
+      const sessions = new SessionResolver(sessionStore,
+        { applicationScopeId: 'app_17bzc551rsg', sessionEnvironment: 'runtime' }, sqlContext);
+      const browserScope = new DialogueBrowserScope(sessions);
+      const search = new EngineeringIssueSearchService(db,
+        { readBrowserRevisionForProjection: () => { throw new Error('Unexpected WorkItem projection read'); } },
+        matters, projection, undefined, undefined, sessions);
+      const serviceEntries = [];
+      const transactionSessionReads = [];
+      const originalRebuild = search.rebuildProjection;
+      const originalValidate = sessionStore.validate;
+      search.rebuildProjection = async function (...args) {
+        const [sqlIdentity] = await db.execute(drizzleSql`SELECT current_user AS role,
+          current_setting('app.user_id',true) AS actor`);
+        serviceEntries.push({ ...sqlIdentity, nativeSystemAccount: args[2].userContext.isSystemAccount });
+        return originalRebuild.apply(this, args);
+      };
+      sessionStore.validate = async function (token, database) {
+        if (database) {
+          const [sqlIdentity] = await database.execute(drizzleSql`SELECT current_user AS role,
+            current_setting('app.user_id',true) AS actor`);
+          transactionSessionReads.push(sqlIdentity);
+        }
+        return originalValidate.call(this, token, database);
+      };
+      const browser = operation => new Promise((resolve, reject) => sqlContext.use(
+        { userContext: { userId: 'actor-A', isSystemAccount: false, roles: [] } }, {},
+        () => Promise.resolve().then(operation).then(resolve, reject)));
+      const [mapping] = await fixtureSql`UPDATE identity_subject_mapping
+        SET feishu_open_id='matter-http-open',feishu_tenant_key='matter-http-tenant',revision=1
+        WHERE miaoda_user_id='actor-A' AND miaoda_tenant_id='tenant-A' RETURNING id`;
+      const identity = { subjectMappingId: mapping.id, provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+        miaodaUserId: 'actor-A', tenantId: 'tenant-A', feishuUserId: null,
+        feishuOpenId: 'matter-http-open', namespacedSubject: { namespace: 'FEISHU_OPEN_ID',
+          subject: 'matter-http-open', tenantKey: 'matter-http-tenant' }, verifiedAt: new Date().toISOString() };
+      const opaque = await browser(() => sessionStore.create(identity));
+      const [ordinary] = await fixtureSql`SELECT aily_access_token_sealed,aily_access_token_expires_at
+        FROM identity_session WHERE id=${opaque.sessionId}`;
+      assert.deepEqual(ordinary, { aily_access_token_sealed: null, aily_access_token_expires_at: null });
+
+      delete process.env.MIAODA_LOCAL_DEV;
+      delete process.env.SANDBOX_ID;
+      process.env.FORCE_FRAMEWORK_ENVIRONMENT = 'boe';
+      process.env.WL_ENGINEERING_SEARCH_PROJECTION = '1';
+      const module = await Test.createTestingModule({
+        controllers: [EngineeringIssueSearchController],
+        providers: [ProductionMiaodaBrowserObjectIngressGuard,
+          { provide: EngineeringIssueSearchService, useValue: search },
+          { provide: DialogueBrowserScope, useValue: browserScope },
+          { provide: DocumentSourceSearchService, useValue: {} }],
+      }).compile();
+      app = module.createNestApplication({ logger: false });
+      const userContext = new UserContextMiddleware();
+      const csrf = new CsrfMiddleware();
+      app.use(cookieParser());
+      app.use(userContext.use.bind(userContext));
+      app.use(sqlContext.use.bind(sqlContext));
+      app.use('/api', csrf.use.bind(csrf));
+      app.useGlobalGuards(new AuthNPaasGuard(new Reflector()));
+      app.useGlobalFilters(new GlobalExceptionFilter());
+      await app.listen(0, '127.0.0.1');
+      const base = `http://127.0.0.1:${app.getHttpServer().address().port}`;
+      const native = { user_id: 'actor-A', tenant_id: 'tenant-A', app_id: 'app_17bzc551rsg',
+        env: 'runtime', roles: [], is_system_account: false };
+      const post = async (name, options = {}) => {
+        const beforeEntries = serviceEntries.length;
+        const headers = { 'x-larkgw-suda-webuser': encodeURIComponent(JSON.stringify(options.native ?? native)),
+          'x-suda-csrf-token': 'constructed-matter-csrf',
+          cookie: `suda-csrf-token=constructed-matter-csrf${options.noSession ? '' : `; wl_session=${opaque.token}`}` };
+        if (options.noCsrf) delete headers['x-suda-csrf-token'];
+        const response = await fetch(`${base}/api/canonical-host/engineering-issues/projection/rebuild?limit=${options.limit ?? 1}`,
+          { method: 'POST', headers });
+        const raw = await response.text();
+        let body;
+        try { body = JSON.parse(raw); } catch { body = raw; }
+        const receipt = { name, status: response.status, body,
+          serviceCalls: serviceEntries.length - beforeEntries };
+        t.diagnostic(`CONSTRUCTED_MATTER_HTTP_RECEIPT ${JSON.stringify(receipt)}`);
+        return receipt;
+      };
+      for (const [name, options, status] of [
+        ['missing-session', { noSession: true }, 401],
+        ['missing-csrf', { noCsrf: true }, 403],
+        ['system-account', { native: { ...native, is_system_account: true } }, 503],
+        ['wrong-actor', { native: { ...native, user_id: 'actor-B' } }, 401],
+        ['invalid-limit', { limit: 101 }, 400],
+      ]) {
+        const rejected = await post(name, options);
+        assert.equal(rejected.status, status);
+        assert.equal(rejected.serviceCalls, 0);
+        assert.equal((await fixtureSql`SELECT attempts FROM engineering_search_projection_pending
+          WHERE exact_revision_ref=${workRef}`)[0].attempts, 0);
+      }
+
+      // A different same-tenant owner sorts ahead of this ref, but may not use
+      // up the limit or have attempts/last_error changed by actor A's request.
+      const foreignRef = 'AAA-MATTER-OTHER-OWNER';
+      await fixtureSql`INSERT INTO engineering_search_projection_pending
+        (tenant_id,exact_revision_ref,owner_kind,owner_id,subject_id,last_error,attempts)
+        VALUES ('tenant-A',${foreignRef},'MATTER','actor-B',${matterId},'',0)`;
+      const admitted = await post('ordinary-final-user-matter-rebuild');
+      assert.equal(admitted.status, 201);
+      assert.deepEqual(admitted.body, { attempted: 1, rebuilt: 1, failed: 0 });
+      assert.equal((await fixtureSql`SELECT count(*)::int AS n FROM engineering_search_projection_pending
+        WHERE exact_revision_ref=${workRef}`)[0].n, 0);
+      const projected = await fixtureSql`SELECT entry_id,owner_kind,owner_id,exact_revision_ref,entry_kind,
+          parent_context_ref,locator_ref,original_or_work_text
+        FROM engineering_search_projection WHERE exact_revision_ref=${workRef} ORDER BY locator_ref`;
+      assert.equal(projected.length, content.issues.length);
+      assert.deepEqual(projected.map(row => row.locator_ref), content.issues.map((_, index) => `issues[${index}]`));
+      assert.ok(projected.every(row => row.owner_kind === 'MATTER' && row.owner_id === 'actor-A' &&
+        row.exact_revision_ref === workRef && row.parent_context_ref === matterId && row.entry_kind === 'WORK'));
+      assert.ok(projected.some(row => row.original_or_work_text.includes(content.issues[0].body)));
+      assert.deepEqual((await fixtureSql`SELECT attempts,last_error FROM engineering_search_projection_pending
+        WHERE exact_revision_ref=${foreignRef}`)[0], { attempts: 0, last_error: '' });
+      assert.deepEqual((await post('foreign-owner-alone')).body, { attempted: 0, rebuilt: 0, failed: 0 });
+
+      const deniedPending = async (name, ref, subject, beforePost, afterPost) => {
+        await fixtureSql`INSERT INTO engineering_search_projection_pending
+          (tenant_id,exact_revision_ref,owner_kind,owner_id,subject_id,last_error,attempts)
+          VALUES ('tenant-A',${ref},'MATTER','actor-A',${subject},'',0)`;
+        try {
+          if (beforePost) await beforePost();
+          const denied = await post(name);
+          assert.equal(denied.status, 201);
+          assert.deepEqual(denied.body, { attempted: 1, rebuilt: 0, failed: 1 });
+          assert.deepEqual((await fixtureSql`SELECT attempts,last_error FROM engineering_search_projection_pending
+            WHERE exact_revision_ref=${ref}`)[0], { attempts: 0, last_error: '' });
+          assert.deepEqual((await fixtureSql`SELECT entry_id,original_or_work_text FROM engineering_search_projection
+            WHERE exact_revision_ref=${workRef} ORDER BY entry_id`).map(row => ({ ...row })),
+            projected.map(row => ({ entry_id: row.entry_id, original_or_work_text: row.original_or_work_text }))
+              .sort((a, b) => a.entry_id.localeCompare(b.entry_id)));
+        } finally {
+          if (afterPost) await afterPost();
+          await fixtureSql`DELETE FROM engineering_search_projection_pending WHERE exact_revision_ref=${ref}`;
+        }
+      };
+      await deniedPending('forged-matter', workRef, 'MAT-NOT-BOUND');
+      await deniedPending('forged-exact-ref', 'MWR-NOT-SAVED', matterId);
+      await deniedPending('forged-creator', workRef, matterId,
+        () => fixtureSql`UPDATE engineering_matter_work_revision SET created_by_user_id='actor-B'
+          WHERE matter_work_revision_id=${workRef}`,
+        () => fixtureSql`UPDATE engineering_matter_work_revision SET created_by_user_id='actor-A'
+          WHERE matter_work_revision_id=${workRef}`);
+      await deniedPending('revoked-member-owner', workRef, matterId,
+        () => fixtureSql`UPDATE work_item SET requested_by_user_id='actor-B' WHERE work_item_id=${FTD_WORK_ITEM_ID}`,
+        () => fixtureSql`UPDATE work_item SET requested_by_user_id='actor-A' WHERE work_item_id=${FTD_WORK_ITEM_ID}`);
+      await fixtureSql`DELETE FROM engineering_search_projection_pending WHERE exact_revision_ref=${foreignRef}`;
+      const readProjection = () => fixtureSql`SELECT entry_id,original_or_work_text FROM engineering_search_projection
+        WHERE exact_revision_ref=${workRef} ORDER BY entry_id`;
+      const stableProjection = await readProjection();
+      // A real second connection runs only after the first transaction has fully
+      // rolled back. It races the new diagnostic transaction under actual RLS.
+      for (const race of ['existing', 'completed', 'rebound', 'source-revoked', 'session-revoked']) {
+        await fixtureSql`INSERT INTO engineering_search_projection_pending
+          (tenant_id,exact_revision_ref,owner_kind,owner_id,subject_id,last_error,attempts)
+          VALUES ('tenant-A',${workRef},'MATTER','actor-A',${matterId},'',0)`;
+        injectedProjectionFailure = true;
+        transactionHooks.afterRollback = async () => {
+          transactionHooks.afterRollback = null;
+          assert.deepEqual(await readProjection(), stableProjection, 'all projection writes rolled back before bookkeeping');
+          assert.equal((await fixtureSql`SELECT attempts FROM engineering_search_projection_pending
+            WHERE exact_revision_ref=${workRef}`)[0].attempts, 0, 'marker deletion rolled back');
+          if (race === 'completed') await fixtureSql`DELETE FROM engineering_search_projection_pending WHERE exact_revision_ref=${workRef}`;
+          if (race === 'rebound') await fixtureSql`UPDATE engineering_search_projection_pending
+            SET owner_id='actor-B',subject_id='SYNTHETIC-REBOUND' WHERE exact_revision_ref=${workRef}`;
+          if (race === 'source-revoked') await fixtureSql`UPDATE work_item
+            SET requested_by_user_id='actor-B' WHERE work_item_id=${FTD_WORK_ITEM_ID}`;
+          if (race === 'session-revoked') await fixtureSql`UPDATE identity_session
+            SET revoked_at=now() WHERE id=${opaque.sessionId}`;
+        };
+        try {
+          const receipt = await post(`physical-rollback-${race}`);
+          assert.equal(receipt.status, race === 'session-revoked' ? 401 : 201);
+          if (race !== 'session-revoked') assert.deepEqual(receipt.body, { attempted: 1, rebuilt: 0, failed: 1 });
+          assert.deepEqual(await readProjection(), stableProjection, 'failed rebuild cannot change indexed source bytes');
+          const rows = await fixtureSql`SELECT owner_id,subject_id,attempts,last_error
+            FROM engineering_search_projection_pending WHERE exact_revision_ref=${workRef}`;
+          if (race === 'completed') assert.equal(rows.length, 0, 'completed marker is never resurrected');
+          else if (race === 'existing') assert.deepEqual(rows[0], { owner_id: 'actor-A', subject_id: matterId, attempts: 1, last_error: 'XX001' });
+          else assert.deepEqual(rows[0], { owner_id: race === 'rebound' ? 'actor-B' : 'actor-A',
+            subject_id: race === 'rebound' ? 'SYNTHETIC-REBOUND' : matterId, attempts: 0, last_error: '' });
+        } finally {
+          transactionHooks.afterRollback = null; injectedProjectionFailure = false;
+          await fixtureSql`DELETE FROM engineering_search_projection_pending WHERE exact_revision_ref=${workRef}`;
+          if (race === 'source-revoked') await fixtureSql`UPDATE work_item SET requested_by_user_id='actor-A' WHERE work_item_id=${FTD_WORK_ITEM_ID}`;
+          if (race === 'session-revoked') await fixtureSql`UPDATE identity_session SET revoked_at=NULL WHERE id=${opaque.sessionId}`;
+        }
+      }
+      // Two exact immutable saved revisions, followed by revocation on an
+      // independent backend immediately after item one commits. Item two must
+      // bypass the admitted request's cached identity and remain untouched.
+      const nextRef = `ZZZ-SYNTHETIC-${randomUUID()}`;
+      await fixtureSql`INSERT INTO engineering_matter_work_revision
+        SELECT (jsonb_populate_record(NULL::engineering_matter_work_revision,
+          to_jsonb(w) || jsonb_build_object('id',gen_random_uuid(),'matter_work_revision_id',${nextRef}::text,
+            'working_revision',2,'request_id','SYNTHETIC-SECOND-IMMUTABLE-REVISION'))).*
+        FROM engineering_matter_work_revision w WHERE w.matter_work_revision_id=${workRef}`;
+      await fixtureSql`INSERT INTO engineering_search_projection_pending
+        (tenant_id,exact_revision_ref,owner_kind,owner_id,subject_id,last_error,attempts)
+        VALUES ('tenant-A',${workRef},'MATTER','actor-A',${matterId},'',0),
+               ('tenant-A',${nextRef},'MATTER','actor-A',${matterId},'',0)`;
+      transactionHooks.afterCommit = async () => {
+        transactionHooks.afterCommit = null;
+        await fixtureSql`UPDATE identity_session SET revoked_at=now() WHERE id=${opaque.sessionId}`;
+      };
+      const between = await post('physical-session-revoked-between-items', { limit: 2 });
+      assert.equal(between.status, 401);
+      assert.equal((await fixtureSql`SELECT count(*)::int AS n FROM engineering_search_projection_pending
+        WHERE exact_revision_ref=${workRef}`)[0].n, 0, 'item one committed');
+      assert.deepEqual((await fixtureSql`SELECT attempts,last_error FROM engineering_search_projection_pending
+        WHERE exact_revision_ref=${nextRef}`)[0], { attempts: 0, last_error: '' });
+      assert.equal((await fixtureSql`SELECT count(*)::int AS n FROM engineering_search_projection
+        WHERE exact_revision_ref=${nextRef}`)[0].n, 0, 'item two never indexed after revocation');
+      assert.equal((await fixtureSql`SELECT state_json FROM engineering_matter_work_revision
+        WHERE matter_work_revision_id=${nextRef}`)[0].state_json, saved.state_json);
+      await fixtureSql`UPDATE identity_session SET revoked_at=NULL WHERE id=${opaque.sessionId}`;
+      await fixtureSql`DELETE FROM engineering_search_projection_pending WHERE exact_revision_ref=${nextRef}`;
+      await fixtureSql`INSERT INTO engineering_search_projection_pending
+        (tenant_id,exact_revision_ref,owner_kind,owner_id,subject_id,last_error,attempts)
+        VALUES ('tenant-A',${workRef},'MATTER','actor-A',${matterId},'',0)`;
+      await fixtureSql`UPDATE identity_session SET revoked_at=now()
+        WHERE session_token_hash=${createHash('sha256').update(opaque.token).digest('hex')}`;
+      assert.equal((await post('revoked-opaque-session')).status, 401);
+      assert.deepEqual((await fixtureSql`SELECT attempts,last_error FROM engineering_search_projection_pending
+        WHERE exact_revision_ref=${workRef}`)[0], { attempts: 0, last_error: '' });
+      assert.ok(serviceEntries.length > 0);
+      assert.ok(transactionSessionReads.length > 0);
+      assert.ok(serviceEntries.every(row => row.role === 'service_role_wiselink_r10_test' &&
+        row.actor === 'actor-A' && row.nativeSystemAccount === false));
+      assert.ok(transactionSessionReads.every(row => row.role === 'authenticated_wiselink_r10_test' &&
+        row.actor === 'actor-A'));
+      assert.equal((await fixtureSql`SELECT state_json FROM engineering_matter_work_revision
+        WHERE matter_work_revision_id=${workRef}`)[0].state_json, saved.state_json);
+      assert.equal((await fixtureSql`SELECT count(*)::int AS n FROM engineering_matter_work_revision
+        WHERE matter_id=${matterId}`)[0].n, 2, 'only the two explicitly seeded immutable fixture revisions exist');
+      t.diagnostic(`CONSTRUCTED_MATTER_HTTP_SQL_IDENTITY ${JSON.stringify({ serviceEntries, transactionSessionReads })}`);
+      t.diagnostic(`CONSTRUCTED_MATTER_HTTP_ACCEPTED ${JSON.stringify({ matterId, workRef,
+        creator: saved.created_by_user_id, projectionRows: projected.length,
+        authoritativeStateSha256: createHash('sha256').update(saved.state_json).digest('hex') })}`);
+    } finally {
+      if (app) await app.close();
+      if (owner) await owner.release();
+      await httpSql.end({ timeout: 5 });
+      await fixtureSql.end({ timeout: 5 });
+      for (const [key, value] of oldEnv) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
   });

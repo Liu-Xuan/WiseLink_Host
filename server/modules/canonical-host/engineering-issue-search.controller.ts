@@ -5,13 +5,15 @@ import type { EngineeringIssueSearchHit, EngineeringKnowledgeScope } from '@shar
 import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
 import { hostActor } from './canonical-host-request-actor';
 import { EngineeringIssueSearchService } from './engineering-issue-search.service';
+import { DialogueBrowserScope } from './dialogue-browser-scope.service';
 import { DocumentSourceSearchService } from './document-source-search.service';
 
 @NeedLogin()
 @UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
 @Controller('api/canonical-host/engineering-issues')
 export class EngineeringIssueSearchController {
-  constructor(private readonly issues: EngineeringIssueSearchService, private readonly sources: DocumentSourceSearchService) {}
+  constructor(private readonly issues: EngineeringIssueSearchService, private readonly sources: DocumentSourceSearchService,
+    private readonly browserScope: DialogueBrowserScope) {}
 
   @Get('catalogue')
   @Header('Cache-Control', 'private, no-store')
@@ -71,6 +73,7 @@ export class EngineeringIssueSearchController {
     if (parsed !== undefined && (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 100)) {
       throw new BadRequestException('ENGINEERING_SEARCH_REBUILD_LIMIT_INVALID');
     }
-    return this.issues.rebuildProjection(parsed, hostActor(request));
+    return this.browserScope.run(request, () =>
+      this.issues.rebuildProjection(parsed, hostActor(request), request));
   }
 }

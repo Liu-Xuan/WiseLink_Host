@@ -61,6 +61,8 @@ import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constan
 import { UnifiedArtifactReadScope } from '../unified-reader/unified-artifact-read-scope';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
+import { CANONICAL_OBJECT_ACCESS, type CanonicalObjectAccessPort } from '../work-item/canonical-object-access.port';
+import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
 import {
   CANONICAL_AUTHORIZATION,
   CANONICAL_PERMISSION_SNAPSHOT,
@@ -164,6 +166,8 @@ export class CanonicalJobAidProblemService {
     @Inject(DRIZZLE_DATABASE)
     private readonly database?: PostgresJsDatabase,
     @Optional() private readonly activityRuns?: DocumentActivityRunRepository,
+    @Optional() @Inject(CANONICAL_OBJECT_ACCESS)
+    private readonly objectAccess?: CanonicalObjectAccessPort,
   ) {}
 
   /** Deployment first installs dual readers; only explicitly enabled NEW tasks use v2. */
@@ -2151,6 +2155,35 @@ export class CanonicalJobAidProblemService {
     actor: CanonicalHostActor,
   ): Promise<JobAidWorkRevision> {
     return (await this.readAuthorizedBrowserRevision(workItemId, workRevisionRef, actor)).revision;
+  }
+
+  /** Rebuild-only read: fresh native authorization, creator and exact body in the caller's transaction. */
+  async readBrowserRevisionForProjection(
+    workItemId: string,
+    workRevisionRef: string,
+    actor: CanonicalHostActor,
+    database: PostgresJsDatabase,
+  ): Promise<JobAidWorkRevision> {
+    const identity = actor.objectAccessActor;
+    if (!this.objectAccess || !identity || !isHostedCanonicalFinalUserActor(identity) ||
+      identity.canonicalSubject.id !== actor.userId || identity.tenantId !== actor.tenantId)
+      throw jobAidBrowserWorkUnavailable();
+    const access = await this.objectAccess.freshRead({ actor: identity,
+      action: 'READ_DOCUMENT_PARSING', accessRoot: { kind: 'WORK_ITEM', id: workItemId } }, database);
+    if ('code' in access || access.workItemId !== workItemId) throw jobAidBrowserWorkUnavailable();
+    const [saved] = await database.select({ ref: assessmentWorkRevision.assessmentWorkRevisionId })
+      .from(assessmentWorkRevision).where(and(
+        eq(assessmentWorkRevision.tenantId, actor.tenantId),
+        eq(assessmentWorkRevision.workItemId, workItemId),
+        eq(assessmentWorkRevision.assessmentWorkRevisionId, workRevisionRef),
+        eq(assessmentWorkRevision.createdByUserId, actor.userId),
+      )).limit(1);
+    if (!saved) throw jobAidBrowserWorkUnavailable();
+    const revision = await this.work.readByRef({ tenantId: actor.tenantId, workItemId, workRevisionRef }, database);
+    if (!revision || revision.workItemId !== workItemId || revision.workRevisionRef !== workRevisionRef || !revision.content)
+      throw jobAidBrowserWorkUnavailable();
+    await this.assertEvidenceOwned(revision.content.evidence, actor.tenantId, actor.userId, workItemId, database);
+    return revision;
   }
 
   async readBrowserKnowledgeRevision(

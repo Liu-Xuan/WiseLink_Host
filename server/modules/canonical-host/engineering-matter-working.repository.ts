@@ -250,7 +250,8 @@ export class EngineeringMatterWorkingRepository {
   }
 
   /** Keeps verified SQL identity across external calls without holding a transaction. */
-  async withActorScope<T>(actorUserId: string, operation: () => Promise<T>): Promise<T> {
+  async withActorScope<T>(actorUserId: string, operation: () => Promise<T>,
+    roleExecutor: Pick<PostgresJsDatabase, 'execute'> = this.db): Promise<T> {
     // The official SDK re-applies its SQL context before EVERY query, including
     // queries inside a pinned transaction. A standalone set_config is reset by
     // that next query. Use its injected middleware to scope the existing
@@ -264,7 +265,9 @@ export class EngineeringMatterWorkingRepository {
     const roleSchema = this.databaseConfig.roleSchema;
     if (!roleSchema || !/^[A-Za-z0-9_]{1,255}$/u.test(roleSchema))
       throw runtimeAuthorizationUnavailable();
-    const [runtimeRole] = await this.db.execute<{ isHostedService: boolean }>(
+    // A caller already holding a transaction must check that same physical
+    // connection; acquiring a root-pool connection here can deadlock a full pool.
+    const [runtimeRole] = await roleExecutor.execute<{ isHostedService: boolean }>(
       sql`SELECT current_user = ${`service_role_${roleSchema}`} AS "isHostedService"`,
     );
     if (runtimeRole?.isHostedService !== true)

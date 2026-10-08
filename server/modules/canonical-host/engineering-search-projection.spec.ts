@@ -46,23 +46,34 @@ describe('buildWorkSearchProjection', () => {
   });
 });
 
-it('rebuilds pending revisions independently and keeps failed items pending', async () => {
-  const writer = Object.create(EngineeringSearchProjectionWriter.prototype) as EngineeringSearchProjectionWriter & Record<string, jest.Mock>;
+it('rebuilds pending revisions independently and keeps denied items pending', async () => {
+  const transaction = { name: 'fixed transaction' };
+  const database = { transaction: jest.fn(async operation => operation(transaction)), update: jest.fn() };
+  const writer = new EngineeringSearchProjectionWriter(database as never);
   const pending = [
     { tenantId: 't1', revisionRef: 'wr-1', ownerKind: 'USER' as const, ownerId: 'u1', subjectId: 'wi-1', lastError: 'old', attempts: 1 },
-    { tenantId: 't1', revisionRef: 'mw-1', ownerKind: 'MATTER' as const, ownerId: 'u2', subjectId: 'm1', lastError: 'old', attempts: 1 },
+    { tenantId: 't1', revisionRef: 'mw-1', ownerKind: 'MATTER' as const, ownerId: 'u1', subjectId: 'm1', lastError: 'old', attempts: 1 },
+    { tenantId: 't1', revisionRef: 'wr-2', ownerKind: 'USER' as const, ownerId: 'u1', subjectId: 'wi-2', lastError: 'old', attempts: 1 },
   ];
-  writer.listPending = jest.fn().mockResolvedValue(pending);
-  writer.indexJobAidRevision = jest.fn().mockResolvedValue(undefined);
-  writer.indexMatterRevision = jest.fn().mockRejectedValue(new Error('INDEX_TEMPORARY_FAILURE'));
-  writer.markPending = jest.fn().mockResolvedValue(undefined);
-  const result = await writer.rebuildPending({ tenantId: 't1', load: async item => {
-    if (item.ownerKind === 'MATTER') throw new Error('SOURCE_NOT_READABLE');
-    return { issues: [] } as never;
-  }});
-  expect(result).toEqual({ attempted: 2, rebuilt: 1, failed: 1 });
-  expect(writer.indexJobAidRevision).toHaveBeenCalledWith(expect.objectContaining({ revisionRef: 'wr-1' }));
-  expect(writer.markPending).toHaveBeenCalledWith(expect.objectContaining({ revisionRef: 'mw-1' }));
+  const jobAidIndex = jest.fn().mockResolvedValue(undefined);
+  const matterIndex = jest.fn();
+  Object.assign(writer, { listPending: jest.fn().mockResolvedValue(pending),
+    lockPending: jest.fn().mockResolvedValue(true), indexJobAidRevision: jobAidIndex,
+    indexMatterRevision: matterIndex });
+  const verifySession = jest.fn().mockResolvedValue(undefined);
+  const result = await writer.rebuildPending({ tenantId: 't1', actorUserId: 'u1', verifySession,
+    load: async (item, tx) => {
+      expect(tx).toBe(transaction);
+      if (item.ownerKind === 'MATTER') throw new Error('SOURCE_NOT_READABLE');
+      return { issues: [] } as never;
+    }});
+  expect(result).toEqual({ attempted: 3, rebuilt: 2, failed: 1 });
+  expect(jobAidIndex).toHaveBeenNthCalledWith(1, expect.objectContaining({ revisionRef: 'wr-1', database: transaction }));
+  expect(jobAidIndex).toHaveBeenNthCalledWith(2, expect.objectContaining({ revisionRef: 'wr-2', database: transaction }));
+  expect(matterIndex).not.toHaveBeenCalled();
+  expect(database.update).not.toHaveBeenCalled();
+  expect(verifySession).toHaveBeenCalledTimes(3);
+  expect(pending[1]).toMatchObject({ attempts: 1, lastError: 'old' });
 });
 
 it('preserves long original passages and indexes limitations and unanswered requirements', () => {

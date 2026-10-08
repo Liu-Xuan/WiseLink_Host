@@ -6,12 +6,16 @@ import {
   NotFoundException,
   Optional,
   ServiceUnavailableException,
+  UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { sql } from 'drizzle-orm';
+import type { Request } from 'express';
+import { SessionResolver, type ResolvedSession } from '../identity/session-resolver.service';
 import type {
   EngineeringIssueRead,
   EngineeringIssueSearchHit,
@@ -62,6 +66,7 @@ export class EngineeringIssueSearchService {
     @Optional() private readonly attempts?: MatterActionAttemptService,
     @Optional() @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceAuthorization?: CanonicalServiceScopeAuthorizationPort,
+    @Optional() private readonly sessions?: SessionResolver,
   ) {}
 
   /** Browses saved explanations without generating text or requiring a keyword. */
@@ -330,24 +335,46 @@ export class EngineeringIssueSearchService {
     return { tenantId: actor.tenantId, actorUserId: actor.userId, matterId, authorizeReferenceMatter };
   }
 
-  /** Rebuilds derived search rows through the same actor-scoped readers as search/read. */
-  async rebuildProjection(limit: number | undefined, actor: CanonicalHostActor): Promise<{
+  /** Called only inside DialogueBrowserScope; all item reads/writes use the same transaction. */
+  async rebuildProjection(limit: number | undefined, actor: CanonicalHostActor, request: Request): Promise<{
     attempted: number; rebuilt: number; failed: number;
   }> {
     this.requireActor(actor);
     if (!this.projectionWriter) throw new Error('ENGINEERING_SEARCH_PROJECTION_WRITER_UNAVAILABLE');
+    const sessions = this.sessions;
+    if (!sessions) throw new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED');
+    const admitted = await sessions.resolve(request);
+    const matchesActor = (session: ResolvedSession | null): session is ResolvedSession => !!session &&
+      session.actor.canonicalSubject.id === actor.userId && session.actor.tenantId === actor.tenantId &&
+      session.actor.applicationScopeId === actor.objectAccessActor?.applicationScopeId;
+    if (!admitted) throw new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED');
+    if (!matchesActor(admitted)) throw new ForbiddenException('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
     return this.projectionWriter.rebuildPending({
       tenantId: actor.tenantId,
+      actorUserId: actor.userId,
       limit,
-      load: async pending => {
-        if (!pending.subjectId) throw new BadRequestException('ENGINEERING_SEARCH_PENDING_SUBJECT_MISSING');
+      verifySession: async database => {
+        // Session SELECT/touch requires the existing browser policies, not service
+        // policies or an Aily grant. Passing tx explicitly bypasses the ALS cache.
+        const fresh = await sessions.withVerifiedBrowserSql(() => sessions.resolve(request, database));
+        if (!fresh || fresh.session.expiresAt.getTime() <= Date.now())
+          throw new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED');
+        if (!matchesActor(fresh) || fresh.session.id !== admitted.session.id ||
+          fresh.session.revision !== admitted.session.revision)
+          throw new ForbiddenException('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
+      },
+      load: async (pending, database) => {
+        if (!pending.subjectId || pending.tenantId !== actor.tenantId || pending.ownerId !== actor.userId)
+          throw new ForbiddenException('ENGINEERING_SEARCH_PENDING_IDENTITY_MISMATCH');
         if (pending.ownerKind === 'USER') {
-          const revision = await this.jobAid.readBrowserRevision(pending.subjectId, pending.revisionRef, actor);
-          if (!('content' in revision) || !revision.content) throw new NotFoundException('ENGINEERING_SEARCH_WORK_CONTENT_MISSING');
+          const revision = await this.jobAid.readBrowserRevisionForProjection(
+            pending.subjectId, pending.revisionRef, actor, database);
+          if (!revision.content) throw new NotFoundException('ENGINEERING_SEARCH_WORK_CONTENT_MISSING');
           return revision.content;
         }
-        if (!pending.subjectId) throw new BadRequestException('ENGINEERING_SEARCH_PENDING_SUBJECT_MISSING');
-        const revision = await this.matters.readWorkingRevision(pending.subjectId, pending.revisionRef, actor);
+        if (pending.ownerKind !== 'MATTER') throw new BadRequestException('ENGINEERING_SEARCH_PENDING_KIND_INVALID');
+        const revision = await this.matters.readWorkingRevisionForProjection(
+          pending.subjectId, pending.revisionRef, actor, database);
         if (!revision.state.problemWork) throw new NotFoundException('ENGINEERING_SEARCH_WORK_CONTENT_MISSING');
         return revision.state.problemWork;
       },

@@ -1,4 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import { and, eq } from 'drizzle-orm';
+import { engineeringMatterWorkRevision } from '../../database/schema';
 
 import type {
   EngineeringMatterWorkingApplyResult,
@@ -155,6 +158,43 @@ export class EngineeringMatterWorkingService {
             'saved',
           ),
       );
+    }
+    return revision;
+  }
+
+  /** Rebuild-only native read; current and historical ownership checks share the write transaction. */
+  async readWorkingRevisionForProjection(
+    matterId: string,
+    workRef: string,
+    actor: CanonicalHostActor,
+    database: PostgresJsDatabase,
+  ): Promise<EngineeringMatterWorkingRevisionReadModel> {
+    const identity = actor.objectAccessActor;
+    if (!identity || !isHostedCanonicalFinalUserActor(identity) ||
+      identity.canonicalSubject.id !== actor.userId || identity.tenantId !== actor.tenantId)
+      throw identityHandoffUnavailable();
+    const input = { tenantId: actor.tenantId, actorUserId: actor.userId, matterId };
+    const current = await this.working.authorizeRuntimeInputs(input, database);
+    const [saved] = await database.select({ ref: engineeringMatterWorkRevision.matterWorkRevisionId })
+      .from(engineeringMatterWorkRevision).where(and(
+        eq(engineeringMatterWorkRevision.tenantId, actor.tenantId),
+        eq(engineeringMatterWorkRevision.matterId, matterId),
+        eq(engineeringMatterWorkRevision.matterWorkRevisionId, workRef),
+        eq(engineeringMatterWorkRevision.createdByUserId, actor.userId),
+      )).limit(1);
+    if (!saved) throw matterNotFound();
+    const revision = await this.working.readByRef({ tenantId: actor.tenantId, matterId, workRef }, database);
+    if (!revision || revision.matterId !== matterId || revision.matterWorkRevisionId !== workRef)
+      throw matterNotFound();
+    await this.working.authorizeRuntimeInputs({ ...input,
+      basedOnMatterRevisionId: revision.basedOnMatterRevisionId }, database);
+    const members = new Set([...current.currentInputs, ...revision.state.substantiveInputs,
+      ...revision.state.coverage.map(item => item.binding)]
+      .flatMap(binding => binding.workItemId ? [binding.workItemId] : []));
+    for (const workItemId of members) {
+      const access = await this.objectAccess.freshRead({ actor: identity,
+        action: 'READ_WORK_ITEM', accessRoot: { kind: 'WORK_ITEM', id: workItemId } }, database);
+      if ('code' in access || access.workItemId !== workItemId) throw matterNotFound();
     }
     return revision;
   }

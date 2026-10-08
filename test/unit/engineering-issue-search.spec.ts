@@ -87,16 +87,74 @@ describe('authorized engineering issue search and exact expansion', () => {
     expect(expanded.identity.workRef).toBe(h.saved.workRevisionRef);
   });
 
-  it('rebuilds pending rows through the actor-scoped exact revision reader', async () => {
+  it('rechecks session with browser SQL and passes the same tx to the exact revision reader', async () => {
     const h = setup();
-    const projection = { rebuildPending: jest.fn().mockImplementation(async ({ load }: { load: (item: { ownerKind: 'USER'; revisionRef: string; ownerId: string; subjectId: string }) => Promise<unknown> }) => {
-      const content = await load({ ownerKind: 'USER', revisionRef: h.saved.workRevisionRef, ownerId: actor.userId, subjectId: h.saved.workItemId });
+    const transaction = { name: 'transaction' };
+    const request = { headers: { cookie: 'wl_session=opaque-test-token' } };
+    const session = { actor: { canonicalSubject: { id: actor.userId }, tenantId: actor.tenantId,
+      applicationScopeId: actor.objectAccessActor!.applicationScopeId }, session: { id: 'session', revision: 1, expiresAt: new Date(Date.now() + 60_000) } };
+    let browser = false;
+    const sessions = {
+      resolve: jest.fn(async (_request, database?) => {
+        if (database) { expect(browser).toBe(true); expect(database).toBe(transaction); }
+        return session;
+      }),
+      withVerifiedBrowserSql: jest.fn(async operation => {
+        browser = true;
+        try { return await operation(); } finally { browser = false; }
+      }),
+    };
+    const read = jest.fn().mockResolvedValue(h.saved);
+    const projection = { rebuildPending: jest.fn().mockImplementation(async input => {
+      expect(input.actorUserId).toBe(actor.userId);
+      await input.verifySession(transaction);
+      expect(browser).toBe(false);
+      const content = await input.load({ tenantId: actor.tenantId, ownerKind: 'USER',
+        revisionRef: h.saved.workRevisionRef, ownerId: actor.userId, subjectId: h.saved.workItemId }, transaction);
       expect(content).toBe(h.saved.content);
       return { attempted: 1, rebuilt: 1, failed: 0 };
     }) };
-    const service = new EngineeringIssueSearchService(h.db as never, h.jobAid as never, h.matters as never, projection as never);
-    await expect(service.rebuildProjection(10, actor)).resolves.toEqual({ attempted: 1, rebuilt: 1, failed: 0 });
-    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledWith(h.saved.workItemId, h.saved.workRevisionRef, actor);
+    const service = new EngineeringIssueSearchService(h.db as never,
+      { ...h.jobAid, readBrowserRevisionForProjection: read } as never, h.matters as never,
+      projection as never, undefined, undefined, sessions as never);
+    await expect(service.rebuildProjection(10, actor, request as never))
+      .resolves.toEqual({ attempted: 1, rebuilt: 1, failed: 0 });
+    expect(read).toHaveBeenCalledWith(h.saved.workItemId, h.saved.workRevisionRef, actor, transaction);
+    expect(sessions.resolve).toHaveBeenNthCalledWith(1, request);
+    expect(sessions.resolve).toHaveBeenNthCalledWith(2, request, transaction);
+  });
+
+  it.each(['missing', 'expired', 'actor', 'tenant', 'app', 'session-id', 'session-revision'])
+    ('rejects a %s commit-time session mismatch before loading work', async mismatch => {
+      const h = setup();
+      const admitted = { actor: { canonicalSubject: { id: actor.userId }, tenantId: actor.tenantId,
+        applicationScopeId: actor.objectAccessActor!.applicationScopeId }, session: { id: 's1', revision: 1, expiresAt: new Date(Date.now() + 60_000) } };
+      const fresh = structuredClone(admitted);
+      if (mismatch === 'expired') fresh.session.expiresAt = new Date(Date.now() - 1);
+      if (mismatch === 'actor') fresh.actor.canonicalSubject.id = 'other';
+      if (mismatch === 'tenant') fresh.actor.tenantId = 'other';
+      if (mismatch === 'app') fresh.actor.applicationScopeId = 'other';
+      if (mismatch === 'session-id') fresh.session.id = 's2';
+      if (mismatch === 'session-revision') fresh.session.revision = 2;
+      const sessions = { resolve: jest.fn().mockResolvedValueOnce(admitted)
+        .mockResolvedValueOnce(mismatch === 'missing' ? null : fresh),
+        withVerifiedBrowserSql: jest.fn(operation => operation()) };
+      const projection = { rebuildPending: jest.fn(async input => input.verifySession({})) };
+      const service = new EngineeringIssueSearchService(h.db as never, h.jobAid as never, h.matters as never,
+        projection as never, undefined, undefined, sessions as never);
+      await expect(service.rebuildProjection(1, actor, {} as never)).rejects.toThrow(['missing', 'expired'].includes(mismatch)
+        ? 'OFFICIAL_OAUTH_SESSION_REQUIRED' : 'DIALOGUE_BROWSER_IDENTITY_MISMATCH');
+      expect(h.jobAid.readBrowserRevision).not.toHaveBeenCalled();
+    });
+
+  it('rejects admission without an opaque session rather than manufacturing one', async () => {
+    const h = setup();
+    const sessions = { resolve: jest.fn().mockResolvedValue(null) };
+    const projection = { rebuildPending: jest.fn() };
+    const service = new EngineeringIssueSearchService(h.db as never, h.jobAid as never, h.matters as never,
+      projection as never, undefined, undefined, sessions as never);
+    await expect(service.rebuildProjection(1, actor, {} as never)).rejects.toThrow('OFFICIAL_OAUTH_SESSION_REQUIRED');
+    expect(projection.rebuildPending).not.toHaveBeenCalled();
   });
 
   it('loads each matching work once within a search, but reauthorizes the next request', async () => {
