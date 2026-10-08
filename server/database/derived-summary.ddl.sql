@@ -83,7 +83,7 @@ $$;
 -- original carriers are retained in the Host reading snapshot, including upper summaries.
 CREATE OR REPLACE FUNCTION derived_summary_reading_sources_owned(t varchar, actor varchar, reading jsonb)
 RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path FROM CURRENT AS $$
-DECLARE member jsonb; leaf jsonb; e jsonb; saved record;
+DECLARE member jsonb; leaf jsonb; e jsonb; saved record; prior jsonb; prior_reading jsonb;
   statement_source jsonb; statement_reference jsonb; statement_original jsonb; statement_saved record;
 BEGIN
   IF NOT derived_summary_sql_role_allowed(false)
@@ -91,6 +91,38 @@ BEGIN
     OR NOT engineering_matter_actor_has_tenant(t)
     OR jsonb_typeof(reading->'members') IS DISTINCT FROM 'array'
     OR jsonb_typeof(reading->'evidence') IS DISTINCT FROM 'array' THEN RETURN false; END IF;
+  -- A sealed revision task also carries the old candidate body. Protect that
+  -- copy using the exact persisted prior's full source reading, including sources
+  -- removed from current members. Never trust only the request's prior refs.
+  IF reading->>'purpose'='REVISE_SAVED_SUMMARY' OR reading ? 'revisionContext' THEN
+    IF reading->>'purpose' IS DISTINCT FROM 'REVISE_SAVED_SUMMARY'
+      OR jsonb_typeof(reading->'revisionContext') IS DISTINCT FROM 'object'
+      OR jsonb_typeof(reading->'revisionContext'->'previousSummary') IS DISTINCT FROM 'object' THEN RETURN false; END IF;
+    prior := reading->'revisionContext'->'previousSummary';
+    IF jsonb_typeof(prior->'revision') IS DISTINCT FROM 'number'
+      OR (prior->>'revision') !~ '^[1-9][0-9]{0,9}$'
+      OR (prior->>'revision')::numeric >= 2147483647 THEN RETURN false; END IF;
+    SELECT r.content_json INTO prior_reading FROM derived_summary_revision r
+      WHERE r.tenant_id=t AND r.actor_user_id=actor
+        AND r.summary_id=prior->>'summaryId' AND r.summary_ref=prior->>'summaryRef'
+        AND r.revision=(prior->>'revision')::integer;
+    IF NOT FOUND OR jsonb_typeof(prior_reading->'members') IS DISTINCT FROM 'array'
+      OR jsonb_typeof(prior_reading->'evidence') IS DISTINCT FROM 'array'
+      OR prior_reading ? 'revisionContext'
+      OR prior_reading->>'summaryId' IS DISTINCT FROM prior->>'summaryId'
+      OR prior_reading->>'summaryRef' IS DISTINCT FROM prior->>'summaryRef'
+      OR prior_reading->'revision' IS DISTINCT FROM prior->'revision'
+      OR prior->'candidateOnly' IS DISTINCT FROM 'true'::jsonb
+      OR prior_reading->'candidateOnly' IS DISTINCT FROM 'true'::jsonb
+      OR prior_reading->>'classificationStatus' IS DISTINCT FROM 'CANDIDATE'
+      OR prior_reading->'content' IS DISTINCT FROM prior->'content'
+      OR prior_reading->'scope' IS DISTINCT FROM prior->'scope' THEN RETURN false; END IF;
+    -- A saved revision is a closed material snapshot, not a revision task. Reject
+    -- nested revisionContext above and combine the two source bases directly;
+    -- no recursive authorization call or circular candidate dependency is added.
+    reading := jsonb_build_object('members', (reading->'members') || (prior_reading->'members'),
+      'evidence', (reading->'evidence') || (prior_reading->'evidence'));
+  END IF;
   FOR member IN SELECT jsonb_array_elements(reading->'members') LOOP
     IF jsonb_typeof(member->'leaves') IS DISTINCT FROM 'array' OR jsonb_array_length(member->'leaves')=0 THEN RETURN false; END IF;
     FOR leaf IN SELECT jsonb_array_elements(member->'leaves') LOOP
