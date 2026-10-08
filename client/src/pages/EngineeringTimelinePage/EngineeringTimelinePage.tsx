@@ -8,7 +8,7 @@ import { getEngineeringMatter } from '@client/src/api/engineering-matter';
 import { selectMatterTimelineSources } from '@client/src/features/navigation/shell-utils';
 import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
 import { readDocumentActivityReading, readDocumentParsingStatus, subscribeCanonicalHostClientSession, getCanonicalHostClientSessionGeneration, getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
-import type { DocumentActivityReadingResponse } from '@shared/document-activity.interface';
+import type { AnyDocumentActivityReadingResponse as DocumentActivityReadingResponse } from '@shared/document-activity.interface';
 import type { DocumentOriginalBinding } from '@shared/document-original.interface';
 import { activityEntryPins, activityEntryReason, loadActivityEntry, validateActivityEntry } from '@client/src/pages/DocumentParsingPage/document-activity-entry';
 import { discoveredTimelineIdentity } from './activity-discovery-handoff';
@@ -125,7 +125,7 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
     if (state?.identity === identity && state.reading !== null) return () => controller.abort();
     void (async () => {
       try {
-        const result = await loadActivityEntry({ documentVersionId, entry, baseParams: searchParams, deps: { readParsingStatus: readDocumentParsingStatus, readActivityReading: readDocumentActivityReading }, signal: controller.signal, current });
+        const result = await loadActivityEntry({ acceptCandidateSchemaV2: true, documentVersionId, entry, baseParams: searchParams, deps: { readParsingStatus: readDocumentParsingStatus, readActivityReading: readDocumentActivityReading }, signal: controller.signal, current });
         if (!current()) return;
         if (result.replaceQuery) {
           const discovered = new URLSearchParams(result.replaceQuery);

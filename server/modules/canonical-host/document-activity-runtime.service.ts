@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod/v4';
-import type { DocumentActivityReadingRequest, DocumentActivityReadingResponse } from '@shared/document-activity.interface';
+import { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA, DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA, type DocumentActivityReadingRequest, type DocumentActivityReadingResponse, type DocumentActivityVersionedReadingResponse, type AnyDocumentActivityReadingResponse } from '@shared/document-activity.interface';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { DocumentSemanticService } from './document-semantic.service';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
@@ -10,7 +10,9 @@ import { DocumentParsingHostedService } from '../document-management/src/hosted/
 import { selectDocumentSemanticSection } from '../document-management/src/hosted/nest/document-semantic-map';
 import { documentOriginalReadingCoverage } from '../document-management/src/hosted/nest/document-original-adapter';
 import { buildTranslationSourcePlan } from './canonical-translation-source-plan';
-import { materializeDocumentActivityRevision, validateDocumentActivityCandidate } from './document-activity-candidate';
+import { DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA } from '@shared/document-activity-quote-selection';
+import { buildDocumentActivitySourceContext } from './document-activity-source-context';
+import { materializeDocumentActivityRevision, materializeDocumentActivityQuoteSelection, validateDocumentActivityCandidate } from './document-activity-candidate';
 import { DocumentActivityRunRepository, type DocumentActivityRun, type DocumentActivityScope } from './document-activity-run.repository';
 import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, canonicalServiceScopeUnavailable,
   type CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
@@ -19,10 +21,17 @@ const id = z.string().regex(/^[A-Za-z0-9_-]{1,96}$/u);
 const run = { documentVersionId: id, runRef: id };
 const fenced = { ...run, leaseOwner: z.string().regex(/^[A-Za-z0-9:_-]{1,160}$/u),
   leaseToken: z.string().uuid(), leaseGeneration: z.number().int().positive() };
+const productionContractSchema = z.strictObject({
+  promptVersion: z.string().trim().min(1).max(160), toolSchemaSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  sourceContextVersion: z.literal(DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA),
+  quoteTransportVersion: z.enum([DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA,DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA]),
+});
 export const documentActivityActionSchemas = [
   z.strictObject({ action: z.literal('ACTIVITY_BEGIN'), documentVersionId: id, parseRunId: id,
     semanticRevision: z.number().int().positive(), requestId: z.string().regex(/^[A-Za-z0-9:_-]{1,160}$/u),
-    expectedRevision: z.number().int().nonnegative(), sectionIds: z.array(z.string().min(1).max(160)).min(1).max(100) }),
+    expectedRevision: z.number().int().nonnegative(), sectionIds: z.array(z.string().min(1).max(160)).min(1).max(100),
+    candidateSchemaVersion: z.enum([DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA,DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2]).optional(),
+    productionContract: productionContractSchema.optional() }),
   z.strictObject({ action: z.literal('ACTIVITY_STATUS'), ...run }),
   z.strictObject({ action: z.literal('ACTIVITY_CANCEL'), ...run }),
   z.strictObject({ action: z.literal('ACTIVITY_CLAIM'), ...run, leaseOwner: fenced.leaseOwner }),
@@ -30,6 +39,8 @@ export const documentActivityActionSchemas = [
   z.strictObject({ action: z.literal('ACTIVITY_READ'), ...fenced, sectionId: z.string().min(1).max(160),
     offset: z.number().int().nonnegative(), limit: z.number().int().min(1).max(50) }),
   z.strictObject({ action: z.literal('ACTIVITY_SAVE'), ...fenced, candidate: z.unknown(),
+    producer: z.strictObject({ skillVersion: z.string().trim().min(1).max(160), modelVersion: z.string().trim().min(1).max(160) }) }),
+  z.strictObject({ action: z.literal('ACTIVITY_SAVE_SELECTION'), ...fenced, candidate: z.unknown(),
     producer: z.strictObject({ skillVersion: z.string().trim().min(1).max(160), modelVersion: z.string().trim().min(1).max(160) }) }),
   z.strictObject({ action: z.literal('ACTIVITY_FAIL'), ...fenced, errorCode: z.string().regex(/^[A-Z0-9_:-]{1,160}$/u) }),
 ] as const;
@@ -58,19 +69,23 @@ export class DocumentActivityRuntimeService {
     return this.actors.withActorScope(scope.actorUserId, async () => {
       if (input.action === 'ACTIVITY_BEGIN') {
         if (new Set(input.sectionIds).size !== input.sectionIds.length) throw new Error('DOCUMENT_ACTIVITY_SELECTION_INVALID');
+        const candidateSchemaVersion = input.candidateSchemaVersion ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA;
+        if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 && !input.productionContract)
+          throw new Error('DOCUMENT_ACTIVITY_PRODUCTION_CONTRACT_REQUIRED');
         const source = await this.load(scope.documentVersionId, input.parseRunId, input.semanticRevision, context);
         const selection = { sectionIds: [...input.sectionIds].sort() };
         for (const sectionId of selection.sectionIds) selectDocumentSemanticSection(source.loaded.original, source.map, sectionId);
         const row = await this.runs.begin(scope, { requestId: input.requestId, parseRunId: input.parseRunId,
           parseRevision: source.loaded.original.binding.parseRevision, semanticRevision: input.semanticRevision,
-          manifestSha256: source.artifact.sha256, selection, expectedRevision: input.expectedRevision });
+          manifestSha256: source.artifact.sha256, selection, expectedRevision: input.expectedRevision,
+          candidateSchemaVersion, productionContract: input.productionContract ?? null });
         return summary(row);
       }
       // RLS owns the run; control operations recheck ordinary source ACL/catalog
       // without downloading content or hydrating semantic maps.
       const row = await this.runs.readRun(scope, input.runRef);
       if (!row) throw new Error('DOCUMENT_ACTIVITY_RUN_NOT_FOUND');
-      if (input.action !== 'ACTIVITY_READ' && input.action !== 'ACTIVITY_SAVE') {
+      if (input.action !== 'ACTIVITY_READ' && input.action !== 'ACTIVITY_SAVE' && input.action !== 'ACTIVITY_SAVE_SELECTION') {
         await this.parsing.status(scope.documentVersionId, context);
       }
       if (input.action === 'ACTIVITY_STATUS') {
@@ -119,15 +134,41 @@ export class DocumentActivityRuntimeService {
         await this.parsing.status(scope.documentVersionId, context);
         await this.runs.recordDelivery(scope, input, range);
         return { runRef: row.runRef, sourceBinding: { original: source.loaded.original.binding, semanticRevision: row.semanticRevision },
-          selection, units, anchors, range, sourceCoverage };
+          candidateSchemaVersion: row.candidateSchemaVersion ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA,
+          productionContract: row.productionContract ?? null,
+          selection, units, anchors, range, sourceCoverage,
+          ...((row.candidateSchemaVersion ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA) === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? {
+            sourceContext: buildDocumentActivitySourceContext({ original: source.loaded.original, semanticMap: source.map,
+              sourceBinding: { original: source.loaded.original.binding, semanticRevision: row.semanticRevision },
+              selection: row.selection, deliveredRanges: [range] }),
+          } : {}) };
       }
+      const candidateSchemaVersion = row.candidateSchemaVersion ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA;
+      if ((input.candidate as { schemaVersion?: unknown })?.schemaVersion !== candidateSchemaVersion)
+        throw new Error('DOCUMENT_ACTIVITY_RUN_SCHEMA_MISMATCH');
+      if (row.productionContract && row.productionContract.quoteTransportVersion !==
+        (input.action === 'ACTIVITY_SAVE_SELECTION' ? DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA : DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA))
+        throw new Error('DOCUMENT_ACTIVITY_RUN_TRANSPORT_MISMATCH');
+      if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 && !row.productionContract)
+        throw new Error('DOCUMENT_ACTIVITY_PRODUCTION_CONTRACT_REQUIRED');
       const command = { candidate: input.candidate, producer: input.producer };
       return this.runs.save(scope, input, command, (current, revision) => {
         const deliveredIds = new Set(current.deliveredRanges.flatMap(range => range.anchorIds));
-        const candidate = validateDocumentActivityCandidate(input.candidate, {
+        const proposal = input.action === 'ACTIVITY_SAVE_SELECTION' ? materializeDocumentActivityQuoteSelection(input.candidate, {
+          sourceBinding: { original: source.loaded.original.binding, semanticRevision: source.map.semanticRevision },
+          expectedSourceBinding: { original: { ...source.loaded.original.binding, documentVersionId: scope.documentVersionId,
+            parseRunId: current.parseRunId, parseRevision: current.parseRevision }, semanticRevision: current.semanticRevision },
+          anchors: plan.anchors, allowedAnchorIds: [...deliveredIds],
+        }) : input.candidate;
+        const candidate = validateDocumentActivityCandidate(proposal, {
           sourceBinding: { original: source.loaded.original.binding, semanticRevision: current.semanticRevision },
           selection: current.selection, deliveredRanges: current.deliveredRanges,
-          deliveredAnchors: plan.anchors.filter(anchor => deliveredIds.has(anchor.anchorId)), sourceCoverage });
+          deliveredAnchors: plan.anchors.filter(anchor => deliveredIds.has(anchor.anchorId)), sourceCoverage,
+          ...(candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? {
+            sourceContext: buildDocumentActivitySourceContext({ original: source.loaded.original, semanticMap: source.map,
+              sourceBinding: { original: source.loaded.original.binding, semanticRevision: current.semanticRevision },
+              selection: current.selection, deliveredRanges: current.deliveredRanges }),
+          } : {}) });
         return materializeDocumentActivityRevision(candidate, { runRef: current.runRef, candidateRevision: revision,
           statementIds: candidate.statements.map(() => `DAS-${randomUUID()}`), producer: input.producer,
           savedAt: new Date().toISOString() });
@@ -136,11 +177,18 @@ export class DocumentActivityRuntimeService {
   }
 
   /** Native browser identity is already set by its guarded request; no Hosted actor wrapper. */
-  async readForBrowser(input: DocumentActivityReadingRequest, context: SourceContext): Promise<DocumentActivityReadingResponse> {
+  async readForBrowser(input: DocumentActivityReadingRequest & { acceptCandidateSchemaV2: true }, context: SourceContext): Promise<DocumentActivityVersionedReadingResponse>;
+  async readForBrowser(input: DocumentActivityReadingRequest & { acceptCandidateSchemaV2?: false }, context: SourceContext): Promise<DocumentActivityReadingResponse>;
+  async readForBrowser(input: DocumentActivityReadingRequest, context: SourceContext): Promise<AnyDocumentActivityReadingResponse>;
+  async readForBrowser(input: DocumentActivityReadingRequest, context: SourceContext): Promise<AnyDocumentActivityReadingResponse> {
     id.parse(input.documentVersionId); id.parse(input.parseRunId);
+    if (input.acceptCandidateSchemaV2 !== undefined) z.boolean().parse(input.acceptCandidateSchemaV2);
     if (input.candidateRevision !== undefined) z.number().int().positive().parse(input.candidateRevision);
     const identity = await this.parsing.inspectPublishedIdentity(input.documentVersionId, input.parseRunId, context);
     const result = await this.runs.readSaved({ ...context, documentVersionId: input.documentVersionId }, input.parseRunId, input.candidateRevision);
+    if (result && (result.schemaVersion !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA && result.schemaVersion !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ||
+      !input.acceptCandidateSchemaV2 && result.schemaVersion !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA))
+      throw new Error('DOCUMENT_ACTIVITY_BROWSER_SCHEMA_UNSUPPORTED');
     if (result) {
       if (!isDeepStrictEqual(result.sourceBinding.original, identity.binding) ||
         (input.candidateRevision !== undefined && result.candidateRevision !== input.candidateRevision))
@@ -149,7 +197,11 @@ export class DocumentActivityRuntimeService {
       if (!ready || ready.semanticRevision !== result.sourceBinding.semanticRevision) throw new Error('DOCUMENT_SEMANTIC_REVISION_NOT_FOUND');
     }
     await this.parsing.status(input.documentVersionId, context);
-    return { familyId: identity.familyId, binding: identity.binding, candidate: result };
+    if (input.acceptCandidateSchemaV2 === true) {
+      return { familyId: identity.familyId, binding: identity.binding,
+        sourceSchemaVersion: result?.schemaVersion ?? null, candidate: result };
+    }
+    return { familyId: identity.familyId, binding: identity.binding, candidate: result as DocumentActivityReadingResponse['candidate'] };
   }
 
   private async load(documentVersionId: string, parseRunId: string, semanticRevision: number, context: SourceContext) {
@@ -166,7 +218,8 @@ export class DocumentActivityRuntimeService {
 
 function summary(run: DocumentActivityRun) {
   return { runRef: run.runRef, requestId: run.requestId, documentVersionId: run.documentVersionId,
-    parseRunId: run.parseRunId, semanticRevision: run.semanticRevision, selection: run.selection,
+    parseRunId: run.parseRunId, candidateSchemaVersion: run.candidateSchemaVersion ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA,
+    productionContract: run.productionContract ?? null, semanticRevision: run.semanticRevision, selection: run.selection,
     expectedRevision: run.expectedRevision, status: run.status, deadline: run.deadline,
     candidateRevision: run.candidateRevision, result: run.result, errorCode: run.errorCode };
 }

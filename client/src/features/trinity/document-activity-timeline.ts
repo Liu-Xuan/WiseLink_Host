@@ -1,8 +1,11 @@
 import type {
-  DocumentActivityRevision,
-  DocumentActivityStatement,
+  AnyDocumentActivityRevision as DocumentActivityRevision,
+  AnyDocumentActivityStatement as DocumentActivityStatement,
+  DocumentActivityRevision as LegacyDocumentActivityRevision,
+  DocumentActivityStatement as LegacyDocumentActivityStatement,
   DocumentActivityTime,
 } from '@shared/document-activity.interface';
+import { documentActivityStatementTimes, isDocumentActivityStatementV2 } from '@shared/document-activity.interface';
 
 export type ActivityTimelineLane = 'materials' | 'execution' | 'observation' | 'knowledge';
 
@@ -24,6 +27,9 @@ export interface ActivityCalendarSpan {
 }
 
 export interface ActivityTimelineItem {
+  /** Presentation identity only; source statement references never include this index. */
+  id: string;
+  timeIndex: number | null;
   statement: DocumentActivityStatement;
   lane: ActivityTimelineLane;
   time: DocumentActivityTime | null;
@@ -122,15 +128,33 @@ export function spanIntersects(span: ActivityCalendarSpan, start: number, end: n
   return span.start <= end && span.end >= start;
 }
 
+export type LegacyActivityTimelineItem = Omit<ActivityTimelineItem, 'statement'> & {
+  statement: LegacyDocumentActivityStatement;
+};
+
+export function timelineItems(candidate: LegacyDocumentActivityRevision | null): LegacyActivityTimelineItem[];
+export function timelineItems(candidate: DocumentActivityRevision | null): ActivityTimelineItem[];
 export function timelineItems(candidate: DocumentActivityRevision | null): ActivityTimelineItem[] {
   if (!candidate) return [];
-  return candidate.statements.map((statement) => ({
-    statement,
-    lane: laneFor(statement.time),
-    time: statement.time,
-    displayTime: statement.time?.raw ?? '时间未提取',
-    span: calendarSpan(statement.time),
-  }));
+  return candidate.statements.flatMap((statement) => {
+    const statementId = statement.statementId;
+    const times = documentActivityStatementTimes(statement);
+    const v2 = isDocumentActivityStatementV2(statement);
+    return (times.length ? times : [null]).map((time, index) => ({
+      id: v2 ? JSON.stringify([
+        candidate.sourceBinding.original.documentVersionId,
+        candidate.sourceBinding.original.parseRunId,
+        candidate.runRef, candidate.candidateRevision, statementId,
+        'time', time ? index : null,
+      ]) : statementId,
+      timeIndex: v2 && time ? index : null,
+      statement,
+      lane: laneFor(time),
+      time,
+      displayTime: time?.raw ?? (v2 ? '时间：本候选未捕获' : '时间未提取'),
+      span: calendarSpan(time),
+    }));
+  });
 }
 
 export function timelineLaneItems(

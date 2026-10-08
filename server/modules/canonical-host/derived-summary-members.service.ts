@@ -17,6 +17,14 @@ import { summaryError, summaryMemberRef } from './derived-summary.validation';
 
 export interface SummaryActor { tenantId: string; actorUserId: string }
 
+/** The source consumer supplies these exact capabilities. Their absence must
+ * reject statement-bearing evidence while leaving ordinary saved work usable. */
+interface SummarySourceStatementVerifier {
+  assertSourceStatementReferences(evidence: AssessmentEvidence[], actor: SummaryActor,
+    database?: PostgresJsDatabase): Promise<void>;
+  readSourceStatementProjections(evidence: AssessmentEvidence[], actor: SummaryActor): Promise<unknown[]>;
+}
+
 @Injectable()
 export class DerivedSummaryMembersService {
   constructor(
@@ -165,6 +173,8 @@ export class DerivedSummaryMembersService {
       AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify(documentIds)}::jsonb) d(id)
         WHERE engineering_matter_document_owned_by_actor(${actor.tenantId}, d.id::varchar) IS NOT TRUE) AS allowed`);
     if (access?.allowed !== true) throw summaryError('DERIVED_SUMMARY_SOURCE_UNAVAILABLE', 404);
+    const statementVerifier = this.sourceStatementVerifier(evidence);
+    if (statementVerifier) await statementVerifier.assertSourceStatementReferences(evidence, actor, database);
     for (const item of evidence) {
       if (item.kind !== 'PRIOR_RESULT' || !item.sourceWork) continue;
       const source = item.sourceWork;
@@ -187,10 +197,13 @@ export class DerivedSummaryMembersService {
   async verifyOriginalEvidence(evidence: AssessmentEvidence[], actor: SummaryActor): Promise<void> {
     const originals = evidence.filter((item): item is Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }> =>
       item.kind === 'DOCUMENT_PASSAGE' && item.evidenceRef.startsWith('DOCUMENT_ORIGINAL:'));
-    if (!originals.length) return;
-    if (!this.originalReader) throw summaryError('DERIVED_SUMMARY_ORIGINAL_READER_UNAVAILABLE', 503);
+    const statementVerifier = this.sourceStatementVerifier(evidence);
+    if (!originals.length && !statementVerifier) return;
+    if (originals.length && !this.originalReader) throw summaryError('DERIVED_SUMMARY_ORIGINAL_READER_UNAVAILABLE', 503);
     const loaded = new Map<string, Awaited<ReturnType<UnifiedReaderService['readDocumentOriginal']>>>();
     await this.matters.withActorScope(actor.actorUserId, async () => {
+      if (statementVerifier) assertSourceStatementProjections(evidence,
+        await statementVerifier.readSourceStatementProjections(evidence, actor));
       for (const item of originals) {
         const prefix = `DOCUMENT_ORIGINAL:${item.documentVersionId}:`;
         const suffix = `:${item.sourceRefId}`;
@@ -204,6 +217,20 @@ export class DerivedSummaryMembersService {
         if (canonicalJson(item) !== canonicalJson(actual)) throw summaryError('DERIVED_SUMMARY_ORIGINAL_CHANGED');
       }
     });
+  }
+  private sourceStatementVerifier(evidence: AssessmentEvidence[]): SummarySourceStatementVerifier | null {
+    const statements = evidence.filter(item => item.kind === 'PRIOR_RESULT' && Object.hasOwn(item, 'sourceStatement'));
+    if (!statements.length) return null;
+    for (const item of statements) {
+      const statement = (item as AssessmentEvidence & { sourceStatement: unknown }).sourceStatement;
+      if (statement === null || typeof statement !== 'object' || Array.isArray(statement))
+        throw summaryError('DERIVED_SUMMARY_SOURCE_STATEMENT_INVALID');
+    }
+    const verifier = this.jobAid as CanonicalJobAidProblemService & Partial<SummarySourceStatementVerifier>;
+    if (typeof verifier.assertSourceStatementReferences !== 'function' ||
+        typeof verifier.readSourceStatementProjections !== 'function')
+      throw summaryError('DERIVED_SUMMARY_SOURCE_STATEMENT_VERIFIER_UNAVAILABLE', 503);
+    return verifier as SummarySourceStatementVerifier;
   }
 }
 
@@ -231,4 +258,50 @@ export function assertMemberSnapshot(before: DerivedSummaryMemberReading, after:
   if (canonicalJson({ member: before.member, body: before.body, evidence: before.evidence, rootRefs: before.rootRefs }) !==
     canonicalJson({ member: after.member, body: after.body, evidence: after.evidence, rootRefs: after.rootRefs }))
     throw summaryError('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+}
+
+/** Consumer has already validated fresh original ACL, UTF-16 quotes and the full
+ * candidate/materialized SAVED value. This boundary checks exact output binding
+ * and version-dispatched completeness without converting or mutating its data. */
+function assertSourceStatementProjections(evidence: AssessmentEvidence[], projections: unknown[]): void {
+  const fail = (): never => { throw summaryError('DERIVED_SUMMARY_SOURCE_STATEMENT_PROJECTION_INVALID'); };
+  const object = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!Array.isArray(projections)) fail();
+  const selected = evidence.filter(item => item.kind === 'PRIOR_RESULT' && Object.hasOwn(item, 'sourceStatement'));
+  for (const item of selected) {
+    const carrier = (item as AssessmentEvidence & { sourceStatement: { reference: Record<string, unknown>; sourceBinding: unknown } }).sourceStatement;
+    const matches = projections.filter(object).flatMap(projection => {
+      if (projection.schemaVersion !== 'wiselink.document.activity-assessment-projection.v1' || projection.availability !== 'AVAILABLE' ||
+          canonicalJson(projection.sourceBinding) !== canonicalJson(carrier.sourceBinding) || !Array.isArray(projection.records) ||
+          !Array.isArray(projection.activityContexts)) return [];
+      return projection.records.filter(object).filter(record => record.ref === item.evidenceRef).map(record => ({ projection, record }));
+    });
+    if (matches.length !== 1) fail();
+    const { projection, record } = matches[0]!;
+    const statement = record.statement;
+    if (!object(statement)) throw summaryError('DERIVED_SUMMARY_SOURCE_STATEMENT_PROJECTION_INVALID');
+    if (record.candidateOnly !== true || canonicalJson(record.reference) !== canonicalJson(carrier.reference) ||
+        canonicalJson(record.sourceBinding) !== canonicalJson(carrier.sourceBinding) || !object(statement) ||
+        statement.statementId !== carrier.reference.statementId || statement.label !== item.excerpt ||
+        !Array.isArray(record.requiredContextRootRefs) ||
+        canonicalJson([...record.requiredContextRootRefs].sort()) !==
+          canonicalJson([...(item as Extract<AssessmentEvidence, { kind: 'PRIOR_RESULT' }>).originalEvidenceRefs].sort())) fail();
+    const context = (projection.activityContexts as unknown[]).filter(object).filter(value =>
+      value.runRef === carrier.reference.runRef && value.candidateRevision === carrier.reference.candidateRevision);
+    if (context.length !== 1 || !object(context[0]!.readCoverage)) fail();
+    if (record.sourceSchemaVersion === 'wiselink.document.activity-candidate.v1') {
+      if (record.semanticFieldsAvailability !== 'LEGACY_PARTIAL' || record.scopeBasis !== 'LEGACY_RUN_SCOPE') fail();
+    } else if (record.sourceSchemaVersion === 'wiselink.document.activity-candidate.v2') {
+      const sourceContext = context[0]!.sourceContext;
+      if (record.semanticFieldsAvailability !== 'V2_CAPTURED_FIELDS_ONLY' || record.scopeBasis !== 'ACTUAL_DELIVERED_RUN_SCOPE' ||
+          !object(sourceContext) || sourceContext.schemaVersion !== 'wiselink.document.activity-source-context.v1' ||
+          canonicalJson(sourceContext.sourceBinding) !== canonicalJson(carrier.sourceBinding) ||
+          !Array.isArray(sourceContext.sections) || !Array.isArray(sourceContext.organizationWarnings) ||
+          !['statementId','statementKey','label','quotes','subject','action','modality','status','times','technicalIds','scope','limitations']
+            .every(key => Object.hasOwn(statement, key)) || !Array.isArray(statement.quotes) || !statement.quotes.length ||
+          !Array.isArray(statement.times) || !Array.isArray(statement.technicalIds) || !Array.isArray(statement.limitations) ||
+          !object(statement.scope) || !Array.isArray(statement.scope.conditions) || !Array.isArray(statement.scope.sectionIds)) fail();
+    } else fail();
+  }
 }

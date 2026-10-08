@@ -104,6 +104,8 @@ export type JobAidWorkValidationContext = (
   persistedOverviewStatus?: JobAidProblemWorkContent['overviewStatus'];
   evidence: AssessmentEvidence[];
   readSourceRefs: string[];
+  /** Actual current-task delivery, separate from retained historical receipts. */
+  currentDeliveredSourceRefs?: string[];
   capabilities: JobAidProblemWorkContent['capabilities'];
   history: JobAidProblemWorkContent['historyReview'];
 };
@@ -128,9 +130,12 @@ export function materializeJobAidWork(
   const refs = (input: unknown, name: string, allowEmpty = false): string[] => {
     const values = strings(input, name);
     if (!allowEmpty && values.length === 0) fail(`${name}_EMPTY`);
-    for (const ref of values)
-      if (!registry.has(ref) || !read.has(ref))
-        fail(`SOURCE_NOT_DELIVERED:${ref}`);
+    for (const ref of values) {
+      const evidence=registry.get(ref);
+      if (!evidence || !read.has(ref)) fail(`SOURCE_NOT_DELIVERED:${ref}`);
+      if(evidence?.kind==='PRIOR_RESULT'&&evidence.sourceStatement&&evidence.originalEvidenceRefs.some(root=>!registry.has(root)||!read.has(root)))
+        fail(`SOURCE_STATEMENT_CONTEXT_NOT_DELIVERED:${ref}`);
+    }
     return values;
   };
   const prior = new Map(
@@ -318,6 +323,17 @@ export function materializeJobAidWork(
         ...collectIssueEvidenceUses(savedIssue).map(use => use.evidenceRef),
         ...inlineRefs,
       ]));
+      // Byte-equivalent materialized issues may be retained without reacquiring
+      // source bodies. Any changed field, including wording, is conservatively a
+      // new use; a model's style-only assertion cannot relax this check.
+      if(context.currentDeliveredSourceRefs && canonicalJson(savedIssue)!==canonicalJson(prior.get(issueKey))) {
+        const delivered=new Set(context.currentDeliveredSourceRefs);
+        for(const ref of sourceDependencies) {
+          const carrier=registry.get(ref);
+          if(carrier?.kind==='PRIOR_RESULT'&&carrier.sourceStatement &&
+            (!delivered.has(ref)||carrier.originalEvidenceRefs.some(root=>!delivered.has(root)))) fail(`SOURCE_STATEMENT_RECORD_NOT_DELIVERED:${ref}`);
+        }
+      }
       return savedIssue;
     },
   );
@@ -390,19 +406,39 @@ export function materializeJobAidWork(
       : value.unchangedExplanation,
     'UNCHANGED_EXPLANATION',
   );
+  const understanding=overview ?? '问题正文已保存；综合认识尚未形成。';
+  const completionReason=text(value.completionReason, 'COMPLETION_REASON');
+  const changeSummary=text(value.changeSummary, 'CHANGE_SUMMARY');
+  // Use the existing [[exactRef]] syntax only. Bare words/IDs and old non-Activity
+  // prose keep their contract. Explicit source-statement citations in saved
+  // reading copy must retain the same delivered carrier/root lineage as issues.
+  const readingCopy={headline,listBrief,understanding,completionReason,changeSummary,unchangedExplanation};
+  for(const [field,prose] of Object.entries(readingCopy)) {
+    const citations=[...new Set([...prose.matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu)].map(match=>match[1]))]
+      .filter(ref=>ref.startsWith('DOCUMENT_ACTIVITY:') || (registry.get(ref)?.kind==='PRIOR_RESULT'&&!!(registry.get(ref) as Extract<AssessmentEvidence,{kind:'PRIOR_RESULT'}>).sourceStatement));
+    refs(citations,'READING_COPY_CITATIONS',true);
+    if(context.currentDeliveredSourceRefs && prose!==context.previous?.[field as keyof typeof readingCopy]) {
+      const delivered=new Set(context.currentDeliveredSourceRefs);
+      for(const ref of citations) {
+        const carrier=registry.get(ref);
+        if(carrier?.kind!=='PRIOR_RESULT'||!carrier.sourceStatement||!delivered.has(ref)||carrier.originalEvidenceRefs.some(root=>!delivered.has(root)))
+          fail(`SOURCE_STATEMENT_RECORD_NOT_DELIVERED:${ref}`);
+      }
+    }
+  }
   return {
     schemaVersion: JOBAID_PROBLEM_WORK_SCHEMA,
     headline,
     listBrief,
-    understanding: overview ?? '问题正文已保存；综合认识尚未形成。',
+    understanding,
     decisiveIssueKeys,
     overviewStatus: context.persistedOverviewStatus ?? (value.overview !== undefined ? 'CURRENT' :
       context.previous?.overviewStatus && context.previous.overviewStatus !== 'NOT_AVAILABLE' ?
         (changedKeys.length || retirements.length ? 'STALE' : context.previous.overviewStatus) : 'NOT_AVAILABLE'),
     issues,
     roundCompletion,
-    completionReason: text(value.completionReason, 'COMPLETION_REASON'),
-    changeSummary: text(value.changeSummary, 'CHANGE_SUMMARY'),
+    completionReason,
+    changeSummary,
     unchangedExplanation,
     methodBinding: structuredClone(context.methodBinding),
     evidence: structuredClone(

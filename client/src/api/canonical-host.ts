@@ -2,7 +2,7 @@ import type { CanonicalLibraryGraphRequest, CanonicalLibraryGraphResponse } from
 import type { DocumentParsingSettingsReadModel, UpdateDocumentParsingSettingsRequest } from '@shared/document-parsing-settings.interface';
 import type { DocumentRevisionReadingRequest, DocumentRevisionReadingResponse } from '@shared/document-revision-reading.interface';
 import type { DocumentSemanticReadingRequest, DocumentSemanticReadingResponse } from '@shared/document-semantic-map.interface';
-import type { DocumentActivityReadingRequest, DocumentActivityReadingResponse } from '@shared/document-activity.interface';
+import type { DocumentActivityReadingRequest, DocumentActivityReadingResponse, DocumentActivityVersionedReadingResponse, AnyDocumentActivityReadingResponse } from '@shared/document-activity.interface';
 import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse,
@@ -652,11 +652,15 @@ export function startDocumentParsing(documentVersionId: string, input: StartDocu
   return readCanonicalLibrary<DocumentParseRunSummary>({ url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parse-runs`, method: 'POST', data: input });
 }
 
-export async function readDocumentActivityReading(input: DocumentActivityReadingRequest, signal?: AbortSignal): Promise<DocumentActivityReadingResponse> {
+export function readDocumentActivityReading(input: DocumentActivityReadingRequest & { acceptCandidateSchemaV2: true }, signal?: AbortSignal): Promise<DocumentActivityVersionedReadingResponse>;
+export function readDocumentActivityReading(input: DocumentActivityReadingRequest & { acceptCandidateSchemaV2?: false }, signal?: AbortSignal): Promise<DocumentActivityReadingResponse>;
+export function readDocumentActivityReading(input: DocumentActivityReadingRequest, signal?: AbortSignal): Promise<AnyDocumentActivityReadingResponse>;
+export async function readDocumentActivityReading(input: DocumentActivityReadingRequest, signal?: AbortSignal): Promise<AnyDocumentActivityReadingResponse> {
   const generation = clientSessionGeneration;
   const query = new URLSearchParams({ parseRunId: input.parseRunId });
   if (input.candidateRevision !== undefined) query.set('candidateRevision', String(input.candidateRevision));
-  const result = await readCanonicalLibrary<DocumentActivityReadingResponse>({
+  if (input.acceptCandidateSchemaV2 !== undefined) query.set('acceptCandidateSchemaV2', String(input.acceptCandidateSchemaV2));
+  const result = await readCanonicalLibrary<AnyDocumentActivityReadingResponse>({
     url: `/api/document-management/document-versions/${encodeURIComponent(input.documentVersionId)}/activity-reading?${query}`, signal });
   if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('DOCUMENT_ACTIVITY_READING_OBSOLETE');
   if (result.binding.documentVersionId !== input.documentVersionId || result.binding.parseRunId !== input.parseRunId ||
@@ -665,6 +669,13 @@ export async function readDocumentActivityReading(input: DocumentActivityReading
       !Number.isSafeInteger(result.candidate.candidateRevision) || result.candidate.candidateRevision < 1 ||
       (input.candidateRevision !== undefined && result.candidate.candidateRevision !== input.candidateRevision))))
     throw new Error('DOCUMENT_ACTIVITY_READING_BINDING_MISMATCH');
+  if (result.candidate && !['wiselink.document.activity-candidate.v1', 'wiselink.document.activity-candidate.v2'].includes(result.candidate.schemaVersion))
+    throw new Error('DOCUMENT_ACTIVITY_READING_SCHEMA_UNSUPPORTED');
+  if (input.acceptCandidateSchemaV2 === true) {
+    if (!('sourceSchemaVersion' in result) || result.sourceSchemaVersion !== (result.candidate?.schemaVersion ?? null))
+      throw new Error('DOCUMENT_ACTIVITY_READING_SCHEMA_MISMATCH');
+  } else if (result.candidate && result.candidate.schemaVersion !== 'wiselink.document.activity-candidate.v1')
+    throw new Error('DOCUMENT_ACTIVITY_READING_SCHEMA_UNSUPPORTED');
   return result;
 }
 

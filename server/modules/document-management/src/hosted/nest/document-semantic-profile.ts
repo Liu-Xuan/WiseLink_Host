@@ -1,4 +1,4 @@
-import type { DocumentSemanticProfile } from '../../../../../../shared/document-semantic-map.interface';
+import type { DocumentSemanticProfile, DocumentSemanticProfileSelection } from '../../../../../../shared/document-semantic-map.interface';
 
 /** Known peer FTD sections retain a level below document/issue headings; plugin Markdown emphasis is not hierarchy.
  * FTD aliases reused from family-section-topology.builder, without its legacy parser or closure rules. */
@@ -59,3 +59,30 @@ export const GENERIC_SEMANTIC_PROFILE: DocumentSemanticProfile = {
   profileRef: 'generic.author-sections.v1',
   roles: [],
 };
+
+
+/** Record the existing INDEX dispatch exactly. Registry inputs can have legacy inferred
+ * origins; this selector does not establish document, issuer, or airframe authority.
+ * SB remains generic: the registry has no trustworthy airframe-subtype/provenance field.
+ * No filename, code, OEM label, heading resemblance, or parser finding may upgrade it. */
+export function selectDocumentSemanticProfile(input: {
+  registeredFamily: string | null;
+  registeredIssuer: string | null;
+}): { profile: DocumentSemanticProfile; selection: DocumentSemanticProfileSelection } {
+  const { registeredFamily: family, registeredIssuer: issuer } = input;
+  const selected = family === 'FTD' && issuer === 'BOEING';
+  let reason: DocumentSemanticProfileSelection['reason'];
+  if (selected) reason = 'REGISTERED_METADATA_TEMPLATE';
+  else if (family === null || !family.trim() || family === 'UNKNOWN') reason = 'UNKNOWN_FAMILY';
+  else if (family !== 'FTD' && family !== 'SB') reason = 'UNSUPPORTED_FAMILY';
+  else if (issuer === null || !issuer.trim() || issuer === 'UNKNOWN') reason = 'UNKNOWN_ISSUER';
+  else if (issuer !== 'BOEING') reason = 'UNSUPPORTED_ISSUER';
+  else reason = 'UNSUPPORTED_LAYOUT';
+  return {
+    profile: selected ? BOEING_FTD_SEMANTIC_PROFILE : GENERIC_SEMANTIC_PROFILE,
+    selection: {
+      policyVersion: 'registered-metadata-existing-dispatch.v1', reason,
+      registeredIdentity: { family, issuer }, evidenceSourceRefIds: [],
+    },
+  };
+}

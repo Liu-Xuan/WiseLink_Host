@@ -12,6 +12,8 @@ export const JOBAID_PROBLEM_WORK_SCHEMA =
   'wiselink.jobaid-problem-work.v3' as const;
 export const JOBAID_PROBLEM_TASK_SCHEMA =
   'wiselink.jobaid-problem-task.v2' as const;
+export const JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA =
+  'wiselink.jobaid-problem-task.v3' as const;
 export const JOBAID_PROBLEM_RESULT_SCHEMA =
   'wiselink.jobaid-problem-result.v2' as const;
 

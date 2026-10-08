@@ -1,5 +1,7 @@
 import { callJsonTool } from '../scripts/run-hosted-review-turn.mjs';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -7,9 +9,15 @@ import {
   ACTIVITY_PROPOSAL_FUNCTION_NAME,
   activityModelMessages,
   activityProposalFunctionTool,
+  activityQuoteSelectionFunctionTool,
+  activityV2ProductionContract,
   invokeHostedDocumentActivityModel,
 } from '../scripts/invoke-hosted-document-activity-model.mjs';
-import { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA } from '../scripts/consume-hosted-document-activity.mjs';
+import { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 as V2,
+  DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA as CONTEXT, DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA as SELECTION,
+} from '../scripts/consume-hosted-document-activity.mjs';
+import { canonicalSha256 } from '../scripts/validate-payload.mjs';
+import { ACTIVITY_MODEL_V2_PROMPT_VERSION } from '../scripts/document-activity-model-contract.mjs';
 
 // The local server is a stand-in gateway: it records the real HTTP request
 // and returns one chat completion carrying the proposal as function
@@ -272,4 +280,110 @@ test('activity MCP requests carry bounded cancellation options without widening 
     await assert.rejects(callJsonTool(client, 'document_work', args, options), /OPTIONS_INVALID/);
   await assert.rejects(callJsonTool(client, 'document_work', { action: 'ACTIVITY_READ' }, { ...options, timeout: 120_001 }), /OPTIONS_INVALID/);
   await assert.rejects(callJsonTool(client, 'document_work', { action: 'ACTIVITY_READ' }, { ...options, extra: true }), /OPTIONS_INVALID/);
+});
+
+
+// Frozen exact historical tool/system values only. They confer no Host delivery.
+const recoveredV2 = JSON.parse(readFileSync(new URL('./fixtures/document-activity-v2-recovered-model-contract.json', import.meta.url), 'utf8'));
+const v2Input = (selection = false) => {
+  const source = input();
+  return { ...source, candidateSchemaVersion: V2,
+    ...(selection ? { quoteSelectionSchemaVersion: SELECTION } : {}),
+    productionContract: activityV2ProductionContract(selection ? SELECTION : undefined),
+    sourceContext: { schemaVersion: CONTEXT, sourceBinding: source.sourceBinding,
+      profile: { profileRef: 'generic.author-sections.v1', selectionBasis: 'NOT_RECORDED', family: null, issuer: null },
+      sections: [{ sectionId: 'S-a', parentSectionId: null, titleRaw: null, roleKey: null, headingUnitId: null,
+        deliveredUnitIds: ['UNIT-a-0'], contextForSectionIds: [] }], organizationWarnings: [] },
+  };
+};
+const stubOptions = { gatewayUrl: 'http://127.0.0.1:1', gatewayToken: 'unused-fixture-token', configuredModelVersion: 'constructed-configured' };
+const gatewayStub = payload => ({ requestGateway: async () => new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } }) });
+
+test('v2 offset serialization tool and exact baseline system match both recovered historical requests', () => {
+  assert.deepEqual([activityProposalFunctionTool(V2)], recoveredV2.tools);
+  const baseline = { candidateSchemaVersion: V2, anchors: [] };
+  assert.deepEqual(activityModelMessages(baseline)[0], recoveredV2.systemMessage);
+  assert.equal(canonicalSha256([activityProposalFunctionTool(V2)]), recoveredV2.toolsCanonicalJsonSha256);
+  assert.equal(createHash('sha256').update(activityModelMessages(baseline)[0].content).digest('hex'), recoveredV2.systemUtf8Sha256);
+  assert.equal(recoveredV2.requestSha256.ftd, '07416cfc77e781927c9e414aed622e5ccefc9a58c745d2488749375614f6a751');
+  assert.equal(recoveredV2.requestSha256.sb, '22a67d4387b98c27420e9a130e9b3fea2a347f0beb6a873c95f4e7f60eb6e2cc');
+  assert.notEqual(canonicalSha256([activityQuoteSelectionFunctionTool(V2)]), recoveredV2.toolsCanonicalJsonSha256);
+});
+
+test('new v2 source-context and selection prompts are distinct versions and retain all recovered baseline constraints', () => {
+  const numeric = v2Input(), selection = v2Input(true);
+  assert.notEqual(numeric.productionContract.promptVersion, ACTIVITY_MODEL_V2_PROMPT_VERSION);
+  assert.notEqual(numeric.productionContract.promptVersion, selection.productionContract.promptVersion);
+  assert.equal(numeric.productionContract.toolSchemaSha256, recoveredV2.toolsCanonicalJsonSha256);
+  assert.equal(selection.productionContract.toolSchemaSha256, '9309b553fa467314ad48d40593aad0b2e38191eee4ec9c277b3e0948ad8a33a9');
+  assert.ok(activityModelMessages(numeric)[0].content.startsWith(recoveredV2.systemMessage.content));
+  assert.match(activityModelMessages(numeric)[0].content, /contextForSectionIds/);
+  assert.match(activityModelMessages(selection)[0].content, /Never generate start\/end offsets/);
+  assert.match(activityModelMessages(selection)[0].content, /unchanged quote order/);
+  const tool = activityQuoteSelectionFunctionTool(V2).function.parameters;
+  assert.deepEqual(tool.properties.statements.items.properties.quotes.items.required, ['anchorId', 'text']);
+  assert.deepEqual(Object.keys(tool.properties.statements.items.properties).sort(),
+    ['action', 'label', 'limitations', 'modality', 'quotes', 'scope', 'statementKey', 'status', 'subject', 'technicalIds', 'times']);
+});
+
+for (const selection of [false, true]) test(`v2 ${selection ? 'selection' : 'offset'} adapter sends one version-pinned request and returns recorded provenance`, async () => {
+  const source = v2Input(selection);
+  const resultProposal = { schemaVersion: V2, ...(selection ? { quoteSelectionSchemaVersion: SELECTION } : {}), statements: [] };
+  let captured, count = 0;
+  const result = await invokeHostedDocumentActivityModel(source, stubOptions, {
+    requestGateway: async (_endpoint, request) => {
+      count++; captured = JSON.parse(request.body);
+      return new Response(JSON.stringify(completion('constructed-v2-model', resultProposal)), { status: 200 });
+    },
+  });
+  assert.equal(count, 1); assert.deepEqual(result.proposal, resultProposal);
+  assert.equal(result.modelVersion, 'constructed-v2-model');
+  assert.equal(result.provenance.promptVersion, source.productionContract.promptVersion);
+  assert.equal(result.provenance.toolSchemaSha256, source.productionContract.toolSchemaSha256);
+  assert.equal(result.provenance.sourceContextVersion, CONTEXT);
+  assert.equal(result.provenance.quoteTransportVersion, source.productionContract.quoteTransportVersion);
+  assert.equal(result.provenance.inputHash, canonicalSha256(source));
+  assert.equal(captured.tools.length, 1); assert.equal(captured.n, 1); assert.equal(captured.parallel_tool_calls, false);
+  assert.equal(canonicalSha256(captured.tools), source.productionContract.toolSchemaSha256);
+});
+
+test('a production v2 adapter rejects wrong prompt/tool/context/transport pins before any request', async () => {
+  for (const key of ['promptVersion', 'toolSchemaSha256', 'sourceContextVersion', 'quoteTransportVersion']) {
+    const source = v2Input(); source.productionContract[key] = 'wrong'; let calls = 0;
+    await assert.rejects(invokeHostedDocumentActivityModel(source, stubOptions, { requestGateway: async () => { calls++; throw new Error('must not dispatch'); } }), /PRODUCTION_CONTRACT_INVALID/);
+    assert.equal(calls, 0);
+  }
+  assert.throws(() => activityModelMessages({ ...input(), candidateSchemaVersion: 'unknown' }), /MODEL_SCHEMA_INVALID/);
+  const source = v2Input(); source.sourceContext.sourceBinding = { ...source.sourceBinding, semanticRevision: 4 };
+  assert.throws(() => activityModelMessages(source), /SOURCE_CONTEXT_BINDING_MISMATCH/);
+});
+
+for (const [name, mutate] of [
+  ['zero tool calls', payload => payload.choices[0].message.tool_calls = []],
+  ['two supported tool calls', payload => payload.choices[0].message.tool_calls.push(structuredClone(payload.choices[0].message.tool_calls[0]))],
+  ['second unsupported tool call', payload => payload.choices[0].message.tool_calls.push({ type: 'function', function: { name: 'other', arguments: '{}' } })],
+  ['assistant text', payload => payload.choices[0].message.content = 'extra prose'],
+  ['assistant whitespace', payload => payload.choices[0].message.content = ' '],
+  ['assistant content blocks', payload => payload.choices[0].message.content = [{ type: 'text', text: 'extra prose' }]],
+  ['extra reasoning text', payload => payload.choices[0].message.reasoning_content = 'extra private text'],
+  ['legacy function call', payload => payload.choices[0].message.function_call = { name: 'other', arguments: '{}' }],
+  ['extra completion choice', payload => payload.choices.push(structuredClone(payload.choices[0]))],
+]) test(`activity adapter rejects ${name} instead of taking the first tool call`, async () => {
+  const payload = completion('constructed-strict-output', { schemaVersion: V2, statements: [] }); mutate(payload);
+  await assert.rejects(invokeHostedDocumentActivityModel(v2Input(), stubOptions, gatewayStub(payload)), /ACTIVITY_MODEL_TOOL_CALL_INVALID/);
+});
+
+test('activity adapter refuses a proposal schema inconsistent with its exact requested tool', async () => {
+  await assert.rejects(invokeHostedDocumentActivityModel(v2Input(), stubOptions,
+    gatewayStub(completion('constructed-v2', { schemaVersion: DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, statements: [] }))), /ACTIVITY_MODEL_SCHEMA_INVALID/);
+});
+
+
+test('v2 requires actual response model provenance and never fills it from the configured model', async () => {
+  const payload = completion('constructed-v2', { schemaVersion: V2, statements: [] });
+  delete payload.model_version; delete payload.choices[0].message.model_version;
+  await assert.rejects(invokeHostedDocumentActivityModel(v2Input(), stubOptions, gatewayStub(payload)), /PROVENANCE_UNREADABLE/);
+  const legacy = completion('constructed-v1', { schemaVersion: DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, statements: [] });
+  delete legacy.model_version; delete legacy.choices[0].message.model_version;
+  assert.equal((await invokeHostedDocumentActivityModel(input(), stubOptions, gatewayStub(legacy))).modelVersion, stubOptions.configuredModelVersion);
 });

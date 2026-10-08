@@ -14,7 +14,7 @@ import {
   libraryReadingParams,
   readingReturnTarget,
 } from '@client/src/features/matter/reading-return';
-import type { DocumentActivityReadingResponse } from '@shared/document-activity.interface';
+import type { AnyDocumentActivityReadingResponse as DocumentActivityReadingResponse } from '@shared/document-activity.interface';
 import type { DocumentOriginalBinding } from '@shared/document-original.interface';
 
 import {
@@ -96,6 +96,7 @@ export default function DocumentActivityReadingPage() {
       }
       try {
         const result = await loadActivityEntry({
+          acceptCandidateSchemaV2: true,
           documentVersionId,
           entry,
           baseParams: searchParams,

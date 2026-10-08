@@ -1,4 +1,4 @@
-import { parseAssessmentSourceWork } from '@shared/assessment-evidence-roots';
+import { parseAssessmentSourceWork, parseAssessmentSourceStatement } from '@shared/assessment-evidence-roots';
 import type {
   AssessmentEvidence,
   AssessmentClaimPremise,
@@ -15,7 +15,12 @@ export type OverallAssessmentReadingSummary = Omit<
   'schemaVersion'
 > & { schemaVersion: 'wiselink.3_1.overall_engineering_summary.v2' };
 
+export const OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION = 'SOURCE_CONTEXT_V2' as const;
+export type OverallEvidenceProjectionVersion = typeof OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION;
+
 export interface OverallModelEvidence {
+  sourceContext?: Pick<Extract<AssessmentEvidence, { kind: 'PRIOR_RESULT' }>, 'resultRef' | 'resultRevision'>;
+  sourceStatement?: Extract<AssessmentEvidence, { kind: 'PRIOR_RESULT' }>['sourceStatement'];
   sourceWork?: Extract<AssessmentEvidence, { kind: 'PRIOR_RESULT' }>['sourceWork'];
   originalEvidenceRefs?: string[];
   queryProvenance?: Extract<
@@ -32,7 +37,10 @@ export interface OverallModelEvidence {
 
 export function overallModelEvidenceRegistry(
   evidence: AssessmentEvidence[],
+  projectionVersion?: OverallEvidenceProjectionVersion,
 ): OverallModelEvidence[] {
+  if (projectionVersion !== undefined && projectionVersion !== OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION)
+    throw new Error('OVERALL_EVIDENCE_PROJECTION_VERSION_INVALID');
   return evidence.map((item) => ({
     evidenceRef: item.evidenceRef,
     kind: item.kind,
@@ -41,7 +49,11 @@ export function overallModelEvidenceRegistry(
     excerpt: item.excerpt,
     locator: 'locator' in item ? item.locator : null,
     ...(item.kind === 'PRIOR_RESULT' ? { originalEvidenceRefs: [...item.originalEvidenceRefs],
-      ...(item.sourceWork ? { sourceWork: structuredClone(item.sourceWork) } : {}) } : {}),
+      ...(item.sourceWork ? { sourceWork: structuredClone(item.sourceWork) } : {}),
+      ...(projectionVersion === OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION ? {
+        sourceContext: { resultRef: item.resultRef, resultRevision: item.resultRevision },
+        ...(item.sourceStatement ? { sourceStatement: parseAssessmentSourceStatement(item.sourceStatement) } : {}),
+      } : {}) } : {}),
     ...(item.kind === 'QUERY_RECEIPT' && item.queryProvenance
       ? { queryProvenance: structuredClone(item.queryProvenance) }
       : {}),
@@ -261,10 +273,17 @@ export function readStoredOverallEvidence(
               : {}),
           };
         case 'PRIOR_RESULT':
+          if (item.sourceStatement !== undefined && item.sourceWork !== undefined) throw new Error('ASSESSMENT_SOURCE_PROVENANCE_AMBIGUOUS');
+          if (item.sourceStatement !== undefined) {
+            const source = parseAssessmentSourceStatement(item.sourceStatement);
+            if(item.evidenceRef !== `DOCUMENT_ACTIVITY:${source.reference.runRef}:${source.reference.candidateRevision}:${source.reference.statementId}` ||
+              item.resultRef !== source.reference.runRef || item.resultRevision !== source.reference.candidateRevision) throw new Error('ASSESSMENT_SOURCE_STATEMENT_INVALID');
+          }
           return {
             ...common,
             kind: item.kind,
             ...(item.sourceWork !== undefined ? { sourceWork: parseAssessmentSourceWork(item.sourceWork) } : {}),
+            ...(item.sourceStatement !== undefined ? { sourceStatement: parseAssessmentSourceStatement(item.sourceStatement) } : {}),
             resultRef: text(
               item.resultRef,
               'OVERALL_EVIDENCE_RESULT_REF_INVALID',

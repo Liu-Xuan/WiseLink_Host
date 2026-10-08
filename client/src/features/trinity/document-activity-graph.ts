@@ -1,5 +1,5 @@
 import type { ElementDefinition } from 'cytoscape';
-import type { DocumentActivityReadingResponse } from '@shared/document-activity.interface';
+import type { AnyDocumentActivityReadingResponse as DocumentActivityReadingResponse } from '@shared/document-activity.interface';
 
 export type ActivityGraphNodeKind = 'statement' | 'quote' | 'anchor' | 'sourceRef';
 export interface ActivityGraphSelection { statementId: string | null; anchorId: string | null }

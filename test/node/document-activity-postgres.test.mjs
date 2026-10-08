@@ -18,6 +18,10 @@ const source = { parseRunId: 'PR-test', parseRevision: 1, semanticRevision: 1, m
 const range = { sectionId: 'section-test', offset: 0, unitIds: ['unit-test'], anchorIds: ['a1'], nextOffset: null };
 const command = { candidate: { schemaVersion: 'wiselink.document.activity-candidate.v1', statements: [] },
   producer: { skillVersion: 'isolated-test', modelVersion: 'not-called' } };
+const v2Schema = 'wiselink.document.activity-candidate.v2';
+const productionContract = { promptVersion: 'isolated-v2-fixture', toolSchemaSha256: 'b'.repeat(64),
+  sourceContextVersion: 'wiselink.document.activity-source-context.v1',
+  quoteTransportVersion: 'wiselink.document.activity-quote-offsets.v1' };
 const clients = [];
 
 async function actor(role, userId) {
@@ -36,6 +40,11 @@ function materialize(run, revision) {
     readCoverage: { status: 'DELIVERED_RANGES_ONLY', selection: run.selection, deliveredRanges: run.deliveredRanges, sourceCoverage: {} },
     sourceAnchors: [], producer: command.producer, savedAt: '2026-09-16T00:00:00Z' };
 }
+function databaseConstraint(error, name) {
+  for (let current = error; current; current = current.cause)
+    if (current.code === '23514' && current.constraint_name === name) return true;
+  return false;
+}
 
 test('source activity PostgreSQL request, leases, CAS, immutable revisions and source RLS', { skip: !databaseUrl }, async t => {
   const url = new URL(databaseUrl);
@@ -50,6 +59,7 @@ test('source activity PostgreSQL request, leases, CAS, immutable revisions and s
     const browser = await actor('authenticated', 'actor-two');
     const foreign = await actor('authenticated', 'actor-foreign');
     let saved;
+    let v2Run;
 
     await t.test('same request is idempotent; conflicts and native writes are rejected', async () => {
       const first = await one.repository.begin(scope, { ...source, requestId: 'request-one' });
@@ -121,6 +131,60 @@ test('source activity PostgreSQL request, leases, CAS, immutable revisions and s
       assert.equal(await one.repository.claim(scope, deadline.runRef, 'too-late'), null);
       assert.equal((await one.repository.readRun(scope, deadline.runRef)).status, 'EXPIRED');
     });
+
+    await t.test('0074 rejects malformed v2 contracts and makes admitted schema/producer pins immutable', async () => {
+      const input = { ...source, requestId: 'v2-contract', expectedRevision: 2,
+        candidateSchemaVersion: v2Schema, productionContract };
+      await assert.rejects(one.repository.begin(scope, { ...input, requestId: 'v2-invalid-contract',
+        productionContract: { ...productionContract, toolSchemaSha256: 'invalid' } }),
+      error => databaseConstraint(error, 'document_activity_production_contract_shape'));
+      assert.equal(await one.repository.readRequest(scope, 'v2-invalid-contract'), null);
+      v2Run = await one.repository.begin(scope, input);
+      assert.equal(v2Run.candidateSchemaVersion, v2Schema);
+      assert.deepEqual(v2Run.productionContract, productionContract);
+      await assert.rejects(one.client`UPDATE dm_document_activity_run
+        SET candidate_schema_version='wiselink.document.activity-candidate.v1',production_contract_json=NULL
+        WHERE run_ref=${v2Run.runRef}`, /DOCUMENT_ACTIVITY_REQUEST_IMMUTABLE/);
+      await assert.rejects(one.client`UPDATE dm_document_activity_run
+        SET production_contract_json=${JSON.stringify({ ...productionContract, promptVersion: 'changed' })}::jsonb
+        WHERE run_ref=${v2Run.runRef}`, /DOCUMENT_ACTIVITY_REQUEST_IMMUTABLE/);
+      const unchanged = await one.repository.readRun(scope, v2Run.runRef);
+      assert.equal(unchanged.candidateSchemaVersion, v2Schema);
+      assert.deepEqual(unchanged.productionContract, productionContract);
+    });
+
+    await t.test('0074 SAVED check rejects wrong schema; exact v2 save, reader and replay retain pinned result', async () => {
+      const fence = await one.repository.claim(scope, v2Run.runRef, 'v2-producer');
+      await one.repository.recordDelivery(scope, fence, range);
+      const v2Command = { ...command, candidate: { ...command.candidate, schemaVersion: v2Schema } };
+      const running = await one.repository.readRun(scope, v2Run.runRef);
+      // Direct synthetic SQL reaches the real new SAVED constraint without the
+      // repository's earlier schema guard hiding a missing database check.
+      await assert.rejects(one.client`UPDATE dm_document_activity_run SET status='SAVED',candidate_revision=3,
+        result_json=${JSON.stringify(materialize(running, 3))}::jsonb,save_command_json=${JSON.stringify(v2Command)}::jsonb,
+        lease_owner=NULL,lease_token=NULL,lease_expires_at=NULL WHERE run_ref=${v2Run.runRef}`,
+      error => databaseConstraint(error, 'document_activity_saved_contract_v2'));
+      assert.equal((await one.repository.readRun(scope, v2Run.runRef)).status, 'RUNNING');
+      const v2Saved = await one.repository.save(scope, fence, v2Command,
+        (run, revision) => {
+          const result = { ...materialize(run, revision), schemaVersion: v2Schema };
+          return { ...result, sourceContext: { schemaVersion: productionContract.sourceContextVersion,
+            sourceBinding: result.sourceBinding,
+            profile: { profileRef: 'test', selectionBasis: 'NOT_RECORDED', family: null, issuer: null },
+            sections: [{ sectionId: 'section-test', parentSectionId: null, titleRaw: null, roleKey: null,
+              headingUnitId: null, deliveredUnitIds: ['unit-test'], contextForSectionIds: [] }], organizationWarnings: [] } };
+        });
+      assert.equal(v2Saved.candidateRevision, 3);
+      assert.equal(v2Saved.schemaVersion, v2Schema);
+      assert.deepEqual(await browser.repository.readSaved({ ...scope, actorUserId: 'actor-two' }, source.parseRunId, 3), v2Saved);
+      assert.equal(await foreign.repository.readSaved({ ...scope, actorUserId: 'actor-foreign' }, source.parseRunId, 3), null);
+      assert.deepEqual(await one.repository.save(scope, fence, v2Command, () => { throw new Error('must not regenerate v2'); }), v2Saved);
+      const stored = await one.repository.readRun(scope, v2Run.runRef);
+      assert.deepEqual(stored.productionContract, productionContract);
+      assert.equal(stored.candidateSchemaVersion, v2Schema);
+      assert.deepEqual(stored.result, v2Saved);
+      assert.deepEqual(await one.repository.readSaved(scope, source.parseRunId, 1), saved);
+    });
   } finally {
     await Promise.all(clients.map(client => client.end()));
     await admin.end();
@@ -155,6 +219,7 @@ async function reset(admin) {
   }
   await admin.unsafe(await readFile(new URL('../../migrations/0055_document_semantic_revision.sql', import.meta.url), 'utf8'));
   await admin.unsafe(await readFile(new URL('../../migrations/0058_document_activity_run.sql', import.meta.url), 'utf8'));
+  await admin.unsafe(await readFile(new URL('../../migrations/0074_document_activity_candidate_contract.sql', import.meta.url), 'utf8'));
   await admin.unsafe('GRANT USAGE ON SCHEMA public TO service_role,authenticated; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO service_role,authenticated');
   await admin`INSERT INTO identity_subject_mapping VALUES
     ('actor-one','tenant-test','cli_aadde8b579f95bc9','ACTIVE'),('actor-two','tenant-test','cli_aadde8b579f95bc9','ACTIVE'),

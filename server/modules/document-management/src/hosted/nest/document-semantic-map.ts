@@ -193,6 +193,11 @@ function organizationWarnings(
   });
 }
 
+function exactObjectKeys(value: unknown, keys: string[]): boolean {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    Object.keys(value).length === keys.length && keys.every(key => Object.prototype.hasOwnProperty.call(value, key));
+}
+
 /** Run after readback as well as before save. Host still performs actor/tenant authorization and CAS. */
 export function assertDocumentSemanticMap(
   map: DocumentSemanticMap,
@@ -210,6 +215,37 @@ export function assertDocumentSemanticMap(
   const units = new Map(
     original.source.units.map((unit) => [unit.unitId, unit]),
   );
+  const selection = map.profileSelection;
+  if (selection !== undefined) {
+    const sourceRefs = new Set(
+      original.source.sourceLocators.map((locator) => locator.sourceRefId),
+    );
+    if (
+      !exactObjectKeys(selection, ['policyVersion', 'reason', 'registeredIdentity', 'evidenceSourceRefIds']) ||
+      typeof selection.policyVersion !== 'string' ||
+      !selection.policyVersion.trim() ||
+      ![
+        'REGISTERED_FAMILY_ISSUER',
+        'REGISTERED_METADATA_TEMPLATE',
+        'UNKNOWN_FAMILY',
+        'UNSUPPORTED_FAMILY',
+        'UNKNOWN_ISSUER',
+        'UNSUPPORTED_ISSUER',
+        'IDENTITY_CONFLICT',
+        'UNSUPPORTED_LAYOUT',
+      ].includes(selection.reason) ||
+      !exactObjectKeys(selection.registeredIdentity, ['family', 'issuer']) ||
+      ![
+        selection.registeredIdentity.family,
+        selection.registeredIdentity.issuer,
+      ].every((value) => value === null || typeof value === 'string') ||
+      !Array.isArray(selection.evidenceSourceRefIds) ||
+      new Set(selection.evidenceSourceRefIds).size !==
+        selection.evidenceSourceRefIds.length ||
+      selection.evidenceSourceRefIds.some((ref) => !sourceRefs.has(ref))
+    )
+      throw new Error('SEMANTIC_PROFILE_SELECTION_INVALID');
+  }
   const sections = new Map(
     map.sections.map((section) => [section.sectionId, section]),
   );

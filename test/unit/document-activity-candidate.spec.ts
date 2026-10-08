@@ -1,4 +1,4 @@
-import { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA } from '../../shared/document-activity.interface';
+import { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, type DocumentActivityCandidateProposal } from '../../shared/document-activity.interface';
 import { validateDocumentActivityCandidate, materializeDocumentActivityRevision,
   type DocumentActivityValidationContext } from '../../server/modules/canonical-host/document-activity-candidate';
 import { buildTranslationSourcePlan } from '../../server/modules/canonical-host/canonical-translation-source-plan';
@@ -20,7 +20,7 @@ function fixture() {
     sourceCoverage: original.coverage,
   };
   const anchor = plan.anchors.find(item => item.sourceUnitId === 'u1')!;
-  const proposal = { schemaVersion: DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, statements: [{
+  const proposal: DocumentActivityCandidateProposal = { schemaVersion: DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, statements: [{
     statementKey: 'local-1', label: 'Source target',
     quotes: [{ anchorId: anchor.anchorId, start: 0, end: anchor.sourceText.length, text: anchor.sourceText }],
     time: { role: 'TARGET' as const, precision: 'QUARTER' as const, expression: 'CALENDAR' as const,
@@ -73,7 +73,7 @@ describe('independent source activity candidates (isolated original fixtures)', 
     const statement = proposal.statements[0];
     const tbd = { ...statement.time, role: 'OCCURRED', expression: 'TBD', precision: 'UNKNOWN', raw: 'TBD' };
     const validateTime = (time: unknown) => validateDocumentActivityCandidate({ ...proposal, statements: [{ ...statement, time }] }, context);
-    expect(validateTime(tbd).statements[0].time).toEqual(tbd);
+    expect(validateTime(tbd).statements[0]).toMatchObject({ time: tbd });
     expect(() => validateTime({ ...tbd, precision: 'DAY' })).toThrow('TIME_PRECISION_INVALID');
     expect(() => validateTime({ ...statement.time, precision: 'QUARTERLY' })).toThrow('SHAPE_INVALID');
     expect(() => validateTime({ ...statement.time, raw: '2026-12-31' })).toThrow('TIME_NOT_QUOTED');

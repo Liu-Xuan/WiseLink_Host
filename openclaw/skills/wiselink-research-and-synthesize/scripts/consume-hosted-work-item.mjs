@@ -960,7 +960,7 @@ export async function runHostedInitialStage(options, dependencies) {
     if (name.startsWith('begin_') && value.status === 'RUNNING') {
       if (options.assessmentRecovery?.status === 'RECOVERY_CANDIDATE')
         assertFreshInitialAssessmentClaim(options.assessmentRecovery.previousClaim, value);
-      problemAssessment = value.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
+      problemAssessment = ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(value.modelInput?.schemaVersion);
       if (problemAssessment) {
         await checkpoint.write('assessment-current-claim', value);
         taskDeadline = value.task?.deadline;
@@ -971,7 +971,7 @@ export async function runHostedInitialStage(options, dependencies) {
     return value;
   };
   const invoke = async (modelInput, runtimeHooks = {}) => {
-    const assessment = problemAssessment && modelInput.schemaVersion === 'wiselink.jobaid-problem-task.v2';
+    const assessment = problemAssessment && ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(modelInput.schemaVersion);
     const perform = () => {
       modelCallCount += 1;
       return dependencies.invokeInitialModel({ operation, modelInput }, {

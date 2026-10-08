@@ -18,6 +18,9 @@ export const dmDocumentActivityRun = pgTable("dm_document_activity_run", {
    * @type { { sectionIds: string[] } }
    */
   selectionJson: jsonb("selection_json").notNull(),
+  candidateSchemaVersion: varchar("candidate_schema_version", { length: 64 }).notNull().default('wiselink.document.activity-candidate.v1'),
+  /** @type { { promptVersion: string; toolSchemaSha256: string; sourceContextVersion: string; quoteTransportVersion: string } | null } */
+  productionContractJson: jsonb("production_contract_json"),
   expectedRevision: integer("expected_revision").notNull(),
   candidateRevision: integer("candidate_revision"),
   status: varchar("status", { length: 16 }).notNull(),

@@ -11,6 +11,8 @@ import {
 } from './run-hosted-review-turn.mjs';
 import {
   WISELINK_HOST_MCP_NAME,
+  validateSourceStatementRecord,
+  validateSourceStatementContext,
   WISELINK_HOST_MCP_VERSION,
   WISELINK_PROFILE_REF,
   WISELINK_SKILL_VERSION,
@@ -18,6 +20,8 @@ import {
 import { classifyHostedGatewayFailure, requestHostedGateway } from './request-hosted-gateway.mjs';
 
 export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
+export const JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v3';
+export const isJobAidProblemInputSchema = schema => [JOBAID_PROBLEM_TASK_SCHEMA, JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA].includes(schema);
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2';
 const FUNCTION = 'return_wiselink_assessment_step';
 const INITIAL_JOBAID_READS_PER_SAVE = 1;
@@ -99,7 +103,7 @@ import { JOBAID_PROBLEM_GUIDANCE as GUIDE } from './jobaid-problem-guidance.mjs'
 export function validateJobAidProblemInput(input) {
   if (
     !input ||
-    ![JOBAID_PROBLEM_TASK_SCHEMA, MATTER_JOBAID_TASK_SCHEMA].includes(input.schemaVersion) ||
+    ![JOBAID_PROBLEM_TASK_SCHEMA, JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA, MATTER_JOBAID_TASK_SCHEMA].includes(input.schemaVersion) ||
     (input.schemaVersion === MATTER_JOBAID_TASK_SCHEMA
       ? input.subject?.kind !== 'ENGINEERING_MATTER' || !input.subject.matterId || !Array.isArray(input.availableDocuments)
       : !['INITIAL_PROBLEM_ASSESSMENT', 'OVERALL_CONSISTENCY'].includes(
@@ -112,6 +116,10 @@ export function validateJobAidProblemInput(input) {
     input.expectedWorkRevision < 0
   )
     throw new Error('JOBAID_PROBLEM_INPUT_INVALID');
+  if(input.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA && (input.evidenceProjectionVersion!=='SOURCE_CONTEXT_V2' ||
+    !['AVAILABLE','NOT_SAVED','NOT_INDEXED'].includes(input.sourceStatementAvailability?.status) || !['LEGACY_PARTIAL','CAPTURED_FIELDS_ONLY'].includes(input.sourceStatementAvailability?.semanticFieldsAvailability) ||
+    !Array.isArray(input.sourceStatementAvailability?.limitations))) throw new Error('JOBAID_SOURCE_STATEMENT_INPUT_INVALID');
+  if(input.schemaVersion===JOBAID_PROBLEM_TASK_SCHEMA && (input.evidenceProjectionVersion==='SOURCE_CONTEXT_V2'||input.sourceStatementAvailability!==undefined||input.sourceStatements!==undefined||input.activityContexts!==undefined||input.availableSources.some(row=>row.sourceStatement!==undefined)||input.deliveredEvidence.some(row=>row.sourceStatement!==undefined))) throw new Error('JOBAID_SOURCE_STATEMENT_VERSION_INVALID');
   const refs = input.availableSources.map((source) => source.ref);
   if (
     new Set(refs).size !== refs.length ||
@@ -119,6 +127,18 @@ export function validateJobAidProblemInput(input) {
     input.deliveredEvidence.some((item) => !refs.includes(item.evidenceRef))
   )
     throw new Error('JOBAID_PROBLEM_SOURCE_CATALOG_INVALID');
+  if(input.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA) {
+    if(input.sourceStatements!==undefined||input.activityContexts!==undefined||input.deliveredEvidence.some(e=>e.sourceStatement||e.evidenceRef?.startsWith('DOCUMENT_ACTIVITY:'))) throw new Error('JOBAID_SOURCE_STATEMENT_DIRECTORY_ONLY_REQUIRED');
+    for(const row of input.availableSources) {
+      if(!row.sourceStatement) {if(row.ref.startsWith('DOCUMENT_ACTIVITY:'))throw new Error('JOBAID_SOURCE_STATEMENT_DIRECTORY_INVALID');continue;}
+      const hint=row.sourceStatement; const reference=hint.reference;
+      if(row.kind!=='PRIOR_RESULT'||!reference||!Number.isSafeInteger(reference.candidateRevision)||reference.candidateRevision<1||
+        [reference.runRef,reference.statementId].some(v=>typeof v!=='string'||!v||v.includes(':'))||
+        row.ref!==`DOCUMENT_ACTIVITY:${reference.runRef}:${reference.candidateRevision}:${reference.statementId}`||
+        !((hint.sourceSchemaVersion===undefined&&hint.semanticFieldsAvailability==='LEGACY_PARTIAL'&&hint.scopeBasis==='LEGACY_RUN_SCOPE')||(hint.sourceSchemaVersion==='wiselink.document.activity-candidate.v2'&&hint.semanticFieldsAvailability==='V2_CAPTURED_FIELDS_ONLY'&&hint.scopeBasis==='ACTUAL_DELIVERED_RUN_SCOPE'))||
+        (hint.label!==undefined&&(typeof hint.label!=='string'||!hint.label.trim())))throw new Error('JOBAID_SOURCE_STATEMENT_DIRECTORY_INVALID');
+    }
+  }
   return input;
 }
 
@@ -301,12 +321,20 @@ function sourceSelectionFeedback(requested, availableSources) {
 // the entire intent, while each batch retains the Host's scope and lease checks.
 export async function readJobAidSourceBatches(intent, read) {
   const batchSize = 96;
-  if (intent.sourceRefs.length <= batchSize) return read(intent);
+  if (intent.sourceRefs.length <= batchSize) {
+    const result=await read(intent);
+    if(result?.schemaVersion==='wiselink.jobaid-source-read.v3') {
+      if(result.status!=='AVAILABLE'||result.scope!==intent.context||!Array.isArray(result.sourceRefs)||intent.sourceRefs.some(ref=>!result.sourceRefs.includes(ref)))throw new Error('JOBAID_SOURCE_READ_FAILED:INCOMPLETE_BATCH');
+      assertSourceStatementReadPacket(result);
+    }
+    return result;
+  }
   if (new Set(intent.sourceRefs).size !== intent.sourceRefs.length)
     throw new Error('JOBAID_SOURCE_SELECTION_INVALID');
   let first;
   const sourceRefs = new Set();
   const evidence = new Map();
+  const statements=new Map(); const activityContexts=new Map();
   for (let offset = 0; offset < intent.sourceRefs.length; offset += batchSize) {
     const requested = intent.sourceRefs.slice(offset, offset + batchSize);
     const result = await read({ ...intent, sourceRefs: requested });
@@ -314,7 +342,22 @@ export async function readJobAidSourceBatches(intent, read) {
       result.completeRequestedScope !== true || !Array.isArray(result.sourceRefs) ||
       !Array.isArray(result.evidence) || requested.some(ref => !result.sourceRefs.includes(ref)))
       throw new Error('JOBAID_SOURCE_READ_FAILED:INCOMPLETE_BATCH');
+    if(first && (first.schemaVersion==='wiselink.jobaid-source-read.v3'||result.schemaVersion==='wiselink.jobaid-source-read.v3') && first.schemaVersion!==result.schemaVersion)
+      throw new Error('JOBAID_SOURCE_READ_FAILED:INCONSISTENT_VERSION');
     first ??= result;
+    if(result.schemaVersion==='wiselink.jobaid-source-read.v3') {
+      assertSourceStatementReadPacket(result);
+      for(const record of result.sourceStatements) {
+        const prior=statements.get(record.ref);
+        if(prior&&!isDeepStrictEqual(prior,record)) throw new Error('JOBAID_SOURCE_READ_FAILED:INCONSISTENT_STATEMENT');
+        statements.set(record.ref,record);
+      }
+      for(const context of result.activityContexts) {
+        const key=JSON.stringify([context.runRef,context.candidateRevision]); const prior=activityContexts.get(key);
+        if(prior&&!isDeepStrictEqual(prior,context)) throw new Error('JOBAID_SOURCE_READ_FAILED:INCONSISTENT_ACTIVITY_CONTEXT');
+        activityContexts.set(key,context);
+      }
+    }
     for (const item of result.evidence) {
       if (!item || typeof item.evidenceRef !== 'string' ||
         (evidence.has(item.evidenceRef) && !isDeepStrictEqual(evidence.get(item.evidenceRef), item)))
@@ -323,7 +366,49 @@ export async function readJobAidSourceBatches(intent, read) {
     }
     for (const ref of result.sourceRefs) sourceRefs.add(ref);
   }
-  return { ...first, sourceRefs: [...sourceRefs], evidence: [...evidence.values()] };
+  return { ...first, sourceRefs: [...sourceRefs], evidence: [...evidence.values()],
+    ...(first.schemaVersion==='wiselink.jobaid-source-read.v3'?{sourceStatements:[...statements.values()],activityContexts:[...activityContexts.values()]}:{}) };
+}
+
+/** Completeness is carrier delivery, never proof that source semantics are correct. */
+function assertSourceStatementReadPacket(result) {
+  const fail=code=>{throw new Error(`JOBAID_SOURCE_READ_FAILED:${code}`);};
+  if(!Array.isArray(result.sourceStatements)||!Array.isArray(result.activityContexts)||!Array.isArray(result.sourceRefs)||!Array.isArray(result.evidence)||result.completeRequestedScope!==true)
+    fail('INCOMPLETE_STATEMENT');
+  const carriers=new Map(result.evidence.map(item=>[item.evidenceRef,item]));
+  const records=new Map();const contexts=new Map();
+  for(const context of result.activityContexts) {
+    try{validateSourceStatementContext(context);}catch{fail('INCOMPLETE_ACTIVITY_CONTEXT');}
+    const key=JSON.stringify([context.runRef,context.candidateRevision]);
+    if(contexts.has(key))fail('INCONSISTENT_ACTIVITY_CONTEXT');contexts.set(key,context);
+  }
+  for(const record of result.sourceStatements) {
+    try{validateSourceStatementRecord(record);}catch{fail('INCOMPLETE_STATEMENT');}
+    const reference=record?.reference; const carrier=carriers.get(record?.ref);
+    if(!reference||record.ref!==`DOCUMENT_ACTIVITY:${reference.runRef}:${reference.candidateRevision}:${reference.statementId}`||records.has(record.ref)||
+      record.statement?.statementId!==reference.statementId||record.candidateOnly!==true||
+      !carrier||carrier.kind!=='PRIOR_RESULT'||!isDeepStrictEqual(carrier.sourceStatement,{reference,sourceBinding:record.sourceBinding})||
+      !['wiselink.document.activity-candidate.v1','wiselink.document.activity-candidate.v2'].includes(record.sourceSchemaVersion)||!Array.isArray(record.rootRefs)||!record.rootRefs.length||!Array.isArray(record.requiredContextRootRefs)||!record.requiredContextRootRefs.length||
+      [...record.rootRefs,...record.requiredContextRootRefs].some(ref=>!ref.startsWith(`DOCUMENT_ORIGINAL:${record.sourceBinding?.original?.documentVersionId}:${record.sourceBinding?.original?.parseRunId}:`)||carriers.get(ref)?.kind!=='DOCUMENT_PASSAGE')||!contexts.has(JSON.stringify([reference.runRef,reference.candidateRevision]))||
+      [record.ref,...record.rootRefs,...record.requiredContextRootRefs].some(ref=>!result.sourceRefs.includes(ref)||!carriers.has(ref)))fail('INCOMPLETE_STATEMENT');
+    if(carrier.excerpt!==record.statement.label || typeof carrier.title!=='string'||!carrier.title.trim()||carrier.versionLabel!==record.sourceBinding.original.parseRunId||carrier.locator!==null||
+      !isDeepStrictEqual(carrier.sourceContext,{resultRef:reference.runRef,resultRevision:reference.candidateRevision})||!Array.isArray(carrier.originalEvidenceRefs)||
+      !isDeepStrictEqual([...carrier.originalEvidenceRefs].sort(),[...new Set([...record.rootRefs,...record.requiredContextRootRefs])].sort()))fail('INCOMPLETE_STATEMENT');
+    if(record.sourceSchemaVersion==='wiselink.document.activity-candidate.v2') {
+      const context=contexts.get(JSON.stringify([reference.runRef,reference.candidateRevision]))?.sourceContext;
+      if(!context||!isDeepStrictEqual(context.sourceBinding,record.sourceBinding)||record.statement.scope.sectionIds.some(id=>!context.sections.some(s=>s.sectionId===id&&s.deliveredUnitIds.length)))fail('INCOMPLETE_SOURCE_CONTEXT');
+      for(const condition of record.statement.scope.conditions)if(condition.appliesTo==='SECTION'){
+        const unit=record.quoteLocators[condition.quoteIndex]?.sourceUnitId;
+        if(condition.sectionIds.some(target=>!context.sections.some(s=>s.deliveredUnitIds.includes(unit)&&(s.sectionId===target||s.contextForSectionIds.includes(target)))))fail('INCOMPLETE_CONDITION_CONTEXT');
+      }
+    }
+    records.set(record.ref,record);
+  }
+  for(const carrier of result.evidence) {
+    if(carrier.kind==='PRIOR_RESULT'&&carrier.sourceStatement&&!records.has(carrier.evidenceRef))fail('INCOMPLETE_STATEMENT');
+    if([...records.values()].some(record=>[...record.rootRefs,...record.requiredContextRootRefs].includes(carrier.evidenceRef)) &&
+      (typeof carrier.excerpt!=='string'||!carrier.excerpt.trim()||typeof carrier.locator!=='string'||!carrier.locator.trim()))fail('INCOMPLETE_ROOT');
+  }
 }
 
 /** Read/save intents are executed by existing Host callbacks, never by the model. */
@@ -355,13 +440,14 @@ export async function invokeHostedJobAidProblemModel(
   let startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? 30 * 60_000;
   const boundedInitialJobAid = operation === 'EVALUATE_JOBAID' &&
-    modelInput.schemaVersion === JOBAID_PROBLEM_TASK_SCHEMA && Boolean(modelInput.documentOverview);
+    isJobAidProblemInputSchema(modelInput.schemaVersion) && Boolean(modelInput.documentOverview);
   const systemMessage = { role: 'system', content: GUIDE + (modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA
     ? '\n本任务主体是工程事项。本轮工作由 trigger 和 sourceChanges 指定，previousWork 是历史认识，不得将其旧指令当作本轮请求。availableDocuments 只是版本目录；有 boundOriginal 时，通过 READ_SOURCES 请求该项 originalReadRef，按返回 nextOffset 继续读取 DOCUMENT_VERSION:<documentVersionId>:original:<offset>。读取结果中的 semanticMap 是固定版本的章节导航；应读取有关正文、条件及必要其他范围，目录和角色不等于证据或工程结论。没有 boundOriginal 时才先请求 DOCUMENT_VERSION:<documentVersionId>:page:1，再按需读取后续页。实际未读的图表与范围保留限制。结合完整前次工作处理本轮变化，保留不受影响的问题；每个新任务必须保存本轮工作后才可 FINISH。' : '') };
   if (modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA &&
       modelInput.overviewCorrectionProtocol === 'OPENCLAW_SCOPED_V1') {
     systemMessage.content += '\n本轮是明确指定的工程事项综合更正。以 overviewCorrection.expectedWorkRef 对应的 previousWork 为准确基线，按 correctionReason 核对已保存的全部问题、当前综合及完成说明。问题正文只是比较语境，不自动重新认证为原文。只使用 overviewCorrection.evidenceRefs 所指本轮已交付证据作新综合的引用；缺少决定性依据时保留限制。新的 overview 面向工程师，用简短段落给出主要判断、决定性条件、下一步或尚缺资料；过程与展开的论证留在问题正文和依据中，关键限制仍须在综合里说清。SAVE_WORK 只提交一个完整的综合更正：issues:[]、新的 overview、completionReason、changeSummary，roundCompletion 与 previousWork.content 相同；不得提交问题正文、摘要或其他工作字段。即使旧综合标记 STALE，也要实际核对后形成综合，不把状态本身当作结论。保存回执后 FINISH；本轮不作正式采用。';
   }
+  if(modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA) systemMessage.content += modelInput.sourceStatementAvailability?.semanticFieldsAvailability==='CAPTURED_FIELDS_ONLY' ? '\nsourceStatement 目录只是已保存解释候选的提示，尚未交付完整声明。使用该精确 ref 前 READ_SOURCES；回执 sourceStatements 保留既有 v1 字段，sourceSchemaVersion 明确区分 v1 与 v2；LEGACY_PARTIAL 表示新版字段未记录，v2 null/空数组只表示本候选未捕获。完整 times[]、否定、技术编号和条件须与引文一并读取，不把 SOURCE_REPORTED_COMPLETED 当作我方实施或有效。必要根原文与 actual readCoverage 不保证全文已读。候选不能证明适用性、执行或效果核验。' : '\nsourceStatement 目录只是已保存解释候选的提示，尚未交付完整声明。使用该精确 ref 前 READ_SOURCES；回执 sourceStatements 保留既有 v1 字段，LEGACY_PARTIAL 表示新版语义未记录，必要根原文与 actual readCoverage 不保证全文已读。候选不能证明适用性、执行或效果核验。';
   if (boundedInitialJobAid) {
     systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。READ_SOURCES 的每个 sourceRef 必须逐字复制 availableSources[].ref；不能从 sourceRefId、页码或解析单元编号自行拼接。首次保存工程问题前须取得原文；若当前 deliveredEvidence 已包含该精确原文，直接使用而不重复读取，否则先成功 READ_SOURCES。不能将来源读取失败写成工程结论。previousWork 展示 Host 已保存的问题目录和较短正文；省略的正文仍由 Host 完整保留。readSourceRefs 表示已保存的来源读取记录，不等于本会话已重新取得原文。优先继续未完成的问题和决定性未读来源，不因新会话重读已保存的同一批，也不重写未变问题。每批只提交有新原文支持的改动，保存后读回精确修订。headline 和 listBrief 必须写工程问题、措施、当前判断及关键限制，不能写“本批已读”“u10—u13”或工作修订号等过程日志；过程留在 changeSummary。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并说明尚未完成范围；不要声称未读来源已经核验。必要原文已覆盖、问题已保存时，检查概览与正文一致；如有过期表述，提交 issues:[] 的简短概览修订。方法资料只在影响当前判断时补读，不为凑齐目录而延长执行。完成必要原文覆盖与概览一致性检查后 FINISH；未连接的外部资料列为待确认，不阻止候选阶段结束。`;
   }
@@ -397,7 +483,7 @@ export async function invokeHostedJobAidProblemModel(
   let inputUnits = 0;
   let outputUnits = 0;
   const checkpoint = options.assessmentCheckpoint;
-  const generationPolicy = modelInput.schemaVersion === JOBAID_PROBLEM_TASK_SCHEMA &&
+  const generationPolicy = isJobAidProblemInputSchema(modelInput.schemaVersion) &&
     options.executionModel?.modelRef === 'm3probe/minimax-m3'
     ? M3_PROBE_WORK_ITEM_GENERATION_POLICY : JOBAID_GENERATION_POLICY;
   let scopeAdjustments = 0;
@@ -550,7 +636,7 @@ export async function invokeHostedJobAidProblemModel(
     const requestToolSchema = jobAidFunctionSchema(requestStepShape);
     const requestMaxCompletionTokens = options.executionModel?.modelRef === 'miaoda/minimax-m3'
       ? generationPolicy.requestMaxCompletionTokens
-      : modelInput.schemaVersion === JOBAID_PROBLEM_TASK_SCHEMA &&
+      : isJobAidProblemInputSchema(modelInput.schemaVersion) &&
         options.executionModel?.modelRef === 'm3probe/minimax-m3'
         ? generationPolicy.probeRequestMaxCompletionTokens : null;
     let requestMetrics = null;
@@ -666,8 +752,8 @@ export async function invokeHostedJobAidProblemModel(
           errorCode: 'JOBAID_MODEL_OUTPUT_LENGTH',
           provenance: {
             modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
-            promptVersion: 'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
-            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': '2' },
+            promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
+            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2' },
             runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
           },
         };
@@ -692,8 +778,8 @@ export async function invokeHostedJobAidProblemModel(
           errorCode: 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE',
           provenance: {
             modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
-            promptVersion: 'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
-            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': '2' },
+            promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
+            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2' },
             runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
           },
         };
@@ -752,8 +838,8 @@ export async function invokeHostedJobAidProblemModel(
         provenance: {
           modelVersion: actualModelVersion(payload, choice, message,
             options.executionModel ? `configured-route:${options.executionModel.modelRef}` : options.configuredModelVersion),
-          promptVersion: 'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
-          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': '2' },
+          promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
+          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2' },
           runMetrics: { durationMs: Date.now() - startedAt, inputUnits,
             outputUnits: outputUnits + Buffer.byteLength(message.content) },
         },
@@ -887,11 +973,11 @@ export async function invokeHostedJobAidProblemModel(
                   ? `configured-route:${options.executionModel.modelRef}`
                   : options.configuredModelVersion,
               ),
-              promptVersion: 'wiselink-jobaid-problem@v2',
+              promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2',
               skillVersion: WISELINK_SKILL_VERSION,
               toolVersions: {
                 [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
-                'jobaid-problem-protocol': '2',
+                'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2',
               },
               runMetrics: {
                 durationMs: Date.now() - startedAt,
@@ -917,8 +1003,8 @@ export async function invokeHostedJobAidProblemModel(
           ? 'JOBAID_SOURCE_BATCH_POLICY_NOT_FOLLOWED'
           : invalidWorkJson ? 'JOBAID_WORK_JSON_INVALID' : 'JOBAID_WORK_VALIDATION_FAILED', provenance: {
           modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
-          promptVersion: 'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
-          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': '2' },
+          promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
+          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2' },
           runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
         } };
       }

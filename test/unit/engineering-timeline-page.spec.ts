@@ -430,7 +430,7 @@ describe('engineering timeline page gates', () => {
     expect(backQuery.get('anchor')).toBe('A1');
     expect(backQuery.get('window')).toBe('current-year');
     const lastRequest = mockActivity.mock.calls[mockActivity.mock.calls.length - 1][0];
-    expect(lastRequest).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: 2 });
+    expect(lastRequest).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: 2, acceptCandidateSchemaV2: true });
   });
 
   it('preserves the validated graph return through timeline selection and original reading', async () => {

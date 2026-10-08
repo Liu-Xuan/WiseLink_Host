@@ -1,3 +1,7 @@
+import { DocumentActivityRunRepository } from './document-activity-run.repository';
+import { projectSavedDocumentActivityForAssessment, type DocumentActivityAssessmentProjection } from './document-activity-assessment-projection';
+import { sourceStatementEvidence } from './document-activity-assessment-consumer';
+import { parseAssessmentSourceStatement } from '@shared/assessment-evidence-roots';
 import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
 import { projectJobAidActivity } from './jobaid-activity';
 import { originalApplicabilityResultMatches } from './original-applicability-currentness';
@@ -27,6 +31,7 @@ import type {
 } from '@shared/api.interface';
 import {
   JOBAID_PROBLEM_RESULT_SCHEMA,
+  JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA,
   JOBAID_PROBLEM_WORK_SCHEMA,
   isJobAidProblemProjection,
   type CanonicalJobAidProblemCandidateProjection,
@@ -158,6 +163,7 @@ export class CanonicalJobAidProblemService {
     @Optional()
     @Inject(DRIZZLE_DATABASE)
     private readonly database?: PostgresJsDatabase,
+    @Optional() private readonly activityRuns?: DocumentActivityRunRepository,
   ) {}
 
   /** Deployment first installs dual readers; only explicitly enabled NEW tasks use v2. */
@@ -807,6 +813,32 @@ export class CanonicalJobAidProblemService {
         previousWork.content.roundCompletion === 'IN_PROGRESS')
         throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
     }
+    // New source reuse never starts an Activity. Historical references stay exact.
+    let sourceActivityProjections: DocumentActivityAssessmentProjection[] | undefined;
+    let sourceStatementAvailability: JobAidProblemModelInput['sourceStatementAvailability'];
+    if (this.activityRuns && (purpose !== 'PROBLEM_REVIEW' || (previousWork?.content.evidence??[]).some(e=>e.kind==='PRIOR_RESULT'&&e.sourceStatement))) {
+      sourceActivityProjections = [];
+      if (purpose === 'INITIAL_PROBLEM_ASSESSMENT' && semanticMap) {
+        const saved = await readInContext(() => this.activityRuns!.readLatestSavedForBinding(originalScope,
+          original.original.binding, semanticMap.semanticRevision));
+        const projected = projectSavedDocumentActivityForAssessment({savedRevision:saved, original:original.original,
+          semanticMap, originalEvidence:primary.map(e=>({...e,workItemId:null}))});
+        sourceActivityProjections.push(projected);
+        sourceStatementAvailability={status:projected.availability,semanticFieldsAvailability:projected.activityContexts.some(c=>c.sourceContext!==undefined)?'CAPTURED_FIELDS_ONLY':'LEGACY_PARTIAL',limitations:projected.limitations};
+      } else sourceStatementAvailability={status:semanticMap?'NOT_SAVED':'NOT_INDEXED',semanticFieldsAvailability:'LEGACY_PARTIAL',
+        limitations:['该准确来源未选取已保存声明；可继续读取原文。']};
+      const historical=await readInContext(()=>this.readSourceStatementProjections(previousWork?.content.evidence??[],{tenantId,actorUserId}));
+      for(const p of historical) {
+        const existing=sourceActivityProjections.find(x=>x.activityContexts[0]?.runRef===p.activityContexts[0]?.runRef &&
+          x.activityContexts[0]?.candidateRevision===p.activityContexts[0]?.candidateRevision);
+        if(!existing) sourceActivityProjections.push(p);
+      }
+      const historicalBindingDiffers=sourceActivityProjections.some(p=>p.records.length && (p.sourceBinding.original.parseRunId!==original.original.binding.parseRunId || p.sourceBinding.semanticRevision!==semanticMap?.semanticRevision));
+      if(historicalBindingDiffers) sourceStatementAvailability!.limitations.push('固定来源声明保留其历史解析及语义组织修订；不得用当前SemanticMap替换其声明作用域。');
+      if (sourceActivityProjections.some(p=>p.records.length)) sourceStatementAvailability={status:'AVAILABLE',semanticFieldsAvailability:sourceActivityProjections.some(p=>p.activityContexts.some(c=>c.sourceContext!==undefined))?'CAPTURED_FIELDS_ONLY':'LEGACY_PARTIAL',
+        limitations:[...new Set([...sourceActivityProjections.flatMap(p=>p.limitations),...(sourceStatementAvailability?.status==='AVAILABLE'?[]:sourceStatementAvailability?.limitations??[])])]};
+      sourceCatalog.push(...sourceActivityProjections.flatMap(p=>p.records.map(sourceStatementEvidence)));
+    }
     // Authorize the complete new input inside buildModelInput, before the
     // lifecycle persists or claims an attempt. begin also rechecks replays.
     const sourceBindings = await this.sourceBindings(
@@ -822,6 +854,7 @@ export class CanonicalJobAidProblemService {
       permissionSnapshotVersion: permissionSnapshotVersion,
       purpose,
       sourceCatalog,
+      ...(sourceActivityProjections ? {sourceActivityProjections,sourceStatementAvailability} : {}),
       originalParseRunId: original.original.binding.parseRunId,
       sourceBindings,
       common: common.common,
@@ -1020,6 +1053,7 @@ export class CanonicalJobAidProblemService {
       readSourceRefs: [
         ...new Set([...task.initiallyDeliveredRefs, ...actualReadRefs]),
       ],
+      currentDeliveredSourceRefs:[...new Set([...task.initiallyDeliveredRefs,...actualReadRefs])],
       capabilities: task.modelInput.capabilities,
       history: task.modelInput.historyReview,
     });
@@ -1029,7 +1063,7 @@ export class CanonicalJobAidProblemService {
     return content;
   }
 
-  saveReviewWork(
+  async saveReviewWork(
     input: {
       row: ActionAttemptRow;
       task: JobAidProblemTaskInput;
@@ -1041,6 +1075,8 @@ export class CanonicalJobAidProblemService {
     },
     database: PostgresJsDatabase,
   ) {
+    await this.assertEvidenceOwned(input.task.sourceCatalog,input.row.tenantId,input.task.actorUserId,input.row.workItemId,database);
+    await this.assertSourceStatementReferences(input.task.sourceCatalog,{tenantId:input.row.tenantId,actorUserId:input.task.actorUserId},database);
     return this.work.save(
       {
         row: input.row,
@@ -1572,11 +1608,23 @@ export class CanonicalJobAidProblemService {
     );
     if (!input.purpose.trim())
       throw new Error('JOBAID_SOURCE_PURPOSE_REQUIRED');
-    const selected = expandJobAidSourceSelection(
-      taskInput.sourceCatalog,
-      input.sourceRefs,
-      input.context,
-    );
+    if (!input.sourceRefs.length || input.sourceRefs.length > 96 || new Set(input.sourceRefs).size !== input.sourceRefs.length)
+      throw new Error('JOBAID_SOURCE_SELECTION_INVALID');
+    const requested = input.sourceRefs.length ? expandJobAidSourceSelection(taskInput.sourceCatalog,input.sourceRefs,'EXACT') : [];
+    const statementRefs = requested.filter(item=>item.kind==='PRIOR_RESULT'&&item.sourceStatement).map(item=>item.evidenceRef);
+    if(statementRefs.length && !taskInput.sourceActivityProjections)
+      throw new Error('JOBAID_SOURCE_STATEMENT_RECORD_REQUIRES_V3');
+    const mandatoryRoots = requested.flatMap(item=>item.kind==='PRIOR_RESULT'&&item.sourceStatement ? item.originalEvidenceRefs : []);
+    const expandedRefs = new Set([...input.sourceRefs,...mandatoryRoots]);
+    let selected=statementRefs.length ? [...expandedRefs].map(ref=>taskInput.sourceCatalog.find(item=>item.evidenceRef===ref)).filter((item):item is AssessmentEvidence=>!!item) :
+      input.sourceRefs.length ? expandJobAidSourceSelection(taskInput.sourceCatalog,input.sourceRefs,input.context) : [];
+    if(statementRefs.length && input.context==='PAGE') {
+      // The existing PAGE rule is applied to each bounded original selection;
+      // internally required context is not a new user-selected batch budget.
+      const pageSelected = selected.flatMap(item=>expandJobAidSourceSelection(taskInput.sourceCatalog,[item.evidenceRef],'PAGE'));
+      selected=taskInput.sourceCatalog.filter(item=>pageSelected.some(e=>e.evidenceRef===item.evidenceRef));
+    }
+    if([...expandedRefs].some(ref=>!selected.some(item=>item.evidenceRef===ref))) throw new Error('JOBAID_SOURCE_STATEMENT_ROOT_REQUIRED');
     // Recheck the complete session scope. Revoked material may already be in
     // native memory; a new lease check alone cannot make that session forget it.
     await this.assertSourcesAuthorized(
@@ -1594,10 +1642,15 @@ export class CanonicalJobAidProblemService {
       purpose: input.purpose,
     });
     return {
-      schemaVersion: 'wiselink.jobaid-source-read.v2',
+      schemaVersion: taskInput.sourceActivityProjections ? 'wiselink.jobaid-source-read.v3' : 'wiselink.jobaid-source-read.v2',
+      ...(taskInput.sourceActivityProjections ? {
+        sourceStatements:(taskInput.sourceActivityProjections??[]).flatMap(p=>p.records).filter(r=>statementRefs.includes(r.ref)).map(r=>structuredClone(r)),
+        activityContexts:(taskInput.sourceActivityProjections??[]).filter(p=>p.records.some(r=>statementRefs.includes(r.ref))).flatMap(p=>p.activityContexts).map(c=>structuredClone(c)),
+      } : {}),
+
       status: 'AVAILABLE',
       sourceRefs: selected.map((item) => item.evidenceRef),
-      evidence: overallModelEvidenceRegistry(selected),
+      evidence: overallModelEvidenceRegistry(selected, taskInput.modelInput.evidenceProjectionVersion),
       scope: input.context,
       completeRequestedScope: true,
     };
@@ -1687,7 +1740,7 @@ export class CanonicalJobAidProblemService {
       });
     return {
       ...receipt,
-      evidence: overallModelEvidenceRegistry(receipt.evidence),
+      evidence: overallModelEvidenceRegistry(receipt.evidence, taskInput.modelInput.evidenceProjectionVersion),
     };
   }
 
@@ -1748,6 +1801,7 @@ export class CanonicalJobAidProblemService {
         )) ?? []),
       ],
       readSourceRefs: readRefs,
+      currentDeliveredSourceRefs:[...new Set([...taskInput.initiallyDeliveredRefs,...resolvedAssessmentSources(row.reviewActivityJson)])],
       capabilities: taskInput.modelInput.capabilities,
       history: taskInput.modelInput.historyReview,
     });
@@ -1831,8 +1885,8 @@ export class CanonicalJobAidProblemService {
     });
     const taskInput = parseJobAidProblemTask(preflight.task);
     if (
-      preflight.result.toolVersions['jobaid-problem-protocol'] !== '2' ||
-      preflight.result.promptVersion !== 'wiselink-jobaid-problem@v2'
+      preflight.result.toolVersions['jobaid-problem-protocol'] !== (taskInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2') ||
+      preflight.result.promptVersion !== (taskInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2')
     )
       throw new Error('JOBAID_RUNTIME_CAPABILITY_REQUIRED');
     await this.assertSourcesAuthorized(
@@ -2330,6 +2384,63 @@ export class CanonicalJobAidProblemService {
         }
       });
     }
+    await this.work.withActorScope(input.actorUserId, async()=>{
+      await this.assertSourceStatementReferences(evidence,{tenantId,actorUserId:input.actorUserId});
+      const fresh=await this.readSourceStatementProjections(evidence,{tenantId,actorUserId:input.actorUserId});
+      if(input.sourceActivityProjections) for(const p of fresh) for(const r of p.records) {
+        const sealed=input.sourceActivityProjections.flatMap(x=>x.records).find(x=>x.ref===r.ref);
+        const sealedContext=input.sourceActivityProjections.flatMap(x=>x.activityContexts).find(x=>x.runRef===r.reference.runRef&&x.candidateRevision===r.reference.candidateRevision);
+        if(canonicalJson(sealed)!==canonicalJson(r)||canonicalJson(sealedContext)!==canonicalJson(p.activityContexts[0])) throw new Error('JOBAID_SOURCE_STATEMENT_CHANGED');
+      }
+    });
+  }
+
+  /** Exact SAVED lineage checked on the caller's actor-bound transaction. */
+  async assertSourceStatementReferences(evidence: AssessmentEvidence[], actor: {tenantId:string;actorUserId:string}, database?: PostgresJsDatabase): Promise<void> {
+    const selected=evidence.filter((item):item is Extract<AssessmentEvidence,{kind:'PRIOR_RESULT'}>=>item.kind==='PRIOR_RESULT'&&!!item.sourceStatement);
+    if(!selected.length) return;
+    if(!this.activityRuns) throw new Error('JOBAID_SOURCE_STATEMENT_READER_UNAVAILABLE');
+    for(const item of selected) {
+      const source=parseAssessmentSourceStatement(item.sourceStatement);
+      if(item.sourceWork || item.evidenceRef!==`DOCUMENT_ACTIVITY:${source.reference.runRef}:${source.reference.candidateRevision}:${source.reference.statementId}` ||
+        item.resultRef!==source.reference.runRef || item.resultRevision!==source.reference.candidateRevision) throw new Error('JOBAID_SOURCE_STATEMENT_BINDING_INVALID');
+      const saved=await this.activityRuns.readSavedByReference({...actor,documentVersionId:source.sourceBinding.original.documentVersionId},source.reference,source.sourceBinding,database);
+      const statement=saved?.statements.find(x=>x.statementId===source.reference.statementId);
+      if(!statement) throw new Error('JOBAID_SOURCE_STATEMENT_UNAVAILABLE');
+      const rootRefs=[...new Set(saved!.sourceAnchors.flatMap(a=>a.sourceRefIds.map(ref=>`DOCUMENT_ORIGINAL:${source.sourceBinding.original.documentVersionId}:${source.sourceBinding.original.parseRunId}:${ref}`)))];
+      if(item.excerpt!==statement.label || canonicalJson([...item.originalEvidenceRefs].sort())!==canonicalJson(rootRefs.sort())) throw new Error('JOBAID_SOURCE_STATEMENT_CHANGED');
+    }
+  }
+
+  /** Fresh Reader ACL, exact historical map and saved payload validation, no latest substitution. */
+  async readSourceStatementProjections(evidence: AssessmentEvidence[], actor: {tenantId:string;actorUserId:string}): Promise<DocumentActivityAssessmentProjection[]> {
+    const selected=evidence.filter((item):item is Extract<AssessmentEvidence,{kind:'PRIOR_RESULT'}>=>item.kind==='PRIOR_RESULT'&&!!item.sourceStatement);
+    if(!selected.length) return [];
+    if(!this.activityRuns||!this.originalReader||!this.semantics) throw new Error('JOBAID_SOURCE_STATEMENT_READER_UNAVAILABLE');
+    const projections:DocumentActivityAssessmentProjection[]=[];
+    for(const item of selected) {
+      const source=parseAssessmentSourceStatement(item.sourceStatement);
+      const scope={...actor,documentVersionId:source.sourceBinding.original.documentVersionId};
+      const prior=projections.find(p=>p.activityContexts[0]?.runRef===source.reference.runRef && p.activityContexts[0]?.candidateRevision===source.reference.candidateRevision);
+      if(prior) continue;
+      const original=await this.originalReader.readDocumentOriginal(scope.documentVersionId,source.sourceBinding.original.parseRunId,{...actor,roles:[]});
+      const map=await this.semantics.read({...scope,roles:[]},original,source.sourceBinding.semanticRevision);
+      if(!map) throw new Error('JOBAID_SOURCE_STATEMENT_SEMANTIC_UNAVAILABLE');
+      const saved=await this.activityRuns.readSavedByReference(scope,source.reference,source.sourceBinding);
+      if(!saved) throw new Error('JOBAID_SOURCE_STATEMENT_UNAVAILABLE');
+      const byRef=new Map<string,AssessmentEvidence>();
+      const read=prepareDocumentOriginalEngineeringReader(original);
+      for(let offset=0;offset<original.structuredSource.units.length;offset+=20) for(const root of read(offset,20).evidence) byRef.set(root.evidenceRef,root);
+      const projected=projectSavedDocumentActivityForAssessment({savedRevision:saved,original:original.original,semanticMap:map,originalEvidence:[...byRef.values()]});
+      const refs=new Set(selected.filter(e=>e.sourceStatement!.reference.runRef===source.reference.runRef && e.sourceStatement!.reference.candidateRevision===source.reference.candidateRevision).map(e=>e.evidenceRef));
+      projected.records=projected.records.filter(r=>refs.has(r.ref)); projected.entries=projected.entries.filter(e=>refs.has(e.ref));
+      for(const ref of refs) {
+        const expected=evidence.find(e=>e.evidenceRef===ref); const record=projected.records.find(r=>r.ref===ref);
+        if(!record||canonicalJson(sourceStatementEvidence(record))!==canonicalJson(expected)) throw new Error('JOBAID_SOURCE_STATEMENT_CHANGED');
+      }
+      projections.push(projected);
+    }
+    return projections;
   }
 
   private async assertBrowserEvidenceOwned(

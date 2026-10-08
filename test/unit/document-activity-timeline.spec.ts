@@ -89,3 +89,13 @@ describe('document activity timeline model', () => {
     expect(timelinePlacedItems(items).map((item) => item.statement.statementId)).toEqual(['EARLY', 'LATE']);
   });
 });
+
+
+import type { DocumentActivityRevisionV2 } from '@shared/document-activity.interface';
+test('v2 timeline preserves every source time and role, technical ranges stay outside the time axis',()=>{
+ const prior=candidate([]);const statement={statementId:'V2-one',statementKey:'one',label:'Source wording',quotes:[],subject:null,action:null,modality:null,status:{raw:'source reports completed',quoteIndex:0,meaning:'SOURCE_REPORTED_COMPLETED' as const},
+  times:[{role:'TARGET' as const,precision:'QUARTER' as const,expression:'CALENDAR' as const,raw:'Q4 2026',quoteIndex:0},{role:'UNKNOWN' as const,precision:'MONTH' as const,expression:'CALENDAR' as const,raw:'March 2027',quoteIndex:0},{role:'UNKNOWN' as const,precision:'UNKNOWN' as const,expression:'TBD' as const,raw:'TBD',quoteIndex:0}],
+  technicalIds:[{kind:'AIRCRAFT_LINE_NUMBER' as const,raw:'LN 2024-2026',quoteIndex:0}],scope:{sectionIds:[],conditions:[],completeness:'UNRESOLVED' as const},limitations:['Source candidate only']};
+ const saved={...prior,schemaVersion:'wiselink.document.activity-candidate.v2',statements:[statement],sourceContext:{schemaVersion:'wiselink.document.activity-source-context.v1',sourceBinding:prior.sourceBinding,profile:{profileRef:'generic',selectionBasis:'NOT_RECORDED',family:null,issuer:null},sections:[],organizationWarnings:[]}} as DocumentActivityRevisionV2;
+ const before=JSON.stringify(saved);const items=timelineItems(saved);expect(items).toHaveLength(3);expect(items.map(i=>i.displayTime)).toEqual(['Q4 2026','March 2027','TBD']);expect(new Set(items.map(i=>i.id)).size).toBe(3);expect(items.map(i=>i.time?.role)).toEqual(['TARGET','UNKNOWN','UNKNOWN']);expect(items.every(i=>i.lane==='materials')).toBe(true);expect(items.some(i=>i.displayTime.includes('LN'))).toBe(false);expect(JSON.stringify(saved)).toBe(before);
+});

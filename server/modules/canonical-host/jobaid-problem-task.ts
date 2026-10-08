@@ -1,3 +1,5 @@
+import type { DocumentActivityAssessmentProjection } from './document-activity-assessment-projection';
+import { sourceStatementEvidence, sourceStatementDirectory } from './document-activity-assessment-consumer';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import type {
   AssessmentEvidence,
@@ -9,6 +11,7 @@ import type {
 } from '@shared/api.interface';
 import {
   JOBAID_PROBLEM_TASK_SCHEMA,
+  JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA,
   type JobAidAssessmentContextPackage,
   type JobAidProblemIssue,
   type JobAidProblemWorkContent,
@@ -22,7 +25,8 @@ import {
   JOBAID_METHOD_EVIDENCE,
   isJobAidMethodBinding,
 } from './jobaid-method-pack';
-import { overallModelEvidenceRegistry } from './overall-assessment-reading';
+import { overallModelEvidenceRegistry,
+  OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION, type OverallEvidenceProjectionVersion } from './overall-assessment-reading';
 import { buildJobAidContextPackage } from './jobaid-context-package';
 
 export interface JobAidSourceBinding {
@@ -63,7 +67,9 @@ export function jobAidSourceFileReference(item: CanonicalWorkItemProjection) {
 }
 
 export interface JobAidProblemModelInput extends Record<string, unknown> {
-  schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA;
+  schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA | typeof JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;
+  /** Absent on sealed historical tasks: retain their original exact projection. */
+  evidenceProjectionVersion?: OverallEvidenceProjectionVersion;
   purpose:
     | 'INITIAL_PROBLEM_ASSESSMENT'
     | 'OVERALL_CONSISTENCY'
@@ -92,7 +98,12 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
     title: string;
     versionLabel: string | null;
     locator: string | null;
+    sourceStatement?: Pick<DocumentActivityAssessmentProjection['entries'][number], 'reference'|'label'|'semanticFieldsAvailability'|'scopeBasis'|'sourceSchemaVersion'>;
   }>;
+  /** New mixed Review alone inlines exact records once; initial/Overall read on demand. */
+  sourceStatements?: DocumentActivityAssessmentProjection['records'];
+  activityContexts?: DocumentActivityAssessmentProjection['activityContexts'];
+  sourceStatementAvailability?: {status:'AVAILABLE'|'NOT_SAVED'|'NOT_INDEXED'; semanticFieldsAvailability:'LEGACY_PARTIAL'|'CAPTURED_FIELDS_ONLY'; limitations:string[]};
   deliveredEvidence: ReturnType<typeof overallModelEvidenceRegistry>;
   previousWork: {
     workRevisionRef: string;
@@ -127,12 +138,14 @@ export function jobAidProblemModelWorkContent(content: JobAidProblemWorkContent)
 }
 
 export interface JobAidProblemTaskInput extends Record<string, unknown> {
-  schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA;
+  schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA | typeof JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;
   knowledgeBinding?: import("./initial-assessment-knowledge.service").InitialKnowledgeBinding;
   actorUserId: string;
   permissionSnapshotVersion: string;
   sourceBindings: JobAidSourceBinding[];
   sourceCatalog: AssessmentEvidence[];
+  /** Host-only exact snapshots, never an extra model directory or input body. */
+  sourceActivityProjections?: DocumentActivityAssessmentProjection[];
   initiallyDeliveredRefs: string[];
   previousWork: JobAidWorkRevision | null;
   modelInput: JobAidProblemModelInput;
@@ -145,7 +158,7 @@ export function isJobAidProblemTask(
     !!value &&
     typeof value === 'object' &&
     'schemaVersion' in value &&
-    value.schemaVersion === JOBAID_PROBLEM_TASK_SCHEMA
+    [JOBAID_PROBLEM_TASK_SCHEMA, JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA].includes(value.schemaVersion as never)
   );
 }
 
@@ -166,10 +179,30 @@ export function assertJobAidProblemTaskBinding(
     typeof input.actorUserId !== 'string' ||
     !input.actorUserId ||
     !input.modelInput ||
-    input.modelInput.schemaVersion !== JOBAID_PROBLEM_TASK_SCHEMA ||
+    input.modelInput.schemaVersion !== input.schemaVersion ||
     !isJobAidMethodBinding(input.modelInput.methodBinding)
   )
     throw new Error('JOBAID_TASK_BINDING_INVALID');
+  const projections = input.sourceActivityProjections ?? [];
+  const v3 = input.schemaVersion === JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;
+  if (v3 && (input.modelInput.purpose === 'PROBLEM_REVIEW' || !Array.isArray(input.sourceActivityProjections) ||
+      !input.modelInput.sourceStatementAvailability || input.modelInput.evidenceProjectionVersion !== OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION))
+    throw new Error('JOBAID_TASK_SOURCE_STATEMENT_BINDING_INVALID');
+  const mixedReview = !v3 && input.modelInput.purpose==='PROBLEM_REVIEW' && projections.length>0;
+  if (!v3 && !mixedReview && (input.sourceActivityProjections !== undefined || input.sourceCatalog.some(e=>e.kind==='PRIOR_RESULT'&&e.sourceStatement)))
+    throw new Error('JOBAID_TASK_SOURCE_STATEMENT_BINDING_INVALID');
+  for (const item of input.sourceCatalog) if(item.kind==='PRIOR_RESULT'&&item.sourceStatement) {
+    const records=projections.flatMap(p=>p.records).filter(r=>r.ref===item.evidenceRef);
+    if(records.length!==1||item.sourceWork||canonicalJson(sourceStatementEvidence(records[0]))!==canonicalJson(item)||
+      (!mixedReview && input.initiallyDeliveredRefs.includes(item.evidenceRef))) throw new Error('JOBAID_TASK_SOURCE_STATEMENT_BINDING_INVALID');
+  }
+  if(mixedReview && (input.modelInput.evidenceProjectionVersion!==OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION ||
+    canonicalJson(input.modelInput.sourceStatements)!==canonicalJson(projections.flatMap(p=>p.records)) ||
+    canonicalJson(input.modelInput.activityContexts)!==canonicalJson(projections.flatMap(p=>p.activityContexts)) ||
+    projections.flatMap(p=>p.records).some(r=>[r.ref,...r.requiredContextRootRefs,...r.rootRefs].some(ref=>!input.initiallyDeliveredRefs.includes(ref)))))
+    throw new Error('JOBAID_TASK_SOURCE_STATEMENT_BINDING_INVALID');
+  const registeredStatementRefs = new Set(input.sourceCatalog.filter(e=>e.kind==='PRIOR_RESULT'&&e.sourceStatement).map(e=>e.evidenceRef));
+  if(projections.flatMap(p=>p.records).some(r=>!registeredStatementRefs.has(r.ref))) throw new Error('JOBAID_TASK_SOURCE_STATEMENT_BINDING_INVALID');
   const refs = new Set(input.sourceCatalog.map((item) => item.evidenceRef));
   // The envelope already seals this snapshot. Replays must validate that exact
   // binding, not today's process constant; otherwise a release changes a task.
@@ -183,6 +216,7 @@ export function assertJobAidProblemTaskBinding(
     title: item.title,
     versionLabel: item.versionLabel,
     locator: 'locator' in item ? item.locator : null,
+    ...sourceStatementDirectory(item, projections),
   }));
   if (
     refs.size !== input.sourceCatalog.length ||
@@ -196,6 +230,7 @@ export function assertJobAidProblemTaskBinding(
         input.sourceCatalog.filter((item) =>
           input.initiallyDeliveredRefs.includes(item.evidenceRef),
         ),
+        input.modelInput.evidenceProjectionVersion,
       ),
     ) !== canonicalJson(input.modelInput.deliveredEvidence) ||
     input.modelInput.expectedWorkRevision !==
@@ -217,10 +252,20 @@ export function buildJobAidProblemTask(input: {
   previousWork: JobAidWorkRevision | null;
   expectedWorkRevision: number;
   priorAssessmentRefs: string[];
+  sourceActivityProjections?: DocumentActivityAssessmentProjection[];
+  sourceStatementAvailability?: JobAidProblemModelInput['sourceStatementAvailability'];
 }): JobAidProblemTaskInput {
+  // Interactive review still uses its existing legacy source-resource contract.
+  const statementContract = input.sourceActivityProjections !== undefined;
+  const mixedReview = input.purpose === 'PROBLEM_REVIEW' && (input.sourceActivityProjections?.length??0)>0;
+  const v3 = input.purpose !== 'PROBLEM_REVIEW' && statementContract;
+  const schemaVersion = v3 ? JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA : JOBAID_PROBLEM_TASK_SCHEMA;
+  const projections = input.sourceActivityProjections ?? [];
+  const projectionVersion = v3 || mixedReview ? OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION : undefined;
   const byRef = new Map<string, AssessmentEvidence>();
   for (const item of [
     ...input.sourceCatalog.map(stableJobAidEvidence),
+    ...projections.flatMap(p=>p.records.map(sourceStatementEvidence)),
     ...structuredClone(JOBAID_METHOD_EVIDENCE),
   ]) {
     const prior = byRef.get(item.evidenceRef);
@@ -236,9 +281,11 @@ export function buildJobAidProblemTask(input: {
     byRef.set(item.evidenceRef, structuredClone(item));
   }
   const catalog = [...byRef.values()];
+  const sourceStatementRefs = new Set(catalog.filter(e=>e.kind==='PRIOR_RESULT'&&e.sourceStatement).map(e=>e.evidenceRef));
   const initiallyDeliveredRefs = [
     ...new Set([
       ...JOBAID_CORE_METHOD_REFS,
+      ...(mixedReview ? projections.flatMap(p=>p.records.flatMap(r=>[r.ref,...r.rootRefs,...r.requiredContextRootRefs])) : []),
       ...inlinePrimaryOriginalRefs(input.sourceCatalog, input.workItem.source.documentVersionId,
         input.originalParseRunId),
       ...catalog
@@ -256,7 +303,7 @@ export function buildJobAidProblemTask(input: {
         ) ? [item.evidenceRef] : [],
       ),
     ]),
-  ];
+  ].filter(ref=>(mixedReview||!sourceStatementRefs.has(ref)));
   const capabilities: JobAidProblemWorkContent['capabilities'] = [
     {
       capability: 'registered_source_reading',
@@ -315,15 +362,17 @@ export function buildJobAidProblemTask(input: {
   );
   const applicability = input.workItem.applicability;
   return {
-    schemaVersion: JOBAID_PROBLEM_TASK_SCHEMA,
+    schemaVersion,
     actorUserId: input.actorUserId,
     permissionSnapshotVersion: input.permissionSnapshotVersion,
     sourceCatalog: catalog,
+    ...(statementContract ? {sourceActivityProjections:structuredClone(projections)} : {}),
     sourceBindings: structuredClone(input.sourceBindings),
     initiallyDeliveredRefs,
     previousWork: structuredClone(previousWork),
     modelInput: {
-      schemaVersion: JOBAID_PROBLEM_TASK_SCHEMA,
+      schemaVersion,
+      ...(projectionVersion ? { evidenceProjectionVersion: projectionVersion } : {}),
       purpose: input.purpose,
       methodBinding: structuredClone(JOBAID_METHOD_BINDING),
       documentOverview: {
@@ -346,17 +395,21 @@ export function buildJobAidProblemTask(input: {
             pass: applicability.pass,
           }
         : null,
+      ...(mixedReview ? {sourceStatements:structuredClone(projections.flatMap(p=>p.records)),activityContexts:structuredClone(projections.flatMap(p=>p.activityContexts))} : {}),
+      ...(v3 || mixedReview ? {sourceStatementAvailability: structuredClone(input.sourceStatementAvailability ?? {status:'AVAILABLE',semanticFieldsAvailability:'LEGACY_PARTIAL',limitations:[]})} : {}),
       availableSources: catalog.map((item) => ({
         ref: item.evidenceRef,
         kind: item.kind,
         title: item.title,
         versionLabel: item.versionLabel,
         locator: 'locator' in item ? item.locator : null,
+        ...sourceStatementDirectory(item, projections),
       })),
       deliveredEvidence: overallModelEvidenceRegistry(
         catalog.filter((item) =>
           initiallyDeliveredRefs.includes(item.evidenceRef),
         ),
+        projectionVersion,
       ),
       previousWork: previousWork
         ? {

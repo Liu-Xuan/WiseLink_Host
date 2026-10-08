@@ -788,7 +788,7 @@ export async function runDynamicEvaluation({
       callTool,
     });
   }
-  const problemV2 = begin.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
+  const problemV2 = ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(begin.modelInput?.schemaVersion);
   if (!problemV2) validatePayload('dynamic-rules-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
@@ -953,7 +953,7 @@ async function completeOverall({
   successorWorkRevisionRef,
   successorReviewTurnRef,
 }) {
-  const problemV2 = begin.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
+  const problemV2 = ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(begin.modelInput?.schemaVersion);
   if (!problemV2) validatePayload('synthesis-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
