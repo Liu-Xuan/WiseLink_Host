@@ -3,7 +3,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, eq, exists, gt, isNull, sql } from 'drizzle-orm';
 
 import {
   identityOauthState,
@@ -230,10 +230,56 @@ export class IdentityRepository {
       )
       .limit(1);
     if (!row) return null;
-    await database
+    // The read and touch are separate statements. Recheck the exact session and
+    // mapped actor we read so a revoke or identity change between them fails
+    // closed rather than returning the stale identity.
+    const [touched] = await database
       .update(identitySession)
       .set({ lastSeenAt: now, updatedAt: now })
-      .where(eq(identitySession.id, row.sessionId));
+      .where(
+        and(
+          eq(identitySession.id, row.sessionId),
+          eq(identitySession.sessionTokenHash, tokenHash),
+          eq(identitySession.revision, row.sessionRevision),
+          eq(identitySession.subjectMappingId, row.mappingId),
+          eq(identitySession.expiresAt, row.expiresAt),
+          sql`${identitySession.feishuUserId} IS NOT DISTINCT FROM ${row.feishuUserId}`,
+          isNull(identitySession.revokedAt),
+          gt(identitySession.expiresAt, now),
+          exists(
+            database
+              .select({ id: identitySubjectMapping.id })
+              .from(identitySubjectMapping)
+              .where(
+                and(
+                  eq(identitySubjectMapping.id, row.mappingId),
+                  eq(
+                    identitySubjectMapping.id,
+                    identitySession.subjectMappingId,
+                  ),
+                  eq(identitySubjectMapping.status, 'ACTIVE'),
+                  eq(identitySubjectMapping.revision, row.mappingRevision),
+                  eq(identitySubjectMapping.feishuOpenId, row.feishuOpenId),
+                  eq(
+                    identitySubjectMapping.feishuTenantKey,
+                    row.feishuTenantKey,
+                  ),
+                  sql`${identitySubjectMapping.feishuUserId} IS NOT DISTINCT FROM ${row.mappingFeishuUserId}`,
+                  eq(identitySubjectMapping.miaodaUserId, row.miaodaUserId),
+                  eq(identitySubjectMapping.miaodaTenantId, row.miaodaTenantId),
+                  eq(
+                    identitySubjectMapping.expectedClientId,
+                    row.expectedClientId,
+                  ),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ id: identitySession.id });
+    // UPDATE may have waited for another request's session row lock. The
+    // original `now` predicate cannot prove validity when that wait finishes.
+    if (!touched || row.expiresAt.getTime() <= Date.now()) return null;
     return {
       sessionId: row.sessionId,
       sessionRevision: row.sessionRevision,
