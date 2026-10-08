@@ -2,8 +2,10 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import type { CurrentObjectContextView } from '@client/src/app/providers/CurrentObjectContextProvider';
 
 const mockGetMatter = jest.fn();
+let mockCurrentObject: CurrentObjectContextView | null = null;
 
 jest.mock('@client/src/components/WiseLinkBrandMark', () => ({
   __esModule: true, default: () => null,
@@ -25,7 +27,8 @@ jest.mock('@client/src/app/providers/ThemeProvider', () => ({
   }),
 }));
 jest.mock('@client/src/app/providers/CurrentObjectContextProvider', () => ({
-  useCurrentObjectContext: () => ({ currentObject: null }),
+  useCurrentObjectContext: () => ({ currentObject: mockCurrentObject }),
+  currentObjectKindLabel: () => '工程事项',
 }));
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({
   useCurrentUserSession: () => ({
@@ -82,6 +85,7 @@ describe('sidebar global navigation identity', () => {
     });
     container = dom.window.document.getElementById('root');
     mockGetMatter.mockReset();
+    mockCurrentObject = null;
   });
   afterEach(() => {
     act(() => root?.unmount());
@@ -127,6 +131,88 @@ describe('sidebar global navigation identity', () => {
     );
   }
 
+  function globalGraphLink(): HTMLAnchorElement {
+    return container.querySelector<HTMLAnchorElement>(
+      'nav[aria-label="全局入口"] a[aria-label="关系图谱"]',
+    )!;
+  }
+
+  it.each([
+    '/library',
+    '/knowledge?query=example',
+    '/matters/M1',
+    '/matters/M1?workRef=MWREV-HIST',
+    '/work-items/WI1/analysis',
+    '/document-versions/DV1?parseRunId=P1&sourceRef=S1',
+    '/graph?matterId=M1&workRef=W1',
+    '/graph?scope=document&documentVersionId=DV1',
+    '/library?selectedMatterId=M7&selectedDocumentVersionId=DV7',
+    '/library?selectedDocumentVersionId=DV7',
+    '/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&workRef=MWREV-OLD&articleY=19000',
+    '/knowledge?subjectKind=WORK_ITEM&subjectId=WI-SAVED&workRef=W-OLD',
+    '/graph?matterId=',
+    '/graph?matterId=M1&matterId=M2',
+    '/library?selectedDocumentVersionId=',
+    '/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=M1&subjectId=M2&workRef=W1',
+    '/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=M1&workRef=W1&matterId=M2',
+  ])('opens the macro graph from the actual global Sidebar link at %s', async (path: string) => {
+    await mount(path);
+    const link: HTMLAnchorElement = globalGraphLink();
+    expect(link.getAttribute('href')).toBe('/graph?scope=library');
+    await act(async () => link.click());
+    expect(container.querySelector('#route')?.textContent).toBe('/graph?scope=library');
+    expect(mockGetMatter).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '/graph',
+    '/graph?scope=library',
+    '/graph?matterId=M1&workRef=MWREV-HIST',
+    '/graph?scope=document&documentVersionId=DV1',
+  ])('keeps the global graph section active at %s', async (path: string) => {
+    await mount(path);
+    expect(globalGraphLink().classList.contains('active')).toBe(true);
+    expect(globalGraphLink().getAttribute('aria-current')).toBe('page');
+  });
+
+  it.each(['/library', '/knowledge?query=example', '/graph', '/graph?scope=library'])(
+    'does not offer a default local graph without an object at %s',
+    async (path: string) => {
+      await mount(path);
+      expect(href('当前对象图谱')).toBeNull();
+      expect(globalGraphLink().getAttribute('href')).toBe('/graph?scope=library');
+    },
+  );
+
+  it('keeps the global graph independent of a published current object', async () => {
+    mockCurrentObject = {
+      kind: 'MATTER',
+      routeWorkItemId: '',
+      routeMatterId: 'M1',
+      displayCode: 'MATTER-1',
+      title: 'Published current matter',
+      meta: 'Registered matter',
+      statusLabel: 'ACTIVE',
+      routes: {
+        overview: '/matters/M1',
+        workspace: '/matters/M1',
+        process: '/matters/M1',
+        jobAid: '/matters/M1',
+        review: '/matters/M1?panel=review',
+        history: '/matters/M1?panel=history',
+        family: '/matters/M1?panel=materials',
+      },
+    };
+    await mount('/matters/M1');
+    expect(container.querySelector('.wl-sidebar-object-title')?.textContent).toContain('Published current matter');
+    expect(href('当前对象图谱')).toBe('/graph?matterId=M1');
+    const link: HTMLAnchorElement = globalGraphLink();
+    expect(link.getAttribute('href')).toBe('/graph?scope=library');
+    await act(async () => link.click());
+    expect(container.querySelector('#route')?.textContent).toBe('/graph?scope=library');
+    expect(mockGetMatter).not.toHaveBeenCalled();
+  });
+
   it('returns from the global Library button to the exact graph through the product toolbar', async () => {
     const viewport = { zoom: 0.9348, pan: { x: -118.5, y: -138.05 } };
     const graph = new URLSearchParams({ matterId: 'M1', workRef: 'MWREV-16',
@@ -160,7 +246,7 @@ describe('sidebar global navigation identity', () => {
     await mount('/graph?matterId=M1');
     expect(mockGetMatter).not.toHaveBeenCalled();
     expect(href('工程时间轴')).toBe('/timeline?matterId=M1');
-    expect(href('关系图谱')).toBe('/graph?matterId=M1');
+    expect(href('当前对象图谱')).toBe('/graph?matterId=M1');
   });
 
   it('preserves the current Matter identity without a background sidebar read', async () => {
@@ -181,7 +267,7 @@ describe('sidebar global navigation identity', () => {
 
   it('carries the library matter and document selection into graph and timeline', async () => {
     await mount('/library?selectedMatterId=M7&selectedDocumentVersionId=DV7');
-    expect(href('关系图谱')).toBe('/graph?matterId=M7');
+    expect(href('当前对象图谱')).toBe('/graph?matterId=M7');
     expect(href('工程时间轴')).toBe('/timeline?documentVersionId=DV7');
   });
 
@@ -189,7 +275,7 @@ describe('sidebar global navigation identity', () => {
     await mount('/graph?matterId=');
     expect(mockGetMatter).not.toHaveBeenCalled();
     expect(href('工程时间轴')).toBe('/timeline?matterId=');
-    expect(href('关系图谱')).toBe('/graph?matterId=');
+    expect(href('当前对象图谱')).toBe('/graph?matterId=');
   });
 
   it('E1 REVIEW R2: pending matter source preserves matter in timeline target', async () => {
@@ -199,7 +285,7 @@ describe('sidebar global navigation identity', () => {
 
   it('E1 REVIEW R2: sidebar preserves exact activity pins and return', async () => {
     await mount('/timeline?documentVersionId=DV9&parseRunId=P9&candidateRevision=2&runRef=R9&window=current-year&returnLibraryQuery=mode%3Ddocument');
-    const q = new URLSearchParams(href('关系图谱')!.split('?')[1]);
+    const q = new URLSearchParams(href('当前对象图谱')!.split('?')[1]);
     expect(q.get('parseRunId')).toBe('P9');
     expect(q.get('candidateRevision')).toBe('2');
     expect(q.get('runRef')).toBe('R9');
@@ -209,7 +295,7 @@ describe('sidebar global navigation identity', () => {
   it('E1 REVIEW R2: invalid library pin cannot become bare default nav', async () => {
     await mount('/library?selectedDocumentVersionId=');
     expect(href('工程时间轴')).not.toBe('/timeline');
-    expect(href('关系图谱')).not.toBe('/graph');
+    expect(href('当前对象图谱')).toBe('/graph?documentVersionId=');
   });
 
   it('E1 REVIEW R2: explicit version wins over matter current source', async () => {
@@ -217,17 +303,17 @@ describe('sidebar global navigation identity', () => {
     expect(new URLSearchParams(href('工程时间轴')!.split('?')[1]).get('documentVersionId')).toBe('DV-HIST');
   });
 
-  it('E1 FINAL: query historical work identity survives graph sidebar link', async () => { await mount('/graph?matterId=M1&workRef=MWREV-HIST'); expect(new URLSearchParams(href('关系图谱')!.split('?')[1]).get('workRef')).toBe('MWREV-HIST'); });
+  it('E1 FINAL: query historical work identity survives graph sidebar link', async () => { await mount('/graph?matterId=M1&workRef=MWREV-HIST'); expect(new URLSearchParams(href('当前对象图谱')!.split('?')[1]).get('workRef')).toBe('MWREV-HIST'); });
 
-  it('E1 FINAL: graph sidebar preserves explicit activity identity even with matter context', async () => { await mount('/graph?matterId=M1&documentVersionId=DV-HIST&parseRunId=P1&candidateRevision=2&runRef=R2&returnLibraryQuery=mode%3Ddocument'); const query = new URLSearchParams(href('关系图谱')!.split('?')[1]); expect(query.get('documentVersionId')).toBe('DV-HIST'); expect(query.get('parseRunId')).toBe('P1'); expect(query.get('returnLibraryQuery')).toBe('mode=document'); });
+  it('E1 FINAL: graph sidebar preserves explicit activity identity even with matter context', async () => { await mount('/graph?matterId=M1&documentVersionId=DV-HIST&parseRunId=P1&candidateRevision=2&runRef=R2&returnLibraryQuery=mode%3Ddocument'); const query = new URLSearchParams(href('当前对象图谱')!.split('?')[1]); expect(query.get('documentVersionId')).toBe('DV-HIST'); expect(query.get('parseRunId')).toBe('P1'); expect(query.get('returnLibraryQuery')).toBe('mode=document'); });
   it('keeps the saved knowledge matter and revision instead of opening a default matter', async () => {
     await mount('/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&workRef=MWREV-OLD&articleY=19000');
-    const graph = new URL(href('关系图谱')!, 'https://example.test');
+    const graph = new URL(href('当前对象图谱')!, 'https://example.test');
     expect(graph.searchParams.get('matterId')).toBe('M-SAVED');
     expect(graph.searchParams.get('workRef')).toBe('MWREV-OLD');
     expect(new URLSearchParams(graph.searchParams.get('returnKnowledgeQuery')!).get('articleY')).toBe('19000');
     expect(mockGetMatter).not.toHaveBeenCalled();
-    await act(async () => container.querySelector<HTMLAnchorElement>('a[aria-label="关系图谱"]')!.click());
+    await act(async () => container.querySelector<HTMLAnchorElement>('a[aria-label="当前对象图谱"]')!.click());
     const back = container.querySelector<HTMLButtonElement>('.wl-pagebar-back')!;
     expect(back.getAttribute('aria-label')).toBe('返回工程知识');
     await act(async () => back.click());
@@ -248,17 +334,18 @@ describe('sidebar global navigation identity', () => {
     'subjectKind=ENGINEERING_MATTER&subjectId=M-SAVED&workRef=W&documentVersionId=DV-OTHER',
   ])('does not turn invalid or conflicting knowledge identity into a default graph: %s', async (query) => {
     await mount(`/knowledge?${query}`);
-    expect(href('关系图谱')).toBe('/graph?matterId=');
+    expect(href('当前对象图谱')).toBe('/graph?matterId=');
   });
 
   it('keeps a document work revision explicit so an unsupported graph cannot silently resolve current work', async () => {
     await mount('/knowledge?subjectKind=WORK_ITEM&subjectId=WI-SAVED&workRef=W-OLD');
-    expect(href('关系图谱')).toBe('/graph?workItemId=WI-SAVED&workRef=W-OLD');
+    expect(href('当前对象图谱')).toBe('/graph?workItemId=WI-SAVED&workRef=W-OLD');
   });
 
   it('retains the ordinary unselected graph entry outside a pinned knowledge work', async () => {
     await mount('/knowledge?query=example');
-    expect(href('关系图谱')).toBe('/graph');
+    expect(href('关系图谱')).toBe('/graph?scope=library');
+    expect(href('当前对象图谱')).toBeNull();
   });
 
 });
