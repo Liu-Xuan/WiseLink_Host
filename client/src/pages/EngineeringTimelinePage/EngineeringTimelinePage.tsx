@@ -5,8 +5,7 @@ import { Button } from '@client/src/components/ui/button';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { getEngineeringMatter } from '@client/src/api/engineering-matter';
-import { selectMatterDocumentSources } from '@client/src/features/matter/matter-document-sources';
-import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
+import { selectMatterDocumentSources, matterDocumentSourceLabel, type MatterDocumentSource } from '@client/src/features/matter/matter-document-sources';
 import { readDocumentActivityReading, readDocumentParsingStatus, subscribeCanonicalHostClientSession, getCanonicalHostClientSessionGeneration, getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
 import type { AnyDocumentActivityReadingResponse as DocumentActivityReadingResponse } from '@shared/document-activity.interface';
 import type { DocumentOriginalBinding } from '@shared/document-original.interface';
@@ -110,6 +109,7 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
     if (documentVersionId) source.set('documentVersionId', documentVersionId);
     const next = activityReadingParams(source);
     if (documentVersionId) next.set('documentVersionId', documentVersionId);
+    else if (matterIdPin.state === 'ok') next.set('matterId', matterIdPin.value);
     return `${target}?${next}`;
   }
 
@@ -329,32 +329,39 @@ function TimelineDefaultDocumentResolver({ pagePath, searchParams }: { pagePath:
 function TimelineMatterSourceResolver({ matterId, pagePath, searchParams }: { matterId: string; pagePath: string; searchParams: URLSearchParams }) {
   const navigate = useNavigate();
   const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
-  const [state, setState] = useState<'loading' | 'empty' | 'error'>('loading');
+  const [result, setResult] = useState<{ key: string; state: 'loading' | 'empty' | 'error' | 'choice'; title?: string; sources?: MatterDocumentSource[] } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const epochRef = useRef(0);
+  const key = JSON.stringify([matterId, sessionGeneration, reloadKey]);
+  const visible = result?.key === key ? result : null;
+  const state = visible?.state ?? 'loading';
+  const openSource = (source: MatterDocumentSource, replace = false) => {
+    const query = activityReadingParams(searchParams);
+    query.set('documentVersionId', source.document.documentVersionId);
+    navigate(`${pagePath}?${query}`, { replace });
+  };
 
   useEffect(() => {
     if (authenticationRequired) return;
     const controller = new AbortController();
     const epoch = ++epochRef.current;
     const session = getCanonicalHostClientSessionGeneration();
-    setState('loading');
+    setResult({ key, state: 'loading' });
     void (async () => {
       try {
         const read = await getEngineeringMatter(matterId, controller.signal);
         if (controller.signal.aborted || epochRef.current !== epoch || session !== getCanonicalHostClientSessionGeneration()) return;
-        const source = selectMatterDocumentSources(read)[0];
-        if (source) {
-          const query = activityReadingParams(searchParams);
-          query.set('documentVersionId', source.document.documentVersionId);
-          navigate(`${pagePath}?${query}`, { replace: true });
+        if (read.matterId !== matterId) throw new Error('事项来源响应与请求不一致。');
+        const sources = selectMatterDocumentSources(read);
+        if (sources.length === 1) {
+          openSource(sources[0], true);
           return;
         }
-        setState('empty');
+        setResult({ key, state: sources.length ? 'choice' : 'empty', title: read.title, sources });
       } catch (reason) {
-        if (controller.signal.aborted || epochRef.current !== epoch) return;
+        if (controller.signal.aborted || epochRef.current !== epoch || session !== getCanonicalHostClientSessionGeneration()) return;
         logger.error('工程时间轴事项来源读取失败', reason);
-        setState('error');
+        setResult({ key, state: 'error' });
       }
     })();
     return () => controller.abort();
@@ -374,6 +381,15 @@ function TimelineMatterSourceResolver({ matterId, pagePath, searchParams }: { ma
         <p>正在读取该事项已登记的资料…</p>
       </div>
     );
+  }
+  if (state === 'choice') {
+    return <section className="activity-timeline-empty" aria-label="事项时间轴来源">
+      <h2>{visible?.title} · 已登记来源</h2>
+      <p>选择一个准确文档版本阅读已保存的时间声明。来源取得不代表活动已经执行。</p>
+      <ul>{visible?.sources?.map(source => <li key={source.document.documentVersionId}>
+        <Button variant="outline" onClick={() => openSource(source)}>{matterDocumentSourceLabel(source)}{matterDocumentSourceLabel(source) !== source.document.documentVersionId ? ` · ${source.document.documentVersionId}` : ''}</Button>
+      </li>)}</ul>
+    </section>;
   }
   if (state === 'empty') {
     return (
