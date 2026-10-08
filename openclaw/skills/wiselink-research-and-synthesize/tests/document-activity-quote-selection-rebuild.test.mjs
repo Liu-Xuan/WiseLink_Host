@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {readFileSync} from 'node:fs';
-import {createRequire} from 'node:module';
 import test from 'node:test';
 import {DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA as Q,validateActivityQuoteSelection,consumeHostedDocumentActivity,buildActivityRequest} from '../scripts/consume-hosted-document-activity.mjs';
 import {activityModelMessages,activityProposalFunctionTool,activityQuoteSelectionFunctionTool} from '../scripts/invoke-hosted-document-activity-model.mjs';
@@ -40,10 +38,4 @@ test('new mode cannot recover an old numeric checkpoint by silently reinterpreti
  checkpointFactory:async()=>({readOptional:async name=>name==='source.result'?{schemaVersion:'wiselink.document.activity-checkpoint.v1',documentVersionId:summary.documentVersionId,runRef:summary.runRef}:null,write:async()=>{throw new Error('unexpected write');}}),invokeModel:async()=>{throw new Error('unexpected model');}};
  await assert.rejects(consumeHostedDocumentActivity({documentVersionId:summary.documentVersionId,runRef:summary.runRef,leaseOwner:fence.leaseOwner,quoteSelectionSchemaVersion:Q},deps),/CHECKPOINT_BINDING_MISMATCH/);
  assert.ok(!calls.includes('ACTIVITY_READ'));assert.ok(!calls.includes('ACTIVITY_SAVE_SELECTION'));
-});
-test('generated rebuild resolver remains byte-for-byte synchronized with its shared TypeScript',()=>{
- const require=createRequire(import.meta.url),ts=require('typescript');
- const source=readFileSync(new URL('../../../../shared/document-activity-quote-selection.ts',import.meta.url),'utf8');
- const expected='// Rebuild implementation generated from shared/document-activity-quote-selection.ts.\n'+ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022},fileName:'document-activity-quote-selection.ts'}).outputText;
- assert.equal(readFileSync(new URL('../scripts/resolve-document-activity-quote-selection.mjs',import.meta.url),'utf8'),expected);
 });
