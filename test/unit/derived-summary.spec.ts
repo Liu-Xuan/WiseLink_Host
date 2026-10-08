@@ -2,7 +2,7 @@ import { z } from 'zod/v4';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { DerivedSummaryMemberReading } from '@shared/derived-summary.interface';
 import { parseSummaryRequest, parseSummaryContent, summaryCitations, summaryMemberRef } from '../../server/modules/canonical-host/derived-summary.validation';
-import { assertMemberSnapshot, mergeSummaryEvidence } from '../../server/modules/canonical-host/derived-summary-members.service';
+import { DerivedSummaryMembersService, assertMemberSnapshot, mergeSummaryEvidence } from '../../server/modules/canonical-host/derived-summary-members.service';
 import { registerDerivedSummaryAttemptMcpTools } from '../../server/modules/canonical-host/derived-summary-attempt-mcp-tools';
 
 const member = { kind: 'WORK_ITEM_WORK' as const, workItemId: 'WI-selected', documentVersionId: 'DV-old',
@@ -83,5 +83,58 @@ describe('Derived summary MCP exact subject and transport', () => {
     const schema = z.toJSONSchema(f.definition.inputSchema) as { oneOf?: unknown[]; anyOf?: unknown[] };
     expect((schema.oneOf ?? schema.anyOf)?.length).toBe(10);
     expect(() => f.call({ ...target, operation: 'FINISH', result: { fakeSuccess: true } })).toThrow();
+  });
+});
+
+
+describe('Exact optional work understanding', () => {
+  const understanding = '条件与尾部前提保持原样\nOnly if BOTH conditions hold; effect is unverified.\n';
+  const issues: DerivedSummaryMemberReading['issues'] = [
+    { issueKey: 'first', question: '条件一？', body: '完整问题一与[[source-old]]' },
+    { issueKey: 'second', question: 'Condition two?', body: 'Tail premise: not implemented or verified.' },
+  ] as never;
+  const body = `${understanding}\n\n${issues.map(issue => `问题 ${issue.issueKey}：${issue.question}\n${issue.body}`).join('\n\n')}`;
+  const split: DerivedSummaryMemberReading = { member, evidenceRef: 'member-ref', headline: 'Complete selected work',
+    understanding, body, issues, evidence: [source], rootRefs: [source.evidenceRef], leaves: [member],
+    limitations: ['Selected only'], current: false, overviewStatus: 'STALE' };
+
+  it('requires exact reconstruction and split content while allowing fresh notices', () => {
+    expect(() => assertMemberSnapshot(split, { ...split, current: true, overviewStatus: 'CURRENT', limitations: ['Fresh notice'] })).not.toThrow();
+    expect(() => assertMemberSnapshot(split, { ...split, understanding: understanding + 'changed' })).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+    expect(() => assertMemberSnapshot(split, { ...split, body: body + 'changed' })).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+    expect(() => assertMemberSnapshot(split, { ...split, issues: [...issues].reverse() })).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+    const { understanding: ignored, ...missing } = split;
+    expect(() => assertMemberSnapshot(split, missing)).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+  });
+  it('keeps old complete body exact when the reader adds a valid understanding', () => {
+    const { understanding: ignored, ...old } = split;
+    expect(() => assertMemberSnapshot(old, split)).not.toThrow();
+    expect(() => assertMemberSnapshot(old, { ...split, headline: 'New headline' })).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+    expect(() => assertMemberSnapshot(old, { ...split, rootRefs: [] })).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+    expect(() => assertMemberSnapshot(old, { ...split, leaves: [] })).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+  });
+  it.each(['WORK_ITEM_WORK', 'MATTER_WORK'] as const)('reads %s persisted understanding on the handed transaction', async kind => {
+    const selected = kind === 'WORK_ITEM_WORK' ? { ...member, issueKeys: [] } :
+      { kind, matterId: 'MAT-exact', workRef: 'MWR-exact', workRevision: 7, issueKeys: [] };
+    const persisted = { headline: 'Saved headline', understanding, issues, evidence: [], overviewStatus: 'STALE' };
+    const jobAid = { readSummaryMemberInTransaction: jest.fn().mockResolvedValue({ current: false,
+      revision: { workRevision: member.workRevision, documentVersionId: member.documentVersionId, content: persisted } }) };
+    const matters = { authorizeRuntimeInputs: jest.fn().mockResolvedValue(undefined), readByRef: jest.fn().mockResolvedValue({
+      workingRevision: 7, basedOnMatterRevisionId: 'MR-exact', state: { problemWork: persisted } }) };
+    const chain = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(), limit: jest.fn().mockResolvedValue([{ ref: 'MWR-later' }]) };
+    const database = { select: jest.fn().mockReturnValue(chain), execute: jest.fn().mockResolvedValue([{ allowed: true }]) };
+    const service = new DerivedSummaryMembersService(jobAid as never, matters as never);
+    jest.spyOn(service, 'authorizeActor').mockResolvedValue(undefined);
+    const actor = { tenantId: 'tenant-exact', actorUserId: 'actor-exact' };
+    const [actual] = await service.readAll([selected], actor, database as never);
+    expect(actual).toMatchObject({ member: selected, headline: persisted.headline, understanding, body, issues,
+      current: false, overviewStatus: 'STALE', evidence: [], rootRefs: [], leaves: [selected] });
+    if (kind === 'WORK_ITEM_WORK') expect(jobAid.readSummaryMemberInTransaction).toHaveBeenCalledWith({ ...actor,
+      workItemId: member.workItemId, workRef: member.workRef }, database);
+    else {
+      expect(matters.readByRef).toHaveBeenCalledWith({ tenantId: actor.tenantId, matterId: 'MAT-exact', workRef: 'MWR-exact' }, database);
+      expect(matters.authorizeRuntimeInputs).toHaveBeenLastCalledWith({ ...actor, matterId: 'MAT-exact', basedOnMatterRevisionId: 'MR-exact' }, database);
+    }
   });
 });

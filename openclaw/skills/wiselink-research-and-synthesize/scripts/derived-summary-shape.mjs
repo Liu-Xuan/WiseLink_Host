@@ -64,15 +64,28 @@ export function validateDerivedSummaryModelInput(value) {
 
 export function validateDerivedSummaryReading(reading) {
   assertSummaryExactKeys(reading, ['member', 'evidenceRef', 'headline', 'body', 'issues', 'evidence', 'rootRefs',
-    'limitations', 'current', 'overviewStatus', 'leaves'], 'DERIVED_SUMMARY_MEMBER_READING_INVALID');
+    'limitations', 'current', 'overviewStatus', 'leaves',
+    ...(Object.hasOwn(reading ?? {}, 'understanding') ? ['understanding'] : [])], 'DERIVED_SUMMARY_MEMBER_READING_INVALID');
   validateDerivedSummaryMember(reading.member);
   if (!text(reading.evidenceRef) || typeof reading.headline !== 'string' || !text(reading.body) ||
       !Array.isArray(reading.issues) || !Array.isArray(reading.evidence) || !texts(reading.rootRefs) ||
       !texts(reading.limitations) || typeof reading.current !== 'boolean' ||
       !['CURRENT', 'STALE', 'NOT_AVAILABLE'].includes(reading.overviewStatus) || !Array.isArray(reading.leaves))
     fail('DERIVED_SUMMARY_MEMBER_READING_INVALID');
+  if (Object.hasOwn(reading, 'understanding') &&
+      (reading.member.kind === 'DERIVED_SUMMARY' || typeof reading.understanding !== 'string' ||
+       reading.body !== completeDerivedSummaryWorkBody(reading.understanding, reading.issues)))
+    fail('DERIVED_SUMMARY_MEMBER_READING_INVALID');
   reading.leaves.forEach(validateDerivedSummaryMember);
   return reading;
+}
+
+/** Host completeBody separators and issue order, with no parsing or inferred text. */
+export function completeDerivedSummaryWorkBody(understanding, issues) {
+  if (typeof understanding !== 'string' || !Array.isArray(issues) || issues.some(issue =>
+      typeof issue?.issueKey !== 'string' || typeof issue.question !== 'string' || typeof issue.body !== 'string'))
+    fail('DERIVED_SUMMARY_MEMBER_READING_INVALID');
+  return `${understanding}\n\n${issues.map(issue => `问题 ${issue.issueKey}：${issue.question}\n${issue.body}`).join('\n\n')}`;
 }
 
 /** Mirrors shared DerivedSummaryTask; runtime controls never enter the model view. */

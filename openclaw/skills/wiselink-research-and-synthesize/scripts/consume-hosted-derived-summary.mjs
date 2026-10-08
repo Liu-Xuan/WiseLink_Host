@@ -7,6 +7,7 @@ import { canonicalJson } from './validate-payload.mjs';
 import { assertHostedModelGatewayReady, createCheckpointStore, createHostMcpConnection,
   resolveRuntimeConfig } from './run-hosted-review-turn.mjs';
 import { validateSummaryRunBudget } from './derived-summary-native-gateway.mjs';
+import { assertDerivedSummaryReadReceiptShape } from './derived-summary-read-projection.mjs';
 import { invokeHostedDerivedSummaryModel } from './invoke-hosted-derived-summary-model.mjs';
 import { derivedSummaryRegistry, validateDerivedSummaryContent, materializeDerivedSummaryContent,
   normalizeDerivedSummaryContent, validateDerivedSummaryReadSelection,
@@ -90,19 +91,27 @@ export async function consumeHostedDerivedSummary(options, dependencies) {
   const read = async intent => {
     validateDerivedSummaryReadSelection(intent, registry, intent.action);
     const result = await call(intent.action, { evidenceRefs: intent.evidenceRefs, purpose: intent.purpose });
+    assertDerivedSummaryReadReceiptShape(result, intent.action);
     if (intent.action === 'READ_MEMBER_WORK') {
       if (!Array.isArray(result?.members) || result.members.length !== intent.evidenceRefs.length)
         throw new Error('DERIVED_SUMMARY_MEMBER_READ_BINDING_MISMATCH');
-      for (const member of result.members) {
-        validateDerivedSummaryReading(member);
-        const expected = registry.members.get(member.evidenceRef);
-        if (!intent.evidenceRefs.includes(member.evidenceRef) || !expected ||
-            canonicalJson(member.member) !== canonicalJson(expected.member))
+      const members = result.members.map(value => {
+        const expected = registry.members.get(value?.evidenceRef);
+        if (!intent.evidenceRefs.includes(value?.evidenceRef) || !expected)
           throw new Error('DERIVED_SUMMARY_MEMBER_READ_BINDING_MISMATCH');
-      }
+        // A sealed old member keeps its complete original body, even after reader enrichment.
+        const { understanding: _freshUnderstanding, ...legacy } = value;
+        const member = Object.hasOwn(expected, 'understanding') ? value : legacy;
+        const immutable = ({ current, overviewStatus, limitations, ...content }) => content;
+        if (canonicalJson(immutable(member)) !== canonicalJson(immutable(expected)))
+          throw new Error('DERIVED_SUMMARY_MEMBER_READ_BINDING_MISMATCH');
+        validateDerivedSummaryReading(value);
+        validateDerivedSummaryReading(member);
+        return member;
+      });
       if (new Set(result.members.map(member => member.evidenceRef)).size !== intent.evidenceRefs.length)
         throw new Error('DERIVED_SUMMARY_MEMBER_READ_BINDING_MISMATCH');
-      return { members: result.members };
+      return { members };
     }
     if (!Array.isArray(result?.evidence) || result.evidence.length !== intent.evidenceRefs.length ||
         new Set(result.evidence.map(item => item?.evidenceRef)).size !== intent.evidenceRefs.length ||

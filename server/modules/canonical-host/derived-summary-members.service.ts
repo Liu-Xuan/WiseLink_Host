@@ -58,6 +58,7 @@ export class DerivedSummaryMembersService {
     const path = new Set(ancestors).add(evidenceRef);
     if (member.kind === 'DERIVED_SUMMARY') return this.readSummary(member, actor, database, path);
     let headline: string;
+    let understanding: string;
     let body: string;
     let issues: JobAidProblemIssue[];
     let evidence: AssessmentEvidence[];
@@ -71,7 +72,8 @@ export class DerivedSummaryMembersService {
       const content = saved.revision.content;
       headline = content.headline;
       issues = selectIssues(content.issues, member.issueKeys);
-      body = completeBody(content.understanding, issues);
+      understanding = content.understanding;
+      body = completeBody(understanding, issues);
       // An Overall projection can be regenerated for the same work ref. This member
       // freezes the immutable work body; it must not splice in a mutable latest projection.
       evidence = content.evidence;
@@ -88,7 +90,8 @@ export class DerivedSummaryMembersService {
       if (!content) throw summaryError('DERIVED_SUMMARY_COMPLETE_MEMBER_WORK_UNAVAILABLE');
       headline = content.headline;
       issues = selectIssues(content.issues, member.issueKeys);
-      body = completeBody(content.understanding, issues);
+      understanding = content.understanding;
+      body = completeBody(understanding, issues);
       evidence = content.evidence;
       overviewStatus = content.overviewStatus;
       const [latest] = await database.select({ ref: engineeringMatterWorkRevision.matterWorkRevisionId })
@@ -109,7 +112,7 @@ export class DerivedSummaryMembersService {
       ...(member.issueKeys.length ? [`只选取问题：${member.issueKeys.join('、')}；其余问题不在本次覆盖内。`] : []),
       ...await this.sourceVersionNotices(evidence, actor, database),
     ];
-    return { member, evidenceRef, headline, body, issues, evidence, rootRefs: roots.rootRefs,
+    return { member, evidenceRef, headline, understanding, body, issues, evidence, rootRefs: roots.rootRefs,
       limitations, current, overviewStatus, leaves: [member] };
   }
 
@@ -255,8 +258,15 @@ export function mergeSummaryEvidence(evidence: AssessmentEvidence[]): Assessment
 }
 /** Currentness can change; exact saved content and roots cannot. */
 export function assertMemberSnapshot(before: DerivedSummaryMemberReading, after: DerivedSummaryMemberReading): void {
-  if (canonicalJson({ member: before.member, body: before.body, evidence: before.evidence, rootRefs: before.rootRefs }) !==
-    canonicalJson({ member: after.member, body: after.body, evidence: after.evidence, rootRefs: after.rootRefs }))
+  for (const reading of [before, after]) {
+    if (Object.hasOwn(reading, 'understanding') && (reading.member.kind === 'DERIVED_SUMMARY' ||
+        typeof reading.understanding !== 'string' || reading.body !== completeBody(reading.understanding, reading.issues)))
+      throw summaryError('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+  }
+  const immutable = ({ current: _current, overviewStatus: _overviewStatus, limitations: _limitations,
+    understanding, ...content }: DerivedSummaryMemberReading) =>
+    Object.hasOwn(before, 'understanding') ? { ...content, understanding } : content;
+  if (canonicalJson(immutable(before)) !== canonicalJson(immutable(after)))
     throw summaryError('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
 }
 

@@ -45,6 +45,8 @@ export interface DerivedSummaryMemberReading {
   member: DerivedSummaryMember;
   evidenceRef: string;
   headline: string;
+  /** Exact persisted work understanding; body remains the complete reconstruction. */
+  understanding?: string;
   body: string;
   issues: JobAidProblemIssue[];
   evidence: AssessmentEvidence[];
