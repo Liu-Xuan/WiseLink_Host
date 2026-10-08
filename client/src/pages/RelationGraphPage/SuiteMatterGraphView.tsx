@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@client/src/components/ui/dialog';
+import { activityStatementTimeText } from '@client/src/features/trinity/document-activity-presentation';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 
@@ -128,7 +129,7 @@ function relationDetailText(detail: SuiteRelationDetail): string {
       return `目录登记：${detail.entry.document.documentCode} · ${detail.entry.document.businessRevision}（${role}）；版本身份：${detail.entry.document.documentVersionId}`;
     }
     if (detail.kind === 'STATEMENT') {
-      const time = detail.statement.time?.raw ?? '未提取';
+      const time = activityStatementTimeText(detail.statement, '未提取');
       return `资料声明：${detail.statement.label}；时间表述：${time}；保存身份：${detail.parseRunId} · 候选修订 ${detail.candidateRevision}`;
     }
     if (detail.kind === 'ATA_CLASSIFICATION') {

@@ -1,3 +1,4 @@
+import { graphActivityV2 } from './fixtures/graph-activity-v2';
 import { saveLibraryGraphReturn } from '@client/src/pages/RelationGraphPage/library-graph-return-memory';
 import { act, createElement, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -193,4 +194,25 @@ it('cannot reuse an old-account macro return while the selected document remains
   await act(async()=>render(entry));await settle();
   expect(mockView.notices).toContain('概览返回状态已过期；返回将重新打开全库概览。');
   await act(async()=>mockView.onBack!());expect(location).toBe('/graph?scope=library');expect(location).not.toContain('previous-actor');
+});
+
+it('mounts v2 document details for the shared opt-in source contract and returns the selected time row with exact pins', async () => {
+  const saved = graphActivityV2('dv-r3', 'old-parse', 'family-a', 'old-run');
+  mockActivities.set('dv-r3', { familyId: saved.familyId, candidate: saved.candidate });
+  await act(async () => render()); await settle();
+  expect(mockView.timelineEvents).toHaveLength(3);
+  const event = mockView.timelineEvents[2];
+  await act(async () => mockView.onSelectEvent(event));
+  expect(container.querySelector('[data-testid="activity-statement-semantics"]')?.textContent).toContain('only after CIDB');
+  expect(container.textContent).toContain('来源声称已完成');
+  await act(async () => { mockView.onStateChange({ selectedId: event.nodeId!, eventId: event.id, eventPins: event.pins! }, true); mockView.onOpenEventTimeline(event); });
+  const target = new URL(location, 'https://example.test');
+  expect(target.searchParams.get('anchor')).toBe('anchor-1');
+  expect(target.searchParams.get('statementId')).toBe('st-1');
+  expect(target.searchParams.get('runRef')).toBe('old-run');
+  const returned = graphReturnTarget(target.searchParams, 'dv-r3', 'old-parse')!;
+  await act(async () => navigate(returned.route)); await settle();
+  expect(mockSourcesInput.restorePins).toEqual(event.pins);
+  expect(mockView.timelineEvents.find(item => item.id === event.id)?.date).toBe('after approval');
+  expect(container.querySelector('[data-testid="activity-statement-semantics"]')).not.toBeNull();
 });

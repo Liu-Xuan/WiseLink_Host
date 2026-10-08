@@ -1,5 +1,6 @@
 import { matterDocumentSourceLabel, type MatterDocumentSource } from '@client/src/features/matter/matter-document-sources';
-import type { DocumentActivityStatement } from '@shared/document-activity.interface';
+import type { AnyDocumentActivityStatement as DocumentActivityStatement } from '@shared/document-activity.interface';
+import { documentActivityStatementStatusRaw, isDocumentActivityStatementV2 } from '@shared/document-activity.interface';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import { timelineItems } from '@client/src/features/trinity/document-activity-timeline';
 import {
@@ -57,14 +58,32 @@ const eventIdentity = (...parts: string[]) => JSON.stringify(['event', ...parts]
 
 export function suiteGraphSourceEventId(
   pins: SuiteGraphTimelineEventPins,
+  timeIndex?: number | null,
 ): string {
-  return eventIdentity(
+  const parts = [
     pins.documentVersionId,
     pins.parseRunId,
     String(pins.candidateRevision),
     pins.runRef,
     pins.statementId,
-  );
+  ];
+  // The index is presentation-only. Legacy identities and exact source pins stay unchanged.
+  if (timeIndex !== undefined) parts.push('time', timeIndex === null ? 'none' : String(timeIndex));
+  return eventIdentity(...parts);
+}
+
+/** A bounded time suffix restores display selection; it never changes exact source pins. */
+export function suiteGraphSourceEventMatchesPins(eventId: string, pins: SuiteGraphTimelineEventPins): boolean {
+  if (suiteGraphSourceEventId(pins) === eventId) return true;
+  try {
+    const parts: unknown = JSON.parse(eventId);
+    if (!Array.isArray(parts) || parts.length !== 8 || parts[6] !== 'time') return false;
+    const rawIndex: unknown = parts[7];
+    if (rawIndex === 'none') return suiteGraphSourceEventId(pins, null) === eventId;
+    if (typeof rawIndex !== 'string' || !/^(0|[1-9]\d*)$/u.test(rawIndex)) return false;
+    const index = Number(rawIndex);
+    return Number.isSafeInteger(index) && suiteGraphSourceEventId(pins, index) === eventId;
+  } catch { return false; }
 }
 
 const sourceLabelFor = matterDocumentSourceLabel;
@@ -88,6 +107,7 @@ export function buildSuiteGraphTimeline(input: {
     const label = sourceLabelFor(entry);
     for (const item of timelineItems(activity.candidate)) {
       const { statement } = item;
+      const statusRaw = documentActivityStatementStatusRaw(statement);
       const nodeId = input.read
         ? suiteGraphStatementNodeId(input.read.targets, documentVersionId, statement.statementId) ??
           suiteGraphDocumentNodeId(input.read.targets, documentVersionId)
@@ -102,13 +122,14 @@ export function buildSuiteGraphTimeline(input: {
         anchorId: statement.quotes[0]?.anchorId ?? null,
       };
       events.push({
-        id: suiteGraphSourceEventId(pins),
+        id: suiteGraphSourceEventId(pins, isDocumentActivityStatementV2(statement) ? item.timeIndex : undefined),
         kind: 'source',
         date: item.displayTime,
         sortKey: item.span?.start ?? null,
         title: statement.label,
-        detail: statement.statusRaw
-          ? `${label} · 状态：${statement.statusRaw}`
+        detail: statusRaw
+          ? `${label}${isDocumentActivityStatementV2(statement) ? ` · ${item.time?.role ?? '本候选未捕获'}` : ''} · 状态：${statusRaw}`
+          : isDocumentActivityStatementV2(statement) ? `${label} · ${item.time?.role ?? '本候选未捕获'}`
           : label,
         nodeId,
         pins,

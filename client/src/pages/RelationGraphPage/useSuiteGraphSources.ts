@@ -116,6 +116,7 @@ export function useSuiteGraphSources(input: {
     const read = async (signal: AbortSignal): Promise<SourceRecord> => {
       if (exactPins) {
         const reading = await readDocumentActivityReading({
+          acceptCandidateSchemaV2: true,
           documentVersionId,
           parseRunId: exactPins.parseRunId,
           candidateRevision: exactPins.candidateRevision,
@@ -153,7 +154,7 @@ export function useSuiteGraphSources(input: {
         return { status: 'unparsed', notice: '该版本尚无已发布解析，没有可读的保存声明。', candidate: null };
       }
       const reading = await readDocumentActivityReading(
-        { documentVersionId, parseRunId: publishedRun.parseRunId },
+        { documentVersionId, parseRunId: publishedRun.parseRunId, acceptCandidateSchemaV2: true },
         signal,
       );
       if (reading.binding.documentVersionId !== documentVersionId || reading.binding.parseRunId !== publishedRun.parseRunId || (entry.familyId && reading.familyId !== entry.familyId)) {

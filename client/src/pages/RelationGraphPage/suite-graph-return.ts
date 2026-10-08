@@ -1,7 +1,7 @@
 import { isLibraryGraphReturnToken } from './library-graph-return-memory';
 import { readDocumentGraphEntry } from './document-graph-route';
 import {
-  suiteGraphSourceEventId,
+  suiteGraphSourceEventMatchesPins,
   type SuiteGraphTimelineEventPins,
 } from './suite-graph-timeline';
 
@@ -69,7 +69,7 @@ export function graphReadingParams(matterId: string, workRef: string | null, sta
     params.set('eventId', state.eventId);
     if (
       validEventPins(state.eventPins)
-      && suiteGraphSourceEventId(state.eventPins) === state.eventId
+      && suiteGraphSourceEventMatchesPins(state.eventId, state.eventPins)
     ) {
       params.set('eventPins', JSON.stringify(state.eventPins));
     }
@@ -131,7 +131,7 @@ export function readGraphReadingState(params: URLSearchParams): SuiteGraphReadin
     state.eventId = eventId;
     try {
       const pins: unknown = JSON.parse(single(params, 'eventPins'));
-      if (validEventPins(pins) && suiteGraphSourceEventId(pins) === eventId) {
+      if (validEventPins(pins) && suiteGraphSourceEventMatchesPins(eventId, pins)) {
         state.eventPins = pins;
       }
     } catch { /* Optional malformed event pins are omitted. */ }

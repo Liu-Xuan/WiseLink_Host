@@ -1,3 +1,4 @@
+import { graphActivityV2 } from './fixtures/graph-activity-v2';
 import { act, createElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRoot, type Root } from 'react-dom/client';
@@ -129,6 +130,7 @@ describe('useSuiteGraphSources exact event restoration', () => {
       documentVersionId: 'dv-b',
       parseRunId: 'parse-b',
       candidateRevision: 7,
+      acceptCandidateSchemaV2: true,
     }, expect.any(AbortSignal));
     expect(mockReadStatus).not.toHaveBeenCalled();
     expect(current.activeSourceId).toBe('dv-b');
@@ -261,7 +263,7 @@ describe('useSuiteGraphSources exact event restoration', () => {
     mockReadStatus.mockResolvedValue({ publishedRun: { parseRunId: 'parse-a' } });
     mockReadActivity.mockResolvedValue({ familyId: 'family-a', binding: { documentVersionId: 'dv-a', parseRunId: 'parse-a' }, candidate: { runRef: 'run-a', statements: [] } });
     await act(async () => root.render(createElement(Probe, { sources: [{ document: { documentVersionId: 'dv-a' }, familyId: 'family-a' }] })));
-    expect(mockReadActivity).toHaveBeenCalledWith({ documentVersionId: 'dv-a', parseRunId: 'parse-a' }, expect.any(AbortSignal));
+    expect(mockReadActivity).toHaveBeenCalledWith({ documentVersionId: 'dv-a', parseRunId: 'parse-a', acceptCandidateSchemaV2: true }, expect.any(AbortSignal));
     expect(current.activities.has('dv-a')).toBe(true);
   });
 
@@ -296,6 +298,20 @@ describe('useSuiteGraphSources exact event restoration', () => {
     await act(async () => current.expandSource('dv-a'));
     expect(mockReadStatus).toHaveBeenCalledTimes(3);
     expect(current.sources[0].status).toBe('unparsed');
+  });
+
+  it.each([false, true])('accepts saved v2 from the actual hook for exactPin=%s', async exactPin => {
+    const reading = graphActivityV2('dv-b', 'parse-b', 'family-b', 'run-b', 7);
+    reading.candidate.statements[0].statementId = 'statement-b';
+    mockReadStatus.mockResolvedValue({ publishedRun: { parseRunId: 'parse-b' } });
+    mockReadActivity.mockResolvedValue(reading);
+    await act(async () => root.render(createElement(Probe, { restorePins: exactPin ? pins : undefined,
+      sources: [{ document: { documentVersionId: 'dv-b' }, familyId: 'family-b' }] })));
+    expect(mockReadActivity).toHaveBeenCalledWith({ documentVersionId: 'dv-b', parseRunId: 'parse-b',
+      ...(exactPin ? { candidateRevision: 7 } : {}), acceptCandidateSchemaV2: true }, expect.any(AbortSignal));
+    expect(current.activities.get('dv-b')?.candidate).toEqual(reading.candidate);
+    expect(current.sources[0].status).toBe('loaded');
+    if (exactPin) expect(mockReadStatus).not.toHaveBeenCalled();
   });
 
   it('does not reuse source cache when the exact registered family binding changes', async () => {

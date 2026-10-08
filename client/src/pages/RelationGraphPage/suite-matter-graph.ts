@@ -4,7 +4,8 @@ import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering
 import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
 import type { AssessmentClaimPremise, AssessmentEvidence, AssessmentReadingClaim } from '@shared/assessment-reading.interface';
 import type { MatterMaterialLink } from '@shared/matter-material.interface';
-import type { DocumentActivityRevision, DocumentActivityStatement } from '@shared/document-activity.interface';
+import type { AnyDocumentActivityRevision as DocumentActivityRevision, AnyDocumentActivityStatement as DocumentActivityStatement } from '@shared/document-activity.interface';
+import { activityStatementTimeText } from '@client/src/features/trinity/document-activity-presentation';
 import type { SuiteGraphGroup, SuiteGraphMatter, SuiteGraphRelation } from './suite-graph-model';
 
 export type SuiteMatterGraphTarget =
@@ -277,7 +278,7 @@ export function appendSuiteGraphActivityStatements(read: SuiteMatterGraphRead, a
       group.items.push({
         id: nodeId,
         title: statement.label,
-        subtitle: statement.time?.raw ?? '时间未提取',
+        subtitle: activityStatementTimeText(statement),
         kind: 'statement',
       });
       const relationId = identity('declares', documentVersionId, statement.statementId);

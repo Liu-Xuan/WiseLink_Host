@@ -1,3 +1,5 @@
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { graphActivityV2 } from './fixtures/graph-activity-v2';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
@@ -9,6 +11,9 @@ const mockStatus = jest.fn();
 const mockActivity = jest.fn();
 let mockGeneration = 1;
 let mockAuthenticationRequired = false;
+let routerLocation = '';
+let navigateBack: ReturnType<typeof useNavigate>;
+function RouteProbe() { const location = useLocation(); routerLocation = `${location.pathname}${location.search}`; navigateBack = useNavigate(); return null; }
 jest.mock('@client/src/api/canonical-host', () => ({
   getCurrentReviewConversation: (...args: unknown[]) => mockReview(...args),
   readDocumentParsingStatus: (...args: unknown[]) => mockStatus(...args),
@@ -46,7 +51,7 @@ describe('Wiki embedding of existing reads (DOM + mocked HTTP boundaries)', () =
   afterEach(() => { act(() => root.unmount()); dom.window.close(); });
   async function render(next = props) {
     props = next;
-    await act(async () => root.render(createElement(WikiRecentChanges, props)));
+    await act(async () => root.render(createElement(MemoryRouter, { basename: '/app', initialEntries: ['/app/wiki'] }, createElement(RouteProbe), createElement(WikiRecentChanges, props))));
   }
   async function expand() {
     const details = [...container.querySelectorAll('details')].find(item => item.querySelector('summary')?.textContent === '来源活动解释候选')!;
@@ -130,10 +135,10 @@ describe('Wiki embedding of existing reads (DOM + mocked HTTP boundaries)', () =
     await select();
     expect(mockStatus).not.toHaveBeenCalled();
     expect(mockActivity).toHaveBeenCalledTimes(1);
-    expect(mockActivity.mock.calls[0][0]).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: 2 });
+    expect(mockActivity.mock.calls[0][0]).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: 2, acceptCandidateSchemaV2: true });
     expect(container.textContent).toContain('来源目标计划');
     expect(container.textContent).toContain('TBD');
-    const link = container.querySelector('a[href^="/timeline?"]')!;
+    const link = container.querySelector('a[href^="/app/timeline?"]')!;
     const query = new URLSearchParams(link.getAttribute('href')!.split('?')[1]);
     expect(Object.fromEntries(query)).toMatchObject({ documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: '2', runRef: 'DA1' });
     const window = container.querySelector('button[data-window="current-year"]')!;
@@ -147,8 +152,39 @@ describe('Wiki embedding of existing reads (DOM + mocked HTTP boundaries)', () =
     await render({ ...props, sources: [{ label: '登记版本一', documentVersionId: 'DV1' }] });
     await expand(); await select();
     expect(mockStatus).toHaveBeenCalledWith('DV1', expect.any(AbortSignal));
-    expect(mockActivity.mock.calls[0][0]).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1' });
-    expect(container.querySelector('a[href^="/timeline?"]')?.getAttribute('href')).toContain('runRef=DA1');
+    expect(mockActivity.mock.calls[0][0]).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1', acceptCandidateSchemaV2: true });
+    expect(container.querySelector('a[href^="/app/timeline?"]')?.getAttribute('href')).toContain('runRef=DA1');
+  });
+
+  it('renders all saved v2 times and routes source/anchor/timeline through the basename without a page reload', async () => {
+    const reading = graphActivityV2('DV1', 'PR1', 'F1', 'DA1');
+    mockActivity.mockResolvedValue(reading);
+    await render(); await expand(); await select();
+    expect(mockActivity.mock.calls[0][0].acceptCandidateSchemaV2).toBe(true);
+    const rows = container.querySelectorAll('article.activity-timeline-item');
+    expect(rows).toHaveLength(3);
+    expect([...rows].map(row => row.querySelector('.activity-time')?.textContent)).toEqual(expect.arrayContaining([
+      expect.stringContaining('Q4 2026'), expect.stringContaining('TBD'), expect.stringContaining('after approval'),
+    ]));
+    await act(async () => container.querySelector<HTMLButtonElement>('.activity-timeline-select')!.click());
+    expect(container.querySelector('[data-testid="activity-statement-semantics"]')?.textContent).toContain('来源声称已完成');
+    expect(container.textContent).toContain(' source reports completed\r\n');
+    expect(container.textContent).toContain('LN 2024-2026');
+    const anchor = [...container.querySelectorAll('button')].find(button => button.textContent === '锚点 anchor-1')!;
+    await act(async () => anchor.click());
+    const target = new URL(routerLocation, 'https://example.test');
+    expect(target.pathname).toBe('/document-versions/DV1/activities');
+    expect(Object.fromEntries(target.searchParams)).toMatchObject({ documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: '2', runRef: 'DA1', statementId: 'st-1', anchor: 'anchor-1' });
+    // Router navigation retains the mounted reader and basename-aware Link output.
+    expect(mockActivity).toHaveBeenCalledTimes(1);
+    const timelineLink = container.querySelector<HTMLAnchorElement>('a[href^="/app/timeline?"]')!;
+    expect(timelineLink).not.toBeNull();
+    await act(async () => timelineLink.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })));
+    expect(routerLocation).toContain('/timeline?');
+    expect(new URL(routerLocation, 'https://example.test').searchParams.get('runRef')).toBe('DA1');
+    await act(async () => navigateBack(-1));
+    expect(routerLocation).toContain('/document-versions/DV1/activities?');
+    expect(mockActivity).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -215,10 +251,10 @@ describe('Wiki embedding of existing reads (DOM + mocked HTTP boundaries)', () =
     await expand(); await select(1); await select(2);
     await act(async () => resolve(sourceReading));
     expect(mockActivity).toHaveBeenCalledTimes(2);
-    expect(mockActivity.mock.calls[1][0]).toEqual({ documentVersionId: 'DV2', parseRunId: 'PR2', candidateRevision: 2 });
+    expect(mockActivity.mock.calls[1][0]).toEqual({ documentVersionId: 'DV2', parseRunId: 'PR2', candidateRevision: 2, acceptCandidateSchemaV2: true });
     expect(container.textContent).toContain('来源二声明');
     expect(container.textContent).not.toContain('来源目标计划');
-    expect(container.querySelector('a[href^="/timeline?"]')?.getAttribute('href')).toContain('documentVersionId=DV2');
+    expect(container.querySelector('a[href^="/app/timeline?"]')?.getAttribute('href')).toContain('documentVersionId=DV2');
   });
 
   it('does not silently repoint a selected source when its candidate identity prop changes', async () => {

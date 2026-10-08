@@ -17,6 +17,9 @@ import type { DocumentAssessmentEvidence } from '@client/src/features/matter/ass
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { SuiteMatterGraphRead, SuiteMatterGraphTarget } from './suite-matter-graph';
+import { documentActivityStatementStatusRaw } from '@shared/document-activity.interface';
+import { activityStatementTimeText } from '@client/src/features/trinity/document-activity-presentation';
+import DocumentActivityStatementSemantics from '@client/src/features/trinity/DocumentActivityStatementSemantics';
 import type { SuiteGraphTimelineEvent } from './suite-graph-timeline';
 
 export type SuiteGraphKnowledgeTab = 'knowledge' | 'basis' | 'discussion';
@@ -167,12 +170,14 @@ function TargetDetail({ target, onLocateEvidence, onOpenTarget }: {
   }
   if (target.kind === 'statement') {
     const { statement } = target;
+    const statusRaw = documentActivityStatementStatusRaw(statement);
     return (
       <>
         <span className="suite-graph-target-kind">来源声明</span>
         <h3>{statement.label}</h3>
-        <p className="suite-graph-muted">时间表述：{statement.time?.raw ?? '时间未提取'}</p>
-        {statement.statusRaw ? <p className="suite-graph-muted">状态：{statement.statusRaw}</p> : null}
+        <p className="suite-graph-muted">时间表述：{activityStatementTimeText(statement)}</p>
+        {statusRaw ? <p className="suite-graph-muted">状态：{statusRaw}</p> : null}
+        <DocumentActivityStatementSemantics statement={statement} />
         {statement.limitations.map((limitation) => <p className="suite-graph-notice" key={limitation}>限制：{limitation}</p>)}
         {statement.quotes.map((quote, index) => (
           <blockquote className="suite-graph-quote" key={`${quote.anchorId}-${index}`}>
