@@ -253,7 +253,7 @@ describe('canonical structured-content browser projection', () => {
     expect(built.snapshot.items[1]).toMatchObject({
       normalizedTarget: '777-SL-31-064',
       resolvedWorkItemRef: 'WI-real-sl',
-      currentness: 'CURRENT',
+      currentness: 'UNKNOWN',
       contextUse: 'BACKGROUND_ONLY',
       targetApplicability: 'APPLICABLE',
       applicabilityResultRef: 'openclaw-applicability://RESULT-RELATED',

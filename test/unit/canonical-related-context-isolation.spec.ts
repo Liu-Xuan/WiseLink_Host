@@ -395,6 +395,7 @@ describe('canonical related-context preview ordinary isolation', () => {
       resolvedDocumentVersionRef: 'DV-RELATED-EXACT',
       resolvedWorkItemRef: 'WI-RELATED-EXACT',
       currentness: 'UNKNOWN',
+      reasonCodes: expect.arrayContaining(['PUBLISHER_CURRENTNESS_UNKNOWN']),
       targetApplicability: 'APPLICABLE',
       applicabilityResultRef: 'openclaw-applicability://RELATED-EXACT',
       availability: 'AVAILABLE',
