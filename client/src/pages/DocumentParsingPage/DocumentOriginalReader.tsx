@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import type { DocumentOriginalBinding, DocumentOriginalResult } from '@shared/document-original.interface';
+import { tableAttachedSourceText } from './table-source-text';
 import { originalReadingGroups, originalUnitPages, sameOriginalBinding } from './original-reading';
 
 /**
@@ -110,8 +111,14 @@ function OriginalTable({ payload }: { payload: Record<string, unknown> }) {
   const groups = payload.rowGroups as Array<{ rows: Array<{ rowId: string; cells: Array<{
     cellId: string; isHeader?: boolean; rowSpan: number; colSpan: number; inlineContent: Array<{ text: string }>;
   }> }> }>;
-  return <div style={{ overflowX: 'auto' }}><table>{typeof payload.caption === 'string' && payload.caption ? <caption>{payload.caption}</caption> : null}<tbody>{groups.flatMap(group => group.rows).map(row =>
+  const attachedText = tableAttachedSourceText(payload);
+  return <div style={{ overflowX: 'auto' }}><table>{typeof payload.caption === 'string' && payload.caption ? <caption className="whitespace-pre-wrap">{payload.caption}</caption> : null}<tbody>{groups.flatMap(group => group.rows).map(row =>
     <tr key={row.rowId} id={row.rowId}>{row.cells.map(cell => { const Cell = cell.isHeader ? 'th' : 'td'; return <Cell key={cell.cellId} id={cell.cellId} rowSpan={cell.rowSpan} colSpan={cell.colSpan}>
       {cell.inlineContent.map(item => item.text).join(' ')}
-    </Cell>; })}</tr>)}</tbody></table></div>;
+    </Cell>; })}</tr>)}</tbody></table>
+    {attachedText !== null ? <div className="mt-2">
+      <p className="text-xs text-muted-foreground">原文附带文字</p>
+      <p className="whitespace-pre-wrap">{attachedText}</p>
+    </div> : null}
+  </div>;
 }

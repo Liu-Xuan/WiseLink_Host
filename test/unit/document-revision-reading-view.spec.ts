@@ -19,6 +19,32 @@ function reading(status: 'TEXT_EQUAL' | 'TEXT_DIFFERENT'): DocumentRevisionReadi
 }
 
 describe('document revision reading view', () => {
+  it('keeps each compared table and its unchanged attached source conditions together', () => {
+    const result = reading('TEXT_DIFFERENT');
+    for (const [value, note] of [[result.before, 'Before: do not use X.\nExcept B < 12.'],
+      [result.after, 'After: only if Y is closed.\nRetain A & B.']] as const) {
+      const unit = value.selectedSections[0].units[0];
+      unit.kind = 'table';
+      unit.payload = { layout: 'grid', caption: `Table ${value.binding.documentVersionId}`, rawText: note,
+        rowGroups: [{ rows: [{ rowId: `${unit.unitId}:row`, cells: [{ cellId: `${unit.unitId}:cell`,
+          isHeader: true, rowSpan: 2, colSpan: 2, inlineContent: [{ text: 'Limits' }] }] }] }] };
+      value.publisherRevisionDescriptions = [];
+    }
+    const before = structuredClone(result);
+    const html = renderToStaticMarkup(createElement(MemoryRouter, null,
+      createElement(DocumentRevisionReadingView, { reading: result })));
+    expect(html.match(/原文附带文字/g)).toHaveLength(2);
+    expect(html.match(/Before: do not use X[.]/g)).toHaveLength(1);
+    expect(html.match(/After: only if Y is closed[.]/g)).toHaveLength(1);
+    expect(html).toContain('Before: do not use X.\nExcept B &lt; 12.');
+    expect(html).toContain('After: only if Y is closed.\nRetain A &amp; B.');
+    expect(html.indexOf('Table DV-BEFORE')).toBeLessThan(html.indexOf('Before: do not use X.'));
+    expect(html.indexOf('Before: do not use X.')).toBeLessThan(html.indexOf('Table DV-AFTER'));
+    expect(html).toMatch(/rowspan="2"/i);
+    expect(html).toMatch(/colspan="2"/i);
+    expect(result).toEqual(before);
+  });
+
   it('keeps a text difference bounded instead of declaring the rest unchanged', () => {
     const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(DocumentRevisionReadingView, { reading: reading('TEXT_DIFFERENT') })));
     expect(html).toContain('本版修订说明与对应原文差异');
@@ -35,4 +61,28 @@ describe('document revision reading view', () => {
     expect(html).toContain('DV-BEFORE');
     expect(html).toContain('DV-AFTER');
   });
+});
+
+it('deduplicates only each table’s exact leading caption while preserving side-specific conditions and source links', () => {
+  const result = reading('TEXT_DIFFERENT');
+  for (const side of [result.before, result.after]) {
+    const unit = side.selectedSections[0].units[0];
+    const caption = `Limits ${side.binding.documentVersionId}`;
+    unit.kind = 'table';
+    unit.payload = { caption, rawText: `${caption}\nDo not use ${side.binding.documentVersionId} unless A < B.`,
+      rowGroups: [{ rows: [{ rowId: `${unit.unitId}:row`, cells: [{ cellId: `${unit.unitId}:cell`,
+        rowSpan: 1, colSpan: 1, inlineContent: [{ text: 'Value' }] }] }] }] };
+    side.publisherRevisionDescriptions = [];
+  }
+  const before = structuredClone(result);
+  const html = renderToStaticMarkup(createElement(MemoryRouter, null,
+    createElement(DocumentRevisionReadingView, { reading: result })));
+  for (const side of [result.before, result.after]) {
+    const dv = side.binding.documentVersionId;
+    expect(html.match(new RegExp(`Limits ${dv}`, 'g'))).toHaveLength(1);
+    expect(html).toContain(`Do not use ${dv} unless A &lt; B.`);
+    for (const ref of side.selectedSections[0].units[0].sourceRefIds) expect(html).toContain(`原文 ${ref}`);
+  }
+  expect(html.match(/原文附带文字/g)).toHaveLength(2);
+  expect(result).toEqual(before);
 });
