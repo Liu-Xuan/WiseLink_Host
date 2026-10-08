@@ -61,6 +61,10 @@ async function click(text: string) {
   await act(async () => button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
 }
 test('exact historical reading keeps old body and upper child ref while source changes remain visible', async () => {
+  const exact = summaryExact();
+  exact.revision.members[0].leaves = [exact.revision.members[0].member,
+    { kind: 'DERIVED_SUMMARY', summaryId: 'DS-child', summaryRef: 'DSR-child-exact', summaryRevision: 4 }];
+  mockExact.mockResolvedValue(exact);
   await mount('/summaries/DS-1?summaryRef=DSR-1&attemptRef=AQ-1');
   expect(container.textContent).toContain('确切正文 DSR-1'); expect(container.textContent).not.toContain('确切正文 DSR-2');
   expect(container.textContent).toContain('历史保存修订'); expect(container.textContent).toContain('当前工作已有新变化');
@@ -68,8 +72,58 @@ test('exact historical reading keeps old body and upper child ref while source c
   expect(container.textContent).toContain('其他 ATA4 未纳入'); expect(container.textContent).toContain('MODEL_FAILED');
   const upper = Array.from(container.querySelectorAll('a')).find(link => link.textContent?.includes('形成上层'))!;
   expect(new URL(upper.href).searchParams.get('fromSummaryRef')).toBe('DSR-1');
+  const workLeaf = Array.from(container.querySelectorAll('a')).find(link => link.textContent === '叶子工作：JAWR-1')!;
+  expect(Object.fromEntries(new URL(workLeaf.href).searchParams)).toEqual({ subjectKind: 'WORK_ITEM', subjectId: 'WI-1', workRef: 'JAWR-1' });
+  const childLeaf = Array.from(container.querySelectorAll('a')).find(link => link.textContent === '叶子工作：DSR-child-exact')!;
+  expect(new URL(childLeaf.href).pathname).toBe('/summaries/DS-child');
+  expect(new URL(childLeaf.href).searchParams.get('summaryRef')).toBe('DSR-child-exact');
   expect(mockExact).toHaveBeenCalledWith('DS-1', 'DSR-1', expect.anything()); expect(mockCreate).not.toHaveBeenCalled();
   expect(mockHead).not.toHaveBeenCalled();
+});
+test.each([
+  { delivered: true, used: true, readLabel: 'Host已读取成员工作', citationLabel: '正文直接引用成员工作' },
+  { delivered: true, used: false, readLabel: 'Host已读取成员工作', citationLabel: '正文未直接引用成员工作' },
+  { delivered: false, used: true, readLabel: 'Host未读取成员工作', citationLabel: '正文直接引用成员工作' },
+  { delivered: false, used: false, readLabel: 'Host未读取成员工作', citationLabel: '正文未直接引用成员工作' },
+])('coverage independently records Host READ $delivered and body citation $used', async ({ delivered, used, readLabel, citationLabel }) => {
+  const exact = summaryExact(); Object.assign(exact.revision.coverage[0], { delivered, used });
+  const before = JSON.stringify(exact); mockExact.mockResolvedValue(exact);
+  await mount('/summaries/DS-1?summaryRef=DSR-1');
+  const coverage = container.querySelector('[aria-label="确切成员与覆盖"]')!;
+  expect(coverage.textContent).toContain(`${readLabel} · ${citationLabel}`);
+  expect(coverage.textContent).toContain('覆盖记录仅表示Host读取与正文直接引用，不证明模型已接收完整正文或完成综合');
+  expect(coverage.textContent).toContain('仅覆盖选定问题');
+  expect(coverage.textContent).not.toContain('已交付输入');
+  expect(coverage.textContent).not.toContain('未交付完整输入');
+  expect(JSON.stringify(exact)).toBe(before);
+});
+test('missing coverage asserts neither Host READ nor body direct citation', async () => {
+  const exact = summaryExact(); exact.revision.coverage = []; mockExact.mockResolvedValue(exact);
+  await mount('/summaries/DS-1?summaryRef=DSR-1');
+  const coverage = container.querySelector('[aria-label="确切成员与覆盖"]')!;
+  expect(coverage.textContent).toContain('覆盖记录不可用，不能扩大已覆盖范围');
+  for (const label of ['Host已读取成员工作', 'Host未读取成员工作', '正文直接引用成员工作', '正文未直接引用成员工作'])
+    expect(coverage.textContent).not.toContain(label);
+});
+const legacyCoverageLimitation = '成员已交付，但正文未直接引用；不能宣称已对该成员完成综合。';
+test.each([legacyCoverageLimitation, `${legacyCoverageLimitation} 另有待核条件。`])('normalizes only the exact legacy coverage limitation: %s', async limitation => {
+  const exact = summaryExact();
+  exact.revision.coverage[0].used = false; exact.revision.coverage[0].limitation = limitation;
+  exact.revision.members[0].limitations.push(legacyCoverageLimitation, '成员条件须保留。');
+  exact.memberNotices[0].limitations.push('来源新版尚未核对。');
+  exact.revision.content.limitations.push('正文范围限制须保留。');
+  const before = JSON.stringify(exact); mockExact.mockResolvedValue(exact);
+  await mount('/summaries/DS-1?summaryRef=DSR-1');
+  const coverage = container.querySelector('[aria-label="确切成员与覆盖"]')!;
+  const paragraphs = Array.from(coverage.querySelectorAll('p')).map(item => item.textContent);
+  expect(paragraphs).toContain(limitation === legacyCoverageLimitation ? '正文未直接引用该成员工作。' : limitation);
+  if (limitation === legacyCoverageLimitation) expect(paragraphs).not.toContain(legacyCoverageLimitation);
+  expect(Array.from(coverage.querySelectorAll('li')).map(item => item.textContent)).toContain(legacyCoverageLimitation);
+  for (const retained of ['成员条件须保留。', '来源新版尚未核对。', '构型待核', '当前工作已有新变化，原概述未覆盖'])
+    expect(coverage.textContent).toContain(retained);
+  expect(container.textContent).toContain('正文范围限制须保留。');
+  expect(container.textContent).toContain('确切正文 DSR-1');
+  expect(JSON.stringify(exact)).toBe(before);
 });
 test('V1 source A remains readable when V2 added source B has been revoked', async () => {
   mockHead.mockRejectedValue(new Error('V2_SOURCE_B_REVOKED'));

@@ -70,17 +70,19 @@ function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?:
         <ul className="list-disc space-y-1 pl-5">{revision.content.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul>
       </section>
       <section className="space-y-3" aria-label="确切成员与覆盖"><h2 className="text-lg font-semibold">成员、覆盖与根来源</h2>
-        <p className="text-sm text-muted-foreground">子概述是派生工作；相同根来源不作为多份独立证据。</p>
+        <p className="text-sm text-muted-foreground">子概述是派生工作；相同根来源不作为多份独立证据。覆盖记录仅表示Host读取与正文直接引用，不证明模型已接收完整正文或完成综合。</p>
         {revision.members.map(member => {
           const coverage = revision.coverage.find(item => summaryMemberKey(item.member) === summaryMemberKey(member.member));
           const notice = value.reading.memberNotices.find(item => summaryMemberKey(item.member) === summaryMemberKey(member.member));
+          const coverageLimitation = coverage?.limitation === '成员已交付，但正文未直接引用；不能宣称已对该成员完成综合。'
+            ? '正文未直接引用该成员工作。' : coverage?.limitation;
           return <div className="space-y-2 rounded-md border border-border p-3" key={summaryMemberKey(member.member)}>
             <Link className="font-semibold underline" to={summaryMemberRoute(member.member)}>{member.headline}</Link>
             <p>{member.member.kind === 'DERIVED_SUMMARY' ? `子概述修订 ${member.member.summaryRevision}` : `工作修订 ${member.member.workRevision} · 选取问题 ${member.member.issueKeys.join('、')}`}</p>
             {member.member.kind === 'WORK_ITEM_WORK' ? <DocumentVersionIdentityLabel documentVersionId={member.member.documentVersionId} session={session} /> : null}
             <p>{notice ? notice.current ? '当前成员工作' : '历史依据或成员工作已变化' : '成员现行性未能重新核对'} · 综合{member.overviewStatus === 'CURRENT' ? '已覆盖该工作' : member.overviewStatus === 'STALE' ? '待更新' : '尚未形成'}</p>
-            <p>{coverage ? `${coverage.delivered ? '已交付输入' : '未交付完整输入'} · ${coverage.used ? '正文直接引用成员工作' : '未直接引用成员工作'}` : '覆盖记录不可用，不能扩大已覆盖范围'}</p>
-            {coverage?.limitation ? <p>{coverage.limitation}</p> : null}
+            <p>{coverage ? `${coverage.delivered ? 'Host已读取成员工作' : 'Host未读取成员工作'} · ${coverage.used ? '正文直接引用成员工作' : '正文未直接引用成员工作'}` : '覆盖记录不可用，不能扩大已覆盖范围'}</p>
+            {coverageLimitation ? <p>{coverageLimitation}</p> : null}
             <ul className="list-disc pl-5">{[...member.limitations, ...(notice?.limitations ?? [])].map((item, index) => <li key={index}>{item}</li>)}</ul>
             <details><summary className="cursor-pointer">根来源与子概述叶子工作</summary>
               <ul className="space-y-1 break-all text-xs">{member.rootRefs.map(root => <li key={root}>{root}</li>)}</ul>
