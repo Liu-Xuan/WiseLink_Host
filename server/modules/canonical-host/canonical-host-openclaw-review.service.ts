@@ -1591,6 +1591,7 @@ export class CanonicalHostOpenClawReviewService {
       jobAidContext.sourceCatalog.filter((item) =>
         jobAidContext.initiallyDeliveredRefs.includes(item.evidenceRef),
       ),
+      jobAidContext.modelInput.evidenceProjectionVersion,
     );
     return parseReviewTurnTaskContract({
       schemaVersion: 'wiselink.3_1.review_turn_task.v1.c5',

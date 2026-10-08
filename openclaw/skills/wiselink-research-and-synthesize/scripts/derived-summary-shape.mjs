@@ -1,3 +1,4 @@
+import { sameSummaryEvidence, collectSummaryNativeReadReceipts } from './derived-summary-native-evidence.mjs';
 import { canonicalJson, canonicalSha256, validateExecutionModelSelection } from './validate-payload.mjs';
 
 export const DERIVED_SUMMARY_TASK_SCHEMA = 'wiselink.derived-summary-task.v1';
@@ -108,11 +109,13 @@ export function validateDerivedSummaryTask(task, target) {
 export function derivedSummaryRegistry(modelInput) {
   const members = new Map(modelInput.members.map(reading => [reading.evidenceRef, reading]));
   const evidence = new Map();
-  for (const item of [...modelInput.evidence, ...modelInput.members.flatMap(reading => reading.evidence)]) {
+  const carriers = [...modelInput.evidence, ...modelInput.members.flatMap(reading => reading.evidence)];
+  collectSummaryNativeReadReceipts(carriers);
+  for (const item of carriers) {
     if (!object(item) || !text(item.evidenceRef)) fail('DERIVED_SUMMARY_EVIDENCE_INVALID');
     const previous = evidence.get(item.evidenceRef);
-    if (previous && canonicalJson(previous) !== canonicalJson(item)) fail('DERIVED_SUMMARY_EVIDENCE_IDENTITY_DRIFT');
-    evidence.set(item.evidenceRef, item);
+    if (previous && !sameSummaryEvidence(previous, item)) fail('DERIVED_SUMMARY_EVIDENCE_IDENTITY_DRIFT');
+    if (!previous || item.kind !== 'TDMS_NATIVE_RECORD') evidence.set(item.evidenceRef, item);
   }
   if ([...members.keys()].some(ref => evidence.has(ref))) fail('DERIVED_SUMMARY_REF_KIND_COLLISION');
   return { members, evidence };
@@ -221,8 +224,16 @@ export function validateDerivedSummaryToolMetadata(tool) {
       if (field === 'leaseGeneration' || field === 'expectedSummaryRevision') {
         if (property.type !== 'integer' || (field === 'leaseGeneration' ? property.exclusiveMinimum !== 0 : property.minimum !== 0)) failMetadata();
       } else if (field === 'evidenceRefs') {
-        if (property.type !== 'array' || property.minItems !== 1 || property.items?.type !== 'string' ||
-            property.items.minLength !== 1 || property.items.maxLength !== 1024) failMetadata();
+        const legacy = property.items?.type === 'string' && property.items.minLength === 1 && property.items.maxLength === 1024;
+        // Preserve old tool metadata/checkpoints. Only READ_SOURCES can carry a
+        // bounded canonical TDMS opinion tuple; member-work refs keep their old cap.
+        const nativeReadItems = { anyOf: [
+          { type: 'string', minLength: 1, maxLength: 1024, pattern: '^(?!TDMS_APPROVED_OPINION:)' },
+          { type: 'string', minLength: 1, maxLength: 11518,
+            pattern: "^TDMS_APPROVED_OPINION:(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-F]{2})+(?::(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-F]{2})+){4}:(?:0|[1-9]\\d{0,15})$" },
+        ] };
+        const native = operation === 'READ_SOURCES' && canonicalJson(property.items) === canonicalJson(nativeReadItems);
+        if (property.type !== 'array' || property.minItems !== 1 || (!legacy && !native)) failMetadata();
       } else {
         if (property.type !== 'string') failMetadata();
         if (field === 'summaryId' && (property.maxLength !== 96 || property.pattern !== '^DS-.*')) failMetadata();

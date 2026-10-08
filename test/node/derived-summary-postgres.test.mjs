@@ -2,6 +2,7 @@ import { prepareDerivedSummaryDdl } from '../../scripts/prepare-derived-summary-
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { isAbsolute, basename, resolve } from 'node:path';
 import test from 'node:test';
 import postgres from 'postgres';
 
@@ -1186,13 +1187,16 @@ async function seedSemanticContext(admin) {
 }
 
 
-// Validation helper module is generated from pinned f771 AST only; it never
+// Validation helper module is generated from runner-pinned source AST; it never
 // registers the original engineering test suite or reads real PDF fixtures.
 test('actual browser correction admission and existing receipt updates are fenced by selected Matter and notice locks',
   { skip: !databaseUrl || !process.env.S3_ENGINEERING_FIXTURE_MODULE, timeout: 60000 }, async t => {
     const url = new URL(databaseUrl); assert.equal(url.hostname, '127.0.0.1'); assert.match(url.pathname, /^\/derived_summary_test_[a-z0-9_]+$/u);
     const fixturePath = process.env.S3_ENGINEERING_FIXTURE_MODULE;
-    assert.ok(fixturePath.endsWith('/validation/s3-context-candidate/engineering-fixture.mjs'));
+    assert.ok(isAbsolute(fixturePath));
+    assert.equal(basename(fixturePath), 'engineering-fixture.mjs');
+    assert.equal(fixturePath, process.env.S3_ENGINEERING_FIXTURE_EXPECTED_PATH);
+    assert.equal(fixturePath, resolve(fixturePath));
     const fixture = await import(fixturePath);
     const { MatterActionAttemptService } = require('../../server/modules/canonical-host/matter-action-attempt.service.ts');
     const { CanonicalModelSettingsService } = require('../../server/modules/model-settings/canonical-model-settings.service.ts');

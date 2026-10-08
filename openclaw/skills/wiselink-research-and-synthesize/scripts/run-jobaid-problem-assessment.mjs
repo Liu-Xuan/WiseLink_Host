@@ -1,3 +1,4 @@
+import { assertTdmsNativeInput, assertTdmsNativeReadPacket } from './tdms-native-context.mjs';
 import { jobAidWorkTypeErrors, JOBAID_STEP_SHAPE, decodeJobAidStep, jobAidFunctionSchema } from './jobaid-work-shape.mjs';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -120,6 +121,7 @@ export function validateJobAidProblemInput(input) {
     !['AVAILABLE','NOT_SAVED','NOT_INDEXED'].includes(input.sourceStatementAvailability?.status) || !['LEGACY_PARTIAL','CAPTURED_FIELDS_ONLY'].includes(input.sourceStatementAvailability?.semanticFieldsAvailability) ||
     !Array.isArray(input.sourceStatementAvailability?.limitations))) throw new Error('JOBAID_SOURCE_STATEMENT_INPUT_INVALID');
   if(input.schemaVersion===JOBAID_PROBLEM_TASK_SCHEMA && (input.evidenceProjectionVersion==='SOURCE_CONTEXT_V2'||input.sourceStatementAvailability!==undefined||input.sourceStatements!==undefined||input.activityContexts!==undefined||input.availableSources.some(row=>row.sourceStatement!==undefined)||input.deliveredEvidence.some(row=>row.sourceStatement!==undefined))) throw new Error('JOBAID_SOURCE_STATEMENT_VERSION_INVALID');
+  assertTdmsNativeInput(input);
   const refs = input.availableSources.map((source) => source.ref);
   if (
     new Set(refs).size !== refs.length ||
@@ -323,6 +325,7 @@ export async function readJobAidSourceBatches(intent, read) {
   const batchSize = 96;
   if (intent.sourceRefs.length <= batchSize) {
     const result=await read(intent);
+    assertTdmsNativeReadPacket(result);
     if(result?.schemaVersion==='wiselink.jobaid-source-read.v3') {
       if(result.status!=='AVAILABLE'||result.scope!==intent.context||!Array.isArray(result.sourceRefs)||intent.sourceRefs.some(ref=>!result.sourceRefs.includes(ref)))throw new Error('JOBAID_SOURCE_READ_FAILED:INCOMPLETE_BATCH');
       assertSourceStatementReadPacket(result);
@@ -334,10 +337,12 @@ export async function readJobAidSourceBatches(intent, read) {
   let first;
   const sourceRefs = new Set();
   const evidence = new Map();
-  const statements=new Map(); const activityContexts=new Map();
+  const statements=new Map(); const activityContexts=new Map(); const nativeReadReceipts=[];
   for (let offset = 0; offset < intent.sourceRefs.length; offset += batchSize) {
     const requested = intent.sourceRefs.slice(offset, offset + batchSize);
     const result = await read({ ...intent, sourceRefs: requested });
+    assertTdmsNativeReadPacket(result);
+    nativeReadReceipts.push(...(result.nativeReadReceipts ?? []));
     if (result?.status !== 'AVAILABLE' || result.scope !== intent.context ||
       result.completeRequestedScope !== true || !Array.isArray(result.sourceRefs) ||
       !Array.isArray(result.evidence) || requested.some(ref => !result.sourceRefs.includes(ref)))
@@ -367,6 +372,7 @@ export async function readJobAidSourceBatches(intent, read) {
     for (const ref of result.sourceRefs) sourceRefs.add(ref);
   }
   return { ...first, sourceRefs: [...sourceRefs], evidence: [...evidence.values()],
+    ...(nativeReadReceipts.length ? {nativeReadReceipts} : {}),
     ...(first.schemaVersion==='wiselink.jobaid-source-read.v3'?{sourceStatements:[...statements.values()],activityContexts:[...activityContexts.values()]}:{}) };
 }
 
@@ -753,7 +759,7 @@ export async function invokeHostedJobAidProblemModel(
           provenance: {
             modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
             promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
-            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2' },
+            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
             runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
           },
         };
@@ -779,7 +785,7 @@ export async function invokeHostedJobAidProblemModel(
           provenance: {
             modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
             promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
-            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2' },
+            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
             runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
           },
         };
@@ -839,7 +845,7 @@ export async function invokeHostedJobAidProblemModel(
           modelVersion: actualModelVersion(payload, choice, message,
             options.executionModel ? `configured-route:${options.executionModel.modelRef}` : options.configuredModelVersion),
           promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
-          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2' },
+          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
           runMetrics: { durationMs: Date.now() - startedAt, inputUnits,
             outputUnits: outputUnits + Buffer.byteLength(message.content) },
         },
@@ -977,7 +983,7 @@ export async function invokeHostedJobAidProblemModel(
               skillVersion: WISELINK_SKILL_VERSION,
               toolVersions: {
                 [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
-                'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2',
+                'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}),
               },
               runMetrics: {
                 durationMs: Date.now() - startedAt,
@@ -1004,7 +1010,7 @@ export async function invokeHostedJobAidProblemModel(
           : invalidWorkJson ? 'JOBAID_WORK_JSON_INVALID' : 'JOBAID_WORK_VALIDATION_FAILED', provenance: {
           modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
           promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
-          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2' },
+          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
           runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
         } };
       }

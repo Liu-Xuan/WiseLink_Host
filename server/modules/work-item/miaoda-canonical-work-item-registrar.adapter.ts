@@ -25,6 +25,7 @@ export class MiaodaCanonicalWorkItemRegistrarAdapter implements CanonicalWorkIte
     syncPrimaryAttempt?: boolean;
     applicabilityInputGuard?: { tenantId: string };
     jobAidWorkRevisionGuard?: { tenantId: string; workRevisionRef: string };
+    nativeEvidenceGuard?: (database: PostgresJsDatabase) => Promise<void>;
   }): Promise<CanonicalWorkItemProjection> {
     return this.repository.compareAndSet(input);
   }

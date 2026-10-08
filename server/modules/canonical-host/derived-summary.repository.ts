@@ -39,7 +39,8 @@ export class DerivedSummaryRepository {
     return this.transactions.withBrowserActorTransaction(actor.userId, async ({ database }) => {
       const owner = { tenantId: actor.tenantId, actorUserId: actor.userId };
       await this.members.authorizeActor(owner, database);
-      return operation(database, owner);
+      return this.members.withNativeTransaction(owner, database, { kind: 'BROWSER', actor },
+        () => operation(database, owner));
     });
   }
 
@@ -60,7 +61,8 @@ export class DerivedSummaryRepository {
       const attempt = await this.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
       if (attempt.actorUserId !== owner.actorUserId || attempt.delegatedPrincipalId !== target.scope.principalId)
         throw summaryError('DERIVED_SUMMARY_ATTEMPT_UNAVAILABLE', 404);
-      return operation(database, owner, head, attempt);
+      return this.members.withNativeTransaction(owner, database, { kind: 'RUNTIME', summaryId: target.summaryId,
+        attemptRef: target.attemptRef, scope: target.scope }, () => operation(database, owner, head, attempt));
     });
   }
 
@@ -186,7 +188,8 @@ export class DerivedSummaryRepository {
     return { schemaVersion: 'wiselink.derived-summary-context.v1', memberNotices: contextMemberNotices(allReadings), sources, workItems, matters,
       summaries: [...new Map(summaries.map(item => [item.summaryId, item])).values()].sort((a, b) =>
         a.summaryId < b.summaryId ? -1 : a.summaryId > b.summaryId ? 1 : 0),
-      uncoordinatedDependencies: sources.length ? ['DOCUMENT_LIFECYCLE_NOT_FENCED'] : [] };
+      uncoordinatedDependencies: [...(sources.length ? ['DOCUMENT_LIFECYCLE_NOT_FENCED'] : []),
+        ...(evidence.some(item => item.kind === 'TDMS_NATIVE_RECORD') ? ['NATIVE_CURRENTNESS_NOT_CONNECTED'] : [])] };
   }
 
   /** These row locks conflict with the existing actual head writers. Re-read

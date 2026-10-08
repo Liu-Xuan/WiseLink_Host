@@ -1,3 +1,5 @@
+import { assertTdmsRuntimeTaskContext, type TdmsRuntimeTaskContext } from '../tdms-source/tdms-runtime-reader.port';
+import { tdmsJobAidDirectory } from './jobaid-tdms-context';
 import type { DocumentActivityAssessmentProjection } from './document-activity-assessment-projection';
 import { sourceStatementEvidence, sourceStatementDirectory } from './document-activity-assessment-consumer';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
@@ -25,7 +27,7 @@ import {
   JOBAID_METHOD_EVIDENCE,
   isJobAidMethodBinding,
 } from './jobaid-method-pack';
-import { overallModelEvidenceRegistry,
+import { overallModelEvidenceRegistry, OVERALL_EVIDENCE_SOURCE_CONTEXT_VERSION,
   OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION, type OverallEvidenceProjectionVersion } from './overall-assessment-reading';
 import { buildJobAidContextPackage } from './jobaid-context-package';
 
@@ -67,6 +69,8 @@ export function jobAidSourceFileReference(item: CanonicalWorkItemProjection) {
 }
 
 export interface JobAidProblemModelInput extends Record<string, unknown> {
+  /** Metadata only. A directory and approval provenance are not a body READ. */
+  tdmsContext?: Pick<TdmsRuntimeTaskContext, 'schemaVersion' | 'projection'>;
   schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA | typeof JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;
   /** Absent on sealed historical tasks: retain their original exact projection. */
   evidenceProjectionVersion?: OverallEvidenceProjectionVersion;
@@ -138,6 +142,8 @@ export function jobAidProblemModelWorkContent(content: JobAidProblemWorkContent)
 }
 
 export interface JobAidProblemTaskInput extends Record<string, unknown> {
+  /** Optional only on newly sealed tasks; never backfilled into old checkpoints. */
+  tdmsContext?: TdmsRuntimeTaskContext;
   schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA | typeof JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;
   knowledgeBinding?: import("./initial-assessment-knowledge.service").InitialKnowledgeBinding;
   actorUserId: string;
@@ -165,7 +171,11 @@ export function isJobAidProblemTask(
 export function parseJobAidProblemTask(
   task: OpenClawTaskEnvelope,
 ): JobAidProblemTaskInput {
-  return assertJobAidProblemTaskBinding(task.modelInput);
+  const input = assertJobAidProblemTaskBinding(task.modelInput);
+  if (input.tdmsContext && (input.tdmsContext.binding.taskContextRef !== task.operationRef ||
+      input.tdmsContext.binding.tenantId !== task.tenantId || input.tdmsContext.binding.workItemId !== task.workItemId ||
+      input.tdmsContext.binding.documentVersionId !== task.documentVersionId)) throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
+  return input;
 }
 
 export function assertJobAidProblemTaskBinding(
@@ -183,6 +193,17 @@ export function assertJobAidProblemTaskBinding(
     !isJobAidMethodBinding(input.modelInput.methodBinding)
   )
     throw new Error('JOBAID_TASK_BINDING_INVALID');
+  const nativeContext = input.tdmsContext === undefined ? undefined : assertTdmsRuntimeTaskContext(input.tdmsContext);
+  if (nativeContext && (nativeContext.binding.actorUserId !== input.actorUserId ||
+      nativeContext.binding.documentVersionId !== input.modelInput.documentOverview.documentVersionRef ||
+      input.modelInput.purpose === 'PROBLEM_REVIEW')) throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
+  if (canonicalJson(input.modelInput.tdmsContext ?? null) !== canonicalJson(nativeContext ?
+      {schemaVersion:nativeContext.schemaVersion,projection:nativeContext.projection} : null))
+    throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
+  if (!nativeContext && input.sourceCatalog.some(e => e.kind === 'TDMS_NATIVE_RECORD'))
+    throw new Error('JOBAID_TDMS_TASK_BINDING_REQUIRED');
+  if (input.initiallyDeliveredRefs.some(ref => input.sourceCatalog.some(e => e.kind === 'TDMS_NATIVE_RECORD' && e.evidenceRef === ref)))
+    throw new Error('JOBAID_TDMS_DIRECTORY_ONLY_REQUIRED');
   const projections = input.sourceActivityProjections ?? [];
   const v3 = input.schemaVersion === JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;
   if (v3 && (input.modelInput.purpose === 'PROBLEM_REVIEW' || !Array.isArray(input.sourceActivityProjections) ||
@@ -210,14 +231,14 @@ export function assertJobAidProblemTaskBinding(
     item.packRef === input.modelInput.methodBinding.packRef);
   if (!boundMethods.length || !boundMethods.some(item => input.initiallyDeliveredRefs.includes(item.evidenceRef)))
     throw new Error('JOBAID_TASK_METHOD_BINDING_INVALID');
-  const expectedSources = input.sourceCatalog.map((item) => ({
+  const expectedSources = [...input.sourceCatalog.filter(item => item.kind !== 'TDMS_NATIVE_RECORD').map((item) => ({
     ref: item.evidenceRef,
     kind: item.kind,
     title: item.title,
     versionLabel: item.versionLabel,
     locator: 'locator' in item ? item.locator : null,
     ...sourceStatementDirectory(item, projections),
-  }));
+  })), ...tdmsJobAidDirectory(nativeContext, input.sourceCatalog)];
   if (
     refs.size !== input.sourceCatalog.length ||
     input.initiallyDeliveredRefs.some((ref) => !refs.has(ref)) ||
@@ -254,14 +275,22 @@ export function buildJobAidProblemTask(input: {
   priorAssessmentRefs: string[];
   sourceActivityProjections?: DocumentActivityAssessmentProjection[];
   sourceStatementAvailability?: JobAidProblemModelInput['sourceStatementAvailability'];
+  tdmsContext?: TdmsRuntimeTaskContext;
 }): JobAidProblemTaskInput {
+  const nativeContext = input.tdmsContext === undefined ? undefined : assertTdmsRuntimeTaskContext(input.tdmsContext);
+  if (nativeContext && (nativeContext.binding.actorUserId !== input.actorUserId ||
+      nativeContext.binding.workItemId !== input.workItem.workItemId ||
+      nativeContext.binding.documentVersionId !== input.workItem.source.documentVersionId ||
+      input.purpose === 'PROBLEM_REVIEW')) throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
+  if (!nativeContext && [...input.sourceCatalog, ...(input.previousWork?.content.evidence ?? [])].some(e => e.kind === 'TDMS_NATIVE_RECORD'))
+    throw new Error('JOBAID_TDMS_TASK_BINDING_REQUIRED');
   // Interactive review still uses its existing legacy source-resource contract.
   const statementContract = input.sourceActivityProjections !== undefined;
   const mixedReview = input.purpose === 'PROBLEM_REVIEW' && (input.sourceActivityProjections?.length??0)>0;
   const v3 = input.purpose !== 'PROBLEM_REVIEW' && statementContract;
   const schemaVersion = v3 ? JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA : JOBAID_PROBLEM_TASK_SCHEMA;
   const projections = input.sourceActivityProjections ?? [];
-  const projectionVersion = v3 || mixedReview ? OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION : undefined;
+  const projectionVersion = v3 || mixedReview ? OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION : nativeContext ? OVERALL_EVIDENCE_SOURCE_CONTEXT_VERSION : undefined;
   const byRef = new Map<string, AssessmentEvidence>();
   for (const item of [
     ...input.sourceCatalog.map(stableJobAidEvidence),
@@ -303,7 +332,7 @@ export function buildJobAidProblemTask(input: {
         ) ? [item.evidenceRef] : [],
       ),
     ]),
-  ].filter(ref=>(mixedReview||!sourceStatementRefs.has(ref)));
+  ].filter(ref=>(mixedReview||!sourceStatementRefs.has(ref)) && !catalog.some(e=>e.kind==='TDMS_NATIVE_RECORD'&&e.evidenceRef===ref));
   const capabilities: JobAidProblemWorkContent['capabilities'] = [
     {
       capability: 'registered_source_reading',
@@ -366,12 +395,14 @@ export function buildJobAidProblemTask(input: {
     actorUserId: input.actorUserId,
     permissionSnapshotVersion: input.permissionSnapshotVersion,
     sourceCatalog: catalog,
+    ...(nativeContext ? {tdmsContext:structuredClone(nativeContext)} : {}),
     ...(statementContract ? {sourceActivityProjections:structuredClone(projections)} : {}),
     sourceBindings: structuredClone(input.sourceBindings),
     initiallyDeliveredRefs,
     previousWork: structuredClone(previousWork),
     modelInput: {
       schemaVersion,
+      ...(nativeContext ? {tdmsContext:{schemaVersion:nativeContext.schemaVersion,projection:structuredClone(nativeContext.projection)}} : {}),
       ...(projectionVersion ? { evidenceProjectionVersion: projectionVersion } : {}),
       purpose: input.purpose,
       methodBinding: structuredClone(JOBAID_METHOD_BINDING),
@@ -397,14 +428,14 @@ export function buildJobAidProblemTask(input: {
         : null,
       ...(mixedReview ? {sourceStatements:structuredClone(projections.flatMap(p=>p.records)),activityContexts:structuredClone(projections.flatMap(p=>p.activityContexts))} : {}),
       ...(v3 || mixedReview ? {sourceStatementAvailability: structuredClone(input.sourceStatementAvailability ?? {status:'AVAILABLE',semanticFieldsAvailability:'LEGACY_PARTIAL',limitations:[]})} : {}),
-      availableSources: catalog.map((item) => ({
+      availableSources: [...catalog.filter(item=>item.kind!=='TDMS_NATIVE_RECORD').map((item) => ({
         ref: item.evidenceRef,
         kind: item.kind,
         title: item.title,
         versionLabel: item.versionLabel,
         locator: 'locator' in item ? item.locator : null,
         ...sourceStatementDirectory(item, projections),
-      })),
+      })), ...tdmsJobAidDirectory(nativeContext, catalog)],
       deliveredEvidence: overallModelEvidenceRegistry(
         catalog.filter((item) =>
           initiallyDeliveredRefs.includes(item.evidenceRef),
@@ -426,6 +457,7 @@ export function buildJobAidProblemTask(input: {
         catalog,
         initiallyDeliveredRefs,
         previousWorkRevision: previousWork?.workRevision ?? null,
+        ...(nativeContext ? {nativeEvidenceRefs:tdmsJobAidDirectory(nativeContext,catalog).map(item=>item.ref)} : {}),
       }),
       capabilities,
       historyReview,

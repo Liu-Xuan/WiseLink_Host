@@ -1,3 +1,4 @@
+import { parseAssessmentTdmsEvidence, type AssessmentTdmsNativeEvidence } from '@shared/assessment-tdms-evidence';
 import { parseAssessmentSourceWork, parseAssessmentSourceStatement } from '@shared/assessment-evidence-roots';
 import type {
   AssessmentEvidence,
@@ -33,6 +34,10 @@ type OverallEvidenceSourceContext =
   | Pick<Extract<AssessmentEvidence, { kind: 'PRIOR_RESULT' }>, 'resultRef' | 'resultRevision'>;
 
 export interface OverallModelEvidence {
+  /** Historical source-declared native context with its original task READ. */
+  nativeSource?: AssessmentTdmsNativeEvidence['nativeSource'];
+  nativeScope?: AssessmentTdmsNativeEvidence['nativeScope'];
+  nativeReadReceipt?: AssessmentTdmsNativeEvidence['nativeReadReceipt'];
   /** Exact source-carrier facts, without inferring acquisition time or authority. */
   sourceContext?: OverallEvidenceSourceContext;
   sourceStatement?: Extract<AssessmentEvidence, { kind: 'PRIOR_RESULT' }>['sourceStatement'];
@@ -65,6 +70,7 @@ export function overallModelEvidenceRegistry(
     versionLabel: item.versionLabel,
     excerpt: item.excerpt,
     locator: 'locator' in item ? item.locator : null,
+    ...(item.kind === 'TDMS_NATIVE_RECORD' ? projectNativeEvidence(item) : {}),
     ...(item.kind === 'PRIOR_RESULT' ? { originalEvidenceRefs: [...item.originalEvidenceRefs],
       ...(item.sourceWork ? { sourceWork: structuredClone(item.sourceWork) } : {}),
       ...(projectionVersion === OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION ? {
@@ -78,6 +84,11 @@ export function overallModelEvidenceRegistry(
     ...(projectionVersion === OVERALL_EVIDENCE_SOURCE_CONTEXT_VERSION
       ? projectEvidenceSourceContext(item) : {}),
   }));
+}
+
+function projectNativeEvidence(item: AssessmentEvidence): Pick<OverallModelEvidence, 'nativeSource' | 'nativeScope' | 'nativeReadReceipt'> {
+  const native = parseAssessmentTdmsEvidence(item);
+  return { nativeSource: native.nativeSource, nativeScope: native.nativeScope, nativeReadReceipt: native.nativeReadReceipt };
 }
 
 /** Deliberately do not spread a Host evidence record into the model view. */
@@ -146,6 +157,8 @@ export function readStoredOverallEvidence(
             }),
       };
       switch (item.kind) {
+        case 'TDMS_NATIVE_RECORD':
+          return parseAssessmentTdmsEvidence(item);
         case 'ENGINEER_ATTACHMENT':
           return {
             ...common,

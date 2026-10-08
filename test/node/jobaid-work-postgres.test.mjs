@@ -782,7 +782,9 @@ test(
         assert.equal(pending.owner_id, scope.actorUserId);
         assert.equal(pending.attempts, 0);
         const rebuild = () => hosted(() => actors.withActorTransaction(scope.actorUserId, async () =>
-          projection.rebuildPending({ tenantId: scope.tenantId, load: async item => {
+          projection.rebuildPending({ tenantId: scope.tenantId, actorUserId: scope.actorUserId,
+            // This is the component's derived-SQL retry, not the browser route.
+            verifySession: async () => {}, load: async item => {
             const work = await repository.readByRefForRuntime({ tenantId: scope.tenantId,
               actorUserId: scope.actorUserId, workItemId: item.subjectId, workRevisionRef: item.revisionRef });
             assert.ok(work);

@@ -1,3 +1,4 @@
+import { summaryNativeReceiptFields, summaryEvidenceRefs, restoreSummaryMemberEvidence } from './derived-summary-native-evidence.mjs';
 import {
   actualModelVersion, assertHostedModelGatewayReady, executionModelHeaders,
   parseStrictJsonObject,
@@ -40,7 +41,7 @@ function evidenceOnlyModelView(modelInput) {
   const registry = derivedSummaryRegistry(modelInput);
   const view = structuredClone(modelInput);
   view.members = view.members.map(({ evidence, ...member }) => ({
-    ...member, evidenceRefs: evidence.map(item => item.evidenceRef),
+    ...member, evidenceRefs: summaryEvidenceRefs(evidence), ...summaryNativeReceiptFields(evidence),
   }));
   view.evidence = structuredClone([...registry.evidence.values()]);
   return view;
@@ -103,15 +104,15 @@ function storedSummaryPromptVersion(state, registry, modelInput) {
     };
     if ([DERIVED_SUMMARY_PROMPT_VERSION, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION, PROBLEM_CONTENT_PROMPT_VERSION, EVIDENCE_ONLY_PROMPT_VERSION].includes(state.promptVersion)) {
       const evidence = derivedSummaryRegistry({ members: [], evidence: input.evidence }).evidence;
-      const original = { ...input, members: input.members.map(({ evidenceRefs, ...member }) => {
+      const original = { ...input, members: input.members.map(({ evidenceRefs, nativeReadReceipts, ...member }) => {
         if (Object.hasOwn(member, 'evidence') || !Array.isArray(evidenceRefs)) invalid();
         if (Object.hasOwn(member, 'understanding')) {
           if (state.promptVersion === EVIDENCE_ONLY_PROMPT_VERSION || Object.hasOwn(member, 'body')) invalid();
           member = { ...member, body: completeDerivedSummaryWorkBody(member.understanding, member.issues) };
         }
-        const restored = evidenceRefs.map(ref => structuredClone(evidence.get(ref)));
-        if (restored.some(value => !value)) invalid();
-        return { ...member, evidence: restored };
+        const restorationRegistry = new Map([...evidence].map(([ref, value]) => [ref, { value }]));
+        return { ...member, evidence: restoreSummaryMemberEvidence({ evidenceRefs,
+          ...(nativeReadReceipts === undefined ? {} : { nativeReadReceipts }) }, restorationRegistry) };
       }) };
       validateDerivedSummaryModelInput(original);
       const project = state.promptVersion === EVIDENCE_ONLY_PROMPT_VERSION ? evidenceOnlyModelView : derivedSummaryModelView;

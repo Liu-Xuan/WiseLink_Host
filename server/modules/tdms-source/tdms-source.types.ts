@@ -1,0 +1,196 @@
+import type {
+  TdmsArtifactSelection,
+  TdmsAttachmentAcquisitionFact,
+} from '@shared/tdms-file-service-import.interface';
+import type {
+  TdmsArtifactBinding,
+  TdmsImportReceipt,
+  TdmsReadContext,
+  TdmsReadReceipt,
+  TdmsRecordRevision,
+  TdmsRelationAssertion,
+  TdmsSourcePackage,
+} from '@shared/tdms-source.interface';
+import type { CanonicalMiaodaFinalUserActorContext } from '../work-item/canonical-object-access.port';
+
+export const TDMS_REPOSITORY = Symbol('TDMS_REPOSITORY');
+export const TDMS_SOURCE_AUTHORIZATION = Symbol('TDMS_SOURCE_AUTHORIZATION');
+export const TDMS_ARTIFACT_STORE = Symbol('TDMS_ARTIFACT_STORE');
+export const TDMS_DOCUMENT_ACCESS = Symbol('TDMS_DOCUMENT_ACCESS');
+export interface TdmsSourceScope {
+  tenantId: string;
+  sourceKey: string;
+  sourceInstanceId: string;
+  scopeId: string;
+}
+/** Only public, verified Host ingress can construct this actor. Runtime callers get a separate port. */
+export type TdmsPublicActor = CanonicalMiaodaFinalUserActorContext;
+export type TdmsAction =
+  | 'IMPORT'
+  | 'CATALOGUE'
+  | 'READ_HISTORY'
+  | 'READ_RECORD'
+  | 'READ_RELATIONS';
+export interface TdmsSourceGrant {
+  scope: TdmsSourceScope;
+  permissionRevision: string;
+}
+/** All are untrusted source claims until a Host provider checks current membership and rights. */
+export interface TdmsImportMemberClaims {
+  records: Array<{ recordKind: string; sourceRecordId: string }>;
+  artifacts: Array<{
+    memberId: string;
+    sourceAttachmentId: string;
+    sourceAttachmentVersion: string | null;
+    metadataOnly?: true;
+    owners: Array<{ recordKind: string; sourceRecordId: string }>;
+  }>;
+  relationIds: string[];
+  /** Server-parsed package context, never independent document read authority.
+   * Optional for existing providers; bounded first-slice admission requires it empty. */
+  relatedDocumentVersionIds?: string[];
+}
+export interface TdmsImportAdmission extends TdmsSourceGrant {
+  authorityRef: string;
+  captureRetentionAllowed: true;
+  nativeProjectionAllowed: true;
+  permittedMembers: TdmsImportMemberClaims;
+}
+/** Host-owned provider must freshly verify BOTH native source audience and selected object ACL.
+ * A package, a source identity, a cached roster and roles alone are never such proof. */
+export interface TdmsSourceAuthorization {
+  readonly available: boolean;
+  authorizeImport(
+    actor: TdmsPublicActor,
+    scope: TdmsSourceScope,
+    claims: TdmsImportMemberClaims,
+  ): Promise<TdmsImportAdmission>;
+  catalogue(
+    actor: TdmsPublicActor,
+    context: TdmsReadContext,
+  ): Promise<TdmsSourceGrant[]>;
+  authorize(
+    actor: TdmsPublicActor,
+    scope: TdmsSourceScope,
+    action: TdmsAction,
+    context: TdmsReadContext,
+  ): Promise<TdmsSourceGrant>;
+}
+export interface TdmsDocumentAccess {
+  assertRead(actor: TdmsPublicActor, documentVersionId: string): Promise<void>;
+}
+export interface TdmsCapture {
+  scope: TdmsSourceScope;
+  packageId: string;
+  packageHash: string;
+  actorId: string;
+  receipt: TdmsImportReceipt;
+  query: TdmsSourcePackage['query'];
+  capturedAt: string;
+  permissionRevision: string;
+  admissionAuthorityRef?: string;
+}
+export interface TdmsRecordHead {
+  scope: TdmsSourceScope;
+  recordRef: string;
+  sourceRecordId: string;
+  recordKind: TdmsRecordRevision['recordKind'];
+  sourceRevisionRef: string;
+  observedAt: string;
+}
+export interface TdmsStoredRevision {
+  scope: TdmsSourceScope;
+  record: TdmsRecordRevision;
+  /** Private capture metadata, not a second artifact store or a browser identity. */
+  attachmentAcquisitions?: Array<
+    Omit<
+      TdmsAttachmentAcquisitionFact,
+      | 'currentSourcePermissionChecked'
+      | 'semanticReadPerformed'
+      | 'engineeringExecutionVerified'
+    >
+  >;
+  artifactIdentities?: Array<{
+    sourceAttachmentId: string;
+    sourceAttachmentVersion: string | null;
+    memberId: string;
+    sha256: string;
+    byteLength: number;
+  }>;
+}
+export interface TdmsRelationHead {
+  scope: TdmsSourceScope;
+  relationRef: string;
+  sourceRelationId: string;
+  assertionRef: string;
+  observedAt: string;
+}
+export interface TdmsStoredAssertion {
+  scope: TdmsSourceScope;
+  assertion: TdmsRelationAssertion;
+}
+export interface TdmsStoredReceipt {
+  scope: TdmsSourceScope;
+  actorId: string;
+  receipt: TdmsReadReceipt;
+  context: TdmsReadContext;
+}
+export interface TdmsTransaction {
+  capture(
+    scope: TdmsSourceScope,
+    packageId: string,
+  ): Promise<TdmsCapture | null>;
+  recordHead(
+    scope: TdmsSourceScope,
+    recordKind: string,
+    sourceRecordId: string,
+  ): Promise<TdmsRecordHead | null>;
+  revision(tenantId: string, ref: string): Promise<TdmsStoredRevision | null>;
+  catalogue(scope: TdmsSourceScope): Promise<TdmsStoredRevision[]>;
+  history(
+    scope: TdmsSourceScope,
+    recordRef: string,
+  ): Promise<TdmsStoredRevision[]>;
+  relationHead(
+    scope: TdmsSourceScope,
+    sourceRelationId: string,
+  ): Promise<TdmsRelationHead | null>;
+  relations(tenantId: string, ref: string): Promise<TdmsStoredAssertion[]>;
+  saveRevision(
+    head: TdmsRecordHead,
+    expected: string | null,
+    revision: TdmsStoredRevision,
+  ): Promise<void>;
+  saveAssertion(
+    head: TdmsRelationHead,
+    expected: string | null,
+    assertion: TdmsStoredAssertion,
+  ): Promise<void>;
+  saveCapture(capture: TdmsCapture): Promise<void>;
+  saveReceipt(receipt: TdmsStoredReceipt): Promise<void>;
+}
+export interface TdmsRepository {
+  transaction<T>(operation: (tx: TdmsTransaction) => Promise<T>): Promise<T>;
+}
+export interface TdmsArtifactStore {
+  /** Current owner/default bucket/exact object and bytes checks; never ordinary DV ingestion. */
+  acquireSelection?(input: {
+    scope: TdmsSourceScope;
+    actor: TdmsPublicActor;
+    packageId: string;
+    artifact: TdmsArtifactSelection;
+  }): Promise<TdmsArtifactBinding>;
+  /** No ordinary DM version creation, parsing, or adoption. May leave an unlinked acquisition on a later failure. */
+  acquire(input: {
+    scope: TdmsSourceScope;
+    actor: TdmsPublicActor;
+    packageId: string;
+    artifact: TdmsSourcePackage['artifacts'][number];
+  }): Promise<TdmsArtifactBinding>;
+}
+export function tdmsError(
+  code: string,
+  statusCode = 400,
+): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error(code), { code, statusCode });
+}

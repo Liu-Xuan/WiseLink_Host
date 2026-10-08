@@ -1,3 +1,4 @@
+import { tdmsNativeReferenceMcpSchema } from './tdms-native-reference-mcp.schema';
 import { DocumentWorkRuntimeService } from './document-work-runtime.service';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { DocumentTranslationRuntimeService } from './document-translation-runtime.service';
@@ -537,7 +538,7 @@ export class CanonicalHostOpenClawMcpService {
             workItemId: mcpWorkItemId.optional(),
             leaseToken,
             leaseGeneration,
-            sourceRefs: z.array(z.string().min(1).max(512)).min(1).max(96),
+            sourceRefs: z.array(tdmsNativeReferenceMcpSchema(z.string().min(1).max(512))).min(1).max(96),
             purpose: z.string().trim().min(1).max(2000),
             context: z.enum(['EXACT', 'PAGE']).default('PAGE'),
           })

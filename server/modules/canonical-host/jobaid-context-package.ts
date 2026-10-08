@@ -12,6 +12,7 @@ export function buildJobAidContextPackage(input: {
   catalog: AssessmentEvidence[];
   initiallyDeliveredRefs: string[];
   previousWorkRevision: number | null;
+  nativeEvidenceRefs?: string[];
 }): JobAidAssessmentContextPackage {
   const delivered: Set<string> = new Set(input.initiallyDeliveredRefs);
   return {
@@ -40,9 +41,9 @@ export function buildJobAidContextPackage(input: {
         };
       }),
     },
-    sourceOrigins: input.catalog.map((evidence) =>
+    sourceOrigins: [...input.catalog.map((evidence) =>
       sourceOrigin(evidence, input.workItem.source.documentVersionId),
-    ),
+    ), ...(input.nativeEvidenceRefs ?? []).filter(ref=>!input.catalog.some(item=>item.evidenceRef===ref)).map(evidenceRef=>({evidenceRef,origin:'TDMS_NATIVE_RECORD',contentNature:'SOURCE_DECLARED_PROFESSIONAL_OPINION' as const}))],
     knowledgeRetrieval: structuredClone(input.common.knowledgeRetrieval),
   };
 }
@@ -53,6 +54,8 @@ function sourceOrigin(
 ): JobAidAssessmentContextPackage['sourceOrigins'][number] {
   const evidenceRef: string = evidence.evidenceRef;
   switch (evidence.kind) {
+    case 'TDMS_NATIVE_RECORD':
+      return { evidenceRef, origin: 'TDMS_NATIVE_RECORD', contentNature: 'SOURCE_DECLARED_PROFESSIONAL_OPINION' };
     case 'DOCUMENT_PASSAGE':
       return {
         evidenceRef,

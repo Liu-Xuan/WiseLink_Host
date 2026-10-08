@@ -55,3 +55,28 @@ it('keeps existing source-read evidence identity through the shared fence', asyn
   const [event] = JSON.parse(String(new PgDialect().sqlToQuery(h.set.mock.calls[0][0].reviewActivityJson).params[0]));
   expect(event).toEqual({ kind: 'ASSESSMENT_SOURCES_READ', sourceRefs: ['source-one'], purpose: 'authorized-read', observedAt: expect.any(String) });
 });
+
+import { tdmsNativeEvidenceFixture } from './fixtures/tdms-native-evidence.fixture';
+it('native read journal requires a live callback and keeps first body once with every fresh receipt',async()=>{
+  const h=harness();Object.assign(h.row,{operationRef:'task-1',reviewActivityJson:'[]'});
+  const evidence=tdmsNativeEvidenceFixture();
+  const read={...h.input,sourceRefs:[evidence.evidenceRef],purpose:'native',nativeEvidence:[evidence]};
+  await expect(h.repository.recordSourceRead(read)).rejects.toThrow('TDMS_NATIVE_EVIDENCE_VERIFIER_UNAVAILABLE');
+  expect(h.update).not.toHaveBeenCalled();
+  const guard=jest.fn(async()=>undefined);
+  await h.repository.recordSourceRead({...read,assertNativeAuthorized:guard});
+  const first=JSON.parse(String(new PgDialect().sqlToQuery(h.set.mock.calls[0][0].reviewActivityJson).params[0]))[0];
+  expect(first.nativeEvidence).toEqual([evidence]);expect(first.nativeReadReceipts).toEqual([evidence.nativeReadReceipt]);
+  Object.assign(h.row,{reviewActivityJson:JSON.stringify([first])});
+  const second=structuredClone(evidence);second.nativeReadReceipt.receiptRef='another-fresh-read';
+  await h.repository.recordSourceRead({...read,nativeEvidence:[second],assertNativeAuthorized:guard});
+  const next=JSON.parse(String(new PgDialect().sqlToQuery(h.set.mock.calls[1][0].reviewActivityJson).params[0]))[0];
+  expect(next.nativeEvidence).toEqual([]);expect(next.nativeReadReceipts).toEqual([second.nativeReadReceipt]);expect(guard).toHaveBeenCalledTimes(6);
+});
+it('revocation while the attempt lock is awaited prevents journal update',async()=>{
+  const h=harness();Object.assign(h.row,{operationRef:'task-1',reviewActivityJson:'[]'});
+  const evidence=tdmsNativeEvidenceFixture();let calls=0;
+  const guard=jest.fn(async()=>{if(++calls>1)throw new Error('NATIVE_REVOKED');});
+  await expect(h.repository.recordSourceRead({...h.input,sourceRefs:[evidence.evidenceRef],purpose:'native',nativeEvidence:[evidence],assertNativeAuthorized:guard})).rejects.toThrow('NATIVE_REVOKED');
+  expect(h.update).not.toHaveBeenCalled();
+});

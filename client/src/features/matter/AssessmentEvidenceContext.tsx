@@ -20,6 +20,7 @@ const ASSESSMENT_EVIDENCE_LABELS: Record<AssessmentEvidence['kind'], string> = {
   PRIOR_RESULT: '历史候选认识',
   METHOD_CLAUSE: '评估方法条款',
   ENGINEER_ATTACHMENT: '工程师上传附件',
+  TDMS_NATIVE_RECORD: 'TDMS 来源专业意见',
 };
 
 const AssessmentEvidenceContext: FC<AssessmentEvidenceContextProps> = ({

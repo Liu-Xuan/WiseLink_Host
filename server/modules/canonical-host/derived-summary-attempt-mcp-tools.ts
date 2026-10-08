@@ -1,3 +1,4 @@
+import { tdmsNativeReferenceMcpSchema } from './tdms-native-reference-mcp.schema';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod/v4';
 import type { CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
@@ -9,6 +10,7 @@ const fence = { leaseToken: z.string().uuid(), leaseGeneration: z.number().int()
 const requestId = z.string().trim().min(1).max(96);
 const reading = { ...target, ...fence, evidenceRefs: z.array(z.string().trim().min(1).max(1024)).min(1),
   purpose: z.string().trim().min(1).max(4000) };
+const sourceReading = { ...reading, evidenceRefs: z.array(tdmsNativeReferenceMcpSchema(z.string().trim().min(1).max(1024))).min(1) };
 
 /** Reuses the authenticated official queue transport, then narrows it to the
  * browser-authorized exact summary/attempt/delegated principal. */
@@ -25,7 +27,7 @@ export function registerDerivedSummaryAttemptMcpTools(server: McpServer, runtime
       z.object({ ...target, ...fence, operation: z.literal('FAIL'), code: z.string().trim().min(1).max(160),
         message: z.string().trim().min(1).max(4000) }).strict(),
       z.object({ ...reading, operation: z.literal('READ_MEMBER_WORK') }).strict(),
-      z.object({ ...reading, operation: z.literal('READ_SOURCES') }).strict(),
+      z.object({ ...sourceReading, operation: z.literal('READ_SOURCES') }).strict(),
       z.object({ ...target, ...fence, operation: z.literal('SAVE_SUMMARY'), requestId,
         expectedSummaryRevision: z.number().int().nonnegative(), contentJson: z.string().min(2).max(1_000_000),
         provenanceJson: z.string().min(2).max(16000).optional() }).strict(),

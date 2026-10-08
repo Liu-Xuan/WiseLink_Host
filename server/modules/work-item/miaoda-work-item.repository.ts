@@ -2028,7 +2028,9 @@ export class MiaodaWorkItemRepository {
     syncPrimaryAttempt?: boolean;
     applicabilityInputGuard?: { tenantId: string };
     jobAidWorkRevisionGuard?: { tenantId: string; workRevisionRef: string };
+    nativeEvidenceGuard?: (database: PostgresJsDatabase) => Promise<void>;
   }): Promise<CanonicalWorkItemProjection> {
+    this.requireNativeProjectionGuard(input);
     if (input.jobAidWorkRevisionGuard) {
       const guard = input.jobAidWorkRevisionGuard;
       if (
@@ -2087,7 +2089,10 @@ export class MiaodaWorkItemRepository {
           latest.documentVersionId !== owner.documentVersionId
         )
           throw new Error('JOBAID_OVERALL_EXACT_WORK_CHANGED');
-        return this.persistProjectionCas(input, transaction);
+        await input.nativeEvidenceGuard?.(transaction as PostgresJsDatabase);
+        const saved = await this.persistProjectionCas(input, transaction);
+        await input.nativeEvidenceGuard?.(transaction as PostgresJsDatabase);
+        return saved;
       });
     }
     if (input.applicabilityInputGuard) {
@@ -2194,10 +2199,25 @@ export class MiaodaWorkItemRepository {
     });
   }
 
+  private requireNativeProjectionGuard(input: Parameters<MiaodaWorkItemRepository['compareAndSet']>[0]): void {
+    const reevaluation = input.next.configurationEvidenceReevaluation;
+    const candidates = [input.next.integratedAssessment?.baseRules,
+      input.next.integratedAssessment?.overallSynthesis,
+      reevaluation && 'stagedBundle' in reevaluation ? reevaluation.stagedBundle?.baseRules : undefined];
+    const nativeProjection = candidates.some(projection => projection && 'readingResult' in projection &&
+      projection.readingResult?.evidence.some(evidence => evidence.kind === 'TDMS_NATIVE_RECORD'));
+    if (nativeProjection && (!input.nativeEvidenceGuard || !input.jobAidWorkRevisionGuard))
+      throw new Error('TDMS_NATIVE_PROJECTION_AUTHORIZATION_REQUIRED');
+    if (input.nativeEvidenceGuard && !input.jobAidWorkRevisionGuard)
+      throw new Error('TDMS_NATIVE_PROJECTION_CAS_GUARD_REQUIRED');
+  }
+
   private async persistProjectionCas(
     input: Parameters<MiaodaWorkItemRepository['compareAndSet']>[0],
     db: Pick<PostgresJsDatabase, 'update'>,
   ): Promise<CanonicalWorkItemProjection> {
+    // Internal browser projection writers cannot bypass the native admission boundary.
+    this.requireNativeProjectionGuard(input);
     const next: CanonicalWorkItemProjection = {
       ...input.next,
       revision: input.expectedRevision + 1,

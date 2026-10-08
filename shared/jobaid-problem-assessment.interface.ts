@@ -42,6 +42,7 @@ export interface JobAidAssessmentContextPackage {
     origin: string;
     contentNature:
       | 'SOURCE_DOCUMENT_CONTENT'
+      | 'SOURCE_DECLARED_PROFESSIONAL_OPINION'
       | 'UNVERIFIED_ENGINEER_STATEMENT'
       | 'UNVERIFIED_QUERY_RESPONSE'
       | 'PRIOR_CANDIDATE'
