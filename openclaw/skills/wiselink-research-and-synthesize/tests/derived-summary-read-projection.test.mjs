@@ -151,3 +151,30 @@ test('R1 current source READ confirmations use top-level current INPUT slots, ne
     assert.equal(Object.hasOwn(projection.items[0], 'content'), false);
   }
 });
+
+
+import { derivedSummarySparseRevisionModelView } from '../scripts/derived-summary-incremental-revision.mjs';
+import { createDerivedSummarySparseDeliveredView, projectDerivedSummarySparseReadReceipt } from '../scripts/derived-summary-read-projection.mjs';
+function sparseProjectionFixture() {
+  const input = JSON.parse(r1RevisionEntries.find(x => JSON.parse(x.taskEnvelopeJson).modelInput.revisionContext.inputChanges.basis === 'SAME_SELECTION').taskEnvelopeJson).modelInput;
+  const registry = derivedSummaryRegistry(input); return { input, registry,
+    delivered: createDerivedSummarySparseDeliveredView(derivedSummarySparseRevisionModelView(input), registry) };
+}
+for (const [name, change] of [
+  ['missing', x => { x.members = []; }], ['duplicate', x => { x.members.push(structuredClone(x.members[0])); }],
+  ['foreign', x => { x.members[0].evidenceRef = 'foreign'; }], ['extra envelope', x => { x.partial = true; }],
+  ['changed body', x => { x.members[0].body += ' drift'; }], ['changed source', x => { x.members[0].evidence[0].excerpt += ' drift'; }],
+]) test(`sparse ${name} raw batch fails without any ledger pollution`, () => {
+  const f = sparseProjectionFixture(); const before = canonicalJson([...f.delivered.members]); const nativeBefore = canonicalJson([...f.delivered.nativeReadReceipts ?? []]);
+  const receipt = { members: structuredClone(f.input.members) }; change(receipt);
+  assert.throws(() => projectDerivedSummarySparseReadReceipt(receipt, intent('READ_MEMBER_WORK', [...f.registry.members.keys()]), f.registry, f.delivered, { round: 0, messageIndex: 3 }), /DERIVED_SUMMARY_/u);
+  assert.equal(canonicalJson([...f.delivered.members]), before); assert.equal(f.delivered.evidence.size, 0);
+  assert.equal(canonicalJson([...f.delivered.nativeReadReceipts ?? []]), nativeBefore);
+});
+test('sparse confirmations point to actual prior own/source bodies independently', () => {
+  const f = sparseProjectionFixture(); const step = intent('READ_MEMBER_WORK', [...f.registry.members.keys()]);
+  const one = projectDerivedSummarySparseReadReceipt({ members: f.input.members }, step, f.registry, f.delivered, { round: 0, messageIndex: 3 });
+  const two = projectDerivedSummarySparseReadReceipt({ members: f.input.members }, step, f.registry, f.delivered, { round: 1, messageIndex: 5 });
+  assert.equal(one.items[0].status, 'DELIVERED_FULL_CONTENT'); assert.equal(two.items[0].status, 'CONFIRMED_SAME_CONTENT');
+  assert.deepEqual(two.items[0].contentLocation, one.items[0].contentLocation); assert.equal(f.delivered.evidence.size, 0);
+});

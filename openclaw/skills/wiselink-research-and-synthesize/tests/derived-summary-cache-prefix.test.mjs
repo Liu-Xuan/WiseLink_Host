@@ -157,3 +157,17 @@ for (const groupName of ['legacy', 'synthesis']) test(`R1 actual ${groupName} pr
   assert.equal(Object.hasOwn(parsed, 'purpose'), groupName === 'synthesis');
   if (groupName === 'synthesis') { assert.equal(parsed.purpose, 'SYNTHESIZE'); assert.equal(Object.keys(parsed).at(-1), 'purpose'); }
 });
+
+
+import { derivedSummarySparseRevisionModelMessages, DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION,
+  derivedSummaryCachePrefixModelMessages } from '../scripts/invoke-hosted-derived-summary-model.mjs';
+test('fresh sparse namespace is independent while full R1 and synthesis ordered messages stay unchanged', () => {
+  const input = JSON.parse(r1RevisionEntries[0].taskEnvelopeJson).modelInput;
+  const before = canonicalJson(input); const full = derivedSummaryCachePrefixModelMessages(input);
+  const sparse = derivedSummarySparseRevisionModelMessages(input);
+  assert.equal(DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION, 'wiselink.derived-summary-prompt.v3.sparse-revision.read-projection.v1');
+  assert.notEqual(sparse[0].content, full[0].content);
+  assert.equal(full[1].content, `Revise the exact saved candidate using requestedChange and all current authorized material.\nINPUT:\n${serializeDerivedSummaryCachePrefix(derivedSummaryModelView(input))}`);
+  const view = JSON.parse(sparse[1].content.split('INPUT:\n')[1]); assert.equal(view.modelViewStrategy, 'SPARSE_REVISION_V1');
+  assert.equal(canonicalJson(input), before); assert.equal(Object.hasOwn(input, 'modelViewStrategy'), false);
+});

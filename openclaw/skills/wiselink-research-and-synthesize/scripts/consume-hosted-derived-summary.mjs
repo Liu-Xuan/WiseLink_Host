@@ -8,7 +8,7 @@ import { assertHostedModelGatewayReady, createCheckpointStore, createHostMcpConn
   resolveRuntimeConfig } from './run-hosted-review-turn.mjs';
 import { validateSummaryRunBudget } from './derived-summary-native-gateway.mjs';
 import { assertDerivedSummaryReadReceiptShape } from './derived-summary-read-projection.mjs';
-import { invokeHostedDerivedSummaryModel } from './invoke-hosted-derived-summary-model.mjs';
+import { invokeHostedDerivedSummaryModel, validateDerivedSummarySparseCandidateReplay } from './invoke-hosted-derived-summary-model.mjs';
 import { derivedSummaryRegistry, validateDerivedSummaryContent, materializeDerivedSummaryContent,
   normalizeDerivedSummaryContent, validateDerivedSummaryReadSelection,
   validateDerivedSummaryReading, validateDerivedSummaryTask, validateDerivedSummaryProvenance } from './derived-summary-shape.mjs';
@@ -166,6 +166,9 @@ export async function consumeHostedDerivedSummary(options, dependencies) {
       await checkpoint.writeOnce('summary-candidate', candidate);
     }
     validateDerivedSummaryContent(candidate.content, task.modelInput);
+    const invocation = await checkpoint.readOptional('summary-invocation');
+    await validateDerivedSummarySparseCandidateReplay(task.modelInput, { checkpoint,
+      executionModel: task.executionModel, sessionDiscriminator: invocation?.sessionDiscriminator }, candidate);
     // Same requestId and exact complete bytes are replayable under the Host unique constraint/CAS.
     const input = { requestId, expectedSummaryRevision: task.expectedSummaryRevision,
       contentJson: JSON.stringify(candidate.content),

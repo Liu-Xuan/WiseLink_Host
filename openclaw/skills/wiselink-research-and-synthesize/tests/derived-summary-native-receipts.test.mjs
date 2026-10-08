@@ -282,3 +282,39 @@ test('R1 native prior candidate does not register a READ body or a receipt locat
   }
   assert.deepEqual(view.members.map(member => member.leaves), value.members.map(member => member.leaves));
 });
+
+
+import { derivedSummarySparseRevisionModelView } from '../scripts/derived-summary-incremental-revision.mjs';
+import { createDerivedSummarySparseDeliveredView, projectDerivedSummarySparseReadReceipt } from '../scripts/derived-summary-read-projection.mjs';
+for (const entry of r1Sealed.groups.find(x => x.name === 'native').variants.filter(x => JSON.parse(x.taskEnvelopeJson).modelInput.purpose === 'REVISE_SAVED_SUMMARY'))
+  test(`sparse ${entry.name} initial metadata/own body retains every receipt without source delivery`, () => {
+    const input = JSON.parse(entry.taskEnvelopeJson).modelInput; const registry = derivedSummaryRegistry(input);
+    const view = derivedSummarySparseRevisionModelView(input, { initialMemberRefs: input.members.map(x => x.evidenceRef) });
+    const delivered = createDerivedSummarySparseDeliveredView(view, registry);
+    const carriers = input.members.flatMap(x => x.evidence).filter(x => x.kind === 'TDMS_NATIVE_RECORD');
+    assert.equal(delivered.nativeReadReceipts?.size ?? 0, new Set(carriers.map(x => x.nativeReadReceipt.receiptRef)).size);
+    assert.equal(delivered.evidence.size, 0);
+    for (const member of delivered.members.values()) assert.equal(member.location.nativeReadReceiptLocations?.length ?? 0, member.value.nativeReadReceipts?.length ?? 0);
+    const projected = projectDerivedSummarySparseReadReceipt({ members: input.members }, step('READ_MEMBER_WORK', input.members.map(x => x.evidenceRef)), registry, delivered, { round: 0, messageIndex: 3 });
+    for (const [i, item] of projected.items.entries()) {
+      assert.equal(item.status, 'CONFIRMED_SAME_CONTENT');
+      for (const [j, loc] of (item.nativeReadReceiptLocations ?? []).entries()) {
+        assert.equal(loc.messageIndex, 3); assert.equal(loc.toolPointer, `/items/${i}/nativeReadReceipts/${j}/receipt`);
+      }
+    }
+    const nativeMember = view.members.find(x => x.nativeReadReceipts?.length);
+    if (nativeMember) {
+      const mutated = structuredClone(view); mutated.members.find(x => x.evidenceRef === nativeMember.evidenceRef).nativeReadReceipts[0].receipt.permissionRevision = 'changed-under-same-receipt';
+      assert.throws(() => createDerivedSummarySparseDeliveredView(mutated, registry), /DERIVED_SUMMARY_/u);
+    } else assert.equal(delivered.nativeReadReceipts, undefined);
+  });
+
+test('sparse directory-only native carriers are validated and retained without any body delivery', () => {
+  const entry = r1Sealed.groups.find(x => x.name === 'native').variants.find(x => x.name === 'same-leaf-full-revision');
+  const input = JSON.parse(entry.taskEnvelopeJson).modelInput; const registry = derivedSummaryRegistry(input);
+  const view = derivedSummarySparseRevisionModelView(input); assert.equal(view.members.length, 0);
+  const delivered = createDerivedSummarySparseDeliveredView(view, registry);
+  assert.equal(delivered.members.size, 0); assert.equal(delivered.evidence.size, 0); assert.ok(delivered.nativeReadReceipts.size >= 2);
+  const changed = structuredClone(view); changed.membersDirectory[0].nativeReadReceipts[0].receipt.permissionRevision = 'forged-metadata';
+  assert.throws(() => createDerivedSummarySparseDeliveredView(changed, registry), /DERIVED_SUMMARY_/u);
+});
