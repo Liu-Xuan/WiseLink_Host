@@ -1,7 +1,8 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
-import type { DerivedSummaryScopeSelection } from '@shared/derived-summary.interface';
+import { summaryPendingKey } from '@client/src/features/derived-summary/summary-pending-request';
+import type { DerivedSummaryReadModel, DerivedSummaryScopeSelection, RequestDerivedSummaryUpdate } from '@shared/derived-summary.interface';
 import DerivedSummaryReadingPage from '@client/src/features/derived-summary/DerivedSummaryReadingPage';
 import DerivedSummaryComposePage from '@client/src/features/derived-summary/DerivedSummaryComposePage';
 import DerivedSummaryListPage from '@client/src/features/derived-summary/DerivedSummaryListPage';
@@ -15,6 +16,7 @@ const mockUpdate = jest.fn();
 const mockList = jest.fn();
 let mockSession = 1;
 let mockAuthenticationRequired = false;
+let mockInstruction = '仅工作23四问题，保留历史和未覆盖范围。';
 jest.mock('@client/src/api/derived-summary', () => ({
   readDerivedSummary: (...args: unknown[]) => mockHead(...args), readDerivedSummaryExact: (...args: unknown[]) => mockExact(...args),
   readDerivedSummaryRequest: (...args: unknown[]) => mockStatus(...args), createDerivedSummary: (...args: unknown[]) => mockCreate(...args),
@@ -24,7 +26,7 @@ jest.mock('@client/src/api/canonical-host', () => ({ getCanonicalHostClientSessi
   readDocumentParsingStatus: async (documentVersionId: string) => ({ documentVersionId, documentCode: '787-FTD-fixture', businessRevision: '旧R1', selectedVersionIsCurrent: false }) }));
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({ useCurrentUserSession: () => ({ sessionGeneration: mockSession, authenticationRequired: mockAuthenticationRequired }) }));
 jest.mock('@client/src/components/ui/button', () => ({ Button: ({ asChild: _asChild, ...props }: import('react').ComponentProps<'button'> & { asChild?: boolean }) => createElement('button', props) }));
-jest.mock('@client/src/components/ui/textarea', () => ({ Textarea: ({ onChange }: { onChange: (event: { target: { value: string } }) => void }) => createElement('button', { onClick: () => onChange({ target: { value: '仅工作23四问题，保留历史和未覆盖范围。' } }) }, '填写生成要求') }));
+jest.mock('@client/src/components/ui/textarea', () => ({ Textarea: ({ onChange }: { onChange: (event: { target: { value: string } }) => void }) => createElement('button', { onClick: () => onChange({ target: { value: mockInstruction } }) }, '填写生成要求') }));
 jest.mock('@client/src/components/ui/checkbox', () => ({ Checkbox: ({ checked, disabled, onCheckedChange }: { checked: boolean; disabled: boolean; onCheckedChange: (value: boolean) => void }) => createElement('button', { disabled, 'aria-label': '确认选定范围', onClick: () => onCheckedChange(!checked) }, String(checked)) }));
 jest.mock('@client/src/features/derived-summary/DerivedSummaryBody', () => ({ __esModule: true, default: ({ revision }: { revision: { content: { body: string } } }) => createElement('div', { 'data-body': true }, revision.content.body) }));
 jest.mock('@client/src/features/derived-summary/SavedWorkSelector', () => ({ __esModule: true, default: ({ onAdd }: { onAdd: (value: unknown) => void }) => createElement('button', { onClick: () => onAdd({ member: { kind: 'WORK_ITEM_WORK', workItemId: 'WI-explicit', documentVersionId: 'DV-old', workRef: 'JAWR-work23', workRevision: 23, issueKeys: ['I1', 'I2', 'I3', 'I4'] }, headline: '四个确切问题', current: true }) }, '明确加入四个问题') }));
@@ -39,7 +41,7 @@ beforeEach(() => {
     oldGlobals.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   }
   container = dom.window.document.getElementById('root')!;
-  jest.clearAllMocks(); mockSession = 1; mockAuthenticationRequired = false;
+  jest.clearAllMocks(); mockSession = 1; mockAuthenticationRequired = false; mockInstruction = '仅工作23四问题，保留历史和未覆盖范围。';
   mockHead.mockResolvedValue(summaryHead()); mockExact.mockResolvedValue(summaryExact());
   const { current: _current, memberNotices: _notices, ...metadata } = summaryHead();
   mockList.mockResolvedValue([metadata]);
@@ -52,11 +54,11 @@ afterEach(async () => {
 });
 async function mount(route: string) {
   router = createMemoryRouter([{ path: '/summaries', element: createElement(DerivedSummaryListPage) }, { path: '/summaries/new', element: createElement(DerivedSummaryComposePage) },
-    { path: '/summaries/:summaryId', element: createElement(DerivedSummaryReadingPage) }, { path: '*', element: createElement('div') }], { initialEntries: [route] });
+    { path: '/summaries/:summaryId/update', element: createElement(DerivedSummaryComposePage) }, { path: '/summaries/:summaryId', element: createElement(DerivedSummaryReadingPage) }, { path: '*', element: createElement('div') }], { initialEntries: [route] });
   root = createRoot(container); await act(async () => { root.render(createElement(RouterProvider, { router, future: { v7_startTransition: true } })); });
 }
 async function click(text: string) {
-  const button = Array.from(container.querySelectorAll('button')).find(element => element.textContent?.includes(text));
+  const button = Array.from(container.querySelectorAll('button')).find(element => element.textContent?.includes(text) || element.getAttribute('aria-label') === text);
   if (!button) throw new Error(`button missing: ${text}`);
   await act(async () => button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
 }
@@ -266,4 +268,121 @@ test('unsaved CONFLICT offers explicit reread and reselection without dispatch',
   expect(container.textContent).toContain('尚无已保存'); expect(container.textContent).toContain('CONFLICT');
   const link = Array.from(container.querySelectorAll('a')).find(item => item.textContent?.includes('重新选取范围'))!;
   expect(new URL(link.href).pathname).toBe('/summaries/DS-1/update'); expect(mockCreate).not.toHaveBeenCalled(); expect(mockUpdate).not.toHaveBeenCalled();
+});
+
+// These are isolated UI/HTTP-mock checks, not Host revision admission or source authority.
+const pendingCommand = (): RequestDerivedSummaryUpdate => ({ requestId: 'REQ-revision-fixed', purpose: 'REVISE_SAVED_SUMMARY',
+  expectedSummaryRevision: 2, scope: summaryHead().scope, members: summaryHead().current!.members.map(item => item.member),
+  instruction: '只修改明确目标', modelRef: 'miaoda/glm-5.3' });
+async function chooseRevision() {
+  const radio = container.querySelector<HTMLInputElement>('input[value="REVISE_SAVED_SUMMARY"]');
+  if (!radio) throw new Error('revision choice missing');
+  await act(async () => radio.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+}
+test('new summary exposes no revision choice and sends explicit synthesis only', async () => {
+  await mount('/summaries/new?kind=ATA4&fleetFamilyId=B787&ata2=46&ata4=46-00&title=有限范围');
+  expect(container.querySelector('input[value="REVISE_SAVED_SUMMARY"]')).toBeNull();
+  await prepareSelection(); mockCreate.mockRejectedValueOnce(new Error('结果未知')); await click('提交选定范围');
+  expect(mockCreate.mock.calls[0][0]).toMatchObject({ purpose: 'SYNTHESIZE' });
+  expect(mockCreate.mock.calls[0][0]).not.toHaveProperty('expectedSummaryRevision'); expect(mockUpdate).not.toHaveBeenCalled();
+});
+test('explicit revision uses the exact current saved version and does not fabricate prior context', async () => {
+  await mount('/summaries/DS-1/update'); await prepareSelection();
+  await chooseRevision(); expect(container.querySelector('[aria-label="确认选定范围"]')!.textContent).toBe('false');
+  await click('确认选定范围');
+  const link = Array.from(container.querySelectorAll('a')).find(item => item.textContent?.includes('查看准确保存概述'))!;
+  expect(new URL(link.href).searchParams.get('summaryRef')).toBe('DSR-2');
+  mockUpdate.mockRejectedValueOnce(new Error('结果未知')); await click('提交修改要求');
+  expect(mockUpdate).toHaveBeenCalledTimes(1); expect(mockUpdate.mock.calls[0][0]).toBe('DS-1');
+  const input = mockUpdate.mock.calls[0][1];
+  expect(input).toMatchObject({ purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 2, instruction: '仅工作23四问题，保留历史和未覆盖范围。' });
+  for (const key of ['priorRef', 'previousSummary', 'revisionContext', 'modelInput']) expect(input).not.toHaveProperty(key);
+  expect(container.textContent).toContain('上版概述不新增原始证据');
+});
+test('update defaults to synthesis even when the instruction contains revision words', async () => {
+  mockInstruction = '修订上一版，但尚未选择修订任务';
+  await mount('/summaries/DS-1/update'); await prepareSelection();
+  mockUpdate.mockRejectedValueOnce(new Error('结果未知')); await click('提交选定范围');
+  expect(mockUpdate.mock.calls[0][1]).toMatchObject({ purpose: 'SYNTHESIZE', expectedSummaryRevision: 2 });
+});
+const invalidRevisionTargets: Array<[string, (head: DerivedSummaryReadModel) => void]> = [
+  ['unsaved', head => { head.current = null; head.currentSummaryRef = null; head.currentRevision = 0; }],
+  ['missing ref', head => { head.currentSummaryRef = null; }],
+  ['blank ref', head => { head.currentSummaryRef = ' '; head.current!.summaryRef = ' '; }],
+  ['wrong ref', head => { head.currentSummaryRef = 'DSR-other'; }],
+  ['wrong revision', head => { head.current!.revision = 1; }],
+  ['fractional revision', head => { head.currentRevision = 2.5; head.current!.revision = 2.5; }],
+  ['out of range revision', head => { head.currentRevision = 2147483647; head.current!.revision = 2147483647; }],
+  ['wrong saved summary', head => { head.current!.summaryId = 'DS-other'; }],
+  ['not candidate', head => { head.current!.candidateOnly = false as true; }],
+];
+test.each(invalidRevisionTargets)('invalid saved target %s cannot offer or create a new revision request', async (_label, mutate) => {
+  const head = summaryHead(); mutate(head); mockHead.mockResolvedValue(head);
+  await mount('/summaries/DS-1/update'); await prepareSelection();
+  const radio = container.querySelector<HTMLInputElement>('input[value="REVISE_SAVED_SUMMARY"]')!;
+  expect(radio.disabled).toBe(true); expect(container.textContent).not.toContain('查看准确保存概述');
+  // Even a script bypassing the disabled UI cannot bypass submit's exact-target guard.
+  radio.disabled = false; await chooseRevision(); await click('确认选定范围'); await click('提交修改要求');
+  expect(container.textContent).toContain('没有可核权的准确保存概述'); expect(mockUpdate).not.toHaveBeenCalled(); expect(mockCreate).not.toHaveBeenCalled();
+  expect(dom.window.sessionStorage.length).toBe(0);
+});
+test('revision replay preserves the complete original command after the head advances', async () => {
+  const original = pendingCommand(); const text = JSON.stringify(original);
+  const key = summaryPendingKey('tenant-1', 'actor-1', 'DS-1'); dom.window.sessionStorage.setItem(key, text);
+  const head = summaryHead(); head.currentRevision = 3; head.currentSummaryRef = 'DSR-3'; head.current!.revision = 3; head.current!.summaryRef = 'DSR-3';
+  mockHead.mockResolvedValue(head); mockUpdate.mockRejectedValueOnce(new Error('仍未知')).mockResolvedValueOnce({ summaryId: 'DS-1', attemptRef: 'AQ-1' });
+  await mount('/summaries/DS-1/update'); expect(container.textContent).toContain('原请求锁定保存修订 2；目前指针为 3');
+  expect(container.textContent).not.toContain('查看准确保存概述'); await click('用同一请求');
+  const first = mockUpdate.mock.calls[0][1]; expect(first).toEqual(original); expect(dom.window.sessionStorage.getItem(key)).toBe(text);
+  await click('用同一请求'); expect(mockUpdate.mock.calls[1][1]).toBe(first); expect(router.state.location.search).toBe('?attemptRef=AQ-1');
+  expect(dom.window.sessionStorage.length).toBe(0);
+});
+test('legacy pending retries without adding purpose or following the new saved revision', async () => {
+  const { purpose: _purpose, ...legacy } = pendingCommand(); const key = summaryPendingKey('tenant-1', 'actor-1', 'DS-1');
+  dom.window.sessionStorage.setItem(key, JSON.stringify(legacy)); await mount('/summaries/DS-1/update');
+  mockUpdate.mockRejectedValueOnce(new Error('未知')); await click('用同一请求');
+  expect(mockUpdate.mock.calls[0][1]).toEqual(legacy); expect(mockUpdate.mock.calls[0][1]).not.toHaveProperty('purpose');
+  expect(dom.window.sessionStorage.getItem(key)).toBe(JSON.stringify(legacy));
+});
+test('malicious revision pending in a new-summary slot blocks dispatch and preserves the failed snapshot', async () => {
+  const key = summaryPendingKey('tenant-1', 'actor-1'); const text = JSON.stringify(pendingCommand()); dom.window.sessionStorage.setItem(key, text);
+  await mount('/summaries/new'); expect(container.textContent).toContain('本地保留请求无法读取');
+  expect(mockCreate).not.toHaveBeenCalled(); expect(mockUpdate).not.toHaveBeenCalled(); expect(dom.window.sessionStorage.getItem(key)).toBe(text);
+});
+test('two synchronous submit clicks dispatch one command before React busy state updates', async () => {
+  await mount('/summaries/DS-1/update'); await prepareSelection(); await chooseRevision(); await click('确认选定范围');
+  let reject!: (reason: Error) => void; mockUpdate.mockImplementationOnce(() => new Promise((_resolve, no) => { reject = no; }));
+  const button = Array.from(container.querySelectorAll('button')).find(item => item.textContent?.includes('提交修改要求'))!;
+  await act(async () => { button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+  expect(mockUpdate).toHaveBeenCalledTimes(1); expect(container.textContent).toContain('正在核对受理');
+  await act(async () => reject(new Error('未知'))); expect(container.textContent).toContain('用同一请求核对受理结果');
+  mockUpdate.mockRejectedValueOnce(new Error('仍未知')); await click('用同一请求'); expect(mockUpdate.mock.calls[1][1]).toBe(mockUpdate.mock.calls[0][1]);
+});
+test('storage failure prevents dispatch and releases the synchronous guard for a later explicit submit', async () => {
+  await mount('/summaries/DS-1/update'); await prepareSelection(); await chooseRevision(); await click('确认选定范围');
+  const write = jest.spyOn(dom.window.Storage.prototype, 'setItem').mockImplementationOnce(() => { throw new Error('quota'); });
+  try {
+    await click('提交修改要求'); expect(mockUpdate).not.toHaveBeenCalled(); expect(container.textContent).toContain('无法保留原请求快照');
+    mockUpdate.mockRejectedValueOnce(new Error('未知')); await click('提交修改要求'); expect(mockUpdate).toHaveBeenCalledTimes(1);
+  } finally { write.mockRestore(); }
+});
+test('late acceptance after session invalidation cannot clear pending or navigate', async () => {
+  const original = pendingCommand(); const key = summaryPendingKey('tenant-1', 'actor-1', 'DS-1'); const text = JSON.stringify(original);
+  dom.window.sessionStorage.setItem(key, text); let resolve!: (receipt: { summaryId: string; attemptRef: string }) => void;
+  mockUpdate.mockImplementationOnce(() => new Promise(yes => { resolve = yes; })); await mount('/summaries/DS-1/update'); await click('用同一请求');
+  mockSession++; mockAuthenticationRequired = true;
+  await act(async () => { root.render(createElement(RouterProvider, { router, future: { v7_startTransition: true } })); await router.navigate('/summaries/DS-1/update?session=2'); });
+  await act(async () => resolve({ summaryId: 'DS-1', attemptRef: 'AQ-late' }));
+  expect(container.textContent).toContain('请先登录'); expect(router.state.location.pathname).toBe('/summaries/DS-1/update');
+  expect(dom.window.sessionStorage.getItem(key)).toBe(text); expect(mockUpdate).toHaveBeenCalledTimes(1);
+});
+test('explicit revision rejection requires reset before a fresh selected command', async () => {
+  const original = pendingCommand(); const key = summaryPendingKey('tenant-1', 'actor-1', 'DS-1'); dom.window.sessionStorage.setItem(key, JSON.stringify(original));
+  mockUpdate.mockRejectedValueOnce(Object.assign(new Error('版本冲突'), { code: 'DERIVED_SUMMARY_REVISION_CONFLICT' }));
+  await mount('/summaries/DS-1/update'); await click('用同一请求'); expect(container.textContent).toContain('请求未受理');
+  expect(dom.window.sessionStorage.getItem(key)).toBe(JSON.stringify(original)); await click('重新读取并选择');
+  expect(dom.window.sessionStorage.length).toBe(0); expect(mockUpdate).toHaveBeenCalledTimes(1); expect(router.state.location.pathname).toBe('/summaries/DS-1');
+  await act(async () => router.navigate('/summaries/DS-1/update')); await prepareSelection();
+  mockUpdate.mockRejectedValueOnce(new Error('未知')); await click('提交选定范围');
+  const fresh = mockUpdate.mock.calls[1][1]; expect(fresh.purpose).toBe('SYNTHESIZE'); expect(fresh.requestId).not.toBe(original.requestId);
 });

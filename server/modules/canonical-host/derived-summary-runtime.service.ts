@@ -102,6 +102,32 @@ export class DerivedSummaryRuntimeService {
       return { error: 'DERIVED_SUMMARY_CLAIM_UNAVAILABLE' };
     });
     if ('error' in outcome) throw summaryError(outcome.error);
+    if (outcome.task.modelInput.revisionContext) {
+      // Prior content is delivered for the first time at CLAIM, including sources
+      // removed from the current selection. Original IO cannot hold the DB pool.
+      const initial = await this.repository.runtime(target, async (database, owner, _head, attempt) => {
+        await this.lockGenerationContext(attempt, owner, database);
+        await lockAttempt(attempt, database);
+        const row = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
+        assertFence(row, { ...target, ...fence(outcome) });
+        const task = checkedSummaryTask(row);
+        const saved = await this.savedForRequest(target.summaryId, task.requestId, owner, database);
+        await this.checkMembers(row, owner, database, saved?.attemptId !== row.attemptId);
+        return { owner, evidence: await this.summaries.taskEvidence(task, owner, database), hash: task.taskInputHash };
+      });
+      await this.members.verifyOriginalEvidence(initial.evidence, initial.owner);
+      await this.repository.runtime(target, async (database, owner, _head, attempt) => {
+        await this.lockGenerationContext(attempt, owner, database);
+        await lockAttempt(attempt, database);
+        const row = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
+        assertFence(row, { ...target, ...fence(outcome) });
+        const task = checkedSummaryTask(row);
+        const saved = await this.savedForRequest(target.summaryId, task.requestId, owner, database);
+        await this.checkMembers(row, owner, database, saved?.attemptId !== row.attemptId);
+        if (task.taskInputHash !== initial.hash || task.taskInputHash !== outcome.task.taskInputHash)
+          throw summaryError('DERIVED_SUMMARY_TASK_INVALID');
+      });
+    }
     return outcome;
   }
 
@@ -182,9 +208,9 @@ export class DerivedSummaryRuntimeService {
         if (!item) throw summaryError('DERIVED_SUMMARY_SOURCE_NOT_REGISTERED', 404);
         return item;
       });
-      return { owner, evidence, hash: attempt.taskInputHash };
+      return { owner, evidence, originals: await this.summaries.taskEvidence(task, owner, database), hash: attempt.taskInputHash };
     });
-    await this.members.verifyOriginalEvidence(initial.evidence, initial.owner);
+    await this.members.verifyOriginalEvidence(initial.originals, initial.owner);
     return this.repository.runtime(target, async (database, owner, _head, attempt) => {
       await this.lockGenerationContext(attempt, owner, database);
       await lockAttempt(attempt, database);
@@ -206,11 +232,11 @@ export class DerivedSummaryRuntimeService {
         throw summaryError('DERIVED_SUMMARY_SAVE_BINDING_INVALID');
       const saved = await this.savedForRequest(target.summaryId, target.requestId, owner, database);
       await this.checkMembers(attempt, owner, database, saved?.attemptId !== attempt.attemptId);
-      return { owner, task };
+      return { owner, task, evidence: await this.summaries.taskEvidence(task, owner, database) };
     });
     // Revalidate exact original artifacts without retaining a DB connection. The
     // final transaction repeats all authorization, content identity and lease checks.
-    await this.members.verifyOriginalEvidence(initial.task.modelInput.evidence, initial.owner);
+    await this.members.verifyOriginalEvidence(initial.evidence, initial.owner);
     const producer = parseProducer(target.provenanceJson, initial.task.executionModel.modelRef);
     return this.repository.runtime(target, async (database, owner, _head, attempt) => {
       await this.lockGenerationContext(attempt, owner, database);

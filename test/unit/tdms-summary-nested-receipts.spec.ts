@@ -77,7 +77,7 @@ it('actual runtime nested member READ rejects nonfirst receipt revoked during jo
   const task={...basis,taskInputHash:canonicalSha256(basis)};
   const attempt={summaryId:caller.summaryId,attemptId:basis.actionAttemptId,operationRef:caller.attemptRef,actorUserId:actor.actorUserId,tenantId:actor.tenantId,delegatedPrincipalId:scope.principalId,
     status:'RUNNING',leaseOwner:scope.principalId,leaseToken:'lease-1',leaseGeneration:1,leaseExpiresAt:new Date('2099-01-01T00:00:00Z'),deadlineAt:new Date(task.deadlineAt),triggerRequestId:basis.requestId,
-    baseRevision:0,inputRevision:0,taskEnvelopeJson:canonicalJson(task),taskInputHash:task.taskInputHash,executionModelJson:canonicalJson(task.executionModel),requestCommandJson:'{}',reviewActivityJson:'[]'};
+    baseRevision:0,inputRevision:0,taskEnvelopeJson:canonicalJson(task),taskInputHash:task.taskInputHash,executionModelJson:canonicalJson(task.executionModel),requestCommandJson:canonicalJson({requestId:basis.requestId,expectedSummaryRevision:0,scope:selection,members:[f.s2.member],instruction:basis.modelInput.instruction,modelRef:task.executionModel.modelRef}),reviewActivityJson:'[]'};
   const readHead=repository.head.bind(repository);
   jest.spyOn(repository,'head').mockImplementation((id,owner,database,lock)=>id===caller.summaryId
     ? Promise.resolve({summaryId:caller.summaryId,currentRevision:0} as never) : readHead(id,owner,database,lock));jest.spyOn(repository,'attempt').mockResolvedValue(attempt as never);

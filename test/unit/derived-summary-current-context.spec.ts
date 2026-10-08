@@ -11,6 +11,7 @@ import { DerivedSummaryService, checkedSummaryTask } from '../../server/modules/
 import { ActionAttemptRepository } from '../../server/modules/action-attempt/action-attempt.repository';
 import { DerivedSummaryRuntimeService } from '../../server/modules/canonical-host/derived-summary-runtime.service';
 import { assertSummaryContextBasis, assertSummaryContextUnchanged, summaryContextStatus } from '../../server/modules/canonical-host/derived-summary-current-context';
+import { buildSummaryRevisionContext } from '../../server/modules/canonical-host/derived-summary-revision-context';
 
 const owner = { tenantId: 'tenant-one', actorUserId: 'actor-one' };
 const scope = { kind: 'ATA4' as const, title: 'Explicit selection', fleetFamilyId: 'B787',
@@ -543,5 +544,71 @@ describe('derived summary runtime freshness fence (transaction-double proof, not
     await expect(runtime.readSaved({ ...target2 } as never))
       .rejects.toThrow('DERIVED_SUMMARY_MEMBER_UNAVAILABLE');
     expect(checkedSummaryTask(attempts.get('AQ-S1') as never)).toEqual(task1);
+  });
+});
+
+describe('R1 sealed command/task binding', () => {
+  const reseal = (task: ReturnType<typeof taskFor>) => {
+    const { taskInputHash: _old, ...fields } = task;
+    return { ...fields, taskInputHash: canonicalSha256(fields) };
+  };
+  it('validates a legacy real command without rewriting its omitted fields or hash', () => {
+    const task = taskFor('legacy-binding', 1); const row = runningAttempt(task);
+    expect(checkedSummaryTask(row as never)).toEqual(task);
+    expect(Object.hasOwn(checkedSummaryTask(row as never).modelInput, 'purpose')).toBe(false);
+    expect(row.taskEnvelopeJson).toBe(canonicalJson(task));
+  });
+  it.each(['requestId', 'expectedSummaryRevision', 'scope', 'members', 'instruction', 'modelRef', 'purpose'])
+    ('rejects command %s drift even while task/hash remain valid', key => {
+      const task = taskFor('command-binding', 1); const row = runningAttempt(task);
+      const command = { ...request(task.requestId, 1), [key]: key === 'expectedSummaryRevision' ? 2 :
+        key === 'scope' ? { ...scope, title: 'Other selection' } : key === 'members' ? [{ ...work, workRef: 'other' }] :
+          key === 'purpose' ? 'SYNTHESIZE' : 'Other command' };
+      row.requestCommandJson = canonicalJson(command);
+      expect(() => checkedSummaryTask(row as never)).toThrow('DERIVED_SUMMARY_TASK_INVALID');
+    });
+  it.each([{}, null, { ...request('command-binding', 1), purpose: null }])('rejects malformed full command %s', command => {
+    const row = runningAttempt(taskFor('command-binding', 1)); row.requestCommandJson = canonicalJson(command);
+    expect(() => checkedSummaryTask(row as never)).toThrow('DERIVED_SUMMARY_TASK_INVALID');
+  });
+  it.each(['purpose', 'revisionContext'])('rejects forbidden task-level %s even if the new hash is self-consistent', key => {
+    const task = { ...taskFor('top-level-binding', 1), [key]: 'SYNTHESIZE' }; const sealed = reseal(task);
+    expect(() => checkedSummaryTask(runningAttempt(sealed) as never)).toThrow('DERIVED_SUMMARY_TASK_INVALID');
+  });
+  it('rejects purpose/context pairing drift after an otherwise valid hash seal', () => {
+    const task = taskFor('context-pair', 1);
+    const withContext = { ...task, modelInput: { ...task.modelInput, revisionContext: {} } };
+    expect(() => checkedSummaryTask(runningAttempt(reseal(withContext as never)) as never)).toThrow('DERIVED_SUMMARY_TASK_INVALID');
+  });
+  it.each(['REVERSED', 'BODY', 'MISSING', 'MEMBER'] as const)('binds each fresh prior in saved order: %s', drift => {
+    const secondWork = { ...work, workItemId: 'W-two', workRef: 'WR-two' };
+    const second = { ...copy(reading), member: secondWork, leaves: [secondWork], evidenceRef: 'member-W-two', body: 'Second immutable saved body', evidence: [] };
+    const saved = { summaryId: 'DS-one', summaryRef: 'DSR-prior', revision: 1, scope,
+      classificationStatus: 'CANDIDATE' as const, members: [copy(reading), second], content: { headline: 'Prior',
+        listBrief: 'Limited', body: 'Old candidate', limitations: [] }, evidence: [source], usedEvidenceRefs: [], coverage: [],
+      requestId: 'prior', attemptRef: 'AQ-prior', createdAt: '2026-10-06T00:00:00.000Z', candidateOnly: true as const };
+    const task = taskFor('prior-bind', 1);
+    const input = { ...request(task.requestId, 1), purpose: 'REVISE_SAVED_SUMMARY' as const };
+    const revisionContext = buildSummaryRevisionContext(input, saved, copy(saved.members), [reading], '2026-10-06T00:00:00.000Z');
+    const fresh = copy(saved.members);
+    if (drift === 'REVERSED') fresh.reverse();
+    if (drift === 'BODY') fresh[1]!.body = 'Different body under old ref';
+    if (drift === 'MISSING') fresh.pop();
+    if (drift === 'MEMBER') fresh[1]!.member = work;
+    const repository = new DerivedSummaryRepository({} as never, {} as never, {} as never);
+    jest.spyOn(repository, 'savedRevision').mockResolvedValue(saved);
+    const members = { readAll: jest.fn(async (selected: DerivedSummaryMember[]) => selected.length === 1 ? [copy(reading)] : fresh) };
+    const service = new DerivedSummaryService(repository, members as never, {} as never);
+    return expect(service.checkTaskAccess({ ...task, modelInput: { ...task.modelInput, purpose: input.purpose, revisionContext } },
+      owner, {} as never)).rejects.toThrow(drift === 'MISSING' ? 'DERIVED_SUMMARY_PERSISTENCE_INVALID' : 'DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+  });
+  it('rejects an invented current evidence registry before prior lookup or source IO', () => {
+    const task = taskFor('registry-bind', 1);
+    const members = { readAll: jest.fn(async () => [copy(reading)]) };
+    const repository = new DerivedSummaryRepository({} as never, {} as never, {} as never);
+    const service = new DerivedSummaryService(repository, members as never, {} as never);
+    return expect(service.checkTaskAccess({ ...task, modelInput: { ...task.modelInput,
+      evidence: [{ ...source, evidenceRef: 'invented-registry' }] } }, owner, {} as never))
+      .rejects.toThrow('DERIVED_SUMMARY_PERSISTENCE_INVALID');
   });
 });

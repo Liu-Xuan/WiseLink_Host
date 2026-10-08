@@ -5,13 +5,15 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { consumeHostedDerivedSummary, derivedSummaryCliTarget, withSummaryHeartbeat } from '../scripts/consume-hosted-derived-summary.mjs';
 import { invokeHostedDerivedSummaryModel, derivedSummaryModelMessages, derivedSummaryModelView, derivedSummaryCachePrefixModelMessages,
-  DERIVED_SUMMARY_PROMPT_VERSION, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION } from '../scripts/invoke-hosted-derived-summary-model.mjs';
+  DERIVED_SUMMARY_PROMPT_VERSION, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION,
+  DERIVED_SUMMARY_REVISION_PROMPT_VERSION, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION } from '../scripts/invoke-hosted-derived-summary-model.mjs';
 import { derivedSummaryRegistry, validateDerivedSummaryTask, validateDerivedSummaryContent,
   materializeDerivedSummaryContent, normalizeDerivedSummaryContent,
   validateDerivedSummaryReadSelection } from '../scripts/derived-summary-shape.mjs';
 import { createDerivedSummaryDeliveredView, projectDerivedSummaryReadReceipt } from '../scripts/derived-summary-read-projection.mjs';
 import { canonicalJson, canonicalSha256 } from '../scripts/validate-payload.mjs';
 import { createCheckpointStore, executionModelHeaders, readHostMcpJsonResult } from '../scripts/run-hosted-review-turn.mjs';
+import { serializeDerivedSummaryCachePrefix } from '../scripts/derived-summary-cache-prefix.mjs';
 
 const member = { kind: 'WORK_ITEM_WORK', workItemId: 'WI-one', documentVersionId: 'DV-one',
   workRef: 'WR-historical', workRevision: 2, issueKeys: ['issue-conditions'] };
@@ -1504,4 +1506,361 @@ test('fresh cache-prefix state has explicit version, exact ordered INPUT and ori
   assert.deepEqual(Object.keys(view), ['evidence', 'members', 'classificationStatus', 'scope', 'limitations', 'instruction']);
   assert.equal((await checkpoint.readOptional('summary-round-0.result')).argsHash,
     canonicalSha256({ ...legacyRoundArgs(state.messages), promptVersion: state.promptVersion }));
+}));
+
+
+// R1 tasks below are copied byte-for-byte from actual Host sealing. The transport
+// injection verifies only the offline protocol; it is not ACL/PG/model evidence.
+const r1Sealed = JSON.parse(await readFile(new URL('./fixtures/derived-summary-r1-sealed.json', import.meta.url), 'utf8'));
+assert.equal(r1Sealed.schemaVersion, 'wiselink.derived-summary-r1-sealed-fixtures.v1');
+function r1Entry(group, basis) {
+  const entries = r1Sealed.groups.find(item => item.name === group)?.variants;
+  assert.ok(entries?.length, `Missing actual Host fixture group ${group}`);
+  const entry = basis ? entries.find(item => JSON.parse(item.taskEnvelopeJson).modelInput.revisionContext?.inputChanges.basis === basis) : entries[0];
+  assert.ok(entry, `Missing actual Host fixture ${group}/${basis ?? 'first'}`);
+  return entry;
+}
+function r1Task(entry) {
+  const value = JSON.parse(entry.taskEnvelopeJson);
+  const { taskInputHash, ...basis } = value;
+  assert.equal(canonicalSha256(basis), entry.taskInputHash);
+  assert.equal(taskInputHash, entry.taskInputHash);
+  assert.equal(value.subject.summaryId, entry.binding.summaryId);
+  assert.equal(value.operationRef, entry.binding.operationRef);
+  assert.equal(value.actionAttemptId, entry.binding.attemptId);
+  assert.equal(value.requestId, entry.binding.requestId);
+  assert.equal(value.expectedSummaryRevision, entry.binding.expectedSummaryRevision);
+  validateDerivedSummaryTask(value, { summaryId: entry.binding.summaryId, attemptRef: entry.binding.operationRef });
+  return value;
+}
+function r1Content(value) {
+  const registry = derivedSummaryRegistry(value);
+  assert.ok(registry.evidence.size);
+  return { headline: `Conditional candidate [[${value.members[0].evidenceRef}]]`,
+    listBrief: `Selected scope only [[${value.members.at(-1).evidenceRef}]]`,
+    body: `Current authorized source remains conditional [[${registry.evidence.keys().next().value}]].`,
+    limitations: ['No applicability, approval or execution verification.'] };
+}
+async function r1Checkpoint(root, entry) {
+  return createCheckpointStore(join(root, 'derived-summary', 'host',
+    encodeURIComponent(entry.binding.summaryId), encodeURIComponent(entry.binding.operationRef)));
+}
+function r1Args(entry, messages, promptVersion) {
+  return { messages, executionModel: r1Task(entry).executionModel,
+    sessionDiscriminator: `${entry.binding.operationRef}:1`, promptVersion };
+}
+function r1Transport(root, entry, hooks = {}) {
+  const sealedTask = r1Task(entry); const selected = sealedTask.modelInput;
+  const subject = { summaryId: entry.binding.summaryId, attemptRef: entry.binding.operationRef };
+  const registry = derivedSummaryRegistry(selected); const calls = []; const gatewayCalls = [];
+  const runBudget = { timeoutMs: 600000, maxCompletionTokens: 64000, maxModelRequests: 10, reasoningEffort: 'low' };
+  let saved = null; let generation = 1; let gatewayReceipt;
+  const dependencies = {
+    prepareGateway: async binding => {
+      assert.deepEqual(binding.subject, { kind: 'DERIVED_SUMMARY', summaryId: subject.summaryId });
+      assert.equal(binding.nativeSessionKey, `agent:wiselink-engineering:summary:${subject.summaryId}:${subject.attemptRef}`);
+      gatewayReceipt = { attemptRef: binding.attemptRef, modelId: 'glm-5.3', maxCompletionTokens: binding.maxCompletionTokens,
+        maxModelRequests: binding.maxModelRequests, absoluteDeadline: binding.deadlineAt, dispatches: [],
+        activeOrdinal: null, unknownTerminal: false, upstreamDispatchCount: 0, upstreamHttpStatus: null,
+        transportCompleted: false, providerStopConfirmed: false, outcome: 'CREATED', finishedAt: null,
+        expectedReasoningEffort: 'low', observedReasoningEffort: null, observedThinkingMode: null, tempSecretScan: null };
+      return { gatewayUrl: 'http://127.0.0.1:1', gatewayToken: 'r1-synthetic-transport-only',
+        getSanitizedReceipt: () => structuredClone(gatewayReceipt),
+        close: async () => { gatewayReceipt.tempSecretScan = { complete: true, found: false }; } };
+    },
+    callTool: async (name, input) => {
+      assert.equal(name, 'derived_summary_attempt'); calls.push(structuredClone(input));
+      assert.equal(input.summaryId, subject.summaryId); assert.equal(input.attemptRef, subject.attemptRef);
+      const intercepted = await hooks.tool?.(input);
+      if (intercepted !== undefined) return intercepted;
+      if (['HEARTBEAT', 'READ_MEMBER_WORK', 'READ_SOURCES', 'SAVE_SUMMARY', 'FINISH'].includes(input.operation)) {
+        assert.equal(input.leaseToken, `r1-lease-${generation}`); assert.equal(input.leaseGeneration, generation);
+      }
+      switch (input.operation) {
+        case 'STATUS': return { ...subject, status: 'RUNNING', savedSummaryRefs: saved ? [saved.summary.summaryRef] : [] };
+        case 'CLAIM': return { ...subject, task: sealedTask, status: 'RUNNING', leaseToken: `r1-lease-${generation}`,
+          leaseGeneration: generation, leaseExpiresAt: sealedTask.deadlineAt };
+        case 'HEARTBEAT': return { ...subject, status: 'RUNNING' };
+        case 'READ_SAVED_SUMMARY': return saved;
+        case 'READ_MEMBER_WORK': return { members: input.evidenceRefs.map(ref => {
+          assert.ok(registry.members.has(ref)); return structuredClone(registry.members.get(ref)); }) };
+        case 'READ_SOURCES': return { evidence: input.evidenceRefs.map(ref => {
+          assert.ok(registry.evidence.has(ref)); return structuredClone(registry.evidence.get(ref)); }) };
+        case 'SAVE_SUMMARY': {
+          assert.deepEqual(Object.keys(input).sort(), ['summaryId', 'attemptRef', 'leaseToken', 'leaseGeneration',
+            'operation', 'requestId', 'expectedSummaryRevision', 'contentJson', 'provenanceJson'].sort());
+          assert.equal(input.requestId, sealedTask.requestId); assert.equal(input.expectedSummaryRevision, sealedTask.expectedSummaryRevision);
+          const submitted = JSON.parse(input.contentJson);
+          const bodyRefs = new Set([...submitted.body.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]));
+          const receipt = { summaryId: subject.summaryId, summaryRef: 'SUMR-r1-transport-only',
+            revision: sealedTask.expectedSummaryRevision + 1, replay: false };
+          saved = { receipt: { ...receipt, replay: true }, summary: { ...receipt, requestId: sealedTask.requestId,
+            attemptRef: subject.attemptRef, scope: selected.scope, classificationStatus: 'CANDIDATE',
+            content: { headline: submitted.headline.trim(), listBrief: submitted.listBrief.trim(), body: submitted.body.trim(),
+              limitations: [...new Set([...selected.limitations, ...submitted.limitations.map(item => item.trim())])] },
+            members: selected.members, producer: JSON.parse(input.provenanceJson),
+            coverage: selected.members.map(item => ({ member: item.member, evidenceRef: item.evidenceRef, delivered: true,
+              used: bodyRefs.has(item.evidenceRef), rootRefs: item.rootRefs, limitation: item.limitations.join('\n') })), candidateOnly: true } };
+          return receipt;
+        }
+        case 'FINISH': assert.ok(saved); return { ...subject, status: 'SUCCEEDED', savedSummaryRef: saved.summary.summaryRef };
+        case 'FAIL': return { ...subject, status: 'FAILED', errorCode: input.code };
+        default: assert.fail(input.operation);
+      }
+    },
+    invokeModel: (input, modelHooks) => invokeHostedDerivedSummaryModel(input, { ...runtime, ...modelHooks }, {
+      requestGateway: async (_endpoint, init) => {
+        gatewayCalls.push(JSON.parse(init.body));
+        assert.equal(init.headers['x-openclaw-model'], sealedTask.executionModel.modelRef);
+        const response = await (hooks.gateway ? hooks.gateway(gatewayCalls.length, init)
+          : gatewayStep({ action: 'SAVE_SUMMARY', content: r1Content(selected) }, 'r1-save'));
+        gatewayReceipt.upstreamDispatchCount += 1;
+        gatewayReceipt.dispatches.push({ ordinal: gatewayReceipt.upstreamDispatchCount,
+          actualCompletionTokens: runBudget.maxCompletionTokens, upstreamHttpStatus: response.status,
+          transportCompleted: true, providerKnownTerminal: true, finishReason: response.ok ? 'tool_calls' : null, outcome: 'COMPLETE' });
+        Object.assign(gatewayReceipt, { providerStopConfirmed: true, transportCompleted: true,
+          observedReasoningEffort: 'LOW', observedThinkingMode: 'ENABLED', outcome: 'COMPLETE' });
+        return response;
+      }, wait: async () => {},
+    }),
+  };
+  return { calls, gatewayCalls, task: sealedTask, dependencies, options: { ...subject, checkpointRoot: root, runBudget },
+    get saved() { return saved; }, set generation(value) { generation = value; } };
+}
+
+for (const group of r1Sealed.groups) for (const entry of group.variants)
+  test(`R1 actual Host sealed ${group.name}/${entry.name} keeps original hash, command presence and binding`, () => {
+    const before = entry.taskEnvelopeJson; const selected = r1Task(entry); const command = JSON.parse(entry.requestCommandJson);
+    assert.equal(Object.hasOwn(selected, 'purpose'), false); assert.equal(Object.hasOwn(selected, 'revisionContext'), false);
+    assert.equal(Object.hasOwn(command, 'purpose'), Object.hasOwn(selected.modelInput, 'purpose'));
+    if (Object.hasOwn(command, 'purpose')) assert.equal(selected.modelInput.purpose, command.purpose);
+    assert.equal(entry.taskEnvelopeJson, before);
+  });
+
+for (const group of ['legacy', 'synthesis']) test(`R1 actual ${group} task retains ordinary synthesis namespace and instructions`, () => {
+  const input = r1Task(r1Entry(group)).modelInput; const before = canonicalJson(input);
+  const messages = derivedSummaryModelMessages(input); const ordered = derivedSummaryCachePrefixModelMessages(input);
+  assert.equal(messages[0].content, legacySummaryV2SystemMessage); assert.deepEqual(ordered[0], messages[0]);
+  assert.equal(messages[1].content, `Form the selected-scope candidate from the complete authorized material.\nINPUT:\n${canonicalJson(derivedSummaryModelView(input))}`);
+  assert.equal(ordered[1].content, `Form the selected-scope candidate from the complete authorized material.\nINPUT:\n${serializeDerivedSummaryCachePrefix(derivedSummaryModelView(input))}`);
+  assert.equal(Object.hasOwn(JSON.parse(messages[1].content.split('INPUT:\n')[1]), 'revisionContext'), false);
+  assert.equal(canonicalJson(input), before);
+});
+
+for (const basis of ['SAME_SELECTION', 'CHANGED_SELECTION']) test(`R1 ${basis} consumer delivers every current member and saves a complete revision`, () => fixture(async root => {
+  const entry = r1Entry('revision', basis); const before = entry.taskEnvelopeJson; const h = r1Transport(root, entry);
+  const result = await consumeHostedDerivedSummary(h.options, h.dependencies);
+  assert.equal(result.status, 'DERIVED_SUMMARY_SAVED'); assert.equal(result.revision, h.task.expectedSummaryRevision + 1);
+  const reads = h.calls.filter(call => call.operation === 'READ_MEMBER_WORK');
+  assert.equal(reads.length, 1); assert.deepEqual(reads[0].evidenceRefs, h.task.modelInput.members.map(item => item.evidenceRef));
+  const state = await (await r1Checkpoint(root, entry)).readOptional('summary-model-state');
+  assert.equal(state.promptVersion, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION);
+  assert.deepEqual(h.gatewayCalls[0].messages, derivedSummaryCachePrefixModelMessages(h.task.modelInput));
+  assert.match(state.messages[0].content, /complete current material/u);
+  assert.match(state.messages[0].content, /not a delta or patch/u);
+  const input = JSON.parse(state.messages[1].content.split('INPUT:\n')[1]);
+  assert.deepEqual(input.revisionContext, h.task.modelInput.revisionContext);
+  assert.equal(input.members.length, h.task.modelInput.members.length);
+  assert.deepEqual(input.evidence.map(item => item.evidenceRef), [...derivedSummaryRegistry(h.task.modelInput).evidence.keys()]);
+  assert.equal(h.saved.summary.producer.promptVersion, state.promptVersion);
+  assert.equal(h.saved.summary.content.body, r1Content(h.task.modelInput).body);
+  assert.equal(h.saved.summary.coverage.every(item => item.delivered === true && item.used === false), true);
+  assert.equal(Object.hasOwn(h.saved.summary, 'purpose'), false); assert.equal(Object.hasOwn(h.saved.summary, 'revisionContext'), false);
+  assert.equal(Object.hasOwn(h.saved.summary.content, 'revisionContext'), false);
+  assert.equal(h.calls.at(-1).operation, 'FINISH'); assert.equal(entry.taskEnvelopeJson, before);
+}));
+
+for (const badPurpose of [null, undefined, '', 'REVISE', 1, true]) test(`R1 rejects explicit invalid purpose ${String(badPurpose)}`, () => {
+  const selected = r1Task(r1Entry('legacy')).modelInput;
+  assert.throws(() => derivedSummaryModelMessages({ ...selected, purpose: badPurpose }), /DERIVED_SUMMARY_/u);
+});
+for (const [label, mutate] of [
+  ['missing context', value => { delete value.revisionContext; }],
+  ['ordinary context', value => { value.purpose = 'SYNTHESIZE'; }],
+  ['wrong requestedChange', value => { value.revisionContext.requestedChange.instruction += ' Unbound'; }],
+  ['wrong deterministic changes', value => { value.revisionContext.inputChanges.addedMembers.push(value.members[0].member); }],
+  ['prior is approved', value => { value.revisionContext.previousSummary.candidateOnly = false; }],
+]) test(`R1 shape refuses ${label}`, () => {
+  const value = r1Task(r1Entry('revision', 'SAME_SELECTION')).modelInput; mutate(value);
+  assert.throws(() => derivedSummaryModelMessages(value), /DERIVED_SUMMARY_REVISION_CONTEXT_INVALID/u);
+});
+
+test('R1 prior-only refs never become current READ or SAVE sources, and header citations cannot support body', () => {
+  const input = r1Task(r1Entry('revision', 'CHANGED_SELECTION')).modelInput;
+  const registry = derivedSummaryRegistry(input); const prior = input.revisionContext.previousSummary;
+  const priorOnly = [...prior.evidenceRefs, ...prior.members.map(item => item.evidenceRef)]
+    .filter(ref => !registry.members.has(ref) && !registry.evidence.has(ref));
+  assert.ok(priorOnly.length, 'CHANGED Host fixture must preserve at least one removed prior dependency');
+  for (const ref of priorOnly) {
+    assert.throws(() => validateDerivedSummaryReadSelection({ action: 'READ_SOURCES', evidenceRefs: [ref], purpose: 'Prior context only' }, registry, 'READ_SOURCES'), /DERIVED_SUMMARY_SOURCE_NOT_REGISTERED/u);
+    assert.throws(() => validateDerivedSummaryContent({ ...r1Content(input), body: `Prior-only claim [[${ref}]]` }, input), /CITATION_NOT_REGISTERED/u);
+    assert.throws(() => validateDerivedSummaryContent({ ...r1Content(input), headline: `Prior-only header [[${ref}]]` }, input), /CITATION_NOT_REGISTERED/u);
+  }
+  assert.throws(() => validateDerivedSummaryContent({ ...r1Content(input), body: 'No registered body support.' }, input), /CITATION_NOT_REGISTERED/u);
+});
+
+test('R1 lost FINISH resumes the exact saved revision without model, member READ or SAVE replay', () => fixture(async root => {
+  const entry = r1Entry('revision', 'SAME_SELECTION'); let finishes = 0;
+  const h = r1Transport(root, entry, { tool: input => { if (input.operation === 'FINISH' && ++finishes === 1) throw new Error('R1 synthetic finish response lost'); } });
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /synthetic finish response lost/u);
+  const before = structuredClone(h.saved); const priorReads = h.calls.filter(call => call.operation === 'READ_MEMBER_WORK').length;
+  h.generation = 2; await consumeHostedDerivedSummary(h.options, h.dependencies);
+  assert.deepEqual(h.saved, before); assert.equal(h.gatewayCalls.length, 1);
+  assert.equal(h.calls.filter(call => call.operation === 'READ_MEMBER_WORK').length, priorReads);
+  assert.equal(h.calls.filter(call => call.operation === 'SAVE_SUMMARY').length, 1);
+  assert.equal(h.calls.filter(call => call.operation === 'FINISH').length, 2);
+}));
+
+async function seedR1Read(root, entry, promptVersion, advanced) {
+  const selected = r1Task(entry).modelInput; const checkpoint = await r1Checkpoint(root, entry);
+  const initial = promptVersion === DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION
+    ? derivedSummaryCachePrefixModelMessages(selected) : derivedSummaryModelMessages(selected);
+  const registry = derivedSummaryRegistry(selected); const ref = registry.evidence.keys().next().value;
+  const step = { action: 'READ_SOURCES', evidenceRefs: [ref], purpose: 'Synthetic transport verifies exact current source' };
+  const raw = await gatewayStep(step, 'r1-completed-read').text(); const call = JSON.parse(raw).choices[0].message.tool_calls[0];
+  const receipt = { evidence: [registry.evidence.get(ref)] };
+  await checkpoint.remoteStep({ step: 'summary-round-0', args: r1Args(entry, initial, promptVersion), ambiguousCommit: false,
+    perform: async () => ({ raw, status: 200, ok: true }) });
+  await checkpoint.writeOnce('summary-round-0-read', receipt);
+  const projection = projectDerivedSummaryReadReceipt(receipt, step, registry,
+    createDerivedSummaryDeliveredView(JSON.parse(initial[1].content.split('INPUT:\n')[1])), { round: 0, messageIndex: 3 });
+  const messages = [...initial, { role: 'assistant', content: null, tool_calls: [call] },
+    { role: 'tool', tool_call_id: call.id, content: canonicalJson(projection) }];
+  const saveRaw = await gatewayStep({ action: 'SAVE_SUMMARY', content: r1Content(selected) }, 'r1-completed-save').text();
+  await checkpoint.remoteStep({ step: 'summary-round-1', args: r1Args(entry, messages, promptVersion), ambiguousCommit: false,
+    perform: async () => ({ raw: saveRaw, status: 200, ok: true }) });
+  const state = { round: advanced ? 1 : 0, promptVersion, messages: advanced ? messages : initial };
+  await checkpoint.write('summary-model-state', state);
+  return { checkpoint, state, messages };
+}
+for (const promptVersion of [DERIVED_SUMMARY_REVISION_PROMPT_VERSION, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION])
+  for (const advanced of [false, true]) test(`R1 ${promptVersion} ${advanced ? 'advanced' : 'receipt-only'} replay preserves complete receipts and original hashes without redispatch`, () => fixture(async root => {
+    const entry = r1Entry('revision', 'SAME_SELECTION'); const seeded = await seedR1Read(root, entry, promptVersion, advanced);
+    const keys = ['summary-round-0.result', 'summary-round-0-read', 'summary-round-1.result'];
+    const before = await Promise.all(keys.map(key => seeded.checkpoint.readOptional(key)));
+    const h = r1Transport(root, entry); await consumeHostedDerivedSummary(h.options, h.dependencies);
+    assert.equal(h.gatewayCalls.length, 0); assert.equal(h.calls.filter(call => call.operation === 'READ_SOURCES').length, 0);
+    assert.deepEqual(await Promise.all(keys.map(key => seeded.checkpoint.readOptional(key))), before);
+    const state = await seeded.checkpoint.readOptional('summary-model-state');
+    assert.deepEqual(state.messages, seeded.messages); assert.equal(state.promptVersion, promptVersion);
+    assert.equal(h.saved.summary.producer.promptVersion, promptVersion);
+  }));
+
+for (const promptVersion of [DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION, `${DERIVED_SUMMARY_REVISION_PROMPT_VERSION}.sparse.v1`, undefined])
+  test(`R1 refuses mismatched/unknown stored namespace ${String(promptVersion)} without dispatch or checkpoint rewrite`, () => fixture(async root => {
+    const entry = r1Entry('revision', 'SAME_SELECTION'); const checkpoint = await r1Checkpoint(root, entry);
+    const state = { round: 0, ...(promptVersion === undefined ? {} : { promptVersion }),
+      messages: derivedSummaryCachePrefixModelMessages(r1Task(entry).modelInput) };
+    await checkpoint.write('summary-model-state', state); const h = r1Transport(root, entry);
+    await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /MODEL_PROMPT_BINDING_INVALID/u);
+    assert.equal(h.gatewayCalls.length, 0); assert.deepEqual(await checkpoint.readOptional('summary-model-state'), state);
+    assert.equal(h.calls.some(call => ['SAVE_SUMMARY', 'FINISH'].includes(call.operation)), false);
+  }));
+
+for (const [label, change] of [
+  ['saved prior body', value => { value.revisionContext.previousSummary.content.body += ' Changed snapshot'; }],
+  ['prior observation timestamp', value => { value.revisionContext.previousSummary.noticesObservedAt = '2098-12-01T00:00:00.000Z'; }],
+  ['authorized instruction', value => { value.instruction += ' Changed request'; value.revisionContext.requestedChange.instruction = value.instruction; }],
+]) test(`R1 immutable ${label} cannot be rebound by valid-looking saved INPUT`, () => fixture(async root => {
+  const entry = r1Entry('revision', 'SAME_SELECTION'); const checkpoint = await r1Checkpoint(root, entry);
+  const messages = derivedSummaryCachePrefixModelMessages(r1Task(entry).modelInput);
+  const view = JSON.parse(messages[1].content.split('INPUT:\n')[1]); change(view);
+  messages[1].content = `${messages[1].content.split('INPUT:\n')[0]}INPUT:\n${serializeDerivedSummaryCachePrefix(view)}`;
+  const state = { round: 0, promptVersion: DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION, messages };
+  await checkpoint.write('summary-model-state', state); const h = r1Transport(root, entry);
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /MODEL_PROMPT_BINDING_INVALID/u);
+  assert.equal(h.gatewayCalls.length, 0); assert.deepEqual(await checkpoint.readOptional('summary-model-state'), state);
+}));
+
+test('R1 advanced history without its original immutable READ receipt fails before redispatch', () => fixture(async root => {
+  const entry = r1Entry('revision', 'SAME_SELECTION'); const seeded = await seedR1Read(root, entry, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION, true);
+  await rm(join(root, 'derived-summary', 'host', entry.binding.summaryId, entry.binding.operationRef, 'summary-round-0-read.json'));
+  const h = r1Transport(root, entry); await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /MODEL_PROMPT_BINDING_INVALID/u);
+  assert.equal(h.gatewayCalls.length, 0); assert.deepEqual(await seeded.checkpoint.readOptional('summary-model-state'), seeded.state);
+}));
+
+test('R1 unresolved original dispatch retains its started hash and never reissues', () => fixture(async root => {
+  const entry = r1Entry('revision', 'SAME_SELECTION'); const checkpoint = await r1Checkpoint(root, entry);
+  const messages = derivedSummaryCachePrefixModelMessages(r1Task(entry).modelInput);
+  const state = { round: 0, promptVersion: DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION, messages };
+  await checkpoint.write('summary-model-state', state);
+  await assert.rejects(checkpoint.remoteStep({ step: 'summary-round-0', args: r1Args(entry, messages, state.promptVersion), ambiguousCommit: false,
+    perform: async () => { throw new Error('R1 synthetic interrupted provider outcome'); } }));
+  const before = await checkpoint.readOptional('summary-round-0.started'); const h = r1Transport(root, entry);
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /OUTCOME_UNKNOWN/u);
+  assert.equal(h.gatewayCalls.length, 0); assert.deepEqual(await checkpoint.readOptional('summary-round-0.started'), before);
+  assert.deepEqual(await checkpoint.readOptional('summary-model-state'), state);
+}));
+
+
+for (const entry of r1Sealed.groups.find(group => group.name === 'native').variants)
+  test(`R1 real sealed native ${entry.name} round-trip protocol preserves receipts, leaves and exact checkpoint resume`, () => fixture(async root => {
+    const sealed = r1Task(entry); const registry = derivedSummaryRegistry(sealed.modelInput); let finishes = 0;
+    const steps = [{ action: 'READ_MEMBER_WORK', evidenceRefs: [...registry.members.keys()], purpose: 'Inspect all current exact carriers' },
+      { action: 'READ_SOURCES', evidenceRefs: [registry.evidence.keys().next().value], purpose: 'Inspect current registered exact source' },
+      { action: 'SAVE_SUMMARY', content: r1Content(sealed.modelInput) }];
+    const h = r1Transport(root, entry, { gateway: n => gatewayStep(steps[n - 1], `r1-native-${n}`),
+      tool: input => { if (input.operation === 'FINISH' && ++finishes === 1) throw new Error('R1 native synthetic lost finish'); } });
+    await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /native synthetic lost finish/u);
+    const checkpoint = await r1Checkpoint(root, entry); const state = await checkpoint.readOptional('summary-model-state');
+    const version = sealed.modelInput.purpose === 'REVISE_SAVED_SUMMARY'
+      ? DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION : DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION;
+    assert.equal(state.promptVersion, version); assert.equal(state.round, 2); assert.equal(h.gatewayCalls.length, 3);
+    const input = JSON.parse(state.messages[1].content.split('INPUT:\n')[1]);
+    assert.deepEqual(input.members.map(item => item.leaves), sealed.modelInput.members.map(item => item.leaves));
+    const memberReceipt = await checkpoint.readOptional('summary-round-0-read');
+    assert.deepEqual(memberReceipt, { members: sealed.modelInput.members });
+    const projection = JSON.parse(state.messages[3].content);
+    for (const [index, member] of sealed.modelInput.members.entries()) {
+      const carriers = member.evidence.filter(source => source.kind === 'TDMS_NATIVE_RECORD');
+      const expectedReceipts = [...new Map(carriers.map(source => [source.nativeReadReceipt.receiptRef,
+        { evidenceRef: source.evidenceRef, receipt: source.nativeReadReceipt }])).values()];
+      assert.deepEqual(input.members[index].nativeReadReceipts ?? [], expectedReceipts);
+      assert.deepEqual(projection.items[index].nativeReadReceipts ?? [], expectedReceipts);
+      assert.equal(projection.items[index].status, 'CONFIRMED_SAME_CONTENT');
+      for (const location of projection.items[index].contentLocation.nativeReadReceiptLocations ?? [])
+        assert.equal(location.inputPointer.includes('revisionContext'), false);
+    }
+    const saved = structuredClone(h.saved); const before = await Promise.all(['summary-round-0.result', 'summary-round-0-read',
+      'summary-round-1.result', 'summary-round-1-read', 'summary-round-2.result'].map(key => checkpoint.readOptional(key)));
+    h.generation = 2; await consumeHostedDerivedSummary(h.options, h.dependencies);
+    assert.equal(h.gatewayCalls.length, 3); assert.equal(h.calls.filter(call => call.operation === 'SAVE_SUMMARY').length, 1);
+    assert.deepEqual(h.saved, saved); assert.deepEqual(await checkpoint.readOptional('summary-model-state'), state);
+    assert.deepEqual(await Promise.all(['summary-round-0.result', 'summary-round-0-read', 'summary-round-1.result',
+      'summary-round-1-read', 'summary-round-2.result'].map(key => checkpoint.readOptional(key))), before);
+  }));
+
+for (const entry of r1Sealed.groups.find(group => group.name === 'native').variants
+  .filter(item => JSON.parse(item.taskEnvelopeJson).modelInput.purpose === 'REVISE_SAVED_SUMMARY'))
+  test(`R1 actual ${entry.name} advanced completed rounds restore native inverse projection without redispatch`, () => fixture(async root => {
+    const seeded = await seedR1Read(root, entry, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION, true);
+    const keys = ['summary-round-0.result', 'summary-round-0-read', 'summary-round-1.result'];
+    const before = await Promise.all(keys.map(key => seeded.checkpoint.readOptional(key)));
+    const h = r1Transport(root, entry); await consumeHostedDerivedSummary(h.options, h.dependencies);
+    assert.equal(h.gatewayCalls.length, 0); assert.equal(h.calls.filter(call => call.operation === 'READ_SOURCES').length, 0);
+    assert.deepEqual(await Promise.all(keys.map(key => seeded.checkpoint.readOptional(key))), before);
+    assert.deepEqual((await seeded.checkpoint.readOptional('summary-model-state')).messages, seeded.messages);
+    assert.deepEqual(h.saved.summary.members, h.task.modelInput.members);
+  }));
+
+for (const group of ['legacy', 'synthesis']) test(`R1 actual ${group} consumer keeps ordinary saved producer and unchanged task`, () => fixture(async root => {
+  const entry = r1Entry(group); const raw = entry.taskEnvelopeJson; const h = r1Transport(root, entry);
+  await consumeHostedDerivedSummary(h.options, h.dependencies);
+  const state = await (await r1Checkpoint(root, entry)).readOptional('summary-model-state');
+  assert.equal(state.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION);
+  assert.equal(state.messages[0].content, legacySummaryV2SystemMessage);
+  assert.deepEqual(state.messages, derivedSummaryCachePrefixModelMessages(h.task.modelInput));
+  assert.equal(h.saved.summary.producer.promptVersion, state.promptVersion);
+  assert.equal(entry.taskEnvelopeJson, raw);
+}));
+
+test('R1 gateway cannot turn a removed prior dependency into a current Host READ', () => fixture(async root => {
+  const entry = r1Entry('revision', 'CHANGED_SELECTION'); const selected = r1Task(entry).modelInput;
+  const registry = derivedSummaryRegistry(selected); const priorRef = selected.revisionContext.previousSummary.evidenceRefs
+    .find(ref => !registry.evidence.has(ref)); assert.ok(priorRef);
+  const h = r1Transport(root, entry, { gateway: () => gatewayStep({ action: 'READ_SOURCES', evidenceRefs: [priorRef], purpose: 'Prior-only source' }) });
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /DERIVED_SUMMARY_SOURCE_NOT_REGISTERED/u);
+  assert.equal(h.gatewayCalls.length, 1); assert.equal(h.calls.filter(call => call.operation === 'READ_SOURCES').length, 0);
+  assert.equal(h.calls.some(call => ['SAVE_SUMMARY', 'FINISH'].includes(call.operation)), false);
+  assert.equal(h.calls.find(call => call.operation === 'FAIL').code, 'DERIVED_SUMMARY_SOURCE_NOT_REGISTERED');
 }));

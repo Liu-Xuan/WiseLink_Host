@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { createDerivedSummaryDeliveredView, projectDerivedSummaryReadReceipt } from '../scripts/derived-summary-read-projection.mjs';
 import { derivedSummaryModelView } from '../scripts/invoke-hosted-derived-summary-model.mjs';
 import { completeDerivedSummaryWorkBody, derivedSummaryRegistry } from '../scripts/derived-summary-shape.mjs';
@@ -95,4 +96,58 @@ test('same exact ref changed against actually delivered initial text fails befor
   const before = canonicalJson([...delivered.evidence]);
   assert.throws(() => project({ evidence: [source] }, intent('READ_SOURCES', ['source-A']), delivered), /READ_PROJECTION_BINDING_INVALID/);
   assert.equal(canonicalJson([...delivered.evidence]), before);
+});
+
+
+const r1Sealed = JSON.parse(await readFile(new URL('./fixtures/derived-summary-r1-sealed.json', import.meta.url), 'utf8'));
+assert.equal(r1Sealed.schemaVersion, 'wiselink.derived-summary-r1-sealed-fixtures.v1');
+const r1RevisionEntries = r1Sealed.groups.find(group => group.name === 'revision').variants;
+for (const entry of r1RevisionEntries) test(`R1 actual sealed ${entry.name} keeps full current material in INPUT and projects only current READ confirmations`, () => {
+  const raw = entry.taskEnvelopeJson; const selected = JSON.parse(raw).modelInput; const view = derivedSummaryModelView(selected);
+  const actualRegistry = derivedSummaryRegistry(selected); const delivered = createDerivedSummaryDeliveredView(view);
+  assert.equal(delivered.members.size, selected.members.length);
+  for (const [index, member] of selected.members.entries()) {
+    const reconstructed = delivered.members.get(member.evidenceRef);
+    assert.equal(reconstructed.value.body, member.body); assert.deepEqual(reconstructed.value.issues, member.issues);
+    assert.deepEqual(reconstructed.value.evidence, member.evidence); assert.deepEqual(reconstructed.value.leaves, member.leaves);
+    const projection = projectDerivedSummaryReadReceipt({ members: [member] }, intent('READ_MEMBER_WORK', [member.evidenceRef]),
+      actualRegistry, delivered, { round: index, messageIndex: 3 + index * 2 });
+    assert.equal(projection.items[0].status, 'CONFIRMED_SAME_CONTENT');
+    assert.equal(projection.items[0].contentLocation.messageIndex, 1);
+    assert.equal(projection.items[0].contentLocation.inputPointer, `/members/${index}`);
+    assert.equal(Object.hasOwn(projection.items[0], 'content'), false);
+    assert.equal(projection.receiptCheckpointKey, `summary-round-${index}-read`);
+  }
+  assert.deepEqual(view.revisionContext, selected.revisionContext); assert.equal(entry.taskEnvelopeJson, raw);
+});
+
+test('R1 removed prior dependencies are neither delivered current content nor registered READ sources', () => {
+  const entry = r1RevisionEntries.find(item => JSON.parse(item.taskEnvelopeJson).modelInput.revisionContext.inputChanges.basis === 'CHANGED_SELECTION');
+  const selected = JSON.parse(entry.taskEnvelopeJson).modelInput; const view = derivedSummaryModelView(selected);
+  const actualRegistry = derivedSummaryRegistry(selected); const delivered = createDerivedSummaryDeliveredView(view);
+  const prior = selected.revisionContext.previousSummary;
+  const removedMembers = prior.members.filter(member => !actualRegistry.members.has(member.evidenceRef));
+  const removedSources = prior.evidenceRefs.filter(ref => !actualRegistry.evidence.has(ref));
+  assert.ok(removedMembers.length + removedSources.length > 0);
+  for (const member of removedMembers) assert.equal(delivered.members.has(member.evidenceRef), false);
+  for (const ref of removedSources) assert.equal(delivered.evidence.has(ref), false);
+  assert.equal(delivered.members.has(prior.summaryRef), false); assert.equal(delivered.evidence.has(prior.summaryRef), false);
+  assert.equal(delivered.evidence.size, actualRegistry.evidence.size);
+  for (const member of selected.members) {
+    const location = delivered.members.get(member.evidenceRef).location;
+    assert.equal(location.messageIndex, 1); assert.equal(location.inputPointer.includes('revisionContext'), false);
+  }
+});
+
+test('R1 current source READ confirmations use top-level current INPUT slots, never saved candidate text', () => {
+  const selected = JSON.parse(r1RevisionEntries[0].taskEnvelopeJson).modelInput; const view = derivedSummaryModelView(selected);
+  const actualRegistry = derivedSummaryRegistry(selected); const delivered = createDerivedSummaryDeliveredView(view);
+  for (const [index, source] of view.evidence.entries()) {
+    const projection = projectDerivedSummaryReadReceipt({ evidence: [actualRegistry.evidence.get(source.evidenceRef)] },
+      intent('READ_SOURCES', [source.evidenceRef]), actualRegistry, delivered, { round: index, messageIndex: 3 + index * 2 });
+    assert.equal(projection.items[0].status, 'CONFIRMED_SAME_CONTENT');
+    assert.equal(projection.items[0].contentLocation.messageIndex, 1);
+    assert.equal(projection.items[0].contentLocation.inputPointer, `/evidence/${index}`);
+    assert.equal(Object.hasOwn(projection.items[0], 'content'), false);
+  }
 });

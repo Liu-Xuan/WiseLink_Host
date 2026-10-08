@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { CreateDerivedSummaryRequest, DerivedSummaryReadModel, RequestDerivedSummaryUpdate } from '@shared/derived-summary.interface';
+import type { CreateDerivedSummaryRequest, DerivedSummaryPurpose, DerivedSummaryReadModel, RequestDerivedSummaryUpdate } from '@shared/derived-summary.interface';
 import { createDerivedSummary, readDerivedSummary, updateDerivedSummary } from '@client/src/api/derived-summary';
 import { getCanonicalHostClientSessionGeneration, getCanonicalHostIdentityContext } from '@client/src/api/canonical-host';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
@@ -21,7 +21,7 @@ export default function DerivedSummaryComposePage() {
   const load = useCallback(async (signal: AbortSignal) => {
     const [identity, head] = await Promise.all([getCanonicalHostIdentityContext(), summaryId ? readDerivedSummary(summaryId, signal) : Promise.resolve(null)]);
     const key = summaryPendingKey(identity.tenantId, identity.userId, summaryId);
-    return { head, key, pending: readPendingSummaryRequest(key) };
+    return { head, key, pending: readPendingSummaryRequest(key, summaryId) };
   }, [summaryId]);
   const target = useSummaryResource(summaryId ?? 'new', sessionGeneration, load);
   return <main className="mx-auto max-w-5xl space-y-6 p-4 md:p-8" aria-label="形成派生概述">
@@ -42,6 +42,7 @@ function SummaryComposeForm({ session, target, pending, pendingKey }: { session:
   const [members, setMembers] = useState<SelectedSummaryMember[]>(() => pending?.members.map(member => ({ member,
     headline: member.kind === 'DERIVED_SUMMARY' ? member.summaryRef : member.workRef, current: null }))
     ?? target?.current?.members.map(item => ({ member: item.member, headline: item.headline, current: item.current })) ?? []);
+  const [purpose, setPurpose] = useState<DerivedSummaryPurpose>(pending?.purpose ?? 'SYNTHESIZE');
   const [instruction, setInstruction] = useState(pending?.instruction ?? '');
   const [modelRef, setModelRef] = useState(pending?.modelRef ?? 'miaoda/glm-5.3');
   const models = useTaskModelOptions();
@@ -51,23 +52,38 @@ function SummaryComposeForm({ session, target, pending, pendingKey }: { session:
   const [rejected, setRejected] = useState(false);
   const [submitted, setSubmitted] = useState<CreateDerivedSummaryRequest | RequestDerivedSummaryUpdate | null>(pending);
   const active = useRef(true);
+  // React state does not update between synchronous clicks in the same event batch.
+  const inFlight = useRef(false);
+  const originalRequest = useRef<PendingSummaryRequest | null>(pending);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const locked = busy || submitted !== null;
+  const exactSavedTarget = Boolean(target && target.classificationStatus === 'CANDIDATE' &&
+    typeof target.currentSummaryRef === 'string' && target.currentSummaryRef.trim() &&
+    Number.isSafeInteger(target.currentRevision) && target.currentRevision >= 1 && target.currentRevision < 2147483647 && target.current &&
+    target.current.summaryId === target.summaryId && target.current.summaryRef === target.currentSummaryRef &&
+    target.current.revision === target.currentRevision && target.current.candidateOnly === true &&
+    target.current.classificationStatus === 'CANDIDATE');
   function add(value: SelectedSummaryMember) {
     if (locked) return;
     setMembers(prior => [...prior.filter(item => summaryMemberKey(item.member) !== summaryMemberKey(value.member)), value]);
     setConfirmed(false);
   }
   async function submit() {
-    if (busy || session !== getCanonicalHostClientSessionGeneration()) return;
+    if (inFlight.current || busy || session !== getCanonicalHostClientSessionGeneration()) return;
+    const replay = originalRequest.current;
     const validation = summaryScopeError(scope, members.map(item => item.member));
-    if (!submitted && (validation || !instruction.trim() || !confirmed || !models.ready || !models.data?.options.some(option => option.modelRef === modelRef && option.available))) {
+    if (!replay && purpose === 'REVISE_SAVED_SUMMARY' && !exactSavedTarget) {
+      setError('没有可核权的准确保存概述，不能提交修改任务。请重新读取，或明确选择重新综合。'); return;
+    }
+    if (!replay && (validation || !instruction.trim() || !confirmed || !models.ready || !models.data?.options.some(option => option.modelRef === modelRef && option.available))) {
       setError(validation ?? '请填写生成要求、选择当前可用模型并确认实际范围。'); return;
     }
-    const input = submitted ?? { requestId: crypto.randomUUID(), scope, members: members.map(item => item.member), instruction: instruction.trim(), modelRef,
+    const input = replay ?? { requestId: crypto.randomUUID(), purpose, scope, members: members.map(item => item.member), instruction: instruction.trim(), modelRef,
       ...(target ? { expectedSummaryRevision: target.currentRevision } : {}) };
+    inFlight.current = true;
     try { storePendingSummaryRequest(pendingKey, input); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : '无法保留请求，本次尚未发起。'); return; }
+    catch (reason) { inFlight.current = false; setError(reason instanceof Error ? reason.message : '无法保留请求，本次尚未发起。'); return; }
+    originalRequest.current = input;
     setSubmitted(input); setBusy(true); setError(''); setRejected(false);
     try {
       const receipt = target ? await updateDerivedSummary(target.summaryId, input as RequestDerivedSummaryUpdate) : await createDerivedSummary(input);
@@ -81,12 +97,22 @@ function SummaryComposeForm({ session, target, pending, pendingKey }: { session:
         setRejected(definitive);
         setError(`${reason instanceof Error ? reason.message : '请求结果未知。'} ${definitive ? '请求未受理，可明确重新读取并选择。' : '原请求已保留，可用同一请求核对受理结果。'}`);
       }
-    } finally { if (active.current) setBusy(false); }
+    } finally { inFlight.current = false; if (active.current) setBusy(false); }
   }
   return <div className="space-y-6">
     {pending ? <p role="status">已恢复尚待核对的原请求。成员、范围与执行模型保持原样，请用同一请求核对受理结果。</p> : null}
     <SummaryScopeFields scope={scope} disabled={locked} onChange={value => { setScope(value); setConfirmed(false); }} />
-    {target ? <p className="text-sm">按当前概述修订 {target.currentRevision} 受理更新；现有确切成员列在下方，可明确移除或替换。</p> : null}
+    {target ? <fieldset className="space-y-2 rounded-md border border-border p-3" disabled={locked}>
+      <legend className="text-sm font-medium">本次任务</legend>
+      <label className="flex items-start gap-2 text-sm"><input type="radio" name="summary-purpose" value="SYNTHESIZE" checked={purpose === 'SYNTHESIZE'}
+        onChange={() => { setPurpose('SYNTHESIZE'); setConfirmed(false); }} />按当前完整选定材料重新综合</label>
+      <label className="flex items-start gap-2 text-sm"><input type="radio" name="summary-purpose" value="REVISE_SAVED_SUMMARY" checked={purpose === 'REVISE_SAVED_SUMMARY'} disabled={!exactSavedTarget}
+        onChange={() => { setPurpose('REVISE_SAVED_SUMMARY'); setConfirmed(false); }} />修改准确的已保存概述</label>
+      <p className="text-sm">{pending && 'expectedSummaryRevision' in pending ? `原请求锁定保存修订 ${pending.expectedSummaryRevision}；目前指针为 ${target.currentRevision}，不会自动改用新版。` : `按保存修订 ${target.currentRevision} 核对受理。`}</p>
+      {purpose === 'REVISE_SAVED_SUMMARY' ? <p className="text-sm">仅请求修订准确上版候选正文，按本次要求重新判断当前完整材料。成员、问题或范围变化须重新判断；上版概述不新增原始证据。</p> : null}
+      {exactSavedTarget && (!pending || !('expectedSummaryRevision' in pending) || pending.expectedSummaryRevision === target.currentRevision)
+        ? <Link className="text-sm underline" to={`/summaries/${encodeURIComponent(target.summaryId)}?${new URLSearchParams({ summaryRef: target.currentSummaryRef! })}`}>查看准确保存概述 {target.currentSummaryRef}</Link> : null}
+    </fieldset> : null}
     {!locked ? <>
       <SavedWorkSelector session={session} candidateVersionIds={params.getAll('documentVersionId')} onAdd={add} />
       <ChildSummarySelector session={session} initialId={params.get('fromSummaryId') ?? ''} initialRef={params.get('fromSummaryRef') ?? ''} onAdd={add} />
@@ -103,16 +129,16 @@ function SummaryComposeForm({ session, target, pending, pendingKey }: { session:
         <Button variant="ghost" size="sm" disabled={locked} onClick={() => { setMembers(prior => prior.filter(value => summaryMemberKey(value.member) !== summaryMemberKey(item.member))); setConfirmed(false); }}>移出本次范围</Button>
       </li>)}</ul>
     </section>
-    <label className="block space-y-2 text-sm">本次生成要求<Textarea value={instruction} disabled={locked} maxLength={4000} onChange={event => { setInstruction(event.target.value); setConfirmed(false); }} placeholder="说明需比较的前提、冲突、措施覆盖、未知和范围限制。" /></label>
+    <label className="block space-y-2 text-sm">{purpose === 'REVISE_SAVED_SUMMARY' ? '本次修改目标' : '本次生成要求'}<Textarea value={instruction} disabled={locked} maxLength={4000} onChange={event => { setInstruction(event.target.value); setConfirmed(false); }} placeholder="说明需比较的前提、冲突、措施覆盖、未知和范围限制。" /></label>
     <TaskModelPicker id="derived-summary-model" label="本次概述执行模型" value={modelRef} onChange={value => { setModelRef(value); setConfirmed(false); }} catalog={models} disabled={locked} />
     <p className="text-sm text-muted-foreground">本次明确选定 Hosted 模型，不改变全局默认。</p>
     <label className="flex items-start gap-2 text-sm"><Checkbox checked={confirmed} disabled={locked} onCheckedChange={value => setConfirmed(value === true)} />
       仅采用上方确切成员和选定问题；其他资料与新变化未自动纳入，输出保持候选意见。</label>
     {error ? <p role="alert">{error}</p> : null}
     {rejected ? <Button variant="outline" onClick={() => {
-      clearPendingSummaryRequest(pendingKey); setSubmitted(null); setRejected(false); setError(''); setConfirmed(false);
+      clearPendingSummaryRequest(pendingKey); originalRequest.current = null; setSubmitted(null); setRejected(false); setError(''); setConfirmed(false);
       if (target) navigate(`/summaries/${encodeURIComponent(target.summaryId)}`);
     }}>重新读取并选择</Button> : null}
-    <Button disabled={busy || (!submitted && !confirmed)} onClick={() => void submit()}>{busy ? '正在核对受理…' : submitted ? '用同一请求核对受理结果' : '提交选定范围，形成候选概述'}</Button>
+    <Button disabled={busy || (!submitted && !confirmed)} onClick={() => void submit()}>{busy ? '正在核对受理…' : submitted ? '用同一请求核对受理结果' : purpose === 'REVISE_SAVED_SUMMARY' ? '提交修改要求，修订保存概述' : '提交选定范围，形成候选概述'}</Button>
   </div>;
 }

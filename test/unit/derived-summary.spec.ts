@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { DerivedSummaryMemberReading } from '@shared/derived-summary.interface';
-import { parseSummaryRequest, parseSummaryContent, summaryCitations, summaryMemberRef } from '../../server/modules/canonical-host/derived-summary.validation';
+import { assertSummaryReplay, parseSummaryRequest, parseSummaryContent, summaryCitations, summaryMemberRef } from '../../server/modules/canonical-host/derived-summary.validation';
 import { DerivedSummaryMembersService, assertMemberSnapshot, mergeSummaryEvidence } from '../../server/modules/canonical-host/derived-summary-members.service';
 import { registerDerivedSummaryAttemptMcpTools } from '../../server/modules/canonical-host/derived-summary-attempt-mcp-tools';
 
@@ -15,6 +15,27 @@ const source: AssessmentEvidence = { kind: 'DOCUMENT_PASSAGE', evidenceRef: 'sou
   documentVersionId: member.documentVersionId, sourceRefId: 'SR-one', locator: '正文第一段' };
 
 describe('Explicit candidate aggregate admission', () => {
+  it('keeps legacy purpose absent, accepts explicit synthesis, and restricts revision to an existing update', () => {
+    expect(Object.hasOwn(parseSummaryRequest(request), 'purpose')).toBe(false);
+    expect(parseSummaryRequest({ ...request, purpose: 'SYNTHESIZE' })).toMatchObject({ purpose: 'SYNTHESIZE' });
+    expect(parseSummaryRequest({ ...request, purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 1 }, true))
+      .toMatchObject({ purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 1 });
+    expect(() => parseSummaryRequest({ ...request, purpose: 'REVISE_SAVED_SUMMARY' })).toThrow('DERIVED_SUMMARY_PRIOR_REQUIRED');
+    expect(() => parseSummaryRequest({ ...request, purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 0 }, true))
+      .toThrow('DERIVED_SUMMARY_PRIOR_REQUIRED');
+  });
+  it.each([null, undefined, 'REVISE', 1, {}])('rejects explicitly malformed purpose %s without defaulting', purpose => {
+    expect(() => parseSummaryRequest({ ...request, purpose })).toThrow('DERIVED_SUMMARY_PURPOSE_INVALID');
+  });
+  it('normalizes absent/synthesis only for replay comparison and preserves old bytes', () => {
+    const before = JSON.stringify(request);
+    expect(() => assertSummaryReplay(request, { ...request, purpose: 'SYNTHESIZE' })).not.toThrow();
+    expect(JSON.stringify(request)).toBe(before);
+    expect(() => assertSummaryReplay(request, { ...request, purpose: 'REVISE_SAVED_SUMMARY' }))
+      .toThrow('DERIVED_SUMMARY_REQUEST_ID_REUSED');
+    expect(() => assertSummaryReplay(request, { ...request, instruction: 'Altered request' }))
+      .toThrow('DERIVED_SUMMARY_REQUEST_ID_REUSED');
+  });
   it('keeps exact saved work, issues and user-selected scope, with an explicit Hosted route', () => {
     expect(parseSummaryRequest(request)).toEqual(request);
     expect(parseSummaryRequest({ ...request, expectedSummaryRevision: 1 }, true)).toMatchObject({ expectedSummaryRevision: 1 });

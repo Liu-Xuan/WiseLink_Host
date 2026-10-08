@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { derivedSummaryModelView } from '../scripts/invoke-hosted-derived-summary-model.mjs';
 import { derivedSummaryRegistry } from '../scripts/derived-summary-shape.mjs';
 import { createDerivedSummaryDeliveredView, projectDerivedSummaryReadReceipt,
@@ -216,4 +217,68 @@ test('P2 native absence keeps ordinary full and confirmed packet bytes unchanged
   const confirmed=project(projectDerivedSummaryReadReceipt,{evidence:[ordinarySource]},intent,registry,delivered,1);
   const confirmedExpected={...expected,receiptCheckpointKey:'summary-round-1-read',items:[{evidenceRef:ordinarySource.evidenceRef,status:'CONFIRMED_SAME_CONTENT',contentLocation:expected.items[0].contentLocation,notices:expected.items[0].notices}]};
   assert.equal(canonicalJson(confirmed),canonicalJson(confirmedExpected));
+});
+
+
+const r1Sealed = JSON.parse(await readFile(new URL('./fixtures/derived-summary-r1-sealed.json', import.meta.url), 'utf8'));
+assert.equal(r1Sealed.schemaVersion, 'wiselink.derived-summary-r1-sealed-fixtures.v1');
+function r1Native() {
+  const entry = r1Sealed.groups.find(group => group.name === 'native').variants
+    .find(item => JSON.parse(item.taskEnvelopeJson).modelInput.purpose === 'REVISE_SAVED_SUMMARY');
+  assert.ok(entry, 'A native full-revision task must be sealed by actual Host');
+  return { entry, value: JSON.parse(entry.taskEnvelopeJson).modelInput };
+}
+function r1NativeCarriers(value) {
+  return [...value.evidence, ...value.members.flatMap(member => member.evidence)]
+    .filter(source => source.kind === 'TDMS_NATIVE_RECORD');
+}
+
+test('R1 actual Host native revision retains every distinct receipt while current body is deduplicated', () => {
+  const { entry, value } = r1Native(); const before = entry.taskEnvelopeJson; const view = derivedSummaryModelView(value);
+  const carriers = r1NativeCarriers(value); const byRef = new Map();
+  for (const source of carriers) byRef.set(source.evidenceRef, new Map([
+    ...(byRef.get(source.evidenceRef) ?? []), [source.nativeReadReceipt.receiptRef, source.nativeReadReceipt]]));
+  const distinct = [...byRef].find(([, receipts]) => receipts.size >= 2);
+  assert.ok(distinct, 'Real sealed native fixture needs distinct receipts for the same body ref');
+  const [ref, receipts] = distinct;
+  assert.equal(view.evidence.filter(source => source.evidenceRef === ref).length, 1);
+  const delivered = createDerivedSummaryDeliveredView(view);
+  for (const [receiptRef, receipt] of receipts) {
+    const record = [...delivered.nativeReadReceipts.values()].find(item => item.receipt.receiptRef === receiptRef);
+    assert.ok(record, `Missing current immutable receipt ${receiptRef}`); assert.deepEqual(record.receipt, receipt);
+  }
+  assert.deepEqual(view.revisionContext, value.revisionContext);
+  assert.equal(entry.taskEnvelopeJson, before);
+});
+
+test('R1 actual native member READ confirms current INPUT and independently locates each receipt', () => {
+  const { value } = r1Native(); const view = derivedSummaryModelView(value); const delivered = createDerivedSummaryDeliveredView(view);
+  const intent = step('READ_MEMBER_WORK', value.members.map(member => member.evidenceRef));
+  const result = project(projectDerivedSummaryReadReceipt, { members: value.members }, intent, derivedSummaryRegistry(value), delivered);
+  assert.equal(result.items.length, value.members.length);
+  for (const [index, item] of result.items.entries()) {
+    assert.equal(item.status, 'CONFIRMED_SAME_CONTENT'); assert.equal(Object.hasOwn(item, 'content'), false);
+    assert.equal(item.contentLocation.messageIndex, 1);
+    assert.equal(item.contentLocation.inputPointer, `/members/${index}`);
+    for (const [receiptLocationIndex, location] of (item.contentLocation.nativeReadReceiptLocations ?? []).entries()) {
+      assert.equal(location.messageIndex, 1); assert.match(location.inputPointer, /^\/members\/\d+\/nativeReadReceipts\/\d+\/receipt$/u);
+      assert.equal(location.inputPointer.includes('revisionContext'), false);
+      const [, , memberIndex, , receiptIndex] = location.inputPointer.split('/');
+      const receipt = view.members[Number(memberIndex)].nativeReadReceipts[Number(receiptIndex)].receipt;
+      assert.equal(location.evidenceRef, item.nativeReadReceipts[receiptLocationIndex].evidenceRef);
+      assert.deepEqual(receipt, item.nativeReadReceipts[receiptLocationIndex].receipt);
+    }
+    assert.deepEqual(item.nativeReadReceipts, view.members[index].nativeReadReceipts ?? []);
+  }
+});
+
+test('R1 native prior candidate does not register a READ body or a receipt location', () => {
+  const { value } = r1Native(); const view = derivedSummaryModelView(value); const delivered = createDerivedSummaryDeliveredView(view);
+  const prior = value.revisionContext.previousSummary;
+  assert.equal(delivered.members.has(prior.summaryRef), false); assert.equal(delivered.evidence.has(prior.summaryRef), false);
+  for (const record of [...delivered.members.values(), ...delivered.evidence.values()]) {
+    assert.equal(record.location.messageIndex, 1);
+    assert.equal(record.location.inputPointer.includes('revisionContext'), false);
+  }
+  assert.deepEqual(view.members.map(member => member.leaves), value.members.map(member => member.leaves));
 });

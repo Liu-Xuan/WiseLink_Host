@@ -1,6 +1,7 @@
 import { prepareDerivedSummaryDdl } from '../../scripts/prepare-derived-summary-ddl.mjs';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { isAbsolute, basename, resolve } from 'node:path';
 import test from 'node:test';
@@ -20,7 +21,7 @@ const { CanonicalJobAidProblemService } = require('../../server/modules/canonica
 const { ReviewConversationRepository } = require('../../server/modules/review-persistence/review-conversation.repository.ts');
 const { DerivedSummaryMembersService } = require('../../server/modules/canonical-host/derived-summary-members.service.ts');
 const { DerivedSummaryRepository } = require('../../server/modules/canonical-host/derived-summary.repository.ts');
-const { DerivedSummaryService } = require('../../server/modules/canonical-host/derived-summary.service.ts');
+const { DerivedSummaryService, checkedSummaryTask } = require('../../server/modules/canonical-host/derived-summary.service.ts');
 const { DerivedSummaryRuntimeService } = require('../../server/modules/canonical-host/derived-summary-runtime.service.ts');
 const { DocumentSemanticRevisionRepository } = require('../../server/modules/canonical-host/document-semantic-revision.repository.ts');
 const { DocumentParsingRepository } = require('../../server/modules/document-management/src/hosted/nest/document-parsing.repository.ts');
@@ -1546,4 +1547,417 @@ test('actual browser correction admission and existing receipt updates are fence
           originalGeneration: baseSource.currentGeneration, returnedGeneration: returnedSource.currentGeneration, publisherCurrentness: 'UNKNOWN' } }));
       });
     } finally { if (one) await one.release(); if (two) await two.release(); await admin.end({ timeout: 5 }); }
+  });
+
+// Full R1 uses actual browser/service SQL wrappers and production seal/save/read
+// methods. All source/native facts here are constructed in this fresh owned DB.
+test('R1 exact saved prior/current authorization and actual Host sealed handoff',
+  { skip: !databaseUrl, timeout: 90000 }, async t => {
+    assert.equal(new URL(databaseUrl).pathname.slice(1), process.env.DERIVED_SUMMARY_OWNED_TEST_DATABASE_NAME);
+    const admin = postgres(databaseUrl, { max: 1, onnotice() {} });
+    const connection = postgres(databaseUrl, { max: 1, onnotice() {} });
+    try {
+      await reset(admin); await seed(admin); await seedSemanticContext(admin);
+      const database = drizzle(connection);
+      const sqlContext = new SqlExecutionContextMiddleware({ roleSchema });
+      const transactions = new EngineeringMatterWorkingRepository(database, sqlContext, { roleSchema }, null);
+      const works = new JobAidWorkRepository(database, transactions, null);
+      const jobAid = new CanonicalJobAidProblemService(null, null, null, null, null, null, null,
+        new ReviewConversationRepository(database), null, works);
+      const members = new DerivedSummaryMembersService(jobAid, transactions);
+      const repository = new DerivedSummaryRepository(database, transactions, members);
+      const summaries = new DerivedSummaryService(repository, members, { authorizeOpenClawAutoWorkItemQueue: async () => scope });
+      const runtime = new DerivedSummaryRuntimeService(repository, members, summaries);
+      const context = (actorId, hosted, operation) => new Promise((resolve, reject) => sqlContext.use({
+        userContext: { userId: actorId, isSystemAccount: hosted, roles: [] } }, {},
+      () => Promise.resolve().then(operation).then(resolve, reject)));
+      const browser = operation => context(owner.actorUserId, false, operation);
+      const hosted = operation => context('-1', true, operation);
+      const actor = nativeActor(owner.actorUserId, owner.tenantId);
+      const fixedClock = '2099-01-01T00:00:00.000Z';
+      const sealedAtFixedClock = async operation => {
+        t.mock.timers.enable({ apis: ['Date'], now: new Date(fixedClock).getTime() });
+        try { return await operation(); } finally { t.mock.timers.reset(); }
+      };
+      const groups = ['legacy', 'synthesis', 'revision', 'native'].map(name => ({ name, variants: [] }));
+      const capture = async (group, name, receipt) => {
+        const [row] = await admin`SELECT attempt_id,operation_ref,trigger_request_id,input_revision,base_revision,deadline_at,
+          task_envelope_json,task_input_hash,execution_model_json,summary_request_command_json
+          FROM action_attempt WHERE operation_ref=${receipt.attemptRef}`;
+        const proof = checkedSummaryTask({ ...row, summaryId: receipt.summaryId, attemptId: row.attempt_id,
+          operationRef: row.operation_ref, triggerRequestId: row.trigger_request_id, inputRevision: row.input_revision,
+          baseRevision: row.base_revision, deadlineAt: row.deadline_at, taskEnvelopeJson: row.task_envelope_json,
+          taskInputHash: row.task_input_hash, executionModelJson: row.execution_model_json,
+          requestCommandJson: row.summary_request_command_json });
+        assert.equal(proof.taskInputHash, row.task_input_hash);
+        assert.equal(proof.deadlineAt, '2099-01-01T01:00:00.000Z');
+        const variant = { name, taskEnvelopeJson: row.task_envelope_json, requestCommandJson: row.summary_request_command_json,
+          taskInputHash: row.task_input_hash, binding: { summaryId: receipt.summaryId, attemptId: row.attempt_id,
+            operationRef: row.operation_ref, requestId: row.trigger_request_id, expectedSummaryRevision: row.base_revision } };
+        groups.find(item => item.name === group).variants.push(variant);
+        return proof;
+      };
+      const create = requestId => sealedAtFixedClock(() => browser(() => summaries.create({ ...request, requestId }, actor)));
+      const update = (summaryId, requestId, expectedSummaryRevision, selected = [member], purpose = 'REVISE_SAVED_SUMMARY') =>
+        sealedAtFixedClock(() => browser(() => summaries.request(summaryId, { ...request, requestId,
+          expectedSummaryRevision, members: selected, purpose }, actor)));
+      const consume = async receipt => {
+        const target = { summaryId: receipt.summaryId, attemptRef: receipt.attemptRef, scope };
+        const lease = await hosted(() => runtime.claim(target));
+        const refs = lease.task.modelInput.members.map(item => item.evidenceRef);
+        await hosted(() => runtime.readMemberWork({ ...target, ...claimFence(lease), evidenceRefs: refs, purpose: 'Read full current synthetic material' }));
+        const input = { ...target, ...claimFence(lease), requestId: lease.task.requestId,
+          expectedSummaryRevision: lease.task.expectedSummaryRevision, contentJson: JSON.stringify({
+            headline: 'R1 synthetic candidate', listBrief: 'Explicit saved selection only',
+            body: 'Candidate basis '+refs.map(ref => `[[${ref}]]`).join(' '), limitations: ['No adoption or source-currentness claim'] }) };
+        const saved = await hosted(() => runtime.save(input));
+        await hosted(() => runtime.finish({ ...target, ...claimFence(lease), requestId: lease.task.requestId, savedSummaryRef: saved.summaryRef }));
+        return { target, lease, input, saved };
+      };
+      let base;
+      await t.test('actual legacy and explicit synthesis seals retain purpose presence and full command', async () => {
+        const legacy = await create('R1-legacy'); const task = await capture('legacy', 'omitted-purpose', legacy);
+        assert.equal(Object.hasOwn(task.modelInput, 'purpose'), false); assert.equal(Object.hasOwn(task, 'purpose'), false);
+        base = await consume(legacy);
+        const explicit = await sealedAtFixedClock(() => browser(() => summaries.create({ ...request,
+          requestId: 'R1-explicit-synthesis', purpose: 'SYNTHESIZE' }, actor)));
+        assert.equal((await capture('synthesis', 'explicit-purpose', explicit)).modelInput.purpose, 'SYNTHESIZE');
+        await consume(explicit);
+      });
+      const newer = { kind: 'WORK_ITEM_WORK', workItemId: 'WI-new', documentVersionId: 'DV-new', workRef: 'JA-new1', workRevision: 1,
+        issueKeys: member.issueKeys };
+      let changed;
+      await t.test('SAME and CHANGED actual revision seal immutable prior plus full current registry independently', async () => {
+        const same = await update(base.target.summaryId, 'R1-same', 1);
+        const sameTask = await capture('revision', 'same-selection', same);
+        assert.equal(sameTask.modelInput.revisionContext.inputChanges.basis, 'SAME_SELECTION');
+        assert.equal(sameTask.modelInput.revisionContext.previousSummary.summaryRef, base.saved.summaryRef);
+        await consume(same);
+        const receipt = await update(base.target.summaryId, 'R1-changed', 2, [newer]);
+        const changedTask = await capture('revision', 'changed-selection', receipt);
+        assert.equal(changedTask.modelInput.revisionContext.inputChanges.basis, 'CHANGED_SELECTION');
+        assert.deepEqual(changedTask.modelInput.members.map(item => item.member), [newer]);
+        assert.ok(changedTask.contextBasis.workItems.some(item => item.workItemId === member.workItemId));
+        assert.ok(changedTask.contextBasis.workItems.some(item => item.workItemId === newer.workItemId));
+        assert.equal(changedTask.modelInput.evidence.some(item => item.documentVersionId === 'DV-old'), false);
+        changed = { receipt, task: changedTask, target: { summaryId: receipt.summaryId, attemptRef: receipt.attemptRef, scope } };
+      });
+      await t.test('current-valid removed-prior revoke blocks claim/task delivery through actual SQL R001 and Host authorization', async () => {
+        await admin`UPDATE summary_test_document_acl SET allowed=false WHERE document_version_id='DV-old'`;
+        const [now] = await admin`SELECT current_revision,current_summary_ref FROM derived_summary WHERE summary_id=${changed.target.summaryId}`;
+        await assert.rejects(hosted(() => runtime.claim(changed.target)), /UNAVAILABLE|SOURCE_ACCESS|SOURCE_CHANGED/u);
+        const [attempt] = await admin`SELECT status FROM action_attempt WHERE operation_ref=${changed.target.attemptRef}`;
+        assert.equal(attempt.status, 'QUEUED'); assert.equal(now.current_revision, 2);
+        await admin`UPDATE summary_test_document_acl SET allowed=true WHERE document_version_id='DV-old'`;
+      });
+      await t.test('removed prior is reauthorized after original IO before first task delivery; independent revoke wins', async () => {
+        const verify = members.verifyOriginalEvidence.bind(members); let seen = false;
+        members.verifyOriginalEvidence = async (evidence, actor) => {
+          await verify(evidence, actor);
+          assert.ok(evidence.some(item => item.documentVersionId === 'DV-old'));
+          assert.ok(evidence.some(item => item.documentVersionId === 'DV-new'));
+          if (!seen) { seen = true; await admin`UPDATE summary_test_document_acl SET allowed=false WHERE document_version_id='DV-old'`; }
+        };
+        try { await assert.rejects(hosted(() => runtime.claim(changed.target)), /UNAVAILABLE|SOURCE_ACCESS|SOURCE_CHANGED/u); }
+        finally { members.verifyOriginalEvidence = verify; await admin`UPDATE summary_test_document_acl SET allowed=true WHERE document_version_id='DV-old'`; }
+        assert.equal(seen, true); await consume(changed.receipt);
+      });
+      await t.test('exact numeric saved lookup denies wrong owner/missing prior and never falls back to head', async () => {
+        await browser(() => repository.browser(actor, async (db, identity) => {
+          assert.equal((await repository.savedRevision(base.target.summaryId, 1, identity, db)).summaryRef, base.saved.summaryRef);
+          await assert.rejects(repository.savedRevision(base.target.summaryId, 99, identity, db), /REVISION_UNAVAILABLE/u);
+          await assert.rejects(repository.savedRevision(base.target.summaryId, 1, { ...identity, actorUserId: 'other-actor' }, db), /REVISION_UNAVAILABLE/u);
+        }));
+      });
+      await admin.unsafe(`CREATE TABLE engineering_search_projection_pending(id uuid DEFAULT gen_random_uuid(),tenant_id varchar,exact_revision_ref varchar,
+        owner_kind varchar,owner_id varchar,subject_id varchar,last_error text,attempts integer,source_next_offset integer DEFAULT 0,
+        UNIQUE(tenant_id,exact_revision_ref)); GRANT SELECT,INSERT ON engineering_search_projection_pending TO authenticated,service_role;`);
+      const writerConnection = postgres(databaseUrl, { max: 1, onnotice() {} });
+      const writerDatabase = drizzle(writerConnection);
+      const writerTransactions = new EngineeringMatterWorkingRepository(writerDatabase, sqlContext, { roleSchema }, null);
+      const writerWorks = new JobAidWorkRepository(writerDatabase, writerTransactions, new EngineeringSearchProjectionWriter(writerDatabase));
+      const [saveSession] = await connection`SELECT pg_backend_pid() AS pid`;
+      const [writerSession] = await writerConnection`SELECT pg_backend_pid() AS pid`;
+      assert.notEqual(saveSession.pid, writerSession.pid);
+      await admin`INSERT INTO action_attempt(attempt_id,work_item_id,tenant_id,actor_user_id,action_type,trigger_request_id,request_origin,
+        status,document_version_id,base_revision,task_input_hash,lease_owner,lease_token,lease_generation,lease_expires_at,deadline_at,attempt_no)
+        VALUES('ATT-R1-prior-work','WI-summary',${owner.tenantId},${owner.actorUserId},'OPENCLAW_DYNAMIC_EVALUATION','R1-prior-work','OPENCLAW_MCP_V1',
+          'RUNNING','DV-old',7,${'7'.repeat(64)},${scope.principalId},'R1-prior-work-lease',1,now()+interval '1 hour',now()+interval '1 hour',3)`;
+      const [writerContent] = await admin`SELECT content_json FROM assessment_work_revision WHERE assessment_work_revision_id=${member.workRef}`;
+      const workSave = expectedWorkRevision => ({ row: { attemptId: 'ATT-R1-prior-work', workItemId: 'WI-summary', tenantId: owner.tenantId,
+        taskInputHash: '7'.repeat(64), baseRevision: 7, documentVersionId: 'DV-old' }, actorUserId: owner.actorUserId,
+        fence: { principalId: scope.principalId, leaseToken: 'R1-prior-work-lease', leaseGeneration: 1 },
+        sourceBindings: [{ kind:'SOURCE_FILE', workItemId:'WI-summary', documentVersionId:'DV-old', artifactRef:'SRC-summary', artifactSha256:'a'.repeat(64) }],
+        requestId: 'R1-real-prior-work-'+expectedWorkRevision, expectedWorkRevision,
+        command: { fixture: 'R1 actual removed-prior work writer', expectedWorkRevision }, content: JSON.parse(writerContent.content_json) });
+      const preparedRevision = async id => {
+        const prior = await create(id+'-base'); await consume(prior);
+        const receipt = await update(prior.summaryId, id, 1, [newer]);
+        const target = { summaryId: receipt.summaryId, attemptRef: receipt.attemptRef, scope };
+        const lease = await hosted(() => runtime.claim(target)); const ref = lease.task.modelInput.members[0].evidenceRef;
+        await hosted(() => runtime.readMemberWork({ ...target, ...claimFence(lease), evidenceRefs:[ref], purpose:'Read complete current selection' }));
+        return { target, lease, input: { ...target, ...claimFence(lease), requestId:id, expectedSummaryRevision:1,
+          contentJson:JSON.stringify({ headline:'R1 concurrent candidate', listBrief:'Full current material', body:`Current [[${ref}]]`, limitations:[] }) } };
+      };
+      try {
+        await t.test('real removed-prior JobAid writer waits behind union SAVE SHARE; later old saved recovery retains lease and ACL guards', async () => {
+          const p = await preparedRevision('R1-save-before-prior-writer'); const reached=deferred(),release=deferred();
+          const oldVerify=members.verifyOriginalEvidence,oldBasis=repository.contextBasis;let final=false,writer;
+          members.verifyOriginalEvidence=async(...args)=>{await oldVerify.apply(members,args);final=true;};
+          repository.contextBasis=async(...args)=>{const value=await oldBasis.apply(repository,args);if(final){final=false;reached.resolve();await release.promise;}return value;};
+          const outcome=hosted(()=>runtime.save(p.input)).then(value=>({value}),error=>({error}));
+          try {
+            await Promise.race([reached.promise,outcome.then(value=>{throw value.error??new Error('SAVE barrier missed');})]);
+            writer=hosted(()=>writerWorks.save(workSave(23))).then(value=>({value}),error=>({error}));
+            await waitForBlocked(admin,writerSession.pid,saveSession.pid,'R1-removed-prior-save-first','work_item');
+            release.resolve();const saved=await outcome;assert.equal(saved.error,undefined);assert.equal((await writer).value.revision.workRevision,24);
+            members.verifyOriginalEvidence=oldVerify;repository.contextBasis=oldBasis;
+            const [bytesBefore]=await admin`SELECT content_json FROM derived_summary_revision WHERE summary_ref=${saved.value.summaryRef}`;
+            assert.equal(Object.hasOwn(bytesBefore.content_json,'purpose'),false);assert.equal(Object.hasOwn(bytesBefore.content_json,'revisionContext'),false);
+            assert.equal(bytesBefore.content_json.members.length,1);assert.equal(bytesBefore.content_json.members[0].member.workItemId,'WI-new');
+            await hosted(()=>runtime.heartbeat({...p.target,...claimFence(p.lease)}));
+            const again=await hosted(()=>runtime.claim(p.target));assert.equal(again.leaseToken,p.lease.leaseToken);
+            await assert.rejects(hosted(()=>runtime.heartbeat({...p.target,...claimFence(p.lease),leaseGeneration:0})),/LEASE_FENCE/u);
+            await admin`UPDATE summary_test_document_acl SET allowed=false WHERE document_version_id='DV-old'`;
+            try {await assert.rejects(hosted(()=>runtime.heartbeat({...p.target,...claimFence(p.lease)})),/UNAVAILABLE/u);
+              await assert.rejects(hosted(()=>runtime.readSaved({...p.target,requestId:p.input.requestId})),/UNAVAILABLE/u);}
+            finally {await admin`UPDATE summary_test_document_acl SET allowed=true WHERE document_version_id='DV-old'`;}
+            await admin`UPDATE action_attempt SET lease_expires_at=now()-interval '1 second' WHERE operation_ref=${p.target.attemptRef}`;
+            await assert.rejects(hosted(()=>runtime.heartbeat({...p.target,...claimFence(p.lease)})),/LEASE_FENCE/u);
+            const recovered=await hosted(()=>runtime.claim(p.target));assert.ok(recovered.leaseGeneration>p.lease.leaseGeneration);
+            await hosted(()=>runtime.finish({...p.target,...claimFence(recovered),requestId:p.input.requestId}));
+            assert.deepEqual((await admin`SELECT content_json FROM derived_summary_revision WHERE summary_ref=${saved.value.summaryRef}`)[0],bytesBefore);
+          } finally {release.resolve();await outcome;if(writer)await writer;members.verifyOriginalEvidence=oldVerify;repository.contextBasis=oldBasis;}
+        });
+        await t.test('real prior writer first changes union vector after wait; false terminal CAS records no partial result then durable CONFLICT', async () => {
+          const p=await preparedRevision('R1-prior-writer-before-save');const reached=deferred(),resume=deferred(),inserted=deferred(),commit=deferred();
+          const oldVerify=members.verifyOriginalEvidence,oldTransaction=writerTransactions.withActorTransaction.bind(writerTransactions);
+          members.verifyOriginalEvidence=async(...args)=>{await oldVerify.apply(members,args);reached.resolve();await resume.promise;};
+          writerTransactions.withActorTransaction=(id,callback)=>oldTransaction(id,async executor=>{const value=await callback(executor);inserted.resolve();await commit.promise;return value;});
+          const terminal= require('../../server/modules/action-attempt/action-attempt.repository.ts').ActionAttemptRepository;
+          const finishTerminal=terminal.prototype.finishTerminal;let zeroCas=false,writer;
+          terminal.prototype.finishTerminal=async function(input){if(input.attemptId===p.lease.task.actionAttemptId&&input.status==='CONFLICT'){
+            zeroCas=true;const result=await finishTerminal.call(this,{...input,leaseGeneration:input.leaseGeneration+1000});assert.equal(result,false);return result;
+          }return finishTerminal.call(this,input);};
+          const [before]=await admin`SELECT task_envelope_json,task_input_hash,review_activity_json FROM action_attempt WHERE operation_ref=${p.target.attemptRef}`;
+          const outcome=hosted(()=>runtime.save(p.input)).then(value=>({value}),error=>({error}));
+          try {
+            await Promise.race([reached.promise,outcome.then(value=>{throw value.error??new Error('Original IO barrier missed');})]);
+            writer=hosted(()=>writerWorks.save(workSave(24))).then(value=>({value}),error=>({error}));
+            await Promise.race([inserted.promise,writer.then(value=>{throw value.error??new Error('Actual writer barrier missed');})]);
+            resume.resolve();await waitForBlocked(admin,saveSession.pid,writerSession.pid,'R1-removed-prior-writer-first','work_item');
+            commit.resolve();assert.equal((await writer).value.revision.workRevision,25);
+            assert.match((await outcome).error?.message??'',/CONTEXT_CONFLICT_NOT_RECORDED/u);assert.equal(zeroCas,true);
+            terminal.prototype.finishTerminal=finishTerminal;members.verifyOriginalEvidence=oldVerify;
+            const [failed]=await admin`SELECT task_envelope_json,task_input_hash,review_activity_json,status FROM action_attempt WHERE operation_ref=${p.target.attemptRef}`;
+            const {status,...immutable}=failed;assert.equal(status,'RUNNING');assert.deepEqual(immutable,before);
+            await assert.rejects(hosted(()=>runtime.save(p.input)),/CONTEXT_CHANGED/u);
+            const [recorded]=await admin`SELECT status,error_code FROM action_attempt WHERE operation_ref=${p.target.attemptRef}`;
+            assert.deepEqual(recorded,{status:'CONFLICT',error_code:'DERIVED_SUMMARY_CONTEXT_CHANGED'});
+            const [head]=await admin`SELECT current_revision FROM derived_summary WHERE summary_id=${p.target.summaryId}`;assert.equal(head.current_revision,1);
+            assert.equal((await admin`SELECT summary_ref FROM derived_summary_revision WHERE request_id=${p.input.requestId}`).length,0);
+          } finally {resume.resolve();commit.resolve();await outcome;if(writer)await writer;terminal.prototype.finishTerminal=finishTerminal;
+            members.verifyOriginalEvidence=oldVerify;writerTransactions.withActorTransaction=oldTransaction;}
+        });
+        await t.test('real SQL zero-row summary head CAS rolls back inserted revision and preserves READ ledger', async () => {
+          const p=await preparedRevision('R1-real-head-zero-cas');const oldTransaction=transactions.withActorTransaction.bind(transactions);
+          const {derivedSummary}=require('../../server/database/derived-summary.schema.ts');const {and}=require('drizzle-orm');let zeroRows=false;
+          transactions.withActorTransaction=(id,callback)=>oldTransaction(id,executor=>callback({...executor,database:new Proxy(executor.database,{get(tx,key){
+            if(key==='update')return table=>table===derivedSummary?{set:values=>({where:predicate=>{
+              const statement=tx.update(table).set(values).where(and(predicate,querySql`current_revision=999999`));const returning=statement.returning.bind(statement);
+              statement.returning=async(...args)=>{const rows=await returning(...args);assert.equal(rows.length,0);zeroRows=true;return rows;};return statement;
+            }})}:tx.update(table);
+            const value=Reflect.get(tx,key);return typeof value==='function'?value.bind(tx):value;
+          }})}));
+          const [before]=await admin`SELECT task_envelope_json,task_input_hash,review_activity_json,status FROM action_attempt WHERE operation_ref=${p.target.attemptRef}`;
+          try {await assert.rejects(hosted(()=>runtime.save(p.input)),/REVISION_CONFLICT/u);assert.equal(zeroRows,true);}
+          finally {transactions.withActorTransaction=oldTransaction;}
+          assert.equal((await admin`SELECT summary_ref FROM derived_summary_revision WHERE request_id=${p.input.requestId}`).length,0);
+          const [head]=await admin`SELECT current_revision FROM derived_summary WHERE summary_id=${p.target.summaryId}`;assert.equal(head.current_revision,1);
+          assert.deepEqual((await admin`SELECT task_envelope_json,task_input_hash,review_activity_json,status FROM action_attempt WHERE operation_ref=${p.target.attemptRef}`)[0],before);
+          await hosted(()=>runtime.cancel({...p.target,reason:'Synthetic head CAS fixture completed'}));
+        });
+        await t.test('legacy omitted-purpose/no-basis saved RUNNING recovery reauthorizes sources and never changes old sealed bytes', async () => {
+          const receipt=await create('R1-legacy-saved-recovery');
+          await hosted(()=>runtime.cancel({summaryId:receipt.summaryId,attemptRef:receipt.attemptRef,scope,reason:'Keep actual modern seal immutable'}));
+          const target={summaryId:receipt.summaryId,attemptRef:'AQ-R1-legacy-durable-fixture',scope};
+          const [row]=await admin`SELECT task_envelope_json FROM action_attempt WHERE operation_ref=${receipt.attemptRef}`;
+          const task=JSON.parse(row.task_envelope_json);delete task.contextBasis;delete task.taskInputHash;
+          Object.assign(task,{actionAttemptId:'ATT-R1-legacy-durable-fixture',operationRef:target.attemptRef,requestId:'R1-legacy-durable-fixture'});
+          const {canonicalJson,canonicalSha256}=require('../../server/modules/action-attempt/action-attempt-envelope.ts');
+          const legacy={...task,taskInputHash:canonicalSha256(task)};
+          // New synthetic old-format row; never UPDATE a modern immutable task.
+          const command={...request,requestId:legacy.requestId,expectedSummaryRevision:0};
+          await admin`INSERT INTO action_attempt(attempt_id,operation_ref,subject_kind,summary_id,action_type,attempt_no,
+            trigger_request_id,request_origin,status,actor_user_id,tenant_id,input_revision,base_revision,task_envelope_json,
+            task_input_hash,execution_model_json,idempotency_key,deadline_at,summary_request_command_json,summary_delegated_principal_id)
+            VALUES(${legacy.actionAttemptId},${legacy.operationRef},'DERIVED_SUMMARY',${target.summaryId},'OPENCLAW_DERIVED_SUMMARY',2,
+              ${legacy.requestId},'OPENCLAW_MCP_V1','QUEUED',${owner.actorUserId},${owner.tenantId},0,0,${canonicalJson(legacy)},
+              ${legacy.taskInputHash},${canonicalJson(legacy.executionModel)},${'derived-summary:'+target.summaryId+':'+legacy.requestId},
+              ${legacy.deadlineAt},${canonicalJson(command)},${scope.principalId})`;
+          // This explicitly labeled old durable compatibility fixture has no live
+          // generation basis. Seed its genuine same-attempt saved material using
+          // a prior actual Host SAVE, not a first-SAVE bypass in RuntimeService.
+          const [priorSaved]=await admin`SELECT content_json FROM derived_summary_revision WHERE summary_id=${base.target.summaryId} AND revision=1`;
+          const saved={...structuredClone(priorSaved.content_json),summaryId:target.summaryId,summaryRef:'DSR-R1-legacy-recovery',revision:1,
+            requestId:legacy.requestId,attemptRef:target.attemptRef};delete saved.contextBasis;
+          await admin`INSERT INTO derived_summary_revision(summary_ref,summary_id,tenant_id,actor_user_id,revision,request_id,attempt_id,content_json)
+            VALUES(${saved.summaryRef},${target.summaryId},${owner.tenantId},${owner.actorUserId},1,${saved.requestId},${legacy.actionAttemptId},${admin.json(saved)})`;
+          await admin`UPDATE derived_summary SET current_revision=1,current_summary_ref=${saved.summaryRef} WHERE summary_id=${target.summaryId}`;
+          const lease=await hosted(()=>runtime.claim(target));
+          await hosted(()=>runtime.heartbeat({...target,...claimFence(lease)}));
+          await assert.rejects(hosted(()=>runtime.heartbeat({...target,...claimFence(lease),leaseGeneration:0})),/LEASE_FENCE/u);
+          await admin`UPDATE summary_test_document_acl SET allowed=false WHERE document_version_id='DV-old'`;
+          try {await assert.rejects(hosted(()=>runtime.readSaved({...target,requestId:legacy.requestId})),/UNAVAILABLE/u);}
+          finally {await admin`UPDATE summary_test_document_acl SET allowed=true WHERE document_version_id='DV-old'`;}
+          assert.equal((await hosted(()=>runtime.readSaved({...target,requestId:legacy.requestId}))).summary.summaryRef,saved.summaryRef);
+          await hosted(()=>runtime.finish({...target,...claimFence(lease),requestId:legacy.requestId}));
+          assert.equal((await admin`SELECT task_envelope_json FROM action_attempt WHERE operation_ref=${target.attemptRef}`)[0].task_envelope_json,canonicalJson(legacy));
+          assert.equal((await admin`SELECT task_envelope_json FROM action_attempt WHERE operation_ref=${receipt.attemptRef}`)[0].task_envelope_json,row.task_envelope_json);
+          assert.deepEqual((await admin`SELECT content_json FROM derived_summary_revision WHERE summary_ref=${saved.summaryRef}`)[0].content_json,saved);
+        });
+      } finally {await writerConnection.end({timeout:5});}
+      await t.test('individually owned current/prior sources sharing a ref with different bodies cannot admit a revision seal', async () => {
+        const [row]=await admin`SELECT content_json FROM assessment_work_revision WHERE assessment_work_revision_id='JA-new1'`;
+        const content=JSON.parse(row.content_json);content.evidence[0].excerpt='Different retained source bytes under the same ref';
+        await admin`INSERT INTO assessment_work_revision(assessment_work_revision_id,tenant_id,work_item_id,work_revision,request_id,
+          action_attempt_id,based_on_work_item_revision,document_version_id,command_json,content_json,created_by_user_id)
+          VALUES('JA-R1-collision-current',${owner.tenantId},'WI-new',2,'R1-collision-work','ATT-work23',1,'DV-new','{}',${JSON.stringify(content)},${owner.actorUserId})`;
+        const selected={...newer,workRef:'JA-R1-collision-current',workRevision:2};
+        await browser(()=>repository.browser(actor,async(db,identity)=>{
+          assert.equal((await members.readAll([newer],identity,db)).length,1);
+          assert.equal((await members.readAll([selected],identity,db)).length,1);
+        }));
+        const [before]=await admin`SELECT current_revision,current_summary_ref FROM derived_summary WHERE summary_id=${base.target.summaryId}`;
+        await assert.rejects(update(base.target.summaryId,'R1-current-prior-collision',3,[selected]),/EVIDENCE_IDENTITY_CONFLICT/u);
+        assert.equal((await admin`SELECT attempt_id FROM action_attempt WHERE trigger_request_id='R1-current-prior-collision'`).length,0);
+        assert.deepEqual((await admin`SELECT current_revision,current_summary_ref FROM derived_summary WHERE summary_id=${base.target.summaryId}`)[0],before);
+      });
+      // Native provider remains synthetic and unregistered. Each exact receipt is
+      // a separate owned DB permission row, verified on the passed TX executor.
+      const { tdmsNativeEvidenceFixture } = require('../unit/fixtures/tdms-native-evidence.fixture.ts');
+      const nativeA = tdmsNativeEvidenceFixture(); nativeA.nativeScope.processingSetBinding.scope.tenantId = owner.tenantId;
+      const nativeB = structuredClone(nativeA); Object.assign(nativeB.nativeReadReceipt, { receiptRef: 'R1-native-receipt-B', taskContextRef: 'R1-native-task-B' });
+      await admin.unsafe('CREATE TABLE summary_test_native_permission(receipt_ref varchar PRIMARY KEY,carrier_json text,allowed boolean); GRANT SELECT ON summary_test_native_permission TO authenticated,service_role');
+      for (const item of [nativeA, nativeB]) await admin`INSERT INTO summary_test_native_permission VALUES (${item.nativeReadReceipt.receiptRef},${JSON.stringify(item)},true)`;
+      const { canonicalJson } = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
+      const checkedNative = async (items, executor) => {
+        const rows = await executor.execute(querySql`SELECT receipt_ref,carrier_json,allowed FROM summary_test_native_permission`);
+        for (const item of items) {
+          const row = rows.find(value => value.receipt_ref === item.nativeReadReceipt.receiptRef);
+          assert.ok(row?.allowed, 'R1_NATIVE_RECEIPT_REVOKED'); assert.equal(canonicalJson(JSON.parse(row.carrier_json)), canonicalJson(item));
+        }
+      };
+      const guardCalls = []; let revokeOnFinal = false;
+      const nativeVerifier = {
+        assertInTransaction: async input => {
+          assert.equal(input.actor.tenantId, owner.tenantId); assert.equal(input.actor.actorUserId, owner.actorUserId);
+          const [session] = await input.database.execute(querySql`SELECT current_setting('app.user_id',true) AS actor_id`);
+          assert.equal(session.actor_id, owner.actorUserId);
+          if (input.summaryCaller?.kind === 'RUNTIME') {
+            const [bound] = await input.database.execute(querySql`SELECT summary_delegated_principal_id FROM action_attempt WHERE operation_ref=${input.summaryCaller.attemptRef} AND summary_id=${input.summaryCaller.summaryId}`);
+            assert.equal(bound?.summary_delegated_principal_id, input.summaryCaller.scope.principalId);
+          }
+          await checkedNative(input.evidence, input.database);
+          guardCalls.push(input.evidence.map(item => item.nativeReadReceipt.receiptRef));
+          if (revokeOnFinal) {
+            const saved = await input.database.execute(querySql`SELECT summary_ref FROM derived_summary_revision WHERE request_id='R1-native-final-revoke'`);
+            if (saved.length) { revokeOnFinal = false; await admin`UPDATE summary_test_native_permission SET allowed=false WHERE receipt_ref=${nativeB.nativeReadReceipt.receiptRef}`; await checkedNative(input.evidence, input.database); }
+          }
+        },
+        authorize: async (items, identity) => {
+          assert.deepEqual(identity, owner); await checkedNative(items, database);
+          return items.map(item => ({ evidenceRef: item.evidenceRef, sourceRevisionRef: item.nativeSource.sourceRevisionRef,
+            processingSetBinding: item.nativeScope.processingSetBinding, permissionRevision: 'owned-current', sourceAudienceAuthorized: true, selectedObjectAuthorized: true }));
+        },
+        readExactEvidence: async items => { await checkedNative(items, database); return structuredClone(items); },
+        assertCurrentEvidence: async input => checkedNative(input.evidence, database),
+      };
+      const nativeJobAid = new CanonicalJobAidProblemService(null, null, null, null, null, null, null,
+        new ReviewConversationRepository(database), null, works, undefined, undefined, undefined, undefined, undefined, undefined, undefined, nativeVerifier);
+      const nativeMembers = new DerivedSummaryMembersService(nativeJobAid, transactions, undefined, nativeVerifier);
+      const nativeRepository = new DerivedSummaryRepository(database, transactions, nativeMembers);
+      const nativeSummaries = new DerivedSummaryService(nativeRepository, nativeMembers, { authorizeOpenClawAutoWorkItemQueue: async () => scope });
+      const nativeRuntime = new DerivedSummaryRuntimeService(nativeRepository, nativeMembers, nativeSummaries);
+      const [savedWork] = await admin`SELECT content_json FROM assessment_work_revision WHERE assessment_work_revision_id=${member.workRef}`;
+      const nativeWork = JSON.parse(savedWork.content_json); nativeWork.evidence.push(nativeA, nativeB);
+      await admin`UPDATE assessment_work_revision SET content_json=${JSON.stringify(nativeWork)} WHERE assessment_work_revision_id=${member.workRef}`;
+      const nativeCreate = await sealedAtFixedClock(() => browser(() => nativeSummaries.create({ ...request, requestId: 'R1-native-base' }, actor)));
+      const nativeTarget = { summaryId: nativeCreate.summaryId, attemptRef: nativeCreate.attemptRef, scope };
+      let nativeBase;
+      await t.test('actual native synthesis/current member keeps same-body distinct receipts and final guard identities', async () => {
+        const task = await capture('native', 'same-leaf-synthesis', nativeCreate);
+        assert.equal(task.modelInput.members[0].evidence.filter(item => item.kind === 'TDMS_NATIVE_RECORD').length, 2);
+        const lease = await hosted(() => nativeRuntime.claim(nativeTarget)); const ref = lease.task.modelInput.members[0].evidenceRef;
+        await hosted(() => nativeRuntime.readMemberWork({ ...nativeTarget, ...claimFence(lease), evidenceRefs: [ref], purpose: 'Read native carrier material' }));
+        const input = { ...nativeTarget, ...claimFence(lease), requestId: task.requestId, expectedSummaryRevision: 0,
+          contentJson: JSON.stringify({ headline: 'Synthetic native', listBrief: 'Source currentness unknown', body: `Candidate [[${ref}]]`, limitations: [] }) };
+        const saved = await hosted(() => nativeRuntime.save(input));
+        await hosted(() => nativeRuntime.finish({ ...nativeTarget, ...claimFence(lease), requestId: task.requestId, savedSummaryRef: saved.summaryRef }));
+        nativeBase = { saved, target: nativeTarget };
+        assert.ok(guardCalls.some(refs => refs.includes(nativeA.nativeReadReceipt.receiptRef) && refs.includes(nativeB.nativeReadReceipt.receiptRef)));
+      });
+      await t.test('actual full revision native same-leaf carriers are sealed without borrowing another receipt', async () => {
+        const receipt = await sealedAtFixedClock(() => browser(() => nativeSummaries.request(nativeTarget.summaryId,
+          { ...request, requestId: 'R1-native-revision', purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 1 }, actor)));
+        const task = await capture('native', 'same-leaf-full-revision', receipt);
+        const target = { summaryId: receipt.summaryId, attemptRef: receipt.attemptRef, scope };
+        await admin`UPDATE summary_test_native_permission SET allowed=false WHERE receipt_ref=${nativeB.nativeReadReceipt.receiptRef}`;
+        await assert.rejects(hosted(() => nativeRuntime.claim(target)), /R1_NATIVE_RECEIPT_REVOKED/u);
+        await admin`UPDATE summary_test_native_permission SET allowed=true WHERE receipt_ref=${nativeB.nativeReadReceipt.receiptRef}`;
+        const lease = await hosted(() => nativeRuntime.claim(target));
+        const evidence = await hosted(() => nativeRepository.runtime(target, (db, identity) => nativeSummaries.taskEvidence(lease.task, identity, db)));
+        assert.deepEqual(evidence.filter(item => item.kind === 'TDMS_NATIVE_RECORD').map(item => item.nativeReadReceipt.receiptRef), [nativeA.nativeReadReceipt.receiptRef,nativeB.nativeReadReceipt.receiptRef]);
+        await hosted(() => nativeRuntime.cancel({ ...target, reason: 'Fixture no further product work' }));
+        assert.equal(task.modelInput.revisionContext.previousSummary.summaryRef, nativeBase.saved.summaryRef);
+      });
+      await t.test('actual nested current/full revision carries both descendant receipts in sealed current material', async () => {
+        const nested = { kind: 'DERIVED_SUMMARY', summaryId: nativeTarget.summaryId, summaryRef: nativeBase.saved.summaryRef, summaryRevision: 1 };
+        const receipt = await sealedAtFixedClock(() => browser(() => nativeSummaries.request(base.target.summaryId,
+          { ...request, requestId: 'R1-native-nested-revision', members: [nested, newer], purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 3 }, actor)));
+        const task = await capture('native', 'nested-full-revision', receipt);
+        assert.equal(task.modelInput.members[0].evidence.filter(item => item.kind === 'TDMS_NATIVE_RECORD').length, 2);
+        await hosted(() => nativeRuntime.cancel({ summaryId: receipt.summaryId, attemptRef: receipt.attemptRef, scope, reason: 'Fixture complete' }));
+      });
+      await t.test('removed prior native receipts remain authorization inputs; final guard failure rolls back real SAVE/head/journal', async () => {
+        const receipt = await sealedAtFixedClock(() => browser(() => nativeSummaries.request(nativeTarget.summaryId,
+          { ...request, requestId: 'R1-native-final-revoke', members: [newer], purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 1 }, actor)));
+        await capture('native', 'removed-prior-native-full-revision', receipt);
+        const target = { summaryId: receipt.summaryId, attemptRef: receipt.attemptRef, scope };
+        const lease = await hosted(() => nativeRuntime.claim(target)); const ref = lease.task.modelInput.members[0].evidenceRef;
+        await hosted(() => nativeRuntime.readMemberWork({ ...target, ...claimFence(lease), evidenceRefs: [ref], purpose: 'Current only READ' }));
+        const [before] = await admin`SELECT review_activity_json FROM action_attempt WHERE operation_ref=${receipt.attemptRef}`;
+        revokeOnFinal = true;
+        await assert.rejects(hosted(() => nativeRuntime.save({ ...target, ...claimFence(lease), requestId: lease.task.requestId,
+          expectedSummaryRevision: 1, contentJson: JSON.stringify({ headline: 'Candidate', listBrief: 'Unknown native currentness', body: `Current [[${ref}]]`, limitations: [] }) })), /R1_NATIVE_RECEIPT_REVOKED/u);
+        assert.equal((await admin`SELECT summary_ref FROM derived_summary_revision WHERE request_id='R1-native-final-revoke'`).length, 0);
+        const [head] = await admin`SELECT current_revision,current_summary_ref FROM derived_summary WHERE summary_id=${target.summaryId}`;
+        assert.equal(head.current_revision, 1); assert.equal(head.current_summary_ref, nativeBase.saved.summaryRef);
+        const [after] = await admin`SELECT review_activity_json FROM action_attempt WHERE operation_ref=${receipt.attemptRef}`;
+        assert.equal(after.review_activity_json, before.review_activity_json);
+        await admin`UPDATE summary_test_native_permission SET allowed=true WHERE receipt_ref=${nativeB.nativeReadReceipt.receiptRef}`;
+      });
+      // Export is an explicit validation-only handoff. All PG assertions above
+      // execute even when no export is requested by a later integration runner.
+      const output = process.env.R1_SEALED_FIXTURE_OUTPUT_PATH;
+      const expectedOutput = process.env.R1_SEALED_FIXTURE_EXPECTED_PATH;
+      if (output === undefined && expectedOutput === undefined) return;
+      assert.equal(typeof output, 'string'); assert.equal(typeof expectedOutput, 'string');
+      assert.ok(isAbsolute(output)); assert.ok(isAbsolute(expectedOutput));
+      assert.equal(resolve(output), output); assert.equal(resolve(expectedOutput), expectedOutput);
+      assert.equal(output, expectedOutput); assert.equal(basename(output), 'sealed-fixtures.json');
+      const bytes = JSON.stringify({ schemaVersion: 'wiselink.derived-summary-r1-sealed-fixtures.v1', fixedClock, groups }, null, 2)+'\n';
+      await writeFile(output, bytes);
+      const sourceBytes = await readFile(import.meta.filename);
+      const producer = 'server/modules/canonical-host/derived-summary.service.ts';
+      await writeFile(resolve(output, '..', 'SEALED_FIXTURE_GENERATION_RECEIPT.json'), JSON.stringify({
+        fixedHead: '336d444dbac9d8de4371bdb09e82217f79b29665', fixedClock, output,
+        outputSha256: createHash('sha256').update(bytes).digest('hex'), testSource: import.meta.filename,
+        testSourceSha256: createHash('sha256').update(sourceBytes).digest('hex'), producer,
+        producerSha256: createHash('sha256').update(await readFile(producer)).digest('hex'),
+        actualEntryPoints: ['DerivedSummaryService.create','DerivedSummaryService.request','checkedSummaryTask','DerivedSummaryRuntimeService.claim/save/finish'],
+        rawSqlColumnsCopied: ['task_envelope_json','summary_request_command_json','task_input_hash'], hashOrSealManuallyRecomputed: false,
+        syntheticNativePortOnly: true, genuineNativeProviderOrBusinessData: false, groups: groups.map(item => ({ name:item.name, variants:item.variants.map(v=>v.name) })),
+      }, null, 2)+'\n');
+    } finally { await connection.end({ timeout: 5 }); await admin.end({ timeout: 5 }); }
   });

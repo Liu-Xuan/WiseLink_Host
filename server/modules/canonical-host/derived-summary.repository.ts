@@ -244,4 +244,18 @@ export class DerivedSummaryRepository {
       throw summaryError('DERIVED_SUMMARY_PERSISTENCE_INVALID');
     return row.contentJson;
   }
+
+  /** Exact owned numerical revision; never fall back to the mutable head. */
+  async savedRevision(summaryId: string, revision: number, owner: SummaryActor, database: PostgresJsDatabase) {
+    if (!Number.isSafeInteger(revision) || revision < 1) throw summaryError('DERIVED_SUMMARY_PRIOR_REQUIRED', 400);
+    const [row] = await database.select().from(derivedSummaryRevision).where(and(
+      eq(derivedSummaryRevision.summaryId, summaryId), eq(derivedSummaryRevision.revision, revision),
+      eq(derivedSummaryRevision.tenantId, owner.tenantId), eq(derivedSummaryRevision.actorUserId, owner.actorUserId))).limit(1);
+    if (!row) throw summaryError('DERIVED_SUMMARY_REVISION_UNAVAILABLE', 404);
+    const saved = row.contentJson;
+    if (saved.summaryId !== summaryId || saved.summaryRef !== row.summaryRef || saved.revision !== revision ||
+      saved.classificationStatus !== 'CANDIDATE' || saved.candidateOnly !== true)
+      throw summaryError('DERIVED_SUMMARY_PERSISTENCE_INVALID');
+    return saved;
+  }
 }

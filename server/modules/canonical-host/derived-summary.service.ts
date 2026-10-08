@@ -5,6 +5,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type {
   CreateDerivedSummaryRequest, DerivedSummaryMetadata, DerivedSummaryReadModel, DerivedSummaryRequestReceipt,
   DerivedSummaryRequestStatus, DerivedSummaryRevision, DerivedSummaryRevisionReadModel, DerivedSummaryTask, RequestDerivedSummaryUpdate,
+  DerivedSummaryRevisionContext,
 } from '@shared/derived-summary.interface';
 import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
 import { derivedSummary, derivedSummaryRevision } from '../../database/derived-summary.schema';
@@ -17,7 +18,8 @@ import type { CanonicalHostActor } from './canonical-host.types';
 import { DerivedSummaryRepository, type SummaryAttempt, type SummaryHead } from './derived-summary.repository';
 import { assertMemberSnapshot, DerivedSummaryMembersService, mergeSummaryEvidence, type SummaryActor } from './derived-summary-members.service';
 import { assertSummaryContextBasis, assertSummaryContextUnchanged, publicSummaryRevision, summaryContextStatus } from './derived-summary-current-context';
-import { assertSummaryReplay, summaryError } from './derived-summary.validation';
+import { assertSummaryReplay, parseSummaryRequest, summaryError } from './derived-summary.validation';
+import { assertPreviousSummarySnapshot, buildSummaryRevisionContext } from './derived-summary-revision-context';
 
 export interface DerivedSummaryRuntimeTask extends DerivedSummaryTask {
   actionAttemptId: string;
@@ -74,10 +76,13 @@ export class DerivedSummaryService {
       .where(and(eq(actionAttempt.tenantId, owner.tenantId), sql`action_attempt.summary_id = ${head.summaryId}`,
         inArray(actionAttempt.status, ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING']))).limit(1);
     if (active) throw summaryError('DERIVED_SUMMARY_REQUEST_ACTIVE');
-    const readings = await this.members.readAll(input.members, owner, database, new Set([head.summaryId]));
+    const priorContext = input.purpose === 'REVISE_SAVED_SUMMARY'
+      ? await this.revisionPrior(head, input.expectedSummaryRevision, owner, database) : null;
+    let readings = await this.members.readAll(input.members, owner, database, new Set([head.summaryId]));
     if (input.members.some(member => member.kind === 'DERIVED_SUMMARY' && member.summaryId === head.summaryId))
       throw summaryError('DERIVED_SUMMARY_SELF_MEMBER', 400);
-    const contextBasis = await this.repository.contextBasis(readings, owner, database);
+    const contextReadings = [...readings, ...(priorContext?.fresh ?? [])];
+    const contextBasis = await this.repository.contextBasis(contextReadings, owner, database);
     await this.repository.lockContext(contextBasis, owner, database, head.summaryId);
     head = await this.repository.head(head.summaryId, owner, database);
     // Concurrent reservation can commit while the dependency locks are awaited.
@@ -99,12 +104,18 @@ export class DerivedSummaryService {
     // A pre-lock read is never a coherent seal. Repeat exact ACL/body and all
     // mutable observations after the supported head locks have been acquired.
     const locked = await this.members.readAll(contextBasis.memberNotices.map(item => item.member), owner, database, new Set([head.summaryId]));
-    for (const item of readings) {
+    for (const item of contextReadings) {
       const fresh = locked.find(value => canonicalJson(value.member) === canonicalJson(item.member));
       if (!fresh) throw summaryError('DERIVED_SUMMARY_CONTEXT_CHANGED');
       assertMemberSnapshot(item, fresh);
     }
     assertSummaryContextUnchanged(contextBasis, await this.repository.contextBasis(locked, owner, database));
+    readings = readings.map(item => locked.find(value => canonicalJson(value.member) === canonicalJson(item.member))!);
+    const lockedPrior = priorContext ? await this.revisionPrior(head, input.expectedSummaryRevision, owner, database) : null;
+    if (priorContext && canonicalJson(priorContext.saved) !== canonicalJson(lockedPrior!.saved))
+      throw summaryError('DERIVED_SUMMARY_PRIOR_CONTENT_CHANGED');
+    assertSummaryContextUnchanged(contextBasis, await this.repository.contextBasis(
+      [...readings, ...(lockedPrior?.fresh ?? [])], owner, database));
     const scope = await this.authorization.authorizeOpenClawAutoWorkItemQueue();
     if (scope.appId !== 'app_17bzc551rsg' || scope.tenantId !== owner.tenantId || !scope.principalId)
       throw summaryError('DERIVED_SUMMARY_EXECUTOR_UNAVAILABLE', 503);
@@ -116,13 +127,16 @@ export class DerivedSummaryService {
     const limitations = ['仅覆盖显式选取的精确保存成员；未选成员、其他ATA和其他机型均未覆盖。',
       '机型/ATA为用户选取的候选分类，成员归属和适用性未核。不是受控事实、批准或正式采用。',
       ...readings.flatMap(member => member.limitations)];
+    const revisionContext = lockedPrior ? buildSummaryRevisionContext(input, lockedPrior.saved,
+      lockedPrior.fresh, readings, now.toISOString()) : undefined;
     const taskBasis = { schemaVersion: 'wiselink.derived-summary-task.v1' as const,
       taskType: 'OPENCLAW_DERIVED_SUMMARY' as const, subject: { kind: 'DERIVED_SUMMARY' as const, summaryId: head.summaryId },
       expectedSummaryRevision: input.expectedSummaryRevision, requestId: input.requestId,
       actionAttemptId: attemptId, operationRef: attemptRef, deadlineAt: deadline.toISOString(),
       executionModel: taskModelSelection(input.modelRef, now), contextBasis,
       modelInput: { scope: input.scope, classificationStatus: 'CANDIDATE' as const,
-        instruction: input.instruction, members: readings, evidence, limitations } };
+        instruction: input.instruction, ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
+        ...(revisionContext ? { revisionContext } : {}), members: readings, evidence, limitations } };
     const task: DerivedSummaryRuntimeTask = { ...taskBasis, taskInputHash: canonicalSha256(taskBasis) };
     // All new subject columns are inserted together: the DB identity constraint is immediate.
     await database.execute(sql`INSERT INTO action_attempt (
@@ -181,12 +195,55 @@ export class DerivedSummaryService {
       await this.repository.lockContext(task.contextBasis, owner, database);
     const current = await this.members.readAll(task.modelInput.members.map(item => item.member), owner, database,
       new Set([task.subject.summaryId]));
+    if (current.length !== task.modelInput.members.length) throw summaryError('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
     for (let i = 0; i < current.length; i++) assertMemberSnapshot(task.modelInput.members[i]!, current[i]!);
+    const currentEvidence = mergeSummaryEvidence(current.flatMap(item => item.evidence));
+    const ordered = (items: typeof currentEvidence) => [...items].sort((a, b) => a.evidenceRef.localeCompare(b.evidenceRef));
+    if (canonicalJson(ordered(task.modelInput.evidence)) !== canonicalJson(ordered(currentEvidence)))
+      throw summaryError('DERIVED_SUMMARY_PERSISTENCE_INVALID');
+    const previous = task.modelInput.revisionContext?.previousSummary;
+    const prior = previous ? await this.repository.savedRevision(task.subject.summaryId,
+      task.expectedSummaryRevision, owner, database) : null;
+    const priorReadings = prior ? await this.checkRevision(prior, owner, database) : [];
+    if (previous && prior) {
+      assertPreviousSummarySnapshot(previous, prior, priorReadings);
+      const expected = buildSummaryRevisionContext({ requestId: task.requestId, expectedSummaryRevision: task.expectedSummaryRevision,
+        purpose: 'REVISE_SAVED_SUMMARY', scope: task.modelInput.scope, instruction: task.modelInput.instruction,
+        modelRef: task.executionModel.modelRef, members: current.map(item => item.member) }, prior, priorReadings, current,
+      previous.noticesObservedAt);
+      // Historical observations may age, but selection/source/scope deltas and
+      // the saved notice half must remain bound to authoritative saved material.
+      if (canonicalJson(revisionMaterial(expected)) !== canonicalJson(revisionMaterial(task.modelInput.revisionContext!)))
+        throw summaryError('DERIVED_SUMMARY_PRIOR_CONTENT_CHANGED');
+    }
     if (options.requireCurrentContext) {
       if (!task.contextBasis) throw summaryError('DERIVED_SUMMARY_CONTEXT_BASIS_REQUIRED');
-      assertSummaryContextUnchanged(task.contextBasis, await this.repository.contextBasis(current, owner, database));
+      assertSummaryContextUnchanged(task.contextBasis, await this.repository.contextBasis([...current, ...priorReadings], owner, database));
     }
     return current;
+  }
+
+  private async revisionPrior(head: SummaryHead, expected: number, owner: SummaryActor, database: PostgresJsDatabase) {
+    if (expected < 1 || !head.currentSummaryRef) throw summaryError('DERIVED_SUMMARY_PRIOR_REQUIRED', 400);
+    const saved = await this.repository.savedRevision(head.summaryId, expected, owner, database);
+    if (saved.summaryRef !== head.currentSummaryRef || saved.revision !== head.currentRevision)
+      throw summaryError('DERIVED_SUMMARY_REVISION_CONFLICT');
+    return { saved, fresh: await this.checkRevision(saved, owner, database) };
+  }
+
+  /** Full authorization/IO carriers, distinct from the current eligible registry.
+   * Native receipts sharing one body remain separate exact authorization inputs. */
+  async taskEvidence(task: DerivedSummaryRuntimeTask, owner: SummaryActor, database: PostgresJsDatabase) {
+    const current = await this.checkTaskAccess(task, owner, database);
+    const previous = task.modelInput.revisionContext?.previousSummary;
+    const prior = previous ? await this.repository.savedRevision(task.subject.summaryId,
+      task.expectedSummaryRevision, owner, database) : null;
+    const priorReadings = prior ? await this.checkRevision(prior, owner, database) : [];
+    if (previous && prior) assertPreviousSummarySnapshot(previous, prior, priorReadings);
+    const evidence = [...task.modelInput.evidence, ...current.flatMap(item => item.evidence),
+      ...(prior?.evidence ?? []), ...priorReadings.flatMap(item => item.evidence)];
+    mergeSummaryEvidence(evidence); // Validate body identity and per-receipt provenance before deduplication.
+    return [...new Map(evidence.map(item => [canonicalJson(item), item])).values()];
   }
 
   async revisionContextStatus(saved: DerivedSummaryRevision, owner: SummaryActor, database: PostgresJsDatabase) {
@@ -197,6 +254,7 @@ export class DerivedSummaryService {
 
   async checkRevision(saved: DerivedSummaryRevision, owner: SummaryActor, database: PostgresJsDatabase) {
     const current = await this.members.readAll(saved.members.map(item => item.member), owner, database, new Set([saved.summaryId]));
+    if (current.length !== saved.members.length) throw summaryError('DERIVED_SUMMARY_PERSISTENCE_INVALID');
     for (let i = 0; i < current.length; i++) assertMemberSnapshot(saved.members[i]!, current[i]!);
     const evidence = mergeSummaryEvidence(current.flatMap(item => item.evidence));
     const orderedEvidence = (items: typeof evidence) => [...items].sort((a, b) => a.evidenceRef.localeCompare(b.evidenceRef));
@@ -216,6 +274,14 @@ export class DerivedSummaryService {
   }
 }
 
+function revisionMaterial(context: DerivedSummaryRevisionContext) {
+  const { memberNotices: _notices, noticesObservedAt: _time, ...previousSummary } = context.previousSummary;
+  const { priorMemberNotices, ...sources } = context.inputChanges.sources;
+  return { ...context, previousSummary, inputChanges: { ...context.inputChanges, sources: {
+    ...sources, priorMemberNotices: priorMemberNotices.map(({ current: _current, ...saved }) => saved),
+  } } };
+}
+
 function headMetadata(head: SummaryHead): DerivedSummaryMetadata {
   return { summaryId: head.summaryId, scope: head.scopeJson, classificationStatus: 'CANDIDATE',
     currentSummaryRef: head.currentSummaryRef, currentRevision: head.currentRevision };
@@ -232,7 +298,10 @@ function receipt(summaryId: string, attempt: SummaryAttempt, created: boolean): 
 export function checkedSummaryTask(attempt: SummaryAttempt): DerivedSummaryRuntimeTask {
   if (!attempt.taskEnvelopeJson || !attempt.requestCommandJson || !attempt.taskInputHash)
     throw summaryError('DERIVED_SUMMARY_TASK_INVALID');
-  const task = JSON.parse(attempt.taskEnvelopeJson) as DerivedSummaryRuntimeTask;
+  let task: DerivedSummaryRuntimeTask;
+  try { task = JSON.parse(attempt.taskEnvelopeJson) as DerivedSummaryRuntimeTask; }
+  catch { throw summaryError('DERIVED_SUMMARY_TASK_INVALID'); }
+  if (!task || typeof task !== 'object' || Array.isArray(task)) throw summaryError('DERIVED_SUMMARY_TASK_INVALID');
   const { taskInputHash, ...basis } = task;
   if (task.schemaVersion !== 'wiselink.derived-summary-task.v1' || task.taskType !== 'OPENCLAW_DERIVED_SUMMARY' ||
     task.subject?.kind !== 'DERIVED_SUMMARY' || task.subject.summaryId !== attempt.summaryId ||
@@ -241,6 +310,27 @@ export function checkedSummaryTask(attempt: SummaryAttempt): DerivedSummaryRunti
     task.expectedSummaryRevision !== attempt.inputRevision || task.deadlineAt !== attempt.deadlineAt?.toISOString() ||
     taskInputHash !== attempt.taskInputHash || canonicalSha256(basis) !== taskInputHash ||
     canonicalJson(task.executionModel) !== attempt.executionModelJson) throw summaryError('DERIVED_SUMMARY_TASK_INVALID');
+  let command: RequestDerivedSummaryUpdate;
+  try { command = parseSummaryRequest(JSON.parse(attempt.requestCommandJson), true) as RequestDerivedSummaryUpdate; }
+  catch { throw summaryError('DERIVED_SUMMARY_TASK_INVALID'); }
+  const input = task.modelInput;
+  const purpose = Object.hasOwn(input ?? {}, 'purpose') ? input.purpose : 'SYNTHESIZE';
+  const previous = input?.revisionContext?.previousSummary;
+  if (Object.hasOwn(task, 'purpose') || Object.hasOwn(task, 'revisionContext') || !input ||
+    input.classificationStatus !== 'CANDIDATE' || !Array.isArray(input.members) ||
+    (purpose !== 'SYNTHESIZE' && purpose !== 'REVISE_SAVED_SUMMARY') ||
+    command.requestId !== task.requestId || command.expectedSummaryRevision !== task.expectedSummaryRevision ||
+    command.modelRef !== task.executionModel.modelRef || command.instruction !== input.instruction ||
+    canonicalJson(command.scope) !== canonicalJson(input.scope) ||
+    canonicalJson(command.members) !== canonicalJson(input.members.map(item => item.member)) ||
+    Object.hasOwn(command, 'purpose') !== Object.hasOwn(input, 'purpose') || purpose !== (command.purpose ?? 'SYNTHESIZE') ||
+    (purpose === 'SYNTHESIZE' && input.revisionContext !== undefined) ||
+    (purpose === 'REVISE_SAVED_SUMMARY' && (!previous || !task.contextBasis || task.expectedSummaryRevision < 1 ||
+      previous.summaryId !== task.subject.summaryId || previous.revision !== task.expectedSummaryRevision ||
+      typeof previous.summaryRef !== 'string' || !previous.summaryRef || previous.candidateOnly !== true ||
+      input.revisionContext!.requestedChange?.instruction !== input.instruction ||
+      input.revisionContext!.inputChanges?.materialStrategy !== 'FULL_CURRENT_MATERIAL')))
+    throw summaryError('DERIVED_SUMMARY_TASK_INVALID');
   if (task.contextBasis !== undefined) assertSummaryContextBasis(task.contextBasis);
   return task;
 }

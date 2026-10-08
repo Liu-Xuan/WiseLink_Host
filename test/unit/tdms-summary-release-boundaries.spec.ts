@@ -73,7 +73,7 @@ async function harness(fault:Fault='NONE', mutation: 'PERMISSION'|'BODY'|'RECEIP
   attempt={summaryId:'summary-1',attemptId:'attempt-1',operationRef:'operation-1',actorUserId:actor.actorUserId,tenantId:actor.tenantId,delegatedPrincipalId:scope.principalId,
     status:'RUNNING',leaseOwner:scope.principalId,leaseToken:'lease-1',leaseGeneration:1,leaseExpiresAt:new Date('2099-01-01T00:00:00Z'),deadlineAt:new Date(task.deadlineAt),
     triggerRequestId:'request-1',baseRevision:0,inputRevision:0,taskEnvelopeJson:canonicalJson(task),taskInputHash:task.taskInputHash,executionModelJson:canonicalJson(task.executionModel),
-    requestCommandJson:'{}',reviewActivityJson:canonicalJson([{kind:'DERIVED_SUMMARY_MEMBERS_READ',evidenceRefs:[reading!.evidenceRef]}])};
+    requestCommandJson:canonicalJson({requestId:basis.requestId,expectedSummaryRevision:0,scope:selection,members:[member],instruction:basis.modelInput.instruction,modelRef:task.executionModel.modelRef}),reviewActivityJson:canonicalJson([{kind:'DERIVED_SUMMARY_MEMBERS_READ',evidenceRefs:[reading!.evidenceRef]}])};
   jest.spyOn(repository,'head').mockImplementation(async()=>head as never);
   jest.spyOn(repository,'attempt').mockImplementation(async()=>attempt as never);
   const summaries=new DerivedSummaryService(repository,members,{} as never);

@@ -1,5 +1,6 @@
 import { sameSummaryEvidence, collectSummaryNativeReadReceipts } from './derived-summary-native-evidence.mjs';
 import { canonicalJson, canonicalSha256, validateExecutionModelSelection } from './validate-payload.mjs';
+import { validateDerivedSummaryRevisionContext } from './derived-summary-revision-context.mjs';
 
 export const DERIVED_SUMMARY_TASK_SCHEMA = 'wiselink.derived-summary-task.v1';
 export const DERIVED_SUMMARY_TASK_TYPE = 'OPENCLAW_DERIVED_SUMMARY';
@@ -38,8 +39,12 @@ export function validateDerivedSummaryMember(value) {
 }
 
 export function validateDerivedSummaryModelInput(value) {
-  assertSummaryExactKeys(value, ['scope', 'classificationStatus', 'instruction', 'members', 'evidence', 'limitations'],
+  assertSummaryExactKeys(value, ['scope', 'classificationStatus', 'instruction', 'members', 'evidence', 'limitations',
+    ...(Object.hasOwn(value ?? {}, 'purpose') ? ['purpose'] : []),
+    ...(Object.hasOwn(value ?? {}, 'revisionContext') ? ['revisionContext'] : [])],
     'DERIVED_SUMMARY_MODEL_INPUT_INVALID');
+  if (Object.hasOwn(value, 'purpose') && !['SYNTHESIZE', 'REVISE_SAVED_SUMMARY'].includes(value.purpose))
+    fail('DERIVED_SUMMARY_MODEL_INPUT_INVALID');
   const scope = value.scope;
   assertSummaryExactKeys(scope, ['kind', 'title', 'fleetFamilyId', 'fleetModelIds', 'ata2', 'ata4', 'selectionReason'],
     'DERIVED_SUMMARY_SCOPE_INVALID');
@@ -60,6 +65,12 @@ export function validateDerivedSummaryModelInput(value) {
     memberRefs.add(reading.evidenceRef); identities.add(identity);
   }
   derivedSummaryRegistry(value);
+  validateDerivedSummaryRevisionContext(value, { assertSummaryExactKeys, validateDerivedSummaryMember,
+    validateScope: scope => {
+      const ordinary = { ...value, scope };
+      delete ordinary.purpose; delete ordinary.revisionContext;
+      validateDerivedSummaryModelInput(ordinary);
+    } });
   return value;
 }
 
@@ -96,12 +107,19 @@ export function validateDerivedSummaryTask(task, target) {
       task.subject?.kind !== 'DERIVED_SUMMARY' || task.subject.summaryId !== target.summaryId ||
       Object.keys(task.subject).length !== 2 || task.operationRef !== target.attemptRef ||
       !text(task.actionAttemptId) || !text(task.taskInputHash) || !Number.isFinite(Date.parse(task.deadlineAt)) ||
-      Object.hasOwn(task, 'workItemId') || Object.hasOwn(task, 'matterId'))
+      Object.hasOwn(task, 'workItemId') || Object.hasOwn(task, 'matterId') ||
+      Object.hasOwn(task, 'purpose') || Object.hasOwn(task, 'revisionContext'))
     fail('DERIVED_SUMMARY_CLAIM_BINDING_MISMATCH');
   const { taskInputHash, ...taskBasis } = task;
   if (canonicalSha256(taskBasis) !== taskInputHash) fail('DERIVED_SUMMARY_CLAIM_BINDING_MISMATCH');
   validateExecutionModelSelection(task.executionModel);
   validateDerivedSummaryModelInput(task.modelInput);
+  if (task.modelInput.purpose === 'REVISE_SAVED_SUMMARY') {
+    const prior = task.modelInput.revisionContext.previousSummary;
+    if (prior.summaryId !== task.subject.summaryId || prior.revision !== task.expectedSummaryRevision ||
+        task.modelInput.members.some(item => item.member.kind === 'DERIVED_SUMMARY' && item.member.summaryId === task.subject.summaryId))
+      fail('DERIVED_SUMMARY_CLAIM_BINDING_MISMATCH');
+  }
   return task;
 }
 

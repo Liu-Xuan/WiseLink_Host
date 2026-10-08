@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { serializeDerivedSummaryCachePrefix } from '../scripts/derived-summary-cache-prefix.mjs';
+import { derivedSummaryModelView } from '../scripts/invoke-hosted-derived-summary-model.mjs';
 import { canonicalJson, canonicalSha256 } from '../scripts/validate-payload.mjs';
 
 const member = index => ({ evidenceRef: `member-${index}`,
@@ -106,4 +108,52 @@ test('optional fields and fallback body retain JSON undefined omission without d
   assert.equal(Object.hasOwn(parsed.members[1], 'body'), false);
   assert.equal(parsed.members[0].body, changed.members[0].body);
   assert.equal(canonicalJson(JSON.parse(serialize({ ...view, members: undefined }))), canonicalJson({ ...view, members: undefined }));
+});
+
+
+const r1Sealed = JSON.parse(await readFile(new URL('./fixtures/derived-summary-r1-sealed.json', import.meta.url), 'utf8'));
+assert.equal(r1Sealed.schemaVersion, 'wiselink.derived-summary-r1-sealed-fixtures.v1');
+const r1RevisionEntries = r1Sealed.groups.find(group => group.name === 'revision').variants;
+for (const entry of r1RevisionEntries) test(`R1 real sealed ${entry.name} full revision layout preserves all current material and prior values`, () => {
+  const raw = entry.taskEnvelopeJson; const sealed = JSON.parse(raw); const selected = derivedSummaryModelView(sealed.modelInput);
+  const before = canonicalJson(selected); const serialized = serialize(selected); const parsed = JSON.parse(serialized);
+  assert.equal(canonicalJson(parsed), before); assert.equal(Buffer.byteLength(serialized), Buffer.byteLength(before));
+  assert.deepEqual(Object.keys(parsed), ['evidence', 'members', 'classificationStatus', 'scope', 'limitations', 'purpose', 'revisionContext', 'instruction']);
+  assert.deepEqual(Object.keys(parsed.revisionContext), ['previousSummary', 'inputChanges', 'requestedChange']);
+  assert.deepEqual(Object.keys(parsed.revisionContext.previousSummary), ['candidateOnly', 'summaryId', 'summaryRef', 'revision',
+    'content', 'scope', 'members', 'evidenceRefs', 'rootRefs', 'usedEvidenceRefs', 'memberNotices', 'noticesObservedAt']);
+  assert.deepEqual(parsed.revisionContext, sealed.modelInput.revisionContext);
+  assert.deepEqual(parsed.evidence, selected.evidence); assert.deepEqual(parsed.members, selected.members);
+  assert.equal(canonicalJson(selected), before); assert.equal(entry.taskEnvelopeJson, raw);
+});
+
+test('R1 requested change edits leave complete current material and saved candidate before the changed suffix', () => {
+  const entry = r1RevisionEntries.find(item => JSON.parse(item.taskEnvelopeJson).modelInput.revisionContext.inputChanges.basis === 'SAME_SELECTION');
+  const raw = entry.taskEnvelopeJson; const selected = derivedSummaryModelView(JSON.parse(raw).modelInput);
+  const changed = structuredClone(selected); changed.instruction += ' More concise.';
+  changed.revisionContext.requestedChange.instruction = changed.instruction;
+  const original = serialize(selected); const next = serialize(changed);
+  const boundary = original.indexOf('"requestedChange":'); assert.ok(boundary > original.indexOf('"previousSummary":'));
+  assert.equal(next.slice(0, boundary), original.slice(0, boundary));
+  assert.ok(utf8Lcp(original, next) >= Buffer.byteLength(original.slice(0, boundary)));
+  assert.deepEqual(JSON.parse(next), changed); assert.equal(entry.taskEnvelopeJson, raw);
+});
+
+test('R1 saved-candidate changes remain visible and do not alter the preceding full current material', () => {
+  const entry = r1RevisionEntries[0]; const selected = derivedSummaryModelView(JSON.parse(entry.taskEnvelopeJson).modelInput);
+  const changed = structuredClone(selected); changed.revisionContext.previousSummary.content.body += '\nChanged editable candidate.';
+  const original = serialize(selected); const next = serialize(changed); const boundary = original.indexOf('"revisionContext":');
+  assert.equal(next.slice(0, boundary), original.slice(0, boundary)); assert.notEqual(next, original);
+  assert.deepEqual(JSON.parse(next).revisionContext.previousSummary.content, changed.revisionContext.previousSummary.content);
+});
+
+for (const groupName of ['legacy', 'synthesis']) test(`R1 actual ${groupName} preserves the ordinary layout and explicit-field presence`, () => {
+  const entry = r1Sealed.groups.find(group => group.name === groupName).variants[0];
+  const selected = derivedSummaryModelView(JSON.parse(entry.taskEnvelopeJson).modelInput);
+  const parsed = JSON.parse(serialize(selected)); assert.deepEqual(parsed, selected);
+  const ordinary = ['evidence', 'members', 'classificationStatus', 'scope', 'limitations', 'instruction'];
+  assert.deepEqual(Object.keys(parsed).slice(0, ordinary.length), ordinary);
+  assert.equal(Object.hasOwn(parsed, 'revisionContext'), false);
+  assert.equal(Object.hasOwn(parsed, 'purpose'), groupName === 'synthesis');
+  if (groupName === 'synthesis') { assert.equal(parsed.purpose, 'SYNTHESIZE'); assert.equal(Object.keys(parsed).at(-1), 'purpose'); }
 });
