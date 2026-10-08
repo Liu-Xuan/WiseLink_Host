@@ -119,7 +119,15 @@ export function buildMineruTranslationPlan(
         if (typeof content.html !== 'string')
           throw new Error('MINERU_TABLE_HTML_INVALID');
         const table = readMineruTranslationTable(content.html);
-        const caption = optionalSpans(content.table_caption);
+        const nativeCaption: string = optionalSpans(content.table_caption);
+        const embeddedCaption: string = table.caption;
+        const captionConflict: boolean = Boolean(nativeCaption && embeddedCaption && nativeCaption !== embeddedCaption);
+        // An explicit empty native field may be a running-title removal. Only
+        // absence permits fallback; distinct asserted captions remain readable.
+        // This display join never creates a SourceRef quote or character range.
+        const caption: string = content.table_caption === undefined ? embeddedCaption
+          : captionConflict ? [nativeCaption, embeddedCaption].join('\n') : nativeCaption;
+        if (captionConflict) unit.issues.push('TABLE_CAPTION_CONFLICT');
         const notes = optionalSpans(content.table_footnote);
         unit.value = {
           kind: 'table',
