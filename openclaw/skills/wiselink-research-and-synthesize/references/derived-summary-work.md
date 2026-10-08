@@ -24,6 +24,24 @@ Model dispatch retains the bound official Hosted profile and existing transport.
 A mismatching Host route is refused, never switched. The driver returns only
 source-read intents or candidate content through `return_wiselink_summary_step`.
 
+The existing Summary CLI default-imports `native-temporary-review-gateway.mjs`
+and passes its `createNativeReviewGatewayPreparer` to the current
+`derived-summary-native-gateway.mjs` session. An explicit
+`--native-gateway-launcher` can supply that same interface. The preparer also
+serves isolated Review execution; Summary is an actual consumer of the two
+native helper files. Including `native-temporary-review-gateway.mjs` and
+`one-shot-outbound-adapter.mjs` supplies this existing source dependency without
+changing Summary model instructions, projections or saved checkpoint formats.
+
+Preparation stays lazy until a model request needs a gateway. It binds the exact
+Summary subject, Host attempt, native session and deadline; the adapter records
+each actual provider dispatch, including a child-internal retry. The current
+Summary receipt validator checks the bounded dispatch ledger and provider
+terminal proof. Owned child shutdown, adapter closure and temporary secret scan
+precede the private cleanup receipt. A saved model response can repeat its exact
+source read without preparing another gateway; an unknown provider terminal
+closes further dispatch and cannot rearm the same attempt.
+
 The model SAVE step uses `{action:'SAVE_SUMMARY', content:{headline,listBrief,body,limitations}}`.
 Its strict tool schema requires exactly these four content fields: headline,
 listBrief and body are nonempty strings; limitations is an array of nonempty
@@ -134,3 +152,14 @@ and recovery contract. They do not measure real-model token or semantic savings,
 prove installed OpenClaw behavior, deployment, provider execution or a real
 business summary. This reference does not activate a runtime or authorize an
 installation or profile change.
+
+The native helper tests use explicit fake resolver modules, fake child CLIs,
+synthetic provider configuration and fake upstream responses over loopback.
+Their cross-module Summary tests exercise the current strict receipt validator,
+actual dispatch ordinals, owned cleanup, unknown-terminal fencing and saved
+response replay. They do not verify the default SDK deep import, its
+`resolveSecretRefValues` export, a particular installed SDK version, real
+SecretRef resolution or a real model. Running the CLI with active configuration
+can claim/heartbeat the Host attempt, read sources, resolve credentials and
+dispatch the provider; package inclusion and these synthetic tests do not grant
+that execution authorization.
