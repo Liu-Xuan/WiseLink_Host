@@ -19,6 +19,8 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 
 c207 保留翻译 GENERATE 的完整英文自然阅读投影，并将 CORRECT/CHECK 改为完整原文仅出现一次的紧凑阅读投影。目标锚点、候选和条件仍可精确定位，Host 私有来源映射与严格保存校验不变。旧窄范围 REGISTERED 请求不会静默扩大来源。模型路由、完成额度和正式采用边界不变。
 
+Review 驱动在每个来源读取、拒绝反馈和有界纠正请求中保留当前 Host 轮次的工程师问题、用途和目标范围。需要先读原文的旧 JobAid 更新首先交付来源选择目录，只有实际成功读取后才交付完整 Host 固定上下文；目录、无效读取或失败读取不能视为读过原文。`SOURCE_CONTEXT_V2` 已交付的保存陈述及全部必要根原文继续直接进入首轮，不强制重复读取；无原生会话时，每轮保留这些完整记录、条件和 UNKNOWN 语义。当前请求和本轮实际来源仍约束候选、纠正与后续保存，历史会话不能扩大来源或变更范围。
+
 c204 将文档翻译网关的既有有界响应诊断写入私有 checkpoint，记录状态、错误码与精确生成身份，不记录正文或凭据；不改变模型路由、请求参数及失败恢复边界。
 
 c198 允许自动队列 cron 附带一个经校验的 `--document-translation-recovery ID`，在 Host 修复中文准入后由下一次自然 tick 重新核验；旧阻塞 checkpoint 保留。c197 对已授权的文档交付队列，在返回待处理 WorkItem 时附带所选解析尝试的精确游标；消费者先持久化游标再执行文档 STEP，使后续 WorkItem 与上传任务获得轮转机会，尾页回绕。仍逐项执行 Host 来源、actor、tenant 与正式保存校验。

@@ -415,7 +415,6 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     input.input?.context?.problemAssessment?.availableSources?.some(
       (source) => source.kind === 'DOCUMENT_PASSAGE') === true &&
     Array.isArray(input.input?.availableSourceRefIds) && input.input.availableSourceRefIds.length > 0;
-  const prompt = buildReviewPrompt(input, { sourceReadFirst });
   // The live JobAid review was still producing output when the legacy 8-minute
   // budget aborted it. Match initial problem analysis's 30-minute total only
   // when the caller renews the exact Host lease before each request. One
@@ -445,9 +444,27 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   // Historical unversioned/v1 projections retain their existing wire behavior.
   const statelessStatementContext = !nativeSessionKey &&
     input.input?.context?.problemAssessment?.evidenceProjectionVersion === 'SOURCE_CONTEXT_V2';
+  const engineerText = input.input?.context?.engineerInput?.text;
+  const currentTurnRequest = {
+    engineerRequest: typeof engineerText === 'string' && engineerText.trim()
+      ? engineerText : input.input?.userMessage ?? null,
+    purpose: input.input?.context?.purpose ?? null,
+    selectedEvaluationItemId: input.input?.selectedEvaluationItemId ?? null,
+    targetClaimId: input.input?.context?.matterWorking?.targetClaimId ?? null,
+    targetIssueKeys: input.input?.context?.issueEditScope?.targetIssueKeys ?? [],
+  };
+  const fullPrompt = buildReviewPrompt(input, { currentTurnRequest });
+  const initialPrompt = sourceReadFirst
+    ? buildSourceSelectionPrompt(input, currentTurnRequest) : fullPrompt;
   const statementContextMessages = () => statelessStatementContext
-    ? [{ role: 'user', content: prompt }] : [];
-  let messages = [systemMessage, { role: 'user', content: prompt }];
+    ? [{ role: 'user', content: fullPrompt }] : [];
+  let messages = [systemMessage, { role: 'user', content: initialPrompt }];
+  const toolExchangeMessages = (toolCall, feedback) => [
+    systemMessage, ...statementContextMessages(),
+    { role: 'assistant', content: null, tool_calls: [toolCall] },
+    { role: 'tool', tool_call_id: toolCall.id,
+      content: canonicalJson({ ...feedback, currentTurnRequest }) },
+  ];
   const sourceCache = new Map();
   const requestGateway = createHostedReviewRequester({
     requestGateway: dependencies.requestGateway ?? requestHostedGateway,
@@ -462,6 +479,13 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   let pendingRejectedValidationCode = null;
   let autoChoiceNextRequest = false;
   let consecutiveCachedReads = 0;
+  let fullContextDelivered = false;
+  const deliverFullContextAfterRead = () => {
+    if (sourceReadFirst && !fullContextDelivered && sourceCache.size > 0) {
+      messages.push({ role: 'user', content: fullPrompt });
+      fullContextDelivered = true;
+    }
+  };
   let inputUnits = 0;
   let outputUnits = 0;
   // All read/analysis rounds share the Host-scoped native session (or the
@@ -567,7 +591,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               'Use schemaVersion wiselink.jobaid-problem-work.v3 exactly and include nonempty completionReason and changeSummary. For this scoped Review, copy the prior roundCompletion and completionReason exactly. Update headline and listBrief together only when the authorized issue change makes the old summary inaccurate. Keep the engineer\'s requested findings and the existing validation contract. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.',
             ].join(' ')
           : `The preceding model response ended before any tool call. Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one complete, concise candidate that changes only the engineer's requested findings. Existing issue keys: ${canonicalJson(previousIssueKeys)}. Use an affected existing key for a correction; create a new key only for a distinct new problem. Omitted issues remain saved. Every updated issue body needs an inline [[evidenceRef]] copied from actually read, supporting evidence. Read another authorized fragment only if essential. Do not repeat a long analysis or claim a candidate was saved.`;
-        messages = [systemMessage, ...statementContextMessages(), { role: 'user', content: correction }];
+        messages = [systemMessage, ...statementContextMessages(), { role: 'user',
+          content: `CURRENT_HOST_TURN:\n${canonicalJson(currentTurnRequest)}\nCORRECTION:\n${correction}` }];
         continue;
       }
       if (sourceReadFirst && options.executionModel?.modelRef === 'm3probe/minimax-m3' &&
@@ -585,6 +610,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           .map((source) => source?.evidenceRef)
           .filter((ref) => typeof ref === 'string' && ref.trim()))];
         messages = [...messages, { role: 'user', content: [
+          `CURRENT_HOST_TURN:\n${canonicalJson(currentTurnRequest)}`,
           `The previous candidate was rejected with REVIEW_JOBAID_ISSUE_FULL_CONTENT_REQUIRED and was not saved. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one corrected candidate.`,
           `For an existing issue use issuePatches with an exact key from ${canonicalJson(jobAidPreviousIssueKeys(input.input))}; a new issue requires full content.`,
           `Cite only supporting evidence already read in this turn: ${canonicalJson(readEvidenceRefs)}. Keep the original question, scope and unaffected work.`,
@@ -615,9 +641,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         Object.keys(output).length !== 1 || typeof output.query !== 'string' || !output.query.trim() || output.query.length > 4000)
         throw new Error('AILY_QUERY_ARGUMENTS_INVALID');
       const value = await options.queryAily(output.query, requiredText(toolCall.id, 'REVIEW_MODEL_TOOL_CALL_ID_REQUIRED'));
-      messages = [systemMessage, ...statementContextMessages(), { role: 'assistant', content: null, tool_calls: [toolCall] },
-        { role: 'tool', tool_call_id: toolCall.id, content: canonicalJson({ ...value,
-          instruction: 'Treat this Aily reply as retrieved candidate material. Attribute its claims and links to Aily. It does not verify original documents or authorize assessment changes. Do not put its URLs or queryRef in Host sourceRefs or candidateEvidenceRefs. Report errors, missing results and truncation honestly.' }) }];
+      messages = toolExchangeMessages(toolCall, { ...value,
+          instruction: 'Treat this Aily reply as retrieved candidate material. Attribute its claims and links to Aily. It does not verify original documents or authorize assessment changes. Do not put its URLs or queryRef in Host sourceRefs or candidateEvidenceRefs. Report errors, missing results and truncation honestly.' });
       continue;
     }
     if (toolCall.function.name === REVIEW_OUTPUT_FUNCTION_NAME) {
@@ -731,10 +756,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         // Continue the same native tool exchange. These are model corrections
         // before any commit, within the original deadline and source scope.
         // Never patch an invalid candidate or resend a mutating Host request.
-        messages = [
-          systemMessage, ...statementContextMessages(),
-          { role: 'assistant', content: null, tool_calls: [toolCall] },
-          { role: 'tool', tool_call_id: toolCall.id, content: canonicalJson({
+        messages = toolExchangeMessages(toolCall, {
             candidateAccepted: false, validationError: errorCode,
             ...(isJobAid && isAssessmentUpdate && errorCode === 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED'
               ? { evidenceReferenceFeedback: {
@@ -787,8 +809,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               : isJobAid
               ? 'Return the complete corrected JobAid candidate directly as the declared function arguments, without a candidate wrapper. Use an affected existing key from previousIssueKeys for a correction; create a new key only for a distinct new problem. Omitted previous issues remain saved. Every updated issue body must contain an inline [[evidenceRef]] copied from evidence actually read this turn and supporting that body. Keep the original question, unaffected issues and their premises. candidateEvidenceRefs may contain only current input.attachmentRefs actually read this turn; ordinary document SourceRefs belong in sourceRefs or working-delta evidence fields, never candidateEvidenceRefs. Omit empty sourceRefs, missingInputs, candidateEvidenceRefs and warnings; omission means no entries, never [""] or a placeholder object. Omit retiredIssues when retiring none. Omit reviewActionDraft and affectedItemIds; the driver owns their fixed no-formal-action values. For UPDATE_ASSESSMENT, jobAidWorkingDelta is mandatory and non-null: propose the actual local update and preserve unknowns. Only ordinary review answers may omit it when no work changes. Read any additional passage through the read function. Never invent references, drop findings merely to pass validation, or claim the rejected candidate was saved.'
               : 'Correct the candidate using the current contract and registered evidence. Keep the original question, unchanged claims and source meaning. Read any additional passage through the read function. Every document premise in the resulting reading must be included in that input\'s checked coverage; an updated coverage entry replaces its old checked range, so include every cited passage for that input, not just representative anchors. Return the complete corrected candidate; do not invent evidence or coverage, remove a substantive finding merely to pass validation, or claim that anything was saved.',
-          }) },
-        ];
+          });
+        deliverFullContextAfterRead();
         continue;
       }
       return {
@@ -821,18 +843,15 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         await options.observeCandidateRejection({ modelRound: round,
           correctionNo: candidateCorrections, errorCode, validationStage: 'SOURCE_REQUEST' });
       }
-      messages = [systemMessage, ...statementContextMessages(),
-        { role: 'assistant', content: null, tool_calls: [toolCall] },
-        { role: 'tool', tool_call_id: toolCall.id, content: canonicalJson({
+      messages = toolExchangeMessages(toolCall, {
           sourceReadAccepted: false, validationError: errorCode,
           readableSourceRefIds: [...allowed],
           alreadyDeliveredEvidenceRefs: candidateFeedbackEvidenceRefs(input, new Map()),
           instruction: 'The whole read request was rejected and none of its sources were read. Resubmit a nonempty unique sourceRefIds array using only readableSourceRefIds, with no other fields. Already delivered method clauses and engineer statements have evidenceRef values for use in working premises; those values are not read handles unless also listed in readableSourceRefIds. Use their delivered content directly without inventing a source mapping. Keep the engineering question and use valid document handles for further investigation; do not claim unread documents were read.',
-        }) },
-      ];
+        });
       continue;
     }
-    const callId = requiredText(toolCall.id, 'REVIEW_MODEL_TOOL_CALL_ID_REQUIRED');
+    requiredText(toolCall.id, 'REVIEW_MODEL_TOOL_CALL_ID_REQUIRED');
     const unread = ids.filter((id) => !sourceCache.has(id));
     if (unread.length === 0) {
       consecutiveCachedReads += 1;
@@ -854,14 +873,10 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       }
       for (const source of sources) sourceCache.set(source.sourceRefId, source);
     }
-    // The Gateway resumes its native history. Send only the new tool exchange,
-    // not another copy of the assessment context and previous source bodies.
-    messages = [
-      systemMessage, ...statementContextMessages(),
-      { role: 'assistant', content: null, tool_calls: [toolCall] },
-      {
-        role: 'tool', tool_call_id: callId,
-        content: canonicalJson({ sourceRefs: ids.map((id) => sourceCache.get(id)),
+    // Native history receives the new exchange; stateless V2 tasks retain
+    // their complete saved statements and required roots in every request.
+    messages = toolExchangeMessages(toolCall, {
+        sourceRefs: ids.map((id) => sourceCache.get(id)),
           ...(unread.length === 0 ? {
             sourceReadCached: true,
             instruction: [
@@ -871,9 +886,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               'Do not repeat a cached-only read or claim a candidate was saved.',
             ].join(' '),
           } : {}),
-        }),
-      },
-    ];
+        });
+    deliverFullContextAfterRead();
   }
 }
 
@@ -2272,15 +2286,13 @@ function reviewAilyFunctionTool() {
       properties: { query: { type: 'string', minLength: 1, maxLength: 4000 } } } } };
 }
 
-function buildReviewPrompt(input, { sourceReadFirst = false } = {}) {
+function buildReviewPrompt(input, { currentTurnRequest } = {}) {
   const isMatter = isRecord(input.input?.context?.matterWorking);
   const isJobAid = isRecord(input.input?.context?.problemAssessment);
   const isChat = input.input?.context?.purpose === 'CHAT';
   return [
     'Generate one candidate-only WiseLink engineering review response from the engineer message and the current Host-frozen context.',
-    sourceReadFirst
-      ? `First call ${REVIEW_READ_FUNCTION_NAME} for only the relevant authorized document fragments. Then call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once in the following response. It is only a serialization channel and will not be executed. Emit no prose outside function arguments.`
-      : `Call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once. It is only a serialization channel and will not be executed. Emit no prose outside its arguments.`,
+    `Call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once. It is only a serialization channel and will not be executed. Emit no prose outside its arguments.`,
     'Use sourceRefs and candidateEvidenceRefs only from SOURCE_REFS read this turn. Never invent facts, IDs, evidence, adoption, approval, publication, confirmation, current changes, or gap closure.',
     'When the engineer asks to locate, cite, or return a SourceRef, use SOURCE_LINK and include at least one relevant sourceRefs entry read this turn. SOURCE_LINK with an empty sourceRefs array is invalid.',
     ...(isChat ? [
@@ -2304,7 +2316,28 @@ function buildReviewPrompt(input, { sourceReadFirst = false } = {}) {
     'Use context.commonContext when supplied: continue prior discussion and later engineer corrections, distinguishing historical working answers from adopted inputs and current evidence. Report omitted history or unavailable RAG honestly. Procedural-reference catalogs and historical attachment names do not mean their contents were read.',
     `Use ${REVIEW_READ_FUNCTION_NAME} as needed, then continue your analysis from the returned fragments. Start from ${isChat ? 'the engineer question and saved understanding' : isJobAid ? 'the saved issue and current question' : isMatter ? 'the Matter working focus' : 'the selected criterion'} and current question; read relevant engineer attachments as well when they affect the question. Do not read every available source just because it is listed.`,
     'Do not call any Host MCP or other tool directly. The driver exclusively owns begin, authorized SourceRef read, commit, and status. A previous answer or native session memory does not authorize an unread citation this turn.',
+    `CURRENT_HOST_TURN:\n${canonicalJson(currentTurnRequest)}`,
     `INPUT:\n${canonicalJson(input)}`,
+  ].join('\n');
+}
+
+function buildSourceSelectionPrompt(input, currentTurnRequest) {
+  const assessment = input.input.context.problemAssessment;
+  const targetKeys = new Set(currentTurnRequest.targetIssueKeys);
+  const targetIssues = assessment.previousWork?.content?.issues
+    ?.filter((issue) => targetKeys.has(issue.issueKey))
+    .map((issue) => ({ issueKey: issue.issueKey, question: issue.question })) ?? [];
+  return [
+    `First call ${REVIEW_READ_FUNCTION_NAME} for only the authorized document fragments needed for the current engineer request. Do not produce a candidate yet. The complete Host-frozen projected context and candidate instructions follow the first successful read.`,
+    'Select exact sourceRefIds from availableSourceRefIds. Catalog refs, titles and locators identify sources but do not by themselves prove reading or authorize a guessed handle. Do not infer a handle from list position.',
+    `CURRENT_HOST_TURN:\n${canonicalJson(currentTurnRequest)}`,
+    `TARGET_ISSUES:\n${canonicalJson(targetIssues)}`,
+    `AUTHORIZED_SOURCE_CATALOG:\n${canonicalJson({
+      availableSourceRefIds: input.input.availableSourceRefIds,
+      availableSources: assessment.availableSources,
+      documentSections: assessment.documentOverview?.sections ?? [],
+      attachmentRefs: input.input.attachmentRefs ?? [],
+    })}`,
   ].join('\n');
 }
 
