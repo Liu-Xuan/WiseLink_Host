@@ -20,6 +20,7 @@ import {
 import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
 import WiseLinkBrandMark from '@client/src/components/WiseLinkBrandMark';
 import { activityReadingParams, knowledgeReadingIdentity, knowledgeReadingParams, libraryGraphReturnRoute } from '@client/src/features/matter/reading-return';
+import { LIBRARY_GRAPH_ROUTE } from '@client/src/pages/RelationGraphPage/library-graph-entry';
 import {
   Dialog,
   DialogContent,
@@ -64,7 +65,7 @@ const GLOBAL_NAV: Array<{
 }> = [
   { to: '/library', label: '资料库', icon: LibraryBig },
   { to: '/knowledge', label: '工程知识', icon: BookMarked },
-  { to: '/graph', label: '关系图谱', icon: Share2 },
+  { to: LIBRARY_GRAPH_ROUTE, label: '关系图谱', icon: Share2 },
   { to: '/situation', label: '工程态势', icon: Compass },
   { to: '/library?mode=tasks', label: '工作进展', icon: Clock3 },
 ];
@@ -240,6 +241,8 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
     return target;
   };
 
+  const currentObjectGraphTarget: string = globalNavTarget('/graph');
+
   const isTasksRoute =
     location.pathname === '/library' &&
     new URLSearchParams(location.search).get('mode') === 'tasks';
@@ -337,6 +340,16 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
         ) : null}
 
         <nav className="wl-sidebar-secondary" aria-label="次级入口">
+          {currentObjectGraphTarget !== '/graph' ? (
+            <NavLink
+              to={currentObjectGraphTarget}
+              aria-label="当前对象图谱"
+              title="当前对象图谱"
+            >
+              <Share2 aria-hidden="true" />
+              <span>当前对象图谱</span>
+            </NavLink>
+          ) : null}
           {SECONDARY_NAV.map(
             (item: {
               to: string;
