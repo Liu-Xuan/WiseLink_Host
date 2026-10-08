@@ -1394,6 +1394,7 @@ export async function createCheckpointStore(directory) {
     },
     write: (step, value) => writeCheckpoint(root, step, value),
     writeOnce: (step, value) => writeCheckpointOnce(root, step, value),
+    writeOnceOrEqual: (step, value) => writeCheckpointOnceOrEqual(root, step, value),
     remoteStep: async ({ step, args, ambiguousCommit, allowExactReplay = false, perform }) => {
       const argsHash = canonicalSha256(args);
       const completed = await readCheckpointOptional(root, `${step}.result`);
@@ -1537,6 +1538,23 @@ async function writeCheckpointOnce(root, step, value) {
     });
   }
   await chmod(path, 0o600);
+}
+
+async function writeCheckpointOnceOrEqual(root, step, value) {
+  const existing = await readCheckpointOptional(root, step);
+  if (existing !== null) {
+    if (canonicalJson(existing) !== canonicalJson(value))
+      throw new Error(`REVIEW_CHECKPOINT_VALUE_CHANGED:${step}`);
+    return;
+  }
+  try {
+    await writeCheckpointOnce(root, step, value);
+  } catch (error) {
+    if (error?.message !== `REVIEW_CHECKPOINT_ALREADY_EXISTS:${step}`) throw error;
+    const raced = await readCheckpointOptional(root, step);
+    if (raced === null || canonicalJson(raced) !== canonicalJson(value))
+      throw new Error(`REVIEW_CHECKPOINT_VALUE_CHANGED:${step}`);
+  }
 }
 
 function toolStep(name) {
