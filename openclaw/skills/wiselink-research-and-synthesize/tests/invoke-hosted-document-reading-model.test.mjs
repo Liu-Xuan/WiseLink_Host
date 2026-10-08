@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { invokeHostedDocumentReadingModel, readingModelMessages,
-  READING_PROPOSAL_FUNCTION_NAME } from '../scripts/invoke-hosted-document-reading-model.mjs';
+  READING_PROPOSAL_FUNCTION_NAME, READING_MODEL_PROMPT_VERSION } from '../scripts/invoke-hosted-document-reading-model.mjs';
 
 const options = { gatewayUrl: 'https://fixture.invalid', gatewayToken: 'fixture-not-a-credential',
   agentId: 'wiselink-engineering', configuredModelVersion: 'fixture-model',
@@ -156,4 +156,18 @@ test('identical source text on different anchors retains the model-selected iden
   });
   assert.equal(result.proposal.brief.quotes[0].anchorId, 'a2');
   assert.equal(result.proposal.brief.quotes[0].text, input.anchors[0].sourceText);
+});
+
+test('reading guidance retains possible causes and limits closed FTD to the recorded document state', () => {
+  const anchors = [
+    { anchorId: 'possible-cause', sourceText: 'Investigation indicates the event may be caused by moisture.' },
+    { anchorId: 'closed', sourceText: 'This FTD is closed in this revision.' },
+  ];
+  const messages = readingModelMessages({ anchors });
+  assert.equal(READING_MODEL_PROMPT_VERSION, 'wiselink.document.reading_model_prompt.v5');
+  assert.match(messages[0].content, /headline 和 brief 也必须保留“可能”“调查指向”等口径/u);
+  assert.match(messages[0].content, /不得浓缩成已定位、已证实的唯一根因/u);
+  assert.match(messages[0].content, /closed 仅表示该 FTD 在所述修订中结案/u);
+  assert.match(messages[0].content, /不证明故障已消除或措施已在运营人机队实施/u);
+  assert.deepEqual(JSON.parse(messages[1].content).anchors, anchors);
 });

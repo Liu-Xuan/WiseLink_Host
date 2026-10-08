@@ -645,47 +645,48 @@ export async function invokeHostedJobAidProblemModel(
       : isJobAidProblemInputSchema(modelInput.schemaVersion) &&
         options.executionModel?.modelRef === 'm3probe/minimax-m3'
         ? generationPolicy.probeRequestMaxCompletionTokens : null;
-    let requestMetrics = null;
-    const performRequest = async () => {
-      if (round === 1 && options.recoveredInitialResponse) return options.recoveredInitialResponse;
-      const requestPayload = {
-        model: requestedModel,
-        user: `initial:${nativeSessionDiscriminator}`,
-        messages: messages.map(message => message.role !== 'system' ? message : ({ ...message, content: message.content + '\n' + JSON.stringify({
-          generationPolicy, scopeAdjustment: scopeAdjustments, expectedWorkRevision, savedWork: saved,
-          focus,
-        }) })),
-        tools: [
-          {
-            type: 'function',
-            function: {
-              name: FUNCTION,
-              description: forceSaveBeforeRead
-                ? 'Return one substantive SAVE_WORK intent. The deterministic Host caller executes and validates it.'
-                : 'Return one source-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.',
-              parameters: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['step'],
-                properties: { step: requestToolSchema },
-              },
+    const requestPayload = {
+      model: requestedModel,
+      user: `initial:${nativeSessionDiscriminator}`,
+      messages: messages.map(message => message.role !== 'system' ? message : ({ ...message, content: message.content + '\n' + JSON.stringify({
+        generationPolicy, scopeAdjustment: scopeAdjustments, expectedWorkRevision, savedWork: saved,
+        focus,
+      }) })),
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: FUNCTION,
+            description: forceSaveBeforeRead
+              ? 'Return one substantive SAVE_WORK intent. The deterministic Host caller executes and validates it.'
+              : 'Return one source-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.',
+            parameters: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['step'],
+              properties: { step: requestToolSchema },
             },
           },
-        ],
-        tool_choice: toolChoice,
-        parallel_tool_calls: false,
-        n: 1,
-        stream: false,
-        ...(requestMaxCompletionTokens
-          ? { max_completion_tokens: requestMaxCompletionTokens } : {}),
-      };
-      const requestBody = JSON.stringify(requestPayload);
-      requestMetrics = {
-        requestBytes: Buffer.byteLength(requestBody),
-        messagesBytes: Buffer.byteLength(JSON.stringify(requestPayload.messages)),
-        systemBytes: Buffer.byteLength(requestPayload.messages[0].content),
-        toolsBytes: Buffer.byteLength(JSON.stringify(requestPayload.tools)),
-      };
+        },
+      ],
+      tool_choice: toolChoice,
+      parallel_tool_calls: false,
+      n: 1,
+      stream: false,
+      ...(requestMaxCompletionTokens
+        ? { max_completion_tokens: requestMaxCompletionTokens } : {}),
+    };
+    const requestBody = JSON.stringify(requestPayload);
+    // A persisted assessment-round response skips performRequest on resume.
+    // Recompute the same request metrics before replaying its observation.
+    const requestMetrics = round === 1 && options.recoveredInitialResponse ? null : {
+      requestBytes: Buffer.byteLength(requestBody),
+      messagesBytes: Buffer.byteLength(JSON.stringify(requestPayload.messages)),
+      systemBytes: Buffer.byteLength(requestPayload.messages[0].content),
+      toolsBytes: Buffer.byteLength(JSON.stringify(requestPayload.tools)),
+    };
+    const performRequest = async () => {
+      if (round === 1 && options.recoveredInitialResponse) return options.recoveredInitialResponse;
       const response = await (
         dependencies.requestGateway ?? requestHostedGateway
       )(new URL('/v1/chat/completions', options.gatewayUrl), {

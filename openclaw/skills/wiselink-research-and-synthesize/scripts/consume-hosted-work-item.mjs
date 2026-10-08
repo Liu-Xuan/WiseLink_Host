@@ -826,6 +826,15 @@ export async function runHostedSuccessorOverall(pointer, dependencies) {
     if (!await current()) throw new Error('HOSTED_SUCCESSOR_OVERALL_RESULT_DRIFT');
     return savedResult;
   }
+  const observeCandidateRejection = async report => {
+    const legacyStep = `model.candidate-rejection-${report.correctionNo}`;
+    const legacy = await checkpoint.readOptional(legacyStep);
+    if (legacy?.modelRound === report.modelRound &&
+        legacy?.correctionNo === report.correctionNo)
+      return checkpoint.writeOnceOrEqual(legacyStep, report);
+    return checkpoint.writeOnceOrEqual(
+      `model.candidate-rejection-${report.modelRound}-${report.correctionNo}`, report);
+  };
   let executionModel;
   let taskDeadline;
   const callTool = async (name, args) => {
@@ -854,10 +863,9 @@ export async function runHostedSuccessorOverall(pointer, dependencies) {
           queryAssessmentKnowledge: hooks.queryAssessmentKnowledge,
           saveAssessmentWork: hooks.saveAssessmentWork,
           readAssessmentWork: hooks.readAssessmentWork,
-          observeModelOutput: (shape, round = 1) => checkpoint.writeOnce(
+          observeModelOutput: (shape, round = 1) => checkpoint.writeOnceOrEqual(
             `model.output-shape${round === 1 ? '' : '-' + round}`, shape),
-          observeCandidateRejection: report => checkpoint.writeOnce(
-            `model.candidate-rejection-${report.correctionNo}`, report) },
+          observeCandidateRejection },
       ),
   }); }
   catch (error) {

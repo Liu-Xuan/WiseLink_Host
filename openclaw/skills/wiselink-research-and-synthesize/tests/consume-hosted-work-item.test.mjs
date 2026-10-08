@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { consumeHostedWorkItem, initialStageLimit, matterPreflightMode, runHostedInitialStage } from '../scripts/consume-hosted-work-item.mjs';
+import { consumeHostedWorkItem, initialStageLimit, matterPreflightMode, runHostedInitialStage, runHostedSuccessorOverall } from '../scripts/consume-hosted-work-item.mjs';
 import { initialStageCheckpointPath } from '../scripts/initial-assessment-recovery.mjs';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
-import { WISELINK_SKILL_VERSION } from '../scripts/validate-payload.mjs';
+import { WISELINK_SKILL_VERSION, canonicalSha256 } from '../scripts/validate-payload.mjs';
 
 function status(overrides = {}) {
   return { entry: { workItemId: 'WI-new' }, initialAnalysis: {
@@ -1035,3 +1035,111 @@ for (const condition of ['unknown-receipt', 'malformed-status', 'budget-exhauste
     const checkpoint = JSON.parse(await readFile(join(input.checkpointRoot, 'WI-new/initial/TRANSLATE/run-result.json'), 'utf8'));
     assert.equal(checkpoint.status, 'INITIAL_STAGE_SAVED');
   });
+
+
+// Exercise the actual successor entry and persisted store; no gateway or Host writes.
+async function successorObservationFixture(t) {
+  const input = await options(t);
+  const pointer = { workItemId: 'WI-P1', reviewTurnRef: 'RT-P1',
+    workRevisionRef: 'JAWR-P1', checkpointRoot: input.checkpointRoot };
+  const modelInput = { schemaVersion: 'wiselink.jobaid-problem-task.v2',
+    purpose: 'OVERALL_CONSISTENCY', availableSources: [], deliveredEvidence: [],
+    expectedWorkRevision: 0, previousWork: null, externalDiscoveryResults: [],
+    successorReviewTurnRef: pointer.reviewTurnRef,
+    successorOverallBinding: { workRevisionRef: pointer.workRevisionRef } };
+  const unsealed = { schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
+    actionAttemptId: 'ATT-P1', operationRef: 'AQ-P1',
+    taskType: 'OPENCLAW_OVERALL_SYNTHESIS', priority: 100,
+    tenantId: 'tenant-p1-synthetic', workItemId: pointer.workItemId,
+    inputRevision: 7, baseRevision: 7, documentVersionId: 'DV-P1',
+    sourceRefs: [{ ref: 'artifact://fixture/p1', sha256: 'a'.repeat(64) }],
+    allowedConnectors: [], hostResolvedMissingInputs: [], modelInput,
+    deadline: '2099-01-01T00:00:00.000Z', idempotencyKey: 'p1-synthetic-overall' };
+  const task = { ...unsealed, inputHash: canonicalSha256(unsealed) };
+  const directory = join(input.checkpointRoot, 'successor-overall', pointer.workItemId, pointer.reviewTurnRef);
+  const checkpoint = await createCheckpointStore(directory);
+  const invoke = observe => runHostedSuccessorOverall(pointer, {
+    callTool: async (name, args) => {
+      assert.equal(args.workItemId, pointer.workItemId);
+      if (name === 'get_parse_status') return { integratedAssessmentSummary: { overallSynthesis: null } };
+      if (name === 'begin_overall_synthesis') return { status: 'RUNNING', attemptRef: task.operationRef,
+        leaseToken: 'synthetic-lease-p1', leaseGeneration: 1,
+        leaseExpiresAt: '2099-01-01T00:00:00.000Z', task, modelInput,
+        selectedDiscoveryRefs: [] };
+      if (name === 'heartbeat_action_attempt') return { status: 'RUNNING', attemptRef: task.operationRef,
+        leaseExpiresAt: '2099-01-01T00:00:00.000Z' };
+      assert.fail(`observations cannot reach a Host write: ${name}`);
+    },
+    invokeInitialModel: async (value, hooks) => {
+      assert.equal(value.operation, 'SYNTHESIZE_OVERALL');
+      await observe(hooks);
+      throw new Error('P1_OBSERVATIONS_RECORDED');
+    },
+  });
+  return { checkpoint, directory, invoke };
+}
+
+test('successor observations accept an identical shape twice without replacing its persisted bytes', async t => {
+  const f = await successorObservationFixture(t);
+  const shape = { operation: 'SYNTHESIZE_OVERALL', round: 1, requestBytes: 42, responseBytes: 18 };
+  await assert.rejects(f.invoke(async hooks => {
+    await hooks.observeModelOutput(shape);
+    const before = await readFile(join(f.directory, 'model.output-shape.json'));
+    await hooks.observeModelOutput({ responseBytes: 18, requestBytes: 42, round: 1,
+      operation: 'SYNTHESIZE_OVERALL' });
+    assert.deepEqual(await readFile(join(f.directory, 'model.output-shape.json')), before);
+  }), /P1_OBSERVATIONS_RECORDED/u);
+  assert.deepEqual(await f.checkpoint.readOptional('model.output-shape'), shape);
+});
+
+test('successor observations reject changed metrics without overwriting the prior shape', async t => {
+  const f = await successorObservationFixture(t);
+  const original = { round: 2, requestBytes: 42 };
+  await f.checkpoint.writeOnce('model.output-shape-2', original);
+  const before = await readFile(join(f.directory, 'model.output-shape-2.json'));
+  await assert.rejects(f.invoke(hooks => hooks.observeModelOutput({ round: 2, requestBytes: 43 }, 2)),
+    /REVIEW_CHECKPOINT_VALUE_CHANGED:model.output-shape-2/u);
+  assert.deepEqual(await readFile(join(f.directory, 'model.output-shape-2.json')), before);
+});
+
+test('successor rejection keys keep the same correction number distinct across model rounds', async t => {
+  const f = await successorObservationFixture(t);
+  const reports = [2, 4].map(modelRound => ({ modelRound, correctionNo: 1,
+    errorCode: 'JOBAID_WORK_VALIDATION_FAILED' }));
+  await assert.rejects(f.invoke(async hooks => {
+    for (const report of reports) {
+      await hooks.observeCandidateRejection(report);
+      await hooks.observeCandidateRejection(structuredClone(report));
+    }
+  }), /P1_OBSERVATIONS_RECORDED/u);
+  for (const report of reports) assert.deepEqual(await f.checkpoint.readOptional(
+    `model.candidate-rejection-${report.modelRound}-1`), report);
+  assert.equal(await f.checkpoint.readOptional('model.candidate-rejection-1'), null);
+});
+
+test('successor rejection reuses a legacy key only for the exact round and correction report', async t => {
+  const f = await successorObservationFixture(t);
+  const report = { modelRound: 4, correctionNo: 1, errorCode: 'JOBAID_WORK_VALIDATION_FAILED' };
+  await f.checkpoint.writeOnce('model.candidate-rejection-1', report);
+  const before = await readFile(join(f.directory, 'model.candidate-rejection-1.json'));
+  await assert.rejects(f.invoke(hooks => hooks.observeCandidateRejection(structuredClone(report))),
+    /P1_OBSERVATIONS_RECORDED/u);
+  assert.deepEqual(await readFile(join(f.directory, 'model.candidate-rejection-1.json')), before);
+  assert.equal(await f.checkpoint.readOptional('model.candidate-rejection-4-1'), null);
+  await assert.rejects(f.invoke(hooks => hooks.observeCandidateRejection({ ...report,
+    errorCode: 'JOBAID_WORK_JSON_INVALID' })), /REVIEW_CHECKPOINT_VALUE_CHANGED:model.candidate-rejection-1/u);
+  assert.deepEqual(await readFile(join(f.directory, 'model.candidate-rejection-1.json')), before);
+});
+
+for (const old of [{ modelRound: 2, correctionNo: 1 }, { modelRound: 4, correctionNo: 2 }]) {
+  test(`successor preserves a nonmatching legacy report round=${old.modelRound}, correction=${old.correctionNo}`, async t => {
+    const f = await successorObservationFixture(t);
+    const legacy = { ...old, errorCode: 'JOBAID_WORK_VALIDATION_FAILED' };
+    await f.checkpoint.writeOnce('model.candidate-rejection-1', legacy);
+    const before = await readFile(join(f.directory, 'model.candidate-rejection-1.json'));
+    const current = { modelRound: 4, correctionNo: 1, errorCode: 'JOBAID_WORK_JSON_INVALID' };
+    await assert.rejects(f.invoke(hooks => hooks.observeCandidateRejection(current)), /P1_OBSERVATIONS_RECORDED/u);
+    assert.deepEqual(await readFile(join(f.directory, 'model.candidate-rejection-1.json')), before);
+    assert.deepEqual(await f.checkpoint.readOptional('model.candidate-rejection-4-1'), current);
+  });
+}
