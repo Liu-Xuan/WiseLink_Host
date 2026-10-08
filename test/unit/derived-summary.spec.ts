@@ -53,6 +53,31 @@ describe('Explicit candidate aggregate admission', () => {
     expect(() => summaryCitations(content, new Set(['member-ref']))).toThrow('DERIVED_SUMMARY_CITATION_INVALID');
     expect(() => parseSummaryContent({ ...content, members: ['forged'] })).toThrow();
   });
+  it('validates registered headline/listBrief refs while retaining only body/limitation refs for use', () => {
+    const allowed = new Set(['member-ref', 'source-old']);
+    const content = parseSummaryContent({ headline: '成员标题 [[member-ref]]', listBrief: '摘要 [[member-ref]]',
+      body: '原文依据 [[source-old]]', limitations: [] });
+    expect(summaryCitations(content, allowed)).toEqual(['source-old']);
+    const bodyRefs = summaryCitations({ ...content, limitations: [] }, allowed);
+    expect(bodyRefs.includes('member-ref')).toBe(false);
+    expect(summaryCitations({ ...content, limitations: ['限制 [[member-ref]]'] }, allowed)).toEqual(['source-old', 'member-ref']);
+  });
+  it.each(['headline', 'listBrief'] as const)('rejects an unregistered %s citation without changing the content', field => {
+    const content = parseSummaryContent({ headline: '成员标题', listBrief: '有限范围', body: '依据 [[source-old]]', limitations: [] });
+    content[field] = '未知引用 [[foreign-header]]';
+    const before = JSON.stringify(content);
+    expect(() => summaryCitations(content, new Set(['member-ref', 'source-old'])))
+      .toThrow('DERIVED_SUMMARY_CITATION_INVALID');
+    expect(JSON.stringify(content)).toBe(before);
+  });
+  it('does not let registered header citations satisfy the runtime body-support check', () => {
+    const content = parseSummaryContent({ headline: '标题 [[member-ref]]', listBrief: '摘要 [[source-old]]',
+      body: '没有正文支持引用', limitations: ['限制 [[member-ref]]'] });
+    const allowed = new Set(['member-ref', 'source-old']);
+    // Runtime checks body separately from the preserved body/limitations union.
+    expect(summaryCitations(content, allowed)).toEqual(['member-ref']);
+    expect(() => summaryCitations({ ...content, limitations: [] }, allowed)).toThrow('DERIVED_SUMMARY_CITATION_INVALID');
+  });
 });
 
 describe('Derived summary MCP exact subject and transport', () => {

@@ -372,6 +372,29 @@ test('selected upper summary delivers the exact child and leaves with their limi
   assert.match(messages[0].content, /inherited source read is not a fresh verification/);
 });
 
+test('registered headline/listBrief refs remain separate from body support and direct member use', () => fixture(async root => {
+  const headerContent = { ...sourceOnlyContent, headline: 'Selected [[member-ref]]', listBrief: 'Scope [[root-ref]]' };
+  assert.equal(validateDerivedSummaryContent(headerContent, modelInput), headerContent);
+  const h = harness(root, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', content: headerContent }) });
+  await consumeHostedDerivedSummary(h.options, h.dependencies);
+  assert.equal(h.saved.summary.coverage[0].delivered, true);
+  assert.equal(h.saved.summary.coverage[0].used, false);
+  assert.deepEqual(h.saved.summary.coverage[0].rootRefs, ['root-ref']);
+}));
+
+for (const field of ['headline', 'listBrief']) test(`unregistered ${field} ref is rejected by the exact canonical registry`, () => {
+  const candidate = { ...content, [field]: 'Unknown [[foreign-header]]' };
+  const before = JSON.stringify(candidate);
+  assert.throws(() => validateDerivedSummaryContent(candidate, modelInput), /DERIVED_SUMMARY_CITATION_NOT_REGISTERED/);
+  assert.equal(JSON.stringify(candidate), before);
+});
+
+test('registered header citations cannot replace mandatory body support', () => {
+  const candidate = { ...content, headline: 'Selected [[member-ref]]', listBrief: 'Scope [[root-ref]]',
+    body: 'No body support', limitations: ['Registered limitation [[member-ref]]'] };
+  assert.throws(() => validateDerivedSummaryContent(candidate, modelInput), /DERIVED_SUMMARY_CITATION_NOT_REGISTERED/);
+});
+
 test('citation registry rejects foreign source/body injection and keeps member/source read kinds distinct', () => {
   const registry = derivedSummaryRegistry(modelInput);
   for (const intent of [

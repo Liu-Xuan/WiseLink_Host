@@ -135,7 +135,7 @@ export function validateDerivedSummaryContent(content, modelInput) {
     fail('DERIVED_SUMMARY_CONTENT_INVALID');
   const registry = derivedSummaryRegistry(modelInput);
   const bodyRefs = [...content.body.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]);
-  const refs = [...`${content.body}\n${content.limitations.join('\n')}`.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]);
+  const refs = [...`${content.headline}\n${content.listBrief}\n${content.body}\n${content.limitations.join('\n')}`.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]);
   // Match Host save: the body needs registered support, not a forced member citation.
   // Direct member use remains a separate coverage fact in the saved revision.
   if (!bodyRefs.length || refs.some(ref => !registry.members.has(ref) && !registry.evidence.has(ref)))

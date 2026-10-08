@@ -100,9 +100,11 @@ export function parseSummaryContent(input: unknown): DerivedSummaryContent {
 }
 
 export function summaryCitations(content: DerivedSummaryContent, allowedRefs: Set<string>): string[] {
+  const headerRefs = [...`${content.headline}\n${content.listBrief}`.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]!);
   const refs = [...new Set([...`${content.body}\n${content.limitations.join('\n')}`.matchAll(/\[\[([^\]]+)\]\]/gu)]
     .map(match => match[1]!))];
-  if (!refs.length || refs.some(ref => !allowedRefs.has(ref))) throw summaryError('DERIVED_SUMMARY_CITATION_INVALID', 400);
+  // Headers must be registered, but never become body support or coverage use.
+  if (!refs.length || [...headerRefs, ...refs].some(ref => !allowedRefs.has(ref))) throw summaryError('DERIVED_SUMMARY_CITATION_INVALID', 400);
   return refs;
 }
 
