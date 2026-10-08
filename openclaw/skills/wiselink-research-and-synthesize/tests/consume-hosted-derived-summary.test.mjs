@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { consumeHostedDerivedSummary, derivedSummaryCliTarget, withSummaryHeartbeat } from '../scripts/consume-hosted-derived-summary.mjs';
-import { invokeHostedDerivedSummaryModel, derivedSummaryModelMessages, derivedSummaryModelView, DERIVED_SUMMARY_PROMPT_VERSION } from '../scripts/invoke-hosted-derived-summary-model.mjs';
+import { invokeHostedDerivedSummaryModel, derivedSummaryModelMessages, derivedSummaryModelView, derivedSummaryCachePrefixModelMessages,
+  DERIVED_SUMMARY_PROMPT_VERSION, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION } from '../scripts/invoke-hosted-derived-summary-model.mjs';
 import { derivedSummaryRegistry, validateDerivedSummaryTask, validateDerivedSummaryContent,
   materializeDerivedSummaryContent, normalizeDerivedSummaryContent,
   validateDerivedSummaryReadSelection } from '../scripts/derived-summary-shape.mjs';
@@ -168,7 +169,7 @@ test('real summary adapter reads exact members and roots then saves, exact-reads
   assert.match(systemPrompt, /Follow the length requested by this task instruction/);
   const checkpoint = await createCheckpointStore(join(root, 'derived-summary', 'host', 'DS-one', 'AQ-one'));
   assert.equal((await checkpoint.readOptional('summary-candidate')).provenance.actualModel, 'synthetic-actual/model-v1');
-  assert.equal(h.saved.summary.producer.promptVersion, DERIVED_SUMMARY_PROMPT_VERSION);
+  assert.equal(h.saved.summary.producer.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION);
   assert.deepEqual(h.saved.summary.content, content);
 }));
 
@@ -609,7 +610,7 @@ test('new deduplicated multi-round state keeps v2 instructions and explicit inpu
   const h = harness(root, { gateway: n => gatewayStep(steps[n - 1], `dedup-call-${n}`) });
   await consumeHostedDerivedSummary(h.options, h.dependencies);
   const state = await (await summaryCheckpoint(root)).readOptional('summary-model-state');
-  assert.equal(state.promptVersion, DERIVED_SUMMARY_PROMPT_VERSION);
+  assert.equal(state.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION);
   assert.equal(state.messages[0].content, legacySummaryV2SystemMessage);
   assert.equal(state.round, 2);
   assert.equal(h.saved.summary.producer.promptVersion, state.promptVersion);
@@ -1141,7 +1142,7 @@ test('P2 repeated member/source READs keep exact receipts and complete call pair
     : { action: 'SAVE_SUMMARY', content }, `p2-repeat-${n}`) });
   await consumeHostedDerivedSummary(h.options, h.dependencies);
   const checkpoint = await summaryCheckpoint(root); const state = await checkpoint.readOptional('summary-model-state');
-  assert.equal(state.round, reads.length); assert.equal(state.promptVersion, DERIVED_SUMMARY_PROMPT_VERSION);
+  assert.equal(state.round, reads.length); assert.equal(state.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION);
   assert.equal(state.messages[0].content, legacySummaryV2SystemMessage);
   for (let round = 0; round < reads.length; round++) {
     const receipt = await checkpoint.readOptional(`summary-round-${round}-read`);
@@ -1369,4 +1370,115 @@ test('stored initial notices stay original when a later Host read supplies fresh
   assert.equal(h.gatewayCalls.length, 0);
   assert.deepEqual(await checkpoint.readOptional('summary-model-state'), state);
   assert.deepEqual(JSON.parse(state.messages[1].content.split('INPUT:\n')[1]).members[0].limitations, reading.limitations);
+}));
+
+// Cache-prefix version: fresh state uses the new layout, old checkpoints do not.
+for (const advanced of [false, true])
+  test(`cache-prefix synthesis restores ${advanced ? 'advanced' : 'receipt-only'} READ bytes and hashes without redispatch`, () => fixture(async root => {
+    const input = modelInput;
+    const promptVersion = DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION;
+    const checkpoint = await summaryCheckpoint(root); const initial = derivedSummaryCachePrefixModelMessages(input);
+    const step = { action: 'READ_SOURCES', evidenceRefs: ['root-ref'], purpose: 'Restore exact read arguments' };
+    const payload = JSON.parse(await gatewayStep(step, 'original-cache-prefix-tool-id').text());
+    // Deliberately retain whitespace in original arguments rather than normalizing them.
+    payload.choices[0].message.tool_calls[0].function.arguments = ` { "step" : ${JSON.stringify(step)} } `;
+    const raw = JSON.stringify(payload); const call = payload.choices[0].message.tool_calls[0];
+    const receipt = { evidence: [source] };
+    await checkpoint.remoteStep({ step: 'summary-round-0', args: { ...legacyRoundArgs(initial), promptVersion },
+      ambiguousCommit: false, perform: async () => ({ raw, status: 200, ok: true }) });
+    await checkpoint.writeOnce('summary-round-0-read', receipt);
+    const projected = projectDerivedSummaryReadReceipt(receipt, step, derivedSummaryRegistry(input),
+      createDerivedSummaryDeliveredView(JSON.parse(initial[1].content.split('INPUT:\n')[1])), { round: 0, messageIndex: 3 });
+    const messages = [...initial, { role: 'assistant', content: null, tool_calls: [call] },
+      { role: 'tool', tool_call_id: call.id, content: canonicalJson(projected) }];
+    const saveRaw = await gatewayStep({ action: 'SAVE_SUMMARY', content }, 'original-cache-prefix-save-id').text();
+    await checkpoint.remoteStep({ step: 'summary-round-1', args: { ...legacyRoundArgs(messages), promptVersion },
+      ambiguousCommit: false, perform: async () => ({ raw: saveRaw, status: 200, ok: true }) });
+    await checkpoint.write('summary-model-state', { round: advanced ? 1 : 0, promptVersion, messages: advanced ? messages : initial });
+    const keys = ['summary-round-0.result', 'summary-round-0-read', 'summary-round-1.result'];
+    const before = await Promise.all(keys.map(key => checkpoint.readOptional(key)));
+    const h = harness(root);
+    await consumeHostedDerivedSummary(h.options, h.dependencies);
+    assert.equal(h.gatewayCalls.length, 0);
+    assert.equal(h.calls.filter(call => call.operation === 'READ_SOURCES').length, 0);
+    assert.deepEqual((await checkpoint.readOptional('summary-model-state')).messages, messages);
+    assert.deepEqual(await Promise.all(keys.map(key => checkpoint.readOptional(key))), before);
+    assert.equal(messages[2].tool_calls[0].function.arguments, call.function.arguments);
+  }));
+
+test(`cache-prefix synthesis completed SAVE resumes exact bytes with zero dispatch`, () => fixture(async root => {
+  const input = modelInput;
+  const promptVersion = DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION;
+  const checkpoint = await summaryCheckpoint(root);
+  const messages = derivedSummaryCachePrefixModelMessages(input);
+  const state = { round: 0, promptVersion, messages };
+  await checkpoint.write('summary-model-state', state);
+  const raw = await gatewayStep({ action: 'SAVE_SUMMARY', content }, 'cache-prefix-original-save').text();
+  await checkpoint.remoteStep({ step: 'summary-round-0', args: { ...legacyRoundArgs(messages), promptVersion },
+    ambiguousCommit: false, perform: async () => ({ raw, status: 200, ok: true }) });
+  const before = await checkpoint.readOptional('summary-round-0.result');
+  const originalInvocation = { sessionDiscriminator: `${target.attemptRef}:1` };
+  await checkpoint.writeOnce('summary-invocation', originalInvocation);
+  const h = harness(root);
+  h.generation = 2;
+  await consumeHostedDerivedSummary(h.options, h.dependencies);
+  assert.equal(h.gatewayCalls.length, 0);
+  assert.equal(h.saved.summary.producer.promptVersion, promptVersion);
+  assert.deepEqual(await checkpoint.readOptional('summary-model-state'), state);
+  assert.deepEqual(await checkpoint.readOptional('summary-round-0.result'), before);
+  assert.deepEqual(await checkpoint.readOptional('summary-invocation'), originalInvocation);
+}));
+
+test(`cache-prefix synthesis refuses old JSON relabeled new without rewriting it`, () => fixture(async root => {
+  const input = modelInput;
+  const promptVersion = DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION;
+  const checkpoint = await summaryCheckpoint(root);
+  const state = { round: 0, promptVersion, messages: derivedSummaryModelMessages(input) };
+  await checkpoint.write('summary-model-state', state);
+  const h = harness(root);
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /MODEL_PROMPT_BINDING_INVALID/);
+  assert.equal(h.gatewayCalls.length, 0);
+  assert.deepEqual(await checkpoint.readOptional('summary-model-state'), state);
+}));
+
+test('cache-prefix unknown provider dispatch preserves original started hash and never redispatches', () => fixture(async root => {
+  const checkpoint = await summaryCheckpoint(root);
+  const messages = derivedSummaryCachePrefixModelMessages(modelInput);
+  const promptVersion = DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION;
+  const state = { round: 0, promptVersion, messages };
+  await checkpoint.write('summary-model-state', state);
+  await assert.rejects(checkpoint.remoteStep({ step: 'summary-round-0', args: { ...legacyRoundArgs(messages), promptVersion },
+    ambiguousCommit: false, perform: async () => { throw new Error('synthetic unresolved cache-prefix dispatch'); } }));
+  const before = await checkpoint.readOptional('summary-round-0.started');
+  const h = harness(root);
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /OUTCOME_UNKNOWN/);
+  assert.equal(h.gatewayCalls.length, 0);
+  assert.deepEqual(await checkpoint.readOptional('summary-model-state'), state);
+  assert.deepEqual(await checkpoint.readOptional('summary-round-0.started'), before);
+}));
+
+for (const key of ['summary-round-0.started', 'summary-round-0.result', 'summary-gateway.started'])
+  test(`cache-prefix missing state with ${key} stays fenced before round0`, () => fixture(async root => {
+    const checkpoint = await summaryCheckpoint(root);
+    await checkpoint.write(key, { retained: 'existing history, never reset' });
+    const h = harness(root);
+    await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /MODEL_PROMPT_BINDING_INVALID/);
+    assert.equal(h.gatewayCalls.length, 0);
+    assert.equal(await checkpoint.readOptional('summary-model-state'), null);
+    assert.deepEqual(await checkpoint.readOptional(key), { retained: 'existing history, never reset' });
+  }));
+
+
+test('fresh cache-prefix state has explicit version, exact ordered INPUT and original v2 instructions', () => fixture(async root => {
+  const h = harness(root); await consumeHostedDerivedSummary(h.options, h.dependencies);
+  const checkpoint = await summaryCheckpoint(root); const state = await checkpoint.readOptional('summary-model-state');
+  assert.equal(state.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION);
+  assert.deepEqual(state.messages, derivedSummaryCachePrefixModelMessages(modelInput));
+  assert.deepEqual(h.gatewayCalls[0].messages, state.messages);
+  assert.equal(state.messages[0].content, legacySummaryV2SystemMessage);
+  const view = JSON.parse(state.messages[1].content.split('INPUT:\n')[1]);
+  assert.deepEqual(view, derivedSummaryModelView(modelInput));
+  assert.deepEqual(Object.keys(view), ['evidence', 'members', 'classificationStatus', 'scope', 'limitations', 'instruction']);
+  assert.equal((await checkpoint.readOptional('summary-round-0.result')).argsHash,
+    canonicalSha256({ ...legacyRoundArgs(state.messages), promptVersion: state.promptVersion }));
 }));
