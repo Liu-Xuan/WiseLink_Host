@@ -5,7 +5,7 @@ import { Button } from '@client/src/components/ui/button';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { getEngineeringMatter } from '@client/src/api/engineering-matter';
-import { selectMatterTimelineSources } from '@client/src/features/navigation/shell-utils';
+import { selectMatterDocumentSources } from '@client/src/features/matter/matter-document-sources';
 import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
 import { readDocumentActivityReading, readDocumentParsingStatus, subscribeCanonicalHostClientSession, getCanonicalHostClientSessionGeneration, getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
 import type { AnyDocumentActivityReadingResponse as DocumentActivityReadingResponse } from '@shared/document-activity.interface';
@@ -343,7 +343,7 @@ function TimelineMatterSourceResolver({ matterId, pagePath, searchParams }: { ma
       try {
         const read = await getEngineeringMatter(matterId, controller.signal);
         if (controller.signal.aborted || epochRef.current !== epoch || session !== getCanonicalHostClientSessionGeneration()) return;
-        const source = selectMatterTimelineSources(read.catalog.entries)[0];
+        const source = selectMatterDocumentSources(read)[0];
         if (source) {
           const query = activityReadingParams(searchParams);
           query.set('documentVersionId', source.document.documentVersionId);

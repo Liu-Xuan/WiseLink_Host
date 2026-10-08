@@ -39,7 +39,7 @@ it('rejects ambiguous explicit work refs instead of showing current work', () =>
   expect(render('&workRef=')).toContain('指定工作身份无效');
 });
 it('opens exact work and exact original source from graph actions', () => {
-  render();
+  render('&workRef=test-working-3');
   mockProps.onOpenWiki!();
   expect(mockNavigate.mock.calls.at(-1)![0]).toContain('workRef=test-working-3');
   mockProps.onOpenProcess!();
@@ -60,7 +60,7 @@ it('returns from a work-item page locator to the exact graph view', () => {
     zoom: 0.7,
     pan: { x: 20, y: -30 },
   }));
-  render(`&selectedId=question-a&perspective=documents&viewport=${viewport}`);
+  render(`&workRef=test-working-3&selectedId=question-a&perspective=documents&viewport=${viewport}`);
   mockProps.onLocateEvidence!({
     kind: 'DOCUMENT_PASSAGE',
     evidenceRef: 'page-evidence',
@@ -145,9 +145,19 @@ it('opens a saved statement timeline with exact pins and graph return state', ()
   expect(route.searchParams.get('returnDocumentVersionId')).toBe('dv-a');
   const graph = new URLSearchParams(route.searchParams.get('returnGraphQuery')!);
   expect(graph.get('matterId')).toBe('ui-test-matter');
-  expect(graph.get('workRef')).toBe('test-working-3');
+  expect(graph.get('workRef')).toBeNull();
   expect(graph.get('perspective')).toBe('documents');
   expect(graph.get('density')).toBe('5');
+});
+
+it('keeps an unpinned current graph return unpinned while reading the exact saved work', () => {
+  render('&density=3');
+  mockProps.onOpenWiki!();
+  const route = new URL(mockNavigate.mock.calls.at(-1)![0], 'https://example.test');
+  expect(route.searchParams.get('workRef')).toBe('test-working-3');
+  const graph = new URLSearchParams(route.searchParams.get('returnGraphQuery')!);
+  expect(graph.has('workRef')).toBe(false);
+  expect(graph.get('density')).toBe('3');
 });
 
 it('requests an unloaded source only through the explicit expand action', () => {
@@ -183,4 +193,49 @@ it('keeps a usable view when historical work requests an unavailable perspective
   render('&workRef=old-work&perspective=domain');
   expect(mockProps).toBeDefined();
   mockHistorical = false;
+});
+
+it('feeds native material versions to both embedded source loading and the statement timeline', () => {
+  const before = mockData.matter.materials;
+  mockData.matter.materials = [{ materialId: 'native-dv-a', kind: 'MEMBER', disposition: 'INCLUDED', origin: 'DEFAULT_INTAKE', scope: 'registered', contribution: 'source', basis: [], familyId: 'family-a', documentVersionId: 'dv-a' }];
+  mockData.matter.catalog.entries = [];
+  mockActivities.set('dv-a', {candidate: activityCandidate(), familyId:'family-a'});
+  try {
+    render();
+    const input = mockSourcesInput as typeof mockSourcesInput & {catalog: Array<{document:{documentVersionId:string}}>};
+    expect(input.catalog.map(source => source.document.documentVersionId)).toEqual(['dv-a']);
+    expect(mockProps.timelineEvents?.some(event => event.pins?.documentVersionId === 'dv-a')).toBe(true);
+    render('&workRef=test-working-3');
+    const historicalInput = mockSourcesInput as typeof input;
+    expect(historicalInput.catalog).toEqual([]);
+    expect(mockProps.timelineEvents?.some(event => event.pins?.documentVersionId === 'dv-a')).toBe(false);
+  } finally { mockData.matter.materials = before; mockActivities.clear(); }
+});
+
+it('opens independent selected-document neighborhood only from unpinned current matter sources', () => {
+  mockHistorical=false;
+  render();
+  expect(mockProps.onOpenDocumentNeighborhood).toBeDefined();
+  mockProps.onOpenDocumentNeighborhood!({kind:'catalog-document',entry:catalogEntry('dv-old')});
+  const url=new URL(mockNavigate.mock.calls.at(-1)![0],'https://example.test');
+  expect(url.pathname).toBe('/graph');
+  expect(url.searchParams.get('scope')).toBe('document');
+  expect(url.searchParams.get('documentVersionId')).toBe('dv-old');
+  expect(url.searchParams.get('readerWorkItemId')).toBe('wi-timeline');
+  expect(url.searchParams.has('matterId')).toBe(false);
+  render('&workRef=historical-work');
+  expect(mockProps.onOpenDocumentNeighborhood).toBeUndefined();
+});
+
+it('does not resurrect an excluded source through its old catalog entry', () => {
+  const before = mockData.matter.materials;
+  mockData.matter.materials = [{ materialId: 'excluded', kind: 'MEMBER', disposition: 'EXCLUDED', origin: 'ENGINEER', scope: '', contribution: '', basis: [], familyId: 'family-a', documentVersionId: 'dv-a' }];
+  mockData.matter.catalog.entries = [catalogEntry('dv-a')];
+  mockActivities.set('dv-a', { candidate: activityCandidate(), familyId: 'family-a' });
+  try {
+    render();
+    expect((mockSourcesInput as typeof mockSourcesInput & { catalog: unknown[] }).catalog).toEqual([]);
+    expect(mockProps.timelineEvents?.some(event => event.pins?.documentVersionId === 'dv-a')).toBe(false);
+    expect([...mockProps.read.targets.values()].some(target => target.kind === 'catalog-document')).toBe(false);
+  } finally { mockData.matter.materials = before; mockActivities.clear(); }
 });

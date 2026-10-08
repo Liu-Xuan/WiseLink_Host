@@ -1,3 +1,4 @@
+import { selectMatterDocumentSources, matterDocumentSourceLabel } from '@client/src/features/matter/matter-document-sources';
 import type { EngineeringMatterWorkingRevisionReadModel, EngineeringMatterWorkingInputBinding, EngineeringMatterWorkingTextItem } from '@shared/matter-working.interface';
 import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering-matter';
 import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
@@ -32,14 +33,26 @@ export interface SuiteMatterGraphRead {
   relationDetails: Map<string, SuiteRelationDetail>;
   notices: string[];
   workRef: string | null;
-  /** True when the view reads an exact historical saved work, not the current one. */
+  /** True only when the selected work is older than the current work. */
   historical?: boolean;
+  /** Explicit selection freezes saved inputs and evidence, even when it is current. */
+  pinnedSavedWork?: boolean;
   overviewStatus: 'CURRENT' | 'STALE' | 'NOT_AVAILABLE' | null;
   missingEvidenceRefs: string[];
 }
 
 const identity = (...parts: string[]) => JSON.stringify(parts);
 const premiseLabels = { SUPPORTS: '支持', LIMITS: '限定', CONTEXT: '背景', CONFLICTS: '冲突' };
+
+function canonicalEvidence(value: unknown): string {
+  const sort = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(sort);
+    if (item === null || typeof item !== 'object') return item;
+    const fields = item as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(fields).sort().map(key => [key, sort(fields[key])]));
+  };
+  return JSON.stringify(sort(value));
+}
 
 /** Project authorized saved identities only; presentation groups are not engineering entities. */
 export function buildSuiteMatterGraph(read: EngineeringMatterWorkspaceRead, selection?: {workRef: string; revision: EngineeringMatterWorkingRevisionReadModel | null}): SuiteMatterGraphRead {
@@ -49,6 +62,7 @@ export function buildSuiteMatterGraph(read: EngineeringMatterWorkspaceRead, sele
     throw new Error('指定历史工作尚未准确读回，不显示其他版本。');
   }
   const historical = Boolean(selection && current?.matterWorkRevisionId !== working.current?.matterWorkRevisionId);
+  const pinnedSavedWork = Boolean(selection);
   const result = current?.state.substantiveResult;
   if (working.matterId !== matter.matterId || working.currentMatterRevisionId !== matter.currentRevision.matterRevisionId) {
     throw new Error('事项与保存工作范围不一致，请重新读取。');
@@ -67,8 +81,8 @@ export function buildSuiteMatterGraph(read: EngineeringMatterWorkspaceRead, sele
   const missing = new Set<string>();
   const relationDetails = new Map<string, SuiteRelationDetail>();
   const notices: string[] = [];
-  if (!historical && !matter.materials) notices.push('当前读取未提供事项材料关系，不能据此认定没有材料。');
-  if (!historical && working.pendingInputs.length) notices.push(`${working.pendingInputs.length} 项资料变化待核对。`);
+  if (!pinnedSavedWork && !matter.materials) notices.push('当前读取未提供事项材料关系，不能据此认定没有材料。');
+  if (!pinnedSavedWork && working.pendingInputs.length) notices.push(`${working.pendingInputs.length} 项资料变化待核对。`);
   const add = (key: string, groupTitle: string, id: string, title: string, subtitle: string, target: SuiteMatterGraphTarget) => {
     if (targets.has(id)) throw new Error('图谱读回存在重复对象身份。');
     const group = groups.get(key) ?? { key, title: groupTitle, items: [] };
@@ -76,18 +90,19 @@ export function buildSuiteMatterGraph(read: EngineeringMatterWorkspaceRead, sele
     groups.set(key, group);
     targets.set(id, target);
   };
-  for (const material of historical ? [] : matter.materials ?? []) {
+  const currentSources = new Map((pinnedSavedWork ? [] : selectMatterDocumentSources(matter)).map(source => [source.document.documentVersionId, source]));
+  for (const material of pinnedSavedWork ? [] : matter.materials ?? []) {
     if (material.disposition !== 'INCLUDED') { notices.push(`已排除资料：${material.contribution || material.materialId}`); continue; }
     const id = identity('material', material.materialId);
     const catalog = matter.catalog.entries.find(entry => entry.document.documentVersionId === material.documentVersionId);
     const title = material.kind === 'EXPECTED' ? material.expected.documentNumber || material.expected.description :
-      catalog ? `${catalog.document.documentCode} · ${catalog.document.businessRevision}` : '资料版本';
+      matterDocumentSourceLabel(currentSources.get(material.documentVersionId) ?? { document: { documentVersionId: material.documentVersionId } });
     const labels = { MEMBER: '事项资料', RELATED: '参考资料', EXPECTED: '预计资料' };
     add(material.kind, labels[material.kind], id, title,
       material.contribution || (catalog ? '' : material.documentVersionId), { kind: 'material', material });
     relationDetails.set(identity('material-link', material.materialId), material);
     relations.push({ id: identity('material-link', material.materialId), source: root, target: id, type: material.kind, label: labels[material.kind] });
-    if (material.kind === 'EXPECTED') {
+    if (material.kind === 'EXPECTED' && material.expected.acquisitionStatus !== 'NOT_ACQUIRED') {
       for (const [index, fulfilled] of material.expected.fulfilledBy.entries()) {
         const documentId = identity('document', fulfilled.documentVersionId);
         if (!targets.has(documentId)) {
@@ -101,8 +116,8 @@ export function buildSuiteMatterGraph(read: EngineeringMatterWorkspaceRead, sele
     }
   }
   const workRef = current?.matterWorkRevisionId ?? null;
-  if (historical && current && workRef) {
-    notices.push('正在阅读指定历史工作；当前材料目录不作为当时采用的依据。');
+  if (pinnedSavedWork && current && workRef) {
+    notices.push('正在阅读指定保存工作；当前材料目录不作为该工作采用的依据。');
     for (const binding of current.state.substantiveInputs) {
       const id = identity('input', workRef, binding.inputId);
       add('inputs', '当时保存的输入', id, '资料版本', binding.documentVersionId,
@@ -115,10 +130,23 @@ export function buildSuiteMatterGraph(read: EngineeringMatterWorkspaceRead, sele
       for (const item of items) add('questions', '继续核对', identity('question', workRef, kind, item.itemId), item.text, kind === 'review' ? '复看条件' : '未决问题', {kind: 'question', item, workRef});
     }
   }
-  if (result && workRef) {
-    for (const evidence of result.evidence) {
+  if (current && workRef) {
+    const evidenceByRef = new Map<string, AssessmentEvidence>();
+    for (const evidence of [
+      ...(result?.evidence ?? []),
+      ...(current.state.problemWork?.evidence ?? []),
+    ]) {
+      const prior = evidenceByRef.get(evidence.evidenceRef);
+      if (prior && canonicalEvidence(prior) !== canonicalEvidence(evidence)) {
+        throw new Error('同一保存工作中的 evidenceRef 指向冲突依据。');
+      }
+      evidenceByRef.set(evidence.evidenceRef, evidence);
+    }
+    for (const evidence of evidenceByRef.values()) {
       add('evidence', '认识依据', identity('evidence', workRef, evidence.evidenceRef), evidence.title, evidence.versionLabel ?? '', { kind: 'evidence', evidence, workRef });
     }
+  }
+  if (result && workRef) {
     for (const claim of result.content.claims) {
       const id = identity('claim', workRef, claim.claimId);
       add('claims', '已保存认识', id, claim.text, claim.basis === 'CONDITIONAL_INFERENCE' ? '有条件的推断 · 候选意见' : '来源陈述 · 待工程师核对', { kind: 'claim', claim, workRef });
@@ -133,7 +161,8 @@ export function buildSuiteMatterGraph(read: EngineeringMatterWorkspaceRead, sele
   }
   return {
     graph: { id: root, title: matter.title, rootKind: 'matter', groups: [...groups.values()], relations },
-    targets, relationDetails, notices, workRef, historical, overviewStatus: current?.state.problemWork?.overviewStatus ?? null,
+    targets, relationDetails, notices, workRef, historical, pinnedSavedWork,
+    overviewStatus: current?.state.problemWork?.overviewStatus ?? null,
     missingEvidenceRefs: [...missing],
   };
 }
@@ -155,11 +184,11 @@ export function suiteGraphDocumentNodeId(targets: ReadonlyMap<string, SuiteMatte
 /**
  * Append registered catalog documents that have no node yet (no material link, not
  * fulfilled, not a saved input). The catalog association itself is a registered
- * relation; nothing is inferred from titles. Historical views never receive current
- * registrations.
+ * relation; nothing is inferred from titles. Pinned saved work never receives
+ * current registrations.
  */
 export function appendSuiteGraphCatalogDocuments(read: SuiteMatterGraphRead, catalog: EngineeringMatterCatalogEntry[]): SuiteMatterGraphRead {
-  if (read.historical || catalog.length === 0) return read;
+  if (read.pinnedSavedWork || read.historical || catalog.length === 0) return read;
   const targets = new Map(read.targets);
   const relationDetails = new Map(read.relationDetails);
   const relations = [...read.graph.relations];
@@ -214,7 +243,7 @@ export function suiteGraphStatementNodeId(targets: ReadonlyMap<string, SuiteMatt
  * edges only connect a document node already in the graph to its own saved statements.
  */
 export function appendSuiteGraphActivityStatements(read: SuiteMatterGraphRead, activities: ReadonlyMap<string, SuiteGraphActivityCandidate>): SuiteMatterGraphRead {
-  if (read.historical || activities.size === 0) return read;
+  if (read.pinnedSavedWork || read.historical || activities.size === 0) return read;
   const targets = new Map(read.targets);
   const relationDetails = new Map(read.relationDetails);
   const relations = [...read.graph.relations];

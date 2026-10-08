@@ -209,7 +209,20 @@ describe('engineering timeline page gates', () => {
     await act(async () => undefined);
     expect(mockMatter).toHaveBeenCalledTimes(1);
     expect(mockLibraryDocuments).not.toHaveBeenCalled();
-    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBe('DV-CUR');
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBe('DV-OLD');
+  });
+
+  it('resolves a native acquired source without requiring a WorkItem and preserves its exact old version', async () => {
+    mockMatter.mockResolvedValue({ materials: [
+      { kind: 'MEMBER', materialId: 'excluded', disposition: 'EXCLUDED', familyId: 'F', documentVersionId: 'DV-EXCLUDED' },
+      { kind: 'MEMBER', materialId: 'native', disposition: 'INCLUDED', familyId: 'F', documentVersionId: 'DV-NATIVE-OLD' },
+    ], catalog: { entries: [matterEntry('DV-EXCLUDED', false), matterEntry('DV-CUR', true)] } });
+    mockStatus.mockImplementation(() => new Promise(() => undefined));
+    await mount('/timeline?matterId=M1');
+    await act(async () => undefined);
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBe('DV-NATIVE-OLD');
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+    expect(mockStatus).toHaveBeenCalledWith('DV-NATIVE-OLD', expect.any(AbortSignal));
   });
 
   it('blocks a matter entry that registers no document version without falling back to the global catalog', async () => {

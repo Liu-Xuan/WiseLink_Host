@@ -30,6 +30,7 @@ export interface SuiteGraphKnowledgePanelProps {
   onTabChange: (tab: SuiteGraphKnowledgeTab) => void;
   onLocateEvidence?: (evidence: DocumentAssessmentEvidence) => void;
   onOpenTarget?: (target: SuiteMatterGraphTarget) => void;
+  onOpenDocumentNeighborhood?: (target: SuiteMatterGraphTarget) => void;
   onOpenWiki?: () => void;
   onClearSelection?: () => void;
 }
@@ -240,6 +241,7 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
   onTabChange,
   onLocateEvidence,
   onOpenTarget,
+  onOpenDocumentNeighborhood,
   onOpenWiki,
   onClearSelection,
 }: SuiteGraphKnowledgePanelProps) {
@@ -415,6 +417,9 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
             onLocateEvidence={onLocateEvidence}
             onOpenTarget={onOpenTarget}
           />
+          {onOpenDocumentNeighborhood && ['document', 'catalog-document', 'material'].includes(selectedTarget.kind)
+            && (selectedTarget.kind !== 'material' || selectedTarget.material.documentVersionId) ?
+            <Button variant="outline" onClick={() => onOpenDocumentNeighborhood(selectedTarget)}>相关资料与时间</Button> : null}
         </>
       );
     }

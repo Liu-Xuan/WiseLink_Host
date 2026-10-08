@@ -51,3 +51,12 @@ describe('document library associated assessment', () => {
     expect(wrongVersion).not.toContain('/work-items/WI-NEW/analysis?panel=assessment');
   });
 });
+
+it('opens the exact selected historical document neighborhood rather than the family current version or a default matter', () => {
+  const family=libraryFamily('787');
+  const old=family.versions[1];
+  const html=renderToStaticMarkup(createElement(StaticRouter,{location:`/library?selectedDocumentVersionId=${old.documentVersionId}`},
+    createElement(LibraryDocumentDetails,{document:family,assessmentQuicklook:{data:null,loading:false,error:null,accessDenied:false},onRefresh:jest.fn(),onViewTasks:jest.fn()})));
+  expect(html).toContain(`scope=document&amp;documentVersionId=${old.documentVersionId}&amp;readerWorkItemId=${old.readerWorkItemId}`);
+  expect(html).toContain('相关资料与时间');
+});

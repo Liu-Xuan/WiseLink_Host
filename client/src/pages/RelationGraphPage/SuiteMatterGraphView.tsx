@@ -61,6 +61,7 @@ export interface SuiteMatterGraphViewProps {
   onOpenWiki?: () => void;
   onOpenProcess?: () => void;
   onOpenTarget?: (target: SuiteMatterGraphTarget) => void;
+  onOpenDocumentNeighborhood?: (target: SuiteMatterGraphTarget) => void;
   timelineEvents?: SuiteGraphTimelineEvent[];
   timelineSources?: SuiteGraphTimelineSource[];
   timelineLoading?: boolean;
@@ -160,6 +161,7 @@ export default function SuiteMatterGraphView({
   onOpenWiki: onOpenWikiCallback,
   onOpenProcess: onOpenProcessCallback,
   onOpenTarget: onOpenTargetCallback,
+  onOpenDocumentNeighborhood: onOpenDocumentNeighborhoodCallback,
   timelineEvents = [],
   timelineSources = [],
   timelineLoading = false,
@@ -324,6 +326,9 @@ export default function SuiteMatterGraphView({
   const onOpenProcess = onOpenProcessCallback ? () => { beforeNavigation(); onOpenProcessCallback(); } : undefined;
   const onOpenTarget = onOpenTargetCallback ? (target: SuiteMatterGraphTarget) => {
     beforeNavigation(); onOpenTargetCallback(target);
+  } : undefined;
+  const onOpenDocumentNeighborhood = onOpenDocumentNeighborhoodCallback ? (target: SuiteMatterGraphTarget) => {
+    beforeNavigation(); onOpenDocumentNeighborhoodCallback(target);
   } : undefined;
   const onOpenEventTimeline = onOpenEventTimelineCallback ? (event: SuiteGraphTimelineEvent) => {
     beforeNavigation(); onOpenEventTimelineCallback(event);
@@ -733,6 +738,7 @@ export default function SuiteMatterGraphView({
             onTabChange={setWikiTab}
             onLocateEvidence={onLocateEvidence}
             onOpenTarget={onOpenTarget}
+            onOpenDocumentNeighborhood={onOpenDocumentNeighborhood}
             onOpenWiki={onOpenWiki}
             onClearSelection={clearSelection}
           />
