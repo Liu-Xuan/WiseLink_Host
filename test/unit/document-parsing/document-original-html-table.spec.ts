@@ -20,17 +20,19 @@ test('invalid or nested layout is not silently flattened into a trustworthy tabl
   expect(readOriginalHtmlTable('<table><tr><td><table><tr><td>A</td></tr></table></td></tr></table>')).toBeNull();
   expect(readOriginalHtmlTable('<table><tr><td rowspan="3">A</td></tr></table>')!.issues).toContain('SPAN_OUTSIDE_ROW_GROUP');
 });
-test('accepted HTML enters the actual original adapter and V2 plan without losing any cell text', () => {
+test('matching HTML without geometry preserves exact PDF text and an uncertain structure', () => {
   const fixture = originalFixture(), table = readOriginalHtmlTable(html)!;
   const original = composeDocumentOriginal({ binding: fixture.binding, producer: fixture.producer, markdown: html,
     extraction: { pageCount: 1, pages: [{ pageIndex: 0, text: table.text, width: 600, height: 800, rotation: 0, imagePaintOperations: 0, items: [] }] } });
-  expect(original.source.units[0].kind).toBe('table'); expect(original.coverage.unresolvedRanges).toEqual([]);
-  expect(original.markdown).toContain('rowspan="2"');
-  expect(original.markdown).toContain('colspan="2"');
+  expect(original.source.units.map(unit => [unit.kind, unit.payload.text])).toEqual([['paragraph', table.text]]);
+  expect(original.markdown).toBe(table.text);
+  expect(original.coverage.unresolvedRanges).toEqual([
+    expect.objectContaining({ reason: 'STRUCTURE_UNCERTAIN', pageIndexes: [0] }),
+  ]);
   const plan = buildTranslationSourcePlan({ documentVersionId: original.binding.documentVersionId,
     packageId: original.binding.parseRunId, source: documentOriginalStructuredSource(original, original.binding), title: 'Test',
     parsedArtifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref: 'fixture', sha256: 'a'.repeat(64), byteLength: 1, mediaType: 'application/json' } });
-  expect(plan.anchors.map(anchor => anchor.sourceText)).toEqual(['Pressure limits', 'Valve', 'Range', 'A-12', '-0.25', '12 kPa', 'N/A']);
+  expect(plan.anchors.map(anchor => anchor.sourceText)).toEqual([table.text]);
 });
 test('conflicting HTML text never replaces the alternate PDF extraction', () => {
   const fixture = originalFixture();
@@ -42,10 +44,21 @@ test('conflicting HTML text never replaces the alternate PDF extraction', () => 
 
 test('ragged HTML rows retain their extra cells and report the specific limitation', () => {
   const fixture = originalFixture();
+  const raggedHtml = '<table><tr><td>Key</td><td>Value</td></tr><tr><td>A</td><td>12</td><td>Extra</td></tr></table>';
+  const table = readOriginalHtmlTable(raggedHtml)!;
+  expect(table.rows[1].map(cell => cell.text)).toEqual(['A', '12', 'Extra']);
+  expect(table.issues).toContain('ROW_WIDTH_MISMATCH');
+  const extractedText = 'Key Value A 12 Extra';
   const original = composeDocumentOriginal({ binding: fixture.binding, producer: fixture.producer,
-    markdown: '<table><tr><td>Key</td><td>Value</td></tr><tr><td>A</td><td>12</td><td>Extra</td></tr></table>',
-    extraction: { pageCount: 1, pages: [{ pageIndex: 0, text: 'Key Value A 12 Extra', width: 600, height: 800, rotation: 0, imagePaintOperations: 0, items: [] }] } });
-  expect(original.source.units[0].kind).toBe('table');
-  expect(original.markdown).toContain('Extra');
-  expect(original.coverage.unresolvedRanges[0].reason).toBe('STRUCTURE_UNCERTAIN');
+    markdown: raggedHtml,
+    extraction: { pageCount: 1, pages: [{ pageIndex: 0, text: extractedText, width: 600, height: 800, rotation: 0, imagePaintOperations: 0, items: [] }] } });
+  expect(original.source.units.map(unit => [unit.kind, unit.payload.text])).toEqual([['paragraph', extractedText]]);
+  expect(original.markdown).toBe(extractedText);
+  expect(original.coverage.unresolvedRanges).toEqual([
+    expect.objectContaining({ reason: 'STRUCTURE_UNCERTAIN', pageIndexes: [0] }),
+  ]);
+  const plan = buildTranslationSourcePlan({ documentVersionId: original.binding.documentVersionId,
+    packageId: original.binding.parseRunId, source: documentOriginalStructuredSource(original, original.binding), title: 'Test',
+    parsedArtifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref: 'fixture', sha256: 'a'.repeat(64), byteLength: 1, mediaType: 'application/json' } });
+  expect(plan.anchors.map(anchor => anchor.sourceText)).toEqual([extractedText]);
 });
