@@ -99,7 +99,7 @@ export interface SuiteGraphPresentation {
     eligible: { groups: number; items: number };
     page: { index: number; size: number; count: number; pageCount: number };
     shown: { groups: number; items: number; cards: number };
-    represented: { relationships: number; displayConnections?: number; businessRelationships?: number };
+    represented: { relationships: number; displayConnections: number; businessRelationships: number };
   };
   omittedRelationships: Array<{ id: string; reason: 'missingEndpoint' | 'hiddenGroup' | 'offPage' | 'cardOverflow' }>;
   bounds: { x1: number; y1: number; x2: number; y2: number; w: number; h: number };

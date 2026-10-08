@@ -122,7 +122,7 @@ export function buildSuitePanoramaGraph(input: {
     return {
       id: nodeId,
       title: item.title,
-      subtitle: item.matterId === input.currentMatterId ? `当前事项 · 工作修订 ${item.workingRevision}` : `工作修订 ${item.workingRevision}`,
+      subtitle: item.matterId === input.currentMatterId ? `工程事项 · 当前打开 · 工作修订 ${item.workingRevision}` : `工程事项 · 工作修订 ${item.workingRevision}`,
       kind: 'matter-node',
     };
   });
@@ -133,7 +133,7 @@ export function buildSuitePanoramaGraph(input: {
     targets.set(currentMatterNodeId, { kind: 'matter-node', matterId: input.currentMatterId, title: input.currentMatter.graph.title, status: input.currentMatter.overviewStatus });
     const group = groups.find(item => item.key === 'matters') ?? { key: 'matters', title: '目录事项', items: [], columns: 2 };
     if (!groups.includes(group)) groups.push(group);
-    group.items.push({id: currentMatterNodeId, title: input.currentMatter.graph.title, subtitle: '当前已授权事项 · 不在本批目录', kind: 'matter-node'});
+    group.items.push({id: currentMatterNodeId, title: input.currentMatter.graph.title, subtitle: '工程事项 · 当前已授权 · 不在本批目录', kind: 'matter-node'});
     notices.push('当前事项按已读取工作单独保留，不代表其在本批目录中。');
   }
 

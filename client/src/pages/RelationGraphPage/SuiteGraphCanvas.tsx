@@ -245,6 +245,7 @@ function buildStyleSheet(tokens: ThemeTokens): StylesheetStyle[] {
     },
     { selector: '.bundle-edge', style: { width: 1.3, opacity: 0.68 } },
     { selector: '.business-edge', style: { width: 1, opacity: 0.28, 'font-size': '10px' } },
+    { selector: '.display-edge', style: { 'line-style': 'dashed', 'target-arrow-shape': 'none' } },
     { selector: '.suite-small-edge-label', style: { label: '' } },
   ];
   Object.entries(tokens.tones).forEach(([toneName, tone]) => {
@@ -388,7 +389,7 @@ const OverlayCard = memo(function OverlayCard({
         <span className="suite-graph-hub-portrait" aria-hidden="true">{picture ? <Image src={picture} alt="" /> : <Network />}</span>
         <strong>{title}</strong>
         {text(data.code) && <small>{text(data.code)}</small>}
-        <span className="suite-graph-hub-sub">{data.rootKind === 'document' ? '工程文档 · 准确版本邻域' : '工程事项 · 持续认识'}</span>
+        <span className="suite-graph-hub-sub">{data.rootKind === 'display' ? '目录展示范围 · 非工程事项' : data.rootKind === 'document' ? '工程文档 · 准确版本邻域' : '工程事项 · 持续认识'}</span>
       </button>
     );
   }

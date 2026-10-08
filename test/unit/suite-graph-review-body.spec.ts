@@ -5,6 +5,33 @@ import SuiteGraphKnowledgePanel from '../../client/src/pages/RelationGraphPage/S
 import { buildSuiteMatterGraph } from '../../client/src/pages/RelationGraphPage/suite-matter-graph';
 import { libraryMatterFixture } from './fixtures/library-matter';
 import { jobAidReadingFixture } from './semantic-reading-ui.fixtures';
+
+it.each(['knowledge', 'basis', 'discussion'] as const)('shows display scope instead of stale matter knowledge on %s tab', tab => {
+  const data = libraryMatterFixture();
+  const matterRead = buildSuiteMatterGraph(data);
+  const read = {
+    ...matterRead,
+    graph: {
+      ...matterRead.graph,
+      rootKind: 'display' as const,
+      groups: [
+        { key: 'matters', title: '目录事项', items: [{ id: 'other', title: '其他事项' }] },
+        { key: 'documents', title: '当前事项资料', items: [{ id: 'document', title: '资料' }] },
+      ],
+      relations: [{ id: 'directory', source: 'root', target: 'other', type: 'DIRECTORY_MEMBERSHIP', label: '目录登记' }],
+    },
+    notices: ['授权目录页有更多事项未加载。'],
+  };
+  data.working.current!.state.substantiveResult!.content.lead = 'OLD_MATTER_SUMMARY';
+  const html = renderToStaticMarkup(createElement(StaticRouter, {location: '/graph'}, createElement(SuiteGraphKnowledgePanel, {
+    read, revision: data.working.current, selectedTarget: null, selectedEvent: null, tab, onTabChange: () => {},
+  })));
+  expect(html).toContain('当前目录范围');
+  expect(html).toContain('已加载 1 个目录事项');
+  expect(html).toContain('当前打开事项的 1 个资料节点');
+  expect(html).not.toContain('OLD_MATTER_SUMMARY');
+  expect(html).not.toContain('当前工作没有已保存依据');
+});
 jest.mock('@client/src/features/matter/SavedAssessmentReading', () => ({__esModule: true, default: ({result}: {result: unknown}) => createElement('div', null, JSON.stringify(result))}));
 it.each(['STALE', 'NOT_AVAILABLE'] as const)('includes selected work problem body for %s without inventing a current overview', status => {
   const data = libraryMatterFixture();

@@ -278,6 +278,22 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
   }
   const openQuestions = [...pendingByText.values()];
   const reviewConditions = revision?.state.reviewConditions ?? [];
+  if (read.graph.rootKind === 'display') {
+    const matters = read.graph.relations.filter((relation) => relation.type === 'DIRECTORY_MEMBERSHIP').length;
+    const documents = read.graph.groups.find((group) => group.key === 'documents')?.items.length ?? 0;
+    return (
+      <div className="suite-graph-knowledge" aria-label="当前图谱范围">
+        <div className="suite-graph-knowledge-body">
+          {selectedTarget ? <TargetDetail target={selectedTarget} onLocateEvidence={onLocateEvidence} onOpenTarget={onOpenTarget} /> : <>
+            <h2>当前目录范围</h2>
+            <p>已加载 {matters} 个目录事项；仅展开当前打开事项的 {documents} 个资料节点。</p>
+            <p>目录连接仅表示展示分组；事项与资料关联按实际登记关系显示。</p>
+            {read.notices.map((notice) => <p className="suite-graph-notice" key={notice}>{notice}</p>)}
+          </>}
+        </div>
+      </div>
+    );
+  }
   const renderTabContent = () => {
     if (tab === 'discussion') {
       return (

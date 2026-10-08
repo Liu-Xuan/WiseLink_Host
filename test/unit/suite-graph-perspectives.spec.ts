@@ -1,4 +1,5 @@
 import { buildSuiteDomainGraph, buildSuitePanoramaGraph } from '../../client/src/pages/RelationGraphPage/suite-graph-perspectives';
+import { buildSuiteGraphPresentation } from '../../client/src/pages/RelationGraphPage/suite-graph-presentation';
 import type {
   CanonicalLibraryDocumentSummary,
   EngineeringMatterCatalogEntry,
@@ -169,6 +170,11 @@ describe('buildSuitePanoramaGraph', () => {
     const membership = read.graph.relations.find((relation) => relation.type === 'DIRECTORY_MEMBERSHIP');
     expect(read.relationDetails.get(membership!.id)).toMatchObject({ kind: 'DIRECTORY_MEMBERSHIP' });
     expect(read.notices).toContain('全景为当前授权目录页视图，不代表全库。');
+    const projected = buildSuiteGraphPresentation(read.graph, { relationMode: 'aggregated' });
+    expect(projected.counts.represented).toMatchObject({ displayConnections: 2, businessRelationships: 1, relationships: 3 });
+    expect(projected.omittedRelationships).toEqual([]);
+    const hub = projected.elements.find((element) => element.group === 'nodes' && element.data.viewKind === 'hub');
+    expect(hub?.data.businessId).toBeUndefined();
   });
 
   it('notes empty authorized directories instead of fabricating matters', () => {

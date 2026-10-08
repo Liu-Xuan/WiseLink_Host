@@ -1,3 +1,4 @@
+import { buildLibraryGraphPresentation } from '../../client/src/pages/RelationGraphPage/suite-library-graph';
 import * as appearance from '../../client/src/pages/RelationGraphPage/suite-graph-appearance';
 import { act, createElement, createRef, Profiler } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -100,7 +101,7 @@ const presentation: SuiteGraphPresentation = {
   visibleIds: ['m', 'i'],
   visibleItemIds: ['i'],
   overflow: { page: 0, pageSize: 6, totalGroups: 1, displayedGroups: 1, omittedGroupKeys: [], hasMore: false },
-  counts: { loaded: { groups: 1, items: 1, relationships: 0 }, eligible: { groups: 1, items: 1 }, page: { index: 0, size: 6, count: 1, pageCount: 1 }, shown: { groups: 1, items: 1, cards: 1 }, represented: { relationships: 0 } },
+  counts: { loaded: { groups: 1, items: 1, relationships: 0 }, eligible: { groups: 1, items: 1 }, page: { index: 0, size: 6, count: 1, pageCount: 1 }, shown: { groups: 1, items: 1, cards: 1 }, represented: { relationships: 0, displayConnections: 0, businessRelationships: 0 } },
   omittedRelationships: [],
   bounds: { x1: 0, y1: 0, x2: 400, y2: 400, w: 400, h: 400 },
 };
@@ -116,7 +117,7 @@ const groupPresentation: SuiteGraphPresentation = {
   visibleIds: ['m', 'a', 'b'],
   visibleItemIds: ['a', 'b'],
   overflow: { page: 0, pageSize: 6, totalGroups: 1, displayedGroups: 1, omittedGroupKeys: [], hasMore: false },
-  counts: { loaded: { groups: 1, items: 2, relationships: 0 }, eligible: { groups: 1, items: 2 }, page: { index: 0, size: 6, count: 1, pageCount: 1 }, shown: { groups: 1, items: 2, cards: 2 }, represented: { relationships: 0 } },
+  counts: { loaded: { groups: 1, items: 2, relationships: 0 }, eligible: { groups: 1, items: 2 }, page: { index: 0, size: 6, count: 1, pageCount: 1 }, shown: { groups: 1, items: 2, cards: 2 }, represented: { relationships: 0, displayConnections: 0, businessRelationships: 0 } },
   omittedRelationships: [],
   bounds: { x1: 0, y1: 0, x2: 600, y2: 400, w: 600, h: 400 },
 };
@@ -172,6 +173,30 @@ describe('SuiteGraphCanvas', () => {
     act(() => root?.unmount());
     container.remove();
     mockCyFactory.mockReset();
+  });
+
+  it('renders bounded macro native points without HTML cards and routes a real Cytoscape selection', async () => {
+    const realCytoscape = jest.requireActual('cytoscape') as typeof import('cytoscape');
+    document.documentElement.setAttribute('data-wl-motion', 'off');
+    mockCyFactory.mockImplementation((options) => realCytoscape({ ...options, headless: true, styleEnabled: false }));
+    const native = buildLibraryGraphPresentation({scope:'CURRENT_USER_DOCUMENT_CATALOG',versionMeaning:'ALL_READABLE_VERSIONS',
+      consistency:'LIVE_READ',relationMeaning:'CLASSIFICATION_AND_CONTAINMENT_ONLY',coverage:{documentReferences:'NOT_INDEXED',matterMemberships:'NOT_LOADED'},
+      counts:{uniqueFamilyCount:12000,readableVersionCountInMatchingFamilies:50000},limit:50,hasMore:false,nextCursor:null,fileReadPerformed:false,modelRunPerformed:false,
+      level:'clusters',groupBy:'ata',filters:{},countScope:'FILTERED_FAMILIES',clusterCountsOverlap:true,
+      items:Array.from({length:50},(_,i) => ({kind:'CLASSIFICATION',value:String(i),uniqueFamilyCount:500,readableVersionCountInMatchingFamilies:2000}))});
+    const onSelect = jest.fn();
+    const ref = createRef<SuiteGraphCanvasHandle>();
+    try {
+      await act(async () => { root=createRoot(container);root.render(createElement(SuiteGraphCanvas,{presentation:native,presentationStyle:'points',ref,onSelect})); });
+      const cy = ref.current!.getCore()!;
+      expect(cy.nodes()).toHaveLength(50);expect(cy.edges()).toHaveLength(0);
+      expect(container.querySelectorAll('.suite-graph-overlay-position')).toHaveLength(0);
+      const selected = cy.nodes()[3];
+      await act(async () => selected.emit('tap'));
+      expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({businessId:selected.data('businessId')}),false);
+      act(() => {cy.zoom(.3);cy.pan({x:31,y:45});});act(flushFrames);
+      expect(container.querySelectorAll('.suite-graph-overlay-position')).toHaveLength(0);
+    } finally {document.documentElement.removeAttribute('data-wl-motion');}
   });
 
   it('renders HTML cards, routes selection and overflow callbacks, and destroys Cytoscape', async () => {
