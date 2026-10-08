@@ -509,7 +509,7 @@ export default function SuiteMatterGraphView({
       <div className="suite-graph-layout" data-mobile-panel={mobilePanel}>
         <aside className="suite-graph-work-panel" aria-label="工程时间线">
           <div className="suite-graph-panel-head">
-            <h2>工程时间线</h2><span>{timelineEvents.length}</span>
+            <h2>{graph.rootKind === 'display' ? '当前打开事项的时间线' : '工程时间线'}</h2><span>{timelineEvents.length}</span>
           </div>
           <div className="suite-graph-panel-scroll">
             <SuiteGraphTimeline
@@ -562,8 +562,8 @@ export default function SuiteMatterGraphView({
             <h1>{title}</h1>
             <div>
               {graph.code ? <span>{graph.code}</span> : null}
-              {revision ? <span>工作修订 {revision.workingRevision}</span> : null}
-              {overviewLabel ? <span>{overviewLabel}</span> : null}
+              {revision && graph.rootKind !== 'display' ? <span>工作修订 {revision.workingRevision}</span> : null}
+              {overviewLabel && graph.rootKind !== 'display' ? <span>{overviewLabel}</span> : null}
             </div>
           </header>
 
@@ -608,7 +608,7 @@ export default function SuiteMatterGraphView({
                   openRelationships(ids);
                 }}
                 onViewport={handleViewport}
-                ariaLabel="工程事项关系图谱"
+                ariaLabel={graph.rootKind === 'display' ? '当前目录关系图谱' : '工程事项关系图谱'}
               />
               <div className="suite-graph-canvas-tools" aria-label="图谱画布控制">
                 <Button size="icon" variant="ghost" aria-label="力导向布局" title="力导向布局" aria-pressed={layoutMode === 'force'} onClick={() => {
@@ -632,7 +632,9 @@ export default function SuiteMatterGraphView({
                 <Button size="icon" variant="ghost" aria-label="重置图谱布局" onClick={() => canvasRef.current?.reset()}><RotateCcw /></Button>
               </div>
               <div className="suite-graph-canvas-status">
-                {presentation.counts.shown.items} 个可见对象 · {presentation.counts.represented.relationships} 条已表达关系
+                {graph.rootKind === 'display' ? <>
+                  已加载 {graph.relations.filter((relation) => relation.type === 'DIRECTORY_MEMBERSHIP').length} 个目录事项，当前仅展开 {graph.groups.find((group) => group.key === 'documents')?.items.length ?? 0} 个资料节点 · {presentation.counts.represented.displayConnections} 条目录展示连接 · {presentation.counts.represented.businessRelationships} 条已表达资料关联
+                </> : <>{presentation.counts.shown.items} 个可见对象 · {presentation.counts.represented.relationships} 条已表达关系</>}
               </div>
 
               {selectedEventHidden ? (
@@ -729,7 +731,7 @@ export default function SuiteMatterGraphView({
           ) : null}
         </section>
 
-        <aside className="suite-graph-knowledge-panel" aria-label="已保存知识">
+        <aside className="suite-graph-knowledge-panel" aria-label={graph.rootKind === 'display' ? '当前目录范围' : '已保存知识'}>
           <SuiteGraphKnowledgePanel
             read={read}
             revision={revision}
