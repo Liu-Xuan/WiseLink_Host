@@ -175,7 +175,7 @@ describe('engineering timeline discovery handoff', () => {
         expect(mockParsingStatus).toHaveBeenCalledTimes(1);
         expect(mockActivityReading).toHaveBeenCalledTimes(1);
         const request: DocumentActivityReadingRequest = mockActivityReading.mock.calls[0][0];
-        expect(request).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1' });
+        expect(request).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1', acceptCandidateSchemaV2: true });
         expect(request.candidateRevision).toBeUndefined();
         expect(container.textContent).toContain('RUN:RUN4@REV:4');
       } finally {
@@ -200,6 +200,7 @@ describe('engineering timeline discovery handoff', () => {
           documentVersionId: 'DV1',
           parseRunId: 'PR1',
           candidateRevision: 4,
+          acceptCandidateSchemaV2: true,
         });
         expect(container.textContent).toContain('RUN:RUN4@REV:4');
       } finally {
