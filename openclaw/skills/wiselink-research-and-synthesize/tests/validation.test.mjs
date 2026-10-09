@@ -8451,11 +8451,24 @@ test('JobAid update first reads an authorized document before exposing the candi
   assert.deepEqual(reads, [['read:one']]);
   assert.deepEqual(requests[0].tools.map((tool) => tool.function.name), ['read_wiselink_review_sources']);
   assert.equal(requests[0].tool_choice, 'required');
-  assert.match(requests[0].messages[1].content, /First call read_wiselink_review_sources/u);
-  assert.match(requests[0].messages[1].content, /Correct an existing JobAid issue through issuePatches/u);
-  assert.doesNotMatch(requests[0].messages[1].content, /Every updated issue is a complete replacement/u);
+  const sourceSelectionPrompt = requests[0].messages.find((message) => message.role === 'user' &&
+    message.content.includes('\nAUTHORIZED_SOURCE_CATALOG:\n'))?.content;
+  assert.equal(typeof sourceSelectionPrompt, 'string');
+  assert.match(sourceSelectionPrompt, /First call read_wiselink_review_sources/u);
+  assert.doesNotMatch(sourceSelectionPrompt, /\nINPUT:\n/u);
+  assert.doesNotMatch(sourceSelectionPrompt, /Correct an existing JobAid issue through issuePatches/u);
+  const catalogMarker = '\nAUTHORIZED_SOURCE_CATALOG:\n';
+  assert.deepEqual(JSON.parse(sourceSelectionPrompt.slice(sourceSelectionPrompt.indexOf(catalogMarker) + catalogMarker.length)), {
+    availableSourceRefIds: ['read:one'], availableSources: [{ ref: 'doc:one', kind: 'DOCUMENT_PASSAGE' }],
+    documentSections: [], attachmentRefs: [],
+  });
   assert.equal(requests[1].tools[0].function.name, 'return_wiselink_review_candidate');
   assert.equal(requests[1].tool_choice, 'required');
+  const fullPrompt = requests[1].messages.find((message) => message.role === 'user' &&
+    message.content.includes('\nINPUT:\n'))?.content;
+  assert.equal(typeof fullPrompt, 'string');
+  assert.match(fullPrompt, /Correct an existing JobAid issue through issuePatches/u);
+  assert.doesNotMatch(fullPrompt, /Every updated issue is a complete replacement/u);
   assert.match(requests[1].messages[2].content, /Actual source/u);
   assert.equal(result.output.answer, '已核对原文并提议局部更正');
 });
