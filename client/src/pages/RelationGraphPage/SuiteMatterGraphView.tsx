@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@client/src/components/ui/dialog';
+import { activityStatementTimeText } from '@client/src/features/trinity/document-activity-presentation';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 
@@ -61,6 +62,7 @@ export interface SuiteMatterGraphViewProps {
   onOpenWiki?: () => void;
   onOpenProcess?: () => void;
   onOpenTarget?: (target: SuiteMatterGraphTarget) => void;
+  onOpenDocumentNeighborhood?: (target: SuiteMatterGraphTarget) => void;
   timelineEvents?: SuiteGraphTimelineEvent[];
   timelineSources?: SuiteGraphTimelineSource[];
   timelineLoading?: boolean;
@@ -127,7 +129,7 @@ function relationDetailText(detail: SuiteRelationDetail): string {
       return `目录登记：${detail.entry.document.documentCode} · ${detail.entry.document.businessRevision}（${role}）；版本身份：${detail.entry.document.documentVersionId}`;
     }
     if (detail.kind === 'STATEMENT') {
-      const time = detail.statement.time?.raw ?? '未提取';
+      const time = activityStatementTimeText(detail.statement, '未提取');
       return `资料声明：${detail.statement.label}；时间表述：${time}；保存身份：${detail.parseRunId} · 候选修订 ${detail.candidateRevision}`;
     }
     if (detail.kind === 'ATA_CLASSIFICATION') {
@@ -160,6 +162,7 @@ export default function SuiteMatterGraphView({
   onOpenWiki: onOpenWikiCallback,
   onOpenProcess: onOpenProcessCallback,
   onOpenTarget: onOpenTargetCallback,
+  onOpenDocumentNeighborhood: onOpenDocumentNeighborhoodCallback,
   timelineEvents = [],
   timelineSources = [],
   timelineLoading = false,
@@ -324,6 +327,9 @@ export default function SuiteMatterGraphView({
   const onOpenProcess = onOpenProcessCallback ? () => { beforeNavigation(); onOpenProcessCallback(); } : undefined;
   const onOpenTarget = onOpenTargetCallback ? (target: SuiteMatterGraphTarget) => {
     beforeNavigation(); onOpenTargetCallback(target);
+  } : undefined;
+  const onOpenDocumentNeighborhood = onOpenDocumentNeighborhoodCallback ? (target: SuiteMatterGraphTarget) => {
+    beforeNavigation(); onOpenDocumentNeighborhoodCallback(target);
   } : undefined;
   const onOpenEventTimeline = onOpenEventTimelineCallback ? (event: SuiteGraphTimelineEvent) => {
     beforeNavigation(); onOpenEventTimelineCallback(event);
@@ -503,7 +509,7 @@ export default function SuiteMatterGraphView({
       <div className="suite-graph-layout" data-mobile-panel={mobilePanel}>
         <aside className="suite-graph-work-panel" aria-label="工程时间线">
           <div className="suite-graph-panel-head">
-            <h2>工程时间线</h2><span>{timelineEvents.length}</span>
+            <h2>{graph.rootKind === 'display' ? '当前打开事项的时间线' : '工程时间线'}</h2><span>{timelineEvents.length}</span>
           </div>
           <div className="suite-graph-panel-scroll">
             <SuiteGraphTimeline
@@ -556,8 +562,8 @@ export default function SuiteMatterGraphView({
             <h1>{title}</h1>
             <div>
               {graph.code ? <span>{graph.code}</span> : null}
-              {revision ? <span>工作修订 {revision.workingRevision}</span> : null}
-              {overviewLabel ? <span>{overviewLabel}</span> : null}
+              {revision && graph.rootKind !== 'display' ? <span>工作修订 {revision.workingRevision}</span> : null}
+              {overviewLabel && graph.rootKind !== 'display' ? <span>{overviewLabel}</span> : null}
             </div>
           </header>
 
@@ -602,7 +608,7 @@ export default function SuiteMatterGraphView({
                   openRelationships(ids);
                 }}
                 onViewport={handleViewport}
-                ariaLabel="工程事项关系图谱"
+                ariaLabel={graph.rootKind === 'display' ? '当前目录关系图谱' : '工程事项关系图谱'}
               />
               <div className="suite-graph-canvas-tools" aria-label="图谱画布控制">
                 <Button size="icon" variant="ghost" aria-label="力导向布局" title="力导向布局" aria-pressed={layoutMode === 'force'} onClick={() => {
@@ -626,7 +632,9 @@ export default function SuiteMatterGraphView({
                 <Button size="icon" variant="ghost" aria-label="重置图谱布局" onClick={() => canvasRef.current?.reset()}><RotateCcw /></Button>
               </div>
               <div className="suite-graph-canvas-status">
-                {presentation.counts.shown.items} 个可见对象 · {presentation.counts.represented.relationships} 条已表达关系
+                {graph.rootKind === 'display' ? <>
+                  已加载 {graph.relations.filter((relation) => relation.type === 'DIRECTORY_MEMBERSHIP').length} 个目录事项，当前仅展开 {graph.groups.find((group) => group.key === 'documents')?.items.length ?? 0} 个资料节点 · {presentation.counts.represented.displayConnections} 条目录展示连接 · {presentation.counts.represented.businessRelationships} 条已表达资料关联
+                </> : <>{presentation.counts.shown.items} 个可见对象 · {presentation.counts.represented.relationships} 条已表达关系</>}
               </div>
 
               {selectedEventHidden ? (
@@ -723,7 +731,7 @@ export default function SuiteMatterGraphView({
           ) : null}
         </section>
 
-        <aside className="suite-graph-knowledge-panel" aria-label="已保存知识">
+        <aside className="suite-graph-knowledge-panel" aria-label={graph.rootKind === 'display' ? '当前目录范围' : '已保存知识'}>
           <SuiteGraphKnowledgePanel
             read={read}
             revision={revision}
@@ -733,6 +741,7 @@ export default function SuiteMatterGraphView({
             onTabChange={setWikiTab}
             onLocateEvidence={onLocateEvidence}
             onOpenTarget={onOpenTarget}
+            onOpenDocumentNeighborhood={onOpenDocumentNeighborhood}
             onOpenWiki={onOpenWiki}
             onClearSelection={clearSelection}
           />

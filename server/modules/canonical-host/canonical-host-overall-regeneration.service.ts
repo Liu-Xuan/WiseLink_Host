@@ -1,5 +1,24 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { Request } from 'express';
+import {
+  DRIZZLE_DATABASE,
+  type PostgresJsDatabase,
+} from '@lark-apaas/fullstack-nestjs-core';
+import { and, desc, eq, sql } from 'drizzle-orm';
+import {
+  assessmentWorkRevision,
+  workItem as workItemTable,
+} from '../../database/schema';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
+import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
+import { JobAidWorkRepository } from './jobaid-work.repository';
+import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
+import {
+  TDMS_NATIVE_EVIDENCE_VERIFIER,
+  assertTdmsNativeInTransaction,
+  type TdmsNativeEvidenceVerifier,
+} from './tdms-native-evidence-verifier.port';
 
 import type {
   CanonicalOverallRegenerationExecutionStatus,
@@ -69,6 +88,13 @@ export class CanonicalHostOverallRegenerationService {
     private readonly overall: CanonicalHostOpenClawOverallService,
     private readonly attempts: ActionAttemptLifecycleService,
     @Optional() private readonly jobAid?: CanonicalJobAidProblemService,
+    @Optional() private readonly work?: JobAidWorkRepository,
+    @Optional()
+    @Inject(DRIZZLE_DATABASE)
+    private readonly database?: PostgresJsDatabase,
+    @Optional()
+    @Inject(TDMS_NATIVE_EVIDENCE_VERIFIER)
+    private readonly nativeVerifier?: TdmsNativeEvidenceVerifier,
   ) {}
 
   async request(
@@ -81,7 +107,16 @@ export class CanonicalHostOverallRegenerationService {
     const previousRequest = authorized.workItem.overallRegenerationRequest;
     if (previousRequest?.requestId === normalizedInput.requestId) {
       assertReplay(previousRequest, normalizedInput);
-      const attempt = await this.ensureAttempt(authorized);
+      assertRequestActor(previousRequest, authorized);
+      const existing = await this.readAttempt(authorized, previousRequest);
+      const nativeReplay = await this.assertNativeReplay(
+        authorized,
+        !!existing,
+      );
+      const attempt =
+        nativeReplay && existing
+          ? existing
+          : await this.ensureAttempt(authorized);
       return {
         regeneration: regenerationReadModel(
           authorized.workItem,
@@ -146,27 +181,29 @@ export class CanonicalHostOverallRegenerationService {
         artifactSha256: sourceOverallSha256,
       },
     };
+    const next: Omit<CanonicalWorkItemProjection, 'revision'> = {
+      ...withoutRevision(workItem),
+      integratedAssessment: {
+        ...workItem.integratedAssessment!,
+        status: 'OVERALL_CANDIDATE_STALE',
+        overallSynthesis: {
+          ...overall,
+          status: 'STALE',
+          // Only the current Host-owned request marker authorizes this full
+          // regeneration. A legacy overall field cannot self-report it.
+          staleReason: null,
+        },
+        overallForAeoConfirmation: null,
+      },
+      overallRegenerationRequest: marker,
+      aeo: null,
+    };
     const updated = await this.registrar.compareAndSet({
       workItemId: workItem.workItemId,
       expectedRevision: workItem.revision,
       syncPrimaryAttempt: false,
-      next: {
-        ...withoutRevision(workItem),
-        integratedAssessment: {
-          ...workItem.integratedAssessment!,
-          status: 'OVERALL_CANDIDATE_STALE',
-          overallSynthesis: {
-            ...overall,
-            status: 'STALE',
-            // Only the current Host-owned request marker authorizes this full
-            // regeneration. A legacy overall field cannot self-report it.
-            staleReason: null,
-          },
-          overallForAeoConfirmation: null,
-        },
-        overallRegenerationRequest: marker,
-        aeo: null,
-      },
+      ...this.nativeRegenerationGuards(authorized, reviewWork, next),
+      next,
     });
     if (updated.revision !== marker.executionRevision) {
       throw regenerationConflict('OVERALL_REGENERATION_CAS_READBACK_INVALID');
@@ -179,6 +216,271 @@ export class CanonicalHostOverallRegenerationService {
       regeneration: regenerationReadModel(refreshed.workItem, marker, attempt),
       replayed: false,
     };
+  }
+
+  /** Retaining native bytes is a fresh native authorization boundary. The genuine
+   * browser actor is passed unchanged; this never invents a runtime principal. */
+  private nativeRegenerationGuards(
+    authorized: AuthorizedRegenerationAccess,
+    reviewWork?: JobAidReviewOverallRegenerationBinding,
+    next?: Omit<CanonicalWorkItemProjection, 'revision'>,
+  ): Pick<
+    Parameters<CanonicalWorkItemRegistrarPort['compareAndSet']>[0],
+    'jobAidWorkRevisionGuard' | 'nativeEvidenceGuard'
+  > {
+    const item = structuredClone(authorized.workItem);
+    const reevaluation = item.configurationEvidenceReevaluation;
+    const projections = [
+      item.integratedAssessment?.baseRules,
+      item.integratedAssessment?.overallSynthesis,
+      reevaluation && 'stagedBundle' in reevaluation
+        ? reevaluation.stagedBundle?.baseRules
+        : undefined,
+    ];
+    const native = projections.filter(
+      (projection) =>
+        projection &&
+        'readingResult' in projection &&
+        projection.readingResult?.evidence.some(
+          (evidence) => evidence.kind === 'TDMS_NATIVE_RECORD',
+        ),
+    );
+    if (!native.length) return {};
+    const base = item.integratedAssessment?.baseRules;
+    if (!isJobAidProblemProjection(base))
+      throw regenerationConflict('TDMS_NATIVE_PROJECTION_WORK_REQUIRED');
+    if (
+      !this.work ||
+      typeof this.nativeVerifier?.assertInTransaction !== 'function'
+    )
+      throw regenerationConflict(
+        'TDMS_NATIVE_TRANSACTION_AUTHORIZATION_NOT_CONNECTED',
+      );
+    const actor = structuredClone(authorized.session.actor);
+    if (
+      !isHostedCanonicalFinalUserActor(actor) ||
+      actor.transport !== 'MIAODA_AUTHENTICATED_HTTP'
+    )
+      throw regenerationConflict('TDMS_NATIVE_EVIDENCE_ACTOR_INVALID');
+    const binding = structuredClone(
+      reviewWork ?? {
+        workRevisionRef: base.workRevisionRef,
+        workRevision: base.workRevision,
+      },
+    );
+    const expectedNext = next
+      ? { ...structuredClone(next), revision: item.revision + 1 }
+      : undefined;
+    return {
+      jobAidWorkRevisionGuard: {
+        tenantId: authorized.grant.tenantId,
+        workRevisionRef: binding.workRevisionRef,
+      },
+      nativeEvidenceGuard: async (database) => {
+        // Every query and authority callback uses this same handed executor.
+        const [identity] = await database.execute<{ actorId: string }>(
+          sql`SELECT current_setting('app.user_id',true) AS "actorId"`,
+        );
+        if (identity?.actorId !== actor.canonicalSubject.id)
+          throw regenerationConflict('JOBAID_REQUEST_ACTOR_CONTEXT_REQUIRED');
+        const grant = await this.objectAccess.freshRead(
+          {
+            actor,
+            action: 'REQUEST_OVERALL_REGENERATION',
+            accessRoot: { kind: 'WORK_ITEM', id: item.workItemId },
+          },
+          database,
+        );
+        const [row] = await database
+          .select({
+            projectionJson: workItemTable.projectionJson,
+            revision: workItemTable.revision,
+            requestedByUserId: workItemTable.requestedByUserId,
+          })
+          .from(workItemTable)
+          .where(
+            and(
+              eq(workItemTable.tenantId, actor.tenantId),
+              eq(workItemTable.workItemId, item.workItemId),
+            ),
+          )
+          .limit(1);
+        const expected = row?.revision === item.revision ? item : expectedNext;
+        if (
+          !grant.allowed ||
+          grant.action !== 'REQUEST_OVERALL_REGENERATION' ||
+          grant.actorUserId !== actor.canonicalSubject.id ||
+          grant.tenantId !== actor.tenantId ||
+          grant.applicationScopeId !== actor.applicationScopeId ||
+          grant.workItemId !== item.workItemId ||
+          grant.documentVersionId !== item.source.documentVersionId ||
+          grant.requestId !== item.requestId ||
+          !row ||
+          row.requestedByUserId !== actor.canonicalSubject.id ||
+          grant.workItemRevision !== row.revision ||
+          !expected ||
+          !row.projectionJson ||
+          canonicalJson(JSON.parse(row.projectionJson)) !==
+            canonicalJson(expected)
+        )
+          throw regenerationConflict('WORK_ITEM_CAS_CONFLICT');
+        const evidence: AssessmentEvidence[] = [];
+        const read = async (workRevisionRef: string, workRevision?: number) => {
+          const [owned] = await database
+            .select({ ref: assessmentWorkRevision.assessmentWorkRevisionId })
+            .from(assessmentWorkRevision)
+            .where(
+              and(
+                eq(assessmentWorkRevision.tenantId, actor.tenantId),
+                eq(assessmentWorkRevision.workItemId, item.workItemId),
+                eq(
+                  assessmentWorkRevision.assessmentWorkRevisionId,
+                  workRevisionRef,
+                ),
+                eq(
+                  assessmentWorkRevision.createdByUserId,
+                  actor.canonicalSubject.id,
+                ),
+              ),
+            )
+            .limit(1);
+          const saved = owned
+            ? await this.work!.readByRef(
+                {
+                  tenantId: actor.tenantId,
+                  workItemId: item.workItemId,
+                  workRevisionRef,
+                },
+                database,
+              )
+            : null;
+          if (
+            !saved ||
+            saved.workRevisionRef !== workRevisionRef ||
+            saved.workItemId !== item.workItemId ||
+            saved.documentVersionId !== item.source.documentVersionId ||
+            (workRevision !== undefined && saved.workRevision !== workRevision)
+          )
+            throw regenerationConflict('TDMS_NATIVE_PROJECTION_WORK_MISMATCH');
+          return saved;
+        };
+        const selected = await read(
+          binding.workRevisionRef,
+          binding.workRevision,
+        );
+        evidence.push(...selected.content.evidence);
+        for (const projection of projections) {
+          if (!projection) continue;
+          const workRevisionRef = isJobAidProblemProjection(projection)
+            ? projection.workRevisionRef
+            : projection && 'basedOnJobAidWorkRevisionRef' in projection
+              ? projection.basedOnJobAidWorkRevisionRef
+              : undefined;
+          if (!workRevisionRef) {
+            if (native.includes(projection))
+              throw regenerationConflict(
+                'TDMS_NATIVE_PROJECTION_WORK_REQUIRED',
+              );
+            continue;
+          }
+          if (!('readingResult' in projection))
+            throw regenerationConflict('TDMS_NATIVE_PROJECTION_WORK_MISMATCH');
+          const saved = await read(
+            workRevisionRef,
+            isJobAidProblemProjection(projection)
+              ? projection.workRevision
+              : undefined,
+          );
+          if (
+            canonicalJson(jobAidReadingResult(saved)) !==
+            canonicalJson(projection.readingResult)
+          )
+            throw regenerationConflict('TDMS_NATIVE_PROJECTION_WORK_MISMATCH');
+          evidence.push(...saved.content.evidence);
+        }
+        await assertTdmsNativeInTransaction(
+          {
+            actor: {
+              tenantId: actor.tenantId,
+              actorUserId: actor.canonicalSubject.id,
+            },
+            browserCaller: {
+              actor,
+              action: 'REQUEST_OVERALL_REGENERATION',
+              workItemId: item.workItemId,
+              documentVersionId: item.source.documentVersionId,
+              workItemRevision: row.revision,
+              workRevisionRef: binding.workRevisionRef,
+            },
+            evidence,
+            database,
+          },
+          this.nativeVerifier,
+        );
+      },
+    };
+  }
+
+  /** A replay cannot use an existing queue row to bypass revoked native access. */
+  private async assertNativeReplay(
+    authorized: AuthorizedRegenerationAccess,
+    existingAttempt: boolean,
+  ): Promise<boolean> {
+    const marker = authorized.workItem
+      .overallRegenerationRequest as JobAidReviewOverallRegenerationMarker;
+    const guards = this.nativeRegenerationGuards(
+      authorized,
+      marker.jobAidReviewWork,
+    );
+    if (!guards.nativeEvidenceGuard) return false;
+    assertSourceIdentity(authorized.workItem, marker.sourceIdentity);
+    if (!this.database)
+      throw regenerationConflict(
+        'TDMS_NATIVE_TRANSACTION_AUTHORIZATION_NOT_CONNECTED',
+      );
+    await this.database.transaction(async (transaction) => {
+      const database = transaction as PostgresJsDatabase;
+      await database
+        .select({ revision: workItemTable.revision })
+        .from(workItemTable)
+        .where(
+          and(
+            eq(workItemTable.tenantId, authorized.grant.tenantId),
+            eq(workItemTable.workItemId, authorized.workItem.workItemId),
+          ),
+        )
+        .limit(1)
+        .for('share');
+      if (!existingAttempt) {
+        const [latest] = await database
+          .select({
+            workRevisionRef: assessmentWorkRevision.assessmentWorkRevisionId,
+          })
+          .from(assessmentWorkRevision)
+          .where(
+            and(
+              eq(assessmentWorkRevision.tenantId, authorized.grant.tenantId),
+              eq(
+                assessmentWorkRevision.workItemId,
+                authorized.workItem.workItemId,
+              ),
+              eq(
+                assessmentWorkRevision.createdByUserId,
+                authorized.grant.actorUserId,
+              ),
+            ),
+          )
+          .orderBy(desc(assessmentWorkRevision.workRevision))
+          .limit(1);
+        if (
+          latest?.workRevisionRef !==
+          guards.jobAidWorkRevisionGuard?.workRevisionRef
+        )
+          throw regenerationConflict('JOBAID_OVERALL_EXACT_WORK_CHANGED');
+      }
+      await guards.nativeEvidenceGuard!(database);
+    });
+    return true;
   }
 
   async status(

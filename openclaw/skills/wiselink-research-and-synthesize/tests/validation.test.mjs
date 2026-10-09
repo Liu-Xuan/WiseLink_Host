@@ -1436,7 +1436,7 @@ test('requires 36 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c207',
+    'wiselink-research-and-synthesize@r09.c210',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -5078,7 +5078,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c51',
+    'wiselink.3_1.review_prompt.v1.c53',
   );
 });
 
@@ -5131,7 +5131,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c51',
+    'wiselink.3_1.review_prompt.v1.c53',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -8451,11 +8451,24 @@ test('JobAid update first reads an authorized document before exposing the candi
   assert.deepEqual(reads, [['read:one']]);
   assert.deepEqual(requests[0].tools.map((tool) => tool.function.name), ['read_wiselink_review_sources']);
   assert.equal(requests[0].tool_choice, 'required');
-  assert.match(requests[0].messages[1].content, /First call read_wiselink_review_sources/u);
-  assert.match(requests[0].messages[1].content, /Correct an existing JobAid issue through issuePatches/u);
-  assert.doesNotMatch(requests[0].messages[1].content, /Every updated issue is a complete replacement/u);
+  const sourceSelectionPrompt = requests[0].messages.find((message) => message.role === 'user' &&
+    message.content.includes('\nAUTHORIZED_SOURCE_CATALOG:\n'))?.content;
+  assert.equal(typeof sourceSelectionPrompt, 'string');
+  assert.match(sourceSelectionPrompt, /First call read_wiselink_review_sources/u);
+  assert.doesNotMatch(sourceSelectionPrompt, /\nINPUT:\n/u);
+  assert.doesNotMatch(sourceSelectionPrompt, /Correct an existing JobAid issue through issuePatches/u);
+  const catalogMarker = '\nAUTHORIZED_SOURCE_CATALOG:\n';
+  assert.deepEqual(JSON.parse(sourceSelectionPrompt.slice(sourceSelectionPrompt.indexOf(catalogMarker) + catalogMarker.length)), {
+    availableSourceRefIds: ['read:one'], availableSources: [{ ref: 'doc:one', kind: 'DOCUMENT_PASSAGE' }],
+    documentSections: [], attachmentRefs: [],
+  });
   assert.equal(requests[1].tools[0].function.name, 'return_wiselink_review_candidate');
   assert.equal(requests[1].tool_choice, 'required');
+  const fullPrompt = requests[1].messages.find((message) => message.role === 'user' &&
+    message.content.includes('\nINPUT:\n'))?.content;
+  assert.equal(typeof fullPrompt, 'string');
+  assert.match(fullPrompt, /Correct an existing JobAid issue through issuePatches/u);
+  assert.doesNotMatch(fullPrompt, /Every updated issue is a complete replacement/u);
   assert.match(requests[1].messages[2].content, /Actual source/u);
   assert.equal(result.output.answer, '已核对原文并提议局部更正');
 });
@@ -9219,6 +9232,62 @@ test('rejects weakened read_matter_current_work metadata through the real valida
   const missingMatterId = buildHostToolSurface();
   delete findPrecheck(missingMatterId).inputSchema.properties.matterId;
   assert.throws(() => validateHostToolMetadata({ tools: missingMatterId }), /REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH/);
+});
+
+
+async function companionJobAidReceiptFixture(mutation = () => {}) {
+  const { task: reviewTask, candidate } = await emptyJobAidReviewFixture();
+  reviewTask.jobAidContext.modelInput.expectedWorkRevision = 7;
+  reviewTask.jobAidContext.previousWork.workRevisionRef = 'JAWR-preserved-7';
+  reviewTask.jobAidContext.previousWork.workRevision = 7;
+  candidate.responseType = 'RESYNTHESIS_RESULT';
+  candidate.jobAidWorkingDelta = { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+    issues: [], overview: '保留当前工作，综合仅为候选。', roundCompletion: 'IN_PROGRESS',
+    completionReason: '仍有条件待核。', changeSummary: '更正保存后的派生综合覆盖。' };
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  let receipt;
+  const result = await runInteractiveReviewTurn({ mode: 'INTERACTIVE_REVIEW',
+    reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId,
+    callTool: async (name, args) => {
+      if (name === 'begin_review_turn') return runningBegin(task);
+      if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+      if (name === 'commit_review_turn_candidate') {
+        const sealed = JSON.parse(args.resultJson);
+        receipt = reviewCommit(task.operationRef);
+        receipt.authority.staleMarked = true;
+        receipt.assistantCandidate = { actionAttemptRef: task.operationRef,
+          provenance: { resultContentHash: sealed.contentHash },
+          jobAidWorkingUpdate: { status: 'APPLIED', workRevisionRef: 'JAWR-saved-8', workRevision: 8 } };
+        mutation(receipt);
+        return receipt;
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    }, respond: async () => ({ output: candidate, provenance: provenance() }) });
+  return { result, receipt };
+}
+
+test('companion exact JobAid APPLIED receipt permits Overall invalidation without a formal action', async () => {
+  const { result, receipt } = await companionJobAidReceiptFixture();
+  assert.equal(result.ok, true);
+  assert.equal(result.committed, receipt);
+  assert.equal(result.committed.authority.staleMarked, true);
+  assert.equal(result.committed.authority.currentChanged, false);
+  assert.equal(result.committed.authority.workItemRevisionChanged, false);
+  assert.equal(result.committed.authority.reviewActionExecuted, false);
+});
+
+for (const [name, mutation] of [
+  ['different attempt', r => { r.assistantCandidate.actionAttemptRef = 'AQ-another'; }],
+  ['different sealed hash', r => { r.assistantCandidate.provenance.resultContentHash = 'f'.repeat(64); }],
+  ['missing persisted update', r => { delete r.assistantCandidate.jobAidWorkingUpdate; }],
+  ['unchanged work reference', r => { r.assistantCandidate.jobAidWorkingUpdate.workRevisionRef = 'JAWR-preserved-7'; }],
+  ['wrong revision', r => { r.assistantCandidate.jobAidWorkingUpdate.workRevision = 9; }],
+  ['non applied receipt', r => { r.assistantCandidate.jobAidWorkingUpdate.status = 'UNCHANGED'; }],
+  ['formal current mutation', r => { r.authority.currentChanged = true; }],
+  ['formal WorkItem mutation', r => { r.authority.workItemRevisionChanged = true; }],
+  ['formal ReviewAction', r => { r.authority.reviewActionExecuted = true; }],
+]) test(`companion refuses invalidating receipt: ${name}`, async () => {
+  await assert.rejects(companionJobAidReceiptFixture(mutation), /HOST_MCP_REVIEW_COMMIT_RESULT_INVALID/u);
 });
 
 test('requires strict registered derived_summary_attempt metadata without granting extra inputs', () => {

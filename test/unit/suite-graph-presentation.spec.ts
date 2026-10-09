@@ -219,6 +219,30 @@ describe('buildSuiteGraphPresentation', () => {
     expect(result.omittedRelationships.map((item) => item.reason)).toContain('missingEndpoint');
   });
 
+  it.each(['individual', 'aggregated'] as const)('represents only directory membership from a display root in %s mode', (relationMode) => {
+    const input = matter(1);
+    input.rootKind = 'display';
+    input.relations = [
+      { id: 'directory', source: input.id, target: 'item-0', type: 'DIRECTORY_MEMBERSHIP', label: '目录登记' },
+      { id: 'not-directory', source: input.id, target: 'item-0', type: 'CATALOG', label: '资料关联' },
+      { id: 'missing-directory', source: input.id, target: 'absent', type: 'DIRECTORY_MEMBERSHIP', label: '目录登记' },
+    ];
+    const result = buildSuiteGraphPresentation(input, { relationMode });
+    const exact = result.elements.find((element) => element.group === 'edges' && element.data.businessId === 'directory');
+    expect(exact?.data).toMatchObject({
+      source: 'sg:hub:matter', target: 'sg:item:item-0',
+      displaySource: 'matter', businessTarget: 'item-0', displayOnly: true,
+    });
+    expect(exact?.data.businessSource).toBeUndefined();
+    expect(result.counts.represented).toMatchObject({ relationships: 1, displayConnections: 1, businessRelationships: 0 });
+    expect(result.omittedRelationships).toEqual([
+      { id: 'not-directory', reason: 'missingEndpoint' },
+      { id: 'missing-directory', reason: 'missingEndpoint' },
+    ]);
+    const hub = result.elements.find((element) => element.group === 'nodes' && element.data.viewKind === 'hub');
+    expect(hub?.data.businessId).toBeUndefined();
+  });
+
   it('normalizes non-finite and fractional paging options', () => {
     const result = buildSuiteGraphPresentation(matter(8), { page: Number.NaN, maxGroups: 1.5, density: Number.POSITIVE_INFINITY });
     expect(result.counts.page).toMatchObject({ index: 0, size: 1, pageCount: 8 });
@@ -226,5 +250,48 @@ describe('buildSuiteGraphPresentation', () => {
     const fallback = buildSuiteGraphPresentation(matter(8), { page: Number.POSITIVE_INFINITY, maxGroups: Number.NaN, density: 1.5 });
     expect(fallback.counts.page).toMatchObject({ index: 0, size: 6, pageCount: 2 });
     expect(fallback.groups[0].visible).toBe(1);
+  });
+});
+
+describe('semantic relation bundle identity', () => {
+  it('separates authority, selected/history/unknown currentness, and legacy edges sharing display endpoints', () => {
+    const input = matter(1);
+    const baseline = { source: 'matter', target: 'item-0', type: 'REFERENCES', label: 'same' };
+    input.relations = [
+      { ...baseline, id: 'legacy' },
+      { ...baseline, id: 'source', authority: 'SOURCE_EXPLICIT', currentness: 'SELECTED_HOST_OBSERVATION' },
+      { ...baseline, id: 'source-2', authority: 'SOURCE_EXPLICIT', currentness: 'SELECTED_HOST_OBSERVATION' },
+      { ...baseline, id: 'candidate', authority: 'CANDIDATE_ONLY', currentness: 'SELECTED_HOST_OBSERVATION' },
+      { ...baseline, id: 'history', authority: 'SOURCE_EXPLICIT', currentness: 'HISTORICAL_HOST_OBSERVATION' },
+      { ...baseline, id: 'unknown', authority: 'SOURCE_EXPLICIT', currentness: 'UNKNOWN' },
+      { ...baseline, id: 'host', authority: 'HOST_RECORDED', currentness: 'UNKNOWN' },
+      { ...baseline, id: 'unknown-authority', authority: 'UNKNOWN', currentness: 'UNKNOWN' },
+    ];
+    const result = buildSuiteGraphPresentation(input);
+    const bundles = result.elements.filter(item => item.group === 'edges' && item.data.viewKind === 'bundle');
+    expect(bundles.map(item => item.data.relationshipIds)).toEqual([['legacy'], ['source', 'source-2'], ['candidate'], ['history'], ['unknown'], ['host'], ['unknown-authority']]);
+    expect(bundles[0].data).not.toHaveProperty('authority');
+    expect(bundles[0].data).not.toHaveProperty('currentness');
+    for (const edge of result.elements.filter(item => item.group === 'edges' && item.data.viewKind === 'relationship')) {
+      const relation = input.relations.find(item => item.id === edge.data.businessId)!;
+      expect(edge.data.authority).toBe(relation.authority);
+      expect(edge.data.currentness).toBe(relation.currentness);
+    }
+    expect(bundles[1].data).toMatchObject({authority: 'SOURCE_EXPLICIT', currentness: 'SELECTED_HOST_OBSERVATION'});
+    expect(bundles[2].data).toMatchObject({authority: 'CANDIDATE_ONLY', currentness: 'SELECTED_HOST_OBSERVATION'});
+    expect(result.counts.represented.relationships).toBe(8);
+    expect(result.omittedRelationships).toEqual([]);
+  });
+  it('preserves the same semantic fields in individual mode without modifying layout or appearance', () => {
+    const input = matter(1);
+    input.relations = [{id: 'candidate', source: 'matter', target: 'item-0', type: 'REFERENCES', label: 'candidate', authority: 'CANDIDATE_ONLY', currentness: 'HISTORICAL_HOST_OBSERVATION'}];
+    const result = buildSuiteGraphPresentation(input, {relationMode: 'individual'});
+    expect(result.elements.find(item => item.group === 'edges')?.data).toMatchObject({authority: 'CANDIDATE_ONLY', currentness: 'HISTORICAL_HOST_OBSERVATION', relationshipIds: ['candidate']});
+    const legacy = structuredClone(input);
+    delete legacy.relations[0].authority; delete legacy.relations[0].currentness;
+    const before = buildSuiteGraphPresentation(legacy, {relationMode: 'individual'});
+    expect(result.groups).toEqual(before.groups);
+    expect(result.bounds).toEqual(before.bounds);
+    expect(result.elements.filter(item => item.group === 'nodes')).toEqual(before.elements.filter(item => item.group === 'nodes'));
   });
 });

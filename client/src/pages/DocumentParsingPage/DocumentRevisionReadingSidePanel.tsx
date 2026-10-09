@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { tableAttachedSourceText } from './table-source-text';
 
 import { Badge } from '@client/src/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@client/src/components/ui/card';
@@ -55,11 +56,12 @@ function RevisionTable({ payload }: { payload: Record<string, unknown> }) {
     typeof payload.caption === 'string' && payload.caption
       ? payload.caption
       : null;
+  const attachedText = tableAttachedSourceText(payload);
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-xs">
         {caption ? (
-          <caption className="px-2 py-1 text-left text-muted-foreground">
+          <caption className="whitespace-pre-wrap px-2 py-1 text-left text-muted-foreground">
             {caption}
           </caption>
         ) : null}
@@ -90,6 +92,12 @@ function RevisionTable({ payload }: { payload: Record<string, unknown> }) {
             ))}
         </tbody>
       </table>
+      {attachedText !== null ? (
+        <div className="mt-2">
+          <p className="text-xs text-muted-foreground">原文附带文字</p>
+          <p className="whitespace-pre-wrap text-sm">{attachedText}</p>
+        </div>
+      ) : null}
     </div>
   );
 }

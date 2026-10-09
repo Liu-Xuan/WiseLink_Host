@@ -33,7 +33,7 @@ describe('structured PDF workspace wiring', () => {
       "container.querySelectorAll<HTMLElement>('[data-pdf-page]')",
     );
     expect(viewer).toContain(
-      'pageFrames.forEach((frame: HTMLElement) => observer.observe(frame))',
+      'pageFrames.forEach((page: HTMLElement) => observer?.observe(page))',
     );
     // The unchanged target effect also follows exact reading-scope changes.
     // Compare its complete dependency contract, not source formatting.
@@ -55,7 +55,7 @@ describe('structured PDF workspace wiring', () => {
     );
     expect(viewer).toContain('requestPdfPage(nextPage);');
     expect(viewer).toContain('setCurrentPage(nextPage);');
-    expect(viewer).toContain('return new Set(current).add(nextPage);');
+    expect(viewer).toContain('currentPage === pageNumber || renderedPages.has(pageNumber)');
     expect(viewer).toContain(
       '{visiblePages.map((pageNumber: number) => (',
     );

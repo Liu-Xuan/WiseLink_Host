@@ -70,7 +70,7 @@ import { libraryMetadata } from './fixtures/canonical-library';
 describe('canonical host assessment client', () => {
   it('reads saved source activity candidates at an exact revision and preserves missing results', async () => {
     const binding = { documentVersionId: 'DV', parseRunId: 'parse' };
-    const candidate = { sourceBinding: { original: binding }, candidateRevision: 3, candidateOnly: true };
+    const candidate = { schemaVersion: 'wiselink.document.activity-candidate.v1', sourceBinding: { original: binding }, candidateRevision: 3, candidateOnly: true };
     request.mockResolvedValue({ status: 200, data: { familyId: 'family', binding, candidate } });
     await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', candidateRevision: 3 }))
       .resolves.toHaveProperty('candidate.candidateRevision', 3);
@@ -81,6 +81,33 @@ describe('canonical host assessment client', () => {
     await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', candidateRevision: 9 })).resolves.toHaveProperty('candidate', null);
     request.mockImplementation(async () => { invalidateCanonicalHostClientSession(); return { status: 200, data: { binding, candidate } }; });
     await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse' })).rejects.toThrow('OBSOLETE');
+  });
+
+  it('accepts saved v2 only with explicit opt-in and a matching response discriminator', async () => {
+    const binding = { documentVersionId: 'DV', parseRunId: 'parse' };
+    const candidate = { schemaVersion: 'wiselink.document.activity-candidate.v2', sourceBinding: { original: binding }, candidateRevision: 7, candidateOnly: true };
+    request.mockResolvedValue({ status: 200, data: { familyId: 'family', binding, candidate, sourceSchemaVersion: candidate.schemaVersion } });
+    await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', candidateRevision: 7, acceptCandidateSchemaV2: true }))
+      .resolves.toHaveProperty('candidate.schemaVersion', candidate.schemaVersion);
+    expect(request).toHaveBeenLastCalledWith(expect.objectContaining({
+      url: '/api/document-management/document-versions/DV/activity-reading?parseRunId=parse&candidateRevision=7&acceptCandidateSchemaV2=true', method: 'GET',
+    }));
+    await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', candidateRevision: 7 }))
+      .rejects.toThrow('SCHEMA_UNSUPPORTED');
+    expect(request.mock.calls.at(-1)[0].url).not.toContain('acceptCandidateSchemaV2');
+    for (const sourceSchemaVersion of ['wiselink.document.activity-candidate.v1', undefined]) {
+      request.mockResolvedValue({ status: 200, data: { familyId: 'family', binding, candidate, sourceSchemaVersion } });
+      await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', acceptCandidateSchemaV2: true }))
+        .rejects.toThrow('SCHEMA_MISMATCH');
+    }
+  });
+
+  it.each(['wiselink.document.activity-candidate.v99', undefined])('rejects an unknown or absent saved discriminator %s even with v2 opt-in', async schemaVersion => {
+    const binding = { documentVersionId: 'DV', parseRunId: 'parse' };
+    const candidate = { schemaVersion, sourceBinding: { original: binding }, candidateRevision: 7, candidateOnly: true };
+    request.mockResolvedValue({ status: 200, data: { familyId: 'family', binding, candidate, sourceSchemaVersion: schemaVersion } });
+    await expect(readDocumentActivityReading({ documentVersionId: 'DV', parseRunId: 'parse', acceptCandidateSchemaV2: true }))
+      .rejects.toThrow('SCHEMA_UNSUPPORTED');
   });
 
   it('discovers a saved semantic revision without assuming revision 1 and preserves the absent state', async () => {
@@ -671,6 +698,67 @@ describe('canonical host assessment client', () => {
       tenantId: 'tenant-1',
     });
     expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('fresh identity bypasses cached tenant observations while ordinary consumers still deduplicate', async () => {
+    request.mockResolvedValueOnce({ status: 200, data: { userId: 'user', tenantId: 'tenant-a' } })
+      .mockResolvedValueOnce({ status: 200, data: { userId: 'user', tenantId: 'tenant-b' } });
+    await expect(getCanonicalHostIdentityContext()).resolves.toMatchObject({ tenantId: 'tenant-a' });
+    await expect(getCanonicalHostIdentityContext({ fresh: true })).resolves.toMatchObject({ tenantId: 'tenant-b' });
+    await expect(getCanonicalHostIdentityContext()).resolves.toMatchObject({ tenantId: 'tenant-b' });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([401, 403])('late superseded identity %s cannot revoke a newly checked identity in the same generation', async status => {
+    let resolveOld!: (value: unknown) => void;
+    request.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }))
+      .mockResolvedValueOnce({ status: 200, data: { userId: 'user', tenantId: 'tenant-b' } });
+    const old = getCanonicalHostIdentityContext();
+    await Promise.resolve();
+    await expect(getCanonicalHostIdentityContext({ fresh: true })).resolves.toMatchObject({ tenantId: 'tenant-b' });
+    const generation = getCanonicalHostClientSessionGeneration();
+    resolveOld({ status, data: {} });
+    await expect(old).rejects.toThrow('CANONICAL_HOST_IDENTITY_REQUIRED');
+    expect(getCanonicalHostClientSessionGeneration()).toBe(generation);
+    expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
+    await expect(getCanonicalHostIdentityContext()).resolves.toMatchObject({ tenantId: 'tenant-b' });
+  });
+
+  it('superseded successful fresh identity replies cannot replace the latest tenant cache', async () => {
+    let resolveOld!: (value: unknown) => void;
+    request.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }))
+      .mockResolvedValueOnce({ status: 200, data: { userId: 'user', tenantId: 'tenant-b' } });
+    const old = getCanonicalHostIdentityContext({ fresh: true });
+    await Promise.resolve();
+    await getCanonicalHostIdentityContext({ fresh: true });
+    resolveOld({ status: 200, data: { userId: 'user', tenantId: 'tenant-a' } });
+    await expect(old).rejects.toThrow('CANONICAL_HOST_IDENTITY_STALE');
+    await expect(getCanonicalHostIdentityContext()).resolves.toMatchObject({ tenantId: 'tenant-b' });
+  });
+
+  it('late rejected identity 401 cannot invalidate a newer checked identity', async () => {
+    let rejectOld!: (error: unknown) => void;
+    request.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject; }))
+      .mockResolvedValueOnce({ status: 200, data: { userId: 'user', tenantId: 'tenant-b' } });
+    const old = getCanonicalHostIdentityContext();
+    await Promise.resolve();
+    await getCanonicalHostIdentityContext({ fresh: true });
+    const generation = getCanonicalHostClientSessionGeneration();
+    const error = Object.assign(new Error('old unauthorized'), { response: { status: 401 } });
+    rejectOld(error);
+    await expect(old).rejects.toBe(error);
+    expect(getCanonicalHostClientSessionGeneration()).toBe(generation);
+    expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
+    await expect(getCanonicalHostIdentityContext()).resolves.toMatchObject({ tenantId: 'tenant-b' });
+  });
+
+  it.each(['resolved-401', 'resolved-403', 'rejected-401'])('latest identity denial %s still signals required authentication', async failure => {
+    if (failure === 'rejected-401') request.mockRejectedValueOnce(Object.assign(new Error('unauthorized'), { response: { status: 401 } }));
+    else request.mockResolvedValueOnce({ status: failure === 'resolved-401' ? 401 : 403, data: {} });
+    const generation = getCanonicalHostClientSessionGeneration();
+    await expect(getCanonicalHostIdentityContext({ fresh: true })).rejects.toThrow();
+    expect(getCanonicalHostClientSessionGeneration()).toBe(generation + 1);
+    expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(true);
   });
 
   it('does not cache failed or incomplete canonical identity reads', async () => {

@@ -1,6 +1,7 @@
 import type {
   DocumentActivityReadingRequest,
-  DocumentActivityReadingResponse,
+  AnyDocumentActivityReadingResponse as DocumentActivityReadingResponse,
+  DocumentActivityReadingResponse as LegacyDocumentActivityReadingResponse,
   DocumentActivityRevision,
   DocumentActivityStatement,
 } from '@shared/document-activity.interface';
@@ -164,19 +165,28 @@ export interface ActivityEntryLoadResult {
   unreadable: string | null;
 }
 
-/**
- * Load the saved activity candidate for a validated entry. Explicit pins never fall
- * back to the latest saved candidate; a pinned runRef or candidateRevision that does
- * not match the saved candidate is an error, not a silent re-point.
- */
-export async function loadActivityEntry(options: {
+export type LegacyActivityEntryLoadResult = Omit<ActivityEntryLoadResult, 'reading'> & {
+  reading: LegacyDocumentActivityReadingResponse | null;
+};
+
+interface ActivityEntryLoadOptions {
   documentVersionId: string;
   entry: ActivityEntryValidation;
   baseParams: URLSearchParams;
   deps: ActivityEntryDeps;
   signal: AbortSignal;
   current: () => boolean;
-}): Promise<ActivityEntryLoadResult> {
+  acceptCandidateSchemaV2?: boolean;
+}
+
+/**
+ * Load the saved activity candidate for a validated entry. Explicit pins never fall
+ * back to the latest saved candidate; a pinned runRef or candidateRevision that does
+ * not match the saved candidate is an error, not a silent re-point.
+ */
+export function loadActivityEntry(options: ActivityEntryLoadOptions & { acceptCandidateSchemaV2?: false }): Promise<LegacyActivityEntryLoadResult>;
+export function loadActivityEntry(options: ActivityEntryLoadOptions): Promise<ActivityEntryLoadResult>;
+export async function loadActivityEntry(options: ActivityEntryLoadOptions): Promise<ActivityEntryLoadResult> {
   const { documentVersionId, entry, baseParams, deps, signal, current } = options;
   const empty: ActivityEntryLoadResult = {
     reading: null,
@@ -201,6 +211,7 @@ export async function loadActivityEntry(options: {
   } else {
     request = plan.request;
   }
+  if (options.acceptCandidateSchemaV2 === true) request = { ...request, acceptCandidateSchemaV2: true };
   const response = await deps.readActivityReading(request, signal);
   if (!current()) throw new Error('DOCUMENT_ACTIVITY_ENTRY_OBSOLETE');
   const candidate = response.candidate;

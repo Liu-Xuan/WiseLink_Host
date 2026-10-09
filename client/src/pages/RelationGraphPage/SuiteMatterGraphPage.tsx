@@ -1,8 +1,10 @@
+import SuiteTdmsSourceLayer from './SuiteTdmsSourceLayer';
 import { activateGraphLayoutSession } from './suite-graph-layout-memory';
 import { suiteDocumentPerspective } from './suite-document-perspective';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   graphReadingParams,
+  documentGraphReadingParams,
   readGraphReadingState,
   withGraphReturn,
   type SuiteGraphReadingState,
@@ -21,6 +23,7 @@ import type {
   CanonicalLibraryDocumentSummary,
   EngineeringMatterDirectoryResponse,
 } from '@shared/api.interface';
+import { selectMatterDocumentSources } from '@client/src/features/matter/matter-document-sources';
 import { useSuiteMatterGraph } from './useSuiteMatterGraph';
 import { useSuiteGraphDirectoryPage } from './useSuiteGraphDirectoryPage';
 import { useSuiteGraphSources } from './useSuiteGraphSources';
@@ -98,17 +101,19 @@ function MatterGraphContent({
   );
   const read = useSuiteMatterGraph(matterId, workRef, session, denied);
   const historical = Boolean(read.graph?.historical);
-  const catalog = useMemo(
-    () => read.workspace?.matter.catalog.entries ?? [],
-    [read.workspace],
-  );
+  const pinnedSavedWork = Boolean(read.graph?.pinnedSavedWork);
+  const currentSourcesAllowed = Boolean(read.graph) && !workRef && !historical && !pinnedSavedWork;
   const sourceCatalog = useMemo(
-    () => (historical ? [] : catalog),
-    [historical, catalog],
+    () => currentSourcesAllowed && read.workspace ? selectMatterDocumentSources(read.workspace.matter) : [],
+    [read.workspace, currentSourcesAllowed],
+  );
+  const catalog = useMemo(
+    () => sourceCatalog.flatMap(source => source.catalogEntry ? [source.catalogEntry] : []),
+    [sourceCatalog],
   );
   const sources = useSuiteGraphSources({
     catalog: sourceCatalog,
-    enabled: !historical,
+    enabled: currentSourcesAllowed,
     session,
     denied,
     restorePins: navigation.state.eventPins,
@@ -126,11 +131,11 @@ function MatterGraphContent({
     () =>
       buildSuiteGraphTimeline({
         read: matterGraph,
-        catalog,
+        catalog: sourceCatalog,
         activities: sources.activities,
         revision: read.revision,
       }),
-    [matterGraph, catalog, sources.activities, read.revision],
+    [matterGraph, sourceCatalog, sources.activities, read.revision],
   );
   const loadDomain = useCallback(
     (cursor: string | undefined, signal: AbortSignal) =>
@@ -152,19 +157,19 @@ function MatterGraphContent({
     [],
   );
   const domainPage = useSuiteGraphDirectoryPage(
-    perspective === 'domain' && !historical && !denied,
+    perspective === 'domain' && currentSourcesAllowed && !denied,
     session,
     loadDomain,
     domainKey,
   );
   const panoramaPage = useSuiteGraphDirectoryPage(
-    perspective === 'panorama' && !historical && !denied,
+    perspective === 'panorama' && currentSourcesAllowed && !denied,
     session,
     loadPanorama,
     panoramaKey,
   );
   const domainGraph = useMemo<SuiteMatterGraphRead | null>(() => {
-    if (!domainPage.loaded || !read.workspace || historical) return null;
+    if (!domainPage.loaded || !read.workspace || !currentSourcesAllowed) return null;
     return buildSuiteDomainGraph({
       matterId,
       matterTitle: read.workspace.matter.title,
@@ -175,12 +180,12 @@ function MatterGraphContent({
     domainPage.loaded,
     domainPage.items,
     read.workspace,
-    historical,
+    currentSourcesAllowed,
     matterId,
     catalog,
   ]);
   const panoramaGraph = useMemo<SuiteMatterGraphRead | null>(() => {
-    if (!panoramaPage.loaded || !matterGraph || historical) return null;
+    if (!panoramaPage.loaded || !matterGraph || !currentSourcesAllowed) return null;
     return buildSuitePanoramaGraph({
       directory: {
         items: panoramaPage.items,
@@ -194,7 +199,7 @@ function MatterGraphContent({
     panoramaPage.items,
     panoramaPage.nextCursor,
     matterGraph,
-    historical,
+    currentSourcesAllowed,
     matterId,
   ]);
   const open = (route: string) =>
@@ -203,7 +208,7 @@ function MatterGraphContent({
         route,
         graphReadingParams(
           matterId,
-          read.graph?.workRef ?? (workRef || null),
+          workRef || null,
           displayState.current,
           returnContext,
         ),
@@ -234,7 +239,7 @@ function MatterGraphContent({
       if (!pins) return;
       const returnQuery = graphReadingParams(
         matterId,
-        read.graph?.workRef ?? (workRef || null),
+        workRef || null,
         displayState.current,
         returnContext,
       );
@@ -383,9 +388,9 @@ function MatterGraphContent({
         ? panoramaPage
         : null;
   const unavailable =
-    historical && (perspective === 'domain' || perspective === 'panorama');
+    !currentSourcesAllowed && (perspective === 'domain' || perspective === 'panorama');
   const perspectiveNotice = unavailable
-    ? '指定历史工作没有绑定该视角数据。请切回事项或工程文档；历史工作身份保持不变。'
+    ? '指定保存工作没有绑定该视角数据。请切回事项或工程文档；保存工作身份保持不变。'
     : directoryPage?.error
       ? `读取该视角失败：${directoryPage.error}`
       : !displayRead
@@ -401,16 +406,19 @@ function MatterGraphContent({
     relationDetails: new Map(),
   };
 
-  const availablePerspectives: SuiteMatterGraphPerspective[] = historical
+  const availablePerspectives: SuiteMatterGraphPerspective[] = !currentSourcesAllowed
     ? ['matter', 'documents']
     : ['matter', 'documents', 'domain', 'panorama'];
   return (
-    <SuiteMatterGraphView
+    <SuiteTdmsSourceLayer read={displayRead} matterId={matterId} workRef={workRef} session={session}
+      allowCurrentSources={currentSourcesAllowed} onAccessRejected={read.refresh}
+      openDocument={version => open(`/document-versions/${encodeURIComponent(version)}`)}>
+    {(sourceRead, openSource) => <SuiteMatterGraphView
       key={navigation.key}
       initialState={navigation.state}
       layoutScope={read.graph?.workRef ? JSON.stringify([session, matterId, read.graph.workRef]) : undefined}
       onStateChange={handleStateChange}
-      read={displayRead}
+      read={sourceRead}
       perspectiveNotice={combinedNotice}
       perspectiveError={Boolean(directoryPage?.error)}
       onRetryPerspective={directoryPage?.retry}
@@ -430,7 +438,21 @@ function MatterGraphContent({
       onOpenWiki={openWiki}
       onOpenProcess={openProcess}
       onLocateEvidence={locateEvidence}
-      onOpenTarget={openTarget}
-    />
+      onOpenTarget={target => {
+        if (target.kind === 'tdms-record') openSource(target.sourceRevisionRef);
+        else if (target.kind !== 'tdms-unresolved') openTarget(target);
+      }}
+      onOpenDocumentNeighborhood={currentSourcesAllowed ? target => {
+        const version = target.kind === 'catalog-document' ? target.entry.document.documentVersionId
+          : target.kind === 'document' ? target.documentVersionId
+          : target.kind === 'material' ? target.material.documentVersionId : null;
+        if (!version) return;
+        const reader = target.kind === 'catalog-document' ? target.entry.workItemId
+          : catalog.find(entry => entry.document.documentVersionId === version)?.workItemId;
+        persistState(displayState.current);
+        navigate(`/graph?${documentGraphReadingParams(version, reader, {})}`);
+      } : undefined}
+    />}
+    </SuiteTdmsSourceLayer>
   );
 }

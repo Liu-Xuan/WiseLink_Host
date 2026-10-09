@@ -788,7 +788,7 @@ export async function runDynamicEvaluation({
       callTool,
     });
   }
-  const problemV2 = begin.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
+  const problemV2 = ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(begin.modelInput?.schemaVersion);
   if (!problemV2) validatePayload('dynamic-rules-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
@@ -953,7 +953,7 @@ async function completeOverall({
   successorWorkRevisionRef,
   successorReviewTurnRef,
 }) {
-  const problemV2 = begin.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
+  const problemV2 = ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(begin.modelInput?.schemaVersion);
   if (!problemV2) validatePayload('synthesis-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
@@ -1021,6 +1021,7 @@ export async function runInteractiveReviewTurn({
   requestId,
   callTool,
   respond,
+  isolatedCandidate = false,
 }) {
   if (mode !== 'INTERACTIVE_REVIEW') {
     throw new Error('INTERACTIVE_REVIEW_MODE_REQUIRED');
@@ -1038,6 +1039,7 @@ export async function runInteractiveReviewTurn({
   assertBegin(begin, 'OPENCLAW_INTERACTIVE_REVIEW');
   const task = validateReviewTask(begin.task.modelInput);
   if (begin.status === 'COMMITTING') {
+    if (isolatedCandidate) throw new Error('REVIEW_ISOLATED_COMMITTING_FORBIDDEN');
     return recoverReviewCommitting(begin, callTool);
   }
   const contextResult = await callTool('get_review_turn_context', {
@@ -1090,6 +1092,13 @@ export async function runInteractiveReviewTurn({
     }),
   );
   const candidate = validateCandidate(execution.output);
+  if (isolatedCandidate) {
+    return {
+      ok: false, mode: 'INTERACTIVE_REVIEW', operation: 'REVIEW_TURN',
+      outcome: 'CANDIDATE_NOT_SAVED', candidate,
+      provenance: execution.provenance,
+    };
+  }
   const result = sealResultEnvelope({
     task: begin.task,
     modelOutput: candidate,

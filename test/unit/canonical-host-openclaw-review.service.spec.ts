@@ -33,8 +33,89 @@ import type { PersistedReviewTurn } from '../../server/modules/review-persistenc
 import type { EngineeringMatterWorkingBasis } from '../../server/modules/canonical-host/engineering-matter-working.service';
 import type { MatterWorkingDeltaProposal } from '../../server/modules/canonical-host/matter-review-candidate';
 import { materializeEngineeringMatterWorkingState } from '../../server/modules/canonical-host/engineering-matter-working-state';
+import { assertJobAidProblemTaskBinding, buildJobAidProblemTask } from '../../server/modules/canonical-host/jobaid-problem-task';
+import { overallModelEvidenceRegistry } from '../../server/modules/canonical-host/overall-assessment-reading';
+import { projectCommonAssessmentContext } from '../../server/modules/canonical-host/canonical-host-common-context.service';
+import type { AssessmentEvidence } from '../../shared/assessment-reading.interface';
 
 describe('CanonicalHostOpenClawReviewService', () => {
+  it.each([undefined, 'SOURCE_CONTEXT_V1', 'SOURCE_CONTEXT_V2'] as const)(
+    'keeps the sealed JobAid Review evidence projection %s through begin and JSON context restore',
+    async (version) => {
+      const harness = reviewHarness();
+      const { turn } = await harness.conversations.loadOpenClawTurnBinding();
+      Object.assign(turn, { purpose: 'UPDATE_ASSESSMENT' });
+      const loaded = await harness.workItems.loadTenantScopedProjection('WI-1');
+      loaded.projection.integratedAssessment = null;
+      const item = parsedWorkItem();
+      const fact: AssessmentEvidence = {
+        kind: 'HOST_FACT', evidenceRef: 'fixture-host-fact', title: 'Constructed fact',
+        versionLabel: null, excerpt: 'Constructed reading', workItemId: 'WI-1',
+        workItemRevision: 7, factRef: 'fixture-host-fact', recordedAt: '2026-08-26T10:00:00.000Z',
+      };
+      const prepared = buildJobAidProblemTask({
+        workItem: item, actorUserId: 'actor-1', permissionSnapshotVersion: 'fixture-permission',
+        purpose: 'PROBLEM_REVIEW', sourceCatalog: [fact], sourceBindings: [],
+        common: projectCommonAssessmentContext(item, {
+          context: { status: 'UNAVAILABLE', reason: 'CONSTRUCTED' },
+          documentReadingStatus: 'AVAILABLE', items: [], sections: [], resourceRefs: [],
+        }, []),
+        previousWork: null, expectedWorkRevision: 0, priorAssessmentRefs: [],
+        ...(version === 'SOURCE_CONTEXT_V2' ? {
+          sourceActivityProjections: [{ records: [], activityContexts: [] }] as never,
+        } : {}),
+      });
+      if (version !== undefined) prepared.modelInput.evidenceProjectionVersion = version;
+      prepared.modelInput.deliveredEvidence = overallModelEvidenceRegistry(
+        prepared.sourceCatalog.filter(e => prepared.initiallyDeliveredRefs.includes(e.evidenceRef)), version,
+      );
+      assertJobAidProblemTaskBinding(prepared);
+      Object.assign(harness.service, { jobAid: {
+        enabledForNewTasks: () => true,
+        prepareReview: jest.fn(async () => structuredClone(prepared)),
+        assertReviewSources: jest.fn(async (input, tenantId, workItemId) => {
+          expect([tenantId, workItemId, input.actorUserId]).toEqual(['tenant-1', 'WI-1', 'actor-1']);
+          assertJobAidProblemTaskBinding(input);
+        }),
+      } });
+      const begin = await harness.service.begin('RC-1', 'request-1');
+      const context = parseReviewTurnTaskContract(begin.task.modelInput).jobAidContext!;
+      const projected = context.modelInput.deliveredEvidence.find(e => e.evidenceRef === fact.evidenceRef)!;
+      expect(projected).toEqual(overallModelEvidenceRegistry([fact], version)[0]);
+      if (version === 'SOURCE_CONTEXT_V1') expect(projected).toHaveProperty('sourceContext');
+      else expect(projected).not.toHaveProperty('sourceContext');
+      const restored = await harness.service.context(begin.attemptRef, 'WI-1');
+      expect(restored.context.problemAssessment).toEqual(context.modelInput);
+      expect(JSON.parse(JSON.stringify(begin.task)).inputHash).toBe(begin.task.inputHash);
+      const { inputHash: _hash, ...sealed } = JSON.parse(JSON.stringify(begin.task));
+      expect(sealTaskEnvelope(sealed).inputHash).toBe(begin.task.inputHash);
+    },
+  );
+
+  it('rejects an unknown prepared Review projection before sealing instead of falling back to historical projection', async () => {
+    const harness = reviewHarness();
+    const { turn } = await harness.conversations.loadOpenClawTurnBinding();
+    Object.assign(turn, { purpose: 'UPDATE_ASSESSMENT' });
+    const loaded = await harness.workItems.loadTenantScopedProjection('WI-1');
+    loaded.projection.integratedAssessment = null;
+    const item = parsedWorkItem();
+    const prepared = buildJobAidProblemTask({
+      workItem: item, actorUserId: 'actor-1', permissionSnapshotVersion: 'fixture-permission',
+      purpose: 'PROBLEM_REVIEW', sourceCatalog: [], sourceBindings: [],
+      common: projectCommonAssessmentContext(item, {
+        context: { status: 'UNAVAILABLE', reason: 'CONSTRUCTED' },
+        documentReadingStatus: 'AVAILABLE', items: [], sections: [], resourceRefs: [],
+      }, []), previousWork: null, expectedWorkRevision: 0, priorAssessmentRefs: [],
+    });
+    Reflect.set(prepared.modelInput, 'evidenceProjectionVersion', 'UNKNOWN_VERSION');
+    Object.assign(harness.service, { jobAid: {
+      enabledForNewTasks: () => true,
+      prepareReview: jest.fn(async () => structuredClone(prepared)),
+    } });
+    await expect(harness.service.begin('RC-1', 'request-1'))
+      .rejects.toThrow('OVERALL_EVIDENCE_PROJECTION_VERSION_INVALID');
+  });
+
   it('returns idle for an allowlisted WorkItem with no Review conversation', async () => {
     const harness = reviewHarness();
     harness.conversations.loadPendingOpenClawTurn.mockResolvedValueOnce(null);
@@ -507,7 +588,8 @@ describe('CanonicalHostOpenClawReviewService', () => {
           items: [
             expect.objectContaining({
               normalizedTarget: '777-SL-31-064',
-              currentness: 'CURRENT',
+              currentness: 'UNKNOWN',
+              reasonCodes: expect.arrayContaining(['PUBLISHER_CURRENTNESS_UNKNOWN']),
               contextUse: 'BACKGROUND_ONLY',
               targetApplicability: 'NOT_EVALUATED',
               availableRelatedSourceRefIds: ['TARGET-SRC-1'],

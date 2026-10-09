@@ -1,4 +1,7 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import TdmsSourceEntry from '@client/src/features/tdms-source/TdmsSourceEntry';
+import { TDMS_SOURCE_UI_ENABLED } from '@client/src/features/tdms-source/tdms-source-enabled';
+import { savedTdmsSourceRefs } from '@client/src/features/tdms-source/saved-tdms-source-refs';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { BookOpen, ChevronDown, ChevronRight, Search } from 'lucide-react';
 import type { CanonicalLibraryDocumentsResponse, CanonicalLibraryDocumentVersionSummary, EngineeringMatterDirectoryResponse } from '@shared/api.interface';
@@ -79,6 +82,16 @@ function KnowledgeCatalogue() {
   const listKey = JSON.stringify([query, scope, kind, after]);
   const knowledge = useKnowledgeResources(query, scope, after, identity,
     resolveWorkItemId, kind === 'works');
+  const [sourceBlockedSelection, setSourceBlockedSelection] = useState<string | null>(null);
+  const [sourceSuspendedSelection, setSourceSuspendedSelection] = useState<string | null>(null);
+  const refreshSavedRead = useRef(knowledge.refresh); refreshSavedRead.current = knowledge.refresh;
+  const rejectTdmsAccess = useCallback(() => {
+    if (kind !== 'works') return;
+    const expected = selection;
+    setSourceBlockedSelection(expected); setSourceSuspendedSelection(expected);
+    // refresh returns no authorization verdict; keep the rejected selection hidden until an explicit retry.
+    void refreshSavedRead.current().catch(() => undefined);
+  }, [kind, selection]);
   const [loadedDocuments, setDocuments] = useState<CanonicalLibraryDocumentsResponse | null>(null);
   const [documentsLoading, setDocumentsLoading] = useState(true);
   const [documentsError, setDocumentsError] = useState('');
@@ -105,7 +118,8 @@ function KnowledgeCatalogue() {
   const visibleRelatedError = relatedKey === selectedRelatedKey ? relatedError : '';
   const visibleRelatedLoading = Boolean(selectedVersion?.readerWorkItemId) &&
     (relatedKey !== selectedRelatedKey || relatedLoading);
-  const page = knowledge.page, read = knowledge.read;
+  const sourceReadingBlocked = sourceBlockedSelection === selection;
+  const page = sourceReadingBlocked ? null : knowledge.page, read = sourceReadingBlocked ? null : knowledge.read;
   const loading = kind === 'works' ? knowledge.loading : kind === 'matters' ? mattersLoading : documentsLoading;
   const error = kind === 'works' ? knowledge.catalogueError ? failure(knowledge.catalogueError) : ''
     : kind === 'matters' ? mattersError : documentsError;
@@ -115,7 +129,7 @@ function KnowledgeCatalogue() {
   const issueRows = read ? savedWorkIssueRows(read.content.issues) : [];
   const visibleIssues = issueRows.filter(row => !selectedIssueKey || row.issueKey === selectedIssueKey).flatMap(row => row.variants);
   const [retry, setRetry] = useState(0);
-  function retryRead() { setRetry(value => value + 1); void knowledge.refresh(); }
+  function retryRead() { setSourceBlockedSelection(null); setSourceSuspendedSelection(null); setRetry(value => value + 1); void knowledge.refresh(); }
   const [source, setSource] = useState<{ documentVersionId: string; sourceRef: string | null } | null>(null);
   const [expandedFamilies, setExpandedFamilies] = useState<Record<string, boolean>>({});
   const [expandedConditions, setExpandedConditions] = useState<Record<string, boolean>>({});
@@ -326,6 +340,14 @@ function KnowledgeCatalogue() {
           </>}
           {read.correctionNotices?.map(notice => <p role="note" key={`${notice.issueKey}:${notice.attemptRef}`}>{notice.unchanged ? '已核对并保留原认识：' : notice.correctedWorkRef ? '已有后继更正：' : '仍有待核更正：'}{notice.reason}</p>)}
           <ReferenceWorkNotices notices={read.referenceWorkNotices} />
+          {TDMS_SOURCE_UI_ENABLED ? <TdmsSourceEntry
+            key={selection} enabled={TDMS_SOURCE_UI_ENABLED && sourceSuspendedSelection !== selection} onAccessRejected={rejectTdmsAccess}
+            context={read.entry.subjectKind === 'ENGINEERING_MATTER' ? { matterId: read.entry.subjectId } : read.reading?.scope.kind === 'WORK_ITEM' ? { documentVersionId: read.reading.scope.documentVersionId } : {}}
+            exactRevisionRefs={savedTdmsSourceRefs([
+              ...read.content.evidence, ...(read.overall?.readingResult.evidence ?? []),
+            ])}
+            openDocument={documentVersionId => openDocument(`/document-versions/${encodeURIComponent(documentVersionId)}`, documentVersionId)}
+          /> : null}
           <div className="knowledge-actions">{read.entry.subjectKind === 'ENGINEERING_MATTER' ? <>
             <Link to={workWikiRoute(read.entry)} onClick={event => {
               if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -512,6 +534,9 @@ function KnowledgeCatalogue() {
               <p className="knowledge-notice">该版本尚无独立保存的文档简明解读；关联评估不能代替文档解读。</p>}
           </>;
         })()}
+        {TDMS_SOURCE_UI_ENABLED ? <TdmsSourceEntry key={selectedVersion.documentVersionId}
+          context={{ documentVersionId: selectedVersion.documentVersionId }} enabled={TDMS_SOURCE_UI_ENABLED}
+          openDocument={documentVersionId => openDocument(`/document-versions/${encodeURIComponent(documentVersionId)}`, documentVersionId)} /> : null}
         <section className="knowledge-prose"><h2>关联工程事项</h2>
           {visibleRelatedLoading ? <p role="status">正在核对已登记关联…</p>
             : visibleRelatedError ? <p role="alert">{visibleRelatedError} <button onClick={retryRead}>重试</button></p>

@@ -139,7 +139,7 @@ it('READ and SAVE still require the exact original bytes', async () => {
 it('returns the complete saved browser result with fresh exact identities and zero content hydration', async () => {
  const f=fixture();
  f.reader.readDocumentOriginal.mockRejectedValue(new Error('STORAGE_UNAVAILABLE'));
- const result = { sourceBinding: { original: f.original.binding, semanticRevision: 1 },
+ const result = { schemaVersion: 'wiselink.document.activity-candidate.v1', sourceBinding: { original: f.original.binding, semanticRevision: 1 },
   candidateRevision: 9, statements: [{ label: '完整已保存正文'.repeat(5000) }] };
  f.runs.readSaved.mockResolvedValue(result as never);
  const request = { documentVersionId: f.scope.documentVersionId, parseRunId: f.row.parseRunId, candidateRevision: 9 };
@@ -155,4 +155,47 @@ it('returns the complete saved browser result with fresh exact identities and ze
  await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SEMANTIC_REVISION_NOT_FOUND');
  f.parsing.inspectPublishedIdentity.mockRejectedValueOnce(new Error('SOURCE_REVOKED'));
  await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SOURCE_REVOKED');
+});
+
+
+describe('explicit source activity v2 contract pins', () => {
+  const pin = { promptVersion: 'fixture-prompt-v2', toolSchemaSha256: 'a'.repeat(64),
+    sourceContextVersion: 'wiselink.document.activity-source-context.v1', quoteTransportVersion: 'wiselink.document.activity-quote-selection.v1' };
+  it('defaults existing BEGIN to v1 and requires explicit v2 producer provenance', async () => {
+    const f = fixture(); const begin = { action: 'ACTIVITY_BEGIN', documentVersionId: f.scope.documentVersionId,
+      parseRunId: f.row.parseRunId, semanticRevision: 1, requestId: 'request-v2', expectedRevision: 0, sectionIds: f.row.selection.sectionIds };
+    await f.service.run(begin);
+    expect(f.runs.begin.mock.calls[0][1]).toMatchObject({ candidateSchemaVersion: 'wiselink.document.activity-candidate.v1', productionContract: null });
+    await expect(f.service.run({ ...begin, candidateSchemaVersion: 'wiselink.document.activity-candidate.v2' })).rejects.toThrow('PRODUCTION_CONTRACT_REQUIRED');
+    await f.service.run({ ...begin, candidateSchemaVersion: 'wiselink.document.activity-candidate.v2', productionContract: pin });
+    expect(f.runs.begin.mock.calls[1][1]).toMatchObject({ candidateSchemaVersion: 'wiselink.document.activity-candidate.v2', productionContract: pin });
+  });
+  it('READ delivers actual sourceContext and SAVE_SELECTION preserves v2 cues into Host identities', async () => {
+    const f = fixture(); f.row.candidateSchemaVersion = 'wiselink.document.activity-candidate.v2'; f.row.productionContract = pin as never;
+    const delivery = await f.service.run({ action: 'ACTIVITY_READ', ...f.fence, sectionId: f.row.selection.sectionIds[0], offset: 0, limit: 50 });
+    if (!('anchors' in delivery) || !('sourceContext' in delivery)) throw new Error('expected v2 READ');
+    expect(delivery.sourceContext).toMatchObject({ schemaVersion: pin.sourceContextVersion,
+      profile: { selectionBasis: 'NOT_RECORDED', family: null, issuer: null } });
+    const anchor = delivery.anchors.find(value => value.sourceUnitId === 'u1')!;
+    const candidate = { schemaVersion: f.row.candidateSchemaVersion, quoteSelectionSchemaVersion: pin.quoteTransportVersion,
+      statements: [{ statementKey: 'planned', label: 'Source planned action', quotes: [{ anchorId: anchor.anchorId, text: anchor.sourceText }],
+        subject: null, action: { raw: 'action', quoteIndex: 0 }, modality: { raw: 'planned', quoteIndex: 0, meaning: 'PLANNED', negationQuoteIndexes: [] },
+        status: null, times: [], technicalIds: [], scope: { sectionIds: f.row.selection.sectionIds, conditions: [], completeness: 'DELIVERED_SCOPE_ONLY' }, limitations: [] }] };
+    const saved = await f.service.run({ action: 'ACTIVITY_SAVE_SELECTION', ...f.fence, candidate, producer: { skillVersion: 'test', modelVersion: 'not-called' } });
+    expect(saved).toMatchObject({ schemaVersion: f.row.candidateSchemaVersion, candidateOnly: true, sourceContext: delivery.sourceContext,
+      statements: [{ statementId: expect.stringMatching(/^DAS-/u), action: { raw: 'action', quoteIndex: 0 } }] });
+    const status = await f.service.run({ action: 'ACTIVITY_STATUS', documentVersionId: f.scope.documentVersionId, runRef: f.row.runRef });
+    expect(status).toMatchObject({ candidateSchemaVersion: f.row.candidateSchemaVersion, productionContract: pin });
+  });
+  it('rejects schema/transport drift and source change after READ before any save result', async () => {
+    const f = fixture(); f.row.candidateSchemaVersion = 'wiselink.document.activity-candidate.v2'; f.row.productionContract = pin as never;
+    await f.service.run({ action: 'ACTIVITY_READ', ...f.fence, sectionId: f.row.selection.sectionIds[0], offset: 0, limit: 50 });
+    const save = { action: 'ACTIVITY_SAVE', ...f.fence, candidate: { schemaVersion: 'wiselink.document.activity-candidate.v2', statements: [] },
+      producer: { skillVersion: 'test', modelVersion: 'not-called' } };
+    await expect(f.service.run({ ...save, candidate: { ...save.candidate, schemaVersion: 'wiselink.document.activity-candidate.v1' } })).rejects.toThrow('RUN_SCHEMA_MISMATCH');
+    await expect(f.service.run(save)).rejects.toThrow('RUN_TRANSPORT_MISMATCH');
+    f.loaded.run.manifestArtifact.sha256 = 'c'.repeat(64);
+    await expect(f.service.run({ ...save, action: 'ACTIVITY_SAVE_SELECTION' })).rejects.toThrow('ORIGINAL_CHANGED');
+    expect(f.runs.save).not.toHaveBeenCalled();
+  });
 });

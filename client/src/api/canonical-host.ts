@@ -1,8 +1,10 @@
+import type { TdmsCatalogueResponse, TdmsReadContext, TdmsRelationReadResponse } from '@shared/tdms-source.interface';
+import type { TdmsFileServiceRecordReadResponse } from '@shared/tdms-file-service-import.interface';
 import type { CanonicalLibraryGraphRequest, CanonicalLibraryGraphResponse } from '@shared/library-graph.interface';
 import type { DocumentParsingSettingsReadModel, UpdateDocumentParsingSettingsRequest } from '@shared/document-parsing-settings.interface';
 import type { DocumentRevisionReadingRequest, DocumentRevisionReadingResponse } from '@shared/document-revision-reading.interface';
 import type { DocumentSemanticReadingRequest, DocumentSemanticReadingResponse } from '@shared/document-semantic-map.interface';
-import type { DocumentActivityReadingRequest, DocumentActivityReadingResponse } from '@shared/document-activity.interface';
+import type { DocumentActivityReadingRequest, DocumentActivityReadingResponse, DocumentActivityVersionedReadingResponse, AnyDocumentActivityReadingResponse } from '@shared/document-activity.interface';
 import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse,
@@ -203,9 +205,10 @@ export function clearCanonicalHostClientSessionCache(): void {
   officialOauthRead = null;
 }
 
-export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostIdentityContext> {
+/** A foreground authorization recheck must not reuse an earlier tenant observation. */
+export async function getCanonicalHostIdentityContext(options?: { fresh?: boolean }): Promise<CanonicalHostIdentityContext> {
   const generation = clientSessionGeneration;
-  if (identityContextRead?.generation === generation) {
+  if (!options?.fresh && identityContextRead?.generation === generation) {
     return identityContextRead.promise;
   }
 
@@ -218,7 +221,8 @@ export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostId
         timeout: 45_000,
       });
       if (response.status === 401 || response.status === 403) {
-        requireCanonicalHostClientAuthentication(generation);
+        if (generation === clientSessionGeneration && identityContextRead?.promise === cachedPromise)
+          requireCanonicalHostClientAuthentication(generation);
         throw new Error('CANONICAL_HOST_IDENTITY_REQUIRED');
       }
       if (response.status < 200 || response.status >= 300) {
@@ -241,7 +245,8 @@ export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostId
       return { ...response.data, userId, tenantId };
     })
     .catch((cause: unknown) => {
-      if (responseStatus(cause) === 401) {
+      if (responseStatus(cause) === 401 &&
+        generation === clientSessionGeneration && identityContextRead?.promise === cachedPromise) {
         requireCanonicalHostClientAuthentication(generation);
       }
       if (identityContextRead?.promise === cachedPromise) {
@@ -566,6 +571,83 @@ async function readCanonicalLibrary<T>(input: {
   }
 }
 
+/** Runtime work/attempt scope is server-internal and is not accepted by browser endpoints. */
+export type TdmsSourceBrowserReadContext = Pick<TdmsReadContext, 'matterId' | 'documentVersionId'>;
+
+/** Native TDMS reads use the same Host session and direct-object error boundary. */
+function tdmsContextQuery(context: TdmsSourceBrowserReadContext): URLSearchParams {
+  if (!context || typeof context !== 'object' || Array.isArray(context) || Object.keys(context).length === 0)
+    throw new Error('TDMS_READ_CONTEXT_INVALID');
+  if (context.matterId && context.documentVersionId)
+    throw new Error('TDMS_READ_CONTEXT_CONFLICT');
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(context)) {
+    if (!['matterId', 'documentVersionId'].includes(key) || typeof value !== 'string' ||
+      !value || value !== value.trim() || /[\u0000-\u001f\u007f]/u.test(value))
+      throw new Error('TDMS_READ_CONTEXT_INVALID');
+    query.set(key, value);
+  }
+  return query;
+}
+
+export async function readTdmsSourceCatalogue(context: TdmsSourceBrowserReadContext,
+  after?: string, signal?: AbortSignal): Promise<TdmsCatalogueResponse> {
+  const generation = clientSessionGeneration;
+  const query = tdmsContextQuery(context);
+  if (after) query.set('after', after);
+  const result = await readCanonicalLibrary<TdmsCatalogueResponse>({
+    url: `/api/tdms-source/records?${query}`, signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration)
+    throw new Error('TDMS_SOURCE_READ_OBSOLETE');
+  if (result.readPerformed !== false || !Array.isArray(result.records) ||
+    (result.sourceStatus === 'DISABLED' && result.records.length !== 0))
+    throw new Error('TDMS_SOURCE_CATALOGUE_BINDING_MISMATCH');
+  return result;
+}
+
+export async function readTdmsSourceRecord(sourceRevisionRef: string,
+  context: TdmsSourceBrowserReadContext, signal?: AbortSignal): Promise<TdmsFileServiceRecordReadResponse> {
+  if (typeof sourceRevisionRef !== 'string' || !sourceRevisionRef || sourceRevisionRef !== sourceRevisionRef.trim() ||
+    /[\u0000-\u001f\u007f]/u.test(sourceRevisionRef))
+    throw new Error('TDMS_SOURCE_REVISION_INVALID');
+  const generation = clientSessionGeneration;
+  const query = tdmsContextQuery(context);
+  const result = await readCanonicalLibrary<TdmsFileServiceRecordReadResponse>({
+    url: `/api/tdms-source/records/${encodeURIComponent(sourceRevisionRef)}?${query}`, signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration)
+    throw new Error('TDMS_SOURCE_READ_OBSOLETE');
+  if (result.record?.sourceRevisionRef !== sourceRevisionRef ||
+    result.receipt?.sourceRevisionRef !== sourceRevisionRef ||
+    result.receipt.readPerformed !== true || result.receipt.purpose !== 'WIKI_NATIVE_RECORD' ||
+    result.selectedFields !== null)
+    throw new Error('TDMS_SOURCE_RECORD_BINDING_MISMATCH');
+  return result;
+}
+
+export async function readTdmsSourceRelations(sourceRevisionRef: string,
+  context: TdmsSourceBrowserReadContext, signal?: AbortSignal): Promise<TdmsRelationReadResponse> {
+  if (typeof sourceRevisionRef !== 'string' || !sourceRevisionRef || sourceRevisionRef !== sourceRevisionRef.trim() ||
+    /[\u0000-\u001f\u007f]/u.test(sourceRevisionRef))
+    throw new Error('TDMS_SOURCE_REVISION_INVALID');
+  const generation = clientSessionGeneration;
+  const query = tdmsContextQuery(context);
+  const result = await readCanonicalLibrary<TdmsRelationReadResponse>({
+    url: `/api/tdms-source/records/${encodeURIComponent(sourceRevisionRef)}/relations?${query}`, signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration)
+    throw new Error('TDMS_SOURCE_READ_OBSOLETE');
+  if (result.sourceRevisionRef !== sourceRevisionRef ||
+    result.receipt?.sourceRevisionRef !== sourceRevisionRef ||
+    result.receipt.readPerformed !== true || result.receipt.purpose !== 'WIKI_NATIVE_RELATIONS' ||
+    !Array.isArray(result.relations) || result.relations.some(relation =>
+      ![relation.from, relation.to].some(endpoint =>
+        endpoint.kind === 'NATIVE_RECORD_REVISION' && endpoint.sourceRevisionRef === sourceRevisionRef)))
+    throw new Error('TDMS_SOURCE_RELATION_BINDING_MISMATCH');
+  return result;
+}
+
 export async function enrichDocumentVersionMetadata(documentVersionId: string): Promise<{
   documentVersionId: string;
   disposition: 'ENRICHED' | 'ALREADY_PRESENT';
@@ -652,11 +734,15 @@ export function startDocumentParsing(documentVersionId: string, input: StartDocu
   return readCanonicalLibrary<DocumentParseRunSummary>({ url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/parse-runs`, method: 'POST', data: input });
 }
 
-export async function readDocumentActivityReading(input: DocumentActivityReadingRequest, signal?: AbortSignal): Promise<DocumentActivityReadingResponse> {
+export function readDocumentActivityReading(input: DocumentActivityReadingRequest & { acceptCandidateSchemaV2: true }, signal?: AbortSignal): Promise<DocumentActivityVersionedReadingResponse>;
+export function readDocumentActivityReading(input: DocumentActivityReadingRequest & { acceptCandidateSchemaV2?: false }, signal?: AbortSignal): Promise<DocumentActivityReadingResponse>;
+export function readDocumentActivityReading(input: DocumentActivityReadingRequest, signal?: AbortSignal): Promise<AnyDocumentActivityReadingResponse>;
+export async function readDocumentActivityReading(input: DocumentActivityReadingRequest, signal?: AbortSignal): Promise<AnyDocumentActivityReadingResponse> {
   const generation = clientSessionGeneration;
   const query = new URLSearchParams({ parseRunId: input.parseRunId });
   if (input.candidateRevision !== undefined) query.set('candidateRevision', String(input.candidateRevision));
-  const result = await readCanonicalLibrary<DocumentActivityReadingResponse>({
+  if (input.acceptCandidateSchemaV2 !== undefined) query.set('acceptCandidateSchemaV2', String(input.acceptCandidateSchemaV2));
+  const result = await readCanonicalLibrary<AnyDocumentActivityReadingResponse>({
     url: `/api/document-management/document-versions/${encodeURIComponent(input.documentVersionId)}/activity-reading?${query}`, signal });
   if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('DOCUMENT_ACTIVITY_READING_OBSOLETE');
   if (result.binding.documentVersionId !== input.documentVersionId || result.binding.parseRunId !== input.parseRunId ||
@@ -665,6 +751,13 @@ export async function readDocumentActivityReading(input: DocumentActivityReading
       !Number.isSafeInteger(result.candidate.candidateRevision) || result.candidate.candidateRevision < 1 ||
       (input.candidateRevision !== undefined && result.candidate.candidateRevision !== input.candidateRevision))))
     throw new Error('DOCUMENT_ACTIVITY_READING_BINDING_MISMATCH');
+  if (result.candidate && !['wiselink.document.activity-candidate.v1', 'wiselink.document.activity-candidate.v2'].includes(result.candidate.schemaVersion))
+    throw new Error('DOCUMENT_ACTIVITY_READING_SCHEMA_UNSUPPORTED');
+  if (input.acceptCandidateSchemaV2 === true) {
+    if (!('sourceSchemaVersion' in result) || result.sourceSchemaVersion !== (result.candidate?.schemaVersion ?? null))
+      throw new Error('DOCUMENT_ACTIVITY_READING_SCHEMA_MISMATCH');
+  } else if (result.candidate && result.candidate.schemaVersion !== 'wiselink.document.activity-candidate.v1')
+    throw new Error('DOCUMENT_ACTIVITY_READING_SCHEMA_UNSUPPORTED');
   return result;
 }
 

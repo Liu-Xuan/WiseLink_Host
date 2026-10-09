@@ -1,3 +1,4 @@
+import { TdmsSourceModule } from './modules/tdms-source/tdms-source.module';
 import { APP_FILTER } from '@nestjs/core';
 import { Module } from '@nestjs/common';
 import { PlatformModule } from '@lark-apaas/fullstack-nestjs-core';
@@ -107,6 +108,7 @@ import { S1000dXmlStructuredPackageProducerAdapter } from './modules/s1000d-ingr
     IdentityModule,
     CanonicalModelSettingsModule,
     ReviewPersistenceModule,
+    TdmsSourceModule,
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last

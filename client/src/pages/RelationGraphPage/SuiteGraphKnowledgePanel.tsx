@@ -17,6 +17,9 @@ import type { DocumentAssessmentEvidence } from '@client/src/features/matter/ass
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { SuiteMatterGraphRead, SuiteMatterGraphTarget } from './suite-matter-graph';
+import { documentActivityStatementStatusRaw } from '@shared/document-activity.interface';
+import { activityStatementTimeText } from '@client/src/features/trinity/document-activity-presentation';
+import DocumentActivityStatementSemantics from '@client/src/features/trinity/DocumentActivityStatementSemantics';
 import type { SuiteGraphTimelineEvent } from './suite-graph-timeline';
 
 export type SuiteGraphKnowledgeTab = 'knowledge' | 'basis' | 'discussion';
@@ -30,6 +33,7 @@ export interface SuiteGraphKnowledgePanelProps {
   onTabChange: (tab: SuiteGraphKnowledgeTab) => void;
   onLocateEvidence?: (evidence: DocumentAssessmentEvidence) => void;
   onOpenTarget?: (target: SuiteMatterGraphTarget) => void;
+  onOpenDocumentNeighborhood?: (target: SuiteMatterGraphTarget) => void;
   onOpenWiki?: () => void;
   onClearSelection?: () => void;
 }
@@ -166,12 +170,14 @@ function TargetDetail({ target, onLocateEvidence, onOpenTarget }: {
   }
   if (target.kind === 'statement') {
     const { statement } = target;
+    const statusRaw = documentActivityStatementStatusRaw(statement);
     return (
       <>
         <span className="suite-graph-target-kind">来源声明</span>
         <h3>{statement.label}</h3>
-        <p className="suite-graph-muted">时间表述：{statement.time?.raw ?? '时间未提取'}</p>
-        {statement.statusRaw ? <p className="suite-graph-muted">状态：{statement.statusRaw}</p> : null}
+        <p className="suite-graph-muted">时间表述：{activityStatementTimeText(statement)}</p>
+        {statusRaw ? <p className="suite-graph-muted">状态：{statusRaw}</p> : null}
+        <DocumentActivityStatementSemantics statement={statement} />
         {statement.limitations.map((limitation) => <p className="suite-graph-notice" key={limitation}>限制：{limitation}</p>)}
         {statement.quotes.map((quote, index) => (
           <blockquote className="suite-graph-quote" key={`${quote.anchorId}-${index}`}>
@@ -240,6 +246,7 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
   onTabChange,
   onLocateEvidence,
   onOpenTarget,
+  onOpenDocumentNeighborhood,
   onOpenWiki,
   onClearSelection,
 }: SuiteGraphKnowledgePanelProps) {
@@ -278,6 +285,22 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
   }
   const openQuestions = [...pendingByText.values()];
   const reviewConditions = revision?.state.reviewConditions ?? [];
+  if (read.graph.rootKind === 'display') {
+    const matters = read.graph.relations.filter((relation) => relation.type === 'DIRECTORY_MEMBERSHIP').length;
+    const documents = read.graph.groups.find((group) => group.key === 'documents')?.items.length ?? 0;
+    return (
+      <div className="suite-graph-knowledge" aria-label="当前图谱范围">
+        <div className="suite-graph-knowledge-body">
+          {selectedTarget ? <TargetDetail target={selectedTarget} onLocateEvidence={onLocateEvidence} onOpenTarget={onOpenTarget} /> : <>
+            <h2>当前目录范围</h2>
+            <p>已加载 {matters} 个目录事项；仅展开当前打开事项的 {documents} 个资料节点。</p>
+            <p>目录连接仅表示展示分组；事项与资料关联按实际登记关系显示。</p>
+            {read.notices.map((notice) => <p className="suite-graph-notice" key={notice}>{notice}</p>)}
+          </>}
+        </div>
+      </div>
+    );
+  }
   const renderTabContent = () => {
     if (tab === 'discussion') {
       return (
@@ -399,6 +422,9 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
             onLocateEvidence={onLocateEvidence}
             onOpenTarget={onOpenTarget}
           />
+          {onOpenDocumentNeighborhood && ['document', 'catalog-document', 'material'].includes(selectedTarget.kind)
+            && (selectedTarget.kind !== 'material' || selectedTarget.material.documentVersionId) ?
+            <Button variant="outline" onClick={() => onOpenDocumentNeighborhood(selectedTarget)}>相关资料与时间</Button> : null}
         </>
       );
     }

@@ -1,4 +1,5 @@
-import { parseAssessmentSourceWork } from '@shared/assessment-evidence-roots';
+import { parseAssessmentTdmsEvidence, type AssessmentTdmsNativeEvidence } from '@shared/assessment-tdms-evidence';
+import { parseAssessmentSourceWork, parseAssessmentSourceStatement } from '@shared/assessment-evidence-roots';
 import type {
   AssessmentEvidence,
   AssessmentClaimPremise,
@@ -15,7 +16,31 @@ export type OverallAssessmentReadingSummary = Omit<
   'schemaVersion'
 > & { schemaVersion: 'wiselink.3_1.overall_engineering_summary.v2' };
 
+export const OVERALL_EVIDENCE_SOURCE_CONTEXT_VERSION = 'SOURCE_CONTEXT_V1' as const;
+export const OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION = 'SOURCE_CONTEXT_V2' as const;
+export type OverallEvidenceProjectionVersion =
+  | typeof OVERALL_EVIDENCE_SOURCE_CONTEXT_VERSION
+  | typeof OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION;
+
+type OverallEvidenceSourceContext =
+  | Pick<Extract<AssessmentEvidence, { kind: 'QUERY_RECEIPT' }>,
+      'receiptRef' | 'checkedScope' | 'queriedAt' | 'coverage'>
+  | Pick<Extract<AssessmentEvidence, { kind: 'ENGINEER_STATEMENT'; origin: 'REVIEW_CONVERSATION' }>,
+      'origin' | 'recordedAt'>
+  | Pick<Extract<AssessmentEvidence, { kind: 'ENGINEER_STATEMENT'; origin: 'ENGINEER_REVIEW_LEDGER' }>,
+      'origin' | 'recordedAt' | 'reviewRevision' | 'sequence'>
+  | Pick<Extract<AssessmentEvidence, { kind: 'HOST_FACT' }>,
+      'factRef' | 'workItemRevision' | 'recordedAt'>
+  | Pick<Extract<AssessmentEvidence, { kind: 'PRIOR_RESULT' }>, 'resultRef' | 'resultRevision'>;
+
 export interface OverallModelEvidence {
+  /** Historical source-declared native context with its original task READ. */
+  nativeSource?: AssessmentTdmsNativeEvidence['nativeSource'];
+  nativeScope?: AssessmentTdmsNativeEvidence['nativeScope'];
+  nativeReadReceipt?: AssessmentTdmsNativeEvidence['nativeReadReceipt'];
+  /** Exact source-carrier facts, without inferring acquisition time or authority. */
+  sourceContext?: OverallEvidenceSourceContext;
+  sourceStatement?: Extract<AssessmentEvidence, { kind: 'PRIOR_RESULT' }>['sourceStatement'];
   sourceWork?: Extract<AssessmentEvidence, { kind: 'PRIOR_RESULT' }>['sourceWork'];
   originalEvidenceRefs?: string[];
   queryProvenance?: Extract<
@@ -32,7 +57,12 @@ export interface OverallModelEvidence {
 
 export function overallModelEvidenceRegistry(
   evidence: AssessmentEvidence[],
+  projectionVersion?: OverallEvidenceProjectionVersion,
 ): OverallModelEvidence[] {
+  if (projectionVersion !== undefined &&
+      projectionVersion !== OVERALL_EVIDENCE_SOURCE_CONTEXT_VERSION &&
+      projectionVersion !== OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION)
+    throw new Error('OVERALL_EVIDENCE_PROJECTION_VERSION_INVALID');
   return evidence.map((item) => ({
     evidenceRef: item.evidenceRef,
     kind: item.kind,
@@ -40,12 +70,66 @@ export function overallModelEvidenceRegistry(
     versionLabel: item.versionLabel,
     excerpt: item.excerpt,
     locator: 'locator' in item ? item.locator : null,
+    ...(item.kind === 'TDMS_NATIVE_RECORD' ? projectNativeEvidence(item) : {}),
     ...(item.kind === 'PRIOR_RESULT' ? { originalEvidenceRefs: [...item.originalEvidenceRefs],
-      ...(item.sourceWork ? { sourceWork: structuredClone(item.sourceWork) } : {}) } : {}),
+      ...(item.sourceWork ? { sourceWork: structuredClone(item.sourceWork) } : {}),
+      ...(projectionVersion === OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION ? {
+        sourceContext: { resultRef: item.resultRef, resultRevision: item.resultRevision },
+        ...(item.sourceStatement ? { sourceStatement: parseAssessmentSourceStatement(item.sourceStatement) } : {}),
+      } : {}) } : {}),
     ...(item.kind === 'QUERY_RECEIPT' && item.queryProvenance
       ? { queryProvenance: structuredClone(item.queryProvenance) }
       : {}),
+    // V2 is an already sealed S1 contract: only V1 receives the wider context.
+    ...(projectionVersion === OVERALL_EVIDENCE_SOURCE_CONTEXT_VERSION
+      ? projectEvidenceSourceContext(item) : {}),
   }));
+}
+
+function projectNativeEvidence(item: AssessmentEvidence): Pick<OverallModelEvidence, 'nativeSource' | 'nativeScope' | 'nativeReadReceipt'> {
+  const native = parseAssessmentTdmsEvidence(item);
+  return { nativeSource: native.nativeSource, nativeScope: native.nativeScope, nativeReadReceipt: native.nativeReadReceipt };
+}
+
+/** Deliberately do not spread a Host evidence record into the model view. */
+function projectEvidenceSourceContext(item: AssessmentEvidence): Pick<OverallModelEvidence, 'sourceContext'> {
+  switch (item.kind) {
+    case 'QUERY_RECEIPT':
+      if (!['COMPLETE', 'PARTIAL'].includes(item.coverage))
+        throw new Error('OVERALL_EVIDENCE_QUERY_COVERAGE_INVALID');
+      return { sourceContext: { receiptRef: text(item.receiptRef, 'OVERALL_EVIDENCE_CONTEXT_INVALID'),
+        checkedScope: text(item.checkedScope, 'OVERALL_EVIDENCE_CONTEXT_INVALID'),
+        // Existing queriedAt is query creation time, not result acquisition or effective time.
+        queriedAt: sourceContextTime(item.queriedAt), coverage: item.coverage } };
+    case 'ENGINEER_STATEMENT':
+      if (item.origin === 'ENGINEER_REVIEW_LEDGER')
+        return { sourceContext: { origin: item.origin, recordedAt: sourceContextTime(item.recordedAt),
+          reviewRevision: positiveInteger(item.reviewRevision, 'OVERALL_EVIDENCE_CONTEXT_REVISION_INVALID'),
+          sequence: positiveInteger(item.sequence, 'OVERALL_EVIDENCE_CONTEXT_REVISION_INVALID') } };
+      if (item.origin !== 'REVIEW_CONVERSATION') throw new Error('OVERALL_EVIDENCE_ENGINEER_ORIGIN_INVALID');
+      return { sourceContext: { origin: item.origin, recordedAt: sourceContextTime(item.recordedAt) } };
+    case 'HOST_FACT':
+      return { sourceContext: { factRef: text(item.factRef, 'OVERALL_EVIDENCE_CONTEXT_INVALID'),
+        workItemRevision: positiveInteger(item.workItemRevision, 'OVERALL_EVIDENCE_CONTEXT_REVISION_INVALID'),
+        recordedAt: sourceContextTime(item.recordedAt) } };
+    case 'PRIOR_RESULT':
+      return { sourceContext: { resultRef: text(item.resultRef, 'OVERALL_EVIDENCE_CONTEXT_INVALID'),
+        resultRevision: positiveInteger(item.resultRevision, 'OVERALL_EVIDENCE_CONTEXT_REVISION_INVALID') } };
+    default:
+      return {};
+  }
+}
+
+function sourceContextTime(value: string): string {
+  const syntax = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/u;
+  if (typeof value !== 'string' || !syntax.test(value) || !Number.isFinite(Date.parse(value)))
+    throw new Error('OVERALL_EVIDENCE_CONTEXT_TIME_INVALID');
+  // Check the source's local calendar date independently of its offset. A
+  // legitimate UTC day change must not invalidate the original source date.
+  const date = value.slice(0, 10);
+  if (new Date(`${date}T00:00:00.000Z`).toISOString().slice(0, 10) !== date)
+    throw new Error('OVERALL_EVIDENCE_CONTEXT_TIME_INVALID');
+  return value;
 }
 
 /** Re-read the Host-owned registry from the sealed task without inventing bindings. */
@@ -73,6 +157,8 @@ export function readStoredOverallEvidence(
             }),
       };
       switch (item.kind) {
+        case 'TDMS_NATIVE_RECORD':
+          return parseAssessmentTdmsEvidence(item);
         case 'ENGINEER_ATTACHMENT':
           return {
             ...common,
@@ -261,10 +347,17 @@ export function readStoredOverallEvidence(
               : {}),
           };
         case 'PRIOR_RESULT':
+          if (item.sourceStatement !== undefined && item.sourceWork !== undefined) throw new Error('ASSESSMENT_SOURCE_PROVENANCE_AMBIGUOUS');
+          if (item.sourceStatement !== undefined) {
+            const source = parseAssessmentSourceStatement(item.sourceStatement);
+            if(item.evidenceRef !== `DOCUMENT_ACTIVITY:${source.reference.runRef}:${source.reference.candidateRevision}:${source.reference.statementId}` ||
+              item.resultRef !== source.reference.runRef || item.resultRevision !== source.reference.candidateRevision) throw new Error('ASSESSMENT_SOURCE_STATEMENT_INVALID');
+          }
           return {
             ...common,
             kind: item.kind,
             ...(item.sourceWork !== undefined ? { sourceWork: parseAssessmentSourceWork(item.sourceWork) } : {}),
+            ...(item.sourceStatement !== undefined ? { sourceStatement: parseAssessmentSourceStatement(item.sourceStatement) } : {}),
             resultRef: text(
               item.resultRef,
               'OVERALL_EVIDENCE_RESULT_REF_INVALID',

@@ -9,9 +9,10 @@ import { ActionAttemptRepository, isLeaseSlotConflict } from '../action-attempt/
 import { canonicalJson, canonicalSha256 } from '../action-attempt/action-attempt-envelope';
 import { ACTION_ATTEMPT_LEASE_MS, ACTION_ATTEMPT_MAX_PARALLEL } from '../action-attempt/action-attempt.types';
 import { assertJobAidWorkFence } from './jobaid-work.repository';
-import { assertMemberSnapshot, DerivedSummaryMembersService, type SummaryActor } from './derived-summary-members.service';
+import { DerivedSummaryMembersService, type SummaryActor } from './derived-summary-members.service';
 import { DerivedSummaryRepository, type SummaryAttempt, type SummaryRuntimeTarget } from './derived-summary.repository';
 import { checkedSummaryTask, DerivedSummaryService, summaryRequestStatus } from './derived-summary.service';
+import { publicSummaryRevision, summaryContextStatus } from './derived-summary-current-context';
 import { parseSummaryContent, summaryCitations, summaryError, summaryText } from './derived-summary.validation';
 
 interface Fence { leaseToken: string; leaseGeneration: number }
@@ -29,12 +30,43 @@ export class DerivedSummaryRuntimeService {
     private readonly summaries: DerivedSummaryService,
   ) {}
 
-  async claim(target: SummaryRuntimeTarget) {
+  claim(target: SummaryRuntimeTarget) { return this.contextOperation(target, () => this.claimCurrent(target)); }
+  heartbeat(target: FencedTarget) { return this.contextOperation(target, () => this.heartbeatCurrent(target)); }
+  readMemberWork(target: ReadSelection) { return this.contextOperation(target, () => this.readMemberWorkCurrent(target)); }
+  readSources(target: ReadSelection) { return this.contextOperation(target, () => this.readSourcesCurrent(target)); }
+  save(target: SaveInput) { return this.contextOperation(target, () => this.saveCurrent(target)); }
+
+  private async contextOperation<T>(target: SummaryRuntimeTarget, operation: () => Promise<T>): Promise<T> {
+    try { return await operation(); } catch (error) {
+      if (!(error instanceof Error) || !['DERIVED_SUMMARY_CONTEXT_CHANGED', 'DERIVED_SUMMARY_CONTEXT_BASIS_REQUIRED'].includes(error.message)) throw error;
+      // Throwing inside the original transaction would roll the status back.
+      // Finish the obsolete request separately, retaining its task and read ledger.
+      await this.repository.runtime(target, async (database, owner, _head, attempt) => {
+        await lockAttempt(attempt, database);
+        const row = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
+        const task = checkedSummaryTask(row);
+        if (await this.savedForRequest(target.summaryId, task.requestId, owner, database)) return;
+        if (!['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(row.status)) return;
+        if (!(await new ActionAttemptRepository(database).finishTerminal({ attemptId: row.attemptId,
+          fromStatus: row.status, status: 'CONFLICT', terminalReason: error.message, errorCode: error.message,
+          now: new Date(), leaseToken: row.leaseToken ?? undefined, leaseGeneration: row.leaseGeneration })))
+          throw summaryError('DERIVED_SUMMARY_CONTEXT_CONFLICT_NOT_RECORDED');
+      });
+      throw error;
+    }
+  }
+
+  private async claimCurrent(target: SummaryRuntimeTarget) {
     const outcome = await this.repository.runtime(target, async (database, owner, head, attempt) => {
+      await this.lockGenerationContext(attempt, owner, database);
+      head = await this.repository.head(target.summaryId, owner, database);
       await lockAttempt(attempt, database);
       let row = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
       const task = checkedSummaryTask(row);
-      await this.checkMembers(row, owner, database);
+      const saved = await this.savedForRequest(target.summaryId, task.requestId, owner, database);
+      const recoveringSaved = saved?.attemptId === row.attemptId;
+      await this.checkMembers(row, owner, database, !recoveringSaved);
+      if (recoveringSaved) await this.summaries.checkRevision(saved.contentJson, owner, database);
       const queue = new ActionAttemptRepository(database);
       const now = new Date();
       if (row.status === 'RUNNING' && row.leaseExpiresAt && row.leaseExpiresAt <= now) {
@@ -50,7 +82,6 @@ export class DerivedSummaryRuntimeService {
       if (row.status === 'RUNNING' && row.leaseOwner === target.scope.principalId && row.leaseExpiresAt && row.leaseExpiresAt > now)
         return runningClaim(target.summaryId, row);
       if (!['QUEUED', 'RETRY_SCHEDULED'].includes(row.status)) return { error: `DERIVED_SUMMARY_${row.status}` };
-      const saved = await this.savedForRequest(target.summaryId, task.requestId, owner, database);
       if (head.currentRevision !== task.expectedSummaryRevision && saved?.attemptId !== row.attemptId) {
         await queue.finishTerminal({ attemptId: row.attemptId, fromStatus: row.status, status: 'CONFLICT',
           terminalReason: 'DERIVED_SUMMARY_REVISION_CHANGED_BEFORE_CLAIM', now });
@@ -71,21 +102,54 @@ export class DerivedSummaryRuntimeService {
       return { error: 'DERIVED_SUMMARY_CLAIM_UNAVAILABLE' };
     });
     if ('error' in outcome) throw summaryError(outcome.error);
+    if (outcome.task.modelInput.revisionContext) {
+      // Prior content is delivered for the first time at CLAIM, including sources
+      // removed from the current selection. Original IO cannot hold the DB pool.
+      const initial = await this.repository.runtime(target, async (database, owner, _head, attempt) => {
+        await this.lockGenerationContext(attempt, owner, database);
+        await lockAttempt(attempt, database);
+        const row = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
+        assertFence(row, { ...target, ...fence(outcome) });
+        const task = checkedSummaryTask(row);
+        const saved = await this.savedForRequest(target.summaryId, task.requestId, owner, database);
+        await this.checkMembers(row, owner, database, saved?.attemptId !== row.attemptId);
+        return { owner, evidence: await this.summaries.taskEvidence(task, owner, database), hash: task.taskInputHash };
+      });
+      await this.members.verifyOriginalEvidence(initial.evidence, initial.owner);
+      await this.repository.runtime(target, async (database, owner, _head, attempt) => {
+        await this.lockGenerationContext(attempt, owner, database);
+        await lockAttempt(attempt, database);
+        const row = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
+        assertFence(row, { ...target, ...fence(outcome) });
+        const task = checkedSummaryTask(row);
+        const saved = await this.savedForRequest(target.summaryId, task.requestId, owner, database);
+        await this.checkMembers(row, owner, database, saved?.attemptId !== row.attemptId);
+        if (task.taskInputHash !== initial.hash || task.taskInputHash !== outcome.task.taskInputHash)
+          throw summaryError('DERIVED_SUMMARY_TASK_INVALID');
+      });
+    }
     return outcome;
   }
 
   status(target: SummaryRuntimeTarget) {
     return this.repository.runtime(target, async (database, owner, _head, attempt) => {
-      await this.checkMembers(attempt, owner, database);
+      await this.checkMembers(attempt, owner, database, false);
       return summaryRequestStatus(target.summaryId, attempt, database);
     });
   }
 
-  heartbeat(target: FencedTarget) {
+  private heartbeatCurrent(target: FencedTarget) {
     return this.repository.runtime(target, async (database, owner, _head, attempt) => {
-      await this.checkMembers(attempt, owner, database);
-      assertFence(attempt, target);
-      if (!(await new ActionAttemptRepository(database).heartbeat({ attemptId: attempt.attemptId,
+      await this.lockGenerationContext(attempt, owner, database);
+      await lockAttempt(attempt, database);
+      const locked = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
+      const task = checkedSummaryTask(locked);
+      const saved = await this.savedForRequest(target.summaryId, task.requestId, owner, database);
+      if (saved && saved.attemptId !== locked.attemptId) throw summaryError('DERIVED_SUMMARY_SAVE_REQUEST_ID_REUSED');
+      await this.checkMembers(locked, owner, database, !saved);
+      if (saved) await this.summaries.checkRevision(saved.contentJson, owner, database);
+      assertFence(locked, target);
+      if (!(await new ActionAttemptRepository(database).heartbeat({ attemptId: locked.attemptId,
         ...fence(target), now: new Date(), leaseMs: ACTION_ATTEMPT_LEASE_MS }))) throw summaryError('DERIVED_SUMMARY_LEASE_REJECTED');
       const current = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
       return { summaryId: target.summaryId, attemptRef: target.attemptRef, status: current.status,
@@ -114,8 +178,9 @@ export class DerivedSummaryRuntimeService {
     });
   }
 
-  readMemberWork(target: ReadSelection) {
+  private readMemberWorkCurrent(target: ReadSelection) {
     return this.repository.runtime(target, async (database, owner, _head, attempt) => {
+      await this.lockGenerationContext(attempt, owner, database);
       await lockAttempt(attempt, database);
       const current = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
       assertFence(current, target);
@@ -132,7 +197,7 @@ export class DerivedSummaryRuntimeService {
     });
   }
 
-  async readSources(target: ReadSelection) {
+  private async readSourcesCurrent(target: ReadSelection) {
     const initial = await this.repository.runtime(target, async (database, owner, _head, attempt) => {
       assertFence(attempt, target);
       await this.checkMembers(attempt, owner, database);
@@ -143,10 +208,11 @@ export class DerivedSummaryRuntimeService {
         if (!item) throw summaryError('DERIVED_SUMMARY_SOURCE_NOT_REGISTERED', 404);
         return item;
       });
-      return { owner, evidence, hash: attempt.taskInputHash };
+      return { owner, evidence, originals: await this.summaries.taskEvidence(task, owner, database), hash: attempt.taskInputHash };
     });
-    await this.members.verifyOriginalEvidence(initial.evidence, initial.owner);
+    await this.members.verifyOriginalEvidence(initial.originals, initial.owner);
     return this.repository.runtime(target, async (database, owner, _head, attempt) => {
+      await this.lockGenerationContext(attempt, owner, database);
       await lockAttempt(attempt, database);
       const current = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
       assertFence(current, target);
@@ -158,33 +224,36 @@ export class DerivedSummaryRuntimeService {
     });
   }
 
-  async save(target: SaveInput) {
+  private async saveCurrent(target: SaveInput) {
     const content = parseSummaryContent(JSON.parse(target.contentJson));
     const initial = await this.repository.runtime(target, async (database, owner, _head, attempt) => {
-      await this.checkMembers(attempt, owner, database);
       const task = checkedSummaryTask(attempt);
       if (target.requestId !== task.requestId || target.expectedSummaryRevision !== task.expectedSummaryRevision)
         throw summaryError('DERIVED_SUMMARY_SAVE_BINDING_INVALID');
-      return { owner, task };
+      const saved = await this.savedForRequest(target.summaryId, target.requestId, owner, database);
+      await this.checkMembers(attempt, owner, database, saved?.attemptId !== attempt.attemptId);
+      return { owner, task, evidence: await this.summaries.taskEvidence(task, owner, database) };
     });
     // Revalidate exact original artifacts without retaining a DB connection. The
     // final transaction repeats all authorization, content identity and lease checks.
-    await this.members.verifyOriginalEvidence(initial.task.modelInput.evidence, initial.owner);
+    await this.members.verifyOriginalEvidence(initial.evidence, initial.owner);
     const producer = parseProducer(target.provenanceJson, initial.task.executionModel.modelRef);
     return this.repository.runtime(target, async (database, owner, _head, attempt) => {
+      await this.lockGenerationContext(attempt, owner, database);
       const head = await this.repository.head(target.summaryId, owner, database, true);
       await lockAttempt(attempt, database);
       const current = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
-      const readings = await this.checkMembers(current, owner, database);
+      const prior = await this.savedForRequest(target.summaryId, target.requestId, owner, database);
+      const readings = await this.checkMembers(current, owner, database, prior?.attemptId !== current.attemptId);
       const task = checkedSummaryTask(current);
       if (task.taskInputHash !== initial.task.taskInputHash) throw summaryError('DERIVED_SUMMARY_TASK_INVALID');
-      const prior = await this.savedForRequest(target.summaryId, target.requestId, owner, database);
       const savedContent = { ...content, limitations: [...new Set([...task.modelInput.limitations, ...content.limitations])] };
       if (prior) {
         if (prior.attemptId !== current.attemptId || canonicalJson(prior.contentJson.content) !== canonicalJson(savedContent) ||
           canonicalJson(prior.contentJson.producer ?? null) !== canonicalJson(producer ?? null))
           throw summaryError('DERIVED_SUMMARY_SAVE_REQUEST_ID_REUSED');
-        return saveReceipt(prior.contentJson, true);
+        return { ...saveReceipt(prior.contentJson, true),
+          contextStatus: await this.summaries.revisionContextStatus(prior.contentJson, owner, database) };
       }
       assertFence(current, target);
       if (head.currentRevision !== target.expectedSummaryRevision) throw summaryError('DERIVED_SUMMARY_REVISION_CONFLICT');
@@ -206,7 +275,7 @@ export class DerivedSummaryRuntimeService {
           rootRefs: member.rootRefs, limitation: bodyRefs.includes(member.evidenceRef)
             ? member.limitations.join('\n') : '成员已交付，但正文未直接引用；不能宣称已对该成员完成综合。' })),
         requestId: target.requestId, attemptRef: target.attemptRef, createdAt: new Date().toISOString(),
-        candidateOnly: true, ...(producer ? { producer } : {}),
+        candidateOnly: true, contextBasis: task.contextBasis, ...(producer ? { producer } : {}),
       };
       await database.insert(derivedSummaryRevision).values({ summaryId: target.summaryId, summaryRef, ...owner,
         revision: revision.revision, requestId: target.requestId, attemptId: current.attemptId, contentJson: revision });
@@ -218,17 +287,18 @@ export class DerivedSummaryRuntimeService {
       if (updated.length !== 1) throw summaryError('DERIVED_SUMMARY_REVISION_CONFLICT');
       await record(current, { kind: 'DERIVED_SUMMARY_SAVED', requestId: target.requestId, summaryRef,
         revision: revision.revision, observedAt: revision.createdAt }, database);
-      return saveReceipt(revision, false);
+      return { ...saveReceipt(revision, false), contextStatus: summaryContextStatus(task.contextBasis, task.contextBasis) };
     });
   }
 
   readSaved(target: SummaryRuntimeTarget & { requestId: string }) {
     return this.repository.runtime(target, async (database, owner, _head, attempt) => {
-      await this.checkMembers(attempt, owner, database);
+      await this.checkMembers(attempt, owner, database, false);
       const saved = await this.savedForRequest(target.summaryId, target.requestId, owner, database);
       if (!saved || saved.attemptId !== attempt.attemptId) throw summaryError('DERIVED_SUMMARY_SAVE_NOT_FOUND', 404);
       await this.summaries.checkRevision(saved.contentJson, owner, database);
-      return { receipt: saveReceipt(saved.contentJson, true), summary: saved.contentJson };
+      return { receipt: saveReceipt(saved.contentJson, true), summary: publicSummaryRevision(saved.contentJson),
+        contextStatus: await this.summaries.revisionContextStatus(saved.contentJson, owner, database) };
     });
   }
 
@@ -236,7 +306,7 @@ export class DerivedSummaryRuntimeService {
     return this.repository.runtime(target, async (database, owner, head, attempt) => {
       await lockAttempt(attempt, database);
       const row = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
-      await this.checkMembers(row, owner, database);
+      await this.checkMembers(row, owner, database, false);
       const saved = await this.savedForRequest(target.summaryId, target.requestId, owner, database);
       if (!saved || saved.attemptId !== row.attemptId || row.triggerRequestId !== target.requestId)
         throw summaryError('DERIVED_SUMMARY_FINISH_REQUIRES_SAVED_REVISION');
@@ -256,11 +326,15 @@ export class DerivedSummaryRuntimeService {
     });
   }
 
-  private async checkMembers(attempt: SummaryAttempt, owner: SummaryActor, database: PostgresJsDatabase) {
+  private async lockGenerationContext(attempt: SummaryAttempt, owner: SummaryActor, database: PostgresJsDatabase) {
     const task = checkedSummaryTask(attempt);
-    const current = await this.members.readAll(task.modelInput.members.map(item => item.member), owner, database);
-    for (let i = 0; i < current.length; i++) assertMemberSnapshot(task.modelInput.members[i]!, current[i]!);
-    return current;
+    if (task.contextBasis) await this.repository.lockContext(task.contextBasis, owner, database, task.subject.summaryId);
+  }
+
+  private async checkMembers(attempt: SummaryAttempt, owner: SummaryActor, database: PostgresJsDatabase,
+    requireCurrentContext = true) {
+    return this.summaries.checkTaskAccess(checkedSummaryTask(attempt), owner, database,
+      { requireCurrentContext: requireCurrentContext && attempt.status !== 'SUCCEEDED' });
   }
 
   private async savedForRequest(summaryId: string, requestId: string, owner: SummaryActor, database: PostgresJsDatabase) {

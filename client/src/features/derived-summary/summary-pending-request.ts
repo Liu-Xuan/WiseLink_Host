@@ -5,12 +5,16 @@ export const summaryPendingKey = (tenantId: string, actorId: string, summaryId?:
   `wiselink:derived-summary:pending:${JSON.stringify([tenantId, actorId, summaryId ?? 'new'])}`;
 
 /** Keep the original request across a reload; the Host still reauthorizes every replay. */
-export function readPendingSummaryRequest(key: string): PendingSummaryRequest | null {
+export function readPendingSummaryRequest(key: string, summaryId?: string): PendingSummaryRequest | null {
   try {
     const text = sessionStorage.getItem(key);
     if (!text) return null;
     const value = JSON.parse(text) as PendingSummaryRequest;
     if (!value || typeof value.requestId !== 'string' || !value.requestId || typeof value.modelRef !== 'string' ||
+      (value.purpose !== undefined && !['SYNTHESIZE', 'REVISE_SAVED_SUMMARY'].includes(value.purpose)) ||
+      ('expectedSummaryRevision' in value && (!Number.isSafeInteger(value.expectedSummaryRevision) || value.expectedSummaryRevision < 0 || value.expectedSummaryRevision >= 2147483647)) ||
+      (summaryId ? !('expectedSummaryRevision' in value) : 'expectedSummaryRevision' in value || value.purpose === 'REVISE_SAVED_SUMMARY') ||
+      (value.purpose === 'REVISE_SAVED_SUMMARY' && (!('expectedSummaryRevision' in value) || value.expectedSummaryRevision < 1)) ||
       !value.scope || !['ATA4', 'ATA2', 'FLEET'].includes(value.scope.kind) || typeof value.scope.title !== 'string' ||
       typeof value.scope.fleetFamilyId !== 'string' || !Array.isArray(value.scope.fleetModelIds) ||
       typeof value.scope.selectionReason !== 'string' || typeof value.instruction !== 'string' ||

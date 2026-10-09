@@ -1,3 +1,4 @@
+import { graphActivityV2 } from './fixtures/graph-activity-v2';
 import { act, createElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRoot, type Root } from 'react-dom/client';
@@ -129,6 +130,7 @@ describe('useSuiteGraphSources exact event restoration', () => {
       documentVersionId: 'dv-b',
       parseRunId: 'parse-b',
       candidateRevision: 7,
+      acceptCandidateSchemaV2: true,
     }, expect.any(AbortSignal));
     expect(mockReadStatus).not.toHaveBeenCalled();
     expect(current.activeSourceId).toBe('dv-b');
@@ -261,7 +263,7 @@ describe('useSuiteGraphSources exact event restoration', () => {
     mockReadStatus.mockResolvedValue({ publishedRun: { parseRunId: 'parse-a' } });
     mockReadActivity.mockResolvedValue({ familyId: 'family-a', binding: { documentVersionId: 'dv-a', parseRunId: 'parse-a' }, candidate: { runRef: 'run-a', statements: [] } });
     await act(async () => root.render(createElement(Probe, { sources: [{ document: { documentVersionId: 'dv-a' }, familyId: 'family-a' }] })));
-    expect(mockReadActivity).toHaveBeenCalledWith({ documentVersionId: 'dv-a', parseRunId: 'parse-a' }, expect.any(AbortSignal));
+    expect(mockReadActivity).toHaveBeenCalledWith({ documentVersionId: 'dv-a', parseRunId: 'parse-a', acceptCandidateSchemaV2: true }, expect.any(AbortSignal));
     expect(current.activities.has('dv-a')).toBe(true);
   });
 
@@ -271,6 +273,45 @@ describe('useSuiteGraphSources exact event restoration', () => {
     await act(async () => root.render(createElement(Probe, { sources: [{ document: { documentVersionId: 'dv-a' }, familyId: 'family-a' }] })));
     expect(current.activities.size).toBe(0);
     expect(current.sources[0].status).toBe('unavailable');
+    mockReadActivity.mockResolvedValue({ familyId: 'family-a', binding: { documentVersionId: 'dv-a', parseRunId: 'parse-a' }, candidate: null });
+    await act(async () => current.expandSource('dv-a'));
+    expect(mockReadActivity).toHaveBeenCalledTimes(2);
+    expect(current.sources[0].status).toBe('empty');
+    expect(current.activities.size).toBe(0);
+  });
+
+  it('keeps a revoked selected source without reading or substituting the other registered source', async () => {
+    const rejected = jest.fn();
+    const sources = ['a', 'b'].map(id => ({ document: { documentVersionId: `dv-${id}` }, familyId: `family-${id}` }));
+    mockReadStatus.mockResolvedValueOnce({ publishedRun: null }).mockResolvedValueOnce({ publishedRun: { parseRunId: 'parse-b' } });
+    mockReadActivity.mockRejectedValue(Object.assign(new Error('revoked'), { statusCode: 403 }));
+    await act(async () => root.render(createElement(Probe, { sources, onAccessRejected: rejected })));
+    await act(async () => current.selectSource('dv-b'));
+    expect(current.activeSourceId).toBe('dv-b');
+    expect(current.sources.find(source => source.documentVersionId === 'dv-b')?.status).toBe('unavailable');
+    expect(current.sources.find(source => source.documentVersionId === 'dv-a')?.status).toBe('unparsed');
+    expect(current.activities.size).toBe(0);
+    expect(rejected).toHaveBeenCalledWith('dv-b');
+    expect(mockReadStatus.mock.calls.map(([id]) => id)).toEqual(['dv-a', 'dv-b']);
+    expect(mockReadActivity).toHaveBeenCalledTimes(1);
+    expect(mockReadActivity.mock.calls[0][0].documentVersionId).toBe('dv-b');
+  });
+
+  it('drops a late candidate from the prior Matter source list after the authorized list is replaced', async () => {
+    let resolve!: (value: unknown) => void;
+    mockReadStatus.mockResolvedValueOnce({ publishedRun: { parseRunId: 'parse-a' } })
+      .mockResolvedValueOnce({ publishedRun: { parseRunId: 'parse-c' } });
+    mockReadActivity.mockReturnValueOnce(new Promise(value => { resolve = value; }))
+      .mockResolvedValueOnce(graphActivityV2('dv-c', 'parse-c', 'family-c', 'run-c', 3));
+    await act(async () => root.render(createElement(Probe, { sources: [{ document: { documentVersionId: 'dv-a' }, familyId: 'family-a' }] })));
+    await act(async () => root.render(createElement(Probe, { sources: [{ document: { documentVersionId: 'dv-c' }, familyId: 'family-c' }] })));
+    await act(async () => resolve(graphActivityV2('dv-a', 'parse-a', 'family-a', 'run-a', 2)));
+    expect(current.activeSourceId).toBe('dv-c');
+    expect(current.sources.map(source => source.documentVersionId)).toEqual(['dv-c']);
+    expect([...current.activities.keys()]).toEqual(['dv-c']);
+    expect(current.activities.get('dv-c')?.candidate.runRef).toBe('run-c');
+    expect(mockReadStatus.mock.calls.map(([id]) => id)).toEqual(['dv-a', 'dv-c']);
+    expect(mockReadActivity).toHaveBeenCalledTimes(2);
   });
 
   it('does not substitute the default source when exact returned source is absent', async () => {
@@ -296,6 +337,20 @@ describe('useSuiteGraphSources exact event restoration', () => {
     await act(async () => current.expandSource('dv-a'));
     expect(mockReadStatus).toHaveBeenCalledTimes(3);
     expect(current.sources[0].status).toBe('unparsed');
+  });
+
+  it.each([false, true])('accepts saved v2 from the actual hook for exactPin=%s', async exactPin => {
+    const reading = graphActivityV2('dv-b', 'parse-b', 'family-b', 'run-b', 7);
+    reading.candidate.statements[0].statementId = 'statement-b';
+    mockReadStatus.mockResolvedValue({ publishedRun: { parseRunId: 'parse-b' } });
+    mockReadActivity.mockResolvedValue(reading);
+    await act(async () => root.render(createElement(Probe, { restorePins: exactPin ? pins : undefined,
+      sources: [{ document: { documentVersionId: 'dv-b' }, familyId: 'family-b' }] })));
+    expect(mockReadActivity).toHaveBeenCalledWith({ documentVersionId: 'dv-b', parseRunId: 'parse-b',
+      ...(exactPin ? { candidateRevision: 7 } : {}), acceptCandidateSchemaV2: true }, expect.any(AbortSignal));
+    expect(current.activities.get('dv-b')?.candidate).toEqual(reading.candidate);
+    expect(current.sources[0].status).toBe('loaded');
+    if (exactPin) expect(mockReadStatus).not.toHaveBeenCalled();
   });
 
   it('does not reuse source cache when the exact registered family binding changes', async () => {

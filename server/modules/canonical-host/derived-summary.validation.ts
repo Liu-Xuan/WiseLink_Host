@@ -1,6 +1,6 @@
 import type {
   CreateDerivedSummaryRequest, DerivedSummaryContent, DerivedSummaryMember,
-  DerivedSummaryScopeSelection, RequestDerivedSummaryUpdate,
+  DerivedSummaryScopeSelection, DerivedSummaryPurpose, RequestDerivedSummaryUpdate,
 } from '@shared/derived-summary.interface';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 
@@ -83,13 +83,22 @@ export function summaryMemberRef(member: DerivedSummaryMember): string {
 }
 
 export function parseSummaryRequest(input: unknown, update = false): CreateDerivedSummaryRequest | RequestDerivedSummaryUpdate {
-  const value = object(input, ['requestId', 'scope', 'members', 'instruction', 'modelRef', ...(update ? ['expectedSummaryRevision'] : [])]);
+  const value = object(input, ['requestId', 'purpose', 'scope', 'members', 'instruction', 'modelRef', ...(update ? ['expectedSummaryRevision'] : [])]);
   if (!Array.isArray(value.members) || !value.members.length) throw summaryError('DERIVED_SUMMARY_MEMBERS_REQUIRED', 400);
   const members = value.members.map(parseSummaryMember);
   if (new Set(members.map(summaryMemberRef)).size !== members.length) throw summaryError('DERIVED_SUMMARY_DUPLICATE_MEMBER', 400);
-  const request = { requestId: summaryText(value.requestId, 96), scope: parseSummaryScope(value.scope),
+  const purpose = Object.hasOwn(value, 'purpose') ? parseSummaryPurpose(value.purpose) : undefined;
+  if (purpose === 'REVISE_SAVED_SUMMARY' && (!update || revision(value.expectedSummaryRevision, true) < 1))
+    throw summaryError('DERIVED_SUMMARY_PRIOR_REQUIRED', 400);
+  const request = { requestId: summaryText(value.requestId, 96), ...(purpose === undefined ? {} : { purpose }), scope: parseSummaryScope(value.scope),
     members, instruction: summaryText(value.instruction), modelRef: summaryText(value.modelRef, 128) };
   return update ? { ...request, expectedSummaryRevision: revision(value.expectedSummaryRevision, true) } : request;
+}
+
+export function parseSummaryPurpose(value: unknown): DerivedSummaryPurpose {
+  if (value !== 'SYNTHESIZE' && value !== 'REVISE_SAVED_SUMMARY')
+    throw summaryError('DERIVED_SUMMARY_PURPOSE_INVALID', 400);
+  return value;
 }
 
 export function parseSummaryContent(input: unknown): DerivedSummaryContent {
@@ -100,12 +109,21 @@ export function parseSummaryContent(input: unknown): DerivedSummaryContent {
 }
 
 export function summaryCitations(content: DerivedSummaryContent, allowedRefs: Set<string>): string[] {
+  const headerRefs = [...`${content.headline}\n${content.listBrief}`.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]!);
   const refs = [...new Set([...`${content.body}\n${content.limitations.join('\n')}`.matchAll(/\[\[([^\]]+)\]\]/gu)]
     .map(match => match[1]!))];
-  if (!refs.length || refs.some(ref => !allowedRefs.has(ref))) throw summaryError('DERIVED_SUMMARY_CITATION_INVALID', 400);
+  // Headers must be registered, but never become body support or coverage use.
+  if (!refs.length || [...headerRefs, ...refs].some(ref => !allowedRefs.has(ref))) throw summaryError('DERIVED_SUMMARY_CITATION_INVALID', 400);
   return refs;
 }
 
 export function assertSummaryReplay(expected: unknown, actual: unknown): void {
-  if (canonicalJson(expected) !== canonicalJson(actual)) throw summaryError('DERIVED_SUMMARY_REQUEST_ID_REUSED');
+  // Only command comparison normalizes legacy synthesis. Never rewrite its task.
+  const command = (value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    const record = value as Record<string, unknown>;
+    const purpose = Object.hasOwn(record, 'purpose') ? parseSummaryPurpose(record.purpose) : 'SYNTHESIZE';
+    return { ...record, purpose };
+  };
+  if (canonicalJson(command(expected)) !== canonicalJson(command(actual))) throw summaryError('DERIVED_SUMMARY_REQUEST_ID_REUSED');
 }

@@ -568,7 +568,10 @@ test('a failed source read resumes the exact model response without another gene
   const f = fixture([
     { action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'], purpose: 'read', context: 'PAGE' },
     { action: 'SAVE_WORK', work: completed }, { action: 'FINISH' },
-  ], { assessmentCheckpoint: checkpoint });
+  ], { assessmentCheckpoint: checkpoint,
+    observeModelOutput: (shape, round) => checkpoint.writeOnceOrEqual(
+      `model.output-shape${round === 1 ? '' : '-' + round}`, shape),
+  });
   const read = f.options.readAssessmentSources;
   let attempts = 0;
   f.options.readAssessmentSources = async input => {
@@ -577,10 +580,13 @@ test('a failed source read resumes the exact model response without another gene
   };
   await assert.rejects(f.run(), /HOST_SOURCE_TIMEOUT/);
   assert.equal(f.calls.length, 1);
+  const firstShape = await checkpoint.readOptional('model.output-shape');
+  assert.ok(firstShape.requestBytes > 0);
   assert.equal((await f.run()).output.workRevisionRef, 'JAWR-1');
   assert.equal(f.calls.length, 3);
   assert.equal(attempts, 2);
   assert.equal(f.saves.length, 1);
+  assert.deepEqual(await checkpoint.readOptional('model.output-shape'), firstShape);
 }));
 
 test('unknown model response stays fenced across process reentry', () => persisted(async checkpoint => {
@@ -1620,4 +1626,59 @@ for (const matter of [false, true]) test(`missing initial summary is corrected w
   assert.match(receipt.instruction,/headline and listBrief together/);
   assert.deepEqual([...f.store.values()][0].content,corrected);
   assert.equal(f.reads.length,0);
+});
+
+
+for (const sourceStatement of [false, true]) {
+  test(`cached model request retains its exact body metrics with zero replay gateway dispatch, v3=${sourceStatement}`, () => persisted(async checkpoint => {
+    const input = modelInput();
+    if (sourceStatement) Object.assign(input, { schemaVersion: 'wiselink.jobaid-problem-task.v3',
+      evidenceProjectionVersion: 'SOURCE_CONTEXT_V2', sourceStatementAvailability: {
+        status: 'NOT_SAVED', semanticFieldsAvailability: 'CAPTURED_FIELDS_ONLY', limitations: [] } });
+    const shapes = [], rawBodies = [];
+    const f = fixture([{ action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'],
+      purpose: 'read', context: 'PAGE' }], { assessmentCheckpoint: checkpoint,
+      observeModelOutput: async (shape, round) => {
+        shapes.push(structuredClone(shape));
+        await checkpoint.writeOnceOrEqual(`p1-output-${round}`, shape);
+        if (shapes.length === 2) throw new Error('P1_REPLAY_OBSERVED');
+      },
+      readAssessmentSources: async () => { throw new Error('HOST_SOURCE_TIMEOUT'); },
+    });
+    const gateway = f.dependencies.requestGateway;
+    f.dependencies.requestGateway = async (url, request) => {
+      rawBodies.push(request.body);
+      return gateway(url, request);
+    };
+    await assert.rejects(f.run(input), /HOST_SOURCE_TIMEOUT/u);
+    assert.equal(rawBodies.length, 1);
+    const sent = JSON.parse(rawBodies[0]);
+    assert.equal(shapes[0].requestBytes, Buffer.byteLength(rawBodies[0]));
+    assert.equal(shapes[0].messagesBytes, Buffer.byteLength(JSON.stringify(sent.messages)));
+    assert.equal(shapes[0].systemBytes, Buffer.byteLength(sent.messages[0].content));
+    assert.equal(shapes[0].toolsBytes, Buffer.byteLength(JSON.stringify(sent.tools)));
+    const first = structuredClone(shapes[0]);
+    await assert.rejects(f.run(input), /P1_REPLAY_OBSERVED/u);
+    assert.deepEqual(shapes[1], first);
+    assert.equal(rawBodies.length, 1, 'durable round skips the real gateway callback on resume');
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.saves.length, 0);
+  }));
+}
+
+test('recovered initial response keeps request metrics absent and makes no gateway dispatch', async () => {
+  let shape;
+  const f = fixture([], { recoveredInitialResponse: { status: 200, ok: true,
+    raw: JSON.stringify({ model: 'synthetic-model-v1', choices: [{ finish_reason: 'tool_calls',
+      message: { role: 'assistant', content: null, tool_calls: [{ id: 'recovered-1', type: 'function',
+        function: { name: 'return_wiselink_assessment_step', arguments: JSON.stringify({ step: {
+          action: 'READ_SOURCES', sourceRefs: ['source:dv:sr1'], purpose: 'read', context: 'PAGE' } }) } }] } }] }) },
+    observeModelOutput: async value => { shape = value; throw new Error('P1_RECOVERED_OBSERVED'); },
+  });
+  f.dependencies.requestGateway = async () => assert.fail('recovered initial response must not dispatch gateway');
+  await assert.rejects(f.run(), /P1_RECOVERED_OBSERVED/u);
+  for (const key of ['requestBytes', 'messagesBytes', 'systemBytes', 'toolsBytes'])
+    assert.equal(Object.hasOwn(shape, key), false, `${key} remains unknown for the already recovered response`);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.saves.length, 0);
 });

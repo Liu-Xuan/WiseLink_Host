@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import postcss from 'postcss';
 
 const root = resolve(__dirname, '../..');
 
@@ -8,35 +9,60 @@ async function source(path: string): Promise<string> {
 }
 
 describe('workbench scroll ownership', () => {
-  it('gives AppShell sole ownership of the header offset and workspace height', async () => {
-    const [appShellStyles, pageStyles, workbenchStyles] = await Promise.all([
+  it('allocates the viewport in AppShell and lets the workbench fill the remaining body', async () => {
+    const [appShellStyles, pageStyles, workbenchStyles, layout] = await Promise.all([
       source('client/src/components/app-shell.css'),
       source('client/src/pages/DocumentParsingPage/document-parsing.css'),
       source('client/src/features/workbench/workbench-shell.css'),
+      source('client/src/components/Layout.tsx'),
     ]);
 
-    expect(appShellStyles).toContain(
-      '--wl-app-safe-block-start: env(safe-area-inset-top, 0px)',
-    );
-    expect(appShellStyles).toContain('--wl-app-header-block-size: 78px');
-    expect(appShellStyles).toMatch(
-      /--wl-workspace-block-size:\s*calc\([\s\S]*?100dvh[\s\S]*?var\(--wl-app-safe-block-start\)[\s\S]*?var\(--wl-app-header-block-size\)[\s\S]*?\);/,
-    );
-    expect(appShellStyles).toMatch(
-      /\.wiselink-app-shell\.is-workbench-route\s*\{[\s\S]*?padding-block-start: var\(--wl-app-safe-block-start\);/,
-    );
-    expect(appShellStyles).toMatch(
-      /grid-template-rows:\s*var\(--wl-app-header-block-size\)\s*minmax\(0, var\(--wl-workspace-block-size\)\);/,
-    );
-    expect(appShellStyles).toMatch(
-      /\.wiselink-app-shell\.is-workbench-route \.wiselink-app-chrome\s*\{[\s\S]*?position: relative;[\s\S]*?top: auto;[\s\S]*?margin-block: 0;/,
-    );
-    expect(appShellStyles).toMatch(
-      /body\[data-wl-immersive='true'\][\s\S]*?\.wiselink-app-shell\.is-workbench-route\s*\{\s*--wl-app-header-block-size: 0px;/,
-    );
-    expect(appShellStyles).toMatch(
-      /@media \(max-width: 720px\)[\s\S]*?\.wiselink-app-shell\.is-workbench-route\s*\{\s*--wl-app-header-block-size: 0px;/,
-    );
+    // Read each exact selector in its actual media scope. Declarations on an
+    // unrelated later rule cannot satisfy the height/scroll ownership contract.
+    function declarations(css: string, selector: string, media?: string): Record<string, string> {
+      const values: Record<string, string> = {};
+      let matches = 0;
+      postcss.parse(css).walkRules(rule => {
+        const parent = rule.parent;
+        const inScope = media === undefined ? parent?.type === 'root'
+          : parent?.type === 'atrule' && parent.name === 'media' && parent.params === media;
+        if (!inScope || !rule.selectors.includes(selector)) return;
+        matches += 1;
+        rule.walkDecls(declaration => { values[declaration.prop] = declaration.value; });
+      });
+      expect(matches).toBeGreaterThan(0);
+      return values;
+    }
+    expect(declarations(appShellStyles, '.wiselink-app-shell')).toMatchObject({
+      display: 'grid', height: '100dvh', 'min-height': '0', overflow: 'hidden',
+    });
+    expect(declarations(appShellStyles, '.wiselink-app-main')).toMatchObject({
+      display: 'flex', 'flex-direction': 'column', 'min-height': '0',
+    });
+    expect(declarations(appShellStyles, '.wl-topbar')).toMatchObject({ 'flex-shrink': '0' });
+    expect(declarations(appShellStyles, '.wiselink-app-shell .wl-topbar')).toMatchObject({
+      height: '60px', 'min-height': '60px', margin: '0',
+    });
+    expect(declarations(appShellStyles, '.wiselink-app-shell .wl-topbar', '(max-width: 760px)')).toMatchObject({
+      height: '58px', 'min-height': '58px',
+    });
+    expect(declarations(appShellStyles, '.wiselink-app-body')).toMatchObject({
+      flex: '1', 'min-height': '0', overflow: 'auto',
+    });
+    expect(declarations(appShellStyles, '.wiselink-app-shell.is-immersive')).toMatchObject({
+      'grid-template-columns': 'minmax(0, 1fr)',
+    });
+    for (const selector of ['.wiselink-app-shell.is-immersive .wl-sidebar', '.wiselink-app-shell.is-immersive .wl-topbar'])
+      expect(declarations(appShellStyles, selector)).toMatchObject({ display: 'none' });
+    expect(layout).toContain("immersive ? ' is-immersive' : ''");
+    const main = layout.match(/<div className="wiselink-app-main">[\s\S]*?<\/div>/u)?.[0];
+    expect(main).toContain('<TopBar');
+    expect(main).toContain('className="wiselink-app-body"');
+    expect(main).toContain('id="main-content"');
+    expect(main).toContain('data-reading-scroll-container');
+    expect(main).toContain('<Outlet />');
+    expect(main!.indexOf('<TopBar')).toBeLessThan(main!.indexOf('className="wiselink-app-body"'));
+    expect(main!.indexOf('className="wiselink-app-body"')).toBeLessThan(main!.indexOf('<Outlet />'));
     expect(pageStyles).toMatch(
       /\.parse-shell\.parse-shell--workbench\s*\{[\s\S]*?height: 100%;[\s\S]*?min-height: 0;[\s\S]*?padding: 0;/,
     );
@@ -47,6 +73,10 @@ describe('workbench scroll ownership', () => {
     expect(workbenchStyles).toMatch(
       /\.wl-workbench-toolbar\s*\{[\s\S]*?flex: 0 0 auto;/,
     );
+    expect(declarations(pageStyles, '.parse-shell.parse-shell--workbench')).toMatchObject({ overflow: 'hidden' });
+    expect(declarations(workbenchStyles, '.wl-workbench-shell')).toMatchObject({
+      height: '100%', 'min-height': '0', overflow: 'hidden',
+    });
   });
 
   it('separates flow pages from fixed desktop workspaces', async () => {
@@ -110,10 +140,10 @@ describe('workbench scroll ownership', () => {
 
     expect(pdf).toContain('aria-label="PDF 页面"');
     expect(pdf).toContain('data-pdf-page={pageNumber}');
-    expect(pdf).toContain('container.scrollTo');
+    expect(pdf).toContain('followPdfPageTarget(container, scrollRequest.page');
     expect(pdf).toContain('onScroll={handlePagesScroll}');
     expect(pdf).toContain('pageAtReadingLine');
-    expect(pdf).toContain('renderRequested || highlighted');
+    expect(pdf).toContain('panelActive && renderRequested');
     expect(pdf).toContain("? 'requested' : 'deferred'");
     expect(pdfStyles).toMatch(
       /\.wl-workbench-main\.is-workspace \.parse-pdf-pages\s*\{[\s\S]*?max-height: none;[\s\S]*?min-height: 0;/,

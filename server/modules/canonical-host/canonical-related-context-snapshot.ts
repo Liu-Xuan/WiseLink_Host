@@ -182,6 +182,7 @@ function snapshotItems(
           : []),
         'RELATION_CANDIDATE_NOT_ACCEPTED',
         'SOURCE_AUTHORITY_NOT_EVALUATED',
+        'PUBLISHER_CURRENTNESS_UNKNOWN',
       ],
       provenance: {
         source: 'PRIMARY_DOCUMENT_EXPLICIT_MENTION',

@@ -4,7 +4,9 @@ import {
   type SuiteGraphActivityCandidate,
   type SuiteMatterGraphRead,
 } from '../../client/src/pages/RelationGraphPage/suite-matter-graph';
-import { buildSuiteGraphTimeline } from '../../client/src/pages/RelationGraphPage/suite-graph-timeline';
+import { graphActivityV2 } from './fixtures/graph-activity-v2';
+import { graphReadingParams, readGraphReadingState } from '../../client/src/pages/RelationGraphPage/suite-graph-return';
+import { suiteGraphSourceEventMatchesPins, suiteGraphSourceEventId, buildSuiteGraphTimeline } from '../../client/src/pages/RelationGraphPage/suite-graph-timeline';
 import type { EngineeringMatterCatalogEntry } from '@shared/api.interface';
 import type {
   DocumentActivityRevision,
@@ -220,7 +222,41 @@ describe('buildSuiteGraphTimeline', () => {
     expect(events).toHaveLength(1);
     expect(events[0].sourceLabel).toBe('dv-a');
     expect(JSON.parse(events[0].id)).toEqual(['event', 'dv-a', 'pr-1', '2', 'run-1', 'st-1']);
-    expect(events[0].statement?.time?.raw).toBe('2026-02-01');
+    expect(events[0].statement).toMatchObject({ time: { raw: '2026-02-01' } });
   });
 
+});
+
+it('keeps every v2 time row distinct while preserving exact pins and raw status', () => {
+  const saved = graphActivityV2();
+  const activities = new Map([['dv-a', { familyId: saved.familyId, candidate: saved.candidate }]]);
+  const events = buildSuiteGraphTimeline({ read: null, catalog: [{ document: { documentVersionId: 'dv-a' } }], activities, revision: null }).events;
+  expect(events.map(event => event.date)).toEqual(['Q4 2026', 'TBD', 'after approval']);
+  expect(new Set(events.map(event => event.id)).size).toBe(3);
+  expect(events.every(event => event.detail.endsWith(' source reports completed\r\n'))).toBe(true);
+  for (const [index, event] of events.entries()) {
+    expect(JSON.parse(event.id).slice(-2)).toEqual(['time', String(index)]);
+    expect(event.pins).toMatchObject({ documentVersionId: 'dv-a', parseRunId: 'pr-1', candidateRevision: 2, runRef: 'run-1', statementId: 'st-1', anchorId: 'anchor-1' });
+    const query = graphReadingParams('matter', null, { eventId: event.id, eventPins: event.pins! });
+    expect(readGraphReadingState(query).eventPins).toEqual(event.pins);
+  }
+  const noTime = graphActivityV2(); noTime.candidate.statements[0].times = [];
+  const noTimeEvent = buildSuiteGraphTimeline({ read: null, catalog: [{ document: { documentVersionId: 'dv-a' } }], activities: new Map([['dv-a', { familyId: noTime.familyId, candidate: noTime.candidate }]]), revision: null }).events[0];
+  expect(JSON.parse(noTimeEvent.id).slice(-2)).toEqual(['time', 'none']);
+  expect(suiteGraphSourceEventMatchesPins(noTimeEvent.id, noTimeEvent.pins!)).toBe(true);
+});
+
+it('rejects malformed v2 display suffixes and any change to exact source pins', () => {
+  const saved = graphActivityV2();
+  const pins = { documentVersionId: 'dv-a', familyId: saved.familyId, parseRunId: 'pr-1', candidateRevision: 2, runRef: 'run-1', statementId: 'st-1', anchorId: 'anchor-1' };
+  expect(suiteGraphSourceEventMatchesPins(suiteGraphSourceEventId(pins), pins)).toBe(true);
+  for (const suffix of ['-1', '01', '1.5', '9007199254740992', 'none-extra']) {
+    const eventId = JSON.stringify([...JSON.parse(suiteGraphSourceEventId(pins)), 'time', suffix]);
+    expect(suiteGraphSourceEventMatchesPins(eventId, pins)).toBe(false);
+    expect(readGraphReadingState(new URLSearchParams({ eventId, eventPins: JSON.stringify(pins) })).eventPins).toBeUndefined();
+  }
+  for (const field of ['documentVersionId', 'parseRunId', 'candidateRevision', 'runRef', 'statementId'] as const) {
+    const changed = { ...pins, [field]: field === 'candidateRevision' ? 3 : 'wrong' };
+    expect(suiteGraphSourceEventMatchesPins(suiteGraphSourceEventId(pins, 1), changed)).toBe(false);
+  }
 });

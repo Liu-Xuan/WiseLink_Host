@@ -1,4 +1,6 @@
+import { sameSummaryEvidence, collectSummaryNativeReadReceipts } from './derived-summary-native-evidence.mjs';
 import { canonicalJson, canonicalSha256, validateExecutionModelSelection } from './validate-payload.mjs';
+import { validateDerivedSummaryRevisionContext } from './derived-summary-revision-context.mjs';
 
 export const DERIVED_SUMMARY_TASK_SCHEMA = 'wiselink.derived-summary-task.v1';
 export const DERIVED_SUMMARY_TASK_TYPE = 'OPENCLAW_DERIVED_SUMMARY';
@@ -37,8 +39,12 @@ export function validateDerivedSummaryMember(value) {
 }
 
 export function validateDerivedSummaryModelInput(value) {
-  assertSummaryExactKeys(value, ['scope', 'classificationStatus', 'instruction', 'members', 'evidence', 'limitations'],
+  assertSummaryExactKeys(value, ['scope', 'classificationStatus', 'instruction', 'members', 'evidence', 'limitations',
+    ...(Object.hasOwn(value ?? {}, 'purpose') ? ['purpose'] : []),
+    ...(Object.hasOwn(value ?? {}, 'revisionContext') ? ['revisionContext'] : [])],
     'DERIVED_SUMMARY_MODEL_INPUT_INVALID');
+  if (Object.hasOwn(value, 'purpose') && !['SYNTHESIZE', 'REVISE_SAVED_SUMMARY'].includes(value.purpose))
+    fail('DERIVED_SUMMARY_MODEL_INPUT_INVALID');
   const scope = value.scope;
   assertSummaryExactKeys(scope, ['kind', 'title', 'fleetFamilyId', 'fleetModelIds', 'ata2', 'ata4', 'selectionReason'],
     'DERIVED_SUMMARY_SCOPE_INVALID');
@@ -59,20 +65,39 @@ export function validateDerivedSummaryModelInput(value) {
     memberRefs.add(reading.evidenceRef); identities.add(identity);
   }
   derivedSummaryRegistry(value);
+  validateDerivedSummaryRevisionContext(value, { assertSummaryExactKeys, validateDerivedSummaryMember,
+    validateScope: scope => {
+      const ordinary = { ...value, scope };
+      delete ordinary.purpose; delete ordinary.revisionContext;
+      validateDerivedSummaryModelInput(ordinary);
+    } });
   return value;
 }
 
 export function validateDerivedSummaryReading(reading) {
   assertSummaryExactKeys(reading, ['member', 'evidenceRef', 'headline', 'body', 'issues', 'evidence', 'rootRefs',
-    'limitations', 'current', 'overviewStatus', 'leaves'], 'DERIVED_SUMMARY_MEMBER_READING_INVALID');
+    'limitations', 'current', 'overviewStatus', 'leaves',
+    ...(Object.hasOwn(reading ?? {}, 'understanding') ? ['understanding'] : [])], 'DERIVED_SUMMARY_MEMBER_READING_INVALID');
   validateDerivedSummaryMember(reading.member);
   if (!text(reading.evidenceRef) || typeof reading.headline !== 'string' || !text(reading.body) ||
       !Array.isArray(reading.issues) || !Array.isArray(reading.evidence) || !texts(reading.rootRefs) ||
       !texts(reading.limitations) || typeof reading.current !== 'boolean' ||
       !['CURRENT', 'STALE', 'NOT_AVAILABLE'].includes(reading.overviewStatus) || !Array.isArray(reading.leaves))
     fail('DERIVED_SUMMARY_MEMBER_READING_INVALID');
+  if (Object.hasOwn(reading, 'understanding') &&
+      (reading.member.kind === 'DERIVED_SUMMARY' || typeof reading.understanding !== 'string' ||
+       reading.body !== completeDerivedSummaryWorkBody(reading.understanding, reading.issues)))
+    fail('DERIVED_SUMMARY_MEMBER_READING_INVALID');
   reading.leaves.forEach(validateDerivedSummaryMember);
   return reading;
+}
+
+/** Host completeBody separators and issue order, with no parsing or inferred text. */
+export function completeDerivedSummaryWorkBody(understanding, issues) {
+  if (typeof understanding !== 'string' || !Array.isArray(issues) || issues.some(issue =>
+      typeof issue?.issueKey !== 'string' || typeof issue.question !== 'string' || typeof issue.body !== 'string'))
+    fail('DERIVED_SUMMARY_MEMBER_READING_INVALID');
+  return `${understanding}\n\n${issues.map(issue => `问题 ${issue.issueKey}：${issue.question}\n${issue.body}`).join('\n\n')}`;
 }
 
 /** Mirrors shared DerivedSummaryTask; runtime controls never enter the model view. */
@@ -82,12 +107,19 @@ export function validateDerivedSummaryTask(task, target) {
       task.subject?.kind !== 'DERIVED_SUMMARY' || task.subject.summaryId !== target.summaryId ||
       Object.keys(task.subject).length !== 2 || task.operationRef !== target.attemptRef ||
       !text(task.actionAttemptId) || !text(task.taskInputHash) || !Number.isFinite(Date.parse(task.deadlineAt)) ||
-      Object.hasOwn(task, 'workItemId') || Object.hasOwn(task, 'matterId'))
+      Object.hasOwn(task, 'workItemId') || Object.hasOwn(task, 'matterId') ||
+      Object.hasOwn(task, 'purpose') || Object.hasOwn(task, 'revisionContext'))
     fail('DERIVED_SUMMARY_CLAIM_BINDING_MISMATCH');
   const { taskInputHash, ...taskBasis } = task;
   if (canonicalSha256(taskBasis) !== taskInputHash) fail('DERIVED_SUMMARY_CLAIM_BINDING_MISMATCH');
   validateExecutionModelSelection(task.executionModel);
   validateDerivedSummaryModelInput(task.modelInput);
+  if (task.modelInput.purpose === 'REVISE_SAVED_SUMMARY') {
+    const prior = task.modelInput.revisionContext.previousSummary;
+    if (prior.summaryId !== task.subject.summaryId || prior.revision !== task.expectedSummaryRevision ||
+        task.modelInput.members.some(item => item.member.kind === 'DERIVED_SUMMARY' && item.member.summaryId === task.subject.summaryId))
+      fail('DERIVED_SUMMARY_CLAIM_BINDING_MISMATCH');
+  }
   return task;
 }
 
@@ -95,11 +127,13 @@ export function validateDerivedSummaryTask(task, target) {
 export function derivedSummaryRegistry(modelInput) {
   const members = new Map(modelInput.members.map(reading => [reading.evidenceRef, reading]));
   const evidence = new Map();
-  for (const item of [...modelInput.evidence, ...modelInput.members.flatMap(reading => reading.evidence)]) {
+  const carriers = [...modelInput.evidence, ...modelInput.members.flatMap(reading => reading.evidence)];
+  collectSummaryNativeReadReceipts(carriers);
+  for (const item of carriers) {
     if (!object(item) || !text(item.evidenceRef)) fail('DERIVED_SUMMARY_EVIDENCE_INVALID');
     const previous = evidence.get(item.evidenceRef);
-    if (previous && canonicalJson(previous) !== canonicalJson(item)) fail('DERIVED_SUMMARY_EVIDENCE_IDENTITY_DRIFT');
-    evidence.set(item.evidenceRef, item);
+    if (previous && !sameSummaryEvidence(previous, item)) fail('DERIVED_SUMMARY_EVIDENCE_IDENTITY_DRIFT');
+    if (!previous || item.kind !== 'TDMS_NATIVE_RECORD') evidence.set(item.evidenceRef, item);
   }
   if ([...members.keys()].some(ref => evidence.has(ref))) fail('DERIVED_SUMMARY_REF_KIND_COLLISION');
   return { members, evidence };
@@ -122,7 +156,7 @@ export function validateDerivedSummaryContent(content, modelInput) {
     fail('DERIVED_SUMMARY_CONTENT_INVALID');
   const registry = derivedSummaryRegistry(modelInput);
   const bodyRefs = [...content.body.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]);
-  const refs = [...`${content.body}\n${content.limitations.join('\n')}`.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]);
+  const refs = [...`${content.headline}\n${content.listBrief}\n${content.body}\n${content.limitations.join('\n')}`.matchAll(/\[\[([^\]]+)\]\]/gu)].map(match => match[1]);
   // Match Host save: the body needs registered support, not a forced member citation.
   // Direct member use remains a separate coverage fact in the saved revision.
   if (!bodyRefs.length || refs.some(ref => !registry.members.has(ref) && !registry.evidence.has(ref)))
@@ -208,8 +242,16 @@ export function validateDerivedSummaryToolMetadata(tool) {
       if (field === 'leaseGeneration' || field === 'expectedSummaryRevision') {
         if (property.type !== 'integer' || (field === 'leaseGeneration' ? property.exclusiveMinimum !== 0 : property.minimum !== 0)) failMetadata();
       } else if (field === 'evidenceRefs') {
-        if (property.type !== 'array' || property.minItems !== 1 || property.items?.type !== 'string' ||
-            property.items.minLength !== 1 || property.items.maxLength !== 1024) failMetadata();
+        const legacy = property.items?.type === 'string' && property.items.minLength === 1 && property.items.maxLength === 1024;
+        // Preserve old tool metadata/checkpoints. Only READ_SOURCES can carry a
+        // bounded canonical TDMS opinion tuple; member-work refs keep their old cap.
+        const nativeReadItems = { anyOf: [
+          { type: 'string', minLength: 1, maxLength: 1024, pattern: '^(?!TDMS_APPROVED_OPINION:)' },
+          { type: 'string', minLength: 1, maxLength: 11518,
+            pattern: "^TDMS_APPROVED_OPINION:(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-F]{2})+(?::(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-F]{2})+){4}:(?:0|[1-9]\\d{0,15})$" },
+        ] };
+        const native = operation === 'READ_SOURCES' && canonicalJson(property.items) === canonicalJson(nativeReadItems);
+        if (property.type !== 'array' || property.minItems !== 1 || (!legacy && !native)) failMetadata();
       } else {
         if (property.type !== 'string') failMetadata();
         if (field === 'summaryId' && (property.maxLength !== 96 || property.pattern !== '^DS-.*')) failMetadata();

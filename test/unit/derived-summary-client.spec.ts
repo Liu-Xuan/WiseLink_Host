@@ -1,9 +1,11 @@
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
-import { readDerivedSummaryExact, readDerivedSummaryRevision, readDerivedSummary, readDerivedSummaryRequest, createDerivedSummary } from '@client/src/api/derived-summary';
+import { readDerivedSummaryExact, readDerivedSummaryRevision, readDerivedSummary, readDerivedSummaryRequest, createDerivedSummary, updateDerivedSummary } from '@client/src/api/derived-summary';
 import { memberFromKnowledge, summaryMemberKey, summaryMemberRoute, summaryScopeError, upperSummaryRoute } from '@client/src/features/derived-summary/summary-selection';
 import { libraryAtaSummaryParams } from '@client/src/pages/WorkspaceHomePage/library-summary-entry';
 import { summaryExact, summaryHead, summaryKnowledge, summaryRevision } from './fixtures/derived-summary';
 import { libraryDocuments } from './fixtures/canonical-library';
+import { readPendingSummaryRequest, storePendingSummaryRequest, summaryPendingKey } from '@client/src/features/derived-summary/summary-pending-request';
+import type { CreateDerivedSummaryRequest, RequestDerivedSummaryUpdate } from '@shared/derived-summary.interface';
 import { requireCanonicalHostClientAuthentication } from '@client/src/api/canonical-host';
 let session = 1;
 jest.mock('@lark-apaas/client-toolkit/utils/getAxiosForBackend', () => ({ axiosForBackend: jest.fn() }));
@@ -83,3 +85,71 @@ test('create POST carries only explicit scope/members and the captured Hosted mo
   await createDerivedSummary(input);
   expect(transport).toHaveBeenCalledWith(expect.objectContaining({ method: 'POST', data: input }));
 });
+
+// UI payload/storage compatibility only; Host admission and current/prior authorization are separate.
+const pendingInput = (): CreateDerivedSummaryRequest => ({ requestId: 'REQ-fixed', scope: summaryRevision().scope,
+  members: summaryRevision().members.map(item => item.member), instruction: '明确修改目标', modelRef: 'miaoda/glm-5.3' });
+function withPendingStorage(run: (values: Map<string, string>) => void) {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key),
+  } });
+  try { run(values); } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'sessionStorage', descriptor); else Reflect.deleteProperty(globalThis, 'sessionStorage');
+  }
+}
+test.each(['SYNTHESIZE', 'REVISE_SAVED_SUMMARY'] as const)('update POST forwards the exact %s command without inventing prior body/ref', async purpose => {
+  const input: RequestDerivedSummaryUpdate = { ...pendingInput(), purpose, expectedSummaryRevision: 2 };
+  transport.mockResolvedValueOnce({ status: 200, data: { summaryId: 'DS-1', attemptRef: 'AQ-1', created: true, status: 'QUEUED' } } as never);
+  await updateDerivedSummary('DS-1', input);
+  expect(transport).toHaveBeenCalledWith(expect.objectContaining({ url: '/api/canonical-host/derived-summaries/DS-1/requests', method: 'POST', data: input }));
+  expect((transport.mock.calls[0][0] as unknown as { data: RequestDerivedSummaryUpdate }).data).toBe(input);
+  expect(Object.keys(input).sort()).toEqual(['requestId', 'scope', 'members', 'instruction', 'modelRef', 'purpose', 'expectedSummaryRevision'].sort());
+});
+test('legacy pending preserves its original serialized object without adding default purpose', () => withPendingStorage(values => {
+  const key = summaryPendingKey('tenant-1', 'actor-1', 'DS-1');
+  const legacy = { ...pendingInput(), expectedSummaryRevision: 2 };
+  const text = JSON.stringify(legacy); values.set(key, text);
+  const restored = readPendingSummaryRequest(key, 'DS-1');
+  expect(restored).toEqual(legacy); expect(restored).not.toHaveProperty('purpose');
+  storePendingSummaryRequest(key, restored!); expect(values.get(key)).toBe(text);
+}));
+test('purpose participates in the preserved command identity under the same pending slot', () => withPendingStorage(values => {
+  const key = summaryPendingKey('tenant-1', 'actor-1', 'DS-1');
+  const original: RequestDerivedSummaryUpdate = { ...pendingInput(), purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 2 };
+  storePendingSummaryRequest(key, original);
+  expect(readPendingSummaryRequest(key, 'DS-1')).toEqual(original);
+  expect(values.get(key)).not.toBe(JSON.stringify({ ...original, purpose: 'SYNTHESIZE' }));
+  expect(summaryPendingKey('tenant-1', 'actor-2', 'DS-1')).not.toBe(key);
+  expect(summaryPendingKey('tenant-2', 'actor-1', 'DS-1')).not.toBe(key);
+  expect(summaryPendingKey('tenant-1', 'actor-1')).not.toBe(key);
+}));
+test.each([
+  { purpose: 'OTHER', expectedSummaryRevision: 2 },
+  { purpose: null, expectedSummaryRevision: 2 },
+  { purpose: 'REVISE_SAVED_SUMMARY' },
+  { purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 0 },
+  { purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: -1 },
+  { purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 1.5 },
+  { purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: '2' },
+  { purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 2147483647 },
+  { purpose: 'SYNTHESIZE', expectedSummaryRevision: -1 },
+  { purpose: 'SYNTHESIZE' },
+])('invalid update pending fails closed without rewriting the stored command: %j', delta => withPendingStorage(values => {
+  const key = summaryPendingKey('tenant-1', 'actor-1', 'DS-1'); const text = JSON.stringify({ ...pendingInput(), ...delta });
+  values.set(key, text); expect(() => readPendingSummaryRequest(key, 'DS-1')).toThrow('无法读取'); expect(values.get(key)).toBe(text);
+}));
+test.each([
+  { purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 2 },
+  { expectedSummaryRevision: 0 },
+  { purpose: 'REVISE_SAVED_SUMMARY' },
+])('new-summary pending rejects revision/update commands: %j', delta => withPendingStorage(values => {
+  const key = summaryPendingKey('tenant-1', 'actor-1'); values.set(key, JSON.stringify({ ...pendingInput(), ...delta }));
+  expect(() => readPendingSummaryRequest(key)).toThrow('无法读取');
+}));
+test.each([undefined, 'SYNTHESIZE'] as const)('ordinary pending remains compatible with purpose %s', purpose => withPendingStorage(values => {
+  const key = summaryPendingKey('tenant-1', 'actor-1'); const input = { ...pendingInput(), ...(purpose ? { purpose } : {}) };
+  values.set(key, JSON.stringify(input)); expect(readPendingSummaryRequest(key)).toEqual(input);
+}));

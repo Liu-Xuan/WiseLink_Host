@@ -1,3 +1,5 @@
+import type { AssessmentTdmsNativeEvidence } from '@shared/assessment-tdms-evidence';
+import { tdmsReadObservation } from './jobaid-tdms-context';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
 import { JOBAID_ACTIVITY_WINDOW, type JobAidExecutionObservation, type JobAidSavedActivityObservation } from './jobaid-activity';
@@ -278,6 +280,26 @@ export class JobAidWorkRepository {
     );
   }
 
+  /** Exact immutable work lookup for an already-held runtime transaction. The
+   * existing service-role check and SDK actor context use the supplied executor;
+   * no root-pool role query or nested transaction is opened. */
+  async readByRefForRuntimeInTransaction(input: {
+    tenantId: string;
+    workItemId: string;
+    actorUserId: string;
+    workRevisionRef: string;
+  }, database: PostgresJsDatabase): Promise<JobAidWorkRevision | null> {
+    return this.actorTransactions.withActorScope(input.actorUserId, async () => {
+      const [row] = await database.select().from(assessmentWorkRevision).where(and(
+        eq(assessmentWorkRevision.tenantId, input.tenantId),
+        eq(assessmentWorkRevision.workItemId, input.workItemId),
+        eq(assessmentWorkRevision.assessmentWorkRevisionId, input.workRevisionRef),
+        eq(assessmentWorkRevision.createdByUserId, input.actorUserId),
+      )).limit(1);
+      return row ? project(row) : null;
+    }, database);
+  }
+
   /** Context discovery needs identities, not every historical issue body. */
   async listHeadersForRuntime(input: {
     tenantId: string;
@@ -438,6 +460,7 @@ export class JobAidWorkRepository {
       expectedWorkRevision: number;
       command: unknown;
       content: JobAidProblemWorkContent;
+      assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>;
     },
     executor?: PostgresJsDatabase,
   ): Promise<{ revision: JobAidWorkRevision; replayed: boolean }> {
@@ -447,8 +470,11 @@ export class JobAidWorkRepository {
       input.expectedWorkRevision < 0
     )
       throw new Error('JOBAID_SAVE_IDENTITY_INVALID');
+    if (input.content.evidence.some(item=>item.kind==='TDMS_NATIVE_RECORD') && !input.assertNativeAuthorized)
+      throw new Error('TDMS_NATIVE_EVIDENCE_VERIFIER_UNAVAILABLE');
     const commandJson = canonicalJson(input.command);
     const apply = async (database: PostgresJsDatabase) => {
+      await input.assertNativeAuthorized?.(database);
       const primary = await this.lockSources(
         database,
         input.row,
@@ -498,6 +524,7 @@ export class JobAidWorkRepository {
           throw new Error('JOBAID_SAVE_REQUEST_REUSE');
         // Response-loss recovery returns the original saved content even after
         // this attempt becomes terminal. It cannot advance a working pointer.
+        await input.assertNativeAuthorized?.(database);
         return { revision: project(existing), replayed: true };
       }
       if (
@@ -514,6 +541,7 @@ export class JobAidWorkRepository {
       );
       if ((current?.workRevision ?? 0) !== input.expectedWorkRevision)
         throw new Error('JOBAID_WORK_REVISION_CONFLICT');
+      await input.assertNativeAuthorized?.(database);
       const [saved] = await database
         .insert(assessmentWorkRevision)
         .values({
@@ -535,6 +563,7 @@ export class JobAidWorkRepository {
       await this.searchProjection.enqueuePending({ tenantId: saved.tenantId, ownerKind: 'USER',
         ownerId: saved.createdByUserId, subjectId: saved.workItemId,
         revisionRef: saved.assessmentWorkRevisionId, database });
+      await input.assertNativeAuthorized?.(database);
       return { revision: project(saved), replayed: false };
     };
     return executor
@@ -552,11 +581,14 @@ export class JobAidWorkRepository {
     sourceBindings: JobAidSourceBinding[];
     sourceRefs: string[];
     purpose: string;
+    nativeEvidence?: AssessmentTdmsNativeEvidence[];
+    assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>;
   }): Promise<void> {
     return this.recordReadObservation(input, {
       kind: 'ASSESSMENT_SOURCES_READ',
       sourceRefs: input.sourceRefs,
       purpose: input.purpose,
+      ...(input.nativeEvidence ? {nativeEvidence:input.nativeEvidence} : {}),
     });
   }
 
@@ -577,11 +609,18 @@ export class JobAidWorkRepository {
     actorUserId: string;
     fence: JobAidWorkFence;
     sourceBindings: JobAidSourceBinding[];
-  }, observation: { kind: 'ASSESSMENT_SOURCES_READ'; sourceRefs: string[]; purpose: string }
+    assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>;
+  }, observation: { kind: 'ASSESSMENT_SOURCES_READ'; sourceRefs: string[]; purpose: string; nativeEvidence?: AssessmentTdmsNativeEvidence[] }
     | { kind: 'ASSESSMENT_KNOWLEDGE_OBSERVED'; status: JobAidKnowledgeObservationStatus }): Promise<void> {
     await this.actorTransactions.withActorTransaction(
       input.actorUserId,
       async ({ database }) => {
+        if (observation.kind === 'ASSESSMENT_SOURCES_READ' && observation.nativeEvidence?.length) {
+          if (!input.assertNativeAuthorized) throw new Error('TDMS_NATIVE_EVIDENCE_VERIFIER_UNAVAILABLE');
+          if (observation.nativeEvidence.some(item=>!observation.sourceRefs.includes(item.evidenceRef)))
+            throw new Error('JOBAID_TDMS_READ_BINDING_INVALID');
+        }
+        await input.assertNativeAuthorized?.(database);
         const primary = await this.lockSources(
           database,
           input.row,
@@ -606,8 +645,10 @@ export class JobAidWorkRepository {
         )
           throw new Error('JOBAID_SOURCE_READ_BINDING_CHANGED');
         assertJobAidWorkFence(attempt, input.fence);
+        await input.assertNativeAuthorized?.(database);
         const activity = {
           ...observation,
+          ...(observation.kind === 'ASSESSMENT_SOURCES_READ' ? tdmsReadObservation(observation,attempt.reviewActivityJson,attempt.operationRef) : {}),
           observedAt: new Date().toISOString(),
         };
         await database
@@ -616,6 +657,7 @@ export class JobAidWorkRepository {
             reviewActivityJson: sql`(COALESCE(${actionAttempt.reviewActivityJson}::jsonb, '[]'::jsonb) || ${JSON.stringify([activity])}::jsonb)::text`,
           })
           .where(eq(actionAttempt.attemptId, attempt.attemptId));
+        await input.assertNativeAuthorized?.(database);
       },
     );
   }

@@ -136,6 +136,8 @@ export interface CanonicalWorkItemRegistrarPort {
     applicabilityInputGuard?: { tenantId: string };
     /** Fences a successor Overall against a newer saved JobAid revision. */
     jobAidWorkRevisionGuard?: { tenantId: string; workRevisionRef: string };
+    /** Recheck native source/receipt authority inside the exact projection CAS transaction. */
+    nativeEvidenceGuard?: (database: PostgresJsDatabase) => Promise<void>;
   }): Promise<CanonicalWorkItemProjection>;
   getExact(input: {
     workItemId: string;

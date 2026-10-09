@@ -1,11 +1,12 @@
 #!/usr/bin/env node
+import { validateActivitySourceContext } from './merge-document-activity-source-context.mjs';
 
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c207';
+  'wiselink-research-and-synthesize@r09.c210';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -1363,7 +1364,7 @@ function validateSynthesisInput(input) {
       'engineerReviewContext',
       'selectiveResynthesis',
     ],
-    ['commonContext', 'evidenceRegistry'],
+    ['commonContext', 'evidenceRegistry', 'evidenceProjectionVersion'],
     'synthesis input',
   );
   equal(
@@ -1377,7 +1378,13 @@ function validateSynthesisInput(input) {
   validateUnifiedSourceContext(input.unifiedSourceContext);
   validateAdoptedDocumentVersions(input.adoptedDocumentVersions);
   validateEngineerReviewContext(input.engineerReviewContext);
-  if (input.evidenceRegistry !== undefined) validateOverallEvidenceRegistry(input.evidenceRegistry);
+  if (input.evidenceProjectionVersion !== undefined) {
+    if (!['SOURCE_CONTEXT_V1', 'SOURCE_CONTEXT_V2'].includes(input.evidenceProjectionVersion))
+      fail('OVERALL_EVIDENCE_PROJECTION_VERSION_INVALID');
+    if (input.evidenceRegistry === undefined) fail('OVERALL_READING_EVIDENCE_REGISTRY_REQUIRED');
+  }
+  if (input.evidenceRegistry !== undefined)
+    validateOverallEvidenceRegistry(input.evidenceRegistry, input.evidenceProjectionVersion);
   assertObject(input.selectiveResynthesis, 'selective resynthesis');
   array(input.externalDiscoveryResults, 'SYNTHESIS_DISCOVERY_RESULTS_INVALID');
   for (const result of input.externalDiscoveryResults)
@@ -1422,12 +1429,18 @@ function validateSynthesisInput(input) {
   }
 }
 
-function validateOverallEvidenceRegistry(values) {
+function validateOverallEvidenceRegistry(values, projectionVersion) {
   array(values, 'OVERALL_READING_EVIDENCE_REGISTRY_INVALID');
   const seen = new Set();
   for (const item of values) {
     assertObject(item, 'Overall model evidence');
-    exactKeys(item, ['evidenceRef', 'kind', 'title', 'versionLabel', 'excerpt', 'locator'], [], 'Overall model evidence');
+    const contextRequired = projectionVersion === 'SOURCE_CONTEXT_V1'
+      ? ['QUERY_RECEIPT', 'ENGINEER_STATEMENT', 'HOST_FACT', 'PRIOR_RESULT'].includes(item.kind)
+      : projectionVersion === 'SOURCE_CONTEXT_V2' && item.kind === 'PRIOR_RESULT';
+    const optional = item.kind === 'QUERY_RECEIPT' ? ['queryProvenance']
+      : item.kind === 'PRIOR_RESULT' ? ['originalEvidenceRefs', 'sourceWork', ...(projectionVersion==='SOURCE_CONTEXT_V2'?['sourceStatement']:[])] : [];
+    exactKeys(item, ['evidenceRef', 'kind', 'title', 'versionLabel', 'excerpt', 'locator',
+      ...(contextRequired ? ['sourceContext'] : [])], optional, 'Overall model evidence');
     nonEmpty(item.evidenceRef, 'OVERALL_EVIDENCE_REF_INVALID');
     if (seen.has(item.evidenceRef)) fail('OVERALL_DUPLICATE_EVIDENCE_REF');
     seen.add(item.evidenceRef);
@@ -1436,7 +1449,68 @@ function validateOverallEvidenceRegistry(values) {
     nullableText(item.versionLabel, 'OVERALL_EVIDENCE_VERSION_INVALID');
     nonEmpty(item.excerpt, 'OVERALL_EVIDENCE_EXCERPT_INVALID');
     nullableText(item.locator, 'OVERALL_EVIDENCE_LOCATOR_INVALID');
+    if (contextRequired) validateOverallEvidenceSourceContext(item.kind, item.sourceContext);
+    if (item.kind === 'QUERY_RECEIPT' && item.queryProvenance !== undefined) {
+      const provenance = item.queryProvenance;
+      exactKeys(provenance, ['origin', 'queryText', 'status', 'originalDocumentsVerified'], [], 'Overall query provenance');
+      equal(provenance.origin, 'AILY_RETRIEVAL', 'OVERALL_QUERY_PROVENANCE_INVALID');
+      nonEmpty(provenance.queryText, 'OVERALL_QUERY_PROVENANCE_INVALID');
+      if (!['COMPLETED', 'FAILED', 'UNKNOWN'].includes(provenance.status) || provenance.originalDocumentsVerified !== false)
+        fail('OVERALL_QUERY_PROVENANCE_INVALID');
+    }
+    if (item.kind === 'PRIOR_RESULT') {
+      if(item.sourceStatement!==undefined) {
+        if(item.sourceWork!==undefined) fail('ASSESSMENT_SOURCE_PROVENANCE_AMBIGUOUS');
+        validateSourceStatementProvenance(item.sourceStatement);
+        const ref=item.sourceStatement.reference;
+        equal(item.evidenceRef, `DOCUMENT_ACTIVITY:${ref.runRef}:${ref.candidateRevision}:${ref.statementId}`, 'ASSESSMENT_SOURCE_STATEMENT_INVALID');
+        equal(item.sourceContext.resultRef, ref.runRef, 'ASSESSMENT_SOURCE_STATEMENT_INVALID');
+        equal(item.sourceContext.resultRevision, ref.candidateRevision, 'ASSESSMENT_SOURCE_STATEMENT_INVALID');
+      }
+      if (item.originalEvidenceRefs !== undefined)
+        uniqueTextArray(item.originalEvidenceRefs, 'OVERALL_PRIOR_EVIDENCE_REFS_INVALID');
+      if (item.sourceWork !== undefined) {
+        exactKeys(item.sourceWork, ['subjectKind', 'subjectId', 'workRef', 'issueKey'], [], 'Overall source work');
+        equal(item.sourceWork.subjectKind, 'ENGINEERING_MATTER', 'OVERALL_SOURCE_WORK_INVALID');
+        for (const key of ['subjectId', 'workRef', 'issueKey']) nonEmpty(item.sourceWork[key], 'OVERALL_SOURCE_WORK_INVALID');
+      }
+    }
   }
+}
+
+/** Model-safe fields only: no Host authority bindings, inferred dates or new providers. */
+function validateOverallEvidenceSourceContext(kind, context) {
+  assertObject(context, 'Overall evidence source context');
+  const keys = {
+    QUERY_RECEIPT: ['receiptRef', 'checkedScope', 'queriedAt', 'coverage'],
+    ENGINEER_STATEMENT: context.origin === 'REVIEW_CONVERSATION'
+      ? ['origin', 'recordedAt'] : ['origin', 'recordedAt', 'reviewRevision', 'sequence'],
+    HOST_FACT: ['factRef', 'workItemRevision', 'recordedAt'],
+    PRIOR_RESULT: ['resultRef', 'resultRevision'],
+  }[kind];
+  exactKeys(context, keys, [], 'Overall evidence source context');
+  for (const key of keys) {
+    if (['reviewRevision', 'sequence', 'workItemRevision', 'resultRevision'].includes(key))
+      integerInRange(context[key], 1, Number.MAX_SAFE_INTEGER, 'OVERALL_EVIDENCE_CONTEXT_REVISION_INVALID');
+    else if (['recordedAt', 'queriedAt'].includes(key)) sourceContextTime(context[key]);
+    else nonEmpty(context[key], 'OVERALL_EVIDENCE_CONTEXT_INVALID');
+  }
+  if (kind === 'QUERY_RECEIPT' && !['COMPLETE', 'PARTIAL'].includes(context.coverage))
+    fail('OVERALL_EVIDENCE_QUERY_COVERAGE_INVALID');
+  if (kind === 'ENGINEER_STATEMENT' && !['REVIEW_CONVERSATION', 'ENGINEER_REVIEW_LEDGER'].includes(context.origin))
+    fail('OVERALL_EVIDENCE_ENGINEER_ORIGIN_INVALID');
+}
+
+/** Local source-context contract only; historical date readers stay unchanged. */
+function sourceContextTime(value) {
+  const syntax = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/u;
+  if (typeof value !== 'string' || !syntax.test(value) || !Number.isFinite(Date.parse(value)))
+    fail('OVERALL_EVIDENCE_CONTEXT_TIME_INVALID');
+  // Validate the original local date, not the offset-converted UTC day.
+  const date = value.slice(0, 10);
+  if (new Date(`${date}T00:00:00.000Z`).toISOString().slice(0, 10) !== date)
+    fail('OVERALL_EVIDENCE_CONTEXT_TIME_INVALID');
+  return value;
 }
 
 function validateEngineerReviewContext(context) {
@@ -4842,6 +4916,122 @@ function jobAidDeltaEvidenceEntries(delta) {
   });
   return entries;
 }
+export function validateSourceStatementProvenance(value) {
+  exactKeys(value,['reference','sourceBinding'],[],'Source statement provenance');
+  exactKeys(value.reference,['runRef','candidateRevision','statementId'],[],'Source statement reference');
+  for(const key of ['runRef','statementId']) {nonEmpty(value.reference[key],'ASSESSMENT_SOURCE_STATEMENT_INVALID');if(value.reference[key].includes(':')) fail('ASSESSMENT_SOURCE_STATEMENT_INVALID');}
+  if(!Number.isSafeInteger(value.reference.candidateRevision)||value.reference.candidateRevision<1) fail('ASSESSMENT_SOURCE_STATEMENT_INVALID');
+  exactKeys(value.sourceBinding,['original','semanticRevision'],[],'Source statement binding');
+  exactKeys(value.sourceBinding.original,['documentVersionId','parseRunId','parseRevision','sourceArtifactId','sourceSha256','sourceByteLength'],[],'Source statement original');
+  for(const key of ['documentVersionId','parseRunId','sourceArtifactId']) nonEmpty(value.sourceBinding.original[key],'ASSESSMENT_SOURCE_STATEMENT_INVALID');
+  for(const number of [value.sourceBinding.semanticRevision,value.sourceBinding.original.parseRevision,value.sourceBinding.original.sourceByteLength]) if(!Number.isSafeInteger(number)||number<1) fail('ASSESSMENT_SOURCE_STATEMENT_INVALID');
+  if(!/^[a-f0-9]{64}$/u.test(value.sourceBinding.original.sourceSha256)) fail('ASSESSMENT_SOURCE_STATEMENT_INVALID');
+}
+
+/** Saved v1 wire shape only. Host owns source ACL, saved state and original slice verification. */
+export function validateSourceStatementRecord(record) {
+  const invalid='ASSESSMENT_SOURCE_STATEMENT_RECORD_INVALID';
+  exactKeys(record,['ref','reference','sourceBinding','candidateOnly','sourceSchemaVersion','statement','semanticFieldsAvailability','scopeBasis','rootRefs','requiredContextRootRefs','quoteLocators'],[],'Source statement record');
+  validateSourceStatementProvenance({reference:record.reference,sourceBinding:record.sourceBinding});
+  equal(record.ref,`DOCUMENT_ACTIVITY:${record.reference.runRef}:${record.reference.candidateRevision}:${record.reference.statementId}`,invalid);
+  equal(record.candidateOnly,true,invalid);
+  const v2=record.sourceSchemaVersion==='wiselink.document.activity-candidate.v2';
+  if(!v2)equal(record.sourceSchemaVersion,'wiselink.document.activity-candidate.v1',invalid);
+  equal(record.semanticFieldsAvailability,v2?'V2_CAPTURED_FIELDS_ONLY':'LEGACY_PARTIAL',invalid);
+  equal(record.scopeBasis,v2?'ACTUAL_DELIVERED_RUN_SCOPE':'LEGACY_RUN_SCOPE',invalid);
+  uniqueTextArray(record.rootRefs,invalid);uniqueTextArray(record.requiredContextRootRefs,invalid);
+  if(!record.rootRefs.length||!record.requiredContextRootRefs.length)fail(invalid);
+  const statement=record.statement;
+  exactKeys(statement,['statementId','statementKey','label','quotes',...(v2?['subject','action','modality','status','times','technicalIds','scope']:['time','statusRaw']),'limitations'],[],'Saved source statement');
+  equal(statement.statementId,record.reference.statementId,invalid);nonEmpty(statement.statementKey,invalid);nonEmpty(statement.label,invalid);
+  if(!/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(statement.statementKey))fail(invalid);
+  array(statement.quotes,invalid);if(!statement.quotes.length)fail(invalid);
+  for(const quote of statement.quotes) {
+    exactKeys(quote,['anchorId','start','end','text'],[],'Saved v1 quote');nonEmpty(quote.anchorId,invalid);nonEmpty(quote.text,invalid);
+    if(!Number.isSafeInteger(quote.start)||quote.start<0||!Number.isSafeInteger(quote.end)||quote.end<=quote.start||quote.end-quote.start!==quote.text.length)fail(invalid);
+  }
+  if(!v2 && statement.time!==null) {
+    const time=statement.time;exactKeys(time,['role','precision','expression','raw','quoteIndex'],[],'Saved v1 time');nonEmpty(time.raw,invalid);
+    if(!['TARGET','OCCURRED','SOURCE_PUBLICATION','EFFECTIVE','CONDITION','UNKNOWN'].includes(time.role)||!['YEAR','QUARTER','MONTH','DAY','UNKNOWN'].includes(time.precision)||!['CALENDAR','TBD','RELATIVE','UNKNOWN'].includes(time.expression)||!Number.isSafeInteger(time.quoteIndex)||time.quoteIndex<0||!statement.quotes[time.quoteIndex]?.text.includes(time.raw))fail(invalid);
+  }
+  if(!v2){nullableText(statement.statusRaw,invalid);if(statement.statusRaw!==null&&!statement.quotes.some(q=>q.text.includes(statement.statusRaw)))fail(invalid);}
+  else validateSavedSourceSemanticsV2(statement,invalid);
+  arrayOfText(statement.limitations,invalid);
+  array(record.quoteLocators,invalid);if(record.quoteLocators.length!==statement.quotes.length)fail(invalid);
+  record.quoteLocators.forEach((locator,index)=>{
+    exactKeys(locator,['quoteIndex','anchorId','sourceUnitId','payloadPath','sourceRefIds','rootRefs'],[],'Saved statement quote locator');
+    equal(locator.quoteIndex,index,invalid);equal(locator.anchorId,statement.quotes[index].anchorId,invalid);nonEmpty(locator.sourceUnitId,invalid);nonEmpty(locator.payloadPath,invalid);
+    uniqueTextArray(locator.sourceRefIds,invalid);uniqueTextArray(locator.rootRefs,invalid);if(!locator.sourceRefIds.length||locator.rootRefs.length!==locator.sourceRefIds.length)fail(invalid);
+    const expected=locator.sourceRefIds.map(ref=>`DOCUMENT_ORIGINAL:${record.sourceBinding.original.documentVersionId}:${record.sourceBinding.original.parseRunId}:${ref}`);
+    equal(canonicalJson(locator.rootRefs),canonicalJson(expected),invalid);
+    if(locator.rootRefs.some(ref=>!record.rootRefs.includes(ref)))fail(invalid);
+  });
+  if(record.rootRefs.some(ref=>!record.requiredContextRootRefs.includes(ref)) || canonicalJson([...new Set(record.quoteLocators.flatMap(q=>q.rootRefs))].sort())!==canonicalJson([...record.rootRefs].sort()))fail(invalid);
+  return record;
+}
+
+/** Wire integrity only; the Host validates exact SAVED state, source scope and ACL. */
+function validateSavedSourceSemanticsV2(statement,invalid) {
+  const cue=(value,extra=[])=>{
+    exactKeys(value,['raw','quoteIndex',...extra],[],'Saved v2 cue');nonEmpty(value.raw,invalid);
+    if(!Number.isSafeInteger(value.quoteIndex)||value.quoteIndex<0||!statement.quotes[value.quoteIndex]?.text.includes(value.raw))fail(invalid);
+  };
+  for(const key of ['subject','action'])if(statement[key]!==null)cue(statement[key]);
+  if(statement.modality!==null){cue(statement.modality,['meaning','negationQuoteIndexes']);
+    if(!['REQUIRED','RECOMMENDED','PLANNED','POSSIBLE','REPORTED','UNKNOWN'].includes(statement.modality.meaning))fail(invalid);
+    const indexes=statement.modality.negationQuoteIndexes;array(indexes,invalid);
+    if(new Set(indexes).size!==indexes.length||indexes.some(i=>!Number.isSafeInteger(i)||i<0||!statement.quotes[i]))fail(invalid);
+  }
+  if(statement.status!==null){cue(statement.status,['meaning']);if(!['PLANNED','IN_PROGRESS','SOURCE_REPORTED_COMPLETED','ON_HOLD','CANCELLED','UNKNOWN'].includes(statement.status.meaning))fail(invalid);}
+  array(statement.times,invalid);for(const time of statement.times){cue(time,['role','precision','expression']);
+    if(!['TARGET','OCCURRED','SOURCE_PUBLICATION','EFFECTIVE','CONDITION','UNKNOWN'].includes(time.role)||
+      !['YEAR','QUARTER','MONTH','DAY','UNKNOWN'].includes(time.precision)||!['CALENDAR','TBD','RELATIVE','UNKNOWN'].includes(time.expression)||
+      (time.expression!=='CALENDAR'&&time.precision!=='UNKNOWN'))fail(invalid);
+  }
+  array(statement.technicalIds,invalid);for(const item of statement.technicalIds){cue(item,['kind']);if(!['AIRCRAFT_LINE_NUMBER','PART_NUMBER','SERIAL_NUMBER','PUBLICATION_ID','TECHNICAL_LABEL','UNKNOWN'].includes(item.kind))fail(invalid);}
+  const scope=statement.scope;exactKeys(scope,['sectionIds','conditions','completeness'],[],'Saved v2 scope');uniqueTextArray(scope.sectionIds,invalid);array(scope.conditions,invalid);
+  if(!['DELIVERED_SCOPE_ONLY','PARTIAL','UNRESOLVED'].includes(scope.completeness))fail(invalid);
+  for(const condition of scope.conditions){cue(condition,['kind','appliesTo','sectionIds']);uniqueTextArray(condition.sectionIds,invalid);
+    if(!['CONDITION','EXCEPTION','PREREQUISITE','LIMITATION'].includes(condition.kind)||!['STATEMENT','SECTION','DOCUMENT','UNRESOLVED'].includes(condition.appliesTo)||
+      (condition.appliesTo==='SECTION'?condition.sectionIds.length===0||condition.sectionIds.some(id=>!scope.sectionIds.includes(id)):condition.sectionIds.length!==0))fail(invalid);
+  }
+}
+export function validateSourceStatementContext(context) {
+  const invalid='ASSESSMENT_SOURCE_STATEMENT_CONTEXT_INVALID';
+  exactKeys(context,['runRef','candidateRevision','readCoverage'],['sourceContext'],'Source activity context');
+  if(context.sourceContext!==undefined)validateActivitySourceContext(context.sourceContext);nonEmpty(context.runRef,invalid);
+  if(!Number.isSafeInteger(context.candidateRevision)||context.candidateRevision<1)fail(invalid);
+  const coverage=context.readCoverage;exactKeys(coverage,['status','selection','deliveredRanges','sourceCoverage'],[],'Source activity read coverage');equal(coverage.status,'DELIVERED_RANGES_ONLY',invalid);
+  exactKeys(coverage.selection,['sectionIds'],[],'Source activity selection');uniqueTextArray(coverage.selection.sectionIds,invalid);if(!coverage.selection.sectionIds.length)fail(invalid);
+  array(coverage.deliveredRanges,invalid);if(!coverage.deliveredRanges.length)fail(invalid);
+  for(const range of coverage.deliveredRanges) {
+    exactKeys(range,['sectionId','offset','unitIds','anchorIds','nextOffset'],[],'Source activity delivered range');nonEmpty(range.sectionId,invalid);
+    uniqueTextArray(range.unitIds,invalid);uniqueTextArray(range.anchorIds,invalid);
+    if(!Number.isSafeInteger(range.offset)||range.offset<0||!range.unitIds.length||!range.anchorIds.length||(range.nextOffset!==null&&(!Number.isSafeInteger(range.nextOffset)||range.nextOffset<0)))fail(invalid);
+  }
+  assertObject(coverage.sourceCoverage,invalid);const source=coverage.sourceCoverage;
+  if(source.knownPageCount!==null&&(!Number.isSafeInteger(source.knownPageCount)||source.knownPageCount<0))fail(invalid);
+  array(source.readPageIndexes,invalid);if(source.readPageIndexes.some(n=>!Number.isSafeInteger(n)||n<0))fail(invalid);
+  array(source.unresolvedRanges,invalid);
+  for(const range of source.unresolvedRanges) {
+    assertObject(range,invalid);array(range.pageIndexes,invalid);arrayOfText(range.unitIds,invalid);nonEmpty(range.message,invalid);
+    if(range.pageIndexes.some(n=>!Number.isSafeInteger(n)||n<0)||!['UNREAD','TEXT_CONFLICT','STRUCTURE_UNCERTAIN','FIGURE_UNINTERPRETED'].includes(range.reason))fail(invalid);
+  }
+  return context;
+}
+
+function projectStatementReviewEvidence(item) {
+  const base={evidenceRef:item.evidenceRef,kind:item.kind,title:item.title,versionLabel:item.versionLabel,excerpt:item.excerpt,locator:item.locator??null};
+  if(item.kind==='PRIOR_RESULT') {
+    base.originalEvidenceRefs=[...item.originalEvidenceRefs];
+    if(item.sourceWork)base.sourceWork=item.sourceWork;
+    if(item.sourceStatement){validateSourceStatementProvenance(item.sourceStatement);if(item.sourceWork)fail('ASSESSMENT_SOURCE_PROVENANCE_AMBIGUOUS');base.sourceStatement=item.sourceStatement;}
+    base.sourceContext={resultRef:item.resultRef,resultRevision:item.resultRevision};
+  }
+  if(item.kind==='QUERY_RECEIPT'&&item.queryProvenance)base.queryProvenance=item.queryProvenance;
+  return base;
+}
+
 function validateFrozenJobAidReviewContext(task) {
   const jobAid = task.jobAidContext;
   assertObject(jobAid, 'REVIEW_JOBAID_CONTEXT_REQUIRED');
@@ -4855,7 +5045,29 @@ function validateFrozenJobAidReviewContext(task) {
   uniqueTextArray(refs, 'REVIEW_JOBAID_SOURCE_CATALOG_INVALID');
   uniqueTextArray(jobAid.initiallyDeliveredRefs, 'REVIEW_JOBAID_DELIVERED_REFS_INVALID');
   assertSubsetOf(jobAid.initiallyDeliveredRefs, new Set(refs), 'REVIEW_JOBAID_DELIVERED_REF_NOT_REGISTERED');
-  const delivered = jobAid.sourceCatalog.filter((item) => jobAid.initiallyDeliveredRefs.includes(item.evidenceRef)).map((item) => ({
+  const statementMode=jobAid.modelInput.evidenceProjectionVersion==='SOURCE_CONTEXT_V2';
+  if(statementMode) {
+    array(jobAid.sourceActivityProjections,'REVIEW_SOURCE_STATEMENT_SNAPSHOTS_REQUIRED');
+    const records=jobAid.sourceActivityProjections.flatMap(p=>p.records);
+    equal(canonicalJson(records),canonicalJson(jobAid.modelInput.sourceStatements),'REVIEW_SOURCE_STATEMENT_RECORD_DRIFT');
+    equal(canonicalJson(jobAid.sourceActivityProjections.flatMap(p=>p.activityContexts)),canonicalJson(jobAid.modelInput.activityContexts),'REVIEW_SOURCE_STATEMENT_CONTEXT_DRIFT');
+    for(const context of jobAid.modelInput.activityContexts)validateSourceStatementContext(context);
+    const recordRefs=new Set();
+    for(const record of records) {
+      validateSourceStatementRecord(record);
+      if(recordRefs.has(record.ref))fail('REVIEW_SOURCE_STATEMENT_DUPLICATE');recordRefs.add(record.ref);
+      const item=jobAid.sourceCatalog.find(e=>e.evidenceRef===record.ref);
+      if(!item||item.kind!=='PRIOR_RESULT'||item.sourceWork)fail('REVIEW_SOURCE_STATEMENT_BINDING_INVALID');
+      validateSourceStatementProvenance(item.sourceStatement);
+      equal(canonicalJson(item.sourceStatement),canonicalJson({reference:record.reference,sourceBinding:record.sourceBinding}),'REVIEW_SOURCE_STATEMENT_BINDING_INVALID');
+      equal(item.resultRef,record.reference.runRef,'REVIEW_SOURCE_STATEMENT_BINDING_INVALID');
+      equal(item.resultRevision,record.reference.candidateRevision,'REVIEW_SOURCE_STATEMENT_BINDING_INVALID');
+      for(const ref of [record.ref,...record.rootRefs,...record.requiredContextRootRefs]) if(!jobAid.initiallyDeliveredRefs.includes(ref))fail('REVIEW_SOURCE_STATEMENT_NOT_DELIVERED');
+      if(record.sourceSchemaVersion==='wiselink.document.activity-candidate.v1')equal(record.semanticFieldsAvailability,'LEGACY_PARTIAL','REVIEW_SOURCE_STATEMENT_BINDING_INVALID');
+      equal(record.scopeBasis,record.sourceSchemaVersion==='wiselink.document.activity-candidate.v2'?'ACTUAL_DELIVERED_RUN_SCOPE':'LEGACY_RUN_SCOPE','REVIEW_SOURCE_STATEMENT_BINDING_INVALID');
+    }
+  }
+  const delivered = jobAid.sourceCatalog.filter((item) => jobAid.initiallyDeliveredRefs.includes(item.evidenceRef)).map((item) => statementMode ? projectStatementReviewEvidence(item) : ({
     evidenceRef: item.evidenceRef, kind: item.kind, title: item.title, versionLabel: item.versionLabel, excerpt: item.excerpt, locator: item.locator ?? null,
   }));
   equal(canonicalJson(delivered), canonicalJson(jobAid.modelInput.deliveredEvidence), 'REVIEW_JOBAID_DELIVERED_EVIDENCE_DRIFT');

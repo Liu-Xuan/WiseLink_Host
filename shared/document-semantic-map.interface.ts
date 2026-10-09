@@ -25,6 +25,9 @@ export interface DocumentSemanticMap {
   /** Allocated with CAS by Host, scoped to this parseRun. */
   semanticRevision: number;
   profileRef: string;
+  /** Absent on historical maps means the selection basis was not recorded.
+   * Selection identifies organization rules only, not source completeness or engineering acceptance. */
+  profileSelection?: DocumentSemanticProfileSelection;
   sections: DocumentSemanticSection[];
   unassignedUnitIds: string[];
   /** Known source roles interrupted by ambiguous heading formatting need bounded structural review. */
@@ -57,7 +60,26 @@ export interface DocumentSemanticSection {
   mappingSource: 'AUTHOR_HEADING' | 'PROFILE_RULE';
 }
 
-/** Caller supplies a verified family/issuer profile; references in body text do not select it. */
+/** Recorded inputs for organization-template selection, not verified business identity or origin. */
+export interface DocumentSemanticProfileSelection {
+  policyVersion: string;
+  reason:
+    | 'REGISTERED_FAMILY_ISSUER'
+    | 'REGISTERED_METADATA_TEMPLATE'
+    | 'UNKNOWN_FAMILY'
+    | 'UNSUPPORTED_FAMILY'
+    | 'UNKNOWN_ISSUER'
+    | 'UNSUPPORTED_ISSUER'
+    | 'IDENTITY_CONFLICT'
+    | 'UNSUPPORTED_LAYOUT';
+  /** Exact dm_publication_family values observed at selection. Their upstream origin is unknown here;
+   * they do not establish a user declaration, publisher identity, applicability, or acceptance. */
+  registeredIdentity: { family: string | null; issuer: string | null };
+  /** Only exact SourceRefs of this map's original; empty when no heading observation was used. */
+  evidenceSourceRefIds: string[];
+}
+
+/** Caller selects organization rules only; references in body text do not establish identity. */
 export interface DocumentSemanticProfile {
   profileRef: string;
   roles: Array<{ roleKey: string; aliases: string[]; headingLevel?: number }>;

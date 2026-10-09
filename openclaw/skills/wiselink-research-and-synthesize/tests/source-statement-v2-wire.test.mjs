@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { readJobAidSourceBatches } from '../scripts/run-jobaid-problem-assessment.mjs';
+import { validateSourceStatementRecord, validateSourceStatementContext } from '../scripts/validate-payload.mjs';
+
+import { record, packet } from './fixtures/source-statement-v2-wire.fixture.mjs';
+
+test('v2 ordered fields and complete parent context survive >96 actual protocol batches once',async()=>{const items=Array.from({length:100},(_,i)=>record(i));const before=JSON.stringify(items);const result=await readJobAidSourceBatches({sourceRefs:items.map(r=>r.ref),context:'EXACT',purpose:'Read captured source values'},async intent=>packet(items.filter(r=>intent.sourceRefs.includes(r.ref))));assert.deepEqual(result.sourceStatements,items);assert.equal(result.activityContexts.length,1);assert.equal(result.evidence.filter(e=>e.kind==='DOCUMENT_PASSAGE').length,2);assert.equal(JSON.stringify(items),before);assert.deepEqual(result.sourceStatements[0].statement.times.map(t=>t.raw),['Q4 2026','March 2027','TBD']);assert.equal(result.sourceStatements[0].statement.status.meaning,'SOURCE_REPORTED_COMPLETED');assert.equal(result.sourceStatements[0].statement.technicalIds[0].raw,'LN 2024-2026');});
+
+test('v2 wire rejects missing context, broken parent applicability, unquoted cue and legacy reinterpretation',async()=>{const r=record();assert.equal(validateSourceStatementRecord(r),r);const p=packet([r]);assert.equal(validateSourceStatementContext(p.activityContexts[0]),p.activityContexts[0]);const unquoted=structuredClone(r);unquoted.statement.subject.raw='Invented actor';assert.throws(()=>validateSourceStatementRecord(unquoted));const legacy=structuredClone(r);legacy.statement.time=null;assert.throws(()=>validateSourceStatementRecord(legacy));for(const change of [value=>delete value.activityContexts[0].sourceContext,value=>{value.activityContexts[0].sourceContext.sections[1].contextForSectionIds=[];}]){const value=structuredClone(p);change(value);await assert.rejects(readJobAidSourceBatches({sourceRefs:[r.ref],context:'EXACT'},async()=>value),/INCOMPLETE_.*CONTEXT/);}});

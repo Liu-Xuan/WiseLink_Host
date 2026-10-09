@@ -6,6 +6,32 @@ import { originalFixture } from './document-parsing/fixtures/document-original.f
 import { originalReadingGroups, originalUnitPage, originalUnitPages } from '../../client/src/pages/DocumentParsingPage/original-reading';
 import { DocumentOriginalReader } from '../../client/src/pages/DocumentParsingPage/DocumentOriginalReader';
 
+it('displays table-attached source text once without dropping its conditions or changing source identity', () => {
+  const original = originalFixture();
+  const table = original.source.units[1];
+  table.payload.caption = 'Load limits';
+  table.payload.rawText = 'Except configuration B.\nDo not proceed unless X < 12 & Y is closed.';
+  table.payload.rowGroups = [{ rows: [{ rowId: 'merged-row', cells: [{ cellId: 'merged-cell',
+    isHeader: true, rowSpan: 2, colSpan: 2, inlineContent: [{ text: 'Values', sourceRefIds: table.sourceRefIds }] }] }] }];
+  const before = structuredClone(original);
+  const html = renderToStaticMarkup(createElement(DocumentOriginalReader, { original }));
+  expect(html.match(/原文附带文字/g)).toHaveLength(1);
+  expect(html.match(/Except configuration B[.]/g)).toHaveLength(1);
+  expect(html).toContain('Except configuration B.\nDo not proceed unless X &lt; 12 &amp; Y is closed.');
+  expect(html).toMatch(/rowspan="2"/i);
+  expect(html).toMatch(/colspan="2"/i);
+  expect(html).toContain('data-unit-id="u2"');
+  expect(html).toContain('<caption class="whitespace-pre-wrap">Load limits</caption>');
+  expect(original).toEqual(before);
+});
+
+it.each(['', '   ', undefined, 12])('does not invent attached table text for %p', rawText => {
+  const original = originalFixture();
+  original.source.units[1].payload.rawText = rawText;
+  const html = renderToStaticMarkup(createElement(DocumentOriginalReader, { original }));
+  expect(html).not.toContain('原文附带文字');
+});
+
 function fixture() {
   const original = originalFixture();
   original.coverage = { knownPageCount: 4, readPageIndexes: [0, 1, 2, 3], unresolvedRanges: [] };
@@ -130,4 +156,29 @@ describe('originalUnitPages', () => {
     original.locations = original.locations.map(location => ({ ...location, pageIndex: null }));
     expect(originalUnitPages(original, 'u1')).toEqual([]);
   });
+});
+
+it('displays an exact leading caption once and preserves every remaining source condition in the same table scope', () => {
+  const original = originalFixture();
+  const table = original.source.units[1];
+  table.payload.caption = 'Load limits\nOnly when X';
+  table.payload.rawText = 'Load limits\nOnly when X\r\nDo not operate unless X < 12.\n<script>Keep this source text</script>';
+  const before = structuredClone(original);
+  const html = renderToStaticMarkup(createElement(DocumentOriginalReader, { original, activeUnitId: table.unitId }));
+  expect(html.match(/Load limits/g)).toHaveLength(1);
+  expect(html.match(/Only when X/g)).toHaveLength(2); // caption plus distinct original cell; do not deduplicate cells
+  expect(html).toContain('Do not operate unless X &lt; 12.\n&lt;script&gt;Keep this source text&lt;/script&gt;');
+  expect(html).not.toContain('<script>');
+  expect(html).toMatch(/id="u2"[^>]*data-unit-id="u2"[^>]*aria-current="location"/);
+  expect(html.indexOf('Do not operate unless')).toBeGreaterThan(html.indexOf('</table>'));
+  expect(original).toEqual(before);
+});
+
+it('does not render an empty attachment when the exact source text is already the caption', () => {
+  const original = originalFixture();
+  original.source.units[1].payload.caption = 'Only if condition A holds.';
+  original.source.units[1].payload.rawText = 'Only if condition A holds.';
+  const html = renderToStaticMarkup(createElement(DocumentOriginalReader, { original }));
+  expect(html.match(/Only if condition A holds[.]/g)).toHaveLength(1);
+  expect(html).not.toContain('原文附带文字');
 });

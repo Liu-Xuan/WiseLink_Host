@@ -61,7 +61,7 @@ test('consumer and real Host runtime exchange exact table anchors over MCP, then
     assert.equal(input.action, 'STATUS');
     return { nextActivityRunRef: row.result ? null : row.runRef };
   } };
-  const mcp = new CanonicalHostOpenClawMcpService({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, documentWork, {}, {}, activity, { run: async () => { throw new Error('unexpected fixture document_reading'); } });
+  const mcp = new CanonicalHostOpenClawMcpService({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, documentWork, {}, {}, activity, { run: async () => { throw new Error('unexpected fixture document_reading'); } }, { run: async () => { throw new Error('unexpected fixture derived_summary_attempt'); } });
   const server = createServer((req, res) => {
     if (req.url !== '/v1/chat/completions') { void mcp.handle(req, res); return; }
     const chunks = [];

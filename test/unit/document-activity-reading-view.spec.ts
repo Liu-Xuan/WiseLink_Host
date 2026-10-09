@@ -388,3 +388,12 @@ describe('coverage display', () => {
     expect(markup).not.toContain('第 页');
   });
 });
+
+
+import type { DocumentActivityRevisionV2 } from '@shared/document-activity.interface';
+test('v2 reading presents raw modality, negation, every time, technical ID, condition and source-only completion',()=>{
+ const base=makeCandidate();const words='Supplier should not install unless X. Source reports completed. Q4 2026, March 2027, TBD, LN 2024-2026.';
+ const statement={statementId:'V2-one',statementKey:'one',label:'Saved source wording',quotes:[{anchorId:'A1',start:0,end:words.length,text:words}],subject:{raw:'Supplier',quoteIndex:0},action:{raw:'install',quoteIndex:0},modality:{raw:'should',quoteIndex:0,meaning:'RECOMMENDED' as const,negationQuoteIndexes:[0]},status:{raw:'reports completed',quoteIndex:0,meaning:'SOURCE_REPORTED_COMPLETED' as const},times:[{raw:'Q4 2026',quoteIndex:0,role:'TARGET' as const,expression:'CALENDAR' as const,precision:'QUARTER' as const},{raw:'March 2027',quoteIndex:0,role:'UNKNOWN' as const,expression:'CALENDAR' as const,precision:'MONTH' as const},{raw:'TBD',quoteIndex:0,role:'UNKNOWN' as const,expression:'TBD' as const,precision:'UNKNOWN' as const}],technicalIds:[{raw:'LN 2024-2026',quoteIndex:0,kind:'AIRCRAFT_LINE_NUMBER' as const}],scope:{sectionIds:['S1'],conditions:[{raw:'unless X',quoteIndex:0,kind:'CONDITION' as const,appliesTo:'STATEMENT' as const,sectionIds:[]}],completeness:'DELIVERED_SCOPE_ONLY' as const},limitations:['No target execution proof']};
+ const saved={...base,schemaVersion:'wiselink.document.activity-candidate.v2',statements:[statement],sourceContext:{schemaVersion:'wiselink.document.activity-source-context.v1',sourceBinding:base.sourceBinding,profile:{profileRef:'generic',selectionBasis:'NOT_RECORDED',family:null,issuer:null},sections:[],organizationWarnings:[]}} as DocumentActivityRevisionV2;
+ const before=JSON.stringify(saved);const html=render({candidate:saved,selectedStatementId:statement.statementId});for(const raw of ['Supplier','install','should','Q4 2026','March 2027','TBD','LN 2024-2026','unless X'])expect(html).toContain(raw);expect(html).toContain('不表示我方已执行');expect(html).toContain('否定线索');expect(html).toContain('未捕获不表示原文没有');expect(JSON.stringify(saved)).toBe(before);
+});

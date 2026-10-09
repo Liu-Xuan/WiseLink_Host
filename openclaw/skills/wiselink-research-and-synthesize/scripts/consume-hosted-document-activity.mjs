@@ -10,7 +10,7 @@
 // acceptor, and document_work STATUS returns nextActivityRunRef only for a
 // run an explicit BEGIN created. ACTIVITY_STATUS always carries an exact
 // non-null runRef. The model returns a candidate proposal only
-// (wiselink.document.activity-candidate.v1); Host binding, anchors, coverage,
+// (explicit v1/v2 schema); Host binding, anchors, coverage,
 // statementId, candidateRevision and producer are never backfilled by the
 // model. A SAVE with an unknown outcome stays pending-confirmation even
 // when the recovery STATUS itself fails: it is never FAILed and never
@@ -25,7 +25,14 @@
 // or FAILs the run.
 
 import { isDeepStrictEqual } from 'node:util';
+import { DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA, resolveSourceQuoteSelection } from './resolve-document-activity-quote-selection.mjs';
+export { DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA } from './resolve-document-activity-quote-selection.mjs';
 import { WISELINK_SKILL_VERSION, canonicalSha256 } from './validate-payload.mjs';
+import { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA,
+  DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA, activityV2ProductionContract } from './document-activity-model-contract.mjs';
+import { activitySourceContextInventory, mergeActivitySourceContexts, validateActivitySourceContext } from './merge-document-activity-source-context.mjs';
+export { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA,
+  DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA } from './document-activity-model-contract.mjs';
 
 /** The only Host tool, per DocumentWorkRuntimeService/DocumentActivityRuntimeService. */
 export const ACTIVITY_TOOL_NAME = 'document_work';
@@ -35,6 +42,8 @@ export const DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA = 'wiselink.document.activity-ca
 
 /** Local checkpoint envelope schema for batch-B durable steps. */
 export const ACTIVITY_CHECKPOINT_SCHEMA = 'wiselink.document.activity-checkpoint.v1';
+export const ACTIVITY_CHECKPOINT_QUOTE_SELECTION_SCHEMA = 'wiselink.document.activity-quote-selection-checkpoint.v1';
+export const ACTIVITY_CHECKPOINT_V2_SCHEMA = 'wiselink.document.activity-checkpoint.v2';
 
 /** Host deadline is fixed at 1 hour and the lease at 2 minutes
  * (120_000 ms renewal inside DocumentWorkRuntimeService STEP). The consumer
@@ -48,19 +57,20 @@ export const HOST_ACTIVITY_LEASE_MS = 2 * 60_000;
  * through READ/model/SAVE. */
 export const CONSUMER_ACTIVITY_ACTIONS = Object.freeze([
   'ACTIVITY_STATUS', 'ACTIVITY_CLAIM', 'ACTIVITY_READ',
-  'ACTIVITY_SAVE', 'ACTIVITY_FAIL', 'ACTIVITY_HEARTBEAT',
+  'ACTIVITY_SAVE', 'ACTIVITY_SAVE_SELECTION', 'ACTIVITY_FAIL', 'ACTIVITY_HEARTBEAT',
 ]);
 
 /** Exact request fields per Host documentActivityActionSchemas (zod
  * strictObject). Field-level validation mirrors the zod constraints. */
 export const REQUEST_FIELD_SCHEMAS = Object.freeze({
-  ACTIVITY_BEGIN: ['documentVersionId', 'parseRunId', 'semanticRevision', 'requestId', 'expectedRevision', 'sectionIds'],
+  ACTIVITY_BEGIN: ['documentVersionId', 'parseRunId', 'semanticRevision', 'requestId', 'expectedRevision', 'sectionIds', 'candidateSchemaVersion', 'productionContract'],
   ACTIVITY_STATUS: ['documentVersionId', 'runRef'],
   ACTIVITY_CANCEL: ['documentVersionId', 'runRef'],
   ACTIVITY_CLAIM: ['documentVersionId', 'runRef', 'leaseOwner'],
   ACTIVITY_HEARTBEAT: ['documentVersionId', 'runRef', 'leaseOwner', 'leaseToken', 'leaseGeneration'],
   ACTIVITY_READ: ['documentVersionId', 'runRef', 'leaseOwner', 'leaseToken', 'leaseGeneration', 'sectionId', 'offset', 'limit'],
   ACTIVITY_SAVE: ['documentVersionId', 'runRef', 'leaseOwner', 'leaseToken', 'leaseGeneration', 'candidate', 'producer'],
+  ACTIVITY_SAVE_SELECTION: ['documentVersionId', 'runRef', 'leaseOwner', 'leaseToken', 'leaseGeneration', 'candidate', 'producer'],
   ACTIVITY_FAIL: ['documentVersionId', 'runRef', 'leaseOwner', 'leaseToken', 'leaseGeneration', 'errorCode'],
 });
 
@@ -133,6 +143,8 @@ export function buildActivityRequest(action, fields) {
 }
 
 function consumerErrorCode(error) {
+  if (typeof error?.message === 'string' && error.message.length <= 160 &&
+      /^ACTIVITY_QUOTE_SELECTION_(?:SELECTION_INVALID|HOST_CONTEXT_INVALID|SOURCE_BINDING_MISMATCH|UNKNOWN_ANCHOR|ANCHOR_NOT_ALLOWED|EMPTY_TEXT|TEXT_NOT_FOUND|TEXT_AMBIGUOUS):STATEMENT_[0-9]+:QUOTE_[0-9]+$/.test(error.message)) return error.message;
   return typeof error?.message === 'string' && /^ACTIVITY_[A-Z0-9_]+$/.test(error.message)
     ? error.message
     : 'ACTIVITY_CONSUMER_FAILED';
@@ -231,10 +243,11 @@ function startActivityLease({ call, fence, documentVersionId, runRef, deadline, 
 
 /** A persisted checkpoint record must bind to exactly this document version
  * and run; anything else is a binding mismatch, never silently reused. */
-function assertCheckpointBinding(record, documentVersionId, runRef) {
+function assertCheckpointBinding(record, documentVersionId, runRef, checkpointSchema = ACTIVITY_CHECKPOINT_SCHEMA, pins = {}) {
   if (record == null) return;
-  if (record.schemaVersion !== ACTIVITY_CHECKPOINT_SCHEMA ||
-      record.documentVersionId !== documentVersionId || record.runRef !== runRef)
+  if (record.schemaVersion !== checkpointSchema ||
+      record.documentVersionId !== documentVersionId || record.runRef !== runRef ||
+      Object.entries(pins).some(([key, value]) => !isDeepStrictEqual(record[key], value)))
     throw new Error('ACTIVITY_CHECKPOINT_BINDING_MISMATCH');
 }
 
@@ -249,7 +262,39 @@ function fenceFreeSave(command) {
  * document-activity-candidate.ts proposalSchema plus the quote/time/status
  * cross-checks that Host validateDocumentActivityCandidate performs, using
  * only anchors the Host actually delivered. */
-export function validateActivityProposal(proposal, deliveredAnchors) {
+/** Transport-specific validation; local exact ranges are not submitted as a replacement proposal. */
+export function validateActivityQuoteSelection(proposal, deliveredAnchors, context) {
+  canonicalActivityQuoteSelection(proposal, deliveredAnchors, context);
+  return proposal;
+}
+
+function canonicalActivityQuoteSelection(proposal, deliveredAnchors, context) {
+  if (proposal == null || typeof proposal !== 'object' || Array.isArray(proposal) ||
+      !exactKeys(proposal, [...PROPOSAL_KEYS, 'quoteSelectionSchemaVersion']) ||
+      proposal.quoteSelectionSchemaVersion !== DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA ||
+      ![DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2].includes(proposal.schemaVersion) || !Array.isArray(proposal.statements))
+    throw new Error('ACTIVITY_QUOTE_SELECTION_SHAPE_INVALID');
+  const host = { sourceBinding: context?.sourceBinding, expectedSourceBinding: context?.expectedSourceBinding,
+    anchors: deliveredAnchors, allowedAnchorIds: [...new Set(context?.deliveredRanges?.flatMap(range => range.anchorIds) ?? [])] };
+  const statements = proposal.statements.map((statement, statementIndex) => {
+    if (statement == null || typeof statement !== 'object' || Array.isArray(statement) || !Array.isArray(statement.quotes))
+      throw new Error('ACTIVITY_QUOTE_SELECTION_SHAPE_INVALID');
+    return { ...statement, quotes: statement.quotes.map((selection, quoteIndex) => {
+      const result = resolveSourceQuoteSelection(selection, host);
+      if (result.status === 'UNRESOLVED') {
+        const error = new Error(`ACTIVITY_QUOTE_SELECTION_${result.reason}:STATEMENT_${statementIndex}:QUOTE_${quoteIndex}`);
+        Object.assign(error, { statementIndex, quoteIndex, unresolvedReason: result.reason });
+        throw error;
+      }
+      return result.quote;
+    }) };
+  });
+  return validateActivityProposal({ schemaVersion: proposal.schemaVersion, statements }, deliveredAnchors, context);
+}
+
+export function validateActivityProposal(proposal, deliveredAnchors, context = {}) {
+  if (proposal?.schemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2)
+    return validateActivityProposalV2(proposal, deliveredAnchors, context);
   if (proposal == null || typeof proposal !== 'object' || Array.isArray(proposal) ||
       !exactKeys(proposal, PROPOSAL_KEYS) || proposal.schemaVersion !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA ||
       !Array.isArray(proposal.statements))
@@ -306,6 +351,118 @@ export function validateActivityProposal(proposal, deliveredAnchors) {
   return proposal;
 }
 
+const V2_STATEMENT_KEYS = ['statementKey', 'label', 'quotes', 'subject', 'action', 'modality', 'status', 'times', 'technicalIds', 'scope', 'limitations'];
+const MODALITY_MEANINGS = ['REQUIRED', 'RECOMMENDED', 'PLANNED', 'POSSIBLE', 'REPORTED', 'UNKNOWN'];
+const STATUS_MEANINGS = ['PLANNED', 'IN_PROGRESS', 'SOURCE_REPORTED_COMPLETED', 'ON_HOLD', 'CANCELLED', 'UNKNOWN'];
+const TECHNICAL_ID_KINDS = ['AIRCRAFT_LINE_NUMBER', 'PART_NUMBER', 'SERIAL_NUMBER', 'PUBLICATION_ID', 'TECHNICAL_LABEL', 'UNKNOWN'];
+const CONDITION_KINDS = ['CONDITION', 'EXCEPTION', 'PREREQUISITE', 'LIMITATION'];
+const CONDITION_TARGETS = ['STATEMENT', 'SECTION', 'DOCUMENT', 'UNRESOLVED'];
+const SCOPE_COMPLETENESS = ['DELIVERED_SCOPE_ONLY', 'PARTIAL', 'UNRESOLVED'];
+const plainObject = value => value != null && typeof value === 'object' && !Array.isArray(value);
+const stringArray = value => Array.isArray(value) && value.every(nonemptyString);
+const uniqueArray = value => new Set(value).size === value.length;
+
+function validateActivityProposalV2(proposal, deliveredAnchors, context) {
+  const shapeInvalid = () => { throw new Error('ACTIVITY_PROPOSAL_SHAPE_INVALID'); };
+  if (!plainObject(proposal) || !exactKeys(proposal, PROPOSAL_KEYS) || !Array.isArray(proposal.statements)) shapeInvalid();
+  if (context.sourceContext == null || context.sourceContext.schemaVersion !== DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA)
+    throw new Error('ACTIVITY_SOURCE_CONTEXT_REQUIRED');
+  validateActivitySourceContext(context.sourceContext, { sourceBinding: context.sourceBinding,
+    ...(context.units ? { units: context.units } : {}),
+    ...(context.deliveredRanges ? { deliveredRanges: context.deliveredRanges } : {}),
+    ...(context.sectionIds ? { selectedSectionIds: context.sectionIds } : {}) });
+  const anchors = new Map();
+  for (const anchor of deliveredAnchors) {
+    if (!plainObject(anchor) || !nonemptyString(anchor.anchorId) || typeof anchor.sourceText !== 'string')
+      throw new Error('ACTIVITY_DELIVERED_ANCHOR_INVALID');
+    if (anchors.has(anchor.anchorId)) throw new Error('ACTIVITY_ANCHOR_DUPLICATE');
+    anchors.set(anchor.anchorId, anchor);
+  }
+  const sections = new Map(context.sourceContext.sections.map(section => [section.sectionId, section]));
+  const statementKeys = new Set();
+  for (const statement of proposal.statements) {
+    if (!plainObject(statement) || !exactKeys(statement, V2_STATEMENT_KEYS) ||
+        !matchesPattern(STATEMENT_KEY_PATTERN, statement.statementKey) || !nonemptyString(statement.label) ||
+        !Array.isArray(statement.quotes) || !statement.quotes.length || !stringArray(statement.limitations)) shapeInvalid();
+    if (statementKeys.has(statement.statementKey)) throw new Error('ACTIVITY_STATEMENT_KEY_DUPLICATE');
+    statementKeys.add(statement.statementKey);
+    for (const quote of statement.quotes) {
+      if (!plainObject(quote) || !exactKeys(quote, QUOTE_KEYS) || !nonemptyString(quote.anchorId) ||
+          !Number.isSafeInteger(quote.start) || quote.start < 0 || !Number.isSafeInteger(quote.end) || quote.end < 1 ||
+          !nonemptyString(quote.text)) shapeInvalid();
+      const anchor = anchors.get(quote.anchorId);
+      if (!anchor) throw new Error('ACTIVITY_QUOTE_NOT_DELIVERED');
+      if (quote.end <= quote.start || quote.end > anchor.sourceText.length || anchor.sourceText.slice(quote.start, quote.end) !== quote.text)
+        throw new Error('ACTIVITY_QUOTE_MISMATCH');
+    }
+    const checkCue = (cue, extraKeys, code, nullable = true) => {
+      if (nullable && cue === null) return;
+      if (!plainObject(cue) || !exactKeys(cue, ['raw', 'quoteIndex', ...extraKeys]) ||
+          !nonemptyString(cue.raw) || !Number.isSafeInteger(cue.quoteIndex) || cue.quoteIndex < 0) shapeInvalid();
+      if (!statement.quotes[cue.quoteIndex]?.text.includes(cue.raw)) throw new Error(`ACTIVITY_${code}_NOT_QUOTED`);
+    };
+    checkCue(statement.subject, [], 'SUBJECT'); checkCue(statement.action, [], 'ACTION');
+    checkCue(statement.modality, ['meaning', 'negationQuoteIndexes'], 'MODALITY');
+    if (statement.modality !== null) {
+      if (!MODALITY_MEANINGS.includes(statement.modality.meaning) || !Array.isArray(statement.modality.negationQuoteIndexes) ||
+          statement.modality.negationQuoteIndexes.some(index => !Number.isSafeInteger(index) || index < 0)) shapeInvalid();
+      if (!uniqueArray(statement.modality.negationQuoteIndexes) ||
+          statement.modality.negationQuoteIndexes.some(index => !statement.quotes[index])) throw new Error('ACTIVITY_NEGATION_INDEX_INVALID');
+    }
+    checkCue(statement.status, ['meaning'], 'STATUS');
+    if (statement.status !== null && !STATUS_MEANINGS.includes(statement.status.meaning)) shapeInvalid();
+    if (!Array.isArray(statement.times) || !Array.isArray(statement.technicalIds)) shapeInvalid();
+    for (const time of statement.times) {
+      checkCue(time, ['role', 'precision', 'expression'], 'TIME', false);
+      if (!TIME_ROLES.includes(time.role) || !TIME_PRECISIONS.includes(time.precision) || !TIME_EXPRESSIONS.includes(time.expression)) shapeInvalid();
+      if (time.expression !== 'CALENDAR' && time.precision !== 'UNKNOWN') throw new Error('ACTIVITY_TIME_PRECISION_INVALID');
+    }
+    for (const identifier of statement.technicalIds) {
+      checkCue(identifier, ['kind'], 'TECHNICAL_ID', false);
+      if (!TECHNICAL_ID_KINDS.includes(identifier.kind)) shapeInvalid();
+    }
+    const scope = statement.scope;
+    if (!plainObject(scope) || !exactKeys(scope, ['sectionIds', 'conditions', 'completeness']) ||
+        !stringArray(scope.sectionIds) || !Array.isArray(scope.conditions) || !SCOPE_COMPLETENESS.includes(scope.completeness)) shapeInvalid();
+    if (!uniqueArray(scope.sectionIds) || scope.sectionIds.some(id => !sections.has(id))) throw new Error('ACTIVITY_SCOPE_NOT_DELIVERED');
+    for (const condition of scope.conditions) {
+      checkCue(condition, ['kind', 'appliesTo', 'sectionIds'], 'CONDITION', false);
+      if (!CONDITION_KINDS.includes(condition.kind) || !CONDITION_TARGETS.includes(condition.appliesTo) || !stringArray(condition.sectionIds)) shapeInvalid();
+      if (!uniqueArray(condition.sectionIds) || (condition.appliesTo === 'SECTION' ? !condition.sectionIds.length : condition.sectionIds.length > 0))
+        throw new Error('ACTIVITY_CONDITION_SCOPE_INVALID');
+      if (condition.appliesTo === 'SECTION') {
+        const anchor = anchors.get(statement.quotes[condition.quoteIndex].anchorId);
+        if (condition.sectionIds.some(target => !scope.sectionIds.includes(target) || !sections.has(target) ||
+            !context.sourceContext.sections.some(section => section.deliveredUnitIds.includes(anchor.sourceUnitId) &&
+              (section.sectionId === target || section.contextForSectionIds.includes(target)))))
+          throw new Error('ACTIVITY_CONDITION_SCOPE_UNSUPPORTED');
+      }
+    }
+  }
+  return proposal;
+}
+
+/** v1 legacy rows have no recorded production provenance. New v2 runs must
+ * match one exact locally supported prompt/tool/context/transport identity. */
+function activityRunContract(summary) {
+  const candidateSchemaVersion = summary.candidateSchemaVersion ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA;
+  const productionContract = summary.productionContract ?? null;
+  if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA) {
+    if (productionContract !== null) throw new Error('ACTIVITY_PRODUCTION_CONTRACT_INVALID');
+  } else if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2) {
+    if (!plainObject(productionContract) || !exactKeys(productionContract, ['promptVersion', 'toolSchemaSha256', 'sourceContextVersion', 'quoteTransportVersion']) ||
+        !isDeepStrictEqual(productionContract, activityV2ProductionContract(productionContract.quoteTransportVersion)))
+      throw new Error('ACTIVITY_PRODUCTION_CONTRACT_INVALID');
+  } else throw new Error('ACTIVITY_RUN_SCHEMA_INVALID');
+  return { candidateSchemaVersion, productionContract };
+}
+
+function assertRunContract(summary, expected) {
+  const contract = activityRunContract(summary);
+  if (!isDeepStrictEqual(contract, expected)) throw new Error('ACTIVITY_RUN_CONTRACT_MISMATCH');
+  return contract;
+}
+
 /** Validate the READ receipt shape from DocumentActivityRuntimeService:
  * runRef, sourceBinding{original, semanticRevision}, selection, units,
  * anchors, range{sectionId, offset, unitIds, anchorIds, nextOffset} and
@@ -344,6 +501,10 @@ function validateReadReceipt(read, documentVersionId, runRef, sectionId, offset,
       new Set(range.anchorIds).size !== range.anchorIds.length ||
       read.anchors.some(anchor => !range.unitIds.includes(anchor?.sourceUnitId)))
     throw new Error('ACTIVITY_READ_RANGE_INVALID');
+  assertRunContract(read, activityRunContract(claim));
+  if (claim.candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2)
+    validateActivitySourceContext(read.sourceContext, { sourceBinding: read.sourceBinding, units: read.units,
+      deliveredRanges: [range], selectedSectionIds: [sectionId] });
   return read;
 }
 
@@ -362,6 +523,10 @@ function validateRunSummary(summary, documentVersionId, runRef) {
       !Array.isArray(summary.selection.sectionIds) ||
       summary.selection.sectionIds.some(id => typeof id !== 'string' || !id))
     throw new Error('ACTIVITY_RUN_SUMMARY_INVALID');
+  const contract = activityRunContract(summary);
+  if (contract.candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 &&
+      (!summary.selection.sectionIds.length || !uniqueArray(summary.selection.sectionIds)))
+    throw new Error('ACTIVITY_RUN_SUMMARY_INVALID');
   return summary;
 }
 
@@ -377,6 +542,7 @@ function validateRunSummary(summary, documentVersionId, runRef) {
  * of shared/document-original.interface.ts. */
 function validateSavedReceipt(saved, {
   documentVersionId, runRef, parseRunId, semanticRevision, sourceBinding, producer, statementCount,
+  candidateSchemaVersion = DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, sourceContext, expectedStatements, expectedAnchors, expectedReadCoverage,
 }) {
   if (saved == null || typeof saved !== 'object' || Array.isArray(saved) ||
       typeof saved.runRef !== 'string' || !saved.runRef)
@@ -385,7 +551,7 @@ function validateSavedReceipt(saved, {
   if (!Number.isSafeInteger(saved.candidateRevision) || saved.candidateRevision < 1)
     throw new Error('ACTIVITY_SAVE_RECEIPT_REVISION_INVALID');
   if (saved.candidateOnly !== true) throw new Error('ACTIVITY_SAVE_RECEIPT_CANDIDATE_ONLY_INVALID');
-  if (saved.schemaVersion !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA)
+  if (saved.schemaVersion !== candidateSchemaVersion)
     throw new Error('ACTIVITY_SAVE_RECEIPT_SCHEMA_INVALID');
   if (typeof saved.savedAt !== 'string' || !Number.isFinite(Date.parse(saved.savedAt)))
     throw new Error('ACTIVITY_SAVE_RECEIPT_SAVED_AT_INVALID');
@@ -427,6 +593,42 @@ function validateSavedReceipt(saved, {
     throw new Error('ACTIVITY_SAVE_RECEIPT_STATEMENTS_INVALID');
   if (statementCount !== undefined && saved.statements.length !== statementCount)
     throw new Error('ACTIVITY_SAVE_RECEIPT_STATEMENTS_INVALID');
+  if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2) {
+    if (!Array.isArray(saved.sourceAnchors) || saved.readCoverage?.status !== 'DELIVERED_RANGES_ONLY' ||
+        !Array.isArray(saved.readCoverage?.deliveredRanges) || !saved.readCoverage.deliveredRanges.length ||
+        !Array.isArray(saved.readCoverage?.selection?.sectionIds) || !saved.readCoverage.selection.sectionIds.length ||
+        !uniqueArray(saved.readCoverage.selection.sectionIds) || saved.readCoverage.selection.sectionIds.some(id => !nonemptyString(id)) ||
+        new Set(saved.statements.map(statement => statement.statementId)).size !== saved.statements.length ||
+        (expectedAnchors !== undefined && !isDeepStrictEqual(saved.sourceAnchors, expectedAnchors)) ||
+        (expectedReadCoverage !== undefined && !isDeepStrictEqual(saved.readCoverage, expectedReadCoverage)))
+      throw new Error('ACTIVITY_SAVE_RECEIPT_STATEMENTS_INVALID');
+    const anchorById = new Map(saved.sourceAnchors.map(anchor => [anchor?.anchorId, anchor]));
+    const allowedAnchors = new Set();
+    if (anchorById.size !== saved.sourceAnchors.length) throw new Error('ACTIVITY_SAVE_RECEIPT_STATEMENTS_INVALID');
+    for (const range of saved.readCoverage.deliveredRanges) {
+      if (!saved.readCoverage.selection.sectionIds.includes(range?.sectionId) || !Number.isSafeInteger(range.offset) || range.offset < 0 ||
+          (range.nextOffset !== null && (!Number.isSafeInteger(range.nextOffset) || range.nextOffset <= range.offset)) ||
+          !stringArray(range.unitIds) || !uniqueArray(range.unitIds) || !stringArray(range.anchorIds) || !uniqueArray(range.anchorIds) ||
+          range.anchorIds.some(id => !anchorById.has(id) || !range.unitIds.includes(anchorById.get(id).sourceUnitId)))
+        throw new Error('ACTIVITY_SAVE_RECEIPT_STATEMENTS_INVALID');
+      for (const id of range.anchorIds) allowedAnchors.add(id);
+    }
+    if (saved.sourceAnchors.some(anchor => !nonemptyString(anchor?.anchorId) || !allowedAnchors.has(anchor.anchorId) ||
+        !Array.isArray(anchor.sourceRefIds) || !anchor.sourceRefIds.length || !Array.isArray(anchor.sourceLocators) ||
+        anchor.sourceRefIds.some(ref => !anchor.sourceLocators.some(locator => locator?.sourceRefId === ref))))
+      throw new Error('ACTIVITY_SAVE_RECEIPT_STATEMENTS_INVALID');
+    validateActivitySourceContext(saved.sourceContext, { sourceBinding: binding,
+      deliveredRanges: saved.readCoverage.deliveredRanges, selectedSectionIds: saved.readCoverage.selection.sectionIds });
+    if (sourceContext !== undefined && !isDeepStrictEqual(activitySourceContextInventory(saved.sourceContext), activitySourceContextInventory(sourceContext)))
+      throw new Error('ACTIVITY_SAVE_RECEIPT_SOURCE_CONTEXT_MISMATCH');
+    const statements = saved.statements.map(({ statementId: _hostId, ...statement }) => statement);
+    validateActivityProposal({ schemaVersion: candidateSchemaVersion, statements }, saved.sourceAnchors, {
+      sourceBinding: binding, sourceContext: saved.sourceContext, deliveredRanges: saved.readCoverage.deliveredRanges,
+      sectionIds: saved.readCoverage.selection.sectionIds,
+    });
+    if (expectedStatements !== undefined && !isDeepStrictEqual(statements, expectedStatements))
+      throw new Error('ACTIVITY_SAVE_RECEIPT_STATEMENTS_INVALID');
+  }
   return saved;
 }
 
@@ -443,6 +645,16 @@ function validateSavedReceipt(saved, {
  * proposal as candidate. A SAVE with an unknown outcome is checked only via
  * ACTIVITY_STATUS; unconfirmed stays pending and is never FAILed. */
 export async function consumeHostedDocumentActivity(options, dependencies) {
+  const candidateSchemaVersion = options.candidateSchemaVersion ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA;
+  if (![DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2].includes(candidateSchemaVersion))
+    throw new Error('ACTIVITY_RUN_SCHEMA_INVALID');
+  const quoteSelectionSchemaVersion = options.quoteSelectionSchemaVersion;
+  if (quoteSelectionSchemaVersion !== undefined && quoteSelectionSchemaVersion !== DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA)
+    throw new Error('ACTIVITY_QUOTE_SELECTION_SCHEMA_INVALID');
+  const selectionMode = quoteSelectionSchemaVersion === DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA;
+  const saveAction = selectionMode ? 'ACTIVITY_SAVE_SELECTION' : 'ACTIVITY_SAVE';
+  const checkpointSchema = candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? ACTIVITY_CHECKPOINT_V2_SCHEMA
+    : selectionMode ? ACTIVITY_CHECKPOINT_QUOTE_SELECTION_SCHEMA : ACTIVITY_CHECKPOINT_SCHEMA;
   const documentVersionId = options.documentVersionId;
   if (!matchesPattern(ID_PATTERN, documentVersionId))
     throw new Error('ACTIVITY_DOCUMENT_VERSION_INVALID');
@@ -474,11 +686,17 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
 
   const summary = validateRunSummary(
     await call('ACTIVITY_STATUS', { documentVersionId, runRef }), documentVersionId, runRef);
+  const runContract = activityRunContract(summary);
+  if (runContract.candidateSchemaVersion !== candidateSchemaVersion ||
+      (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 && runContract.productionContract.quoteTransportVersion !==
+        (selectionMode ? DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA : DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA)) ||
+      (options.productionContract !== undefined && !isDeepStrictEqual(options.productionContract, runContract.productionContract)))
+    throw new Error('ACTIVITY_RUN_CONTRACT_MISMATCH');
   if (summary.result != null) {
     return { status: 'ACTIVITY_WORK_SAVED', documentVersionId, runRef,
       saved: validateSavedReceipt(summary.result, {
         documentVersionId, runRef,
-        parseRunId: summary.parseRunId, semanticRevision: summary.semanticRevision }),
+        parseRunId: summary.parseRunId, semanticRevision: summary.semanticRevision, candidateSchemaVersion }),
       recoveredFromStatus: true, modelInvocations: 0, candidateOnly: true };
   }
 
@@ -488,11 +706,15 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
   const claimedAt = Date.now();
   const claim = await call('ACTIVITY_CLAIM', { documentVersionId, runRef, leaseOwner });
   validateRunSummary(claim, documentVersionId, runRef);
+  assertRunContract(claim, runContract);
+  if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 &&
+      ['parseRunId', 'semanticRevision', 'selection', 'expectedRevision', 'requestId', 'deadline'].some(key => !isDeepStrictEqual(claim[key], summary[key])))
+    throw new Error('ACTIVITY_RUN_BINDING_MISMATCH');
   if (claim.result != null) {
     return { status: 'ACTIVITY_WORK_SAVED', documentVersionId, runRef,
       saved: validateSavedReceipt(claim.result, {
         documentVersionId, runRef,
-        parseRunId: claim.parseRunId, semanticRevision: claim.semanticRevision }),
+        parseRunId: claim.parseRunId, semanticRevision: claim.semanticRevision, candidateSchemaVersion }),
       recoveredFromClaim: true, modelInvocations: 0, candidateOnly: true };
   }
   // Use exactly the fence the Host returned. A null fence must not continue:
@@ -511,6 +733,12 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
   const sectionIds = claim.selection.sectionIds;
   const limit = options.readLimit ?? 20;
   const maxPages = options.maxPagesPerSection ?? 10_000;
+  const checkpointPins = candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? {
+    candidateSchemaVersion, productionContract: runContract.productionContract,
+    sourceContextVersion: runContract.productionContract.sourceContextVersion,
+    quoteTransportVersion: runContract.productionContract.quoteTransportVersion,
+    parseRunId: claim.parseRunId, semanticRevision: claim.semanticRevision,
+  } : {};
 
   // Durable per-run checkpoint. The factory owns the private directory
   // layout (0700/0600, keyed by endpoint origin+path without any token,
@@ -532,7 +760,7 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
   checkpointReadComplete = true;
   modelDispatched = persisted.modelStarted != null || persisted.modelResult != null;
   for (const record of Object.values(persisted))
-    assertCheckpointBinding(record, documentVersionId, runRef);
+    assertCheckpointBinding(record, documentVersionId, runRef, checkpointSchema, checkpointPins);
   if (persisted.saveStarted != null && persisted.modelResult == null)
     throw new Error('ACTIVITY_CHECKPOINT_STATE_INVALID');
   if (persisted.modelResult != null && persisted.source == null)
@@ -548,11 +776,12 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     try {
       const recovered = validateRunSummary(
         await recoverStatus(runRef), documentVersionId, runRef);
+      assertRunContract(recovered, runContract);
       const result = recovered.result ?? null;
       if (result != null)
         recoveredSaved = { ...validateSavedReceipt(result, {
           documentVersionId, runRef, parseRunId: claim.parseRunId,
-          semanticRevision: claim.semanticRevision, sourceBinding: persisted.source?.sourceBinding,
+          semanticRevision: claim.semanticRevision, sourceBinding: persisted.source?.sourceBinding, candidateSchemaVersion,
         }), replayed: true };
     } catch { /* The recovery itself failed: the outcome stays unknown. */ }
     if (recoveredSaved !== undefined)
@@ -569,6 +798,8 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     const deliveredRanges = [];
     const units = [];
     let sourceCoverage;
+    let sourceContext;
+    const sourceContexts = [];
     if (persisted.source != null) {
       // Strict recovery of a prior delivery: it must bind to this exact run
       // through the fresh claim's parseRunId/semanticRevision/selection, and
@@ -610,6 +841,10 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
       units.push(...persisted.source.units);
       deliveredRanges.push(...persisted.source.deliveredRanges);
       sourceCoverage = persisted.source.sourceCoverage;
+      if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2) {
+        sourceContext = validateActivitySourceContext(persisted.source.sourceContext, { sourceBinding,
+          units, deliveredRanges, selectedSectionIds: sectionIds });
+      }
       for (const anchor of persisted.source.anchors) {
         if (anchor == null || typeof anchor !== 'object' || !nonemptyString(anchor.anchorId))
           throw new Error('ACTIVITY_DELIVERED_ANCHOR_INVALID');
@@ -632,6 +867,7 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
           throw new Error('ACTIVITY_READ_COVERAGE_MISMATCH');
         units.push(...read.units);
         deliveredRanges.push(read.range);
+        if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2) sourceContexts.push(read.sourceContext);
         for (const anchor of read.anchors) {
           if (anchor == null || typeof anchor !== 'object' || !nonemptyString(anchor.anchorId))
             throw new Error('ACTIVITY_DELIVERED_ANCHOR_INVALID');
@@ -650,13 +886,26 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
       }
     }
     if (!deliveredRanges.length) throw new Error('ACTIVITY_DELIVERY_EMPTY');
+    // Context is page-dependent: union only what each READ actually delivered.
+    // Repeated units can arise from shared ancestors; keep a single exact unit.
+    if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2) {
+      const uniqueUnits = new Map();
+      for (const unit of units) {
+        if (uniqueUnits.has(unit.unitId) && !isDeepStrictEqual(uniqueUnits.get(unit.unitId), unit))
+          throw new Error('ACTIVITY_READ_UNIT_MISMATCH');
+        uniqueUnits.set(unit.unitId, unit);
+      }
+      units.splice(0, units.length, ...uniqueUnits.values());
+      if (sourceContext === undefined) sourceContext = mergeActivitySourceContexts(sourceContexts, {
+        sourceBinding, units, deliveredRanges, selectedSectionIds: sectionIds });
+    }
     // Durable source: the delivery, selection and fence are persisted before
     // any model work so a later attempt never re-reads a changed delivery.
     await writeCheckpoint('source.result', {
-      schemaVersion: ACTIVITY_CHECKPOINT_SCHEMA, documentVersionId, runRef,
+      schemaVersion: checkpointSchema, documentVersionId, runRef, ...checkpointPins,
       parseRunId: claim.parseRunId, semanticRevision: claim.semanticRevision,
       sourceBinding, selection: claim.selection, units, anchors: deliveredAnchors,
-      deliveredRanges, sourceCoverage, fence,
+      deliveredRanges, sourceCoverage, fence, ...(sourceContext ? { sourceContext } : {}),
     });
 
     // Mirror Host anchor-source checks with the delivered fields we hold:
@@ -675,6 +924,9 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     // reused as-is with its recorded actual modelVersion (zero regeneration);
     // a dispatched model with no persisted result keeps an unknown outcome.
     const modelInput = {
+      ...(selectionMode ? { quoteSelectionSchemaVersion } : {}),
+      ...(candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? { candidateSchemaVersion,
+        productionContract: runContract.productionContract, sourceContext } : {}),
       documentVersionId, runRef, sectionIds,
       sourceBinding, selection: claim.selection, units, anchors: deliveredAnchors,
       deliveredRanges, sourceCoverage,
@@ -682,12 +934,14 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     const inputHash = canonicalSha256(modelInput);
     let proposal;
     let modelVersion;
+    let modelProvenance;
     let modelInvocations = 0;
     if (persisted.modelResult != null) {
       if (persisted.modelResult.inputHash !== inputHash)
         throw new Error('ACTIVITY_CHECKPOINT_BINDING_MISMATCH');
       proposal = persisted.modelResult.proposal;
       modelVersion = persisted.modelResult.modelVersion;
+      modelProvenance = persisted.modelResult.provenance;
     } else {
       if (typeof dependencies.invokeModel !== 'function')
         throw new Error('ACTIVITY_MODEL_EXECUTOR_REQUIRED');
@@ -695,7 +949,7 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
       // Model dispatch BEFORE HTTP: once this marker exists, only a result
       // checkpoint may clear the unknown outcome.
       await writeCheckpoint('model.started', {
-        schemaVersion: ACTIVITY_CHECKPOINT_SCHEMA, step: 'model',
+        schemaVersion: checkpointSchema, step: 'model', ...checkpointPins,
         documentVersionId, runRef, inputHash, startedAt: new Date().toISOString() });
       lease.throwIfLost();
       let modelResult;
@@ -710,24 +964,35 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
       }
       proposal = modelResult?.proposal;
       modelVersion = modelResult?.modelVersion;
+      modelProvenance = modelResult?.provenance;
       modelInvocations = 1;
     }
     try {
     if (typeof modelVersion !== 'string' || !modelVersion.trim() ||
         modelVersion.length > 160) throw new Error('ACTIVITY_MODEL_VERSION_INVALID');
-    validateActivityProposal(proposal, deliveredAnchors);
+    if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 &&
+        !isDeepStrictEqual(modelProvenance, { modelVersion, ...runContract.productionContract, inputHash }))
+      throw new Error('ACTIVITY_MODEL_PROVENANCE_MISMATCH');
+    if (proposal?.schemaVersion !== candidateSchemaVersion) throw new Error('ACTIVITY_MODEL_SCHEMA_INVALID');
+    if (selectionMode) validateActivityQuoteSelection(proposal, deliveredAnchors, { deliveredRanges, sourceBinding, sourceContext, units, sectionIds,
+      expectedSourceBinding: { original: { ...sourceBinding.original, documentVersionId, parseRunId: claim.parseRunId }, semanticRevision: claim.semanticRevision } });
+    else validateActivityProposal(proposal, deliveredAnchors, { sourceBinding, sourceContext, units, deliveredRanges, sectionIds });
     } catch (error) { definitiveModelError = true; throw error; }
     // Model result with the actual modelVersion BEFORE SAVE:
     try {
     await writeCheckpoint('model.result', {
-      schemaVersion: ACTIVITY_CHECKPOINT_SCHEMA, step: 'model',
+      schemaVersion: checkpointSchema, step: 'model', ...checkpointPins,
       documentVersionId, runRef, inputHash, modelVersion, proposal,
+      ...(candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? { provenance: modelProvenance } : {}),
       finishedAt: new Date().toISOString() });
     } catch (error) { throw new Error('ACTIVITY_MODEL_OUTCOME_UNKNOWN', { cause: error }); }
 
     // The SAVE candidate is exactly the proposal. Host strictObject rejects
     // any extra field, so nothing else is ever attached here.
-    const candidate = { schemaVersion: proposal.schemaVersion, statements: proposal.statements };
+    const candidate = { schemaVersion: proposal.schemaVersion, statements: proposal.statements, ...(selectionMode ? { quoteSelectionSchemaVersion } : {}) };
+    const canonicalProposal = structuredClone(selectionMode ? canonicalActivityQuoteSelection(proposal, deliveredAnchors, {
+      deliveredRanges, sourceBinding, expectedSourceBinding: sourceBinding, sourceContext, units, sectionIds,
+    }) : proposal);
     const producer = { skillVersion: options.skillVersion ?? WISELINK_SKILL_VERSION, modelVersion };
     const saveFields = { ...fence, documentVersionId, runRef, candidate, producer };
 
@@ -739,11 +1004,12 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
       // result may confirm the outcome; unconfirmed stays unknown.
       if (!isDeepStrictEqual(
             fenceFreeSave(persisted.saveStarted.saveCommand),
-            fenceFreeSave(buildActivityRequest('ACTIVITY_SAVE', saveFields))))
+            fenceFreeSave(buildActivityRequest(saveAction, saveFields))))
         throw new Error('ACTIVITY_CHECKPOINT_BINDING_MISMATCH');
       try {
         const recovered = validateRunSummary(
           await recoverStatus(runRef), documentVersionId, runRef);
+        assertRunContract(recovered, runContract);
         const result = recovered.result ?? null;
         if (result != null && (typeof result.runRef !== 'string' || result.runRef === runRef))
           saved = { ...result, replayed: true };
@@ -753,15 +1019,15 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     } else {
       // The complete SAVE command BEFORE dispatch:
       await writeCheckpoint('save.started', {
-        schemaVersion: ACTIVITY_CHECKPOINT_SCHEMA, step: 'save',
+        schemaVersion: checkpointSchema, step: 'save', ...checkpointPins,
         documentVersionId, runRef, inputHash,
-        saveCommand: buildActivityRequest('ACTIVITY_SAVE', saveFields),
+        saveCommand: buildActivityRequest(saveAction, saveFields),
         startedAt: new Date().toISOString() });
       saveDispatched = true;
       try {
         // Dispatch is already durable. A later heartbeat loss cannot erase a
         // successful receipt; bound this in-flight response independently.
-        saved = await call('ACTIVITY_SAVE', saveFields,
+        saved = await call(saveAction, saveFields,
           { signal: AbortSignal.timeout(HOST_ACTIVITY_LEASE_MS), timeout: HOST_ACTIVITY_LEASE_MS });
       } catch (error) {
         // The SAVE dispatch already went out, so the Host may have persisted
@@ -772,6 +1038,7 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
         try {
           const recovered = validateRunSummary(
             await recoverStatus(runRef), documentVersionId, runRef);
+          assertRunContract(recovered, runContract);
           const result = recovered.result ?? null;
           if (result != null && (typeof result.runRef !== 'string' || result.runRef === runRef))
             saved = { ...result, replayed: true };
@@ -781,7 +1048,10 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
       }
     }
     validateSavedReceipt(saved, {
-      documentVersionId, runRef, sourceBinding, producer, statementCount: proposal.statements.length });
+      documentVersionId, runRef, sourceBinding, producer, statementCount: proposal.statements.length,
+      candidateSchemaVersion, sourceContext, expectedStatements: canonicalProposal.statements,
+      expectedAnchors: deliveredAnchors, expectedReadCoverage: { status: 'DELIVERED_RANGES_ONLY',
+        selection: claim.selection, deliveredRanges, sourceCoverage } });
     return { status: 'ACTIVITY_WORK_SAVED', documentVersionId, runRef,
       saved, producer, modelInvocations, candidateOnly: true };
   } catch (error) {

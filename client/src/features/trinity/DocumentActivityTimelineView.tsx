@@ -1,6 +1,9 @@
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
-import type { DocumentActivityReadingResponse } from '@shared/document-activity.interface';
+import type { AnyDocumentActivityReadingResponse as DocumentActivityReadingResponse } from '@shared/document-activity.interface';
+import { documentActivityStatementTimes, documentActivityStatementStatusRaw, isDocumentActivityStatementV2 } from '@shared/document-activity.interface';
+import { activityStatementTimeText } from './document-activity-presentation';
+import DocumentActivityStatementSemantics from './DocumentActivityStatementSemantics';
 import {
   ACTIVITY_TIMELINE_LANES,
   ACTIVITY_TIMELINE_WINDOWS,
@@ -106,6 +109,8 @@ export default function DocumentActivityTimelineView({
   const inWindow = placed.filter((item) => spanIntersects(item.span!, windowStart, windowEnd));
   const outOfWindow = placed.filter((item) => !spanIntersects(item.span!, windowStart, windowEnd));
   const selected = candidate.statements.find((statement) => statement.statementId === selectedStatementId) ?? null;
+  const selectedTimes = selected ? documentActivityStatementTimes(selected) : [];
+  const emptyTimeField = selected && isDocumentActivityStatementV2(selected) ? '本候选未捕获' : 'UNKNOWN';
   const selectedOutsideWindow = selected
     ? outOfWindow.some((item) => item.statement.statementId === selected.statementId)
     : false;
@@ -163,8 +168,8 @@ export default function DocumentActivityTimelineView({
           const startX = x(item.span!.start);
           const endX = Math.max(x(item.span!.end), startX + 1.5);
           const midX = (startX + endX) / 2;
-          return <g key={item.statement.statementId} role="button" tabIndex={0}
-            aria-label={item.statement.label} className={selectedStatementId === item.statement.statementId ? 'selected' : ''}
+          return <g key={item.id} data-time-item-id={item.id} role="button" tabIndex={0}
+            aria-label={isDocumentActivityStatementV2(item.statement) ? `${item.statement.label} · ${item.displayTime} · ${item.time?.role ?? '本候选未捕获'}` : item.statement.label} className={selectedStatementId === item.statement.statementId ? 'selected' : ''}
             onClick={() => onSelectStatement(item.statement.statementId)}
             onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelectStatement(item.statement.statementId); }}>
             <line className="activity-map-range" x1={startX} x2={endX} y1={y} y2={y} />
@@ -177,13 +182,13 @@ export default function DocumentActivityTimelineView({
 
       <div className="activity-timeline-list">{inWindow.map((item) => <article
         className={`activity-timeline-item ${selectedStatementId === item.statement.statementId ? 'selected' : ''}`}
-        key={item.statement.statementId}>
+        key={item.id} data-time-item-id={item.id}>
         <button type="button" className="activity-timeline-select" onClick={() => onSelectStatement(item.statement.statementId)}>
           <span className="activity-time">{item.displayTime}<small>来源时间 · {item.span!.precision}</small></span>
           <span className="activity-timeline-copy">
             <span className="activity-timeline-meta"><i className={`activity-lane-indicator ${laneClass(item)}`} />资料与厂家进展 · {item.time?.role ?? 'UNKNOWN'}</span>
             <strong>{item.statement.label}</strong>
-            <small>声明 {item.statement.statementId} · 原词 {item.statement.statusRaw ?? '未提供'} · 精度 {item.time?.precision ?? 'UNKNOWN'}</small>
+            <small>声明 {item.statement.statementId} · 原词 {documentActivityStatementStatusRaw(item.statement) ?? (isDocumentActivityStatementV2(item.statement) ? '本候选未捕获' : '未提供')} · 精度 {item.time?.precision ?? 'UNKNOWN'}</small>
           </span>
         </button>
         {itemActions(item, onOpenReading, onOpenAnchor, onNavigateGraph)}
@@ -192,22 +197,22 @@ export default function DocumentActivityTimelineView({
       {outOfWindow.length > 0 ? <section className="activity-window-context">
         <h3>窗口外声明 · 保留为上下文</h3>
         <p>以下声明有明确年份但不属于当前时间窗，不参与窗口内计数。</p>
-        {outOfWindow.map((item) => <article key={item.statement.statementId}
+        {outOfWindow.map((item) => <article key={item.id} data-time-item-id={item.id}
           className={`activity-timeline-item ${selectedStatementId === item.statement.statementId ? 'selected' : ''}`}>
           <button type="button" className="activity-timeline-select" onClick={() => onSelectStatement(item.statement.statementId)}>
             <span className="activity-time">{item.displayTime}<small>窗口外 · {item.span!.precision}</small></span>
-            <span className="activity-timeline-copy"><strong>{item.statement.label}</strong><small>声明 {item.statement.statementId} · 原词保留，不在当前窗口计数</small></span>
+            <span className="activity-timeline-copy"><strong>{item.statement.label}</strong><small>声明 {item.statement.statementId}{isDocumentActivityStatementV2(item.statement) ? ` · ${item.time?.role ?? '本候选未捕获'}` : ''} · 原词保留，不在当前窗口计数</small></span>
           </button>
           {itemActions(item, onOpenReading, onOpenAnchor, onNavigateGraph)}
         </article>)}
       </section> : null}
 
       {undated.length > 0 ? <section className="activity-undated"><h3>日期未定／尚无可计算时间</h3>
-        {undated.map((item) => <article key={item.statement.statementId}
+        {undated.map((item) => <article key={item.id} data-time-item-id={item.id}
           className={`activity-timeline-item ${selectedStatementId === item.statement.statementId ? 'selected' : ''}`}>
           <button type="button" className="activity-timeline-select" onClick={() => onSelectStatement(item.statement.statementId)}>
             <span className="activity-time">{item.displayTime}<small>未确定时间</small></span>
-            <span className="activity-timeline-copy"><strong>{item.statement.label}</strong><small>声明 {item.statement.statementId} · 保留原词</small></span>
+            <span className="activity-timeline-copy"><strong>{item.statement.label}</strong><small>声明 {item.statement.statementId}{isDocumentActivityStatementV2(item.statement) ? ` · ${item.time?.role ?? '本候选未捕获'}` : ''} · 保留原词</small></span>
           </button>
           {itemActions(item, onOpenReading, onOpenAnchor, onNavigateGraph)}
         </article>)}
@@ -220,9 +225,10 @@ export default function DocumentActivityTimelineView({
       <div className="activity-timeline-inspector-eyebrow">资料与厂家进展 · 已保存候选</div>
       {selected ? <>
         <h2>{selected.label}</h2>
-        <p className="activity-timeline-inspector-lead">{selected.time?.raw ?? '当前声明没有可作为日期坐标的时间原词。'}</p>
-        <dl><dt>时间性质</dt><dd>{selected.time?.role ?? 'UNKNOWN'}</dd><dt>精度</dt><dd>{selected.time?.precision ?? 'UNKNOWN'}</dd><dt>原始状态</dt><dd>{selected.statusRaw ?? '未提供'}</dd><dt>准确来源</dt><dd>{reading.binding.documentVersionId}<br />{reading.binding.parseRunId}</dd></dl>
-        {selectedOutsideWindow ? <p className="activity-window-note">该声明在当前时间窗外，仅作为上下文保留，不计入窗口数量。</p> : null}
+        <p className="activity-timeline-inspector-lead">{activityStatementTimeText(selected, '当前声明没有可作为日期坐标的时间原词。')}</p>
+        <dl><dt>时间性质</dt><dd>{selectedTimes.map((time) => time.role).join('；') || emptyTimeField}</dd><dt>精度</dt><dd>{selectedTimes.map((time) => time.precision).join('；') || emptyTimeField}</dd><dt>原始状态</dt><dd>{documentActivityStatementStatusRaw(selected) ?? (isDocumentActivityStatementV2(selected) ? '本候选未捕获' : '未提供')}</dd><dt>准确来源</dt><dd>{reading.binding.documentVersionId}<br />{reading.binding.parseRunId}</dd></dl>
+        <DocumentActivityStatementSemantics statement={selected} />
+        {selectedOutsideWindow ? <p className="activity-window-note">{inWindow.some((item) => item.statement.statementId === selected.statementId) ? '该声明部分时间表述在当前时间窗外；窗口外表述仅作为上下文保留，不计入窗口数量。' : '该声明在当前时间窗外，仅作为上下文保留，不计入窗口数量。'}</p> : null}
         {selected.limitations.length ? <div className="activity-timeline-limitations"><strong>限制</strong>{selected.limitations.map((item) => <p key={item}>{item}</p>)}</div> : null}
         <section className="activity-history-boundary"><h3>预计变化边界</h3><p>当前候选没有跨版本活动身份。相似标题不会自动拼成“同一活动”的预计历史；取得有依据的身份关系后再按版本展示。</p></section>
         <div className="activity-timeline-inspector-actions">

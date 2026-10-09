@@ -29,7 +29,7 @@ import {
   buildPdfDocumentRequest,
   resolvePdfWorkerUrl,
 } from './pdf-viewer-request';
-import { clampPdfPage, visiblePdfPages } from './pdf-viewer-state';
+import { clampPdfPage, PDF_RENDER_OVERSCAN_PX, visiblePdfPages } from './pdf-viewer-state';
 import { loadPdfJsRuntime } from './pdfjs-runtime';
 import { followPdfPageTarget } from './pdf-page-target';
 import { readPdfPosition, savePdfPosition } from './pdf-reading-position';
@@ -72,6 +72,7 @@ interface PdfCanvasPageProps {
   zoom: number;
   highlighted: boolean;
   renderRequested: boolean;
+  frameWidth: number;
   targetBoxes?: PdfBoxTarget | null;
 }
 
@@ -103,6 +104,7 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
   const [zoom, setZoom] = useState<number>(initialPosition?.zoom ?? 1);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<boolean>(false);
+  const [pageFrameWidth, setPageFrameWidth] = useState<number>(0);
   const [renderedPages, setRenderedPages] = useState<ReadonlySet<number>>(
     () => new Set([targetPage ?? 1]),
   );
@@ -203,6 +205,9 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
   const sourceTargetPage: number | null =
     targetPage === null ? null : clampPdfPage(targetPage, pageCount);
 
+  // Keep lightweight desktop frames mounted for continuous scroll and exact
+  // source/return positioning. Only nearby pages retain canvas backing pixels.
+  const mobilePage: number | null = isMobile ? currentPage : null;
   useEffect(() => {
     if (!panelActive) return;
     const container: HTMLDivElement | null = pagesRef.current;
@@ -211,40 +216,57 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
       container.querySelectorAll<HTMLElement>('[data-pdf-page]'),
     );
     if (pageFrames.length === 0) return;
-
-    if (typeof IntersectionObserver === 'undefined') {
-      setRenderedPages(
-        new Set(
-          pageFrames.map((frame: HTMLElement) =>
-            Number(frame.getAttribute('data-pdf-page')),
-          ),
-        ),
+    let frame: number | null = null;
+    const publish = (next: ReadonlySet<number>): void => {
+      setRenderedPages((current: ReadonlySet<number>) =>
+        current.size === next.size && [...current].every((page: number) => next.has(page))
+          ? current : next,
       );
-      return;
-    }
-
-    const observer = new IntersectionObserver(
+    };
+    const nearbyPages: Set<number> = new Set();
+    const measure = (): void => {
+      setPageFrameWidth(pageFrames[0].clientWidth);
+      const bounds: DOMRect = container.getBoundingClientRect();
+      nearbyPages.clear();
+      for (const page of pageFrames) {
+        const rect: DOMRect = page.getBoundingClientRect();
+        if (rect.bottom >= bounds.top - PDF_RENDER_OVERSCAN_PX &&
+            rect.top <= bounds.bottom + PDF_RENDER_OVERSCAN_PX) {
+          nearbyPages.add(Number(page.dataset.pdfPage));
+        }
+      }
+      publish(new Set(nearbyPages));
+    };
+    const scheduleMeasure = (): void => {
+      if (frame !== null) return;
+      frame = window.requestAnimationFrame(() => { frame = null; measure(); });
+    };
+    measure();
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleMeasure);
+    resizeObserver?.observe(container);
+    pageFrames.forEach((page: HTMLElement) => resizeObserver?.observe(page));
+    const observer = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(
       (entries: IntersectionObserverEntry[]) => {
-        const intersectingPages: number[] = entries
-          .filter((entry: IntersectionObserverEntry) => entry.isIntersecting)
-          .map((entry: IntersectionObserverEntry) =>
-            Number(entry.target.getAttribute('data-pdf-page')),
-          )
-          .filter((pageNumber: number) => Number.isSafeInteger(pageNumber));
-        if (intersectingPages.length === 0) return;
-        setRenderedPages((current: ReadonlySet<number>) => {
-          const next: Set<number> = new Set(current);
-          intersectingPages.forEach((pageNumber: number) =>
-            next.add(pageNumber),
-          );
-          return next.size === current.size ? current : next;
-        });
+        for (const entry of entries) {
+          const page: number = Number(entry.target.getAttribute('data-pdf-page'));
+          if (!Number.isSafeInteger(page)) continue;
+          if (entry.isIntersecting) nearbyPages.add(page);
+          else nearbyPages.delete(page);
+        }
+        publish(new Set(nearbyPages));
       },
-      { root: container, rootMargin: '900px 0px' },
+      { root: container, rootMargin: `${PDF_RENDER_OVERSCAN_PX}px 0px` },
     );
-    pageFrames.forEach((frame: HTMLElement) => observer.observe(frame));
-    return () => observer.disconnect();
-  }, [pageCount, pdfDocument, panelActive]);
+    pageFrames.forEach((page: HTMLElement) => observer?.observe(page));
+    // The no-IntersectionObserver path must stay bounded too.
+    if (!observer) container.addEventListener('scroll', scheduleMeasure, { passive: true });
+    return () => {
+      observer?.disconnect();
+      resizeObserver?.disconnect();
+      container.removeEventListener('scroll', scheduleMeasure);
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+  }, [pageCount, pdfDocument, panelActive, mobilePage, targetSignal, sourceTargetPage]);
 
   useLayoutEffect(() => {
     if (!panelActive) {
@@ -280,10 +302,8 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
     const nextPage: number = clampPdfPage(page, pageCount);
     setCurrentPage(nextPage);
     setPageInput(String(nextPage));
-    setRenderedPages((current: ReadonlySet<number>) => {
-      if (current.has(nextPage)) return current;
-      return new Set(current).add(nextPage);
-    });
+    // currentPage requests the jump target immediately; the observer owns the
+    // nearby window, including neighbors with no new intersection transition.
     setScrollRequest((current: PdfScrollRequest) => ({
       page: nextPage,
       offsetRatio,
@@ -468,7 +488,8 @@ export default function PdfDocumentViewer(props: PdfDocumentViewerProps) {
             document={pdfDocument}
             pageNumber={pageNumber}
             zoom={zoom}
-            renderRequested={renderedPages.has(pageNumber)}
+            frameWidth={pageFrameWidth}
+            renderRequested={currentPage === pageNumber || renderedPages.has(pageNumber)}
             highlighted={
               pageNumber === sourceTargetPage && Boolean(targetSignal)
             }
@@ -486,123 +507,118 @@ function PdfCanvasPage({
   zoom,
   highlighted,
   renderRequested,
+  frameWidth,
   targetBoxes,
 }: PdfCanvasPageProps) {
   const panelActive: boolean = useWorkbenchPanelActive();
   const frameRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const completionRef = useRef<Promise<void>>(Promise.resolve());
+  const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null);
   const [renderError, setRenderError] = useState<boolean>(false);
-  const [renderScale, setRenderScale] = useState<{
-    x: number;
-    y: number;
-    left: number;
-    top: number;
-  } | null>(null);
+  const activeRender: boolean = panelActive && renderRequested;
+  const cssScale: number = pageSize ? Math.max(1, frameWidth - 18) / pageSize.width * zoom : 0;
+  const cssWidth: number = pageSize ? Math.floor(pageSize.width * cssScale) : 0;
+  const cssHeight: number = pageSize ? Math.floor(pageSize.height * cssScale) : 0;
 
   useEffect(() => {
-    if (!panelActive) return;
-    if (!renderRequested && !highlighted) return;
-    const frame: HTMLDivElement | null = frameRef.current;
+    if (!activeRender || frameWidth <= 0) return;
     const canvas: HTMLCanvasElement | null = canvasRef.current;
-    if (!frame || !canvas) return;
+    if (!canvas) return;
     let active = true;
     let page: PDFPageProxy | null = null;
     let cancelRender: (() => void) | null = null;
+    const precedingRender: Promise<void> = completionRef.current;
+    const releasePixels = (): void => {
+      canvas.width = 0;
+      canvas.height = 0;
+    };
 
     async function render(): Promise<void> {
-      if (!active || !frame || frame.clientWidth === 0) return;
       try {
+        // A cancelled pdf.js task must settle before this canvas can be reused.
+        await precedingRender;
+        if (!active || !canvas) return;
         page = await document.getPage(pageNumber);
-        if (!active || !frame || !canvas) return;
+        if (!active) return;
         const baseViewport = page.getViewport({ scale: 1 });
-        const availableWidth: number = Math.max(1, frame.clientWidth - 18);
-        const cssScale: number = (availableWidth / baseViewport.width) * zoom;
-        const viewport = page.getViewport({ scale: cssScale });
+        const scale: number = Math.max(1, frameWidth - 18) / baseViewport.width * zoom;
+        const viewport = page.getViewport({ scale });
         const outputScale: number = Math.min(window.devicePixelRatio || 1, 2);
-        const context: CanvasRenderingContext2D | null =
-          canvas.getContext('2d');
+        const context: CanvasRenderingContext2D | null = canvas.getContext('2d');
         if (!context) throw new Error('PDF_CANVAS_CONTEXT_UNAVAILABLE');
+        setPageSize({ width: baseViewport.width, height: baseViewport.height });
         canvas.width = Math.floor(viewport.width * outputScale);
         canvas.height = Math.floor(viewport.height * outputScale);
+        // Preserve the exact CSS geometry even when the backing pixels are freed.
         canvas.style.width = `${Math.floor(viewport.width)}px`;
         canvas.style.height = `${Math.floor(viewport.height)}px`;
-        setRenderScale({
-          x: cssScale * (targetBoxes ? baseViewport.width / targetBoxes.viewportWidth : 1),
-          y: cssScale * (targetBoxes ? baseViewport.height / targetBoxes.viewportHeight : 1),
-          left: Math.max(0, (frame.clientWidth - viewport.width) / 2),
-          top: 4,
-        });
         const renderTask = page.render({
           canvasContext: context,
           viewport,
-          transform:
-            outputScale === 1
-              ? undefined
-              : [outputScale, 0, 0, outputScale, 0, 0],
+          transform: outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
         });
         cancelRender = () => renderTask.cancel();
         await renderTask.promise;
         if (active) setRenderError(false);
       } catch (error) {
-        if (!active || isCancelledRender(error)) return;
-        setRenderError(true);
+        if (active && !isCancelledRender(error)) setRenderError(true);
+      } finally {
+        if (!active) {
+          releasePixels();
+          page?.cleanup();
+        }
       }
     }
 
-    let observedWidth: number = frame.clientWidth;
-    const observer = new ResizeObserver(() => {
-      // Canvas height changes must not restart the render that set that height.
-      if (frame.clientWidth === observedWidth) return;
-      observedWidth = frame.clientWidth;
-      cancelRender?.();
-      void render();
-    });
-    observer.observe(frame);
-    void render();
+    completionRef.current = render();
     return () => {
       active = false;
-      observer.disconnect();
       cancelRender?.();
+      releasePixels();
       page?.cleanup();
     };
-  }, [document, highlighted, pageNumber, renderRequested, zoom, panelActive]);
+  }, [document, pageNumber, activeRender, zoom, frameWidth]);
 
   return (
     <article
       ref={frameRef}
       className={`parse-pdf-page${highlighted ? ' is-source-target' : ''}`}
       data-pdf-page={pageNumber}
-      data-render-state={
-        renderRequested || highlighted ? 'requested' : 'deferred'
-      }
+      data-page-measured={pageSize ? 'true' : undefined}
+      data-render-state={activeRender ? 'requested' : 'deferred'}
       aria-label={`PDF 第 ${pageNumber} 页`}
-      aria-busy={!renderRequested && !highlighted}
+      aria-busy={!activeRender}
     >
       <span className="parse-pdf-page-number">第 {pageNumber} 页</span>
-      {!renderRequested && !highlighted ? (
+      {!activeRender ? (
         <span className="parse-pdf-page-placeholder" aria-hidden="true">
           滚动到附近时加载页面
         </span>
       ) : null}
-      {renderError ? (
+      {renderError && activeRender ? (
         <div className="parse-pdf-page-error" role="alert">
           当前页渲染失败，请切换页码或刷新后重试。
         </div>
       ) : null}
       <canvas
         ref={canvasRef}
+        width={0}
+        height={0}
+        style={pageSize ? { width: `${cssWidth}px`, height: `${cssHeight}px` } : undefined}
         role="img"
         aria-label={`PDF 第 ${pageNumber} 页画布`}
       />
-      {targetBoxes && renderScale !== null ? targetBoxes.boxes.map((box, index) => (
+      {targetBoxes && pageSize ? targetBoxes.boxes.map((box, index) => (
         <span
           key={`${pageNumber}-${index}`}
           className="parse-pdf-source-box"
           style={{
-            left: `${renderScale.left + box[0] * renderScale.x}px`,
-            top: `${renderScale.top + box[1] * renderScale.y}px`,
-            width: `${box[2] * renderScale.x}px`,
-            height: `${box[3] * renderScale.y}px`,
+            left: `${Math.max(0, (frameWidth - pageSize.width * cssScale) / 2)
+              + box[0] * cssScale * pageSize.width / targetBoxes.viewportWidth}px`,
+            top: `${4 + box[1] * cssScale * pageSize.height / targetBoxes.viewportHeight}px`,
+            width: `${box[2] * cssScale * pageSize.width / targetBoxes.viewportWidth}px`,
+            height: `${box[3] * cssScale * pageSize.height / targetBoxes.viewportHeight}px`,
           }}
           aria-hidden="true"
         />

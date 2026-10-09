@@ -171,3 +171,41 @@ test('historical graph does not substitute current work or display cancelled or 
     }
   }
 });
+
+test('cold pinned-current graph waits for the workspace and never probes history', async () => {
+  const dom = new JSDOM('<div id="root"></div>');
+  const prior = new Map<string, PropertyDescriptor | undefined>();
+  for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document,
+    navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true })) {
+    prior.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+  }
+  const data = libraryMatterFixture();
+  const saved = { ...mockWorkspace };
+  Object.assign(mockWorkspace, { data: undefined, loading: true, error: null });
+  mockRead.mockReset().mockRejectedValue(new Error('must not request history'));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = dom.window.document.getElementById('root')!;
+  const root = createRoot(container);
+  function Probe() {
+    const state = useSuiteMatterGraph(data.matter.matterId, data.working.current!.matterWorkRevisionId, mockSession, false);
+    return createElement('div', null, state.graph?.workRef ?? state.error ?? 'waiting');
+  }
+  const render = () => root.render(createElement(QueryClientProvider, { client }, createElement(Probe)));
+  try {
+    await act(async () => { render(); await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(mockRead).not.toHaveBeenCalled();
+    expect(container.textContent).toBe('waiting');
+    Object.assign(mockWorkspace, { data, loading: false });
+    await act(async () => { render(); await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect(container.textContent).toBe(data.working.current!.matterWorkRevisionId);
+    expect(mockRead).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    Object.assign(mockWorkspace, saved);
+    client.clear(); client.unmount(); dom.window.close();
+    for (const [key, value] of prior) {
+      if (value) Object.defineProperty(globalThis, key, value); else Reflect.deleteProperty(globalThis, key);
+    }
+  }
+});

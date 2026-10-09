@@ -1,0 +1,92 @@
+.tdms-relation-graph {
+  border: 1px solid var(--wl-border, #d5ddd8);
+  border-radius: 14px;
+  padding: 16px;
+  margin-block: 16px;
+  background: var(--wl-surface-solid, #fff);
+  overflow-wrap: anywhere;
+}
+.tdms-relation-graph header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.tdms-relation-graph h4,
+.tdms-relation-graph h5 {
+  margin-block: 0 10px;
+}
+.tdms-relation-graph button {
+  border: 1px solid var(--wl-border, #d5ddd8);
+  border-radius: 8px;
+  padding: 6px 10px;
+  text-align: start;
+  white-space: pre-line;
+}
+.tdms-relation-graph button:hover {
+  background: var(--wl-surface-muted, #f3f5f2);
+}
+.tdms-relation-graph button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.tdms-graph-boundary {
+  color: var(--wl-muted, #626b66);
+  font-size: 13px;
+}
+.tdms-graph-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(220px, 1fr);
+  gap: 16px;
+}
+.tdms-graph-stage {
+  min-width: 0;
+}
+.tdms-graph-stage .rg-canvas {
+  height: 360px;
+  min-height: 280px;
+  border-radius: 12px;
+}
+.tdms-graph-stage ul {
+  padding-inline-start: 20px;
+}
+.tdms-graph-stage li {
+  margin-block: 8px;
+}
+.tdms-graph-inspector {
+  background: var(--wl-surface-muted, #f3f5f2);
+  border-radius: 12px;
+  padding: 14px;
+  min-width: 0;
+  max-height: 540px;
+  overflow: auto;
+}
+.tdms-graph-inspector dl {
+  display: grid;
+  gap: 5px;
+  margin-block: 12px;
+}
+.tdms-graph-inspector dt {
+  font-size: 12px;
+  color: var(--wl-muted, #626b66);
+}
+.tdms-graph-inspector dd {
+  margin-inline-start: 0;
+  margin-block-end: 7px;
+}
+.tdms-graph-inspector pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.tdms-relation-graph small {
+  display: block;
+  margin-block: 12px;
+  color: var(--wl-muted, #626b66);
+}
+@media (max-width: 760px) {
+  .tdms-graph-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -66,6 +66,62 @@ describe('offline MinerU original adapter', () => {
     expect(plan.blocks.some(entry => entry.organization === 'EXPLICIT_LIST')).toBe(true);
   });
 
+  it('anchors a real embedded native caption without inventing geometry or rewriting raw source', () => {
+    const result = fixture();
+    const pages = result.rawArtifacts.contentListV2 as Array<Array<{ content: Record<string, unknown> }>>;
+    const raw = pages[0][3].content;
+    raw.html = '<table><caption>Only if X &lt; 12</caption><tr><th rowspan="2">Limit</th>' +
+      '<th colspan="2">Values</th></tr><tr><td>10</td><td>20</td></tr></table>';
+    delete raw.table_caption;
+    const before = structuredClone(result);
+    const original = convert(result);
+    const table = original.source.units.find(unit => unit.kind === 'table')!;
+    const plan = buildTranslationSourcePlan({ documentVersionId: binding.documentVersionId, packageId: binding.parseRunId,
+      title: '', source: documentOriginalStructuredSource(original, binding),
+      parsedArtifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref: 'fixture://offline',
+        sha256: 'b'.repeat(64), byteLength: 1, mediaType: 'application/json' } });
+    expect(plan.anchors.map(anchor => anchor.sourceText)).toContain('Only if X < 12');
+    expect(plan.anchors.map(anchor => anchor.sourceText)).toContain('Except configuration B.');
+    expect(table.payload.rawMineruContent).toEqual(raw);
+    expect(table.mapping.sourcePointer).toBe('/raw/contentListV2/0/3');
+    expect(table.sourceRefIds).toEqual([`${binding.parseRunId}:page-1-block-4:source`]);
+    expect(original.source.sourceLocators.every(locator => locator.quote === null && locator.bbox === null)).toBe(true);
+    expect(result).toEqual(before);
+  });
+
+  it('retains caption conflicts with an existing limitation and no fabricated source quote', () => {
+    const result = fixture();
+    const pages = result.rawArtifacts.contentListV2 as Array<Array<{ content: Record<string, unknown> }>>;
+    pages[0][3].content.html = '<table><caption>Other caption</caption><tr><td>Limit</td></tr></table>';
+    const before = structuredClone(result);
+    const original = convert(result);
+    const table = original.source.units.find(unit => unit.kind === 'table')!;
+    expect(table.payload.caption).toBe('Load limits\nOther caption');
+    expect(table.payload.rawMineruContent).toEqual(pages[0][3].content);
+    expect(original.coverage.unresolvedRanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ reason: 'STRUCTURE_UNCERTAIN', unitIds: [table.unitId],
+        readingImpact: 'LIMITATION', message: expect.stringContaining('TABLE_CAPTION_CONFLICT') }),
+    ]));
+    expect(original.source.sourceLocators.every(locator => locator.quote === null &&
+      locator.charStart === null && locator.charEnd === null)).toBe(true);
+    expect(result).toEqual(before);
+  });
+
+  it('does not revive an observed running title removed from the separate native table caption', () => {
+    const result = fixture();
+    const pages = result.rawArtifacts.contentListV2 as Array<Array<{ type: string; bbox: number[]; content: Record<string, unknown> }>>;
+    pages[0][3].content.table_caption = text('FLEET TEAM DIGEST');
+    pages[0][3].content.html = '<table><caption>FLEET TEAM DIGEST</caption><tr><td>Limit</td><td>10</td></tr></table>';
+    pages[1].push({ type: 'title', bbox: [50, 60, 900, 80],
+      content: { level: 1, title_content: text('FLEET TEAM DIGEST') } });
+    const before = structuredClone(result);
+    const original = convert(result);
+    const table = original.source.units.find(unit => unit.kind === 'table')!;
+    expect(table.payload.caption).toBe('');
+    expect(original.source.units.map(unit => unit.payload.text)).not.toContain('FLEET TEAM DIGEST');
+    expect(result).toEqual(before);
+  });
+
   it('keeps figure, unsupported structure and unread-page limitations visible in reading coverage', () => {
     const original = convert();
     const coverage = documentOriginalReadingCoverage(original);

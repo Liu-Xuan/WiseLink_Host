@@ -16,10 +16,14 @@ export class DocumentActivityReadingController {
   @Get('activity-reading')
   @Header('Cache-Control', 'private, no-store')
   async read(@Param('documentVersionId') documentVersionId: string, @Query('parseRunId') parseRunId: string,
-    @Query('candidateRevision') candidateRevision: string | undefined, @Req() request: Request) {
+    @Query('candidateRevision') candidateRevision: string | undefined, @Req() request: Request,
+    @Query('acceptCandidateSchemaV2') acceptCandidateSchemaV2?: string) {
     if (candidateRevision !== undefined && (typeof candidateRevision !== 'string' || !/^[1-9][0-9]*$/.test(candidateRevision)))
       throw new BadRequestException('DOCUMENT_ACTIVITY_REVISION_INVALID');
+    if (acceptCandidateSchemaV2 !== undefined && acceptCandidateSchemaV2 !== 'true' && acceptCandidateSchemaV2 !== 'false')
+      throw new BadRequestException('DOCUMENT_ACTIVITY_SCHEMA_OPT_IN_INVALID');
     return this.activity.readForBrowser({ documentVersionId, parseRunId,
-      ...(candidateRevision === undefined ? {} : { candidateRevision: Number(candidateRevision) }) }, contextFromRequest(request));
+      ...(candidateRevision === undefined ? {} : { candidateRevision: Number(candidateRevision) }),
+      ...(acceptCandidateSchemaV2 === undefined ? {} : { acceptCandidateSchemaV2: acceptCandidateSchemaV2 === 'true' }) }, contextFromRequest(request));
   }
 }

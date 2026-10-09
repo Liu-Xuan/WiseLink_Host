@@ -1,3 +1,5 @@
+import TdmsSourceEntry from '@client/src/features/tdms-source/TdmsSourceEntry';
+import { TDMS_SOURCE_UI_ENABLED } from '@client/src/features/tdms-source/tdms-source-enabled';
 import { documentParseRecoveryRequestId } from '@shared/document-parsing-recovery';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import LocalMineruImport from './LocalMineruImport';
@@ -309,6 +311,14 @@ export default function DocumentVersionReadingPage() {
         latest.status === 'FAILED' ? `解析未完成：${latest.errorCode ?? '请重试或联系维护人员'}` :
         expired ? '执行期限已过，可重新发起解析。' : latest.waitingForLocalWorker ? '等待本机解析器接续。可以离开页面，任务会保留。' : latest.status === 'STAGING' ? `正在保存并核验产物，已核验 ${latest.verifiedArtifacts} 个文件。` : '正在解析原件，可离开页面后回来查看。')}</p>}
     </header>
+    {TDMS_SOURCE_UI_ENABLED && (currentStatus || currentReading) && !rejectedRef.current ? <TdmsSourceEntry
+      key={readingIdentity} context={{ documentVersionId }} enabled={TDMS_SOURCE_UI_ENABLED}
+      onAccessRejected={() => {
+        rejectedRef.current = true; epoch.current++; bodyControllerRef.current?.abort();
+        setStatus(null); setReading(null); setTranslation(null); setSource(null);
+        loaded.current = ''; setError('此来源暂不可读取，文档与译文已隐藏，请重新核权。');
+      }}
+    /> : null}
     {currentReading ? <>
       {requestedRun && <p role="status">{currentStatus?.publishedRun?.parseRunId !== requestedRun ? '历史解析版本' : '指定解析版本'}：固定读取此版本，刷新不会切换到最新版本。 <Link to={`/document-versions/${encodeURIComponent(documentVersionId)}`}>查看最新版本</Link></p>}
       {activeSourceRef && <aside aria-label="检索命中来源">

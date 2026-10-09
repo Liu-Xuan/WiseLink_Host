@@ -1,7 +1,8 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
+import { parseAssessmentTdmsEvidence } from '@shared/assessment-tdms-evidence';
 import { assessmentEvidenceRoots } from '@shared/assessment-evidence-roots';
 import type { DerivedSummaryMember, DerivedSummaryMemberReading } from '@shared/derived-summary.interface';
 import type { JobAidProblemIssue } from '@shared/jobaid-problem-assessment.interface';
@@ -13,17 +14,61 @@ import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.servic
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
 import { findDocumentOriginalEvidence } from './document-original-engineering-reading';
 import { buildMatterWorkReference } from './matter-work-reference';
+import { contextWorkNotices } from './derived-summary-current-context';
 import { summaryError, summaryMemberRef } from './derived-summary.validation';
+
+import { TDMS_NATIVE_EVIDENCE_VERIFIER, verifyTdmsNativeEvidence, assertTdmsNativeInTransaction,
+  type TdmsNativeEvidenceVerifier, type TdmsNativeSummaryCaller } from './tdms-native-evidence-verifier.port';
 
 export interface SummaryActor { tenantId: string; actorUserId: string }
 
+/** The source consumer supplies these exact capabilities. Their absence must
+ * reject statement-bearing evidence while leaving ordinary saved work usable. */
+interface SummarySourceStatementVerifier {
+  assertSourceStatementReferences(evidence: AssessmentEvidence[], actor: SummaryActor,
+    database?: PostgresJsDatabase): Promise<void>;
+  readSourceStatementProjections(evidence: AssessmentEvidence[], actor: SummaryActor): Promise<unknown[]>;
+}
+
 @Injectable()
 export class DerivedSummaryMembersService {
+  /** Transaction-local exact carriers, never cached permission decisions. */
+  private readonly nativeTransactions = new WeakMap<PostgresJsDatabase, {
+    actor: SummaryActor; caller: TdmsNativeSummaryCaller; evidence: AssessmentEvidence[];
+  }>();
   constructor(
     private readonly jobAid: CanonicalJobAidProblemService,
     private readonly matters: EngineeringMatterWorkingRepository,
     @Optional() private readonly originalReader?: UnifiedReaderService,
+    @Optional() @Inject(TDMS_NATIVE_EVIDENCE_VERIFIER) private readonly nativeVerifier?: TdmsNativeEvidenceVerifier,
   ) {}
+
+  /** The repository invokes this inside the authentic actor transaction. Every
+   * late journal/insert/CAS/context await finishes before the last native guard. */
+  async withNativeTransaction<T>(actor: SummaryActor, database: PostgresJsDatabase, caller: TdmsNativeSummaryCaller,
+    operation: () => Promise<T>): Promise<T> {
+    if (this.nativeTransactions.has(database)) throw summaryError('DERIVED_SUMMARY_NATIVE_TRANSACTION_REENTRY');
+    const frame = {actor: {...actor}, caller: structuredClone(caller), evidence: [] as AssessmentEvidence[]};
+    this.nativeTransactions.set(database, frame);
+    try {
+      const result = await operation();
+      // Guard every native carrier actually released as well as the complete
+      // hidden descendant set read while constructing this transaction's result.
+      frame.evidence.push(...nativeResultCarriers(result));
+      await assertTdmsNativeInTransaction({actor: frame.actor, summaryCaller: frame.caller, evidence: frame.evidence, database}, this.nativeVerifier);
+      return result;
+    } finally { this.nativeTransactions.delete(database); }
+  }
+
+  private async verifyNativeEvidence(evidence: AssessmentEvidence[], actor: SummaryActor, database?: PostgresJsDatabase): Promise<void> {
+    const frame = database === undefined ? undefined : this.nativeTransactions.get(database);
+    if (frame) {
+      if (frame.actor.tenantId !== actor.tenantId || frame.actor.actorUserId !== actor.actorUserId) throw summaryError('TDMS_NATIVE_EVIDENCE_ACTOR_INVALID');
+      const native = evidence.filter(item => item.kind === 'TDMS_NATIVE_RECORD');
+      frame.evidence.push(...structuredClone(native));
+      await assertTdmsNativeInTransaction({actor, evidence, database: database!, summaryCaller: frame.caller}, this.nativeVerifier);
+    } else await verifyTdmsNativeEvidence(evidence, actor, this.nativeVerifier, database);
+  }
 
   async authorizeActor(actor: SummaryActor, database: PostgresJsDatabase): Promise<void> {
     const [mapping] = await database.select({ id: identitySubjectMapping.id }).from(identitySubjectMapping)
@@ -36,24 +81,31 @@ export class DerivedSummaryMembersService {
 
   /** Every branch uses the handed connection, including nested saved-summary lineage. */
   async readAll(members: DerivedSummaryMember[], actor: SummaryActor, database: PostgresJsDatabase,
-    ancestors = new Set<string>()): Promise<DerivedSummaryMemberReading[]> {
+    ancestors = new Set<string>(), nativeCarriers: AssessmentEvidence[] = []): Promise<DerivedSummaryMemberReading[]> {
     await this.authorizeActor(actor, database);
     const result: DerivedSummaryMemberReading[] = [];
-    for (const member of members) result.push(await this.read(member, actor, database, ancestors));
+    for (const member of members) result.push(await this.read(member, actor, database, ancestors, nativeCarriers));
+    // Recheck hidden earlier carriers after every later member await.
+    await this.verifyNativeEvidence(nativeCarriers, actor, database);
     return result;
   }
 
   private async read(member: DerivedSummaryMember, actor: SummaryActor, database: PostgresJsDatabase,
-    ancestors: Set<string>): Promise<DerivedSummaryMemberReading> {
+    ancestors: Set<string>, nativeCarriers: AssessmentEvidence[]): Promise<DerivedSummaryMemberReading> {
     const evidenceRef = summaryMemberRef(member);
     if (ancestors.has(evidenceRef)) throw summaryError('DERIVED_SUMMARY_LINEAGE_CYCLE');
     const path = new Set(ancestors).add(evidenceRef);
-    if (member.kind === 'DERIVED_SUMMARY') return this.readSummary(member, actor, database, path);
+    if (member.kind === 'DERIVED_SUMMARY') {
+      if (ancestors.has(member.summaryId)) throw summaryError('DERIVED_SUMMARY_LINEAGE_CYCLE');
+      return this.readSummary(member, actor, database, path.add(member.summaryId), nativeCarriers);
+    }
     let headline: string;
+    let understanding: string;
     let body: string;
     let issues: JobAidProblemIssue[];
     let evidence: AssessmentEvidence[];
     let current: boolean;
+    let correctionLimitations: string[] = [];
     let overviewStatus: DerivedSummaryMemberReading['overviewStatus'];
     if (member.kind === 'WORK_ITEM_WORK') {
       const saved = await this.jobAid.readSummaryMemberInTransaction({ ...actor,
@@ -63,7 +115,8 @@ export class DerivedSummaryMembersService {
       const content = saved.revision.content;
       headline = content.headline;
       issues = selectIssues(content.issues, member.issueKeys);
-      body = completeBody(content.understanding, issues);
+      understanding = content.understanding;
+      body = completeBody(understanding, issues);
       // An Overall projection can be regenerated for the same work ref. This member
       // freezes the immutable work body; it must not splice in a mutable latest projection.
       evidence = content.evidence;
@@ -76,11 +129,21 @@ export class DerivedSummaryMembersService {
       if (!saved || saved.workingRevision !== member.workRevision) throw summaryError('DERIVED_SUMMARY_MEMBER_VERSION_MISMATCH');
       await this.matters.authorizeRuntimeInputs({ ...actor, matterId: member.matterId,
         basedOnMatterRevisionId: saved.basedOnMatterRevisionId }, database);
+      const notices = contextWorkNotices(saved);
+      correctionLimitations = [
+        ...notices.correctionNotices.map(notice => `已登记问题更正请求${notice.attemptRef}（${notice.attemptStatus}）：${notice.reason}；${notice.correctedWorkRef ? '已有精确更正工作，不能默认本成员已覆盖。' : notice.unchanged ? '对照后保留原工作。' : '本成员尚无已核更正结果。'}`),
+        ...notices.overviewCorrectionNotices.map(notice => `已登记概述复核请求${notice.attemptRef}（${notice.attemptStatus}）：${notice.reason}；${notice.savedWorkRef ? '已有保存工作，覆盖需按准确引用核对。' : '尚无已保存复核结果。'}`),
+        ...notices.referenceWorkNotices.flatMap(notice => [
+          ...notice.correctionNotices.map(correction => `引用工作${notice.evidenceRef}有更正请求${correction.attemptRef}（${correction.attemptStatus}）：${correction.reason}。`),
+          ...(notice.overviewCorrectionNotices ?? []).map(correction => `引用工作${notice.evidenceRef}有概述复核请求${correction.attemptRef}（${correction.attemptStatus}）：${correction.reason}。`),
+        ]),
+      ];
       const content = saved.state.problemWork;
       if (!content) throw summaryError('DERIVED_SUMMARY_COMPLETE_MEMBER_WORK_UNAVAILABLE');
       headline = content.headline;
       issues = selectIssues(content.issues, member.issueKeys);
-      body = completeBody(content.understanding, issues);
+      understanding = content.understanding;
+      body = completeBody(understanding, issues);
       evidence = content.evidence;
       overviewStatus = content.overviewStatus;
       const [latest] = await database.select({ ref: engineeringMatterWorkRevision.matterWorkRevisionId })
@@ -89,7 +152,9 @@ export class DerivedSummaryMembersService {
         .orderBy(desc(engineeringMatterWorkRevision.workingRevision)).limit(1);
       current = latest?.ref === member.workRef;
     }
-    evidence = mergeSummaryEvidence(evidence);
+    nativeCarriers.push(...structuredClone(evidence.filter(item => item.kind === 'TDMS_NATIVE_RECORD')));
+    await this.verifyNativeEvidence(evidence, actor, database);
+    evidence = retainSummaryNativeCarriers(mergeSummaryEvidence(evidence), evidence);
     await this.authorizeEvidence(evidence, actor, database, path);
     // Each root keeps its carrier/version; a prior candidate is never counted as a new source.
     const roots = assessmentEvidenceRoots(evidence.map(item => item.evidenceRef), evidence);
@@ -99,14 +164,17 @@ export class DerivedSummaryMembersService {
       ...(!current ? ['固定成员已有较新的保存工作；本次仍使用明确选取的版本。'] : []),
       ...(overviewStatus !== 'CURRENT' ? [`成员概述状态为${overviewStatus}，不能视为现行完整概述。`] : []),
       ...(member.issueKeys.length ? [`只选取问题：${member.issueKeys.join('、')}；其余问题不在本次覆盖内。`] : []),
+      ...correctionLimitations,
+      ...(evidence.some(item => item.kind === 'TDMS_NATIVE_RECORD') ? ['NATIVE_CURRENTNESS_NOT_CONNECTED'] : []),
       ...await this.sourceVersionNotices(evidence, actor, database),
     ];
-    return { member, evidenceRef, headline, body, issues, evidence, rootRefs: roots.rootRefs,
+    await this.verifyNativeEvidence(evidence, actor, database);
+    return { member, evidenceRef, headline, understanding, body, issues, evidence, rootRefs: roots.rootRefs,
       limitations, current, overviewStatus, leaves: [member] };
   }
 
   private async readSummary(member: Extract<DerivedSummaryMember, { kind: 'DERIVED_SUMMARY' }>, actor: SummaryActor,
-    database: PostgresJsDatabase, path: Set<string>): Promise<DerivedSummaryMemberReading> {
+    database: PostgresJsDatabase, path: Set<string>, nativeCarriers: AssessmentEvidence[]): Promise<DerivedSummaryMemberReading> {
     const [head] = await database.select().from(derivedSummary).where(and(eq(derivedSummary.tenantId, actor.tenantId),
       eq(derivedSummary.actorUserId, actor.actorUserId), eq(derivedSummary.summaryId, member.summaryId))).limit(1);
     const [row] = await database.select().from(derivedSummaryRevision).where(and(
@@ -116,11 +184,23 @@ export class DerivedSummaryMembersService {
     const saved = row.contentJson;
     if (saved.summaryId !== member.summaryId || saved.summaryRef !== member.summaryRef || saved.revision !== member.summaryRevision)
       throw summaryError('DERIVED_SUMMARY_PERSISTENCE_INVALID');
-    const children = await this.readAll(saved.members.map(item => item.member), actor, database, path);
+    nativeCarriers.push(...structuredClone(saved.evidence.filter(item => item.kind === 'TDMS_NATIVE_RECORD')));
+    await this.verifyNativeEvidence(saved.evidence, actor, database);
+    const children = await this.readAll(saved.members.map(item => item.member), actor, database, path, nativeCarriers);
     for (let i = 0; i < children.length; i++) assertMemberSnapshot(saved.members[i]!, children[i]!);
     const leaves = uniqueMembers(children.flatMap(item => item.leaves));
+    const descendants = children.flatMap(item => item.evidence);
+    const registry = mergeSummaryEvidence(descendants);
+    const ordered = (items: AssessmentEvidence[]) => [...items].sort((a, b) => a.evidenceRef.localeCompare(b.evidenceRef));
+    const refs = new Set([...children.map(item => item.evidenceRef), ...registry.map(item => item.evidenceRef)]);
+    if (canonicalJson(ordered(saved.evidence)) !== canonicalJson(ordered(registry)) ||
+        saved.usedEvidenceRefs.some(ref => !refs.has(ref))) throw summaryError('DERIVED_SUMMARY_PERSISTENCE_INVALID');
+    await this.verifyNativeEvidence(nativeCarriers, actor, database);
+    // The immutable aggregate registry retains one body. Exact nested member
+    // delivery retains each distinct descendant READ receipt for that body.
+    const evidence = retainSummaryNativeCarriers(saved.evidence, descendants);
     return { member, evidenceRef: summaryMemberRef(member), headline: saved.content.headline, body: saved.content.body,
-      issues: [], evidence: saved.evidence, rootRefs: [...new Set(children.flatMap(item => item.rootRefs))],
+      issues: [], evidence, rootRefs: [...new Set(children.flatMap(item => item.rootRefs))],
       limitations: ['这是派生候选摘要，不是新增独立证据。仅覆盖已保存的精确成员。', ...saved.content.limitations,
         ...children.flatMap(item => item.limitations),
         ...(head.currentSummaryRef !== member.summaryRef ? ['该摘要已有较新的保存版本。'] : [])],
@@ -142,20 +222,21 @@ export class DerivedSummaryMembersService {
       const row = rows.find(item => item.documentVersionId === id);
       if (!row) throw summaryError('DERIVED_SUMMARY_SOURCE_VERSION_UNAVAILABLE', 404);
       if (!row.currentDocumentVersionId) {
-        notices.push(`来源版本${id}的当前正式版指针未确定；不能将选中版本视为当前正式版。`);
+        notices.push(`来源版本${id}的本地目录选择指针未确定；发布方现行有效状态未核。`);
       } else if (row.currentDocumentVersionId !== id) {
         const [access] = await database.execute<{ allowed: boolean }>(sql`SELECT
           engineering_matter_document_owned_by_actor(${actor.tenantId}, ${row.currentDocumentVersionId}) AS allowed`);
         notices.push(access?.allowed === true
-          ? `来源版本${id}为历史正式版；当前正式版${row.currentDocumentVersionId}${selected.includes(row.currentDocumentVersionId) ? '另有显式选取来源，两个版本保持分开。' : '未被本成员覆盖。'}`
-          : `来源版本${id}为历史正式版；当前正式版未被本成员覆盖，且本次无权展开其来源。`);
-      } else notices.push(`来源版本${id}是当前正式版；此标记不代表适用性、正式采用或其他版本覆盖。`);
+          ? `来源版本${id}与本地目录当前选择${row.currentDocumentVersionId}不同；${selected.includes(row.currentDocumentVersionId) ? '另有显式选取来源，两个版本保持分开。' : '目录所选版本未被本成员覆盖。'}发布方现行有效状态未核。`
+          : `来源版本${id}与本地目录选择不同；目录所选版本未被本成员覆盖，且本次无权展开其来源。发布方现行有效状态未核。`);
+      } else notices.push(`来源版本${id}是本地目录当前选择；发布方现行有效状态未核，不代表适用性、正式采用或其他版本覆盖。`);
     }
     return notices;
   }
 
   private async authorizeEvidence(evidence: AssessmentEvidence[], actor: SummaryActor, database: PostgresJsDatabase,
     ancestors: Set<string>) {
+    await this.verifyNativeEvidence(evidence, actor, database);
     const workItemIds = [...new Set(evidence.flatMap(item => 'workItemId' in item && item.workItemId ? [item.workItemId] : []))];
     const documentIds = [...new Set(evidence.flatMap(item => item.kind === 'DOCUMENT_PASSAGE' ||
       item.kind === 'ENGINEER_ATTACHMENT' ? [item.documentVersionId] : []))];
@@ -165,6 +246,8 @@ export class DerivedSummaryMembersService {
       AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify(documentIds)}::jsonb) d(id)
         WHERE engineering_matter_document_owned_by_actor(${actor.tenantId}, d.id::varchar) IS NOT TRUE) AS allowed`);
     if (access?.allowed !== true) throw summaryError('DERIVED_SUMMARY_SOURCE_UNAVAILABLE', 404);
+    const statementVerifier = this.sourceStatementVerifier(evidence);
+    if (statementVerifier) await statementVerifier.assertSourceStatementReferences(evidence, actor, database);
     for (const item of evidence) {
       if (item.kind !== 'PRIOR_RESULT' || !item.sourceWork) continue;
       const source = item.sourceWork;
@@ -180,17 +263,25 @@ export class DerivedSummaryMembersService {
       const expected = buildMatterWorkReference({ matterId: source.subjectId, workRef: source.workRef,
         issueKey: source.issueKey, purpose: 'Reauthorize exact saved lineage' }, saved)[0];
       if (canonicalJson(item) !== canonicalJson(expected)) throw summaryError('DERIVED_SUMMARY_SOURCE_WORK_CHANGED');
+      // Exact prior work may carry hidden native origins not displayed by this
+      // single PRIOR_RESULT. Its authorization never substitutes for theirs.
+      await this.verifyNativeEvidence(saved.state.problemWork?.evidence ?? [], actor, database);
     }
+    await this.verifyNativeEvidence(evidence, actor, database);
   }
 
   /** Original artifact IO happens after the caller has released its transaction. */
   async verifyOriginalEvidence(evidence: AssessmentEvidence[], actor: SummaryActor): Promise<void> {
+    await this.verifyNativeEvidence(evidence, actor);
     const originals = evidence.filter((item): item is Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }> =>
       item.kind === 'DOCUMENT_PASSAGE' && item.evidenceRef.startsWith('DOCUMENT_ORIGINAL:'));
-    if (!originals.length) return;
-    if (!this.originalReader) throw summaryError('DERIVED_SUMMARY_ORIGINAL_READER_UNAVAILABLE', 503);
+    const statementVerifier = this.sourceStatementVerifier(evidence);
+    if (!originals.length && !statementVerifier) return;
+    if (originals.length && !this.originalReader) throw summaryError('DERIVED_SUMMARY_ORIGINAL_READER_UNAVAILABLE', 503);
     const loaded = new Map<string, Awaited<ReturnType<UnifiedReaderService['readDocumentOriginal']>>>();
     await this.matters.withActorScope(actor.actorUserId, async () => {
+      if (statementVerifier) assertSourceStatementProjections(evidence,
+        await statementVerifier.readSourceStatementProjections(evidence, actor));
       for (const item of originals) {
         const prefix = `DOCUMENT_ORIGINAL:${item.documentVersionId}:`;
         const suffix = `:${item.sourceRefId}`;
@@ -204,7 +295,30 @@ export class DerivedSummaryMembersService {
         if (canonicalJson(item) !== canonicalJson(actual)) throw summaryError('DERIVED_SUMMARY_ORIGINAL_CHANGED');
       }
     });
+    await this.verifyNativeEvidence(evidence, actor);
   }
+  private sourceStatementVerifier(evidence: AssessmentEvidence[]): SummarySourceStatementVerifier | null {
+    const statements = evidence.filter(item => item.kind === 'PRIOR_RESULT' && Object.hasOwn(item, 'sourceStatement'));
+    if (!statements.length) return null;
+    for (const item of statements) {
+      const statement = (item as AssessmentEvidence & { sourceStatement: unknown }).sourceStatement;
+      if (statement === null || typeof statement !== 'object' || Array.isArray(statement))
+        throw summaryError('DERIVED_SUMMARY_SOURCE_STATEMENT_INVALID');
+    }
+    const verifier = this.jobAid as CanonicalJobAidProblemService & Partial<SummarySourceStatementVerifier>;
+    if (typeof verifier.assertSourceStatementReferences !== 'function' ||
+        typeof verifier.readSourceStatementProjections !== 'function')
+      throw summaryError('DERIVED_SUMMARY_SOURCE_STATEMENT_VERIFIER_UNAVAILABLE', 503);
+    return verifier as SummarySourceStatementVerifier;
+  }
+}
+
+function nativeResultCarriers(value: unknown, seen = new Set<object>()): AssessmentEvidence[] {
+  if (!value || typeof value !== 'object' || seen.has(value)) return [];
+  seen.add(value);
+  if (!Array.isArray(value) && (value as {kind?: unknown}).kind === 'TDMS_NATIVE_RECORD')
+    return [parseAssessmentTdmsEvidence(value)];
+  return Object.values(value).flatMap(item => nativeResultCarriers(item, seen));
 }
 
 function selectIssues(issues: JobAidProblemIssue[], keys: string[]): JobAidProblemIssue[] {
@@ -217,18 +331,100 @@ function completeBody(overview: string, issues: JobAidProblemIssue[]): string {
 function uniqueMembers(members: DerivedSummaryMember[]): DerivedSummaryMember[] {
   return [...new Map(members.map(member => [summaryMemberRef(member), member])).values()];
 }
+/** The registry has already validated exact bodies and receipt provenance.
+ * Member delivery retains each original carrier; a shared body never substitutes
+ * one READ receipt for another, including two receipts in the same saved leaf. */
+function retainSummaryNativeCarriers(registry: AssessmentEvidence[], carriers: AssessmentEvidence[]): AssessmentEvidence[] {
+  return registry.flatMap<AssessmentEvidence>(item => {
+    if (item.kind !== 'TDMS_NATIVE_RECORD') return [structuredClone(item)];
+    const native = carriers.filter((value): value is Extract<AssessmentEvidence, { kind: 'TDMS_NATIVE_RECORD' }> =>
+      value.kind === 'TDMS_NATIVE_RECORD' && value.evidenceRef === item.evidenceRef);
+    return [...new Map(native.map(value => [value.nativeReadReceipt.receiptRef, structuredClone(value)])).values()];
+  });
+}
+
 export function mergeSummaryEvidence(evidence: AssessmentEvidence[]): AssessmentEvidence[] {
   const registry = new Map<string, AssessmentEvidence>();
+  const nativeReceipts = new Map<string, string>();
   for (const item of evidence) {
+    if (item.kind === 'TDMS_NATIVE_RECORD') {
+      const native = parseAssessmentTdmsEvidence(item);
+      const oldReceipt = nativeReceipts.get(native.nativeReadReceipt.receiptRef);
+      if (oldReceipt !== undefined && oldReceipt !== canonicalJson(native)) throw summaryError('DERIVED_SUMMARY_EVIDENCE_IDENTITY_CONFLICT');
+      nativeReceipts.set(native.nativeReadReceipt.receiptRef, canonicalJson(native));
+    }
     const old = registry.get(item.evidenceRef);
-    if (old && canonicalJson(old) !== canonicalJson(item)) throw summaryError('DERIVED_SUMMARY_EVIDENCE_IDENTITY_CONFLICT');
+    if (old) {
+      if (old.kind === 'TDMS_NATIVE_RECORD' && item.kind === 'TDMS_NATIVE_RECORD') {
+        const { nativeReadReceipt: firstReceipt, ...first } = parseAssessmentTdmsEvidence(old);
+        const { nativeReadReceipt: nextReceipt, ...next } = parseAssessmentTdmsEvidence(item);
+        if (canonicalJson(first) !== canonicalJson(next) || (firstReceipt.receiptRef === nextReceipt.receiptRef && canonicalJson(firstReceipt) !== canonicalJson(nextReceipt)))
+          throw summaryError('DERIVED_SUMMARY_EVIDENCE_IDENTITY_CONFLICT');
+        // Keep one body/initial receipt; exact member snapshots retain every READ.
+        continue;
+      }
+      if (canonicalJson(old) !== canonicalJson(item)) throw summaryError('DERIVED_SUMMARY_EVIDENCE_IDENTITY_CONFLICT');
+    }
     registry.set(item.evidenceRef, structuredClone(item));
   }
   return [...registry.values()];
 }
 /** Currentness can change; exact saved content and roots cannot. */
 export function assertMemberSnapshot(before: DerivedSummaryMemberReading, after: DerivedSummaryMemberReading): void {
-  if (canonicalJson({ member: before.member, body: before.body, evidence: before.evidence, rootRefs: before.rootRefs }) !==
-    canonicalJson({ member: after.member, body: after.body, evidence: after.evidence, rootRefs: after.rootRefs }))
+  for (const reading of [before, after]) {
+    if (Object.hasOwn(reading, 'understanding') && (reading.member.kind === 'DERIVED_SUMMARY' ||
+        typeof reading.understanding !== 'string' || reading.body !== completeBody(reading.understanding, reading.issues)))
+      throw summaryError('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+  }
+  const immutable = ({ current: _current, overviewStatus: _overviewStatus, limitations: _limitations,
+    understanding, ...content }: DerivedSummaryMemberReading) =>
+    Object.hasOwn(before, 'understanding') ? { ...content, understanding } : content;
+  if (canonicalJson(immutable(before)) !== canonicalJson(immutable(after)))
     throw summaryError('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+}
+
+/** Consumer has already validated fresh original ACL, UTF-16 quotes and the full
+ * candidate/materialized SAVED value. This boundary checks exact output binding
+ * and version-dispatched completeness without converting or mutating its data. */
+function assertSourceStatementProjections(evidence: AssessmentEvidence[], projections: unknown[]): void {
+  const fail = (): never => { throw summaryError('DERIVED_SUMMARY_SOURCE_STATEMENT_PROJECTION_INVALID'); };
+  const object = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!Array.isArray(projections)) fail();
+  const selected = evidence.filter(item => item.kind === 'PRIOR_RESULT' && Object.hasOwn(item, 'sourceStatement'));
+  for (const item of selected) {
+    const carrier = (item as AssessmentEvidence & { sourceStatement: { reference: Record<string, unknown>; sourceBinding: unknown } }).sourceStatement;
+    const matches = projections.filter(object).flatMap(projection => {
+      if (projection.schemaVersion !== 'wiselink.document.activity-assessment-projection.v1' || projection.availability !== 'AVAILABLE' ||
+          canonicalJson(projection.sourceBinding) !== canonicalJson(carrier.sourceBinding) || !Array.isArray(projection.records) ||
+          !Array.isArray(projection.activityContexts)) return [];
+      return projection.records.filter(object).filter(record => record.ref === item.evidenceRef).map(record => ({ projection, record }));
+    });
+    if (matches.length !== 1) fail();
+    const { projection, record } = matches[0]!;
+    const statement = record.statement;
+    if (!object(statement)) throw summaryError('DERIVED_SUMMARY_SOURCE_STATEMENT_PROJECTION_INVALID');
+    if (record.candidateOnly !== true || canonicalJson(record.reference) !== canonicalJson(carrier.reference) ||
+        canonicalJson(record.sourceBinding) !== canonicalJson(carrier.sourceBinding) || !object(statement) ||
+        statement.statementId !== carrier.reference.statementId || statement.label !== item.excerpt ||
+        !Array.isArray(record.requiredContextRootRefs) ||
+        canonicalJson([...record.requiredContextRootRefs].sort()) !==
+          canonicalJson([...(item as Extract<AssessmentEvidence, { kind: 'PRIOR_RESULT' }>).originalEvidenceRefs].sort())) fail();
+    const context = (projection.activityContexts as unknown[]).filter(object).filter(value =>
+      value.runRef === carrier.reference.runRef && value.candidateRevision === carrier.reference.candidateRevision);
+    if (context.length !== 1 || !object(context[0]!.readCoverage)) fail();
+    if (record.sourceSchemaVersion === 'wiselink.document.activity-candidate.v1') {
+      if (record.semanticFieldsAvailability !== 'LEGACY_PARTIAL' || record.scopeBasis !== 'LEGACY_RUN_SCOPE') fail();
+    } else if (record.sourceSchemaVersion === 'wiselink.document.activity-candidate.v2') {
+      const sourceContext = context[0]!.sourceContext;
+      if (record.semanticFieldsAvailability !== 'V2_CAPTURED_FIELDS_ONLY' || record.scopeBasis !== 'ACTUAL_DELIVERED_RUN_SCOPE' ||
+          !object(sourceContext) || sourceContext.schemaVersion !== 'wiselink.document.activity-source-context.v1' ||
+          canonicalJson(sourceContext.sourceBinding) !== canonicalJson(carrier.sourceBinding) ||
+          !Array.isArray(sourceContext.sections) || !Array.isArray(sourceContext.organizationWarnings) ||
+          !['statementId','statementKey','label','quotes','subject','action','modality','status','times','technicalIds','scope','limitations']
+            .every(key => Object.hasOwn(statement, key)) || !Array.isArray(statement.quotes) || !statement.quotes.length ||
+          !Array.isArray(statement.times) || !Array.isArray(statement.technicalIds) || !Array.isArray(statement.limitations) ||
+          !object(statement.scope) || !Array.isArray(statement.scope.conditions) || !Array.isArray(statement.scope.sectionIds)) fail();
+    } else fail();
+  }
 }

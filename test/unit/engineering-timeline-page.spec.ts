@@ -13,6 +13,7 @@ const mockLibraryDocuments = jest.fn();
 const mockMatter = jest.fn();
 const mockSessionCallbacks = new Set<() => void>();
 let mockSessionGen = 1;
+let mockAuthenticationRequired = false;
 let mockDetail: any = null;
 let mockGraph: any = null;
 jest.mock('@lark-apaas/client-toolkit/logger', () => ({ logger: { error: jest.fn() } }));
@@ -27,7 +28,7 @@ jest.mock('@client/src/api/engineering-matter', () => ({
   getEngineeringMatter: (...args: unknown[]) => mockMatter(...args),
 }));
 jest.mock('../../client/src/app/providers/CurrentUserSessionProvider', () => ({
-  useCurrentUserSession: () => ({ sessionGeneration: mockSessionGen, authenticationRequired: false }),
+  useCurrentUserSession: () => ({ sessionGeneration: mockSessionGen, authenticationRequired: mockAuthenticationRequired }),
 }));
 jest.mock('@client/src/pages/DocumentParsingPage/DocumentActivityReadingView', () => ({
   __esModule: true, default: (props: any) => { mockDetail = props; return createElement('div', { 'data-testid': 'reading-detail', 'data-statement': props.selectedStatementId }, 'detail'); },
@@ -92,12 +93,12 @@ describe('engineering timeline page gates', () => {
     Object.defineProperty(globalThis, 'HTMLElement', { configurable: true, value: dom.window.HTMLElement });
     Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true });
     container = dom.window.document.getElementById('root');
-    mockStatus.mockReset(); mockActivity.mockReset(); mockLibraryDocuments.mockReset(); mockMatter.mockReset(); mockSessionGen = 1; mockDetail = null; mockSessionCallbacks.clear();
+    mockStatus.mockReset(); mockActivity.mockReset(); mockLibraryDocuments.mockReset(); mockMatter.mockReset(); mockSessionGen = 1; mockAuthenticationRequired = false; mockDetail = null; mockSessionCallbacks.clear();
   });
   afterEach(() => { act(() => root?.unmount()); router?.dispose(); dom.window.close(); });
 
-  async function mount(path: string) {
-    router = createMemoryRouter([{ path: '/document-versions/:documentVersionId/engineering-timeline', element: createElement(EngineeringTimelinePage) }, {path:'/timeline', element:createElement(EngineeringTimelinePage)}, {path:'/activity-graph', element:createElement(EngineeringTimelinePage, {view:'graph'})}, {path:'/document-versions/:documentVersionId/activities', element:createElement('div', null, 'activities')}], { initialEntries: [path] });
+  async function mount(path: string, basename?: string) {
+    router = createMemoryRouter([{ path: '/document-versions/:documentVersionId/engineering-timeline', element: createElement(EngineeringTimelinePage) }, {path:'/timeline', element:createElement(EngineeringTimelinePage)}, {path:'/activity-graph', element:createElement(EngineeringTimelinePage, {view:'graph'})}, {path:'/document-versions/:documentVersionId/activities', element:createElement('div', null, 'activities')}], { initialEntries: [path], basename });
     root = createRoot(container);
     await act(async () => root.render(createElement(RouterProvider, { router })));
   }
@@ -203,17 +204,44 @@ describe('engineering timeline page gates', () => {
     expect(container.textContent).toContain('未指定解析版本时');
   });
 
-  it('resolves a matter entry from the matter registered sources instead of the global catalog', async () => {
-    mockMatter.mockResolvedValue({ catalog: { entries: [matterEntry('DV-OLD', false), matterEntry('DV-CUR', true)] } });
+  it('offers all registered matter sources and opens the explicitly selected second source instead of the global catalog', async () => {
+    mockMatter.mockResolvedValue({ matterId: 'M1', title: '事项来源', catalog: { entries: [matterEntry('DV-OLD', false), matterEntry('DV-CUR', true)] } });
+    mockStatus.mockImplementation(() => new Promise(() => undefined));
     await mount('/timeline?matterId=M1');
     await act(async () => undefined);
     expect(mockMatter).toHaveBeenCalledTimes(1);
     expect(mockLibraryDocuments).not.toHaveBeenCalled();
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBeNull();
+    expect(mockStatus).not.toHaveBeenCalled();
+    expect(mockActivity).not.toHaveBeenCalled();
+    const choices = container.querySelector('[aria-label="事项时间轴来源"]')!;
+    expect(choices.textContent).toContain('DV-OLD');
+    expect(choices.textContent).toContain('DV-CUR');
+    await act(async () => [...choices.querySelectorAll('button')].find(button => button.textContent?.includes('DV-CUR'))!.click());
     expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBe('DV-CUR');
+    expect(new URLSearchParams(router.state.location.search).has('matterId')).toBe(false);
+  });
+
+  it('resolves a native acquired source without requiring a WorkItem and preserves its exact old version', async () => {
+    mockMatter.mockResolvedValue({ matterId: 'M1', title: '原生来源', materials: [
+      { kind: 'MEMBER', materialId: 'excluded', disposition: 'EXCLUDED', familyId: 'F', documentVersionId: 'DV-EXCLUDED' },
+      { kind: 'MEMBER', materialId: 'native', disposition: 'INCLUDED', familyId: 'F', documentVersionId: 'DV-NATIVE-OLD' },
+    ], catalog: { entries: [matterEntry('DV-EXCLUDED', false), matterEntry('DV-CUR', true)] } });
+    mockStatus.mockImplementation(() => new Promise(() => undefined));
+    await mount('/timeline?matterId=M1');
+    await act(async () => undefined);
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBeNull();
+    expect(mockStatus).not.toHaveBeenCalled();
+    const choices = container.querySelector('[aria-label="事项时间轴来源"]')!;
+    expect(choices.textContent).not.toContain('DV-EXCLUDED');
+    await act(async () => [...choices.querySelectorAll('button')].find(button => button.textContent?.includes('DV-NATIVE-OLD'))!.click());
+    expect(new URLSearchParams(router.state.location.search).get('documentVersionId')).toBe('DV-NATIVE-OLD');
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+    expect(mockStatus).toHaveBeenCalledWith('DV-NATIVE-OLD', expect.any(AbortSignal));
   });
 
   it('blocks a matter entry that registers no document version without falling back to the global catalog', async () => {
-    mockMatter.mockResolvedValue({ catalog: { entries: [] } });
+    mockMatter.mockResolvedValue({ matterId: 'M1', title: '空事项', catalog: { entries: [] } });
     await mount('/timeline?matterId=M1');
     await act(async () => undefined);
     expect(mockLibraryDocuments).not.toHaveBeenCalled();
@@ -430,7 +458,7 @@ describe('engineering timeline page gates', () => {
     expect(backQuery.get('anchor')).toBe('A1');
     expect(backQuery.get('window')).toBe('current-year');
     const lastRequest = mockActivity.mock.calls[mockActivity.mock.calls.length - 1][0];
-    expect(lastRequest).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: 2 });
+    expect(lastRequest).toEqual({ documentVersionId: 'DV1', parseRunId: 'PR1', candidateRevision: 2, acceptCandidateSchemaV2: true });
   });
 
   it('preserves the validated graph return through timeline selection and original reading', async () => {
@@ -540,6 +568,146 @@ describe('engineering timeline page gates', () => {
     await act(async () => { mockSessionGen += 1; mockSessionCallbacks.forEach(callback => callback()); });
     await act(async () => { oldComplete({items:[{versions:[{documentVersionId:'OLD-ACTOR-DV',selectedVersionIsCurrent:true}]}]}); });
     expect(router.state.location.search).not.toContain('OLD-ACTOR-DV');
+  });
+
+  function matterSources(matterId: string, versions: string[]) {
+    return { matterId, title: `来源 ${matterId}`, materials: versions.map(documentVersionId => ({
+      kind: 'MEMBER', materialId: documentVersionId, disposition: 'INCLUDED',
+      familyId: `family-${documentVersionId}`, documentVersionId,
+    })), catalog: { entries: [] } };
+  }
+
+  it('auto-replaces exactly one native source and retains window and router basename without mixed matter identity', async () => {
+    mockMatter.mockResolvedValue(matterSources('M1', ['DV-SINGLE']));
+    mockStatus.mockImplementation(() => new Promise(() => undefined));
+    await mount('/suite/timeline?matterId=M1&window=current-year', '/suite');
+    expect(router.state.historyAction).toBe('REPLACE');
+    expect(router.state.location.pathname).toBe('/suite/timeline');
+    expect(Object.fromEntries(new URLSearchParams(router.state.location.search)))
+      .toEqual({ window: 'current-year', documentVersionId: 'DV-SINGLE' });
+    expect(mockStatus).toHaveBeenCalledWith('DV-SINGLE', expect.any(AbortSignal));
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+  });
+
+  it('requires explicit exact source choice under the router basename and preserves reading parameters', async () => {
+    mockMatter.mockResolvedValue(matterSources('M1', ['DV-ONE', 'DV-TWO']));
+    mockStatus.mockImplementation(() => new Promise(() => undefined));
+    await mount('/suite/timeline?matterId=M1&window=current-year', '/suite');
+    expect(router.state.historyAction).toBe('POP');
+    expect(mockStatus).not.toHaveBeenCalled();
+    expect(mockActivity).not.toHaveBeenCalled();
+    const choices = container.querySelector('[aria-label="事项时间轴来源"]')!;
+    await act(async () => [...choices.querySelectorAll('button')].find(button => button.textContent === 'DV-TWO')!.click());
+    expect(router.state.historyAction).toBe('PUSH');
+    expect(router.state.location.pathname).toBe('/suite/timeline');
+    expect(Object.fromEntries(new URLSearchParams(router.state.location.search)))
+      .toEqual({ window: 'current-year', documentVersionId: 'DV-TWO' });
+    expect(mockStatus).toHaveBeenCalledWith('DV-TWO', expect.any(AbortSignal));
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+  });
+
+  it('rejects a different response matter identity before navigation or document reads', async () => {
+    mockMatter.mockResolvedValue(matterSources('OTHER', ['DV-UNRELATED']));
+    await mount('/timeline?matterId=M1');
+    expect(container.textContent).toContain('事项来源读取受阻');
+    expect(container.querySelector('[aria-label="事项时间轴来源"]')).toBeNull();
+    expect(new URLSearchParams(router.state.location.search).get('matterId')).toBe('M1');
+    expect(mockStatus).not.toHaveBeenCalled();
+    expect(mockActivity).not.toHaveBeenCalled();
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+  });
+
+  it('keeps excluded-only sources empty even when the old catalog still contains the exact version', async () => {
+    const read = matterSources('M1', ['DV-EXCLUDED']);
+    read.materials[0].disposition = 'EXCLUDED';
+    mockMatter.mockResolvedValue({ ...read, catalog: { entries: [matterEntry('DV-EXCLUDED', true)] } });
+    await mount('/timeline?matterId=M1');
+    expect(container.textContent).toContain('该事项没有已登记的文档版本');
+    expect(container.querySelector('[aria-label="事项时间轴来源"]')).toBeNull();
+    expect(mockStatus).not.toHaveBeenCalled();
+    expect(mockLibraryDocuments).not.toHaveBeenCalled();
+  });
+
+  it('removes visible choices immediately when the matter route changes and ignores the old response', async () => {
+    let completeSecond!: (value: unknown) => void;
+    mockMatter.mockResolvedValueOnce(matterSources('M1', ['DV-A1', 'DV-A2']))
+      .mockImplementationOnce(() => new Promise(resolve => { completeSecond = resolve; }));
+    await mount('/timeline?matterId=M1');
+    expect(container.textContent).toContain('DV-A2');
+    await act(async () => router.navigate('/timeline?matterId=M2'));
+    expect(container.querySelector('[aria-label="事项时间轴来源"]')).toBeNull();
+    expect(container.textContent).not.toContain('DV-A2');
+    await act(async () => completeSecond(matterSources('M2', ['DV-B1', 'DV-B2'])));
+    expect(container.textContent).toContain('DV-B2');
+    expect(container.textContent).not.toContain('DV-A2');
+    expect(mockStatus).not.toHaveBeenCalled();
+  });
+
+  it.each(['resolve', 'reject'])('ignores an old matter %s after changing routes', async settlement => {
+    let complete!: (value: unknown) => void;
+    let fail!: (error: Error) => void;
+    mockMatter.mockImplementationOnce(() => new Promise((resolve, reject) => { complete = resolve; fail = reject; }))
+      .mockResolvedValueOnce(matterSources('M2', ['DV-B1', 'DV-B2']));
+    await mount('/timeline?matterId=M1');
+    const oldSignal = mockMatter.mock.calls[0][1] as AbortSignal;
+    await act(async () => router.navigate('/timeline?matterId=M2'));
+    expect(oldSignal.aborted).toBe(true);
+    await act(async () => { if (settlement === 'resolve') complete(matterSources('M1', ['DV-OLD'])); else fail(new Error('old failure')); });
+    expect(container.textContent).toContain('DV-B2');
+    expect(container.textContent).not.toContain('事项来源读取受阻');
+    expect(router.state.location.search).toBe('?matterId=M2');
+    expect(mockStatus).not.toHaveBeenCalled();
+  });
+
+  it('removes old choices during session refresh and does not reuse them in the new session', async () => {
+    let complete!: (value: unknown) => void;
+    mockMatter.mockResolvedValueOnce(matterSources('M1', ['DV-OLD1', 'DV-OLD2']))
+      .mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    await mount('/timeline?matterId=M1');
+    expect(container.textContent).toContain('DV-OLD2');
+    await act(async () => { mockSessionGen += 1; mockSessionCallbacks.forEach(callback => callback()); });
+    expect(container.querySelector('[aria-label="事项时间轴来源"]')).toBeNull();
+    expect(container.textContent).not.toContain('DV-OLD2');
+    await act(async () => complete(matterSources('M1', ['DV-NEW1', 'DV-NEW2'])));
+    expect(container.textContent).toContain('DV-NEW2');
+    expect(container.textContent).not.toContain('DV-OLD2');
+  });
+
+  it.each(['resolve', 'reject'])('ignores late matter %s when the API session changed before React refresh', async settlement => {
+    let complete!: (value: unknown) => void;
+    let fail!: (error: Error) => void;
+    mockMatter.mockImplementationOnce(() => new Promise((resolve, reject) => { complete = resolve; fail = reject; }));
+    await mount('/timeline?matterId=M1');
+    mockSessionGen += 1;
+    await act(async () => { if (settlement === 'resolve') complete(matterSources('M1', ['DV-OLD'])); else fail(new Error('old-session failure')); });
+    expect(container.textContent).not.toContain('事项来源读取受阻');
+    expect(container.querySelector('[aria-label="事项时间轴来源"]')).toBeNull();
+    expect(mockStatus).not.toHaveBeenCalled();
+    expect(router.state.location.search).toBe('?matterId=M1');
+  });
+
+  it('puts authentication-required ahead of old source choices', async () => {
+    mockMatter.mockResolvedValue(matterSources('M1', ['DV-ONE', 'DV-TWO']));
+    await mount('/timeline?matterId=M1');
+    expect(container.querySelector('[aria-label="事项时间轴来源"]')).not.toBeNull();
+    await act(async () => { mockAuthenticationRequired = true; mockSessionGen += 1; mockSessionCallbacks.forEach(callback => callback()); });
+    expect(container.textContent).toContain('请先登录');
+    expect(container.querySelector('[aria-label="事项时间轴来源"]')).toBeNull();
+    expect(mockMatter).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves a matter-only identity switching timeline and activity graph before choosing a document', async () => {
+    mockMatter.mockResolvedValue(matterSources('M1', ['DV-ONE', 'DV-TWO']));
+    await mount('/suite/timeline?matterId=M1&window=current-year', '/suite');
+    const nav = container.querySelector('[aria-label="三视图入口"]')!;
+    await act(async () => [...nav.querySelectorAll('button')].find(button => button.textContent === '图谱')!.click());
+    expect(router.state.location.pathname).toBe('/suite/activity-graph');
+    expect(Object.fromEntries(new URLSearchParams(router.state.location.search))).toEqual({ window: 'current-year', matterId: 'M1' });
+    await act(async () => [...container.querySelector('[aria-label="三视图入口"]')!.querySelectorAll('button')].find(button => button.textContent === '时间轴')!.click());
+    expect(router.state.location.pathname).toBe('/suite/timeline');
+    expect(new URLSearchParams(router.state.location.search).get('matterId')).toBe('M1');
+    expect(mockStatus).not.toHaveBeenCalled();
+    expect(mockActivity).not.toHaveBeenCalled();
   });
 
 });

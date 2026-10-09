@@ -19,8 +19,10 @@ export function useSuiteMatterGraph(
     authenticationRequired,
   );
   const current = workspace.data?.working.current ?? null;
+  // Resolve the authorized workspace before deciding whether an exact work is
+  // historical. A cold pinned-current entry must not probe the history endpoint.
   const needsHistory = Boolean(
-    workRef && current?.matterWorkRevisionId !== workRef,
+    workRef && workspace.data && current?.matterWorkRevisionId !== workRef,
   );
   const historical = useEngineeringMatterWorkingRevision(
     matterId,
@@ -61,10 +63,10 @@ export function useSuiteMatterGraph(
     workspace.data,
     workspace.revoked,
   ]);
-  const readError = workspace.error ?? historical.error;
+  const readError = workspace.error ?? (needsHistory ? historical.error : null);
   const blockingError =
     workspace.revoked ||
-    historical.revoked ||
+    (needsHistory && historical.revoked) ||
     !workspace.data ||
     (needsHistory && !revision) ||
     (!projection.graph && Boolean(projection.error))

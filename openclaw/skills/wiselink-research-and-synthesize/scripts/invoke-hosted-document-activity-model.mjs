@@ -12,6 +12,7 @@
 // readiness check and checkpoint store; it never calls
 // invokeHostedReviewModel and never sends ACTIVITY_BEGIN.
 
+import { isDeepStrictEqual } from 'node:util';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -32,11 +33,24 @@ import { WISELINK_PROFILE_REF, canonicalJson, canonicalSha256 } from './validate
 /** From shared/document-activity.interface.ts via the activity consumer. */
 import {
   DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA,
+  DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA,
   consumeHostedDocumentActivity,
 } from './consume-hosted-document-activity.mjs';
+import {
+  DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA,
+  ACTIVITY_MODEL_V2_PROMPT_VERSION, ACTIVITY_MODEL_V2_RECOVERED_USER_PREFIX,
+  activityV2ProductionContract, activityV2ProposalFunctionTool,
+  activityV2QuoteSelectionFunctionTool, activityV2SystemMessage,
+} from './document-activity-model-contract.mjs';
+import { validateActivitySourceContext } from './merge-document-activity-source-context.mjs';
+export {
+  ACTIVITY_MODEL_V2_PROMPT_VERSION, ACTIVITY_MODEL_V2_SOURCE_CONTEXT_PROMPT_VERSION,
+  ACTIVITY_MODEL_V2_SOURCE_CONTEXT_SELECTION_PROMPT_VERSION, activityV2ProductionContract,
+} from './document-activity-model-contract.mjs';
 
 export const ACTIVITY_PROPOSAL_FUNCTION_NAME = 'return_wiselink_activity_proposal';
 export const ACTIVITY_MODEL_PROMPT_VERSION = 'wiselink.document.activity_model_prompt.v1';
+export const ACTIVITY_MODEL_QUOTE_SELECTION_PROMPT_VERSION = 'wiselink.document.activity_quote_selection_rebuild_prompt.v1';
 const MAX_GATEWAY_BYTES = 4 * 1024 * 1024;
 
 const ACTIVITY_TIME_SCHEMA = {
@@ -53,7 +67,9 @@ const ACTIVITY_TIME_SCHEMA = {
 
 /** The only output channel: proposal {schemaVersion, statements}. The schema
  * mirrors the Host's proposalSchema; nothing else may appear in arguments. */
-export function activityProposalFunctionTool() {
+export function activityProposalFunctionTool(candidateSchemaVersion = DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA) {
+  if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2) return activityV2ProposalFunctionTool();
+  if (candidateSchemaVersion !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA) throw new Error('ACTIVITY_MODEL_SCHEMA_INVALID');
   return {
     type: 'function',
     function: {
@@ -98,7 +114,73 @@ export function activityProposalFunctionTool() {
   };
 }
 
+/** New rebuild transport, independent of the unchanged default numeric producer. */
+export function activityQuoteSelectionFunctionTool(candidateSchemaVersion = DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA) {
+  if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2) return activityV2QuoteSelectionFunctionTool();
+  const tool = activityProposalFunctionTool(candidateSchemaVersion);
+  const parameters = tool.function.parameters;
+  parameters.required.push('quoteSelectionSchemaVersion');
+  parameters.properties.quoteSelectionSchemaVersion = { type: 'string', enum: [DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA] };
+  const quote = parameters.properties.statements.items.properties.quotes.items;
+  quote.required = ['anchorId', 'text'];
+  delete quote.properties.start;
+  delete quote.properties.end;
+  return tool;
+}
+function quoteSelectionMessages(input) {
+  if (input.quoteSelectionSchemaVersion !== DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA)
+    throw new Error('ACTIVITY_QUOTE_SELECTION_SCHEMA_INVALID');
+  if (input.candidateSchemaVersion !== undefined && input.candidateSchemaVersion !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA)
+    throw new Error('ACTIVITY_MODEL_SCHEMA_INVALID');
+  const { quoteSelectionSchemaVersion: _transport, ...source } = input;
+  const messages = activityModelMessages(source);
+  messages[0].content = messages[0].content
+    .replace('The proposal has exactly two fields: schemaVersion and statements.',
+      'The transport proposal has exactly schemaVersion, quoteSelectionSchemaVersion and statements.')
+    .replace('copy anchorId, start, end and text from the delivered anchors, never retype or paraphrase them.',
+      'select only anchorId and exact verbatim text from one delivered anchor, without retyping or paraphrasing the source.');
+  messages[0].content += `\nUse quoteSelectionSchemaVersion ${DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA}. Each quote has exactly anchorId and text. Never generate start/end offsets or extra source/version/authority fields. Host resolves exact UTF-16 ranges from its actual READ inventory. Each text must occur exactly once within its cited anchor; repeated wording needs a longer exact verbatim passage or a narrower already-delivered anchor. Never choose the first occurrence, invent surrounding text, drop a supported proposition or change semantic fields to pass locator validation. Successful locator resolution does not prove semantic correctness, execution or engineering adoption.`;
+  messages[1].content = `Return the explicit exact-quote-selection transport for this v1 candidate using only Host-delivered anchors.\nINPUT:\n${canonicalJson(input)}`;
+  return messages;
+}
+
+function modelContractForInput(input) {
+  const schema = input.candidateSchemaVersion ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA;
+  if (schema !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA && schema !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2)
+    throw new Error('ACTIVITY_MODEL_SCHEMA_INVALID');
+  if (input.quoteSelectionSchemaVersion !== undefined && input.quoteSelectionSchemaVersion !== DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA)
+    throw new Error('ACTIVITY_QUOTE_SELECTION_SCHEMA_INVALID');
+  const selection = input.quoteSelectionSchemaVersion === DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA;
+  const tool = selection ? activityQuoteSelectionFunctionTool(schema) : activityProposalFunctionTool(schema);
+  if (schema === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA) {
+    if (input.productionContract != null || input.sourceContext !== undefined) throw new Error('ACTIVITY_MODEL_SCHEMA_INVALID');
+    return { schema, selection, sourceContext: false, tool,
+      promptVersion: selection ? ACTIVITY_MODEL_QUOTE_SELECTION_PROMPT_VERSION : ACTIVITY_MODEL_PROMPT_VERSION,
+      toolSchemaSha256: canonicalSha256([tool]) };
+  }
+  const sourceContext = input.sourceContext !== undefined;
+  if (selection && !sourceContext) throw new Error('ACTIVITY_MODEL_SCHEMA_INVALID');
+  if (sourceContext) {
+    validateActivitySourceContext(input.sourceContext, { sourceBinding: input.sourceBinding,
+      ...(input.units ? { units: input.units } : {}),
+      ...(input.deliveredRanges ? { deliveredRanges: input.deliveredRanges } : {}),
+      ...(input.sectionIds ? { selectedSectionIds: input.sectionIds } : {}) });
+    const productionContract = activityV2ProductionContract(selection ? DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA : DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA);
+    if (!isDeepStrictEqual(input.productionContract, productionContract)) throw new Error('ACTIVITY_PRODUCTION_CONTRACT_INVALID');
+    return { schema, selection, sourceContext: true, tool, ...productionContract };
+  }
+  if (input.productionContract != null) throw new Error('ACTIVITY_PRODUCTION_CONTRACT_INVALID');
+  return { schema, selection, sourceContext: false, tool,
+    promptVersion: ACTIVITY_MODEL_V2_PROMPT_VERSION, toolSchemaSha256: canonicalSha256([tool]) };
+}
+
 export function activityModelMessages(input) {
+  const contract = modelContractForInput(input);
+  if (contract.schema === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2) return [
+    { role: 'system', content: activityV2SystemMessage(contract) },
+    { role: 'user', content: `${ACTIVITY_MODEL_V2_RECOVERED_USER_PREFIX}INPUT:\n${canonicalJson(input)}` },
+  ];
+  if (input?.quoteSelectionSchemaVersion !== undefined) return quoteSelectionMessages(input);
   const system = [
     `Use ${ACTIVITY_PROPOSAL_FUNCTION_NAME} exactly once to serialize the document-activity candidate proposal. It is a serialization channel only and is never executed; emit no assistant prose or private reasoning outside its arguments.`,
     'The proposal has exactly two fields: schemaVersion and statements. Each statement has exactly statementKey, label, quotes, time, statusRaw and limitations. Every quote must be an exact verbatim slice of one delivered anchor: copy anchorId, start, end and text from the delivered anchors, never retype or paraphrase them. time.raw and statusRaw must appear verbatim inside that statement\'s quotes; a non-CALENDAR time expression must use precision UNKNOWN.',
@@ -127,6 +209,7 @@ function requiredOption(value, code) {
 export async function invokeHostedDocumentActivityModel(input, options = {}, dependencies = {}) {
   if (input == null || typeof input !== 'object')
     throw new Error('ACTIVITY_MODEL_INPUT_INVALID');
+  const contract = modelContractForInput(input);
   const modelHeaders = executionModelHeaders(options);
   const gatewayUrl = requiredOption(options.gatewayUrl, 'ACTIVITY_GATEWAY_URL_REQUIRED');
   const gatewayToken = requiredOption(options.gatewayToken, 'ACTIVITY_GATEWAY_TOKEN_REQUIRED');
@@ -162,7 +245,7 @@ export async function invokeHostedDocumentActivityModel(input, options = {}, dep
         model: `openclaw/${agentId}`,
         user: `activity-driver:${canonicalSha256(input).slice(0, 24)}`,
         messages: activityModelMessages(input),
-        tools: [activityProposalFunctionTool()],
+        tools: [contract.tool],
         tool_choice: 'required',
         parallel_tool_calls: false,
         n: 1,
@@ -185,19 +268,28 @@ export async function invokeHostedDocumentActivityModel(input, options = {}, dep
   }
   if (!response.ok) throw new Error(`ACTIVITY_GATEWAY_HTTP_${response.status}`);
   const choice = payload.choices?.[0];
-  const toolCall = choice?.message?.tool_calls?.[0];
-  if (toolCall?.type !== 'function' ||
+  const message = choice?.message;
+  const toolCall = message?.tool_calls?.[0];
+  if (!Array.isArray(payload.choices) || payload.choices.length !== 1 ||
+      !Array.isArray(message?.tool_calls) || message.tool_calls.length !== 1 ||
+      (message.content !== undefined && message.content !== null && message.content !== '') ||
+      ['reasoning_content', 'reasoning', 'analysis', 'text', 'audio'].some(key => message[key] != null && message[key] !== '') ||
+      message.function_call !== undefined || message.refusal != null ||
+      toolCall?.type !== 'function' ||
       toolCall.function?.name !== ACTIVITY_PROPOSAL_FUNCTION_NAME)
     throw new Error('ACTIVITY_MODEL_TOOL_CALL_INVALID');
   const proposal = parseStrictJsonObject(toolCall.function.arguments);
+  if (proposal.schemaVersion !== contract.schema) throw new Error('ACTIVITY_MODEL_SCHEMA_INVALID');
   const modelVersion = actualModelVersion(
-    payload, choice, choice.message, configuredModelVersion);
+    payload, choice, choice.message, contract.schema === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? undefined : configuredModelVersion);
   return {
     proposal,
     modelVersion,
     provenance: {
       modelVersion,
-      promptVersion: ACTIVITY_MODEL_PROMPT_VERSION,
+      promptVersion: contract.promptVersion,
+      toolSchemaSha256: contract.toolSchemaSha256,
+      ...(contract.sourceContext ? { sourceContextVersion: contract.sourceContextVersion, quoteTransportVersion: contract.quoteTransportVersion } : {}),
       inputHash: canonicalSha256(input),
     },
   };
@@ -213,7 +305,7 @@ function option(argv, name) {
  * documentVersionId and runRef; every file is 0600 inside a 0700 root. */
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node invoke-hosted-document-activity-model.mjs --document-version-id DV [--activity-run-ref ID] [--lease-owner ID] [--checkpoint-root PATH] [--openclaw-config PATH] [--agent ID]\nConsumes one already-begun Host document-activity run end to end. Never sends ACTIVITY_BEGIN; a null pending discovery stays idle.\n');
+    process.stdout.write('Usage: node invoke-hosted-document-activity-model.mjs --document-version-id DV [--activity-run-ref ID] [--lease-owner ID] [--checkpoint-root PATH] [--openclaw-config PATH] [--agent ID] [--candidate-schema-version VERSION] [--exact-quote-selection]\nConsumes one already-begun Host document-activity run end to end. Never sends ACTIVITY_BEGIN; a null pending discovery stays idle.\n');
     return;
   }
   const documentVersionId = option(argv, '--document-version-id');
@@ -233,7 +325,7 @@ async function main(argv, env) {
   const connection = await createHostMcpConnection(runtime);
   try {
     const result = await consumeHostedDocumentActivity(
-      { documentVersionId, runRef, leaseOwner },
+      { documentVersionId, runRef, leaseOwner, candidateSchemaVersion: option(argv, '--candidate-schema-version') ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, ...(argv.includes('--exact-quote-selection') ? { quoteSelectionSchemaVersion: DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA } : {}) },
       {
         callTool: connection.callTool,
         checkpointFactory,

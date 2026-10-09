@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react';
 import cytoscape, { type Core } from 'cytoscape';
 import { Button } from '@client/src/components/ui/button';
-import type { DocumentActivityReadingResponse } from '@shared/document-activity.interface';
+import type { AnyDocumentActivityReadingResponse as DocumentActivityReadingResponse } from '@shared/document-activity.interface';
+import { documentActivityStatementTimes, documentActivityStatementStatusRaw, isDocumentActivityStatementV2 } from '@shared/document-activity.interface';
+import { activityStatementTimeText } from './document-activity-presentation';
+import DocumentActivityStatementSemantics from './DocumentActivityStatementSemantics';
 import { activityGraphNodeId, buildActivityGraphElements, selectionForGraphNode } from './document-activity-graph';
 import './document-activity-graph.css';
 
@@ -75,8 +78,9 @@ export default function DocumentActivityGraphView({ reading, selectedStatementId
         <div className="activity-graph-eyebrow">仅该保存候选的引文关系</div>
         {selectedStatement ? <>
           <h2>{selectedStatement.label}</h2>
-          <p className="activity-graph-lead">{selectedStatement.time?.raw ?? '当前声明没有已保存的时间原词。'}</p>
-          <dl><dt>声明标识</dt><dd>{selectedStatement.statementId}</dd><dt>时间性质</dt><dd>{selectedStatement.time?.role ?? 'UNKNOWN'}</dd><dt>状态原词</dt><dd>{selectedStatement.statusRaw ?? '未提供'}</dd><dt>准确来源</dt><dd>{reading.binding.documentVersionId}<br />{reading.binding.parseRunId}</dd></dl>
+          <p className="activity-graph-lead">{activityStatementTimeText(selectedStatement, '当前声明没有已保存的时间原词。')}</p>
+          <dl><dt>声明标识</dt><dd>{selectedStatement.statementId}</dd><dt>时间性质</dt><dd>{documentActivityStatementTimes(selectedStatement).map((time) => time.role).join('；') || (isDocumentActivityStatementV2(selectedStatement) ? '本候选未捕获' : 'UNKNOWN')}</dd><dt>状态原词</dt><dd>{documentActivityStatementStatusRaw(selectedStatement) ?? (isDocumentActivityStatementV2(selectedStatement) ? '本候选未捕获' : '未提供')}</dd><dt>准确来源</dt><dd>{reading.binding.documentVersionId}<br />{reading.binding.parseRunId}</dd></dl>
+          <DocumentActivityStatementSemantics statement={selectedStatement} />
           {selectedStatement.limitations.length ? <div className="activity-graph-limitations"><strong>限制</strong>{selectedStatement.limitations.map((item) => <p key={item}>{item}</p>)}</div> : null}
           <section className="activity-graph-inspector-section"><h3>保存的引文关系</h3>{selectedStatement.quotes.length ? selectedStatement.quotes.map((quote, index) => <button type="button" className={selectedAnchorId === quote.anchorId ? 'selected' : ''} key={`${quote.anchorId}:${index}`} onClick={() => onSelectLocation(selectedStatement.statementId, quote.anchorId)}><span>“{quote.text}”</span><small>锚点 {quote.anchorId}</small></button>) : <p>该声明没有保存逐条引用。</p>}</section>
           <Button size="sm" onClick={onReturnTimeline}>查看同一声明历程</Button>

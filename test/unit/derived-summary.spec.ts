@@ -1,8 +1,8 @@
 import { z } from 'zod/v4';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { DerivedSummaryMemberReading } from '@shared/derived-summary.interface';
-import { parseSummaryRequest, parseSummaryContent, summaryCitations, summaryMemberRef } from '../../server/modules/canonical-host/derived-summary.validation';
-import { assertMemberSnapshot, mergeSummaryEvidence } from '../../server/modules/canonical-host/derived-summary-members.service';
+import { assertSummaryReplay, parseSummaryRequest, parseSummaryContent, summaryCitations, summaryMemberRef } from '../../server/modules/canonical-host/derived-summary.validation';
+import { DerivedSummaryMembersService, assertMemberSnapshot, mergeSummaryEvidence } from '../../server/modules/canonical-host/derived-summary-members.service';
 import { registerDerivedSummaryAttemptMcpTools } from '../../server/modules/canonical-host/derived-summary-attempt-mcp-tools';
 
 const member = { kind: 'WORK_ITEM_WORK' as const, workItemId: 'WI-selected', documentVersionId: 'DV-old',
@@ -15,11 +15,32 @@ const source: AssessmentEvidence = { kind: 'DOCUMENT_PASSAGE', evidenceRef: 'sou
   documentVersionId: member.documentVersionId, sourceRefId: 'SR-one', locator: '正文第一段' };
 
 describe('Explicit candidate aggregate admission', () => {
+  it('keeps legacy purpose absent, accepts explicit synthesis, and restricts revision to an existing update', () => {
+    expect(Object.hasOwn(parseSummaryRequest(request), 'purpose')).toBe(false);
+    expect(parseSummaryRequest({ ...request, purpose: 'SYNTHESIZE' })).toMatchObject({ purpose: 'SYNTHESIZE' });
+    expect(parseSummaryRequest({ ...request, purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 1 }, true))
+      .toMatchObject({ purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 1 });
+    expect(() => parseSummaryRequest({ ...request, purpose: 'REVISE_SAVED_SUMMARY' })).toThrow('DERIVED_SUMMARY_PRIOR_REQUIRED');
+    expect(() => parseSummaryRequest({ ...request, purpose: 'REVISE_SAVED_SUMMARY', expectedSummaryRevision: 0 }, true))
+      .toThrow('DERIVED_SUMMARY_PRIOR_REQUIRED');
+  });
+  it.each([null, undefined, 'REVISE', 1, {}])('rejects explicitly malformed purpose %s without defaulting', purpose => {
+    expect(() => parseSummaryRequest({ ...request, purpose })).toThrow('DERIVED_SUMMARY_PURPOSE_INVALID');
+  });
+  it('normalizes absent/synthesis only for replay comparison and preserves old bytes', () => {
+    const before = JSON.stringify(request);
+    expect(() => assertSummaryReplay(request, { ...request, purpose: 'SYNTHESIZE' })).not.toThrow();
+    expect(JSON.stringify(request)).toBe(before);
+    expect(() => assertSummaryReplay(request, { ...request, purpose: 'REVISE_SAVED_SUMMARY' }))
+      .toThrow('DERIVED_SUMMARY_REQUEST_ID_REUSED');
+    expect(() => assertSummaryReplay(request, { ...request, instruction: 'Altered request' }))
+      .toThrow('DERIVED_SUMMARY_REQUEST_ID_REUSED');
+  });
   it('keeps exact saved work, issues and user-selected scope, with an explicit Hosted route', () => {
     expect(parseSummaryRequest(request)).toEqual(request);
     expect(parseSummaryRequest({ ...request, expectedSummaryRevision: 1 }, true)).toMatchObject({ expectedSummaryRevision: 1 });
   });
-  it.each(['tenantId', 'actorUserId', 'modelInput', 'producer', 'authority'])('rejects caller %s authority/content', key => {
+  it.each(['tenantId', 'actorUserId', 'modelInput', 'producer', 'authority', 'contextBasis'])('rejects caller %s authority/content', key => {
     expect(() => parseSummaryRequest({ ...request, [key]: 'forged' })).toThrow('DERIVED_SUMMARY_INPUT_INVALID');
   });
   it('rejects node/Matter impersonation, invalid ATA parentage and duplicate exact members', () => {
@@ -53,6 +74,31 @@ describe('Explicit candidate aggregate admission', () => {
     expect(() => summaryCitations(content, new Set(['member-ref']))).toThrow('DERIVED_SUMMARY_CITATION_INVALID');
     expect(() => parseSummaryContent({ ...content, members: ['forged'] })).toThrow();
   });
+  it('validates registered headline/listBrief refs while retaining only body/limitation refs for use', () => {
+    const allowed = new Set(['member-ref', 'source-old']);
+    const content = parseSummaryContent({ headline: '成员标题 [[member-ref]]', listBrief: '摘要 [[member-ref]]',
+      body: '原文依据 [[source-old]]', limitations: [] });
+    expect(summaryCitations(content, allowed)).toEqual(['source-old']);
+    const bodyRefs = summaryCitations({ ...content, limitations: [] }, allowed);
+    expect(bodyRefs.includes('member-ref')).toBe(false);
+    expect(summaryCitations({ ...content, limitations: ['限制 [[member-ref]]'] }, allowed)).toEqual(['source-old', 'member-ref']);
+  });
+  it.each(['headline', 'listBrief'] as const)('rejects an unregistered %s citation without changing the content', field => {
+    const content = parseSummaryContent({ headline: '成员标题', listBrief: '有限范围', body: '依据 [[source-old]]', limitations: [] });
+    content[field] = '未知引用 [[foreign-header]]';
+    const before = JSON.stringify(content);
+    expect(() => summaryCitations(content, new Set(['member-ref', 'source-old'])))
+      .toThrow('DERIVED_SUMMARY_CITATION_INVALID');
+    expect(JSON.stringify(content)).toBe(before);
+  });
+  it('does not let registered header citations satisfy the runtime body-support check', () => {
+    const content = parseSummaryContent({ headline: '标题 [[member-ref]]', listBrief: '摘要 [[source-old]]',
+      body: '没有正文支持引用', limitations: ['限制 [[member-ref]]'] });
+    const allowed = new Set(['member-ref', 'source-old']);
+    // Runtime checks body separately from the preserved body/limitations union.
+    expect(summaryCitations(content, allowed)).toEqual(['member-ref']);
+    expect(() => summaryCitations({ ...content, limitations: [] }, allowed)).toThrow('DERIVED_SUMMARY_CITATION_INVALID');
+  });
 });
 
 describe('Derived summary MCP exact subject and transport', () => {
@@ -83,5 +129,79 @@ describe('Derived summary MCP exact subject and transport', () => {
     const schema = z.toJSONSchema(f.definition.inputSchema) as { oneOf?: unknown[]; anyOf?: unknown[] };
     expect((schema.oneOf ?? schema.anyOf)?.length).toBe(10);
     expect(() => f.call({ ...target, operation: 'FINISH', result: { fakeSuccess: true } })).toThrow();
+  });
+});
+
+
+describe('Exact optional work understanding', () => {
+  const understanding = '条件与尾部前提保持原样\nOnly if BOTH conditions hold; effect is unverified.\n';
+  const issues: DerivedSummaryMemberReading['issues'] = [
+    { issueKey: 'first', question: '条件一？', body: '完整问题一与[[source-old]]' },
+    { issueKey: 'second', question: 'Condition two?', body: 'Tail premise: not implemented or verified.' },
+  ] as never;
+  const body = `${understanding}\n\n${issues.map(issue => `问题 ${issue.issueKey}：${issue.question}\n${issue.body}`).join('\n\n')}`;
+  const split: DerivedSummaryMemberReading = { member, evidenceRef: 'member-ref', headline: 'Complete selected work',
+    understanding, body, issues, evidence: [source], rootRefs: [source.evidenceRef], leaves: [member],
+    limitations: ['Selected only'], current: false, overviewStatus: 'STALE' };
+
+  it('requires exact reconstruction and split content while allowing fresh notices', () => {
+    expect(() => assertMemberSnapshot(split, { ...split, current: true, overviewStatus: 'CURRENT', limitations: ['Fresh notice'] })).not.toThrow();
+    expect(() => assertMemberSnapshot(split, { ...split, understanding: understanding + 'changed' })).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+    expect(() => assertMemberSnapshot(split, { ...split, body: body + 'changed' })).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+    expect(() => assertMemberSnapshot(split, { ...split, issues: [...issues].reverse() })).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+    const { understanding: ignored, ...missing } = split;
+    expect(() => assertMemberSnapshot(split, missing)).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+  });
+  it('keeps old complete body exact when the reader adds a valid understanding', () => {
+    const { understanding: ignored, ...old } = split;
+    expect(() => assertMemberSnapshot(old, split)).not.toThrow();
+    expect(() => assertMemberSnapshot(old, { ...split, headline: 'New headline' })).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+    expect(() => assertMemberSnapshot(old, { ...split, rootRefs: [] })).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+    expect(() => assertMemberSnapshot(old, { ...split, leaves: [] })).toThrow('DERIVED_SUMMARY_MEMBER_CONTENT_CHANGED');
+  });
+  it.each(['WORK_ITEM_WORK', 'MATTER_WORK'] as const)('reads %s persisted understanding on the handed transaction', async kind => {
+    const selected = kind === 'WORK_ITEM_WORK' ? { ...member, issueKeys: [] } :
+      { kind, matterId: 'MAT-exact', workRef: 'MWR-exact', workRevision: 7, issueKeys: [] };
+    const persisted = { headline: 'Saved headline', understanding, issues, evidence: [], overviewStatus: 'STALE' };
+    const jobAid = { readSummaryMemberInTransaction: jest.fn().mockResolvedValue({ current: false,
+      revision: { workRevision: member.workRevision, documentVersionId: member.documentVersionId, content: persisted } }) };
+    const matters = { authorizeRuntimeInputs: jest.fn().mockResolvedValue(undefined), readByRef: jest.fn().mockResolvedValue({
+      workingRevision: 7, basedOnMatterRevisionId: 'MR-exact', state: { problemWork: persisted } }) };
+    const chain = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(), limit: jest.fn().mockResolvedValue([{ ref: 'MWR-later' }]) };
+    const database = { select: jest.fn().mockReturnValue(chain), execute: jest.fn().mockResolvedValue([{ allowed: true }]) };
+    const service = new DerivedSummaryMembersService(jobAid as never, matters as never);
+    jest.spyOn(service, 'authorizeActor').mockResolvedValue(undefined);
+    const actor = { tenantId: 'tenant-exact', actorUserId: 'actor-exact' };
+    const [actual] = await service.readAll([selected], actor, database as never);
+    expect(actual).toMatchObject({ member: selected, headline: persisted.headline, understanding, body, issues,
+      current: false, overviewStatus: 'STALE', evidence: [], rootRefs: [], leaves: [selected] });
+    if (kind === 'WORK_ITEM_WORK') expect(jobAid.readSummaryMemberInTransaction).toHaveBeenCalledWith({ ...actor,
+      workItemId: member.workItemId, workRef: member.workRef }, database);
+    else {
+      expect(matters.readByRef).toHaveBeenCalledWith({ tenantId: actor.tenantId, matterId: 'MAT-exact', workRef: 'MWR-exact' }, database);
+      expect(matters.authorizeRuntimeInputs).toHaveBeenLastCalledWith({ ...actor, matterId: 'MAT-exact', basedOnMatterRevisionId: 'MR-exact' }, database);
+    }
+  });
+});
+
+
+describe('Selected catalog notices and summary identity cycles', () => {
+  const actor = { tenantId: 'tenant-notice', actorUserId: 'actor-notice' };
+  function service() { return new DerivedSummaryMembersService({} as never, {} as never); }
+  it('rejects the same summary identity even when its exact revision differs', async () => {
+    const reader = service(); jest.spyOn(reader, 'authorizeActor').mockResolvedValue(undefined);
+    await expect(reader.readAll([{ kind: 'DERIVED_SUMMARY', summaryId: 'DS-cycle', summaryRef: 'DSR-old',
+      summaryRevision: 1 }], actor, {} as never, new Set(['DS-cycle'])))
+      .rejects.toThrow('DERIVED_SUMMARY_LINEAGE_CYCLE');
+  });
+  it.each([null, 'DV-old', 'DV-new'])('qualifies local catalog selection %s without publisher authority', async head => {
+    const rows = [{ documentVersionId: 'DV-old', currentDocumentVersionId: head }];
+    const chain = { from: jest.fn().mockReturnThis(), innerJoin: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue(rows) };
+    const database = { select: jest.fn().mockReturnValue(chain), execute: jest.fn().mockResolvedValue([{ allowed: false }]) };
+    const reader = service() as unknown as { sourceVersionNotices: (evidence: AssessmentEvidence[], owner: typeof actor, db: unknown) => Promise<string[]> };
+    const notices = await reader.sourceVersionNotices([source], actor, database);
+    expect(notices.join('')).toContain('本地目录'); expect(notices.join('')).toContain('发布方现行有效状态未核');
+    expect(notices.join('')).not.toContain('当前正式版'); expect(notices.join('')).not.toContain('DV-new');
   });
 });

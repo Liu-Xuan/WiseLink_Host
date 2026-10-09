@@ -81,3 +81,28 @@ documentVersion 分支接线属后续 B 批，未在本批冒充完成。
 cd workspace/skills/wiselink-research-and-synthesize
 node --test tests/consume-hosted-document-activity.test.mjs   # 20/20 通过
 ```
+
+
+## Quote-selection REBUILD v1 (new reconstruction, not an old patch restoration)
+
+This recovered source baseline supports canonical activity-candidate.v1 only. No v2 contract,
+version pin or migration has been reconstructed by this locator task. Unknown/v2 candidate
+schemas are rejected; prior v2 requests are evidence of old prompt shapes, not restored Host support.
+
+Runner option quoteSelectionSchemaVersion='wiselink.document.activity-quote-selection.v1' or
+CLI --exact-quote-selection explicitly opts in. Omission retains the recovered numeric producer,
+checkpoint and ACTIVITY_SAVE behavior. The model cannot select a protocol by returning extra fields.
+Selection mode uses a distinct activity-quote-selection-checkpoint.v1 envelope and input hash for
+attempt recovery; the Host run does not gain a permanent transport-mode field.
+
+Every selection quote has exactly anchorId/text. Consumer validates only actual READ receipts, then
+sends the original selection to document_work ACTIVITY_SAVE_SELECTION. The actual Host resolves
+unique exact text from its verified source and current persisted READ inventory inside the existing
+repository transaction callback, then runs unchanged canonical candidate checks. Existing saved DTOs
+remain candidate-only v1 numeric quotes. No first-match, normalization, fuzzy/cross-page search,
+context invention, evidence dropping or semantic repair is allowed. Repetition requires choosing a
+longer exact source passage or a narrower already-delivered anchor. Failure is atomic for the whole
+candidate and carries a bounded enumerated reason plus zero-based statement/quote indexes, without
+source text or a suggested range. Host retains source authorization, exact versions, lease/deadline,
+CAS, source locks and adoption authority. Parsing/locator success does not establish semantic or
+engineering correctness. No product model or database execution is part of the offline rebuild tests.

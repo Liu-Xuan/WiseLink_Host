@@ -1,8 +1,9 @@
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { QueryClient, QueryClientProvider, notifyManager } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, focusManager, notifyManager } from '@tanstack/react-query';
 
 import useEngineeringMatter, {
+  ENGINEERING_MATTER_QUERY_ROOT,
   clearEngineeringMatterQueries,
   useEngineeringMatterWorkingRevision,
 } from '../../client/src/features/matter/useEngineeringMatter';
@@ -108,6 +109,11 @@ describe('engineering matter QueryClient resource identity', () => {
   let container: HTMLDivElement;
   let root: Root;
   let queryClient: QueryClient;
+  let observedQueries: Set<{
+    cancel(options?: { silent?: boolean }): Promise<void>;
+    destroy(): void;
+  }>;
+  let stopObservingQueries: () => void;
   let priorGlobals: Map<string, PropertyDescriptor | undefined>;
 
   beforeAll(() => {
@@ -150,6 +156,10 @@ describe('engineering matter QueryClient resource identity', () => {
     queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
+    observedQueries = new Set();
+    stopObservingQueries = queryClient.getQueryCache().subscribe(event => {
+      observedQueries.add(event.query);
+    });
     root = createRoot(container);
   });
 
@@ -159,13 +169,16 @@ describe('engineering matter QueryClient resource identity', () => {
       jest.advanceTimersByTime(0);
       await Promise.resolve();
     });
-    await queryClient.cancelQueries();
-    for (const query of queryClient.getQueryCache().getAll()) {
-      query.destroy();
-    }
+    await Promise.all([...observedQueries].map(query => query.cancel({ silent: true })));
+    await Promise.resolve();
     queryClient.getMutationCache().clear();
     queryClient.clear();
+    // Removed tenant queries are absent from getAll(), but can still own GC timers.
+    for (const query of observedQueries) query.destroy();
+    stopObservingQueries();
+    observedQueries.clear();
     queryClient.unmount();
+    focusManager.setFocused(undefined);
     await act(async () => {
       jest.advanceTimersByTime(0);
       await Promise.resolve();
@@ -929,6 +942,62 @@ describe('engineering matter QueryClient resource identity', () => {
     await act(async()=>retryIdentity.resolve({userId:'actor-1',tenantId:'tenant-1'}));
     await waitUntil(()=>mockWorkspaceRead.mock.calls.length===2);
     await waitUntil(()=>container.querySelector('[data-consumer="b"]')?.getAttribute('data-title')==='Cached identity body');
+  });
+
+  test('A to B to A foreground checks remove old tenant workspace, exact work and graph-source cache even after late responses', async () => {
+    const oldWorkspace = deferred<ReturnType<typeof libraryMatterFixture>>();
+    const oldWork = deferred<ReturnType<typeof libraryMatterFixture>['working']['current']>();
+    const historical = (ref: string) => {
+      const revision = structuredClone(libraryMatterFixture().working.current!);
+      revision.matterWorkRevisionId = ref;
+      return revision;
+    };
+    mockIdentityRead.mockReset()
+      .mockResolvedValueOnce({ userId: 'actor-1', tenantId: 'tenant-a' })
+      .mockResolvedValueOnce({ userId: 'actor-1', tenantId: 'tenant-b' })
+      .mockResolvedValueOnce({ userId: 'actor-1', tenantId: 'tenant-a' });
+    mockWorkspaceRead.mockResolvedValueOnce(workspace('A originally authorized'))
+      .mockReturnValueOnce(oldWorkspace.promise)
+      .mockResolvedValueOnce(workspace('B authorized'))
+      .mockResolvedValueOnce(workspace('A freshly reauthorized'));
+    mockHistoricalRead.mockResolvedValueOnce(historical('A-original-work'))
+      .mockReturnValueOnce(oldWork.promise)
+      .mockResolvedValueOnce(historical('B-work'))
+      .mockResolvedValueOnce(historical('A-fresh-work'));
+    render(createElement(Consumer, { matterId: 'M-1', workRef: 'exact-work', label: 'only' }));
+    await waitUntil(() => container.querySelector('[data-consumer="only"]')?.getAttribute('data-title') === 'A originally authorized');
+    const oldGraphSourceKey = [...ENGINEERING_MATTER_QUERY_ROOT, 'graph-source', 'unknown-app', 'tenant-a', 'actor-1', 1, 'document-a'];
+    const unrelatedKey = [...ENGINEERING_MATTER_QUERY_ROOT, 'graph-source', 'unknown-app', 'tenant-other', 'actor-1', 1, 'document-other'];
+    queryClient.setQueryData(oldGraphSourceKey, { status: 'loaded', notice: null });
+    queryClient.setQueryData(unrelatedKey, { status: 'loaded', notice: null });
+    void queryClient.refetchQueries({ predicate: query =>
+      query.queryKey[4] === 'tenant-a' &&
+      (query.queryKey[2] === 'workspace' || query.queryKey[2] === 'working-revision'),
+    });
+    await waitUntil(() => mockWorkspaceRead.mock.calls.length === 2 && mockHistoricalRead.mock.calls.length === 2);
+
+    await act(async () => { focusManager.setFocused(false); focusManager.setFocused(true); });
+    await waitUntil(() => container.querySelector('[data-consumer="only"]')?.getAttribute('data-title') === 'B authorized');
+    expect(container.querySelector('[data-consumer="only"]')?.getAttribute('data-revision')).toBe('B-work');
+    expect(queryClient.getQueryData(oldGraphSourceKey)).toBeUndefined();
+    expect(queryClient.getQueryData(unrelatedKey)).toEqual({ status: 'loaded', notice: null });
+    expect(queryClient.getQueryCache().findAll({ predicate: query =>
+      query.queryKey[4] === 'tenant-a' &&
+      (query.queryKey[2] === 'workspace' || query.queryKey[2] === 'working-revision'),
+    })).toHaveLength(0);
+
+    await act(async () => { focusManager.setFocused(false); focusManager.setFocused(true); });
+    await waitUntil(() => container.querySelector('[data-consumer="only"]')?.getAttribute('data-title') === 'A freshly reauthorized');
+    expect(container.querySelector('[data-consumer="only"]')?.getAttribute('data-revision')).toBe('A-fresh-work');
+    expect(mockWorkspaceRead).toHaveBeenCalledTimes(4);
+    expect(mockHistoricalRead).toHaveBeenCalledTimes(4);
+    await act(async () => {
+      oldWorkspace.resolve(workspace('LATE_OLD_A_WORKSPACE'));
+      oldWork.resolve(historical('LATE_OLD_A_WORK'));
+    });
+    await waitUntil(() => container.querySelector('[data-consumer="only"]')?.getAttribute('data-title') === 'A freshly reauthorized');
+    expect(container.querySelector('[data-consumer="only"]')?.getAttribute('data-revision')).toBe('A-fresh-work');
+    expect(queryClient.getQueryData(unrelatedKey)).toEqual({ status: 'loaded', notice: null });
   });
 
 });

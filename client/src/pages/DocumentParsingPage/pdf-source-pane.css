@@ -230,11 +230,14 @@
   box-shadow: 0 10px 24px rgb(15 23 42 / 12%);
 }
 
-.parse-pdf-page[data-render-state='deferred'] {
+.parse-pdf-page:not([data-page-measured]) {
   aspect-ratio: 8.5 / 11;
 }
 
 .parse-pdf-page-placeholder {
+  position: absolute;
+  top: 4px;
+  left: 4px;
   color: #7b8798;
   font-size: var(--wl-text-caption);
 }

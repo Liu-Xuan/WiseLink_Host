@@ -210,20 +210,21 @@ function relationEdge(
       source,
       target,
       businessId: relation.id,
-      businessSource: relation.source,
+      ...(relation.type === 'DIRECTORY_MEMBERSHIP' ? { displaySource: relation.source } : { businessSource: relation.source }),
       businessTarget: relation.target,
       type: relation.type,
       label: relation.label,
       ...(relation.authority === undefined ? {} : { authority: relation.authority }),
       ...(relation.currentness === undefined ? {} : { currentness: relation.currentness }),
       viewKind: 'relationship',
+      displayOnly: relation.type === 'DIRECTORY_MEMBERSHIP',
       groupKey,
       ...appearance,
       curvature,
       virtual: false,
       relationshipIds: [relation.id],
     },
-    classes: 'business-edge',
+    classes: relation.type === 'DIRECTORY_MEMBERSHIP' ? 'business-edge display-edge' : 'business-edge',
   };
 }
 
@@ -377,10 +378,18 @@ export function buildSuiteGraphPresentation(
   });
 
   const rootBusinessId = matter.rootKind !== 'display' ? matter.id : undefined;
+  // A display root can anchor directory membership visually without acquiring
+  // business identity. Other relations with it remain invalid endpoints.
+  const isDisplayRootEndpoint = (relation: SuiteGraphRelation, id: string) =>
+    matter.rootKind === 'display' && relation.type === 'DIRECTORY_MEMBERSHIP' && id === matter.id;
+  const hasEndpoint = (relation: SuiteGraphRelation, id: string, items: Set<string>) =>
+    items.has(id) || id === rootBusinessId || isDisplayRootEndpoint(relation, id);
   const visibleBusinessIds = new Set([...(rootBusinessId ? [rootBusinessId] : []), ...visibleItems.keys()]);
   const displayedBusinessIds = new Set([...(rootBusinessId ? [rootBusinessId] : []), ...itemGroup.keys()]);
-  const individualRelations = matter.relations.filter((relation) => visibleBusinessIds.has(relation.source) && visibleBusinessIds.has(relation.target));
-  const aggregatedRelations = matter.relations.filter((relation) => displayedBusinessIds.has(relation.source) && displayedBusinessIds.has(relation.target));
+  const individualRelations = matter.relations.filter((relation) =>
+    hasEndpoint(relation, relation.source, visibleBusinessIds) && hasEndpoint(relation, relation.target, visibleBusinessIds));
+  const aggregatedRelations = matter.relations.filter((relation) =>
+    hasEndpoint(relation, relation.source, displayedBusinessIds) && hasEndpoint(relation, relation.target, displayedBusinessIds));
   const allItemGroups = new Map(matter.groups.flatMap((group) => group.items.map((item) => [item.id, group.key] as const)));
   const eligibleItemGroups = new Map(eligible.flatMap((group) => group.items.map((item) => [item.id, group.key] as const)));
   const omittedRelationships: SuiteGraphPresentation['omittedRelationships'] = [];
@@ -400,11 +409,11 @@ export function buildSuiteGraphPresentation(
   matter.relations.forEach((relation) => {
     if (representedIds.has(relation.id)) return;
     const endpointIds = [relation.source, relation.target];
-    if (endpointIds.some((id) => id !== rootBusinessId && !allItemGroups.has(id))) {
+    if (endpointIds.some((id) => id !== rootBusinessId && !isDisplayRootEndpoint(relation, id) && !allItemGroups.has(id))) {
       omittedRelationships.push({ id: relation.id, reason: 'missingEndpoint' });
       return;
     }
-    const unavailableItemIds = endpointIds.filter((id) => id !== rootBusinessId && !displayedBusinessIds.has(id));
+    const unavailableItemIds = endpointIds.filter((id) => id !== rootBusinessId && !isDisplayRootEndpoint(relation, id) && !displayedBusinessIds.has(id));
     if (unavailableItemIds.some((id) => !eligibleItemGroups.has(id))) {
       omittedRelationships.push({ id: relation.id, reason: 'hiddenGroup' });
       return;
@@ -417,17 +426,17 @@ export function buildSuiteGraphPresentation(
   });
   if (relationMode === 'individual') {
     individualRelations.forEach((relation) => {
-      const source = relation.source === rootBusinessId ? HUB_ID(matter.id) : ITEM_ID(relation.source);
-      const target = relation.target === rootBusinessId ? HUB_ID(matter.id) : ITEM_ID(relation.target);
+      const source = (relation.source === rootBusinessId || isDisplayRootEndpoint(relation, relation.source)) ? HUB_ID(matter.id) : ITEM_ID(relation.source);
+      const target = (relation.target === rootBusinessId || isDisplayRootEndpoint(relation, relation.target)) ? HUB_ID(matter.id) : ITEM_ID(relation.target);
       const groupKey = itemGroup.get(relation.source) ?? itemGroup.get(relation.target);
-      const curvature = relation.source === rootBusinessId || relation.target === rootBusinessId ? 0 : 33;
+      const curvature = relation.source === matter.id || relation.target === matter.id ? 0 : 33;
       elements.push(relationEdge(relation, source, target, groupKey, appearanceForGroup(groupKey), curvature));
     });
   } else {
     const bundles = new Map<string, { source: string; target: string; relations: SuiteGraphRelation[]; groupKey?: string }>();
     aggregatedRelations.forEach((relation) => {
-      const source = relation.source === rootBusinessId ? HUB_ID(matter.id) : GROUP_ID(itemGroup.get(relation.source)!);
-      const target = relation.target === rootBusinessId ? HUB_ID(matter.id) : GROUP_ID(itemGroup.get(relation.target)!);
+      const source = (relation.source === rootBusinessId || isDisplayRootEndpoint(relation, relation.source)) ? HUB_ID(matter.id) : GROUP_ID(itemGroup.get(relation.source)!);
+      const target = (relation.target === rootBusinessId || isDisplayRootEndpoint(relation, relation.target)) ? HUB_ID(matter.id) : GROUP_ID(itemGroup.get(relation.target)!);
       // Legacy relations keep the original bundle grouping and identity.
       const key = relation.authority === undefined && relation.currentness === undefined
         ? JSON.stringify([source, target])
@@ -456,6 +465,7 @@ export function buildSuiteGraphPresentation(
           source: bundle.source,
           target: bundle.target,
           viewKind: 'bundle',
+          displayOnly: bundle.relations.every((relation) => relation.type === 'DIRECTORY_MEMBERSHIP'),
           label: labels.size === 1 ? bundle.relations[0].label : '资料关联',
           relationshipIds: ids,
           ...(bundle.relations[0].authority === undefined ? {} : { authority: bundle.relations[0].authority }),
@@ -465,14 +475,14 @@ export function buildSuiteGraphPresentation(
           curvature,
           virtual: true,
         },
-        classes: 'bundle-edge',
+        classes: bundle.relations.every((relation) => relation.type === 'DIRECTORY_MEMBERSHIP') ? 'bundle-edge display-edge' : 'bundle-edge',
       });
     });
     // Keep exact business edges as a hidden interaction layer. The default view
     // stays aggregated; selecting a node reveals only its real adjacent edges.
     individualRelations.forEach((relation) => {
-      const source = relation.source === rootBusinessId ? HUB_ID(matter.id) : ITEM_ID(relation.source);
-      const target = relation.target === rootBusinessId ? HUB_ID(matter.id) : ITEM_ID(relation.target);
+      const source = (relation.source === rootBusinessId || isDisplayRootEndpoint(relation, relation.source)) ? HUB_ID(matter.id) : ITEM_ID(relation.source);
+      const target = (relation.target === rootBusinessId || isDisplayRootEndpoint(relation, relation.target)) ? HUB_ID(matter.id) : ITEM_ID(relation.target);
       elements.push({
         ...relationEdge(
           relation,
@@ -480,9 +490,9 @@ export function buildSuiteGraphPresentation(
           target,
           itemGroup.get(relation.source) ?? itemGroup.get(relation.target),
           appearanceForGroup(itemGroup.get(relation.source) ?? itemGroup.get(relation.target)),
-          relation.source === rootBusinessId || relation.target === rootBusinessId ? 0 : 33,
+          relation.source === matter.id || relation.target === matter.id ? 0 : 33,
         ),
-        classes: 'business-edge individual-edge',
+        classes: relation.type === 'DIRECTORY_MEMBERSHIP' ? 'business-edge individual-edge display-edge' : 'business-edge individual-edge',
       });
     });
   }
@@ -498,7 +508,7 @@ export function buildSuiteGraphPresentation(
       eligible: { groups: eligible.length, items: eligible.reduce((count, group) => count + group.items.length, 0) },
       page: { index: page, size: pageSize, count: groups.length, pageCount },
       shown: { groups: groups.length, items: visibleItems.size, cards: visibleItems.size },
-      represented: { relationships: representedRelations.length, displayConnections: 0, businessRelationships: representedRelations.length },
+      represented: { relationships: representedRelations.length, displayConnections: representedRelations.filter((relation) => relation.type === 'DIRECTORY_MEMBERSHIP').length, businessRelationships: representedRelations.filter((relation) => relation.type !== 'DIRECTORY_MEMBERSHIP').length },
     },
     omittedRelationships,
     bounds: (() => {

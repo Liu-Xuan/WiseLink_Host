@@ -12,6 +12,8 @@ export interface MineruTableCell {
 export interface MineruTranslationTable {
   /** Null is a covered merge slot. Layout stays with Host; model preserves this matrix shape. */
   rows: Array<Array<string | null>>;
+  /** Text explicitly present in inert HTML, never an inferred table title. */
+  caption: string;
   cells: MineruTableCell[];
   needsVisualReview: boolean;
 }
@@ -26,6 +28,11 @@ export function readMineruTranslationTable(
   const tables = descendants(root, 'table');
   if (tables.length !== 1) throw new Error('MINERU_TABLE_NESTING_UNSUPPORTED');
   const table = tables[0];
+  const caption: string = table.childNodes
+    .filter((node): node is Element => isElement(node) && node.tagName === 'caption')
+    .map((node: Element) => plainHtmlText(node).trim())
+    .filter((value: string) => value.length > 0)
+    .join('\n');
   const rowElements = descendants(table, 'tr');
   if (!rowElements.length || rowElements.length > 2000)
     throw new Error('MINERU_TABLE_ROWS_INVALID');
@@ -76,7 +83,7 @@ export function readMineruTranslationTable(
     )
   )
     throw new Error('MINERU_TABLE_GEOMETRY_INVALID');
-  return { rows, cells, needsVisualReview };
+  return { rows, caption, cells, needsVisualReview };
 }
 
 export function plainMineruHtml(html: string): string {

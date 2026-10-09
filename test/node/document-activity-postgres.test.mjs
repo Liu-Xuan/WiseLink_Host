@@ -18,7 +18,21 @@ const source = { parseRunId: 'PR-test', parseRevision: 1, semanticRevision: 1, m
 const range = { sectionId: 'section-test', offset: 0, unitIds: ['unit-test'], anchorIds: ['a1'], nextOffset: null };
 const command = { candidate: { schemaVersion: 'wiselink.document.activity-candidate.v1', statements: [] },
   producer: { skillVersion: 'isolated-test', modelVersion: 'not-called' } };
+const v2Schema = 'wiselink.document.activity-candidate.v2';
+const productionContract = { promptVersion: 'isolated-v2-fixture', toolSchemaSha256: 'b'.repeat(64),
+  sourceContextVersion: 'wiselink.document.activity-source-context.v1',
+  quoteTransportVersion: 'wiselink.document.activity-quote-offsets.v1' };
 const clients = [];
+const exactBinding = { original: { documentVersionId: 'DV-test', parseRunId: 'PR-test', parseRevision: 1,
+  sourceArtifactId: 'ART-test', sourceSha256: 'a'.repeat(64), sourceByteLength: 1234 }, semanticRevision: 1 };
+const rawV2Statement = { statementId: 'DAS-v2-source', statementKey: 'source-local', label: 'Source raw semantics',
+  quotes: [{ anchorId: 'a1', start: 0, end: 18, text: 'TBD after approval' }], subject: null, action: null, modality: null,
+  status: { raw: 'TBD', quoteIndex: 0, meaning: 'UNKNOWN' },
+  times: [{ raw: 'TBD', quoteIndex: 0, role: 'TARGET', precision: 'UNKNOWN', expression: 'TBD' },
+    { raw: 'after approval', quoteIndex: 0, role: 'CONDITION', precision: 'UNKNOWN', expression: 'RELATIVE' }],
+  technicalIds: [], scope: { sectionIds: ['section-test'], conditions: [], completeness: 'DELIVERED_SCOPE_ONLY' },
+  limitations: ['Constructed SQL storage fixture only.'] };
+let legacyBefore;
 
 async function actor(role, userId) {
   // Dedicated one-connection clients prevent session identity from crossing actors.
@@ -36,6 +50,11 @@ function materialize(run, revision) {
     readCoverage: { status: 'DELIVERED_RANGES_ONLY', selection: run.selection, deliveredRanges: run.deliveredRanges, sourceCoverage: {} },
     sourceAnchors: [], producer: command.producer, savedAt: '2026-09-16T00:00:00Z' };
 }
+function databaseConstraint(error, name) {
+  for (let current = error; current; current = current.cause)
+    if (current.code === '23514' && current.constraint_name === name) return true;
+  return false;
+}
 
 test('source activity PostgreSQL request, leases, CAS, immutable revisions and source RLS', { skip: !databaseUrl }, async t => {
   const url = new URL(databaseUrl);
@@ -50,6 +69,26 @@ test('source activity PostgreSQL request, leases, CAS, immutable revisions and s
     const browser = await actor('authenticated', 'actor-two');
     const foreign = await actor('authenticated', 'actor-foreign');
     let saved;
+    let v2Run;
+    let v2Saved;
+
+    await t.test('0074 migrates existing frozen v1 and active rows without rewriting history or inventing producer provenance', async () => {
+      const rows = await admin`SELECT run_ref,candidate_schema_version,production_contract_json,result_json::text AS raw
+        FROM dm_document_activity_run WHERE run_ref IN ('DAR-legacy-saved','DAR-legacy-active') ORDER BY run_ref`;
+      assert.equal(rows.length, 2);
+      assert.ok(rows.every(row => row.candidate_schema_version === 'wiselink.document.activity-candidate.v1' && row.production_contract_json === null));
+      assert.equal(rows.find(row => row.run_ref === 'DAR-legacy-saved').raw, legacyBefore);
+      assert.equal(rows.find(row => row.run_ref === 'DAR-legacy-active').raw, null);
+      const legacy = JSON.parse(legacyBefore);
+      assert.equal(legacy.productionContract, undefined);
+      assert.equal(legacy.candidateSchemaVersion, undefined);
+      await assert.rejects(admin`UPDATE dm_document_activity_run SET candidate_schema_version=${v2Schema}
+        WHERE run_ref='DAR-legacy-active'`, /DOCUMENT_ACTIVITY_REQUEST_IMMUTABLE/);
+      await assert.rejects(admin`UPDATE dm_document_activity_run SET production_contract_json=${admin.json(productionContract)}
+        WHERE run_ref='DAR-legacy-active'`, /DOCUMENT_ACTIVITY_REQUEST_IMMUTABLE/);
+      await assert.rejects(admin`UPDATE dm_document_activity_run SET result_json='{}'::jsonb
+        WHERE run_ref='DAR-legacy-saved'`, /DOCUMENT_ACTIVITY_TERMINAL_IMMUTABLE/);
+    });
 
     await t.test('same request is idempotent; conflicts and native writes are rejected', async () => {
       const first = await one.repository.begin(scope, { ...source, requestId: 'request-one' });
@@ -121,6 +160,79 @@ test('source activity PostgreSQL request, leases, CAS, immutable revisions and s
       assert.equal(await one.repository.claim(scope, deadline.runRef, 'too-late'), null);
       assert.equal((await one.repository.readRun(scope, deadline.runRef)).status, 'EXPIRED');
     });
+
+    await t.test('0074 rejects malformed v2 contracts and makes admitted schema/producer pins immutable', async () => {
+      const input = { ...source, requestId: 'v2-contract', expectedRevision: 2,
+        candidateSchemaVersion: v2Schema, productionContract };
+      await assert.rejects(one.repository.begin(scope, { ...input, requestId: 'v2-invalid-contract',
+        productionContract: { ...productionContract, toolSchemaSha256: 'invalid' } }),
+      error => databaseConstraint(error, 'document_activity_production_contract_shape'));
+      assert.equal(await one.repository.readRequest(scope, 'v2-invalid-contract'), null);
+      v2Run = await one.repository.begin(scope, input);
+      assert.equal(v2Run.candidateSchemaVersion, v2Schema);
+      assert.deepEqual(v2Run.productionContract, productionContract);
+      await assert.rejects(one.client`UPDATE dm_document_activity_run
+        SET candidate_schema_version='wiselink.document.activity-candidate.v1',production_contract_json=NULL
+        WHERE run_ref=${v2Run.runRef}`, /DOCUMENT_ACTIVITY_REQUEST_IMMUTABLE/);
+      await assert.rejects(one.client`UPDATE dm_document_activity_run
+        SET production_contract_json=${JSON.stringify({ ...productionContract, promptVersion: 'changed' })}::jsonb
+        WHERE run_ref=${v2Run.runRef}`, /DOCUMENT_ACTIVITY_REQUEST_IMMUTABLE/);
+      const unchanged = await one.repository.readRun(scope, v2Run.runRef);
+      assert.equal(unchanged.candidateSchemaVersion, v2Schema);
+      assert.deepEqual(unchanged.productionContract, productionContract);
+    });
+
+    await t.test('0074 SAVED check rejects wrong schema; exact v2 save, reader and replay retain pinned result', async () => {
+      const fence = await one.repository.claim(scope, v2Run.runRef, 'v2-producer');
+      await one.repository.recordDelivery(scope, fence, range);
+      const v2Command = { ...command, candidate: { ...command.candidate, schemaVersion: v2Schema, statements: [rawV2Statement] } };
+      const running = await one.repository.readRun(scope, v2Run.runRef);
+      // Direct synthetic SQL reaches the real new SAVED constraint without the
+      // repository's earlier schema guard hiding a missing database check.
+      await assert.rejects(one.client`UPDATE dm_document_activity_run SET status='SAVED',candidate_revision=3,
+        result_json=${JSON.stringify(materialize(running, 3))}::jsonb,save_command_json=${JSON.stringify(v2Command)}::jsonb,
+        lease_owner=NULL,lease_token=NULL,lease_expires_at=NULL WHERE run_ref=${v2Run.runRef}`,
+      error => databaseConstraint(error, 'document_activity_saved_contract_v2'));
+      assert.equal((await one.repository.readRun(scope, v2Run.runRef)).status, 'RUNNING');
+      v2Saved = await one.repository.save(scope, fence, v2Command,
+        (run, revision) => {
+          const result = { ...materialize(run, revision), schemaVersion: v2Schema,
+            sourceBinding: exactBinding, statements: [rawV2Statement] };
+          return { ...result, sourceContext: { schemaVersion: productionContract.sourceContextVersion,
+            sourceBinding: result.sourceBinding,
+            profile: { profileRef: 'test', selectionBasis: 'NOT_RECORDED', family: null, issuer: null },
+            sections: [{ sectionId: 'section-test', parentSectionId: null, titleRaw: null, roleKey: null,
+              headingUnitId: null, deliveredUnitIds: ['unit-test'], contextForSectionIds: [] }], organizationWarnings: [] } };
+        });
+      assert.equal(v2Saved.candidateRevision, 3);
+      assert.equal(v2Saved.schemaVersion, v2Schema);
+      assert.deepEqual(await browser.repository.readSaved({ ...scope, actorUserId: 'actor-two' }, source.parseRunId, 3), v2Saved);
+      assert.equal(await foreign.repository.readSaved({ ...scope, actorUserId: 'actor-foreign' }, source.parseRunId, 3), null);
+      assert.deepEqual(await one.repository.save(scope, fence, v2Command, () => { throw new Error('must not regenerate v2'); }), v2Saved);
+      const stored = await one.repository.readRun(scope, v2Run.runRef);
+      assert.deepEqual(stored.productionContract, productionContract);
+      assert.equal(stored.candidateSchemaVersion, v2Schema);
+      assert.deepEqual(stored.result, v2Saved);
+      assert.deepEqual(await one.repository.readSaved(scope, source.parseRunId, 1), saved);
+    });
+
+    await t.test('physical exact-reference reads retain raw UNKNOWN/multiple times and source ACL after revocation', async () => {
+      const readerScope = { ...scope, actorUserId: 'actor-two' };
+      const reference = { runRef: v2Run.runRef, candidateRevision: v2Saved.candidateRevision };
+      assert.deepEqual(await browser.repository.readSavedByReference(readerScope, reference, exactBinding), v2Saved);
+      assert.equal(await foreign.repository.readSavedByReference({ ...scope, actorUserId: 'actor-foreign' }, reference, exactBinding), null);
+      assert.equal(await browser.repository.readSavedByReference(readerScope, { ...reference, runRef: 'DAR-missing' }, exactBinding), null);
+      const [row] = await admin`SELECT result_json::text AS raw FROM dm_document_activity_run WHERE run_ref=${reference.runRef}`;
+      const roundtrip = JSON.parse(row.raw);
+      assert.deepEqual(roundtrip, v2Saved);
+      assert.deepEqual(roundtrip.statements[0], rawV2Statement);
+      assert.equal(roundtrip.statements[0].status.meaning, 'UNKNOWN');
+      assert.equal(roundtrip.statements[0].times.length, 2);
+      assert.equal(Object.hasOwn(roundtrip.statements[0], 'time'), false);
+      await admin`DELETE FROM work_item WHERE requested_by_user_id='actor-two'`;
+      assert.equal(await browser.repository.readSavedByReference(readerScope, reference, exactBinding), null);
+      await admin`INSERT INTO work_item VALUES ('tenant-test','DV-test','actor-two')`;
+    });
   } finally {
     await Promise.all(clients.map(client => client.end()));
     await admin.end();
@@ -139,7 +251,7 @@ async function reset(admin) {
     CREATE TABLE dm_document_version(document_version_id varchar(96) PRIMARY KEY,family_id varchar,source_artifact_id varchar);
     CREATE TABLE dm_publication_family(family_id varchar,canonical_identity_key text);
     CREATE TABLE dm_acquisition(document_version_id varchar,source_artifact_id varchar,acquired_by varchar,status varchar,idempotency_key text);
-    CREATE TABLE dm_document_parse_run(tenant_id varchar(128),document_version_id varchar(96),parse_run_id varchar(96),parse_revision integer,status text,manifest_artifact jsonb,
+    CREATE TABLE dm_document_parse_run(tenant_id varchar(128),document_version_id varchar(96),parse_run_id varchar(96),parse_revision integer,status text,manifest_artifact jsonb,source_binding jsonb,
       UNIQUE(tenant_id,document_version_id,parse_run_id));`);
   for (const [file, names] of [
     ['0014_engineering_matter_catalog.sql', ['engineering_matter_actor_has_tenant']],
@@ -162,10 +274,28 @@ async function reset(admin) {
   await admin`INSERT INTO work_item VALUES ('tenant-test','DV-test','actor-one'),('tenant-test','DV-test','actor-two')`;
   await admin`INSERT INTO dm_document_version(document_version_id) VALUES ('DV-test')`;
   await admin`INSERT INTO dm_document_parse_run VALUES ('tenant-test','DV-test','PR-test',1,'PUBLISHED',
-    ${admin.json({ role: 'MANIFEST', relativePath: 'original/manifest.json', readback: 'VERIFIED', sha256: source.manifestSha256 })})`;
+    ${admin.json({ role: 'MANIFEST', relativePath: 'original/manifest.json', readback: 'VERIFIED', sha256: source.manifestSha256 })},
+    ${admin.json({ documentVersionId: 'DV-test', sourceArtifactId: 'ART-test', pdfSha256: exactBinding.original.sourceSha256, byteLength: 1234 })})`;
   await admin`INSERT INTO dm_document_semantic_revision
     (tenant_id,document_version_id,parse_run_id,parse_revision,semantic_revision,actor_user_id,profile_ref,original_manifest_sha256,map_json)
     VALUES ('tenant-test','DV-test','PR-test',1,1,'actor-one','test',${source.manifestSha256},
       ${admin.json({ schemaVersion: 'wiselink.document.semantic-map.v1', profileRef: 'test', semanticRevision: 1,
         binding: { documentVersionId: 'DV-test', parseRunId: 'PR-test', parseRevision: 1 } })})`;
+  // These rows must exist under 0058 before 0074 runs; their separate parse avoids
+  // changing the main fixture's revision, lease and CAS cases.
+  await admin`INSERT INTO dm_document_parse_run SELECT tenant_id,document_version_id,'PR-legacy',parse_revision,status,manifest_artifact,source_binding
+    FROM dm_document_parse_run WHERE parse_run_id='PR-test'`;
+  const legacy = { ...materialize({ runRef: 'DAR-legacy-saved', selection: source.selection, deliveredRanges: [] }, 1),
+    sourceBinding: { original: { documentVersionId: 'DV-test', parseRunId: 'PR-legacy', parseRevision: 1 }, semanticRevision: 1 } };
+  await admin`INSERT INTO dm_document_activity_run(run_ref,tenant_id,actor_user_id,request_id,document_version_id,parse_run_id,parse_revision,semantic_revision,
+    original_manifest_sha256,selection_json,expected_revision,candidate_revision,status,deadline_at,result_json,save_command_json)
+    VALUES('DAR-legacy-saved','tenant-test','actor-one','legacy-saved','DV-test','PR-legacy',1,1,${source.manifestSha256},${admin.json(source.selection)},0,1,'SAVED',CURRENT_TIMESTAMP,${admin.json(legacy)},${admin.json(command)})`;
+  await admin`INSERT INTO dm_document_activity_run(run_ref,tenant_id,actor_user_id,request_id,document_version_id,parse_run_id,parse_revision,semantic_revision,
+    original_manifest_sha256,selection_json,expected_revision,status,deadline_at)
+    VALUES('DAR-legacy-active','tenant-test','actor-one','legacy-active','DV-test','PR-legacy',1,1,${source.manifestSha256},${admin.json(source.selection)},1,'QUEUED',CURRENT_TIMESTAMP+interval '1 hour')`;
+  const absentPins = await admin`SELECT column_name FROM information_schema.columns WHERE table_name='dm_document_activity_run'
+    AND column_name IN ('candidate_schema_version','production_contract_json')`;
+  assert.equal(absentPins.length, 0);
+  legacyBefore = (await admin`SELECT result_json::text AS raw FROM dm_document_activity_run WHERE run_ref='DAR-legacy-saved'`)[0].raw;
+  await admin.unsafe(await readFile(new URL('../../migrations/0074_document_activity_candidate_contract.sql', import.meta.url), 'utf8'));
 }

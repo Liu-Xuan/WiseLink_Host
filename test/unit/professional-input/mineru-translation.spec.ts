@@ -262,4 +262,40 @@ describe('MinerU translation input and Host alignment', () => {
       ),
     ).toThrow('SPAN_INVALID');
   });
+
+  it('retains an inert embedded HTML caption when no separate native caption was supplied', () => {
+    const doc = document();
+    const table = doc.blocks.find(block => block.type === 'table')!;
+    table.content.html = '<table><caption>A &amp; B<br>Only if X &lt; 12<script>omit()</script></caption>' +
+      '<tr><td>Limit</td><td>10</td></tr></table>';
+    delete table.content.table_caption;
+    const before = structuredClone(doc);
+    const unit = buildMineruTranslationPlan(doc, identity).units.find(unit => unit.key === table.id)!;
+    expect(unit.value).toMatchObject({ kind: 'table', caption: 'A & B\nOnly if X < 12',
+      notes: 'Exception: only for model 787-8.' });
+    expect(readMineruTranslationTable(String(table.content.html))).toMatchObject({ caption: 'A & B\nOnly if X < 12' });
+    expect(unit.issues).not.toContain('TABLE_CAPTION_CONFLICT');
+    expect(doc).toEqual(before);
+  });
+
+  it('preserves both distinct caption values and marks the uncertainty instead of choosing one', () => {
+    const doc = document();
+    const table = doc.blocks.find(block => block.type === 'table')!;
+    table.content.html = '<table><caption>Embedded source caption</caption><tr><td>Limit</td></tr></table>';
+    const unit = buildMineruTranslationPlan(doc, identity).units.find(unit => unit.key === table.id)!;
+    expect(unit.value).toMatchObject({ caption: 'Operating limits\nEmbedded source caption' });
+    expect(unit.issues).toContain('TABLE_CAPTION_CONFLICT');
+  });
+
+  it('does not duplicate matching captions or restore a deliberately emptied native caption', () => {
+    const doc = document();
+    const table = doc.blocks.find(block => block.type === 'table')!;
+    table.content.html = '<table><caption>Operating limits</caption><tr><td>Limit</td></tr></table>';
+    const matching = buildMineruTranslationPlan(doc, identity).units.find(unit => unit.key === table.id)!;
+    expect(matching.value).toMatchObject({ caption: 'Operating limits' });
+    expect(matching.issues).not.toContain('TABLE_CAPTION_CONFLICT');
+    table.content.table_caption = [];
+    const removed = buildMineruTranslationPlan(doc, identity).units.find(unit => unit.key === table.id)!;
+    expect(removed.value).not.toHaveProperty('caption');
+  });
 });

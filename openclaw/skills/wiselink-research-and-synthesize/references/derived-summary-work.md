@@ -20,32 +20,81 @@ unknowns, stale Overall, corrections, historical exact work and child summary
 lineage are delivered. A child summary is derived work; its roots do not become
 new independent sources, verified applicability or installed-fleet facts.
 
-The CLI uses the **installed A12b native temporary Gateway and original one-shot
-outbound adapter**. Its small new binding branch accepts the real summary
-subject and session `agent:wiselink-engineering:summary:<summaryId>:<attemptRef>`.
-The official source profile, endpoint, secret resolver, TLS, plugins-disabled
-Gateway and provider-terminal ledger remain the existing implementations. The
-captured route must be the registered official `miaoda/glm-5.3`; a mismatching
-Host route is refused, never switched. The driver returns only source-read
-intents or candidate content through `return_wiselink_summary_step`.
+Model dispatch retains the bound official Hosted profile and existing transport.
+A mismatching Host route is refused, never switched. The driver returns only
+source-read intents or candidate content through `return_wiselink_summary_step`.
+
+The existing Summary CLI default-imports `native-temporary-review-gateway.mjs`
+and passes its `createNativeReviewGatewayPreparer` to the current
+`derived-summary-native-gateway.mjs` session. An explicit
+`--native-gateway-launcher` can supply that same interface. The preparer also
+serves isolated Review execution; Summary is an actual consumer of the two
+native helper files. Including `native-temporary-review-gateway.mjs` and
+`one-shot-outbound-adapter.mjs` supplies this existing source dependency without
+changing Summary model instructions, projections or saved checkpoint formats.
+
+Preparation stays lazy until a model request needs a gateway. It binds the exact
+Summary subject, Host attempt, native session and deadline; the adapter records
+each actual provider dispatch, including a child-internal retry. The current
+Summary receipt validator checks the bounded dispatch ledger and provider
+terminal proof. Owned child shutdown, adapter closure and temporary secret scan
+precede the private cleanup receipt. A saved model response can repeat its exact
+source read without preparing another gateway; an unknown provider terminal
+closes further dispatch and cannot rearm the same attempt.
 
 The model SAVE step uses `{action:'SAVE_SUMMARY', content:{headline,listBrief,body,limitations}}`.
 Its strict tool schema requires exactly these four content fields: headline,
 listBrief and body are nonempty strings; limitations is an array of nonempty
 strings and may be empty. The schema mirrors existing Host receive limits
 (240/2000/1000000 characters and 4000 per limitation); these are not requested
-summary lengths. Prompt v2 follows the task's requested length and asks for
-concise decisive premises, conclusions and conditions instead of copied member
+summary lengths. The system instruction follows the task's requested length and
+asks for concise decisive premises, conclusions and conditions instead of copied member
 assessments. The driver validates the object, then sends the unchanged Host SAVE
 transport `contentJson: JSON.stringify(candidate.content)`. A string limitation
 is rejected, never converted to an array. READ intents retain their existing shape.
 
-Every run explicitly chooses timeout, completion cap and maximum actual model
-requests. These are adjustable run budgets within the Host deadline and current
-profile limits, not fixed model capabilities. The existing provider timeout is
-inherited when omitted; the observed 600 seconds and 64000 completion cap are
-current installation choices. Reasoning defaults to low and may be set to the
-profile's supported low/high/max. No 480-second or 8192-token default is imposed.
+## S2 model-view preservation
+
+P1 deduplicates evidence by exact `evidenceRef`: complete evidence appears once
+at top level and members retain ordered `evidenceRefs`. Equal wording under
+different refs never merges identities; conflicting content for the same ref
+is rejected. A member with persisted `understanding` may omit the duplicate
+composed `body` only when `understanding` plus its complete ordered issues
+reconstructs that body exactly. No text is inferred or parsed out of legacy
+bodies. Old members without that field and child summaries keep their complete
+bodies. Issues, negations, measures, rationale, limitations and exact lineage
+remain intact; Host task/control fields stay outside the model view.
+
+Each new P2 read intent still executes the requested authorized READ. Its complete
+validated result is stored once at `summary-round-<round>-read`, separately from the model tool
+message. The message confirms `CONFIRMED_SAME_CONTENT` only after exact
+selection/content binding checks and proof that the full content is already in
+the saved INPUT or an earlier tool message. `contentLocation` points to that
+actual message and JSON location, including split body fields and evidence
+locations. Registry availability alone is not delivery. Unseen content is
+`DELIVERED_FULL_CONTENT` with its complete value; later confirmations retain
+fresh currentness, Overall-status and limitation notices. Partial/error envelopes,
+changed refs/content, missing receipts and invalid delivery locations fail closed.
+Neither confirmation nor an inherited source read establishes fresh source
+verification, applicability or approval.
+
+The supported S2 prompt versions in `invoke-hosted-derived-summary-model.mjs` are:
+
+- P1: `wiselink.derived-summary-prompt.v2.evidence-problem-dedup.v1`.
+- P2: `wiselink.derived-summary-prompt.v2.evidence-problem-dedup.read-projection.v1`.
+- Current new-state ordered INPUT variant: `wiselink.derived-summary-prompt.v2.evidence-problem-dedup.read-projection.v1.cache-prefix.v1`.
+
+The ordered variant changes only serialization order through
+`derived-summary-cache-prefix.mjs`. Complete values, array order, roots and
+locator paths remain; generic identity/task hashing stays canonical. Supported
+older `wiselink.derived-summary-prompt.v2.evidence-dedup.v1` and
+`wiselink.derived-summary-prompt.v2` checkpoints keep their own message format.
+Fresh reader enrichment never rewrites a sealed old member basis.
+
+Every run chooses timeout, completion cap and maximum actual model requests
+within the Host deadline and official profile limits. These are adjustable run
+budgets, not fixed model capabilities; the existing provider timeout is inherited
+when omitted.
 
 ```text
 node scripts/consume-hosted-derived-summary.mjs \
@@ -59,10 +108,23 @@ node scripts/consume-hosted-derived-summary.mjs \
   --checkpoint-root <private persistent directory>
 ```
 
+## Checkpoint recovery
+
+Saved `messages`, supported `promptVersion` and completed `argsHash` remain bound
+to the original request. Recovery validates the saved transcript and exact
+assistant/tool call pairs; it never replaces old messages with a newer projection.
+Valid legacy v2 states may omit the version discriminator; their saved INPUT and
+transcript still require the same binding validation.
+A receipt-only crash after a completed model response and immutable READ can
+reconstruct the missing tool message without redispatch or repeating that READ.
+An already advanced transcript must match the original completed response and
+receipt. Missing model state with round/Gateway artifacts, missing full receipts,
+unsupported versions or altered bindings stop before generation or SAVE.
+
 Completed model responses are persisted before executing their read intent.
 Unknown generation is never replayed. Known transient failures retain the shared
 requester's bounded retry plus fresh lease and the adapter's real terminal proof.
-The existing A12b exclusive attempt marker forbids restarting a retired Gateway
+The existing exclusive attempt marker forbids restarting a retired Gateway
 under the same Host attempt. A completed read intent can repeat its exact Host
 read; if more generation is necessary after that Gateway has retired, a normal
 new Host request is required. This does not reset the old attempt, erase its
@@ -79,26 +141,25 @@ report remains in the private checkpoint and is exposed as a bounded diagnostic.
 
 Actual reported model identity is stored separately from configuredModelRef.
 If the platform exposes no downstream model, actualModel is null. The driver,
-not model content, creates provenanceJson (prompt, installed skill and tool
+not model content, creates provenanceJson (prompt, skill and tool
 versions). Provider dispatch receipts and secret-cleanup proof remain private
 checkpoint evidence. A cleanup or terminal-proof failure prevents saving.
 
-## Installation delta
+## Evidence boundary
 
-This Git implementation starts from Host commit
-`7e7be7fdbba40fc94c461defc962bf1caae9475e`. Its runtime files are older than the
-installed A12b 71-file source. Do not install those whole existing files from Git.
-Apply the separately reviewed A12b delta, which preserves all installed files and
-changes only the new summary consumer files, strict metadata registration/tests,
-this documentation, and the summary-only native launcher binding branch.
+Offline preservation and exact byte/receipt checks establish the retained input
+and recovery contract. They do not measure real-model token or semantic savings,
+prove installed OpenClaw behavior, deployment, provider execution or a real
+business summary. This reference does not activate a runtime or authorize an
+installation or profile change.
 
-Add exactly `derived_summary_attempt` to
-`mcp.servers.wiselink_host_controller.toolFilter.include`, preserving every prior
-entry and every other config key. Host must publish the corresponding tool
-before the strict runtime metadata validator is installed. Do not start a summary
-job or change cron, identity, models, endpoints, secrets or profile during install.
-
-Local tests and the exact-file installation rehearsal prove the implementation
-and fake transport behavior. They do not prove installed OpenClaw behavior,
-provider execution, a published Host route, or a real business summary. Those
-receipts remain separate acceptance steps.
+The native helper tests use explicit fake resolver modules, fake child CLIs,
+synthetic provider configuration and fake upstream responses over loopback.
+Their cross-module Summary tests exercise the current strict receipt validator,
+actual dispatch ordinals, owned cleanup, unknown-terminal fencing and saved
+response replay. They do not verify the default SDK deep import, its
+`resolveSecretRefValues` export, a particular installed SDK version, real
+SecretRef resolution or a real model. Running the CLI with active configuration
+can claim/heartbeat the Host attempt, read sources, resolve credentials and
+dispatch the provider; package inclusion and these synthetic tests do not grant
+that execution authorization.

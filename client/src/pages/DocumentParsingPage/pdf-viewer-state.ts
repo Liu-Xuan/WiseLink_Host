@@ -1,3 +1,5 @@
+export const PDF_RENDER_OVERSCAN_PX = 900;
+
 export function clampPdfPage(page: number, pageCount: number): number {
   if (!Number.isFinite(page) || pageCount <= 0) return 1;
   return Math.min(pageCount, Math.max(1, Math.trunc(page)));

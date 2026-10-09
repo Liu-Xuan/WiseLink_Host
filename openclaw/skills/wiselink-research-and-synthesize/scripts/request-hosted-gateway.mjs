@@ -29,15 +29,25 @@ export function classifyHostedGatewayFailure(payload) {
  * Lost responses/timeouts are ambiguous and are never replayed here.
  */
 export function createHostedReviewRequester({ requestGateway = requestHostedGateway,
-  observeProgress, wait = (ms, signal) => delay(ms, undefined, { signal }),
+  observeProgress, maxModelRequests,
+  wait = (ms, signal) => delay(ms, undefined, { signal }),
 }) {
+  if (maxModelRequests !== undefined &&
+    (!Number.isSafeInteger(maxModelRequests) || maxModelRequests <= 0)) {
+    throw new Error('REVIEW_MAX_MODEL_REQUESTS_INVALID');
+  }
   let retryNo = 0;
   let requestNo = 0;
   return async (endpoint, init) => {
     for (;;) {
       init.signal.throwIfAborted();
-      requestNo += 1;
-      await observeProgress?.({ kind: 'MODEL_REQUEST', requestNo, retryNo, delayMs: 0, errorCode: null });
+      if (maxModelRequests !== undefined && requestNo >= maxModelRequests)
+        throw new Error('REVIEW_MODEL_REQUEST_BUDGET_EXHAUSTED');
+      const nextRequestNo = requestNo + 1;
+      await observeProgress?.({ kind: 'MODEL_REQUEST', requestNo: nextRequestNo,
+        retryNo, delayMs: 0, errorCode: null });
+      init.signal.throwIfAborted();
+      requestNo = nextRequestNo;
       let response;
       let error;
       let retryCode;
@@ -63,6 +73,9 @@ export function createHostedReviewRequester({ requestGateway = requestHostedGate
         if (!NONDISPATCH_NETWORK_CODES.has(networkCode) || init.signal.aborted) throw cause;
         retryCode = `REVIEW_GATEWAY_${networkCode}`;
       }
+      init.signal.throwIfAborted();
+      if (maxModelRequests !== undefined && requestNo >= maxModelRequests)
+        throw new Error('REVIEW_MODEL_REQUEST_BUDGET_EXHAUSTED');
       if (retryNo >= 2) {
         if (error) throw error;
         return response;

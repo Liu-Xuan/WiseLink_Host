@@ -1,7 +1,7 @@
 import type { JobAidProblemWorkContent } from '@shared/jobaid-problem-assessment.interface';
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { engineeringSearchProjection, engineeringSearchProjectionPending } from '../../database/engineering-search.schema';
 import { buildEngineeringSearchText, type EngineeringSearchText } from './engineering-search-text';
 
@@ -15,6 +15,40 @@ export interface EngineeringSearchProjectionEntry {
   parentContextRef: string | null;
   title: string;
   search: EngineeringSearchText;
+}
+
+export interface EngineeringSearchPendingRevision {
+  tenantId: string;
+  revisionRef: string;
+  ownerKind: 'USER' | 'MATTER';
+  ownerId: string;
+  subjectId: string | null;
+  lastError: string;
+  attempts: number;
+}
+
+function pendingIdentity(item: Pick<EngineeringSearchPendingRevision,
+  'tenantId' | 'revisionRef' | 'ownerKind' | 'ownerId' | 'subjectId'>) {
+  return and(eq(engineeringSearchProjectionPending.tenantId, item.tenantId),
+    eq(engineeringSearchProjectionPending.exactRevisionRef, item.revisionRef),
+    eq(engineeringSearchProjectionPending.ownerKind, item.ownerKind),
+    eq(engineeringSearchProjectionPending.ownerId, item.ownerId),
+    item.subjectId === null ? isNull(engineeringSearchProjectionPending.subjectId)
+      : eq(engineeringSearchProjectionPending.subjectId, item.subjectId));
+}
+
+function projectionFailureCode(error: unknown): string {
+  // SQL wrapper messages can contain source text or parameters. Keep codes only.
+  let code = 'ENGINEERING_SEARCH_PROJECTION_FAILED';
+  for (let depth = 0; depth < 5 && error instanceof Error; depth += 1) {
+    if ('code' in error && typeof error.code === 'string' && /^[A-Z0-9_:-]+$/u.test(error.code)) {
+      code = error.code;
+    } else if (/^[A-Z][A-Z0-9_:-]+$/u.test(error.message)) {
+      code = error.message;
+    }
+    error = error.cause;
+  }
+  return code.slice(0, 2000);
 }
 
 export interface AuthorizedSearchProjectionEntryInput {
@@ -103,32 +137,39 @@ export class EngineeringSearchProjectionWriter {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
 
   async indexJobAidRevision(input: { tenantId: string; ownerId: string; subjectId: string; revisionRef: string; content: JobAidProblemWorkContent; database?: PostgresJsDatabase }) {
-    const rows = buildWorkSearchProjection({ ownerKind: 'USER', ownerId: input.ownerId, subjectId: input.subjectId, exactRevisionRef: input.revisionRef, content: input.content });
-    const write = async (tx: PostgresJsDatabase) => {
-      await tx.delete(engineeringSearchProjection).where(and(eq(engineeringSearchProjection.tenantId, input.tenantId), eq(engineeringSearchProjection.exactRevisionRef, input.revisionRef)));
-      if (rows.length > 0) await tx.insert(engineeringSearchProjection).values(rows.map(row => ({
-          entryId: row.entryId, tenantId: input.tenantId, ownerKind: row.ownerKind, ownerId: row.ownerId,
-          exactRevisionRef: row.exactRevisionRef, entryKind: row.entryKind, locatorRef: row.locatorRef,
-          parentContextRef: row.parentContextRef, title: row.title, identifiers: row.search.identifiers,
-          originalOrWorkText: row.search.originalText, tokenizedText: row.search.tokenizedText, indexedVersion: 1,
-        })));
-      await tx.delete(engineeringSearchProjectionPending).where(and(eq(engineeringSearchProjectionPending.tenantId, input.tenantId), eq(engineeringSearchProjectionPending.exactRevisionRef, input.revisionRef)));
-    };
-    if (input.database) await write(input.database);
-    else await this.db.transaction(write);
+    return this.indexWorkRevision({ ...input, ownerKind: 'USER' });
   }
 
   async indexMatterRevision(input: { tenantId: string; ownerId: string; subjectId: string; revisionRef: string; content: JobAidProblemWorkContent; database?: PostgresJsDatabase }) {
-    const rows = buildWorkSearchProjection({ ownerKind: 'MATTER', ownerId: input.ownerId, subjectId: input.subjectId, exactRevisionRef: input.revisionRef, content: input.content });
+    return this.indexWorkRevision({ ...input, ownerKind: 'MATTER' });
+  }
+
+  private async indexWorkRevision(input: { tenantId: string; ownerKind: 'USER' | 'MATTER';
+    ownerId: string; subjectId: string; revisionRef: string; content: JobAidProblemWorkContent;
+    database?: PostgresJsDatabase }) {
+    const rows = buildWorkSearchProjection({ ...input, exactRevisionRef: input.revisionRef });
     const write = async (tx: PostgresJsDatabase) => {
-      await tx.delete(engineeringSearchProjection).where(and(eq(engineeringSearchProjection.tenantId, input.tenantId), eq(engineeringSearchProjection.exactRevisionRef, input.revisionRef)));
+      const existing = await tx.select({ ownerKind: engineeringSearchProjection.ownerKind,
+        ownerId: engineeringSearchProjection.ownerId, subjectId: engineeringSearchProjection.parentContextRef,
+        entryKind: engineeringSearchProjection.entryKind }).from(engineeringSearchProjection)
+        .where(and(eq(engineeringSearchProjection.tenantId, input.tenantId),
+          eq(engineeringSearchProjection.exactRevisionRef, input.revisionRef)));
+      if (existing.some(row => row.ownerKind !== input.ownerKind || row.ownerId !== input.ownerId ||
+        row.subjectId !== input.subjectId || row.entryKind !== 'WORK'))
+        throw new Error('ENGINEERING_SEARCH_PROJECTION_IDENTITY_CONFLICT');
+      await tx.delete(engineeringSearchProjection).where(and(
+        eq(engineeringSearchProjection.tenantId, input.tenantId),
+        eq(engineeringSearchProjection.ownerKind, input.ownerKind),
+        eq(engineeringSearchProjection.ownerId, input.ownerId),
+        eq(engineeringSearchProjection.parentContextRef, input.subjectId),
+        eq(engineeringSearchProjection.exactRevisionRef, input.revisionRef)));
       if (rows.length > 0) await tx.insert(engineeringSearchProjection).values(rows.map(row => ({
         entryId: row.entryId, tenantId: input.tenantId, ownerKind: row.ownerKind, ownerId: row.ownerId,
         exactRevisionRef: row.exactRevisionRef, entryKind: row.entryKind, locatorRef: row.locatorRef,
         parentContextRef: row.parentContextRef, title: row.title, identifiers: row.search.identifiers,
         originalOrWorkText: row.search.originalText, tokenizedText: row.search.tokenizedText, indexedVersion: 1,
       })));
-      await tx.delete(engineeringSearchProjectionPending).where(and(eq(engineeringSearchProjectionPending.tenantId, input.tenantId), eq(engineeringSearchProjectionPending.exactRevisionRef, input.revisionRef)));
+      await tx.delete(engineeringSearchProjectionPending).where(pendingIdentity(input));
     };
     if (input.database) await write(input.database); else await this.db.transaction(write);
   }
@@ -180,75 +221,86 @@ export class EngineeringSearchProjectionWriter {
     });
   }
 
-  async markPending(input: { tenantId: string; ownerKind: 'USER' | 'MATTER'; ownerId: string; subjectId?: string; revisionRef: string; error: unknown }): Promise<void> {
-    // Drizzle's wrapper message includes SQL parameters (potentially full
-    // source text). Persist the underlying diagnostic code, never that body.
-    let cause: unknown = input.error;
-    let message = 'ENGINEERING_SEARCH_PROJECTION_FAILED';
-    for (let depth = 0; depth < 5 && cause instanceof Error; depth += 1) {
-      if ('code' in cause && typeof cause.code === 'string' && /^[A-Z0-9_:-]+$/u.test(cause.code)) {
-        message = cause.code;
-      } else if (/^[A-Z][A-Z0-9_:-]+$/u.test(cause.message)) {
-        message = cause.message;
-      }
-      cause = cause.cause;
-    }
-    await this.db.insert(engineeringSearchProjectionPending).values({
-      tenantId: input.tenantId, exactRevisionRef: input.revisionRef, ownerKind: input.ownerKind,
-      ownerId: input.ownerId, subjectId: input.subjectId ?? null, lastError: message.slice(0, 2000), attempts: 1,
-    }).onConflictDoUpdate({
-      target: [engineeringSearchProjectionPending.tenantId, engineeringSearchProjectionPending.exactRevisionRef],
-      set: { lastError: message.slice(0, 2000), attempts: sql`${engineeringSearchProjectionPending.attempts} + 1` },
-    });
-  }
-
-  async listPending(tenantId: string, limit = 100): Promise<Array<{
-    tenantId: string; revisionRef: string; ownerKind: 'USER' | 'MATTER'; ownerId: string; subjectId: string | null; lastError: string; attempts: number;
-  }>> {
-    if (!tenantId || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error('ENGINEERING_SEARCH_PENDING_QUERY_INVALID');
+  async listPending(tenantId: string, actorUserId: string, limit = 100): Promise<EngineeringSearchPendingRevision[]> {
+    if (!tenantId || !actorUserId || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000)
+      throw new Error('ENGINEERING_SEARCH_PENDING_QUERY_INVALID');
+    // Both work and matter ownerId are the saved revision's creator, never matterId.
+    // Filter before LIMIT so another actor's queue cannot starve this request.
     const rows = await this.db.select().from(engineeringSearchProjectionPending)
       .where(and(eq(engineeringSearchProjectionPending.tenantId, tenantId),
-        inArray(engineeringSearchProjectionPending.ownerKind, ['USER', 'MATTER']))).limit(limit);
+        eq(engineeringSearchProjectionPending.ownerId, actorUserId),
+        inArray(engineeringSearchProjectionPending.ownerKind, ['USER', 'MATTER'])))
+      .orderBy(engineeringSearchProjectionPending.exactRevisionRef).limit(limit);
     return rows.map(row => ({ tenantId: row.tenantId, revisionRef: row.exactRevisionRef,
       ownerKind: row.ownerKind as 'USER' | 'MATTER', ownerId: row.ownerId, subjectId: row.subjectId,
       lastError: row.lastError, attempts: row.attempts }));
   }
 
-  /**
-   * Rebuilds derived rows from the authoritative saved revision. The loader is
-   * supplied by the caller so this class never bypasses the existing reader,
-   * tenant or actor authorization boundary. A failed item remains pending and
-   * is processed independently from later items.
-   */
+  private async lockPending(item: EngineeringSearchPendingRevision, database: PostgresJsDatabase): Promise<boolean> {
+    const rows = await database.select({ id: engineeringSearchProjectionPending.id })
+      .from(engineeringSearchProjectionPending).where(pendingIdentity(item)).limit(1).for('update');
+    return rows.length === 1;
+  }
+
+  /** Each item rechecks the admitted request and authoritative saved revision in its write transaction. */
   async rebuildPending(input: {
     tenantId: string;
+    actorUserId: string;
     limit?: number;
-    load: (pending: {
-      revisionRef: string;
-      ownerKind: 'USER' | 'MATTER';
-      ownerId: string;
-      subjectId: string | null;
-    }) => Promise<JobAidProblemWorkContent>;
+    verifySession: (database: PostgresJsDatabase) => Promise<void>;
+    load: (pending: EngineeringSearchPendingRevision, database: PostgresJsDatabase) => Promise<JobAidProblemWorkContent>;
   }): Promise<{ attempted: number; rebuilt: number; failed: number }> {
-    const pending = await this.listPending(input.tenantId, input.limit);
+    const pending = await this.listPending(input.tenantId, input.actorUserId, input.limit);
     let rebuilt = 0;
     let failed = 0;
     for (const item of pending) {
-      try {
-        const content = await input.load(item);
-        if (!item.subjectId) throw new Error('ENGINEERING_SEARCH_PENDING_SUBJECT_MISSING');
-        if (item.ownerKind === 'USER') {
-          await this.indexJobAidRevision({ tenantId: input.tenantId, ownerId: item.ownerId, subjectId: item.subjectId, revisionRef: item.revisionRef, content });
-        } else if (item.subjectId) {
-          await this.indexMatterRevision({ tenantId: input.tenantId, ownerId: item.ownerId, subjectId: item.subjectId, revisionRef: item.revisionRef, content });
-        } else {
-          throw new Error('ENGINEERING_SEARCH_PENDING_SUBJECT_MISSING');
-        }
-        rebuilt += 1;
-      } catch (error: unknown) {
+      // Defense in depth even if a replaced repository returns an invalid candidate.
+      if (item.tenantId !== input.tenantId || item.ownerId !== input.actorUserId || !item.subjectId ||
+        !['USER', 'MATTER'].includes(item.ownerKind)) {
         failed += 1;
-        await this.markPending({ tenantId: input.tenantId, ownerKind: item.ownerKind, ownerId: item.ownerId,
-          subjectId: item.subjectId ?? undefined, revisionRef: item.revisionRef, error });
+        continue;
+      }
+      let sessionVerified = false;
+      let contentAuthorized = false;
+      try {
+        const written = await this.db.transaction(async (tx: PostgresJsDatabase) => {
+          await input.verifySession(tx);
+          sessionVerified = true;
+          if (!await this.lockPending(item, tx)) return false;
+          const content = await input.load(item, tx);
+          contentAuthorized = true;
+          const write = { tenantId: input.tenantId, ownerId: input.actorUserId,
+            subjectId: item.subjectId!, revisionRef: item.revisionRef, content, database: tx };
+          if (item.ownerKind === 'USER') await this.indexJobAidRevision(write);
+          else await this.indexMatterRevision(write);
+          return true;
+        });
+        if (written) rebuilt += 1;
+      } catch (error: unknown) {
+        // Session denial must remain an HTTP auth error, never a successful receipt.
+        if (!sessionVerified) throw error;
+        failed += 1;
+        // Authorization/identity failures are read-only, including attempts/lastError.
+        if (!contentAuthorized || (error instanceof Error &&
+          error.message === 'ENGINEERING_SEARCH_PROJECTION_IDENTITY_CONFLICT')) continue;
+        let retrySessionVerified = false;
+        try {
+          await this.db.transaction(async (tx: PostgresJsDatabase) => {
+            await input.verifySession(tx);
+            retrySessionVerified = true;
+            if (!await this.lockPending(item, tx)) return;
+            await input.load(item, tx);
+            // UPDATE only: a completed/deleted/rebound item must never be resurrected.
+            await tx.update(engineeringSearchProjectionPending).set({
+              attempts: sql`${engineeringSearchProjectionPending.attempts} + 1`,
+              lastError: projectionFailureCode(error),
+            }).where(pendingIdentity(item));
+          });
+        } catch (retryError: unknown) {
+          if (!retrySessionVerified) throw retryError;
+          // Preserve the failed receipt. A lost authorization or failed diagnostic
+          // write cannot authorize another write or mask the original index failure.
+        }
       }
     }
     return { attempted: pending.length, rebuilt, failed };

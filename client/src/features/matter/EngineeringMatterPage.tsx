@@ -1,4 +1,7 @@
 import MemberSavedAssessmentReading from './MemberSavedAssessmentReading';
+import TdmsSourceEntry from '@client/src/features/tdms-source/TdmsSourceEntry';
+import { TDMS_SOURCE_UI_ENABLED } from '@client/src/features/tdms-source/tdms-source-enabled';
+import { savedTdmsSourceRefs } from '@client/src/features/tdms-source/saved-tdms-source-refs';
 import { useCallback, useEffect, useMemo, useRef, useState, type FC } from 'react';
 import {
   Link,
@@ -116,6 +119,10 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     initialLocation?.discussionClaimId ?? null,
   );
   const [navigationError, setNavigationError] = useState<string | null>(null);
+  const [sourceReadHold, setSourceReadHold] = useState(false);
+  const [sourceReadSuspended, setSourceReadSuspended] = useState(false);
+  const sourceAuthorizationEpoch = useRef(0);
+  useEffect(() => () => { sourceAuthorizationEpoch.current += 1; }, []);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const currentRevision: EngineeringMatterWorkingRevisionReadModel | null =
     data?.working.current ?? null;
@@ -140,6 +147,19 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     await Promise.all([workspaceRefresh(), requestedRevisionRead.refresh()]);
     await queryClient.invalidateQueries({ queryKey: [...ENGINEERING_MATTER_QUERY_ROOT, 'execution-summary'] });
   }, [queryClient, requestedRevisionRead.refresh, workspaceRefresh]);
+  const rejectTdmsAccess = useCallback(() => {
+    setSourceReadHold(true); setSourceReadSuspended(true);
+    const epoch = ++sourceAuthorizationEpoch.current;
+    void refresh().then(() => {
+      if (sourceAuthorizationEpoch.current === epoch) setSourceReadHold(false);
+    }).catch(() => undefined);
+  }, [refresh]);
+  async function refreshReadingManually(): Promise<void> {
+    const epoch = ++sourceAuthorizationEpoch.current;
+    await refresh();
+    if (sourceAuthorizationEpoch.current !== epoch) return;
+    setSourceReadHold(false); setSourceReadSuspended(false);
+  }
   const displayedReadGeneration = requestedWorkRef
     ? requestedRevisionRead.authorizedSessionGeneration : authorizedSessionGeneration;
   const timelineSources = useMemo(() => {
@@ -197,11 +217,11 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
 
   useEffect(() => {
     publishCurrentObject(
-      !requestedWorkRef && data
+      !requestedWorkRef && data && !sourceReadHold
         ? buildMatterObjectContext(data.matter, data.working)
         : null,
     );
-  }, [data, publishCurrentObject, requestedWorkRef]);
+  }, [data, publishCurrentObject, requestedWorkRef, sourceReadHold]);
 
   useEffect(() => {
     if (!requestedRevisionRead.revoked) return;
@@ -251,12 +271,12 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
     openDocument(matches[0]);
   }
 
-  if (!data)
+  if (!data || sourceReadHold)
     return (
       <main className="wl-overview-page" aria-busy={loading}>
         <div className="wl-overall-hero wl-glass-content space-y-4">
           <h1 className="text-xl font-semibold">
-            {loading ? '正在读取事项工作记录…' : '暂时无法打开事项'}
+            {sourceReadHold ? '来源权限待核，相关保存工作已隐藏' : loading ? '正在读取事项工作记录…' : '暂时无法打开事项'}
           </h1>
           {error ? <p role="alert">{error}</p> : null}
           {!matterId ? <p role="alert">事项标识缺失，请重新进入。</p> : null}
@@ -269,7 +289,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
               返回工程事项
             </Button>
             {!loading && !authenticationRequired ? (
-              <Button onClick={() => { void refresh().catch(() => undefined); }}>
+              <Button onClick={() => { void refreshReadingManually().catch(() => undefined); }}>
                 重新读取
               </Button>
             ) : null}
@@ -306,7 +326,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
         <Button
           variant="outline"
           disabled={loading}
-          onClick={() => { void refresh().catch(() => undefined); }}
+          onClick={() => { void refreshReadingManually().catch(() => undefined); }}
         >
           <RefreshCw aria-hidden="true" />
           {loading ? '正在读取…' : '重新读取'}
@@ -479,6 +499,15 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
               onLocateDocument={openDocument}
               showMethodNotice={false}
             />
+            {TDMS_SOURCE_UI_ENABLED && !workspaceRevoked && (!requestedWorkRef || displayedRevision) ? <TdmsSourceEntry
+              key={JSON.stringify([matterId, requestedWorkRef])}
+              context={{ matterId }} enabled={TDMS_SOURCE_UI_ENABLED && !sourceReadSuspended} onAccessRejected={rejectTdmsAccess}
+              exactRevisionRefs={requestedWorkRef ? savedTdmsSourceRefs([
+                ...(displayedRevision?.state.problemWork?.evidence ?? []),
+                ...(displayedRevision?.state.substantiveResult?.evidence ?? []),
+              ]) : undefined}
+              openDocument={documentVersionId => openDocument({ documentVersionId, workItemId: null })}
+            /> : null}
             {displayedRevision && displayedReadGeneration != null ? <WikiRecentChanges
               work={{ kind: 'ENGINEERING_MATTER', revision: displayedRevision }}
               mode={requestedWorkRef ? 'HISTORICAL' : 'CURRENT'}

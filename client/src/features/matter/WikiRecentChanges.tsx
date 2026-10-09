@@ -1,6 +1,7 @@
+import { Link, useNavigate } from 'react-router-dom';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReviewConversationReadModel } from '@shared/api.interface';
-import type { DocumentActivityReadingResponse } from '@shared/document-activity.interface';
+import type { AnyDocumentActivityReadingResponse as DocumentActivityReadingResponse } from '@shared/document-activity.interface';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import {
   getCanonicalHostClientSessionGeneration, getCurrentReviewConversation,
@@ -132,6 +133,7 @@ function SourceDeclarations({ mode, sources, sessionGeneration, onAccessDenied }
 function SourceReading({ source, mode, sessionGeneration, onAccessDenied }: {
   source: WikiTimelineSource; mode: WikiWorkMode; sessionGeneration: number; onAccessDenied: () => void;
 }) {
+  const navigate = useNavigate();
   const [reading, setReading] = useState<DocumentActivityReadingResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -151,7 +153,7 @@ function SourceReading({ source, mode, sessionGeneration, onAccessDenied }: {
     if (runRef !== undefined) query.set('runRef', runRef);
     setReading(null); setError(null); setLoading(true);
     if (blocker) { setError(blocker); setLoading(false); return () => controller.abort(); }
-    void loadActivityEntry({ documentVersionId,
+    void loadActivityEntry({ documentVersionId, acceptCandidateSchemaV2: true,
       entry: validateActivityEntry(query), baseParams: query,
       deps: { readParsingStatus: readDocumentParsingStatus, readActivityReading: readDocumentActivityReading },
       signal: controller.signal, current,
@@ -176,13 +178,13 @@ function SourceReading({ source, mode, sessionGeneration, onAccessDenied }: {
   };
   const open = (statementId: string, anchorId?: string) => {
     const target = route(statementId, anchorId);
-    if (target) globalThis.location.assign(target);
+    if (target) navigate(target);
   };
   return <div className="mt-4"><DocumentActivityTimelineView reading={reading}
     selectedStatementId={selectedStatement} onSelectStatement={setSelectedStatement}
     onOpenReading={open} onOpenAnchor={open} loading={loading} error={error}
     hasExactSource={Boolean(source.parseRunId || reading)} window={window} onWindowChange={setWindow} />
-    {reading?.candidate ? <a href={`/timeline?${new URLSearchParams({ documentVersionId: reading.binding.documentVersionId,
+    {reading?.candidate ? <Link to={`/timeline?${new URLSearchParams({ documentVersionId: reading.binding.documentVersionId,
       parseRunId: reading.binding.parseRunId, candidateRevision: String(reading.candidate.candidateRevision),
-      runRef: reading.candidate.runRef, window })}`}>打开独立时间轴</a> : null}</div>;
+      runRef: reading.candidate.runRef, window })}`}>打开独立时间轴</Link> : null}</div>;
 }

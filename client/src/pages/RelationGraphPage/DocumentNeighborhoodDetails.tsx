@@ -6,6 +6,7 @@ import type { DocumentParsingStatus } from '@shared/document-parsing.interface';
 import { documentNeighborhoodAccessRejected, type DocumentNeighborhoodRead } from './document-neighborhood-read';
 import type { DocumentNeighborhoodProjection, DocumentNeighborhoodTarget } from './suite-document-neighborhood';
 import type { SuiteGraphTimelineEvent } from './suite-graph-timeline';
+import DocumentActivityStatementSemantics from '@client/src/features/trinity/DocumentActivityStatementSemantics';
 
 type DocumentTarget = Extract<DocumentNeighborhoodTarget, {kind: 'document'}>;
 function SavedReading({ quicklook }: { quicklook: CanonicalLibraryQuicklookResponse | null }) {
@@ -97,6 +98,7 @@ function SelectedDetail({ read, projection, selectedId, event, session, onReject
     {event.statement.quotes.length > 8 ? <p>此处显示前 8 段引文，完整时间轴保留全部来源。</p> : null}
     {event.statement.limitations.slice(0, 8).map((limitation, index) => <p key={index}>限制：{limitation}</p>)}
     {event.statement.limitations.length > 8 ? <p>其余限制请在完整时间轴核对。</p> : null}
+    <DocumentActivityStatementSemantics statement={event.statement} />
     <small>保存候选 {event.pins?.parseRunId} · {event.pins?.candidateRevision}；不代表实际执行。</small></>;
   const target = projection.targets.get(selectedId);
   const relation = projection.relations.get(selectedId);

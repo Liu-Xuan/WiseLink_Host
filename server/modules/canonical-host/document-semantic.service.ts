@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { DocumentSemanticRevisionRepository } from './document-semantic-revision.repository';
 import { assertDocumentSemanticMap, buildDocumentSemanticMap } from '../document-management/src/hosted/nest/document-semantic-map';
-import { BOEING_FTD_SEMANTIC_PROFILE, GENERIC_SEMANTIC_PROFILE } from '../document-management/src/hosted/nest/document-semantic-profile';
+import { selectDocumentSemanticProfile } from '../document-management/src/hosted/nest/document-semantic-profile';
 
 type Scope = { tenantId: string; actorUserId: string; documentVersionId: string; roles: string[] };
 type Loaded = Awaited<ReturnType<UnifiedReaderService['readDocumentOriginal']>>;
@@ -31,10 +31,11 @@ export class DocumentSemanticService {
       FROM dm_document_version v JOIN dm_publication_family f ON f.family_id=v.family_id
       WHERE v.document_version_id=${scope.documentVersionId}`);
     if (!rows[0]) throw new Error('DOCUMENT_SEMANTIC_FAMILY_NOT_FOUND');
-    // SB supplier/airframe layout is not yet verified by registered family alone.
-    const profile = rows[0].family === 'FTD' && rows[0].issuer === 'BOEING'
-      ? BOEING_FTD_SEMANTIC_PROFILE : GENERIC_SEMANTIC_PROFILE;
+    const { profile, selection } = selectDocumentSemanticProfile({
+      registeredFamily: rows[0].family, registeredIssuer: rows[0].issuer,
+    });
     const map = buildDocumentSemanticMap({ original: loaded.original, semanticRevision: 1, profile });
+    map.profileSelection = selection;
     const manifest = loaded.run.manifestArtifact;
     if (!manifest || manifest.readback !== 'VERIFIED') throw new Error('DOCUMENT_ORIGINAL_MANIFEST_REQUIRED');
     try {

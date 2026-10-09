@@ -1104,6 +1104,16 @@ export class MiaodaHostedDocumentCatalog {
     });
   }
 
+  /** Internal exact-content lookup under the current SQL actor context; never grants source/ref rights. */
+  async readSourceArtifactByContent(input: { sha256: string; byteLength: number }) {
+    if (!/^[a-f0-9]{64}$/u.test(input.sha256) || !Number.isSafeInteger(input.byteLength) || input.byteLength < 1)
+      fail('SOURCE_ARTIFACT_IDENTITY_INVALID', 'Exact source content identity is required.');
+    const [artifact] = await this.db.select().from(dmSourceArtifact).where(and(
+      eq(dmSourceArtifact.sha256, input.sha256), eq(dmSourceArtifact.byteLength, input.byteLength),
+    )).limit(1);
+    return artifact ?? null;
+  }
+
   async recordAcquisition({ sourceArtifact, acquisition }) {
     return this.db.transaction(async (transaction) => {
       await transaction.insert(dmSourceArtifact).values({

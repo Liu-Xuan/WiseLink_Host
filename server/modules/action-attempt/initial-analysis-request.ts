@@ -13,6 +13,12 @@ const requestSchema = z.strictObject({
   ]),
   requestId: z.union([z.string().uuid(), z.string().regex(/^original-[1-9][0-9]{0,15}$/)]),
   originalParseRunId: z.string().min(1).max(200).optional(),
+  /** Browser queues exact intent; genuine runtime admission resolves native metadata. */
+  nativeOverallAdmission: z.strictObject({
+    workRevisionRef: z.string().regex(/^JAWR-[A-Za-z0-9-]{1,91}$/u),
+    workRevision: z.number().int().positive(),
+    regenerationRequestId: z.string().min(1).max(200).optional(),
+  }).optional(),
   retranslateBlockIds: z
     .array(z.string().min(1).max(200))
     .min(1)
@@ -30,6 +36,9 @@ export function buildInitialAnalysisRequestInput(
     ...input,
     schemaVersion: INITIAL_ANALYSIS_REQUEST_SCHEMA,
   });
+  if (request.nativeOverallAdmission &&
+      (request.taskType !== 'OPENCLAW_OVERALL_SYNTHESIS' || !request.originalParseRunId))
+    throw new Error('JOBAID_TDMS_OVERALL_REQUEST_INVALID');
   if (request.requestId.startsWith('original-') && !request.originalParseRunId)
     throw new Error('ACTION_ATTEMPT_INITIAL_REQUEST_ORIGINAL_SCOPE_INVALID');
   if (request.originalParseRunId && request.taskType === 'OPENCLAW_TRANSLATE')
@@ -65,12 +74,19 @@ export function readInitialAnalysisRequestInput(
     task.allowedConnectors.length === 1 &&
     task.allowedConnectors[0] === 'feishu-aily-user'
   );
+  const nativeAdmission = request.nativeOverallAdmission;
+  const expectedIdempotency = nativeAdmission
+    ? nativeAdmission.regenerationRequestId
+      ? `openclaw-v1:overall:${task.workItemId}:${task.baseRevision}:USER_REQUESTED_REGENERATION:${nativeAdmission.regenerationRequestId}`
+      : `openclaw-v1:overall:${task.workItemId}:${task.baseRevision}:problem-v2`
+    : `openclaw-v2:${operation}:${task.workItemId}:${task.documentVersionId}:${request.requestId}`;
+  if (nativeAdmission && request.requestId !== `original-${task.baseRevision}`)
+    throw new Error('JOBAID_TDMS_OVERALL_REQUEST_INVALID');
   if (
     task.taskType !== request.taskType ||
     task.sourceRefs.length !== 1 ||
     !connectorsValid ||
-    task.idempotencyKey !==
-      `openclaw-v2:${operation}:${task.workItemId}:${task.documentVersionId}:${request.requestId}`
+    task.idempotencyKey !== expectedIdempotency
   )
     throw new Error('ACTION_ATTEMPT_INITIAL_REQUEST_BINDING_INVALID');
   return request;
@@ -85,7 +101,7 @@ export function assertPreparedInitialAnalysisInput(
       ? 'wiselink.3_1.translation_task.v2'
       : 'wiselink.jobaid-problem-task.v2';
   if (
-    modelInput.schemaVersion !== expectedSchema ||
+    (modelInput.schemaVersion !== expectedSchema && !(request.taskType !== 'OPENCLAW_TRANSLATE' && modelInput.schemaVersion === 'wiselink.jobaid-problem-task.v3')) ||
     (request.taskType === 'OPENCLAW_TRANSLATE' &&
       JSON.stringify(modelInput.retranslateBlockIds ?? []) !==
         JSON.stringify(request.retranslateBlockIds ?? []))
@@ -96,5 +112,15 @@ export function assertPreparedInitialAnalysisInput(
       original: z.object({ binding: z.object({ parseRunId: z.literal(request.originalParseRunId) }) }),
     }) }) }).safeParse(modelInput);
     if (!binding.success) throw new Error('ACTION_ATTEMPT_INITIAL_REQUEST_ORIGINAL_CHANGED');
+  }
+  if (request.nativeOverallAdmission) {
+    const binding = z.object({
+      tdmsContext: z.object({ schemaVersion: z.literal('wiselink.tdms-runtime-context.v1') }),
+      previousWork: z.object({
+        workRevisionRef: z.literal(request.nativeOverallAdmission.workRevisionRef),
+        workRevision: z.literal(request.nativeOverallAdmission.workRevision),
+      }),
+    }).safeParse(modelInput);
+    if (!binding.success) throw new Error('JOBAID_TDMS_OVERALL_PREPARED_BINDING_INVALID');
   }
 }

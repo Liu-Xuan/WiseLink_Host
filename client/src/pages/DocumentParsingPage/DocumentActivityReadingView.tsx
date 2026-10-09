@@ -5,9 +5,11 @@ import { exactDocumentSourceRoute } from '@client/src/features/matter/matter-nav
 import type { TranslationSourceAnchorV2 } from '@shared/canonical-translation-v2.interface';
 import type {
   DocumentActivityDeliveryRange, DocumentActivityQuote, DocumentActivityReadCoverage,
-  DocumentActivityRevision, DocumentActivityStatement,
+  AnyDocumentActivityRevision as DocumentActivityRevision, AnyDocumentActivityStatement as DocumentActivityStatement,
 } from '@shared/document-activity.interface';
 import type { DocumentOriginalBinding } from '@shared/document-original.interface';
+import { documentActivityStatementTimes, documentActivityStatementStatusRaw, isDocumentActivityStatementV2 } from '@shared/document-activity.interface';
+import DocumentActivityStatementSemantics from '@client/src/features/trinity/DocumentActivityStatementSemantics';
 
 export type ActivityReturnParamsFor = (
   binding: DocumentOriginalBinding,
@@ -128,6 +130,7 @@ function StatementCard({ statement, candidate, binding, selected, returnParamsFo
 }) {
   const quotedAnchorIds = statement.quotes.map((quote: DocumentActivityQuote) => quote.anchorId);
   const anchors = candidate.sourceAnchors.filter((anchor: TranslationSourceAnchorV2) => quotedAnchorIds.includes(anchor.anchorId));
+  const times = documentActivityStatementTimes(statement);
   return (
     <Card data-testid={`statement-${statement.statementId}`}>
       <CardHeader>
@@ -140,14 +143,15 @@ function StatementCard({ statement, candidate, binding, selected, returnParamsFo
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
         <p className="text-xs text-muted-foreground">声明标识 {statement.statementId}</p>
-        {statement.time ? (
-          <p>
-            <span className="whitespace-pre-wrap">{statement.time.raw}</span>
-            <Badge variant="outline" className="ml-2">{statement.time.role}</Badge>
-            <Badge variant="outline" className="ml-1">精度 {statement.time.precision} · 表述 {statement.time.expression}</Badge>
+        {times.length ? times.map((time, index) => (
+          <p key={index}>
+            <span className="whitespace-pre-wrap">{time.raw}</span>
+            <Badge variant="outline" className="ml-2">{time.role}</Badge>
+            <Badge variant="outline" className="ml-1">精度 {time.precision} · 表述 {time.expression}</Badge>
           </p>
-        ) : <p className="text-muted-foreground">时间未提取</p>}
-        <p className="text-xs text-muted-foreground">状态原词：{statement.statusRaw ?? '（无状态原词）'}</p>
+        )) : <p className="text-muted-foreground">{isDocumentActivityStatementV2(statement) ? '时间：本候选未捕获' : '时间未提取'}</p>}
+        <p className="text-xs text-muted-foreground">状态原词：{documentActivityStatementStatusRaw(statement) ?? (isDocumentActivityStatementV2(statement) ? '本候选未捕获' : '（无状态原词）')}</p>
+        <DocumentActivityStatementSemantics statement={statement} />
         {statement.quotes.length > 0 ? (
           <ul className="list-disc space-y-1 pl-5">
             {statement.quotes.map((quote: DocumentActivityQuote, index: number) => <QuoteBlock key={`${quote.anchorId}-${index}`} quote={quote} candidate={candidate} />)}
