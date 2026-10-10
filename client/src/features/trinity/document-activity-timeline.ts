@@ -55,6 +55,11 @@ function laneFor(_time: DocumentActivityTime | null): ActivityTimelineLane {
 
 const DAY_CALENDAR = /^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/u;
 const MONTH_CALENDAR = /^(\d{4})[-/.年](\d{1,2})月?$/u;
+const NAMED_MONTH_CALENDAR = /^([a-z]+)\s+(\d{4})$/iu;
+const NAMED_MONTHS: Record<string, number> = {
+  january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+  july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+};
 const QUARTER_PREFIX = /^(\d{4})\s*年?\s*第?\s*([1-4]|一|二|三|四)\s*季度$/u;
 const QUARTER_Q = /^(\d{4})\s*[Qq]\s*([1-4])$/u;
 const QUARTER_Q_REVERSED = /^[Qq]\s*([1-4])\s*(?:of\s+)?(\d{4})$/u;
@@ -100,11 +105,14 @@ export function calendarSpan(time: DocumentActivityTime | null): ActivityCalenda
     return spanFromParts(year, 'DAY', month, day);
   }
   if (time.precision === 'MONTH') {
-    const match = raw.match(MONTH_CALENDAR);
-    if (!match) return null;
-    const month = Number(match[2]);
-    if (month < 1 || month > 12) return null;
-    return spanFromParts(Number(match[1]), 'MONTH', month);
+    const numericMatch = raw.match(MONTH_CALENDAR);
+    const namedMatch = numericMatch ? null : raw.match(NAMED_MONTH_CALENDAR);
+    if (!numericMatch && !namedMatch) return null;
+    const month = numericMatch
+      ? Number(numericMatch[2]) : NAMED_MONTHS[namedMatch![1].toLowerCase()];
+    if (!Number.isInteger(month) || month < 1 || month > 12) return null;
+    const year = Number(numericMatch ? numericMatch[1] : namedMatch![2]);
+    return spanFromParts(year, 'MONTH', month);
   }
   if (time.precision === 'QUARTER') {
     let match = raw.match(QUARTER_PREFIX);

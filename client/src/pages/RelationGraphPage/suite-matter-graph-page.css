@@ -287,7 +287,8 @@ html[data-wl-theme='dark'] .suite-matter-graph-page {
 .suite-graph-knowledge-body h2 { margin: 0 0 7px; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
 .suite-graph-knowledge-body h3 { display: flex; align-items: center; gap: 8px; margin: 25px 0 10px; font-size: 14px; }
 .suite-graph-knowledge-body h3 svg { width: 18px; height: 18px; color: var(--wl-accent); }
-.suite-graph-knowledge-body p { margin: 0 0 9px; color: var(--wl-muted); font-size: 13px; line-height: 1.75; overflow-wrap: anywhere; }
+.suite-graph-knowledge-body p,
+.suite-graph-knowledge-body .suite-graph-reading-body > .whitespace-pre-wrap { margin: 0 0 9px; color: var(--wl-muted); font-size: 13px; line-height: 1.75; overflow-wrap: anywhere; }
 .suite-graph-knowledge-body > [data-slot='button'] { margin-top: 17px; }
 .suite-graph-matter-code { display: block; margin-bottom: 4px; color: var(--wl-muted); font-size: 11px; }
 .suite-graph-bullet { position: relative; padding-left: 13px; }

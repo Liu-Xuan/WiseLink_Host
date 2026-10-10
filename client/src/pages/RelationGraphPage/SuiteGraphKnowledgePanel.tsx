@@ -77,8 +77,9 @@ function EvidenceLines({ evidence, onLocate }: { evidence: AssessmentEvidence; o
   );
 }
 
-function TargetDetail({ target, onLocateEvidence, onOpenTarget }: {
+function TargetDetail({ target, evidence, onLocateEvidence, onOpenTarget }: {
   target: SuiteMatterGraphTarget;
+  evidence: AssessmentEvidence[];
   onLocateEvidence?: (evidence: DocumentAssessmentEvidence) => void;
   onOpenTarget?: (target: SuiteMatterGraphTarget) => void;
 }) {
@@ -86,7 +87,13 @@ function TargetDetail({ target, onLocateEvidence, onOpenTarget }: {
     return (
       <>
         <span className="suite-graph-target-kind">已保存认识</span>
-        <p>{target.claim.text}</p>
+        <div className="suite-graph-reading-body">
+          <EngineeringIssueBody
+            body={target.claim.text}
+            evidence={evidence}
+            onLocateDocument={(source) => onLocateEvidence?.(source)}
+          />
+        </div>
         <p className="suite-graph-muted">{target.claim.basis === 'CONDITIONAL_INFERENCE' ? '有条件的推断 · 候选意见' : '来源陈述 · 待工程师核对'}</p>
         {target.claim.premises.map((premise) => (
           <p className="suite-graph-notice" key={`${premise.evidenceRef}-${premise.role}`}>
@@ -291,7 +298,7 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
     return (
       <div className="suite-graph-knowledge" aria-label="当前图谱范围">
         <div className="suite-graph-knowledge-body">
-          {selectedTarget ? <TargetDetail target={selectedTarget} onLocateEvidence={onLocateEvidence} onOpenTarget={onOpenTarget} /> : <>
+          {selectedTarget ? <TargetDetail target={selectedTarget} evidence={evidenceList} onLocateEvidence={onLocateEvidence} onOpenTarget={onOpenTarget} /> : <>
             <h2>当前目录范围</h2>
             <p>已加载 {matters} 个目录事项；仅展开当前打开事项的 {documents} 个资料节点。</p>
             <p>目录连接仅表示展示分组；事项与资料关联按实际登记关系显示。</p>
@@ -403,6 +410,7 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
               candidateRevision: selectedEvent.pins.candidateRevision,
               runRef: selectedEvent.pins.runRef,
             }}
+            evidence={evidenceList}
             onLocateEvidence={onLocateEvidence}
             onOpenTarget={onOpenTarget}
           />
@@ -419,6 +427,7 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
           ) : null}
           <TargetDetail
             target={selectedTarget}
+            evidence={evidenceList}
             onLocateEvidence={onLocateEvidence}
             onOpenTarget={onOpenTarget}
           />
@@ -436,7 +445,13 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
         {overviewStatus === 'NOT_AVAILABLE' ? <p className="suite-graph-notice">问题工作已经保存，当前范围尚未形成综合认识。</p> : null}
         <section>
           <h3><House aria-hidden="true" />{summaryLabel}</h3>
-          <p>{summaryText || '当前工作尚未保存问题理解或事项摘要。'}</p>
+          <div className="suite-graph-reading-body">
+            <EngineeringIssueBody
+              body={summaryText || '当前工作尚未保存问题理解或事项摘要。'}
+              evidence={evidenceList}
+              onLocateDocument={(evidence) => onLocateEvidence?.(evidence)}
+            />
+          </div>
         </section>
         <section>
           <h3><Lightbulb aria-hidden="true" />{
@@ -445,7 +460,13 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
               : savedIssues.length ? '已保存问题正文' : '当前认识'
           }</h3>
           {overviewStatus !== 'NOT_AVAILABLE' && savedClaims.length ? savedClaims.map((claim) => (
-            <p className="suite-graph-bullet" key={claim.claimId}>{claim.text}</p>
+            <div className="suite-graph-bullet suite-graph-reading-body" key={claim.claimId}>
+              <EngineeringIssueBody
+                body={claim.text}
+                evidence={evidenceList}
+                onLocateDocument={(evidence) => onLocateEvidence?.(evidence)}
+              />
+            </div>
           )) : savedIssues.length ? (
             <p>当前工作已保存 {savedIssues.length} 项完整问题正文，可在下方逐项阅读。</p>
           ) : overviewStatus !== 'NOT_AVAILABLE' ? (

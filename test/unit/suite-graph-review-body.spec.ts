@@ -1,4 +1,5 @@
-import { createElement, type ReactNode } from 'react';
+import { act, createElement, type ReactNode } from 'react';
+import { createRoot } from 'react-dom/client';
 import { StaticRouter } from 'react-router-dom/server';
 import { renderToStaticMarkup } from 'react-dom/server';
 import SuiteGraphKnowledgePanel from '../../client/src/pages/RelationGraphPage/SuiteGraphKnowledgePanel';
@@ -61,7 +62,7 @@ it.each(['STALE', 'NOT_AVAILABLE'] as const)('includes selected work problem bod
   }
 });
 
-jest.mock('@client/src/components/ui/button', () => ({ Button: ({children}: {children: ReactNode}) => createElement('button', null, children) }));
+jest.mock('@client/src/components/ui/button', () => ({ Button: ({children, onClick}: {children: ReactNode; onClick?: () => void}) => createElement('button', {onClick}, children) }));
 
 it('labels problem work understanding without presenting it as a separate overview', () => {
   const data = libraryMatterFixture();
@@ -187,3 +188,106 @@ it('shows each pending question once in the knowledge summary', () => {
   const html = renderToStaticMarkup(createElement(StaticRouter, {location:'/graph'}, createElement(SuiteGraphKnowledgePanel, {read:buildSuiteMatterGraph(data),revision:data.working.current,selectedTarget:null,selectedEvent:null,tab:'knowledge',onTabChange:()=>{}})));
   expect(html.match(/ONE_PENDING_QUESTION/g)).toHaveLength(1);
 });
+
+it.each([
+  'saved-summary',
+  'saved-list-brief',
+  'problem-understanding',
+  'problem-list-brief',
+  'claim-overview',
+  'selected-claim',
+  'display-selected-claim',
+] as const)('reads inline evidence in %s with source context and a visible unresolved-reference warning', surface => {
+  const data = libraryMatterFixture();
+  const revision = data.working.current!;
+  const result = revision.state.substantiveResult!;
+  const content = structuredClone(jobAidReadingFixture().current!.content);
+  const source = content.evidence[0];
+  const body = `GRAPH_BODY_HEAD\nGRAPH_BODY_TAIL [[${source.evidenceRef}]] [[unresolved-evidence]]`;
+  result.evidence = [source];
+  if (surface === 'saved-summary') result.content.lead = body;
+  if (surface === 'saved-list-brief') {
+    result.content.lead = '';
+    result.content.listBrief = body;
+  }
+  if (surface === 'problem-understanding' || surface === 'problem-list-brief') {
+    content.understanding = surface === 'problem-understanding' ? body : '';
+    content.listBrief = body;
+    revision.state.problemWork = content;
+  }
+  const selecting = surface === 'selected-claim' || surface === 'display-selected-claim';
+  if (surface === 'claim-overview' || selecting) result.content.claims[0].text = body;
+  const read = buildSuiteMatterGraph(data);
+  if (surface === 'display-selected-claim') read.graph.rootKind = 'display';
+  const selectedTarget = selecting
+    ? [...read.targets.values()].find(target => target.kind === 'claim')!
+    : null;
+  const before = JSON.stringify(revision);
+  const html = renderToStaticMarkup(createElement(StaticRouter, { location: '/graph' },
+    createElement(SuiteGraphKnowledgePanel, {
+      read, revision, selectedTarget, selectedEvent: null,
+      tab: 'knowledge', onTabChange: () => {}, onLocateEvidence: () => {},
+    })));
+  expect(html).toContain('GRAPH_BODY_HEAD\nGRAPH_BODY_TAIL');
+  expect(html).toContain('whitespace-pre-wrap');
+  expect(html).toContain('依据');
+  expect(html).toContain(source.title);
+  expect(html).toContain(source.excerpt);
+  expect(html).toContain('前往这份文档的原文');
+  expect(html).toContain('［依据无法读回］');
+  expect(html).not.toContain(`[[${source.evidenceRef}]]`);
+  expect(html).not.toContain('[[unresolved-evidence]]');
+  expect(JSON.stringify(revision)).toBe(before);
+});
+
+it.each(['summary', 'claim-overview', 'selected-claim'] as const)(
+  'locates the exact saved source from an inline %s reference', async surface => {
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://example.test/graph' });
+    const globals: Record<string, unknown> = {
+      window: dom.window, document: dom.window.document,
+      navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement,
+      IS_REACT_ACT_ENVIRONMENT: true,
+    };
+    const descriptors = new Map(Object.keys(globals).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+    for (const [key, value] of Object.entries(globals)) {
+      Object.defineProperty(globalThis, key, { configurable: true, value });
+    }
+    const container = dom.window.document.getElementById('root') as HTMLElement;
+    const root = createRoot(container);
+    try {
+      const data = libraryMatterFixture();
+      const revision = data.working.current!;
+      const result = revision.state.substantiveResult!;
+      const source = structuredClone(jobAidReadingFixture().current!.content.evidence[0]);
+      const body = `INLINE_SAVED_TEXT [[${source.evidenceRef}]]`;
+      result.evidence = [source];
+      if (surface === 'summary') result.content.lead = body;
+      else result.content.claims[0].text = body;
+      const read = buildSuiteMatterGraph(data);
+      const selectedTarget = surface === 'selected-claim'
+        ? [...read.targets.values()].find(target => target.kind === 'claim')!
+        : null;
+      const onLocateEvidence = jest.fn();
+      await act(async () => root.render(createElement(StaticRouter, { location: '/graph' },
+        createElement(SuiteGraphKnowledgePanel, {
+          read, revision, selectedTarget, selectedEvent: null,
+          tab: 'knowledge', onTabChange: () => {}, onLocateEvidence,
+        }))));
+      const locateButton = Array.from(container.querySelectorAll('button'))
+        .find(button => button.textContent === '前往这份文档的原文');
+      expect(locateButton).toBeDefined();
+      await act(async () => locateButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+      expect(onLocateEvidence).toHaveBeenCalledTimes(1);
+      expect(onLocateEvidence).toHaveBeenCalledWith(source);
+      expect(onLocateEvidence.mock.calls[0][0]).toBe(source);
+    } finally {
+      await act(async () => root.unmount());
+      dom.window.close();
+      for (const [key, descriptor] of descriptors) {
+        if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+        else Reflect.deleteProperty(globalThis, key);
+      }
+    }
+  },
+);
