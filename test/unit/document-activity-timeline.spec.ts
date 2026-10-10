@@ -70,8 +70,51 @@ describe('document activity timeline model', () => {
     expect(sourceTime.raw).toBe(raw);
   });
 
-  it('requires a full month name, explicit year and matching calendar precision', () => {
-    for (const raw of ['March', 'March 27', 'Mar 2027', 'March 2027 target', '2027 March', 'constructor 2027', 'toString 2027']) {
+  it.each([
+    ['Jan 2021', 2021, 1], ['Jan. 2021', 2021, 1], ['Feb 2024', 2024, 2],
+    ['Mar 2026', 2026, 3], ['Mar2026', 2026, 3], ['apr 2026', 2026, 4],
+    ['May 2026', 2026, 5], ['Jun 2026', 2026, 6], ['Jul 2026', 2026, 7],
+    ['Aug 2026', 2026, 8], ['Sep 2024', 2024, 9], ['Sep2024', 2024, 9],
+    ['Sep. 2024', 2024, 9], ['Sept 2024', 2024, 9], ['Oct 2026', 2026, 10],
+    ['Nov 2026', 2026, 11], ['Dec 2026', 2026, 12],
+  ] as const)('places recognised abbreviation %s as a complete source month', (raw, year, month) => {
+    const sourceTime = time({ precision: 'MONTH', role: 'TARGET', raw });
+    const before = JSON.stringify(sourceTime);
+    expect(calendarSpan(sourceTime)).toEqual({
+      start: Date.UTC(year, month - 1, 1), end: Date.UTC(year, month, 1) - 1,
+      precision: 'MONTH',
+    });
+    expect(JSON.stringify(sourceTime)).toBe(before);
+  });
+
+  it('keeps completed Sep and target Mar as material declarations with their original roles and limitations', () => {
+    const saved = candidate([
+      { statementId: 'SEP', statementKey: 'sep', label: '来源发生声明', quotes: [], time: time({ role: 'OCCURRED', precision: 'MONTH', raw: 'Sep 2024' }), statusRaw: 'completed', limitations: ['No specific day stated'] },
+      { statementId: 'MAR', statementKey: 'mar', label: '来源目标声明', quotes: [], time: time({ role: 'TARGET', precision: 'MONTH', raw: 'Mar 2026' }), statusRaw: 'target', limitations: ['Target may change'] },
+    ]);
+    const before = JSON.stringify(saved);
+    const items = timelinePlacedItems(timelineItems(saved));
+    expect(items.map(item => [item.displayTime, item.time?.role, item.span?.precision, item.lane])).toEqual([
+      ['Sep 2024', 'OCCURRED', 'MONTH', 'materials'], ['Mar 2026', 'TARGET', 'MONTH', 'materials'],
+    ]);
+    expect(items[0].span?.end).toBeLessThan(items[1].span!.start);
+    expect(timelineLaneItems(saved, 'execution')).toEqual([]);
+    expect(timelineLaneItems(saved, 'observation')).toEqual([]);
+    expect(JSON.stringify(saved)).toBe(before);
+  });
+
+  it('sorts abbreviated, full and numeric months by their real intervals', () => {
+    const saved = candidate(['Mar2026', 'January 2021', '2026-02', 'Sep2024'].map((raw, index) => ({
+      statementId: `S${index}`, statementKey: `k${index}`, label: raw, quotes: [],
+      time: time({ precision: 'MONTH', raw }), statusRaw: null, limitations: [],
+    })));
+    expect(timelinePlacedItems(timelineItems(saved)).map(item => item.displayTime)).toEqual([
+      'January 2021', 'Sep2024', '2026-02', 'Mar2026',
+    ]);
+  });
+
+  it('requires a recognised month, explicit year and matching calendar precision', () => {
+    for (const raw of ['March', 'March 27', 'Se 2027', 'J 2027', 'Sep.. 2027', 'March 2027 target', '2027 March', 'constructor 2027', 'toString 2027']) {
       expect(calendarSpan(time({ precision: 'MONTH', raw }))).toBeNull();
     }
     for (const wording of [
