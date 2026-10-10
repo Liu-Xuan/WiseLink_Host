@@ -5,6 +5,9 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { DocumentReadingDelivery, DocumentReadingRevision } from '@shared/document-reading.interface';
 
+import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
+import { parseExecutionModel, readStoredExecutionModel } from '../model-settings/canonical-execution-model';
+
 import { dmDocumentReadingRun } from '../../database/document-reading.schema';
 
 export type DocumentReadingScope = { tenantId: string; actorUserId: string; documentVersionId: string };
@@ -14,6 +17,9 @@ export type DocumentReadingRetraction = {
   reviewReference: string; retractedAt: string;
 };
 export type DocumentReadingRun = {
+  // Host control snapshot inside producer_json; distinct from actual producer.modelVersion.
+  // Absence is retained for historical runs, never backfilled from current settings.
+  executionModel?: CanonicalExecutionModelSelection | null;
   runRef: string;
   requestId: string;
   documentVersionId: string;
@@ -35,7 +41,7 @@ const columns = sql`run_ref AS "runRef",request_id AS "requestId",document_versi
   parse_run_id AS "parseRunId",parse_revision AS "parseRevision",semantic_revision AS "semanticRevision",
   original_manifest_sha256 AS "manifestSha256",expected_revision AS "expectedRevision",
   reading_revision AS "readingRevision",status,deadline_at::text AS deadline,delivered_json AS "deliveredRanges",
-  result_json AS result,save_command_json AS "saveCommand",error_code AS "errorCode"`;
+  producer_json->'executionModel' AS "executionModel",result_json AS result,save_command_json AS "saveCommand",error_code AS "errorCode"`;
 
 @Injectable()
 // Registered by CanonicalHostModule.forRoot.
@@ -142,9 +148,20 @@ export class DocumentReadingRunRepository {
 
   async begin(scope: DocumentReadingScope, input: {
     requestId: string; parseRunId: string; parseRevision: number; semanticRevision: number;
-    manifestSha256: string; expectedRevision: number;
+    manifestSha256: string; expectedRevision: number; executionModel?: CanonicalExecutionModelSelection;
+    workItemBinding?: { workItemId: string; sourceArtifactId: string; sourceSha256: string; sourceByteLength: number };
   }): Promise<DocumentReadingRun> {
     return this.db.transaction(async tx => {
+      // Same ordering as pending model apply and translation admission: WI first,
+      // then document. Hold the WI pin stable until the reading INSERT commits.
+      const binding = input.workItemBinding;
+      const selected = binding ? (await tx.execute<{
+        actorUserId: string; documentVersionId: string; sourceArtifactId: string;
+        sourceSha256: string; sourceByteLength: number | string; executionModelJson: string | null;
+      }>(sql`SELECT requested_by_user_id AS "actorUserId",document_version_id AS "documentVersionId",
+        source_artifact_id AS "sourceArtifactId",source_file_sha256 AS "sourceSha256",
+        source_byte_length AS "sourceByteLength",analysis_model_json AS "executionModelJson"
+        FROM work_item WHERE tenant_id=${scope.tenantId} AND work_item_id=${binding.workItemId} FOR UPDATE`))[0] : null;
       await lockSource(tx, scope, input);
       const rows = await tx.execute<DocumentReadingRun>(sql`SELECT ${columns} FROM ${dmDocumentReadingRun}
         WHERE tenant_id=${scope.tenantId} AND actor_user_id=${scope.actorUserId} AND request_id=${input.requestId}`);
@@ -156,14 +173,28 @@ export class DocumentReadingRunRepository {
           throw new Error('DOCUMENT_READING_REQUEST_CONFLICT');
         return prior;
       }
+      // Replays above preserve their original control snapshot, even when the WI
+      // changed later. Only a new admission must still match the captured pin.
+      // Raw SQL int8 values may be strings; reject any lossy/unsafe conversion.
+      const selectedByteLength = Number(selected?.sourceByteLength);
+      if (binding && (!selected || selected.actorUserId !== scope.actorUserId ||
+          selected.documentVersionId !== scope.documentVersionId ||
+          selected.sourceArtifactId !== binding.sourceArtifactId ||
+          selected.sourceSha256 !== binding.sourceSha256 ||
+          !Number.isSafeInteger(selectedByteLength) || selectedByteLength !== binding.sourceByteLength ||
+          !isDeepStrictEqual(readStoredExecutionModel(selected.executionModelJson), input.executionModel)))
+        throw new Error('DOCUMENT_READING_WORK_ITEM_MODEL_CHANGED');
       if (await currentRevision(tx, scope, input.parseRunId, input.semanticRevision) !== input.expectedRevision)
         throw new Error('DOCUMENT_READING_REVISION_CONFLICT');
+      if (!input.executionModel) throw new Error('DOCUMENT_READING_EXECUTION_MODEL_REQUIRED');
+      const executionModel = parseExecutionModel(input.executionModel);
       const inserted = await tx.execute<DocumentReadingRun>(sql`INSERT INTO ${dmDocumentReadingRun}
         (run_ref,tenant_id,actor_user_id,request_id,document_version_id,parse_run_id,parse_revision,
-         semantic_revision,original_manifest_sha256,expected_revision,status,deadline_at)
+         semantic_revision,original_manifest_sha256,expected_revision,status,deadline_at,producer_json)
         VALUES (${`DRR-${randomUUID()}`},${scope.tenantId},${scope.actorUserId},${input.requestId},${scope.documentVersionId},
           ${input.parseRunId},${input.parseRevision},${input.semanticRevision},${input.manifestSha256},
-          ${input.expectedRevision},'QUEUED',CURRENT_TIMESTAMP+interval '1 hour')
+          ${input.expectedRevision},'QUEUED',CURRENT_TIMESTAMP+interval '1 hour',
+          ${JSON.stringify({ executionModel })}::jsonb)
         RETURNING ${columns}`);
       if (!inserted[0]) throw new Error('DOCUMENT_READING_REQUEST_SAVE_FAILED');
       return inserted[0];
@@ -274,7 +305,7 @@ export class DocumentReadingRunRepository {
         throw new Error('DOCUMENT_READING_RESULT_BINDING_MISMATCH');
       const updated = await tx.execute(sql`UPDATE ${dmDocumentReadingRun} SET status='SAVED',
         reading_revision=${result.readingRevision},result_json=${JSON.stringify(result)}::jsonb,
-        save_command_json=${JSON.stringify(command)}::jsonb,producer_json=${JSON.stringify(command.producer)}::jsonb,
+        save_command_json=${JSON.stringify(command)}::jsonb,producer_json=COALESCE(producer_json,'{}'::jsonb)||${JSON.stringify(command.producer)}::jsonb,
         lease_owner=NULL,lease_token=NULL,lease_expires_at=NULL,_updated_at=CURRENT_TIMESTAMP
         WHERE ${owned(scope, fence.runRef)} AND ${validFence(fence)} RETURNING run_ref`);
       if (updated.length !== 1) throw new Error('DOCUMENT_READING_LEASE_REJECTED');

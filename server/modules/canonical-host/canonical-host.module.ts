@@ -1,3 +1,4 @@
+import { CanonicalModelSettingsModule } from '../model-settings/canonical-model-settings.module';
 import { LocalMineruWorkerService } from './local-mineru-worker.service';
 import { LocalMineruWorkerOpenApiController } from './local-mineru-worker.openapi.controller';
 import { MatterAssessmentActivityController } from './matter-assessment-activity.controller';
@@ -214,6 +215,7 @@ export interface CanonicalHostModuleOptions {
 
 @Module({
   imports: [
+    CanonicalModelSettingsModule,
     EngineeringMatterModule,
     ActionAttemptModule,
     ExternalDiscoveryModule,
@@ -474,6 +476,7 @@ export class CanonicalHostModule {
     return {
       module: CanonicalHostModule,
       imports: [
+        CanonicalModelSettingsModule,
         EngineeringMatterModule,
         ActionAttemptModule,
         UnifiedReaderModule.forRoot(options.unifiedReader),

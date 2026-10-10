@@ -1,13 +1,14 @@
+import { isDocumentTranslationModel } from './document-translation-model';
 import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
-import { actionAttempt, translationBlockRevision, translationWorkspace } from '../../database/schema';
+import { actionAttempt, translationBlockRevision, translationWorkspace, workItem } from '../../database/schema';
 import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
 import { canonicalJson, canonicalSha256 } from './action-attempt-envelope';
 import { parseDocumentTranslationTaskEnvelope, sealDocumentTranslationTaskEnvelope,
   type DocumentTranslationTaskEnvelope } from './document-translation-task-envelope';
-import { parseExecutionModel } from '../model-settings/canonical-execution-model';
+import { parseExecutionModel, readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { readTranslationWorkspaceSnapshot } from '../canonical-host/canonical-translation-workspace.repository';
 import { buildTranslationWorkspaceReadingV2 } from '../canonical-host/canonical-translation-v2-quality';
 import { documentTranslationRepairableBlockIds } from '../canonical-host/document-translation-repair-scope';
@@ -101,7 +102,7 @@ export class DocumentTranslationAttemptRepository {
           predecessor.producerRunId !== priorTask.parseRunId ||
           predecessor.inputRevision !== priorTask.parseRevision ||
           !predecessor.executionModelJson ||
-          parseExecutionModel(JSON.parse(predecessor.executionModelJson)).modelRef !== 'm3probe/minimax-m3')
+          !isDocumentTranslationModel(parseExecutionModel(JSON.parse(predecessor.executionModelJson))))
         throw new Error('DOCUMENT_TRANSLATION_EXPIRED_PREDECESSOR_INVALID');
       const [published] = await tx.execute<{ parseRunId: string; parseRevision: number;
         sha256: string; byteLength: number }>(sql`SELECT parse_run_id AS "parseRunId",
@@ -266,7 +267,8 @@ export class DocumentTranslationAttemptRepository {
           predecessor.inputRevision !== current.parseRevision || priorTask.parseRunId !== current.parseRunId ||
           priorTask.parseRevision !== current.parseRevision ||
           canonicalJson(priorTask.modelInput) !== canonicalJson(current.modelInput) ||
-          !priorModel || priorModel.modelRef !== currentModel.modelRef ||
+          !isDocumentTranslationModel(priorModel) || !isDocumentTranslationModel(currentModel) ||
+          priorModel.modelRef !== currentModel.modelRef ||
           priorModel.providerKind !== currentModel.providerKind ||
           priorModel.settingsRevision !== currentModel.settingsRevision ||
           (predecessor.leaseOwner !== null && predecessor.leaseExpiresAt !== null &&
@@ -387,16 +389,31 @@ export class DocumentTranslationAttemptRepository {
 
   async reserve(scope: DocumentTranslationScope, task: DocumentTranslationTaskEnvelope, requestId: string,
     executionModel: CanonicalExecutionModelSelection | null = null, predecessorRef?: string,
-    successorKind: 'QUOTA' | 'PARTIAL' = 'QUOTA') {
+    successorKind: 'QUOTA' | 'PARTIAL' = 'QUOTA', modelWorkItemId?: string) {
     const parsed = parseDocumentTranslationTaskEnvelope(canonicalJson(task));
     if (parsed.modelInput.documentProducer === 'HOSTED_M3') {
-      if (!executionModel || parseExecutionModel(executionModel).modelRef !== 'm3probe/minimax-m3')
+      if (!isDocumentTranslationModel(executionModel))
         throw new Error('DOCUMENT_TRANSLATION_HOSTED_MODEL_INVALID');
     } else if (executionModel) throw new Error('DOCUMENT_TRANSLATION_OFFICIAL_MODEL_INVALID');
     if (parsed.tenantId !== scope.tenantId || parsed.documentVersionId !== scope.documentVersionId ||
         !requestId || requestId.length > 96) throw new Error('DOCUMENT_TRANSLATION_RESERVATION_SCOPE_INVALID');
     return this.db.transaction(async tx => {
-      // Serialize reservations by real document; no WorkItem is involved.
+      // A WI-sourced initial selection shares the WI lock with pending model updates.
+      // The document remains the attempt subject; this does not grant WI execution scope.
+      if (modelWorkItemId) {
+        const [selected] = await tx.select().from(workItem).where(and(
+          eq(workItem.tenantId, scope.tenantId), eq(workItem.workItemId, modelWorkItemId)))
+          .limit(1).for('update');
+        const source = parsed.modelInput.source.originalBinding;
+        if (!selected || selected.requestedByUserId !== scope.actorUserId ||
+            selected.documentVersionId !== scope.documentVersionId ||
+            selected.sourceArtifactId !== source.sourceArtifactId ||
+            selected.sourceFileSha256 !== source.sourceSha256 ||
+            selected.sourceByteLength !== source.sourceByteLength ||
+            canonicalJson(readStoredExecutionModel(selected.analysisModelJson)) !== canonicalJson(executionModel))
+          throw new Error('DOCUMENT_TRANSLATION_WORK_ITEM_MODEL_CHANGED');
+      }
+      // Serialize reservations by real document.
       const locked = await tx.execute(sql`SELECT document_version_id FROM dm_document_version
         WHERE document_version_id=${scope.documentVersionId} FOR UPDATE`);
       if (!locked.length) throw new Error('DOCUMENT_VERSION_NOT_FOUND');
@@ -407,6 +424,8 @@ export class DocumentTranslationAttemptRepository {
           throw new Error('DOCUMENT_TRANSLATION_RECOVERY_INELIGIBLE');
         const priorTask = parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '');
         if (successorKind === 'PARTIAL') {
+          if (canonicalJson(readStoredExecutionModel(prior.executionModelJson)) !== canonicalJson(executionModel))
+            throw new Error('DOCUMENT_TRANSLATION_HOSTED_MODEL_CHANGED');
           const rootRequestId = partialRootRequestId(prior.triggerRequestId,
             prior.attemptNo, priorTask);
           const readPredecessor = async (attemptId: string, operationRef: string) => {
@@ -526,7 +545,7 @@ export class DocumentTranslationAttemptRepository {
     const model = parseExecutionModel(executionModel);
     const oldRequestId = `${rootRequestId}:partial-repair`;
     const requestId = `${rootRequestId}:partial-repair-v2`;
-    if (model.modelRef !== 'm3probe/minimax-m3' ||
+    if (!isDocumentTranslationModel(model) ||
         parsed.tenantId !== scope.tenantId || parsed.documentVersionId !== scope.documentVersionId ||
         parsed.modelInput.documentProducer !== 'HOSTED_M3' ||
         parsed.idempotencyKey !== `document-translation:${scope.documentVersionId}:${requestId}` ||
@@ -543,7 +562,8 @@ export class DocumentTranslationAttemptRepository {
           prior.producerRunId !== parsed.parseRunId || prior.inputRevision !== parsed.parseRevision)
         throw new Error('DOCUMENT_TRANSLATION_PARTIAL_INPUT_RECOVERY_INELIGIBLE');
       const priorTask = parseDocumentTranslationTaskEnvelope(prior.taskEnvelopeJson ?? '');
-      if (priorTask.modelInput.retranslateBlockIds ||
+      if (canonicalJson(readStoredExecutionModel(prior.executionModelJson)) !== canonicalJson(model) ||
+          priorTask.modelInput.retranslateBlockIds ||
           priorTask.modelInput.documentProducer !== 'HOSTED_M3' ||
           parsed.recoveryOf?.inputHash !== priorTask.inputHash ||
           priorTask.workspaceId !== parsed.workspaceId ||

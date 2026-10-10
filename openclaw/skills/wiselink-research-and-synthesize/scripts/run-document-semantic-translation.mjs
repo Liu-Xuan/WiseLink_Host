@@ -1,3 +1,4 @@
+import { validateExecutionModelSelection } from './validate-payload.mjs';
 import { collectBatch } from './run-semantic-translation.mjs';
 
 /** One Host-owned document attempt, bounded leased semantic batches per queue tick. */
@@ -11,9 +12,11 @@ export async function runDocumentSemanticTranslationStep(summary, { callTool, tr
       claimed.task?.modelInput?.documentProducer !== 'HOSTED_M3' ||
       claimed.task.documentVersionId !== identity.documentVersionId ||
       claimed.task.parseRunId !== identity.parseRunId ||
-      claimed.task.workspaceId !== claimed.task.modelInput.workspaceId ||
-      claimed.executionModel?.modelRef !== 'm3probe/minimax-m3')
+      claimed.task.workspaceId !== claimed.task.modelInput.workspaceId)
     throw new Error('DOCUMENT_TRANSLATION_CLAIM_BINDING_INVALID');
+  // Host owns catalog/provider validation; the gateway validates current registration.
+  // Never substitute a model based on this legacy producer wire tag.
+  validateExecutionModelSelection(claimed.executionModel);
   const lease = { leaseToken: fence.leaseToken, leaseGeneration: fence.leaseGeneration };
   const binding = { ...identity, ...lease };
   let heartbeatError = null;

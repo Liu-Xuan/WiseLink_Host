@@ -31,9 +31,11 @@ function fixture() {
     recordDelivery: jest.fn(async (_scope, _fence, range) => { row.deliveredRanges.push(range); }),
     save: jest.fn(async (_scope, _fence, _command, materialize) => materialize(row, 1)),
     renew: jest.fn().mockResolvedValue(true), claim: jest.fn().mockResolvedValue(fence), cancel: jest.fn(), fail: jest.fn(), expire: jest.fn() };
-  const service = new DocumentReadingRuntimeService(authorization as never, actors as never, reader as never, semantics as never, parsing as never, runs as never);
+  const selection = { modelRef: 'minimax/MiniMax-M2.5', displayName: 'Selected', providerKind: 'BUILT_IN', settingsRevision: 3, selectedAt: '2026-10-10T00:00:00Z' };
+  const modelSettings = { captureForNewTask: jest.fn().mockResolvedValue(selection), captureForWorkItem: jest.fn().mockResolvedValue(selection) };
+  const service = new DocumentReadingRuntimeService(authorization as never, actors as never, reader as never, semantics as never, parsing as never, runs as never, modelSettings as never);
   const context = { ...scope, roles: [] };
-  return { original, map, loaded, row, scope, fence, authorization, actors, reader, semantics, parsing, runs, service, context };
+  return { original, map, loaded, row, scope, fence, authorization, actors, reader, semantics, parsing, runs, service, context, modelSettings, selection };
 }
 
 describe('independent file reading runtime', () => {
@@ -44,6 +46,7 @@ describe('independent file reading runtime', () => {
       parseRunId: f.row.parseRunId, semanticRevision: 1,
       requestId: documentDeliveryRequestId('reading', deliveryRef),
       deliveryRef, expectedRevision: 0 };
+    f.authorization.authorizeDocumentWork.mockResolvedValue({ ...f.scope, modelWorkItemId: 'WI-one', sourceBinding: f.original.binding });
     f.runs.currentRevision.mockResolvedValue(3);
     await f.service.run(request);
     expect(f.runs.begin).toHaveBeenCalledWith(f.scope, expect.objectContaining({ expectedRevision: 3 }));
@@ -333,4 +336,46 @@ it('returns the complete saved browser result with fresh exact identities and ze
  await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SEMANTIC_REVISION_NOT_FOUND');
  f.parsing.inspectPublishedIdentity.mockRejectedValueOnce(new Error('SOURCE_REVOKED'));
  await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SOURCE_REVOKED');
+});
+
+it('freezes independent reading from central settings and replays the stored selection', async () => {
+  const f = fixture();
+  const input = { action: 'READING_BEGIN', documentVersionId: f.scope.documentVersionId,
+    parseRunId: f.row.parseRunId, semanticRevision: 1, requestId: 'model-freeze', expectedRevision: 0 };
+  await f.service.run(input);
+  expect(f.runs.begin).toHaveBeenCalledWith(f.scope, expect.objectContaining({ executionModel: f.selection }));
+  f.runs.readRequest.mockResolvedValue({ ...f.row, executionModel: f.selection });
+  f.modelSettings.captureForNewTask.mockRejectedValue(new Error('changed or unavailable settings'));
+  await f.service.run(input);
+  expect(f.modelSettings.captureForNewTask).toHaveBeenCalledTimes(1);
+  expect(f.runs.begin).toHaveBeenLastCalledWith(f.scope, expect.objectContaining({ executionModel: f.selection }));
+});
+
+it('captures the same WorkItem snapshot when reading is its first model consumer', async () => {
+  const f = fixture();
+  f.authorization.authorizeDocumentWork.mockResolvedValue({ ...f.scope, modelWorkItemId: 'WI-selected', sourceBinding: f.original.binding });
+  await f.service.run({ action: 'READING_BEGIN', documentVersionId: f.scope.documentVersionId,
+    parseRunId: f.row.parseRunId, semanticRevision: 1, requestId: 'model-wi', expectedRevision: 0 });
+  expect(f.modelSettings.captureForWorkItem).toHaveBeenCalledWith(f.scope.tenantId, 'WI-selected', expect.any(Date));
+  expect(f.modelSettings.captureForNewTask).not.toHaveBeenCalled();
+});
+
+it('never substitutes current settings when a historical reading has no selection', async () => {
+  const f = fixture();
+  f.runs.readRequest.mockResolvedValue(f.row);
+  await f.service.run({ action: 'READING_BEGIN', documentVersionId: f.scope.documentVersionId,
+    parseRunId: f.row.parseRunId, semanticRevision: 1, requestId: f.row.requestId, expectedRevision: 0 });
+  expect(f.modelSettings.captureForNewTask).not.toHaveBeenCalled();
+  expect(f.runs.begin).toHaveBeenCalledWith(f.scope, expect.objectContaining({ executionModel: undefined }));
+});
+
+it('rejects a WI source mismatch before pinning a model or admitting reading', async () => {
+  const f = fixture();
+  f.authorization.authorizeDocumentWork.mockResolvedValue({ ...f.scope, modelWorkItemId: 'WI-one',
+    sourceBinding: { ...f.original.binding, sourceSha256: 'different' } });
+  await expect(f.service.run({ action: 'READING_BEGIN', documentVersionId: f.scope.documentVersionId,
+    parseRunId: f.row.parseRunId, semanticRevision: 1, requestId: 'source-mismatch', expectedRevision: 0 }))
+    .rejects.toThrow('DOCUMENT_READING_AUTHORIZATION_SOURCE_MISMATCH');
+  expect(f.modelSettings.captureForWorkItem).not.toHaveBeenCalled();
+  expect(f.runs.begin).not.toHaveBeenCalled();
 });

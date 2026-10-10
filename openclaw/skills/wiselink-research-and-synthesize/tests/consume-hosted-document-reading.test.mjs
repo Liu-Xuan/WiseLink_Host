@@ -365,3 +365,65 @@ test('pre-dispatch invalid source anchors are a durable explicit failure, not a 
     assert.equal(f.calls.includes('READING_SAVE'), false);
   }
 });
+
+test('Host frozen reading selection reaches the actual adapter and is checkpointed', async () => {
+  const f = fixture();
+  const selection = { modelRef: 'minimax/MiniMax-M2.5', displayName: 'Selected', providerKind: 'BUILT_IN', settingsRevision: 3, selectedAt: '2026-10-10T00:00:00Z' };
+  const call = f.deps.callTool;
+  f.deps.callTool = async (...args) => {
+    const result = await call(...args);
+    return ['READING_STATUS', 'READING_CLAIM'].includes(args[1].action) ? { ...result, executionModel: selection } : result;
+  };
+  const invoke = f.deps.invokeModel;
+  f.deps.invokeModel = async (source, hooks) => {
+    assert.deepEqual(hooks.executionModel, selection);
+    return invoke(source, hooks);
+  };
+  assert.equal((await consumeHostedDocumentReading(f.options, f.deps)).status, 'READING_SAVED');
+  assert.deepEqual(f.records.get('model.started').value.executionModel, selection);
+});
+
+test('reading refuses a changed selection between STATUS and CLAIM before invoking a model', async () => {
+  const f = fixture();
+  const call = f.deps.callTool;
+  f.deps.callTool = async (...args) => {
+    const result = await call(...args);
+    return args[1].action === 'READING_CLAIM' ? { ...result, executionModel: {
+      modelRef: 'provider/changed', displayName: 'Changed', providerKind: 'CUSTOM',
+      settingsRevision: 2, selectedAt: '2026-10-10T00:00:00Z',
+    } } : result;
+  };
+  await assert.rejects(consumeHostedDocumentReading(f.options, f.deps), /READING_EXECUTION_MODEL_BINDING_MISMATCH/);
+  assert.equal(f.count(), 0);
+});
+
+test('an unregistered selected route becomes a durable actionable failure without fallback or re-dispatch', async () => {
+  const f = fixture(); let invocations = 0;
+  f.deps.invokeModel = async () => { invocations++; throw new Error('HOSTED_SELECTED_MODEL_NOT_REGISTERED'); };
+  const result = await consumeHostedDocumentReading(f.options, f.deps);
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(result.errorCode, 'HOSTED_SELECTED_MODEL_NOT_REGISTERED');
+  assert.equal((await consumeHostedDocumentReading(f.options, f.deps)).errorCode, result.errorCode);
+  assert.equal(invocations, 1);
+  assert.equal(f.calls.includes('READING_SAVE'), false);
+});
+
+test('resume refuses to save a checkpoint produced under a different frozen model selection', async () => {
+  const f = fixture();
+  const selection = { modelRef: 'provider/original', displayName: 'Original', providerKind: 'CUSTOM',
+    settingsRevision: 1, selectedAt: '2026-10-10T00:00:00Z' };
+  const call = f.deps.callTool;
+  let restored = false;
+  f.deps.callTool = async (...args) => {
+    const result = await call(...args);
+    if (!['READING_STATUS', 'READING_CLAIM'].includes(args[1].action)) return result;
+    return { ...result, executionModel: restored ? { ...selection, modelRef: 'provider/changed' } : selection,
+      ...(restored ? { status: 'RUNNING', result: null } : {}) };
+  };
+  assert.equal((await consumeHostedDocumentReading(f.options, f.deps)).status, 'READING_SAVED');
+  f.records.delete('save.started');
+  restored = true;
+  await assert.rejects(consumeHostedDocumentReading(f.options, f.deps), /READING_EXECUTION_MODEL_BINDING_MISMATCH/);
+  assert.equal(f.count(), 1);
+  assert.equal(f.calls.filter(action => action === 'READING_SAVE').length, 1);
+});

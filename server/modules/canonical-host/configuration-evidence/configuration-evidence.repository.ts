@@ -1,3 +1,4 @@
+import { preserveWorkItemModelConfigurationAudit } from '../../work-item/model-configuration-audit';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -196,7 +197,7 @@ export class MiaodaConfigurationEvidenceStore implements ConfigurationEvidenceSt
       const updatedRows = await executor
         .update(workItem)
         .set({
-          projectionJson: JSON.stringify(nextWorkItem),
+          projectionJson: preserveWorkItemModelConfigurationAudit(nextWorkItem),
           revision: nextWorkItem.revision,
           updatedAt: new Date(input.recordedAt),
         })

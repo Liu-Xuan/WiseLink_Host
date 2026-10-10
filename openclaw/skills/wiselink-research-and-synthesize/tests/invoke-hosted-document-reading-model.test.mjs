@@ -171,3 +171,27 @@ test('reading guidance retains possible causes and limits closed FTD to the reco
   assert.match(messages[0].content, /不证明故障已消除或措施已在运营人机队实施/u);
   assert.deepEqual(JSON.parse(messages[1].content).anchors, anchors);
 });
+
+test('a non-default Host selection routes exactly and unavailable routes never dispatch or fall back', async () => {
+  const selected = { ...options.executionModel, modelRef: 'provider/selected-model', displayName: 'Selected' };
+  let calls = 0;
+  const dependencies = { requestGateway: async (_url, request) => {
+    calls++;
+    assert.equal(request.headers['x-openclaw-model'], selected.modelRef);
+    return response([call]);
+  } };
+  const result = await invokeHostedDocumentReadingModel(input, { ...options,
+    executionModel: selected, registeredModelRefs: [selected.modelRef] }, dependencies);
+  assert.equal(calls, 1);
+  assert.equal(result.modelVersion, 'actual-fixture-model');
+  await assert.rejects(invokeHostedDocumentReadingModel(input, { ...options,
+    executionModel: selected }, dependencies), /HOSTED_SELECTED_MODEL_NOT_REGISTERED/);
+  assert.equal(calls, 1);
+});
+
+test('absent provider model evidence labels the selected route rather than the global configured model', async () => {
+  const result = await invokeHostedDocumentReadingModel(input, options, { requestGateway: async () => ({
+    ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { tool_calls: [call] } }] }),
+  }) });
+  assert.equal(result.modelVersion, 'configured-route:miaoda/minimax-m3');
+});

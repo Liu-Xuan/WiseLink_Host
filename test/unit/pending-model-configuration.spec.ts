@@ -1,0 +1,61 @@
+import { AutomaticWorkItemDispatchService } from '../../server/modules/canonical-host/automatic-work-item-dispatch.service';
+import { CanonicalHostOpenClawMcpOpenApiController } from '../../server/modules/canonical-host/canonical-host-openclaw-mcp.openapi.controller';
+import { parsePendingModelConfigurationRequest } from '../../server/modules/canonical-host/pending-model-configuration.request';
+import { MiaodaWorkItemRepository } from '../../server/modules/work-item/miaoda-work-item.repository';
+import { workItem, actionAttempt, canonicalModelSetting } from '../../server/database/schema';
+import { autoWorkItemAuthorization } from '../../server/database/auto-work-item-authorization.schema';
+import { dmDocumentReadingRun } from '../../server/database/document-reading.schema';
+import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
+import { documentDeliveryRequestId } from '../../server/modules/canonical-host/document-delivery-ref';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
+const oldModel = taskModelSelection();
+const request = { configurationRequestId: '11111111-1111-4111-8111-111111111111', workItemId: 'WI-1', requestId: 'REQ-1', documentVersionId: 'DV-1', sourceArtifactId: 'SRC-1', sourceFileSha256: 'a'.repeat(64), sourceByteLength: 10, expectedWorkItemRevision: 3, expectedExecutionModel: oldModel, expectedSettingsRevision: 2 };
+function fixture() {
+ const trace: string[] = []; const queries: SQL[] = [];
+ const authorization = { ...request, tenantId: 'tenant-1', actorUserId: 'actor-1', documentId: 'DOC-1', status: 'WAITING', grantKind: 'MIAODA_CANONICAL_PARSE_REQUEST', leaseGeneration: 0, leaseToken: null, leaseOwner: null, leaseExpiresAt: null };
+ const projection = { workItemId: 'WI-1', requestId: 'REQ-1', revision: 3, phase: 'CANDIDATE_READBACK_VERIFIED', package: { packageId: 'PKG-1' }, source: { documentVersionId: 'DV-1', sourceArtifactId: 'SRC-1', sourceFileSha256: 'a'.repeat(64), sourceByteLength: 10 } };
+ const owner = { ...authorization, requestedByUserId: 'actor-1', actionType: 'PARSE_PDF', revision: 3, packageId: 'PKG-1', status: 'CANDIDATE_READBACK_VERIFIED', analysisModelJson: JSON.stringify(oldModel), projectionJson: JSON.stringify(projection) };
+ const settings = { tenantId: 'tenant-1', modelRef: 'miaoda/glm-5.3', revision: 2 };
+ let attempts: unknown[] = []; let reading: unknown[] = [];
+ const rows = (table: unknown) => table === autoWorkItemAuthorization ? [authorization] : table === workItem ? [owner] : table === canonicalModelSetting ? [settings] : table === actionAttempt ? attempts : table === dmDocumentReadingRun ? reading : [];
+ const tx = { select: jest.fn(() => ({ from: (table: unknown) => ({ where: (query: SQL) => { queries.push(query); return { limit: () => ({ for: async (lock: string) => { trace.push(`${table === autoWorkItemAuthorization ? 'auth' : table === workItem ? 'wi' : 'settings'}:${lock}`); return rows(table); }, then: (yes: (v: unknown[]) => unknown) => Promise.resolve(rows(table)).then(yes) }) }; } }) })), update: jest.fn(() => ({ set: (values: Record<string, unknown>) => { trace.push('write'); return { where: () => ({ returning: async () => { Object.assign(owner, values); return [{ workItemId: 'WI-1' }]; } }) }; } })) };
+ const repo = new MiaodaWorkItemRepository({ transaction: async (fn: (db: typeof tx) => unknown) => fn(tx) } as never);
+ return { repo, owner, authorization, settings, trace, queries, tx, projection, attempts: (v: unknown[]) => { attempts = v; }, reading: (v: unknown[]) => { reading = v; } };
+}
+const apply = (state: ReturnType<typeof fixture>, input = request) => (state.repo as unknown as { applyPendingModelConfiguration(input: unknown): Promise<unknown> }).applyPendingModelConfiguration({ ...input, tenantId: 'tenant-1', principalId: 'service:queue' });
+describe('exact pending WorkItem applies the saved central configuration', () => {
+ it('allows a parse-only waiting task and locks enrollment before WI/configuration without revising source', async () => { const s = fixture(); const result = await apply(s); expect(result).toMatchObject({ status: 'MODEL_CONFIGURATION_APPLIED', replayed: false, application: { workItemRevision: 3, previousModel: oldModel, executionModel: { modelRef: 'miaoda/glm-5.3', settingsRevision: 2 } } }); expect(s.trace).toEqual(['auth:update','wi:update','settings:share','write']); expect(s.owner.revision).toBe(3); expect(s.owner.documentVersionId).toBe('DV-1'); expect(JSON.parse(s.owner.projectionJson).modelConfigurationApplications).toHaveLength(1); });
+ it.each([{ status: 'LEASED' }, { leaseGeneration: 1 }, { leaseToken: 'not-null' }, { actorUserId: 'other' }, { sourceArtifactId: 'other' }])('rejects claimed or mismatched enrollment %j', async delta => { const s = fixture(); Object.assign(s.authorization, delta); await expect(apply(s)).rejects.toThrow(); expect(s.tx.update).not.toHaveBeenCalled(); });
+ it('rejects stale model snapshots and settings revisions without writing', async () => { const s = fixture(); s.owner.analysisModelJson = JSON.stringify(taskModelSelection('dli/gpt-5.6-sol')); await expect(apply(s)).rejects.toThrow('PENDING_MODEL_SNAPSHOT_CHANGED'); expect(s.tx.update).not.toHaveBeenCalled(); const other = fixture(); other.settings.revision = 3; await expect(apply(other)).rejects.toThrow('MODEL_SETTINGS_REVISION_CONFLICT'); expect(other.tx.update).not.toHaveBeenCalled(); });
+ it('rejects legacy result projections even when model metadata is absent', async () => { const s = fixture(); s.owner.projectionJson = JSON.stringify({ ...s.projection, assessment: { status: 'legacy' } }); await expect(apply(s)).rejects.toThrow('PENDING_MODEL_EXECUTION_STARTED'); expect(s.tx.update).not.toHaveBeenCalled(); });
+ it('rejects any frozen WI execution and exact independently reserved translation', async () => { const s = fixture(); s.attempts([{ attemptId: 'ATT-1' }]); await expect(apply(s)).rejects.toThrow('PENDING_MODEL_EXECUTION_STARTED'); expect(s.tx.update).not.toHaveBeenCalled(); });
+ it('queries only the exact WI translation root and preserves unrelated same-DV history', async () => { const s = fixture(); await apply(s); const q = new PgDialect().sqlToQuery(s.queries[2]); expect(q.params).toContain(documentDeliveryRequestId('translation', 'work-item:WI-1')); expect(q.params).toContain('DOCUMENT_VERSION'); expect(q.params).toContain('DOCUMENT_TRANSLATE'); });
+ it('rejects an existing exact reading admission', async () => { const s = fixture(); s.reading([{ runRef: 'DRR-1' }]); await expect(apply(s)).rejects.toThrow('PENDING_MODEL_EXECUTION_STARTED'); expect(s.tx.update).not.toHaveBeenCalled(); });
+ it('replays one exact application without writing or adding a second audit receipt', async () => { const s = fixture(); const first = await apply(s); const second = await apply(s); expect(second).toMatchObject({ ...(first as object), replayed: true }); expect(s.tx.update).toHaveBeenCalledTimes(1); });
+ it('replays the exact prior application after claim without changing its lease or writing', async () => { const s = fixture(); const first = await apply(s); Object.assign(s.authorization, { status: 'LEASED', leaseGeneration: 1, leaseToken: 'existing-lease', leaseOwner: 'consumer', leaseExpiresAt: '2026-10-10T16:00:00Z' }); const second = await apply(s); expect(second).toMatchObject({ ...(first as object), replayed: true }); expect(s.tx.update).toHaveBeenCalledTimes(1); expect(s.authorization).toMatchObject({ status: 'LEASED', leaseGeneration: 1, leaseOwner: 'consumer' }); });
+ it('rejects a new configuration request once the existing claim has started', async () => { const s = fixture(); await apply(s); Object.assign(s.authorization, { status: 'LEASED', leaseGeneration: 1 }); await expect(apply(s, { ...request, configurationRequestId: '22222222-2222-4222-8222-222222222222' })).rejects.toThrow(); expect(s.tx.update).toHaveBeenCalledTimes(1); });
+});
+
+describe('pending configuration input keeps model selection Host-owned', () => {
+ it('accepts the exact non-secret expected snapshot without a new model selector', () => { expect(parsePendingModelConfigurationRequest(request)).toEqual(request); });
+ it.each([{ ...request, modelRef: 'miaoda/glm-5.3' }, { ...request, expectedExecutionModel: { ...oldModel, apiKey: 'never-accepted' } }, { ...request, expectedSettingsRevision: 0 }, { ...request, sourceByteLength: -1 }, { ...request, expectedExecutionModel: { ...oldModel, providerKind: 'INVALID' } }])('rejects forged, unfrozen or malformed input', input => { expect(() => parsePendingModelConfigurationRequest(input)).toThrow('PENDING_MODEL_CONFIGURATION_INPUT_INVALID'); });
+});
+
+describe('pending configuration uses the existing queue and source authorization', () => {
+ const original = process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID;
+ beforeEach(() => { process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID = 'service:queue'; });
+ afterEach(() => { if (original === undefined) delete process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID; else process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID = original; });
+ function service() {
+  const candidate = { authorization: { workItemId: 'WI-1' } };
+  const repository = { listAutoProcessingCandidates: jest.fn().mockResolvedValue([candidate]), applyPendingModelConfiguration: jest.fn().mockResolvedValue({ status: 'MODEL_CONFIGURATION_APPLIED' }) };
+  const scope = { authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({ appId: 'app_17bzc551rsg', tenantId: 'tenant-1', principalId: 'service:queue', authorizationFingerprint: 'sha256:' + 'a'.repeat(64) }) };
+  const target = new AutomaticWorkItemDispatchService(repository as never, {} as never, scope as never);
+  const authorize = jest.spyOn(target as never, 'validateCandidate' as never).mockResolvedValue(null as never);
+  return { target, repository, scope, authorize, candidate };
+ }
+ it('rechecks the full existing source authorization before the transactional mutation', async () => { const s = service(); await s.target.applyPendingModelConfiguration(request); expect(s.authorize).toHaveBeenCalledWith(s.candidate, expect.objectContaining({ tenantId: 'tenant-1', principalId: 'service:queue' })); expect(s.repository.listAutoProcessingCandidates).toHaveBeenCalledWith(expect.objectContaining({ includeActiveLeaseForConfiguration: true })); expect(s.repository.applyPendingModelConfiguration).toHaveBeenCalledWith({ ...request, tenantId: 'tenant-1', principalId: 'service:queue' }); });
+ it('does not mutate on source denial, unavailable enrollment, or malformed input', async () => { const s = service(); s.authorize.mockResolvedValue('AUTO_WORK_ITEM_SOURCE_READ_FORBIDDEN' as never); await expect(s.target.applyPendingModelConfiguration(request)).rejects.toMatchObject({ statusCode: 403 }); expect(s.repository.applyPendingModelConfiguration).not.toHaveBeenCalled(); s.repository.listAutoProcessingCandidates.mockResolvedValue([]); await expect(s.target.applyPendingModelConfiguration(request)).rejects.toMatchObject({ statusCode: 409 }); await expect(s.target.applyPendingModelConfiguration({ ...request, modelRef: 'miaoda/glm-5.3' })).rejects.toMatchObject({ statusCode: 400 }); expect(s.repository.applyPendingModelConfiguration).not.toHaveBeenCalled(); });
+ it('rejects an unexpected configured queue identity before discovery or mutation', async () => { const s = service(); s.scope.authorizeOpenClawAutoWorkItemQueue.mockResolvedValue({ appId: 'app_17bzc551rsg', tenantId: 'tenant-1', principalId: 'other', authorizationFingerprint: 'sha256:' + 'a'.repeat(64) }); await expect(s.target.applyPendingModelConfiguration(request)).rejects.toMatchObject({ statusCode: 503 }); expect(s.repository.listAutoProcessingCandidates).not.toHaveBeenCalled(); });
+ it('requires the existing queue transport before invoking the new operation', async () => { const s = service(); const transport = { assertAutoWorkItemQueueTransport: jest.fn().mockRejectedValue(new Error('transport rejected')) }; const controller = new CanonicalHostOpenClawMcpOpenApiController({} as never, s.target, transport as never); await expect(controller.applyPendingModelConfiguration(request)).rejects.toThrow('transport rejected'); expect(s.scope.authorizeOpenClawAutoWorkItemQueue).not.toHaveBeenCalled(); });
+});

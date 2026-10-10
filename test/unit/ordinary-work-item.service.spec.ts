@@ -159,10 +159,12 @@ function target() {
     organizeWorkItemIntake: jest.fn().mockResolvedValue({ matterId: 'MAT-SB' }),
   };
   const sessions = {
-    withVerifiedServiceSql: jest.fn((operation: () => Promise<unknown>, actorId: string) => {
-      expect(actorId).toBe(ACTOR.userId);
-      return operation();
-    }),
+    withVerifiedServiceSql: jest.fn(
+      (operation: () => Promise<unknown>, actorId: string) => {
+        expect(actorId).toBe(ACTOR.userId);
+        return operation();
+      },
+    ),
   };
   return {
     documentManagement,
@@ -306,6 +308,27 @@ describe('OrdinaryWorkItemService run identity', () => {
         GATEWAY_ACTOR,
       ),
     ).rejects.toBe(refusal);
+  });
+
+  it('leaves an inherited model unfrozen during source intake and preserves the exact source request', async () => {
+    const instance = target();
+    await instance.service.createOauthSessionDevelopmentRun(
+      {
+        documentVersionId: 'document-version-sb',
+        developmentRunToken: '22222222-2222-4222-8222-222222222222',
+      },
+      OAUTH_SESSION_ACTOR,
+      GATEWAY_ACTOR,
+    );
+    const input = instance.repository.reserve.mock.calls[0][0];
+    expect(input).not.toHaveProperty('analysisModel');
+    expect(input).toMatchObject({
+      modelChoiceExplicit: false,
+      documentVersionId: 'document-version-sb',
+      sourceFileSha256: 'a'.repeat(64),
+      runKey: 'dev:22222222-2222-4222-8222-222222222222',
+      autoProcessingGrant: 'MIAODA_CANONICAL_PARSE_REQUEST',
+    });
   });
 
   it('stores the requested model and enrolls verified OAuth intake without requiring a global manager role', async () => {
@@ -796,14 +819,25 @@ describe('OrdinaryWorkItemService run identity', () => {
   it('uses only the verified OAuth session actor for a same-user FileService selection', async () => {
     const targetValue = target();
     let serviceSqlActive = false;
-    targetValue.sessions.withVerifiedServiceSql.mockImplementation(async (operation, actorId) => {
-      expect(actorId).toBe(ACTOR.userId);
-      serviceSqlActive = true;
-      try { return await operation(); } finally { serviceSqlActive = false; }
-    });
+    targetValue.sessions.withVerifiedServiceSql.mockImplementation(
+      async (operation, actorId) => {
+        expect(actorId).toBe(ACTOR.userId);
+        serviceSqlActive = true;
+        try {
+          return await operation();
+        } finally {
+          serviceSqlActive = false;
+        }
+      },
+    );
     targetValue.repository.reserve.mockImplementation(async () => {
       expect(serviceSqlActive).toBe(true);
-      return { workItemId: 'WI-NEW-SB', requestId: 'REQ-NEW-SB', attemptId: 'ATT-NEW-SB', created: true };
+      return {
+        workItemId: 'WI-NEW-SB',
+        requestId: 'REQ-NEW-SB',
+        attemptId: 'ATT-NEW-SB',
+        created: true,
+      };
     });
     targetValue.documentManagement.ingestFileServiceSelection.mockResolvedValue(
       { documentVersionId: 'document-version-sb' },
@@ -871,7 +905,9 @@ describe('OrdinaryWorkItemService run identity', () => {
           runKey: 'dev:22222222-2222-4222-8222-222222222222',
         }),
       );
-      expect(targetValue.sessions.withVerifiedServiceSql).toHaveBeenCalledTimes(1);
+      expect(targetValue.sessions.withVerifiedServiceSql).toHaveBeenCalledTimes(
+        1,
+      );
       expect(serviceSqlActive).toBe(false);
     } finally {
       restoreProcessEnv('SANDBOX_ID', previousSandbox);
@@ -887,13 +923,20 @@ describe('OrdinaryWorkItemService run identity', () => {
     targetValue.sessions.withVerifiedServiceSql.mockRejectedValue(
       new Error('DIALOGUE_BROWSER_IDENTITY_MISMATCH'),
     );
-    await expect(targetValue.service.createOauthSessionDevelopmentRun({
-      selection: {
-        bucketId: 'bucket-default',
-        filePath: 'wiselink/dev-intake/22222222-2222-4222-8222-222222222222/source.pdf',
-      },
-      developmentRunToken: '22222222-2222-4222-8222-222222222222',
-    }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR)).rejects.toThrow('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
+    await expect(
+      targetValue.service.createOauthSessionDevelopmentRun(
+        {
+          selection: {
+            bucketId: 'bucket-default',
+            filePath:
+              'wiselink/dev-intake/22222222-2222-4222-8222-222222222222/source.pdf',
+          },
+          developmentRunToken: '22222222-2222-4222-8222-222222222222',
+        },
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).rejects.toThrow('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
     expect(targetValue.repository.reserve).not.toHaveBeenCalled();
   });
 

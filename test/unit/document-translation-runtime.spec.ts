@@ -1,3 +1,4 @@
+import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
 import { DocumentTranslationRuntimeService } from '../../server/modules/canonical-host/document-translation-runtime.service';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import { sealDocumentTranslationTaskEnvelope } from '../../server/modules/action-attempt/document-translation-task-envelope';
@@ -20,14 +21,19 @@ function setup() {
           sha256: 'a'.repeat(64), byteLength: 100, mediaType: 'application/json' } } }),
     executeStep: jest.fn().mockResolvedValue({ status: 'PROGRESSED' }) };
   let row: Record<string, unknown> | null = null;
+  const priorRows = new Map<string, Record<string, unknown>>();
   const attempts = { readRequest: jest.fn(async (_scope, requestId) =>
     row?.triggerRequestId === requestId ? row : null), latest: jest.fn(async () => row),
-    readAttempt: jest.fn(async (_scope, attemptRef) => row?.operationRef === attemptRef ? row : null),
-    reserve: jest.fn(async (_scope, task, requestId, executionModel) => { row = { status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
+    readAttempt: jest.fn(async (_scope, attemptRef) => row?.operationRef === attemptRef ? row : priorRows.get(attemptRef) ?? null),
+    reserve: jest.fn(async (_scope, task, requestId, executionModel, _predecessorRef?: string,
+      _successorKind?: string, _modelWorkItemId?: string) => {
+      if (row) priorRows.set(String(row.operationRef), row);
+      row = { status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
       attemptId: task.actionAttemptId, operationRef: task.operationRef, taskEnvelopeJson: JSON.stringify(task),
       triggerRequestId: requestId, executionModelJson: JSON.stringify(executionModel),
       deadlineAt: new Date(task.deadline), errorCode: null }; return row; }),
-    recoverPartialInput: jest.fn(async (_scope, task, requestId) => { row = {
+    recoverPartialInput: jest.fn(async (_scope, task, requestId, _predecessorRef, executionModel) => { row = {
+      executionModelJson: JSON.stringify(executionModel),
       status: 'QUEUED', documentVersionId, producerRunId: parseRunId,
       attemptId: task.actionAttemptId, operationRef: task.operationRef,
       taskEnvelopeJson: JSON.stringify(task), triggerRequestId: `${requestId}:partial-repair-v2`,
@@ -89,8 +95,10 @@ function setup() {
     documentHasInterruptedGeneration: jest.fn().mockResolvedValue(false),
     readDocumentProgress: jest.fn().mockResolvedValue({ completeness: 'PARTIAL', repairableBlockCount: 1,
       repairableBlockIds: ['repairable-block'] }) };
+  const modelSettings = { captureForNewTask: jest.fn().mockImplementation(async () => taskModelSelection()),
+    captureForWorkItem: jest.fn().mockImplementation(async () => taskModelSelection('miaoda/glm-5.3')) };
   const service = new DocumentTranslationRuntimeService(authorization as never, actors as never, reader as never,
-    plugins as never, attempts as never, semantics as never, parsing as never, v2 as never);
+    plugins as never, attempts as never, semantics as never, parsing as never, v2 as never, modelSettings as never);
   const legacy = () => {
     if (!row) throw new Error('expected row');
     const task = JSON.parse(String(row.taskEnvelopeJson));
@@ -98,11 +106,100 @@ function setup() {
     row.taskEnvelopeJson = JSON.stringify(sealDocumentTranslationTaskEnvelope({ ...unsealed,
       modelInput: { ...unsealed.modelInput, documentProducer: 'OFFICIAL_PLUGIN' } }));
   };
-  return { service, reader, plugins, attempts, authorization, parsing, semantics, v2, legacy,
+  return { service, reader, plugins, attempts, authorization, parsing, semantics, v2, legacy, modelSettings,
     binding: { documentVersionId, parseRunId } };
 }
 
 describe('independent document translation runtime', () => {
+  it.each(['miaoda/glm-5.3', 'm3probe/minimax-m3'])('freezes the authorized WI model %s through START and CLAIM', async (modelRef) => {
+    const f = setup();
+    const executionModel = taskModelSelection(modelRef, new Date('2026-10-01T00:00:00Z'));
+    f.authorization.authorizeDocumentWork.mockResolvedValue({ tenantId: 'tenant', actorUserId: 'actor',
+      documentVersionId: f.binding.documentVersionId, modelWorkItemId: 'WI-glm', executionModel,
+      sourceBinding: (await f.reader.readDocumentOriginal()).original.binding } as never);
+    const deliveryRef = 'work-item:WI-glm';
+    const started = await f.service.run({ action: 'START', ...f.binding, deliveryRef,
+      requestId: documentDeliveryRequestId('translation', deliveryRef) });
+    expect(f.attempts.reserve.mock.calls[0][3]).toEqual(executionModel);
+    expect(f.attempts.reserve.mock.calls[0][6]).toBe('WI-glm');
+    if (!('attemptRef' in started)) throw new Error('expected attempt');
+    const claimed = await f.service.run({ action: 'CLAIM', ...f.binding, deliveryRef, attemptRef: started.attemptRef! });
+    expect(claimed).toMatchObject({ executionModel });
+  });
+
+  it('pins a null WI snapshot from the configuration after verifying its original source', async () => {
+    const f = setup();
+    const selection = taskModelSelection('miaoda/glm-5.3');
+    f.modelSettings.captureForWorkItem.mockResolvedValue(selection);
+    f.authorization.authorizeDocumentWork.mockResolvedValue({ tenantId: 'tenant', actorUserId: 'actor',
+      documentVersionId: f.binding.documentVersionId, modelWorkItemId: 'WI-glm', executionModel: null,
+      sourceBinding: (await f.reader.readDocumentOriginal()).original.binding } as never);
+    const deliveryRef = 'work-item:WI-glm';
+    await f.service.run({ action: 'START', ...f.binding, deliveryRef,
+      requestId: documentDeliveryRequestId('translation', deliveryRef) });
+    expect(f.modelSettings.captureForWorkItem).toHaveBeenCalledWith('tenant', 'WI-glm', expect.any(Date));
+    expect(f.modelSettings.captureForNewTask).not.toHaveBeenCalled();
+    expect(f.attempts.reserve.mock.calls[0][3]).toEqual(selection);
+    expect(f.attempts.reserve.mock.calls[0][6]).toBe('WI-glm');
+    const invalid = setup();
+    invalid.authorization.authorizeDocumentWork.mockResolvedValue({ tenantId: 'tenant', actorUserId: 'actor',
+      documentVersionId: invalid.binding.documentVersionId, modelWorkItemId: 'WI-glm', executionModel: null,
+      sourceBinding: { sourceArtifactId: 'wrong', sourceSha256: 'a'.repeat(64), sourceByteLength: 123 } } as never);
+    await expect(invalid.service.run({ action: 'START', ...invalid.binding, deliveryRef,
+      requestId: documentDeliveryRequestId('translation', deliveryRef) }))
+      .rejects.toThrow('DOCUMENT_TRANSLATION_AUTHORIZATION_SOURCE_MISMATCH');
+    expect(invalid.modelSettings.captureForWorkItem).not.toHaveBeenCalled();
+  });
+
+  it('freezes the configuration-page selection for a new standalone document task', async () => {
+    const f = setup();
+    const selection = taskModelSelection('miaoda/glm-5.3');
+    f.modelSettings.captureForNewTask.mockResolvedValue(selection);
+    await f.service.run({ action: 'START', ...f.binding, requestId: 'standalone' });
+    expect(f.attempts.reserve.mock.calls[0][3]).toEqual(selection);
+    f.modelSettings.captureForNewTask.mockResolvedValue(taskModelSelection('miaoda/miaoda-model-auto'));
+    await f.service.run({ action: 'START', ...f.binding, requestId: 'standalone' });
+    expect(f.attempts.reserve).toHaveBeenCalledTimes(1);
+    expect(f.modelSettings.captureForNewTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed for missing WI selection, unsupported model, and changed source', async () => {
+    for (const [override, code] of [
+      [{ modelWorkItemId: undefined }, 'DOCUMENT_TRANSLATION_HOSTED_MODEL_REQUIRED'],
+      [{ executionModel: { ...taskModelSelection(), modelRef: 'unregistered/model' } }, 'DOCUMENT_TRANSLATION_HOSTED_MODEL_INVALID'],
+      [{ sourceBinding: { sourceArtifactId: 'other' } }, 'DOCUMENT_TRANSLATION_AUTHORIZATION_SOURCE_MISMATCH'],
+    ] as const) {
+      const f = setup();
+      f.authorization.authorizeDocumentWork.mockResolvedValue({ tenantId: 'tenant', actorUserId: 'actor',
+        documentVersionId: f.binding.documentVersionId, modelWorkItemId: 'WI-glm',
+        executionModel: taskModelSelection('miaoda/glm-5.3'),
+        sourceBinding: (await f.reader.readDocumentOriginal()).original.binding, ...override } as never);
+      const deliveryRef = 'work-item:WI-glm';
+      await expect(f.service.run({ action: 'START', ...f.binding, deliveryRef,
+        requestId: documentDeliveryRequestId('translation', deliveryRef) })).rejects.toThrow(code);
+      expect(f.attempts.reserve).not.toHaveBeenCalled();
+      expect(f.plugins.prepareOriginal).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each([['miaoda/glm-5.3', 'm3probe/minimax-m3'], ['m3probe/minimax-m3', 'miaoda/glm-5.3']])(
+    'keeps the %s predecessor frozen after configuration changes to %s', async (priorModelRef, nextModelRef) => {
+    const f = setup();
+    const deliveryRef = 'acquisition:sample';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const started = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
+    if (!('attemptRef' in started)) throw new Error('expected attempt');
+    const executionModel = taskModelSelection(priorModelRef, new Date('2026-10-01T00:00:00Z'));
+    f.modelSettings.captureForNewTask.mockResolvedValue(taskModelSelection(nextModelRef));
+    Object.assign((await f.attempts.latest())!, { executionModelJson: JSON.stringify(executionModel), status: 'FAILED' });
+    const recovered = await f.service.run({ action: 'RECOVER_KNOWN_FAILURE', ...f.binding, deliveryRef, attemptRef: started.attemptRef! });
+    expect(f.attempts.recoverKnownFailure.mock.calls[0][4]).toEqual(executionModel);
+    if (!('attemptRef' in recovered)) throw new Error('expected recovery');
+    Object.assign((await f.attempts.latest())!, { status: 'SUCCEEDED', terminalReason: 'REMAINING_LIMITATIONS' });
+    await f.service.run({ action: 'CONTINUE_PARTIAL', ...f.binding, deliveryRef, attemptRef: recovered.attemptRef! });
+    expect(f.attempts.reserve.mock.lastCall?.[3]).toEqual(executionModel);
+  });
+
   it('authorizes the exact source before resuming a never-claimed deadline', async () => {
     const f = setup();
     const deliveryRef = 'acquisition:sample';
@@ -166,7 +263,7 @@ describe('independent document translation runtime', () => {
     const partial = await f.service.run({ action: 'CONTINUE_PARTIAL',
       ...f.binding, deliveryRef, attemptRef: resumed.attemptRef! });
     expect(partial).toMatchObject({ status: 'QUEUED' });
-    expect(f.attempts.reserve.mock.lastCall?.slice(2)).toMatchObject([
+    expect(f.attempts.reserve.mock.lastCall?.slice(2, 6)).toMatchObject([
       `${requestId}:partial-repair`, expect.objectContaining({ modelRef: 'm3probe/minimax-m3' }),
       resumed.attemptRef, 'PARTIAL' ]);
   });
@@ -242,7 +339,7 @@ describe('independent document translation runtime', () => {
       deliveryRef, attemptRef: known.attemptRef! });
     if (!('attemptRef' in partial)) throw new Error('expected partial successor');
     expect(partial).toMatchObject({ status: 'QUEUED', attemptRef: expect.not.stringMatching(known.attemptRef!) });
-    expect(f.attempts.reserve.mock.lastCall?.slice(2)).toMatchObject([
+    expect(f.attempts.reserve.mock.lastCall?.slice(2, 6)).toMatchObject([
       `${requestId}:partial-repair`, { modelRef: 'm3probe/minimax-m3' }, known.attemptRef, 'PARTIAL']);
     expect(await f.service.run({ action: 'STATUS', ...f.binding, deliveryRef }))
       .toMatchObject({ status: 'QUEUED', attemptRef: partial.attemptRef });
@@ -298,7 +395,7 @@ describe('independent document translation runtime', () => {
     const continued = await f.service.run({ action: 'CONTINUE_PARTIAL', ...f.binding,
       deliveryRef, attemptRef: first.attemptRef! });
     expect(continued).toMatchObject({ status: 'QUEUED' });
-    expect(f.attempts.reserve.mock.calls[1].slice(2)).toMatchObject([
+    expect(f.attempts.reserve.mock.calls[1].slice(2, 6)).toMatchObject([
       `${requestId}:partial-repair`, { modelRef: 'm3probe/minimax-m3' }, first.attemptRef, 'PARTIAL']);
     expect(f.attempts.reserve.mock.calls[1][1].modelInput.retranslateBlockIds).toEqual(['repairable-block']);
     f.v2.readDocumentProgress.mockResolvedValueOnce({ completeness: 'COMPLETE', repairableBlockCount: 0,

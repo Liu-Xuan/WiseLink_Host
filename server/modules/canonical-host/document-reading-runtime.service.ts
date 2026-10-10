@@ -1,3 +1,5 @@
+import { CanonicalModelSettingsService } from '../model-settings/canonical-model-settings.service';
+import { parseExecutionModel } from '../model-settings/canonical-execution-model';
 import { Inject, Injectable } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod/v4';
@@ -49,7 +51,8 @@ export class DocumentReadingRuntimeService {
   constructor(@Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION) private readonly authorization: CanonicalServiceScopeAuthorizationPort,
     private readonly actors: EngineeringMatterWorkingRepository, private readonly reader: UnifiedReaderService,
     private readonly semantics: DocumentSemanticService, private readonly parsing: DocumentParsingHostedService,
-    private readonly runs: DocumentReadingRunRepository) {}
+    private readonly runs: DocumentReadingRunRepository,
+    private readonly modelSettings: CanonicalModelSettingsService) {}
 
   /** Only explicitly admitted source requests are produced. This service does not invoke a model. */
   async run(raw: unknown) {
@@ -70,13 +73,31 @@ export class DocumentReadingRuntimeService {
         if (expectedRequestId && input.expectedRevision !== 0)
           throw new Error('DOCUMENT_READING_DELIVERY_REVISION_MISMATCH');
         const source = await this.load(scope.documentVersionId, input.parseRunId, input.semanticRevision, context);
+        const originalBinding = source.loaded.original.binding;
+        if (auth.sourceBinding && (auth.sourceBinding.sourceArtifactId !== originalBinding.sourceArtifactId ||
+            auth.sourceBinding.sourceSha256 !== originalBinding.sourceSha256 ||
+            auth.sourceBinding.sourceByteLength !== originalBinding.sourceByteLength))
+          throw new Error('DOCUMENT_READING_AUTHORIZATION_SOURCE_MISMATCH');
+        const prior = await this.runs.readRequest(scope, input.requestId);
+        if (!prior && ((auth.modelWorkItemId && !auth.sourceBinding) ||
+            (input.deliveryRef?.startsWith('work-item:') &&
+              (!auth.sourceBinding || input.deliveryRef !== `work-item:${auth.modelWorkItemId}`))))
+          throw new Error('DOCUMENT_READING_HOSTED_MODEL_REQUIRED');
+        const executionModel = prior ? prior.executionModel ?? undefined
+          : auth.executionModel != null ? parseExecutionModel(auth.executionModel)
+          : auth.modelWorkItemId
+            ? await this.modelSettings.captureForWorkItem(scope.tenantId, auth.modelWorkItemId, new Date())
+            : await this.modelSettings.captureForNewTask(scope.tenantId, new Date());
         const expectedRevision = expectedRequestId
-          ? (await this.runs.readRequest(scope, input.requestId))?.expectedRevision ??
+          ? prior?.expectedRevision ??
             await this.runs.currentRevision(scope, input.parseRunId, input.semanticRevision)
           : input.expectedRevision;
         const row = await this.runs.begin(scope, { requestId: input.requestId, parseRunId: input.parseRunId,
           parseRevision: source.loaded.original.binding.parseRevision, semanticRevision: input.semanticRevision,
-          manifestSha256: source.artifact.sha256, expectedRevision });
+          manifestSha256: source.artifact.sha256, expectedRevision, executionModel,
+          ...(auth.modelWorkItemId ? { workItemBinding: { workItemId: auth.modelWorkItemId,
+            sourceArtifactId: originalBinding.sourceArtifactId, sourceSha256: originalBinding.sourceSha256,
+            sourceByteLength: originalBinding.sourceByteLength } } : {}) });
         const retraction = row.status === 'SAVED' ? await this.runs.readRetraction(scope, row.runRef) : null;
         return summary(row, retraction);
       }
@@ -198,6 +219,7 @@ export class DocumentReadingRuntimeService {
 function summary(run: DocumentReadingRun, retraction: Awaited<ReturnType<DocumentReadingRunRepository['readRetraction']>> = null) {
   return { runRef: run.runRef, requestId: run.requestId, documentVersionId: run.documentVersionId,
     parseRunId: run.parseRunId, semanticRevision: run.semanticRevision,
+    ...(run.executionModel != null ? { executionModel: parseExecutionModel(run.executionModel) } : {}),
     expectedRevision: run.expectedRevision, status: retraction ? 'RETRACTED' : run.status, deadline: run.deadline,
     readingRevision: run.readingRevision, result: retraction ? null : run.result,
     errorCode: run.errorCode, retraction };

@@ -22,11 +22,11 @@ function delivery() {
     targetRowVersion: null, delivery: { partIndex: 0, partCount: 1,
       byteLength: bytes.length, payloadBase64: bytes.toString('base64') } };
 }
-function harness({ next, translate, terminalFailureCode = null }) {
+function harness({ next, translate, terminalFailureCode = null, model = executionModel }) {
   const calls = [];
   const callTool = async (name, input) => {
     assert.equal(name, 'document_translation'); calls.push(input);
-    if (input.action === 'CLAIM') return { ...identity, status: 'RUNNING', fence, task, executionModel };
+    if (input.action === 'CLAIM') return { ...identity, status: 'RUNNING', fence, task, executionModel: model };
     if (input.action === 'HEARTBEAT') return { renewed: true, attemptRef: identity.attemptRef };
     if (input.action === 'RELEASE') return { released: true, attemptRef: identity.attemptRef };
     if (input.action === 'FINISH') return { ...identity, status: 'SUCCEEDED', progress: { completeness: 'COMPLETE' } };
@@ -105,4 +105,23 @@ test('nonretryable known failure records a terminal Host attempt without another
   assert.equal((await runDocumentSemanticTranslationStep(identity, recovered)).status, 'REQUIRES_ATTENTION');
   assert.equal(recovered.calls.some(call => call.workspaceCommand?.phase === 'NEXT'), false);
   assert.equal(recovered.calls.some(call => call.action === 'FAIL'), true);
+});
+
+
+test('GLM document generation forwards its frozen selection and actual receipt without an M3 fallback', async () => {
+  const model = { modelRef: 'miaoda/glm-5.3', providerKind: 'BUILT_IN', displayName: 'GLM 5.3',
+    settingsRevision: 0, selectedAt: '2026-10-01T00:00:00.000Z' };
+  let nextCount = 0, modelCalls = 0;
+  const h = harness({ model, next: () => ++nextCount === 1 ? delivery() : { action: 'DONE' },
+    translate: async (_batch, options) => {
+      modelCalls++;
+      assert.equal(options.executionModel, model);
+      assert.equal(options.configuredModelVersion, model.modelRef);
+      return { output: { blocks: [{ blockId: 'b1', elements: [{ kind: 'paragraph',
+        translatedText: '一。', anchorIds: ['a1'] }] }] }, actualExecution: { modelRef: model.modelRef } };
+    } });
+  assert.equal((await runDocumentSemanticTranslationStep(identity, h)).status, 'SUCCEEDED');
+  assert.equal(modelCalls, 1);
+  assert.equal(h.calls.find(call => call.workspaceCommand?.phase === 'SAVE').workspaceCommand.actualExecution.modelRef,
+    'miaoda/glm-5.3');
 });

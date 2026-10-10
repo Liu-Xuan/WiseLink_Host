@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canonicalSha256, WISELINK_SKILL_VERSION } from '../scripts/validate-payload.mjs';
+import { canonicalSha256, WISELINK_SKILL_VERSION, WISELINK_PROFILE_REF } from '../scripts/validate-payload.mjs';
 import { invokeHostedTranslationBlock, normalizeTranslationCheckSeverity, validateTranslationBlockOutput, validateTranslationSemanticBatch } from '../scripts/invoke-hosted-translation-block.mjs';
 import { runSemanticTranslation } from '../scripts/run-semantic-translation.mjs';
 
@@ -456,3 +456,29 @@ function execution() { return { output, actualExecution: { modelRef: model.model
 function assembled() { return { schemaVersion: 'wiselink.3_1.translation_final_result.v2', workspaceId: 'TW-test', completeness: 'COMPLETE',
   manifest: { workspaceId: 'TW-test', planRevision: 1, contextRevision: 1, workspaceRowVersion: 7, blockRevisions: [{ blockId: 'b1', blockRevisionId: 'TB-synthetic', contentRevision: 1 }] },
   artifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref: 'artifact://synthetic/final', sha256: '2'.repeat(64), byteLength: 1, mediaType: 'application/json' } }; }
+
+for (const modelRef of ['miaoda/glm-5.3', 'miaoda/miaoda-model-auto']) {
+  test(`configured document translation routes ${modelRef} through the registered Hosted profile`, async () => {
+    const configured = { ...model, modelRef };
+    let request, headers;
+    const observed = [];
+    const result = await invokeHostedTranslationBlock(batch(), { ...options(), executionModel: configured,
+      registeredModelRefs: [modelRef], observeModelOutput: async shape => observed.push(shape) },
+    { requestGateway: async (_url, init) => {
+      headers = init.headers;
+      request = JSON.parse(init.body);
+      return response(output, { model: 'synthetic-configured-provider' });
+    } });
+    assert.equal(headers['x-openclaw-model'], modelRef);
+    assert.equal(request.model, `openclaw/${WISELINK_PROFILE_REF}`);
+    assert.equal(result.actualExecution.modelRef, modelRef);
+    assert.equal(result.actualExecution.modelVersion, 'synthetic-configured-provider');
+    assert.equal(observed[0].configuredModelRef, modelRef);
+    assert.equal(Object.hasOwn(request, 'max_completion_tokens'), false);
+    let calls = 0;
+    await assert.rejects(invokeHostedTranslationBlock(batch(), { ...options(), executionModel: configured,
+      registeredModelRefs: [] }, { requestGateway: async () => { calls++; return response(); } }),
+    error => error.cause?.message === 'HOSTED_SELECTED_MODEL_NOT_REGISTERED');
+    assert.equal(calls, 0);
+  });
+}

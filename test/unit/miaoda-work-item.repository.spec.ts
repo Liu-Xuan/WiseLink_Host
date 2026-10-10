@@ -288,7 +288,7 @@ describe('MiaodaWorkItemRepository parse retry recovery', () => {
     expect(fixture.insert).not.toHaveBeenCalled();
     expect(fixture.update).toHaveBeenCalledTimes(1);
     const persisted = JSON.parse(
-      fixture.set.mock.calls[0][0].projectionJson,
+      new PgDialect().sqlToQuery(fixture.set.mock.calls[0][0].projectionJson).params[0] as string,
     ) as CanonicalWorkItemProjection;
     expect(persisted).toMatchObject({
       workItemId: 'WI-RETRY-1',
@@ -368,7 +368,7 @@ describe('MiaodaWorkItemRepository parse retry recovery', () => {
     expect(result).toMatchObject({ attemptNo: 2 });
     expect(result?.attemptId).toMatch(/^ATT-/u);
     const persisted = JSON.parse(
-      fixture.set.mock.calls[0][0].projectionJson,
+      new PgDialect().sqlToQuery(fixture.set.mock.calls[0][0].projectionJson).params[0] as string,
     ) as CanonicalWorkItemProjection;
     expect(persisted).toMatchObject({
       workItemId: 'WI-RETRY-1',

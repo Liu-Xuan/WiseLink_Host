@@ -26,6 +26,7 @@ import type {
 } from '@shared/api.interface';
 import { canonicalJson } from './action-attempt-envelope';
 import { INITIAL_ANALYSIS_REQUEST_SCHEMA } from './initial-analysis-request';
+import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import type {
   OpenClawResultEnvelope,
   AnyOpenClawResultEnvelope,
@@ -251,8 +252,19 @@ export class ActionAttemptRepository {
     attempt: typeof actionAttempt.$inferInsert,
     knowledge?: ReserveActionAttemptInput['initialKnowledgeSession'],
   ): Promise<ActionAttemptReservation> {
-    if (attempt.idempotencyKey?.startsWith('openclaw-v2:') ||
-      attempt.actionType === 'OPENCLAW_APPLICABILITY_EVALUATION') {
+    const hasInitialModel =
+      [
+        'OPENCLAW_TRANSLATE',
+        'OPENCLAW_APPLICABILITY_EVALUATION',
+        'OPENCLAW_DYNAMIC_EVALUATION',
+        'OPENCLAW_OVERALL_SYNTHESIS',
+      ].includes(String(attempt.actionType)) &&
+      attempt.executionModelJson != null;
+    if (
+      attempt.idempotencyKey?.startsWith('openclaw-v2:') ||
+      attempt.actionType === 'OPENCLAW_APPLICABILITY_EVALUATION' ||
+      hasInitialModel
+    ) {
       // Serialize explicit requests and applicability admission against the WI row. The legacy
       // partial unique index alone does not cover a response lost after commit.
       return this.db.transaction(async (transaction) => {
@@ -263,6 +275,7 @@ export class ActionAttemptRepository {
             documentVersionId: workItem.documentVersionId,
             initialAilySessionId: workItem.initialAilySessionId,
             requestedByUserId: workItem.requestedByUserId,
+            analysisModelJson: workItem.analysisModelJson,
           })
           .from(workItem)
           .where(
@@ -292,6 +305,19 @@ export class ActionAttemptRepository {
           owner.documentVersionId !== attempt.documentVersionId
         )
           throw new Error('ACTION_ATTEMPT_WORK_ITEM_BINDING_CHANGED');
+        // captureForWorkItem precedes asynchronous input preparation. A late
+        // prepared request must not insert its old model after a pending model
+        // selection changed while it was awaiting that preparation.
+        if (hasInitialModel) {
+          const current = readStoredExecutionModel(owner.analysisModelJson);
+          const captured = readStoredExecutionModel(attempt.executionModelJson);
+          if (
+            !current ||
+            !captured ||
+            canonicalJson(current) !== canonicalJson(captured)
+          )
+            throw new Error('ACTION_ATTEMPT_MODEL_BINDING_CHANGED');
+        }
         const [active] = await transaction
           .select({ id: actionAttempt.attemptId })
           .from(actionAttempt)
@@ -299,13 +325,17 @@ export class ActionAttemptRepository {
             and(
               eq(actionAttempt.workItemId, String(attempt.workItemId)),
               eq(actionAttempt.tenantId, String(attempt.tenantId)),
-              inArray(actionAttempt.actionType, attempt.actionType === 'OPENCLAW_APPLICABILITY_EVALUATION'
-                ? ['OPENCLAW_APPLICABILITY_EVALUATION'] : [
-                'OPENCLAW_TRANSLATE',
-                'OPENCLAW_APPLICABILITY_EVALUATION',
-                'OPENCLAW_DYNAMIC_EVALUATION',
-                'OPENCLAW_OVERALL_SYNTHESIS',
-              ]),
+              inArray(
+                actionAttempt.actionType,
+                attempt.actionType === 'OPENCLAW_APPLICABILITY_EVALUATION'
+                  ? ['OPENCLAW_APPLICABILITY_EVALUATION']
+                  : [
+                      'OPENCLAW_TRANSLATE',
+                      'OPENCLAW_APPLICABILITY_EVALUATION',
+                      'OPENCLAW_DYNAMIC_EVALUATION',
+                      'OPENCLAW_OVERALL_SYNTHESIS',
+                    ],
+              ),
               inArray(actionAttempt.status, [
                 'QUEUED',
                 'RUNNING',

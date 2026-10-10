@@ -101,7 +101,7 @@ export async function invokeHostedDocumentReadingModel(input, options = {}, depe
   const gatewayToken = requiredOption(options.gatewayToken, 'READING_GATEWAY_TOKEN_REQUIRED');
   const agentId = requiredOption(options.agentId ?? WISELINK_PROFILE_REF, 'READING_AGENT_REQUIRED');
   const configuredModelVersion = requiredOption(
-    options.configuredModelVersion, 'READING_MODEL_CONFIG_UNREADABLE');
+    options.executionModel ? `configured-route:${options.executionModel.modelRef}` : options.configuredModelVersion, 'READING_MODEL_CONFIG_UNREADABLE');
   let timeoutMs = options.timeoutMs;
   if (timeoutMs !== undefined &&
       (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0))

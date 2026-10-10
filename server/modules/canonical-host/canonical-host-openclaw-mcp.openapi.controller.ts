@@ -35,6 +35,12 @@ export class CanonicalHostOpenClawMcpOpenApiController {
     await this.mcp.handle(request, response, body);
   }
 
+  @Post('apply-pending-model-configuration')
+  async applyPendingModelConfiguration(@Body() body: unknown) {
+    await this.serviceScope.assertAutoWorkItemQueueTransport();
+    return this.autoWorkItems.applyPendingModelConfiguration(body);
+  }
+
   @Post('next-work-item')
   async nextWorkItem(
     @Body() body?: NextAutomaticWorkItemRequest,

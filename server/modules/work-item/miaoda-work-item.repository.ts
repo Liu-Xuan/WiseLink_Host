@@ -34,12 +34,16 @@ import { dmDocumentReadingRun } from '../../database/document-reading.schema';
 import {
   actionAttempt,
   assessmentWorkRevision,
+  canonicalModelSetting,
   translationBlockRevision,
   translationWorkspace,
   workItem,
 } from '../../database/schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
-import { canonicalModelError } from '../model-settings/canonical-model-catalog';
+import { canonicalModelError, taskModelSelection } from '../model-settings/canonical-model-catalog';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { documentDeliveryRequestId } from '../canonical-host/document-delivery-ref';
+import { preserveWorkItemModelConfigurationAudit } from './model-configuration-audit';
 
 const ACTION_TYPE = 'PARSE_PDF';
 const DELIVERY_INTENT_ACTION_TYPE = 'DOCUMENT_DELIVERY_INTENT';
@@ -250,6 +254,7 @@ export class MiaodaWorkItemRepository {
     sourceFileSha256: string;
     sourceByteLength: number;
     delivery: DocumentDeliverySelection;
+    executionModel: CanonicalExecutionModelSelection | null;
   }>> {
     const rows = await this.db.select({
       workItemId: workItem.workItemId,
@@ -260,6 +265,7 @@ export class MiaodaWorkItemRepository {
       sourceFileSha256: workItem.sourceFileSha256,
       sourceByteLength: workItem.sourceByteLength,
       envelope: actionAttempt.taskEnvelopeJson,
+      analysisModelJson: workItem.analysisModelJson,
     }).from(workItem).innerJoin(actionAttempt, and(
       eq(actionAttempt.workItemId, workItem.workItemId),
       eq(actionAttempt.tenantId, workItem.tenantId),
@@ -295,6 +301,7 @@ export class MiaodaWorkItemRepository {
         actorUserId: row.actorUserId, documentVersionId: row.documentVersionId,
         sourceArtifactId: row.sourceArtifactId, sourceFileSha256: row.sourceFileSha256,
         sourceByteLength: row.sourceByteLength,
+        executionModel: readStoredExecutionModel(row.analysisModelJson),
         delivery: { reading: choice.reading, translation: choice.translation } }];
     });
   }
@@ -649,6 +656,8 @@ export class MiaodaWorkItemRepository {
     now: Date;
     limit?: number;
     workItemId?: string;
+    /** Explicit configuration replay discovery only; normal dispatch never sets this. */
+    includeActiveLeaseForConfiguration?: boolean;
   }): Promise<AutoWorkItemQueueCandidate[]> {
     const limit = Math.min(Math.max(input.limit ?? 32, 1), 100);
     return this.db
@@ -674,7 +683,7 @@ export class MiaodaWorkItemRepository {
             eq(autoWorkItemAuthorization.status, 'WAITING'),
             and(
               eq(autoWorkItemAuthorization.status, 'LEASED'),
-              lt(autoWorkItemAuthorization.leaseExpiresAt, input.now),
+              ...(input.includeActiveLeaseForConfiguration ? [] : [lt(autoWorkItemAuthorization.leaseExpiresAt, input.now)]),
             ),
           ),
           eq(workItem.actionType, ACTION_TYPE),
@@ -783,6 +792,99 @@ export class MiaodaWorkItemRepository {
       )
       .orderBy(workItem.workItemId)
       .limit(Math.min(Math.max(input.limit ?? 32, 1), 100));
+  }
+
+  /** Applies only the current saved default to an exact, never-claimed task. */
+  async applyPendingModelConfiguration(input: import('@shared/pending-model-configuration.interface').ApplyPendingModelConfigurationRequest & {
+    tenantId: string; principalId: string;
+  }): Promise<import('@shared/pending-model-configuration.interface').ApplyPendingModelConfigurationResponse> {
+    return this.db.transaction(async tx => {
+      // Queue claim UPDATE locks this same row; no browser/RLS bypass is used.
+      const [grant] = await tx.select().from(autoWorkItemAuthorization).where(and(
+        eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+        eq(autoWorkItemAuthorization.workItemId, input.workItemId),
+      )).limit(1).for('update');
+      const [owner] = await tx.select().from(workItem).where(and(
+        eq(workItem.tenantId, input.tenantId), eq(workItem.workItemId, input.workItemId),
+      )).limit(1).for('update');
+      if (!grant || !owner || grant.requestId !== input.requestId ||
+          owner.requestId !== input.requestId || owner.requestedByUserId !== grant.actorUserId ||
+          owner.documentId !== grant.documentId || owner.documentVersionId !== input.documentVersionId ||
+          grant.documentVersionId !== input.documentVersionId || owner.sourceArtifactId !== input.sourceArtifactId ||
+          grant.sourceArtifactId !== input.sourceArtifactId || owner.sourceFileSha256 !== input.sourceFileSha256 ||
+          grant.sourceFileSha256 !== input.sourceFileSha256 || Number(owner.sourceByteLength) !== input.sourceByteLength ||
+          Number(grant.sourceByteLength) !== input.sourceByteLength || owner.revision !== input.expectedWorkItemRevision ||
+          owner.actionType !== 'PARSE_PDF' || grant.grantKind !== 'MIAODA_CANONICAL_PARSE_REQUEST')
+        throw canonicalModelError('PENDING_MODEL_SOURCE_BINDING_CHANGED', 409);
+      const projection = parseProjection(owner.projectionJson);
+      if (!projection || projection.workItemId !== input.workItemId || projection.requestId !== input.requestId ||
+          projection.revision !== input.expectedWorkItemRevision || projection.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
+          projection.source.documentVersionId !== input.documentVersionId || projection.package?.packageId !== owner.packageId)
+        throw canonicalModelError('PENDING_MODEL_SOURCE_BINDING_CHANGED', 409);
+      const current = readStoredExecutionModel(owner.analysisModelJson);
+      const history = projection.modelConfigurationApplications ?? [];
+      const prior = history.find(receipt => receipt.configurationRequestId === input.configurationRequestId);
+      if (prior) {
+        if (prior.executorPrincipalId !== input.principalId || prior.actorUserId !== grant.actorUserId ||
+            prior.workItemId !== input.workItemId || prior.requestId !== input.requestId ||
+            prior.documentVersionId !== input.documentVersionId || prior.sourceArtifactId !== input.sourceArtifactId ||
+            prior.sourceFileSha256 !== input.sourceFileSha256 || prior.sourceByteLength !== input.sourceByteLength ||
+            prior.workItemRevision !== input.expectedWorkItemRevision ||
+            canonicalJson(prior.previousModel) !== canonicalJson(input.expectedExecutionModel) ||
+            prior.executionModel.settingsRevision !== input.expectedSettingsRevision ||
+            canonicalJson(prior.executionModel) !== canonicalJson(current))
+          throw canonicalModelError('PENDING_MODEL_CONFIGURATION_REPLAY_CONFLICT', 409);
+        return { status: 'MODEL_CONFIGURATION_APPLIED', replayed: true, application: prior };
+      }
+      if (grant.status !== 'WAITING' || grant.leaseGeneration !== 0 || grant.leaseToken !== null ||
+          grant.leaseOwner !== null || grant.leaseExpiresAt !== null)
+        throw canonicalModelError('PENDING_MODEL_ALREADY_CLAIMED', 409);
+      if (canonicalJson(current) !== canonicalJson(input.expectedExecutionModel))
+        throw canonicalModelError('PENDING_MODEL_SNAPSHOT_CHANGED', 409);
+      if (projection.assessment || projection.integratedAssessment || projection.translation || projection.applicability)
+        throw canonicalModelError('PENDING_MODEL_EXECUTION_STARTED', 409);
+      const translationRoot = documentDeliveryRequestId('translation', `work-item:${input.workItemId}`);
+      const [frozen] = await tx.select({ attemptId: actionAttempt.attemptId }).from(actionAttempt).where(and(
+        eq(actionAttempt.tenantId, input.tenantId),
+        or(and(eq(actionAttempt.workItemId, input.workItemId),
+          or(isNotNull(actionAttempt.executionModelJson), inArray(actionAttempt.actionType, [
+            'OPENCLAW_TRANSLATE', 'OPENCLAW_APPLICABILITY_EVALUATION',
+            'OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS',
+          ]))), and(
+          eq(actionAttempt.subjectKind, 'DOCUMENT_VERSION'), eq(actionAttempt.documentVersionId, input.documentVersionId),
+          eq(actionAttempt.actorUserId, grant.actorUserId), eq(actionAttempt.actionType, 'DOCUMENT_TRANSLATE'),
+          or(eq(actionAttempt.triggerRequestId, translationRoot), sql`${actionAttempt.triggerRequestId} LIKE ${`${translationRoot}:%`}`),
+        )),
+      )).limit(1);
+      const [reading] = await tx.select({ runRef: dmDocumentReadingRun.runRef }).from(dmDocumentReadingRun).where(and(
+        eq(dmDocumentReadingRun.tenantId, input.tenantId), eq(dmDocumentReadingRun.actorUserId, grant.actorUserId),
+        eq(dmDocumentReadingRun.documentVersionId, input.documentVersionId),
+        eq(dmDocumentReadingRun.requestId, documentDeliveryRequestId('reading', `work-item:${input.workItemId}`)),
+      )).limit(1);
+      if (frozen || reading) throw canonicalModelError('PENDING_MODEL_EXECUTION_STARTED', 409);
+      // Share-lock the exact configuration revision so a concurrent save cannot
+      // change which authoritative default this application acknowledges.
+      const [saved] = await tx.select().from(canonicalModelSetting).where(
+        eq(canonicalModelSetting.tenantId, input.tenantId)).limit(1).for('share');
+      if (!saved || saved.revision !== input.expectedSettingsRevision)
+        throw canonicalModelError('MODEL_SETTINGS_REVISION_CONFLICT', 409);
+      const now = new Date();
+      const executionModel = { ...taskModelSelection(saved.modelRef, now), settingsRevision: saved.revision };
+      const application = { configurationRequestId: input.configurationRequestId, appliedAt: now.toISOString(),
+        executorPrincipalId: input.principalId, actorUserId: grant.actorUserId,
+        workItemId: input.workItemId, requestId: input.requestId, documentVersionId: input.documentVersionId,
+        sourceArtifactId: input.sourceArtifactId, sourceFileSha256: input.sourceFileSha256,
+        sourceByteLength: input.sourceByteLength, workItemRevision: owner.revision,
+        previousModel: current, executionModel };
+      const updated = await tx.update(workItem).set({
+        analysisModelJson: JSON.stringify(executionModel),
+        projectionJson: JSON.stringify({ ...projection, modelConfigurationApplications: [...history, application] }),
+        updatedAt: now,
+      }).where(and(eq(workItem.tenantId, input.tenantId), eq(workItem.workItemId, input.workItemId),
+        eq(workItem.revision, input.expectedWorkItemRevision))).returning({ workItemId: workItem.workItemId });
+      if (updated.length !== 1) throw canonicalModelError('PENDING_MODEL_SOURCE_BINDING_CHANGED', 409);
+      return { status: 'MODEL_CONFIGURATION_APPLIED', replayed: false, application };
+    });
   }
 
   /** One conditional UPDATE elects a single queue consumer for each lease. */
@@ -1445,7 +1547,7 @@ export class MiaodaWorkItemRepository {
           const updated = await transaction
             .update(workItem)
             .set({
-              projectionJson: JSON.stringify(rebound),
+              projectionJson: preserveWorkItemModelConfigurationAudit(rebound),
               status: rebound.phase,
               revision: rebound.revision,
               updatedAt: new Date(),
@@ -1495,7 +1597,7 @@ export class MiaodaWorkItemRepository {
       const updated = await transaction
         .update(workItem)
         .set({
-          projectionJson: JSON.stringify(next),
+          projectionJson: preserveWorkItemModelConfigurationAudit(next),
           status: next.phase,
           revision: next.revision,
           packageId: next.package?.packageId ?? null,
@@ -1605,7 +1707,7 @@ export class MiaodaWorkItemRepository {
       const updated = await transaction
         .update(workItem)
         .set({
-          projectionJson: JSON.stringify(reopened),
+          projectionJson: preserveWorkItemModelConfigurationAudit(reopened),
           status: reopened.phase,
           revision: reopened.revision,
           packageId: projection.package.packageId,
@@ -2228,7 +2330,7 @@ export class MiaodaWorkItemRepository {
     const updated = await db
       .update(workItem)
       .set({
-        projectionJson: JSON.stringify(next),
+        projectionJson: preserveWorkItemModelConfigurationAudit(next),
         status: next.phase,
         revision: next.revision,
         packageId: next.package?.packageId ?? null,

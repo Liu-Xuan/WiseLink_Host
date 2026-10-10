@@ -100,10 +100,6 @@ export function HostedDevelopmentIntake() {
     phase === 'uploading' || phase === 'creating' || phase === 'readback';
 
   useEffect(() => {
-    if (models.data && !modelRef) setModelRef(models.data.defaultModelRef);
-  }, [models.data, modelRef]);
-
-  useEffect(() => {
     setFile(null);
     setModelRef('');
     setPendingModelRef(null);
@@ -206,7 +202,6 @@ export function HostedDevelopmentIntake() {
     const selectedExistingPdf = existingPdf;
     if (
       (!selectedFile && !selectedExistingPdf) ||
-      !modelRef ||
       !models.ready ||
       failedWorkItemId !== null ||
       busy ||
@@ -351,12 +346,14 @@ export function HostedDevelopmentIntake() {
           value={modelRef}
           onChange={setModelRef}
           catalog={models}
+          inheritLabel={`系统配置：${models.data?.options.find((option) => option.modelRef === models.data?.defaultModelRef)?.displayName ?? '正在读取'}`}
           disabled={busy || pendingModelRef !== null}
         />
         <small>
-          此模型用于事项评估；文件解读与翻译由文档任务处理。Review 新回合可另选。
+          默认在首次执行前读取系统模型配置；明确选择后，初始评估与文件解读、翻译沿用此事项模型。Review
+          新回合可另选。
         </small>
-        {pendingModelRef && !busy ? (
+        {pendingModelRef !== null && !busy ? (
           <small>
             本次请求已提交，重试保留原模型。要新建不同模型的事项，请重新选择
             PDF。
@@ -429,7 +426,6 @@ export function HostedDevelopmentIntake() {
             (!file && !existingPdf) ||
             busy ||
             !models.ready ||
-            !modelRef ||
             failedWorkItemId !== null
           }
           onClick={() => void createWorkItem()}

@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import type { ApplyPendingModelConfigurationResponse } from '@shared/pending-model-configuration.interface';
+import { parsePendingModelConfigurationRequest } from './pending-model-configuration.request';
+import { canonicalModelError } from '../model-settings/canonical-model-catalog';
 
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
@@ -73,6 +76,23 @@ export class AutomaticWorkItemDispatchService {
     @Optional()
     private readonly documentWork?: DocumentWorkRuntimeService,
   ) {}
+
+  /** Explicit application of the saved setting; never discovery or model work. */
+  async applyPendingModelConfiguration(raw: unknown): Promise<ApplyPendingModelConfigurationResponse> {
+    const input = parsePendingModelConfigurationRequest(raw);
+    const scope = await this.serviceScope.authorizeOpenClawAutoWorkItemQueue();
+    assertQueueScope(scope);
+    const candidates = await this.workItems.listAutoProcessingCandidates({
+      tenantId: scope.tenantId, now: new Date(), workItemId: input.workItemId, limit: 1,
+      includeActiveLeaseForConfiguration: true,
+    });
+    const candidate = candidates.find(item => item.authorization.workItemId === input.workItemId);
+    if (!candidate) throw canonicalModelError('PENDING_MODEL_TASK_NOT_AVAILABLE', 409);
+    const reason = await this.validateCandidate(candidate, scope);
+    if (reason) throw canonicalModelError(reason, 403);
+    return this.workItems.applyPendingModelConfiguration({ ...input,
+      tenantId: scope.tenantId, principalId: scope.principalId });
+  }
 
   async nextWorkItem(
     input?: NextAutomaticWorkItemRequest,

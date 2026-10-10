@@ -1,3 +1,4 @@
+import { requireDocumentTranslationModel } from '../action-attempt/document-translation-model';
 import { DocumentParsingHostedService } from '../document-management/src/hosted/nest/document-parsing-hosted.service';
 import { DocumentSemanticService } from './document-semantic.service';
 import { Inject, Injectable } from '@nestjs/common';
@@ -11,7 +12,7 @@ import { CanonicalTranslationV2PluginService } from './canonical-translation-v2-
 import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, canonicalServiceScopeUnavailable,
   type CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
 import { documentDeliveryRequestId } from './document-delivery-ref';
-import { taskModelSelection } from '../model-settings/canonical-model-catalog';
+import { CanonicalModelSettingsService } from '../model-settings/canonical-model-settings.service';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { CanonicalTranslationV2Service } from './canonical-translation-v2.service';
 import type { TranslationWorkspaceFence } from './canonical-translation-workspace.repository';
@@ -23,7 +24,8 @@ export class DocumentTranslationRuntimeService {
   constructor(@Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION) private readonly authorization: CanonicalServiceScopeAuthorizationPort,
     private readonly actors: EngineeringMatterWorkingRepository, private readonly reader: UnifiedReaderService,
     private readonly plugins: CanonicalTranslationV2PluginService, private readonly attempts: DocumentTranslationAttemptRepository, private readonly semantics: DocumentSemanticService, private readonly parsing: DocumentParsingHostedService,
-    private readonly v2: CanonicalTranslationV2Service) {}
+    private readonly v2: CanonicalTranslationV2Service,
+    private readonly modelSettings: CanonicalModelSettingsService) {}
 
   async run(input: { action: 'START' | 'RECOVER' | 'RECOVER_EXPIRED' | 'CONTINUE_PARTIAL' | 'RECOVER_PARTIAL_INPUT' | 'RECOVER_KNOWN_FAILURE' | 'RESUME_KNOWN_FAILURE' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
     parseRunId: string; deliveryRef?: string; requestId?: string; attemptRef?: string;
@@ -38,7 +40,23 @@ export class DocumentTranslationRuntimeService {
         ? documentDeliveryRequestId('translation', input.deliveryRef) : undefined;
       if (expectedRequestId && input.action === 'START' && input.requestId !== expectedRequestId)
         throw new Error('DOCUMENT_TRANSLATION_DELIVERY_REQUEST_MISMATCH');
-      const read = () => this.reader.readDocumentOriginal(scope.documentVersionId, input.parseRunId, { ...scope, roles: [] });
+      const read = async () => {
+        const original = await this.reader.readDocumentOriginal(scope.documentVersionId, input.parseRunId, { ...scope, roles: [] });
+        const binding = original.original.binding;
+        if (auth.sourceBinding && (auth.sourceBinding.sourceArtifactId !== binding.sourceArtifactId ||
+            auth.sourceBinding.sourceSha256 !== binding.sourceSha256 ||
+            auth.sourceBinding.sourceByteLength !== binding.sourceByteLength))
+          throw new Error('DOCUMENT_TRANSLATION_AUTHORIZATION_SOURCE_MISMATCH');
+        return original;
+      };
+      const initialModel = async () => {
+        if (input.deliveryRef?.startsWith('work-item:') && (!auth.sourceBinding ||
+            input.deliveryRef !== `work-item:${auth.modelWorkItemId}`))
+          throw new Error('DOCUMENT_TRANSLATION_HOSTED_MODEL_REQUIRED');
+        return requireDocumentTranslationModel(auth.executionModel ?? (auth.modelWorkItemId
+          ? await this.modelSettings.captureForWorkItem(scope.tenantId, auth.modelWorkItemId, new Date())
+          : await this.modelSettings.captureForNewTask(scope.tenantId, new Date())));
+      };
       // Control requires fresh source ACL/catalog access, not original bytes or
       // semantic hydration. A successful status is not a content-health proof.
       await this.parsing.status(scope.documentVersionId, { ...scope, roles: [] });
@@ -103,7 +121,8 @@ export class DocumentTranslationRuntimeService {
             { parseRunId: input.parseRunId, parseRevision: original.original.binding.parseRevision,
               modelInput: { ...modelInput, schemaVersion: 'wiselink.3_1.translation_task.v2',
                 source: { ...modelInput.source, originalBinding: original.original.binding },
-                documentProducer: 'HOSTED_M3' } }, taskModelSelection()));
+                documentProducer: 'HOSTED_M3' } },
+            requireDocumentTranslationModel(readStoredExecutionModel(prior.executionModelJson))));
         } catch (error) {
           if (isPermissionRejection(error)) throw new Error('DOCUMENT_TRANSLATION_ADMISSION_DENIED');
           if (error instanceof Error && ['DOCUMENT_TRANSLATION_RECOVERY_SAVED_OUTPUT',
@@ -143,7 +162,15 @@ export class DocumentTranslationRuntimeService {
             return summary(prior);
           }
         }
+        const predecessor = input.action === 'CONTINUE_PARTIAL' || input.action === 'RECOVER_PARTIAL_INPUT'
+          ? await this.attempts.readAttempt(scope, input.attemptRef!) : null;
+        if ((input.action === 'CONTINUE_PARTIAL' || input.action === 'RECOVER_PARTIAL_INPUT') &&
+            (!predecessor || predecessor.producerRunId !== input.parseRunId))
+          throw new Error('DOCUMENT_TRANSLATION_PREDECESSOR_NOT_FOUND');
         const original = await read();
+        const executionModel = predecessor
+          ? requireDocumentTranslationModel(readStoredExecutionModel(predecessor.executionModelJson))
+          : await initialModel();
         const artifact = original.run.manifestArtifact;
         if (!artifact || artifact.relativePath !== 'original/manifest.json' || artifact.readback !== 'VERIFIED')
           throw new Error('DOCUMENT_ORIGINAL_MANIFEST_REQUIRED');
@@ -184,10 +211,11 @@ export class DocumentTranslationRuntimeService {
         try {
           if (input.action === 'RECOVER_PARTIAL_INPUT')
             return summary(await this.attempts.recoverPartialInput(scope, task, expectedRequestId!,
-              input.attemptRef!, taskModelSelection()));
+              input.attemptRef!, executionModel));
           return summary(await this.attempts.reserve(scope, task, requestId,
-            taskModelSelection(), input.action === 'START' ? undefined : input.attemptRef,
-            input.action === 'CONTINUE_PARTIAL' ? 'PARTIAL' : 'QUOTA'));
+            executionModel, input.action === 'START' ? undefined : input.attemptRef,
+            input.action === 'CONTINUE_PARTIAL' ? 'PARTIAL' : 'QUOTA',
+            input.action === 'START' || input.action === 'RECOVER' ? auth.modelWorkItemId : undefined));
         } catch (error) {
           // A confirmed DB permission rejection is distinct from an unknown
           // reservation outcome. Never expose Drizzle SQL/parameters to callers.
@@ -232,8 +260,7 @@ export class DocumentTranslationRuntimeService {
       if (input.action === 'CLAIM') {
         if (parseDocumentTranslationTaskEnvelope(row.taskEnvelopeJson ?? '').modelInput.documentProducer !== 'HOSTED_M3')
           throw new Error('DOCUMENT_TRANSLATION_HOSTED_TASK_REQUIRED');
-        const executionModel = readStoredExecutionModel(row.executionModelJson);
-        if (executionModel?.modelRef !== 'm3probe/minimax-m3') throw new Error('DOCUMENT_TRANSLATION_HOSTED_MODEL_INVALID');
+        const executionModel = requireDocumentTranslationModel(readStoredExecutionModel(row.executionModelJson));
         const fence = await this.attempts.claim(scope, input.attemptRef, `document-translation:${randomUUID()}`);
         if (fence && await this.v2.documentHasInterruptedGeneration({ ...fence, tenantId: scope.tenantId,
           workItemId: null, documentVersionId: scope.documentVersionId,

@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c211`
+- Skill：`wiselink-research-and-synthesize@r09.c212`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -615,7 +615,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c211`
+- `skillVersion=wiselink-research-and-synthesize@r09.c212`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
@@ -700,7 +700,7 @@ Matter or Review task. See [derived summary protocol](references/derived-summary
 for adjustable run budgets, precise read/save recovery, provenance and the
 installed-baseline delta.
 
-### 单 endpoint 自动队列失败收尾（r09.c211）
+### 单 endpoint 自动队列失败收尾（r09.c212）
 
 - `--auto-queue` 的正常 tick 与显式 `--finish-blocked-claim` 共用 `active-claim.owner.lock` 的 Linux util-linux `flock` 独占 FD owner，从首次读指针覆盖至 Host 等待及最后本地写；竞争、缺失工具或不支持的文件系统一律 fail-closed。锁文件不删除，FD close / 进程退出由内核释放锁；安装前必须确认旧版无锁 consumer 已退出，不能停止仍活跃任务。阶段内已有 heartbeat / 续租不重入此队列 owner 锁。
 - 操作员仅在已确认正式 BLOCKED 后，指定精确 WI / 原 request / DV / lease generation / blockedAt，使用 `--auto-queue --finish-blocked-claim --finish-work-item-id WI-... --finish-request-id REQ-... --finish-document-version-id DV --finish-lease-generation N --finish-blocked-at UTC`。此流程调用既有正式 BLOCK POST 并要求精确 `replayed=true` 回执，先不可变归档原 claim 与回执，再解除该本地绑定；归档内已有 leaseToken 留在可信私有 checkpoint，不得进入模型、公开输出或交付包。

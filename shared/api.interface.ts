@@ -2535,6 +2535,8 @@ export interface CanonicalAutoProcessingCompletionReceipt {
 }
 
 export interface CanonicalWorkItemProjection {
+  /** Non-secret Host control audit; it does not revise engineering content. */
+  modelConfigurationApplications?: import('./pending-model-configuration.interface').PendingModelConfigurationApplication[];
   /** Host receipt for browser display/acceptance; executor still rechecks the enrollment row. */
   autoProcessingCompletionReceipt?: CanonicalAutoProcessingCompletionReceipt;
   schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate';

@@ -1,3 +1,4 @@
+import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
 import type { AuthorizedSuccessorReviewDelegation } from './automatic-work-item-lease-authorization.port';
 import { Injectable } from '@nestjs/common';
 
@@ -9,6 +10,9 @@ export const CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION = Symbol(
 );
 
 export interface CanonicalVerifiedDocumentWorkScope {
+  modelWorkItemId?: string;
+  executionModel?: CanonicalExecutionModelSelection | null;
+  sourceBinding?: { sourceArtifactId: string; sourceSha256: string; sourceByteLength: number };
   principalId: string;
   appId: string;
   tenantId: string;

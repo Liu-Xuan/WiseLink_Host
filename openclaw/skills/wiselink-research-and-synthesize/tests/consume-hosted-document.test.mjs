@@ -214,7 +214,8 @@ test('document translation checkpoints bounded HTTP 400 shape and never reports 
           task: { documentVersionId: 'DV-test', parseRunId: 'PRUN-test',
             workspaceId: 'TW-shape', deadline: new Date(Date.now() + 600_000).toISOString(),
             modelInput: { documentProducer: 'HOSTED_M3', workspaceId: 'TW-shape' } },
-          executionModel: { modelRef: 'm3probe/minimax-m3' } };
+          executionModel: { modelRef: 'm3probe/minimax-m3', providerKind: 'CUSTOM',
+            displayName: 'M3 Probe Large', settingsRevision: 0, selectedAt: '2026-10-01T00:00:00.000Z' } };
         if (args.action === 'HEARTBEAT') return { renewed: true, attemptRef };
         if (args.action === 'RELEASE') return { released: true, attemptRef };
         if (args.action === 'FAIL') return { status: 'FAILED', attemptRef,

@@ -1,5 +1,6 @@
 // Consumes only an explicitly accepted run. No BEGIN, parsing, translation or activity writes.
 import { isDeepStrictEqual } from 'node:util';
+import { validateExecutionModelSelection } from './validate-payload.mjs';
 import { WISELINK_SKILL_VERSION } from './validate-payload.mjs';
 const HOST_READING_LEASE_MS = 120_000;
 const CHECKPOINT_SCHEMA = 'wiselink.document.reading-checkpoint.v1';
@@ -182,6 +183,10 @@ export async function consumeHostedDocumentReading(options, dependencies) {
     return { status: 'READING_SAVED', saved: savedReceipt(claimed.result, state, expected),
       modelResponse: readingModelResponse(currentModel), modelInvocations: 0 };
   }
+  const executionModel = claimed.executionModel == null ? undefined : validateExecutionModelSelection(claimed.executionModel);
+  if (!isDeepStrictEqual(claimed.executionModel, state.executionModel) ||
+      (modelStarted && !isDeepStrictEqual(modelStarted.executionModel, executionModel)))
+    throw new Error('READING_EXECUTION_MODEL_BINDING_MISMATCH');
   const fence = claimed.fence;
   if (!fence || fence.leaseOwner !== leaseOwner || typeof fence.leaseToken !== 'string' ||
       !/^[0-9a-f-]{36}$/iu.test(fence.leaseToken) || !Number.isSafeInteger(fence.leaseGeneration) || fence.leaseGeneration < 1)
@@ -223,10 +228,10 @@ export async function consumeHostedDocumentReading(options, dependencies) {
     if (source.sourceBinding?.original?.documentVersionId !== documentVersionId || source.sourceBinding.original.parseRunId !== state.parseRunId ||
         source.sourceBinding.semanticRevision !== state.semanticRevision) throw new Error('READING_SOURCE_CHECKPOINT_INVALID');
     if (!model) {
-      await lease.guard(() => write('model.started', { sourceBinding: source.sourceBinding }));
+      await lease.guard(() => write('model.started', { sourceBinding: source.sourceBinding, ...(executionModel ? { executionModel } : {}) }));
       modelDispatched = true;
       modelInvocations++;
-      model = await lease.guard(() => dependencies.invokeModel(source, { signal: lease.signal }));
+      model = await lease.guard(() => dependencies.invokeModel(source, { signal: lease.signal, ...(executionModel ? { executionModel } : {}) }));
       if (!nonempty(model?.modelVersion) || model?.proposal?.schemaVersion !== 'wiselink.document.reading.v1')
         throw new Error('READING_MODEL_RESULT_INVALID');
       await lease.guard(() => write('model.result', model));
@@ -274,5 +279,6 @@ export async function consumeHostedDocumentReading(options, dependencies) {
 // Report bounded application validation codes, never raw transport details or credentials.
 function definiteError(error) {
   const code = error?.hostErrorCode ?? error?.code ?? error?.message;
+  if (code === 'HOSTED_SELECTED_MODEL_NOT_REGISTERED') return code;
   return typeof code === 'string' && /^(?:DOCUMENT_READING_|READING_(?:MODEL_INPUT_|MODEL_RESULT_|SAVE_RECEIPT_|SOURCE_CHECKPOINT_))[A-Z0-9_]+$/u.test(code) ? code : null;
 }

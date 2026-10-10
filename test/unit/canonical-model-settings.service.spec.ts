@@ -55,10 +55,10 @@ function setup(initial: StoredCanonicalModelSetting | null = null) {
 }
 
 describe('tenant global model selection', () => {
-  it('offers registered task choices to a valid existing user without any global manager role', () => {
+  it('offers configured task choices to a valid existing user without any global manager role', async () => {
     delete process.env[CANONICAL_MODEL_MANAGER_ROLE_ENV];
     const { service, repository } = setup();
-    const taskOptions = service.taskOptions(actor([]));
+    const taskOptions = await service.taskOptions(actor([]));
     expect(taskOptions.defaultModelRef).toBe('m3probe/minimax-m3');
     expect(taskOptions.options).toEqual(
       expect.arrayContaining([
@@ -72,11 +72,14 @@ describe('tenant global model selection', () => {
         },
       ]),
     );
-    expect(repository.read).not.toHaveBeenCalled();
+    expect(repository.read).toHaveBeenCalledWith(
+      'tenant-model-fixture',
+      undefined,
+    );
     expect(repository.compareAndSet).not.toHaveBeenCalled();
-    expect(() =>
+    await expect(
       service.taskOptions({ ...actor([]), tenantId: 'forged' }),
-    ).toThrow('MODEL_SETTINGS_IDENTITY_REQUIRED');
+    ).rejects.toThrow('MODEL_SETTINGS_IDENTITY_REQUIRED');
   });
 
   it('keeps all stages on the WorkItem snapshot, independent from global settings', async () => {
@@ -108,6 +111,7 @@ describe('tenant global model selection', () => {
   it('uses the concurrent pin winner for a legacy task and never switches on a read failure', async () => {
     const winner = taskModelSelection('dli/gpt-5.6-sol');
     const repository = {
+      read: jest.fn().mockResolvedValue(null),
       readWorkItemModel: jest.fn().mockResolvedValue(null),
       pinWorkItemModel: jest.fn().mockResolvedValue(winner),
     };

@@ -502,7 +502,9 @@ export class OrdinaryWorkItemService {
       ...(retryTarget
         ? {}
         : {
-            analysisModel: taskModelSelection(input.modelRef),
+            ...(input.modelRef !== undefined
+              ? { analysisModel: taskModelSelection(input.modelRef) }
+              : {}),
             modelChoiceExplicit: input.modelRef !== undefined,
             ...(initialAilySessionId ? { initialAilySessionId } : {}),
           }),

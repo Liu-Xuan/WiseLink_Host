@@ -91,9 +91,18 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       intent.delivery.reading || intent.delivery.translation === 'ZH_FULL');
     const actors = [...new Set(requested.map((intent) => intent.actorUserId))];
     if (actors.length !== 1) throw scopeNotFound();
+    const modelBackedWork = input.purpose === 'TRANSLATION' || input.purpose === 'READING';
+    const workItem = workItemRef && modelBackedWork
+      ? workItems.find((intent) => intent.workItemId === workItemRef[1] &&
+          intent.actorUserId === actors[0] && intent.documentVersionId === input.documentVersionId) : undefined;
+    if (workItemRef && modelBackedWork && !workItem) throw scopeNotFound();
     return { principalId: config.principalId, appId: CANONICAL_APP_ID,
       tenantId: config.tenantId, actorUserId: actors[0],
-      documentVersionId: input.documentVersionId };
+      documentVersionId: input.documentVersionId,
+      ...(workItem ? { modelWorkItemId: workItem.workItemId, executionModel: workItem.executionModel, sourceBinding: {
+        sourceArtifactId: workItem.sourceArtifactId, sourceSha256: workItem.sourceFileSha256,
+        sourceByteLength: workItem.sourceByteLength } } : {}) };
+
   }
 
   async authorizeOpenClawAutoWorkItemQueue() {

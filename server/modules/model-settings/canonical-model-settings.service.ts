@@ -16,7 +16,6 @@ import {
   CANONICAL_MODEL_MANAGER_ROLE_ENV,
   CANONICAL_REGISTERED_MODELS,
   canonicalModelError,
-  taskModelSelection,
 } from './canonical-model-catalog';
 import {
   CanonicalModelSettingsRepository,
@@ -27,11 +26,14 @@ import {
 export class CanonicalModelSettingsService {
   constructor(private readonly repository: CanonicalModelSettingsRepository) {}
 
-  taskOptions(actor: CanonicalHostActor): CanonicalTaskModelOptions {
+  async taskOptions(
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalTaskModelOptions> {
     assertModelSettingsActor(actor);
+    const configured = await this.captureForNewTask(actor.tenantId, new Date());
     return {
       options: CANONICAL_REGISTERED_MODELS.map((option) => ({ ...option })),
-      defaultModelRef: CANONICAL_INITIAL_MODEL_REF,
+      defaultModelRef: configured.modelRef,
     };
   }
 
@@ -49,7 +51,7 @@ export class CanonicalModelSettingsService {
     return this.repository.pinWorkItemModel(
       tenantId,
       workItemId,
-      model ?? taskModelSelection(CANONICAL_INITIAL_MODEL_REF, selectedAt),
+      model ?? (await this.captureForNewTask(tenantId, selectedAt)),
     );
   }
 

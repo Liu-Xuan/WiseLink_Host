@@ -1,3 +1,4 @@
+import { isDocumentTranslationModel } from '../action-attempt/document-translation-model';
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod/v4';
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
@@ -285,7 +286,7 @@ export class CanonicalTranslationV2Service {
     const input = translationWorkspaceCommandSchemaV2.parse(raw);
     if (input.attemptRef !== fence.attemptRef || input.leaseToken !== fence.leaseToken ||
         input.leaseGeneration !== fence.leaseGeneration || task.workspaceId !== fence.workspaceId ||
-        task.modelInput.documentProducer !== 'HOSTED_M3' || executionModel.modelRef !== 'm3probe/minimax-m3')
+        task.modelInput.documentProducer !== 'HOSTED_M3' || !isDocumentTranslationModel(executionModel))
       throw new Error('DOCUMENT_TRANSLATION_WORKSPACE_SCOPE_INVALID');
     await assertAuthorized();
     await this.workspaces.attachAttempt(fence);
