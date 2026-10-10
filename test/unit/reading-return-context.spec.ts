@@ -125,6 +125,62 @@ test('Suite directory return preserves selected matter and pane positions withou
   expect(readingReturnTarget(route.searchParams, 'DV-B')).toBeNull();
 });
 
+test.each(['mode=document&', ''])(
+  'document directory return can bind to one matching nested version without a top-level pin (mode=%s)',
+  mode => {
+    const nested = new URLSearchParams(`${mode}familyId=F-old&selectedDocumentVersionId=DV-old&search=FTD&listY=410&quicklookY=90&linkMatterId=WRITE&returnUrl=https://outside.test`);
+    const params = new URLSearchParams({ returnLibraryQuery: nested.toString() });
+    const before = params.toString();
+    const target = readingReturnTarget(params, 'DV-old');
+    expect(target).toEqual({
+      route: `/library?${libraryReadingParams(nested)}`,
+      label: '返回原文档目录',
+    });
+    expect(target?.route).toContain('selectedDocumentVersionId=DV-old');
+    expect(target?.route).toContain('familyId=F-old');
+    expect(target?.route).toContain('listY=410');
+    expect(target?.route).not.toContain('outside.test');
+    expect(target?.route).not.toContain('linkMatterId');
+    expect(params.toString()).toBe(before);
+    expect(readingReturnTarget(params, 'DV-other')).toBeNull();
+    expect(readingReturnTarget(params)).toBeNull();
+  },
+);
+
+test('nested document directory fallback rejects absent, empty, duplicate and cross-mode bindings', () => {
+  for (const nested of [
+    'mode=document',
+    'mode=document&selectedDocumentVersionId=',
+    'mode=document&selectedDocumentVersionId=DV-other',
+    'mode=document&selectedDocumentVersionId=DV-old&selectedDocumentVersionId=DV-old',
+    'mode=document&selectedDocumentVersionId=DV-old&selectedDocumentVersionId=DV-other',
+    'mode=document&selectedDocumentVersionId=%20DV-old%20',
+    'mode=document&mode=document&selectedDocumentVersionId=DV-old',
+    'mode=matter&selectedDocumentVersionId=DV-old',
+    'mode=tasks&selectedDocumentVersionId=DV-old',
+    'mode=invalid&selectedDocumentVersionId=DV-old',
+  ]) {
+    expect(readingReturnTarget(new URLSearchParams({ returnLibraryQuery: nested }), 'DV-old')).toBeNull();
+  }
+});
+
+test('a matching nested document selection cannot override explicit top-level conflict or ambiguity', () => {
+  const params = new URLSearchParams({
+    returnLibraryQuery: 'mode=document&familyId=F-old&selectedDocumentVersionId=DV-old',
+  });
+  for (const topPins of [['DV-other'], [''], ['DV-old', 'DV-old'], ['DV-old', 'DV-other']]) {
+    const explicit = new URLSearchParams(params);
+    for (const pin of topPins) explicit.append('returnDocumentVersionId', pin);
+    expect(readingReturnTarget(explicit, 'DV-old')).toBeNull();
+  }
+  const duplicateQuery = new URLSearchParams(params);
+  duplicateQuery.append('returnLibraryQuery', params.get('returnLibraryQuery')!);
+  expect(readingReturnTarget(duplicateQuery, 'DV-old')).toBeNull();
+  const mixedIntent = new URLSearchParams(params);
+  mixedIntent.set('returnWorkItemId', 'WI-old');
+  expect(readingReturnTarget(mixedIntent, 'DV-old')).toBeNull();
+});
+
 test('Suite document return retains bounded family expansion and rejects ambiguous or malformed display state', () => {
   const state = new URLSearchParams('mode=document&selectedDocumentVersionId=OLD&expandedFamilyIds=F2,F1,F2&density=compact&listY=-2&quicklookY=Infinity&selectedMatterId=OTHER');
   const clean = libraryReadingParams(state);

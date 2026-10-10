@@ -53,6 +53,59 @@ describe('document activity timeline model', () => {
     });
   });
 
+  it.each([
+    ['March 2027', 2027, 3],
+    ['January 2021', 2021, 1],
+    ['FEBRUARY 2024', 2024, 2],
+  ] as const)('places %s as the whole source month without changing its role', (raw, year, month) => {
+    const sourceTime = time({ precision: 'MONTH', role: 'UNKNOWN', raw });
+    const before = JSON.stringify(sourceTime);
+    expect(calendarSpan(sourceTime)).toEqual({
+      start: Date.UTC(year, month - 1, 1),
+      end: Date.UTC(year, month, 1) - 1,
+      precision: 'MONTH',
+    });
+    expect(JSON.stringify(sourceTime)).toBe(before);
+    expect(sourceTime.role).toBe('UNKNOWN');
+    expect(sourceTime.raw).toBe(raw);
+  });
+
+  it('requires a full month name, explicit year and matching calendar precision', () => {
+    for (const raw of ['March', 'March 27', 'Mar 2027', 'March 2027 target', '2027 March', 'constructor 2027', 'toString 2027']) {
+      expect(calendarSpan(time({ precision: 'MONTH', raw }))).toBeNull();
+    }
+    for (const wording of [
+      time({ precision: 'DAY', raw: 'March 2027' }),
+      time({ precision: 'MONTH', expression: 'RELATIVE', raw: 'March 2027' }),
+      time({ precision: 'MONTH', expression: 'UNKNOWN', raw: 'January 2021' }),
+    ]) {
+      expect(calendarSpan(wording)).toBeNull();
+    }
+  });
+
+  it('sorts full named-month intervals with numeric months and quarters while preserving source wording', () => {
+    const saved = candidate([
+      { statementId: 'MARCH', statementKey: 'march', label: '三月', quotes: [], time: time({ role: 'UNKNOWN', precision: 'MONTH', raw: 'March 2027' }), statusRaw: null, limitations: [] },
+      { statementId: 'QUARTER', statementKey: 'quarter', label: '季度', quotes: [], time: time({ precision: 'QUARTER', raw: 'Q4 2026' }), statusRaw: null, limitations: [] },
+      { statementId: 'JANUARY', statementKey: 'january', label: '一月', quotes: [], time: time({ role: 'UNKNOWN', precision: 'MONTH', raw: 'January 2021' }), statusRaw: null, limitations: [] },
+      { statementId: 'TBD', statementKey: 'tbd', label: '待定', quotes: [], time: time({ precision: 'UNKNOWN', expression: 'TBD', raw: 'TBD' }), statusRaw: null, limitations: [] },
+      { statementId: 'NUMERIC', statementKey: 'numeric', label: '数字年月', quotes: [], time: time({ precision: 'MONTH', raw: '2027-02' }), statusRaw: null, limitations: [] },
+    ]);
+    const before = JSON.stringify(saved);
+    const items = timelineItems(saved);
+    const placed = timelinePlacedItems(items);
+    expect(placed.map((item) => item.statement.statementId)).toEqual([
+      'JANUARY', 'QUARTER', 'NUMERIC', 'MARCH',
+    ]);
+    expect(placed.map((item) => item.span?.precision)).toEqual([
+      'MONTH', 'QUARTER', 'MONTH', 'MONTH',
+    ]);
+    expect(placed.slice(1).every((item, index) => placed[index].span!.end < item.span!.start)).toBe(true);
+    expect(items[0].displayTime).toBe('March 2027');
+    expect(items[0].lane).toBe('materials');
+    expect(JSON.stringify(saved)).toBe(before);
+  });
+
   it('keeps the same quarter of different years disjoint on the continuous axis', () => {
     const q25 = calendarSpan(time({ precision: 'QUARTER', raw: '2025 Q3' }))!;
     const q26 = calendarSpan(time({ precision: 'QUARTER', raw: '2026 Q3' }))!;
@@ -97,5 +150,5 @@ test('v2 timeline preserves every source time and role, technical ranges stay ou
   times:[{role:'TARGET' as const,precision:'QUARTER' as const,expression:'CALENDAR' as const,raw:'Q4 2026',quoteIndex:0},{role:'UNKNOWN' as const,precision:'MONTH' as const,expression:'CALENDAR' as const,raw:'March 2027',quoteIndex:0},{role:'UNKNOWN' as const,precision:'UNKNOWN' as const,expression:'TBD' as const,raw:'TBD',quoteIndex:0}],
   technicalIds:[{kind:'AIRCRAFT_LINE_NUMBER' as const,raw:'LN 2024-2026',quoteIndex:0}],scope:{sectionIds:[],conditions:[],completeness:'UNRESOLVED' as const},limitations:['Source candidate only']};
  const saved={...prior,schemaVersion:'wiselink.document.activity-candidate.v2',statements:[statement],sourceContext:{schemaVersion:'wiselink.document.activity-source-context.v1',sourceBinding:prior.sourceBinding,profile:{profileRef:'generic',selectionBasis:'NOT_RECORDED',family:null,issuer:null},sections:[],organizationWarnings:[]}} as DocumentActivityRevisionV2;
- const before=JSON.stringify(saved);const items=timelineItems(saved);expect(items).toHaveLength(3);expect(items.map(i=>i.displayTime)).toEqual(['Q4 2026','March 2027','TBD']);expect(new Set(items.map(i=>i.id)).size).toBe(3);expect(items.map(i=>i.time?.role)).toEqual(['TARGET','UNKNOWN','UNKNOWN']);expect(items.every(i=>i.lane==='materials')).toBe(true);expect(items.some(i=>i.displayTime.includes('LN'))).toBe(false);expect(JSON.stringify(saved)).toBe(before);
+ const before=JSON.stringify(saved);const items=timelineItems(saved);expect(items).toHaveLength(3);expect(items.map(i=>i.displayTime)).toEqual(['Q4 2026','March 2027','TBD']);expect(new Set(items.map(i=>i.id)).size).toBe(3);expect(items.map(i=>i.time?.role)).toEqual(['TARGET','UNKNOWN','UNKNOWN']);expect(items.every(i=>i.lane==='materials')).toBe(true);expect(items[1].span).toEqual({start:Date.UTC(2027,2,1),end:Date.UTC(2027,3,1)-1,precision:'MONTH'});expect(timelinePlacedItems(items).map(i=>i.displayTime)).toEqual(['Q4 2026','March 2027']);expect(items.some(i=>i.displayTime.includes('LN'))).toBe(false);expect(JSON.stringify(saved)).toBe(before);
 });

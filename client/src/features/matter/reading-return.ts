@@ -790,17 +790,26 @@ export function readingReturnTarget(
     };
   }
   if (params.has('returnLibraryQuery')) {
-    if (
-      !binding ||
-      !params.get('returnLibraryQuery') ||
-      params.get('returnLibraryQuery')!.length > 4096
-    )
-      return null;
+    const raw = params.get('returnLibraryQuery');
+    if (!raw || raw.length > 4096) return null;
+    const nested = new URLSearchParams(raw);
+    if (!binding) {
+      // Legacy reader links may carry the exact selection only inside the
+      // directory state. Explicit top-level pins are validated above and never
+      // replaced by this document-only fallback.
+      const selectedPins = nested.getAll('selectedDocumentVersionId');
+      const modes = nested.getAll('mode');
+      if (!documentVersionId || selectedPins.length !== 1 ||
+        selectedPins[0] !== documentVersionId ||
+        identifier(selectedPins[0]) !== selectedPins[0] ||
+        modes.length > 1 || (modes.length === 1 && modes[0] !== 'document'))
+        return null;
+    }
     return {
-      route: `/library?${libraryReadingParams(new URLSearchParams(params.get('returnLibraryQuery')!))}`,
-      label: new URLSearchParams(params.get('returnLibraryQuery')!).get('mode') === 'matter'
+      route: `/library?${libraryReadingParams(nested)}`,
+      label: nested.get('mode') === 'matter'
         ? '返回原事项目录'
-        : new URLSearchParams(params.get('returnLibraryQuery')!).get('mode') === 'tasks'
+        : nested.get('mode') === 'tasks'
           ? '返回任务快览' : '返回原文档目录',
     };
   }
