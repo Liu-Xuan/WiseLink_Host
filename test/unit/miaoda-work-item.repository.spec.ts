@@ -99,6 +99,72 @@ describe('MiaodaWorkItemRepository assessment CAS audit isolation', () => {
   });
 });
 
+describe('MiaodaWorkItemRepository development intake transaction lock', () => {
+  const input = {
+    developmentIntake: true,
+    documentDelivery: { reading: true, translation: 'ZH_FULL' as const },
+    tenantId: 'tenant-lock', actorUserId: 'engineer-lock',
+    documentId: 'DOC-LOCK', documentVersionId: 'DV-LOCK',
+    sourceArtifactId: 'SOURCE-LOCK', sourceFileSha256: 'a'.repeat(64),
+    sourceByteLength: 1024, normalizedFamily: 'AD',
+    requestOrigin: 'MIAODA' as const, runKey: 'dev:locked-request',
+  };
+
+  function fixture(execute: jest.Mock) {
+    const insert = jest.fn();
+    const select = jest.fn().mockReturnValue({
+      from: () => ({ where: () => ({
+        limit: async () => [{
+          documentVersionId: 'DV-OTHER', requestedByUserId: input.actorUserId,
+        }],
+      }) }),
+    });
+    const transaction = jest.fn(async (run: (tx: unknown) => Promise<unknown>) =>
+      run({ execute, select, insert }));
+    const target = new MiaodaWorkItemRepository({ transaction } as never);
+    return { target, transaction, execute, select, insert };
+  }
+
+  it('projects an integer while retaining the same blocking dual-key transaction lock', async () => {
+    const state = fixture(jest.fn().mockResolvedValue([{ acquired: 1 }]));
+    await expect(state.target.reserve(input))
+      .rejects.toThrow('DEVELOPMENT_RUN_REQUEST_IDENTITY_CONFLICT');
+
+    const query = new PgDialect().sqlToQuery(state.execute.mock.calls[0][0]);
+    expect(query.sql.replace(/\s+/gu, ' ').trim().toLowerCase()).toBe(
+      'select 1 as acquired from pg_advisory_xact_lock( hashtext($1), hashtext($2) )',
+    );
+    expect(query.params).toEqual([input.tenantId, input.runKey]);
+    expect(state.transaction).toHaveBeenCalledTimes(1);
+    expect(state.execute).toHaveBeenCalledTimes(1);
+    expect(state.insert).not.toHaveBeenCalled();
+  });
+
+  it('does not read or insert the reservation before lock acquisition completes', async () => {
+    let finishLock: () => void = () => { throw new Error('LOCK_NOT_STARTED'); };
+    const lock = new Promise<void>((resolve) => { finishLock = resolve; });
+    const state = fixture(jest.fn().mockReturnValue(lock));
+    const pending = state.target.reserve(input);
+    expect(state.execute).toHaveBeenCalledTimes(1);
+    expect(state.select).not.toHaveBeenCalled();
+    expect(state.insert).not.toHaveBeenCalled();
+
+    finishLock();
+    await expect(pending)
+      .rejects.toThrow('DEVELOPMENT_RUN_REQUEST_IDENTITY_CONFLICT');
+    expect(state.select).toHaveBeenCalledTimes(1);
+    expect(state.insert).not.toHaveBeenCalled();
+  });
+
+  it('propagates a lock result decoder failure without continuing the reservation', async () => {
+    const error = new SyntaxError('Unexpected end of JSON input');
+    const state = fixture(jest.fn().mockRejectedValue(error));
+    await expect(state.target.reserve(input)).rejects.toBe(error);
+    expect(state.select).not.toHaveBeenCalled();
+    expect(state.insert).not.toHaveBeenCalled();
+  });
+});
+
 describe('MiaodaWorkItemRepository development document delivery admission', () => {
   it('enumerates only selected document delivery intents, excluding null and NONE', async () => {
     const execute = jest.fn().mockResolvedValue([]);
@@ -110,15 +176,16 @@ describe('MiaodaWorkItemRepository development document delivery admission', () 
     expect(query.sql).toContain("task_envelope_json::jsonb->'documentDelivery'->>'translation'='ZH_FULL'");
     expect(query.sql).toContain('ORDER BY i.created_at,i.attempt_id LIMIT');
   });
-  it('rejects reuse of a development token for another source version', async () => {
+  it.each([
+    { documentVersionId: 'DV-OLD', requestedByUserId: 'engineer-1' },
+    { documentVersionId: 'DV-NEW', requestedByUserId: 'engineer-other' },
+  ])('rejects reuse of a development token for another source version or actor (%j)', async (existingRun) => {
     const insert = jest.fn();
     const target = new MiaodaWorkItemRepository({
       transaction: async (run: (tx: unknown) => Promise<unknown>) => run({
         execute: async () => undefined,
         select: () => ({ from: () => ({ where: () => ({
-          limit: async () => [{
-            documentVersionId: 'DV-OLD', requestedByUserId: 'engineer-1',
-          }],
+          limit: async () => [existingRun],
         }) }) }),
         insert,
       }),

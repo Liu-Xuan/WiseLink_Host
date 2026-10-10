@@ -459,7 +459,9 @@ export class MiaodaWorkItemRepository {
       if (input.developmentIntake) {
         // The request token identifies one actor and one source version, even
         // when two submissions race for different DocumentVersions.
-        await transaction.execute(sql`select pg_advisory_xact_lock(
+        // Keep the blocking transaction lock, but project only an integer:
+        // the Hosted SQL result decoder must not receive the void value.
+        await transaction.execute(sql`select 1 AS acquired from pg_advisory_xact_lock(
           hashtext(${input.tenantId}), hashtext(${input.runKey})
         )`);
         const [existingRun] = await transaction.select().from(workItem)
