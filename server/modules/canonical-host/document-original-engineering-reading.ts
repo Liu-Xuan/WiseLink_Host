@@ -92,9 +92,14 @@ export function findDocumentOriginalEvidence(loaded: Parameters<typeof documentO
     return Object.entries(value).some(([key, child]) => key === 'sourceRefIds' && Array.isArray(child)
       ? child.includes(sourceRefId) : includesRef(child));
   };
-  const offset = loaded.structuredSource.units.findIndex(includesRef);
-  if (offset < 0) throw new Error('DOCUMENT_ORIGINAL_SOURCE_LOCATOR_MISSING');
-  const evidence = documentOriginalEngineeringReading(loaded, offset, 1).evidence.find(item => item.sourceRefId === sourceRefId);
-  if (!evidence) throw new Error('DOCUMENT_ORIGINAL_SOURCE_TEXT_MISSING');
-  return evidence;
+  const offsets = loaded.structuredSource.units.flatMap((unit, offset) => includesRef(unit) ? [offset] : []);
+  if (!offsets.length) throw new Error('DOCUMENT_ORIGINAL_SOURCE_LOCATOR_MISSING');
+  const read = prepareDocumentOriginalEngineeringReader(loaded);
+  // A structural container may own the ref without readable anchors. Its child
+  // units use the same ref; the prepared reader preserves their complete quote.
+  for (const offset of offsets) {
+    const evidence = read(offset, 1).evidence.find(item => item.sourceRefId === sourceRefId);
+    if (evidence) return evidence;
+  }
+  throw new Error('DOCUMENT_ORIGINAL_SOURCE_TEXT_MISSING');
 }
