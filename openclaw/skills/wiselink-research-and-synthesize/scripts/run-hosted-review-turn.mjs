@@ -5,10 +5,13 @@ import { JOBAID_WORK_GUIDANCE } from './jobaid-problem-guidance.mjs';
 import { REVIEW_JOBAID_TASK_SCHEMA, REVIEW_JOBAID_CANDIDATE_SCHEMA } from './validate-payload.mjs';
 
 import { createHash, randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { constants as fsConstants } from 'node:fs';
 import {
   chmod,
   link,
   mkdir,
+  open,
   readFile,
   readdir,
   rename,
@@ -2085,6 +2088,7 @@ export async function createCheckpointStore(directory) {
   await chmod(root, 0o700);
   return {
     readOptional: (step) => readCheckpointOptional(root, step),
+    withActiveClaimOwner: perform => withActiveClaimOwner(root, perform),
     // Read the actual namespace, including unfinished files; errors are not empty history.
     hasEntries: async (prefix) => {
       const exactPrefix = requiredText(prefix, 'REVIEW_CHECKPOINT_PREFIX_REQUIRED');
@@ -2199,6 +2203,40 @@ async function readCheckpointOptional(root, step) {
     if (error?.code === 'ENOENT') return null;
     throw error;
   }
+}
+
+// One endpoint's queue tick/explicit finalization owns this FD for its entire
+// operation. flock attaches to the inherited open-file description; parent FD
+// close (including process death) releases it. Never unlink the lock inode.
+async function withActiveClaimOwner(root, perform) {
+  if (process.platform !== 'linux' || typeof perform !== 'function')
+    throw new Error('AUTO_WORK_ITEM_QUEUE_OWNER_LOCK_UNAVAILABLE');
+  const handle = await open(join(root, 'active-claim.owner.lock'),
+    fsConstants.O_CREAT | fsConstants.O_RDWR | fsConstants.O_NOFOLLOW, 0o600);
+  try {
+    if (!(await handle.stat()).isFile())
+      throw new Error('AUTO_WORK_ITEM_QUEUE_OWNER_LOCK_UNAVAILABLE');
+    await handle.chmod(0o600);
+    await new Promise((resolve, reject) => {
+      const child = spawn('flock', ['--nonblock', '--conflict-exit-code', '73', '3'],
+        { stdio: ['ignore', 'ignore', 'ignore', handle.fd] });
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(new Error('AUTO_WORK_ITEM_QUEUE_OWNER_LOCK_UNAVAILABLE'));
+      }, 5000);
+      child.once('error', () => {
+        clearTimeout(timer);
+        reject(new Error('AUTO_WORK_ITEM_QUEUE_OWNER_LOCK_UNAVAILABLE'));
+      });
+      child.once('exit', code => {
+        clearTimeout(timer);
+        if (code === 0) resolve();
+        else reject(new Error(code === 73 ? 'AUTO_WORK_ITEM_QUEUE_OWNER_BUSY'
+          : 'AUTO_WORK_ITEM_QUEUE_OWNER_LOCK_UNAVAILABLE'));
+      });
+    });
+    return await perform();
+  } finally { await handle.close(); }
 }
 
 async function writeCheckpoint(root, step, value) {

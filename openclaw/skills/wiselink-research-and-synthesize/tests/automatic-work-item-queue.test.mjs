@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -50,11 +50,22 @@ function memoryCheckpoint(initialClaim = null, extras = {}) {
     ...Object.entries(extras).map(([key, value]) => [key, structuredClone(value)]),
   ]);
   const writes = [];
+  let ownerHeld = false;
   return {
     writes,
     values,
+    withActiveClaimOwner: async perform => {
+      if (ownerHeld) throw new Error('AUTO_WORK_ITEM_QUEUE_OWNER_BUSY');
+      ownerHeld = true;
+      try { return await perform(); } finally { ownerHeld = false; }
+    },
     readOptional: async key => structuredClone(values.get(key) ?? null),
     write: async (key, value) => {
+      writes.push([key, structuredClone(value)]);
+      values.set(key, structuredClone(value));
+    },
+    writeOnce: async (key, value) => {
+      if (values.has(key)) throw new Error(`REVIEW_CHECKPOINT_ALREADY_EXISTS:${key}`);
       writes.push([key, structuredClone(value)]);
       values.set(key, structuredClone(value));
     },
@@ -1369,4 +1380,178 @@ test('a known MCP tool without a retained host code still preserves its safe cal
     }); },
   }));
   assert.equal(result.errorCode, 'REVIEW_HOST_MCP_TOOL_FAILED:next_original_assessment');
+});
+
+
+function failedInvocationDependencies(checkpoint, consumeWorkItem, initial = status({
+  overallStatus: 'BUSY', nextOperation: null, jobAid: 'BUSY',
+})) {
+  return {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async () => assert.fail('must retain the existing live queue lease'),
+    acknowledgeWorkItem: async () => assert.fail('failed local invocation cannot ACK'),
+    blockWorkItem: async () => assert.fail('local invocation failure does not prove Host failure'),
+    readInitialStatus: async () => initial,
+    consumeWorkItem,
+  };
+}
+
+function invocationFailures(checkpoint) {
+  return [...checkpoint.values].filter(([key]) => key.startsWith('consumer-failure-'));
+}
+
+function assertInvocationFailure([key, receipt], claim, attentionCode) {
+  assert.match(key, /^consumer-failure-[a-f0-9-]{36}$/u);
+  assert.deepEqual(receipt, {
+    schemaVersion: 'wiselink.auto_work_item_invocation_failure.v1',
+    invocationId: key.slice('consumer-failure-'.length),
+    status: 'FAILED_INVOCATION',
+    workItemId: claim.workItemId, requestId: claim.requestId,
+    documentVersionId: claim.documentVersionId,
+    workItemRevision: claim.workItemRevision,
+    leaseGeneration: claim.leaseGeneration, leaseExpiresAt: claim.leaseExpiresAt,
+    attentionCode,
+  });
+  assert.equal(JSON.stringify(receipt).includes(claim.leaseToken), false);
+  assert.equal(Object.hasOwn(receipt, 'consumerStopped'), false);
+}
+
+test('a thrown begin failure records only its independent invocation and rethrows the same error', async () => {
+  const original = storedClaim();
+  const checkpoint = memoryCheckpoint(original);
+  const failure = Object.assign(new Error('Host MCP begin failed'), {
+    receivedHostToolError: true, hostToolName: 'begin_dynamic_evaluation',
+  });
+  await assert.rejects(consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(
+    checkpoint, async () => { throw failure; })), error => error === failure);
+  assert.deepEqual(checkpoint.values.get('active-claim'), original);
+  const receipts = invocationFailures(checkpoint);
+  assert.equal(receipts.length, 1);
+  assertInvocationFailure(receipts[0], original, 'REVIEW_HOST_MCP_TOOL_FAILED:begin_dynamic_evaluation');
+  assert.equal(checkpoint.writes.length, 1);
+});
+
+test('an unclassified thrown invocation records only a bounded safe code and preserves its original error', async () => {
+  const original = storedClaim();
+  const checkpoint = memoryCheckpoint(original);
+  const failure = new Error('untrusted lowercase prose\nprivate-token-fixture');
+  await assert.rejects(consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(
+    checkpoint, async () => { throw failure; })), error => error === failure);
+  assert.deepEqual(checkpoint.values.get('active-claim'), original);
+  assertInvocationFailure(invocationFailures(checkpoint)[0], original, 'HOSTED_INITIAL_FAILED');
+  assert.equal(JSON.stringify([...checkpoint.values]).includes('private-token-fixture'), false);
+});
+
+test('a failure to persist independent evidence retains both failures and never clears the claim', async () => {
+  const original = storedClaim();
+  const checkpoint = memoryCheckpoint(original);
+  const failure = new Error('HOSTED_INITIAL_FAILED');
+  const persistenceFailure = new Error('CHECKPOINT_WRITE_FAILED');
+  checkpoint.writeOnce = async () => { throw persistenceFailure; };
+  await assert.rejects(consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(
+    checkpoint, async () => { throw failure; })), error =>
+    error instanceof AggregateError && error.message === 'AUTO_WORK_ITEM_FAILURE_CHECKPOINT_UNCONFIRMED' &&
+    error.errors[0] === failure && error.errors[1] === persistenceFailure);
+  assert.deepEqual(checkpoint.values.get('active-claim'), original);
+});
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+for (const replacement of ['new-generation', 'new-work-item', 'cleared']) {
+  test(`real checkpoint: late invocation failure preserves a ${replacement} claim`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'wiselink-invocation-race-'));
+    try {
+      const checkpoint = await createCheckpointStore(directory);
+      const original = storedClaim();
+      await checkpoint.write('active-claim', original);
+      const entered = deferred();
+      const finish = deferred();
+      const failure = new Error('HOSTED_INITIAL_FAILED');
+      const invocation = consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(
+        checkpoint, async () => { entered.resolve(); await finish.promise; throw failure; }));
+      const result = invocation.then(() => assert.fail('failed invocation must reject'), error => error);
+      await entered.promise;
+      const next = replacement === 'cleared' ? null : replacement === 'new-generation'
+        ? storedClaim(2) : { ...storedClaim(2), workItemId: 'WI-NEW', requestId: 'REQ-NEW', documentVersionId: 'DV-NEW' };
+      await checkpoint.write('active-claim', next);
+      finish.resolve();
+      assert.equal(await result, failure);
+      assert.deepEqual(await checkpoint.readOptional('active-claim'), next);
+      const names = (await readdir(directory)).filter(name => /^consumer-failure-.*\.json$/u.test(name));
+      assert.equal(names.length, 1);
+      const key = names[0].slice(0, -5);
+      assertInvocationFailure([key, await checkpoint.readOptional(key)], original, 'HOSTED_INITIAL_FAILED');
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+}
+
+test('real checkpoint: one active invocation rejects a competing same-lease consumer', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'wiselink-invocation-live-race-'));
+  try {
+    const checkpoint = await createCheckpointStore(directory);
+    const original = storedClaim();
+    await checkpoint.write('active-claim', original);
+    const entered = deferred(), finish = deferred();
+    const failure = new Error('HOSTED_INITIAL_FAILED');
+    const a = consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(checkpoint,
+      async () => { entered.resolve(); await finish.promise; throw failure; }));
+    const resultA = a.then(() => assert.fail('A must fail'), error => error);
+    await entered.promise;
+    try {
+      await assert.rejects(consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(checkpoint,
+        async () => assert.fail('competing consumer must not run'))), /AUTO_WORK_ITEM_QUEUE_OWNER_BUSY/u);
+    } finally { finish.resolve(); }
+    assert.equal(await resultA, failure);
+    assert.deepEqual(await checkpoint.readOptional('active-claim'), original);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('real checkpoint: separate failed invocations retain independent immutable receipts', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'wiselink-invocation-two-failures-'));
+  try {
+    const checkpoint = await createCheckpointStore(directory);
+    const original = storedClaim();
+    await checkpoint.write('active-claim', original);
+    const errors = [new Error('HOSTED_INITIAL_FAILED'), new Error('DOCUMENT_PARSE_STEP_FAILED')];
+    for (const failure of errors)
+      await assert.rejects(consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(checkpoint,
+        async () => { throw failure; })), error => error === failure);
+    assert.deepEqual(await checkpoint.readOptional('active-claim'), original);
+    const names = (await readdir(directory)).filter(name => /^consumer-failure-.*\.json$/u.test(name));
+    assert.equal(names.length, 2);
+    const codes = [];
+    for (const name of names) {
+      const key = name.slice(0, -5), receipt = await checkpoint.readOptional(key);
+      assertInvocationFailure([key, receipt], original, receipt.attentionCode);
+      codes.push(receipt.attentionCode);
+      await assert.rejects(checkpoint.writeOnce(key, { ...receipt, attentionCode: 'CHANGED' }),
+        /REVIEW_CHECKPOINT_ALREADY_EXISTS/u);
+      assert.deepEqual(await checkpoint.readOptional(key), receipt);
+    }
+    assert.deepEqual(codes.sort(), errors.map(error => error.message).sort());
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('an active BUSY invocation is not marked stopped, acknowledged, blocked or cleared', async () => {
+  const original = storedClaim();
+  const checkpoint = memoryCheckpoint(original);
+  const report = await consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(
+    checkpoint, async () => ({ status: 'BUSY' })));
+  assert.equal(report.status, 'IN_PROGRESS');
+  assert.deepEqual(checkpoint.values.get('active-claim'), original);
+  assert.deepEqual(checkpoint.writes, []);
+});
+
+test('source drift rejected before invocation cannot annotate or clear a different claim', async () => {
+  const original = storedClaim();
+  const checkpoint = memoryCheckpoint(original);
+  await assert.rejects(consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(
+    checkpoint, async () => assert.fail('foreign source must not execute'),
+    { ...status(), documentVersionId: 'DV-FOREIGN' })), /AUTO_WORK_ITEM_STATUS_SOURCE_CHANGED/u);
+  assert.deepEqual(checkpoint.values.get('active-claim'), original);
+  assert.deepEqual(checkpoint.writes, []);
 });
