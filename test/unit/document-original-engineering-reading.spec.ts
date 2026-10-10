@@ -2,7 +2,7 @@ import * as sourcePlanning from '../../server/modules/canonical-host/canonical-t
 import * as adapter from '../../server/modules/document-management/src/hosted/nest/document-original-adapter';
 import { buildDocumentSemanticMap } from '../../server/modules/document-management/src/hosted/nest/document-semantic-map';
 import { GENERIC_SEMANTIC_PROFILE } from '../../server/modules/document-management/src/hosted/nest/document-semantic-profile';
-import { documentOriginalEngineeringReading, prepareDocumentOriginalEngineeringReader } from '../../server/modules/canonical-host/document-original-engineering-reading';
+import { documentOriginalEngineeringReading, findDocumentOriginalEvidence, prepareDocumentOriginalEngineeringReader } from '../../server/modules/canonical-host/document-original-engineering-reading';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 
 function fixture() {
@@ -114,4 +114,105 @@ it('keeps semantic revisions scoped to their prepared reader and rejects a forei
   expect(second(0, 1).semanticMap?.semanticRevision).toBe(2);
   const other = fixture(); other.original.binding.parseRunId = 'other-parse'; other.run.parseRunId = 'other-parse';
   expect(() => prepareDocumentOriginalEngineeringReader(other, firstMap)).toThrow();
+});
+
+
+const FAA_PARSE_RUN = 'PRUN-9db7cac3-dc21-4b9d-a682-1b40edb3406e';
+const FAA_DOCUMENT_VERSION = 'document_version_0cda181990c250d381d08c7c';
+// Minimal real shapes/text from the accepted FAA AD 2026-05-01 original. Omitted
+// surrounding units do not alter the exact parent/child ownership or source refs.
+const FAA_LIST_CASES = [
+  { blockId: 'page-1-block-1', pageIndex: 0, order: 0, texts: [
+    '[Federal Register, Volume 91 Number 48 (Thursday, March 12, 2026)]',
+    '[Rules and Regulations]', '[Pages 12068-12071]',
+    'From the Federal Register Online via the Government Publishing Office [www.gpo.gov]',
+    '[FR Doc No: 2026-04832]',
+  ] },
+  { blockId: 'page-2-block-6', pageIndex: 1, order: 27, texts: [
+    'Michael Closson, Aviation Safety Engineer, FAA, 2200 South 216th St., Des Moines, WA 98198;',
+    'phone: 206-231-3973; email: Michael.P.Closson@faa.gov.',
+  ] },
+];
+
+function faaListFixture(sample: typeof FAA_LIST_CASES[number]) {
+  const loaded = fixture();
+  Object.assign(loaded.original.binding, { documentVersionId: FAA_DOCUMENT_VERSION, parseRunId: FAA_PARSE_RUN, parseRevision: 1 });
+  Object.assign(loaded.run, { documentVersionId: FAA_DOCUMENT_VERSION, parseRunId: FAA_PARSE_RUN, parseRevision: 1 });
+  const sourceRefId = `${FAA_PARSE_RUN}:${sample.blockId}:source`;
+  const parentId = `${FAA_PARSE_RUN}:${sample.blockId}`;
+  const items = sample.texts.map((text, index) => ({
+    unitId: `${parentId}:item${index}`, kind: 'list_item', moduleId: 'body', parentUnitId: parentId,
+    order: sample.order + index + 1, depth: 1, continuityKey: sample.blockId,
+    sourceRefIds: [sourceRefId], sourceSegmentIds: [sourceRefId], mapping: { itemIndex: index }, payload: { text },
+  }));
+  loaded.structuredSource.units = [{ unitId: parentId, kind: 'list', moduleId: 'body', parentUnitId: null,
+    order: sample.order, depth: 0, continuityKey: sample.blockId, sourceRefIds: [sourceRefId],
+    sourceSegmentIds: [sourceRefId], mapping: {}, payload: { originalBlockType: 'list',
+      rawMineruContent: { list_type: 'text_list', list_items: sample.texts.map(text => ({ text })) },
+      itemUnitIds: items.map(item => item.unitId) } }, ...items];
+  loaded.structuredSource.sourceLocators = [{ ...loaded.structuredSource.sourceLocators[0], sourceRefId,
+    pageStart: sample.pageIndex, pageEnd: sample.pageIndex }];
+  loaded.original.locations = [{ ...loaded.original.locations[0], sourceRefId, pageIndex: sample.pageIndex }];
+  loaded.original.coverage = { knownPageCount: 2, readPageIndexes: [sample.pageIndex], unresolvedRanges: [
+    { pageIndexes: [1 - sample.pageIndex], unitIds: [], reason: 'UNREAD', message: 'Other page omitted from this small regression fixture.' },
+  ] };
+  return { loaded, sourceRefId };
+}
+
+describe('exact original evidence lookup', () => {
+  it.each(FAA_LIST_CASES)('reads $blockId child anchors when its list container owns the first matching ref', sample => {
+    const { loaded, sourceRefId } = faaListFixture(sample);
+    expect(documentOriginalEngineeringReading(loaded, 0, 1).evidence).toEqual([]);
+    const expected = documentOriginalEngineeringReading(loaded, 1, 1).evidence;
+    const before = structuredClone(loaded);
+    const plan = jest.spyOn(sourcePlanning, 'buildTranslationSourcePlan');
+    try {
+      const evidence = findDocumentOriginalEvidence(loaded, sourceRefId);
+      expect(evidence).toEqual(expected[0]);
+      expect(evidence.excerpt).toBe(sample.texts.join('\n'));
+      expect(evidence.documentVersionId).toBe(FAA_DOCUMENT_VERSION);
+      expect(evidence.versionLabel).toBe(FAA_PARSE_RUN);
+      expect(evidence.sourceRefId).toBe(sourceRefId);
+      expect(evidence.evidenceRef).toBe(`DOCUMENT_ORIGINAL:${FAA_DOCUMENT_VERSION}:${FAA_PARSE_RUN}:${sourceRefId}`);
+      expect(evidence.workItemId).toBeNull();
+      expect(plan).toHaveBeenCalledTimes(1);
+      expect(loaded).toEqual(before);
+    } finally { plan.mockRestore(); }
+  });
+
+  it('returns the one complete quote for a ref shared by multiple readable units', () => {
+    const loaded = fixture();
+    loaded.structuredSource.units.push({ ...loaded.structuredSource.units[0], unitId: 'u3', order: 2,
+      payload: { text: 'Same locator, independently retained final condition.' } });
+    const evidence = findDocumentOriginalEvidence(loaded, 'SR-TEST-P1');
+    expect(evidence).toEqual(documentOriginalEngineeringReading(loaded, 2, 1).evidence[0]);
+    expect(evidence.excerpt).toBe([loaded.structuredSource.units[0].payload.text,
+      loaded.structuredSource.units[2].payload.text].join('\n'));
+  });
+
+  it.each([false, true])('rejects duplicate locators even when their coordinates conflict=%s', conflict => {
+    const loaded = fixture();
+    loaded.structuredSource.sourceLocators.push({ ...loaded.structuredSource.sourceLocators[0],
+      pageStart: conflict ? 1 : 0 });
+    expect(() => findDocumentOriginalEvidence(loaded, 'SR-TEST-P1')).toThrow('DOCUMENT_ORIGINAL_DUPLICATE_SOURCE_REF');
+  });
+
+  it('rejects a foreign parse binding rather than borrowing the matching ref', () => {
+    const { loaded, sourceRefId } = faaListFixture(FAA_LIST_CASES[0]);
+    loaded.run.parseRunId = 'PRUN-FOREIGN';
+    expect(() => findDocumentOriginalEvidence(loaded, sourceRefId)).toThrow('DOCUMENT_ORIGINAL_ENGINEERING_BINDING_INVALID');
+  });
+
+  it.each([false, true])('does not accept raw container content without readable child body; empty child=%s', emptyChild => {
+    const { loaded, sourceRefId } = faaListFixture(FAA_LIST_CASES[0]);
+    const parent = loaded.structuredSource.units[0];
+    loaded.structuredSource.units = emptyChild ? [parent, loaded.structuredSource.units[1]] : [parent];
+    parent.payload.itemUnitIds = loaded.structuredSource.units.slice(1).map(unit => unit.unitId);
+    if (emptyChild) loaded.structuredSource.units[1].payload.text = '   ';
+    expect(() => findDocumentOriginalEvidence(loaded, sourceRefId)).toThrow('DOCUMENT_ORIGINAL_SOURCE_TEXT_MISSING');
+  });
+
+  it('rejects an unknown source ref without substituting nearby evidence', () => {
+    expect(() => findDocumentOriginalEvidence(fixture(), 'SR-UNKNOWN')).toThrow('DOCUMENT_ORIGINAL_SOURCE_LOCATOR_MISSING');
+  });
 });
