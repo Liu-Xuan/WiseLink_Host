@@ -55,10 +55,12 @@ function laneFor(_time: DocumentActivityTime | null): ActivityTimelineLane {
 
 const DAY_CALENDAR = /^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/u;
 const MONTH_CALENDAR = /^(\d{4})[-/.年](\d{1,2})月?$/u;
-const NAMED_MONTH_CALENDAR = /^([a-z]+)\s+(\d{4})$/iu;
+const NAMED_MONTH_CALENDAR = /^([a-z]+)[.]?\s*(\d{4})$/iu;
 const NAMED_MONTHS: Record<string, number> = {
   january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
   july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+  jan: 1, feb: 2, mar: 3, apr: 4, jun: 6, jul: 7, aug: 8,
+  sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
 };
 const QUARTER_PREFIX = /^(\d{4})\s*年?\s*第?\s*([1-4]|一|二|三|四)\s*季度$/u;
 const QUARTER_Q = /^(\d{4})\s*[Qq]\s*([1-4])$/u;
