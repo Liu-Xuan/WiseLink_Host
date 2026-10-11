@@ -65,7 +65,7 @@ export async function recoverNativeDocumentActivityResult({ storePath, trajector
     if (matches.length !== 1 || matches[0][0] !== sessionKey) fail();
     const entry = matches[0][1];
     if (!object(entry) || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(entry.sessionId ?? '') ||
-        entry.abortedLastRun !== false || !token(entry.modelProvider) || !token(entry.model)) fail();
+        entry.status !== 'done' || entry.abortedLastRun !== false || !token(entry.modelProvider) || !token(entry.model)) fail();
     const sessionPath = join(dirname(indexFile.path), `${entry.sessionId}.jsonl`);
     if (resolve(entry.sessionFile ?? '') !== sessionPath) fail();
     const sessionFile = await ownedFile(sessionPath);

@@ -44,7 +44,7 @@ async function fixture(run) {
   Object.assign(rejectedReceipt.message, { toolCallId: 'call-one', isError: true,
     content: [{ type: 'text', text: `Validation failed for tool "${call.name}": missing required field` }] });
   const index = { [sessionKey]: { sessionId, sessionFile: join(directory, `${sessionId}.jsonl`),
-    modelProvider: assistant.message.provider, model: assistant.message.model, abortedLastRun: false } };
+    status: 'done', modelProvider: assistant.message.provider, model: assistant.message.model, abortedLastRun: false } };
   const transcript = [{ type: 'session', id: sessionId },
     { type: 'model_change', provider: assistant.message.provider, modelId: assistant.message.model },
     { type: 'message', id: 'user-one', timestamp: '2026-10-11T06:00:01.000Z', message: {
@@ -96,6 +96,7 @@ test('native evidence rejects changed full INPUT/source/selection/pins/time, amb
     f => f.options.deadline = '2026-10-11T06:01:00.000Z',
     f => f.index[`${f.sessionKey}:other`] = { ...f.index[f.sessionKey] },
     f => f.index[f.sessionKey].abortedLastRun = true,
+    f => f.index[f.sessionKey].status = 'running',
     f => f.index[f.sessionKey].model = 'configured-fallback',
     f => f.transcript[1].provider = 'foreign-provider',
     f => f.transcript[2].message.content[0].text += '\nreplacement INPUT',
