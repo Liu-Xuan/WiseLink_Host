@@ -9,6 +9,7 @@ import type {
   TdmsSourceAuthorization,
   TdmsSourceGrant,
   TdmsSourceScope,
+  TdmsReadMemberAdmission,
 } from './tdms-source.types';
 import { tdmsError } from './tdms-source.types';
 
@@ -48,6 +49,13 @@ export class HostDecisionTdmsSourceAuthorization implements TdmsSourceAuthorizat
       claims: TdmsImportMemberClaims;
       grant: TdmsSourceGrant;
     }) => Promise<TdmsImportAdmission>,
+    private readonly readMembers?: (input: {
+      actor: TdmsPublicActor;
+      scope: TdmsSourceScope;
+      action: 'READ_RECORD' | 'READ_HISTORY';
+      claims: TdmsImportMemberClaims;
+      grant: TdmsSourceGrant;
+    }) => Promise<TdmsReadMemberAdmission>,
   ) {}
   async authorizeImport(
     actor: TdmsPublicActor,
@@ -61,6 +69,17 @@ export class HostDecisionTdmsSourceAuthorization implements TdmsSourceAuthorizat
   }
   async catalogue(actor: TdmsPublicActor, context: TdmsReadContext) {
     return this.read({ actor, action: 'CATALOGUE', context });
+  }
+  async authorizeReadMembers(
+    actor: TdmsPublicActor,
+    scope: TdmsSourceScope,
+    action: 'READ_RECORD' | 'READ_HISTORY',
+    claims: TdmsImportMemberClaims,
+  ): Promise<TdmsReadMemberAdmission> {
+    const grant = await this.authorize(actor, scope, action, {});
+    if (!this.readMembers)
+      throw tdmsError('TDMS_READ_MEMBER_ADMISSION_UNCONFIGURED', 503);
+    return this.readMembers({ actor, scope, action, claims, grant });
   }
   async authorize(
     actor: TdmsPublicActor,

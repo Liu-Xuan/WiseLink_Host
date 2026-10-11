@@ -39,6 +39,7 @@ export type {
   TdmsSourceAuthorization,
   TdmsImportAdmission,
   TdmsImportMemberClaims,
+  TdmsReadMemberAdmission,
   TdmsSourceScope,
   TdmsSourceGrant,
   TdmsDocumentAccess,

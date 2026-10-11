@@ -12,6 +12,10 @@ import type {
   TdmsSourcePackage,
 } from '@shared/tdms-source.interface';
 import type { CanonicalMiaodaFinalUserActorContext } from '../work-item/canonical-object-access.port';
+import type {
+  TdmsDailyMetadataEnvelope,
+  TdmsDailyMetadataImportReceipt,
+} from './tdms-daily-metadata-contract';
 
 export const TDMS_REPOSITORY = Symbol('TDMS_REPOSITORY');
 export const TDMS_SOURCE_AUTHORIZATION = Symbol('TDMS_SOURCE_AUTHORIZATION');
@@ -56,6 +60,12 @@ export interface TdmsImportAdmission extends TdmsSourceGrant {
   nativeProjectionAllowed: true;
   permittedMembers: TdmsImportMemberClaims;
 }
+/** Independent current read decisions, never inferred from a prior import admission. */
+export interface TdmsReadMemberAdmission extends TdmsSourceGrant {
+  authorityRef: string;
+  retainedCaptureReadAllowed: true;
+  permittedMembers: TdmsImportMemberClaims;
+}
 /** Host-owned provider must freshly verify BOTH native source audience and selected object ACL.
  * A package, a source identity, a cached roster and roles alone are never such proof. */
 export interface TdmsSourceAuthorization {
@@ -65,6 +75,12 @@ export interface TdmsSourceAuthorization {
     scope: TdmsSourceScope,
     claims: TdmsImportMemberClaims,
   ): Promise<TdmsImportAdmission>;
+  authorizeReadMembers?(
+    actor: TdmsPublicActor,
+    scope: TdmsSourceScope,
+    action: 'READ_RECORD' | 'READ_HISTORY',
+    claims: TdmsImportMemberClaims,
+  ): Promise<TdmsReadMemberAdmission>;
   catalogue(
     actor: TdmsPublicActor,
     context: TdmsReadContext,
@@ -89,6 +105,12 @@ export interface TdmsCapture {
   capturedAt: string;
   permissionRevision: string;
   admissionAuthorityRef?: string;
+  /** Lossless collector metadata in the existing immutable capture, not native record/edge projection. */
+  dailyMetadata?: {
+    applicationScopeId: string;
+    envelope: TdmsDailyMetadataEnvelope;
+    receipt: TdmsDailyMetadataImportReceipt;
+  };
 }
 export interface TdmsRecordHead {
   scope: TdmsSourceScope;
@@ -140,6 +162,10 @@ export interface TdmsTransaction {
     scope: TdmsSourceScope,
     packageId: string,
   ): Promise<TdmsCapture | null>;
+  capturesBySourceRef(
+    scope: TdmsSourceScope,
+    sourceRef: string,
+  ): Promise<TdmsCapture[]>;
   recordHead(
     scope: TdmsSourceScope,
     recordKind: string,

@@ -34,6 +34,22 @@ const stored = {
   record: { sourceRevisionRef: 'revision', selectedHead: true },
 } as TdmsStoredRevision;
 describe('actual SQL repository statement boundaries, no physical PG claim', () => {
+  it('daily SourceRef lookup uses exact JSON membership and all four scope parameters', async () => {
+    const s = setup();
+    const ref = "TDMS:SNAPSHOT:x' OR TRUE --";
+    await s.tx.capturesBySourceRef(nativeScope, ref);
+    expect(s.statements[0]!.sql).toContain('jsonb_exists(');
+    expect(s.statements[0]!.sql).not.toContain('LIKE');
+    expect(s.statements[0]!.sql).not.toContain(ref);
+    expect(s.statements[0]!.params).toEqual([
+      'tenant-a',
+      'TDMS',
+      'instance',
+      'narrow',
+      ref,
+    ]);
+    expect(s.statements[0]!.sql).toContain('LIMIT 2');
+  });
   it('all native identity queries bind tenant, instance and scope as parameters', async () => {
     const s = setup();
     await s.tx.capture(nativeScope, "pkg' OR TRUE --");

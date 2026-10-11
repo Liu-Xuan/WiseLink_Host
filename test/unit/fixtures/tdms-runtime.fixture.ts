@@ -430,6 +430,7 @@ export function tdmsRuntimeFixture(
   };
   const tx: TdmsProcessingSetTransaction = {
     capture: async () => null,
+    capturesBySourceRef: async () => [],
     recordHead: async () => null,
     revision: async (tenant, ref) => {
       await control.onRevision?.(ref);

@@ -39,6 +39,13 @@ export class SqlTdmsTransaction implements TdmsTransaction {
       sql`SELECT data FROM tdms_capture WHERE ${scope(s)} AND package_id=${id}`,
     );
   }
+  async capturesBySourceRef(s: TdmsSourceScope, sourceRef: string) {
+    // Exact JSON array membership; never substring search or a native relation inference.
+    const rows = await this.db.execute<{ data: TdmsCapture }>(
+      sql`SELECT data FROM tdms_capture WHERE ${scope(s)} AND jsonb_exists(data->'dailyMetadata'->'receipt'->'sourceRefs',${sourceRef}) ORDER BY package_id LIMIT 2`,
+    );
+    return rows.map((row) => row.data);
+  }
   recordHead(s: TdmsSourceScope, kind: string, id: string) {
     return this.one<TdmsRecordHead>(
       sql`SELECT data FROM tdms_record WHERE ${scope(s)} AND record_kind=${kind} AND source_record_id=${id}`,

@@ -25,6 +25,17 @@ import type {
 } from '@shared/tdms-source.interface';
 import { assertPublicActor, sameScope } from './tdms-source.authorization';
 import {
+  prepareTdmsDailyMetadataImport,
+  type TdmsDailyMetadataImportReceipt,
+} from './tdms-daily-metadata-contract';
+import {
+  assertSameDailyEnvelope,
+  dailyReferenceRead,
+  dailyRequestId,
+  dailySourceRef,
+  storedDailyCapture,
+} from './tdms-daily-metadata.readback';
+import {
   assertOpinionCollectionIngress,
   canonical,
   hash,
@@ -43,10 +54,12 @@ import {
   TDMS_SOURCE_AUTHORIZATION,
   tdmsError,
   type TdmsArtifactStore,
+  type TdmsCapture,
   type TdmsDocumentAccess,
   type TdmsPublicActor,
   type TdmsImportAdmission,
   type TdmsImportMemberClaims,
+  type TdmsReadMemberAdmission,
   type TdmsRepository,
   type TdmsSourceAuthorization,
   type TdmsSourceGrant,
@@ -78,6 +91,226 @@ export class TdmsSourceService {
     @Inject(TDMS_DOCUMENT_ACCESS)
     private readonly documents: TdmsDocumentAccess,
   ) {}
+
+  async importDailyMetadata(actor: TdmsPublicActor, raw: unknown) {
+    assertPublicActor(actor);
+    this.requireDailyAuthorization();
+    const prepared = prepareTdmsDailyMetadataImport(raw);
+    const grants = await this.dailyGrants(actor);
+    if (grants.length !== 1)
+      throw tdmsError('TDMS_DAILY_SOURCE_SCOPE_AMBIGUOUS', 409);
+    const scope = grants[0]!.scope;
+    const admission = await this.authorization.authorizeImport(
+      actor,
+      scope,
+      prepared.memberClaims,
+    );
+    this.assertImportAdmission(actor, admission, scope, prepared.memberClaims);
+    const receipt = await this.repository.transaction(async (tx) => {
+      await this.recheckImport(actor, admission, prepared.memberClaims);
+      const prior = await tx.capture(scope, prepared.envelope.requestId);
+      if (prior) {
+        const saved = storedDailyCapture(prior, actor, scope, true);
+        assertSameDailyEnvelope(saved, prepared);
+        return saved.receipt;
+      }
+      const now = new Date().toISOString();
+      const receipt: TdmsDailyMetadataImportReceipt = {
+        schemaVersion: 'wiselink.tdms-source-import-receipt.v1',
+        requestId: prepared.envelope.requestId,
+        payloadDigest: prepared.payloadDigest,
+        status: 'IMPORTED',
+        importedAt: now,
+        sourceRefs: prepared.sourceRefs,
+        objectCount: prepared.envelope.package.records.length,
+        relationCount: prepared.envelope.package.edges.length,
+        artifactCount: 0,
+        documentVersionMappings: [],
+      };
+      await tx.saveCapture({
+        scope,
+        // Existing scope/request uniqueness is the only persistence CAS.
+        packageId: prepared.envelope.requestId,
+        packageHash: prepared.payloadDigest,
+        actorId: actor.canonicalSubject.id,
+        capturedAt: now,
+        permissionRevision: admission.permissionRevision,
+        admissionAuthorityRef: admission.authorityRef,
+        query: prepared.envelope.package.query as TdmsSourcePackage['query'],
+        // Private legacy capture header; no native projection is created or served as this receipt.
+        receipt: {
+          captureRef: 'TDMS-CAP-' + randomUUID(),
+          packageId: prepared.envelope.package.packageId,
+          status: 'PARTIAL',
+          created: true,
+          sourceVerification: 'DECLARED_ONLY',
+          recordRevisionRefs: [],
+          assertionRefs: [],
+          artifactBindings: [],
+          gaps: ['DAILY_METADATA_ONLY_NO_NATIVE_PROJECTION'],
+          engineeringAdoption: 'NOT_CREATED',
+          executionVerified: false,
+        },
+        dailyMetadata: {
+          applicationScopeId: actor.applicationScopeId,
+          envelope: prepared.envelope,
+          receipt,
+        },
+      });
+      const stored = await tx.capture(scope, prepared.envelope.requestId);
+      if (!stored) throw tdmsError('TDMS_DAILY_CAPTURE_READBACK_FAILED', 409);
+      const saved = storedDailyCapture(stored, actor, scope, true);
+      assertSameDailyEnvelope(saved, prepared);
+      await this.recheckImport(actor, admission, prepared.memberClaims);
+      return saved.receipt;
+    });
+    await this.recheckImport(actor, admission, prepared.memberClaims);
+    return receipt;
+  }
+
+  async readDailyMetadataImport(actor: TdmsPublicActor, requestId: string) {
+    assertPublicActor(actor);
+    dailyRequestId(requestId);
+    const grants = await this.dailyGrants(actor);
+    const { row, grant } = await this.dailyCaptureLookup(
+      actor,
+      grants,
+      'READ_HISTORY',
+      async (tx, scope) => {
+        const row = await tx.capture(scope, requestId);
+        return row ? [row] : [];
+      },
+    );
+    const saved = storedDailyCapture(row, actor, grant.scope, true);
+    if (saved.envelope.requestId !== requestId)
+      throw tdmsError('TDMS_DAILY_CAPTURE_INTEGRITY_CONFLICT', 409);
+    await this.checkDailyReadMembers(
+      actor,
+      grant,
+      'READ_HISTORY',
+      saved.memberClaims,
+    );
+    return { receipt: saved.receipt, package: saved.envelope.package };
+  }
+
+  async readDailySourceRef(actor: TdmsPublicActor, sourceRef: string) {
+    assertPublicActor(actor);
+    dailySourceRef(sourceRef);
+    const grants = await this.dailyGrants(actor);
+    const { row, grant } = await this.dailyCaptureLookup(
+      actor,
+      grants,
+      'READ_RECORD',
+      (tx, scope) => tx.capturesBySourceRef(scope, sourceRef),
+    );
+    const saved = storedDailyCapture(row, actor, grant.scope, false);
+    if (!saved.receipt.sourceRefs.includes(sourceRef))
+      throw tdmsError('TDMS_DAILY_CAPTURE_INTEGRITY_CONFLICT', 409);
+    const read = dailyReferenceRead(saved.envelope.package, sourceRef);
+    await this.checkDailyReadMembers(actor, grant, 'READ_RECORD', read.claims);
+    return read.response;
+  }
+
+  private requireDailyAuthorization() {
+    if (!this.authorization.available)
+      throw tdmsError('TDMS_SOURCE_AUTHORIZATION_UNCONFIGURED', 503);
+  }
+  private async dailyGrants(actor: TdmsPublicActor) {
+    this.requireDailyAuthorization();
+    const grants = await this.authorization.catalogue(actor, {});
+    const result: TdmsSourceGrant[] = [];
+    for (const grant of grants) {
+      this.assertGrant(actor, grant);
+      if (grant.scope.sourceKey !== 'TDMS') continue;
+      const existing = result.find((g) => sameScope(g.scope, grant.scope));
+      if (existing && existing.permissionRevision !== grant.permissionRevision)
+        throw tdmsError('TDMS_SOURCE_PERMISSION_CHANGED', 409);
+      if (!existing) result.push(grant);
+    }
+    if (!result.length) throw tdmsError('TDMS_SOURCE_NOT_FOUND', 404);
+    return result;
+  }
+  private async dailyCaptureLookup(
+    actor: TdmsPublicActor,
+    grants: TdmsSourceGrant[],
+    action: 'READ_RECORD' | 'READ_HISTORY',
+    lookup: (
+      tx: TdmsTransaction,
+      scope: TdmsSourceScope,
+    ) => Promise<TdmsCapture[]>,
+  ) {
+    if (!this.authorization.authorizeReadMembers)
+      throw tdmsError('TDMS_READ_MEMBER_ADMISSION_UNCONFIGURED', 503);
+    return this.repository.transaction(async (tx) => {
+      const matches: Array<{
+        row: TdmsCapture;
+        grant: TdmsSourceGrant;
+      }> = [];
+      for (const grant of grants) {
+        await this.recheck(actor, grant, action, {});
+        for (const row of await lookup(tx, grant.scope))
+          matches.push({ row, grant });
+        await this.recheck(actor, grant, action, {});
+      }
+      if (!matches.length) throw tdmsError('TDMS_SOURCE_NOT_FOUND', 404);
+      // Never choose a scope, package, head or latest observation on the caller's behalf.
+      if (matches.length !== 1)
+        throw tdmsError('TDMS_DAILY_REFERENCE_AMBIGUOUS', 409);
+      return matches[0]!;
+    });
+  }
+  private async checkDailyReadMembers(
+    actor: TdmsPublicActor,
+    grant: TdmsSourceGrant,
+    action: 'READ_RECORD' | 'READ_HISTORY',
+    claims: TdmsImportMemberClaims,
+  ) {
+    const authorize = this.authorization.authorizeReadMembers;
+    if (!authorize)
+      throw tdmsError('TDMS_READ_MEMBER_ADMISSION_UNCONFIGURED', 503);
+    const check = (admission: TdmsReadMemberAdmission) => {
+      this.assertGrant(actor, admission, grant.scope);
+      const allowed = admission.permittedMembers;
+      if (
+        !admission.authorityRef ||
+        admission.retainedCaptureReadAllowed !== true ||
+        !allowed ||
+        !Array.isArray(allowed.records) ||
+        !Array.isArray(allowed.relationIds) ||
+        claims.records.some(
+          (r) =>
+            !allowed.records.some(
+              (a) =>
+                a.recordKind === r.recordKind &&
+                a.sourceRecordId === r.sourceRecordId,
+            ),
+        ) ||
+        claims.relationIds.some((id) => !allowed.relationIds.includes(id))
+      )
+        throw tdmsError('TDMS_READ_MEMBER_SCOPE_ADMISSION_REQUIRED', 403);
+      if (admission.permissionRevision !== grant.permissionRevision)
+        throw tdmsError('TDMS_SOURCE_PERMISSION_CHANGED', 409);
+    };
+    const first = await authorize.call(
+      this.authorization,
+      actor,
+      grant.scope,
+      action,
+      claims,
+    );
+    check(first);
+    await this.recheck(actor, grant, action, {});
+    const fresh = await authorize.call(
+      this.authorization,
+      actor,
+      grant.scope,
+      action,
+      claims,
+    );
+    check(fresh);
+    if (first.authorityRef !== fresh.authorityRef)
+      throw tdmsError('TDMS_SOURCE_PERMISSION_CHANGED', 409);
+  }
 
   async catalogue(
     actor: TdmsPublicActor,
@@ -442,6 +675,7 @@ export class TdmsSourceService {
       const saved = await tx.capture(scope, p.packageId);
       if (saved) {
         if (
+          saved.dailyMetadata ||
           saved.packageHash !== packageHash ||
           saved.actorId !== actor.canonicalSubject.id
         )
@@ -499,6 +733,7 @@ export class TdmsSourceService {
       const replay = await tx.capture(scope, p.packageId);
       if (replay) {
         if (
+          replay.dailyMetadata ||
           replay.packageHash !== packageHash ||
           replay.actorId !== actor.canonicalSubject.id
         )

@@ -1,5 +1,6 @@
 import { Module, type DynamicModule, type Provider } from '@nestjs/common';
 import { TdmsSourceController } from './tdms-source.controller';
+import { TdmsDailyMetadataController } from './tdms-daily-metadata.controller';
 import { TdmsSourceService } from './tdms-source.service';
 import { MiaodaTdmsSourceRepository } from './tdms-source.repository';
 import {
@@ -16,7 +17,7 @@ import {
 import { UnconfiguredTdmsArtifactStore } from './unconfigured-tdms-artifact-store';
 export { UnconfiguredTdmsArtifactStore } from './unconfigured-tdms-artifact-store';
 @Module({
-  controllers: [TdmsSourceController],
+  controllers: [TdmsSourceController, TdmsDailyMetadataController],
   providers: [
     TdmsSourceService,
     MiaodaTdmsSourceRepository,
