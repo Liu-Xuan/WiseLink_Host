@@ -37,7 +37,8 @@ describe('document translation model boundary', () => {
     expect(service.executeScoped.mock.calls[0][1].executionModel).toBe(model);
   });
 
-  it('rechecks the exact WI selection and source under the admission transaction lock', async () => {
+  it.each([undefined, 'DTQ-prior'])(
+    'rechecks the exact WI selection and source under the admission lock with predecessor %s', async (predecessorRef) => {
     const model = taskModelSelection('miaoda/glm-5.3');
     const selected = { tenantId: 'tenant', workItemId: 'WI-test', requestedByUserId: 'actor',
       documentVersionId: 'DV', sourceArtifactId: 'PDF', sourceFileSha256: 'b'.repeat(64),
@@ -48,15 +49,53 @@ describe('document translation model boundary', () => {
       const locked = jest.fn().mockResolvedValue([{ ...selected, ...changed }]);
       const query = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(), for: locked };
-      const tx = { select: jest.fn().mockReturnValue(query), execute: jest.fn() };
+      const tx = { select: jest.fn().mockReturnValue(query), execute: jest.fn(), insert: jest.fn() };
       const repository = new DocumentTranslationAttemptRepository({
         transaction: async (fn: (value: unknown) => unknown) => fn(tx),
       } as never);
-      await expect(repository.reserve(scope, task, 'request', model, undefined, 'QUOTA', 'WI-test'))
+      await expect(repository.reserve(scope, task, 'request', model, predecessorRef, 'QUOTA', 'WI-test'))
         .rejects.toThrow('DOCUMENT_TRANSLATION_WORK_ITEM_MODEL_CHANGED');
       expect(locked).toHaveBeenCalledWith('update');
       expect(tx.execute).not.toHaveBeenCalled();
+      expect(tx.insert).not.toHaveBeenCalled();
     }
+  });
+
+  it.each([
+    { label: 'saved envelope', documentProducer: 'OFFICIAL_PLUGIN', resultEnvelopeJson: '{}',
+      savedBlocks: [], workspaceResult: null, code: 'DOCUMENT_TRANSLATION_RECOVERY_INELIGIBLE' },
+    { label: 'saved block', documentProducer: 'OFFICIAL_PLUGIN', resultEnvelopeJson: null,
+      savedBlocks: [{ id: 'saved-block' }], workspaceResult: null, code: 'DOCUMENT_TRANSLATION_RECOVERY_HAS_OUTPUT' },
+    { label: 'saved workspace', documentProducer: 'OFFICIAL_PLUGIN', resultEnvelopeJson: null,
+      savedBlocks: [], workspaceResult: '{}', code: 'DOCUMENT_TRANSLATION_RECOVERY_HAS_OUTPUT' },
+    { label: 'Hosted predecessor', documentProducer: 'HOSTED_M3', resultEnvelopeJson: null,
+      savedBlocks: [], workspaceResult: null, code: 'DOCUMENT_TRANSLATION_RECOVERY_INELIGIBLE' },
+  ] as const)('does not insert a quota successor for $label', async (ineligible) => {
+    const { inputHash: _hash, ...unsealed } = task;
+    const priorTask = sealDocumentTranslationTaskEnvelope({ ...unsealed,
+      actionAttemptId: 'DTA-prior', operationRef: 'DTQ-prior',
+      modelInput: { ...unsealed.modelInput, documentProducer: ineligible.documentProducer } });
+    const prior = { attemptId: 'DTA-prior', operationRef: 'DTQ-prior', triggerRequestId: 'request',
+      producerRunId: 'parse', status: 'FAILED', errorCode: 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED',
+      startedAt: null, projectionApplied: false, resultEnvelopeJson: ineligible.resultEnvelopeJson,
+      executionModelJson: null, taskEnvelopeJson: JSON.stringify(priorTask) };
+    const locked = jest.fn().mockResolvedValue([prior]);
+    const predecessor = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(), for: locked };
+    const blocks = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue(ineligible.savedBlocks) };
+    const workspace = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ result: ineligible.workspaceResult }]) };
+    const tx = { select: jest.fn().mockReturnValueOnce(predecessor).mockReturnValueOnce(blocks)
+      .mockReturnValueOnce(workspace), execute: jest.fn().mockResolvedValue([{ document_version_id: 'DV' }]),
+      insert: jest.fn() };
+    const transaction = jest.fn(async (fn: (value: unknown) => unknown) => fn(tx));
+    const repository = new DocumentTranslationAttemptRepository({ transaction } as never);
+    await expect(repository.reserve(scope, task, 'request:hosted-m3',
+      taskModelSelection('miaoda/glm-5.3'), 'DTQ-prior', 'QUOTA')).rejects.toThrow(ineligible.code);
+    expect(locked).toHaveBeenCalledWith('update');
+    expect(tx.execute).toHaveBeenCalledTimes(1);
+    expect(tx.insert).not.toHaveBeenCalled();
   });
 
   it.each([null, {}, { ...taskModelSelection(), modelRef: 'unregistered/model' },

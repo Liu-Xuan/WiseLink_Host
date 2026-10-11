@@ -16,6 +16,7 @@ import {
   safeOauthReturnPath,
 } from './oauth-return-location';
 import {
+  oauthFailureMessage,
   toOauthFailureCode,
   type OAuthFailureCode,
 } from './oauth-failure-code';
@@ -147,7 +148,7 @@ export default function OAuthCallbackPage() {
             <div>
               <h1 className="text-xl font-semibold">飞书身份连接未完成</h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                授权参数无效、已过期或服务暂不可用，请重新开始。
+                {oauthFailureMessage(failureCode)}
               </p>
               {failureCode ? (
                 <p className="mt-2 font-mono text-xs text-muted-foreground">
@@ -164,6 +165,16 @@ export default function OAuthCallbackPage() {
             >
               重新连接
             </Button>
+            {failureCode === 'CALLBACK_OUTCOME_UNKNOWN' ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate(returnPath ?? '/', { replace: true })}
+                data-ai-section-type="button"
+              >
+                返回原页面核验
+              </Button>
+            ) : null}
           </div>
         )}
       </section>

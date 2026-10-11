@@ -1,7 +1,8 @@
 import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
 import { DocumentTranslationRuntimeService } from '../../server/modules/canonical-host/document-translation-runtime.service';
+import { DocumentTranslationAttemptRepository, type DocumentTranslationScope } from '../../server/modules/action-attempt/document-translation-attempt.repository';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
-import { sealDocumentTranslationTaskEnvelope } from '../../server/modules/action-attempt/document-translation-task-envelope';
+import { parseDocumentTranslationTaskEnvelope, sealDocumentTranslationTaskEnvelope } from '../../server/modules/action-attempt/document-translation-task-envelope';
 import { documentDeliveryRequestId } from '../../server/modules/canonical-host/document-delivery-ref';
 
 function setup() {
@@ -22,8 +23,14 @@ function setup() {
     executeStep: jest.fn().mockResolvedValue({ status: 'PROGRESSED' }) };
   let row: Record<string, unknown> | null = null;
   const priorRows = new Map<string, Record<string, unknown>>();
-  const attempts = { readRequest: jest.fn(async (_scope, requestId) =>
-    row?.triggerRequestId === requestId ? row : null), latest: jest.fn(async () => row),
+  const readRequest = jest.fn(async (_scope: DocumentTranslationScope, requestId: string) =>
+    row?.triggerRequestId === requestId ? row : [...priorRows.values()]
+      .find((prior: Record<string, unknown>) => prior.triggerRequestId === requestId) ?? null);
+  const attempts = { readRequest, latest: jest.fn(async () => row),
+    assertQuotaSuccessor: jest.fn((scope: DocumentTranslationScope, requestId: string,
+      attemptRef: string, currentParseRunId: string) =>
+      DocumentTranslationAttemptRepository.prototype.assertQuotaSuccessor.call(
+        { readRequest } as never, scope, requestId, attemptRef, currentParseRunId)),
     readAttempt: jest.fn(async (_scope, attemptRef) => row?.operationRef === attemptRef ? row : priorRows.get(attemptRef) ?? null),
     reserve: jest.fn(async (_scope, task, requestId, executionModel, _predecessorRef?: string,
       _successorKind?: string, _modelWorkItemId?: string) => {
@@ -106,7 +113,14 @@ function setup() {
     row.taskEnvelopeJson = JSON.stringify(sealDocumentTranslationTaskEnvelope({ ...unsealed,
       modelInput: { ...unsealed.modelInput, documentProducer: 'OFFICIAL_PLUGIN' } }));
   };
-  return { service, reader, plugins, attempts, authorization, parsing, semantics, v2, legacy, modelSettings,
+  const quotaFailure = () => {
+    legacy();
+    if (!row) throw new Error('expected quota predecessor');
+    Object.assign(row, { status: 'FAILED', errorCode: 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED',
+      startedAt: null, projectionApplied: false, resultEnvelopeJson: null, executionModelJson: null });
+    return row;
+  };
+  return { service, reader, plugins, attempts, authorization, parsing, semantics, v2, legacy, quotaFailure, modelSettings,
     binding: { documentVersionId, parseRunId } };
 }
 
@@ -161,6 +175,117 @@ describe('independent document translation runtime', () => {
     await f.service.run({ action: 'START', ...f.binding, requestId: 'standalone' });
     expect(f.attempts.reserve).toHaveBeenCalledTimes(1);
     expect(f.modelSettings.captureForNewTask).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['miaoda/glm-5.3', 'm3probe/minimax-m3'])(
+    'captures a first %s Hosted snapshot from an official quota failure with no model', async (modelRef) => {
+    const f = setup();
+    const deliveryRef = 'acquisition:quota';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const started = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
+    if (!('attemptRef' in started) || !started.attemptRef) throw new Error('expected predecessor');
+    expect(f.quotaFailure().executionModelJson).toBeNull();
+    const executionModel = taskModelSelection(modelRef, new Date('2026-10-01T00:00:00Z'));
+    f.modelSettings.captureForNewTask.mockClear().mockResolvedValue(executionModel);
+    f.attempts.reserve.mockClear();
+    const recovered = await f.service.run({ action: 'RECOVER', ...f.binding, deliveryRef,
+      requestId: `${requestId}:hosted-m3`, attemptRef: started.attemptRef });
+    expect(recovered).toMatchObject({ status: 'QUEUED' });
+    expect(f.attempts.assertQuotaSuccessor).toHaveBeenCalledWith(
+      expect.objectContaining({ actorUserId: 'actor' }), requestId, started.attemptRef, f.binding.parseRunId);
+    expect(f.modelSettings.captureForNewTask).toHaveBeenCalledTimes(1);
+    expect(f.attempts.reserve).toHaveBeenCalledTimes(1);
+    expect(f.attempts.reserve.mock.lastCall?.slice(3, 6)).toEqual([executionModel, started.attemptRef, 'QUOTA']);
+    const successor = await f.attempts.latest();
+    expect(JSON.parse(String(successor?.executionModelJson))).toEqual(executionModel);
+    expect(parseDocumentTranslationTaskEnvelope(String(successor?.taskEnvelopeJson)).modelInput.documentProducer)
+      .toBe('HOSTED_M3');
+  });
+
+  it.each(['standalone', 'work-item'] as const)(
+    'keeps the original %s quota successor after configuration or authorized WI model changes', async (deliveryKind) => {
+    const f = setup();
+    const executionModel = taskModelSelection('miaoda/glm-5.3', new Date('2026-10-01T00:00:00Z'));
+    const sourceBinding = (await f.reader.readDocumentOriginal()).original.binding;
+    const deliveryRef = deliveryKind === 'work-item' ? 'work-item:WI-quota' : 'acquisition:quota';
+    if (deliveryKind === 'work-item') {
+      f.authorization.authorizeDocumentWork.mockResolvedValue({ tenantId: 'tenant', actorUserId: 'actor',
+        documentVersionId: f.binding.documentVersionId, modelWorkItemId: 'WI-quota', executionModel: null,
+        sourceBinding } as never);
+    }
+    f.modelSettings.captureForNewTask.mockResolvedValue(executionModel);
+    f.modelSettings.captureForWorkItem.mockResolvedValue(executionModel);
+    const rootRequestId = documentDeliveryRequestId('translation', deliveryRef);
+    const started = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId: rootRequestId });
+    if (!('attemptRef' in started) || !started.attemptRef) throw new Error('expected predecessor');
+    f.quotaFailure();
+    f.modelSettings.captureForNewTask.mockClear();
+    f.modelSettings.captureForWorkItem.mockClear();
+    f.attempts.reserve.mockClear();
+    const input = { action: 'RECOVER' as const, ...f.binding, deliveryRef,
+      requestId: `${rootRequestId}:hosted-m3`, attemptRef: started.attemptRef };
+    const first = await f.service.run(input);
+    const changedModel = taskModelSelection('m3probe/minimax-m3');
+    f.modelSettings.captureForNewTask.mockResolvedValue(changedModel);
+    f.modelSettings.captureForWorkItem.mockResolvedValue(changedModel);
+    if (deliveryKind === 'work-item') {
+      f.authorization.authorizeDocumentWork.mockResolvedValue({ tenantId: 'tenant', actorUserId: 'actor',
+        documentVersionId: f.binding.documentVersionId, modelWorkItemId: 'WI-quota',
+        executionModel: changedModel, sourceBinding } as never);
+    }
+    const authorizationCalls = f.authorization.authorizeDocumentWork.mock.calls.length;
+    const catalogCalls = f.parsing.status.mock.calls.length;
+    expect(await f.service.run(input)).toEqual(first);
+    const successor = await f.attempts.latest();
+    expect(JSON.parse(String(successor?.executionModelJson))).toEqual(executionModel);
+    expect(f.authorization.authorizeDocumentWork).toHaveBeenCalledTimes(authorizationCalls + 1);
+    expect(f.parsing.status).toHaveBeenCalledTimes(catalogCalls + 1);
+    expect(f.attempts.reserve).toHaveBeenCalledTimes(1);
+    expect(f.modelSettings.captureForNewTask).toHaveBeenCalledTimes(deliveryKind === 'standalone' ? 1 : 0);
+    expect(f.modelSettings.captureForWorkItem).toHaveBeenCalledTimes(deliveryKind === 'work-item' ? 1 : 0);
+    expect(f.attempts.reserve.mock.lastCall?.[6]).toBe(deliveryKind === 'work-item' ? 'WI-quota' : undefined);
+  });
+
+  it.each(['hosted-predecessor', 'projected-output'] as const)(
+    'rejects an ineligible %s through the real quota predecessor check', async (ineligibleKind) => {
+    const f = setup();
+    const deliveryRef = 'acquisition:quota';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const started = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
+    if (!('attemptRef' in started) || !started.attemptRef) throw new Error('expected predecessor');
+    const predecessor = f.quotaFailure();
+    if (ineligibleKind === 'projected-output') predecessor.projectionApplied = true;
+    else {
+      const { inputHash: _hash, ...unsealed } = parseDocumentTranslationTaskEnvelope(String(predecessor.taskEnvelopeJson));
+      predecessor.taskEnvelopeJson = JSON.stringify(sealDocumentTranslationTaskEnvelope({ ...unsealed,
+        modelInput: { ...unsealed.modelInput, documentProducer: 'HOSTED_M3' } }));
+    }
+    f.modelSettings.captureForNewTask.mockClear();
+    f.attempts.reserve.mockClear();
+    await expect(f.service.run({ action: 'RECOVER', ...f.binding, deliveryRef,
+      requestId: `${requestId}:hosted-m3`, attemptRef: started.attemptRef }))
+      .rejects.toThrow('DOCUMENT_TRANSLATION_RECOVERY_INELIGIBLE');
+    expect(f.attempts.reserve).not.toHaveBeenCalled();
+    expect(f.modelSettings.captureForNewTask).not.toHaveBeenCalled();
+  });
+
+  it.each(['actor', 'source-catalog'] as const)(
+    'rechecks %s access before a quota takeover', async (deniedAuthority) => {
+    const f = setup();
+    const deliveryRef = 'acquisition:quota';
+    const requestId = documentDeliveryRequestId('translation', deliveryRef);
+    const started = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
+    if (!('attemptRef' in started) || !started.attemptRef) throw new Error('expected predecessor');
+    f.quotaFailure();
+    f.modelSettings.captureForNewTask.mockClear();
+    f.attempts.reserve.mockClear();
+    if (deniedAuthority === 'actor') f.authorization.authorizeDocumentWork.mockRejectedValueOnce(new Error('ACCESS_REVOKED'));
+    else f.parsing.status.mockRejectedValueOnce(new Error('ACCESS_REVOKED'));
+    await expect(f.service.run({ action: 'RECOVER', ...f.binding, deliveryRef,
+      requestId: `${requestId}:hosted-m3`, attemptRef: started.attemptRef })).rejects.toThrow('ACCESS_REVOKED');
+    expect(f.attempts.assertQuotaSuccessor).not.toHaveBeenCalled();
+    expect(f.attempts.reserve).not.toHaveBeenCalled();
+    expect(f.modelSettings.captureForNewTask).not.toHaveBeenCalled();
   });
 
   it('fails closed for missing WI selection, unsupported model, and changed source', async () => {
@@ -386,7 +511,8 @@ describe('independent document translation runtime', () => {
     const requestId = documentDeliveryRequestId('translation', deliveryRef);
     const first = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
     if (!('attemptRef' in first)) throw new Error('expected first attempt');
-    const prior = await f.attempts.readRequest({}, requestId);
+    const prior = await f.attempts.readRequest({ tenantId: 'tenant', actorUserId: 'actor',
+      documentVersionId: f.binding.documentVersionId }, requestId);
     Object.assign(prior!, { status: 'SUCCEEDED', terminalReason: 'REMAINING_LIMITATIONS' });
     const status = await f.service.run({ action: 'STATUS', ...f.binding, deliveryRef });
     expect(status).toMatchObject({ status: 'SUCCEEDED', partialRepairAvailable: true });
@@ -414,7 +540,8 @@ describe('independent document translation runtime', () => {
     const requestId = documentDeliveryRequestId('translation', deliveryRef);
     const old = await f.service.run({ action: 'START', ...f.binding, deliveryRef, requestId });
     if (!('attemptRef' in old)) throw new Error('expected attempt');
-    const prior = await f.attempts.readRequest({}, requestId);
+    const prior = await f.attempts.readRequest({ tenantId: 'tenant', actorUserId: 'actor',
+      documentVersionId: f.binding.documentVersionId }, requestId);
     if (!prior) throw new Error('expected prior');
     prior.triggerRequestId = `${requestId}:partial-repair`;
     const oldHash = JSON.parse(String(prior.taskEnvelopeJson)).inputHash;
