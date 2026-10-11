@@ -27,11 +27,14 @@ it('constructs the actual configuration-evidence UPDATE with a live audit merge 
  // This is a statement-shape / interleaving simulation, not a live PostgreSQL transaction.
  let simulated;
  if (typeof value === 'string') simulated = JSON.parse(value);
- else { const query = new PgDialect().sqlToQuery(value); expect(query.sql).toContain('jsonb_build_object'); expect(query.sql).toContain('"work_item"."projection_json"'); simulated = { ...JSON.parse(query.params[0] as string), modelConfigurationApplications: lateAudit }; }
+ else { const query = new PgDialect().sqlToQuery(value); expect(query.sql).toContain('jsonb_build_object'); expect(query.sql).toContain('jsonb_exists("work_item"."projection_json"::jsonb, \'modelConfigurationApplications\')'); expect(query.sql).not.toContain('?'); expect(query.params).toHaveLength(1); simulated = { ...JSON.parse(query.params[0] as string), modelConfigurationApplications: lateAudit }; }
  expect(simulated.modelConfigurationApplications).toEqual(lateAudit);
  expect(simulated).toMatchObject({ workItemId: 'WI-1', revision: 4, schemaVersion: projection.schemaVersion });
 });
 it('uses the database audit even if a replacement DTO contains a different audit', () => {
  const query = new PgDialect().sqlToQuery(preserveWorkItemModelConfigurationAudit({ revision: 4, modelConfigurationApplications: ['stale'] }));
+ expect(query.sql).toContain('jsonb_exists("work_item"."projection_json"::jsonb, \'modelConfigurationApplications\')');
+ expect(query.sql).not.toContain('?');
+ expect(query.params).toEqual([JSON.stringify({ revision: 4, modelConfigurationApplications: ['stale'] })]);
  expect(query.sql).toMatch(/jsonb_build_object\('modelConfigurationApplications', "work_item"\."projection_json"::jsonb->'modelConfigurationApplications'\)/u);
 });

@@ -147,21 +147,20 @@ function recoverProseTables(original: DocumentOriginalResult, page: DocumentPdfP
     const touched = lines.filter(line => overlaps(lineBox(line, page), box));
     if (touched.length < 4 || touched.some(line => line.runs.length !== 1 ||
         !contains(box, lineBox(line, page)) || !line.text.trim())) continue;
-    // All text in the candidate region must form one continuous, left-aligned run.
+    // All text in the candidate region must form one left-aligned column.
     const lefts = touched.map(line => line.x);
     if (Math.max(...lefts) - Math.min(...lefts) > 12 ||
         lineBox(touched[0], page)[1] - box[1] > touched[0].height * 1.5 ||
         box[3] - lineBox(touched.at(-1)!, page)[3] > touched.at(-1)!.height * 1.5 ||
         lines.some(line => lineBox(line, page)[1] < box[3] &&
-          lineBox(line, page)[3] > box[1] && !touched.includes(line)) ||
-        touched.some((line, index) => index > 0 &&
-          touched[index - 1].y - line.y > Math.max(line.height, touched[index - 1].height) * 2)) continue;
+          lineBox(line, page)[3] > box[1] && !touched.includes(line))) continue;
     if (original.source.units.some(other => {
       if (other.unitId === unit.unitId || Number(other.mapping.pageIndex) !== page.pageIndex) return false;
       const otherBox = scaledBox(other.mapping.nativeBbox, page);
       return otherBox !== null && overlaps(otherBox, box);
     })) continue;
-    const pdfText = touched.map(line => line.text).join(' ');
+    const pdfText = proseTableText(touched, page);
+    if (pdfText === null) continue;
     const ocrText = tableRows(unit).join(' ');
     const pdfWords = words(pdfText), ocrWords = words(ocrText);
     if (pdfWords.length < 35 || ocrWords.length < 12 ||
@@ -189,6 +188,35 @@ function recoverProseTables(original: DocumentOriginalResult, page: DocumentPdfP
       message: 'MinerU 将单栏连续正文识别为一列表格；同源 PDF 文本层提供局部阅读恢复，原始块及指针已保留。决定性工程判断仍须核对 PDF 原页。',
       affectedUnitIds: [unit.unitId], sourceRefIds: [ref], pageIndexes: [page.pageIndex] });
   }
+}
+/** Infer blank lines only from a stable pitch in the same physical prose column.
+ * A larger initial label stays text and never contributes to the body pitch. */
+function proseTableText(lines: OriginalLayoutLine[], page: DocumentPdfPage): string | null {
+  if (lines.some(line => uniformLineSize(line, page) === null)) return null;
+  const sizes = lines.map(line => line.height).sort((a, b) => a - b);
+  const bodySize = sizes[Math.floor(sizes.length / 2)];
+  const first = lines[0];
+  const hasLabel = Math.abs(first.height - bodySize) > 0.5;
+  if (hasLabel && (first.height < bodySize * 1.2 || first.text.length > 120 ||
+      words(first.text).length > 12 || /[.;:。；：!?！？]$/u.test(first.text))) return null;
+  const body = lines.slice(hasLabel ? 1 : 0);
+  if (body.some(line => Math.abs(line.height - bodySize) > 0.5)) return null;
+  if (hasLabel && first.y - body[0].y > Math.max(first.height, bodySize) * 2) return null;
+  const gaps = body.slice(1).map((line, index) => body[index].y - line.y);
+  const ordinary = gaps.filter(gap => gap >= bodySize && gap <= bodySize * 2).sort((a, b) => a - b);
+  if (ordinary.length < 3) return null;
+  const pitch = ordinary[Math.floor(ordinary.length / 2)];
+  const tolerance = Math.max(0.5, pitch * 0.1);
+  if (ordinary.some(gap => Math.abs(gap - pitch) > tolerance)) return null;
+  let text = body[0].text;
+  for (let index = 1; index < body.length; index++) {
+    const gap = gaps[index - 1];
+    if (Math.abs(gap - pitch) <= tolerance) text += ` ${body[index].text}`;
+    else if (gap >= pitch * 1.8 && gap <= pitch * 2.2 &&
+        /[.!?。！？]["'”’)]?$/u.test(body[index - 1].text)) text += `\n\n${body[index].text}`;
+    else return null; // Irregular gaps or table-like rows are not paragraph evidence.
+  }
+  return hasLabel ? `${first.text}\n\n${text}` : text;
 }
 function singleColumnProseTable(unit: TranslationStructuredSourceUnit, raw: Record<string, unknown>): boolean {
   const content = raw.content;

@@ -241,3 +241,94 @@ it('does not exclude a PDF line only partially overlapping an omitted native foo
   expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({
     reason: 'TEXT_CONFLICT', message: expect.stringContaining('Edge body'), readingImpact: 'LIMITATION' }));
 });
+
+const proseLines = [
+  'Some operators have experienced a loss of guidance and autopilot disconnects on approach.',
+  'Aircraft certified for fail operational autoland may see warning messages.',
+  'Operators have also experienced warning status during approach.',
+  'Displayed on the maintenance page for the crew to review.',
+  'In addition, the flight crew should review the indicated condition before departure.',
+  'The remaining indication must be checked against the applicable aircraft configuration.',
+];
+function proseGapFixture(options: {
+  texts?: string[]; tops?: number[]; html?: string; content?: Record<string, unknown>; extra?: unknown[];
+} = {}) {
+  const texts = options.texts ?? proseLines;
+  const tops = options.tops ?? [122, 134.5, 147, 159.5, 184.5, 197];
+  const table = { type: 'table', bbox: [10, 100, 400, tops.at(-1)! + 12], content: {
+    table_type: 'simple_table', table_nest_level: 1, table_caption: [], table_footnote: [],
+    html: options.html ?? `<table>${texts.slice(1, 4).map(text => `<tr><td>${text}</td></tr>`).join('')}</table>`,
+    ...options.content,
+  } };
+  const p = page([{ text: 'Description', top: 100, size: 12 },
+    ...texts.map((text, index) => ({ text, top: tops[index], size: 9 }))]);
+  return fixture([[table, ...options.extra ?? []]], [p]);
+}
+it('preserves a corroborated paragraph blank line using body pitch, excluding the larger initial label', () => {
+  const input = proseGapFixture();
+  const before = structuredClone(input);
+  const result = reconcileMineruTextCoverage(input);
+  const unit = result.source.units[0];
+  const expected = `Description\n\n${proseLines.slice(0, 4).join(' ')}\n\n${proseLines.slice(4).join(' ')}`;
+  expect(unit.kind).toBe('paragraph');
+  expect(unit.payload.text).toBe(expected);
+  expect(unit.payload.rawMineruContent).toEqual(input.original.source.units[0].payload.rawMineruContent);
+  expect(unit.mapping.sourcePointer).toBe('/raw/contentListV2/0/0');
+  expect(unit.mapping.textItems).toHaveLength(7);
+  expect(result.source.sourceLocators[0].quote).toBe(expected);
+  expect(result.locations[0].boxes).toHaveLength(7);
+  expect(result.markdown).toContain(expected);
+  expect(result.coverage.unresolvedRanges.filter(range => range.reason === 'TEXT_CONFLICT')).toEqual([]);
+  expect(input).toEqual(before);
+});
+it.each([
+  ['irregular large gap', [122, 134.5, 147, 159.5, 190.75, 203.25]],
+  ['unstable ordinary pitch', [122, 136.5, 147, 159.5, 184.5, 197]],
+  ['too few ordinary gaps to infer pitch', [122, 134.5, 159.5, 172]],
+])('keeps the raw table and limitations for %s', (_name, tops) => {
+  const input = proseGapFixture({ tops, texts: proseLines.slice(0, tops.length) });
+  const result = reconcileMineruTextCoverage(input);
+  expect(result.source.units[0].kind).toBe('table');
+  expect(result.source.findings.some(finding => finding.code === 'PDF_TEXT_REGION_RECOVERY')).toBe(false);
+  expect(result.coverage.unresolvedRanges.some(range => range.reason === 'TEXT_CONFLICT')).toBe(true);
+});
+it.each(['numeric', 'key/value'])('does not use blank row spacing to flatten a single-column %s table', kind => {
+  const texts = proseLines.map((_line, index) => kind === 'numeric'
+    ? `Inspection channel ${index + 1} measured value ${100 + index} lower bound 50 upper bound 200 reference count 30`
+    : `Aircraft configuration assignment ${index + 1}: inspection category normal reference channel initial condition supported response value accepted`);
+  const result = reconcileMineruTextCoverage(proseGapFixture({ texts }));
+  expect(result.source.units[0].kind).toBe('table');
+  expect(result.source.findings.some(finding => finding.code === 'PDF_TEXT_REGION_RECOVERY')).toBe(false);
+});
+it.each(['font change', 'left alignment change', 'multiple physical runs', 'no text layer'])('refuses paragraph recovery with %s', reason => {
+  const input = proseGapFixture();
+  const p = input.extraction.pages[0];
+  if (reason === 'font change') {
+    const item = p.items[3];
+    item.transform[0] = 11; item.transform[3] = 11; item.height = 11;
+  } else if (reason === 'left alignment change') p.items[3].transform[4] = 40;
+  else if (reason === 'multiple physical runs') {
+    const item = { ...p.items[3], text: 'Separate column', transform: [...p.items[3].transform] };
+    item.transform[4] = 500;
+    p.items.push(item); p.text += '\nSeparate column';
+  } else { p.items = []; p.text = ''; }
+  const result = reconcileMineruTextCoverage(input);
+  expect(result.source.units[0].kind).toBe('table');
+  expect(result.source.findings.some(finding => finding.code === 'PDF_TEXT_REGION_RECOVERY')).toBe(false);
+});
+it.each(['header', 'merged cell', 'caption', 'footnote', 'raw overlap', 'no shared phrase'])('preserves structural/source fences for %s with paragraph gaps', reason => {
+  const options: Parameters<typeof proseGapFixture>[0] = {};
+  if (reason === 'header') options.html = `<table><tr><th>${proseLines[1]}</th></tr><tr><td>${proseLines[2]}</td></tr><tr><td>${proseLines[3]}</td></tr></table>`;
+  else if (reason === 'merged cell') options.html = `<table><tr><td rowspan="2">${proseLines[1]}</td></tr><tr></tr><tr><td>${proseLines[3]}</td></tr></table>`;
+  else if (reason === 'caption' || reason === 'footnote') options.content = {
+    [reason === 'caption' ? 'table_caption' : 'table_footnote']: [{ type: 'text', content: 'Retain this structural boundary.' }],
+  };
+  else if (reason === 'raw overlap') options.extra = [{ type: 'page_footer', bbox: [10, 180, 200, 205],
+    content: { page_footer_content: [{ type: 'text', content: 'Publication footer' }] } }];
+  else options.html = '<table><tr><td>One independent unrelated statement describes another system and condition.</td></tr>' +
+    '<tr><td>Second independent unrelated row lists different equipment and criteria.</td></tr>' +
+    '<tr><td>Third independent unrelated row retains the distinct original observation.</td></tr></table>';
+  const result = reconcileMineruTextCoverage(proseGapFixture(options));
+  expect(result.source.units[0].kind).toBe('table');
+  expect(result.source.findings.some(finding => finding.code === 'PDF_TEXT_REGION_RECOVERY')).toBe(false);
+});

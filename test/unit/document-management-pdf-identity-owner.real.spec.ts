@@ -12,9 +12,11 @@ import { recognizeHostNativePdfProfile } from '../../server/modules/canonical-ho
 
 const REAL_CAAC_CAD_PATH = process.env.WL31_REAL_CAAC_CAD_PDF_PATH?.trim();
 const REAL_AIRBUS_TFU_PATH = process.env.WL31_REAL_AIRBUS_TFU_PDF_PATH?.trim();
+const REAL_FAA_AD_PATH = process.env.WL31_REAL_FAA_AD_IDENTITY_PDF_PATH?.trim();
 
 const REAL_FTD_PATH = process.env.WL31_REAL_FTD_IDENTITY_PDF_PATH?.trim();
 const REAL_787_SB_PATH = process.env.WL31_REAL_787_SB_IDENTITY_PDF_PATH?.trim();
+const REAL_SPECIAL_ATTENTION_SB_PATH = process.env.WL31_REAL_SPECIAL_ATTENTION_SB_IDENTITY_PDF_PATH?.trim();
 const REAL_FTD_REFERENCE_DOMINATED_PATH =
   process.env.WL31_REAL_FTD_REFERENCE_DOMINATED_PDF_PATH?.trim();
 const REAL_SL_PATH = process.env.WL31_REAL_SL_IDENTITY_PDF_PATH?.trim();
@@ -74,6 +76,59 @@ const describeAirbusFot = REAL_AIRBUS_FOT_PATH ? describe : describe.skip;
   });
 });
 
+(REAL_FAA_AD_PATH ? describe : describe.skip)('actual FAA AD PDF identity owner', () => {
+  it('normalizes the primary Federal Register en-dash identity without a filename fallback', async () => {
+    const bytes = await readFile(REAL_FAA_AD_PATH as string);
+    expect(bytes.byteLength).toBe(208087);
+    expect(sha256Raw(bytes)).toBe('6496c48e43ddf8454e5793a84180e97ba4fe4003087d7b59c5e26e44125d76b4');
+    const layout = new PdfjsDistLayoutExtractor().extractLayoutWithDiagnostics(bytes);
+    const rawLayout = JSON.stringify(layout);
+    const identity = (resolveActualPdfDocumentIdentity as any)({ layout, actualSha256: sha256Raw(bytes),
+      actualByteLength: bytes.byteLength, originalFilename: 'unrelated-name.pdf' });
+    expect(identity).toMatchObject({ documentCode: 'AD-2024-04-09', documentFamily: 'AD', sourceType: 'ad',
+      issuer: 'FAA', businessRevision: 'ORIGINAL ISSUE', revisionDate: '2024-04-23', sourceGeneratedDate: '',
+      pageCount: 11, documentFamilyAdapterId: 'issuer.faa.airworthiness_directive.v1',
+      identityAuthority: 'DM_ACTUAL_PDF_FIRST_THREE_PAGES', documentCodeProvenance: {
+        inspectedSha256: sha256Raw(bytes), candidates: ['AD-2024-04-09'], conflict: false,
+      } });
+    expect(JSON.stringify(layout)).toBe(rawLayout);
+    expect(recognizeHostNativePdfProfile(layout, 'AD')).toMatchObject({ adapterId: 'issuer.faa.airworthiness_directive.v1',
+      family: 'AD', documentType: 'airworthiness_directive', issuerAuthority: 'FAA' });
+  });
+});
+
+describe('FAA AD primary Federal Register Unicode header', () => {
+  const publisher = 'Federal Aviation Administration 14 CFR Part 39';
+  const docket = '[Docket No. FAA–2022–0101; Project Identifier AD–2021–0101–T; Amendment 39–0101; AD 2024–01–01]';
+  const title = 'Airworthiness Directives; Example Airplanes';
+  const date = 'This AD is effective April 23, 2024.';
+  it('accepts one primary en-dash header and preserves legacy ASCII identity', () => {
+    for (const header of [docket, docket.replace(/–/gu, '-')]) {
+      expect(resolveIdentityFromText([publisher, header, title, date].join(' '))).toMatchObject({
+        documentCode: 'AD-2024-01-01', issuer: 'FAA', businessRevision: 'ORIGINAL ISSUE', revisionDate: '2024-04-23',
+      });
+    }
+  });
+  it.each([
+    ['missing publisher', [docket, title, date].join(' ')],
+    ['body-only AD citation', [publisher, title, 'Refer to AD 2024–01–01.', date].join(' ')],
+    ['body-only docket citation', [publisher, title, 'Refer to', docket, date].join(' ')],
+    ['missing Amendment', [publisher, docket.replace('Amendment 39–0101; ', ''), title, date].join(' ')],
+    ['unobserved em dash', [publisher, docket.replace(/–/gu, '—'), title, date].join(' ')],
+    ['missing effective date', [publisher, docket, title].join(' ')],
+  ])('refuses %s instead of inferring identity', (_reason, text) => {
+    expect(() => resolveIdentityFromText(text)).toThrow();
+  });
+  it('rejects distinct primary AD headers instead of choosing the first', () => {
+    expect(() => resolveIdentityFromText([publisher, docket, docket.replace('AD 2024–01–01', 'AD 2024–01–02'), title, date].join(' ')))
+      .toThrow(expect.objectContaining({ code: 'DM_PDF_IDENTITY_CONFLICT' }));
+  });
+  it('rejects conflicting effective dates', () => {
+    expect(() => resolveIdentityFromText([publisher, docket, title, date, 'This AD is effective April 24, 2024.'].join(' ')))
+      .toThrow(expect.objectContaining({ code: 'DM_PDF_IDENTITY_CONFLICT' }));
+  });
+});
+
 describeFtd('actual Boeing FTD PDF identity owner', () => {
   it('accepts the source-owned generated date sentence without a leading article', async () => {
     const identity = await resolveIdentity(REAL_FTD_PATH as string);
@@ -103,6 +158,25 @@ describe787Sb('actual Boeing 787 publication-module SB identity owner', () => {
       documentFamilyAdapterId: 'issuer.boeing.service_bulletin.v1',
       identityAuthority: 'DM_ACTUAL_PDF_FIRST_THREE_PAGES',
     });
+  });
+});
+
+(REAL_SPECIAL_ATTENTION_SB_PATH ? describe : describe.skip)('actual Boeing SPECIAL ATTENTION SB identity owner', () => {
+  it('binds the independent cover Number row without a filename fallback', async () => {
+    const bytes = await readFile(REAL_SPECIAL_ATTENTION_SB_PATH as string);
+    expect(bytes.byteLength).toBe(736492);
+    expect(sha256Raw(bytes)).toBe('7fce5d19d2d358f1c98cdc901c8e92a6b37224d9340bf1effcbd89068a35c003');
+    const layout = new PdfjsDistLayoutExtractor().extractLayoutWithDiagnostics(bytes);
+    const identity = (resolveActualPdfDocumentIdentity as any)({ layout, actualSha256: sha256Raw(bytes),
+      actualByteLength: bytes.byteLength, originalFilename: 'unrelated-name.pdf' });
+    expect(identity).toMatchObject({ documentCode: '737-34-3657', documentFamily: 'SB', sourceType: 'boeing_sb',
+      issuer: 'BOEING', businessRevision: 'ORIGINAL ISSUE', revisionDate: '2026-04-01', sourceGeneratedDate: '',
+      pageCount: 64, documentFamilyAdapterId: 'issuer.boeing.service_bulletin.v1',
+      identityAuthority: 'DM_ACTUAL_PDF_FIRST_THREE_PAGES', documentCodeProvenance: {
+        inspectedSha256: sha256Raw(bytes), candidates: ['737-34-3657'], conflict: false,
+      } });
+    expect(recognizeHostNativePdfProfile(layout, 'SB')).toMatchObject({ adapterId: 'issuer.boeing.service_bulletin.v1',
+      family: 'SB', documentType: 'service_bulletin', issuerAuthority: 'BOEING' });
   });
 });
 
@@ -166,6 +240,70 @@ describe('Boeing SB primary publication layout variants', () => {
       businessRevision: 'R4',
       revisionDate: '2020-03-20',
     });
+  });
+});
+
+describe('Boeing SB separated cover Number geometry', () => {
+  const run = (text: string, x: number, y: number, fontSize = 10) => ({ page: 1, text, x, y, fontSize,
+    fontName: 'fixture', bold: false });
+  function coverRuns() {
+    return [run('BOEING PROPRIETARY', 101, 740), run('Service Bulletin', 423, 700, 18),
+      run('SPECIAL ATTENTION', 250, 679, 14), run('Number:', 101, 660), run('737-34-3657', 171, 660),
+      run('Original Issue:', 101, 648), run('April 01, 2026', 171, 648), run('ATA System: 3461', 101, 636),
+      run('SUBJECT: Synthetic system update', 101, 624), run('Original Issue: April 01, 2026', 81, 50)];
+  }
+  function resolveRuns(textRuns: ReturnType<typeof coverRuns>) {
+    const sourceSha256 = 'a'.repeat(64);
+    const sourceByteLength = Buffer.byteLength(JSON.stringify(textRuns));
+    return (resolveActualPdfDocumentIdentity as any)({ layout: { pageCount: 1, textRuns,
+      sourceSha256: `sha256:${sourceSha256}`, sourceByteLength, metadata: {} }, actualSha256: sourceSha256,
+      actualByteLength: sourceByteLength, originalFilename: '737-34-3657 Original.pdf' });
+  }
+  it('joins the unique Number baseline and binds the date in the same primary header', () => {
+    const runs = coverRuns(); const before = structuredClone(runs);
+    expect(resolveRuns(runs)).toMatchObject({ documentCode: '737-34-3657', issuer: 'BOEING',
+      documentFamily: 'SB', businessRevision: 'ORIGINAL ISSUE', revisionDate: '2026-04-01' });
+    expect(runs).toEqual(before);
+  });
+  it('does not use a cited same-number legacy row and revision below SUBJECT as its own current revision', () => {
+    expect(resolveRuns([...coverRuns(), run('Service Bulletin Number: 737-34-3657 Revision 9: May 02, 2026', 101, 500)]))
+      .toMatchObject({ documentCode: '737-34-3657', businessRevision: 'ORIGINAL ISSUE', revisionDate: '2026-04-01' });
+  });
+  it('uses only the cover current revision and retains its separately labelled original date', () => {
+    const runs = coverRuns(); runs[7].y = 612; runs[8].y = 600;
+    runs.push(run('Revision 2: May 02, 2026', 101, 636));
+    expect(resolveRuns(runs)).toMatchObject({ businessRevision: 'R2', revisionDate: '2026-05-02' });
+  });
+  it.each(['body/footer number', 'split baseline', 'distant column', 'missing publisher', 'missing masthead',
+    'only footer date', 'date before number'])('refuses an unproved primary header: %s', reason => {
+    let runs = coverRuns();
+    if (reason === 'body/footer number') { runs[3].y = 400; runs[4].y = 400; }
+    else if (reason === 'split baseline') runs[4].y = 656;
+    else if (reason === 'distant column') runs[4].x = 500;
+    else if (reason === 'missing publisher') runs = runs.slice(1);
+    else if (reason === 'missing masthead') runs.splice(1, 1);
+    else if (reason === 'only footer date') runs.splice(5, 2);
+    else { runs[5].y = 670; runs[6].y = 670; }
+    expect(() => resolveRuns(runs)).toThrow(expect.objectContaining({ code: 'DM_PDF_IDENTITY_UNRESOLVED', statusCode: 422 }));
+  });
+  it('rejects two primary Number codes before the date', () => {
+    expect(() => resolveRuns([...coverRuns(), run('Number: 737-34-3658', 101, 655)]))
+      .toThrow(expect.objectContaining({ code: 'DM_PDF_IDENTITY_CONFLICT' }));
+  });
+  it('rejects conflicting original issue dates in the primary header', () => {
+    const runs = coverRuns(); runs[7].y = 612; runs[8].y = 600;
+    runs.push(run('Original Issue: May 02, 2026', 101, 636));
+    expect(() => resolveRuns(runs)).toThrow(expect.objectContaining({ code: 'DM_PDF_IDENTITY_CONFLICT' }));
+  });
+  it('rejects conflicting current revision dates in the primary header', () => {
+    const runs = coverRuns(); runs[7].y = 600; runs[8].y = 588;
+    runs.push(run('Revision 2: May 02, 2026', 101, 636), run('Revision 2: May 03, 2026', 101, 624));
+    expect(() => resolveRuns(runs)).toThrow(expect.objectContaining({ code: 'DM_PDF_IDENTITY_CONFLICT' }));
+  });
+  it('rejects distinct primary current revision numbers instead of choosing the largest', () => {
+    const runs = coverRuns(); runs[7].y = 600; runs[8].y = 588;
+    runs.push(run('Revision 2: May 02, 2026', 101, 636), run('Revision 3: May 03, 2026', 101, 624));
+    expect(() => resolveRuns(runs)).toThrow(expect.objectContaining({ code: 'DM_PDF_IDENTITY_CONFLICT' }));
   });
 });
 

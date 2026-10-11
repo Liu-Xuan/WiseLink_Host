@@ -294,12 +294,19 @@ function extractFaaAd({ firstPageText }) {
     return null;
   }
   const adapterId = 'issuer.faa.airworthiness_directive.v1';
+  // Federal Register's primary docket precedes the directive heading. Only
+  // this bounded header admits the observed en dash; cited body ADs do not.
+  const primaryHeaderText = firstPageText.slice(0,
+    firstPageText.search(/\bAIRWORTHINESS\s+DIRECTIVES?\b/iu));
   const documentCode = singleIdentityCandidate(
     [
-      ...firstPageText.matchAll(
+      ...[...firstPageText.matchAll(
         /(?:AMENDMENT\s+\d+-\d+\s*;\s*)?AD\s+(\d{4}-\d{2}-\d{2})\b/giu,
-      ),
-    ].map((match) => `AD-${match[1]}`),
+      )].map((match) => `AD-${match[1]}`),
+      ...[...primaryHeaderText.matchAll(
+        /\[\s*DOCKET\s+NO\.\s+FAA[-\u2013]\d{4}[-\u2013]\d+\s*;[^\[\]]*\bAMENDMENT\s+\d+[-\u2013]\d+\s*;\s*AD\s+(\d{4}[-\u2013]\d{2}[-\u2013]\d{2})\s*\]/giu,
+      )].map((match) => `AD-${match[1].replace(/\u2013/gu, '-')}`),
+    ],
     adapterId,
     'document code',
   );
@@ -441,15 +448,12 @@ function extractBoeingServiceBulletin({ firstPageText, inspectedText, layout }) 
       `\\bPUBLICATION\\s*:\\s*(${BOEING_787_PUBLICATION_CODE_PATTERN})\\s+ISSUE\\s+(\\d{1,4})\\s*,\\s*(\\d{1,2}\\s+[A-Z]{3,9}\\s+\\d{4})\\b`,
       'giu',
     ))]);
+  const cover = boeingCoverNumberEvidence(layout);
+  const legacyCodes = [...firstPageText.matchAll(new RegExp(
+    `\\bSERVICE\\s+BULLETIN\\s+NUMBER\\s*:\\s*(${BOEING_SB_CODE_PATTERN})\\b`, 'giu',
+  ))].map((match) => match[1].toUpperCase());
   const documentCode = singleIdentityCandidate(
-    [
-      ...firstPageText.matchAll(
-        new RegExp(
-          `\\bSERVICE\\s+BULLETIN\\s+NUMBER\\s*:\\s*(${BOEING_SB_CODE_PATTERN})\\b`,
-          'giu',
-        ),
-      ),
-    ].map((match) => match[1].toUpperCase()).concat(
+    legacyCodes.concat(cover.codes,
       publicationRows.map((match) => match[1].toUpperCase()),
     ),
     adapterId,
@@ -476,8 +480,11 @@ function extractBoeingServiceBulletin({ firstPageText, inspectedText, layout }) 
       sourceType: 'boeing_sb',
     };
   }
+  // The separated cover variant proves its date in the same primary header;
+  // a revision cited below SUBJECT must not become the publication revision.
+  const versionText = cover.codes.length ? cover.dateText : firstPageText;
   const revisions = [
-    ...firstPageText.matchAll(
+    ...versionText.matchAll(
       /\bREVISION\s+(\d{1,4})\s*:\s*([A-Z]{3,9}\s+\d{1,2},\s+\d{4})\b/giu,
     ),
   ].map((match) => ({
@@ -486,7 +493,9 @@ function extractBoeingServiceBulletin({ firstPageText, inspectedText, layout }) 
   }));
   const currentRevisionNumber =
     revisions.length > 0
-      ? Math.max(...revisions.map((value) => value.number))
+      ? cover.codes.length
+        ? Number(singleIdentityCandidate(revisions.map((value) => String(value.number)), adapterId, 'current revision number'))
+        : Math.max(...revisions.map((value) => value.number))
       : null;
   const currentRevisionDate = singleIdentityCandidate(
     revisions
@@ -497,7 +506,7 @@ function extractBoeingServiceBulletin({ firstPageText, inspectedText, layout }) 
   );
   const originalIssueDate = singleIdentityCandidate(
     [
-      ...firstPageText.matchAll(
+      ...versionText.matchAll(
         /\bORIGINAL\s+ISSUE\s*:\s*([A-Z]{3,9}\s+\d{1,2},\s+\d{4})\b/giu,
       ),
     ].map((match) =>
@@ -518,6 +527,38 @@ function extractBoeingServiceBulletin({ firstPageText, inspectedText, layout }) 
     sourceGeneratedDate: '',
     sourceType: 'boeing_sb',
   };
+}
+
+/** SPECIAL ATTENTION may separate the masthead and Number field. Only an
+ * independently positioned first-cover header can bridge that separation. */
+function boeingCoverNumberEvidence(layout) {
+  const runs = (Array.isArray(layout?.textRuns) ? layout.textRuns : []).filter((run) =>
+    Number(run?.page) === 1 && Number.isFinite(run?.x) && Number.isFinite(run?.y) &&
+    Number.isFinite(run?.fontSize) && run.fontSize > 0);
+  const boundary = Math.max(...runs.filter((run) => /^(?:ATA\s+SYSTEM|SUBJECT)\s*:/iu.test(normalizeText(run.text)))
+    .map((run) => run.y));
+  if (!Number.isFinite(boundary)) return { codes: [], dateText: '' };
+  const titles = runs.filter((run) => /^SERVICE\s+BULLETIN$/iu.test(normalizeText(run.text)) && run.y > boundary);
+  const headers = [];
+  const datePattern = /^(?:ORIGINAL\s+ISSUE|REVISION\s+\d{1,4})\s*:\s*[A-Z]{3,9}\s+\d{1,2},\s+\d{4}$/iu;
+  const rowText = (label, reach) => runs.filter((run) => Math.abs(run.y - label.y) <= 1 &&
+    run.x >= label.x && run.x - label.x <= label.fontSize * reach)
+    .sort((left, right) => left.x - right.x).map((run) => normalizeText(run.text)).join(' ');
+  for (const title of titles) {
+    for (const label of runs.filter((run) => /^NUMBER\s*:/iu.test(normalizeText(run.text)) &&
+      run.y < title.y && run.y > boundary && title.y - run.y <= title.fontSize * 4 &&
+      title.fontSize >= run.fontSize * 1.2)) {
+      const match = rowText(label, 12).match(new RegExp(`^NUMBER\\s*:\\s*(${BOEING_SB_CODE_PATTERN})$`, 'iu'));
+      if (!match) continue;
+      const dates = runs.filter((run) => /^(?:ORIGINAL\s+ISSUE|REVISION\s+\d{1,4})\s*:/iu.test(normalizeText(run.text)) &&
+        Math.abs(run.x - label.x) <= 2 && run.y < title.y && run.y > boundary);
+      const dateRows = dates.map((run) => rowText(run, 24));
+      headers.push({ code: match[1].toUpperCase(), dates: dateRows,
+        valid: dates.length > 0 && dates.every((run) => run.y < label.y) && dateRows.every((text) => datePattern.test(text)) });
+    }
+  }
+  return { codes: headers.map((header) => header.code),
+    dateText: headers.every((header) => header.valid) ? headers.flatMap((header) => header.dates).join(' ') : '' };
 }
 
 function boeingPublicationRowTexts(layout) {

@@ -5,7 +5,7 @@ import type { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import type { FileMeta } from '@lark-apaas/file-service';
 import type { DocumentOriginalArtifact, DocumentOriginalBinding, DocumentOriginalResult } from '@shared/document-original.interface';
 import { documentOriginalStructuredSource } from './document-original-adapter';
-import { withFileReadTransportRetry } from '../../../../unified-reader/file-service-read-transport';
+import { isFileServiceTransportFailure, withFileReadTransportRetry } from '../../../../unified-reader/file-service-read-transport';
 
 export interface DocumentOriginalStoreScope { documentVersionId: string; parseRunId: string; bucketId: string }
 export interface DocumentOriginalBundle {
@@ -21,6 +21,7 @@ const entries = {
   RAW_MARKDOWN: { relativePath: 'raw/document.md', mediaType: 'text/markdown' },
   MANIFEST: { relativePath: 'original/manifest.json', mediaType: 'application/json' },
 };
+const UPLOAD_RECOVERY_DELAYS_MS = [250, 1000] as const;
 
 /** FileService recovery uses the exact deterministic object path and verified bytes.
  * Publication and lease checks remain in the parseRun repository, never this store. */
@@ -28,17 +29,32 @@ export class DocumentOriginalStore {
   constructor(private readonly files: Pick<FileService, 'from'>) {}
 
   async save(scope: DocumentOriginalStoreScope, role: DocumentOriginalArtifact['role'], bytes: Uint8Array,
-    onProgress: (artifact: DocumentOriginalArtifact) => Promise<void>, relativePath?: string): Promise<DocumentOriginalArtifact> {
+    onProgress: (artifact: DocumentOriginalArtifact) => Promise<void>, relativePath?: string,
+    assertActive?: () => Promise<void>): Promise<DocumentOriginalArtifact> {
     const snapshot = new Uint8Array(bytes);
     if (!snapshot.length || snapshot.length > 64 * 1024 * 1024) throw new Error('DOCUMENT_ORIGINAL_ARTIFACT_SIZE_INVALID');
     const rule = entry(role, relativePath);
     const filePath = prefix(scope) + rule.relativePath;
     const scoped = this.files.from(scope.bucketId);
-    const existing = await optionalMetadata(() => scoped.getFileMetadata(filePath));
-    // No overwrite or speculative retry after a lost upload response. Reentry reads
-    // this same path before deciding whether another upload is needed.
-    const metadata = existing ?? await scoped.upload(snapshot, { filePath,
-      fileName: rule.relativePath.split('/').at(-1), contentType: rule.mediaType, upsert: false });
+    let metadata = await optionalMetadata(() => scoped.getFileMetadata(filePath));
+    for (let attempt = 0; !metadata; attempt += 1) {
+      // A lost response can mean the immutable object was committed. Only a
+      // fresh, authoritative absence permits another guarded write.
+      if (assertActive) await assertActive();
+      try {
+        metadata = await scoped.upload(snapshot, { filePath,
+          fileName: rule.relativePath.split('/').at(-1), contentType: rule.mediaType, upsert: false });
+      } catch (cause) {
+        if (!assertActive || !isFileServiceTransportFailure(cause)) throw cause;
+        metadata = await optionalMetadata(() => scoped.getFileMetadata(filePath));
+        if (metadata) break; // Normal descriptor and exact snapshot readback below.
+        const delayMs = UPLOAD_RECOVERY_DELAYS_MS[attempt];
+        if (delayMs === undefined) throw cause; // Three total uploads, including the first.
+        await new Promise<void>(resolve => setTimeout(resolve, delayMs));
+        continue;
+      }
+      if (!metadata) throw new Error('DOCUMENT_ORIGINAL_METADATA_MISMATCH');
+    }
     const artifact: DocumentOriginalArtifact = { role, ...rule, bucketId: metadata.bucketID,
       filePath: metadata.filePath.replace(/^\/+/, ''), providerObjectId: metadata.id,
       byteLength: snapshot.length, sha256: digest(snapshot), readback: 'UPLOADED' };

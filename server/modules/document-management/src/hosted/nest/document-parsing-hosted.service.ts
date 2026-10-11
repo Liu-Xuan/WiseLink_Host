@@ -218,10 +218,11 @@ export class DocumentParsingHostedService {
     if (run.status === 'RUNNING') await this.repository.stage(scope, parseRunId, fence);
     const saved = await this.workerCandidate(run, scope, fence);
     if (saved && !Buffer.from(saved).equals(Buffer.from(bytes))) throw documentParseError('DOCUMENT_LOCAL_WORKER_CANDIDATE_CONFLICT');
+    const assertActive = async () => { await this.readLocalWorkerRun(parseRunId, scope); await this.leases.check(scope, fence); };
     if (!saved) await this.store.save(storageScope(run), 'MANIFEST', bytes, async artifact => {
-      await this.readLocalWorkerRun(parseRunId, scope);
+      await assertActive();
       await this.repository.recordLocalWorkerCandidate(scope, fence, artifact);
-    }, 'raw/mineru-candidate.json');
+    }, 'raw/mineru-candidate.json', assertActive);
     return summary((await this.repository.read(scope, parseRunId))!);
   }
 
@@ -253,7 +254,7 @@ export class DocumentParsingHostedService {
     this.assertWorkerCandidate(run, inherited);
     await this.store.save(storage, 'MANIFEST', inherited, async artifact => {
       await assertActive(); await this.repository.recordLocalWorkerCandidate(scope, fence, artifact);
-    }, 'raw/mineru-candidate.json');
+    }, 'raw/mineru-candidate.json', assertActive);
     return inherited;
   }
 
@@ -356,12 +357,12 @@ export class DocumentParsingHostedService {
         const result = reconcileMineruTextCoverage({ original: mineruOriginal, extraction: checkpoint.extraction,
           rawMiddle: candidate.rawArtifacts.middle, rawContentListV2: candidate.rawArtifacts.contentListV2 });
         await assertActive();
-        const rawMineruCandidate = await this.store.save(storage, 'MANIFEST', selected.bytes, record, 'raw/mineru-candidate.json');
-        const rawMarkdown = await this.store.save(storage, 'RAW_MARKDOWN', Buffer.from(candidate.rawArtifacts.markdown), record);
+        const rawMineruCandidate = await this.store.save(storage, 'MANIFEST', selected.bytes, record, 'raw/mineru-candidate.json', assertActive);
+        const rawMarkdown = await this.store.save(storage, 'RAW_MARKDOWN', Buffer.from(candidate.rawArtifacts.markdown), record, undefined, assertActive);
         const change = await this.originalChange(run, result, context);
         const bundle: DocumentOriginalBundle = { schemaVersion: 'wiselink.document.bundle.v1', original: result,
           rawPdfArtifacts: checkpoint.pageArtifacts, rawMineruCandidate, rawMarkdown, change, titleEnhancement };
-        const manifest = await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(bundle)), record);
+        const manifest = await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(bundle)), record, undefined, assertActive);
         await this.store.load(storage, manifest, binding);
         await assertActive();
         await this.repository.publish(scope, parseRunId, manifest, fence);
@@ -373,18 +374,18 @@ export class DocumentParsingHostedService {
         throw documentParseError('DOCUMENT_PARSE_RECOVERY_COPY_MISMATCH');
       if (!raw && recoveredRaw) {
         const bytes = new Uint8Array(recoveredRaw);
-        raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record) };
+        raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record, assertActive) };
       }
       if (!raw && reusable?.bundle.original.producer.kind === 'OFFICIAL_PLUGIN_HYBRID') {
         const bytes = new Uint8Array(await this.store.read(reusable.scope, reusable.bundle.rawMarkdown));
-        raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record) };
+        raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record, assertActive) };
       }
       await checkCurrentRawProvenance(this.store, run, raw?.bytes ?? null, record);
       if (!raw) {
         const parsed = await this.plugins.parseOriginal({ assertActive,
           originalUrl: async () => this.files.from(source.source.bucketId).createSignedUrl(source.source.filePath, 600) });
         const bytes = Buffer.from(parsed.markdown);
-        raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record) };
+        raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record, assertActive) };
       } else await record(raw.artifact);
       const checkpoint = await this.checkpointPdfPages(run, original, assertActive, record, executionStartedAt, reusable, recovery);
       if (checkpoint.status === 'STAGING') return stepResult(run, checkpoint.coverage, 'STAGING');
@@ -397,7 +398,7 @@ export class DocumentParsingHostedService {
       const change = await this.originalChange(run, result, context);
       const bundle: DocumentOriginalBundle = { change, schemaVersion: 'wiselink.document.bundle.v1', original: result,
         rawPdfArtifacts: pageArtifacts, rawMarkdown: raw.artifact };
-      const manifest = await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(bundle)), record);
+      const manifest = await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(bundle)), record, undefined, assertActive);
       await this.store.load(storage, manifest, binding);
       await assertActive();
       await this.repository.publish(scope, parseRunId, manifest, fence);
@@ -533,12 +534,12 @@ export class DocumentParsingHostedService {
         if (!recovered && recoveredPage) {
           const bytes = new Uint8Array(recoveredPage);
           assertPageChunk(JSON.parse(Buffer.from(bytes).toString('utf8')), pageStart, pageCount);
-          recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path) };
+          recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path, assertActive) };
         }
         const reusablePage = reusable?.bundle.rawPdfArtifacts.find(item => item.relativePath === path);
         if (!recovered && reusable && reusablePage) {
           const bytes = new Uint8Array(await this.store.read(reusable.scope, reusablePage));
-          recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path) };
+          recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path, assertActive) };
         }
         if (!recovered && !pdfSession) pdfSession = await openDocumentPdfSession({ bytes: original.bytes, assertActive });
         const chunk: DocumentPdfExtraction = recovered
@@ -546,7 +547,7 @@ export class DocumentParsingHostedService {
           : await pdfSession!.extract({ pageStart, pageCount: PAGE_GROUP_SIZE });
         assertPageChunk(chunk, pageStart, pageCount);
         const artifact = recovered ? recovered.artifact
-          : await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(chunk)), record, path);
+          : await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(chunk)), record, path, assertActive);
         if (recovered) await record(artifact);
         currentPages.set(pageStart, chunk); pageArtifacts.push(artifact);
         pageCount = chunk.pageCount; pageStart += chunk.pages.length;

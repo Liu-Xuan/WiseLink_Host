@@ -897,6 +897,357 @@
         }
       }
     },
+    "/openapi/wiselink/apply-pending-model-configuration": {
+      "post": {
+        "operationId": "applyPendingModelConfiguration",
+        "summary": "为尚未执行的确切队列任务应用已保存模型设置",
+        "description": "仅可信OpenClaw自动队列服务调用。Host复核配置的服务主体、租户、原actor、当前文档、来源ACL与字节绑定，并在事务中锁定任务和授权登记。首次应用只允许WAITING、leaseGeneration=0且无租约，原文候选已读回且没有已冻结或已开始的工程分析、文件解读、翻译。客户端提交准确预期快照及设置修订，不能指定新的目标模型、租户或actor；Host读取已保存系统设置并保存应用回执。相同configurationRequestId及完整绑定可幂等重放；不领取任务、不调用模型、不ACK/BLOCK、不改变原件或任务修订。平台Key需仅增加此精确POST权限，Host现有授权链保持不变。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "configurationRequestId",
+                  "workItemId",
+                  "requestId",
+                  "documentVersionId",
+                  "sourceArtifactId",
+                  "sourceFileSha256",
+                  "sourceByteLength",
+                  "expectedWorkItemRevision",
+                  "expectedExecutionModel",
+                  "expectedSettingsRevision"
+                ],
+                "properties": {
+                  "configurationRequestId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "本次配置应用的稳定UUID；未知结果先读回，同一请求重放不另造ID。"
+                  },
+                  "workItemId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                    "description": "已受理任务ID。"
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                    "description": "该任务原受理请求ID。"
+                  },
+                  "documentVersionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                    "description": "该任务绑定的确切DocumentVersion。"
+                  },
+                  "sourceArtifactId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                    "description": "该任务绑定的确切原件artifact。"
+                  },
+                  "sourceFileSha256": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64,
+                    "pattern": "^[a-f0-9]{64}$",
+                    "description": "原件SHA-256，必须逐字匹配任务与授权登记。"
+                  },
+                  "sourceByteLength": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "description": "原件实际字节长度，须匹配任务与授权登记。"
+                  },
+                  "expectedWorkItemRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "当前任务修订；应用设置不会推进此修订。"
+                  },
+                  "expectedExecutionModel": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "modelRef",
+                      "displayName",
+                      "providerKind",
+                      "settingsRevision",
+                      "selectedAt"
+                    ],
+                    "properties": {
+                      "modelRef": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9][a-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9/._:-]*$",
+                        "description": "原任务中完整保存的模型引用；不是本次自由选择的目标模型。"
+                      },
+                      "displayName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "\\S",
+                        "description": "保存的显示名称，trim 后不得为空。"
+                      },
+                      "providerKind": {
+                        "type": "string",
+                        "enum": [
+                          "BUILT_IN",
+                          "CUSTOM"
+                        ]
+                      },
+                      "settingsRevision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "保存此模型快照时的设置修订；0可表示已有显式任务选择。"
+                      },
+                      "selectedAt": {
+                        "type": "string",
+                        "description": "保存的选择时间；Host要求Date.parse结果有限，不强制请求值为RFC3339。"
+                      }
+                    },
+                    "nullable": true,
+                    "description": "完整原执行模型快照或null；与现有快照逐字段CAS比较。"
+                  },
+                  "expectedSettingsRevision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "description": "已保存系统模型设置的准确正修订；目标模型只能由Host从该修订读取。"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Host已应用已保存设置；相同完整请求重放时replayed=true。当前控制器为未覆盖HttpCode的Nest POST，返回201。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status",
+                    "replayed",
+                    "application"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "MODEL_CONFIGURATION_APPLIED"
+                      ]
+                    },
+                    "replayed": {
+                      "type": "boolean"
+                    },
+                    "application": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "configurationRequestId",
+                        "appliedAt",
+                        "executorPrincipalId",
+                        "actorUserId",
+                        "workItemId",
+                        "requestId",
+                        "documentVersionId",
+                        "sourceArtifactId",
+                        "sourceFileSha256",
+                        "sourceByteLength",
+                        "workItemRevision",
+                        "previousModel",
+                        "executionModel"
+                      ],
+                      "properties": {
+                        "configurationRequestId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "本次配置应用的稳定UUID；未知结果先读回，同一请求重放不另造ID。"
+                        },
+                        "appliedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Host首次应用时间。"
+                        },
+                        "executorPrincipalId": {
+                          "type": "string",
+                          "description": "Host配置并核验的执行服务主体。"
+                        },
+                        "actorUserId": {
+                          "type": "string",
+                          "description": "由任务授权登记解析的原actor，不接受客户端指定。"
+                        },
+                        "workItemId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 96,
+                          "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                          "description": "已受理任务ID。"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 96,
+                          "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                          "description": "该任务原受理请求ID。"
+                        },
+                        "documentVersionId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 96,
+                          "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                          "description": "该任务绑定的确切DocumentVersion。"
+                        },
+                        "sourceArtifactId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 96,
+                          "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                          "description": "该任务绑定的确切原件artifact。"
+                        },
+                        "sourceFileSha256": {
+                          "type": "string",
+                          "minLength": 64,
+                          "maxLength": 64,
+                          "pattern": "^[a-f0-9]{64}$",
+                          "description": "原件SHA-256，必须逐字匹配任务与授权登记。"
+                        },
+                        "sourceByteLength": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "description": "原件实际字节长度，须匹配任务与授权登记。"
+                        },
+                        "workItemRevision": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "本次CAS核验且保持的任务修订。"
+                        },
+                        "previousModel": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "modelRef",
+                            "displayName",
+                            "providerKind",
+                            "settingsRevision",
+                            "selectedAt"
+                          ],
+                          "properties": {
+                            "modelRef": {
+                              "type": "string",
+                              "maxLength": 255,
+                              "pattern": "^[a-z0-9][a-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9/._:-]*$",
+                              "description": "原任务中完整保存的模型引用；不是本次自由选择的目标模型。"
+                            },
+                            "displayName": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "pattern": "\\S",
+                              "description": "保存的显示名称，trim 后不得为空。"
+                            },
+                            "providerKind": {
+                              "type": "string",
+                              "enum": [
+                                "BUILT_IN",
+                                "CUSTOM"
+                              ]
+                            },
+                            "settingsRevision": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "保存此模型快照时的设置修订；0可表示已有显式任务选择。"
+                            },
+                            "selectedAt": {
+                              "type": "string",
+                              "description": "保存的选择时间；Host要求Date.parse结果有限，不强制请求值为RFC3339。"
+                            }
+                          },
+                          "nullable": true
+                        },
+                        "executionModel": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "modelRef",
+                            "displayName",
+                            "providerKind",
+                            "settingsRevision",
+                            "selectedAt"
+                          ],
+                          "properties": {
+                            "modelRef": {
+                              "type": "string",
+                              "maxLength": 255,
+                              "pattern": "^[a-z0-9][a-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9/._:-]*$",
+                              "description": "Host从已保存设置读取的目标模型引用。"
+                            },
+                            "displayName": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "pattern": "\\S",
+                              "description": "保存的显示名称，trim 后不得为空。"
+                            },
+                            "providerKind": {
+                              "type": "string",
+                              "enum": [
+                                "BUILT_IN",
+                                "CUSTOM"
+                              ]
+                            },
+                            "settingsRevision": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "保存此模型快照时的设置修订；0可表示已有显式任务选择。"
+                            },
+                            "selectedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "Host实际应用设置的时间。"
+                            }
+                          },
+                          "description": "Host从已保存设置读取并应用的完整执行模型快照，settingsRevision等于expectedSettingsRevision。"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "PENDING_MODEL_CONFIGURATION_INPUT_INVALID：缺失、额外或格式错误字段，包括无效完整模型快照；保存的模型配置无效也会被Host拒绝。"
+          },
+          "403": {
+            "description": "平台未授权此精确POST，或Host重新核验actor/来源ACL/currentness/候选绑定失败；不进行配置应用。"
+          },
+          "409": {
+            "description": "PENDING_MODEL_TASK_NOT_AVAILABLE、PENDING_MODEL_SOURCE_BINDING_CHANGED、PENDING_MODEL_CONFIGURATION_REPLAY_CONFLICT、PENDING_MODEL_ALREADY_CLAIMED、PENDING_MODEL_SNAPSHOT_CHANGED、PENDING_MODEL_EXECUTION_STARTED或MODEL_SETTINGS_REVISION_CONFLICT；保留原任务和应用历史，不静默切换模型。"
+          },
+          "503": {
+            "description": "自动队列service scope未显式配置/不匹配，或当前来源ACL等Host依赖不可用。"
+          }
+        }
+      }
+    },
     "/openapi/wiselink/next-work-item": {
       "post": {
         "operationId": "nextWorkItem",

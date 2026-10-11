@@ -98,13 +98,13 @@ export class DocumentOriginalRecovery {
 }
 
 export async function saveOriginalRaw(store: DocumentOriginalStore, run: DocumentParseRow, bytes: Uint8Array,
-  record: (artifact: DocumentOriginalArtifact) => Promise<void>) {
+  record: (artifact: DocumentOriginalArtifact) => Promise<void>, assertActive: () => Promise<void>) {
   const marker = { schemaVersion: 'wiselink.original.raw-provenance.v1', producer: PRODUCER,
     parseRunId: run.parseRunId, parseRevision: run.parseRevision, sourceBinding: run.sourceBinding,
     rawSha256: digest(bytes), rawByteLength: bytes.length };
   // The companion is bound to the actual plugin output, before the raw upload can lose its receipt.
-  await store.save(storage(run), 'MANIFEST', Buffer.from(JSON.stringify(marker)), record, PROVENANCE_PATH);
-  return store.save(storage(run), 'RAW_MARKDOWN', bytes, record);
+  await store.save(storage(run), 'MANIFEST', Buffer.from(JSON.stringify(marker)), record, PROVENANCE_PATH, assertActive);
+  return store.save(storage(run), 'RAW_MARKDOWN', bytes, record, undefined, assertActive);
 }
 
 export async function checkCurrentRawProvenance(store: DocumentOriginalStore, run: DocumentParseRow,

@@ -17,10 +17,10 @@ function fixture(loseReceipt = false) {
   const scoped = {
     getFileMetadata: async (path: string) => content.has(path) ? metadata(path) : null,
     download: jest.fn(async (path: string) => ({ metadata: metadata(path), content: new Blob([Buffer.from(content.get(path)!.bytes)]) })),
-    upload: async (bytes: Uint8Array, options: { filePath: string; contentType: string }) => {
+    upload: jest.fn(async (bytes: Uint8Array, options: { filePath: string; contentType: string }) => {
     if (content.has(options.filePath)) throw new Error('OVERWRITE');
     content.set(options.filePath, { bytes: new Uint8Array(bytes), mediaType: options.contentType }); return metadata(options.filePath);
-    },
+    }),
     createSignedUrl: jest.fn(async () => 'https://example.invalid/original'),
   };
   const readOriginal = jest.spyOn(MiaodaFileServiceArtifactStore.prototype, 'readSelection').mockResolvedValue({
@@ -66,6 +66,43 @@ function fixture(loseReceipt = false) {
 describe('bounded original execute and persisted Reader (isolated source and plugin)', () => {
   beforeEach(() => jest.clearAllMocks());
   afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
+  async function settle<T>(pending: Promise<T>): Promise<T> {
+    const outcome = pending.then(value => ({ value }), error => ({ error }));
+    await jest.runAllTimersAsync();
+    const result = await outcome;
+    if ('error' in result) throw result.error;
+    return result.value;
+  }
+  it.each([false, true])('recovers page upload transport failure within the guarded execution, committed=%s', async committed => {
+    jest.useFakeTimers(); const f = fixture(); const upload = f.scoped.upload.getMockImplementation()!;
+    let failed = false;
+    f.scoped.upload.mockImplementation(async (bytes, options) => {
+      if (!failed && options.filePath.endsWith('/original/pages-0.json')) {
+        failed = true; if (committed) await upload(bytes, options); throw new Error('fetch failed');
+      }
+      return upload(bytes, options);
+    });
+    expect((await settle(f.service.executeStep('PR', f.scope, f.fence))).status).toBe('STAGING');
+    expect(f.scoped.upload.mock.calls.filter(([, options]) => options.filePath.endsWith('/original/pages-0.json')))
+      .toHaveLength(committed ? 1 : 2);
+    const first = Buffer.from(f.content.get('wiselink/parsed/DV/PR/original/pages-0.json')!.bytes);
+    expect((await settle(f.service.executeStep('PR', f.scope, f.fence))).status).toBe('PUBLISHED');
+    expect(f.parser).toHaveBeenCalledTimes(1); expect(f.repository.recordStepFailure).not.toHaveBeenCalled();
+    expect(f.extract.mock.calls.map(([input]) => input.pageStart)).toEqual([0, 8, 16, 24]);
+    expect(Buffer.from(f.content.get('wiselink/parsed/DV/PR/original/pages-0.json')!.bytes)).toEqual(first);
+    expect(f.repository.publish).toHaveBeenCalledTimes(1);
+  });
+  it.each(['authorization', 'lease'])('denies a resumed page write after %s changes without treating it as upload failure', async control => {
+    jest.useFakeTimers(); const f = fixture(); const upload = f.scoped.upload.getMockImplementation()!;
+    const check = control === 'authorization' ? f.authorize : f.checkLease;
+    f.scoped.upload.mockImplementation(async (bytes, options) => {
+      if (options.filePath.endsWith('/original/pages-0.json')) { check.mockRejectedValue(new Error('fetch failed')); throw new Error('fetch failed'); }
+      return upload(bytes, options);
+    });
+    await expect(settle(f.service.executeStep('PR', f.scope, f.fence))).rejects.toThrow('fetch failed');
+    expect(f.scoped.upload.mock.calls.filter(([, options]) => options.filePath.endsWith('/original/pages-0.json'))).toHaveLength(1);
+    expect(f.parser).toHaveBeenCalledTimes(1); expect(f.repository.publish).not.toHaveBeenCalled();
+  });
   it.each([false, true])('checkpoints two groups per execution and recovers lost page receipt=%s', async loseReceipt => {
     const f = fixture(loseReceipt);
     const { service, scope, fence, run, repository, compose, parser, extract, content, readOriginal } = f;
