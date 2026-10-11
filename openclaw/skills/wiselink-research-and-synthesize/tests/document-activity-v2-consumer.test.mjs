@@ -9,6 +9,9 @@ import { activityV2ProductionContract, DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA a
 import { canonicalSha256 } from '../scripts/validate-payload.mjs';
 import { activitySourceContextInventory, mergeActivitySourceContexts, validateActivitySourceContext } from '../scripts/merge-document-activity-source-context.mjs';
 
+// Native recovery fixtures below are synthetic. They verify the safety of the
+// explicit adapter seam, never business quality or a real native model result.
+
 const DOCUMENT = 'DV-v2-constructed', RUN = 'DAR-v2-constructed';
 const BINDING = { original: { documentVersionId: DOCUMENT, parseRunId: 'PR-v2', parseRevision: 1,
   sourceArtifactId: 'SRC-v2', sourceSha256: 'a'.repeat(64), sourceByteLength: 190 }, semanticRevision: 2 };
@@ -92,6 +95,144 @@ function harness(overrides = {}, records = new Map(), selection = false) {
   return { calls, inputs, records, productionContract, deps, summary,
     options: { documentVersionId: DOCUMENT, runRef: RUN, leaseOwner: FENCE.leaseOwner, skillVersion: 'constructed-skill', candidateSchemaVersion: V2, ...(selection ? { quoteSelectionSchemaVersion: SELECTION } : {}) } };
 }
+
+async function unknownNativeHarness(overrides = {}) {
+  const h = harness({}, new Map(), true);
+  await consumeHostedDocumentActivity(h.options, h.deps);
+  h.records.delete('model.result'); h.records.delete('save.started');
+  h.calls.length = 0; h.inputs.length = 0;
+  h.originalSource = JSON.stringify(h.records.get('source.result'));
+  h.originalStarted = JSON.stringify(h.records.get('model.started'));
+  h.nativeCalls = [];
+  h.options.recoverNativeResult = true;
+  h.deps.recoverNativeResult = async value => {
+    h.nativeCalls.push(structuredClone(value));
+    const candidate = overrides.proposal ?? proposal(true);
+    const modelVersion = 'constructed-model', inputHash = canonicalSha256(value.input);
+    return { proposal: candidate, modelVersion,
+      provenance: { modelVersion, ...h.productionContract, inputHash }, nativeRecovery: {
+        schemaVersion: 'wiselink.document.activity-native-recovery.v1', protocolAdaptation: true,
+        originalHttpWireRecovered: false, modelInvocations: 0, inputHash, documentVersionId: DOCUMENT,
+        runRef: RUN, startedAt: value.modelStarted.startedAt, deadline: value.deadline,
+        proposalSha256: canonicalSha256(candidate),
+      }, ...overrides.result };
+  };
+  return h;
+}
+
+test('default unknown consumer still stops before native recovery, READ or SAVE even if a dependency exists', async () => {
+  const h = await unknownNativeHarness(); delete h.options.recoverNativeResult;
+  await assert.rejects(consumeHostedDocumentActivity(h.options, h.deps), /ACTIVITY_MODEL_OUTCOME_UNKNOWN/);
+  assert.equal(h.inputs.length, 0); assert.equal(h.nativeCalls.length, 0);
+  assert.ok(!h.calls.some(call => ['ACTIVITY_READ', 'ACTIVITY_SAVE_SELECTION', 'ACTIVITY_FAIL'].includes(call.action)));
+});
+
+test('explicit native recovery reauthorizes exact source, keeps old markers and validates before one normal SAVE with zero models', async () => {
+  const h = await unknownNativeHarness();
+  const originalCall = h.deps.callTool;
+  h.deps.callTool = async (name, args) => {
+    const result = await originalCall(name, args);
+    if (args.action === 'ACTIVITY_CLAIM') result.fence = { ...result.fence, leaseGeneration: 2 };
+    return result;
+  };
+  const result = await consumeHostedDocumentActivity(h.options, h.deps);
+  assert.equal(result.status, 'ACTIVITY_WORK_SAVED'); assert.equal(result.modelInvocations, 0);
+  assert.equal(result.nativeRecovery.protocolAdaptation, true);
+  assert.equal(h.inputs.length, 0); assert.equal(h.nativeCalls.length, 1);
+  assert.equal(h.calls.filter(call => call.action === 'ACTIVITY_READ').length, 2);
+  const save = h.calls.filter(call => call.action === 'ACTIVITY_SAVE_SELECTION');
+  assert.equal(save.length, 1); assert.equal(save[0].leaseGeneration, 2);
+  assert.deepEqual(save[0].candidate, proposal(true));
+  assert.equal(JSON.stringify(h.records.get('source.result')), h.originalSource);
+  assert.equal(JSON.stringify(h.records.get('model.started')), h.originalStarted);
+  assert.deepEqual(h.records.get('model.result').proposal, proposal(true));
+  assert.equal(h.records.get('model.result').nativeRecovery.protocolAdaptation, true);
+  assert.ok(!h.calls.some(call => ['ACTIVITY_BEGIN', 'ACTIVITY_FAIL'].includes(call.action)));
+});
+
+test('explicit native recovery cannot start a model without an original marker or with changed full input hash', async () => {
+  for (const mutate of [h => h.records.delete('model.started'), h => h.records.get('model.started').inputHash = 'f'.repeat(64)]) {
+    const h = await unknownNativeHarness(); mutate(h);
+    await assert.rejects(consumeHostedDocumentActivity(h.options, h.deps), /ACTIVITY_(NATIVE_RECOVERY_UNVERIFIED|CHECKPOINT_BINDING_MISMATCH)/);
+    assert.equal(h.inputs.length, 0); assert.equal(h.nativeCalls.length, 0);
+    assert.ok(!h.calls.some(call => ['ACTIVITY_FAIL', 'ACTIVITY_SAVE_SELECTION'].includes(call.action)));
+    assert.equal(h.records.has('model.result'), false);
+  }
+});
+
+test('fresh READ denies changed authority or source before reading native evidence and never FAILs the old unknown run', async () => {
+  for (const mutate of [
+    page => page.anchors[0].sourceText += ' changed',
+    page => page.units[0].text += ' changed',
+    page => page.sourceCoverage.unresolvedRanges.push({ reason: 'new warning' }),
+    page => { throw new Error('private 403 body/url/header'); },
+  ]) {
+    const h = await unknownNativeHarness(); const originalCall = h.deps.callTool;
+    h.deps.callTool = async (name, args) => { const page = await originalCall(name, args);
+      if (args.action === 'ACTIVITY_READ') mutate(page); return page; };
+    await assert.rejects(consumeHostedDocumentActivity(h.options, h.deps));
+    assert.equal(h.inputs.length, 0); assert.equal(h.nativeCalls.length, 0);
+    assert.equal(h.records.has('model.result'), false);
+    assert.equal(JSON.stringify(h.records.get('source.result')), h.originalSource);
+    assert.equal(JSON.stringify(h.records.get('model.started')), h.originalStarted);
+    assert.ok(!h.calls.some(call => ['ACTIVITY_FAIL', 'ACTIVITY_SAVE_SELECTION'].includes(call.action)));
+    assert.equal(JSON.stringify(h.records.get('failure.diagnostic')).includes('private'), false);
+  }
+});
+
+test('actual arguments must pass unchanged strict quote/context validation and provenance before model.result or SAVE', async () => {
+  const badQuote = proposal(true); badQuote.statements[0].quotes[0].text = 'not in the delivered source';
+  for (const overrides of [{ proposal: badQuote }, { result: { provenance: { configuredFallback: true } } }]) {
+    const h = await unknownNativeHarness(overrides);
+    await assert.rejects(consumeHostedDocumentActivity(h.options, h.deps), /ACTIVITY_(QUOTE_SELECTION|MODEL_PROVENANCE)/);
+    assert.equal(h.nativeCalls.length, 1); assert.equal(h.inputs.length, 0);
+    assert.equal(h.records.has('model.result'), false);
+    assert.ok(!h.calls.some(call => ['ACTIVITY_FAIL', 'ACTIVITY_SAVE_SELECTION'].includes(call.action)));
+  }
+});
+
+test('native recovery evidence failure and result persistence failure remain unknown without a new model or SAVE', async () => {
+  for (const stage of ['native', 'persist']) {
+    const h = await unknownNativeHarness();
+    if (stage === 'native') h.deps.recoverNativeResult = async () => { throw new Error('ACTIVITY_NATIVE_RECOVERY_UNVERIFIED'); };
+    else {
+      const factory = h.deps.checkpointFactory;
+      h.deps.checkpointFactory = async () => { const checkpoint = await factory(); const write = checkpoint.write;
+        checkpoint.write = async (name, value) => { if (name === 'model.result') throw new Error('private storage error'); return write(name, value); }; return checkpoint; };
+    }
+    await assert.rejects(consumeHostedDocumentActivity(h.options, h.deps));
+    assert.equal(h.inputs.length, 0); assert.equal(h.records.has('model.result'), false);
+    assert.ok(!h.calls.some(call => ['ACTIVITY_FAIL', 'ACTIVITY_SAVE_SELECTION'].includes(call.action)));
+    assert.equal(JSON.stringify(h.records.get('source.result')), h.originalSource);
+    assert.equal(JSON.stringify(h.records.get('model.started')), h.originalStarted);
+    assert.equal(h.records.get('failure.diagnostic').category, stage === 'native' ? 'PROVENANCE' : 'PERSIST');
+  }
+});
+
+test('a previously saved original run only returns STATUS; native recovery cannot duplicate the SAVE', async () => {
+  const h = await unknownNativeHarness(); const originalCall = h.deps.callTool;
+  h.deps.callTool = async (name, args) => { const result = await originalCall(name, args);
+    if (args.action === 'ACTIVITY_STATUS') result.result = saved(proposal(true)); return result; };
+  const result = await consumeHostedDocumentActivity(h.options, h.deps);
+  assert.equal(result.recoveredFromStatus, true); assert.equal(result.modelInvocations, 0);
+  assert.equal(h.nativeCalls.length, 0); assert.equal(h.inputs.length, 0);
+  assert.deepEqual(h.calls.map(call => call.action), ['STATUS', 'ACTIVITY_STATUS']);
+});
+
+test('a dispatched native recovery SAVE with unknown outcome is never resubmitted on the next opt-in invocation', async () => {
+  const h = await unknownNativeHarness(); const originalCall = h.deps.callTool;
+  h.deps.callTool = async (name, args) => {
+    if (args.action === 'ACTIVITY_SAVE_SELECTION') { await originalCall(name, args); throw new Error('unknown save'); }
+    return originalCall(name, args);
+  };
+  await assert.rejects(consumeHostedDocumentActivity(h.options, h.deps), /ACTIVITY_SAVE_UNCONFIRMED/);
+  const nativeCalls = h.nativeCalls.length, started = JSON.stringify(h.records.get('model.result'));
+  await assert.rejects(consumeHostedDocumentActivity(h.options, h.deps), /ACTIVITY_SAVE_UNCONFIRMED/);
+  assert.equal(h.calls.filter(call => call.action === 'ACTIVITY_SAVE_SELECTION').length, 1);
+  assert.equal(h.nativeCalls.length, nativeCalls); assert.equal(h.inputs.length, 0);
+  assert.equal(JSON.stringify(h.records.get('model.result')), started);
+  assert.ok(!h.calls.some(call => call.action === 'ACTIVITY_FAIL'));
+});
 
 test('strict v2 mirror preserves full raw, quote order, negation, multitime, technical identifiers and parent condition', () => {
   const p = proposal(), bytes = JSON.stringify(p);

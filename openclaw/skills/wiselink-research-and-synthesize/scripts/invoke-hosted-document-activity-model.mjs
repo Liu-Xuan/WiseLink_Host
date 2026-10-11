@@ -43,6 +43,8 @@ import {
   activityV2QuoteSelectionFunctionTool, activityV2SystemMessage,
 } from './document-activity-model-contract.mjs';
 import { validateActivitySourceContext } from './merge-document-activity-source-context.mjs';
+import { recoverNativeDocumentActivityResult } from './recover-native-document-activity-result.mjs';
+import { activityFailureDiagnostic, safeActivityDriverError } from './document-activity-failure-diagnostic.mjs';
 export {
   ACTIVITY_MODEL_V2_PROMPT_VERSION, ACTIVITY_MODEL_V2_SOURCE_CONTEXT_PROMPT_VERSION,
   ACTIVITY_MODEL_V2_SOURCE_CONTEXT_SELECTION_PROMPT_VERSION, activityV2ProductionContract,
@@ -300,12 +302,33 @@ function option(argv, name) {
   return index < 0 ? undefined : argv[index + 1];
 }
 
+/** Operator-only opt-in. Neither cron/default consumption nor a store path by
+ * itself enables recovery. Exact original run and both owned evidence paths
+ * must be named; no native "last output" discovery or configured fallback. */
+export function nativeActivityRecoveryOptions(argv) {
+  const enabled = argv.includes('--recover-native-result');
+  const storePath = option(argv, '--native-session-store');
+  const trajectoryPath = option(argv, '--native-trajectory-file');
+  if (!enabled && (storePath !== undefined || trajectoryPath !== undefined))
+    throw new Error('ACTIVITY_NATIVE_RECOVERY_OPT_IN_REQUIRED');
+  if (!enabled) return null;
+  if (argv.filter(value => value === '--recover-native-result').length !== 1 ||
+      ['--native-session-store', '--native-trajectory-file', '--activity-run-ref', '--candidate-schema-version', '--exact-quote-selection']
+        .some(flag => argv.filter(value => value === flag).length !== 1) ||
+      typeof storePath !== 'string' || storePath.startsWith('--') || !storePath ||
+      typeof trajectoryPath !== 'string' || trajectoryPath.startsWith('--') || !trajectoryPath ||
+      !/^DAR-[A-Za-z0-9-]+$/u.test(option(argv, '--activity-run-ref') ?? '') ||
+      option(argv, '--candidate-schema-version') !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2)
+    throw new Error('ACTIVITY_NATIVE_RECOVERY_UNVERIFIED');
+  return { storePath, trajectoryPath };
+}
+
 /** Real CLI entry: consumes one already-begun activity run end to end.
  * The checkpoint directory is keyed by endpoint (origin+path, never a token),
  * documentVersionId and runRef; every file is 0600 inside a 0700 root. */
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node invoke-hosted-document-activity-model.mjs --document-version-id DV [--activity-run-ref ID] [--lease-owner ID] [--checkpoint-root PATH] [--openclaw-config PATH] [--agent ID] [--candidate-schema-version VERSION] [--exact-quote-selection]\nConsumes one already-begun Host document-activity run end to end. Never sends ACTIVITY_BEGIN; a null pending discovery stays idle.\n');
+    process.stdout.write('Usage: node invoke-hosted-document-activity-model.mjs --document-version-id DV [--activity-run-ref ID] [--lease-owner ID] [--checkpoint-root PATH] [--openclaw-config PATH] [--agent ID] [--candidate-schema-version VERSION] [--exact-quote-selection] [--recover-native-result --native-session-store PATH --native-trajectory-file PATH]\nConsumes one already-begun Host document-activity run end to end. Never sends ACTIVITY_BEGIN; a null pending discovery stays idle. Native recovery requires an explicit original v2 selection run and its owned evidence paths; it performs zero model calls and preserves original dispatch/source markers.\n');
     return;
   }
   const documentVersionId = option(argv, '--document-version-id');
@@ -314,8 +337,9 @@ async function main(argv, env) {
   const runRef = option(argv, '--activity-run-ref');
   if (runRef !== undefined && !/^[A-Za-z0-9_-]{1,96}$/u.test(runRef))
     throw new Error('ACTIVITY_RUN_REF_INVALID');
+  const recovery = nativeActivityRecoveryOptions(argv);
   const runtime = await resolveRuntimeConfig(argv, env);
-  assertHostedModelGatewayReady(runtime);
+  if (!recovery) assertHostedModelGatewayReady(runtime);
   const leaseOwner = option(argv, '--lease-owner') ?? `openclaw:${runtime.agentId}`;
   const checkpointRoot = option(argv, '--checkpoint-root') ?? join(homedir(), '.openclaw', 'wiselink-activity-runs');
   const endpoint = new URL(runtime.hostMcpUrl);
@@ -325,12 +349,14 @@ async function main(argv, env) {
   const connection = await createHostMcpConnection(runtime);
   try {
     const result = await consumeHostedDocumentActivity(
-      { documentVersionId, runRef, leaseOwner, candidateSchemaVersion: option(argv, '--candidate-schema-version') ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, ...(argv.includes('--exact-quote-selection') ? { quoteSelectionSchemaVersion: DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA } : {}) },
+      { documentVersionId, runRef, leaseOwner, candidateSchemaVersion: option(argv, '--candidate-schema-version') ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA,
+        ...(argv.includes('--exact-quote-selection') ? { quoteSelectionSchemaVersion: DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA } : {}),
+        ...(recovery ? { recoverNativeResult: true } : {}) },
       {
         callTool: connection.callTool,
         checkpointFactory,
-        invokeModel: (modelInput, hooks) => invokeHostedDocumentActivityModel(
-          modelInput, { ...runtime, ...hooks }),
+        ...(recovery ? { recoverNativeResult: input => recoverNativeDocumentActivityResult({ ...input, ...recovery }) }
+          : { invokeModel: (modelInput, hooks) => invokeHostedDocumentActivityModel(modelInput, { ...runtime, ...hooks }) }),
       });
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } finally {
@@ -340,7 +366,7 @@ async function main(argv, env) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main(process.argv.slice(2), process.env).catch((error) => {
-    process.stderr.write(`${error?.message ?? 'ACTIVITY_DRIVER_FAILED'}\n`);
+    process.stderr.write(`${safeActivityDriverError(error)}\n${JSON.stringify(activityFailureDiagnostic(error, error?.activityDiagnostic?.stage))}\n`);
     process.exitCode = 1;
   });
 }

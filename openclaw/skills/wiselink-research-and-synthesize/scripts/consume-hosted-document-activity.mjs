@@ -31,6 +31,7 @@ import { WISELINK_SKILL_VERSION, canonicalSha256 } from './validate-payload.mjs'
 import { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA,
   DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA, activityV2ProductionContract } from './document-activity-model-contract.mjs';
 import { activitySourceContextInventory, mergeActivitySourceContexts, validateActivitySourceContext } from './merge-document-activity-source-context.mjs';
+import { activityFailureDiagnostic } from './document-activity-failure-diagnostic.mjs';
 export { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA,
   DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA } from './document-activity-model-contract.mjs';
 
@@ -652,6 +653,10 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
   if (quoteSelectionSchemaVersion !== undefined && quoteSelectionSchemaVersion !== DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA)
     throw new Error('ACTIVITY_QUOTE_SELECTION_SCHEMA_INVALID');
   const selectionMode = quoteSelectionSchemaVersion === DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA;
+  const nativeRecoveryMode = options.recoverNativeResult === true;
+  if (nativeRecoveryMode && (!options.runRef || candidateSchemaVersion !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ||
+      !selectionMode || typeof dependencies.recoverNativeResult !== 'function'))
+    throw new Error('ACTIVITY_NATIVE_RECOVERY_UNVERIFIED');
   const saveAction = selectionMode ? 'ACTIVITY_SAVE_SELECTION' : 'ACTIVITY_SAVE';
   const checkpointSchema = candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? ACTIVITY_CHECKPOINT_V2_SCHEMA
     : selectionMode ? ACTIVITY_CHECKPOINT_QUOTE_SELECTION_SCHEMA : ACTIVITY_CHECKPOINT_SCHEMA;
@@ -728,6 +733,9 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
   let modelDispatched = false;
   let checkpointReadComplete = false;
   let definitiveModelError = false;
+  let checkpoint;
+  let diagnosticStage = 'CHECKPOINT_READ';
+  let nativeRecovery;
   try {
     lease.throwIfLost();
   const sectionIds = claim.selection.sectionIds;
@@ -744,7 +752,7 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
   // layout (0700/0600, keyed by endpoint origin+path without any token,
   // documentVersionId and runRef). Recovery reuses only strictly bound
   // persisted steps and never regenerates or re-dispatches an unknown one.
-  const checkpoint = typeof dependencies.checkpointFactory === 'function'
+  checkpoint = typeof dependencies.checkpointFactory === 'function'
     ? await lease.guard(() => dependencies.checkpointFactory({ documentVersionId, runRef }))
     : null;
   const writeCheckpoint = (name, record) => checkpoint
@@ -787,10 +795,16 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     if (recoveredSaved !== undefined)
       return { status: 'ACTIVITY_WORK_SAVED', documentVersionId, runRef, saved: recoveredSaved,
         modelInvocations: 0, candidateOnly: true, recoveredFromUnknownModel: true };
-    throw new Error('ACTIVITY_MODEL_OUTCOME_UNKNOWN');
+    if (!nativeRecoveryMode || persisted.source == null)
+      throw new Error('ACTIVITY_MODEL_OUTCOME_UNKNOWN');
   }
+  // Explicit recovery can never become a new model invocation if the original
+  // durable dispatch marker is absent. Default consumers still stop above.
+  if (nativeRecoveryMode && persisted.modelStarted == null && persisted.modelResult == null)
+    throw new Error('ACTIVITY_NATIVE_RECOVERY_UNVERIFIED');
   priorSaveDispatched = persisted.saveStarted != null;
 
+    diagnosticStage = 'SOURCE';
     if (!sectionIds.length) throw new Error('ACTIVITY_SELECTION_EMPTY');
     let sourceBinding;
     const deliveredAnchors = [];
@@ -901,12 +915,45 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     }
     // Durable source: the delivery, selection and fence are persisted before
     // any model work so a later attempt never re-reads a changed delivery.
-    await writeCheckpoint('source.result', {
+    if (!nativeRecoveryMode) await writeCheckpoint('source.result', {
       schemaVersion: checkpointSchema, documentVersionId, runRef, ...checkpointPins,
       parseRunId: claim.parseRunId, semanticRevision: claim.semanticRevision,
       sourceBinding, selection: claim.selection, units, anchors: deliveredAnchors,
       deliveredRanges, sourceCoverage, fence, ...(sourceContext ? { sourceContext } : {}),
     });
+
+    if (nativeRecoveryMode && persisted.modelResult == null) {
+      // Host READ independently rechecks current actor/member/source authority
+      // under this fresh fence. Reuse no package claims or old authorization.
+      const currentUnits = new Map(), currentAnchors = new Map();
+      const currentRanges = [], currentContexts = [];
+      for (const sectionId of sectionIds) {
+        let offset = 0, pages = 0;
+        for (;;) {
+          const read = validateReadReceipt(await call('ACTIVITY_READ', {
+            ...fence, documentVersionId, runRef, sectionId, offset, limit,
+          }), documentVersionId, runRef, sectionId, offset, claim);
+          if (!isDeepStrictEqual(read.sourceBinding, sourceBinding) || !isDeepStrictEqual(read.sourceCoverage, sourceCoverage))
+            throw new Error('ACTIVITY_NATIVE_RECOVERY_SOURCE_CHANGED');
+          for (const [values, target, key] of [[read.units, currentUnits, 'unitId'], [read.anchors, currentAnchors, 'anchorId']]) {
+            for (const value of values) {
+              if (target.has(value[key]) && !isDeepStrictEqual(target.get(value[key]), value))
+                throw new Error('ACTIVITY_NATIVE_RECOVERY_SOURCE_CHANGED');
+              target.set(value[key], value);
+            }
+          }
+          currentRanges.push(read.range); currentContexts.push(read.sourceContext);
+          if (read.range.nextOffset === null) break;
+          offset = read.range.nextOffset;
+          if (++pages >= maxPages) throw new Error('ACTIVITY_READ_PAGES_EXCEEDED');
+        }
+      }
+      const currentContext = mergeActivitySourceContexts(currentContexts, { sourceBinding,
+        units: [...currentUnits.values()], deliveredRanges: currentRanges, selectedSectionIds: sectionIds });
+      if (!isDeepStrictEqual([...currentUnits.values()], units) || !isDeepStrictEqual([...currentAnchors.values()], deliveredAnchors) ||
+          !isDeepStrictEqual(currentRanges, deliveredRanges) || !isDeepStrictEqual(currentContext, sourceContext))
+        throw new Error('ACTIVITY_NATIVE_RECOVERY_SOURCE_CHANGED');
+    }
 
     // Mirror Host anchor-source checks with the delivered fields we hold:
     // every anchor keeps non-empty sourceRefIds covered by its locators.
@@ -942,6 +989,22 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
       proposal = persisted.modelResult.proposal;
       modelVersion = persisted.modelResult.modelVersion;
       modelProvenance = persisted.modelResult.provenance;
+      nativeRecovery = persisted.modelResult.nativeRecovery;
+    } else if (nativeRecoveryMode) {
+      diagnosticStage = 'NATIVE_RECOVERY';
+      if (persisted.modelStarted.inputHash !== inputHash)
+        throw new Error('ACTIVITY_CHECKPOINT_BINDING_MISMATCH');
+      const recovered = await lease.guard(() => dependencies.recoverNativeResult({
+        input: modelInput, modelStarted: persisted.modelStarted, deadline: claim.deadline,
+      }));
+      proposal = recovered?.proposal; modelVersion = recovered?.modelVersion;
+      modelProvenance = recovered?.provenance; nativeRecovery = recovered?.nativeRecovery;
+      if (nativeRecovery?.protocolAdaptation !== true || nativeRecovery.originalHttpWireRecovered !== false ||
+          nativeRecovery.modelInvocations !== 0 || nativeRecovery.inputHash !== inputHash ||
+          nativeRecovery.runRef !== runRef || nativeRecovery.documentVersionId !== documentVersionId ||
+          nativeRecovery.startedAt !== persisted.modelStarted.startedAt || nativeRecovery.deadline !== claim.deadline ||
+          nativeRecovery.proposalSha256 !== canonicalSha256(proposal))
+        throw new Error('ACTIVITY_NATIVE_RECOVERY_UNVERIFIED');
     } else {
       if (typeof dependencies.invokeModel !== 'function')
         throw new Error('ACTIVITY_MODEL_EXECUTOR_REQUIRED');
@@ -953,6 +1016,7 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
         documentVersionId, runRef, inputHash, startedAt: new Date().toISOString() });
       lease.throwIfLost();
       let modelResult;
+      diagnosticStage = 'MODEL';
       try {
         modelDispatched = true;
         modelResult = await lease.guard(() => dependencies.invokeModel(modelInput, { signal: lease.signal }));
@@ -967,6 +1031,7 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
       modelProvenance = modelResult?.provenance;
       modelInvocations = 1;
     }
+    diagnosticStage = 'PROPOSAL_VALIDATION';
     try {
     if (typeof modelVersion !== 'string' || !modelVersion.trim() ||
         modelVersion.length > 160) throw new Error('ACTIVITY_MODEL_VERSION_INVALID');
@@ -979,11 +1044,13 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     else validateActivityProposal(proposal, deliveredAnchors, { sourceBinding, sourceContext, units, deliveredRanges, sectionIds });
     } catch (error) { definitiveModelError = true; throw error; }
     // Model result with the actual modelVersion BEFORE SAVE:
+    diagnosticStage = 'MODEL_PERSIST';
     try {
-    await writeCheckpoint('model.result', {
+    if (!(nativeRecoveryMode && persisted.modelResult != null)) await writeCheckpoint('model.result', {
       schemaVersion: checkpointSchema, step: 'model', ...checkpointPins,
       documentVersionId, runRef, inputHash, modelVersion, proposal,
       ...(candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? { provenance: modelProvenance } : {}),
+      ...(nativeRecovery ? { nativeRecovery } : {}),
       finishedAt: new Date().toISOString() });
     } catch (error) { throw new Error('ACTIVITY_MODEL_OUTCOME_UNKNOWN', { cause: error }); }
 
@@ -997,6 +1064,7 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     const saveFields = { ...fence, documentVersionId, runRef, candidate, producer };
 
     let saved;
+    diagnosticStage = 'SAVE';
     lease.throwIfLost();
     if (priorSaveDispatched) {
       // A prior attempt already recorded this exact SAVE command before its
@@ -1047,21 +1115,29 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
           throw new Error('ACTIVITY_SAVE_UNCONFIRMED', { cause: error });
       }
     }
+    diagnosticStage = 'SAVE_READBACK';
     validateSavedReceipt(saved, {
       documentVersionId, runRef, sourceBinding, producer, statementCount: proposal.statements.length,
       candidateSchemaVersion, sourceContext, expectedStatements: canonicalProposal.statements,
       expectedAnchors: deliveredAnchors, expectedReadCoverage: { status: 'DELIVERED_RANGES_ONLY',
         selection: claim.selection, deliveredRanges, sourceCoverage } });
     return { status: 'ACTIVITY_WORK_SAVED', documentVersionId, runRef,
-      saved, producer, modelInvocations, candidateOnly: true };
+      saved, producer, modelInvocations, candidateOnly: true,
+      ...(nativeRecovery ? { nativeRecovery } : {}) };
   } catch (error) {
+    const diagnostic = activityFailureDiagnostic(error, diagnosticStage);
+    if (error && typeof error === 'object') error.activityDiagnostic = diagnostic;
+    if (checkpoint) {
+      try { await checkpoint.write('failure.diagnostic', diagnostic); }
+      catch { /* Diagnostics never authorize retry or mask the original error. */ }
+    }
     // Local, deterministic failures are isolated to this run through a fenced
     // ACTIVITY_FAIL. Once the SAVE has been dispatched the outcome may be
     // persisted Host-side: every unconfirmed path — a failing or malformed
     // recovery STATUS, a malformed receipt — is never FAILed, never retried
     // and never reported as success. An unknown model outcome and a lost
     // lease never FAIL either: the run stays pending for its owner.
-    if (checkpointReadComplete && (!modelDispatched || definitiveModelError) &&
+    if (!nativeRecoveryMode && checkpointReadComplete && (!modelDispatched || definitiveModelError) &&
         !saveDispatched && !priorSaveDispatched && lease.lost == null &&
         error?.message !== 'ACTIVITY_MODEL_OUTCOME_UNKNOWN') {
       try { await call('ACTIVITY_FAIL', { ...fence, documentVersionId, runRef, errorCode: consumerErrorCode(error) }); }
