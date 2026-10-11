@@ -38,9 +38,10 @@ import {
 } from './consume-hosted-document-activity.mjs';
 import {
   DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA,
-  ACTIVITY_MODEL_V2_PROMPT_VERSION, ACTIVITY_MODEL_V2_RECOVERED_USER_PREFIX,
+  ACTIVITY_MODEL_V2_PROMPT_VERSION,
   activityV2ProductionContract, activityV2ProposalFunctionTool,
   activityV2QuoteSelectionFunctionTool, activityV2SystemMessage,
+  activityV2UserContent,
 } from './document-activity-model-contract.mjs';
 import { validateActivitySourceContext } from './merge-document-activity-source-context.mjs';
 import { recoverNativeDocumentActivityResult } from './recover-native-document-activity-result.mjs';
@@ -167,7 +168,8 @@ function modelContractForInput(input) {
       ...(input.units ? { units: input.units } : {}),
       ...(input.deliveredRanges ? { deliveredRanges: input.deliveredRanges } : {}),
       ...(input.sectionIds ? { selectedSectionIds: input.sectionIds } : {}) });
-    const productionContract = activityV2ProductionContract(selection ? DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA : DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA);
+    const productionContract = activityV2ProductionContract(selection ? DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA : DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA,
+      input.productionContract?.promptVersion);
     if (!isDeepStrictEqual(input.productionContract, productionContract)) throw new Error('ACTIVITY_PRODUCTION_CONTRACT_INVALID');
     return { schema, selection, sourceContext: true, tool, ...productionContract };
   }
@@ -180,7 +182,7 @@ export function activityModelMessages(input) {
   const contract = modelContractForInput(input);
   if (contract.schema === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2) return [
     { role: 'system', content: activityV2SystemMessage(contract) },
-    { role: 'user', content: `${ACTIVITY_MODEL_V2_RECOVERED_USER_PREFIX}INPUT:\n${canonicalJson(input)}` },
+    { role: 'user', content: activityV2UserContent(input) },
   ];
   if (input?.quoteSelectionSchemaVersion !== undefined) return quoteSelectionMessages(input);
   const system = [

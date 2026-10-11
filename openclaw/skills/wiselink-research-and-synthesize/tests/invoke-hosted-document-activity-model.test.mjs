@@ -16,8 +16,12 @@ import {
 import { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 as V2,
   DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA as CONTEXT, DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA as SELECTION,
 } from '../scripts/consume-hosted-document-activity.mjs';
-import { canonicalSha256 } from '../scripts/validate-payload.mjs';
-import { ACTIVITY_MODEL_V2_PROMPT_VERSION } from '../scripts/document-activity-model-contract.mjs';
+import { canonicalJson, canonicalSha256 } from '../scripts/validate-payload.mjs';
+import { ACTIVITY_MODEL_V2_PROMPT_VERSION, activityV2UserContent,
+  ACTIVITY_MODEL_V2_SOURCE_CONTEXT_SELECTION_PROMPT_VERSION as OLD,
+  ACTIVITY_MODEL_V2_EVIDENCE_VIEW_SELECTION_PROMPT_VERSION as NEW } from '../scripts/document-activity-model-contract.mjs';
+import { restoreActivityModelEvidenceView } from '../scripts/activity-model-evidence-view.mjs';
+import { activityEvidenceInput } from './fixtures/activity-model-evidence-input.mjs';
 
 // The local server is a stand-in gateway: it records the real HTTP request
 // and returns one chat completion carrying the proposal as function
@@ -289,7 +293,7 @@ const v2Input = (selection = false) => {
   const source = input();
   return { ...source, candidateSchemaVersion: V2,
     ...(selection ? { quoteSelectionSchemaVersion: SELECTION } : {}),
-    productionContract: activityV2ProductionContract(selection ? SELECTION : undefined),
+    productionContract: activityV2ProductionContract(selection ? SELECTION : undefined, selection ? OLD : undefined),
     sourceContext: { schemaVersion: CONTEXT, sourceBinding: source.sourceBinding,
       profile: { profileRef: 'generic.author-sections.v1', selectionBasis: 'NOT_RECORDED', family: null, issuer: null },
       sections: [{ sectionId: 'S-a', parentSectionId: null, titleRaw: null, roleKey: null, headingUnitId: null,
@@ -356,6 +360,39 @@ test('a production v2 adapter rejects wrong prompt/tool/context/transport pins b
   assert.throws(() => activityModelMessages({ ...input(), candidateSchemaVersion: 'unknown' }), /MODEL_SCHEMA_INVALID/);
   const source = v2Input(); source.sourceContext.sourceBinding = { ...source.sourceBinding, semanticRevision: 4 };
   assert.throws(() => activityModelMessages(source), /SOURCE_CONTEXT_BINDING_MISMATCH/);
+});
+
+test('fresh ordinary selection factory chooses the evidence version and one request conserves the original input hash', async () => {
+  const input = activityEvidenceInput();
+  assert.equal(activityV2ProductionContract(SELECTION).promptVersion, NEW);
+  let requests = 0, captured;
+  const proposal = { schemaVersion: V2, quoteSelectionSchemaVersion: SELECTION, statements: [] };
+  const result = await invokeHostedDocumentActivityModel(input, stubOptions, {
+    requestGateway: async (_endpoint, request) => {
+      requests++; captured = JSON.parse(request.body);
+      return new Response(JSON.stringify(completion('synthetic-evidence-model', proposal)), { status: 200 });
+    },
+  });
+  assert.equal(requests, 1); assert.deepEqual(result.proposal, proposal);
+  assert.equal(captured.messages[1].content, activityV2UserContent(input));
+  const view = JSON.parse(captured.messages[1].content.split('INPUT:\n')[1]);
+  assert.equal(canonicalJson(restoreActivityModelEvidenceView(view, canonicalSha256(input))), canonicalJson(input));
+  assert.equal(result.provenance.inputHash, canonicalSha256(input));
+  assert.equal(result.provenance.promptVersion, NEW);
+  assert.equal(canonicalSha256(captured.tools), '9309b553fa467314ad48d40593aad0b2e38191eee4ec9c277b3e0948ad8a33a9');
+  const old = activityEvidenceInput(OLD);
+  assert.equal(canonicalSha256(activityModelMessages(old)[0]), canonicalSha256(activityModelMessages(v2Input(true))[0]));
+  assert.ok(captured.messages[0].content.startsWith(activityModelMessages(old)[0].content));
+  assert.match(captured.messages[0].content, /Equal values do not merge source identities/u);
+});
+
+test('new codec rejects mismatched source pointers before any gateway request, without an old-format fallback', async () => {
+  const input = activityEvidenceInput(); input.anchors[0].sourceText += ' unbound';
+  let requests = 0;
+  await assert.rejects(invokeHostedDocumentActivityModel(input, stubOptions, {
+    requestGateway: async () => { requests++; throw new Error('must not dispatch'); },
+  }), /ACTIVITY_MODEL_EVIDENCE_POINTER_OR_LOCATOR_INVALID/u);
+  assert.equal(requests, 0);
 });
 
 for (const [name, mutate] of [

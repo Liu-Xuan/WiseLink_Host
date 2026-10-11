@@ -34,6 +34,18 @@ test('untrusted errors and provider-private text never become CLI errors or diag
     'ACTIVITY_QUOTE_SELECTION_TEXT_NOT_FOUND:STATEMENT_1:QUOTE_2');
 });
 
+test('bounded evidence failures have only a fixed pre-dispatch source category, never raw private suffixes', () => {
+  const error = new Error('ACTIVITY_MODEL_EVIDENCE_POINTER_OR_LOCATOR_INVALID');
+  assert.deepEqual(activityFailureDiagnostic(error, 'MODEL_INPUT'), {
+    schemaVersion: 'wiselink.document.activity-failure-diagnostic.v1', stage: 'MODEL_INPUT',
+    category: 'SOURCE', code: error.message, httpStatus: null, retryAuthorized: false, rawErrorIncluded: false,
+  });
+  assert.equal(safeActivityDriverError(error), error.message);
+  const privateError = new Error(`${error.message}: private source URL`);
+  assert.equal(activityFailureDiagnostic(privateError, 'MODEL_INPUT').code, null);
+  assert.equal(safeActivityDriverError(privateError), 'ACTIVITY_DRIVER_FAILED');
+});
+
 test('technical-ID quote rejection keeps its fixed code through an unknown wrapper', () => {
   const cause = new Error('ACTIVITY_TECHNICAL_ID_NOT_QUOTED');
   for (const error of [cause, new Error('ACTIVITY_MODEL_OUTCOME_UNKNOWN', { cause })]) {

@@ -5,21 +5,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { recoverNativeDocumentActivityResult } from '../scripts/recover-native-document-activity-result.mjs';
 import { nativeActivityRecoveryOptions } from '../scripts/invoke-hosted-document-activity-model.mjs';
-import { ACTIVITY_MODEL_V2_RECOVERED_USER_PREFIX, activityV2ProductionContract,
+import { ACTIVITY_MODEL_V2_RECOVERED_USER_PREFIX, activityV2UserContent,
+  ACTIVITY_MODEL_V2_SOURCE_CONTEXT_SELECTION_PROMPT_VERSION as OLD,
+  ACTIVITY_MODEL_V2_EVIDENCE_VIEW_SELECTION_PROMPT_VERSION as NEW,
   DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 as V2 } from '../scripts/document-activity-model-contract.mjs';
+import { activityModelEvidenceView } from '../scripts/activity-model-evidence-view.mjs';
+import { activityEvidenceInput } from './fixtures/activity-model-evidence-input.mjs';
 import { DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA as SELECTION } from '../scripts/resolve-document-activity-quote-selection.mjs';
 import { canonicalJson, canonicalSha256 } from '../scripts/validate-payload.mjs';
 
-async function fixture(run) {
+async function fixture(run, promptVersion = OLD) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'native-activity-recovery-')));
   const sessionId = '11111111-2222-3333-4444-555555555555';
-  const input = { candidateSchemaVersion: V2, quoteSelectionSchemaVersion: SELECTION,
-    productionContract: activityV2ProductionContract(SELECTION),
-    documentVersionId: 'DV-synthetic', runRef: 'DAR-synthetic', sectionIds: ['section-one'],
-    selection: { sectionIds: ['section-one'] }, sourceBinding: {
-      original: { documentVersionId: 'DV-synthetic', parseRunId: 'PR-synthetic', parseRevision: 2,
-        sourceArtifactId: 'SRC-synthetic', sourceSha256: 'a'.repeat(64), sourceByteLength: 100 }, semanticRevision: 1 },
-    sourceContext: { synthetic: true }, units: [], anchors: [], deliveredRanges: [], sourceCoverage: { complete: false } };
+  const input = activityEvidenceInput(promptVersion);
   const modelStarted = { schemaVersion: 'wiselink.document.activity-checkpoint.v2', step: 'model', candidateSchemaVersion: V2,
     sourceContextVersion: input.productionContract.sourceContextVersion, quoteTransportVersion: input.productionContract.quoteTransportVersion,
     documentVersionId: input.documentVersionId, runRef: input.runRef,
@@ -48,7 +46,7 @@ async function fixture(run) {
   const transcript = [{ type: 'session', id: sessionId },
     { type: 'model_change', provider: assistant.message.provider, modelId: assistant.message.model },
     { type: 'message', id: 'user-one', timestamp: '2026-10-11T06:00:01.000Z', message: {
-      role: 'user', content: [{ type: 'text', text: `${ACTIVITY_MODEL_V2_RECOVERED_USER_PREFIX}INPUT:\n${canonicalJson(input)}` }] } },
+      role: 'user', content: [{ type: 'text', text: activityV2UserContent(input) }] } },
     rejectedAssistant, rejectedReceipt, assistant, receipt];
   const base = { sessionKey, sessionId, runId: 'run-synthetic', ts: '2026-10-11T06:02:02.000Z' };
   const trajectory = [{ ...base, type: 'model.completed', data: { messagesSnapshot: [structuredClone(assistant.message)],
@@ -146,6 +144,29 @@ test('owned native files reject symlink substitution and foreign session path', 
     f.index[f.sessionKey].sessionFile = join(f.directory, 'foreign.jsonl'); await f.save();
     await assert.rejects(recoverNativeDocumentActivityResult(f.options), /ACTIVITY_NATIVE_RECOVERY_UNVERIFIED/u);
   });
+});
+
+test('both pinned user formats recover the exact accepted synthetic arguments without changing native provenance guards', async () => {
+  for (const promptVersion of [OLD, NEW]) await fixture(async f => {
+    const before = await Promise.all([f.options.storePath, f.options.trajectoryPath,
+      f.index[f.sessionKey].sessionFile].map(path => readFile(path)));
+    const result = await recoverNativeDocumentActivityResult(f.options);
+    assert.deepEqual(result.proposal, f.call.arguments);
+    assert.equal(result.provenance.promptVersion, promptVersion);
+    assert.equal(result.provenance.inputHash, canonicalSha256(f.options.input));
+    assert.equal(result.nativeRecovery.modelInvocations, 0);
+    assert.deepEqual(await Promise.all([f.options.storePath, f.options.trajectoryPath,
+      f.index[f.sessionKey].sessionFile].map(path => readFile(path))), before);
+  }, promptVersion);
+});
+
+test('a native user wire inconsistent with the frozen old/new version is rejected rather than reinterpreted', async () => {
+  for (const promptVersion of [OLD, NEW]) await fixture(async f => {
+    const body = promptVersion === OLD ? activityModelEvidenceView(f.options.input) : f.options.input;
+    f.transcript[2].message.content[0].text = `${ACTIVITY_MODEL_V2_RECOVERED_USER_PREFIX}INPUT:\n${canonicalJson(body)}`;
+    await f.save();
+    await assert.rejects(recoverNativeDocumentActivityResult(f.options), /ACTIVITY_NATIVE_RECOVERY_UNVERIFIED/u);
+  }, promptVersion);
 });
 
 test('CLI recovery requires explicit flag, original run, v2 selection and two named native files', () => {

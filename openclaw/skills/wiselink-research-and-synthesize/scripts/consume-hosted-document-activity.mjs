@@ -29,7 +29,8 @@ import { DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA, resolveSourceQuoteSelection }
 export { DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA } from './resolve-document-activity-quote-selection.mjs';
 import { WISELINK_SKILL_VERSION, canonicalSha256 } from './validate-payload.mjs';
 import { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA,
-  DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA, activityV2ProductionContract } from './document-activity-model-contract.mjs';
+  DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA, activityV2ProductionContract, activityV2UserContent,
+  ACTIVITY_MODEL_V2_EVIDENCE_VIEW_SELECTION_PROMPT_VERSION } from './document-activity-model-contract.mjs';
 import { activitySourceContextInventory, mergeActivitySourceContexts, validateActivitySourceContext } from './merge-document-activity-source-context.mjs';
 import { activityFailureDiagnostic } from './document-activity-failure-diagnostic.mjs';
 export { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA,
@@ -452,7 +453,7 @@ function activityRunContract(summary) {
     if (productionContract !== null) throw new Error('ACTIVITY_PRODUCTION_CONTRACT_INVALID');
   } else if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2) {
     if (!plainObject(productionContract) || !exactKeys(productionContract, ['promptVersion', 'toolSchemaSha256', 'sourceContextVersion', 'quoteTransportVersion']) ||
-        !isDeepStrictEqual(productionContract, activityV2ProductionContract(productionContract.quoteTransportVersion)))
+        !isDeepStrictEqual(productionContract, activityV2ProductionContract(productionContract.quoteTransportVersion, productionContract.promptVersion)))
       throw new Error('ACTIVITY_PRODUCTION_CONTRACT_INVALID');
   } else throw new Error('ACTIVITY_RUN_SCHEMA_INVALID');
   return { candidateSchemaVersion, productionContract };
@@ -1008,6 +1009,10 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     } else {
       if (typeof dependencies.invokeModel !== 'function')
         throw new Error('ACTIVITY_MODEL_EXECUTOR_REQUIRED');
+      if (runContract.productionContract?.promptVersion === ACTIVITY_MODEL_V2_EVIDENCE_VIEW_SELECTION_PROMPT_VERSION) {
+        diagnosticStage = 'MODEL_INPUT';
+        activityV2UserContent(modelInput); // Complete conservation before dispatch marker or HTTP.
+      }
       lease.throwIfLost();
       // Model dispatch BEFORE HTTP: once this marker exists, only a result
       // checkpoint may clear the unknown outcome.

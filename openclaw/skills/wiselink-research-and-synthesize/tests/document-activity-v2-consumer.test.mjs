@@ -5,8 +5,12 @@ import {
   DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 as V2, DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA as SELECTION,
   consumeHostedDocumentActivity, validateActivityProposal, validateActivityQuoteSelection,
 } from '../scripts/consume-hosted-document-activity.mjs';
-import { activityV2ProductionContract, DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA as CONTEXT } from '../scripts/document-activity-model-contract.mjs';
-import { canonicalSha256 } from '../scripts/validate-payload.mjs';
+import { activityV2ProductionContract, activityV2UserContent, ACTIVITY_MODEL_V2_RECOVERED_USER_PREFIX,
+  ACTIVITY_MODEL_V2_SOURCE_CONTEXT_SELECTION_PROMPT_VERSION as OLD,
+  ACTIVITY_MODEL_V2_EVIDENCE_VIEW_SELECTION_PROMPT_VERSION as NEW,
+  DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA as CONTEXT } from '../scripts/document-activity-model-contract.mjs';
+import { restoreActivityModelEvidenceView } from '../scripts/activity-model-evidence-view.mjs';
+import { canonicalJson, canonicalSha256 } from '../scripts/validate-payload.mjs';
 import { activitySourceContextInventory, mergeActivitySourceContexts, validateActivitySourceContext } from '../scripts/merge-document-activity-source-context.mjs';
 
 // Native recovery fixtures below are synthetic. They verify the safety of the
@@ -30,7 +34,9 @@ const RANGES = [
   { sectionId: 'leaf', offset: 0, unitIds: ['u-parent'], anchorIds: ['a-parent'], nextOffset: 1 },
   { sectionId: 'leaf', offset: 1, unitIds: ['u-leaf'], anchorIds: ['a-leaf'], nextOffset: null },
 ];
-const UNITS = [{ unitId: 'u-parent', text: ANCHORS[0].sourceText }, { unitId: 'u-leaf', text: ANCHORS[1].sourceText }];
+for (const anchor of ANCHORS) anchor.payloadPath = '/text';
+const UNITS = [{ unitId: 'u-parent', text: ANCHORS[0].sourceText, sourceRefIds: ['r1'] },
+  { unitId: 'u-leaf', text: ANCHORS[1].sourceText, sourceRefIds: ['r2'] }];
 const MERGED_CONTEXT = () => mergeActivitySourceContexts([CONTEXT_PAGE('parent'), CONTEXT_PAGE('leaf')], { sourceBinding: BINDING, units: UNITS, deliveredRanges: RANGES, selectedSectionIds: ['leaf'] });
 const VALIDATION = () => ({ sourceBinding: BINDING, units: UNITS, deliveredRanges: RANGES, sectionIds: ['leaf'], sourceContext: MERGED_CONTEXT(), expectedSourceBinding: BINDING });
 const QUOTE = index => ({ anchorId: ANCHORS[index].anchorId, start: 0, end: ANCHORS[index].sourceText.length, text: ANCHORS[index].sourceText });
@@ -59,9 +65,9 @@ function saved(proposalValue = proposal(), overrides = {}) {
     statements: canonical.map((statement, index) => ({ ...statement, statementId: `DAS-v2-${index}` })),
     producer: { skillVersion: 'constructed-skill', modelVersion: 'constructed-model' }, savedAt: '2026-10-05T00:00:00.000Z', ...overrides };
 }
-function harness(overrides = {}, records = new Map(), selection = false) {
+function harness(overrides = {}, records = new Map(), selection = false, promptVersion) {
   const calls = [], inputs = [];
-  const productionContract = activityV2ProductionContract(selection ? SELECTION : undefined);
+  const productionContract = activityV2ProductionContract(selection ? SELECTION : undefined, promptVersion);
   const deadline = new Date(Date.now() + 60000).toISOString();
   const summary = () => ({ documentVersionId: DOCUMENT, runRef: RUN, parseRunId: BINDING.original.parseRunId,
     semanticRevision: 2, selection: { sectionIds: ['leaf'] }, expectedRevision: 0,
@@ -119,6 +125,44 @@ async function unknownNativeHarness(overrides = {}) {
   };
   return h;
 }
+
+test('ordinary fresh factory and frozen old run both complete their own format with one model and one selection SAVE', async () => {
+  for (const promptVersion of [OLD, NEW]) {
+    const h = harness({}, new Map(), true, promptVersion);
+    assert.equal(h.productionContract.promptVersion, promptVersion);
+    h.deps.invokeModel = async input => {
+      h.inputs.push(structuredClone(input));
+      const user = activityV2UserContent(input);
+      if (promptVersion === OLD) assert.equal(user, `${ACTIVITY_MODEL_V2_RECOVERED_USER_PREFIX}INPUT:\n${canonicalJson(input)}`);
+      else {
+        const view = JSON.parse(user.split('INPUT:\n')[1]);
+        assert.equal(canonicalJson(restoreActivityModelEvidenceView(view, canonicalSha256(input))), canonicalJson(input));
+      }
+      return { proposal: proposal(true), modelVersion: 'constructed-model',
+        provenance: { modelVersion: 'constructed-model', ...h.productionContract, inputHash: canonicalSha256(input) } };
+    };
+    const result = await consumeHostedDocumentActivity(h.options, h.deps);
+    assert.equal(result.status, 'ACTIVITY_WORK_SAVED'); assert.equal(h.inputs.length, 1);
+    assert.equal(h.calls.filter(call => call.action === 'ACTIVITY_SAVE_SELECTION').length, 1);
+    assert.equal(h.records.get('model.started').inputHash, canonicalSha256(h.inputs[0]));
+    assert.deepEqual(h.records.get('source.result').anchors, ANCHORS);
+    assert.deepEqual(h.records.get('model.result').proposal, proposal(true));
+    assert.ok(!h.calls.some(call => ['ACTIVITY_BEGIN', 'ACTIVITY_FAIL'].includes(call.action)));
+  }
+  assert.equal(harness({}, new Map(), true).productionContract.promptVersion, NEW);
+});
+
+test('new evidence preflight denies inconsistent delivered pointers before model.started, model or SAVE', async () => {
+  const h = harness({ read: page => { page.anchors[0].payloadPath = '/missing'; return page; } }, new Map(), true);
+  await assert.rejects(consumeHostedDocumentActivity(h.options, h.deps), /ACTIVITY_MODEL_EVIDENCE_POINTER_OR_LOCATOR_INVALID/u);
+  assert.equal(h.inputs.length, 0); assert.equal(h.records.has('model.started'), false);
+  assert.equal(h.records.has('model.result'), false);
+  assert.ok(!h.calls.some(call => ['ACTIVITY_SAVE', 'ACTIVITY_SAVE_SELECTION'].includes(call.action)));
+  const diagnostic = h.records.get('failure.diagnostic');
+  assert.equal(diagnostic.stage, 'MODEL_INPUT');
+  assert.equal(diagnostic.category, 'SOURCE');
+  assert.equal(diagnostic.retryAuthorized, false);
+});
 
 test('default unknown consumer still stops before native recovery, READ or SAVE even if a dependency exists', async () => {
   const h = await unknownNativeHarness(); delete h.options.recoverNativeResult;

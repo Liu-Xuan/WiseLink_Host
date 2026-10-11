@@ -6,8 +6,7 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { WISELINK_PROFILE_REF, canonicalJson, canonicalSha256 } from './validate-payload.mjs';
 import {
-  ACTIVITY_MODEL_V2_RECOVERED_USER_PREFIX, DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2,
-  activityV2ProductionContract,
+  DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, activityV2UserContent, activityV2ProductionContract,
 } from './document-activity-model-contract.mjs';
 import { DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA } from './resolve-document-activity-quote-selection.mjs';
 
@@ -42,7 +41,7 @@ export async function recoverNativeDocumentActivityResult({ storePath, trajector
   try {
     if (!object(input) || input.candidateSchemaVersion !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ||
         input.quoteSelectionSchemaVersion !== DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA ||
-        !isDeepStrictEqual(input.productionContract, activityV2ProductionContract(DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA)) ||
+        !isDeepStrictEqual(input.productionContract, activityV2ProductionContract(DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA, input.productionContract?.promptVersion)) ||
         !/^DAR-[A-Za-z0-9-]+$/u.test(input.runRef ?? '') || !object(modelStarted) ||
         modelStarted.schemaVersion !== 'wiselink.document.activity-checkpoint.v2' || modelStarted.step !== 'model' ||
         modelStarted.candidateSchemaVersion !== DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ||
@@ -75,8 +74,9 @@ export async function recoverNativeDocumentActivityResult({ storePath, trajector
     const trajectory = rows(trajectoryFile.bytes.toString('utf8'));
     if (transcript[0]?.type !== 'session' || transcript[0].id !== entry.sessionId) fail();
     const users = transcript.filter(row => row.type === 'message' && row.message?.role === 'user');
-    const expectedUser = `${ACTIVITY_MODEL_V2_RECOVERED_USER_PREFIX}INPUT:\n${canonicalJson(input)}`;
-    // Match the complete original INPUT, not a hash prefix or diagnostics.
+    const expectedUser = activityV2UserContent(input);
+    // Old pins retain full original INPUT bytes; new pins require the exact
+    // deterministic lossless view of that same complete original INPUT.
     if (users.length !== 1 || textContent(users[0].message) !== expectedUser ||
         !instant(users[0].timestamp) || Date.parse(users[0].timestamp) < began) fail();
     const modelChanges = transcript.filter(row => row.type === 'model_change');
