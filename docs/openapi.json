@@ -1501,7 +1501,7 @@
       "post": {
         "operationId": "blockWorkItem",
         "summary": "将 Host 已确认的失败队列事项转入需处理状态",
-        "description": "仅由可信消费者编排层调用，不注册为模型 MCP 工具。Host 复核固定 service scope、active lease、租户、原 actor、DocumentVersion、来源权限和原件，再按最新 WorkItem 修订读取 Host 状态；只有当前初始分析明确 FAILED/CONFLICT 且没有 nextOperation 时，才以租约 token/generation CAS 将授权登记转为 BLOCKED。Host 返回失败的阶段码并阻止定时任务每轮重试；同一租约重试幂等。消费者不能自报失败来封锁仍可继续的事项。",
+        "description": "仅由可信消费者编排层调用，不注册为模型 MCP 工具。普通请求仍只接受当前初始分析明确 FAILED/CONFLICT 且没有 nextOperation。显式 expectedCancellation 仅用于 operator PARK：Host fresh-read 原 actor 来源权限/原件，并在共享 WorkItem 行锁后锁定授权和全部 attempt，保护精确最新 CANCELLED JobAid 的身份、No、请求、input/model/source/revision，无更晚任意 attempt、无在途 attempt，最后按未过期 lease token/generation CAS 转 BLOCKED，固定码 AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED。replayOnly=true 必须附相同 expectedCancellation，只能返回既有精确取消 BLOCK，绝不新建 BLOCK；重放同样复核当前来源权限和原件。消费者不能自报失败、取消或 provider 终态来授权 PARK；本操作不改变 attempt、JobAid 或异步 provider UNKNOWN。",
         "requestBody": {
           "required": true,
           "content": {
@@ -1513,7 +1513,42 @@
                 "properties": {
                   "workItemId": { "type": "string", "example": "WI-3d41f7" },
                   "leaseToken": { "type": "string", "format": "uuid", "example": "0f8fad5b-d9cb-469f-a165-70867728950e" },
-                  "leaseGeneration": { "type": "integer", "minimum": 1, "example": 1 }
+                  "leaseGeneration": { "type": "integer", "minimum": 1, "example": 1 },
+                  "expectedCancellation": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["requestId", "workItemRevision", "documentId", "documentVersionId", "sourceArtifactId", "sourceFileSha256", "sourceByteLength", "attemptId", "attemptRef", "attemptNo", "attemptRequestId", "actionType", "inputRevision", "baseRevision", "inputHash", "executionModel"],
+                    "properties": {
+                      "requestId": { "type": "string", "pattern": "^REQ-[A-Za-z0-9_-]{1,92}$", "description": "原 WorkItem 登记请求" },
+                      "workItemRevision": { "type": "integer", "minimum": 0 },
+                      "documentId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$" },
+                      "documentVersionId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$" },
+                      "sourceArtifactId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$" },
+                      "sourceFileSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                      "sourceByteLength": { "type": "integer", "minimum": 1 },
+                      "attemptId": { "type": "string", "pattern": "^ATT-[A-Za-z0-9_-]{1,92}$" },
+                      "attemptRef": { "type": "string", "pattern": "^AQ-[A-Za-z0-9_-]{1,93}$" },
+                      "attemptNo": { "type": "integer", "minimum": 1 },
+                      "attemptRequestId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$", "description": "原 attempt.triggerRequestId，不能替换为新 UI 请求" },
+                      "actionType": { "type": "string", "enum": ["OPENCLAW_DYNAMIC_EVALUATION"] },
+                      "inputRevision": { "type": "integer", "minimum": 0 },
+                      "baseRevision": { "type": "integer", "minimum": 0 },
+                      "inputHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                      "executionModel": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["modelRef", "displayName", "providerKind", "settingsRevision", "selectedAt"],
+                        "properties": {
+                          "modelRef": { "type": "string", "maxLength": 255 },
+                          "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+                          "providerKind": { "type": "string", "enum": ["BUILT_IN", "CUSTOM"] },
+                          "settingsRevision": { "type": "integer", "minimum": 0 },
+                          "selectedAt": { "type": "string", "format": "date-time" }
+                        }
+                      }
+                    }
+                  },
+                  "replayOnly": { "type": "boolean", "enum": [true], "description": "必须附 expectedCancellation；只读验证既有 BLOCK，不重试未知 PARK" }
                 }
               }
             }
@@ -1538,7 +1573,7 @@
               }
             }
           },
-          "400": { "description": "WorkItem 或租约字段格式无效" },
+          "400": { "description": "WorkItem、租约或精确取消期望格式无效；replayOnly 缺少 expectedCancellation" },
           "404": { "description": "活动租约或精确授权绑定不存在" },
           "409": { "description": "Host 当前状态未确认终态失败，或租约/修订发生漂移" },
           "503": { "description": "自动队列 service scope 或状态读取依赖不可用" }

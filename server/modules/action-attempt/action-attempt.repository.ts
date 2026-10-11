@@ -1,3 +1,4 @@
+import { assertCancelledInitialContinuation, type CancelledInitialContinuationGuard } from './cancelled-initial-continuation';
 import { randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -251,6 +252,7 @@ export class ActionAttemptRepository {
   async reserve(
     attempt: typeof actionAttempt.$inferInsert,
     knowledge?: ReserveActionAttemptInput['initialKnowledgeSession'],
+    cancelled?: CancelledInitialContinuationGuard,
   ): Promise<ActionAttemptReservation> {
     const hasInitialModel =
       [
@@ -385,7 +387,16 @@ export class ActionAttemptRepository {
               ),
             );
         }
-        return this.insertReservation(attempt, transaction);
+        if (cancelled && (attempt.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
+            attempt.tenantId !== cancelled.binding.tenantId || attempt.workItemId !== cancelled.binding.workItem.workItemId ||
+            attempt.baseRevision !== cancelled.binding.workItem.revision || attempt.inputRevision !== cancelled.binding.workItem.revision ||
+            attempt.documentVersionId !== cancelled.binding.workItem.source.documentVersionId))
+          throw new Error('INITIAL_CONTINUATION_CANCELLED_BINDING_CHANGED');
+        const release = cancelled
+          ? await assertCancelledInitialContinuation(transaction as PostgresJsDatabase, cancelled) : undefined;
+        const reservation = await this.insertReservation(attempt, transaction);
+        if (release) await release();
+        return reservation;
       });
     }
     return this.insertReservation(attempt, this.db);

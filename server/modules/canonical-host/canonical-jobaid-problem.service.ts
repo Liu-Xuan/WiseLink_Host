@@ -1,3 +1,4 @@
+import type { CancelledInitialContinuationGuard } from '../action-attempt/cancelled-initial-continuation';
 import { TDMS_RUNTIME_READER, type TdmsRuntimeReaderPort, type TdmsRuntimeTaskContext } from '../tdms-source/tdms-runtime-reader.port';
 import { TDMS_NATIVE_EVIDENCE_VERIFIER, verifyTdmsNativeEvidence, assertTdmsNativeInTransaction, type TdmsNativeEvidenceVerifier } from './tdms-native-evidence-verifier.port';
 import { parseAssessmentTdmsEvidence } from '@shared/assessment-tdms-evidence';
@@ -451,6 +452,7 @@ export class CanonicalJobAidProblemService {
       tenantId: string;
     },
     expectedOriginal?: {parseRunId:string;parseRevision:number},
+    cancelledInitialContinuation?: CancelledInitialContinuationGuard,
   ) {
     if (!permissionSnapshotVersion.trim())
       throw new Error('JOBAID_PERMISSION_SNAPSHOT_REQUIRED');
@@ -491,6 +493,7 @@ export class CanonicalJobAidProblemService {
     if (expectedOriginal && (original.parseRunId !== expectedOriginal.parseRunId ||
       original.parseRevision !== expectedOriginal.parseRevision)) throw new Error('JOBAID_ORIGINAL_REQUEST_CHANGED');
     const reserved = await this.attempts.reserve({
+      cancelledInitialContinuation,
       workItemId: execution.workItemId,
       taskType,
       actorUserId: 'service:openclaw-main',

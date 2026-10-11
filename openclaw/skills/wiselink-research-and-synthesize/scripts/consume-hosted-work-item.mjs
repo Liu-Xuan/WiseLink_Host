@@ -9,6 +9,10 @@ import { pathToFileURL } from 'node:url';
 import { consumePendingReviewTurn } from './consume-hosted-review-turn.mjs';
 import { consumeHostedMatter } from './consume-hosted-matter.mjs';
 import { hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
+import {
+  parkCancelledAutomaticClaim, readCancelledClaimExpectation, parseCancelledClaimExpectation,
+  matchesCancelledClaim, validateCancelledBlockReceipt, assertCancelledParkIntent,
+} from './cancelled-claim-parking.mjs';
 import { recoverNativeMatterResponse } from './recover-native-matter-response.mjs';
 import { invokeHostedJobAidProblemModel } from './run-jobaid-problem-assessment.mjs';
 import { invokeHostedInitialModel } from './invoke-hosted-initial-model.mjs';
@@ -222,9 +226,13 @@ async function consumeSuccessorOverallPointer(pointer, checkpoint, consume) {
 export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   if (typeof dependencies.checkpoint?.withActiveClaimOwner !== 'function')
     throw new Error('AUTO_WORK_ITEM_QUEUE_DEPENDENCIES_INVALID');
-  return dependencies.checkpoint.withActiveClaimOwner(() => options.finishBlockedClaim
-    ? finishBlockedAutomaticClaim(options, dependencies)
-    : consumeAutomaticWorkItemQueueTickOwned(options, dependencies));
+  if ((options.parkCancelledClaim && (options.finishBlockedClaim || options.repairStoppedClaim)) ||
+      (options.finishCancelledClaim && (!options.finishBlockedClaim || options.parkCancelledClaim)))
+    throw new Error('AUTO_WORK_ITEM_CANCELLATION_OPTIONS_INVALID');
+  return dependencies.checkpoint.withActiveClaimOwner(() => options.parkCancelledClaim
+    ? parkCancelledAutomaticClaim(options, { ...dependencies, validateClaim: validateStoredAutoClaim })
+    : options.finishBlockedClaim ? finishBlockedAutomaticClaim(options, dependencies)
+      : consumeAutomaticWorkItemQueueTickOwned(options, dependencies));
 }
 
 async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
@@ -561,6 +569,9 @@ function matchesBlockedClaimExpectation(claim, options) {
 }
 
 function validatedBlockedReceipt(value, options) {
+  if (options.finishCancelledClaim)
+    return validateCancelledBlockReceipt(value, options.cancellationExpectation,
+      { replayOnly: true, blockedAt: options.finishBlockedAt });
   const keys = ['status', 'workItemId', 'blockedCode', 'blockedAt', 'replayed'];
   if (!isRecord(value) || Object.keys(value).length !== keys.length ||
       !Object.keys(value).every(key => keys.includes(key)) || value.status !== 'BLOCKED' ||
@@ -573,10 +584,15 @@ function validatedBlockedReceipt(value, options) {
 
 function validateBlockedClaimArchive(value, options) {
   try {
-    assertExactKeys(value, ['schemaVersion', 'claim', 'receipt'], [], 'AUTO_WORK_ITEM_BLOCK_ARCHIVE');
-    if (value.schemaVersion !== 'wiselink.auto_work_item_blocked_claim_archive.v1' ||
+    assertExactKeys(value, ['schemaVersion', 'claim', 'receipt',
+      ...(options.finishCancelledClaim ? ['cancellationExpectation'] : [])], [], 'AUTO_WORK_ITEM_BLOCK_ARCHIVE');
+    if (value.schemaVersion !== (options.finishCancelledClaim
+      ? 'wiselink.auto_work_item_cancelled_claim_archive.v1' : 'wiselink.auto_work_item_blocked_claim_archive.v1') ||
         !matchesBlockedClaimExpectation(validateStoredAutoClaim(value.claim), options))
       throw new Error('INVALID_BINDING');
+    if (options.finishCancelledClaim && (!matchesCancelledClaim(value.claim, options.cancellationExpectation) ||
+        JSON.stringify(parseCancelledClaimExpectation(value.cancellationExpectation)) !==
+          JSON.stringify(options.cancellationExpectation))) throw new Error('INVALID_BINDING');
     validatedBlockedReceipt(value.receipt, options);
   } catch { throw new Error('AUTO_WORK_ITEM_BLOCK_ARCHIVE_INVALID'); }
 }
@@ -586,6 +602,15 @@ async function finishBlockedAutomaticClaim(options, dependencies) {
   if (!validBlockedClaimExpectation(options) || options.repairStoppedClaim ||
       typeof blockWorkItem !== 'function' || typeof checkpoint.writeOnceOrEqual !== 'function')
     throw new Error('AUTO_WORK_ITEM_BLOCK_FINALIZATION_OPTIONS_INVALID');
+  if (options.finishCancelledClaim) {
+    const cancellationExpectation = await readCancelledClaimExpectation(options.parkExpectationFile);
+    if (cancellationExpectation.workItemId !== options.finishWorkItemId ||
+        cancellationExpectation.leaseGeneration !== options.finishLeaseGeneration ||
+        cancellationExpectation.expectedCancellation.requestId !== options.finishRequestId ||
+        cancellationExpectation.expectedCancellation.documentVersionId !== options.finishDocumentVersionId)
+      throw new Error('AUTO_WORK_ITEM_CANCELLATION_EXPECTATION_INVALID');
+    options = { ...options, cancellationExpectation };
+  }
   const archiveKey = `blocked-claim-${options.finishWorkItemId}-g${options.finishLeaseGeneration}`;
   const stored = await checkpoint.readOptional('active-claim');
   const claim = stored === null ? null : validateStoredAutoClaim(stored);
@@ -602,15 +627,28 @@ async function finishBlockedAutomaticClaim(options, dependencies) {
   }
   if (!claim.consumerStopped || claim.completionReady || claim.blockReady !== null)
     throw new Error('AUTO_WORK_ITEM_BLOCKED_CLAIM_CHANGED');
+  if (options.finishCancelledClaim && !matchesCancelledClaim(claim, options.cancellationExpectation))
+    throw new Error('AUTO_WORK_ITEM_BLOCKED_CLAIM_CHANGED');
+  if (options.finishCancelledClaim) assertCancelledParkIntent(await checkpoint.readOptional(
+    `cancelled-park-${claim.workItemId}-g${claim.leaseGeneration}`),
+  claim, options.cancellationExpectation, validateStoredAutoClaim);
   // This is the explicit, approved idempotent BLOCK POST, not a read-only API.
   // Only an exact existing replay is a release receipt; local failure/not-found
   // and a freshly created BLOCK can never silently clear this checkpoint.
   const receipt = validatedBlockedReceipt(await blockWorkItem({
     workItemId: claim.workItemId, leaseToken: claim.leaseToken,
     leaseGeneration: claim.leaseGeneration,
+    ...(options.finishCancelledClaim ? {
+      expectedCancellation: options.cancellationExpectation.expectedCancellation, replayOnly: true,
+    } : {}),
   }), options);
+  if (options.finishCancelledClaim && JSON.stringify(validateStoredAutoClaim(
+    await checkpoint.readOptional('active-claim'))) !== JSON.stringify(claim))
+    throw new Error('AUTO_WORK_ITEM_BLOCKED_CLAIM_CHANGED');
   await checkpoint.writeOnceOrEqual(archiveKey, {
-    schemaVersion: 'wiselink.auto_work_item_blocked_claim_archive.v1', claim, receipt,
+    schemaVersion: options.finishCancelledClaim
+      ? 'wiselink.auto_work_item_cancelled_claim_archive.v1' : 'wiselink.auto_work_item_blocked_claim_archive.v1', claim, receipt,
+    ...(options.finishCancelledClaim ? { cancellationExpectation: options.cancellationExpectation } : {}),
   });
   await checkpoint.write('active-claim', null);
   return { ...result(receipt), alreadyFinalized: false };
@@ -1252,12 +1290,18 @@ export function automaticWorkItemQueueMode(argv) {
   const repairAttempts = argv.filter(arg => arg === '--repair-attempt-ref').length;
   const recoveries = argv.filter(arg => arg === '--document-translation-recovery').length;
   const finishes = argv.filter(arg => arg === '--finish-blocked-claim').length;
+  const parks = argv.filter(arg => arg === '--park-cancelled-claim').length;
+  const cancelledFinishes = argv.filter(arg => arg === '--finish-cancelled-claim').length;
+  const expectations = argv.filter(arg => arg === '--park-expectation-file').length;
   const finishFields = ['--finish-work-item-id', '--finish-request-id', '--finish-document-version-id',
     '--finish-lease-generation', '--finish-blocked-at'];
   if (finishes > 1 || finishFields.some(flag => argv.filter(arg => arg === flag).length !== finishes) ||
+      parks > 1 || cancelledFinishes > 1 || (cancelledFinishes && finishes !== 1) ||
+      expectations !== parks + cancelledFinishes ||
+      (parks && (finishes || repairs || recoveries)) ||
       (finishes && (repairs || recoveries))) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
   if (!occurrences) {
-    if (repairs || repairWorkItems || repairAttempts || finishes)
+    if (repairs || repairWorkItems || repairAttempts || finishes || parks || cancelledFinishes || expectations)
       throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
     return false;
   }
@@ -1272,11 +1316,12 @@ export function automaticWorkItemQueueMode(argv) {
   const valueOptions = new Set([
     '--checkpoint-root', '--openclaw-config',
     '--repair-work-item-id', '--repair-attempt-ref',
-    '--document-translation-recovery', ...finishFields,
+    '--document-translation-recovery', '--park-expectation-file', ...finishFields,
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--auto-queue' || arg === '--repair-stopped-claim' || arg === '--finish-blocked-claim') continue;
+    if (['--auto-queue', '--repair-stopped-claim', '--finish-blocked-claim',
+      '--park-cancelled-claim', '--finish-cancelled-claim'].includes(arg)) continue;
     if (!valueOptions.has(arg)) {
       throw new Error('AUTO_WORK_ITEM_QUEUE_OPTION_NOT_ALLOWED');
     }
@@ -1570,7 +1615,7 @@ export function matterPreflightMode(argv, matterId) {
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue [--document-translation-recovery ID] [--repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...] [--finish-blocked-claim --finish-work-item-id WI-... --finish-request-id REQ-... --finish-document-version-id DV --finish-lease-generation N --finish-blocked-at UTC]] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. After Host admission repair, one document translation recovery ID may be added to the existing cron so the next natural tick checks Host again without clearing the old checkpoint. --repair-stopped-claim with both exact identity flags permits one operator-triggered successor only for a stopped claim with a failed no-work JobAid/Overall auto-retry after a bounded gateway change; it is never a cron option. --finish-blocked-claim is an operator-only exact existing BLOCK replay finalization; it archives the original claim/receipt under the endpoint owner lock, never ACKs a failure, and leaves new dispatch to the next natural tick. It requires Linux util-linux flock; competing owners and unsupported locking fail closed. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue [--park-cancelled-claim --park-expectation-file ABSOLUTE_0600_JSON] [--document-translation-recovery ID] [--repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...] [--finish-blocked-claim --finish-work-item-id WI-... --finish-request-id REQ-... --finish-document-version-id DV --finish-lease-generation N --finish-blocked-at UTC [--finish-cancelled-claim --park-expectation-file ABSOLUTE_0600_JSON]]] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. After Host admission repair, one document translation recovery ID may be added to the existing cron so the next natural tick checks Host again without clearing the old checkpoint. --repair-stopped-claim with both exact identity flags permits one operator-triggered successor only for a stopped claim with a failed no-work JobAid/Overall auto-retry after a bounded gateway change; it is never a cron option. --finish-blocked-claim is an operator-only exact existing BLOCK replay finalization; it archives the original claim/receipt under the endpoint owner lock, never ACKs a failure, and leaves new dispatch to the next natural tick. It requires Linux util-linux flock; competing owners and unsupported locking fail closed. --park-cancelled-claim is a separate operator-only, single BLOCK POST for the exact latest cancelled JobAid; it always retains the stopped claim and provider UNKNOWN. Only --finish-cancelled-claim with an exact private expectation file extends finalization to an existing cancellation BLOCK replay; it cannot create a fresh BLOCK or retry an unknown POST. Both require the compatible Host and a normal Skill/MCP installation, and are never cron options. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
     return;
   }
   const autoQueue = automaticWorkItemQueueMode(argv);
@@ -1653,6 +1698,9 @@ async function main(argv, env) {
     const result = autoQueue
       ? await consumeAutomaticWorkItemQueueTick({ checkpointRoot, repairStoppedClaim,
         repairWorkItemId, repairAttemptRef, finishBlockedClaim: argv.includes('--finish-blocked-claim'),
+        parkCancelledClaim: argv.includes('--park-cancelled-claim'),
+        finishCancelledClaim: argv.includes('--finish-cancelled-claim'),
+        parkExpectationFile: option(argv, '--park-expectation-file'),
         finishWorkItemId: option(argv, '--finish-work-item-id'),
         finishRequestId: option(argv, '--finish-request-id'),
         finishDocumentVersionId: option(argv, '--finish-document-version-id'),

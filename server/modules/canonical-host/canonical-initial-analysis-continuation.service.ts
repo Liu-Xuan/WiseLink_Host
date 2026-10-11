@@ -1,3 +1,13 @@
+import type { Request } from 'express';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import {
+  AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION,
+  type AutomaticWorkItemSourceAuthorizationPort,
+} from './automatic-work-item-source-authorization.port';
+import {
+  type CancelledInitialContinuationGuard,
+  cancelledContinuationConflict,
+} from '../action-attempt/cancelled-initial-continuation';
 import {
   ForbiddenException,
   Inject,
@@ -81,6 +91,9 @@ export class CanonicalInitialAnalysisContinuationService {
     private readonly jobAid: CanonicalJobAidProblemService,
     @Optional() private readonly sessions?: SessionResolver,
     @Optional() private readonly aily?: ReviewAilyService,
+    @Optional()
+    @Inject(AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION)
+    private readonly sourceAuthorization?: AutomaticWorkItemSourceAuthorizationPort,
   ) {}
 
   async request(
@@ -88,6 +101,7 @@ export class CanonicalInitialAnalysisContinuationService {
     raw: unknown,
     actor: CanonicalHostActor,
     session?: ResolvedSession | null,
+    httpRequest?: Request,
   ): Promise<CanonicalInitialAnalysisContinuationReceipt> {
     const input = command.parse(raw);
     if (input.operation !== 'TRANSLATE' && input.retranslateBlockIds)
@@ -104,7 +118,17 @@ export class CanonicalInitialAnalysisContinuationService {
             : 'EVALUATE_JOB_AID',
         workItemId,
       });
+    const cancelled =
+      input.operation === 'EVALUATE_JOBAID' &&
+      this.initial.cancelledContinuationBinding
+        ? await this.initial.cancelledContinuationBinding({
+            tenantId: actor.tenantId,
+            actorUserId: actor.userId,
+            workItem,
+          })
+        : null;
     if (
+      !cancelled &&
       !isOpenClawAutomaticReviewConfigured({
         tenantId: actor.tenantId,
         workItemId,
@@ -201,24 +225,107 @@ export class CanonicalInitialAnalysisContinuationService {
       input.operation === 'TRANSLATE'
         ? undefined
         : await this.currentKnowledgeSession(actor, session);
-    const reserved =
+    if (
+      cancelled &&
+      (!this.sessions || !httpRequest || !this.sourceAuthorization)
+    )
+      throw cancelledContinuationConflict();
+    const cancelledGuard: CancelledInitialContinuationGuard | undefined =
+      cancelled
+        ? {
+            binding: cancelled,
+            authorize: async (database: PostgresJsDatabase) => {
+              if (!this.sessions || !httpRequest || !this.sourceAuthorization)
+                throw cancelledContinuationConflict();
+              const current = await this.sessions.resolve(
+                httpRequest,
+                database,
+              );
+              if (
+                !current ||
+                current.actor.canonicalSubject.id !== actor.userId ||
+                current.actor.tenantId !== actor.tenantId ||
+                current.actor.applicationScopeId !== actor.appId
+              )
+                throw cancelledContinuationConflict();
+              const decision = await this.authorization.authorize(
+                { actor, action: 'EVALUATE_JOB_AID', workItemId },
+                database,
+              );
+              const fresh = await this.permissions.freshRead(
+                { actor, decision, workItemId },
+                database,
+              );
+              if (
+                !decision.allowed ||
+                decision.action !== 'EVALUATE_JOB_AID' ||
+                fresh.permissionSnapshotVersion !== permissionSnapshotVersion ||
+                decision.permissionSnapshotVersion !== permissionSnapshotVersion
+              )
+                throw cancelledContinuationConflict();
+              const source = workItem.source;
+              const permission =
+                await this.sourceAuthorization.authorizeSourceRead({
+                  tenantId: actor.tenantId,
+                  actorUserId: actor.userId,
+                  workItemId,
+                  requestId: workItem.requestId,
+                  documentId: source.documentId,
+                  documentVersionId: source.documentVersionId,
+                  sourceArtifactId: source.sourceArtifactId,
+                  sourceFileSha256: source.sourceFileSha256.replace(
+                    /^sha256:/u,
+                    '',
+                  ),
+                  sourceByteLength: source.sourceByteLength,
+                });
+              if (
+                !permission.allowed ||
+                permission.tenantId !== actor.tenantId ||
+                permission.actorUserId !== actor.userId ||
+                permission.documentId !== source.documentId ||
+                permission.documentVersionId !== source.documentVersionId ||
+                permission.sourceArtifactId !== source.sourceArtifactId ||
+                permission.sourceFileSha256 !==
+                  source.sourceFileSha256.replace(/^sha256:/u, '') ||
+                permission.sourceByteLength !== source.sourceByteLength
+              )
+                throw cancelledContinuationConflict();
+            },
+          }
+        : undefined;
+    const reserve = () =>
       input.operation === 'TRANSLATE'
-        ? await this.translation.enqueueContinuation(
+        ? this.translation.enqueueContinuation(
             workItem,
             actor.tenantId,
             input.requestId,
             requestedBlocks,
           )
-        : await this.jobAid.enqueueContinuation(
-            workItem,
-            actor.tenantId,
-            permissionSnapshotVersion,
-            input.requestId,
-            input.operation === 'EVALUATE_JOBAID'
-              ? 'INITIAL_PROBLEM_ASSESSMENT'
-              : 'OVERALL_CONSISTENCY',
-            authorizedKnowledgeSession,
-          );
+        : cancelledGuard
+          ? this.jobAid.enqueueContinuation(
+              workItem,
+              actor.tenantId,
+              permissionSnapshotVersion,
+              input.requestId,
+              'INITIAL_PROBLEM_ASSESSMENT',
+              authorizedKnowledgeSession,
+              undefined,
+              cancelledGuard,
+            )
+          : this.jobAid.enqueueContinuation(
+              workItem,
+              actor.tenantId,
+              permissionSnapshotVersion,
+              input.requestId,
+              input.operation === 'EVALUATE_JOBAID'
+                ? 'INITIAL_PROBLEM_ASSESSMENT'
+                : 'OVERALL_CONSISTENCY',
+              authorizedKnowledgeSession,
+            );
+    const reserved = cancelled
+      ? await this.sessions!.withVerifiedServiceSql(reserve, actor.userId)
+      : await reserve();
     return {
       requestId: input.requestId,
       operation: input.operation,

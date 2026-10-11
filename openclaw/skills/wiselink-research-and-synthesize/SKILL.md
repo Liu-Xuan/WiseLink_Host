@@ -12,10 +12,12 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c215`
+- Skill：`wiselink-research-and-synthesize@r09.c216`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
+
+c216 为已停止的自动队列 claim 增加显式取消停车与既有 BLOCK 重放归档。Host 核对精确最新 CANCELLED JobAid、原输入/来源/模型/修订并原子隔离旧写入；消费者先保存不可变 intent，保留 provider UNKNOWN，不重发未知 POST、不启动模型或自动派发新事项。须配套 Host 和正常安装更新，旧失败与已保存 JobAid 保留。
 
 c213 更新独立文档解读的无损阅读投影和正文完整性指导，新解析保留明确生成日期页脚的原文与页位置。引用、覆盖范围和 Host 保存校验保持；旧解析及已保存工作不改写。
 
@@ -617,7 +619,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c215`
+- `skillVersion=wiselink-research-and-synthesize@r09.c216`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

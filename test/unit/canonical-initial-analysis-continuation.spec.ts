@@ -83,6 +83,27 @@ describe('owner-requested initial continuation', () => {
     }
   });
 
+  it('accepts only the exact cancelled binding under fresh owner/session/source permissions and passes atomic reservation guard', async()=>{
+    const h=harness();process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID='WI-other';
+    const binding={actorUserId:actor.userId,tenantId:actor.tenantId,workItem:h.workItem,cancelledAttemptId:'ATT-old',executionModel:{}};
+    h.initial.cancelledContinuationBinding.mockResolvedValue(binding);
+    h.jobAid.enqueueContinuation.mockImplementation(async(...args:unknown[])=>{
+      const guard=args[7] as {binding:unknown;authorize(db:unknown):Promise<void>};
+      expect(guard.binding).toBe(binding);await guard.authorize('same-transaction');
+      return {status:'QUEUED',created:true};
+    });
+    await expect(h.send({...request,operation:'EVALUATE_JOBAID'})).resolves.toMatchObject({status:'QUEUED',replayed:false});
+    expect(h.sessions.resolve).toHaveBeenCalledWith({},'same-transaction');
+    expect(h.authorization.authorize).toHaveBeenLastCalledWith({actor,action:'EVALUATE_JOB_AID',workItemId:h.workItem.workItemId},'same-transaction');
+    expect(h.sourceAuthorization.authorizeSourceRead).toHaveBeenCalledTimes(1);
+    h.sourceAuthorization.authorizeSourceRead.mockResolvedValueOnce({allowed:false} as never);
+    await expect(h.send({...request,operation:'EVALUATE_JOBAID'})).rejects.toThrow('BINDING_CHANGED');
+    h.sessions.resolve.mockResolvedValueOnce(null as never);
+    await expect(h.send({...request,operation:'EVALUATE_JOBAID'})).rejects.toThrow('BINDING_CHANGED');
+    h.permissions.freshRead.mockResolvedValueOnce({permissionSnapshotVersion:'permission-1'}).mockResolvedValueOnce({permissionSnapshotVersion:'revoked'});
+    await expect(h.send({...request,operation:'EVALUATE_JOBAID'})).rejects.toThrow('BINDING_CHANGED');
+  });
+
   it('freshly authorizes the owner and saves only a queued request with the exact document and block scope', async () => {
     const h = harness();
     const result = await h.send({
@@ -306,7 +327,7 @@ function harness() {
   const workItem = {
     workItemId: 'WI-continuation',
     revision: 5,
-    source: { documentVersionId: 'DV-continuation' },
+    requestId: 'REQ-original', source: { documentVersionId: 'DV-continuation', documentId:'DOC-original',sourceArtifactId:'ART-original',sourceFileSha256:'a'.repeat(64),sourceByteLength:1024 },
     classification: { status: 'CONFIRMED', normalizedFamily: 'SB' },
   } as CanonicalWorkItemProjection;
   const stage = (status: string) => ({
@@ -355,6 +376,7 @@ function harness() {
   const initial = {
     project: jest.fn(async () => status),
     hasExactAutoProcessingGrant: jest.fn(async () => false),
+    cancelledContinuationBinding: jest.fn<Promise<unknown>,[unknown]>().mockResolvedValue(null),
   };
   const translation = {
     enqueueContinuation: jest.fn(async () => ({
@@ -368,7 +390,9 @@ function harness() {
       created: true,
     })),
   };
+  const sourceAuthorization = {authorizeSourceRead:jest.fn(async (input:unknown)=>({...input as object,allowed:true}))};
   const sessions = {
+    resolve: jest.fn(async()=>({actor:{canonicalSubject:{id:actor.userId},tenantId:actor.tenantId,applicationScopeId:actor.appId}})),
     withVerifiedServiceSql: jest.fn(async (operation: () => Promise<unknown>) =>
       operation(),
     ),
@@ -384,8 +408,10 @@ function harness() {
     jobAid as never,
     sessions as never,
     aily as never,
+    sourceAuthorization as never,
   );
   return {
+    service,sourceAuthorization,
     workItem,
     status,
     authorization,
@@ -399,6 +425,6 @@ function harness() {
     aily,
     order,
     send: (body: unknown, session?: ResolvedSession) =>
-      service.request(workItem.workItemId, body, actor, session),
+      service.request(workItem.workItemId, body, actor, session, {} as never),
   };
 }

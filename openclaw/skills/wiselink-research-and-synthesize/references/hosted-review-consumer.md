@@ -85,6 +85,45 @@ JobAid/Overall 尝试最多发起一次新的幂等请求，继续使用 Host �
 自动队列与 `--work-item-id` 静态入口互斥。升级并启用前继续用既有静态 job 验收；启用后保留一个不重叠的原生队列
 cron，不按同租户或上传时间复制静态 job。关闭队列开关不会补登记历史 WorkItem。
 
+### 显式停放已取消 JobAid claim（待配套 Host 发布和普通 Skill 安装）
+
+此操作仅供获准 operator 处理当前 exact/latest `CANCELLED` JobAid。原普通 BLOCK 对取消状态的拒绝保持；
+PARK 不会启动 producer、模型、ACK、下一事项，也不修改 JobAid、attempt、原控制 marker 或 cron。
+`consumerStopped=true` 仅表示消费者已经停止，不证明异步 provider 结束；其终态始终保留 `UNKNOWN`。
+原已安装 c215 不支持此分支，须正常升级 Skill/MCP 后才能执行，禁止直接覆盖安装目录内的文件。
+
+先在私有、本人拥有的绝对路径 `0600` JSON 文件中保存四项控制期望：`workItemId`、当前
+`leaseGeneration`、原 token 的裸 SHA256 `leaseTokenHash`、`expectedCancellation`。后者完整保留 Host
+的 16 项精确绑定：原 WorkItem `requestId/workItemRevision/documentId/documentVersionId/sourceArtifactId/
+sourceFileSha256/sourceByteLength`、原 `attemptId/attemptRef/attemptNo/attemptRequestId/actionType/
+inputRevision/baseRevision/inputHash/executionModel`；`attemptRequestId` 是原 attempt 的 `triggerRequestId`。
+不写死历史 generation，不新建请求、模型选择或来源值；日期不是技术编号，期望文件不进入模型或日志。
+
+```text
+node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --auto-queue --park-cancelled-claim --park-expectation-file <absolute-private-json>
+```
+
+同一 endpoint 的 Linux 内核 `flock` 内 fresh-read 当前 claim；必须 exact identity/token hash、
+`consumerStopped=true/completionReady=false/blockReady=null`。POST 前不可变保存本次原 claim 和完整控制期望；
+同 WI/generation 已有 intent 即拒绝再次 PARK，含中断、未知 POST 和期望文件变动。一次 PARK 最多发一个 BLOCK POST，不重试。
+Host fresh-read 原 actor 当前权限/同版原件，并在 `WorkItem FOR UPDATE` 后锁授权和该 WI 的全部 attempt：
+既有 WI 外键约束阻止新 attempt 插入越过该锁；精确最新 CANCELLED、输入/model/source/revision 不变，
+没有任何更晚 attempt 或在途状态，且最终 wall-clock 租约 CAS 成功才写固定
+`AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED`。只写队列授权，不删除、重放或改写原 attempt/JobAid。
+成功 PARK 仍保留完整 claim。未知 POST、拒绝或不符回执立即停止，不从本地失败推断已 BLOCK。
+
+取得并核验实际既有 BLOCK 五字段回执后，另一次明确 operator 操作使用同一期望文件及其实际 `blockedAt`：
+
+```text
+node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --auto-queue --finish-blocked-claim --finish-cancelled-claim --park-expectation-file <absolute-private-json> --finish-work-item-id <exact-WI> --finish-request-id <original-REQ> --finish-document-version-id <same-DV> --finish-lease-generation <current-G> --finish-blocked-at <actual-UTC>
+```
+
+该 finalizer 只发一个 `replayOnly=true` BLOCK POST，fresh 权限/来源/取消 CAS 再核验，不创建新 BLOCK。
+仍在同一 flock 内，先匹配原不可变 PARK intent，再在 POST 后重新读取 claim，核对精确五字段 `replayed=true` 回执和实际时间，先不可变保存
+原 claim、控制期望及回执，成功后才写 `active-claim=null`。新建/未知/冲突回执、pointer 漂移、归档写入失败
+均保留 claim；已归档重放不会清 successor。旧锁 inode 和原任务 checkpoint 保留；释放后由下一自然 tick
+选择其余等待事项。本地合成定向验证不等于实际 Linux 锁、数据库竞态或真实 operator 执行验收。
+
 初始模型适配器只接收既有 operation modelInput，调用唯一官方 Gateway/profile，并只返回该 operation 的候选。
 它不执行 Host 工具、不拼 Task/ResultEnvelope、不把本轮控制引用或物理 locator 发给模型。四种输入输出校验、
 ResultEnvelope、Translation parts、Host readback/CAS 均复用现有实现。初始候选由 Host 按原有规则更新 revision；
