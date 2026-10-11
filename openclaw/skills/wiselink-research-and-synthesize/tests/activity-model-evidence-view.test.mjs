@@ -124,3 +124,53 @@ test('unbound locator data cannot disappear inside a view accepted against an or
   view.root.evidence.sourceLocatorIndex.extra = { sourceRefId: 'extra', text: 'unbound authority' };
   assert.throws(() => restore(view, input), /LOCATOR_UNREACHABLE/u);
 });
+
+test('object keys, escaped keys and literal-object keys cannot fan out past the limit before canonical serialization', () => {
+  const stringify = JSON.stringify;
+  for (const [key, literal] of [['k'.repeat(16384), false], ['"'.repeat(8192), false], ['k'.repeat(16384), true]]) {
+    const item = literal ? { $literal: [[key, 0], ['$value', 0]] } : { [key]: 0 };
+    const root = { request: { extension: { $value: 1 } }, evidence: {
+      sourceBinding: {}, units: [], anchors: [], sourceLocatorIndex: {}, sourceCoverage: {},
+    } };
+    const view = encoded(root, [item, Array.from({ length: 2048 }, () => ({ $value: 0 }))]);
+    assert.ok(Buffer.byteLength(stringify(view)) < 50000);
+    let largest = 0, overLimitCalls = 0;
+    JSON.stringify = (value, ...options) => {
+      // An independent lower-bound canary prevents the old failing code from
+      // actually allocating its 33 MB signature while proving it reached that
+      // unsafe serialization. Raw keys suffice for these bounded ASCII cases.
+      let lower = 0; const pending = [value];
+      while (pending.length && lower <= ACTIVITY_MODEL_EVIDENCE_LIMITS.bytes) {
+        const node = pending.pop();
+        if (node !== null && typeof node === 'object') {
+          lower += 2 + Math.max(0, Object.keys(node).length - 1);
+          if (!Array.isArray(node)) for (const key of Object.keys(node)) lower += Buffer.byteLength(key) + 3;
+          pending.push(...Object.values(node));
+        } else lower += typeof node === 'string' ? Buffer.byteLength(node) + 2 : stringify(node).length;
+      }
+      if (lower > ACTIVITY_MODEL_EVIDENCE_LIMITS.bytes) { overLimitCalls++; throw new Error('SYNTHETIC_OVERSIZE_SERIALIZATION'); }
+      const result = stringify(value, ...options);
+      if (typeof result === 'string') largest = Math.max(largest, Buffer.byteLength(result));
+      return result;
+    };
+    try {
+      assert.throws(() => restoreActivityModelEvidenceView(view, view.inputHash), /ACTIVITY_MODEL_EVIDENCE_LIMIT_EXCEEDED/u);
+      assert.equal(overLimitCalls, 0);
+      assert.ok(largest <= ACTIVITY_MODEL_EVIDENCE_LIMITS.bytes);
+    } finally { JSON.stringify = stringify; }
+  }
+});
+
+test('JSON escaping is bounded before input serialization while controls and lone surrogates still roundtrip exactly', () => {
+  const input = activityEvidenceInput();
+  input.extension = { control: '\u0000\b\t\n\f\r"\\😀\ud800X\udfff', [String.fromCharCode(1)]: [true, false, null, 1e-20] };
+  assert.equal(canonicalJson(restore(activityModelEvidenceView(input), input)), canonicalJson(input));
+  const tooLarge = activityEvidenceInput(); tooLarge.extension = '\u0000'.repeat(3 * 1024 * 1024);
+  const stringify = JSON.stringify; let objectSerializations = 0;
+  JSON.stringify = (value, ...options) => { if (value !== null && typeof value === 'object') objectSerializations++;
+    return stringify(value, ...options); };
+  try {
+    assert.throws(() => activityModelEvidenceView(tooLarge), /ACTIVITY_MODEL_EVIDENCE_LIMIT_EXCEEDED/u);
+    assert.equal(objectSerializations, 0);
+  } finally { JSON.stringify = stringify; }
+});

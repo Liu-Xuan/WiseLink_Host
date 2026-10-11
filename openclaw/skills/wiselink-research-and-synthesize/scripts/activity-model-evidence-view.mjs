@@ -13,6 +13,26 @@ const own = (value, key) => Object.hasOwn(value, key);
 const byteLength = value => Buffer.byteLength(canonicalJson(value));
 const exactKeys = (value, keys) => object(value) && Object.keys(value).length === keys.length && keys.every(key => own(value, key));
 
+// Count JSON's exact UTF-8 string bytes without first allocating its escaped
+// form. Lone surrogates and control characters can expand sixfold on the wire.
+function stringBytes(value) {
+  let bytes = 2;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code === 0x22 || code === 0x5c || [8, 9, 10, 12, 13].includes(code)) bytes += 2;
+    else if (code < 0x20) bytes += 6;
+    else if (code < 0x80) bytes++;
+    else if (code < 0x800) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) { bytes += 4; index++; }
+      else bytes += 6;
+    } else bytes += code >= 0xdc00 && code <= 0xdfff ? 6 : 3;
+    if (bytes > ACTIVITY_MODEL_EVIDENCE_LIMITS.bytes) fail('LIMIT_EXCEEDED');
+  }
+  return bytes;
+}
+
 function restoredSizeGuard(source) {
   const keys = ['sourceBinding', 'units', 'anchors', 'sourceLocatorIndex', 'sourceCoverage'];
   if (!exactKeys(source, ['evidence', 'request']) || !exactKeys(source.evidence, keys) || !object(source.request) ||
@@ -62,13 +82,14 @@ function restoredSizeGuard(source) {
 // Validate before canonical serialization/cloning. No accessors, non-JSON values,
 // cycles or unbounded expansion may enter the model-visible representation.
 function boundedJson(value) {
-  let nodes = 0, approximateBytes = 0;
+  let nodes = 0, bytes = 0;
   const active = new Set();
+  const charge = size => { bytes += size; if (bytes > ACTIVITY_MODEL_EVIDENCE_LIMITS.bytes) fail('LIMIT_EXCEEDED'); };
   const visit = (item, depth) => {
     if (++nodes > ACTIVITY_MODEL_EVIDENCE_LIMITS.nodes || depth > ACTIVITY_MODEL_EVIDENCE_LIMITS.depth) fail('LIMIT_EXCEEDED');
-    if (typeof item === 'string') approximateBytes += Buffer.byteLength(item);
-    else if (item === null || typeof item === 'boolean') approximateBytes += 5;
-    else if (typeof item === 'number' && Number.isFinite(item) && !Object.is(item, -0)) approximateBytes += 24;
+    if (typeof item === 'string') charge(stringBytes(item));
+    else if (item === null || typeof item === 'boolean') charge(item === false ? 5 : 4);
+    else if (typeof item === 'number' && Number.isFinite(item) && !Object.is(item, -0)) charge(JSON.stringify(item).length);
     else if (typeof item === 'object') {
       if (active.has(item)) fail('CYCLE');
       if ((!Array.isArray(item) && ![Object.prototype, null].includes(Object.getPrototypeOf(item))) ||
@@ -76,24 +97,27 @@ function boundedJson(value) {
       active.add(item);
       if (Array.isArray(item)) {
         if (Object.keys(item).length !== item.length) fail('JSON_INVALID');
+        charge(2 + Math.max(0, item.length - 1));
         for (let index = 0; index < item.length; index++) {
           const descriptor = Object.getOwnPropertyDescriptor(item, String(index));
           if (!descriptor || !own(descriptor, 'value')) fail('JSON_INVALID');
           visit(descriptor.value, depth + 1);
         }
-      } else for (const key of Object.keys(item)) {
-        const descriptor = Object.getOwnPropertyDescriptor(item, key);
-        if (!descriptor || !own(descriptor, 'value')) fail('JSON_INVALID');
-        approximateBytes += Buffer.byteLength(key);
-        visit(descriptor.value, depth + 1);
+      } else {
+        const keys = Object.keys(item);
+        charge(2 + Math.max(0, keys.length - 1));
+        for (const key of keys) {
+          const descriptor = Object.getOwnPropertyDescriptor(item, key);
+          if (!descriptor || !own(descriptor, 'value')) fail('JSON_INVALID');
+          charge(stringBytes(key) + 1);
+          visit(descriptor.value, depth + 1);
+        }
       }
       active.delete(item);
     } else fail('JSON_INVALID');
-    if (approximateBytes > ACTIVITY_MODEL_EVIDENCE_LIMITS.bytes) fail('LIMIT_EXCEEDED');
   };
   visit(value, 0);
-  if (byteLength(value) > ACTIVITY_MODEL_EVIDENCE_LIMITS.bytes) fail('LIMIT_EXCEEDED');
-  return { nodes };
+  return { nodes, bytes };
 }
 
 /** Wire-only view. Complete source/checkpoint values and identities stay owned
@@ -105,15 +129,15 @@ export function activityModelEvidenceView(input) {
   try { pointerView = readingModelContextView(input); }
   catch { fail('POINTER_OR_LOCATOR_INVALID'); }
   const { schemaVersion: _readingTag, ...source } = pointerView;
+  boundedJson(source);
   // Canonical key traversal makes the value table independent of insertion order.
   const rootSource = JSON.parse(canonicalJson(source));
   const occurrences = new Map();
   let signatureBytes = 0;
   const keyOf = value => {
-    const key = canonicalJson(value);
-    signatureBytes += Buffer.byteLength(key);
+    signatureBytes += boundedJson(value).bytes;
     if (signatureBytes > ACTIVITY_MODEL_EVIDENCE_LIMITS.signatures) fail('LIMIT_EXCEEDED');
-    return key;
+    return canonicalJson(value);
   };
   const collect = value => {
     if (typeof value === 'string' || value !== null && typeof value === 'object') {
@@ -164,7 +188,16 @@ export function restoreActivityModelEvidenceView(view, expectedInputHash) {
       !/^[a-f0-9]{64}$/u.test(expectedInputHash ?? '') || view.inputHash !== expectedInputHash ||
       !Array.isArray(view.values) || view.values.length > ACTIVITY_MODEL_EVIDENCE_LIMITS.values) fail('VIEW_INVALID');
   const active = new Set(), used = new Set(), signatures = new Map(), signatureOwners = new Map();
-  let nodes = 0, references = 0, signatureBytes = 0, expandedStringBytes = 0;
+  let nodes = 0, references = 0, signatureBytes = 0, expandedBytes = 0;
+  const stringSizes = new Map();
+  const quotedBytes = value => {
+    if (!stringSizes.has(value)) stringSizes.set(value, stringBytes(value));
+    return stringSizes.get(value);
+  };
+  const charge = size => {
+    expandedBytes += size;
+    if (expandedBytes > ACTIVITY_MODEL_EVIDENCE_LIMITS.bytes) fail('LIMIT_EXCEEDED');
+  };
   const decode = (value, depth = 0) => {
     if (++nodes > ACTIVITY_MODEL_EVIDENCE_LIMITS.nodes || depth > ACTIVITY_MODEL_EVIDENCE_LIMITS.depth) fail('LIMIT_EXCEEDED');
     if (object(value) && own(value, REF)) {
@@ -176,9 +209,9 @@ export function restoreActivityModelEvidenceView(view, expectedInputHash) {
       const restored = decode(view.values[index], depth + 1);
       active.delete(index);
       if (!signatures.has(index)) {
-        const key = canonicalJson(restored);
-        signatureBytes += Buffer.byteLength(key);
+        signatureBytes += boundedJson(restored).bytes;
         if (signatureBytes > ACTIVITY_MODEL_EVIDENCE_LIMITS.signatures) fail('LIMIT_EXCEEDED');
+        const key = canonicalJson(restored);
         if (signatureOwners.has(key) && signatureOwners.get(key) !== index) fail('REFERENCE_AMBIGUOUS');
         signatures.set(index, key); signatureOwners.set(key, index);
       }
@@ -188,20 +221,30 @@ export function restoreActivityModelEvidenceView(view, expectedInputHash) {
     if (object(value) && own(value, LITERAL)) {
       if (!exactKeys(value, [LITERAL]) || !Array.isArray(value[LITERAL])) fail('LITERAL_INVALID');
       const keys = new Set();
+      charge(2 + Math.max(0, value[LITERAL].length - 1));
       const pairs = value[LITERAL].map(pair => {
         if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== 'string' || keys.has(pair[0])) fail('LITERAL_INVALID');
         keys.add(pair[0]);
+        charge(quotedBytes(pair[0]) + 1);
         return [pair[0], decode(pair[1], depth + 1)];
       });
       if (!keys.has(REF) && !keys.has(LITERAL)) fail('LITERAL_INVALID');
       return Object.fromEntries(pairs);
     }
-    if (Array.isArray(value)) return value.map(child => decode(child, depth + 1));
-    if (object(value)) return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, decode(child, depth + 1)]));
-    if (typeof value === 'string') {
-      expandedStringBytes += Buffer.byteLength(value);
-      if (expandedStringBytes > ACTIVITY_MODEL_EVIDENCE_LIMITS.bytes) fail('LIMIT_EXCEEDED');
+    if (Array.isArray(value)) {
+      charge(2 + Math.max(0, value.length - 1));
+      return value.map(child => decode(child, depth + 1));
     }
+    if (object(value)) {
+      const entries = Object.entries(value);
+      charge(2 + Math.max(0, entries.length - 1));
+      return Object.fromEntries(entries.map(([key, child]) => {
+        charge(quotedBytes(key) + 1);
+        return [key, decode(child, depth + 1)];
+      }));
+    }
+    if (typeof value === 'string') charge(quotedBytes(value));
+    else charge(JSON.stringify(value).length);
     return value;
   };
   const source = decode(view.root);
