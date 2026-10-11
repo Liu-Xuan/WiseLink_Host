@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { pathToFileURL } from 'node:url';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
 import { automaticWorkItemQueueMode, consumeAutomaticWorkItemQueueTick } from '../scripts/consume-hosted-work-item.mjs';
 
@@ -22,6 +21,24 @@ const receipt = () => ({ status: 'BLOCKED', workItemId: 'WI-OLD', replayed: true
   blockedCode: 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED', blockedAt: BLOCKED_AT });
 const archiveKey = 'blocked-claim-WI-OLD-g3';
 function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
+function ownerTest(name, perform) {
+  const platformName = process.platform === 'linux' ? name
+    : `non-Linux owner rejection contract: ${name}`;
+  return test(platformName, { timeout: 15_000 }, perform);
+}
+async function bounded(promise, message) {
+  let timer;
+  try {
+    return await Promise.race([promise, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), 10_000);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+function waitForOwnerEntry(entered, operation) {
+  return bounded(Promise.race([entered.promise, operation.then(() => {
+    throw new Error('TEST_OWNER_ENDED_BEFORE_ENTRY');
+  })]), 'TEST_OWNER_ENTRY_TIMEOUT');
+}
 function dependencies(checkpoint, overrides = {}) {
   return { checkpoint, now: () => new Date('2026-09-25T00:30:00.000Z'),
     nextWorkItem: async () => assert.fail('finish must not claim or scan other tasks'),
@@ -37,11 +54,31 @@ function dependencies(checkpoint, overrides = {}) {
 }
 async function withStore(perform) {
   const directory = await mkdtemp(join(tmpdir(), 'wl-queue-finalization-'));
-  try { return await perform(await createCheckpointStore(directory), directory); }
+  try {
+    const checkpoint = await createCheckpointStore(directory);
+    if (process.platform !== 'linux') {
+      const original = claim();
+      await checkpoint.write('active-claim', original);
+      const before = (await readdir(directory)).sort();
+      let calls = 0;
+      const unexpected = async () => { calls += 1; assert.fail('unsupported owner cannot enter business callbacks'); };
+      const blockedDependencies = Object.fromEntries(Object.entries(dependencies(checkpoint))
+        .map(([key, value]) => [key, typeof value === 'function' ? unexpected : value]));
+      await assert.rejects(checkpoint.withActiveClaimOwner(unexpected), /AUTO_WORK_ITEM_QUEUE_OWNER_LOCK_UNAVAILABLE/u);
+      for (const input of [{}, options()])
+        await assert.rejects(consumeAutomaticWorkItemQueueTick(input, blockedDependencies),
+          /AUTO_WORK_ITEM_QUEUE_OWNER_LOCK_UNAVAILABLE/u);
+      assert.equal(calls, 0);
+      assert.deepEqual(await checkpoint.readOptional('active-claim'), original);
+      assert.deepEqual((await readdir(directory)).sort(), before);
+      return;
+    }
+    return await perform(checkpoint, directory);
+  }
   finally { await rm(directory, { recursive: true, force: true }); }
 }
 
-test('finish archives the exact BLOCK replay and claim before release; next natural tick may claim a new item', async () => withStore(async checkpoint => {
+ownerTest('finish archives the exact BLOCK replay and claim before release; next natural tick may claim a new item', async () => withStore(async checkpoint => {
   const old = claim(); await checkpoint.write('active-claim', old);
   const result = await consumeAutomaticWorkItemQueueTick(options(), dependencies(checkpoint));
   assert.equal(result.status, 'BLOCKED_CLAIM_FINALIZED');
@@ -65,7 +102,7 @@ test('finish archives the exact BLOCK replay and claim before release; next natu
 for (const change of [
   { workItemId: 'WI-OTHER' }, { requestId: 'REQ-OTHER' }, { documentVersionId: 'DV-OTHER' },
   { leaseGeneration: 4 }, { completionReady: true }, { consumerStopped: false },
-]) test(`finish rejects changed exact claim ${Object.keys(change)[0]}`, async () => withStore(async checkpoint => {
+]) ownerTest(`finish rejects changed exact claim ${Object.keys(change)[0]}`, async () => withStore(async checkpoint => {
   const changed = { ...claim(), ...change }; await checkpoint.write('active-claim', changed);
   await assert.rejects(consumeAutomaticWorkItemQueueTick(options(), dependencies(checkpoint, {
     blockWorkItem: async () => assert.fail('mismatched claim cannot contact Host'),
@@ -78,7 +115,7 @@ for (const change of [
   { status: 'ACKNOWLEDGED' }, { workItemId: 'WI-OTHER' }, { replayed: false },
   { blockedCode: 'HOSTED_INITIAL_FAILED' }, { blockedCode: 'AUTO_WORK_ITEM_STAGE_JOBAID_BUSY' },
   { blockedAt: '2026-09-25T00:11:00.000Z' }, { unexpected: true },
-]) test(`finish preserves claim for invalid formal receipt ${Object.keys(change)[0]}`, async () => withStore(async checkpoint => {
+]) ownerTest(`finish preserves claim for invalid formal receipt ${Object.keys(change)[0]}`, async () => withStore(async checkpoint => {
   const old = claim(); await checkpoint.write('active-claim', old);
   await assert.rejects(consumeAutomaticWorkItemQueueTick(options(), dependencies(checkpoint, {
     blockWorkItem: async () => ({ ...receipt(), ...change }),
@@ -87,7 +124,7 @@ for (const change of [
   assert.equal(await checkpoint.readOptional(archiveKey), null);
 }));
 
-test('ambiguous BLOCK transport failure retains claim and does not retry', async () => withStore(async checkpoint => {
+ownerTest('ambiguous BLOCK transport failure retains claim and does not retry', async () => withStore(async checkpoint => {
   const old = claim(); await checkpoint.write('active-claim', old); let calls = 0;
   const failure = new Error('TRANSPORT_FAILED');
   await assert.rejects(consumeAutomaticWorkItemQueueTick(options(), dependencies(checkpoint, {
@@ -96,14 +133,14 @@ test('ambiguous BLOCK transport failure retains claim and does not retry', async
   assert.equal(calls, 1); assert.deepEqual(await checkpoint.readOptional('active-claim'), old);
 }));
 
-test('archive failure preserves the exact claim', async () => withStore(async checkpoint => {
+ownerTest('archive failure preserves the exact claim', async () => withStore(async checkpoint => {
   const old = claim(); await checkpoint.write('active-claim', old);
   checkpoint.writeOnceOrEqual = async () => { throw new Error('ARCHIVE_WRITE_FAILED'); };
   await assert.rejects(consumeAutomaticWorkItemQueueTick(options(), dependencies(checkpoint)), /ARCHIVE_WRITE_FAILED/u);
   assert.deepEqual(await checkpoint.readOptional('active-claim'), old);
 }));
 
-test('archive before a failed clear is reusable without overwriting the preserved history', async () => withStore(async (checkpoint, directory) => {
+ownerTest('archive before a failed clear is reusable without overwriting the preserved history', async () => withStore(async (checkpoint, directory) => {
   const old = claim(); await checkpoint.write('active-claim', old);
   const write = checkpoint.write;
   checkpoint.write = async (key, value) => { if (key === 'active-claim' && value === null) throw new Error('CLEAR_FAILED'); return write(key, value); };
@@ -117,7 +154,7 @@ test('archive before a failed clear is reusable without overwriting the preserve
 }));
 
 for (const replacement of ['new-generation', 'new-work-item', 'cleared'])
-  test(`repeated finish retains ${replacement} state and never replays Host`, async () => withStore(async checkpoint => {
+  ownerTest(`repeated finish retains ${replacement} state and never replays Host`, async () => withStore(async checkpoint => {
     const old = claim(); await checkpoint.write('active-claim', old);
     await consumeAutomaticWorkItemQueueTick(options(), dependencies(checkpoint));
     const next = replacement === 'cleared' ? null : replacement === 'new-generation'
@@ -130,36 +167,38 @@ for (const replacement of ['new-generation', 'new-work-item', 'cleared'])
     assert.deepEqual(await checkpoint.readOptional('active-claim'), next);
   }));
 
-test('missing or tampered archive cannot finalize an empty or successor claim', async () => withStore(async checkpoint => {
+ownerTest('missing or tampered archive cannot finalize an empty or successor claim', async () => withStore(async checkpoint => {
   await assert.rejects(consumeAutomaticWorkItemQueueTick(options(), dependencies(checkpoint)), /AUTO_WORK_ITEM_BLOCKED_CLAIM_CHANGED/u);
   await checkpoint.write(archiveKey, { schemaVersion: 'bad', claim: claim(), receipt: receipt() });
   await assert.rejects(consumeAutomaticWorkItemQueueTick(options(), dependencies(checkpoint)), /AUTO_WORK_ITEM_BLOCK_ARCHIVE_INVALID/u);
   assert.equal(await checkpoint.readOptional('active-claim'), null);
 }));
 
-test('held whole-tick owner refuses competing finish before any Host call', async () => withStore(async checkpoint => {
+ownerTest('held whole-tick owner refuses competing finish before any Host call', async () => withStore(async checkpoint => {
   await checkpoint.write('active-claim', claim()); const entered = deferred(), finish = deferred();
   const a = checkpoint.withActiveClaimOwner(async () => { entered.resolve(); await finish.promise; });
-  await entered.promise;
-  try { await assert.rejects(consumeAutomaticWorkItemQueueTick(options(), dependencies(checkpoint)), /AUTO_WORK_ITEM_QUEUE_OWNER_BUSY/u); }
+  try {
+    await waitForOwnerEntry(entered, a);
+    await assert.rejects(consumeAutomaticWorkItemQueueTick(options(), dependencies(checkpoint)), /AUTO_WORK_ITEM_QUEUE_OWNER_BUSY/u);
+  }
   finally { finish.resolve(); await a; }
   assert.deepEqual(await checkpoint.readOptional('active-claim'), claim());
 }));
 
-test('normal tick holds owner across awaiting Host and prevents null ABA or a competing dispatch', async () => withStore(async checkpoint => {
+ownerTest('normal tick holds owner across awaiting Host and prevents null ABA or a competing dispatch', async () => withStore(async checkpoint => {
   const entered = deferred(), finish = deferred();
   const a = consumeAutomaticWorkItemQueueTick({}, dependencies(checkpoint, {
     nextWorkItem: async () => { entered.resolve(); await finish.promise; return { status: 'IDLE' }; },
   }));
-  await entered.promise;
   try {
+    await waitForOwnerEntry(entered, a);
     await assert.rejects(consumeAutomaticWorkItemQueueTick({}, dependencies(checkpoint)), /AUTO_WORK_ITEM_QUEUE_OWNER_BUSY/u);
     await assert.rejects(consumeAutomaticWorkItemQueueTick(options(), dependencies(checkpoint)), /AUTO_WORK_ITEM_QUEUE_OWNER_BUSY/u);
   } finally { finish.resolve(); await a; }
   assert.equal(await checkpoint.readOptional('active-claim'), null);
 }));
 
-for (const phase of ['ACK', 'attention']) test(`owner covers late ${phase} responses through the final claim write`, async () => withStore(async checkpoint => {
+for (const phase of ['ACK', 'attention']) ownerTest(`owner covers late ${phase} responses through the final claim write`, async () => withStore(async checkpoint => {
   const old = { ...claim(), consumerStopped: false, attentionCode: null };
   await checkpoint.write('active-claim', old);
   const entered = deferred(), finish = deferred();
@@ -179,34 +218,49 @@ for (const phase of ['ACK', 'attention']) test(`owner covers late ${phase} respo
       return { status: 'REQUIRES_ATTENTION', errorCode: 'HOSTED_INITIAL_FAILED' };
     },
   }));
-  await entered.promise;
   try {
+    await waitForOwnerEntry(entered, a);
     await assert.rejects(consumeAutomaticWorkItemQueueTick({}, dependencies(checkpoint)), /AUTO_WORK_ITEM_QUEUE_OWNER_BUSY/u);
     await assert.rejects(consumeAutomaticWorkItemQueueTick(options(), dependencies(checkpoint)), /AUTO_WORK_ITEM_QUEUE_OWNER_BUSY/u);
-  } finally { finish.resolve(); }
-  assert.equal((await a).status, phase === 'ACK' ? 'ACKNOWLEDGED' : 'REQUIRES_ATTENTION');
+    finish.resolve();
+    assert.equal((await a).status, phase === 'ACK' ? 'ACKNOWLEDGED' : 'REQUIRES_ATTENTION');
+  } finally { finish.resolve(); await a; }
   assert.deepEqual(await checkpoint.readOptional('active-claim'), phase === 'ACK' ? null
     : { ...old, consumerStopped: true, attentionCode: 'HOSTED_INITIAL_FAILED' });
 }));
 
-test('owner kernel lock retains its inode and releases after throw and process death', async () => withStore(async (checkpoint, directory) => {
+ownerTest('owner kernel lock retains its inode and releases after throw and process death', async () => withStore(async (checkpoint, directory) => {
   await assert.rejects(checkpoint.withActiveClaimOwner(async () => { throw new Error('LOCAL_FAILED'); }), /LOCAL_FAILED/u);
   const lockPath = join(directory, 'active-claim.owner.lock'), inode = (await stat(lockPath)).ino;
   await checkpoint.withActiveClaimOwner(async () => {});
   assert.equal((await stat(lockPath)).ino, inode);
-  const moduleUrl = pathToFileURL(join(process.cwd(), 'openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs')).href;
+  const moduleUrl = new URL('../scripts/run-hosted-review-turn.mjs', import.meta.url).href;
   const child = spawn(process.execPath, ['--input-type=module', '-e',
     `const {createCheckpointStore}=await import(${JSON.stringify(moduleUrl)});const c=await createCheckpointStore(${JSON.stringify(directory)});await c.withActiveClaimOwner(async()=>{console.log('OWNER_HELD');setInterval(()=>{},1000);await new Promise(()=>{});});`], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const childWaits = new AbortController();
   try {
-    const [output] = await once(child.stdout, 'data'); assert.match(output.toString(), /OWNER_HELD/u);
+    const exited = once(child, 'exit', { signal: childWaits.signal }).then(() => {
+      throw new Error('TEST_OWNER_CHILD_EXITED_BEFORE_ENTRY');
+    });
+    const [output] = await bounded(Promise.race([
+      once(child.stdout, 'data', { signal: childWaits.signal }), exited,
+    ]), 'TEST_OWNER_CHILD_ENTRY_TIMEOUT');
+    assert.match(output.toString(), /OWNER_HELD/u);
     await assert.rejects(checkpoint.withActiveClaimOwner(async () => assert.fail('second process cannot acquire')), /AUTO_WORK_ITEM_QUEUE_OWNER_BUSY/u);
-    child.kill('SIGKILL'); await once(child, 'exit');
+    const killed = once(child, 'exit');
+    child.kill('SIGKILL'); await bounded(killed, 'TEST_OWNER_CHILD_EXIT_TIMEOUT');
     await checkpoint.withActiveClaimOwner(async () => {});
     assert.equal((await stat(lockPath)).ino, inode);
-  } finally { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); }
+  } finally {
+    childWaits.abort();
+    if (child.exitCode === null && child.signalCode === null) {
+      const killed = once(child, 'exit');
+      child.kill('SIGKILL'); await bounded(killed, 'TEST_OWNER_CHILD_CLEANUP_TIMEOUT');
+    }
+  }
 }));
 
-test('missing supported flock fails closed before performing any owner operation', async () => withStore(async checkpoint => {
+ownerTest('missing supported flock fails closed before performing any owner operation', async () => withStore(async checkpoint => {
   const originalPath = process.env.PATH;
   process.env.PATH = '/nonexistent-wiselink-test-only';
   try {

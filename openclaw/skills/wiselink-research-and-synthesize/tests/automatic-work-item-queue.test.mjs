@@ -1461,61 +1461,98 @@ function deferred() {
   return { promise, resolve };
 }
 
+function realOwnerTest(name, perform) {
+  const platformName = process.platform === 'linux' ? name
+    : `non-Linux owner rejection contract: ${name}`;
+  return test(platformName, { timeout: 15_000 }, perform);
+}
+
+async function assertUnsupportedOwnerPlatform(checkpoint, directory, original) {
+  if (process.platform === 'linux') return false;
+  const before = (await readdir(directory)).sort();
+  let calls = 0;
+  const unexpected = async () => { calls += 1; assert.fail('unsupported owner cannot enter business callbacks'); };
+  const dependencies = Object.fromEntries(Object.entries(failedInvocationDependencies(checkpoint, unexpected))
+    .map(([key, value]) => [key, typeof value === 'function' ? unexpected : value]));
+  await assert.rejects(checkpoint.withActiveClaimOwner(unexpected), /AUTO_WORK_ITEM_QUEUE_OWNER_LOCK_UNAVAILABLE/u);
+  await assert.rejects(consumeAutomaticWorkItemQueueTick({}, dependencies), /AUTO_WORK_ITEM_QUEUE_OWNER_LOCK_UNAVAILABLE/u);
+  assert.equal(calls, 0);
+  assert.deepEqual(await checkpoint.readOptional('active-claim'), original);
+  assert.deepEqual((await readdir(directory)).sort(), before);
+  return true;
+}
+
+async function waitForOwnerEntry(entered, operation) {
+  let timer;
+  try {
+    await Promise.race([entered.promise, operation.then(() => {
+      throw new Error('TEST_OWNER_ENDED_BEFORE_ENTRY');
+    }), new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('TEST_OWNER_ENTRY_TIMEOUT')), 10_000);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
 for (const replacement of ['new-generation', 'new-work-item', 'cleared']) {
-  test(`real checkpoint: late invocation failure preserves a ${replacement} claim`, async () => {
+  realOwnerTest(`real checkpoint: late invocation failure preserves a ${replacement} claim`, async () => {
     const directory = await mkdtemp(join(tmpdir(), 'wiselink-invocation-race-'));
     try {
       const checkpoint = await createCheckpointStore(directory);
       const original = storedClaim();
       await checkpoint.write('active-claim', original);
+      if (await assertUnsupportedOwnerPlatform(checkpoint, directory, original)) return;
       const entered = deferred();
       const finish = deferred();
       const failure = new Error('HOSTED_INITIAL_FAILED');
       const invocation = consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(
         checkpoint, async () => { entered.resolve(); await finish.promise; throw failure; }));
       const result = invocation.then(() => assert.fail('failed invocation must reject'), error => error);
-      await entered.promise;
-      const next = replacement === 'cleared' ? null : replacement === 'new-generation'
-        ? storedClaim(2) : { ...storedClaim(2), workItemId: 'WI-NEW', requestId: 'REQ-NEW', documentVersionId: 'DV-NEW' };
-      await checkpoint.write('active-claim', next);
-      finish.resolve();
-      assert.equal(await result, failure);
-      assert.deepEqual(await checkpoint.readOptional('active-claim'), next);
-      const names = (await readdir(directory)).filter(name => /^consumer-failure-.*\.json$/u.test(name));
-      assert.equal(names.length, 1);
-      const key = names[0].slice(0, -5);
-      assertInvocationFailure([key, await checkpoint.readOptional(key)], original, 'HOSTED_INITIAL_FAILED');
+      try {
+        await waitForOwnerEntry(entered, invocation);
+        const next = replacement === 'cleared' ? null : replacement === 'new-generation'
+          ? storedClaim(2) : { ...storedClaim(2), workItemId: 'WI-NEW', requestId: 'REQ-NEW', documentVersionId: 'DV-NEW' };
+        await checkpoint.write('active-claim', next);
+        finish.resolve();
+        assert.equal(await result, failure);
+        assert.deepEqual(await checkpoint.readOptional('active-claim'), next);
+        const names = (await readdir(directory)).filter(name => /^consumer-failure-.*\.json$/u.test(name));
+        assert.equal(names.length, 1);
+        const key = names[0].slice(0, -5);
+        assertInvocationFailure([key, await checkpoint.readOptional(key)], original, 'HOSTED_INITIAL_FAILED');
+      } finally { finish.resolve(); await result; }
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
 }
 
-test('real checkpoint: one active invocation rejects a competing same-lease consumer', async () => {
+realOwnerTest('real checkpoint: one active invocation rejects a competing same-lease consumer', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'wiselink-invocation-live-race-'));
   try {
     const checkpoint = await createCheckpointStore(directory);
     const original = storedClaim();
     await checkpoint.write('active-claim', original);
+    if (await assertUnsupportedOwnerPlatform(checkpoint, directory, original)) return;
     const entered = deferred(), finish = deferred();
     const failure = new Error('HOSTED_INITIAL_FAILED');
     const a = consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(checkpoint,
       async () => { entered.resolve(); await finish.promise; throw failure; }));
     const resultA = a.then(() => assert.fail('A must fail'), error => error);
-    await entered.promise;
     try {
+      await waitForOwnerEntry(entered, a);
       await assert.rejects(consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(checkpoint,
         async () => assert.fail('competing consumer must not run'))), /AUTO_WORK_ITEM_QUEUE_OWNER_BUSY/u);
-    } finally { finish.resolve(); }
+    } finally { finish.resolve(); await resultA; }
     assert.equal(await resultA, failure);
     assert.deepEqual(await checkpoint.readOptional('active-claim'), original);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('real checkpoint: separate failed invocations retain independent immutable receipts', async () => {
+realOwnerTest('real checkpoint: separate failed invocations retain independent immutable receipts', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'wiselink-invocation-two-failures-'));
   try {
     const checkpoint = await createCheckpointStore(directory);
     const original = storedClaim();
     await checkpoint.write('active-claim', original);
+    if (await assertUnsupportedOwnerPlatform(checkpoint, directory, original)) return;
     const errors = [new Error('HOSTED_INITIAL_FAILED'), new Error('DOCUMENT_PARSE_STEP_FAILED')];
     for (const failure of errors)
       await assert.rejects(consumeAutomaticWorkItemQueueTick({}, failedInvocationDependencies(checkpoint,
