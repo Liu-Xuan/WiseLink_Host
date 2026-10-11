@@ -140,7 +140,7 @@ c24 可选控制元数据兼容旧任务，但旧 Skill 不接受新字段，因
 4. 同名 Skill 只有一个，安装版本精确
    `wiselink-research-and-synthesize@r09.c216`；
 5. Host MCP package/version 为
-   `wiselink-openclaw-engineering-assessment@1.2.0`，exact 35 tools 可见；
+   `wiselink-openclaw-engineering-assessment@1.2.0`，exact 36 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
 7. 凭据已轮换，托管日志/trace 不回显 Bearer、cookie、token、API key 或 FileService locator。
 
