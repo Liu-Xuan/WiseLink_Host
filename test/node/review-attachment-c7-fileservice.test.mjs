@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import test from 'node:test';
+import { InMemoryArtifactLocator } from '../support/offline-artifact-locator.mjs';
 
 import {
   InMemoryHostedDocumentCatalog,
@@ -25,6 +26,7 @@ const {
 const {
   MiaodaFileServiceArtifactStore,
 } = require('../../dist/server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js');
+const { MiaodaOrdinaryArtifactStoreAdapter } = require('../../dist/server/modules/unified-reader/miaoda-ordinary-artifact-store.adapter.js');
 const {
   classifyImmutableSourceReuseState,
   classifyReviewAttachmentResidualReuseState,
@@ -79,6 +81,7 @@ test('R09 C7 official FileService actual PDF bytes -> DM binding -> parsed artif
     fileService,
     documentManagement,
     documentVersions,
+    new MiaodaOrdinaryArtifactStoreAdapter(fileService, new InMemoryArtifactLocator()),
   );
 
   const previousSandboxId = process.env.SANDBOX_ID;
@@ -631,6 +634,7 @@ test('legacy unresolved Review residual recovers only under exact new-request sc
       resolve: (documentVersionId, options) =>
         catalog.resolveDocumentVersionSource(documentVersionId, options),
     },
+    new MiaodaOrdinaryArtifactStoreAdapter(fileService, new InMemoryArtifactLocator()),
   );
   const previousSandboxId = process.env.SANDBOX_ID;
   const previousLocalDev = process.env.MIAODA_LOCAL_DEV;

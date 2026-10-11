@@ -631,20 +631,23 @@ export class DocumentManagementHostedCore {
       request,
       serverContext,
     );
-    await this.authorizer.assertCanIngest({
+    const ingestRoles = Array.isArray(serverContext.roles) ? [...serverContext.roles] : [];
+    const runtimeIngestAuthority = serverContext.runtimeIngestAuthority;
+    const assertCanIngest = () => this.authorizer.assertCanIngest({
       actorUserId,
       tenantId,
-      roles: Array.isArray(serverContext.roles) ? [...serverContext.roles] : [],
+      roles: [...ingestRoles],
       action: 'DOCUMENT_INGEST',
       selection,
-      ...(serverContext.runtimeIngestAuthority
+      ...(runtimeIngestAuthority
         ? {
-            runtimeIngestAuthority: serverContext.runtimeIngestAuthority.mode === 'HOSTED_MIAODA_DOCUMENT_UPLOAD'
-              ? serverContext.runtimeIngestAuthority
-              : structuredClone(serverContext.runtimeIngestAuthority),
+            runtimeIngestAuthority: runtimeIngestAuthority.mode === 'HOSTED_MIAODA_DOCUMENT_UPLOAD'
+              ? runtimeIngestAuthority
+              : structuredClone(runtimeIngestAuthority),
           }
         : {}),
     });
+    await assertCanIngest();
 
     let existingIngestion = await this.catalog.findIngestionByIdempotency({
       idempotencyKey,
@@ -771,6 +774,19 @@ export class DocumentManagementHostedCore {
       sha256: actualSha256,
       byteLength: selected.bytes.byteLength,
       mediaType: 'application/pdf',
+      assertActive: async () => {
+        await assertCanIngest();
+        const fresh = await this.artifactStore.readSelection(selection);
+        assertPdfMediaType(fresh.mediaType);
+        if (fresh.bucketId !== selected.bucketId || fresh.filePath !== selected.filePath
+          || fresh.providerObjectId !== selected.providerObjectId
+          || fresh.providerVersionId !== selected.providerVersionId
+          || fresh.sha256 !== actualSha256 || sha256Hex(fresh.bytes) !== actualSha256
+          || fresh.byteLength !== selected.byteLength || fresh.bytes.byteLength !== selected.byteLength
+          || !fresh.bytes.equals(selected.bytes)) {
+          fail('INGESTION_SOURCE_CHANGED', 'The selected source no longer matches the authorized snapshot.');
+        }
+      },
     });
     if (!immutable.readbackVerified) {
       fail(

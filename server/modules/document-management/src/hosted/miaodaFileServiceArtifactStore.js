@@ -1,6 +1,8 @@
 import { sha256Hex } from '../runtime/valueTools.js';
+import { isFileServiceTransportFailure, withFileReadTransportRetry } from '../../../unified-reader/file-service-read-transport';
 
 const DEFAULT_MAX_BYTES = 100 * 1024 * 1024;
+const UPLOAD_RECOVERY_DELAYS_MS = [250, 1000];
 
 function fail(code, message, details = {}) {
   throw Object.assign(new Error(message), { code, details });
@@ -165,8 +167,8 @@ export class MiaodaFileServiceArtifactStore {
     };
   }
 
-  async persistImmutableSource({ bytes, sha256, byteLength, mediaType = 'application/pdf' } = {}) {
-    const sourceBytes = await bodyToBuffer(bytes, this.maxBytes);
+  async persistImmutableSource({ bytes, sha256, byteLength, mediaType = 'application/pdf', assertActive } = {}) {
+    const sourceBytes = Buffer.from(await bodyToBuffer(bytes, this.maxBytes));
     const actualSha256 = sha256Hex(sourceBytes);
     if (actualSha256 !== sha256 || sourceBytes.byteLength !== Number(byteLength)) {
       fail('SOURCE_IDENTITY_MISMATCH', 'Requested source identity does not match actual bytes.');
@@ -174,20 +176,41 @@ export class MiaodaFileServiceArtifactStore {
     const bucketId = required(await this.fileService.getDefaultBucket(), 'defaultBucketId');
     const filePath = `/document-management/source/sha256/${sha256.slice(0, 2)}/${sha256}.pdf`;
     const scoped = this.fileService.from(bucketId);
-    let metadata = await scoped.getFileMetadata(filePath);
+    let metadata = await optionalMetadata(() => scoped.getFileMetadata(filePath));
     let reusedExisting = Boolean(metadata);
-    if (!metadata) {
+    for (let attempt = 0; !metadata; attempt += 1) {
+      // Authorization failures are never transport failures. Recheck the exact
+      // actor and selected source before every write, outside the upload catch.
+      if (assertActive) await assertActive();
       const uploadFilePath = providerFilePath(filePath, 'filePath');
-      metadata = await scoped.upload(sourceBytes, {
-        filePath: uploadFilePath,
-        fileName: `${sha256}.pdf`,
-        contentType: mediaType,
-        upsert: false,
-      });
+      try {
+        metadata = await scoped.upload(sourceBytes, {
+          filePath: uploadFilePath,
+          fileName: `${sha256}.pdf`,
+          contentType: mediaType,
+          upsert: false,
+        });
+      } catch (cause) {
+        if (!assertActive || !isFileServiceTransportFailure(cause)) throw cause;
+        metadata = await optionalMetadata(() => scoped.getFileMetadata(filePath));
+        if (metadata) {
+          // A lost response may have committed the immutable object. Normal
+          // exact readback and Catalog reuse admission still apply below.
+          reusedExisting = true;
+          break;
+        }
+        const delayMs = UPLOAD_RECOVERY_DELAYS_MS[attempt];
+        if (delayMs === undefined) throw cause;
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        continue;
+      }
+      if (!metadata) fail('FILESERVICE_OBJECT_NOT_FOUND', 'Upload returned no object metadata.');
       reusedExisting = false;
     }
     const identity = metadataIdentity(metadata, bucketId, filePath);
-    const readback = await downloadActualBytes(scoped, identity, this.maxBytes);
+    assertSourceMetadata(identity, sourceBytes, mediaType);
+    const readback = await withFileReadTransportRetry(() => downloadActualBytes(scoped, identity, this.maxBytes));
+    assertSourceMetadata(readback.metadata, sourceBytes, mediaType);
     const readbackSha256 = sha256Hex(readback.bytes);
     if (
       readbackSha256 !== sha256
@@ -215,5 +238,19 @@ export class MiaodaFileServiceArtifactStore {
       readbackVerified: true,
       reusedExisting,
     };
+  }
+}
+
+function assertSourceMetadata(identity, bytes, mediaType) {
+  if (identity.providerByteLength !== bytes.byteLength || identity.mediaType !== mediaType) {
+    fail('FILESERVICE_SOURCE_METADATA_MISMATCH', 'Immutable source metadata differs from the source snapshot.');
+  }
+}
+
+async function optionalMetadata(read) {
+  try { return await withFileReadTransportRetry(read); }
+  catch (cause) {
+    if ([cause?.status, cause?.statusCode, cause?.response?.status].includes(404)) return null;
+    throw cause;
   }
 }

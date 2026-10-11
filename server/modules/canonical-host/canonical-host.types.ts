@@ -111,7 +111,7 @@ export interface CanonicalAuthorizationPort {
     workItemId: string;
     requestId?: string;
     documentVersionId?: string;
-  }): Promise<CanonicalAuthorizationDecision>;
+  }, database?: PostgresJsDatabase): Promise<CanonicalAuthorizationDecision>;
 }
 
 export interface CanonicalPermissionSnapshotPort {
@@ -121,7 +121,7 @@ export interface CanonicalPermissionSnapshotPort {
     workItemId: string;
     requestId?: string;
     documentVersionId?: string;
-  }): Promise<{ permissionSnapshotVersion: string }>;
+  }, database?: PostgresJsDatabase): Promise<{ permissionSnapshotVersion: string }>;
 }
 
 export interface CanonicalWorkItemRegistrarPort {

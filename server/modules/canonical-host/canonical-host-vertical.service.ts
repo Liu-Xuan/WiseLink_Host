@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 
 import type {
   AilyParsedPackageQueryResponse,
@@ -30,6 +31,8 @@ import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { S1000dIngressService } from '../s1000d-ingress/s1000d-ingress.service';
 import { DocumentManagementHostedService } from '../document-management/src/hosted/nest';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
+import { initializedParseSeedGrantFacts } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
+import { canonicalAuthorizationDecisionFromGrant } from './ordinary-canonical-authorization.adapter';
 import type { PreparedS1000dIngressCandidate } from '../s1000d-ingress/s1000d-ingress.types';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
@@ -194,19 +197,32 @@ export class CanonicalHostVerticalService {
       // the already verified WorkItem result with a new parsing failure.
       return this.reuseCompleted(request, projection);
     }
-    assertSameAuthorization(projection, actionContext);
     if (projection.phase !== 'PARSE_REQUESTED') {
+      assertSameAuthorization(projection, actionContext);
       throw new Error(`WORK_ITEM_NOT_RUNNABLE:${projection.phase}`);
     }
     const replacesCompletedPackage = projection.package !== null;
-    projection = await this.registrar.compareAndSet({
-      workItemId: request.workItemId,
-      expectedRevision: projection.revision,
-      next: {
-        ...withoutRevision(projection),
-        phase: 'PARSING',
-      },
-    });
+    const oauthActor = actionContext.actor.objectAccessActor;
+    if (!sameAuthorization(projection, actionContext) && projection.revision === 1
+      && oauthActor?.identityProvenance === 'FEISHU_OAUTH_USER_ACCESS_TOKEN' && this.workItems) {
+      let currentContext = actionContext;
+      projection = await this.workItems.claimInitializedParseRequest({ request,
+        tenantId: actionContext.actor.tenantId, actorUserId: actionContext.actor.userId,
+        authorizeCurrent: async (database, binding) => {
+          currentContext = await this.authorizeAction({ actor: actionContext.actor, action: 'PARSE_PDF',
+            workItemId: request.workItemId, requestId: request.requestId,
+            documentVersionId: request.source.documentVersionId }, database);
+          const seedDecision = canonicalAuthorizationDecisionFromGrant('PARSE_PDF', initializedParseSeedGrantFacts(oauthActor, binding));
+          return { current: seedProjection(request, currentContext).parseAuthorization,
+            seed: seedProjection(request, { actor: actionContext.actor, decision: seedDecision }).parseAuthorization };
+        },
+      });
+      assertSameAuthorization(projection, currentContext);
+    } else {
+      assertSameAuthorization(projection, actionContext);
+      projection = await this.registrar.compareAndSet({ workItemId: request.workItemId,
+        expectedRevision: projection.revision, next: { ...withoutRevision(projection), phase: 'PARSING' } });
+    }
     let packageAttempt: {
       packageId: string;
       contractId: string;
@@ -1393,17 +1409,18 @@ export class CanonicalHostVerticalService {
     workItemId: string;
     requestId?: string;
     documentVersionId?: string;
-  }): Promise<CanonicalHostActionContext> {
+  }, database?: PostgresJsDatabase): Promise<CanonicalHostActionContext> {
     const decision: CanonicalAuthorizationDecision =
-      await this.authorization.authorize(input);
+      await (database ? this.authorization.authorize(input, database) : this.authorization.authorize(input));
     validateDecision(decision, input.action);
-    const fresh = await this.permissionSnapshots.freshRead({
+    const snapshotInput = {
       actor: input.actor,
       decision,
       workItemId: input.workItemId,
       requestId: input.requestId,
       documentVersionId: input.documentVersionId,
-    });
+    };
+    const fresh = await (database ? this.permissionSnapshots.freshRead(snapshotInput, database) : this.permissionSnapshots.freshRead(snapshotInput));
     if (
       fresh.permissionSnapshotVersion !== decision.permissionSnapshotVersion
     ) {
@@ -2005,16 +2022,23 @@ function assertSameAuthorization(
   projection: CanonicalWorkItemProjection,
   actionContext: CanonicalHostActionContext,
 ): void {
-  if (
-    projection.parseAuthorization.actorFingerprint !==
-      actionContext.decision.actorFingerprint ||
-    projection.parseAuthorization.decisionHash !==
-      actionContext.decision.decisionHash ||
-    projection.permissionSnapshotVersion !==
-      actionContext.decision.permissionSnapshotVersion
-  ) {
+  if (!sameAuthorization(projection, actionContext)) {
     throw new Error('WORK_ITEM_AUTHORIZATION_IDEMPOTENCY_COLLISION');
   }
+}
+
+function sameAuthorization(
+  projection: CanonicalWorkItemProjection,
+  actionContext: CanonicalHostActionContext,
+): boolean {
+  return (
+    projection.parseAuthorization.actorFingerprint ===
+      actionContext.decision.actorFingerprint &&
+    projection.parseAuthorization.decisionHash ===
+      actionContext.decision.decisionHash &&
+    projection.permissionSnapshotVersion ===
+      actionContext.decision.permissionSnapshotVersion
+  );
 }
 
 function assertSameActor(

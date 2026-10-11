@@ -20,6 +20,7 @@ import {
 
 import type {
   CanonicalParseAuthorizationProjection,
+  CanonicalPdfVerticalRunRequest,
   CanonicalWorkItemProjection,
   CanonicalExecutionModelSelection,
   DocumentDeliverySelection,
@@ -44,6 +45,7 @@ import { canonicalModelError, taskModelSelection } from '../model-settings/canon
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { documentDeliveryRequestId } from '../canonical-host/document-delivery-ref';
 import { preserveWorkItemModelConfigurationAudit } from './model-configuration-audit';
+import { MiaodaDocumentVersionSourceResolver } from './miaoda-document-version-source.resolver';
 
 const ACTION_TYPE = 'PARSE_PDF';
 const DELIVERY_INTENT_ACTION_TYPE = 'DOCUMENT_DELIVERY_INTENT';
@@ -2096,6 +2098,86 @@ export class MiaodaWorkItemRepository {
         ),
       )
       .orderBy(desc(workItem.updatedAt));
+  }
+
+  /** Claim only a never-started initial projection left behind by a failed
+   * first PARSING CAS. Existing attempts and later parse phases stay untouched. */
+  async claimInitializedParseRequest(input: {
+    request: CanonicalPdfVerticalRunRequest;
+    tenantId: string;
+    actorUserId: string;
+    authorizeCurrent: (database: PostgresJsDatabase, binding: WorkItemAuthorizationBinding) => Promise<{
+      current: CanonicalParseAuthorizationProjection;
+      seed: CanonicalParseAuthorizationProjection;
+    }>;
+  }): Promise<CanonicalWorkItemProjection> {
+    return this.db.transaction(async transaction => {
+      const { request } = input;
+      const [row] = await transaction.select().from(workItem).where(and(
+        eq(workItem.workItemId, request.workItemId), eq(workItem.tenantId, input.tenantId),
+        eq(workItem.requestedByUserId, input.actorUserId),
+      )).limit(1).for('update');
+      const projection = row && parseProjection(row.projectionJson);
+      if (!row || !projection || row.revision !== 1 || projection.revision !== 1
+        || row.actionType !== ACTION_TYPE || row.status !== 'PARSE_REQUESTED'
+        || projection.phase !== 'PARSE_REQUESTED' || !row.runKey.startsWith('dev:')
+        || row.requestId !== request.requestId || projection.requestId !== request.requestId
+        || projection.workItemId !== request.workItemId
+        || row.documentId !== request.source.documentId || row.documentVersionId !== request.source.documentVersionId
+        || row.sourceArtifactId !== request.source.sourceArtifactId
+        || row.sourceFileSha256 !== rawHash(request.source.sourceFileSha256)
+        || Number(row.sourceByteLength) !== request.source.sourceByteLength
+        || row.normalizedFamily !== request.classification.normalizedFamily
+        || canonicalJson(projection.source) !== canonicalJson(request.source)
+        || canonicalJson(projection.classification) !== canonicalJson(request.classification)
+        || projection.package !== null || projection.failure !== null || projection.recordingFailure !== null
+        || projection.integratedAssessment !== null
+        || [row.analysisModelJson, row.packageId, row.packageArtifactRef, row.packageArtifactSha256,
+          row.failureCode, row.failureArtifactRef, row.failureArtifactSha256].some(value => value !== null)) {
+        throw new Error('WORK_ITEM_INITIAL_PARSE_RESUME_NOT_AVAILABLE');
+      }
+      const [attempt] = await transaction.select().from(actionAttempt).where(and(
+        eq(actionAttempt.workItemId, row.workItemId), eq(actionAttempt.actionType, ACTION_TYPE),
+      )).orderBy(desc(actionAttempt.attemptNo)).limit(1).for('update');
+      if (!attempt || attempt.attemptNo !== 1 || attempt.status !== 'PENDING'
+        || attempt.tenantId !== row.tenantId || attempt.actorUserId !== row.requestedByUserId
+        || attempt.triggerRequestId !== row.requestId || attempt.requestOrigin !== 'MIAODA'
+        || attempt.claimCount !== 0 || attempt.retryCount !== 0 || attempt.leaseGeneration !== 0
+        || [attempt.startedAt, attempt.completedAt, attempt.producerRunId, attempt.packageArtifactRef,
+          attempt.packageArtifactSha256, attempt.failureArtifactRef, attempt.failureArtifactSha256,
+          attempt.errorCode, attempt.errorMessage, attempt.executionModelJson, attempt.taskEnvelopeJson,
+          attempt.resultEnvelopeJson, attempt.leaseOwner, attempt.leaseToken, attempt.leaseExpiresAt,
+          attempt.cancelRequestedAt, attempt.commitStartedAt].some(value => value !== null)) {
+        throw new Error('WORK_ITEM_INITIAL_PARSE_RESUME_NOT_AVAILABLE');
+      }
+      const binding: WorkItemAuthorizationBinding = { workItemId: row.workItemId, revision: row.revision,
+        tenantId: row.tenantId, requestId: row.requestId, documentId: row.documentId,
+        documentVersionId: row.documentVersionId, requestedByUserId: row.requestedByUserId, runKey: row.runKey };
+      const authorization = await input.authorizeCurrent(transaction, binding);
+      if (canonicalJson(projection.parseAuthorization) !== canonicalJson(authorization.seed)
+        || projection.permissionSnapshotVersion !== authorization.seed.permissionSnapshotVersion
+        || authorization.current.actorFingerprint !== authorization.seed.actorFingerprint) {
+        throw new Error('WORK_ITEM_AUTHORIZATION_IDEMPOTENCY_COLLISION');
+      }
+      const source = await new MiaodaDocumentVersionSourceResolver(transaction).resolve(row.documentVersionId,
+        { requireCurrent: true, expectedCreatorUserId: input.actorUserId });
+      if (source.version.documentId !== row.documentId || source.version.sourceArtifactId !== row.sourceArtifactId
+        || source.version.pdfSha256 !== row.sourceFileSha256 || Number(source.version.byteLength) !== Number(row.sourceByteLength)
+        || source.artifact.providerObjectId !== request.source.driveFileToken
+        || source.artifact.providerVersionId !== request.source.driveSourceVersion) {
+        throw new Error('WORK_ITEM_BUSINESS_KEY_COLLISION');
+      }
+      const { revision: _revision, ...previous } = projection;
+      const claimed = await this.persistProjectionCas({ workItemId: row.workItemId, expectedRevision: 1,
+        syncPrimaryAttempt: false, next: { ...previous, phase: 'PARSING',
+          parseAuthorization: authorization.current, permissionSnapshotVersion: authorization.current.permissionSnapshotVersion } }, transaction);
+      const now = new Date();
+      const started = await transaction.update(actionAttempt).set({ status: 'PARSING', startedAt: now, updatedAt: now })
+        .where(and(eq(actionAttempt.attemptId, attempt.attemptId), eq(actionAttempt.status, 'PENDING'),
+          isNull(actionAttempt.startedAt))).returning({ attemptId: actionAttempt.attemptId });
+      if (started.length !== 1) throw new Error('WORK_ITEM_CAS_CONFLICT');
+      return claimed;
+    });
   }
 
   async initializeProjection(

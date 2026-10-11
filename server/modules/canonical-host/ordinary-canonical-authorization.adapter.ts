@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 
 import {
   CANONICAL_OBJECT_ACCESS,
@@ -32,30 +33,17 @@ export class OrdinaryCanonicalAuthorizationAdapter implements CanonicalAuthoriza
     workItemId: string;
     requestId?: string;
     documentVersionId?: string;
-  }): Promise<CanonicalAuthorizationDecision> {
+  }, database?: PostgresJsDatabase): Promise<CanonicalAuthorizationDecision> {
+    const accessInput = {
+      actor: input.actor.objectAccessActor ?? unavailableServiceActorContext(),
+      action: input.action,
+      accessRoot: { kind: 'WORK_ITEM' as const, id: input.workItemId },
+    };
     const grant = requiredLegacyGrant(
-      await this.objectAccess.freshRead({
-        actor:
-          input.actor.objectAccessActor ?? unavailableServiceActorContext(),
-        action: input.action,
-        accessRoot: { kind: 'WORK_ITEM', id: input.workItemId },
-      }),
+      await (database ? this.objectAccess.freshRead(accessInput, database) : this.objectAccess.freshRead(accessInput)),
       input,
     );
-    const decisionSeed = JSON.stringify({
-      action: input.action,
-      actorFingerprint: grant.actorFingerprint,
-      authorizationFingerprint: grant.authorizationFingerprint,
-      accessRevision: grant.accessRevision,
-    });
-    return {
-      action: input.action,
-      allowed: true,
-      actorFingerprint: grant.actorFingerprint,
-      decisionId: `decision-${digest(decisionSeed).slice(7, 39)}`,
-      decisionHash: digest(decisionSeed),
-      permissionSnapshotVersion: grant.authorizationFingerprint,
-    };
+    return canonicalAuthorizationDecisionFromGrant(input.action, grant);
   }
 }
 
@@ -75,14 +63,14 @@ export class OrdinaryCanonicalPermissionSnapshotAdapter implements CanonicalPerm
     workItemId: string;
     requestId?: string;
     documentVersionId?: string;
-  }): Promise<{ permissionSnapshotVersion: string }> {
+  }, database?: PostgresJsDatabase): Promise<{ permissionSnapshotVersion: string }> {
+    const accessInput = {
+      actor: input.actor.objectAccessActor ?? unavailableServiceActorContext(),
+      action: input.decision.action,
+      accessRoot: { kind: 'WORK_ITEM' as const, id: input.workItemId },
+    };
     const grant = requiredLegacyGrant(
-      await this.objectAccess.freshRead({
-        actor:
-          input.actor.objectAccessActor ?? unavailableServiceActorContext(),
-        action: input.decision.action,
-        accessRoot: { kind: 'WORK_ITEM', id: input.workItemId },
-      }),
+      await (database ? this.objectAccess.freshRead(accessInput, database) : this.objectAccess.freshRead(accessInput)),
       input,
     );
     if (
@@ -93,6 +81,19 @@ export class OrdinaryCanonicalPermissionSnapshotAdapter implements CanonicalPerm
     }
     return { permissionSnapshotVersion: grant.authorizationFingerprint };
   }
+}
+
+/** The existing decision hash rule is also used to prove a frozen seed; hashing
+ * those facts alone never grants permission to execute the seed authorization. */
+export function canonicalAuthorizationDecisionFromGrant(
+  action: CanonicalAuthorizationDecision['action'],
+  grant: Pick<CanonicalObjectAccessGrant, 'actorFingerprint' | 'authorizationFingerprint' | 'accessRevision'>,
+): CanonicalAuthorizationDecision {
+  const decisionSeed = JSON.stringify({ action, actorFingerprint: grant.actorFingerprint,
+    authorizationFingerprint: grant.authorizationFingerprint, accessRevision: grant.accessRevision });
+  return { action, allowed: true, actorFingerprint: grant.actorFingerprint,
+    decisionId: `decision-${digest(decisionSeed).slice(7, 39)}`, decisionHash: digest(decisionSeed),
+    permissionSnapshotVersion: grant.authorizationFingerprint };
 }
 
 function requiredLegacyGrant(

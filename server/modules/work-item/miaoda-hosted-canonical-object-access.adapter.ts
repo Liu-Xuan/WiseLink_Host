@@ -275,6 +275,22 @@ function grant(
   };
 }
 
+/** Reconstruct only the original revision-0 hash facts from a freshly owned
+ * revision-1 binding. This evidence is never used as a current access grant. */
+export function initializedParseSeedGrantFacts(
+  actor: CanonicalMiaodaFinalUserActorContext,
+  binding: WorkItemAuthorizationBinding,
+): Pick<CanonicalObjectAccessGrant, 'actorFingerprint' | 'authorizationFingerprint' | 'accessRevision'> {
+  if (!isHostedCanonicalFinalUserActor(actor)
+    || actor.identityProvenance !== 'FEISHU_OAUTH_USER_ACCESS_TOKEN'
+    || binding.revision !== 1 || !ownedBindingMatches(binding, actor, binding.workItemId)) {
+    throw new Error('WORK_ITEM_AUTHORIZATION_IDEMPOTENCY_COLLISION');
+  }
+  const seed = grant(actor, 'PARSE_PDF', { ...binding, revision: 0 });
+  return { actorFingerprint: seed.actorFingerprint, authorizationFingerprint: seed.authorizationFingerprint,
+    accessRevision: seed.accessRevision };
+}
+
 function ownedBindingMatches(
   binding: WorkItemAuthorizationBinding | null,
   actor: HostedFinalUserActor,
