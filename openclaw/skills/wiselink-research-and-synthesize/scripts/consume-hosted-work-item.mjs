@@ -1097,7 +1097,7 @@ export async function runHostedInitialStage(options, dependencies) {
         queryAssessmentKnowledge: runtimeHooks.queryAssessmentKnowledge,
         saveAssessmentWork: runtimeHooks.saveAssessmentWork,
         readAssessmentWork: runtimeHooks.readAssessmentWork,
-        observeModelOutput: (shape, round = 1) => checkpoint.writeOnce(
+        observeModelOutput: (shape, round = 1) => checkpoint.writeOnceOrEqual(
           `${runtimeHooks.checkpointKey ?? 'model'}.output-shape${round === 1 ? '' : '-' + round}`, shape,
         ),
         observeTranslationFidelity: (report, round) => checkpoint.writeOnce(
