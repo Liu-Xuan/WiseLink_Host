@@ -14,7 +14,7 @@ import type { LocalMineruWorkerClaim, LocalMineruWorkerResult, LocalMineruWorker
 
 /** The existing runner's upper bound; the Host deadline and lease signal can stop it earlier. */
 export function createLocalMineruWorkerRunner(options: Pick<MineruRuntimeOptions, 'executable' | 'entryScript' | 'configPath'>): MineruRunner {
-  return new MineruRunner({ ...options, timeoutMs: 30 * 60 * 1000 });
+  return new MineruRunner({ ...options, timeoutMs: 60 * 60 * 1000 });
 }
 
 type WorkerPhase = 'CLAIM' | 'SOURCE' | 'CACHE' | 'PARSE' | 'TITLE' | 'PACKAGE' | 'RENEW' | 'RESULT' | 'DEADLINE';

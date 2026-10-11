@@ -59,14 +59,14 @@ describe('MinerU runner process boundary (fixture executable)', () => {
     }
     throw new Error('FIXTURE_PROCESS_NOT_READY');
   }
-  it('allows the production worker parser to finish beyond the previous fifteen-minute budget', async () => {
+  it('allows the production worker parser to finish beyond the previous thirty-minute budget', async () => {
     const f = await controlledFixture(); const controller = new AbortController();
     jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
     const pending = createLocalMineruWorkerRunner({ executable, configPath }).parse(pdf, { signal: controller.signal })
       .then(result => ({ result }), (error: unknown) => ({ error }));
     try {
       const pid = await readyPid(f.marker);
-      await jest.advanceTimersByTimeAsync(16 * 60 * 1000);
+      await jest.advanceTimersByTimeAsync(31 * 60 * 1000);
       expect(() => process.kill(pid, 0)).not.toThrow();
       await writeFile(f.release, 'complete');
       const outcome = await pending;
@@ -77,7 +77,7 @@ describe('MinerU runner process boundary (fixture executable)', () => {
       }
     } finally { controller.abort(); await pending; jest.useRealTimers(); }
   });
-  it('still bounds the production worker parser to thirty minutes', async () => {
+  it('still bounds the production worker parser to one hour', async () => {
     const f = await controlledFixture(); const controller = new AbortController();
     jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
     const pending = createLocalMineruWorkerRunner({ executable, configPath }).parse(pdf, { signal: controller.signal })
@@ -85,13 +85,13 @@ describe('MinerU runner process boundary (fixture executable)', () => {
     try {
       const pid = await readyPid(f.marker);
       // Let the real fixture's close event settle before advancing its hard-kill grace timer.
-      await jest.advanceTimersByTimeAsync(30 * 60 * 1000);
+      await jest.advanceTimersByTimeAsync(60 * 60 * 1000);
       const error = await pending;
       expect(error).toMatchObject({ message: 'MINERU_TIMEOUT' });
       expect(() => process.kill(pid, 0)).toThrow();
     } finally { controller.abort(); await pending; jest.useRealTimers(); }
   });
-  it('stops the thirty-minute worker parser when the earlier Host lease/deadline signal aborts', async () => {
+  it('stops the one-hour worker parser when the earlier Host lease/deadline signal aborts', async () => {
     const f = await controlledFixture(); const controller = new AbortController();
     jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
     const timer = setTimeout(() => controller.abort(new Error('LOCAL_MINERU_LEASE_LOST')), 2 * 60 * 1000);
@@ -104,6 +104,12 @@ describe('MinerU runner process boundary (fixture executable)', () => {
       expect(error).toMatchObject({ message: 'MINERU_ABORTED' });
       expect(() => process.kill(pid, 0)).toThrow();
     } finally { clearTimeout(timer); controller.abort(); await pending; jest.useRealTimers(); }
+  });
+  it('rejects a runtime budget above one hour before spawning the parser', async () => {
+    const f = await controlledFixture();
+    await expect(new MineruRunner({ executable, configPath, timeoutMs: 60 * 60 * 1000 + 1 }).parse(pdf))
+      .rejects.toThrow('MINERU_RUNTIME_CONFIG_INVALID');
+    await expect(readFile(f.marker)).rejects.toMatchObject({ code: 'ENOENT' });
   });
   it('binds exact input bytes, explicitly selects pipeline and preserves produced paragraphs', async () => {
     await script(`

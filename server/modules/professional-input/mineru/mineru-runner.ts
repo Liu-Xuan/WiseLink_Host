@@ -52,7 +52,7 @@ export class MineruRunner {
       (this.options.libraryPath !== undefined && (!isAbsolute(this.options.libraryPath) || this.options.libraryPath.includes(':'))) ||
       !Number.isSafeInteger(timeoutMs) ||
       timeoutMs < 1 ||
-      timeoutMs > 30 * 60 * 1000
+      timeoutMs > 60 * 60 * 1000
     )
       throw new Error('MINERU_RUNTIME_CONFIG_INVALID');
     this.running = true;
