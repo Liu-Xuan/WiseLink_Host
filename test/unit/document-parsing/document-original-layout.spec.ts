@@ -21,6 +21,32 @@ function texts(result: ReturnType<typeof compose>) {
 }
 
 describe('original comparison layout (synthetic coordinate evidence)', () => {
+  it('keeps a PDF.js end-of-line boundary across a small column gutter', () => {
+    const left = { ...item('Left condition.', 40, 650, 100), hasEOL: true };
+    const p = page([item('Right', 152, 650, 20), left, item('condition.', 177, 650, 50)]);
+    const before = structuredClone(p), line = originalPageLayout(p).lines[0];
+    expect(line.text).toBe('Left condition. Right condition.');
+    expect(line.runs).toEqual([
+      { text: 'Left condition.', x: 40, endX: 140, itemIndexes: [1], boxes: [[40, 140, 100, 10]] },
+      { text: 'Right condition.', x: 152, endX: 227, itemIndexes: [0, 2], boxes: [[152, 140, 20, 10], [177, 140, 50, 10]] },
+    ]);
+    expect(p).toEqual(before);
+  });
+
+  it('keeps each physical run\'s own indices and item boxes when columns share a baseline', () => {
+    const right = { ...item('Right column.', 300, 650, 70), transform: [12, 0, 0, 12, 300, 650], height: 12 };
+    const p = page([right, item('Left', 40, 650, 20), item('condition.', 65, 650, 50)]);
+    const before = structuredClone(p);
+    const line = originalPageLayout(p).lines[0];
+    expect(line.itemIndexes).toEqual([1, 2, 0]);
+    expect(line.runs).toEqual([
+      { text: 'Left condition.', x: 40, endX: 115, itemIndexes: [1, 2], boxes: [[40, 140, 20, 10], [65, 140, 50, 10]] },
+      { text: 'Right column.', x: 300, endX: 370, itemIndexes: [0], boxes: [[300, 138, 70, 12]] },
+    ]);
+    expect(line.height).toBe(12);
+    expect(p).toEqual(before);
+  });
+
   it('repairs late list markers, isolates page margins, and retains rejected pseudo-table words', () => {
     const first = page([
       item('Background', 40, 650), item('There are two cases.', 40, 630),
@@ -84,7 +110,8 @@ describe('original comparison layout (synthetic coordinate evidence)', () => {
 
   it('retains the original view when geometry is incomplete or rotated', () => {
     const p = page([item('Second', 40, 630), item('First', 40, 650)]);
-    for (const input of [{ ...p, rotation: 90 }, { ...p, text: p.text + ' missing geometry' },
+    for (const input of [{ ...p, rotation: 90 }, { ...p, width: Number.NaN }, { ...p, height: 0 },
+      { ...p, text: p.text + ' missing geometry' },
       { ...p, items: [{ ...p.items[0], transform: [10, 1, 0, 10, 40, 630] }, p.items[1]] }]) {
       expect(originalPageLayout(input)).toEqual({ page: input, lines: [] });
     }

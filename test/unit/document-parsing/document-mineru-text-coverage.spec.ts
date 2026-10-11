@@ -450,3 +450,175 @@ it('preserves conflicting explicit footer dates and their independent locations 
     reason: 'TEXT_CONFLICT', unitIds: units.map(unit => unit.unitId), readingImpact: 'LIMITATION',
     message: expect.stringContaining('不同的文档生成日期') }));
 });
+
+const literalUnits = (result: ReturnType<typeof reconcileMineruTextCoverage>) =>
+  result.source.units.filter(unit => ['SOURCE_LITERAL_TEXT', 'SOURCE_HEADER'].includes(String(unit.payload.role)));
+function unreadableTable(bbox: number[]) {
+  return { type: 'table', bbox, content: { html: '', table_type: 'complex_table', table_nest_level: 2 } };
+}
+function header(text: string, bbox = [0, 0, 950, 100]) {
+  return { type: 'page_header', bbox, content: { page_header_content: [{ type: 'text', content: text }] } };
+}
+
+it('retains independent literal runs in an unreadable table without reconstructing its columns', () => {
+  const input = fixture([[unreadableTable([0, 90, 900, 160])]],
+    [page([{ text: 'Left condition.', top: 100 }, { text: 'Right target: pending.', top: 100, x: 500 }])]);
+  const before = structuredClone(input), result = reconcileMineruTextCoverage(input), units = literalUnits(result);
+  expect(units.map(unit => unit.payload.text)).toEqual(['Left condition.', 'Right target: pending.']);
+  expect(units.map(unit => unit.mapping.textItems)).toEqual([
+    [{ pageIndex: 0, itemIndexes: [0] }], [{ pageIndex: 0, itemIndexes: [1] }],
+  ]);
+  expect(result.source.units[0]).toEqual(before.original.source.units[0]);
+  for (const [index, unit] of units.entries()) {
+    const ref = unit.sourceRefIds[0];
+    expect(unit.kind).toBe('paragraph');
+    expect(unit.mapping).toMatchObject({ supplementation: 'NATIVE_REGION_LITERAL',
+      sourcePointer: '/raw/contentListV2/0/0', sourceArtifactPath: 'original/pages-0.json' });
+    expect(result.source.sourceLocators.find(locator => locator.sourceRefId === ref)).toMatchObject({
+      artifactId: binding.sourceArtifactId, pageStart: 0, pageEnd: 0, quote: unit.payload.text });
+    expect(result.locations.find(location => location.sourceRefId === ref)?.boxes)
+      .toEqual([[index === 0 ? 10 : 500, 100, 100, 10]]);
+  }
+  expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({ reason: 'UNREAD', readingImpact: 'LIMITATION' }));
+  expect(input).toEqual(before);
+});
+
+it('retains an exact missing identifier without filling a blank cell or assigning completion', () => {
+  const table = { type: 'table', bbox: [0, 90, 900, 160], content: {
+    html: '<table><tr><td></td><td>Completed</td></tr><tr><td>TASK WX-ABC-760</td><td>Completed</td></tr></table>',
+  } };
+  const input = fixture([[table]], [page([{ text: 'TASK WX-ABC-560', top: 100 }, { text: 'Completed', top: 100, x: 500 }])]);
+  const result = reconcileMineruTextCoverage(input), units = literalUnits(result);
+  expect(units.map(unit => unit.payload.text)).toEqual(['TASK WX-ABC-560']);
+  expect(units[0].payload.rowGroups).toBeUndefined();
+  expect(result.source.units[0].payload).toEqual(input.original.source.units[0].payload);
+  expect(JSON.stringify(result.source.units[0].payload)).toContain('TASK WX-ABC-760');
+  expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({ reason: 'TEXT_CONFLICT', readingImpact: 'LIMITATION' }));
+});
+
+it('does not repeat literal text already delivered by a merged source on another physical page', () => {
+  const text = 'The exact source condition is already delivered.';
+  const input = fixture([[paragraph(text, [10, 100, 300, 120])], [unreadableTable([0, 90, 900, 160])]],
+    [page([{ text, top: 100 }]), page([{ text, top: 100 }], 1)]);
+  const result = reconcileMineruTextCoverage(input);
+  expect(literalUnits(result)).toEqual([]);
+  expect(result.source.units).toHaveLength(2);
+  expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({ reason: 'UNREAD', pageIndexes: [1], readingImpact: 'LIMITATION' }));
+});
+
+it('compares only hyphen typography without changing identifiers, source quotes or minus signs', () => {
+  const table = { type: 'table', bbox: [0, 90, 900, 210], content: {
+    html: '<table><tr><td></td><td>WX-005-78(Note 1)</td><td>WX-ABC-760</td><td>-0.25</td><td>3-4</td><td>WX-2</td></tr></table>',
+  } };
+  const input = fixture([[table]], [page([
+    { text: 'WX \u2010 005 \u2011 78 ( Note 1 )', top: 100 }, { text: 'WX \u2010 ABC \u2010 560', top: 120 },
+    { text: '- 0.25', top: 140 }, { text: '3 \u2013 4', top: 160 },
+    { text: 'WX\u20132', top: 180 },
+  ])]);
+  const before = structuredClone(input), result = reconcileMineruTextCoverage(input), units = literalUnits(result);
+  expect(units.map(unit => unit.payload.text)).toEqual(['WX \u2010 ABC \u2010 560', '- 0.25', '3 \u2013 4']);
+  expect(result.source.sourceLocators.filter(locator => units.some(unit => unit.sourceRefIds.includes(locator.sourceRefId)))
+    .map(locator => locator.quote)).toEqual(units.map(unit => unit.payload.text));
+  expect(result.source.units[0].payload).toEqual(before.original.source.units[0].payload);
+  expect(result.coverage.unresolvedRanges.some(range => range.reason === 'TEXT_CONFLICT')).toBe(true);
+  expect(input).toEqual(before);
+});
+
+it('keeps a fully populated table OCR difference as a limitation without fuzzy glyph matching', () => {
+  const table = { type: 'table', bbox: [0, 90, 900, 160], content: {
+    html: '<table><tr><td>WX-01T-AO</td><td>Existing condition.</td></tr></table>',
+  } };
+  const input = fixture([[table]], [page([{ text: 'WX-01T-A0', top: 100 }])]);
+  const result = reconcileMineruTextCoverage(input);
+  expect(literalUnits(result)).toEqual([]);
+  expect(result.source.units[0].payload).toEqual(input.original.source.units[0].payload);
+  expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({
+    reason: 'STRUCTURE_UNCERTAIN', readingImpact: 'LIMITATION', message: expect.stringContaining('不能确认为缺漏') }));
+});
+
+it.each(['competing paragraph', 'competing table', 'figure', 'middle figure'])('retains the limitation for a fragment with a %s', reason => {
+  const other = reason === 'figure' ? { type: 'image', bbox: [0, 90, 900, 160], content: {} }
+    : reason === 'competing table' ? unreadableTable([0, 90, 900, 160])
+      : paragraph('Other native content.', [0, 90, 900, 160]);
+  const blocks = [unreadableTable([0, 90, 900, 160]), ...(reason === 'middle figure' ? [] : [other])];
+  const result = reconcileMineruTextCoverage(fixture([blocks], [page([{ text: 'Missing condition.', top: 100 }])],
+    reason === 'middle figure' ? { preproc_blocks: [{ type: 'image', bbox: [0, 90, 900, 160] }] } : {}));
+  expect(literalUnits(result)).toEqual([]);
+  expect(result.coverage.unresolvedRanges.some(range => range.readingImpact === 'LIMITATION')).toBe(true);
+});
+
+it('does not use an unrelated native pointer as proof of an unread table fragment', () => {
+  const input = fixture([[unreadableTable([0, 90, 900, 160])]], [page([{ text: 'Missing condition.', top: 100 }])]);
+  input.original.source.units[0].mapping.sourcePointer = '/raw/contentListV2/0/9';
+  const result = reconcileMineruTextCoverage(input);
+  expect(literalUnits(result)).toEqual([]);
+  expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({ reason: 'TEXT_CONFLICT', readingImpact: 'LIMITATION' }));
+});
+
+it('uses two unique physical neighbors to retain a missing paragraph despite wrong native bboxes', () => {
+  const first = 'First category: an existing source condition.', missing = 'Other category: a missing source condition.';
+  const last = 'Last category: the next existing source condition.';
+  const input = fixture([[paragraph(first, [10, 90, 300, 125]), paragraph(last, [10, 125, 300, 150])]],
+    [page([{ text: first, top: 100 }, { text: missing, top: 120 }, { text: last, top: 140 }])]);
+  const result = reconcileMineruTextCoverage(input);
+  expect(result.source.units.map(unit => unit.payload.text)).toEqual([first, missing, last]);
+  expect(literalUnits(result)[0].mapping).toMatchObject({ supplementation: 'MATCHED_PARAGRAPH_GAP',
+    textItems: [{ pageIndex: 0, itemIndexes: [1] }] });
+  expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({ reason: 'TEXT_CONFLICT', readingImpact: 'LIMITATION' }));
+});
+
+it('keeps an OCR character difference as a conflict instead of a missing paragraph', () => {
+  const input = fixture([[paragraph('First source paragraph.', [10, 90, 300, 115]),
+    paragraph('The spelling is incorect.', [10, 125, 300, 155]), paragraph('Last source paragraph.', [10, 170, 300, 195])]],
+    [page([{ text: 'First source paragraph.', top: 100 }, { text: 'The spelling is incorrect.', top: 140 },
+      { text: 'Last source paragraph.', top: 180 }])]);
+  const result = reconcileMineruTextCoverage(input);
+  expect(literalUnits(result)).toEqual([]);
+  expect(result.source.units).toHaveLength(3);
+  expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({ reason: 'TEXT_CONFLICT', readingImpact: 'LIMITATION' }));
+});
+
+it('rejects a gap when its source neighbor has multiple physical matches', () => {
+  const result = reconcileMineruTextCoverage(fixture([[
+    paragraph('Repeated neighbor.', [10, 90, 300, 125]), paragraph('Last neighbor.', [10, 125, 300, 150]),
+  ]], [page([{ text: 'Repeated neighbor.', top: 70 }, { text: 'Repeated neighbor.', top: 100 },
+    { text: 'Missing category.', top: 120 }, { text: 'Last neighbor.', top: 140 }])],
+  { preproc_blocks: [{ type: 'text', bbox: [0, 0, 900, 300] }] }));
+  expect(literalUnits(result)).toEqual([]);
+});
+
+it('retains the full first-page date header as an ordinary quote without setting date metadata', () => {
+  const text = 'Publication journal, volume 42 (May 6, 2032).';
+  const input = fixture([[header(text), paragraph('Body condition.', [10, 300, 300, 315])]],
+    [page([{ text, top: 20 }, { text: 'Body condition.', top: 300 }])]);
+  const before = structuredClone(input), result = reconcileMineruTextCoverage(input), unit = literalUnits(result)[0];
+  expect(unit).toMatchObject({ kind: 'paragraph', payload: { text, role: 'SOURCE_HEADER' },
+    mapping: { supplementation: 'FIRST_PAGE_DATE_HEADER', sourcePointer: '/raw/contentListV2/0/0',
+      textItems: [{ pageIndex: 0, itemIndexes: [0] }] } });
+  expect(result.source.units.map(value => value.payload.text)).toEqual([text, 'Body condition.']);
+  expect(result.source.sourceLocators.find(locator => locator.sourceRefId === unit.sourceRefIds[0])?.quote).toBe(text);
+  expect(result.binding).toEqual(before.original.binding);
+  expect(input).toEqual(before);
+});
+
+it('does not retain a repeated running date header as a unique publication header', () => {
+  const text = 'Running header dated 2032-05-06.', blocks = [header(text), paragraph('Body.', [10, 300, 300, 315])];
+  const result = reconcileMineruTextCoverage(fixture([blocks, blocks],
+    [page([{ text, top: 20 }, { text: 'Body.', top: 300 }]), page([{ text, top: 20 }, { text: 'Body.', top: 300 }], 1)]));
+  expect(literalUnits(result)).toEqual([]);
+});
+
+it.each(['legal notice', 'body position', 'mixed font', 'zero width'])('does not promote a date header with %s', reason => {
+  const text = reason === 'legal notice' ? 'Copyright 2032-05-06.' : 'Publication date: 2032-05-06.';
+  const p = page([{ text, top: reason === 'body position' ? 220 : 20 }]);
+  if (reason === 'mixed font') {
+    p.items[0].text = 'Publication date:';
+    p.items.push({ text: '2032-05-06.', transform: [12, 0, 0, 12, 120, 970], width: 100, height: 12, hasEOL: true });
+    p.text = p.items.map(item => item.text).join(' ');
+  }
+  if (reason === 'zero width') p.items[0].width = 0;
+  const result = reconcileMineruTextCoverage(fixture([[header(text, reason === 'body position' ? [0, 200, 950, 250] : undefined)]], [p]));
+  expect(literalUnits(result)).toEqual([]);
+  if (reason === 'mixed font' || reason === 'zero width')
+    expect(result.coverage.unresolvedRanges.some(range => range.reason === 'STRUCTURE_UNCERTAIN')).toBe(true);
+});

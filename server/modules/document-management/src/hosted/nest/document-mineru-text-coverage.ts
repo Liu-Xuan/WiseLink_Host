@@ -2,15 +2,18 @@ import type { DocumentOriginalResult } from '@shared/document-original.interface
 import type { TranslationStructuredSourceUnit } from '@shared/canonical-translation-v2.interface';
 import type { DocumentPdfExtraction, DocumentPdfPage } from './document-original-pdf';
 import { mineruPageFurniture } from '../../../../professional-input/mineru/mineru-page-furniture';
-import { originalPageLayout, type OriginalLayoutLine } from './document-original-layout';
+import { originalPageLayout, type OriginalLayoutLine, type OriginalLayoutRun } from './document-original-layout';
 import { normalizeOriginalWhitespace, originalMarkdownText } from './document-original-text';
 import { documentOriginalStructuredSource } from './document-original-adapter';
 
 type Box = [number, number, number, number];
-type Region = { box: Box; discardedFurniture: boolean; native: boolean; footer: boolean; sourcePointer: string };
+type Region = { box: Box; discardedFurniture: boolean; native: boolean; footer: boolean; header: boolean;
+  blockType: string; sourcePointer: string };
 type GeneratedOn = { text: string; date: string; lines: Array<{ line: OriginalLayoutLine; index: number }>; sourcePointer: string };
-/** Preserve OCR; add independently located text outside MinerU regions. A narrowly
- * evidenced, single-column prose table may be replaced by its PDF text layer. */
+type LiteralRun = { run: OriginalLayoutRun; box: Box; slot: number; sourcePointer: string;
+  supplementation: 'NATIVE_REGION_LITERAL' | 'MATCHED_PARAGRAPH_GAP' | 'FIRST_PAGE_DATE_HEADER' };
+/** Preserve OCR and independently located PDF text. Literal fragments inside an
+ * unreadable native region do not reconstruct its table or column relationships. */
 export function reconcileMineruTextCoverage(input: {
   original: DocumentOriginalResult; extraction: DocumentPdfExtraction; rawMiddle: unknown; rawContentListV2: unknown;
 }): DocumentOriginalResult {
@@ -71,6 +74,32 @@ export function reconcileMineruTextCoverage(input: {
       original.source.findings.push({ findingId: `${unitId}:supplement`, code: 'PDF_TEXT_SUPPLEMENT', severity: 'warning',
         readingImpact: 'DIAGNOSTIC', blocking: false,
         message: '原文页脚明确给出的文档生成日期；不替代正文或附件的修订日期。',
+        affectedUnitIds: [unitId], sourceRefIds: [ref], pageIndexes: [pageIndex] });
+      if (!original.coverage.readPageIndexes.includes(pageIndex)) original.coverage.readPageIndexes.push(pageIndex);
+    }
+    for (const observation of literalSourceRuns(original, page, layout.lines, layouts, regions,
+      (unitIds, message) => limit('STRUCTURE_UNCERTAIN', pageIndex, unitIds, message))) {
+      const { run, box } = observation;
+      const unitId = `${original.binding.parseRunId}:pdfjs:p${pageIndex}:run:${run.itemIndexes.join('-')}`;
+      const ref = `${unitId}:source`;
+      additions.push({ unitId, kind: 'paragraph', moduleId: 'body', parentUnitId: null,
+        order: 0, depth: 0, continuityKey: unitId, sourceRefIds: [ref], sourceSegmentIds: [ref],
+        mapping: { extraction: 'PDFJS_TEXT_LAYER', supplementation: observation.supplementation, pageIndex,
+          sourcePointer: observation.sourcePointer, sourceArtifactPath: `original/pages-${Math.floor(pageIndex / 8) * 8}.json`,
+          textItems: [{ pageIndex, itemIndexes: [...run.itemIndexes] }], pdfTop: box[1], pdfLeft: box[0] },
+        payload: { text: run.text, role: observation.supplementation === 'FIRST_PAGE_DATE_HEADER'
+          ? 'SOURCE_HEADER' : 'SOURCE_LITERAL_TEXT' } });
+      insertionSlots.set(unitId, observation.slot);
+      original.source.sourceLocators.push({ sourceRefId: ref, kind: 'PDF_PAGE', artifactId: original.binding.sourceArtifactId,
+        pageStart: pageIndex, pageEnd: pageIndex, charStart: null, charEnd: null, charOffsetUnit: null,
+        normalizedPath: null, xpath: null, elementId: null, quote: run.text, bbox: null });
+      original.locations.push({ sourceRefId: ref, precision: 'TEXT_ITEM', coordinateSpace: 'PDF_VIEWPORT_TOP_LEFT',
+        pageIndex, viewportWidth: page.width, viewportHeight: page.height, boxes: run.boxes.map(value => [...value]) });
+      original.source.findings.push({ findingId: `${unitId}:literal`, code: 'PDF_TEXT_SUPPLEMENT', severity: 'warning',
+        readingImpact: 'DIAGNOSTIC', blocking: false,
+        message: observation.supplementation === 'FIRST_PAGE_DATE_HEADER'
+          ? '保留原件首面明确含日期的页眉文字；不据此修改文档日期字段。'
+          : '同一原件的独立物理文字片段；原表、栏关系及跨页结构仍须核对，未据此重建。',
         affectedUnitIds: [unitId], sourceRefIds: [ref], pageIndexes: [pageIndex] });
       if (!original.coverage.readPageIndexes.includes(pageIndex)) original.coverage.readPageIndexes.push(pageIndex);
     }
@@ -136,7 +165,11 @@ export function reconcileMineruTextCoverage(input: {
       limit('TEXT_CONFLICT', pageIndex, generatedDates.filter(value => value.pageIndex === pageIndex).map(value => value.unitId),
         '原文页脚给出不同的文档生成日期；各处原文均保留，日期关系需核对，未据此修改文档修订日期。');
   }
-  const supplementedPages = new Set(additions.map(unit => Number(unit.mapping.pageIndex)));
+  // Independent literal fragments cannot prove that an unread native page is
+  // complete. Keep its existing limitation, including cross-page table defects.
+  const literalModes = new Set(['NATIVE_REGION_LITERAL', 'MATCHED_PARAGRAPH_GAP', 'FIRST_PAGE_DATE_HEADER']);
+  const supplementedPages = new Set(additions.filter(unit => !literalModes.has(String(unit.mapping.supplementation)))
+    .map(unit => Number(unit.mapping.pageIndex)));
   for (const range of original.coverage.unresolvedRanges) if (range.reason === 'UNREAD' &&
       range.pageIndexes.every(page => supplementedPages.has(page))) {
     range.reason = 'STRUCTURE_UNCERTAIN';
@@ -146,7 +179,8 @@ export function reconcileMineruTextCoverage(input: {
   original.source.units = [];
   for (let index = 0; index <= baseUnits.length; index++) {
     original.source.units.push(...additions.filter(unit => insertionSlots.get(unit.unitId) === index).sort((left, right) =>
-      Number(left.mapping.pageIndex) - Number(right.mapping.pageIndex) || Number(left.mapping.pdfTop) - Number(right.mapping.pdfTop)));
+      Number(left.mapping.pageIndex) - Number(right.mapping.pageIndex) || Number(left.mapping.pdfTop) - Number(right.mapping.pdfTop) ||
+      Number(left.mapping.pdfLeft) - Number(right.mapping.pdfLeft)));
     if (index < baseUnits.length) original.source.units.push(baseUnits[index]);
   }
   original.source.units.forEach((unit, index) => { unit.order = index; });
@@ -163,6 +197,139 @@ export function reconcileMineruTextCoverage(input: {
   function limit(reason: 'TEXT_CONFLICT' | 'STRUCTURE_UNCERTAIN', pageIndex: number, unitIds: string[], message: string) {
     original.coverage.unresolvedRanges.push({ reason, pageIndexes: [pageIndex], unitIds, readingImpact: 'LIMITATION', message });
   }
+}
+/** Ordinary literal text only. No table cells, inferred branches, cross-column
+ * quotes, fuzzy identifier matching, or raw HTML promoted into readable text. */
+function literalSourceRuns(original: DocumentOriginalResult, page: DocumentPdfPage, lines: OriginalLayoutLine[],
+  layouts: Array<{ lines: OriginalLayoutLine[] }>, regions: Region[],
+  onUncertain: (unitIds: string[], message: string) => void): LiteralRun[] {
+  const observations: LiteralRun[] = [];
+  const delivered = original.source.units.flatMap(canonicalTexts).filter(Boolean).map(literalComparisonText);
+  const pageUnits = original.source.units.filter(unit => Number(unit.mapping.pageIndex) === page.pageIndex && !unit.parentUnitId);
+  const indexed = lines.flatMap(line => line.runs.map(run => ({ line, run, box: runBox(run, page) })));
+  for (const { line, run, box } of indexed) {
+    if (!run.text.trim()) continue;
+    if (!box) {
+      onUncertain([], '独立 PDF 文字片段的原始 item 索引或几何不完整；未自动补入，请核对原页。');
+      continue;
+    }
+    const needle = literalComparisonText(run.text);
+    if (delivered.some(text => text.includes(needle))) continue;
+    const touched = regions.filter(region => overlaps(box, region.box));
+    if (!touched.length || touched.some(region => ['image', 'chart', 'figure'].includes(region.blockType))) continue;
+
+    const dateHeaders = touched.filter(region => region.discardedFurniture && region.header && contains(region.box, box));
+    if (dateHeaders.length && page.pageIndex === 0 && box[3] <= page.height * 0.12 && literalDate(run.text) &&
+        !/\b(?:copyright|proprietary|export controlled)\b|©/iu.test(run.text) &&
+        !layouts.slice(1).some(layout => layout.lines.some(entry => entry.runs.some(value =>
+          literalComparisonText(value.text) === needle)))) {
+      const slot = line.runs.length === 1 && uniformRunSize(run, page) !== null
+        ? insertionSlot(original.source.units, page, box) : null;
+      if (slot !== null) observations.push({ run, box, slot, sourcePointer: dateHeaders[0].sourcePointer,
+        supplementation: 'FIRST_PAGE_DATE_HEADER' });
+      else onUncertain([], '首面含日期的页眉文字或阅读位置无法唯一对应；未自动补入，请核对原页。');
+      continue;
+    }
+    // Omitted furniture cannot be reclassified as body text by a nearby table.
+    if (touched.some(region => region.native && region.discardedFurniture)) continue;
+    const owners = pageUnits.filter(unit => (unit.kind === 'table' ||
+        (unit.kind === 'preserved_source' && unit.payload.originalBlockType === 'table')) &&
+      regions.some(region => region.native && region.sourcePointer === unit.mapping.sourcePointer &&
+        !region.discardedFurniture && contains(region.box, box)));
+    if (owners.length > 1) {
+      onUncertain(owners.map(unit => unit.unitId), 'PDF 文字片段对应多个原生表格；未自动补入或重建其关系，请核对原页。');
+      continue;
+    }
+    if (owners.length === 1) {
+      const owner = owners[0];
+      // A fully populated readable table may contain an OCR glyph conflict,
+      // not a missing fragment. No fuzzy identifiers or replacement cells.
+      if (owner.kind === 'table' && !hasUnreadCell(owner)) {
+        onUncertain([owner.unitId], '可读表格中的文字差异不能确认为缺漏；未自动补入或修订单元格，请核对原页。');
+        continue;
+      }
+      // A partly matched physical run remains a conflict. Do not append its
+      // unmatched suffix or replace OCR, even when it resembles a prose table.
+      const localTexts = canonicalTexts(owner).filter(Boolean).map(literalComparisonText);
+      if (localTexts.some(text => needle.includes(text))) continue;
+      const competitors = pageUnits.filter(unit => unit.unitId !== owner.unitId && (() => {
+        const bounds = scaledBox(unit.mapping.nativeBbox, page);
+        return bounds !== null && overlaps(bounds, box);
+      })());
+      if (competitors.length) {
+        onUncertain([owner.unitId, ...competitors.map(unit => unit.unitId)],
+          'PDF 文字片段与多个原生单元重叠；未自动补入或重建其关系，请核对原页。');
+        continue;
+      }
+      observations.push({ run, box, slot: original.source.units.indexOf(owner) + 1,
+        sourcePointer: String(owner.mapping.sourcePointer), supplementation: 'NATIVE_REGION_LITERAL' });
+      continue;
+    }
+    // A wrong native bbox must not hide a whole missing paragraph. Require the
+    // two real, uniquely matched neighbors in the same physical column instead.
+    if (line.runs.length !== 1) continue;
+    const gap = matchedParagraphGap(original.source.units, page, indexed, run, box);
+    if (gap) observations.push({ run, box, slot: gap.slot, sourcePointer: gap.sourcePointer,
+      supplementation: 'MATCHED_PARAGRAPH_GAP' });
+  }
+  return observations;
+}
+/** Presence comparison only: PDF typography around an actual hyphen must not
+ * create duplicate identifiers. Quotes and raw items retain their exact text;
+ * only hyphen glyphs and parentheses padding vary. Spaced ASCII minus signs,
+ * spaced en-dash ranges and every letter/digit stay distinct. */
+function literalComparisonText(value: string): string {
+  return normalizeOriginalWhitespace(value.replace(/\s*[\u2010\u2011]\s*/gu, '-')
+    .replace(/(?<=[\p{L}\p{N}])\u2013(?=[\p{L}\p{N}])/gu, '-')
+    .replace(/\s*\(\s*/gu, '(').replace(/\s*\)/gu, ')'));
+}
+function hasUnreadCell(unit: TranslationStructuredSourceUnit): boolean {
+  const groups = unit.payload.rowGroups;
+  return Array.isArray(groups) && groups.some(group => Array.isArray(group?.rows) &&
+    group.rows.some((row: { cells?: Array<{ textAvailability?: string; inlineContent?: Array<{ text?: string }> }> }) =>
+      Array.isArray(row?.cells) && row.cells.some(cell => cell.textAvailability === 'NO_TEXT_ITEMS' &&
+        Array.isArray(cell.inlineContent) && !cell.inlineContent.map(run => run.text ?? '').join('').trim())));
+}
+function runBox(run: OriginalLayoutRun, page: DocumentPdfPage): Box | null {
+  if (!run.itemIndexes.length || run.itemIndexes.length !== run.boxes.length ||
+      new Set(run.itemIndexes).size !== run.itemIndexes.length ||
+      run.boxes.some((box, index) => {
+        const item = page.items[run.itemIndexes[index]];
+        return !item || box.some(value => !Number.isFinite(value)) || box[0] < 0 || box[1] < 0 ||
+          box[2] <= 0 || box[3] <= 0 || box[0] + box[2] > page.width + 0.5 || box[1] + box[3] > page.height + 0.5 ||
+          box[0] !== item.transform[4] || box[1] !== page.height - item.transform[5] - item.transform[3] ||
+          box[2] !== item.width || box[3] !== item.transform[3];
+      })) return null;
+  return [Math.min(...run.boxes.map(box => box[0])), Math.min(...run.boxes.map(box => box[1])),
+    Math.max(...run.boxes.map(box => box[0] + box[2])), Math.max(...run.boxes.map(box => box[1] + box[3]))];
+}
+function uniformRunSize(run: OriginalLayoutRun, page: DocumentPdfPage): number | null {
+  const sizes = run.itemIndexes.map(index => page.items[index]?.transform[3]);
+  return sizes.length && sizes.every(size => typeof size === 'number' && Number.isFinite(size) &&
+    Math.abs(size - sizes[0]) <= 0.5) ? sizes[0] : null;
+}
+function literalDate(text: string): boolean {
+  const months = 'January|February|March|April|May|June|July|August|September|October|November|December';
+  return new RegExp(`(?:\\b[0-9]{4}[-/.][0-9]{1,2}[-/.][0-9]{1,2}\\b|\\b[0-9]{1,2}[-/.][0-9]{1,2}[-/.][0-9]{4}\\b|` +
+    `\\b[0-9]{1,2} (?:${months}) [0-9]{4}\\b|\\b(?:${months}) [0-9]{1,2},? [0-9]{4}\\b)`, 'iu').test(text);
+}
+function matchedParagraphGap(units: TranslationStructuredSourceUnit[], page: DocumentPdfPage,
+  indexed: Array<{ line: OriginalLayoutLine; run: OriginalLayoutRun; box: Box | null }>,
+  run: OriginalLayoutRun, box: Box): { slot: number; sourcePointer: string } | null {
+  const anchors = units.flatMap((unit, index) => {
+    if (Number(unit.mapping.pageIndex) !== page.pageIndex || unit.parentUnitId || unit.kind !== 'paragraph' ||
+        typeof unit.payload.text !== 'string' || typeof unit.mapping.sourcePointer !== 'string') return [];
+    const matches = indexed.filter(value => value.box && value.line.runs.length === 1 &&
+      normalizeOriginalWhitespace(value.run.text) === normalizeOriginalWhitespace(String(unit.payload.text)));
+    return matches.length === 1 ? [{ unit, index, run: matches[0].run, box: matches[0].box! }] : [];
+  });
+  const candidates = anchors.flatMap(before => anchors.filter(after => after.index === before.index + 1 &&
+    before.box[3] <= box[1] && after.box[1] >= box[3] &&
+    Math.abs(before.box[0] - box[0]) <= 2 && Math.abs(after.box[0] - box[0]) <= 2 &&
+    uniformRunSize(run, page) !== null && uniformRunSize(before.run, page) === uniformRunSize(run, page) &&
+    uniformRunSize(after.run, page) === uniformRunSize(run, page))
+    .map(after => ({ slot: after.index, sourcePointer: String(before.unit.mapping.sourcePointer) })));
+  return candidates.length === 1 ? candidates[0] : null;
 }
 function recoverProseTables(original: DocumentOriginalResult, page: DocumentPdfPage,
   lines: OriginalLayoutLine[], rawPage: unknown): void {
@@ -408,6 +575,7 @@ function pageRegions(middle: Record<string, unknown>, rawV2: unknown, page: Docu
     if (!box) return null;
     regions.push({ box, native: true, discardedFurniture: omitted(entry),
       footer: entry.type === 'page_footer' || (entry.type === 'paragraph' && box[1] >= page.height * 0.85),
+      header: entry.type === 'page_header', blockType: String(entry.type),
       sourcePointer: `/raw/contentListV2/${page.pageIndex}/${index}` });
   }
   // Include discarded headers, figures and preprocessing regions omitted from normalized v2.
@@ -419,6 +587,7 @@ function pageRegions(middle: Record<string, unknown>, rawV2: unknown, page: Docu
       regions.push({ box, native: false, discardedFurniture: key === 'discarded_blocks' &&
         ['header', 'page_header', 'footer', 'page_footer', 'page_number'].includes(String(entry.type)),
         footer: key === 'discarded_blocks' && ['footer', 'page_footer'].includes(String(entry.type)),
+        header: key === 'discarded_blocks' && ['header', 'page_header'].includes(String(entry.type)), blockType: String(entry.type),
         sourcePointer: `/raw/middle/pdf_info/${page.pageIndex}/${key}/${index}` });
     }
   }

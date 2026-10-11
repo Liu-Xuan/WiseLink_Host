@@ -1,10 +1,15 @@
 import type { DocumentPdfPage } from './document-original-pdf';
 import { normalizeOriginalWhitespace } from './document-original-text';
 
+export interface OriginalLayoutRun { text: string; x: number; endX: number;
+  itemIndexes: number[];
+  /** Each original item's own box, in PDF viewport top-left coordinates. */
+  boxes: Array<[number, number, number, number]>;
+}
 export interface OriginalLayoutLine { text: string; start: number; end: number; breakBefore: boolean;
   itemIndexes: number[]; x: number; y: number; width: number; height: number;
   /** Physical gaps between runs, not inferred semantic columns. */
-  runs: Array<{ text: string; x: number; endX: number }>;
+  runs: OriginalLayoutRun[];
 }
 
 /** A comparison view only. Raw PDF items remain immutable in the saved sidecar.
@@ -12,7 +17,8 @@ export interface OriginalLayoutLine { text: string; start: number; end: number; 
 export function originalPageLayout(page: DocumentPdfPage): { page: DocumentPdfPage; lines: OriginalLayoutLine[] } {
   const items = page.items.filter(item => item.text.trim());
   const compact = (text: string) => text.replace(/\s/gu, '');
-  if (page.rotation !== 0 || !items.length ||
+  if (page.rotation !== 0 || !Number.isFinite(page.width) || page.width <= 0 ||
+      !Number.isFinite(page.height) || page.height <= 0 || !items.length ||
       compact(items.map(item => item.text).join('')) !== compact(page.text) ||
       items.some(item => item.transform.length !== 6 || !item.transform.every(Number.isFinite) ||
         Math.abs(item.transform[1]) > 0.01 || Math.abs(item.transform[2]) > 0.01 ||
@@ -41,10 +47,17 @@ export function originalPageLayout(page: DocumentPdfPage): { page: DocumentPdfPa
       const joined = previous && /[\p{L}\p{N}]-$/u.test(previous.text) && /^[\p{L}\p{N}]/u.test(item.text) && Math.abs(gap) <= 0.3;
       const separator = itemIndex && !joined ? ' ' : '';
       line += separator + item.text;
+      const itemIndexInPage = page.items.indexOf(item);
+      const box: [number, number, number, number] = [item.transform[4],
+        page.height - item.transform[5] - item.transform[3], item.width, item.transform[3]];
       const run = runs.at(-1);
-      if (run && gap <= Math.max(row.size * 1.6, 8)) {
+      // PDF.js can mark the end of a column even when its gutter is smaller
+      // than a word gap. Keep that boundary in the independent quote view.
+      if (run && !previous?.hasEOL && gap <= Math.max(row.size * 1.6, 8)) {
         run.text += separator + item.text; run.endX = item.transform[4] + item.width;
-      } else runs.push({ text: item.text, x: item.transform[4], endX: item.transform[4] + item.width });
+        run.itemIndexes.push(itemIndexInPage); run.boxes.push(box);
+      } else runs.push({ text: item.text, x: item.transform[4], endX: item.transform[4] + item.width,
+        itemIndexes: [itemIndexInPage], boxes: [box] });
     });
     line = normalizeOriginalWhitespace(line);
     if (text) text += ' ';
