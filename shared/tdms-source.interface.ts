@@ -36,6 +36,8 @@ export interface TdmsFieldProvenance {
   observationRef: string;
 }
 export interface TdmsSourceContent {
+  /** Bounded native form literals, independently authorized; never an approved opinion. */
+  ownedVisibleBusinessContent?: Array<Record<string, unknown>>;
   opinions?: Array<{
     text: string;
     author: TdmsPerson | null;

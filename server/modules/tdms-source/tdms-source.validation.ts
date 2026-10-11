@@ -8,6 +8,7 @@ import {
 } from '@shared/tdms-source.interface';
 import { tdmsError } from './tdms-source.types';
 import { createOpinionCollectionIngress } from './tdms-opinion-collection.validation';
+import { createOwnedVisibleContentValidator } from './tdms-owned-visible-content.validation';
 export const TDMS_SMALL_PACKAGE_MAX_BYTES = 512 * 1024;
 export function canonical(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -126,6 +127,12 @@ export const assertOpinionCollectionIngress = createOpinionCollectionIngress({
   date,
   rawCode,
   version,
+  ownedVisibleContent: createOwnedVisibleContentValidator({
+    canonical,
+    object,
+    strict,
+    date,
+  }),
 });
 export function sourcePackage(value: unknown): TdmsSourcePackage {
   const serialized = JSON.stringify(value);
@@ -258,6 +265,7 @@ export function sourcePackage(value: unknown): TdmsSourcePackage {
     object(r.content);
     const content = object(r.content);
     strict(content, [
+      'ownedVisibleBusinessContent',
       'opinions',
       'conditions',
       'requiredActions',

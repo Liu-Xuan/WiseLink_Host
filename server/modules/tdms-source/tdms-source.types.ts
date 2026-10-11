@@ -16,6 +16,11 @@ import type {
   TdmsDailyMetadataEnvelope,
   TdmsDailyMetadataImportReceipt,
 } from './tdms-daily-metadata-contract';
+import type { TdmsDailyArtifactObservation } from './tdms-daily-metadata-contract';
+import type {
+  TdmsDailyNativeRetention,
+  TdmsDailySourceAdapterCapture,
+} from './tdms-daily-source-adapter';
 
 export const TDMS_REPOSITORY = Symbol('TDMS_REPOSITORY');
 export const TDMS_SOURCE_AUTHORIZATION = Symbol('TDMS_SOURCE_AUTHORIZATION');
@@ -44,7 +49,7 @@ export interface TdmsImportMemberClaims {
   records: Array<{ recordKind: string; sourceRecordId: string }>;
   artifacts: Array<{
     memberId: string;
-    sourceAttachmentId: string;
+    sourceAttachmentId: string | null;
     sourceAttachmentVersion: string | null;
     metadataOnly?: true;
     owners: Array<{ recordKind: string; sourceRecordId: string }>;
@@ -105,11 +110,13 @@ export interface TdmsCapture {
   capturedAt: string;
   permissionRevision: string;
   admissionAuthorityRef?: string;
-  /** Lossless collector metadata in the existing immutable capture, not native record/edge projection. */
+  /** Lossless collector envelope and, for the wider adapter, same native retention refs. */
   dailyMetadata?: {
     applicationScopeId: string;
     envelope: TdmsDailyMetadataEnvelope;
     receipt: TdmsDailyMetadataImportReceipt;
+    adapter?: TdmsDailySourceAdapterCapture;
+    nativeRetention?: TdmsDailyNativeRetention;
   };
 }
 export interface TdmsRecordHead {
@@ -199,6 +206,14 @@ export interface TdmsRepository {
   transaction<T>(operation: (tx: TdmsTransaction) => Promise<T>): Promise<T>;
 }
 export interface TdmsArtifactStore {
+  /** A separately bound, source-authorized transport supplies an exact candidate selection.
+   * A collector hash/local CAS path is not a selection or a right to read. Default absent. */
+  resolveDailySelection?(input: {
+    scope: TdmsSourceScope;
+    actor: TdmsPublicActor;
+    packageId: string;
+    observation: TdmsDailyArtifactObservation;
+  }): Promise<TdmsArtifactSelection>;
   /** Current owner/default bucket/exact object and bytes checks; never ordinary DV ingestion. */
   acquireSelection?(input: {
     scope: TdmsSourceScope;

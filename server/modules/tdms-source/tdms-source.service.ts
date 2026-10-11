@@ -26,8 +26,14 @@ import type {
 import { assertPublicActor, sameScope } from './tdms-source.authorization';
 import {
   prepareTdmsDailyMetadataImport,
+  prepareTdmsDailySourceImport,
   type TdmsDailyMetadataImportReceipt,
 } from './tdms-daily-metadata-contract';
+import {
+  adaptTdmsDailySource,
+  dailyNativeRetention,
+  isDailyMetadataOnly,
+} from './tdms-daily-source-adapter';
 import {
   assertSameDailyEnvelope,
   dailyReferenceRead,
@@ -95,6 +101,12 @@ export class TdmsSourceService {
   async importDailyMetadata(actor: TdmsPublicActor, raw: unknown) {
     assertPublicActor(actor);
     this.requireDailyAuthorization();
+    const source = prepareTdmsDailySourceImport(raw);
+    if (!isDailyMetadataOnly(source.envelope))
+      return this.importDailySource(
+        actor,
+        adaptTdmsDailySource(source.envelope),
+      );
     const prepared = prepareTdmsDailyMetadataImport(raw);
     const grants = await this.dailyGrants(actor);
     if (grants.length !== 1)
@@ -168,6 +180,103 @@ export class TdmsSourceService {
     return receipt;
   }
 
+  private async importDailySource(
+    actor: TdmsPublicActor,
+    prepared: ReturnType<typeof adaptTdmsDailySource>,
+  ) {
+    const grants = await this.dailyGrants(actor);
+    if (grants.length !== 1)
+      throw tdmsError('TDMS_DAILY_SOURCE_SCOPE_AMBIGUOUS', 409);
+    const scope = grants[0]!.scope,
+      claims = prepared.memberClaims;
+    const admission = await this.authorization.authorizeImport(
+      actor,
+      scope,
+      claims,
+    );
+    this.assertImportAdmission(actor, admission, scope, claims);
+    // The source package has no Host head IDs. Read actual scoped heads, then retain normal CAS.
+    const p = structuredClone(prepared.output.nativePackage);
+    const prior = await this.repository.transaction(async (tx) => {
+      await this.recheckImport(actor, admission, claims);
+      const row = await tx.capture(scope, prepared.envelope.requestId);
+      if (row) {
+        const saved = storedDailyCapture(row, actor, scope, true);
+        assertSameDailyEnvelope(saved, prepared);
+        return saved.receipt;
+      }
+      for (const r of p.records)
+        r.expectedHeadRevisionRef =
+          (await tx.recordHead(scope, r.recordKind, r.sourceRecordId))
+            ?.sourceRevisionRef ?? null;
+      for (const r of p.relations)
+        r.expectedHeadAssertionRef =
+          (await tx.relationHead(scope, r.sourceRelationId))?.assertionRef ??
+          null;
+      return null;
+    });
+    await this.recheckImport(actor, admission, claims);
+    if (prior) return prior;
+    const selections: TdmsArtifactSelection[] = [];
+    for (const observation of prepared.envelope.package.artifactBindings) {
+      // Null is retained by preparation but cannot become an invented attachment identity.
+      if (observation.sourceAttachmentId === null)
+        throw tdmsError('TDMS_DAILY_ARTIFACT_IDENTITY_UNCONFIRMED', 503);
+      if (!this.artifacts.resolveDailySelection)
+        throw tdmsError('TDMS_DAILY_ARTIFACT_TRANSPORT_UNCONFIGURED', 503);
+      await this.recheckImport(actor, admission, claims);
+      const a = await this.artifacts.resolveDailySelection({
+        actor,
+        scope,
+        packageId: prepared.envelope.requestId,
+        observation: structuredClone(observation),
+      });
+      if (
+        a.memberId !== observation.bindingId ||
+        a.sourceAttachmentId !== observation.sourceAttachmentId ||
+        a.sourceAttachmentVersion !== null ||
+        a.fileName !== observation.filename ||
+        a.mediaType !== observation.mediaType ||
+        a.sha256 !== observation.blobSha256 ||
+        a.byteLength !== observation.byteLength ||
+        canonical(a.ownerItemIds) !== canonical([observation.ownerSnapshotId])
+      )
+        throw tdmsError('TDMS_DAILY_ARTIFACT_SELECTION_BINDING_INVALID', 409);
+      selections.push(a);
+      await this.recheckImport(actor, admission, claims);
+    }
+    // Existing selection validator and artifact store own current object and byte verification.
+    const checked = selections.length
+      ? fileServiceImport({
+          sourceKey: scope.sourceKey,
+          sourceInstanceId: scope.sourceInstanceId,
+          scopeId: scope.scopeId,
+          package: p,
+          artifactSelections: selections,
+        })
+      : null;
+    const effective: PreparedSourcePackage = checked
+      ? { ...checked.package, artifacts: checked.artifactSelections }
+      : { ...p, artifacts: [] };
+    for (const r of effective.records)
+      r.artifactMemberIds = selections
+        .filter((a) => a.ownerItemIds.includes(r.itemId))
+        .map((a) => a.memberId);
+    await this.importPrepared(actor, scope, effective, prepared.payloadDigest, {
+      prepared,
+      applicationScopeId: actor.applicationScopeId,
+    });
+    const saved = await this.repository.transaction(async (tx) => {
+      const row = await tx.capture(scope, prepared.envelope.requestId);
+      if (!row) throw tdmsError('TDMS_DAILY_CAPTURE_READBACK_FAILED', 409);
+      const value = storedDailyCapture(row, actor, scope, true);
+      assertSameDailyEnvelope(value, prepared);
+      return value.receipt;
+    });
+    await this.recheckImport(actor, admission, claims);
+    return saved;
+  }
+
   async readDailyMetadataImport(actor: TdmsPublicActor, requestId: string) {
     assertPublicActor(actor);
     dailyRequestId(requestId);
@@ -206,7 +315,11 @@ export class TdmsSourceService {
     const saved = storedDailyCapture(row, actor, grant.scope, false);
     if (!saved.receipt.sourceRefs.includes(sourceRef))
       throw tdmsError('TDMS_DAILY_CAPTURE_INTEGRITY_CONFLICT', 409);
-    const read = dailyReferenceRead(saved.envelope.package, sourceRef);
+    const read = dailyReferenceRead(
+      saved.envelope.package,
+      sourceRef,
+      saved.receipt.documentVersionMappings,
+    );
     await this.checkDailyReadMembers(actor, grant, 'READ_RECORD', read.claims);
     return read.response;
   }
@@ -277,6 +390,24 @@ export class TdmsSourceService {
         !allowed ||
         !Array.isArray(allowed.records) ||
         !Array.isArray(allowed.relationIds) ||
+        !Array.isArray(allowed.artifacts) ||
+        claims.artifacts.some(
+          (a) =>
+            !allowed.artifacts.some(
+              (b) =>
+                b.memberId === a.memberId &&
+                b.sourceAttachmentId === a.sourceAttachmentId &&
+                b.sourceAttachmentVersion === a.sourceAttachmentVersion &&
+                b.metadataOnly === a.metadataOnly &&
+                a.owners.every((o) =>
+                  b.owners.some(
+                    (x) =>
+                      x.recordKind === o.recordKind &&
+                      x.sourceRecordId === o.sourceRecordId,
+                  ),
+                ),
+            ),
+        ) ||
         claims.records.some(
           (r) =>
             !allowed.records.some(
@@ -661,9 +792,25 @@ export class TdmsSourceService {
     scope: TdmsSourceScope,
     p: PreparedSourcePackage,
     packageHash: string,
+    daily?: {
+      prepared: ReturnType<typeof adaptTdmsDailySource>;
+      applicationScopeId: string;
+    },
   ): Promise<TdmsImportReceipt> {
     assertOpinionCollectionIngress(p);
-    const claims = importClaims(p);
+    const claims = daily?.prepared.memberClaims ?? importClaims(p);
+    const assertReplay = (saved: TdmsCapture) => {
+      if (
+        saved.packageHash !== packageHash ||
+        saved.actorId !== actor.canonicalSubject.id
+      )
+        throw tdmsError('TDMS_PACKAGE_IDEMPOTENCY_CONFLICT', 409);
+      if (daily) {
+        const value = storedDailyCapture(saved, actor, scope, true);
+        assertSameDailyEnvelope(value, daily.prepared);
+      } else if (saved.dailyMetadata)
+        throw tdmsError('TDMS_PACKAGE_IDEMPOTENCY_CONFLICT', 409);
+    };
     const grant = await this.authorization.authorizeImport(
       actor,
       scope,
@@ -674,12 +821,7 @@ export class TdmsSourceService {
     const replay = await this.repository.transaction(async (tx) => {
       const saved = await tx.capture(scope, p.packageId);
       if (saved) {
-        if (
-          saved.dailyMetadata ||
-          saved.packageHash !== packageHash ||
-          saved.actorId !== actor.canonicalSubject.id
-        )
-          throw tdmsError('TDMS_PACKAGE_IDEMPOTENCY_CONFLICT', 409);
+        assertReplay(saved);
         return saved.receipt;
       }
       for (const r of p.records) {
@@ -732,12 +874,7 @@ export class TdmsSourceService {
     const result = await this.repository.transaction(async (tx) => {
       const replay = await tx.capture(scope, p.packageId);
       if (replay) {
-        if (
-          replay.dailyMetadata ||
-          replay.packageHash !== packageHash ||
-          replay.actorId !== actor.canonicalSubject.id
-        )
-          throw tdmsError('TDMS_PACKAGE_IDEMPOTENCY_CONFLICT', 409);
+        assertReplay(replay);
         await this.recheckImport(actor, grant, claims);
         return { ...replay.receipt, created: false };
       }
@@ -1033,6 +1170,48 @@ export class TdmsSourceService {
         capturedAt: now,
         permissionRevision: grant.permissionRevision,
         admissionAuthorityRef: grant.authorityRef,
+        ...(daily
+          ? {
+              dailyMetadata: {
+                applicationScopeId: daily.applicationScopeId,
+                envelope: daily.prepared.envelope,
+                adapter: {
+                  adapterVersion: daily.prepared.adapterVersion,
+                  output: daily.prepared.output,
+                  outputDigest: daily.prepared.outputDigest,
+                  mappings: daily.prepared.mappings,
+                },
+                nativeRetention: dailyNativeRetention(daily.prepared, receipt),
+                receipt: {
+                  schemaVersion:
+                    'wiselink.tdms-source-import-receipt.v1' as const,
+                  requestId: daily.prepared.envelope.requestId,
+                  payloadDigest: daily.prepared.payloadDigest,
+                  status: 'IMPORTED' as const,
+                  importedAt: now,
+                  sourceRefs: daily.prepared.sourceRefs,
+                  objectCount: p.records.length,
+                  relationCount: p.relations.length,
+                  artifactCount: bindings.length,
+                  documentVersionMappings:
+                    daily.prepared.envelope.package.artifactBindings.map(
+                      (b) => ({
+                        requestId: daily.prepared.envelope.requestId,
+                        bindingId: b.bindingId,
+                        sourceRef: 'TDMS:ARTIFACT:' + b.bindingId,
+                        status: 'REVIEW_REQUIRED' as const,
+                        documentVersionId: null,
+                        preflightId: null,
+                        sha256: b.blobSha256,
+                        byteLength: b.byteLength,
+                        readbackVerified: false as const,
+                        mappedAt: now,
+                      }),
+                    ),
+                },
+              },
+            }
+          : {}),
       });
       await this.recheckImport(actor, grant, claims);
       return receipt;

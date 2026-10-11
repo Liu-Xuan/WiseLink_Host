@@ -6,6 +6,10 @@ import {
 import { canonical } from './tdms-source.validation';
 import { sameScope } from './tdms-source.authorization';
 import {
+  adaptTdmsDailySource,
+  dailyNativeRetention,
+} from './tdms-daily-source-adapter';
+import {
   tdmsError,
   type TdmsCapture,
   type TdmsImportMemberClaims,
@@ -21,7 +25,7 @@ export function dailyRequestId(value: unknown): string {
 export function dailySourceRef(value: unknown): string {
   if (
     typeof value !== 'string' ||
-    !/^TDMS:(?:SNAPSHOT:TDMSSNAP-[a-f0-9]{64}|FIELD:TDMSSNAP-[a-f0-9]{64}:(?:0|[1-9][0-9]{0,3})|RELATION:TDMSEDGE-[a-f0-9]{64})$/u.test(
+    !/^TDMS:(?:SNAPSHOT:TDMSSNAP-[a-f0-9]{64}|FIELD:TDMSSNAP-[a-f0-9]{64}:(?:0|[1-9][0-9]{0,3})|RELATION:TDMSEDGE-[a-f0-9]{64}|ARTIFACT:TDMSBIND-[a-f0-9]{64})$/u.test(
       value,
     )
   )
@@ -45,14 +49,30 @@ export function storedDailyCapture(
   )
     throw tdmsError('TDMS_DAILY_CAPTURE_BINDING_CONFLICT', 409);
   try {
-    const prepared = prepareTdmsDailyMetadataImport(saved.envelope);
+    const full = saved.adapter ? adaptTdmsDailySource(saved.envelope) : null;
+    const prepared = full ?? prepareTdmsDailyMetadataImport(saved.envelope);
+    if (saved.adapter && full) {
+      const { adapterVersion, output, outputDigest, mappings } = full;
+      if (
+        canonical(saved.adapter) !==
+          canonical({ adapterVersion, output, outputDigest, mappings }) ||
+        !saved.nativeRetention ||
+        canonical(saved.nativeRetention) !==
+          canonical(dailyNativeRetention(full, row.receipt))
+      )
+        throw new Error('adapter projection differs');
+    }
     if (
       row.packageId !== prepared.envelope.requestId ||
       row.packageHash !== prepared.payloadDigest ||
       row.capturedAt !== saved.receipt.importedAt
     )
       throw new Error('capture identity differs');
-    validateTdmsDailyMetadataImportReceipt(saved.receipt, prepared.envelope);
+    validateTdmsDailyMetadataImportReceipt(
+      saved.receipt,
+      prepared.envelope,
+      !!saved.adapter,
+    );
     return { ...prepared, receipt: structuredClone(saved.receipt) };
   } catch {
     throw tdmsError('TDMS_DAILY_CAPTURE_INTEGRITY_CONFLICT', 409);
@@ -67,9 +87,20 @@ export function assertSameDailyEnvelope(
 }
 
 /** Exact immutable literals only. OR/VR endpoints stay unresolved, never joined by number. */
-export function dailyReferenceRead(pkg: TdmsDailyMetadataPackage, ref: string) {
+export function dailyReferenceRead(
+  pkg: TdmsDailyMetadataPackage,
+  ref: string,
+  mappings: import('./tdms-daily-metadata-contract').TdmsDailyMetadataImportReceipt['documentVersionMappings'] = [],
+) {
   const [, kind, entityId, fieldIndexRaw] = dailySourceRef(ref).split(':');
-  const snapshot = pkg.records.find((r) => r.snapshotId === entityId) ?? null;
+  const binding =
+    kind === 'ARTIFACT'
+      ? (pkg.artifactBindings.find((b) => b.bindingId === entityId) ?? null)
+      : null;
+  const snapshot =
+    pkg.records.find(
+      (r) => r.snapshotId === (binding?.ownerSnapshotId ?? entityId),
+    ) ?? null;
   const fieldIndex = kind === 'FIELD' ? Number(fieldIndexRaw) : null;
   const field =
     fieldIndex === null ? null : (snapshot?.provenance[fieldIndex] ?? null);
@@ -80,12 +111,15 @@ export function dailyReferenceRead(pkg: TdmsDailyMetadataPackage, ref: string) {
   if (
     (kind === 'FIELD' && !field) ||
     (kind === 'SNAPSHOT' && !snapshot) ||
-    (kind === 'RELATION' && !relation)
+    (kind === 'RELATION' && !relation) ||
+    (kind === 'ARTIFACT' && !binding)
   )
     throw tdmsError('TDMS_SOURCE_NOT_FOUND', 404);
   const relatedEdges = snapshot
     ? pkg.edges.filter(
-        (e) => e.fromSnapshotId === entityId || e.toSnapshotId === entityId,
+        (e) =>
+          e.fromSnapshotId === snapshot.snapshotId ||
+          e.toSnapshotId === snapshot.snapshotId,
       )
     : [];
   const returnedEdges = relation ? [relation] : relatedEdges;
@@ -98,7 +132,19 @@ export function dailyReferenceRead(pkg: TdmsDailyMetadataPackage, ref: string) {
       .filter((r) => recordIds.has(r.sourceRecordId))
       .map((r) => ({ recordKind: r.kind, sourceRecordId: r.sourceRecordId })),
     relationIds: returnedEdges.map((e) => e.edgeId),
-    artifacts: [],
+    artifacts: pkg.artifactBindings
+      .filter((b) => b.ownerSnapshotId === snapshot?.snapshotId)
+      .map((b) => ({
+        memberId: b.bindingId,
+        sourceAttachmentId: b.sourceAttachmentId,
+        sourceAttachmentVersion: null,
+        owners: pkg.records
+          .filter((r) => r.snapshotId === b.ownerSnapshotId)
+          .map((r) => ({
+            recordKind: r.kind,
+            sourceRecordId: r.sourceRecordId,
+          })),
+      })),
     relatedDocumentVersionIds: [],
   };
   return {
@@ -113,15 +159,27 @@ export function dailyReferenceRead(pkg: TdmsDailyMetadataPackage, ref: string) {
         entityId,
         snapshotId: snapshot?.snapshotId ?? null,
         fieldIndex,
-        locator: field?.selector ?? relation?.evidenceLocator ?? null,
+        locator:
+          field?.selector ??
+          relation?.evidenceLocator ??
+          binding?.evidenceLocator ??
+          null,
       },
       snapshot,
       field,
       relation,
-      artifactBinding: null,
+      artifactBinding: binding,
       relatedEdges,
-      artifactBindings: [],
-      documentVersionMappings: [],
+      artifactBindings: pkg.artifactBindings.filter(
+        (b) => b.ownerSnapshotId === snapshot?.snapshotId,
+      ),
+      documentVersionMappings: mappings.filter((m) =>
+        pkg.artifactBindings.some(
+          (b) =>
+            b.bindingId === m.bindingId &&
+            b.ownerSnapshotId === snapshot?.snapshotId,
+        ),
+      ),
       limitations: {
         nativeRelationsVerified: false,
         engineeringEvidenceAuthorization: 'NOT_GRANTED_BY_IMPORT',

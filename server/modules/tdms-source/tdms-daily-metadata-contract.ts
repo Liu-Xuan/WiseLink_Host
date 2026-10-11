@@ -1,5 +1,7 @@
 import type {
   TdmsCoverage,
+  TdmsRecordKind,
+  TdmsSourceContent,
   TdmsSourceVersion,
 } from '@shared/tdms-source.interface';
 import type { TdmsImportMemberClaims } from './tdms-source.types';
@@ -14,7 +16,7 @@ import {
 export interface TdmsDailyMetadataRecord {
   snapshotId: string;
   sourceRecordId: string;
-  kind: 'AEO' | 'EXECUTION_STATUS';
+  kind: TdmsRecordKind | 'AEO' | 'EXECUTION_FEEDBACK' | 'EXECUTION_STATUS';
   number: string;
   sourceVersion: TdmsSourceVersion;
   businessVersion: TdmsSourceVersion | null;
@@ -23,7 +25,7 @@ export interface TdmsDailyMetadataRecord {
   sourceModifiedAt: string | null;
   authors: Record<string, unknown>[];
   rawFields: Record<string, unknown>;
-  content: Record<string, never>;
+  content: TdmsSourceContent;
   provenance: Array<{
     fieldPath: string;
     selector: string;
@@ -53,7 +55,7 @@ export interface TdmsDailyMetadataPackage {
   query: Record<string, unknown>;
   records: TdmsDailyMetadataRecord[];
   edges: TdmsDailyObservedEdge[];
-  artifactBindings: [];
+  artifactBindings: TdmsDailyArtifactObservation[];
   readFailures: Array<{
     sourceRecordId: string | null;
     code: string;
@@ -63,6 +65,20 @@ export interface TdmsDailyMetadataPackage {
 export interface TdmsDailyMetadataEnvelope {
   requestId: string;
   package: TdmsDailyMetadataPackage;
+}
+/** Collector declarations, never a FileService selection or Host byte verification. */
+export interface TdmsDailyArtifactObservation {
+  bindingId: string;
+  ownerSnapshotId: string;
+  sourceAttachmentId: string | null;
+  role: string;
+  filename: string;
+  mediaType: string;
+  blobSha256: string;
+  byteLength: number;
+  sourceVersion: TdmsSourceVersion;
+  observedAt: string;
+  evidenceLocator: string;
 }
 /** Exact ten-key receipt accepted by the frozen host-client; never synthesized by preparation. */
 export interface TdmsDailyMetadataImportReceipt {
@@ -74,8 +90,19 @@ export interface TdmsDailyMetadataImportReceipt {
   sourceRefs: string[];
   objectCount: number;
   relationCount: number;
-  artifactCount: 0;
-  documentVersionMappings: [];
+  artifactCount: number;
+  documentVersionMappings: Array<{
+    requestId: string;
+    bindingId: string;
+    sourceRef: string;
+    status: 'REVIEW_REQUIRED';
+    documentVersionId: null;
+    preflightId: null;
+    sha256: string;
+    byteLength: number;
+    readbackVerified: false;
+    mappedAt: string;
+  }>;
 }
 
 const nativePattern =
@@ -87,6 +114,13 @@ const secret =
 
 /** Lossless, detached metadata preparation. All member entries remain untrusted source claims. */
 export function prepareTdmsDailyMetadataImport(raw: unknown) {
+  return prepareDailyImport(raw, false);
+}
+/** Same frozen wire, explicitly wider source adapter; old metadata validator stays exact. */
+export function prepareTdmsDailySourceImport(raw: unknown) {
+  return prepareDailyImport(raw, true);
+}
+function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
   const envelope = exact(plainData(raw), ['requestId', 'package']);
   const p = exact(envelope.package, [
     'schemaVersion',
@@ -111,7 +145,7 @@ export function prepareTdmsDailyMetadataImport(raw: unknown) {
   query(p.query);
   const records = list(p.records, 500),
     edges = list(p.edges, 1000);
-  if (list(p.artifactBindings, 1000).length)
+  if (!sourceAdapter && list(p.artifactBindings, 1000).length)
     fail('ARTIFACT_INGRESS_NOT_IMPLEMENTED');
   const snapshots = new Map<string, string>(),
     sourceIds = new Set<string>();
@@ -132,7 +166,23 @@ export function prepareTdmsDailyMetadataImport(raw: unknown) {
       'provenance',
       'coverage',
     ]);
-    if (!['AEO', 'EXECUTION_STATUS'].includes(String(r.kind)))
+    if (
+      !(
+        sourceAdapter
+          ? [
+              'MANUFACTURER_FILE',
+              'PROCESSING_SHEET',
+              'ENGINEER_ASSESSMENT',
+              'COMMENT',
+              'ENGINEERING_FILE',
+              'OBSERVATION',
+              'AEO',
+              'EXECUTION_FEEDBACK',
+              'EXECUTION_STATUS',
+            ]
+          : ['AEO', 'EXECUTION_STATUS']
+      ).includes(String(r.kind))
+    )
       fail('METADATA_KIND_UNSUPPORTED');
     native(r.sourceRecordId);
     text(r.number, 180);
@@ -146,7 +196,22 @@ export function prepareTdmsDailyMetadataImport(raw: unknown) {
     }
     rawCode(r.state);
     coverage(r.coverage);
-    exact(r.content, []);
+    exact(
+      r.content,
+      sourceAdapter
+        ? [
+            'opinions',
+            'ownedVisibleBusinessContent',
+            'conditions',
+            'requiredActions',
+            'approvers',
+            'sourceEvents',
+            'executionDeclaration',
+            'futureLcmLinks',
+          ]
+        : [],
+      [],
+    );
     for (const author of list(r.authors, 1000)) {
       const a = exact(
         author,
@@ -185,9 +250,12 @@ export function prepareTdmsDailyMetadataImport(raw: unknown) {
       r.rawFields,
       [
         ...base,
-        ...(r.kind === 'AEO'
-          ? ['execution', 'engineering']
-          : ['executionStatus']),
+        ...(sourceAdapter ? ['opinionCollection', 'ownedBusinessContent'] : []),
+        ...(sourceAdapter
+          ? ['execution', 'engineering', 'executionStatus']
+          : r.kind === 'AEO'
+            ? ['execution', 'engineering']
+            : ['executionStatus']),
       ],
       [],
     );
@@ -239,13 +307,84 @@ export function prepareTdmsDailyMetadataImport(raw: unknown) {
     if (fields.attachmentObservations !== undefined)
       attachmentObservations(fields.attachmentObservations, r, p.observedAt);
     if (
-      r.snapshotId !== 'TDMSSNAP-' + hash(withoutTimes(r)) ||
+      r.snapshotId !==
+        'TDMSSNAP-' +
+          hash(
+            withoutTimes(
+              sourceAdapter && fields.ownedBusinessContent !== undefined
+                ? ownedLocatorIdentity(r)
+                : r,
+            ),
+          ) ||
       snapshots.has(String(r.snapshotId)) ||
       sourceIds.has(String(r.sourceRecordId))
     )
       fail('SNAPSHOT_INVALID');
     snapshots.set(String(r.snapshotId), String(r.sourceRecordId));
     sourceIds.add(String(r.sourceRecordId));
+  }
+  // This source mode is an independently collected owner probe, not a batch opinion approval.
+  if (
+    sourceAdapter &&
+    records.some(
+      (r) => object(object(r).rawFields).ownedBusinessContent !== undefined,
+    ) &&
+    (records.length !== 1 ||
+      list(p.artifactBindings, 1000).length ||
+      object(p.coverage).status !== 'PARTIAL' ||
+      object(p.coverage).readback !== 'NON_ATOMIC' ||
+      !(object(p.coverage).gaps as string[]).includes('PROBE_ONLY') ||
+      object(p.query).scopeComplete !== false ||
+      object(p.query).scopeMatch !== 'UNKNOWN' ||
+      object(p.query).actualCriteria !== null)
+  )
+    fail('OWN_CONTENT_PROBE_REQUIRED');
+  const bindings = list(p.artifactBindings, 1000);
+  const bindingIds = new Set<string>();
+  for (const value of bindings) {
+    const b = exact(value, [
+      'bindingId',
+      'ownerSnapshotId',
+      'sourceAttachmentId',
+      'role',
+      'filename',
+      'mediaType',
+      'blobSha256',
+      'byteLength',
+      'sourceVersion',
+      'observedAt',
+      'evidenceLocator',
+    ]);
+    const owner = records.find(
+      (r) => object(r).snapshotId === b.ownerSnapshotId,
+    ) as TdmsDailyMetadataRecord | undefined;
+    if (
+      !owner ||
+      bindingIds.has(String(b.bindingId)) ||
+      typeof b.blobSha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/u.test(b.blobSha256) ||
+      !Number.isSafeInteger(b.byteLength) ||
+      Number(b.byteLength) < 1 ||
+      Number(b.byteLength) > 100 * 1024 * 1024
+    )
+      fail('ARTIFACT_INVALID');
+    if (b.sourceAttachmentId !== null) text(b.sourceAttachmentId, 160);
+    text(b.role, 80);
+    text(b.filename, 255);
+    text(b.mediaType, 120);
+    text(b.evidenceLocator, 500);
+    iso(b.observedAt);
+    timeOrder(b.observedAt, p.observedAt);
+    version(b.sourceVersion);
+    if (
+      owner.sourceVersion.confirmation !== 'SOURCE_DECLARED' ||
+      canonical(owner.sourceVersion) !== canonical(b.sourceVersion)
+    )
+      fail('ARTIFACT_OWNER_VERSION_UNVERIFIED');
+    const { bindingId, ...identity } = b;
+    if (bindingId !== 'TDMSBIND-' + hash(withoutTimes(identity)))
+      fail('ARTIFACT_BINDING_INVALID');
+    bindingIds.add(String(bindingId));
   }
   const edgeIds = new Set<string>();
   for (const value of edges) {
@@ -262,7 +401,57 @@ export function prepareTdmsDailyMetadataImport(raw: unknown) {
       'confidence',
     ]);
     native(e.fromSourceRecordId);
-    native(e.toSourceRecordId);
+    const ownedRecord = sourceAdapter
+      ? records.find(
+          (r) =>
+            object(r).snapshotId === e.fromSnapshotId &&
+            object(r).sourceRecordId === e.fromSourceRecordId &&
+            object(object(r).rawFields).ownedBusinessContent !== undefined,
+        )
+      : undefined;
+    const ownedProof = ownedRecord
+      ? object(object(object(ownedRecord).rawFields).ownedBusinessContent)
+      : undefined;
+    const lastRead = Array.isArray(ownedProof?.reads)
+      ? object(ownedProof.reads[1])
+      : undefined;
+    const observedLink =
+      lastRead &&
+      Array.isArray(lastRead.relationTables) &&
+      lastRead.relationTables.some((value) => {
+        const table = object(value);
+        return (
+          table.tableTitle === e.relationKind &&
+          Array.isArray(table.rows) &&
+          table.rows.some(
+            (value) =>
+              Array.isArray(object(value).sourceLinks) &&
+              (object(value).sourceLinks as unknown[]).some(
+                (value) =>
+                  object(value).targetRef === e.toSourceRecordId &&
+                  object(value).evidenceLocator === e.evidenceLocator,
+              ),
+          )
+        );
+      });
+    if (
+      ownedProof &&
+      (!observedLink ||
+        e.toSnapshotId !== null ||
+        e.toSourceRecordId === e.fromSourceRecordId)
+    )
+      fail('RELATION_EVIDENCE_INVALID');
+    if (
+      !(
+        observedLink &&
+        ownedProof?.profileId === 'AD_PROCESSING_FORM' &&
+        typeof e.toSourceRecordId === 'string' &&
+        /^(?:OR|VR):wt\.change2\.WTChangeActivity2:[0-9]{1,24}$/u.test(
+          e.toSourceRecordId,
+        )
+      )
+    )
+      native(e.toSourceRecordId);
     text(e.relationKind, 120);
     text(e.evidenceLocator, 300);
     iso(e.observedAt);
@@ -321,7 +510,14 @@ export function prepareTdmsDailyMetadataImport(raw: unknown) {
       recordKind: r.kind,
       sourceRecordId: r.sourceRecordId,
     })),
-    artifacts: [],
+    artifacts: pkg.artifactBindings.map((b) => ({
+      memberId: b.bindingId,
+      sourceAttachmentId: b.sourceAttachmentId,
+      sourceAttachmentVersion: null,
+      owners: pkg.records
+        .filter((r) => r.snapshotId === b.ownerSnapshotId)
+        .map((r) => ({ recordKind: r.kind, sourceRecordId: r.sourceRecordId })),
+    })),
     // Observation retention keys, NOT native relationship IDs or independent rights.
     relationIds: pkg.edges.map((e) => e.edgeId),
     relatedDocumentVersionIds: [],
@@ -339,8 +535,11 @@ export function prepareTdmsDailyMetadataImport(raw: unknown) {
 export function validateTdmsDailyMetadataImportReceipt(
   raw: unknown,
   envelope: unknown,
+  sourceAdapter = false,
 ): TdmsDailyMetadataImportReceipt {
-  const prepared = prepareTdmsDailyMetadataImport(envelope),
+  const prepared = sourceAdapter
+      ? prepareTdmsDailySourceImport(envelope)
+      : prepareTdmsDailyMetadataImport(envelope),
     pkg = prepared.envelope.package;
   const r = exact(plainData(raw), [
     'schemaVersion',
@@ -366,7 +565,7 @@ export function validateTdmsDailyMetadataImportReceipt(
   if (
     r.objectCount !== pkg.records.length ||
     r.relationCount !== pkg.edges.length ||
-    r.artifactCount !== 0
+    r.artifactCount !== pkg.artifactBindings.length
   )
     fail('RECEIPT_COUNTS_MISMATCH');
   const wanted = new Set(prepared.sourceRefs),
@@ -377,8 +576,37 @@ export function validateTdmsDailyMetadataImportReceipt(
     wanted.size
   )
     fail('RECEIPT_SOURCE_REFS_INVALID');
-  if (list(r.documentVersionMappings, 1000).length)
+  const mappings = list(r.documentVersionMappings, 1000);
+  if (mappings.length !== pkg.artifactBindings.length)
     fail('RECEIPT_DOCUMENT_MAPPINGS_INVALID');
+  for (const [index, value] of mappings.entries()) {
+    const m = exact(value, [
+      'requestId',
+      'bindingId',
+      'sourceRef',
+      'status',
+      'documentVersionId',
+      'preflightId',
+      'sha256',
+      'byteLength',
+      'readbackVerified',
+      'mappedAt',
+    ]);
+    const b = pkg.artifactBindings[index]!;
+    if (
+      m.requestId !== prepared.envelope.requestId ||
+      m.bindingId !== b.bindingId ||
+      m.sourceRef !== 'TDMS:ARTIFACT:' + b.bindingId ||
+      m.status !== 'REVIEW_REQUIRED' ||
+      m.documentVersionId !== null ||
+      m.preflightId !== null ||
+      m.sha256 !== b.blobSha256 ||
+      m.byteLength !== b.byteLength ||
+      m.readbackVerified !== false ||
+      m.mappedAt !== r.importedAt
+    )
+      fail('RECEIPT_DOCUMENT_MAPPINGS_INVALID');
+  }
   return r as unknown as TdmsDailyMetadataImportReceipt;
 }
 
@@ -409,7 +637,25 @@ function expectedSourceRefs(pkg: TdmsDailyMetadataPackage): string[] {
       ...r.provenance.map((_, i) => 'TDMS:FIELD:' + r.snapshotId + ':' + i),
     ]),
     ...pkg.edges.map((e) => 'TDMS:RELATION:' + e.edgeId),
+    ...pkg.artifactBindings.map((b) => 'TDMS:ARTIFACT:' + b.bindingId),
   ];
+}
+/** Collector comparison identity only; original locators stay byte-for-byte in the envelope. */
+function ownedLocatorIdentity(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(ownedLocatorIdentity);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([k, v]) => [
+      k,
+      typeof v === 'string' &&
+      ['panelLocator', 'locator', 'selector'].includes(k)
+        ? v.replace(
+            /^#infoPage_myTab_tab_jcaGen_\d+(?=\s|$)/u,
+            '#infoPage_myTab_tab_jcaGen_DYNAMIC',
+          )
+        : ownedLocatorIdentity(v),
+    ]),
+  );
 }
 function fail(code: string): never {
   throw tdmsError('TDMS_DAILY_' + code);

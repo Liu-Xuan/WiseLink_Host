@@ -7,6 +7,10 @@ import { tdmsError } from './tdms-source.types';
 
 /** Reuse the package validator's primitives without a circular module import. */
 interface ValidationPrimitives {
+  ownedVisibleContent(
+    record: TdmsPackageRecord,
+    packageObservedAt: string,
+  ): void;
   canonical(value: unknown): string;
   identifier(value: unknown): string;
   object(value: unknown): Record<string, unknown>;
@@ -23,6 +27,7 @@ export function createOpinionCollectionIngress({
   date,
   rawCode,
   version,
+  ownedVisibleContent,
 }: ValidationPrimitives) {
   /** New-ingress checks only. Captured observations never replace Host authorization. */
   const OPINION_COLLECTION_SCHEMA = 'wiselink.tdms-opinion-collection.v1';
@@ -409,8 +414,32 @@ export function createOpinionCollectionIngress({
     observedAt: string;
     coverage: TdmsCoverage;
   }): void {
+    if (
+      p.records.some((r) => r.rawFields.ownedBusinessContent !== undefined) &&
+      (p.records.length !== 1 ||
+        p.artifacts.length ||
+        p.coverage.status !== 'PARTIAL' ||
+        p.coverage.readback !== 'NON_ATOMIC' ||
+        !p.coverage.gaps.includes('PROBE_ONLY') ||
+        p.relations.some(
+          (r) =>
+            r.authority !== 'CANDIDATE_ONLY' ||
+            r.controlledKind !== null ||
+            r.from.kind !== 'UNRESOLVED' ||
+            r.to.kind !== 'UNRESOLVED' ||
+            r.completionEffect !== 'UNSPECIFIED' ||
+            r.changeClass !== 'UNSPECIFIED',
+        ))
+    )
+      throw tdmsError('TDMS_OWN_VISIBLE_SOURCE_PROOF_INVALID');
     const owned = new Set<string>();
     for (const r of p.records) {
+      if (r.rawFields.ownedBusinessContent !== undefined) {
+        ownedVisibleContent(r, p.observedAt);
+        continue;
+      }
+      if (r.content.ownedVisibleBusinessContent !== undefined)
+        throw tdmsError('TDMS_OWN_VISIBLE_SOURCE_PROOF_INVALID');
       const approved = opinionCollection(r, p.observedAt, p.coverage);
       if (
         r.recordKind === 'ENGINEER_ASSESSMENT' ||
