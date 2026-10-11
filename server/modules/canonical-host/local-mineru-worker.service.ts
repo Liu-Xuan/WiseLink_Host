@@ -1,5 +1,6 @@
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import { createHash } from 'node:crypto';
+import { documentParseRecoveryPredecessor } from '@shared/document-parsing-recovery';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type {
   LocalMineruWorkerClaimResult, LocalMineruWorkerIdentity, LocalMineruWorkerRenewResult,
@@ -52,6 +53,7 @@ export class LocalMineruWorkerService {
               status: 'CLAIMED' as const, parseRunId: row.parseRunId, documentVersionId: row.documentVersionId,
               sourceSha256: loaded.run.sourceBinding.pdfSha256, sourceByteLength: loaded.run.sourceBinding.byteLength,
               settings: { ...parser.settings }, deadlineAt: loaded.run.deadlineAt.toISOString(),
+              ...recoveryPredecessor(loaded.run),
               lease: { leaseOwner: fence.leaseOwner, leaseToken: fence.leaseToken, leaseGeneration: fence.leaseGeneration },
             };
           }
@@ -93,6 +95,7 @@ export class LocalMineruWorkerService {
                 sourceByteLength: loaded.run.sourceBinding.byteLength,
                 settings: { ...loaded.run.sourceBinding.parserInput!.settings! },
                 deadlineAt: loaded.run.deadlineAt.toISOString(),
+                ...recoveryPredecessor(loaded.run),
                 lease: { leaseOwner: fence.leaseOwner, leaseToken: fence.leaseToken,
                   leaseGeneration: fence.leaseGeneration } };
             }
@@ -135,6 +138,7 @@ export class LocalMineruWorkerService {
                 sourceByteLength: loaded.run.sourceBinding.byteLength,
                 settings: { ...loaded.run.sourceBinding.parserInput!.settings! },
                 deadlineAt: loaded.run.deadlineAt.toISOString(),
+                ...recoveryPredecessor(loaded.run),
                 lease: { leaseOwner: fence.leaseOwner, leaseToken: fence.leaseToken,
                   leaseGeneration: fence.leaseGeneration } };
             }
@@ -328,6 +332,10 @@ export class LocalMineruWorkerService {
   }
 }
 
+function recoveryPredecessor(run: DocumentParseRow): { recoveryPredecessorParseRunId?: string } {
+  const predecessor = documentParseRecoveryPredecessor(run.requestId);
+  return predecessor ? { recoveryPredecessorParseRunId: predecessor } : {};
+}
 function owner(scope: CanonicalVerifiedAutoWorkItemQueueScope, grant: NonNullable<DocumentParseScope['automaticWorkItem']>): string {
   const value = `mineru:${scope.principalId}:${grant.workItemId}:g${grant.leaseGeneration}`;
   if (!/^[A-Za-z0-9_-]{1,96}$/u.test(grant.workItemId) || !Number.isSafeInteger(grant.leaseGeneration) || grant.leaseGeneration < 1 ||

@@ -70,6 +70,17 @@ export class LocalMineruWorker {
         throw new Error('LOCAL_MINERU_SOURCE_MISMATCH');
       const cache = await this.cache(claim);
       let candidate = await privateRead(join(cache, 'candidate.json'));
+      if (!candidate && claim.recoveryPredecessorParseRunId) {
+        const inherited = await this.predecessorCache(claim);
+        if (inherited?.candidate) {
+          this.checkCandidate(inherited.candidate, claim);
+          candidate = inherited.candidate;
+          await privateWrite(join(cache, 'candidate.json'), candidate);
+        } else if (inherited?.raw && !await privateRead(join(cache, 'raw-candidate.json'))) {
+          this.checkCandidate(inherited.raw, claim);
+          await privateWrite(join(cache, 'raw-candidate.json'), inherited.raw);
+        }
+      }
       if (!candidate) {
         let raw = await privateRead(join(cache, 'raw-candidate.json'));
         if (!raw) {
@@ -144,15 +155,34 @@ export class LocalMineruWorker {
     const path = join(directory, 'binding.json');
     const existing = await privateRead(path);
     if (existing) {
-      const prior: typeof identity = JSON.parse(existing.toString('utf8'));
-      if (prior?.documentVersionId !== identity.documentVersionId || prior.sourceSha256 !== identity.sourceSha256 ||
-          prior.sourceByteLength !== identity.sourceByteLength || prior.settings?.revision !== identity.settings.revision ||
-          prior.settings?.localMineruFallbackEnabled !== identity.settings.localMineruFallbackEnabled ||
-          prior.settings?.titleEnhancementEnabled !== identity.settings.titleEnhancementEnabled) throw new Error('LOCAL_MINERU_CACHE_BINDING_CHANGED');
+      assertCacheBinding(existing, claim);
     }
     if (!existing) await privateWrite(path, Buffer.from(JSON.stringify(identity)));
     return directory;
   }
+  /** Only a Host-linked recovery request can name an older cache. The current
+   * original is freshly verified before this read; old files are never changed. */
+  private async predecessorCache(claim: LocalMineruWorkerClaim): Promise<{ candidate: Buffer | null; raw: Buffer | null } | null> {
+    const directory = join(this.options.cacheDirectory, this.options.cacheNamespace, claim.recoveryPredecessorParseRunId!);
+    let info;
+    try { info = await lstat(directory); }
+    catch (cause) { if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return null; throw cause; }
+    if (!info.isDirectory() || info.isSymbolicLink() || (info.mode & 0o077) !== 0)
+      throw new Error('LOCAL_MINERU_CACHE_PERMISSIONS_INVALID');
+    const binding = await privateRead(join(directory, 'binding.json'));
+    if (!binding) throw new Error('LOCAL_MINERU_CACHE_BINDING_CHANGED');
+    assertCacheBinding(binding, claim);
+    const candidate = await privateRead(join(directory, 'candidate.json'));
+    return { candidate, raw: candidate ? null : await privateRead(join(directory, 'raw-candidate.json')) };
+  }
+}
+function assertCacheBinding(bytes: Buffer, claim: LocalMineruWorkerClaim): void {
+  const prior: Pick<LocalMineruWorkerClaim, 'documentVersionId' | 'sourceSha256' | 'sourceByteLength' | 'settings'> = JSON.parse(bytes.toString('utf8'));
+  if (prior?.documentVersionId !== claim.documentVersionId || prior.sourceSha256 !== claim.sourceSha256 ||
+      prior.sourceByteLength !== claim.sourceByteLength || prior.settings?.revision !== claim.settings.revision ||
+      prior.settings?.localMineruFallbackEnabled !== claim.settings.localMineruFallbackEnabled ||
+      prior.settings?.titleEnhancementEnabled !== claim.settings.titleEnhancementEnabled)
+    throw new Error('LOCAL_MINERU_CACHE_BINDING_CHANGED');
 }
 async function privateRead(path: string): Promise<Buffer | null> {
   let info;

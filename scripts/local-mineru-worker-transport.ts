@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { encodeLocalMineruResult } from '../server/modules/professional-input/mineru/local-mineru-result-transport';
 import type { LocalMineruWorkerClaim, LocalMineruWorkerIdentity, LocalMineruWorkerSourceReady } from '../shared/local-mineru-worker.interface';
 export type LocalMineruClaim = LocalMineruWorkerClaim;
 export type LocalMineruIdentity = LocalMineruWorkerIdentity;
@@ -23,6 +24,9 @@ export function validateClaim(value: unknown, now = Date.now()): LocalMineruClai
       !Number.isSafeInteger(claim.sourceByteLength) || claim.sourceByteLength! < 5 || claim.sourceByteLength! > MAX_PDF ||
       !claim.settings || !Number.isSafeInteger(claim.settings.revision) || claim.settings.revision < 0 ||
       typeof claim.settings.localMineruFallbackEnabled !== 'boolean' || typeof claim.settings.titleEnhancementEnabled !== 'boolean' ||
+      (claim.recoveryPredecessorParseRunId !== undefined &&
+        (!/^PRUN-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(claim.recoveryPredecessorParseRunId) ||
+          claim.recoveryPredecessorParseRunId === claim.parseRunId)) ||
       typeof claim.deadlineAt !== 'string' || !Number.isFinite(Date.parse(claim.deadlineAt)) || Date.parse(claim.deadlineAt) <= now)
     throw new Error('LOCAL_MINERU_CLAIM_INVALID');
   return claim as LocalMineruClaim;
@@ -61,7 +65,8 @@ export class LocalMineruHttpTransport implements LocalMineruTransport {
   renew(identity: LocalMineruIdentity, signal: AbortSignal) { return this.json('renew', identity, signal); }
   async result(identity: LocalMineruIdentity, candidate: Uint8Array, signal: AbortSignal) {
     if (!candidate.length || candidate.length > MAX_CANDIDATE) throw new Error('LOCAL_MINERU_CANDIDATE_TOO_LARGE');
-    const bytes = await this.post('result', Buffer.from(candidate), { 'content-type': 'application/octet-stream',
+    const encoded = encodeLocalMineruResult(candidate);
+    const bytes = await this.post('result', encoded.body, { 'content-type': 'application/octet-stream', ...encoded.headers,
       'x-wiselink-parse-run-id': identity.parseRunId, 'x-wiselink-document-version-id': identity.documentVersionId,
       'x-wiselink-lease-owner': identity.lease.leaseOwner, 'x-wiselink-lease-token': identity.lease.leaseToken,
       'x-wiselink-lease-generation': String(identity.lease.leaseGeneration) }, signal, 64 * 1024, 'application/json');

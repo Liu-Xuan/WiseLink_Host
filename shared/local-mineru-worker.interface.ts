@@ -17,6 +17,8 @@ export interface LocalMineruWorkerClaim extends LocalMineruWorkerIdentity {
   sourceByteLength: number;
   settings: DocumentParsingSettingsSnapshot;
   deadlineAt: string;
+  /** Derived by Host from a repository-admitted recovery request. Grants no authority. */
+  recoveryPredecessorParseRunId?: string;
 }
 export type LocalMineruWorkerClaimResult = { status: 'IDLE' } | LocalMineruWorkerClaim;
 export interface LocalMineruWorkerRenewResult {

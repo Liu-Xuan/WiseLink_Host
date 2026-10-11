@@ -142,6 +142,11 @@
                           "type": "string",
                           "description": "本次运行最晚完成时间",
                           "example": "2026-09-26T10:00:00.000Z"
+                        },
+                        "recoveryPredecessorParseRunId": {
+                          "type": "string",
+                          "description": "可选；仅由Host已受理的正常恢复requestId派生，旧原件和parser/settings绑定必须相同。只用于本机私有缓存复用，不授予任何权限。",
+                          "pattern": "^PRUN-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
                         }
                       }
                     }
@@ -376,7 +381,7 @@
       "post": {
         "operationId": "acceptLocalMineruResult",
         "summary": "提交并核验本机候选产物",
-        "description": "沿用可信服务主体；租户和actor从Host持久解析记录解析。仅处理已有逐任务委托、来源权限和有效租约的确切原件。不授予正式采用或审批能力。",
+        "description": "沿用可信服务主体和现有x-wiselink原件/租约身份headers；租户和actor从Host持久解析记录解析。仅处理已有逐任务委托、来源权限和有效租约的确切原件。不授予正式采用或审批能力。v1自定义传输保留全部原candidate字节；禁止HTTP Content-Encoding以免平台自动解压。缺少三个传输headers时保留旧identity语义；平台实际gateway拒绝超过12 MB的request payload。",
         "requestBody": {
           "required": true,
           "content": {
@@ -384,7 +389,7 @@
               "schema": {
                 "type": "string",
                 "format": "binary",
-                "description": "完整wiselink.mineru.local-candidate.v1 JSON的UTF-8字节，最大64 MiB"
+                "description": "完整wiselink.mineru.local-candidate.v1 JSON的UTF-8原字节(identity.v1)或其无损gzip(gzip.v1)，v1 body最大8 MiB，完整原candidate最大64 MiB。旧无传输headers的identity保持64 MiB源码校验；平台12 MB限制仍适用。"
               }
             }
           }
@@ -426,6 +431,9 @@
               }
             }
           },
+          "400": {
+            "description": "传输版本、metadata、gzip或完整原字节长度/SHA256不匹配"
+          },
           "403": {
             "description": "主体、任务或来源权限不匹配"
           },
@@ -436,10 +444,10 @@
             "description": "配置或存储依赖不可用"
           },
           "413": {
-            "description": "候选超过64 MiB"
+            "description": "v1传输body超过8 MiB或完整/解压候选超过声明长度及64 MiB上限"
           },
           "415": {
-            "description": "不是application/octet-stream"
+            "description": "不是application/octet-stream或提供HTTP Content-Encoding"
           }
         },
         "parameters": [
@@ -492,6 +500,36 @@
               "minimum": 1,
               "example": 1,
               "description": "本次执行代次"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-wiselink-candidate-transport",
+            "required": false,
+            "description": "v1候选传输；使用时必须同时提供原字节长度和SHA256。线上的body最大8 MiB。",
+            "schema": {
+              "type": "string",
+              "enum": ["identity.v1", "gzip.v1"]
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-wiselink-candidate-raw-byte-length",
+            "required": false,
+            "description": "v1必填；完整解压candidate的UTF-8字节长度，1至64 MiB，十进制正整数。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-wiselink-candidate-raw-sha256",
+            "required": false,
+            "description": "v1必填；完整解压candidate字节的SHA256，与最终Host接受回执一致。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
             }
           }
         ]

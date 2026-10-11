@@ -1,7 +1,10 @@
 import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
 import type { AddressInfo } from 'node:net';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { json, urlencoded } from 'express';
+import { encodeLocalMineruResult } from '../../server/modules/professional-input/mineru/local-mineru-result-transport';
 import type { Request, Response } from 'express';
 import { LocalMineruWorkerService } from '../../server/modules/canonical-host/local-mineru-worker.service';
 import { LocalMineruWorkerOpenApiController } from '../../server/modules/canonical-host/local-mineru-worker.openapi.controller';
@@ -36,7 +39,7 @@ function setup() {
     parserInput: { mode: 'LOCAL_MINERU_WORKER', settings: { localMineruFallbackEnabled: true } },
   };
   const row = { tenantId: serviceScope.tenantId, parseRunId: identity.parseRunId, documentVersionId: identity.documentVersionId,
-    actorUserId: grant.actorUserId, sourceBinding };
+    actorUserId: grant.actorUserId, sourceBinding, requestId: 'parse-test' };
   const artifactProgress: Array<{ relativePath: string; localWorkerReceipt?: typeof identity.lease }> = [];
   const loaded = { scope, run: { ...row, artifactProgress, deadlineAt: new Date('2026-09-27T00:00:00Z') } };
   const authorization = { assertAutoWorkItemQueueTransport: jest.fn().mockResolvedValue(undefined),
@@ -94,12 +97,19 @@ describe('local MinerU Host dispatcher', () => {
     expect(h.leases.claim).toHaveBeenCalledWith(h.scope, identity.parseRunId, identity.lease.leaseOwner, 120_000);
   });
 
-  it.each(['actorUserId', 'tenantId', 'roles', 'principalId'])('rejects caller-provided %s', async field => {
+  it.each(['actorUserId', 'tenantId', 'roles', 'principalId', 'recoveryPredecessorParseRunId'])('rejects caller-provided %s', async field => {
     const h = setup();
     await expect(h.worker.claim({ [field]: 'forged' })).rejects.toThrow('LOCAL_MINERU_CLAIM_INPUT_INVALID');
     await expect(h.worker.source({ ...identity, [field]: 'forged' })).rejects.toThrow('LOCAL_MINERU_LEASE_INPUT_INVALID');
     expect(h.repository.readLocalWorkerById).not.toHaveBeenCalled();
     expect(h.parsing.readLocalWorkerOriginal).not.toHaveBeenCalled();
+  });
+  it('exposes an optional predecessor only from the repository-admitted recovery request', async () => {
+    const h = setup(); const predecessor = 'PRUN-00000000-0000-4000-8000-000000000001';
+    h.loaded.run.requestId = `parse-resume-${predecessor}`;
+    await expect(h.worker.claim({})).resolves.toMatchObject({ recoveryPredecessorParseRunId: predecessor });
+    h.loaded.run.requestId = 'ordinary-independent-request';
+    expect(await h.worker.claim({})).not.toHaveProperty('recoveryPredecessorParseRunId');
   });
 
   it('skips an expired automatic grant and claims the next eligible durable run', async () => {
@@ -421,6 +431,8 @@ describe('local MinerU binary result controller', () => {
     [{ 'x-wiselink-lease-generation': '9007199254740992' }, 'LOCAL_MINERU_LEASE_INPUT_INVALID'],
     [{ 'x-wiselink-lease-token': '' }, 'LOCAL_MINERU_LEASE_INPUT_INVALID'],
     [{ 'x-wiselink-parse-run-id': '../bad' }, 'LOCAL_MINERU_LEASE_INPUT_INVALID'],
+    [{ 'content-encoding': 'gzip' }, 'LOCAL_MINERU_RESULT_HTTP_ENCODING_INVALID'],
+    [{ 'x-wiselink-candidate-transport': 'gzip.v2' }, 'LOCAL_MINERU_RESULT_TRANSPORT_INVALID'],
   ] as [Record<string, string>, string][])('rejects invalid metadata %j without consuming bytes', async (headers, code) => {
     const h = setup(); const body = upload(headers);
     await expect(h.controller.acceptLocalMineruResult(body.request)).rejects.toThrow(code);
@@ -457,6 +469,43 @@ describe('local MinerU binary result controller', () => {
     expect(h.parsing.acceptLocalWorkerCandidate).toHaveBeenCalledWith(identity.parseRunId, h.scope, fence, bytes);
     expect(h.leases.release).toHaveBeenCalledWith(h.scope, fence);
   });
+  it('restores a complete versioned gzip body before existing Host candidate acceptance', async () => {
+    const h = setup(); const raw = Buffer.from(JSON.stringify({ complete: 's'.repeat(14 * 1024 * 1024) }));
+    const encoded = encodeLocalMineruResult(raw);
+    const body = upload({ ...encoded.headers, 'content-length': String(encoded.body.length) }, [encoded.body]);
+    await expect(h.controller.acceptLocalMineruResult(body.request)).resolves.toMatchObject({ status: 'ACCEPTED',
+      candidateSha256: createHash('sha256').update(raw).digest('hex') });
+    expect(h.parsing.acceptLocalWorkerCandidate).toHaveBeenCalledTimes(1);
+    expect(h.parsing.acceptLocalWorkerCandidate.mock.calls[0].slice(0, 3)).toEqual([identity.parseRunId, h.scope, fence]);
+    expect(Buffer.from(h.parsing.acceptLocalWorkerCandidate.mock.calls[0][3]).equals(raw)).toBe(true);
+  });
+  it.each(['revoked', 'source', 'stale'])('rejects gzip ingress on %s binding before reading or persisting', async condition => {
+    const h = setup(); const encoded = encodeLocalMineruResult(Buffer.from('s'.repeat(9 * 1024 * 1024)));
+    const body = upload(encoded.headers, [encoded.body]);
+    const error = condition === 'stale' ? denied : new Error(condition === 'source' ? 'DOCUMENT_PARSE_SOURCE_CHANGED' : 'DOCUMENT_ACCESS_DENIED');
+    if (condition === 'stale') h.leases.check.mockRejectedValue(error);
+    else h.parsing.readLocalWorkerRun.mockRejectedValue(error);
+    await expect(h.controller.acceptLocalMineruResult(body.request)).rejects.toThrow(error.message);
+    expect(body.consumed).not.toHaveBeenCalled();
+    expect(h.parsing.acceptLocalWorkerCandidate).not.toHaveBeenCalled(); expect(h.leases.release).not.toHaveBeenCalled();
+  });
+  it('never persists or publishes a versioned body with wrong raw digest or excessive streamed bytes', async () => {
+    const h = setup(); const encoded = encodeLocalMineruResult(Buffer.from('s'.repeat(9 * 1024 * 1024)));
+    await expect(h.controller.acceptLocalMineruResult(upload({ ...encoded.headers,
+      'x-wiselink-candidate-raw-sha256': 'a'.repeat(64) }, [encoded.body]).request))
+      .rejects.toThrow('LOCAL_MINERU_RESULT_RAW_MISMATCH');
+    await expect(h.controller.acceptLocalMineruResult(upload(encoded.headers, [Buffer.alloc(8 * 1024 * 1024 + 1)]).request))
+      .rejects.toThrow('MINERU_CANDIDATE_TOO_LARGE');
+    expect(h.parsing.acceptLocalWorkerCandidate).not.toHaveBeenCalled();
+    expect(h.parsing.executeStep).not.toHaveBeenCalled(); expect(h.leases.release).not.toHaveBeenCalled();
+  });
+  it('preserves the final fence check after gzip decoding and does not acknowledge failed acceptance', async () => {
+    const h = setup(); const raw = Buffer.from('r'.repeat(9 * 1024 * 1024)); const encoded = encodeLocalMineruResult(raw);
+    h.parsing.acceptLocalWorkerCandidate.mockRejectedValue(denied);
+    await expect(h.controller.acceptLocalMineruResult(upload(encoded.headers, [encoded.body]).request))
+      .rejects.toThrow('DOCUMENT_STEP_LEASE_REJECTED');
+    expect(h.leases.release).not.toHaveBeenCalled(); expect(h.parsing.executeStep).not.toHaveBeenCalled();
+  });
 });
 
 // Uses Nest's real Express/body-parser setup. Platform SDK gateway middleware is outside this harness.
@@ -484,5 +533,34 @@ it('serves the real Nest binary route with HTTP 200 and exact bytes after defaul
     expect(worker.validateUpload).toHaveBeenCalledWith(identity);
     expect(worker.result).toHaveBeenCalledWith(identity, bytes);
     expect(worker.validateUpload.mock.invocationCallOrder[0]).toBeLessThan(worker.result.mock.invocationCallOrder[0]);
+  } finally { await app.close(); }
+});
+
+it('keeps versioned gzip opaque to Nest and the platform core JSON/form middleware equivalents', async () => {
+  const actualPath = process.env.WL_LOCAL_MINERU_REAL_CANDIDATE;
+  const raw = actualPath ? readFileSync(actualPath) : Buffer.from(JSON.stringify({ entropy: randomBytes(2 * 1024 * 1024).toString('base64'),
+    complete: 's'.repeat(12 * 1024 * 1024) }));
+  const encoded = encodeLocalMineruResult(raw);
+  expect(encoded.body.length).toBeGreaterThan(1024 * 1024);
+  expect(encoded.body.length).toBeLessThanOrEqual(8 * 1024 * 1024);
+  const worker = { validateUpload: jest.fn().mockResolvedValue(undefined), result: jest.fn().mockResolvedValue({ status: 'ACCEPTED',
+    parseRunId: identity.parseRunId, candidateSha256: createHash('sha256').update(raw).digest('hex') }) };
+  const module = await Test.createTestingModule({ controllers: [LocalMineruWorkerOpenApiController],
+    providers: [{ provide: LocalMineruWorkerService, useValue: worker }] }).compile();
+  const app = module.createNestApplication();
+  // configureApp uses only these type-filtered parsers (default 1mb), not an octet-stream decoder.
+  app.use(json({ limit: '1mb' })); app.use(urlencoded({ limit: '1mb', extended: true }));
+  try {
+    await app.listen(0, '127.0.0.1'); const address = app.getHttpServer().address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${address.port}/openapi/wiselink/local-mineru/result`, {
+      method: 'POST', headers: { 'content-type': 'application/octet-stream', ...encoded.headers,
+        'x-wiselink-parse-run-id': identity.parseRunId, 'x-wiselink-document-version-id': identity.documentVersionId,
+        'x-wiselink-lease-owner': identity.lease.leaseOwner, 'x-wiselink-lease-token': identity.lease.leaseToken,
+        'x-wiselink-lease-generation': String(identity.lease.leaseGeneration) }, body: new Uint8Array(encoded.body).buffer,
+    });
+    expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ status: 'ACCEPTED' });
+    expect(worker.result).toHaveBeenCalledTimes(1);
+    expect(worker.result.mock.calls[0][0]).toEqual(identity);
+    expect(Buffer.from(worker.result.mock.calls[0][1]).equals(raw)).toBe(true);
   } finally { await app.close(); }
 });

@@ -4,6 +4,8 @@ import type { DocumentStepFence } from '../../../server/modules/document-managem
 import { openDocumentPdfSession } from '../../../server/modules/document-management/src/hosted/nest/document-original-pdf';
 jest.mock('../../../server/modules/document-management/src/hosted/nest/document-original-pdf', () => ({ openDocumentPdfSession: jest.fn() }));
 import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
+import { decodeLocalMineruResult } from '../../../server/modules/professional-input/mineru/local-mineru-result-transport';
 import { DocumentParsingHostedService } from '../../../server/modules/document-management/src/hosted/nest/document-parsing-hosted.service';
 import { readLocalMineruCandidate } from '../../../server/modules/document-management/src/hosted/nest/document-mineru-local-candidate';
 import { sameParserInput } from '../../../server/modules/document-management/src/hosted/nest/document-parsing.repository';
@@ -335,6 +337,21 @@ it('returns exact source and frozen settings, accepts only output, then bounded 
   await expect(f.service.acceptLocalWorkerCandidate('PR', workerScope, { ...workerFence, leaseToken: 'other' }, f.selection.bytes)).rejects.toThrow('DOCUMENT_LOCAL_WORKER_RECEIPT_MISMATCH');
   const publicArtifacts = [...f.content.values()].map(value => Buffer.from(value.bytes).toString()).join('');
   expect(publicArtifacts).not.toContain('worker-token'); expect(JSON.stringify(accepted)).not.toContain('worker-token');
+});
+it('persists complete gzip-restored raw candidate bytes through the original source/fence/receipt path', async () => {
+  const f = await workerFixture(); const value = candidate(); value.raw.markdown += 'p'.repeat(9 * 1024 * 1024);
+  const raw = Buffer.from(encode(value)); const sha = createHash('sha256').update(raw).digest('hex');
+  const restored = decodeLocalMineruResult(gzipSync(raw), { encoding: 'gzip', rawByteLength: raw.length, rawSha256: sha });
+  expect(await f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, restored)).toMatchObject({ status: 'STAGING' });
+  const artifact = (f.run.artifactProgress as DocumentOriginalArtifact[]).find(item => item.relativePath === 'raw/mineru-candidate.json')!;
+  expect(artifact).toMatchObject({ byteLength: raw.length, sha256: sha, readback: 'VERIFIED' });
+  expect(Buffer.from(f.content.get(artifact.filePath)!.bytes).equals(raw)).toBe(true);
+  const calls = f.scoped.upload.mock.calls.length;
+  await f.service.acceptLocalWorkerCandidate('PR', workerScope, workerFence, restored);
+  expect(f.scoped.upload).toHaveBeenCalledTimes(calls);
+  await expect(f.service.acceptLocalWorkerCandidate('PR', workerScope, { ...workerFence, leaseToken: 'new' }, restored))
+    .rejects.toThrow('DOCUMENT_LOCAL_WORKER_RECEIPT_MISMATCH');
+  expect(f.repository.publish).not.toHaveBeenCalled();
 });
 it('recovers candidate upload response loss without repeating upload or producing a false source download', async () => {
   const f = await workerFixture(); const upload = f.scoped.upload.getMockImplementation()!;

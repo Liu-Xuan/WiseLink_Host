@@ -53,6 +53,66 @@ describe('outbound local worker, isolated transports only', () => {
     await expect(f.worker.once()).resolves.toEqual({ status: 'CANDIDATE_READY' });
     expect(f.runner.parse).not.toHaveBeenCalled(); expect(f.transport.result).not.toHaveBeenCalled();
   });
+  it('reuses only the Host-linked predecessor cache after a normal new recovery admission', async () => {
+    const f = fixture(directory);
+    const predecessor = 'PRUN-00000000-0000-4000-8000-000000000001';
+    f.claim.parseRunId = predecessor;
+    await f.worker.once();
+    const oldPath = join(directory, 'a'.repeat(64), predecessor, 'candidate.json');
+    const oldBytes = await readFile(oldPath); const oldStat = await stat(oldPath);
+    const oldBinding = await readFile(join(directory, 'a'.repeat(64), predecessor, 'binding.json'));
+    f.claim.parseRunId = 'PRUN-00000000-0000-4000-8000-000000000002';
+    f.claim.recoveryPredecessorParseRunId = predecessor;
+    f.claim.lease = { ...f.claim.lease, leaseToken: 'new-run-token', leaseGeneration: 1 };
+    await f.worker.once();
+    expect(f.runner.parse).toHaveBeenCalledTimes(1);
+    expect(f.transport.source).toHaveBeenCalledTimes(2);
+    expect(f.transport.result.mock.calls[1][0]).toMatchObject({ parseRunId: f.claim.parseRunId,
+      lease: { leaseToken: 'new-run-token' } });
+    expect(Buffer.from(f.transport.result.mock.calls[1][1])).toEqual(oldBytes);
+    expect(await readFile(oldPath)).toEqual(oldBytes);
+    expect((await stat(oldPath)).mtimeMs).toBe(oldStat.mtimeMs);
+    expect(await readFile(join(directory, 'a'.repeat(64), predecessor, 'binding.json'))).toEqual(oldBinding);
+  });
+  it.each(['documentVersionId', 'sourceSha256', 'sourceByteLength', 'revision', 'titleEnhancementEnabled', 'localMineruFallbackEnabled'])
+    ('refuses predecessor cache binding changes to %s without parser or result replay', async field => {
+      const f = fixture(directory); const predecessor = 'PRUN-00000000-0000-4000-8000-000000000001';
+      f.claim.parseRunId = predecessor; await f.worker.once();
+      const path = join(directory, 'a'.repeat(64), predecessor, 'binding.json');
+      const binding = JSON.parse((await readFile(path)).toString());
+      if (field === 'revision') binding.settings.revision++;
+      else if (field === 'titleEnhancementEnabled' || field === 'localMineruFallbackEnabled') binding.settings[field] = !binding.settings[field];
+      else if (field === 'sourceByteLength') binding[field]++;
+      else binding[field] = 'changed';
+      await writeFile(path, JSON.stringify(binding));
+      f.claim.parseRunId = 'PRUN-00000000-0000-4000-8000-000000000002'; f.claim.recoveryPredecessorParseRunId = predecessor;
+      await expect(f.worker.once()).rejects.toThrow('LOCAL_MINERU_CACHE_BINDING_CHANGED');
+      expect(f.runner.parse).toHaveBeenCalledTimes(1); expect(f.transport.result).toHaveBeenCalledTimes(1);
+    });
+  it('does not discover a previous candidate without a Host recovery link', async () => {
+    const f = fixture(directory); await f.worker.once(); f.claim.parseRunId = 'PRUN-unlinked';
+    await f.worker.once();
+    expect(f.runner.parse).toHaveBeenCalledTimes(2);
+  });
+  it('recovers private raw output without repeating MinerU when the linked final candidate is absent', async () => {
+    const f = fixture(directory); const predecessor = 'PRUN-00000000-0000-4000-8000-000000000001';
+    f.claim.parseRunId = predecessor; await f.worker.once();
+    await rm(join(directory, 'a'.repeat(64), predecessor, 'candidate.json'));
+    f.claim.parseRunId = 'PRUN-00000000-0000-4000-8000-000000000002'; f.claim.recoveryPredecessorParseRunId = predecessor;
+    await f.worker.once();
+    expect(f.runner.parse).toHaveBeenCalledTimes(1);
+    expect(Buffer.from(f.transport.result.mock.calls[1][1])).toEqual(Buffer.from(f.transport.result.mock.calls[0][1]));
+  });
+  it('keeps current source and lease checks before submitting a linked old candidate', async () => {
+    const f = fixture(directory); const predecessor = 'PRUN-00000000-0000-4000-8000-000000000001';
+    f.claim.parseRunId = predecessor; await f.worker.once();
+    f.claim.parseRunId = 'PRUN-00000000-0000-4000-8000-000000000002'; f.claim.recoveryPredecessorParseRunId = predecessor;
+    f.transport.source.mockResolvedValueOnce(Buffer.from('%PDF-source-changed'));
+    await expect(f.worker.once()).rejects.toThrow('LOCAL_MINERU_SOURCE_MISMATCH');
+    f.transport.renew.mockRejectedValueOnce(new Error('STALE_FENCE'));
+    await expect(f.worker.once()).rejects.toThrow('STALE_FENCE');
+    expect(f.runner.parse).toHaveBeenCalledTimes(1); expect(f.transport.result).toHaveBeenCalledTimes(1);
+  });
   it('rejects changed source before calling the parser', async () => {
     const f = fixture(directory); f.transport.source.mockResolvedValue(Buffer.from('%PDF-wrong-source'));
     await expect(f.worker.once()).rejects.toThrow('LOCAL_MINERU_SOURCE_MISMATCH'); expect(f.runner.parse).not.toHaveBeenCalled();
@@ -94,6 +154,8 @@ describe('outbound local worker, isolated transports only', () => {
     expect(() => validateClaim({ ...f.claim, parseRunId: '../escape' })).toThrow('LOCAL_MINERU_CLAIM_INVALID');
     expect(() => validateClaim({ ...f.claim, deadlineAt: 'invalid' })).toThrow('LOCAL_MINERU_CLAIM_INVALID');
     expect(() => validateClaim({ ...f.claim, lease: { ...f.claim.lease, leaseGeneration: 0 } })).toThrow('LOCAL_MINERU_CLAIM_INVALID');
+    expect(() => validateClaim({ ...f.claim, recoveryPredecessorParseRunId: '../old' })).toThrow('LOCAL_MINERU_CLAIM_INVALID');
+    expect(() => validateClaim({ ...f.claim, recoveryPredecessorParseRunId: f.claim.parseRunId })).toThrow('LOCAL_MINERU_CLAIM_INVALID');
     expect(validateClaim({ status: 'IDLE' })).toBeNull();
   });
   it('uses fixed HTTPS routes, bearer authority and rejects oversized response metadata', async () => {
