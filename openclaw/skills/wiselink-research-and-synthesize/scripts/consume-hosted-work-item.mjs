@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 import { consumePendingReviewTurn } from './consume-hosted-review-turn.mjs';
 import { consumeHostedMatter } from './consume-hosted-matter.mjs';
+import { hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
 import { recoverNativeMatterResponse } from './recover-native-matter-response.mjs';
 import { invokeHostedJobAidProblemModel } from './run-jobaid-problem-assessment.mjs';
 import { invokeHostedInitialModel } from './invoke-hosted-initial-model.mjs';
@@ -482,6 +483,7 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
     // This receipt proves only this settled invocation failed. A concurrent
     // owner may have replaced or cleared the shared claim; never write it here.
     const invocationId = randomUUID();
+    const gatewayTransportFailure = hostedGatewayTransportFailureDiagnostic(error);
     try {
       await checkpoint.writeOnce(`consumer-failure-${invocationId}`, {
         schemaVersion: 'wiselink.auto_work_item_invocation_failure.v1',
@@ -494,6 +496,7 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
         leaseGeneration: claim.leaseGeneration,
         leaseExpiresAt: claim.leaseExpiresAt,
         attentionCode: safeAutomaticAttentionCode(errorCode(error)),
+        ...(gatewayTransportFailure ? { gatewayTransportFailure } : {}),
       });
     } catch (persistenceError) {
       throw new AggregateError([error, persistenceError],
@@ -1162,10 +1165,12 @@ export async function runHostedInitialStage(options, dependencies) {
         });
         if (stopped.attemptRef !== startedAttempt || stopped.status !== 'CANCELLED')
           throw new Error('HOSTED_INITIAL_STOP_NOT_CONFIRMED');
+        const gatewayTransportFailure = hostedGatewayTransportFailureDiagnostic(error);
         const report = {
           status: 'REQUIRES_ATTENTION', operation,
           attemptRef: startedAttempt, attemptStatus: stopped.status,
           errorCode: errorCode(error), modelCallCount, candidateOnly: true,
+          ...(gatewayTransportFailure ? { gatewayTransportFailure } : {}),
         };
         await checkpoint.writeOnce('run-result', report);
         return report;

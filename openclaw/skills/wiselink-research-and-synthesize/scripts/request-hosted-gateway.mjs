@@ -8,6 +8,56 @@ const TRANSIENT_HTTP_STATUSES = new Set([429, 502, 503, 504]);
 const NONDISPATCH_NETWORK_CODES = new Set([
   'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH',
 ]);
+const TRANSPORT_FAILURE_PHASES = new Map([
+  ['HOSTED_GATEWAY_REQUEST_FAILED', 'REQUEST'],
+  ['HOSTED_GATEWAY_RESPONSE_INTERRUPTED', 'RESPONSE'],
+]);
+const TRANSPORT_CAUSE_CODES = new Set([
+  ...NONDISPATCH_NETWORK_CODES,
+  'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ABORT_ERR', 'ERR_STREAM_PREMATURE_CLOSE',
+  'CERT_HAS_EXPIRED', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'ERR_TLS_CERT_ALTNAME_INVALID', 'ERR_TLS_HANDSHAKE_TIMEOUT',
+]);
+const TRANSPORT_CAUSE_NAMES = new Set(['AbortError', 'TimeoutError']);
+const TRANSPORT_SYSCALLS = new Set(['connect', 'read', 'write', 'getaddrinfo']);
+
+function safeErrorField(value, field) {
+  if (value === null || !['object', 'function'].includes(typeof value)) return undefined;
+  try { return value[field]; } catch { return undefined; }
+}
+
+/** Project only a fixed transport wrapper's bounded cause chain. The phase
+ * names its error event, not dispatch or provider outcome. No raw text leaves
+ * this diagnostic and it cannot authorize a retry of an unknown response.
+ */
+export function hostedGatewayTransportFailureDiagnostic(error) {
+  const seen = new Set();
+  const chain = [];
+  for (let value = error; value && chain.length < 5 && !seen.has(value);
+    value = safeErrorField(value, 'cause')) {
+    seen.add(value);
+    chain.push(value);
+  }
+  const messages = chain.map(value => safeErrorField(value, 'message'));
+  const originIndex = messages.findIndex(message => TRANSPORT_FAILURE_PHASES.has(message));
+  if (originIndex === -1) return null;
+  const errorCode = messages[originIndex];
+  const causeCodes = new Set(), causeNames = new Set(), syscalls = new Set();
+  for (const cause of chain.slice(originIndex + 1)) {
+    const code = safeErrorField(cause, 'code');
+    const name = safeErrorField(cause, 'name');
+    const syscall = safeErrorField(cause, 'syscall');
+    if (TRANSPORT_CAUSE_CODES.has(code)) causeCodes.add(code);
+    if (TRANSPORT_CAUSE_NAMES.has(name)) causeNames.add(name);
+    if (TRANSPORT_SYSCALLS.has(syscall)) syscalls.add(syscall);
+  }
+  return {
+    schemaVersion: 'wiselink.hosted-gateway-transport-failure.v1',
+    errorCode, phase: TRANSPORT_FAILURE_PHASES.get(errorCode),
+    causeCodes: [...causeCodes], causeNames: [...causeNames], syscalls: [...syscalls],
+    upstreamOutcome: 'UNKNOWN', retryAuthorized: false, rawErrorIncluded: false,
+  };
+}
 
 /** Only fixed native failure categories leave this boundary, never upstream
  * error text, model-generated content, provider identities or credentials.
