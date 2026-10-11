@@ -9,7 +9,8 @@ import { enhanceMineruTitles, type MineruTitleInput } from '../server/modules/pr
 import { readMineruArtifacts } from '../server/modules/professional-input/mineru/mineru-artifacts';
 import { readLocalMineruCandidate, type LocalMineruTitleReceipt } from '../server/modules/document-management/src/hosted/nest/document-mineru-local-candidate';
 import { packageLocalMineruCandidate } from './package-local-mineru-candidate';
-import { LocalMineruHttpTransport, validateClaim, identityOf, sha256, type LocalMineruTransport } from './local-mineru-worker-transport';
+import { LocalMineruHttpTransport, validateClaim, identityOf, sha256, isValidLeaseExpiry,
+  localMineruTransportFailureDiagnostic, type LocalMineruTransport, type LocalMineruTransportFailureDiagnostic } from './local-mineru-worker-transport';
 import type { LocalMineruWorkerClaim, LocalMineruWorkerResult, LocalMineruWorkerRenewResult } from '../shared/local-mineru-worker.interface';
 
 /** The existing runner's upper bound; the Host deadline and lease signal can stop it earlier. */
@@ -29,7 +30,10 @@ export interface LocalMineruWorkerDiagnostic {
   causeCode?: string;
   abortCauseCode?: string;
   renewCauseCode?: string;
+  renewAttempt?: 1;
+  transportFailure?: LocalMineruTransportFailureDiagnostic;
 }
+const LEASE_EXPIRY_SAFETY_MARGIN_MS = 1000;
 
 interface WorkerOptions {
   transport: LocalMineruTransport;
@@ -55,12 +59,14 @@ export class LocalMineruWorker {
     const signal = AbortSignal.any([externalSignal, controller.signal]);
     let timer: NodeJS.Timeout | undefined;
     let deadlineTimer: NodeJS.Timeout | undefined;
+    let leaseTimer: NodeJS.Timeout | undefined;
     let pendingRenew: Promise<void> = Promise.resolve();
     let finished = false;
     let phase: WorkerPhase = 'CLAIM';
     let diagnosticClaim: LocalMineruWorkerClaim | undefined;
     let renewCauseCode: string | undefined;
-    const diagnose = (status: LocalMineruWorkerDiagnostic['status'], observedPhase: WorkerPhase, cause?: unknown) => {
+    const diagnose = (status: LocalMineruWorkerDiagnostic['status'], observedPhase: WorkerPhase, cause?: unknown, renewAttempt?: 1) => {
+      const transportFailure = localMineruTransportFailureDiagnostic(cause);
       const entry: LocalMineruWorkerDiagnostic = {
         schemaVersion: 'wiselink.local-mineru-worker.diagnostic.v1', at: new Date().toISOString(),
         phase: observedPhase, status, parseRunId: diagnosticClaim?.parseRunId,
@@ -68,6 +74,8 @@ export class LocalMineruWorker {
         ...(cause === undefined ? {} : { causeCode: diagnosticErrorCode(cause) }),
         ...(signal.aborted ? { abortCauseCode: diagnosticErrorCode(signal.reason) } : {}),
         ...(renewCauseCode === undefined ? {} : { renewCauseCode }),
+        ...(renewAttempt === undefined ? {} : { renewAttempt }),
+        ...(transportFailure === undefined ? {} : { transportFailure }),
       };
       // An observer must never prevent fail-closed lease cancellation or change candidate persistence.
       try { this.options.reportDiagnostic?.(entry); }
@@ -81,19 +89,66 @@ export class LocalMineruWorker {
       const identity = identityOf(claim);
       const failLease = () => controller.abort(new Error('LOCAL_MINERU_LEASE_LOST'));
       const setDeadline = (deadline: string) => {
-        if (deadlineTimer) clearTimeout(deadlineTimer);
         const delay = Date.parse(deadline) - Date.now();
         if (!Number.isFinite(delay) || delay <= 0 || Date.parse(deadline) > Date.parse(claim.deadlineAt)) throw new Error('LOCAL_MINERU_RENEW_INVALID');
+        if (deadlineTimer) clearTimeout(deadlineTimer);
         deadlineTimer = setTimeout(() => {
           failLease();
           diagnose('FAILED', 'DEADLINE', new Error('LOCAL_MINERU_DEADLINE_REACHED'));
         }, Math.min(delay, 2_147_483_647));
       };
       setDeadline(claim.deadlineAt);
+      const expiryMode = claim.leaseExpiresAt !== undefined;
+      let confirmedExpiry: number | undefined;
+      const confirmExpiry = (expiry: string) => {
+        signal.throwIfAborted();
+        const next = Math.min(Date.parse(expiry), Date.parse(claim.deadlineAt));
+        const delay = next - Date.now() - LEASE_EXPIRY_SAFETY_MARGIN_MS;
+        if (delay <= 0) {
+          failLease();
+          diagnose('FAILED', 'RENEW', new Error('LOCAL_MINERU_LEASE_EXPIRED'));
+          signal.throwIfAborted();
+        }
+        if (leaseTimer) clearTimeout(leaseTimer);
+        confirmedExpiry = next;
+        leaseTimer = setTimeout(() => {
+          failLease();
+          diagnose('FAILED', 'RENEW', new Error('LOCAL_MINERU_LEASE_EXPIRED'));
+        }, Math.min(delay, 2_147_483_647));
+      };
+      if (expiryMode) confirmExpiry(claim.leaseExpiresAt!);
+      const assertConfirmedExpiry = () => {
+        // Also guard a delayed timer callback, rather than accepting an ACK after its known window.
+        if (confirmedExpiry !== undefined && confirmedExpiry - Date.now() <= LEASE_EXPIRY_SAFETY_MARGIN_MS) {
+          failLease();
+          diagnose('FAILED', 'RENEW', new Error('LOCAL_MINERU_LEASE_EXPIRED'));
+          signal.throwIfAborted();
+        }
+      };
       const renew = async () => {
-        const reply = await this.options.transport.renew(identity, signal) as LocalMineruWorkerRenewResult;
-        if (reply?.status !== 'RENEWED') throw new Error('LOCAL_MINERU_RENEW_INVALID');
-        setDeadline(reply.deadlineAt);
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            signal.throwIfAborted();
+            assertConfirmedExpiry();
+            const reply = await abortable(this.options.transport.renew(identity, signal), signal) as LocalMineruWorkerRenewResult;
+            // A late ACK cannot resurrect an expired/cancelled parser or extend an unconfirmed lease.
+            signal.throwIfAborted();
+            assertConfirmedExpiry();
+            if (reply?.status !== 'RENEWED' || (expiryMode && !isValidLeaseExpiry(reply.leaseExpiresAt, reply.deadlineAt)))
+              throw new Error('LOCAL_MINERU_RENEW_INVALID');
+            setDeadline(reply.deadlineAt);
+            if (expiryMode) confirmExpiry(reply.leaseExpiresAt!);
+            return;
+          } catch (error) {
+            if (attempt === 0 && expiryMode && !signal.aborted &&
+                error instanceof Error && error.message === 'LOCAL_MINERU_TRANSPORT_UNAVAILABLE' &&
+                confirmedExpiry! - Date.now() > LEASE_EXPIRY_SAFETY_MARGIN_MS) {
+              diagnose('FAILED', 'RENEW', error, 1);
+              continue;
+            }
+            throw error;
+          }
+        }
       };
       const schedule = () => {
         timer = setTimeout(() => {
@@ -191,6 +246,7 @@ export class LocalMineruWorker {
       finished = true;
       if (timer) clearTimeout(timer);
       if (deadlineTimer) clearTimeout(deadlineTimer);
+      if (leaseTimer) clearTimeout(leaseTimer);
       controller.abort();
       await pendingRenew;
       this.running = false;
@@ -256,6 +312,7 @@ async function privateWrite(path: string, bytes: Buffer): Promise<void> {
   finally { await rm(temporary, { force: true }); }
 }
 async function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) void promise.catch(() => undefined);
   signal.throwIfAborted();
   let listener: () => void;
   const aborted = new Promise<never>((_resolve, reject) => {
@@ -287,7 +344,7 @@ function workerErrorCode(error: unknown): string {
     ? error.message : 'LOCAL_MINERU_WORKER_FAILED';
 }
 const diagnosticCodes = new Set([
-  'LOCAL_MINERU_TRANSPORT_UNAVAILABLE', 'LOCAL_MINERU_LEASE_LOST', 'LOCAL_MINERU_STOPPED',
+  'LOCAL_MINERU_TRANSPORT_UNAVAILABLE', 'LOCAL_MINERU_LEASE_LOST', 'LOCAL_MINERU_LEASE_EXPIRED', 'LOCAL_MINERU_STOPPED',
   'LOCAL_MINERU_RENEW_INVALID', 'LOCAL_MINERU_DEADLINE_REACHED', 'LOCAL_MINERU_SOURCE_MISMATCH',
   'LOCAL_MINERU_SOURCE_REPLY_INVALID', 'LOCAL_MINERU_CACHE_BINDING_CHANGED', 'LOCAL_MINERU_CACHE_PERMISSIONS_INVALID',
   'LOCAL_MINERU_CACHED_TITLE_INVALID', 'LOCAL_MINERU_TITLE_PROVIDER_NOT_READY', 'LOCAL_MINERU_TITLE_ENHANCEMENT_FAILED',

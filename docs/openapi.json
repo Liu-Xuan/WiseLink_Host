@@ -138,6 +138,12 @@
                             }
                           }
                         },
+                        "leaseExpiresAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Host本次CAS实际租约期限；旧Host可缺失，不能据此推算或宽限租约",
+                          "example": "2026-09-26T09:32:00.000Z"
+                        },
                         "deadlineAt": {
                           "type": "string",
                           "description": "本次运行最晚完成时间",
@@ -354,6 +360,12 @@
                         "RENEWED"
                       ],
                       "example": "RENEWED"
+                    },
+                    "leaseExpiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Host本次CAS实际租约期限；旧Host可缺失，不能据此推算或宽限租约",
+                      "example": "2026-09-26T09:32:00.000Z"
                     },
                     "deadlineAt": {
                       "type": "string",

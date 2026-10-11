@@ -2,7 +2,8 @@ import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { LocalMineruWorker, pollLocalMineruWorker, readLocalMineruCredential, type LocalMineruWorkerDiagnostic } from '../../../scripts/local-mineru-worker';
-import { LocalMineruHttpTransport, validateClaim, sha256 } from '../../../scripts/local-mineru-worker-transport';
+import { LocalMineruHttpTransport, validateClaim, sha256, localMineruTransportFailureDiagnostic,
+  type LocalMineruIdentity } from '../../../scripts/local-mineru-worker-transport';
 import { readMineruArtifacts } from '../../../server/modules/professional-input/mineru/mineru-artifacts';
 import type { LocalMineruWorkerClaim } from '../../../shared/local-mineru-worker.interface';
 
@@ -23,6 +24,18 @@ function fixture(cacheDirectory: string) {
     result: jest.fn(async (_identity: unknown, bytes: Uint8Array, _signal: AbortSignal): Promise<unknown> => ({ status: 'ACCEPTED', parseRunId: claim.parseRunId, candidateSha256: sha256(bytes) })) };
   const options = { cacheDirectory, cacheNamespace: 'a'.repeat(64), runner, transport };
   return { claim, runner, transport, options, worker: new LocalMineruWorker(options) };
+}
+function expiryFixture(cacheDirectory: string, milliseconds = 10_000) {
+  const f = fixture(cacheDirectory);
+  f.claim.leaseExpiresAt = new Date(Date.now() + milliseconds).toISOString();
+  f.transport.renew.mockImplementation(async () => ({ status: 'RENEWED', deadlineAt: f.claim.deadlineAt,
+    leaseExpiresAt: f.claim.leaseExpiresAt }));
+  return f;
+}
+function holdParser(f: ReturnType<typeof fixture>) {
+  f.runner.parse.mockImplementation((_pdf, input) => new Promise((_resolve, reject) => {
+    input!.signal!.addEventListener('abort', () => reject(new Error('MINERU_ABORTED')), { once: true });
+  }));
 }
 describe('outbound local worker, isolated transports only', () => {
   let directory: string;
@@ -124,6 +137,123 @@ describe('outbound local worker, isolated transports only', () => {
     }));
     await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10 }).once()).rejects.toThrow('MINERU_ABORTED');
     expect(f.transport.result).not.toHaveBeenCalled();
+  });
+  it('recovers one transport failure with the same confirmed fence and no duplicate parse or result', async () => {
+    const f = expiryFixture(directory); const parsed = f.runner.parse.getMockImplementation()!;
+    let resume!: () => void;
+    f.runner.parse.mockImplementation(async (bytes, input) => {
+      await new Promise<void>(resolve => { resume = resolve; }); return parsed(bytes, input);
+    });
+    f.transport.renew.mockRejectedValueOnce(new Error('LOCAL_MINERU_TRANSPORT_UNAVAILABLE'))
+      .mockImplementationOnce(async () => { resume(); return { status: 'RENEWED', deadlineAt: f.claim.deadlineAt,
+        leaseExpiresAt: new Date(Date.now() + 15_000).toISOString() }; });
+    await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10 }).once()).resolves.toMatchObject({ status: 'ACCEPTED' });
+    expect(f.transport.renew.mock.calls[0][0]).toEqual(f.transport.renew.mock.calls[1][0]);
+    expect(f.transport.renew.mock.calls[0][0]).toEqual({ parseRunId: f.claim.parseRunId,
+      documentVersionId: f.claim.documentVersionId, lease: f.claim.lease });
+    expect(f.runner.parse).toHaveBeenCalledTimes(1); expect(f.transport.claim).toHaveBeenCalledTimes(1);
+    expect(f.transport.source).toHaveBeenCalledTimes(1); expect(f.transport.result).toHaveBeenCalledTimes(1);
+  });
+  it('also bounds the final fresh renew to two attempts before the single result', async () => {
+    const f = expiryFixture(directory);
+    f.transport.renew.mockRejectedValueOnce(new Error('LOCAL_MINERU_TRANSPORT_UNAVAILABLE'));
+    await expect(f.worker.once()).resolves.toMatchObject({ status: 'ACCEPTED' });
+    expect(f.transport.renew).toHaveBeenCalledTimes(2); expect(f.transport.result).toHaveBeenCalledTimes(1);
+  });
+  it.each([['LOCAL_MINERU_TRANSPORT_UNAVAILABLE', 2], ['LOCAL_MINERU_HTTP_403', 1],
+    ['LOCAL_MINERU_HTTP_500', 1], ['DOCUMENT_STEP_LEASE_REJECTED', 1], ['LOCAL_MINERU_RENEW_INVALID', 1]] as const)
+    ('never exceeds the permitted renew attempts for %s', async (code, attempts) => {
+      const f = expiryFixture(directory); holdParser(f); f.transport.renew.mockRejectedValue(new Error(code));
+      await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10 }).once()).rejects.toThrow('MINERU_ABORTED');
+      expect(f.transport.renew).toHaveBeenCalledTimes(attempts); expect(f.transport.result).not.toHaveBeenCalled();
+      await expect(stat(join(directory, 'a'.repeat(64), f.claim.parseRunId, 'raw-candidate.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  it('keeps the old Host first-error abort without guessing a lease window', async () => {
+    const f = fixture(directory); holdParser(f);
+    f.transport.renew.mockRejectedValue(new Error('LOCAL_MINERU_TRANSPORT_UNAVAILABLE'));
+    await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10 }).once()).rejects.toThrow('MINERU_ABORTED');
+    expect(f.transport.renew).toHaveBeenCalledTimes(1); expect(f.transport.result).not.toHaveBeenCalled();
+  });
+  it.each(['missing', 'invalid', 'expired', 'pastDeadline', 'wrongStatus'])
+    ('does not downgrade expiry mode on a %s renewal reply', async kind => {
+      const f = expiryFixture(directory); holdParser(f);
+      const reply = { status: 'RENEWED', deadlineAt: f.claim.deadlineAt, leaseExpiresAt: f.claim.leaseExpiresAt };
+      if (kind === 'missing') delete reply.leaseExpiresAt;
+      else if (kind === 'invalid') reply.leaseExpiresAt = 'invalid';
+      else if (kind === 'expired') reply.leaseExpiresAt = new Date(Date.now() - 1).toISOString();
+      else if (kind === 'pastDeadline') reply.leaseExpiresAt = new Date(Date.parse(f.claim.deadlineAt) + 1).toISOString();
+      else reply.status = 'ACCEPTED';
+      f.transport.renew.mockResolvedValue(reply);
+      await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10 }).once()).rejects.toThrow('MINERU_ABORTED');
+      expect(f.transport.renew).toHaveBeenCalledTimes(1); expect(f.transport.result).not.toHaveBeenCalled();
+    });
+  it.each(['FETCH', 'RESPONSE_BODY'])('aborts a pending %s at confirmed expiry without waiting for transport timeout', async stage => {
+    const f = expiryFixture(directory, 1200); holdParser(f);
+    let networkSignal: AbortSignal | undefined;
+    const request = jest.fn(async (_url: unknown, init?: RequestInit): Promise<Response> => {
+      networkSignal = init!.signal as AbortSignal;
+      return stage === 'FETCH' ? new Promise(() => undefined) : new Response(new ReadableStream({
+        start(stream) { stream.enqueue(Buffer.from('{')); },
+      }), { headers: { 'content-type': 'application/json' } });
+    });
+    const http = new LocalMineruHttpTransport({ origin: 'https://host.test', apiKey: 'private-unit-key' }, request as typeof fetch);
+    f.transport.renew.mockImplementation((id, signal) => http.renew(id as LocalMineruIdentity, signal));
+    await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10 }).once()).rejects.toThrow('MINERU_ABORTED');
+    expect(networkSignal!.aborted).toBe(true); expect(request).toHaveBeenCalledTimes(1);
+    expect(f.transport.result).not.toHaveBeenCalled();
+  });
+  it('does not extend confirmed expiry after an unknown first result and a pending retry', async () => {
+    const f = expiryFixture(directory, 1200); holdParser(f);
+    const request = jest.fn<Promise<Response>, [unknown, RequestInit?]>()
+      .mockRejectedValueOnce(Object.assign(new TypeError('private-network-details'), { cause: { code: 'EAI_AGAIN' } }))
+      .mockImplementation(async () => new Promise(() => undefined));
+    const http = new LocalMineruHttpTransport({ origin: 'https://host.test', apiKey: 'private-unit-key' }, request as typeof fetch);
+    f.transport.renew.mockImplementation((id, signal) => http.renew(id as LocalMineruIdentity, signal));
+    const diagnostics: LocalMineruWorkerDiagnostic[] = [];
+    await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10,
+      reportDiagnostic: entry => diagnostics.push(entry) }).once()).rejects.toThrow('MINERU_ABORTED');
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.calls[0][1]!.body).toEqual(request.mock.calls[1][1]!.body);
+    expect(diagnostics).toContainEqual(expect.objectContaining({ renewAttempt: 1,
+      transportFailure: expect.objectContaining({ phase: 'FETCH', nativeCodes: ['EAI_AGAIN'] }) }));
+    expect(JSON.stringify(diagnostics)).not.toContain('private-network-details');
+    expect(f.transport.result).not.toHaveBeenCalled();
+  });
+  it('never revives a parser when an ACK arrives after local expiry', async () => {
+    const f = expiryFixture(directory, 1200); holdParser(f); let reply!: (value: unknown) => void;
+    f.transport.renew.mockImplementation(async () => new Promise(resolve => { reply = resolve; }));
+    await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10 }).once()).rejects.toThrow('MINERU_ABORTED');
+    reply({ status: 'RENEWED', deadlineAt: f.claim.deadlineAt, leaseExpiresAt: new Date(Date.now() + 10_000).toISOString() });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(f.transport.renew).toHaveBeenCalledTimes(1); expect(f.transport.result).not.toHaveBeenCalled();
+    await expect(stat(join(directory, 'a'.repeat(64), f.claim.parseRunId, 'raw-candidate.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+  it('prioritizes caller cancellation during a pending retry', async () => {
+    const f = expiryFixture(directory); holdParser(f); const caller = new AbortController();
+    f.transport.renew.mockRejectedValueOnce(new Error('LOCAL_MINERU_TRANSPORT_UNAVAILABLE'))
+      .mockImplementationOnce(async () => { caller.abort(new Error('LOCAL_MINERU_STOPPED')); return new Promise(() => undefined); });
+    await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10 }).once(caller.signal)).rejects.toThrow('MINERU_ABORTED');
+    expect(f.transport.renew).toHaveBeenCalledTimes(2); expect(f.transport.result).not.toHaveBeenCalled();
+  });
+  it('rejects an ACK outside confirmed expiry even before a delayed timer callback runs', async () => {
+    const f = expiryFixture(directory); holdParser(f); let clock: jest.SpyInstance | undefined;
+    f.transport.renew.mockImplementationOnce(async () => {
+      clock = jest.spyOn(Date, 'now').mockReturnValue(Date.parse(f.claim.leaseExpiresAt!) + 1);
+      return { status: 'RENEWED', deadlineAt: f.claim.deadlineAt, leaseExpiresAt: new Date(Date.now() + 10_000).toISOString() };
+    });
+    try {
+      await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10 }).once()).rejects.toThrow('MINERU_ABORTED');
+    } finally { clock?.mockRestore(); }
+    expect(f.transport.renew).toHaveBeenCalledTimes(1); expect(f.transport.result).not.toHaveBeenCalled();
+  });
+  it('does not retry claim or result even when confirmed-expiry support is present', async () => {
+    const f = expiryFixture(directory);
+    f.transport.claim.mockRejectedValueOnce(new Error('LOCAL_MINERU_TRANSPORT_UNAVAILABLE'));
+    await expect(f.worker.once()).rejects.toThrow('LOCAL_MINERU_TRANSPORT_UNAVAILABLE');
+    expect(f.transport.claim).toHaveBeenCalledTimes(1); expect(f.transport.source).not.toHaveBeenCalled();
+    f.transport.result.mockRejectedValueOnce(new Error('LOCAL_MINERU_TRANSPORT_UNAVAILABLE'));
+    await expect(f.worker.once()).rejects.toThrow('LOCAL_MINERU_TRANSPORT_UNAVAILABLE');
+    expect(f.transport.result).toHaveBeenCalledTimes(1); expect(f.runner.parse).toHaveBeenCalledTimes(1);
   });
   it.each(['LOCAL_MINERU_TRANSPORT_UNAVAILABLE', 'LOCAL_MINERU_HTTP_500', 'LOCAL_MINERU_HTTP_403'])
     ('retains the exact safe renewal cause %s when the parser is aborted', async causeCode => {
@@ -228,6 +358,16 @@ describe('outbound local worker, isolated transports only', () => {
     expect(() => validateClaim({ ...f.claim, recoveryPredecessorParseRunId: f.claim.parseRunId })).toThrow('LOCAL_MINERU_CLAIM_INVALID');
     expect(validateClaim({ status: 'IDLE' })).toBeNull();
   });
+  it('rejects present invalid claim expiry instead of entering legacy compatibility', async () => {
+    const f = expiryFixture(directory);
+    for (const expiry of [null, 'invalid', new Date(Date.now() - 1).toISOString(),
+      new Date(Date.parse(f.claim.deadlineAt) + 1).toISOString()]) {
+      expect(() => validateClaim({ ...f.claim, leaseExpiresAt: expiry })).toThrow('LOCAL_MINERU_CLAIM_INVALID');
+    }
+    f.transport.claim.mockResolvedValue({ ...f.claim, leaseExpiresAt: null });
+    await expect(f.worker.once()).rejects.toThrow('LOCAL_MINERU_CLAIM_INVALID');
+    expect(f.transport.source).not.toHaveBeenCalled(); expect(f.runner.parse).not.toHaveBeenCalled();
+  });
   it('uses fixed HTTPS routes, bearer authority and rejects oversized response metadata', async () => {
     const request = jest.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({ status: 'IDLE' }), { headers: { 'content-type': 'application/json' } }));
     const transport = new LocalMineruHttpTransport({ origin: 'https://host.test', basePath: '/app/exact', apiKey: 'private-test-key' }, request as typeof fetch);
@@ -310,12 +450,48 @@ describe('outbound local worker, isolated transports only', () => {
     await expect(transport.claim(new AbortController().signal)).rejects.toThrow('LOCAL_MINERU_TRANSPORT_UNAVAILABLE');
     const controller = new AbortController();
     controller.abort();
-    await expect(transport.claim(controller.signal)).rejects.toThrow('fetch failed');
+    await expect(transport.claim(controller.signal)).rejects.toBe(controller.signal.reason);
     const interruptedBody = jest.fn(async () => new Response(new ReadableStream({
       pull(stream) { stream.error(new TypeError('connection reset')); },
     }), { headers: { 'content-type': 'application/json' } }));
     const streamed = new LocalMineruHttpTransport({ origin: 'https://host.test', apiKey: 'private-test-key' }, interruptedBody as typeof fetch);
     await expect(streamed.claim(new AbortController().signal)).rejects.toThrow('LOCAL_MINERU_TRANSPORT_UNAVAILABLE');
+  });
+  it('projects only bounded native enums and keeps fetch/body/timeout distinctions', async () => {
+    const secret = 'PRIVATE_BODY_URL_TOKEN';
+    const native = { code: 'ECONNRESET', name: 'AbortError', message: secret, headers: { Authorization: secret }, cause: {} };
+    native.cause = native;
+    const raw = Object.assign(new TypeError(secret), { cause: native });
+    const request = jest.fn(async () => { throw raw; });
+    const http = new LocalMineruHttpTransport({ origin: 'https://host.test', apiKey: secret }, request as typeof fetch);
+    const failure = await http.renew({ parseRunId: 'PRUN-test', documentVersionId: 'DV-test',
+      lease: { leaseOwner: 'owner', leaseToken: 'token', leaseGeneration: 1 } }, new AbortController().signal).catch(error => error);
+    expect((failure as Error & { cause?: unknown }).cause).toBe(raw);
+    expect(localMineruTransportFailureDiagnostic(failure)).toEqual({ operation: 'RENEW', phase: 'FETCH',
+      timeoutOrigin: 'UNKNOWN', httpStatus: null, nativeCodes: ['ECONNRESET'], causeNames: ['AbortError'] });
+    expect(JSON.stringify(localMineruTransportFailureDiagnostic(failure))).not.toContain(secret);
+    const body = new LocalMineruHttpTransport({ origin: 'https://host.test', apiKey: secret },
+      (async () => new Response(new ReadableStream({ start(stream) { stream.error(raw); } }),
+        { headers: { 'content-type': 'application/json' } })) as typeof fetch);
+    const interrupted = await body.claim(new AbortController().signal).catch(error => error);
+    expect(localMineruTransportFailureDiagnostic(interrupted)).toMatchObject({ phase: 'RESPONSE_BODY', httpStatus: 200 });
+    const timeout = new LocalMineruHttpTransport({ origin: 'https://host.test', apiKey: secret, timeoutMs: 10 },
+      (async () => new Promise<Response>(() => undefined)) as typeof fetch);
+    const timedOut = await timeout.claim(new AbortController().signal).catch(error => error);
+    expect(localMineruTransportFailureDiagnostic(timedOut)).toMatchObject({ timeoutOrigin: 'TRANSPORT_TIMEOUT', causeNames: ['TimeoutError'] });
+    const hostile = Object.assign(new TypeError(secret), { code: secret });
+    Object.defineProperty(hostile, 'cause', { get() { throw new Error(secret); } });
+    const unknown = new LocalMineruHttpTransport({ origin: 'https://host.test', apiKey: secret }, (async () => { throw hostile; }) as typeof fetch);
+    expect(localMineruTransportFailureDiagnostic(await unknown.claim(new AbortController().signal).catch(error => error)))
+      .toMatchObject({ nativeCodes: [], causeNames: [] });
+    let reads = 0;
+    const changing = new TypeError(secret);
+    Object.defineProperty(changing, 'code', { get() { return ++reads <= 2 ? 'ECONNRESET' : secret; } });
+    const changingTransport = new LocalMineruHttpTransport({ origin: 'https://host.test', apiKey: secret },
+      (async () => { throw changing; }) as typeof fetch);
+    const projection = localMineruTransportFailureDiagnostic(await changingTransport.claim(new AbortController().signal).catch(error => error));
+    expect(projection).toMatchObject({ nativeCodes: ['ECONNRESET'] });
+    expect(reads).toBe(1); expect(JSON.stringify(projection)).not.toContain(secret);
   });
 
   it('reads the dedicated key from a private file without putting it in launch configuration', async () => {

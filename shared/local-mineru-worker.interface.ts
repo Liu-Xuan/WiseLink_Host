@@ -17,6 +17,8 @@ export interface LocalMineruWorkerClaim extends LocalMineruWorkerIdentity {
   sourceByteLength: number;
   settings: DocumentParsingSettingsSnapshot;
   deadlineAt: string;
+  /** Actual Host CAS expiry. Optional only for compatibility with older Hosts. */
+  leaseExpiresAt?: string;
   /** Derived by Host from a repository-admitted recovery request. Grants no authority. */
   recoveryPredecessorParseRunId?: string;
 }
@@ -24,6 +26,7 @@ export type LocalMineruWorkerClaimResult = { status: 'IDLE' } | LocalMineruWorke
 export interface LocalMineruWorkerRenewResult {
   status: 'RENEWED';
   deadlineAt: string;
+  leaseExpiresAt?: string;
 }
 /** Source normally returns PDF bytes; this JSON reply recovers an already received candidate. */
 export interface LocalMineruWorkerSourceReady {

@@ -12,6 +12,9 @@ export interface DocumentStepFence {
   leaseToken: string;
   leaseGeneration: number;
 }
+export interface DocumentStepGrant extends DocumentStepFence {
+  leaseExpiresAt: Date;
+}
 
 /** Execution control on the existing parseRun, without a second task status. */
 @Injectable()
@@ -37,11 +40,11 @@ export class DocumentStepLeaseRepository {
     if (!row) throw new Error('DOCUMENT_AUTOMATIC_LEASE_REJECTED');
   }
 
-  async claim(scope: DocumentParseScope, parseRunId: string, leaseOwner: string, leaseMs = 120_000): Promise<DocumentStepFence | null> {
+  async claim(scope: DocumentParseScope, parseRunId: string, leaseOwner: string, leaseMs = 120_000): Promise<DocumentStepGrant | null> {
     if (!/^[A-Za-z0-9:_-]{1,160}$/u.test(leaseOwner) || !Number.isSafeInteger(leaseMs) || leaseMs < 1000 || leaseMs > 300_000) {
       throw new Error('DOCUMENT_STEP_LEASE_ARGUMENT_INVALID');
     }
-    const mutate = async (database: PostgresJsDatabase): Promise<DocumentStepFence | null> => {
+    const mutate = async (database: PostgresJsDatabase): Promise<DocumentStepGrant | null> => {
       if (scope.automaticWorkItem) await this.assertAutomaticWorkItem(database, scope);
       const now = new Date();
       const [row] = await database.update(dmDocumentParseRun).set({
@@ -50,7 +53,8 @@ export class DocumentStepLeaseRepository {
       }).where(and(owned(scope, parseRunId), active(now),
         or(isNull(dmDocumentParseRun.leaseExpiresAt), lte(dmDocumentParseRun.leaseExpiresAt, now))))
         .returning();
-      return row ? { parseRunId, leaseOwner, leaseToken: row.leaseToken!, leaseGeneration: row.leaseGeneration } : null;
+      return row ? { parseRunId, leaseOwner, leaseToken: row.leaseToken!, leaseGeneration: row.leaseGeneration,
+        leaseExpiresAt: row.leaseExpiresAt! } : null;
     };
     return scope.automaticWorkItem ? this.db.transaction(mutate) : mutate(this.db);
   }
@@ -74,15 +78,19 @@ export class DocumentStepLeaseRepository {
   }
 
   async renew(scope: DocumentParseScope, fence: DocumentStepFence, leaseMs = 120_000): Promise<boolean> {
+    return await this.renewWithExpiry(scope, fence, leaseMs) !== null;
+  }
+
+  async renewWithExpiry(scope: DocumentParseScope, fence: DocumentStepFence, leaseMs = 120_000): Promise<Date | null> {
     if (!Number.isSafeInteger(leaseMs) || leaseMs < 1000 || leaseMs > 300_000) throw new Error('DOCUMENT_STEP_LEASE_ARGUMENT_INVALID');
-    const mutate = async (database: PostgresJsDatabase): Promise<boolean> => {
+    const mutate = async (database: PostgresJsDatabase): Promise<Date | null> => {
       if (scope.automaticWorkItem) await this.assertAutomaticWorkItem(database, scope);
       const now = new Date();
       const rows = await database.update(dmDocumentParseRun).set({
         leaseExpiresAt: sql`LEAST(${dmDocumentParseRun.deadlineAt}, ${new Date(now.getTime() + leaseMs).toISOString()}::timestamptz)`,
       }).where(and(owned(scope, fence.parseRunId), fenced(fence), active(now), gt(dmDocumentParseRun.leaseExpiresAt, now)))
-        .returning({ id: dmDocumentParseRun.id });
-      return rows.length === 1;
+        .returning({ leaseExpiresAt: dmDocumentParseRun.leaseExpiresAt });
+      return rows.length === 1 ? rows[0].leaseExpiresAt : null;
     };
     return scope.automaticWorkItem ? this.db.transaction(mutate) : mutate(this.db);
   }

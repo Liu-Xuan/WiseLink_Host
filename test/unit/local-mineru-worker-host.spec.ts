@@ -20,6 +20,7 @@ const identity = { parseRunId: 'PRUN-test', documentVersionId: 'DV-test', lease:
   leaseOwner: 'mineru:configured-principal:WI-test:g3', leaseToken: 'lease-secret', leaseGeneration: 2,
 } };
 const fence = { parseRunId: identity.parseRunId, ...identity.lease };
+const leaseExpiresAt = new Date('2026-09-26T23:59:18.123Z');
 const denied = Object.assign(new Error('DOCUMENT_STEP_LEASE_REJECTED'), { statusCode: 409 });
 
 function setup() {
@@ -53,7 +54,8 @@ function setup() {
     readLocalWorkerOriginal: jest.fn().mockResolvedValue({ candidateReady: false, bytes: Buffer.from('%PDF-test') }),
     acceptLocalWorkerCandidate: jest.fn().mockResolvedValue({ status: 'STAGING' }),
     executeStep: jest.fn().mockResolvedValue({ status: 'PUBLISHED' }) };
-  const leases = { claim: jest.fn().mockResolvedValue(fence), renew: jest.fn().mockResolvedValue(true),
+  const leases = { claim: jest.fn().mockResolvedValue({ ...fence, leaseExpiresAt }),
+    renewWithExpiry: jest.fn().mockResolvedValue(leaseExpiresAt),
     check: jest.fn().mockResolvedValue(undefined), release: jest.fn().mockResolvedValue(undefined) };
   const workItems = { listActiveLocalWorkerDelegations: jest.fn().mockResolvedValue([grant]),
     listCompletedLocalWorkerDiscovery: jest.fn().mockResolvedValue([]),
@@ -83,9 +85,20 @@ function upload(headers: Record<string, string> = {}, chunks: Buffer[] = [Buffer
 }
 
 describe('local MinerU Host dispatcher', () => {
+  it('returns the actual renewal CAS expiry instead of the stale loaded row or a computed TTL', async () => {
+    const h = setup(); const actual = new Date('2026-09-26T23:59:59.456Z');
+    Object.assign(h.loaded.run, { leaseExpiresAt: new Date('2026-09-26T23:58:00Z') });
+    h.leases.renewWithExpiry.mockResolvedValue(actual);
+    await expect(h.worker.renew(identity)).resolves.toEqual({ status: 'RENEWED',
+      deadlineAt: h.loaded.run.deadlineAt.toISOString(), leaseExpiresAt: actual.toISOString() });
+    expect(h.leases.renewWithExpiry).toHaveBeenCalledWith(h.scope, fence, 120_000);
+    const reply = await h.worker.claim({});
+    expect(reply).toMatchObject({ leaseExpiresAt: leaseExpiresAt.toISOString(), lease: identity.lease });
+    expect((reply as { lease: unknown }).lease).toEqual(identity.lease);
+  });
   it('claims only through configured transport and restores the durable actor', async () => {
     const h = setup();
-    await expect(h.worker.claim({})).resolves.toMatchObject({ status: 'CLAIMED', ...identity });
+    await expect(h.worker.claim({})).resolves.toMatchObject({ status: 'CLAIMED', ...identity, leaseExpiresAt: leaseExpiresAt.toISOString() });
     expect(h.authorization.assertAutoWorkItemQueueTransport).toHaveBeenCalledTimes(1);
     expect(h.workItems.listActiveLocalWorkerDelegations).toHaveBeenCalledWith({
       tenantId: 'configured-tenant', principalId: 'configured-principal', limit: 50 });
@@ -154,7 +167,7 @@ describe('local MinerU Host dispatcher', () => {
     const h = setup(); h.grant.leaseGeneration += 1;
     await expect(h.worker.renew(identity)).rejects.toThrow('LOCAL_MINERU_RUN_NOT_FOUND');
     expect(h.repository.readLocalWorkerById).not.toHaveBeenCalled();
-    expect(h.leases.renew).not.toHaveBeenCalled();
+    expect(h.leases.renewWithExpiry).not.toHaveBeenCalled();
   });
 
   it('returns idle without parse access when no active delegation is visible', async () => {
@@ -178,9 +191,9 @@ describe('local MinerU Host dispatcher', () => {
     h.catalog.readDocumentUploadDeliveryIntents.mockResolvedValue([{ ...upload,
       delivery: { reading: true, translation: 'ZH_FULL' } }]);
     h.parsing.readLocalWorkerRun.mockResolvedValue({ scope: uploadScope, run: h.loaded.run });
-    h.leases.claim.mockResolvedValue({ parseRunId: identity.parseRunId, ...uploadLease });
+    h.leases.claim.mockResolvedValue({ parseRunId: identity.parseRunId, ...uploadLease, leaseExpiresAt });
     await expect(h.worker.claim({})).resolves.toMatchObject({ status: 'CLAIMED',
-      parseRunId: identity.parseRunId, lease: uploadLease });
+      parseRunId: identity.parseRunId, lease: uploadLease, leaseExpiresAt: leaseExpiresAt.toISOString() });
     expect(h.authorization.authorizeDocumentWork).toHaveBeenCalledWith({ documentVersionId: identity.documentVersionId,
       deliveryRef: `acquisition:${acquisitionId}`, purpose: 'SOURCE' });
     expect(h.catalog.readOwnedAcquisitionVersionBinding).toHaveBeenCalledWith({ ...uploadScope, acquisitionId });
@@ -283,7 +296,7 @@ describe('local MinerU Host dispatcher', () => {
       documentVersionId: h.grant.documentVersionId, roles: [] };
     h.parsing.readLocalWorkerRun.mockResolvedValue({ scope, run: h.loaded.run });
     h.leases.claim.mockResolvedValue({ parseRunId: identity.parseRunId, leaseToken: 'allowed-token',
-      leaseOwner: `mineru:${h.serviceScope.principalId}:upload:${allowed.acquisitionId}`, leaseGeneration: 1 });
+      leaseOwner: `mineru:${h.serviceScope.principalId}:upload:${allowed.acquisitionId}`, leaseGeneration: 1, leaseExpiresAt });
     await expect(h.worker.claim({})).resolves.toMatchObject({ status: 'CLAIMED',
       lease: { leaseOwner: `mineru:${h.serviceScope.principalId}:upload:${allowed.acquisitionId}` } });
     expect(h.leases.claim).toHaveBeenCalledTimes(1);
@@ -305,9 +318,9 @@ describe('local MinerU Host dispatcher', () => {
     h.workItems.listActiveLocalWorkerDelegations.mockResolvedValue([]);
     h.workItems.listCompletedLocalWorkerDiscovery.mockResolvedValue([h.grant]);
     h.parsing.readLocalWorkerRun.mockResolvedValue({ scope: browserScope, run: h.loaded.run });
-    h.leases.claim.mockResolvedValue({ parseRunId: identity.parseRunId, ...browserLease });
+    h.leases.claim.mockResolvedValue({ parseRunId: identity.parseRunId, ...browserLease, leaseExpiresAt });
     await expect(h.worker.claim({})).resolves.toMatchObject({ status: 'CLAIMED',
-      parseRunId: identity.parseRunId, lease: browserLease });
+      parseRunId: identity.parseRunId, lease: browserLease, leaseExpiresAt: leaseExpiresAt.toISOString() });
     expect(h.workItems.loadActiveAutoProcessingLease).not.toHaveBeenCalled();
     expect(h.workItems.loadCompletedLocalWorkerDiscovery).toHaveBeenCalledWith({
       tenantId: 'configured-tenant', workItemId: 'WI-test', actorUserId: 'persisted-user', documentVersionId: 'DV-test',
@@ -367,7 +380,7 @@ describe('local MinerU Host dispatcher', () => {
   });
 
   it('does not return source bytes or acknowledge renewal when the lease is rejected', async () => {
-    const h = setup(); h.parsing.readLocalWorkerOriginal.mockRejectedValue(denied); h.leases.renew.mockResolvedValue(false);
+    const h = setup(); h.parsing.readLocalWorkerOriginal.mockRejectedValue(denied); h.leases.renewWithExpiry.mockResolvedValue(null);
     await expect(h.worker.source(identity)).rejects.toThrow('DOCUMENT_STEP_LEASE_REJECTED');
     expect(h.parsing.readLocalWorkerOriginal).toHaveBeenCalledWith(identity.parseRunId, h.scope, fence);
     await expect(h.worker.renew(identity)).rejects.toThrow('DOCUMENT_STEP_LEASE_REJECTED');

@@ -53,6 +53,7 @@ export class LocalMineruWorkerService {
               status: 'CLAIMED' as const, parseRunId: row.parseRunId, documentVersionId: row.documentVersionId,
               sourceSha256: loaded.run.sourceBinding.pdfSha256, sourceByteLength: loaded.run.sourceBinding.byteLength,
               settings: { ...parser.settings }, deadlineAt: loaded.run.deadlineAt.toISOString(),
+              leaseExpiresAt: fence.leaseExpiresAt.toISOString(),
               ...recoveryPredecessor(loaded.run),
               lease: { leaseOwner: fence.leaseOwner, leaseToken: fence.leaseToken, leaseGeneration: fence.leaseGeneration },
             };
@@ -95,6 +96,7 @@ export class LocalMineruWorkerService {
                 sourceByteLength: loaded.run.sourceBinding.byteLength,
                 settings: { ...loaded.run.sourceBinding.parserInput!.settings! },
                 deadlineAt: loaded.run.deadlineAt.toISOString(),
+                leaseExpiresAt: fence.leaseExpiresAt.toISOString(),
                 ...recoveryPredecessor(loaded.run),
                 lease: { leaseOwner: fence.leaseOwner, leaseToken: fence.leaseToken,
                   leaseGeneration: fence.leaseGeneration } };
@@ -138,6 +140,7 @@ export class LocalMineruWorkerService {
                 sourceByteLength: loaded.run.sourceBinding.byteLength,
                 settings: { ...loaded.run.sourceBinding.parserInput!.settings! },
                 deadlineAt: loaded.run.deadlineAt.toISOString(),
+                leaseExpiresAt: fence.leaseExpiresAt.toISOString(),
                 ...recoveryPredecessor(loaded.run),
                 lease: { leaseOwner: fence.leaseOwner, leaseToken: fence.leaseToken,
                   leaseGeneration: fence.leaseGeneration } };
@@ -180,9 +183,10 @@ export class LocalMineruWorkerService {
 
   async renew(input: unknown): Promise<LocalMineruWorkerRenewResult> {
     return this.withRun(input, async (identity, loaded) => {
-      if (!await this.leases.renew(loaded.scope, fenceOf(identity), 120_000))
+      const expiry = await this.leases.renewWithExpiry(loaded.scope, fenceOf(identity), 120_000);
+      if (!expiry)
         throw documentParseError('DOCUMENT_STEP_LEASE_REJECTED');
-      return { status: 'RENEWED', deadlineAt: loaded.run.deadlineAt.toISOString() };
+      return { status: 'RENEWED', deadlineAt: loaded.run.deadlineAt.toISOString(), leaseExpiresAt: expiry.toISOString() };
     });
   }
 

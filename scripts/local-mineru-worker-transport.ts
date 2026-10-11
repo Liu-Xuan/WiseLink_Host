@@ -13,6 +13,59 @@ const MAX_PDF = 100 * 1024 * 1024;
 const MAX_CANDIDATE = 64 * 1024 * 1024;
 const identifier = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9:_-]{1,160}$/u.test(value);
 export const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+export function isValidLeaseExpiry(value: unknown, deadlineAt: string, now = Date.now()): value is string {
+  if (typeof value !== 'string') return false;
+  const expiry = Date.parse(value);
+  return Number.isFinite(expiry) && expiry > now && expiry <= Date.parse(deadlineAt) && new Date(expiry).toISOString() === value;
+}
+type TransportOperation = 'claim' | 'source' | 'renew' | 'result';
+export interface LocalMineruTransportFailureDiagnostic {
+  operation: 'CLAIM' | 'SOURCE' | 'RENEW' | 'RESULT';
+  phase: 'FETCH' | 'RESPONSE_BODY';
+  timeoutOrigin: 'TRANSPORT_TIMEOUT' | 'UNKNOWN';
+  httpStatus: number | null;
+  nativeCodes: string[];
+  causeNames: string[];
+}
+const failureDiagnostics = new WeakMap<Error, LocalMineruTransportFailureDiagnostic>();
+const nativeCodes = new Set(['ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'EAI_AGAIN', 'ENOTFOUND',
+  'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'CERT_HAS_EXPIRED', 'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE']);
+const causeNames = new Set(['AbortError', 'TimeoutError']);
+/** Only a fixed projection created by this transport may enter worker diagnostics. */
+export function localMineruTransportFailureDiagnostic(error: unknown): LocalMineruTransportFailureDiagnostic | undefined {
+  const entry = error instanceof Error ? failureDiagnostics.get(error) : undefined;
+  return entry ? { ...entry, nativeCodes: [...entry.nativeCodes], causeNames: [...entry.causeNames] } : undefined;
+}
+function unavailable(cause: unknown, operation: TransportOperation, phase: LocalMineruTransportFailureDiagnostic['phase'],
+  timeout: AbortSignal, httpStatus: number | null): Error {
+  const codes = new Set<string>(); const names = new Set<string>(); const seen = new Set<object>();
+  let node = cause;
+  for (let depth = 0; depth < 5 && node !== null && typeof node === 'object' && !seen.has(node); depth++) {
+    seen.add(node);
+    try {
+      const current = node as { code?: unknown; name?: unknown; cause?: unknown };
+      const code = current.code; const name = current.name;
+      if (typeof code === 'string' && nativeCodes.has(code)) codes.add(code);
+      if (typeof name === 'string' && causeNames.has(name)) names.add(name);
+      node = current.cause;
+    } catch { break; }
+  }
+  const error = new Error('LOCAL_MINERU_TRANSPORT_UNAVAILABLE', { cause });
+  failureDiagnostics.set(error, { operation: ({ claim: 'CLAIM', source: 'SOURCE', renew: 'RENEW', result: 'RESULT' } as const)[operation],
+    phase, timeoutOrigin: timeout.aborted ? 'TRANSPORT_TIMEOUT' : 'UNKNOWN', httpStatus,
+    nativeCodes: [...codes], causeNames: [...names] });
+  return error;
+}
+async function withinSignal<T>(action: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  let listener: () => void;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    listener = () => reject(signal.reason); signal.addEventListener('abort', listener, { once: true });
+  });
+  try { return await Promise.race([Promise.resolve().then(() => { signal.throwIfAborted(); return action(); }), aborted]); }
+  finally { signal.removeEventListener('abort', listener!); }
+}
 export function validateClaim(value: unknown, now = Date.now()): LocalMineruClaim | null {
   if (!value || typeof value !== 'object') throw new Error('LOCAL_MINERU_CLAIM_INVALID');
   const claim = value as Partial<Omit<LocalMineruClaim, 'status'>> & { status?: string };
@@ -27,7 +80,8 @@ export function validateClaim(value: unknown, now = Date.now()): LocalMineruClai
       (claim.recoveryPredecessorParseRunId !== undefined &&
         (!/^PRUN-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(claim.recoveryPredecessorParseRunId) ||
           claim.recoveryPredecessorParseRunId === claim.parseRunId)) ||
-      typeof claim.deadlineAt !== 'string' || !Number.isFinite(Date.parse(claim.deadlineAt)) || Date.parse(claim.deadlineAt) <= now)
+      typeof claim.deadlineAt !== 'string' || !Number.isFinite(Date.parse(claim.deadlineAt)) || Date.parse(claim.deadlineAt) <= now ||
+      (claim.leaseExpiresAt !== undefined && !isValidLeaseExpiry(claim.leaseExpiresAt, claim.deadlineAt, now)))
     throw new Error('LOCAL_MINERU_CLAIM_INVALID');
   return claim as LocalMineruClaim;
 }
@@ -76,16 +130,17 @@ export class LocalMineruHttpTransport implements LocalMineruTransport {
     const bytes = await this.post(path, JSON.stringify(body), { 'content-type': 'application/json' }, signal, 64 * 1024, 'application/json');
     return JSON.parse(bytes.bytes.toString('utf8')) as unknown;
   }
-  private async post(path: string, body: string | Buffer, headers: Record<string, string>, signal: AbortSignal, max: number, type: string | string[]) {
-    const bounded = AbortSignal.any([signal, AbortSignal.timeout(this.config.timeoutMs)]);
+  private async post(path: TransportOperation, body: string | Buffer, headers: Record<string, string>, signal: AbortSignal, max: number, type: string | string[]) {
+    const timeout = AbortSignal.timeout(this.config.timeoutMs);
+    const bounded = AbortSignal.any([signal, timeout]);
     let response: Response;
     try {
-      response = await this.request(this.base + path, { method: 'POST', redirect: 'error', signal: bounded,
+      response = await withinSignal(() => this.request(this.base + path, { method: 'POST', redirect: 'error', signal: bounded,
         headers: { ...headers, Authorization: `Bearer ${this.config.apiKey}` },
-        body: typeof body === 'string' ? body : new Uint8Array(body).buffer });
+        body: typeof body === 'string' ? body : new Uint8Array(body).buffer }), bounded);
     } catch (error) {
       if (!signal.aborted && (bounded.aborted || error instanceof TypeError))
-        throw new Error('LOCAL_MINERU_TRANSPORT_UNAVAILABLE');
+        throw unavailable(error, path, 'FETCH', timeout, null);
       throw error;
     }
     if (!response.ok) { await response.body?.cancel(); throw new Error(`LOCAL_MINERU_HTTP_${response.status}`); }
@@ -104,15 +159,16 @@ export class LocalMineruHttpTransport implements LocalMineruTransport {
     try {
       while (true) {
         bounded.throwIfAborted();
-        const part = await reader.read();
+        const part = await withinSignal(() => reader.read(), bounded);
         if (part.done) break;
         size += part.value.length;
         if (size > bodyLimit) { await reader.cancel(); throw new Error('LOCAL_MINERU_RESPONSE_TOO_LARGE'); }
         chunks.push(part.value);
       }
     } catch (error) {
+      if (bounded.aborted) void reader.cancel().catch(() => undefined);
       if (!signal.aborted && (bounded.aborted || error instanceof TypeError))
-        throw new Error('LOCAL_MINERU_TRANSPORT_UNAVAILABLE');
+        throw unavailable(error, path, 'RESPONSE_BODY', timeout, response.status);
       throw error;
     } finally { reader.releaseLock(); }
     return { bytes: Buffer.concat(chunks), type: actualType };
