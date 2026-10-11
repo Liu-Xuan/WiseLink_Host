@@ -1,5 +1,16 @@
 export { TdmsSourceModule } from './tdms-source.module';
 export { TdmsSourceService } from './tdms-source.service';
+/** Pure frozen-client metadata compatibility; no HTTP ingress, persistence or source grant. */
+export {
+  prepareTdmsDailyMetadataImport,
+  validateTdmsDailyMetadataImportReceipt,
+  validateTdmsDailyMetadataImportReadback,
+} from './tdms-daily-metadata-contract';
+export type {
+  TdmsDailyMetadataEnvelope,
+  TdmsDailyMetadataPackage,
+  TdmsDailyMetadataImportReceipt,
+} from './tdms-daily-metadata-contract';
 /** Inactive processing-set seam; no module registration or HTTP/runtime capability. */
 export { TdmsProcessingSetService } from './tdms-processing-set.service';
 export { MiaodaTdmsProcessingSetRepository } from './tdms-processing-set.repository';
