@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { LocalMineruWorker, pollLocalMineruWorker, readLocalMineruCredential } from '../../../scripts/local-mineru-worker';
+import { LocalMineruWorker, pollLocalMineruWorker, readLocalMineruCredential, type LocalMineruWorkerDiagnostic } from '../../../scripts/local-mineru-worker';
 import { LocalMineruHttpTransport, validateClaim, sha256 } from '../../../scripts/local-mineru-worker-transport';
 import { readMineruArtifacts } from '../../../server/modules/professional-input/mineru/mineru-artifacts';
 import type { LocalMineruWorkerClaim } from '../../../shared/local-mineru-worker.interface';
@@ -124,6 +124,76 @@ describe('outbound local worker, isolated transports only', () => {
     }));
     await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10 }).once()).rejects.toThrow('MINERU_ABORTED');
     expect(f.transport.result).not.toHaveBeenCalled();
+  });
+  it.each(['LOCAL_MINERU_TRANSPORT_UNAVAILABLE', 'LOCAL_MINERU_HTTP_500', 'LOCAL_MINERU_HTTP_403'])
+    ('retains the exact safe renewal cause %s when the parser is aborted', async causeCode => {
+      const f = fixture(directory); const diagnostics: LocalMineruWorkerDiagnostic[] = [];
+      f.transport.renew.mockRejectedValue(new Error(causeCode));
+      f.runner.parse.mockImplementation((_pdf, input) => new Promise((_resolve, reject) => {
+        input!.signal!.addEventListener('abort', () => reject(new Error('MINERU_ABORTED')), { once: true });
+      }));
+      await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10,
+        reportDiagnostic: entry => diagnostics.push(entry) }).once()).rejects.toThrow('MINERU_ABORTED');
+      expect(diagnostics).toContainEqual(expect.objectContaining({ phase: 'RENEW', status: 'FAILED',
+        parseRunId: f.claim.parseRunId, documentVersionId: f.claim.documentVersionId, leaseGeneration: 1,
+        causeCode, abortCauseCode: 'LOCAL_MINERU_LEASE_LOST', renewCauseCode: causeCode }));
+      expect(diagnostics).toContainEqual(expect.objectContaining({ phase: 'PARSE', status: 'FAILED',
+        causeCode: 'MINERU_ABORTED', abortCauseCode: 'LOCAL_MINERU_LEASE_LOST', renewCauseCode: causeCode }));
+      expect(f.transport.result).not.toHaveBeenCalled();
+      await expect(stat(join(directory, 'a'.repeat(64), f.claim.parseRunId, 'raw-candidate.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  it('distinguishes the earlier Host deadline from an internal parser timeout and never submits', async () => {
+    const f = fixture(directory); const diagnostics: LocalMineruWorkerDiagnostic[] = [];
+    f.claim.deadlineAt = new Date(Date.now() + 300).toISOString();
+    f.runner.parse.mockImplementation((_pdf, input) => new Promise((_resolve, reject) => {
+      input!.signal!.addEventListener('abort', () => reject(new Error('MINERU_ABORTED')), { once: true });
+    }));
+    await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10,
+      reportDiagnostic: entry => diagnostics.push(entry) }).once()).rejects.toThrow('MINERU_ABORTED');
+    expect(f.transport.renew).toHaveBeenCalled();
+    expect(diagnostics).toContainEqual(expect.objectContaining({ phase: 'DEADLINE', status: 'FAILED',
+      causeCode: 'LOCAL_MINERU_DEADLINE_REACHED', abortCauseCode: 'LOCAL_MINERU_LEASE_LOST' }));
+    expect(diagnostics).not.toContainEqual(expect.objectContaining({ causeCode: 'MINERU_TIMEOUT' }));
+    expect(f.transport.result).not.toHaveBeenCalled();
+  });
+  it('logs exact parser phase and safe timeout without serializing source, credentials or exception bodies', async () => {
+    const f = fixture(directory); const diagnostics: LocalMineruWorkerDiagnostic[] = [];
+    f.claim.lease = { leaseOwner: 'private-owner', leaseToken: 'private-token', leaseGeneration: 7 };
+    const error = Object.assign(new Error('MINERU_TIMEOUT'), { stderr: 'private-source-body',
+      headers: { Authorization: 'Bearer private-key' }, body: 'private-response-body' });
+    f.runner.parse.mockRejectedValue(error);
+    await expect(new LocalMineruWorker({ ...f.options, reportDiagnostic: entry => diagnostics.push(entry) }).once())
+      .rejects.toBe(error);
+    expect(diagnostics).toContainEqual(expect.objectContaining({ phase: 'PARSE', status: 'FAILED',
+      parseRunId: f.claim.parseRunId, documentVersionId: f.claim.documentVersionId, leaseGeneration: 7,
+      causeCode: 'MINERU_TIMEOUT' }));
+    const serialized = JSON.stringify(diagnostics);
+    for (const secret of ['private-owner', 'private-token', 'private-key', 'private-source-body', 'private-response-body',
+      'Local exact paragraph.', '%PDF-local-worker-fixture']) expect(serialized).not.toContain(secret);
+    expect(f.transport.result).not.toHaveBeenCalled();
+  });
+  it('masks even an uppercase unknown exception message and preserves the original failure', async () => {
+    const f = fixture(directory); const diagnostics: LocalMineruWorkerDiagnostic[] = [];
+    const error = new Error('PRIVATE_UPPERCASE_BEARER_TOKEN'); f.runner.parse.mockRejectedValue(error);
+    await expect(new LocalMineruWorker({ ...f.options, reportDiagnostic: entry => diagnostics.push(entry) }).once())
+      .rejects.toBe(error);
+    expect(diagnostics).toContainEqual(expect.objectContaining({ phase: 'PARSE', status: 'FAILED',
+      causeCode: 'LOCAL_MINERU_WORKER_FAILED' }));
+    expect(JSON.stringify(diagnostics)).not.toContain(error.message);
+  });
+  it('does not let a failed diagnostic observer suppress lease cancellation or leak its exception', async () => {
+    const f = fixture(directory); const stderr = jest.spyOn(process.stderr, 'write').mockReturnValue(true);
+    f.transport.renew.mockRejectedValue(new Error('LOCAL_MINERU_HTTP_403'));
+    f.runner.parse.mockImplementation((_pdf, input) => new Promise((_resolve, reject) => {
+      input!.signal!.addEventListener('abort', () => reject(new Error('MINERU_ABORTED')), { once: true });
+    }));
+    try {
+      await expect(new LocalMineruWorker({ ...f.options, renewIntervalMs: 10,
+        reportDiagnostic: () => { throw new Error('private-observer-body'); } }).once()).rejects.toThrow('MINERU_ABORTED');
+      expect(stderr).toHaveBeenCalledWith('LOCAL_MINERU_DIAGNOSTIC_WRITE_FAILED\n');
+      expect(JSON.stringify(stderr.mock.calls)).not.toContain('private-observer-body');
+      expect(f.transport.result).not.toHaveBeenCalled();
+    } finally { stderr.mockRestore(); }
   });
   it('preserves raw parsing when enabled title provider is unavailable, then resumes without OCR', async () => {
     const f = fixture(directory); f.claim.settings.titleEnhancementEnabled = true;

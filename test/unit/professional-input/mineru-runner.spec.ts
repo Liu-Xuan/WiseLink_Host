@@ -4,6 +4,9 @@ import { join } from 'node:path';
 import { packageLocalMineruCandidate } from '../../../scripts/package-local-mineru-candidate';
 import { readLocalMineruCandidate } from '../../../server/modules/document-management/src/hosted/nest/document-mineru-local-candidate';
 import { MineruRunner } from '../../../server/modules/professional-input/mineru/mineru-runner';
+import { createLocalMineruWorkerRunner } from '../../../scripts/local-mineru-worker';
+
+const realSetTimeout = setTimeout;
 
 // Fake executable tests process management and output handling, not model quality.
 describe('MinerU runner process boundary (fixture executable)', () => {
@@ -31,6 +34,77 @@ describe('MinerU runner process boundary (fixture executable)', () => {
       mode: 0o700,
     });
   }
+  async function controlledFixture() {
+    const marker = join(root, 'ready.pid'); const release = join(root, 'release');
+    await script(`
+      const fs = require('node:fs'); const path = require('node:path');
+      fs.writeFileSync(${JSON.stringify(marker)}, String(process.pid));
+      const timer = setInterval(() => {
+        if (!fs.existsSync(${JSON.stringify(release)})) return;
+        clearInterval(timer);
+        const output = process.argv[process.argv.indexOf('-o') + 1];
+        fs.mkdirSync(output, { recursive: true });
+        fs.writeFileSync(path.join(output, 'document.md'), 'Controlled parser completion.');
+        fs.writeFileSync(path.join(output, 'document_middle.json'), JSON.stringify({_backend:'pipeline',_version_name:'3.4.5',pdf_info:[{page_idx:0,page_size:[612,792]}]}));
+        fs.writeFileSync(path.join(output, 'document_content_list_v2.json'), JSON.stringify([[{type:'paragraph',bbox:[1,1,100,100],content:{paragraph_content:[{type:'text',content:'Controlled parser completion.'}]}}]]));
+      }, 20);
+    `);
+    return { marker, release };
+  }
+  async function readyPid(marker: string): Promise<number> {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try { return Number(await readFile(marker, 'utf8')); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      await new Promise(resolve => realSetTimeout(resolve, 20));
+    }
+    throw new Error('FIXTURE_PROCESS_NOT_READY');
+  }
+  it('allows the production worker parser to finish beyond the previous fifteen-minute budget', async () => {
+    const f = await controlledFixture(); const controller = new AbortController();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    const pending = createLocalMineruWorkerRunner({ executable, configPath }).parse(pdf, { signal: controller.signal })
+      .then(result => ({ result }), (error: unknown) => ({ error }));
+    try {
+      const pid = await readyPid(f.marker);
+      await jest.advanceTimersByTimeAsync(16 * 60 * 1000);
+      expect(() => process.kill(pid, 0)).not.toThrow();
+      await writeFile(f.release, 'complete');
+      const outcome = await pending;
+      expect(outcome).not.toHaveProperty('error');
+      if ('result' in outcome) {
+        expect(outcome.result.sourceByteLength).toBe(pdf.length);
+        expect(outcome.result.document.markdown).toBe('Controlled parser completion.');
+      }
+    } finally { controller.abort(); await pending; jest.useRealTimers(); }
+  });
+  it('still bounds the production worker parser to thirty minutes', async () => {
+    const f = await controlledFixture(); const controller = new AbortController();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    const pending = createLocalMineruWorkerRunner({ executable, configPath }).parse(pdf, { signal: controller.signal })
+      .then(() => null, (error: unknown) => error);
+    try {
+      const pid = await readyPid(f.marker);
+      // Let the real fixture's close event settle before advancing its hard-kill grace timer.
+      await jest.advanceTimersByTimeAsync(30 * 60 * 1000);
+      const error = await pending;
+      expect(error).toMatchObject({ message: 'MINERU_TIMEOUT' });
+      expect(() => process.kill(pid, 0)).toThrow();
+    } finally { controller.abort(); await pending; jest.useRealTimers(); }
+  });
+  it('stops the thirty-minute worker parser when the earlier Host lease/deadline signal aborts', async () => {
+    const f = await controlledFixture(); const controller = new AbortController();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    const timer = setTimeout(() => controller.abort(new Error('LOCAL_MINERU_LEASE_LOST')), 2 * 60 * 1000);
+    const pending = createLocalMineruWorkerRunner({ executable, configPath }).parse(pdf, { signal: controller.signal })
+      .then(() => null, (error: unknown) => error);
+    try {
+      const pid = await readyPid(f.marker);
+      await jest.advanceTimersByTimeAsync(2 * 60 * 1000);
+      const error = await pending;
+      expect(error).toMatchObject({ message: 'MINERU_ABORTED' });
+      expect(() => process.kill(pid, 0)).toThrow();
+    } finally { clearTimeout(timer); controller.abort(); await pending; jest.useRealTimers(); }
+  });
   it('binds exact input bytes, explicitly selects pipeline and preserves produced paragraphs', async () => {
     await script(`
       const fs = require('node:fs'); const path = require('node:path');

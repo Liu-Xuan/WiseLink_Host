@@ -4,13 +4,32 @@ import { constants } from 'node:fs';
 import { resolve, join, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { MineruRunner } from '../server/modules/professional-input/mineru/mineru-runner';
+import { MineruRunner, type MineruRuntimeOptions } from '../server/modules/professional-input/mineru/mineru-runner';
 import { enhanceMineruTitles, type MineruTitleInput } from '../server/modules/professional-input/mineru/mineru-title-enhancer';
 import { readMineruArtifacts } from '../server/modules/professional-input/mineru/mineru-artifacts';
 import { readLocalMineruCandidate, type LocalMineruTitleReceipt } from '../server/modules/document-management/src/hosted/nest/document-mineru-local-candidate';
 import { packageLocalMineruCandidate } from './package-local-mineru-candidate';
 import { LocalMineruHttpTransport, validateClaim, identityOf, sha256, type LocalMineruTransport } from './local-mineru-worker-transport';
 import type { LocalMineruWorkerClaim, LocalMineruWorkerResult, LocalMineruWorkerRenewResult } from '../shared/local-mineru-worker.interface';
+
+/** The existing runner's upper bound; the Host deadline and lease signal can stop it earlier. */
+export function createLocalMineruWorkerRunner(options: Pick<MineruRuntimeOptions, 'executable' | 'entryScript' | 'configPath'>): MineruRunner {
+  return new MineruRunner({ ...options, timeoutMs: 30 * 60 * 1000 });
+}
+
+type WorkerPhase = 'CLAIM' | 'SOURCE' | 'CACHE' | 'PARSE' | 'TITLE' | 'PACKAGE' | 'RENEW' | 'RESULT' | 'DEADLINE';
+export interface LocalMineruWorkerDiagnostic {
+  schemaVersion: 'wiselink.local-mineru-worker.diagnostic.v1';
+  at: string;
+  phase: WorkerPhase;
+  status: 'STARTED' | 'FAILED';
+  parseRunId?: string;
+  documentVersionId?: string;
+  leaseGeneration?: number;
+  causeCode?: string;
+  abortCauseCode?: string;
+  renewCauseCode?: string;
+}
 
 interface WorkerOptions {
   transport: LocalMineruTransport;
@@ -20,6 +39,7 @@ interface WorkerOptions {
   cacheNamespace: string;
   titleProvider?: { call: (titles: readonly MineruTitleInput[], signal: AbortSignal) => Promise<unknown>; model: string; endpointOrigin: string };
   renewIntervalMs?: number;
+  reportDiagnostic?: (entry: LocalMineruWorkerDiagnostic) => void;
 }
 export class LocalMineruWorker {
   private running = false;
@@ -37,16 +57,37 @@ export class LocalMineruWorker {
     let deadlineTimer: NodeJS.Timeout | undefined;
     let pendingRenew: Promise<void> = Promise.resolve();
     let finished = false;
+    let phase: WorkerPhase = 'CLAIM';
+    let diagnosticClaim: LocalMineruWorkerClaim | undefined;
+    let renewCauseCode: string | undefined;
+    const diagnose = (status: LocalMineruWorkerDiagnostic['status'], observedPhase: WorkerPhase, cause?: unknown) => {
+      const entry: LocalMineruWorkerDiagnostic = {
+        schemaVersion: 'wiselink.local-mineru-worker.diagnostic.v1', at: new Date().toISOString(),
+        phase: observedPhase, status, parseRunId: diagnosticClaim?.parseRunId,
+        documentVersionId: diagnosticClaim?.documentVersionId, leaseGeneration: diagnosticClaim?.lease.leaseGeneration,
+        ...(cause === undefined ? {} : { causeCode: diagnosticErrorCode(cause) }),
+        ...(signal.aborted ? { abortCauseCode: diagnosticErrorCode(signal.reason) } : {}),
+        ...(renewCauseCode === undefined ? {} : { renewCauseCode }),
+      };
+      // An observer must never prevent fail-closed lease cancellation or change candidate persistence.
+      try { this.options.reportDiagnostic?.(entry); }
+      catch { process.stderr.write('LOCAL_MINERU_DIAGNOSTIC_WRITE_FAILED\n'); }
+    };
     try {
       const claim = validateClaim(await this.options.transport.claim(signal));
       if (!claim) return { status: 'IDLE' };
+      diagnosticClaim = claim;
+      diagnose('STARTED', 'CLAIM');
       const identity = identityOf(claim);
       const failLease = () => controller.abort(new Error('LOCAL_MINERU_LEASE_LOST'));
       const setDeadline = (deadline: string) => {
         if (deadlineTimer) clearTimeout(deadlineTimer);
         const delay = Date.parse(deadline) - Date.now();
         if (!Number.isFinite(delay) || delay <= 0 || Date.parse(deadline) > Date.parse(claim.deadlineAt)) throw new Error('LOCAL_MINERU_RENEW_INVALID');
-        deadlineTimer = setTimeout(failLease, Math.min(delay, 2_147_483_647));
+        deadlineTimer = setTimeout(() => {
+          failLease();
+          diagnose('FAILED', 'DEADLINE', new Error('LOCAL_MINERU_DEADLINE_REACHED'));
+        }, Math.min(delay, 2_147_483_647));
       };
       setDeadline(claim.deadlineAt);
       const renew = async () => {
@@ -56,10 +97,15 @@ export class LocalMineruWorker {
       };
       const schedule = () => {
         timer = setTimeout(() => {
-          pendingRenew = renew().catch(failLease).finally(() => { if (!finished && !signal.aborted) schedule(); });
+          pendingRenew = renew().catch(error => {
+            failLease();
+            renewCauseCode = diagnosticErrorCode(error);
+            diagnose('FAILED', 'RENEW', error);
+          }).finally(() => { if (!finished && !signal.aborted) schedule(); });
         }, this.options.renewIntervalMs ?? 30_000);
       };
       schedule();
+      phase = 'SOURCE';
       const source = await this.options.transport.source(identity, signal);
       signal.throwIfAborted();
       if (!(source instanceof Uint8Array)) {
@@ -68,6 +114,7 @@ export class LocalMineruWorker {
       }
       if (source.length !== claim.sourceByteLength || sha256(source) !== claim.sourceSha256 || Buffer.from(source.subarray(0, 5)).toString() !== '%PDF-')
         throw new Error('LOCAL_MINERU_SOURCE_MISMATCH');
+      phase = 'CACHE';
       const cache = await this.cache(claim);
       let candidate = await privateRead(join(cache, 'candidate.json'));
       if (!candidate && claim.recoveryPredecessorParseRunId) {
@@ -84,8 +131,11 @@ export class LocalMineruWorker {
       if (!candidate) {
         let raw = await privateRead(join(cache, 'raw-candidate.json'));
         if (!raw) {
+          phase = 'PARSE';
+          diagnose('STARTED', phase);
           const parsed = await this.options.runner.parse(source, { signal });
           signal.throwIfAborted();
+          phase = 'PACKAGE';
           raw = packageLocalMineruCandidate({ pdf: source, parser: { version: parsed.document.version, backend: parsed.document.backend },
             raw: parsed.rawArtifacts, assets: parsed.assets });
           await privateWrite(join(cache, 'raw-candidate.json'), raw);
@@ -93,6 +143,8 @@ export class LocalMineruWorker {
         const parsed = this.checkCandidate(raw, claim);
         let receipt: LocalMineruTitleReceipt = { status: 'DISABLED' };
         if (claim.settings.titleEnhancementEnabled) {
+          phase = 'TITLE';
+          diagnose('STARTED', phase);
           const provider = this.options.titleProvider;
           if (!provider) throw new Error('LOCAL_MINERU_TITLE_PROVIDER_NOT_READY');
           const titleSignal = AbortSignal.any([signal, AbortSignal.timeout(80_000)]);
@@ -106,6 +158,7 @@ export class LocalMineruWorker {
             levels: enhanced.document.blocks.filter(block => block.type === 'title').map(block => ({ id: block.id, level: block.headingLevel! })),
             provider: { model: provider.model, endpointOrigin: provider.endpointOrigin } } : { status: 'NOT_APPLICABLE' };
         }
+        phase = 'PACKAGE';
         const document = readMineruArtifacts({ ...parsed.rawArtifacts, assetPaths: parsed.assets.map(asset => asset.path) });
         candidate = packageLocalMineruCandidate({ pdf: source, parser: { version: document.version, backend: document.backend },
           raw: parsed.rawArtifacts, assets: parsed.assets, titleEnhancement: receipt });
@@ -122,12 +175,18 @@ export class LocalMineruWorker {
       await pendingRenew;
       signal.throwIfAborted();
       // A final lease check precedes submission, including candidate replay after a lost response.
+      phase = 'RENEW';
       await renew();
       signal.throwIfAborted();
+      phase = 'RESULT';
+      diagnose('STARTED', phase);
       const receipt = await this.options.transport.result(identity, candidate, signal) as LocalMineruWorkerResult;
       if (!receipt || !['ACCEPTED', 'PUBLISHED'].includes(receipt.status) || receipt.parseRunId !== claim.parseRunId || receipt.candidateSha256 !== sha256(candidate))
         throw new Error('LOCAL_MINERU_RESULT_INVALID');
       return receipt;
+    } catch (error) {
+      diagnose('FAILED', phase, error);
+      throw error;
     } finally {
       finished = true;
       if (timer) clearTimeout(timer);
@@ -227,6 +286,22 @@ function workerErrorCode(error: unknown): string {
   return error instanceof Error && /^[A-Z][A-Z0-9_]{1,120}$/u.test(error.message)
     ? error.message : 'LOCAL_MINERU_WORKER_FAILED';
 }
+const diagnosticCodes = new Set([
+  'LOCAL_MINERU_TRANSPORT_UNAVAILABLE', 'LOCAL_MINERU_LEASE_LOST', 'LOCAL_MINERU_STOPPED',
+  'LOCAL_MINERU_RENEW_INVALID', 'LOCAL_MINERU_DEADLINE_REACHED', 'LOCAL_MINERU_SOURCE_MISMATCH',
+  'LOCAL_MINERU_SOURCE_REPLY_INVALID', 'LOCAL_MINERU_CACHE_BINDING_CHANGED', 'LOCAL_MINERU_CACHE_PERMISSIONS_INVALID',
+  'LOCAL_MINERU_CACHED_TITLE_INVALID', 'LOCAL_MINERU_TITLE_PROVIDER_NOT_READY', 'LOCAL_MINERU_TITLE_ENHANCEMENT_FAILED',
+  'LOCAL_MINERU_RESULT_INVALID', 'MINERU_ABORTED', 'MINERU_TIMEOUT', 'MINERU_LOG_LIMIT_EXCEEDED',
+  'MINERU_BUSY', 'MINERU_INPUT_INVALID', 'MINERU_RUNTIME_CONFIG_INVALID', 'MINERU_LOCAL_MODEL_CONFIG_REQUIRED',
+  'MINERU_OUTPUT_LAYOUT_INVALID', 'MINERU_OUTPUT_SYMLINK_FORBIDDEN', 'MINERU_OUTPUT_BUNDLE_MISSING_OR_AMBIGUOUS',
+]);
+/** Never serialize arbitrary exception messages, properties, HTTP bodies or credentials. */
+function diagnosticErrorCode(error: unknown): string {
+  if (!(error instanceof Error)) return 'LOCAL_MINERU_WORKER_FAILED';
+  if (diagnosticCodes.has(error.message) || /^LOCAL_MINERU_HTTP_[1-5][0-9]{2}$/u.test(error.message)) return error.message;
+  if (/^MINERU_PROCESS_FAILED:(?:[0-9]+|SIG[A-Z0-9]+)$/u.test(error.message)) return 'MINERU_PROCESS_FAILED';
+  return 'LOCAL_MINERU_WORKER_FAILED';
+}
 export async function pollLocalMineruWorker(
   worker: Pick<LocalMineruWorker, 'once'>,
   options: PollingOptions,
@@ -290,8 +365,9 @@ async function main() {
     basePath: process.env.WL_LOCAL_MINERU_HOST_BASE_PATH, apiKey: key });
   const worker = new LocalMineruWorker({ transport, cacheNamespace: transport.cacheNamespace,
     cacheDirectory: resolve(process.env.WL_LOCAL_MINERU_CACHE_DIRECTORY ?? '.local-mineru-cache'),
-    runner: new MineruRunner({ executable: process.env.WL_LOCAL_MINERU_PYTHON_EXECUTABLE ?? '', entryScript: resolve(__dirname, 'mineru-local-entry.py'),
-      configPath: process.env.WL_LOCAL_MINERU_CONFIG_PATH ?? '' }) });
+    runner: createLocalMineruWorkerRunner({ executable: process.env.WL_LOCAL_MINERU_PYTHON_EXECUTABLE ?? '', entryScript: resolve(__dirname, 'mineru-local-entry.py'),
+      configPath: process.env.WL_LOCAL_MINERU_CONFIG_PATH ?? '' }),
+    reportDiagnostic: entry => process.stderr.write(JSON.stringify(entry) + '\n') });
   const controller = new AbortController();
   const stop = () => controller.abort(new Error('LOCAL_MINERU_STOPPED'));
   process.once('SIGINT', stop); process.once('SIGTERM', stop);
