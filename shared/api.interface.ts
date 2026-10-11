@@ -3413,6 +3413,30 @@ export interface BlockAutomaticWorkItemRequest {
   workItemId: string;
   leaseToken: string;
   leaseGeneration: number;
+  /** Explicit operator parking; normal terminal-failure BLOCK is unchanged. */
+  expectedCancellation?: AutomaticWorkItemCancellationBinding;
+  /** Cancellation receipt replay only: never creates a new BLOCK. */
+  replayOnly?: true;
+}
+
+/** Expected control binding, never an assertion about provider termination. */
+export interface AutomaticWorkItemCancellationBinding {
+  requestId: string;
+  workItemRevision: number;
+  documentId: string;
+  documentVersionId: string;
+  sourceArtifactId: string;
+  sourceFileSha256: string;
+  sourceByteLength: number;
+  attemptId: string;
+  attemptRef: string;
+  attemptNo: number;
+  attemptRequestId: string;
+  actionType: 'OPENCLAW_DYNAMIC_EVALUATION';
+  inputRevision: number;
+  baseRevision: number;
+  inputHash: string;
+  executionModel: CanonicalExecutionModelSelection;
 }
 
 export interface BlockAutomaticWorkItemResponse {

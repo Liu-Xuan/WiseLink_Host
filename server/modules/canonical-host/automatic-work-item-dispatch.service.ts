@@ -29,7 +29,13 @@ import {
 import {
   AUTOMATIC_WORK_ITEM_LEASE_AUTHORIZATION,
   type AutomaticWorkItemLeaseAuthorizationPort,
+  type AuthorizedAutomaticWorkItemLease,
 } from './automatic-work-item-lease-authorization.port';
+import {
+  CANCELLED_AUTOMATIC_WORK_ITEM_CODE,
+  parseAutomaticWorkItemCancellation,
+} from './automatic-work-item-cancellation';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import {
   AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION,
   type AutomaticWorkItemSourceAuthorizationPort,
@@ -47,6 +53,10 @@ const CANONICAL_APP_ID = 'app_17bzc551rsg';
 const AUTO_WORK_ITEM_LEASE_MILLISECONDS = 60 * 60 * 1000;
 const REVIEW_DISCOVERY_PAGE_SIZE = 32;
 const DOCUMENT_DISCOVERY_PAGE_SIZE = 100;
+
+type AutomaticSourceBinding = Pick<AuthorizedAutomaticWorkItemLease,
+  'workItemId' | 'requestId' | 'actorUserId' | 'documentId' | 'documentVersionId' |
+  'sourceArtifactId' | 'sourceFileSha256' | 'sourceByteLength'>;
 
 export type NextAutoWorkItemResult = AutomaticWorkItemClaimResult;
 
@@ -425,8 +435,9 @@ export class AutomaticWorkItemDispatchService {
   ): Promise<BlockAutomaticWorkItemResponse> {
     const scope = await this.serviceScope.authorizeOpenClawAutoWorkItemQueue();
     assertQueueScope(scope);
-    assertAcknowledgementInput(input);
+    assertBlockInput(input);
     if (!this.leaseAuthorization) throw sourceAuthorizationUnavailable();
+    if (input.expectedCancellation) return this.parkCancelledWorkItem(input, scope);
     const leaseIdentity = {
       tenantId: scope.tenantId,
       workItemId: input.workItemId,
@@ -475,11 +486,91 @@ export class AutomaticWorkItemDispatchService {
     return blockResponse(input.workItemId, blocked, blocked.replayed);
   }
 
+  private async parkCancelledWorkItem(
+    input: BlockAutomaticWorkItemRequest,
+    scope: CanonicalVerifiedAutoWorkItemQueueScope,
+  ): Promise<BlockAutomaticWorkItemResponse> {
+    const expected = parseAutomaticWorkItemCancellation(input.expectedCancellation);
+    let binding: AutomaticSourceBinding;
+    try {
+      binding = await this.leaseAuthorization!.authorizeActiveLease({
+        tenantId: scope.tenantId, principalId: scope.principalId,
+        workItemId: input.workItemId, leaseToken: input.leaseToken,
+        leaseGeneration: input.leaseGeneration,
+      });
+    } catch (error) {
+      // PARK itself is not automatically retried after unknown POST. Only the
+      // explicit replay can read a prior cancellation receipt and never writes.
+      if (!input.replayOnly || !isWorkItemNotFound(error)) throw error;
+      binding = await this.authorizeCancelledBlockReplay(input, scope);
+    }
+    const current = await this.readCurrentInitialAnalysis(scope, binding);
+    const jobAid = current.status.stages.jobAid;
+    if (current.revision !== expected.workItemRevision ||
+        current.status.status !== 'FAILED' || current.status.nextOperation !== null ||
+        jobAid.status !== 'FAILED' || jobAid.attemptStatus !== 'CANCELLED' ||
+        jobAid.attemptRef !== expected.attemptRef ||
+        canonicalJson(jobAid.executionModel) !== canonicalJson(expected.executionModel))
+      throw automaticWorkItemFailureNotConfirmed();
+    const blocked = await this.workItems.parkCancelledAutoProcessingLease({
+      tenantId: scope.tenantId, workItemId: input.workItemId,
+      actorUserId: binding.actorUserId, leaseOwner: scope.principalId,
+      leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration,
+      expectedCancellation: expected, replayOnly: input.replayOnly === true,
+    });
+    if (!blocked) throw autoWorkItemLeaseConflict();
+    return blockResponse(input.workItemId, blocked, blocked.replayed);
+  }
+
+  private async authorizeCancelledBlockReplay(
+    input: BlockAutomaticWorkItemRequest,
+    scope: CanonicalVerifiedAutoWorkItemQueueScope,
+  ): Promise<AutomaticSourceBinding> {
+    const receipt = await this.workItems.readBlockedAutoProcessingLeaseReceipt({
+      tenantId: scope.tenantId, workItemId: input.workItemId,
+      leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration,
+    });
+    if (receipt?.blockedCode !== CANCELLED_AUTOMATIC_WORK_ITEM_CODE)
+      throw autoWorkItemLeaseConflict();
+    const current = await this.workItems.loadAutoProcessingProjection(input.workItemId, scope.tenantId);
+    if (!current?.projection || !this.sourceAuthorization) throw sourceAuthorizationUnavailable();
+    const row = current.row;
+    const sourceBinding = current.projection.source;
+    const binding: AutomaticSourceBinding = {
+      workItemId: row.workItemId, requestId: current.projection.requestId, actorUserId: row.requestedByUserId,
+      documentId: sourceBinding.documentId, documentVersionId: sourceBinding.documentVersionId,
+      sourceArtifactId: sourceBinding.sourceArtifactId,
+      sourceFileSha256: canonicalHostBareSha256(sourceBinding.sourceFileSha256),
+      sourceByteLength: sourceBinding.sourceByteLength,
+    };
+    // A prior receipt is not a new SOURCE grant. Recheck the actual stored actor,
+    // same current source and current permission before the locked replay guard.
+    const permission = await this.sourceAuthorization.authorizeSourceRead({
+      ...binding, tenantId: scope.tenantId, actorUserId: binding.actorUserId,
+    });
+    if (!permission.allowed || permission.action !== 'DOCUMENT_READ' ||
+        permission.authorizationPolicy !== 'MIAODA_HOST_DOCUMENT_READ' ||
+        permission.tenantId !== scope.tenantId || permission.actorUserId !== binding.actorUserId ||
+        permission.documentId !== binding.documentId || permission.documentVersionId !== binding.documentVersionId ||
+        permission.sourceArtifactId !== binding.sourceArtifactId ||
+        permission.sourceFileSha256 !== binding.sourceFileSha256 ||
+        permission.sourceByteLength !== binding.sourceByteLength) throw autoWorkItemLeaseConflict();
+    const source = await this.sources.resolve(binding.documentVersionId, {
+      requireCurrent: true, expectedCreatorUserId: binding.actorUserId,
+    });
+    if (source.version.documentId !== binding.documentId ||
+        source.version.documentVersionId !== binding.documentVersionId ||
+        source.version.sourceArtifactId !== binding.sourceArtifactId ||
+        source.artifact.sourceArtifactId !== binding.sourceArtifactId ||
+        source.version.pdfSha256 !== binding.sourceFileSha256 || source.artifact.sha256 !== binding.sourceFileSha256 ||
+        Number(source.version.byteLength) !== binding.sourceByteLength ||
+        Number(source.artifact.byteLength) !== binding.sourceByteLength) throw autoWorkItemLeaseConflict();
+    return binding;
+  }
+
   private async readCurrentInitialAnalysis(
     scope: CanonicalVerifiedAutoWorkItemQueueScope,
-    lease: Awaited<
-      ReturnType<AutomaticWorkItemLeaseAuthorizationPort['authorizeActiveLease']>
-    >,
+    lease: AutomaticSourceBinding,
   ): Promise<{ status: AilyInitialAnalysisStatus; revision: number }> {
     if (!this.initialAnalysisStatus) {
       throw Object.assign(new Error('INITIAL_ANALYSIS_STATUS_UNCONFIGURED'), {
@@ -744,6 +835,21 @@ function assertAcknowledgementInput(
       statusCode: 400,
     });
   }
+}
+
+function assertBlockInput(input: BlockAutomaticWorkItemRequest): void {
+  if (!input || typeof input !== 'object' || Array.isArray(input) ||
+      Object.keys(input).some(key => ![
+        'workItemId', 'leaseToken', 'leaseGeneration', 'expectedCancellation', 'replayOnly',
+      ].includes(key)) ||
+      ('replayOnly' in input && (input.replayOnly !== true || !('expectedCancellation' in input)))) {
+    throw Object.assign(new Error('AUTO_WORK_ITEM_CANCELLATION_INPUT_INVALID'), {
+      code: 'AUTO_WORK_ITEM_CANCELLATION_INPUT_INVALID', statusCode: 400,
+    });
+  }
+  assertAcknowledgementInput({ workItemId: input.workItemId,
+    leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration });
+  if ('expectedCancellation' in input) parseAutomaticWorkItemCancellation(input.expectedCancellation);
 }
 
 function assertNextWorkItemInput(
