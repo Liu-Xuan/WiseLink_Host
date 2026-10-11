@@ -1,0 +1,489 @@
+{
+  "format": "wiselink-code-patch-handoff-v1",
+  "sourceCommit": "6cd3c66336c3205dc40b755cc722b4d9b9ca554e",
+  "requiredBaseCommit": "94e09bcc2718fe4c6e4b7e6f35d8020994c87d6b",
+  "expectedResultTree": "87a0c503d8f3440d65cb7a5c063a2a66b348e892",
+  "patch": {
+    "file": "model-configuration-6cd3c663.patch",
+    "byteLength": 186126,
+    "sha256": "bd89e5879c2d47675d2579279cf14bb6c83c274aba7367326915b7e0ff706a27"
+  },
+  "sourceCommitMetadata": {
+    "file": "source-commit.txt",
+    "byteLength": 257,
+    "sha256": "1e08f15ddd65f42b8b5dbbbcc28253e897c6d69cc054846e3414ced6900138c0",
+    "gitCommitObjectSha1": "6cd3c66336c3205dc40b755cc722b4d9b9ca554e"
+  },
+  "changedFileCount": 51,
+  "files": [
+    {
+      "path": "client/src/pages/ModelSettingsPage/ModelConfigurationPanel.tsx",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "41f765c664120dcdb31ff7cca7e0ad140a144367",
+      "byteLength": 6484,
+      "sha256": "db693372e32e3004cf70a930c1483b5d83713331b26ecd0a046e19ad23984fbd"
+    },
+    {
+      "path": "client/src/pages/ModelSettingsPage/ModelSettingsPage.tsx",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "92fc0d287cc4a923f86835fd80d28b69c9dfa7d5",
+      "afterBlob": "0e781ae0d970c2adfa42b6751f13165625fa4f91",
+      "byteLength": 1178,
+      "sha256": "c9cca693130f38e66372dde717ddd937159dcc1e365b356cc371d1b7f34c7f98"
+    },
+    {
+      "path": "client/src/pages/WorkspaceHomePage/HostedDevelopmentIntake.tsx",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "a030811c5c13741ffdf941930c32461006d43b9d",
+      "afterBlob": "0a2ad8ea23793b660d3a8bd358fdaba2123458af",
+      "byteLength": 22760,
+      "sha256": "92128340570eef55cf99251db680406c48b58304c337abf136a780d7849e4b3c"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/SKILL.md",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "98403757c4d75ccad7f953240f4f9db3ff63ead7",
+      "afterBlob": "364a68b983fe1f37da6d730d7c9c27fdbe6b1674",
+      "byteLength": 74339,
+      "sha256": "3ab8b6ef91f28547e332685d9558c4ec13d5f7fc61d6ce1df88fcdd563478c13"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/agents/openai.yaml",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "611374b66df295eab8a581c7ddf3d624473bc720",
+      "afterBlob": "dfde97330aefe02c19f55657a631cf3b7671cf25",
+      "byteLength": 8508,
+      "sha256": "6bd6945428df0212c6b6d73a46fdf2abe4cd4d3426a9cfa92c0b5f402d51fcce"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/references/hosted-uat-runbook.md",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "143a36c0656d1a7f6e3e579580a188eae4b34ef1",
+      "afterBlob": "ab60abfa51f2c1f585f994703ca31dab4088d712",
+      "byteLength": 26768,
+      "sha256": "9063b3afb24c7518f392b7a3eed818823a82136a8184cde0ddfe13e5979bd9de"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/references/input-output.md",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "6e2995794b7a4250b563b108e7aca950c8a69ad9",
+      "afterBlob": "26f034273c3e7b398fe24600f867511f4589ead4",
+      "byteLength": 34767,
+      "sha256": "83fd666370808a2548b731632f3dba7351fb06d453bd7572b3deb068747dcf99"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-document-reading.mjs",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "7d9025fa8afa52dd5fafc8de35561b323b188ca4",
+      "afterBlob": "70c5366e86e704ba5f99b517f86c47767afa51cd",
+      "byteLength": 16842,
+      "sha256": "bdb9d1a971bb6183fef050cc612474b74e427e6aea9b7f56f701a11e626bb622"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-document-reading-model.mjs",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "7d10a2ec7d63761d2ab98a36ee2fb5aa9f98e04f",
+      "afterBlob": "76298b0513e3024780c636ebb0f727a74251c610",
+      "byteLength": 13784,
+      "sha256": "5f1acf5fd7d0d8ef09f933bc488699cd63d2b145eb133ece2c374a6039f30450"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-document-semantic-translation.mjs",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "e355f12363877ddf55d4aa6c5e94df82a183249d",
+      "afterBlob": "7e772b256a9db8c4d05a403a38898fb9776f91b1",
+      "byteLength": 7477,
+      "sha256": "9c1a5dbb116450adb50966075279a9585fed0014041bbb1f75f96a498b9a4a7e"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs",
+      "status": "MODIFIED",
+      "mode": "100755",
+      "beforeBlob": "84618a9da5e8719a5e097417bec1d475f264da8b",
+      "afterBlob": "630c195f9220f3bccddb8c083fdf2e021ce71fb2",
+      "byteLength": 212495,
+      "sha256": "cc8d7fc903d4b8419b688bc0b77ca7cd803e9f0f32d79c29d45cf7ea23d656a3"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-document-reading.test.mjs",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "d6afdad3e0f46d9c32567cc7646b7ed80249e456",
+      "afterBlob": "4cbb013a544dd76bdfca5f88fd2d1f0ca89b4e2c",
+      "byteLength": 25631,
+      "sha256": "ed45b186ab8927eba41e1cd5e0e796c4040dae46f0e5be99e10bf067b860bd1b"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-document.test.mjs",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "8ebc48b0e7c61a36b113657c33d6c87da95f21b5",
+      "afterBlob": "d8ed0638dda84d22c4bdbfc15565d18056c838e2",
+      "byteLength": 31485,
+      "sha256": "eeba43ad707ca96a3eca17106149c5d710f10a22ee011939d701a36927896d91"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/tests/invoke-hosted-document-reading-model.test.mjs",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "fbb89b943a60f09b9bd1543d62600b1f31a84c92",
+      "afterBlob": "75e69e3e4697441ca2c610e1e57a0755f7d990ec",
+      "byteLength": 11539,
+      "sha256": "bdc1c0bf5a3abcd74aab9b29e6b96362f1df63deaa866748539eb0756807770f"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/tests/run-document-semantic-translation.test.mjs",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "2fce146a54401b087d0851fc752e58f2d1a2b9a3",
+      "afterBlob": "f4dd287a27b53c109e70f79d6d619a7eec33c490",
+      "byteLength": 8243,
+      "sha256": "942a17c0390c9f60fa7b2a42167b1bca2ad57c9a9104e93d6f73b8c60a47c8f9"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/tests/semantic-translation.test.mjs",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "bea48cb4cea8a05726da9d4785164fc421c0ab3a",
+      "afterBlob": "7736049bd1b5d01fef0fbdf55d3439ffc941f152",
+      "byteLength": 34140,
+      "sha256": "a5d189b0ff76ed226a5bdabe94610cec90847d0772275670f806ef8ddb6bab7d"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/tests/validation.test.mjs",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "ee8d128b0e12c9eb8fe441ba05f3f42b4362f3de",
+      "afterBlob": "4e5c52ebc970626996212fab7912019c0d1b7766",
+      "byteLength": 442420,
+      "sha256": "517ce2dd541e082546fd7f6d2f39f48216e10812f7b27238dcde5a886125db09"
+    },
+    {
+      "path": "server/modules/action-attempt/action-attempt.repository.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "b9c3decbae364cbbd518ac9ed4541d91257a405f",
+      "afterBlob": "6e918e89d9cdddd424f5688ad6abd8dfd3c6b4d8",
+      "byteLength": 34764,
+      "sha256": "ae2ecf8631cb33e3dd09def2a322bf6c551b59960f0fcf35f371e54d4155cf99"
+    },
+    {
+      "path": "server/modules/action-attempt/document-translation-attempt.repository.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "b55f7374e08598eb07c780bef1fe81bd9ca74d84",
+      "afterBlob": "f58cdaf935ab9717b87a279c48127a90d083814c",
+      "byteLength": 60123,
+      "sha256": "cc76f97e609be1f752f7e9da802875cbcd8f3425316b5b2412d2cf33a253bd58"
+    },
+    {
+      "path": "server/modules/action-attempt/document-translation-model.ts",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "a2fc131eb79414297bc831530ae2cd2282ff5c64",
+      "byteLength": 909,
+      "sha256": "0bdecdb9e168945c7ad347e8e9c4bd5f5e254950b32303763f580018ae4ac18d"
+    },
+    {
+      "path": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "575a22bd62df787f1848ea3a4df2c72fa4c27394",
+      "afterBlob": "344994387862bb38cd0308654c55c9b940a312df",
+      "byteLength": 35980,
+      "sha256": "d73e9b2315482a825851b9b9d6ccae63017bb8d6d6f330dceab8bab696ed816b"
+    },
+    {
+      "path": "server/modules/canonical-host/automatic-work-item-queue-scope.spec.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "a0a58abc44fe91270ca22510f27049eb3afd794f",
+      "afterBlob": "98c6f63368aa0f199ba36b0865c9e1406fc8e2b6",
+      "byteLength": 16138,
+      "sha256": "dab2c8a5acf9257c921446ff4ce4326256259c86b62426ca230f1daaf6746e1b"
+    },
+    {
+      "path": "server/modules/canonical-host/canonical-host-openclaw-mcp.openapi.controller.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "6b215674020daa4573b281316875adb1e0c350c0",
+      "afterBlob": "d10d756a4a37199710656c1fad7b5edf8bb1715e",
+      "byteLength": 2431,
+      "sha256": "cda169d42762cd62b803e70aa89b7fcb05ea7b7c849093d9e04be3733b503dda"
+    },
+    {
+      "path": "server/modules/canonical-host/canonical-host.module.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "660443776f009eb85310c690a35a03467c0047b7",
+      "afterBlob": "bebfd4ea2ea1dadf3325bb0ef6438a39b0e750f8",
+      "byteLength": 33766,
+      "sha256": "b402a60790fc45a849c53fe3efd9853727f79d8486403521a8aaa767d64d5b2e"
+    },
+    {
+      "path": "server/modules/canonical-host/canonical-service-scope.authorization.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "f531099f7e3951fb9bc5ea35137ef314e034bcac",
+      "afterBlob": "a5be541e1eeccf93070602bb6d9642f96813e9f0",
+      "byteLength": 7240,
+      "sha256": "093763360d3c1f53a5c5f23d5db27d42075d95618f815a65cb5854022f0b6e84"
+    },
+    {
+      "path": "server/modules/canonical-host/canonical-translation-v2.service.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "e3c5a439ee7e0b6be6b8b29acc5a44a35b715444",
+      "afterBlob": "d96d09ef3ebe9776a4eb679735342ddc96dcde0b",
+      "byteLength": 31939,
+      "sha256": "ad0756793e874c038a22f9ee7c47f12e3d229301d6c85e9ccadc5be1ed1f49e4"
+    },
+    {
+      "path": "server/modules/canonical-host/configuration-evidence/configuration-evidence.repository.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "64472541379f13cec1d51d9b6f1f8dc49cf94b1a",
+      "afterBlob": "0b18a3a38f061b86c5549e44b93dd994319523c9",
+      "byteLength": 29225,
+      "sha256": "9c2f7198a55240f17e7af87f6648958475acd6272e284891986a47ad12b7c4f3"
+    },
+    {
+      "path": "server/modules/canonical-host/configured-development-service-scope.authorization.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "8436ac1c99056ca27ac2118db65a17e96c524f33",
+      "afterBlob": "38a52bd846a4ad0697170e71b1f5451720f5346a",
+      "byteLength": 34432,
+      "sha256": "21d3d708947f657d3468c0fa43ff943e5baa92bba66181bca30511170e13f307"
+    },
+    {
+      "path": "server/modules/canonical-host/document-reading-run.repository.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "f439de906ea822bc6bc648054f5d852306c7c76e",
+      "afterBlob": "bdb7ece676d7529b94e8994599468d2f2dd0a895",
+      "byteLength": 23394,
+      "sha256": "36b9ca6f2104203aad486095051200890ff91bf92101e3d1b60a9f440a4ce95c"
+    },
+    {
+      "path": "server/modules/canonical-host/document-reading-runtime.service.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "6df79fe9578a12ef433cee37aca79b44e0f3267b",
+      "afterBlob": "299380d5565ffeaa075c8cab9c7cbba50180120b",
+      "byteLength": 16593,
+      "sha256": "1aa8ffa42682a355d34f5151f901de91747cc4e4e7567b37bc9908bd2b0719d3"
+    },
+    {
+      "path": "server/modules/canonical-host/document-translation-runtime.service.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "b77c3369f89d1ed73f57d9689056b3749f915727",
+      "afterBlob": "5c8631014ed86865c2f0ac1a259d410888a75904",
+      "byteLength": 26588,
+      "sha256": "d921ba87af3c8ef4fb7d72b9406f04784416670db7a03169c8017dd0341197c8"
+    },
+    {
+      "path": "server/modules/canonical-host/pending-model-configuration.request.ts",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "937c6b69c11db22af17e1f9cd1f9b8d35914d42b",
+      "byteLength": 1396,
+      "sha256": "33be1e1f28cbdf30a5dd49c3f576de87e5a52df1fbadd00d1ef06e1db71eff37"
+    },
+    {
+      "path": "server/modules/model-settings/canonical-model-settings.service.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "d2ef0a7de93e159efb444b24a91f9fa00f782811",
+      "afterBlob": "f16edaf2f1f6a45b61d586916c5b5b4a697ded5c",
+      "byteLength": 6151,
+      "sha256": "148bf7c729f56fc14ccb34f4ebfef5b6078396addbb506b81f770c95778b5968"
+    },
+    {
+      "path": "server/modules/work-item/miaoda-work-item.repository.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "8b9efbde0f3fc0a7b7e2b287ba9a01ace786e383",
+      "afterBlob": "8810d4f1a6a2286421d74ad6435e15339911b464",
+      "byteLength": 113800,
+      "sha256": "563c3727651bfb2005be02182218d373b53455843f0a48564874888a6732e609"
+    },
+    {
+      "path": "server/modules/work-item/model-configuration-audit.ts",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "9235dd6ccf1c85fb7f19d00cc8f219593f82f0c4",
+      "byteLength": 548,
+      "sha256": "4e4387559571870831b84bd0c1e475c96ee3e2f2d4076f4ada85aa48c3e3b263"
+    },
+    {
+      "path": "server/modules/work-item/ordinary-work-item.service.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "b01724f46239fc1510ad21b7940d563fc3f479c2",
+      "afterBlob": "cd52aef47ecb7dc1038043f3e6f569471d2dcb91",
+      "byteLength": 35375,
+      "sha256": "b28df63b97d04ffdfce74041da3629ff6abcca4b8f451cae0a5db2ea146af1fd"
+    },
+    {
+      "path": "shared/api.interface.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "ac8474784559f08fbaee850a0a8ebeffbce1834e",
+      "afterBlob": "6e811e12951174348a5da66dfdde8bbf091192bd",
+      "byteLength": 111558,
+      "sha256": "0429a70c2d8d1cf7ce55f1908cc2c671d7ebfdb194879a18017e09dc6c903ec2"
+    },
+    {
+      "path": "shared/pending-model-configuration.interface.ts",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "56a7e5acf5ac400588e8edf9f1496ede59939018",
+      "byteLength": 1167,
+      "sha256": "b3b884834c9bd9e969dfa8038e55b1d53d1d9dbdc82b7430fd787b24d29c4ea1"
+    },
+    {
+      "path": "test/node/document-translation-model-selection.test.mjs",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "3a12625a1aa92d44ff233f231d998515a285464d",
+      "byteLength": 2183,
+      "sha256": "8960f8ceabce5bfb47f3db508c2c569911a10b8b56efa449479e214e30a1c57e"
+    },
+    {
+      "path": "test/unit/canonical-model-settings.service.spec.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "aae6ed765107d310efd052b782d4663dde7dccbe",
+      "afterBlob": "ef0977252e8dbdc092ce4a86a7db118da5f25e92",
+      "byteLength": 11054,
+      "sha256": "a5bb7a31061947616181f9c896922554d9c5d23d6ef3e0dc9884f7bb5baa6ee4"
+    },
+    {
+      "path": "test/unit/configured-task-model.spec.ts",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "c48d9037d856bfdbb166b7dcc3caf8221ec150e3",
+      "byteLength": 3829,
+      "sha256": "0e82712f900be76d328623c2750c46bf6cca7af70d77b3ec34790896802140ab"
+    },
+    {
+      "path": "test/unit/document-reading-model-persistence.spec.ts",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "1b34a5f8d2d3912dfb58e505f030bcd02d18108a",
+      "byteLength": 6470,
+      "sha256": "008cf54ca2c8cbcd7d5af2a94448da77c27051fc04287d45c393aee0cdfe9d0d"
+    },
+    {
+      "path": "test/unit/document-reading-runtime.spec.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "d0a65e0efb3bcf179a4372a43ec42ab6317e5a71",
+      "afterBlob": "7a5fa493e7949c25e413336f3773e3e4f4df1c7c",
+      "byteLength": 26972,
+      "sha256": "0da1ebb84ee53beee3b2b6f13c156527092cbd914e51f94069686df23884bfae"
+    },
+    {
+      "path": "test/unit/document-translation-model.spec.ts",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "3b680bcb13f14ef37c0c42733dd247a26fce2cc4",
+      "byteLength": 5364,
+      "sha256": "70b59ccafdc67e30827c5d2e2ed71636475b151e03f8b086ef3dee53a4c59928"
+    },
+    {
+      "path": "test/unit/document-translation-runtime.spec.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "3b9f5cf69f8033a4d211c31b04101c0137aefe0c",
+      "afterBlob": "a1b22c45d8daef2c32fc83df773a3b45c83735b7",
+      "byteLength": 39429,
+      "sha256": "44aaadd9b2bb6af3879c7d0364254f2a9b1cf23ce15631f5bd868de383ef295d"
+    },
+    {
+      "path": "test/unit/miaoda-work-item.repository.spec.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "bc22b4fc4c5169f6c57cc42a67a24e1fa307dab7",
+      "afterBlob": "0d3f698dc87668a157ce2756990a9d73b27ede62",
+      "byteLength": 31115,
+      "sha256": "dd24c5c7392c3db6b703a0b849b6ff80f9d8aa5a75cc53d5491122c114b56a5c"
+    },
+    {
+      "path": "test/unit/model-configuration-audit.spec.ts",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "b8afc42f9fd4a7eb9313c90f223171be9e68de62",
+      "byteLength": 4007,
+      "sha256": "9b6029fd29275173d89452752cc6123e520324a8817586c2bfa43bb25cdd1868"
+    },
+    {
+      "path": "test/unit/model-settings-ui.spec.ts",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "6cc6f12b67a1057dd225a246cf110ba9c4dd43e2",
+      "byteLength": 6133,
+      "sha256": "aa0deb5c787af5dae737d6feee6271e8028f3194fd13b11988f6e17e52aa99f7"
+    },
+    {
+      "path": "test/unit/ordinary-work-item.service.spec.ts",
+      "status": "MODIFIED",
+      "mode": "100644",
+      "beforeBlob": "c5a1e36dee53a0960b2b80bc938b412d6bcb36d3",
+      "afterBlob": "f5adb5a5210184ec1d4d32be2bc48f2291a5dd46",
+      "byteLength": 52122,
+      "sha256": "b5711912abb9dcf1739e7b8d0988fc47a421c61994d8c329ace5d41bc2ea5e2e"
+    },
+    {
+      "path": "test/unit/pending-model-admission.spec.ts",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "61dd616ad4413e65ba1d871884a1cbd3f542bae3",
+      "byteLength": 4136,
+      "sha256": "6bd688188b4f7b73b3de6ee9b10ba83a43cddb7a1dc6a7ee82b3418596eaffd2"
+    },
+    {
+      "path": "test/unit/pending-model-configuration.spec.ts",
+      "status": "ADDED",
+      "mode": "100644",
+      "beforeBlob": null,
+      "afterBlob": "ed668f651b9cbf381a61735564359b84a8081ba5",
+      "byteLength": 12295,
+      "sha256": "4f9715ee646d808579eea15b2d4e0bf8e06719c5da8378565325def6b5c2999b"
+    }
+  ],
+  "validation": {
+    "baseApplyCheckPassed": true,
+    "isolatedIndexResultTree": "87a0c503d8f3440d65cb7a5c063a2a66b348e892",
+    "commitObjectMatchesSource": true
+  },
+  "limitations": [
+    "Requires the exact base commit from the authorized project repository. This patch is not a standalone repository.",
+    "No base blobs, history, raw engineering documents, runtime logs, credentials or restoration ZIP are included.",
+    "Applying this patch to a different GitHub baseline is not verified."
+  ]
+}

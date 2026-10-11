@@ -1,0 +1,6 @@
+tree 87a0c503d8f3440d65cb7a5c063a2a66b348e892
+parent 94e09bcc2718fe4c6e4b7e6f35d8020994c87d6b
+author dot <dot@localhost> 1791646249 -0600
+committer dot <dot@localhost> 1791646249 -0600
+
+Apply configured task models across assessment reading and translation
