@@ -208,6 +208,78 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
     },
   );
 
+  it('contains a throwing provider diagnostic getter without exposing its error', async () => {
+    const scoped = new LocalScopedFileService('bucket-getter-failure');
+    const adapter = createAdapter({
+      getDefaultBucket: async () => 'bucket-getter-failure',
+      from: () => scoped,
+    } as never);
+    const staged = await adapter.stageCandidateAndReadback({
+      bytes: new TextEncoder().encode('{"candidate":true}'),
+      ownerRef: 'getter-candidate-owner',
+    });
+    const getterFailure = new Error('synthetic-getter-message-secret', {
+      cause: sdkFailure('synthetic-nested-sdk-message-secret'),
+    });
+    getterFailure.stack =
+      'synthetic-getter-stack-secret at https://provider.invalid';
+    const providerFailure = new Error('synthetic-provider-message-secret');
+    const getter = jest.fn(() => {
+      throw getterFailure;
+    });
+    Object.defineProperty(providerFailure, 'status', { get: getter });
+    const read = jest
+      .spyOn(scoped, 'getFileMetadata')
+      .mockRejectedValue(providerFailure);
+
+    const caught = await adapter
+      .discardCandidateArtifact(staged)
+      .catch((error) => error);
+    expect(caught).not.toBe(getterFailure);
+    expect(caught).not.toHaveProperty('cause');
+    expect(caught).toMatchObject({
+      code: 'ARTIFACT_STORE_STAGE_DISCARD_METADATA_READ_FAILED',
+      statusCode: 500,
+      details: {
+        operation: 'ARTIFACT_STORE_STAGE_DISCARD_METADATA_READ_FAILED',
+        category: 'PROVIDER_FAILURE',
+      },
+    });
+    const wire = serializedClientFailure(caught);
+    expect(wire.statusCode).toBe(500);
+    expect(wire.payload).toMatchObject({
+      error: {
+        code: 'ARTIFACT_STORE_STAGE_DISCARD_METADATA_READ_FAILED',
+        message:
+          'ARTIFACT_STORE_STAGE_DISCARD_METADATA_READ_FAILED:PROVIDER_FAILURE',
+      },
+    });
+    const serializedThrown = JSON.stringify(
+      Object.fromEntries(
+        Object.getOwnPropertyNames(caught).map((key) => [key, caught[key]]),
+      ),
+    );
+    for (const forbidden of [
+      'synthetic-',
+      'https://',
+      'config',
+      'platformAuth',
+      'customClaims',
+      'headers',
+      'Authorization',
+      'x-api-key',
+      'x-tt-env',
+      'body',
+    ]) {
+      expect(wire.serialized).not.toContain(forbidden);
+      expect(serializedThrown).not.toContain(forbidden);
+    }
+    expect(getter).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(scoped.removeCount).toBe(0);
+    expect(scoped.files.size).toBe(1);
+  });
+
   it('redacts the previously unwrapped discard metadata failure without deleting or retrying', async () => {
     const scoped = new LocalScopedFileService('bucket-discard-failure');
     const adapter = createAdapter({

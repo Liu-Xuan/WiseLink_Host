@@ -622,7 +622,13 @@ async function providerCallWithTransportRetry<T>(
 }
 
 function providerError(code: string, cause: unknown): Error {
-  const diagnostic = providerFailureDiagnostic(cause);
+  let diagnostic: ReturnType<typeof providerFailureDiagnostic>;
+  try {
+    diagnostic = providerFailureDiagnostic(cause);
+  } catch {
+    // Unknown provider getters must not escape this safe error boundary.
+    diagnostic = { category: 'PROVIDER_FAILURE' };
+  }
   // The HTTP exception filter serializes Error.cause. SDK errors can carry
   // request credentials, claims, URLs and bodies; none may cross this boundary.
   return Object.assign(new Error(`${code}:${diagnostic.category}`), {
