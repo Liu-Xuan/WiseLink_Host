@@ -951,27 +951,24 @@ describe('CanonicalHostVerticalService', () => {
     expect(persistCount).toBe(2);
   });
 
-  it('records Reader no-result failure as immutable FailureReport', async () => {
+  it('accepts optional PDF preview no-results and reuses the saved package without another producer call', async () => {
     const request = {
       ...(await realRequest()),
       query: 'query-that-does-not-exist-in-the-real-package-4f7166',
     };
     const bytes = await realPackageBytes();
     const store = new InMemoryArtifactStore();
+    const producer = {
+      producePdf: jest.fn().mockResolvedValue({
+        kind: 'PACKAGE',
+        packageId: 'urn:techpub:package:v1:sha256:9e734a0de1c37c368b954662e9bb11036cc24b430468a073b31da127380df622',
+        contractId: 'techpub.parsed-package.v1', contractRevision: 'frozen.2', bytes,
+        strictReaderValidated: true, executionRoute: 'test-reader-preview',
+      }),
+    };
     const service = new CanonicalHostVerticalService(
       new InMemoryRegistrar(),
-      {
-        producePdf: jest.fn().mockResolvedValue({
-          kind: 'PACKAGE',
-          packageId:
-            'urn:techpub:package:v1:sha256:9e734a0de1c37c368b954662e9bb11036cc24b430468a073b31da127380df622',
-          contractId: 'techpub.parsed-package.v1',
-          contractRevision: 'frozen.2',
-          bytes,
-          strictReaderValidated: true,
-          executionRoute: 'test-reader-failure',
-        }),
-      },
+      producer,
       authorization(),
       permissionSnapshots(),
       store,
@@ -996,17 +993,17 @@ describe('CanonicalHostVerticalService', () => {
     const response = await service.runPdf(request, TEST_ACTOR);
 
     expect(response).toMatchObject({
-      status: 'FAILED',
+      status: 'CANDIDATE_VERTICAL_VERIFIED',
       workItem: {
-        phase: 'FAILED',
-        failure: {
-          failureCode: 'READER_REJECTED',
-          message:
-            'The selected Reader rejected the frozen package query or binding.',
-          artifact: { sha256: expect.stringMatching(/^[0-9a-f]{64}$/u) },
-        },
+        phase: 'CANDIDATE_READBACK_VERIFIED', revision: 3, failure: null,
+        package: { contentUnitCount: 311, sourceRefCount: 239, resultStatus: 'partial' },
       },
+      readback: { queryResults: [], receipt: { queryProbe: { resultCount: 0 }, sourceBoundUnitCount: 311 } },
     });
+    const replay = await service.runPdf(request, TEST_ACTOR);
+    expect(replay.workItem).toEqual(response.workItem);
+    expect(replay.readback?.queryResults).toEqual([]);
+    expect(producer.producePdf).toHaveBeenCalledTimes(1);
   });
 
   it('reports replay readback drift without replacing the saved parse result', async () => {

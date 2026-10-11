@@ -3,7 +3,10 @@ import type {
   CanonicalOrdinaryWorkItemRunResponse,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
-import { isRetryableParseFailureCode } from '@shared/parse-retry-policy';
+import {
+  isRetryableParseFailureCode,
+  isRetryableReaderPreviewFailure,
+} from '@shared/parse-retry-policy';
 
 export type ParseAction =
   | 'RESUME_PENDING'
@@ -22,6 +25,7 @@ export function availableParseAction(
   if (!developmentIntakeAvailable || projection === null) return null;
   if (projection.phase === 'PARSE_REQUESTED') return 'RESUME_PENDING';
   if (
+    isRetryableReaderPreviewFailure(projection) ||
     (projection.phase === 'FAILED' &&
       isRetryableParseFailureCode(projection.failure?.failureCode)) ||
     (projection.phase === 'RECORDING_FAILED' &&

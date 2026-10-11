@@ -4,6 +4,7 @@ import { actionAttempt, workItem } from '../../server/database/schema';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { autoWorkItemAuthorization } from '../../server/database/auto-work-item-authorization.schema';
 import { MiaodaWorkItemRepository } from '../../server/modules/work-item/miaoda-work-item.repository';
+import { readerPreviewFailureProjection } from '../support/reader-preview-failure';
 
 function projection(): Omit<CanonicalWorkItemProjection, 'revision'> {
   return {
@@ -274,6 +275,58 @@ describe('MiaodaWorkItemRepository parse retry recovery', () => {
     decisionHash: `sha256:${'2'.repeat(64)}`,
     permissionSnapshotVersion: `sha256:${'3'.repeat(64)}`,
   };
+
+  it('reopens a bound preview miss with fresh authorization and one CAS while preserving original failure history and model', async () => {
+    const saved = await readerPreviewFailureProjection();
+    const fixture = completedReparseRepository({ failedProjection: saved });
+    const oldAttempt = JSON.stringify(fixture.attemptRow);
+    const oldProjection = fixture.workItemRow.projectionJson;
+    const result = await fixture.target.reopenRetryableParseFailure({ ...retryIdentity(), authorization });
+    expect(result).toMatchObject({ attemptNo: 2 });
+    expect(fixture.update).toHaveBeenCalledTimes(1);
+    expect(fixture.update).toHaveBeenCalledWith(workItem);
+    const next = JSON.parse(new PgDialect().sqlToQuery(fixture.set.mock.calls[0][0].projectionJson).params[0] as string);
+    expect(next).toMatchObject({ workItemId: saved.workItemId, requestId: saved.requestId,
+      revision: 4, phase: 'PARSE_REQUESTED', source: saved.source,
+      classification: saved.classification, parseAuthorization: authorization, failure: null });
+    expect(fixture.insertValues).toHaveBeenCalledWith(expect.objectContaining({
+      workItemId: saved.workItemId, triggerRequestId: saved.requestId, attemptNo: 2,
+      tenantId: retryIdentity().tenantId, actorUserId: retryIdentity().actorUserId, status: 'PENDING',
+    }));
+    expect(JSON.stringify(fixture.attemptRow)).toBe(oldAttempt);
+    expect(fixture.workItemRow.projectionJson).toBe(oldProjection);
+    expect(fixture.set.mock.calls[0][0]).not.toHaveProperty('analysisModelJson');
+    expect(saved.failure?.artifact).toEqual(JSON.parse(oldProjection).failure.artifact);
+  });
+
+  it.each(['missing authorization', 'wrong prior attempt status', 'unfinished prior attempt',
+    'wrong prior error', 'different prior failure artifact', 'projection revision drift'])
+  ('does not reopen a preview miss with %s', async (mutation) => {
+    const saved = await readerPreviewFailureProjection();
+    const attemptOverride = mutation === 'wrong prior attempt status' ? { status: 'RUNNING' }
+      : mutation === 'unfinished prior attempt' ? { completedAt: null }
+      : mutation === 'wrong prior error' ? { errorCode: 'READER_BINDING_MISMATCH' }
+      : mutation === 'different prior failure artifact' ? { failureArtifactSha256: 'e'.repeat(64) } : {};
+    const fixture = completedReparseRepository({ failedProjection: saved, attemptOverride,
+      ...(mutation === 'projection revision drift' ? { storedRevision: 4 } : {}) });
+    await expect(fixture.target.reopenRetryableParseFailure({ ...retryIdentity(),
+      ...(mutation === 'missing authorization' ? {} : { authorization }) })).resolves.toBeNull();
+    expect(fixture.update).not.toHaveBeenCalled();
+    expect(fixture.insert).not.toHaveBeenCalled();
+  });
+
+  it('rejects changed source or a preview retry CAS race before inserting another Attempt', async () => {
+    const saved = await readerPreviewFailureProjection();
+    const collision = completedReparseRepository({ failedProjection: saved });
+    await expect(collision.target.reopenRetryableParseFailure({ ...retryIdentity(), authorization,
+      sourceFileSha256: 'e'.repeat(64) })).rejects.toThrow('WORK_ITEM_BUSINESS_KEY_COLLISION');
+    expect(collision.update).not.toHaveBeenCalled();
+    expect(collision.insert).not.toHaveBeenCalled();
+    const race = completedReparseRepository({ failedProjection: saved, updatedRows: [] });
+    await expect(race.target.reopenRetryableParseFailure({ ...retryIdentity(), authorization }))
+      .rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
+    expect(race.insert).not.toHaveBeenCalled();
+  });
 
   it('rebinds a fresh authorization onto the exact pending retry without inserting Attempt 3', async () => {
     const fixture = pendingRetryRepository({ status: 'PENDING' });
@@ -677,6 +730,9 @@ function pendingRetryRepository(input: {
 function completedReparseRepository(input?: {
   updatedRows?: Array<{ workItemId: string }>;
   projectionDocumentVersionId?: string;
+  failedProjection?: CanonicalWorkItemProjection;
+  attemptOverride?: Record<string, unknown>;
+  storedRevision?: number;
 }) {
   const projection: CanonicalWorkItemProjection = {
     schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate',
@@ -710,6 +766,7 @@ function completedReparseRepository(input?: {
     integratedAssessment: null,
     failure: null,
     recordingFailure: null,
+    ...input?.failedProjection,
   };
   const workItemRow = {
     workItemId: 'WI-RETRY-1',
@@ -723,7 +780,7 @@ function completedReparseRepository(input?: {
     normalizedFamily: 'FTD',
     requestedByUserId: 'user-retry',
     runKey: 'dev:22222222-2222-4222-8222-222222222222',
-    revision: 4,
+    revision: input?.storedRevision ?? projection.revision,
     projectionJson: JSON.stringify(projection),
   };
   const attemptRow = {
@@ -735,6 +792,9 @@ function completedReparseRepository(input?: {
     errorCode: null,
     packageArtifactRef: 'artifact://old-package',
     packageArtifactSha256: 'b'.repeat(64),
+    ...(input?.failedProjection ? { status: 'FAILED', errorCode: projection.failure?.failureCode,
+      failureArtifactRef: projection.failure?.artifact.ref, failureArtifactSha256: projection.failure?.artifact.sha256 } : {}),
+    ...input?.attemptOverride,
   };
   let selectNo = 0;
   const select = jest.fn().mockImplementation(() => {
@@ -770,6 +830,8 @@ function completedReparseRepository(input?: {
     insertValues,
     update,
     set,
+    attemptRow,
+    workItemRow,
   };
 }
 

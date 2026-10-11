@@ -13,7 +13,10 @@ import type {
   CanonicalS1000dVerticalRunRequest,
   DocumentDeliverySelection,
 } from '@shared/api.interface';
-import { isRetryableParseFailureCode } from '@shared/parse-retry-policy';
+import {
+  isRetryableParseFailureCode,
+  isRetryableReaderPreviewFailure,
+} from '@shared/parse-retry-policy';
 import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-vertical.service';
 import { CANONICAL_DEVELOPMENT_ROLE_ID } from '../canonical-host/canonical-host.constants';
 import { EngineeringMatterService } from '../canonical-host/engineering-matter.service';
@@ -363,6 +366,7 @@ export class OrdinaryWorkItemService {
       actor.tenantId,
     );
     const retryableFailure =
+      isRetryableReaderPreviewFailure(fresh?.projection) ||
       (fresh?.projection?.phase === 'FAILED' &&
         isRetryableParseFailureCode(fresh.projection.failure?.failureCode)) ||
       (fresh?.projection?.phase === 'RECORDING_FAILED' &&
@@ -527,6 +531,7 @@ export class OrdinaryWorkItemService {
         actor.tenantId,
       );
       if (
+        isRetryableReaderPreviewFailure(retryState?.projection) ||
         (retryState?.projection?.phase === 'FAILED' &&
           isRetryableParseFailureCode(
             retryState.projection.failure?.failureCode,

@@ -1,4 +1,5 @@
 import { OrdinaryWorkItemService } from '../../server/modules/work-item/ordinary-work-item.service';
+import { readerPreviewFailureProjection } from '../support/reader-preview-failure';
 
 const ACTOR = {
   userId: 'engineer-1001',
@@ -1125,6 +1126,55 @@ describe('OrdinaryWorkItemService run identity', () => {
     expect(
       targetValue.vertical.runPdfWithExistingAuthorization,
     ).toHaveBeenCalledWith(expect.any(Object), EXISTING_PARSE_AUTHORIZATION);
+  });
+
+  it('retries a saved optional preview miss using the normal same-WorkItem route and fresh authorization', async () => {
+    const targetValue = target();
+    const saved = await readerPreviewFailureProjection({ workItemId: 'WI-NEW-SB', requestId: 'REQ-NEW-SB',
+      source: { documentId: 'document-sb', documentVersionId: 'document-version-sb', parserRequestId: 'REQ-NEW-SB',
+        sourceArtifactId: 'artifact-sb', sourceFileSha256: `sha256:${'a'.repeat(64)}`, sourceByteLength: 1024,
+        driveFileToken: 'drive-token-sb', driveSourceVersion: 'drive-version-sb' } });
+    targetValue.repository.loadAuthorizationBinding.mockResolvedValue({
+      workItemId: saved.workItemId, requestId: saved.requestId, documentVersionId: saved.source.documentVersionId,
+      runKey: 'dev:22222222-2222-4222-8222-222222222222',
+    });
+    targetValue.repository.loadTenantScopedProjection.mockResolvedValue({ row: {}, projection: saved });
+    targetValue.repository.reopenRetryableParseFailure.mockResolvedValue({ attemptId: 'ATT-RETRY-2', attemptNo: 2 });
+    await expect(targetValue.service.retryOauthSessionDevelopmentRun(saved.workItemId, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR))
+      .resolves.toMatchObject({ workItemCreated: false, workItemReused: true, actionAttemptId: 'ATT-RETRY-2' });
+    expect(targetValue.repository.reopenRetryableParseFailure).toHaveBeenCalledWith(expect.objectContaining({
+      workItemId: saved.workItemId, requestId: saved.requestId, documentVersionId: saved.source.documentVersionId,
+      authorization: expect.objectContaining({ decisionId: EXISTING_PARSE_AUTHORIZATION.decision.decisionId }),
+    }));
+    expect(targetValue.vertical.runPdfWithExistingAuthorization).toHaveBeenCalledWith(expect.objectContaining({
+      workItemId: saved.workItemId, requestId: saved.requestId, source: expect.objectContaining({
+        sourceFileSha256: saved.source.sourceFileSha256, sourceByteLength: saved.source.sourceByteLength }), query: 'applicability',
+    }), EXISTING_PARSE_AUTHORIZATION);
+    expect(targetValue.repository.reopenRetryableParseFailure.mock.calls[0][0]).not.toHaveProperty('analysisModel');
+    expect(targetValue.repository.reserve).not.toHaveBeenCalled();
+    expect(targetValue.documentManagement.ingestFileServiceSelection).not.toHaveBeenCalled();
+    targetValue.vertical.authorizeExistingWorkItem.mockRejectedValueOnce(new Error('PERMISSION_DENIED'));
+    await expect(targetValue.service.retryOauthSessionDevelopmentRun(saved.workItemId, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR))
+      .rejects.toThrow('PERMISSION_DENIED');
+    expect(targetValue.repository.reopenRetryableParseFailure).toHaveBeenCalledTimes(1);
+    expect(targetValue.vertical.runPdfWithExistingAuthorization).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['generic reader rejection', 'client-like cause claim'])('rejects %s on the retry route before resolver or mutation', async (mutation) => {
+    const targetValue = target();
+    targetValue.repository.loadAuthorizationBinding.mockResolvedValue({
+      workItemId: 'WI-NEW-SB', requestId: 'REQ-NEW-SB', documentVersionId: 'document-version-sb',
+      runKey: 'dev:22222222-2222-4222-8222-222222222222',
+    });
+    targetValue.repository.loadTenantScopedProjection.mockResolvedValue({ row: {}, projection: {
+      phase: 'FAILED', failure: { failureCode: 'READER_REJECTED', ...(mutation === 'client-like cause claim'
+        ? { adapterReceipt: { taxonomy: { causeCode: 'READER_QUERY_NO_RESULTS' } } } : {}) },
+    } });
+    await expect(targetValue.service.retryOauthSessionDevelopmentRun('WI-NEW-SB', OAUTH_SESSION_ACTOR, GATEWAY_ACTOR))
+      .rejects.toMatchObject({ code: 'WORK_ITEM_RETRY_NOT_AVAILABLE' });
+    expect(targetValue.resolver.resolve).not.toHaveBeenCalled();
+    expect(targetValue.repository.reopenRetryableParseFailure).not.toHaveBeenCalled();
+    expect(targetValue.vertical.runPdfWithExistingAuthorization).not.toHaveBeenCalled();
   });
 
   it('explicitly reparses a completed candidate on the same WorkItem and current DV with a new Attempt', async () => {

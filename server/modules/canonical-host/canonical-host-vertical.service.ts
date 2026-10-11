@@ -255,7 +255,7 @@ export class CanonicalHostVerticalService {
           contractId: produced.contractId,
           contractRevision: produced.contractRevision,
           query: request.query,
-        });
+        }, { allowEmptyResults: true });
       projection = await this.registrar.compareAndSet({
         workItemId: request.workItemId,
         expectedRevision: projection.revision,
@@ -1232,7 +1232,7 @@ export class CanonicalHostVerticalService {
         artifact: projection.package.artifact,
       },
       query: request.query,
-    });
+    }, undefined, { allowEmptyResults: true });
     return verifiedResponse(
       projection,
       readback,

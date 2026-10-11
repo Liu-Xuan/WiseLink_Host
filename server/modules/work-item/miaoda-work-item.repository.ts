@@ -25,7 +25,10 @@ import type {
   CanonicalExecutionModelSelection,
   DocumentDeliverySelection,
 } from '@shared/api.interface';
-import { isRetryableParseFailureCode } from '@shared/parse-retry-policy';
+import {
+  isRetryableParseFailureCode,
+  isRetryableReaderPreviewFailure,
+} from '@shared/parse-retry-policy';
 import {
   sourceIdentityBatchQuery,
   sourceIdentityQuery,
@@ -1569,9 +1572,22 @@ export class MiaodaWorkItemRepository {
         };
       }
 
+      const previewMiss = isRetryableReaderPreviewFailure(projection);
+      if (previewMiss && (
+        !input.authorization ||
+        stored.revision !== projection?.revision ||
+        latestAttempt.status !== 'FAILED' ||
+        latestAttempt.completedAt === null ||
+        latestAttempt.errorCode !== projection?.failure?.failureCode ||
+        latestAttempt.failureArtifactRef !== projection?.failure?.artifact.ref ||
+        latestAttempt.failureArtifactSha256 !== projection?.failure?.artifact.sha256
+      )) {
+        return null;
+      }
       if (
         !projection ||
         !(
+          previewMiss ||
           (projection.phase === 'FAILED' &&
             isRetryableParseFailureCode(projection.failure?.failureCode)) ||
           (projection.phase === 'RECORDING_FAILED' &&

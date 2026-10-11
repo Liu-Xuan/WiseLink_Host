@@ -154,6 +154,7 @@ export class UnifiedReaderService {
       contractId: string;
       contractRevision: string;
     },
+    options: { allowEmptyResults?: boolean } = {},
   ): Promise<UnifiedPackageReadbackResponse> {
     const persisted: ImmutableArtifactPersistResult =
       await this.artifactStore.persistAndReadback(bytes);
@@ -170,7 +171,7 @@ export class UnifiedReaderService {
       },
       query: context.query,
     };
-    return this.readback(request);
+    return this.readback(request, undefined, options);
   }
 
   async readback(
@@ -191,8 +192,8 @@ export class UnifiedReaderService {
       sourcePackage,
       request.query,
     );
-    // Initial acceptance and assessment probes still require a hit. Only
-    // explicit search callers may read a verified package with zero matches.
+    // Required probes retain their must-match default. Optional intake previews
+    // and explicit searches may return zero matches after full package validation.
     if (!options.allowEmptyResults && summary.queryResults.length === 0) {
       throw new Error('READER_QUERY_NO_RESULTS');
     }
