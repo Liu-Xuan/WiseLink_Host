@@ -86,7 +86,7 @@ export async function recoverNativeDocumentActivityResult({ storePath, trajector
     if (completed.length !== 1 || ended.length !== 1) fail();
     const completion = completed[0], terminal = ended[0];
     if (!token(completion.runId) || terminal.runId !== completion.runId || terminal.data?.status !== 'success' ||
-        ABORT_FLAGS.some(key => completion.data?.[key] !== false) ||
+        ABORT_FLAGS.some(key => completion.data?.[key] !== false || terminal.data?.[key] !== false) ||
         completion.data?.promptErrorSource !== null || completion.data?.compactionCount !== 0) fail();
     for (const event of [completion, terminal]) {
       if (event.sessionKey !== sessionKey || event.sessionId !== entry.sessionId || !instant(event.ts) ||

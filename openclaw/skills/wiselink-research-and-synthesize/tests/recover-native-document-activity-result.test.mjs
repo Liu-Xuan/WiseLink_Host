@@ -54,7 +54,9 @@ async function fixture(run) {
   const trajectory = [{ ...base, type: 'model.completed', data: { messagesSnapshot: [structuredClone(assistant.message)],
     aborted: false, externalAbort: false, idleTimedOut: false, timedOut: false,
     timedOutDuringCompaction: false, timedOutDuringToolExecution: false, promptErrorSource: null, compactionCount: 0 } },
-    { ...base, ts: '2026-10-11T06:02:03.000Z', type: 'session.ended', data: { status: 'success' } }];
+    { ...base, ts: '2026-10-11T06:02:03.000Z', type: 'session.ended', data: { status: 'success',
+      aborted: false, externalAbort: false, idleTimedOut: false, timedOut: false,
+      timedOutDuringCompaction: false, timedOutDuringToolExecution: false } }];
   const options = { storePath: join(directory, 'sessions.json'), trajectoryPath: join(directory, 'trajectory.jsonl'),
     input, modelStarted, deadline: '2026-10-11T07:00:00.000Z' };
   const save = async () => {
@@ -105,6 +107,8 @@ test('native evidence rejects changed full INPUT/source/selection/pins/time, amb
     f => delete f.trajectory[0].data.timedOutDuringToolExecution,
     f => f.trajectory[0].data.compactionCount = 1,
     f => f.trajectory[1].data.status = 'error',
+    f => f.trajectory[1].data.aborted = true,
+    f => delete f.trajectory[1].data.externalAbort,
     f => f.trajectory[0].sessionKey = 'another-native-session',
     f => f.trajectory.push(structuredClone(f.trajectory[0])),
   ];
