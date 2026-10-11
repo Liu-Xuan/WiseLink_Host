@@ -1,3 +1,7 @@
+import { HttpError } from '@lark-apaas/http-client';
+import type { ArgumentsHost } from '@nestjs/common';
+
+import { GlobalExceptionFilter } from '../../server/common/filters/exception.filter';
 import { MiaodaOrdinaryArtifactStoreAdapter } from '../../server/modules/unified-reader/miaoda-ordinary-artifact-store.adapter';
 import { sha256Raw } from '../../server/modules/unified-reader/unified-reader.utils';
 import { InMemoryArtifactLocator } from '../support/in-memory-artifact-locator';
@@ -9,6 +13,50 @@ function createAdapter(
   locators = new InMemoryArtifactLocator(),
 ) {
   return new MiaodaOrdinaryArtifactStoreAdapter(fileService, locators);
+}
+
+function sdkFailure(message: string, status?: number) {
+  const error = new HttpError(
+    status === undefined ? undefined : new Response(null, { status }),
+    {
+      timeout: 5000,
+      baseURL: 'https://provider.invalid/synthetic-private-endpoint',
+      url: '/metadata?token=synthetic-url-secret',
+      body: 'synthetic-request-body',
+      platformAuth: {
+        customClaims: { tenant_id: 'synthetic-claim-secret' },
+      },
+      headers: {
+        Authorization: 'Bearer synthetic-auth-secret',
+        'x-api-key': 'synthetic-api-secret',
+        'x-tt-env': 'synthetic-environment-secret',
+      },
+    },
+    message,
+  );
+  error.stack =
+    'SDK stack with synthetic-stack-secret and https://provider.invalid';
+  return error;
+}
+
+function serializedClientFailure(error: unknown) {
+  let statusCode: number | undefined;
+  let payload: unknown;
+  const response = {
+    headersSent: false,
+    status(value: number) {
+      statusCode = value;
+      return this;
+    },
+    json(value: unknown) {
+      payload = value;
+      return this;
+    },
+  };
+  new GlobalExceptionFilter().catch(error, {
+    switchToHttp: () => ({ getResponse: () => response }),
+  } as ArgumentsHost);
+  return { statusCode, payload, serialized: JSON.stringify(payload) };
 }
 
 interface StoredFile {
@@ -76,6 +124,194 @@ class LocalScopedFileService {
 }
 
 describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
+  it.each([
+    ['Request aborted', 'ABORTED', undefined],
+    [
+      'Provider failed at https://provider.invalid with synthetic-message-secret',
+      'PROVIDER_FAILURE',
+      undefined,
+    ],
+    ['Request aborted', 'HTTP', 403],
+  ] as const)(
+    'serializes SDK metadata failure %s with only fixed public diagnostics',
+    async (message, category, httpStatus) => {
+      const failure = sdkFailure(message, httpStatus);
+      expect(JSON.stringify(failure.config)).toContain(
+        'synthetic-claim-secret',
+      );
+      expect(JSON.stringify(failure.config)).toContain(
+        'synthetic-request-body',
+      );
+      expect(JSON.stringify(failure.config)).toContain(
+        'synthetic-environment-secret',
+      );
+      const getFileMetadata = jest.fn().mockRejectedValue(failure);
+      const download = jest.fn();
+      const adapter = createAdapter({
+        getDefaultBucket: async () => 'bucket-safe-failure',
+        from: () => ({ getFileMetadata, download }),
+      } as never);
+      const bytes = new TextEncoder().encode('{"safe":true}');
+      const digest = sha256Raw(bytes);
+      const caught = await adapter
+        .readActualBytes({
+          storeRole: 'UnifiedArtifactStoreCandidate',
+          ref: `artifact://UnifiedArtifactStoreCandidate/unified-parsed-packages/sha256/${digest}`,
+          sha256: digest,
+          byteLength: bytes.byteLength,
+          mediaType: 'application/json',
+        })
+        .catch((error) => error);
+
+      expect(caught).toBeInstanceOf(Error);
+      expect(caught).not.toBe(failure);
+      expect(caught).not.toHaveProperty('cause');
+      expect(caught).toMatchObject({
+        code: 'ARTIFACT_STORE_METADATA_READ_FAILED',
+        statusCode: 500,
+        details: {
+          operation: 'ARTIFACT_STORE_METADATA_READ_FAILED',
+          category,
+          ...(httpStatus === undefined ? {} : { httpStatus }),
+        },
+      });
+      const wire = serializedClientFailure(caught);
+      expect(wire.statusCode).toBe(500);
+      expect(wire.payload).toMatchObject({
+        error: {
+          code: 'ARTIFACT_STORE_METADATA_READ_FAILED',
+          message: `ARTIFACT_STORE_METADATA_READ_FAILED:${category}`,
+        },
+      });
+      const serializedThrown = JSON.stringify(
+        Object.fromEntries(
+          Object.getOwnPropertyNames(caught).map((key) => [key, caught[key]]),
+        ),
+      );
+      for (const forbidden of [
+        'synthetic-',
+        'https://',
+        'platformAuth',
+        'customClaims',
+        'Authorization',
+        'x-api-key',
+        'x-tt-env',
+        'config',
+        'headers',
+        'body',
+      ]) {
+        expect(wire.serialized).not.toContain(forbidden);
+        expect(serializedThrown).not.toContain(forbidden);
+      }
+      expect(getFileMetadata).toHaveBeenCalledTimes(1);
+      expect(download).not.toHaveBeenCalled();
+    },
+  );
+
+  it('contains a throwing provider diagnostic getter without exposing its error', async () => {
+    const scoped = new LocalScopedFileService('bucket-getter-failure');
+    const adapter = createAdapter({
+      getDefaultBucket: async () => 'bucket-getter-failure',
+      from: () => scoped,
+    } as never);
+    const staged = await adapter.stageCandidateAndReadback({
+      bytes: new TextEncoder().encode('{"candidate":true}'),
+      ownerRef: 'getter-candidate-owner',
+    });
+    const getterFailure = new Error('synthetic-getter-message-secret', {
+      cause: sdkFailure('synthetic-nested-sdk-message-secret'),
+    });
+    getterFailure.stack =
+      'synthetic-getter-stack-secret at https://provider.invalid';
+    const providerFailure = new Error('synthetic-provider-message-secret');
+    const getter = jest.fn(() => {
+      throw getterFailure;
+    });
+    Object.defineProperty(providerFailure, 'status', { get: getter });
+    const read = jest
+      .spyOn(scoped, 'getFileMetadata')
+      .mockRejectedValue(providerFailure);
+
+    const caught = await adapter
+      .discardCandidateArtifact(staged)
+      .catch((error) => error);
+    expect(caught).not.toBe(getterFailure);
+    expect(caught).not.toHaveProperty('cause');
+    expect(caught).toMatchObject({
+      code: 'ARTIFACT_STORE_STAGE_DISCARD_METADATA_READ_FAILED',
+      statusCode: 500,
+      details: {
+        operation: 'ARTIFACT_STORE_STAGE_DISCARD_METADATA_READ_FAILED',
+        category: 'PROVIDER_FAILURE',
+      },
+    });
+    const wire = serializedClientFailure(caught);
+    expect(wire.statusCode).toBe(500);
+    expect(wire.payload).toMatchObject({
+      error: {
+        code: 'ARTIFACT_STORE_STAGE_DISCARD_METADATA_READ_FAILED',
+        message:
+          'ARTIFACT_STORE_STAGE_DISCARD_METADATA_READ_FAILED:PROVIDER_FAILURE',
+      },
+    });
+    const serializedThrown = JSON.stringify(
+      Object.fromEntries(
+        Object.getOwnPropertyNames(caught).map((key) => [key, caught[key]]),
+      ),
+    );
+    for (const forbidden of [
+      'synthetic-',
+      'https://',
+      'config',
+      'platformAuth',
+      'customClaims',
+      'headers',
+      'Authorization',
+      'x-api-key',
+      'x-tt-env',
+      'body',
+    ]) {
+      expect(wire.serialized).not.toContain(forbidden);
+      expect(serializedThrown).not.toContain(forbidden);
+    }
+    expect(getter).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(scoped.removeCount).toBe(0);
+    expect(scoped.files.size).toBe(1);
+  });
+
+  it('redacts the previously unwrapped discard metadata failure without deleting or retrying', async () => {
+    const scoped = new LocalScopedFileService('bucket-discard-failure');
+    const adapter = createAdapter({
+      getDefaultBucket: async () => 'bucket-discard-failure',
+      from: () => scoped,
+    } as never);
+    const staged = await adapter.stageCandidateAndReadback({
+      bytes: new TextEncoder().encode('{"candidate":true}'),
+      ownerRef: 'candidate-owner',
+    });
+    const read = jest
+      .spyOn(scoped, 'getFileMetadata')
+      .mockRejectedValue(sdkFailure('Request aborted', 403));
+    const caught = await adapter
+      .discardCandidateArtifact(staged)
+      .catch((error) => error);
+    const wire = serializedClientFailure(caught);
+    expect(wire.statusCode).toBe(500);
+    expect(wire.payload).toMatchObject({
+      error: {
+        code: 'ARTIFACT_STORE_STAGE_DISCARD_METADATA_READ_FAILED',
+        message: 'ARTIFACT_STORE_STAGE_DISCARD_METADATA_READ_FAILED:HTTP',
+      },
+    });
+    expect(wire.serialized).not.toMatch(
+      /synthetic-|https:\/\/|platformAuth|config|headers/u,
+    );
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(scoped.removeCount).toBe(0);
+    expect(scoped.files.size).toBe(1);
+  });
+
   it('retries a pre-upload metadata transport read once without repeating the upload', async () => {
     const scoped = new LocalScopedFileService('bucket-preflight');
     jest
@@ -487,7 +723,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
         byteLength: bytes.byteLength,
         mediaType: 'application/json',
       }),
-    ).rejects.toThrow('ARTIFACT_STORE_METADATA_READ_FAILED:Not Found');
+    ).rejects.toThrow('ARTIFACT_STORE_METADATA_READ_FAILED:HTTP');
     expect(scoped.getFileMetadata).toHaveBeenCalledTimes(1);
     expect(scoped.download).not.toHaveBeenCalled();
   });
@@ -517,7 +753,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
         byteLength: bytes.byteLength,
         mediaType: 'application/json',
       }),
-    ).rejects.toThrow('ARTIFACT_STORE_METADATA_READ_FAILED:fetch failed');
+    ).rejects.toThrow('ARTIFACT_STORE_METADATA_READ_FAILED:HTTP');
     expect(scoped.getFileMetadata).toHaveBeenCalledTimes(1);
   });
 
@@ -592,7 +828,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
         byteLength: bytes.byteLength,
         mediaType: 'application/json',
       }),
-    ).rejects.toThrow('ARTIFACT_STORE_DOWNLOAD_FAILED:fetch failed');
+    ).rejects.toThrow('ARTIFACT_STORE_DOWNLOAD_FAILED:TRANSPORT');
     expect(scoped.download).toHaveBeenCalledTimes(3);
   });
 
@@ -619,7 +855,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
     expect(scoped.downloadCount).toBe(1);
   });
 
-  it('preserves the default-bucket provider failure stage and cause', async () => {
+  it('preserves the default-bucket failure stage with a fixed transport diagnostic', async () => {
     const providerCause = new TypeError('fetch failed');
     const fileService = {
       getDefaultBucket: async () => {
@@ -648,9 +884,16 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
 
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toBe(
-      'ARTIFACT_STORE_DEFAULT_BUCKET_READ_FAILED:fetch failed',
+      'ARTIFACT_STORE_DEFAULT_BUCKET_READ_FAILED:TRANSPORT',
     );
-    expect((caught as Error & { cause?: unknown }).cause).toBe(providerCause);
+    expect(caught).not.toHaveProperty('cause');
+    expect(caught).toMatchObject({
+      details: {
+        operation: 'ARTIFACT_STORE_DEFAULT_BUCKET_READ_FAILED',
+        category: 'TRANSPORT',
+        transportCode: 'FETCH_FAILED',
+      },
+    });
     expect(fileService.from).not.toHaveBeenCalled();
   });
 
