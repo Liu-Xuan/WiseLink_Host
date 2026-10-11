@@ -43,7 +43,7 @@ const DOCUMENT_CATEGORY_FAMILY_MAP = Object.freeze({
   airbus_ril: 'SB',
   airbus_als: 'MT',
   airbus_cmp: 'MT',
-  airbus_tfu: 'GENERIC',
+  airbus_tfu: 'TFU',
   airbus_concession: 'GENERIC',
   airbus_ame: 'GENERIC',
   generic: 'GENERIC',
@@ -178,6 +178,7 @@ function normalizeApiSourceType(value = '') {
   const normalized = normalizeString(value).toLowerCase().replace(/[^a-z0-9]+/gu, '_').replace(/^_+|_+$/gu, '');
   if (!normalized) return '';
   if (['ftd', 'boeing_fleet_team_digest', 'fleet_team_digest'].includes(normalized)) return 'boeing_ftd';
+  if (['tfu', 'technical_follow_up', 'airbus_technical_follow_up', 'airbus_tfu'].includes(normalized)) return 'airbus_tfu';
   if (['asb', 'alert_service_bulletin', 'boeing_asb'].includes(normalized)) return 'boeing_asb';
   if (['boeing_service_bulletin', 'boeing_sb', 'service_bulletin', 'sb'].includes(normalized)) return 'boeing_sb';
   if (['boeing_service_letter', 'boeing_sl', 'service_letter', 'sl'].includes(normalized)) return 'boeing_sl';
@@ -203,6 +204,7 @@ function familyFromSourceType(sourceType = '') {
   if (!normalized) return '';
   if (normalized === 'oem_reference') return 'OEM_REFERENCE';
   if (normalized === 'boeing_ftd') return 'FTD';
+  if (normalized === 'airbus_tfu') return 'TFU';
   if (normalized === 'boeing_asb' || normalized === 'boeing_sb' || normalized.startsWith('airbus_service_bulletin') || normalized.startsWith('airbus_operator_transmission') || normalized.startsWith('airbus_retrofit_information_letter')) return 'SB';
   if (normalized === 'boeing_sl') return 'SL';
   if (normalized === 'supplier_sil') return 'SIL';
@@ -227,6 +229,7 @@ function defaultSourceTypeForFamily(canonicalDocumentFamily = '', context = {}) 
   const displayFamily = normalizeString(context.displayFamily).toLowerCase();
   const filename = normalizeString(context.originalFilename).toLowerCase();
   if (canonicalDocumentFamily === 'FTD') return 'boeing_ftd';
+  if (canonicalDocumentFamily === 'TFU') return 'airbus_tfu';
   if (canonicalDocumentFamily === 'AD') return 'ad';
   if (canonicalDocumentFamily === 'AEO') return 'ameco_engineering_order';
   if (canonicalDocumentFamily === 'SL') return /boeing|(?:^|[^a-z0-9])(?:737|747|767|777|787)[-_\s]*sl/u.test(`${displayFamily}\n${filename}`) ? 'boeing_sl' : 'service_letter';
@@ -423,6 +426,7 @@ export function normalizeUploadDescriptor(descriptor = {}) {
     parserFormat: classification.parserFormat,
     adapterRelease: classification.adapterRelease,
     identityAuthority: normalizeString(descriptor.identityAuthority, ''),
+    ...(descriptor.publicationIdentityEvidence ? { publicationIdentityEvidence: structuredClone(descriptor.publicationIdentityEvidence) } : {}),
     issuer: normalizeString(descriptor.issuer || descriptor.metadata?.issuer, ''),
     airplaneModel: normalizeString(descriptor.airplaneModel, ''),
     sha256,

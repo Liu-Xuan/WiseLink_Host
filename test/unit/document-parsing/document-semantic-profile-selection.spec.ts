@@ -112,6 +112,26 @@ describe('semantic selection service persistence and exact readback', () => {
     expect(second.sections.flatMap(section => [section.headingUnitId, ...section.bodyUnitIds])).toEqual(['profile-u0', 'profile-u1']);
   });
 
+  it('uses the TFU section template only for the registered Airbus TFU identity', async () => {
+    const original = document([
+      ['Engineering Support', 1], ['Open'], ['Mitigation / Interim Action', 2],
+      ['Interim source requirement.'], ['Terminating Action', 2], ['Planned action, not completed.'],
+    ]);
+    const sourceBytes = JSON.stringify(original);
+    const map = await setup(original, 'TFU', 'AIRBUS').ensure();
+    expect(map.profileRef).toBe('airbus.tfu.sections.v1');
+    expect(map.profileSelection).toEqual({ policyVersion: 'registered-airbus-tfu-dispatch.v1',
+      reason: 'REGISTERED_METADATA_TEMPLATE', registeredIdentity: { family: 'TFU', issuer: 'AIRBUS' }, evidenceSourceRefIds: [] });
+    expect(map.sections.map(section => section.roleKey)).toEqual(['tfu.engineering_support', 'tfu.interim_action', 'tfu.terminating_action']);
+    expect(map.sections[1].parentSectionId).toBe('section:profile-u0');
+    expect(map.sections[2].parentSectionId).toBe('section:profile-u0');
+    expect(map.sections.flatMap(section => [section.headingUnitId, ...section.bodyUnitIds])).toEqual(original.source.units.map(unit => unit.unitId));
+    expect(JSON.stringify(original)).toBe(sourceBytes);
+    for (const [family, issuer] of [['GENERIC', 'AIRBUS'], ['TFU', 'TEST SUPPLIER'], ['OEM_REFERENCE', 'AIRBUS']]) {
+      expect((await setup(original, family, issuer).ensure()).profileRef).toBe('generic.author-sections.v1');
+    }
+  });
+
   it('returns the equal concurrent map after a CAS retry', async () => {
     const original = document();
     const context = setup(original);

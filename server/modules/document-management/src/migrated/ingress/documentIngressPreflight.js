@@ -229,6 +229,9 @@ export function documentIngressIdentityFromDescriptor(
       || (storedDocument && explicitSourceGeneratedDate));
   const filenameRevision =
     upperFilename.match(/(?:^|[_\s-])R(?:EV)?[_\s-]?(\d{1,4})(?:[^A-Z0-9]|$)/u)?.[1] || '';
+  const sourceDateOnly = normalizedDescriptor.canonicalDocumentFamily === 'TFU'
+    || descriptor.documentFamilyAdapterId === 'issuer.caac.cad.v1'
+    || normalizedDescriptor.adapterRelease?.adapterId === 'issuer.caac.cad.v1';
   const businessRevision = normalizeString(
     descriptor.businessRevision
       || descriptor.revisionLabel
@@ -236,7 +239,7 @@ export function documentIngressIdentityFromDescriptor(
       || descriptor.metadata?.revisionLabel
       || normalizedDescriptor.businessRevision
       || normalizedBoeingBulletinIdentity.businessRevision
-      || (filenameRevision ? `R${Number(filenameRevision)}` : ''),
+      || (!sourceDateOnly && filenameRevision ? `R${Number(filenameRevision)}` : ''),
   ).toUpperCase();
   const canonicalDocumentFamily = normalizeDescriptorDocumentFamily(
     normalizedDescriptor.canonicalDocumentFamily || normalizedDescriptor.documentFamily,

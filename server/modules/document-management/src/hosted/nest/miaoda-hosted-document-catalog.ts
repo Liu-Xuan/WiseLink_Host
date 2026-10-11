@@ -24,6 +24,7 @@ import {
   documentIngressIdentityFromDescriptor,
 } from '../../migrated/ingress/documentIngressPreflight.js';
 import { deterministicId } from '../../runtime/valueTools.js';
+import { isAirbusTfuFooterDescriptor } from '../../migrated/ingress/pdfPublicationEvidence.js';
 import { SessionResolver } from '../../../../identity/session-resolver.service';
 
 interface HistoricalImportScope {
@@ -880,6 +881,11 @@ export class MiaodaHostedDocumentCatalog {
     const identityAuthority = String(
       normalizedDescriptor.identityAuthority || '',
     );
+    const sourceDescriptor = recordJson(acquisition.sourceDescriptorJson);
+    const tfuFooterIdentityVerified = isAirbusTfuFooterDescriptor(normalizedDescriptor)
+      && isAirbusTfuFooterDescriptor(sourceDescriptor)
+      && stableJson(normalizedDescriptor.publicationIdentityEvidence)
+        === stableJson(sourceDescriptor.publicationIdentityEvidence);
     const pageCount = Number(normalizedDescriptor.pageCount || 0);
     // Exact reuse links another verified acquisition to the immutable version;
     // that version retains the acquisition which originally created it.
@@ -888,7 +894,7 @@ export class MiaodaHostedDocumentCatalog {
       ['REUSE_EXACT', 'RESUME_EXISTING_PROCESS'].includes(row.preflight.decision) &&
       row.preflight.commitIdempotencyKey === `catalog:${acquisition.acquisitionId}`;
     if (
-      !VERIFIED_DM_IDENTITY_AUTHORITIES.has(identityAuthority) ||
+      !(VERIFIED_DM_IDENTITY_AUTHORITIES.has(identityAuthority) || tfuFooterIdentityVerified) ||
       !Number.isSafeInteger(pageCount) ||
       pageCount < 1 ||
       normalizedDescriptor.sha256 !== row.artifact.sha256 ||
@@ -1443,8 +1449,10 @@ export class MiaodaHostedDocumentCatalog {
       || row.preflight.executionAuthorized !== false
       || !['READY', 'COMMITTED'].includes(row.preflight.status)
       || row.artifact.readbackVerified !== true
-      || normalizedDescriptor.identityAuthority !== 'DM_ACTUAL_PDF_FIRST_THREE_PAGES'
-      || sourceDescriptor.identityAuthority !== 'DM_ACTUAL_PDF_FIRST_THREE_PAGES'
+      || !(normalizedDescriptor.identityAuthority === 'DM_ACTUAL_PDF_FIRST_THREE_PAGES' || isAirbusTfuFooterDescriptor(normalizedDescriptor))
+      || !(sourceDescriptor.identityAuthority === 'DM_ACTUAL_PDF_FIRST_THREE_PAGES' || isAirbusTfuFooterDescriptor(sourceDescriptor))
+      || normalizedDescriptor.identityAuthority !== sourceDescriptor.identityAuthority
+      || stableJson(normalizedDescriptor.publicationIdentityEvidence) !== stableJson(sourceDescriptor.publicationIdentityEvidence)
       || sourceDescriptor.sha256 !== row.artifact.sha256
       || normalizedDescriptor.sha256 !== row.artifact.sha256
       || Number(sourceDescriptor.sizeBytes) !== Number(row.artifact.byteLength)

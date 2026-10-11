@@ -57,16 +57,34 @@ describe('version-scoped metadata and full catalog facets', () => {
         onFilterChange: jest.fn(),
         disabled: false,
         counts: {
-          familyCounts: { SB: 100 },
+          familyCounts: { SB: 100, AD: 2, TFU: 1 },
           ataCounts: { __UNKNOWN__: 7, '34': 90 },
           aircraftModelCounts: { '737': 70 },
         },
       }),
     );
     expect(html).toContain('100');
+    expect(html).toContain('TFU');
+    expect(html).toContain('AD');
     expect(html).toContain('已选：未分类');
     expect(html).toContain('筛选前');
     expect(html).toContain('不能相加');
     expect(html).toContain('不限');
+  });
+
+  it('shows publication dates and supplier separately from the issuing authority', () => {
+    const metadata = libraryMetadata();
+    const observation = (value: string, page: number) => ({ status: 'PENDING_REVIEW' as const,
+      observations: [{ value, status: 'PENDING_REVIEW' as const, evidence: [{ page, text: value }] }] });
+    metadata.amendment = observation('39-12345', 1);
+    metadata.issueDate = observation('2042-01-22', 1);
+    metadata.effectiveDate = observation('2042-02-01', 2);
+    metadata.firstIssueDate = observation('2040-05-14', 3);
+    metadata.lastCheckDate = observation('2042-01-23', 3);
+    metadata.supplier = observation('TEST SUPPLIER', 1);
+    const html = renderToStaticMarkup(createElement(LibraryMetadataObservations, { metadata }));
+    for (const value of ['39-12345', '2042-01-22', '2042-02-01', '2040-05-14', '2042-01-23', 'TEST SUPPLIER']) expect(html).toContain(value);
+    expect(html).toContain('原文第 3 页');
+    expect(html).toContain('非发布方');
   });
 });

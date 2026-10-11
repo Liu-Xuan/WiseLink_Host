@@ -363,8 +363,20 @@ describe('OrdinaryWorkItemService run identity', () => {
     );
   });
 
-  it('enrolls a normally accepted, verified engineering PDF for automatic processing', async () => {
+  it.each([
+    ['SB', 'BOEING', 'issuer.boeing.service_bulletin.v1'],
+    ['AD', 'CAAC', 'issuer.caac.cad.v1'],
+    ['TFU', 'AIRBUS', 'issuer.airbus.technical_follow_up.v1'],
+  ])('enrolls a normally accepted, verified %s PDF for automatic processing', async (family, issuer, adapterId) => {
     const instance = target();
+    const resolved = await instance.resolver.resolve();
+    instance.resolver.resolve.mockResolvedValue({
+      ...resolved,
+      family: { documentFamily: family, issuerAuthority: issuer },
+      preflight: { normalizedDescriptorJson: JSON.stringify({
+        adapterRelease: { adapterId, adapterVersion: 'v8.4-document-family-adapter.v1' },
+      }) },
+    });
     const previousSandbox = process.env.SANDBOX_ID;
     const previousLocal = process.env.MIAODA_LOCAL_DEV;
     process.env.SANDBOX_ID = 'unit-hosted-sandbox';
@@ -387,11 +399,35 @@ describe('OrdinaryWorkItemService run identity', () => {
           tenantId: ACTOR.tenantId,
           actorUserId: ACTOR.userId,
           documentVersionId: 'document-version-sb',
-          normalizedFamily: 'SB',
+          normalizedFamily: family,
           runKey: 'canonical',
           autoProcessingGrant: 'MIAODA_CANONICAL_PARSE_REQUEST',
         }),
       );
+    } finally {
+      restoreProcessEnv('SANDBOX_ID', previousSandbox);
+      restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+    }
+  });
+  it('does not give general Airbus support material an automatic engineering grant', async () => {
+    const instance = target();
+    const resolved = await instance.resolver.resolve();
+    instance.resolver.resolve.mockResolvedValue({
+      ...resolved,
+      family: { documentFamily: 'GENERIC', issuerAuthority: 'AIRBUS' },
+      preflight: { normalizedDescriptorJson: JSON.stringify({
+        adapterRelease: { adapterId: 'issuer.airbus.support_document.v1' },
+      }) },
+    });
+    const previousSandbox = process.env.SANDBOX_ID;
+    const previousLocal = process.env.MIAODA_LOCAL_DEV;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    delete process.env.MIAODA_LOCAL_DEV;
+    try {
+      await expect(instance.service.parsePdf({ documentVersionId: 'document-version-sb' }, {
+        ...ACTOR, env: 'preview', objectAccessActor: OAUTH_SESSION_ACTOR,
+      })).rejects.toMatchObject({ code: 'PDF_PRODUCER_PROFILE_NOT_AVAILABLE' });
+      expect(instance.repository.reserve).not.toHaveBeenCalled();
     } finally {
       restoreProcessEnv('SANDBOX_ID', previousSandbox);
       restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);

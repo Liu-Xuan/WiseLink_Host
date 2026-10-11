@@ -3059,6 +3059,12 @@ export interface DocumentExtractedMetadata {
   issuer: DocumentMetadataField;
   ata: DocumentMetadataField;
   mentionedAircraftModels: DocumentMetadataField;
+  amendment?: DocumentMetadataField;
+  issueDate?: DocumentMetadataField;
+  effectiveDate?: DocumentMetadataField;
+  firstIssueDate?: DocumentMetadataField;
+  lastCheckDate?: DocumentMetadataField;
+  supplier?: DocumentMetadataField;
   aircraftModelSemantics: 'DOCUMENT_MENTION_ONLY';
   applicabilityAssessment: 'NOT_EVALUATED';
 }

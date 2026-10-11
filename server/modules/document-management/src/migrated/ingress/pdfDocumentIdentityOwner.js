@@ -1,5 +1,14 @@
 import { extractActualPdfMetadata } from './pdfDocumentMetadata.js';
 import { resolveDocumentFamilyAdapter } from '../adapters/documentFamilyAdapterRegistry.js';
+import {
+  AIRBUS_TFU_ADAPTER_ID,
+  AIRBUS_TFU_FOOTER_IDENTITY_AUTHORITY,
+  airbusTfuIssueDateEvidence,
+  airbusTfuPublisherEvidence,
+  hasAirbusTfuPrimaryHeader,
+  hasCaacCadPrimaryHeader,
+  parseSourcePublicationDate,
+} from './pdfPublicationEvidence.js';
 
 const FIRST_PAGE_LIMIT = 1;
 const INSPECTED_PAGE_LIMIT = 3;
@@ -99,7 +108,7 @@ function parseEnglishDate(value = '') {
 }
 
 function requiredExtractedDate(value, adapterId, fieldName) {
-  const date = parseEnglishDate(value);
+  const date = parseSourcePublicationDate(value) || parseEnglishDate(value);
   if (!date) {
     fail(
       'DM_PDF_VERSION_IDENTITY_UNRESOLVED',
@@ -312,6 +321,63 @@ function extractFaaAd({ firstPageText }) {
     revisionDate,
     sourceGeneratedDate: '',
     sourceType: 'ad',
+  };
+}
+
+function extractCaacCad({ firstPageText, inspectedText }) {
+  if (!hasCaacCadPrimaryHeader(firstPageText)) return null;
+  const adapterId = 'issuer.caac.cad.v1';
+  const documentCode = singleIdentityCandidate(
+    [...firstPageText.matchAll(/编\s*号\s*[:：]\s*(CAD\s*\d{4}\s*-\s*[A-Z0-9]+\s*-\s*\d{2,4})\b/giu)]
+      .map((match) => match[1].replace(/\s+/gu, '').toUpperCase()),
+    adapterId,
+    'document code',
+  );
+  const readDate = (label, fieldName) => singleIdentityCandidate(
+    [...inspectedText.matchAll(new RegExp(`${label}\\s*[:：]\\s*(\\d{4}(?:[-/.]|年)\\s*\\d{1,2}(?:[-/.]|月)\\s*\\d{1,2}日?)`, 'gu'))]
+      .map((match) => requiredExtractedDate(match[1], adapterId, fieldName)),
+    adapterId,
+    fieldName,
+  );
+  const revisionDate = readDate('颁\\s*发\\s*日\\s*期', 'publication date');
+  readDate('生\\s*效\\s*日\\s*期', 'effective date');
+  if (!documentCode || !revisionDate) return null;
+  return {
+    documentCode,
+    // The amendment is a source observation, not an ordered Rn revision.
+    businessRevision: '',
+    revisionDate,
+    sourceGeneratedDate: '',
+    sourceType: 'ad',
+  };
+}
+
+function extractAirbusTechnicalFollowUp({ firstPageText, layout }) {
+  if (!hasAirbusTfuPrimaryHeader(firstPageText)) return null;
+  const publisher = airbusTfuPublisherEvidence(layout);
+  if (!publisher) return null;
+  const documentCode = singleIdentityCandidate(
+    [...firstPageText.matchAll(/\bREFERENCE\s*:\s*(\d{2}\s*\.\s*\d{2}\s*\.\s*\d{5})\b/giu)]
+      .map((match) => match[1].replace(/\s+/gu, '')),
+    AIRBUS_TFU_ADAPTER_ID,
+    'document code',
+  );
+  const dates = airbusTfuIssueDateEvidence(layout);
+  const revisionDate = singleIdentityCandidate(
+    dates
+      .map((evidence) => requiredExtractedDate(evidence.value, AIRBUS_TFU_ADAPTER_ID, 'issue date')),
+    AIRBUS_TFU_ADAPTER_ID,
+    'issue date',
+  );
+  if (!revisionDate || !dates.some((evidence) => evidence.page === 1)) fail('DM_PDF_VERSION_IDENTITY_UNRESOLVED', 'Actual TFU primary header has no valid issue date.', { adapterId: AIRBUS_TFU_ADAPTER_ID });
+  return {
+    documentCode,
+    businessRevision: '',
+    revisionDate,
+    sourceGeneratedDate: '',
+    sourceType: 'airbus_tfu',
+    publisherEvidence: publisher,
+    ...(publisher.source === 'PUBLISHER_FOOTER' ? { identityAuthority: AIRBUS_TFU_FOOTER_IDENTITY_AUTHORITY } : {}),
   };
 }
 
@@ -650,6 +716,8 @@ const ACTIVATED_IDENTITY_OWNERS = new Map([
   ['issuer.ameco.engineering_order.v1', extractAmecoEngineeringOrder],
   ['issuer.boeing.ftd.v1', extractBoeingFtd],
   ['issuer.faa.airworthiness_directive.v1', extractFaaAd],
+  ['issuer.caac.cad.v1', extractCaacCad],
+  [AIRBUS_TFU_ADAPTER_ID, extractAirbusTechnicalFollowUp],
   ['issuer.boeing.service_letter.v1', extractBoeingServiceLetter],
   ['issuer.boeing.service_bulletin.v1', extractBoeingServiceBulletin],
   ['issuer.airbus.service_bulletin.v1', extractAirbusServiceBulletin],
@@ -721,6 +789,7 @@ export function readActualPdfPageCount({
   return pageCount;
 }
 
+/** @param {{ layout: import('../../../../professional-input/pure/professional-input-pure.types').ParsedPdfLayout, actualSha256: string, actualByteLength: number, inspectionSha256?: string, inspectionByteLength?: number, byteViewOffset?: number, byteViewNormalization?: string, originalFilename?: string }} input */
 export function resolveActualPdfDocumentIdentity({
   layout,
   actualSha256,
@@ -825,6 +894,21 @@ export function resolveActualPdfDocumentIdentity({
     sourceGeneratedDate: extracted.sourceGeneratedDate,
     documentCodeProvenance: provenance,
     extractedMetadata: extractActualPdfMetadata({ layout, actualSha256, actualByteLength, identity: { documentFamily: adapter.docFamily, issuer } }),
+    ...(extracted.publisherEvidence ? {
+      publicationIdentityEvidence: {
+        schemaVersion: 'wiselink.pdf_publication_identity_evidence.v1',
+        adapterId: adapter.adapterId,
+        documentCode: extracted.documentCode,
+        issueDate: extracted.revisionDate,
+        sourceSha256: actualSha256,
+        sourceByteLength: actualByteLength,
+        primaryHeaderLocator: { kind: 'PDF_PAGE', pageIndex: 0 },
+        publisher: {
+          ...extracted.publisherEvidence,
+          sourceLocator: { kind: 'PDF_PAGE', pageIndex: extracted.publisherEvidence.page - 1 },
+        },
+      },
+    } : {}),
     ...(extracted.sourceGeneratedDate
       ? {
           sourceGeneratedDateProvenance: {
@@ -837,7 +921,7 @@ export function resolveActualPdfDocumentIdentity({
         }
       : {}),
     documentFamilyAdapterId: adapter.adapterId,
-    identityAuthority: 'DM_ACTUAL_PDF_FIRST_THREE_PAGES',
+    identityAuthority: extracted.identityAuthority || 'DM_ACTUAL_PDF_FIRST_THREE_PAGES',
     pdfByteView: {
       normalization: byteViewNormalization,
       offset: byteViewOffset,

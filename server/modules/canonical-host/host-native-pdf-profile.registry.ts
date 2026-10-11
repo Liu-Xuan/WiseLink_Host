@@ -4,6 +4,14 @@ import {
   resolveDocumentFamilyAdapter,
 } from '../document-management/src/migrated/adapters/documentFamilyAdapterRegistry.js';
 import {
+  AIRBUS_TFU_ADAPTER_ID,
+  airbusTfuIssueDateEvidence,
+  airbusTfuPublisherEvidence,
+  hasAirbusTfuPrimaryHeader,
+  hasCaacCadPrimaryHeader,
+  parseSourcePublicationDate,
+} from '../document-management/src/migrated/ingress/pdfPublicationEvidence.js';
+import {
   jcsCanonicalize,
   sha256Hex,
 } from '../professional-input/pure/canonical-hash';
@@ -15,6 +23,7 @@ export type HostNativePdfDocumentType =
   | 'fleet_team_digest'
   | 'maintenance_programme'
   | 'maintenance_tip'
+  | 'oem_reference'
   | 'operator_transmission'
   | 'retrofit_information_letter'
   | 'service_bulletin'
@@ -24,7 +33,7 @@ export type HostNativePdfDocumentType =
 export interface HostNativePdfProfile {
   readonly adapterId: string;
   readonly adapterSchemaVersion: string;
-  readonly family: 'AD' | 'AEO' | 'FTD' | 'MT' | 'SB' | 'SIL' | 'SL';
+  readonly family: 'AD' | 'AEO' | 'FTD' | 'MT' | 'SB' | 'SIL' | 'SL' | 'TFU';
   readonly issuerAuthority: string;
   readonly parseProfileRef: string;
   readonly parserProfileId: string;
@@ -79,6 +88,14 @@ const ACTIVATED_PROFILE_DEFINITIONS = [
     documentType: 'fleet_team_digest',
     parserProfileHashOverride:
       'sha256:c47a7388da23d106c2476b579308c458332127153930ced8c684212f1b431731',
+  },
+  {
+    adapterId: AIRBUS_TFU_ADAPTER_ID,
+    family: 'TFU',
+    issuerAuthority: 'AIRBUS',
+    parseProfileRef: 'airbus.technical_follow_up',
+    documentType: 'oem_reference',
+    requiresDmAdapterRelease: true,
   },
   {
     adapterId: 'issuer.boeing.service_bulletin.v1',
@@ -180,8 +197,8 @@ const DEFINITIONS_BY_ADAPTER_ID: ReadonlyMap<
  * Resolve a production profile from the controlled DM family plus actual PDF
  * metadata/text. The family narrows cross-reference-heavy documents to the
  * current DM lane, but cannot activate an issuer profile without matching
- * source content. Filename, file digest, byte length, and document code are
- * deliberately absent. The producer later cross-checks the result against the
+ * source content, including its own publication header. Filename, digest and
+ * byte length allowlists are absent. The producer cross-checks the result against the
  * request classification and DM issuer.
  */
 export function recognizeHostNativePdfProfile(
@@ -190,7 +207,25 @@ export function recognizeHostNativePdfProfile(
 ): HostNativePdfProfile | null {
   const evidence = sourceProfileEvidence(layout);
   if (!evidence.content) return null;
-  const resolved = resolveDocumentFamilyAdapter({
+  const firstPageText = layout.textRuns.filter((run) => run.page === 1).map((run) => run.text).join(' ');
+  let primaryAdapterId: string | undefined;
+  if (expectedFamily === 'AD' && hasCaacCadPrimaryHeader(firstPageText)) {
+    // A CAD's own bilingual header has precedence over its cited FAA AD.
+    primaryAdapterId = 'issuer.caac.cad.v1';
+  }
+  if (expectedFamily === 'TFU') {
+    const publisher = airbusTfuPublisherEvidence(layout);
+    if (!hasAirbusTfuPrimaryHeader(firstPageText) || !publisher) return null;
+    const dates = airbusTfuIssueDateEvidence(layout);
+    const parsedDates = dates.map((date) => parseSourcePublicationDate(date.value));
+    if (!dates.some((date) => date.page === 1) || parsedDates.some((date) => !date) || new Set(parsedDates).size !== 1) return null;
+    evidence.inspectedPageCount = new Set([
+      ...Array.from({ length: evidence.inspectedPageCount }, (_, index) => index + 1),
+      ...dates.map((date) => date.page), publisher.page,
+    ]).size;
+    primaryAdapterId = AIRBUS_TFU_ADAPTER_ID;
+  }
+  const resolved = resolveDocumentFamilyAdapter(primaryAdapterId ? { adapterId: primaryAdapterId } : {
     documentFamily: expectedFamily,
     title: layout.metadata.title ?? '',
     content: evidence.content,

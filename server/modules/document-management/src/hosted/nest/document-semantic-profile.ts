@@ -54,6 +54,25 @@ export const BOEING_AIRFRAME_SB_SEMANTIC_PROFILE: DocumentSemanticProfile = {
   ].map(([key, title]) => ({ roleKey: `sb.${key}`, aliases: [title] })),
 };
 
+/** TFU roles describe observed Airbus support sections, not execution or closure. */
+export const AIRBUS_TFU_SEMANTIC_PROFILE: DocumentSemanticProfile = {
+  profileRef: 'airbus.tfu.sections.v1',
+  roles: [
+    ['revision_description', 'Purpose / Reason for revision'],
+    ['engineering_support', 'Engineering Support'],
+    ['status', 'Status'],
+    ['description', 'Description / Operational Impact'],
+    ['investigation', 'Root Cause / Investigation'],
+    ['interim_action', 'Mitigation / Interim Action'],
+    ['terminating_action', 'Terminating Action'],
+    ['annex', 'Annex'],
+    ['general_information', 'General Information'],
+    ['technical_parameters', 'Technical parameters'],
+    ['attachments', 'Attachments'],
+    ['links', 'Links'],
+  ].map(([key, title]) => ({ roleKey: `tfu.${key}`, aliases: [title] })),
+};
+
 /** Any family can retain its author's structure; verified family rules extend this same contract. */
 export const GENERIC_SEMANTIC_PROFILE: DocumentSemanticProfile = {
   profileRef: 'generic.author-sections.v1',
@@ -70,6 +89,15 @@ export function selectDocumentSemanticProfile(input: {
   registeredIssuer: string | null;
 }): { profile: DocumentSemanticProfile; selection: DocumentSemanticProfileSelection } {
   const { registeredFamily: family, registeredIssuer: issuer } = input;
+  if (family === 'TFU' && issuer === 'AIRBUS') {
+    return {
+      profile: AIRBUS_TFU_SEMANTIC_PROFILE,
+      selection: {
+        policyVersion: 'registered-airbus-tfu-dispatch.v1', reason: 'REGISTERED_METADATA_TEMPLATE',
+        registeredIdentity: { family, issuer }, evidenceSourceRefIds: [],
+      },
+    };
+  }
   const selected = family === 'FTD' && issuer === 'BOEING';
   let reason: DocumentSemanticProfileSelection['reason'];
   if (selected) reason = 'REGISTERED_METADATA_TEMPLATE';

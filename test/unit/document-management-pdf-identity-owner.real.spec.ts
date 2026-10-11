@@ -8,6 +8,10 @@ import {
 import { resolveActualPdfDocumentIdentity } from '../../server/modules/document-management/src/migrated/ingress/pdfDocumentIdentityOwner.js';
 import { PdfjsDistLayoutExtractor } from '../../server/modules/professional-input/parser/pdfjs-dist-layout-extractor.adapter';
 import { sha256Raw } from '../../server/modules/unified-reader/unified-reader.utils';
+import { recognizeHostNativePdfProfile } from '../../server/modules/canonical-host/host-native-pdf-profile.registry';
+
+const REAL_CAAC_CAD_PATH = process.env.WL31_REAL_CAAC_CAD_PDF_PATH?.trim();
+const REAL_AIRBUS_TFU_PATH = process.env.WL31_REAL_AIRBUS_TFU_PDF_PATH?.trim();
 
 const REAL_FTD_PATH = process.env.WL31_REAL_FTD_IDENTITY_PDF_PATH?.trim();
 const REAL_787_SB_PATH = process.env.WL31_REAL_787_SB_IDENTITY_PDF_PATH?.trim();
@@ -44,6 +48,31 @@ const describeAirbusSbit = REAL_AIRBUS_SBIT_PATH ? describe : describe.skip;
 const describeAirbusAot = REAL_AIRBUS_AOT_PATH ? describe : describe.skip;
 const describeAirbusOit = REAL_AIRBUS_OIT_PATH ? describe : describe.skip;
 const describeAirbusFot = REAL_AIRBUS_FOT_PATH ? describe : describe.skip;
+
+(REAL_CAAC_CAD_PATH ? describe : describe.skip)('actual CAAC CAD PDF identity owner', () => {
+  it('uses its own CAAC identity, amendment and publication date while retaining effective date', async () => {
+    const { identity, layout } = await resolveIdentityAndLayout(REAL_CAAC_CAD_PATH as string);
+    expect(identity).toMatchObject({ documentCode: 'CAD2024-B777-01', documentFamily: 'AD', issuer: 'CAAC', businessRevision: '', revisionDate: '2024-04-03', pageCount: 2, documentFamilyAdapterId: 'issuer.caac.cad.v1' });
+    expect(identity.extractedMetadata.amendment.observations[0].value).toBe('39-11556');
+    expect(identity.extractedMetadata.effectiveDate.observations[0]).toMatchObject({ value: '2024-04-23', evidence: [{ page: 2, text: expect.any(String) }] });
+    expect(identity.extractedMetadata.title.observations[0].value.replace(/\s+/gu, '')).toBe('指示系统-飞机信息管理系统-软件安装');
+    expect(recognizeHostNativePdfProfile(layout, 'AD')).toMatchObject({ adapterId: 'issuer.caac.cad.v1', issuerAuthority: 'CAAC' });
+  });
+});
+
+(REAL_AIRBUS_TFU_PATH ? describe : describe.skip)('actual Airbus TFU PDF identity owner', () => {
+  it('reads graphical-header exports through exact source header and publisher-footer evidence', async () => {
+    const { identity, layout } = await resolveIdentityAndLayout(REAL_AIRBUS_TFU_PATH as string);
+    expect(identity).toMatchObject({ documentCode: '31.39.00005', documentFamily: 'TFU', issuer: 'AIRBUS', businessRevision: '', revisionDate: '2026-01-22', pageCount: 16, documentFamilyAdapterId: 'issuer.airbus.technical_follow_up.v1', identityAuthority: 'DM_ACTUAL_PDF_HEADER_AND_PUBLISHER_FOOTER' });
+    expect(identity.publicationIdentityEvidence.publisher).toMatchObject({ page: 16, sourceLocator: { kind: 'PDF_PAGE', pageIndex: 15 } });
+    expect(identity.extractedMetadata.firstIssueDate.observations[0].value).toBe('2024-05-14');
+    expect(identity.extractedMetadata.lastCheckDate.observations[0].value).toBe('2026-01-22');
+    expect(identity.extractedMetadata.supplier.observations[0].value).toBe('SAFRAN ELECTRONICS & DEFENCE');
+    expect(identity.extractedMetadata.issuer.observations[0].evidence[0].page).toBe(16);
+    expect(identity.extractedMetadata.title.observations[0].value.replace(/\s+/gu, ' ').trim()).toBe('ELT-DT inadvertent activations');
+    expect(recognizeHostNativePdfProfile(layout, 'TFU')).toMatchObject({ family: 'TFU', documentType: 'oem_reference', requiresDmAdapterRelease: true });
+  });
+});
 
 describeFtd('actual Boeing FTD PDF identity owner', () => {
   it('accepts the source-owned generated date sentence without a leading article', async () => {

@@ -40,6 +40,8 @@ import {
   type HostNativePdfDocumentType,
 } from '../../../server/modules/canonical-host/host-native-pdf-profile.registry';
 import { scopedProfessionalArtifactRef } from '../../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
+import { resolveActualPdfDocumentIdentity } from '../../../server/modules/document-management/src/migrated/ingress/pdfDocumentIdentityOwner.js';
+import { normalizeUploadDescriptor } from '../../../server/modules/document-management/src/migrated/ingress/uploadDescriptor.js';
 import { runProfessionalInputPipelineFromLayout } from '../../../server/modules/professional-input/builders/professional-input-pipeline';
 import { PdfjsDistLayoutExtractor } from '../../../server/modules/professional-input/parser/pdfjs-dist-layout-extractor.adapter';
 import type {
@@ -62,7 +64,7 @@ const U0_CONTRACT_COMMIT = 'fa69ada08265934951df53c7a61a3ccdb8cb2900';
 interface RealFamilyCase {
   key: string;
   path: string | undefined;
-  family: 'AD' | 'AEO' | 'MT' | 'SB' | 'SIL' | 'SL';
+  family: 'AD' | 'AEO' | 'MT' | 'SB' | 'SIL' | 'SL' | 'TFU';
   issuerAuthority: string;
   adapterId: string;
   documentCode: string;
@@ -74,6 +76,18 @@ interface RealFamilyCase {
 }
 
 const REAL_FAMILY_CASES: RealFamilyCase[] = [
+  {
+    key: 'caac-cad', path: process.env.WL31_REAL_CAAC_CAD_PDF_PATH?.trim(),
+    family: 'AD', issuerAuthority: 'CAAC', adapterId: 'issuer.caac.cad.v1',
+    documentCode: 'CAD2024-B777-01', query: 'CAD2024-B777-01', businessRevision: '',
+    expectedParserProfileId: 'parser-profile:caac.cad@1.0.0', expectedDocumentType: 'airworthiness_directive',
+  },
+  {
+    key: 'airbus-tfu', path: process.env.WL31_REAL_AIRBUS_TFU_PDF_PATH?.trim(),
+    family: 'TFU', issuerAuthority: 'AIRBUS', adapterId: 'issuer.airbus.technical_follow_up.v1',
+    documentCode: '31.39.00005', query: '31.39.00005', businessRevision: '',
+    expectedParserProfileId: 'parser-profile:airbus.technical_follow_up@1.0.0', expectedDocumentType: 'oem_reference',
+  },
   {
     key: 'ameco-aeo',
     path: process.env.WL31_REAL_AEO_PDF_PATH?.trim(),
@@ -405,6 +419,22 @@ describeRealFamilies(
       async (fixture) => {
         const sourceBytes = await readFile(fixture.path as string);
         const sourceSha256 = sha256Raw(sourceBytes);
+        const sourceOwnedIdentity = fixture.key === 'caac-cad' || fixture.key === 'airbus-tfu'
+          ? resolveActualPdfDocumentIdentity({
+            layout: new PdfjsDistLayoutExtractor().extractLayout(sourceBytes),
+            actualSha256: sourceSha256, actualByteLength: sourceBytes.byteLength,
+            originalFilename: basename(fixture.path as string),
+          }) : null;
+        const sourceOwnedDescriptor = sourceOwnedIdentity ? normalizeUploadDescriptor({
+          ...sourceOwnedIdentity, sha256: sourceSha256, sizeBytes: sourceBytes.byteLength,
+          originalFilename: basename(fixture.path as string),
+        }) : null;
+        if (sourceOwnedDescriptor) expect(sourceOwnedDescriptor).toMatchObject({
+          canonicalDocumentFamily: fixture.family, issuer: fixture.issuerAuthority,
+          documentCode: fixture.documentCode, businessRevision: '',
+          revisionDate: fixture.key === 'caac-cad' ? '2024-04-03' : '2026-01-22',
+          adapterRelease: { adapterId: fixture.adapterId },
+        });
         const classification = hostNativePdfClassificationFor({
           family: fixture.family,
           issuerAuthority: fixture.issuerAuthority,
@@ -475,7 +505,8 @@ describeRealFamilies(
             pdfSha256: sourceSha256,
             byteLength: sourceBytes.byteLength,
             committedAt: '2026-08-30T00:00:00.000Z',
-            businessRevision: fixture.businessRevision,
+            businessRevision: sourceOwnedIdentity?.businessRevision || fixture.businessRevision || null,
+            ...(sourceOwnedIdentity ? { revisionDate: sourceOwnedIdentity.revisionDate } : {}),
           },
           family: {
             familyId: `publication-family-real-${fixture.key}`,
@@ -486,7 +517,7 @@ describeRealFamilies(
             currentGeneration: 1,
           },
           preflight: {
-            normalizedDescriptorJson: JSON.stringify({
+            normalizedDescriptorJson: JSON.stringify(sourceOwnedDescriptor || {
               adapterRelease: {
                 adapterId: fixture.adapterId,
                 adapterVersion: 'v8.4-document-family-adapter.v1',
@@ -615,7 +646,7 @@ describeRealFamilies(
           strictReaderValidated: true,
           documentIdentity: {
             documentCode: fixture.documentCode,
-            businessRevision: fixture.businessRevision,
+            businessRevision: fixture.businessRevision || null,
           },
           usagePolicy: {
             presentationMode: 'ENGINEERING_DOCUMENT',

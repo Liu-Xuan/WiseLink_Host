@@ -1,3 +1,8 @@
+import {
+  airbusTfuPublisherEvidence,
+  parseSourcePublicationDate,
+} from './pdfPublicationEvidence.js';
+
 function text(value) {
   return String(value || '')
     .replace(/\s+/gu, ' ')
@@ -175,6 +180,12 @@ export function extractActualPdfMetadata({
       (key) => [key, { status: 'NOT_FOUND', observations: [] }],
     ),
   );
+  const isCad = identity?.documentFamily === 'AD' && identity?.issuer === 'CAAC';
+  const isTfu = identity?.documentFamily === 'TFU' && identity?.issuer === 'AIRBUS';
+  for (const key of isCad ? ['amendment', 'issueDate', 'effectiveDate']
+    : isTfu ? ['issueDate', 'firstIssueDate', 'lastCheckDate', 'supplier'] : []) {
+    fields[key] = { status: 'NOT_FOUND', observations: [] };
+  }
   function add(key, value, page, excerpt) {
     const normalized = text(value);
     if (!normalized) return;
@@ -200,6 +211,7 @@ export function extractActualPdfMetadata({
     }
   }
   const typePatterns = {
+    AD: /(?:适\s*航\s*指\s*令|\bAIRWORTHINESS\s+DIRECTIVE\b)/iu,
     SB: /\b(?:alert\s+)?service\s+bulletin\b/iu,
     SL: /\bservice\s+letter\b/iu,
     FTD: /\bfleet\s+team\s+digest\b/iu,
@@ -208,7 +220,12 @@ export function extractActualPdfMetadata({
     AOT: /\balert\s+operators?\s+transmission\b/iu,
     OIT: /\boperators?\s+information\s+transmission\b/iu,
     FOT: /\bflight\s+operations?\s+transmission\b/iu,
+    TFU: /\b(?:technical\s+follow[-\s]*up|engineering\s+support)\b/iu,
   };
+  if (isTfu) {
+    const publisher = airbusTfuPublisherEvidence(layout);
+    if (publisher) add('issuer', 'AIRBUS', publisher.page, publisher.text);
+  }
   for (const [page, runs] of pages) {
     const pageText = runs.map((run) => run.text).join(' ');
     const lines = [];
@@ -227,6 +244,39 @@ export function extractActualPdfMetadata({
       page === 1 ? boeingPublicationTitle(lines, identity) : null;
     if (publicationTitle)
       add('title', publicationTitle.value, page, publicationTitle.evidence);
+    if (isTfu) {
+      if (page === 1) {
+        const referenceIndex = runs.findIndex((run) => /^Reference\s*:/iu.test(run.text));
+        const titleRuns = runs.slice(0, Math.max(0, referenceIndex))
+          .filter((run) => !/^(?:AIRBUS(?:\s+S\.?A\.?S\.?)?|TECHNICAL\s+FOLLOW[-\s]*UP)$/iu.test(run.text));
+        const title = titleRuns.map((run) => run.text).join(' ');
+        if (title.length >= 3 && title.length <= 350) add('title', title, page, title);
+      }
+      for (const match of pageText.matchAll(/\b(FIRST\s+)?ISSUE\s+DATE\s*:\s*(\d{1,2}-[A-Z]{3}-\d{4})\b/giu)) {
+        add(match[1] ? 'firstIssueDate' : 'issueDate', parseSourcePublicationDate(match[2]), page, match[0]);
+      }
+      for (const match of pageText.matchAll(/\bLAST\s+CHECK\s+DATE\s*:\s*(\d{1,2}-[A-Z]{3}-\d{4})\b/giu)) {
+        add('lastCheckDate', parseSourcePublicationDate(match[1]), page, match[0]);
+      }
+      for (const line of lines) {
+        const supplier = line.text.match(/\bSUPPLIER\s*:\s*(.+)/iu);
+        if (supplier) add('supplier', supplier[1].split(/\s+(?:Purpose|Reason|ATA|Status|A\/C)\b/iu)[0], page, supplier[0]);
+      }
+    }
+    if (isCad && page <= 3) {
+      for (const match of pageText.matchAll(/修\s*正\s*案\s*号\s*[:：]\s*(\d{2}\s*-\s*\d{3,8})/gu)) {
+        add('amendment', match[1].replace(/\s+/gu, ''), page, match[0]);
+      }
+      for (const match of pageText.matchAll(/(颁\s*发|生\s*效)\s*日\s*期\s*[:：]\s*(\d{4}(?:[-/.]|年)\s*\d{1,2}(?:[-/.]|月)\s*\d{1,2}日?)/gu)) {
+        add(match[1].replace(/\s+/gu, '') === '颁发' ? 'issueDate' : 'effectiveDate', parseSourcePublicationDate(match[2]), page, match[0]);
+      }
+      const issuer = pageText.match(/中\s*国\s*民\s*用\s*航\s*空\s*局|\bC\s*A\s*A\s*C\b/iu);
+      if (issuer) add('issuer', 'CAAC', page, issuer[0]);
+      for (const line of lines) {
+        const title = line.text.match(/标\s*题\s*[:：]\s*(.+)/u);
+        if (title) add('title', title[1], page, title[0]);
+      }
+    }
     // A labelled title can be split into PDF text runs. Stop at the next label.
     if (page <= 3) {
       for (const [index, line] of lines.entries()) {
@@ -241,12 +291,12 @@ export function extractActualPdfMetadata({
       const typePattern = typePatterns[identity?.documentFamily];
       const typeMatch = typePattern && pageText.match(typePattern);
       if (typeMatch)
-        add('documentType', identity.documentFamily, page, typeMatch[0]);
+        add('documentType', isCad ? 'CAD' : identity.documentFamily, page, typeMatch[0]);
       const issuer = text(identity?.issuer);
       const issuerIndex = issuer
         ? pageText.toUpperCase().indexOf(issuer.toUpperCase())
         : -1;
-      if (issuerIndex >= 0)
+      if (issuerIndex >= 0 && !isTfu)
         add(
           'issuer',
           issuer,

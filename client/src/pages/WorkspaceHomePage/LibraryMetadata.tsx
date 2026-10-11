@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type {
   CanonicalLibraryDocumentVersionSummary,
   DocumentExtractedMetadata,
+  DocumentMetadataField,
 } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import { MetadataRevisionActions } from './MetadataRevisionActions';
@@ -21,6 +22,18 @@ const METADATA_FIELDS: {
   { key: 'mentionedAircraftModels', label: '正文提及机型（非适用性）' },
 ];
 
+const PUBLICATION_METADATA_FIELDS: {
+  key: 'amendment' | 'issueDate' | 'effectiveDate' | 'firstIssueDate' | 'lastCheckDate' | 'supplier';
+  label: string;
+}[] = [
+  { key: 'amendment', label: '修正案号（非数字修订版次）' },
+  { key: 'issueDate', label: '颁发 / 发布日期' },
+  { key: 'effectiveDate', label: '生效日期' },
+  { key: 'firstIssueDate', label: '首次发布日期' },
+  { key: 'lastCheckDate', label: '最后核查日期（非发布日期）' },
+  { key: 'supplier', label: '供应商（非发布方）' },
+];
+
 export function LibraryMetadataObservations({
   metadata,
 }: {
@@ -33,12 +46,14 @@ export function LibraryMetadataObservations({
         文本提取，全部观察值待核；“未检出”仅表示本次检查文本未发现，不代表原文没有。机型提及不构成适用性结论。
       </p>
       <dl className="library-metadata-fields">
-        {METADATA_FIELDS.map(({ key, label }) => (
+        {[...METADATA_FIELDS, ...PUBLICATION_METADATA_FIELDS.filter(({ key }) => metadata[key] !== undefined)].map(({ key, label }) => {
+          const field = metadata[key] as DocumentMetadataField;
+          return (
           <div key={key}>
             <dt>{label}</dt>
             <dd>
-              {metadata[key].observations.length
-                ? metadata[key].observations.map((observation, index) => (
+              {field.observations.length
+                ? field.observations.map((observation, index) => (
                     <details key={`${observation.value}:${index}`}>
                       <summary>{observation.value} · 待核</summary>
                       {observation.evidence.map((evidence, evidenceIndex) => (
@@ -52,7 +67,8 @@ export function LibraryMetadataObservations({
                 : '本次文本未检出'}
             </dd>
           </div>
-        ))}
+          );
+        })}
       </dl>
       <p className="library-classification-note">
         检查页码：{metadata.inspectedPages.join('、')} / 共 {metadata.pageCount}{' '}

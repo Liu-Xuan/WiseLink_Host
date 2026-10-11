@@ -79,6 +79,8 @@ function isExtractedMetadata(
     isMetadataField(value.issuer) &&
     isMetadataField(value.ata) &&
     isMetadataField(value.mentionedAircraftModels) &&
+    ['amendment', 'issueDate', 'effectiveDate', 'firstIssueDate', 'lastCheckDate', 'supplier']
+      .every((key) => value[key] === undefined || isMetadataField(value[key])) &&
     value.aircraftModelSemantics === 'DOCUMENT_MENTION_ONLY' &&
     value.applicabilityAssessment === 'NOT_EVALUATED'
   );

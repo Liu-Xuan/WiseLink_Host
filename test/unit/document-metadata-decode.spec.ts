@@ -69,6 +69,18 @@ describe('document metadata decode boundary', () => {
     });
   });
 
+  it('reads distinct optional publication roles while preserving old stored metadata', () => {
+    const metadata = { ...validMetadata(), amendment: field('39-12345'),
+      issueDate: field('2042-01-22'), effectiveDate: field('2042-02-01'),
+      firstIssueDate: field('2040-05-14'), lastCheckDate: field('2042-01-23'),
+      supplier: field('TEST SUPPLIER') };
+    expect(decodeExtractedMetadata(metadata)).toBe(metadata);
+    expect(decodeExtractedMetadata(validMetadata())).not.toHaveProperty('issueDate');
+    for (const role of ['amendment', 'issueDate', 'effectiveDate', 'firstIssueDate', 'lastCheckDate', 'supplier']) {
+      expectShapeRejected(() => decodeExtractedMetadata({ ...metadata, [role]: { status: 'PENDING_REVIEW', observations: 'broken' } }));
+    }
+  });
+
   it('validates only the consumed title field for status display', () => {
     const corruptOtherField: unknown = {
       ...validMetadata(),

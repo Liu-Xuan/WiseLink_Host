@@ -105,6 +105,7 @@ const AUTOMATIC_ENGINEERING_PDF_FAMILIES = new Set([
   'SB',
   'SIL',
   'SL',
+  'TFU',
 ]);
 @Injectable()
 export class OrdinaryWorkItemService {

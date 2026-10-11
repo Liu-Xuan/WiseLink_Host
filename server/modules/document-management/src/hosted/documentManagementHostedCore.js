@@ -46,6 +46,7 @@ const CALLER_IDENTITY_FIELDS = Object.freeze([
   'metadata',
   'originalFilename',
   'pageCount',
+  'publicationIdentityEvidence',
   'revisionDate',
   'revisionLabel',
   'sha256',

@@ -2,7 +2,9 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 
 import {
   dmAcquisition,
+  dmDocument,
   dmDocumentVersion,
+  dmIngressPreflight,
   dmPublicationFamily,
   dmSourceArtifact,
 } from '@server/database/schema';
@@ -150,6 +152,32 @@ describe('MiaodaHostedDocumentCatalog tenant-scoped listing', () => {
 });
 
 describe('MiaodaHostedDocumentCatalog exact-version acquisition replay', () => {
+  it('replays a TFU only with the source-owned adapter and matching header/footer byte evidence', async () => {
+    const fixture = tfuReplayCatalogFixture();
+    const catalog = new MiaodaHostedDocumentCatalog(fixture.db as never);
+    await expect(catalog.findIngestionByIdempotency(fixture.input)).resolves.toMatchObject({
+      documentVersionId: 'DV-1', identityReadback: { documentFamily: 'TFU', issuerAuthority: 'AIRBUS',
+        identityAuthority: 'DM_ACTUAL_PDF_HEADER_AND_PUBLISHER_FOOTER', businessRevision: '', revisionDate: '2042-01-22' },
+    });
+  });
+
+  it.each(['no evidence', 'different adapter', 'different footer page', 'different source evidence', 'other family'])(
+    'rejects TFU footer authority replay with %s', async failure => {
+      const fixture = tfuReplayCatalogFixture();
+      const descriptor = JSON.parse(fixture.row.preflight.normalizedDescriptorJson);
+      if (failure === 'no evidence') delete descriptor.publicationIdentityEvidence;
+      if (failure === 'different adapter') descriptor.adapterRelease.adapterId = 'issuer.airbus.support_document.v1';
+      if (failure === 'different footer page') descriptor.publicationIdentityEvidence.publisher.sourceLocator.pageIndex = 0;
+      if (failure === 'other family') descriptor.canonicalDocumentFamily = 'OEM_REFERENCE';
+      if (failure === 'different source evidence') fixture.acquisition.sourceDescriptorJson = JSON.stringify({
+        ...descriptor, publicationIdentityEvidence: undefined,
+      });
+      fixture.row.preflight.normalizedDescriptorJson = JSON.stringify(descriptor);
+      const catalog = new MiaodaHostedDocumentCatalog(fixture.db as never);
+      await expect(catalog.findIngestionByIdempotency(fixture.input)).rejects.toMatchObject({ code: 'CATALOG_REPLAY_IDENTITY_UNVERIFIED' });
+    },
+  );
+
   it('binds an explicit delivery choice to the original upload request', async () => {
     const fixture = replayCatalogFixture();
     const choice = { reading: true, translation: 'ZH_FULL' };
@@ -220,6 +248,75 @@ describe('MiaodaHostedDocumentCatalog exact-version acquisition replay', () => {
     });
   });
 });
+
+describe('MiaodaHostedDocumentCatalog TFU historical evidence', () => {
+  it('reads a pending historical TFU with exact source evidence and actor/tenant SQL scope', async () => {
+    const fixture = tfuHistoricalCatalogFixture();
+    const before = structuredClone(fixture.row);
+    const catalog = new MiaodaHostedDocumentCatalog(fixture.db as never);
+    await expect(catalog.readHistoricalImportCandidate({ preflightId: 'PREFLIGHT-1', actorUserId: 'engineer-1', tenantId: 'tenant-1' }))
+      .resolves.toMatchObject({ normalizedDescriptor: { canonicalDocumentFamily: 'TFU', revisionDate: '2042-01-22', businessRevision: '' } });
+    expect(fixture.conditions[0].params).toEqual(['PREFLIGHT-1', 'engineer-1', 'tenant:tenant-1:request:']);
+    expect(fixture.conditions[1].params).toEqual(['tenant:tenant-1:family:AIRBUS%7CTFU%7C00.00.10000']);
+    expect(fixture.row).toEqual(before);
+  });
+
+  it.each(['missing source proof', 'conflicting source proof', 'generic support family'])(
+    'refuses historical footer authority with %s', async failure => {
+      const fixture = tfuHistoricalCatalogFixture();
+      const source = JSON.parse(fixture.row.acquisition.sourceDescriptorJson);
+      const normalized = JSON.parse(fixture.row.preflight.normalizedDescriptorJson);
+      if (failure === 'missing source proof') delete source.publicationIdentityEvidence;
+      if (failure === 'conflicting source proof') source.publicationIdentityEvidence.publisher.text = 'COPYRIGHT Airbus SAS, 2042';
+      if (failure === 'generic support family') normalized.canonicalDocumentFamily = 'GENERIC';
+      fixture.row.acquisition.sourceDescriptorJson = JSON.stringify(source);
+      fixture.row.preflight.normalizedDescriptorJson = JSON.stringify(normalized);
+      const catalog = new MiaodaHostedDocumentCatalog(fixture.db as never);
+      await expect(catalog.readHistoricalImportCandidate({ preflightId: 'PREFLIGHT-1', actorUserId: 'engineer-1', tenantId: 'tenant-1' }))
+        .rejects.toMatchObject({ code: 'HISTORICAL_IMPORT_LINEAGE_INVALID' });
+      expect(fixture.conditions).toHaveLength(1);
+    },
+  );
+});
+
+function tfuHistoricalCatalogFixture() {
+  const replay = tfuReplayCatalogFixture();
+  const row = { preflight: { ...replay.row.preflight, decision: 'ASK_IMPORT_OLDER_REVISION', executionAuthorized: false, status: 'READY' },
+    acquisition: replay.acquisition, artifact: replay.row.artifact };
+  const conditions: Array<{ params: unknown[] }> = [];
+  const db = { select: jest.fn(() => ({ from: (table: unknown) => {
+    const query = { innerJoin: (..._args: unknown[]) => query,
+      where: (condition: unknown) => { conditions.push(new PgDialect().sqlToQuery(condition as never)); return query; },
+      limit: async () => table === dmIngressPreflight ? [row]
+        : table === dmPublicationFamily ? [replay.row.family]
+          : table === dmDocument ? [{ documentId: 'DOC-1', familyId: 'FAMILY-1' }] : [],
+    };
+    return query;
+  } })) };
+  return { db, row, conditions };
+}
+
+function tfuReplayCatalogFixture() {
+  const fixture = replayCatalogFixture();
+  const descriptor = {
+    identityAuthority: 'DM_ACTUAL_PDF_HEADER_AND_PUBLISHER_FOOTER', pageCount: 4,
+    sha256: fixture.row.artifact.sha256, sizeBytes: fixture.row.artifact.byteLength,
+    documentCode: '00.00.10000', canonicalDocumentFamily: 'TFU', issuer: 'AIRBUS',
+    businessRevision: '', revisionDate: '2042-01-22', sourceGeneratedDate: '',
+    adapterRelease: { adapterId: 'issuer.airbus.technical_follow_up.v1' },
+    publicationIdentityEvidence: {
+      schemaVersion: 'wiselink.pdf_publication_identity_evidence.v1', adapterId: 'issuer.airbus.technical_follow_up.v1',
+      sourceSha256: fixture.row.artifact.sha256, sourceByteLength: fixture.row.artifact.byteLength,
+      documentCode: '00.00.10000', issueDate: '2042-01-22', primaryHeaderLocator: { kind: 'PDF_PAGE', pageIndex: 0 },
+      publisher: { source: 'PUBLISHER_FOOTER', page: 4, text: '© Airbus SAS, 2042', sourceLocator: { kind: 'PDF_PAGE', pageIndex: 3 } },
+    },
+  };
+  Object.assign(fixture.row.family, { documentFamily: 'TFU', issuerAuthority: 'AIRBUS', canonicalDocumentNumber: '00.00.10000' });
+  Object.assign(fixture.row.version, { businessRevision: '', revisionDate: '2042-01-22' });
+  fixture.row.preflight.normalizedDescriptorJson = JSON.stringify(descriptor);
+  fixture.acquisition.sourceDescriptorJson = JSON.stringify(descriptor);
+  return fixture;
+}
 
 function replayCatalogFixture() {
   const recorded = recordAcquisitionInput();

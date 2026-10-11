@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.airbus.technical_follow_up.v1",
+  "extends": "generic.general_document.v1",
+  "issuerPolicy": {
+    "issuer": "AIRBUS",
+    "issuerAliases": ["\\bAIRBUS\\b"]
+  },
+  "docFamily": "TFU",
+  "subtype": "airbus_tfu",
+  "templateMode": "issuer_overlay_source_bounded",
+  "formatOverlay": "airbus_tfu",
+  "matchPolicy": {
+    "priority": 70,
+    "textPatterns": [
+      "(?=[\\s\\S]*\\bAIRBUS\\b)(?=[\\s\\S]*\\bReference\\s*:\\s*\\d{2}\\s*\\.\\s*\\d{2}\\s*\\.\\s*\\d{5}\\b)(?=[\\s\\S]*\\bIssue\\s+date\\s*:)(?=[\\s\\S]*\\b(?:Technical\\s+Follow[-\\s]*Up|Engineering\\s+Support)\\b)"
+    ]
+  },
+  "sourceContract": {
+    "requiredSources": ["source.pdf_or_mineru_markdown", "source_excerpt"],
+    "missingSourceNeedKind": "source_excerpt_request",
+    "tableFidelityRequired": true,
+    "genericReadAllowed": false
+  },
+  "documentTypeProfileRef": "airbus_tfu",
+  "parseProfileRef": "airbus.technical_follow_up",
+  "structuredParseTemplateRef": "generic_document",
+  "evaluationProfileRef": "evaluation.generic.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.generic_document.v1"
+}

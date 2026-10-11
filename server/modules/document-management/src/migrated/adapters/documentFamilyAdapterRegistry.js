@@ -16,6 +16,7 @@ export const DOCUMENT_FAMILY_ADAPTER_FAMILIES = Object.freeze([
   'SB',
   'SIL',
   'SL',
+  'TFU',
 ]);
 
 const FAMILY_SET = new Set(DOCUMENT_FAMILY_ADAPTER_FAMILIES);
@@ -114,6 +115,7 @@ export function normalizeDocumentFamily(value = '') {
   if (normalized === 'REQUIREMENTS_BULLETIN') return 'RB';
   if (normalized === 'SUPPLIER_SERVICE_INFORMATION_LETTER' || normalized === 'SUPPLIER_SIL') return 'SIL';
   if (normalized === 'FLEET_TEAM_DIGEST') return 'FTD';
+  if (normalized === 'TECHNICAL_FOLLOW_UP' || normalized === 'AIRBUS_TFU') return 'TFU';
   if (
     normalized === 'MAINTENANCE_TASK'
     || normalized === 'MAINTENANCE_TIP'
