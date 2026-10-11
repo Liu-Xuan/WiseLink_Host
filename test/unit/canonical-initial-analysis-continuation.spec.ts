@@ -390,7 +390,7 @@ function harness() {
       created: true,
     })),
   };
-  const sourceAuthorization = {authorizeSourceRead:jest.fn(async (input:unknown)=>({...input as object,allowed:true}))};
+  const sourceAuthorization = {authorizeSourceRead:jest.fn(async (input:unknown)=>({...input as object,allowed:true,action:'DOCUMENT_READ',authorizationPolicy:'MIAODA_HOST_DOCUMENT_READ'}))};
   const sessions = {
     resolve: jest.fn(async()=>({actor:{canonicalSubject:{id:actor.userId},tenantId:actor.tenantId,applicationScopeId:actor.appId}})),
     withVerifiedServiceSql: jest.fn(async (operation: () => Promise<unknown>) =>
