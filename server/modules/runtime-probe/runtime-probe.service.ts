@@ -1,13 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import {
-  access,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -29,9 +23,55 @@ const U0_COMMIT = 'fa69ada08265934951df53c7a61a3ccdb8cb2900' as const;
 const U0_MANIFEST_SHA256 =
   '730baa88e7254bac6d3808ca2ddbfb1824c5891d6ce3d6d29ce177431cd5ffc0' as const;
 
+/** Only the immutable server package asset can identify this build, never runtime env or .git. */
+export async function readServerBuildFingerprint(
+  path = resolve(
+    __dirname,
+    '../../runtime-assets/host-build/build-fingerprint.json',
+  ),
+): Promise<
+  Pick<
+    RuntimeProbeResponse,
+    'deployedCommit' | 'serverBuildTime' | 'fingerprintSource'
+  >
+> {
+  const unavailable = {
+    deployedCommit: 'UNAVAILABLE',
+    serverBuildTime: 'UNAVAILABLE',
+    fingerprintSource: 'UNAVAILABLE' as const,
+  };
+  try {
+    const bytes = await readFile(path);
+    if (bytes.byteLength > 1024) return unavailable;
+    const value: unknown = JSON.parse(bytes.toString('utf8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      return unavailable;
+    const metadata = value as Record<string, unknown>;
+    if (
+      Object.keys(metadata).length !== 3 ||
+      metadata.schemaVersion !== 'wiselink.server-build-fingerprint.v1' ||
+      typeof metadata.sourceCommit !== 'string' ||
+      !/^[a-f0-9]{40}$/u.test(metadata.sourceCommit) ||
+      typeof metadata.buildTime !== 'string' ||
+      !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u.test(metadata.buildTime) ||
+      !Number.isFinite(Date.parse(metadata.buildTime)) ||
+      new Date(metadata.buildTime).toISOString() !== metadata.buildTime
+    )
+      return unavailable;
+    return {
+      deployedCommit: metadata.sourceCommit,
+      serverBuildTime: metadata.buildTime,
+      fingerprintSource: 'SERVER_BUILD_ARTIFACT',
+    };
+  } catch {
+    return unavailable;
+  }
+}
+
 @Injectable()
 export class RuntimeProbeService {
   async probe(): Promise<RuntimeProbeResponse> {
+    const serverBuildFingerprint = await readServerBuildFingerprint();
     const contractRoot = resolve(
       __dirname,
       '../../runtime-assets/technical-publication-parsed-package/v1-frozen-2',
@@ -101,11 +141,7 @@ export class RuntimeProbeService {
       schemaVersion: 'wiselink.3_1.hosted_runtime_probe.v1',
       status: blockers.length === 0 ? 'PASS' : 'BLOCKED',
       appId: APP_ID,
-      deployedCommit:
-        process.env.MIAODA_DEPLOYED_COMMIT ??
-        process.env.GIT_COMMIT ??
-        process.env.COMMIT_SHA ??
-        'UNAVAILABLE',
+      ...serverBuildFingerprint,
       selectedContract: {
         contractId: 'techpub.parsed-package.v1',
         contractRevision: 'frozen.2',
@@ -185,10 +221,7 @@ async function manifestCheck(
   blockers: string[],
 ): Promise<RuntimeProbeCheck> {
   try {
-    const path = join(
-      contractRoot,
-      'freeze/frozen-2-contract-manifest.json',
-    );
+    const path = join(contractRoot, 'freeze/frozen-2-contract-manifest.json');
     const bytes = await readFile(path);
     const observed = createHash('sha256').update(bytes).digest('hex');
     if (observed !== U0_MANIFEST_SHA256) {

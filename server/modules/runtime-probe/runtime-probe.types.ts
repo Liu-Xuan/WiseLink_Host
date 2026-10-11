@@ -8,6 +8,8 @@ export interface RuntimeProbeResponse {
   status: 'PASS' | 'BLOCKED';
   appId: 'app_17bzc551rsg';
   deployedCommit: string;
+  serverBuildTime: string;
+  fingerprintSource: 'SERVER_BUILD_ARTIFACT' | 'UNAVAILABLE';
   selectedContract: {
     contractId: 'techpub.parsed-package.v1';
     contractRevision: 'frozen.2';
