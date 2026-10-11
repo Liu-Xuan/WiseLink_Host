@@ -229,7 +229,7 @@ export function DocumentSourceReadingWorkspace({
           hidden={showTranslation}
         >
             <div className="source-reader-primary" hidden={!showText}>
-              <div className="source-reader-pane-title"><strong>连续结构化原文</strong><span>源文顺序与完整语义保留</span></div>
+              <div className="source-reader-pane-title"><strong>连续结构化原文</strong><span>按解析结果展示，完整内容请核对原件</span></div>
               <div className="source-reader-pane-scroll"><DocumentOriginalReader original={original}
                 activeUnitId={activeUnitId} onUnitLocate={locateUnit} /></div>
             </div>

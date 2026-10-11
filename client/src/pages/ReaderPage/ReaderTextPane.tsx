@@ -91,7 +91,7 @@ const ReaderTextPane = forwardRef<HTMLDivElement, ReaderTextPaneProps>(
         <div className="pane-title">
           <b>{isZh ? '中文阅读' : '连续结构化原文'}</b>
           <span>
-            {isZh ? '完整语义与原文关联' : '源文顺序与完整语义保留'}
+            {isZh ? '完整语义与原文关联' : '按解析结果展示，完整内容请核对原件'}
           </span>
         </div>
 
