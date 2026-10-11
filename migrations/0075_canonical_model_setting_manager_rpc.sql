@@ -1,7 +1,8 @@
 BEGIN;
 
--- Apply as the existing table owner in this application's verified workspace.
+-- Apply to dev as the existing table owner, then use the official app release.
 -- No table grant, write policy, role membership or parsing authority is added.
+-- The platform manages function ACLs; authorization is enforced inside the RPC.
 DO $preflight$
 BEGIN
   IF current_schema() IS DISTINCT FROM 'workspace_aadkpkjef3slu'
@@ -36,13 +37,20 @@ SECURITY DEFINER
 SET search_path = pg_catalog, workspace_aadkpkjef3slu, pg_temp
 AS $function$
 DECLARE
-  actor_user_id text := nullif(pg_catalog.current_setting('app.user_id', true), '');
+  actor_user_id text;
 BEGIN
-  -- SET LOCAL ROLE and both GUCs are supplied by the platform's trusted
-  -- userContext middleware. current_user here is the function owner, not actor.
+  -- Platform default ACLs allow other roles to invoke functions. Reject those
+  -- roles first, before actor/manager processing or any table access. The role
+  -- GUC retains SET LOCAL ROLE inside SECURITY DEFINER; current_user is owner.
   IF pg_catalog.current_setting('role', true)
        IS DISTINCT FROM 'authenticated_workspace_aadkpkjef3slu'
-    OR actor_user_id IS NULL
+  THEN
+    RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'MODEL_SETTINGS_MANAGER_REQUIRED';
+  END IF;
+
+  -- SET LOCAL ROLE and both GUCs come from trusted platform userContext.
+  actor_user_id := nullif(pg_catalog.current_setting('app.user_id', true), '');
+  IF actor_user_id IS NULL
     OR pg_catalog.btrim(actor_user_id) = ''
     OR pg_catalog.length(actor_user_id) > 255
     OR NOT ('wiselink_model_settings_manager' = ANY (
@@ -113,29 +121,5 @@ BEGIN
   END IF;
 END;
 $function$;
-
-REVOKE ALL ON FUNCTION workspace_aadkpkjef3slu.canonical_model_setting_compare_and_set(
-  varchar, varchar, integer
-) FROM PUBLIC, anon_workspace_aadkpkjef3slu, service_role_workspace_aadkpkjef3slu;
-GRANT EXECUTE ON FUNCTION workspace_aadkpkjef3slu.canonical_model_setting_compare_and_set(
-  varchar, varchar, integer
-) TO authenticated_workspace_aadkpkjef3slu;
-
--- Fail atomically if an unexpected default privilege gave another role access.
-DO $acl$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_catalog.pg_proc AS rpc,
-      LATERAL pg_catalog.aclexplode(coalesce(rpc.proacl, pg_catalog.acldefault('f', rpc.proowner))) AS acl
-    WHERE rpc.oid = 'workspace_aadkpkjef3slu.canonical_model_setting_compare_and_set(varchar,varchar,integer)'::regprocedure
-      AND acl.grantee NOT IN (
-        rpc.proowner,
-        'authenticated_workspace_aadkpkjef3slu'::regrole::oid
-      )
-  ) THEN
-    RAISE EXCEPTION 'MODEL_SETTINGS_RPC_UNEXPECTED_EXECUTE_GRANT';
-  END IF;
-END;
-$acl$;
 
 COMMIT;

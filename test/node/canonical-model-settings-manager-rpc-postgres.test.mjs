@@ -37,11 +37,20 @@ const schema = 'workspace_aadkpkjef3slu';
 const authRole = `authenticated_${schema}`;
 const manager = 'wiselink_model_settings_manager';
 const modelRef = 'miaoda/glm-5.3';
+// Mirrors the verified workspace pg_default_acl. PostgreSQL also adds PUBLIC.
+const platformFunctionExecuteRoles = [
+  'service_role',
+  'authenticated',
+  `service_role_${schema}`,
+  authRole,
+  `anon_${schema}`,
+];
 const source = (path) =>
   readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
-const sqlError = (code) => (error) => {
+const sqlError = (code, message) => (error) => {
   for (let cause = error; cause; cause = cause.cause)
-    if (cause.code === code) return true;
+    if (cause.code === code && (!message || cause.message === message))
+      return true;
   return false;
 };
 
@@ -71,13 +80,17 @@ test(
       CREATE ROLE ${authRole} NOLOGIN NOSUPERUSER NOBYPASSRLS;
       CREATE ROLE anon_${schema} NOLOGIN NOSUPERUSER NOBYPASSRLS;
       CREATE ROLE service_role_${schema} NOLOGIN NOSUPERUSER BYPASSRLS;
+      CREATE ROLE authenticated NOLOGIN NOSUPERUSER NOBYPASSRLS;
+      CREATE ROLE service_role NOLOGIN NOSUPERUSER BYPASSRLS;
       CREATE ROLE ${applicationUser} LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS;
-      GRANT ${authRole}, anon_${schema}, service_role_${schema} TO ${applicationUser};
+      GRANT ${platformFunctionExecuteRoles.join(', ')} TO ${applicationUser};
       CREATE SCHEMA ${schema} AUTHORIZATION dataloom_user;
       SET ROLE dataloom_user;
       SET search_path = ${schema};
       -- Production pg_catalog readback: one attribute, user_id character varying.
       CREATE TYPE user_profile AS (user_id character varying);
+      ALTER DEFAULT PRIVILEGES FOR ROLE dataloom_user IN SCHEMA ${schema}
+        GRANT EXECUTE ON FUNCTIONS TO ${platformFunctionExecuteRoles.join(', ')};
       CREATE TABLE identity_subject_mapping (
         miaoda_user_id varchar NOT NULL, miaoda_tenant_id varchar NOT NULL,
         expected_client_id varchar NOT NULL, status varchar NOT NULL
@@ -118,7 +131,7 @@ test(
         ),
       );
       await admin.unsafe(`
-      GRANT USAGE ON SCHEMA ${schema} TO ${authRole}, anon_${schema}, service_role_${schema};
+      GRANT USAGE ON SCHEMA ${schema} TO ${platformFunctionExecuteRoles.join(', ')};
       GRANT SELECT, INSERT, UPDATE, DELETE ON canonical_model_setting TO ${authRole};
       CREATE SEQUENCE rpc_temp_view_canary;
     `);
@@ -132,6 +145,12 @@ test(
     `;
       const baselinePolicies = await policySnapshot();
       const baselineAcl = await aclSnapshot();
+      const defaultFunctionAcl = () => admin`
+        SELECT defaclacl::text AS acl FROM pg_default_acl
+        WHERE defaclnamespace = 'workspace_aadkpkjef3slu'::regnamespace
+          AND defaclrole = 'dataloom_user'::regrole AND defaclobjtype = 'f'
+      `;
+      const baselineDefaultFunctionAcl = await defaultFunctionAcl();
       const forward = await source(
         'migrations/0075_canonical_model_setting_manager_rpc.sql',
       );
@@ -143,12 +162,19 @@ test(
       const scoped = (
         connection,
         operation,
-        { actor = 'actor-a', roles = manager, role = authRole } = {},
+        {
+          actor = 'actor-a',
+          roles = manager,
+          role = authRole,
+          ownerSession = false,
+        } = {},
       ) =>
         drizzle(connection).transaction(async (database) => {
           // Use Drizzle's real transaction for repository calls; its native SQL
           // client is used only for fixture DDL, policy probes and savepoints.
           const tx = database.session.client;
+          if (ownerSession)
+            await tx.unsafe('SET LOCAL SESSION AUTHORIZATION dataloom_user');
           await tx.unsafe(`SET LOCAL ROLE ${role}`);
           await tx.unsafe(`SET LOCAL search_path = ${schema}, pg_catalog`);
           await tx`SELECT set_config('app.user_id', ${actor}, true), set_config('app.role_ids', ${roles}, true), set_config('statement_timeout', '5000', true), set_config('lock_timeout', '5000', true)`;
@@ -190,11 +216,17 @@ test(
           });
           assert.deepEqual(await policySnapshot(), baselinePolicies);
           assert.deepEqual(await aclSnapshot(), baselineAcl);
+          assert.deepEqual(
+            await defaultFunctionAcl(),
+            baselineDefaultFunctionAcl,
+          );
           const [rpc] = await admin`
         SELECT pg_get_userbyid(proowner) AS owner, prosecdef AS definer, proconfig,
           has_function_privilege(${authRole}, oid, 'EXECUTE') AS authenticated_execute,
           has_function_privilege(${`anon_${schema}`}, oid, 'EXECUTE') AS anon_execute,
-          has_function_privilege(${`service_role_${schema}`}, oid, 'EXECUTE') AS service_execute
+          has_function_privilege(${`service_role_${schema}`}, oid, 'EXECUTE') AS service_execute,
+          has_function_privilege('authenticated', oid, 'EXECUTE') AS global_authenticated_execute,
+          has_function_privilege('service_role', oid, 'EXECUTE') AS global_service_execute
         FROM pg_proc WHERE oid = 'workspace_aadkpkjef3slu.canonical_model_setting_compare_and_set(varchar,varchar,integer)'::regprocedure
       `;
           assert.deepEqual(rpc, {
@@ -204,14 +236,26 @@ test(
               'search_path=pg_catalog, workspace_aadkpkjef3slu, pg_temp',
             ],
             authenticated_execute: true,
-            anon_execute: false,
-            service_execute: false,
+            anon_execute: true,
+            service_execute: true,
+            global_authenticated_execute: true,
+            global_service_execute: true,
           });
           const grants =
-            await admin`SELECT acl.grantee, pg_get_userbyid(acl.grantee) AS grantee_name, acl.privilege_type, acl.is_grantable FROM pg_proc AS rpc, LATERAL aclexplode(rpc.proacl) AS acl WHERE rpc.oid = 'workspace_aadkpkjef3slu.canonical_model_setting_compare_and_set(varchar,varchar,integer)'::regprocedure`;
+            await admin`SELECT acl.grantee, CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(acl.grantee) END AS grantee_name, acl.privilege_type, acl.is_grantable FROM pg_proc AS rpc, LATERAL aclexplode(rpc.proacl) AS acl WHERE rpc.oid = 'workspace_aadkpkjef3slu.canonical_model_setting_compare_and_set(varchar,varchar,integer)'::regprocedure`;
+          assert.deepEqual(
+            grants.map((entry) => entry.grantee_name).sort(),
+            ['PUBLIC', 'dataloom_user', ...platformFunctionExecuteRoles].sort(),
+          );
+          const roleMembership = await admin.unsafe(`SELECT rolname,
+            pg_has_role(oid, '${authRole}'::regrole, 'MEMBER') AS target_role_member
+            FROM pg_roles WHERE rolname IN (${platformFunctionExecuteRoles.map((role) => `'${role}'`).join(',')})
+            ORDER BY rolname`);
           assert.ok(
-            grants.every((entry) => entry.grantee !== 0),
-            'PUBLIC must not execute',
+            roleMembership.every(
+              (entry) =>
+                entry.target_role_member === (entry.rolname === authRole),
+            ),
           );
           const attributes =
             await admin`SELECT attname, format_type(atttypid,atttypmod) AS type FROM pg_attribute WHERE attrelid = (SELECT typrelid FROM pg_type WHERE oid = 'workspace_aadkpkjef3slu.user_profile'::regtype) AND attnum > 0 AND NOT attisdropped ORDER BY attnum`;
@@ -225,6 +269,8 @@ test(
               runtime,
               rpc,
               functionAcl: [...grants],
+              roleMembership: [...roleMembership],
+              platformDefaultFunctionAclUnchanged: true,
               userProfileAttributes: [...attributes],
               tablePoliciesUnchanged: true,
               tableAclUnchanged: true,
@@ -353,24 +399,104 @@ test(
       );
 
       await t.test(
-        'anon, service role and direct owner invocation cannot use the authenticated capability',
+        'roles with platform EXECUTE receive custom rejection before any table access',
         async () => {
           const before = await snapshot();
-          for (const role of [`anon_${schema}`, `service_role_${schema}`]) {
-            await assert.rejects(
-              update(client, 3, {}, { role }),
-              sqlError('42501'),
+          // Instrument the real schema only inside the owned fixture. A mapping
+          // read or settings DML increments a non-transactional sequence, so a
+          // rejected/rolled-back RPC cannot hide access before its role guard.
+          await admin.unsafe(`SET ROLE dataloom_user;
+            CREATE SEQUENCE ${schema}.rpc_role_guard_canary;
+            CREATE FUNCTION ${schema}.rpc_mapping_access_canary() RETURNS boolean LANGUAGE plpgsql AS $canary$
+            BEGIN PERFORM pg_catalog.nextval('${schema}.rpc_role_guard_canary'); RETURN true; END; $canary$;
+            CREATE FUNCTION ${schema}.rpc_settings_access_canary() RETURNS trigger LANGUAGE plpgsql AS $canary$
+            BEGIN PERFORM pg_catalog.nextval('${schema}.rpc_role_guard_canary'); RETURN NULL; END; $canary$;
+            ALTER TABLE ${schema}.identity_subject_mapping RENAME TO rpc_mapping_baseline;
+            CREATE VIEW ${schema}.identity_subject_mapping AS
+              SELECT * FROM ${schema}.rpc_mapping_baseline WHERE ${schema}.rpc_mapping_access_canary();
+            CREATE TRIGGER rpc_settings_access_canary BEFORE INSERT OR UPDATE OR DELETE
+              ON ${schema}.canonical_model_setting FOR EACH STATEMENT
+              EXECUTE FUNCTION ${schema}.rpc_settings_access_canary();
+            RESET ROLE;
+          `);
+          const counter = async () =>
+            (
+              await admin`SELECT last_value, is_called FROM workspace_aadkpkjef3slu.rpc_role_guard_canary`
+            )[0];
+          const rejected = [];
+          try {
+            // Positive control: a permitted caller reaches the canary even
+            // though revision-zero CAS loses against the already saved row.
+            assert.equal(
+              (
+                await scoped(
+                  client,
+                  (tx) =>
+                    tx`SELECT * FROM workspace_aadkpkjef3slu.canonical_model_setting_compare_and_set('tenant-a',${modelRef},0)`,
+                )
+              ).length,
+              0,
             );
+            assert.equal((await counter()).is_called, true);
+            await admin.unsafe(
+              `ALTER SEQUENCE ${schema}.rpc_role_guard_canary RESTART WITH 1`,
+            );
+            const contexts = [
+              ...platformFunctionExecuteRoles
+                .filter((role) => role !== authRole)
+                .map((role) => ({ connection: client, role })),
+              { connection: ownerClient, role: 'dataloom_user' },
+              { connection: ownerClient, role: 'none', ownerSession: true },
+            ];
+            for (const { connection, ...context } of contexts) {
+              let identity;
+              await assert.rejects(
+                scoped(
+                  connection,
+                  async (tx) => {
+                    [identity] =
+                      await tx`SELECT current_user AS user_name, session_user AS session_user_name, current_setting('role') AS active_role`;
+                    return tx`SELECT * FROM workspace_aadkpkjef3slu.canonical_model_setting_compare_and_set('tenant-a',${modelRef},3)`;
+                  },
+                  context,
+                ),
+                sqlError('42501', 'MODEL_SETTINGS_MANAGER_REQUIRED'),
+              );
+              if (context.ownerSession)
+                assert.deepEqual(identity, {
+                  user_name: 'dataloom_user',
+                  session_user_name: 'dataloom_user',
+                  active_role: 'none',
+                });
+              assert.deepEqual(await counter(), {
+                last_value: '1',
+                is_called: false,
+              });
+              rejected.push({
+                ...identity,
+                customError: 'MODEL_SETTINGS_MANAGER_REQUIRED',
+                tableAccessCanaryCalls: 0,
+              });
+            }
+            t.diagnostic(
+              JSON.stringify({
+                roleGuardCanary: {
+                  positiveControlTouchedTables: true,
+                  rejectedCallers: rejected,
+                },
+              }),
+            );
+          } finally {
+            await admin.unsafe(`SET ROLE dataloom_user;
+              DROP TRIGGER rpc_settings_access_canary ON ${schema}.canonical_model_setting;
+              DROP VIEW ${schema}.identity_subject_mapping;
+              ALTER TABLE ${schema}.rpc_mapping_baseline RENAME TO identity_subject_mapping;
+              DROP FUNCTION ${schema}.rpc_mapping_access_canary();
+              DROP FUNCTION ${schema}.rpc_settings_access_canary();
+              DROP SEQUENCE ${schema}.rpc_role_guard_canary;
+              RESET ROLE;
+            `);
           }
-          await assert.rejects(
-            scoped(
-              ownerClient,
-              (tx) =>
-                tx`SELECT * FROM workspace_aadkpkjef3slu.canonical_model_setting_compare_and_set('tenant-a', ${modelRef}, 3)`,
-              { role: 'dataloom_user' },
-            ),
-            sqlError('42501'),
-          );
           assert.deepEqual(await snapshot(), before);
         },
       );
