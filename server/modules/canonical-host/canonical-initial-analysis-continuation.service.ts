@@ -280,7 +280,7 @@ export class CanonicalInitialAnalysisContinuationService {
                   sourceByteLength: source.sourceByteLength,
                 });
               if (
-                !permission.allowed ||
+                !permission.allowed || permission.action !== 'DOCUMENT_READ' || permission.authorizationPolicy !== 'MIAODA_HOST_DOCUMENT_READ' ||
                 permission.tenantId !== actor.tenantId ||
                 permission.actorUserId !== actor.userId ||
                 permission.documentId !== source.documentId ||
