@@ -140,7 +140,10 @@ export class MiaodaOrdinaryArtifactStoreAdapter
       candidate.artifact,
     );
     const scoped = this.fileService.from(bucketId);
-    const metadata = await scoped.getFileMetadata(filePath);
+    const metadata = await providerCall(
+      'ARTIFACT_STORE_STAGE_DISCARD_METADATA_READ_FAILED',
+      () => scoped.getFileMetadata(filePath),
+    );
     if (
       metadata === null ||
       (providerObjectId && metadata.id !== providerObjectId)
@@ -619,10 +622,87 @@ async function providerCallWithTransportRetry<T>(
 }
 
 function providerError(code: string, cause: unknown): Error {
-  const message = cause instanceof Error ? cause.message : String(cause);
-  const error = new Error(`${code}:${message}`);
-  (error as Error & { cause?: unknown }).cause = cause;
-  return error;
+  const diagnostic = providerFailureDiagnostic(cause);
+  // The HTTP exception filter serializes Error.cause. SDK errors can carry
+  // request credentials, claims, URLs and bodies; none may cross this boundary.
+  return Object.assign(new Error(`${code}:${diagnostic.category}`), {
+    code,
+    statusCode: 500,
+    details: Object.freeze({ operation: code, ...diagnostic }),
+  });
+}
+
+function providerFailureDiagnostic(cause: unknown): {
+  category: 'HTTP' | 'ABORTED' | 'TRANSPORT' | 'PROVIDER_FAILURE';
+  httpStatus?: number;
+  transportCode?: string;
+} {
+  const chain: {
+    status?: unknown;
+    statusCode?: unknown;
+    response?: { status?: unknown };
+    message?: unknown;
+    name?: unknown;
+    code?: unknown;
+    cause?: unknown;
+  }[] = [];
+  const seen = new Set<unknown>();
+  for (
+    let value = cause;
+    value && typeof value === 'object' && !seen.has(value) && chain.length < 8;
+  ) {
+    seen.add(value);
+    const item = value as (typeof chain)[number];
+    chain.push(item);
+    for (const status of [
+      item.status,
+      item.statusCode,
+      item.response?.status,
+    ]) {
+      const number =
+        typeof status === 'number'
+          ? status
+          : typeof status === 'string' && /^\d{3}$/.test(status)
+            ? Number(status)
+            : NaN;
+      if (Number.isInteger(number) && number >= 100 && number <= 599) {
+        return { category: 'HTTP', httpStatus: number };
+      }
+    }
+    value = item.cause;
+  }
+  if (
+    chain.some(
+      (item) =>
+        item.name === 'AbortError' ||
+        item.code === 'ABORT_ERR' ||
+        [
+          'Request aborted',
+          'The operation was aborted',
+          'This operation was aborted',
+        ].includes(typeof item.message === 'string' ? item.message : ''),
+    )
+  ) {
+    return { category: 'ABORTED' };
+  }
+  const transportCodes = [
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'EAI_AGAIN',
+    'ENETUNREACH',
+    'ECONNREFUSED',
+    'UND_ERR_SOCKET',
+    'UND_ERR_CONNECT_TIMEOUT',
+  ];
+  for (const item of chain) {
+    if (typeof item.code === 'string' && transportCodes.includes(item.code)) {
+      return { category: 'TRANSPORT', transportCode: item.code };
+    }
+    if (item.message === 'fetch failed') {
+      return { category: 'TRANSPORT', transportCode: 'FETCH_FAILED' };
+    }
+  }
+  return { category: 'PROVIDER_FAILURE' };
 }
 
 /**
