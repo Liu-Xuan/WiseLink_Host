@@ -57,7 +57,12 @@ async function fixture(perform) {
           ...(input.replayOnly === true ? { replayOnly: true } : {}) });
         return receipt();
       } };
-    await perform({ directory, checkpoint, path, options, finish, dependencies, events });
+    const prepareFinish = async () => {
+      await consumeAutomaticWorkItemQueueTick(options, { ...dependencies,
+        blockWorkItem: async input => ({ ...await dependencies.blockWorkItem(input), replayed: false }) });
+      events.length = 0;
+    };
+    await perform({ directory, checkpoint, path, options, finish, dependencies, events, prepareFinish });
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
@@ -74,6 +79,7 @@ test('synthetic owner seam: fresh PARK is one POST with zero producer/model and 
 }));
 
 test('synthetic owner seam: strict replay archives original cancellation/claim before null and repeated finalize is immutable', async () => fixture(async f => {
+  await f.prepareFinish();
   const write = f.checkpoint.write;
   f.checkpoint.write = async (key, value) => {
     if (key === 'active-claim' && value === null) {
@@ -100,6 +106,7 @@ for (const change of [{ replayed: false }, { blockedCode: 'AUTO_WORK_ITEM_STAGE_
   { blockedCode: 'AUTO_WORK_ITEM_STAGE_OVERALL_CANCELLED' }, { blockedAt: '2026-10-12T00:01:00.000Z' },
   { workItemId: 'WI-new' }, { status: 'ACKNOWLEDGED' }, { extra: true }])
   test(`synthetic owner seam: fresh/conflicting finalization receipt preserves pointer ${JSON.stringify(change)}`, async () => fixture(async f => {
+    await f.prepareFinish();
     await assert.rejects(consumeAutomaticWorkItemQueueTick(f.finish, { ...f.dependencies,
       blockWorkItem: async () => ({ ...receipt(), ...change }) }), /AUTO_WORK_ITEM_BLOCK_RECEIPT_INVALID/u);
     assert.deepEqual(await f.checkpoint.readOptional('active-claim'), claim());
@@ -107,6 +114,7 @@ for (const change of [{ replayed: false }, { blockedCode: 'AUTO_WORK_ITEM_STAGE_
   }));
 
 for (const mode of ['park', 'finish']) test(`synthetic owner seam: unknown ${mode} POST stays one call and preserves stopped checkpoint`, async () => fixture(async f => {
+  if (mode === 'finish') await f.prepareFinish();
   let calls = 0; const error = new Error('AUTO_WORK_ITEM_QUEUE_TRANSPORT_FAILED');
   await assert.rejects(consumeAutomaticWorkItemQueueTick(mode === 'park' ? f.options : f.finish, {
     ...f.dependencies, blockWorkItem: async () => { calls += 1; throw error; } }), e => e === error);
@@ -126,6 +134,7 @@ for (const change of [{ workItemRevision: 4 }, { leaseGeneration: 11 }, { consum
   }));
 
 test('synthetic owner seam: a pointer replaced during POST is reread and never cleared or archived', async () => fixture(async f => {
+  await f.prepareFinish();
   const next = { ...claim(), leaseGeneration: 11 };
   await assert.rejects(consumeAutomaticWorkItemQueueTick(f.finish, { ...f.dependencies,
     blockWorkItem: async () => { await f.checkpoint.write('active-claim', next); return receipt(); } }),
@@ -134,6 +143,7 @@ test('synthetic owner seam: a pointer replaced during POST is reread and never c
 }));
 
 test('synthetic owner seam: failed archive preserves pointer, and conflicting old archive cannot be overwritten', async () => fixture(async f => {
+  await f.prepareFinish();
   const original = f.checkpoint.writeOnceOrEqual;
   f.checkpoint.writeOnceOrEqual = async () => { throw new Error('ARCHIVE_FAILED'); };
   await assert.rejects(consumeAutomaticWorkItemQueueTick(f.finish, f.dependencies), /ARCHIVE_FAILED/u);
@@ -165,6 +175,54 @@ test('private expectation files reject broad permissions, symlinks, excess bytes
       assert.equal(error.message, 'AUTO_WORK_ITEM_CANCELLATION_EXPECTATION_INVALID'); return true;
     });
   }
+}));
+
+test('new intent: a changed expectation for a later cancellation cannot replay or replace the first PARK bytes', async () => fixture(async f => {
+  await f.prepareFinish();
+  const path = join(f.directory, 'cancelled-park-WI-test-g10.json');
+  const bytes = await readFile(path); const before = await stat(path);
+  const changed = expectation(); changed.expectedCancellation.attemptId = 'ATT-later';
+  changed.expectedCancellation.attemptRef = 'AQ-later'; changed.expectedCancellation.attemptNo = 7;
+  await writeFile(f.path, JSON.stringify(changed));
+  const dependencies = { ...f.dependencies, blockWorkItem: async () => assert.fail('later cancellation cannot POST') };
+  await assert.rejects(consumeAutomaticWorkItemQueueTick(f.options, dependencies), /PARK_ALREADY_STARTED/u);
+  await assert.rejects(consumeAutomaticWorkItemQueueTick(f.finish, dependencies), /PARK_INTENT_INVALID/u);
+  assert.deepEqual(await readFile(path), bytes); assert.equal((await stat(path)).mtimeMs, before.mtimeMs);
+  assert.deepEqual(await f.checkpoint.readOptional('active-claim'), claim());
+  assert.equal(await f.checkpoint.readOptional(archiveKey), null);
+}));
+
+test('new intent: unknown POST prevents any repeat PARK', async () => fixture(async f => {
+  let calls = 0;
+  const dependencies = { ...f.dependencies, blockWorkItem: async () => { calls += 1; throw new Error('UNKNOWN_POST'); } };
+  await assert.rejects(consumeAutomaticWorkItemQueueTick(f.options, dependencies), /UNKNOWN_POST/u);
+  await assert.rejects(consumeAutomaticWorkItemQueueTick(f.options, dependencies), /PARK_ALREADY_STARTED/u);
+  assert.equal(calls, 1); assert.deepEqual(await f.checkpoint.readOptional('active-claim'), claim());
+  assert.equal(await f.checkpoint.readOptional(archiveKey), null);
+}));
+
+test('new intent: interruption after durable intent but before POST prevents a later dispatch', async () => fixture(async f => {
+  const writeIntent = f.checkpoint.writeOnceOrEqual;
+  f.checkpoint.writeOnceOrEqual = async (key, value) => {
+    await writeIntent(key, value); throw new Error('INTERRUPTED_BEFORE_POST');
+  };
+  const dependencies = { ...f.dependencies, blockWorkItem: async () => assert.fail('pre-POST interruption cannot dispatch') };
+  await assert.rejects(consumeAutomaticWorkItemQueueTick(f.options, dependencies), /INTERRUPTED_BEFORE_POST/u);
+  f.checkpoint.writeOnceOrEqual = writeIntent;
+  await assert.rejects(consumeAutomaticWorkItemQueueTick(f.options, dependencies), /PARK_ALREADY_STARTED/u);
+  assert.deepEqual(await f.checkpoint.readOptional('active-claim'), claim());
+  assert.equal(await f.checkpoint.readOptional(archiveKey), null);
+}));
+
+test('new intent: missing or changed stored claim intent rejects finalization before Host or archive', async () => fixture(async f => {
+  const dependencies = { ...f.dependencies, blockWorkItem: async () => assert.fail('invalid intent cannot POST') };
+  await assert.rejects(consumeAutomaticWorkItemQueueTick(f.finish, dependencies), /PARK_INTENT_INVALID/u);
+  await f.prepareFinish(); const intentKey = 'cancelled-park-WI-test-g10';
+  const intent = await f.checkpoint.readOptional(intentKey); intent.claim.leaseToken = 'd6c5e6ef-ac4b-4dc2-9955-57cb338c12ee';
+  await f.checkpoint.write(intentKey, intent);
+  await assert.rejects(consumeAutomaticWorkItemQueueTick(f.finish, dependencies), /PARK_INTENT_INVALID/u);
+  assert.deepEqual(await f.checkpoint.readOptional('active-claim'), claim());
+  assert.equal(await f.checkpoint.readOptional(archiveKey), null);
 }));
 
 test('operator CLI modes require exact file/finish fields and cannot mix static subjects, repair or cron recovery', () => {

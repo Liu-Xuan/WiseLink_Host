@@ -11,7 +11,7 @@ import { consumeHostedMatter } from './consume-hosted-matter.mjs';
 import { hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
 import {
   parkCancelledAutomaticClaim, readCancelledClaimExpectation, parseCancelledClaimExpectation,
-  matchesCancelledClaim, validateCancelledBlockReceipt,
+  matchesCancelledClaim, validateCancelledBlockReceipt, assertCancelledParkIntent,
 } from './cancelled-claim-parking.mjs';
 import { recoverNativeMatterResponse } from './recover-native-matter-response.mjs';
 import { invokeHostedJobAidProblemModel } from './run-jobaid-problem-assessment.mjs';
@@ -629,6 +629,9 @@ async function finishBlockedAutomaticClaim(options, dependencies) {
     throw new Error('AUTO_WORK_ITEM_BLOCKED_CLAIM_CHANGED');
   if (options.finishCancelledClaim && !matchesCancelledClaim(claim, options.cancellationExpectation))
     throw new Error('AUTO_WORK_ITEM_BLOCKED_CLAIM_CHANGED');
+  if (options.finishCancelledClaim) assertCancelledParkIntent(await checkpoint.readOptional(
+    `cancelled-park-${claim.workItemId}-g${claim.leaseGeneration}`),
+  claim, options.cancellationExpectation, validateStoredAutoClaim);
   // This is the explicit, approved idempotent BLOCK POST, not a read-only API.
   // Only an exact existing replay is a release receipt; local failure/not-found
   // and a freshly created BLOCK can never silently clear this checkpoint.

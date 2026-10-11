@@ -104,7 +104,8 @@ node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --auto-queue --
 ```
 
 同一 endpoint 的 Linux 内核 `flock` 内 fresh-read 当前 claim；必须 exact identity/token hash、
-`consumerStopped=true/completionReady=false/blockReady=null`。一次 PARK 最多发一个 BLOCK POST，不重试。
+`consumerStopped=true/completionReady=false/blockReady=null`。POST 前不可变保存本次原 claim 和完整控制期望；
+同 WI/generation 已有 intent 即拒绝再次 PARK，含中断、未知 POST 和期望文件变动。一次 PARK 最多发一个 BLOCK POST，不重试。
 Host fresh-read 原 actor 当前权限/同版原件，并在 `WorkItem FOR UPDATE` 后锁授权和该 WI 的全部 attempt：
 既有 WI 外键约束阻止新 attempt 插入越过该锁；精确最新 CANCELLED、输入/model/source/revision 不变，
 没有任何更晚 attempt 或在途状态，且最终 wall-clock 租约 CAS 成功才写固定
@@ -118,7 +119,7 @@ node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --auto-queue --
 ```
 
 该 finalizer 只发一个 `replayOnly=true` BLOCK POST，fresh 权限/来源/取消 CAS 再核验，不创建新 BLOCK。
-仍在同一 flock 内，POST 后重新读取 claim，核对精确五字段 `replayed=true` 回执和实际时间，先不可变保存
+仍在同一 flock 内，先匹配原不可变 PARK intent，再在 POST 后重新读取 claim，核对精确五字段 `replayed=true` 回执和实际时间，先不可变保存
 原 claim、控制期望及回执，成功后才写 `active-claim=null`。新建/未知/冲突回执、pointer 漂移、归档写入失败
 均保留 claim；已归档重放不会清 successor。旧锁 inode 和原任务 checkpoint 保留；释放后由下一自然 tick
 选择其余等待事项。本地合成定向验证不等于实际 Linux 锁、数据库竞态或真实 operator 执行验收。

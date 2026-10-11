@@ -77,9 +77,20 @@ export function validateCancelledBlockReceipt(value, expectation, { replayOnly =
   return value;
 }
 
+export function assertCancelledParkIntent(value, claim, expectation, validateClaim) {
+  try {
+    if (!exact(value, ['schemaVersion', 'claim', 'cancellationExpectation']) ||
+        value.schemaVersion !== 'wiselink.auto_work_item_cancelled_claim_park.v1' ||
+        JSON.stringify(validateClaim(value.claim)) !== JSON.stringify(claim) ||
+        JSON.stringify(parseCancelledClaimExpectation(value.cancellationExpectation)) !== JSON.stringify(expectation))
+      throw new Error('INVALID_BINDING');
+  } catch { throw new Error('AUTO_WORK_ITEM_CANCELLATION_PARK_INTENT_INVALID'); }
+}
+
 export async function parkCancelledAutomaticClaim(options, dependencies) {
   if (options.finishBlockedClaim || options.repairStoppedClaim ||
-      typeof dependencies.blockWorkItem !== 'function' || typeof dependencies.validateClaim !== 'function')
+      typeof dependencies.blockWorkItem !== 'function' || typeof dependencies.validateClaim !== 'function' ||
+      typeof dependencies.checkpoint?.writeOnceOrEqual !== 'function')
     throw new Error('AUTO_WORK_ITEM_CANCELLATION_OPTIONS_INVALID');
   const expectation = await readCancelledClaimExpectation(options.parkExpectationFile);
   const stored = await dependencies.checkpoint.readOptional('active-claim');
@@ -87,6 +98,15 @@ export async function parkCancelledAutomaticClaim(options, dependencies) {
   if (!matchesCancelledClaim(claim, expectation) || claim.consumerStopped !== true ||
       claim.completionReady !== false || claim.blockReady !== null)
     throw new Error('AUTO_WORK_ITEM_BLOCKED_CLAIM_CHANGED');
+  const intentKey = `cancelled-park-${claim.workItemId}-g${claim.leaseGeneration}`;
+  if (await dependencies.checkpoint.readOptional(intentKey) !== null)
+    throw new Error('AUTO_WORK_ITEM_CANCELLATION_PARK_ALREADY_STARTED');
+  // Bound before the single POST. A crash or unknown response is not permission
+  // for another PARK; finalization must match these original private bytes.
+  await dependencies.checkpoint.writeOnceOrEqual(intentKey, {
+    schemaVersion: 'wiselink.auto_work_item_cancelled_claim_park.v1', claim,
+    cancellationExpectation: expectation,
+  });
   const receipt = validateCancelledBlockReceipt(await dependencies.blockWorkItem({
     workItemId: claim.workItemId, leaseToken: claim.leaseToken,
     leaseGeneration: claim.leaseGeneration, expectedCancellation: expectation.expectedCancellation,
