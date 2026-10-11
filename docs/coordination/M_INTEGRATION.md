@@ -1,5 +1,15 @@
 # M 主控集成交接
 
+## 2026-10-12：取消任务接续与 c216 已集成，技术发布和真实验收分别核对
+
+- 本机正常合并形成 `69c1c44b7b0d14ce2ef524dcd0f60ccc14bae04d`，父提交为 `0d14d9f9775dad84236d63c0f8b35e05fd4d824a` 和 `00c3114bff306d32814627c7abbc38b4e59df89e`。后者的 11 文件差异已由主控与 Sol 独立阅读并接受；它自身只有父提交 `a70eafe4f4e2278156086e9f58f4e8ae37b08345`，双父提交是此前的 `6ba91dac51f199f8f02d6f90fe74444fca000b1f`。冻结说明的父提交文字勘误保留在独立回执，不改写旧冻件。
+- 最近已核对的 Host online 为 `d376f267412856039aecc724c3ee2c75ee124d1f`，release `7695434472444169411` 为 finished、error_logs 空。上述新源码仍待本轮完整生产构建、正常私有 origin 同名分支同步及单次发布；源码提交不代替线上运行版本。新增服务端构建指纹从编译产物读取，实际线上指纹须在发布后核验。
+- c216 标准安装包已在本机生成，来源提交为 `0d14d9f9775dad84236d63c0f8b35e05fd4d824a`，Skill 子树 `openclaw/skills/wiselink-research-and-synthesize` 为 `7c93d833ff9ec7174a58b9fd587b8ea1d8747207`。ZIP 为 858,734 字节、SHA256 `9a27e3a5dae750f034b5c46957900dc60fbb8a3c5d38216706b0930f1079eae3`；120 文件与清单及该提交原始 Git blob 逐字节一致。标准 publisher 测试通过，未修改 publisher、未虚构其未输出的测试数；119 项 ZIP 未提供 Unix mode。包尚未上传或安装，新 Host 合并未改变该 Skill 子树，无须重打包。
+- 取消收尾通过正常 Host PARK 合同，仅接受当前同版、原 owner、精确取消 attempt 与原租约；接续经普通 NeedLogin/session、对象权限和来源读取授权重新检查，在同一事务中创建稳定 UUID 后继请求并将原授权从特定取消 BLOCKED 恢复为 WAITING。来源、原件、已保存模型和旧工作保持原绑定；不清空数据库队列、不复活旧 attempt、不把 provider UNKNOWN 改称终态。当前 A330 No6 的精确旧 actor 资格及 producer 状态仍须实际读回；历史 generation 不能当作当前租约。
+- 受影响的权限、同源/模型、最新取消、新请求幂等、竞争 UUID 和失败回滚检查通过，普通提交 hook 保留完整 lint/类型检查。隔离事务测试不代替真实 PostgreSQL 并发；17c Linux 安装核验和 affected owner/flock 检查尚未执行。本轮未触发新 consumer、PARK、重排或模型调用。
+- TDMS 采集仍由既有来源聊天负责。本机 Host 已接入来源 0.2.46 的 AD 字段所属面板规则，错面板、重复字段和应有字段缺失保持明确拒绝/未知。真实来源 actor/scope、认证运输、原件 resolver 和下游受理能力尚未交付；G1/G2/G4/G5 保持依赖未就绪，不能以来源采集或本地 fixture 通过代替 WiseLink 导入验收。
+- 九类真实工程文档的完整验收仍进行中。A330 的同版 Wiki 可读工作 23、四个已保存问题，但问题间仍有“尚未读取”与后续已确认内容冲突，综合意见尚未覆盖该修订；完整更正尚未保存。现有原件、工作和历史失败继续保留，未测环节不能标为业务通过或正式采用。两项已提出的具体外发确认保留待答，未重发；不受其阻塞的源码、构建和私有发布继续。
+
 ## 2026-09-29：恢复时钟修复与指定直连空间验证
 
 - 第二热修84dfbe1e4经Astra窄审接受，集成为79edd6a91。只在恢复比较中忽略extractedMetadata.extractedAt这一重复读取观测时间，其他来源/元数据/租户/请求/预检/零下游检查保留；返回原持久acquisition，不覆盖首次观察。定向Jest2/2、类型与lint/precommit通过，待真实原请求验收。
