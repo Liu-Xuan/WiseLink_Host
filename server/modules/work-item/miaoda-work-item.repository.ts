@@ -49,6 +49,10 @@ import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { documentDeliveryRequestId } from '../canonical-host/document-delivery-ref';
 import { preserveWorkItemModelConfigurationAudit } from './model-configuration-audit';
 import { MiaodaDocumentVersionSourceResolver } from './miaoda-document-version-source.resolver';
+import {
+  parkCancelledAutoProcessingLease,
+  type CancelledAutoProcessingLeaseInput,
+} from './cancelled-auto-processing-lease';
 
 const ACTION_TYPE = 'PARSE_PDF';
 const DELIVERY_INTENT_ACTION_TYPE = 'DOCUMENT_DELIVERY_INTENT';
@@ -1292,6 +1296,11 @@ export class MiaodaWorkItemRepository {
     return completed?.completedAt
       ? { acknowledgedAt: completed.completedAt, replayed: true }
       : null;
+  }
+
+  /** Explicit cancelled-claim parking uses the shared WI reservation fence. */
+  async parkCancelledAutoProcessingLease(input: CancelledAutoProcessingLeaseInput) {
+    return parkCancelledAutoProcessingLease(this.db, input);
   }
 
   /** Blocks only the exact active lease after Host verifies terminal failure. */
