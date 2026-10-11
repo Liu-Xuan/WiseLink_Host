@@ -112,9 +112,6 @@ export function syntheticOwnedRecord(
     ad || kind === 'ENGINEER_ASSESSMENT'
       ? '#infoPage_myTab_object_changeNoticeDetailsTab'
       : '#infoPage_myTab_object_changeRequestDetailsTab';
-  const panel = ad
-    ? '#wrap_infoPage_myTab_object_changeNoticeDetailsTab_objectattributes'
-    : detail;
   const labels = ad
     ? [
         'Change Admin II:',
@@ -219,6 +216,10 @@ export function syntheticOwnedRecord(
     observedAt: sourceTime,
   };
   const fields = labels.map((label, i) => {
+    const panel = ad
+      ? '#wrap_infoPage_myTab_object_changeNoticeDetailsTab_object' +
+        (i < 15 ? 'primaryAttributes' : 'attributes')
+      : detail;
     const value =
       label === 'Description:'
         ? '  planned TBD / literal 560 and 760 remain distinct\n'

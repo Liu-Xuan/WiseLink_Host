@@ -16,6 +16,7 @@ interface Profile {
   fieldLabels: string[];
   detailPanel?: string;
   fieldPanels?: string[];
+  fieldPanelByLabel?: Record<string, string>;
   dynamic?: true;
   tables: Array<{
     title: string;
@@ -24,6 +25,34 @@ interface Profile {
     targetClasses: string[];
   }>;
 }
+const adPrimaryPanel =
+  '#wrap_infoPage_myTab_object_changeNoticeDetailsTab_objectprimaryAttributes';
+const adObjectPanel =
+  '#wrap_infoPage_myTab_object_changeNoticeDetailsTab_objectattributes';
+const adPrimaryLabels = [
+  'Change Admin II:',
+  'Description:',
+  '是否需要适航替代措施:',
+  '是否影响国航机群:',
+  'AD适用范围:',
+  '作者:',
+  '提交时间:',
+  '校对人:',
+  '校对日期:',
+  '审核人:',
+  '审核日期:',
+  '审批记录:',
+  '任务来源:',
+  '是否需要再评估:',
+  '再评估日期:',
+];
+const adObjectLabels = [
+  'Need Date:',
+  'Complexity:',
+  'Resolution Date:',
+  'Team Name:',
+  'Modified By:',
+];
 /** Source profiles from tdms-independent-content-profiles@1.
  * Type/panel matches validate source shape, never current source authority. */
 const profiles: Record<string, Profile> = {
@@ -33,33 +62,14 @@ const profiles: Record<string, Profile> = {
     nativeTypeId: 'WCTYPE|wt.change2.WTChangeOrder2|com.airchina.ADForm',
     objectType: 'AD分处理单',
     businessVersionLabel: 'AD分处理单版本:',
-    fieldLabels: [
-      'Change Admin II:',
-      'Description:',
-      '是否需要适航替代措施:',
-      '是否影响国航机群:',
-      'AD适用范围:',
-      '作者:',
-      '提交时间:',
-      '校对人:',
-      '校对日期:',
-      '审核人:',
-      '审核日期:',
-      '审批记录:',
-      '任务来源:',
-      '是否需要再评估:',
-      '再评估日期:',
-      'Need Date:',
-      'Complexity:',
-      'Resolution Date:',
-      'Team Name:',
-      'Modified By:',
-    ],
+    fieldLabels: [...adPrimaryLabels, ...adObjectLabels],
     detailPanel: '#infoPage_myTab_object_changeNoticeDetailsTab',
-    fieldPanels: [
-      '#wrap_infoPage_myTab_object_changeNoticeDetailsTab_objectprimaryAttributes',
-      '#wrap_infoPage_myTab_object_changeNoticeDetailsTab_objectattributes',
-    ],
+    fieldPanels: [adPrimaryPanel, adObjectPanel],
+    // Same-name fields in another legal wrapper are different source nodes.
+    fieldPanelByLabel: Object.fromEntries([
+      ...adPrimaryLabels.map((label) => [label, adPrimaryPanel]),
+      ...adObjectLabels.map((label) => [label, adObjectPanel]),
+    ]),
     tables: [
       {
         title: 'AD Form Table',
@@ -490,6 +500,9 @@ export function createOwnedVisibleContentValidator({
           !(profile.dynamic
             ? dynamicPanel(f.panelLocator)
             : profile.fieldPanels!.includes(String(f.panelLocator))) ||
+          (profile.fieldPanelByLabel &&
+            f.panelLocator !==
+              profile.fieldPanelByLabel[String(f.actualLabel)]) ||
           !text(f.locator).startsWith(String(f.panelLocator) + ' ')
         )
           fail();

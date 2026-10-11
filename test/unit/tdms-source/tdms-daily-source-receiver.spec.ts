@@ -594,3 +594,199 @@ describe('versioned daily source adapter through the existing native receiver/st
     expect(artifacts.resolveDailySelection).not.toHaveBeenCalled();
   });
 });
+
+describe('AD expected field panels from the frozen native profile', () => {
+  const primary =
+      '#wrap_infoPage_myTab_object_changeNoticeDetailsTab_objectprimaryAttributes',
+    additional =
+      '#wrap_infoPage_myTab_object_changeNoticeDetailsTab_objectattributes';
+
+  it('retains all 20 ordered fields, their expected panels and the immutable original package', async () => {
+    const env = syntheticOwnedEnvelope(201, 'PROCESSING_SHEET', true),
+      original = copy(env),
+      s = setup(env),
+      receipt = await s.service.importDailyMetadata(actor(), env);
+    expect(Object.keys(receipt)).toHaveLength(10);
+    expect(receipt.requestId).toBe(original.requestId);
+    expect(receipt.payloadDigest).toBe(hash(original.package));
+    expect(env).toEqual(original);
+    expect(
+      (await s.service.readDailyMetadataImport(actor(), env.requestId)).package,
+    ).toEqual(original.package);
+    const fields = env.package.records[0]!.content.ownedVisibleBusinessContent!;
+    expect(fields).toHaveLength(20);
+    expect(fields.slice(0, 15).map((f) => f.panelLocator)).toEqual(
+      Array(15).fill(primary),
+    );
+    expect(fields.slice(15).map((f) => f.panelLocator)).toEqual(
+      Array(5).fill(additional),
+    );
+    expect(
+      fields.every((f) => String(f.locator).startsWith(f.panelLocator + ' ')),
+    ).toBe(true);
+    expect(s.repository.state.captures[0]!.receipt.executionVerified).toBe(
+      false,
+    );
+    expect(env.package.records[0]!.sourceVersion.confirmation).toBe(
+      'VERSION_UNCONFIRMED',
+    );
+    expect(env.package.query.scopeMatch).toBe('UNKNOWN');
+    expect(env.package.coverage).toMatchObject({
+      status: 'PARTIAL',
+      readback: 'NON_ATOMIC',
+    });
+    expect(env.package.coverage.gaps).toContain('PROBE_ONLY');
+    expect(s.documents.assertRead).not.toHaveBeenCalled();
+    expect(s.artifacts.acquire).not.toHaveBeenCalled();
+  });
+
+  it('rejects every AD label grafted with a matching locator onto the other legal wrapper before storage', async () => {
+    const env = syntheticOwnedEnvelope(201, 'PROCESSING_SHEET', true),
+      s = setup(env);
+    for (let i = 0; i < 20; i++) {
+      const bad = copy(env),
+        r = bad.package.records[0]!,
+        proof = r.rawFields.ownedBusinessContent as any;
+      for (const read of proof.reads) {
+        const f = read.fields[i];
+        f.panelLocator = i < 15 ? additional : primary;
+        f.locator = f.panelLocator + ' .source-value-' + i;
+      }
+      r.content.ownedVisibleBusinessContent = copy(proof.reads[1].fields);
+      seal(bad);
+      await expect(
+        s.service.importDailyMetadata(actor(), bad),
+      ).rejects.toMatchObject({
+        code: 'TDMS_OWN_VISIBLE_SOURCE_PROOF_INVALID',
+      });
+    }
+    expect(s.repository.state.captures).toEqual([]);
+    expect(s.repository.state.revisions).toEqual([]);
+    expect(s.artifacts.acquire).not.toHaveBeenCalled();
+  });
+
+  it('rejects locator grafts even when each label retains its expected panel', () => {
+    for (const i of [1, 15]) {
+      const bad = syntheticOwnedEnvelope(201, 'PROCESSING_SHEET', true),
+        r = bad.package.records[0]!,
+        proof = r.rawFields.ownedBusinessContent as any;
+      for (const read of proof.reads)
+        read.fields[i].locator =
+          (i < 15 ? additional : primary) + ' .source-value-' + i;
+      r.content.ownedVisibleBusinessContent = copy(proof.reads[1].fields);
+      seal(bad);
+      expect(() => adaptTdmsDailySource(bad)).toThrow(
+        'TDMS_OWN_VISIBLE_SOURCE_PROOF_INVALID',
+      );
+    }
+  });
+
+  it('still rejects same-panel duplicates whether they replace or append a field', () => {
+    for (const extra of [false, true]) {
+      const bad = syntheticOwnedEnvelope(201, 'PROCESSING_SHEET', true),
+        r = bad.package.records[0]!,
+        proof = r.rawFields.ownedBusinessContent as any;
+      for (const read of proof.reads) {
+        const duplicate = copy(read.fields[1]);
+        if (extra) read.fields.push(duplicate);
+        else read.fields[2] = duplicate;
+      }
+      r.content.ownedVisibleBusinessContent = copy(proof.reads[1].fields);
+      seal(bad);
+      expect(() => adaptTdmsDailySource(bad)).toThrow(
+        'TDMS_OWN_VISIBLE_SOURCE_PROOF_INVALID',
+      );
+    }
+  });
+
+  it.each(['ABSENT', 'NOT_LOADED'])(
+    'keeps %s in its expected panel without borrowing a value or blank from another region',
+    async (presence) => {
+      const env = syntheticOwnedEnvelope(201, 'PROCESSING_SHEET', true),
+        r = env.package.records[0]!,
+        proof = r.rawFields.ownedBusinessContent as any;
+      for (const read of proof.reads) {
+        for (const i of [1, 15]) {
+          Object.assign(read.fields[i], {
+            presence,
+            labelOrigin: 'PROFILE_EXPECTED_LABEL',
+            fieldType: 'UNOBSERVED',
+            rawBoundedValue: null,
+            nativeControl: null,
+            truncation: {
+              truncated: false,
+              limit: 8000,
+              capturedCodepoints: 0,
+              observedTotalCodepoints: 0,
+            },
+          });
+        }
+        read.unreadFields.push('Description:');
+      }
+      r.content.ownedVisibleBusinessContent = copy(proof.reads[1].fields);
+      r.coverage.gaps.push('CONTENT_FIELDS_UNAVAILABLE');
+      env.package.coverage = copy(r.coverage);
+      seal(env);
+      const s = setup(env);
+      await s.service.importDailyMetadata(actor(), env);
+      const saved = await s.service.readDailySourceRef(
+        actor(),
+        'TDMS:SNAPSHOT:' + r.snapshotId,
+      );
+      expect(saved.snapshot!.content).toEqual(r.content);
+      for (const i of [1, 15]) {
+        expect(
+          saved.snapshot!.content.ownedVisibleBusinessContent![i],
+        ).toMatchObject({
+          presence,
+          panelLocator: i < 15 ? primary : additional,
+          rawBoundedValue: null,
+          labelOrigin: 'PROFILE_EXPECTED_LABEL',
+        });
+        const bad = copy(env),
+          badRecord = bad.package.records[0]!,
+          badProof = badRecord.rawFields.ownedBusinessContent as any;
+        for (const read of badProof.reads) {
+          read.fields[i].panelLocator = i < 15 ? additional : primary;
+          read.fields[i].locator =
+            read.fields[i].panelLocator + ' .absent-value';
+        }
+        badRecord.content.ownedVisibleBusinessContent = copy(
+          badProof.reads[1].fields,
+        );
+        seal(bad);
+        expect(() => adaptTdmsDailySource(bad)).toThrow(
+          'TDMS_OWN_VISIBLE_SOURCE_PROOF_INVALID',
+        );
+      }
+      expect(saved.snapshot!.coverage.gaps).toContain(
+        'CONTENT_FIELDS_UNAVAILABLE',
+      );
+    },
+  );
+
+  it.each(['PROCESSING_SHEET', 'ENGINEER_ASSESSMENT'] as const)(
+    'keeps the SB %s profile on its existing detail panel',
+    async (kind) => {
+      const env = syntheticOwnedEnvelope(301, kind),
+        fields = env.package.records[0]!.content.ownedVisibleBusinessContent!,
+        panel =
+          kind === 'PROCESSING_SHEET'
+            ? '#infoPage_myTab_object_changeRequestDetailsTab'
+            : '#infoPage_myTab_object_changeNoticeDetailsTab',
+        s = setup(env);
+      expect(fields.every((f) => f.panelLocator === panel)).toBe(true);
+      expect(
+        fields.find((f) => f.actualLabel === 'Description:'),
+      ).toMatchObject({
+        panelLocator: panel,
+        presence: 'PRESENT_VALUE',
+      });
+      await s.service.importDailyMetadata(actor(), env);
+      expect(
+        (await s.service.readDailyMetadataImport(actor(), env.requestId))
+          .package,
+      ).toEqual(env.package);
+    },
+  );
+});
