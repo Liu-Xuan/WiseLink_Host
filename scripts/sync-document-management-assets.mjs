@@ -4,6 +4,7 @@ import {
   cp,
   mkdir,
   mkdtemp,
+  realpath,
   rename,
   rm,
   writeFile,
@@ -24,12 +25,32 @@ export async function writeServerBuildFingerprint(buildRoot) {
   let sourceCommit = 'UNAVAILABLE';
   let buildTime = 'UNAVAILABLE';
   try {
+    const environment = { ...process.env };
+    // These controls can substitute a foreign repository, index, objects, or Git configuration.
+    // Reject ambiguity without changing the caller's environment or trusting the redirected facts.
+    if (
+      Object.keys(environment).some((key) =>
+        /^GIT_(?:DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|CEILING_DIRECTORIES|DISCOVERY_ACROSS_FILESYSTEM|EXEC_PATH|CONFIG(?:_.*)?)$/u.test(
+          key,
+        ),
+      )
+    ) {
+      throw new Error('AMBIGUOUS_BUILD_GIT_ENVIRONMENT');
+    }
+    const checkoutRoot = await realpath(buildRoot);
     const options = {
-      cwd: buildRoot,
+      cwd: checkoutRoot,
+      env: environment,
       encoding: 'utf8',
       timeout: 5000,
       maxBuffer: 64 * 1024,
     };
+    const actualRoot = (
+      await execFileAsync('git', ['rev-parse', '--show-toplevel'], options)
+    ).stdout.trim();
+    if ((await realpath(actualRoot)) !== checkoutRoot) {
+      throw new Error('BUILD_GIT_ROOT_MISMATCH');
+    }
     const head = (
       await execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], options)
     ).stdout.trim();
@@ -44,7 +65,15 @@ export async function writeServerBuildFingerprint(buildRoot) {
     const finalHead = (
       await execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], options)
     ).stdout.trim();
-    if (/^[a-f0-9]{40}$/u.test(head) && head === finalHead && status === '') {
+    const finalRoot = (
+      await execFileAsync('git', ['rev-parse', '--show-toplevel'], options)
+    ).stdout.trim();
+    if (
+      /^[a-f0-9]{40}$/u.test(head) &&
+      head === finalHead &&
+      status === '' &&
+      (await realpath(finalRoot)) === checkoutRoot
+    ) {
       sourceCommit = head;
       buildTime = new Date().toISOString();
     }

@@ -48,7 +48,7 @@ function stamp(root: string) {
     'dist/server/runtime-assets/host-build/build-fingerprint.json',
   );
 }
-function runWriter(root: string) {
+function runWriter(root: string, environment: NodeJS.ProcessEnv = {}) {
   return JSON.parse(
     execFileSync(
       process.execPath,
@@ -59,7 +59,11 @@ function runWriter(root: string) {
         moduleUrl,
         root,
       ],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, ...environment },
+      },
     ),
   );
 }
@@ -142,6 +146,104 @@ describe('server build artifact fingerprint', () => {
       );
     },
   );
+
+  it('rejects a dirty build redirected to a different clean repository by Git environment', async () => {
+    const root = repository();
+    const foreign = repository();
+    writeFileSync(join(root, 'source.txt'), 'dirty actual build source\n');
+    writeFileSync(join(foreign, 'source.txt'), 'foreign clean source\n');
+    git(foreign, ['add', '.']);
+    git(foreign, [
+      '-c',
+      'user.name=Synthetic',
+      '-c',
+      'user.email=synthetic@example.invalid',
+      'commit',
+      '--quiet',
+      '-m',
+      'Foreign source',
+    ]);
+    expect(git(root, ['status', '--porcelain=v1'])).not.toBe('');
+    expect(git(foreign, ['status', '--porcelain=v1'])).toBe('');
+    expect(git(root, ['rev-parse', 'HEAD'])).not.toBe(
+      git(foreign, ['rev-parse', 'HEAD']),
+    );
+    expect(
+      runWriter(root, {
+        GIT_DIR: join(foreign, '.git'),
+        GIT_WORK_TREE: foreign,
+      }),
+    ).toEqual({
+      schemaVersion: valid.schemaVersion,
+      sourceCommit: 'UNAVAILABLE',
+      buildTime: 'UNAVAILABLE',
+    });
+    await expect(readServerBuildFingerprint(stamp(root))).resolves.toEqual(
+      unavailable,
+    );
+  });
+
+  it.each([
+    ['alternate index', { GIT_INDEX_FILE: '.git/index' }],
+    [
+      'counted config',
+      {
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'core.ignorestat',
+        GIT_CONFIG_VALUE_0: 'true',
+      },
+    ],
+    ['config parameters', { GIT_CONFIG_PARAMETERS: "'core.ignorestat=true'" }],
+    ['global config file', { GIT_CONFIG_GLOBAL: '.git/config' }],
+  ])(
+    'rejects %s environment rather than accepting influenced Git facts',
+    async (_name, environment) => {
+      const root = repository();
+      expect(runWriter(root, environment)).toEqual({
+        schemaVersion: valid.schemaVersion,
+        sourceCommit: 'UNAVAILABLE',
+        buildTime: 'UNAVAILABLE',
+      });
+      await expect(readServerBuildFingerprint(stamp(root))).resolves.toEqual(
+        unavailable,
+      );
+    },
+  );
+
+  it('does not use a clean parent repository as the build root', async () => {
+    const parent = repository();
+    const root = join(parent, 'nested-build');
+    mkdirSync(root);
+    expect(git(parent, ['status', '--porcelain=v1'])).toBe('');
+    expect(runWriter(root).sourceCommit).toBe('UNAVAILABLE');
+    await expect(readServerBuildFingerprint(stamp(root))).resolves.toEqual(
+      unavailable,
+    );
+  });
+
+  it('rejects a repository-local core.worktree redirect whose physical top level differs', async () => {
+    const root = repository();
+    const foreign = repository();
+    git(root, ['config', 'core.worktree', foreign]);
+    expect(runWriter(root).sourceCommit).toBe('UNAVAILABLE');
+    await expect(readServerBuildFingerprint(stamp(root))).resolves.toEqual(
+      unavailable,
+    );
+  });
+
+  it('accepts an ordinary clean Git worktree with a .git file bound to the build root', async () => {
+    const original = repository();
+    const root = directory();
+    git(original, ['worktree', 'add', '--detach', '--quiet', root, 'HEAD']);
+    expect(readFileSync(join(root, '.git'), 'utf8')).toMatch(/^gitdir: /u);
+    const metadata = runWriter(root);
+    expect(metadata.sourceCommit).toBe(git(original, ['rev-parse', 'HEAD']));
+    await expect(readServerBuildFingerprint(stamp(root))).resolves.toEqual({
+      deployedCommit: metadata.sourceCommit,
+      serverBuildTime: metadata.buildTime,
+      fingerprintSource: 'SERVER_BUILD_ARTIFACT',
+    });
+  });
 
   it('writes explicit unavailable when the build checkout has no git provenance', async () => {
     const root = directory();
