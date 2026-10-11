@@ -1,3 +1,4 @@
+import type { CancelledInitialContinuationGuard } from './cancelled-initial-continuation';
 import type {
   ActionAttemptStatus,
   OpenClawActionTaskType,
@@ -39,6 +40,7 @@ export interface ReserveActionAttemptInput {
     expectedSessionId: string | null;
     replacement?: { sessionId: string; actorId: string; tenantId: string };
   };
+  cancelledInitialContinuation?: CancelledInitialContinuationGuard;
   hostResolvedMissingInputs?: OpenClawTaskEnvelope['hostResolvedMissingInputs'];
   buildModelInput(
     identity: NewActionAttemptIdentity,

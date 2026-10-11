@@ -89,7 +89,7 @@ export class ActionAttemptLifecycleService {
       };
     }
 
-    await this.repository.terminalizeExpiredActiveForSuccessor({
+    if (!input.cancelledInitialContinuation) await this.repository.terminalizeExpiredActiveForSuccessor({
       workItemId: input.workItemId,
       actionType: input.taskType,
       tenantId: input.tenantId,
@@ -169,6 +169,7 @@ export class ActionAttemptLifecycleService {
         updatedAt: now,
       } satisfies typeof actionAttempt.$inferInsert,
       input.initialKnowledgeSession,
+      input.cancelledInitialContinuation,
     );
     assertReplay(reservation.row, input);
     return {

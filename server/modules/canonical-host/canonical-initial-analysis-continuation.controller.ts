@@ -33,7 +33,7 @@ export class CanonicalInitialAnalysisContinuationController {
   ) {
     try {
       return await this.sessions.withRequestSession(request, (session) =>
-        this.service.request(workItemId, body, hostActor(request), session),
+        this.service.request(workItemId, body, hostActor(request), session, request),
       );
     } catch (error) {
       if (error instanceof z.ZodError)

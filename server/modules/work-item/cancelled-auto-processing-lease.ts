@@ -108,10 +108,10 @@ function matchesCurrentProjection(owner: typeof workItem.$inferSelect): boolean 
   } catch { return false; }
 }
 
-function matchesCancelledAttempt(
+export function matchesCancelledAttempt(
   target: typeof actionAttempt.$inferSelect,
   owner: typeof workItem.$inferSelect,
-  input: CancelledAutoProcessingLeaseInput,
+  input: Pick<CancelledAutoProcessingLeaseInput, 'tenantId' | 'workItemId' | 'expectedCancellation'>,
 ): boolean {
   const expected = input.expectedCancellation;
   if (target.tenantId !== input.tenantId || target.workItemId !== input.workItemId ||

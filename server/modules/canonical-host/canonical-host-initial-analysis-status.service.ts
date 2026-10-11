@@ -1,3 +1,4 @@
+import { readCancelledInitialContinuation } from '../action-attempt/cancelled-initial-continuation';
 import { CanonicalHostApplicabilityInputProducer } from './canonical-host-applicability-input.producer';
 import { originalApplicabilityInputMatches } from './original-applicability-currentness';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
@@ -403,6 +404,12 @@ export class CanonicalHostInitialAnalysisStatusService {
     return !!grant;
   }
 
+  async cancelledContinuationBinding(input: {tenantId:string;actorUserId:string;workItem:CanonicalWorkItemProjection}) {
+    if (!this.sessions) return null;
+    return this.sessions.withVerifiedServiceSql(async () =>
+      (await readCancelledInitialContinuation(this.db, input))?.binding ?? null, input.actorUserId);
+  }
+
   async projectForBrowser(input: {
     workItem: CanonicalWorkItemProjection;
     tenantId: string;
@@ -436,6 +443,8 @@ export class CanonicalHostInitialAnalysisStatusService {
           value.attemptStatus,
         ),
     );
+    const cancelled = !active && status.stages.jobAid.attemptStatus === 'CANCELLED'
+      ? await this.cancelledContinuationBinding(input) : null;
     const automatic =
       status.status !== 'NOT_READY' &&
       !active &&
@@ -458,7 +467,7 @@ export class CanonicalHostInitialAnalysisStatusService {
     )
       continuationOperations.push('TRANSLATE');
     if (
-      automatic &&
+      (automatic || !!cancelled) &&
       process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1' &&
       (input.workItem.classification.normalizedFamily !== 'SB' ||
         input.workItem.classification.status === 'CONFIRMED')
@@ -474,7 +483,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       )
         continuationOperations.push('EVALUATE_JOBAID');
       if (
-        isJobAidProblemProjection(execution.integratedAssessment?.baseRules) &&
+        automatic && isJobAidProblemProjection(execution.integratedAssessment?.baseRules) &&
         ['FAILED', 'CONFLICT'].includes(status.stages.overall.status) &&
         canContinueInitialStage(
           status.stages,
