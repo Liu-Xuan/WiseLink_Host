@@ -9,7 +9,7 @@ function fixture() {
   const options = { documentVersionId: 'DV-test', runRef: 'DRR-test', leaseOwner: 'fixture' };
   const binding = { original: { documentVersionId: 'DV-test', parseRunId: 'PR-test', parseRevision: 1,
     sourceArtifactId: 'source-test', sourceSha256: 'a'.repeat(64), sourceByteLength: 10 }, semanticRevision: 1 };
-  const anchor = { anchorId: 'a1', sourceUnitId: 'u1', sourceText: 'Not confirmed.', sourceRefIds: ['SR-test'], sourceLocators: [{ sourceRefId: 'SR-test' }] };
+  const anchor = { anchorId: 'a1', sourceUnitId: 'u1', payloadPath: '/payload/text', sourceText: 'Not confirmed.', sourceRefIds: ['SR-test'], sourceLocators: [{ sourceRefId: 'SR-test' }] };
   const statement = { text: '尚未确认。', quotes: [{ anchorId: 'a1', start: 0, end: 14, text: 'Not confirmed.' }] };
   const proposal = { schemaVersion: 'wiselink.document.reading.v1', headline: '来源条件', brief: statement,
     explanation: [statement], criticalConditions: [statement], limitations: [] };
@@ -26,7 +26,7 @@ function fixture() {
         leaseToken: '0f23e82b-2b1e-46ba-b62b-9e9a2ec62ca0', leaseGeneration: 1 } };
       if (request.action === 'READING_HEARTBEAT') return { runRef: options.runRef, renewed: true };
       if (request.action === 'READING_READ') return { runRef: options.runRef, sourceBinding: binding,
-        units: [{ unitId: 'u1' }], anchors: [anchor], range: { offset: 0, unitIds: ['u1'], anchorIds: ['a1'], nextOffset: null },
+        units: [{ unitId: 'u1', sourceRefIds: ['SR-test'], payload: { text: anchor.sourceText } }], anchors: [anchor], range: { offset: 0, unitIds: ['u1'], anchorIds: ['a1'], nextOffset: null },
         sourceCoverage: { knownPageCount: 1, readPageIndexes: [0], unresolvedRanges: [] } };
       if (request.action === 'READING_SAVE') {
         saved = { ...request.candidate, readingRunRef: options.runRef, readingRevision: 1, candidateOnly: true,

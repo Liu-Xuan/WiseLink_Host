@@ -332,3 +332,121 @@ it.each(['header', 'merged cell', 'caption', 'footnote', 'raw overlap', 'no shar
   expect(result.source.units[0].kind).toBe('table');
   expect(result.source.findings.some(finding => finding.code === 'PDF_TEXT_REGION_RECOVERY')).toBe(false);
 });
+
+function footer(text: string, bbox = [0, 900, 950, 980]) {
+  return { type: 'page_footer', bbox, content: { page_footer_content: [{ type: 'text', content: text }] } };
+}
+const generatedUnits = (result: ReturnType<typeof reconcileMineruTextCoverage>) =>
+  result.source.units.filter(unit => unit.payload.role === 'SOURCE_GENERATED_DATE');
+
+it('preserves an explicit generated-on statement as an ordinary same-source unit with real PDF item geometry', () => {
+  const text = 'The document generated on 05/06/2032 by Reference application.';
+  const input = fixture([[paragraph('Body condition.', [10, 100, 200, 120]), footer(text)]],
+    [page([{ text: 'Body condition.', top: 100 }, { text, top: 910 }])]);
+  const before = structuredClone(input);
+  const result = reconcileMineruTextCoverage(input), units = generatedUnits(result);
+  expect(units).toHaveLength(1);
+  const unit = units[0], ref = unit.sourceRefIds[0];
+  expect(unit.kind).toBe('paragraph');
+  expect(unit.payload.text).toBe(text);
+  expect(unit.mapping).toMatchObject({ supplementation: 'EXPLICIT_GENERATED_ON_FOOTER', pageIndex: 0,
+    sourcePointer: '/raw/contentListV2/0/1', sourceArtifactPath: 'original/pages-0.json',
+    textItems: [{ pageIndex: 0, itemIndexes: [1] }] });
+  expect(result.binding).toEqual(before.original.binding);
+  expect(result.source.sourceLocators.find(value => value.sourceRefId === ref)).toMatchObject({
+    artifactId: binding.sourceArtifactId, quote: text, pageStart: 0, pageEnd: 0 });
+  expect(result.locations.find(value => value.sourceRefId === ref)).toMatchObject({ precision: 'TEXT_ITEM',
+    coordinateSpace: 'PDF_VIEWPORT_TOP_LEFT', pageIndex: 0, boxes: [[10, 910, 100, 10]] });
+  expect(result.markdown).toContain(text);
+  const semantic = buildDocumentSemanticMap({ original: result, semanticRevision: 2, profile: { profileRef: 'test', roles: [] } });
+  expect(semantic.unassignedUnitIds).toContain(unit.unitId);
+  expect(result.source.units.map(value => value.payload.text)).toEqual(['Body condition.', text]);
+  expect(input).toEqual(before); // A new parse result, not a mutation of an old published original.
+});
+
+it('recovers the complete bounded wrapped sentence inside a filtered publication notice, without retaining unrelated legal text', () => {
+  const notice = 'PROPRIETARY legal notice. The document generated on 2032-05-06 by Reference application. Other legal conditions.';
+  const input = fixture([[paragraph('Body.', [10, 100, 200, 120]), paragraph(notice, [0, 900, 950, 980])]],
+    [page([{ text: 'Body.', top: 100 },
+      { text: 'PROPRIETARY legal notice. The document generated', top: 910 },
+      { text: 'on 2032-05-06 by Reference application. Other legal conditions.', top: 922 }])]);
+  const result = reconcileMineruTextCoverage(input), unit = generatedUnits(result)[0];
+  expect(unit.payload.text).toBe('The document generated on 2032-05-06 by Reference application.');
+  expect(unit.mapping.textItems).toEqual([{ pageIndex: 0, itemIndexes: [1] }, { pageIndex: 0, itemIndexes: [2] }]);
+  expect(result.locations.find(value => value.sourceRefId === unit.sourceRefIds[0])?.boxes).toHaveLength(2);
+  expect(result.markdown).not.toContain('PROPRIETARY legal notice');
+  expect(result.markdown).not.toContain('Other legal conditions');
+});
+
+it('keeps an uncovered body supplement before a generated-date footer when both share the same insertion slot', () => {
+  const text = 'The document generated on 05/06/2032.';
+  const result = reconcileMineruTextCoverage(fixture([[paragraph('First body.', [10, 100, 200, 120]), footer(text)]],
+    [page([{ text: 'First body.', top: 100 }, { text: 'Later body condition.', top: 500 }, { text, top: 910 }])]));
+  expect(result.source.units.map(unit => unit.payload.text)).toEqual(['First body.', 'Later body condition.', text]);
+});
+
+it('accepts a proved discarded middle footer and deduplicates only the same physical statement across overlapping raw regions', () => {
+  const text = 'Document generated on 6 May 2032.';
+  const extra = { discarded_blocks: [{ type: 'footer', bbox: [0, 900, 950, 980] }] };
+  const middleOnly = reconcileMineruTextCoverage(fixture([[paragraph('Body.', [10, 100, 200, 120])]],
+    [page([{ text: 'Body.', top: 100 }, { text, top: 910 }])], extra));
+  expect(generatedUnits(middleOnly)[0].mapping.sourcePointer).toBe('/raw/middle/pdf_info/0/discarded_blocks/0');
+  const both = reconcileMineruTextCoverage(fixture([[paragraph('Body.', [10, 100, 200, 120]), footer(text, [0, 905, 950, 935])]],
+    [page([{ text: 'Body.', top: 100 }, { text: 'Copyright legal notice.', top: 900 }, { text, top: 910 }])], extra));
+  expect(generatedUnits(both)).toHaveLength(1);
+  expect(generatedUnits(both)[0].mapping.sourcePointer).toBe('/raw/contentListV2/0/1');
+});
+
+it.each([
+  'Copyright legal notice.',
+  'The document generated on an unspecified day.',
+  'Example: The document generated on 05/06/2032.',
+  '“The document generated on 05/06/2032.”',
+])('does not invent a source-generation date from an unrelated or nondeclarative footer: %s', text => {
+  const result = reconcileMineruTextCoverage(fixture([[paragraph('Body.', [10, 100, 200, 120]), footer(text)]],
+    [page([{ text: 'Body.', top: 100 }, { text, top: 910 }])]));
+  expect(generatedUnits(result)).toEqual([]);
+  expect(result.source.units.map(unit => unit.payload.text)).toEqual(['Body.']);
+});
+
+it('keeps a body date reference as body text and does not promote an omitted block outside the physical footer', () => {
+  const text = 'The document generated on 05/06/2032.';
+  const body = reconcileMineruTextCoverage(fixture([[paragraph(text, [10, 300, 300, 320])]], [page([{ text, top: 300 }])]));
+  expect(body.source.units[0].payload.text).toBe(text);
+  expect(generatedUnits(body)).toEqual([]);
+  const omittedBody = reconcileMineruTextCoverage(fixture([[footer(text, [0, 300, 950, 340])]], [page([{ text, top: 310 }])]));
+  expect(generatedUnits(omittedBody)).toEqual([]);
+});
+
+it.each(['cross-column wrap', 'large gap', 'different font', 'multiple physical runs', 'rotation', 'partial footer overlap', 'incomplete sentence'])(
+  'does not join uncertain generated-date evidence with %s', reason => {
+    const lines = [{ text: 'The document generated', top: 910 }, { text: 'on 05/06/2032 by Reference application.', top: 922 }];
+    const p = page(lines);
+    if (reason === 'cross-column wrap') p.items[1].transform[4] = 500;
+    if (reason === 'large gap') p.items[1].transform[5] -= 35;
+    if (reason === 'different font') { p.items[1].transform[0] = 8; p.items[1].transform[3] = 8; }
+    if (reason === 'multiple physical runs') {
+      p.items[1].transform[5] = p.items[0].transform[5]; p.items[1].transform[4] = 500;
+    }
+    if (reason === 'rotation') p.rotation = 90;
+    if (reason === 'partial footer overlap') p.items[0].transform[5] += 20;
+    if (reason === 'incomplete sentence') {
+      p.items[1].text = 'on 05/06/2032 by'; p.text = p.items.map(item => item.text).join('\n');
+    }
+    const input = fixture([[paragraph('Body.', [10, 100, 200, 120]), footer(lines.map(value => value.text).join(' '))]], [p]);
+    const result = reconcileMineruTextCoverage(input);
+    expect(generatedUnits(result)).toEqual([]);
+  });
+
+it('preserves conflicting explicit footer dates and their independent locations as a limitation, without changing any revision date', () => {
+  const first = 'Document generated on 2032-05-06.', second = 'Document generated on 2032-05-07.';
+  const input = fixture([[paragraph('Body.', [10, 100, 200, 120]), footer(`${first} ${second}`)]],
+    [page([{ text: 'Body.', top: 100 }, { text: first, top: 910 }, { text: second, top: 922 }])]);
+  const result = reconcileMineruTextCoverage(input), units = generatedUnits(result);
+  expect(units.map(unit => unit.payload.text)).toEqual([first, second]);
+  expect(new Set(units.map(unit => unit.unitId)).size).toBe(2);
+  expect(result.binding).toEqual(input.original.binding);
+  expect(result.coverage.unresolvedRanges).toContainEqual(expect.objectContaining({
+    reason: 'TEXT_CONFLICT', unitIds: units.map(unit => unit.unitId), readingImpact: 'LIMITATION',
+    message: expect.stringContaining('不同的文档生成日期') }));
+});
