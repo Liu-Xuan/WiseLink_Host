@@ -3,7 +3,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, asc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
 
 import {
@@ -112,37 +112,30 @@ export class CanonicalModelSettingsRepository {
     expectedRevision: number;
     modelRef: string;
   }): Promise<StoredCanonicalModelSetting> {
-    const now = new Date();
-    const changed = {
-      modelRef: input.modelRef,
-      revision: input.expectedRevision + 1,
-      changedByUserId: input.actorUserId,
-      updatedAt: now,
-      updatedBy: input.actorUserId,
-    };
-    const rows =
-      input.expectedRevision === 0
-        ? await this.db
-            .insert(canonicalModelSetting)
-            .values({
-              ...changed,
-              tenantId: input.tenantId,
-              createdBy: input.actorUserId,
-            })
-            .onConflictDoNothing()
-            .returning(selection)
-        : await this.db
-            .update(canonicalModelSetting)
-            .set(changed)
-            .where(
-              and(
-                eq(canonicalModelSetting.tenantId, input.tenantId),
-                eq(canonicalModelSetting.revision, input.expectedRevision),
-              ),
-            )
-            .returning(selection);
+    // The platform transaction supplies the actor and roles. The RPC accepts
+    // no actor or parsing settings and preserves the table's write-deny RLS.
+    const rows = await this.db.execute<{
+      tenantId: string;
+      modelRef: string;
+      revision: number;
+      updatedAt: Date | string;
+    }>(sql`
+      SELECT tenant_id AS "tenantId", model_ref AS "modelRef",
+             revision, updated_at AS "updatedAt"
+      FROM workspace_aadkpkjef3slu.canonical_model_setting_compare_and_set(
+        ${input.tenantId}::varchar,
+        ${input.modelRef}::varchar,
+        ${input.expectedRevision}::integer
+      )
+    `);
     if (!rows[0])
       throw canonicalModelError('MODEL_SETTINGS_REVISION_CONFLICT', 409);
-    return rows[0];
+    return {
+      ...rows[0],
+      updatedAt:
+        rows[0].updatedAt instanceof Date
+          ? rows[0].updatedAt
+          : new Date(rows[0].updatedAt),
+    };
   }
 }
