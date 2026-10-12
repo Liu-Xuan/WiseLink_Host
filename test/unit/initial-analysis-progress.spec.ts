@@ -61,6 +61,23 @@ describe('Initial analysis progress', () => {
     expect(html).not.toContain('当前暂无分析进度记录');
     expect(html).not.toContain('候选待复核');
     expect(html).not.toContain('INITIAL_GATEWAY');
+    expect(html).not.toContain('续办身份尚未验证');
+  });
+
+  it('shows the separate continuation identity note while preserving the actual failed progress', () => {
+    const value: CanonicalInitialAnalysisReadModel = { ...initial(),
+      continuationDiagnosticCode: 'OFFICIAL_OAUTH_SESSION_REQUIRED', continuationOperations: [],
+      stages: { ...initial().stages, jobAid: { status: 'FAILED', terminalCode: 'INITIAL_GATEWAY_HTTP_502' } },
+    };
+    const html = renderToStaticMarkup(createElement(InitialAnalysisProgress, {
+      workItemId: 'WI-test', sessionGeneration: 1, initial: value, timeline,
+      onRevisionChanged: jest.fn(), onAccessLost: jest.fn(),
+    }));
+    expect(html).toContain('续办身份尚未验证，请先完成工作台身份验证。');
+    expect(html).toContain('全文翻译未完成');
+    expect(html).toContain('模型未返回可用结果');
+    expect(html).not.toContain('继续问题评估');
+    expect(html).not.toContain('OFFICIAL_OAUTH_SESSION_REQUIRED');
   });
 
   it('polls only pending/running work and stops on failure, conflict or completed waiting-input', () => {

@@ -161,6 +161,11 @@ export default function InitialAnalysisProgress(props: Props) {
         />
       ))}
       <TaskPills timeline={props.timeline} initialAnalysis={value} />
+      {value?.continuationDiagnosticCode === 'OFFICIAL_OAUTH_SESSION_REQUIRED' ? (
+        <p className="wl-initial-analysis-note" role="status">
+          续办身份尚未验证，请先完成工作台身份验证。
+        </p>
+      ) : null}
       {props.initial ? (
         <Button
           type="button"

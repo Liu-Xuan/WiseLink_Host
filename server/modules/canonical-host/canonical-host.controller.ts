@@ -195,7 +195,7 @@ export class CanonicalHostController {
     @Query('sourceRef') sourceRef: string | undefined,
     @Req() httpRequest: Request,
   ) {
-    return this.pageWithEngineerReviews(
+    const operation = () => this.pageWithEngineerReviews(
       {
         workItemId,
         query,
@@ -203,6 +203,9 @@ export class CanonicalHostController {
       },
       hostActor(httpRequest),
     );
+    return this.sessions
+      ? this.sessions.withRequestSession(httpRequest, operation)
+      : operation();
   }
 
   @Get('work-items/:workItemId/assessment-work')

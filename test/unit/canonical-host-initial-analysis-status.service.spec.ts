@@ -1,5 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { SessionResolver } from '../../server/modules/identity/session-resolver.service';
+import * as cancelledContinuation from '../../server/modules/action-attempt/cancelled-initial-continuation';
 import postgres from 'postgres';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import type {
@@ -37,6 +39,137 @@ const HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('CanonicalHost initial-analysis status projection', () => {
+  describe('cancelled browser read session boundary', () => {
+    let oldJobAid: string | undefined;
+    let oldTranslation: string | undefined;
+    let oldSandbox: string | undefined;
+    let oldLocal: string | undefined;
+    beforeEach(() => {
+      oldJobAid = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+      oldTranslation = process.env.WL_TRANSLATION_V2_ENABLED;
+      oldSandbox = process.env.SANDBOX_ID;
+      oldLocal = process.env.MIAODA_LOCAL_DEV;
+      process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '1';
+      process.env.WL_TRANSLATION_V2_ENABLED = '1';
+      process.env.SANDBOX_ID = 'synthetic-browser-session-test';
+      delete process.env.MIAODA_LOCAL_DEV;
+    });
+    afterEach(() => {
+      for (const [key, value] of Object.entries({
+        WL_JOBAID_PROBLEM_V2_ENABLED: oldJobAid,
+        WL_TRANSLATION_V2_ENABLED: oldTranslation,
+        SANDBOX_ID: oldSandbox,
+        MIAODA_LOCAL_DEV: oldLocal,
+      })) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+      jest.restoreAllMocks();
+    });
+
+    function harness(options: { cookie?: boolean; expires?: boolean; user?: string; tenant?: string; app?: string } = {}) {
+      const workItem = parsedWorkItem();
+      const input = { workItem, tenantId: 'tenant-1', actorUserId: 'owner-test' };
+      const request = {
+        headers: options.cookie ? { cookie: 'wl_session=synthetic-opaque' } : {},
+        userContext: { userId: input.actorUserId, tenantId: input.tenantId,
+          appId: 'app_17bzc551rsg', env: 'runtime', isSystemAccount: false, roles: [] },
+      };
+      const store = { validate: jest.fn(async () => ({ sessionId: 'session-test', revision: 1,
+        expiresAt: new Date(Date.now() + (options.expires ? -1_000 : 60_000)),
+        identity: { subjectMappingId: 'mapping-test', provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+          miaodaUserId: options.user ?? input.actorUserId, tenantId: options.tenant ?? input.tenantId,
+          feishuUserId: null, feishuOpenId: 'synthetic-open-id',
+          namespacedSubject: { namespace: 'FEISHU_OPEN_ID', subject: 'synthetic-open-id', tenantKey: 'tenant-key' },
+          verifiedAt: new Date().toISOString() },
+      })) };
+      const middleware = { use: jest.fn((_request, _response, next) => next()) };
+      const sessions = new SessionResolver(store as never, {
+        applicationScopeId: options.app ?? request.userContext.appId, sessionEnvironment: 'runtime',
+      } as never, middleware as never);
+      const db = { select: jest.fn(() => ({ from: () => ({ where: () => ({ limit: async () => [{ model: null }] }) }) })) };
+      const service = new CanonicalHostInitialAnalysisStatusService(db as never, {} as never,
+        undefined, undefined, undefined, sessions);
+      const status = projectCanonicalHostInitialAnalysisStatus(workItem, [{
+        ...attempt('OPENCLAW_DYNAMIC_EVALUATION', 'CANCELLED'), terminalCode: 'INITIAL_GATEWAY_HTTP_502',
+      }], { englishAssessmentEnabled: true });
+      jest.spyOn(service, 'project').mockResolvedValue(status);
+      const grant = jest.spyOn(service, 'hasExactAutoProcessingGrant').mockResolvedValue(false);
+      const automatic = jest.spyOn(automaticScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(false);
+      const readBinding = jest.spyOn(cancelledContinuation, 'readCancelledInitialContinuation')
+        .mockResolvedValue({ binding: { workItem, actorUserId: input.actorUserId, tenantId: input.tenantId } } as never);
+      const read = () => sessions.withRequestSession(request as never, () => service.projectForBrowser(input));
+      return { service, sessions, store, middleware, db, input, request, status, grant, automatic, readBinding, read };
+    }
+
+    it.each([false, true])('preserves native-only failure and grants no operation even with configured scope (%s)', async (configured) => {
+      const h = harness(); h.automatic.mockReturnValue(configured);
+      const value = await h.read();
+      expect(value).toMatchObject({ status: h.status.status, nextOperation: h.status.nextOperation,
+        stages: { jobAid: { status: 'FAILED', terminalCode: 'INITIAL_GATEWAY_HTTP_502' } },
+        continuationDiagnosticCode: 'OFFICIAL_OAUTH_SESSION_REQUIRED', continuationOperations: [],
+        canRequestBlockTranslation: false });
+      expect(h.readBinding).not.toHaveBeenCalled();
+      expect(h.middleware.use).not.toHaveBeenCalled();
+      expect(h.grant).not.toHaveBeenCalled();
+      expect(h.automatic).not.toHaveBeenCalled();
+      await expect(h.service.cancelledContinuationBinding(h.input)).rejects.toThrow('OFFICIAL_OAUTH_SESSION_REQUIRED');
+    });
+
+    it('uses a valid same-person session and the unchanged exact binding lookup', async () => {
+      const h = harness({ cookie: true });
+      const value = await h.read();
+      expect(value.continuationOperations).toContain('EVALUATE_JOBAID');
+      expect(value).not.toHaveProperty('continuationDiagnosticCode');
+      expect(h.readBinding).toHaveBeenCalledWith(h.db, h.input);
+      expect(h.store.validate).toHaveBeenCalledTimes(1);
+      expect(h.middleware.use).toHaveBeenCalledWith(expect.objectContaining({ userContext: {
+        userId: h.input.actorUserId, isSystemAccount: true, roles: [],
+      } }), {}, expect.any(Function));
+    });
+
+    it.each([{ user: 'other-user' }, { tenant: 'other-tenant' }, { app: 'other-app' }])(
+      'rejects mismatched session identity before privileged SQL: %j', async (mismatch) => {
+        const h = harness({ cookie: true, ...mismatch });
+        await expect(h.read()).rejects.toThrow('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
+        expect(h.readBinding).not.toHaveBeenCalled();
+        expect(h.middleware.use).not.toHaveBeenCalled();
+      },
+    );
+
+    it('never gives an expired session continuation capability or enters privileged SQL', async () => {
+      const h = harness({ cookie: true, expires: true });
+      expect(await h.read()).toMatchObject({ continuationDiagnosticCode: 'OFFICIAL_OAUTH_SESSION_REQUIRED', continuationOperations: [] });
+      expect(h.readBinding).not.toHaveBeenCalled();
+      expect(h.middleware.use).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      new ForbiddenException('OFFICIAL_OAUTH_SESSION_REQUIRED'),
+      new UnauthorizedException('OTHER_AUTHENTICATION_FAILURE'),
+      new Error('OFFICIAL_OAUTH_SESSION_REQUIRED'),
+      new Error('CANCELLED_BINDING_DATABASE_FAILURE'),
+    ])('keeps every non-exact lookup failure fatal: %s', async (error) => {
+      const h = harness({ cookie: true }); h.readBinding.mockRejectedValue(error);
+      await expect(h.read()).rejects.toBe(error);
+    });
+
+    it('does not soften session storage failure before the page projection', async () => {
+      const h = harness({ cookie: true }); const error = new Error('SESSION_DATABASE_FAILURE');
+      h.store.validate.mockRejectedValue(error);
+      await expect(h.read()).rejects.toBe(error);
+      expect(h.db.select).not.toHaveBeenCalled();
+    });
+
+    it('keeps an in-flight stage read unchanged without invoking cancelled eligibility', async () => {
+      const h = harness();
+      jest.spyOn(h.service, 'project').mockResolvedValue(projectCanonicalHostInitialAnalysisStatus(h.input.workItem, [
+        attempt('OPENCLAW_DYNAMIC_EVALUATION', 'RUNNING'),
+      ], { englishAssessmentEnabled: true }));
+      expect(await h.read()).toMatchObject({ status: 'BUSY', continuationOperations: [] });
+      expect(h.readBinding).not.toHaveBeenCalled();
+    });
+  });
+
   it('checks enrolled continuation only under the verified owner service SQL context', async () => {
     const limit = jest.fn().mockResolvedValue([{ workItemId: 'WI-enrolled' }]);
     const chain = { innerJoin: jest.fn(), where: jest.fn(), limit };

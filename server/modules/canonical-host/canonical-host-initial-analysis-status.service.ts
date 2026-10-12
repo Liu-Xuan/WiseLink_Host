@@ -443,9 +443,21 @@ export class CanonicalHostInitialAnalysisStatusService {
           value.attemptStatus,
         ),
     );
-    const cancelled = !active && status.stages.jobAid.attemptStatus === 'CANCELLED'
-      ? await this.cancelledContinuationBinding(input) : null;
+    let cancelled: Awaited<ReturnType<typeof this.cancelledContinuationBinding>> = null;
+    let continuationDiagnosticCode: CanonicalInitialAnalysisReadModel['continuationDiagnosticCode'];
+    if (!active && status.stages.jobAid.attemptStatus === 'CANCELLED') {
+      try {
+        cancelled = await this.cancelledContinuationBinding(input);
+      } catch (error) {
+        if (!(error instanceof UnauthorizedException &&
+          error.message === 'OFFICIAL_OAUTH_SESSION_REQUIRED')) throw error;
+        // A readable native page does not establish privileged continuation identity.
+        // Keep the actual terminal state, without advertising an unverified operation.
+        continuationDiagnosticCode = 'OFFICIAL_OAUTH_SESSION_REQUIRED';
+      }
+    }
     const automatic =
+      !continuationDiagnosticCode &&
       status.status !== 'NOT_READY' &&
       !active &&
       (isOpenClawAutomaticReviewConfigured({
@@ -538,6 +550,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       analysisModel: readStoredExecutionModel(root?.model),
       nextOperation: status.nextOperation,
       continuationOperations,
+      ...(continuationDiagnosticCode ? { continuationDiagnosticCode } : {}),
       canRequestBlockTranslation: canTranslate,
       translationWork,
       stages: {

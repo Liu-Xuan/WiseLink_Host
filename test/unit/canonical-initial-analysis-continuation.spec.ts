@@ -2,6 +2,7 @@ import type {
   AilyInitialAnalysisStatus,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
+import { UnauthorizedException } from '@nestjs/common';
 import {
   canonicalJson,
   sealTaskEnvelope,
@@ -33,6 +34,17 @@ const configuration = {
 };
 
 describe('owner-requested initial continuation', () => {
+  it.each([
+    new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED'),
+    new Error('CANCELLED_BINDING_DATABASE_FAILURE'),
+  ])('keeps the write-side cancelled lookup failure fatal and queues no work: %s', async (error) => {
+    const h = harness(); h.initial.cancelledContinuationBinding.mockRejectedValue(error);
+    await expect(h.send({ ...request, operation: 'EVALUATE_JOBAID' })).rejects.toBe(error);
+    expect(h.attempts.readRequest).not.toHaveBeenCalled();
+    expect(h.jobAid.enqueueContinuation).not.toHaveBeenCalled();
+    expect(h.translation.enqueueContinuation).not.toHaveBeenCalled();
+  });
+
   it.each([true, false])(
     'automatically uses only an available current verified grant (%s)',
     async (available) => {

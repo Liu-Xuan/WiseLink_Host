@@ -23,7 +23,8 @@ jest.mock('@lark-apaas/fullstack-nestjs-core', () => {
   };
 });
 
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import type { SessionResolver } from '../../server/modules/identity/session-resolver.service';
 
 import { CanonicalHostController } from '../../server/modules/canonical-host/canonical-host.controller';
 
@@ -37,7 +38,7 @@ const HOST_REQUEST = {
   },
 };
 
-function target() {
+function target(sessions?: SessionResolver) {
   const service = { browserInitialAnalysisStatus: jest.fn().mockResolvedValue({ status: 'FAILED' }) };
   const workItems = {
     parsePdf: jest.fn().mockResolvedValue({ workItemCreated: true }),
@@ -77,11 +78,59 @@ function target() {
       engineerReviews as never,
       aeo as never,
       libraryIndex as never,
+      undefined,
+      undefined,
+      sessions,
     ),
   };
 }
 
 describe('CanonicalHostController assessment actions', () => {
+  describe('document parsing optional request session', () => {
+    function pageHarness(sessions?: SessionResolver) {
+      const h = target(sessions);
+      const page = jest.spyOn(h.controller as unknown as {
+        pageWithEngineerReviews(input: unknown, actor: unknown): Promise<unknown>;
+      }, 'pageWithEngineerReviews').mockResolvedValue({ status: 'FAILED' });
+      return { ...h, page };
+    }
+
+    it('runs the page projection inside the same optional session scope as initial analysis', async () => {
+      let inScope = false;
+      const sessions = { withRequestSession: jest.fn(async (_request, operation) => {
+        inScope = true;
+        try { return await operation(null); } finally { inScope = false; }
+      }) };
+      const h = pageHarness(sessions as never);
+      h.page.mockImplementation(async () => { expect(inScope).toBe(true); return { status: 'FAILED' }; });
+      await expect(h.controller.page('WI-progress', 'query', 'source-ref', HOST_REQUEST as never))
+        .resolves.toEqual({ status: 'FAILED' });
+      expect(sessions.withRequestSession).toHaveBeenCalledWith(HOST_REQUEST, expect.any(Function));
+      expect(sessions.withRequestSession).toHaveBeenCalledTimes(1);
+      expect(h.page).toHaveBeenCalledWith({ workItemId: 'WI-progress', query: 'query', sourceRef: 'source-ref' },
+        expect.objectContaining({ userId: 'engineer-1001', tenantId: 'tenant-2001' }));
+    });
+
+    it('keeps the existing page path when the optional resolver is absent', async () => {
+      const h = pageHarness();
+      await expect(h.controller.page('WI-progress', undefined, undefined, HOST_REQUEST as never))
+        .resolves.toEqual({ status: 'FAILED' });
+      expect(h.page).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      new UnauthorizedException('MALFORMED_SESSION'),
+      new Error('SESSION_DATABASE_FAILURE'),
+      new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED'),
+    ])('never softens an optional session resolver failure: %s', async (error) => {
+      const sessions = { withRequestSession: jest.fn().mockRejectedValue(error) };
+      const h = pageHarness(sessions as never);
+      await expect(h.controller.page('WI-progress', undefined, undefined, HOST_REQUEST as never))
+        .rejects.toBe(error);
+      expect(h.page).not.toHaveBeenCalled();
+    });
+  });
+
   it('delegates the initial progress read with the existing trusted browser actor', async () => {
     const { controller, service } = target();
     await expect(controller.initialAnalysis('WI-progress', HOST_REQUEST as never)).resolves.toEqual({ status: 'FAILED' });

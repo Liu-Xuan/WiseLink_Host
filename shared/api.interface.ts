@@ -2878,6 +2878,8 @@ export interface CanonicalInitialAnalysisReadModel {
   status: AilyInitialAnalysisStatus['status'];
   nextOperation: AilyInitialAnalysisOperation | null;
   continuationOperations?: CanonicalInitialAnalysisContinuationRequest['operation'][];
+  /** Only the optional cancelled-continuation lookup lacked a verified session. */
+  continuationDiagnosticCode?: 'OFFICIAL_OAUTH_SESSION_REQUIRED';
   canRequestBlockTranslation?: boolean;
   translationWork?: { workspaceId: string; rowVersion: number } | null;
   stages: {
