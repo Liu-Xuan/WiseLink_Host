@@ -16,9 +16,11 @@ export function useLibraryGraphPage(request:CanonicalLibraryGraphRequest,session
       if (current()) setState({key,page,error:null,cursorInvalid:false});
     }).catch(reason => {
       if (!current()) return;
-      const code = summarizeCanonicalDocumentReadFailure(reason).code ?? (reason instanceof Error ? reason.message : '');
+      const failure = summarizeCanonicalDocumentReadFailure(reason);
+      const code = failure.code ?? (reason instanceof Error ? reason.message : '');
       const cursorInvalid = code === 'LIBRARY_GRAPH_CURSOR_INVALID';
-      const deniedScope = ['CANONICAL_WORK_ITEM_NOT_FOUND','FORBIDDEN'].includes(code);
+      const deniedScope = ['CANONICAL_WORK_ITEM_NOT_FOUND','FORBIDDEN'].includes(code)
+        || [403,404].includes(failure.statusCode ?? 0);
       setState({key,page:null,cursorInvalid,error:cursorInvalid
         ? '分页范围已变化或游标不可用。旧页已清除，请重新读取同一范围首页。'
         : deniedScope ? '当前账户无法读取此目录范围。已清除本页对象，请重新核对授权。' : libraryReadErrorPresentation(reason).message});

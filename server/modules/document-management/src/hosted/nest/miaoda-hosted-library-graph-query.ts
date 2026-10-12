@@ -55,21 +55,30 @@ export function libraryGraphStatement(input: OwnedLibraryGraphQuery): SQL {
   if (request.level === 'versions') {
     // Anchor before authorization; deliberately no metadata or prior-filter join.
     return sql`with visible as materialized (
-      select v.document_version_id, v.business_revision, v.committed_at,
+      select v.document_id, v.document_version_id, v.business_revision, v.committed_at,
         coalesce(v.document_version_id=f.current_document_version_id,false) as is_current
       from ${joins} where f.family_id=${request.familyId} and ${visibility(input)}
-    ), page as (
+    ), page as materialized (
       select * from visible ${after ? sql`where document_version_id collate "C" > ${after.value} collate "C"` : sql``}
       order by document_version_id collate "C" limit ${limit + 1}
+    ), reader_page as (
+      select page.*, (select w.work_item_id from work_item w
+        where w.tenant_id=${input.tenantId} and w.requested_by_user_id=${input.actorUserId}
+          and w.document_id=page.document_id and w.document_version_id=page.document_version_id
+        order by (w.package_id is not null and w.package_artifact_ref is not null) desc,
+          w.created_at desc, w.work_item_id desc limit 1) as reader_work_item_id from page
     ) select
       (case when exists(select 1 from visible) then 1 else 0 end)::integer as "uniqueFamilyCount",
       (select count(*)::integer from visible) as "readableVersionCountInMatchingFamilies",
       coalesce((select bool_or(document_version_id is null or octet_length(document_version_id)>384 or length(document_version_id)>96
-        or business_revision is null or octet_length(business_revision)>2048 or length(business_revision)>512 or committed_at is null) from page),false) as "invalidData",
+        or business_revision is null or octet_length(business_revision)>2048 or length(business_revision)>512 or committed_at is null
+        or (reader_work_item_id is not null and (octet_length(reader_work_item_id)>384 or length(reader_work_item_id)>96))) from reader_page),false) as "invalidData",
       coalesce((select jsonb_agg(jsonb_build_object('kind','VERSION',
         'documentVersionId',case when octet_length(document_version_id)<=384 then document_version_id end,
         'businessRevision',case when octet_length(business_revision)<=2048 then business_revision end,
-        'committedAt',committed_at,'isCurrent',is_current) order by document_version_id collate "C") from page),'[]'::jsonb) as items`;
+        'committedAt',committed_at,'isCurrent',is_current)
+        || case when reader_work_item_id is null then '{}'::jsonb else jsonb_build_object('readerWorkItemId',reader_work_item_id) end
+        order by document_version_id collate "C") from reader_page),'[]'::jsonb) as items`;
   }
   const pattern = `%${(request.search ?? '').replace(/[\\%_]/gu, '\\$&')}%`;
   const search = request.search

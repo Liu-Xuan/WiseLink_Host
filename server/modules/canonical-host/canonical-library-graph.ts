@@ -288,6 +288,7 @@ export async function readLibraryGraph(
       request.level === 'versions' &&
       item.kind === 'VERSION' &&
       validText(item.documentVersionId, 384, true) &&
+      (item.readerWorkItemId === undefined || validText(item.readerWorkItemId, 384, true)) &&
       validText(item.businessRevision, 2048) &&
       typeof item.isCurrent === 'boolean' &&
       typeof item.committedAt === 'string' &&
@@ -296,6 +297,7 @@ export async function readLibraryGraph(
       return {
         kind: item.kind,
         documentVersionId: item.documentVersionId,
+        ...(item.readerWorkItemId ? { readerWorkItemId: item.readerWorkItemId } : {}),
         businessRevision: item.businessRevision,
         committedAt: new Date(item.committedAt).toISOString(),
         isCurrent: item.isCurrent,

@@ -5,7 +5,7 @@ import { Button } from '@client/src/components/ui/button';
 import { DocumentVersionLink } from './DocumentVersionLink';
 import { documentLabel, libraryVersionLabel } from './library-document-presentation';
 import { metadataValues, type LibraryCatalogFilters } from './library-classification';
-import { ataDirectoryTitles, buildLibraryAtaDirectory, type AtaDirectoryNode, type AtaTitleScheme } from './library-ata-directory';
+import { ataDirectoryLabel, ataDirectoryTitles, buildLibraryAtaDirectory, type AtaDirectoryNode, type AtaTitleScheme } from './library-ata-directory';
 import { libraryAtaSummaryParams } from './library-summary-entry';
 
 export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore, scheme, onSchemeChange, onSelect }: {
@@ -23,7 +23,7 @@ export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore,
       const key = [...path, `${node.level}:${node.key}`];
       const titles = node.level === 'ata2' || node.level === 'ata4' ? ataDirectoryTitles(node.key, scheme) : [];
       return <details key={node.key} data-reading-key={`ata:${JSON.stringify(key)}`} open={path.length === 0}>
-        <summary><span className="library-branch-label"><strong>{node.label}</strong></span><small>已加载 {new Set(node.items.map(item => item.document.familyId)).size} 份 / {node.items.length} 个版本</small></summary>
+        <summary><span className="library-branch-label"><strong>{node.level === 'ata2' || node.level === 'ata4' ? ataDirectoryLabel(node.key, scheme) : node.label}</strong></span><small>已加载 {new Set(node.items.map(item => item.document.familyId)).size} 份 / {node.items.length} 个版本</small></summary>
         {node.level === 'ata4' && /^\d{2}-\d{2}$/u.test(node.key) ? <div className="my-2 flex flex-wrap gap-3">
           <Link className="text-sm underline" to={`/summaries/new?${libraryAtaSummaryParams(node, path)}`}>为选定资料形成概述</Link>
           <Link className="text-sm underline" to={`/summaries?${libraryAtaSummaryParams(node, path)}`}>阅读此范围已有概述</Link>
@@ -46,6 +46,7 @@ export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore,
     <p className="library-classification-note">仅覆盖当前已加载的获权版本。机型提及与 ATA 取自同一版本的原文观察，均待核，不表示适用性。{hasMore ? '可在下方加载更多。' : ''}</p>
     <div role="group" aria-label="ATA 标题附件"><Button size="sm" variant="outline" aria-pressed={scheme === 'ispec'} onClick={() => onSchemeChange('ispec')}>iSpec 附件标题</Button><Button size="sm" variant="outline" aria-pressed={scheme === 'jasc'} onClick={() => onSchemeChange('jasc')}>JASC 附件标题</Button></div>
     <p className="library-classification-note">标题来自仓库已收录的 2026-09-10 附件摘录，可展开查看源行。附件版次及机型映射未核验；iSpec 与 JASC 同号不表示等同。</p>
+    <p className="library-classification-note">带分隔符等尚未确认含义的标注逐项保留在“原始 ATA 标注”中；不据标点推定子章节或范围。</p>
     {roots.length ? branches(roots) : <p role="status">本批获权版本没有可显示的分类路径。</p>}
   </section>;
 }

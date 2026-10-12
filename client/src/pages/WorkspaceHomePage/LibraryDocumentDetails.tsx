@@ -210,7 +210,7 @@ export function LibraryDocumentDetails({
               </details>
             ) : null}
             <DocumentVersionLink version={selectedVersion} familyId={document.familyId}>进入精读工作台</DocumentVersionLink>
-            <Link to={`/graph?${documentGraphReadingParams(selectedVersion.documentVersionId, selectedVersion.readerWorkItemId || undefined, {})}`}>相关资料与时间</Link>
+            <Link to={`/graph?${documentGraphReadingParams(selectedVersion.documentVersionId, selectedVersion.readerWorkItemId || undefined, {})}`}>文档关系图谱与时间</Link>
           </section> : <p role="status">所选版本未在当前读取范围内返回，未替换为其他版本。</p>}
           <p className="library-quicklook-note">
             版本状态以文档管理模块的登记为准。重复评估关联已有文档版本。

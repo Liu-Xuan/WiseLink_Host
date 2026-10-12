@@ -45,6 +45,9 @@ export interface LibraryGraphFamily {
 export interface LibraryGraphVersion {
   kind: 'VERSION';
   documentVersionId: string;
+  /** Host-selected actor-owned reader for this exact DV, following the library's
+   * existing ranking. A navigation hint; the destination rechecks authorization. */
+  readerWorkItemId?: string;
   businessRevision: string;
   committedAt: string;
   isCurrent: boolean;

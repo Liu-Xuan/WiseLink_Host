@@ -41,3 +41,16 @@ it('rejects an oversized or wrong-scope response before showing any partial grap
   expect(() => validateLibraryGraphPage({...page,items:[...page.items,page.items[0]]},{level:'clusters',groupBy:'ata',limit:50})).toThrow('RESPONSE_INVALID');
   expect(() => validateLibraryGraphPage({...page,coverage:{...page.coverage,documentReferences:'COMPLETE' as never}},{level:'clusters',groupBy:'ata',limit:50})).toThrow('RESPONSE_INVALID');
 });
+
+it('accepts an exact reader navigation hint but rejects malformed or empty reader identities', () => {
+  const request = { level: 'versions' as const, familyId: 'f', limit: 50 };
+  const versionPage: CanonicalLibraryGraphResponse = { ...base, limit: 50, hasMore: false, nextCursor: null,
+    level: 'versions', familyId: 'f', countScope: 'SELECTED_FAMILY_FRESH_READ',
+    items: [{ kind: 'VERSION', documentVersionId: 'dv-r3', businessRevision: 'R3', committedAt: '2026-10-01', isCurrent: false,
+      readerWorkItemId: 'wi-r3' }] };
+  expect(validateLibraryGraphPage(versionPage, request)).toBe(versionPage);
+  for (const readerWorkItemId of ['', 'x'.repeat(97), 'bad\u0000id', null]) {
+    expect(() => validateLibraryGraphPage({ ...versionPage,
+      items: [{ ...versionPage.items[0], readerWorkItemId } as never] }, request)).toThrow('RESPONSE_INVALID');
+  }
+});

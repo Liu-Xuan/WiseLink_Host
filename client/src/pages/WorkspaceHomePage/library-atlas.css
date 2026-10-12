@@ -1,4 +1,15 @@
 /* Library navigation lives in the shell; the reading sheet uses the full width. */
+.suite-ata-facets > details > summary {
+  padding: 10px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.suite-ata-facets .suite-folder-row { padding-left: 20px; }
+.suite-ata-facets .suite-folder-row > span { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.suite-ata-facets .suite-folder-row > span > small { display: block; margin-top: 3px; }
+.suite-ata-note { padding: 0 8px; font-size: 10px; line-height: 1.6; color: var(--wl-muted); }
 .library-home.library-atlas-home {
   --wl-accent: #367ad8;
   --wl-ink: #1c2938;

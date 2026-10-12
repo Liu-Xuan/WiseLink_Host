@@ -1,6 +1,6 @@
 import { saveLibraryGraphReturn } from './library-graph-return-memory';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronRight, Filter, Maximize2, Minus, Plus, RefreshCw, Search } from 'lucide-react';
 import type { CanonicalLibraryGraphRequest, LibraryGraphFilters } from '@shared/library-graph.interface';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
@@ -95,7 +95,7 @@ function LibraryGraphContent({request,session,denied,discardDisplay}:{request:Ca
     if (item.kind === 'CLASSIFICATION' && request.level !== 'versions') drill({level:'families',groupBy:request.groupBy,
       clusterValue:item.value,...libraryGraphFilters(request),limit:50});
     else if (item.kind === 'FAMILY') drill({level:'versions',familyId:item.familyId,limit:50});
-    else if (item.kind === 'VERSION') { const macro = capture(); const query = documentGraphReadingParams(item.documentVersionId,undefined,{}); const token = saveLibraryGraphReturn({query:macro.toString(),parent:parentQuery ?? undefined,root:rootQuery ?? undefined},session); if (token) query.set('returnLibrarySnapshot',token); navigate(`/graph?${query}`); }
+    else if (item.kind === 'VERSION') { const macro = capture(); const query = documentGraphReadingParams(item.documentVersionId,item.readerWorkItemId,{}); const token = saveLibraryGraphReturn({query:macro.toString(),parent:parentQuery ?? undefined,root:rootQuery ?? undefined},session); if (token) query.set('returnLibrarySnapshot',token); navigate(`/graph?${query}`); }
   };
   return <section className="suite-library-graph" aria-label="授权全库概览">
     <header className="suite-library-header"><div><span className="suite-library-eyebrow">关系图谱</span><h1>全库概览</h1></div>
@@ -108,6 +108,14 @@ function LibraryGraphContent({request,session,denied,discardDisplay}:{request:Ca
       <Button size="sm" variant="outline" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(value => !value)}><Filter aria-hidden="true" />筛选</Button>
       <Button size="sm" variant="ghost" aria-label="重新核对当前范围" onClick={() => { capture(); read.refresh(); }}><RefreshCw aria-hidden="true" /></Button>
     </header>
+    <nav className="suite-library-breadcrumb" aria-label="图谱模式">
+      <span aria-current="page">全库概览</span>
+      <Link to="/graph">事项关系图谱</Link>
+      <Link to="/library">在资料库选择文档</Link>
+      <Button size="sm" variant="ghost" disabled={selected?.kind !== 'VERSION'}
+        onClick={() => { if (selected?.kind === 'VERSION') openSelected(selected); }}>文档关系图谱</Button>
+    </nav>
+    <p className="suite-library-notice">当前是分类概览。展开分类簇 → 文档族 → 准确版本，即可进入已有文档关系图谱；事项关系图谱保留事项、工程文档、领域聚焦与全景目录视角。分类簇的位置不表示业务关系。</p>
     <nav className="suite-library-breadcrumb" aria-label="图谱范围">
       <Button size="sm" variant="ghost" onClick={() => {capture(); navigate(`/graph?${rootQuery ?? libraryGraphReadingParams({level:'clusters',groupBy:request.level === 'versions' ? 'ata' : request.groupBy,...libraryGraphFilters(request),limit:50})}`);}}>全库概览</Button>
       {request.level !== 'clusters' ? <><ChevronRight aria-hidden="true" /><Button size="sm" variant="ghost" onClick={() => {capture(); navigate(parentQuery ? `/graph?${parentQuery}` : LIBRARY_GRAPH_ROUTE,{state:request.level === 'versions' && rootQuery ? {libraryRoot:rootQuery,libraryParent:rootQuery} : undefined});}}>{request.level === 'families' ? libraryClusterLabel(request.clusterValue,request.groupBy) : '返回分类簇'}</Button></> : null}
@@ -144,9 +152,11 @@ function LibraryGraphContent({request,session,denied,discardDisplay}:{request:Ca
               : selected.kind === 'FAMILY' ? <p>{selected.readableVersionCount} 个可读版本<br /><small>{selected.familyId}</small></p>
                 : <><p>{selected.isCurrent ? 'Host 当前登记版本，正式现行性待来源核对' : '其他已登记版本，保留准确身份'}</p><small>{selected.documentVersionId}</small><p>登记时间 {selected.committedAt}</p></>}
             <Button onClick={() => openSelected(selected)}>{selected.kind === 'CLASSIFICATION' ? '展开此分类簇' : selected.kind === 'FAMILY' ? '查看族内版本' : '以此准确版本查看邻域'}</Button></>
-            : <><h2>选择一个簇</h2><p>点选画布或下方清单，再展开下一层。每次只读取所选范围的一页。</p>{selectedId ? <p>先前选择未出现在本次授权页，未替换为其他对象。</p> : null}</>}
-          <details className="suite-library-list"><summary>本页对象清单（{read.page.items.length}）</summary><ul>{read.page.items.map(item => <li key={libraryGraphItemId(item)}><button type="button" aria-pressed={libraryGraphItemId(item) === selectedId}
-            onClick={() => select(libraryGraphItemId(item))}>{libraryGraphItemLabel(item,groupBy)}</button></li>)}</ul></details>
+            : <><h2>{request.level === 'clusters' ? '选择一个簇' : request.level === 'families' ? '选择一个文档族' : '选择一个准确版本'}</h2><p>点选画布或下方清单，再展开下一层。每次只读取所选范围的一页。</p>{selectedId ? <p>先前选择未出现在本次授权页，未替换为其他对象。</p> : null}</>}
+          <details open className="suite-library-list"><summary>本页对象清单（{read.page.items.length}）</summary><ul>{read.page.items.map(item => <li key={libraryGraphItemId(item)}><button type="button" aria-pressed={libraryGraphItemId(item) === selectedId}
+            onClick={() => select(libraryGraphItemId(item))}>{libraryGraphItemLabel(item,groupBy)}</button>
+            <button type="button" aria-label={`${item.kind === 'VERSION' ? '打开文档关系图谱' : '展开'} ${libraryGraphItemLabel(item,groupBy)}`}
+              onClick={() => openSelected(item)}>{item.kind === 'VERSION' ? '文档关系' : '展开'}</button></li>)}</ul></details>
         </aside></div> : <div className="suite-library-state" role="status"><h2>当前范围没有可读对象</h2><p>可调整筛选或重新核对。空目录不代表不存在文档引用。</p></div>}
         <footer className="suite-library-footer"><p>文档引用：尚未建立全库索引（NOT_INDEXED） · 事项归属：此层未读取（NOT_LOADED）<br />当前授权目录实时读取；分页之间资料或权限可能变化。元数据是最新登记观察，不是历史工作快照。</p>
           <div>{request.cursor ? <Button size="sm" variant="ghost" onClick={resetPage}>返回当前范围首页</Button> : null}

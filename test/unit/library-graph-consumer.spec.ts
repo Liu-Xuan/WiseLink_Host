@@ -118,8 +118,9 @@ function cluster(value: string | null, count = 1): LibraryGraphCluster {
 function family(familyId: string, documentCode = familyId, readableVersionCount = 2): LibraryGraphFamily {
   return { kind: 'FAMILY', familyId, documentId: `doc-${familyId}`, documentCode, normalizedFamily: 'AMM', readableVersionCount };
 }
-function version(documentVersionId: string, businessRevision: string, isCurrent = false): LibraryGraphVersion {
-  return { kind: 'VERSION', documentVersionId, businessRevision, committedAt: '2026-09-01T00:00:00Z', isCurrent };
+function version(documentVersionId: string, businessRevision: string, isCurrent = false, readerWorkItemId?: string): LibraryGraphVersion {
+  return { kind: 'VERSION', documentVersionId, businessRevision, committedAt: '2026-09-01T00:00:00Z', isCurrent,
+    ...(readerWorkItemId ? { readerWorkItemId } : {}) };
 }
 function requestFilters(request: CanonicalLibraryGraphRequest): LibraryGraphFilters {
   if (request.level === 'versions') return {};
@@ -254,6 +255,37 @@ it('drills from cluster to family to fresh exact R3 version and opens document s
   expect(documentRoute.searchParams.has('search')).toBe(false);
   expect(documentRoute.searchParams.has('ata')).toBe(false);
   expect(documentRoute.searchParams.has('level')).toBe(false);
+});
+
+it('exposes the existing graph modes and opens exact versions directly from the visible list', async () => {
+  mockGetGraph.mockImplementation(async (request: CanonicalLibraryGraphRequest) => {
+    if (request.level === 'clusters') return clusterPageFor(request, [cluster('20')]);
+    if (request.level === 'families') return familyPageFor(request, [family('family-ftd', 'FTD-A')]);
+    return versions(request.familyId, [version('dv-r3', 'R3', false, 'wi-r3')]);
+  });
+  await render('/graph?scope=library');
+  expect(container.querySelector('nav[aria-label="图谱模式"] a[href="/graph"]')?.textContent).toBe('事项关系图谱');
+  expect(container.querySelector<HTMLDetailsElement>('.suite-library-list')?.open).toBe(true);
+  expect(button('文档关系图谱').disabled).toBe(true);
+  await act(async () => button('展开 ATA 20').click()); await settle();
+  expect(container.textContent).toContain('选择一个文档族');
+  await act(async () => button('展开 FTD-A').click()); await settle();
+  expect(container.textContent).toContain('选择一个准确版本');
+  await act(async () => button('打开文档关系图谱 R3').click()); await settle();
+  const route = new URL(currentLocation, 'https://example.test');
+  expect(route.searchParams.get('scope')).toBe('document');
+  expect(route.searchParams.get('documentVersionId')).toBe('dv-r3');
+  expect(route.searchParams.get('readerWorkItemId')).toBe('wi-r3');
+  expect(route.searchParams.has('ata')).toBe(false);
+  expect(mockGetGraph).toHaveBeenCalledTimes(3);
+});
+
+it.each([403,404])('clears the graph and reports an unreadable directory scope for HTTP %s', async statusCode => {
+  mockGetGraph.mockRejectedValueOnce({statusCode});
+  await render('/graph?scope=library');
+  expect(container.textContent).toContain('当前账户无法读取此目录范围');
+  expect(container.textContent).not.toContain('工程评估');
+  expect(container.querySelector('[data-testid="library-canvas"]')).toBeNull();
 });
 
 it('restores per-entry scope, selection and camera across browser Back and Forward', async () => {
@@ -424,7 +456,7 @@ it('clears actor A display ancestry for authorized actor B even when family IDs 
   mockSession = 2; mockUserId = 'actor-2'; mockDenied = false;
   await act(async () => root.render(app(currentLocation))); await settle();
   expect(container.textContent).toContain('FTD-A'); // same readable family ID exists for actor B
-  expect(container.textContent).toContain('选择一个簇');
+  expect(container.textContent).toContain('选择一个文档族');
   expect(mockCanvasProps?.selectedId).toBeUndefined();
   const actorBPage = new URL(currentLocation, 'https://example.test');
   expect(actorBPage.searchParams.get('level')).toBe('families');
