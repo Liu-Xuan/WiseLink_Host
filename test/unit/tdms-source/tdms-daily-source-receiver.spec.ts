@@ -21,9 +21,113 @@ import {
   syntheticFullDailyEnvelope,
   syntheticOwnedEnvelope,
   sourceTime,
+  syntheticBoundedEnvelope,
+  sealBounded,
+  type BoundedProfile,
 } from './tdms-daily-source.fixture';
+import { prepareTdmsDailyMetadataImport } from '../../../server/modules/tdms-source/tdms-daily-metadata-contract';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
+describe('Source51 bounded body through the existing receiver (synthetic only)', () => {
+  it.each<BoundedProfile>(['AD_PROCESSING_FORM', 'SB_PROCESSING_FORM', 'SB_ASSESSMENT_FORM', 'ENGINEERING_INDEPENDENT'])(
+    'retains %s v2 raw/provenance and partial/unread state without authority promotion', async profile => {
+      const { envelope, proof } = syntheticBoundedEnvelope(profile), before = JSON.stringify(envelope);
+      const s = setup(envelope), first = await s.service.importDailyMetadata(actor(), envelope);
+      expect(Object.keys(first)).toHaveLength(10); expect(first.relationCount).toBe(0); expect(first.artifactCount).toBe(0);
+      expect(JSON.stringify(envelope)).toBe(before);
+      expect(s.prepared.envelope).toEqual(envelope);
+      const native = s.prepared.output.nativePackage.records[0];
+      expect(native.content.boundedOwnedBody).toEqual(envelope.package.records[0].content.boundedOwnedBody);
+      expect(native.content).not.toHaveProperty('ownedVisibleBusinessContent'); expect(native.content).not.toHaveProperty('opinions');
+      expect(native.rawFields.profileOwnedBody).toEqual(proof);
+      expect(native.fieldProvenance).toEqual(envelope.package.records[0].provenance);
+      expect(proof).toMatchObject({ sourceReady: false, requiredContentComplete: false, purpose: 'COVERAGE' });
+      expect(proof.relationManifest.every(r => r.state === 'UNREAD' && r.reportedCount === null && r.capturedCount === null && r.targetOwnerReads === 0)).toBe(true);
+      expect(native.coverage).toEqual(envelope.package.coverage);
+      if (profile !== 'ENGINEERING_INDEPENDENT') expect(native.sourceVersion).toEqual({ rawRevision: null, rawIteration: null, confirmation: 'VERSION_UNCONFIRMED' });
+      expect(await s.service.importDailyMetadata(actor(), copy(envelope))).toEqual(first);
+      expect(s.repository.state.captures).toHaveLength(1);
+      const stored = await s.service.readDailyMetadataImport(actor(), envelope.requestId);
+      expect(stored.package).toEqual(envelope.package);
+      expect(s.repository.state.captures[0].packageHash).toBe(hash(envelope.package));
+      expect(s.repository.state.captures[0].dailyMetadata?.adapter?.outputDigest).toBe(hash(s.prepared.output));
+      expect(s.artifacts.acquire).not.toHaveBeenCalled(); expect(s.documents.assertRead).not.toHaveBeenCalled();
+    });
+  it('requires current independent import/read authority and memberships for the new body too', async () => {
+    const { envelope } = syntheticBoundedEnvelope(); const s = setup(envelope);
+    const unavailable = new TdmsSourceService(s.repository, new UnconfiguredTdmsSourceAuthorization(), s.artifacts, s.documents);
+    await expect(unavailable.importDailyMetadata(actor(), envelope)).rejects.toMatchObject({ statusCode: 503 });
+    expect(s.repository.state.captures).toEqual([]);
+    await s.service.importDailyMetadata(actor(), envelope); s.state.readAllowed = false;
+    await expect(s.service.readDailyMetadataImport(actor(), envelope.requestId)).rejects.toThrow();
+    s.state.readAllowed = true; s.state.scopes = [];
+    await expect(s.service.importDailyMetadata(actor(), envelope)).rejects.toThrow();
+    expect(s.repository.state.captures).toHaveLength(1);
+  });
+  it('keeps legacy metadata preparation closed to bounded bodies', () => {
+    expect(() => prepareTdmsDailyMetadataImport(syntheticBoundedEnvelope().envelope)).toThrow('TDMS_DAILY_METADATA_KIND_UNSUPPORTED');
+  });
+  it('preserves blank/absent/not-loaded distinctions and exact bounded unicode/whitespace truncation', () => {
+    const { envelope, proof } = syntheticBoundedEnvelope();
+    for (const read of proof.reads) {
+      const f = read.fields[3]; f.rawBoundedValue = ' 560 / 760 TBD\n😀 '.repeat(10);
+      f.truncation = { limit: 8000, truncated: true, capturedCodepoints: [...f.rawBoundedValue].length, observedTotalCodepoints: 999 };
+    }
+    envelope.package.records[0].content.boundedOwnedBody = copy(proof.reads[1].fields);
+    envelope.package.records[0].coverage.gaps.push('CONTENT_TRUNCATED'); envelope.package.coverage.gaps.push('CONTENT_TRUNCATED'); sealBounded(envelope);
+    const native = adaptTdmsDailySource(envelope).output.nativePackage.records[0];
+    expect(native.content.boundedOwnedBody).toEqual(proof.reads[1].fields);
+    expect(new Set(native.content.boundedOwnedBody?.map(f => f.presence))).toEqual(new Set(['PRESENT_BLANK', 'PRESENT_VALUE', 'ABSENT', 'NOT_LOADED']));
+  });
+  it('uses dynamic locator comparison only for snapshot identity while preserving original bytes/digest', () => {
+    const { envelope } = syntheticBoundedEnvelope('ENGINEERING_INDEPENDENT');
+    const changed = JSON.parse(JSON.stringify(envelope).replaceAll('jcaGen_101', 'jcaGen_999')) as typeof envelope;
+    sealBounded(changed);
+    expect(changed.package.records[0].snapshotId).toBe(envelope.package.records[0].snapshotId);
+    expect(changed.requestId).not.toBe(envelope.requestId);
+    expect(adaptTdmsDailySource(changed).envelope).toEqual(changed);
+    expect(JSON.stringify(adaptTdmsDailySource(changed).output)).toContain('jcaGen_999');
+  });
+  it.each(['version', 'purpose', 'sourceReady', 'requiredContentComplete', 'alias', 'missing-proof', 'legacy-mix', 'not-loaded-as-absent',
+    'double-read', 'owner', 'source-version', 'panel', 'field-order', 'count', 'limit', 'truncation', 'manifest', 'provenance', 'gaps'])(
+    'rejects %s on the native receiver boundary before storage', change => {
+      const p = copy(adaptTdmsDailySource(syntheticBoundedEnvelope().envelope).output.nativePackage);
+      const r = p.records[0], body = r.rawFields.profileOwnedBody as ReturnType<typeof syntheticBoundedEnvelope>['proof'];
+      switch (change) {
+        case 'version': body.bodyRevision = 'tdms-owned-body-observation@1'; break;
+        case 'purpose': body.purpose = 'PROBE'; break;
+        case 'sourceReady': body.sourceReady = true; break;
+        case 'requiredContentComplete': body.requiredContentComplete = true; break;
+        case 'alias': r.content = { ownedVisibleBusinessContent: r.content.boundedOwnedBody as unknown as Array<Record<string, unknown>> }; break;
+        case 'missing-proof': delete r.rawFields.profileOwnedBody; break;
+        case 'legacy-mix': r.rawFields.ownedBusinessContent = {}; break;
+        case 'not-loaded-as-absent': for (const read of body.reads) read.fields.at(-1)!.nativeControl = null; break;
+        case 'double-read': body.reads[0].fields[3].rawBoundedValue = 'changed'; break;
+        case 'owner': for (const read of body.reads) read.owner.sourceRecordId = 'OR:wt.change2.WTChangeRequest2:999'; break;
+        case 'source-version': r.sourceVersion = { rawRevision: 'A', rawIteration: '1', confirmation: 'SOURCE_DECLARED' }; break;
+        case 'panel': for (const read of body.reads) read.fields[0].panelLocator = '#infoPage_myTab_object_changeRequestDetailsTab'; break;
+        case 'field-order': for (const read of body.reads) read.fields.reverse(); break;
+        case 'count': for (const read of body.reads) read.fields[3].truncation.capturedCodepoints += 1; break;
+        case 'limit': for (const read of body.reads) read.fields[3].truncation.limit = 7999 as 8000; break;
+        case 'truncation': for (const read of body.reads) read.fields[3].truncation.truncated = true; break;
+        case 'manifest': body.relationManifest[0].reportedCount = 0 as unknown as null; break;
+        case 'provenance': r.fieldProvenance[0].observationRef = 'OR:wt.change2.WTChangeRequest2:999'; break;
+        case 'gaps': r.coverage.gaps = ['PROBE_ONLY']; break;
+      }
+      expect(() => sourcePackage(p)).toThrow('TDMS_');
+    });
+  it.each(['edges', 'artifacts', 'scope-complete', 'scope-match', 'complete-coverage'])(
+    'refuses package-level %s promotion in the daily path', change => {
+      const { envelope } = syntheticBoundedEnvelope();
+      if (change === 'edges') envelope.package.edges.push({} as never);
+      if (change === 'artifacts') envelope.package.artifactBindings.push({} as never);
+      if (change === 'scope-complete') envelope.package.query.scopeComplete = true;
+      if (change === 'scope-match') envelope.package.query.scopeMatch = 'MATCHED';
+      if (change === 'complete-coverage') envelope.package.coverage.status = 'COMPLETE';
+      sealBounded(envelope); expect(() => adaptTdmsDailySource(envelope)).toThrow('TDMS_');
+    });
+});
 function setup(envelope = syntheticFullDailyEnvelope()) {
   const prepared = adaptTdmsDailySource(envelope),
     allowed = copy(prepared.memberClaims);

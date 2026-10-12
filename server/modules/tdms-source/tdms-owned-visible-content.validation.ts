@@ -25,6 +25,144 @@ interface Profile {
     targetClasses: string[];
   }>;
 }
+
+/** Source51's v2 COVERAGE proof is deliberately separate from the legacy PROBE. */
+export function createBoundedOwnedBodyValidator({ canonical, object, strict, date }: Primitives) {
+  const fail = (): never => { throw tdmsError('TDMS_BOUNDED_BODY_PROOF_INVALID'); };
+  const shape = (v: unknown, keys: string[]) => {
+    const o = object(v); strict(o, keys);
+    if (keys.some(k => !Object.hasOwn(o, k))) fail();
+    return o;
+  };
+  const list = (v: unknown, max: number): unknown[] => {
+    if (!Array.isArray(v) || v.length > max) fail();
+    return v as unknown[];
+  };
+  const text = (v: unknown, max = 500): string => {
+    if (typeof v !== 'string' || !v.trim() || v.length > max) fail();
+    return v as string;
+  };
+  const ordered = (a: unknown, b: unknown) => {
+    for (const v of [a, b]) {
+      if (typeof v !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/u.test(v)) fail();
+      date(v);
+      const s = v as string;
+      const normalized = s.slice(0, 19) + '.' + (s.match(/\.(\d{1,3})Z$/u)?.[1] || '0').padEnd(3, '0') + 'Z';
+      if (new Date(s).toISOString() !== normalized) fail();
+    }
+    if (Date.parse(String(a)) > Date.parse(String(b))) fail();
+  };
+  const noTimes = (v: unknown): unknown => Array.isArray(v) ? v.map(noTimes) :
+    v && typeof v === 'object' ? Object.fromEntries(Object.entries(v)
+      .filter(([k]) => k !== 'observedAt').map(([k, x]) => [k, noTimes(x)])) : v;
+  const baseGaps = ['OWN_BODY_BOUNDED', 'REQUIRED_CONTENT_COMPLETENESS_UNPROVEN',
+    'RELATIONS_UNREAD', 'RELATION_TARGETS_UNVERIFIED', 'OTHER_TABS_NOT_COLLECTED'];
+  return (r: TdmsPackageRecord, packageObservedAt: string) => {
+    const body = shape(r.rawFields.profileOwnedBody, ['schemaVersion', 'bodyRevision', 'profileId',
+      'profileRevision', 'purpose', 'sourceReady', 'requiredContentComplete', 'reads', 'relationManifest']);
+    const profileId = String(body.profileId);
+    const profile = Object.hasOwn(profiles, profileId) ? profiles[profileId] : undefined;
+    if (!profile || body.schemaVersion !== 'wiselink.tdms-profile-owned-body.v2' ||
+        body.bodyRevision !== 'tdms-owned-body-observation@2' ||
+        body.profileRevision !== 'tdms-independent-source-profiles@1' || body.purpose !== 'COVERAGE' ||
+        body.sourceReady !== false || body.requiredContentComplete !== false || r.recordKind !== profile.kind) fail();
+    shape(r.rawFields, ['number', 'storageType', 'sourceModifiedRaw', 'profileOwnedBody']);
+    shape(r.content, ['boundedOwnedBody']);
+    const type = shape(r.rawFields.storageType, ['rawCode', 'rawName']);
+    const headerType = profile.dynamic ? 'Publication Source' : profile.objectType;
+    if (r.rawFields.number !== r.title || type.rawCode !== null || type.rawName !== headerType ||
+        canonical(r.fileType) !== canonical(type) || r.state?.rawCode !== null ||
+        r.artifactMemberIds.length || r.unreadAttachments?.length || r.relatedDocumentVersionIds.length ||
+        r.formalDocumentArtifactMemberId != null || r.sourceModifiedAt !== null || r.authors.length ||
+        r.coverage.status !== 'PARTIAL' || r.coverage.readback !== 'NON_ATOMIC' ||
+        !baseGaps.every(g => r.coverage.gaps.includes(g))) fail();
+    const unknownVersion = { rawRevision: null, rawIteration: null, confirmation: 'VERSION_UNCONFIRMED' };
+    if (profile.dynamic) {
+      if (r.sourceVersion.confirmation !== 'SOURCE_DECLARED' || !/^\d{1,20}$/u.test(r.sourceVersion.rawIteration ?? '') ||
+          !['PARENT_MTIME_NOT_CHILD_UPDATE_PROOF', 'CHILD_COVERAGE_UNVERIFIED'].every(g => r.coverage.gaps.includes(g))) fail();
+      text(r.sourceVersion.rawRevision, 80);
+    } else if (canonical(r.sourceVersion) !== canonical(unknownVersion) || !r.coverage.gaps.includes('VERSION_UNCONFIRMED')) fail();
+    if (!r.businessVersion || r.businessVersion.confirmation !== 'SOURCE_DECLARED' || r.businessVersion.rawIteration !== null) fail();
+    text(r.businessVersion.rawRevision, 80);
+    const expectedManifest = profile.tables.map(t => ({ tableTitle: t.title, panelLocator: t.panel, gridId: t.grid,
+      state: 'UNREAD', reportedCount: null, capturedCount: null, targetOwnerReads: 0, provenance: 'PROFILE_EXPECTED_NOT_OBSERVED' }));
+    if (canonical(body.relationManifest) !== canonical(expectedManifest)) fail();
+    const reads = list(body.reads, 2);
+    if (reads.length !== 2 || canonical(noTimes(reads[0])) !== canonical(noTimes(reads[1]))) fail();
+    let previousEnd: unknown;
+    for (const value of reads) {
+      const read = shape(value, ['owner', 'section', 'fields', 'unreadFields', 'unreadTabs', 'observedAt']);
+      const owner = shape(read.owner, ['sourceRecordId', 'number', 'rawHeaderIdentifier', 'nativeTypeId', 'objectType',
+        'typeEvidence', 'sourceVersion', 'technicalVersionEvidence', 'businessVersion', 'businessVersionLabel',
+        'stateRaw', 'sourceCreatedRaw', 'sourceModifiedRaw', 'contextRaw', 'observedAt']);
+      const evidence = shape(owner.typeEvidence, ['nativeTypeIdOrigin', 'rawHeaderType', 'headerMatch']);
+      text(owner.rawHeaderIdentifier, 500);
+      if (!new RegExp('^OR:' + profile.nativeClass.replaceAll('.', '\\.') + ':[0-9]{1,24}$', 'u').test(r.sourceRecordId) ||
+          owner.sourceRecordId !== r.sourceRecordId || owner.number !== r.title || owner.nativeTypeId !== profile.nativeTypeId ||
+          owner.objectType !== profile.objectType || owner.businessVersionLabel !== profile.businessVersionLabel ||
+          evidence.nativeTypeIdOrigin !== 'BOUND_IDENTITY_READ' || text(evidence.rawHeaderType, 120).trim() !== headerType ||
+          evidence.headerMatch !== true || canonical(owner.sourceVersion) !== canonical(r.sourceVersion) ||
+          canonical(owner.businessVersion) !== canonical(r.businessVersion) || owner.stateRaw !== r.state?.rawName ||
+          owner.sourceModifiedRaw !== r.rawFields.sourceModifiedRaw) fail();
+      const section = shape(read.section, ['label', 'panelLocator', 'active', 'hitVerified']);
+      if (section.label !== (profile.dynamic ? '所有属性' : 'Details') || section.active !== true || section.hitVerified !== true ||
+          (profile.dynamic ? !/^#infoPage_myTab_tab_jcaGen_\d+$/u.test(String(section.panelLocator)) : section.panelLocator !== profile.detailPanel)) fail();
+      if (profile.dynamic) {
+        const technical = shape(owner.technicalVersionEvidence, ['actualLabel', 'rawValue', 'panelLocator']);
+        if (technical.actualLabel !== 'Version:' || technical.rawValue !== r.sourceVersion.rawRevision + '.' + r.sourceVersion.rawIteration ||
+            technical.panelLocator !== section.panelLocator) fail();
+      } else if (owner.technicalVersionEvidence !== null) fail();
+      ordered(owner.observedAt, read.observedAt); ordered(read.observedAt, packageObservedAt);
+      if (previousEnd !== undefined) ordered(previousEnd, owner.observedAt);
+      previousEnd = read.observedAt;
+      const fields = list(read.fields, profile.fieldLabels.length);
+      if (fields.length !== profile.fieldLabels.length) fail();
+      const seen = new Set<string>(); let total = 0;
+      for (const [i, value] of fields.entries()) {
+        const field = shape(value, ['actualLabel', 'labelOrigin', 'sectionLabel', 'panelLocator', 'locator', 'fieldType',
+          'presence', 'rawBoundedValue', 'nativeControl', 'truncation', 'observedAt']);
+        const panel = profile.dynamic ? section.panelLocator : profileId === 'SB_PROCESSING_FORM'
+          ? '#wrap_infoPage_myTab_object_changeRequestDetailsTab_objectprimaryAttributes'
+          : profile.fieldPanelByLabel?.[String(field.actualLabel)];
+        if (field.actualLabel !== profile.fieldLabels[i] || field.sectionLabel !== section.label ||
+            (panel !== undefined ? field.panelLocator !== panel : !profile.fieldPanels?.includes(String(field.panelLocator))) ||
+            !text(field.locator).startsWith(text(field.panelLocator, 200) + ' ') || seen.has(String(field.panelLocator) + '|' + field.actualLabel)) fail();
+        seen.add(String(field.panelLocator) + '|' + field.actualLabel);
+        ordered(owner.observedAt, field.observedAt); ordered(field.observedAt, read.observedAt);
+        const truncation = shape(field.truncation, ['truncated', 'limit', 'capturedCodepoints', 'observedTotalCodepoints']);
+        const captured = Number(truncation.capturedCodepoints), observed = Number(truncation.observedTotalCodepoints);
+        if (truncation.limit !== 8000 || typeof truncation.truncated !== 'boolean' ||
+            !Number.isSafeInteger(truncation.capturedCodepoints) || captured < 0 || captured > 8000 ||
+            !Number.isSafeInteger(truncation.observedTotalCodepoints) || observed < captured ||
+            !['PRESENT_VALUE', 'PRESENT_BLANK', 'ABSENT', 'NOT_LOADED'].includes(String(field.presence))) fail();
+        if (field.presence === 'ABSENT') {
+          if (field.nativeControl !== null || field.fieldType !== 'UNOBSERVED' || field.labelOrigin !== 'PROFILE_EXPECTED_LABEL') fail();
+        } else {
+          // v2 NOT_LOADED has a visible TD label/control, but no delivered value.
+          const control = shape(field.nativeControl, ['tag', 'readOnly', 'disabled', 'visibleControls']);
+          if (control.tag !== 'TD' || !['readOnly', 'disabled'].every(k => control[k] === null || typeof control[k] === 'boolean') ||
+              list(control.visibleControls, 0).length || field.fieldType !== 'DISPLAY_TEXT' || field.labelOrigin !== 'NATIVE_VISIBLE_LABEL') fail();
+        }
+        if (['ABSENT', 'NOT_LOADED'].includes(String(field.presence))) {
+          if (field.rawBoundedValue !== null || captured !== 0 || observed !== 0 || truncation.truncated !== false) fail();
+        } else if (typeof field.rawBoundedValue !== 'string' || [...field.rawBoundedValue].length !== captured ||
+                   (field.presence === 'PRESENT_BLANK' && field.rawBoundedValue !== '') ||
+                   (field.presence === 'PRESENT_VALUE' && !field.rawBoundedValue.trim() && !truncation.truncated) ||
+                   truncation.truncated !== (observed > captured)) fail();
+        total += captured;
+      }
+      if (total > 20000) fail();
+      for (const key of ['unreadFields', 'unreadTabs']) for (const v of list(read[key], 200)) text(v, 200);
+      if (list(read.unreadFields, 200).length && !r.coverage.gaps.includes('CONTENT_FIELDS_UNREAD') ||
+          fields.some(f => object(object(f).truncation).truncated) && !r.coverage.gaps.includes('CONTENT_TRUNCATED') ||
+          fields.some(f => ['ABSENT', 'NOT_LOADED'].includes(String(object(f).presence))) && !r.coverage.gaps.includes('CONTENT_FIELDS_UNAVAILABLE')) fail();
+    }
+    const last = object(reads[1]);
+    if (r.observedAt !== last.observedAt || canonical(r.content.boundedOwnedBody) !== canonical(last.fields) ||
+        r.fieldProvenance.length !== 1 || canonical(r.fieldProvenance[0]) !== canonical({ fieldPath: 'content.boundedOwnedBody',
+          selector: object(last.section).panelLocator, sourceModifiedAt: null, observationRef: r.sourceRecordId })) fail();
+  };
+}
 const adPrimaryPanel =
   '#wrap_infoPage_myTab_object_changeNoticeDetailsTab_objectprimaryAttributes';
 const adObjectPanel =

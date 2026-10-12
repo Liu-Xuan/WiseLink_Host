@@ -202,6 +202,7 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
         ? [
             'opinions',
             'ownedVisibleBusinessContent',
+            'boundedOwnedBody',
             'conditions',
             'requiredActions',
             'approvers',
@@ -250,7 +251,7 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
       r.rawFields,
       [
         ...base,
-        ...(sourceAdapter ? ['opinionCollection', 'ownedBusinessContent'] : []),
+        ...(sourceAdapter ? ['opinionCollection', 'ownedBusinessContent', 'profileOwnedBody'] : []),
         ...(sourceAdapter
           ? ['execution', 'engineering', 'executionStatus']
           : r.kind === 'AEO'
@@ -311,7 +312,7 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
         'TDMSSNAP-' +
           hash(
             withoutTimes(
-              sourceAdapter && fields.ownedBusinessContent !== undefined
+              sourceAdapter && (fields.ownedBusinessContent !== undefined || fields.profileOwnedBody !== undefined)
                 ? ownedLocatorIdentity(r)
                 : r,
             ),
@@ -339,6 +340,13 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
       object(p.query).actualCriteria !== null)
   )
     fail('OWN_CONTENT_PROBE_REQUIRED');
+  // The v2 bounded body observes no relation or artifact and cannot claim completeness.
+  if (sourceAdapter && records.some(r => object(object(r).rawFields).profileOwnedBody !== undefined) &&
+      (records.length !== 1 || edges.length || list(p.artifactBindings, 1000).length ||
+       object(p.coverage).status !== 'PARTIAL' || object(p.coverage).readback !== 'NON_ATOMIC' ||
+       !(object(p.coverage).gaps as string[]).includes('RELATIONS_UNREAD') ||
+       object(p.query).scopeComplete !== false || object(p.query).scopeMatch !== 'UNKNOWN' ||
+       object(p.query).actualCriteria !== null)) fail('BOUNDED_BODY_LIMITS_REQUIRED');
   const bindings = list(p.artifactBindings, 1000);
   const bindingIds = new Set<string>();
   for (const value of bindings) {

@@ -36,6 +36,8 @@ export interface TdmsFieldProvenance {
   observationRef: string;
 }
 export interface TdmsSourceContent {
+  /** Source51 v2 bounded observation, not complete content or an approved opinion. */
+  boundedOwnedBody?: TdmsBoundedOwnedBodyField[];
   /** Bounded native form literals, independently authorized; never an approved opinion. */
   ownedVisibleBusinessContent?: Array<Record<string, unknown>>;
   opinions?: Array<{
@@ -81,6 +83,30 @@ export interface TdmsSourceContent {
     feedbackRef: string | null;
     integrationStatus: 'NOT_CONNECTED';
   }>;
+}
+
+export interface TdmsBoundedOwnedBodyField {
+  actualLabel: string;
+  labelOrigin: 'NATIVE_VISIBLE_LABEL' | 'PROFILE_EXPECTED_LABEL';
+  sectionLabel: string;
+  panelLocator: string;
+  locator: string;
+  fieldType: 'DISPLAY_TEXT' | 'UNOBSERVED';
+  presence: 'PRESENT_VALUE' | 'PRESENT_BLANK' | 'ABSENT' | 'NOT_LOADED';
+  rawBoundedValue: string | null;
+  nativeControl: {
+    tag: 'TD';
+    readOnly: boolean | null;
+    disabled: boolean | null;
+    visibleControls: [];
+  } | null;
+  truncation: {
+    truncated: boolean;
+    limit: 8000;
+    capturedCodepoints: number;
+    observedTotalCodepoints: number;
+  };
+  observedAt: string;
 }
 export interface TdmsUnreadAttachment {
   sourceAttachmentId: string;
