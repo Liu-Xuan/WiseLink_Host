@@ -39,6 +39,61 @@ const HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('CanonicalHost initial-analysis status projection', () => {
+  describe('original applicability browser admission', () => {
+    const oldMode = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+    beforeEach(() => { process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '1'; });
+    afterEach(() => {
+      if (oldMode === undefined) delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+      else process.env.WL_JOBAID_PROBLEM_V2_ENABLED = oldMode;
+    });
+    function harness(error?: Error) {
+      const workItem = { ...parsedWorkItem(), package: null };
+      const chain = { where: () => chain, orderBy: () => chain,
+        limit: async () => [{ id: 'published-original' }] };
+      const db = { execute: async () => [{ service: false }],
+        select: () => ({ from: () => chain }),
+        selectDistinctOn: () => ({ from: () => ({ where: () => ({ orderBy: async () => [] }) }) }) };
+      const readOriginalAdmissionContext = jest.fn(async () => ({ contextRef: null,
+        reason: 'APPLICABILITY_CONTEXT_NOT_CONFIGURED' }));
+      const withVerifiedServiceSql = jest.fn(async (operation: () => Promise<unknown>) => {
+        if (error) throw error;
+        return operation();
+      });
+      const service = new CanonicalHostInitialAnalysisStatusService(db as never, {} as never,
+        undefined, undefined, { readOriginalAdmissionContext } as never,
+        { withVerifiedServiceSql } as never);
+      return { service, workItem, readOriginalAdmissionContext, withVerifiedServiceSql };
+    }
+    it('uses the existing verified scope only for browser admission and preserves the honest missing-context result', async () => {
+      const h = harness();
+      const status = await h.service.project({ workItem: h.workItem, tenantId: 'tenant-1', browserActorUserId: 'owner-test' });
+      expect(h.withVerifiedServiceSql).toHaveBeenCalledWith(expect.any(Function), 'owner-test');
+      expect(status).toMatchObject({ applicabilityContextRef: null, stages: { applicability: {
+        status: 'WAITING_INPUT', terminalCode: 'APPLICABILITY_CONTEXT_NOT_CONFIGURED' } } });
+      expect(h.readOriginalAdmissionContext).toHaveBeenCalledTimes(1);
+    });
+    it('leaves service-side admission in its existing scope', async () => {
+      const h = harness();
+      await h.service.project({ workItem: h.workItem, tenantId: 'tenant-1' });
+      expect(h.withVerifiedServiceSql).not.toHaveBeenCalled();
+      expect(h.readOriginalAdmissionContext).toHaveBeenCalledTimes(1);
+    });
+    it('reports the exact missing opaque session without querying privileged admission', async () => {
+      const h = harness(new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED'));
+      expect(await h.service.project({ workItem: h.workItem, tenantId: 'tenant-1', browserActorUserId: 'owner-test' }))
+        .toMatchObject({ applicabilityContextRef: null, stages: { applicability: {
+          status: 'WAITING_INPUT', terminalCode: 'OFFICIAL_OAUTH_SESSION_REQUIRED' } } });
+      expect(h.readOriginalAdmissionContext).not.toHaveBeenCalled();
+    });
+    it.each([new ForbiddenException('OFFICIAL_OAUTH_SESSION_REQUIRED'),
+      new UnauthorizedException('OTHER_AUTHENTICATION_FAILURE'),
+      new Error('OFFICIAL_OAUTH_SESSION_REQUIRED'), new Error('ADMISSION_DATABASE_FAILURE')])(
+      'propagates all other failures: %s', async (error) => {
+        const h = harness(error);
+        await expect(h.service.project({ workItem: h.workItem, tenantId: 'tenant-1', browserActorUserId: 'owner-test' })).rejects.toBe(error);
+      });
+  });
+
   describe('cancelled browser read session boundary', () => {
     let oldJobAid: string | undefined;
     let oldTranslation: string | undefined;

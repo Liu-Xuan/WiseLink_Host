@@ -316,8 +316,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       if (originalImpactStages.jobAid) originalImpactStages.overall = true;
     }
     const originalAdmission = originalMode && originalPublished && !execution.applicabilityInput && this.applicabilityInputs
-      ? await this.applicabilityInputs.readOriginalAdmissionContext({workItemId:input.workItem.workItemId,
-          tenantId:input.tenantId,documentVersionId:input.workItem.source.documentVersionId}) : undefined;
+      ? await this.readOriginalAdmission(input) : undefined;
     return projectCanonicalHostInitialAnalysisStatus(
       input.workItem,
       rows.map((row) => ({
@@ -341,6 +340,31 @@ export class CanonicalHostInitialAnalysisStatusService {
           process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1',
       },
     );
+  }
+
+  private async readOriginalAdmission(input: {
+    workItem: CanonicalWorkItemProjection;
+    tenantId: string;
+    browserActorUserId?: string;
+  }) {
+    const read = () => this.applicabilityInputs!.readOriginalAdmissionContext({
+      workItemId: input.workItem.workItemId,
+      tenantId: input.tenantId,
+      documentVersionId: input.workItem.source.documentVersionId,
+    });
+    // Discovery rechecks service-only queue leases and ordinary Source access.
+    // A native browser identity alone cannot enter that privileged SQL scope.
+    if (input.browserActorUserId === undefined) return read();
+    try {
+      if (!this.sessions)
+        throw new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED');
+      return await this.sessions.withVerifiedServiceSql(read, input.browserActorUserId);
+    } catch (error) {
+      if (error instanceof UnauthorizedException &&
+          error.message === 'OFFICIAL_OAUTH_SESSION_REQUIRED')
+        return { contextRef: null, reason: 'OFFICIAL_OAUTH_SESSION_REQUIRED' };
+      throw error;
+    }
   }
 
   /** Browser continuation requires the same exact, still eligible Host grant as queue enrollment. */
