@@ -20,7 +20,7 @@ const root = resolve(import.meta.dirname, '..');
 
 const execFileAsync = promisify(execFile);
 
-/** Build-checkout facts only. A dirty or unavailable checkout has no proven commit. */
+/** Bind the artifact to clean Git facts, or official build metadata only when Git is absent. */
 export async function writeServerBuildFingerprint(
   buildRoot,
   { requireProvenance = false } = {},
@@ -28,6 +28,7 @@ export async function writeServerBuildFingerprint(
   let sourceCommit = 'UNAVAILABLE';
   let buildTime = 'UNAVAILABLE';
   let failureReason;
+  let platformBuildMetadata = false;
   let phase = 'CHECKOUT_ROOT';
   const reject = (reason) => {
     failureReason = reason;
@@ -55,42 +56,61 @@ export async function writeServerBuildFingerprint(
       maxBuffer: 64 * 1024,
     };
     phase = 'GIT_ROOT';
-    const actualRoot = (
-      await execFileAsync('git', ['rev-parse', '--show-toplevel'], options)
-    ).stdout.trim();
-    phase = 'GIT_ROOT_REALPATH';
-    if ((await realpath(actualRoot)) !== checkoutRoot) {
-      reject('GIT_ROOT_MISMATCH');
+    let actualRoot;
+    try {
+      actualRoot = (
+        await execFileAsync('git', ['rev-parse', '--show-toplevel'], options)
+      ).stdout.trim();
+    } catch (error) {
+      // Only this first spawn may select the platform's Git-less build path.
+      if (error?.code !== 'ENOENT') throw error;
+      phase = 'GIT_ROOT_REALPATH';
+      if ((await realpath(buildRoot)) !== checkoutRoot)
+        reject('GIT_ROOT_CHANGED');
+      const releaseCommit = environment.RELEASE_ID;
+      if (releaseCommit === undefined || releaseCommit === '')
+        reject('GIT_EXECUTABLE_MISSING');
+      if (!/^[a-f0-9]{40}$/u.test(releaseCommit))
+        reject('PLATFORM_BUILD_METADATA_INVALID');
+      sourceCommit = releaseCommit;
+      buildTime = new Date().toISOString();
+      platformBuildMetadata = true;
     }
-    phase = 'GIT_HEAD';
-    const head = (
-      await execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], options)
-    ).stdout.trim();
-    phase = 'GIT_STATUS';
-    const status = (
-      await execFileAsync(
-        'git',
-        ['status', '--porcelain=v1', '--untracked-files=normal'],
-        options,
-      )
-    ).stdout;
-    // Detect a checkout change while collecting provenance; never use deployment env or client fields.
-    phase = 'GIT_FINAL_HEAD';
-    const finalHead = (
-      await execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], options)
-    ).stdout.trim();
-    phase = 'GIT_FINAL_ROOT';
-    const finalRoot = (
-      await execFileAsync('git', ['rev-parse', '--show-toplevel'], options)
-    ).stdout.trim();
-    if (!/^[a-f0-9]{40}$/u.test(head)) reject('GIT_HEAD_INVALID');
-    if (head !== finalHead) reject('GIT_HEAD_CHANGED');
-    if (status !== '') reject('GIT_WORKTREE_DIRTY');
-    phase = 'GIT_FINAL_ROOT_REALPATH';
-    if ((await realpath(finalRoot)) !== checkoutRoot)
-      reject('GIT_ROOT_CHANGED');
-    sourceCommit = head;
-    buildTime = new Date().toISOString();
+    if (!platformBuildMetadata) {
+      phase = 'GIT_ROOT_REALPATH';
+      if ((await realpath(actualRoot)) !== checkoutRoot) {
+        reject('GIT_ROOT_MISMATCH');
+      }
+      phase = 'GIT_HEAD';
+      const head = (
+        await execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], options)
+      ).stdout.trim();
+      phase = 'GIT_STATUS';
+      const status = (
+        await execFileAsync(
+          'git',
+          ['status', '--porcelain=v1', '--untracked-files=normal'],
+          options,
+        )
+      ).stdout;
+      // Detect a checkout change while collecting provenance; never use deployment env or client fields.
+      phase = 'GIT_FINAL_HEAD';
+      const finalHead = (
+        await execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], options)
+      ).stdout.trim();
+      phase = 'GIT_FINAL_ROOT';
+      const finalRoot = (
+        await execFileAsync('git', ['rev-parse', '--show-toplevel'], options)
+      ).stdout.trim();
+      if (!/^[a-f0-9]{40}$/u.test(head)) reject('GIT_HEAD_INVALID');
+      if (head !== finalHead) reject('GIT_HEAD_CHANGED');
+      if (status !== '') reject('GIT_WORKTREE_DIRTY');
+      phase = 'GIT_FINAL_ROOT_REALPATH';
+      if ((await realpath(finalRoot)) !== checkoutRoot)
+        reject('GIT_ROOT_CHANGED');
+      sourceCommit = head;
+      buildTime = new Date().toISOString();
+    }
   } catch (error) {
     // Never include stderr, paths, environment values or exception text in diagnostics.
     failureReason ??= fingerprintFailureReason(phase, error);
@@ -113,6 +133,9 @@ export async function writeServerBuildFingerprint(
     await rename(temporary, target);
   } finally {
     await rm(staging, { recursive: true, force: true });
+  }
+  if (platformBuildMetadata) {
+    process.stdout.write('SERVER_BUILD_FINGERPRINT:PLATFORM_BUILD_METADATA\n');
   }
   if (failureReason) {
     process.stderr.write(`SERVER_BUILD_FINGERPRINT:${failureReason}\n`);

@@ -164,6 +164,98 @@ describe('server build artifact fingerprint', () => {
     expect(JSON.parse(readFileSync(stamp(root), 'utf8'))).toEqual(metadata);
   });
 
+  it('packages exact platform build metadata only when Git is missing', async () => {
+    const root = directory();
+    const result = strictWriterProcess(root, {
+      PATH: directory(),
+      RELEASE_ID: valid.sourceCommit,
+    });
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toBe(
+      'SERVER_BUILD_FINGERPRINT:PLATFORM_BUILD_METADATA\n',
+    );
+    const metadata = JSON.parse(readFileSync(stamp(root), 'utf8'));
+    expect(Object.keys(metadata).sort()).toEqual([
+      'buildTime',
+      'schemaVersion',
+      'sourceCommit',
+    ]);
+    expect(metadata.sourceCommit).toBe(valid.sourceCommit);
+    await expect(readServerBuildFingerprint(stamp(root))).resolves.toEqual({
+      deployedCommit: valid.sourceCommit,
+      serverBuildTime: metadata.buildTime,
+      fingerprintSource: 'SERVER_BUILD_ARTIFACT',
+    });
+  });
+
+  it.each([
+    undefined,
+    '',
+    'abc1234',
+    'A'.repeat(40),
+    ` ${'a'.repeat(40)}`,
+    `${'a'.repeat(40)}\n`,
+    '7695572621287328705',
+    '2026-10-12T00:27:23.000Z',
+  ])(
+    'rejects invalid Git-less RELEASE_ID %s without logging its value',
+    (releaseId) => {
+      const root = directory();
+      const result = strictWriterProcess(root, {
+        PATH: directory(),
+        RELEASE_ID: releaseId,
+      });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe(
+        `SERVER_BUILD_FINGERPRINT:${releaseId === undefined || releaseId === '' ? 'GIT_EXECUTABLE_MISSING' : 'PLATFORM_BUILD_METADATA_INVALID'}\n`,
+      );
+      expect(JSON.parse(readFileSync(stamp(root), 'utf8'))).toEqual({
+        schemaVersion: valid.schemaVersion,
+        sourceCommit: 'UNAVAILABLE',
+        buildTime: 'UNAVAILABLE',
+      });
+    },
+  );
+
+  it('keeps Git authoritative and does not bypass a dirty or non-repository root with platform metadata', () => {
+    const root = repository();
+    const metadata = runWriter(root, { RELEASE_ID: valid.sourceCommit }, true);
+    expect(metadata.sourceCommit).toBe(git(root, ['rev-parse', 'HEAD']));
+    expect(metadata.sourceCommit).not.toBe(valid.sourceCommit);
+    writeFileSync(join(root, 'source.txt'), 'changed');
+    const dirty = strictWriterProcess(root, { RELEASE_ID: valid.sourceCommit });
+    expect(dirty.status).toBe(1);
+    expect(dirty.stderr).toBe('SERVER_BUILD_FINGERPRINT:GIT_WORKTREE_DIRTY\n');
+    const notRepository = strictWriterProcess(directory(), {
+      RELEASE_ID: valid.sourceCommit,
+    });
+    expect(notRepository.status).toBe(1);
+    expect(notRepository.stderr).toBe(
+      'SERVER_BUILD_FINGERPRINT:GIT_ROOT_UNAVAILABLE\n',
+    );
+  });
+
+  it('does not fall back when Git disappears after the first successful call', () => {
+    const root = directory();
+    const bin = directory();
+    writeFileSync(
+      join(bin, 'git'),
+      `#!${process.execPath}\nconst fs = require('node:fs'); fs.unlinkSync(process.argv[1]); console.log(process.cwd());\n`,
+      { mode: 0o755 },
+    );
+    const result = strictWriterProcess(root, {
+      PATH: bin,
+      RELEASE_ID: valid.sourceCommit,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe(
+      'SERVER_BUILD_FINGERPRINT:GIT_EXECUTABLE_MISSING\n',
+    );
+  });
+
   it.each(['tracked', 'untracked'])(
     'fails the strict build subprocess after explicitly replacing the stamp for %s changes',
     (kind) => {
@@ -194,6 +286,7 @@ describe('server build artifact fingerprint', () => {
     const root = repository();
     const result = strictWriterProcess(root, {
       GIT_CONFIG_GLOBAL: '/private/SENSITIVE_CONFIGURATION_PATH',
+      RELEASE_ID: valid.sourceCommit,
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toBe(
@@ -406,10 +499,9 @@ describe('server build artifact fingerprint', () => {
 
   it('does not substitute runtime deployment env for either valid or absent metadata in the actual probe response', async () => {
     const old = new Map(
-      ['MIAODA_DEPLOYED_COMMIT', 'GIT_COMMIT', 'COMMIT_SHA'].map((key) => [
-        key,
-        process.env[key],
-      ]),
+      ['MIAODA_DEPLOYED_COMMIT', 'GIT_COMMIT', 'COMMIT_SHA', 'RELEASE_ID'].map(
+        (key) => [key, process.env[key]],
+      ),
     );
     const actualRead = files.readFile;
     let metadata: unknown = valid;
