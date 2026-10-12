@@ -16,6 +16,9 @@ import { activitySourceContextInventory, mergeActivitySourceContexts, validateAc
 // Native recovery fixtures below are synthetic. They verify the safety of the
 // explicit adapter seam, never business quality or a real native model result.
 
+const EXECUTION_MODEL = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3', providerKind: 'BUILT_IN',
+  settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z' };
+
 const DOCUMENT = 'DV-v2-constructed', RUN = 'DAR-v2-constructed';
 const BINDING = { original: { documentVersionId: DOCUMENT, parseRunId: 'PR-v2', parseRevision: 1,
   sourceArtifactId: 'SRC-v2', sourceSha256: 'a'.repeat(64), sourceByteLength: 190 }, semanticRevision: 2 };
@@ -69,7 +72,7 @@ function harness(overrides = {}, records = new Map(), selection = false, promptV
   const calls = [], inputs = [];
   const productionContract = activityV2ProductionContract(selection ? SELECTION : undefined, promptVersion);
   const deadline = new Date(Date.now() + 60000).toISOString();
-  const summary = () => ({ documentVersionId: DOCUMENT, runRef: RUN, parseRunId: BINDING.original.parseRunId,
+  const summary = () => ({ executionModel: EXECUTION_MODEL, documentVersionId: DOCUMENT, runRef: RUN, parseRunId: BINDING.original.parseRunId,
     semanticRevision: 2, selection: { sectionIds: ['leaf'] }, expectedRevision: 0,
     candidateSchemaVersion: V2, productionContract, result: null, deadline, ...overrides.summary });
   let statuses = 0;

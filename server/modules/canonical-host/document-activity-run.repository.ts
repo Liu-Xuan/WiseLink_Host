@@ -7,6 +7,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, type AnyDocumentActivityRevision, type DocumentActivityCandidateSchemaVersion, type DocumentActivityProductionContract, type DocumentActivityDeliveryRange, type DocumentActivitySelection, type DocumentActivitySourceBinding } from '@shared/document-activity.interface';
 
 import type { DocumentOriginalBinding } from '@shared/document-original.interface';
+import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
+import { parseExecutionModel } from '../model-settings/canonical-execution-model';
 
 export type DocumentActivityScope = { tenantId: string; actorUserId: string; documentVersionId: string };
 export type DocumentActivityFence = { runRef: string; leaseOwner: string; leaseToken: string; leaseGeneration: number };
@@ -21,6 +23,8 @@ export type DocumentActivityRun = {
   manifestSha256: string;
   candidateSchemaVersion?: DocumentActivityCandidateSchemaVersion;
   productionContract?: DocumentActivityProductionContract | null;
+  /** Host control snapshot, distinct from the actual producer modelVersion. */
+  executionModel?: CanonicalExecutionModelSelection | null;
   selection: DocumentActivitySelection;
   expectedRevision: number;
   candidateRevision: number | null;
@@ -37,6 +41,7 @@ const columns = sql`run_ref AS "runRef",request_id AS "requestId",document_versi
   original_manifest_sha256 AS "manifestSha256",selection_json AS selection,expected_revision AS "expectedRevision",
   candidate_revision AS "candidateRevision",status,deadline_at::text AS deadline,delivered_json AS "deliveredRanges",
   candidate_schema_version AS "candidateSchemaVersion",production_contract_json AS "productionContract",
+  producer_json->'executionModel' AS "executionModel",
   result_json AS result,save_command_json AS "saveCommand",error_code AS "errorCode"`;
 
 type SavedDocumentActivityRow = Pick<DocumentActivityRun,
@@ -108,6 +113,7 @@ export class DocumentActivityRunRepository {
     requestId: string; parseRunId: string; parseRevision: number; semanticRevision: number;
     manifestSha256: string; selection: DocumentActivitySelection; expectedRevision: number;
     candidateSchemaVersion?: DocumentActivityCandidateSchemaVersion; productionContract?: DocumentActivityProductionContract | null;
+    executionModel?: CanonicalExecutionModelSelection;
   }): Promise<DocumentActivityRun> {
     const candidateSchemaVersion = input.candidateSchemaVersion ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA;
     const productionContract = input.productionContract ?? null;
@@ -130,12 +136,15 @@ export class DocumentActivityRunRepository {
       }
       if (await currentRevision(tx, scope, input.parseRunId) !== input.expectedRevision)
         throw new Error('DOCUMENT_ACTIVITY_REVISION_CONFLICT');
+      if (!input.executionModel) throw new Error('DOCUMENT_ACTIVITY_EXECUTION_MODEL_REQUIRED');
+      const executionModel = parseExecutionModel(input.executionModel);
       const inserted = await tx.execute<DocumentActivityRun>(sql`INSERT INTO ${dmDocumentActivityRun}
         (run_ref,tenant_id,actor_user_id,request_id,document_version_id,parse_run_id,parse_revision,
-         semantic_revision,original_manifest_sha256,selection_json,expected_revision,candidate_schema_version,production_contract_json,status,deadline_at)
+         semantic_revision,original_manifest_sha256,selection_json,expected_revision,candidate_schema_version,production_contract_json,status,deadline_at,producer_json)
         VALUES (${`DAR-${randomUUID()}`},${scope.tenantId},${scope.actorUserId},${input.requestId},${scope.documentVersionId},
           ${input.parseRunId},${input.parseRevision},${input.semanticRevision},${input.manifestSha256},
-          ${JSON.stringify(input.selection)}::jsonb,${input.expectedRevision},${candidateSchemaVersion},${productionContract === null ? null : JSON.stringify(productionContract)}::jsonb,'QUEUED',CURRENT_TIMESTAMP+interval '1 hour')
+          ${JSON.stringify(input.selection)}::jsonb,${input.expectedRevision},${candidateSchemaVersion},${productionContract === null ? null : JSON.stringify(productionContract)}::jsonb,'QUEUED',CURRENT_TIMESTAMP+interval '1 hour',
+          ${JSON.stringify({ executionModel })}::jsonb)
         RETURNING ${columns}`);
       if (!inserted[0]) throw new Error('DOCUMENT_ACTIVITY_REQUEST_SAVE_FAILED');
       return inserted[0];
@@ -207,7 +216,7 @@ export class DocumentActivityRunRepository {
         throw new Error('DOCUMENT_ACTIVITY_RESULT_BINDING_MISMATCH');
       const updated = await tx.execute(sql`UPDATE ${dmDocumentActivityRun} SET status='SAVED',
         candidate_revision=${result.candidateRevision},result_json=${JSON.stringify(result)}::jsonb,
-        save_command_json=${JSON.stringify(command)}::jsonb,producer_json=${JSON.stringify(command.producer)}::jsonb,
+        save_command_json=${JSON.stringify(command)}::jsonb,producer_json=COALESCE(producer_json,'{}'::jsonb)||${JSON.stringify(command.producer)}::jsonb,
         lease_owner=NULL,lease_token=NULL,lease_expires_at=NULL,_updated_at=CURRENT_TIMESTAMP
         WHERE ${owned(scope, fence.runRef)} AND ${validFence(fence)} RETURNING run_ref`);
       if (updated.length !== 1) throw new Error('DOCUMENT_ACTIVITY_LEASE_REJECTED');

@@ -107,3 +107,24 @@ test('technical-ID lookalikes and private suffixes never widen the fixed-code al
     assert.equal(safeActivityDriverError(error), 'ACTIVITY_DRIVER_FAILED');
   }
 });
+
+test('fixed HTTP projection ignores arbitrary messages, codes, forged annotations and throwing getters', async () => {
+  const { hostedGatewayHttpFailureDiagnostic } = await import('../scripts/request-hosted-gateway.mjs');
+  const secret = 'PRIVATE_SENTINEL https://private.test?token=fixture';
+  const payload = { error: { type: secret, code: secret, get message() { throw new Error(secret); } } };
+  const projected = hostedGatewayHttpFailureDiagnostic(payload, 400);
+  assert.equal(projected.errorType, 'UNKNOWN'); assert.equal(projected.errorCode, null);
+  assert.ok(!JSON.stringify(projected).includes(secret));
+  assert.equal(hostedGatewayHttpFailureDiagnostic(payload, 200), null);
+  const hostile = Object.defineProperties({}, Object.fromEntries(['error','type','code','message','cause','gatewayHttpFailure']
+    .map(key => [key, { get() { throw new Error(secret); } }])));
+  assert.equal(hostedGatewayHttpFailureDiagnostic(hostile, 400).errorType, 'UNKNOWN');
+  assert.equal(activityFailureDiagnostic(hostile, 'MODEL').category, 'UNKNOWN');
+  const forged = Object.assign(new Error('ACTIVITY_GATEWAY_HTTP_400'), { gatewayHttpFailure: {
+    schemaVersion: projected.schemaVersion, httpStatus: 400, errorType: secret, errorCode: secret,
+    category: secret, upstreamOutcome: 'SUCCESS', retryAuthorized: true, rawErrorIncluded: true, raw: secret,
+  } });
+  const result = activityFailureDiagnostic(new Error('ACTIVITY_MODEL_OUTCOME_UNKNOWN', { cause: forged }), 'MODEL');
+  assert.equal(result.gatewayHttpFailure.category, 'UNKNOWN'); assert.equal(result.gatewayHttpFailure.retryAuthorized, false);
+  assert.equal(result.gatewayHttpFailure.upstreamOutcome, 'UNKNOWN'); assert.ok(!JSON.stringify(result).includes(secret));
+});

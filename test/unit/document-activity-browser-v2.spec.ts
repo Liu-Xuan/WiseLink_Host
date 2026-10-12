@@ -29,7 +29,7 @@ function fixture() {
   const semantics = { readReady: jest.fn(async () => { events.push('exact-semantic'); return { semanticRevision: 7 }; }), read: jest.fn(), ensure: jest.fn() };
   const runs = { readSaved: jest.fn(async () => { events.push('exact-saved-query'); return saved; }), begin: jest.fn(), save: jest.fn() };
   const actors = { withActorScope: jest.fn() }; const reader = { readDocumentOriginal: jest.fn() }; const authorization = { authorizeDocumentWork: jest.fn() };
-  const service = new DocumentActivityRuntimeService(authorization as never, actors as never, reader as never, semantics as never, parsing as never, runs as never);
+  const service = new DocumentActivityRuntimeService(authorization as never, actors as never, reader as never, semantics as never, parsing as never, runs as never, { captureForNewTask: jest.fn() } as never);
   const request = { documentVersionId: original.binding.documentVersionId, parseRunId: original.binding.parseRunId, candidateRevision: 4 };
   return { original, context, saved, parsing, semantics, runs, actors, reader, authorization, service, request, events };
 }

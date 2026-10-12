@@ -46,8 +46,11 @@ const ANCHOR_B1 = {
 };
 const SOURCE_COVERAGE = { complete: true, unresolvedRanges: [] };
 
+const EXECUTION_MODEL = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3', providerKind: 'BUILT_IN',
+  settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z' };
+
 function summary({ runRef = RUN, result = null, status = 'PENDING', selection = { sectionIds: ['S-a', 'S-b'] } } = {}) {
-  return { runRef, requestId: 'req_1', documentVersionId: DOCUMENT, parseRunId: PARSE_RUN,
+  return { executionModel: EXECUTION_MODEL, runRef, requestId: 'req_1', documentVersionId: DOCUMENT, parseRunId: PARSE_RUN,
     semanticRevision: 2, selection, expectedRevision: 1, status,
     deadline: new Date(Date.now() + 60 * 60_000).toISOString(), candidateRevision: result ? 1 : null,
     result, errorCode: null };
@@ -901,7 +904,7 @@ test('a lease loss during a slow gateway response aborts the real model HTTP and
       const gatewayUrl = `http://127.0.0.1:${server.address().port}`;
       const invokeModel = (modelInput, hooks) => invokeHostedDocumentActivityModel(modelInput, {
         gatewayUrl, gatewayToken: 'gw-token-1', agentId: 'wiselink-engineering',
-        configuredModelVersion: 'configured-fallback-1', ...hooks,
+        configuredModelVersion: 'configured-fallback-1', registeredModelRefs: ['miaoda/glm-5.3'], ...hooks,
       });
       await assert.rejects(consumeHostedDocumentActivity(
         { ...baseOptions(), heartbeatIntervalMs: 5 },
@@ -921,7 +924,7 @@ test('an unknown model recovery rejects malformed saved receipts without another
   let statusCalls = 0;
   const { deps, calls, modelInputs } = hostMock({ activityStatus: () => summary({ result: ++statusCalls === 1 ? null : {} }) });
   const checkpointFactory = async () => ({ readOptional: async name => name === 'model.started' ? {
-    schemaVersion: 'wiselink.document.activity-checkpoint.v1', documentVersionId: DOCUMENT, runRef: RUN } : null });
+    schemaVersion: 'wiselink.document.activity-checkpoint.v1', documentVersionId: DOCUMENT, runRef: RUN, executionModel: EXECUTION_MODEL } : null });
   await assert.rejects(consumeHostedDocumentActivity(baseOptions(), { ...deps, checkpointFactory }), /ACTIVITY_MODEL_OUTCOME_UNKNOWN/);
   assert.equal(modelInputs.length, 0);
   assert.ok(!calls.some(([, args]) => ['ACTIVITY_FAIL', 'ACTIVITY_SAVE'].includes(args.action)));
@@ -969,4 +972,91 @@ test('the lease watchdog also covers checkpoint reads and rejects an expired dea
     assert.equal(modelInputs.length, 0);
     assert.ok(!calls.some(([, args]) => ['ACTIVITY_FAIL', 'ACTIVITY_SAVE'].includes(args.action)));
   }
+});
+
+test('the frozen Host selection is carried outside unchanged modelInput and pinned through SAVE checkpoints', async () => {
+  await withCheckpointRoot(async ({ directory, factory }) => {
+    let hooks;
+    const { deps, modelInputs } = hostMock({ model: async (_input, received) => { hooks = received;
+      return { proposal: proposal(), modelVersion: 'actual-provider-version' }; },
+      save: args => savedRevision({ producer: args.producer }) });
+    const result = await consumeHostedDocumentActivity(baseOptions(), { ...deps, checkpointFactory: factory });
+    assert.equal(result.status, 'ACTIVITY_WORK_SAVED');
+    assert.deepEqual(hooks.executionModel, EXECUTION_MODEL);
+    assert.equal(Object.hasOwn(modelInputs[0], 'executionModel'), false);
+    for (const name of ['source.result', 'model.started', 'model.result', 'save.started']) {
+      const value = JSON.parse(await readFile(join(directory, RUN, `${name}.json`)));
+      assert.deepEqual(value.executionModel, EXECUTION_MODEL);
+    }
+  });
+});
+
+test('STATUS/CLAIM model drift rejects before any model request or SAVE', async () => {
+  const { deps, modelInputs, calls } = hostMock({ claim: { ...summary(),
+    executionModel: { ...EXECUTION_MODEL, settingsRevision: 99 }, fence: FENCE } });
+  await assert.rejects(consumeHostedDocumentActivity(baseOptions(), deps), /ACTIVITY_EXECUTION_MODEL_BINDING_MISMATCH/);
+  assert.equal(modelInputs.length, 0);
+  assert.ok(!calls.some(([, args]) => ['ACTIVITY_READ', 'ACTIVITY_SAVE', 'ACTIVITY_FAIL'].includes(args.action)));
+});
+
+test('historical absence is never filled from options and keeps old UNKNOWN markers without dispatch', async () => {
+  const historical = () => { const value = summary(); delete value.executionModel; return value; };
+  for (const started of [false, true]) {
+    const records = new Map(started ? [['model.started', {
+      schemaVersion: 'wiselink.document.activity-checkpoint.v1', documentVersionId: DOCUMENT, runRef: RUN,
+    }]] : []);
+    const before = JSON.stringify([...records]);
+    const { deps, calls, modelInputs } = hostMock({ activityStatus: historical,
+      claim: { ...historical(), fence: FENCE } });
+    const checkpointFactory = async () => ({ readOptional: async key => records.get(key) ?? null,
+      write: async (key, value) => records.set(key, value) });
+    await assert.rejects(consumeHostedDocumentActivity({ ...baseOptions(), executionModel: EXECUTION_MODEL },
+      { ...deps, checkpointFactory }), started ? /ACTIVITY_MODEL_OUTCOME_UNKNOWN/ : /ACTIVITY_EXECUTION_MODEL_REQUIRED/);
+    assert.equal(modelInputs.length, 0);
+    assert.ok(!calls.some(([, args]) => ['ACTIVITY_SAVE', 'ACTIVITY_FAIL'].includes(args.action)));
+    if (started) assert.equal(JSON.stringify([['model.started', records.get('model.started')]]), before);
+  }
+});
+
+test('a changed checkpoint model pin refuses recovery without regeneration', async () => {
+  await withCheckpointRoot(async ({ directory, factory }) => {
+    const original = hostMock();
+    await consumeHostedDocumentActivity(baseOptions(), { ...original.deps, checkpointFactory: factory });
+    await rm(join(directory, RUN, 'save.started.json'));
+    const path = join(directory, RUN, 'model.result.json');
+    const record = JSON.parse(await readFile(path));
+    record.executionModel = { ...EXECUTION_MODEL, modelRef: 'other/model' };
+    await writeFile(path, JSON.stringify(record));
+    const before = await readFile(path);
+    const recovery = hostMock();
+    await assert.rejects(consumeHostedDocumentActivity(baseOptions(), { ...recovery.deps, checkpointFactory: factory }),
+      /ACTIVITY_CHECKPOINT_BINDING_MISMATCH/);
+    assert.equal(recovery.modelInputs.length, 0);
+    assert.ok(!recovery.calls.some(([, args]) => args.action === 'ACTIVITY_SAVE'));
+    assert.deepEqual(await readFile(path), before);
+  });
+});
+
+test('one HTTP400 records only fixed safe categories and an UNKNOWN replay preserves the original observation', async () => {
+  await withCheckpointRoot(async ({ directory, factory }) => {
+    let gatewayRequests = 0;
+    const sentinel = 'PRIVATE_SECRET https://private.example.test?token=synthetic BODY';
+    const { deps, calls } = hostMock({ model: async (input, hooks) => invokeHostedDocumentActivityModel(input, {
+      gatewayUrl: 'http://127.0.0.1:1', gatewayToken: 'synthetic-token', registeredModelRefs: ['miaoda/glm-5.3'], ...hooks,
+    }, { requestGateway: async () => { gatewayRequests++; return new Response(JSON.stringify({
+      error: { type: 'invalid_request_error', code: 'context_length_exceeded', message: sentinel,
+        body: sentinel, headers: { authorization: sentinel }, config: sentinel },
+    }), { status: 400 }); } }) });
+    await assert.rejects(consumeHostedDocumentActivity(baseOptions(), { ...deps, checkpointFactory: factory }), /ACTIVITY_MODEL_OUTCOME_UNKNOWN/);
+    const path = join(directory, RUN, 'gateway.http.failure.json');
+    const raw = await readFile(path); const observation = JSON.parse(raw);
+    assert.equal(observation.httpStatus, 400); assert.equal(observation.errorType, 'invalid_request_error');
+    assert.equal(observation.errorCode, 'context_length_exceeded'); assert.equal(observation.upstreamOutcome, 'UNKNOWN');
+    assert.equal(observation.retryAuthorized, false); assert.ok(!raw.includes(Buffer.from(sentinel)));
+    const failure = JSON.parse(await readFile(join(directory, RUN, 'failure.diagnostic.json')));
+    assert.equal(failure.gatewayHttpFailure.category, 'INVALID_REQUEST');
+    await assert.rejects(consumeHostedDocumentActivity(baseOptions(), { ...deps, checkpointFactory: factory }), /ACTIVITY_MODEL_OUTCOME_UNKNOWN/);
+    assert.equal(gatewayRequests, 1); assert.deepEqual(await readFile(path), raw);
+    assert.ok(!calls.some(([, args]) => ['ACTIVITY_SAVE', 'ACTIVITY_FAIL'].includes(args.action)));
+  });
 });

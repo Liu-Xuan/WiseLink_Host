@@ -20,10 +20,46 @@ const TRANSPORT_CAUSE_CODES = new Set([
 ]);
 const TRANSPORT_CAUSE_NAMES = new Set(['AbortError', 'TimeoutError']);
 const TRANSPORT_SYSCALLS = new Set(['connect', 'read', 'write', 'getaddrinfo']);
+const HTTP_ERROR_TYPES = new Map([
+  ['invalid_request_error', 'INVALID_REQUEST'], ['authentication_error', 'AUTHENTICATION'],
+  ['permission_error', 'PERMISSION'], ['insufficient_quota', 'QUOTA'],
+  ['rate_limit_error', 'RATE_LIMIT'], ['api_error', 'UPSTREAM_API'],
+]);
+// Exact diagnostic literals only, not a provider contract or retry policy.
+const HTTP_ERROR_CODES = new Set(['invalid_api_key', 'model_not_found', 'context_length_exceeded']);
 
 function safeErrorField(value, field) {
   if (value === null || !['object', 'function'].includes(typeof value)) return undefined;
   try { return value[field]; } catch { return undefined; }
+}
+
+/** Never read message or return an arbitrary provider field. An explicit HTTP
+ * failure still does not prove whether the agent/provider already executed.
+ */
+export function hostedGatewayHttpFailureDiagnostic(payload, httpStatus) {
+  if (!Number.isSafeInteger(httpStatus) || httpStatus < 400 || httpStatus > 599) return null;
+  const error = safeErrorField(payload, 'error');
+  const type = safeErrorField(error, 'type');
+  const code = safeErrorField(error, 'code');
+  return {
+    schemaVersion: 'wiselink.hosted-gateway-http-failure.v1', httpStatus,
+    errorType: HTTP_ERROR_TYPES.has(type) ? type : 'UNKNOWN',
+    category: HTTP_ERROR_TYPES.get(type) ?? 'UNKNOWN',
+    errorCode: HTTP_ERROR_CODES.has(code) ? code : null,
+    upstreamOutcome: 'UNKNOWN', retryAuthorized: false, rawErrorIncluded: false,
+  };
+}
+
+/** Re-project an error annotation; never copy even a forged diagnostic object. */
+export function readHostedGatewayHttpFailureDiagnostic(error) {
+  const annotation = safeErrorField(error, 'gatewayHttpFailure');
+  if (safeErrorField(annotation, 'schemaVersion') !== 'wiselink.hosted-gateway-http-failure.v1') return null;
+  const message = safeErrorField(error, 'message');
+  const match = typeof message === 'string' && /^ACTIVITY_GATEWAY_HTTP_([45]\d{2})$/u.exec(message);
+  if (!match || Number(match[1]) !== safeErrorField(annotation, 'httpStatus')) return null;
+  return hostedGatewayHttpFailureDiagnostic({ error: {
+    type: safeErrorField(annotation, 'errorType'), code: safeErrorField(annotation, 'errorCode'),
+  } }, Number(match[1]));
 }
 
 /** Project only a fixed transport wrapper's bounded cause chain. The phase

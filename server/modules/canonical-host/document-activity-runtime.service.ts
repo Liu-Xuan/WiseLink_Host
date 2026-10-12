@@ -1,4 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { CanonicalModelSettingsService } from '../model-settings/canonical-model-settings.service';
+import { parseExecutionModel } from '../model-settings/canonical-execution-model';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod/v4';
@@ -55,7 +57,8 @@ export class DocumentActivityRuntimeService {
   constructor(@Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION) private readonly authorization: CanonicalServiceScopeAuthorizationPort,
     private readonly actors: EngineeringMatterWorkingRepository, private readonly reader: UnifiedReaderService,
     private readonly semantics: DocumentSemanticService, private readonly parsing: DocumentParsingHostedService,
-    private readonly runs: DocumentActivityRunRepository) {}
+    private readonly runs: DocumentActivityRunRepository,
+    private readonly modelSettings: CanonicalModelSettingsService) {}
 
   /** Only explicitly admitted source requests are produced. This service does not invoke a model. */
   async run(raw: unknown) {
@@ -75,10 +78,15 @@ export class DocumentActivityRuntimeService {
         const source = await this.load(scope.documentVersionId, input.parseRunId, input.semanticRevision, context);
         const selection = { sectionIds: [...input.sectionIds].sort() };
         for (const sectionId of selection.sectionIds) selectDocumentSemanticSection(source.loaded.original, source.map, sectionId);
+        // A replay retains its original control snapshot, including historical
+        // absence. Current settings can select only a genuinely new task.
+        const prior = await this.runs.readRequest(scope, input.requestId);
+        const executionModel = prior ? prior.executionModel ?? undefined
+          : await this.modelSettings.captureForNewTask(scope.tenantId, new Date());
         const row = await this.runs.begin(scope, { requestId: input.requestId, parseRunId: input.parseRunId,
           parseRevision: source.loaded.original.binding.parseRevision, semanticRevision: input.semanticRevision,
           manifestSha256: source.artifact.sha256, selection, expectedRevision: input.expectedRevision,
-          candidateSchemaVersion, productionContract: input.productionContract ?? null });
+          candidateSchemaVersion, productionContract: input.productionContract ?? null, executionModel });
         return summary(row);
       }
       // RLS owns the run; control operations recheck ordinary source ACL/catalog
@@ -220,6 +228,7 @@ function summary(run: DocumentActivityRun) {
   return { runRef: run.runRef, requestId: run.requestId, documentVersionId: run.documentVersionId,
     parseRunId: run.parseRunId, candidateSchemaVersion: run.candidateSchemaVersion ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA,
     productionContract: run.productionContract ?? null, semanticRevision: run.semanticRevision, selection: run.selection,
+    ...(run.executionModel != null ? { executionModel: parseExecutionModel(run.executionModel) } : {}),
     expectedRevision: run.expectedRevision, status: run.status, deadline: run.deadline,
     candidateRevision: run.candidateRevision, result: run.result, errorCode: run.errorCode };
 }

@@ -4,6 +4,9 @@ import { buildDocumentSemanticMap } from '../../server/modules/document-manageme
 import { GENERIC_SEMANTIC_PROFILE } from '../../server/modules/document-management/src/hosted/nest/document-semantic-profile';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 
+const executionModel = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3', providerKind: 'BUILT_IN' as const,
+  settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z' };
+
 function fixture() {
   const original = originalFixture();
   original.source.units[0].kind = 'heading';
@@ -14,7 +17,7 @@ function fixture() {
   const scope = { tenantId: 'tenant-test', actorUserId: 'actor-test', documentVersionId: original.binding.documentVersionId };
   const row: DocumentActivityRun = { runRef: 'DAR-test', requestId: 'request-test', documentVersionId: scope.documentVersionId,
     parseRunId: original.binding.parseRunId, parseRevision: original.binding.parseRevision, semanticRevision: 1,
-    manifestSha256: artifact.sha256, selection: { sectionIds: [map.sections[0].sectionId] }, expectedRevision: 0,
+    manifestSha256: artifact.sha256, executionModel, selection: { sectionIds: [map.sections[0].sectionId] }, expectedRevision: 0,
     candidateRevision: null, status: 'RUNNING', deadline: '2026-09-17T00:00:00Z', deliveredRanges: [], result: null, saveCommand: null, errorCode: null };
   const fence = { documentVersionId: scope.documentVersionId, runRef: row.runRef, leaseOwner: 'test-producer',
     leaseToken: '0f23e82b-2b1e-46ba-b62b-9e9a2ec62ca0', leaseGeneration: 1 };
@@ -23,16 +26,53 @@ function fixture() {
   const reader = { readDocumentOriginal: jest.fn().mockResolvedValue(loaded) };
   const semantics = { read: jest.fn().mockResolvedValue(map), ensure: jest.fn(), readReady: jest.fn().mockResolvedValue({ semanticRevision: 1 }) };
   const parsing = { status: jest.fn().mockResolvedValue({}), inspectPublishedIdentity: jest.fn().mockResolvedValue({ familyId: 'family-test', binding: original.binding }) };
-  const runs = { begin: jest.fn().mockResolvedValue(row), readRun: jest.fn().mockResolvedValue(row), readSaved: jest.fn().mockResolvedValue(null),
+  const modelSettings = { captureForNewTask: jest.fn().mockResolvedValue(executionModel) };
+  const runs = { readRequest: jest.fn().mockResolvedValue(null), begin: jest.fn().mockResolvedValue(row), readRun: jest.fn().mockResolvedValue(row), readSaved: jest.fn().mockResolvedValue(null),
     recordDelivery: jest.fn(async (_scope, _fence, range) => { row.deliveredRanges.push(range); }),
     save: jest.fn(async (_scope, _fence, _command, materialize) => materialize(row, 1)),
     renew: jest.fn().mockResolvedValue(true), claim: jest.fn().mockResolvedValue(fence), cancel: jest.fn(), fail: jest.fn(), expire: jest.fn() };
-  const service = new DocumentActivityRuntimeService(authorization as never, actors as never, reader as never, semantics as never, parsing as never, runs as never);
+  const service = new DocumentActivityRuntimeService(authorization as never, actors as never, reader as never, semantics as never, parsing as never, runs as never, modelSettings as never);
   const context = { ...scope, roles: [] };
-  return { original, map, loaded, row, scope, fence, authorization, actors, reader, semantics, parsing, runs, service, context };
+  return { original, map, loaded, row, scope, fence, authorization, actors, reader, semantics, parsing, runs, service, context, modelSettings };
 }
 
 describe('independent source activity runtime', () => {
+  const begin = (f: ReturnType<typeof fixture>) => ({ action: 'ACTIVITY_BEGIN', documentVersionId: f.scope.documentVersionId,
+    parseRunId: f.row.parseRunId, semanticRevision: 1, requestId: f.row.requestId, expectedRevision: 0,
+    sectionIds: f.row.selection.sectionIds });
+
+  it('freezes the tenant Host model only for a new request and returns it in STATUS and CLAIM', async () => {
+    const f = fixture();
+    await expect(f.service.run(begin(f))).resolves.toMatchObject({ executionModel });
+    expect(f.modelSettings.captureForNewTask).toHaveBeenCalledWith(f.scope.tenantId, expect.any(Date));
+    expect(f.runs.begin.mock.calls[0][1]).toMatchObject({ executionModel });
+    for (const action of ['ACTIVITY_STATUS', 'ACTIVITY_CLAIM'])
+      await expect(f.service.run({ action, documentVersionId: f.scope.documentVersionId, runRef: f.row.runRef,
+        ...(action === 'ACTIVITY_CLAIM' ? { leaseOwner: f.fence.leaseOwner } : {}) })).resolves.toMatchObject({ executionModel });
+    expect(f.modelSettings.captureForNewTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays the old pin after settings change and never fills historical absence', async () => {
+    for (const pin of [executionModel, undefined]) {
+      const f = fixture(); f.row.executionModel = pin; f.runs.readRequest.mockResolvedValue(f.row);
+      f.modelSettings.captureForNewTask.mockRejectedValue(new Error('MUST_NOT_READ_CURRENT_MODEL'));
+      const response = await f.service.run(begin(f));
+      expect(f.runs.begin.mock.calls[0][1].executionModel).toEqual(pin);
+      expect('executionModel' in response).toBe(pin !== undefined);
+      expect(f.modelSettings.captureForNewTask).not.toHaveBeenCalled();
+    }
+  });
+
+  it('refuses missing model authority, revoked source and caller-supplied model before admission', async () => {
+    const f = fixture(); f.modelSettings.captureForNewTask.mockRejectedValueOnce(new Error('MODEL_SETTINGS_MODEL_UNAVAILABLE'));
+    await expect(f.service.run(begin(f))).rejects.toThrow('MODEL_SETTINGS_MODEL_UNAVAILABLE');
+    expect(f.runs.begin).not.toHaveBeenCalled();
+    f.reader.readDocumentOriginal.mockRejectedValueOnce(new Error('SOURCE_REVOKED'));
+    await expect(f.service.run(begin(f))).rejects.toThrow('SOURCE_REVOKED');
+    expect(f.modelSettings.captureForNewTask).toHaveBeenCalledTimes(1);
+    await expect(f.service.run({ ...begin(f), executionModel })).rejects.toThrow();
+    expect(f.runs.begin).not.toHaveBeenCalled();
+  });
   it('admits only explicit exact selections without creating semantic data or an assessment', async () => {
     const f = fixture();
     const request = { action: 'ACTIVITY_BEGIN', documentVersionId: f.scope.documentVersionId,

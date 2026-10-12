@@ -27,7 +27,7 @@ import {
   parseStrictJsonObject,
   resolveRuntimeConfig,
 } from './run-hosted-review-turn.mjs';
-import { requestHostedGateway } from './request-hosted-gateway.mjs';
+import { requestHostedGateway, hostedGatewayHttpFailureDiagnostic } from './request-hosted-gateway.mjs';
 import { WISELINK_PROFILE_REF, canonicalJson, canonicalSha256 } from './validate-payload.mjs';
 
 /** From shared/document-activity.interface.ts via the activity consumer. */
@@ -214,12 +214,11 @@ export async function invokeHostedDocumentActivityModel(input, options = {}, dep
   if (input == null || typeof input !== 'object')
     throw new Error('ACTIVITY_MODEL_INPUT_INVALID');
   const contract = modelContractForInput(input);
+  if (!options.executionModel) throw new Error('ACTIVITY_EXECUTION_MODEL_REQUIRED');
   const modelHeaders = executionModelHeaders(options);
   const gatewayUrl = requiredOption(options.gatewayUrl, 'ACTIVITY_GATEWAY_URL_REQUIRED');
   const gatewayToken = requiredOption(options.gatewayToken, 'ACTIVITY_GATEWAY_TOKEN_REQUIRED');
   const agentId = requiredOption(options.agentId ?? WISELINK_PROFILE_REF, 'ACTIVITY_AGENT_REQUIRED');
-  const configuredModelVersion = requiredOption(
-    options.configuredModelVersion, 'ACTIVITY_MODEL_CONFIG_UNREADABLE');
   let timeoutMs = options.timeoutMs;
   if (timeoutMs !== undefined &&
       (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0))
@@ -270,7 +269,13 @@ export async function invokeHostedDocumentActivityModel(input, options = {}, dep
   } catch {
     throw new Error(`ACTIVITY_GATEWAY_INVALID_JSON_HTTP_${response.status}`);
   }
-  if (!response.ok) throw new Error(`ACTIVITY_GATEWAY_HTTP_${response.status}`);
+  if (!response.ok) {
+    const error = new Error(`ACTIVITY_GATEWAY_HTTP_${response.status}`);
+    Object.defineProperty(error, 'gatewayHttpFailure', {
+      value: hostedGatewayHttpFailureDiagnostic(payload, response.status),
+    });
+    throw error;
+  }
   const choice = payload.choices?.[0];
   const message = choice?.message;
   const toolCall = message?.tool_calls?.[0];
@@ -285,7 +290,7 @@ export async function invokeHostedDocumentActivityModel(input, options = {}, dep
   const proposal = parseStrictJsonObject(toolCall.function.arguments);
   if (proposal.schemaVersion !== contract.schema) throw new Error('ACTIVITY_MODEL_SCHEMA_INVALID');
   const modelVersion = actualModelVersion(
-    payload, choice, choice.message, contract.schema === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? undefined : configuredModelVersion);
+    payload, choice, choice.message, undefined);
   return {
     proposal,
     modelVersion,

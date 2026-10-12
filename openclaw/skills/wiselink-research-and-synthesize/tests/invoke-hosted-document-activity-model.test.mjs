@@ -26,6 +26,9 @@ import { activityEvidenceInput } from './fixtures/activity-model-evidence-input.
 // The local server is a stand-in gateway: it records the real HTTP request
 // and returns one chat completion carrying the proposal as function
 // arguments. No live model, no Host, no credentials are touched.
+const MODEL_OPTIONS = { executionModel: { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3',
+  providerKind: 'BUILT_IN', settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z' }, registeredModelRefs: ['miaoda/glm-5.3'] };
+
 const input = () => ({
   documentVersionId: 'document_version_act_1', runRef: 'activity_run_1',
   sectionIds: ['S-a'],
@@ -88,7 +91,7 @@ test('one request carries the activity system prompt, proposal-only schema and p
     res.end(JSON.stringify(completion('real-activity-model-1', proposalJson)));
   }, async (requests, url) => {
     const result = await invokeHostedDocumentActivityModel(input(), {
-      gatewayUrl: url, gatewayToken: 'gw-token-1',
+      ...MODEL_OPTIONS, gatewayUrl: url, gatewayToken: 'gw-token-1',
       agentId: 'wiselink-engineering', configuredModelVersion: 'configured-fallback-1',
       executionModel: { modelRef: 'miaoda/minimax-m3', displayName: 'MiniMax M3',
         providerKind: 'BUILT_IN', settingsRevision: 1, selectedAt: '2026-09-16T00:00:00.000Z' },
@@ -163,7 +166,7 @@ test('aborting the signal cancels the real in-flight HTTP request', async () => 
     const controller = new AbortController();
     const startedAt = Date.now();
     const pending = invokeHostedDocumentActivityModel(input(), {
-      gatewayUrl: url, gatewayToken: 'gw-token-1',
+      ...MODEL_OPTIONS, gatewayUrl: url, gatewayToken: 'gw-token-1',
       configuredModelVersion: 'configured-fallback-1',
       signal: controller.signal,
     });
@@ -198,7 +201,7 @@ test('aborting during a slow response body cancels the streamed read', async () 
     const controller = new AbortController();
     const startedAt = Date.now();
     const pending = invokeHostedDocumentActivityModel(input(), {
-      gatewayUrl: url, gatewayToken: 'gw-token-1',
+      ...MODEL_OPTIONS, gatewayUrl: url, gatewayToken: 'gw-token-1',
       configuredModelVersion: 'configured-fallback-1',
       signal: controller.signal,
     });
@@ -213,19 +216,12 @@ test('aborting during a slow response body cancels the streamed read', async () 
   });
 });
 
-test('without a sealed execution model no routing header is invented', async () => {
-  const proposalJson = { schemaVersion: DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, statements: [] };
-  await withGateway((_captured, _req, res) => {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(completion('plain-route-model-1', proposalJson)));
-  }, async (requests, url) => {
-    const result = await invokeHostedDocumentActivityModel(input(), {
-      gatewayUrl: url, gatewayToken: 'gw-token-1',
-      configuredModelVersion: 'configured-fallback-1',
-    });
-    assert.equal(result.modelVersion, 'plain-route-model-1');
-    assert.equal(requests[0].headers['x-openclaw-model'], undefined);
-  });
+test('without a sealed Host execution model no request or default routing is allowed', async () => {
+  let requests = 0;
+  await assert.rejects(invokeHostedDocumentActivityModel(input(), {
+    gatewayUrl: 'http://127.0.0.1:1', gatewayToken: 'fixture', configuredModelVersion: 'configured-fallback',
+  }, { requestGateway: async () => { requests++; throw new Error('must not dispatch'); } }), /ACTIVITY_EXECUTION_MODEL_REQUIRED/);
+  assert.equal(requests, 0);
 });
 
 test('a non-proposal tool call and a non-2xx response are rejected specifically', async () => {
@@ -240,7 +236,7 @@ test('a non-proposal tool call and a non-2xx response are rejected specifically'
     res.end(JSON.stringify(wrongTool));
   }, async (_requests, url) => {
     await assert.rejects(invokeHostedDocumentActivityModel(input(), {
-      gatewayUrl: url, gatewayToken: 't', configuredModelVersion: 'cfg',
+      ...MODEL_OPTIONS, gatewayUrl: url, gatewayToken: 't', configuredModelVersion: 'cfg',
     }), /ACTIVITY_MODEL_TOOL_CALL_INVALID/);
   });
   await withGateway((_captured, _req, res) => {
@@ -248,7 +244,7 @@ test('a non-proposal tool call and a non-2xx response are rejected specifically'
     res.end('{}');
   }, async (_requests, url) => {
     await assert.rejects(invokeHostedDocumentActivityModel(input(), {
-      gatewayUrl: url, gatewayToken: 't', configuredModelVersion: 'cfg',
+      ...MODEL_OPTIONS, gatewayUrl: url, gatewayToken: 't', configuredModelVersion: 'cfg',
     }), /ACTIVITY_GATEWAY_HTTP_503/);
   });
 });
@@ -267,7 +263,7 @@ test('an external lease signal does not disable the real HTTP timeout', async ()
       res.end(JSON.stringify(completion('fixture-model', { schemaVersion: DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, statements: [] })));
     }
   }, 150), async (requests, url) => {
-    await assert.rejects(invokeHostedDocumentActivityModel(input(), { gatewayUrl: url, gatewayToken: 'fixture-only',
+    await assert.rejects(invokeHostedDocumentActivityModel(input(), { ...MODEL_OPTIONS, gatewayUrl: url, gatewayToken: 'fixture-only',
       configuredModelVersion: 'fixture-model', signal: new AbortController().signal, timeoutMs: 40 }), /ACTIVITY_MODEL_ABORTED/);
     assert.equal(requests.length, 1);
   });
@@ -300,7 +296,7 @@ const v2Input = (selection = false) => {
         deliveredUnitIds: ['UNIT-a-0'], contextForSectionIds: [] }], organizationWarnings: [] },
   };
 };
-const stubOptions = { gatewayUrl: 'http://127.0.0.1:1', gatewayToken: 'unused-fixture-token', configuredModelVersion: 'constructed-configured' };
+const stubOptions = { ...MODEL_OPTIONS, gatewayUrl: 'http://127.0.0.1:1', gatewayToken: 'unused-fixture-token', configuredModelVersion: 'constructed-configured' };
 const gatewayStub = payload => ({ requestGateway: async () => new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } }) });
 
 test('v2 offset serialization tool and exact baseline system match both recovered historical requests', () => {
@@ -422,5 +418,5 @@ test('v2 requires actual response model provenance and never fills it from the c
   await assert.rejects(invokeHostedDocumentActivityModel(v2Input(), stubOptions, gatewayStub(payload)), /PROVENANCE_UNREADABLE/);
   const legacy = completion('constructed-v1', { schemaVersion: DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, statements: [] });
   delete legacy.model_version; delete legacy.choices[0].message.model_version;
-  assert.equal((await invokeHostedDocumentActivityModel(input(), stubOptions, gatewayStub(legacy))).modelVersion, stubOptions.configuredModelVersion);
+  await assert.rejects(invokeHostedDocumentActivityModel(input(), stubOptions, gatewayStub(legacy)), /PROVENANCE_UNREADABLE/);
 });

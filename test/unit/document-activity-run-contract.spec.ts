@@ -1,11 +1,14 @@
 import { DocumentActivityRunRepository, type DocumentActivityRun } from '../../server/modules/canonical-host/document-activity-run.repository';
 import { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 } from '../../shared/document-activity.interface';
+import { PgDialect } from 'drizzle-orm/pg-core';
 const scope = { tenantId: 't', actorUserId: 'reader', documentVersionId: 'DV-one' };
 const contract = { promptVersion: 'v2-fixture', toolSchemaSha256: 'a'.repeat(64),
   sourceContextVersion: 'wiselink.document.activity-source-context.v1' as const, quoteTransportVersion: 'wiselink.document.activity-quote-offsets.v1' };
 const input = { requestId: 'same-request', parseRunId: 'PR-one', parseRevision: 1, semanticRevision: 2,
   manifestSha256: 'b'.repeat(64), selection: { sectionIds: ['leaf'] }, expectedRevision: 3,
   candidateSchemaVersion: DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, productionContract: contract };
+const executionModel = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3', providerKind: 'BUILT_IN' as const,
+  settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z' };
 function row(): DocumentActivityRun { return { ...input, documentVersionId: scope.documentVersionId,
   runRef: 'DAR-original', candidateRevision: null, status: 'RUNNING', deadline: '2026-10-06T02:00:00Z',
   deliveredRanges: [], result: null, saveCommand: null, errorCode: null }; }
@@ -16,6 +19,55 @@ function beginHarness(prior: DocumentActivityRun) {
   return { repository: new DocumentActivityRunRepository(db as never), execute, db };
 }
 describe('activity immutable versioned request contracts (SQL doubles, not PostgreSQL)', () => {
+  it('persists a validated Host control snapshot without another column or a producer claim', async () => {
+    const current = { ...row(), executionModel };
+    const execute = jest.fn().mockResolvedValueOnce([{}]).mockResolvedValueOnce([{}])
+      .mockResolvedValueOnce([]).mockResolvedValueOnce([{ revision: input.expectedRevision }]).mockResolvedValueOnce([current]);
+    const db = { transaction: jest.fn(async callback => callback({ execute })) };
+    await expect(new DocumentActivityRunRepository(db as never).begin(scope, { ...input, executionModel })).resolves.toBe(current);
+    const statement = new PgDialect().sqlToQuery(execute.mock.calls[4][0]);
+    expect(statement.sql).toContain('producer_json');
+    expect(statement.sql).toContain("CURRENT_TIMESTAMP+interval '1 hour'");
+    expect(statement.params).toContain(JSON.stringify({ executionModel }));
+    expect(JSON.stringify(statement.params)).not.toContain('skillVersion');
+  });
+
+  it.each([undefined, { ...executionModel, settingsRevision: -1 }])('refuses a new admission with missing or invalid model selection', async pin => {
+    const execute = jest.fn().mockResolvedValueOnce([{}]).mockResolvedValueOnce([{}])
+      .mockResolvedValueOnce([]).mockResolvedValueOnce([{ revision: input.expectedRevision }]);
+    const db = { transaction: jest.fn(async callback => callback({ execute })) };
+    await expect(new DocumentActivityRunRepository(db as never).begin(scope, { ...input, executionModel: pin })).rejects.toThrow();
+    expect(execute).toHaveBeenCalledTimes(4);
+  });
+
+  it('preserves the winning original snapshot or historical absence on an idempotent replay', async () => {
+    for (const pin of [executionModel, undefined]) {
+      const prior = { ...row(), executionModel: pin }, h = beginHarness(prior);
+      await expect(h.repository.begin(scope, { ...input, executionModel: { ...executionModel, settingsRevision: 2 } })).resolves.toBe(prior);
+      expect(prior.executionModel).toEqual(pin);
+      expect(h.execute).toHaveBeenCalledTimes(3);
+    }
+  });
+
+  it('SAVE merges actual provenance while retaining the Host snapshot under the existing source/fence/CAS guards', async () => {
+    const current = { ...row(), executionModel };
+    const results = [[current], [{}], [{}], [current], [current], [{ revision: input.expectedRevision }], [{ run_ref: current.runRef }]];
+    const queries: Array<{ sql: string; params: unknown[] }> = [];
+    const execute = jest.fn(async query => { queries.push(new PgDialect().sqlToQuery(query)); return results.shift() ?? []; });
+    const db = { execute, transaction: jest.fn(async callback => callback({ execute })) };
+    const producer = { skillVersion: 'synthetic', modelVersion: 'actual-provider-reported-version' };
+    const result = { schemaVersion: current.candidateSchemaVersion, runRef: current.runRef, candidateRevision: input.expectedRevision + 1,
+      sourceBinding: { original: { documentVersionId: scope.documentVersionId, parseRunId: current.parseRunId }, semanticRevision: current.semanticRevision } };
+    await new DocumentActivityRunRepository(db as never).save(scope,
+      { runRef: current.runRef, leaseOwner: 'owner', leaseToken: '0f23e82b-2b1e-46ba-b62b-9e9a2ec62ca0', leaseGeneration: 1 },
+      { candidate: { schemaVersion: current.candidateSchemaVersion }, producer }, () => result as never);
+    const update = queries.find(query => query.sql.startsWith('UPDATE'))!;
+    expect(update.sql).toContain("producer_json=COALESCE(producer_json,'{}'::jsonb)||");
+    expect(update.sql).toContain('lease_generation=');
+    expect(update.sql).toContain('lease_expires_at>CURRENT_TIMESTAMP');
+    expect(update.params).toContain(JSON.stringify(producer));
+    expect(current.executionModel).toEqual(executionModel);
+  });
   it('returns the same v2 run only for exact schema/producer/source/request replay', async () => {
     const prior = row(), h = beginHarness(prior); await expect(h.repository.begin(scope,input)).resolves.toBe(prior);
     expect(h.execute).toHaveBeenCalledTimes(3);

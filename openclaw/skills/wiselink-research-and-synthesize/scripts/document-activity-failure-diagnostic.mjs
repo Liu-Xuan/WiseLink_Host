@@ -1,4 +1,5 @@
 // Fixed categories only. Never copy a raw error, response body, URL or headers.
+import { readHostedGatewayHttpFailureDiagnostic } from './request-hosted-gateway.mjs';
 const CODES = new Map([
   ['REVIEW_MODEL_PROVENANCE_UNREADABLE', 'PROVENANCE'],
   ['ACTIVITY_MODEL_PROVENANCE_MISMATCH', 'PROVENANCE'],
@@ -13,6 +14,8 @@ const CODES = new Map([
   ['ACTIVITY_NATIVE_RECOVERY_UNVERIFIED', 'PROVENANCE'],
   ['ACTIVITY_NATIVE_RECOVERY_SOURCE_CHANGED', 'SOURCE'],
   ['ACTIVITY_CHECKPOINT_BINDING_MISMATCH', 'SOURCE'],
+  ['ACTIVITY_EXECUTION_MODEL_BINDING_MISMATCH', 'PROVENANCE'],
+  ['ACTIVITY_EXECUTION_MODEL_REQUIRED', 'PROVENANCE'],
   ['ACTIVITY_RUN_BINDING_MISMATCH', 'SOURCE'],
   ...['LIMIT_EXCEEDED', 'JSON_INVALID', 'CYCLE', 'POINTER_OR_LOCATOR_INVALID', 'ROUNDTRIP_MISMATCH',
     'VIEW_INVALID', 'REFERENCE_INVALID', 'REFERENCE_AMBIGUOUS', 'LITERAL_INVALID',
@@ -28,26 +31,33 @@ const QUOTE_ERROR = /^ACTIVITY_QUOTE_SELECTION_(?:SELECTION_INVALID|HOST_CONTEXT
 const DRIVER_CODES = new Set([...CODES.keys(), 'ACTIVITY_MODEL_OUTCOME_UNKNOWN', 'ACTIVITY_DRIVER_FAILED',
   'ACTIVITY_NATIVE_RECOVERY_OPT_IN_REQUIRED', 'ACTIVITY_DOCUMENT_VERSION_REQUIRED', 'ACTIVITY_RUN_REF_INVALID']);
 
+function safeField(value, field) {
+  try { return value?.[field]; } catch { return undefined; }
+}
+
 export function activityFailureDiagnostic(error, stage) {
   let category = stage === 'MODEL_PERSIST' || stage === 'SAVE' ? 'PERSIST' : 'UNKNOWN';
-  let code = null, httpStatus = null;
+  let code = null, httpStatus = null, gatewayHttpFailure = null;
   const seen = new Set();
-  for (let cause = error, depth = 0; cause && depth < 5 && !seen.has(cause); cause = cause.cause, depth++) {
+  for (let cause = error, depth = 0; cause && depth < 5 && !seen.has(cause); cause = safeField(cause, 'cause'), depth++) {
     seen.add(cause);
-    const value = cause.message;
+    const value = safeField(cause, 'message');
+    const transportCode = safeField(cause, 'code');
+    gatewayHttpFailure ??= readHostedGatewayHttpFailureDiagnostic(cause);
     const http = typeof value === 'string' && /^ACTIVITY_GATEWAY_(HTTP|INVALID_JSON_HTTP)_([1-5]\d{2})$/u.exec(value);
     if (http) { category = 'HTTP'; code = http[1] === 'HTTP' ? 'HTTP_STATUS' : 'HTTP_RESPONSE_INVALID'; httpStatus = Number(http[2]); }
     else if (CODES.has(value)) { category = CODES.get(value); code = value; }
     else if (typeof value === 'string' && QUOTE_ERROR.test(value)) { category = 'TOOL'; code = value; }
-    else if (TRANSPORT_CODES.has(cause.code)) { category = 'TRANSPORT'; code = cause.code; }
+    else if (TRANSPORT_CODES.has(transportCode)) { category = 'TRANSPORT'; code = transportCode; }
   }
   return { schemaVersion: 'wiselink.document.activity-failure-diagnostic.v1',
     stage: STAGES.has(stage) ? stage : 'UNKNOWN', category, code, httpStatus,
+    ...(gatewayHttpFailure ? { gatewayHttpFailure } : {}),
     retryAuthorized: false, rawErrorIncluded: false };
 }
 
 export function safeActivityDriverError(error) {
-  const code = error?.message;
+  const code = safeField(error, 'message');
   return typeof code === 'string' && (DRIVER_CODES.has(code) || QUOTE_ERROR.test(code))
     ? code : 'ACTIVITY_DRIVER_FAILED';
 }

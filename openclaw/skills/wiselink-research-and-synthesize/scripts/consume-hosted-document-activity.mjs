@@ -27,7 +27,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA, resolveSourceQuoteSelection } from './resolve-document-activity-quote-selection.mjs';
 export { DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA } from './resolve-document-activity-quote-selection.mjs';
-import { WISELINK_SKILL_VERSION, canonicalSha256 } from './validate-payload.mjs';
+import { WISELINK_SKILL_VERSION, canonicalSha256, validateExecutionModelSelection } from './validate-payload.mjs';
 import { DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA,
   DOCUMENT_ACTIVITY_SOURCE_CONTEXT_SCHEMA, activityV2ProductionContract, activityV2UserContent,
   ACTIVITY_MODEL_V2_EVIDENCE_VIEW_SELECTION_PROMPT_VERSION } from './document-activity-model-contract.mjs';
@@ -723,6 +723,9 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
         parseRunId: claim.parseRunId, semanticRevision: claim.semanticRevision, candidateSchemaVersion }),
       recoveredFromClaim: true, modelInvocations: 0, candidateOnly: true };
   }
+  const executionModel = claim.executionModel == null ? undefined : validateExecutionModelSelection(claim.executionModel);
+  if (!isDeepStrictEqual(claim.executionModel, summary.executionModel))
+    throw new Error('ACTIVITY_EXECUTION_MODEL_BINDING_MISMATCH');
   // Use exactly the fence the Host returned. A null fence must not continue:
   // no READ/SAVE/FAIL can be authorized without it.
   const fence = assertFence(claim.fence ?? null, leaseOwner);
@@ -742,12 +745,12 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
   const sectionIds = claim.selection.sectionIds;
   const limit = options.readLimit ?? 20;
   const maxPages = options.maxPagesPerSection ?? 10_000;
-  const checkpointPins = candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? {
+  const checkpointPins = { ...(candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? {
     candidateSchemaVersion, productionContract: runContract.productionContract,
     sourceContextVersion: runContract.productionContract.sourceContextVersion,
     quoteTransportVersion: runContract.productionContract.quoteTransportVersion,
     parseRunId: claim.parseRunId, semanticRevision: claim.semanticRevision,
-  } : {};
+  } : {}), ...(executionModel ? { executionModel } : {}) };
 
   // Durable per-run checkpoint. The factory owns the private directory
   // layout (0700/0600, keyed by endpoint origin+path without any token,
@@ -1009,6 +1012,9 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     } else {
       if (typeof dependencies.invokeModel !== 'function')
         throw new Error('ACTIVITY_MODEL_EXECUTOR_REQUIRED');
+      // Historical tasks without a frozen selection remain readable/recoverable
+      // from existing results, but cannot dispatch using today's default model.
+      if (!executionModel) throw new Error('ACTIVITY_EXECUTION_MODEL_REQUIRED');
       if (runContract.productionContract?.promptVersion === ACTIVITY_MODEL_V2_EVIDENCE_VIEW_SELECTION_PROMPT_VERSION) {
         diagnosticStage = 'MODEL_INPUT';
         activityV2UserContent(modelInput); // Complete conservation before dispatch marker or HTTP.
@@ -1024,7 +1030,7 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
       diagnosticStage = 'MODEL';
       try {
         modelDispatched = true;
-        modelResult = await lease.guard(() => dependencies.invokeModel(modelInput, { signal: lease.signal }));
+        modelResult = await lease.guard(() => dependencies.invokeModel(modelInput, { signal: lease.signal, executionModel }));
       } catch (error) {
         // The dispatch may have reached the model: the outcome is unknown.
         // No second model call, no FAIL, no fake success. A lease loss is
@@ -1135,6 +1141,13 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     if (checkpoint) {
       try { await checkpoint.write('failure.diagnostic', diagnostic); }
       catch { /* Diagnostics never authorize retry or mask the original error. */ }
+      if (diagnostic.gatewayHttpFailure) {
+        // A later UNKNOWN readback may replace failure.diagnostic, but cannot
+        // erase this one-response HTTP observation or use it to redispatch.
+        try { await checkpoint.write('gateway.http.failure', {
+          ...diagnostic.gatewayHttpFailure, documentVersionId, runRef,
+        }); } catch { /* The original outcome and failure remain unchanged. */ }
+      }
     }
     // Local, deterministic failures are isolated to this run through a fenced
     // ACTIVITY_FAIL. Once the SAVE has been dispatched the outcome may be
@@ -1144,7 +1157,8 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     // lease never FAIL either: the run stays pending for its owner.
     if (!nativeRecoveryMode && checkpointReadComplete && (!modelDispatched || definitiveModelError) &&
         !saveDispatched && !priorSaveDispatched && lease.lost == null &&
-        error?.message !== 'ACTIVITY_MODEL_OUTCOME_UNKNOWN') {
+        error?.message !== 'ACTIVITY_MODEL_OUTCOME_UNKNOWN' &&
+        error?.message !== 'ACTIVITY_EXECUTION_MODEL_REQUIRED') {
       try { await call('ACTIVITY_FAIL', { ...fence, documentVersionId, runRef, errorCode: consumerErrorCode(error) }); }
       catch { /* Never mask the original error; failure stays isolated to this run. */ }
     }
