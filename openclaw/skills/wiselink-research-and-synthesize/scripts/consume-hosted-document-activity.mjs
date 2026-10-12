@@ -1071,7 +1071,9 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     // Model result with the actual modelVersion BEFORE SAVE:
     diagnosticStage = 'MODEL_PERSIST';
     try {
-    if (!(nativeRecoveryMode && persisted.modelResult != null)) await writeCheckpoint('model.result', {
+    // A validated completed result is immutable, including its original time.
+    // Normal checkpoint reentry and native recovery both reuse it unchanged.
+    if (persisted.modelResult == null) await writeCheckpoint('model.result', {
       schemaVersion: checkpointSchema, step: 'model', ...checkpointPins,
       documentVersionId, runRef, inputHash, modelVersion, proposal,
       ...(candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 ? { provenance: modelProvenance } : {}),

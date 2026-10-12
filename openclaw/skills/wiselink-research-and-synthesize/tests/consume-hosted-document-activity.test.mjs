@@ -1091,6 +1091,9 @@ for (const step of ['source.result', 'model.started', 'model.result', 'save.star
 test('both legacy snapshot absences preserve zero-model existing-result SAVE recovery without backfill', async () => {
   const { records, checkpointFactory } = await legacyResultRecords();
   records.delete('save.started');
+  // An older immutable completion makes a timestamp rewrite fail deterministically,
+  // rather than occasionally passing when both runs finish in the same millisecond.
+  records.get('model.result').finishedAt = '2001-01-01T00:00:00.000Z';
   const beforeModel = JSON.stringify(records.get('model.result'));
   const legacy = legacyResultHost();
   const result = await consumeHostedDocumentActivity(baseOptions(), { ...legacy.deps, checkpointFactory });
