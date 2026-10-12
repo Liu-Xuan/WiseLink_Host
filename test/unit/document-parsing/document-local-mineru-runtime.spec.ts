@@ -51,7 +51,8 @@ function fixture(sample?: { pdf: Buffer; candidate: Buffer }) {
   };
   const scoped = {
     getFileMetadata: jest.fn(async (path: string) => content.has(normalize(path)) ? metadata(path) : null),
-    download: jest.fn(async (path: string) => ({ metadata: metadata(path), content: new Blob([Buffer.from(content.get(normalize(path))!.bytes)]) })),
+    download: jest.fn((path: string) => new FileDownloadBuilder(async () => ({ metadata: metadata(path) as never,
+      content: new Response(Buffer.from(content.get(normalize(path))!.bytes)) as never }))),
     upload: jest.fn(async (bytes: Uint8Array, options: { filePath: string; contentType: string }) => {
       const path = normalize(options.filePath); if (content.has(path)) throw new Error('UNEXPECTED_OVERWRITE');
       content.set(path, { bytes: new Uint8Array(bytes), mediaType: options.contentType, owner: browser.actorUserId }); return metadata(path);
@@ -254,3 +255,4 @@ const realCandidatePath = process.env.WL_LOCAL_MINERU_TEST_CANDIDATE;
     semanticRoles: map.sections.map(section => section.roleKey), translationUnitCount: translation.units.length,
     rawRangeImpactCounts, engineeringLimitationCounts, engineeringRangeMetadata, assetCount: parsed.assets.length }) + '\n');
 }, 60_000);
+import { FileDownloadBuilder } from '@lark-apaas/file-service';

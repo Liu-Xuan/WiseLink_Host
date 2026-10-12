@@ -1,5 +1,7 @@
 import { DocumentOriginalStore } from '../../../server/modules/document-management/src/hosted/nest/document-original-store';
 import { originalFixture } from './fixtures/document-original.fixture';
+import { createHash } from 'node:crypto';
+import { FileDownloadBuilder } from '@lark-apaas/file-service';
 
 describe('document FileService recovery (isolated storage double)', () => {
   beforeEach(() => jest.useFakeTimers());
@@ -26,7 +28,9 @@ describe('document FileService recovery (isolated storage double)', () => {
         if (loseResponse) { loseResponse = false; throw new Error('UPLOAD_RESPONSE_LOST'); }
         return metadata(options.filePath);
       }),
-      download: jest.fn(async (path: string) => ({ metadata: metadata(path), content: new Blob([Buffer.from(content.get(path)!)] ) })),
+      download: jest.fn((path: string) => new FileDownloadBuilder(async () => ({
+        metadata: metadata(path) as never, content: new Response(Buffer.from(content.get(path)!)) as never,
+      }))),
     };
     return { store: new DocumentOriginalStore({ from: () => scoped } as never), scoped, content,
       loseNextResponse: () => { loseResponse = true; } };
@@ -118,12 +122,13 @@ describe('document FileService recovery (isolated storage double)', () => {
       if (mismatch === 'length') return { ...value, metadata: { ...value.metadata, contentLength: bytes.length + 1 } };
       return value;
     });
-    scoped.download.mockImplementation(async path => {
+    scoped.download.mockImplementation(path => new FileDownloadBuilder(async () => {
       if (mismatch === 'download') throw { status: 403 };
       if (mismatch === 'downloadTransport') throw transportFailure();
       const value = await download(path);
-      return mismatch === 'provider' ? { ...value, metadata: { ...value.metadata, id: 'other' } } : value;
-    });
+      return { content: new Response(value.content) as never,
+        metadata: (mismatch === 'provider' ? { ...value.metadata, id: 'other' } : value.metadata) as never };
+    }));
     await expect(settle(store.save(scope, 'RAW_MARKDOWN', bytes, progress, undefined, async () => undefined))).rejects.toBeDefined();
     expect(scoped.upload).toHaveBeenCalledTimes(1);
     if (mismatch === 'downloadTransport') expect(scoped.download).toHaveBeenCalledTimes(3);
@@ -159,10 +164,10 @@ describe('document FileService recovery (isolated storage double)', () => {
     expect(scoped.getFileMetadata).not.toHaveBeenCalled();
     expect(scoped.download).toHaveBeenCalledTimes(1);
     const download = scoped.download.getMockImplementation()!;
-    scoped.download.mockImplementationOnce(async path => {
+    scoped.download.mockImplementationOnce(path => new FileDownloadBuilder(async () => {
       const result = await download(path);
-      return { ...result, metadata: { ...result.metadata, id: 'different-object' } };
-    });
+      return { content: new Response(result.content) as never, metadata: { ...result.metadata, id: 'different-object' } as never };
+    }));
     await expect(store.read(scope, saved)).rejects.toThrow('DOCUMENT_ORIGINAL_METADATA_MISMATCH');
   });
   it('retains completed page groups after later persistence fails and refuses arbitrary paths', async () => {
@@ -205,4 +210,129 @@ describe('document FileService recovery (isolated storage double)', () => {
     else await expect(store.load(localScope, manifest, original.binding)).rejects.toThrow('DOCUMENT_ORIGINAL_RAW_PAGES_REQUIRED');
   });
 
+});
+
+describe('document FileService SDK streaming readback (synthetic bytes)', () => {
+  const scope = { documentVersionId: 'DV-STREAM', parseRunId: 'PR-STREAM', bucketId: 'bucket' };
+  const path = 'wiselink/parsed/DV-STREAM/PR-STREAM/raw/mineru-candidate.json';
+  const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+  function setup(bytes: Uint8Array, options: {
+    length?: number;
+    body?: () => ReadableStream<Uint8Array>;
+  } = {}) {
+    const metadata = { id: 'stream-object', bucketID: scope.bucketId, filePath: path,
+      metadata: { contentLength: options.length ?? bytes.length, mimeType: 'application/json' } };
+    const scoped = {
+      getFileMetadata: jest.fn(async () => metadata),
+      upload: jest.fn(),
+      download: jest.fn(() => new FileDownloadBuilder(async () => ({
+        metadata: metadata as never,
+        content: new Response(options.body ? options.body() : new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (let offset = 0; offset < bytes.length; offset += 65536)
+              controller.enqueue(bytes.subarray(offset, Math.min(offset + 65536, bytes.length)));
+            controller.close();
+          },
+        })) as never,
+      }))),
+    };
+    const artifact = { role: 'MANIFEST' as const, relativePath: 'raw/mineru-candidate.json',
+      mediaType: 'application/json', bucketId: scope.bucketId, filePath: path,
+      providerObjectId: metadata.id, byteLength: metadata.metadata.contentLength,
+      sha256: sha256(bytes), readback: 'VERIFIED' as const };
+    const store = new DocumentOriginalStore({ from: () => scoped } as never);
+    return { store, scoped, artifact };
+  }
+  async function read(kind: 'read' | 'recover', fixture: ReturnType<typeof setup>) {
+    return kind === 'read' ? fixture.store.read(scope, fixture.artifact)
+      : (await fixture.store.recover(scope, 'MANIFEST', 'raw/mineru-candidate.json'))!.bytes;
+  }
+  it.each(['read', 'recover'] as const)('fully verifies actual >50MiB bytes via the installed SDK stream: %s', async kind => {
+    const bytes = Buffer.alloc(50 * 1024 * 1024 + 1, 0x61);
+    bytes[bytes.length - 1] = 0x62;
+    const f = setup(bytes);
+    // The real SDK's ordinary Blob builder reproduces the production boundary.
+    await expect(Promise.resolve(f.scoped.download())).rejects.toThrow(
+      "Can't download file blob larger than 50MB, use asStream() instead.");
+    const actual = await read(kind, f);
+    expect(actual.length).toBe(bytes.length);
+    expect(Buffer.from(actual).equals(bytes)).toBe(true);
+    expect(sha256(actual)).toBe(f.artifact.sha256);
+    expect(f.scoped.upload).not.toHaveBeenCalled();
+  });
+  it('verifies an existing >50MiB immutable object without a new upload before completing progress', async () => {
+    const bytes = Buffer.alloc(50 * 1024 * 1024 + 1, 0x63);
+    const f = setup(bytes); const progress = jest.fn();
+    const saved = await f.store.save(scope, 'MANIFEST', bytes, progress, 'raw/mineru-candidate.json', async () => undefined);
+    expect(saved).toMatchObject({ sha256: f.artifact.sha256, byteLength: bytes.length, readback: 'VERIFIED' });
+    expect(progress.mock.calls.map(([value]) => value.readback)).toEqual(['UPLOADED', 'VERIFIED']);
+    expect(f.scoped.upload).not.toHaveBeenCalled();
+  });
+  it.each(['read', 'recover'] as const)('rejects a truncated stream: %s', async kind => {
+    const f = setup(Buffer.from('truncated'), { length: 10 });
+    await expect(read(kind, f)).rejects.toThrow('DOCUMENT_ORIGINAL_READBACK_SIZE_MISMATCH');
+  });
+  it.each(['read', 'recover'] as const)('cancels excess bytes before copying beyond the declared bound: %s', async kind => {
+    const cancel = jest.fn(); const bytes = Buffer.from('too long');
+    const f = setup(bytes, { length: bytes.length - 1, body: () => new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(bytes); }, cancel,
+    }) });
+    await expect(read(kind, f)).rejects.toThrow('DOCUMENT_ORIGINAL_READBACK_SIZE_MISMATCH');
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+  it.each(['read', 'recover'] as const)('propagates a mid-stream failure without Blob fallback: %s', async kind => {
+    const cause = new Error('CONSTRUCTED_STREAM_FAILURE');
+    const f = setup(Buffer.from('complete'), { body: () => {
+      let first = true;
+      return new ReadableStream<Uint8Array>({ pull(controller) {
+        if (first) { first = false; controller.enqueue(new Uint8Array([99])); }
+        else controller.error(cause);
+      } });
+    } });
+    await expect(read(kind, f)).rejects.toBe(cause);
+    expect(f.scoped.download).toHaveBeenCalledTimes(1);
+    expect(f.scoped.upload).not.toHaveBeenCalled();
+  });
+  it.each(['read', 'recover'] as const)('cancels the acquired stream when download metadata is rejected: %s', async kind => {
+    const bytes = Buffer.from('bound'); const f = setup(bytes); const cancel = jest.fn();
+    const metadata = await f.scoped.getFileMetadata();
+    f.scoped.download.mockImplementationOnce(() => new FileDownloadBuilder(async () => ({
+      metadata: { ...metadata, id: 'different-object' } as never,
+      content: new Response(new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(bytes); }, cancel,
+      })) as never,
+    })));
+    await expect(read(kind, f)).rejects.toThrow('DOCUMENT_ORIGINAL_METADATA_MISMATCH');
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(f.scoped.download).toHaveBeenCalledTimes(1);
+  });
+  it('rejects recovery head identity before requesting a stream', async () => {
+    const f = setup(Buffer.from('bound')); const metadata = await f.scoped.getFileMetadata();
+    f.scoped.getFileMetadata.mockResolvedValueOnce({ ...metadata, bucketID: 'other-bucket' });
+    await expect(read('recover', f)).rejects.toThrow('DOCUMENT_ORIGINAL_METADATA_MISMATCH');
+    expect(f.scoped.download).not.toHaveBeenCalled();
+  });
+  it('still rejects an exact-length stream with a different digest', async () => {
+    const f = setup(Buffer.from('before'));
+    f.artifact.sha256 = sha256(Buffer.from('after!'));
+    await expect(read('read', f)).rejects.toThrow('DOCUMENT_ORIGINAL_READBACK_DIGEST_MISMATCH');
+  });
+  it.each(['read', 'recover'] as const)('retains the64MiB cap before download or allocation: %s', async kind => {
+    const f = setup(Buffer.from('small'), { length: 64 * 1024 * 1024 + 1 });
+    await expect(read(kind, f)).rejects.toThrow('DOCUMENT_ORIGINAL_DESCRIPTOR_INVALID');
+    expect(f.scoped.download).not.toHaveBeenCalled();
+  });
+  it('retains bounded read-only transport retries when a stream fails before completion', async () => {
+    let attempt = 0;
+    const f = setup(Buffer.from('x'), { body: () => {
+      attempt += 1;
+      return new ReadableStream<Uint8Array>({ start(controller) {
+        if (attempt < 3) controller.error(new Error('fetch failed'));
+        else { controller.enqueue(new Uint8Array([120])); controller.close(); }
+      } });
+    } });
+    await expect(read('read', f)).resolves.toEqual(new Uint8Array([120]));
+    expect(f.scoped.download).toHaveBeenCalledTimes(3);
+    expect(f.scoped.upload).not.toHaveBeenCalled();
+  });
 });

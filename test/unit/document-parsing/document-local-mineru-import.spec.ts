@@ -1,4 +1,5 @@
 import type { DocumentParseProgressArtifact, DocumentParseSourceBinding } from '../../../server/database/document-parsing.schema';
+import { FileDownloadBuilder } from '@lark-apaas/file-service';
 import type { DocumentOriginalArtifact } from '../../../shared/document-original.interface';
 import type { DocumentStepFence } from '../../../server/modules/document-management/src/hosted/nest/document-step-lease.repository';
 import { openDocumentPdfSession } from '../../../server/modules/document-management/src/hosted/nest/document-original-pdf';
@@ -34,7 +35,8 @@ function fixture() {
   const content = new Map<string, { bytes: Uint8Array; mediaType: string }>();
   const metadata = (path: string) => ({ id: `object:${path}`, bucketID: 'bucket', filePath: path, metadata: { contentLength: content.get(path)!.bytes.length, mimeType: content.get(path)!.mediaType } });
   const scoped = { getFileMetadata: async (path: string) => content.has(path) ? metadata(path) : null,
-    download: async (path: string) => ({ metadata: metadata(path), content: new Blob([Buffer.from(content.get(path)!.bytes)]) }),
+    download: (path: string) => new FileDownloadBuilder(async () => ({ metadata: metadata(path) as never,
+      content: new Response(Buffer.from(content.get(path)!.bytes)) as never })),
     upload: jest.fn(async (data: Uint8Array, options: { filePath: string; contentType: string }) => {
       if (content.has(options.filePath)) throw new Error('OVERWRITE');
       content.set(options.filePath, { bytes: new Uint8Array(data), mediaType: options.contentType }); return metadata(options.filePath);

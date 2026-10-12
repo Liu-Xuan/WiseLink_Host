@@ -22,6 +22,7 @@ const entries = {
   MANIFEST: { relativePath: 'original/manifest.json', mediaType: 'application/json' },
 };
 const UPLOAD_RECOVERY_DELAYS_MS = [250, 1000] as const;
+const MAX_ARTIFACT_BYTES = 64 * 1024 * 1024;
 
 /** FileService recovery uses the exact deterministic object path and verified bytes.
  * Publication and lease checks remain in the parseRun repository, never this store. */
@@ -32,7 +33,7 @@ export class DocumentOriginalStore {
     onProgress: (artifact: DocumentOriginalArtifact) => Promise<void>, relativePath?: string,
     assertActive?: () => Promise<void>): Promise<DocumentOriginalArtifact> {
     const snapshot = new Uint8Array(bytes);
-    if (!snapshot.length || snapshot.length > 64 * 1024 * 1024) throw new Error('DOCUMENT_ORIGINAL_ARTIFACT_SIZE_INVALID');
+    if (!snapshot.length || snapshot.length > MAX_ARTIFACT_BYTES) throw new Error('DOCUMENT_ORIGINAL_ARTIFACT_SIZE_INVALID');
     const rule = entry(role, relativePath);
     const filePath = prefix(scope) + rule.relativePath;
     const scoped = this.files.from(scope.bucketId);
@@ -73,13 +74,13 @@ export class DocumentOriginalStore {
     const scoped = this.files.from(scope.bucketId);
     // Download returns the object's metadata alongside its bytes. Validate that
     // receipt rather than issuing a second, earlier metadata request per read.
-    const result = await withFileReadTransportRetry(() => scoped.download(artifact.filePath));
-    assertMetadata(result.metadata, artifact);
-    if (result.content.size !== artifact.byteLength) throw new Error('DOCUMENT_ORIGINAL_READBACK_SIZE_MISMATCH');
-    const bytes = new Uint8Array(await result.content.arrayBuffer());
-    if (bytes.length !== artifact.byteLength || digest(bytes) !== artifact.sha256)
-      throw new Error('DOCUMENT_ORIGINAL_READBACK_DIGEST_MISMATCH');
-    return bytes;
+    return withFileReadTransportRetry(async () => {
+      const result = await scoped.download(artifact.filePath).asStream();
+      const bytes = await consumeDownload(result.content, artifact.byteLength,
+        () => assertMetadata(result.metadata, artifact));
+      if (digest(bytes) !== artifact.sha256) throw new Error('DOCUMENT_ORIGINAL_READBACK_DIGEST_MISMATCH');
+      return bytes;
+    });
   }
 
   /** Recover a write whose response or DB progress was lost without re-invoking a model. */
@@ -89,12 +90,22 @@ export class DocumentOriginalStore {
     const scoped = this.files.from(scope.bucketId);
     const metadata = await optionalMetadata(() => scoped.getFileMetadata(filePath));
     if (!metadata) return null;
-    const result = await withFileReadTransportRetry(() => scoped.download(filePath));
-    const bytes = new Uint8Array(await result.content.arrayBuffer());
-    const artifact: DocumentOriginalArtifact = { role, ...rule, bucketId: scope.bucketId, filePath,
-      providerObjectId: metadata.id, byteLength: bytes.length, sha256: digest(bytes), readback: 'VERIFIED' };
-    assertDescriptor(scope, artifact); assertMetadata(metadata, artifact); assertMetadata(result.metadata, artifact);
-    return { artifact, bytes };
+    const byteLength = Number(metadata.metadata?.contentLength);
+    if (!Number.isSafeInteger(byteLength) || byteLength < 1 || byteLength > MAX_ARTIFACT_BYTES)
+      throw new Error('DOCUMENT_ORIGINAL_DESCRIPTOR_INVALID');
+    const identity = { bucketId: scope.bucketId, filePath, providerObjectId: metadata.id,
+      byteLength, mediaType: rule.mediaType };
+    if (!identity.providerObjectId) throw new Error('DOCUMENT_ORIGINAL_DESCRIPTOR_INVALID');
+    assertMetadata(metadata, identity);
+    return withFileReadTransportRetry(async () => {
+      const result = await scoped.download(filePath).asStream();
+      const bytes = await consumeDownload(result.content, byteLength,
+        () => assertMetadata(result.metadata, identity));
+      const artifact: DocumentOriginalArtifact = { role, ...rule, bucketId: scope.bucketId, filePath,
+        providerObjectId: metadata.id, byteLength, sha256: digest(bytes), readback: 'VERIFIED' };
+      assertDescriptor(scope, artifact); assertMetadata(metadata, artifact); assertMetadata(result.metadata, artifact);
+      return { artifact, bytes };
+    });
   }
 
   async load(scope: DocumentOriginalStoreScope, artifact: DocumentOriginalArtifact, expected: DocumentOriginalBinding) {
@@ -142,10 +153,38 @@ function assertDescriptor(scope: DocumentOriginalStoreScope, artifact: DocumentO
   if (!rule || artifact.relativePath !== rule.relativePath || artifact.mediaType !== rule.mediaType ||
       artifact.bucketId !== scope.bucketId || artifact.filePath !== prefix(scope) + rule.relativePath ||
       !artifact.providerObjectId || !Number.isSafeInteger(artifact.byteLength) || artifact.byteLength < 1 ||
-      artifact.byteLength > 64 * 1024 * 1024 || !/^[a-f0-9]{64}$/.test(artifact.sha256))
+      artifact.byteLength > MAX_ARTIFACT_BYTES || !/^[a-f0-9]{64}$/.test(artifact.sha256))
     throw new Error('DOCUMENT_ORIGINAL_DESCRIPTOR_INVALID');
 }
-function assertMetadata(metadata: FileMeta | null, artifact: DocumentOriginalArtifact) {
+
+/** The SDK Blob builder stops at 50MiB; streaming still retains our exact 64MiB bound. */
+async function consumeDownload(content: ReadableStream<Uint8Array>, byteLength: number,
+  assertReceipt: () => void): Promise<Uint8Array> {
+  const reader = content.getReader();
+  try {
+    // Hold the reader before receipt checks so every rejection cancels this network stream.
+    assertReceipt();
+    if (!Number.isSafeInteger(byteLength) || byteLength < 1 || byteLength > MAX_ARTIFACT_BYTES)
+      throw new Error('DOCUMENT_ORIGINAL_READBACK_SIZE_MISMATCH');
+    const bytes = new Uint8Array(byteLength);
+    let offset = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!(value instanceof Uint8Array)) throw new Error('DOCUMENT_ORIGINAL_READBACK_BODY_INVALID');
+      if (value.byteLength > byteLength - offset) throw new Error('DOCUMENT_ORIGINAL_READBACK_SIZE_MISMATCH');
+      bytes.set(value, offset); offset += value.byteLength;
+    }
+    if (offset !== byteLength) throw new Error('DOCUMENT_ORIGINAL_READBACK_SIZE_MISMATCH');
+    return bytes;
+  } catch (error) {
+    // Cleanup failure must not replace the original transport or guard failure.
+    try { await reader.cancel(); } catch { /* preserve the original error */ }
+    throw error;
+  } finally { reader.releaseLock(); }
+}
+function assertMetadata(metadata: FileMeta | null, artifact: Pick<DocumentOriginalArtifact,
+  'providerObjectId' | 'bucketId' | 'filePath' | 'byteLength' | 'mediaType'>) {
   if (!metadata || metadata.id !== artifact.providerObjectId || metadata.bucketID !== artifact.bucketId ||
       metadata.filePath.replace(/^\/+/, '') !== artifact.filePath || Number(metadata.metadata?.contentLength) !== artifact.byteLength ||
       metadata.metadata?.mimeType !== artifact.mediaType) throw new Error('DOCUMENT_ORIGINAL_METADATA_MISMATCH');

@@ -1,4 +1,5 @@
 import { DocumentParsingHostedService } from '../../../server/modules/document-management/src/hosted/nest/document-parsing-hosted.service';
+import { FileDownloadBuilder } from '@lark-apaas/file-service';
 import { MiaodaFileServiceArtifactStore } from '../../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 import * as composition from '../../../server/modules/document-management/src/hosted/nest/document-original-compose';
 import { openDocumentPdfSession } from '../../../server/modules/document-management/src/hosted/nest/document-original-pdf';
@@ -16,7 +17,8 @@ function fixture(loseReceipt = false) {
     metadata: { contentLength: content.get(path)!.bytes.length, mimeType: content.get(path)!.mediaType } });
   const scoped = {
     getFileMetadata: async (path: string) => content.has(path) ? metadata(path) : null,
-    download: jest.fn(async (path: string) => ({ metadata: metadata(path), content: new Blob([Buffer.from(content.get(path)!.bytes)]) })),
+    download: jest.fn((path: string) => new FileDownloadBuilder(async () => ({ metadata: metadata(path) as never,
+      content: new Response(Buffer.from(content.get(path)!.bytes)) as never }))),
     upload: jest.fn(async (bytes: Uint8Array, options: { filePath: string; contentType: string }) => {
     if (content.has(options.filePath)) throw new Error('OVERWRITE');
     content.set(options.filePath, { bytes: new Uint8Array(bytes), mediaType: options.contentType }); return metadata(options.filePath);
