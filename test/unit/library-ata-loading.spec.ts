@@ -31,7 +31,7 @@ const fleet: CanonicalLibraryFleetCatalog = {
 
 function documents(family = 'radio'): CanonicalLibraryDocumentsResponse {
   const response = libraryDocuments([family]);
-  response.items[0].versions.forEach(version => { version.extractedMetadata = libraryMetadata('23-10', '787-9'); });
+  response.items[0].versions.forEach(version => { version.extractedMetadata = libraryMetadata('2310', '787-9'); });
   return response;
 }
 
@@ -103,7 +103,7 @@ describe('ATA directory with the synchronous compact title catalog', () => {
     await act(async () => read.resolve(documents()));
     expect(text()).toContain('Speech Communications');
     expect(text()).toContain('通信');
-    expect(text()).toContain('ATA4 23-10');
+    expect(text()).toContain('ATA23-10');
     expect(text()).not.toContain('目录暂不可用');
     expect(dom.window.document.querySelector('a[href*="DV-radio-1"]')).not.toBeNull();
     expect(dom.window.document.querySelector('a[href*="DV-radio-2"]')).not.toBeNull();

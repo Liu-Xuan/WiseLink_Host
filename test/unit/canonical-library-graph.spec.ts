@@ -55,6 +55,36 @@ const version = (documentVersionId = 'version-1') => ({
   committedAt: '2026-10-01T12:00:00.000Z',
   isCurrent: true,
 });
+
+it('carries only a Host-selected exact-version reader hint and rejects malformed hints', async () => {
+  const { service, repository } = serviceTarget();
+  repository.graph.mockResolvedValueOnce([result([{ ...version('dv-reader'), readerWorkItemId: 'wi-authorized',
+    internalOwnerId: 'private-owner' } as never])]);
+  const response = await service.graph({ level: 'versions', familyId: 'family-a' }, actor);
+  expect(response.items[0]).toEqual({ ...version('dv-reader'), readerWorkItemId: 'wi-authorized' });
+  expect(JSON.stringify(response)).not.toContain('private-owner');
+  for (const readerWorkItemId of ['', 'x'.repeat(97), 'bad\u0000id', null]) {
+    repository.graph.mockResolvedValueOnce([result([{ ...version(), readerWorkItemId } as never])]);
+    await expect(service.graph({ level: 'versions', familyId: 'family-a' }, actor)).rejects.toMatchObject({
+      response: { code: 'LIBRARY_GRAPH_DATA_LIMIT_EXCEEDED' },
+    });
+  }
+});
+
+it('selects reader hints using the existing rich-library ranking with actor, tenant and exact DV/document binding', () => {
+  const compiled = new PgDialect().sqlToQuery(libraryGraphStatement({
+    tenantId: 'tenant-a', actorUserId: 'reader-a', request: { level: 'versions', familyId: 'family-a' },
+    after: null, limit: 50,
+  }));
+  expect(compiled.sql).toMatch(/w\.document_id=page\.document_id and w\.document_version_id=page\.document_version_id/u);
+  expect(compiled.sql).toMatch(/page as materialized \([\s\S]*limit \$\d+\s*\), reader_page as/u);
+  expect(compiled.sql).toContain('order by (w.package_id is not null and w.package_artifact_ref is not null) desc');
+  expect(compiled.sql).toContain('w.created_at desc, w.work_item_id desc limit 1');
+  expect(compiled.params.filter(value => value === 'reader-a').length).toBeGreaterThanOrEqual(2);
+  expect(compiled.params.filter(value => value === 'tenant-a').length).toBeGreaterThanOrEqual(2);
+  expect(compiled.sql).toContain("case when reader_work_item_id is null then '{}'::jsonb");
+  expect(compiled.sql).not.toContain('dm_document_version_metadata');
+});
 const result = (
   items: OwnedLibraryGraphResult['items'] = [],
 ): OwnedLibraryGraphResult => ({

@@ -19,7 +19,7 @@ const fleet: CanonicalLibraryFleetCatalog = {
 const flatten = (nodes: AtaDirectoryNode[]): AtaDirectoryNode[] => nodes.flatMap(node => [node, ...flatten(node.children)]);
 function classified() {
   const document = libraryFamily('mixed');
-  document.versions[0].extractedMetadata = libraryMetadata('23-15', '787-9');
+  document.versions[0].extractedMetadata = libraryMetadata('2315', '787-9');
   document.versions[1].extractedMetadata = libraryMetadata('34', '737-8');
   return document;
 }
@@ -27,8 +27,8 @@ function classified() {
 describe('authorized per-version aircraft / ATA browsing projection', () => {
   it('recognizes only explicit ATA observations and does not turn SB numbers into ATA4', () => {
     expect(ataDirectoryCode('23')).toEqual({ ata2: '23', ata4: null });
-    for (const value of ['2315', '23-15', '231500', '23-15-00']) expect(ataDirectoryCode(value)).toEqual({ ata2: '23', ata4: '23-15' });
-    for (const value of ['737-23-1234', '23-1234 SB', 'ATA 23', '3', '1234567']) expect(ataDirectoryCode(value)).toBeNull();
+    for (const value of ['2315', '231500']) expect(ataDirectoryCode(value)).toEqual({ ata2: '23', ata4: '23-15' });
+    for (const value of ['23-15', '23-15-00', '24-41', '31-39', '4600-00', '737-23-1234', '23-1234 SB', 'ATA 23', '3', '1234567']) expect(ataDirectoryCode(value)).toBeNull();
   });
   it('keeps different aircraft/ATA observations on their exact visible versions', () => {
     const document = classified();
@@ -52,7 +52,7 @@ describe('authorized per-version aircraft / ATA browsing projection', () => {
   it('preserves unknown/outside-fleet material and broad parent observations without manufacturing child mapping', () => {
     const document = libraryFamily('broad');
     document.versions[0].extractedMetadata = libraryMetadata('23', '787');
-    document.versions[1].extractedMetadata = libraryMetadata('23-10', '787-9');
+    document.versions[1].extractedMetadata = libraryMetadata('2310', '787-9');
     const roots = buildLibraryAtaDirectory([document], fleet);
     expect(roots[0].children.map(node => node.key)).toEqual(['787-9', '__FAMILY_MENTION__']);
     expect(roots[0].children[1].items[0].version.documentVersionId).toBe('DV-broad-2');
@@ -60,6 +60,31 @@ describe('authorized per-version aircraft / ATA browsing projection', () => {
     const missingFleet = buildLibraryAtaDirectory([unknown], null);
     expect(flatten(missingFleet).map(node => node.key)).toEqual(['__OUTSIDE_FLEET__', '__UNKNOWN__', '__UNKNOWN__']);
     expect(buildLibraryAtaDirectory([unknown], null, { fleetFamily: '787' })).toEqual([]);
+  });
+  it('retains every unresolved original value on its exact version instead of folding it into unknown or inferring a range', () => {
+    const document = libraryFamily('raw');
+    document.versions = [document.versions[0]];
+    const metadata = libraryMetadata('24-41', '787-9');
+    metadata.ata.observations = ['24-41', '31-39', '4600-00', '3141'].map(value => ({
+      value, status: 'PENDING_REVIEW', evidence: [{ page: 1, text: `ATA ${value}` }],
+    }));
+    document.versions[0].extractedMetadata = metadata;
+    const before = JSON.stringify(document);
+    const nodes = flatten(buildLibraryAtaDirectory([document], fleet));
+    for (const value of ['24-41', '31-39', '4600-00']) {
+      const raw = nodes.find(node => node.key === value)!;
+      expect(raw.level).toBe('raw');
+      expect(raw.items[0].version.documentVersionId).toBe(document.versions[0].documentVersionId);
+    }
+    expect(nodes.filter(node => node.level === 'ata2').map(node => node.key)).toEqual(['31']);
+    expect(nodes.find(node => node.key === '31-41')?.items).toHaveLength(1);
+    expect(JSON.stringify(document)).toBe(before);
+    const html = renderToStaticMarkup(createElement(StaticRouter, null, createElement(LibraryAtaHierarchy, {
+      documents: [document], fleetCatalog: fleet, filters: {}, hasMore: false, scheme: 'ispec',
+      onSchemeChange: jest.fn(), onSelect: jest.fn(),
+    })));
+    expect(html).toContain('原始标注 4600-00');
+    expect(html).not.toContain('ATA46');
   });
   it('keeps bilingual attachment namespaces and duplicate source locators distinct', () => {
     expect(ataDirectoryTitles('23', 'ispec')[0]).toMatchObject({ titleZH: '通信', titleEN: 'COMMUNICATIONS' });

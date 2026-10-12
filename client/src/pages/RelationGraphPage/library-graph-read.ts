@@ -38,6 +38,7 @@ export function validateLibraryGraphPage(page:CanonicalLibraryGraphResponse, req
     if (page.familyId !== request.familyId || page.countScope !== 'SELECTED_FAMILY_FRESH_READ') fail();
     for (const item of page.items) {
       if (item.kind !== 'VERSION' || !text(item.documentVersionId,96,true) || !text(item.businessRevision,512)
+        || (item.readerWorkItemId !== undefined && !text(item.readerWorkItemId,96,true))
         || !text(item.committedAt,96,true) || typeof item.isCurrent !== 'boolean' || ids.has(item.documentVersionId)) fail();
       ids.add(item.documentVersionId);
     }
