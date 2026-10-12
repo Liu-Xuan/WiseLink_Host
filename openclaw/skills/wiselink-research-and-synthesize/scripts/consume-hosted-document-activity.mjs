@@ -544,6 +544,7 @@ function validateRunSummary(summary, documentVersionId, runRef) {
  * of shared/document-original.interface.ts. */
 function validateSavedReceipt(saved, {
   documentVersionId, runRef, parseRunId, semanticRevision, sourceBinding, producer, statementCount,
+  executionModel,
   candidateSchemaVersion = DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA, sourceContext, expectedStatements, expectedAnchors, expectedReadCoverage,
 }) {
   if (saved == null || typeof saved !== 'object' || Array.isArray(saved) ||
@@ -584,11 +585,17 @@ function validateSavedReceipt(saved, {
   if (sourceBinding !== undefined && !isDeepStrictEqual(binding, sourceBinding))
     throw new Error('ACTIVITY_SAVE_RECEIPT_SOURCE_BINDING_MISMATCH');
   const receiptProducer = saved.producer;
-  if (receiptProducer == null || typeof receiptProducer !== 'object' ||
+  if (receiptProducer == null || typeof receiptProducer !== 'object' || Array.isArray(receiptProducer) ||
       !nonemptyString(receiptProducer.skillVersion) || receiptProducer.skillVersion.length > 160 ||
       !nonemptyString(receiptProducer.modelVersion) || receiptProducer.modelVersion.length > 160)
     throw new Error('ACTIVITY_SAVE_RECEIPT_PRODUCER_MISMATCH');
-  if (producer !== undefined && !isDeepStrictEqual(receiptProducer, producer))
+  const hasSelection = Object.hasOwn(receiptProducer, 'executionModel');
+  if (Object.keys(receiptProducer).length !== (hasSelection ? 3 : 2) ||
+      (executionModel === undefined ? hasSelection : !hasSelection ||
+        !isDeepStrictEqual(validateExecutionModelSelection(receiptProducer.executionModel), executionModel)))
+    throw new Error('ACTIVITY_SAVE_RECEIPT_PRODUCER_MISMATCH');
+  const actualProducer = { skillVersion: receiptProducer.skillVersion, modelVersion: receiptProducer.modelVersion };
+  if (producer !== undefined && !isDeepStrictEqual(actualProducer, producer))
     throw new Error('ACTIVITY_SAVE_RECEIPT_PRODUCER_MISMATCH');
   if (!Array.isArray(saved.statements) ||
       saved.statements.some(statement => typeof statement?.statementId !== 'string' || !statement.statementId))
@@ -698,11 +705,13 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
         (selectionMode ? DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA : DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA)) ||
       (options.productionContract !== undefined && !isDeepStrictEqual(options.productionContract, runContract.productionContract)))
     throw new Error('ACTIVITY_RUN_CONTRACT_MISMATCH');
+  const summaryExecutionModel = summary.executionModel == null ? undefined : validateExecutionModelSelection(summary.executionModel);
   if (summary.result != null) {
     return { status: 'ACTIVITY_WORK_SAVED', documentVersionId, runRef,
       saved: validateSavedReceipt(summary.result, {
         documentVersionId, runRef,
-        parseRunId: summary.parseRunId, semanticRevision: summary.semanticRevision, candidateSchemaVersion }),
+        parseRunId: summary.parseRunId, semanticRevision: summary.semanticRevision, candidateSchemaVersion,
+        executionModel: summaryExecutionModel }),
       recoveredFromStatus: true, modelInvocations: 0, candidateOnly: true };
   }
 
@@ -716,16 +725,16 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
   if (candidateSchemaVersion === DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2 &&
       ['parseRunId', 'semanticRevision', 'selection', 'expectedRevision', 'requestId', 'deadline'].some(key => !isDeepStrictEqual(claim[key], summary[key])))
     throw new Error('ACTIVITY_RUN_BINDING_MISMATCH');
+  const executionModel = claim.executionModel == null ? undefined : validateExecutionModelSelection(claim.executionModel);
+  if (!isDeepStrictEqual(claim.executionModel, summary.executionModel))
+    throw new Error('ACTIVITY_EXECUTION_MODEL_BINDING_MISMATCH');
   if (claim.result != null) {
     return { status: 'ACTIVITY_WORK_SAVED', documentVersionId, runRef,
       saved: validateSavedReceipt(claim.result, {
         documentVersionId, runRef,
-        parseRunId: claim.parseRunId, semanticRevision: claim.semanticRevision, candidateSchemaVersion }),
+        parseRunId: claim.parseRunId, semanticRevision: claim.semanticRevision, candidateSchemaVersion, executionModel }),
       recoveredFromClaim: true, modelInvocations: 0, candidateOnly: true };
   }
-  const executionModel = claim.executionModel == null ? undefined : validateExecutionModelSelection(claim.executionModel);
-  if (!isDeepStrictEqual(claim.executionModel, summary.executionModel))
-    throw new Error('ACTIVITY_EXECUTION_MODEL_BINDING_MISMATCH');
   // Use exactly the fence the Host returned. A null fence must not continue:
   // no READ/SAVE/FAIL can be authorized without it.
   const fence = assertFence(claim.fence ?? null, leaseOwner);
@@ -792,11 +801,13 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
       const recovered = validateRunSummary(
         await recoverStatus(runRef), documentVersionId, runRef);
       assertRunContract(recovered, runContract);
+      if (!isDeepStrictEqual(recovered.executionModel, claim.executionModel))
+        throw new Error('ACTIVITY_EXECUTION_MODEL_BINDING_MISMATCH');
       const result = recovered.result ?? null;
       if (result != null)
         recoveredSaved = { ...validateSavedReceipt(result, {
           documentVersionId, runRef, parseRunId: claim.parseRunId,
-          semanticRevision: claim.semanticRevision, sourceBinding: persisted.source?.sourceBinding, candidateSchemaVersion,
+          semanticRevision: claim.semanticRevision, sourceBinding: persisted.source?.sourceBinding, candidateSchemaVersion, executionModel,
         }), replayed: true };
     } catch { /* The recovery itself failed: the outcome stays unknown. */ }
     if (recoveredSaved !== undefined)
@@ -1092,6 +1103,8 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
         const recovered = validateRunSummary(
           await recoverStatus(runRef), documentVersionId, runRef);
         assertRunContract(recovered, runContract);
+        if (!isDeepStrictEqual(recovered.executionModel, claim.executionModel))
+          throw new Error('ACTIVITY_EXECUTION_MODEL_BINDING_MISMATCH');
         const result = recovered.result ?? null;
         if (result != null && (typeof result.runRef !== 'string' || result.runRef === runRef))
           saved = { ...result, replayed: true };
@@ -1121,6 +1134,8 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
           const recovered = validateRunSummary(
             await recoverStatus(runRef), documentVersionId, runRef);
           assertRunContract(recovered, runContract);
+          if (!isDeepStrictEqual(recovered.executionModel, claim.executionModel))
+            throw new Error('ACTIVITY_EXECUTION_MODEL_BINDING_MISMATCH');
           const result = recovered.result ?? null;
           if (result != null && (typeof result.runRef !== 'string' || result.runRef === runRef))
             saved = { ...result, replayed: true };
@@ -1131,7 +1146,7 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     }
     diagnosticStage = 'SAVE_READBACK';
     validateSavedReceipt(saved, {
-      documentVersionId, runRef, sourceBinding, producer, statementCount: proposal.statements.length,
+      documentVersionId, runRef, sourceBinding, producer, executionModel, statementCount: proposal.statements.length,
       candidateSchemaVersion, sourceContext, expectedStatements: canonicalProposal.statements,
       expectedAnchors: deliveredAnchors, expectedReadCoverage: { status: 'DELIVERED_RANGES_ONLY',
         selection: claim.selection, deliveredRanges, sourceCoverage } });

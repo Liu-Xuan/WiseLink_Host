@@ -178,7 +178,9 @@ export class DocumentActivityRuntimeService {
               selection: current.selection, deliveredRanges: current.deliveredRanges }),
           } : {}) });
         return materializeDocumentActivityRevision(candidate, { runRef: current.runRef, candidateRevision: revision,
-          statementIds: candidate.statements.map(() => `DAS-${randomUUID()}`), producer: input.producer,
+          statementIds: candidate.statements.map(() => `DAS-${randomUUID()}`),
+          producer: { ...input.producer,
+            ...(current.executionModel != null ? { executionModel: parseExecutionModel(current.executionModel) } : {}) },
           savedAt: new Date().toISOString() });
       });
     });

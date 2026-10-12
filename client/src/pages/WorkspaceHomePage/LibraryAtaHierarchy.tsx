@@ -10,7 +10,8 @@ import type { LibraryCatalogFilters } from './library-classification';
 import { libraryAtaSummaryParams } from './library-summary-entry';
 
 export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore, scheme, onSchemeChange, onSelect,
-  selectedId = '', selectedDocumentVersionId = '', onSelectVersion, navigationOnly = false }: {
+  selectedId = '', selectedDocumentVersionId = '', onSelectVersion, navigationOnly = false,
+  fleetLoading = false, fleetError = null }: {
   documents: CanonicalLibraryDocumentSummary[];
   fleetCatalog: CanonicalLibraryFleetCatalog | null;
   filters: LibraryCatalogFilters;
@@ -22,7 +23,16 @@ export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore,
   selectedDocumentVersionId?: string;
   onSelectVersion?: (familyId: string, versionId: string) => void;
   navigationOnly?: boolean;
+  fleetLoading?: boolean;
+  fleetError?: string | null;
 }) {
+  if (!navigationOnly && (filters.fleetFamily || filters.fleetModel) &&
+      (fleetLoading || fleetError || fleetCatalog?.status !== 'AVAILABLE')) {
+    return <section className="library-ata-results" aria-label="ATA 范围文档版本">
+      {fleetLoading ? <p role="status">正在读取机队范围，暂不能判断匹配资料。</p> :
+        <p role="alert">{fleetError ? '机队范围未能读取' : '机队范围暂不可用'}，暂不能判断匹配资料。{fleetError ? ` ${fleetError}` : ''}</p>}
+    </section>;
+  }
   const roots = buildLibraryAtaDirectory(documents, fleetCatalog, filters);
   const items = [...new Map(roots.flatMap(node => node.items).map(item =>
     [JSON.stringify([item.document.familyId, item.version.documentVersionId]), item])).values()];

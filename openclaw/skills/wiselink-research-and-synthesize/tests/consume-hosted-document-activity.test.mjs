@@ -95,7 +95,7 @@ function savedRevision(overrides = {}) {
     runRef: RUN, candidateRevision: 1,
     statements: proposal().statements.map((statement, index) =>
       ({ ...statement, statementId: `DAS-${index + 1}` })),
-    producer: { skillVersion: WISELINK_SKILL_VERSION, modelVersion: 'test-hosted-model-1' },
+    producer: { skillVersion: WISELINK_SKILL_VERSION, modelVersion: 'test-hosted-model-1', executionModel: structuredClone(EXECUTION_MODEL) },
     savedAt: '2026-09-16T03:04:05.000Z', ...overrides };
 }
 
@@ -979,7 +979,7 @@ test('the frozen Host selection is carried outside unchanged modelInput and pinn
     let hooks;
     const { deps, modelInputs } = hostMock({ model: async (_input, received) => { hooks = received;
       return { proposal: proposal(), modelVersion: 'actual-provider-version' }; },
-      save: args => savedRevision({ producer: args.producer }) });
+      save: args => savedRevision({ producer: { ...args.producer, executionModel: structuredClone(EXECUTION_MODEL) } }) });
     const result = await consumeHostedDocumentActivity(baseOptions(), { ...deps, checkpointFactory: factory });
     assert.equal(result.status, 'ACTIVITY_WORK_SAVED');
     assert.deepEqual(hooks.executionModel, EXECUTION_MODEL);
@@ -1072,7 +1072,8 @@ async function legacyResultRecords() {
 }
 function legacyResultHost() {
   const historical = () => { const row = summary(); delete row.executionModel; return row; };
-  return hostMock({ activityStatus: historical, claim: { ...historical(), fence: FENCE } });
+  return hostMock({ activityStatus: historical, claim: { ...historical(), fence: FENCE },
+    save: args => savedRevision({ producer: args.producer }) });
 }
 for (const step of ['source.result', 'model.started', 'model.result', 'save.started'])
   test(`Host snapshot absence rejects a local-only ${step} pin without dispatch or SAVE`, async () => {
@@ -1098,4 +1099,108 @@ test('both legacy snapshot absences preserve zero-model existing-result SAVE rec
   assert.equal(legacy.calls.filter(([, args]) => args.action === 'ACTIVITY_SAVE').length, 1);
   assert.equal(JSON.stringify(records.get('model.result')), beforeModel);
   for (const record of records.values()) assert.equal(Object.hasOwn(record, 'executionModel'), false);
+});
+
+test('Host producer readback keeps actual provenance independent and sends only two caller fields', async () => {
+  const h = hostMock({ model: () => ({ proposal: proposal(), modelVersion: 'actual-native-version' }),
+    save: args => savedRevision({ producer: { ...args.producer, executionModel: structuredClone(EXECUTION_MODEL) } }) });
+  const result = await consumeHostedDocumentActivity(baseOptions(), h.deps);
+  assert.deepEqual(result.saved.producer.executionModel, EXECUTION_MODEL);
+  assert.equal(result.saved.producer.modelVersion, 'actual-native-version');
+  const saves = h.calls.filter(([, args]) => args.action === 'ACTIVITY_SAVE');
+  assert.equal(saves.length, 1); assert.equal(h.modelInputs.length, 1);
+  assert.deepEqual(Object.keys(saves[0][1].producer).sort(), ['modelVersion', 'skillVersion']);
+});
+
+test('Host producer readback rejects missing, different, malformed or extra post-SAVE provenance', async () => {
+  for (const mutate of [
+    value => { delete value.producer.executionModel; },
+    value => { value.producer.executionModel.settingsRevision++; },
+    value => { value.producer.executionModel = null; },
+    value => { value.producer.executionModel.extra = true; },
+    value => { value.producer.extra = true; },
+    value => { value.producer.modelVersion = EXECUTION_MODEL.modelRef; },
+  ]) {
+    const h = hostMock({ save: () => { const value = savedRevision(); mutate(value); return value; } });
+    await assert.rejects(consumeHostedDocumentActivity(baseOptions(), h.deps));
+    assert.equal(h.calls.filter(([, args]) => args.action === 'ACTIVITY_SAVE').length, 1);
+    assert.ok(!h.calls.some(([, args]) => args.action === 'ACTIVITY_FAIL'));
+  }
+});
+
+test('Host producer readback STATUS and CLAIM preserve exact pinned or legacy saved results with zero model work', async () => {
+  for (const early of ['STATUS', 'CLAIM']) for (const pin of [EXECUTION_MODEL, undefined]) {
+    const producer = { skillVersion: WISELINK_SKILL_VERSION, modelVersion: 'test-hosted-model-1',
+      ...(pin ? { executionModel: structuredClone(pin) } : {}) };
+    const saved = savedRevision({ producer });
+    const state = result => { const row = summary({ result }); if (!pin) delete row.executionModel; return row; };
+    const h = hostMock({ activityStatus: () => state(early === 'STATUS' ? saved : null),
+      claim: { ...state(saved), fence: null } });
+    const result = await consumeHostedDocumentActivity(baseOptions(), h.deps);
+    assert.equal(result.saved, saved); assert.equal(result.modelInvocations, 0); assert.equal(h.modelInputs.length, 0);
+    assert.ok(!h.calls.some(([, args]) => ['ACTIVITY_READ', 'ACTIVITY_SAVE', 'ACTIVITY_FAIL'].includes(args.action)));
+    assert.equal(Object.hasOwn(result.saved.producer, 'executionModel'), pin !== undefined);
+  }
+});
+
+test('Host producer readback early STATUS and CLAIM reject pin loss, grafts and claim changes before any dispatch', async () => {
+  for (const early of ['STATUS', 'CLAIM']) for (const mutate of [
+    value => { delete value.producer.executionModel; },
+    value => { value.producer.executionModel.selectedAt = '2026-10-13T00:00:00Z'; },
+    value => { value.producer.extra = 'unapproved'; },
+  ]) {
+    const saved = savedRevision(); mutate(saved);
+    const h = hostMock({ activityStatus: () => summary({ result: early === 'STATUS' ? saved : null }),
+      claim: { ...summary({ result: saved }), fence: null } });
+    await assert.rejects(consumeHostedDocumentActivity(baseOptions(), h.deps));
+    assert.equal(h.modelInputs.length, 0);
+    assert.ok(!h.calls.some(([, args]) => ['ACTIVITY_READ', 'ACTIVITY_SAVE', 'ACTIVITY_FAIL'].includes(args.action)));
+  }
+  const changed = hostMock({ claim: { ...summary({ result: savedRevision() }),
+    executionModel: { ...EXECUTION_MODEL, settingsRevision: 2 }, fence: null } });
+  await assert.rejects(consumeHostedDocumentActivity(baseOptions(), changed.deps), /EXECUTION_MODEL_BINDING_MISMATCH/);
+  assert.equal(changed.modelInputs.length, 0);
+});
+
+test('Host producer readback of an unknown-model original STATUS requires the original frozen selection', async () => {
+  const records = new Map();
+  const checkpointFactory = async () => ({ readOptional: async name => structuredClone(records.get(name) ?? null),
+    write: async (name, value) => records.set(name, structuredClone(value)) });
+  const first = hostMock({ model: () => { throw new Error('UNKNOWN_SYNTHETIC_MODEL_OUTCOME'); } });
+  await assert.rejects(consumeHostedDocumentActivity(baseOptions(), { ...first.deps, checkpointFactory }), /MODEL_OUTCOME_UNKNOWN/);
+  const originalStarted = JSON.stringify(records.get('model.started'));
+  for (const changed of [false, true]) {
+    let calls = 0;
+    const h = hostMock({ activityStatus: () => {
+      const value = summary({ result: ++calls === 2 ? savedRevision() : null });
+      if (changed && calls === 2) value.executionModel = { ...EXECUTION_MODEL, settingsRevision: 2 };
+      return value;
+    } });
+    const operation = consumeHostedDocumentActivity(baseOptions(), { ...h.deps, checkpointFactory });
+    if (changed) await assert.rejects(operation, /MODEL_OUTCOME_UNKNOWN/);
+    else { const result = await operation; assert.equal(result.recoveredFromUnknownModel, true); assert.equal(result.modelInvocations, 0); }
+    assert.equal(h.modelInputs.length, 0);
+    assert.ok(!h.calls.some(([, args]) => ['ACTIVITY_READ', 'ACTIVITY_SAVE', 'ACTIVITY_FAIL'].includes(args.action)));
+    assert.equal(JSON.stringify(records.get('model.started')), originalStarted);
+  }
+});
+
+test('Host producer readback of a lost SAVE response never resubmits and requires both run and receipt pins', async () => {
+  for (const changed of ['none', 'run', 'receipt']) {
+    let statuses = 0;
+    const h = hostMock({ save: () => { throw new Error('SYNTHETIC_LOST_SAVE_RESPONSE'); },
+      activityStatus: () => {
+        const saved = ++statuses === 2 ? savedRevision() : null;
+        const value = summary({ result: saved });
+        if (statuses === 2 && changed === 'run') value.executionModel = { ...EXECUTION_MODEL, settingsRevision: 2 };
+        if (saved && changed === 'receipt') delete saved.producer.executionModel;
+        return value;
+      } });
+    const operation = consumeHostedDocumentActivity(baseOptions(), h.deps);
+    if (changed === 'none') { const result = await operation; assert.equal(result.saved.replayed, true); }
+    else await assert.rejects(operation, changed === 'run' ? /SAVE_UNCONFIRMED/ : /SAVE_RECEIPT_PRODUCER_MISMATCH/);
+    assert.equal(h.modelInputs.length, 1);
+    assert.equal(h.calls.filter(([, args]) => args.action === 'ACTIVITY_SAVE').length, 1);
+    assert.ok(!h.calls.some(([, args]) => args.action === 'ACTIVITY_FAIL'));
+  }
 });

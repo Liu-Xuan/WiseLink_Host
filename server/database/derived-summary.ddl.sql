@@ -210,8 +210,7 @@ BEGIN
               AND a.result_json->'readCoverage'->'selection'=a.selection_json
               AND a.result_json->'readCoverage'->'deliveredRanges'=a.delivered_json
               AND jsonb_typeof(a.result_json->'producer')='object'
-              AND a.result_json->'producer'=CASE WHEN jsonb_typeof(to_jsonb(a)->'producer_json')='object'
-                THEN (to_jsonb(a)->'producer_json') - 'executionModel' ELSE NULL END))
+              AND a.result_json->'producer'=to_jsonb(a)->'producer_json'))
           AND a.result_json->'candidateOnly'='true'::jsonb
           AND a.result_json->'sourceBinding'=statement_source->'sourceBinding'
           AND a.result_json->>'runRef'=a.run_ref

@@ -1,6 +1,7 @@
 import type { DocumentSemanticProfileSelection } from './document-semantic-map.interface';
 import type { DocumentOriginalBinding, DocumentOriginalCoverage } from './document-original.interface';
 import type { TranslationSourceAnchorV2 } from './canonical-translation-v2.interface';
+import type { CanonicalExecutionModelSelection } from './api.interface';
 
 /** Legacy/default contract stays v1; v2 production is an explicit opt-in. */
 export const DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA = 'wiselink.document.activity-candidate.v1' as const;
@@ -134,7 +135,13 @@ export interface DocumentActivityRevision extends Omit<ValidatedDocumentActivity
   runRef: string;
   candidateRevision: number;
   statements: DocumentActivityStatement[];
-  producer: { skillVersion: string; modelVersion: string };
+  producer: {
+    skillVersion: string;
+    /** Actual observed model provenance, independent of the Host selection. */
+    modelVersion: string;
+    /** Host-frozen run metadata; absent on legacy runs and never supplied by a model or SAVE caller. */
+    executionModel?: CanonicalExecutionModelSelection;
+  };
   savedAt: string;
 }
 /** V1 aliases deliberately remain narrow so legacy consumers cannot silently read v2. */

@@ -12,6 +12,7 @@ import {
 } from '@shared/document-activity.interface';
 import type { DocumentOriginalCoverage } from '@shared/document-original.interface';
 import type { TranslationSourceAnchorV2 } from '@shared/canonical-translation-v2.interface';
+import { parseExecutionModel } from '../model-settings/canonical-execution-model';
 
 const nonempty = z.string().refine(value => value.trim().length > 0);
 const proposalSchemaV1 = z.strictObject({
@@ -197,10 +198,16 @@ type RevisionHost = {
   runRef: string; candidateRevision: number; statementIds: string[];
   producer: DocumentActivityRevision['producer']; savedAt: string;
 };
+const hostProducerSchema = z.strictObject({
+  skillVersion: nonempty.max(160), modelVersion: nonempty.max(160), executionModel: z.unknown().optional(),
+});
 export function materializeDocumentActivityRevision(candidate: ValidatedDocumentActivityCandidate, host: RevisionHost): DocumentActivityRevision;
 export function materializeDocumentActivityRevision(candidate: ValidatedDocumentActivityCandidateV2, host: RevisionHost): DocumentActivityRevisionV2;
 export function materializeDocumentActivityRevision(candidate: AnyValidatedDocumentActivityCandidate, host: RevisionHost): AnyDocumentActivityRevision;
 export function materializeDocumentActivityRevision(candidate: AnyValidatedDocumentActivityCandidate, host: RevisionHost): AnyDocumentActivityRevision {
+  const producer = hostProducerSchema.safeParse(host.producer);
+  if (!producer.success) fail('HOST_IDENTITY_INVALID');
+  if (Object.hasOwn(host.producer, 'executionModel')) parseExecutionModel(host.producer.executionModel);
   if (!host.runRef.trim() || !Number.isSafeInteger(host.candidateRevision) || host.candidateRevision < 1 ||
       host.statementIds.length !== candidate.statements.length || new Set(host.statementIds).size !== host.statementIds.length ||
       host.statementIds.some(id => !id.trim()) || !host.producer.skillVersion.trim() || !host.producer.modelVersion.trim() ||

@@ -190,7 +190,7 @@ export class DocumentActivityRunRepository {
   }
 
   async save(scope: DocumentActivityScope, fence: DocumentActivityFence,
-    command: { candidate: unknown; producer: AnyDocumentActivityRevision['producer'] },
+    command: { candidate: unknown; producer: Pick<AnyDocumentActivityRevision['producer'], 'skillVersion' | 'modelVersion'> },
     materialize: (run: DocumentActivityRun, revision: number) => AnyDocumentActivityRevision): Promise<AnyDocumentActivityRevision> {
     return this.db.transaction(async tx => {
       const snapshot = await readRun(tx, scope, fence.runRef);
@@ -198,6 +198,8 @@ export class DocumentActivityRunRepository {
       await lockSource(tx, scope, snapshot);
       const row = await readRun(tx, scope, fence.runRef, true);
       if (!row) throw new Error('DOCUMENT_ACTIVITY_RUN_NOT_FOUND');
+      if (!isDeepStrictEqual(snapshot.executionModel, row.executionModel))
+        throw new Error('DOCUMENT_ACTIVITY_EXECUTION_MODEL_BINDING_MISMATCH');
       if (row.status === 'SAVED') {
         if (!isDeepStrictEqual(row.saveCommand, command) || !row.result) throw new Error('DOCUMENT_ACTIVITY_SAVE_REPLAY_CONFLICT');
         if (row.result.schemaVersion !== (row.candidateSchemaVersion ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA))
@@ -210,6 +212,11 @@ export class DocumentActivityRunRepository {
       if (await currentRevision(tx, scope, row.parseRunId) !== row.expectedRevision)
         throw new Error('DOCUMENT_ACTIVITY_REVISION_CONFLICT');
       const result = materialize(row, row.expectedRevision + 1);
+      const actualProducer = { skillVersion: command.producer.skillVersion, modelVersion: command.producer.modelVersion };
+      const expectedProducer = { ...actualProducer,
+        ...(row.executionModel != null ? { executionModel: parseExecutionModel(row.executionModel) } : {}) };
+      if (!isDeepStrictEqual(command.producer, actualProducer) || !isDeepStrictEqual(result.producer, expectedProducer))
+        throw new Error('DOCUMENT_ACTIVITY_RESULT_PRODUCER_MISMATCH');
       if (result.schemaVersion !== (row.candidateSchemaVersion ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA) || result.runRef !== row.runRef || result.candidateRevision !== row.expectedRevision + 1 ||
         result.sourceBinding.original.documentVersionId !== scope.documentVersionId ||
         result.sourceBinding.original.parseRunId !== row.parseRunId || result.sourceBinding.semanticRevision !== row.semanticRevision)

@@ -172,6 +172,7 @@ export function LibraryDocumentDirectory({
             />
         ) : directory.items.length && !taskMode && catalogView === 'ata' ? (
           <LibraryAtaHierarchy documents={directory.items.filter(item => item.kind === 'DOCUMENT')}
+            fleetLoading={fleet?.loading ?? false} fleetError={fleet?.error ?? null}
             fleetCatalog={fleet?.catalog ?? null} filters={filters} hasMore={Boolean(directory.nextCursor)}
             scheme={params.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
             onSchemeChange={scheme => { const next = new URLSearchParams(params); next.set('ataTitleScheme', scheme); setParams(next); }}

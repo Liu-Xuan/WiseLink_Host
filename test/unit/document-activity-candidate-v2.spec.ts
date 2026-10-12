@@ -40,6 +40,37 @@ function fixture() {
   return { proposal, context, anchor };
 }
 
+it('Host frozen producer materialization preserves valid optional selection and legacy absence without altering candidate data', () => {
+  const f = fixture();
+  const candidate = validateDocumentActivityCandidate(f.proposal, f.context);
+  const executionModel = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3', providerKind: 'BUILT_IN' as const,
+    settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z' };
+  for (const producer of [{ skillVersion: 'synthetic', modelVersion: 'actual-native-version' },
+    { skillVersion: 'synthetic', modelVersion: 'actual-native-version', executionModel }]) {
+    const saved = materializeDocumentActivityRevision(candidate, { runRef: 'DAR-saved', candidateRevision: 1,
+      statementIds: ['DAS-host'], producer, savedAt: '2026-10-12T01:00:00Z' });
+    expect(saved.producer).toEqual(producer);
+    expect(saved.statements[0]).toEqual({ ...f.proposal.statements[0], statementId: 'DAS-host' });
+    if ('executionModel' in producer) {
+      producer.executionModel.settingsRevision = 2;
+      expect(saved.producer.executionModel!.settingsRevision).toBe(1);
+    }
+  }
+});
+
+it('Host frozen producer materialization rejects malformed, null, extra selection and producer keys', () => {
+  const f = fixture(); const candidate = validateDocumentActivityCandidate(f.proposal, f.context);
+  const pin = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3', providerKind: 'BUILT_IN',
+    settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z' };
+  for (const producer of [
+    { skillVersion: 'synthetic', modelVersion: 'actual', executionModel: null },
+    { skillVersion: 'synthetic', modelVersion: 'actual', executionModel: { ...pin, settingsRevision: -1 } },
+    { skillVersion: 'synthetic', modelVersion: 'actual', executionModel: { ...pin, extra: true } },
+    { skillVersion: 'synthetic', modelVersion: 'actual', extra: true },
+  ]) expect(() => materializeDocumentActivityRevision(candidate, { runRef: 'DAR-saved', candidateRevision: 1,
+    statementIds: ['DAS-host'], producer: producer as never, savedAt: '2026-10-12T01:00:00Z' })).toThrow();
+});
+
 describe('source v2 strict preservation (synthetic, no semantic-certification claim)', () => {
   it('preserves ordered multi-time roles, forecast/TBD, negation, technical ranges and raw bytes through immutable materialization', () => {
     const f = fixture(); const validated = validateDocumentActivityCandidate(f.proposal, f.context);

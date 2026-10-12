@@ -239,3 +239,51 @@ describe('explicit source activity v2 contract pins', () => {
     expect(f.runs.save).not.toHaveBeenCalled();
   });
 });
+
+async function producerSaveFixture(action: 'ACTIVITY_SAVE' | 'ACTIVITY_SAVE_SELECTION') {
+  const f = fixture();
+  f.row.candidateSchemaVersion = 'wiselink.document.activity-candidate.v2';
+  f.row.productionContract = { promptVersion: 'synthetic-producer-pin', toolSchemaSha256: 'a'.repeat(64),
+    sourceContextVersion: 'wiselink.document.activity-source-context.v1',
+    quoteTransportVersion: action === 'ACTIVITY_SAVE_SELECTION'
+      ? 'wiselink.document.activity-quote-selection.v1' : 'wiselink.document.activity-quote-offsets.v1' };
+  const delivery = await f.service.run({ action: 'ACTIVITY_READ', ...f.fence,
+    sectionId: f.row.selection.sectionIds[0], offset: 0, limit: 50 });
+  if (!('anchors' in delivery)) throw new Error('expected source delivery');
+  const anchor = delivery.anchors[0];
+  const input = { action, ...f.fence, producer: { skillVersion: 'synthetic', modelVersion: 'actual-native-version' },
+    candidate: { schemaVersion: f.row.candidateSchemaVersion,
+      ...(action === 'ACTIVITY_SAVE_SELECTION' ? { quoteSelectionSchemaVersion: f.row.productionContract.quoteTransportVersion } : {}),
+      statements: [{ statementKey: 'literal', label: 'Source literal', quotes: [{ anchorId: anchor.anchorId, text: anchor.sourceText,
+        ...(action === 'ACTIVITY_SAVE' ? { start: 0, end: anchor.sourceText.length } : {}) }],
+        subject: null, action: null, modality: null, status: null, times: [], technicalIds: [],
+        scope: { sectionIds: f.row.selection.sectionIds, conditions: [], completeness: 'DELIVERED_SCOPE_ONLY' }, limitations: [] }] } };
+  return { f, input };
+}
+
+it.each(['ACTIVITY_SAVE', 'ACTIVITY_SAVE_SELECTION'] as const)('Host frozen producer %s retains locked metadata and independent actual provenance without current settings', async action => {
+  for (const pin of [executionModel, undefined]) {
+    const { f, input } = await producerSaveFixture(action);
+    f.row.executionModel = pin;
+    f.modelSettings.captureForNewTask.mockRejectedValue(new Error('CURRENT_SETTINGS_MUST_NOT_BE_READ'));
+    const saved = await f.service.run(input);
+    expect(saved).toHaveProperty('producer', { ...input.producer, ...(pin ? { executionModel: pin } : {}) });
+    expect(f.runs.save.mock.calls[0][2].producer).toEqual(input.producer);
+    expect(f.modelSettings.captureForNewTask).not.toHaveBeenCalled();
+  }
+});
+
+it.each(['ACTIVITY_SAVE', 'ACTIVITY_SAVE_SELECTION'] as const)('Host frozen producer %s rejects caller-injected selection before authority or storage', async action => {
+  const { f, input } = await producerSaveFixture(action);
+  f.authorization.authorizeDocumentWork.mockClear();
+  await expect(f.service.run({ ...input, producer: { ...input.producer, executionModel } })).rejects.toThrow();
+  expect(f.authorization.authorizeDocumentWork).not.toHaveBeenCalled();
+  expect(f.runs.save).not.toHaveBeenCalled();
+});
+
+it('Host frozen producer rejects a malformed locked selection instead of creating a saved revision', async () => {
+  const { f, input } = await producerSaveFixture('ACTIVITY_SAVE_SELECTION');
+  f.row.executionModel = { ...executionModel, settingsRevision: -1 };
+  await expect(f.service.run(input)).rejects.toThrow('TASK_EXECUTION_MODEL_INVALID');
+  expect(f.modelSettings.captureForNewTask).not.toHaveBeenCalled();
+});

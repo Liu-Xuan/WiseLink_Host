@@ -66,7 +66,7 @@ function saved(proposalValue = proposal(), overrides = {}) {
     readCoverage: { status: 'DELIVERED_RANGES_ONLY', selection: { sectionIds: ['leaf'] }, deliveredRanges: structuredClone(RANGES), sourceCoverage: { complete: false, unresolvedRanges: [] } },
     sourceAnchors: structuredClone(ANCHORS), runRef: RUN, candidateRevision: 1,
     statements: canonical.map((statement, index) => ({ ...statement, statementId: `DAS-v2-${index}` })),
-    producer: { skillVersion: 'constructed-skill', modelVersion: 'constructed-model' }, savedAt: '2026-10-05T00:00:00.000Z', ...overrides };
+    producer: { skillVersion: 'constructed-skill', modelVersion: 'constructed-model', executionModel: structuredClone(EXECUTION_MODEL) }, savedAt: '2026-10-05T00:00:00.000Z', ...overrides };
 }
 function harness(overrides = {}, records = new Map(), selection = false, promptVersion) {
   const calls = [], inputs = [];

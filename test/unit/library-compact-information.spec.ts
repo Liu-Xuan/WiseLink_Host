@@ -8,7 +8,10 @@ import { libraryDistinctBrief, libraryMatterSourceAta, libraryPublicationPresent
 import { libraryFamily, libraryMetadata } from './fixtures/canonical-library';
 import { libraryMatterFixture } from './fixtures/library-matter';
 import { LibraryAtaHierarchy } from '@client/src/pages/WorkspaceHomePage/LibraryAtaHierarchy';
+import { LibraryDocumentDirectory } from '@client/src/pages/WorkspaceHomePage/LibraryDocumentDirectory';
+import type { LibraryFleetRead } from '@client/src/pages/WorkspaceHomePage/useLibraryFleetCatalog';
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
+jest.mock('@client/src/components/ui/input', () => ({ Input: 'input' }));
 
 jest.mock('@client/src/api/canonical-host', () => ({
   getCanonicalHostClientSessionGeneration: () => 1,
@@ -116,4 +119,40 @@ describe('compact library information from exact saved sources', () => {
     matter.materials.pop();
     expect(JSON.stringify({ matter, document })).toBe(before);
   });
+});
+
+function fleetDirectory(read: LibraryFleetRead, fleetModel = '787-9') {
+  return new JSDOM(renderToStaticMarkup(createElement(StaticRouter, { location: '/library?catalogView=ata' },
+    createElement(LibraryDocumentDirectory, { directory: { items: [fixture()], loading: false, error: null,
+      nextCursor: null, totalCount: 1 } as never, authenticationRequired: false, mode: 'document',
+      search: '', searchText: '', selectedId: '', quicklookLoading: false,
+      onSearchTextChange: jest.fn(), onSearch: jest.fn(), onRefresh: jest.fn(), onSelect: jest.fn(),
+      presentation: { grouping: 'category', view: 'ata' }, filters: { fleetFamily: '787', fleetModel }, fleet: read }))));
+}
+
+it('fleet catalog loading, error and unavailable states remain visible in the primary ATA results without a false empty match', () => {
+  for (const read of [{ catalog: null, loading: true, error: null }, { catalog: null, loading: false, error: 'fleet-read-failed' },
+    { catalog: null, loading: false, error: null }] satisfies LibraryFleetRead[]) {
+    const dom = fleetDirectory(read); const main = dom.window.document.querySelector('.library-tree-recent-wrapper')!;
+    expect(main.textContent).toMatch(/正在读取机队范围|机队范围未能读取|机队范围暂不可用/u);
+    expect(main.textContent).not.toContain('本批获权版本没有匹配资料');
+    expect(main.querySelectorAll('tbody > tr')).toHaveLength(0);
+    expect(main.querySelector('[role="status"], [role="alert"]')).not.toBeNull();
+    dom.window.close();
+  }
+});
+
+it('fleet catalog readiness retains exact matching and genuine empty results without expanding visible versions', () => {
+  const catalog: NonNullable<LibraryFleetRead['catalog']> = { scope: 'CURRENT_TENANT_ACTIVE_FLEET', status: 'AVAILABLE',
+    asOf: '2026-10-12T00:00:00Z', source: null, families: [{ fleetFamily: '787', models: ['787-9', '787-10'] }],
+    unclassifiedAssetCount: 0, semantics: 'DOCUMENT_MENTION_CLASSIFICATION_ONLY' };
+  const before = JSON.stringify(catalog);
+  for (const [model, count] of [['787-9', 2], ['787-10', 0]] as const) {
+    const dom = fleetDirectory({ catalog, loading: false, error: null }, model);
+    const main = dom.window.document.querySelector('.library-tree-recent-wrapper')!;
+    expect(main.querySelectorAll('tbody > tr')).toHaveLength(count);
+    expect(main.textContent!.includes('本批获权版本没有匹配资料')).toBe(count === 0);
+    dom.window.close();
+  }
+  expect(JSON.stringify(catalog)).toBe(before);
 });

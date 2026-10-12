@@ -64,6 +64,24 @@ function fixture(text = 'Target Q4 2026; completion TBD. should retain TLS and L
 }
 const roots = ['DOCUMENT_ORIGINAL:DV-TEST:PR-TEST-2:SR-TEST-P1', 'DOCUMENT_ORIGINAL:DV-TEST:PR-TEST-2:SR-TEST-P2'];
 
+it('Host frozen producer saved assessment projection preserves optional metadata while keeping actual version independent', () => {
+  const input = fixture();
+  input.savedRevision.producer.executionModel = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3', providerKind: 'BUILT_IN',
+    settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z' };
+  const before = JSON.stringify(input);
+  expect(projectSavedDocumentActivityForAssessment(input).records).toHaveLength(2);
+  expect(JSON.stringify(input)).toBe(before);
+  expect(input.savedRevision.producer.modelVersion).toBe('not-called');
+});
+
+it('Host frozen producer saved assessment projection rejects malformed optional metadata rather than stripping it', () => {
+  for (const pin of [null, { modelRef: 'unbound' }, { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3',
+    providerKind: 'BUILT_IN', settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z', extra: true }]) {
+    const input = fixture(); input.savedRevision.producer.executionModel = pin as never;
+    expect(() => projectSavedDocumentActivityForAssessment(input)).toThrow();
+  }
+});
+
 describe('saved Activity v1 assessment projection (D0 only)', () => {
   it('preserves source bytes, exact identities and legacy markers without semantic inventions', () => {
     const input = fixture(); const before = JSON.stringify(input);
