@@ -1,5 +1,7 @@
 import { assertTdmsNativeInput, assertTdmsNativeReadPacket } from './tdms-native-context.mjs';
-import { jobAidWorkTypeErrors, JOBAID_STEP_SHAPE, decodeJobAidStep, jobAidFunctionSchema } from './jobaid-work-shape.mjs';
+import { jobAidWorkTypeErrors, JOBAID_STEP_SHAPE, decodeJobAidValue, jobAidFunctionSchema } from './jobaid-work-shape.mjs';
+import { createJobAidEvidenceCache, cacheJobAidSourceRead, cacheJobAidKnowledgeReceipt, projectJobAidContinuationContext,
+  projectJobAidTargetWork, mergeJobAidTargetWork } from './jobaid-continuation-context.mjs';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -65,6 +67,15 @@ const transportStepShape = {
   ...JOBAID_STEP_SHAPE,
   properties: { ...stepProperties, workJson: { type: 'string', minLength: 2,
     description: 'One complete batch of new or changed issues encoded as JSON text, plus only necessary summary changes. Unchanged issues are retained by Host; supplied issues replace whole issues. Preserve arrays and nulls.' } },
+};
+const initialStepShape = {
+  ...transportStepShape,
+  properties: { ...transportStepShape.properties,
+    action: { type: 'string', enum: [...transportStepShape.properties.action.enum, 'READ_WORK'] },
+    workRevisionRef: { type: 'string', minLength: 1 },
+    issueKeys: { type: 'array', items: { type: 'string', minLength: 1 } },
+    includeOverview: { type: 'boolean' },
+  },
 };
 
 export function parseJobAidWorkJson(value) {
@@ -456,13 +467,20 @@ export async function invokeHostedJobAidProblemModel(
   if(modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA) systemMessage.content += modelInput.sourceStatementAvailability?.semanticFieldsAvailability==='CAPTURED_FIELDS_ONLY' ? '\nsourceStatement 目录只是已保存解释候选的提示，尚未交付完整声明。使用该精确 ref 前 READ_SOURCES；回执 sourceStatements 保留既有 v1 字段，sourceSchemaVersion 明确区分 v1 与 v2；LEGACY_PARTIAL 表示新版字段未记录，v2 null/空数组只表示本候选未捕获。完整 times[]、否定、技术编号和条件须与引文一并读取，不把 SOURCE_REPORTED_COMPLETED 当作我方实施或有效。必要根原文与 actual readCoverage 不保证全文已读。候选不能证明适用性、执行或效果核验。' : '\nsourceStatement 目录只是已保存解释候选的提示，尚未交付完整声明。使用该精确 ref 前 READ_SOURCES；回执 sourceStatements 保留既有 v1 字段，LEGACY_PARTIAL 表示新版语义未记录，必要根原文与 actual readCoverage 不保证全文已读。候选不能证明适用性、执行或效果核验。';
   if (boundedInitialJobAid) {
     systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。READ_SOURCES 的每个 sourceRef 必须逐字复制 availableSources[].ref；不能从 sourceRefId、页码或解析单元编号自行拼接。首次保存工程问题前须取得原文；若当前 deliveredEvidence 已包含该精确原文，直接使用而不重复读取，否则先成功 READ_SOURCES。不能将来源读取失败写成工程结论。previousWork 展示 Host 已保存的问题目录和较短正文；省略的正文仍由 Host 完整保留。readSourceRefs 表示已保存的来源读取记录，不等于本会话已重新取得原文。优先继续未完成的问题和决定性未读来源，不因新会话重读已保存的同一批，也不重写未变问题。每批只提交有新原文支持的改动，保存后读回精确修订。headline 和 listBrief 必须写工程问题、措施、当前判断及关键限制，不能写“本批已读”“u10—u13”或工作修订号等过程日志；过程留在 changeSummary。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并说明尚未完成范围；不要声称未读来源已经核验。必要原文已覆盖、问题已保存时，检查概览与正文一致；如有过期表述，提交 issues:[] 的简短概览修订。方法资料只在影响当前判断时补读，不为凑齐目录而延长执行。完成必要原文覆盖与概览一致性检查后 FINISH；未连接的外部资料列为待确认，不阻止候选阶段结束。`;
+    systemMessage.content += '\nREAD_WORK 是本运行器的准确旧工作读取意图：{action:"READ_WORK",workRevisionRef:<previousWork.workRevisionRef>,issueKeys:[准确旧问题键],includeOverview:true|false}。更正已有问题前取得其完整基线；更正或检查综合时读取适用的旧 overview。只选本次需要的目标，不重读全部正文。targetWork 是该准确修订的完整比较材料，previousWork 的省略索引不能作为整项替换基线。deliveredEvidence 与 deliveredSourceReads 保留同一 attempt 已由 Host 实际交付的完整原文与回执语境，当前上下文中每份正文只出现一次；可直接使用其中已交付材料，不因保存换段重新 READ_SOURCES。缓存和 READ_WORK 不证明新来源核验或正式采用。';
   }
   const projectForModel = boundedInitialJobAid
     ? projectBoundedInitialJobAidInput
     : projectJobAidModelInput;
+  const stepShape = boundedInitialJobAid ? initialStepShape : transportStepShape;
+  let evidenceCache = boundedInitialJobAid ? createJobAidEvidenceCache(modelInput) : null;
+  let targetWork = null;
+  const modelContext = input => boundedInitialJobAid
+    ? projectJobAidContinuationContext(projectForModel(input), evidenceCache, targetWork)
+    : projectForModel(input);
   let messages = [
     systemMessage,
-    { role: 'user', content: JSON.stringify(projectForModel(modelInput)) },
+    { role: 'user', content: JSON.stringify(modelContext(modelInput)) },
   ];
   if (options.recoveredSourceContext) systemMessage.content += '\n这是 Host 正常授权的后继任务：旧任务已结束但未交付完整工作载荷。当前 deliveredEvidence 包含 Host 重新授权并保留的已读原文，previousWork 是实际已保存工作。先使用这些完整证据形成本批有价值正文，仅在缺少必要语境时补读；不要为了恢复而重复获取已交付的相同范围。旧任务错误不是工程结论，也不是已保存正文。本次仍须正常 SAVE_WORK 后才能完成。';
   let initialContextMessage = messages[1];
@@ -489,9 +507,11 @@ export async function invokeHostedJobAidProblemModel(
   let inputUnits = 0;
   let outputUnits = 0;
   const checkpoint = options.assessmentCheckpoint;
-  const generationPolicy = isJobAidProblemInputSchema(modelInput.schemaVersion) &&
+  const baseGenerationPolicy = isJobAidProblemInputSchema(modelInput.schemaVersion) &&
     options.executionModel?.modelRef === 'm3probe/minimax-m3'
     ? M3_PROBE_WORK_ITEM_GENERATION_POLICY : JOBAID_GENERATION_POLICY;
+  const generationPolicy = boundedInitialJobAid ? { ...baseGenerationPolicy,
+    contextProjectionVersion: 'shared-evidence-target-work-v1' } : baseGenerationPolicy;
   let scopeAdjustments = 0;
   let sourceMetadata = [];
   let sourceSelectionError = null;
@@ -499,6 +519,7 @@ export async function invokeHostedJobAidProblemModel(
     round: nextRound, messages, expectedWorkRevision, saved, corrections, inputUnits, outputUnits,
     scopeAdjustments, sourceMetadata, sessionModelInput, sessionWorkRevision, readsSinceSave,
     savedReadSourceRefs, nativeSessionSegment, forceSaveBeforeRead,
+    ...(boundedInitialJobAid ? { evidenceCache, targetWork } : {}),
   });
   if (checkpoint) {
     const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,
@@ -516,7 +537,12 @@ export async function invokeHostedJobAidProblemModel(
   if (restored) {
     ({ round, messages, expectedWorkRevision, saved, corrections, inputUnits, outputUnits } = restored);
     sessionModelInput = restored.sessionModelInput ?? modelInput;
-    initialContextMessage = { role: 'user', content: JSON.stringify(projectForModel(sessionModelInput)) };
+    if (boundedInitialJobAid) {
+      if (!restored.evidenceCache) throw new Error('JOBAID_CHECKPOINT_POLICY_CHANGED');
+      evidenceCache = restored.evidenceCache;
+      targetWork = restored.targetWork ?? null;
+    }
+    initialContextMessage = { role: 'user', content: JSON.stringify(modelContext(sessionModelInput)) };
     sessionWorkRevision = restored.sessionWorkRevision ?? modelInput.expectedWorkRevision;
     readsSinceSave = restored.readsSinceSave ?? 0;
     savedReadSourceRefs = restored.savedReadSourceRefs ?? [];
@@ -605,11 +631,12 @@ export async function invokeHostedJobAidProblemModel(
           !revision.content)
         throw new Error('JOBAID_WORK_SAVE_READBACK_INVALID');
       sessionModelInput = continuationModelInput(modelInput, revision);
+      targetWork = null;
       savedReadSourceRefs = Array.isArray(revision.content.readSourceRefs)
         ? [...revision.content.readSourceRefs] : [];
       initialContextMessage = {
         role: 'user',
-        content: JSON.stringify(projectForModel(sessionModelInput)),
+        content: JSON.stringify(modelContext(sessionModelInput)),
       };
       sessionWorkRevision = revision.workRevision;
     }
@@ -631,14 +658,14 @@ export async function invokeHostedJobAidProblemModel(
       ? 'Reduce the amount delivered in this unfinished batch while retaining the full engineering context. Choose one or several complete, meaningful issue updates; do not split conditions or reasoning fragments. Preserve saved work and do not continue a truncated JSON string.'
       : boundedInitialJobAid
         ? forceSaveBeforeRead
-          ? 'The Host has delivered one successful source-read receipt in this fresh native session. Submit a substantive SAVE_WORK for one coherent issue or one small related group now. Supply only changed issues and necessary summary fields; Host retains unchanged issues. Keep the workJson concise while preserving every condition, uncertainty, and citation needed for this increment. The required function schema permits only SAVE_WORK until Host confirms the save; preserve unread scopes and do not claim them verified.'
+          ? 'The Host has delivered one successful source-read receipt in this fresh native session. Submit a substantive SAVE_WORK for one coherent issue or one small related group now. Supply only changed issues and necessary summary fields; Host retains unchanged issues. If an existing target lacks its full exact work baseline, READ_WORK first, then SAVE_WORK; do not read another source batch. Preserve every condition, uncertainty and citation, and do not claim unread scopes verified.'
           : 'Use primary original passages already in deliveredEvidence without reading them again. Otherwise, save each meaningful initial-analysis increment after one bounded source-read action. After a successful Host source read, the runtime starts a fresh native session with that exact evidence and requires SAVE_WORK. After a Host-confirmed SAVE_WORK, it starts another fresh native session containing the exact Host-read-back work and revision receipt. Do not accumulate more source reads before saving or claim unread scopes were verified.'
         : 'Keep the shared engineering context and investigate across relevant sections and sources. Choose the number of complete issues that can be delivered in this batch; save substantive results promptly without first exhausting every issue. After SAVE_WORK continue automatically in this same session. Do not rewrite unchanged issues or summary fields. Before completion check cross-issue consistency and save only necessary synthesis or corrections.';
     const requestStepShape = forceSaveBeforeRead ? {
-      ...transportStepShape,
-      required: ['action', 'workJson'],
-      properties: { ...transportStepShape.properties, action: { type: 'string', enum: ['SAVE_WORK'] } },
-    } : transportStepShape;
+      ...stepShape,
+      required: ['action'],
+      properties: { ...stepShape.properties, action: { type: 'string', enum: ['SAVE_WORK', 'READ_WORK'] } },
+    } : stepShape;
     const requestToolSchema = jobAidFunctionSchema(requestStepShape);
     const requestMaxCompletionTokens = options.executionModel?.modelRef === 'miaoda/minimax-m3'
       ? generationPolicy.requestMaxCompletionTokens
@@ -658,8 +685,10 @@ export async function invokeHostedJobAidProblemModel(
           function: {
             name: FUNCTION,
             description: forceSaveBeforeRead
-              ? 'Return one substantive SAVE_WORK intent. The deterministic Host caller executes and validates it.'
-              : 'Return one source-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.',
+              ? 'Return one substantive SAVE_WORK intent, or read an exact existing work target first. The deterministic Host caller executes and validates it.'
+              : boundedInitialJobAid
+                ? 'Return one source-read, exact-work-target-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.'
+                : 'Return one source-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.',
             parameters: {
               type: 'object',
               additionalProperties: false,
@@ -871,9 +900,9 @@ export async function invokeHostedJobAidProblemModel(
       const args = parseStrictJsonObject(call.function.arguments);
       if (Object.keys(args).length !== 1 || !args.step || typeof args.step !== 'object' || Array.isArray(args.step))
         throw new Error('JOBAID_STEP_OBJECT_REQUIRED');
-      if (Object.keys(args.step).some(key => !Object.hasOwn(transportStepShape.properties, key)))
+      if (Object.keys(args.step).some(key => !Object.hasOwn(stepShape.properties, key)))
         throw new Error('JOBAID_STEP_FIELD_INVALID');
-      const step = decodeJobAidStep(args.step);
+      const step = decodeJobAidValue(args.step, stepShape);
       if (step.action === 'READ_SOURCES') {
         if (boundedInitialJobAid && readsSinceSave >= INITIAL_JOBAID_READS_PER_SAVE)
           throw new Error('JOBAID_SOURCE_BATCH_SAVE_REQUIRED');
@@ -899,11 +928,32 @@ export async function invokeHostedJobAidProblemModel(
         if (receipt?.status !== 'AVAILABLE' || !Array.isArray(receipt.evidence))
           throw new Error('JOBAID_SOURCE_READ_FAILED');
         if (boundedInitialJobAid) {
+          const cached = cacheJobAidSourceRead(evidenceCache, receipt);
+          evidenceCache = cached.cache;
+          receipt = cached.receipt;
+          initialContextMessage = { role: 'user', content: JSON.stringify(modelContext(sessionModelInput)) };
           readsSinceSave++;
           forceSaveBeforeRead = true;
           nativeSessionSegment++;
           sessionResetKind = 'SOURCE_READ';
         }
+      } else if (step.action === 'READ_WORK' && boundedInitialJobAid) {
+        const expected = sessionModelInput.previousWork;
+        if (!expected || step.workRevisionRef !== expected.workRevisionRef ||
+            !Array.isArray(step.issueKeys) || typeof step.includeOverview !== 'boolean')
+          throw new Error('JOBAID_WORK_TARGET_INVALID');
+        const requestId = saved?.workRevisionRef === expected.workRevisionRef ? saved.requestId : null;
+        const readback = await options.readAssessmentWork(requestId ? { requestId } : {});
+        const revision = readback?.revision;
+        if (!revision?.content || !Array.isArray(revision.content.issues))
+          throw new Error('JOBAID_WORK_READ_FAILED');
+        if (revision.workRevisionRef !== expected.workRevisionRef ||
+            revision.workRevision !== expected.workRevision || revision.workRevision !== expectedWorkRevision ||
+            (requestId && revision.requestId !== requestId))
+          throw new Error('JOBAID_WORK_REVISION_CONFLICT');
+        receipt = projectJobAidTargetWork(revision, step.issueKeys, step.includeOverview);
+        targetWork = mergeJobAidTargetWork(targetWork, receipt);
+        initialContextMessage = { role: 'user', content: JSON.stringify(modelContext(sessionModelInput)) };
       } else if (step.action === 'QUERY_KNOWLEDGE') {
         if (typeof step.query !== 'string' || !step.query.trim() || step.query.length > 4000)
           throw new Error('JOBAID_KNOWLEDGE_QUERY_INVALID');
@@ -926,6 +976,10 @@ export async function invokeHostedJobAidProblemModel(
           if (!['COMPLETED','FAILED','UNKNOWN','UNAVAILABLE'].includes(receipt?.status) || !Array.isArray(receipt.evidence))
             throw new Error('JOBAID_KNOWLEDGE_RECEIPT_INVALID');
         }
+        if (boundedInitialJobAid) {
+          evidenceCache = cacheJobAidKnowledgeReceipt(evidenceCache, receipt);
+          initialContextMessage = { role: 'user', content: JSON.stringify(modelContext(sessionModelInput)) };
+        }
       } else if (step.action === 'SAVE_WORK' || step.action === 'FINISH') {
         if (step.workJson !== undefined) {
           if (boundedInitialJobAid && expectedWorkRevision === modelInput.expectedWorkRevision &&
@@ -935,6 +989,21 @@ export async function invokeHostedJobAidProblemModel(
           const priorWorkRevision = expectedWorkRevision;
           submittedWork = parseJobAidWorkJson(step.workJson);
           if (boundedInitialJobAid) {
+            const priorKeys = new Set(sessionModelInput.previousWork?.content?.issues?.map(issue => issue.issueKey) ?? []);
+            const completeKeys = new Set(targetWork && sessionModelInput.previousWork &&
+              targetWork.workRevisionRef === sessionModelInput.previousWork.workRevisionRef
+              ? targetWork.issues.map(issue => issue.issueKey) : []);
+            const suppliedKeys = ['issues', 'retiredIssues'].flatMap(field => Array.isArray(submittedWork[field])
+              ? submittedWork[field].map(issue => issue?.issueKey) : []);
+            const missingKeys = [...new Set(suppliedKeys.filter(key => priorKeys.has(key) && !completeKeys.has(key)))];
+            const needsOverview = Object.hasOwn(submittedWork, 'overview') && sessionModelInput.previousWork &&
+              !(targetWork?.workRevisionRef === sessionModelInput.previousWork.workRevisionRef && Object.hasOwn(targetWork, 'overview'));
+            if (missingKeys.length || needsOverview) {
+              const error = new Error('JOBAID_WORK_BASELINE_READ_REQUIRED');
+              error.workReadRequired = { workRevisionRef: sessionModelInput.previousWork.workRevisionRef,
+                issueKeys: missingKeys, includeOverview: Boolean(needsOverview) };
+              throw error;
+            }
             const normalized = canonicalizeKnownJobAidSourceAliases(
               submittedWork,
               sessionModelInput.availableSources,
@@ -1034,6 +1103,10 @@ export async function invokeHostedJobAidProblemModel(
           'Correct only the rejected step or substantive work using the original evidence. Existing saved work remains available; never invent sources or turn failure into completion.',
         ...sourcePolicy,
         ...shapeCorrection,
+        ...(error.workReadRequired ? {
+          workReadRequired: error.workReadRequired,
+          instruction: 'No SAVE occurred. READ_WORK using workReadRequired first; the short issue index is not a complete replacement baseline. Then revise the complete issue or overview deliberately, preserving all unchanged conditions and professional records. Do not guess missing fields.',
+        } : {}),
         ...(sourceSelectionError ? {
           sourceSelection: { ...sourceSelectionError, hostReadExecuted: false },
           instruction: 'The source IDs below are not in this exact Host catalog; no read occurred. Copy exact availableSources[].ref values, including the final page marker. Use each unique suggested exact ref only after checking its title and locator. Retry READ_SOURCES; do not save a status-only issue or claim the primary document was read.',
@@ -1067,7 +1140,7 @@ export async function invokeHostedJobAidProblemModel(
         status: 'HOST_SOURCE_READ_CONFIRMED',
         expectedWorkRevision,
         sourceReadReceipt: projectJobAidReadReceipt(receipt, sourceMetadata),
-        instruction: '这是一次成功且已由 Host 确认的来源读取。当前新 OpenClaw 会话已收到完整 Host 回执和来源正文。请立即基于已交付材料提交一项有价值、完整的 SAVE_WORK，明确保留尚未读取的范围和问题。当前工具只允许 SAVE_WORK；不得再读来源、不得声称未读来源已核验。保存成功后运行器会精确读回 Host 工作并在下一新会话继续。',
+        instruction: '这是一次成功且已由 Host 确认的来源读取。当前新会话的 deliveredEvidence 和 deliveredSourceReads 已保留完整原文与回执语境。请立即提交一项有价值、完整的 SAVE_WORK；若已有目标缺少完整旧工作基线，先 READ_WORK，再保存。不得再读来源、不得声称未读来源已核验。保存后继续使用同一 attempt 的完整证据缓存。',
       }) },
     ] : sessionResetKind === 'SAVE' ? [
       systemMessage,
@@ -1078,8 +1151,7 @@ export async function invokeHostedJobAidProblemModel(
         workRevisionRef: saved.workRevisionRef,
         workRevision: saved.workRevision,
         roundCompletion: saved.roundCompletion,
-        readSourceRefs: savedReadSourceRefs,
-        instruction: `这是同一 Host attempt 在确认保存后的续段。previousWork 包含刚读回的准确问题目录及较短正文；完整工作由 Host 保留。继续检查未覆盖范围并保留已有问题；readSourceRefs 只证明先前已保存的来源读取，不是本新会话中可直接引用的原文。若新判断需要原文，先用 READ_SOURCES；每次只读一个不超过 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} refs 的批次，再保存一项完整且简洁的增量，不重写未变化的问题。headline 和 listBrief 只写工程认识，过程放在 changeSummary。不得重放先前 SAVE_WORK。`,
+        instruction: `这是同一 Host attempt 在确认保存后的续段。previousWork 包含准确问题目录，readSourceRefs 只在其中列出一次；deliveredEvidence 与 deliveredSourceReads 保留本 attempt 的完整已交付证据。更正已有问题或概览前，用 READ_WORK 读取该准确修订的目标完整基线。只为缺少的决定性原文 READ_SOURCES，每次不超过 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} refs，随后保存完整增量，不重写未变化的问题。headline/listBrief 只写工程认识，过程留在 changeSummary。不得重放先前 SAVE_WORK。`,
       }) },
     ] : [
       systemMessage,
