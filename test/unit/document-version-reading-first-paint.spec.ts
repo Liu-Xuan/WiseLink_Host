@@ -2,6 +2,7 @@ import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import DocumentVersionReadingPage from '../../client/src/pages/DocumentParsingPage/DocumentVersionReadingPage';
+import type { DocumentParseRunSummary } from '@shared/document-parsing.interface';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 
 const { JSDOM } = require('jsdom');
@@ -525,4 +526,236 @@ it('clears the pending current-settings request on session change and ignores it
   expect(restart?.disabled).toBe(false);
   await act(async () => restart?.click());
   expect(mockStart.mock.calls[1][1].requestId).not.toBe(oldRequest);
+});
+
+const importPredecessor = 'PRUN-00000000-0000-0000-0000-000000000021';
+const importSuccessor = 'PRUN-00000000-0000-0000-0000-000000000022';
+function importReceipt(changes: Partial<DocumentParseRunSummary> = {}): DocumentParseRunSummary {
+  return {
+    documentVersionId: 'DV1', parseRunId: importSuccessor, parseRevision: 7,
+    executionMode: 'LOCAL_MINERU_IMPORT', waitingForLocalWorker: false,
+    status: 'STAGING', verifiedArtifacts: 1, errorCode: null,
+    startedAt: '2026-10-12T07:00:00Z', deadlineAt: '2030-01-01T00:00:00Z', completedAt: null,
+    ...changes,
+  };
+}
+function importStatus(run: DocumentParseRunSummary) {
+  return { ...statusPayload(), documentVersionId: run.documentVersionId, latestRun: run,
+    publishedRun: run.status === 'PUBLISHED' ? run : null };
+}
+function expiredImportStatus() {
+  return importStatus(importReceipt({ parseRunId: importPredecessor, parseRevision: 6,
+    verifiedArtifacts: 9, deadlineAt: '2000-01-01T00:00:00Z' }));
+}
+async function clickParseButton(label: string) {
+  await act(async () => {
+    const button = [...container.querySelectorAll('button')].find(item => item.textContent === label);
+    expect(button).toBeDefined(); button!.click();
+  });
+}
+
+it('continues a recovered import one visible step at a time with the exact recovery request and no upload', async () => {
+  mockStatus.mockResolvedValue(expiredImportStatus());
+  for (const receipt of [importReceipt(), importReceipt({ verifiedArtifacts: 2 }),
+    importReceipt({ status: 'PUBLISHED', verifiedArtifacts: 24, completedAt: '2026-10-12T07:10:00Z' })]) {
+    mockStart.mockImplementationOnce(async () => { mockStatus.mockResolvedValue(importStatus(receipt)); return receipt; });
+  }
+  mockReading.mockResolvedValue({ ...readingPayload(), parseRunId: importSuccessor, parseRevision: 7 });
+  await mount();
+  await clickParseButton('解析文档');
+  expect(container.textContent).toContain('导入版本 7 的本次回执：已核验 1 个文件。');
+  expect(container.textContent).toContain('执行期限：2030-01-01T00:00:00Z');
+  expect(container.textContent).not.toContain('导入本机 MinerU 解析');
+  expect(mockStart).toHaveBeenCalledTimes(1);
+  await clickParseButton('核对同一导入请求（继续一步）');
+  expect(container.textContent).toContain('导入版本 7 的本次回执：已核验 2 个文件。');
+  await clickParseButton('核对同一导入请求（继续一步）');
+  expect(mockStart).toHaveBeenCalledTimes(3);
+  for (const call of mockStart.mock.calls) expect(call).toEqual(['DV1', {
+    requestId: `parse-resume-${importPredecessor}`, expectedPublishedRevision: 0,
+  }]);
+  expect(jest.requireMock('@client/src/components/business-ui/api/files/service').uploadFile).not.toHaveBeenCalled();
+  expect(container.textContent).not.toContain('核对同一导入请求（继续一步）');
+  expect(container.textContent).toContain('已核验 24 个文件。已发布。');
+  expect(mockReading).toHaveBeenLastCalledWith('DV1', importSuccessor, expect.anything());
+});
+
+it('keeps an unknown recovery outcome checkable after a fresh status read observes a busy import', async () => {
+  mockStatus.mockResolvedValue(expiredImportStatus());
+  mockStart.mockImplementationOnce(async () => {
+    mockStatus.mockResolvedValue(importStatus(importReceipt())); throw new Error('响应丢失');
+  }).mockResolvedValueOnce(importReceipt({ verifiedArtifacts: 2 }));
+  await mount(); await clickParseButton('解析文档');
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('响应丢失');
+  expect(mockStart).toHaveBeenCalledTimes(1);
+  await clickParseButton('刷新');
+  const check = [...container.querySelectorAll('button')].find(item => item.textContent === '核对解析请求');
+  expect(check?.disabled).toBe(false);
+  await clickParseButton('核对解析请求');
+  expect(mockStart.mock.calls[1]).toEqual(mockStart.mock.calls[0]);
+  expect(mockStart.mock.calls[1][1].requestId).toBe(`parse-resume-${importPredecessor}`);
+  expect(container.textContent).toContain('核对同一导入请求（继续一步）');
+});
+
+it('prevents two synchronous clicks from submitting overlapping admission or continuation steps', async () => {
+  mockStatus.mockResolvedValue(expiredImportStatus());
+  let resolveStart!: (value: DocumentParseRunSummary) => void;
+  mockStart.mockImplementationOnce(() => new Promise(resolve => { resolveStart = resolve; }));
+  await mount();
+  await act(async () => {
+    const button = [...container.querySelectorAll('button')].find(item => item.textContent === '解析文档')!;
+    button.click(); button.click();
+  });
+  expect(mockStart).toHaveBeenCalledTimes(1);
+  expect([...container.querySelectorAll('button')].find(item => item.textContent === '正在受理…')?.disabled).toBe(true);
+  mockStatus.mockResolvedValue(importStatus(importReceipt()));
+  await act(async () => resolveStart(importReceipt()));
+  mockStart.mockResolvedValueOnce(importReceipt({ verifiedArtifacts: 2 }));
+  await act(async () => {
+    const button = [...container.querySelectorAll('button')].find(item => item.textContent === '核对同一导入请求（继续一步）')!;
+    button.click(); button.click();
+  });
+  expect(mockStart).toHaveBeenCalledTimes(2);
+  expect(mockStart.mock.calls[1]).toEqual(mockStart.mock.calls[0]);
+});
+
+it.each(['session', 'document'])('discards a pending import recovery on %s change and ignores its late response', async change => {
+  mockStatus.mockResolvedValue(expiredImportStatus());
+  let resolveStart!: (value: DocumentParseRunSummary) => void;
+  mockStart.mockImplementationOnce(() => new Promise(resolve => { resolveStart = resolve; }));
+  await mount(); await clickParseButton('解析文档');
+  mockStatus.mockResolvedValue(importStatus(importReceipt({ documentVersionId: change === 'document' ? 'DV2' : 'DV1' })));
+  if (change === 'session') await act(async () => mockSessionCallbacks[0]!());
+  else await navigate('/document-versions/DV2');
+  await act(async () => resolveStart(importReceipt()));
+  expect(container.textContent).not.toContain('核对同一导入请求（继续一步）');
+  expect(container.textContent).not.toContain('导入版本 7 的本次回执');
+  expect([...container.querySelectorAll('button')].find(item => item.textContent === '正在解析…')?.disabled).toBe(true);
+  expect(mockStart).toHaveBeenCalledTimes(1);
+});
+
+it('keeps the admitted CAS on a later check and exposes a revision conflict without creating a different request', async () => {
+  mockStatus.mockResolvedValue(expiredImportStatus());
+  mockStart.mockImplementationOnce(async () => { mockStatus.mockResolvedValue(importStatus(importReceipt())); return importReceipt(); });
+  await mount(); await clickParseButton('解析文档');
+  mockStatus.mockResolvedValue({ ...importStatus(importReceipt()), publishedRun: { parseRunId: 'OTHER-PUBLISHED', parseRevision: 1 } });
+  mockReading.mockResolvedValue({ ...readingPayload(), parseRunId: 'OTHER-PUBLISHED' });
+  await clickParseButton('刷新');
+  mockStart.mockRejectedValueOnce(Object.assign(new Error('已发布版本发生变化，请刷新核对。'), { code: 'DOCUMENT_PARSE_REVISION_CONFLICT' }));
+  await clickParseButton('核对同一导入请求（继续一步）');
+  expect(mockStart.mock.calls[1]).toEqual(mockStart.mock.calls[0]);
+  expect(mockStart.mock.calls[1][1].expectedPublishedRevision).toBe(0);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('已发布版本发生变化');
+  expect(container.textContent).not.toContain('核对同一导入请求（继续一步）');
+  expect(mockStart).toHaveBeenCalledTimes(2);
+});
+
+it('rejects a continuation response for a different run while preserving the original request for readback', async () => {
+  mockStatus.mockResolvedValue(expiredImportStatus());
+  mockStart.mockImplementationOnce(async () => { mockStatus.mockResolvedValue(importStatus(importReceipt())); return importReceipt(); })
+    .mockResolvedValueOnce(importReceipt({ parseRunId: 'PRUN-00000000-0000-0000-0000-000000000023', parseRevision: 8 }));
+  await mount(); await clickParseButton('解析文档');
+  await clickParseButton('核对同一导入请求（继续一步）');
+  expect(mockStart.mock.calls[1]).toEqual(mockStart.mock.calls[0]);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('接续结果与原导入版本不一致');
+  expect(container.textContent).toContain('导入版本 7 的本次回执');
+  expect(container.textContent).not.toContain('导入版本 8 的本次回执');
+  expect([...container.querySelectorAll('button')].find(item => item.textContent === '核对同一导入请求（继续一步）')?.disabled).toBe(false);
+});
+
+it('does not turn a hosted local worker recovery into an explicit import continuation', async () => {
+  mockStatus.mockResolvedValue(importStatus(importReceipt({ parseRunId: importPredecessor, parseRevision: 6,
+    executionMode: 'LOCAL_MINERU_WORKER', waitingForLocalWorker: true, deadlineAt: '2000-01-01T00:00:00Z' })));
+  const worker = importReceipt({ executionMode: 'LOCAL_MINERU_WORKER', waitingForLocalWorker: true });
+  mockStart.mockImplementationOnce(async () => { mockStatus.mockResolvedValue(importStatus(worker)); return worker; });
+  await mount(); await clickParseButton('解析文档');
+  expect(container.textContent).not.toContain('核对同一导入请求（继续一步）');
+  expect([...container.querySelectorAll('button')].find(item => item.textContent === '等待本机解析')?.disabled).toBe(true);
+  expect(mockStart).toHaveBeenCalledTimes(1);
+});
+
+it.each(['FAILED', 'EXPIRED'])('shows an import %s receipt without inviting another step on the expired request', async terminal => {
+  mockStatus.mockResolvedValue(expiredImportStatus());
+  const result = terminal === 'FAILED' ? importReceipt({ status: 'FAILED', errorCode: 'DOCUMENT_PARSE_DEADLINE_EXCEEDED' })
+    : importReceipt({ deadlineAt: '2000-01-01T00:00:00Z' });
+  mockStart.mockImplementationOnce(async () => { mockStatus.mockResolvedValue(importStatus(result)); return result; });
+  await mount(); await clickParseButton('解析文档');
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(terminal === 'FAILED' ? 'DOCUMENT_PARSE_DEADLINE_EXCEEDED' : '执行期限已过');
+  expect(container.textContent).not.toContain('核对同一导入请求（继续一步）');
+  expect(mockStart).toHaveBeenCalledTimes(1);
+});
+
+it('uses polling only for readback and never advances an accepted import automatically', async () => {
+  jest.useFakeTimers();
+  try {
+    mockStatus.mockResolvedValue(expiredImportStatus());
+    mockStart.mockImplementationOnce(async () => { mockStatus.mockResolvedValue(importStatus(importReceipt())); return importReceipt(); });
+    await mount(); await clickParseButton('解析文档');
+    await act(async () => { jest.advanceTimersByTime(15000); });
+    expect(mockStatus.mock.calls.length).toBeGreaterThan(2);
+    expect(mockStart).toHaveBeenCalledTimes(1);
+    expect([...container.querySelectorAll('button')].find(item => item.textContent === '核对同一导入请求（继续一步）')?.disabled).toBe(false);
+  } finally { jest.useRealTimers(); }
+});
+
+it('keeps a lost step outcome visible across status polling and checks the same request explicitly', async () => {
+  jest.useFakeTimers();
+  try {
+    mockStatus.mockResolvedValue(expiredImportStatus());
+    mockStart.mockImplementationOnce(async () => { mockStatus.mockResolvedValue(importStatus(importReceipt())); return importReceipt(); })
+      .mockRejectedValueOnce(new Error('接续响应丢失，请核对原请求。'))
+      .mockResolvedValueOnce(importReceipt({ verifiedArtifacts: 2 }));
+    await mount(); await clickParseButton('解析文档');
+    await clickParseButton('核对同一导入请求（继续一步）');
+    await act(async () => { jest.advanceTimersByTime(15000); });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('接续响应丢失');
+    expect(mockStart).toHaveBeenCalledTimes(2);
+    await clickParseButton('核对同一导入请求（继续一步）');
+    expect(mockStart).toHaveBeenCalledTimes(3);
+    expect(mockStart.mock.calls[2]).toEqual(mockStart.mock.calls[0]);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  } finally { jest.useRealTimers(); }
+});
+
+it.each(['status', 'translation'])('invalidates an in-flight import recovery after a concurrent %s access rejection', async rejectedRead => {
+  mockStatus.mockResolvedValue(rejectedRead === 'translation' ? { ...expiredImportStatus(), publishedRun: { parseRunId: 'PR1', parseRevision: 3 } }
+    : expiredImportStatus());
+  let resolveStart!: (value: DocumentParseRunSummary) => void;
+  mockStart.mockImplementationOnce(() => new Promise(resolve => { resolveStart = resolve; }));
+  await mount(); await clickParseButton(rejectedRead === 'translation' ? '重新解析' : '解析文档');
+  const denied = Object.assign(new Error('导入接续权限已撤销'), { statusCode: 403 });
+  if (rejectedRead === 'status') {
+    mockStatus.mockRejectedValueOnce(denied); await clickParseButton('刷新');
+  } else {
+    mockTranslation.mockRejectedValueOnce(denied);
+    await act(async () => container.querySelector<HTMLButtonElement>('#switch-bilingual')!.click());
+  }
+  const reads = mockStatus.mock.calls.length;
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('导入接续权限已撤销');
+  await act(async () => resolveStart(importReceipt()));
+  expect(mockStatus).toHaveBeenCalledTimes(reads);
+  expect(container.textContent).not.toContain('导入版本 7 的本次回执');
+  expect(container.textContent).not.toContain('核对同一导入请求（继续一步）');
+  expect(container.textContent).not.toContain('constructed');
+  mockStatus.mockResolvedValue(importStatus(importReceipt()));
+  await clickParseButton('刷新');
+  expect([...container.querySelectorAll('button')].find(item => item.textContent === '正在解析…')?.disabled).toBe(true);
+  expect(mockStart).toHaveBeenCalledTimes(1);
+});
+
+it('clears the admitted continuation and saved reading when its explicit POST is denied', async () => {
+  mockStatus.mockResolvedValue({ ...expiredImportStatus(), publishedRun: { parseRunId: 'PR1', parseRevision: 3 } });
+  mockStart.mockImplementationOnce(async () => {
+    mockStatus.mockResolvedValue({ ...importStatus(importReceipt()), publishedRun: { parseRunId: 'PR1', parseRevision: 3 } });
+    return importReceipt();
+  }).mockRejectedValueOnce(Object.assign(new Error('候选读取权限已撤销'), { statusCode: 403 }));
+  await mount(); await clickParseButton('重新解析');
+  expect(container.textContent).toContain('constructed');
+  await clickParseButton('核对同一导入请求（继续一步）');
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('候选读取权限已撤销');
+  expect(container.textContent).not.toContain('constructed');
+  expect(container.textContent).not.toContain('导入版本 7 的本次回执');
+  expect(container.textContent).not.toContain('核对解析请求');
+  expect(mockStart.mock.calls[1]).toEqual(mockStart.mock.calls[0]);
+  expect(mockStart).toHaveBeenCalledTimes(2);
 });

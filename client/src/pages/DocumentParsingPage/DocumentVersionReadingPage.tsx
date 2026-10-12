@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '@client/src/components/ui/button';
 import { readDocumentTranslationReading, readDocumentParsingStatus, readParsedDocument, startDocumentParsing, subscribeCanonicalHostClientSession } from '@client/src/api/canonical-host';
-import type { DocumentParsedReading, DocumentParsingStatus, StartDocumentParseRequest } from '@shared/document-parsing.interface';
+import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
 import type { MineruReaderSource } from '@shared/mineru-reading.interface';
 import { MineruMarkdownReader } from './MineruMarkdownReader';
 import { DocumentParsedImage } from './DocumentParsedImage';
@@ -53,6 +53,9 @@ export default function DocumentVersionReadingPage() {
   const rejectedRef = useRef(false);
   const bodyControllerRef = useRef<AbortController | null>(null);
   const [sending, setSending] = useState(false);
+  const parseInFlight = useRef(false);
+  const [importReply, setImportReply] = useState<DocumentParseRunSummary | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
   const loaded = useRef('');
   const request = useRef<StartDocumentParseRequest | null>(null);
@@ -60,9 +63,17 @@ export default function DocumentVersionReadingPage() {
   const identity = useRef(readingIdentity);
   identity.current = readingIdentity;
 
+  function rejectCurrentAccess() {
+    rejectedRef.current = true; epoch.current++; bodyControllerRef.current?.abort();
+    request.current = null; currentSettingsRequest.current = null; parseInFlight.current = false;
+    setImportReply(null); setParseError(null); setSending(false);
+    setStatus(null); setReading(null); setTranslation(null); setSource(null); loaded.current = '';
+  }
+
   useEffect(() => {
     epoch.current++;
     setStatus(null); setReading(null); setSource(null); setError(null); setSending(false);
+    parseInFlight.current = false; setImportReply(null); setParseError(null);
     setTranslation(null); setTranslationPage(null); setTranslationUnitId(null); setTranslationSourceContext(requestedSource); setTranslationError(null); setView('dual');
     setTranslationLocationRequest(0);
     loaded.current = ''; request.current = null; currentSettingsRequest.current = null;
@@ -70,7 +81,8 @@ export default function DocumentVersionReadingPage() {
       epoch.current++;
       rejectedRef.current = false;
       setStatus(null); setReading(null); setSource(null); setTranslation(null); setTranslationPage(null); setTranslationUnitId(null); setTranslationSourceContext(requestedSource); setTranslationError(null);
-      loaded.current = ''; request.current = null; currentSettingsRequest.current = null; setSending(false); setRefresh(value => value + 1);
+      loaded.current = ''; request.current = null; currentSettingsRequest.current = null;
+      parseInFlight.current = false; setImportReply(null); setParseError(null); setSending(false); setRefresh(value => value + 1);
     });
   }, [readingIdentity]);
 
@@ -92,9 +104,7 @@ export default function DocumentVersionReadingPage() {
         // drop every partial result and abort so no late body or translation
         // resolution can pass current() and re-display. The rejected state holds
         // until an explicit retry starts a new epoch.
-        rejectedRef.current = true;
-        setReading(null); setStatus(null); setTranslation(null);
-        loaded.current = '';
+        rejectCurrentAccess();
         controller.abort();
       }
     };
@@ -169,13 +179,11 @@ export default function DocumentVersionReadingPage() {
           // Terminal rejection of the translation must also invalidate the body
           // epoch of the same identity/session/reading epoch: a late body result
           // must not re-write reading and re-display over the rejected state.
-          rejectedRef.current = true;
           const message = reason instanceof Error ? reason.message : '读取未完成，请重试。';
           setError(message);
           setTranslationError(reason instanceof Error ? reason.message : '中文读取未完成，请刷新重试。');
-          setTranslation(null); setReading(null); loaded.current = '';
+          rejectCurrentAccess();
           controller.abort();
-          bodyControllerRef.current?.abort();
         } else {
           setTranslationError(reason instanceof Error ? reason.message : '中文读取未完成，请刷新重试。');
         }
@@ -236,6 +244,8 @@ export default function DocumentVersionReadingPage() {
   const expired = latest ? Date.parse(latest.deadlineAt) <= Date.now() : false;
   const canRestartWithCurrentSettings = Boolean(latest && (latest.status === 'FAILED' || (latest.status !== 'PUBLISHED' && expired)));
   const busy = Boolean(latest && ['RUNNING', 'STAGING'].includes(latest.status) && !expired);
+  const currentImportReply = currentStatus && importReply?.documentVersionId === documentVersionId ? importReply : null;
+  const checkingImport = Boolean(request.current && currentImportReply?.executionMode === 'LOCAL_MINERU_IMPORT');
   const parseFailure = latest?.errorCode === 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED'
     ? '文档解析服务额度已用尽，待服务恢复后接续。'
     : latest && (latest.errorCode || latest.status === 'FAILED')
@@ -251,28 +261,53 @@ export default function DocumentVersionReadingPage() {
   })() : null;
 
   async function start(withCurrentSettings = false) {
-    if (!currentStatus || sending || (withCurrentSettings ? request.current : currentSettingsRequest.current)) return;
+    if (!currentStatus || parseInFlight.current || sending || (withCurrentSettings ? request.current : currentSettingsRequest.current)) return;
     if (withCurrentSettings && !canRestartWithCurrentSettings && !currentSettingsRequest.current) return;
     const pendingRequest = withCurrentSettings ? currentSettingsRequest : request;
     const version = documentVersionId;
     const navigation = readingIdentity;
     const generation = epoch.current;
+    const continuedRun = checkingImport ? currentImportReply : null;
     pendingRequest.current ??= {
       requestId: !withCurrentSettings && latest && (latest.status === 'FAILED' || (latest.status !== 'PUBLISHED' && expired))
         ? documentParseRecoveryRequestId(latest.parseRunId) : `parse-${crypto.randomUUID()}`,
       expectedPublishedRevision: currentStatus.publishedRun?.parseRevision ?? 0,
     };
-    setSending(true); setError(null);
+    parseInFlight.current = true; setSending(true); setParseError(null);
     try {
-      await startDocumentParsing(version, pendingRequest.current);
+      const result = await startDocumentParsing(version, pendingRequest.current);
       if (identity.current !== navigation || epoch.current !== generation) return;
-      pendingRequest.current = null; setRefresh(value => value + 1);
+      if (continuedRun && (result.documentVersionId !== version || result.parseRunId !== continuedRun.parseRunId ||
+          result.parseRevision !== continuedRun.parseRevision || result.executionMode !== 'LOCAL_MINERU_IMPORT'))
+        throw new Error('接续结果与原导入版本不一致，请核对原请求。');
+      if (result.executionMode === 'LOCAL_MINERU_IMPORT') {
+        if (result.documentVersionId !== version) throw new Error('导入结果与指定文档版本不一致，请核对原请求。');
+        setImportReply(result);
+      } else setImportReply(null);
+      // Local imports advance one bounded step per explicit same-request check.
+      // Keep the admitted recovery identity; a new request would lose this continuation.
+      const continueImport = !withCurrentSettings && result.executionMode === 'LOCAL_MINERU_IMPORT' &&
+        ['RUNNING', 'STAGING'].includes(result.status) && Date.parse(result.deadlineAt) > Date.now();
+      if (!continueImport) pendingRequest.current = null;
+      setRefresh(value => value + 1);
     } catch (reason) {
       if (identity.current !== navigation || epoch.current !== generation) return;
+      const statusCode = reason && typeof reason === 'object' && 'statusCode' in reason ? Number(reason.statusCode) : null;
+      if (statusCode !== null && [401, 403, 404].includes(statusCode)) {
+        rejectCurrentAccess();
+        setError(reason instanceof Error ? reason.message : '此文档暂不可访问，请重新核权。');
+        return;
+      }
       const code = reason && typeof reason === 'object' && 'code' in reason ? reason.code : null;
-      if (['DOCUMENT_PARSE_REVISION_CONFLICT', 'DOCUMENT_PARSE_ALREADY_RUNNING', 'DOCUMENT_PARSE_RECOVERY_NOT_LATEST'].includes(String(code))) pendingRequest.current = null;
-      setError(reason instanceof Error ? reason.message : '请求结果尚未确认，重试会核对同一请求。');
-    } finally { if (identity.current === navigation && epoch.current === generation) setSending(false); }
+      if (['DOCUMENT_PARSE_REVISION_CONFLICT', 'DOCUMENT_PARSE_ALREADY_RUNNING', 'DOCUMENT_PARSE_RECOVERY_NOT_LATEST'].includes(String(code))) {
+        pendingRequest.current = null; setImportReply(null);
+      }
+      setParseError(reason instanceof Error ? reason.message : '请求结果尚未确认，重试会核对同一请求。');
+    } finally {
+      if (identity.current === navigation && epoch.current === generation) {
+        parseInFlight.current = false; setSending(false);
+      }
+    }
   }
 
   const renderImage = useCallback(({ path, alt }: { path: string; src: string; alt: string }) => currentReading
@@ -287,8 +322,8 @@ export default function DocumentVersionReadingPage() {
       <details className="document-reading-maintenance">
         <summary>文档处理</summary>
         <div className="document-reading-actions">
-          <Button onClick={() => { void start(); }} disabled={!currentStatus?.runtimeAvailable || busy || sending || Boolean(currentSettingsRequest.current)}>
-            {sending ? '正在受理…' : request.current ? '核对解析请求' : busy ? (parseFailure ? '等待接续' : latest?.waitingForLocalWorker ? '等待本机解析' : '正在解析…') : currentStatus?.publishedRun ? '重新解析' : '解析文档'}
+          <Button onClick={() => { void start(); }} disabled={!currentStatus?.runtimeAvailable || (busy && !request.current) || sending || Boolean(currentSettingsRequest.current)}>
+            {sending ? '正在受理…' : checkingImport ? '核对同一导入请求（继续一步）' : request.current ? '核对解析请求' : busy ? (parseFailure ? '等待接续' : latest?.waitingForLocalWorker ? '等待本机解析' : '正在解析…') : currentStatus?.publishedRun ? '重新解析' : '解析文档'}
           </Button>
           {(canRestartWithCurrentSettings || currentSettingsRequest.current) && <Button variant="outline"
             onClick={() => { void start(true); }} disabled={!currentStatus?.runtimeAvailable || sending || Boolean(request.current)}>
@@ -297,12 +332,22 @@ export default function DocumentVersionReadingPage() {
           <Button variant="outline" onClick={() => setRefresh(value => value + 1)}>刷新</Button>
           <DocumentOriginalPreview documentVersionId={documentVersionId}>打开原件</DocumentOriginalPreview>
         </div>
-        {currentStatus ? <LocalMineruImport key={documentVersionId} documentVersionId={documentVersionId}
+        {currentImportReply && <p role={currentImportReply.status === 'FAILED' ||
+            (currentImportReply.status !== 'PUBLISHED' && Date.parse(currentImportReply.deadlineAt) <= Date.now()) ? 'alert' : 'status'}>
+          导入版本 {currentImportReply.parseRevision} 的本次回执：已核验 {currentImportReply.verifiedArtifacts} 个文件。
+          {currentImportReply.status === 'FAILED' ? `解析未完成（${currentImportReply.errorCode ?? 'DOCUMENT_PARSE_FAILED'}），请刷新后查看恢复条件。`
+            : currentImportReply.status === 'PUBLISHED' ? '已发布。'
+              : Date.parse(currentImportReply.deadlineAt) <= Date.now() ? '执行期限已过，请刷新后查看恢复条件。'
+                : '每次核对只继续一步，不会重新上传候选包。'}
+          执行期限：{currentImportReply.deadlineAt}。
+        </p>}
+        {currentStatus && !sending && !request.current && !currentSettingsRequest.current ? <LocalMineruImport key={documentVersionId} documentVersionId={documentVersionId}
           expectedPublishedRevision={currentStatus.publishedRun?.parseRevision ?? 0} onImported={() => setRefresh(value => value + 1)} /> : null}
         {canRestartWithCurrentSettings && <p>按当前设置重新解析会创建新的解析版本，保留旧输入及已保存的历史。</p>}
         {latest?.errorCode && <p>处理原因：{latest.errorCode}</p>}
       </details>
       {error && <p role="alert">{error}</p>}
+      {currentStatus && parseError && <p role="alert">{parseError}</p>}
       {unboundEvidence ? <p role="status">此保存依据没有工作项执行身份。已打开它绑定的确切文档版本，未猜测任务或具体段落位置。</p> : null}
       {currentStatus && !currentStatus.runtimeAvailable && <p role="status">
         {currentStatus.runtime?.state === 'FAILED' ? '最近的文档处理未完成，已保存的范围仍可读取。' : '官方文档解析插件尚未配置。'}
@@ -314,9 +359,7 @@ export default function DocumentVersionReadingPage() {
     {TDMS_SOURCE_UI_ENABLED && (currentStatus || currentReading) && !rejectedRef.current ? <TdmsSourceEntry
       key={readingIdentity} context={{ documentVersionId }} enabled={TDMS_SOURCE_UI_ENABLED}
       onAccessRejected={() => {
-        rejectedRef.current = true; epoch.current++; bodyControllerRef.current?.abort();
-        setStatus(null); setReading(null); setTranslation(null); setSource(null);
-        loaded.current = ''; setError('此来源暂不可读取，文档与译文已隐藏，请重新核权。');
+        rejectCurrentAccess(); setError('此来源暂不可读取，文档与译文已隐藏，请重新核权。');
       }}
     /> : null}
     {currentReading ? <>
