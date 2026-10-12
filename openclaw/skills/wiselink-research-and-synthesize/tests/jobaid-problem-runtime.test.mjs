@@ -1054,6 +1054,8 @@ test('initial JobAid bounds reads before save, then rotates only with exact save
     { action: 'SAVE_WORK', work: firstWork },
     { action: 'READ_SOURCES', sourceRefs: refs.slice(4, 5), purpose: 'read next batch', context: 'PAGE' },
     { action: 'SAVE_WORK', work: secondWork },
+    { action: 'READ_WORK', workRevisionRef: 'JAWR-1', issueKeys: ['condition-a'], includeOverview: true },
+    { action: 'SAVE_WORK', work: secondWork },
     { action: 'FINISH' },
   ]);
   f.options.readAssessmentSources = async request => {
@@ -1092,19 +1094,32 @@ test('initial JobAid bounds reads before save, then rotates only with exact save
   assert.equal(f.calls[2].user, f.calls[3].user,
     'the read receipt and required save stay together in the fresh session');
   const saveOnlyStep = f.calls[2].tools[0].function.parameters.properties.step;
-  assert.deepEqual(saveOnlyStep.properties.action.enum, ['SAVE_WORK']);
-  assert.ok(saveOnlyStep.required.includes('workJson'));
+  assert.deepEqual(saveOnlyStep.properties.action.enum, ['SAVE_WORK', 'READ_WORK']);
+  assert.equal(saveOnlyStep.properties.action.enum.includes('READ_SOURCES'), false);
+  assert.deepEqual(saveOnlyStep.required, ['action'], 'READ_WORK has no workJson');
+  assert.equal(saveOnlyStep.properties.workJson.type, 'string');
+  assert.equal(saveOnlyStep.properties.workJson.minLength, 2);
   assert.match(f.calls[2].messages[0].content, /one coherent issue/u);
   assert.match(f.calls[4].messages[2].content, /不超过 4 refs/u);
   assert.deepEqual(f.calls[2].tool_choice, { type: 'function', function: { name: 'return_wiselink_assessment_step' } });
   assert.notEqual(f.calls[4].user, f.calls[5].user,
     'each successful source read starts a fresh save-only session');
-  assert.notEqual(f.calls[5].user, f.calls[6].user,
+  assert.equal(f.calls[5].user, f.calls[6].user,
+    'a rejected incomplete baseline stays in the same source segment');
+  assert.equal(f.calls[6].user, f.calls[7].user,
+    'exact READ_WORK and the subsequent SAVE share their source segment');
+  assert.notEqual(f.calls[7].user, f.calls[8].user,
     'each exact saved revision begins the next native session');
   const sourceContinuation = JSON.parse(f.calls[2].messages[2].content);
   assert.equal(sourceContinuation.status, 'HOST_SOURCE_READ_CONFIRMED');
-  assert.deepEqual(sourceContinuation.sourceReadReceipt.sourceRefs, refs.slice(0, 4));
-  assert.equal(sourceContinuation.sourceReadReceipt.evidence.length, 4);
+  const sourceContext = JSON.parse(f.calls[2].messages[1].content);
+  const confirmedRead = sourceContext.deliveredSourceReads.reads[sourceContinuation.sourceReadReceipt.cachedReadIndex];
+  assert.deepEqual(confirmedRead.sourceRefs, refs.slice(0, 4));
+  assert.deepEqual(confirmedRead.evidenceRefs, refs.slice(0, 4));
+  assert.deepEqual(sourceContext.deliveredEvidence, refs.slice(0, 4).map(evidenceRef => ({
+    evidenceRef, kind: 'DOCUMENT_PASSAGE', excerpt: `Source passage ${evidenceRef}` })));
+  assert.equal(Object.hasOwn(sourceContinuation.sourceReadReceipt, 'evidence'), false,
+    'the compact receipt references the complete evidence, without a duplicate body');
   assert.equal(f.calls[2].messages.some(message => message.role === 'assistant'), false,
     'fresh source continuation has no orphaned prior-session tool call');
   const resumedInput = JSON.parse(f.calls[4].messages[1].content);
@@ -1113,11 +1128,19 @@ test('initial JobAid bounds reads before save, then rotates only with exact save
   assert.equal(resumedInput.previousWork.workRevisionRef, 'JAWR-1');
   assert.equal(resumedInput.previousWork.content.issues[0].issueKey, 'condition-a');
   assert.equal(resumedInput.previousWork.content.evidence, undefined);
-  assert.deepEqual(continuationReceipt.readSourceRefs, refs.slice(0, 4));
+  assert.deepEqual(resumedInput.previousWork.content.readSourceRefs, refs.slice(0, 4));
+  assert.equal(Object.hasOwn(continuationReceipt, 'readSourceRefs'), false,
+    'saved read references occur in their original previousWork exactly once');
   assert.equal(continuationReceipt.workRevisionRef, 'JAWR-1');
   assert.equal(continuationReceipt.status, 'HOST_SAVE_CONFIRMED');
   assert.equal(f.calls[4].messages.some(message => message.role === 'assistant'), false,
     'new native session starts from the exact Host readback instead of an orphaned old-session tool call');
+  const baselineRequired = JSON.parse(f.calls[6].messages.at(-1).content);
+  assert.equal(baselineRequired.errorCode, 'JOBAID_WORK_BASELINE_READ_REQUIRED');
+  assert.deepEqual(baselineRequired.workReadRequired, { workRevisionRef: 'JAWR-1', issueKeys: ['condition-a'], includeOverview: true });
+  const fullTarget = JSON.parse(f.calls[7].messages.at(-1).content);
+  assert.deepEqual(fullTarget.issues, firstWork.issues);
+  assert.equal(fullTarget.overview, firstWork.overview);
 });
 
 test('an unregistered source correction can recover, then the successful Host read gets a save-only fresh session', async () => {
@@ -1158,10 +1181,17 @@ test('an unregistered source correction can recover, then the successful Host re
     'a successful Host read moves the save into a fresh native session');
   const continuation = JSON.parse(f.calls[2].messages[2].content);
   assert.equal(continuation.status, 'HOST_SOURCE_READ_CONFIRMED');
-  assert.deepEqual(continuation.sourceReadReceipt.sourceRefs, ['source:ftd:1:p0']);
+  const sourceContext = JSON.parse(f.calls[2].messages[1].content);
+  const read = sourceContext.deliveredSourceReads.reads[continuation.sourceReadReceipt.cachedReadIndex];
+  assert.deepEqual(read.sourceRefs, ['source:ftd:1:p0']);
+  assert.deepEqual(read.evidenceRefs, ['source:ftd:1:p0']);
+  assert.deepEqual(sourceContext.deliveredEvidence, [{ evidenceRef: 'source:ftd:1:p0', excerpt: 'Condition A.' }]);
   const stepSchema = f.calls[2].tools[0].function.parameters.properties.step;
-  assert.deepEqual(stepSchema.properties.action.enum, ['SAVE_WORK']);
-  assert.ok(stepSchema.required.includes('workJson'));
+  assert.deepEqual(stepSchema.properties.action.enum, ['SAVE_WORK', 'READ_WORK']);
+  assert.equal(stepSchema.properties.action.enum.includes('READ_SOURCES'), false);
+  assert.deepEqual(stepSchema.required, ['action'], 'READ_WORK has no workJson');
+  assert.equal(stepSchema.properties.workJson.type, 'string');
+  assert.equal(stepSchema.properties.workJson.minLength, 2);
   assert.ok(f.calls.every(call => call.tool_choice.function.name === 'return_wiselink_assessment_step'));
 });
 
@@ -1190,6 +1220,31 @@ test('initial JobAid cannot save a status-only issue before a primary source rea
   const rejection = JSON.parse(f.calls[1].messages.at(-1).content);
   assert.equal(rejection.errorCode, 'JOBAID_PRIMARY_SOURCE_READ_REQUIRED');
   assert.match(rejection.instruction, /READ_SOURCES/u);
+});
+
+test('R2 READ_WORK transport still rejects a bodyless SAVE and keeps the source batch fenced', async () => {
+  const input = initialChunkModelInput();
+  const f = fixture([
+    { action: 'READ_SOURCES', sourceRefs: ['source:ftd:1'], purpose: 'read registered source', context: 'PAGE' },
+    { action: 'SAVE_WORK' },
+    { action: 'READ_SOURCES', sourceRefs: ['source:ftd:2'], purpose: 'must not execute', context: 'PAGE' },
+    { action: 'SAVE_WORK', work: completed },
+    { action: 'FINISH' },
+  ]);
+  f.options.readAssessmentSources = async request => {
+    f.reads.push(request);
+    return { status: 'AVAILABLE', scope: request.context, completeRequestedScope: true, sourceRefs: request.sourceRefs,
+      evidence: [{ evidenceRef: 'source:ftd:1', excerpt: 'Complete original condition.' }] };
+  };
+  const result = await f.run(input);
+  assert.equal(result.output.workRevisionRef, 'JAWR-1');
+  assert.equal(f.reads.length, 1); assert.equal(f.saves.length, 1);
+  assert.equal(JSON.parse(f.calls[2].messages.at(-1).content).errorCode, 'JOBAID_WORK_REQUIRED');
+  const blocked = JSON.parse(f.calls[3].messages.at(-1).content);
+  assert.equal(blocked.errorCode, 'JOBAID_SOURCE_BATCH_SAVE_REQUIRED');
+  assert.equal(blocked.sourceReadPolicy.hostReadExecuted, false);
+  assert.equal(f.calls[1].user, f.calls[2].user);
+  assert.equal(f.calls[2].user, f.calls[3].user);
 });
 
 test('a confirmed source read and save-only session survive checkpoint resume without another Host read', () => persisted(async checkpoint => {
@@ -1221,7 +1276,13 @@ test('a confirmed source read and save-only session survive checkpoint resume wi
   assert.equal(checkpointed.nativeSessionSegment, 1);
   const persistedRead = JSON.parse(checkpointed.messages[2].content);
   assert.equal(persistedRead.status, 'HOST_SOURCE_READ_CONFIRMED');
-  assert.deepEqual(persistedRead.sourceReadReceipt.sourceRefs, ['source:ftd:1']);
+  const persistedContext = JSON.parse(checkpointed.messages[1].content);
+  const read = persistedContext.deliveredSourceReads.reads[persistedRead.sourceReadReceipt.cachedReadIndex];
+  assert.deepEqual(read.sourceRefs, ['source:ftd:1']);
+  assert.deepEqual(read.evidenceRefs, ['source:ftd:1']);
+  assert.deepEqual(persistedContext.deliveredEvidence, [{ evidenceRef: 'source:ftd:1', excerpt: 'Checked.' }]);
+  assert.deepEqual(persistedContext.deliveredEvidence, checkpointed.evidenceCache.evidence);
+  assert.deepEqual(persistedContext.deliveredSourceReads.reads, checkpointed.evidenceCache.reads);
 
   f.options.heartbeat = async () => {};
   const result = await f.run(input);
@@ -1230,8 +1291,11 @@ test('a confirmed source read and save-only session survive checkpoint resume wi
   assert.equal(f.saves.length, 1);
   assert.notEqual(f.calls[0].user, f.calls[1].user);
   const saveStep = f.calls[1].tools[0].function.parameters.properties.step;
-  assert.deepEqual(saveStep.properties.action.enum, ['SAVE_WORK']);
-  assert.ok(saveStep.required.includes('workJson'));
+  assert.deepEqual(saveStep.properties.action.enum, ['SAVE_WORK', 'READ_WORK']);
+  assert.equal(saveStep.properties.action.enum.includes('READ_SOURCES'), false);
+  assert.deepEqual(saveStep.required, ['action'], 'READ_WORK has no workJson');
+  assert.equal(saveStep.properties.workJson.type, 'string');
+  assert.equal(saveStep.properties.workJson.minLength, 2);
   assert.equal((await checkpoint.readOptional('assessment-state')).forceSaveBeforeRead, false);
 }));
 

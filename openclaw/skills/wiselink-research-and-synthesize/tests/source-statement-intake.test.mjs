@@ -229,13 +229,21 @@ test('initial v3 consumes directory then reads full saved statement and roots be
   assert.equal(first.sourceStatements, undefined);
   assert.equal(first.activityContexts, undefined);
   assert.equal(first.availableSources.some(x => x.sourceStatement?.statement || x.sourceStatement?.quotes), false);
-  const continuation = fixture.requests[1].messages.map(x => { try { return JSON.parse(x.content); } catch { return null; } })
-    .find(x => x?.sourceReadReceipt)?.sourceReadReceipt;
-  assert.deepEqual(continuation.sourceStatements, [record]);
-  assert.deepEqual(continuation.activityContexts, [context]);
-  assert.deepEqual(continuation.evidence, receipt.evidence);
-  assert.deepEqual(continuation.sourceRefs, [STATEMENT_REF, ROOT]);
-  assert.deepEqual(Object.keys(continuation.sourceStatements[0].statement).sort(),
+  const continuationMessages = fixture.requests[1].messages.map(x => { try { return JSON.parse(x.content); } catch { return null; } });
+  const continuation = continuationMessages.find(x => x?.sourceReadReceipt)?.sourceReadReceipt;
+  const delivered = continuationMessages.find(x => x?.deliveredSourceReads);
+  assert.equal(continuation.status, 'AVAILABLE');
+  assert.deepEqual(delivered.deliveredSourceReads.sourceStatements, [record]);
+  assert.deepEqual(delivered.deliveredSourceReads.activityContexts, [context]);
+  assert.deepEqual(delivered.deliveredEvidence, receipt.evidence);
+  const originalRead = delivered.deliveredSourceReads.reads[continuation.cachedReadIndex];
+  assert.deepEqual(originalRead.sourceRefs, [STATEMENT_REF, ROOT]);
+  assert.deepEqual(originalRead.sourceStatementRefs, [record.ref]);
+  assert.deepEqual(originalRead.activityContextKeys, [[context.runRef, context.candidateRevision]]);
+  assert.deepEqual(originalRead.evidenceRefs, receipt.evidence.map(item => item.evidenceRef));
+  for (const field of ['sourceStatements', 'activityContexts', 'evidence', 'sourceRefs'])
+    assert.equal(continuation[field], undefined, 'the compact pointer does not duplicate its full cached source');
+  assert.deepEqual(Object.keys(delivered.deliveredSourceReads.sourceStatements[0].statement).sort(),
     ['statementId', 'statementKey', 'label', 'quotes', 'time', 'statusRaw', 'limitations'].sort(),
     'the consumer transports the saved v1 fields without inventing semantic fields');
   assert.deepEqual(fixture.saves[0].expectedWorkRevision, 0);

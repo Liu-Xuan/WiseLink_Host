@@ -47,8 +47,11 @@ async function fixture(t) {
     { action: 'READ_SOURCES', sourceRefs: ['source:synthetic:1'], purpose: 'read', context: 'PAGE' },
     { action: 'SAVE_WORK', workJson: JSON.stringify(work('IN_PROGRESS')) },
     { action: 'READ_SOURCES', sourceRefs: ['source:synthetic:1'], purpose: 'read', context: 'PAGE' },
+    { action: 'READ_WORK', workRevisionRef: 'JAWR-synthetic-1', issueKeys: [], includeOverview: true },
     { action: 'SAVE_WORK', workJson: JSON.stringify(work('IN_PROGRESS')) },
+    { action: 'READ_WORK', workRevisionRef: 'JAWR-synthetic-2', issueKeys: [], includeOverview: true },
     { action: 'SAVE_WORK', workJson: JSON.stringify(work('IN_PROGRESS')) },
+    { action: 'READ_WORK', workRevisionRef: 'JAWR-synthetic-3', issueKeys: [], includeOverview: true },
     // FINISH with work uses the same pending SAVE helper, then ends this bounded
     // regression without asking for another model round after the readback.
     { action: 'FINISH', workJson: JSON.stringify(work('COMPLETE_WITH_OPEN_QUESTIONS')) },
@@ -163,17 +166,19 @@ async function assertUnchanged(directory, snapshot) {
   }
 }
 
-test('initial durable round 6 resumes the same SAVE request with equal observer and no new model request', async t => {
+test('initial durable round 9 resumes the same SAVE request with equal observer and no new model request', async t => {
   const f = await fixture(t);
   await assert.rejects(f.first(), /HOSTED_INITIAL_CANCEL_FAILED:SYNTHETIC_SAVE_RESPONSE_LOST:SYNTHETIC_CANCEL_RESPONSE_LOST/u);
-  assert.equal(f.gatewayCalls.length, 6);
-  assert.equal((await f.checkpoint.readOptional('assessment-state')).round, 6);
-  const save = await f.checkpoint.readOptional('assessment-6-save');
+  assert.equal(f.gatewayCalls.length, 9);
+  assert.equal((await f.checkpoint.readOptional('assessment-state')).round, 9);
+  const save = await f.checkpoint.readOptional('assessment-9-save');
+  assert.equal(f.toolCalls.filter(call => call.name === 'read_assessment_work' &&
+    !call.args.requestId).length, 0, 'every overview baseline is read from its exact saved request');
   const before = await persistedSnapshot(f.directory);
   const callCount = f.toolCalls.length;
   const result = await f.resume();
   assert.equal(result.status, 'INITIAL_STAGE_SAVED');
-  assert.equal(f.gatewayCalls.length, 6, 'all completed model responses are reused');
+  assert.equal(f.gatewayCalls.length, 9, 'all completed model responses are reused');
   await assertUnchanged(f.directory, before);
   assert.equal(await f.checkpoint.readOptional('stop-attempt.result'), null, 'unknown cancellation is not declared successful');
   assert.equal(await f.checkpoint.readOptional('model.result'), null, 'the old outer model checkpoint is not rewritten');
@@ -189,17 +194,17 @@ test('initial durable round 6 resumes the same SAVE request with equal observer 
   assert.equal((await f.checkpoint.readOptional('assessment-current-claim')).leaseGeneration, 2);
 });
 
-test('initial durable round 6 rejects one changed observer field without SAVE or checkpoint replacement', async t => {
+test('initial durable round 9 rejects one changed observer field without SAVE or checkpoint replacement', async t => {
   const f = await fixture(t);
   await assert.rejects(f.first(), /SYNTHETIC_SAVE_RESPONSE_LOST/u);
-  const shape = await f.checkpoint.readOptional('model.output-shape-6');
+  const shape = await f.checkpoint.readOptional('model.output-shape-9');
   // Deliberately corrupt only this synthetic fixture before testing refusal.
-  await f.checkpoint.write('model.output-shape-6', { ...shape, inputTokens: shape.inputTokens + 1 });
+  await f.checkpoint.write('model.output-shape-9', { ...shape, inputTokens: shape.inputTokens + 1 });
   const before = await persistedSnapshot(f.directory);
   const stateBefore = await readFile(join(f.directory, 'assessment-state.json'));
   const callCount = f.toolCalls.length;
   await assert.rejects(f.resume(), /HOSTED_INITIAL_CANCEL_FAILED:REVIEW_CHECKPOINT_VALUE_CHANGED:REVIEW_STOP-ATTEMPT_OUTCOME_UNKNOWN/u);
-  assert.equal(f.gatewayCalls.length, 6);
+  assert.equal(f.gatewayCalls.length, 9);
   await assertUnchanged(f.directory, before);
   assert.deepEqual(await readFile(join(f.directory, 'assessment-state.json')), stateBefore);
   const afterCalls = f.toolCalls.slice(callCount);
