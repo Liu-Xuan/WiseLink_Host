@@ -54,7 +54,7 @@ export function LibraryClassificationControls({
         aria-label="选择目录首层"
       >
         {LIBRARY_GROUPINGS.map((option) => (
-          <Button
+          <Button type="button"
             key={option.value}
             size="sm"
             variant="outline"
@@ -76,7 +76,7 @@ export function LibraryClassificationControls({
           <div className="library-facet-row" key={facet.key} role="group" aria-label={facet.label}>
             <strong>{facet.label}</strong>
             <div className="library-grouping-controls">
-              <Button
+              <Button type="button"
                 size="sm"
                 variant="outline"
                 className="library-facet-choice"
@@ -93,7 +93,7 @@ export function LibraryClassificationControls({
                 .map(([rawValue, count]) => {
                   const value = rawValue || LIBRARY_UNCLASSIFIED;
                   return (
-                    <Button
+                    <Button type="button"
                       key={value}
                       size="sm"
                       disabled={disabled}
@@ -124,7 +124,7 @@ export function LibraryClassificationControls({
           </div>
         ))}
         <LibraryFleetControls fleet={fleet} filters={filters} onFilterChange={onFilterChange} disabled={disabled} />
-        {Object.values(filters).some(Boolean) ? <Button variant="ghost" size="sm" className="library-clear-facets"
+        {Object.values(filters).some(Boolean) ? <Button type="button" variant="ghost" size="sm" className="library-clear-facets"
           disabled={disabled} onClick={() => onFilterChange({})}>清除三项筛选（保留搜索）</Button> : null}
       </details>
     </section>

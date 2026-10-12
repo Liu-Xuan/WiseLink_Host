@@ -13,6 +13,7 @@ import {
 } from '@client/src/features/matter/reading-return';
 import { captureReadingLocation } from '@client/src/features/matter/useReadingLocation';
 import { DocumentVersionLink } from './DocumentVersionLink';
+import { LibrarySummaryText } from './LibrarySummaryText';
 import { LibraryMetadata } from './LibraryMetadata';
 import type { useLibraryQuicklook } from './useLibraryQuicklook';
 import LinkDocumentMatterMaterial from '@client/src/features/matter/LinkDocumentMatterMaterial';
@@ -22,6 +23,8 @@ import {
   documentIdentityPresentation,
   libraryDateLabel,
   libraryVersionLabel,
+  libraryPublicationPresentation,
+  libraryDistinctBrief,
   projectLibraryDocumentReading,
 } from './library-document-presentation';
 
@@ -70,6 +73,7 @@ export function LibraryDocumentDetails({
     : 0;
   const selectedIdentity = document ? documentIdentityPresentation({ documentCode: document.documentCode,
     extractedMetadata: selectedVersion?.extractedMetadata }) : null;
+  const selectedPublication = libraryPublicationPresentation(selectedVersion ?? null);
 
   useEffect(() => {
     if (!document) {
@@ -118,8 +122,7 @@ export function LibraryDocumentDetails({
     >
       <div className="library-panel-heading">
         <div>
-          <span className="library-section-label">来源资料</span>
-          <h2>快速理解</h2>
+          <h2>文档详情</h2>
         </div>
         <History aria-hidden="true" />
       </div>
@@ -133,24 +136,26 @@ export function LibraryDocumentDetails({
         <div {...paneScroll} className="library-quicklook-scroll">
           <header className="library-quicklook-title">
             <div>
-              <h3>{selectedIdentity?.documentNumber}</h3>
-              <p>
-                {selectedIdentity?.documentTitle} · {document.issuerAuthority} · {document.normalizedFamily} ·{' '}
-                {document.versions.length} 个可见版本
-              </p>
+              <h3>{selectedIdentity?.hasDocumentTitle ? selectedIdentity.documentTitle : selectedIdentity?.documentNumber}</h3>
             </div>
           </header>
           {selectedVersion && selectedReading ? <section className="library-selected-version" data-document-version-id={selectedVersion.documentVersionId}>
-            <p>{libraryVersionLabel(selectedVersion)} · {selectedVersion.selectedVersionIsCurrent ? '库内当前版本' : '历史版本'} · 原始文件 {selectedVersion.originalFilename || '未标注'}</p>
-            <h4>{!selectedReading.brief && assessmentBrief ? '关联评估短认识' : '简明解读'}</h4>
+            <dl className="suite-library-key-facts">
+              {selectedIdentity?.documentTitle !== selectedIdentity?.documentNumber && selectedIdentity?.hasDocumentTitle
+                ? <div><dt>编号</dt><dd>{selectedIdentity.documentNumber}</dd></div> : null}
+              <div><dt>版本</dt><dd>{selectedVersion.businessRevision || '未标注'} · {selectedVersion.selectedVersionIsCurrent ? '当前' : '历史'}</dd></div>
+              <div><dt>颁发时间</dt><dd>{selectedPublication.issueDate}</dd></div>
+              <div><dt>ATA</dt><dd>{selectedPublication.ata}</dd></div>
+            </dl>
+            <h4>{!selectedReading.brief && assessmentBrief ? '关联评估短认识' : '摘要'}</h4>
             {selectedReading.brief ? (
               <div
                 className="library-quicklook-reading"
                 data-reading-run-ref={selectedReading.readingRunRef ?? undefined}
                 data-reading-revision={selectedReading.readingRevision ?? undefined}
               >
-                <strong className="library-quicklook-headline">{selectedReading.headline}</strong>
-                <p className="library-quicklook-brief">{selectedReading.brief}</p>
+                <LibrarySummaryText key={selectedVersion.documentVersionId}
+                  text={libraryDistinctBrief(selectedReading.brief, selectedIdentity?.documentTitle ?? '', selectedIdentity?.documentNumber)} />
                 {selectedReading.coverageStatus === 'PARTIAL_DELIVERY' ? (
                   <p className="library-quicklook-note">
                     部分覆盖：已送达 {selectedReading.deliveredUnitCount}/{selectedReading.totalUnitCount}，仅代表已送达范围，不代表完整理解。
@@ -177,7 +182,7 @@ export function LibraryDocumentDetails({
                       : matchingAssessment.result?.overallStatus === 'CURRENT'
                         ? '已保存的问题工作；综合候选当前有效。'
                         : '已保存的问题工作；综合状态请进入工作台核对。'}</p>
-                    <p className="library-quicklook-assessment-brief">{assessmentBrief}</p>
+                    <LibrarySummaryText key={selectedVersion.documentVersionId} text={assessmentBrief} />
                     <Link to={`/work-items/${encodeURIComponent(matchingAssessment.document.workItemId)}/analysis?panel=assessment`}>查看完整评估与来源</Link>
                   </>
                 ) : (
@@ -212,9 +217,6 @@ export function LibraryDocumentDetails({
             <DocumentVersionLink version={selectedVersion} familyId={document.familyId}>进入精读工作台</DocumentVersionLink>
             <Link to={`/graph?${documentGraphReadingParams(selectedVersion.documentVersionId, selectedVersion.readerWorkItemId || undefined, {})}`}>文档关系图谱与时间</Link>
           </section> : <p role="status">所选版本未在当前读取范围内返回，未替换为其他版本。</p>}
-          <p className="library-quicklook-note">
-            版本状态以文档管理模块的登记为准。重复评估关联已有文档版本。
-          </p>
           {linkMatterId ? (
             <LinkDocumentMatterMaterial
               key={`${linkMatterId}:${document.familyId}`}
@@ -224,6 +226,7 @@ export function LibraryDocumentDetails({
           ) : null}
           <details className="library-quicklook-history">
             <summary>改版比较与全部版本（{document.versions.length}）</summary>
+          <p className="library-quicklook-note">版本状态以文档管理模块的登记为准。重复评估关联已有文档版本。颁发时间与 ATA 为原文观察值，待核；修订、生成及入库日期分别保留。</p>
           <div className="library-revision-picker">
             <p className="library-revision-picker-note">
               选择两个不同的版本进行只读改版比较。「基线端」与「比较目标端」只表示本次比较的两端，不代表厂家先后、正式采用或最新。

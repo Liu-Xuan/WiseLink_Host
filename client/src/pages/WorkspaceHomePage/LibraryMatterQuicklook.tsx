@@ -2,7 +2,7 @@ import MemberSavedAssessmentReading from '@client/src/features/matter/MemberSave
 import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import { useLibraryPaneScroll } from './useLibraryPaneScroll';
 import { useEffect } from 'react';
-import { ArrowRight, BookOpen } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@client/src/components/ui/button';
 import useEngineeringMatter from '@client/src/features/matter/useEngineeringMatter';
@@ -16,13 +16,18 @@ import OverviewSourceWork from '@client/src/features/matter/OverviewSourceWork';
 import ReferenceWorkNotices from '@client/src/features/matter/ReferenceWorkNotices';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering-matter';
+import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
+import { libraryDateLabel, libraryDistinctBrief, libraryMatterSourceAta } from './library-document-presentation';
+import { LibrarySummaryText } from './LibrarySummaryText';
 import { savedReadingSummary } from '@client/src/features/matter/AssessmentReadingListSummary';
 import { libraryDocumentReadingRoute, libraryMatterReadingRoute } from '@client/src/features/matter/reading-return';
 
 export function LibraryMatterQuicklookContent({
   data,
+  documents = [],
 }: {
   data: EngineeringMatterWorkspaceRead;
+  documents?: CanonicalLibraryDocumentSummary[];
 }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -36,24 +41,26 @@ export function LibraryMatterQuicklookContent({
   return (
     <>
       <header className="atlas-library-inspector-title">
-        <BookOpen aria-hidden="true" />
-        <small>工程事项 · 工作修订 {data.working.currentWorkingRevision}</small>
-        <h2>{problemWork?.headline || summary?.headline || data.matter.title}</h2>
+        <h2>{data.matter.title}</h2>
       </header>
+      <dl className="suite-library-key-facts">
+        <div><dt>事项 ID</dt><dd className="suite-library-object-id" title={data.matter.matterId}>{data.matter.matterId}</dd></div>
+        <div><dt>工作修订</dt><dd>{data.working.currentWorkingRevision}</dd></div>
+        <div><dt>工作保存</dt><dd>{current ? libraryDateLabel(current.createdAt) : '未返回'}</dd></div>
+        <div><dt>关联资料 ATA</dt><dd>{libraryMatterSourceAta(data.matter, documents)}</dd></div>
+      </dl>
       <section className="atlas-library-reading-block atlas-library-summary-block">
-        <h3>{problemWork?.overviewStatus === 'STALE' ? '已保存认识 · 综合待更新' : '当前认识'}</h3>
+        <h3>{problemWork?.overviewStatus === 'STALE' ? '摘要 · 综合待更新' : '摘要'}</h3>
         {problemWork?.overviewStatus === 'STALE' ? <p className="atlas-library-attention">最新问题已更新，以下综合尚未覆盖这些变化。</p> : null}
         {data.working.pendingInputs.length ? <p className="atlas-library-attention">{data.working.pendingInputs.length} 项资料变化待核对。</p> : null}
         {current?.correctionNotices?.map(notice => <p key={notice.attemptRef} className="atlas-library-attention">{notice.unchanged ? '已核对并保留原认识' : notice.correctedWorkRef ? '已有后继更正，当前仍为原版本' : '更正待核对'}：{notice.reason}</p>)}
         {current?.overviewCorrectionNotices?.length ? <p className="atlas-library-attention">本综合存在更正记录，请展开核对其保存结果与覆盖范围。</p> : null}
         {summary && problemWork?.overviewStatus !== 'NOT_AVAILABLE' ? (
-          <p><strong>{summary.listBrief}</strong></p>
+          <LibrarySummaryText key={data.matter.matterId} text={libraryDistinctBrief(summary.listBrief, data.matter.title)} />
         ) : (
           <p>尚无已保存的事项综合认识。</p>
         )}
       </section>
-      <MemberSavedAssessmentReading matterId={data.matter.matterId} members={data.matter.catalog.entries}
-        sessionGeneration={getCanonicalHostClientSessionGeneration()} />
       <ReferenceWorkNotices notices={current?.referenceWorkNotices} />
       <div className="atlas-library-inspector-actions">
         <Button asChild><Link to={`/matters/${encodeURIComponent(data.matter.matterId)}/posture`}>工程态势</Link></Button>
@@ -65,6 +72,8 @@ export function LibraryMatterQuicklookContent({
       </div>
       <details className="atlas-library-details">
         <summary>展开完整工作、依据与后续关注</summary>
+      <MemberSavedAssessmentReading matterId={data.matter.matterId} members={data.matter.catalog.entries}
+        sessionGeneration={getCanonicalHostClientSessionGeneration()} />
       <section className="atlas-library-reading-block">
         <h3>已保存工作 · 我方候选意见</h3>
         {problemWork ? (
@@ -181,11 +190,13 @@ export default function LibraryMatterQuicklook({
   sessionGeneration,
   authenticationRequired,
   onRead,
+  documents = [],
 }: {
   matterId: string;
   sessionGeneration: number;
   authenticationRequired: boolean;
   onRead(data: EngineeringMatterWorkspaceRead | null): void;
+  documents?: CanonicalLibraryDocumentSummary[];
 }) {
   const read = useEngineeringMatter(
     matterId,
@@ -198,9 +209,7 @@ export default function LibraryMatterQuicklook({
   }, [read.data, onRead]);
   return (
     <aside {...paneScroll} className="atlas-library-inspector" aria-label="工程事项快览">
-      <div className="atlas-library-inspector-heading">
-        <span>这件事的工程要点</span>
-      </div>
+      <div className="atlas-library-inspector-heading"><span>事项详情</span></div>
       {read.loading ? <p role="status">正在读取已保存的事项认识…</p> : null}
       {read.error ? (
         <div role="alert">
@@ -217,7 +226,7 @@ export default function LibraryMatterQuicklook({
         </div>
       ) : null}
       {read.data ? (
-        <LibraryMatterQuicklookContent data={read.data} />
+        <LibraryMatterQuicklookContent data={read.data} documents={documents} />
       ) : !read.loading && !read.error ? (
         <p>选择一个事项查看其已保存认识。</p>
       ) : null}

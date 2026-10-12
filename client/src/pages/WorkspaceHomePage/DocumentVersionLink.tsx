@@ -13,18 +13,24 @@ export function DocumentVersionLink({
   version,
   children,
   familyId,
+  compact = false,
 }: {
   version: CanonicalLibraryDocumentVersionSummary;
   children: ReactNode;
   familyId?: string;
+  compact?: boolean;
 }) {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   if (familyId) params.set('familyId', familyId);
   if (params.get('mode') !== 'matter') params.set('selectedDocumentVersionId', version.documentVersionId);
   const inLibrary = location.pathname === '/library';
+  const readingStatus = version.parsing?.status === 'PUBLISHED'
+    ? '解析可读' : version.parsing?.status === 'FAILED' ? '解析未完成'
+      : version.parsing ? '解析处理中' : '查看原件与解析';
   return (
     <Link
+      title={compact ? readingStatus : undefined}
       to={
         inLibrary
           ? libraryDocumentReadingRoute(version.documentVersionId, params)
@@ -45,15 +51,7 @@ export function DocumentVersionLink({
       }}
     >
       {children}
-      <small>
-        {version.parsing?.status === 'PUBLISHED'
-          ? '解析可读'
-          : version.parsing?.status === 'FAILED'
-            ? '解析未完成'
-            : version.parsing
-              ? '解析处理中'
-              : '查看原件与解析'}
-      </small>
+      {!compact ? <small>{readingStatus}</small> : null}
     </Link>
   );
 }

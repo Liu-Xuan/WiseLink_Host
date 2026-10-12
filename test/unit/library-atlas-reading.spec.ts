@@ -22,6 +22,7 @@ jest.mock(
   '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css',
   () => ({}),
 );
+jest.mock('@client/src/features/matter/saved-jobaid-reading.css', () => ({}));
 
 jest.mock('@client/src/api/canonical-host', () => ({
   getCanonicalHostClientSessionGeneration: () => 1,
@@ -145,8 +146,8 @@ describe('Guided Atlas library uses saved business reading', () => {
     );
     expect(html).toContain(rows[0].result!.listBrief);
     expect(html).toContain('全部资料');
-    expect(html).toContain('ATA 32');
-    expect(html).toContain('ATA 34');
+    expect(html).toContain('ATA32');
+    expect(html).toContain('ATA34');
     expect(html).toContain('工程事项');
     expect(html).toContain('评估任务');
     expect(html).toContain('问题已更新，综合尚未覆盖');

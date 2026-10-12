@@ -692,3 +692,43 @@
     margin-inline: -16px;
   }
 }
+
+/* Compact source fields, shared by the list, ATA leaves and matter directory. */
+.suite-library-data-table { min-width: 680px; }
+.suite-library-data-table th:nth-child(1) { width: 27%; }
+.suite-library-data-table th:nth-child(2) { width: 8%; }
+.suite-library-data-table th:nth-child(3) { width: 12%; }
+.suite-library-data-table th:nth-child(4) { width: 10%; }
+.suite-library-data-table th:nth-child(5) { width: 36%; }
+.suite-library-data-table th:nth-child(6) { width: 7%; }
+.suite-library-data-table th { padding: 8px; font-size: 11px; }
+.suite-library-data-table td { padding: 9px 8px; line-height: 1.5; }
+.suite-library-data-table small { margin-top: 2px; }
+.suite-library-data-table .meaning { font-size: 12px; line-height: 1.5; color: var(--wl-ink); }
+.suite-library-summary { display: flex; align-items: flex-start; gap: 4px; }
+.suite-library-summary p { min-width: 0; flex: 1; margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; white-space: pre-line; }
+.suite-library-summary p.is-expanded { display: block; }
+.suite-library-summary button { flex: 0 0 auto; padding: 2px 0; border: 0; color: var(--wl-accent); background: transparent; font: inherit; font-size: 10px; cursor: pointer; }
+.suite-reading-more { margin-top: 3px; font-size: 11px; color: var(--wl-muted); }
+.suite-reading-more > summary { cursor: pointer; padding: 0; font-size: 10px; color: var(--wl-accent); }
+.suite-reading-more p { margin: 4px 0; }
+.suite-library-object-id { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.suite-library-key-facts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; margin: 10px 0 14px; font-size: 12px; }
+.suite-library-key-facts > div { min-width: 0; }
+.suite-library-key-facts dt { color: var(--wl-muted); font-size: 10px; }
+.suite-library-key-facts dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+.library-atlas-home .library-panel-heading { padding-block: 12px; }
+.library-atlas-home .library-quicklook-title { padding-bottom: 0; }
+.library-atlas-home .library-quicklook-title h3,
+.library-atlas-home .atlas-library-inspector-title h2 { font-size: 16px; line-height: 1.5; }
+
+/* Navigation and evidence live in an optional overlay, outside the result flow. */
+.suite-table-toolbar { padding: 8px 10px; gap: 6px; }
+.suite-directory-options { position: relative; flex: 0 0 auto; font-size: 11px; }
+.suite-directory-options > summary { padding: 6px 8px; cursor: pointer; border-radius: 6px; color: var(--wl-muted); }
+.suite-directory-options > summary:hover { background: var(--wl-selected); }
+.suite-directory-options-panel { position: absolute; z-index: 30; right: 0; top: 34px; width: min(420px, calc(100vw - 36px)); max-height: 70dvh; padding: 12px; overflow: auto; background: var(--wl-sheet); border: 1px solid var(--wl-border); border-radius: 8px; box-shadow: var(--wl-sheet-shadow); }
+.suite-directory-options-panel .atlas-library-filters { margin: 0; padding: 8px 0; border: 0; }
+.suite-directory-options-panel .atlas-library-view-switch { display: flex; flex-wrap: wrap; gap: 4px; }
+.suite-directory-options-panel .library-ata-toolbar { padding: 4px 0; }
+.library-ata-results { min-width: 0; }

@@ -120,12 +120,20 @@ export function LibraryDocumentDirectory({
         <label className="suite-table-query"><Search aria-hidden="true" /><Input aria-label={`搜索${label}`} value={searchText} maxLength={200} onChange={event => onSearchTextChange(event.target.value)} placeholder="名称、主题与版本…" /></label>
         <Button type="submit" size="sm" variant="outline" disabled={authenticationRequired}>搜索</Button>
         <Button type="button" variant="ghost" size="icon" onClick={onRefresh} disabled={directory.loading || authenticationRequired} aria-label={`刷新${label}`}><RefreshCw aria-hidden="true" /></Button>
-        {!taskMode ? <Button type="button" variant="ghost" size="sm" onClick={toggleDensity}>{compact ? '标准行距' : '紧凑行距'}</Button> : null}
+        {!taskMode ? <details className="suite-directory-options"><summary>筛选 / 目录</summary>
+          <div className="suite-directory-options-panel">
+            <div className="atlas-library-view-switch"><Button type="button" variant="outline" size="sm" aria-pressed={catalogView === 'list'} onClick={() => setCatalogView('list')}>文档列表</Button><Button type="button" variant="outline" size="sm" aria-pressed={catalogView === 'tree'} onClick={() => setCatalogView('tree')}>分类目录</Button><Button type="button" variant="outline" size="sm" aria-pressed={catalogView === 'ata'} onClick={() => setCatalogView('ata')}>ATA 范围版本</Button></div>
+            <Button type="button" variant="ghost" size="sm" onClick={toggleDensity}>{compact ? '标准行距' : '紧凑行距'}</Button>
+            <LibraryClassificationControls grouping={grouping} onGroupingChange={setGrouping} showGrouping={catalogView !== 'ata'} filters={filters} onFilterChange={onFilterChange ?? (() => undefined)} counts={directory} fleet={fleet} disabled={authenticationRequired || directory.loading || !onFilterChange} />
+            <LibraryAtaHierarchy navigationOnly documents={directory.items.filter(item => item.kind === 'DOCUMENT')}
+              fleetCatalog={fleet?.catalog ?? null} filters={filters} hasMore={Boolean(directory.nextCursor)}
+              scheme={params.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
+              onSchemeChange={scheme => { const next = new URLSearchParams(params); next.set('ataTitleScheme', scheme); setParams(next); }}
+              selectedId={selectedId} selectedDocumentVersionId={selectedDocumentVersionId}
+              onSelectVersion={selectVersion} onSelect={onSelect} />
+          </div>
+        </details> : null}
       </form>
-      {!taskMode ? <details className="atlas-library-filters suite-library-filters"><summary>筛选与目录</summary>
-        <div className="atlas-library-view-switch"><Button variant="outline" aria-pressed={catalogView === 'list'} onClick={() => setCatalogView('list')}>文档列表</Button><Button variant="outline" aria-pressed={catalogView === 'tree'} onClick={() => setCatalogView('tree')}>分类目录</Button><Button variant="outline" aria-pressed={catalogView === 'ata'} onClick={() => setCatalogView('ata')}>机型 / ATA 目录</Button></div>
-        <LibraryClassificationControls grouping={grouping} onGroupingChange={setGrouping} showGrouping={catalogView !== 'ata'} filters={filters} onFilterChange={onFilterChange ?? (() => undefined)} counts={directory} fleet={fleet} disabled={authenticationRequired || directory.loading || !onFilterChange} />
-      </details> : null}
       {!taskMode &&
       !directory.items.length &&
       directory.totalCount !== undefined ? (
@@ -167,7 +175,8 @@ export function LibraryDocumentDirectory({
             fleetCatalog={fleet?.catalog ?? null} filters={filters} hasMore={Boolean(directory.nextCursor)}
             scheme={params.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
             onSchemeChange={scheme => { const next = new URLSearchParams(params); next.set('ataTitleScheme', scheme); setParams(next); }}
-            onSelect={onSelect} />
+            selectedId={selectedId} selectedDocumentVersionId={selectedDocumentVersionId}
+            onSelectVersion={selectVersion} onSelect={onSelect} />
         ) : directory.items.length && !taskMode ? (
           <LibraryHierarchy
             documents={directory.items.filter(

@@ -26,7 +26,7 @@ export function LibraryFleetControls({
       <p className="library-classification-note">
         仅按当前有效机队关系组织正文提及机型，不代表适用性结论。父机型包含其有效子机型提及；子机型仅匹配自身。
       </p>
-      <Button
+      <Button type="button"
         variant="outline"
         size="sm"
         disabled={disabled}
@@ -55,7 +55,7 @@ export function LibraryFleetControls({
                 key={family.fleetFamily}
                 className="library-grouping-controls"
               >
-                <Button
+                <Button type="button"
                   variant="outline"
                   size="sm"
                   disabled={disabled}
@@ -68,7 +68,7 @@ export function LibraryFleetControls({
                   {family.fleetFamily} · 全部子机型
                 </Button>
                 {family.models.map((model) => (
-                  <Button
+                  <Button type="button"
                     key={model}
                     variant="outline"
                     size="sm"

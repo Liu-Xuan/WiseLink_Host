@@ -284,7 +284,7 @@ describe('library document rows and quicklook reading rendering', () => {
     })])], true);
     expect(markup).toContain('is-folded');
     expect(markup).toContain(brief);
-    expect(markup).toContain('展开全文');
+    expect(markup).toContain('aria-label="展开摘要"');
   });
 
   it('shows an accurate absence note instead of a fabricated interpretation', () => {
@@ -317,6 +317,7 @@ describe('library document rows and quicklook reading rendering', () => {
         { location: '/?selectedDocumentVersionId=DV-NEW' },
         createElement(LibraryDocumentDetails, {
           document: documents,
+          assessmentQuicklook: { data: null, loading: false, error: null, accessDenied: false },
           onRefresh: noop,
           onViewTasks: noop,
         }),
@@ -341,6 +342,7 @@ describe('library document rows and quicklook reading rendering', () => {
         { location: '/?selectedDocumentVersionId=DV-NEW' },
         createElement(LibraryDocumentDetails, {
           document: documents,
+          assessmentQuicklook: { data: null, loading: false, error: null, accessDenied: false },
           onRefresh: noop,
           onViewTasks: noop,
         }),

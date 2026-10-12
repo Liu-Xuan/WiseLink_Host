@@ -112,10 +112,10 @@ describe('ATA directory with the synchronous compact title catalog', () => {
   it('switches schemes repeatedly without title requests or another directory read and returns with fresh authorization', async () => {
     jest.mocked(getCanonicalLibraryDocuments).mockResolvedValueOnce(documents()).mockResolvedValueOnce(documents('returned'));
     await act(async () => root.render(createElement(RouterProvider, { router })));
-    await click('JASC 附件标题');
+    await click('JASC');
     expect(text()).toContain('HF Communications System');
     expect(text()).not.toContain('Speech Communications');
-    await click('iSpec 附件标题');
+    await click('iSpec');
     expect(text()).toContain('Speech Communications');
     expect(getCanonicalLibraryDocuments).toHaveBeenCalledTimes(1);
     expect(getCanonicalLibraryFleetCatalog).toHaveBeenCalledTimes(1);
@@ -156,4 +156,25 @@ describe('ATA directory with the synchronous compact title catalog', () => {
     expect(text()).not.toContain('目录暂不可用');
     expect(getCanonicalLibraryDocuments).toHaveBeenCalledTimes(2);
   });
+  it('pins the exact historical ATA leaf on row selection instead of selecting the family current version', async () => {
+    jest.mocked(getCanonicalLibraryDocuments).mockResolvedValueOnce(documents());
+    await act(async () => root.render(createElement(RouterProvider, { router })));
+    const historical = dom.window.document.querySelector<HTMLElement>('tr[data-document-version-id="DV-radio-1"]');
+    expect(historical).not.toBeNull();
+    await act(async () => historical!.click());
+    expect(new URLSearchParams(router.state.location.search).get('selectedDocumentVersionId')).toBe('DV-radio-1');
+    expect(new URLSearchParams(router.state.location.search).get('familyId')).toBe('radio');
+    expect(getCanonicalLibraryDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps navigation in a closed toolbar overlay and makes its actions non-submitting', async () => {
+    jest.mocked(getCanonicalLibraryDocuments).mockResolvedValueOnce(documents());
+    await act(async () => root.render(createElement(RouterProvider, { router })));
+    const options = dom.window.document.querySelector<HTMLDetailsElement>('.suite-directory-options')!;
+    expect(options.open).toBe(false);
+    expect(options.parentElement?.tagName).toBe('FORM');
+    expect(dom.window.document.querySelector('.library-tree-recent-wrapper .library-category-tree')).toBeNull();
+    expect([...options.querySelectorAll('button')].every(button => button.type === 'button')).toBe(true);
+  });
+
 });

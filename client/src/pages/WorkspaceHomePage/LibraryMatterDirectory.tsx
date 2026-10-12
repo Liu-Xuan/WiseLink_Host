@@ -6,7 +6,9 @@ import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import type useMatterDirectory from '@client/src/features/matter/useMatterDirectory';
 import type { useLibraryDocuments } from './useLibraryDocuments';
-import { libraryDateLabel } from './library-document-presentation';
+import { libraryDateLabel, libraryDistinctBrief, libraryMatterSourceAta } from './library-document-presentation';
+import { LibrarySummaryText } from './LibrarySummaryText';
+import { LibraryAtaFacetDirectory } from './LibraryAtaFacetDirectory';
 import LibraryMatterQuicklook from './LibraryMatterQuicklook';
 import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering-matter';
 import { savedReadingSummary } from '@client/src/features/matter/AssessmentReadingListSummary';
@@ -87,17 +89,9 @@ export default function LibraryMatterDirectory({
         {documentDirectory.error ? (
           <p role="alert">资料目录暂不可用，可刷新后重试。</p>
         ) : null}
-        {Object.entries(documentDirectory.ataCounts ?? {}).map(([ata, count]) => (
-          <button
-            type="button"
-            className="suite-folder-row"
-            key={ata}
-            onClick={() => onViewDocuments(ata)}
-          >
-            <span>ATA {ata}</span>
-            <small>{count}</small>
-          </button>
-        ))}
+        <LibraryAtaFacetDirectory counts={documentDirectory.ataCounts ?? {}}
+          selected="" scheme={searchParams.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
+          onSelect={ata => onViewDocuments(ata)} />
         {filteredByWorkItem ? <p>当前按关联任务筛选。</p> : null}
         <div className="suite-folder-separator">阅读范围</div>
         <button type="button" className="suite-folder-row active" onClick={onViewAll}>
@@ -151,17 +145,24 @@ export default function LibraryMatterDirectory({
             {directory.items.length ? ' 保留上次成功读回的目录。' : ''}
           </p>
         ) : null}
-        <div {...paneScroll} className="suite-matter-list-scroll"><table className="suite-library-table" aria-label="工程事项">
-          <thead><tr><th>工程事项</th><th>当前工作</th><th>解读与当前认识</th><th>范围 / 变化</th><th /></tr></thead>
+        <div {...paneScroll} className="suite-matter-list-scroll"><table className="suite-library-table suite-library-data-table" aria-label="工程事项">
+          <thead><tr><th>标题 / 事项 ID</th><th>工作修订</th><th>更新时间</th><th>关联资料 ATA</th><th>摘要</th><th><span className="sr-only">操作</span></th></tr></thead>
           <tbody>{items.map(matter => <tr key={matter.matterId}
             className={matter.matterId === selectedId ? 'selected' : ''}
             data-result-ref={matter.result?.resultRef} data-result-revision={matter.result?.resultRevision}
             tabIndex={0} onClick={() => onSelect(matter.matterId)}
             onKeyDown={event => { if (event.target === event.currentTarget && event.key === 'Enter') onSelect(matter.matterId); }}>
-            <td><div className="suite-doc-cell"><BookOpen aria-hidden="true" /><span><b>{matter.result?.headline || matter.title}</b><small>工程事项</small></span></div></td>
-            <td><b>工作修订 {matter.workingRevision}</b><small>{matter.result?.roundCompletion === 'IN_PROGRESS' ? '分析进行中' : matter.result ? '已有保存认识' : '认识待形成'}</small></td>
-            <td className="meaning">{matter.overallStatus === 'NOT_AVAILABLE' ? '问题正文已保存，综合认识尚未形成。' : matter.result?.listBrief || '尚无已保存的事项综合认识。'}{matter.overallStatus === 'STALE' ? <small className="atlas-library-attention">问题已更新，综合尚未覆盖</small> : null}</td>
-            <td><span>{libraryDateLabel(matter.updatedAt)}</span><small>更新日期 · 具体范围见正文</small></td>
+            <td><div className="suite-doc-cell"><span><b>{matter.title}</b><small className="suite-library-object-id" title={matter.matterId}>{matter.matterId}</small></span></div></td>
+            <td><b>{matter.workingRevision}</b>{matter.result?.roundCompletion === 'IN_PROGRESS' ? <small>分析进行中</small> : null}</td>
+            <td>{libraryDateLabel(matter.updatedAt)}</td>
+            <td title="仅汇集已读回的准确关联资料原文 ATA，不代表事项适用性">{libraryMatterSourceAta(selectedRead?.matter.matterId === matter.matterId ? selectedRead.matter : null,
+              documentDirectory.items.filter(document => document.kind === 'DOCUMENT'))}</td>
+            <td className="meaning"><LibrarySummaryText expandable={Boolean(matter.result?.listBrief) && matter.overallStatus !== 'NOT_AVAILABLE'} text={matter.overallStatus === 'NOT_AVAILABLE'
+              ? '问题正文已保存，综合认识尚未形成。' : matter.result?.listBrief
+                ? libraryDistinctBrief(matter.result.listBrief, matter.title) : '尚无已保存摘要'} />
+              {matter.overallStatus === 'STALE' ? <small className="atlas-library-attention">问题已更新，综合尚未覆盖</small> : null}
+              {matter.overallStatus !== 'NOT_AVAILABLE' && matter.result?.headline && matter.result.headline !== matter.title && matter.result.headline !== matter.result.listBrief
+                ? <details className="suite-reading-more" onClick={event => event.stopPropagation()}><summary>已保存认识</summary><p>{matter.result.headline}</p></details> : null}</td>
             <td><Link to={libraryMatterReadingRoute(matter.matterId, searchParams)} onClick={event => event.stopPropagation()} aria-label={`进入事项：${matter.result?.headline || matter.title}`}>打开 <ArrowRight aria-hidden="true" /></Link></td>
           </tr>)}</tbody>
         </table></div>
@@ -198,9 +199,6 @@ export default function LibraryMatterDirectory({
             {directory.loadingMore ? '正在加载…' : '加载更多事项'}
           </Button>
         ) : null}
-        <p className="atlas-library-footnote">
-          列表与事项详情读取同一份已保存结果。资料措施、候选意见和真实实施记录分别核对。
-        </p>
       </div>
       {selected ? (
         <LibraryMatterQuicklook
@@ -209,6 +207,7 @@ export default function LibraryMatterDirectory({
           sessionGeneration={sessionGeneration}
           authenticationRequired={authenticationRequired}
           onRead={setSelectedRead}
+          documents={documentDirectory.items.filter(document => document.kind === 'DOCUMENT')}
         />
       ) : <aside className="atlas-library-inspector"><h2>快速理解</h2><p>{selectedId ? '所选事项尚未在当前读取范围内返回，可加载更多或核对筛选。' : '选择一个事项，查看当前认识和关键条件。'}</p></aside>}
     </section>

@@ -1,25 +1,66 @@
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { useLibraryPaneScroll } from './useLibraryPaneScroll';
-import { ChevronDown, ChevronRight, FileText } from 'lucide-react';
-import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import type { CanonicalLibraryDocumentSummary, CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import {
-  documentIdentityPresentation,
-  libraryVersionLabel,
+  documentIdentityPresentation, libraryDistinctBrief, libraryPublicationPresentation,
   projectLibraryDocumentReading,
 } from './library-document-presentation';
 import { DocumentVersionLink } from './DocumentVersionLink';
+import { LibrarySummaryText } from './LibrarySummaryText';
+
+export function LibraryDocumentTableHead() {
+  return <thead><tr><th>标题 / 编号</th><th>版本</th><th>颁发时间</th><th>ATA</th><th>摘要</th><th><span className="sr-only">操作</span></th></tr></thead>;
+}
+
+/** The main list and ATA leaves use the same exact-version fields. */
+export function LibraryDocumentVersionRow({ document, version, selected, onSelect, leading }: {
+  document: CanonicalLibraryDocumentSummary;
+  version: CanonicalLibraryDocumentVersionSummary | null;
+  selected?: boolean;
+  onSelect(): void;
+  leading?: ReactNode;
+}) {
+  const identity = documentIdentityPresentation({ documentCode: document.documentCode,
+    extractedMetadata: version?.extractedMetadata });
+  const title = identity.hasDocumentTitle ? identity.documentTitle : identity.documentNumber;
+  const publication = libraryPublicationPresentation(version);
+  const reading = version ? projectLibraryDocumentReading(version) : null;
+  return <tr className={`${selected ? 'selected ' : ''}${version && !version.selectedVersionIsCurrent ? 'suite-version-row' : ''}`}
+    data-document-version-id={version?.documentVersionId} tabIndex={0} onClick={onSelect}
+    onKeyDown={event => { if (event.target === event.currentTarget && event.key === 'Enter') onSelect(); }}>
+    <td><div className="suite-doc-cell">{leading}<span><b>{title}</b>
+      {title !== identity.documentNumber ? <small>{identity.documentNumber}</small> : null}
+      {!identity.hasDocumentTitle ? <small>标题待核</small> : null}
+    </span></div></td>
+    <td><b>{version ? version.businessRevision || '未标注' : '未返回'}</b>
+      {version ? <small>{version.selectedVersionIsCurrent ? '当前' : '历史'}</small> : null}</td>
+    <td title="原文颁发时间；不以修订、生成或入库日期替代">{publication.issueDate}</td>
+    <td title="原文 ATA 观察值，待核">{publication.ata}</td>
+    <td className="meaning">
+      <div data-reading-run-ref={reading?.readingRunRef ?? undefined}
+        data-reading-revision={reading?.readingRevision ?? undefined}>
+        <LibrarySummaryText key={version?.documentVersionId ?? document.familyId}
+          expandable={Boolean(reading?.brief)}
+          text={reading?.brief ? libraryDistinctBrief(reading.brief, title, identity.documentNumber)
+            : reading?.note || '当前版本未返回'} />
+        {reading && (reading.conditionLines.length || reading.headline && reading.headline !== title) ? (
+          <details className="suite-reading-more" onClick={event => event.stopPropagation()}>
+            <summary>{reading.conditionLines.length ? `条件与限制 ${reading.conditionLines.length}` : '完整认识'}</summary>
+            {reading.headline && reading.headline !== title && reading.headline !== reading.brief ? <p>{reading.headline}</p> : null}
+            <div className="suite-conditions">{reading.conditionLines.map(line => <span key={line}>{line}</span>)}</div>
+          </details>
+        ) : null}
+      </div>
+    </td>
+    <td>{version ? <DocumentVersionLink version={version} familyId={document.familyId} compact>打开</DocumentVersionLink> : null}</td>
+  </tr>;
+}
 
 export default function LibraryDocumentRows({
-  documents,
-  selectedId,
-  selectedDocumentVersionId,
-  expandedFamilyIds,
-  compact,
-  sessionGeneration = 0,
-  onSelect,
-  onSelectVersion,
-  onToggleFamily,
+  documents, selectedId, selectedDocumentVersionId, expandedFamilyIds, compact,
+  sessionGeneration = 0, onSelect, onSelectVersion, onToggleFamily,
 }: {
   documents: CanonicalLibraryDocumentSummary[];
   selectedId: string;
@@ -32,110 +73,30 @@ export default function LibraryDocumentRows({
   onToggleFamily(familyId: string): void;
 }) {
   const scroll = useLibraryPaneScroll<HTMLDivElement>('listY', true, sessionGeneration);
-  return (
-    <div {...scroll} className={`suite-library-table-wrap${compact ? ' is-compact' : ''}`}>
-      <table className="suite-library-table">
-        <thead><tr><th>文件与主题</th><th>来源版本</th><th>解读与当前认识</th><th>关键条件与覆盖</th><th /></tr></thead>
-        <tbody>
-          {documents.map((document) => {
-            const current = document.versions.find((version) => version.selectedVersionIsCurrent);
-            const identity = documentIdentityPresentation({ documentCode: document.documentCode,
-              extractedMetadata: current?.extractedMetadata });
-            const expanded = expandedFamilyIds.includes(document.familyId);
-            const currentReading = current ? projectLibraryDocumentReading(current) : null;
-            return (
-              <Fragment key={document.familyId}>
-                <tr className={selectedId === document.familyId && (!selectedDocumentVersionId || selectedDocumentVersionId === current?.documentVersionId) ? 'selected' : ''} tabIndex={0} onClick={() => onSelect(document.familyId)} onKeyDown={(event) => event.target === event.currentTarget && event.key === 'Enter' && onSelect(document.familyId)}>
-                  <td><div className="suite-doc-cell"><Button className="suite-expand-button" variant="ghost" size="icon" aria-label={`${expanded ? '收起' : '展开'}${identity.documentNumber}历史版本`} onClick={(event) => { event.stopPropagation(); onToggleFamily(document.familyId); }}>{expanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}</Button><FileText aria-hidden="true" /><span><b>{identity.documentNumber}</b><small>{identity.documentTitle} · {document.normalizedFamily}</small></span></div></td>
-                  <td><b>{current ? libraryVersionLabel(current) : '当前版本未返回'}</b><small>{document.versions.length} 个可见版本</small></td>
-                  <td className="meaning">
-                    {currentReading?.brief ? (
-                      <div
-                        className="suite-reading"
-                        data-reading-run-ref={currentReading.readingRunRef ?? undefined}
-                        data-reading-revision={currentReading.readingRevision ?? undefined}
-                      >
-                        <b className="suite-reading-headline">{currentReading.headline}</b>
-                        <details onClick={(event) => event.stopPropagation()}>
-                          <summary className="suite-reading-toggle">展开完整解读</summary>
-                          <span className="suite-reading-brief">{currentReading.brief}</span>
-                        </details>
-                      </div>
-                    ) : (
-                      <span className="suite-reading-note">{currentReading?.note ?? '当前版本未返回，暂无版本解读'}</span>
-                    )}
-                  </td>
-                  <td>
-                    {currentReading && currentReading.conditionLines.length ? (
-                      <details onClick={(event) => event.stopPropagation()}>
-                        <summary className="suite-reading-toggle">
-                          {currentReading.conditionLines.length} 项条件与限制
-                        </summary>
-                        <div className="suite-conditions">
-                          {currentReading.conditionLines.map((line) => (
-                            <span key={line}>{line}</span>
-                          ))}
-                        </div>
-                      </details>
-                    ) : (
-                      <span>—</span>
-                    )}
-                    <small>{document.workItemCount} 个评估任务</small>
-                  </td>
-                  <td>{current ? <DocumentVersionLink version={current} familyId={document.familyId}>打开</DocumentVersionLink> : null}</td>
-                </tr>
-                {expanded ? document.versions.filter((version) => !version.selectedVersionIsCurrent).map((version) => {
-                  const versionReading = projectLibraryDocumentReading(version);
-                  const versionIdentity = documentIdentityPresentation({ documentCode: document.documentCode,
-                    extractedMetadata: version.extractedMetadata });
-                  return (
-                  <tr className={selectedId === document.familyId && selectedDocumentVersionId === version.documentVersionId ? 'selected suite-version-row' : 'suite-version-row'} key={version.documentVersionId} tabIndex={0} onClick={() => onSelectVersion(document.familyId, version.documentVersionId)} onKeyDown={(event) => event.target === event.currentTarget && event.key === 'Enter' && onSelectVersion(document.familyId, version.documentVersionId)}>
-                    <td><div className="suite-doc-cell suite-version-cell"><span /><span><b>{versionIdentity.documentNumber}</b><small>{versionIdentity.documentTitle} · {libraryVersionLabel(version)}</small></span></div></td>
-                    <td><span>{version.revisionDate || version.sourceGeneratedDate || '版本日期未标注'}</span><small>{version.originalFilename}</small></td>
-                    <td className="meaning">
-                      {versionReading.brief ? (
-                        <div
-                          className="suite-reading"
-                          data-reading-run-ref={versionReading.readingRunRef ?? undefined}
-                          data-reading-revision={versionReading.readingRevision ?? undefined}
-                        >
-                          <b className="suite-reading-headline">{versionReading.headline}</b>
-                          <details onClick={(event) => event.stopPropagation()}>
-                            <summary className="suite-reading-toggle">展开完整解读</summary>
-                            <span className="suite-reading-brief">{versionReading.brief}</span>
-                          </details>
-                        </div>
-                      ) : (
-                        <span className="suite-reading-note">{versionReading.note}</span>
-                      )}
-                    </td>
-                    <td>
-                      {versionReading.conditionLines.length ? (
-                        <details onClick={(event) => event.stopPropagation()}>
-                          <summary className="suite-reading-toggle">
-                            {versionReading.conditionLines.length} 项条件与限制
-                          </summary>
-                          <div className="suite-conditions">
-                            {versionReading.conditionLines.map((line) => (
-                              <span key={line}>{line}</span>
-                            ))}
-                          </div>
-                        </details>
-                      ) : (
-                        <span>—</span>
-                      )}
-                      <small>{version.workItemCount} 个评估任务</small>
-                    </td>
-                    <td><DocumentVersionLink version={version} familyId={document.familyId}>打开</DocumentVersionLink></td>
-                  </tr>
-                  );
-                }) : null}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
-      {!documents.length ? <p className="suite-library-empty">当前读取范围内没有匹配文档。</p> : null}
-    </div>
-  );
+  return <div {...scroll} className={`suite-library-table-wrap${compact ? ' is-compact' : ''}`}>
+    <table className="suite-library-table suite-library-data-table" aria-label="工程文档">
+      <LibraryDocumentTableHead />
+      <tbody>{documents.map(document => {
+        const current = document.versions.find(version => version.selectedVersionIsCurrent) ?? null;
+        const expanded = expandedFamilyIds.includes(document.familyId);
+        return <Fragment key={document.familyId}>
+          <LibraryDocumentVersionRow document={document} version={current}
+            selected={selectedId === document.familyId && (!selectedDocumentVersionId || selectedDocumentVersionId === current?.documentVersionId)}
+            onSelect={() => onSelect(document.familyId)}
+            leading={<Button className="suite-expand-button" variant="ghost" size="icon"
+              aria-label={`${expanded ? '收起' : '展开'}${document.documentCode}历史版本`}
+              title={`${document.versions.length} 个可见版本`}
+              onClick={event => { event.stopPropagation(); onToggleFamily(document.familyId); }}>
+              {expanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+            </Button>} />
+          {expanded ? document.versions.filter(version => !version.selectedVersionIsCurrent).map(version => (
+            <LibraryDocumentVersionRow key={version.documentVersionId} document={document} version={version}
+              selected={selectedId === document.familyId && selectedDocumentVersionId === version.documentVersionId}
+              onSelect={() => onSelectVersion(document.familyId, version.documentVersionId)} />
+          )) : null}
+        </Fragment>;
+      })}</tbody>
+    </table>
+    {!documents.length ? <p className="suite-library-empty">当前读取范围内没有匹配文档。</p> : null}
+  </div>;
 }

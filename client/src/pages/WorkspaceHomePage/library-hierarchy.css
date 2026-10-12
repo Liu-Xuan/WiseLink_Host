@@ -387,3 +387,25 @@
 .library-upload-receipt a {
   text-decoration: underline;
 }
+
+.library-ata-toolbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12px; }
+.library-ata-toolbar > [role='group'] { display: flex; }
+.library-ata-toolbar button { height: 27px; padding-inline: 8px; font-size: 11px; }
+.library-ata-toolbar button[aria-pressed='true'] { background: var(--wl-selected); }
+.library-ata-guide { margin-left: auto; }
+.library-ata-hierarchy .library-ata-guide > summary { padding: 4px 0; color: var(--wl-muted); font-size: 11px; }
+.library-ata-guide > div { position: absolute; z-index: 5; top: 36px; right: 8px; width: min(420px, calc(100vw - 48px)); padding: 10px 14px; border: 1px solid var(--wl-border); border-radius: 8px; background: var(--wl-sheet); box-shadow: var(--wl-sheet-shadow); font-size: 12px; }
+.library-ata-guide p { margin: 6px 0; }
+.library-ata-hierarchy .library-category-tree > details > summary { padding: 6px 8px; font-size: 12px; }
+.library-ata-hierarchy .library-category-tree > details > summary > small { color: var(--wl-muted); font-size: 10px; }
+.library-ata-hierarchy .library-category-tree:not([data-depth='0']) { margin-inline: 6px 4px; padding-inline-start: 6px; }
+.library-ata-hierarchy .library-category-tree[data-depth='0'] > details { margin-block: 4px; border-radius: 6px; }
+.library-ata-leaf-table { overflow-x: auto; margin: 0 4px 4px; }
+.library-ata-leaf-table .suite-library-data-table { background: var(--wl-sheet); }
+.library-ata-node-more { margin: 2px 12px 6px; }
+.library-ata-hierarchy .library-ata-node-more > summary { padding: 0; color: var(--wl-muted); font-size: 10px; }
+.library-ata-scope-actions { display: flex; gap: 12px; padding: 0 12px 6px; font-size: 11px; color: var(--wl-accent); }
+.library-ata-navigation-docs { list-style: none; margin: 0; padding: 4px 8px; }
+.library-ata-navigation-docs > li { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding-block: 3px; font-size: 11px; }
+.library-ata-navigation-docs button { text-align: left; border: 0; padding: 0; background: transparent; color: var(--wl-ink); font: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.library-ata-navigation-docs a { flex: 0 0 auto; color: var(--wl-accent); }

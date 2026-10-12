@@ -1,5 +1,6 @@
-import type { CanonicalLibraryDocumentVersionSummary, DocumentExtractedMetadata } from '@shared/api.interface';
+import type { CanonicalLibraryDocumentSummary, CanonicalLibraryDocumentVersionSummary, DocumentExtractedMetadata, EngineeringMatterReadModel } from '@shared/api.interface';
 import type { DocumentReadingPreview } from '@shared/document-reading.interface';
+import { metadataValues } from './library-classification';
 
 type LibraryDocumentReading = NonNullable<DocumentReadingPreview['reading']>;
 type LibraryDocumentReadingCoverage = LibraryDocumentReading['coverageStatus'];
@@ -36,6 +37,36 @@ export function documentIdentityPresentation(input: {
     .map((observation) => observation.value.trim()).filter(Boolean) ?? [])];
   const documentTitle = input.documentTitle?.trim() || observedTitles.join(' / ') || '文档标题待核';
   return { documentNumber, documentTitle, hasDocumentTitle: documentTitle !== '文档标题待核' };
+}
+
+/** Publication is an observed source field, not the revision, generation or upload date. */
+export function libraryPublicationPresentation(version: CanonicalLibraryDocumentVersionSummary | null) {
+  return {
+    issueDate: metadataValues(version?.extractedMetadata?.issueDate).join(' / ') || '未返回',
+    ata: metadataValues(version?.extractedMetadata?.ata).join(' / ') || '未返回',
+  };
+}
+
+/** Keep each field once without rewriting the saved meaning. */
+export function libraryDistinctBrief(brief: string, title: string, number = ''): string {
+  const normalized = (value: string) => value.trim().replace(/\s+/gu, ' ');
+  return [title, number].some(value => value && normalized(value) === normalized(brief))
+    ? '与标题 / 编号相同' : brief;
+}
+
+/** Linked-source ATA is not a classification or applicability conclusion about the matter. */
+export function libraryMatterSourceAta(matter: EngineeringMatterReadModel | null,
+  documents: CanonicalLibraryDocumentSummary[]): string {
+  if (!matter) return '未加载';
+  const versionIds = new Set(matter.materials
+    ? matter.materials.flatMap(material => material.disposition === 'INCLUDED' && material.documentVersionId
+      ? [material.documentVersionId] : [])
+    : matter.catalog.entries.map(entry => entry.document.documentVersionId));
+  if (!versionIds.size) return '未返回';
+  const versions = documents.flatMap(document => document.versions).filter(version => versionIds.has(version.documentVersionId));
+  const values = [...new Set(versions.flatMap(version => metadataValues(version.extractedMetadata?.ata)))];
+  const incomplete = new Set(versions.map(version => version.documentVersionId)).size < versionIds.size;
+  return values.length ? `${values.join(' / ')}${incomplete ? ' · 部分已加载' : ''}` : incomplete ? '未加载' : '未返回';
 }
 
 export function libraryDateLabel(value: string): string {

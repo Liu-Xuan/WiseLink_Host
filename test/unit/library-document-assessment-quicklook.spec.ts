@@ -58,5 +58,5 @@ it('opens the exact selected historical document neighborhood rather than the fa
   const html=renderToStaticMarkup(createElement(StaticRouter,{location:`/library?selectedDocumentVersionId=${old.documentVersionId}`},
     createElement(LibraryDocumentDetails,{document:family,assessmentQuicklook:{data:null,loading:false,error:null,accessDenied:false},onRefresh:jest.fn(),onViewTasks:jest.fn()})));
   expect(html).toContain(`scope=document&amp;documentVersionId=${old.documentVersionId}&amp;readerWorkItemId=${old.readerWorkItemId}`);
-  expect(html).toContain('相关资料与时间');
+  expect(html).toContain('文档关系图谱与时间');
 });

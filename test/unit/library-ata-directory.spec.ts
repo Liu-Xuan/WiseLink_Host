@@ -81,7 +81,7 @@ describe('authorized per-version aircraft / ATA browsing projection', () => {
     expect(JSON.stringify(document)).toBe(before);
     const html = renderToStaticMarkup(createElement(StaticRouter, null, createElement(LibraryAtaHierarchy, {
       documents: [document], fleetCatalog: fleet, filters: {}, hasMore: false, scheme: 'ispec',
-      onSchemeChange: jest.fn(), onSelect: jest.fn(),
+      onSchemeChange: jest.fn(), onSelect: jest.fn(), navigationOnly: true,
     })));
     expect(html).toContain('原始标注 4600-00');
     expect(html).not.toContain('ATA46');
@@ -96,7 +96,7 @@ describe('authorized per-version aircraft / ATA browsing projection', () => {
   it('renders title provenance, exact historical links and read-only return state', () => {
     const params = new URLSearchParams('catalogView=ata&ataTitleScheme=jasc&fleetFamily=737MAX&search=radio');
     const html = renderToStaticMarkup(createElement(StaticRouter, { location: `/library?${params}` }, createElement(LibraryAtaHierarchy, {
-      documents: [classified()], fleetCatalog: fleet, filters: {}, hasMore: true, scheme: 'ispec', onSchemeChange: jest.fn(), onSelect: jest.fn(),
+      documents: [classified()], fleetCatalog: fleet, filters: {}, hasMore: true, scheme: 'ispec', onSchemeChange: jest.fn(), onSelect: jest.fn(), navigationOnly: true,
     })));
     expect(html).toContain('机型 → ATA2 → ATA4 → 文档版本');
     expect(html).toContain('COMMUNICATIONS');
