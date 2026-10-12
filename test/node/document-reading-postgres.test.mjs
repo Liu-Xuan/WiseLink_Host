@@ -14,6 +14,8 @@ const { DocumentReadingRunRepository } = require('../../server/modules/canonical
 const { DocumentActivityRunRepository } = require('../../server/modules/canonical-host/document-activity-run.repository.ts');
 const databaseUrl = process.env.DOCUMENT_READING_TEST_DATABASE_URL;
 const scope = { tenantId: 'tenant-test', actorUserId: 'actor-one', documentVersionId: 'DV-test' };
+const executionModel = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3', providerKind: 'BUILT_IN',
+  settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z' };
 const source = { parseRunId: 'PR-test', parseRevision: 1, semanticRevision: 1, manifestSha256: 'a'.repeat(64),
   expectedRevision: 0 };
 const range = { offset: 0, unitIds: ['unit-test'], anchorIds: ['a1'], nextOffset: null };
@@ -57,7 +59,7 @@ test('independent document reading PostgreSQL request, leases, CAS, immutable re
 
     const activityRepository = new DocumentActivityRunRepository(drizzle(one.client));
     const activityCommand = { candidate: { schemaVersion: 'wiselink.document.activity-candidate.v1', statements: [] }, producer: command.producer };
-    const activityRun = await activityRepository.begin(scope, { ...source, requestId: 'existing-activity', selection: { sectionIds: ['section-test'] } });
+    const activityRun = await activityRepository.begin(scope, { ...source, requestId: 'existing-activity', executionModel, selection: { sectionIds: ['section-test'] } });
     const activityFence = await activityRepository.claim(scope, activityRun.runRef, 'activity-producer');
     const activitySaved = await activityRepository.save(scope, activityFence, activityCommand, (run, revision) => ({
       schemaVersion: 'wiselink.document.activity-candidate.v1', candidateOnly: true, runRef: run.runRef,

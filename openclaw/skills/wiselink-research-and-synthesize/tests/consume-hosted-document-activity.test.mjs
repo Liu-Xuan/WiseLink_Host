@@ -1060,3 +1060,42 @@ test('one HTTP400 records only fixed safe categories and an UNKNOWN replay prese
     assert.ok(!calls.some(([, args]) => ['ACTIVITY_SAVE', 'ACTIVITY_FAIL'].includes(args.action)));
   });
 });
+
+async function legacyResultRecords() {
+  const records = new Map();
+  const checkpointFactory = async () => ({ readOptional: async name => structuredClone(records.get(name) ?? null),
+    write: async (name, value) => records.set(name, structuredClone(value)) });
+  const first = hostMock();
+  await consumeHostedDocumentActivity(baseOptions(), { ...first.deps, checkpointFactory });
+  for (const record of records.values()) delete record.executionModel;
+  return { records, checkpointFactory };
+}
+function legacyResultHost() {
+  const historical = () => { const row = summary(); delete row.executionModel; return row; };
+  return hostMock({ activityStatus: historical, claim: { ...historical(), fence: FENCE } });
+}
+for (const step of ['source.result', 'model.started', 'model.result', 'save.started'])
+  test(`Host snapshot absence rejects a local-only ${step} pin without dispatch or SAVE`, async () => {
+    const { records, checkpointFactory } = await legacyResultRecords();
+    records.get(step).executionModel = structuredClone(EXECUTION_MODEL);
+    const before = JSON.stringify(records.get(step));
+    const legacy = legacyResultHost();
+    await assert.rejects(consumeHostedDocumentActivity(baseOptions(), { ...legacy.deps, checkpointFactory }),
+      /ACTIVITY_EXECUTION_MODEL_BINDING_MISMATCH/);
+    assert.equal(legacy.modelInputs.length, 0);
+    assert.ok(!legacy.calls.some(([, args]) => args.action === 'ACTIVITY_SAVE'));
+    assert.equal(JSON.stringify(records.get(step)), before);
+  });
+
+test('both legacy snapshot absences preserve zero-model existing-result SAVE recovery without backfill', async () => {
+  const { records, checkpointFactory } = await legacyResultRecords();
+  records.delete('save.started');
+  const beforeModel = JSON.stringify(records.get('model.result'));
+  const legacy = legacyResultHost();
+  const result = await consumeHostedDocumentActivity(baseOptions(), { ...legacy.deps, checkpointFactory });
+  assert.equal(result.status, 'ACTIVITY_WORK_SAVED'); assert.equal(result.modelInvocations, 0);
+  assert.equal(legacy.modelInputs.length, 0);
+  assert.equal(legacy.calls.filter(([, args]) => args.action === 'ACTIVITY_SAVE').length, 1);
+  assert.equal(JSON.stringify(records.get('model.result')), beforeModel);
+  for (const record of records.values()) assert.equal(Object.hasOwn(record, 'executionModel'), false);
+});

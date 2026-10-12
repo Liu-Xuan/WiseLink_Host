@@ -771,8 +771,11 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
   } : {};
   checkpointReadComplete = true;
   modelDispatched = persisted.modelStarted != null || persisted.modelResult != null;
-  for (const record of Object.values(persisted))
+  for (const record of Object.values(persisted)) {
     assertCheckpointBinding(record, documentVersionId, runRef, checkpointSchema, checkpointPins);
+    if (record != null && !isDeepStrictEqual(record.executionModel, executionModel))
+      throw new Error('ACTIVITY_EXECUTION_MODEL_BINDING_MISMATCH');
+  }
   if (persisted.saveStarted != null && persisted.modelResult == null)
     throw new Error('ACTIVITY_CHECKPOINT_STATE_INVALID');
   if (persisted.modelResult != null && persisted.source == null)

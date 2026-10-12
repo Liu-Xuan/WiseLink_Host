@@ -15,6 +15,8 @@ import {
 } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-document-activity-model.mjs';
 import { activityV2ProductionContract, DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2, DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/document-activity-model-contract.mjs';
 import { callJsonTool, validateHostToolMetadata } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
+import { ACTIVITY_MODEL_EVIDENCE_VIEW_VERSION, restoreActivityModelEvidenceView } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/activity-model-evidence-view.mjs';
+import { canonicalSha256 } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
 
 process.env.TS_NODE_PROJECT = 'tsconfig.node.json';
 process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({ module: 'CommonJS', moduleResolution: 'node' });
@@ -28,6 +30,9 @@ const { DocumentActivityRuntimeService } = require('../../server/modules/canonic
 const { buildDocumentSemanticMap } = require('../../server/modules/document-management/src/hosted/nest/document-semantic-map.ts');
 const { GENERIC_SEMANTIC_PROFILE } = require('../../server/modules/document-management/src/hosted/nest/document-semantic-profile.ts');
 const { originalFixture } = require('../unit/document-parsing/fixtures/document-original.fixture.ts');
+
+const EXECUTION_MODEL = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3', providerKind: 'BUILT_IN',
+  settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z' };
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const FENCE = Object.freeze({ leaseOwner: 'synthetic-producer',
@@ -46,13 +51,14 @@ function fixture({ sourceText = '🛠️\r\nCafe\u0301 was measured once at 12 k
   const scope = { tenantId: 'tenant-synthetic', actorUserId: 'actor-synthetic', documentVersionId: original.binding.documentVersionId };
   const row = { runRef, requestId: `request-${runRef}`, documentVersionId: scope.documentVersionId,
     parseRunId: original.binding.parseRunId, parseRevision: original.binding.parseRevision, semanticRevision: 1,
-    manifestSha256: artifact.sha256, candidateSchemaVersion: DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2,
+    manifestSha256: artifact.sha256, executionModel: EXECUTION_MODEL, candidateSchemaVersion: DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2,
     productionContract: activityV2ProductionContract(selectionMode ? DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA : DOCUMENT_ACTIVITY_QUOTE_OFFSETS_SCHEMA), selection: { sectionIds: [map.sections[0].sectionId] }, expectedRevision: 0,
     candidateRevision: null, status: 'QUEUED', deadline: new Date(Date.now() + 60_000).toISOString(),
     deliveredRanges: [], result: null, saveCommand: null, errorCode: null };
   let saveAttempts = 0;
   let commits = 0;
   const runs = {
+    readRequest: async () => null,
     begin: async (_scope, input) => { Object.assign(row,input); return structuredClone(row); },
     expire: async () => {},
     readRun: async () => structuredClone(row),
@@ -77,7 +83,7 @@ function fixture({ sourceText = '🛠️\r\nCafe\u0301 was measured once at 12 k
     { readDocumentOriginal: async () => loaded },
     { read: async () => map },
     { status: async () => ({}) },
-    runs,
+    runs, { captureForNewTask: async () => EXECUTION_MODEL },
   );
   const documentWork = { run: async input => {
     assert.equal(input.action, 'STATUS');
@@ -115,11 +121,14 @@ function inMemoryCheckpoint(records) {
 
 
 function modelFixture(f, { selectionMode = true, afterModel = () => {}, records = new Map(), loseSaveReply = false } = {}) {
-  let calls = 0; let lost = false; const actions = [];
+  let calls = 0; let lost = false; let expectedInputHash; const actions = [];
   const requestGateway = async (_endpoint, init) => {
     calls++;
+    assert.equal(init.headers['x-openclaw-model'], EXECUTION_MODEL.modelRef);
     const request = JSON.parse(init.body); const text = request.messages.at(-1).content;
-    const input = JSON.parse(text.slice(text.indexOf('INPUT:\n')+'INPUT:\n'.length));
+    const delivered = JSON.parse(text.slice(text.indexOf('INPUT:\n')+'INPUT:\n'.length));
+    const input = delivered.schemaVersion === ACTIVITY_MODEL_EVIDENCE_VIEW_VERSION ? restoreActivityModelEvidenceView(delivered, expectedInputHash) : delivered;
+    assert.equal(canonicalSha256(input), expectedInputHash);
     assert.equal(input.candidateSchemaVersion,DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA_V2);
     assert.deepEqual(input.productionContract,f.row.productionContract);
     assert.equal(input.sourceContext.schemaVersion,f.row.productionContract.sourceContextVersion);
@@ -146,9 +155,9 @@ function modelFixture(f, { selectionMode = true, afterModel = () => {}, records 
     actions.push(args.action); const reply=await callJsonTool(f.client,name,args,options,3);
     if(loseSaveReply&&!lost&&(args.action==='ACTIVITY_SAVE'||args.action==='ACTIVITY_SAVE_SELECTION')){lost=true;throw new Error('SYNTHETIC_SAVE_RESPONSE_LOST');}
     return reply;
-  },checkpointFactory:inMemoryCheckpoint(records),invokeModel:(input,hooks)=>invokeHostedDocumentActivityModel(input,{
+  },checkpointFactory:inMemoryCheckpoint(records),invokeModel:(input,hooks)=>{ expectedInputHash=canonicalSha256(input); return invokeHostedDocumentActivityModel(input,{
     gatewayUrl:'https://synthetic-gateway.invalid',gatewayToken:'synthetic-test-only',agentId:'synthetic-agent',configuredModelVersion:'synthetic-v2-model',
-    timeoutMs:5000,...hooks},{requestGateway})};
+    registeredModelRefs:[EXECUTION_MODEL.modelRef],timeoutMs:5000,...hooks},{requestGateway}); }};
   return {dependencies,records,actions,get modelCalls(){return calls;}};
 }
 const SOURCE = '😀 Supplier plans release in Q4 2026; expected approval March 2027. Actual installation TBD. LN 2024-2026. Do not install before prerequisite.';

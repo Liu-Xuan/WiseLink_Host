@@ -23,6 +23,9 @@ const { originalFixture } = require('../unit/document-parsing/fixtures/document-
 // Constructed original + in-memory repository. The source selector, candidate
 // validator, runtime service, MCP SDK/HTTP, gateway HTTP and disk checkpoints
 // are actual implementations. This does not claim production or DB acceptance.
+const EXECUTION_MODEL = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3', providerKind: 'BUILT_IN',
+  settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z' };
+
 test('consumer and real Host runtime exchange exact table anchors over MCP, then recover without another model', async () => {
   const original = originalFixture();
   original.source.units[0].kind = 'heading';
@@ -33,7 +36,7 @@ test('consumer and real Host runtime exchange exact table anchors over MCP, then
   const scope = { tenantId: 'tenant-test', actorUserId: 'actor-test', documentVersionId: original.binding.documentVersionId };
   const row = { runRef: 'DAR-interop', requestId: 'request-interop', documentVersionId: scope.documentVersionId,
     parseRunId: original.binding.parseRunId, parseRevision: original.binding.parseRevision, semanticRevision: 1,
-    manifestSha256: artifact.sha256, selection: { sectionIds: [map.sections[0].sectionId] }, expectedRevision: 0,
+    manifestSha256: artifact.sha256, executionModel: EXECUTION_MODEL, selection: { sectionIds: [map.sections[0].sectionId] }, expectedRevision: 0,
     candidateRevision: null, status: 'QUEUED', deadline: new Date(Date.now() + 60_000).toISOString(), deliveredRanges: [], result: null, saveCommand: null, errorCode: null };
   let saves = 0;
   let modelCalls = 0;
@@ -56,7 +59,7 @@ test('consumer and real Host runtime exchange exact table anchors over MCP, then
   };
   const activity = new DocumentActivityRuntimeService(
     { authorizeDocumentWork: async () => scope }, { withActorScope: async (_actor, fn) => fn() },
-    { readDocumentOriginal: async () => loaded }, { read: async () => map }, { status: async () => ({}) }, runs);
+    { readDocumentOriginal: async () => loaded }, { read: async () => map }, { status: async () => ({}) }, runs, { captureForNewTask: async () => EXECUTION_MODEL });
   const documentWork = { run: async input => {
     assert.equal(input.action, 'STATUS');
     return { nextActivityRunRef: row.result ? null : row.runRef };
@@ -91,7 +94,7 @@ test('consumer and real Host runtime exchange exact table anchors over MCP, then
       callTool: connection.callTool,
       checkpointFactory: ({ runRef }) => createCheckpointStore(join(directory, runRef)),
       invokeModel: (input, hooks) => invokeHostedDocumentActivityModel(input, { gatewayUrl: url,
-        gatewayToken: 'fixture-only', configuredModelVersion: 'fixture-model', ...hooks }),
+        gatewayToken: 'fixture-only', registeredModelRefs: [EXECUTION_MODEL.modelRef], configuredModelVersion: 'fixture-model', ...hooks }),
     };
     const options = { documentVersionId: scope.documentVersionId, runRef: row.runRef, leaseOwner: fence.leaseOwner, readLimit: 1 };
     const first = await consumeHostedDocumentActivity(options, dependencies);

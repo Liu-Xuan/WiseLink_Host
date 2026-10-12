@@ -28,6 +28,9 @@ const { buildDocumentSemanticMap } = require('../../server/modules/document-mana
 const { GENERIC_SEMANTIC_PROFILE } = require('../../server/modules/document-management/src/hosted/nest/document-semantic-profile.ts');
 const { originalFixture } = require('../unit/document-parsing/fixtures/document-original.fixture.ts');
 
+const EXECUTION_MODEL = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM5.3', providerKind: 'BUILT_IN',
+  settingsRevision: 1, selectedAt: '2026-10-12T00:00:00.000Z' };
+
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const FENCE = Object.freeze({ leaseOwner: 'synthetic-producer',
   leaseToken: '0f23e82b-2b1e-46ba-b62b-9e9a2ec62ca0', leaseGeneration: 1 });
@@ -45,12 +48,13 @@ function fixture({ sourceText = '🛠️\r\nCafe\u0301 was measured once at 12 k
   const scope = { tenantId: 'tenant-synthetic', actorUserId: 'actor-synthetic', documentVersionId: original.binding.documentVersionId };
   const row = { runRef, requestId: `request-${runRef}`, documentVersionId: scope.documentVersionId,
     parseRunId: original.binding.parseRunId, parseRevision: original.binding.parseRevision, semanticRevision: 1,
-    manifestSha256: artifact.sha256, selection: { sectionIds: [map.sections[0].sectionId] }, expectedRevision: 0,
+    manifestSha256: artifact.sha256, executionModel: EXECUTION_MODEL, selection: { sectionIds: [map.sections[0].sectionId] }, expectedRevision: 0,
     candidateRevision: null, status: 'QUEUED', deadline: new Date(Date.now() + 60_000).toISOString(),
     deliveredRanges: [], result: null, saveCommand: null, errorCode: null };
   let saveAttempts = 0;
   let commits = 0;
   const runs = {
+    readRequest: async () => null,
     expire: async () => {},
     readRun: async () => structuredClone(row),
     claim: async () => { row.status = 'RUNNING'; return { ...FENCE }; },
@@ -74,7 +78,7 @@ function fixture({ sourceText = '🛠️\r\nCafe\u0301 was measured once at 12 k
     { readDocumentOriginal: async () => loaded },
     { read: async () => map },
     { status: async () => ({}) },
-    runs,
+    runs, { captureForNewTask: async () => EXECUTION_MODEL },
   );
   const documentWork = { run: async input => {
     assert.equal(input.action, 'STATUS');
@@ -114,7 +118,7 @@ function modelDependencies(f, { text, mode = 'selection', records = new Map(), c
   let gatewayCalls = 0;
   const toolActions = [];
   const requestGateway = async (endpoint, init) => {
-    gatewayCalls++;
+    gatewayCalls++; assert.equal(init.headers['x-openclaw-model'], EXECUTION_MODEL.modelRef);
     assert.equal(new URL(endpoint).pathname, '/v1/chat/completions');
     assert.equal(init.method, 'POST');
     const body = JSON.parse(init.body);
@@ -166,7 +170,7 @@ function modelDependencies(f, { text, mode = 'selection', records = new Map(), c
     invokeModel: (input, hooks) => invokeHostedDocumentActivityModel(input, {
       gatewayUrl: 'https://synthetic-gateway.invalid', gatewayToken: 'synthetic-token',
       agentId: 'synthetic-test-agent', configuredModelVersion: 'synthetic-model', timeoutMs: 5000,
-      ...hooks,
+      registeredModelRefs: [EXECUTION_MODEL.modelRef], ...hooks,
     }, { requestGateway }),
   };
   return { dependencies, records, toolActions, get gatewayCalls() { return gatewayCalls; } };
