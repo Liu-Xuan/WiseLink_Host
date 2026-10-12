@@ -1091,9 +1091,13 @@ for (const step of ['source.result', 'model.started', 'model.result', 'save.star
 test('both legacy snapshot absences preserve zero-model existing-result SAVE recovery without backfill', async () => {
   const { records, checkpointFactory } = await legacyResultRecords();
   records.delete('save.started');
-  // An older immutable completion makes a timestamp rewrite fail deterministically,
-  // rather than occasionally passing when both runs finish in the same millisecond.
-  records.get('model.result').finishedAt = '2001-01-01T00:00:00.000Z';
+  // A legal historical pair from this same synthetic snapshot makes a rewrite
+  // fail deterministically, without inventing a completion before model start.
+  const originalCompletedAt = Date.parse(records.get('model.result').finishedAt);
+  records.get('model.started').startedAt = new Date(originalCompletedAt - 2000).toISOString();
+  records.get('model.result').finishedAt = new Date(originalCompletedAt - 1000).toISOString();
+  assert.ok(Date.parse(records.get('model.started').startedAt) < Date.parse(records.get('model.result').finishedAt));
+  const beforeStarted = JSON.stringify(records.get('model.started'));
   const beforeModel = JSON.stringify(records.get('model.result'));
   const legacy = legacyResultHost();
   const result = await consumeHostedDocumentActivity(baseOptions(), { ...legacy.deps, checkpointFactory });
@@ -1101,6 +1105,7 @@ test('both legacy snapshot absences preserve zero-model existing-result SAVE rec
   assert.equal(legacy.modelInputs.length, 0);
   assert.equal(legacy.calls.filter(([, args]) => args.action === 'ACTIVITY_SAVE').length, 1);
   assert.equal(JSON.stringify(records.get('model.result')), beforeModel);
+  assert.equal(JSON.stringify(records.get('model.started')), beforeStarted);
   for (const record of records.values()) assert.equal(Object.hasOwn(record, 'executionModel'), false);
 });
 
