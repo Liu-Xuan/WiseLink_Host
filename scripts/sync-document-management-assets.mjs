@@ -21,9 +21,18 @@ const root = resolve(import.meta.dirname, '..');
 const execFileAsync = promisify(execFile);
 
 /** Build-checkout facts only. A dirty or unavailable checkout has no proven commit. */
-export async function writeServerBuildFingerprint(buildRoot) {
+export async function writeServerBuildFingerprint(
+  buildRoot,
+  { requireProvenance = false } = {},
+) {
   let sourceCommit = 'UNAVAILABLE';
   let buildTime = 'UNAVAILABLE';
+  let failureReason;
+  let phase = 'CHECKOUT_ROOT';
+  const reject = (reason) => {
+    failureReason = reason;
+    throw new Error(reason);
+  };
   try {
     const environment = { ...process.env };
     // These controls can substitute a foreign repository, index, objects, or Git configuration.
@@ -35,7 +44,7 @@ export async function writeServerBuildFingerprint(buildRoot) {
         ),
       )
     ) {
-      throw new Error('AMBIGUOUS_BUILD_GIT_ENVIRONMENT');
+      reject('GIT_ENVIRONMENT_REDIRECT_PRESENT');
     }
     const checkoutRoot = await realpath(buildRoot);
     const options = {
@@ -45,15 +54,19 @@ export async function writeServerBuildFingerprint(buildRoot) {
       timeout: 5000,
       maxBuffer: 64 * 1024,
     };
+    phase = 'GIT_ROOT';
     const actualRoot = (
       await execFileAsync('git', ['rev-parse', '--show-toplevel'], options)
     ).stdout.trim();
+    phase = 'GIT_ROOT_REALPATH';
     if ((await realpath(actualRoot)) !== checkoutRoot) {
-      throw new Error('BUILD_GIT_ROOT_MISMATCH');
+      reject('GIT_ROOT_MISMATCH');
     }
+    phase = 'GIT_HEAD';
     const head = (
       await execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], options)
     ).stdout.trim();
+    phase = 'GIT_STATUS';
     const status = (
       await execFileAsync(
         'git',
@@ -62,23 +75,25 @@ export async function writeServerBuildFingerprint(buildRoot) {
       )
     ).stdout;
     // Detect a checkout change while collecting provenance; never use deployment env or client fields.
+    phase = 'GIT_FINAL_HEAD';
     const finalHead = (
       await execFileAsync('git', ['rev-parse', '--verify', 'HEAD'], options)
     ).stdout.trim();
+    phase = 'GIT_FINAL_ROOT';
     const finalRoot = (
       await execFileAsync('git', ['rev-parse', '--show-toplevel'], options)
     ).stdout.trim();
-    if (
-      /^[a-f0-9]{40}$/u.test(head) &&
-      head === finalHead &&
-      status === '' &&
-      (await realpath(finalRoot)) === checkoutRoot
-    ) {
-      sourceCommit = head;
-      buildTime = new Date().toISOString();
-    }
-  } catch {
-    // The artifact is still explicitly written as unavailable, replacing any prior build's stamp.
+    if (!/^[a-f0-9]{40}$/u.test(head)) reject('GIT_HEAD_INVALID');
+    if (head !== finalHead) reject('GIT_HEAD_CHANGED');
+    if (status !== '') reject('GIT_WORKTREE_DIRTY');
+    phase = 'GIT_FINAL_ROOT_REALPATH';
+    if ((await realpath(finalRoot)) !== checkoutRoot)
+      reject('GIT_ROOT_CHANGED');
+    sourceCommit = head;
+    buildTime = new Date().toISOString();
+  } catch (error) {
+    // Never include stderr, paths, environment values or exception text in diagnostics.
+    failureReason ??= fingerprintFailureReason(phase, error);
   }
   const metadata = {
     schemaVersion: 'wiselink.server-build-fingerprint.v1',
@@ -99,7 +114,28 @@ export async function writeServerBuildFingerprint(buildRoot) {
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
+  if (failureReason) {
+    process.stderr.write(`SERVER_BUILD_FINGERPRINT:${failureReason}\n`);
+    if (requireProvenance) {
+      const error = new Error(
+        `SERVER_BUILD_PROVENANCE_REQUIRED:${failureReason}`,
+      );
+      error.code = 'SERVER_BUILD_PROVENANCE_REQUIRED';
+      throw error;
+    }
+  }
   return metadata;
+}
+
+function fingerprintFailureReason(phase, error) {
+  if (phase === 'CHECKOUT_ROOT' || phase.endsWith('_REALPATH'))
+    return 'BUILD_CHECKOUT_UNAVAILABLE';
+  if (error?.code === 'ENOENT') return 'GIT_EXECUTABLE_MISSING';
+  if (error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER')
+    return `${phase}_OUTPUT_LIMIT`;
+  if (error?.killed && error?.signal === 'SIGTERM') return `${phase}_TIMEOUT`;
+  // The fixed phase distinguishes unavailable Git/repository facts without parsing private stderr.
+  return `${phase}_UNAVAILABLE`;
 }
 
 async function syncDocumentManagementAssets() {
@@ -198,7 +234,9 @@ async function syncDocumentManagementAssets() {
     allowCrossPlatformCopy: true,
   });
 
-  const serverBuildFingerprint = await writeServerBuildFingerprint(root);
+  const serverBuildFingerprint = await writeServerBuildFingerprint(root, {
+    requireProvenance: true,
+  });
 
   process.stdout.write(
     `${JSON.stringify({
@@ -232,5 +270,11 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  await syncDocumentManagementAssets();
+  try {
+    await syncDocumentManagementAssets();
+  } catch (error) {
+    if (error?.code !== 'SERVER_BUILD_PROVENANCE_REQUIRED') throw error;
+    // The writer already emitted the bounded reason; do not print a path-bearing stack.
+    process.exitCode = 1;
+  }
 }

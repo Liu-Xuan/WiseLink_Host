@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -23,6 +23,8 @@ const U0_COMMIT = 'fa69ada08265934951df53c7a61a3ccdb8cb2900' as const;
 const U0_MANIFEST_SHA256 =
   '730baa88e7254bac6d3808ca2ddbfb1824c5891d6ce3d6d29ce177431cd5ffc0' as const;
 
+const fingerprintLogger = new Logger('ServerBuildFingerprint');
+
 /** Only the immutable server package asset can identify this build, never runtime env or .git. */
 export async function readServerBuildFingerprint(
   path = resolve(
@@ -40,32 +42,62 @@ export async function readServerBuildFingerprint(
     serverBuildTime: 'UNAVAILABLE',
     fingerprintSource: 'UNAVAILABLE' as const,
   };
-  try {
-    const bytes = await readFile(path);
-    if (bytes.byteLength > 1024) return unavailable;
-    const value: unknown = JSON.parse(bytes.toString('utf8'));
-    if (!value || typeof value !== 'object' || Array.isArray(value))
-      return unavailable;
-    const metadata = value as Record<string, unknown>;
-    if (
-      Object.keys(metadata).length !== 3 ||
-      metadata.schemaVersion !== 'wiselink.server-build-fingerprint.v1' ||
-      typeof metadata.sourceCommit !== 'string' ||
-      !/^[a-f0-9]{40}$/u.test(metadata.sourceCommit) ||
-      typeof metadata.buildTime !== 'string' ||
-      !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u.test(metadata.buildTime) ||
-      !Number.isFinite(Date.parse(metadata.buildTime)) ||
-      new Date(metadata.buildTime).toISOString() !== metadata.buildTime
-    )
-      return unavailable;
-    return {
-      deployedCommit: metadata.sourceCommit,
-      serverBuildTime: metadata.buildTime,
-      fingerprintSource: 'SERVER_BUILD_ARTIFACT',
-    };
-  } catch {
+  const reject = (
+    reason:
+      | 'MISSING'
+      | 'READ_FAILED'
+      | 'OVERSIZED'
+      | 'INVALID_JSON'
+      | 'INVALID_SCHEMA'
+      | 'PROVENANCE_UNAVAILABLE',
+  ) => {
+    fingerprintLogger.warn(`SERVER_BUILD_FINGERPRINT:${reason}`);
     return unavailable;
+  };
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(path);
+  } catch (error) {
+    return reject(
+      (error as NodeJS.ErrnoException)?.code === 'ENOENT'
+        ? 'MISSING'
+        : 'READ_FAILED',
+    );
   }
+  if (bytes.byteLength > 1024) return reject('OVERSIZED');
+  let value: unknown;
+  try {
+    value = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    return reject('INVALID_JSON');
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return reject('INVALID_SCHEMA');
+  const metadata = value as Record<string, unknown>;
+  if (
+    Object.keys(metadata).length !== 3 ||
+    metadata.schemaVersion !== 'wiselink.server-build-fingerprint.v1'
+  )
+    return reject('INVALID_SCHEMA');
+  if (
+    metadata.sourceCommit === 'UNAVAILABLE' &&
+    metadata.buildTime === 'UNAVAILABLE'
+  )
+    return reject('PROVENANCE_UNAVAILABLE');
+  if (
+    typeof metadata.sourceCommit !== 'string' ||
+    !/^[a-f0-9]{40}$/u.test(metadata.sourceCommit) ||
+    typeof metadata.buildTime !== 'string' ||
+    !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u.test(metadata.buildTime) ||
+    !Number.isFinite(Date.parse(metadata.buildTime)) ||
+    new Date(metadata.buildTime).toISOString() !== metadata.buildTime
+  )
+    return reject('INVALID_SCHEMA');
+  return {
+    deployedCommit: metadata.sourceCommit,
+    serverBuildTime: metadata.buildTime,
+    fingerprintSource: 'SERVER_BUILD_ARTIFACT',
+  };
 }
 
 @Injectable()

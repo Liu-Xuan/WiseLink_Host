@@ -1,4 +1,5 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { Logger } from '@nestjs/common';
 import {
   mkdtempSync,
   mkdirSync,
@@ -48,16 +49,21 @@ function stamp(root: string) {
     'dist/server/runtime-assets/host-build/build-fingerprint.json',
   );
 }
-function runWriter(root: string, environment: NodeJS.ProcessEnv = {}) {
+function runWriter(
+  root: string,
+  environment: NodeJS.ProcessEnv = {},
+  requireProvenance = false,
+) {
   return JSON.parse(
     execFileSync(
       process.execPath,
       [
         '--input-type=module',
         '-e',
-        'const {writeServerBuildFingerprint}=await import(process.argv[1]); console.log(JSON.stringify(await writeServerBuildFingerprint(process.argv[2])));',
+        'const {writeServerBuildFingerprint}=await import(process.argv[1]); console.log(JSON.stringify(await writeServerBuildFingerprint(process.argv[2], { requireProvenance: process.argv[3] === "true" })));',
         moduleUrl,
         root,
+        String(requireProvenance),
       ],
       {
         encoding: 'utf8',
@@ -65,6 +71,22 @@ function runWriter(root: string, environment: NodeJS.ProcessEnv = {}) {
         env: { ...process.env, ...environment },
       },
     ),
+  );
+}
+function strictWriterProcess(
+  root: string,
+  environment: NodeJS.ProcessEnv = {},
+) {
+  return spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      'const {writeServerBuildFingerprint}=await import(process.argv[1]); try { await writeServerBuildFingerprint(process.argv[2], {requireProvenance:true}); } catch(error) { if(error.code!=="SERVER_BUILD_PROVENANCE_REQUIRED") throw error; process.exitCode=1; }',
+      moduleUrl,
+      root,
+    ],
+    { encoding: 'utf8', env: { ...process.env, ...environment } },
   );
 }
 function git(root: string, args: string[]) {
@@ -92,6 +114,9 @@ function repository() {
   ]);
   return root;
 }
+beforeEach(() =>
+  jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined),
+);
 afterEach(() => jest.restoreAllMocks());
 afterAll(() =>
   temporary.forEach((path) => rmSync(path, { recursive: true, force: true })),
@@ -126,6 +151,118 @@ describe('server build artifact fingerprint', () => {
       readdirSync(join(root, 'dist/server/runtime-assets/host-build')),
     ).toEqual(['build-fingerprint.json']);
   });
+
+  it('accepts a clean checkout in required-provenance mode', () => {
+    const root = repository();
+    const metadata = runWriter(root, {}, true);
+    expect(metadata.sourceCommit).toBe(git(root, ['rev-parse', 'HEAD']));
+    expect(Object.keys(metadata).sort()).toEqual([
+      'buildTime',
+      'schemaVersion',
+      'sourceCommit',
+    ]);
+    expect(JSON.parse(readFileSync(stamp(root), 'utf8'))).toEqual(metadata);
+  });
+
+  it.each(['tracked', 'untracked'])(
+    'fails the strict build subprocess after explicitly replacing the stamp for %s changes',
+    (kind) => {
+      const root = repository();
+      expect(runWriter(root).sourceCommit).not.toBe('UNAVAILABLE');
+      writeFileSync(
+        join(
+          root,
+          kind === 'tracked' ? 'source.txt' : 'private-secret-file.txt',
+        ),
+        'PRIVATE_SOURCE_MUST_NOT_LEAK',
+      );
+      const result = strictWriterProcess(root);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe(
+        'SERVER_BUILD_FINGERPRINT:GIT_WORKTREE_DIRTY\n',
+      );
+      expect(JSON.parse(readFileSync(stamp(root), 'utf8'))).toEqual({
+        schemaVersion: valid.schemaVersion,
+        sourceCommit: 'UNAVAILABLE',
+        buildTime: 'UNAVAILABLE',
+      });
+    },
+  );
+
+  it('reports redirect presence without printing the environment value or checkout path', () => {
+    const root = repository();
+    const result = strictWriterProcess(root, {
+      GIT_CONFIG_GLOBAL: '/private/SENSITIVE_CONFIGURATION_PATH',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe(
+      'SERVER_BUILD_FINGERPRINT:GIT_ENVIRONMENT_REDIRECT_PRESENT\n',
+    );
+    expect(result.stderr).not.toContain(root);
+  });
+
+  it('distinguishes unavailable repository facts from a missing Git executable', () => {
+    const root = directory();
+    const noRepository = strictWriterProcess(root);
+    expect(noRepository.status).toBe(1);
+    expect(noRepository.stderr).toBe(
+      'SERVER_BUILD_FINGERPRINT:GIT_ROOT_UNAVAILABLE\n',
+    );
+    const missingGit = strictWriterProcess(root, { PATH: directory() });
+    expect(missingGit.status).toBe(1);
+    expect(missingGit.stderr).toBe(
+      'SERVER_BUILD_FINGERPRINT:GIT_EXECUTABLE_MISSING\n',
+    );
+  });
+
+  it.each([
+    ['OVERSIZED', ' '.repeat(1025)],
+    ['INVALID_JSON', 'PRIVATE_INVALID_JSON'],
+    [
+      'INVALID_SCHEMA',
+      JSON.stringify({ ...valid, privateData: 'PRIVATE_VALUE' }),
+    ],
+    [
+      'PROVENANCE_UNAVAILABLE',
+      JSON.stringify({
+        schemaVersion: valid.schemaVersion,
+        sourceCommit: 'UNAVAILABLE',
+        buildTime: 'UNAVAILABLE',
+      }),
+    ],
+  ])('logs only the fixed reader category %s', async (reason, content) => {
+    const path = join(directory(), 'private-artifact-path.json');
+    writeFileSync(path, content);
+    await expect(readServerBuildFingerprint(path)).resolves.toEqual(
+      unavailable,
+    );
+    expect(Logger.prototype.warn).toHaveBeenCalledTimes(1);
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(
+      `SERVER_BUILD_FINGERPRINT:${reason}`,
+    );
+  });
+
+  it.each([
+    ['ENOENT', 'MISSING'],
+    ['EACCES', 'READ_FAILED'],
+  ])(
+    'classifies read error %s without logging its private message or path',
+    async (code, reason) => {
+      jest
+        .spyOn(files, 'readFile')
+        .mockRejectedValueOnce(
+          Object.assign(new Error('PRIVATE_URL_TOKEN_AND_PATH'), { code }),
+        );
+      await expect(
+        readServerBuildFingerprint('/private/SENSITIVE_PATH'),
+      ).resolves.toEqual(unavailable);
+      expect(Logger.prototype.warn).toHaveBeenCalledTimes(1);
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
+        `SERVER_BUILD_FINGERPRINT:${reason}`,
+      );
+    },
+  );
 
   it.each(['tracked', 'untracked'])(
     'writes explicit unavailable for a %s dirty build and replaces an old stamp',
