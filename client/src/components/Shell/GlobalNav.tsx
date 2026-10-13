@@ -9,6 +9,10 @@
  */
 
 import React from 'react';
+import {
+  WISELINK_PRODUCT_NAME,
+  WISELINK_CHINESE_NAME,
+} from '@client/src/config/wiselink-brand';
 
 interface NavItem {
   page: string;
@@ -36,9 +40,9 @@ export function GlobalNav({ currentPage, onNavigate, onOpenSettings }: GlobalNav
       {/* 品牌 */}
       <div className="brand">
         <div className="brand-logo">W</div>
-        <div>
-          <strong>WiseLink</strong>
-          <small>工程知识 · 持续认识</small>
+        <div className="brand-copy">
+          <strong>{WISELINK_PRODUCT_NAME}</strong>
+          <small>{WISELINK_CHINESE_NAME}</small>
         </div>
       </div>
 

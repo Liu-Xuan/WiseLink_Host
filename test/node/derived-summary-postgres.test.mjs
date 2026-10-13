@@ -1,4 +1,5 @@
 import { prepareDerivedSummaryDdl } from '../../scripts/prepare-derived-summary-ddl.mjs';
+import { runHierarchicalWikiPostgres } from './helpers/hierarchical-wiki-postgres.fixture.mjs';
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -880,6 +881,8 @@ test('real saved aggregate/upper consumer preserves exact work, pool1, CAS, leas
         const [count] = await admin`SELECT count(*)::int AS n FROM action_attempt WHERE summary_id=${initialB.receipt.summaryId} AND trigger_request_id=${same.requestId}`;
         assert.equal(count.n, 1); await hosted(() => runtime.cancel({ summaryId: initialB.receipt.summaryId, attemptRef: one.attemptRef, scope, reason: 'Owned fixture cleanup' }));
       });
+      await t.test('hierarchical Wiki production repositories and private scope automation',async wikiTest =>
+        runHierarchicalWikiPostgres(wikiTest,{admin,reset,seed,seedSemanticContext,semanticOriginal,nativeActor,databaseUrl}));
     } finally {
       if (semanticConnection) await semanticConnection.end({ timeout: 5 });
       if (connection) await connection.end({ timeout: 5 });

@@ -16,6 +16,8 @@ import { findDocumentOriginalEvidence } from './document-original-engineering-re
 import { buildMatterWorkReference } from './matter-work-reference';
 import { contextWorkNotices } from './derived-summary-current-context';
 import { summaryError, summaryMemberRef } from './derived-summary.validation';
+import { readDocumentSummaryMember, documentReadingAnchorEvidence } from './derived-summary-document-reading';
+import { buildTranslationSourcePlan } from './canonical-translation-source-plan';
 
 import { TDMS_NATIVE_EVIDENCE_VERIFIER, verifyTdmsNativeEvidence, assertTdmsNativeInTransaction,
   type TdmsNativeEvidenceVerifier, type TdmsNativeSummaryCaller } from './tdms-native-evidence-verifier.port';
@@ -95,6 +97,12 @@ export class DerivedSummaryMembersService {
     const evidenceRef = summaryMemberRef(member);
     if (ancestors.has(evidenceRef)) throw summaryError('DERIVED_SUMMARY_LINEAGE_CYCLE');
     const path = new Set(ancestors).add(evidenceRef);
+    if (member.kind === 'DOCUMENT_READING') {
+      const reading = await readDocumentSummaryMember(member, actor, database);
+      await this.authorizeEvidence(reading.evidence, actor, database, path);
+      reading.limitations.push(...await this.sourceVersionNotices(reading.evidence, actor, database));
+      return reading;
+    }
     if (member.kind === 'DERIVED_SUMMARY') {
       if (ancestors.has(member.summaryId)) throw summaryError('DERIVED_SUMMARY_LINEAGE_CYCLE');
       return this.readSummary(member, actor, database, path.add(member.summaryId), nativeCarriers);
@@ -274,7 +282,8 @@ export class DerivedSummaryMembersService {
   async verifyOriginalEvidence(evidence: AssessmentEvidence[], actor: SummaryActor): Promise<void> {
     await this.verifyNativeEvidence(evidence, actor);
     const originals = evidence.filter((item): item is Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }> =>
-      item.kind === 'DOCUMENT_PASSAGE' && item.evidenceRef.startsWith('DOCUMENT_ORIGINAL:'));
+      item.kind === 'DOCUMENT_PASSAGE' && (item.evidenceRef.startsWith('DOCUMENT_ORIGINAL:') ||
+        item.evidenceRef.startsWith('DOCUMENT_READING_ORIGINAL:')));
     const statementVerifier = this.sourceStatementVerifier(evidence);
     if (!originals.length && !statementVerifier) return;
     if (originals.length && !this.originalReader) throw summaryError('DERIVED_SUMMARY_ORIGINAL_READER_UNAVAILABLE', 503);
@@ -283,6 +292,27 @@ export class DerivedSummaryMembersService {
       if (statementVerifier) assertSourceStatementProjections(evidence,
         await statementVerifier.readSourceStatementProjections(evidence, actor));
       for (const item of originals) {
+        if (item.evidenceRef.startsWith('DOCUMENT_READING_ORIGINAL:')) {
+          const prefix = `DOCUMENT_READING_ORIGINAL:${item.documentVersionId}:`;
+          const parts = item.evidenceRef.slice(prefix.length).split(':');
+          if (!item.evidenceRef.startsWith(prefix) || parts.length !== 3)
+            throw summaryError('DERIVED_SUMMARY_SOURCE_IDENTITY_INVALID');
+          const [parseRunId, readingRunRef, anchorId] = parts.map(decodeURIComponent) as [string, string, string];
+          const key = `${item.documentVersionId}:${parseRunId}`;
+          if (!loaded.has(key)) loaded.set(key, await this.originalReader!.readDocumentOriginal(item.documentVersionId,
+            parseRunId, { tenantId: actor.tenantId, actorUserId: actor.actorUserId, roles: [] }));
+          const original = loaded.get(key)!;
+          const artifact = original.run.manifestArtifact;
+          if (!artifact || artifact.readback !== 'VERIFIED') throw summaryError('DERIVED_SUMMARY_ORIGINAL_CHANGED');
+          const plan = buildTranslationSourcePlan({ documentVersionId: item.documentVersionId, packageId: parseRunId,
+            parsedArtifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref: `document-original://${item.documentVersionId}/${parseRunId}`,
+              sha256: artifact.sha256, byteLength: artifact.byteLength, mediaType: 'application/json' }, title: '', source: original.structuredSource });
+          const anchor = plan.anchors.find(value => value.anchorId === anchorId);
+          if (!anchor || canonicalJson(item) !== canonicalJson(documentReadingAnchorEvidence({
+            documentVersionId: item.documentVersionId, parseRunId, readingRunRef }, anchor)))
+            throw summaryError('DERIVED_SUMMARY_ORIGINAL_CHANGED');
+          continue;
+        }
         const prefix = `DOCUMENT_ORIGINAL:${item.documentVersionId}:`;
         const suffix = `:${item.sourceRefId}`;
         const parseRunId = item.evidenceRef.slice(prefix.length, -suffix.length);

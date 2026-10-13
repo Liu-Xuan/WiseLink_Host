@@ -428,34 +428,11 @@ function WorkspaceHomeContent() {
                   ? '最近任务'
                   : '资料库'}
             </h1>
-            <p className="library-home-lede">
+            {treeMode !== 'document' ? <p className="library-home-lede">
               {treeMode === 'matter'
                 ? '从工程问题开始，阅读当前认识、措施前提与后续关注。'
-                : treeMode === 'tasks'
-                  ? '查看每次工程评估的进展与候选判断，继续评估与讨论。'
-                  : '先看文件与主题，再展开分类、当前版本和历史版本。'}
-            </p>
-            <Link className="text-sm underline" to="/summaries">阅读选定范围的派生概述</Link>
-          </div>
-          <div className="library-home-status" aria-label="当前资料库视图">
-            <span>
-              {treeMode === 'matter'
-                ? '当前账户可见的工程事项'
-                : treeMode === 'tasks'
-                  ? '当前账户的评估任务'
-                  : '当前账户可见的文档'}
-            </span>
-            <strong>
-              已加载{' '}
-              {treeMode === 'matter'
-                ? matters.items.length
-                : directory.items.length}{' '}
-              {treeMode === 'matter'
-                ? '个事项'
-                : treeMode === 'tasks'
-                  ? '个任务'
-                  : '份文档'}
-            </strong>
+                : '查看每次工程评估的进展与候选判断，继续评估与讨论。'}
+            </p> : null}
           </div>
           <details className="suite-library-actions"><summary>接收资料与更多</summary><div className="suite-library-actions-panel">
         <div className="library-reading-tools">

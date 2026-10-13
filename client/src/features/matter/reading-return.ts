@@ -28,21 +28,36 @@ export function knowledgeReadingIdentity(params: URLSearchParams):
   return { state: 'ok', identity: { subjectKind, subjectId, workRef } };
 }
 
+const KNOWLEDGE_READING_KEYS = ['query', 'subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'knowledgeIssueKey', 'scope', 'kind', 'after', 'listY', 'articleY', 'normalizedFamily', 'ata', 'aircraftModel', 'fleetFamily', 'fleetModel', 'ataTitleScheme'] as const;
+
 export function knowledgeReadingParams(params: URLSearchParams): URLSearchParams {
   const result = new URLSearchParams();
-  for (const key of ['query', 'subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'knowledgeIssueKey', 'scope', 'kind', 'after', 'listY', 'articleY']) {
+  for (const key of KNOWLEDGE_READING_KEYS) {
     if (params.getAll(key).length !== 1) continue;
     const value = params.get(key) ?? '';
     const limit = key === 'after' ? 2400 : key === 'query' ? 200 : 255;
     if (value.length > limit || /[\u0000-\u001f\u007f]/u.test(value)) continue;
     if (key === 'scope' && !['CURRENT', 'ALL', 'HISTORICAL'].includes(value)) continue;
     if (key === 'kind' && !['works', 'sources', 'matters'].includes(value)) continue;
+    if (key === 'ataTitleScheme' && !['ispec', 'jasc'].includes(value)) continue;
     if (key === 'subjectKind' && !['WORK_ITEM', 'ENGINEERING_MATTER'].includes(value)) continue;
     if ((key === 'listY' || key === 'articleY') && !/^\d{1,7}$/.test(value)) continue;
     if (value) result.set(key, value);
   }
   result.sort();
   return result;
+}
+
+/** A Wiki may return to the same read-only knowledge state, never an arbitrary URL. */
+export function knowledgeReadingReturnRoute(params: URLSearchParams): string | null {
+  const values = params.getAll('returnKnowledgeQuery');
+  if (values.length !== 1 || !values[0] || values[0].length > 4096) return null;
+  const state = new URLSearchParams(values[0]);
+  if (knowledgeReadingIdentity(state).state === 'invalid') return null;
+  const safe = knowledgeReadingParams(state);
+  if (!safe.size || KNOWLEDGE_READING_KEYS.some(key => state.has(key) &&
+    (state.getAll(key).length !== 1 || state.get(key) !== safe.get(key)))) return null;
+  return `/knowledge?${safe}`;
 }
 
 /** Wiki return is bound to the exact authorized work being opened. */

@@ -8,12 +8,13 @@ const validText = (value:string, max:number) => value.length <= max && !/[\u0000
 export function readLibraryGraphEntry(params:URLSearchParams):LibraryGraphEntry {
   if (!params.has('scope') || !params.getAll('scope').includes('library')) return {kind:'absent'};
   const allowed = new Set(['scope','level','groupBy','clusterValue','clusterMissing','familyId','cursor',
-    'selectedId','viewport','layoutSnapshot','displaySession', ...LIBRARY_GRAPH_FILTER_KEYS]);
+    'selectedId','viewport','layoutSnapshot','displaySession','macroView', ...LIBRARY_GRAPH_FILTER_KEYS]);
   if ([...params.keys()].some(key => !allowed.has(key) || params.getAll(key).length !== 1)
     || params.get('scope') !== 'library') return {kind:'invalid'};
   if ([['selectedId',2048],['viewport',256],['layoutSnapshot',64]].some(([key,max]) =>
     params.has(String(key)) && !validText(params.get(String(key))!,Number(max)))) return {kind:'invalid'};
   if (params.has('displaySession') && !/^\d{1,10}$/u.test(params.get('displaySession')!)) return {kind:'invalid'};
+  if (params.has('macroView') && params.get('macroView') !== 'network') return {kind:'invalid'};
   const level = params.get('level') ?? 'clusters';
   if (!['clusters','families','versions'].includes(level)) return {kind:'invalid'};
   const cursor = params.get('cursor') ?? undefined;

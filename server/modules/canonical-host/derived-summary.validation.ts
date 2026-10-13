@@ -55,7 +55,14 @@ export function parseSummaryScope(input: unknown): DerivedSummaryScopeSelection 
 
 export function parseSummaryMember(input: unknown): DerivedSummaryMember {
   const value = object(input, ['kind', 'workItemId', 'documentVersionId', 'workRef', 'workRevision',
-    'issueKeys', 'matterId', 'summaryId', 'summaryRef', 'summaryRevision']);
+    'issueKeys', 'matterId', 'summaryId', 'summaryRef', 'summaryRevision',
+    'parseRunId', 'semanticRevision', 'readingRunRef', 'readingRevision']);
+  if (value.kind === 'DOCUMENT_READING') {
+    object(input, ['kind', 'documentVersionId', 'parseRunId', 'semanticRevision', 'readingRunRef', 'readingRevision']);
+    return { kind: value.kind, documentVersionId: summaryText(value.documentVersionId, 96),
+      parseRunId: summaryText(value.parseRunId, 96), semanticRevision: revision(value.semanticRevision),
+      readingRunRef: summaryText(value.readingRunRef, 96), readingRevision: revision(value.readingRevision) };
+  }
   if (value.kind === 'WORK_ITEM_WORK') {
     object(input, ['kind', 'workItemId', 'documentVersionId', 'workRef', 'workRevision', 'issueKeys']);
     return { kind: value.kind, workItemId: summaryText(value.workItemId, 96),
@@ -76,6 +83,8 @@ export function parseSummaryMember(input: unknown): DerivedSummaryMember {
 }
 
 export function summaryMemberRef(member: DerivedSummaryMember): string {
+  if (member.kind === 'DOCUMENT_READING')
+    return `DOCUMENT_READING:${encodeURIComponent(member.documentVersionId)}:${encodeURIComponent(member.readingRunRef)}`;
   if (member.kind === 'DERIVED_SUMMARY') return `DERIVED_SUMMARY:${encodeURIComponent(member.summaryId)}:${encodeURIComponent(member.summaryRef)}`;
   const subject = member.kind === 'WORK_ITEM_WORK' ? member.workItemId : member.matterId;
   const issues = member.issueKeys.length ? `ISSUES:${member.issueKeys.map(encodeURIComponent).sort().join(',')}` : 'ALL_ISSUES';

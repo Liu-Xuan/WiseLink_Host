@@ -28,6 +28,8 @@ import OverviewSourceWork from '@client/src/features/matter/OverviewSourceWork';
 import { useKnowledgeResources } from './useKnowledgeResources';
 import { SavedWorkIssueDirectory, savedWorkIssueRows } from './SavedWorkIssueDirectory';
 import SavedDocumentReadingArticle from './SavedDocumentReadingArticle';
+import KnowledgeAtaDirectory from './KnowledgeAtaDirectory';
+import type { LibraryCatalogFilters } from '../WorkspaceHomePage/library-classification';
 import './knowledge-lookup.css';
 import './knowledge-suite.css';
 
@@ -57,17 +59,27 @@ const knowledgeKind = (params: URLSearchParams): 'works' | 'matters' | 'sources'
   return hasWorkPin || requestedKind === 'works' ? 'works'
     : requestedKind === 'matters' ? 'matters' : 'sources';
 };
+const directoryFilterKeys = ['normalizedFamily', 'ata', 'aircraftModel', 'fleetFamily', 'fleetModel'] as const;
+const directoryFilters = (params: URLSearchParams): LibraryCatalogFilters =>
+  Object.fromEntries(directoryFilterKeys.map(key => [key, params.get(key) ?? '']));
+const directoryRequestFilters = (params: URLSearchParams): LibraryCatalogFilters =>
+  Object.fromEntries(Object.entries(directoryFilters(params)).filter(([, value]) => value));
+const catalogueStateKey = (params: URLSearchParams) => JSON.stringify([
+  params.get('query') ?? '', params.get('scope') === 'ALL' ? 'ALL' : params.get('scope') === 'HISTORICAL' ? 'HISTORICAL' : 'CURRENT',
+  knowledgeKind(params), params.get('after') ?? undefined, directoryFilters(params),
+]);
 
 export default function KnowledgeLookupPage() {
   const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
   return <main className="wl-knowledge-suite" aria-label="工程知识">
-    <header className="page-heading"><div><h1>工程知识</h1><p>从工程文档或事项进入 Wiki，阅读已保存的认识、条件与来源。</p></div><small>按文档与事项组织</small></header>
-    {authenticationRequired ? <p role="alert">请先登录，再读取当前账户有权查看的工程知识。</p>
+    <header className="page-heading"><h1>工程知识</h1></header>
+    {authenticationRequired ? <p role="alert">请先登录。</p>
       : <KnowledgeCatalogue key={sessionGeneration} />}
   </main>;
 }
 
 function KnowledgeCatalogue() {
+  const { sessionGeneration } = useCurrentUserSession();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const query = params.get('query') ?? '';
@@ -80,7 +92,9 @@ function KnowledgeCatalogue() {
   const resolveWorkItemId = kind === 'works' && identityPin.state === 'absent' &&
     itemPin.state === 'ok' ? itemPin.workItemId : null;
   const selection = identity ? keyOf(identity) : '';
-  const listKey = JSON.stringify([query, scope, kind, after]);
+  const filters = directoryFilters(params);
+  const filterKey = JSON.stringify(filters);
+  const listKey = catalogueStateKey(params);
   const knowledge = useKnowledgeResources(query, scope, after, identity,
     resolveWorkItemId, kind === 'works');
   const [sourceBlockedSelection, setSourceBlockedSelection] = useState<string | null>(null);
@@ -151,6 +165,17 @@ function KnowledgeCatalogue() {
     clearPendingScroll();
     setParams(prior => { const next = new URLSearchParams(prior); next.set(key, value); ['after', 'subjectKind', 'subjectId', 'workRef', 'workItemId', 'documentVersionId', 'knowledgeIssueKey', 'listY', 'articleY'].forEach(name => next.delete(name)); return next; }, { replace: true });
   }
+  function filterDirectory(value: LibraryCatalogFilters) {
+    clearPendingScroll();
+    setParams(prior => {
+      const next = new URLSearchParams(prior);
+      for (const key of directoryFilterKeys) {
+        if (value[key]) next.set(key, value[key]!); else next.delete(key);
+      }
+      if (knowledgeKind(prior) === 'sources') ['after', 'documentVersionId', 'listY', 'articleY'].forEach(key => next.delete(key));
+      return next;
+    }, { replace: true });
+  }
   function rememberScroll(key: 'listY' | 'articleY', top: number) {
     pendingScroll.current[key] = String(Math.min(9999999, Math.max(0, Math.round(top))));
     if (scrollTimer.current) clearTimeout(scrollTimer.current);
@@ -158,7 +183,7 @@ function KnowledgeCatalogue() {
     scrollTimer.current = setTimeout(() => {
       const pin = knowledgeReadingIdentity(currentParams.current);
       const actualIdentity = pin.state === 'ok' ? keyOf(pin.identity) : '';
-      const actualList = JSON.stringify([currentParams.current.get('query') ?? '', currentParams.current.get('scope') ?? 'CURRENT', knowledgeKind(currentParams.current), currentParams.current.get('after') ?? undefined]);
+      const actualList = catalogueStateKey(currentParams.current);
       if (expectedIdentity !== actualIdentity || expectedList !== actualList) { pendingScroll.current = {}; return; }
       const values = pendingScroll.current; pendingScroll.current = {};
       setParams(prior => { const next = new URLSearchParams(prior); Object.entries(values).forEach(([name, value]) => next.set(name, value)); return next; }, { replace: true });
@@ -196,15 +221,16 @@ function KnowledgeCatalogue() {
   useEffect(() => {
     if (kind !== 'sources') return;
     const controller = new AbortController();
+    const requestFilters = directoryRequestFilters(currentParams.current);
     setDocuments(null); setDocumentsError(''); setDocumentsLoading(true);
     const timer = setTimeout(() => {
-      void getCanonicalLibraryDocuments({ search: query, cursor: after, limit: 24 }, controller.signal).then(value => {
+      void getCanonicalLibraryDocuments({ search: query, cursor: after, limit: 24, ...requestFilters }, controller.signal).then(value => {
         if (!controller.signal.aborted) { setDocuments(value); setLoadedKey(listKey); }
       }).catch(cause => { if (!controller.signal.aborted) setDocumentsError(failure(cause)); })
         .finally(() => { if (!controller.signal.aborted) setDocumentsLoading(false); });
     }, query ? 250 : 0);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [query, scope, kind, after, retry]);
+  }, [query, scope, kind, after, retry, filterKey]);
 
   useEffect(() => {
     if (kind !== 'matters') return;
@@ -277,17 +303,43 @@ function KnowledgeCatalogue() {
     state.set('articleY', String(Math.round(articleRef.current?.scrollTop ?? 0)));
     return `${matterWorkRoute(entry.subjectId, entry.workRef)}&${new URLSearchParams({ returnKnowledgeWorkQuery: state.toString() })}`;
   }
+  function treeDocumentRoute(documentVersionId: string) {
+    const state = knowledgeReadingParams(currentParams.current);
+    state.set('documentVersionId', documentVersionId);
+    return `/document-versions/${encodeURIComponent(documentVersionId)}?${new URLSearchParams({
+      returnKnowledgeQuery: state.toString(), returnDocumentVersionId: documentVersionId,
+    })}`;
+  }
+  function selectTreeVersion(documentVersionId: string) {
+    clearPendingScroll();
+    if (kind !== 'sources') { navigate(treeDocumentRoute(documentVersionId)); return; }
+    setParams(prior => { const next = new URLSearchParams(prior); next.set('documentVersionId', documentVersionId); next.delete('articleY'); return next; });
+  }
+  function treeWikiRoute(summaryId: string) {
+    const state = knowledgeReadingParams(currentParams.current);
+    state.set('kind', kind);
+    state.set('listY', String(Math.round(listRef.current?.scrollTop ?? 0)));
+    state.set('articleY', String(Math.round(articleRef.current?.scrollTop ?? 0)));
+    return `/summaries/${encodeURIComponent(summaryId)}?${new URLSearchParams({ returnKnowledgeQuery: state.toString() })}`;
+  }
+  function nextPage(cursor: string) {
+    clearPendingScroll();
+    setParams(prior => { const next = new URLSearchParams(prior); next.set('after', cursor); ['subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'knowledgeIssueKey', 'listY', 'articleY'].forEach(key => next.delete(key)); return next; });
+  }
   const nextCursor = kind === 'works' ? page?.nextCursor
     : kind === 'matters' ? matters?.nextCursor : documents?.nextCursor;
   const pagination = <div className="knowledge-pagination">
     {after && <button onClick={() => change('kind', kind)}>回到首批</button>}
-    {nextCursor && <button onClick={() => { clearPendingScroll(); setParams(prior => { const next = new URLSearchParams(prior); next.set('after', nextCursor); ['subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'knowledgeIssueKey', 'listY', 'articleY'].forEach(key => next.delete(key)); return next; }); }}>下一批</button>}
+    {nextCursor && <button onClick={() => nextPage(nextCursor)}>下一批</button>}
   </div>;
   return <>
     <div className="knowledge-toolbar">
       <div className="tabs" role="group" aria-label="知识类型"><button aria-pressed={kind === 'sources'} onClick={() => change('kind', 'sources')}>工程文档</button><button aria-pressed={kind === 'matters'} onClick={() => change('kind', 'matters')}>工程事项</button><button aria-pressed={kind === 'works'} onClick={() => change('kind', 'works')}>工作与历史</button></div>
       <label className="knowledge-search"><Search size={18} /><input aria-label="搜索工程知识" maxLength={200} placeholder="搜索文档、事项或已保存工作…" value={query} onChange={event => change('query', event.target.value)} /></label>
       {kind === 'works' && <select aria-label="知识版本范围" value={scope} onChange={event => change('scope', event.target.value)}><option value="CURRENT">当前工作</option><option value="ALL">包含历史工作</option><option value="HISTORICAL">仅历史工作</option></select>}
+      <details className="knowledge-more-functions"><summary>更多功能</summary><div>
+        <Link to="/summaries">资料综合</Link><Link to="/summaries#hierarchical-wiki">分层 Wiki 设置</Link>
+      </div></details>
     </div>
     {identityPin.state === 'invalid' && <p role="alert">知识工作身份不完整或有重复参数，请重新选择确切工作。</p>}
     {kind === 'works' && identityPin.state === 'absent' && itemPin.state === 'invalid' &&
@@ -295,6 +347,15 @@ function KnowledgeCatalogue() {
     {resolveWorkItemId && knowledge.workItemError &&
       <p role="alert">{failure(knowledge.workItemError)} <button onClick={retryRead}>重试</button></p>}
     {error && <p role="alert">{error} <button onClick={retryRead}>重试</button></p>}
+    <div className="knowledge-directory-layout">
+      <KnowledgeAtaDirectory kind={kind} session={sessionGeneration} refreshRevision={retry}
+        sourceDirectory={documents} sourceLoading={documentsLoading} sourceError={documentsError}
+        filters={filters} onFilterChange={filterDirectory} scheme={params.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
+        onSchemeChange={scheme => setParams(prior => { const next = new URLSearchParams(prior); next.set('ataTitleScheme', scheme); return next; }, { replace: true })}
+        onRefresh={retryRead} onNextSourcePage={nextPage} selectedDocumentVersionId={versionPin.length === 1 ? versionPin[0] : ''}
+        onSelectVersion={selectTreeVersion} documentReadingRoute={treeDocumentRoute} wikiReadingRoute={treeWikiRoute}
+        onOpenWiki={summaryId => { clearPendingScroll(); navigate(treeWikiRoute(summaryId)); }} />
+      <div className="knowledge-catalogue-content">
     {kind === 'works' ? <div className="knowledge-layout">
       <section className="panel knowledge-results" aria-label="已有工程认识" ref={listRef} onScroll={event => rememberScroll('listY', event.currentTarget.scrollTop)}>
         <div className="panel-head"><h2>{loading ? '正在读取已有认识…' : `本批 ${page?.entries.length ?? 0} 条可查阅工作`}</h2></div>
@@ -532,6 +593,7 @@ function KnowledgeCatalogue() {
         {selectedVersion.readerWorkItemId && <section className="knowledge-prose">
           <h2>该版本的评估工作</h2>
           <Link to={`/knowledge?${new URLSearchParams({
+            ...directoryRequestFilters(params), ...(params.get('ataTitleScheme') ? { ataTitleScheme: params.get('ataTitleScheme')! } : {}),
             kind: 'works', workItemId: selectedVersion.readerWorkItemId,
           })}`}>查看该版本评估</Link>
         </section>}
@@ -540,6 +602,8 @@ function KnowledgeCatalogue() {
           selectedVersion.documentVersionId)}>精读该文档版本与原文</button></div>
       </> : <p className="knowledge-empty">选择一份工程文档，阅读其简明解读、条件和已登记关联事项。</p>}
     </section></div>}
+      </div>
+    </div>
     {source && kind === 'works' && read && keyOf(read.entry) === selection && <MatterDocumentSourceDialog key={`${source.documentVersionId}:${source.sourceRef}`} {...source} onClose={() => setSource(null)} />}
   </>;
 }

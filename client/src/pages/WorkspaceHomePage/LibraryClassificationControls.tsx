@@ -69,9 +69,6 @@ export function LibraryClassificationControls({
       </div></> : null}
       <details className="library-facet-controls" open>
         <summary>联合筛选（含历史版本）</summary>
-        <p className="library-classification-note">
-          数量为当前搜索下、分类筛选前的全量文档族数；多值文档可属于多个分组，不能相加作为总数。三项筛选共同生效。
-        </p>
         {facets.map((facet) => (
           <div className="library-facet-row" key={facet.key} role="group" aria-label={facet.label}>
             <strong>{facet.label}</strong>

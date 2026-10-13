@@ -116,11 +116,19 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
 }
 
 .wl-sidebar-brand-text small {
-  overflow: hidden;
   color: var(--wl-muted);
   font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.brand .brand-copy {
+  min-width: 0;
+}
+
+.brand .brand-copy small {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .wl-sidebar-quote {

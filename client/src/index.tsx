@@ -11,6 +11,7 @@ import './index.css';
 import { createPortal } from 'react-dom';
 import { Toaster } from '@client/src/components/ui/sonner';
 import { WlThemeProvider } from '@client/src/app/providers/ThemeProvider';
+import { WISELINK_PAGE_TITLE } from '@client/src/config/wiselink-brand';
 
 const CLIENT_BASE_PATH = process.env.CLIENT_BASE_PATH || '/';
 
@@ -36,4 +37,5 @@ const MainApp = () => {
   );
 };
 
+document.title = WISELINK_PAGE_TITLE;
 createRoot(document.getElementById('root')!).render(<MainApp />);

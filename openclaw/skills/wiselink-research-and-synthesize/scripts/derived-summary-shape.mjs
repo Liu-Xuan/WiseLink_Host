@@ -24,7 +24,8 @@ export function validateDerivedSummaryMember(value) {
   const fields = value?.kind === 'WORK_ITEM_WORK'
     ? ['workItemId', 'documentVersionId', 'workRef', 'workRevision', 'issueKeys']
     : value?.kind === 'MATTER_WORK' ? ['matterId', 'workRef', 'workRevision', 'issueKeys']
-      : value?.kind === 'DERIVED_SUMMARY' ? ['summaryId', 'summaryRef', 'summaryRevision'] : null;
+      : value?.kind === 'DERIVED_SUMMARY' ? ['summaryId', 'summaryRef', 'summaryRevision']
+        : value?.kind === 'DOCUMENT_READING' ? ['documentVersionId', 'parseRunId', 'semanticRevision', 'readingRunRef', 'readingRevision'] : null;
   if (!fields) fail('DERIVED_SUMMARY_MEMBER_KIND_INVALID');
   assertSummaryExactKeys(value, [...common, ...fields], 'DERIVED_SUMMARY_MEMBER_IDENTITY_INVALID');
   for (const field of fields) {

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type {
@@ -20,6 +20,7 @@ import { assertMemberSnapshot, DerivedSummaryMembersService, mergeSummaryEvidenc
 import { assertSummaryContextBasis, assertSummaryContextUnchanged, publicSummaryRevision, summaryContextStatus } from './derived-summary-current-context';
 import { assertSummaryReplay, parseSummaryRequest, summaryError } from './derived-summary.validation';
 import { assertPreviousSummarySnapshot, buildSummaryRevisionContext } from './derived-summary-revision-context';
+import { HierarchicalWikiCompletion } from './hierarchical-wiki-completion';
 
 export interface DerivedSummaryRuntimeTask extends DerivedSummaryTask {
   actionAttemptId: string;
@@ -35,6 +36,7 @@ export class DerivedSummaryService {
     private readonly repository: DerivedSummaryRepository,
     private readonly members: DerivedSummaryMembersService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION) private readonly authorization: CanonicalServiceScopeAuthorizationPort,
+    @Optional() private readonly wiki?: HierarchicalWikiCompletion,
   ) {}
 
   create(input: CreateDerivedSummaryRequest, actor: CanonicalHostActor): Promise<DerivedSummaryRequestReceipt> {
@@ -55,11 +57,14 @@ export class DerivedSummaryService {
   request(summaryId: string, input: RequestDerivedSummaryUpdate, actor: CanonicalHostActor): Promise<DerivedSummaryRequestReceipt> {
     return this.repository.browser(actor, async (database, owner) => {
       const head = await this.repository.head(summaryId, owner, database);
+      if ((await this.wiki?.metadata(summaryId, database))?.automaticWiki)
+        throw summaryError('WIKI_MANAGED_UPDATE_REQUIRED');
       return this.reserve(input, owner, head, database);
     });
   }
 
-  private async reserve(input: RequestDerivedSummaryUpdate, owner: SummaryActor, head: SummaryHead,
+  /** Internal caller already holds a real browser or durable service delegation. */
+  async reserve(input: RequestDerivedSummaryUpdate, owner: SummaryActor, head: SummaryHead,
     database: PostgresJsDatabase): Promise<DerivedSummaryRequestReceipt> {
     const idempotencyKey = `derived-summary:${head.summaryId}:${input.requestId}`;
     const [prior] = await database.select({ attemptRef: actionAttempt.operationRef }).from(actionAttempt).where(and(
@@ -125,7 +130,6 @@ export class DerivedSummaryService {
     const deadline = new Date(now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS);
     const evidence = mergeSummaryEvidence(readings.flatMap(member => member.evidence));
     const limitations = ['仅覆盖显式选取的精确保存成员；未选成员、其他ATA和其他机型均未覆盖。',
-      '机型/ATA为用户选取的候选分类，成员归属和适用性未核。不是受控事实、批准或正式采用。',
       ...readings.flatMap(member => member.limitations)];
     const revisionContext = lockedPrior ? buildSummaryRevisionContext(input, lockedPrior.saved,
       lockedPrior.fresh, readings, now.toISOString()) : undefined;
@@ -158,7 +162,7 @@ export class DerivedSummaryService {
     return this.repository.browser(actor, async (database, owner) => {
       const heads = await database.select().from(derivedSummary).where(and(eq(derivedSummary.tenantId, owner.tenantId),
         eq(derivedSummary.actorUserId, owner.actorUserId))).orderBy(desc(derivedSummary.updatedAt));
-      return heads.map(headMetadata);
+      return Promise.all(heads.map(async head => ({ ...headMetadata(head), ...await this.wiki?.metadata(head.summaryId, database) })));
     });
   }
 
@@ -174,7 +178,7 @@ export class DerivedSummaryService {
       const selected = await this.checkRevision(saved, owner, database);
       return { summaryId, currentSummaryRef: head.currentSummaryRef, currentRevision: head.currentRevision,
         revision: publicSummaryRevision(saved), memberNotices: selected.map(memberNotice),
-        contextStatus: await this.revisionContextStatus(saved, owner, database) };
+        contextStatus: await this.revisionContextStatus(saved, owner, database), ...await this.wiki?.metadata(summaryId, database) };
     });
   }
 
@@ -265,9 +269,12 @@ export class DerivedSummaryService {
   }
 
   private async readHead(head: SummaryHead, owner: SummaryActor, database: PostgresJsDatabase): Promise<DerivedSummaryReadModel> {
+    const wiki = await this.wiki?.metadata(head.summaryId, database);
+    if (wiki?.currentBodyStatus === 'UPDATING_SCOPE') return { ...headMetadata(head), ...wiki,
+      current: null, memberNotices: [], contextStatus: summaryContextStatus(undefined) };
     const current = head.currentSummaryRef ? await this.repository.saved(head.summaryId, head.currentSummaryRef, owner, database) : null;
     const members = current ? await this.checkRevision(current, owner, database) : await this.members.readAll(head.membersJson, owner, database);
-    return { summaryId: head.summaryId, scope: head.scopeJson, classificationStatus: 'CANDIDATE',
+    return { summaryId: head.summaryId, scope: head.scopeJson, classificationStatus: 'CANDIDATE', ...wiki,
       currentSummaryRef: head.currentSummaryRef, currentRevision: head.currentRevision, current: current ? publicSummaryRevision(current) : null,
       memberNotices: members.map(memberNotice),
       contextStatus: current ? await this.revisionContextStatus(current, owner, database) : summaryContextStatus(undefined) };

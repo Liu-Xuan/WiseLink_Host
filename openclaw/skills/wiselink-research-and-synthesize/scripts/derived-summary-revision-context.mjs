@@ -5,10 +5,11 @@ const object = value => value && typeof value === 'object' && !Array.isArray(val
 const text = value => typeof value === 'string' && value.trim().length > 0;
 const texts = value => Array.isArray(value) && value.every(text) && new Set(value).size === value.length;
 const sorted = values => [...new Set(values)].sort();
-const key = member => canonicalJson(member.kind === 'DERIVED_SUMMARY' ? member : { ...member, issueKeys: sorted(member.issueKeys) });
+const key = member => canonicalJson(!('issueKeys' in member) ? member : { ...member, issueKeys: sorted(member.issueKeys) });
 const ordered = members => [...members].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
 const subjectKey = member => canonicalJson({ kind: member.kind, subjectId: member.kind === 'WORK_ITEM_WORK'
-  ? member.workItemId : member.kind === 'MATTER_WORK' ? member.matterId : member.summaryId });
+  ? member.workItemId : member.kind === 'MATTER_WORK' ? member.matterId :
+    member.kind === 'DOCUMENT_READING' ? member.documentVersionId : member.summaryId });
 const savedKey = member => { const { issueKeys, ...identity } = member; return canonicalJson(identity); };
 const group = (members, by) => { const result = new Map();
   for (const member of ordered(members)) result.set(by(member), [...(result.get(by(member)) ?? []), member]); return result; };

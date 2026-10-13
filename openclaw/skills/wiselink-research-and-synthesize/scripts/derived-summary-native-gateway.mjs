@@ -84,8 +84,10 @@ export function createSummaryGatewaySession(options) {
           throw new Error('DERIVED_SUMMARY_GATEWAY_REARM_REQUIRES_NEW_REQUEST');
         const startedAt = Date.now();
         const deadlineAt = Math.min(startedAt + options.runBudget.timeoutMs, Date.parse(options.deadlineAt));
-        binding = { attemptRef: options.attemptRef, subject: { kind: 'DERIVED_SUMMARY', summaryId: options.summaryId },
-          nativeSessionKey: `agent:${WISELINK_PROFILE_REF}:summary:${options.summaryId}:${options.attemptRef}`,
+        if ((!!options.matterId) === (!!options.summaryId)) throw new Error('DERIVED_SUMMARY_GATEWAY_SUBJECT_INVALID');
+        binding = { attemptRef: options.attemptRef, subject: options.matterId ? { kind: 'ENGINEERING_MATTER', matterId: options.matterId }
+          : { kind: 'DERIVED_SUMMARY', summaryId: options.summaryId },
+          nativeSessionKey: `agent:${WISELINK_PROFILE_REF}:${options.matterId ? 'matter' : 'summary'}:${options.matterId ?? options.summaryId}:${options.attemptRef}`,
           executionModel: options.executionModel, startedAt: new Date(startedAt).toISOString(),
           taskDeadlineAt: options.deadlineAt, deadlineAt: new Date(deadlineAt).toISOString(), ...options.runBudget };
         await checkpoint.writeOnce('summary-gateway.started', binding);

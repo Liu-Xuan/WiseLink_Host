@@ -5,7 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { Button } from '@client/src/components/ui/button';
 import { activateGraphLayoutSession } from './suite-graph-layout-memory';
-import { documentGraphReadingParams, libraryGraphReturnToken, readGraphReadingState, withGraphReturn, type SuiteGraphReadingState } from './suite-graph-return';
+import { documentGraphReadingParams, graphReadingParams, libraryGraphReturnToken, readGraphReadingState, withGraphReturn, type SuiteGraphReadingState } from './suite-graph-return';
 import { useDocumentNeighborhood } from './useDocumentNeighborhood';
 import { buildDocumentNeighborhood, documentNeighborhoodNodeId } from './suite-document-neighborhood';
 import { useSuiteGraphSources } from './useSuiteGraphSources';
@@ -109,8 +109,14 @@ function DocumentGraphContent({ documentVersionId, readerWorkItemId, session, de
     <DocumentNeighborhoodDetails read={read.read} projection={projection} selectedId={selectedId} event={selectedEvent}
       relationshipIds={selectedRelations} onSelectRelationship={setSelectedId}
       session={session} onRejected={rejectAccess} onOpen={openSource}
-      onCenter={target => { persist(display.current); navigate(`/graph?${documentGraphReadingParams(target.documentVersionId, target.readerWorkItemId, {})}`); }}
-      onMatter={matterId => { persist(display.current); navigate(`/graph?${new URLSearchParams({matterId})}`); }}
+      onCenter={target => {
+        persist(display.current);
+        const query = documentGraphReadingParams(target.documentVersionId, target.readerWorkItemId, {});
+        const token = libraryGraphReturnToken(paramsRef.current);
+        if (token) query.set('returnLibrarySnapshot', token);
+        navigate(`/graph?${query}`);
+      }}
+      onMatter={matterId => { persist(display.current); navigate(`/graph?${graphReadingParams(matterId, null, {}, paramsRef.current)}`); }}
       onMentionSource={(mention, sourceRef) => {
         if (!read.read?.quicklook || !mention.sourceRefIds.includes(sourceRef)) return;
         persist(display.current);

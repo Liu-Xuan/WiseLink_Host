@@ -35,7 +35,45 @@ export interface TdmsFieldProvenance {
   sourceModifiedAt: string | null;
   observationRef: string;
 }
+export type TdmsCompleteOwnedValueState =
+  | 'VALUE'
+  | 'BLANK'
+  | 'ABSENT'
+  | 'NOT_APPLICABLE'
+  | 'NOT_LOADED'
+  | 'NOT_READ'
+  | 'TRUNCATED'
+  | 'ACCESS_DENIED';
+export interface TdmsCompleteOwnedField {
+  fieldId: string;
+  tabId: string;
+  sectionId: string;
+  labelOrigin: 'NATIVE_SOURCE_DECLARED' | 'PROFILE_EXPECTED';
+  nativeControl: {
+    tag: string;
+    readOnly: boolean | null;
+    disabled: boolean | null;
+  };
+  value: {
+    state: TdmsCompleteOwnedValueState;
+    actualLabel: string;
+    rawValue: string | null;
+    locator: string;
+    observedTotalCodepoints: number;
+  };
+  links: Array<{
+    rawHref: string;
+    targetRef: string | null;
+    numberRaw: string;
+    nativeRole: string;
+    locator: string;
+    nativeColumnLabel?: string;
+    nativeColumnToken?: string | null;
+  }>;
+}
 export interface TdmsSourceContent {
+  /** Complete1 own-part literals remain PARTIAL and independently authorized. */
+  completeOwnedFields?: TdmsCompleteOwnedField[];
   /** Source51 v2 bounded observation, not complete content or an approved opinion. */
   boundedOwnedBody?: TdmsBoundedOwnedBodyField[];
   /** Bounded native form literals, independently authorized; never an approved opinion. */

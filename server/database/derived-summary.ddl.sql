@@ -142,6 +142,31 @@ BEGIN
         IF NOT FOUND OR NOT engineering_matter_owned_by_actor(t,(leaf->>'matterId')::varchar)
           OR NOT engineering_matter_all_links_owned_by_actor(t,saved.based_on_matter_revision_id)
           OR NOT engineering_matter_all_links_owned_by_actor(t,saved.current_matter_revision_id) THEN RETURN false; END IF;
+      ELSIF leaf->>'kind'='DOCUMENT_READING' THEN
+        SELECT r.document_version_id,r.parse_run_id,r.parse_revision INTO saved
+          FROM dm_document_reading_run r
+          JOIN dm_document_parse_run p ON p.tenant_id=r.tenant_id AND p.document_version_id=r.document_version_id
+            AND p.parse_run_id=r.parse_run_id AND p.parse_revision=r.parse_revision AND p.status='PUBLISHED'
+            AND p.manifest_artifact->>'sha256'=r.original_manifest_sha256
+          JOIN dm_document_semantic_revision s ON s.tenant_id=r.tenant_id AND s.document_version_id=r.document_version_id
+            AND s.parse_run_id=r.parse_run_id AND s.parse_revision=r.parse_revision
+            AND s.semantic_revision=r.semantic_revision AND s.original_manifest_sha256=r.original_manifest_sha256
+          WHERE r.tenant_id=t AND r.document_version_id=leaf->>'documentVersionId'
+            AND r.run_ref=leaf->>'readingRunRef' AND r.parse_run_id=leaf->>'parseRunId'
+            AND to_jsonb(r.reading_revision)=leaf->'readingRevision' AND to_jsonb(r.semantic_revision)=leaf->'semanticRevision'
+            AND r.status='SAVED' AND r.result_json->>'schemaVersion'='wiselink.document.reading.v1'
+            AND r.result_json->'candidateOnly'='true'::jsonb AND r.result_json->>'readingRunRef'=r.run_ref
+            AND r.result_json->'readingRevision'=to_jsonb(r.reading_revision)
+            AND r.result_json->'sourceBinding'->'semanticRevision'=to_jsonb(r.semantic_revision)
+            AND r.result_json->'sourceBinding'->'original'->>'documentVersionId'=r.document_version_id
+            AND r.result_json->'sourceBinding'->'original'->>'parseRunId'=r.parse_run_id
+            AND r.result_json->'sourceBinding'->'original'->'parseRevision'=to_jsonb(r.parse_revision)
+            AND r.result_json->'sourceBinding'->'original'->>'sourceArtifactId'=p.source_binding->>'sourceArtifactId'
+            AND r.result_json->'sourceBinding'->'original'->>'sourceSha256'=p.source_binding->>'pdfSha256'
+            AND r.result_json->'sourceBinding'->'original'->'sourceByteLength'=p.source_binding->'byteLength'
+            AND NOT EXISTS (SELECT 1 FROM dm_document_reading_retraction x WHERE x.tenant_id=r.tenant_id AND x.run_ref=r.run_ref);
+        IF NOT FOUND OR document_translation_attempt_owned(t,actor,saved.document_version_id,
+          saved.parse_run_id,saved.parse_revision) IS NOT TRUE THEN RETURN false; END IF;
       ELSE RETURN false; END IF;
     END LOOP;
   END LOOP;

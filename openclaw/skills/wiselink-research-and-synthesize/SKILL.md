@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c223`
+- Skill：`wiselink-research-and-synthesize@r09.c224`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -620,7 +620,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c223`
+- `skillVersion=wiselink-research-and-synthesize@r09.c224`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
@@ -704,6 +704,10 @@ back the candidate before FINISH. Do not route it through a fake WorkItem,
 Matter or Review task. See [derived summary protocol](references/derived-summary-work.md)
 for adjustable run budgets, precise read/save recovery, provenance and the
 installed-baseline delta.
+
+分层自动 Wiki 的队列入口、独立事项分析委托、Provider UNKNOWN 与提交截止点恢复见
+[分层 Wiki 协议](references/hierarchical-wiki-work.md)。仅在兼容 Host/SQL/MCP/Skill 安装后，
+由原自动队列的同一 owner 开启 `--wiki-idle` 及明确预算；既存在途指针优先恢复。
 
 ### 单 endpoint 自动队列失败收尾（r09.c212）
 

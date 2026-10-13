@@ -1,3 +1,9 @@
+import {
+  completeContentIdentityProjection,
+  COMPLETE_OWN_PACKAGE_MAX_BYTES,
+  COMPLETE_OWN_REQUEST_MAX_BYTES,
+  validateCompleteOwnedRecord,
+} from './tdms-complete-owned-source.validation';
 import type {
   TdmsCoverage,
   TdmsRecordKind,
@@ -16,7 +22,12 @@ import {
 export interface TdmsDailyMetadataRecord {
   snapshotId: string;
   sourceRecordId: string;
-  kind: TdmsRecordKind | 'AEO' | 'EXECUTION_FEEDBACK' | 'EXECUTION_STATUS';
+  kind:
+    | TdmsRecordKind
+    | 'AEO'
+    | 'EXECUTION_FEEDBACK'
+    | 'EXECUTION_STATUS'
+    | 'PROCESSING_ITEM';
   number: string;
   sourceVersion: TdmsSourceVersion;
   businessVersion: TdmsSourceVersion | null;
@@ -121,7 +132,15 @@ export function prepareTdmsDailySourceImport(raw: unknown) {
   return prepareDailyImport(raw, true);
 }
 function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
-  const envelope = exact(plainData(raw), ['requestId', 'package']);
+  const envelope = exact(
+    plainData(
+      raw,
+      sourceAdapter
+        ? COMPLETE_OWN_REQUEST_MAX_BYTES
+        : TDMS_SMALL_PACKAGE_MAX_BYTES,
+    ),
+    ['requestId', 'package'],
+  );
   const p = exact(envelope.package, [
     'schemaVersion',
     'packageId',
@@ -135,6 +154,11 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
     'readFailures',
   ]);
   if (
+    sourceAdapter &&
+    Buffer.byteLength(canonical(p)) > COMPLETE_OWN_PACKAGE_MAX_BYTES
+  )
+    fail('LIMIT');
+  if (
     p.schemaVersion !== 'wiselink.tdms-daily-package.v1' ||
     p.sourceSystem !== 'TDMS'
   )
@@ -142,9 +166,32 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
   text(p.packageId, 160);
   iso(p.observedAt);
   coverage(p.coverage);
-  query(p.query);
+  const completeItem =
+    sourceAdapter && Array.isArray(p.records)
+      ? p.records.find((v) => {
+          const r = object(v);
+          return (
+            r.kind === 'PROCESSING_ITEM' &&
+            object(r.rawFields).completeOwnedSource !== undefined
+          );
+        })
+      : undefined;
+  query(
+    p.query,
+    completeItem ? String(object(completeItem).sourceRecordId) : undefined,
+  );
   const records = list(p.records, 500),
     edges = list(p.edges, 1000);
+  const completeOwnPackage =
+    sourceAdapter &&
+    records.some(
+      (r) => object(object(r).rawFields).completeOwnedSource !== undefined,
+    );
+  if (
+    !completeOwnPackage &&
+    Buffer.byteLength(canonical(envelope)) > TDMS_SMALL_PACKAGE_MAX_BYTES
+  )
+    fail('LIMIT');
   if (!sourceAdapter && list(p.artifactBindings, 1000).length)
     fail('ARTIFACT_INGRESS_NOT_IMPLEMENTED');
   const snapshots = new Map<string, string>(),
@@ -179,12 +226,26 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
               'AEO',
               'EXECUTION_FEEDBACK',
               'EXECUTION_STATUS',
+              ...(object(r.rawFields).completeOwnedSource !== undefined
+                ? ['PROCESSING_ITEM']
+                : []),
             ]
           : ['AEO', 'EXECUTION_STATUS']
       ).includes(String(r.kind))
     )
       fail('METADATA_KIND_UNSUPPORTED');
-    native(r.sourceRecordId);
+    const completeOwn =
+      sourceAdapter && object(r.rawFields).completeOwnedSource !== undefined;
+    if (
+      !(
+        completeOwn &&
+        r.kind === 'PROCESSING_ITEM' &&
+        /^(?:OR|VR):wt\.change2\.WTChangeActivity2:[0-9]{1,24}$/u.test(
+          String(r.sourceRecordId),
+        )
+      )
+    )
+      native(r.sourceRecordId);
     text(r.number, 180);
     iso(r.observedAt);
     version(r.sourceVersion);
@@ -203,6 +264,7 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
             'opinions',
             'ownedVisibleBusinessContent',
             'boundedOwnedBody',
+            'completeOwnedFields',
             'conditions',
             'requiredActions',
             'approvers',
@@ -251,7 +313,14 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
       r.rawFields,
       [
         ...base,
-        ...(sourceAdapter ? ['opinionCollection', 'ownedBusinessContent', 'profileOwnedBody'] : []),
+        ...(sourceAdapter
+          ? [
+              'opinionCollection',
+              'ownedBusinessContent',
+              'profileOwnedBody',
+              'completeOwnedSource',
+            ]
+          : []),
         ...(sourceAdapter
           ? ['execution', 'engineering', 'executionStatus']
           : r.kind === 'AEO'
@@ -276,7 +345,7 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
     if (fields.engineering !== undefined) engineering(fields.engineering, r);
     if (fields.execution !== undefined)
       execution(fields.execution, r.observedAt);
-    if (r.kind === 'EXECUTION_STATUS')
+    if (r.kind === 'EXECUTION_STATUS' && !completeOwn)
       executionStatus(fields.executionStatus, r);
     if (
       r.kind === 'AEO' &&
@@ -312,9 +381,13 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
         'TDMSSNAP-' +
           hash(
             withoutTimes(
-              sourceAdapter && (fields.ownedBusinessContent !== undefined || fields.profileOwnedBody !== undefined)
-                ? ownedLocatorIdentity(r)
-                : r,
+              completeOwn
+                ? completeContentIdentityProjection(r)
+                : sourceAdapter &&
+                    (fields.ownedBusinessContent !== undefined ||
+                      fields.profileOwnedBody !== undefined)
+                  ? ownedLocatorIdentity(r)
+                  : r,
             ),
           ) ||
       snapshots.has(String(r.snapshotId)) ||
@@ -324,6 +397,24 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
     snapshots.set(String(r.snapshotId), String(r.sourceRecordId));
     sourceIds.add(String(r.sourceRecordId));
   }
+  if (
+    sourceAdapter &&
+    records.some(
+      (r) => object(object(r).rawFields).completeOwnedSource !== undefined,
+    ) &&
+    (records.length !== 1 ||
+      list(p.artifactBindings, 1000).length ||
+      object(p.coverage).status !== 'PARTIAL' ||
+      object(p.coverage).readback !== 'NON_ATOMIC' ||
+      !(object(p.coverage).gaps as string[]).includes(
+        'COMPLETION_CERTIFICATE_NOT_ISSUED',
+      ) ||
+      object(p.query).scopeComplete !== false ||
+      object(p.query).scopeMatch !== 'UNKNOWN' ||
+      object(p.query).actualCriteria !== null)
+  )
+    fail('COMPLETE_OWN_PACKAGE_LIMITS_REQUIRED');
+  if (completeOwnPackage) validateCompleteOwnedRecord(records[0]);
   // This source mode is an independently collected owner probe, not a batch opinion approval.
   if (
     sourceAdapter &&
@@ -341,12 +432,22 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
   )
     fail('OWN_CONTENT_PROBE_REQUIRED');
   // The v2 bounded body observes no relation or artifact and cannot claim completeness.
-  if (sourceAdapter && records.some(r => object(object(r).rawFields).profileOwnedBody !== undefined) &&
-      (records.length !== 1 || edges.length || list(p.artifactBindings, 1000).length ||
-       object(p.coverage).status !== 'PARTIAL' || object(p.coverage).readback !== 'NON_ATOMIC' ||
-       !(object(p.coverage).gaps as string[]).includes('RELATIONS_UNREAD') ||
-       object(p.query).scopeComplete !== false || object(p.query).scopeMatch !== 'UNKNOWN' ||
-       object(p.query).actualCriteria !== null)) fail('BOUNDED_BODY_LIMITS_REQUIRED');
+  if (
+    sourceAdapter &&
+    records.some(
+      (r) => object(object(r).rawFields).profileOwnedBody !== undefined,
+    ) &&
+    (records.length !== 1 ||
+      edges.length ||
+      list(p.artifactBindings, 1000).length ||
+      object(p.coverage).status !== 'PARTIAL' ||
+      object(p.coverage).readback !== 'NON_ATOMIC' ||
+      !(object(p.coverage).gaps as string[]).includes('RELATIONS_UNREAD') ||
+      object(p.query).scopeComplete !== false ||
+      object(p.query).scopeMatch !== 'UNKNOWN' ||
+      object(p.query).actualCriteria !== null)
+  )
+    fail('BOUNDED_BODY_LIMITS_REQUIRED');
   const bindings = list(p.artifactBindings, 1000);
   const bindingIds = new Set<string>();
   for (const value of bindings) {
@@ -408,7 +509,23 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
       'observedAt',
       'confidence',
     ]);
-    native(e.fromSourceRecordId);
+    const completeOwner = sourceAdapter
+      ? records.find(
+          (r) =>
+            object(r).snapshotId === e.fromSnapshotId &&
+            object(r).sourceRecordId === e.fromSourceRecordId &&
+            object(object(r).rawFields).completeOwnedSource !== undefined,
+        )
+      : undefined;
+    if (
+      !(
+        completeOwner &&
+        /^(?:OR|VR):wt\.change2\.WTChangeActivity2:[0-9]{1,24}$/u.test(
+          String(e.fromSourceRecordId),
+        )
+      )
+    )
+      native(e.fromSourceRecordId);
     const ownedRecord = sourceAdapter
       ? records.find(
           (r) =>
@@ -451,8 +568,8 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
       fail('RELATION_EVIDENCE_INVALID');
     if (
       !(
-        observedLink &&
-        ownedProof?.profileId === 'AD_PROCESSING_FORM' &&
+        (completeOwner ||
+          (observedLink && ownedProof?.profileId === 'AD_PROCESSING_FORM')) &&
         typeof e.toSourceRecordId === 'string' &&
         /^(?:OR|VR):wt\.change2\.WTChangeActivity2:[0-9]{1,24}$/u.test(
           e.toSourceRecordId,
@@ -460,8 +577,8 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
       )
     )
       native(e.toSourceRecordId);
-    text(e.relationKind, 120);
-    text(e.evidenceLocator, 300);
+    text(e.relationKind, completeOwner ? 500 : 120);
+    text(e.evidenceLocator, completeOwner ? 700 : 300);
     iso(e.observedAt);
     timeOrder(e.observedAt, p.observedAt);
     if (e.confidence !== 'observed_unresolved' || e.nativeRelationId !== null)
@@ -748,7 +865,7 @@ function coverage(value: unknown) {
   )
     fail('COMPLETE_COVERAGE_UNPROVEN');
 }
-function query(value: unknown) {
+function query(value: unknown, completeItemRef?: string) {
   const q = exact(
     value,
     [
@@ -785,7 +902,16 @@ function query(value: unknown) {
     );
     for (const key of ['documentCode', 'objectType', 'keyword', 'nativeClass'])
       if (r[key] !== undefined) text(r[key], 200);
-    if (r.sourceObjectRef !== undefined) native(r.sourceObjectRef);
+    if (
+      r.sourceObjectRef !== undefined &&
+      !(
+        r.sourceObjectRef === completeItemRef &&
+        /^(?:OR|VR):wt\.change2\.WTChangeActivity2:[0-9]{1,24}$/u.test(
+          String(r.sourceObjectRef),
+        )
+      )
+    )
+      native(r.sourceObjectRef);
     if (r.sourceVersion !== undefined) {
       const v = exact(r.sourceVersion, ['rawRevision', 'rawIteration']);
       text(v.rawRevision, 80);
@@ -955,7 +1081,10 @@ function withoutTimes(value: unknown): unknown {
   );
 }
 /** No getters, identity claims, secrets, JSON omissions, prototype coercion or raw-body side effects. */
-function plainData(value: unknown): unknown {
+function plainData(
+  value: unknown,
+  maxBytes = TDMS_SMALL_PACKAGE_MAX_BYTES,
+): unknown {
   let visited = 0;
   const walk = (v: unknown, depth: number): unknown => {
     if (++visited > 50000 || depth > 25) fail('LIMIT');
@@ -1008,7 +1137,6 @@ function plainData(value: unknown): unknown {
     return result;
   };
   const result = walk(value, 0);
-  if (Buffer.byteLength(canonical(result)) > TDMS_SMALL_PACKAGE_MAX_BYTES)
-    fail('LIMIT');
+  if (Buffer.byteLength(canonical(result)) > maxBytes) fail('LIMIT');
   return result;
 }

@@ -23,10 +23,14 @@ export function assertSummaryContextBasis(basis: DerivedSummaryContextBasis): vo
           (typeof source.publishedParse !== 'object' || Array.isArray(source.publishedParse) ||
             typeof source.publishedParse.parseRunId !== 'string' || !source.publishedParse.parseRunId.trim() ||
             !Number.isSafeInteger(source.publishedParse.parseRevision) || source.publishedParse.parseRevision < 1)) ||
-        (source.semanticRevisions !== undefined && (!Array.isArray(source.semanticRevisions) ||
+          (source.semanticRevisions !== undefined && (!Array.isArray(source.semanticRevisions) ||
           source.semanticRevisions.some(item => !item.parseRunId ||
             !Number.isSafeInteger(item.parseRevision) || item.parseRevision < 1 ||
-            !Number.isSafeInteger(item.semanticRevision) || item.semanticRevision < 1)))))
+            !Number.isSafeInteger(item.semanticRevision) || item.semanticRevision < 1)))) ||
+      (basis.documentReadings !== undefined && (!Array.isArray(basis.documentReadings) || basis.documentReadings.some(item =>
+        !item.documentVersionId || !item.parseRunId || !item.readingRunRef || !Number.isSafeInteger(item.semanticRevision) || item.semanticRevision < 1 ||
+        !(item.currentReadingRunRef === null || typeof item.currentReadingRunRef === 'string' && item.currentReadingRunRef.trim()) ||
+        !(item.currentReadingRevision === null || Number.isSafeInteger(item.currentReadingRevision) && item.currentReadingRevision > 0)))))
     throw summaryError('DERIVED_SUMMARY_CONTEXT_INVALID');
 }
 
@@ -38,7 +42,7 @@ export function summaryContextStatus(frozen: DerivedSummaryContextBasis | undefi
   assertSummaryContextBasis(frozen);
   if (!fresh) throw summaryError('DERIVED_SUMMARY_CONTEXT_INVALID');
   assertSummaryContextBasis(fresh);
-  const changed = (['memberNotices', 'sources', 'workItems', 'matters', 'summaries'] as const)
+  const changed = (['memberNotices', 'sources', 'workItems', 'matters', 'summaries', 'documentReadings'] as const)
     .filter(key => canonicalJson(frozen[key]) !== canonicalJson(fresh[key]));
   const coverageGap = fresh.memberNotices.some(item => !item.current || item.overviewStatus !== 'CURRENT') ||
     fresh.sources.some(item => item.selectedHead !== item.documentVersionId) ||

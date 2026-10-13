@@ -6,13 +6,14 @@ import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { summaryError } from './derived-summary.validation';
 
 const sorted = (values: string[]) => [...new Set(values)].sort();
-const selectionKey = (member: DerivedSummaryMember) => canonicalJson(member.kind === 'DERIVED_SUMMARY'
+const selectionKey = (member: DerivedSummaryMember) => canonicalJson(!('issueKeys' in member)
   ? member : { ...member, issueKeys: sorted(member.issueKeys) });
 const ordered = (members: DerivedSummaryMember[]) => [...members].sort((a, b) => (selectionKey(a) < selectionKey(b) ? -1 : selectionKey(a) > selectionKey(b) ? 1 : 0));
 const subjectKey = (member: DerivedSummaryMember) => canonicalJson({ kind: member.kind, subjectId:
-  member.kind === 'WORK_ITEM_WORK' ? member.workItemId : member.kind === 'MATTER_WORK' ? member.matterId : member.summaryId });
+  member.kind === 'WORK_ITEM_WORK' ? member.workItemId : member.kind === 'MATTER_WORK' ? member.matterId :
+    member.kind === 'DOCUMENT_READING' ? member.documentVersionId : member.summaryId });
 const savedMemberKey = (member: DerivedSummaryMember) => {
-  if (member.kind === 'DERIVED_SUMMARY') return canonicalJson(member);
+  if (!('issueKeys' in member)) return canonicalJson(member);
   const { issueKeys: _issues, ...identity } = member;
   return canonicalJson(identity);
 };

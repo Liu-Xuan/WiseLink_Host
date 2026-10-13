@@ -1,167 +1,189 @@
-import { saveLibraryGraphReturn } from './library-graph-return-memory';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronRight, Filter, Maximize2, Minus, Plus, RefreshCw, Search } from 'lucide-react';
+import { Filter, List, Maximize2, Minus, Plus, RefreshCw, Search, X, Info } from 'lucide-react';
+import type { Core } from 'cytoscape';
 import type { CanonicalLibraryGraphRequest, LibraryGraphFilters } from '@shared/library-graph.interface';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { Button } from '@client/src/components/ui/button';
-import SuiteGraphCanvas, { type SuiteGraphCanvasHandle } from './SuiteGraphCanvas';
+import AtlasGraph from '@client/src/features/atlas/AtlasGraph';
+import { initialAtlasLocation, type AtlasLocation } from '@client/src/features/atlas/atlas-model';
 import { activateGraphLayoutSession, readGraphLayout, saveGraphLayout } from './suite-graph-layout-memory';
-import { documentGraphReadingParams, type SuiteGraphReadingState } from './suite-graph-return';
+import { documentGraphReadingParams, withGraphReturn, type SuiteGraphReadingState } from './suite-graph-return';
 import { LIBRARY_GRAPH_FILTER_KEYS, LIBRARY_GRAPH_ROUTE, libraryGraphFilters, libraryGraphReadingParams, libraryGraphState, readLibraryGraphEntry } from './library-graph-route';
-import { buildLibraryGraphPresentation, libraryClusterLabel, libraryGraphItemId, libraryGraphItemLabel, type LibraryGraphItem } from './suite-library-graph';
-import { useLibraryGraphPage } from './useLibraryGraphPage';
+import { saveLibraryGraphReturn } from './library-graph-return-memory';
+import { buildLibraryMacroGraph, LIBRARY_MACRO_NODE_LIMIT, type MacroTarget } from './library-macro-graph';
+import { useLibraryMacro } from './useLibraryMacro';
 import './suite-library-graph-page.css';
+
 export default function SuiteLibraryGraphPage() {
-  const [params,setParams] = useSearchParams();
-  const location = useLocation();
-  const entry = readLibraryGraphEntry(params);
-  const {sessionGeneration,authenticationRequired,currentUser} = useCurrentUserSession();
-  const lifecycle = JSON.stringify([sessionGeneration,currentUser?.user_id ?? null]);
+  const [params, setParams] = useSearchParams();
+  const location = useLocation(), entry = readLibraryGraphEntry(params);
+  const { sessionGeneration, authenticationRequired, currentUser } = useCurrentUserSession();
+  const lifecycle = JSON.stringify([sessionGeneration, currentUser?.user_id ?? null]);
   const previousLifecycle = useRef(lifecycle);
-  const changedSession = previousLifecycle.current !== lifecycle;
-  const staleDisplay = params.has('displaySession') && params.get('displaySession') !== String(sessionGeneration);
-  const discardDisplay = changedSession || staleDisplay || authenticationRequired;
+  const discardDisplay = previousLifecycle.current !== lifecycle || authenticationRequired ||
+    (params.has('displaySession') && params.get('displaySession') !== String(sessionGeneration));
   useLayoutEffect(() => {
     previousLifecycle.current = lifecycle;
     if (!discardDisplay || entry.kind !== 'library') return;
-    const next = libraryGraphReadingParams(entry.request,{},sessionGeneration);
-    if (next.toString() !== params.toString() || location.state) setParams(next,{replace:true,state:null});
-  },[lifecycle,discardDisplay,params,location.state,setParams]);
-  activateGraphLayoutSession(sessionGeneration,authenticationRequired || discardDisplay);
+    const next = libraryGraphReadingParams(entry.request, {}, sessionGeneration);
+    if (next.toString() !== params.toString() || location.state) setParams(next, { replace: true, state: null });
+  }, [lifecycle, discardDisplay, params, location.state, setParams]);
+  activateGraphLayoutSession(sessionGeneration, authenticationRequired || discardDisplay);
   if (entry.kind !== 'library') return <p role="alert">全库概览范围不明确。</p>;
-  return <LibraryGraphContent key={JSON.stringify([entry.request,sessionGeneration,currentUser?.user_id ?? null])}
+  return <LibraryMacroContent key={JSON.stringify([entry.request, sessionGeneration, currentUser?.user_id ?? null])}
     request={entry.request} session={sessionGeneration} denied={authenticationRequired} discardDisplay={discardDisplay} />;
 }
-const FILTER_LABELS:Record<keyof LibraryGraphFilters,string> = {search:'文号、资料检索',normalizedFamily:'资料类别',ata:'ATA 标注',aircraftModel:'文档机型标注',fleetFamily:'机队系列',fleetModel:'机队机型'};
-/** One metadata page at a time. Selected document detail is delegated to the exact existing neighborhood. */
-function LibraryGraphContent({request,session,denied,discardDisplay}:{request:CanonicalLibraryGraphRequest;session:number;denied:boolean;discardDisplay:boolean}) {
-  const [params,setParams] = useSearchParams();
-  const location = useLocation(), navigate = useNavigate();
-  const read = useLibraryGraphPage(request,session,denied);
-  const [filtersOpen,setFiltersOpen] = useState(false);
-  const [draft,setDraft] = useState<LibraryGraphFilters>(() => libraryGraphFilters(request));
-  const stateRef = useRef<SuiteGraphReadingState>(discardDisplay ? {} : libraryGraphState(params));
-  const [selectedId,setSelectedId] = useState(stateRef.current.selectedId);
-  const canvasRef = useRef<SuiteGraphCanvasHandle|null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout>|null>(null);
+const FILTER_LABELS: Record<keyof LibraryGraphFilters, string> = { search: '文号、资料检索', normalizedFamily: '资料类别', ata: 'ATA 原始标注', aircraftModel: '文档机型标注', fleetFamily: '机队系列', fleetModel: '机队机型' };
+const KINDS: Record<string, string> = { classification: '分类', family: '文档族', document: '准确版本', matter: '工程事项' };
+const COVERAGE: Record<string, string> = { COMPLETE: '已读取', PARTIAL: '部分读取', READ_FAILED: '读取失败', NOT_AUTHORIZED: '无权限或不可访问', NOT_LOADED: '未读取', NOT_INDEXED: '未建立全库索引' };
+type Panel = 'detail' | 'objects' | 'filter' | 'status' | null;
+
+function LibraryMacroContent({ request, session, denied, discardDisplay }: {
+  request: CanonicalLibraryGraphRequest; session: number; denied: boolean; discardDisplay: boolean;
+}) {
+  const [params, setParams] = useSearchParams(), navigate = useNavigate();
+  const read = useLibraryMacro(request, session, denied);
+  const [panel, setPanel] = useState<Panel>(null), [draft, setDraft] = useState<LibraryGraphFilters>(() => libraryGraphFilters(request));
+  const state = useRef<SuiteGraphReadingState>(discardDisplay ? {} : libraryGraphState(params));
+  const [selectedId, setSelectedId] = useState(state.current.selectedId ?? '');
+  const [allLabels, setAllLabels] = useState(false);
+  const migratedCamera = useRef(params.get('macroView') !== 'network' && (params.has('viewport') || params.has('layoutSnapshot')));
+  const cy = useRef<Core | null>(null), readyCore = useRef<Core | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryRef = useRef(params.toString()); queryRef.current = params.toString();
   const lastWritten = useRef(params.toString());
-  const geometryScope = JSON.stringify(['library',session,request]);
-  const presentation = useMemo(() => read.page ? buildLibraryGraphPresentation(read.page) : null,[read.page]);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); },[]);
+  const geometryScope = JSON.stringify(['library-macro', session, request]);
+  const groupBy = request.level === 'versions' ? 'ata' : request.groupBy;
+  const filtered = request.level !== 'clusters' || LIBRARY_GRAPH_FILTER_KEYS.some(key => Boolean(libraryGraphFilters(request)[key]));
+  const display = useMemo<{ projection: ReturnType<typeof buildLibraryMacroGraph> | null; error: string | null }>(() => {
+    if (!read.read) return { projection: null, error: null };
+    try { return { projection: buildLibraryMacroGraph(read.read, groupBy, filtered), error: null }; }
+    catch (reason) { return { projection: null, error: reason instanceof Error ? reason.message : '图谱无法构造，请重新读取。' }; }
+  }, [read.read, groupBy, filtered]);
+  const projection = display.projection;
+  const graphLocation: AtlasLocation = { ...initialAtlasLocation, view: 'network', selected: selectedId, allLabels };
+  const persist = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    const next = libraryGraphReadingParams(request, state.current, session);
+    lastWritten.current = next.toString();
+    if (next.toString() !== queryRef.current) setParams(next, { replace: true });
+    return next;
+  }, [request, session, setParams]);
+  const capture = () => {
+    const core = cy.current;
+    if (core) {
+      state.current.viewport = { pan: { ...core.pan() }, zoom: core.zoom() };
+      state.current.layoutSnapshot = saveGraphLayout(geometryScope, { nodes: core.nodes().map(node => ({
+        id: node.id(), base: { x: 0, y: 0 }, position: { ...node.position() }, w: 0, h: 0, baseW: 0, baseH: 0,
+      })) }, state.current.layoutSnapshot, LIBRARY_MACRO_NODE_LIMIT);
+    }
+    return persist();
+  };
+  const onReady = useCallback((ready: boolean) => {
+    if (!ready || !cy.current || readyCore.current === cy.current) return;
+    const core = cy.current; readyCore.current = core;
+    const saved = readGraphLayout(state.current.layoutSnapshot, geometryScope);
+    if (saved) core.batch(() => saved.nodes.forEach(node => {
+      const target = core.getElementById(node.id);
+      if (target.isNode()) target.position(node.position);
+    }));
+    if (state.current.viewport) core.viewport(state.current.viewport);
+  }, [geometryScope]);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   useEffect(() => {
     if (params.toString() === lastWritten.current) return;
     if (timer.current) clearTimeout(timer.current);
-    stateRef.current = discardDisplay ? {} : libraryGraphState(params); setSelectedId(stateRef.current.selectedId);
-    canvasRef.current?.setViewport(stateRef.current.viewport ?? null);
-  },[params,discardDisplay]);
-  useEffect(() => { if (read.error) activateGraphLayoutSession(session,true); },[read.error,session]);
-  const persist = () => {
-    if (timer.current) clearTimeout(timer.current);
-    const next = libraryGraphReadingParams(request,stateRef.current,session);
-    lastWritten.current = next.toString();
-    if (next.toString() !== queryRef.current) setParams(next,{replace:true,state:location.state});
-    return next;
+    state.current = discardDisplay ? {} : libraryGraphState(params);
+    setSelectedId(state.current.selectedId ?? '');
+    if (state.current.viewport) cy.current?.viewport(state.current.viewport);
+    else cy.current?.fit(undefined, 45);
+  }, [params, discardDisplay]);
+  useEffect(() => { if (read.error) activateGraphLayoutSession(session, true); }, [read.error, session]);
+  const select = (id: string) => {
+    if (!projection?.targets.has(id)) return;
+    setSelectedId(id); state.current.selectedId = id; setPanel('detail'); persist();
   };
-  const capture = () => {
-    if (timer.current) clearTimeout(timer.current);
-    const viewport = canvasRef.current?.getViewport();
-    const layout = canvasRef.current?.getLayout();
-    stateRef.current = {...stateRef.current,viewport:viewport ?? stateRef.current.viewport,
-      layoutSnapshot:layout ? saveGraphLayout(geometryScope,layout,stateRef.current.layoutSnapshot) : stateRef.current.layoutSnapshot};
-    return persist();
+  const selected = projection?.targets.get(selectedId);
+  const openDetail = (target: MacroTarget) => {
+    if (target.kind !== 'version' && target.kind !== 'matter') return;
+    const token = saveLibraryGraphReturn({ query: capture().toString() }, session);
+    const query = target.kind === 'version' ? documentGraphReadingParams(target.documentVersionId, target.readerWorkItemId, {}) : new URLSearchParams({ matterId: target.matterId });
+    if (token) query.set('returnLibrarySnapshot', token);
+    navigate(`/graph?${query}`);
   };
-  const parentState = (discardDisplay ? {} : location.state ?? {}) as {libraryRoot?:string;libraryParent?:string};
-  const safeBackQuery = (raw:string|undefined) => raw && raw.length <= 24000 && readLibraryGraphEntry(new URLSearchParams(raw)).kind === 'library' ? raw : null;
-  const rootQuery = safeBackQuery(parentState.libraryRoot);
-  const parentQuery = safeBackQuery(parentState.libraryParent);
-  const drill = (next:CanonicalLibraryGraphRequest) => {
-    const current = capture().toString();
-    navigate(`/graph?${libraryGraphReadingParams(next)}`,{state:{libraryParent:current,
-      libraryRoot:request.level === 'clusters' ? current : rootQuery ?? LIBRARY_GRAPH_ROUTE.split('?')[1]}});
+  const openSource = (documentVersionId: string) => {
+    navigate(withGraphReturn(`/document-versions/${encodeURIComponent(documentVersionId)}`, capture()));
   };
-  const resetPage = () => { capture(); navigate(`/graph?${libraryGraphReadingParams({...request,cursor:undefined})}`,{replace:true,state:location.state}); };
-  const applyFilters = (event:FormEvent) => {
+  const applyFilters = (event: FormEvent) => {
     event.preventDefault(); capture();
-    const filters = Object.fromEntries(LIBRARY_GRAPH_FILTER_KEYS.filter(key => draft[key]?.trim()).map(key => [key,draft[key]!.trim()]));
-    const groupBy = request.level === 'versions' ? 'ata' : request.groupBy;
-    navigate(`/graph?${libraryGraphReadingParams({level:'clusters',groupBy,...filters})}`);
+    const filters = Object.fromEntries(LIBRARY_GRAPH_FILTER_KEYS.filter(key => draft[key]?.trim()).map(key => [key, draft[key]!.trim()]));
+    navigate(`/graph?${libraryGraphReadingParams({ level: 'clusters', groupBy, ...filters })}`);
+    setPanel(null);
   };
-  const select = (id:string) => { setSelectedId(id); stateRef.current = {...stateRef.current,selectedId:id}; persist(); };
-  const selected = read.page?.items.find(item => libraryGraphItemId(item) === selectedId);
-  const groupBy = read.page && read.page.level !== 'versions' ? read.page.groupBy : 'ata';
-  const openSelected = (item:LibraryGraphItem) => {
-    if (item.kind === 'CLASSIFICATION' && request.level !== 'versions') drill({level:'families',groupBy:request.groupBy,
-      clusterValue:item.value,...libraryGraphFilters(request),limit:50});
-    else if (item.kind === 'FAMILY') drill({level:'versions',familyId:item.familyId,limit:50});
-    else if (item.kind === 'VERSION') { const macro = capture(); const query = documentGraphReadingParams(item.documentVersionId,item.readerWorkItemId,{}); const token = saveLibraryGraphReturn({query:macro.toString(),parent:parentQuery ?? undefined,root:rootQuery ?? undefined},session); if (token) query.set('returnLibrarySnapshot',token); navigate(`/graph?${query}`); }
-  };
-  return <section className="suite-library-graph" aria-label="授权全库概览">
-    <header className="suite-library-header"><div><span className="suite-library-eyebrow">关系图谱</span><h1>全库概览</h1></div>
+  const toggle = (next: Panel) => setPanel(current => current === next ? null : next);
+  const partial = read.read && (read.read.coverage.documents !== 'COMPLETE' || read.read.coverage.matters !== 'COMPLETE');
+  const neighbors: string[] = projection?.graph.edges.flatMap<string>(edge => edge.source === selectedId ? [edge.target] : edge.target === selectedId ? [edge.source] : []) ?? [];
+  return <section className="suite-library-graph" aria-label="授权宏观关系图谱">
+    <header className="suite-library-header">
+      <h1>全库图谱</h1>
+      {projection ? <small className="suite-library-counts" aria-label="当前画布已读取对象计数" aria-live="polite">{projection.counts.families} 份 · {projection.counts.versions} 版 · {projection.counts.matters || read.read?.coverage.matters === 'COMPLETE' ? `${projection.counts.matters} 事项` : '事项未读'}</small> : null}
       <form className="suite-library-search" onSubmit={applyFilters}><Search aria-hidden="true" /><input aria-label="检索全库资料" maxLength={200}
-        value={draft.search ?? ''} onChange={event => setDraft(previous => ({...previous,search:event.target.value}))} placeholder="检索文号或资料" />
+        value={draft.search ?? ''} onChange={event => setDraft(previous => ({ ...previous, search: event.target.value }))} placeholder="文号、标题…" />
         <Button type="submit" variant="ghost" size="sm">检索</Button></form>
-      <label className="suite-library-group">分组<select aria-label="概览分组方式" value={request.level === 'versions' ? '' : request.groupBy}
-        disabled={request.level === 'versions'} onChange={event => { capture(); navigate(`/graph?${libraryGraphReadingParams({level:'clusters',groupBy:event.target.value as 'ata'|'normalizedFamily',...libraryGraphFilters(request),limit:50})}`); }}>
-        {request.level === 'versions' ? <option value="">所选文档族</option> : null}<option value="ata">ATA 标注</option><option value="normalizedFamily">资料类别</option></select></label>
-      <Button size="sm" variant="outline" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(value => !value)}><Filter aria-hidden="true" />筛选</Button>
-      <Button size="sm" variant="ghost" aria-label="重新核对当前范围" onClick={() => { capture(); read.refresh(); }}><RefreshCw aria-hidden="true" /></Button>
+      <Button size="sm" variant="ghost" aria-expanded={panel === 'filter'} onClick={() => toggle('filter')}><Filter aria-hidden="true" />筛选</Button>
+      <Button size="sm" variant="ghost" aria-label="图谱对象清单" aria-expanded={panel === 'objects'} onClick={() => toggle('objects')}><List /></Button>
+      <Button size="sm" variant="ghost" aria-label="图谱读取状态" aria-expanded={panel === 'status'} onClick={() => toggle('status')}><Info />{partial ? '部分读取' : '状态'}</Button>
+      <Button size="sm" variant="ghost" aria-label="重新核对当前范围" onClick={() => { capture(); read.refresh(); }}><RefreshCw /></Button>
     </header>
-    <nav className="suite-library-breadcrumb" aria-label="图谱模式">
-      <span aria-current="page">全库概览</span>
-      <Link to="/graph">事项关系图谱</Link>
-      <Link to="/library">在资料库选择文档</Link>
-      <Button size="sm" variant="ghost" disabled={selected?.kind !== 'VERSION'}
-        onClick={() => { if (selected?.kind === 'VERSION') openSelected(selected); }}>文档关系图谱</Button>
-    </nav>
-    <p className="suite-library-notice">展开分类簇、文档族与版本，可进入文档关系图谱。</p>
-    <nav className="suite-library-breadcrumb" aria-label="图谱范围">
-      <Button size="sm" variant="ghost" onClick={() => {capture(); navigate(`/graph?${rootQuery ?? libraryGraphReadingParams({level:'clusters',groupBy:request.level === 'versions' ? 'ata' : request.groupBy,...libraryGraphFilters(request),limit:50})}`);}}>全库概览</Button>
-      {request.level !== 'clusters' ? <><ChevronRight aria-hidden="true" /><Button size="sm" variant="ghost" onClick={() => {capture(); navigate(parentQuery ? `/graph?${parentQuery}` : LIBRARY_GRAPH_ROUTE,{state:request.level === 'versions' && rootQuery ? {libraryRoot:rootQuery,libraryParent:rootQuery} : undefined});}}>{request.level === 'families' ? libraryClusterLabel(request.clusterValue,request.groupBy) : '返回分类簇'}</Button></> : null}
-      {request.level === 'versions' ? <><ChevronRight aria-hidden="true" /><span>所选文档族的可读版本</span></> : null}
-      {request.cursor ? <span>后续页 · 按稳定身份排序</span> : null}
-    </nav>
-    {filtersOpen ? <form className="suite-library-filters" aria-label="全库筛选" onSubmit={applyFilters}>
-      {LIBRARY_GRAPH_FILTER_KEYS.filter(key => key !== 'search').map(key => <label key={key}>{FILTER_LABELS[key]}<input aria-label={FILTER_LABELS[key]} maxLength={96}
-        value={draft[key] ?? ''} onChange={event => setDraft(previous => ({...previous,[key]:event.target.value}))} /></label>)}
-      <p>文档机型标注与机队系列可选一种筛选。</p>
-      <Button type="submit" size="sm" disabled={Boolean((draft.fleetModel && !draft.fleetFamily) || (draft.fleetFamily && draft.aircraftModel))}>应用并返回概览</Button>
-      <Button type="button" size="sm" variant="ghost" onClick={() => {setDraft({});capture();navigate(`/graph?${libraryGraphReadingParams({level:'clusters',groupBy:request.level === 'versions' ? 'ata' : request.groupBy,limit:50})}`);}}>清除筛选</Button>
-    </form> : null}
-    {read.error ? <div className="suite-library-state" role="alert"><p>{read.error}</p>{!denied ? <Button onClick={read.cursorInvalid ? resetPage : read.refresh}>{read.cursorInvalid ? '重新读取同范围首页' : '重试同一范围'}</Button> : null}</div>
-      : !read.page || !presentation ? <div className="suite-library-state" role="status">正在读取当前授权范围的有界概览…</div>
-      : <>
-        <div className="suite-library-scope" aria-live="polite"><strong>{read.page.counts.uniqueFamilyCount.toLocaleString()} 个唯一文档族 · {read.page.counts.readableVersionCountInMatchingFamilies.toLocaleString()} 个可读版本</strong>
-          <span>{read.page.countScope === 'SELECTED_FAMILY_FRESH_READ' ? '所选文档族重新核权；先前宏观筛选不用于此页' : '筛选按文档族匹配；计数包括匹配族的所有可读版本'}</span>
-          <span>本页 {read.page.items.length} {read.page.level === 'clusters' ? '个分类簇' : read.page.level === 'families' ? '个文档族' : '个准确版本'} · 每页最多 50 · {read.page.hasMore ? '仍有后续页' : '已到当前范围末页'}</span>
+    <div className="suite-library-stage">
+      {read.error || display.error ? <div className="suite-library-state" role="alert"><p>{read.error ?? display.error}</p>{!denied ? <Button onClick={read.refresh}>重试同一范围</Button> : null}</div>
+        : !projection ? <div className="suite-library-state" role="status">正在读取授权图谱…</div>
+        : projection.graph.nodes.length ? <AtlasGraph graph={projection.graph} location={graphLocation} variant="macro" api={cy}
+          ariaLabel="全库宏观图谱；分类、文档族、准确版本与事项同时显示；对象清单提供等价点选"
+          onSelect={select} onReady={onReady} onCamera={(pan, zoom) => {
+            state.current.viewport = { pan, zoom }; if (timer.current) clearTimeout(timer.current);
+            timer.current = setTimeout(persist, 320);
+          }} /> : <div className="suite-library-state" role="status">当前范围没有可读对象</div>}
+      {projection ? <>
+        <div className="suite-library-camera"><Button size="sm" variant="outline" aria-label="适应概览画布" onClick={() => cy.current?.fit(undefined, 45)}><Maximize2 /></Button>
+          <Button size="sm" variant="outline" aria-label="放大概览" onClick={() => { const core = cy.current; if (core) core.zoom({ level: core.zoom() * 1.25, renderedPosition: { x: core.width() / 2, y: core.height() / 2 } }); }}><Plus /></Button>
+          <Button size="sm" variant="outline" aria-label="缩小概览" onClick={() => { const core = cy.current; if (core) core.zoom({ level: core.zoom() * .8, renderedPosition: { x: core.width() / 2, y: core.height() / 2 } }); }}><Minus /></Button>
+          <Button size="sm" variant="outline" aria-pressed={allLabels} onClick={() => setAllLabels(value => !value)}>名称</Button>
+          {selectedId ? <Button size="sm" variant="outline" onClick={() => { setSelectedId(''); state.current.selectedId = undefined; persist(); }}>取消选择</Button> : null}
         </div>
-        {read.page.level === 'clusters' && read.page.clusterCountsOverlap ? <p className="suite-library-notice">同一文档族可出现在多个 ATA 簇中，簇计数不能相加。</p> : null}
-        {read.page.items.length ? <div className="suite-library-workspace"><div className="suite-library-stage">
-          <SuiteGraphCanvas key={geometryScope} ref={canvasRef} presentation={presentation} presentationStyle="points" selectedId={selectedId}
-            initialLayout={readGraphLayout(stateRef.current.layoutSnapshot,geometryScope)} initialViewport={stateRef.current.viewport}
-            ariaLabel="分类簇与文档族概览画布" onSelect={(data,isEdge) => {if (!isEdge && typeof data.businessId === 'string') select(data.businessId);}}
-            onViewport={viewport => {stateRef.current = {...stateRef.current,viewport}; if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(persist,320);}} />
-          <div className="suite-library-camera"><Button size="sm" variant="outline" aria-label="适应概览画布" onClick={() => canvasRef.current?.fit()}><Maximize2 /></Button>
-            <Button size="sm" variant="outline" aria-label="放大概览" onClick={() => canvasRef.current?.zoomBy(1.25)}><Plus /></Button>
-            <Button size="sm" variant="outline" aria-label="缩小概览" onClick={() => canvasRef.current?.zoomBy(.8)}><Minus /></Button></div>
-          <small className="suite-library-legend"><i />分类或包含分组连接 · 没有据此生成引用或工程关系</small>
-        </div><aside className="suite-library-inspector" aria-label="概览所选对象">
-          {selected ? <><span className="suite-library-eyebrow">{selected.kind === 'CLASSIFICATION' ? '分类簇' : selected.kind === 'FAMILY' ? '文档族' : '准确文档版本'}</span><h2>{libraryGraphItemLabel(selected,groupBy)}</h2>
-            {selected.kind === 'CLASSIFICATION' ? <p>{selected.uniqueFamilyCount} 个唯一文档族 · {selected.readableVersionCountInMatchingFamilies} 个可读版本</p>
-              : selected.kind === 'FAMILY' ? <p>{selected.readableVersionCount} 个可读版本<br /><small>{selected.familyId}</small></p>
-                : <><p>{selected.isCurrent ? 'Host 当前登记版本，正式现行性待来源核对' : '其他已登记版本，保留准确身份'}</p><small>{selected.documentVersionId}</small><p>登记时间 {selected.committedAt}</p></>}
-            <Button onClick={() => openSelected(selected)}>{selected.kind === 'CLASSIFICATION' ? '展开此分类簇' : selected.kind === 'FAMILY' ? '查看族内版本' : '以此准确版本查看邻域'}</Button></>
-            : <><h2>{request.level === 'clusters' ? '选择一个簇' : request.level === 'families' ? '选择一个文档族' : '选择一个准确版本'}</h2><p>点选画布或下方清单，再展开下一层。每次只读取所选范围的一页。</p>{selectedId ? <p>先前选择未出现在本次授权页，未替换为其他对象。</p> : null}</>}
-          <details open className="suite-library-list"><summary>本页对象清单（{read.page.items.length}）</summary><ul>{read.page.items.map(item => <li key={libraryGraphItemId(item)}><button type="button" aria-pressed={libraryGraphItemId(item) === selectedId}
-            onClick={() => select(libraryGraphItemId(item))}>{libraryGraphItemLabel(item,groupBy)}</button>
-            <button type="button" aria-label={`${item.kind === 'VERSION' ? '打开文档关系图谱' : '展开'} ${libraryGraphItemLabel(item,groupBy)}`}
-              onClick={() => openSelected(item)}>{item.kind === 'VERSION' ? '文档关系' : '展开'}</button></li>)}</ul></details>
-        </aside></div> : <div className="suite-library-state" role="status"><h2>当前范围没有可读对象</h2><p>可调整筛选。</p></div>}
-        <footer className="suite-library-footer"><details><summary>目录范围</summary><p>文档引用：全库索引尚未建立 · 事项归属：此层未加载</p></details>
-          <div>{request.cursor ? <Button size="sm" variant="ghost" onClick={resetPage}>返回当前范围首页</Button> : null}
-            <Button size="sm" variant="outline" disabled={!read.page.hasMore} onClick={() => {if (read.page?.nextCursor) {capture();navigate(`/graph?${libraryGraphReadingParams({...request,cursor:read.page.nextCursor})}`,{state:location.state});}}}>下一页</Button></div>
-        </footer>
-      </>}
+        <div className="suite-library-legend" aria-label="图谱图例"><span data-kind="classification">分类</span><span data-kind="family">文档族</span><span data-kind="document">版本</span><span data-kind="matter">事项</span><span className="macro-classification-line">分类 / 包含</span><span className="macro-material-line">登记资料</span></div>
+      </> : null}
+      {panel ? <aside className="suite-library-panel" aria-label={panel === 'filter' ? '全库筛选' : panel === 'status' ? '图谱状态详情' : panel === 'objects' ? '图谱对象清单' : '概览所选对象'}>
+        <header><strong>{panel === 'filter' ? '筛选' : panel === 'status' ? '读取状态' : panel === 'objects' ? '图谱对象' : '所选对象'}</strong><Button size="sm" variant="ghost" aria-label="关闭图谱侧栏" onClick={() => setPanel(null)}><X /></Button></header>
+        {panel === 'filter' ? <form className="suite-library-filters" onSubmit={applyFilters}>
+          <label>分类维度<select aria-label="概览分组方式" value={groupBy} onChange={event => { capture(); navigate(`/graph?${libraryGraphReadingParams({ level: 'clusters', groupBy: event.target.value as 'ata' | 'normalizedFamily', ...libraryGraphFilters(request) })}`); }}><option value="ata">ATA</option><option value="normalizedFamily">资料类别</option></select></label>
+          {LIBRARY_GRAPH_FILTER_KEYS.filter(key => key !== 'search').map(key => <label key={key}>{FILTER_LABELS[key]}<input aria-label={FILTER_LABELS[key]} maxLength={96}
+            value={draft[key] ?? ''} onChange={event => setDraft(previous => ({ ...previous, [key]: event.target.value }))} /></label>)}
+          <p>文档机型标注与机队系列可选一种筛选。</p>
+          <Button type="submit" size="sm" disabled={Boolean((draft.fleetModel && !draft.fleetFamily) || (draft.fleetFamily && draft.aircraftModel))}>应用筛选</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => { setDraft({}); capture(); navigate(LIBRARY_GRAPH_ROUTE); setPanel(null); }}>清除筛选</Button>
+        </form> : panel === 'status' ? <>
+          {read.read ? <dl>{Object.entries(read.read.coverage).map(([key, value]) => <div key={key}><dt>{key === 'documents' ? '资料目录' : key === 'matters' ? '事项及材料' : '文档引用'}</dt><dd>{COVERAGE[value]} <small>{value}</small></dd></div>)}</dl> : null}
+          {read.read?.issues.map(issue => <p key={issue}>{issue}</p>)}
+          {migratedCamera.current ? <p>旧概览坐标已适配为网络视图；筛选和准确对象身份保留。</p> : null}
+          <p>筛选按文档族匹配，画布保留匹配族的全部获权版本。</p>
+          {projection?.outsideLinks ? <p>{projection.outsideLinks} 项登记资料在当前文档范围之外。</p> : null}
+          <p>分类连接取自原始标注；事项连接来自 Host 已登记的实存资料或旧工作关联。预期资料及排除材料保留在事项细节图谱中。</p>
+          {read.read?.coverage.matters === 'COMPLETE' && !projection?.counts.materials ? <p>已读回的事项在当前文档范围内没有登记资料连接。</p> : null}
+          <nav><Link to="/graph">事项关系图谱</Link><Link to="/library">资料库</Link></nav>
+        </> : panel === 'objects' ? <ul className="suite-library-object-list">{projection?.graph.nodes.map(node => <li key={node.id}><button type="button" aria-pressed={node.id === selectedId} onClick={() => select(node.id)}><small>{KINDS[node.kind]}</small>{node.kind === 'document' ? `${node.code} · ${node.version ?? ''}` : node.title}</button></li>)}</ul>
+          : selected ? <>
+            <h2>{selected.title}</h2>
+            {selected.kind === 'version' ? <><dl><div><dt>版本</dt><dd>{selected.version} · {selected.current ? '库内当前' : '库内历史'}</dd></div><div><dt>原始 ATA</dt><dd>{selected.ata.length ? selected.ata.map(value => value || '空值').join('、') : '未读回'}</dd></div></dl><small>{selected.documentVersionId}</small>
+              <Button onClick={() => openDetail(selected)}>打开文档图谱</Button><Button variant="ghost" onClick={() => openSource(selected.documentVersionId)}>阅读准确来源</Button></>
+              : selected.kind === 'matter' ? <><p>事项修订 {selected.revision}</p><small>{selected.matterId}</small><Button onClick={() => openDetail(selected)}>打开事项图谱</Button></>
+                : selected.kind === 'classification' ? <p>原始标注：{selected.raw.map(value => value || '空值').join('、')}</p>
+                  : selected.kind === 'family' ? <small>{selected.familyId}</small>
+                    : <><p>{selected.explanation}</p><button onClick={() => select(selected.source)}>定位起点</button><button onClick={() => select(selected.target)}>定位终点</button></>}
+            {neighbors.length ? <><h3>直接连接（{new Set(neighbors).size}）</h3><ul className="suite-library-object-list">{[...new Set(neighbors)].map(id => <li key={id}><button onClick={() => select(id)}>{projection?.graph.nodes.find(node => node.id === id)?.title}</button></li>)}</ul></> : null}
+          </> : <p>先前选择未出现在本次读取范围。</p>}
+      </aside> : null}
+    </div>
   </section>;
 }

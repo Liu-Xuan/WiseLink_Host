@@ -1,6 +1,17 @@
 import { graphReadingParams, readGraphReadingState, withGraphReturn } from '../../client/src/pages/RelationGraphPage/suite-graph-return';
 import { matterReadingReturnParams, readingReturnTarget } from '../../client/src/features/matter/reading-return';
+import { saveLibraryGraphReturn } from '../../client/src/pages/RelationGraphPage/library-graph-return-memory';
+import { libraryGraphReadingParams } from '../../client/src/pages/RelationGraphPage/library-graph-route';
 const query = graphReadingParams('matter-a', 'old-work', {selectedId: '["claim","old-work","c1"]', hiddenGroups: ['evidence'], perspective: 'documents', page: 1, density: 3, relationMode: 'individual', layoutMode: 'reference', viewport: {zoom: .7, pan: {x: 20, y: -30}}});
+it('retains the session-scoped macro return through matter state replacement and source/Wiki round trips', () => {
+  const token = saveLibraryGraphReturn({ query: 'scope=library&ata=24-41' }, 1)!;
+  const origin = new URLSearchParams({ returnLibrarySnapshot: token });
+  const matter = graphReadingParams('matter-a', 'old-work', { perspective: 'documents' }, origin);
+  expect(matter.get('returnLibrarySnapshot')).toBe(token);
+  const source = new URL(withGraphReturn('/document-versions/dv1', matter), 'https://example.test');
+  const target = readingReturnTarget(source.searchParams, 'dv1');
+  expect(new URL(target!.route, 'https://example.test').searchParams.get('returnLibrarySnapshot')).toBe(token);
+});
 it('restores exact graph state after a pinned source and after Wiki', () => {
   const source = new URL(withGraphReturn('/document-versions/dv1?parseRunId=pr1&sourceRef=s1&returnMatterId=old', query), 'https://example.test');
   expect(source.searchParams.has('returnMatterId')).toBe(false);
@@ -20,6 +31,23 @@ it('rejects destination mismatches, duplicate and mixed return intents', () => {
   expect(readingReturnTarget(params, 'dv1', 'pr1')).toBeNull();
   params.delete('returnGraphQuery'); params.set('returnGraphQuery', query.toString()); params.set('returnMatterId', 'another');
   expect(readingReturnTarget(params, 'dv1', 'pr1')).toBeNull();
+});
+it('accepts only a validated macro scope through the existing exact-document return protocol', () => {
+  const macro = libraryGraphReadingParams({ level: 'clusters', groupBy: 'ata', ata: '24-41' }, {
+    selectedId: 'library:version:dv1', viewport: { zoom: .7, pan: { x: 11, y: -23 } },
+    layoutSnapshot: 'gl-12345678-1234-1234-1234-123456789abc',
+  }, 1);
+  const params = new URL(withGraphReturn('/document-versions/dv1', macro), 'https://example.test').searchParams;
+  expect(readingReturnTarget(params, 'dv1')).toEqual({ route: `/graph?${macro}`, label: '返回全库图谱' });
+  for (const extra of ['scope=document', 'matterId=other', 'displaySession=2', 'action=START']) {
+    const invalid = new URLSearchParams(params);
+    invalid.set('returnGraphQuery', `${macro}&${extra}`);
+    expect(readingReturnTarget(invalid, 'dv1')).toBeNull();
+  }
+  params.set('returnGraphQuery', 'scope=library&macroView=external');
+  expect(readingReturnTarget(params, 'dv1')).toBeNull();
+  const matter = new URL(withGraphReturn('/matters/matter-a', macro), 'https://example.test').searchParams;
+  expect(readingReturnTarget(matter, undefined, null, 'matter-a')).toBeNull();
 });
 it('preserves a question mark inside an existing route parameter', () => {
   const result = new URL(

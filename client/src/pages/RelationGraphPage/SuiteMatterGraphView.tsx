@@ -58,6 +58,7 @@ export interface SuiteMatterGraphViewProps {
   revision: EngineeringMatterWorkingRevisionReadModel | null;
   perspective?: SuiteMatterGraphPerspective;
   onPerspectiveChange?: (perspective: SuiteMatterGraphPerspective) => void;
+  onBackToLibrary?: () => void;
   onLocateEvidence?: (evidence: DocumentAssessmentEvidence) => void;
   onOpenWiki?: () => void;
   onOpenProcess?: () => void;
@@ -158,6 +159,7 @@ export default function SuiteMatterGraphView({
   revision,
   perspective: controlledPerspective,
   onPerspectiveChange,
+  onBackToLibrary,
   onLocateEvidence: onLocateEvidenceCallback,
   onOpenWiki: onOpenWikiCallback,
   onOpenProcess: onOpenProcessCallback,
@@ -428,6 +430,7 @@ export default function SuiteMatterGraphView({
             </Button>
           ))}
         </div>
+        {onBackToLibrary ? <Button size="sm" variant="ghost" onClick={onBackToLibrary}>返回全库图谱</Button> : null}
         <Button size="sm" variant="outline" onClick={() => setFilterOpen(true)}>
           <Filter aria-hidden="true" /> 筛选
         </Button>

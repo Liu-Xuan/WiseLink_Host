@@ -11,7 +11,7 @@ import TaskModelPicker, { useTaskModelOptions } from '@client/src/features/revie
 import SavedWorkSelector, { type SelectedSummaryMember } from './SavedWorkSelector';
 import ChildSummarySelector from './ChildSummarySelector';
 import SummaryScopeFields from './SummaryScopeFields';
-import { scopeFromParams, summaryMemberKey, summaryMemberRoute, summaryScopeError } from './summary-selection';
+import { scopeFromParams, summaryMemberKey, summaryMemberVersionLabel, summaryMemberSavedRef, summaryMemberRoute, summaryScopeError } from './summary-selection';
 import { useSummaryResource } from './useSummaryResource';
 import { clearPendingSummaryRequest, readPendingSummaryRequest, storePendingSummaryRequest, summaryPendingKey, type PendingSummaryRequest } from './summary-pending-request';
 
@@ -24,10 +24,10 @@ export default function DerivedSummaryComposePage() {
     return { head, key, pending: readPendingSummaryRequest(key, summaryId) };
   }, [summaryId]);
   const target = useSummaryResource(summaryId ?? 'new', sessionGeneration, load);
-  return <main className="mx-auto max-w-5xl space-y-6 p-4 md:p-8" aria-label="形成派生概述">
-    <Link className="underline" to="/summaries">返回派生概述目录</Link>
-    <h1 className="text-2xl font-semibold">{summaryId ? '更新选定范围的概述' : '形成选定范围的概述'}</h1>
-    {authenticationRequired ? <p role="alert">请先登录，再选择获权保存工作。</p>
+  return <main className="mx-auto max-w-5xl space-y-6 p-4 md:p-8" aria-label="创建资料综合">
+    <Link className="underline" to="/summaries">返回资料综合目录</Link>
+    <h1 className="text-2xl font-semibold">{summaryId ? '更新资料综合' : '创建资料综合'}</h1>
+    {authenticationRequired ? <p role="alert">请先登录。</p>
       : target.error ? <p role="alert">{target.error}</p>
       : target.loading ? <p role="status">正在读取选定范围…</p>
       : target.data ? <SummaryComposeForm key={`${sessionGeneration}:${summaryId ?? 'new'}:${target.data.head?.currentRevision ?? 0}`} session={sessionGeneration}
@@ -40,7 +40,7 @@ function SummaryComposeForm({ session, target, pending, pendingKey }: { session:
   const [params] = useSearchParams();
   const [scope, setScope] = useState(() => pending?.scope ?? target?.scope ?? scopeFromParams(params));
   const [members, setMembers] = useState<SelectedSummaryMember[]>(() => pending?.members.map(member => ({ member,
-    headline: member.kind === 'DERIVED_SUMMARY' ? member.summaryRef : member.workRef, current: null }))
+    headline: summaryMemberSavedRef(member), current: null }))
     ?? target?.current?.members.map(item => ({ member: item.member, headline: item.headline, current: item.current })) ?? []);
   const [purpose, setPurpose] = useState<DerivedSummaryPurpose>(pending?.purpose ?? 'SYNTHESIZE');
   const [instruction, setInstruction] = useState(pending?.instruction ?? '');
@@ -107,11 +107,10 @@ function SummaryComposeForm({ session, target, pending, pendingKey }: { session:
       <label className="flex items-start gap-2 text-sm"><input type="radio" name="summary-purpose" value="SYNTHESIZE" checked={purpose === 'SYNTHESIZE'}
         onChange={() => { setPurpose('SYNTHESIZE'); setConfirmed(false); }} />按当前完整选定材料重新综合</label>
       <label className="flex items-start gap-2 text-sm"><input type="radio" name="summary-purpose" value="REVISE_SAVED_SUMMARY" checked={purpose === 'REVISE_SAVED_SUMMARY'} disabled={!exactSavedTarget}
-        onChange={() => { setPurpose('REVISE_SAVED_SUMMARY'); setConfirmed(false); }} />修改准确的已保存概述</label>
+        onChange={() => { setPurpose('REVISE_SAVED_SUMMARY'); setConfirmed(false); }} />修改已有资料综合</label>
       <p className="text-sm">{pending && 'expectedSummaryRevision' in pending ? `原请求锁定保存修订 ${pending.expectedSummaryRevision}；目前指针为 ${target.currentRevision}，不会自动改用新版。` : `按保存修订 ${target.currentRevision} 核对受理。`}</p>
-      {purpose === 'REVISE_SAVED_SUMMARY' ? <p className="text-sm">仅请求修订准确上版候选正文，按本次要求重新判断当前完整材料。成员、问题或范围变化须重新判断；上版概述不新增原始证据。</p> : null}
       {exactSavedTarget && (!pending || !('expectedSummaryRevision' in pending) || pending.expectedSummaryRevision === target.currentRevision)
-        ? <Link className="text-sm underline" to={`/summaries/${encodeURIComponent(target.summaryId)}?${new URLSearchParams({ summaryRef: target.currentSummaryRef! })}`}>查看准确保存概述 {target.currentSummaryRef}</Link> : null}
+        ? <Link className="text-sm underline" to={`/summaries/${encodeURIComponent(target.summaryId)}?${new URLSearchParams({ summaryRef: target.currentSummaryRef! })}`}>查看保存版本 {target.currentSummaryRef}</Link> : null}
     </fieldset> : null}
     {!locked ? <>
       <SavedWorkSelector session={session} candidateVersionIds={params.getAll('documentVersionId')} onAdd={add} />
@@ -122,23 +121,22 @@ function SummaryComposeForm({ session, target, pending, pendingKey }: { session:
       {!members.length ? <p>尚未选定成员。</p> : null}
       <ul className="space-y-3">{members.map(item => <li className="rounded-md border border-border p-3" key={summaryMemberKey(item.member)}>
         <Link className="font-medium underline" to={summaryMemberRoute(item.member)}>{item.headline}</Link>
-        <p className="text-sm">{item.member.kind === 'DERIVED_SUMMARY' ? `子概述确切修订 ${item.member.summaryRevision}` : `${item.member.kind === 'WORK_ITEM_WORK' ? '评估任务' : '工程事项'} · ${item.current === null ? '按保留确切身份核对' : item.current ? '选取时为当前工作' : '选取历史工作'} · 修订 ${item.member.workRevision} · 问题 ${item.member.issueKeys.join('、')}`}</p>
-        <p className="break-all text-xs text-muted-foreground">{item.member.kind === 'DERIVED_SUMMARY' ? item.member.summaryRef : item.member.workRef}</p>
+        <p className="text-sm">{summaryMemberVersionLabel(item.member)}</p>
+        <p className="break-all text-xs text-muted-foreground">{summaryMemberSavedRef(item.member)}</p>
         {item.member.kind === 'WORK_ITEM_WORK' ? <p className="break-all text-xs">文档版本：{item.member.documentVersionId}</p> : null}
         {item.documentCurrent !== undefined ? <p className="text-sm">{item.documentCurrent ? '选取时为库内当前文档版本' : '选取历史文档版本，新版本未纳入'}</p> : null}
         <Button variant="ghost" size="sm" disabled={locked} onClick={() => { setMembers(prior => prior.filter(value => summaryMemberKey(value.member) !== summaryMemberKey(item.member))); setConfirmed(false); }}>移出本次范围</Button>
       </li>)}</ul>
     </section>
     <label className="block space-y-2 text-sm">{purpose === 'REVISE_SAVED_SUMMARY' ? '本次修改目标' : '本次生成要求'}<Textarea value={instruction} disabled={locked} maxLength={4000} onChange={event => { setInstruction(event.target.value); setConfirmed(false); }} placeholder="说明需比较的前提、冲突、措施覆盖、未知和范围限制。" /></label>
-    <TaskModelPicker id="derived-summary-model" label="本次概述执行模型" value={modelRef} onChange={value => { setModelRef(value); setConfirmed(false); }} catalog={models} disabled={locked} />
-    <p className="text-sm text-muted-foreground">本次明确选定 Hosted 模型，不改变全局默认。</p>
+    <TaskModelPicker id="derived-summary-model" label="生成模型" value={modelRef} onChange={value => { setModelRef(value); setConfirmed(false); }} catalog={models} disabled={locked} />
     <label className="flex items-start gap-2 text-sm"><Checkbox checked={confirmed} disabled={locked} onCheckedChange={value => setConfirmed(value === true)} />
-      仅采用上方确切成员和选定问题；其他资料与新变化未自动纳入，输出保持候选意见。</label>
+      确认以上选定资料与问题。</label>
     {error ? <p role="alert">{error}</p> : null}
     {rejected ? <Button variant="outline" onClick={() => {
       clearPendingSummaryRequest(pendingKey); originalRequest.current = null; setSubmitted(null); setRejected(false); setError(''); setConfirmed(false);
       if (target) navigate(`/summaries/${encodeURIComponent(target.summaryId)}`);
     }}>重新读取并选择</Button> : null}
-    <Button disabled={busy || (!submitted && !confirmed)} onClick={() => void submit()}>{busy ? '正在核对受理…' : submitted ? '用同一请求核对受理结果' : purpose === 'REVISE_SAVED_SUMMARY' ? '提交修改要求，修订保存概述' : '提交选定范围，形成候选概述'}</Button>
+    <Button disabled={busy || (!submitted && !confirmed)} onClick={() => void submit()}>{busy ? '正在提交…' : submitted ? '用同一请求核对受理结果' : purpose === 'REVISE_SAVED_SUMMARY' ? '提交修改要求，更新资料综合' : '提交选定范围，生成资料综合'}</Button>
   </div>;
 }

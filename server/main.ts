@@ -6,12 +6,14 @@ import { __express as hbsExpressEngine } from 'hbs';
 
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import { createTdmsDailyHttpParser } from './modules/tdms-source/tdms-daily-http-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     abortOnError: process.env.NODE_ENV !== 'development',
   });
-  await configureApp(app, { 
+  app.use(createTdmsDailyHttpParser());
+  await configureApp(app, {
     disableSwagger: true,
   });
   const logger = new Logger('Bootstrap');

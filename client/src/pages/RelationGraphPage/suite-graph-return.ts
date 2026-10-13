@@ -1,5 +1,6 @@
 import { isLibraryGraphReturnToken } from './library-graph-return-memory';
 import { readDocumentGraphEntry } from './document-graph-route';
+import { libraryGraphReadingParams, libraryGraphState, readLibraryGraphEntry } from './library-graph-route';
 import {
   suiteGraphSourceEventMatchesPins,
   type SuiteGraphTimelineEventPins,
@@ -46,6 +47,7 @@ function validEventPins(value: unknown): value is SuiteGraphTimelineEventPins {
 
 export function graphReadingParams(matterId: string, workRef: string | null, state: SuiteGraphReadingState, origin?: URLSearchParams): URLSearchParams {
   const params = new URLSearchParams({matterId});
+  if (origin?.has('returnLibrarySnapshot')) params.set('returnLibrarySnapshot', libraryGraphReturnToken(origin) ?? '');
   // Preserve the return intent through view-state replacement and source round trips.
   // Malformed intent stays explicit (empty) so the toolbar rejects it instead of guessing.
   if (origin?.has('returnKnowledgeQuery')) {
@@ -199,6 +201,13 @@ export function graphReturnTarget(params: URLSearchParams, documentVersionId?: s
   if (targetWork && targetWork !== single(params, 'workRef') && targetWork !== single(params, 'sourceWorkRef')) return null;
   if (params.has('returnGraphParseRunId') && (!doc || single(params, 'returnGraphParseRunId') !== requestedRun)) return null;
   const query = new URLSearchParams(raw);
+  const libraryScope = readLibraryGraphEntry(query);
+  if (libraryScope.kind === 'invalid') return null;
+  if (libraryScope.kind === 'library') {
+    if (!doc) return null;
+    const session = query.has('displaySession') ? Number(query.get('displaySession')) : undefined;
+    return { route: `/graph?${libraryGraphReadingParams(libraryScope.request, libraryGraphState(query), session)}`, label: '返回全库图谱' };
+  }
   const documentScope = readDocumentGraphEntry(query);
   if (documentScope.kind === 'invalid') return null;
   if (documentScope.kind === 'document') {

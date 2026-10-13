@@ -220,7 +220,7 @@ export function deriveBreadcrumbs(
   const crumbs: ShellCrumb[] = [{ label: '资料库', to: '/library' }];
 
   if (pathname === '/summaries' || /^\/summaries\/[^/]+(?:\/update)?$/u.test(pathname)) {
-    crumbs.push({ label: '派生概述', ...(pathname !== '/summaries' ? { to: '/summaries' } : {}) });
+    crumbs.push({ label: 'Wiki 与资料综合', ...(pathname !== '/summaries' ? { to: '/summaries' } : {}) });
     if (pathname === '/summaries/new') {
       crumbs.push({ label: '形成选定范围概述' });
     } else if (pathname !== '/summaries') {

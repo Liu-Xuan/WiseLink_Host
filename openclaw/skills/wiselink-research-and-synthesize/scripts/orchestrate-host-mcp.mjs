@@ -63,6 +63,8 @@ export const HOST_MCP_TOOLS = [
   'begin_matter_assessment',
   'matter_action_attempt',
   'derived_summary_attempt',
+  'next_hierarchical_wiki', 'hierarchical_wiki_next_matter_assessment',
+  'hierarchical_wiki_read_matter_current_work', 'hierarchical_wiki_matter_action_attempt', 'hierarchical_wiki_cleanup',
   'read_matter_current_work',
   'query_review_aily',
   'get_parse_status',

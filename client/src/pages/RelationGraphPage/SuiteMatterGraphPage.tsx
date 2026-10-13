@@ -4,12 +4,15 @@ import { suiteDocumentPerspective } from './suite-document-perspective';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   graphReadingParams,
+  libraryGraphReturnToken,
   documentGraphReadingParams,
   readGraphReadingState,
   withGraphReturn,
   type SuiteGraphReadingState,
 } from './suite-graph-return';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { readLibraryGraphReturn } from './library-graph-return-memory';
+import { LIBRARY_GRAPH_ROUTE } from './library-graph-entry';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import {
   matterDocumentRoute,
@@ -85,9 +88,12 @@ function MatterGraphContent({
   const knowledgeReturn = params.has('returnKnowledgeQuery')
     ? (params.getAll('returnKnowledgeQuery').length === 1 ? params.get('returnKnowledgeQuery')! : '')
     : null;
-  const returnContext = useMemo(() => new URLSearchParams(
-    knowledgeReturn === null ? undefined : { returnKnowledgeQuery: knowledgeReturn },
-  ), [knowledgeReturn]);
+  const macroToken = libraryGraphReturnToken(params);
+  const returnContext = useMemo(() => {
+    const context = new URLSearchParams(knowledgeReturn === null ? undefined : { returnKnowledgeQuery: knowledgeReturn });
+    if (macroToken) context.set('returnLibrarySnapshot', macroToken);
+    return context;
+  }, [knowledgeReturn, macroToken]);
   const [navigation, setNavigation] = useState(() => ({
     key: 0,
     state: readGraphReadingState(params),
@@ -340,7 +346,7 @@ function MatterGraphContent({
     if (target.kind === 'matter-node') {
       if (target.matterId !== matterId)
         navigate(
-          `/graph?${new URLSearchParams({ matterId: target.matterId })}`,
+          `/graph?${graphReadingParams(target.matterId, null, {}, returnContext)}`,
         );
       return;
     }
@@ -428,6 +434,11 @@ function MatterGraphContent({
       directoryLoading={directoryPage?.loading}
       perspective={perspective}
       onPerspectiveChange={setPerspective}
+      onBackToLibrary={macroToken ? () => {
+        persistState(displayState.current);
+        const macro = readLibraryGraphReturn(macroToken, session);
+        navigate(macro ? `/graph?${macro.query}` : LIBRARY_GRAPH_ROUTE);
+      } : undefined}
       availablePerspectives={availablePerspectives}
       revision={read.revision}
       timelineEvents={timeline.events}
@@ -450,7 +461,7 @@ function MatterGraphContent({
         const reader = target.kind === 'catalog-document' ? target.entry.workItemId
           : catalog.find(entry => entry.document.documentVersionId === version)?.workItemId;
         persistState(displayState.current);
-        navigate(`/graph?${documentGraphReadingParams(version, reader, {})}`);
+        navigate(`/graph?${documentGraphReadingParams(version, reader, {}, returnContext)}`);
       } : undefined}
     />}
     </SuiteTdmsSourceLayer>

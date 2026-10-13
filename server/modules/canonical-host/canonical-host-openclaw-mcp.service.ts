@@ -7,6 +7,7 @@ import { MatterActionAttemptService } from './matter-action-attempt.service';
 import { registerMatterAttemptMcpTools } from './matter-attempt-mcp-tools';
 import { registerDerivedSummaryAttemptMcpTools } from './derived-summary-attempt-mcp-tools';
 import { DerivedSummaryRuntimeService } from './derived-summary-runtime.service';
+import { HierarchicalWikiService } from './hierarchical-wiki.service';
 import { DocumentManagementHostedService } from '../document-management/src/hosted/nest/document-management-hosted.service';
 import {
   toNodeHandler,
@@ -219,6 +220,7 @@ export class CanonicalHostOpenClawMcpService {
     @Optional() private readonly documentActivity?: DocumentActivityRuntimeService,
     @Optional() private readonly documentReading?: DocumentReadingRuntimeService,
     @Optional() private readonly derivedSummary?: DerivedSummaryRuntimeService,
+    @Optional() private readonly hierarchicalWiki?: HierarchicalWikiService,
   ) {
     const handler = createMcpHandler(() => this.createServer(), {
       legacy: 'stateless',
@@ -251,6 +253,28 @@ export class CanonicalHostOpenClawMcpService {
     );
     if (this.matterAttempts) registerMatterAttemptMcpTools(server, this.matterAttempts, this.serviceScope, this.matterDocuments, this.originalReader);
     if (this.derivedSummary) registerDerivedSummaryAttemptMcpTools(server, this.derivedSummary, this.serviceScope);
+    if (this.hierarchicalWiki) server.registerTool('next_hierarchical_wiki', {
+      title: '预约到期的分层Wiki更新',
+      description: '只使用已保存的本人Wiki委托和实时来源授权，合并底层变化，返回至多一个精确DerivedSummary任务；没有变化时IDLE，不调用模型。',
+      inputSchema: z.strictObject({}),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    }, async () => textResult(await this.hierarchicalWiki!.next()));
+    if (this.hierarchicalWiki && this.matterAttempts) registerMatterAttemptMcpTools(server, this.matterAttempts, {
+      authorizeOpenClawMatterRequest: async input => this.hierarchicalWiki!.authorizeMatter(input),
+      authorizeOpenClawMatterAttempt: async input => {
+        const scope = await this.hierarchicalWiki!.authorizeMatter(input);
+        if (scope.attemptRef !== input.attemptRef) throw new Error('WIKI_MATTER_DELEGATION_UNAVAILABLE');
+        return { ...scope, attemptRef: input.attemptRef };
+      },
+    }, this.matterDocuments, this.originalReader, { prefix: 'hierarchical_wiki_', automaticOnly: true,
+      cleanup: input => this.hierarchicalWiki!.cleanup({ ...input, kind: 'MATTER', subjectId: input.matterId }) });
+    if (this.hierarchicalWiki) server.registerTool('hierarchical_wiki_cleanup', {
+      title: '读取或取消确切自动Wiki任务',
+      description: '仅对持久化本人委托的确切自动请求读取队列状态或取消；不读取来源、正文或任务内容，取消不代表模型已停止。',
+      inputSchema: z.strictObject({ kind: z.enum(['SUMMARY','MATTER']), subjectId: z.string().min(1).max(96),
+        attemptRef: z.string().min(1).max(200), operation: z.enum(['STATUS','CANCEL']) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    }, async input => textResult(await this.hierarchicalWiki!.cleanup(input)));
     if (this.documentWork) server.registerTool('document_work', {
       title: '推进已授权的文档原文步骤',
       description: 'STATUS读取精确文档状态及已明确受理的活动候选请求；STEP推进原文解析，INDEX只组织原文。ACTIVITY_BEGIN显式受理独立来源声明候选，CLAIM/READ/HEARTBEAT/SAVE/FAIL/CANCEL管理其读取与保存；模型由获授权Hosted生产者调用，Host保留准确来源、租约和版本校验。候选不是正式采用。',

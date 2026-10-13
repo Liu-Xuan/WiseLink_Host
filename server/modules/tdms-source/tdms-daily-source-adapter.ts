@@ -1,3 +1,4 @@
+import { completeOwnedNativeKind } from './tdms-complete-owned-source.validation';
 import {
   TDMS_SOURCE_PACKAGE_SCHEMA,
   type TdmsImportReceipt,
@@ -22,8 +23,10 @@ export function adaptTdmsDailySource(raw: unknown) {
   ): TdmsRecordKind =>
     kind === 'AEO'
       ? 'ENGINEERING_FILE'
-      : ['EXECUTION_STATUS', 'EXECUTION_FEEDBACK'].includes(kind)
-        ? 'OBSERVATION'
+      : ['EXECUTION_STATUS', 'EXECUTION_FEEDBACK', 'PROCESSING_ITEM'].includes(
+            kind,
+          )
+        ? (completeOwnedNativeKind(kind) as TdmsRecordKind)
         : (kind as TdmsRecordKind);
   const nativePackage: TdmsSourcePackage = {
     schemaVersion: TDMS_SOURCE_PACKAGE_SCHEMA,

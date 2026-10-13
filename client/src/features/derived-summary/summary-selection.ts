@@ -1,7 +1,41 @@
 import type { DerivedSummaryMember, DerivedSummaryScopeSelection } from '@shared/derived-summary.interface';
 import type { EngineeringKnowledgeRead } from '@shared/engineering-issue-search.interface';
+import { knowledgeReadingReturnRoute } from '@client/src/features/matter/reading-return';
 
-export const summaryMemberKey = (member: DerivedSummaryMember): string => member.kind === 'DERIVED_SUMMARY'
+const summaryBoilerplate = new Set([
+  '仅覆盖显式选取的精确保存成员；未选成员、其他ATA和其他机型均未覆盖。',
+  '机型/ATA为用户选取的候选分类，成员归属和适用性未核。不是受控事实、批准或正式采用。',
+  '独立文件解读为派生候选，不是事项评估、适用性结论或正式采用。',
+].map(value => value.replace(/\s+/gu, '')));
+
+export function summaryReadingLimitations(values: string[]): string[] {
+  return values.filter(value => !summaryBoilerplate.has(value.replace(/\s+/gu, '')));
+}
+
+/** Continue only the existing, validated knowledge return state through internal reading links. */
+export function summaryReadingRoute(route: string, params: URLSearchParams): string {
+  const knowledgeReturn = knowledgeReadingReturnRoute(params);
+  if (!knowledgeReturn || (!route.startsWith('/summaries/') && !route.startsWith('/document-versions/'))) return route;
+  const index = route.indexOf('?');
+  const path = index < 0 ? route : route.slice(0, index);
+  const query = new URLSearchParams(index < 0 ? '' : route.slice(index + 1));
+  const state = new URLSearchParams(knowledgeReturn.slice('/knowledge?'.length));
+  if (path.startsWith('/document-versions/')) {
+    const encodedVersion = /^\/document-versions\/([^/]+)$/u.exec(path)?.[1];
+    if (!encodedVersion) return route;
+    let documentVersionId: string;
+    try { documentVersionId = decodeURIComponent(encodedVersion); } catch { return route; }
+    query.set('returnDocumentVersionId', documentVersionId);
+    // The existing reader contract binds a document selection to its destination version.
+    if (state.has('documentVersionId')) state.set('documentVersionId', documentVersionId);
+  }
+  query.set('returnKnowledgeQuery', state.toString());
+  return `${path}?${query}`;
+}
+
+export const summaryMemberKey = (member: DerivedSummaryMember): string => member.kind === 'DOCUMENT_READING'
+  ? JSON.stringify([member.kind, member.documentVersionId, member.readingRunRef, member.readingRevision])
+  : member.kind === 'DERIVED_SUMMARY'
   ? JSON.stringify([member.kind, member.summaryId, member.summaryRef])
   : JSON.stringify([member.kind, member.kind === 'WORK_ITEM_WORK' ? member.workItemId : member.matterId,
     member.kind === 'WORK_ITEM_WORK' ? member.documentVersionId : null, member.workRef, member.workRevision, member.issueKeys]);
@@ -19,9 +53,22 @@ export function memberFromKnowledge(read: EngineeringKnowledgeRead, issueKeys: s
 }
 
 export function summaryMemberRoute(member: DerivedSummaryMember): string {
+  if (member.kind === 'DOCUMENT_READING') return `/document-versions/${encodeURIComponent(member.documentVersionId)}?${
+    new URLSearchParams({ parseRunId: member.parseRunId, semanticRevision: String(member.semanticRevision),
+      readingRevision: String(member.readingRevision), readingRunRef: member.readingRunRef })}`;
   if (member.kind === 'DERIVED_SUMMARY') return `/summaries/${encodeURIComponent(member.summaryId)}?${new URLSearchParams({ summaryRef: member.summaryRef })}`;
   return `/knowledge?${new URLSearchParams({ subjectKind: member.kind === 'WORK_ITEM_WORK' ? 'WORK_ITEM' : 'ENGINEERING_MATTER',
     subjectId: member.kind === 'WORK_ITEM_WORK' ? member.workItemId : member.matterId, workRef: member.workRef })}`;
+}
+
+export function summaryMemberVersionLabel(member: DerivedSummaryMember): string {
+  if (member.kind === 'DOCUMENT_READING') return `文档解读修订 ${member.readingRevision}`;
+  if (member.kind === 'DERIVED_SUMMARY') return `子概述修订 ${member.summaryRevision}`;
+  return `工作修订 ${member.workRevision} · 选取问题 ${member.issueKeys.join('、') || '全部'}`;
+}
+
+export function summaryMemberSavedRef(member: DerivedSummaryMember): string {
+  return member.kind === 'DOCUMENT_READING' ? member.readingRunRef : member.kind === 'DERIVED_SUMMARY' ? member.summaryRef : member.workRef;
 }
 
 export function summaryScopeError(scope: DerivedSummaryScopeSelection, members: DerivedSummaryMember[]): string | null {

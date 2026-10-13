@@ -30,7 +30,7 @@ test('Matter selection preserves its subject and exact historical work', () => {
 });
 test('coverage identities distinguish issue subsets and child summary exact refs', () => {
   const member = summaryRevision().members[0].member;
-  if (member.kind === 'DERIVED_SUMMARY') throw new Error('fixture');
+  if (!('issueKeys' in member)) throw new Error('fixture');
   expect(summaryMemberKey(member)).not.toBe(summaryMemberKey({ ...member, issueKeys: ['other'] }));
   const route = upperSummaryRoute('DS-1', 'DSR-old', summaryRevision().scope);
   const params = new URL(route, 'https://test.invalid').searchParams;

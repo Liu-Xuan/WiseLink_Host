@@ -19,6 +19,11 @@ import {
 } from '@client/src/app/providers/ThemeProvider';
 import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
 import WiseLinkBrandMark from '@client/src/components/WiseLinkBrandMark';
+import {
+  WISELINK_PRODUCT_NAME,
+  WISELINK_CHINESE_NAME,
+  WISELINK_DESCRIPTION,
+} from '@client/src/config/wiselink-brand';
 import { activityReadingParams, knowledgeReadingIdentity, knowledgeReadingParams, libraryGraphReturnRoute } from '@client/src/features/matter/reading-return';
 import { LIBRARY_GRAPH_ROUTE } from '@client/src/pages/RelationGraphPage/library-graph-entry';
 import {
@@ -260,8 +265,8 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
             <WiseLinkBrandMark size={33} />
           </span>
           <span className="wl-sidebar-brand-text">
-            <strong>WiseLink</strong>
-            <small>工程与知识协同</small>
+            <strong>{WISELINK_PRODUCT_NAME}</strong>
+            <small title={WISELINK_CHINESE_NAME}>{WISELINK_CHINESE_NAME}</small>
           </span>
           <button
             type="button"
@@ -483,7 +488,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
           <DialogHeader>
             <DialogTitle>演示与帮助</DialogTitle>
             <DialogDescription>
-              了解整体流程与当前版本的边界。
+              {WISELINK_DESCRIPTION}
             </DialogDescription>
           </DialogHeader>
           <div className="wiselink-settings-group">

@@ -1,7 +1,8 @@
-import { act, createElement, type ReactNode } from 'react';
+import { act, createElement, useLayoutEffect, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import DocumentVersionReadingPage from '../../client/src/pages/DocumentParsingPage/DocumentVersionReadingPage';
+import DocumentWikiReading from '../../client/src/pages/DocumentParsingPage/DocumentWikiReading';
 import type { DocumentParseRunSummary } from '@shared/document-parsing.interface';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 
@@ -49,7 +50,11 @@ const mockReading = jest.fn();
 const mockTranslation = jest.fn();
 const mockStart = jest.fn();
 const mockSessionCallbacks: Array<() => void> = [];
+const mockWiki=jest.fn();
+jest.mock('@client/src/api/document-wiki',()=>({readDocumentWiki:(...args:unknown[])=>mockWiki(...args)}));
+jest.mock('@client/src/app/providers/CurrentUserSessionProvider',()=>({useCurrentUserSession:()=>({sessionGeneration:1,authenticationRequired:false})}));
 jest.mock('@client/src/api/canonical-host', () => ({
+  getCanonicalHostClientSessionGeneration:()=>1,
   readDocumentParsingStatus: (...args: unknown[]) => mockStatus(...args),
   readParsedDocument: (...args: unknown[]) => mockReading(...args),
   readDocumentTranslationReading: (...args: unknown[]) => mockTranslation(...args),
@@ -119,6 +124,7 @@ beforeEach(() => {
   mockSessionCallbacks.length = 0;
   mockStart.mockReset();
   mockStart.mockResolvedValue({});
+  mockWiki.mockReset();
   mockStatus.mockResolvedValue(statusPayload());
   mockReading.mockResolvedValue(readingPayload());
   mockTranslation.mockResolvedValue({
@@ -126,6 +132,57 @@ beforeEach(() => {
     execution: { status: 'SUCCEEDED' }, translation: { schemaVersion: 'constructed' },
   });
 });
+
+test('Wiki member link reads the exact semantic/reading revision and retains full conditions',async()=>{
+  mockWiki.mockResolvedValue({status:'AVAILABLE',reading:{readingRunRef:'DRR-1',readingRevision:2,headline:'Saved conditional Wiki',
+    brief:{text:'Only after condition X is verified.',quotes:[]},explanation:[{text:'Complete saved explanation; applicability is unconfirmed.',quotes:[]}],
+    criticalConditions:[{text:'Do not act before verifying X.',quotes:[]}],limitations:['Selected original has gaps.'],sourceAnchors:[],
+    readCoverage:{deliveredUnitIds:['u1'],totalUnitCount:2,status:'PARTIAL_DELIVERY',sourceCoverage:{unresolvedRanges:[{message:'Unseen page retained.'}]}}}});
+  await mount('parseRunId=PR1&semanticRevision=4&readingRevision=2&readingRunRef=DRR-1');
+  expect(mockWiki.mock.calls[0][0]).toEqual({documentVersionId:'DV1',parseRunId:'PR1',semanticRevision:4,readingRevision:2});
+  expect(container.textContent).toContain('Complete saved explanation');expect(container.textContent).toContain('Do not act before verifying X.');
+  expect(container.textContent).toContain('Unseen page retained.');expect(mockStart).not.toHaveBeenCalled();
+});
+
+test('withdrawn exact Wiki stops its body without switching to another revision',async()=>{
+  mockWiki.mockResolvedValue({status:'RETRACTED',reading:null});
+  await mount('parseRunId=PR1&semanticRevision=4&readingRevision=2&readingRunRef=DRR-1');
+  expect(container.textContent).toContain('该文档 Wiki 已撤回');
+  expect(mockWiki).toHaveBeenCalledTimes(1);expect(mockStart).not.toHaveBeenCalled();
+});
+
+test('changing only the saved Wiki run pin clears the prior body before effects run', async () => {
+  mockWiki.mockResolvedValueOnce({ status: 'AVAILABLE', reading: {
+    readingRunRef: 'DRR-1', readingRevision: 2, headline: 'Previous pinned Wiki body',
+    brief: { text: 'Saved engineering explanation.', quotes: [] }, explanation: [],
+    criticalConditions: [], limitations: [], sourceAnchors: [],
+    readCoverage: { deliveredUnitIds: ['u1'], totalUnitCount: 1, status: 'COMPLETE_DELIVERY',
+      sourceCoverage: { unresolvedRanges: [] } },
+  } }).mockImplementationOnce(() => new Promise(() => undefined));
+  const captures: string[] = [];
+  const onAccessRejected = jest.fn(), onLocate = jest.fn();
+  function CapturedWiki({ runRef }: { runRef: string }) {
+    useLayoutEffect(() => { captures.push(container.textContent ?? ''); }, [runRef]);
+    return createElement(DocumentWikiReading, {
+      documentVersionId: 'DV1', parseRunId: 'PR1', semanticRevision: 4,
+      readingRevision: 2, readingRunRef: runRef, onAccessRejected, onLocate,
+    });
+  }
+  root = createRoot(container);
+  await act(async () => { root.render(createElement(CapturedWiki, { runRef: 'DRR-1' })); });
+  expect(container.textContent).toContain('Previous pinned Wiki body');
+  captures.length = 0;
+  await act(async () => { root.render(createElement(CapturedWiki, { runRef: 'DRR-2' })); });
+  expect(captures[0]).not.toContain('Previous pinned Wiki body');
+  expect(container.textContent).not.toContain('Previous pinned Wiki body');
+  expect(mockWiki).toHaveBeenCalledTimes(2);
+  expect(mockStart).not.toHaveBeenCalled();
+});
+
+test.each(['parseRunId=PR1&readingRevision=2','parseRunId=PR1&semanticRevision=4&semanticRevision=5&readingRevision=2'])
+  ('invalid exact Wiki parameters are visible and never select another reading: %s',async query=>{
+    await mount(query);expect(container.textContent).toContain('确切版本参数不完整或有重复');expect(mockWiki).not.toHaveBeenCalled();
+  });
 
 afterEach(async () => {
   await act(async () => root?.unmount());

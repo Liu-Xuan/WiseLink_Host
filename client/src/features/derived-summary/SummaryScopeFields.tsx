@@ -15,7 +15,7 @@ export default function SummaryScopeFields({ scope, onChange, disabled }: {
       const kind = value as DerivedSummaryScopeSelection['kind'];
       patch({ kind, ata2: kind === 'FLEET' ? null : scope.ata2, ata4: kind === 'ATA4' ? scope.ata4 : null });
     }}><SelectTrigger aria-label="范围类型"><SelectValue /></SelectTrigger><SelectContent>
-      <SelectItem value="ATA4">ATA4 短概述</SelectItem><SelectItem value="ATA2">ATA2 有限综合</SelectItem><SelectItem value="FLEET">机型范围有限综合</SelectItem>
+      <SelectItem value="ATA4">ATA4 章节</SelectItem><SelectItem value="ATA2">ATA2 章节</SelectItem><SelectItem value="FLEET">机型范围</SelectItem>
     </SelectContent></Select></label>
     <label className="space-y-1 text-sm">范围标题<Input value={scope.title} maxLength={240} onChange={event => patch({ title: event.target.value })} /></label>
     <label className="space-y-1 text-sm">父机型（当前目录标识）<Input value={scope.fleetFamilyId} maxLength={96} onChange={event => patch({ fleetFamilyId: event.target.value })} /></label>

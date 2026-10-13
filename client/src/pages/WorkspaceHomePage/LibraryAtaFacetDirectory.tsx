@@ -10,7 +10,6 @@ export function LibraryAtaFacetDirectory({ counts, selected, scheme = 'ispec', d
 }) {
   const selectedChapter = ataDirectoryCode(selected)?.ata2;
   return <nav className="suite-ata-facets" aria-label="ATA 章节分组">
-    <p className="suite-ata-note">展开 ATA2 查看子章节。按原始标注筛选；数字为搜索范围内的文档族数，子项可能重叠。</p>
     {buildLibraryAtaFacets(counts, scheme).map(chapter => <details key={chapter.key}
       open={chapter.key === selectedChapter || chapter.entries.some(entry => entry.value === selected) || undefined}>
       <summary>{chapter.label}</summary>

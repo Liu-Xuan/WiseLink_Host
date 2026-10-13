@@ -204,7 +204,7 @@ it('mounts v2 document details for the shared opt-in source contract and returns
   const event = mockView.timelineEvents[2];
   await act(async () => mockView.onSelectEvent(event));
   expect(container.querySelector('[data-testid="activity-statement-semantics"]')?.textContent).toContain('only after CIDB');
-  expect(container.textContent).toContain('来源声称已完成');
+  expect(container.textContent).toContain('来源声明：已完成');
   await act(async () => { mockView.onStateChange({ selectedId: event.nodeId!, eventId: event.id, eventPins: event.pins! }, true); mockView.onOpenEventTimeline(event); });
   const target = new URL(location, 'https://example.test');
   expect(target.searchParams.get('anchor')).toBe('anchor-1');

@@ -1,3 +1,7 @@
+import {
+  hasCompleteOwnedSource,
+  assertCompleteOwnedNativePackage,
+} from './tdms-complete-owned-source.validation';
 import type {
   TdmsCoverage,
   TdmsPackageRecord,
@@ -416,11 +420,26 @@ export function createOpinionCollectionIngress({
     observedAt: string;
     coverage: TdmsCoverage;
   }): void {
-    const bounded = p.records.some(r => r.rawFields.profileOwnedBody !== undefined || r.content.boundedOwnedBody !== undefined);
-    if (bounded && (p.records.length !== 1 || p.relations.length || p.artifacts.length ||
-        p.coverage.status !== 'PARTIAL' || p.coverage.readback !== 'NON_ATOMIC' ||
-        !['OWN_BODY_BOUNDED', 'REQUIRED_CONTENT_COMPLETENESS_UNPROVEN', 'RELATIONS_UNREAD',
-          'RELATION_TARGETS_UNVERIFIED'].every(g => p.coverage.gaps.includes(g))))
+    assertCompleteOwnedNativePackage(p);
+    const bounded = p.records.some(
+      (r) =>
+        r.rawFields.profileOwnedBody !== undefined ||
+        r.content.boundedOwnedBody !== undefined,
+    );
+    if (
+      bounded &&
+      (p.records.length !== 1 ||
+        p.relations.length ||
+        p.artifacts.length ||
+        p.coverage.status !== 'PARTIAL' ||
+        p.coverage.readback !== 'NON_ATOMIC' ||
+        ![
+          'OWN_BODY_BOUNDED',
+          'REQUIRED_CONTENT_COMPLETENESS_UNPROVEN',
+          'RELATIONS_UNREAD',
+          'RELATION_TARGETS_UNVERIFIED',
+        ].every((g) => p.coverage.gaps.includes(g)))
+    )
       throw tdmsError('TDMS_BOUNDED_BODY_LIMITS_REQUIRED');
     if (
       p.records.some((r) => r.rawFields.ownedBusinessContent !== undefined) &&
@@ -442,7 +461,11 @@ export function createOpinionCollectionIngress({
       throw tdmsError('TDMS_OWN_VISIBLE_SOURCE_PROOF_INVALID');
     const owned = new Set<string>();
     for (const r of p.records) {
-      if (r.rawFields.profileOwnedBody !== undefined || r.content.boundedOwnedBody !== undefined) {
+      if (hasCompleteOwnedSource(r)) continue;
+      if (
+        r.rawFields.profileOwnedBody !== undefined ||
+        r.content.boundedOwnedBody !== undefined
+      ) {
         boundedOwnedBody(r, p.observedAt);
         continue;
       }

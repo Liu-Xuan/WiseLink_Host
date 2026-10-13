@@ -10,6 +10,10 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { consumePendingReviewTurn } from './consume-hosted-review-turn.mjs';
 import { consumeHostedMatter } from './consume-hosted-matter.mjs';
+import { consumeHierarchicalWikiIdle } from './consume-hierarchical-wiki-queue.mjs';
+import { invokeHostedDerivedSummaryModel } from './invoke-hosted-derived-summary-model.mjs';
+import { validateSummaryRunBudget } from './derived-summary-native-gateway.mjs';
+import { createNativeReviewGatewayPreparer } from './native-temporary-review-gateway.mjs';
 import { hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
 import {
   parkCancelledAutomaticClaim, readCancelledClaimExpectation, parseCancelledClaimExpectation,
@@ -251,6 +255,14 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
 
   const stored = await checkpoint.readOptional('active-claim');
   let claim = stored === null ? null : validateStoredAutoClaim(stored);
+  const activeWiki = await checkpoint.readOptional('active-wiki');
+  if (activeWiki !== null) {
+    if (claim || options.repairStoppedClaim || typeof dependencies.consumeWikiIdle !== 'function')
+      throw new Error('AUTO_WORK_ITEM_WIKI_CHECKPOINT_CONFLICT');
+    // UNKNOWN provider state owns this endpoint until exact cleanup is proven,
+    // including when new user work has arrived or automatic Wiki was paused.
+    return dependencies.consumeWikiIdle();
+  }
   const storedReviewCursor = claim ? null : await checkpoint.readOptional('review-cursor');
   const storedDocumentCursor = claim ? null : await checkpoint.readOptional('document-cursor');
   if (storedReviewCursor !== null &&
@@ -341,6 +353,7 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
       if (next.documentAfterRef !== undefined || storedDocumentCursor !== null)
         await checkpoint.write('document-cursor', next.documentAfterRef ?? null);
       await checkpoint.write('active-claim', null);
+      if (typeof dependencies.consumeWikiIdle === 'function') return dependencies.consumeWikiIdle();
       return { status: 'IDLE' };
     }
     if (previous && next.workItemId !== previous.workItemId) {
@@ -1479,6 +1492,7 @@ export function automaticWorkItemQueueMode(argv) {
   const repairAttempts = argv.filter(arg => arg === '--repair-attempt-ref').length;
   const recoveries = argv.filter(arg => arg === '--document-translation-recovery').length;
   const finishes = argv.filter(arg => arg === '--finish-blocked-claim').length;
+  const wiki = argv.filter(arg => arg === '--wiki-idle').length;
   const parks = argv.filter(arg => arg === '--park-cancelled-claim').length;
   const cancelledFinishes = argv.filter(arg => arg === '--finish-cancelled-claim').length;
   const expectations = argv.filter(arg => arg === '--park-expectation-file').length;
@@ -1489,7 +1503,10 @@ export function automaticWorkItemQueueMode(argv) {
       expectations !== parks + cancelledFinishes ||
       (parks && (finishes || repairs || recoveries)) ||
       (finishes && (repairs || recoveries))) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+  if (wiki > 1 || (wiki && (repairs || finishes || parks || cancelledFinishes)))
+    throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
   if (!occurrences) {
+    if (wiki) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
     if (repairs || repairWorkItems || repairAttempts || finishes || parks || cancelledFinishes || expectations)
       throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
     return false;
@@ -1506,11 +1523,14 @@ export function automaticWorkItemQueueMode(argv) {
     '--checkpoint-root', '--openclaw-config',
     '--repair-work-item-id', '--repair-attempt-ref',
     '--document-translation-recovery', '--park-expectation-file', ...finishFields,
+    '--wiki-timeout-ms', '--wiki-max-completion-tokens', '--wiki-max-model-requests',
+    '--wiki-reasoning-effort', '--wiki-provider-timeout-seconds',
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (['--auto-queue', '--repair-stopped-claim', '--finish-blocked-claim',
-      '--park-cancelled-claim', '--finish-cancelled-claim'].includes(arg)) continue;
+      '--park-cancelled-claim', '--finish-cancelled-claim', '--wiki-idle'].includes(arg)) continue;
+    if (arg.startsWith('--wiki-') && !wiki) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
     if (!valueOptions.has(arg)) {
       throw new Error('AUTO_WORK_ITEM_QUEUE_OPTION_NOT_ALLOWED');
     }
@@ -1805,9 +1825,18 @@ export function matterPreflightMode(argv, matterId) {
 async function main(argv, env) {
   if (argv.includes('--help')) {
     process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue [--park-cancelled-claim --park-expectation-file ABSOLUTE_0600_JSON] [--document-translation-recovery ID] [--repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...] [--finish-blocked-claim --finish-work-item-id WI-... --finish-request-id REQ-... --finish-document-version-id DV --finish-lease-generation N --finish-blocked-at UTC [--finish-cancelled-claim --park-expectation-file ABSOLUTE_0600_JSON]]] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. After Host admission repair, one document translation recovery ID may be added to the existing cron so the next natural tick checks Host again without clearing the old checkpoint. --repair-stopped-claim with both exact identity flags permits one operator-triggered successor only for a stopped claim with a failed no-work JobAid/Overall auto-retry after a bounded gateway change; it is never a cron option. --finish-blocked-claim is an operator-only exact existing BLOCK replay finalization; it archives the original claim/receipt under the endpoint owner lock, never ACKs a failure, and leaves new dispatch to the next natural tick. It requires Linux util-linux flock; competing owners and unsupported locking fail closed. --park-cancelled-claim is a separate operator-only, single BLOCK POST for the exact latest cancelled JobAid; it always retains the stopped claim and provider UNKNOWN. Only --finish-cancelled-claim with an exact private expectation file extends finalization to an existing cancellation BLOCK replay; it cannot create a fresh BLOCK or retry an unknown POST. Both require the compatible Host and a normal Skill/MCP installation, and are never cron options. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
+    process.stdout.write('Wiki idle consumption: add --wiki-idle --wiki-timeout-ms N --wiki-max-completion-tokens N --wiki-max-model-requests N to --auto-queue, with --openclaw-config PATH; optionally --wiki-reasoning-effort low|high|max and --wiki-provider-timeout-seconds N. Uses the existing Hosted GLM5.3 profile, endpoint owner lock and capacity. An unresolved active-wiki checkpoint resumes before new user work; provider UNKNOWN or durable Host COMMITTING keeps it pinned. Platform backstop reserves the same Host queue. Install compatible Host/MCP/schema before enabling these flags.\n');
     return;
   }
   const autoQueue = automaticWorkItemQueueMode(argv);
+  const wikiIdle = argv.includes('--wiki-idle');
+  const wikiBudget = wikiIdle ? validateSummaryRunBudget({ timeoutMs: Number(option(argv, '--wiki-timeout-ms')),
+    maxCompletionTokens: Number(option(argv, '--wiki-max-completion-tokens')),
+    maxModelRequests: Number(option(argv, '--wiki-max-model-requests')),
+    reasoningEffort: option(argv, '--wiki-reasoning-effort') ?? 'low',
+    ...(option(argv, '--wiki-provider-timeout-seconds') ? {
+      providerTimeoutSeconds: Number(option(argv, '--wiki-provider-timeout-seconds')) } : {}) }) : undefined;
+  if (wikiIdle && !option(argv, '--openclaw-config')) throw new Error('WIKI_CONFIG_PATH_REQUIRED');
   const repairStoppedClaim = argv.includes('--repair-stopped-claim');
   const repairWorkItemId = repairStoppedClaim ? option(argv, '--repair-work-item-id') : undefined;
   const repairAttemptRef = repairStoppedClaim ? option(argv, '--repair-attempt-ref') : undefined;
@@ -1884,6 +1913,8 @@ async function main(argv, env) {
         runMetrics: { durationMs: 0, inputUnits: 0, outputUnits: 0 },
       },
     };
+    const automaticCheckpoint = autoQueue ? await createCheckpointStore(join(checkpointRoot,
+      'automatic-work-item-queue', encodeURIComponent(endpoint.origin + endpoint.pathname))) : null;
     const result = autoQueue
       ? await consumeAutomaticWorkItemQueueTick({ checkpointRoot, repairStoppedClaim,
         repairWorkItemId, repairAttemptRef, finishBlockedClaim: argv.includes('--finish-blocked-claim'),
@@ -1895,11 +1926,7 @@ async function main(argv, env) {
         finishDocumentVersionId: option(argv, '--finish-document-version-id'),
         finishLeaseGeneration: Number(option(argv, '--finish-lease-generation')),
         finishBlockedAt: option(argv, '--finish-blocked-at') }, {
-        checkpoint: await createCheckpointStore(join(
-          checkpointRoot,
-          'automatic-work-item-queue',
-          encodeURIComponent(endpoint.origin + endpoint.pathname),
-        )),
+        checkpoint: automaticCheckpoint,
         ...createHostAutoWorkItemQueueClient(runtime),
         readInitialStatus: async id => readInitialStatus(
           await connection.callTool('get_parse_status', { workItemId: id }),
@@ -1959,6 +1986,17 @@ async function main(argv, env) {
             invokeInitialModel: (input, hooks) => invokeHostedInitialModel(input, { ...runtime, ...hooks }),
           });
         },
+        ...(wikiIdle ? { consumeWikiIdle: async () => {
+          assertHostedModelGatewayReady(runtime);
+          return consumeHierarchicalWikiIdle({ enabled: true, runBudget: wikiBudget, checkpointRoot,
+            endpointKey: encodeURIComponent(endpoint.origin + endpoint.pathname) }, {
+            checkpoint: automaticCheckpoint, callTool: connection.callTool,
+            createGatewayPreparer: () => createNativeReviewGatewayPreparer({
+              sourceConfigPath: option(argv, '--openclaw-config') }),
+            invokeModel: (input, hooks) => invokeHostedDerivedSummaryModel(input, { ...runtime, ...hooks }),
+            invokeMatterModel: (input, hooks, deps) => invokeHostedJobAidProblemModel(input, { ...runtime, ...hooks }, deps),
+          });
+        } } : {}),
       })
       : await consumeHostedWorkItem({
         workItemId,

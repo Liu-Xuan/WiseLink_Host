@@ -15,6 +15,8 @@ export interface DerivedSummaryScopeSelection {
 }
 
 export type DerivedSummaryMember =
+  | { kind: 'DOCUMENT_READING'; documentVersionId: string; parseRunId: string;
+      semanticRevision: number; readingRunRef: string; readingRevision: number }
   | { kind: 'WORK_ITEM_WORK'; workItemId: string; documentVersionId: string;
       workRef: string; workRevision: number; issueKeys: string[] }
   | { kind: 'MATTER_WORK'; matterId: string; workRef: string;
@@ -116,6 +118,9 @@ export interface DerivedSummaryMetadata {
   classificationStatus: 'CANDIDATE';
   currentSummaryRef: string | null;
   currentRevision: number;
+  automaticWiki?: true;
+  parentSummaryId?: string | null;
+  currentBodyStatus?: 'AVAILABLE' | 'UPDATING_SCOPE';
 }
 
 export interface DerivedSummaryReadModel extends DerivedSummaryMetadata {
@@ -132,6 +137,8 @@ export interface DerivedSummaryRevisionReadModel {
   revision: DerivedSummaryRevision;
   memberNotices: DerivedSummaryReadModel['memberNotices'];
   contextStatus?: DerivedSummaryContextStatus;
+  automaticWiki?: true;
+  parentSummaryId?: string | null;
 }
 
 export interface DerivedSummaryRequestStatus {
@@ -236,6 +243,9 @@ export interface DerivedSummaryContextBasis {
       overviewCorrectionNotices: EngineeringMatterOverviewCorrectionNotice[];
       referenceWorkNotices: EngineeringMatterReferenceWorkNotice[] }> }>;
   summaries: Array<{ summaryId: string; currentSummaryRef: string | null; currentRevision: number }>;
+  /** Absent on historical contexts; exact independent reading heads and withdrawal. */
+  documentReadings?: Array<{ documentVersionId: string; parseRunId: string; semanticRevision: number;
+    readingRunRef: string; currentReadingRunRef: string | null; currentReadingRevision: number | null }>;
   /** These axes are outside this bounded atomic fence and remain unknown. */
   uncoordinatedDependencies: string[];
 }

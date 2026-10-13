@@ -8,7 +8,14 @@ import {
 } from '@shared/tdms-source.interface';
 import { tdmsError } from './tdms-source.types';
 import { createOpinionCollectionIngress } from './tdms-opinion-collection.validation';
-import { createBoundedOwnedBodyValidator, createOwnedVisibleContentValidator } from './tdms-owned-visible-content.validation';
+import {
+  COMPLETE_OWN_PACKAGE_MAX_BYTES,
+  hasCompleteOwnedSource,
+} from './tdms-complete-owned-source.validation';
+import {
+  createBoundedOwnedBodyValidator,
+  createOwnedVisibleContentValidator,
+} from './tdms-owned-visible-content.validation';
 export const TDMS_SMALL_PACKAGE_MAX_BYTES = 512 * 1024;
 export function canonical(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -27,10 +34,13 @@ export function hash(value: unknown): string {
   return createHash('sha256').update(canonical(value)).digest('hex');
 }
 export function identifier(value: unknown): string {
+  return boundedIdentifier(value, 255);
+}
+function boundedIdentifier(value: unknown, max: number): string {
   if (
     typeof value !== 'string' ||
     !value.length ||
-    value.length > 255 ||
+    value.length > max ||
     value.trim() !== value ||
     /[\u0000-\u001f\u007f]/u.test(value)
   )
@@ -133,16 +143,29 @@ export const assertOpinionCollectionIngress = createOpinionCollectionIngress({
     strict,
     date,
   }),
-  boundedOwnedBody: createBoundedOwnedBodyValidator({ canonical, object, strict, date }),
+  boundedOwnedBody: createBoundedOwnedBodyValidator({
+    canonical,
+    object,
+    strict,
+    date,
+  }),
 });
 export function sourcePackage(value: unknown): TdmsSourcePackage {
   const serialized = JSON.stringify(value);
   if (
     !serialized ||
-    Buffer.byteLength(serialized) > TDMS_SMALL_PACKAGE_MAX_BYTES
+    Buffer.byteLength(serialized) > COMPLETE_OWN_PACKAGE_MAX_BYTES
   )
     throw tdmsError('TDMS_SMALL_PACKAGE_LIMIT');
   const p = object(value);
+  const completeOwnPackage =
+    Array.isArray(p.records) && p.records.some(hasCompleteOwnedSource);
+  // The larger bound still requires the complete-mode ingress proof below.
+  if (
+    !completeOwnPackage &&
+    Buffer.byteLength(serialized) > TDMS_SMALL_PACKAGE_MAX_BYTES
+  )
+    throw tdmsError('TDMS_SMALL_PACKAGE_LIMIT');
   strict(p, [
     'schemaVersion',
     'packageId',
@@ -168,8 +191,12 @@ export function sourcePackage(value: unknown): TdmsSourcePackage {
   for (const name of ['readFailures', 'records', 'relations', 'artifacts'])
     if (!Array.isArray(p[name]) || (p[name] as unknown[]).length > 200)
       throw tdmsError('TDMS_PACKAGE_LIST_INVALID');
-  if ((p.records as unknown[]).some(r => object(object(r).rawFields).profileOwnedBody !== undefined) &&
-      (q.scopeMatch !== 'UNKNOWN' || q.actualCriteria !== null))
+  if (
+    (p.records as unknown[]).some(
+      (r) => object(object(r).rawFields).profileOwnedBody !== undefined,
+    ) &&
+    (q.scopeMatch !== 'UNKNOWN' || q.actualCriteria !== null)
+  )
     throw tdmsError('TDMS_BOUNDED_BODY_LIMITS_REQUIRED');
   const ids = new Set<string>();
   const memberIds = new Set<string>();
@@ -271,6 +298,7 @@ export function sourcePackage(value: unknown): TdmsSourcePackage {
     strict(content, [
       'ownedVisibleBusinessContent',
       'boundedOwnedBody',
+      'completeOwnedFields',
       'opinions',
       'conditions',
       'requiredActions',
@@ -398,8 +426,8 @@ export function sourcePackage(value: unknown): TdmsSourcePackage {
     relationIds.add(id);
     if (r.expectedHeadAssertionRef !== null)
       identifier(r.expectedHeadAssertionRef);
-    identifier(r.rawKind);
-    identifier(r.selector);
+    boundedIdentifier(r.rawKind, completeOwnPackage ? 500 : 255);
+    boundedIdentifier(r.selector, completeOwnPackage ? 700 : 255);
     date(r.observedAt);
     coverage(r.coverage);
     object(r.scope);

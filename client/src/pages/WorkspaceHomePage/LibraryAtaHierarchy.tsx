@@ -1,6 +1,8 @@
 import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import { Link } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
+import type { DerivedSummaryScopeSelection } from '@shared/derived-summary.interface';
 import { Button } from '@client/src/components/ui/button';
 import { LibraryDocumentTableHead, LibraryDocumentVersionRow } from './LibraryDocumentRows';
 import { DocumentVersionLink } from './DocumentVersionLink';
@@ -11,7 +13,7 @@ import { libraryAtaSummaryParams } from './library-summary-entry';
 
 export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore, scheme, onSchemeChange, onSelect,
   selectedId = '', selectedDocumentVersionId = '', onSelectVersion, navigationOnly = false,
-  fleetLoading = false, fleetError = null }: {
+  fleetLoading = false, fleetError = null, wikiScopes = [], renderNodeActions, documentReadingRoute, showScopeActions = true }: {
   documents: CanonicalLibraryDocumentSummary[];
   fleetCatalog: CanonicalLibraryFleetCatalog | null;
   filters: LibraryCatalogFilters;
@@ -25,6 +27,10 @@ export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore,
   navigationOnly?: boolean;
   fleetLoading?: boolean;
   fleetError?: string | null;
+  wikiScopes?: DerivedSummaryScopeSelection[];
+  renderNodeActions?: (node: AtaDirectoryNode, path: string[]) => ReactNode;
+  documentReadingRoute?: (documentVersionId: string) => string;
+  showScopeActions?: boolean;
 }) {
   if (!navigationOnly && (filters.fleetFamily || filters.fleetModel) &&
       (fleetLoading || fleetError || fleetCatalog?.status !== 'AVAILABLE')) {
@@ -33,7 +39,7 @@ export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore,
         <p role="alert">{fleetError ? '机队范围未能读取' : '机队范围暂不可用'}，暂不能判断匹配资料。{fleetError ? ` ${fleetError}` : ''}</p>}
     </section>;
   }
-  const roots = buildLibraryAtaDirectory(documents, fleetCatalog, filters);
+  const roots = buildLibraryAtaDirectory(documents, fleetCatalog, filters, wikiScopes);
   const items = [...new Map(roots.flatMap(node => node.items).map(item =>
     [JSON.stringify([item.document.familyId, item.version.documentVersionId]), item])).values()];
   if (!navigationOnly) return <section className="library-ata-results" aria-label="ATA 范围文档版本">
@@ -53,13 +59,15 @@ export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore,
       const leafTitles = [...titles, ...path.filter(segment => segment.startsWith('ata2:'))
         .flatMap(segment => ataDirectoryTitles(segment.slice(5), scheme))];
       return <details key={node.key} data-reading-key={`ata:${JSON.stringify(key)}`} open={path.length === 0 || Boolean(filters.ata)}>
-        <summary><span className="library-branch-label"><strong>{node.level === 'ata2' || node.level === 'ata4' ? ataDirectoryLabel(node.key, scheme) : node.label}</strong></span><small>{new Set(node.items.map(item => item.document.familyId)).size} 份 · {node.items.length} 版</small></summary>
+        <summary><span className="library-branch-label"><strong>{node.level === 'ata2' || node.level === 'ata4' ? ataDirectoryLabel(node.key, scheme) : node.label}</strong></span>{node.items.length ? <small>{new Set(node.items.map(item => item.document.familyId)).size} 份 · {node.items.length} 版</small> : null}</summary>
+        {renderNodeActions ? <div className="library-ata-node-actions">{renderNodeActions(node, key)}</div> : null}
         {node.children.length ? branches(node.children, key) : <ul className="library-ata-navigation-docs">
           {node.items.map(({ document, version }) => <li key={JSON.stringify([document.familyId, version.documentVersionId])}>
             <button type="button" onClick={() => onSelectVersion ? onSelectVersion(document.familyId, version.documentVersionId) : onSelect(document.familyId)}>
               {documentLabel(document)} · {libraryVersionLabel(version)}
             </button>
-            <DocumentVersionLink compact version={version} familyId={document.familyId}>阅读</DocumentVersionLink>
+            {documentReadingRoute ? <Link to={documentReadingRoute(version.documentVersionId)}>阅读</Link>
+              : <DocumentVersionLink compact version={version} familyId={document.familyId}>阅读</DocumentVersionLink>}
           </li>)}
         </ul>}
         {!node.children.length && (leafTitles.length || node.level === 'ata4') ? <details className="library-ata-node-more">
@@ -68,9 +76,9 @@ export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore,
             <p lang="en">{title.titleEN || '英文标题待核'}</p>
             <ul>{title.sources.map(source => <li key={source}>{source}</li>)}</ul>
           </div>)}</div>
-          {node.level === 'ata4' && /^\d{2}-\d{2}$/u.test(node.key) ? <div className="library-ata-scope-actions">
-            <Link to={`/summaries?${libraryAtaSummaryParams(node, path)}`}>已有概述</Link>
-            <Link to={`/summaries/new?${libraryAtaSummaryParams(node, path)}`}>形成概述</Link>
+          {showScopeActions && node.level === 'ata4' && /^\d{2}-\d{2}$/u.test(node.key) ? <div className="library-ata-scope-actions">
+            <Link to={`/summaries?${libraryAtaSummaryParams(node, path)}`}>已有资料综合</Link>
+            <Link to={`/summaries/new?${libraryAtaSummaryParams(node, path)}`}>创建资料综合</Link>
           </div> : null}
         </details> : null}
       </details>;

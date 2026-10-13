@@ -17,8 +17,8 @@ const work = (id: string, issueKeys: string[] = ['a', 'b']): Extract<DerivedSumm
   kind: 'WORK_ITEM_WORK', workItemId: `WI-${id}`, documentVersionId: `DV-${id}`,
   workRef: `WR-${id}`, workRevision: 1, issueKeys,
 });
-const reading = (member: DerivedSummaryMember, resolved = member.kind === 'DERIVED_SUMMARY' ? [] : member.issueKeys): DerivedSummaryMemberReading => ({
-  member, evidenceRef: `member-${member.kind === 'WORK_ITEM_WORK' ? member.workRef : member.kind === 'MATTER_WORK' ? member.workRef : member.summaryRef}`,
+const reading = (member: DerivedSummaryMember, resolved = 'issueKeys' in member ? member.issueKeys : []): DerivedSummaryMemberReading => ({
+  member, evidenceRef: `member-${member.kind === 'WORK_ITEM_WORK' ? member.workRef : member.kind === 'MATTER_WORK' ? member.workRef : member.kind === 'DOCUMENT_READING' ? member.readingRunRef : member.summaryRef}`,
   headline: 'Synthetic saved work', body: 'Complete synthetic saved work body',
   issues: resolved.map(issueKey => ({ issueKey, issueRef: `issue-${issueKey}`, question: `Question ${issueKey}`,
     body: `Full candidate explanation ${issueKey}`, riskScenarios: [], measures: [], otherClassifications: [],

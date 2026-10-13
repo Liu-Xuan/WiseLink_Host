@@ -74,3 +74,60 @@ Production activation still requires the actual identity/session transport,
 current native source-authority provider, source-authorized artifact transport,
 and any later separately approved DM/source-intake bindings. Those missing seams
 are not made successful by local fixtures or this source-only implementation.
+
+## Complete1 own-part observations
+
+The same daily v1 routes also retain the explicit `COMPLETE_OWN_SOURCE@1`
+mode: `rawFields.completeOwnedSource` uses
+`wiselink.tdms-owned-complete-source-observation.v1` and
+`tdms-complete-owned-profiles@1`; `content.completeOwnedFields` retains the
+ordered, typed source fields. The Host checks exact owner/type/version/context,
+two stable reads, tab/section/field rosters, all eight presence states, relation
+windows/counts/terminal evidence and their original target occurrences. The
+comparison-only snapshot projection omits observed timing, relation traversal
+windows, capture document identity, input discovery/expected-owner claims and
+principal context beyond source origin. It normalizes only the reviewed generated
+engineering detail-panel identifiers; unknown identifiers remain content. The
+complete original envelope, all context and locators, and its request/output
+digests still retain every original value.
+
+Different original requests may share that content snapshot identity. Each
+request still reads back its exact original envelope. The existing SourceRef
+lookup rejects multiple matching captures with `TDMS_DAILY_REFERENCE_AMBIGUOUS`
+instead of choosing one; this candidate does not change that v1 readback boundary.
+
+The current own DTO also requires `technicalVersionFieldEvidence` separately
+from a supported engineering header's `technicalVersionEvidence`. Engineering
+own input retains its `classificationOperationId` for directory or required
+relation targets; this does not authorize or
+admit a separate classification package. Single-aircraft status accepts the
+concrete native class evidence, and feedback keeps its exact native header/type
+binding. Related-status column tokens and optional native status enumeration
+proof are validated against their exact owner/version, counts and target links.
+Execution dates and feedback references in that proof remain raw source
+evidence, including TBD execution dates; they do not make execution verified.
+
+The own-part stays one record, `PARTIAL` / `NON_ATOMIC`, with an unknown query
+scope, no artifact bindings, and `COMPLETION_CERTIFICATE_NOT_ISSUED`. It neither
+issues a composite source-completion certificate nor approves opinions or
+execution. `Estimating` opinion fields must remain `NOT_APPLICABLE` with null
+text. Independently captured assessments sharing a business revision remain
+separate source identities and observations. Approved/Estimated source literals
+are retained without becoming the existing approved-opinion mapper's output.
+
+The related-only AD item retains its exact `WTChangeActivity2` identity as a
+native `OBSERVATION`; complete-mode single-aircraft status and feedback also
+use `OBSERVATION`, preserving their original daily kind and proof. The legacy
+single-aircraft status fields and legacy opinion/body contracts are unchanged.
+Observed edges still become `CANDIDATE_ONLY` / unresolved assertions with no
+native semantic promotion.
+
+Complete1 permits 850 KiB for its two-read observation and 2 MiB for the whole
+request envelope or native package, with edge kinds up to 500 characters and
+locators up to 700. Those limits require the strict complete-mode record and
+package validation. Legacy modes retain their 512 KiB and original edge and
+identifier limits. An over-limit object is rejected explicitly; no field,
+window or original relationship is cropped into a successful import. Source authorization and nonempty artifact
+transport still require the independent server bindings described above. An
+attachment listed in the own read is source metadata, not collected original
+bytes or a formal DM document version.

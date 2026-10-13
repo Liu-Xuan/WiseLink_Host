@@ -18,9 +18,9 @@ export function activateGraphLayoutSession(session: number, denied: boolean) {
   if (session !== activeSession || denied) entries.clear();
   activeSession = session;
 }
-export function saveGraphLayout(scope: string, snapshot: SuiteGraphLayoutSnapshot, previous?: string): string | undefined {
+export function saveGraphLayout(scope: string, snapshot: SuiteGraphLayoutSnapshot, previous?: string, maxNodes: 512 | 1024 = 512): string | undefined {
   for (const [key, entry] of entries) if (entry.expires <= Date.now()) entries.delete(key);
-  if (!snapshot.nodes.length || snapshot.nodes.length > 512 || snapshot.nodes.some(node =>
+  if (!snapshot.nodes.length || snapshot.nodes.length > maxNodes || snapshot.nodes.some(node =>
     !node.id || node.id.length > 2048 || !finitePoint(node.base) || !finitePoint(node.position)
     || ![node.w, node.h, node.baseW, node.baseH].every(n => Number.isFinite(n) && n >= 0 && n <= 100000))) return undefined;
   const serialized = JSON.stringify(snapshot);

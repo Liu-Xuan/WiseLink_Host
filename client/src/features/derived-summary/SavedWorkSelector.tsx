@@ -62,7 +62,6 @@ export default function SavedWorkSelector({ session, candidateVersionIds, onAdd 
   const route = selected ? `/knowledge?${new URLSearchParams({ subjectKind: selected.entry.subjectKind, subjectId: selected.entry.subjectId, workRef: selected.entry.workRef })}` : null;
   return <section className="space-y-4" aria-label="选择确切保存工作">
     <h2 className="text-lg font-semibold">选择保存工作与问题</h2>
-    <p className="text-sm text-muted-foreground">目录用于发现，展开后明确选择确切工作和问题。历史工作保留原版依据，未覆盖的新变化需单独说明。</p>
     {candidateVersionIds.length ? <p className="text-sm">从 ATA 节点进入：当前已加载 {candidateVersionIds.length} 个候选文档版本，尚未加入成员。</p> : null}
     <details><summary className="cursor-pointer">直接读取已有确切保存链接（含历史工作）</summary>
       <form className="my-3 flex flex-wrap gap-2" onSubmit={event => {
@@ -78,13 +77,13 @@ export default function SavedWorkSelector({ session, candidateVersionIds, onAdd 
     <form className="flex flex-wrap items-center gap-2" onSubmit={event => { event.preventDefault(); setSearch(text.trim()); setAfter(undefined); }}>
       <Input className="max-w-sm" aria-label="查找保存工作" placeholder="标题或问题关键词" value={text} maxLength={200} onChange={event => setText(event.target.value)} />
       <Button variant="outline" type="submit">查找</Button>
-      <Button variant="ghost" type="button" onClick={catalogue.refresh}>重新读取目录</Button>
+      <Button variant="ghost" type="button" onClick={catalogue.refresh}>刷新</Button>
     </form>
     <div className="flex flex-wrap gap-2" role="group" aria-label="保存工作现行性">
       {(['ALL', 'CURRENT', 'HISTORICAL'] as const).map(value => <Button key={value} size="sm" variant={scope === value ? 'default' : 'outline'}
         aria-pressed={scope === value} onClick={() => { setScope(value); setAfter(undefined); }}>{value === 'ALL' ? '当前与历史' : value === 'CURRENT' ? '当前工作' : '历史工作'}</Button>)}
     </div>
-    {catalogue.loading ? <p role="status">正在读取获权保存工作…</p> : null}
+    {catalogue.loading ? <p role="status">正在读取保存工作…</p> : null}
     {catalogue.error ? <p role="alert">{catalogue.error}</p> : null}
     <ul className="space-y-2">{catalogue.data?.entries.map(entry => <li className="rounded-md border border-border p-3" key={`${entry.subjectKind}:${entry.subjectId}:${entry.workRef}`}>
       <strong>{entry.headline}</strong><p className="text-sm">{entry.subjectKind === 'WORK_ITEM' ? '评估任务' : '工程事项'} · {entry.current ? '当前工作' : '历史工作'} · 修订 {entry.workRevision}</p>
@@ -93,7 +92,7 @@ export default function SavedWorkSelector({ session, candidateVersionIds, onAdd 
     </li>)}</ul>
     {catalogue.data && !catalogue.data.entries.length ? <p>这批目录没有匹配的保存工作。</p> : null}
     {catalogue.data?.nextCursor ? <Button variant="outline" onClick={() => setAfter(catalogue.data!.nextCursor!)}>下一批保存工作</Button> : null}
-    {reading ? <p role="status">正在重新核权并读取确切工作…</p> : null}
+    {reading ? <p role="status">正在读取保存工作…</p> : null}
     {error ? <p role="alert">{error}</p> : null}
     {selected ? <div className="space-y-3 rounded-md border border-border p-4" data-work-ref={selected.entry.workRef}>
       <h3 className="font-semibold">{selected.entry.headline}</h3>

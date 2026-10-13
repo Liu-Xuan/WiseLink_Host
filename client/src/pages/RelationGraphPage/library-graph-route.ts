@@ -6,6 +6,7 @@ export function libraryGraphReadingParams(request:CanonicalLibraryGraphRequest, 
   const bounded = graphReadingParams('_',null,{selectedId:state.selectedId,viewport:state.viewport,layoutSnapshot:state.layoutSnapshot});
   if (session !== undefined && Number.isSafeInteger(session) && session >= 0) bounded.set('displaySession',String(session));
   bounded.delete('matterId'); bounded.set('scope','library'); bounded.set('level',request.level);
+  bounded.set('macroView','network');
   if (request.level === 'versions') bounded.set('familyId',request.familyId);
   else {
     bounded.set('groupBy',request.groupBy);
@@ -20,6 +21,9 @@ export function libraryGraphReadingParams(request:CanonicalLibraryGraphRequest, 
 }
 export function libraryGraphState(params:URLSearchParams):SuiteGraphReadingState {
   const {selectedId,viewport,layoutSnapshot} = readGraphReadingState(params);
+  // Old grid cameras have a different coordinate space. Keep the scope and
+  // exact object intent, but fit the new network on old bookmarks/releases.
+  if (params.get('macroView') !== 'network') return {selectedId};
   return {selectedId,viewport,layoutSnapshot};
 }
 export function libraryGraphFilters(request:CanonicalLibraryGraphRequest):LibraryGraphFilters {

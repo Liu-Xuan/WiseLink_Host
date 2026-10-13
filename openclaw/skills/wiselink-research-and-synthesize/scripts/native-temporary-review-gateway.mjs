@@ -82,7 +82,13 @@ async function beforeDeadline(pending, deadlineAt, signal) {
 
 export function assertNativeGatewayBinding(binding) {
   const summary = binding?.subject?.kind === 'DERIVED_SUMMARY';
-  const subjectValid = summary
+  const matter = binding?.subject?.kind === 'ENGINEERING_MATTER';
+  const subjectValid = matter ?
+    typeof binding.subject.matterId === 'string' && /^MAT-[A-Za-z0-9_-]{1,92}$/u.test(binding.subject.matterId) &&
+      Object.keys(binding.subject).length === 2 &&
+      !['workItemId', 'summaryId', 'documentVersionId'].some(key => Object.hasOwn(binding, key)) &&
+      binding.nativeSessionKey === `agent:${AGENT_ID}:matter:${binding.subject.matterId}:${binding.attemptRef}`
+    : summary
     ? typeof binding.subject.summaryId === 'string' && /^DS-[A-Za-z0-9_-]{1,93}$/u.test(binding.subject.summaryId) &&
       Object.keys(binding.subject).length === 2 &&
       !['workItemId', 'matterId', 'documentVersionId'].some(key => Object.hasOwn(binding, key)) &&

@@ -1,6 +1,6 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, type Query } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import type {
   EngineeringKnowledgeEntry,
@@ -11,6 +11,7 @@ import type {
 import type { CanonicalLibraryDocumentsResponse, EngineeringMatterDirectoryResponse } from '@shared/api.interface';
 import type { DocumentReadingPreview, DocumentReadingRequest } from '@shared/document-reading.interface';
 import { getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
+import type { HierarchicalWikiList } from '@shared/hierarchical-wiki.interface';
 import { getEngineeringMatterDirectory } from '@client/src/api/engineering-matter';
 import { clearEngineeringMatterQueries, ENGINEERING_MATTER_QUERY_ROOT } from '@client/src/features/matter/useEngineeringMatter';
 import KnowledgeLookupPage from '@client/src/pages/KnowledgeLookupPage/KnowledgeLookupPage';
@@ -30,10 +31,20 @@ const mockSourcePage = jest.fn();
 const mockSavedDocumentReading = jest.fn();
 const mockIdentity = jest.fn();
 const mockWrite = jest.fn((..._args: unknown[]) => { throw new Error('Read-only catalogue invoked a write'); });
+const mockWiki = jest.fn();
+const wikiDirectory = (): HierarchicalWikiList => ({
+  items: [{ wikiId: 'WIKI-787-23-15', summaryId: 'DS-WIKI-23-15', parentSummaryId: null,
+    scope: { kind: 'ATA4', title: '787-9 ATA23-15 Wiki', fleetFamilyId: '787', fleetModelIds: ['787-9'], ata2: '23', ata4: '23-15', selectionReason: '已归类资料' },
+    enabled: true, state: 'EMPTY', desiredGeneration: 1, completedGeneration: 0, firstDirtyAt: null, dueAt: null,
+    coveredMembers: [], waiting: [], errorCode: null, coverage: 'AUTHORIZED_CLASSIFIED_HOST_MATERIAL', lastCheckedAt: null, inventoryComplete: false }],
+  classifications: [], candidates: [], nextClassificationCursor: null, sourceCurrentness: 'UNKNOWN',
+});
 const mockDocuments = jest.mocked(getCanonicalLibraryDocuments);
 const mockMatters = jest.mocked(getEngineeringMatterDirectory);
 let sessionGeneration = 1;
 let queryClient: QueryClient;
+let trackedQueries: Set<Query>;
+let stopTrackingQueries: () => void;
 let currentActor = 'actor-test';
 let currentTenant = 'tenant-test';
 
@@ -101,6 +112,7 @@ function sourceDocuments(): CanonicalLibraryDocumentsResponse {
 jest.mock('@client/src/api/engineering-matter', () => ({
   getEngineeringMatterDirectory: jest.fn(),
 }));
+jest.mock('@client/src/api/hierarchical-wiki', () => ({ listHierarchicalWiki: (...args: unknown[]) => mockWiki(...args) }));
 jest.mock('@client/src/features/matter/SavedAssessmentReading', () => ({
   __esModule: true,
   default: ({ result }: { result: { content: { headline: string } } }) =>
@@ -113,6 +125,12 @@ jest.mock('@client/src/api/canonical-host', () => ({
   readDocumentVersionSourcePage: (...args: unknown[]) => mockSourcePage(...args),
   readSavedDocumentReading: (...args: unknown[]) => mockSavedDocumentReading(...args),
   getCanonicalLibraryDocuments: jest.fn(),
+  getCanonicalLibraryFleetCatalog: async () => ({
+    scope: 'CURRENT_TENANT_ACTIVE_FLEET', status: 'AVAILABLE', asOf: '2026-09-10', source: null,
+    families: [{ fleetFamily: '787', models: ['787-9'] }], unclassifiedAssetCount: 0,
+    semantics: 'DOCUMENT_MENTION_CLASSIFICATION_ONLY',
+  }),
+  isCanonicalObjectNotFound: () => false,
   subscribeCanonicalHostClientSession: () => () => undefined,
   getCanonicalHostClientSessionGeneration: () => sessionGeneration,
   getCanonicalHostIdentityContext: (...args: unknown[]) => mockIdentity(...args),
@@ -123,12 +141,53 @@ jest.mock('@client/src/api/canonical-host', () => ({
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/pages/KnowledgeLookupPage/knowledge-lookup.css', () => ({}));
 jest.mock('@client/src/pages/KnowledgeLookupPage/knowledge-suite.css', () => ({}));
+jest.mock('@client/src/pages/WorkspaceHomePage/library-hierarchy.css', () => ({}));
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({
   useCurrentUserSession: () => ({ sessionGeneration, authenticationRequired: false, currentUser: { user_id: currentActor } }),
 }));
 jest.mock('@client/src/components/ui/dialog', () => {
   const Box = ({ children }: { children: import('react').ReactNode }) => require('react').createElement('div', null, children);
   return { Dialog: Box, DialogContent: Box, DialogHeader: Box, DialogTitle: Box, DialogDescription: Box };
+});
+
+test('the shared directory keeps actual Wiki status links through document, matter and saved-work views', async () => {
+  mockWiki.mockResolvedValue(wikiDirectory());
+  await mount('?kind=sources'); await settle();
+  const directory = () => container.querySelector('aside[aria-label="资料与 Wiki 目录"]')!;
+  const wikiLink = () => directory().querySelector<HTMLAnchorElement>('a[href^="/summaries/DS-WIKI-23-15?"]');
+  expect(wikiLink()?.textContent).toContain('尚无已归类的可读成果');
+  expect(directory().textContent).toContain('ATA23-15');
+  for (const kind of ['matters', 'works']) {
+    await act(async () => { await router.navigate(`/knowledge?kind=${kind}&fleetFamily=787`); }); await settle();
+    expect(wikiLink()).not.toBeNull();
+    expect(mockDocuments).toHaveBeenCalledWith({ search: '', limit: 24, fleetFamily: '787' }, expect.anything());
+  }
+  expect(mockWrite).not.toHaveBeenCalled();
+});
+
+test('document directory filters reach the real read and survive an exact historical source return', async () => {
+  await mount('?kind=sources&normalizedFamily=SB&ata=2315&fleetFamily=787&fleetModel=787-9&ataTitleScheme=jasc&documentVersionId=DV-FAM-1-1');
+  await settle();
+  expect(mockDocuments).toHaveBeenCalledWith({ search: '', cursor: undefined, limit: 24, normalizedFamily: 'SB', ata: '2315', fleetFamily: '787', fleetModel: '787-9' }, expect.anything());
+  await act(async () => container.querySelector<HTMLButtonElement>('.knowledge-actions button')!.click());
+  const query = new URLSearchParams(router.state.location.search);
+  const returned = readingReturnTarget(query, 'DV-FAM-1-1')!;
+  const state = new URL(returned.route, 'https://example.test').searchParams;
+  expect(Object.fromEntries(state)).toMatchObject({ kind: 'sources', documentVersionId: 'DV-FAM-1-1', normalizedFamily: 'SB', ata: '2315', fleetFamily: '787', fleetModel: '787-9', ataTitleScheme: 'jasc' });
+  expect(mockWrite).not.toHaveBeenCalled();
+});
+
+test('a Wiki navigation captures current reading scroll and preserves directory filters before the delayed scroll write', async () => {
+  mockWiki.mockResolvedValue(wikiDirectory());
+  await mount('?kind=sources&ata=2315&fleetFamily=787&fleetModel=787-9&ataTitleScheme=jasc'); await settle();
+  container.querySelector<HTMLElement>('[aria-label="工程文档目录"]')!.scrollTop = 123;
+  container.querySelector<HTMLElement>('[aria-label="文档 Wiki"]')!.scrollTop = 456;
+  const link = container.querySelector<HTMLAnchorElement>('.knowledge-wiki-link')!;
+  await act(async () => link.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true })));
+  expect(router.state.location.pathname).toBe('/summaries/DS-WIKI-23-15');
+  const state = new URLSearchParams(new URLSearchParams(router.state.location.search).get('returnKnowledgeQuery')!);
+  expect(Object.fromEntries(state)).toMatchObject({ kind: 'sources', ata: '2315', fleetFamily: '787', fleetModel: '787-9', ataTitleScheme: 'jasc', listY: '123', articleY: '456' });
+  expect(mockWrite).not.toHaveBeenCalled();
 });
 jest.mock('@client/src/pages/WorkspaceHomePage/DocumentOriginalPreview', () => ({
   DocumentOriginalPreview: () => require('react').createElement('span', null, '原件入口夹具'),
@@ -242,7 +301,12 @@ beforeEach(() => {
   sessionGeneration = 1;
   currentActor = 'actor-test'; currentTenant = 'tenant-test';
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  trackedQueries = new Set();
+  stopTrackingQueries = queryClient.getQueryCache().subscribe(event => {
+    if (event.type === 'added') trackedQueries.add(event.query);
+  });
   jest.clearAllMocks();
+  mockWiki.mockResolvedValue({ items: [], classifications: [], candidates: [], nextClassificationCursor: null, sourceCurrentness: 'UNKNOWN' });
   mockIdentity.mockImplementation(async () => ({ tenantId: currentTenant, userId: currentActor }));
   mockCatalogue.mockResolvedValue(page(entry('A'), entry('B')));
   mockReadWork.mockImplementation((identity: { subjectId: string }) => Promise.resolve(read(entry(identity.subjectId))));
@@ -272,7 +336,11 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root?.unmount());
   router?.dispose();
+  await clearEngineeringMatterQueries(queryClient);
   queryClient.clear();
+  // Removed/cancelled queries can schedule their final GC outside the cache.
+  for (const query of trackedQueries) query.destroy();
+  stopTrackingQueries();
   dom.window.close();
   for (const [key, descriptor] of oldGlobals) {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor);

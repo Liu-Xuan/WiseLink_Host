@@ -6,7 +6,8 @@ import { JOBAID_ACTIVITY_WINDOW, type JobAidExecutionObservation, type JobAidSav
 import { readHistoricalJobAidWork } from './jobaid-historical-reading';
 import { randomUUID } from 'node:crypto';
 import { dmDocumentParseRun } from '../../database/document-parsing.schema';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { HierarchicalWikiChanges } from './hierarchical-wiki-changes';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -75,6 +76,7 @@ export class JobAidWorkRepository {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly actorTransactions: EngineeringMatterWorkingRepository,
     private readonly searchProjection: EngineeringSearchProjectionWriter,
+    @Optional() private readonly wikiChanges?: HierarchicalWikiChanges,
   ) {}
 
   async withActorScope<T>(actorUserId: string, operation: () => Promise<T>): Promise<T> {
@@ -563,6 +565,8 @@ export class JobAidWorkRepository {
       await this.searchProjection.enqueuePending({ tenantId: saved.tenantId, ownerKind: 'USER',
         ownerId: saved.createdByUserId, subjectId: saved.workItemId,
         revisionRef: saved.assessmentWorkRevisionId, database });
+      await this.wikiChanges?.record({ tenantId: saved.tenantId, actorUserId: input.actorUserId,
+        kind: 'WORK_ITEM', subjectId: saved.workItemId, versionRef: saved.assessmentWorkRevisionId }, database);
       await input.assertNativeAuthorized?.(database);
       return { revision: project(saved), replayed: false };
     };

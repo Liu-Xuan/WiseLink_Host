@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   DATAPAAS_CONFIG,
   DRIZZLE_DATABASE,
@@ -41,6 +41,7 @@ import type { OpenClawMatterTaskEnvelope } from '../action-attempt/action-attemp
 import { loadMaterials } from './engineering-matter.repository';
 import { materialInputBindings } from './matter-material';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
+import { HierarchicalWikiChanges } from './hierarchical-wiki-changes';
 import { EngineeringReadPhaseObservation, observeEngineeringRead, observeEngineeringReadSync } from './engineering-read-phase-observation';
 import {
   assertEngineeringMatterWorkingBindingsCurrent,
@@ -203,6 +204,7 @@ export class EngineeringMatterWorkingRepository {
     @Inject(DATAPAAS_CONFIG)
     private readonly databaseConfig: Pick<DataPaasConfig, 'roleSchema'>,
     private readonly searchProjection: EngineeringSearchProjectionWriter,
+    @Optional() private readonly wikiChanges?: HierarchicalWikiChanges,
   ) {}
 
   async withTransaction<T>(
@@ -887,6 +889,12 @@ export class EngineeringMatterWorkingRepository {
       await this.searchProjection.enqueuePending({ tenantId: stored.tenantId, ownerKind: 'MATTER',
         ownerId: stored.createdByUserId, subjectId: stored.matterId,
         revisionRef: stored.matterWorkRevisionId, database: executor });
+      if (materialized.resultChanged || materialized.coverageChanged ||
+        canonicalJson(current?.state.problemWork ?? null) !== canonicalJson(materialized.state.problemWork)) {
+        await this.wikiChanges?.record({ tenantId: input.tenantId, actorUserId: input.actorUserId,
+          kind: 'MATTER', subjectId: input.matterId, versionRef: stored.matterWorkRevisionId,
+          important: input.command.updateKind === 'CORRECTION' }, executor);
+      }
     }
     return {
       revision: await authorizedReadModel(stored, executor),

@@ -118,6 +118,7 @@ export class DerivedSummaryRepository {
     const addMatter = (id: string, ref: string) => matterRefs.set(id, new Set([...(matterRefs.get(id) ?? []), ref]));
     for (const member of selected) {
       if (member.kind === 'WORK_ITEM_WORK') { workIds.add(member.workItemId); documentIds.add(member.documentVersionId); }
+      if (member.kind === 'DOCUMENT_READING') documentIds.add(member.documentVersionId);
       if (member.kind === 'MATTER_WORK') addMatter(member.matterId, member.workRef);
     }
     for (const item of evidence) if (item.kind === 'PRIOR_RESULT' && item.sourceWork)
@@ -185,7 +186,19 @@ export class DerivedSummaryRepository {
       }
       matters.push({ matterId, ...head, currentWorkRef: latest?.ref ?? null, currentWorkRevision: latest?.revision ?? null, selectedWork });
     }
+    const documentReadings: NonNullable<DerivedSummaryContextBasis['documentReadings']> = [];
+    for (const member of [...new Map(selected.filter((item): item is Extract<DerivedSummaryMember, { kind: 'DOCUMENT_READING' }> =>
+      item.kind === 'DOCUMENT_READING').map(item => [item.readingRunRef, item])).values()].sort((a, b) => a.readingRunRef.localeCompare(b.readingRunRef))) {
+      const rows = await database.execute<{ runRef: string; revision: number }>(sql`SELECT run_ref AS "runRef",reading_revision AS revision
+        FROM dm_document_reading_run WHERE tenant_id=${owner.tenantId} AND document_version_id=${member.documentVersionId}
+          AND parse_run_id=${member.parseRunId} AND semantic_revision=${member.semanticRevision} AND status='SAVED'
+        ORDER BY reading_revision DESC LIMIT 1`);
+      documentReadings.push({ documentVersionId: member.documentVersionId, parseRunId: member.parseRunId,
+        semanticRevision: member.semanticRevision, readingRunRef: member.readingRunRef,
+        currentReadingRunRef: rows[0]?.runRef ?? null, currentReadingRevision: rows[0]?.revision ?? null });
+    }
     return { schemaVersion: 'wiselink.derived-summary-context.v1', memberNotices: contextMemberNotices(allReadings), sources, workItems, matters,
+      ...(documentReadings.length ? { documentReadings } : {}),
       summaries: [...new Map(summaries.map(item => [item.summaryId, item])).values()].sort((a, b) =>
         a.summaryId < b.summaryId ? -1 : a.summaryId > b.summaryId ? 1 : 0),
       uncoordinatedDependencies: [...(sources.length ? ['DOCUMENT_LIFECYCLE_NOT_FENCED'] : []),

@@ -14,7 +14,7 @@ function nodeIcon(kind: string, palette: Record<string, string>) {
     )
   );
 }
-const styles = (dark: boolean, compatible: boolean): StylesheetJson => [
+const styles = (dark: boolean, compatible: boolean, macro: boolean): StylesheetJson => [
   {
     selector: 'node',
     style: {
@@ -172,6 +172,22 @@ const styles = (dark: boolean, compatible: boolean): StylesheetJson => [
     selector: '.panorama:selected',
     style: { label: 'data(label)', width: 45, height: 45, 'font-size': 15 },
   },
+  ...(macro ? [
+    { selector: 'node', style: {
+      shape: 'ellipse' as const, width: 'data(macroSize)', height: 'data(macroSize)',
+      'background-color': 'data(color)', 'background-fill': 'solid' as const,
+      'background-image-opacity': 0, 'border-width': 0, 'background-opacity': 1,
+      label: '', 'font-size': 11, 'text-margin-y': 6, 'text-max-width': '135px',
+      'min-zoomed-font-size': 7, 'text-background-opacity': 0.65,
+    } },
+    { selector: 'node[kind="classification"], node[kind="matter"], node.named, node.near, node.hovered', style: { label: 'data(label)' } },
+    { selector: 'node:selected, node.hovered', style: { 'border-width': 2, 'border-color': dark ? '#e4ebf5' : '#2e4771', label: 'data(label)' } },
+    { selector: 'edge', style: { width: 1, opacity: 0.4, 'target-arrow-shape': 'none' as const, 'curve-style': 'bezier' as const } },
+    { selector: 'edge[kind="CLASSIFIED_AS"], edge[kind="ATA_SUBCHAPTER"]', style: { 'line-style': 'dashed' as const, opacity: 0.32 } },
+    { selector: 'edge[kind="MATTER_MATERIAL"], edge[kind="RELATED_MATERIAL"], edge[kind="WORK_ITEM_MEMBERSHIP"]', style: { 'line-color': '#369e8a', opacity: 0.7, width: 1.4 } },
+    { selector: 'edge.dim', style: { opacity: 0.055, width: 0.8 } },
+    { selector: 'edge.near, edge.hovered', style: { opacity: 1, width: 2 } },
+  ] : []),
 ];
 export default function AtlasGraph({
   graph,
@@ -180,6 +196,8 @@ export default function AtlasGraph({
   onReady,
   onCamera,
   api,
+  variant = 'default',
+  ariaLabel = '工程关系图；右侧提供等价对象与关系列表',
 }: {
   graph: Graph;
   location: AtlasLocation;
@@ -187,6 +205,9 @@ export default function AtlasGraph({
   onReady: (ready: boolean) => void;
   onCamera: (pan: { x: number; y: number }, zoom: number) => void;
   api: React.MutableRefObject<Core | null>;
+  /** Shared renderer; the macro caller supplies only authorized Host objects. */
+  variant?: 'default' | 'macro';
+  ariaLabel?: string;
 }) {
   const { theme } = useWlTheme();
   const container = useRef<HTMLDivElement>(null);
@@ -204,6 +225,14 @@ export default function AtlasGraph({
         value[theme],
       ]),
     );
+    if (variant === 'macro') Object.assign(palette, theme === 'dark'
+      ? { classification: '#d5b17b', family: '#b4b9cf', document: '#a2c6e2', matter: '#64c4b0' }
+      : { classification: '#b78e55', family: '#8c91a7', document: '#6e99bb', matter: '#369e8a' });
+    const degree = new Map<string, number>();
+    graph.edges.forEach(edge => {
+      degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
+      degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
+    });
     const positions =
       location.space === 'EXAMPLE' && location.view === 'panorama'
         ? layouts.panorama.positions
@@ -212,15 +241,15 @@ export default function AtlasGraph({
           : null;
     const cy = cytoscape({
       container: container.current,
-      style: styles(theme === 'dark', location.effect === 'compatible'),
+      style: styles(theme === 'dark', location.effect === 'compatible', variant === 'macro'),
       elements: [
-        ...graph.nodes.map((n) => ({
+        ...graph.nodes.map((n, index) => ({
           data: {
             ...n,
             label:
               ('exactDocument' in n && n.exactDocument) ||
               (location.space === 'HOST' && n.kind === 'document')
-                ? `${n.code}\n${n.version ?? ''}`
+                ? `${n.code}${n.version ? `${variant === 'macro' ? ' · ' : '\n'}${n.version}` : ''}`
                 : n.title,
             shape:
               ((icons.categories as Record<string, { shape: string }>)[n.kind]
@@ -230,6 +259,7 @@ export default function AtlasGraph({
                     n.kind
                   ]?.shape) ?? 'round-rectangle',
             color: palette[n.kind] ?? '#8d9eae',
+            macroSize: 12 + Math.sqrt(Math.min(60, degree.get(n.id) ?? 0)) * 4,
             panoramaLabel: [
               'NAV-03',
               'ENG-04',
@@ -268,15 +298,16 @@ export default function AtlasGraph({
                 : ''),
           ...(positions && n.id in positions
             ? { position: positions[n.id as keyof typeof positions] }
-            : {}),
+            : variant === 'macro' ? { position: { x: Math.cos(index * 2.399963) * Math.sqrt(index + 1) * 45,
+              y: Math.sin(index * 2.399963) * Math.sqrt(index + 1) * 45 } } : {}),
         })),
         ...graph.edges.map((e) => ({
           data: { ...e, label: atlasRelationLabel(e.kind) },
         })),
       ],
       layout: { name: 'preset' },
-      wheelSensitivity: 0.25,
-      minZoom: 0.035,
+      wheelSensitivity: variant === 'macro' ? 1 : 0.25,
+      minZoom: variant === 'macro' ? 0.05 : 0.035,
       maxZoom: 3,
       pixelRatio:
         location.effect === 'highest'
@@ -285,8 +316,24 @@ export default function AtlasGraph({
     });
     api.current = cy;
     cy.on('tap', 'node,edge', (e) => callbacks.current.onSelect(e.target.id()));
-    cy.on('pan zoom', () => callbacks.current.onCamera(cy.pan(), cy.zoom()));
+    cy.on('pan zoom', () => { if (variant !== 'macro' || layoutReady.current) callbacks.current.onCamera(cy.pan(), cy.zoom()); });
+    if (variant === 'macro') {
+      cy.on('mouseover', 'node', event => event.target.closedNeighborhood().addClass('hovered'));
+      cy.on('mouseout', 'node', () => cy.elements().removeClass('hovered'));
+    }
     cy.one('layoutstop', () => {
+      if (variant === 'macro' && cy.width() > cy.height()) {
+        const bounds = cy.nodes().boundingBox({ includeLabels: false });
+        // Orient the existing force result to the canvas. This only rotates
+        // display coordinates; it never creates or hides a relation.
+        if (bounds.h > bounds.w) {
+          const cx = (bounds.x1 + bounds.x2) / 2, centerY = (bounds.y1 + bounds.y2) / 2;
+          cy.batch(() => cy.nodes().forEach(node => {
+            const position = node.position(); node.position({ x: position.y - centerY, y: cx - position.x });
+          }));
+          cy.fit(undefined, 45);
+        }
+      }
       container.current?.setAttribute(
         'data-render-ms',
         String(Math.round(performance.now() - start)),
@@ -334,9 +381,9 @@ export default function AtlasGraph({
                   name: 'cose',
                   animate: false,
                   randomize: false,
-                  nodeRepulsion: () => 1800,
-                  idealEdgeLength: () => 50,
-                  gravity: 1.1,
+                  nodeRepulsion: () => variant === 'macro' ? 8500 : 1800,
+                  idealEdgeLength: () => variant === 'macro' ? 90 : 50,
+                  gravity: variant === 'macro' ? 0.5 : 1.1,
                   componentSpacing: 75,
                   fit: true,
                   padding: 55,
@@ -366,6 +413,7 @@ export default function AtlasGraph({
     location.layout,
     theme,
     api,
+    variant,
   ]);
   useEffect(() => onReady(layoutReady.current), [onReady]);
   useEffect(() => {
@@ -399,7 +447,7 @@ export default function AtlasGraph({
       role="img"
       tabIndex={0}
       onPointerDown={(event) => event.currentTarget.focus()}
-      aria-label="工程关系图；右侧提供等价对象与关系列表"
+      aria-label={ariaLabel}
       data-atlas-target="graph"
     />
   );

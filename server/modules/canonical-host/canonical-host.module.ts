@@ -73,6 +73,11 @@ import { DerivedSummaryService } from './derived-summary.service';
 import { DerivedSummaryRuntimeService } from './derived-summary-runtime.service';
 import { DerivedSummaryRepository } from './derived-summary.repository';
 import { DerivedSummaryMembersService } from './derived-summary-members.service';
+import { HierarchicalWikiService } from './hierarchical-wiki.service';
+import { HierarchicalWikiController } from './hierarchical-wiki.controller';
+import { HierarchicalWikiChanges } from './hierarchical-wiki-changes';
+import { HierarchicalWikiCompletion } from './hierarchical-wiki-completion';
+import { HierarchicalWikiAutomation } from './hierarchical-wiki.automation';
 import { DocumentWorkRuntimeService } from './document-work-runtime.service';
 import { DocumentSourceProjectionService } from './document-source-projection.service';
 import { DocumentSourceSearchService } from './document-source-search.service';
@@ -243,6 +248,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalRuleSetLifecycleController,
     EngineeringMatterController,
     DerivedSummaryController,
+    HierarchicalWikiController,
     MatterAssessmentActivityController,
     CanonicalHostAeoEditingController,
     CanonicalTranslationKnowledgeController,
@@ -298,6 +304,10 @@ export interface CanonicalHostModuleOptions {
     DerivedSummaryRuntimeService,
     DerivedSummaryRepository,
     DerivedSummaryMembersService,
+    HierarchicalWikiService,
+    HierarchicalWikiChanges,
+    HierarchicalWikiCompletion,
+    HierarchicalWikiAutomation,
     CanonicalHostReviewActionService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
     HostNativeDocumentFamilyPdfProducerAdapter,
@@ -510,6 +520,7 @@ export class CanonicalHostModule {
         CanonicalRuleSetLifecycleController,
         EngineeringMatterController,
         DerivedSummaryController,
+        HierarchicalWikiController,
         MatterAssessmentActivityController,
         CanonicalHostAeoEditingController,
         CanonicalTranslationKnowledgeController,
@@ -594,6 +605,10 @@ export class CanonicalHostModule {
         DerivedSummaryRuntimeService,
         DerivedSummaryRepository,
         DerivedSummaryMembersService,
+        HierarchicalWikiService,
+        HierarchicalWikiChanges,
+        HierarchicalWikiCompletion,
+        HierarchicalWikiAutomation,
         EngineeringSearchProjectionWriter,
         DocumentWorkRuntimeService,
         LocalMineruWorkerService,

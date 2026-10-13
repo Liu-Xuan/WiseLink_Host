@@ -3049,6 +3049,8 @@ export interface CanonicalLibraryWorkItemSummary {
 }
 
 /** Observations from actual PDF text; never an applicability or fleet conclusion. */
+export type { HierarchicalWikiEnableRequest, HierarchicalWikiStatus, HierarchicalWikiList } from './hierarchical-wiki.interface';
+
 export interface DocumentMetadataObservation {
   value: string;
   status: 'PENDING_REVIEW';

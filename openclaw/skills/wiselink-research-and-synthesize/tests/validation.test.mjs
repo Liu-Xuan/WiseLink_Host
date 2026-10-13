@@ -1412,7 +1412,7 @@ test('accepts shared background in new JobAid and Overall inputs while retaining
   validatePayload('synthesis-input', { ...overall, commonContext });
 });
 
-test('requires 36 MCP capabilities, six review tools, and hosted provenance', () => {
+test('requires 41 MCP capabilities, six review tools, and hosted provenance', () => {
   assert.deepEqual(INITIAL_ANALYSIS_OPERATIONS, [
     'TRANSLATE',
     'EXTRACT_APPLICABILITY',
@@ -1427,16 +1427,19 @@ test('requires 36 MCP capabilities, six review tools, and hosted provenance', ()
     'get_action_attempt_status',
     'commit_review_turn_candidate',
   ]);
-  assert.equal(HOST_MCP_TOOLS.length, 36);
-  assert.equal(new Set(HOST_MCP_TOOLS).size, 36);
+  assert.equal(HOST_MCP_TOOLS.length, 41);
+  assert.equal(new Set(HOST_MCP_TOOLS).size, 41);
   for (const name of ['translation_workspace', 'read_assessment_sources', 'query_assessment_knowledge', 'save_assessment_work', 'read_assessment_work']) assert.ok(HOST_MCP_TOOLS.includes(name));
   assert.ok(HOST_MCP_TOOLS.includes('read_matter_current_work'));
   assert.ok(HOST_MCP_TOOLS.includes('derived_summary_attempt'));
+  for (const name of ['next_hierarchical_wiki', 'hierarchical_wiki_next_matter_assessment',
+    'hierarchical_wiki_read_matter_current_work', 'hierarchical_wiki_matter_action_attempt', 'hierarchical_wiki_cleanup'])
+    assert.ok(HOST_MCP_TOOLS.includes(name));
   assert.ok(HOST_MCP_TOOLS.includes('begin_applicability_evaluation'));
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c223',
+    'wiselink-research-and-synthesize@r09.c224',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -9153,11 +9156,728 @@ const READ_MATTER_CURRENT_WORK_TOOL = {
 
 const DERIVED_SUMMARY_TOOL_METADATA = JSON.parse(await readFile(new URL('./fixtures/derived-summary-tool-metadata.json', import.meta.url), 'utf8'));
 
+// Captured from the production Wiki registration block and Matter registrar via
+// the locked MCP SDK tools/list on an in-memory transport; no business callbacks.
+// This snapshot is independent of HOST_MCP_TOOLS and retains strict schemas.
+const HIERARCHICAL_WIKI_TOOL_METADATA = [
+  {
+    "name": "next_hierarchical_wiki",
+    "title": "预约到期的分层Wiki更新",
+    "description": "只使用已保存的本人Wiki委托和实时来源授权，合并底层变化，返回至多一个精确DerivedSummary任务；没有变化时IDLE，不调用模型。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "hierarchical_wiki_next_matter_assessment",
+    "title": "读取事项待执行评估",
+    "description": "由现有消费者观察来源变化并登记所需的持续评估；已存在的任务直接读回，不重复创建失败请求。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "matterId": {
+          "type": "string",
+          "maxLength": 96,
+          "format": "starts_with",
+          "pattern": "^MAT-.*"
+        }
+      },
+      "required": [
+        "matterId"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "hierarchical_wiki_read_matter_current_work",
+    "title": "读取事项当前工作",
+    "description": "读取已授权事项的最新版本标识、完整当前工作/Overview、准确输入绑定与已登记来源目录，以及活动任务摘要。纯读取：不创建/认领/保存/完成任何任务，不写工作、事件或来源回执；后续 BEGIN 仍需重新授权与 CAS。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "matterId": {
+          "type": "string",
+          "maxLength": 96,
+          "format": "starts_with",
+          "pattern": "^MAT-.*"
+        }
+      },
+      "required": [
+        "matterId"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "hierarchical_wiki_matter_action_attempt",
+    "title": "读取或继续事项评估任务",
+    "description": "对精确授权的事项任务执行领取、状态读取、续期、取消或按保存请求读取工作；不会新建任务或形成正式采用。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "operation": {
+              "type": "string",
+              "const": "CLAIM"
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "operation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "operation": {
+              "type": "string",
+              "const": "STATUS"
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "operation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "operation": {
+              "type": "string",
+              "const": "HEARTBEAT"
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "operation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "operation": {
+              "type": "string",
+              "const": "CANCEL"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "operation",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "operation": {
+              "type": "string",
+              "const": "READ_SAVED_WORK"
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "operation",
+            "requestId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "operation": {
+              "type": "string",
+              "const": "SAVE_WORK"
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "expectedWorkRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "workJson": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 1000000
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "operation",
+            "requestId",
+            "expectedWorkRevision",
+            "workJson"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "operation": {
+              "type": "string",
+              "const": "FINISH"
+            },
+            "result": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "operation",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "operation": {
+              "type": "string",
+              "const": "GENERATE_ISSUE_CORRECTION"
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "operation",
+            "requestId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "operation": {
+              "type": "string",
+              "const": "SAVE_ISSUE_CORRECTION"
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "generationRequestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "operation",
+            "requestId",
+            "generationRequestId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "operation": {
+              "type": "string",
+              "const": "FINISH_ISSUE_CORRECTION"
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "operation",
+            "requestId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "operation": {
+              "type": "string",
+              "const": "READ_REGISTERED"
+            },
+            "sourceRefs": {
+              "minItems": 1,
+              "maxItems": 96,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            },
+            "purpose": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "operation",
+            "sourceRefs",
+            "purpose"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "operation": {
+              "type": "string",
+              "const": "READ_SOURCES"
+            },
+            "documentVersionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "pageStart": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "pageEnd": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "purpose": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "operation",
+            "documentVersionId",
+            "pageStart",
+            "purpose"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "operation": {
+              "type": "string",
+              "const": "READ_ORIGINAL"
+            },
+            "documentVersionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "purpose": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "matterId",
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "operation",
+            "documentVersionId",
+            "offset",
+            "limit",
+            "purpose"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "hierarchical_wiki_cleanup",
+    "title": "读取或取消确切自动Wiki任务",
+    "description": "仅对持久化本人委托的确切自动请求读取队列状态或取消；不读取来源、正文或任务内容，取消不代表模型已停止。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "SUMMARY",
+            "MATTER"
+          ]
+        },
+        "subjectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "attemptRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "STATUS",
+            "CANCEL"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "subjectId",
+        "attemptRef",
+        "operation"
+      ],
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  }
+];
+
 const buildHostToolSurface = () => {
   const names = 'document_reading document_work read_document_original document_translation next_original_assessment next_matter_assessment begin_matter_assessment matter_action_attempt derived_summary_attempt read_matter_current_work query_review_aily get_parse_status query_parsed_package get_deep_link begin_translation commit_translation_candidate translation_workspace begin_applicability_evaluation commit_applicability_candidate begin_dynamic_evaluation commit_dynamic_evaluation_candidate read_assessment_sources query_assessment_knowledge save_assessment_work read_assessment_work record_oem_discovery_run begin_overall_synthesis resume_overall_synthesis commit_overall_candidate begin_review_turn get_review_turn_context read_source_refs get_action_attempt_status commit_review_turn_candidate heartbeat_action_attempt cancel_action_attempt get_pending_review_turn'.split(' ');
   const commitRequired = ['attemptRef', 'leaseGeneration', 'leaseToken', 'resultJson'];
   const commitProperties = [...commitRequired, 'workItemId'];
-  return names.map(name => name === 'derived_summary_attempt' ? structuredClone(DERIVED_SUMMARY_TOOL_METADATA) : name === 'read_matter_current_work' ? structuredClone(READ_MATTER_CURRENT_WORK_TOOL) : ({ name, inputSchema: name === 'commit_review_turn_candidate' ? {
+  return [...names, ...HIERARCHICAL_WIKI_TOOL_METADATA.map(tool => tool.name)].map(name =>
+    HIERARCHICAL_WIKI_TOOL_METADATA.some(tool => tool.name === name)
+      ? structuredClone(HIERARCHICAL_WIKI_TOOL_METADATA.find(tool => tool.name === name))
+      : name === 'derived_summary_attempt' ? structuredClone(DERIVED_SUMMARY_TOOL_METADATA) : name === 'read_matter_current_work' ? structuredClone(READ_MATTER_CURRENT_WORK_TOOL) : ({ name, inputSchema: name === 'commit_review_turn_candidate' ? {
     type: 'object', additionalProperties: false, required: commitRequired,
     properties: Object.fromEntries(commitProperties.map(key => [
       key, key === 'workItemId'

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +9,7 @@ import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
 import { parseExecutionModel, readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 
 import { dmDocumentReadingRun } from '../../database/document-reading.schema';
+import { HierarchicalWikiChanges } from './hierarchical-wiki-changes';
 
 export type DocumentReadingScope = { tenantId: string; actorUserId: string; documentVersionId: string };
 export type DocumentReadingFence = { runRef: string; leaseOwner: string; leaseToken: string; leaseGeneration: number };
@@ -47,7 +48,8 @@ const columns = sql`run_ref AS "runRef",request_id AS "requestId",document_versi
 // Registered by CanonicalHostModule.forRoot.
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class DocumentReadingRunRepository {
-  constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
+  constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+    @Optional() private readonly wikiChanges?: HierarchicalWikiChanges) {}
 
   async readRequest(scope: DocumentReadingScope, requestId: string): Promise<DocumentReadingRun | null> {
     const rows = await this.db.execute<DocumentReadingRun>(sql`SELECT ${columns} FROM ${dmDocumentReadingRun}
@@ -142,6 +144,8 @@ export class DocumentReadingRunRepository {
         RETURNING run_ref AS "runRef",reading_revision AS "readingRevision",request_id AS "requestId",
           reason_code AS "reasonCode",review_reference AS "reviewReference",_created_at::text AS "retractedAt"`);
       if (!inserted[0]) throw new Error('DOCUMENT_READING_RETRACTION_SAVE_FAILED');
+      await this.wikiChanges?.record({ ...scope, kind: 'DOCUMENT', subjectId: scope.documentVersionId,
+        versionRef: `retracted:${input.runRef}`, important: true }, tx);
       return inserted[0];
     });
   }
@@ -309,6 +313,8 @@ export class DocumentReadingRunRepository {
         lease_owner=NULL,lease_token=NULL,lease_expires_at=NULL,_updated_at=CURRENT_TIMESTAMP
         WHERE ${owned(scope, fence.runRef)} AND ${validFence(fence)} RETURNING run_ref`);
       if (updated.length !== 1) throw new Error('DOCUMENT_READING_LEASE_REJECTED');
+      await this.wikiChanges?.record({ ...scope, kind: 'DOCUMENT', subjectId: scope.documentVersionId,
+        versionRef: result.readingRunRef }, tx);
       return result;
     });
   }

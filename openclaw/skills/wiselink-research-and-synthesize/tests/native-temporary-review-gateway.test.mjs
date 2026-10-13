@@ -9,6 +9,7 @@ import { createNativeReviewGatewayPreparer, assertNativeGatewayBinding } from '.
 import { createSummaryGatewaySession, validateSummaryGatewayReceipt } from '../scripts/derived-summary-native-gateway.mjs';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
 import { invokeHostedDerivedSummaryModel } from '../scripts/invoke-hosted-derived-summary-model.mjs';
+import { consumeHierarchicalWikiIdle } from '../scripts/consume-hierarchical-wiki-queue.mjs';
 
 test('native preparer uses one official profile, cleans state, and blocks attempt reuse',
   async (t) => {
@@ -411,4 +412,38 @@ test('Summary saved model response replay repeats the exact source read without 
   assert.deepEqual(await f.checkpoint.readOptional('summary-round-0.result'), response);
   assert.deepEqual(await f.checkpoint.readOptional('summary-gateway.receipt'), receipt);
   assert.deepEqual(await f.checkpoint.readOptional('summary-model-state'), state);
+});
+
+for (const mode of ['RETRY_THEN_STOP','UNKNOWN_EOF']) test(`Wiki Matter uses actual native gateway and retains uncertain provider ${mode}`,async t=>{
+  const f=await summaryNativeFixture(t,mode);
+  const matterId=f.options.summaryId.replace(/^DS-/u,'MAT-');
+  const pointer=new Map();const checkpoint={readOptional:async key=>pointer.get(key)??null,write:async(key,value)=>pointer.set(key,value)};
+  let admissions=0;
+  const opts={enabled:true,checkpointRoot:'/synthetic-only',endpointKey:'fixture',runBudget:f.options.runBudget};
+  const deps={checkpoint,createCheckpoint:async()=>f.checkpoint,createGatewayPreparer:()=>f.options.prepareGateway,
+    requestGateway:f.options.requestGateway,callTool:async(name)=>{
+      assert.equal(name,'next_hierarchical_wiki');admissions++;return {status:'MATTER_PENDING',matterId,attemptRef:f.options.attemptRef};},
+    consumeMatter:async(options,dependencies)=>{
+      assert.equal(options.matterId,matterId);
+      if(!await f.checkpoint.readOptional('binding'))await f.checkpoint.writeOnce('binding',{matterId,attemptRef:f.options.attemptRef,inputHash:'synthetic-matter-input'});
+      await dependencies.invokeMatterModel({operation:'ASSESS_MATTER',modelInput:{}},{
+        executionModel:f.options.executionModel,taskDeadline:f.options.deadlineAt});
+      return {status:'MATTER_WORK_SAVED'};
+    },
+    invokeMatterModel:async(_input,_hooks,deps)=>{
+      const response=await deps.requestGateway(new URL('http://127.0.0.1:1'),f.request());
+      assert.equal(response.status,200);await response.text();
+    }};
+  const value=await consumeHierarchicalWikiIdle(opts,deps);
+  assert.equal(f.binding.subject.kind,'ENGINEERING_MATTER');assert.equal(f.binding.subject.matterId,matterId);
+  assert.equal(Object.hasOwn(f.binding,'workItemId'),false);
+  await f.assertCleaned();assert.equal(f.preparations,1);
+  if(mode==='RETRY_THEN_STOP'){
+    assert.equal(value.status,'WIKI_MATTER_DISPATCHED');assert.equal(await checkpoint.readOptional('active-wiki'),null);
+  }else{
+    assert.equal(value.status,'WIKI_ATTENTION');assert.equal(value.errorCode,'WIKI_PROVIDER_TERMINAL_UNKNOWN');
+    assert.ok(await checkpoint.readOptional('active-wiki'));
+    const repeated=await consumeHierarchicalWikiIdle(opts,deps);assert.equal(repeated.status,'WIKI_ATTENTION');
+    assert.equal(admissions,1);assert.equal(f.preparations,1);assert.equal(f.upstream.state.calls.length,1);
+  }
 });

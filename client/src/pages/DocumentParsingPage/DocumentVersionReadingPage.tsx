@@ -14,6 +14,7 @@ import { MineruMarkdownReader } from './MineruMarkdownReader';
 import { DocumentParsedImage } from './DocumentParsedImage';
 import { DocumentOriginalPreview } from '../WorkspaceHomePage/DocumentOriginalPreview';
 import './document-version-reading.css';
+import DocumentWikiReading from './DocumentWikiReading';
 import { libraryReadingParams, readingReturnTarget } from '@client/src/features/matter/reading-return';
 import { DocumentSourceReadingWorkspace, type DocumentSourceReaderMode } from './DocumentSourceReadingWorkspace';
 import { documentIdentityPresentation, libraryVersionLabel } from '../WorkspaceHomePage/library-document-presentation';
@@ -23,6 +24,15 @@ export default function DocumentVersionReadingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedRun = searchParams.get('parseRunId') || null;
   const requestedSource = searchParams.get('sourceRef') || null;
+  const wikiSemantic = searchParams.get('semanticRevision');
+  const wikiRevision = searchParams.get('readingRevision');
+  const wikiRunRef = searchParams.get('readingRunRef') || undefined;
+  const wikiRequested = ['semanticRevision','readingRevision','readingRunRef'].some(key => searchParams.has(key));
+  const pinnedWiki = requestedRun && searchParams.getAll('parseRunId').length === 1 &&
+    searchParams.getAll('semanticRevision').length === 1 && searchParams.getAll('readingRevision').length === 1 &&
+    searchParams.getAll('readingRunRef').length <= 1 && (!searchParams.has('readingRunRef') || !!wikiRunRef?.trim()) &&
+    wikiSemantic && wikiRevision && /^[1-9][0-9]*$/u.test(wikiSemantic) &&
+    /^[1-9][0-9]*$/u.test(wikiRevision) && Number.isSafeInteger(Number(wikiSemantic)) && Number.isSafeInteger(Number(wikiRevision));
   const unboundEvidence = searchParams.getAll('unboundEvidence').length === 1 &&
     searchParams.get('unboundEvidence') === '1';
   const returnTarget = readingReturnTarget(
@@ -63,12 +73,12 @@ export default function DocumentVersionReadingPage() {
   const identity = useRef(readingIdentity);
   identity.current = readingIdentity;
 
-  function rejectCurrentAccess() {
+  const rejectCurrentAccess = useCallback(() => {
     rejectedRef.current = true; epoch.current++; bodyControllerRef.current?.abort();
     request.current = null; currentSettingsRequest.current = null; parseInFlight.current = false;
     setImportReply(null); setParseError(null); setSending(false);
     setStatus(null); setReading(null); setTranslation(null); setSource(null); loaded.current = '';
-  }
+  }, []);
 
   useEffect(() => {
     epoch.current++;
@@ -364,6 +374,7 @@ export default function DocumentVersionReadingPage() {
     /> : null}
     {currentReading ? <>
       {requestedRun && <p role="status">{currentStatus?.publishedRun?.parseRunId !== requestedRun ? '历史解析版本' : '指定解析版本'}：固定读取此版本，刷新不会切换到最新版本。 <Link to={`/document-versions/${encodeURIComponent(documentVersionId)}`}>查看最新版本</Link></p>}
+      {wikiRequested && !pinnedWiki ? <p role="alert">文档 Wiki 的确切版本参数不完整或有重复，请从 Wiki 成员链接重新打开。</p> : null}
       {activeSourceRef && <aside aria-label="检索命中来源">
         {selectedLocation ? <><strong>已定位检索命中来源</strong><p>{selectedLocation.pageIndex !== null
           ? '对应正文已标出；点击文字可在右侧核对准确原件位置。'
@@ -373,6 +384,13 @@ export default function DocumentVersionReadingPage() {
       {currentReading.titleEnhancement.status === 'FAILED' && <p role="status">标题层级增强未完成，当前显示解析器标题。{currentReading.titleEnhancement.code}</p>}
       <p className="document-reading-version">阅读版本 {currentReading.parseRevision} · {currentReading.parser.name} {currentReading.parser.version}</p>
       {currentReading.original ? <>
+        {pinnedWiki ? <DocumentWikiReading documentVersionId={documentVersionId} parseRunId={requestedRun!}
+          semanticRevision={Number(wikiSemantic)} readingRevision={Number(wikiRevision)} readingRunRef={wikiRunRef}
+          onAccessRejected={rejectCurrentAccess} onLocate={unitId => {
+            const unit = currentReading.original!.source.units.find(item => item.unitId === unitId);
+            const location = unit && currentReading.original!.locations.find(item => unit.sourceRefIds.includes(item.sourceRefId));
+            if (location) persistOriginalLocation(location.pageIndex + 1, unitId);
+          }} /> : null}
         <DocumentSourceReadingWorkspace
           key={`${currentReading.documentVersionId}:${currentReading.parseRunId}`}
           original={currentReading.original}

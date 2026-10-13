@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, eq, sql } from 'drizzle-orm';
 import type { DerivedSummaryProducer, DerivedSummaryRevision } from '@shared/derived-summary.interface';
@@ -12,6 +12,7 @@ import { assertJobAidWorkFence } from './jobaid-work.repository';
 import { DerivedSummaryMembersService, type SummaryActor } from './derived-summary-members.service';
 import { DerivedSummaryRepository, type SummaryAttempt, type SummaryRuntimeTarget } from './derived-summary.repository';
 import { checkedSummaryTask, DerivedSummaryService, summaryRequestStatus } from './derived-summary.service';
+import { HierarchicalWikiCompletion } from './hierarchical-wiki-completion';
 import { publicSummaryRevision, summaryContextStatus } from './derived-summary-current-context';
 import { parseSummaryContent, summaryCitations, summaryError, summaryText } from './derived-summary.validation';
 
@@ -28,6 +29,7 @@ export class DerivedSummaryRuntimeService {
     private readonly repository: DerivedSummaryRepository,
     private readonly members: DerivedSummaryMembersService,
     private readonly summaries: DerivedSummaryService,
+    @Optional() private readonly wikiCompletion?: HierarchicalWikiCompletion,
   ) {}
 
   claim(target: SummaryRuntimeTarget) { return this.contextOperation(target, () => this.claimCurrent(target)); }
@@ -285,6 +287,7 @@ export class DerivedSummaryRuntimeService {
           eq(derivedSummary.actorUserId, owner.actorUserId), eq(derivedSummary.currentRevision, target.expectedSummaryRevision)))
         .returning({ id: derivedSummary.summaryId });
       if (updated.length !== 1) throw summaryError('DERIVED_SUMMARY_REVISION_CONFLICT');
+      await this.wikiCompletion?.saved(database, owner, revision);
       await record(current, { kind: 'DERIVED_SUMMARY_SAVED', requestId: target.requestId, summaryRef,
         revision: revision.revision, observedAt: revision.createdAt }, database);
       return { ...saveReceipt(revision, false), contextStatus: summaryContextStatus(task.contextBasis, task.contextBasis) };

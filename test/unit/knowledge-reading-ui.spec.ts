@@ -19,6 +19,7 @@ let mockAuthenticationRequired = false;
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({ useCurrentUserSession: () => ({ sessionGeneration: 1, authenticationRequired: mockAuthenticationRequired, currentUser: { user_id: 'actor-test' } }) }));
 jest.mock('@client/src/api/canonical-host', () => ({ subscribeCanonicalHostClientSession: () => () => undefined }));
 jest.mock('@client/src/api/engineering-matter', () => ({}));
+jest.mock('@client/src/api/hierarchical-wiki', () => ({ listHierarchicalWiki: jest.fn() }));
 jest.mock('@client/src/features/matter/MatterDocumentSourceDialog', () => ({ __esModule: true, default: 'div' }));
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/components/ui/input', () => ({ Input: 'input' }));
@@ -27,6 +28,7 @@ jest.mock('@lark-apaas/client-toolkit/logger', () => ({ logger: { error: jest.fn
 jest.mock('@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css', () => ({}));
 jest.mock('../../client/src/pages/KnowledgeLookupPage/knowledge-lookup.css', () => ({}));
 jest.mock('../../client/src/pages/KnowledgeLookupPage/knowledge-suite.css', () => ({}));
+jest.mock('@client/src/pages/WorkspaceHomePage/library-hierarchy.css', () => ({}));
 
 test('knowledge defaults to the document Wiki without process cards or write actions', () => {
   const html = renderKnowledge('/knowledge?referenceAttemptRef=must-not-run');

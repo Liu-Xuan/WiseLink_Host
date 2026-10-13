@@ -5,6 +5,7 @@ import SuiteMatterGraphPage from '../../client/src/pages/RelationGraphPage/Suite
 import { libraryMatterFixture } from './fixtures/library-matter';
 import { buildSuiteMatterGraph } from '../../client/src/pages/RelationGraphPage/suite-matter-graph';
 import type { SuiteMatterGraphViewProps } from '../../client/src/pages/RelationGraphPage/SuiteMatterGraphView';
+import { saveLibraryGraphReturn } from '../../client/src/pages/RelationGraphPage/library-graph-return-memory';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -69,6 +70,18 @@ describe('SuiteMatterGraphPage navigation state', () => {
       createElement(Routes, null,
         createElement(Route, { path: '/graph', element: createElement(SuiteMatterGraphPage, { matterId: 'ui-test-matter' }) }))));
   }
+
+  it('keeps the macro return through existing perspectives and returns to its precise filtered view', async () => {
+    const token = saveLibraryGraphReturn({ query: 'scope=library&ata=3461&selectedId=library:version:dv-old' }, 1)!;
+    await act(async () => renderPage(`/graph?matterId=ui-test-matter&returnLibrarySnapshot=${token}`));
+    expect(mockProps.availablePerspectives).toEqual(['matter', 'documents', 'domain', 'panorama']);
+    await act(async () => mockProps.onStateChange!({ perspective: 'documents', viewport: { zoom: .7, pan: { x: 20, y: 30 } } }, true));
+    expect(new URLSearchParams(currentSearch).get('returnLibrarySnapshot')).toBe(token);
+    await act(async () => mockProps.onBackToLibrary!());
+    const returned = new URLSearchParams(currentSearch);
+    expect(returned.get('scope')).toBe('library'); expect(returned.get('ata')).toBe('3461');
+    expect(returned.get('selectedId')).toBe('library:version:dv-old');
+  });
 
   it('keeps the view through request errors, explicit retry and another directory page', async () => {
     const api = jest.requireMock('@client/src/api/canonical-host');

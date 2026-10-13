@@ -1,5 +1,6 @@
 import type { CanonicalLibraryDocumentSummary, CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
+import type { DerivedSummaryScopeSelection } from '@shared/derived-summary.interface';
 // Generated from the complete Atlas catalog; keep this synchronous title-only
 // projection out of the full definitions catalog's lazy route dependency.
 import catalog from './library-ata-titles.generated.json';
@@ -17,6 +18,19 @@ export interface AtaDirectoryNode {
   level: 'fleet' | 'model' | 'ata2' | 'ata4' | 'raw';
   items: AtaDirectoryItem[];
   children: AtaDirectoryNode[];
+}
+
+export function ataDirectoryScopeMatches(node: AtaDirectoryNode, path: string[], scope: DerivedSummaryScopeSelection): boolean {
+  if (node.level === 'raw' || (node.level === 'model' && node.key.startsWith('__'))) return false;
+  const family = path.find(segment => segment.startsWith('fleet:'))?.slice(6);
+  const model = path.find(segment => segment.startsWith('model:'))?.slice(6);
+  const modelId = model && !model.startsWith('__') ? model : null;
+  if (!family || family.startsWith('__') || scope.fleetFamilyId.toUpperCase() !== family.toUpperCase()) return false;
+  if (scope.fleetModelIds.length !== (modelId ? 1 : 0) ||
+      (modelId && scope.fleetModelIds[0].toUpperCase() !== modelId.toUpperCase())) return false;
+  return node.level === 'fleet' || node.level === 'model' ? scope.kind === 'FLEET'
+    : node.level === 'ata2' ? scope.kind === 'ATA2' && scope.ata2 === node.key
+      : scope.kind === 'ATA4' && scope.ata4 === node.key;
 }
 
 /** Compact chapter/section observations only. A separator can denote a range,
@@ -100,7 +114,7 @@ function ataBranches(items: AtaDirectoryItem[]): AtaDirectoryNode[] {
 
 /** Actor-authorized visible versions are the only membership input. Aircraft and ATA
  * must co-occur in that version; attachment titles do not add document memberships. */
-export function buildLibraryAtaDirectory(documents: CanonicalLibraryDocumentSummary[], fleet: CanonicalLibraryFleetCatalog | null, filters: LibraryCatalogFilters = {}): AtaDirectoryNode[] {
+export function buildLibraryAtaDirectory(documents: CanonicalLibraryDocumentSummary[], fleet: CanonicalLibraryFleetCatalog | null, filters: LibraryCatalogFilters = {}, wikiScopes: DerivedSummaryScopeSelection[] = []): AtaDirectoryNode[] {
   const items = uniqueItems(documents.flatMap(document => document.versions.map(version => ({ document, version }))))
     .filter(item => {
       const document = unitDocument(item);
@@ -132,5 +146,40 @@ export function buildLibraryAtaDirectory(documents: CanonicalLibraryDocumentSumm
   }
   const outside = items.filter(item => !assigned.has(item));
   if (outside.length && !filters.fleetFamily && !filters.fleetModel) roots.push(node('__OUTSIDE_FLEET__', '未归入当前机队（资料保留）', 'fleet', outside, ataBranches(outside)));
+  // Actual Wiki scopes add navigation paths, never document membership or counts.
+  const selectedAta = filters.ata ? ataDirectoryCode(filters.ata) : null;
+  const existingNodes = (nodes: AtaDirectoryNode[]): AtaDirectoryNode[] => nodes.flatMap(value => [value, ...existingNodes(value.children)]);
+  for (const scope of wikiScopes) {
+    if (!scope.fleetFamilyId || scope.fleetModelIds.length > 1 ||
+      (filters.fleetFamily && filters.fleetFamily.toUpperCase() !== scope.fleetFamilyId.toUpperCase()) ||
+      (filters.fleetModel && filters.fleetModel.toUpperCase() !== scope.fleetModelIds[0]?.toUpperCase())) continue;
+    if (filters.ata && (!selectedAta || (scope.kind !== 'FLEET' && scope.ata2 !== selectedAta.ata2) ||
+      (scope.kind === 'ATA4' && selectedAta.ata4 && scope.ata4 !== selectedAta.ata4))) continue;
+    if (scope.kind === 'ATA2' && !/^\d{2}$/u.test(scope.ata2 ?? '')) continue;
+    if (scope.kind === 'ATA4' && !/^\d{2}-\d{2}$/u.test(scope.ata4 ?? '')) continue;
+    let root = roots.find(value => value.level === 'fleet' && value.key.toUpperCase() === scope.fleetFamilyId.toUpperCase());
+    // Document-only facets cannot classify a Wiki with no matching loaded material.
+    if (filters.normalizedFamily || filters.aircraftModel) {
+      const scopedRoot = scope.fleetModelIds[0]
+        ? root?.children.find(value => value.level === 'model' && value.key.toUpperCase() === scope.fleetModelIds[0].toUpperCase()) : root;
+      if (!scopedRoot || !existingNodes([scopedRoot]).some(value => value.items.length &&
+        (scope.kind === 'FLEET' || (scope.kind === 'ATA2' && value.level === 'ata2' && value.key === scope.ata2) ||
+          (scope.kind === 'ATA4' && value.level === 'ata4' && value.key === scope.ata4)))) continue;
+    }
+    if (!root) { root = node(scope.fleetFamilyId, scope.fleetFamilyId, 'fleet', []); roots.push(root); }
+    let children = root.children;
+    const model = scope.fleetModelIds[0];
+    if (model) {
+      let modelNode = children.find(value => value.level === 'model' && value.key.toUpperCase() === model.toUpperCase());
+      if (!modelNode) { modelNode = node(model, model, 'model', []); children.push(modelNode); }
+      children = modelNode.children;
+    }
+    if (scope.kind === 'FLEET') continue;
+    const chapterCode = scope.ata2 ?? scope.ata4!.slice(0, 2);
+    let chapter = children.find(value => value.level === 'ata2' && value.key === chapterCode);
+    if (!chapter) { chapter = node(chapterCode, `ATA${chapterCode}`, 'ata2', []); children.push(chapter); }
+    if (scope.kind === 'ATA4' && !chapter.children.some(value => value.level === 'ata4' && value.key === scope.ata4))
+      chapter.children.push(node(scope.ata4!, `ATA${scope.ata4}`, 'ata4', []));
+  }
   return roots;
 }

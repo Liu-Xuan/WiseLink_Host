@@ -5,7 +5,7 @@ import { completeDerivedSummaryWorkBody, derivedSummaryRegistry, validateDerived
 
 const fail = () => { throw new Error('DERIVED_SUMMARY_SPARSE_VIEW_BINDING_INVALID'); };
 const sorted = values => [...new Set(values)].sort();
-const memberKey = member => canonicalJson(member.kind === 'DERIVED_SUMMARY'
+const memberKey = member => canonicalJson(!('issueKeys' in member)
   ? member : { ...member, issueKeys: sorted(member.issueKeys) });
 const noticesValid = item => typeof item?.current === 'boolean' &&
   ['CURRENT', 'STALE', 'NOT_AVAILABLE'].includes(item.overviewStatus) && Array.isArray(item.limitations) &&
