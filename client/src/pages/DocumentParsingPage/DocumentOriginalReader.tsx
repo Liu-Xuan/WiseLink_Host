@@ -75,7 +75,7 @@ export function DocumentOriginalReader({
 
   return <section className="document-original-reader" aria-label="已保存原文">
     {coverage.unresolvedRanges.length > 0 && <details className="document-original-reading-limits">
-      <summary>原文核对提示（{coverage.unresolvedRanges.length} 项）· 关键内容请对照 PDF 原页</summary>
+      <summary>原文差异与缺项（{coverage.unresolvedRanges.length} 项）</summary>
       <ul aria-label="原文覆盖与定位限制">
         {coverage.unresolvedRanges.map((range, index) => <li key={index}>
           {range.pageIndexes.length ? `第 ${range.pageIndexes.map(page => page + 1).join('、')} 页：` : ''}{range.message}

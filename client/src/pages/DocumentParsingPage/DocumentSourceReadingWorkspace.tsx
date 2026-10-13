@@ -219,8 +219,7 @@ export function DocumentSourceReadingWorkspace({
 
       <section className={`source-reader-stage mode-${mode}`}>
         <div className="source-reader-translation" hidden={!showTranslation}>
-          <div className="source-reader-pane-title"><strong>{mode === 'translation' ? '中文阅读' : '中英对照'}</strong>
-            <span>完整语义与原文来源保持关联</span></div>
+          <div className="source-reader-pane-title"><strong>{mode === 'translation' ? '中文阅读' : '中英对照'}</strong></div>
           <div className="source-reader-bilingual">{bilingualContent}</div>
         </div>
         <div
@@ -229,7 +228,7 @@ export function DocumentSourceReadingWorkspace({
           hidden={showTranslation}
         >
             <div className="source-reader-primary" hidden={!showText}>
-              <div className="source-reader-pane-title"><strong>连续结构化原文</strong><span>按解析结果展示，完整内容请核对原件</span></div>
+              <div className="source-reader-pane-title"><strong>连续结构化原文</strong></div>
               <div className="source-reader-pane-scroll"><DocumentOriginalReader original={original}
                 activeUnitId={activeUnitId} onUnitLocate={locateUnit} /></div>
             </div>
@@ -251,7 +250,7 @@ export function DocumentSourceReadingWorkspace({
               }}
             />
             <div className="source-reader-pdf-pane" hidden={!showPdf}>
-              <div className="source-reader-pane-title"><strong>PDF 原件</strong><span>受控读取 · 第 {visiblePdfPage} 页</span></div>
+              <div className="source-reader-pane-title"><strong>PDF 原件</strong><span>第 {visiblePdfPage} 页</span></div>
               <RetainedWorkbenchPanel active={pdfActive}>
                 {renderPdfPreview ? renderPdfPreview(page) : <DocumentOriginalCanvasPreview
                   documentVersionId={documentVersionId}

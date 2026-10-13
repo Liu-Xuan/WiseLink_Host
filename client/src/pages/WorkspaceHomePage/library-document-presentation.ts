@@ -1,6 +1,7 @@
 import type { CanonicalLibraryDocumentSummary, CanonicalLibraryDocumentVersionSummary, DocumentExtractedMetadata, EngineeringMatterReadModel } from '@shared/api.interface';
 import type { DocumentReadingPreview } from '@shared/document-reading.interface';
 import { metadataValues } from './library-classification';
+import { documentReadingLimitations } from '../DocumentParsingPage/document-reading-presentation';
 
 type LibraryDocumentReading = NonNullable<DocumentReadingPreview['reading']>;
 type LibraryDocumentReadingCoverage = LibraryDocumentReading['coverageStatus'];
@@ -173,9 +174,10 @@ export function projectLibraryDocumentReading(
     };
   }
   const reading = preview.reading;
+  const limitations = documentReadingLimitations(reading.limitations);
   const conditionLines: string[] = [];
   conditionLines.push(...reading.criticalConditions);
-  conditionLines.push(...reading.limitations);
+  conditionLines.push(...limitations);
   for (const sourceLimitation of reading.sourceLimitations) {
     conditionLines.push(sourceLimitation);
   }
@@ -185,7 +187,7 @@ export function projectLibraryDocumentReading(
     headline: reading.headline,
     brief: reading.brief,
     criticalConditions: reading.criticalConditions,
-    limitations: reading.limitations,
+    limitations,
     sourceLimitations: reading.sourceLimitations,
     coverageStatus: reading.coverageStatus,
     deliveredUnitCount: reading.deliveredUnitCount,

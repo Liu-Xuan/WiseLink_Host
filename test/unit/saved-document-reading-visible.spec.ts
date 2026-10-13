@@ -15,6 +15,7 @@ let root: Root;
 let container: HTMLElement;
 const oldGlobals = new Map<string, PropertyDescriptor | undefined>();
 const openSource = jest.fn();
+const historicalSelfReport = '本结果仅为文件解读候选，不构成机队适用性判断、工程决定、批准、执行或发布；未采用任何事项特定假设，未生成sourceBinding、readCoverage、revision或producer信息。';
 function fixture() {
   const version = libraryFamily('test').versions[0];
   const reading = savedDocumentReadingFixture(version.documentVersionId);
@@ -45,13 +46,26 @@ afterEach(async () => {
 });
 
 it('shows saved parse-1 explanation after parse-2 publication and opens exact old evidence', async () => {
-  const f = fixture(); const before = JSON.stringify(f);
+  const f = fixture();
+  const specificBoundary = '2907C1不能用于RNP AR minima<0.3 NM；2907C2取证尚未完成。';
+  const extendedEntry = `${historicalSelfReport} 构型 B 的执行记录仍待核。`;
+  f.reading.limitations.push(historicalSelfReport, specificBoundary, extendedEntry);
+  f.version.documentReading!.reading = savedDocumentReadingPreview(f.reading);
+  const before = JSON.stringify(f);
   mockRead.mockResolvedValue(f.response); await render(f.version);
   expect(mockRead).toHaveBeenCalledWith({ documentVersionId: f.version.documentVersionId,
     parseRunId: 'parse-1', semanticRevision: 1, readingRevision: 1 }, expect.any(AbortSignal));
   for (const text of ['已保存的详细解释。', '仅适用于构型 A。', '构型 B 尚无执行记录。', '第二页图示含义尚未确认。'])
     expect(container.textContent).toContain(text);
-  expect(container.textContent).not.toContain('diagnostic-only');
+  const sourceDetails = container.querySelector('details[aria-label="原文差异与缺项"]')!;
+  expect(sourceDetails.hasAttribute('open')).toBe(false);
+  expect(sourceDetails.querySelectorAll('li')).toHaveLength(f.reading.readCoverage.sourceCoverage.unresolvedRanges.length);
+  expect(sourceDetails.textContent).toContain('diagnostic-only');
+  const paragraphs = [...container.querySelectorAll('p')].map(item => item.textContent);
+  expect(paragraphs).not.toContain('diagnostic-only');
+  expect(paragraphs).not.toContain(historicalSelfReport);
+  expect(paragraphs).toContain(specificBoundary);
+  expect(paragraphs).toContain(extendedEntry);
   expect(container.textContent).not.toMatch(/来源已变化|不代表|不能代替/);
   const evidence = [...container.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent?.includes('Check configuration.'))!;
   await act(async () => evidence.click());
@@ -93,12 +107,17 @@ it('honors a fresh access denial and can read again after retry without a model 
 });
 
 it('keeps the authorized saved preview on an ordinary full-reading failure and reports the actual error', async () => {
-  const f = fixture(); mockRead.mockRejectedValue(Object.assign(new Error('full reading unavailable'), { statusCode: 503 }));
+  const f = fixture();
+  f.reading.limitations.push(historicalSelfReport);
+  f.version.documentReading!.reading = savedDocumentReadingPreview(f.reading);
+  mockRead.mockRejectedValue(Object.assign(new Error('full reading unavailable'), { statusCode: 503 }));
   await render(f.version);
   expect(container.textContent).toContain(f.reading.headline);
   expect(container.textContent).toContain(f.reading.brief.text);
   expect(container.textContent).toContain(f.reading.criticalConditions[0].text);
   expect(container.textContent).not.toContain(f.reading.explanation[0].text);
+  expect(container.textContent).not.toContain(historicalSelfReport);
+  expect(container.textContent).toContain('构型 B 尚无执行记录。');
   expect(container.querySelector('[role="alert"]')?.textContent).toContain('full reading unavailable');
 });
 

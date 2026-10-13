@@ -4,6 +4,7 @@ import { readDocumentWiki } from '@client/src/api/document-wiki';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { useSummaryResource } from '@client/src/features/derived-summary/useSummaryResource';
 import { Button } from '@client/src/components/ui/button';
+import { documentReadingLimitations } from './document-reading-presentation';
 
 /** An exact saved independent reading; it never substitutes the latest reading
  * or raw source page when a pinned result has been withdrawn. */
@@ -72,6 +73,8 @@ export default function DocumentWikiReading({
     load,
   );
   const reading = resource.data?.reading;
+  const limitations = documentReadingLimitations(reading?.limitations ?? []);
+  const sourceRanges = reading?.readCoverage.sourceCoverage.unresolvedRanges ?? [];
   const statement = (value: DocumentReadingStatement, key: string) => (
     <div key={key} className="space-y-2">
       <p className="whitespace-pre-wrap">{value.text}</p>
@@ -142,16 +145,16 @@ export default function DocumentWikiReading({
                 : null}
             </p>
           </details>
-          <ul>
-            {[
-              ...reading.limitations,
-              ...reading.readCoverage.sourceCoverage.unresolvedRanges.map(
-                (item) => item.message,
-              ),
-            ].map((item, index) => (
-              <li key={index}>{item}</li>
-            ))}
-          </ul>
+          {limitations.length ? <div className="space-y-2">
+            <h3 className="font-semibold">阅读补充</h3>
+            {limitations.map((item, index) => <p key={index}>{item}</p>)}
+          </div> : null}
+          {sourceRanges.length ? <details aria-label="原文差异与缺项">
+            <summary className="cursor-pointer text-sm">原文差异与缺项（{sourceRanges.length} 项）</summary>
+            <ul>{sourceRanges.map((range, index) => <li key={index}>
+              {range.pageIndexes.length ? `第 ${range.pageIndexes.map(page => page + 1).join('、')} 页：` : ''}{range.message}
+            </li>)}</ul>
+          </details> : null}
         </>
       ) : null}
       <Button variant="outline" size="sm" onClick={resource.refresh}>

@@ -176,7 +176,7 @@ export function DocumentReaderWorkspace({
           aria-labelledby={`${idPrefix}-source`}
         >
           <div>
-            <span>受控文件来源</span>
+            <span>文件来源</span>
             <strong>已绑定当前文件版本</strong>
             <p>{fileSizeLabel(data.workItem.source.sourceByteLength)}</p>
           </div>
@@ -191,13 +191,13 @@ export function DocumentReaderWorkspace({
             <div>
               <strong>
                 {data.readerProjection?.pdfPreview.status === 'AVAILABLE'
-                  ? 'PDF 原文已通过受控读取链打开'
+                  ? 'PDF 原文已打开'
                   : '暂不能预览 PDF 页面'}
               </strong>
               <p>
                 {data.readerProjection?.pdfPreview.status === 'AVAILABLE'
                   ? '画布显示在 PDF 原文面板；点击来源依据会跳转到对应页码。'
-                  : '当前受控读取链尚未提供 PDF 页面画布。你仍可使用结构化原文和页码定位。'}
+                  : '暂无 PDF 页面预览，可使用结构化原文和页码定位。'}
               </p>
             </div>
           </div>
