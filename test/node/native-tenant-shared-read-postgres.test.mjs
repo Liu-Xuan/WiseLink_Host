@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   nativeSharedReadTables,
+  nativeTenantReadAclPreflightSql,
   prepareNativeTenantReadDdl,
 } from '../../scripts/prepare-native-tenant-read-ddl.mjs';
 
@@ -106,6 +107,9 @@ test('prepared native shared read uses real PostgreSQL roles and RLS',
         permissive: 'PERMISSIVE', roles: `{${auth}}`,
         qual: 'true', with_check: 'true' });
       psql(baseSql.join('\n'));
+      psql(`REVOKE SELECT ON ${quote(schema)}.hierarchical_wiki_scope
+        FROM ${quote(auth)};`);
+      psql('ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;');
 
       const template = await readFile(new URL('../../migrations/0078_native_tenant_shared_read.sql', import.meta.url), 'utf8');
       assert.throws(() => prepareNativeTenantReadDdl({
@@ -116,11 +120,82 @@ test('prepared native shared read uses real PostgreSQL roles and RLS',
       const prepared = prepareNativeTenantReadDdl({
         template, snapshot: { ok: true, data: policies },
       });
+      assert.doesNotMatch(prepared, /\b(?:GRANT|REVOKE)\b/iu);
+      assert.match(prepared, /has_table_privilege/u);
+      assert.match(prepareNativeTenantReadDdl({
+        template, snapshot: { ok: true, data: policies },
+        permissionMode: 'managed',
+      }), /GRANT SELECT ON "work_item"/u);
+      const aclSql = nativeTenantReadAclPreflightSql();
+      assert.match(aclSql, /has_table_privilege/u);
+      assert.match(aclSql, /has_function_privilege/u);
+      assert.match(psql(aclSql), /hierarchical_wiki_scope\|f/u);
+      assert.match(psql(aclSql),
+        /native_app_document_readable\(varchar,varchar\)\|NOT_INSTALLED\|NOT_INSTALLED/u);
       const preparedFile = join(base, 'prepared.sql');
       writeFileSync(preparedFile,
         `SET client_min_messages TO WARNING;\nSET search_path TO ${quote(schema)}, public;\n${prepared}`);
-      call('psql', ['-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-h', socket,
-        '-p', port, '-U', 'postgres', '-d', 'postgres', '-f', preparedFile]);
+      const deploy = () => call('psql', [
+        '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-h', socket,
+        '-p', port, '-U', 'postgres', '-d', 'postgres', '-f', preparedFile,
+      ]);
+      assert.throws(deploy, /NATIVE_READ_AUTH_SELECT_ACL_MISSING: hierarchical_wiki_scope/u);
+      assert.equal(psql(`SELECT count(*) FROM pg_proc
+        WHERE pronamespace='${schema}'::regnamespace
+          AND proname='native_app_shared_read_allowed';`), '0');
+      assert.equal(psql(`SELECT count(*) FROM pg_policies
+        WHERE schemaname='${schema}' AND policyname='nr78_shared_read';`), '0');
+      psql(`GRANT SELECT ON ${quote(schema)}.hierarchical_wiki_scope
+        TO ${quote(auth)};`);
+      assert.doesNotMatch(psql(aclSql), /\|f(?:\n|$)/u);
+      assert.throws(deploy, /NATIVE_READ_AUTH_EXECUTE_ACL_MISSING/u);
+      assert.equal(psql(`SELECT count(*) FROM pg_proc
+        WHERE pronamespace='${schema}'::regnamespace
+          AND proname='native_app_shared_read_allowed';`), '0');
+      assert.equal(psql(`SELECT count(*) FROM pg_policies
+        WHERE schemaname='${schema}' AND policyname='nr78_shared_read';`), '0');
+      const functions = [
+        ['native_app_shared_read_allowed(target_tenant varchar)',
+          'native_app_shared_read_allowed(varchar)', true],
+        ['native_app_work_item_readable(target_tenant varchar,target_work_item varchar)',
+          'native_app_work_item_readable(varchar,varchar)', true],
+        ['native_app_document_readable(target_tenant varchar,target_document_version varchar)',
+          'native_app_document_readable(varchar,varchar)', true],
+        ['native_app_dm_related_readable(target_tenant varchar,entity_kind varchar,entity_id varchar)',
+          'native_app_dm_related_readable(varchar,varchar,varchar)', true],
+        ['native_app_matter_revision_readable(target_tenant varchar,target_matter_revision varchar)',
+          'native_app_matter_revision_readable(varchar,varchar)', true],
+        ['wiselink_native_reviewer(target_tenant text)',
+          'wiselink_native_reviewer(text)', false],
+      ];
+      psql(`SET search_path TO ${quote(schema)}, public;\n` + functions.map(
+        ([definition]) => `CREATE FUNCTION ${definition}
+          RETURNS boolean LANGUAGE sql AS $$ SELECT false $$;`,
+      ).join('\n'));
+      psql(`SET search_path TO ${quote(schema)}, public;\n` + functions.map(
+        ([, signature]) => `GRANT EXECUTE ON FUNCTION ${signature}
+          TO ${quote(auth)};`,
+      ).join('\n'));
+      assert.match(psql(aclSql),
+        /native_app_document_readable\(varchar,varchar\)\|OK\|MISSING/u);
+      assert.throws(deploy, /NATIVE_READ_SERVICE_EXECUTE_ACL_MISSING/u);
+      assert.equal(psql(`SELECT count(*) FROM pg_policies
+        WHERE schemaname='${schema}' AND policyname='nr78_shared_read';`), '0');
+      psql(`SET search_path TO ${quote(schema)}, public;\n` + functions
+        .filter(([, , serviceRequired]) => serviceRequired)
+        .map(([, signature]) => `GRANT EXECUTE ON FUNCTION ${signature}
+          TO ${quote(service)};`).join('\n'));
+      assert.match(psql(aclSql),
+        /native_app_document_readable\(varchar,varchar\)\|OK\|OK/u);
+      deploy();
+      assert.equal(psql(`SET search_path TO ${quote(schema)}, public;
+        SELECT has_function_privilege('${anon}',
+          '${schema}.native_app_document_readable(character varying,character varying)',
+          'EXECUTE');`), 'f');
+      psql(`SET search_path TO ${quote(schema)}, public;\n` + functions.map(
+        ([, signature]) => `GRANT EXECUTE ON FUNCTION ${signature}
+          TO PUBLIC;`,
+      ).join('\n'));
       psql(`SET search_path TO ${quote(schema)}, public;
         INSERT INTO work_item(id,tenant_id,actor_id,work_item_id,
           requested_by_user_id)
@@ -254,13 +329,33 @@ test('prepared native shared read uses real PostgreSQL roles and RLS',
         "native_app_shared_read_allowed('63849986')",
         "native_app_work_item_readable('63849986','WI-A')",
         "native_app_document_readable('63849986','VA')",
+        "native_app_dm_related_readable('63849986','FAMILY','FH')",
+        "native_app_dm_related_readable('63849986','DOCUMENT','DH')",
+        "native_app_dm_related_readable('63849986','ACQUISITION','AH')",
+        "native_app_dm_related_readable('63849986','ARTIFACT','SH')",
         "native_app_matter_revision_readable('63849986','R')",
-      ]) assert.equal(asRole(service, 'B', '', `SELECT ${helper};`), 'f');
+        "wiselink_native_reviewer('63849986')",
+      ]) {
+        assert.equal(asRole(service, 'B', '', `SELECT ${helper};`), 'f');
+        assert.equal(asRole(anon, 'B', '', `SELECT ${helper};`), 'f');
+      }
+      assert.equal(psql(`SET search_path TO ${quote(schema)}, public;
+        SELECT has_function_privilege('${anon}',
+          '${schema}.native_app_document_readable(character varying,character varying)',
+          'EXECUTE');`), 't');
       assert.equal(asRole(auth, '', '', 'SELECT count(*) FROM work_item;'), '0');
       assert.equal(asRole(auth, 'B', '',
         "SELECT native_app_document_readable('63849986','VA');"), 't');
       assert.equal(asRole(auth, 'B', '',
         "SELECT native_app_document_readable('63849986','VH');"), 't');
+      for (const helper of [
+        "native_app_shared_read_allowed('other')",
+        "native_app_work_item_readable('other','WI-X')",
+        "native_app_document_readable('other','VX')",
+        "native_app_dm_related_readable('other','FAMILY','FX')",
+        "native_app_matter_revision_readable('other','R')",
+        "wiselink_native_reviewer('other')",
+      ]) assert.equal(asRole(auth, 'B', '', `SELECT ${helper};`), 'f');
       for (const version of ['VM','VN','VC','VX'])
         assert.equal(asRole(auth, 'B', '',
           `SELECT native_app_document_readable('63849986','${version}');`), 'f');

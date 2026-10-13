@@ -2,6 +2,7 @@
 -- a fresh official pg_policies snapshot after 0077. Do not execute this source.
 -- The app admission is Tenant + require_login for the single tenant 63849986.
 BEGIN;
+-- @native-tenant-read:acl-check
 
 CREATE OR REPLACE FUNCTION native_app_shared_read_allowed(target_tenant varchar)
 RETURNS boolean LANGUAGE sql STABLE SECURITY INVOKER AS $$
@@ -11,9 +12,6 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY INVOKER AS $$
     AND current_setting('app.user_id', true) <> '-1'
     AND target_tenant = '63849986'
 $$;
-REVOKE ALL ON FUNCTION native_app_shared_read_allowed(varchar) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION native_app_shared_read_allowed(varchar)
-  TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION native_app_work_item_readable(
   target_tenant varchar, target_work_item varchar)
@@ -22,9 +20,6 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY INVOKER AS $$
     AND EXISTS (SELECT 1 FROM work_item w
       WHERE w.tenant_id=target_tenant AND w.work_item_id=target_work_item)
 $$;
-REVOKE ALL ON FUNCTION native_app_work_item_readable(varchar,varchar) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION native_app_work_item_readable(varchar,varchar)
-  TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION native_app_document_readable(
   target_tenant varchar, target_document_version varchar)
@@ -60,9 +55,6 @@ SET search_path = pg_catalog, workspace_aadkpkjef3slu, pg_temp AS $$
               AND w.source_file_sha256=v.pdf_sha256
               AND w.source_byte_length=v.byte_length)))
 $$;
-REVOKE ALL ON FUNCTION native_app_document_readable(varchar,varchar) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION native_app_document_readable(varchar,varchar)
-  TO authenticated, service_role;
 
 -- A fact-only read for tenantless catalog rows. The definer owns the catalog
 -- and bypasses its RLS, so family/version policies cannot recursively filter
@@ -110,10 +102,6 @@ SET search_path = pg_catalog, workspace_aadkpkjef3slu, pg_temp AS $$
                 AND native_app_document_readable(target_tenant,v.document_version_id)))))
     ELSE false END
 $$;
-REVOKE ALL ON FUNCTION native_app_dm_related_readable(varchar,varchar,varchar)
-  FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION native_app_dm_related_readable(varchar,varchar,varchar)
-  TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION native_app_matter_revision_readable(
   target_tenant varchar, target_matter_revision varchar)
@@ -154,17 +142,12 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY INVOKER AS $$
               target_tenant,(fulfilled->>'documentVersionId')::varchar) IS NOT TRUE)
         ))
 $$;
-REVOKE ALL ON FUNCTION native_app_matter_revision_readable(varchar,varchar)
-  FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION native_app_matter_revision_readable(varchar,varchar)
-  TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION wiselink_native_reviewer(target_tenant text)
 RETURNS boolean LANGUAGE sql STABLE SECURITY INVOKER AS $$
   SELECT native_app_shared_read_allowed(target_tenant::varchar)
 $$;
-REVOKE ALL ON FUNCTION wiselink_native_reviewer(text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION wiselink_native_reviewer(text) TO authenticated;
+-- @native-tenant-read:function-acl-check
 
 -- @native-tenant-read:prepared-policies:start
 DO $native_read_prepare$ BEGIN

@@ -10,6 +10,23 @@ node scripts/prepare-native-tenant-read-ddl.mjs \
   --output /private/tmp/0078_native_tenant_shared_read.prepared.sql
 ```
 
+The default `platform` output contains no SQL permission-management statements,
+because the platform rejected that DDL class during 0077. The CLI also writes
+`<output>.acl-preflight.sql`, a read-only table and function ACL report. Run
+that report before deployment; every table `can_select` must be true for
+`authenticated_workspace_aadkpkjef3slu`. The prepared transaction rechecks
+the same ACL and raises `NATIVE_READ_AUTH_SELECT_ACL_MISSING` before creating
+functions or changing policies if any table is missing SELECT. The report
+marks absent helpers `NOT_INSTALLED`; existing helpers show authenticated and
+service EXECUTE rights. After creating the six helpers, the transaction checks
+authenticated EXECUTE on all six and service EXECUTE on the five source-read
+helpers, before changing any policy. Missing rights raise
+`NATIVE_READ_AUTH_EXECUTE_ACL_MISSING` or
+`NATIVE_READ_SERVICE_EXECUTE_ACL_MISSING` and roll back the transaction. It
+does not grant missing ACLs or fall back to weaker access. The optional
+`--permission-mode managed` variant emits SQL permission changes for an
+environment that permits them; it is not the platform deployment variant.
+
 The adapter refuses a missing target table, including all three 0077 Wiki
 tables. It preserves each existing restrictive `FOR ALL` write expression as
 separate INSERT/UPDATE/DELETE policies and retains its service/anon restriction.
@@ -24,9 +41,14 @@ has no app tenant GUC, so `native_app_shared_read_allowed` checks the exact
 `authenticated_workspace_aadkpkjef3slu` SQL role, nonempty genuine app user ID,
 and this fixed app tenant. The Host still compares the trusted actor tenant
 exactly; a future multi tenant app admission requires new design and DDL.
-The read helpers allow service-role `EXECUTE` so old runtime source checks
-can call them, but return false under that SQL role. 0078 does not grant new
-service-role table SELECT or native review write authority.
+The default platform variant does not change function ACLs. PostgreSQL may
+grant PUBLIC EXECUTE by default, or an existing function or altered default
+privilege may keep it restricted; either way, the authenticated and service
+privileges above are required. Every new helper explicitly checks the exact
+authenticated SQL role, nonempty app user ID and fixed tenant before returning
+true. If PUBLIC EXECUTE is present, anon and service calls still return false,
+including for the two `SECURITY DEFINER` catalog helpers. 0078 does not grant
+new service-role table SELECT or native review write authority.
 Before release, read back app scope and tenant identity again. The test uses
 isolated local PostgreSQL roles, not an external organization account.
 
@@ -42,8 +64,9 @@ fact-only `native_app_dm_related_readable` helper applies the same historical
 document check to tenantless catalog families, documents, acquisitions and
 artifacts. Both catalog helpers use `SECURITY DEFINER` with fixed search path
 to avoid DM policy recursion, but retain exact logged-in SQL-role admission
-and return only boolean authorization facts. The Matter check requires a real revision and at least
-one WorkItem or material, and checks every linked WorkItem and material source.
+and return only boolean authorization facts. The Matter check requires a real
+revision and at least one WorkItem or material, and checks every linked
+WorkItem and material source.
 Existing OAuth owner helpers and write/CAS/source/adoption paths stay intact.
 
 Native reviewer INSERT/SELECT/UPDATE policies are limited to a genuine logged
@@ -86,6 +109,10 @@ their online installation nor widens their special `app.lcm_*` scopes.
 Validation: `node --test test/node/native-tenant-shared-read-postgres.test.mjs`
 passed with real local PostgreSQL `SET ROLE` and RLS, including historical
 WorkItem-linked DM rows across eight protected tables and mismatched, missing
-or foreign-tenant source denials. Official prepared DDL,
+or foreign-tenant source denials. It verifies missing table, authenticated
+function and service function ACL each abort the whole transaction; after
+test-only privileges are supplied, the default output installs without SQL
+permission statements. When test-only PUBLIC EXECUTE is supplied, helpers
+still return false to anon/service roles. Official prepared DDL,
 platform execution and runtime admission tests remain pending the post-0077
 snapshot and the release owner.

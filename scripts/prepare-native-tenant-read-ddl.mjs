@@ -7,6 +7,8 @@ const AUTH = `authenticated_${SCHEMA}`;
 const SERVICE = `service_role_${SCHEMA}`;
 const ANON = `anon_${SCHEMA}`;
 const marker = /-- @native-tenant-read:prepared-policies:start[\s\S]*?-- @native-tenant-read:prepared-policies:end/u;
+const aclMarker = '-- @native-tenant-read:acl-check';
+const functionAclMarker = '-- @native-tenant-read:function-acl-check';
 const ident = value => `"${value.replaceAll('"', '""')}"`;
 
 // Only tables consumed by the shared library, work and evidence readers.
@@ -62,6 +64,87 @@ const tenantless = {
 export const nativeSharedReadTables = new Set([
   ...directTenantTables, ...Object.keys(tenantless),
 ]);
+
+const aclTargets = [...nativeSharedReadTables].sort();
+const aclValues = aclTargets.map(table => `('${table}')`).join(',\n    ');
+const functionTargets = [
+  ['native_app_shared_read_allowed(varchar)', true],
+  ['native_app_work_item_readable(varchar,varchar)', true],
+  ['native_app_document_readable(varchar,varchar)', true],
+  ['native_app_dm_related_readable(varchar,varchar,varchar)', true],
+  ['native_app_matter_revision_readable(varchar,varchar)', true],
+  ['wiselink_native_reviewer(text)', false],
+];
+const functionValues = functionTargets.map(([signature, serviceRequired]) =>
+  `('${signature}',${serviceRequired})`).join(',\n    ');
+export function nativeTenantReadAclPreflightSql() {
+  return `-- Read-only deployment preflight for table and function ACLs.\n` +
+    `WITH target(table_name) AS (VALUES\n    ${aclValues})\n` +
+    `SELECT table_name, has_table_privilege('${AUTH}',\n` +
+    `  format('%I.%I','${SCHEMA}',table_name),'SELECT') AS can_select\n` +
+    `FROM target ORDER BY table_name;\n\n` +
+    `WITH target(signature,service_required) AS (VALUES\n    ${functionValues}),\n` +
+    `resolved AS (SELECT signature,service_required,\n` +
+    `  to_regprocedure(format('%I.%s','${SCHEMA}',signature)) AS function_oid\n` +
+    `  FROM target)\n` +
+    `SELECT signature,\n` +
+    `  CASE WHEN function_oid IS NULL THEN 'NOT_INSTALLED'\n` +
+    `    WHEN has_function_privilege('${AUTH}',function_oid::oid,'EXECUTE')\n` +
+    `      THEN 'OK' ELSE 'MISSING' END AS auth_execute,\n` +
+    `  CASE WHEN NOT service_required THEN 'NOT_REQUIRED'\n` +
+    `    WHEN function_oid IS NULL THEN 'NOT_INSTALLED'\n` +
+    `    WHEN has_function_privilege('${SERVICE}',function_oid::oid,'EXECUTE')\n` +
+    `      THEN 'OK' ELSE 'MISSING' END AS service_execute\n` +
+    `FROM resolved ORDER BY signature;\n`;
+}
+
+function nativeTenantReadAclFailClosedSql() {
+  return `DO $native_read_acl$\nDECLARE missing_tables text;\nBEGIN\n` +
+    `  WITH target(table_name) AS (VALUES\n    ${aclValues})\n` +
+    `  SELECT string_agg(table_name, ', ' ORDER BY table_name)\n` +
+    `    INTO missing_tables FROM target\n` +
+    `  WHERE has_table_privilege('${AUTH}',\n` +
+    `    format('%I.%I','${SCHEMA}',table_name),'SELECT') IS NOT TRUE;\n` +
+    `  IF missing_tables IS NOT NULL THEN\n` +
+    `    RAISE EXCEPTION 'NATIVE_READ_AUTH_SELECT_ACL_MISSING: %', missing_tables\n` +
+    `      USING ERRCODE='42501';\n` +
+    `  END IF;\nEND $native_read_acl$;`;
+}
+
+function nativeTenantReadFunctionAclFailClosedSql() {
+  const targets = `WITH target(signature,service_required) AS (VALUES\n` +
+    `    ${functionValues})\n`;
+  const privilege = role => `has_function_privilege('${role}',\n` +
+    `    to_regprocedure(format('%I.%s','${SCHEMA}',signature))::oid,\n` +
+    `    'EXECUTE') IS NOT TRUE`;
+  return `DO $native_read_fn_acl$\n` +
+    `DECLARE missing_auth text; missing_service text;\nBEGIN\n` +
+    `  ${targets}` +
+    `  SELECT string_agg(signature, ', ' ORDER BY signature)\n` +
+    `    INTO missing_auth FROM target WHERE ${privilege(AUTH)};\n` +
+    `  IF missing_auth IS NOT NULL THEN\n` +
+    `    RAISE EXCEPTION 'NATIVE_READ_AUTH_EXECUTE_ACL_MISSING: %', missing_auth\n` +
+    `      USING ERRCODE='42501';\n` +
+    `  END IF;\n` +
+    `  ${targets}` +
+    `  SELECT string_agg(signature, ', ' ORDER BY signature)\n` +
+    `    INTO missing_service FROM target\n` +
+    `    WHERE service_required AND ${privilege(SERVICE)};\n` +
+    `  IF missing_service IS NOT NULL THEN\n` +
+    `    RAISE EXCEPTION 'NATIVE_READ_SERVICE_EXECUTE_ACL_MISSING: %', missing_service\n` +
+    `      USING ERRCODE='42501';\n` +
+    `  END IF;\nEND $native_read_fn_acl$;`;
+}
+
+function managedPermissionSql() {
+  return functionTargets.flatMap(([signature, serviceRequired]) => {
+    const roles = serviceRequired ? [AUTH, SERVICE] : [AUTH];
+    return [
+    `REVOKE ALL ON FUNCTION ${signature} FROM PUBLIC;`,
+    `GRANT EXECUTE ON FUNCTION ${signature} TO ${roles.map(roleSql).join(', ')};`,
+    ];
+  });
+}
 
 function expectSnapshot(snapshot) {
   if (snapshot?.ok !== true || !Array.isArray(snapshot.data) ||
@@ -216,9 +299,15 @@ function reviewerPolicies() {
   });
 }
 
-export function prepareNativeTenantReadDdl({ template, snapshot }) {
+export function prepareNativeTenantReadDdl({
+  template, snapshot, permissionMode = 'platform',
+}) {
   const policies = expectSnapshot(snapshot);
-  if (!marker.test(template) || !template.includes("target_tenant = '63849986'"))
+  if (!['platform', 'managed'].includes(permissionMode))
+    throw new Error(`NATIVE_READ_PERMISSION_MODE_INVALID:${permissionMode}`);
+  if (!marker.test(template) || !template.includes(aclMarker) ||
+    !template.includes(functionAclMarker) ||
+    !template.includes("target_tenant = '63849986'"))
     throw new Error('NATIVE_READ_TEMPLATE_MISMATCH');
   const tables = new Set(policies.map(p => p.tablename));
   const missing = [...nativeSharedReadTables].filter(table => !tables.has(table));
@@ -275,23 +364,45 @@ export function prepareNativeTenantReadDdl({ template, snapshot }) {
       name: boundary, table, command: 'SELECT', roles: [AUTH],
       using: sharedPredicate(table),
     }));
-    statements.push(`GRANT SELECT ON ${ident(table)} TO ${roleSql(AUTH)};`);
+    if (permissionMode === 'managed')
+      statements.push(`GRANT SELECT ON ${ident(table)} TO ${roleSql(AUTH)};`);
   }
   statements.push(...reviewerPolicies());
+  if (permissionMode === 'managed') statements.push(...managedPermissionSql());
   return template.replace(marker, `-- @native-tenant-read:prepared-policies:start\n${statements.join('\n')}\n-- @native-tenant-read:prepared-policies:end`)
-    .replaceAll('TO authenticated, service_role;',
-      `TO ${roleSql(AUTH)}, ${roleSql(SERVICE)};`)
-    .replaceAll(`TO authenticated;`, `TO ${roleSql(AUTH)};`);
+    .replace(aclMarker, permissionMode === 'platform'
+      ? nativeTenantReadAclFailClosedSql() : '-- ACL supplied by managed permissions')
+    .replace(functionAclMarker, permissionMode === 'platform'
+      ? nativeTenantReadFunctionAclFailClosedSql()
+      : '-- Function ACL supplied by managed permissions');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const args = process.argv.slice(2);
-  if (args.length !== 4 || args[0] !== '--snapshot' || args[2] !== '--output')
-    throw new Error('Usage: node scripts/prepare-native-tenant-read-ddl.mjs --snapshot official-policies.json --output prepared.sql');
+  const options = new Map();
+  for (let i = 0; i < args.length; i += 2) {
+    if (!args[i]?.startsWith('--') || args[i + 1] === undefined ||
+      options.has(args[i])) throw new Error('NATIVE_READ_INVALID_ARGS');
+    options.set(args[i], args[i + 1]);
+  }
+  if (options.size < 2 || options.size > 4 ||
+    [...options.keys()].some(key => ![
+      '--snapshot', '--output', '--permission-mode', '--acl-output',
+    ].includes(key)) || !options.has('--snapshot') || !options.has('--output'))
+    throw new Error('Usage: node scripts/prepare-native-tenant-read-ddl.mjs --snapshot official-policies.json --output prepared.sql [--permission-mode platform|managed] [--acl-output preflight.sql]');
   const [template, snapshot] = await Promise.all([
     readFile(new URL('../migrations/0078_native_tenant_shared_read.sql', import.meta.url), 'utf8'),
-    readFile(args[1], 'utf8').then(JSON.parse),
+    readFile(options.get('--snapshot'), 'utf8').then(JSON.parse),
   ]);
-  await writeFile(args[3], prepareNativeTenantReadDdl({ template, snapshot }), { flag: 'wx' });
-  process.stdout.write(`Prepared ${args[3]}. No database statements executed.\n`);
+  const output = options.get('--output');
+  const permissionMode = options.get('--permission-mode') ?? 'platform';
+  const prepared = prepareNativeTenantReadDdl({ template, snapshot, permissionMode });
+  const aclOutput = options.get('--acl-output') ?? `${output}.acl-preflight.sql`;
+  if (resolve(aclOutput) === resolve(output))
+    throw new Error('NATIVE_READ_ACL_OUTPUT_MUST_DIFFER');
+  await writeFile(aclOutput, nativeTenantReadAclPreflightSql(), { flag: 'wx' });
+  await writeFile(output,
+    prepared,
+    { flag: 'wx' });
+  process.stdout.write(`Prepared ${output} and read-only ${aclOutput}. No database statements executed.\n`);
 }
