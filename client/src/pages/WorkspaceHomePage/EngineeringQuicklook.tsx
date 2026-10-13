@@ -86,13 +86,7 @@ export default function EngineeringQuicklook({
               ? '正在读取已保存摘要…'
               : (readError?.title ?? '选择资料查看工程摘要')}
           </strong>
-          <p>
-            {loading
-              ? '正在读取当前账户可见的登记与候选摘要。'
-              : readError
-                ? readError.message
-                : '当前判断、适用范围、依据、缺口和建议动作将在这里同步显示。'}
-          </p>
+          {readError ? <p>{readError.message}</p> : null}
         </div>
       ) : (
         <div className="library-quicklook-scroll">

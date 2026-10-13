@@ -62,7 +62,6 @@ export default function SavedWorkSelector({ session, candidateVersionIds, onAdd 
   const route = selected ? `/knowledge?${new URLSearchParams({ subjectKind: selected.entry.subjectKind, subjectId: selected.entry.subjectId, workRef: selected.entry.workRef })}` : null;
   return <section className="space-y-4" aria-label="选择确切保存工作">
     <h2 className="text-lg font-semibold">选择保存工作与问题</h2>
-    {candidateVersionIds.length ? <p className="text-sm">从 ATA 节点进入：当前已加载 {candidateVersionIds.length} 个候选文档版本，尚未加入成员。</p> : null}
     <details><summary className="cursor-pointer">直接读取已有确切保存链接（含历史工作）</summary>
       <form className="my-3 flex flex-wrap gap-2" onSubmit={event => {
         event.preventDefault();

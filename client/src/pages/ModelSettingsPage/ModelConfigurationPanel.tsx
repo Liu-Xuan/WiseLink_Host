@@ -153,10 +153,6 @@ function ModelConfigurationEditor({
         </Button>
         {pending ? <span role="status">正在读取或保存模型设置…</span> : null}
       </div>
-      <p className="wl-model-settings-help">
-        目录表示已登记路由，不能证明实时生成健康。失败不会自动切换模型。服务商配额与密钥仍由现有官方
-        Hosted 配置管理，本页不读取或保存密钥。
-      </p>
     </section>
   );
 }

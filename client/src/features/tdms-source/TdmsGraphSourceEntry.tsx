@@ -24,7 +24,6 @@ function EnabledTdmsGraphSourceEntry(
   return (
     <section className="rg-panel" aria-label="TDMS 原生来源图谱入口">
       <h2 className="rg-panel-title">TDMS 文件、评估与工程文件关系</h2>
-      <p>按需读取已获准的准确来源关系；概览不复制正文，阅读不调用模型。</p>
       <button
         type="button"
         disabled={authenticationRequired}
