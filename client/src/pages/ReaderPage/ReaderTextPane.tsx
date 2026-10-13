@@ -90,9 +90,6 @@ const ReaderTextPane = forwardRef<HTMLDivElement, ReaderTextPaneProps>(
       <div className="reader-text-pane panel">
         <div className="pane-title">
           <b>{isZh ? '中文阅读' : '连续结构化原文'}</b>
-          <span>
-            {isZh ? '完整语义与原文关联' : '按解析结果展示，完整内容请核对原件'}
-          </span>
         </div>
 
         <div
@@ -106,11 +103,6 @@ const ReaderTextPane = forwardRef<HTMLDivElement, ReaderTextPaneProps>(
               {document.familyId} · {document.version}
             </small>
             <h1>{isZh ? document.title : 'Engineering information'}</h1>
-            <p>
-              {isZh
-                ? '完整语义与原文关联'
-                : 'Original text · source-linked reading'}
-            </p>
           </div>
 
           {document.blocks.map((block) => (

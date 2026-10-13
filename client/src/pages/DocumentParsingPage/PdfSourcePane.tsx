@@ -126,7 +126,7 @@ export default function PdfSourcePane({
         <FileSearch aria-hidden="true" /> PDF 原文
         <span
           className="parse-pdf-binding"
-          aria-label={`受控文件来源：已绑定当前文件版本，${fileSizeLabel(
+          aria-label={`文件来源：已绑定当前文件版本，${fileSizeLabel(
             data.workItem.source.sourceByteLength,
           )}`}
         >
@@ -189,8 +189,8 @@ export default function PdfSourcePane({
             <strong>暂不能预览 PDF 页面</strong>
             <p>
               {pdfPreview?.reason === 'PDF_PREVIEW_SOURCE_TOO_LARGE'
-                ? '当前受控文件超过在线预览上限，可继续使用结构化原文和页码定位。'
-                : '当前受控读取链暂未提供 PDF 页面画布，可继续使用结构化原文和页码定位。'}
+                ? '当前文件超过在线预览上限，可继续使用结构化原文和页码定位。'
+                : '暂未提供 PDF 页面预览，可使用结构化原文和页码定位。'}
             </p>
           </div>
         </div>

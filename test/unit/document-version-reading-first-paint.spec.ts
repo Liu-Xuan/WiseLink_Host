@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import DocumentVersionReadingPage from '../../client/src/pages/DocumentParsingPage/DocumentVersionReadingPage';
 import DocumentWikiReading from '../../client/src/pages/DocumentParsingPage/DocumentWikiReading';
 import type { DocumentParseRunSummary } from '@shared/document-parsing.interface';
+import type { DocumentOriginalCoverage } from '@shared/document-original.interface';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 
 const { JSDOM } = require('jsdom');
@@ -134,14 +135,25 @@ beforeEach(() => {
 });
 
 test('Wiki member link reads the exact semantic/reading revision and retains full conditions',async()=>{
+  const sourceCoverage: DocumentOriginalCoverage = {
+    knownPageCount: 2, readPageIndexes: [0],
+    unresolvedRanges: [{ pageIndexes: [1], unitIds: [], reason: 'UNREAD',
+      message: 'Unseen page retained.', readingImpact: 'LIMITATION' }],
+  };
+  const coverageBefore = JSON.stringify(sourceCoverage);
   mockWiki.mockResolvedValue({status:'AVAILABLE',reading:{readingRunRef:'DRR-1',readingRevision:2,headline:'Saved conditional Wiki',
     brief:{text:'Only after condition X is verified.',quotes:[]},explanation:[{text:'Complete saved explanation; applicability is unconfirmed.',quotes:[]}],
     criticalConditions:[{text:'Do not act before verifying X.',quotes:[]}],limitations:['Selected original has gaps.'],sourceAnchors:[],
-    readCoverage:{deliveredUnitIds:['u1'],totalUnitCount:2,status:'PARTIAL_DELIVERY',sourceCoverage:{unresolvedRanges:[{message:'Unseen page retained.'}]}}}});
+    readCoverage:{deliveredUnitIds:['u1'],totalUnitCount:2,status:'PARTIAL_DELIVERY',sourceCoverage}}});
   await mount('parseRunId=PR1&semanticRevision=4&readingRevision=2&readingRunRef=DRR-1');
   expect(mockWiki.mock.calls[0][0]).toEqual({documentVersionId:'DV1',parseRunId:'PR1',semanticRevision:4,readingRevision:2});
   expect(container.textContent).toContain('Complete saved explanation');expect(container.textContent).toContain('Do not act before verifying X.');
   expect(container.textContent).toContain('Unseen page retained.');expect(mockStart).not.toHaveBeenCalled();
+  const sourceDetails = container.querySelector('details[aria-label="原文差异与缺项"]')!;
+  expect(sourceDetails.hasAttribute('open')).toBe(false);
+  expect(sourceDetails.querySelectorAll('li')).toHaveLength(1);
+  expect(sourceDetails.textContent).toContain('第 2 页：Unseen page retained.');
+  expect(JSON.stringify(sourceCoverage)).toBe(coverageBefore);
 });
 
 test('withdrawn exact Wiki stops its body without switching to another revision',async()=>{

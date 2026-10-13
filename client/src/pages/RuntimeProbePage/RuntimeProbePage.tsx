@@ -53,12 +53,7 @@ export default function RuntimeProbePage() {
     <main className="parse-shell" aria-busy={loading}>
       <header className="parse-masthead">
         <div>
-          <p className="parse-eyebrow">资料连接 · 只读检查</p>
           <h1>资料与原文阅读连接状态</h1>
-          <p className="parse-lede">
-            仅使用当前登录身份读取连接与原文阅读就绪状态。此页面不触发资料入库、
-            工程评估、解析或工程结论写入。
-          </p>
         </div>
       </header>
       <section className="parse-panel wl-runtime-fingerprint">

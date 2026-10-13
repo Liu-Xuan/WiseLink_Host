@@ -140,7 +140,7 @@ describe('document source reading workspace', () => {
         original.binding.sourceArtifactId, original.binding.sourceSha256,
       ]);
       await act(async () => pdf.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
-      expect(container.textContent).toContain('受控读取 · 第 3 页');
+      expect(container.textContent).toContain('第 3 页');
       // An observed manual page updates the label, not the source target command.
       expect(container.querySelector('[data-pdf-page="2"]')).not.toBeNull();
       expect(selectedLocations).toHaveBeenCalledTimes(1);
