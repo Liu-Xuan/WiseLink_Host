@@ -75,10 +75,12 @@ export function resealEfRequest(env: EfRequestEnvelope) {
   if (
     read.rosterEvidence.unknownRequiredSurfaces.length ||
     read.rosterEvidence.unreadControls.length ||
-    read.tabs.some((t: any) =>
-      ['NOT_READ', 'NOT_LOADED', 'TRUNCATED', 'ACCESS_DENIED'].includes(
-        t.state,
-      ),
+    read.tabs.some(
+      (t: any) =>
+        t.required &&
+        ['NOT_READ', 'NOT_LOADED', 'TRUNCATED', 'ACCESS_DENIED'].includes(
+          t.state,
+        ),
     ) ||
     read.fields.some((f: any) =>
       ['NOT_READ', 'NOT_LOADED', 'TRUNCATED', 'ACCESS_DENIED'].includes(

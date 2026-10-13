@@ -396,15 +396,18 @@ export function syntheticCompleteEnvelope(
     },
     observedAt: observationTime,
   };
-  if (scopeId === 'ENGINEERING_ASSESSMENT') {
-    // The reviewed EFRequest model has two distinct native modified mirrors.
+  if (scopeId === 'ENGINEERING_ASSESSMENT' || scopeId === 'AD') {
+    // The reviewed EFRequest/AD models have two native modified mirrors.
     // Keep the existing eight-state synthetic fields and absent optional pair.
     const tabId =
       'infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails';
     const panel = '#infoPage_myTab_object_docInfoDefaultDetails';
     const sections = ['General', 'MoreAttributesGroup'];
     const mirrors = sections.map((section) => {
-      const locator = `${panel} ${section} td.synthetic-modified`;
+      const locator =
+        scopeId === 'AD'
+          ? `${panel} #dataStore${section} > tbody > tr > td.synthetic-modified`
+          : `${panel} ${section} td.synthetic-modified`;
       return {
         fieldId: locator,
         tabId,
@@ -422,7 +425,7 @@ export function syntheticCompleteEnvelope(
     });
     read.tabs.push({
       tabId,
-      label: 'Synthetic EFRequest Details',
+      label: `Synthetic ${scopeId} Details`,
       panelLocator: panel,
       state: 'VALUE',
       required: true,
@@ -432,8 +435,12 @@ export function syntheticCompleteEnvelope(
     const mirrorSections = sections.map((section) => ({
       sectionId: `${tabId}::${section}`,
       tabId,
-      label: section,
-      panelLocator: `${panel} ${section}`,
+      label:
+        scopeId === 'AD' && section === 'MoreAttributesGroup'
+          ? 'System'
+          : section,
+      panelLocator:
+        scopeId === 'AD' ? `${panel} #${section}` : `${panel} ${section}`,
       state: 'VALUE',
       sourceDeclared: true,
     }));

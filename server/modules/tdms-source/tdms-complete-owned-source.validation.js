@@ -17,6 +17,9 @@ import {
   isReviewedEfRequestUnknownFieldCaption,
   validateReviewedCompleteTabRoster,
   validateReviewedEfRequestModifiedMirrors,
+  validateReviewedAdModifiedMirrors,
+  validateReviewedCompleteTabPurposes,
+  validateReviewedEfRequestGridRosters,
 } from './tdms-reviewed-complete-source-types';
 import { createHash } from 'node:crypto';
 import { tdmsError } from './tdms-source.types';
@@ -1232,6 +1235,11 @@ function validateRoster(read, input) {
     rosterEvidence: read.rosterEvidence,
     contentTabIds: read.tabs.map((t) => t.tabId),
   });
+  validateReviewedCompleteTabPurposes({
+    scopeId: input.scopeId,
+    owner: read.owner,
+    read,
+  });
   const modifiedMirrors = validateReviewedEfRequestModifiedMirrors({
     scopeId: input.scopeId,
     owner: read.owner,
@@ -1262,6 +1270,12 @@ function validateRoster(read, input) {
     for (const v of read.rosterEvidence[k]) text(v, 500);
   }
   validateCompleteStructuralRosters(read);
+  validateReviewedAdModifiedMirrors({
+    scopeId: input.scopeId,
+    owner: read.owner,
+    fields: read.fields,
+    sections: read.sections,
+  });
   bool(read.rosterEvidence.layoutEvidencePending);
   if (
     p.layoutEvidencePending &&
@@ -1385,7 +1399,37 @@ function validateRelatedStatusSourceViewEvidence(
     'nativeView',
     'nativeFilters',
     'observedAt',
+    ...(Object.hasOwn(v || {}, 'rawControlObservations')
+      ? ['rawControlObservations']
+      : []),
   ]);
+  if (Object.hasOwn(v, 'rawControlObservations')) {
+    if (
+      !Array.isArray(v.rawControlObservations) ||
+      v.rawControlObservations.length > 1
+    )
+      invalid();
+    for (const c of v.rawControlObservations) {
+      keys(c, ['locator', 'tag', 'actualLabel', 'rawValue', 'state']);
+      if (
+        c.locator !==
+          '#relatedStatusLinkTable [id="relatedStatusLinkTable.searchInListTextBox"]' ||
+        c.tag !== 'INPUT'
+      )
+        invalid();
+      if (
+        c.actualLabel !== null &&
+        (typeof c.actualLabel !== 'string' || c.actualLabel.length > 700)
+      )
+        invalid();
+      if (
+        typeof c.rawValue !== 'string' ||
+        c.rawValue.length > 1000 ||
+        c.state !== (c.rawValue.trim() ? 'VALUE' : 'BLANK')
+      )
+        invalid();
+    }
+  }
   if (
     v.schemaVersion !== 'wiselink.tdms-related-status-source-view.v1' ||
     v.ownerSourceRecordId !== owner.sourceRecordId ||
@@ -1825,6 +1869,11 @@ function validateRead(r, input) {
       fail('TDMS_COMPLETE_RELATION_TABLE_DUPLICATE');
     ids.add(t.tableId);
   }
+  validateReviewedEfRequestGridRosters({
+    scopeId: input.scopeId,
+    owner: r.owner,
+    read: r,
+  });
   if (Date.parse(r.owner.observedAt) > Date.parse(r.observedAt))
     fail('TDMS_COMPLETE_OWN_TIME_INVALID');
 }
@@ -1975,10 +2024,12 @@ export function completeOwnedRecord(raw, rawInput) {
   if (
     read.rosterEvidence.unknownRequiredSurfaces.length ||
     read.rosterEvidence.unreadControls.length ||
-    read.tabs.some((t) =>
-      ['NOT_READ', 'NOT_LOADED', 'TRUNCATED', 'ACCESS_DENIED'].includes(
-        t.state,
-      ),
+    read.tabs.some(
+      (t) =>
+        t.required &&
+        ['NOT_READ', 'NOT_LOADED', 'TRUNCATED', 'ACCESS_DENIED'].includes(
+          t.state,
+        ),
     ) ||
     read.fields.some((f) =>
       ['NOT_READ', 'NOT_LOADED', 'TRUNCATED', 'ACCESS_DENIED'].includes(

@@ -1,0 +1,609 @@
+{
+  "syntheticOnly": true,
+  "sourceModelsSha256": "461dc5e3e62bafe876c8c93d05f426b725d8bd3cc25255f75a7ff9914520d6e0",
+  "sourceViewSha256": "8644b4505d2ea03b3ab39b0e9aff5ab2ea658a158392405329f086bc56e65979",
+  "efModel": {
+    "modelRevision": "tdms-reviewed-efrequest-readonly-surfaces@1",
+    "scopeId": "ENGINEERING_ASSESSMENT",
+    "nativeClass": "wt.doc.WTDocument",
+    "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.EFRequest",
+    "nativeHeaderType": "工程文件编写评估单",
+    "detailTabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+    "detailPanel": "#infoPage_myTab_object_docInfoDefaultDetails",
+    "rootLocator": "#infoPagemainInfoPagePanel",
+    "technicalVersion": {
+      "source": "OWN_HEADER_THIRD_SLOT",
+      "locator": "#infoPageIdentityObjectIdentifier"
+    },
+    "modifiedMirrors": ["General", "MoreAttributesGroup"],
+    "nonContentControl": {
+      "actionId": "infoPageinfoPanelID__new_tab_action",
+      "tag": "LI",
+      "classToken": "x-tab-with-icon",
+      "rawCaption": "",
+      "semantic": "NATIVE_TAB_CREATE_ACTION"
+    },
+    "scopeExcludedTabReason": "TDMS_COMPLETE_OWN_TAB_NOT_REQUIRED_BY_CONFIRMED_SCOPE",
+    "scopeExcludedTabs": [
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docObjectsHistoryTab",
+        "label": "History",
+        "panelLocator": "#infoPage_myTab_object_docObjectsHistoryTab"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_45658671",
+        "label": "工作流进程",
+        "panelLocator": "#infoPage_myTab_tab_jcaGen_45658671"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_866988688",
+        "label": "成员",
+        "panelLocator": "#infoPage_myTab_tab_jcaGen_866988688"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_866988689",
+        "label": "笔记本",
+        "panelLocator": "#infoPage_myTab_tab_jcaGen_866988689"
+      }
+    ],
+    "nativeGridSurfaces": [
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docContentInfoDetails",
+        "panelLocator": "#infoPage_myTab_object_docContentInfoDetails",
+        "gridId": "attachments.table.primary",
+        "nativeUiRole": "PRIMARY_CONTENT",
+        "relationshipRole": "UNKNOWN",
+        "direction": "UNKNOWN",
+        "columns": [
+          {
+            "actualLabel": "Label or File Name",
+            "nativeColumnToken": "attachmentsName",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "View Information",
+            "nativeColumnToken": "infoPageActionAttachment",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Format Icon",
+            "nativeColumnToken": "formatIcon",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Format",
+            "nativeColumnToken": "formatName",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Last Modified",
+            "nativeColumnToken": "thePersistInfo_modifyStamp",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Modified By",
+            "nativeColumnToken": "modifier",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          }
+        ],
+        "evidenceRef": "TDMS_EFREQUEST_REQUIRED_TABS_NATIVE_INPUT_ROOT_20261014/ef-safe.json",
+        "evidenceSha256": "5f90d1437eff2ae97832190696cb3679643561d14c3bb86781c64559f3bc4999",
+        "evidenceJsonPointer": "/parts/0/requestedPanels/0/grids/0"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docContentInfoDetails",
+        "panelLocator": "#infoPage_myTab_object_docContentInfoDetails",
+        "gridId": "attachments.table.secondary",
+        "nativeUiRole": "ATTACHMENTS",
+        "relationshipRole": "UNKNOWN",
+        "direction": "UNKNOWN",
+        "columns": [
+          {
+            "actualLabel": "",
+            "nativeColumnToken": "checker",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Label or File Name",
+            "nativeColumnToken": "attachmentsName",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "View Information",
+            "nativeColumnToken": "infoPageActionAttachment",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Format Icon",
+            "nativeColumnToken": "formatIcon",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Format",
+            "nativeColumnToken": "formatName",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Attachment Description",
+            "nativeColumnToken": "description",
+            "valuePolicy": "NOT_READ_UNREVIEWED_ROW_TEXT_QUALIFICATION"
+          },
+          {
+            "actualLabel": "Last Modified",
+            "nativeColumnToken": "thePersistInfo_modifyStamp",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Modified By",
+            "nativeColumnToken": "modifier",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          }
+        ],
+        "evidenceRef": "TDMS_EFREQUEST_REQUIRED_TABS_NATIVE_INPUT_ROOT_20261014/ef-safe.json",
+        "evidenceSha256": "5f90d1437eff2ae97832190696cb3679643561d14c3bb86781c64559f3bc4999",
+        "evidenceJsonPointer": "/parts/0/requestedPanels/0/grids/1"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_referenceDocumentTable",
+        "panelLocator": "#infoPage_myTab_object_referenceDocumentTable",
+        "gridId": "document.refDoc.list",
+        "nativeUiRole": null,
+        "relationshipRole": "UNKNOWN",
+        "direction": "UNKNOWN",
+        "columns": [
+          {
+            "actualLabel": "",
+            "nativeColumnToken": "checker",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Reference Document Number",
+            "nativeColumnToken": "docNumber",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "RefDocumentVersionNo",
+            "nativeColumnToken": "docVersion",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "RefDocumentSourcing",
+            "nativeColumnToken": "sourcing",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Reference Document Type",
+            "nativeColumnToken": "docType",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Reference Document Title",
+            "nativeColumnToken": "docName",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "RefDocumentDate",
+            "nativeColumnToken": "issueDate",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          }
+        ],
+        "evidenceRef": "TDMS_EFREQUEST_REQUIRED_TABS_NATIVE_INPUT_ROOT_20261014/ef-safe.json",
+        "evidenceSha256": "5f90d1437eff2ae97832190696cb3679643561d14c3bb86781c64559f3bc4999",
+        "evidenceJsonPointer": "/parts/0/requestedPanels/1/grids/0"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_EFRDocumentTable",
+        "panelLocator": "#infoPage_myTab_object_EFRDocumentTable",
+        "gridId": "document.EFRDoc.list",
+        "nativeUiRole": null,
+        "relationshipRole": "UNKNOWN",
+        "direction": "UNKNOWN",
+        "columns": [
+          {
+            "actualLabel": "",
+            "nativeColumnToken": "checker",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFR Document Operation",
+            "nativeColumnToken": "operationType",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFR Document Number",
+            "nativeColumnToken": "numberDisPlay",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "State",
+            "nativeColumnToken": "stateDisplay",
+            "valuePolicy": "NATIVE_STATE_METADATA_ONLY"
+          },
+          {
+            "actualLabel": "EFRDocumentNumber2",
+            "nativeColumnToken": "returnNumberDisPlay",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFRDocState2",
+            "nativeColumnToken": "returnStateDisplay",
+            "valuePolicy": "NATIVE_STATE_METADATA_ONLY"
+          },
+          {
+            "actualLabel": "EFR Document Type",
+            "nativeColumnToken": "docType",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFR Document Name",
+            "nativeColumnToken": "docName",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFR Document IssueDate",
+            "nativeColumnToken": "issueDate",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFR Document Operator",
+            "nativeColumnToken": "userRef_fullName",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFR Document Description",
+            "nativeColumnToken": "docDescription",
+            "valuePolicy": "NOT_READ_UNREVIEWED_ROW_TEXT_QUALIFICATION"
+          },
+          {
+            "actualLabel": "Comments",
+            "nativeColumnToken": "comments",
+            "valuePolicy": "NOT_READ_UNREVIEWED_ROW_TEXT_QUALIFICATION"
+          }
+        ],
+        "evidenceRef": "TDMS_EFREQUEST_REQUIRED_TABS_NATIVE_INPUT_ROOT_20261014/ef-safe.json",
+        "evidenceSha256": "5f90d1437eff2ae97832190696cb3679643561d14c3bb86781c64559f3bc4999",
+        "evidenceJsonPointer": "/parts/0/requestedPanels/2/grids/0"
+      }
+    ],
+    "evidenceRef": "full-goal-native-efrequest-minimal-model-round13-private.json",
+    "evidenceSha256": "91451c461efdcac0b67216c325849f15e8e13f461701a95b6d3cb60ec4c3c366"
+  },
+  "adModel": {
+    "modelRevision": "tdms-reviewed-ad-own-modified-mirrors@1",
+    "scopeId": "AD",
+    "nativeClass": "wt.doc.WTDocument",
+    "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.ADDocument",
+    "nativeHeaderType": "AD文档",
+    "detailTabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+    "detailPanel": "#infoPage_myTab_object_docInfoDefaultDetails",
+    "modifiedMirrors": [
+      {
+        "sectionId": "General",
+        "sectionLabel": "General",
+        "dataStoreId": "dataStoreGeneral"
+      },
+      {
+        "sectionId": "MoreAttributesGroup",
+        "sectionLabel": "System",
+        "dataStoreId": "dataStoreMoreAttributesGroup"
+      }
+    ],
+    "evidenceRef": "work/TDMS_AD_DETAIL_PRIMARY_READONLY_DOM_20261011.json",
+    "evidenceSha256": "cea8af044626d78307908e120acaf0c76edf191b0f5a1d24fbefbc2ce732c598"
+  },
+  "owner": {
+    "sourceRecordId": "OR:wt.doc.WTDocument:249001",
+    "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.EFRequest",
+    "rawHeaderType": "工程文件编写评估单",
+    "nativeTypeEvidence": {
+      "actualLabel": "Native type",
+      "rawValue": "WCTYPE|wt.doc.WTDocument|com.airchina.EFRequest",
+      "state": "VALUE",
+      "observedTotalCodepoints": 47,
+      "locator": "#synthetic-type"
+    },
+    "sourceVersion": {
+      "rawRevision": "A",
+      "rawIteration": "1",
+      "confirmation": "SOURCE_DECLARED"
+    },
+    "businessVersion": null,
+    "sourceModifiedRaw": "2026-10-13 09:00"
+  },
+  "read": {
+    "tabs": [
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+        "required": true,
+        "state": "VALUE",
+        "reasonCode": null
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docObjectsHistoryTab",
+        "label": "History",
+        "panelLocator": "#infoPage_myTab_object_docObjectsHistoryTab",
+        "required": false,
+        "state": "NOT_READ",
+        "reasonCode": "TDMS_COMPLETE_OWN_TAB_NOT_REQUIRED_BY_CONFIRMED_SCOPE"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_45658671",
+        "label": "工作流进程",
+        "panelLocator": "#infoPage_myTab_tab_jcaGen_45658671",
+        "required": false,
+        "state": "NOT_READ",
+        "reasonCode": "TDMS_COMPLETE_OWN_TAB_NOT_REQUIRED_BY_CONFIRMED_SCOPE"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_866988688",
+        "label": "成员",
+        "panelLocator": "#infoPage_myTab_tab_jcaGen_866988688",
+        "required": false,
+        "state": "NOT_READ",
+        "reasonCode": "TDMS_COMPLETE_OWN_TAB_NOT_REQUIRED_BY_CONFIRMED_SCOPE"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_866988689",
+        "label": "笔记本",
+        "panelLocator": "#infoPage_myTab_tab_jcaGen_866988689",
+        "required": false,
+        "state": "NOT_READ",
+        "reasonCode": "TDMS_COMPLETE_OWN_TAB_NOT_REQUIRED_BY_CONFIRMED_SCOPE"
+      }
+    ],
+    "sections": [],
+    "fields": [],
+    "attachments": [],
+    "relationTables": [],
+    "rosterEvidence": {
+      "tabIds": [
+        "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+        "infoPageinfoPanelID__infoPage_myTab_object_docObjectsHistoryTab",
+        "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_45658671",
+        "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_866988688",
+        "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_866988689"
+      ],
+      "nativeTabStripIds": [
+        "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+        "infoPageinfoPanelID__infoPage_myTab_object_docObjectsHistoryTab",
+        "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_45658671",
+        "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_866988688",
+        "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_866988689",
+        "infoPageinfoPanelID__new_tab_action"
+      ],
+      "nonContentControls": [
+        {
+          "actionId": "infoPageinfoPanelID__new_tab_action",
+          "tag": "LI",
+          "rawClassName": "x-tab-with-icon",
+          "rawCaption": "",
+          "locator": "#infoPageinfoPanelID__new_tab_action",
+          "rootLocator": "#infoPagemainInfoPagePanel",
+          "semantic": "NATIVE_TAB_CREATE_ACTION",
+          "modelRevision": "tdms-reviewed-efrequest-readonly-surfaces@1"
+        }
+      ],
+      "structuralRosters": []
+    }
+  },
+  "adOwner": {
+    "sourceRecordId": "OR:wt.doc.WTDocument:249001",
+    "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.ADDocument",
+    "rawHeaderType": "AD文档",
+    "nativeTypeEvidence": {
+      "actualLabel": "Native type",
+      "rawValue": "WCTYPE|wt.doc.WTDocument|com.airchina.ADDocument",
+      "state": "VALUE",
+      "observedTotalCodepoints": 48,
+      "locator": "#synthetic-type"
+    },
+    "sourceVersion": {
+      "rawRevision": "A",
+      "rawIteration": "1",
+      "confirmation": "SOURCE_DECLARED"
+    },
+    "businessVersion": null,
+    "sourceModifiedRaw": "2026-10-13 09:00"
+  },
+  "adFields": [
+    {
+      "fieldId": "#infoPage_myTab_object_docInfoDefaultDetails #dataStoreGeneral > tbody > tr > td.synthetic-modified",
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+      "sectionId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails::General",
+      "labelOrigin": "NATIVE_SOURCE_DECLARED",
+      "nativeControl": {
+        "tag": "TD",
+        "readOnly": null,
+        "disabled": null
+      },
+      "value": {
+        "actualLabel": "Last Modified:",
+        "rawValue": "2026-10-13 09:00",
+        "state": "VALUE",
+        "observedTotalCodepoints": 16,
+        "locator": "#infoPage_myTab_object_docInfoDefaultDetails #dataStoreGeneral > tbody > tr > td.synthetic-modified"
+      },
+      "links": []
+    },
+    {
+      "fieldId": "#infoPage_myTab_object_docInfoDefaultDetails #dataStoreMoreAttributesGroup > tbody > tr > td.synthetic-modified",
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+      "sectionId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails::MoreAttributesGroup",
+      "labelOrigin": "NATIVE_SOURCE_DECLARED",
+      "nativeControl": {
+        "tag": "TD",
+        "readOnly": null,
+        "disabled": null
+      },
+      "value": {
+        "actualLabel": "Last Modified:",
+        "rawValue": "2026-10-13 09:00",
+        "state": "VALUE",
+        "observedTotalCodepoints": 16,
+        "locator": "#infoPage_myTab_object_docInfoDefaultDetails #dataStoreMoreAttributesGroup > tbody > tr > td.synthetic-modified"
+      },
+      "links": []
+    }
+  ],
+  "adSections": [
+    {
+      "sectionId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails::General",
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+      "label": "General",
+      "panelLocator": "#infoPage_myTab_object_docInfoDefaultDetails #General",
+      "state": "VALUE",
+      "sourceDeclared": true
+    },
+    {
+      "sectionId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails::MoreAttributesGroup",
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+      "label": "System",
+      "panelLocator": "#infoPage_myTab_object_docInfoDefaultDetails #MoreAttributesGroup",
+      "state": "VALUE",
+      "sourceDeclared": true
+    }
+  ],
+  "sourceView": {
+    "schemaVersion": "wiselink.tdms-related-status-source-view.v1",
+    "state": "NOT_READ",
+    "modelRevision": null,
+    "evidenceLocator": "#infoPage_myTab_object_latestStatusLink #relatedStatusLinkTable",
+    "ownerSourceRecordId": "OR:wt.doc.WTDocument:249001",
+    "ownerTechnicalVersion": {
+      "rawRevision": "A",
+      "rawIteration": "1",
+      "confirmation": "SOURCE_DECLARED"
+    },
+    "ownerBusinessVersion": null,
+    "tabId": "infoPageinfoPanelID__infoPage_myTab_object_latestStatusLink",
+    "panelLocator": "#infoPage_myTab_object_latestStatusLink",
+    "gridId": "relatedStatusLinkTable",
+    "nativeView": {
+      "state": "NOT_READ",
+      "control": null
+    },
+    "nativeFilters": {
+      "state": "NOT_READ",
+      "controls": null,
+      "noFilterDeclaration": null
+    },
+    "observedAt": "2026-10-13T00:00:00.000Z"
+  },
+  "acceptedControls": [
+    {
+      "schemaVersion": "wiselink.tdms-related-status-source-view.v1",
+      "state": "NOT_READ",
+      "modelRevision": null,
+      "evidenceLocator": "#infoPage_myTab_object_latestStatusLink #relatedStatusLinkTable",
+      "ownerSourceRecordId": "OR:wt.doc.WTDocument:249001",
+      "ownerTechnicalVersion": {
+        "rawRevision": "A",
+        "rawIteration": "1",
+        "confirmation": "SOURCE_DECLARED"
+      },
+      "ownerBusinessVersion": null,
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_object_latestStatusLink",
+      "panelLocator": "#infoPage_myTab_object_latestStatusLink",
+      "gridId": "relatedStatusLinkTable",
+      "nativeView": {
+        "state": "NOT_READ",
+        "control": null
+      },
+      "nativeFilters": {
+        "state": "NOT_READ",
+        "controls": null,
+        "noFilterDeclaration": null
+      },
+      "observedAt": "2026-10-13T00:00:00.000Z",
+      "rawControlObservations": [
+        {
+          "locator": "#relatedStatusLinkTable [id=\"relatedStatusLinkTable.searchInListTextBox\"]",
+          "tag": "INPUT",
+          "actualLabel": null,
+          "rawValue": "",
+          "state": "BLANK"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "wiselink.tdms-related-status-source-view.v1",
+      "state": "NOT_READ",
+      "modelRevision": null,
+      "evidenceLocator": "#infoPage_myTab_object_latestStatusLink #relatedStatusLinkTable",
+      "ownerSourceRecordId": "OR:wt.doc.WTDocument:249001",
+      "ownerTechnicalVersion": {
+        "rawRevision": "A",
+        "rawIteration": "1",
+        "confirmation": "SOURCE_DECLARED"
+      },
+      "ownerBusinessVersion": null,
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_object_latestStatusLink",
+      "panelLocator": "#infoPage_myTab_object_latestStatusLink",
+      "gridId": "relatedStatusLinkTable",
+      "nativeView": {
+        "state": "NOT_READ",
+        "control": null
+      },
+      "nativeFilters": {
+        "state": "NOT_READ",
+        "controls": null,
+        "noFilterDeclaration": null
+      },
+      "observedAt": "2026-10-13T00:00:00.000Z",
+      "rawControlObservations": [
+        {
+          "locator": "#relatedStatusLinkTable [id=\"relatedStatusLinkTable.searchInListTextBox\"]",
+          "tag": "INPUT",
+          "actualLabel": null,
+          "rawValue": " \t ",
+          "state": "BLANK"
+        }
+      ]
+    },
+    {
+      "schemaVersion": "wiselink.tdms-related-status-source-view.v1",
+      "state": "NOT_READ",
+      "modelRevision": null,
+      "evidenceLocator": "#infoPage_myTab_object_latestStatusLink #relatedStatusLinkTable",
+      "ownerSourceRecordId": "OR:wt.doc.WTDocument:249001",
+      "ownerTechnicalVersion": {
+        "rawRevision": "A",
+        "rawIteration": "1",
+        "confirmation": "SOURCE_DECLARED"
+      },
+      "ownerBusinessVersion": null,
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_object_latestStatusLink",
+      "panelLocator": "#infoPage_myTab_object_latestStatusLink",
+      "gridId": "relatedStatusLinkTable",
+      "nativeView": {
+        "state": "NOT_READ",
+        "control": null
+      },
+      "nativeFilters": {
+        "state": "NOT_READ",
+        "controls": null,
+        "noFilterDeclaration": null
+      },
+      "observedAt": "2026-10-13T00:00:00.000Z",
+      "rawControlObservations": [
+        {
+          "locator": "#relatedStatusLinkTable [id=\"relatedStatusLinkTable.searchInListTextBox\"]",
+          "tag": "INPUT",
+          "actualLabel": null,
+          "rawValue": "  SYNTHETIC-SEARCH  ",
+          "state": "VALUE"
+        }
+      ]
+    }
+  ],
+  "results": {
+    "tabPurposes": true,
+    "gridsPresent": true,
+    "gridsAbsent": false,
+    "adMirrors": {
+      "state": "VALUE",
+      "unreadLocators": []
+    },
+    "adChanged": "TDMS_COMPLETE_OWN_MODIFIED_MIRROR_CHANGED"
+  }
+}
