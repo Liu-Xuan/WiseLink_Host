@@ -188,7 +188,7 @@ export default function DocumentActivityTimelineView({
           <span className="activity-timeline-copy">
             <span className="activity-timeline-meta"><i className={`activity-lane-indicator ${laneClass(item)}`} />资料与厂家进展 · {item.time?.role ?? 'UNKNOWN'}</span>
             <strong>{item.statement.label}</strong>
-            <small>声明 {item.statement.statementId} · 原词 {documentActivityStatementStatusRaw(item.statement) ?? (isDocumentActivityStatementV2(item.statement) ? '本候选未捕获' : '未提供')} · 精度 {item.time?.precision ?? 'UNKNOWN'}</small>
+            <small>声明 {item.statement.statementId} · 状态原词 {documentActivityStatementStatusRaw(item.statement) ?? (isDocumentActivityStatementV2(item.statement) ? '本候选未捕获' : '未提供')} · 精度 {item.time?.precision ?? 'UNKNOWN'}</small>
           </span>
         </button>
         {itemActions(item, onOpenReading, onOpenAnchor, onNavigateGraph)}
