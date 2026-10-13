@@ -1,4 +1,6 @@
 import { adaptTdmsDailySource } from '../../../server/modules/tdms-source/tdms-daily-source-adapter';
+import { validateEngineeringClassificationInput } from '../../../server/modules/tdms-source/tdms-current-source-classification.validation';
+import sealedDirectory from '../../fixtures/tdms-source/engineering-directory-row-digest-0254.synthetic.json';
 import { prepareTdmsDailyMetadataImport } from '../../../server/modules/tdms-source/tdms-daily-metadata-contract';
 import {
   hash,
@@ -78,6 +80,84 @@ function fileEnvelope(format = 'PDF', large = false) {
   };
 }
 describe('frozen TDMS 0.2.54 current Host wire alignment', () => {
+  it('accepts sealed producer directory samples with unchanged rowDigest when only observedAt changes', () => {
+    expect(sealedDirectory.input.directoryProof.rowDigest).toBe(
+      '14e2e65c907b8d7ddea7cbc5dde8d633888d34a5f7ce25a33a1ff2a5ba05e1e5',
+    );
+    expect(sealedDirectory.laterInput.directoryProof.rowDigest).toBe(
+      sealedDirectory.producerRowDigest,
+    );
+    expect(sealedDirectory.laterInput.expectedRow.observedAt).not.toBe(
+      sealedDirectory.input.expectedRow.observedAt,
+    );
+    expect(
+      validateEngineeringClassificationInput(
+        copyComplete(sealedDirectory.input),
+      ),
+    ).toEqual(sealedDirectory.input);
+    expect(
+      validateEngineeringClassificationInput(
+        copyComplete(sealedDirectory.laterInput),
+      ),
+    ).toEqual(sealedDirectory.laterInput);
+  });
+  it('preserves sealed directory row/timestamp in the native projection and changes only the request digest', () => {
+    const first = currentClassification('engineering', true),
+      later = copyComplete(first);
+    const p = later.package.records[0].rawFields
+      .engineeringClassification as any;
+    p.requestedCriteria = copyComplete(sealedDirectory.laterInput);
+    resealClassification(later);
+    const before = adaptTdmsDailySource(first),
+      after = adaptTdmsDailySource(later);
+    expect(
+      after.envelope.package.records[0].rawFields.engineeringClassification,
+    ).toEqual(p);
+    expect(
+      after.output.nativePackage.records[0].rawFields.engineeringClassification,
+    ).toEqual(p);
+    expect(later.requestId).not.toBe(first.requestId);
+    expect(later.package.records[0].snapshotId).toBe(
+      first.package.records[0].snapshotId,
+    );
+    expect(after.payloadDigest).not.toBe(before.payloadDigest);
+  });
+  it('rejects sealed producer-invalid whole-row digest including observedAt', () => {
+    const input = copyComplete(sealedDirectory.input);
+    input.directoryProof.rowDigest = sealedDirectory.legacyFullRowDigest;
+    expect(sealedDirectory.legacyFullRowDigestRejectedWith).toBe(
+      'TDMS_ENGINEERING_CLASSIFICATION_BINDING_INVALID',
+    );
+    expect(() => validateEngineeringClassificationInput(input)).toThrow(
+      'TDMS_ENGINEERING_CLASSIFICATION_BINDING_INVALID',
+    );
+  });
+  it.each([
+    'sourceRecordId',
+    'number',
+    'sourceVersion',
+    'sourceModifiedRaw',
+  ] as const)(
+    'rejects sealed directory %s identity tamper under the unchanged proof',
+    (change) => {
+      const input = copyComplete(sealedDirectory.input),
+        row = input.expectedRow;
+      if (change === 'sourceRecordId')
+        input.sourceObjectRef = row.sourceRecordId =
+          'OR:wt.epm.EPMDocument:99126';
+      if (change === 'number')
+        input.documentCode = row.number = 'SYNTHETIC-OTHER-DIRECTORY';
+      if (change === 'sourceVersion') {
+        row.sourceVersion.rawIteration = '2';
+        row.technicalVersionRaw = row.technicalVersionEvidence.rawValue = 'A.2';
+      }
+      if (change === 'sourceModifiedRaw')
+        row.sourceModifiedRaw = '2026-10-12 08:01';
+      expect(() => validateEngineeringClassificationInput(input)).toThrow(
+        'TDMS_ENGINEERING_CLASSIFICATION_BINDING_INVALID',
+      );
+    },
+  );
   it('retains required WTDocument classification operation and parent link index', () => {
     const env = syntheticCompleteEnvelope('SL'),
       p = proofOfCurrent(env);

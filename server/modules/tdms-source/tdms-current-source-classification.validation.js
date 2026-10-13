@@ -392,6 +392,14 @@ export const ENGINEERING_CLASSIFICATION_TARGET_INPUT_KEYS = Object.freeze([
 export function engineeringClassificationIsRelated(input) {
   return !!input && Object.hasOwn(input, 'sourceProof');
 }
+// Exact profile-source.mjs@0.2.54 projection: omit only top-level observedAt.
+// The retained row and all identity/version/source-modification fields stay intact.
+const profileRowDigest = (row) =>
+  sha256(
+    Object.fromEntries(
+      Object.entries(row).filter(([key]) => key !== 'observedAt'),
+    ),
+  );
 export function validateEngineeringClassificationInput(raw) {
   const v = plainData(raw),
     p = SOURCE_PROFILES.ENGINEERING_INDEPENDENT,
@@ -466,7 +474,7 @@ export function validateEngineeringClassificationInput(raw) {
       !Number.isSafeInteger(d.pageIndex) ||
       d.pageIndex < 0 ||
       d.scopeDigest !== sha256(v.scope) ||
-      d.rowDigest !== sha256(r)
+      d.rowDigest !== profileRowDigest(r)
     )
       fail('TDMS_ENGINEERING_CLASSIFICATION_BINDING_INVALID');
     text(d.queryRequestId, 120);

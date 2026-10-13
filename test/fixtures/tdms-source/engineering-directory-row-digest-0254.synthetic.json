@@ -1,0 +1,166 @@
+{
+  "schemaVersion": "wiselink.synthetic-sealed-tdms-directory-row-digest.v1",
+  "producerVersion": "0.2.54",
+  "syntheticOnly": true,
+  "input": {
+    "profileId": "ENGINEERING_INDEPENDENT",
+    "profileRevision": "tdms-independent-source-profiles@1",
+    "documentCode": "SYNTHETIC-PRODUCER-DIRECTORY-0254",
+    "sourceObjectRef": "OR:wt.epm.EPMDocument:99125",
+    "scope": {
+      "schemaVersion": "wiselink.tdms-discovery-scope.v2",
+      "strategy": "TYPE_DATE",
+      "scopeId": "synthetic-engineering-scope",
+      "profileId": "ENGINEERING_INDEPENDENT",
+      "profileRevision": "tdms-independent-source-profiles@1",
+      "objectType": "EO整体",
+      "nativeClass": "wt.epm.EPMDocument",
+      "businessType": null,
+      "oemManufacturerType": null,
+      "dateField": "Last Modified",
+      "dateRange": {
+        "from": "2026-10-01",
+        "to": "2026-10-12",
+        "dateZone": null,
+        "semanticsEvidenceId": null
+      },
+      "stateFilter": "ALL",
+      "contextRaw": "All Contexts"
+    },
+    "expectedRow": {
+      "sourceRecordId": "OR:wt.epm.EPMDocument:99125",
+      "number": "SYNTHETIC-PRODUCER-DIRECTORY-0254",
+      "sourceVersion": {
+        "rawRevision": "A",
+        "rawIteration": "1",
+        "confirmation": "SOURCE_DECLARED"
+      },
+      "state": {
+        "rawCode": null,
+        "rawName": "Estimated"
+      },
+      "sourceModifiedAt": null,
+      "sourceModifiedRaw": "2026-10-12 08:00",
+      "observedAt": "2026-10-13T00:00:00.000Z",
+      "storageType": {
+        "rawCode": null,
+        "rawName": "EO整体"
+      },
+      "sourceCreatedRaw": null,
+      "nativeTypeId": "WCTYPE|wt.epm.EPMDocument|com.airchina.DynamicDocument|com.airchina.EODocument",
+      "typeEvidence": {
+        "origin": "BOUND_DIRECTORY_QUERY",
+        "nativeTypeId": "WCTYPE|wt.epm.EPMDocument|com.airchina.DynamicDocument|com.airchina.EODocument",
+        "rawTypeLabel": "EO整体"
+      },
+      "businessVersion": {
+        "rawRevision": "1",
+        "rawIteration": null,
+        "confirmation": "SOURCE_DECLARED"
+      },
+      "businessVersionEvidence": {
+        "actualLabel": "EO版次:",
+        "rawValue": "1"
+      },
+      "orderTypeRaw": "EO",
+      "technicalVersionRaw": "A.1",
+      "technicalVersionEvidence": {
+        "actualLabel": "Version",
+        "rawValue": "A.1"
+      }
+    },
+    "directoryProof": {
+      "operationId": "TDMSOP-11111111-1111-1111-1111-111111111111",
+      "queryRequestId": "synthetic-directory-query",
+      "pageIndex": 0,
+      "scopeDigest": "918470f90e2d3e7cb2f5cd388fb2b4e0f108f2916a5f6b945439587e7947c0c4",
+      "rowDigest": "14e2e65c907b8d7ddea7cbc5dde8d633888d34a5f7ce25a33a1ff2a5ba05e1e5"
+    },
+    "purpose": "COVERAGE",
+    "primaryPolicy": "METADATA_ONLY",
+    "openIfMissing": false,
+    "classificationRevision": "tdms-engineering-own-subtype@1"
+  },
+  "laterInput": {
+    "profileId": "ENGINEERING_INDEPENDENT",
+    "profileRevision": "tdms-independent-source-profiles@1",
+    "documentCode": "SYNTHETIC-PRODUCER-DIRECTORY-0254",
+    "sourceObjectRef": "OR:wt.epm.EPMDocument:99125",
+    "scope": {
+      "schemaVersion": "wiselink.tdms-discovery-scope.v2",
+      "strategy": "TYPE_DATE",
+      "scopeId": "synthetic-engineering-scope",
+      "profileId": "ENGINEERING_INDEPENDENT",
+      "profileRevision": "tdms-independent-source-profiles@1",
+      "objectType": "EO整体",
+      "nativeClass": "wt.epm.EPMDocument",
+      "businessType": null,
+      "oemManufacturerType": null,
+      "dateField": "Last Modified",
+      "dateRange": {
+        "from": "2026-10-01",
+        "to": "2026-10-12",
+        "dateZone": null,
+        "semanticsEvidenceId": null
+      },
+      "stateFilter": "ALL",
+      "contextRaw": "All Contexts"
+    },
+    "expectedRow": {
+      "sourceRecordId": "OR:wt.epm.EPMDocument:99125",
+      "number": "SYNTHETIC-PRODUCER-DIRECTORY-0254",
+      "sourceVersion": {
+        "rawRevision": "A",
+        "rawIteration": "1",
+        "confirmation": "SOURCE_DECLARED"
+      },
+      "state": {
+        "rawCode": null,
+        "rawName": "Estimated"
+      },
+      "sourceModifiedAt": null,
+      "sourceModifiedRaw": "2026-10-12 08:00",
+      "observedAt": "2026-10-13T00:00:30.000Z",
+      "storageType": {
+        "rawCode": null,
+        "rawName": "EO整体"
+      },
+      "sourceCreatedRaw": null,
+      "nativeTypeId": "WCTYPE|wt.epm.EPMDocument|com.airchina.DynamicDocument|com.airchina.EODocument",
+      "typeEvidence": {
+        "origin": "BOUND_DIRECTORY_QUERY",
+        "nativeTypeId": "WCTYPE|wt.epm.EPMDocument|com.airchina.DynamicDocument|com.airchina.EODocument",
+        "rawTypeLabel": "EO整体"
+      },
+      "businessVersion": {
+        "rawRevision": "1",
+        "rawIteration": null,
+        "confirmation": "SOURCE_DECLARED"
+      },
+      "businessVersionEvidence": {
+        "actualLabel": "EO版次:",
+        "rawValue": "1"
+      },
+      "orderTypeRaw": "EO",
+      "technicalVersionRaw": "A.1",
+      "technicalVersionEvidence": {
+        "actualLabel": "Version",
+        "rawValue": "A.1"
+      }
+    },
+    "directoryProof": {
+      "operationId": "TDMSOP-11111111-1111-1111-1111-111111111111",
+      "queryRequestId": "synthetic-directory-query",
+      "pageIndex": 0,
+      "scopeDigest": "918470f90e2d3e7cb2f5cd388fb2b4e0f108f2916a5f6b945439587e7947c0c4",
+      "rowDigest": "14e2e65c907b8d7ddea7cbc5dde8d633888d34a5f7ce25a33a1ff2a5ba05e1e5"
+    },
+    "purpose": "COVERAGE",
+    "primaryPolicy": "METADATA_ONLY",
+    "openIfMissing": false,
+    "classificationRevision": "tdms-engineering-own-subtype@1"
+  },
+  "producerRowDigest": "14e2e65c907b8d7ddea7cbc5dde8d633888d34a5f7ce25a33a1ff2a5ba05e1e5",
+  "legacyFullRowDigest": "7e5fdbeaed2a991637a35e3599a8bdcdab9327af22dae11e669db757965674aa",
+  "legacyFullRowDigestRejectedWith": "TDMS_ENGINEERING_CLASSIFICATION_BINDING_INVALID"
+}
