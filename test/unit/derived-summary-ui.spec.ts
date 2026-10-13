@@ -20,6 +20,10 @@ const mockWikiList = jest.fn();
 const mockWikiClassify = jest.fn();
 const mockWikiDelegate = jest.fn();
 const mockWikiUpdate = jest.fn();
+const mockWikiEnable = jest.fn();
+let mockDefaultModel = 'miaoda/glm-5.3';
+let mockModelsReady = true;
+const mockFleetCatalog = jest.fn();
 let mockSession = 1;
 let mockAuthenticationRequired = false;
 let mockInstruction = '仅工作23四问题，保留历史和未覆盖范围。';
@@ -29,13 +33,14 @@ jest.mock('@client/src/api/derived-summary', () => ({
   updateDerivedSummary: (...args: unknown[]) => mockUpdate(...args), listDerivedSummaries: (...args: unknown[]) => mockList(...args),
 }));
 jest.mock('@client/src/api/canonical-host', () => ({ getCanonicalHostClientSessionGeneration: () => mockSession, getCanonicalHostIdentityContext: async () => ({ tenantId: 'tenant-1', userId: 'actor-1' }),
-  getCanonicalLibraryFleetCatalog: async () => ({ families: [] }),
+  getCanonicalLibraryFleetCatalog: (...args: unknown[]) => mockFleetCatalog(...args),
   getCanonicalLibraryDocuments: async () => ({ items: [], nextCursor: null }),
   readDocumentParsingStatus: async (documentVersionId: string) => ({ documentVersionId, documentCode: '787-FTD-fixture', businessRevision: '旧R1', selectedVersionIsCurrent: false }) }));
 jest.mock('@client/src/api/hierarchical-wiki', () => ({ listHierarchicalWiki: (...args: unknown[]) => mockWikiList(...args),
   classifyHierarchicalWiki: (...args: unknown[]) => mockWikiClassify(...args),
   delegateHierarchicalWikiMatter: (...args: unknown[]) => mockWikiDelegate(...args),
-  updateHierarchicalWiki: (...args: unknown[]) => mockWikiUpdate(...args) }));
+  updateHierarchicalWiki: (...args: unknown[]) => mockWikiUpdate(...args),
+  enableHierarchicalWiki: (...args: unknown[]) => mockWikiEnable(...args) }));
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({ useCurrentUserSession: () => ({ sessionGeneration: mockSession, authenticationRequired: mockAuthenticationRequired }) }));
 jest.mock('@client/src/components/ui/button', () => ({ Button: ({ asChild: _asChild, ...props }: import('react').ComponentProps<'button'> & { asChild?: boolean }) => createElement('button', props) }));
 jest.mock('@client/src/components/ui/input', () => ({ Input: (props: import('react').ComponentProps<'input'>) => createElement('input', props) }));
@@ -45,7 +50,13 @@ jest.mock('@client/src/features/derived-summary/DerivedSummaryBody', () => ({ __
 jest.mock('@client/src/features/derived-summary/SavedWorkSelector', () => ({ __esModule: true, default: ({ onAdd }: { onAdd: (value: unknown) => void }) => createElement('button', { onClick: () => onAdd({ member: { kind: 'WORK_ITEM_WORK', workItemId: 'WI-explicit', documentVersionId: 'DV-old', workRef: 'JAWR-work23', workRevision: 23, issueKeys: ['I1', 'I2', 'I3', 'I4'] }, headline: '四个确切问题', current: true }) }, '明确加入四个问题') }));
 jest.mock('@client/src/features/derived-summary/ChildSummarySelector', () => ({ __esModule: true, default: () => createElement('p', null, '子概述尚未选定') }));
 jest.mock('@client/src/features/derived-summary/SummaryScopeFields', () => ({ __esModule: true, default: ({ scope, onChange }: { scope: DerivedSummaryScopeSelection; onChange: (value: DerivedSummaryScopeSelection) => void }) => createElement('button', { onClick: () => onChange({ ...scope, selectionReason: '仅旧DV工作23，未覆盖新版本。' }) }, '明确范围理由') }));
-jest.mock('@client/src/features/review/TaskModelPicker', () => ({ __esModule: true, default: ({ value }: { value: string }) => createElement('p', null, value), useTaskModelOptions: () => ({ ready: true, data: { options: [{ modelRef: 'miaoda/glm-5.3', available: true }] } }) }));
+jest.mock('@client/src/features/review/TaskModelPicker', () => ({ __esModule: true,
+  default: jest.requireActual('@client/src/features/review/TaskModelPicker').default,
+  useTaskModelOptions: () => ({ ready: mockModelsReady, loading: !mockModelsReady, error: '', refresh: jest.fn(),
+    data: { defaultModelRef: mockDefaultModel, options: [
+      { modelRef: 'miaoda/glm-5.3', displayName: 'GLM 5.3', providerLabel: '妙搭', available: true },
+      { modelRef: 'miaoda/minimax-m3', displayName: 'MiniMax-M3', providerLabel: '妙搭', available: true },
+    ] } }) }));
 let dom: InstanceType<typeof JSDOM>, root: Root, container: HTMLElement, router: ReturnType<typeof createMemoryRouter>;
 const oldGlobals = new Map<string, PropertyDescriptor | undefined>();
 beforeEach(() => {
@@ -55,6 +66,8 @@ beforeEach(() => {
   }
   container = dom.window.document.getElementById('root')!;
   jest.clearAllMocks(); mockSession = 1; mockAuthenticationRequired = false; mockInstruction = '仅工作23四问题，保留历史和未覆盖范围。';
+  mockDefaultModel = 'miaoda/glm-5.3'; mockModelsReady = true;
+  mockFleetCatalog.mockResolvedValue({ families: [] }); mockWikiEnable.mockResolvedValue({});
   mockWikiList.mockReset().mockResolvedValue({ items: [], candidates: [], classifications: [], nextClassificationCursor: null });
   mockWikiClassify.mockResolvedValue({});mockWikiDelegate.mockResolvedValue({});mockWikiUpdate.mockResolvedValue({});
   mockHead.mockResolvedValue(summaryHead()); mockExact.mockResolvedValue(summaryExact());
@@ -306,7 +319,7 @@ test.each([
 });
 test('new scope and upper child URL do not implicitly select members or start generation', async () => {
   await mount('/summaries/new?kind=ATA2&fleetFamilyId=B787&ata2=46&title=有限范围&fromSummaryId=DS-1&fromSummaryRef=DSR-1');
-  expect(container.textContent).toContain('尚未选定成员'); expect(container.textContent).toContain('miaoda/glm-5.3');
+  expect(container.textContent).toContain('尚未选定成员'); expect(container.textContent).toContain('系统配置：GLM 5.3');
   expect(mockCreate).not.toHaveBeenCalled(); expect(mockHead).not.toHaveBeenCalled();
 });
 async function prepareSelection() {
@@ -317,6 +330,9 @@ async function prepareSelection() {
 test('unknown acceptance retains identical requestId, members and Hosted model on explicit retry', async () => {
   await mount('/summaries/new?kind=ATA4&fleetFamilyId=B787&ata2=46&ata4=46-00&title=有限范围');
   await prepareSelection();
+  const picker = container.querySelector<HTMLSelectElement>('#derived-summary-model')!;
+  await act(async () => { picker.value = 'miaoda/glm-5.3'; picker.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
+  await click('确认选定范围');
   mockCreate.mockRejectedValueOnce(new Error('网络结果未知')).mockResolvedValueOnce({ summaryId: 'DS-1', attemptRef: 'AQ-1' });
   await click('提交选定范围'); expect(mockCreate).toHaveBeenCalledTimes(1);
   const original = mockCreate.mock.calls[0][0];
@@ -512,4 +528,55 @@ test('explicit revision rejection requires reset before a fresh selected command
   await act(async () => router.navigate('/summaries/DS-1/update')); await prepareSelection();
   mockUpdate.mockRejectedValueOnce(new Error('未知')); await click('提交选定范围');
   const fresh = mockUpdate.mock.calls[1][1]; expect(fresh.purpose).toBe('SYNTHESIZE'); expect(fresh.requestId).not.toBe(original.requestId);
+});
+
+test('new manual summary inherits the displayed saved configuration without manufacturing an explicit model choice', async () => {
+  mockDefaultModel = 'miaoda/minimax-m3';
+  await mount('/summaries/new?kind=ATA4&fleetFamilyId=B787&ata2=46&ata4=46-00&title=有限范围');
+  const picker = container.querySelector<HTMLSelectElement>('#derived-summary-model')!;
+  expect(picker.value).toBe(''); expect(picker.options[0].text).toContain('MiniMax-M3');
+  await prepareSelection(); mockCreate.mockRejectedValueOnce(new Error('结果未知')); await click('提交选定范围');
+  const input = mockCreate.mock.calls[0][0]; expect(input).not.toHaveProperty('modelRef');
+  expect(JSON.parse(dom.window.sessionStorage.getItem(summaryPendingKey('tenant-1', 'actor-1'))!)).toEqual(input);
+});
+
+test('an explicit manual choice survives a changed default and stays explicit in the retained command', async () => {
+  mockDefaultModel = 'miaoda/minimax-m3';
+  await mount('/summaries/new?kind=ATA4&fleetFamilyId=B787&ata2=46&ata4=46-00&title=有限范围');
+  const picker = container.querySelector<HTMLSelectElement>('#derived-summary-model')!;
+  await act(async () => { picker.value = 'miaoda/glm-5.3'; picker.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
+  mockDefaultModel = 'miaoda/glm-5.3';
+  await act(async () => router.navigate('/summaries/new?kind=ATA4&fleetFamilyId=B787&ata2=46&ata4=46-00&title=有限范围&settings=2'));
+  await prepareSelection(); mockCreate.mockRejectedValueOnce(new Error('结果未知')); await click('提交选定范围');
+  expect(mockCreate.mock.calls[0][0].modelRef).toBe('miaoda/glm-5.3');
+});
+
+test('omitted-model pending replay preserves original bytes when the configuration has changed', async () => {
+  const { modelRef: _model, ...original } = pendingCommand();
+  const key = summaryPendingKey('tenant-1', 'actor-1', 'DS-1'), text = JSON.stringify(original);
+  dom.window.sessionStorage.setItem(key, text); mockDefaultModel = 'miaoda/minimax-m3';
+  mockUpdate.mockRejectedValueOnce(new Error('仍未知')); await mount('/summaries/DS-1/update'); await click('用同一请求');
+  expect(mockUpdate.mock.calls[0][1]).toEqual(original); expect(mockUpdate.mock.calls[0][1]).not.toHaveProperty('modelRef');
+  expect(dom.window.sessionStorage.getItem(key)).toBe(text);
+});
+
+test('Wiki registration shows current configured name and omits a sticky per-root model', async () => {
+  mockDefaultModel = 'miaoda/minimax-m3'; mockFleetCatalog.mockResolvedValue({ families: [{ fleetFamily: 'B787', models: ['B787-9'] }] });
+  await mount('/summaries');
+  expect(container.textContent).toContain('自动综合模型：MiniMax-M3');
+  expect(container.querySelector('#hierarchical-wiki-model')).toBeNull();
+  const family = container.querySelector<HTMLSelectElement>('[aria-label="Wiki父机型"]')!;
+  await act(async () => { family.value = 'B787'; family.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
+  await click('建立并启用自动更新');
+  expect(mockWikiEnable).toHaveBeenCalledWith({ fleetFamilyId: 'B787', fleetModelId: null });
+});
+
+test.each(['retired/model', 'loading'])('Wiki does not register an unavailable/unread configuration %s', async condition => {
+  if (condition === 'loading') mockModelsReady = false; else mockDefaultModel = condition;
+  mockFleetCatalog.mockResolvedValue({ families: [{ fleetFamily: 'B787', models: ['B787-9'] }] });
+  await mount('/summaries');
+  const family = container.querySelector<HTMLSelectElement>('[aria-label="Wiki父机型"]')!;
+  await act(async () => { family.value = 'B787'; family.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
+  const enable = Array.from(container.querySelectorAll('button')).find(button => button.textContent === '建立并启用自动更新')!;
+  expect(enable.disabled).toBe(true); await click('建立并启用自动更新'); expect(mockWikiEnable).not.toHaveBeenCalled();
 });

@@ -61,6 +61,7 @@ test(
     const {
       HierarchicalWikiService,
     } = require('../../server/modules/canonical-host/hierarchical-wiki.service.ts');
+    const { fixedModelSettings } = require('../support/fixed-model-settings.ts');
     const {
       HierarchicalWikiChanges,
     } = require('../../server/modules/canonical-host/hierarchical-wiki-changes.ts');
@@ -186,6 +187,7 @@ test(
         working,
         members,
       );
+    const models = fixedModelSettings('miaoda/glm-5.3');
     const completion = new HierarchicalWikiCompletion(),
       authorization = { authorizeOpenClawAutoWorkItemQueue: async () => scope };
     const summaries = new DerivedSummaryService(
@@ -193,6 +195,7 @@ test(
         members,
         authorization,
         completion,
+        models,
       ),
       runtime = new DerivedSummaryRuntimeService(
         repository,
@@ -214,6 +217,7 @@ test(
       },
       authorization,
       writer,
+      models,
     );
     const created = await owner.service.create(
       {

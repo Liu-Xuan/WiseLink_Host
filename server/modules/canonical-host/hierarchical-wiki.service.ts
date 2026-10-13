@@ -33,6 +33,7 @@ import {
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
 import { CanonicalFleetMasterDataRepository } from './canonical-fleet-master-data.repository';
 import { taskModelSelection } from '../model-settings/canonical-model-catalog';
+import { CanonicalModelSettingsService } from '../model-settings/canonical-model-settings.service';
 import {
   mergeWikiDemand,
   wikiDemandState,
@@ -70,6 +71,7 @@ export class HierarchicalWikiService {
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly authorization: CanonicalServiceScopeAuthorizationPort,
     @Optional() private readonly matterAttempts?: MatterActionAttemptService,
+    @Optional() private readonly models?: CanonicalModelSettingsService,
   ) {}
 
   async enable(
@@ -89,21 +91,23 @@ export class HierarchicalWikiService {
       (input.fleetModelId && !family.models.includes(input.fleetModelId))
     )
       throw summaryError('WIKI_FLEET_SCOPE_UNAVAILABLE', 400);
-    taskModelSelection(input.modelRef, new Date());
-    if (input.modelRef !== 'miaoda/glm-5.3')
-      throw summaryError('WIKI_AUTOMATIC_MODEL_UNAVAILABLE', 400);
+    if (input.modelRef !== undefined) taskModelSelection(input.modelRef, new Date());
     const scope = await this.authorization.authorizeOpenClawAutoWorkItemQueue();
     this.assertScope(scope, actor.tenantId);
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         await this.repository.browser(actor, async (database, owner) => {
           await lockWikiRoots(database, owner);
+          if (!this.models) throw summaryError('WIKI_MODEL_SETTINGS_UNAVAILABLE', 503);
+          const configured = await this.models.captureForNewTask(owner.tenantId, new Date(), database);
+          if (input.modelRef !== undefined && input.modelRef !== configured.modelRef)
+            throw summaryError('WIKI_AUTOMATIC_MODEL_CONFIGURATION_MISMATCH', 400);
           const root = await ensureWiki(
             database,
             owner,
             wikiScopeFor(input, null),
             scope.principalId,
-            input.modelRef,
+            configured.modelRef,
             null,
           );
           if (root.principalId !== scope.principalId)
@@ -512,7 +516,6 @@ export class HierarchicalWikiService {
               const input: RequestDerivedSummaryUpdate = {
                 requestId,
                 scope: row.scope,
-                modelRef: row.modelRef,
                 expectedSummaryRevision: head.currentRevision,
                 members: Object.values(row.state.versions),
                 purpose:

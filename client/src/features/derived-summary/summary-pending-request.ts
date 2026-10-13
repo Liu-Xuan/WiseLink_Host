@@ -10,7 +10,8 @@ export function readPendingSummaryRequest(key: string, summaryId?: string): Pend
     const text = sessionStorage.getItem(key);
     if (!text) return null;
     const value = JSON.parse(text) as PendingSummaryRequest;
-    if (!value || typeof value.requestId !== 'string' || !value.requestId || typeof value.modelRef !== 'string' ||
+    if (!value || typeof value.requestId !== 'string' || !value.requestId ||
+      (Object.prototype.hasOwnProperty.call(value, 'modelRef') && typeof value.modelRef !== 'string') ||
       (value.purpose !== undefined && !['SYNTHESIZE', 'REVISE_SAVED_SUMMARY'].includes(value.purpose)) ||
       ('expectedSummaryRevision' in value && (!Number.isSafeInteger(value.expectedSummaryRevision) || value.expectedSummaryRevision < 0 || value.expectedSummaryRevision >= 2147483647)) ||
       (summaryId ? !('expectedSummaryRevision' in value) : 'expectedSummaryRevision' in value || value.purpose === 'REVISE_SAVED_SUMMARY') ||

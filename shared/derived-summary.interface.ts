@@ -33,8 +33,8 @@ export interface CreateDerivedSummaryRequest {
   scope: DerivedSummaryScopeSelection;
   members: DerivedSummaryMember[];
   instruction: string;
-  /** Explicit existing official Hosted route, captured once for this request. */
-  modelRef: string;
+  /** Omit to inherit the saved configuration; explicit Hosted choices remain per request. */
+  modelRef?: string;
 }
 
 export interface RequestDerivedSummaryUpdate extends CreateDerivedSummaryRequest {

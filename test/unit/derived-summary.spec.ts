@@ -49,7 +49,8 @@ describe('Explicit candidate aggregate admission', () => {
     expect(() => parseSummaryRequest({ ...request, members: [member, member] })).toThrow('DERIVED_SUMMARY_DUPLICATE_MEMBER');
     expect(() => parseSummaryRequest({ ...request, members: [{ ...member, body: 'model supplied source' }] })).toThrow();
     const { modelRef: _ignored, ...missingModel } = request;
-    expect(() => parseSummaryRequest(missingModel)).toThrow();
+    expect(parseSummaryRequest(missingModel)).not.toHaveProperty('modelRef');
+    expect(() => parseSummaryRequest({ ...missingModel, modelRef: null })).toThrow();
   });
   it('uses one immutable source carrier and rejects conflicting content under the same ref', () => {
     expect(mergeSummaryEvidence([source, source])).toEqual([source]);

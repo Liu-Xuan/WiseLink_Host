@@ -15,9 +15,7 @@ import {
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import { useSummaryResource } from './useSummaryResource';
-import TaskModelPicker, {
-  useTaskModelOptions,
-} from '@client/src/features/review/TaskModelPicker';
+import { useTaskModelOptions } from '@client/src/features/review/TaskModelPicker';
 import SavedWorkSelector from './SavedWorkSelector';
 import { wikiStatusLabels } from './hierarchical-wiki-presentation';
 
@@ -68,7 +66,6 @@ export default function HierarchicalWikiDirectory({
   const models = useTaskModelOptions();
   const [family, setFamily] = useState('');
   const [model, setModel] = useState('');
-  const [modelRef, setModelRef] = useState('miaoda/glm-5.3');
   const [selectedRoot, setSelectedRoot] = useState('');
   const [selectedDocument, setSelectedDocument] = useState('');
   const [ata, setAta] = useState('');
@@ -92,6 +89,9 @@ export default function HierarchicalWikiDirectory({
     (item) => item.fleetFamily === family,
   );
   const validAta = !ata || /^\d{2}(?:-\d{2})?$/u.test(ata);
+  const configuredModel = models.data?.options.find(
+    (item) => item.available && item.modelRef === models.data?.defaultModelRef,
+  );
   return (
     <section
       className="space-y-4 border border-border p-4"
@@ -140,32 +140,17 @@ export default function HierarchicalWikiDirectory({
             ))}
           </select>
         </label>
-        <TaskModelPicker
-          id="hierarchical-wiki-model"
-          label="后续综合执行模型"
-          value={modelRef}
-          onChange={setModelRef}
-          catalog={{
-            ...models,
-            data: models.data
-              ? {
-                  ...models.data,
-                  options: models.data.options.filter(
-                    (item) => item.modelRef === 'miaoda/glm-5.3',
-                  ),
-                }
-              : null,
-          }}
-          disabled={busy}
-        />
+        <div>
+          <p>自动综合模型：{configuredModel?.displayName ?? '正在读取配置'}</p>
+          {models.error ? <p role="alert">{models.error}<Button variant="ghost" onClick={() => void models.refresh()}>刷新模型</Button></p> : null}
+        </div>
         <Button
-          disabled={!family || busy}
+          disabled={!family || busy || !models.ready || !configuredModel}
           onClick={() =>
             void perform(() =>
               enableHierarchicalWiki({
                 fleetFamilyId: family,
                 fleetModelId: model || null,
-                modelRef,
               }),
             )
           }

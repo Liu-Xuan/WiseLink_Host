@@ -13,6 +13,8 @@ import { actionAttempt } from '../../database/schema';
 import { canonicalJson, canonicalSha256 } from '../action-attempt/action-attempt-envelope';
 import { ACTION_ATTEMPT_DEFAULT_DEADLINE_MS, ACTION_ATTEMPT_REQUEST_ORIGIN } from '../action-attempt/action-attempt.types';
 import { taskModelSelection } from '../model-settings/canonical-model-catalog';
+import { CanonicalModelSettingsService } from '../model-settings/canonical-model-settings.service';
+import { parseExecutionModel } from '../model-settings/canonical-execution-model';
 import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, type CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
 import type { CanonicalHostActor } from './canonical-host.types';
 import { DerivedSummaryRepository, type SummaryAttempt, type SummaryHead } from './derived-summary.repository';
@@ -37,6 +39,7 @@ export class DerivedSummaryService {
     private readonly members: DerivedSummaryMembersService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION) private readonly authorization: CanonicalServiceScopeAuthorizationPort,
     @Optional() private readonly wiki?: HierarchicalWikiCompletion,
+    @Optional() private readonly models?: CanonicalModelSettingsService,
   ) {}
 
   create(input: CreateDerivedSummaryRequest, actor: CanonicalHostActor): Promise<DerivedSummaryRequestReceipt> {
@@ -125,6 +128,11 @@ export class DerivedSummaryService {
     if (scope.appId !== 'app_17bzc551rsg' || scope.tenantId !== owner.tenantId || !scope.principalId)
       throw summaryError('DERIVED_SUMMARY_EXECUTOR_UNAVAILABLE', 503);
     const now = new Date();
+    if (input.modelRef === undefined && !this.models)
+      throw summaryError('DERIVED_SUMMARY_MODEL_SETTINGS_UNAVAILABLE', 503);
+    const executionModel = input.modelRef === undefined
+      ? await this.models!.captureForNewTask(owner.tenantId, now, database)
+      : taskModelSelection(input.modelRef, now);
     const attemptId = `ATT-${randomUUID()}`;
     const attemptRef = `AQ-${randomUUID().replaceAll('-', '')}`;
     const deadline = new Date(now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS);
@@ -137,7 +145,7 @@ export class DerivedSummaryService {
       taskType: 'OPENCLAW_DERIVED_SUMMARY' as const, subject: { kind: 'DERIVED_SUMMARY' as const, summaryId: head.summaryId },
       expectedSummaryRevision: input.expectedSummaryRevision, requestId: input.requestId,
       actionAttemptId: attemptId, operationRef: attemptRef, deadlineAt: deadline.toISOString(),
-      executionModel: taskModelSelection(input.modelRef, now), contextBasis,
+      executionModel, contextBasis,
       modelInput: { scope: input.scope, classificationStatus: 'CANDIDATE' as const,
         instruction: input.instruction, ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
         ...(revisionContext ? { revisionContext } : {}), members: readings, evidence, limitations } };
@@ -320,7 +328,10 @@ export function checkedSummaryTask(attempt: SummaryAttempt): DerivedSummaryRunti
     taskInputHash !== attempt.taskInputHash || canonicalSha256(basis) !== taskInputHash ||
     canonicalJson(task.executionModel) !== attempt.executionModelJson) throw summaryError('DERIVED_SUMMARY_TASK_INVALID');
   let command: RequestDerivedSummaryUpdate;
-  try { command = parseSummaryRequest(JSON.parse(attempt.requestCommandJson), true) as RequestDerivedSummaryUpdate; }
+  try {
+    command = parseSummaryRequest(JSON.parse(attempt.requestCommandJson), true) as RequestDerivedSummaryUpdate;
+    parseExecutionModel(task.executionModel);
+  }
   catch { throw summaryError('DERIVED_SUMMARY_TASK_INVALID'); }
   const input = task.modelInput;
   const purpose = Object.hasOwn(input ?? {}, 'purpose') ? input.purpose : 'SYNTHESIZE';
@@ -329,7 +340,7 @@ export function checkedSummaryTask(attempt: SummaryAttempt): DerivedSummaryRunti
     input.classificationStatus !== 'CANDIDATE' || !Array.isArray(input.members) ||
     (purpose !== 'SYNTHESIZE' && purpose !== 'REVISE_SAVED_SUMMARY') ||
     command.requestId !== task.requestId || command.expectedSummaryRevision !== task.expectedSummaryRevision ||
-    command.modelRef !== task.executionModel.modelRef || command.instruction !== input.instruction ||
+    (command.modelRef !== undefined && command.modelRef !== task.executionModel.modelRef) || command.instruction !== input.instruction ||
     canonicalJson(command.scope) !== canonicalJson(input.scope) ||
     canonicalJson(command.members) !== canonicalJson(input.members.map(item => item.member)) ||
     Object.hasOwn(command, 'purpose') !== Object.hasOwn(input, 'purpose') || purpose !== (command.purpose ?? 'SYNTHESIZE') ||

@@ -7,7 +7,8 @@ export interface HierarchicalWikiEnableRequest {
   fleetFamilyId: string;
   /** Null creates the family page; a concrete model is a separate scope. */
   fleetModelId: string | null;
-  modelRef: string;
+  /** Legacy registration acknowledgement; automatic new tasks use current settings. */
+  modelRef?: string;
 }
 
 export interface HierarchicalWikiStatus {

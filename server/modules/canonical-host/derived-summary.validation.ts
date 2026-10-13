@@ -100,7 +100,8 @@ export function parseSummaryRequest(input: unknown, update = false): CreateDeriv
   if (purpose === 'REVISE_SAVED_SUMMARY' && (!update || revision(value.expectedSummaryRevision, true) < 1))
     throw summaryError('DERIVED_SUMMARY_PRIOR_REQUIRED', 400);
   const request = { requestId: summaryText(value.requestId, 96), ...(purpose === undefined ? {} : { purpose }), scope: parseSummaryScope(value.scope),
-    members, instruction: summaryText(value.instruction), modelRef: summaryText(value.modelRef, 128) };
+    members, instruction: summaryText(value.instruction),
+    ...(Object.hasOwn(value, 'modelRef') ? { modelRef: summaryText(value.modelRef, 128) } : {}) };
   return update ? { ...request, expectedSummaryRevision: revision(value.expectedSummaryRevision, true) } : request;
 }
 

@@ -19,7 +19,7 @@ import { summaryText } from './derived-summary.validation';
 const enable = z.strictObject({
   fleetFamilyId: z.string().trim().min(1).max(96),
   fleetModelId: z.string().trim().min(1).max(96).nullable(),
-  modelRef: z.string().trim().min(1).max(128),
+  modelRef: z.string().trim().min(1).max(128).optional(),
 });
 const change = z.strictObject({
   enabled: z.boolean().optional(),

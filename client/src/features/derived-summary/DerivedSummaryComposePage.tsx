@@ -44,7 +44,7 @@ function SummaryComposeForm({ session, target, pending, pendingKey }: { session:
     ?? target?.current?.members.map(item => ({ member: item.member, headline: item.headline, current: item.current })) ?? []);
   const [purpose, setPurpose] = useState<DerivedSummaryPurpose>(pending?.purpose ?? 'SYNTHESIZE');
   const [instruction, setInstruction] = useState(pending?.instruction ?? '');
-  const [modelRef, setModelRef] = useState(pending?.modelRef ?? 'miaoda/glm-5.3');
+  const [modelRef, setModelRef] = useState(pending?.modelRef ?? '');
   const models = useTaskModelOptions();
   const [confirmed, setConfirmed] = useState(pending !== null);
   const [busy, setBusy] = useState(false);
@@ -75,10 +75,10 @@ function SummaryComposeForm({ session, target, pending, pendingKey }: { session:
     if (!replay && purpose === 'REVISE_SAVED_SUMMARY' && !exactSavedTarget) {
       setError('没有可核权的准确保存概述，不能提交修改任务。请重新读取，或明确选择重新综合。'); return;
     }
-    if (!replay && (validation || !instruction.trim() || !confirmed || !models.ready || !models.data?.options.some(option => option.modelRef === modelRef && option.available))) {
+    if (!replay && (validation || !instruction.trim() || !confirmed || !models.ready || !models.data?.options.some(option => option.modelRef === (modelRef || models.data.defaultModelRef) && option.available))) {
       setError(validation ?? '请填写生成要求、选择当前可用模型并确认实际范围。'); return;
     }
-    const input = replay ?? { requestId: crypto.randomUUID(), purpose, scope, members: members.map(item => item.member), instruction: instruction.trim(), modelRef,
+    const input = replay ?? { requestId: crypto.randomUUID(), purpose, scope, members: members.map(item => item.member), instruction: instruction.trim(), ...(modelRef ? { modelRef } : {}),
       ...(target ? { expectedSummaryRevision: target.currentRevision } : {}) };
     inFlight.current = true;
     try { storePendingSummaryRequest(pendingKey, input); }
@@ -129,7 +129,8 @@ function SummaryComposeForm({ session, target, pending, pendingKey }: { session:
       </li>)}</ul>
     </section>
     <label className="block space-y-2 text-sm">{purpose === 'REVISE_SAVED_SUMMARY' ? '本次修改目标' : '本次生成要求'}<Textarea value={instruction} disabled={locked} maxLength={4000} onChange={event => { setInstruction(event.target.value); setConfirmed(false); }} placeholder="说明需比较的前提、冲突、措施覆盖、未知和范围限制。" /></label>
-    <TaskModelPicker id="derived-summary-model" label="生成模型" value={modelRef} onChange={value => { setModelRef(value); setConfirmed(false); }} catalog={models} disabled={locked} />
+    <TaskModelPicker id="derived-summary-model" label="生成模型" value={modelRef} onChange={value => { setModelRef(value); setConfirmed(false); }} catalog={models} disabled={locked}
+      inheritLabel={`系统配置：${models.data?.options.find(option => option.modelRef === models.data?.defaultModelRef)?.displayName ?? '正在读取'}`} />
     <label className="flex items-start gap-2 text-sm"><Checkbox checked={confirmed} disabled={locked} onCheckedChange={value => setConfirmed(value === true)} />
       确认以上选定资料与问题。</label>
     {error ? <p role="alert">{error}</p> : null}
