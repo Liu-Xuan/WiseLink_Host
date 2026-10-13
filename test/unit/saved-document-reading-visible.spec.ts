@@ -16,6 +16,9 @@ let container: HTMLElement;
 const oldGlobals = new Map<string, PropertyDescriptor | undefined>();
 const openSource = jest.fn();
 const historicalSelfReport = '本结果仅为文件解读候选，不构成机队适用性判断、工程决定、批准、执行或发布；未采用任何事项特定假设，未生成sourceBinding、readCoverage、revision或producer信息。';
+const sourceCoverageSelfReport = 'sourceCoverage.unresolvedRanges非空：第1、2、3、5、6页（0基索引0、1、2、4、5）多个单元被标记TEXT_CONFLICT，包括次型号清单、适用范围段、参考文件表、附件II MEDB表格多个单元格及注释等，其结构化内容与PDF文本层未确切对应；本解读基于Host已交付的结构化单元，相关字符级细节（尤其MEDB表格单元格内容与注释）使用前应核对原页。';
+const visualSelfReport = '全部6页的结构化单元均已交付读取，但不代表原始PDF所有视觉内容（如表格图像细节）均已核实。';
+const attachmentDate = '附件I页眉标注日期为2021年10月21日，属附件自身标注，不是本信函的日期或修订日期；本信函Original日期为2026年4月24日。';
 function fixture() {
   const version = libraryFamily('test').versions[0];
   const reading = savedDocumentReadingFixture(version.documentVersionId);
@@ -74,6 +77,52 @@ it('shows saved parse-1 explanation after parse-2 publication and opens exact ol
   expect(route.searchParams.get('parseRunId')).toBe('parse-1');
   expect(route.searchParams.get('sourceRef')).toBe('source-ref-parse-1');
   expect(container.querySelector('details:last-child')?.hasAttribute('open')).toBe(false);
+  expect(JSON.stringify(f)).toBe(before);
+});
+
+it('keeps the loading preview and saved main reading focused while retaining original differences', async () => {
+  const f = fixture();
+  const specificUnreadMaterial = '第5页MEDB图表注释尚未读取，U13兼容性仍未确认。';
+  f.reading.limitations.push(sourceCoverageSelfReport, visualSelfReport, attachmentDate, specificUnreadMaterial);
+  f.version.documentReading!.reading = savedDocumentReadingPreview(f.reading);
+  const before = JSON.stringify(f);
+  let resolve!: (value: DocumentReadingResponse) => void;
+  mockRead.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  await render(f.version);
+  const previewLines = [...container.querySelectorAll('li')].map(item => item.textContent);
+  expect(previewLines).toContain(f.reading.criticalConditions[0].text);
+  expect(previewLines).toContain(attachmentDate);
+  expect(previewLines).toContain(specificUnreadMaterial);
+  expect(previewLines).not.toContain(sourceCoverageSelfReport);
+  expect(previewLines).not.toContain(visualSelfReport);
+  expect(container.textContent).not.toContain('diagnostic-only');
+  await act(async () => resolve(f.response));
+  const paragraphs = [...container.querySelectorAll('p')].map(item => item.textContent);
+  expect(paragraphs).toContain(attachmentDate);
+  expect(paragraphs).toContain(specificUnreadMaterial);
+  expect(paragraphs).not.toContain(sourceCoverageSelfReport);
+  expect(paragraphs).not.toContain(visualSelfReport);
+  const sourceDetails = container.querySelector('details[aria-label="原文差异与缺项"]')!;
+  expect(sourceDetails.hasAttribute('open')).toBe(false);
+  expect(sourceDetails.querySelectorAll('li')).toHaveLength(f.reading.readCoverage.sourceCoverage.unresolvedRanges.length);
+  expect(sourceDetails.textContent).toContain('diagnostic-only');
+  expect(JSON.stringify(f)).toBe(before);
+});
+
+it('preserves similar self-reports with added facts and specific unread material', async () => {
+  const f = fixture();
+  const addedFacts = [
+    `${sourceCoverageSelfReport} 附件III的NDB兼容位图示尚未读取。`,
+    `${visualSelfReport} AFM图4的硬件构型条件尚未确认。`,
+    'sourceCoverage.unresolvedRanges中的附件II图表尚未读取，不能确认新增STC构型。',
+  ];
+  f.reading.limitations.push(...addedFacts);
+  f.version.documentReading!.reading = savedDocumentReadingPreview(f.reading);
+  const before = JSON.stringify(f);
+  mockRead.mockResolvedValue(f.response);
+  await render(f.version);
+  const paragraphs = [...container.querySelectorAll('p')].map(item => item.textContent);
+  for (const fact of addedFacts) expect(paragraphs).toContain(fact);
   expect(JSON.stringify(f)).toBe(before);
 });
 

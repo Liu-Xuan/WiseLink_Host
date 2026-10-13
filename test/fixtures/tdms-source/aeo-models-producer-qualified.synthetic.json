@@ -1,0 +1,357 @@
+{
+  "syntheticOnly": true,
+  "noSourceEvidenceOrBusinessInputs": true,
+  "business": {
+    "owner": {
+      "number": "SYNTHETIC-AEO-ONLY",
+      "sourceRecordId": "OR:wt.epm.EPMDocument:990001",
+      "nativeTypeId": "WCTYPE|wt.epm.EPMDocument|com.airchina.DynamicDocument|com.airchina.EODocument",
+      "nativeTypeEvidence": {
+        "state": "VALUE",
+        "rawValue": "WCTYPE|wt.epm.EPMDocument|com.airchina.DynamicDocument|com.airchina.EODocument"
+      },
+      "rawHeaderType": "Publication Source",
+      "scopeEvidence": {
+        "engineeringSubtype": "AEO"
+      },
+      "sourceVersion": {
+        "rawRevision": "N",
+        "rawIteration": "3",
+        "confirmation": "SOURCE_DECLARED"
+      },
+      "businessVersion": {
+        "rawRevision": "R17",
+        "rawIteration": null,
+        "confirmation": "SOURCE_DECLARED"
+      },
+      "businessVersionEvidence": {
+        "state": "VALUE",
+        "actualLabel": "EO编号:",
+        "rawValue": "SYNTHETIC-AEO-ONLY-R17",
+        "locator": "#own #dataStorePrimary_Attributes td.own-number",
+        "observedTotalCodepoints": 22
+      }
+    },
+    "fields": [
+      {
+        "fieldId": "#own #dataStorePrimary_Attributes td.own-number",
+        "tabId": "infoPageinfoPanelID__syntheticDetails",
+        "sectionId": "infoPageinfoPanelID__syntheticDetails::Primary_Attributes",
+        "labelOrigin": "NATIVE_SOURCE_DECLARED",
+        "nativeControl": {
+          "tag": "TD"
+        },
+        "value": {
+          "state": "VALUE",
+          "actualLabel": "EO编号:",
+          "rawValue": "SYNTHETIC-AEO-ONLY-R17",
+          "locator": "#own #dataStorePrimary_Attributes td.own-number",
+          "observedTotalCodepoints": 22
+        }
+      }
+    ],
+    "expectedVersion": {
+      "rawRevision": "R17",
+      "rawIteration": null,
+      "confirmation": "SOURCE_DECLARED"
+    },
+    "expectedValid": true
+  },
+  "slots": {
+    "owner": {
+      "number": "SYNTHETIC-AEO-ONLY",
+      "sourceRecordId": "OR:wt.epm.EPMDocument:990001",
+      "nativeTypeId": "WCTYPE|wt.epm.EPMDocument|com.airchina.DynamicDocument|com.airchina.EODocument",
+      "nativeTypeEvidence": {
+        "state": "VALUE",
+        "rawValue": "WCTYPE|wt.epm.EPMDocument|com.airchina.DynamicDocument|com.airchina.EODocument"
+      },
+      "rawHeaderType": "Publication Source",
+      "scopeEvidence": {
+        "engineeringSubtype": "AEO"
+      },
+      "sourceVersion": {
+        "rawRevision": "N",
+        "rawIteration": "3",
+        "confirmation": "SOURCE_DECLARED"
+      },
+      "businessVersion": {
+        "rawRevision": "R17",
+        "rawIteration": null,
+        "confirmation": "SOURCE_DECLARED"
+      },
+      "businessVersionEvidence": {
+        "state": "VALUE",
+        "actualLabel": "EO编号:",
+        "rawValue": "SYNTHETIC-AEO-ONLY-R17",
+        "locator": "#own #dataStorePrimary_Attributes td.own-number",
+        "observedTotalCodepoints": 22
+      }
+    },
+    "table": {
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_object_latestStatusLink",
+      "panelLocator": "#infoPage_myTab_object_latestStatusLink",
+      "gridId": "relatedStatusLinkTable",
+      "tableId": "relatedStatusLinkTable",
+      "scanMode": "VIRTUAL_SCROLL",
+      "countEvidence": {
+        "exact": true
+      },
+      "reportedTotal": 2,
+      "rawHeaders": [
+        "Object Type Indicator",
+        "Number",
+        "Feed Back Order",
+        "Updator",
+        "Execute Time",
+        "Document Number",
+        "AC/ENG/APU",
+        "Status",
+        "State Comments",
+        "Standalone expired date",
+        "Delay Request",
+        "SUBS",
+        "SUBSED",
+        "EQUAL",
+        "EQUALED",
+        "Modify Date",
+        "OperatorBase"
+      ],
+      "enumerationState": "VALUE",
+      "rows": [
+        {
+          "occurrenceId": "relatedStatusLinkTable:ROW0",
+          "globalIndex": 0,
+          "nativeRowId": null,
+          "treeDepth": null,
+          "treePath": [],
+          "cells": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          "sourceLinks": [
+            {
+              "targetRef": "OR:com.airchina.tdms.statuslink.TDMSStatusLink:991000",
+              "locator": "#synthetic-row-0"
+            }
+          ]
+        },
+        {
+          "occurrenceId": "relatedStatusLinkTable:ROW1",
+          "globalIndex": 1,
+          "nativeRowId": null,
+          "treeDepth": null,
+          "treePath": [],
+          "cells": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          "sourceLinks": [
+            {
+              "targetRef": "OR:com.airchina.tdms.statuslink.TDMSStatusLink:991001",
+              "locator": "#synthetic-row-1"
+            }
+          ]
+        }
+      ],
+      "windows": [
+        {
+          "ordinal": 0,
+          "stableReads": 2,
+          "reportedTotal": 2,
+          "pageRaw": null,
+          "treePending": 0,
+          "nextControl": {
+            "present": false
+          },
+          "scroll": {
+            "top": 0,
+            "height": 40,
+            "viewport": 20,
+            "atTop": true,
+            "atBottom": false
+          },
+          "rowOccurrenceIds": ["relatedStatusLinkTable:ROW0"],
+          "globalIndices": [0]
+        },
+        {
+          "ordinal": 1,
+          "stableReads": 2,
+          "reportedTotal": 2,
+          "pageRaw": null,
+          "treePending": 0,
+          "nextControl": {
+            "present": false
+          },
+          "scroll": {
+            "top": 20,
+            "height": 40,
+            "viewport": 20,
+            "atTop": false,
+            "atBottom": true
+          },
+          "rowOccurrenceIds": ["relatedStatusLinkTable:ROW1"],
+          "globalIndices": [1]
+        }
+      ]
+    },
+    "evidence": {
+      "schemaVersion": "wiselink.tdms-related-status-fixed-dom-slots.v1",
+      "modelRevision": "tdms-related-status-fixed-dom-slots@1",
+      "indexOrigin": "NATIVE_FIXED_DOM_ORDER",
+      "columns": [
+        {
+          "actualLabel": "Object Type Indicator",
+          "nativeColumnToken": "type_icon"
+        },
+        {
+          "actualLabel": "Number",
+          "nativeColumnToken": "number"
+        },
+        {
+          "actualLabel": "Feed Back Order",
+          "nativeColumnToken": "feedbackOid"
+        },
+        {
+          "actualLabel": "Updator",
+          "nativeColumnToken": "executeor"
+        },
+        {
+          "actualLabel": "Execute Time",
+          "nativeColumnToken": "executeDate"
+        },
+        {
+          "actualLabel": "Document Number",
+          "nativeColumnToken": "docOid"
+        },
+        {
+          "actualLabel": "AC/ENG/APU",
+          "nativeColumnToken": "standaloneOid"
+        },
+        {
+          "actualLabel": "Status",
+          "nativeColumnToken": "state"
+        },
+        {
+          "actualLabel": "State Comments",
+          "nativeColumnToken": "stateComments"
+        },
+        {
+          "actualLabel": "Standalone expired date",
+          "nativeColumnToken": "danjiexpireDate"
+        },
+        {
+          "actualLabel": "Delay Request",
+          "nativeColumnToken": "delayRequest"
+        },
+        {
+          "actualLabel": "SUBS",
+          "nativeColumnToken": "subs"
+        },
+        {
+          "actualLabel": "SUBSED",
+          "nativeColumnToken": "subsBy"
+        },
+        {
+          "actualLabel": "EQUAL",
+          "nativeColumnToken": "equiv"
+        },
+        {
+          "actualLabel": "EQUALED",
+          "nativeColumnToken": "equivBy"
+        },
+        {
+          "actualLabel": "Modify Date",
+          "nativeColumnToken": "modifyDate"
+        },
+        {
+          "actualLabel": "OperatorBase",
+          "nativeColumnToken": "OperatorBase"
+        }
+      ],
+      "slotRootLocator": "#infoPage_myTab_object_latestStatusLink #relatedStatusLinkTable .x-grid3-body",
+      "slotEncoding": "INDEX_NODE_TOP_HEIGHT_CELLCOUNT@1",
+      "windows": [
+        {
+          "windowOrdinal": 0,
+          "before": {
+            "reportedTotal": 2,
+            "slots": [
+              [0, 1, 0, 20, 17],
+              [1, 2, 20, 20, 0]
+            ]
+          },
+          "after": {
+            "reportedTotal": 2,
+            "slots": [
+              [0, 1, 0, 20, 17],
+              [1, 2, 20, 20, 0]
+            ]
+          },
+          "referenceBindings": [
+            {
+              "globalIndex": 0,
+              "occurrenceId": "relatedStatusLinkTable:ROW0",
+              "sourceLinksSha256": "5ef6b7198cbe26fd5141eb621c3f578ca55b5e95f2bcadd792012eb65ea1a225"
+            }
+          ]
+        },
+        {
+          "windowOrdinal": 1,
+          "before": {
+            "reportedTotal": 2,
+            "slots": [
+              [0, 1, 0, 20, 0],
+              [1, 2, 20, 20, 17]
+            ]
+          },
+          "after": {
+            "reportedTotal": 2,
+            "slots": [
+              [0, 1, 0, 20, 0],
+              [1, 2, 20, 20, 17]
+            ]
+          },
+          "referenceBindings": [
+            {
+              "globalIndex": 1,
+              "occurrenceId": "relatedStatusLinkTable:ROW1",
+              "sourceLinksSha256": "66febd3550742b0895d4a1c7161b23b34a066d8a60e6c94d34acbaeaa74504bf"
+            }
+          ]
+        }
+      ]
+    },
+    "expectedValid": true
+  }
+}

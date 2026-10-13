@@ -2,6 +2,8 @@ import {
   completeContentIdentityProjection,
   COMPLETE_OWN_PACKAGE_MAX_BYTES,
   COMPLETE_OWN_REQUEST_MAX_BYTES,
+  COMPLETE_OWN_MAX_NODES,
+  usesCompleteOwnedPackageLimits,
   validateCompleteOwnedRecord,
 } from './tdms-complete-owned-source.validation';
 import {
@@ -139,12 +141,22 @@ export function prepareTdmsDailySourceImport(raw: unknown) {
   return prepareDailyImport(raw, true);
 }
 function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
+  const packageDescriptor =
+    raw && typeof raw === 'object'
+      ? Object.getOwnPropertyDescriptor(raw, 'package')
+      : undefined;
+  const completeBudget =
+    sourceAdapter &&
+    packageDescriptor &&
+    Object.hasOwn(packageDescriptor, 'value') &&
+    usesCompleteOwnedPackageLimits(packageDescriptor.value);
   const envelope = exact(
     plainData(
       raw,
       sourceAdapter
         ? COMPLETE_OWN_REQUEST_MAX_BYTES
         : TDMS_SMALL_PACKAGE_MAX_BYTES,
+      completeBudget ? COMPLETE_OWN_MAX_NODES : 50000,
     ),
     ['requestId', 'package'],
   );
@@ -1139,10 +1151,11 @@ function withoutTimes(value: unknown): unknown {
 function plainData(
   value: unknown,
   maxBytes = TDMS_SMALL_PACKAGE_MAX_BYTES,
+  maxNodes = 50000,
 ): unknown {
   let visited = 0;
   const walk = (v: unknown, depth: number): unknown => {
-    if (++visited > 50000 || depth > 25) fail('LIMIT');
+    if (++visited > maxNodes || depth > 25) fail('LIMIT');
     if (
       v === null ||
       typeof v === 'boolean' ||

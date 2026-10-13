@@ -175,12 +175,7 @@ export function projectLibraryDocumentReading(
   }
   const reading = preview.reading;
   const limitations = documentReadingLimitations(reading.limitations);
-  const conditionLines: string[] = [];
-  conditionLines.push(...reading.criticalConditions);
-  conditionLines.push(...limitations);
-  for (const sourceLimitation of reading.sourceLimitations) {
-    conditionLines.push(sourceLimitation);
-  }
+  const conditionLines = [...reading.criticalConditions, ...limitations];
   return {
     fileTitle,
     status: 'AVAILABLE',

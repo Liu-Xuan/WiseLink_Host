@@ -8,6 +8,11 @@ import {
 import { isNativeReloadProvenance } from './tdms-native-reload-provenance';
 import { assertCompleteOriginalNativeArtifacts } from './tdms-complete-original.validation';
 import {
+  parseReviewedAeoOwnBusinessNumber,
+  validateReviewedAeoBusinessNumberEvidence,
+} from './tdms-reviewed-aeo-business-version';
+import { validateRelatedStatusFixedRowSlotEvidence } from './tdms-related-status-fixed-row-slots';
+import {
   isReviewedEfRequestOwner,
   isReviewedEfRequestUnknownFieldCaption,
   validateReviewedCompleteTabRoster,
@@ -15,7 +20,8 @@ import {
 } from './tdms-reviewed-complete-source-types';
 import { createHash } from 'node:crypto';
 import { tdmsError } from './tdms-source.types';
-export const COMPLETE_OWN_OBSERVATION_MAX_BYTES = 850 * 1024;
+export const COMPLETE_OWN_OBSERVATION_MAX_BYTES = 1536 * 1024;
+export const COMPLETE_OWN_MAX_NODES = 100000;
 export const COMPLETE_OWN_PACKAGE_MAX_BYTES = 2 * 1024 * 1024;
 export const COMPLETE_OWN_REQUEST_MAX_BYTES =
   COMPLETE_OWN_PACKAGE_MAX_BYTES + 128;
@@ -85,10 +91,13 @@ const version = (v, { business = false } = {}) => {
   )
     fail('TDMS_COMPLETE_OWN_VERSION_INVALID');
 };
-function plainData(raw, { maxBytes = COMPLETE_OWN_PACKAGE_MAX_BYTES } = {}) {
+function plainData(
+  raw,
+  { maxBytes = COMPLETE_OWN_PACKAGE_MAX_BYTES, maxNodes = 50000 } = {},
+) {
   let visits = 0;
   const walk = (v, depth = 0) => {
-    if (++visits > 50000 || depth > 25) fail('TDMS_COMPLETE_OWN_LIMIT');
+    if (++visits > maxNodes || depth > 25) fail('TDMS_COMPLETE_OWN_LIMIT');
     if (
       v === null ||
       typeof v === 'boolean' ||
@@ -934,9 +943,23 @@ export function validateCompleteOwnedOwner(
   typedValue(o.businessVersionEvidence);
   if (o.businessVersion !== null)
     version(o.businessVersion, { business: true });
+  const businessScope = classification
+    ? o.scopeEvidence?.engineeringSubtype
+    : input.scopeId;
+  const aeoBusiness =
+    o.businessVersionEvidence.actualLabel === 'EO编号:'
+      ? parseReviewedAeoOwnBusinessNumber({
+          scopeId: businessScope,
+          owner: o,
+          value: o.businessVersionEvidence,
+        })
+      : false;
   if (
     (o.businessVersionEvidence.state === 'VALUE' &&
-      (o.businessVersion?.rawRevision !== o.businessVersionEvidence.rawValue ||
+      ((aeoBusiness
+        ? stable(o.businessVersion) !== stable(aeoBusiness)
+        : o.businessVersion?.rawRevision !==
+          o.businessVersionEvidence.rawValue) ||
         o.businessVersion.rawIteration !== null ||
         o.businessVersion.confirmation !== 'SOURCE_DECLARED')) ||
     (o.businessVersionEvidence.state !== 'VALUE' && o.businessVersion !== null)
@@ -1447,6 +1470,7 @@ export function validateCompleteRelationTable(t, input, owner) {
       'observedAt',
       'nativeStatusProof',
       'sourceViewEvidence',
+      'nativeRowSlotEvidence',
     ],
     [
       'tableId',
@@ -1764,6 +1788,11 @@ export function validateCompleteRelationTable(t, input, owner) {
       gridId: t.gridId,
     });
   }
+  validateRelatedStatusFixedRowSlotEvidence(t.nativeRowSlotEvidence, {
+    scopeId: input.scopeId,
+    owner,
+    table: t,
+  });
   if (t.stopReason !== null) text(t.stopReason, 120);
   return t;
 }
@@ -1783,6 +1812,11 @@ function validateRead(r, input) {
   validateCompleteSourceContext(r.sourceContext);
   iso(r.observedAt);
   validateRoster(r, input);
+  validateReviewedAeoBusinessNumberEvidence({
+    scopeId: input.scopeId,
+    owner: r.owner,
+    fields: r.fields,
+  });
   array(r.relationTables, 100);
   const ids = new Set();
   for (const t of r.relationTables) {
@@ -1796,7 +1830,10 @@ function validateRead(r, input) {
 }
 export function validateCompleteOwnedObservation(raw, rawInput) {
   const input = validateCompleteOwnedInput(rawInput),
-    v = plainData(raw, { maxBytes: 850 * 1024 });
+    v = plainData(raw, {
+      maxBytes: COMPLETE_OWN_OBSERVATION_MAX_BYTES,
+      maxNodes: COMPLETE_OWN_MAX_NODES,
+    });
   assertKeys(v, [
     'schemaVersion',
     'requestedCriteria',
@@ -2192,6 +2229,35 @@ export function hasCompleteOwnedSource(record) {
     record?.content?.completeOwnedFields !== undefined
   );
 }
+// Select a larger walk only from data descriptors. An accessor cannot acquire
+// the Complete1 budget or execute before the normal plain-data rejection.
+export function usesCompleteOwnedPackageLimits(raw) {
+  const ownValue = (value, key) => {
+    if (!value || typeof value !== 'object') return undefined;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && Object.hasOwn(descriptor, 'value')
+      ? descriptor.value
+      : undefined;
+  };
+  const records = ownValue(raw, 'records');
+  const length = ownValue(records, 'length');
+  if (!Array.isArray(records) || !Number.isSafeInteger(length) || length > 500)
+    return false;
+  for (let index = 0; index < length; index++) {
+    const record = ownValue(records, String(index));
+    const proof = ownValue(
+      ownValue(record, 'rawFields'),
+      'completeOwnedSource',
+    );
+    if (
+      ownValue(proof, 'mode') === COMPLETE_OWN_MODE &&
+      ownValue(proof, 'schemaVersion') === COMPLETE_OWN_SCHEMA &&
+      ownValue(proof, 'profileRevision') === COMPLETE_OWN_PROFILE_REVISION
+    )
+      return true;
+  }
+  return false;
+}
 export function completeOwnedNativeKind(kind) {
   return ['EXECUTION_STATUS', 'EXECUTION_FEEDBACK', 'PROCESSING_ITEM'].includes(
     kind,
@@ -2206,6 +2272,7 @@ export function validateCompleteOwnedNativeRecord(
 ) {
   const proof = plainData(r.rawFields.completeOwnedSource, {
     maxBytes: COMPLETE_OWN_PACKAGE_MAX_BYTES,
+    maxNodes: COMPLETE_OWN_MAX_NODES,
   });
   const profile = completeOwnProfile(proof.scopeId);
   if (

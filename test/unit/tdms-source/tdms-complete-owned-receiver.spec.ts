@@ -15,9 +15,15 @@ import {
 import {
   COMPLETE_OWN_PACKAGE_MAX_BYTES,
   COMPLETE_OWN_REQUEST_MAX_BYTES,
+  COMPLETE_OWN_OBSERVATION_MAX_BYTES,
 } from '../../../server/modules/tdms-source/tdms-complete-owned-source.validation';
 import { MemoryTdmsRepository, nativeScope } from './tdms-memory-double';
 import { actor } from './tdms-fixtures';
+import {
+  syntheticAeoEnvelope,
+  aeoProof,
+  resealAeo,
+} from './tdms-aeo-capacity.fixture';
 import {
   copyComplete,
   completeComparison,
@@ -561,26 +567,18 @@ describe('Complete1 through the existing Daily/native transaction and exact read
     (forged.records[0].rawFields.completeOwnedSource as any).mode = 'ORDINARY';
     expect(() => sourcePackage(forged)).toThrow();
   });
-  it('rejects an observation above 850 KiB before retention even when its whole package is below 2 MiB', () => {
-    const env = syntheticCompleteEnvelope(),
-      proof = proofOf(env);
+  it('rejects an observation above 1536 KiB before retention even when its whole package is below 2 MiB', () => {
+    const env = syntheticAeoEnvelope(112),
+      proof = aeoProof(env);
     for (const read of proof.reads) {
-      Object.assign(read.fields[0].value, {
+      Object.assign(read.relationTables[0].rows[0].cells[8], {
         rawValue: '界'.repeat(100000),
         observedTotalCodepoints: 100000,
       });
-      Object.assign(read.fields[1].value, {
-        state: 'VALUE',
-        rawValue: '界'.repeat(60000),
-        observedTotalCodepoints: 60000,
-      });
     }
-    env.package.records[0].content.completeOwnedFields = copyComplete(
-      proof.reads[1].fields,
-    );
-    sealComplete(env);
+    resealAeo(env);
     expect(Buffer.byteLength(JSON.stringify(proof))).toBeGreaterThan(
-      850 * 1024,
+      COMPLETE_OWN_OBSERVATION_MAX_BYTES,
     );
     expect(Buffer.byteLength(JSON.stringify(env))).toBeLessThan(
       2 * 1024 * 1024,

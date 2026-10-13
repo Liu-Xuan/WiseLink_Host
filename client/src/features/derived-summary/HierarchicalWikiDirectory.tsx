@@ -44,7 +44,7 @@ export default function HierarchicalWikiDirectory({
   const loadDocuments = useCallback(
     (signal: AbortSignal) =>
       getCanonicalLibraryDocuments(
-        { limit: 100, cursor: documentCursor, search },
+        { limit: 50, cursor: documentCursor, search },
         signal,
       ),
     [documentCursor, search],

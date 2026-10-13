@@ -113,7 +113,7 @@ describe('projectLibraryDocumentReading', () => {
       documentNumber: '文档编号待核', documentTitle: '文档标题待核', hasDocumentTitle: false });
   });
 
-  it('projects AVAILABLE readings with conditions, limitations and source limitations', () => {
+  it('keeps source diagnostics separate from the main engineering conditions', () => {
     const projection = projectLibraryDocumentReading(
       version('DV-1', {
         extractedMetadata: libraryMetadata(),
@@ -126,8 +126,8 @@ describe('projectLibraryDocumentReading', () => {
     expect(projection.conditionLines).toEqual([
       '关键条件 现行主题',
       '认识限制 现行主题',
-      '来源限制 现行主题',
     ]);
+    expect(projection.sourceLimitations).toEqual(['来源限制 现行主题']);
     expect(projection.fileTitle).toBe('测试原文标题');
     expect(projection.readingRunRef).toBe('RUN-现行主题');
     expect(projection.readingRevision).toBe(3);
@@ -150,7 +150,7 @@ describe('projectLibraryDocumentReading', () => {
     expect(projection.coverageStatus).toBe('PARTIAL_DELIVERY');
     expect(projection.deliveredUnitCount).toBe(2);
     expect(projection.totalUnitCount).toBe(5);
-    expect(projection.conditionLines).toHaveLength(3);
+    expect(projection.conditionLines).toHaveLength(2);
   });
 
   it('reports NOT_GENERATED without claiming an interpretation', () => {
@@ -290,7 +290,7 @@ describe('library document rows and quicklook reading rendering', () => {
     expect(markup).toContain('已读取 2/5');
     expect(markup).toContain('关键条件 新版主题');
     expect(markup).toContain('认识限制 新版主题');
-    expect(markup).toContain('来源限制 新版主题');
+    expect(markup).not.toContain('来源限制 新版主题');
   });
 
   it('keeps every compact clamped brief expandable regardless of character count', () => {
