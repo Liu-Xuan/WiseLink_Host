@@ -7,7 +7,6 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
-  DialogDescription,
 } from '@client/src/components/ui/dialog';
 import {
   currentRouteWorkItemId,
@@ -36,6 +35,7 @@ export default function AtlasLauncher() {
         <Network aria-hidden="true" />
       </button>
       <DialogContent
+        aria-describedby={undefined}
         showCloseButton={false}
         onEscapeKeyDown={(event) => {
           if (document.querySelector('.atlas-workspace[data-guiding="true"]')) {
@@ -46,9 +46,6 @@ export default function AtlasLauncher() {
         className="!h-[98dvh] !w-[99vw] !max-w-none !p-0 !gap-0 overflow-hidden"
       >
         <DialogTitle className="sr-only">图谱与自动演示</DialogTitle>
-        <DialogDescription className="sr-only">
-          在独立面板阅读真实资料关系或探索明确标记的示例，关闭后回到原页面。
-        </DialogDescription>
         <Suspense fallback={<p role="status">正在加载图谱与讲解…</p>}>
           <AtlasWorkspace
             initialSnapshot={
