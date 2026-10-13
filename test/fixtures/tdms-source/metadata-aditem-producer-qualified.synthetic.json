@@ -1,0 +1,654 @@
+{
+  "meaning": "Pure model literals from exact Source helpers; all wire fixtures using them are fabricated, no source payload or authority.",
+  "adItemModel": {
+    "modelRevision": "tdms-reviewed-ad-item-native-readonly-surfaces@1",
+    "scopeId": "AD_ITEM",
+    "nativeClass": "wt.change2.WTChangeActivity2",
+    "nativeTypeId": null,
+    "nativeHeaderType": "AD处理条目",
+    "detailTabId": "infoPageinfoPanelID__infoPage_myTab_object_changeTaskDetailsTab",
+    "detailPanel": "#infoPage_myTab_object_changeTaskDetailsTab",
+    "rootLocator": "#infoPagemainInfoPagePanel",
+    "technicalVersionSemantics": "UNREVIEWED",
+    "businessVersionSemantics": "UNREVIEWED",
+    "nonContentControl": {
+      "actionId": "infoPageinfoPanelID__new_tab_action",
+      "tag": "LI",
+      "classToken": "x-tab-with-icon",
+      "rawCaption": "",
+      "semantic": "NATIVE_TAB_CREATE_ACTION"
+    },
+    "tabs": [
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_changeTaskDetailsTab",
+        "label": "Details",
+        "panelLocator": "#infoPage_myTab_object_changeTaskDetailsTab"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_changeTaskProcessTab",
+        "label": "Process",
+        "panelLocator": "#infoPage_myTab_object_changeTaskProcessTab"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_referenceDocumentTable",
+        "label": "Reference Document Table",
+        "panelLocator": "#infoPage_myTab_object_referenceDocumentTable"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_EFRDocumentTable",
+        "label": "EFR Document Table",
+        "panelLocator": "#infoPage_myTab_object_EFRDocumentTable"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_ad_adTreeReport",
+        "label": "AD RelationShip",
+        "panelLocator": "#infoPage_myTab_ad_adTreeReport"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_979795311",
+        "label": "成员",
+        "panelLocator": "#infoPage_myTab_tab_jcaGen_979795311"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_1259031177",
+        "label": "生命周期历史记录",
+        "panelLocator": "#infoPage_myTab_tab_jcaGen_1259031177"
+      },
+      {
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_3748929190",
+        "label": "新建选项卡 1",
+        "panelLocator": "#infoPage_myTab_tab_jcaGen_3748929190"
+      }
+    ],
+    "sections": [
+      {
+        "sectionId": "General",
+        "sectionLabel": "Attributes",
+        "dataStoreId": "dataStoreGeneral",
+        "fieldLabels": [
+          "Name:",
+          "AD段落号:",
+          "ATA章节:",
+          "段号:",
+          "评估人:",
+          "是否重检:",
+          "完成期限:",
+          "首检时限:",
+          "重检间隔:",
+          "终止措施截止期限:",
+          "适航指令要求:",
+          "评估意见:",
+          "受影响的飞机:",
+          "受影响的发动机:",
+          "受影响的APU:",
+          "受影响的起落架:",
+          "受影响的附件:",
+          "是否适用:"
+        ]
+      },
+      {
+        "sectionId": "BusinessAttributesGroup",
+        "sectionLabel": "Business Attributes",
+        "dataStoreId": "dataStoreBusinessAttributesGroup",
+        "fieldLabels": [
+          "是否适用:",
+          "AD段落号:",
+          "ATA章节:",
+          "历史时限:",
+          "受影响的APU:",
+          "受影响的发动机:",
+          "受影响的起落架:",
+          "受影响的附件:",
+          "受影响的飞机:",
+          "完成期限:",
+          "是否重检:",
+          "段号:",
+          "终止措施截止期限:",
+          "结构化终止措施截止期限:",
+          "结构化重检间隔:",
+          "结构化首检时限:",
+          "评估人:",
+          "评估意见:",
+          "适航指令要求:",
+          "重检间隔:",
+          "非结构化终止措施截止期限:",
+          "非结构化重检间隔:",
+          "非结构化首检时限:",
+          "非结构完成期限:",
+          "首检时限:"
+        ]
+      },
+      {
+        "sectionId": "Process",
+        "sectionLabel": "Process",
+        "dataStoreId": "dataStoreProcess",
+        "fieldLabels": ["Assignee:", "Need Date:", "Reviewer:"]
+      },
+      {
+        "sectionId": "System",
+        "sectionLabel": "System",
+        "dataStoreId": "dataStoreSystem",
+        "fieldLabels": [
+          "Team Name:",
+          "Modified By:",
+          "Created By:",
+          "Last Modified:",
+          "Created On:"
+        ]
+      }
+    ],
+    "nativeGridSurfaces": [
+      {
+        "gridId": "attachments.table.secondary",
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_changeTaskDetailsTab",
+        "panelLocator": "#infoPage_myTab_object_changeTaskDetailsTab",
+        "nativeUiRole": "ATTACHMENTS",
+        "relationshipRole": "UNKNOWN",
+        "direction": "UNKNOWN",
+        "columns": [
+          {
+            "actualLabel": "",
+            "nativeColumnToken": "checker",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Label or File Name",
+            "nativeColumnToken": "attachmentsName",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "View Information",
+            "nativeColumnToken": "infoPageActionAttachment",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Format Icon",
+            "nativeColumnToken": "formatIcon",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Format",
+            "nativeColumnToken": "formatName",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Attachment Description",
+            "nativeColumnToken": "description",
+            "valuePolicy": "NOT_READ_UNREVIEWED_ROW_TEXT_QUALIFICATION"
+          },
+          {
+            "actualLabel": "Last Modified",
+            "nativeColumnToken": "thePersistInfo_modifyStamp",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Modified By",
+            "nativeColumnToken": "modifier",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          }
+        ],
+        "evidenceRef": "tdms-ad-item-own-native-input18/ad-item-safe.json",
+        "evidenceSha256": "8b010ceac8272f8a04a6a0fe04687cd3a7abcd17ee6dc167fac1f0da55dd36ee"
+      },
+      {
+        "gridId": "changeTask_affectedItems_table",
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_changeTaskDetailsTab",
+        "panelLocator": "#infoPage_myTab_object_changeTaskDetailsTab",
+        "nativeUiRole": null,
+        "relationshipRole": "UNKNOWN",
+        "direction": "UNKNOWN",
+        "columns": [
+          {
+            "actualLabel": "",
+            "nativeColumnToken": "checker",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "General Status",
+            "nativeColumnToken": "statusFamily_General",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Change Status",
+            "nativeColumnToken": "statusFamily_Change",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Object Type Indicator",
+            "nativeColumnToken": "type_icon",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Number",
+            "nativeColumnToken": "number",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Version",
+            "nativeColumnToken": "version",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "View Information",
+            "nativeColumnToken": "infoPageAction",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Name",
+            "nativeColumnToken": "name",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "On Order",
+            "nativeColumnToken": "onOrderDisposition",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Work-in-Process",
+            "nativeColumnToken": "inventoryDisposition",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Finished",
+            "nativeColumnToken": "finishedDisposition",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Annotation Sets",
+            "nativeColumnToken": "associatedAnnotations",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Comments",
+            "nativeColumnToken": "aadDescription",
+            "valuePolicy": "NOT_READ_UNREVIEWED_ROW_TEXT_QUALIFICATION"
+          }
+        ],
+        "evidenceRef": "tdms-ad-item-own-native-input18/ad-item-safe.json",
+        "evidenceSha256": "8b010ceac8272f8a04a6a0fe04687cd3a7abcd17ee6dc167fac1f0da55dd36ee"
+      },
+      {
+        "gridId": "changeTask_resultingItems_table",
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_changeTaskDetailsTab",
+        "panelLocator": "#infoPage_myTab_object_changeTaskDetailsTab",
+        "nativeUiRole": null,
+        "relationshipRole": "UNKNOWN",
+        "direction": "UNKNOWN",
+        "columns": [
+          {
+            "actualLabel": "",
+            "nativeColumnToken": "checker",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "General Status",
+            "nativeColumnToken": "statusFamily_General",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Change Status",
+            "nativeColumnToken": "statusFamily_Change",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Object Type Indicator",
+            "nativeColumnToken": "type_icon",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Number",
+            "nativeColumnToken": "number",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Version",
+            "nativeColumnToken": "version",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Unincorporated Changes Table Parameters",
+            "nativeColumnToken": "launchIncorpHangingChange",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Compare Objects",
+            "nativeColumnToken": "compare",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "View Information",
+            "nativeColumnToken": "infoPageAction",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Name",
+            "nativeColumnToken": "name",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "State",
+            "nativeColumnToken": "current_lifecycle_state",
+            "valuePolicy": "NATIVE_STATE_METADATA_ONLY"
+          },
+          {
+            "actualLabel": "Comments",
+            "nativeColumnToken": "crDescription",
+            "valuePolicy": "NOT_READ_UNREVIEWED_ROW_TEXT_QUALIFICATION"
+          }
+        ],
+        "evidenceRef": "tdms-ad-item-own-native-input18/ad-item-safe.json",
+        "evidenceSha256": "8b010ceac8272f8a04a6a0fe04687cd3a7abcd17ee6dc167fac1f0da55dd36ee"
+      },
+      {
+        "gridId": "document.refDoc.list",
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_referenceDocumentTable",
+        "panelLocator": "#infoPage_myTab_object_referenceDocumentTable",
+        "nativeUiRole": null,
+        "relationshipRole": "UNKNOWN",
+        "direction": "UNKNOWN",
+        "columns": [
+          {
+            "actualLabel": "",
+            "nativeColumnToken": "checker",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Reference Document Number",
+            "nativeColumnToken": "docNumber",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "RefDocumentVersionNo",
+            "nativeColumnToken": "docVersion",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "RefDocumentSourcing",
+            "nativeColumnToken": "sourcing",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Reference Document Type",
+            "nativeColumnToken": "docType",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Reference Document Title",
+            "nativeColumnToken": "docName",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "RefDocumentDate",
+            "nativeColumnToken": "issueDate",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          }
+        ],
+        "evidenceRef": "tdms-ad-item-own-native-input18/ad-item-safe.json",
+        "evidenceSha256": "8b010ceac8272f8a04a6a0fe04687cd3a7abcd17ee6dc167fac1f0da55dd36ee"
+      },
+      {
+        "gridId": "document.EFRDoc.list",
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_object_EFRDocumentTable",
+        "panelLocator": "#infoPage_myTab_object_EFRDocumentTable",
+        "nativeUiRole": null,
+        "relationshipRole": "UNKNOWN",
+        "direction": "UNKNOWN",
+        "columns": [
+          {
+            "actualLabel": "",
+            "nativeColumnToken": "checker",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFR Document Operation",
+            "nativeColumnToken": "operationType",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFR Document Number",
+            "nativeColumnToken": "numberDisPlay",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "State",
+            "nativeColumnToken": "stateDisplay",
+            "valuePolicy": "NATIVE_STATE_METADATA_ONLY"
+          },
+          {
+            "actualLabel": "EFRDocumentNumber2",
+            "nativeColumnToken": "returnNumberDisPlay",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFRDocState2",
+            "nativeColumnToken": "returnStateDisplay",
+            "valuePolicy": "NATIVE_STATE_METADATA_ONLY"
+          },
+          {
+            "actualLabel": "EFR Document Type",
+            "nativeColumnToken": "docType",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFR Document Name",
+            "nativeColumnToken": "docName",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFR Document IssueDate",
+            "nativeColumnToken": "issueDate",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFR Document Operator",
+            "nativeColumnToken": "userRef_fullName",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "EFR Document Description",
+            "nativeColumnToken": "docDescription",
+            "valuePolicy": "NOT_READ_UNREVIEWED_ROW_TEXT_QUALIFICATION"
+          },
+          {
+            "actualLabel": "Comments",
+            "nativeColumnToken": "comments",
+            "valuePolicy": "NOT_READ_UNREVIEWED_ROW_TEXT_QUALIFICATION"
+          }
+        ],
+        "evidenceRef": "tdms-ad-item-own-native-input18/ad-item-safe.json",
+        "evidenceSha256": "8b010ceac8272f8a04a6a0fe04687cd3a7abcd17ee6dc167fac1f0da55dd36ee"
+      },
+      {
+        "gridId": "mytreetable",
+        "tabId": "infoPageinfoPanelID__infoPage_myTab_ad_adTreeReport",
+        "panelLocator": "#infoPage_myTab_ad_adTreeReport",
+        "nativeUiRole": null,
+        "relationshipRole": "UNKNOWN",
+        "direction": "UNKNOWN",
+        "columns": [
+          {
+            "actualLabel": "Object Type Indicator",
+            "nativeColumnToken": "type_icon",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Number",
+            "nativeColumnToken": "number",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "View Information",
+            "nativeColumnToken": "infoPageAction",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Primary Content",
+            "nativeColumnToken": "primaryAttachmentProperties",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Name",
+            "nativeColumnToken": "name",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "AD序号",
+            "nativeColumnToken": "IBA|ADSequenceNO",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "State",
+            "nativeColumnToken": "state",
+            "valuePolicy": "NATIVE_STATE_METADATA_ONLY"
+          },
+          {
+            "actualLabel": "Created By",
+            "nativeColumnToken": "creator",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          },
+          {
+            "actualLabel": "Last Modified",
+            "nativeColumnToken": "thePersistInfo_modifyStamp",
+            "valuePolicy": "EXISTING_TYPED_VALUE"
+          }
+        ],
+        "evidenceRef": "tdms-ad-item-own-native-input18/ad-item-safe.json",
+        "evidenceSha256": "8b010ceac8272f8a04a6a0fe04687cd3a7abcd17ee6dc167fac1f0da55dd36ee"
+      }
+    ],
+    "evidenceRef": "tdms-ad-item-own-native-input18/ad-item-safe.json",
+    "evidenceSha256": "8b010ceac8272f8a04a6a0fe04687cd3a7abcd17ee6dc167fac1f0da55dd36ee"
+  },
+  "producerQualification": {
+    "adItem": {
+      "recordSha256": "6bb43f6e3958cda50160a42cbdd68839449cf69731776f4d57ecb801395236e5",
+      "snapshotId": "TDMSSNAP-392fa2e201ae953157ef4b191063a9f5b79c55759e4ab7165751e3719f06dd9f",
+      "hostFixtureRecordMatches": true
+    },
+    "currentEpmEf": {
+      "recordSha256": "9587064f1cd59d9032f3bdce263b71606986a943c34027060a9c0a810a91afc4",
+      "snapshotId": "TDMSSNAP-72d3dde4f8d6e41cf2817c7aa7abad46ca1c735c6f62f1dd3f39b0edaa6c83f1",
+      "hostFixtureRecordMatches": true
+    },
+    "legacyEpmEf": {
+      "recordSha256": "79c312b2f99f8c0f5bfed53a7ce1e43793fe0261b0626bb30a789cd572342b63",
+      "snapshotId": "TDMSSNAP-c089bfc6cfae2bf8bbfd9848c71e30a555e69d8ad0c685b0cd98cb64b16a2d20",
+      "hostFixtureRecordMatches": true
+    },
+    "currentEo": {
+      "recordSha256": "b13f90236c07b2c91beb080fd2094500adf7081231179bb9ce7cbb9eb0cc3a23",
+      "snapshotId": "TDMSSNAP-31a40b245015bc89773b83893ece3ede881c9e3b9b948c4096c6eee3a051fceb",
+      "hostFixtureRecordMatches": true
+    },
+    "adUnknownBusiness": {
+      "recordSha256": "6794e743222d38fb7826ddaa361c9bff843247b044e0cc448b90b9f412f27aec",
+      "snapshotId": "TDMSSNAP-530008a517d269d2728466cbf7c4ab528d588562ba5d6095c4d56bf0c5c662dd",
+      "hostFixtureRecordMatches": true
+    },
+    "efMetadata": {
+      "recordSha256": "a7cb00296ae7b61bf65f88323f203b31ba26ff7a31fe7fbb52cdecd7d8ed9247",
+      "snapshotId": "TDMSSNAP-a34fe56ee005e77a4aa142849efe14bd4a9b4cd62086f019be67524b98e2af21",
+      "hostFixtureRecordMatches": true
+    }
+  },
+  "efMetadataModel": {
+    "detailTabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+    "detailPanel": "#infoPage_myTab_object_docInfoDefaultDetails",
+    "ownMetadataFields": [
+      {
+        "sectionId": "General",
+        "dataStoreId": "dataStoreGeneral",
+        "tag": "TD",
+        "labelClass": "attributePanel-label",
+        "valueClass": "attributePanel-value",
+        "labels": [
+          "ATA章节:",
+          "受影响的机型:",
+          "受影响的APU类型:",
+          "受影响的发动机类型:",
+          "受影响的起落架类型:",
+          "受影响的附件:",
+          "用户:",
+          "Status:",
+          "Primary Content:"
+        ]
+      },
+      {
+        "sectionId": "BusinessAttributesGroup",
+        "dataStoreId": "dataStoreBusinessAttributesGroup",
+        "tag": "TD",
+        "labelClass": "attributePanel-label",
+        "valueClass": "attributePanel-value",
+        "labels": [
+          "用户:",
+          "ATA章节:",
+          "受影响的机型:",
+          "受影响的飞机:",
+          "受影响的发动机:",
+          "受影响的发动机类型:",
+          "受影响的APU类型:",
+          "受影响的APU:",
+          "受影响的起落架类型:",
+          "受影响的起落架:",
+          "受影响的附件:"
+        ]
+      },
+      {
+        "sectionId": "MoreAttributesGroup",
+        "dataStoreId": "dataStoreMoreAttributesGroup",
+        "tag": "TD",
+        "labelClass": "attributePanel-label",
+        "valueClass": "attributePanel-value",
+        "labels": ["Format Name:", "Life Cycle Template:", "Team Template:"]
+      }
+    ],
+    "ownIdentityFields": [
+      {
+        "sectionId": "General",
+        "dataStoreId": "dataStoreGeneral",
+        "tag": "TD",
+        "labelClass": "attributePanel-label",
+        "valueClass": "attributePanel-value",
+        "labels": ["Name:", "Modified By:", "Last Modified:"]
+      },
+      {
+        "sectionId": "MoreAttributesGroup",
+        "dataStoreId": "dataStoreMoreAttributesGroup",
+        "tag": "TD",
+        "labelClass": "attributePanel-label",
+        "valueClass": "attributePanel-value",
+        "labels": [
+          "State:",
+          "Context:",
+          "Location:",
+          "Created By:",
+          "Modified By:",
+          "Created On:",
+          "Last Modified:"
+        ]
+      }
+    ]
+  },
+  "sourceCode": [
+    {
+      "name": "complete-owned-source.mjs",
+      "bytes": 54177,
+      "sha256": "55bd642b7fe8503908fa3a949e2e66dba93f350633b47679f72bff9566c446ad"
+    },
+    {
+      "name": "reviewed-complete-source-types.mjs",
+      "bytes": 24966,
+      "sha256": "36eb83b2d5e2e7072ef864cdcb5155080dc00630eeee2faff9a012517b48fadf"
+    },
+    {
+      "name": "reviewed-ad-item-native-model.mjs",
+      "bytes": 17614,
+      "sha256": "1318c97f4e5c1f34a5c60d4c97477e2b761b30f47e5aa6ce46c774173c693b93"
+    },
+    {
+      "name": "engineering-classification.mjs",
+      "bytes": 10507,
+      "sha256": "578670e249facc36ee803d186887177a450d33cb42dcfa23d063d5c4016e13f6"
+    }
+  ]
+}

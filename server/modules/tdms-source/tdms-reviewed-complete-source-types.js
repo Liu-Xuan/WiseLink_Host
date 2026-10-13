@@ -1,6 +1,10 @@
 // Pure EFRequest surface contract from the SHA-qualified 2026-10-14 code delta.
 // Native fields describe observations; they do not supply source authority.
 import { tdmsError } from './tdms-source.types';
+import {
+  isReviewedAdItemOwner,
+  REVIEWED_AD_ITEM_NATIVE_MODEL,
+} from './tdms-reviewed-ad-item-native-model';
 
 export const EFREQUEST_READONLY_MODEL_REVISION =
   'tdms-reviewed-efrequest-readonly-surfaces@1';
@@ -472,7 +476,10 @@ export function validateReviewedCompleteTabRoster({
   if (
     !hasStrip ||
     !hasControls ||
-    !isReviewedEfRequestOwner({ scopeId, owner })
+    !(
+      isReviewedEfRequestOwner({ scopeId, owner }) ||
+      isReviewedAdItemOwner({ scopeId, owner })
+    )
   )
     reject();
   const strip = rosterEvidence.nativeTabStripIds;
@@ -497,7 +504,10 @@ export function validateReviewedCompleteTabRoster({
   )
     reject();
   const c = controls[0];
-  const m = REVIEWED_EFREQUEST_NATIVE_MODEL;
+  const m =
+    scopeId === 'AD_ITEM'
+      ? REVIEWED_AD_ITEM_NATIVE_MODEL
+      : REVIEWED_EFREQUEST_NATIVE_MODEL;
   const a = m.nonContentControl;
   if (
     !exactKeys(c, [

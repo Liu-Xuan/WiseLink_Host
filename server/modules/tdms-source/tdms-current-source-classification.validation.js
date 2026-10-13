@@ -360,8 +360,10 @@ export function validateDocumentTargetClassificationRecord(record) {
   if (stable(expected) !== stable(record))
     fail('TDMS_DOCUMENT_TARGET_CLASSIFICATION_RECORD_INVALID');
 }
-export const ENGINEERING_CLASSIFICATION_REVISION =
+export const LEGACY_ENGINEERING_CLASSIFICATION_REVISION =
   'tdms-engineering-own-subtype@1';
+export const ENGINEERING_CLASSIFICATION_REVISION =
+  'tdms-engineering-own-subtype@2';
 export const ENGINEERING_CLASSIFICATION_SCHEMA =
   'wiselink.tdms-engineering-own-classification.v1';
 const directoryKeys = [
@@ -411,7 +413,10 @@ export function validateEngineeringClassificationInput(raw) {
   if (
     v.profileId !== 'ENGINEERING_INDEPENDENT' ||
     v.profileRevision !== SOURCE_PROFILE_REVISION ||
-    v.classificationRevision !== ENGINEERING_CLASSIFICATION_REVISION ||
+    ![
+      LEGACY_ENGINEERING_CLASSIFICATION_REVISION,
+      ENGINEERING_CLASSIFICATION_REVISION,
+    ].includes(v.classificationRevision) ||
     v.purpose !== 'COVERAGE' ||
     v.primaryPolicy !== 'METADATA_ONLY' ||
     v.openIfMissing !== false ||
@@ -512,7 +517,7 @@ export function validateEngineeringClassificationObservation(raw, rawInput) {
   ]);
   if (
     v.schemaVersion !== ENGINEERING_CLASSIFICATION_SCHEMA ||
-    v.classificationRevision !== ENGINEERING_CLASSIFICATION_REVISION ||
+    v.classificationRevision !== input.classificationRevision ||
     stable(v.requestedCriteria) !== stable(input) ||
     !Array.isArray(v.reads) ||
     v.reads.length !== 2
@@ -593,7 +598,13 @@ export function validateEngineeringClassificationObservation(raw, rawInput) {
       stable(engineeringClassificationStableProjection(v.reads[1]))
   )
     fail('TDMS_ENGINEERING_CLASSIFICATION_CHANGED');
-  const resolved = ['EO', 'EF', 'AEO'].includes(subtype) ? subtype : null;
+  const resolved = (input.classificationRevision ===
+  LEGACY_ENGINEERING_CLASSIFICATION_REVISION
+    ? ['EO', 'EF', 'AEO']
+    : ['EO', 'AEO']
+  ).includes(subtype)
+    ? subtype
+    : null;
   if (
     v.resolvedSubtype !== resolved ||
     v.disposition !== (resolved ? 'IN_SCOPE' : 'OUT_OF_SCOPE')
@@ -634,6 +645,10 @@ export function engineeringClassificationRecord(raw, input) {
       gaps: [
         'OWN_SUBTYPE_CLASSIFICATION_ONLY',
         'OWN_COMPLETE_CONTENT_NOT_READ',
+        ...(o.classificationRevision === ENGINEERING_CLASSIFICATION_REVISION &&
+        o.reads[1].nativeSubtype.rawValue === 'EF'
+          ? ['NATIVE_EPM_EF_NOT_EFREQUEST_OUT_OF_CURRENT_SCOPE']
+          : []),
         ...(owner.sourceVersion.confirmation === 'VERSION_UNCONFIRMED'
           ? ['TECHNICAL_VERSION_UNCONFIRMED']
           : []),

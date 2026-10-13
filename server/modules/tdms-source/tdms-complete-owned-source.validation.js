@@ -13,6 +13,10 @@ import {
 } from './tdms-reviewed-aeo-business-version';
 import { validateRelatedStatusFixedRowSlotEvidence } from './tdms-related-status-fixed-row-slots';
 import {
+  classifyReviewedAdItemOwnReference,
+  validateReviewedAdItemRead,
+} from './tdms-reviewed-ad-item-native-model';
+import {
   isReviewedEfRequestOwner,
   isReviewedEfRequestUnknownFieldCaption,
   validateReviewedCompleteTabRoster,
@@ -1874,6 +1878,11 @@ function validateRead(r, input) {
     owner: r.owner,
     read: r,
   });
+  validateReviewedAdItemRead({
+    scopeId: input.scopeId,
+    owner: r.owner,
+    read: r,
+  });
   if (Date.parse(r.owner.observedAt) > Date.parse(r.observedAt))
     fail('TDMS_COMPLETE_OWN_TIME_INVALID');
 }
@@ -1966,11 +1975,19 @@ export function completeOwnedTargetOccurrences(observation) {
   for (const f of read.fields)
     for (const [index, link] of f.links.entries()) {
       if (!link.targetRef) continue;
-      const model = classifyOwnFieldReference({
-        scopeId: observation.requestedCriteria.scopeId,
-        fieldActualLabel: f.value.actualLabel,
-        targetRef: link.targetRef,
-      });
+      const model =
+        classifyReviewedAdItemOwnReference({
+          scopeId: observation.requestedCriteria.scopeId,
+          owner: read.owner,
+          read,
+          fieldActualLabel: f.value.actualLabel,
+          targetRef: link.targetRef,
+        }) ??
+        classifyOwnFieldReference({
+          scopeId: observation.requestedCriteria.scopeId,
+          fieldActualLabel: f.value.actualLabel,
+          targetRef: link.targetRef,
+        });
       out.push({
         origin: 'OWN_FIELD',
         tableId: 'OWN_FIELD:' + sha256(f.fieldId).slice(0, 32),
