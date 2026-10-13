@@ -497,6 +497,7 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
   const consumedOperation = retry?.operation ?? repair?.operation ?? statusValue.nextOperation;
   const consumedRequestId = retry?.requestId ?? repair?.requestId ??
     statusValue.stages?.[STAGE_BY_OPERATION[consumedOperation]]?.requestId;
+  const consumedWorkItemRevision = statusValue.workItemRevision;
   let report;
   try {
     report = await dependencies.consumeWorkItem({
@@ -550,6 +551,24 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
   if (explicitStageRequest && report?.status !== 'REQUIRES_ATTENTION' &&
       !confirmedExplicitStageReport(report, explicitStageRequest, statusValue))
     return automaticWorkItemAttention(claim, 'AUTO_WORK_ITEM_EXPLICIT_REPORT_UNCONFIRMED', statusValue, report);
+  const completedStage = explicitStageRequest ??
+    (/^AQ-[A-Za-z0-9-]{1,93}$/u.test(report?.attemptRef ?? '') ? {
+      workItemId: claim.workItemId, documentVersionId: claim.documentVersionId,
+      workItemRevision: consumedWorkItemRevision, operation: consumedOperation,
+      requestId: consumedRequestId ?? statusValue.stages?.[STAGE_BY_OPERATION[consumedOperation]]?.requestId,
+      attemptRef: report.attemptRef,
+    } : null);
+  // The queue lease spans serial stages. Only this consumed stage's exact
+  // successful Host projection may advance its local revision, never a read
+  // of an unrelated later revision while the claim is stopped.
+  if (report?.status === 'INITIAL_STAGE_SAVED' && completedStage &&
+      confirmedExplicitStageReport(report, completedStage, statusValue) &&
+      statusValue.workItemRevision > claim.workItemRevision) {
+    if (!isDeepStrictEqual(await checkpoint.readOptional('active-claim'), claim))
+      throw new Error('AUTO_WORK_ITEM_EXPLICIT_CLAIM_CHANGED');
+    claim = { ...claim, workItemRevision: statusValue.workItemRevision };
+    await checkpoint.write('active-claim', claim);
+  }
   if (isAutomaticWorkItemDone(statusValue)) {
     claim = { ...claim, completionReady: true };
     await checkpoint.write('active-claim', claim);
@@ -1345,6 +1364,8 @@ export async function runHostedInitialStage(options, dependencies) {
     const report = {
       status: stageDone ? 'INITIAL_STAGE_SAVED' : 'REQUIRES_ATTENTION',
       operation, stageStatus, nextOperation: after.nextOperation,
+      ...(startedAttempt ?? options.assessmentRecovery?.previousClaim?.attemptRef
+        ? { attemptRef: startedAttempt ?? options.assessmentRecovery.previousClaim.attemptRef } : {}),
       outcome: result.outcome, modelCallCount,
       provenance: result.provenance,
       workItemRevision: after.workItemRevision,

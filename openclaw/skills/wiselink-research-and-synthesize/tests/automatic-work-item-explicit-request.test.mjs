@@ -113,6 +113,7 @@ test('a legacy stopped claim consumes only the fresh Host request and preserves 
   assert.equal(f.checkpoint.values.get('active-claim').consumerStopped, false);
   assert.equal(f.checkpoint.values.get(`explicit-stage-wakeup-${NEW_REQUEST}`).priorAttentionCode, ATTENTION);
   assert.equal(JSON.parse(await readFile(join(f.path(), 'binding.json'), 'utf8')).requestId, NEW_REQUEST);
+  assert.equal(JSON.parse(await readFile(join(f.path(), 'run-result.json'), 'utf8')).attemptRef, 'AQ-new');
   assert.equal(await readFile(join(oldPath, 'model.started.json'), 'utf8'), unknown);
   assert.equal(await readFile(join(oldPath, 'run-result.json'), 'utf8'), failure);
 });
@@ -442,6 +443,74 @@ test('a successful exact projection can omit the continuation UUID and advance t
   });
   assert.equal(result.status, 'IN_PROGRESS');
   assert.equal(f.checkpoint.values.get('active-claim').consumerStopped, false);
+  assert.equal(f.checkpoint.values.get('active-claim').workItemRevision, 4);
+});
+
+test('confirmed R3 success, R4 Overall failure, reclaim and a fresh R4 request retain the real stopped scope', async t => {
+  const f = await fixture(t, claim({ consumerStopped: false, attentionCode: null,
+    stoppedWorkItemRevision: 3, stoppedStageRequest: binding() }));
+  const overallRequest = '00000000-0000-4000-8000-000000000011';
+  const freshOverallRequest = '00000000-0000-4000-8000-000000000012';
+  const consumed = [];
+  let clock = START;
+  let phase = 'jobAid';
+  const deps = { ...f.dependencies,
+    now: () => new Date(clock),
+    nextWorkItem: async input => {
+      assert.deepEqual(input, { resumeWorkItemId: 'WI-explicit' });
+      const { schemaVersion, consumerStopped, attentionCode, completionReady, blockReady, ...fields } = claim();
+      return { status: 'CLAIMED', ...fields, workItemRevision: 4, leaseGeneration: 43,
+        leaseToken: '00000000-0000-4000-8000-000000000043',
+        leaseExpiresAt: '2026-10-13T02:16:05.795Z' };
+    },
+    consumeWorkItem: async input => {
+      consumed.push(phase);
+      if (phase === 'jobAid') {
+        assert.equal(input.explicitStageRequest, undefined, 'ordinary successful stages also advance the local scope');
+        f.initial.workItemRevision = 4; f.initial.nextOperation = 'SYNTHESIZE_OVERALL';
+        f.initial.stages.jobAid = { status: 'SUCCEEDED', attemptStatus: 'SUCCEEDED', attemptRef: 'AQ-new', terminalCode: null };
+        f.initial.stages.overall = { status: 'PENDING', attemptStatus: 'QUEUED', attemptRef: 'AQ-overall-r4',
+          requestId: overallRequest, terminalCode: null };
+        return { status: 'INITIAL_STAGE_SAVED', operation: 'EVALUATE_JOBAID', attemptRef: 'AQ-new',
+          stageStatus: 'SUCCEEDED', candidateOnly: true, modelCallCount: 1, workItemRevision: 4 };
+      }
+      if (phase === 'overallFailure') {
+        assert.equal(input.explicitStageRequest, undefined);
+        assert.equal(f.checkpoint.values.get('active-claim').workItemRevision, 4);
+        f.initial.status = 'FAILED'; f.initial.nextOperation = null;
+        f.initial.stages.overall.status = 'FAILED'; f.initial.stages.overall.attemptStatus = 'CANCELLED';
+        f.initial.stages.overall.terminalCode = ATTENTION;
+        return { status: 'REQUIRES_ATTENTION', operation: 'SYNTHESIZE_OVERALL', attemptRef: 'AQ-overall-r4',
+          errorCode: ATTENTION, candidateOnly: true, modelCallCount: 1 };
+      }
+      assert.equal(input.explicitStageRequest.workItemRevision, 4);
+      assert.equal(input.explicitStageRequest.requestId, freshOverallRequest);
+      assert.equal(input.explicitStageRequest.attemptRef, 'AQ-fresh-overall-r4');
+      assert.equal(input.autoRetry, undefined);
+      f.initial.status = 'BUSY'; f.initial.nextOperation = null;
+      f.initial.stages.overall.status = 'BUSY'; f.initial.stages.overall.attemptStatus = 'RUNNING';
+      return { status: 'BUSY', operation: 'SYNTHESIZE_OVERALL', nextOperation: null, candidateOnly: true, modelCallCount: 0 };
+    },
+  };
+  assert.equal((await consumeAutomaticWorkItemQueueTick({ checkpointRoot: f.checkpointRoot }, deps)).status, 'IN_PROGRESS');
+  assert.equal(f.checkpoint.values.get('active-claim').workItemRevision, 4);
+  phase = 'overallFailure';
+  assert.equal((await consumeAutomaticWorkItemQueueTick({ checkpointRoot: f.checkpointRoot }, deps)).status, 'REQUIRES_ATTENTION');
+  assert.deepEqual(f.checkpoint.values.get('active-claim').stoppedStageRequest, {
+    ...binding(overallRequest, 'SYNTHESIZE_OVERALL'), workItemRevision: 4, attemptRef: 'AQ-overall-r4',
+  });
+  assert.equal(f.checkpoint.values.get('active-claim').stoppedWorkItemRevision, 4);
+  phase = 'freshOverall'; clock = Date.parse('2026-10-13T01:20:00.000Z');
+  f.initial.status = 'REQUIRED'; f.initial.nextOperation = 'SYNTHESIZE_OVERALL';
+  f.initial.stages.overall = { status: 'PENDING', attemptStatus: 'QUEUED', attemptRef: 'AQ-fresh-overall-r4',
+    requestId: freshOverallRequest, terminalCode: null };
+  assert.equal((await consumeAutomaticWorkItemQueueTick({ checkpointRoot: f.checkpointRoot }, deps)).status, 'IN_PROGRESS');
+  assert.deepEqual(consumed, ['jobAid', 'overallFailure', 'freshOverall']);
+  assert.equal(f.checkpoint.values.get('active-claim').consumerStopped, false);
+  assert.equal(f.checkpoint.values.get('active-claim').workItemRevision, 4);
+  assert.equal(f.checkpoint.values.get('active-claim').stoppedWorkItemRevision, 4);
+  assert.equal(f.checkpoint.values.get('active-claim').leaseGeneration, 43);
+  assert.equal(f.checkpoint.values.get('active-claim').requestId, 'REQ-original-grant');
 });
 
 for (const [name, change] of [
