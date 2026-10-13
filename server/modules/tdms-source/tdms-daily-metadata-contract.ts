@@ -4,6 +4,13 @@ import {
   COMPLETE_OWN_REQUEST_MAX_BYTES,
   validateCompleteOwnedRecord,
 } from './tdms-complete-owned-source.validation';
+import {
+  documentTargetClassificationStableProjection,
+  engineeringClassificationStableProjection,
+  validateDocumentTargetClassificationRecord,
+  validateEngineeringClassificationRecord,
+} from './tdms-current-source-classification.validation';
+import { validateCompleteOriginalPackageMarker } from './tdms-complete-original.validation';
 import type {
   TdmsCoverage,
   TdmsRecordKind,
@@ -179,6 +186,7 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
   query(
     p.query,
     completeItem ? String(object(completeItem).sourceRecordId) : undefined,
+    sourceAdapter,
   );
   const records = list(p.records, 500),
     edges = list(p.edges, 1000);
@@ -319,6 +327,8 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
               'ownedBusinessContent',
               'profileOwnedBody',
               'completeOwnedSource',
+              'documentTargetClassification',
+              'engineeringClassification',
             ]
           : []),
         ...(sourceAdapter
@@ -377,17 +387,29 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
     if (fields.attachmentObservations !== undefined)
       attachmentObservations(fields.attachmentObservations, r, p.observedAt);
     if (
+      [
+        'completeOwnedSource',
+        'documentTargetClassification',
+        'engineeringClassification',
+      ].filter((key) => fields[key] !== undefined).length > 1
+    )
+      fail('SOURCE_MODE_INVALID');
+    if (
       r.snapshotId !==
         'TDMSSNAP-' +
           hash(
             withoutTimes(
               completeOwn
                 ? completeContentIdentityProjection(r)
-                : sourceAdapter &&
-                    (fields.ownedBusinessContent !== undefined ||
-                      fields.profileOwnedBody !== undefined)
-                  ? ownedLocatorIdentity(r)
-                  : r,
+                : fields.documentTargetClassification !== undefined
+                  ? documentTargetClassificationStableProjection(r)
+                  : fields.engineeringClassification !== undefined
+                    ? engineeringClassificationStableProjection(r)
+                    : sourceAdapter &&
+                        (fields.ownedBusinessContent !== undefined ||
+                          fields.profileOwnedBody !== undefined)
+                      ? ownedLocatorIdentity(r)
+                      : r,
             ),
           ) ||
       snapshots.has(String(r.snapshotId)) ||
@@ -397,13 +419,16 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
     snapshots.set(String(r.snapshotId), String(r.sourceRecordId));
     sourceIds.add(String(r.sourceRecordId));
   }
+  const completeOriginal = Object.hasOwn(object(p.query), 'originalAcquisition')
+    ? sourceAdapter && validateCompleteOriginalPackageMarker(p)
+    : false;
   if (
     sourceAdapter &&
     records.some(
       (r) => object(object(r).rawFields).completeOwnedSource !== undefined,
     ) &&
     (records.length !== 1 ||
-      list(p.artifactBindings, 1000).length ||
+      (!completeOriginal && list(p.artifactBindings, 1000).length) ||
       object(p.coverage).status !== 'PARTIAL' ||
       object(p.coverage).readback !== 'NON_ATOMIC' ||
       !(object(p.coverage).gaps as string[]).includes(
@@ -415,6 +440,31 @@ function prepareDailyImport(raw: unknown, sourceAdapter: boolean) {
   )
     fail('COMPLETE_OWN_PACKAGE_LIMITS_REQUIRED');
   if (completeOwnPackage) validateCompleteOwnedRecord(records[0]);
+  for (const record of records) {
+    const fields = object(object(record).rawFields);
+    const classifier =
+      fields.documentTargetClassification !== undefined
+        ? 'documentTargetClassification'
+        : fields.engineeringClassification !== undefined
+          ? 'engineeringClassification'
+          : null;
+    if (!classifier) continue;
+    if (classifier === 'documentTargetClassification')
+      validateDocumentTargetClassificationRecord(record);
+    else validateEngineeringClassificationRecord(record);
+    if (
+      records.length !== 1 ||
+      edges.length ||
+      list(p.artifactBindings, 1000).length ||
+      list(p.readFailures, 1000).length ||
+      canonical(p.coverage) !== canonical(object(record).coverage) ||
+      object(p.query).scopeComplete !== false ||
+      object(p.query).scopeMatch !== 'UNKNOWN' ||
+      object(p.query).actualCriteria !== null ||
+      p.observedAt !== object(record).observedAt
+    )
+      fail('CLASSIFICATION_PACKAGE_INVALID');
+  }
   // This source mode is an independently collected owner probe, not a batch opinion approval.
   if (
     sourceAdapter &&
@@ -865,7 +915,11 @@ function coverage(value: unknown) {
   )
     fail('COMPLETE_COVERAGE_UNPROVEN');
 }
-function query(value: unknown, completeItemRef?: string) {
+function query(
+  value: unknown,
+  completeItemRef?: string,
+  sourceAdapter = false,
+) {
   const q = exact(
     value,
     [
@@ -877,6 +931,7 @@ function query(value: unknown, completeItemRef?: string) {
       'sourceFixtureSha256',
       'sixAssessmentsEvidence',
       'creatorIsNotOpinionAuthor',
+      ...(sourceAdapter ? ['originalAcquisition'] : []),
     ],
     [],
   );

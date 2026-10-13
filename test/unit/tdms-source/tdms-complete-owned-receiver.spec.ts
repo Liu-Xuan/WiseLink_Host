@@ -610,9 +610,13 @@ describe('Complete1 through the existing Daily/native transaction and exact read
   it('does not spend the core package budget on the request wrapper or admit an oversized core', () => {
     const env = syntheticCompleteEnvelope();
     env.package.readFailures = Array.from({ length: 25 }, () => ({
-      sourceRecordId: null, code: 'FAILED', detail: 'x'.repeat(80000),
+      sourceRecordId: null,
+      code: 'FAILED',
+      detail: 'x'.repeat(80000),
     }));
-    let remaining = COMPLETE_OWN_PACKAGE_MAX_BYTES + 1 -
+    let remaining =
+      COMPLETE_OWN_PACKAGE_MAX_BYTES +
+      1 -
       Buffer.byteLength(JSON.stringify(env.package));
     expect(remaining).toBeGreaterThan(0);
     for (const failure of env.package.readFailures) {
@@ -622,8 +626,12 @@ describe('Complete1 through the existing Daily/native transaction and exact read
     }
     expect(remaining).toBe(0);
     sealComplete(env);
-    expect(Buffer.byteLength(JSON.stringify(env.package))).toBe(COMPLETE_OWN_PACKAGE_MAX_BYTES + 1);
-    expect(Buffer.byteLength(JSON.stringify(env))).toBeLessThan(COMPLETE_OWN_REQUEST_MAX_BYTES);
+    expect(Buffer.byteLength(JSON.stringify(env.package))).toBe(
+      COMPLETE_OWN_PACKAGE_MAX_BYTES + 1,
+    );
+    expect(Buffer.byteLength(JSON.stringify(env))).toBeLessThan(
+      COMPLETE_OWN_REQUEST_MAX_BYTES,
+    );
     const before = JSON.stringify(env);
     expect(() => prepareTdmsDailySourceImport(env)).toThrow('TDMS_DAILY_LIMIT');
     expect(JSON.stringify(env)).toBe(before);
@@ -671,7 +679,7 @@ describe('Complete1 through the existing Daily/native transaction and exact read
         ownerSourceRecordId: r.sourceRecordId,
         sourceVersion: copyComplete(r.sourceVersion),
         sourceAttachmentId: id,
-        role: index === 2 ? 'SECONDARY' : 'PRIMARY',
+        role: index === 2 ? 'SECONDARY' : 'ORIGINAL_REFERENCE',
         filename: 'same-name.pdf',
         rawHref: '/source-attachment/' + id,
         locator: '#attachment-' + index,
@@ -763,6 +771,8 @@ describe('Complete1 through the existing Daily/native transaction and exact read
       later = copyComplete(first),
       proof = proofOf(later);
     proof.documentIdentity = 'synthetic-later-document-identity';
+    (proof.nativeReloadProvenance as any).documentIdentity =
+      proof.documentIdentity;
     (proof.requestedCriteria as any).sourceProof.operationId =
       'TDMSOP-33333333-3333-3333-3333-333333333333';
     (proof.requestedCriteria as any).expectedOwner.sourceModifiedRaw = null;

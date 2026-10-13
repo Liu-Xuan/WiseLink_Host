@@ -238,6 +238,18 @@ export interface TdmsSourcePackage {
     requestedCriteria: Record<string, unknown>;
     actualCriteria: Record<string, unknown> | null;
     scopeMatch: 'MATCHED' | 'MISMATCH' | 'UNKNOWN';
+    /** Exact source declaration retained by the Complete1 adapter; not a Host selection. */
+    originalAcquisition?: {
+      contentMode: 'COMPLETE_OWN_SOURCE@1';
+      originalRevision: 'tdms-complete-primary-bytes@1';
+      operationId: string;
+      ownOperationId: string;
+      receiptSha256: string;
+      sourceAttachmentId: string;
+      bytesSha256: string;
+      byteLength: number;
+      mediaType: string;
+    };
   };
   readFailures: Array<{
     sourceRecordId: string | null;

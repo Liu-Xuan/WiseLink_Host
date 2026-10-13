@@ -183,13 +183,22 @@ export function sourcePackage(value: unknown): TdmsSourcePackage {
   date(p.observedAt);
   coverage(p.coverage);
   const q = object(p.query);
-  strict(q, ['requestedCriteria', 'actualCriteria', 'scopeMatch']);
+  strict(q, [
+    'requestedCriteria',
+    'actualCriteria',
+    'scopeMatch',
+    'originalAcquisition',
+  ]);
   object(q.requestedCriteria);
   if (q.actualCriteria !== null) object(q.actualCriteria);
   if (!['MATCHED', 'MISMATCH', 'UNKNOWN'].includes(String(q.scopeMatch)))
     throw tdmsError('TDMS_QUERY_INVALID');
   for (const name of ['readFailures', 'records', 'relations', 'artifacts'])
-    if (!Array.isArray(p[name]) || (p[name] as unknown[]).length > 200)
+    if (
+      !Array.isArray(p[name]) ||
+      (p[name] as unknown[]).length >
+        (completeOwnPackage && name === 'relations' ? 1000 : 200)
+    )
       throw tdmsError('TDMS_PACKAGE_LIST_INVALID');
   if (
     (p.records as unknown[]).some(

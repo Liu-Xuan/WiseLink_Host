@@ -43,6 +43,13 @@ export function adaptTdmsDailySource(raw: unknown) {
       scopeMatch:
         (pkg.query.scopeMatch as 'MATCHED' | 'MISMATCH' | 'UNKNOWN') ??
         'UNKNOWN',
+      ...(Object.hasOwn(pkg.query, 'originalAcquisition')
+        ? {
+            originalAcquisition: structuredClone(
+              pkg.query.originalAcquisition,
+            ) as NonNullable<TdmsSourcePackage['query']['originalAcquisition']>,
+          }
+        : {}),
     },
     readFailures: pkg.readFailures.map((f) => ({
       ...f,

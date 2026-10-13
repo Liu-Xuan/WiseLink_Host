@@ -11,8 +11,14 @@ import {
   TDMS_SMALL_PACKAGE_MAX_BYTES,
 } from './tdms-source.validation';
 import { tdmsError } from './tdms-source.types';
+import { COMPLETE_OWN_PACKAGE_MAX_BYTES } from './tdms-complete-owned-source.validation';
+import { assertCompleteOriginalNativeArtifacts } from './tdms-complete-original.validation';
 /** Existing FileService reader budget, not a promise about real browser/provider upload capacity. */
 export const TDMS_ARTIFACT_READ_MAX_BYTES = 100 * 1024 * 1024;
+// One validated original selection and three 255-character scope identities.
+// Each selection string is bounded by identifier()/tdmsUploadPath(); JSON
+// escaping is accounted for by checking the actual serialized overhead too.
+export const TDMS_COMPLETE_ORIGINAL_FILE_WRAPPER_MAX_BYTES = 8 * 1024;
 export function tdmsUploadPath(value: unknown): string {
   const path = identifier(value).replace(/^\//u, '');
   if (
@@ -25,7 +31,9 @@ export function fileServiceImport(value: unknown): TdmsFileServiceImport {
   const serialized = JSON.stringify(value);
   if (
     !serialized ||
-    Buffer.byteLength(serialized) > TDMS_SMALL_PACKAGE_MAX_BYTES
+    Buffer.byteLength(serialized) >
+      COMPLETE_OWN_PACKAGE_MAX_BYTES +
+        TDMS_COMPLETE_ORIGINAL_FILE_WRAPPER_MAX_BYTES
   )
     throw tdmsError('TDMS_SMALL_PACKAGE_LIMIT');
   const envelope = object(value);
@@ -39,6 +47,15 @@ export function fileServiceImport(value: unknown): TdmsFileServiceImport {
   for (const key of ['sourceKey', 'sourceInstanceId', 'scopeId'])
     identifier(envelope[key]);
   const packet = sourcePackage(envelope.package);
+  const original = assertCompleteOriginalNativeArtifacts(packet);
+  const totalSize = Buffer.byteLength(serialized);
+  if (
+    original
+      ? totalSize - Buffer.byteLength(JSON.stringify(envelope.package)) >
+        TDMS_COMPLETE_ORIGINAL_FILE_WRAPPER_MAX_BYTES
+      : totalSize > TDMS_SMALL_PACKAGE_MAX_BYTES
+  )
+    throw tdmsError('TDMS_SMALL_PACKAGE_LIMIT');
   if (
     packet.artifacts.length ||
     packet.records.some((r) => r.artifactMemberIds.length)

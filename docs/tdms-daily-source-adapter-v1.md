@@ -15,7 +15,7 @@ IDs, never DM document-version IDs. Original source/business versions, authors,
 locators, order, nulls, coverage and unknown query scope remain in the envelope.
 The adapter explicitly rejects unsupported fields or limits; it does not trim a
 package to its authorized subset. Existing limits (512 KiB and the native list
-limits) remain enforced.
+limits) remain enforced outside the explicit Complete1 modes below.
 
 The source form mode `wiselink.tdms-owned-visible-business-content.v1` with
 `tdms-independent-content-profiles@1` is an independently collected owner probe.
@@ -99,15 +99,15 @@ instead of choosing one; this candidate does not change that v1 readback boundar
 The current own DTO also requires `technicalVersionFieldEvidence` separately
 from a supported engineering header's `technicalVersionEvidence`. Engineering
 own input retains its `classificationOperationId` for directory or required
-relation targets; this does not authorize or
-admit a separate classification package. Single-aircraft status accepts the
+relation targets. This proof is retained independently from a classification
+observation and grants no source admission. Single-aircraft status accepts the
 concrete native class evidence, and feedback keeps its exact native header/type
 binding. Related-status column tokens and optional native status enumeration
 proof are validated against their exact owner/version, counts and target links.
 Execution dates and feedback references in that proof remain raw source
 evidence, including TBD execution dates; they do not make execution verified.
 
-The own-part stays one record, `PARTIAL` / `NON_ATOMIC`, with an unknown query
+The ordinary own-part stays one record, `PARTIAL` / `NON_ATOMIC`, with an unknown query
 scope, no artifact bindings, and `COMPLETION_CERTIFICATE_NOT_ISSUED`. It neither
 issues a composite source-completion certificate nor approves opinions or
 execution. `Estimating` opinion fields must remain `NOT_APPLICABLE` with null
@@ -131,3 +131,49 @@ window or original relationship is cropped into a successful import. Source auth
 transport still require the independent server bindings described above. An
 attachment listed in the own read is source metadata, not collected original
 bytes or a formal DM document version.
+
+## Frozen 0.2.54 wire alignment
+
+The current pure Complete1 DTO retains required `nativeReloadProvenance`, the
+PRIMARY metadata observation, parent `linkIndex`, optional required-document
+classification operation, native document header version and reviewed own-field
+roles. A reload must replace the native document, bypass cache, settle twice and
+finish before the source observation. Reload evidence remains in the saved
+envelope and digest; only its comparison projection omits it. Reviewed user and
+context references retain their raw own-field occurrences without emitting
+business edges. Unknown field roles stay unknown. The native `已批准` state can
+retain an own assessment literal, without mapping it to an adopted opinion.
+
+`documentTargetClassification` and `engineeringClassification` validate their
+own two native reads, exact owner/proof/version/context, disposition and snapshot
+projection. Their native kinds are `OBSERVATION` and `ENGINEERING_FILE`,
+respectively. Each is one `PARTIAL` / `NON_ATOMIC` observation with empty content,
+edges and artifacts and `OWN_COMPLETE_CONTENT_NOT_READ`. An in-scope or
+out-of-scope classifier result is not foreign complete content, source authority
+or an inventory/completion certificate. Other unimplemented raw-field modes are
+still rejected.
+
+Only the typed `query.originalAcquisition` Complete1 branch permits one exact
+PRIMARY binding for a declared owner/version. Its operation and receipt hash
+remain source claims, not Host verification of those runtime operations. Native
+Format Name selects PDF, ZIP, DOCX, XLSX or PPTX; filename suffixes do not select a
+format. The marker, owner snapshot, ApplicationData identity, format, SHA,
+length and binding version must agree. Ordinary own observations still forbid
+artifacts. The adapter retains the marker through the normal FileService
+selection path; the independent `resolveDailySelection` and current object/byte
+verification are required. No formal document, parsing, model or adoption is
+invoked.
+
+Complete1 native relations permit 1000 edges to match the unchanged daily outer
+limit; other native lists remain at 200. The validated derived-original
+FileService core keeps its 2 MiB bound with at most 8 KiB of measured wrapper
+overhead. The existing 100 MiB artifact-read budget remains unchanged. Other
+modes retain their 512 KiB envelope and native relation limit of 200. Payloads
+are rejected at their limits without trimming evidence.
+
+This local alignment does not install 0.2.54, bind the default closed authority,
+provide an authenticated collector receiver/session, select a FileService
+object or prove `HostReceived`. The frozen v1 routes, ten-key receipt, SourceRef
+readback, five-key sourceContext, current ACL/member checks, native head CAS and
+GLM profile remain unchanged. Activation and real source acceptance still
+require those independent bindings and actual source samples.

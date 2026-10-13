@@ -1,4 +1,5 @@
 import { hash } from '../../../server/modules/tdms-source/tdms-source.validation';
+import { createHash } from 'node:crypto';
 import type { TdmsDailyMetadataEnvelope } from '../../../server/modules/tdms-source/tdms-daily-metadata-contract';
 
 // Independently synthetic DTO literals. No collector, source original or authority execution.
@@ -15,6 +16,27 @@ const declared = () => ({
 });
 const observationTime = '2026-10-13T00:00:00.000Z';
 const profiles = {
+  SB: [
+    'MANUFACTURER_FILE',
+    'wt.doc.WTDocument',
+    'WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument',
+    'SB文档',
+    false,
+  ],
+  SL: [
+    'MANUFACTURER_FILE',
+    'wt.doc.WTDocument',
+    'WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument',
+    'SB文档',
+    false,
+  ],
+  AD: [
+    'MANUFACTURER_FILE',
+    'wt.doc.WTDocument',
+    'WCTYPE|wt.doc.WTDocument|com.airchina.ADDocument',
+    'AD文档',
+    true,
+  ],
   SB_PROCESSING_FORM: [
     'PROCESSING_SHEET',
     'wt.change2.WTChangeRequest2',
@@ -88,6 +110,7 @@ export function completeComparison(value: unknown): unknown {
               'itemId',
               'snapshotId',
               'lastSeenAt',
+              'nativeReloadProvenance',
             ].includes(k),
         )
         .map(([k, x]) => [k, completeComparison(x)]),
@@ -129,14 +152,26 @@ export function sealComplete(env: TdmsDailyMetadataEnvelope) {
     delete proof.documentIdentity;
     delete proof.requestedCriteria.sourceProof;
     delete proof.requestedCriteria.expectedOwner;
-    for (const read of proof.reads)
+    for (const read of proof.reads) {
       read.sourceContext = {
         sourceInstanceOrigin: read.sourceContext.sourceInstanceOrigin,
       };
+      const type = read.owner.nativeTypeEvidence;
+      if (
+        read.owner.scopeEvidence.nativeTypeOrigin === 'CURRENT_DIRECTORY' &&
+        type.actualLabel === 'Bound directory nativeTypeId' &&
+        /^CURRENT_DIRECTORY:TDMSOP-[A-F0-9-]{36}$/u.test(type.locator)
+      )
+        type.locator = 'CURRENT_DIRECTORY:CURRENT_CAPTURE';
+    }
     for (const occurrence of proof.targetOccurrences)
       if (occurrence.origin === 'OWN_FIELD') {
         occurrence.tableId =
-          'OWN_FIELD:' + hash(occurrence.fieldId).slice(0, 32);
+          'OWN_FIELD:' +
+          createHash('sha256')
+            .update(occurrence.fieldId)
+            .digest('hex')
+            .slice(0, 32);
         occurrence.occurrenceId =
           'OWN_FIELD:' +
           hash([
@@ -162,7 +197,9 @@ export function syntheticCompleteEnvelope(
     scopeId,
   );
   const engineering = scopeId === 'EO';
-  const sourceVersion = related || engineering ? declared() : unknownVersion();
+  const document = ['SB', 'SL', 'AD'].includes(scopeId);
+  const sourceVersion =
+    related || engineering || document ? declared() : unknownVersion();
   const input = {
     scopeId,
     profileRevision: 'tdms-complete-owned-profiles@1',
@@ -184,6 +221,7 @@ export function syntheticCompleteEnvelope(
           parentSourceVersion: declared(),
           tableId: 'synthetic-parent-table',
           occurrenceId: 'synthetic-row',
+          linkIndex: 0,
           targetRef: ref,
         }
       : {
@@ -219,14 +257,24 @@ export function syntheticCompleteEnvelope(
       nativeTypeId,
       '#type',
     ),
-    rawHeaderIdentifier: number + ', ' + (engineering ? 'A.1' : header),
+    rawHeaderIdentifier:
+      number +
+      ', ' +
+      (engineering ? 'A.1' : header) +
+      (document ? ', A.1' : ''),
     rawHeaderType: header,
     sourceVersion,
     technicalVersionEvidence: value(
-      related || engineering ? 'VALUE' : 'ABSENT',
-      engineering ? 'Publication Source' : 'Version:',
-      related || engineering ? 'A.1' : null,
-      engineering ? '#infoPageIdentityObjectIdentifier' : '#version',
+      related || engineering || document ? 'VALUE' : 'ABSENT',
+      engineering
+        ? 'Publication Source'
+        : document
+          ? 'Document Header Version'
+          : 'Version:',
+      related || engineering || document ? 'A.1' : null,
+      engineering || document
+        ? '#infoPageIdentityObjectIdentifier'
+        : '#version',
     ),
     technicalVersionFieldEvidence: value(
       related ? 'VALUE' : 'ABSENT',
@@ -251,7 +299,7 @@ export function syntheticCompleteEnvelope(
     contextRaw: null,
     scopeEvidence: {
       nativeTypeOrigin: input.sourceProof.kind,
-      businessType: null,
+      businessType: document && scopeId !== 'AD' ? scopeId : null,
       engineeringSubtype: engineering ? 'EO' : null,
       rawTypeField: null,
     },
@@ -353,7 +401,8 @@ export function syntheticCompleteEnvelope(
     'COMPLETION_CERTIFICATE_NOT_ISSUED',
   ];
   if (nativeTypeId === null) gaps.push('NATIVE_TYPE_UNOBSERVED');
-  if (!related && !engineering) gaps.push('TECHNICAL_VERSION_UNCONFIRMED');
+  if (!related && !engineering && !document)
+    gaps.push('TECHNICAL_VERSION_UNCONFIRMED');
   if (layoutPending) gaps.push('OWN_LAYOUT_REPRESENTATIVE_PENDING');
   gaps.push('OWN_CONTENT_UNREAD');
   const coverage = { status: 'PARTIAL', gaps, readback: 'NON_ATOMIC' };
@@ -364,6 +413,18 @@ export function syntheticCompleteEnvelope(
     profileRevision: input.profileRevision,
     requestedCriteria: input,
     documentIdentity: 'synthetic-document-identity',
+    nativeReloadProvenance: {
+      schemaVersion: 'wiselink.tdms-native-document-reload.v1',
+      sourceRecordId: ref,
+      beforeDocumentIdentity: 'synthetic-previous-document',
+      documentIdentity: 'synthetic-document-identity',
+      trigger: 'CHROME_TABS_RELOAD',
+      cacheMode: 'BYPASS_CACHE',
+      frameId: 0,
+      settledReads: 2,
+      requestedAt: observationTime,
+      settledAt: observationTime,
+    },
     reads: [copyComplete(read), copyComplete(read)],
     targetOccurrences: [],
   };

@@ -1,14 +1,17 @@
+// Current pure DTO basis: TDMS final 0.2.54/runtime 174f1d555502880a.
+// Producer admission/runtime/completion orchestration is not copied into Host.
+import {
+  classifyOwnFieldReference,
+  OWN_OUT_OF_SCOPE_NATIVE_CLASSES,
+} from './tdms-own-reference-models';
+import { isNativeReloadProvenance } from './tdms-native-reload-provenance';
+import { assertCompleteOriginalNativeArtifacts } from './tdms-complete-original.validation';
 import { createHash } from 'node:crypto';
 import { tdmsError } from './tdms-source.types';
-
 export const COMPLETE_OWN_OBSERVATION_MAX_BYTES = 850 * 1024;
 export const COMPLETE_OWN_PACKAGE_MAX_BYTES = 2 * 1024 * 1024;
-// The fixed TDMSIMPORT-<sha256> request wrapper adds 102 bytes outside the package.
 export const COMPLETE_OWN_REQUEST_MAX_BYTES =
   COMPLETE_OWN_PACKAGE_MAX_BYTES + 128;
-
-// Complete1 is a retained own-part observation. Native scope/member authorization
-// remains in TdmsSourceService; this validator grants no source or execution rights.
 const stable = (value) =>
   value === null || typeof value !== 'object'
     ? JSON.stringify(value)
@@ -21,7 +24,13 @@ const stable = (value) =>
           .join(',') +
         '}';
 const sha256 = (value) =>
-  createHash('sha256').update(stable(value)).digest('hex');
+  createHash('sha256')
+    .update(
+      typeof value === 'string' || Buffer.isBuffer(value)
+        ? value
+        : stable(value),
+    )
+    .digest('hex');
 const fail = (code) => {
   throw tdmsError(code);
 };
@@ -69,7 +78,7 @@ const version = (v, { business = false } = {}) => {
   )
     fail('TDMS_COMPLETE_OWN_VERSION_INVALID');
 };
-function plainData(raw, { maxBytes = 512 * 1024 } = {}) {
+function plainData(raw, { maxBytes = COMPLETE_OWN_PACKAGE_MAX_BYTES } = {}) {
   let visits = 0;
   const walk = (v, depth = 0) => {
     if (++visits > 50000 || depth > 25) fail('TDMS_COMPLETE_OWN_LIMIT');
@@ -157,7 +166,6 @@ const withoutTimes = (value) =>
       : value;
 const snapshotIdentity = (r) =>
   'TDMSSNAP-' + sha256(completeContentIdentityProjection(r));
-
 function normalizeCompleteCaptureLocators(value, key = '') {
   if (Array.isArray(value))
     return value.map((v) => normalizeCompleteCaptureLocators(v, key));
@@ -201,11 +209,19 @@ export function completeContentIdentityProjection(record) {
       delete proof.requestedCriteria.sourceProof;
       delete proof.requestedCriteria.expectedOwner;
     }
-    for (const read of proof.reads)
+    for (const read of proof.reads) {
       if (read.sourceContext)
         read.sourceContext = {
           sourceInstanceOrigin: read.sourceContext.sourceInstanceOrigin,
         };
+      const type = read.owner?.nativeTypeEvidence;
+      if (
+        read.owner?.scopeEvidence?.nativeTypeOrigin === 'CURRENT_DIRECTORY' &&
+        type?.actualLabel === 'Bound directory nativeTypeId' &&
+        /^CURRENT_DIRECTORY:TDMSOP-[A-F0-9-]{36}$/u.test(type.locator || '')
+      )
+        type.locator = 'CURRENT_DIRECTORY:CURRENT_CAPTURE';
+    }
     for (const occurrence of proof.targetOccurrences || [])
       if (occurrence.origin === 'OWN_FIELD') {
         occurrence.tableId =
@@ -221,8 +237,6 @@ export function completeContentIdentityProjection(record) {
   }
   return value;
 }
-
-// Explicit revision: legacy profiles never acquire these capabilities implicitly.
 export const COMPLETE_OWN_PROFILE_REVISION = 'tdms-complete-owned-profiles@1';
 const form = (
   objectType,
@@ -306,6 +320,7 @@ const doc = {
   detailLabel: 'Details',
   detailPanel: '#infoPage_myTab_object_docInfoDefaultDetails',
   relationTables: sbRelations,
+  ownDocumentHeaderVersionSlot: true,
 };
 const engineering = {
   objectType: 'EO整体',
@@ -485,9 +500,6 @@ export function completeOwnProfile(scopeId) {
     });
   return p;
 }
-
-// Displayed native TDMS account evidence proves only the source browser session;
-// it neither delegates Host authority nor substitutes a local controller owner.
 export function validateCompleteSourceContext(raw) {
   const v = plainData(raw);
   assertKeys(v, [
@@ -560,7 +572,13 @@ export function completeOwnedStableProjection(v) {
     Object.entries(v)
       .filter(
         ([k]) =>
-          !['observedAt', 'settledAt', 'windows', 'treeExpansions'].includes(k),
+          ![
+            'observedAt',
+            'settledAt',
+            'windows',
+            'treeExpansions',
+            'nativeReloadProvenance',
+          ].includes(k),
       )
       .map(([k, x]) => [k, completeOwnedStableProjection(x)]),
   );
@@ -615,6 +633,7 @@ export function validateRequiredTargetSourceProof(
     'parentSourceVersion',
     'tableId',
     'occurrenceId',
+    'linkIndex',
     'targetRef',
   ];
   assertKeys(
@@ -628,6 +647,12 @@ export function validateRequiredTargetSourceProof(
     !/^TDMSSNAP-[a-f0-9]{64}$/u.test(v.parentSnapshotId || '') ||
     v.targetRef !== targetRef ||
     (classificationRequired && !OP.test(v.classificationOperationId || ''))
+  )
+    fail('TDMS_COMPLETE_OWN_PARENT_REQUIRED');
+  if (
+    !Number.isSafeInteger(v.linkIndex) ||
+    v.linkIndex < 0 ||
+    v.linkIndex >= 30
   )
     fail('TDMS_COMPLETE_OWN_PARENT_REQUIRED');
   ref(v.parentSourceRecordId);
@@ -661,7 +686,10 @@ function sourceProof(v, p, input) {
       fail('TDMS_COMPLETE_OWN_DIRECTORY_REQUIRED');
   } else if (v?.kind === 'REQUIRED_RELATION_TARGET')
     validateRequiredTargetSourceProof(v, input.sourceObjectRef, {
-      classificationRequired: !!p.engineeringSubtype,
+      classificationRequired:
+        !!p.engineeringSubtype ||
+        (p.nativeClass === 'wt.doc.WTDocument' &&
+          Object.hasOwn(v, 'classificationOperationId')),
     });
   else fail('TDMS_COMPLETE_OWN_SOURCE_PROOF_REQUIRED');
 }
@@ -859,6 +887,19 @@ export function validateCompleteOwnedOwner(
       (field.state === 'VALUE' && field.rawValue !== evidence.rawValue)
     )
       fail('TDMS_COMPLETE_OWN_VERSION_INVALID');
+  } else if (evidence.actualLabel === 'Document Header Version') {
+    const parts = o.rawHeaderIdentifier.split(',').map((v) => v.trim());
+    if (
+      !p.ownDocumentHeaderVersionSlot ||
+      evidence.locator !== '#infoPageIdentityObjectIdentifier' ||
+      evidence.state !== 'VALUE' ||
+      parts.length !== 3 ||
+      parts[0] !== o.number ||
+      !parts[1] ||
+      parts[2] !== evidence.rawValue ||
+      (field.state === 'VALUE' && field.rawValue !== evidence.rawValue)
+    )
+      fail('TDMS_COMPLETE_OWN_VERSION_INVALID');
   } else if (stable(evidence) !== stable(field))
     fail('TDMS_COMPLETE_OWN_VERSION_INVALID');
   if (
@@ -990,7 +1031,7 @@ function validateRoster(read, input) {
     )
       fail('TDMS_COMPLETE_OWN_EDITABLE_FIELD_REJECTED');
     if (
-      !['Approved', 'Estimated'].includes(read.owner.stateRaw) &&
+      !['Approved', '已批准', 'Estimated'].includes(read.owner.stateRaw) &&
       /评估意见|Assessment Opinion/iu.test(f.value.actualLabel) &&
       (f.value.state !== 'NOT_APPLICABLE' || f.value.rawValue !== null)
     )
@@ -1001,16 +1042,30 @@ function validateRoster(read, input) {
       );
   }
   for (const a of read.attachments) {
-    assertKeys(a, [
-      'ownerSourceRecordId',
-      'sourceVersion',
-      'sourceAttachmentId',
-      'role',
-      'filename',
-      'rawHref',
-      'locator',
-      'state',
-    ]);
+    assertKeys(
+      a,
+      [
+        'ownerSourceRecordId',
+        'sourceVersion',
+        'sourceAttachmentId',
+        'role',
+        'filename',
+        'rawHref',
+        'locator',
+        'state',
+        'primaryMetadata',
+      ],
+      [
+        'ownerSourceRecordId',
+        'sourceVersion',
+        'sourceAttachmentId',
+        'role',
+        'filename',
+        'rawHref',
+        'locator',
+        'state',
+      ],
+    );
     if (
       a.ownerSourceRecordId !== input.sourceObjectRef ||
       stable(a.sourceVersion) !== stable(read.owner.sourceVersion) ||
@@ -1020,6 +1075,86 @@ function validateRoster(read, input) {
     for (const k of ['role', 'locator']) text(a[k], 500);
     for (const k of ['sourceAttachmentId', 'filename', 'rawHref'])
       if (a[k] !== null) text(a[k], 2000);
+    if (a.role === 'PRIMARY') {
+      const evidence = a.primaryMetadata,
+        keys = [
+          'sourceAttachmentId',
+          'role',
+          'filename',
+          'format',
+          'sizeRaw',
+          'ownerTechnicalVersion',
+          'ownerBusinessVersion',
+          'observedAt',
+          'evidenceLocator',
+          'bytesCollected',
+        ],
+        markerKeys = ['metadataRevision', 'metadataState', 'metadataGapCodes'];
+      assertKeys(evidence, [...keys, ...markerKeys], keys);
+      const marked = Object.hasOwn(evidence, 'metadataRevision');
+      if (marked) {
+        if (
+          evidence.metadataRevision !== COMPLETE_PRIMARY_METADATA_REVISION ||
+          !['VALUE', 'NOT_READ'].includes(evidence.metadataState) ||
+          a.state !== evidence.metadataState
+        )
+          fail('TDMS_COMPLETE_OWN_PRIMARY_METADATA_UNVERIFIED');
+        array(evidence.metadataGapCodes, 6);
+        if (
+          new Set(evidence.metadataGapCodes).size !==
+            evidence.metadataGapCodes.length ||
+          evidence.metadataGapCodes.some(
+            (code) => !/^TDMS_COMPLETE_PRIMARY_[A-Z_]+$/u.test(code),
+          ) ||
+          (evidence.metadataState === 'VALUE' &&
+            evidence.metadataGapCodes.length) ||
+          (evidence.metadataState === 'NOT_READ' &&
+            !evidence.metadataGapCodes.length)
+        )
+          fail('TDMS_COMPLETE_OWN_PRIMARY_METADATA_UNVERIFIED');
+      } else if (
+        markerKeys.some((k) => Object.hasOwn(evidence, k)) ||
+        a.state !== 'VALUE'
+      )
+        fail('TDMS_COMPLETE_OWN_PRIMARY_METADATA_UNVERIFIED');
+      if (
+        !['SB文档', 'AD文档'].includes(read.owner.rawHeaderType) ||
+        a.rawHref !== null ||
+        evidence.role !== 'PRIMARY' ||
+        evidence.sourceAttachmentId !== a.sourceAttachmentId ||
+        evidence.filename !== a.filename ||
+        evidence.evidenceLocator !== a.locator ||
+        evidence.bytesCollected !== false ||
+        stable(evidence.ownerTechnicalVersion) !==
+          stable(read.owner.sourceVersion) ||
+        stable(evidence.ownerBusinessVersion) !==
+          stable(read.owner.businessVersion)
+      )
+        fail('TDMS_COMPLETE_OWN_PRIMARY_METADATA_UNVERIFIED');
+      if (a.state === 'VALUE') {
+        if (
+          !/^OR:wt\.content\.ApplicationData:\d{1,24}$/u.test(
+            a.sourceAttachmentId || '',
+          )
+        )
+          fail('TDMS_COMPLETE_OWN_PRIMARY_METADATA_UNVERIFIED');
+        for (const key of ['filename', 'format', 'sizeRaw'])
+          text(evidence[key], 700);
+      } else {
+        if (
+          a.sourceAttachmentId !== null &&
+          !/^OR:wt\.content\.ApplicationData:\d{1,24}$/u.test(
+            a.sourceAttachmentId || '',
+          )
+        )
+          fail('TDMS_COMPLETE_OWN_PRIMARY_METADATA_UNVERIFIED');
+        for (const key of ['filename', 'format', 'sizeRaw'])
+          if (evidence[key] !== null) text(evidence[key], 700);
+      }
+      text(evidence.evidenceLocator, 700);
+      iso(evidence.observedAt);
+    } else if (a.primaryMetadata !== undefined)
+      fail('TDMS_COMPLETE_OWN_PRIMARY_METADATA_UNVERIFIED');
   }
   assertKeys(read.rosterEvidence, [
     'tabRosterSource',
@@ -1085,7 +1220,12 @@ function validateRawLink(l) {
     ['rawHref', 'targetRef', 'numberRaw', 'nativeRole', 'locator'],
   );
   text(l.rawHref, 2000);
-  if (l.targetRef !== null) ref(l.targetRef);
+  if (
+    l.targetRef !== null &&
+    !REF.test(l.targetRef || '') &&
+    !RAW_REFERENCE.test(l.targetRef || '')
+  )
+    fail('TDMS_COMPLETE_OWN_REF_INVALID');
   if (typeof l.numberRaw !== 'string' || l.numberRaw.length > 500)
     fail('TDMS_COMPLETE_OWN_LINK_INVALID');
   text(l.nativeRole, 120);
@@ -1475,11 +1615,12 @@ function validateRead(r, input) {
 }
 export function validateCompleteOwnedObservation(raw, rawInput) {
   const input = validateCompleteOwnedInput(rawInput),
-    v = plainData(raw, { maxBytes: COMPLETE_OWN_OBSERVATION_MAX_BYTES });
+    v = plainData(raw, { maxBytes: 850 * 1024 });
   assertKeys(v, [
     'schemaVersion',
     'requestedCriteria',
     'documentIdentity',
+    'nativeReloadProvenance',
     'reads',
   ]);
   if (
@@ -1491,6 +1632,14 @@ export function validateCompleteOwnedObservation(raw, rawInput) {
   array(v.reads, 2);
   if (v.reads.length !== 2) fail('TDMS_COMPLETE_OWN_DOUBLE_READ_REQUIRED');
   for (const r of v.reads) validateRead(r, input);
+  if (
+    !isNativeReloadProvenance(v.nativeReloadProvenance, {
+      sourceRecordId: input.sourceObjectRef,
+      documentIdentity: v.documentIdentity,
+      observedAt: v.reads[0].owner.observedAt,
+    })
+  )
+    fail('TDMS_COMPLETE_OWN_FRESH_RELOAD_REQUIRED');
   if (
     Date.parse(v.reads[0].observedAt) >
       Date.parse(v.reads[1].owner.observedAt) ||
@@ -1550,6 +1699,11 @@ export function completeOwnedTargetOccurrences(observation) {
   for (const f of read.fields)
     for (const [index, link] of f.links.entries()) {
       if (!link.targetRef) continue;
+      const model = classifyOwnFieldReference({
+        scopeId: observation.requestedCriteria.scopeId,
+        fieldActualLabel: f.value.actualLabel,
+        targetRef: link.targetRef,
+      });
       out.push({
         origin: 'OWN_FIELD',
         tableId: 'OWN_FIELD:' + sha256(f.fieldId).slice(0, 32),
@@ -1558,8 +1712,8 @@ export function completeOwnedTargetOccurrences(observation) {
         targetRef: link.targetRef,
         numberRaw: link.numberRaw,
         rawHref: link.rawHref,
-        relationshipRole: 'UNKNOWN',
-        modelRoleOrigin: 'UNREVIEWED_OWN_FIELD',
+        relationshipRole: model.relationshipRole,
+        modelRoleOrigin: model.modelRoleOrigin,
         rawRole: f.value.actualLabel,
         nativeLinkRole: link.nativeRole,
         nativeColumnLabel: null,
@@ -1568,7 +1722,7 @@ export function completeOwnedTargetOccurrences(observation) {
         fieldActualLabel: f.value.actualLabel,
         tabId: f.tabId,
         sectionId: f.sectionId,
-        direction: 'UNKNOWN',
+        direction: model.direction,
         rawDirection: null,
         treePath: [],
         nativeRelationId: null,
@@ -1596,6 +1750,8 @@ export function completeOwnedRecord(raw, rawInput) {
     gaps.push('TECHNICAL_VERSION_UNCONFIRMED');
   if (read.relationTables.some((t) => t.enumerationState !== 'VALUE'))
     gaps.push('RELATION_ENUMERATION_UNVERIFIED');
+  if (read.attachments.some((a) => a.role === 'PRIMARY' && a.state !== 'VALUE'))
+    gaps.push('PRIMARY_METADATA_UNVERIFIED');
   if (read.rosterEvidence.layoutEvidencePending)
     gaps.push('OWN_LAYOUT_REPRESENTATIVE_PENDING');
   if (
@@ -1634,6 +1790,7 @@ export function completeOwnedRecord(raw, rawInput) {
         profileRevision: input.profileRevision,
         requestedCriteria: input,
         documentIdentity: o.documentIdentity,
+        nativeReloadProvenance: o.nativeReloadProvenance,
         reads: o.reads,
         targetOccurrences: completeOwnedTargetOccurrences(o),
       },
@@ -1661,6 +1818,7 @@ export function validateCompleteOwnedRecord(record) {
     'profileRevision',
     'requestedCriteria',
     'documentIdentity',
+    'nativeReloadProvenance',
     'reads',
     'targetOccurrences',
   ]);
@@ -1669,6 +1827,7 @@ export function validateCompleteOwnedRecord(record) {
       schemaVersion: proof.schemaVersion,
       requestedCriteria: proof.requestedCriteria,
       documentIdentity: proof.documentIdentity,
+      nativeReloadProvenance: proof.nativeReloadProvenance,
       reads: proof.reads,
     },
     proof.requestedCriteria,
@@ -1696,6 +1855,10 @@ export function isCompleteOwnedObservedEdge(edge, owner) {
     edge.confidence === 'observed_unresolved' &&
     p.targetOccurrences.some(
       (t) =>
+        !(
+          t.origin === 'OWN_FIELD' &&
+          t.relationshipRole === 'OUT_OF_SCOPE_REFERENCE'
+        ) &&
         t.targetRef === edge.toSourceRecordId &&
         t.tableId === edge.relationKind &&
         t.locator === edge.evidenceLocator,
@@ -1775,7 +1938,6 @@ function validateCompleteStructuralRosters(read) {
   )
     fail('TDMS_COMPLETE_OWN_STRUCTURAL_ROSTER_MISSING');
 }
-
 export function validateReusedEngineeringStatusTable(raw, owner) {
   const t = plainData(raw);
   assertKeys(t, [
@@ -1843,7 +2005,6 @@ export function validateReusedEngineeringStatusTable(raw, owner) {
   }
   return t;
 }
-
 export function hasCompleteOwnedSource(record) {
   return (
     record?.rawFields?.completeOwnedSource !== undefined ||
@@ -1857,7 +2018,11 @@ export function completeOwnedNativeKind(kind) {
     ? 'OBSERVATION'
     : kind;
 }
-export function validateCompleteOwnedNativeRecord(r, packageObservedAt) {
+export function validateCompleteOwnedNativeRecord(
+  r,
+  packageObservedAt,
+  original = false,
+) {
   const proof = plainData(r.rawFields.completeOwnedSource, {
     maxBytes: COMPLETE_OWN_PACKAGE_MAX_BYTES,
   });
@@ -1866,7 +2031,7 @@ export function validateCompleteOwnedNativeRecord(r, packageObservedAt) {
     r.recordKind !== completeOwnedNativeKind(profile.kind) ||
     r.authors.length ||
     r.sourceModifiedAt !== null ||
-    r.artifactMemberIds.length ||
+    (original ? r.artifactMemberIds.length > 1 : r.artifactMemberIds.length) ||
     r.unreadAttachments?.length ||
     r.relatedDocumentVersionIds.length ||
     r.formalDocumentArtifactMemberId != null
@@ -1898,7 +2063,9 @@ export function validateCompleteOwnedNativeRecord(r, packageObservedAt) {
   validateCompleteOwnedRecord(sourceRecord);
   if (
     stable(r.fileType) !== stable(r.rawFields.storageType) ||
-    packageObservedAt !== r.observedAt
+    (original
+      ? Date.parse(packageObservedAt) < Date.parse(r.observedAt)
+      : packageObservedAt !== r.observedAt)
   )
     fail('TDMS_COMPLETE_OWN_NATIVE_BINDING_INVALID');
 }
@@ -1906,6 +2073,12 @@ export function completeOwnedObservedEdges(r) {
   const edges = [],
     seen = new Set();
   for (const occurrence of r.rawFields.completeOwnedSource.targetOccurrences) {
+    if (
+      !REF.test(occurrence.targetRef) ||
+      (occurrence.origin === 'OWN_FIELD' &&
+        occurrence.relationshipRole === 'OUT_OF_SCOPE_REFERENCE')
+    )
+      continue;
     const edge = {
       fromSourceRecordId: r.sourceRecordId,
       toSourceRecordId: occurrence.targetRef,
@@ -1927,10 +2100,13 @@ export function completeOwnedObservedEdges(r) {
 }
 export function assertCompleteOwnedNativePackage(p) {
   const own = p.records.filter(hasCompleteOwnedSource);
+  if (!own.length && Object.hasOwn(p.query || {}, 'originalAcquisition'))
+    fail('TDMS_COMPLETE_ORIGINAL_PACKAGE_MARKER_INVALID');
   if (!own.length) return;
+  const original = Object.hasOwn(p.query || {}, 'originalAcquisition');
   if (
     p.records.length !== 1 ||
-    p.artifacts.length ||
+    (!original && p.artifacts.length) ||
     p.coverage.status !== 'PARTIAL' ||
     p.coverage.readback !== 'NON_ATOMIC' ||
     !p.coverage.gaps.includes('COMPLETION_CERTIFICATE_NOT_ISSUED') ||
@@ -1939,7 +2115,8 @@ export function assertCompleteOwnedNativePackage(p) {
   )
     fail('TDMS_COMPLETE_OWN_PACKAGE_LIMITS_REQUIRED');
   const r = own[0];
-  validateCompleteOwnedNativeRecord(r, p.observedAt);
+  validateCompleteOwnedNativeRecord(r, p.observedAt, original);
+  if (original) assertCompleteOriginalNativeArtifacts(p);
   if (stable(p.coverage) !== stable(r.coverage))
     fail('TDMS_COMPLETE_OWN_PACKAGE_BINDING_INVALID');
   const wanted = completeOwnedObservedEdges(r);
@@ -1975,3 +2152,26 @@ export function assertCompleteOwnedNativePackage(p) {
       fail('TDMS_COMPLETE_OWN_RELATIONS_INVALID');
   }
 }
+export const COMPLETE_PRIMARY_METADATA_REVISION =
+  'tdms-complete-owned-primary-metadata@1';
+const RAW_REFERENCE = new RegExp(
+  '^(?:OR|VR):(?:' +
+    OWN_OUT_OF_SCOPE_NATIVE_CLASSES.map((c) => c.replaceAll('.', '\\.')).join(
+      '|',
+    ) +
+    '):\\d{1,24}$',
+  'u',
+);
+
+export {
+  stable,
+  sha256,
+  fail,
+  assertKeys,
+  text,
+  iso,
+  version,
+  plainData,
+  withoutTimes,
+  snapshotIdentity,
+};

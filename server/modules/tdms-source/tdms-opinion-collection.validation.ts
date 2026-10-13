@@ -2,6 +2,10 @@ import {
   hasCompleteOwnedSource,
   assertCompleteOwnedNativePackage,
 } from './tdms-complete-owned-source.validation';
+import {
+  assertNativeClassificationPackage,
+  hasNativeClassification,
+} from './tdms-current-source-classification.validation';
 import type {
   TdmsCoverage,
   TdmsPackageRecord,
@@ -421,6 +425,7 @@ export function createOpinionCollectionIngress({
     coverage: TdmsCoverage;
   }): void {
     assertCompleteOwnedNativePackage(p);
+    assertNativeClassificationPackage(p);
     const bounded = p.records.some(
       (r) =>
         r.rawFields.profileOwnedBody !== undefined ||
@@ -461,7 +466,11 @@ export function createOpinionCollectionIngress({
       throw tdmsError('TDMS_OWN_VISIBLE_SOURCE_PROOF_INVALID');
     const owned = new Set<string>();
     for (const r of p.records) {
-      if (hasCompleteOwnedSource(r)) continue;
+      if (hasCompleteOwnedSource(r)) {
+        for (const member of r.artifactMemberIds) owned.add(member);
+        continue;
+      }
+      if (hasNativeClassification(r)) continue;
       if (
         r.rawFields.profileOwnedBody !== undefined ||
         r.content.boundedOwnedBody !== undefined
