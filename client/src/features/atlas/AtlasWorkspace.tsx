@@ -625,7 +625,7 @@ export default function AtlasWorkspace({
                 });
               }}
             >
-              <option value="HOST">真实授权资料</option>
+              <option value="HOST">工程资料</option>
               <option value="EXAMPLE">独立示例空间</option>
             </select>
           </label>
@@ -812,7 +812,7 @@ export default function AtlasWorkspace({
             onWheelCapture={userAction}
           >
             {location.space === 'HOST' && host.loading ? (
-              <p role="status">正在读取授权资料…</p>
+              <p role="status">正在读取资料…</p>
             ) : null}
             {location.space === 'HOST' && host.error ? (
               <div role="alert">
@@ -869,7 +869,7 @@ export default function AtlasWorkspace({
                   {location.space === 'HOST' ? (
                     <>
                       <input
-                        aria-label="搜索授权文档"
+                        aria-label="搜索文档"
                         placeholder="文档编号或名称"
                         value={location.search}
                         onChange={(e) =>
@@ -890,7 +890,7 @@ export default function AtlasWorkspace({
                           })
                         }
                       >
-                        授权目录
+                        资料目录
                       </button>
                       {host.nextCursor ? (
                         <button
@@ -1117,7 +1117,7 @@ export default function AtlasWorkspace({
                       <span className="atlas-eyebrow">
                         {location.space === 'EXAMPLE'
                           ? 'EXAMPLE · 独立资料空间'
-                          : 'HOST · 授权资料'}
+                          : '工程资料'}
                       </span>
                       <h2>
                         {hostMacroView && location.view === 'domain'
