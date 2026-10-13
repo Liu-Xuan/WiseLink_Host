@@ -146,9 +146,7 @@ export function catalogGraph(
   return {
     nodes,
     edges,
-    notices: [
-      '仅显示当前授权目录页；版本来自 Host。附件归属和反向引用尚未接通。',
-    ],
+    notices: [],
   };
 }
 

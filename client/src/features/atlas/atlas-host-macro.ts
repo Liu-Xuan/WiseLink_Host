@@ -33,7 +33,6 @@ export async function readAtlasHostMacro(
   );
   projection.graph.notices = [
     ...read.issues,
-    '文档引用尚未建立全库索引。',
     ...(projection.outsideLinks
       ? [`${projection.outsideLinks} 项登记资料在当前文档范围之外。`]
       : []),
