@@ -9,6 +9,8 @@ import type {
   TranslationStructuredSource,
   TranslationStructuredSourceUnit,
 } from '@shared/canonical-translation-v2.interface';
+import { isUnrankedPdfHeading } from '@shared/pdf-heading-semantics';
+import { legacyPdfHeadingFinding, legacyPdfHeadingIds } from './pdf-heading-reading-projection';
 
 import { UNIFIED_READER } from './unified-reader.constants';
 import type { UnifiedArtifactReadScope } from './unified-artifact-read-scope';
@@ -73,8 +75,18 @@ export class Frozen2CandidateReaderService {
     const pkg = recordValue(readScope ? readScope.parseJson(bytes) : parsePackageJson(bytes), 'package');
     this.assertContract(pkg);
     const sourceRefById = this.sourceRefIndex(recordArray(pkg.sourceRefs, 'sourceRefs'));
+    const legacyHeadings = legacyPdfHeadingIds(pkg);
+    const units = recordArray(pkg.contentUnits, 'contentUnits').map(structuredUnit);
+    for (const unit of units) {
+      if (legacyHeadings.has(unit.unitId)) {
+        // Preserve the actual payload, including its legacy sequence number.
+        // This flag declares a Reader interpretation, not modified artifact bytes.
+        unit.mapping.headingLevelStatus = 'unknown';
+        unit.mapping.headingBasis = 'bold_candidate';
+      }
+    }
     return {
-      units: recordArray(pkg.contentUnits, 'contentUnits').map(structuredUnit),
+      units,
       modules: recordArray(pkg.modules, 'modules').map((value) => {
         const module = recordValue(value, 'module');
         if (typeof module.order !== 'number' || !Number.isSafeInteger(module.order)) {
@@ -83,7 +95,10 @@ export class Frozen2CandidateReaderService {
         return { moduleId: requiredText(module.moduleId, 'moduleId'), order: module.order };
       }),
       sourceLocators: [...sourceRefById.values()].map(cloneLocator),
-      findings: recordArray(pkg.findings, 'findings').map((value) => structuredClone(recordValue(value, 'finding'))),
+      findings: [
+        ...recordArray(pkg.findings, 'findings').map((value) => structuredClone(recordValue(value, 'finding'))),
+        ...units.filter(unit => legacyHeadings.has(unit.unitId)).map(legacyPdfHeadingFinding),
+      ],
       references: recordArray(pkg.references, 'references').map((value) => structuredClone(recordValue(value, 'reference'))),
     };
   }
@@ -176,6 +191,8 @@ export class Frozen2CandidateReaderService {
     const sourceRefById = this.sourceRefIndex(sourceRefs);
     const sourceRefIds = new Set(sourceRefById.keys());
     const units: ParsedContentUnit[] = this.contentUnits(pkg, sourceRefIds, sourceRefById);
+    const candidateHeadingCount = units.filter(unit =>
+      unit.reading?.kind === 'heading' && unit.reading.level === null).length;
     const document: Record<string, unknown> = recordValue(
       pkg.document,
       'document',
@@ -222,6 +239,7 @@ export class Frozen2CandidateReaderService {
         provenanceHash,
         coverageHash,
         resultStatus,
+        ...(candidateHeadingCount ? { candidateHeadingCount } : {}),
         title,
         revisionLabel,
         contentUnitCount: units.length,
@@ -271,6 +289,7 @@ export class Frozen2CandidateReaderService {
     sourceRefById: Map<string, UnifiedReaderSourceLocator>,
   ): ParsedContentUnit[] {
     const values: unknown[] = recordArray(pkg.contentUnits, 'contentUnits');
+    const legacyHeadings = legacyPdfHeadingIds(pkg);
     if (values.length === 0) {
       throw new Error('PACKAGE_SEMANTIC_VALIDATION_FAILED:CONTENT_UNITS_EMPTY');
     }
@@ -299,7 +318,7 @@ export class Frozen2CandidateReaderService {
         ),
         kind: requiredText(unit.kind, `contentUnits[${index}].kind`, 100),
         text: extractText(unit),
-        ...readingSemantics(unit),
+        ...readingSemantics(unit, legacyHeadings.has(String(unit.unitId))),
         sourceRefIds: refs,
         sourceLocators: refs.map((sourceRefId) => sourceRefById.get(sourceRefId)!).map(cloneLocator),
       };
@@ -329,8 +348,12 @@ export class Frozen2CandidateReaderService {
 
 function readingSemantics(
   unit: Record<string, unknown>,
+  legacyHeading = false,
 ): Pick<UnifiedReaderQueryResult, 'reading'> {
   if (unit.kind === 'paragraph') return { reading: { kind: 'paragraph' } };
+  if (legacyHeading || isUnrankedPdfHeading({
+    kind: String(unit.kind), payload: recordValue(unit.payload, 'contentUnit.payload'),
+  })) return { reading: { kind: 'heading', level: null, basis: 'bold_candidate' } };
   if (unit.kind !== 'heading') return {};
   const payload = recordValue(unit.payload, 'contentUnit.payload');
   const level = payload.level;
@@ -479,6 +502,9 @@ function extractText(unit: Record<string, unknown>): string {
     unit.payload,
     'contentUnit.payload',
   );
+  if (isUnrankedPdfHeading({ kind: String(unit.kind), payload }) && typeof payload.rawText === 'string') {
+    return payload.rawText;
+  }
   for (const field of ['text', 'instructionText', 'title', 'label']) {
     const value: unknown = payload[field];
     if (typeof value === 'string' && value.trim() !== '') {

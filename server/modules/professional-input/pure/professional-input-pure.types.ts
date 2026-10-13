@@ -18,7 +18,7 @@ export const PROFESSIONAL_INPUT_PURE_SCHEMA_ID =
 
 /** Deterministic pipeline revision identifier (no clock, no randomness). */
 export const PROFESSIONAL_INPUT_PURE_PIPELINE_VERSION =
-  'professional-input-pure.v1.candidate.1' as const;
+  'professional-input-pure.v1.candidate.2' as const;
 
 /* ------------------------------------------------------------------ *
  * Stage 1 output: ParsedLayout — the raw structural reading of bytes.

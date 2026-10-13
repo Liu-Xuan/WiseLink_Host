@@ -235,6 +235,8 @@ export interface UnifiedReaderPackageSummary {
   provenanceHash: string;
   coverageHash: string;
   resultStatus: 'complete' | 'partial';
+  /** Reader diagnostic; does not revise the immutable package's result or hashes. */
+  candidateHeadingCount?: number;
   title: string;
   revisionLabel: string | null;
   contentUnitCount: number;

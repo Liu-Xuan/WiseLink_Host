@@ -1130,8 +1130,10 @@ export default function DocumentParsingPage() {
               </div>
               <p>
                 结果状态：
-                {usagePolicy?.qualityStatus === 'NEEDS_REVIEW'
-                  ? '存在质量阻断，需人工处理'
+                {data.readerProjection?.readingQuality?.reason === 'CANDIDATE_HEADING_RANK_UNKNOWN'
+                  ? '候选标题层级未知，需核对；原文可继续阅读'
+                  : usagePolicy?.qualityStatus === 'NEEDS_REVIEW'
+                  ? '解析质量需人工核对'
                   : pkg?.resultStatus === 'partial'
                     ? '部分完成，需人工处理'
                     : pkg?.resultStatus === 'complete'

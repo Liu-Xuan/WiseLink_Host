@@ -3,10 +3,19 @@ import type {
   TranslationSourceAnchorV2,
   TranslationWorkspaceReadingV2,
 } from '@shared/canonical-translation-v2.interface';
+import { isUnrankedPdfHeading, PDF_HEADING_LEVEL_UNKNOWN_FINDING } from '@shared/pdf-heading-semantics';
 
 export type SemanticReadingBlock =
   TranslationWorkspaceReadingV2['blocks'][number];
 export type SemanticReadingMode = 'translation' | 'original' | 'bilingual';
+
+/** Candidate titles remain navigable, independently of the verified hierarchy outline. */
+export function semanticReadingHeading(block: SemanticReadingBlock): 'source' | 'candidate' | null {
+  if (block.source.sourceStructure.some(isUnrankedPdfHeading) ||
+      block.source.sourceIssues.some(issue =>
+        issue.code === PDF_HEADING_LEVEL_UNKNOWN_FINDING)) return 'candidate';
+  return block.source.kind === 'heading' ? 'source' : null;
+}
 
 export const semanticReadingStatusLabels = {
   MISSING: '待生成',

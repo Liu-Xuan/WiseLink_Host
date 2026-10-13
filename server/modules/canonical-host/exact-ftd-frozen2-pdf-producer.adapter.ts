@@ -15,6 +15,7 @@ import { MiaodaFileServiceArtifactStore } from '../document-management/src/hoste
 import { runProfessionalInputPipelineFromLayout } from '../professional-input/builders/professional-input-pipeline';
 import { PdfjsOcrCompositeLayoutExtractor } from '../professional-input/parser/pdfjs-ocr-composite-layout-extractor.adapter';
 import { ProfessionalInputPureError } from '../professional-input/pure/professional-input-pure.error';
+import { PROFESSIONAL_INPUT_PURE_PIPELINE_VERSION } from '../professional-input/pure/professional-input-pure.types';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import { U0FullValidationService } from '../unified-reader/u0-full-validation.service';
 import type {
@@ -164,7 +165,7 @@ export class HostNativeDocumentFamilyPdfProducerAdapter
         lineage: {
           generatedAt: new Date(resolved.version.committedAt).toISOString(),
           producerName: 'WiseLinkCanonicalHostProfessionalInput',
-          producerVersion: 'professional-input-pure.v1.candidate.1',
+          producerVersion: PROFESSIONAL_INPUT_PURE_PIPELINE_VERSION,
         },
       });
     } catch (error) {

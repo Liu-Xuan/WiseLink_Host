@@ -1,4 +1,5 @@
 import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
+import { isUnrankedPdfHeading, PDF_HEADING_LEVEL_UNKNOWN_FINDING } from '@shared/pdf-heading-semantics';
 import type {
   TranslationIssueV2,
   TranslationSemanticBlockV2,
@@ -141,15 +142,18 @@ export function buildTranslationSourcePlan(input: {
     const block: TranslationSemanticBlockV2 = {
       blockId: `b${blocks.length + 1}`,
       order: blocks.length,
-      kind: blockKind(first.kind),
+      kind: isUnrankedPdfHeading(first) ? 'preserved_source' : blockKind(first.kind),
       moduleId: first.moduleId,
       sourceUnitIds: group.map((unit) => unit.unitId),
       anchorIds: blockAnchors.map((anchor) => anchor.anchorId),
-      sourceStructure: group.map((unit) => ({
-        sourceUnitId: unit.unitId,
-        kind: unit.kind,
-        payload: structuredClone(unit.payload),
-      })),
+      sourceStructure: group.map((unit) => {
+        const payload = structuredClone(unit.payload);
+        // The raw Reader source retains the old ordinal. Translation layout
+        // must not send that known non-rank as heading metadata to the model.
+        // Source text and its original /payload/text pointer are unchanged.
+        if (unit.kind === 'heading' && isUnrankedPdfHeading(unit)) delete payload.level;
+        return { sourceUnitId: unit.unitId, kind: unit.kind, payload };
+      }),
       contextBlockIds: [],
       requiredTogetherBlockIds: [],
       sourceCharacterCount: blockAnchors.reduce(
@@ -176,7 +180,13 @@ export function buildTranslationSourcePlan(input: {
   for (const block of blocks) {
     const first = byId.get(block.sourceUnitIds[0])!;
     const path = headingPath.get(first.moduleId) ?? [];
-    if (first.kind === 'heading') {
+    if (isUnrankedPdfHeading(first)) {
+      // A new candidate title is a section boundary, but supplies no rank.
+      // Do not carry the preceding section's headings into its text or make
+      // this candidate a false ancestor of subsequent translation blocks.
+      path.length = 0;
+      headingPath.set(first.moduleId, path);
+    } else if (first.kind === 'heading') {
       const level = finiteInteger(first.payload.level, 'heading.level');
       while (path.length && path[path.length - 1].level >= level) path.pop();
       outline.push({
@@ -268,6 +278,9 @@ export function buildTranslationSourcePlan(input: {
         finding.sourceRefIds,
         'finding.sourceRefIds',
       );
+      // Unknown rank belongs to this title, not every object sharing its page anchor.
+      if (finding.code === PDF_HEADING_LEVEL_UNKNOWN_FINDING &&
+          !affectedUnits.some(id => block.sourceUnitIds.includes(id))) continue;
       if (
         affectedUnits.some((id) => block.sourceUnitIds.includes(id)) ||
         affectedRefs.some((id) => sourceRefIds.has(id)) ||

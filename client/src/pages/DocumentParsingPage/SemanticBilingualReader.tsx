@@ -17,6 +17,7 @@ import {
   semanticReadingText,
   semanticReadingIssues,
   semanticReadingExport,
+  semanticReadingHeading,
   semanticSourceLinks,
   translationIssueOriginLabels,
   type SemanticReadingMode,
@@ -90,7 +91,7 @@ function SemanticWorkspaceReader({
   const blocks = [...reading.blocks].sort(
     (a, b) => a.source.order - b.source.order,
   );
-  const outline = blocks.filter((block) => block.source.kind === 'heading');
+  const outline = blocks.filter((block) => semanticReadingHeading(block) !== null);
   const hasReadable: boolean = blocks.some((block) => block.selected);
   const execution = props.initialAnalysis?.stages.translation;
   const continueAllowed: boolean =
@@ -252,6 +253,8 @@ function SemanticWorkspaceReader({
                     .map((anchor) => anchor.sourceText)
                     .join(' ') ||
                   '无文字标题'}
+                {semanticReadingHeading(block) === 'candidate'
+                  ? <small>候选标题 · 层级未知</small> : null}
               </button>
             ))}
             {view.missing.length ? (

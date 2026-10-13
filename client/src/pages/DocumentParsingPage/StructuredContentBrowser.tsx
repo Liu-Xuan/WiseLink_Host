@@ -198,7 +198,7 @@ export function StructuredContentBrowser({
           <p>
             {usable
               ? '可直接浏览、搜索并用于辅助分析；工程师只需处理异常、冲突、不确定项和最终工程判断。'
-              : '解析不完整或存在质量阻断，请优先处理标记项；无需逐条核对正常内容。'}
+              : '解析结构或覆盖范围仍需核对，可继续阅读原文并查看标记项。'}
           </p>
         </div>
         <div
@@ -207,7 +207,7 @@ export function StructuredContentBrowser({
           <strong>{page.totalSourceUnitCount.toLocaleString('zh-CN')}</strong>
           <span>源内容单元</span>
           <small>
-            {usable ? '解析完整' : '存在解析阻断'} · 已加载{' '}
+            {usable ? '解析完整' : '解析结构需核对'} · 已加载{' '}
             {units.length.toLocaleString('zh-CN')} /{' '}
             {page.totalDisplayUnitCount.toLocaleString('zh-CN')} 个浏览项
           </small>
@@ -339,7 +339,7 @@ function OutlineList({
           key={unit.ordinal}
           title={unit.sectionTitle ?? undefined}
           style={{
-            paddingInlineStart: `${12 + ((unit.reading?.kind === 'heading' ? Math.min(unit.reading.level, 6) : 1) - 1) * 14}px`,
+            paddingInlineStart: `${12 + ((unit.reading?.kind === 'heading' && unit.reading.level !== null ? Math.min(unit.reading.level, 6) : 1) - 1) * 14}px`,
           }}
           onClick={(event) => {
             event.preventDefault();
@@ -356,6 +356,8 @@ function OutlineList({
           }}
         >
           <span>{unit.sectionTitle}</span>
+          {unit.reading?.kind === 'heading' && unit.reading.level === null
+            ? <small>候选标题 · 层级未知</small> : null}
         </a>
       ))}
     </nav>

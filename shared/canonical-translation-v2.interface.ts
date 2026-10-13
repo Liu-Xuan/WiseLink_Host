@@ -69,7 +69,7 @@ export interface TranslationSemanticBlockV2 {
   moduleId: string;
   sourceUnitIds: string[];
   anchorIds: string[];
-  /** Immutable source layout. Model output fills text, never row/column spans. */
+  /** Source layout for translation; immutable spans remain exact, diagnosed legacy heading ordinals are omitted. */
   sourceStructure: Array<{
     sourceUnitId: string;
     kind: string;

@@ -435,8 +435,11 @@ export interface UnifiedReaderQueryResult {
   unitId: string;
   kind: string;
   text: string;
-  /** Explicit package block semantics, preserved independently of plain text. */
-  reading?: { kind: 'heading'; level: number } | { kind: 'paragraph' };
+  /** Source rank when known; bold candidates retain navigation without an invented rank. */
+  reading?:
+    | { kind: 'heading'; level: number }
+    | { kind: 'heading'; level: null; basis: 'bold_candidate' }
+    | { kind: 'paragraph' };
   sourceRefIds: string[];
   /** Frozen.2 source locator details when the package provides them. */
   sourceLocators?: UnifiedReaderSourceLocator[];
@@ -522,10 +525,17 @@ export interface CanonicalReaderProjection {
   structuredUnitCount: number;
   sourceRefCount: number;
   query: string;
+  /** Interpretation of headings in this read view; independent of saved package usagePolicy. */
+  readingQuality?: {
+    qualityStatus: 'NEEDS_REVIEW';
+    reason: 'CANDIDATE_HEADING_RANK_UNKNOWN';
+    candidateHeadingCount: number;
+  };
   units: Array<{
     unitId: string;
     kind: string;
     text: string;
+    reading?: UnifiedReaderQueryResult['reading'];
     sourceRefIds: string[];
     sourceLocators: UnifiedReaderSourceLocator[];
   }>;
@@ -556,7 +566,7 @@ export interface CanonicalStructuredContentUnit {
   sectionTitle: string | null;
   /** Browser-safe engineering text or an honest typed summary, never raw JSON. */
   displayText: string;
-  /** Present when the package supplies a real block boundary/heading level. */
+  /** Real block boundary/rank, or explicit unknown rank for a candidate title. */
   reading?: UnifiedReaderQueryResult['reading'];
   sourceRefIds: string[];
   sourceLocators: CanonicalStructuredContentSourceLocator[];
@@ -902,6 +912,8 @@ export interface UnifiedPackageReadbackResponse {
     provenanceHash: string;
     coverageHash: string;
     resultStatus: 'complete' | 'partial';
+    /** Reader interpretation only; does not change the immutable resultStatus. */
+    candidateHeadingCount?: number;
     title: string;
     revisionLabel: string | null;
     contentUnitCount: number;

@@ -38,24 +38,26 @@ export function StructuredDocumentArticle({
       >
         {structuredReadingGroups(units).map((group) => {
           const first = group[0];
+          const candidateHeading = first.reading?.kind === 'heading' && first.reading.level === null;
           const level =
-            first.reading?.kind === 'heading' ? first.reading.level : 3;
+            first.reading?.kind === 'heading' ? first.reading.level ?? 3 : 3;
           const Tag =
-            first.displayKind === 'section'
+            first.displayKind === 'section' && !candidateHeading
               ? (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const)[
                   Math.min(level, 6) - 1
                 ]
               : 'p';
+          const TextTag = candidateHeading ? 'strong' : 'span';
           return (
             <Tag
               key={first.ordinal}
               className={`structured-document-${first.displayKind}`}
               aria-level={
-                first.displayKind === 'section' && level > 6 ? level : undefined
+                first.displayKind === 'section' && !candidateHeading && level > 6 ? level : undefined
               }
             >
               {group.map((unit, index) => (
-                <span key={unit.ordinal}>
+                <TextTag key={unit.ordinal}>
                   {index > 0 ? ' ' : null}
                   <span
                     id={`structured-unit-${unit.ordinal}`}
@@ -69,8 +71,9 @@ export function StructuredDocumentArticle({
                   >
                     {unit.displayText}
                   </span>
-                </span>
+                </TextTag>
               ))}
+              {candidateHeading ? <small>候选标题 · 层级未知</small> : null}
             </Tag>
           );
         })}

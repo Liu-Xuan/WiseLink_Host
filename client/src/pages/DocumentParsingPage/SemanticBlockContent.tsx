@@ -4,7 +4,7 @@ import type {
   TranslationSourceAnchorV2,
 } from '@shared/canonical-translation-v2.interface';
 import { SemanticSourceGrid } from './SemanticSourceGrid';
-import type { SemanticReadingBlock } from './semantic-reading';
+import { semanticReadingHeading, type SemanticReadingBlock } from './semantic-reading';
 
 export function SemanticElements({
   elements,
@@ -151,7 +151,8 @@ export function SemanticBlockContent({
         selectedAnchors={selectedAnchors}
         onFocus={onFocus}
         onAnchorNode={onAnchorNode}
-        heading={block.source.kind === 'heading'}
+        heading={semanticReadingHeading(block) === 'source'}
+        candidateHeading={semanticReadingHeading(block) === 'candidate'}
       />
     ) : (
       <p className="wl-bilingual-scope">
@@ -176,12 +177,14 @@ function OriginalAnchors({
   onFocus,
   onAnchorNode,
   heading = false,
+  candidateHeading = false,
 }: {
   anchors: TranslationSourceAnchorV2[];
   selectedAnchors: string[];
   onFocus: (ids: string[]) => void;
   onAnchorNode?: (ids: string[], node: HTMLElement | null) => void;
   heading?: boolean;
+  candidateHeading?: boolean;
 }) {
   const Tag = heading ? 'h3' : 'p';
   return (
@@ -197,8 +200,9 @@ function OriginalAnchors({
             ref={(node) => onAnchorNode?.([anchor.anchorId], node)}
             title="显示来源对应"
           >
-            {anchor.sourceText}
+            {candidateHeading ? <strong>{anchor.sourceText}</strong> : anchor.sourceText}
           </button>
+          {candidateHeading ? <small>候选标题 · 层级未知</small> : null}
         </Tag>
       ))}
     </>

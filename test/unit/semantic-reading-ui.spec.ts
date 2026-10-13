@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { TranslationReadingElementV2 } from '@shared/canonical-translation-v2.interface';
+import { PDF_HEADING_LEVEL_UNKNOWN_REASON } from '@shared/pdf-heading-semantics';
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/features/review/InitialAnalysisContinueButton', () => ({
   __esModule: true,
@@ -27,6 +28,31 @@ import {
 } from './semantic-reading-ui.fixtures';
 
 describe('semantic document reading', () => {
+  it('keeps an unranked candidate title in the bilingual outline and preserves the following body', () => {
+    const reading = semanticReadingFixture();
+    const title = sourceAnchor('title', 'Invented candidate title');
+    const body = sourceAnchor('body', 'Body stays after the candidate title.');
+    reading.anchors = [title, body];
+    reading.blocks = [title, body].map((anchor, index) => ({
+      ...reading.blocks[0], selected: null, readingStatus: 'MISSING',
+      source: { ...reading.blocks[0].source, blockId: index ? 'body' : 'title', order: index,
+        kind: index ? 'prose' : 'preserved_source', anchorIds: [anchor.anchorId],
+        sourceUnitIds: [anchor.sourceUnitId], sourceIssues: [],
+        sourceStructure: [{ sourceUnitId: anchor.sourceUnitId, kind: index ? 'paragraph' : 'preserved_source',
+          payload: index ? { text: anchor.sourceText } : { rawText: anchor.sourceText,
+            reasonCode: PDF_HEADING_LEVEL_UNKNOWN_REASON } }],
+      },
+    }));
+    const html = renderToStaticMarkup(createElement(SemanticBilingualReader, {
+      translation: { status: 'SEMANTIC_READING_AID_AVAILABLE', reading },
+      mode: 'original', onSourceRefSelect: jest.fn(),
+    }));
+    expect(html).toContain('aria-label="文档章节"');
+    expect(html).toContain('Invented candidate title');
+    expect(html).toContain('候选标题 · 层级未知');
+    expect(html).toContain('Body stays after the candidate title.');
+    expect(html).not.toMatch(/<h[1-6][^>]*>[^<]*Invented candidate title/);
+  });
   it('renders a complete Chinese paragraph once for three anchors on two pages', () => {
     const reading = semanticReadingFixture();
     const html: string = renderToStaticMarkup(

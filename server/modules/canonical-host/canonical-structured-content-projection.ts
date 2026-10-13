@@ -67,7 +67,7 @@ function browserSafeUnitSemantics(
   depth = 0,
 ): BrowserSafeUnitSemantics | null {
   const normalizedText: string = unit.text.trim().normalize('NFC');
-  const sourceOutline: boolean = isSourceHeading(unit.kind);
+  const sourceOutline: boolean = unit.reading?.kind === 'heading' || isSourceHeading(unit.kind);
   const decoded: DecodedStructuredText = decodeStructuredText(normalizedText);
   if (decoded.kind === 'PLAIN') {
     return {

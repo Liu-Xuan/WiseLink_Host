@@ -227,6 +227,7 @@ export class UnifiedReaderService {
         provenanceHash: summary.provenanceHash,
         coverageHash: summary.coverageHash,
         resultStatus: summary.resultStatus,
+        ...(summary.candidateHeadingCount ? { candidateHeadingCount: summary.candidateHeadingCount } : {}),
         title: summary.title,
         revisionLabel: summary.revisionLabel,
         contentUnitCount: summary.contentUnitCount,

@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod/v4';
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
+import { isUnrankedPdfHeading } from '@shared/pdf-heading-semantics';
 import type {
   BilingualTranslationArtifactV2,
   TranslationBlockRevisionV2,
@@ -201,8 +202,8 @@ export class CanonicalTranslationV2Service {
     });
     if (source.units.length !== workItem.package.contentUnitCount)
       throw new Error('TRANSLATION_SOURCE_UNIT_COUNT_MISMATCH');
-    const firstHeading = source.units.find((unit) => unit.kind === 'heading')
-      ?.payload.text;
+    const titleUnit = source.units.find((unit) => unit.kind === 'heading' || isUnrankedPdfHeading(unit));
+    const firstHeading = titleUnit?.payload.text ?? titleUnit?.payload.rawText;
     return this.workspaces.prepare({
       tenantId,
       workItemId: workItem.workItemId,

@@ -1,4 +1,8 @@
 import {
+  PDF_HEADING_LEVEL_UNKNOWN_FINDING,
+  PDF_HEADING_LEVEL_UNKNOWN_REASON,
+} from '@shared/pdf-heading-semantics';
+import {
   buildSourceBoundAeoEffectivity,
   buildSourceBoundAeoProcedure,
   buildSourceBoundAeoSafetyBoundary,
@@ -116,7 +120,8 @@ export function buildStructuredParsePackage(input: {
 
   const contentUnits: Array<Record<string, unknown>> = [];
   const assets: Array<Record<string, unknown>> = [];
-  let headingCount = 0;
+  const findings: Array<Record<string, unknown>> = [];
+  const headingFindingBySegment = new Map<string, string>();
   let contentOrder = 0;
   unitSet.units.forEach((unit) => {
     if (unit.kind === 'source_metadata') {
@@ -125,7 +130,10 @@ export function buildStructuredParsePackage(input: {
     }
     const isHeading = unit.expectedSemantic === 'heading';
     const isFigure = unit.expectedSemantic === 'figure';
-    const kind = isFigure ? 'figure' : isHeading ? 'heading' : 'paragraph';
+    // Bold identifies a candidate title, not an author-assigned section rank.
+    // frozen.2 requires a positive heading.level, so preserve uncertain titles
+    // using its existing text-preservation contract rather than invent a rank.
+    const kind = isFigure ? 'figure' : isHeading ? 'preserved_source' : 'paragraph';
     const figureId = isFigure
       ? techpubEntityId(
           'figure',
@@ -162,6 +170,27 @@ export function buildStructuredParsePackage(input: {
         }),
       ),
     );
+    const headingFindingId = isHeading
+      ? techpubEntityId('finding', sha256Hex(jcsCanonicalize({
+          namespace: 'techpub-pdf-heading-level-unknown-v1', unitId,
+        })))
+      : null;
+    if (headingFindingId) {
+      headingFindingBySegment.set(unit.sourceUnitId, headingFindingId);
+      findings.push({
+        findingId: headingFindingId,
+        code: PDF_HEADING_LEVEL_UNKNOWN_FINDING,
+        severity: 'warning',
+        message: '粗体文字已作为候选标题保留；标题身份及原文层级尚未可靠确认。',
+        stage: 'mapping',
+        blocking: false,
+        blocks: [],
+        sourceRefIds: [...unit.sourceRefIds],
+        sourceSegmentIds: [unit.sourceUnitId],
+        affectedUnitIds: [unitId],
+        parameters: { headingLevel: 'unknown', headingBasis: 'bold_candidate' },
+      });
+    }
     const contentUnitWithoutHash: Record<string, unknown> = {
       unitId,
       continuityKey: unit.continuityKey,
@@ -173,9 +202,9 @@ export function buildStructuredParsePackage(input: {
       sourceRefIds: [...unit.sourceRefIds],
       sourceSegmentIds: [unit.sourceUnitId],
       mapping: {
-        status: 'mapped_exactly',
+        status: isHeading ? 'preserved_as_text' : 'mapped_exactly',
         confidence: 'deterministic',
-        findingIds: [],
+        findingIds: headingFindingId ? [headingFindingId] : [],
       },
       payload: isFigure
         ? {
@@ -186,8 +215,8 @@ export function buildStructuredParsePackage(input: {
           }
         : isHeading
           ? {
-              text: unit.text,
-              level: (headingCount += 1),
+              rawText: unit.text,
+              reasonCode: PDF_HEADING_LEVEL_UNKNOWN_REASON,
             }
           : {
               text: unit.text,
@@ -309,7 +338,8 @@ export function buildStructuredParsePackage(input: {
   const sourceSegments = unitSet.units.map(toSourceSegment);
   const coverageEntries = unitSet.units.map((unit) => ({
     sourceSegmentId: unit.sourceUnitId,
-    disposition: 'mapped_exactly',
+    disposition: headingFindingBySegment.has(unit.sourceUnitId)
+      ? 'preserved_as_text' : 'mapped_exactly',
     targetIds:
       unit.kind === 'source_metadata'
         ? [documentId]
@@ -322,12 +352,14 @@ export function buildStructuredParsePackage(input: {
                 ),
             )
             .map((contentUnit) => contentUnit.unitId as string),
-    findingIds: [],
+    findingIds: headingFindingBySegment.has(unit.sourceUnitId)
+      ? [headingFindingBySegment.get(unit.sourceUnitId)!] : [],
   }));
   const requiredCount = sourceSegments.filter(
     (segment) => segment.coverageRequired,
   ).length;
-  const mappedCount = coverageEntries.length;
+  const preservedCount = headingFindingBySegment.size;
+  const mappedCount = coverageEntries.length - preservedCount;
   const coverage = {
     basis: {
       segmentSetId: unitSet.sourceUnitSetId,
@@ -341,12 +373,12 @@ export function buildStructuredParsePackage(input: {
       requiredSourceSegmentCount: requiredCount,
       mappedExactlyCount: mappedCount,
       mappedWithNormalizationCount: 0,
-      preservedAsTextCount: 0,
+      preservedAsTextCount: preservedCount,
       intentionallyExcludedCount: 0,
       blockedCount: 0,
-      accountingComplete: mappedCount === unitSet.units.length,
+      accountingComplete: coverageEntries.length === unitSet.units.length,
       contentPreserved: true,
-      structuredCoverageComplete: mappedCount === unitSet.units.length,
+      structuredCoverageComplete: preservedCount === 0 && mappedCount === unitSet.units.length,
     },
   };
 
@@ -492,10 +524,10 @@ export function buildStructuredParsePackage(input: {
     assets,
     applicability,
     coverage,
-    findings: [],
+    findings,
     extensions: [],
     result: {
-      status: 'complete',
+      status: coverage.summary.structuredCoverageComplete ? 'complete' : 'partial',
       accountingComplete: coverage.summary.accountingComplete,
       contentPreserved: coverage.summary.contentPreserved,
       structuredCoverageComplete: coverage.summary.structuredCoverageComplete,

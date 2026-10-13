@@ -644,6 +644,7 @@ export class CanonicalHostVerticalService {
       });
     let queryResults: UnifiedPackageReadbackResponse['queryResults'] = [];
     let readerSourceKind: UnifiedPackageSourceKind | null = null;
+    let candidateHeadingCount = 0;
     const query: string = optionalReaderQuery(input.query);
     const sourceRef: string = optionalReaderSourceRef(input.sourceRef);
     if (
@@ -656,6 +657,7 @@ export class CanonicalHostVerticalService {
           packageId: projection.package.packageId,
         });
         readerSourceKind = sourcePackage.inspection.sourceKind;
+        candidateHeadingCount = sourcePackage.inspection.candidateHeadingCount ?? 0;
         queryResults = sourcePackage.units
           .filter((unit: UnifiedReaderQueryResult): boolean =>
             unit.sourceRefIds.includes(sourceRef),
@@ -672,6 +674,7 @@ export class CanonicalHostVerticalService {
           query,
         );
         readerSourceKind = readback.package.sourceKind;
+        candidateHeadingCount = readback.package.candidateHeadingCount ?? 0;
         queryResults = readback.queryResults
           .map((result, index) =>
             projectCanonicalBrowserQueryResult(result, index + 1),
@@ -683,6 +686,7 @@ export class CanonicalHostVerticalService {
           packageId: projection.package.packageId,
         });
         readerSourceKind = inspection.sourceKind;
+        candidateHeadingCount = inspection.candidateHeadingCount ?? 0;
       }
     }
     const translation = await this.readTranslationConsumptionAxes(projection, actor.tenantId);
@@ -716,6 +720,7 @@ export class CanonicalHostVerticalService {
         readerSourceKind,
         translation,
         pdfPreview,
+        candidateHeadingCount,
       ),
       ...buildCanonicalPageProjections({
         workItem: projection,
@@ -814,7 +819,9 @@ export class CanonicalHostVerticalService {
       mode: 'BROWSE',
       revision: projection.revision,
       resultStatus: pkg.resultStatus,
-      qualityStatus: pkg.usagePolicy?.qualityStatus ?? 'PASS',
+      qualityStatus: pkg.resultStatus === 'partial' ||
+        allUnits.some(unit => unit.reading?.kind === 'heading' && unit.reading.level === null)
+        ? 'NEEDS_REVIEW' : pkg.usagePolicy?.qualityStatus ?? 'PASS',
       totalSourceUnitCount: allUnits.length,
       totalDisplayUnitCount: browserUnits.length,
       omittedUnitCount: allUnits.length - browserUnits.length,
@@ -1647,6 +1654,7 @@ function buildReaderProjection(
   sourceKind: UnifiedPackageSourceKind | null,
   translation: CanonicalReaderProjection['translation'],
   pdfPreview: CanonicalPdfPreviewProjection,
+  candidateHeadingCount = 0,
 ): CanonicalReaderProjection | null {
   if (!workItem.package || sourceKind === null) return null;
   return {
@@ -1654,10 +1662,16 @@ function buildReaderProjection(
     structuredUnitCount: workItem.package.contentUnitCount,
     sourceRefCount: workItem.package.sourceRefCount,
     query,
+    ...(candidateHeadingCount ? { readingQuality: {
+      qualityStatus: 'NEEDS_REVIEW' as const,
+      reason: 'CANDIDATE_HEADING_RANK_UNKNOWN' as const,
+      candidateHeadingCount,
+    } } : {}),
     units: queryResults.map((result) => ({
       unitId: result.unitId,
       kind: result.kind,
       text: result.text,
+      ...(result.reading ? { reading: { ...result.reading } } : {}),
       sourceRefIds: [...result.sourceRefIds],
       sourceLocators: (result.sourceLocators ?? []).map((locator) => ({
         ...locator,
