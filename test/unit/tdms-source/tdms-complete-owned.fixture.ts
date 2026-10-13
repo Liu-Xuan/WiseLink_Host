@@ -396,6 +396,67 @@ export function syntheticCompleteEnvelope(
     },
     observedAt: observationTime,
   };
+  if (scopeId === 'ENGINEERING_ASSESSMENT') {
+    // The reviewed EFRequest model has two distinct native modified mirrors.
+    // Keep the existing eight-state synthetic fields and absent optional pair.
+    const tabId =
+      'infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails';
+    const panel = '#infoPage_myTab_object_docInfoDefaultDetails';
+    const sections = ['General', 'MoreAttributesGroup'];
+    const mirrors = sections.map((section) => {
+      const locator = `${panel} ${section} td.synthetic-modified`;
+      return {
+        fieldId: locator,
+        tabId,
+        sectionId: `${tabId}::${section}`,
+        labelOrigin: 'NATIVE_SOURCE_DECLARED',
+        nativeControl: { tag: 'TD', readOnly: null, disabled: null },
+        value: value(
+          'VALUE',
+          'Last Modified:',
+          owner.sourceModifiedRaw,
+          locator,
+        ),
+        links: [],
+      };
+    });
+    read.tabs.push({
+      tabId,
+      label: 'Synthetic EFRequest Details',
+      panelLocator: panel,
+      state: 'VALUE',
+      required: true,
+      sourceDeclared: true,
+      reasonCode: null,
+    });
+    const mirrorSections = sections.map((section) => ({
+      sectionId: `${tabId}::${section}`,
+      tabId,
+      label: section,
+      panelLocator: `${panel} ${section}`,
+      state: 'VALUE',
+      sourceDeclared: true,
+    }));
+    read.sections.push(...mirrorSections);
+    read.fields.push(...mirrors);
+    read.rosterEvidence.tabIds.push(tabId);
+    const mirrorRoster = {
+      fieldIds: mirrors.map((f) => f.fieldId),
+      sectionIds: mirrorSections.map((s) => s.sectionId),
+      fieldLocators: mirrors.map((f) => f.value.locator),
+      sectionLocators: mirrorSections.map((s) => s.panelLocator),
+      declaredFieldCount: mirrors.length,
+      declaredSectionCount: mirrorSections.length,
+      loadingPresent: false,
+      terminal: 'DOM_TREE_END',
+    };
+    read.rosterEvidence.structuralRosters.push({
+      tabId,
+      before: mirrorRoster,
+      after: copyComplete(mirrorRoster),
+      settledReads: 2,
+    });
+  }
   const gaps = [
     'REQUIRED_TARGET_OWN_SOURCES_PENDING',
     'COMPLETION_CERTIFICATE_NOT_ISSUED',

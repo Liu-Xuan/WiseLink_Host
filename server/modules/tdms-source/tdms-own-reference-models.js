@@ -42,6 +42,21 @@ const CURRENT = Object.freeze([
   },
 ]);
 const OUTSIDE = Object.freeze([
+  ...['Created By:', 'Modified By:'].map((label) => ({
+    scopes: ['ENGINEERING_ASSESSMENT'],
+    label,
+    classes: ['wt.org.WTUser'],
+  })),
+  {
+    scopes: ['ENGINEERING_ASSESSMENT'],
+    label: 'Context:',
+    classes: ['wt.inf.library.WTLibrary', 'wt.pdmlink.PDMLinkProduct'],
+  },
+  {
+    scopes: ['ENGINEERING_ASSESSMENT'],
+    label: 'Location:',
+    classes: ['wt.folder.Cabinet', 'wt.folder.SubFolder'],
+  },
   ...userLabels.map((label) => ({
     scopes: OBSERVED_SCOPES,
     label,
@@ -68,6 +83,8 @@ export const OWN_OUT_OF_SCOPE_NATIVE_CLASSES = Object.freeze([
   'wt.org.WTUser',
   'wt.inf.library.WTLibrary',
   'wt.pdmlink.PDMLinkProduct',
+  'wt.folder.Cabinet',
+  'wt.folder.SubFolder',
 ]);
 const nativeClass = (ref) =>
   typeof ref === 'string'

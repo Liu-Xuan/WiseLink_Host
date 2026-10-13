@@ -7,6 +7,12 @@ import {
 } from './tdms-own-reference-models';
 import { isNativeReloadProvenance } from './tdms-native-reload-provenance';
 import { assertCompleteOriginalNativeArtifacts } from './tdms-complete-original.validation';
+import {
+  isReviewedEfRequestOwner,
+  isReviewedEfRequestUnknownFieldCaption,
+  validateReviewedCompleteTabRoster,
+  validateReviewedEfRequestModifiedMirrors,
+} from './tdms-reviewed-complete-source-types';
 import { createHash } from 'node:crypto';
 import { tdmsError } from './tdms-source.types';
 export const COMPLETE_OWN_OBSERVATION_MAX_BYTES = 850 * 1024;
@@ -731,7 +737,7 @@ export function validateCompleteOwnedInput(raw) {
   sourceProof(v.sourceProof, p, v);
   return v;
 }
-function typedValue(v, { allowNull = false } = {}) {
+function typedValue(v, { allowNull = false, allowBlankLabel = false } = {}) {
   assertKeys(v, [
     'state',
     'actualLabel',
@@ -740,7 +746,7 @@ function typedValue(v, { allowNull = false } = {}) {
     'observedTotalCodepoints',
   ]);
   if (!states.has(v.state)) fail('TDMS_COMPLETE_OWN_FIELD_STATE_INVALID');
-  text(v.actualLabel, 200);
+  if (!(allowBlankLabel && v.actualLabel === '')) text(v.actualLabel, 200);
   text(v.locator, 700);
   if (
     v.rawValue !== null &&
@@ -833,7 +839,11 @@ export function validateCompleteOwnedOwner(
       fail('TDMS_COMPLETE_OWN_TYPE_INVALID');
     if (
       o.nativeTypeEvidence.actualLabel.startsWith('Mapped own header type: ') &&
-      (input.sourceProof.kind !== 'REQUIRED_RELATION_TARGET' ||
+      (!(
+        input.sourceProof.kind === 'REQUIRED_RELATION_TARGET' ||
+        (input.sourceProof.kind === 'CURRENT_DIRECTORY' &&
+          isReviewedEfRequestOwner({ scopeId: input.scopeId, owner: o }))
+      ) ||
         o.nativeTypeEvidence.actualLabel !==
           'Mapped own header type: ' + o.rawHeaderType ||
         o.nativeTypeEvidence.locator !== '#infoPageIdentityDisplayType' ||
@@ -891,7 +901,10 @@ export function validateCompleteOwnedOwner(
   } else if (evidence.actualLabel === 'Document Header Version') {
     const parts = o.rawHeaderIdentifier.split(',').map((v) => v.trim());
     if (
-      !p.ownDocumentHeaderVersionSlot ||
+      !(
+        p.ownDocumentHeaderVersionSlot ||
+        isReviewedEfRequestOwner({ scopeId: input.scopeId, owner: o })
+      ) ||
       evidence.locator !== '#infoPageIdentityObjectIdentifier' ||
       evidence.state !== 'VALUE' ||
       parts.length !== 3 ||
@@ -1017,7 +1030,19 @@ function validateRoster(read, input) {
     )
       fail('TDMS_COMPLETE_OWN_ROSTER_INVALID');
     fieldIds.add(f.fieldId);
-    typedValue(f.value);
+    const unknownCaption = isReviewedEfRequestUnknownFieldCaption({
+      scopeId: input.scopeId,
+      owner: read.owner,
+      field: f,
+    });
+    typedValue(f.value, { allowBlankLabel: unknownCaption });
+    if (
+      unknownCaption &&
+      (read.tabs.find((t) => t.tabId === f.tabId)?.state !== 'NOT_READ' ||
+        !Array.isArray(read.rosterEvidence?.unknownRequiredSurfaces) ||
+        !read.rosterEvidence.unknownRequiredSurfaces.includes(f.value.locator))
+    )
+      fail('TDMS_COMPLETE_OWN_UNKNOWN_CAPTION_UNACKNOWLEDGED');
     array(f.links, 30);
     for (const link of f.links) validateRawLink(link);
     assertKeys(f.nativeControl, ['tag', 'readOnly', 'disabled']);
@@ -1157,14 +1182,51 @@ function validateRoster(read, input) {
     } else if (a.primaryMetadata !== undefined)
       fail('TDMS_COMPLETE_OWN_PRIMARY_METADATA_UNVERIFIED');
   }
-  assertKeys(read.rosterEvidence, [
-    'tabRosterSource',
-    'tabIds',
-    'structuralRosters',
-    'unreadControls',
-    'unknownRequiredSurfaces',
-    'layoutEvidencePending',
-  ]);
+  assertKeys(
+    read.rosterEvidence,
+    [
+      'tabRosterSource',
+      'tabIds',
+      'structuralRosters',
+      'unreadControls',
+      'unknownRequiredSurfaces',
+      'layoutEvidencePending',
+      'nativeTabStripIds',
+      'nonContentControls',
+    ],
+    [
+      'tabRosterSource',
+      'tabIds',
+      'structuralRosters',
+      'unreadControls',
+      'unknownRequiredSurfaces',
+      'layoutEvidencePending',
+    ],
+  );
+  validateReviewedCompleteTabRoster({
+    scopeId: input.scopeId,
+    owner: read.owner,
+    rosterEvidence: read.rosterEvidence,
+    contentTabIds: read.tabs.map((t) => t.tabId),
+  });
+  const modifiedMirrors = validateReviewedEfRequestModifiedMirrors({
+    scopeId: input.scopeId,
+    owner: read.owner,
+    fields: read.fields,
+  });
+  if (
+    modifiedMirrors &&
+    modifiedMirrors.state === 'NOT_READ' &&
+    modifiedMirrors.unreadLocators.some(
+      (locator) =>
+        read.tabs.find(
+          (t) =>
+            t.tabId ===
+            read.fields.find((f) => f.value.locator === locator)?.tabId,
+        )?.state !== 'NOT_READ',
+    )
+  )
+    fail('TDMS_COMPLETE_OWN_MODIFIED_MIRROR_UNREAD');
   if (read.rosterEvidence.tabRosterSource !== 'OWN_INFOPAGE_TAB_STRIP')
     fail('TDMS_COMPLETE_OWN_ROSTER_INVALID');
   array(read.rosterEvidence.tabIds, 200);

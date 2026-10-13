@@ -1,0 +1,180 @@
+{
+  "syntheticOnly": true,
+  "noSourceEvidenceOrBusinessInputs": true,
+  "sourcePureCodeSha256": {
+    "reviewed-complete-source-types.mjs": "35b62b02031bad560570724e2b3d511345f93bd3ba2af2d074cfcaf19825312a",
+    "own-reference-models.mjs": "862322d5c4b324cb462a7a928f2a6cb95a43ab3ad19d5c7c3d581b767520ec49"
+  },
+  "modelRevision": "tdms-reviewed-efrequest-readonly-surfaces@1",
+  "scopeId": "ENGINEERING_ASSESSMENT",
+  "owner": {
+    "sourceRecordId": "OR:wt.doc.WTDocument:241001",
+    "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.EFRequest",
+    "rawHeaderType": "工程文件编写评估单",
+    "nativeTypeEvidence": {
+      "state": "VALUE",
+      "rawValue": "WCTYPE|wt.doc.WTDocument|com.airchina.EFRequest"
+    },
+    "sourceModifiedRaw": "2026-10-13 08:00"
+  },
+  "contentTabIds": [
+    "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+    "infoPageinfoPanelID__infoPage_myTab_synthetic_extra"
+  ],
+  "rosterEvidence": {
+    "tabIds": [
+      "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+      "infoPageinfoPanelID__infoPage_myTab_synthetic_extra"
+    ],
+    "nativeTabStripIds": [
+      "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+      "infoPageinfoPanelID__infoPage_myTab_synthetic_extra",
+      "infoPageinfoPanelID__new_tab_action"
+    ],
+    "nonContentControls": [
+      {
+        "actionId": "infoPageinfoPanelID__new_tab_action",
+        "tag": "LI",
+        "rawClassName": "x-tab-with-icon",
+        "rawCaption": "",
+        "locator": "#infoPageinfoPanelID__new_tab_action",
+        "rootLocator": "#infoPagemainInfoPagePanel",
+        "semantic": "NATIVE_TAB_CREATE_ACTION",
+        "modelRevision": "tdms-reviewed-efrequest-readonly-surfaces@1"
+      }
+    ]
+  },
+  "mirrors": [
+    {
+      "fieldId": "#infoPage_myTab_object_docInfoDefaultDetails General td.synthetic-modified-0",
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+      "sectionId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails::General",
+      "labelOrigin": "NATIVE_SOURCE_DECLARED",
+      "nativeControl": {
+        "tag": "TD",
+        "readOnly": null,
+        "disabled": null
+      },
+      "value": {
+        "state": "VALUE",
+        "actualLabel": "Last Modified:",
+        "rawValue": "2026-10-13 08:00",
+        "locator": "#infoPage_myTab_object_docInfoDefaultDetails General td.synthetic-modified-0",
+        "observedTotalCodepoints": 16
+      },
+      "links": []
+    },
+    {
+      "fieldId": "#infoPage_myTab_object_docInfoDefaultDetails MoreAttributesGroup td.synthetic-modified-1",
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+      "sectionId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails::MoreAttributesGroup",
+      "labelOrigin": "NATIVE_SOURCE_DECLARED",
+      "nativeControl": {
+        "tag": "TD",
+        "readOnly": null,
+        "disabled": null
+      },
+      "value": {
+        "state": "VALUE",
+        "actualLabel": "Last Modified:",
+        "rawValue": "2026-10-13 08:00",
+        "locator": "#infoPage_myTab_object_docInfoDefaultDetails MoreAttributesGroup td.synthetic-modified-1",
+        "observedTotalCodepoints": 16
+      },
+      "links": []
+    }
+  ],
+  "unknown": {
+    "fieldId": "#infoPage_myTab_object_docInfoDefaultDetails MoreAttributesGroup td.synthetic-unknown",
+    "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+    "sectionId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails::MoreAttributesGroup",
+    "labelOrigin": "NATIVE_SOURCE_DECLARED",
+    "nativeControl": {
+      "tag": "TD",
+      "readOnly": null,
+      "disabled": null
+    },
+    "value": {
+      "state": "NOT_READ",
+      "actualLabel": "",
+      "rawValue": null,
+      "locator": "#infoPage_myTab_object_docInfoDefaultDetails MoreAttributesGroup td.synthetic-unknown",
+      "observedTotalCodepoints": 0
+    },
+    "links": []
+  },
+  "referenceModels": [
+    {
+      "label": "Created By:",
+      "ref": "OR:wt.org.WTUser:241010",
+      "model": {
+        "relationshipRole": "OUT_OF_SCOPE_REFERENCE",
+        "modelRoleOrigin": "REVIEWED_OUT_OF_SCOPE_OWN_FIELD_MODEL",
+        "direction": "SOURCE_TO_TARGET"
+      }
+    },
+    {
+      "label": "Modified By:",
+      "ref": "OR:wt.org.WTUser:241011",
+      "model": {
+        "relationshipRole": "OUT_OF_SCOPE_REFERENCE",
+        "modelRoleOrigin": "REVIEWED_OUT_OF_SCOPE_OWN_FIELD_MODEL",
+        "direction": "SOURCE_TO_TARGET"
+      }
+    },
+    {
+      "label": "Context:",
+      "ref": "OR:wt.pdmlink.PDMLinkProduct:241012",
+      "model": {
+        "relationshipRole": "OUT_OF_SCOPE_REFERENCE",
+        "modelRoleOrigin": "REVIEWED_OUT_OF_SCOPE_OWN_FIELD_MODEL",
+        "direction": "SOURCE_TO_TARGET"
+      }
+    },
+    {
+      "label": "Context:",
+      "ref": "OR:wt.inf.library.WTLibrary:241013",
+      "model": {
+        "relationshipRole": "OUT_OF_SCOPE_REFERENCE",
+        "modelRoleOrigin": "REVIEWED_OUT_OF_SCOPE_OWN_FIELD_MODEL",
+        "direction": "SOURCE_TO_TARGET"
+      }
+    },
+    {
+      "label": "Location:",
+      "ref": "OR:wt.folder.Cabinet:241014",
+      "model": {
+        "relationshipRole": "OUT_OF_SCOPE_REFERENCE",
+        "modelRoleOrigin": "REVIEWED_OUT_OF_SCOPE_OWN_FIELD_MODEL",
+        "direction": "SOURCE_TO_TARGET"
+      }
+    },
+    {
+      "label": "Location:",
+      "ref": "OR:wt.folder.SubFolder:241015",
+      "model": {
+        "relationshipRole": "OUT_OF_SCOPE_REFERENCE",
+        "modelRoleOrigin": "REVIEWED_OUT_OF_SCOPE_OWN_FIELD_MODEL",
+        "direction": "SOURCE_TO_TARGET"
+      }
+    },
+    {
+      "label": "Unreviewed Location:",
+      "ref": "OR:wt.folder.Cabinet:241016",
+      "model": {
+        "relationshipRole": "UNKNOWN",
+        "modelRoleOrigin": "UNREVIEWED_OWN_FIELD",
+        "direction": "UNKNOWN"
+      }
+    }
+  ],
+  "expected": {
+    "rosterWithPair": true,
+    "rosterBothAbsent": false,
+    "modifiedMirrors": {
+      "state": "VALUE",
+      "unreadLocators": []
+    },
+    "unknownCaption": true
+  }
+}
