@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
+import { lstat, readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 import { consumePendingReviewTurn } from './consume-hosted-review-turn.mjs';
 import { consumeHostedMatter } from './consume-hosted-matter.mjs';
@@ -82,6 +84,7 @@ export async function consumeHostedWorkItem(options, dependencies) {
   });
   let initial = readInitialStatus(statusResult, options.workItemId);
   assertExpectedInitialOperationStatus(options.expectedInitialOperation, initial);
+  assertExplicitInitialStageRequest(options, initial);
   if (options.repairingRecovery) {
     const operation = options.repairExpectedOperation;
     const stage = STAGE_BY_OPERATION[operation];
@@ -368,6 +371,12 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
       consumerStopped: previous?.consumerStopped ?? false,
       attentionCode: previous?.attentionCode ?? null,
       blockReady: previous?.blockReady ?? null,
+      ...(previous?.stoppedStageRequest !== undefined
+        ? { stoppedStageRequest: previous.stoppedStageRequest } : {}),
+      ...(previous?.stoppedWorkItemRevision !== undefined
+        ? { stoppedWorkItemRevision: previous.stoppedWorkItemRevision }
+        : previous?.consumerStopped && next.workItemRevision !== previous.workItemRevision
+          ? { stoppedWorkItemRevision: previous.workItemRevision } : {}),
     };
     await checkpoint.write('active-claim', claim);
   }
@@ -449,11 +458,15 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
     statusValue.stages?.[STAGE_BY_OPERATION[committingRecovery.operation]]?.requestId ===
       repairRequestId(claim.workItemId, claim.documentVersionId,
         STAGE_BY_OPERATION[committingRecovery.operation], options.repairAttemptRef);
+  const explicitStageRequest = claim.consumerStopped && !retry && !repair &&
+    !committingRecovery && !options.repairStoppedClaim
+    ? await stoppedClaimExplicitStageRequest(options, claim, statusValue, checkpoint, now)
+    : null;
   if (claim.completionReady) {
     claim = { ...claim, completionReady: false };
     await checkpoint.write('active-claim', claim);
   }
-  if (claim.consumerStopped && !retry && !repair && !repairingRecovery &&
+  if (claim.consumerStopped && !retry && !repair && !repairingRecovery && !explicitStageRequest &&
       !(committingRecovery?.status === 'RECOVERY_COMMITTING' && !options.repairStoppedClaim)) {
     return automaticWorkItemAttention(
       claim,
@@ -461,12 +474,29 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
       statusValue,
     );
   }
+  if (explicitStageRequest) {
+    if (!isDeepStrictEqual(await checkpoint.readOptional('active-claim'), claim))
+      throw new Error('AUTO_WORK_ITEM_EXPLICIT_CLAIM_CHANGED');
+    // An intent is durable before clearing the queue latch. An interrupted
+    // wakeup cannot treat this same request as a fresh explicit instruction.
+    await checkpoint.writeOnce(explicitStageWakeupStep(explicitStageRequest.requestId), {
+      schemaVersion: 'wiselink.auto_work_item_explicit_stage_wakeup.v1',
+      ...explicitStageRequest,
+      autoRequestId: claim.requestId,
+      leaseGeneration: claim.leaseGeneration,
+      priorAttentionCode: claim.attentionCode,
+      priorStoppedStageRequest: claim.stoppedStageRequest ?? null,
+    });
+  }
   if ((retry || (committingRecovery?.status === 'RECOVERY_COMMITTING' &&
       !options.repairStoppedClaim)) && claim.consumerStopped) {
     claim = { ...claim, consumerStopped: false, attentionCode: null };
     await checkpoint.write('active-claim', claim);
   }
 
+  const consumedOperation = retry?.operation ?? repair?.operation ?? statusValue.nextOperation;
+  const consumedRequestId = retry?.requestId ?? repair?.requestId ??
+    statusValue.stages?.[STAGE_BY_OPERATION[consumedOperation]]?.requestId;
   let report;
   try {
     report = await dependencies.consumeWorkItem({
@@ -477,6 +507,7 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
       // New items must use the context returned by Host status; a static
       // WorkItem's context reference cannot be inherited by a queued item.
       applicabilityContextRef: undefined,
+      ...(explicitStageRequest ? { explicitStageRequest } : {}),
       ...(retry || repair ? { autoRetry: retry ?? repair } : {}),
       ...(repair ? { repairStoppedClaim: true, repairAttentionCode,
         repairWorkItemRevision: claim.workItemRevision,
@@ -514,16 +545,27 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
   }
   statusValue = await dependencies.readInitialStatus(claim.workItemId);
   assertAutomaticClaimStatusBinding(claim, statusValue);
+  if (explicitStageRequest && !isDeepStrictEqual(await checkpoint.readOptional('active-claim'), claim))
+    throw new Error('AUTO_WORK_ITEM_EXPLICIT_CLAIM_CHANGED');
+  if (explicitStageRequest && report?.status !== 'REQUIRES_ATTENTION' &&
+      !confirmedExplicitStageReport(report, explicitStageRequest, statusValue))
+    return automaticWorkItemAttention(claim, 'AUTO_WORK_ITEM_EXPLICIT_REPORT_UNCONFIRMED', statusValue, report);
   if (isAutomaticWorkItemDone(statusValue)) {
     claim = { ...claim, completionReady: true };
     await checkpoint.write('active-claim', claim);
     return acknowledgeAndClearAutoClaim(claim, checkpoint, dependencies, report);
   }
   if (report?.status === 'REQUIRES_ATTENTION') {
+    const stoppedStageRequest = initialStageRequestBinding(
+      claim, statusValue, consumedOperation, consumedRequestId);
     claim = {
       ...claim,
       consumerStopped: true,
       attentionCode: safeAutomaticAttentionCode(report.errorCode),
+      ...(stoppedStageRequest || claim.stoppedStageRequest !== undefined
+        ? { stoppedStageRequest } : {}),
+      ...(claim.stoppedWorkItemRevision !== undefined
+        ? { stoppedWorkItemRevision: stoppedStageRequest?.workItemRevision ?? claim.workItemRevision } : {}),
     };
     await checkpoint.write('active-claim', claim);
     return automaticWorkItemAttention(
@@ -534,7 +576,9 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
     );
   }
 
-  if ((repair || repairingRecovery) && claim.consumerStopped) {
+  // Keep an explicit wakeup stopped across a thrown/uncertain invocation.
+  // Only a settled non-attention report releases its old queue latch.
+  if ((explicitStageRequest || repair || repairingRecovery) && claim.consumerStopped) {
     claim = { ...claim, consumerStopped: false, attentionCode: null };
     await checkpoint.write('active-claim', claim);
   }
@@ -687,7 +731,7 @@ function validateStoredAutoClaim(value) {
       'workItemRevision', 'leaseToken', 'leaseGeneration', 'leaseExpiresAt',
       'completionReady', 'consumerStopped', 'attentionCode', 'blockReady',
     ],
-    [],
+    ['stoppedStageRequest', 'stoppedWorkItemRevision'],
     'AUTO_WORK_ITEM_CLAIM_CHECKPOINT',
   );
   if (value.schemaVersion !== 'wiselink.auto_work_item_claim.v1' ||
@@ -696,7 +740,11 @@ function validateStoredAutoClaim(value) {
       (value.attentionCode !== null &&
         (typeof value.attentionCode !== 'string' ||
           !/^[A-Z][A-Z0-9_:.-]{0,199}$/u.test(value.attentionCode))) ||
-      (value.blockReady !== null && !isAutomaticBlockBinding(value.blockReady))) {
+      (value.blockReady !== null && !isAutomaticBlockBinding(value.blockReady)) ||
+      (value.stoppedStageRequest !== undefined && value.stoppedStageRequest !== null &&
+        !isInitialStageRequestBinding(value.stoppedStageRequest)) ||
+      (value.stoppedWorkItemRevision !== undefined &&
+        (!Number.isSafeInteger(value.stoppedWorkItemRevision) || value.stoppedWorkItemRevision < 0))) {
     throw new Error('AUTO_WORK_ITEM_CLAIM_CHECKPOINT_INVALID');
   }
   validateClaimFields(value);
@@ -804,6 +852,121 @@ function assertAutomaticClaimStatusBinding(claim, initial) {
   if (!isRecord(initial) || initial.documentVersionId !== claim.documentVersionId) {
     throw new Error('AUTO_WORK_ITEM_STATUS_SOURCE_CHANGED');
   }
+}
+
+function isInitialStageRequestBinding(value) {
+  return isRecord(value) && JSON.stringify(Object.keys(value).sort()) ===
+    JSON.stringify(['attemptRef', 'documentVersionId', 'operation', 'requestId', 'workItemId', 'workItemRevision']) &&
+    /^WI-[A-Za-z0-9_-]{1,93}$/u.test(value.workItemId) &&
+    /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(value.documentVersionId) &&
+    Number.isSafeInteger(value.workItemRevision) && value.workItemRevision >= 0 &&
+    INITIAL_ANALYSIS_OPERATIONS.includes(value.operation) &&
+    /^[A-Za-z0-9_-]{1,64}$/u.test(value.requestId) &&
+    /^AQ-[A-Za-z0-9-]{1,93}$/u.test(value.attemptRef);
+}
+
+function initialStageRequestBinding(claim, initial, operation, requestId) {
+  const stage = initial.stages?.[STAGE_BY_OPERATION[operation]];
+  if (initial.workItemId !== claim.workItemId || initial.documentVersionId !== claim.documentVersionId ||
+      initial.workItemRevision !== claim.workItemRevision || stage?.requestId !== requestId) return null;
+  const binding = { workItemId: claim.workItemId, documentVersionId: claim.documentVersionId,
+    workItemRevision: claim.workItemRevision, operation, requestId, attemptRef: stage?.attemptRef };
+  return isInitialStageRequestBinding(binding) ? binding : null;
+}
+
+function pendingExplicitInitialStageRequest(claim, initial) {
+  const operation = initial.nextOperation;
+  const stage = initial.stages?.[STAGE_BY_OPERATION[operation]];
+  if (initial.candidateOnly !== true || !['REQUIRED', 'WAITING_INPUT'].includes(initial.status) ||
+      !['TRANSLATE', 'EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation) ||
+      stage?.status !== 'PENDING' || stage.attemptStatus !== 'QUEUED' || stage.terminalCode !== null ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(stage.requestId ?? '') ||
+      Object.values(initial.stages).some(observation => observation.status === 'BUSY' ||
+        ['RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(observation.attemptStatus))) return null;
+  if (operation !== 'TRANSLATE' &&
+      (!['SUCCEEDED', 'PENDING', 'FAILED', 'CONFLICT'].includes(initial.stages.translation?.status) ||
+        !['SUCCEEDED', 'WAITING_INPUT'].includes(initial.stages.applicability?.status) ||
+        (operation === 'SYNTHESIZE_OVERALL' && initial.stages.jobAid?.status !== 'SUCCEEDED'))) return null;
+  return initialStageRequestBinding(claim, initial, operation, stage.requestId);
+}
+
+function explicitStageWakeupStep(requestId) {
+  return `explicit-stage-wakeup-${requestId}`;
+}
+
+function confirmedExplicitStageReport(report, expected, initial) {
+  const stage = initial.stages?.[STAGE_BY_OPERATION[expected.operation]];
+  if (!isRecord(report) || report.operation !== expected.operation || report.candidateOnly !== true ||
+      !Number.isSafeInteger(report.modelCallCount) || report.modelCallCount < 0 ||
+      initial.workItemId !== expected.workItemId || initial.documentVersionId !== expected.documentVersionId ||
+      stage?.attemptRef !== expected.attemptRef) return false;
+  if (report.status === 'INITIAL_STAGE_SAVED') {
+    // A successful projection keeps the exact attemptRef but may omit its
+    // continuation UUID; its applied WorkItem revision may also advance.
+    return report.stageStatus === 'SUCCEEDED' && stage.status === 'SUCCEEDED' &&
+      stage.attemptStatus === 'SUCCEEDED' && (!stage.requestId || stage.requestId === expected.requestId) &&
+      report.workItemRevision === initial.workItemRevision &&
+      Number.isSafeInteger(initial.workItemRevision) && initial.workItemRevision >= expected.workItemRevision;
+  }
+  return report.status === 'BUSY' && report.nextOperation === null && initial.status === 'BUSY' &&
+    initial.nextOperation === null && initial.workItemRevision === expected.workItemRevision &&
+    stage.status === 'BUSY' && stage.requestId === expected.requestId &&
+    ['RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(stage.attemptStatus);
+}
+
+async function stoppedClaimExplicitStageRequest(options, claim, initial, checkpoint, now) {
+  const currentTime = now();
+  if (!(currentTime instanceof Date) || !Number.isFinite(currentTime.getTime()))
+    throw new Error('AUTO_WORK_ITEM_QUEUE_CLOCK_INVALID');
+  if (claim.completionReady || claim.blockReady || !isAbsolute(options.checkpointRoot ?? '') ||
+      Date.parse(claim.leaseExpiresAt) <= currentTime.getTime() ||
+      /(?:ACL|AUTH|PERMISSION|SOURCE_REVOKED|BINDING_CHANGED|VERSION_DRIFT)/u.test(claim.attentionCode ?? '')) return null;
+  const binding = pendingExplicitInitialStageRequest(claim, initial);
+  const stopped = claim.stoppedStageRequest;
+  if (!binding || (claim.stoppedWorkItemRevision !== undefined &&
+      claim.stoppedWorkItemRevision !== binding.workItemRevision) || (stopped && (stopped.requestId === binding.requestId ||
+      stopped.workItemId !== binding.workItemId || stopped.documentVersionId !== binding.documentVersionId ||
+      stopped.workItemRevision !== binding.workItemRevision))) return null;
+  if (typeof checkpoint.hasEntries !== 'function' || typeof checkpoint.writeOnce !== 'function')
+    throw new Error('AUTO_WORK_ITEM_QUEUE_DEPENDENCIES_INVALID');
+  if (await checkpoint.hasEntries(explicitStageWakeupStep(binding.requestId))) return null;
+  return await unusedInitialStageCheckpoint(options, binding) ? binding : null;
+}
+
+async function unusedInitialStageCheckpoint(options, binding) {
+  // Legacy claims have no stopped request identity. A queued UUID alone is
+  // insufficient: its exact independent namespace must have no intent at all,
+  // including incomplete/temp files. No earlier namespace is read or changed.
+  const root = options.checkpointRoot;
+  let directory = root;
+  try {
+    for (const segment of ['', encodeURIComponent(binding.workItemId), 'initial', binding.operation,
+      'requests', binding.requestId]) {
+      if (segment) directory = join(directory, segment);
+      let info;
+      try { info = await lstat(directory); }
+      catch (error) {
+        if (error?.code === 'ENOENT' && directory !== root) return true;
+        throw error;
+      }
+      if (!info.isDirectory() || info.isSymbolicLink())
+        throw new Error('AUTO_WORK_ITEM_EXPLICIT_CHECKPOINT_UNAVAILABLE');
+    }
+    return (await readdir(directory)).length === 0;
+  } catch (error) {
+    throw new Error('AUTO_WORK_ITEM_EXPLICIT_CHECKPOINT_UNAVAILABLE', { cause: error });
+  }
+}
+
+function assertExplicitInitialStageRequest(options, initial) {
+  if (options.explicitStageRequest === undefined) return;
+  const expected = options.explicitStageRequest;
+  if (!isInitialStageRequestBinding(expected)) throw new Error('AUTO_WORK_ITEM_EXPLICIT_STAGE_CHANGED');
+  const current = pendingExplicitInitialStageRequest(expected, initial);
+  if (!options.initialStageOnly || options.maxInitialStages !== 1 || options.workItemId !== expected?.workItemId ||
+      !current ||
+      Object.keys(expected).some(key => expected[key] !== current[key]))
+    throw new Error('AUTO_WORK_ITEM_EXPLICIT_STAGE_CHANGED');
 }
 
 async function automaticRetryPlan(initial, workItemId, readSavedWork) {
@@ -1036,6 +1199,11 @@ export async function runHostedInitialStage(options, dependencies) {
   if (!INITIAL_ANALYSIS_OPERATIONS.includes(operation)) throw new Error('INITIAL_OPERATION_INVALID');
   const continuationRequestId = options.autoRetryRequestId ??
     initial.stages[STAGE_BY_OPERATION[operation]]?.requestId;
+  if (options.explicitStageRequest &&
+      (options.explicitStageRequest.operation !== operation ||
+        options.explicitStageRequest.requestId !== continuationRequestId ||
+        !await unusedInitialStageCheckpoint(options, options.explicitStageRequest)))
+    throw new Error('AUTO_WORK_ITEM_EXPLICIT_CHECKPOINT_CHANGED');
   const initialWorkItemRevision=operation === 'EXTRACT_APPLICABILITY'
     ? (options.assessmentRecovery?.initialWorkItemRevision ?? initial.workItemRevision) : undefined;
   const checkpoint = await createCheckpointStore(initialStageCheckpointPath(
@@ -1234,7 +1402,7 @@ function readInitialStatus(value, workItemId) {
       throw new Error('HOST_INITIAL_STATUS_INVALID');
     }
   }
-  return status;
+  return { ...status, workItemId };
 }
 
 function initialComplete(value) {
