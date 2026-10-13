@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c222`
+- Skill：`wiselink-research-and-synthesize@r09.c223`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -154,6 +154,7 @@ checkpoint；模型和业务工具仍复用现有消费者、官方 Gateway、�
 全部保留并返回 `REQUIRES_ATTENTION`；绝不接着消费其他排队项。消费者只在 Host fresh status 确认初始 JobAid 和
 Overall 完成后 ACK。c145 对取消、超时或准备失败的 JobAid/Overall，按旧 attempt 与确切原文版本派生稳定的新请求，最多接续一次；再次失败或授权/版本变化则保留成果并报告关注。运行故障不再自动 BLOCK 文档；既有未确认 BLOCK 意图也不重发。模型结果不决定发现、续领或正式采用。
 修复部署后，操作员可在无其他消费者时单次使用 `--auto-queue --repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...` 接续已停止的精确 claim。它只接受自动重试后的无保存 Gateway 不完整终态，依据旧 attempt 与当前 Skill 版本派生稳定 requestId；普通定时命令不带此参数，失败后不能循环重放。
+c223 对已有停止标记的 claim，只有 Host 当前返回同事项、文档版本和工作修订的新显式 `PENDING/QUEUED` 请求，且该请求的独立检查点没有任何执行或保存意图，才通过原入口接续。消费者先持久化一次唤醒意图，再于第二次状态读取重验操作、请求和 attempt 绑定；未知结果保留停止记录。任务时限仍由 Host 核验，历史 provider UNKNOWN 不重放。
 静态 `--work-item-id`、Matter 和 DocumentVersion 命令仍使用原入口，不与 `--auto-queue` 混用。
 
 ### 共同背景（兼容增量）
@@ -619,7 +620,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c222`
+- `skillVersion=wiselink-research-and-synthesize@r09.c223`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
