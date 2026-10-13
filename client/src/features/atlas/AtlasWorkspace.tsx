@@ -615,13 +615,13 @@ export default function AtlasWorkspace({
               <option value="EXAMPLE">独立示例空间</option>
             </select>
           </label>
-          <span className={`atlas-space is-${location.space}`}>
-            {location.view === 'classification'
-              ? '附件分类原值 · 非机队构型'
-              : location.space === 'EXAMPLE'
-                ? '构造样例 · 非实际机队状态'
-                : 'Host 授权只读'}
-          </span>
+          {location.view === 'classification' || location.space === 'EXAMPLE' ? (
+            <span className={`atlas-space is-${location.space}`}>
+              {location.view === 'classification'
+                ? '附件分类原值 · 非机队构型'
+                : '构造样例 · 非实际机队状态'}
+            </span>
+          ) : null}
           <label>
             效果{' '}
             <select
@@ -1390,12 +1390,6 @@ export default function AtlasWorkspace({
                     : '暂无已保存意见。'}
                 </p>
               </section>
-            ) : null}
-            {location.space === 'HOST' && host.readMs !== undefined ? (
-              <p className="atlas-metrics">
-                本次 Host 读取 {host.readMs} ms · 图渲染时间单独记录 ·
-                未调用模型
-              </p>
             ) : null}
           </div>
         </div>
