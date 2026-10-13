@@ -55,10 +55,13 @@ export interface AtlasLocation {
   space: AtlasSpace;
   view: AtlasView;
   focus: string;
+  documentVersionId?: string;
   selected: string;
   search: string;
   cursor: string;
   domain: string;
+  /** Raw Host document ATA filter; independent of the example domain identifiers. */
+  hostAta?: string;
   history: boolean;
   sidebarOpen?: boolean;
   series?: 'all' | 'NG' | 'MAX';
@@ -168,9 +171,7 @@ export function documentGraph(
   const graph: AtlasGraph = {
     nodes: [central],
     edges: [],
-    notices: [
-      '反向引用与版本附件暂无数据。',
-    ],
+    notices: ['反向引用与版本附件暂无数据。'],
   };
   if (!preview) return graph;
   if (

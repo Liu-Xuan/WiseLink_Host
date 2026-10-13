@@ -35,6 +35,12 @@ import {
   exampleEdges,
 } from './example-provider';
 import { atlasReadKey, useAtlasHost } from './useAtlasHost';
+import {
+  atlasHostAtaValues,
+  atlasMacroCoverageLabel,
+  isAtlasHostMacroView,
+} from './atlas-host-macro';
+import { libraryGraphReadingParams } from '@client/src/pages/RelationGraphPage/library-graph-route';
 import AtlasGraph from './AtlasGraph';
 import AtlasClassification from './AtlasClassification';
 import AtlasExampleReading from './AtlasExampleReading';
@@ -166,6 +172,10 @@ export default function AtlasWorkspace({
     ],
   );
   const graph = location.space === 'EXAMPLE' ? exampleGraph : host.graph;
+  const hostMacroView = isAtlasHostMacroView(location);
+  const hostAtaValues = atlasHostAtaValues(host.macro);
+  if (location.hostAta && !hostAtaValues.includes(location.hostAta))
+    hostAtaValues.unshift(location.hostAta);
   const key = JSON.stringify([
     atlasReadKey(location, sessionGeneration),
     location.domain,
@@ -471,6 +481,8 @@ export default function AtlasWorkspace({
       view,
       sidebarOpen: false,
       selected: '',
+      cursor: '',
+      documentVersionId: undefined,
       focus:
         location.space === 'EXAMPLE'
           ? 'sb-r1'
@@ -481,6 +493,7 @@ export default function AtlasWorkspace({
   };
   const selectedNode = graph.nodes.find((n) => n.id === location.selected);
   const selectedEdge = graph.edges.find((e) => e.id === location.selected);
+  const selectedMacroTarget = host.macro?.targets.get(location.selected);
   const selectedSources =
     selectedNode?.sourceRefs ?? selectedEdge?.sourceRefs ?? [];
   function navigateDocument(
@@ -605,6 +618,7 @@ export default function AtlasWorkspace({
                   space: e.target.value as AtlasLocation['space'],
                   view: 'documents',
                   focus: e.target.value === 'EXAMPLE' ? 'sb-r1' : workItemId,
+                  documentVersionId: undefined,
                   selected: '',
                   cursor: '',
                   search: '',
@@ -615,7 +629,8 @@ export default function AtlasWorkspace({
               <option value="EXAMPLE">独立示例空间</option>
             </select>
           </label>
-          {location.view === 'classification' || location.space === 'EXAMPLE' ? (
+          {location.view === 'classification' ||
+          location.space === 'EXAMPLE' ? (
             <span className={`atlas-space is-${location.space}`}>
               {location.view === 'classification'
                 ? '附件分类原值 · 非机队构型'
@@ -862,10 +877,19 @@ export default function AtlasWorkspace({
                             search: e.target.value,
                             cursor: '',
                             focus: '',
+                            documentVersionId: undefined,
                           })
                         }
                       />
-                      <button onClick={() => change({ focus: '', cursor: '' })}>
+                      <button
+                        onClick={() =>
+                          change({
+                            focus: '',
+                            cursor: '',
+                            documentVersionId: undefined,
+                          })
+                        }
+                      >
                         授权目录
                       </button>
                       {host.nextCursor ? (
@@ -992,7 +1016,8 @@ export default function AtlasWorkspace({
                     <option value="cose">力导向</option>
                     <option value="grid">网格</option>
                   </select>
-                  {location.view === 'domain' ? (
+                  {location.space === 'EXAMPLE' &&
+                  location.view === 'domain' ? (
                     <select
                       aria-label="技术领域"
                       value={location.domain}
@@ -1008,11 +1033,41 @@ export default function AtlasWorkspace({
                       <option value="display">显示技术领域</option>
                     </select>
                   ) : null}
+                  {hostMacroView && location.view === 'domain' ? (
+                    <select
+                      aria-label="按原文 ATA 筛选"
+                      value={location.hostAta ?? ''}
+                      onChange={(event) =>
+                        change({
+                          hostAta: event.target.value || undefined,
+                          selected: '',
+                          cursor: '',
+                        })
+                      }
+                    >
+                      <option value="">全部已读 ATA</option>
+                      {hostAtaValues.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
                   <strong className="atlas-view-title">
                     {viewLabels[location.view]}
                   </strong>
                   <span className="atlas-count">
-                    {graph.nodes.length} 对象 · {graph.edges.length} 关系
+                    {hostMacroView && (host.loading || host.error) ? (
+                      host.loading ? (
+                        '正在读取'
+                      ) : (
+                        '读取受阻'
+                      )
+                    ) : (
+                      <>
+                        {graph.nodes.length} 对象 · {graph.edges.length} 关系
+                      </>
+                    )}
                   </span>
                   <button
                     aria-label="缩小图谱"
@@ -1065,27 +1120,78 @@ export default function AtlasWorkspace({
                           : 'HOST · 授权资料'}
                       </span>
                       <h2>
-                        {location.view === 'domain'
-                          ? location.domain === 'fmc'
-                            ? 'FMC · 飞行管理计算机'
-                            : '显示技术领域'
-                          : viewLabels[location.view]}
+                        {hostMacroView && location.view === 'domain'
+                          ? location.hostAta
+                            ? `原文 ATA · ${location.hostAta}`
+                            : '文档 ATA 分类'
+                          : location.view === 'domain'
+                            ? location.domain === 'fmc'
+                              ? 'FMC · 飞行管理计算机'
+                              : '显示技术领域'
+                            : viewLabels[location.view]}
                       </h2>
                       <p>
-                        {location.view === 'domain'
-                          ? '按技术对象查看相关工程事项。'
-                          : location.view === 'network'
-                            ? '先看文档族之间的联系，再深入确切版本与原始引用。'
-                            : location.view === 'panorama'
-                              ? '从每项认识了解整体，随时返回事项和确切依据。'
-                              : location.view === 'evidence'
-                                ? '查看支持依据与限制条件。'
-                                : '保留主题、版本与来源，沿有依据的关系继续深入。'}
+                        {hostMacroView
+                          ? '分类、文档族、准确版本与登记事项。'
+                          : location.view === 'domain'
+                            ? '按技术对象查看相关工程事项。'
+                            : location.view === 'network'
+                              ? '先看文档族之间的联系，再深入确切版本与原始引用。'
+                              : location.view === 'panorama'
+                                ? '从每项认识了解整体，随时返回事项和确切依据。'
+                                : location.view === 'evidence'
+                                  ? '查看支持依据与限制条件。'
+                                  : '保留主题、版本与来源，沿有依据的关系继续深入。'}
                       </p>
                     </header>
+                    {hostMacroView &&
+                    !host.loading &&
+                    !host.error &&
+                    !graph.nodes.length ? (
+                      <p role="status">当前已读取范围没有可读对象。</p>
+                    ) : null}
+                    {host.macro ? (
+                      <dl aria-label="全景读取覆盖">
+                        <div>
+                          <dt>资料目录</dt>
+                          <dd>
+                            {
+                              atlasMacroCoverageLabel[
+                                host.macro.read.coverage.documents
+                              ]
+                            }
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>事项及材料</dt>
+                          <dd>
+                            {
+                              atlasMacroCoverageLabel[
+                                host.macro.read.coverage.matters
+                              ]
+                            }
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>文档引用</dt>
+                          <dd>
+                            {
+                              atlasMacroCoverageLabel[
+                                host.macro.read.coverage.references
+                              ]
+                            }
+                          </dd>
+                        </div>
+                      </dl>
+                    ) : null}
                     <AtlasGraph
                       graph={graph}
-                      location={location}
+                      location={
+                        hostMacroView
+                          ? { ...location, view: 'network' }
+                          : location
+                      }
+                      variant={hostMacroView ? 'macro' : 'default'}
                       onSelect={(selected) => change({ selected })}
                       onReady={graphReady}
                       onCamera={(pan, zoom) => {
@@ -1194,6 +1300,7 @@ export default function AtlasWorkspace({
                             change({
                               view: 'documents',
                               focus: selectedNode.workItemId!,
+                              documentVersionId: selectedNode.documentVersionId,
                               selected: '',
                             })
                           }
@@ -1216,6 +1323,7 @@ export default function AtlasWorkspace({
                             change({
                               view: 'family',
                               focus: selectedNode.workItemId!,
+                              documentVersionId: selectedNode.documentVersionId,
                               selected: '',
                             })
                           }
@@ -1224,12 +1332,47 @@ export default function AtlasWorkspace({
                         </button>
                       </>
                     ) : null}
+                    {location.space === 'HOST' &&
+                    selectedNode?.documentVersionId ? (
+                      <button
+                        onClick={() =>
+                          onNavigate(
+                            `/document-versions/${encodeURIComponent(selectedNode.documentVersionId!)}`,
+                          )
+                        }
+                      >
+                        阅读准确来源
+                      </button>
+                    ) : null}
+                    {selectedMacroTarget?.kind === 'matter' ? (
+                      <button
+                        onClick={() =>
+                          change({
+                            view: 'matter',
+                            focus: selectedMacroTarget.matterId,
+                            selected: '',
+                            cursor: '',
+                          })
+                        }
+                      >
+                        读取此事项与已保存意见
+                      </button>
+                    ) : null}
+                    {selectedMacroTarget?.kind === 'family' ? (
+                      <button
+                        onClick={() =>
+                          onNavigate(
+                            `/graph?${libraryGraphReadingParams({ level: 'versions', familyId: selectedMacroTarget.familyId })}`,
+                          )
+                        }
+                      >
+                        打开文档族版本
+                      </button>
+                    ) : null}
                     {selectedEdge?.memberEdgeRefs ? (
                       <section>
                         <h3>版本级原始引用</h3>
-                        <p>
-                          文档族内各版本的引用
-                        </p>
+                        <p>文档族内各版本的引用</p>
                         {selectedEdge.memberEdgeRefs.map((id) => {
                           const edge = exampleEdges.find((e) => e.id === id);
                           if (!edge) return null;
@@ -1385,9 +1528,7 @@ export default function AtlasWorkspace({
                     '当前没有可读取的保存意见。'}
                 </p>
                 <p>
-                  {host.quicklook.result
-                    ? '已保存意见'
-                    : '暂无已保存意见。'}
+                  {host.quicklook.result ? '已保存意见' : '暂无已保存意见。'}
                 </p>
               </section>
             ) : null}

@@ -20,12 +20,20 @@ import {
 } from './atlas-model';
 import { libraryReadErrorPresentation } from '@client/src/pages/WorkspaceHomePage/library-read-error';
 import type { AssessmentReadingResult } from '@shared/assessment-reading.interface';
+import {
+  isAtlasHostMacroView,
+  readAtlasHostMacro,
+  type AtlasHostMacro,
+} from './atlas-host-macro';
+const selectedVersionChanged =
+  '所选准确文档版本与读取结果不一致，请重新选择该版本。';
 export interface AtlasHostRead {
   key: string;
   graph: AtlasGraph;
   quicklook?: CanonicalLibraryQuicklookResponse;
   preview?: CanonicalRelatedContextPreviewResponse;
   reading?: AssessmentReadingResult | null;
+  macro?: AtlasHostMacro;
   nextCursor?: string | null;
   loading: boolean;
   error?: string;
@@ -37,8 +45,10 @@ export function atlasReadKey(location: AtlasLocation, session: number) {
     location.space,
     location.view,
     location.focus,
+    location.documentVersionId,
     location.search,
     location.cursor,
+    location.hostAta,
   ]);
 }
 export function useAtlasHost(
@@ -46,7 +56,7 @@ export function useAtlasHost(
   session: number,
   authenticationRequired: boolean,
   retry: number,
-) {
+): AtlasHostRead {
   const [read, setRead] = useState<AtlasHostRead | null>(null);
   const key = atlasReadKey(location, session);
   useEffect(() => {
@@ -63,6 +73,10 @@ export function useAtlasHost(
     setRead(empty);
     const start = performance.now();
     async function load(): Promise<AtlasHostRead> {
+      if (isAtlasHostMacroView(location)) {
+        const macro = await readAtlasHostMacro(location, controller.signal);
+        return { ...empty, loading: false, graph: macro.graph, macro };
+      }
       if (location.view === 'classification')
         return {
           ...empty,
@@ -81,6 +95,11 @@ export function useAtlasHost(
             location.focus,
             controller.signal,
           );
+          if (
+            location.documentVersionId &&
+            quicklook.document.documentVersionId !== location.documentVersionId
+          )
+            throw new Error(selectedVersionChanged);
           let preview: CanonicalRelatedContextPreviewResponse | undefined;
           let error: string | undefined;
           try {
@@ -114,6 +133,13 @@ export function useAtlasHost(
                 controller.signal,
               )
             : null;
+        if (
+          location.documentVersionId &&
+          familyQuicklook &&
+          familyQuicklook.document.documentVersionId !==
+            location.documentVersionId
+        )
+          throw new Error(selectedVersionChanged);
         const catalog = await getCanonicalLibraryDocuments(
           {
             search:
@@ -200,9 +226,7 @@ export function useAtlasHost(
         graph: {
           nodes: [],
           edges: [],
-          notices: [
-            '此视图暂无数据，可切换到示例空间。',
-          ],
+          notices: ['当前视图尚未接通 Host 读取。'],
         },
       };
     }
@@ -216,7 +240,11 @@ export function useAtlasHost(
           setRead({
             ...empty,
             loading: false,
-            error: libraryReadErrorPresentation(reason).message,
+            error:
+              reason instanceof Error &&
+              reason.message === selectedVersionChanged
+                ? selectedVersionChanged
+                : libraryReadErrorPresentation(reason).message,
           });
       });
     return () => controller.abort();
@@ -228,8 +256,10 @@ export function useAtlasHost(
     location.space,
     location.view,
     location.focus,
+    location.documentVersionId,
     location.search,
     location.cursor,
+    location.hostAta,
   ]);
   return authenticationRequired
     ? {
