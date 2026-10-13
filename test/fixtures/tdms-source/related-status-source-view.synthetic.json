@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "wiselink.tdms-related-status-source-view.v1",
+  "state": "NOT_READ",
+  "modelRevision": null,
+  "evidenceLocator": "#infoPage_myTab_object_latestStatusLink #relatedStatusLinkTable",
+  "ownerSourceRecordId": "OR:wt.epm.EPMDocument:901",
+  "ownerTechnicalVersion": {
+    "rawRevision": "A",
+    "rawIteration": "1",
+    "confirmation": "SOURCE_DECLARED"
+  },
+  "ownerBusinessVersion": {
+    "rawRevision": "1",
+    "rawIteration": null,
+    "confirmation": "SOURCE_DECLARED"
+  },
+  "tabId": "infoPageinfoPanelID__infoPage_myTab_object_latestStatusLink",
+  "panelLocator": "#infoPage_myTab_object_latestStatusLink",
+  "gridId": "relatedStatusLinkTable",
+  "nativeView": {
+    "state": "NOT_READ",
+    "control": null
+  },
+  "nativeFilters": {
+    "state": "NOT_READ",
+    "controls": null,
+    "noFilterDeclaration": null
+  },
+  "observedAt": "2026-10-13T00:00:00.000Z"
+}

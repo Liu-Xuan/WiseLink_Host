@@ -1,4 +1,5 @@
-// Current pure DTO basis: TDMS final 0.2.54/runtime 174f1d555502880a.
+// Core pure DTO basis: TDMS final 0.2.54/runtime 174f1d555502880a.
+// Optional related-status source-view v1 is independent of producer version.
 // Producer admission/runtime/completion orchestration is not copied into Host.
 import {
   classifyOwnFieldReference,
@@ -1254,6 +1255,110 @@ function validateRawLink(l) {
   )
     fail('TDMS_COMPLETE_OWN_LINK_INVALID');
 }
+// Raw native view/filter evidence only; it grants no applicability coverage or
+// completion certificate. Historical relation DTOs keep this object absent.
+function validateRelatedStatusSourceViewEvidence(
+  v,
+  { owner, tabId, panelLocator, gridId },
+) {
+  const invalid = () => fail('TDMS_COMPLETE_RELATED_STATUS_VIEW_INVALID');
+  const keys = (value, names) => {
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      Object.keys(value).length !== names.length ||
+      Object.keys(value).some((key) => !names.includes(key))
+    )
+      invalid();
+  };
+  const valueText = (value, max = 700) => {
+    if (typeof value !== 'string' || !value.trim() || value.length > max)
+      invalid();
+  };
+  const control = (value) => {
+    keys(value, ['locator', 'tag', 'actualLabel', 'rawValue']);
+    for (const key of ['locator', 'tag', 'actualLabel', 'rawValue'])
+      valueText(value[key], key === 'rawValue' ? 1000 : 700);
+    if (
+      !value.locator.startsWith('#') ||
+      !['SELECT', 'INPUT', 'SPAN', 'DIV', 'BUTTON'].includes(value.tag)
+    )
+      invalid();
+  };
+  keys(v, [
+    'schemaVersion',
+    'state',
+    'modelRevision',
+    'evidenceLocator',
+    'ownerSourceRecordId',
+    'ownerTechnicalVersion',
+    'ownerBusinessVersion',
+    'tabId',
+    'panelLocator',
+    'gridId',
+    'nativeView',
+    'nativeFilters',
+    'observedAt',
+  ]);
+  if (
+    v.schemaVersion !== 'wiselink.tdms-related-status-source-view.v1' ||
+    v.ownerSourceRecordId !== owner.sourceRecordId ||
+    stable(v.ownerTechnicalVersion) !== stable(owner.sourceVersion) ||
+    stable(v.ownerBusinessVersion) !== stable(owner.businessVersion) ||
+    v.tabId !== tabId ||
+    tabId !== 'infoPageinfoPanelID__infoPage_myTab_object_latestStatusLink' ||
+    v.panelLocator !== panelLocator ||
+    panelLocator !== '#infoPage_myTab_object_latestStatusLink' ||
+    v.gridId !== gridId ||
+    gridId !== 'relatedStatusLinkTable' ||
+    v.evidenceLocator !== panelLocator + ' #' + gridId
+  )
+    invalid();
+  valueText(v.observedAt, 100);
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(v.observedAt) ||
+    !Number.isFinite(Date.parse(v.observedAt))
+  )
+    invalid();
+  keys(v.nativeView, ['state', 'control']);
+  keys(v.nativeFilters, ['state', 'controls', 'noFilterDeclaration']);
+  if (v.state === 'NOT_READ') {
+    if (
+      v.modelRevision !== null ||
+      v.nativeView.state !== 'NOT_READ' ||
+      v.nativeView.control !== null ||
+      v.nativeFilters.state !== 'NOT_READ' ||
+      v.nativeFilters.controls !== null ||
+      v.nativeFilters.noFilterDeclaration !== null
+    )
+      invalid();
+    return;
+  }
+  if (v.state !== 'VALUE' || v.nativeView.state !== 'VALUE') invalid();
+  valueText(v.modelRevision, 160);
+  control(v.nativeView.control);
+  const filters = v.nativeFilters;
+  if (filters.state === 'NONE') {
+    if (!Array.isArray(filters.controls) || filters.controls.length) invalid();
+    control(filters.noFilterDeclaration);
+  } else if (filters.state === 'VALUE') {
+    if (
+      !Array.isArray(filters.controls) ||
+      !filters.controls.length ||
+      filters.controls.length > 20 ||
+      filters.noFilterDeclaration !== null
+    )
+      invalid();
+    filters.controls.forEach(control);
+    if (
+      new Set(filters.controls.map((value) => value.locator)).size !==
+      filters.controls.length
+    )
+      invalid();
+  } else invalid();
+}
+
 export function validateCompleteRelationTable(t, input, owner) {
   assertKeys(
     t,
@@ -1279,6 +1384,7 @@ export function validateCompleteRelationTable(t, input, owner) {
       'ownerSourceVersion',
       'observedAt',
       'nativeStatusProof',
+      'sourceViewEvidence',
     ],
     [
       'tableId',
@@ -1582,6 +1688,19 @@ export function validateCompleteRelationTable(t, input, owner) {
       )
     )
       fail('TDMS_COMPLETE_ENGINEERING_REUSED_STATUS_UNVERIFIED');
+  }
+  if (t.sourceViewEvidence !== undefined) {
+    if (
+      !['EO', 'EF', 'AEO'].includes(input.scopeId) ||
+      t.gridId !== 'relatedStatusLinkTable'
+    )
+      fail('TDMS_COMPLETE_RELATED_STATUS_VIEW_INVALID');
+    validateRelatedStatusSourceViewEvidence(t.sourceViewEvidence, {
+      owner,
+      tabId: t.tabId,
+      panelLocator: t.panelLocator,
+      gridId: t.gridId,
+    });
   }
   if (t.stopReason !== null) text(t.stopReason, 120);
   return t;
