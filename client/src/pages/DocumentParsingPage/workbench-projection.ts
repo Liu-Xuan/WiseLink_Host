@@ -368,7 +368,7 @@ function buildAssessmentSemantics(
       : null,
     gaps,
     boundary:
-      '页面展示的是同一工程事项的候选意见；在工程师确认前，不构成工程、适航或发布结论。',
+      '当前工程事项的已保存意见',
   };
 }
 

@@ -208,7 +208,7 @@ export default function EngineeringTimelinePage({ view = 'timeline', onNavigateG
   };
   return <main className="trinity-activity-page">
     <header className="activity-page-head">
-      <div><h1>{view === 'graph' ? '活动来源关系' : '工程时间轴'}</h1><p>按当前文档版本已保存的时间声明阅读；保存时间不替代发生、取得或生效时间。</p></div>
+      <div><h1>{view === 'graph' ? '活动来源关系' : '工程时间轴'}</h1><p>已保存的来源时间声明</p></div>
       <nav className="activity-view-nav" aria-label="三视图入口">
         <Button variant="ghost" onClick={() => navigate('/situation')}><Compass size={15} />态势</Button>
         <Button variant="ghost" className={view === 'timeline' ? 'active' : ''} onClick={() => navigate(pageRoute(searchParams, '/timeline'))}><Clock size={15} />时间轴</Button>
@@ -320,7 +320,7 @@ function TimelineDefaultDocumentResolver({ pagePath, searchParams }: { pagePath:
   return (
     <div className="activity-timeline-empty" role="alert">
       <h2>目录读取受阻</h2>
-      <p>文档目录服务暂时不可用，已停止而不是换用其他文档，请稍后重试。</p>
+      <p>文档目录暂时不可用，请稍后重试。</p>
       <Button variant="outline" onClick={() => setReloadKey(value => value + 1)}>重试</Button>
     </div>
   );
@@ -385,7 +385,7 @@ function TimelineMatterSourceResolver({ matterId, pagePath, searchParams }: { ma
   if (state === 'choice') {
     return <section className="activity-timeline-empty" aria-label="事项时间轴来源">
       <h2>{visible?.title} · 已登记来源</h2>
-      <p>选择一个准确文档版本阅读已保存的时间声明。来源取得不代表活动已经执行。</p>
+      <p>选择文档版本阅读已保存的时间声明。</p>
       <ul>{visible?.sources?.map(source => <li key={source.document.documentVersionId}>
         <Button variant="outline" onClick={() => openSource(source)}>{matterDocumentSourceLabel(source)}{matterDocumentSourceLabel(source) !== source.document.documentVersionId ? ` · ${source.document.documentVersionId}` : ''}</Button>
       </li>)}</ul>
@@ -395,7 +395,7 @@ function TimelineMatterSourceResolver({ matterId, pagePath, searchParams }: { ma
     return (
       <div className="activity-timeline-empty">
         <h2>该事项没有已登记的文档版本</h2>
-        <p>工程时间轴只阅读该事项实际登记来源的时间声明；当前事项尚未登记可用于时间轴的文档版本，不会改读其他文档。</p>
+        <p>尚未登记可用于时间轴的文档版本。</p>
         <Button variant="outline" onClick={() => navigate('/library?mode=matter')}>去资料库</Button>
       </div>
     );
@@ -403,7 +403,7 @@ function TimelineMatterSourceResolver({ matterId, pagePath, searchParams }: { ma
   return (
     <div className="activity-timeline-empty" role="alert">
       <h2>事项来源读取受阻</h2>
-      <p>无法读取该事项已登记的资料，已停止而不是换用其他文档，请稍后重试。</p>
+      <p>事项资料读取失败，请稍后重试。</p>
       <Button variant="outline" onClick={() => setReloadKey(value => value + 1)}>重试</Button>
     </div>
   );

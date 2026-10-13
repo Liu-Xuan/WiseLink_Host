@@ -44,6 +44,7 @@ import {
   readDocumentVersionOriginalIdentity,
   readDocumentSemanticReading,
   readDocumentActivityReading,
+  readSavedDocumentReading,
   previewApplicabilitySelectionReviewAction,
   uploadLibraryDocument,
   confirmLibraryHistoricalImport,
@@ -66,8 +67,56 @@ import {
 import { createRequestCorrelationId } from '../../client/src/utils/request-correlation-id';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { libraryMetadata } from './fixtures/canonical-library';
+import { savedDocumentReadingFixture } from './fixtures/saved-document-reading';
+import { isRevokedMatterError } from '@client/src/features/matter/matter-read-error';
 
 describe('canonical host assessment client', () => {
+  it.each(['resolved-401', 'resolved-403', 'resolved-404', 'rejected-401', 'rejected-403', 'rejected-404'])(
+    'saved-read identity error classifier treats actual %s as an access rejection', async failure => {
+      const status = Number(failure.slice(-3));
+      if (failure.startsWith('resolved')) request.mockResolvedValueOnce({ status, data: {} });
+      else request.mockRejectedValueOnce(Object.assign(new Error('identity rejected'), { response: { status, data: {} } }));
+      const error = await getCanonicalHostIdentityContext({ fresh: true }).catch(reason => reason);
+      expect(error).toBeInstanceOf(Error);
+      expect(isRevokedMatterError(error)).toBe(true);
+    },
+  );
+
+  it('saved-read identity error classifier retains an ordinary actual HTTP503 as availability failure', async () => {
+    request.mockResolvedValueOnce({ status: 503, data: {} });
+    const error = await getCanonicalHostIdentityContext({ fresh: true }).catch(reason => reason);
+    expect(error).toMatchObject({ statusCode: 503 });
+    expect(isRevokedMatterError(error)).toBe(false);
+  });
+
+  it('reads saved document reading at its original parse and semantic revision with an encoded exact GET', async () => {
+    const reading = savedDocumentReadingFixture('DV/old');
+    const response = { familyId: 'family', sourceBinding: reading.sourceBinding, status: 'AVAILABLE', reading };
+    request.mockResolvedValue({ status: 200, data: response });
+    const signal = new AbortController().signal;
+    await expect(readSavedDocumentReading({ documentVersionId: 'DV/old', parseRunId: 'parse-1',
+      semanticRevision: 1, readingRevision: 1 }, signal)).resolves.toBe(response);
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ method: 'GET', signal,
+      url: '/api/document-management/document-versions/DV%2Fold/document-reading?parseRunId=parse-1&semanticRevision=1&readingRevision=1' }));
+    await expect(readSavedDocumentReading({ documentVersionId: 'DV/old', parseRunId: 'parse-2',
+      semanticRevision: 1 })).rejects.toThrow('BINDING_MISMATCH');
+    await expect(readSavedDocumentReading({ documentVersionId: 'DV/old', parseRunId: 'parse-1',
+      semanticRevision: 1, readingRevision: 2 })).rejects.toThrow('BINDING_MISMATCH');
+  });
+
+  it('saved document reading obeys request cancellation, session changes and original access rejection', async () => {
+    const reading = savedDocumentReadingFixture();
+    const input = { documentVersionId: 'DV-test', parseRunId: 'parse-1', semanticRevision: 1 };
+    const response = { familyId: 'family', sourceBinding: reading.sourceBinding, status: 'AVAILABLE', reading };
+    const aborted = new AbortController(); aborted.abort();
+    request.mockResolvedValue({ status: 200, data: response });
+    await expect(readSavedDocumentReading(input, aborted.signal)).rejects.toThrow('OBSOLETE');
+    request.mockImplementationOnce(async () => { invalidateCanonicalHostClientSession(); return { status: 200, data: response }; });
+    await expect(readSavedDocumentReading(input)).rejects.toThrow('OBSOLETE');
+    request.mockResolvedValueOnce({ status: 403, data: {} });
+    await expect(readSavedDocumentReading(input)).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it('reads saved source activity candidates at an exact revision and preserves missing results', async () => {
     const binding = { documentVersionId: 'DV', parseRunId: 'parse' };
     const candidate = { schemaVersion: 'wiselink.document.activity-candidate.v1', sourceBinding: { original: binding }, candidateRevision: 3, candidateOnly: true };

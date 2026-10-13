@@ -53,7 +53,7 @@ export const DialogueMessages: FC<DialogueMessagesProps> = ({
           <details className="text-xs text-muted-foreground">
             <summary>
               发送时关注 {message.focus.length} 份资料 ·
-              工作摘要，不代表全文已读
+              工作摘要
             </summary>
             {message.focus.map((context) => (
               <div key={context.workItemId} className="space-y-1 py-2">

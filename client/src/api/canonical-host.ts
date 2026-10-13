@@ -223,12 +223,13 @@ export async function getCanonicalHostIdentityContext(options?: { fresh?: boolea
       if (response.status === 401 || response.status === 403) {
         if (generation === clientSessionGeneration && identityContextRead?.promise === cachedPromise)
           requireCanonicalHostClientAuthentication(generation);
-        throw new Error('CANONICAL_HOST_IDENTITY_REQUIRED');
+        throw backendResponseError(undefined, 'CANONICAL_HOST_IDENTITY_REQUIRED', response.status);
       }
       if (response.status < 200 || response.status >= 300) {
         throw backendResponseError(
           response.data,
           'CANONICAL_HOST_IDENTITY_UNAVAILABLE',
+          response.status,
         );
       }
       const userId = response.data.userId?.trim();
@@ -758,6 +759,23 @@ export async function readDocumentActivityReading(input: DocumentActivityReading
       throw new Error('DOCUMENT_ACTIVITY_READING_SCHEMA_MISMATCH');
   } else if (result.candidate && result.candidate.schemaVersion !== 'wiselink.document.activity-candidate.v1')
     throw new Error('DOCUMENT_ACTIVITY_READING_SCHEMA_UNSUPPORTED');
+  return result;
+}
+
+export async function readSavedDocumentReading(input: import('@shared/document-reading.interface').DocumentReadingRequest,
+  signal?: AbortSignal): Promise<import('@shared/document-reading.interface').DocumentReadingResponse> {
+  const generation = clientSessionGeneration;
+  const query = new URLSearchParams({ parseRunId: input.parseRunId, semanticRevision: String(input.semanticRevision) });
+  if (input.readingRevision !== undefined) query.set('readingRevision', String(input.readingRevision));
+  const result = await readCanonicalLibrary<import('@shared/document-reading.interface').DocumentReadingResponse>({
+    url: `/api/document-management/document-versions/${encodeURIComponent(input.documentVersionId)}/document-reading?${query}`, signal });
+  if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('DOCUMENT_READING_OBSOLETE');
+  if (result.sourceBinding.original.documentVersionId !== input.documentVersionId ||
+      result.sourceBinding.original.parseRunId !== input.parseRunId || result.sourceBinding.semanticRevision !== input.semanticRevision ||
+      (result.reading && (result.reading.sourceBinding.original.documentVersionId !== input.documentVersionId ||
+        result.reading.sourceBinding.original.parseRunId !== input.parseRunId || result.reading.sourceBinding.semanticRevision !== input.semanticRevision ||
+        (input.readingRevision !== undefined && result.reading.readingRevision !== input.readingRevision))))
+    throw new Error('DOCUMENT_READING_BINDING_MISMATCH');
   return result;
 }
 

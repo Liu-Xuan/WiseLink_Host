@@ -129,7 +129,7 @@ export default function MatterExecutionSummary({
                 summary.baseWorkingRevision !== null &&
                 summary.workingRevision > summary.baseWorkingRevision ? (
                   <p className="text-muted-foreground">
-                    当前工作已在该轮开始后另行保存；该轮状态不表示当前工作已自动评估。
+                    当前工作在本轮开始后另行保存。
                   </p>
                 ) : null}
               <p className="text-muted-foreground">
@@ -148,7 +148,7 @@ export default function MatterExecutionSummary({
             </>
           ) : (
             <p className="text-muted-foreground">
-              待核查输入只说明来源状态，不表示任务已启动。
+              暂无当前任务的执行记录。
             </p>
           )}
           <p className="text-muted-foreground">

@@ -212,7 +212,6 @@ function SemanticWorkspaceReader({
             {execution.terminalCode ? `（${execution.terminalCode}）` : ''}
           </span>
         ) : null}
-        <span>仅供阅读与评估参考，尚非正式采用</span>
       </div>
       {feedback ? (
         <p role="status" className="wl-bilingual-scope">
@@ -221,10 +220,9 @@ function SemanticWorkspaceReader({
       ) : null}
       {reading.coverage.unresolvedSourceUnitCount > 0 &&
       view.readablePercent === 100 ? (
-        <p className="wl-bilingual-scope" role="note">
-          文字覆盖率已达 100%，仍有 {reading.coverage.unresolvedSourceUnitCount}{' '}
-          个来源单元需处理；不代表全文或图像内容已经完成。
-        </p>
+        <details className="wl-bilingual-scope"><summary>阅读范围</summary>
+          <p>文字覆盖率 100%，还有 {reading.coverage.unresolvedSourceUnitCount} 个来源单元待处理。</p>
+        </details>
       ) : null}
       <div
         className={`wl-semantic-layout${outline.length ? ' has-outline' : ''}`}
@@ -477,7 +475,7 @@ function SemanticWorkspaceReader({
                       />
                     ) : null}
                     <p className="wl-bilingual-scope">
-                      译文说明尚未接通。补充解释不会写入忠实译文，也不会作为已保存说明。
+                      暂无已保存的译文说明。
                     </p>
                     {block.selected ? (
                       <details>

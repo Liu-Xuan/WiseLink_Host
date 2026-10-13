@@ -37,7 +37,7 @@ export default function AssessmentUpdatePreview(
         <DialogHeader>
           <DialogTitle>本次评估输入</DialogTitle>
           <DialogDescription>
-            已自动汇集当前范围的有效讨论。讨论与材料作为评估输入，不代表正式采用。
+            查看本次汇集的讨论与材料。
           </DialogDescription>
         </DialogHeader>
         {props.notice ? <p role="alert">{props.notice}</p> : null}
@@ -86,7 +86,7 @@ export default function AssessmentUpdatePreview(
                 </p>
                 <p>
                   已保存附件：{turn.attachmentRefs.length}{' '}
-                  份；纳入不代表已读取或已采用。
+                  份。
                 </p>
                 {turn.attachmentRefs.map((ref: string) => (
                   <p key={ref} className="break-all">

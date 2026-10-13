@@ -338,7 +338,7 @@ export const CHRONOLOGY_REVISION_COMPARE_SAMPLES: ChronologyRevisionCompareSampl
       assessmentImpacts: [
         {
           assessmentLabel: '既有适航符合性评估',
-          impact: '文本归一化一致不代表工程影响不变，仍须人工复核',
+          impact: '归一化文本一致；工程影响尚未核实',
           status: 'UNKNOWN',
         },
       ],

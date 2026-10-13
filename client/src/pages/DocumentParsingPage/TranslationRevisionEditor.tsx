@@ -153,7 +153,7 @@ function RevisionEditor({
       onSaved(result.reading);
       setMessage(
         result.revision.selectedForReading
-          ? '工程师修订候选已保存并可读。原版本保留，不构成正式采用。'
+          ? '工程师修订已保存，可阅读。'
           : result.revision.check?.issues.some(
                 (issue) => issue.severity === 'BLOCK',
               )
@@ -276,7 +276,7 @@ function RevisionEditor({
           ) : draft ? (
             <>
               <p role="alert">
-                草稿的基础正文未能读回。不会将草稿套到其他版本；仍可复制保留的修改。
+                草稿的基础正文读取失败，可复制保留的修改。
               </p>
               <Button variant="outline" onClick={() => void copyDraft()}>
                 复制保留的草稿

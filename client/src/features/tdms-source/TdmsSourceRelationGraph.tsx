@@ -48,7 +48,6 @@ function AssertionDetails({ assertion }: { assertion: TdmsRelationAssertion }) {
             : assertion.selectedHead === false
               ? '准确历史关系观察'
               : '未取得当前/历史关系位置'}
-          ；不据此推定源系统当前关系
         </dd>
         <dt>来源取得记录</dt>
         <dd>{assertion.captureRef}</dd>
@@ -165,10 +164,6 @@ export default function TdmsSourceRelationGraph({
         条源明确关系 · {candidateCount} 条候选关系
         {unresolvedCount ? ` · ${unresolvedCount} 个未解析端点` : ''}
       </p>
-      <p className="tdms-graph-boundary">
-        源明确关系与候选关系分别标注；关系来自源声明；未核验实际执行，也不表示正式采用。
-        未解析的 OR/VR、版次或名称不能自动连到当前版本；LCM 软件构型不在此推算。
-      </p>
       <div className="tdms-graph-layout">
         <div className="tdms-graph-stage">
           <RelationGraphCanvas
@@ -252,7 +247,7 @@ export default function TdmsSourceRelationGraph({
                 概览不复制全文。选择关系可查看准确断言、原始关系与来源定位；选择确切端点后可按需读取。
               </p>
               {!projection.edges.length ? (
-                <p>本次未取得可显示关系；不表示源系统没有关系。</p>
+                <p>暂无已取得的关系。</p>
               ) : null}
             </>
           )}

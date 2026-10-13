@@ -128,7 +128,7 @@ export function catalogGraph(
         documentVersionId: version.documentVersionId,
         familyId: family.familyId,
         summary: version.selectedVersionIsCurrent
-          ? '库内当前版本；不代表发布方最新版本'
+          ? '库内当前版本'
           : '库内历史版本',
       });
       edges.push({
@@ -169,7 +169,7 @@ export function documentGraph(
     nodes: [central],
     edges: [],
     notices: [
-      '引用表示正文线索，不能证明措施实施或对象适用性。反向引用、版本附件尚未接通。',
+      '反向引用与版本附件暂无数据。',
     ],
   };
   if (!preview) return graph;

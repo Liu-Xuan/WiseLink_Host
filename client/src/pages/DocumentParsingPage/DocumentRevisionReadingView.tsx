@@ -118,11 +118,6 @@ export default function DocumentRevisionReadingView({
           <p className="text-xs text-muted-foreground">
             比较口径：{comparison.method}——仅比较标题、段落与父级条件的空白归一化纯文本；不含表格、图示与工程含义。
           </p>
-          {comparison.status === 'TEXT_EQUAL' ? (
-            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              “文本一致”不代表工程影响、评估或适航结论无变化。
-            </p>
-          ) : null}
           {comparison.status === 'NOT_COMPARED' && comparison.reasons.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               未产生比较且未返回原因；以 Host 读取记录为准。
@@ -149,22 +144,21 @@ export default function DocumentRevisionReadingView({
       <Card className="revision-boundary-card">
         <CardHeader>
           <p className="revision-kicker">换版与工作覆盖</p>
-          <CardTitle className="text-base">每份文件保留自身有效依据</CardTitle>
+           <CardTitle className="text-base">版本与评估记录</CardTitle>
         </CardHeader>
         <CardContent className="revision-boundary-content space-y-2 text-sm">
           <p className="text-muted-foreground">
             <Badge variant="outline" className="mr-2">
               {reading.publicationRelationship}
             </Badge>
-            出版/采用关系：未验证。一对来源版本不证明出版顺序、正式采用，也不证明最新或完整修订跨度。
+            出版/采用关系：未验证。
           </p>
           <p className="text-muted-foreground">
             <Badge variant="outline" className="mr-2">
               {reading.assessmentCoverage}
             </Badge>
-            评估覆盖：本次读取未记录。本端点不记录、不推导新版评估覆盖。
+            评估覆盖：本次读取未记录。
           </p>
-          <p className="revision-boundary-note">相关资料可帮助理解，但不会静默改写另一份工程文件、事项认识或我方决定。</p>
         </CardContent>
       </Card>
       </div>

@@ -165,7 +165,7 @@ const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
       <header className="space-y-1">
         <h2 className="font-semibold">与 Aily 讨论</h2>
         <p className="text-xs text-muted-foreground">
-          仅自己可见。普通聊天不会更新工作判断；保存贡献也不代表正式采用。
+          仅自己可见。
         </p>
       </header>
       {error && (
@@ -252,7 +252,7 @@ const PrivateDialogueContent: FC<PrivateDialoguePanelProps> = ({
             <p role="status" className="text-sm">
               Aily 暂不可用：
               {dialogueAilyError(thread.aily.reason || '服务尚未就绪')}
-              。可以仅保存片段，不会切换其他模型。
+              。仍可保存片段。
             </p>
           )}
           {!thread.aily.available &&

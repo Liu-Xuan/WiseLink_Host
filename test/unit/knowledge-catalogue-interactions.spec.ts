@@ -9,13 +9,14 @@ import type {
   EngineeringKnowledgeScope,
 } from '@shared/engineering-issue-search.interface';
 import type { CanonicalLibraryDocumentsResponse, EngineeringMatterDirectoryResponse } from '@shared/api.interface';
-import type { DocumentReadingPreview } from '@shared/document-reading.interface';
+import type { DocumentReadingPreview, DocumentReadingRequest } from '@shared/document-reading.interface';
 import { getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
 import { getEngineeringMatterDirectory } from '@client/src/api/engineering-matter';
 import { clearEngineeringMatterQueries, ENGINEERING_MATTER_QUERY_ROOT } from '@client/src/features/matter/useEngineeringMatter';
 import KnowledgeLookupPage from '@client/src/pages/KnowledgeLookupPage/KnowledgeLookupPage';
 import { libraryDocuments } from './fixtures/canonical-library';
 import { jobAidReadingFixture } from './semantic-reading-ui.fixtures';
+import { savedDocumentReadingFixture } from './fixtures/saved-document-reading';
 import { knowledgeMatterReturnRoute, readingReturnTarget } from '@client/src/features/matter/reading-return';
 
 const { JSDOM } = require('jsdom');
@@ -26,6 +27,8 @@ const mockCatalogue = jest.fn();
 const mockReadWork = jest.fn();
 const mockJobAidWork = jest.fn();
 const mockSourcePage = jest.fn();
+const mockSavedDocumentReading = jest.fn();
+const mockIdentity = jest.fn();
 const mockWrite = jest.fn((..._args: unknown[]) => { throw new Error('Read-only catalogue invoked a write'); });
 const mockDocuments = jest.mocked(getCanonicalLibraryDocuments);
 const mockMatters = jest.mocked(getEngineeringMatterDirectory);
@@ -89,6 +92,9 @@ function sourceDocuments(): CanonicalLibraryDocumentsResponse {
       },
     },
   ];
+  for (const version of response.items[0].versions) {
+    version.documentReading!.reading!.sourceBinding.original.documentVersionId = version.documentVersionId;
+  }
   return response;
 }
 
@@ -105,10 +111,11 @@ jest.mock('@client/src/api/canonical-host', () => ({
   readEngineeringKnowledgeWork: (...args: unknown[]) => mockReadWork(...args),
   readJobAidAssessmentWork: (...args: unknown[]) => mockJobAidWork(...args),
   readDocumentVersionSourcePage: (...args: unknown[]) => mockSourcePage(...args),
+  readSavedDocumentReading: (...args: unknown[]) => mockSavedDocumentReading(...args),
   getCanonicalLibraryDocuments: jest.fn(),
   subscribeCanonicalHostClientSession: () => () => undefined,
   getCanonicalHostClientSessionGeneration: () => sessionGeneration,
-  getCanonicalHostIdentityContext: async () => ({ tenantId: currentTenant, userId: currentActor }),
+  getCanonicalHostIdentityContext: (...args: unknown[]) => mockIdentity(...args),
   requestOverallRegeneration: (...args: unknown[]) => mockWrite(...args),
   requestInitialAnalysisContinuation: (...args: unknown[]) => mockWrite(...args),
   referenceEngineeringIssue: (...args: unknown[]) => mockWrite(...args),
@@ -236,12 +243,27 @@ beforeEach(() => {
   currentActor = 'actor-test'; currentTenant = 'tenant-test';
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   jest.clearAllMocks();
+  mockIdentity.mockImplementation(async () => ({ tenantId: currentTenant, userId: currentActor }));
   mockCatalogue.mockResolvedValue(page(entry('A'), entry('B')));
   mockReadWork.mockImplementation((identity: { subjectId: string }) => Promise.resolve(read(entry(identity.subjectId))));
   mockJobAidWork.mockImplementation((id: string) => Promise.resolve({
     current: { workItemId: id, workRevisionRef: `JAWR-${id}` },
   }));
   mockDocuments.mockResolvedValue(sourceDocuments());
+  mockSavedDocumentReading.mockImplementation(async (input: DocumentReadingRequest) => {
+    const version = sourceDocuments().items[0].versions.find(item => item.documentVersionId === input.documentVersionId);
+    const preview = version?.documentReading?.reading;
+    const reading = savedDocumentReadingFixture(input.documentVersionId);
+    if (preview) {
+      reading.readingRunRef = preview.readingRunRef; reading.readingRevision = preview.readingRevision;
+      reading.sourceBinding = preview.sourceBinding; reading.headline = preview.headline;
+      reading.brief.text = preview.brief; reading.criticalConditions = preview.criticalConditions.map(text => ({ text, quotes: [] }));
+      reading.limitations = [...preview.limitations, ...preview.sourceLimitations];
+      reading.readCoverage.deliveredUnitIds = Array.from({ length: preview.deliveredUnitCount }, (_, i) => `unit-${i}`);
+      reading.readCoverage.totalUnitCount = preview.totalUnitCount;
+    }
+    return { familyId: 'FAM-1', sourceBinding: reading.sourceBinding, status: 'AVAILABLE', reading };
+  });
   mockMatters.mockResolvedValue({
     items: [], nextCursor: null, fileReadPerformed: false,
   });
@@ -619,7 +641,7 @@ describe('knowledge source documents reading', () => {
     await mount('?kind=sources');
     await settle();
     expect(container.textContent).toContain('现行版主题');
-    expect(container.textContent).toContain('部分覆盖：已送达 2/5');
+    expect(container.textContent).toContain('已读取 2 / 5 个来源单元');
     expect(container.textContent).not.toContain('旧版主题');
     const toggle = container.querySelector<HTMLButtonElement>(
       'button[aria-label="展开版本历史"]',
@@ -683,7 +705,7 @@ describe('knowledge source documents reading', () => {
     expect(mockWrite).not.toHaveBeenCalled();
   });
 
-  it('never shows a stale reading and keeps history expandable without a current version', async () => {
+  it('keeps same-version saved reading in expandable history without a current version', async () => {
     const response = libraryDocuments(['FAM-2']);
     const [newer, older] = response.items[0].versions;
     response.items[0].versions = [
@@ -692,7 +714,8 @@ describe('knowledge source documents reading', () => {
         selectedVersionIsCurrent: false,
         documentReading: {
           status: 'SOURCE_CHANGED',
-          reading: previewReading('过期主题'),
+          reading: previewReading('过期主题', { sourceBinding: { original: { ...previewReading('过期主题').sourceBinding.original,
+            documentVersionId: newer.documentVersionId }, semanticRevision: 1 } }),
         },
       },
       { ...older, selectedVersionIsCurrent: false },
@@ -707,10 +730,10 @@ describe('knowledge source documents reading', () => {
         .querySelector<HTMLButtonElement>('button[aria-label="展开版本历史"]')!
         .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
     );
-    expect(container.textContent).toContain('来源已变化');
-    expect(container.textContent).toContain('当前接口未返回该版本解读');
-    expect(container.textContent).not.toContain('过期主题');
-    expect(container.textContent).not.toContain('来源简明解读 过期主题');
+    expect(container.textContent).not.toContain('来源已变化');
+    expect(container.textContent).not.toContain('当前接口未返回该版本解读');
+    expect(container.textContent).toContain('过期主题');
+    expect(container.textContent).toContain('来源简明解读 过期主题');
   });
 });
 
@@ -726,14 +749,14 @@ test('reuses the exact saved knowledge and catalogue on a fresh same-session rou
   expect(mockReadWork).toHaveBeenCalledTimes(1);
 });
 
-test('a stale saved work is withheld during refresh and a denial replaces it across remounts', async () => {
+test('same-identity saved work stays visible during refresh and a denial replaces it across remounts', async () => {
   const route = '/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A';
   await mount(route.slice('/knowledge'.length)); await settle();
   const rejection = deferred<EngineeringKnowledgeRead>();
   mockReadWork.mockReturnValueOnce(rejection.promise);
   await act(async () => { void queryClient.invalidateQueries({ predicate: query => query.queryKey.includes('work') }); });
   await settle();
-  expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain('主题 A');
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('主题 A');
   // Explicit rejection, without changing the selected saved identity.
   const failure = Object.assign(new Error('source access revoked'), { statusCode: 403 });
   await act(async () => rejection.reject(failure));
@@ -799,7 +822,7 @@ test('clearing an invalid pin can select the first authorized cached catalogue e
 });
 
 
-test('refresh within staleTime withholds the saved body and full saved brief remains available', async () => {
+test('refresh within staleTime keeps the full saved brief visible', async () => {
   const saved = read(entry('A'));
   saved.entry.listBrief = '已保存简明意见。' + '中段文字。'.repeat(100) + 'ONLY_IF_TAIL_CONDITION';
   mockReadWork.mockResolvedValueOnce(saved);
@@ -808,12 +831,50 @@ test('refresh within staleTime withholds the saved body and full saved brief rem
   const pending = deferred<EngineeringKnowledgeRead>(); mockReadWork.mockReturnValueOnce(pending.promise);
   await act(async () => { void queryClient.refetchQueries({ predicate: query => query.queryKey.includes('work') }); });
   await settle();
-  expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain('主题 A');
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('ONLY_IF_TAIL_CONDITION');
   await act(async () => pending.resolve(saved)); await settle();
   expect(container.querySelector('.knowledge-preview')?.textContent).toContain('ONLY_IF_TAIL_CONDITION');
 });
 
-test('the real source dialog is removed on pending saved-work refresh and ignores its late text', async () => {
+test('ordinary refresh failure retains the same saved work and reports the actual failure', async () => {
+  await mount('?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A'); await settle();
+  mockReadWork.mockRejectedValueOnce(Object.assign(new Error('saved work refresh unavailable'), { statusCode: 503 }));
+  await act(async () => { await queryClient.refetchQueries({ predicate: query => query.queryKey.includes('work') }); });
+  await settle();
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('主题 A');
+  expect(container.querySelector('.knowledge-preview [role="alert"]')?.textContent).toContain('saved work refresh unavailable');
+  const pending = deferred<EngineeringKnowledgeRead>(); mockReadWork.mockReturnValueOnce(pending.promise);
+  await navigate('/knowledge?subjectKind=ENGINEERING_MATTER&subjectId=B&workRef=WR-B'); await settle();
+  expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain('主题 A');
+  expect(mockWrite).not.toHaveBeenCalled();
+  await act(async () => pending.resolve(read(entry('B'))));
+});
+
+test('same-scope identity refresh and ordinary identity failure preserve saved work, while denial clears it', async () => {
+  await mount('?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A'); await settle();
+  const context = deferred<{ tenantId: string; userId: string }>(); mockIdentity.mockReturnValueOnce(context.promise);
+  await act(async () => { void queryClient.refetchQueries({ predicate: query => query.queryKey.includes('identity') }); });
+  await settle();
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('主题 A');
+  await act(async () => context.reject(Object.assign(new Error('identity refresh unavailable'), { statusCode: 503 })));
+  await settle();
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('主题 A');
+  expect(container.querySelector('.knowledge-preview [role="alert"]')?.textContent).toContain('identity refresh unavailable');
+  mockIdentity.mockRejectedValueOnce(Object.assign(new Error('identity access rejected'), { statusCode: 403 }));
+  await act(async () => { await queryClient.refetchQueries({ predicate: query => query.queryKey.includes('identity') }); });
+  await settle();
+  expect(container.textContent).not.toContain('主题 A');
+  expect(queryClient.getQueryCache().getAll().filter(query => query.queryKey.includes('knowledge'))
+    .every(query => (query.state.data as { kind?: string } | undefined)?.kind !== 'readable')).toBe(true);
+  const fresh = deferred<EngineeringKnowledgeRead>(); mockReadWork.mockReturnValueOnce(fresh.promise);
+  await act(async () => { await queryClient.refetchQueries({ predicate: query => query.queryKey.includes('identity') }); });
+  await settle();
+  expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain('主题 A');
+  await act(async () => fresh.resolve(read(entry('A')))); await settle();
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('主题 A');
+});
+
+test('the real source dialog stays during ordinary refresh and closes on source denial', async () => {
   const saved = read(entry('A'));
   const fixture = jobAidReadingFixture().current!.content;
   saved.content = fixture;
@@ -831,7 +892,7 @@ test('the real source dialog is removed on pending saved-work refresh and ignore
   expect(mockSourcePage).toHaveBeenCalledTimes(1);
   const pending = deferred<EngineeringKnowledgeRead>(); mockReadWork.mockReturnValueOnce(pending.promise);
   await act(async () => { void queryClient.refetchQueries({ predicate: query => query.queryKey.includes('work') }); }); await settle();
-  expect(container.textContent).not.toContain('事项材料原文');
+  expect(container.textContent).toContain('事项材料原文');
   await act(async () => source.resolve({ documentVersionId:evidence.documentVersionId,
     sourceSha256:'a'.repeat(64), sourceByteLength:100, pageCount:1, extractionScope:'NATIVE_TEXT_LAYER',
     pages:[{page:1,sourceRefId:'source-ref-test',text:'LATE_SOURCE_TEXT',textLayerStatus:'PRESENT',visualContentVerified:false,evidence:null}] }));
@@ -855,12 +916,12 @@ test('same actor with a new tenant/session cannot display or accept late old-ten
   expect(mockWrite).not.toHaveBeenCalled();
 });
 
-test('fresh manual refetch removes old knowledge before the response is received', async () => {
+test('fresh manual refetch preserves saved knowledge until an actual access rejection', async () => {
   await mount('?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A'); await settle();
   const pending=deferred<EngineeringKnowledgeRead>();mockReadWork.mockReturnValueOnce(pending.promise);
   await act(async()=>{void queryClient.refetchQueries({predicate:query=>query.queryKey.includes('work')});});await settle();
   expect(mockReadWork).toHaveBeenCalledTimes(2);
-  expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain('主题 A');
+  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('主题 A');
   await act(async()=>pending.reject(Object.assign(new Error('read unavailable'),{statusCode:404})));await settle();
   expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain('主题 A');
 });

@@ -161,7 +161,7 @@ export function useSuiteGraphSources(input: {
         return { status: 'unavailable', notice: '读取响应与请求来源不一致，已丢弃。', candidate: null };
       }
       if (!reading.candidate) {
-        return { status: 'empty', notice: '该精确来源没有已保存的时间声明，不代表文件无活动。', candidate: null };
+        return { status: 'empty', notice: '暂无已保存的时间声明。', candidate: null };
       }
       return {
         status: 'loaded',

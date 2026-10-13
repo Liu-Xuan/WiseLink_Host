@@ -169,9 +169,7 @@ const ApplicabilitySelectionReviewAction: FC<
           <DialogHeader>
             <DialogTitle>确认适用性评估目标</DialogTitle>
             <DialogDescription>
-              选择真实飞机与评估日期。Host 将核对受控机队来源并显示版本；
-              构型事实缺失时保持 UNKNOWN。确认后只保存候选评估范围，
-              不代表工程结论正式采用。
+              选择飞机与评估日期，确认后保存评估范围。缺少构型事实的对象会标为 UNKNOWN。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">

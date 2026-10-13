@@ -339,7 +339,7 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
       ) : null}
       {error ? (
         <p className="wl-projection-refresh" role="alert">
-          {error} 以下保留上次已保存认识，不代表最新状态。
+          {error} 显示上次保存的认识。
         </p>
       ) : null}
       {navigationError ? (

@@ -106,7 +106,6 @@ function GraphSavedUnderstanding({ workItemId, workRef, kind }: {
     <p>{summary || '当前工作尚未保存简短认识。'}</p>
     {read.overall?.status === 'STALE' && kind !== 'DYNAMIC_EVALUATION'
       ? <small>此前综合未覆盖当前问题工作，此处显示当前问题认识。</small> : null}
-    {showOverall ? <small>已保存候选，尚非正式采用。</small> : null}
     <Link to={`/knowledge?${new URLSearchParams({ subjectKind: 'WORK_ITEM', subjectId: workItemId, workRef })}`}>阅读完整分析与来源</Link>
   </section>;
 }
@@ -807,7 +806,7 @@ function LegacyRelationGraphContent({
                 ? <Button size="sm" onClick={openInspectedNode}>打开准确对象</Button>
                 : <p className="rg-inspector-note">当前对象没有可验证的生产深链。</p>}
         </> : <><h2>选择一个对象</h2><p className="rg-inspector-lead">选择画布节点后，在这里核对其身份、状态与准确入口。</p></>}
-        <p className="rg-inspector-boundary">当前边只表达 LibraryIndex 已保存的父子投影；布局、距离和连通性不证明归属、因果、风险或正式采用。</p>
+        <p className="rg-inspector-boundary">已登记的父子关系</p>
       </aside>
     </div>;
   }

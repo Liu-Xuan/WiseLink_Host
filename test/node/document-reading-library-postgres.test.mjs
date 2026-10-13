@@ -16,6 +16,8 @@ const { tenantFamilyIdentityPrefix } = require('../../server/modules/document-ma
 const databaseUrl = process.env.DOCUMENT_READING_LIBRARY_TEST_DATABASE_URL;
 const scope = { tenantId: 'tenant-test', actorUserId: 'actor-one', documentVersionId: 'DV-test' };
 const source = { parseRunId: 'PR-test', parseRevision: 1, semanticRevision: 1, manifestSha256: 'a'.repeat(64), expectedRevision: 0 };
+const original = { sourceArtifactId: 'SA-test', sourceSha256: 'b'.repeat(64), sourceByteLength: 100 };
+const parseSource = { sourceArtifactId: original.sourceArtifactId, pdfSha256: original.sourceSha256, byteLength: original.sourceByteLength };
 const clients = [];
 async function actor(role, userId) {
   const client = postgres(databaseUrl, { max: 1, onnotice() {} });
@@ -31,7 +33,7 @@ function materialize(run, revision) {
     readingRunRef: run.runRef, readingRevision: revision, headline: '真实保存的文件主题',
     brief: { text: '需要核实构型后才能判断。', quotes: [] }, explanation: [],
     criticalConditions: [{ text: '先核实构型', quotes: [] }], limitations: ['文件解读，尚未正式采用'],
-    sourceBinding: { original: { documentVersionId: scope.documentVersionId, parseRunId: run.parseRunId, parseRevision: run.parseRevision }, semanticRevision: run.semanticRevision },
+    sourceBinding: { original: { documentVersionId: scope.documentVersionId, parseRunId: run.parseRunId, parseRevision: run.parseRevision, ...original }, semanticRevision: run.semanticRevision },
     readCoverage: { status: 'PARTIAL_DELIVERY', deliveredUnitIds: ['u1'], totalUnitCount: 3,
       sourceCoverage: { unresolvedRanges: [
         { message: 'diagnostic-only', readingImpact: 'DIAGNOSTIC' },
@@ -83,16 +85,16 @@ test('production library SQL projects exact document reading and authorized curr
     });
     await t.test('new FAILED and pending parses do not obscure the still-published reading', async () => {
       for (const [revision, status] of [[2, 'FAILED'], [3, 'QUEUED']]) {
-        await admin`INSERT INTO dm_document_parse_run VALUES ('tenant-test','DV-test',${`PR-${revision}`},${revision},${status},NULL)`;
+        await admin`INSERT INTO dm_document_parse_run VALUES ('tenant-test','DV-test',${`PR-${revision}`},${revision},${status},NULL,${admin.json(parseSource)})`;
         const result = version(await query());
         assert.equal(result.parsing.status, status);
         assert.equal(result.parsing.publishedRevision, 1);
         assert.deepEqual(result.documentReading, originalPreview);
       }
     });
-    await t.test('new semantic revision makes previous reading SOURCE_CHANGED, not current', async () => {
+    await t.test('new semantic revision keeps the same-original reading and selects a later explicit save', async () => {
       await semantic(admin, 'PR-test', 1, 2);
-      assert.deepEqual(version(await query()).documentReading, { status: 'SOURCE_CHANGED', reading: null });
+      assert.deepEqual(version(await query()).documentReading, originalPreview);
       const run = await producer.repository.begin(scope, { ...source, semanticRevision: 2, requestId: 'new-semantic-reading' });
       const fence = await producer.repository.claim(scope, run.runRef, 'fixture-producer');
       await producer.repository.save(scope, fence, command, materialize);
@@ -155,11 +157,23 @@ test('production library SQL projects exact document reading and authorized curr
       assert.deepEqual(version(await query()).documentReading, { status: 'RETRACTED', reading: null });
       assert.equal(await browser.repository.readSaved({ ...scope, actorUserId: 'actor-two' }, source.parseRunId, 2), null);
     });
-    await t.test('new published source never borrows previous parse reading', async () => {
+    await t.test('same-original published reparse preserves saved parse and a different original never reuses it', async () => {
+      const run = await producer.repository.begin(scope, { ...source, semanticRevision: 2,
+        requestId: 'saved-before-reparse', expectedRevision: 2 });
+      const fence = await producer.repository.claim(scope, run.runRef, 'fixture-producer');
+      await producer.repository.save(scope, fence, command, materialize);
+      const saved = version(await query()).documentReading;
+      const before = await admin`SELECT result_json FROM dm_document_reading_run WHERE run_ref=${run.runRef}`;
       await admin`INSERT INTO dm_document_parse_run VALUES ('tenant-test','DV-test','PR-4',4,'PUBLISHED',
-        ${admin.json({ role: 'MANIFEST', relativePath: 'original/manifest.json', readback: 'VERIFIED', sha256: source.manifestSha256 })})`;
-      await semantic(admin, 'PR-4', 4, 1);
-      assert.deepEqual(version(await query()).documentReading, { status: 'SOURCE_CHANGED', reading: null });
+        ${admin.json({ role: 'MANIFEST', relativePath: 'original/manifest.json', readback: 'VERIFIED', sha256: 'c'.repeat(64) })},${admin.json(parseSource)})`;
+      await semantic(admin, 'PR-4', 4, 1, 'c'.repeat(64));
+      assert.deepEqual(version(await query()).documentReading, saved);
+      assert.equal(saved.reading.sourceBinding.original.parseRunId, 'PR-test');
+      assert.deepEqual(await admin`SELECT result_json FROM dm_document_reading_run WHERE run_ref=${run.runRef}`, before);
+      await admin`UPDATE dm_document_version SET pdf_sha256=${'d'.repeat(64)} WHERE document_version_id='DV-test'`;
+      assert.deepEqual(version(await query()).documentReading, { status: 'NOT_GENERATED', reading: null });
+      await admin`UPDATE dm_document_version SET pdf_sha256=${original.sourceSha256} WHERE document_version_id='DV-test'`;
+      assert.deepEqual(version(await query()).documentReading, saved);
     });
     await t.test('production catalog visibility plus source RLS rejects other actor/tenant and revoked ownership', async () => {
       assert.equal((await query(foreign, { tenantId: 'tenant-foreign', actorUserId: 'actor-foreign' })).totalCount, 0);
@@ -175,10 +189,10 @@ test('production library SQL projects exact document reading and authorized curr
     await admin.end();
   }
 });
-async function semantic(admin, parseRunId, parseRevision, semanticRevision) {
+async function semantic(admin, parseRunId, parseRevision, semanticRevision, manifestSha256 = source.manifestSha256) {
   await admin`INSERT INTO dm_document_semantic_revision
     (tenant_id,document_version_id,parse_run_id,parse_revision,semantic_revision,actor_user_id,profile_ref,original_manifest_sha256,map_json)
-    VALUES ('tenant-test','DV-test',${parseRunId},${parseRevision},${semanticRevision},'actor-one','test',${source.manifestSha256},
+    VALUES ('tenant-test','DV-test',${parseRunId},${parseRevision},${semanticRevision},'actor-one','test',${manifestSha256},
       ${admin.json({ schemaVersion: 'wiselink.document.semantic-map.v1', profileRef: 'test', semanticRevision,
         binding: { documentVersionId: 'DV-test', parseRunId, parseRevision } })})`;
 }
@@ -188,6 +202,7 @@ async function catalog(admin) {
     ALTER TABLE dm_document_version ADD COLUMN document_id varchar DEFAULT 'D-test', ADD COLUMN business_revision varchar DEFAULT '1',
     ADD COLUMN revision_date varchar DEFAULT '2026-09-17', ADD COLUMN source_generated_date varchar DEFAULT '2026-09-17',
     ADD COLUMN original_filename text DEFAULT 'fixture.pdf', ADD COLUMN byte_length bigint DEFAULT 100,
+    ADD COLUMN pdf_sha256 varchar DEFAULT '${original.sourceSha256}',
     ADD COLUMN committed_at timestamptz DEFAULT CURRENT_TIMESTAMP;
     CREATE TABLE dm_document(document_id varchar, family_id varchar);
     CREATE TABLE dm_document_version_metadata(document_version_id varchar, metadata_revision integer, extracted_metadata jsonb);
@@ -214,7 +229,7 @@ async function reset(admin) {
     CREATE TABLE dm_document_version(document_version_id varchar(96) PRIMARY KEY,family_id varchar,source_artifact_id varchar);
     CREATE TABLE dm_publication_family(family_id varchar,canonical_identity_key text);
     CREATE TABLE dm_acquisition(document_version_id varchar,source_artifact_id varchar,acquired_by varchar,status varchar,idempotency_key text);
-    CREATE TABLE dm_document_parse_run(tenant_id varchar(128),document_version_id varchar(96),parse_run_id varchar(96),parse_revision integer,status text,manifest_artifact jsonb,
+    CREATE TABLE dm_document_parse_run(tenant_id varchar(128),document_version_id varchar(96),parse_run_id varchar(96),parse_revision integer,status text,manifest_artifact jsonb,source_binding jsonb,
       UNIQUE(tenant_id,document_version_id,parse_run_id));`);
   for (const [file, names] of [
     ['0014_engineering_matter_catalog.sql', ['engineering_matter_actor_has_tenant']],
@@ -239,7 +254,7 @@ async function reset(admin) {
   await admin`INSERT INTO work_item VALUES ('tenant-test','DV-test','actor-one'),('tenant-test','DV-test','actor-two')`;
   await admin`INSERT INTO dm_document_version(document_version_id) VALUES ('DV-test')`;
   await admin`INSERT INTO dm_document_parse_run VALUES ('tenant-test','DV-test','PR-test',1,'PUBLISHED',
-    ${admin.json({ role: 'MANIFEST', relativePath: 'original/manifest.json', readback: 'VERIFIED', sha256: source.manifestSha256 })})`;
+    ${admin.json({ role: 'MANIFEST', relativePath: 'original/manifest.json', readback: 'VERIFIED', sha256: source.manifestSha256 })},${admin.json(parseSource)})`;
   await admin`INSERT INTO dm_document_semantic_revision
     (tenant_id,document_version_id,parse_run_id,parse_revision,semantic_revision,actor_user_id,profile_ref,original_manifest_sha256,map_json)
     VALUES ('tenant-test','DV-test','PR-test',1,1,'actor-one','test',${source.manifestSha256},

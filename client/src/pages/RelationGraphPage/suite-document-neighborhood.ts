@@ -75,7 +75,7 @@ export function buildDocumentNeighborhood(read: DocumentNeighborhoodRead): Docum
     if (resolution.status !== 'RESOLVED_EXACT' || mention.permissionState !== 'AUTHORIZED') continue;
     const id = documentNeighborhoodNodeId(resolution.documentVersionId);
     add('candidates', '文号匹配候选 · 版次待核', id, resolution.canonicalDocumentNumber,
-      `${resolution.businessRevision ?? '版次未返回'} · 不等于被引版次`, { kind: 'document',
+      `${resolution.businessRevision ?? '版次未返回'} · 被引版次尚未核实`, { kind: 'document',
         documentVersionId: resolution.documentVersionId, readerWorkItemId: resolution.workItemId,
         title: resolution.canonicalDocumentNumber, businessRevision: resolution.businessRevision ?? '', candidate: true });
     edge(JSON.stringify(['resolution', mention.mentionId]), occurrence, id, 'REFERENCE_RESOLUTION_CANDIDATE',

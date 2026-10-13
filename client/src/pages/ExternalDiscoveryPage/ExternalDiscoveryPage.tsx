@@ -64,7 +64,7 @@ export default function ExternalDiscoveryPage() {
           <p>受控工程资料 · 人工筛选</p>
           <h1>补充资料候选</h1>
           <span>
-            查看可核验的官方来源候选。人工选择只记录筛选意见，不代表资料已进入工程资料库。
+            查看官方来源资料，选择需要进一步调查的内容。
           </span>
         </div>
         <Radar aria-hidden="true" />

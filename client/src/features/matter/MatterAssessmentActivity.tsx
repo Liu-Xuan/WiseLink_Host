@@ -77,7 +77,6 @@ function ActivityRead({
           ? '指定保存工作所关联执行轮的记录；不是保存时刻的状态快照。'
           : '当前活跃执行轮；没有活跃执行时显示最近一轮。'}
       </p>
-      <p>读取与保存记录用于核查过程，不代表工程结论已正式采用。</p>
       {error ? <p role="alert">{error} 自动刷新已停止。</p> : null}
       {page?.attempt ? (
         <p>

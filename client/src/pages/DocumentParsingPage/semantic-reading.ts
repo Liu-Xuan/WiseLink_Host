@@ -101,7 +101,6 @@ export function semanticReadingText(
     `工作区：${reading.workspaceId} · 读取版本 ${reading.rowVersion}`,
     `中文可读覆盖的原文范围 ${reading.coverage.readableSourceCharacters}/${reading.coverage.registeredSourceCharacters} 字符；未覆盖来源单元 ${reading.coverage.unresolvedSourceUnitCount}。`,
     status.delivery,
-    '包含完整语义段落 / 表格组及其条件和缺项；仅供阅读参考，不构成正式采用。',
     '',
   ];
   for (const block of [...reading.blocks].sort(

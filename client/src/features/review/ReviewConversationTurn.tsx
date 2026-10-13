@@ -99,7 +99,7 @@ export default function ReviewConversationTurn(
               {chat
                 ? '已保存讨论 · 未更新评估'
                 : props.readOnly
-                  ? '已保存候选 · 仅供追溯'
+                  ? '已保存草稿'
                   : '候选已生成 · 未采纳'}
             </span>
           </header>
@@ -124,7 +124,7 @@ export default function ReviewConversationTurn(
           {!chat && candidate.candidateEvidenceRefs.length ? (
             <p className="continuous-review-evidence-count">
               已形成 {candidate.candidateEvidenceRefs.length}{' '}
-              条候选依据，确认前不会写入正式判断。
+              条依据。
             </p>
           ) : null}
           {candidate.missingInputs.length ? (
@@ -236,22 +236,13 @@ export default function ReviewConversationTurn(
                   </ul>
                 </div>
               ) : null}
-              {props.formalActionsAllowed === false ? (
+              {props.formalActionsAllowed === false || !interactive ? null : interactive.rejected ? (
                 <p className="continuous-review-draft-stale">
-                  这是事项工作讨论；正式采用草稿须进入相应成员任务单独核对，此处不提供采用操作。
-                </p>
-              ) : !interactive ? (
-                <p className="continuous-review-draft-stale">
-                  已保存草稿仅供追溯；当前只读展示不提供确认或采用操作。
-                </p>
-              ) : interactive.rejected ? (
-                <p className="continuous-review-draft-stale">
-                  此草稿已在当前页面拒绝；没有修改 Host
-                  current，也没有推进事项版本。继续对话可形成新草稿。
+                  草稿已拒绝。继续对话可形成新草稿。
                 </p>
               ) : !assessmentCurrent ? (
                 <p className="continuous-review-draft-stale">
-                  历史回合草稿仅供追溯；请在当前回合核对并显式确认最新草稿。
+                  历史回合草稿
                 </p>
               ) : !draftCurrent ? (
                 <p className="continuous-review-draft-stale">
@@ -260,7 +251,7 @@ export default function ReviewConversationTurn(
               ) : interactive.confirming ? (
                 <div className="continuous-review-confirm">
                   <p>
-                    确认会新增一版工程师复核记录，把整体意见标记为需更新，并仅安排受影响项目重新综合；不会立即得到完成结果。
+                    确认后保存工程师复核记录，并安排受影响项目更新综合。
                   </p>
                   <div>
                     <Button
@@ -305,19 +296,12 @@ export default function ReviewConversationTurn(
             </div>
           ) : null}
           <footer className="continuous-review-candidate-runtime">
-            <span>
-              {chat
-                ? '此答复仅用于讨论；只有显式更新评估才重算，正式采用仍独立处理。'
-                : matterScope
-                  ? '事项工作变化以 Host 工作记录读回为准；回复本身不是正式采用，成员 WorkItem current 与正式状态不因此推进。'
-                  : '候选阶段没有采纳输入，也不会修改 WorkItem current、revision 或 STALE 状态。'}
-            </span>
-            <span title={candidate.actionAttemptRef}>
+            <details><summary>保存记录</summary><span title={candidate.actionAttemptRef}>
               Attempt {shortRef(candidate.actionAttemptRef)} · Model{' '}
               {candidate.provenance.modelVersion} · Skill{' '}
               {candidate.provenance.skillVersion} ·{' '}
               {formatReviewTime(candidate.completedAt)}
-            </span>
+            </span></details>
             {candidate.warnings.length ? (
               <span>提示：{candidate.warnings.join('；')}</span>
             ) : null}
@@ -330,10 +314,8 @@ export default function ReviewConversationTurn(
             <strong>{chat ? '讨论答复尚未读回' : '候选尚未读回'}</strong>
             <span>
               {chat
-                ? '对话已经记录，答复尚未返回；未请求更新评估。'
+                ? '对话已经记录，答复尚未返回。'
                 : '工程师输入已经记录，候选结果尚未返回。'}
-              保存输入不会自动采用意见，WorkItem current、revision 与 STALE
-              状态均未因此改变。
             </span>
           </div>
         </div>

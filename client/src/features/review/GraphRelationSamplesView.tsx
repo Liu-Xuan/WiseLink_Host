@@ -115,8 +115,7 @@ export default function GraphRelationSamplesView({
   return (
     <div className="space-y-4">
       <section className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-        隔离样例：来源仅在本页示意，不向真实阅读器发送假 ID。
-        真实阅读与返回合同尚未接通；本页不代表真实业务验收。
+        示例
       </section>
       <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="space-y-2">

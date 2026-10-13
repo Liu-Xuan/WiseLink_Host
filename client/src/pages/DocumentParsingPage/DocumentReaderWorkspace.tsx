@@ -363,7 +363,7 @@ export function DocumentReaderWorkspace({
               ))
             ) : !data.workItem.package ? (
               <div className="parse-empty">
-                <p>当前事项尚无可查询的结构化内容；这里的 0 条结果不代表文档版本的已发布原文为空。</p>
+                <p>暂无结构化内容，可打开原文。</p>
                 {data.workItem.source.documentVersionId ? (
                   <Link to={`/document-versions/${encodeURIComponent(data.workItem.source.documentVersionId)}`}>
                     阅读当前文档版本的已发布原文

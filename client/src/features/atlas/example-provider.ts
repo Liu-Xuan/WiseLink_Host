@@ -230,6 +230,6 @@ export function readExample(location: AtlasLocation): AtlasGraph {
         : n,
     ),
     edges: edges.filter((e) => ids.has(e.source) && ids.has(e.target)),
-    notices: ['独立构造样例；不代表 OEM 指令、实际机队状态或已批准结论。'],
+    notices: ['示例数据'],
   };
 }

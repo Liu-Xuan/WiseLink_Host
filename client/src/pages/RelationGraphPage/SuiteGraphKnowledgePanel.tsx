@@ -332,7 +332,7 @@ const SuiteGraphKnowledgePanel = memo(function SuiteGraphKnowledgePanel({
           {reviewConditions.map((item) => (
             <p className="suite-graph-notice" key={item.itemId}>复看条件：{item.text}{item.when ? `（${whenText(item.when)}）` : ''}</p>
           ))}
-          <p className="suite-graph-muted">复核交流在事项 Wiki 中进行，图谱页不新建保存。</p>
+          <p className="suite-graph-muted">可前往事项 Wiki 继续复核交流。</p>
           {onOpenWiki ? <Button variant="outline" onClick={onOpenWiki}>前往事项 Wiki 复核 <ArrowRight aria-hidden="true" /></Button> : null}
         </>
       );

@@ -92,10 +92,10 @@ export async function readDocumentNeighborhood(
   const [family, matters, preview] = await Promise.all([
     partial(() => getCanonicalLibraryTasks({ familyId: document.familyId,
       limit: DOCUMENT_NEIGHBORHOOD_LIMITS.familyRows, cursor: request.familyCursor }, signal),
-    '同族版本页读取失败；不代表没有其他版本。'),
+    '同族版本页读取失败。'),
     quicklook ? partial(() => getEngineeringMatterDirectory({ workItemId: quicklook.document.workItemId,
       limit: DOCUMENT_NEIGHBORHOOD_LIMITS.matterRows, cursor: request.matterCursor }, signal),
-    '此工作关联的事项页读取失败；不代表没有关联事项。') : null,
+    '关联事项页读取失败。') : null,
     quicklook ? partial(() => getRelatedContextPreview(quicklook.document.workItemId,
       quicklook.document.revision, signal), '引用预览读取失败；保留准确文档，不宣称无引用。') : null,
   ]);
@@ -108,13 +108,13 @@ export async function readDocumentNeighborhood(
   if (matters && matters.items.length > DOCUMENT_NEIGHBORHOOD_LIMITS.matterRows)
     throw new Error('事项关联页超出请求范围，已停止显示。');
   const references = preview && quicklook ? bindDocumentReferenceRead(preview, quicklook) : null;
-  if (!quicklook) notices.push('未提供已核对的阅读工作：文档时间可读，工作引用与工作所属事项未接通。');
-  notices.push('同族版本仅覆盖本页本人已登记工作，按准确版本去重；不代表完整出版版本史。');
-  if (quicklook) notices.push('所属事项仅覆盖此阅读工作的当前登记关系；其他工作或原生材料归属未查询。');
-  notices.push('引用出现位置与 Host 按文号匹配的版本候选分开显示；被引版次尚未核实。反向引用与版本附件接口尚未接通。');
+  if (!quicklook) notices.push('暂无关联阅读工作。');
+  notices.push('同族版本：本页已登记的文档版本。');
+  if (quicklook) notices.push('关联事项：此阅读工作的登记关系。');
+  notices.push('被引版次尚未核实；反向引用与版本附件暂无数据。');
   if (references && references.totalMentionCount > references.mentions.length)
-    notices.push(`本图仅保留前 ${references.mentions.length} 条引用出现位置；引用接口尚无分页，不继续扫描。`);
+    notices.push(`当前显示 ${references.mentions.length} / ${references.totalMentionCount} 条引用出现位置。`);
   if (references?.receipt.availability !== 'AVAILABLE' && references)
-    notices.push('引用来源覆盖不完整；未返回的关系不能解释为不存在。');
+    notices.push('引用来源覆盖不完整。');
   return { document, quicklook, references, family, matters, notices };
 }

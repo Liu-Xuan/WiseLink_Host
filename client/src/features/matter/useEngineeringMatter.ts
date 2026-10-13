@@ -18,6 +18,7 @@ import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSess
 import { writeReviewDraft } from '@client/src/features/review/review-draft-store';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import { clearMatterReadingLocations } from './reading-location';
+import { isRevokedMatterError } from './matter-read-error';
 
 const MATTER_STALE_TIME_MS = 30_000;
 const MATTER_GC_TIME_MS = 5 * 60_000;
@@ -357,11 +358,6 @@ function assertCurrentSession(sessionGeneration: number): void {
   }
 }
 
-function isRevokedMatterError(error: unknown): boolean {
-  const statusCode: number | undefined = matterErrorStatus(error);
-  return statusCode === 401 || statusCode === 403 || statusCode === 404;
-}
-
 type MatterResourceResult<T> =
   | { kind: 'readable'; data: T; sessionGeneration: number }
   | { kind: 'rejected'; error: unknown };
@@ -388,18 +384,6 @@ export async function readMatterResource<T>(
 function matterErrorMessage(error: unknown): string | null {
   if (!error) return null;
   return error instanceof Error ? error.message : '读取事项失败，请稍后重试。';
-}
-
-function matterErrorStatus(error: unknown): number | undefined {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'statusCode' in error &&
-    typeof error.statusCode === 'number'
-  ) {
-    return error.statusCode;
-  }
-  return undefined;
 }
 
 function currentAppId(): string {

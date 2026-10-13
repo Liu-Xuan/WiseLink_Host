@@ -124,7 +124,7 @@ const LinkMatterMaterial: FC<LinkMatterMaterialProps> = ({
         {workItemId
           ? `当前选择：${documentLabel}。`
           : '请在下方选择一个已有任务。'}
-        关联后仅进入待核查材料，不会自动改写综合判断或正式采用状态。
+        关联后可在事项材料中查看。
       </p>
       {error ? (
         <p role="alert" className="text-sm">

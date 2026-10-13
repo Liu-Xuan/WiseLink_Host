@@ -238,7 +238,7 @@ function SectionReadingBlock({
       {sectionReading.selection.unresolvedRanges.length > 0 ? (
         <p className="text-xs text-muted-foreground">
           本选择有 {sectionReading.selection.unresolvedRanges.length}{' '}
-          项覆盖记录（含诊断或未标注项），详见下方逐项性质；数量不代表未读或比较失败。
+          项覆盖记录，详见下方。
         </p>
       ) : null}
     </div>
@@ -265,7 +265,7 @@ export default function DocumentRevisionReadingSidePanel({
           <h3 className="text-sm font-medium text-foreground">厂家改版说明</h3>
           {side.publisherRevisionDescriptions.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              未定位到支持的说明角色；不代表该版本没有改版说明。
+              暂未定位到支持的改版说明章节。
             </p>
           ) : (
             side.publisherRevisionDescriptions.map(

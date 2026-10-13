@@ -78,7 +78,6 @@ export function LibraryMatterQuicklookContent({
         <h3>已保存工作 · 我方候选意见</h3>
         {problemWork ? (
           <>
-            <p>问题分析已保存；保存不代表综合已覆盖或已正式采用。</p>
             <MatterProblemWork
               revision={current}
               onLocateDocument={locateDocument}
@@ -132,14 +131,11 @@ export function LibraryMatterQuicklookContent({
             </li>
           ))}
         </ul>
-        <p className="atlas-library-muted">
-          关联不代表已读取，核查范围以保存记录为准。
-        </p>
       </section>
       <section className="atlas-library-reading-block">
         <h3>资料措施与前提</h3>
         <p>
-          当前接口未单独返回资料措施与实施前提。请在上述原文及候选判断的依据中核对，不以我方建议代替资料原意。
+          尚无单独保存的资料措施与实施前提，可查看原文与评估依据。
         </p>
       </section>
       <section className="atlas-library-reading-block">
@@ -148,18 +144,18 @@ export function LibraryMatterQuicklookContent({
         {data.working.pendingInputs.length ? (
           <p className="atlas-library-attention">
             {data.working.pendingInputs.length}{' '}
-            项新增或变化的材料尚未覆盖；已有认识不冒充已纳入这些变化。
+            项新增或变化的材料待处理。
           </p>
         ) : (
           <p className="atlas-library-muted">
-            本次未返回待覆盖输入；不表示评估完成或事实已全部核实。
+            暂无待处理输入。
           </p>
         )}
       </section>
       <section className="atlas-library-reading-block">
         <h3>真实实施与故障记录</h3>
         <p>
-          未核实。当前读模型未返回实施、执行完成或故障记录，不能判断已完成、未实施或无故障。
+          暂无实施、执行完成或故障记录。
         </p>
       </section>
       <section className="atlas-library-reading-block">
@@ -176,7 +172,7 @@ export function LibraryMatterQuicklookContent({
             ))}
           </ul>
         ) : (
-          <p>尚未单独保存待核问题或复看条件；不表示没有后续关注事项。</p>
+          <p>暂无待核问题或复看条件。</p>
         )}
       </section>
 

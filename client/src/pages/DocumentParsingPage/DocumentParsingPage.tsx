@@ -972,7 +972,7 @@ export default function DocumentParsingPage() {
         >
           <summary>
             当前工程认识与分析状态
-            <span>展开查看 · 候选意见仍需工程师确认</span>
+            <span>展开查看</span>
           </summary>
           {/* 阅读态只折叠展示，保留状态读取、权限与候选确认边界。 */}
           <AuthorityStrip view={workItemView} />
@@ -1046,7 +1046,7 @@ export default function DocumentParsingPage() {
                 </ul>
               ) : (
                 <p className="parse-overall-bar-empty">
-                  当前候选没有逐结论绑定当前文件版本的原文依据，不能作为工程摘要展示。
+                        本次摘要缺少原文引用。
                 </p>
               )}
             </details>
@@ -1112,7 +1112,7 @@ export default function DocumentParsingPage() {
                   : '分类待确认'}
               </span>
               {referenceOnly ? (
-                <span className="parse-tag parse-reference-tag">仅供参考</span>
+                <span className="parse-tag parse-reference-tag">参考资料</span>
               ) : null}
             </article>
 
@@ -1202,7 +1202,7 @@ export default function DocumentParsingPage() {
               <p className="parse-empty">
                 {data.workItem.failure || data.workItem.recordingFailure
                   ? '本事项的解析或记录未完成，请刷新或联系支持人员。'
-                  : '文档版本的已发布原文请在原文页核对；此处为空不表示原文为空。'}
+                  : '暂无结构化内容，可打开原文。'}
               </p>
               {data.workItem.source.documentVersionId ? (
                 <Link to={`/document-versions/${encodeURIComponent(data.workItem.source.documentVersionId)}`}>
@@ -1285,7 +1285,7 @@ export default function DocumentParsingPage() {
                       onClick={() => void reviewOverallProjection.run()}>
                       {reviewOverallProjection.busy ? '正在更新综合…' : '从已保存评估更新综合'}
                     </button>
-                    <p>根据已保存的完整评估工作形成候选综合，不重新分析正文；工程结论仍需人工复核。</p>
+                    <p>根据已保存的评估工作更新综合。</p>
                   </>
                 ) : null}
                 {reviewOverallProjection.message ? <p role="status">{reviewOverallProjection.message}</p> : null}
@@ -1453,7 +1453,7 @@ export default function DocumentParsingPage() {
                                         | 'BASE_RULE_RESULT_CHANGED'
                                         | 'ENGINEER_REVIEW_CHANGED',
                                     )}）`
-                                  : '当前意见仍是候选，需工程师确认。'}
+                                  : '已保存整体意见'}
                               </small>
                             </>
                           ) : (
@@ -1472,7 +1472,7 @@ export default function DocumentParsingPage() {
                       integratedAssessment.overallForAeoConfirmation ? (
                         <div className="parse-aeo-ready-action">
                           <p>
-                            工程师确认已记录，可用于形成后续编写候选。该确认不等于工程批准或发布。
+                            工程师确认已记录，可形成后续编写素材。
                           </p>
                           {!aeo ? (
                             <Button
@@ -1661,7 +1661,7 @@ export default function DocumentParsingPage() {
                   </summary>
                   <div className="parse-engineer-review-body">
                     <p>
-                      保存只记录工程师判断，不运行模型，也不会直接改写逐项评估结果。
+                      保存本次工程师判断。
                       只有发现判断方向、依据或输入需要修正时才记录，无需逐项确认。
                     </p>
                     <p className="parse-review-mobile-hint" role="note">
@@ -1943,7 +1943,7 @@ export default function DocumentParsingPage() {
         />
 
         <footer className="parse-footer">
-          <span>当前工程事项 · 候选意见需工程师确认</span>
+          <span>当前工程事项</span>
           <Link
             to={`/work-items/${encodeURIComponent(workItemId)}/analysis?panel=review`}
           >

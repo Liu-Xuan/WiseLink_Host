@@ -414,7 +414,7 @@ export default function ContinuousReviewPanel({
             <span>持续工程复核</span>
             <h3 id="continuous-review-title">围绕当前事项继续核对</h3>
             <p>
-              自由讨论不会改写当前评估。需更新时填写并核对评估输入后重算；正式采用与实施决定仍独立处理。
+              可继续讨论，或填写评估输入更新评估。
             </p>
           </div>
           <div className="continuous-review-toolbar">

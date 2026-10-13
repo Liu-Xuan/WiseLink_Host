@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   CircleDashed,
   ClipboardList,
   FileCheck2,
@@ -54,11 +53,6 @@ export function AeoAuthoringWorkspace({
           </div>
           <p className="aeo-authoring-kicker">候选素材工作区</p>
           <h2>{aeo.targetIdentity}</h2>
-          <p>
-            当前工作区只处理候选编写素材。它不会创建正式
-            EO、改变当前有效结果、替代 AAmis，也不会把 AI
-            候选意见升级为工程结论。
-          </p>
         </div>
         <div className="aeo-authoring-seal">
           <span>当前性质</span>
@@ -144,10 +138,6 @@ export function AeoAuthoringWorkspace({
               <dd>禁止</dd>
             </div>
           </dl>
-          <div className="aeo-authoring-warning">
-            <AlertTriangle aria-hidden="true" />
-            <span>候选仍需工程师复核；状态不代表工程、适航或发布结论。</span>
-          </div>
           <Link
             className="aeo-authoring-reader-link"
             to={`/work-items/${encodeURIComponent(workItemId)}/analysis?panel=reader`}
@@ -159,7 +149,6 @@ export function AeoAuthoringWorkspace({
 
       <footer className="aeo-authoring-footer">
         <span>候选素材保留来源与文件校验记录</span>
-        <span>当前编辑器不会另建事项或资料目录</span>
       </footer>
     </section>
   );

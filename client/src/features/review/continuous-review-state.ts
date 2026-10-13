@@ -58,7 +58,7 @@ export function reviewReadbackMessage(
   if (readFailed) {
     return refreshing
       ? '上次刷新失败，正在重新读取；仍显示旧投影，执行状态可能已变化。'
-      : '刷新失败：当前保留上次成功读回的旧投影，不代表最新执行状态。未提交的草稿仍保留，请重新读取。';
+      : '刷新失败，显示上次读取内容。草稿已保留，可重试。';
   }
   return refreshing
     ? '正在读取最新记录；暂时保留上次读回的投影及未提交的草稿。'

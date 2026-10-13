@@ -67,7 +67,7 @@ async function resolveSidePin(
     if (!status.publishedRun) {
       return {
         identity: null,
-        unreadable: `「${side.documentVersionId}」没有已发布的解析版本，无法进行改版比较。本页面不会启动新的解析。`,
+        unreadable: `「${side.documentVersionId}」没有已发布的解析版本，暂无法比较。`,
       };
     }
     parseRunId = status.publishedRun.parseRunId;
@@ -81,7 +81,7 @@ async function resolveSidePin(
     if (!semantic.semanticMap) {
       return {
         identity: null,
-        unreadable: `「${side.documentVersionId}」没有已保存的语义组织，无法进行改版比较。本页面不会生成语义组织。`,
+        unreadable: `「${side.documentVersionId}」没有已保存的语义组织，暂无法比较。`,
       };
     }
     semanticRevision = semantic.semanticMap.semanticRevision;
@@ -337,7 +337,7 @@ export default function DocumentRevisionReadingPage() {
         </Link>
         <h1>文件自身换版</h1>
         <p>
-          只读比较两个版本所选角色的纯文本。基线端与比较目标端只表示本次比较的两端，不代表厂家先后、正式采用，也不代表最新或完整修订跨度。
+          比较基线版本与目标版本的所选章节。
         </p>
         {focusSide === 'before' || focusSide === 'after' ? (
           <p role="status" className="text-xs text-muted-foreground">
@@ -372,9 +372,6 @@ export default function DocumentRevisionReadingPage() {
                   {message}
                 </p>
               ))}
-            <p className="text-xs text-muted-foreground">
-              本页面只读取已保存的内容，不会启动解析、索引或模型，也不会改用其他版本代替。
-            </p>
           </CardContent>
         </Card>
       ) : null}
@@ -406,7 +403,7 @@ export default function DocumentRevisionReadingPage() {
               <Badge variant="outline" className="mr-2">
                 当前角色 {roleKey}
               </Badge>
-              更换角色会沿用当前两端的固定版本绑定重新读取该角色的比较，不会自动切换到其他版本。
+              可切换章节查看这两个版本的比较。
             </p>
           ) : null}
           <DocumentRevisionReadingView

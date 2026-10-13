@@ -87,15 +87,22 @@ describe('compact library information from exact saved sources', () => {
     expect(libraryPublicationPresentation(null)).toEqual({ issueDate: '未返回', ata: '未返回' });
   });
 
-  it('keeps stale/retracted saved readings out of the summary and avoids repeating identical fields', () => {
+  it('keeps same-version saved readings visible after re-parsing and avoids repeating identical fields', () => {
     const document = fixture();
     document.versions[0].documentReading = { ...reading('STALE_UNSAFE_BRIEF'), status: 'SOURCE_CHANGED' };
     const html = renderToStaticMarkup(createElement(StaticRouter, null, createElement('table', null,
       createElement('tbody', null, createElement(LibraryDocumentVersionRow, {
         document, version: document.versions[0], onSelect: jest.fn(),
       })))));
-    expect(html).not.toContain('STALE_UNSAFE_BRIEF');
-    expect(html).toContain('来源已变化');
+    expect(html).toContain('STALE_UNSAFE_BRIEF');
+    expect(html).not.toContain('来源已变化');
+    document.versions[0].documentReading = { ...reading('RETRACTED_BRIEF'), status: 'RETRACTED' };
+    const withdrawn = renderToStaticMarkup(createElement(StaticRouter, null, createElement('table', null,
+      createElement('tbody', null, createElement(LibraryDocumentVersionRow, {
+        document, version: document.versions[0], onSelect: jest.fn(),
+      })))));
+    expect(withdrawn).not.toContain('RETRACTED_BRIEF');
+    expect(withdrawn).toContain('已撤回');
     expect(libraryDistinctBrief(' 当前文档标题 ', '当前文档标题')).toBe('与标题 / 编号相同');
     expect(libraryDistinctBrief('不同摘要', '当前文档标题')).toBe('不同摘要');
   });

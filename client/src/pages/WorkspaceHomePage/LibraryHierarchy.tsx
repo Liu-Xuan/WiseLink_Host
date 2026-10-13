@@ -143,10 +143,9 @@ export function LibraryHierarchy({
         {`已加载 ${documents.length} 份；下方树节点数量仅覆盖已加载的搜索结果。`}
         {hasMore ? '可在下方加载更多。' : ''} 展开文档查看版本，或打开文档快览。
       </p>
-      <p className="library-classification-note">
-        三项筛选共同生效，切换首层只改变目录层级。ATA 与正文提及机型（非适用性）按文档族各获权版本的原文观察值归类，全部待核；可能来自历史版本或不同版本，不代表同版关联。
-        机型父子关系仅来自当前有效机队，非本司机型不单列分支；未归入机队的资料仍保留。未分类表示尚未提取或本次文本未检出；可在文档快览查看依据或补提取。
-      </p>
+      <details className="library-classification-note"><summary>目录分类</summary>
+        <p>三项筛选共同生效。ATA 与正文提及机型取自文档族内各版本的原文；机型层级取自当前有效机队。未分类资料可在文档快览查看依据或补提取。</p>
+      </details>
       <div key={grouping}>{categoryRows(groups)}</div>
     </section>
   );

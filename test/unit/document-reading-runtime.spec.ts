@@ -338,6 +338,28 @@ it('returns the complete saved browser result with fresh exact identities and ze
  await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SOURCE_REVOKED');
 });
 
+it('keeps saved browser reading bound to parse-1 when the same original has published parse-2', async () => {
+  const f = fixture();
+  f.parsing.status.mockResolvedValue({ latestRevision: 2, publishedRevision: 2, parseRunId: 'parse-2', status: 'PUBLISHED' } as never);
+  const reading = { readingRevision: 1, sourceBinding: { original: { ...f.original.binding }, semanticRevision: 1 },
+    sourceAnchors: [{ sourceRefIds: ['old-source-ref'], payloadPath: '/payload/text' }],
+    explanation: [{ text: '先前已保存的文档解读', quotes: [] }] };
+  const bytes = JSON.stringify(reading);
+  f.runs.readSavedState.mockResolvedValue({ status: 'AVAILABLE', reading } as never);
+  const request = { documentVersionId: f.scope.documentVersionId, parseRunId: f.row.parseRunId, semanticRevision: 1, readingRevision: 1 };
+  const response = await f.service.readForBrowser(request, f.context);
+  expect(response.reading).toBe(reading);
+  expect(f.parsing.inspectPublishedIdentity).toHaveBeenCalledWith(request.documentVersionId, request.parseRunId, f.context);
+  expect(f.runs.readSavedState).toHaveBeenCalledWith(f.context, request.parseRunId, 1, 1);
+  expect(JSON.stringify(reading)).toBe(bytes);
+  expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
+  expect(f.semantics.ensure).not.toHaveBeenCalled();
+  expect(f.runs.begin).not.toHaveBeenCalled(); expect(f.runs.save).not.toHaveBeenCalled();
+  expect(f.modelSettings.captureForNewTask).not.toHaveBeenCalled();
+  f.parsing.status.mockRejectedValueOnce(new Error('SOURCE_ACCESS_DENIED'));
+  await expect(f.service.readForBrowser(request, f.context)).rejects.toThrow('SOURCE_ACCESS_DENIED');
+});
+
 it('freezes independent reading from central settings and replays the stored selection', async () => {
   const f = fixture();
   const input = { action: 'READING_BEGIN', documentVersionId: f.scope.documentVersionId,

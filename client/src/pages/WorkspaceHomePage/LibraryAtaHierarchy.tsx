@@ -86,9 +86,11 @@ export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore,
       <details className="library-ata-guide"><summary>目录说明</summary>
         <div>
           <p>机型 → ATA2 → ATA4 → 文档版本</p>
-          <p>仅覆盖当前已加载的获权版本。机型提及与 ATA 取自同一版本的原文观察，均待核，不表示适用性。{hasMore ? '可在下方加载更多。' : ''}</p>
-          <p>标题来自仓库已收录的 2026-09-10 附件摘录，可展开查看源行。附件版次及机型映射未核验；iSpec 与 JASC 同号不表示等同。</p>
-          <p>带分隔符等尚未确认含义的标注逐项保留在“原始 ATA 标注”中；不据标点推定子章节或范围。</p>
+          {hasMore ? <p>可在下方加载更多版本。</p> : null}
+          <details><summary>章节与机型来源</summary>
+            <p>机型提及与 ATA 取自同一文档版本。章节标题来自已收录的 2026-09-10 附件摘录，可展开查看源行；附件版次、机型及 iSpec/JASC 对应关系尚未核验。</p>
+            <p>含分隔符的标注保留在“原始 ATA 标注”中，含义尚未确认。</p>
+          </details>
         </div>
       </details>
     </div>

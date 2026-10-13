@@ -100,13 +100,13 @@ export const mockReviewSuggestionCard: ReviewSuggestionCardViewModel = {
   workItemId: WORK_ITEM_ID,
   expectedRevision: REVISION,
   workItemTitle: WORK_ITEM_TITLE,
-  reviewSummary: '候选综合意见需要工程师复核后再用于后续工作',
+  reviewSummary: '已保存综合意见',
   recommendationList: [
     '优先核实5架飞机的软件构型',
     '确认并行改装计划后再更新适用范围',
-    '复核通过前候选结论不得用于正式工作',
+    '查看综合意见与原文依据',
   ],
-  riskHint: '候选结论当前仅基于受控文件与已记录的评估，未经人工确认',
+  riskHint: '基于受控文件与已记录的评估',
 };
 
 export const mockStaleConflictCard: StaleConflictCardViewModel = {

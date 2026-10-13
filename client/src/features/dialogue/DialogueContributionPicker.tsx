@@ -87,7 +87,7 @@ export const DialogueContributionPicker: FC<
         <DialogHeader>
           <DialogTitle>保存为私人贡献</DialogTitle>
           <DialogDescription>
-            选中原文片段并指定归属。保存不会自动重评、分享或正式采用。
+            选中原文片段，指定归属并保存。
           </DialogDescription>
         </DialogHeader>
         <Select
@@ -192,7 +192,7 @@ export const DialogueContributionPicker: FC<
         )}
         {kind === 'CORRECTION' && supersedes !== 'none' && (
           <p className="text-xs">
-            保存时撤回所选旧前提，并建立替代关系；不会撤销已经使用旧前提的评估。
+            保存时撤回所选旧前提，建立替代关系；已保存评估保留。
             原前提：
             {
               prior.find((item) => item.contributionRef === supersedes)

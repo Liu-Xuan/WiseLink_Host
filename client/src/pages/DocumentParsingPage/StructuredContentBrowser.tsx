@@ -194,7 +194,7 @@ export function StructuredContentBrowser({
       <header className="structured-browser-header" data-wl-material="g3">
         <div>
           <span className="structured-browser-kicker">结构化内容</span>
-          <h3>{usable ? '结构化内容可直接使用' : '部分内容需要人工处理'}</h3>
+          <h3>结构化内容</h3>
           <p>
             {usable
               ? '可直接浏览、搜索并用于辅助分析；工程师只需处理异常、冲突、不确定项和最终工程判断。'

@@ -201,7 +201,7 @@ export function useAtlasHost(
           nodes: [],
           edges: [],
           notices: [
-            '当前真实空间此视图尚未接线。可明确切换到独立示例空间查看设计，不代表真实机队数据。',
+            '此视图暂无数据，可切换到示例空间。',
           ],
         },
       };

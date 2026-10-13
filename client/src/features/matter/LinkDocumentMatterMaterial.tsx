@@ -73,7 +73,7 @@ export default function LinkDocumentMatterMaterial({
     documentVersionId,
     scope: '核查所选文件版本的工程问题、条件及本版变化。',
     contribution:
-      '与事项已有材料比较，形成有来源依据的判断；加入材料本身不代表已核查或正式采用。',
+      '与事项已有材料比较，形成有来源依据的判断。',
     basis: [],
     origin: 'ENGINEER',
     disposition: 'INCLUDED',

@@ -23,9 +23,9 @@ export function LibraryFleetControls({
       aria-label="本司机队机型分类"
     >
       <strong>本司机队 · 父机型 / 子机型</strong>
-      <p className="library-classification-note">
-        仅按当前有效机队关系组织正文提及机型，不代表适用性结论。父机型包含其有效子机型提及；子机型仅匹配自身。
-      </p>
+      <details className="library-classification-note"><summary>机型筛选范围</summary>
+        <p>按当前有效机队组织正文提及机型。父机型包含有效子机型；子机型匹配自身。</p>
+      </details>
       <Button type="button"
         variant="outline"
         size="sm"

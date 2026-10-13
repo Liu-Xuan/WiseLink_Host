@@ -56,7 +56,7 @@ export default function MatterPosturePage() {
       {read.error ? (
         <p role="alert">
           {read.error}
-          {read.data ? ' 当前保留上次已保存读取，不代表最新状态。' : ''}
+          {read.data ? ' 显示上次保存的内容。' : ''}
         </p>
       ) : null}
       {read.data ? (

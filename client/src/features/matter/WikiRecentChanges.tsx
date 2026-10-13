@@ -79,7 +79,7 @@ function AuthorizedChanges({ work, mode, authorizedSessionGeneration, reviewWork
   const model = buildWikiRecentChanges(work, mode, conversation);
   return <section className="space-y-4 border-t border-border pt-4" aria-label="本工作实际变化">
     <header><h2 className="text-base font-semibold">本工作实际变化</h2>
-      <p className="text-xs leading-6 text-muted-foreground">只显示当前或选定工作的持久保存记录，覆盖范围不是全部历史。候选保存不代表正式采用或工程执行。</p></header>
+      <p className="text-xs leading-6 text-muted-foreground">已保存的工作变化</p></header>
     <ol className="space-y-4">
       {model.events.map(event => <li key={event.id} data-work-ref={event.workRef}>
         <strong>{event.updateLabel} · 工作修订 {event.revision}</strong>
@@ -113,17 +113,16 @@ function SourceDeclarations({ mode, sources, sessionGeneration, onAccessDenied }
   const source = sources.find(item => JSON.stringify([item.documentVersionId, item.parseRunId,
     item.candidateRevision, item.runRef]) === selected);
   return <details onToggle={event => setExpanded(event.currentTarget.open)}>
-    <summary>来源活动解释候选</summary>
-    <p className="text-xs leading-6 text-muted-foreground">原文声明与本工作实际保存分开阅读；计划、Target、TBD 不代表实际执行。请选择已登记的准确文档版本。</p>
-    <p className="text-xs text-muted-foreground">当前来源声明候选可来自较新的解析或候选版本，不表示本工作当时使用或采用了这些内容。</p>
-    <p className="text-xs text-muted-foreground">当前来源合同只提供资料声明；工程执行、运行观察与认识更新泳道尚无实际记录接入。</p>
+    <summary>来源活动解读</summary>
+    <p className="text-xs leading-6 text-muted-foreground">选择文档版本查看来源活动声明。</p>
+    <p className="text-xs text-muted-foreground">工程执行、运行观察与认识更新暂无记录。</p>
     <label>登记来源 <select aria-label="时间声明来源" value={source ? selected : ''}
       onChange={event => setSelected(event.target.value)}>
       <option value="">请选择来源</option>
       {sources.map(item => { const key = JSON.stringify([item.documentVersionId, item.parseRunId,
         item.candidateRevision, item.runRef]); return <option key={key} value={key}>{item.label}</option>; })}
     </select></label>
-    {mode === 'HISTORICAL' ? <p role="status">该历史工作未提供可核对归属的来源活动候选绑定；不会读取最新候选。</p>
+    {mode === 'HISTORICAL' ? <p role="status">该历史工作暂无来源活动解读。</p>
       : !sources.length ? <p role="status">没有已授权登记来源可供选择。</p>
         : expanded && source ? <SourceReading key={selected} source={source} mode={mode}
           sessionGeneration={sessionGeneration} onAccessDenied={onAccessDenied} /> : null}

@@ -25,6 +25,5 @@ export default function SummaryScopeFields({ scope, onChange, disabled }: {
     {scope.kind !== 'FLEET' ? <label className="space-y-1 text-sm">ATA2<Input value={scope.ata2 ?? ''} maxLength={2} onChange={event => patch({ ata2: event.target.value })} /></label> : null}
     {scope.kind === 'ATA4' ? <label className="space-y-1 text-sm">ATA4<Input value={scope.ata4 ?? ''} maxLength={5} onChange={event => patch({ ata4: event.target.value })} /></label> : null}
     <label className="space-y-1 text-sm md:col-span-2">选取理由与未纳入范围<Textarea value={scope.selectionReason} maxLength={4000} onChange={event => patch({ selectionReason: event.target.value })} placeholder="说明为何选取这些资料，以及其他 ATA4、版本或问题未纳入的范围。" /></label>
-    <p className="text-sm text-muted-foreground md:col-span-2">分类保持候选待核。目录原文观察、机型提及与本次范围不代表适用性或正式采用。</p>
   </fieldset>;
 }

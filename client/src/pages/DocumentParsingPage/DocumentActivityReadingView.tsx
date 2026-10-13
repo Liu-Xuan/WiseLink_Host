@@ -249,7 +249,7 @@ function CoverageBlock({ coverage }: { coverage: DocumentActivityReadCoverage })
   );
 }
 
-export default function DocumentActivityReadingView({ binding, familyId, candidate, selectedStatementId, selectedAnchorId, returnParamsFor, onSelectStatement, onSelectAnchor }: DocumentActivityReadingViewProps) {
+export default function DocumentActivityReadingView({ binding, candidate, selectedStatementId, selectedAnchorId, returnParamsFor, onSelectStatement, onSelectAnchor }: DocumentActivityReadingViewProps) {
   const selectedStatement = candidate && selectedStatementId ? candidate.statements.find(
     (statement: DocumentActivityStatement) => statement.statementId === selectedStatementId) ?? null : null;
   const selectedAnchor = candidate && selectedAnchorId ? candidate.sourceAnchors.find(
@@ -257,13 +257,12 @@ export default function DocumentActivityReadingView({ binding, familyId, candida
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader><CardTitle className="text-base">已保存活动候选（只读）</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">已保存活动解读</CardTitle></CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p className="text-xs text-muted-foreground">
-            family {familyId} · 解析版本绑定 {binding.parseRunId}
-            {candidate ? <> · 候选改版 {candidate.candidateRevision} · 运行标识 {candidate.runRef} · 产生者 {candidate.producer.skillVersion} / {candidate.producer.modelVersion} · 保存时间 {candidate.savedAt}（保存时间不是活动时间）</> : null}
-          </p>
-          <p className="text-xs text-muted-foreground">候选仅表示模型对原文引用的解读，不代表已验证的执行或采用；声明顺序按 Host 返回顺序展示，不按保存时间虚构活动时间。</p>
+          <details><summary>保存与来源</summary>
+            <p>来源解析版本：{binding.parseRevision}</p>
+            {candidate ? <p>保存时间：{candidate.savedAt} · 阅读修订 {candidate.candidateRevision}</p> : null}
+          </details>
         </CardContent>
       </Card>
       {candidate === null ? (
@@ -271,16 +270,16 @@ export default function DocumentActivityReadingView({ binding, familyId, candida
           <CardHeader><CardTitle className="text-base">未保存候选</CardTitle></CardHeader>
           <CardContent>
             <p role="status" className="text-sm text-muted-foreground">
-              该来源与解析版本没有已保存的活动候选。这不表示该文档没有活动，仅表示当前没有可读取的已保存结果。
+              暂无已保存的活动解读。
             </p>
           </CardContent>
         </Card>
       ) : (
         <>
           {selectedStatementId && !selectedStatement ? <p role="status" className="text-sm text-muted-foreground">
-            无法定位声明 {selectedStatementId}，不会默认选择其他声明。</p> : null}
+            无法定位声明 {selectedStatementId}。</p> : null}
           {selectedAnchorId && !selectedAnchor ? <p role="status" className="text-sm text-muted-foreground">
-            无法定位锚点 {selectedAnchorId}，不会默认选择其他锚点。</p> : null}
+            无法定位锚点 {selectedAnchorId}。</p> : null}
           {candidate.statements.length === 0 ? (
             <Card>
               <CardContent className="pt-6">

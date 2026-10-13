@@ -347,7 +347,6 @@ export function quicklookMarkdown(
       '',
       `## ${content.headline}`,
       '',
-      '> 已保存候选认识；不代表正式采用、批准或实施决定。',
       `> 结果版本：${quicklook.readingResult.resultRef} · ${quicklook.readingResult.resultRevision}`,
       ...(quicklook.sourceReadNote ? ['', quicklook.sourceReadNote] : []),
       '',
@@ -374,7 +373,7 @@ export function quicklookMarkdown(
   return [
     `# ${title}`,
     '',
-    `> ${quicklook.authorityLabel} · ${quicklook.freshnessLabel}；内容仅用于工程辅助，不代表批准或放行。`,
+    `> ${quicklook.authorityLabel} · ${quicklook.freshnessLabel}`,
     ...(quicklook.sourceReadNote ? ['', quicklook.sourceReadNote] : []),
     '',
     '## 当前判断',

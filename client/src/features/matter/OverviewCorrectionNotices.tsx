@@ -23,7 +23,7 @@ function outcomeText(
     ATTEMPT_STATUS_LABELS[notice.attemptStatus] ??
     `待核实（${notice.attemptStatus}）`;
   const saved: string = notice.savedWorkRef
-    ? '已保存后续工作；保存不等于错误已消除或已正式采用。'
+    ? '已保存后续工作。'
     : '尚未读到保存后的后续工作；原工作仍可阅读。';
   return `请求状态：${status}。${saved}`;
 }

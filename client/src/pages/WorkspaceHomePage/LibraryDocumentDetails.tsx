@@ -130,7 +130,7 @@ export function LibraryDocumentDetails({
         <div className="library-quicklook-empty" role="status">
           <FileSearch2 aria-hidden="true" />
           <strong>{selectionPending ? '原选择尚未在当前读取范围内加载' : '选择工程文档查看版本'}</strong>
-          <p>{selectionPending ? '已保留原文档选择。可加载更多目录或核对筛选与访问范围；未出现在本次读取中不代表资料不存在，也不会自动改选首行。' : '同一文档的版本集中在这里，评估记录可在最近任务中查看。'}</p>
+          <p>{selectionPending ? '所选文档未在当前目录页中，可加载更多或调整筛选。' : '同一文档的版本集中在这里，评估记录可在最近任务中查看。'}</p>
         </div>
       ) : (
         <div {...paneScroll} className="library-quicklook-scroll">
@@ -157,9 +157,10 @@ export function LibraryDocumentDetails({
                 <LibrarySummaryText key={selectedVersion.documentVersionId}
                   text={libraryDistinctBrief(selectedReading.brief, selectedIdentity?.documentTitle ?? '', selectedIdentity?.documentNumber)} />
                 {selectedReading.coverageStatus === 'PARTIAL_DELIVERY' ? (
-                  <p className="library-quicklook-note">
-                    部分覆盖：已送达 {selectedReading.deliveredUnitCount}/{selectedReading.totalUnitCount}，仅代表已送达范围，不代表完整理解。
-                  </p>
+                  <details><summary>保存与来源</summary>
+                    <p>已保存阅读范围 {selectedReading.deliveredUnitCount}/{selectedReading.totalUnitCount}</p>
+                    {selectedReading.savedAt ? <p>保存时间：{selectedReading.savedAt}</p> : null}
+                  </details>
                 ) : null}
               </div>
             ) : !assessmentBrief ? (
@@ -189,9 +190,6 @@ export function LibraryDocumentDetails({
                   <p>该版本已有评估任务，尚无可显示的已保存问题摘要。</p>
                 )}
               </section>
-            ) : null}
-            {!selectedReading.brief && assessmentBrief ? (
-              <p className="library-quicklook-note">文档自身解读尚未生成；上方为此版本关联任务的已保存评估。</p>
             ) : null}
             {readingConditionCount > 0 ? (
               <details
@@ -229,7 +227,7 @@ export function LibraryDocumentDetails({
           <p className="library-quicklook-note">版本状态以文档管理模块的登记为准。重复评估关联已有文档版本。颁发时间与 ATA 为原文观察值，待核；修订、生成及入库日期分别保留。</p>
           <div className="library-revision-picker">
             <p className="library-revision-picker-note">
-              选择两个不同的版本进行只读改版比较。「基线端」与「比较目标端」只表示本次比较的两端，不代表厂家先后、正式采用或最新。
+              选择基线版本与比较目标版本，查看改版差异。
             </p>
             <div className="library-revision-picker-fields">
               <label>

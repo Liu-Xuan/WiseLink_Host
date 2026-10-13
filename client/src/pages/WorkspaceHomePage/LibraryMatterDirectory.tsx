@@ -155,7 +155,7 @@ export default function LibraryMatterDirectory({
             <td><div className="suite-doc-cell"><span><b>{matter.title}</b><small className="suite-library-object-id" title={matter.matterId}>{matter.matterId}</small></span></div></td>
             <td><b>{matter.workingRevision}</b>{matter.result?.roundCompletion === 'IN_PROGRESS' ? <small>分析进行中</small> : null}</td>
             <td>{libraryDateLabel(matter.updatedAt)}</td>
-            <td title="仅汇集已读回的准确关联资料原文 ATA，不代表事项适用性">{libraryMatterSourceAta(selectedRead?.matter.matterId === matter.matterId ? selectedRead.matter : null,
+            <td title="关联资料的原文 ATA">{libraryMatterSourceAta(selectedRead?.matter.matterId === matter.matterId ? selectedRead.matter : null,
               documentDirectory.items.filter(document => document.kind === 'DOCUMENT'))}</td>
             <td className="meaning"><LibrarySummaryText expandable={Boolean(matter.result?.listBrief) && matter.overallStatus !== 'NOT_AVAILABLE'} text={matter.overallStatus === 'NOT_AVAILABLE'
               ? '问题正文已保存，综合认识尚未形成。' : matter.result?.listBrief

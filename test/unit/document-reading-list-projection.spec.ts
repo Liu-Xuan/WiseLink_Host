@@ -67,6 +67,11 @@ function version(
   documentVersionId: string,
   overrides: Partial<CanonicalLibraryDocumentVersionSummary> = {},
 ): CanonicalLibraryDocumentVersionSummary {
+  const preview = overrides.documentReading?.reading;
+  if (preview?.sourceBinding.original.documentVersionId === 'DV-X') {
+    overrides = { ...overrides, documentReading: { ...overrides.documentReading!, reading: { ...preview,
+      sourceBinding: { ...preview.sourceBinding, original: { ...preview.sourceBinding.original, documentVersionId } } } } };
+  }
   return {
     documentVersionId,
     businessRevision: 'R1',
@@ -129,7 +134,7 @@ describe('projectLibraryDocumentReading', () => {
     expect(projection.sourceBinding?.semanticRevision).toBe(2);
   });
 
-  it('places the actual delivered ratio first for PARTIAL_DELIVERY', () => {
+  it('keeps actual coverage counts separate from engineering conditions for PARTIAL_DELIVERY', () => {
     const projection = projectLibraryDocumentReading(
       version('DV-1', {
         documentReading: {
@@ -143,9 +148,9 @@ describe('projectLibraryDocumentReading', () => {
       }),
     );
     expect(projection.coverageStatus).toBe('PARTIAL_DELIVERY');
-    expect(projection.conditionLines[0]).toContain('部分覆盖：已送达 2/5');
-    expect(projection.conditionLines[0]).toContain('仅代表已送达范围');
-    expect(projection.conditionLines).toHaveLength(4);
+    expect(projection.deliveredUnitCount).toBe(2);
+    expect(projection.totalUnitCount).toBe(5);
+    expect(projection.conditionLines).toHaveLength(3);
   });
 
   it('reports NOT_GENERATED without claiming an interpretation', () => {
@@ -155,7 +160,7 @@ describe('projectLibraryDocumentReading', () => {
     expect(projection.status).toBe('NOT_GENERATED');
     expect(projection.headline).toBeNull();
     expect(projection.brief).toBeNull();
-    expect(projection.note).toBe('该版本尚无已保存解读');
+    expect(projection.note).toBe('');
   });
 
   it('never paints withdrawn text even if an upstream response accidentally includes it', () => {
@@ -177,25 +182,36 @@ describe('projectLibraryDocumentReading', () => {
     expect(projection.brief).toBeNull();
   });
 
-  it('suppresses stale headline and brief when the source changed', () => {
+  it('shows saved reading after re-parsing the same version without rebinding provenance', () => {
     const projection = projectLibraryDocumentReading(
       version('DV-1', {
         documentReading: { status: 'SOURCE_CHANGED', reading: previewReading('过期主题') },
       }),
     );
-    expect(projection.status).toBe('SOURCE_CHANGED');
-    expect(projection.headline).toBeNull();
-    expect(projection.brief).toBeNull();
-    expect(projection.conditionLines).toEqual([]);
-    expect(projection.note).toBe('来源已变化，已有解读不代表此版本认识');
+    expect(projection.status).toBe('AVAILABLE');
+    expect(projection.headline).toBe('过期主题');
+    expect(projection.brief).toBe('简明解读 过期主题');
+    expect(projection.conditionLines).toContain('关键条件 过期主题');
+    expect(projection.note).toBe('');
+    expect(projection.sourceBinding?.original.parseRunId).toBe('parse-1');
     expect(projection.readingRunRef).toBe('RUN-过期主题');
   });
 
   it('reports NOT_RETURNED when the interface omits the reading preview', () => {
     const projection = projectLibraryDocumentReading(version('DV-1'));
     expect(projection.status).toBe('NOT_RETURNED');
-    expect(projection.note).toBe('当前接口未返回该版本解读');
+    expect(projection.note).toBe('');
     expect(projection.brief).toBeNull();
+  });
+
+  it('does not mix a saved reading from another document version even when the hash matches', () => {
+    const reading = previewReading('另一版本');
+    reading.sourceBinding.original.documentVersionId = 'DV-other';
+    const projection = projectLibraryDocumentReading(version('DV-1', {
+      documentReading: { status: 'SOURCE_CHANGED', reading },
+    }));
+    expect(projection.brief).toBeNull();
+    expect(projection.sourceBinding).toBeNull();
   });
 
   it('keeps two versions of one family on their own saved readings', () => {
@@ -271,7 +287,7 @@ describe('library document rows and quicklook reading rendering', () => {
     expect(markup).toContain('新版主题');
     expect(markup).toContain('简明解读 新版主题');
     expect(markup).toContain('旧版主题');
-    expect(markup).toContain('部分覆盖：已送达 2/5');
+    expect(markup).toContain('已读取 2/5');
     expect(markup).toContain('关键条件 新版主题');
     expect(markup).toContain('认识限制 新版主题');
     expect(markup).toContain('来源限制 新版主题');
@@ -287,7 +303,7 @@ describe('library document rows and quicklook reading rendering', () => {
     expect(markup).toContain('aria-label="展开摘要"');
   });
 
-  it('shows an accurate absence note instead of a fabricated interpretation', () => {
+  it('shows a concise saved-reading absence state', () => {
     const markup = renderRows([
       family([
         version('DV-NEW', {
@@ -295,7 +311,7 @@ describe('library document rows and quicklook reading rendering', () => {
         }),
       ]),
     ]);
-    expect(markup).toContain('该版本尚无已保存解读');
+    expect(markup).toContain('暂无已保存解读');
   });
 
   it('quicklook shows the selected version ratio, limitations and source limitations', () => {
@@ -325,12 +341,12 @@ describe('library document rows and quicklook reading rendering', () => {
     );
     expect(markup).toContain('快览主题');
     expect(markup).toContain('简明解读 快览主题');
-    expect(markup).toContain('已送达 3/7');
+    expect(markup).toContain('已保存阅读范围 3/7');
     expect(markup).toContain('认识限制 快览主题');
     expect(markup).toContain('来源限制 快览主题');
   });
 
-  it('quicklook never shows a stale SOURCE_CHANGED headline or brief', () => {
+  it('quicklook preserves same-version saved text after another parse', () => {
     const documents = family([
       version('DV-NEW', {
         documentReading: { status: 'SOURCE_CHANGED', reading: previewReading('过期主题') },
@@ -348,8 +364,8 @@ describe('library document rows and quicklook reading rendering', () => {
         }),
       ),
     );
-    expect(markup).toContain('来源已变化');
-    expect(markup).not.toContain('过期主题');
-    expect(markup).not.toContain('简明解读 过期主题');
+    expect(markup).not.toContain('来源已变化');
+    expect(markup).toContain('过期主题');
+    expect(markup).toContain('简明解读 过期主题');
   });
 });

@@ -66,7 +66,7 @@ export function projectAuthorizedSituation(
     const questions = current?.state.openQuestions ?? [];
     const coverage = !current ? '尚未取得已保存工作' : !work ? '综合覆盖尚未核实' :
       work.overviewStatus === 'STALE' ? '综合尚未纳入最新问题工作' :
-      work.overviewStatus === 'NOT_AVAILABLE' ? '问题工作已保存，尚无综合' : '综合覆盖当前问题工作；不代表正式采用';
+      work.overviewStatus === 'NOT_AVAILABLE' ? '问题工作已保存，尚无综合' : '综合覆盖当前问题工作';
     const saved: TrinityMatter = {
       id: matter.matterId, code: '', title: matter.title,
       fleet: '机型范围未核实', ata: '未核实', tag: '待核', status: coverage,

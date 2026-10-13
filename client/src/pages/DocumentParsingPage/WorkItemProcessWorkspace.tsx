@@ -133,18 +133,18 @@ export function AssessmentProcessDetails({
             <p>
               <strong>版本关系：</strong>
               {working?.currentInputChanged
-                ? '当前事项输入已变化，已保存候选需要复核。'
-                : '候选按其记录的输入修订保存；具体证据请在问题评估中核对。'}
+                ? '已保存评估后，事项输入有更新。'
+                : '评估按保存时的输入修订记录。'}
             </p>
           </>
         ) : (
-          <p>尚无已保存的问题评估候选；运行状态不代表结论已形成。</p>
+          <p>暂无已保存的问题评估。</p>
         )}
         <p>
           <strong>人工确认：</strong>
           {confirmation
             ? humanState(confirmation.status) ?? confirmation.status
-            : '尚无整体意见确认记录；候选不会自动成为正式结论。'}
+            : '暂无整体意见确认记录。'}
         </p>
       </div>
     </section>
@@ -226,8 +226,8 @@ export default function WorkItemProcessWorkspace({
               <strong>{updateState}</strong>
               <p>
                 {overall
-                  ? '当前显示已保存的候选综合及其形成记录；后续变化不会自动改写这份认识。'
-                  : '当前尚无已保存综合，分析记录和原文仍可按各自范围核对。'}
+                  ? '已保存综合与形成记录'
+                  : '暂无已保存综合，可查看分析记录和原文。'}
               </p>
               <Button type="button" onClick={onOpenReview}>
                 <MessageSquareText aria-hidden="true" /> 补充与复核

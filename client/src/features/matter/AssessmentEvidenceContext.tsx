@@ -56,7 +56,7 @@ const AssessmentEvidenceContext: FC<AssessmentEvidenceContextProps> = ({
     ) : null}
     {evidence.kind === 'ENGINEER_STATEMENT' ? (
       <p className="text-xs leading-6 text-muted-foreground">
-        记录于 {evidence.recordedAt}。这是工程师提供的陈述，不等于受控完成记录。
+        工程师陈述 · {evidence.recordedAt}
       </p>
     ) : null}
     {evidence.kind === 'METHOD_CLAUSE' ? (
@@ -65,13 +65,13 @@ const AssessmentEvidenceContext: FC<AssessmentEvidenceContextProps> = ({
         {evidence.sourceVersionStatus === 'CONFIRMED'
           ? '版本已确认'
           : '版本尚待确认'}
-        。方法条款说明评估要求，不证明当前对象的技术事实。
+
       </p>
     ) : null}
     {evidence.kind === 'ENGINEER_ATTACHMENT' ? (
       <p className="text-xs leading-6 text-muted-foreground">
         {evidence.locator} · 附件版本 {evidence.documentVersionId}
-        。内容来自工程师上传资料，其执行及有效性需按对应来源核实。
+
       </p>
     ) : null}
     {evidence.kind === 'HOST_FACT' ? (
@@ -89,14 +89,13 @@ const AssessmentEvidenceContext: FC<AssessmentEvidenceContextProps> = ({
             : '所声明范围仅部分核查'}
           · {evidence.queriedAt}
         </p>
-        <p>未命中仅适用于以上实际核查范围，不代表其他范围不存在。</p>
       </div>
     ) : null}
     {evidence.kind === 'PRIOR_RESULT' ? (
       <p className="text-xs leading-6 text-muted-foreground">
         引自历史结果修订 {evidence.resultRevision}，关联{' '}
         {evidence.originalEvidenceRefs.length}
-        项原始前提；历史意见用于上下文，不构成新的独立事实。
+        项原始前提。
       </p>
     ) : null}
   </div>

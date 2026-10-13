@@ -103,7 +103,7 @@ export function WorkItemContextDock({
             <dt>人工确认</dt>
             <dd>
               {integrated?.overallForAeoConfirmation
-                ? '已记录，不等于正式批准'
+                ? '已记录'
                 : '等待工程师复核'}
             </dd>
           </div>

@@ -133,7 +133,7 @@ function relationDetailText(detail: SuiteRelationDetail): string {
       return `资料声明：${detail.statement.label}；时间表述：${time}；保存身份：${detail.parseRunId} · 候选修订 ${detail.candidateRevision}`;
     }
     if (detail.kind === 'ATA_CLASSIFICATION') {
-      return `ATA 标注（资料标注 · 待核）：${detail.value}；元数据状态：${detail.status}。标注不构成正式适用或系统归属。`;
+      return `原文 ATA 标注：${detail.value}；元数据状态：${detail.status}`;
     }
     if (detail.kind === 'DIRECTORY_MEMBERSHIP') {
       return `授权目录登记事项：${detail.matterId}`;

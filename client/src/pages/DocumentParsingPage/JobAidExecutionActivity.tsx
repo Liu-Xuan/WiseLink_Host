@@ -33,9 +33,6 @@ export default function JobAidExecutionActivity({
           ? ' · 部分记录不可用'
           : null}
       </summary>
-      <p>
-        记录反映材料读取和候选保存，不代表正式采用。读取与保存分别按各自记录顺序展示。
-      </p>
       {activity.error ? (
         <p role="alert">材料读取记录损坏，暂时无法展示；已保存工作仍可阅读。</p>
       ) : null}
@@ -65,13 +62,12 @@ export default function JobAidExecutionActivity({
       )}
       {activity.knowledgeObservations !== undefined ? <>
         <h3>知识检索工具</h3>
-        <p>以下是调用时的观察记录，不证明工具当前仍在运行。检索完成也不代表原始文档已核实。</p>
         {activity.knowledgeObservations.length ? <ol>
           {activity.knowledgeObservations.map((observation) => <li key={observation.sequence}>
             记录 {observation.sequence}：{knowledgeStatusLabels[observation.status]} ·{' '}
             <ActivityTime value={observation.observedAt} />
           </li>)}
-        </ol> : <p>当前展示范围没有知识工具记录；这不表示已完成检索。</p>}
+        </ol> : <p>暂无知识工具记录。</p>}
       </> : null}
       <h3>工作保存</h3>
       {activity.savedRevisions.length ? (

@@ -220,8 +220,8 @@ export default function EngineeringIssueSearch({
       <h2 className="text-lg font-semibold">{catalog ? '统一知识查阅' : '查找原文与已有问题'}</h2>
       <p className="text-sm text-muted-foreground">
         按关键词查找有权阅读的已发布原文和已保存工作，展开后核对问题、前提和来源。
-        每类最多展示 50 项，查找到的候选不会自动加入事项。
-        {readOnly ? ' 此入口只读，不登记引用比较、不启动模型。范围是当前账户获准读取的资料，不依赖先选事项。' : ''}
+        每类最多展示 50 项。
+
       </p>
       <form
         className="flex gap-2"
@@ -363,7 +363,7 @@ export default function EngineeringIssueSearch({
       {originals?.hits.map(hit => <details key={`${hit.parseRunId}:${hit.sourceRefId}`} className="rounded border border-border p-3">
         <summary className="cursor-pointer">原文 · 解析修订 {hit.parseRevision} · {hit.documentVersionId}</summary>
         <p className="mt-2 whitespace-pre-wrap text-sm">{hit.originalText}</p>
-        <p className="mt-2 text-xs text-muted-foreground">原文覆盖限制 {hit.coverage.unresolvedRanges.length} 项；命中不代表已完成评估。</p>
+        <p className="mt-2 text-xs text-muted-foreground">原文覆盖限制 {hit.coverage.unresolvedRanges.length} 项。</p>
         <Button variant="ghost" onClick={() => {
           if (!readOnly) {
             navigate(matterDocumentRoute(matterId, {
@@ -489,7 +489,7 @@ export default function EngineeringIssueSearch({
 }
 
 function referenceStatusText(status: EngineeringIssueReferenceStatus): string {
-  if (status.status === 'SUCCEEDED') return '本次引用比较处理已完成，请重新读取事项核对保存结果。候选认识不代表正式采用。';
+  if (status.status === 'SUCCEEDED') return '引用比较已完成，可重新读取事项查看保存结果。';
   if (status.status === 'FAILED') return status.errorCode === 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE'
     ? '本次处理失败：模型没有返回完整结果。已保存工作仍可阅读。'
     : '本次引用比较处理失败。请重新读取事项核对已有保存结果。';

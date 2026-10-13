@@ -38,12 +38,7 @@ export default function ReviewMaterialsPanel({
       </summary>
       {open ? (
         <div className="review-materials-body">
-          <p className="review-materials-boundary">
-            保存、选入、实际读取、候选引用与正式采用分别表达。逐次取证见各回合的真实活动记录；未返回记录时不推定已读。当前
-            页面尚未取得 Aily
-            连接能力回执，不据此宣称知识检索已接通；已有获准资料仍可分析。
-            {refreshing ? ' 正在刷新讨论，已读回记录保留。' : ''}
-          </p>
+          {refreshing ? <p role="status">正在刷新讨论…</p> : null}
           <article className="review-material-row">
             <FileText aria-hidden="true" />
             <div>
@@ -57,7 +52,6 @@ export default function ReviewMaterialsPanel({
               <details>
                 <summary>来源版本</summary>
                 <p>{context.primary.documentVersionId}</p>
-                <p>页面可浏览正文；这不代表系统已在本轮读取全文。</p>
               </details>
             </div>
             <button type="button" onClick={context.onOpenPrimary}>
@@ -112,9 +106,6 @@ export default function ReviewMaterialsPanel({
             <h4>候选引用的原文片段</h4>
             {references.citedSources.length ? (
               <>
-                <p>
-                  以下定位来自已保存候选；它们不表示相同数量的独立资料，也不证明整份资料已读或已采用。
-                </p>
                 <ul>
                   {references.citedSources.map((source, index) => (
                     <li key={source.sourceRef}>

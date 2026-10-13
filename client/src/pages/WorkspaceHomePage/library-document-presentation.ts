@@ -109,6 +109,7 @@ export interface LibraryDocumentReadingProjection {
   readingRunRef: string | null;
   readingRevision: number | null;
   sourceBinding: LibraryDocumentReadingSourceBinding | null;
+  savedAt: string | null;
   note: string;
   conditionLines: string[];
 }
@@ -137,7 +138,8 @@ export function projectLibraryDocumentReading(
     readingRunRef: null,
     readingRevision: null,
     sourceBinding: null,
-    note: '当前接口未返回该版本解读',
+    savedAt: null,
+    note: '',
     conditionLines: [],
   };
   const preview: DocumentReadingPreview | undefined = version.documentReading;
@@ -146,24 +148,20 @@ export function projectLibraryDocumentReading(
   }
   const binding: LibraryDocumentReadingSourceBinding | null =
     preview.reading?.sourceBinding ?? null;
+  if (binding && binding.original.documentVersionId !== version.documentVersionId) {
+    return { ...empty, status: 'NOT_GENERATED' };
+  }
   const provenance = {
     readingRunRef: preview.reading?.readingRunRef ?? null,
     readingRevision: preview.reading?.readingRevision ?? null,
     sourceBinding: binding,
+    savedAt: preview.reading?.savedAt ?? null,
   };
   if (preview.status === 'RETRACTED') {
     return {
       ...empty,
       status: 'RETRACTED',
-      note: '该版本解读已撤回，待重新核验；原保存记录保留供审计',
-    };
-  }
-  if (preview.status === 'SOURCE_CHANGED') {
-    return {
-      ...empty,
-      ...provenance,
-      status: 'SOURCE_CHANGED',
-      note: '来源已变化，已有解读不代表此版本认识',
+      note: '解读已撤回',
     };
   }
   if (preview.status === 'NOT_GENERATED' || !preview.reading) {
@@ -171,16 +169,11 @@ export function projectLibraryDocumentReading(
       ...empty,
       ...provenance,
       status: 'NOT_GENERATED',
-      note: '该版本尚无已保存解读',
+      note: '',
     };
   }
   const reading = preview.reading;
   const conditionLines: string[] = [];
-  if (reading.coverageStatus === 'PARTIAL_DELIVERY') {
-    conditionLines.push(
-      `部分覆盖：已送达 ${reading.deliveredUnitCount}/${reading.totalUnitCount}，仅代表已送达范围，不代表完整理解`,
-    );
-  }
   conditionLines.push(...reading.criticalConditions);
   conditionLines.push(...reading.limitations);
   for (const sourceLimitation of reading.sourceLimitations) {

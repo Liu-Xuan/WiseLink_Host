@@ -27,6 +27,7 @@ import ReferenceWorkNotices from '@client/src/features/matter/ReferenceWorkNotic
 import OverviewSourceWork from '@client/src/features/matter/OverviewSourceWork';
 import { useKnowledgeResources } from './useKnowledgeResources';
 import { SavedWorkIssueDirectory, savedWorkIssueRows } from './SavedWorkIssueDirectory';
+import SavedDocumentReadingArticle from './SavedDocumentReadingArticle';
 import './knowledge-lookup.css';
 import './knowledge-suite.css';
 
@@ -310,7 +311,8 @@ function KnowledgeCatalogue() {
         {resolveWorkItemId && knowledge.workItemLoading ? <p role="status">正在定位该事项的当前工作…</p> :
         resolveWorkItemId && knowledge.workItemResolved && !knowledge.currentWork ? <p role="alert">该事项尚无可读的已保存工作。</p> :
         resolveWorkItemId && knowledge.currentWork?.workItemId !== resolveWorkItemId ? <p role="alert">当前工作与所请求事项不一致。</p> :
-        reading ? <p role="status">正在读取确切工作…</p> : readError ? <p role="alert">{readError} <button onClick={retryRead}>重试</button></p> : read ? <>
+        reading ? <p role="status">正在读取确切工作…</p> : read ? <>
+          {readError ? <p role="alert">{readError} <button onClick={retryRead}>重试</button></p> : null}
           <div className="article-kicker">{read.entry.current ? '已保存的工程认识' : '当时的工程认识'} · 工作修订 {read.entry.workRevision}</div>
           <h1>{read.entry.headline || '已保存的工程认识'}</h1>{read.overall?.status !== 'CANDIDATE_ONLY' && compactReadingSummary(read.entry.headline, read.entry.listBrief) !== read.entry.headline && <p className="article-lead">{compactReadingSummary(read.entry.headline, read.entry.listBrief)}</p>}
           <small>{read.entry.subjectKind === 'ENGINEERING_MATTER' ? '工程事项' : '文档工作'} · {displayDate(read.entry.createdAt)}</small>
@@ -318,7 +320,6 @@ function KnowledgeCatalogue() {
             <p className="whitespace-pre-wrap">{read.entry.listBrief}</p>
           </details>}
           <SavedJobAidMethodNotice work={read.content} />
-          {!read.entry.current && <div className="knowledge-notice">当前显示当时保存的解释；查看当前事项是独立导航，不替换本条历史内容。</div>}
           {read.entry.subjectKind === 'ENGINEERING_MATTER' && read.entry.overviewStatus !== 'CURRENT' &&
             <div className="knowledge-notice">{read.entry.overviewStatus === 'STALE' ? '问题已更新，综合尚未覆盖。本页保留各部分的确切保存范围。' : '当前已保存问题解释，综合认识尚未形成。'}</div>}
           {read.entry.subjectKind === 'WORK_ITEM' && (read.overall ? <section className="knowledge-prose" aria-label="确切综合意见">
@@ -355,7 +356,8 @@ function KnowledgeCatalogue() {
             }}><BookOpen size={16} />打开对应工作 Wiki</Link>
             {!read.entry.current && <Link to={`/matters/${encodeURIComponent(read.entry.subjectId)}`}>查看事项当前认识</Link>}
           </> : <Link to={`/work-items/${encodeURIComponent(read.entry.subjectId)}`}>查看文档工作</Link>}</div>
-        </> : <p className="knowledge-empty">选择一条已有认识，阅读完整解释与来源。</p>}
+        </> : readError ? <p role="alert">{readError} <button onClick={retryRead}>重试</button></p>
+          : <p className="knowledge-empty">选择一条已有认识，阅读完整解释与来源。</p>}
       </section>
     </div> : kind === 'matters' ? <section className="panel knowledge-sources" aria-label="工程事项目录">
       <div className="panel-head"><h2>工程事项 Wiki</h2></div>
@@ -379,13 +381,7 @@ function KnowledgeCatalogue() {
         const expanded = Boolean(expandedFamilies[document.familyId]);
         const sourceBody = (version: CanonicalLibraryDocumentVersionSummary) => {
           const reading = projectLibraryDocumentReading(version);
-          const partialCoverageLine =
-            reading.coverageStatus === 'PARTIAL_DELIVERY'
-              ? (reading.conditionLines[0] ?? null)
-              : null;
-          const foldedLines = partialCoverageLine
-            ? reading.conditionLines.slice(1)
-            : reading.conditionLines;
+          const foldedLines = reading.conditionLines;
           const conditionsOpen = Boolean(
             expandedConditions[version.documentVersionId],
           );
@@ -401,11 +397,8 @@ function KnowledgeCatalogue() {
                 <strong>{reading.brief ? reading.headline : reading.fileTitle}</strong>
                 {reading.brief ?? reading.note}
               </p>
-              {partialCoverageLine || foldedLines.length ? (
+              {foldedLines.length ? (
                 <div className="knowledge-source-conditions">
-                  {partialCoverageLine ? (
-                    <p className="knowledge-source-coverage">{partialCoverageLine}</p>
-                  ) : null}
                   {foldedLines.length ? (
                     <>
                       <button
@@ -522,18 +515,8 @@ function KnowledgeCatalogue() {
         <div className="article-kicker">工程文档 · {libraryVersionLabel(selectedVersion)} · {selectedVersion.selectedVersionIsCurrent ? '当前版本' : '历史版本'}</div>
         <h1>{documents?.items.find(document => document.versions.some(version =>
           version.documentVersionId === selectedVersion.documentVersionId))?.documentCode ?? '文档版本'}</h1>
-        {(() => {
-          const reading = projectLibraryDocumentReading(selectedVersion);
-          return <>
-            <h2>{reading.headline || reading.fileTitle}</h2>
-            <p className="article-lead">{reading.brief ?? reading.note}</p>
-            {reading.conditionLines.length > 0 && <section className="knowledge-prose">
-              <h2>关键条件与阅读限制</h2><ul>{reading.conditionLines.map(line => <li key={line}>{line}</li>)}</ul>
-            </section>}
-            {!selectedVersion.documentReading?.reading &&
-              <p className="knowledge-notice">该版本尚无独立保存的文档简明解读；关联评估不能代替文档解读。</p>}
-          </>;
-        })()}
+        <SavedDocumentReadingArticle key={`${selectedVersion.documentVersionId}:${selectedVersion.documentReading?.reading?.readingRunRef ?? ''}`}
+          version={selectedVersion} onOpenSource={route => openDocument(route, selectedVersion.documentVersionId)} />
         {TDMS_SOURCE_UI_ENABLED ? <TdmsSourceEntry key={selectedVersion.documentVersionId}
           context={{ documentVersionId: selectedVersion.documentVersionId }} enabled={TDMS_SOURCE_UI_ENABLED}
           openDocument={documentVersionId => openDocument(`/document-versions/${encodeURIComponent(documentVersionId)}`, documentVersionId)} /> : null}
@@ -548,7 +531,6 @@ function KnowledgeCatalogue() {
         </section>
         {selectedVersion.readerWorkItemId && <section className="knowledge-prose">
           <h2>该版本的评估工作</h2>
-          <p>这是对该文档版本的已保存评估，阅读范围与独立文档解读不同。</p>
           <Link to={`/knowledge?${new URLSearchParams({
             kind: 'works', workItemId: selectedVersion.readerWorkItemId,
           })}`}>查看该版本评估</Link>

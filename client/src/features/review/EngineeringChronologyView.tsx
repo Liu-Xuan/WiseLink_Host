@@ -126,8 +126,7 @@ export default function EngineeringChronologyView({
   return (
     <div className="space-y-4">
       <section className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-        隔离样例：来源仅在本页示意，不向真实阅读器发送假 ID，不触发业务
-        API；真实活动/声明读取合同待主控与 P 交付。本页不代表真实业务验收。
+        示例
       </section>
       <Card>
         <CardHeader>

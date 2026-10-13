@@ -178,7 +178,7 @@ export default function AtlasExampleReading({
           <article>
             <h3>DSP-01 · 显示相关独立现象</h3>
             <p>
-              共享部分调查背景，不代表相同机理。当前资料不足以判断实际机队故障率。
+              共享部分调查背景，实际机队故障率尚无法确定。
             </p>
           </article>
         </>

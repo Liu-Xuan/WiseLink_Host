@@ -41,10 +41,6 @@ export function LibraryMetadataObservations({
 }) {
   return (
     <>
-      <p className="library-classification-note">
-        由实际 PDF
-        文本提取，全部观察值待核；“未检出”仅表示本次检查文本未发现，不代表原文没有。机型提及不构成适用性结论。
-      </p>
       <dl className="library-metadata-fields">
         {[...METADATA_FIELDS, ...PUBLICATION_METADATA_FIELDS.filter(({ key }) => metadata[key] !== undefined)].map(({ key, label }) => {
           const field = metadata[key] as DocumentMetadataField;
@@ -55,7 +51,7 @@ export function LibraryMetadataObservations({
               {field.observations.length
                 ? field.observations.map((observation, index) => (
                     <details key={`${observation.value}:${index}`}>
-                      <summary>{observation.value} · 待核</summary>
+                      <summary>{observation.value}</summary>
                       {observation.evidence.map((evidence, evidenceIndex) => (
                         <blockquote key={evidenceIndex}>
                           <span>原文第 {evidence.page} 页</span>
@@ -116,7 +112,7 @@ export function LibraryMetadata({
       setMessage(
         receipt.disposition === 'ALREADY_PRESENT'
           ? '已有提取记录，正在刷新目录。'
-          : '元数据已保存，正在刷新目录；观察值仍待核。',
+          : '元数据已保存，正在刷新目录。',
       );
       onRefresh();
     } catch (reason: unknown) {
@@ -155,7 +151,7 @@ export function LibraryMetadata({
       ) : (
         <>
           <p className="library-classification-note">
-            本版本尚无元数据提取记录。补提取只补充本版本元数据，不新建文档或评估任务。
+            本版本暂无元数据提取记录，可从原文补提取。
           </p>
           <Button
             variant="outline"

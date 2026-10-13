@@ -24,7 +24,7 @@ export default function OverviewSourceWork({
           >
             工作修订 {source.workingRevision}
           </Link>
-          。 此记录不代表批准或生成运行状态。
+          。
         </>
       ) : (
         '当前保留综合的准确保存工作尚未核实。'

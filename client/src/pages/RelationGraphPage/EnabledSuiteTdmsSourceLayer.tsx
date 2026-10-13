@@ -38,10 +38,9 @@ export default function EnabledSuiteTdmsSourceLayer(props: SuiteTdmsSourceLayerP
   return <>
     {props.children(projected.read, tdms.readBody)}
     <section aria-label="TDMS 来源目录">
-      <p>仅为来源观察与候选关系，不表示 Host 批准、执行或实装。</p>
       {props.allowCurrentSources ? <button onClick={tdms.toggle} aria-expanded={tdms.opened}>
         {tdms.opened ? '收起 TDMS 来源目录' : '读取 TDMS 来源目录'}</button>
-        : <p>固定保存工作仅展示其准确来源引用，不读取当前目录。</p>}
+        : <p>已保存工作的来源引用</p>}
       {projected.failed ? <p role="alert">来源投影身份核对失败，已清除来源节点与关系。</p> : null}
       {tdms.accessBlocked ? <p role="alert">此来源暂不可读取，原来源节点与正文已清除。
         <button onClick={() => { setSourceAccessEpoch(value => value + 1); tdms.retryAccess(); }}>重新核权来源</button></p> : null}

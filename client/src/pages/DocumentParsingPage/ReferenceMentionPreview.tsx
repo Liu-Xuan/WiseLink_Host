@@ -341,7 +341,7 @@ function SourceAuthority({
     OEM_TRACKING: '厂家跟踪',
     OPERATOR_CONTROLLED: '航司受控',
     AUTHORIZED_REFERENCE: '授权参考',
-    REFERENCE_ONLY: '仅供参考',
+    REFERENCE_ONLY: '参考资料',
     UNKNOWN: '未核定',
   };
   return <small>来源权威：{labels[value]}</small>;

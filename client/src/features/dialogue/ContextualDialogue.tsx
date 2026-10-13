@@ -90,9 +90,9 @@ export default function ContextualDialogue({
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        聊天可能包含此前其他资料的讨论；本页资料为：{document.label}
+        本页资料：{document.label}
         {documentRevision ? ` · ${documentRevision}` : ''}
-        。讨论不会自动更新评估。
+
       </p>
     </div>
   );

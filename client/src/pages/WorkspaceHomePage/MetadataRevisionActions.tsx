@@ -108,7 +108,7 @@ export function MetadataRevisionActions({
 
   return (
     <section aria-label="元数据修订管理">
-      <p>元数据修订：{revision || '尚未读取'}。重新提取仅追加元数据记录，保留旧提取结果，不新建文档版本或评估任务。</p>
+      <p>元数据修订：{revision || '尚未读取'}。</p>
       <div className="library-grouping-controls">
         <Button variant="outline" size="sm" disabled={busy || Boolean(submission) || conflict || sourceBlocked || revision < 1} onClick={() => { void run('reextract'); }}>重新提取元数据</Button>
         <Button variant="outline" size="sm" disabled={busy} onClick={() => { void run('latest'); }}>刷新最新元数据</Button>

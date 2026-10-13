@@ -130,7 +130,7 @@ export function buildSuiteMatterGraph(read: EngineeringMatterWorkspaceRead, sele
   }
   const workRef = current?.matterWorkRevisionId ?? null;
   if (pinnedSavedWork && current && workRef) {
-    notices.push('正在阅读指定保存工作；当前材料目录不作为该工作采用的依据。');
+    notices.push('已保存工作与当时的输入。');
     for (const binding of current.state.substantiveInputs) {
       const id = identity('input', workRef, binding.inputId);
       add('inputs', '当时保存的输入', id, '资料版本', binding.documentVersionId,

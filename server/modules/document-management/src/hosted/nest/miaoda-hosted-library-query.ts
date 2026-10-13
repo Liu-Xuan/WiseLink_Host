@@ -77,9 +77,7 @@ export function listOwnedLibraryFamilies(
           select jsonb_build_object(
             'status', case when x.run_ref is not null then 'RETRACTED'
               when r.result_json is not null then 'AVAILABLE'
-              when exists (select 1 from dm_document_reading_run older
-                where older.tenant_id=${input.tenantId} and older.document_version_id=${dmDocumentVersion.documentVersionId}
-                  and older.status='SAVED') then 'SOURCE_CHANGED' else 'NOT_GENERATED' end,
+              else 'NOT_GENERATED' end,
             'reading', case when r.result_json is null or x.run_ref is not null then null else jsonb_build_object(
               'readingRunRef', r.run_ref, 'readingRevision', r.reading_revision,
               'headline', r.result_json->>'headline', 'brief', r.result_json->'brief'->>'text',
@@ -94,18 +92,25 @@ export function listOwnedLibraryFamilies(
               'totalUnitCount', r.result_json->'readCoverage'->'totalUnitCount',
               'savedAt', r.result_json->>'savedAt') end)
           from (values (1)) reading_scope(value)
-          left join lateral (select p.parse_run_id, p.manifest_artifact from ${dmDocumentParseRun} p
-            where p.tenant_id=${input.tenantId} and p.document_version_id=${dmDocumentVersion.documentVersionId}
-              and p.status='PUBLISHED' order by p.parse_revision desc limit 1) p on true
-          left join lateral (select s.semantic_revision from dm_document_semantic_revision s
-            where s.tenant_id=${input.tenantId} and s.document_version_id=${dmDocumentVersion.documentVersionId}
-              and s.parse_run_id=p.parse_run_id and s.original_manifest_sha256=p.manifest_artifact->>'sha256'
-            order by s.semantic_revision desc limit 1) s on true
           left join lateral (select r.run_ref,r.reading_revision,r.result_json from dm_document_reading_run r
+            inner join ${dmDocumentParseRun} p on p.tenant_id=r.tenant_id
+              and p.document_version_id=r.document_version_id and p.parse_run_id=r.parse_run_id
+              and p.parse_revision=r.parse_revision and p.status='PUBLISHED'
+              and p.manifest_artifact->>'sha256'=r.original_manifest_sha256
+            inner join dm_document_semantic_revision s on s.tenant_id=r.tenant_id
+              and s.document_version_id=r.document_version_id and s.parse_run_id=r.parse_run_id
+              and s.semantic_revision=r.semantic_revision and s.original_manifest_sha256=r.original_manifest_sha256
             where r.tenant_id=${input.tenantId} and r.document_version_id=${dmDocumentVersion.documentVersionId}
-              and r.parse_run_id=p.parse_run_id and r.semantic_revision=s.semantic_revision and r.status='SAVED'
-              and r.original_manifest_sha256=p.manifest_artifact->>'sha256'
-            order by r.reading_revision desc limit 1) r on true
+              and r.status='SAVED' and r.result_json is not null
+              and p.source_binding->>'sourceArtifactId'=${dmDocumentVersion.sourceArtifactId}
+              and p.source_binding->>'pdfSha256'=${dmDocumentVersion.pdfSha256}
+              and p.source_binding->>'byteLength'=${dmDocumentVersion.byteLength}::text
+              and r.result_json->'sourceBinding'->'original'=jsonb_build_object(
+                'documentVersionId', r.document_version_id, 'parseRunId', r.parse_run_id,
+                'parseRevision', r.parse_revision, 'sourceArtifactId', ${dmDocumentVersion.sourceArtifactId},
+                'sourceSha256', ${dmDocumentVersion.pdfSha256}, 'sourceByteLength', ${dmDocumentVersion.byteLength})
+              and r.result_json->'sourceBinding'->>'semanticRevision'=r.semantic_revision::text
+            order by r._updated_at desc,r._created_at desc,r.run_ref desc limit 1) r on true
           left join dm_document_reading_retraction x on x.run_ref=r.run_ref and x.tenant_id=${input.tenantId}
         )`.as('document_reading'),
         parsing: sql<CanonicalLibraryDocumentVersionSummary['parsing']>`(

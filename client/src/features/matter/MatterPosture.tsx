@@ -19,7 +19,7 @@ export function postureCoverage(data: EngineeringMatterWorkspaceRead): string {
   if (work.overviewStatus === 'NOT_AVAILABLE')
     return '问题分析已保存，尚未形成综合意见';
   if (work.overviewStatus === 'STALE') return '综合意见尚未纳入最新分析';
-  return '已保存综合覆盖当前问题工作；不代表正式采用';
+  return '已保存综合覆盖当前问题工作';
 }
 
 /** Selected-Matter projection only: no inference, aggregation, or additional reads. */
@@ -55,7 +55,7 @@ export default function MatterPosture({
   return (
     <div className="matter-posture">
       <header className="matter-posture-summary">
-        <p>选中事项 · 当前授权读取范围 · 非全局统计</p>
+        <p>选中事项</p>
         <h1>{matter.title}</h1>
         <p>
           本次工作变化：{current?.changeSummary || '尚未取得已保存的工作变化。'}
@@ -63,8 +63,8 @@ export default function MatterPosture({
         <p>
           依据覆盖：
           {working.pendingInputs.length
-            ? '仍有输入待核查，现有认识不覆盖全部新变化。'
-            : '本次未返回待核查输入，不等于全部依据已核实。'}
+            ? `${working.pendingInputs.length} 项输入待核查。`
+            : '暂无待核查输入。'}
         </p>
         <p>
           下一关注：
@@ -160,8 +160,8 @@ export default function MatterPosture({
           ) : !decisiveIssues.length ? (
             <p className="matter-posture-note">
               {work || result
-                ? '未单独返回决定性限制；请结合完整问题正文核对，不代表没有限制。'
-                : '尚未取得问题及限制记录，不代表没有待核问题。'}
+                ? '暂无单独保存的决定性限制。'
+                : '暂无问题及限制记录。'}
             </p>
           ) : null}
           {current ? (
@@ -176,9 +176,6 @@ export default function MatterPosture({
           aria-label="文件依据范围"
         >
           <h2>文件依据范围</h2>
-          <p className="matter-posture-note">
-            已关联不代表有效、已读或已正式采用。
-          </p>
           <ul>
             {matter.catalog.entries.map((entry) => (
               <li key={entry.workItemId}>
@@ -189,7 +186,7 @@ export default function MatterPosture({
                 <p>
                   {entry.relationRole === 'PRIMARY' ? '主要资料' : '关联资料'} ·{' '}
                   {entry.documentCurrentness.selectedVersionIsCurrent
-                    ? '所选版本与库内当前一致（不证明业务有效性）'
+                    ? '所选版本与库内当前一致'
                     : '所选版本非库内当前或当前尚未核实'}
                 </p>
               </li>
@@ -216,7 +213,6 @@ export default function MatterPosture({
                         : item.contribution === 'NO_MATERIAL_CHANGE'
                           ? '核查后认识不变'
                           : '对认识有实质贡献'}
-                      ；不代表整份文档已覆盖。
                     </p>
                   </li>
                 ))}
@@ -263,7 +259,7 @@ export default function MatterPosture({
               ))}
             </ul>
           ) : (
-            <p>尚未单独保存待核问题，不代表所有疑点已解决。</p>
+            <p>暂无单独保存的待核问题。</p>
           )}
           {work ? (
             <>
@@ -279,7 +275,7 @@ export default function MatterPosture({
         >
           <h2>我方措施记录</h2>
           <p>
-            当前读取未提供措施颁发、计划、执行及效果记录。复核条件不作为已执行措施。
+            暂无措施颁发、计划、执行及效果记录。
           </p>
         </section>
         <section
@@ -313,11 +309,8 @@ export default function MatterPosture({
               <Link to={exactWork}>阅读条件所在的保存工作</Link>
             </>
           ) : (
-            <p>尚未单独保存复核条件，不代表无需后续关注。</p>
+            <p>暂无单独保存的复核条件。</p>
           )}
-          <p className="matter-posture-note">
-            条件不是执行记录，也不是厂家承诺的里程碑。
-          </p>
         </section>
       </div>
       <section

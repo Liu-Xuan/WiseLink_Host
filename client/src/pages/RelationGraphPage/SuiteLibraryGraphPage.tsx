@@ -115,7 +115,7 @@ function LibraryGraphContent({request,session,denied,discardDisplay}:{request:Ca
       <Button size="sm" variant="ghost" disabled={selected?.kind !== 'VERSION'}
         onClick={() => { if (selected?.kind === 'VERSION') openSelected(selected); }}>文档关系图谱</Button>
     </nav>
-    <p className="suite-library-notice">当前是分类概览。展开分类簇 → 文档族 → 准确版本，即可进入已有文档关系图谱；事项关系图谱保留事项、工程文档、领域聚焦与全景目录视角。分类簇的位置不表示业务关系。</p>
+    <p className="suite-library-notice">展开分类簇、文档族与版本，可进入文档关系图谱。</p>
     <nav className="suite-library-breadcrumb" aria-label="图谱范围">
       <Button size="sm" variant="ghost" onClick={() => {capture(); navigate(`/graph?${rootQuery ?? libraryGraphReadingParams({level:'clusters',groupBy:request.level === 'versions' ? 'ata' : request.groupBy,...libraryGraphFilters(request),limit:50})}`);}}>全库概览</Button>
       {request.level !== 'clusters' ? <><ChevronRight aria-hidden="true" /><Button size="sm" variant="ghost" onClick={() => {capture(); navigate(parentQuery ? `/graph?${parentQuery}` : LIBRARY_GRAPH_ROUTE,{state:request.level === 'versions' && rootQuery ? {libraryRoot:rootQuery,libraryParent:rootQuery} : undefined});}}>{request.level === 'families' ? libraryClusterLabel(request.clusterValue,request.groupBy) : '返回分类簇'}</Button></> : null}
@@ -125,7 +125,7 @@ function LibraryGraphContent({request,session,denied,discardDisplay}:{request:Ca
     {filtersOpen ? <form className="suite-library-filters" aria-label="全库筛选" onSubmit={applyFilters}>
       {LIBRARY_GRAPH_FILTER_KEYS.filter(key => key !== 'search').map(key => <label key={key}>{FILTER_LABELS[key]}<input aria-label={FILTER_LABELS[key]} maxLength={96}
         value={draft[key] ?? ''} onChange={event => setDraft(previous => ({...previous,[key]:event.target.value}))} /></label>)}
-      <p>机队筛选来自当前机队目录；不能同时填写文档机型标注与机队系列。分类与机型提及不表示正式适用。</p>
+      <p>文档机型标注与机队系列可选一种筛选。</p>
       <Button type="submit" size="sm" disabled={Boolean((draft.fleetModel && !draft.fleetFamily) || (draft.fleetFamily && draft.aircraftModel))}>应用并返回概览</Button>
       <Button type="button" size="sm" variant="ghost" onClick={() => {setDraft({});capture();navigate(`/graph?${libraryGraphReadingParams({level:'clusters',groupBy:request.level === 'versions' ? 'ata' : request.groupBy,limit:50})}`);}}>清除筛选</Button>
     </form> : null}
@@ -157,8 +157,8 @@ function LibraryGraphContent({request,session,denied,discardDisplay}:{request:Ca
             onClick={() => select(libraryGraphItemId(item))}>{libraryGraphItemLabel(item,groupBy)}</button>
             <button type="button" aria-label={`${item.kind === 'VERSION' ? '打开文档关系图谱' : '展开'} ${libraryGraphItemLabel(item,groupBy)}`}
               onClick={() => openSelected(item)}>{item.kind === 'VERSION' ? '文档关系' : '展开'}</button></li>)}</ul></details>
-        </aside></div> : <div className="suite-library-state" role="status"><h2>当前范围没有可读对象</h2><p>可调整筛选或重新核对。空目录不代表不存在文档引用。</p></div>}
-        <footer className="suite-library-footer"><p>文档引用：尚未建立全库索引（NOT_INDEXED） · 事项归属：此层未读取（NOT_LOADED）<br />当前授权目录实时读取；分页之间资料或权限可能变化。元数据是最新登记观察，不是历史工作快照。</p>
+        </aside></div> : <div className="suite-library-state" role="status"><h2>当前范围没有可读对象</h2><p>可调整筛选。</p></div>}
+        <footer className="suite-library-footer"><details><summary>目录范围</summary><p>文档引用：全库索引尚未建立 · 事项归属：此层未加载</p></details>
           <div>{request.cursor ? <Button size="sm" variant="ghost" onClick={resetPage}>返回当前范围首页</Button> : null}
             <Button size="sm" variant="outline" disabled={!read.page.hasMore} onClick={() => {if (read.page?.nextCursor) {capture();navigate(`/graph?${libraryGraphReadingParams({...request,cursor:read.page.nextCursor})}`,{state:location.state});}}}>下一页</Button></div>
         </footer>

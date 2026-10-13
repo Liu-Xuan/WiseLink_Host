@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { CanonicalLibraryDocumentSummary, CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import {
-  documentIdentityPresentation, libraryDistinctBrief, libraryPublicationPresentation,
+  documentIdentityPresentation, libraryDateLabel, libraryDistinctBrief, libraryPublicationPresentation,
   projectLibraryDocumentReading,
 } from './library-document-presentation';
 import { DocumentVersionLink } from './DocumentVersionLink';
@@ -44,12 +44,14 @@ export function LibraryDocumentVersionRow({ document, version, selected, onSelec
         <LibrarySummaryText key={version?.documentVersionId ?? document.familyId}
           expandable={Boolean(reading?.brief)}
           text={reading?.brief ? libraryDistinctBrief(reading.brief, title, identity.documentNumber)
-            : reading?.note || '当前版本未返回'} />
-        {reading && (reading.conditionLines.length || reading.headline && reading.headline !== title) ? (
+            : reading?.note || '暂无已保存解读'} />
+        {reading?.status === 'AVAILABLE' ? (
           <details className="suite-reading-more" onClick={event => event.stopPropagation()}>
-            <summary>{reading.conditionLines.length ? `条件与限制 ${reading.conditionLines.length}` : '完整认识'}</summary>
+            <summary>{reading.conditionLines.length ? `条件与限制 ${reading.conditionLines.length}` : '保存与来源'}</summary>
             {reading.headline && reading.headline !== title && reading.headline !== reading.brief ? <p>{reading.headline}</p> : null}
             <div className="suite-conditions">{reading.conditionLines.map(line => <span key={line}>{line}</span>)}</div>
+            <p>已读取 {reading.deliveredUnitCount}/{reading.totalUnitCount} 个来源单元 · 来源解析版本 {reading.sourceBinding?.original.parseRevision}</p>
+            <p>保存时间：{libraryDateLabel(reading.savedAt)}</p>
           </details>
         ) : null}
       </div>

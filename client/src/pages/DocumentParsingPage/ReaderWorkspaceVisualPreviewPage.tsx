@@ -17,7 +17,7 @@ export default function ReaderWorkspaceVisualPreviewPage() {
         returnRoute="/dev-preview/reader-workspace"
         returnLabel="返回样例"
         title="SB-A R02 · Reader 视觉样例"
-        bilingualContent={<div className="reader-preview-translation"><h2>中文阅读样例</h2><p>确认安装构型后再执行程序，并保留限制条件与例外。</p><p>这是隔离样例，不代表已保存中文或工程结论。</p></div>}
+        bilingualContent={<div className="reader-preview-translation"><h2>中文阅读样例</h2><p>确认安装构型后再执行程序，并保留限制条件与例外。</p><p>中文阅读示例</p></div>}
         renderPdfPreview={(page) => <div className="reader-preview-pdf" aria-label={`构造原件第 ${page} 页`}><div>构造原件 · 第 {page} 页 / 4</div><div className="reader-preview-pdf-paper"><span>CONTROLLED SOURCE</span><strong>SB-A R02</strong><small>Preview page {page}</small><i /></div></div>}
       />
     </main>

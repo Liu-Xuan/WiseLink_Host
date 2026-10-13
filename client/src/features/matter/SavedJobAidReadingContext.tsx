@@ -29,13 +29,13 @@ export function JobAidEvidenceDetails({ refs, evidence, onLocateDocument, label 
   onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
   label?: string;
 }) {
-  if (!refs.length) return <p className="wl-jobaid-meta">未登记可展开的依据；不能据此认定已经核实。</p>;
+  if (!refs.length) return <p className="wl-jobaid-meta">暂无来源引用。</p>;
   return <details className="wl-jobaid-evidence">
     <summary>{label}（{new Set(refs).size}）</summary>
     <div>{[...new Set(refs)].map((ref: string) => {
       const source = evidence.find((item: AssessmentEvidence) => item.evidenceRef === ref);
       return source ? <AssessmentEvidenceContext key={ref} evidence={source} onLocateDocument={onLocateDocument} />
-        : <p key={ref} role="alert">依据 {ref} 未能读回，不能视为已核实。</p>;
+        : <p key={ref} role="alert">依据 {ref} 读取失败。</p>;
     })}</div>
   </details>;
 }
@@ -44,18 +44,16 @@ export function JobAidEvidenceDetails({ refs, evidence, onLocateDocument, label 
 export function SavedJobAidMethodNotice({ work }: { work: JobAidProblemWorkContent }) {
   const binding = work.methodBinding;
   const sources = binding?.sources ?? [];
-  return <section className="wl-saved-jobaid-notice" aria-label="本版方法与资料边界">
-    <p>本版保存的候选分析；不是正式采用、实施或放行决定。</p>
+  return <details className="wl-saved-jobaid-notice" aria-label="本版方法与资料边界"><summary>方法与来源</summary>
     {sources.length ? <p>{sources.map((source) => <span key={source.sourceIdentity}>
       {source.sourceIdentity} {source.versionLabel} ·{' '}
       {source.status === 'CONFIRMED' && source.documentVersionId
         ? '本版登记版本已确认' : '受控版本身份待确认'}；{' '}
-    </span>)}</p> : <p>未取得本版方法绑定；不能据此认定已采用受控方法。</p>}
+    </span>)}</p> : <p>方法版本未提供。</p>}
     <p>{binding?.attachment5 === 'R00_CONTENT_REPORTED_R01_LINK_UNCONFIRMED'
       ? '附件 5：本版登记为 R00 内容转述，与 R01 正文配套待核。'
       : '未取得本版附件 5 的绑定，版次及配套关系待核。'}</p>
-    <p>以下来源按本工作保存的登记展示，可含此前沿用资料；本阅读投影未提供区分本轮新读与历史沿用的完整回执，不能宣称本轮已读取全部原件。</p>
-  </section>;
+  </details>;
 }
 
 /** Show every saved condition, limitation and question; never infer priority or configuration. */
@@ -68,10 +66,7 @@ export function SavedJobAidIssueContext({ issue, evidence, onLocateDocument }: {
   const requirements = issue.requirementHandling ?? [];
   const questions = issue.openQuestions ?? [];
   const measures = issue.measures ?? [];
-  const hasConditions = risks.some((risk) => risk.conditions.length || risk.limitations.length) ||
-    requirements.some((item) => item.conditions.length) || measures.some((item) => item.limitations.length);
   return <section className="wl-saved-jobaid-context" aria-label="本问题保存的条件、局限与未决问题" data-saved-context-issue={issue.issueKey}>
-    {!hasConditions ? <p className="wl-saved-jobaid-caveat">未登记结构化条件或局限；仍须核对完整保存正文，不能据此认定没有条件。</p> : null}
     {risks.map((risk, index: number) => <section key={index}>
       <h4>风险情景：{risk.scenario}</h4>
       {risk.conditions.map((condition: string, position: number) => <p key={position}>成立条件：{condition}</p>)}
@@ -87,7 +82,7 @@ export function SavedJobAidIssueContext({ issue, evidence, onLocateDocument }: {
       <h4>{item.requirement} · {jobAidTreatmentLabels[item.treatment]}</h4>
       {item.conditions.map((condition: string, position: number) => <p key={position}>适用条件：{condition}</p>)}
       <p>{item.explanation}</p>
-      {!item.basisRefs.length ? <p className="wl-saved-jobaid-caveat">未登记对象依据，不能将处理状态视为覆盖已核实。</p> : null}
+      {!item.basisRefs.length ? <p className="wl-saved-jobaid-caveat">对象依据未提供。</p> : null}
     </section>)}
     {questions.length ? <section className="wl-jobaid-open-questions">
       <h4>仍需确认与下一步</h4>
@@ -95,16 +90,12 @@ export function SavedJobAidIssueContext({ issue, evidence, onLocateDocument }: {
         <p>{question.question}</p><p>影响：{question.affects}。原因：{question.reason}</p>
         <p>下一步所需依据：{question.nextEvidence}</p>
       </div>)}
-    </section> : <p className="wl-saved-jobaid-caveat">未登记未决问题，不等于不存在未知。</p>}
+    </section> : null}
     {measures.map((measure, index: number) => <section key={index} className="wl-jobaid-measure">
       <h4>{measureLabels[measure.status]}：{measure.text}</h4>
       <p>针对：{measure.addresses}</p>
       {measure.limitations.map((limit: string, position: number) => <p key={position}>措施限制：{limit}</p>)}
-      <p className="wl-saved-jobaid-caveat">该状态是本版保存候选的表述；提议或报告实施不能证明控制有效，也不能据此降低剩余风险。</p>
       <JobAidEvidenceDetails refs={measure.basisRefs} evidence={evidence} onLocateDocument={onLocateDocument} label="核对本措施的保存依据" />
     </section>)}
-    {!risks.length ? <p className="wl-saved-jobaid-caveat">未登记风险情景，不等于没有风险。</p> : null}
-    {!requirements.length ? <p className="wl-saved-jobaid-caveat">未登记要求处理记录，不能认定方法已覆盖。</p> : null}
-    {!measures.length ? <p className="wl-saved-jobaid-caveat">未登记措施，不等于无需措施。</p> : null}
   </section>;
 }

@@ -106,7 +106,7 @@ export function buildSuitePanoramaGraph(input: {
   const relationDetails = new Map<string, SuiteRelationDetail>();
   const relations: SuiteGraphRelation[] = [];
   const groups: SuiteGraphGroup[] = [];
-  const notices: string[] = ['全景为当前授权目录页视图，不代表全库。'];
+  const notices: string[] = ['当前加载的目录记录。'];
   const matterItems = input.directory.items.map((item) => {
     const nodeId = identity('matter', item.matterId);
     targets.set(nodeId, { kind: 'matter-node', matterId: item.matterId, title: item.title, status: item.overallStatus ?? null });
@@ -134,7 +134,7 @@ export function buildSuitePanoramaGraph(input: {
     const group = groups.find(item => item.key === 'matters') ?? { key: 'matters', title: '目录事项', items: [], columns: 2 };
     if (!groups.includes(group)) groups.push(group);
     group.items.push({id: currentMatterNodeId, title: input.currentMatter.graph.title, subtitle: '工程事项 · 当前已授权 · 不在本批目录', kind: 'matter-node'});
-    notices.push('当前事项按已读取工作单独保留，不代表其在本批目录中。');
+    notices.push('当前事项已单独加载。');
   }
 
   const itemById = new Map(input.currentMatter.graph.groups.flatMap((group) => group.items.map((item) => [item.id, item])));

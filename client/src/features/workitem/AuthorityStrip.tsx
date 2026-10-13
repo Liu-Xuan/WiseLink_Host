@@ -67,11 +67,11 @@ export default function AuthorityStrip({ view }: { view: WorkItemView }) {
       <span className="wl-authority-meta">
         {view.aircraftFamily} ·{' '}
         {view.authority === 'engineer_confirmed'
-          ? '人工确认已记录，仍不等于正式批准'
+          ? '人工确认已记录'
           : view.authority === 'formal_readback'
             ? '正式系统回读结果'
             : view.overall
-              ? '候选意见，待工程师复核'
+              ? '已保存意见'
               : '综合评估尚未形成'}
       </span>
     </div>

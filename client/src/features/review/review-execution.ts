@@ -57,7 +57,7 @@ const EXECUTION_COPY: Record<
   },
   SUCCEEDED: {
     label: '执行已完成',
-    description: '本回合执行已结束；候选结果仍需工程师核对。',
+    description: '本回合执行已完成。',
     tone: 'success',
     active: false,
   },

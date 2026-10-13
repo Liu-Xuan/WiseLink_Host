@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { readEngineeringKnowledgeCatalogue, readEngineeringKnowledgeWork, readJobAidAssessmentWork } from '@client/src/api/canonical-host';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { ENGINEERING_MATTER_QUERY_ROOT, readMatterResource, useEngineeringMatterQueryIdentity } from '@client/src/features/matter/useEngineeringMatter';
+import { isRevokedMatterError } from '@client/src/features/matter/matter-read-error';
 import type { EngineeringKnowledgeIdentity, EngineeringKnowledgeScope } from '@shared/engineering-issue-search.interface';
 
 /** Same session boundary, authorization rejection state and lifetime as saved Matter reading. */
@@ -22,6 +23,15 @@ export function useKnowledgeResources(query: string, scope: EngineeringKnowledge
     identity?.tenantId, identity?.actorId, sessionGeneration];
   const identityRefreshing = identityQuery.isFetching;
   const canRead = active && Boolean(identity) && !identityQuery.error && !identityRefreshing;
+  const identityRejected = isRevokedMatterError(identityQuery.error);
+  const canShow = active && Boolean(identity) && !identityRejected;
+  useEffect(() => {
+    if (!identityRejected || !identity) return;
+    const deniedRoot = [...ENGINEERING_MATTER_QUERY_ROOT, 'knowledge', identity.appId,
+      identity.tenantId, identity.actorId, sessionGeneration];
+    void queryClient.cancelQueries({ queryKey: deniedRoot });
+    queryClient.removeQueries({ queryKey: deniedRoot });
+  }, [identityRejected, identity?.appId, identity?.tenantId, identity?.actorId, sessionGeneration, queryClient]);
   const catalogue = useQuery({
     queryKey: [...root, 'catalogue', query, scope, after ?? null],
     queryFn: ({ signal }) => readMatterResource(
@@ -47,10 +57,13 @@ export function useKnowledgeResources(query: string, scope: EngineeringKnowledge
   const workError = identityQuery.error ?? work.error ?? (work.data?.kind === 'rejected' ? work.data.error : null);
   const workItemError = identityQuery.error ?? workItem.error ??
     (workItem.data?.kind === 'rejected' ? workItem.data.error : null);
-  const page = canRead && !catalogue.isFetching && !catalogueError && catalogue.data?.kind === 'readable' ? catalogue.data.data : null;
-  const read = canRead && selected && !work.isFetching && !workError && work.data?.kind === 'readable' ? work.data.data : null;
-  const currentWork = canRead && workItemId && !workItem.isFetching && !workItemError &&
-    workItem.data?.kind === 'readable' ? workItem.data.data.current : null;
+  // Each key already pins app, tenant, actor, session and selected saved work.
+  // A source denial replaces the readable value with a rejected resource;
+  // an ordinary refresh/error may keep the same authorized saved content.
+  const page = canShow && catalogue.data?.kind === 'readable' && catalogue.data.sessionGeneration === sessionGeneration ? catalogue.data.data : null;
+  const read = canShow && selected && work.data?.kind === 'readable' && work.data.sessionGeneration === sessionGeneration ? work.data.data : null;
+  const currentWork = canShow && workItemId && workItem.data?.kind === 'readable' &&
+    workItem.data.sessionGeneration === sessionGeneration ? workItem.data.data.current : null;
   return {
     page, read, catalogueError, workError, currentWork, workItemError,
     workItemResolved: canRead && Boolean(workItemId) && !workItem.isFetching &&

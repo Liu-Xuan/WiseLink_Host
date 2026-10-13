@@ -187,14 +187,10 @@ export default function DocumentActivityReadingPage() {
         <Link to={returnTarget?.route ?? libraryReturnRoute} className="text-sm text-muted-foreground hover:underline">
           {returnTarget?.label ?? '变更选择并返回目录'}
         </Link>
-        <h1 className="text-lg font-semibold">活动候选阅读</h1>
-        <p className="text-xs text-muted-foreground">
-          只读读取已保存的活动候选。候选仅表示模型对原文引用的解读，不代表已验证的执行、出版或采用；本页面不会启动解析、活动提取或模型。
-        </p>
+        <h1 className="text-lg font-semibold">活动解读</h1>
         {pins.statementId ? (
           <p role="status" className="text-xs text-muted-foreground">
             <Badge variant="outline" className="mr-2">声明 {pins.statementId}</Badge>
-            更换声明会沿用当前来源与候选的固定绑定重新定位，不会改用其他候选。
           </p>
         ) : null}
       </header>
@@ -228,9 +224,6 @@ export default function DocumentActivityReadingPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             <p role="status" className="text-sm text-muted-foreground">{unreadable}</p>
-            <p className="text-xs text-muted-foreground">
-              本页面只读取已保存的内容，不会启动解析、索引或模型，也不会改用其他版本代替。
-            </p>
           </CardContent>
         </Card>
       ) : null}

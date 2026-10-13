@@ -224,6 +224,5 @@ export function appendSuiteTdmsSources(read: SuiteMatterGraphRead, input: SuiteT
     notices.add('指定保存工作仅使用其准确保存依据；当前目录和未随工作保存的来源关系未混入。');
   }
   if (targets.size === read.targets.size && relations.length === read.graph.relations.length && notices.size === read.notices.length) return read;
-  if (targets.size > read.targets.size) notices.add('TDMS 目录可读不证明事项归属；来源声明和批准状态不代表工程采用、执行核验或源端最新版。');
   return { ...read, graph: { ...read.graph, groups, relations }, targets, tdmsRelationDetails, notices: [...notices] };
 }

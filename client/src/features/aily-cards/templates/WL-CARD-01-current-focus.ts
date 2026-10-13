@@ -82,7 +82,7 @@ export const wlCard01CurrentFocus: WlCardTemplate = {
           elements: [
             {
               tag: 'plain_text',
-              content: '候选结论仅供预览，工程师复核前不得用于正式工作',
+              content: '已保存分析意见',
             },
           ],
         },

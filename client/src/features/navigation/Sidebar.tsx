@@ -495,12 +495,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
               </p>
             </div>
             <div className="wiselink-settings-row">
-              <h3>当前边界</h3>
-              <p>
-                候选意见在复核之前仅供参考；图谱只提供当前已接通的文档与事项范围，页面内容均按实际返回展示。
-              </p>
-            </div>
-            <div className="wiselink-settings-row">
               <h3>连接诊断</h3>
               <p>
                 <NavLink to="/runtime-probe">连接状态</NavLink>

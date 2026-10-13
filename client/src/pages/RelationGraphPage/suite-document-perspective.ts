@@ -17,6 +17,6 @@ export function suiteDocumentPerspective(read: SuiteMatterGraphRead): SuiteMatte
     graph: {...read.graph, groups, relations},
     targets,
     relationDetails: new Map([...read.relationDetails].filter(([id]) => ids.has(id))),
-    notices: [...read.notices, '工程文档视角仅包含本事项及所选工作已获授权的资料、预计记录和原文依据，不代表全库。'],
+    notices: [...read.notices, '此事项的资料、预计记录与原文依据。'],
   };
 }

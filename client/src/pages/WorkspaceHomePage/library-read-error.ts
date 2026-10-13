@@ -43,7 +43,7 @@ export function libraryReadErrorPresentation(
     return {
       title: '原文暂时无法读取',
       message:
-        '原文未能通过受控存储读取。已有工程评估记录不等于原件已恢复；本次不展示资料内容或最新候选状态。请在原文恢复后重试。',
+        '原文读取失败，请重试。',
       sourceUnavailable: true,
     };
   }

@@ -75,15 +75,7 @@ export function DocumentDeliveryChoice({
             </label>
           </div>
         </RadioGroup>
-        {context === 'matter' ? (
-          <span className="text-xs text-muted-foreground">
-            英文原文分析不会等待中文翻译。
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            此入口不会创建工程评估任务。
-          </span>
-        )}
+        {context === 'matter' ? <span className="text-xs text-muted-foreground">英文分析与中文翻译可独立进行。</span> : null}
       </div>
     </section>
   );

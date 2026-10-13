@@ -153,7 +153,7 @@ export default function ChronologyRevisionCompareView({
                   </h3>
                   {selectedCompare.manufacturerNotes.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      未定位到支持的说明角色（空数组不代表无修订）。
+                      暂未定位到支持的改版说明章节。
                     </p>
                   ) : (
                     <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
@@ -203,11 +203,6 @@ export default function ChronologyRevisionCompareView({
                                 >
                                   {BODY_DIFF_KIND_LABEL[diff.changeKind]}
                                 </Badge>
-                                {diff.changeKind === 'TEXT_EQUAL' ? (
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    文本一致不代表工程影响或评估无变化。
-                                  </p>
-                                ) : null}
                               </td>
                             </tr>
                           ),

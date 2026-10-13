@@ -252,7 +252,7 @@ export default function WorkItemOverviewPage() {
       </header>
       {loading ? (
         <p className="wl-projection-refresh" role="status">
-          正在刷新当前结果…仍显示上次读回的内容，尚未确认最新状态。
+          正在刷新当前结果…
         </p>
       ) : null}
 
@@ -262,9 +262,7 @@ export default function WorkItemOverviewPage() {
         </p>
       ) : null}
       {!visibleView.document.selectedVersionIsCurrent ? (
-        <p className="wl-projection-refresh" role="status">
-          这份评估绑定历史文件版本；同一文档已有更新版本。以下结论保留供追溯，不能直接作为当前版本的判断。
-        </p>
+        <details><summary>来源版本</summary><p>历史文件版本：{visibleView.document.businessRevision || '未标注'}</p></details>
       ) : null}
       <EngineeringQuicklook
         title={
@@ -317,7 +315,7 @@ export default function WorkItemOverviewPage() {
         <section className="wl-side-panel" aria-label="单独核对与正式处置入口">
           <h3>单独核对与正式处置</h3>
           <p className="wl-side-empty">
-            查看逐项评估、历史与人工处置时再进入任务工作台。打开简报不会执行模型或正式采用。
+            在任务工作台查看逐项评估、历史与人工处置。
           </p>
           <Button
             variant="outline"

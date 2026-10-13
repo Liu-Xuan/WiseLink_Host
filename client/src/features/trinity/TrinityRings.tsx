@@ -139,7 +139,6 @@ export default function TrinityRings({
       </div>
       <div className="ring-caption">
         <span>内环形成依据，外环协同判断。</span>
-        <span>关联位置不代表已完成，数量不相加作总体。</span>
       </div>
     </section>
   );

@@ -90,12 +90,11 @@ export default function TrinityStagePanel({
             </button>
           ))}
         </div> : <p className="empty-tip">
-          当前范围尚未取得该评估环节的关联工作，不推断为已完成或不适用。
+          暂无该评估环节的关联工作。
         </p>}
       </section>
       {stage.id === 'update' ? <section>
         <div className="row"><h3>已保存复看条件</h3></div>
-        <p>这是候选工作内容，不代表已经触发、逾期或正式采用。</p>
         <ReviewConditions conditions={data.reviewConditions}
           onNavigate={onNavigate} />
       </section> : null}
@@ -140,7 +139,7 @@ export default function TrinityStagePanel({
             </button>
           ))}
         </div> : <p className="empty-tip">
-          当前授权读取未取得这一类材料。缺少记录不表示该类信息不存在。
+          暂无这一类材料。
         </p>}
       </section>
       <div className="end-actions">
@@ -190,7 +189,7 @@ export default function TrinityStagePanel({
         </button>
       ))}
       {!attention.length ? <p className="empty-tip">
-        当前读取范围尚未取得可确定的待核事项；未知不会显示为零。
+        暂无已取得的待核事项。
       </p> : null}
     </div>
     <div className="end-actions">

@@ -66,10 +66,6 @@ export default function ReviewExecutionStatus({
       {activity ? (
         <details className="review-evidence-activity">
           <summary>取证活动 · {activity.items.length} 条</summary>
-          <p>
-            以下是 Host
-            实际准备上下文与取回片段的记录，不代表模型已读全文、已引用或已正式采用。
-          </p>
           {activity.error ? (
             <p role="alert">
               {activity.error.message}（{activity.error.code}）

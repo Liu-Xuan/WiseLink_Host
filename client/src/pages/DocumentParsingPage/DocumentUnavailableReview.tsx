@@ -113,8 +113,8 @@ export function SavedReviewReadbackView({
             <h1>{denied ? '当前事项不可访问' : '原文暂时无法读取'}</h1>
             <p role="alert">
               {denied
-                ? '当前授权无法读取此事项，页面不显示其讨论或材料。'
-                : '材料区的正文与来源定位暂不可用。下方通过独立授权接口读取已保存讨论和执行状态，不表示原文、分析或自动执行已恢复。'}
+                ? '当前事项不可访问。'
+                : '原文与来源定位暂不可用，可继续查看已保存讨论。'}
             </p>
           </div>
           <div className="continuous-review-toolbar">
@@ -133,7 +133,6 @@ export function SavedReviewReadbackView({
         </header>
         {!denied ? (
           <>
-            <p>此处仅供追溯，不提交新回合、不确认草案、不采用意见。</p>
             {readback ? (
               <p>讨论接口读回的事项版本 {readback.currentWorkItemRevision}</p>
             ) : null}

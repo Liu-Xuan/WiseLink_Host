@@ -1073,13 +1073,13 @@ export default function AtlasWorkspace({
                       </h2>
                       <p>
                         {location.view === 'domain'
-                          ? '稳定技术对象连接多项工程事项；同域不意味着同一原因。'
+                          ? '按技术对象查看相关工程事项。'
                           : location.view === 'network'
                             ? '先看文档族之间的联系，再深入确切版本与原始引用。'
                             : location.view === 'panorama'
                               ? '从每项认识了解整体，随时返回事项和确切依据。'
                               : location.view === 'evidence'
-                                ? '支持与限制一起阅读；资料范围不等于结论适用范围。'
+                                ? '查看支持依据与限制条件。'
                                 : '保留主题、版本与来源，沿有依据的关系继续深入。'}
                       </p>
                     </header>
@@ -1113,7 +1113,7 @@ export default function AtlasWorkspace({
                     <p>
                       {selectedNode?.summary ??
                         selectedEdge?.explanation ??
-                        '查看主题、版本与来源；图中的连线不表示措施已经实施。'}
+                        '查看主题、版本与来源。'}
                     </p>
                     {selectedNode?.version ? (
                       <p>确切版本：{selectedNode.version}</p>
@@ -1228,7 +1228,7 @@ export default function AtlasWorkspace({
                       <section>
                         <h3>版本级原始引用</h3>
                         <p>
-                          这里是文档族的显示聚合，不表示整族或所有版本通用。
+                          文档族内各版本的引用
                         </p>
                         {selectedEdge.memberEdgeRefs.map((id) => {
                           const edge = exampleEdges.find((e) => e.id === id);
@@ -1321,7 +1321,7 @@ export default function AtlasWorkspace({
                           </p>
                         ))}
                       <p>
-                        实线与箭头保留关系方向；虚线区分修订或待核线索。色彩表示资料类型，不表示批准或风险等级。
+                        箭头表示关系方向，虚线表示修订或待核线索，色彩表示资料类型。
                       </p>
                     </details>
                     <details open={location.search ? true : undefined}>
@@ -1386,8 +1386,8 @@ export default function AtlasWorkspace({
                 </p>
                 <p>
                   {host.quicklook.result
-                    ? '候选意见，尚非正式实施决定。'
-                    : '不在读取时生成意见。'}
+                    ? '已保存意见'
+                    : '暂无已保存意见。'}
                 </p>
               </section>
             ) : null}

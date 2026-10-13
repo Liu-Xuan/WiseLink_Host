@@ -65,10 +65,8 @@ export function TdmsRecordDetails({ read, openDocument }: {
       </dl>
       {content.executionDeclaration.frequency.rarePeriodicExtension &&
         <section><h5>源明确记录的周期性扩展</h5><pre>{tdmsJsonText(content.executionDeclaration.frequency.rarePeriodicExtension)}</pre></section>}
-      <p className="tdms-source-notice">此处是源声明，实际执行是否满足仍须另有取得和核验的依据。</p>
     </section> : record.recordKind === 'ENGINEERING_FILE' ? <p>对象、频次与完成认可声明未取得。</p> : null}
     <section><h4>附件与准确工程文件版本</h4>
-      <p className="tdms-source-notice">原生记录字段的读回不等于文件原文或附件正文已读；字节取得与准确文件版本另列。</p>
       {record.artifacts.length ? record.artifacts.map(artifact => <div key={artifact.memberId} className="tdms-source-artifact">
         <p>{artifact.fileName} · {artifact.mediaType} · {artifact.byteLength} 字节</p>
         <p>不可变原件 {artifact.sourceArtifactId} · 取得记录 {artifact.acquisitionId}</p>
@@ -79,19 +77,18 @@ export function TdmsRecordDetails({ read, openDocument }: {
         </p> : <p>附件尚无可打开的正式文件版本{artifact.registrationGap ? `：${artifact.registrationGap}` : ''}</p>}
       </div>) : <p>{read.attachmentAcquisitions?.length
         ? '此修订原记录未登记附件原件绑定；Host 后续字节取得事实另列。'
-        : '此修订未返回经不可变字节读回核验的附件；不表示源系统从未有附件。'}</p>}
+        : '此修订暂无已取得的附件。'}</p>}
     </section>
     {record.unreadAttachments.length ? <section><h4>源观察时的未读附件清单（仅元数据）</h4>
       {record.unreadAttachments.map(attachment => <div key={attachment.sourceAttachmentId} className="tdms-source-artifact">
         <p>{attachment.fileName} · {attachment.mediaType ?? '媒体类型未取得'} · {attachment.byteLength === null ? '字节数未取得' : `${attachment.byteLength} 字节（源元数据）`}</p>
         <p>源附件 {attachment.sourceAttachmentId} · 源附件版本 {attachment.sourceAttachmentVersion ?? '未取得'}</p>
         <p>来源在 {record.observedAt} {attachment.readStatus === 'FAILED' ? '读取失败' : '未取得附件字节'}：{attachment.gap}</p>
-        <p>来源定位 {attachment.selector} · 这是当时的来源声明；Host 后续字节取得事实另列</p>
+        <p>来源定位 {attachment.selector}</p>
       </div>)}
     </section> : null}
     {read.attachmentAcquisitions?.length ? <section aria-label="附件来源观察与 Host 字节取得事实">
       <h4>附件的来源观察与 Host 字节取得</h4>
-      <p className="tdms-source-notice">来源当时的读取状态与 Host 后续字节取得是两层事实，不合并成一个已读状态。</p>
       {read.attachmentAcquisitions.map(fact => <div
         key={`${fact.memberId}:${fact.sourceAttachmentId}:${fact.sourceAttachmentVersion ?? ''}:${fact.acquisitionId}`} className="tdms-source-artifact">
         <p>附件成员 {fact.memberId} · 源附件 {fact.sourceAttachmentId} · 源附件版本 {fact.sourceAttachmentVersion ?? '未取得'}</p>
@@ -109,7 +106,7 @@ export function TdmsRecordDetails({ read, openDocument }: {
       </li>)}</ol> : <p>未取得来源事件。</p>}
     </section>
     {content.futureLcmLinks?.length ? <section><h4>LCM 相关来源</h4>
-      <p>未接入。软件构型由 LCM 负责；此处仅保留源参考，不推算允装或实装。</p>
+      <p>LCM 软件构型尚未接入。</p>
       {content.futureLcmLinks.map((link, index) => <pre key={index}>{tdmsJsonText(link)}</pre>)}
     </section> : null}
     <details><summary>原始字段与字段来源</summary>
@@ -144,7 +141,7 @@ export function TdmsSourceRelations({ read, onOpen, openDocument }: {
     {read.relations.length ? read.relations.map((relation: TdmsRelationAssertion) => <section key={relation.assertionRef} className="tdms-source-relation">
       <p>{relation.rawKind} · {relation.authority === 'SOURCE_EXPLICIT' ? '源明确关系' : '候选关系，尚未核实'}</p>
       <p><Endpoint endpoint={relation.from} onOpen={onOpen} openDocument={openDocument} /> → <Endpoint endpoint={relation.to} onOpen={onOpen} openDocument={openDocument} /></p>
-      <p>{relation.selectedHead === false ? '已保留历史来源断言' : relation.selectedHead === true ? '当前选定来源断言' : '关系当前性未取得'}；与工程执行状态分开。</p>
+      <p>{relation.selectedHead === false ? '历史来源断言' : relation.selectedHead === true ? '当前选定来源断言' : '关系当前性未取得'}</p>
       <p>准确断言 {relation.assertionRef} · 观察 {relation.observedAt} · 来源定位 {relation.selector}</p>
       <p>改版关系：{tdmsRevisionRuleNeedsVerification(relation) && relation.changeClass !== 'UNSPECIFIED'
         ? `待核字段 ${relation.changeClass}，尚未核实；不形成实施结论`
@@ -155,7 +152,7 @@ export function TdmsSourceRelations({ read, onOpen, openDocument }: {
       <h5>关系适用范围</h5><pre>{tdmsJsonText(relation.scope)}</pre>
       <details><summary>关系原始字段</summary><pre>{tdmsJsonText(relation.rawFields)}</pre></details>
       {relation.coverage.gaps.length ? lines(relation.coverage.gaps) : null}
-    </section>) : <p>本次未取得此准确修订的可读关系；不表示没有关系。</p>}
+    </section>) : <p>此修订暂无已取得的关系。</p>}
     {read.limitations.length ? lines(read.limitations) : null}
   </section>;
 }

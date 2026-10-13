@@ -140,18 +140,17 @@ export default function TdmsSourceReading({ context, enabled = false, authorizat
   return <section className="tdms-source-reading" aria-label="TDMS 来源记录">
     <header><h2>TDMS 来源记录与相关工程文件</h2>
       <button type="button" onClick={reload} disabled={!active}>重新读取来源目录</button></header>
-    <p className="tdms-source-notice">这里只读已取得的源记录。来源信息由取得包声明，尚未作源系统真实核验；源批准、颁发、已发送、Passed 或已关闭状态本身不证明 WiseLink 正式采用、实际执行或当前适用。</p>
     {context.documentVersionId ? <p>准确文档版本 {context.documentVersionId}</p> : null}
-    {exactRevisionRefs !== undefined ? <p>仅展开此保存工作引用的准确来源修订；后续取得的目录不补入历史依据。</p> : null}
+    {exactRevisionRefs !== undefined ? <p>已保存工作的来源引用</p> : null}
     {!active ? <p role="status">{authenticationRequired ? '请先登录，再读取来源。' : '当前来源读取已暂停，待重新核对权限。'}</p>
       : authorizationDenied || deniedKey === scopeKey || identityQuery.error ? <p role="alert">此来源暂不可读取，请重新核对来源与权限。原目录、正文与关系已清除。</p>
       : !allowed ? <p role="status">正在核对当前账户与来源读取范围…</p>
       : <>
-        {catalogue.loading ? <p role="status">正在读取获准来源目录；目录发现不算已读正文…</p> : null}
+        {catalogue.loading ? <p role="status">正在读取来源目录…</p> : null}
         {catalogue.error ? <p role="alert">{catalogue.error}</p> : null}
         {catalogue.value ? <>
           {catalogue.value.sourceStatus === 'DISABLED' ? <p>TDMS 来源尚未接入当前读取范围。</p>
-            : !catalogue.value.records.length ? <p>此范围尚无已取得且当前可读的记录；不表示源系统没有记录。</p> : null}
+            : !catalogue.value.records.length ? <p>暂无已取得的记录。</p> : null}
           {recordKinds.map(kind => {
             const records = catalogue.value!.records.filter(record => record.recordKind === kind);
             if (!records.length) return null;
@@ -165,7 +164,6 @@ export default function TdmsSourceReading({ context, enabled = false, authorizat
                 <p>原始类型 {tdmsRawCodeLabel(record.fileType)} · 源处理状态 {tdmsRawCodeLabel(record.state)}</p>
                 <p>观察时间 {record.observedAt} · Host 取得时间 {record.capturedAt} · 来源原生记录 {record.sourceRecordId}</p>
                 <Coverage value={record.coverage} />
-                <small>{graphFirst ? '可查看关系概览；记录全文尚需另行准确读取' : '可展开，正文尚需准确读取'}</small>
               </li>)}</ul>
             </section>;
           })}
@@ -174,12 +172,11 @@ export default function TdmsSourceReading({ context, enabled = false, authorizat
           {catalogue.value.hasMore && catalogue.value.nextAfter ? <button type="button" onClick={() => { setAfter({ scope: scopeKey, cursors: [...cursors, catalogue.value!.nextAfter!] }); setSelection({ scope: '', revisions: [] }); setRelationsSelection(null); }}>下一页来源</button> : null}
         </> : null}
         {exactRevisionRefs !== undefined ? exactRevisionRefs.length ? <ul className="tdms-source-directory">
-          {exactRevisionRefs.map(ref => <li key={ref}><button type="button" onClick={() => openRevision(ref)}>{graphFirst ? '查看已保存引用的关系概览' : '展开已保存引用'} {ref}</button><small>正文尚需准确读取</small></li>)}
+          {exactRevisionRefs.map(ref => <li key={ref}><button type="button" onClick={() => openRevision(ref)}>{graphFirst ? '查看已保存引用的关系概览' : '展开已保存引用'} {ref}</button></li>)}
         </ul> : <p>此工作尚无已保存的原生 TDMS 来源引用。</p> : null}
         {selected ? <section className="tdms-source-expanded" aria-label="TDMS 来源展开">
           <header><h3>{graphFirst && !graphRecord ? '准确来源关系概览' : '准确来源修订'} {recordRevision ?? selected}</h3><button type="button" onClick={goBack}>{graphFirst && graphRecord ? '返回同一准确来源图谱' : revisions.length > 1 ? '返回上一准确来源' : '返回来源目录'}</button></header>
           {graphFirst && !graphRecord ? <>
-            <p>当前仅阅读获准关系概览；记录全文未读取。展开确切端点后才单独读取。</p>
             {relations.loading ? <p role="status">正在读取此准确修订的获准关系…</p> : null}
             {relations.error ? <p role="alert">{relations.error} <button type="button" onClick={() => setRelationRetry(value => value + 1)}>重试此准确关系</button></p> : null}
             {relations.value ? <>

@@ -48,9 +48,6 @@ const MatterWorkingDetails: FC<MatterWorkingDetailsProps> = ({
         aria-label="待核查的新输入"
       >
         <h2 className="text-sm font-semibold">还有材料尚未覆盖</h2>
-        <p className="text-xs leading-6 text-muted-foreground">
-          已保存认识继续保留。加入或更新材料，不等于已经阅读或据此修改了判断。
-        </p>
         <ul className="space-y-3">
           {working.pendingInputs.map((input: EngineeringMatterPendingInput) => (
             <li key={input.inputId} className="space-y-1 text-sm">
@@ -80,11 +77,10 @@ const MatterWorkingDetails: FC<MatterWorkingDetailsProps> = ({
               变化原因：{working.current.change.changedBecause}
             </p>
           ) : null}
-          <p className="text-xs leading-6 text-muted-foreground">
+          <details><summary>保存记录</summary><p className="text-xs leading-6 text-muted-foreground">
             工作修订 {working.current.workingRevision} ·{' '}
             {working.current.createdAt}。
-            事项工作记录不代表正式采用，也不推进成员文档的评估结果。
-          </p>
+          </p></details>
         </section>
         {working.current.state.openQuestions.length > 0 ? (
           <section className="space-y-3" aria-label="仍待核实的问题">
@@ -111,9 +107,6 @@ const MatterWorkingDetails: FC<MatterWorkingDetailsProps> = ({
                 ),
               )}
             </ul>
-            <p className="text-xs text-muted-foreground">
-              后台消费者运行时检查明确时间和原文变化；纯文字条件仍需人工判断。触发复看不代表工程结论已经变化。
-            </p>
           </section>
         ) : null}
         {working.current.state.coverage.length > 0 ? (
@@ -134,7 +127,7 @@ const MatterWorkingDetails: FC<MatterWorkingDetailsProps> = ({
                     <p>
                       实际核查范围：{coverage.checkedScope}（
                       {coverage.checkedSourceRefIds.length}{' '}
-                      处原文，不代表已覆盖整份文档）
+                      处原文）
                     </p>
                     <p>
                       {coverage.contribution === 'SUBSTANTIVE'

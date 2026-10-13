@@ -76,7 +76,6 @@ const AssessmentReadingBrief: FC<AssessmentReadingBriefProps> = ({
             {result.scope.kind === 'ENGINEERING_MATTER'
               ? '事项工作认识'
               : '当前对象的工程认识'}
-            <span>· 已保存候选，尚非实施决定</span>
           </p>
           <h2 className="break-words text-xl font-semibold leading-8">
             {result.content.headline}
