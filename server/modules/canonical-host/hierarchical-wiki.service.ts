@@ -130,9 +130,6 @@ export class HierarchicalWikiService {
     actor: CanonicalHostActor,
     cursor?: string,
   ): Promise<HierarchicalWikiList> {
-    await this.repository.browser(actor, async (database, owner) => {
-      await this.refresh(database, owner, new Date().toISOString());
-    });
     return this.readList(actor, cursor);
   }
 
@@ -1014,7 +1011,7 @@ export class HierarchicalWikiService {
     actor: CanonicalHostActor,
     cursor?: string,
   ): Promise<HierarchicalWikiList> {
-    return this.repository.browser(actor, async (database, owner) =>
+    return this.repository.readBrowser(actor, async (database, owner) =>
       this.listRows(await wikiRows(database, owner), owner, database, cursor),
     );
   }
@@ -1030,6 +1027,7 @@ export class HierarchicalWikiService {
       const root = rows.find(
         (item) =>
           item.scope.kind === 'FLEET' &&
+          item.actorUserId === row.actorUserId &&
           item.scope.fleetFamilyId === row.scope.fleetFamilyId &&
           canonicalJson(item.scope.fleetModelIds) ===
             canonicalJson(row.scope.fleetModelIds),
@@ -1052,7 +1050,13 @@ export class HierarchicalWikiService {
       if (!denied) {
         const access = await database.execute<{
           allowed: boolean;
-        }>(sql`SELECT NOT EXISTS (
+        }>(owner.readScope === 'TENANT' ? sql`SELECT NOT EXISTS (
+          SELECT 1 FROM jsonb_array_elements(${JSON.stringify(row.state.waiting)}::jsonb) gap
+          WHERE CASE gap->>'kind'
+            WHEN 'DOCUMENT' THEN native_app_document_readable(${owner.tenantId},gap->>'documentVersionId') IS NOT TRUE
+            WHEN 'MATTER' THEN NOT EXISTS (SELECT 1 FROM engineering_matter e WHERE e.tenant_id=${owner.tenantId}
+              AND e.matter_id=gap->>'subjectId')
+            ELSE false END) AS allowed` : sql`SELECT NOT EXISTS (
           SELECT 1 FROM jsonb_array_elements(${JSON.stringify(row.state.waiting)}::jsonb) gap
           WHERE CASE gap->>'kind'
             WHEN 'DOCUMENT' THEN engineering_matter_document_owned_by_actor(${owner.tenantId},gap->>'documentVersionId') IS NOT TRUE
@@ -1114,12 +1118,19 @@ export class HierarchicalWikiService {
       FROM hierarchical_wiki_membership m JOIN hierarchical_wiki_scope w ON w.wiki_id=m.wiki_id
       LEFT JOIN dm_publication_family f ON m.source_kind='DOCUMENT' AND f.family_id=m.source_id
       LEFT JOIN engineering_matter e ON m.source_kind='MATTER' AND e.tenant_id=m.tenant_id AND e.matter_id=m.source_id
-      WHERE m.tenant_id=${owner.tenantId} AND m.actor_user_id=${owner.actorUserId}
+      WHERE m.tenant_id=${owner.tenantId}
+        ${owner.readScope === 'TENANT' ? sql`` : sql`AND m.actor_user_id=${owner.actorUserId}`}
         AND m.basis_json->>'classificationStatus' IN ('CANDIDATE','CONFIRMED','EXCLUDED')
         AND (${after === null} OR (w.summary_id,m.member_key)>(${after?.[0] ?? ''},${after?.[1] ?? ''}))
-        AND CASE m.source_kind WHEN 'DOCUMENT' THEN EXISTS (SELECT 1 FROM dm_publication_family f WHERE f.family_id=m.source_id
-          AND engineering_matter_document_owned_by_actor(${owner.tenantId},f.current_document_version_id))
-          WHEN 'MATTER' THEN engineering_matter_owned_by_actor(${owner.tenantId},m.source_id) ELSE false END ORDER BY w.summary_id,m.member_key LIMIT 101`);
+        AND ${owner.readScope === 'TENANT' ? sql`CASE m.source_kind
+          WHEN 'DOCUMENT' THEN EXISTS (SELECT 1 FROM dm_publication_family f WHERE f.family_id=m.source_id
+            AND native_app_document_readable(${owner.tenantId},f.current_document_version_id))
+          WHEN 'MATTER' THEN EXISTS (SELECT 1 FROM engineering_matter e WHERE e.tenant_id=${owner.tenantId}
+            AND e.matter_id=m.source_id) ELSE false END`
+          : sql`CASE m.source_kind WHEN 'DOCUMENT' THEN EXISTS (SELECT 1 FROM dm_publication_family f WHERE f.family_id=m.source_id
+            AND engineering_matter_document_owned_by_actor(${owner.tenantId},f.current_document_version_id))
+          WHEN 'MATTER' THEN engineering_matter_owned_by_actor(${owner.tenantId},m.source_id) ELSE false END`}
+      ORDER BY w.summary_id,m.member_key LIMIT 101`);
     const page = [...classifications].slice(0, 100);
     const tail = page.at(-1);
     return {

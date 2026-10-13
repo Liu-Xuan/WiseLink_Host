@@ -71,7 +71,7 @@ it('carries only a Host-selected exact-version reader hint and rejects malformed
   }
 });
 
-it('selects reader hints using the existing rich-library ranking with actor, tenant and exact DV/document binding', () => {
+it('selects tenant reader hints with exact DV/document binding', () => {
   const compiled = new PgDialect().sqlToQuery(libraryGraphStatement({
     tenantId: 'tenant-a', actorUserId: 'reader-a', request: { level: 'versions', familyId: 'family-a' },
     after: null, limit: 50,
@@ -80,7 +80,8 @@ it('selects reader hints using the existing rich-library ranking with actor, ten
   expect(compiled.sql).toMatch(/page as materialized \([\s\S]*limit \$\d+\s*\), reader_page as/u);
   expect(compiled.sql).toContain('order by (w.package_id is not null and w.package_artifact_ref is not null) desc');
   expect(compiled.sql).toContain('w.created_at desc, w.work_item_id desc limit 1');
-  expect(compiled.params.filter(value => value === 'reader-a').length).toBeGreaterThanOrEqual(2);
+  expect(compiled.params).not.toContain('reader-a');
+  expect(compiled.sql).not.toContain('requested_by_user_id');
   expect(compiled.params.filter(value => value === 'tenant-a').length).toBeGreaterThanOrEqual(2);
   expect(compiled.sql).toContain("case when reader_work_item_id is null then '{}'::jsonb");
   expect(compiled.sql).not.toContain('dm_document_version_metadata');
@@ -303,7 +304,7 @@ describe('canonical library graph request contract', () => {
       ['tenant-a', 'reader-a'],
     ]);
     expect(first).toMatchObject({
-      scope: 'CURRENT_USER_DOCUMENT_CATALOG',
+      scope: 'TENANT_DOCUMENT_CATALOG',
       versionMeaning: 'ALL_READABLE_VERSIONS',
       consistency: 'LIVE_READ',
       relationMeaning: 'CLASSIFICATION_AND_CONTAINMENT_ONLY',

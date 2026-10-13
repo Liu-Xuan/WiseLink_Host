@@ -7,13 +7,17 @@ import type {
   ConfirmReviewActionDraftResponse,
 } from '@shared/api.interface';
 import { CanonicalHostReviewActionService } from './canonical-host-review-action.service';
+import { DialogueBrowserScope } from './dialogue-browser-scope.service';
 
 const MAX_IDENTIFIER_LENGTH = 96;
 
 @NeedLogin()
 @Controller('api')
 export class CanonicalHostReviewActionController {
-  constructor(private readonly service: CanonicalHostReviewActionService) {}
+  constructor(
+    private readonly service: CanonicalHostReviewActionService,
+    private readonly browser: DialogueBrowserScope,
+  ) {}
 
   @Post(
     'work-items/:workItemId/review-conversations/:reviewConversationId/turns/:reviewTurnId/confirm-draft',
@@ -26,7 +30,7 @@ export class CanonicalHostReviewActionController {
     @Req() request: Request,
   ): Promise<ConfirmReviewActionDraftResponse> {
     const input: ConfirmReviewActionDraftRequest = confirmBody(body);
-    return this.service.confirmDraft(
+    return this.browser.runNativeWrite(request, () => this.service.confirmDraft(
       requiredIdentifier(workItemIdValue, 'WORK_ITEM_ID_INVALID'),
       requiredIdentifier(
         reviewConversationIdValue,
@@ -35,7 +39,7 @@ export class CanonicalHostReviewActionController {
       requiredIdentifier(reviewTurnIdValue, 'REVIEW_TURN_ID_INVALID'),
       input,
       request,
-    );
+    ));
   }
 }
 

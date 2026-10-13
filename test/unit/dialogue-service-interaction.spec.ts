@@ -32,7 +32,7 @@ describe('dialogue API interaction boundaries', () => {
         tenantId: actor.tenantId,
         canonicalSubject: { id: actor.actorId },
       },
-      session: { id: actor.sessionId },
+      oauthSession: { session: { id: actor.sessionId } },
     };
     const generation = {
       generationQuery: 'first immutable snapshot',
@@ -99,7 +99,7 @@ describe('dialogue API interaction boundaries', () => {
     };
     const service = new DialogueService(
       {
-        resolve: jest.fn().mockResolvedValue(session),
+        nativeBrowserIdentity: jest.fn().mockReturnValue(session),
       } as unknown as SessionResolver,
       repository as unknown as DialogueRepository,
       context as unknown as DialogueContextService,
@@ -115,7 +115,7 @@ describe('dialogue API interaction boundaries', () => {
       'WI-current',
     ]);
     expect(h.repository.list).toHaveBeenCalledWith(
-      expect.objectContaining({ actorId: 'alice', tenantId: 'tenant' }),
+      expect.objectContaining({ actorId: 'alice', tenantId: 'tenant', browserRead: true }),
       undefined,
       'WI-current',
     );
@@ -234,7 +234,7 @@ describe('dialogue API interaction boundaries', () => {
     );
   });
 
-  it('settles abandoned running state through the local result path while keeping its partial answer', async () => {
+  it('projects abandoned running state without persisting it during GET', async () => {
     const h = harness();
     await h.service.append(threadRef, input, request);
     h.aily.resultMessage.mockClear();
@@ -247,6 +247,7 @@ describe('dialogue API interaction boundaries', () => {
       actor,
       messageRef,
       queryRef,
+      true,
     );
     expect(result.messages[0].response).toMatchObject({
       status: 'UNKNOWN',

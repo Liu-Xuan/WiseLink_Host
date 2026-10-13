@@ -100,7 +100,7 @@ export async function readDocumentNeighborhood(
       quicklook.document.revision, signal), '引用预览读取失败；保留准确文档，不宣称无引用。') : null,
   ]);
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-  if (family && (family.scope !== 'CURRENT_USER_OWNED_WORK_ITEMS'
+  if (family && (family.scope !== 'TENANT_WORK_ITEMS'
     || family.items.length > DOCUMENT_NEIGHBORHOOD_LIMITS.familyRows
     || family.items.some(item => item.familyId !== document.familyId))) {
     throw new Error('同族版本页范围不一致，已停止显示。');

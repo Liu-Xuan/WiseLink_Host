@@ -1,13 +1,16 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { listOwnedLibraryFamilies } from '@server/modules/document-management/src/hosted/nest/miaoda-hosted-library-query';
 
-it('compiles the production owned-library query with saved-source selection and unchanged parameterized visibility', () => {
+it('compiles the tenant library query with verified source selection and tenant-bound visibility', () => {
   const query = listOwnedLibraryFamilies(drizzle.mock() as never, {
     tenantId: 'tenant-test', actorUserId: "actor'quoted", search: '', cursor: null, limit: 20,
   }).toSQL();
   expect(query.sql).not.toContain("actor'quoted");
-  expect(query.params).toContain("actor'quoted");
-  expect(query.sql).toContain('"work_item"."requested_by_user_id" = $');
+  expect(query.params).not.toContain("actor'quoted");
+  expect(query.sql).not.toContain('"work_item"."requested_by_user_id" = $');
+  expect(query.sql).toContain('"work_item"."tenant_id" = $');
+  expect(query.params).toContain('tenant:tenant-test:family:');
+  expect(query.params).toContain('tenant:tenant-test:request:');
   const readingSelection = query.sql.slice(query.sql.indexOf('left join lateral (select r.run_ref'),
     query.sql.indexOf('left join dm_document_reading_retraction'));
   expect(readingSelection).toContain('p.parse_run_id=r.parse_run_id');

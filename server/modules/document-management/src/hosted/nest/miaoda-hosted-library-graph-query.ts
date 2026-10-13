@@ -23,7 +23,7 @@ export interface OwnedLibraryGraphResult {
   items: Array<LibraryGraphCluster | LibraryGraphFamily | LibraryGraphVersion>;
 }
 
-/** The same actor-owned-task OR exact-acquisition predicate as the rich catalog.
+/** The same tenant-task OR tenant-acquisition predicate as the rich catalog.
  * No RLS/session settings, grants, content reads, or permission caching here.
  */
 function visibility(input: OwnedLibraryGraphQuery): SQL {
@@ -31,11 +31,12 @@ function visibility(input: OwnedLibraryGraphQuery): SQL {
     and (exists (select 1 from dm_document d
       where d.document_id=v.document_id and d.family_id=v.family_id)) is true
     and (exists (select 1 from work_item w
-      where w.tenant_id=${input.tenantId} and w.requested_by_user_id=${input.actorUserId}
-        and w.document_id=v.document_id and w.document_version_id=v.document_version_id)
+      where w.tenant_id=${input.tenantId}
+        and w.document_id=v.document_id and w.document_version_id=v.document_version_id
+        and w.source_artifact_id=v.source_artifact_id
+        and w.source_file_sha256=v.pdf_sha256 and w.source_byte_length=v.byte_length)
       or exists (select 1 from dm_acquisition a
         where a.document_version_id=v.document_version_id and a.source_artifact_id=v.source_artifact_id
-          and a.acquired_by=${input.actorUserId}
           and a.status in ('COMMITTED_CANONICAL','LINKED_EXACT_DOCUMENT_VERSION')
           and starts_with(a.idempotency_key, ${`tenant:${encodeURIComponent(input.tenantId)}:request:`})))`;
 }
@@ -55,7 +56,8 @@ export function libraryGraphStatement(input: OwnedLibraryGraphQuery): SQL {
   if (request.level === 'versions') {
     // Anchor before authorization; deliberately no metadata or prior-filter join.
     return sql`with visible as materialized (
-      select v.document_id, v.document_version_id, v.business_revision, v.committed_at,
+      select v.document_id, v.document_version_id, v.source_artifact_id,
+        v.pdf_sha256, v.byte_length, v.business_revision, v.committed_at,
         coalesce(v.document_version_id=f.current_document_version_id,false) as is_current
       from ${joins} where f.family_id=${request.familyId} and ${visibility(input)}
     ), page as materialized (
@@ -63,8 +65,10 @@ export function libraryGraphStatement(input: OwnedLibraryGraphQuery): SQL {
       order by document_version_id collate "C" limit ${limit + 1}
     ), reader_page as (
       select page.*, (select w.work_item_id from work_item w
-        where w.tenant_id=${input.tenantId} and w.requested_by_user_id=${input.actorUserId}
+        where w.tenant_id=${input.tenantId}
           and w.document_id=page.document_id and w.document_version_id=page.document_version_id
+          and w.source_artifact_id=page.source_artifact_id
+          and w.source_file_sha256=page.pdf_sha256 and w.source_byte_length=page.byte_length
         order by (w.package_id is not null and w.package_artifact_ref is not null) desc,
           w.created_at desc, w.work_item_id desc limit 1) as reader_work_item_id from page
     ) select
@@ -154,7 +158,9 @@ export function libraryGraphStatement(input: OwnedLibraryGraphQuery): SQL {
       coalesce(jsonb_path_query_array(m.extracted_metadata,'$.mentionedAircraftModels.observations[*].value'),'[]'::jsonb) as aircraft_values
     from ${joins}
     left join lateral (select extracted_metadata from dm_document_version_metadata metadata
-      where metadata.document_version_id=v.document_version_id order by metadata_revision desc limit 1) m on true
+      where metadata.document_version_id=v.document_version_id order by metadata_revision desc limit 1) m
+      on m.extracted_metadata->>'sourceSha256'=v.pdf_sha256
+        and m.extracted_metadata->>'sourceByteLength'=v.byte_length::text
     where ${visibility(input)}
   ), family_values as (
     select family_id,document_id,document_code,normalized_family,count(*)::integer as version_count,

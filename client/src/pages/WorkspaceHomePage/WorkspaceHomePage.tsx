@@ -584,7 +584,7 @@ function WorkspaceHomeContent() {
               <section
                 className="library-tree-panel"
                 aria-label={
-                  treeMode === 'tasks' ? '当前账户评估任务' : '当前账户文档目录'
+                  treeMode === 'tasks' ? '本租户评估任务' : '本租户文档目录'
                 }
               >
                 <LibraryDocumentDirectory

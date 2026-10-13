@@ -19,7 +19,7 @@ const document = {
   sourceReadability: 'NOT_CHECKED',
 };
 const catalog = {
-  scope: 'CURRENT_USER_DOCUMENT_CATALOG',
+  scope: 'TENANT_DOCUMENT_CATALOG',
   items: [
     {
       familyId: 'F-SB',

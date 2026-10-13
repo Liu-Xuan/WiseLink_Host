@@ -8,6 +8,52 @@ import { taskModelSelection } from '../../server/modules/model-settings/canonica
 describe('ReviewConversationRepository OpenClaw actor context', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  it('reads an exact tenant-bound source under the existing native SQL actor', async () => {
+    const stored = {
+      conversation: {
+        reviewConversationId: 'RC-A', tenantId: 'tenant-1', actorId: 'owner-A',
+        workItemId: 'WI-A', openClawAgentId: 'wiselink-engineering',
+        openClawSessionKey: 'review:owner-A:RC-A', startedAtRevision: 7,
+        lastSyncedRevision: 7, status: 'ACTIVE',
+        createdAt: new Date('2026-08-26T10:00:00.000Z'),
+        lastActiveAt: new Date('2026-08-26T10:01:00.000Z'), closedAt: null,
+      },
+      turn: {
+        reviewTurnId: 'RT-A', reviewConversationId: 'RC-A',
+        engineerSuppliedInputId: 'ESI-A', turnNo: 1, requestId: 'request-A',
+        inputRevision: 7, userMessage: 'Owner supplied evidence',
+        reviewScopeJson: null, inputType: 'ENGINEER_TEXT',
+        adoptionStatus: 'CANDIDATE_UNADOPTED',
+        candidateText: 'Owner supplied evidence', responseType: null,
+        assistantResponse: null, sourceRefsJson: null,
+        missingInputsJson: null, candidateEvidenceRefsJson: null,
+        reviewActionDraftJson: null, affectedItemIdsJson: null,
+        warningsJson: null, resultProvenanceJson: null,
+        resultContentHash: null, actionAttemptId: null,
+        assistantCompletedAt: null,
+        createdAt: new Date('2026-08-26T10:02:00.000Z'),
+      },
+    };
+    const query = {
+      from: jest.fn(), innerJoin: jest.fn(), where: jest.fn(),
+      limit: jest.fn().mockResolvedValue([stored]),
+    };
+    query.from.mockReturnValue(query);
+    query.innerJoin.mockReturnValue(query);
+    query.where.mockReturnValue(query);
+    const db = { select: jest.fn().mockReturnValue(query), execute: jest.fn() };
+    const repository = new ReviewConversationRepository(db as never);
+    const result = await repository.loadOpenClawTurnByIdBinding({
+      reviewConversationId: 'RC-A', reviewTurnId: 'RT-A',
+      tenantId: 'tenant-1', actorId: 'owner-A', workItemId: 'WI-A',
+      readScope: 'TENANT',
+    });
+    expect(result?.conversation.actorId).toBe('owner-A');
+    expect(result?.turn.userMessage).toBe('Owner supplied evidence');
+    expect(query.innerJoin).toHaveBeenCalledTimes(3);
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
   it('sets the Host-owned actor and reads the Review binding in one statement', async () => {
     const warning = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const db = {

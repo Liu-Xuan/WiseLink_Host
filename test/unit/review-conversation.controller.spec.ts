@@ -22,6 +22,21 @@ jest.mock('@lark-apaas/fullstack-nestjs-core', () => {
 import { ReviewConversationController } from '../../server/modules/review-persistence/review-conversation.controller';
 
 describe('ReviewConversationController request boundary', () => {
+  it('uses authenticated B SQL for plain review writes and retains delegated scope for generation', async () => {
+    const setup = makeController();
+    await setup.controller.createOrResume('WI-1', {}, {} as never);
+    await setup.controller.appendTextTurn('WI-1', 'RC-1', {
+      requestId: 'plain-1', userMessage: '复核意见',
+    }, {} as never);
+    await setup.controller.close('WI-1', 'RC-1', {}, {} as never);
+    expect(setup.sessions.withVerifiedNativeBrowserSql).toHaveBeenCalledTimes(3);
+    expect(setup.sessions.withVerifiedNativeBrowserServiceSql).not.toHaveBeenCalled();
+    await setup.controller.appendTextTurn('WI-1', 'RC-1', {
+      requestId: 'generate-1', userMessage: '生成建议', executionMode: 'AUTOMATIC',
+    }, {} as never);
+    expect(setup.sessions.withVerifiedNativeBrowserServiceSql).toHaveBeenCalledTimes(1);
+  });
+
   it('accepts explicit updates only with a fixed revision and distinct discussion selection', async () => {
     const setup = makeController();
     const update = {
@@ -347,8 +362,14 @@ function makeController() {
     appendTextTurn: jest.fn(),
     close: jest.fn(),
   };
+  const sessions = {
+      withNativeBrowserIdentity: (_request: unknown, operation: () => Promise<unknown>) => operation(),
+      withVerifiedNativeBrowserServiceSql: jest.fn((operation: () => Promise<unknown>) => operation()),
+      withVerifiedNativeBrowserSql: jest.fn((operation: () => Promise<unknown>) => operation()),
+    };
   return {
-    controller: new ReviewConversationController(service as never),
+    controller: new ReviewConversationController(service as never, sessions as never),
     service,
+    sessions,
   };
 }

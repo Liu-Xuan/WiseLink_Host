@@ -12,6 +12,7 @@ import type {
   ReviewScopeSelection,
 } from '@shared/api.interface';
 import { ReviewConversationService } from './review-conversation.service';
+import { SessionResolver } from '../identity/session-resolver.service';
 
 const MAX_MESSAGE_LENGTH = 20_000;
 const MAX_IDENTIFIER_LENGTH = 96;
@@ -21,7 +22,10 @@ const MAX_FILE_PATH_LENGTH = 1_024;
 @NeedLogin()
 @Controller('api')
 export class ReviewConversationController {
-  constructor(private readonly service: ReviewConversationService) {}
+  constructor(
+    private readonly service: ReviewConversationService,
+    private readonly sessions: SessionResolver,
+  ) {}
 
   @Post('work-items/:workItemId/review-conversations/current')
   async createOrResume(
@@ -36,7 +40,8 @@ export class ReviewConversationController {
       workItemIdValue,
       'WORK_ITEM_ID_INVALID',
     );
-    return this.service.createOrResume(workItemId, request, reviewScope);
+    return this.runNativeWrite(request, () =>
+      this.service.createOrResume(workItemId, request, reviewScope));
   }
 
   @Get('work-items/:workItemId/review-conversations/current')
@@ -59,7 +64,8 @@ export class ReviewConversationController {
               'REVIEW_MATTER_ID_INVALID',
             ),
           };
-    return this.service.current(workItemId, request, reviewScope);
+    return this.runRead(request, () =>
+      this.service.current(workItemId, request, reviewScope));
   }
 
   @Post(
@@ -80,12 +86,15 @@ export class ReviewConversationController {
       'REVIEW_CONVERSATION_ID_INVALID',
     );
     const input: AppendReviewTextTurnRequest = reviewTextBody(body);
-    return this.service.appendTextTurn(
+    const run = input.executionMode === 'AUTOMATIC' || input.attachmentSelection
+      ? this.runDelegatedWrite.bind(this)
+      : this.runNativeWrite.bind(this);
+    return run(request, () => this.service.appendTextTurn(
       workItemId,
       reviewConversationId,
       input,
       request,
-    );
+    ));
   }
 
   @Post(
@@ -106,7 +115,23 @@ export class ReviewConversationController {
       reviewConversationIdValue,
       'REVIEW_CONVERSATION_ID_INVALID',
     );
-    return this.service.close(workItemId, reviewConversationId, request);
+    return this.runNativeWrite(request, () =>
+      this.service.close(workItemId, reviewConversationId, request));
+  }
+
+  private runRead<T>(request: Request, operation: () => Promise<T>): Promise<T> {
+    return this.sessions.withNativeBrowserIdentity(request, () =>
+      this.sessions.withVerifiedNativeBrowserSql(operation));
+  }
+
+  private runNativeWrite<T>(request: Request, operation: () => Promise<T>): Promise<T> {
+    return this.sessions.withNativeBrowserIdentity(request, () =>
+      this.sessions.withVerifiedNativeBrowserSql(operation));
+  }
+
+  private runDelegatedWrite<T>(request: Request, operation: () => Promise<T>): Promise<T> {
+    return this.sessions.withNativeBrowserIdentity(request, () =>
+      this.sessions.withVerifiedNativeBrowserServiceSql(operation));
   }
 }
 

@@ -62,6 +62,10 @@ export const CANONICAL_AILY_AGENT_ID = 'agent_4km47c77ujwqphg';
 // it is never an object-read bypass.
 export const CANONICAL_DEVELOPMENT_ROLE_ID = 'wiselink_development';
 
+// Created and read back on 2026-10-13, reserved for later permission narrowing.
+// This phase explicitly permits native tenant users to review without this role.
+export const CANONICAL_ENGINEERING_REVIEWER_ROLE_ID = 'wiselink_engineering_reviewer';
+
 /**
  * Deployment-owned platform role binding for V1.1 RuleSet current changes.
  * The role must already exist in Miaoda and must not reuse the development

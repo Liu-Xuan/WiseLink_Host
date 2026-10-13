@@ -3024,7 +3024,7 @@ export interface CanonicalLibraryIndexReadResponse {
   };
 }
 
-/** Each row is one owned assessment task, independently of document identity. */
+/** Each row is one tenant assessment task, independently of document identity. */
 export interface CanonicalLibraryWorkItemSummary {
   kind: 'TASK';
   workItemId: string;
@@ -3131,7 +3131,7 @@ export interface CanonicalLibraryDocumentVersionSummary {
   byteLength: number;
   committedAt: string;
   selectedVersionIsCurrent: boolean;
-  /** Existing authorized task available for the version's engineering assessment. */
+  /** Existing tenant task available for the version's engineering assessment. */
   readerWorkItemId: string;
   workItemCount: number;
 }
@@ -3212,7 +3212,7 @@ export interface CanonicalLibraryDocumentsRequest {
 }
 
 export interface CanonicalLibraryDocumentsResponse {
-  scope: 'CURRENT_USER_DOCUMENT_CATALOG';
+  scope: 'TENANT_DOCUMENT_CATALOG';
   totalCount: number;
   /** Search-wide counts before normalizedFamily filtering. */
   familyCounts: Record<string, number>;
@@ -3229,7 +3229,7 @@ export interface CanonicalLibraryTasksRequest extends CanonicalLibraryDocumentsR
 }
 
 export interface CanonicalLibraryTasksResponse {
-  scope: 'CURRENT_USER_OWNED_WORK_ITEMS';
+  scope: 'TENANT_WORK_ITEMS';
   order: 'CREATED_AT_DESC_WORK_ITEM_ID_DESC';
   items: CanonicalLibraryWorkItemSummary[];
   nextCursor: string | null;

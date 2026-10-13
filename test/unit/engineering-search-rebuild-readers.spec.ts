@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { CANONICAL_OBJECT_ACCESS } from '../../server/modules/work-item/canonical-object-access.port';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { CanonicalJobAidProblemService } from '../../server/modules/canonical-host/canonical-jobaid-problem.service';
+import { DocumentActivityRunRepository } from '../../server/modules/canonical-host/document-activity-run.repository';
 import { EngineeringMatterWorkingService } from '../../server/modules/canonical-host/engineering-matter-working.service';
 import { CANONICAL_MIAODA_APP_ID } from '../../server/modules/canonical-host/canonical-host.constants';
 
@@ -104,13 +105,13 @@ it.each(['missing-port', 'missing-identity', 'wrong-actor', 'wrong-tenant'])('pr
 it('Nest resolves appended optional object access without changing prior constructor dependencies', async () => {
   const types: unknown[] = Reflect.getMetadata('design:paramtypes', CanonicalJobAidProblemService);
   const declared: Array<{ index: number; param: unknown }> = Reflect.getMetadata('self:paramtypes', CanonicalJobAidProblemService);
-  const values = types.slice(0, -1).map((_type, index) => ({ position: index }));
+  const portIndex = declared.find(item => item.param === CANONICAL_OBJECT_ACCESS)!.index;
+  const values = types.map((_type, index) => ({ position: index }));
   const providers = values.map((value, index) => ({
     provide: declared.find(item => item.index === index)?.param ?? types[index], useValue: value,
-  }));
+  })).filter((_provider, index) => index !== portIndex);
   const optional: number[] = Reflect.getMetadata('optional:paramtypes', CanonicalJobAidProblemService);
-  expect(declared.find(item => item.index === types.length - 1)?.param).toBe(CANONICAL_OBJECT_ACCESS);
-  expect(optional).toContain(types.length - 1);
+  expect(optional).toContain(portIndex);
   for (const includePort of [false, true]) {
     const port = { freshRead: jest.fn() };
     const module = await Test.createTestingModule({ providers: [CanonicalJobAidProblemService,
@@ -118,7 +119,7 @@ it('Nest resolves appended optional object access without changing prior constru
     try {
       const service = module.get(CanonicalJobAidProblemService) as unknown as Record<string, unknown>;
       expect(service.registrar).toBe(values[0]);
-      expect(service.activityRuns).toBe(values.at(-1));
+      expect(service.activityRuns).toBe(values[types.indexOf(DocumentActivityRunRepository)]);
       expect(service.objectAccess).toBe(includePort ? port : undefined);
     } finally { await module.close(); }
   }

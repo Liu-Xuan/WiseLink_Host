@@ -46,7 +46,9 @@ export async function wikiRows(
 ): Promise<WikiRow[]> {
   const rows =
     await database.execute<WikiRow>(sql`SELECT ${columns} FROM hierarchical_wiki_scope
-    WHERE tenant_id=${owner.tenantId} AND actor_user_id=${owner.actorUserId} ORDER BY wiki_id`);
+    WHERE tenant_id=${owner.tenantId}
+      ${owner.readScope === 'TENANT' ? sql`` : sql`AND actor_user_id=${owner.actorUserId}`}
+    ORDER BY wiki_id`);
   for (const row of rows) {
     if (
       row.state.schemaVersion !== 1 ||

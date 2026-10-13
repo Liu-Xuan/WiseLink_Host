@@ -101,7 +101,7 @@ export default function LibraryMatterDirectory({
         <button type="button" className="suite-folder-row" onClick={onViewTasks}>
           <span>评估任务</span>
         </button>
-        <p>按当前账户可读取的事项展示。</p>
+        <p>展示本租户共享的工程事项。</p>
       </aside>
       <div className="atlas-library-list">
         <form className="atlas-library-search" onSubmit={onSearch}>

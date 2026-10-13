@@ -159,20 +159,21 @@ export class DerivedSummaryService {
   }
 
   list(actor: CanonicalHostActor): Promise<DerivedSummaryMetadata[]> {
-    return this.repository.browser(actor, async (database, owner) => {
+    return this.repository.readBrowser(actor, async (database, owner) => {
       const heads = await database.select().from(derivedSummary).where(and(eq(derivedSummary.tenantId, owner.tenantId),
-        eq(derivedSummary.actorUserId, owner.actorUserId))).orderBy(desc(derivedSummary.updatedAt));
+        ...(owner.readScope === 'TENANT' ? [] : [eq(derivedSummary.actorUserId, owner.actorUserId)])))
+        .orderBy(desc(derivedSummary.updatedAt));
       return Promise.all(heads.map(async head => ({ ...headMetadata(head), ...await this.wiki?.metadata(head.summaryId, database) })));
     });
   }
 
   read(summaryId: string, actor: CanonicalHostActor): Promise<DerivedSummaryReadModel> {
-    return this.repository.browser(actor, async (database, owner) =>
+    return this.repository.readBrowser(actor, async (database, owner) =>
       this.readHead(await this.repository.head(summaryId, owner, database), owner, database));
   }
 
   readRevision(summaryId: string, summaryRef: string, actor: CanonicalHostActor): Promise<DerivedSummaryRevisionReadModel> {
-    return this.repository.browser(actor, async (database, owner) => {
+    return this.repository.readBrowser(actor, async (database, owner) => {
       const head = await this.repository.head(summaryId, owner, database);
       const saved = await this.repository.saved(summaryId, summaryRef, owner, database);
       const selected = await this.checkRevision(saved, owner, database);
@@ -183,10 +184,11 @@ export class DerivedSummaryService {
   }
 
   status(summaryId: string, attemptRef: string, actor: CanonicalHostActor): Promise<DerivedSummaryRequestStatus> {
-    return this.repository.browser(actor, async (database, owner) => {
-      await this.repository.head(summaryId, owner, database);
+    return this.repository.readBrowser(actor, async (database, owner) => {
+      const head = await this.repository.head(summaryId, owner, database);
       const attempt = await this.repository.attempt(summaryId, attemptRef, owner.tenantId, database);
-      if (attempt.actorUserId !== owner.actorUserId) throw summaryError('DERIVED_SUMMARY_ATTEMPT_UNAVAILABLE', 404);
+      if (attempt.actorUserId !== head.actorUserId || attempt.summaryId !== head.summaryId)
+        throw summaryError('DERIVED_SUMMARY_ATTEMPT_UNAVAILABLE', 404);
       await this.checkTaskAccess(checkedSummaryTask(attempt), owner, database);
       return summaryRequestStatus(summaryId, attempt, database);
     });

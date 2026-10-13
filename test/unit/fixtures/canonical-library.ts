@@ -53,7 +53,7 @@ export function libraryTasks(
   nextCursor: string | null = null,
 ): CanonicalLibraryTasksResponse {
   return {
-    scope: 'CURRENT_USER_OWNED_WORK_ITEMS',
+    scope: 'TENANT_WORK_ITEMS',
     order: 'CREATED_AT_DESC_WORK_ITEM_ID_DESC',
     items: ids.map(libraryDocument),
     nextCursor,
@@ -108,7 +108,7 @@ export function libraryDocuments(
   nextCursor: string | null = null,
 ): CanonicalLibraryDocumentsResponse {
   return {
-    scope: 'CURRENT_USER_DOCUMENT_CATALOG',
+    scope: 'TENANT_DOCUMENT_CATALOG',
     totalCount: ids.length,
     familyCounts: {},
     ataCounts: {},

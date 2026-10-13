@@ -222,7 +222,7 @@ describe('synthetic development creator-only fixture', () => {
   });
 });
 
-describe('hosted native browser creator-only access', () => {
+describe('hosted native browser tenant reads and independent writes', () => {
   it('fresh-reads and grants only the exact Host creator binding', async () => {
     const repository = productionRepository();
     const result = await productionRouter(repository).freshRead({
@@ -246,6 +246,7 @@ describe('hosted native browser creator-only access', () => {
       workItemId: 'WI1',
       tenantId: 'tenant-1',
       actorUserId: 'user-a',
+      readScope: 'TENANT',
     });
   });
 
@@ -281,7 +282,45 @@ describe('hosted native browser creator-only access', () => {
       workItemId: 'WI1',
       tenantId: 'tenant-1',
       actorUserId: 'user-a',
+      ...(action === 'READ_CONFIGURATION_EVIDENCE' ? { readScope: 'TENANT' } : {}),
     });
+  });
+
+  it('reads another creator without changing either actor or owner facts', async () => {
+    const actor = hostedMiaodaActor();
+    actor.canonicalSubject = { namespace: 'MIAODA_USER_ID', id: 'user-b' };
+    actor.platformRoles = [];
+    const result = await productionRouter().freshRead({ actor, action: 'READ_WORK_ITEM',
+      accessRoot: { kind: 'WORK_ITEM', id: 'WI1' } });
+    expect(result).toMatchObject({ allowed: true, actorUserId: 'user-b', tenantId: 'tenant-1',
+      ownerFact: { isOwner: false, ownerUserId: 'user-a' },
+      actionPolicy: { objectRelation: 'TENANT_READER', policyRevision: 'tenant-shared-read.v1', requiredPlatformRoles: [] } });
+  });
+
+  it.each(['PARSE_PDF', 'REQUEST_OVERALL_REGENERATION',
+    'CONFIRM_OPENCLAW_OVERALL_FOR_AEO'] as const)('shared reads never grant %s to a non-owner', async action => {
+    const actor = hostedMiaodaActor();
+    actor.canonicalSubject = { namespace: 'MIAODA_USER_ID', id: 'user-b' };
+    actor.platformRoles = ['wiselink_development', 'wiselink_model_settings_manager'];
+    expect(await productionRouter().freshRead({ actor, action, accessRoot: { kind: 'WORK_ITEM', id: 'WI1' } }))
+      .toMatchObject({ allowed: false, statusCode: 404 });
+  });
+
+  it('native tenant users can record review, retaining the original owner and true reviewer', async () => {
+    const actor = hostedMiaodaActor();
+    actor.canonicalSubject = { namespace: 'MIAODA_USER_ID', id: 'user-b' };
+    actor.platformRoles = [];
+    expect(await productionRouter().freshRead({ actor, action: 'RECORD_ENGINEER_REVIEW',
+      accessRoot: { kind: 'WORK_ITEM', id: 'WI1' } })).toMatchObject({ allowed: true, actorUserId: 'user-b',
+      ownerFact: { isOwner: false, ownerUserId: 'user-a' }, actionPolicy: { objectRelation: 'TENANT_REVIEWER',
+        requiredPlatformRoles: [], platformRoleEvaluation: 'NOT_REQUIRED' } });
+    expect(await productionRouter().freshRead({ actor, action: 'RUN_AEO_CANDIDATE_LOOP',
+      accessRoot: { kind: 'WORK_ITEM', id: 'WI1' } })).toMatchObject({ allowed: false });
+  });
+
+  it('shared native reading does not cross tenant boundaries', async () => {
+    expect(await productionRouter().freshRead({ actor: hostedMiaodaActor(), action: 'READ_WORK_ITEM',
+      accessRoot: { kind: 'WORK_ITEM', id: 'WI3' } })).toMatchObject({ allowed: false, statusCode: 404 });
   });
 
   it('does not promote an SDK-parsed header into the required hosted actor decision', async () => {
@@ -414,12 +453,13 @@ function productionRepository() {
         workItemId: string;
         tenantId: string;
         actorUserId: string;
+        readScope?: 'TENANT';
       }) =>
         bindings.find(
           (value) =>
             value.workItemId === input.workItemId &&
             value.tenantId === input.tenantId &&
-            value.requestedByUserId === input.actorUserId,
+            (input.readScope === 'TENANT' || value.requestedByUserId === input.actorUserId),
         ) ?? null,
     ),
   };

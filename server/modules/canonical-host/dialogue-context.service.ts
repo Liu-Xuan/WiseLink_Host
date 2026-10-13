@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import type { DialogueWorkingContext } from '@shared/dialogue.interface';
 import type { ResolvedSession } from '../identity/session-resolver.service';
+
+type DialogueActor = Pick<ResolvedSession, 'actor'>;
 import {
   CANONICAL_OBJECT_ACCESS,
   type CanonicalObjectAccessPort,
@@ -26,7 +28,7 @@ export class DialogueContextService {
     private readonly repository: DialogueRepository,
   ) {}
 
-  async authorize(session: ResolvedSession, ids: string[]) {
+  async authorize(session: DialogueActor, ids: string[]) {
     return Promise.all(
       [...new Set(ids)].map(async (workItemId) => {
         const grant = await this.access.freshRead({
@@ -48,9 +50,10 @@ export class DialogueContextService {
   }
 
   async current(
-    session: ResolvedSession,
+    session: DialogueActor,
     ids: string[],
     includeContributions = true,
+    browserRead = false,
   ): Promise<DialogueWorkingContext[]> {
     const grants = await this.authorize(session, ids);
     const actor = {
@@ -64,7 +67,8 @@ export class DialogueContextService {
     const contributions = includeContributions
       ? (
           await this.repository.relevantContributions(
-            { tenantId: actor.tenantId, actorId: actor.userId },
+            { tenantId: actor.tenantId, actorId: actor.userId,
+              ...(browserRead ? { browserRead: true as const } : {}) },
             ids,
           )
         ).filter((row) => !row.consumed_working_ref)
@@ -72,7 +76,8 @@ export class DialogueContextService {
     const contributionContexts = new Map<string, DialogueMessageRow[]>();
     for (const row of contributions) {
       const messages = await this.repository.contributionContext(
-        { tenantId: actor.tenantId, actorId: actor.userId },
+        { tenantId: actor.tenantId, actorId: actor.userId,
+          ...(browserRead ? { browserRead: true as const } : {}) },
         row,
       );
       await this.authorize(

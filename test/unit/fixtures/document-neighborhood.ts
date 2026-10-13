@@ -32,7 +32,7 @@ export function referencePreview(): CanonicalRelatedContextPreviewResponse {
   } as CanonicalRelatedContextPreviewResponse;
 }
 export function familyPage(): CanonicalLibraryTasksResponse {
-  return {scope: 'CURRENT_USER_OWNED_WORK_ITEMS', order: 'CREATED_AT_DESC_WORK_ITEM_ID_DESC', fileReadPerformed: false,
+  return {scope: 'TENANT_WORK_ITEMS', order: 'CREATED_AT_DESC_WORK_ITEM_ID_DESC', fileReadPerformed: false,
     items: [documentQuicklook().document, {...documentQuicklook('dv-r4', 'wi-r4').document, businessRevision: 'R4', selectedVersionIsCurrent: true}], nextCursor: null};
 }
 export function mattersPage(): EngineeringMatterDirectoryResponse {

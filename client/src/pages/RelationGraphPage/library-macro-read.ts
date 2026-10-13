@@ -57,7 +57,7 @@ export async function readLibraryMacro(request: CanonicalLibraryGraphRequest, si
     for (let page = 0; page < LIBRARY_MACRO_BUDGET.documentPages; page++) {
       aborted(signal);
       const response = await getCanonicalLibraryDocuments({ ...filters, cursor, limit: 50 }, signal);
-      if (response.scope !== 'CURRENT_USER_DOCUMENT_CATALOG' || response.fileReadPerformed !== false || response.items.length > 50) throw invalid();
+      if (response.scope !== 'TENANT_DOCUMENT_CATALOG' || response.fileReadPerformed !== false || response.items.length > 50) throw invalid();
       for (const document of response.items) {
         if (!document.familyId || ids.has(document.familyId) || document.kind !== 'DOCUMENT' || !document.versions.length) throw invalid();
         const ownIds = document.versions.map(version => version.documentVersionId);

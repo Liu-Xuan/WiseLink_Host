@@ -333,7 +333,8 @@ describe('derived summary runtime freshness fence (transaction-double proof, not
       body: 'Stable S0 body', limitations: [] }, evidence: [source], usedEvidenceRefs: [], coverage: [],
       requestId: 'S0', attemptRef: 'AQ-S0', createdAt: '2026-10-06T00:00:00.000Z', candidateOnly: true as const,
       contextBasis: basis0 };
-    const head = { summaryId: 'DS-one', currentRevision: 1, currentSummaryRef: 'DSR-zero', scopeJson: scope,
+    const head = { summaryId: 'DS-one', actorUserId: owner.actorUserId,
+      currentRevision: 1, currentSummaryRef: 'DSR-zero', scopeJson: scope,
       membersJson: [work] };
     const attempts = new Map<string, ReturnType<typeof runningAttempt>>();
     const saved = [saved0];
@@ -410,7 +411,8 @@ describe('derived summary runtime freshness fence (transaction-double proof, not
       head: jest.fn(async () => head),
       contextBasis: repo.contextBasis.bind(repo), lockContext: repo.lockContext.bind(repo),
       saved: jest.fn(async (_summaryId: string, ref: string) => saved.find(item => item.summaryRef === ref)),
-      browser: jest.fn(async (_actor: unknown, operation: Function) => operation(database, owner)) };
+      browser: jest.fn(async (_actor: unknown, operation: Function) => operation(database, owner)),
+      readBrowser: jest.fn(async (_actor: unknown, operation: Function) => operation(database, owner)) };
     const summaries = new DerivedSummaryService(runtimeRepo as never, members as never,
       { authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({ appId: 'app_17bzc551rsg',
         tenantId: owner.tenantId, principalId: 'service-one' }) } as never);

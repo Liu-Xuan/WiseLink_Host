@@ -159,7 +159,7 @@ export class CanonicalLibraryService {
       }));
     const last = items.at(-1);
     return {
-      scope: 'CURRENT_USER_DOCUMENT_CATALOG',
+      scope: 'TENANT_DOCUMENT_CATALOG',
       totalCount: result.totalCount,
       familyCounts: result.familyCounts,
       ataCounts: result.ataCounts,
@@ -218,7 +218,7 @@ export class CanonicalLibraryService {
     );
     const last = items.at(-1);
     return {
-      scope: 'CURRENT_USER_OWNED_WORK_ITEMS',
+      scope: 'TENANT_WORK_ITEMS',
       order: 'CREATED_AT_DESC_WORK_ITEM_ID_DESC',
       items,
       nextCursor:
@@ -303,8 +303,7 @@ function ownedScope(actor: CanonicalHostActor) {
       statusCode: 503,
     });
   }
-  // Same fresh creator-only relation as MiaodaHostedCanonicalObjectAccessAdapter.
-  // No tenant-wide grant, role bypass, client-supplied owner or reusable permission.
+  // Bind tenant reads to the verified gateway identity on every request.
   return {
     tenantId: identity.tenantId,
     actorUserId: identity.canonicalSubject.id,

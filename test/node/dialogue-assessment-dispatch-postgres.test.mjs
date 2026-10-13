@@ -102,11 +102,11 @@ test(
       // Session authentication is covered by the browser-scope suite. Here the
       // scope port drives the real SDK and both PostgreSQL roles on every query.
       const sessions = {
-        withVerifiedServiceSql: (operation, actor) => {
+        withVerifiedReviewServiceSql: (operation, actor) => {
           if (actor !== undefined) assert.equal(actor, 'actor');
           return roleScope(true, operation);
         },
-        withVerifiedBrowserSql: (operation) => roleScope(false, operation),
+        withVerifiedReviewBrowserSql: (operation) => roleScope(false, operation),
       };
       const working = new EngineeringMatterWorkingRepository(db, middleware, {
         roleSchema,

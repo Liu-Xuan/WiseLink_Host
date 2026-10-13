@@ -131,10 +131,8 @@ async function applyFixtureSchema(admin) {
     await admin.unsafe(await readMigration(migration));
   }
 
-  // Reuse the actual repository WorkItem DDL for its table and indexes. The
-  // hosted actor-bound SELECT fixture from migration 0019 replaces the legacy
-  // broad service_role policy for this read, matching the existing RLS test
-  // pattern in test/node/local-mineru-worker-rls.test.mjs.
+  // Reuse actual WorkItem DDL and indexes, then replace its broad service-role
+  // policy with a synthetic tenant SELECT policy for this read fixture.
   const workItemDdl = await readFile(
     new URL('../../server/database/work-item.ddl.sql', import.meta.url),
     'utf8',
@@ -160,6 +158,19 @@ async function applyFixtureSchema(admin) {
   await admin.unsafe(
     `${hostedPolicyMigration.slice(policyStart, reviewPolicies)} COMMIT;`,
   );
+  await admin.unsafe(`
+    DROP POLICY IF EXISTS service_role_bypass_policy ON work_item;
+    CREATE POLICY work_item_tenant_reader_select ON work_item
+      FOR SELECT TO service_role USING (
+        tenant_id = (
+          SELECT current_mapping.miaoda_tenant_id
+          FROM identity_subject_mapping current_mapping
+          WHERE current_mapping.miaoda_user_id = current_setting('app.user_id', true)
+            AND current_mapping.expected_client_id = 'cli_aadde8b579f95bc9'
+            AND current_mapping.status = 'ACTIVE'
+        )
+      );
+  `);
 
   await admin.unsafe(`
     GRANT USAGE ON SCHEMA public TO service_role;
@@ -174,7 +185,8 @@ async function applyFixtureSchema(admin) {
         expected_client_id,status,revision)
     VALUES
       ('open-a','tenant-key-a','actor-a','tenant-a','cli_aadde8b579f95bc9','ACTIVE',1),
-      ('open-b','tenant-key-b','actor-b','tenant-b','cli_aadde8b579f95bc9','ACTIVE',1)
+      ('open-b','tenant-key-b','actor-b','tenant-b','cli_aadde8b579f95bc9','ACTIVE',1),
+      ('open-c','tenant-key-a','actor-c','tenant-a','cli_aadde8b579f95bc9','ACTIVE',1)
   `;
 }
 
@@ -279,8 +291,8 @@ async function seedCatalog(admin) {
       '{}','COMMITTED_CANONICAL')
   `;
 
-  // Eligible acquisition-only access works for the exact artifact. Each
-  // negative row differs by exactly one authorization dimension.
+  // Eligible tenant acquisition works for the exact artifact. Negative rows
+  // retain wrong status or wrong tenant bindings.
   await admin`
     DELETE FROM work_item
     WHERE document_version_id IN ('V-00010015','V-00010017','V-00010018','V-00010019')
@@ -291,7 +303,7 @@ async function seedCatalog(admin) {
   await insertAcquisition(admin, 'V-00010017', 'wrong-status', {
     status: 'FAILED',
   });
-  await insertAcquisition(admin, 'V-00010018', 'wrong-actor', {
+  await insertAcquisition(admin, 'V-00010018', 'second-tenant-reader', {
     acquiredBy: 'actor-b',
   });
   await insertAcquisition(admin, 'V-00010019', 'wrong-tenant', {
@@ -515,7 +527,7 @@ test('production macro library graph query preserves authorization and bounded p
     const [tenantBRows] = await runtime`
       SELECT count(*)::integer AS n FROM work_item WHERE tenant_id='tenant-b'
     `;
-    assert.equal(tenantBRows.n, 0, 'actor-bound RLS hides the cross-tenant WorkItem');
+    assert.equal(tenantBRows.n, 0, 'tenant SELECT RLS hides the cross-tenant WorkItem');
 
     let graphSequence = 0;
     const executeGraph = async (input, instrument = false) => {
@@ -563,7 +575,7 @@ test('production macro library graph query preserves authorization and bounded p
 
     const all = await executeGraph(graphInput({ level: 'clusters', groupBy: 'normalizedFamily' }, { limit: 50 }), true);
     assert.equal(all.uniqueFamilyCount, 10000);
-    assert.equal(all.readableVersionCountInMatchingFamilies, 49994);
+    assert.equal(all.readableVersionCountInMatchingFamilies, 49995);
     assert.equal(all.invalidData, false);
     assert.ok(all.items.length <= 51);
     assert.ok(Buffer.byteLength(JSON.stringify(all)) < 256 * 1024);
@@ -588,13 +600,16 @@ test('production macro library graph query preserves authorization and bounded p
     const clusterPlan = summarizePlan(clusterPlanRaw);
     mark('plan-clusters-50000:ready', phase);
 
-    const wrongActor = await executeGraph(graphInput(
+    await runtime.unsafe("SET app.user_id='actor-c'");
+    const sameTenantReader = await executeGraph(graphInput(
       { level: 'clusters', groupBy: 'normalizedFamily' },
       { tenantId: 'tenant-a', actorUserId: 'actor-c' },
     ));
-    assert.equal(wrongActor.uniqueFamilyCount, 0);
-    assert.equal(wrongActor.readableVersionCountInMatchingFamilies, 0);
-    assert.deepEqual(wrongActor.items, []);
+    await runtime.unsafe("SET app.user_id='actor-a'");
+    assert.equal(sameTenantReader.uniqueFamilyCount, all.uniqueFamilyCount);
+    assert.equal(sameTenantReader.readableVersionCountInMatchingFamilies,
+      all.readableVersionCountInMatchingFamilies);
+    assert.deepEqual(sameTenantReader.items, all.items);
 
     const wrongTenant = await executeGraph(graphInput(
       { level: 'clusters', groupBy: 'normalizedFamily' },
@@ -740,7 +755,8 @@ test('production macro library graph query preserves authorization and bounded p
     const wrongAcquisitions = await executeGraph(graphInput({
       level: 'versions', familyId: 'F-SCALE-00002',
     }));
-    assert.deepEqual(wrongAcquisitions.items.map((item) => item.documentVersionId), ['V-00010020']);
+    assert.deepEqual(wrongAcquisitions.items.map((item) => item.documentVersionId),
+      ['V-00010018', 'V-00010020']);
 
     // The selected 10,000-version family is freshly authorized, returns only a
     // 50-row page plus one lookahead row, and never joins reading or parse data.
@@ -867,7 +883,7 @@ test('production macro library graph query preserves authorization and bounded p
       plans: { clusters: clusterPlan, anchoredVersions: versionPlan },
       queryTimings: timings,
       phaseLogs,
-      schemaAndRls: 'actual migrations 0001/0004/0027/0028 and actual 0019 actor SELECT policy; WorkItem table/indexes from repository DDL; local fixture grants and actor rows',
+      schemaAndRls: 'actual migrations 0001/0004/0027/0028 and actual 0019 actor SELECT policy; WorkItem table/indexes from repository DDL; synthetic tenant SELECT fixture replaces broad WorkItem service policy',
       limitations: 'synthetic local loopback fixture; no hosted database or production distribution; driver and EXPLAIN timings are local observations, not an HTTP latency/SLA claim',
       cleanup: 'pending',
     };

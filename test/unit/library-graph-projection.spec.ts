@@ -3,7 +3,7 @@ import { readLibraryGraphEntry, libraryGraphReadingParams } from '@client/src/pa
 import { buildLibraryGraphPresentation } from '@client/src/pages/RelationGraphPage/suite-library-graph';
 import { validateLibraryGraphPage } from '@client/src/pages/RelationGraphPage/library-graph-read';
 jest.mock('@client/src/api/canonical-host', () => ({}));
-const base = {scope:'CURRENT_USER_DOCUMENT_CATALOG',versionMeaning:'ALL_READABLE_VERSIONS',consistency:'LIVE_READ',relationMeaning:'CLASSIFICATION_AND_CONTAINMENT_ONLY',coverage:{documentReferences:'NOT_INDEXED',matterMemberships:'NOT_LOADED'},counts:{uniqueFamilyCount:12000,readableVersionCountInMatchingFamilies:50000},limit:50,hasMore:true,nextCursor:'next',fileReadPerformed:false,modelRunPerformed:false} as const;
+const base = {scope:'TENANT_DOCUMENT_CATALOG',versionMeaning:'ALL_READABLE_VERSIONS',consistency:'LIVE_READ',relationMeaning:'CLASSIFICATION_AND_CONTAINMENT_ONLY',coverage:{documentReferences:'NOT_INDEXED',matterMemberships:'NOT_LOADED'},counts:{uniqueFamilyCount:12000,readableVersionCountInMatchingFamilies:50000},limit:50,hasMore:true,nextCursor:'next',fileReadPerformed:false,modelRunPerformed:false} as const;
 const page:CanonicalLibraryGraphResponse = {...base,level:'clusters',groupBy:'ata',filters:{},countScope:'FILTERED_FAMILIES',clusterCountsOverlap:true,items:Array.from({length:50},(_,i) => ({kind:'CLASSIFICATION',value:String(i),uniqueFamilyCount:500,readableVersionCountInMatchingFamilies:2000}))};
 it('keeps 50k aggregate counts but only 50 native cluster points and no invented connections', () => {
   const p = buildLibraryGraphPresentation(page);

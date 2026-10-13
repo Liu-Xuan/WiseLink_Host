@@ -57,8 +57,8 @@ function harness() {
   };
   const outside = { insert: jest.fn(() => ({ values })) };
   const sessions = {
-    withVerifiedServiceSql: jest.fn(async (run) => run()),
-    withVerifiedBrowserSql: jest.fn(async (run) => run()),
+    withVerifiedReviewServiceSql: jest.fn(async (run) => run()),
+    withVerifiedReviewBrowserSql: jest.fn(async (run) => run()),
   };
   const repository = new ReviewConversationRepository(
     outside as never,
@@ -94,11 +94,11 @@ describe('dialogue assessment atomic dispatch', () => {
       'actor',
       expect.any(Function),
     );
-    expect(h.sessions.withVerifiedServiceSql).toHaveBeenCalledWith(
+    expect(h.sessions.withVerifiedReviewServiceSql).toHaveBeenCalledWith(
       expect.any(Function),
       'actor',
     );
-    expect(h.sessions.withVerifiedBrowserSql).toHaveBeenCalledTimes(1);
+    expect(h.sessions.withVerifiedReviewBrowserSql).toHaveBeenCalledTimes(1);
     expect(h.queries[0].sql).toContain('FOR UPDATE');
     expect(h.queries[0].params).toEqual([
       requestRef,
@@ -174,7 +174,7 @@ describe('dialogue assessment atomic dispatch', () => {
   });
   it('does not enter the transaction when verified service scope is unavailable', async () => {
     const h = harness();
-    h.sessions.withVerifiedServiceSql.mockRejectedValue(
+    h.sessions.withVerifiedReviewServiceSql.mockRejectedValue(
       new Error('IDENTITY_SESSION_REQUIRED'),
     );
     await expect(h.repository.appendTextTurn(input as never)).rejects.toThrow(
@@ -191,8 +191,8 @@ describe('dialogue assessment atomic dispatch', () => {
       requestId: 'ordinary',
     } as never);
     expect(h.outside.insert).toHaveBeenCalledTimes(1);
-    expect(h.sessions.withVerifiedServiceSql).not.toHaveBeenCalled();
-    expect(h.sessions.withVerifiedBrowserSql).not.toHaveBeenCalled();
+    expect(h.sessions.withVerifiedReviewServiceSql).not.toHaveBeenCalled();
+    expect(h.sessions.withVerifiedReviewBrowserSql).not.toHaveBeenCalled();
     expect(h.actors.withActorTransaction).not.toHaveBeenCalled();
   });
 });

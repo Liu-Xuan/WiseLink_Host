@@ -22,7 +22,7 @@ import { buildTranslationSourcePlan } from './canonical-translation-source-plan'
 import { TDMS_NATIVE_EVIDENCE_VERIFIER, verifyTdmsNativeEvidence, assertTdmsNativeInTransaction,
   type TdmsNativeEvidenceVerifier, type TdmsNativeSummaryCaller } from './tdms-native-evidence-verifier.port';
 
-export interface SummaryActor { tenantId: string; actorUserId: string }
+export interface SummaryActor { tenantId: string; actorUserId: string; readScope?: 'TENANT' }
 
 /** The source consumer supplies these exact capabilities. Their absence must
  * reject statement-bearing evidence while leaving ordinary saved work usable. */
@@ -73,6 +73,13 @@ export class DerivedSummaryMembersService {
   }
 
   async authorizeActor(actor: SummaryActor, database: PostgresJsDatabase): Promise<void> {
+    if (actor.readScope === 'TENANT') {
+      const [access] = await database.execute<{ allowed: boolean }>(sql`SELECT
+        native_app_shared_read_allowed(${actor.tenantId})
+          AND current_setting('app.user_id',true)=${actor.actorUserId} AS allowed`);
+      if (access?.allowed !== true) throw summaryError('DERIVED_SUMMARY_ACTOR_UNAVAILABLE', 404);
+      return;
+    }
     const [mapping] = await database.select({ id: identitySubjectMapping.id }).from(identitySubjectMapping)
       .where(and(eq(identitySubjectMapping.miaodaUserId, actor.actorUserId),
         eq(identitySubjectMapping.miaodaTenantId, actor.tenantId),
@@ -131,11 +138,11 @@ export class DerivedSummaryMembersService {
       current = saved.current;
       overviewStatus = content.overviewStatus;
     } else {
-      await this.matters.authorizeRuntimeInputs({ ...actor, matterId: member.matterId }, database);
+      await this.authorizeMatter({ ...actor, matterId: member.matterId }, database);
       const saved = await this.matters.readByRef({ tenantId: actor.tenantId,
         matterId: member.matterId, workRef: member.workRef }, database);
       if (!saved || saved.workingRevision !== member.workRevision) throw summaryError('DERIVED_SUMMARY_MEMBER_VERSION_MISMATCH');
-      await this.matters.authorizeRuntimeInputs({ ...actor, matterId: member.matterId,
+      await this.authorizeMatter({ ...actor, matterId: member.matterId,
         basedOnMatterRevisionId: saved.basedOnMatterRevisionId }, database);
       const notices = contextWorkNotices(saved);
       correctionLimitations = [
@@ -184,11 +191,14 @@ export class DerivedSummaryMembersService {
   private async readSummary(member: Extract<DerivedSummaryMember, { kind: 'DERIVED_SUMMARY' }>, actor: SummaryActor,
     database: PostgresJsDatabase, path: Set<string>, nativeCarriers: AssessmentEvidence[]): Promise<DerivedSummaryMemberReading> {
     const [head] = await database.select().from(derivedSummary).where(and(eq(derivedSummary.tenantId, actor.tenantId),
-      eq(derivedSummary.actorUserId, actor.actorUserId), eq(derivedSummary.summaryId, member.summaryId))).limit(1);
+      eq(derivedSummary.summaryId, member.summaryId),
+      ...(actor.readScope === 'TENANT' ? [] : [eq(derivedSummary.actorUserId, actor.actorUserId)]))).limit(1);
     const [row] = await database.select().from(derivedSummaryRevision).where(and(
-      eq(derivedSummaryRevision.tenantId, actor.tenantId), eq(derivedSummaryRevision.actorUserId, actor.actorUserId),
-      eq(derivedSummaryRevision.summaryId, member.summaryId), eq(derivedSummaryRevision.summaryRef, member.summaryRef))).limit(1);
-    if (!head || !row || row.revision !== member.summaryRevision) throw summaryError('DERIVED_SUMMARY_MEMBER_UNAVAILABLE', 404);
+      eq(derivedSummaryRevision.tenantId, actor.tenantId),
+      eq(derivedSummaryRevision.summaryId, member.summaryId), eq(derivedSummaryRevision.summaryRef, member.summaryRef),
+      ...(actor.readScope === 'TENANT' ? [] : [eq(derivedSummaryRevision.actorUserId, actor.actorUserId)]))).limit(1);
+    if (!head || !row || row.actorUserId !== head.actorUserId || row.revision !== member.summaryRevision)
+      throw summaryError('DERIVED_SUMMARY_MEMBER_UNAVAILABLE', 404);
     const saved = row.contentJson;
     if (saved.summaryId !== member.summaryId || saved.summaryRef !== member.summaryRef || saved.revision !== member.summaryRevision)
       throw summaryError('DERIVED_SUMMARY_PERSISTENCE_INVALID');
@@ -232,8 +242,9 @@ export class DerivedSummaryMembersService {
       if (!row.currentDocumentVersionId) {
         notices.push(`来源版本${id}的本地目录选择指针未确定；发布方现行有效状态未核。`);
       } else if (row.currentDocumentVersionId !== id) {
-        const [access] = await database.execute<{ allowed: boolean }>(sql`SELECT
-          engineering_matter_document_owned_by_actor(${actor.tenantId}, ${row.currentDocumentVersionId}) AS allowed`);
+        const [access] = await database.execute<{ allowed: boolean }>(actor.readScope === 'TENANT'
+          ? sql`SELECT native_app_document_readable(${actor.tenantId}, ${row.currentDocumentVersionId}) AS allowed`
+          : sql`SELECT engineering_matter_document_owned_by_actor(${actor.tenantId}, ${row.currentDocumentVersionId}) AS allowed`);
         notices.push(access?.allowed === true
           ? `来源版本${id}与本地目录当前选择${row.currentDocumentVersionId}不同；${selected.includes(row.currentDocumentVersionId) ? '另有显式选取来源，两个版本保持分开。' : '目录所选版本未被本成员覆盖。'}发布方现行有效状态未核。`
           : `来源版本${id}与本地目录选择不同；目录所选版本未被本成员覆盖，且本次无权展开其来源。发布方现行有效状态未核。`);
@@ -248,7 +259,11 @@ export class DerivedSummaryMembersService {
     const workItemIds = [...new Set(evidence.flatMap(item => 'workItemId' in item && item.workItemId ? [item.workItemId] : []))];
     const documentIds = [...new Set(evidence.flatMap(item => item.kind === 'DOCUMENT_PASSAGE' ||
       item.kind === 'ENGINEER_ATTACHMENT' ? [item.documentVersionId] : []))];
-    const [access] = await database.execute<{ allowed: boolean }>(sql`SELECT
+    const [access] = await database.execute<{ allowed: boolean }>(actor.readScope === 'TENANT' ? sql`SELECT
+      NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify(workItemIds)}::jsonb) w(id)
+        WHERE native_app_work_item_readable(${actor.tenantId}, w.id::varchar) IS NOT TRUE)
+      AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify(documentIds)}::jsonb) d(id)
+        WHERE native_app_document_readable(${actor.tenantId}, d.id::varchar) IS NOT TRUE) AS allowed` : sql`SELECT
       NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify(workItemIds)}::jsonb) w(id)
         WHERE engineering_matter_work_item_owned_by_actor(${actor.tenantId}, w.id::varchar) IS NOT TRUE)
       AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify(documentIds)}::jsonb) d(id)
@@ -261,12 +276,12 @@ export class DerivedSummaryMembersService {
       const source = item.sourceWork;
       const reference = `MATTER_WORK:${source.subjectId}:${source.workRef}:${source.issueKey}`;
       if (ancestors.has(reference)) throw summaryError('DERIVED_SUMMARY_LINEAGE_CYCLE');
-      await this.matters.authorizeRuntimeInputs({ ...actor, matterId: source.subjectId }, database);
+      await this.authorizeMatter({ ...actor, matterId: source.subjectId }, database);
       const saved = await this.matters.readByRef({ tenantId: actor.tenantId,
         matterId: source.subjectId, workRef: source.workRef }, database);
       if (!saved || saved.workingRevision !== item.resultRevision || item.resultRef !== source.workRef)
         throw summaryError('DERIVED_SUMMARY_SOURCE_WORK_UNAVAILABLE', 404);
-      await this.matters.authorizeRuntimeInputs({ ...actor, matterId: source.subjectId,
+      await this.authorizeMatter({ ...actor, matterId: source.subjectId,
         basedOnMatterRevisionId: saved.basedOnMatterRevisionId }, database);
       const expected = buildMatterWorkReference({ matterId: source.subjectId, workRef: source.workRef,
         issueKey: source.issueKey, purpose: 'Reauthorize exact saved lineage' }, saved)[0];
@@ -288,7 +303,7 @@ export class DerivedSummaryMembersService {
     if (!originals.length && !statementVerifier) return;
     if (originals.length && !this.originalReader) throw summaryError('DERIVED_SUMMARY_ORIGINAL_READER_UNAVAILABLE', 503);
     const loaded = new Map<string, Awaited<ReturnType<UnifiedReaderService['readDocumentOriginal']>>>();
-    await this.matters.withActorScope(actor.actorUserId, async () => {
+    const verify = async () => {
       if (statementVerifier) assertSourceStatementProjections(evidence,
         await statementVerifier.readSourceStatementProjections(evidence, actor));
       for (const item of originals) {
@@ -324,8 +339,16 @@ export class DerivedSummaryMembersService {
         const actual = { ...findDocumentOriginalEvidence(loaded.get(key)!, item.sourceRefId), workItemId: item.workItemId };
         if (canonicalJson(item) !== canonicalJson(actual)) throw summaryError('DERIVED_SUMMARY_ORIGINAL_CHANGED');
       }
-    });
+    };
+    if (actor.readScope === 'TENANT') await verify();
+    else await this.matters.withActorScope(actor.actorUserId, verify);
     await this.verifyNativeEvidence(evidence, actor);
+  }
+  private authorizeMatter(input: SummaryActor & { matterId: string; basedOnMatterRevisionId?: string },
+    database: PostgresJsDatabase) {
+    return input.readScope === 'TENANT'
+      ? this.matters.authorizeReadInputs(input, database)
+      : this.matters.authorizeRuntimeInputs(input, database);
   }
   private sourceStatementVerifier(evidence: AssessmentEvidence[]): SummarySourceStatementVerifier | null {
     const statements = evidence.filter(item => item.kind === 'PRIOR_RESULT' && Object.hasOwn(item, 'sourceStatement'));

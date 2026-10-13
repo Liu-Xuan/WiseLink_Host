@@ -17,6 +17,8 @@ import { dialogueConflict, dialogueNotFound } from './dialogue-validation';
 export interface DialogueScope {
   tenantId: string;
   actorId: string;
+  /** GET-only database reads retain the authenticated browser SQL role. */
+  browserRead?: true;
 }
 export interface DialogueThreadRow extends Record<string, unknown> {
   thread_ref: string;
@@ -41,6 +43,7 @@ export interface DialogueMessageRow extends Record<string, unknown> {
   _created_at: Date | string;
   query_ref: string | null;
   query_status: string | null;
+  query_status_projected?: boolean;
   answer_text: string | null;
   error_code: string | null;
   remote_session_id: string | null;
@@ -81,6 +84,10 @@ export class DialogueRepository {
     scope: DialogueScope,
     work: (db: EngineeringMatterWorkingDatabaseExecutor) => Promise<T>,
   ) {
+    if (scope.browserRead)
+      return this.actors.withBrowserActorTransaction(scope.actorId, ({ database }) =>
+        work(database),
+      );
     return this.actors.withActorTransaction(scope.actorId, ({ database }) =>
       work(database),
     );
