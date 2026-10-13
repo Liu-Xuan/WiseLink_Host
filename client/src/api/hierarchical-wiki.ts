@@ -71,7 +71,9 @@ async function request<T = HierarchicalWikiList>(
           ? '请先登录，再读取Wiki。'
           : response?.status === 403 || response?.status === 404
             ? 'Wiki或相关材料不可读取，已停止展示。'
-            : 'Wiki操作未完成，请重新核对范围和材料。',
+            : response?.status && response.status >= 500
+              ? 'Wiki更新失败，请稍后重试。'
+              : 'Wiki操作未完成，请重新核对范围和材料。',
       ),
       { statusCode: response?.status },
     );

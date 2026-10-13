@@ -701,7 +701,7 @@ export class HierarchicalWikiService {
         SELECT wiki_id AS "wikiId",member_key AS key,member_json AS member,source_kind AS kind,source_id AS "sourceId"
         FROM hierarchical_wiki_membership WHERE tenant_id=${owner.tenantId} AND actor_user_id=${owner.actorUserId}
           AND wiki_id IN (SELECT wiki_id FROM hierarchical_wiki_scope WHERE scope_json->>'fleetFamilyId'=${root.scope.fleetFamilyId}
-            AND scope_json->'fleetModelIds'=${JSON.stringify(root.scope.fleetModelIds)}::jsonb) AND member_json ? 'kind'`);
+            AND scope_json->'fleetModelIds'=${JSON.stringify(root.scope.fleetModelIds)}::jsonb) AND jsonb_exists(member_json, 'kind')`);
       for (const item of retained) {
         const access = await database.execute<{
           allowed: boolean;
@@ -731,7 +731,7 @@ export class HierarchicalWikiService {
       }>(sql`
         SELECT DISTINCT 'DOCUMENT' AS kind,f.current_document_version_id AS "subjectId",
           (m.basis_json->>'documentVersionId' IS DISTINCT FROM f.current_document_version_id OR
-            (r.run_ref IS NULL AND m.member_json ? 'readingRunRef')) AS important
+            (r.run_ref IS NULL AND jsonb_exists(m.member_json, 'readingRunRef'))) AS important
         FROM hierarchical_wiki_membership m JOIN hierarchical_wiki_scope w ON w.wiki_id=m.wiki_id
         JOIN dm_publication_family f ON f.family_id=m.source_id
         LEFT JOIN LATERAL (SELECT a.* FROM dm_document_reading_run a WHERE a.tenant_id=${owner.tenantId}
@@ -918,7 +918,7 @@ export class HierarchicalWikiService {
           member: DerivedSummaryMember;
         }>(sql`
           SELECT member_key AS key,member_json AS member FROM hierarchical_wiki_membership WHERE wiki_id=${node.wikiId}
-            AND basis_json->>'classificationStatus'='CONFIRMED' AND member_json ? 'kind' ORDER BY member_key`);
+            AND basis_json->>'classificationStatus'='CONFIRMED' AND jsonb_exists(member_json, 'kind') ORDER BY member_key`);
         const versions: WikiVersions = Object.fromEntries(
           memberships.map((item) => [item.key, item.member]),
         );
