@@ -1877,14 +1877,14 @@ export class MiaodaHostedDocumentCatalog {
   }
 
   async readOwnedAcquisitionVersionBinding(input: { documentVersionId: string; tenantId: string;
-    actorUserId: string; acquisitionId?: string }): Promise<boolean> {
+    actorUserId: string; acquisitionId?: string; readScope?: 'TENANT' }): Promise<boolean> {
     const [row] = await this.db.select({ documentVersionId: dmDocumentVersion.documentVersionId })
       .from(dmDocumentVersion)
       .innerJoin(dmPublicationFamily, eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId))
       .innerJoin(dmAcquisition, and(eq(dmAcquisition.documentVersionId, dmDocumentVersion.documentVersionId),
         eq(dmAcquisition.sourceArtifactId, dmDocumentVersion.sourceArtifactId)))
       .where(and(eq(dmDocumentVersion.documentVersionId, input.documentVersionId),
-        eq(dmAcquisition.acquiredBy, input.actorUserId),
+        input.readScope === 'TENANT' ? undefined : eq(dmAcquisition.acquiredBy, input.actorUserId),
         input.acquisitionId ? eq(dmAcquisition.acquisitionId, input.acquisitionId) : undefined,
         inArray(dmAcquisition.status, ['COMMITTED_CANONICAL', 'LINKED_EXACT_DOCUMENT_VERSION']),
         sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(input.tenantId)})`,

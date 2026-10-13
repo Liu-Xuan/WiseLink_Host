@@ -326,7 +326,7 @@ export async function readLibraryGraph(
   if (request.level !== 'versions')
     for (const key of FILTERS) if (request[key]) filters[key] = request[key];
   const response = {
-    scope: 'CURRENT_USER_DOCUMENT_CATALOG',
+    scope: 'TENANT_DOCUMENT_CATALOG',
     versionMeaning: 'ALL_READABLE_VERSIONS',
     consistency: 'LIVE_READ',
     relationMeaning: 'CLASSIFICATION_AND_CONTAINMENT_ONLY',

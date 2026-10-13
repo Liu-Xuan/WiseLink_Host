@@ -1028,15 +1028,17 @@ export class CanonicalJobAidProblemService {
    * The caller owns the authenticated/Hosted transaction; never borrow another connection. */
   async readSummaryMemberInTransaction(input: {
     tenantId: string; actorUserId: string; workItemId: string; workRef: string;
+    readScope?: 'TENANT';
   }, database: PostgresJsDatabase) {
     const revision = await this.work.readByRef({ tenantId: input.tenantId,
       workItemId: input.workItemId, workRevisionRef: input.workRef }, database);
     if (!revision) throw new Error('JOBAID_WORK_NOT_FOUND');
-    await this.assertEvidenceOwned(revision.content.evidence, input.tenantId,
-      input.actorUserId, input.workItemId, database);
+    await (input.readScope === 'TENANT' ? this.assertEvidenceReadable(revision.content.evidence, input.tenantId,
+      input.actorUserId, input.workItemId, database) : this.assertEvidenceOwned(revision.content.evidence, input.tenantId,
+      input.actorUserId, input.workItemId, database));
     const [row] = await database.select({ projectionJson: workItemTable.projectionJson }).from(workItemTable)
       .where(and(eq(workItemTable.tenantId, input.tenantId), eq(workItemTable.workItemId, input.workItemId),
-        eq(workItemTable.requestedByUserId, input.actorUserId))).limit(1);
+        input.readScope === 'TENANT' ? undefined : eq(workItemTable.requestedByUserId, input.actorUserId))).limit(1);
     if (!row?.projectionJson) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
     const projection = JSON.parse(row.projectionJson) as CanonicalWorkItemProjection;
     if (projection.source.documentVersionId !== revision.documentVersionId)
@@ -2316,6 +2318,7 @@ export class CanonicalJobAidProblemService {
     const revision = await this.work.readByRef({ tenantId: actor.tenantId, workItemId, workRevisionRef }, database);
     if (!revision || revision.workItemId !== workItemId || revision.workRevisionRef !== workRevisionRef || !revision.content)
       throw jobAidBrowserWorkUnavailable();
+    // Projection rebuild is an owner-authorized writer, not a shared browser read.
     await this.assertEvidenceOwned(revision.content.evidence, actor.tenantId, actor.userId, workItemId, database);
     return revision;
   }
@@ -2345,6 +2348,7 @@ export class CanonicalJobAidProblemService {
     }
     await this.assertBrowserEvidenceOwned(
       readingResult.evidence, actor.tenantId, actor.userId, workItemId,
+      actor.objectAccessActor?.identityProvenance === 'MIAODA_GATEWAY_USER_CONTEXT',
     );
     return { revision, overall: { status: overall.status, readingResult } };
   }
@@ -2366,7 +2370,8 @@ export class CanonicalJobAidProblemService {
       tenantId: actor.tenantId, workItemId, workRevisionRef,
     });
     if (!revision) throw jobAidBrowserWorkUnavailable();
-    await this.assertBrowserEvidenceOwned(revision.content.evidence, actor.tenantId, actor.userId, workItemId);
+    await this.assertBrowserEvidenceOwned(revision.content.evidence, actor.tenantId, actor.userId, workItemId,
+      actor.objectAccessActor?.identityProvenance === 'MIAODA_GATEWAY_USER_CONTEXT');
     return { workItem, revision };
   }
 
@@ -2395,6 +2400,7 @@ export class CanonicalJobAidProblemService {
         actor.tenantId,
         actor.userId,
         workItemId,
+        actor.objectAccessActor?.identityProvenance === 'MIAODA_GATEWAY_USER_CONTEXT',
       );
     const activity = execution ? projectJobAidActivity(execution, savedActivity) : null;
     const overall = workItem.integratedAssessment?.overallSynthesis;
@@ -2628,9 +2634,11 @@ export class CanonicalJobAidProblemService {
     tenantId: string,
     actorUserId: string,
     workItemId: string,
+    sharedRead = false,
   ): Promise<void> {
     try {
-      await this.assertEvidenceOwned(evidence, tenantId, actorUserId, workItemId);
+      await (sharedRead ? this.assertEvidenceReadable(evidence, tenantId, actorUserId, workItemId)
+        : this.assertEvidenceOwned(evidence, tenantId, actorUserId, workItemId));
     } catch (cause: unknown) {
       // Only these verified bare authorization sentinels become the public
       // unavailable response. Preserve explicit conflicts and storage errors.
@@ -2646,6 +2654,55 @@ export class CanonicalJobAidProblemService {
       }
       throw cause;
     }
+  }
+
+  /** Read an immutable saved candidate under the current native reader, not its creator. */
+  private async assertEvidenceReadable(evidence: AssessmentEvidence[], tenantId: string,
+    actorUserId: string, primaryWorkItemId: string, connection?: PostgresJsDatabase): Promise<void> {
+    const database = connection ?? this.database;
+    if (!database) throw new Error('JOBAID_SOURCE_AUTHORIZATION_UNAVAILABLE');
+    const workIds = new Set<string>([primaryWorkItemId]);
+    const documentIds = new Set<string>();
+    for (const item of evidence) {
+      for (const id of item.dialogueSource?.contextWorkItemIds ?? []) workIds.add(id);
+      if (item.kind === 'DOCUMENT_PASSAGE') { workIds.add(item.workItemId); documentIds.add(item.documentVersionId); }
+      if (item.kind === 'ENGINEER_ATTACHMENT') { workIds.add(item.workItemId); documentIds.add(item.documentVersionId); }
+    }
+    const [access] = await database.execute<{ allowed: boolean }>(sql`SELECT
+      native_app_shared_read_allowed(${tenantId}) AND current_setting('app.user_id',true)=${actorUserId}
+      AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify([...workIds])}::jsonb) w(id)
+        WHERE native_app_work_item_readable(${tenantId},w.id::varchar) IS NOT TRUE)
+      AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify([...documentIds])}::jsonb) d(id)
+        WHERE native_app_document_readable(${tenantId},d.id::varchar) IS NOT TRUE) AS allowed`);
+    if (access?.allowed !== true) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+    await verifyTdmsNativeEvidence(evidence, { tenantId, actorUserId }, this.nativeVerifier, database);
+    const queried = evidence.filter(item => item.kind === 'QUERY_RECEIPT' && item.queryProvenance?.origin === 'AILY_RETRIEVAL');
+    if (queried.length) {
+      const saved = await this.knowledge?.saved({ tenantId, actorId: actorUserId,
+        workItemId: primaryWorkItemId, readScope: 'TENANT' }, undefined, database) ?? [];
+      for (const item of queried) if (!saved.some(receipt => receipt.evidenceRef === item.evidenceRef &&
+        canonicalJson(receipt) === canonicalJson(item))) throw new Error('JOBAID_QUERY_RECEIPT_AUTHORIZATION_CHANGED');
+    }
+    for (const item of evidence) {
+      if (item.kind !== 'DOCUMENT_PASSAGE' && item.kind !== 'ENGINEER_ATTACHMENT') continue;
+      const binding = await this.workItems.loadAuthorizationBinding({ workItemId: item.workItemId,
+        tenantId, actorUserId, readScope: 'TENANT' }, database);
+      if (!binding || (item.kind === 'DOCUMENT_PASSAGE' && binding.documentVersionId !== item.documentVersionId))
+        throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+      if (item.kind !== 'ENGINEER_ATTACHMENT') continue;
+      const [stored] = await database.select({ actorId: reviewTurn.actorId }).from(reviewTurn).where(and(
+        eq(reviewTurn.tenantId, tenantId), eq(reviewTurn.workItemId, item.workItemId),
+        eq(reviewTurn.reviewConversationId, item.reviewConversationId), eq(reviewTurn.reviewTurnId, item.reviewTurnId))).limit(1);
+      if (!stored) throw new Error('JOBAID_ATTACHMENT_AUTHORIZATION_CHANGED');
+      const turn = await this.conversations.loadOpenClawTurnByIdBinding({ tenantId, actorId: stored.actorId,
+        workItemId: item.workItemId, reviewConversationId: item.reviewConversationId, reviewTurnId: item.reviewTurnId,
+        readScope: 'TENANT' }, database);
+      const attachment = turn?.turn.attachmentBindings?.find(entry => entry.attachmentRef === item.attachmentRef);
+      if (!attachment || attachment.documentVersionId !== item.documentVersionId ||
+        attachment.parsedArtifact.ref !== item.artifactRef || attachment.parsedArtifact.sha256 !== item.artifactSha256)
+        throw new Error('JOBAID_ATTACHMENT_AUTHORIZATION_CHANGED');
+    }
+    await verifyTdmsNativeEvidence(evidence, { tenantId, actorUserId }, this.nativeVerifier, database);
   }
 
   private async assertEvidenceOwned(

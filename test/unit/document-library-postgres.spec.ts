@@ -5,6 +5,11 @@ import { listOwnedLibraryFamilies } from '../../server/modules/document-manageme
 import { MiaodaHostedDocumentCatalog } from '../../server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog';
 
 const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
+const metadataForSource = (fields: Record<string, unknown>, byteLength = 100) => ({
+  ...fields,
+  sourceSha256: 'f'.repeat(64),
+  sourceByteLength: byteLength,
+});
 (enabled ? describe : describe.skip)(
   'document library isolated PostgreSQL',
   () => {
@@ -23,12 +28,15 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
       limit: 1,
     };
     beforeAll(async () => {
-      await client.unsafe(`create temporary table work_item (document_id text,document_version_id text,work_item_id text,tenant_id text,requested_by_user_id text,package_id text,package_artifact_ref text,created_at timestamptz);
+      await client.unsafe(`create temporary table work_item (document_id text,document_version_id text,work_item_id text,tenant_id text,requested_by_user_id text,package_id text,package_artifact_ref text,created_at timestamptz,source_artifact_id text default 'shared-source',source_file_sha256 text default '${'f'.repeat(64)}',source_byte_length integer default 100);
       create temporary table dm_document (document_id text,family_id text);
       create temporary table dm_publication_family (family_id text,canonical_document_number text,document_family text,issuer_authority text,created_at timestamptz,updated_at timestamptz,canonical_identity_key text,current_document_version_id text);
-      create temporary table dm_document_version (document_version_id text,document_id text,family_id text,source_artifact_id text,business_revision text,revision_date text,source_generated_date text,original_filename text,byte_length int,committed_at timestamptz);
+      create temporary table dm_document_version (document_version_id text,document_id text,family_id text,source_artifact_id text,business_revision text,revision_date text,source_generated_date text,original_filename text,byte_length int,committed_at timestamptz,pdf_sha256 text default '${'f'.repeat(64)}');
       create temporary table dm_document_version_metadata (document_version_id text,extracted_metadata jsonb,metadata_revision integer not null default 1,unique(document_version_id,metadata_revision));
-      create temporary table dm_document_parse_run (tenant_id text,document_version_id text,status text,parse_revision integer);
+      create temporary table dm_document_parse_run (tenant_id text,document_version_id text,status text,parse_revision integer,parse_run_id text,manifest_artifact jsonb,source_binding jsonb);
+      create temporary table dm_document_semantic_revision (tenant_id text,document_version_id text,parse_run_id text,semantic_revision integer,original_manifest_sha256 text);
+      create temporary table dm_document_reading_run (run_ref text,reading_revision integer,result_json jsonb,tenant_id text,document_version_id text,parse_run_id text,parse_revision integer,semantic_revision integer,original_manifest_sha256 text,status text,_updated_at timestamptz,_created_at timestamptz);
+      create temporary table dm_document_reading_retraction (run_ref text,tenant_id text);
       create temporary table dm_acquisition (document_version_id text,source_artifact_id text,acquired_by text,status text,idempotency_key text);`);
       for (const id of [
         'a',
@@ -44,7 +52,7 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
         await client`insert into dm_document_version values (${id},${id},${id},'shared-source','R1','','',${`${id}.pdf`},100,'2026-09-01')`;
         await client`insert into dm_acquisition values (${id},${id === 'mismatch' ? 'wrong-source' : 'shared-source'},${id === 'hidden' ? 'u2' : 'u1'},${id === 'pending' ? 'ACQUIRED_READBACK_VERIFIED' : 'COMMITTED_CANONICAL'},${`tenant:${id === 'scope' ? 't2' : 't1'}:request:${id}`})`;
       }
-      await client`insert into dm_document_version_metadata (document_version_id,extracted_metadata) values ('a', ${JSON.stringify({ ata: { observations: [{ value: '34' }, { value: '34' }] }, mentionedAircraftModels: { observations: [{ value: '787' }] }, title: { observations: [{ value: 'Flight navigation' }] } })})`;
+      await client`insert into dm_document_version_metadata (document_version_id,extracted_metadata) values ('a', ${JSON.stringify(metadataForSource({ ata: { observations: [{ value: '34' }, { value: '34' }] }, mentionedAircraftModels: { observations: [{ value: '787' }] }, title: { observations: [{ value: 'Flight navigation' }] } }))})`;
     });
     afterAll(async () => {
       await client.end();
@@ -59,10 +67,20 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
         expect(result.rows.filter(row => row.familyId === 'a')).toHaveLength(1);
       } finally { await client`delete from dm_document_parse_run`; }
     });
-    it('reads acquisition-only versions, paginates and counts without exposing reused-source outsiders', async () => {
-      const [first] = await listOwnedLibraryFamilies(db as never, scope);
-      expect(first.totalCount).toBe(2);
-      expect(first.rows.map((row) => row.familyId)).toEqual(['b', 'a']);
+    it('reads same-tenant acquisitions across users and excludes wrong tenant or source bindings', async () => {
+      const [first] = await listOwnedLibraryFamilies(db as never, { ...scope, limit: 10 });
+      expect(first.totalCount).toBe(3);
+      expect(first.rows.map((row) => row.familyId)).toEqual(['hidden', 'b', 'a']);
+      const [secondReader] = await listOwnedLibraryFamilies(db as never, {
+        ...scope, actorUserId: 'u2', limit: 10,
+      });
+      expect(secondReader.rows.map((row) => row.familyId)).toEqual(
+        first.rows.map((row) => row.familyId),
+      );
+      const [otherTenant] = await listOwnedLibraryFamilies(db as never, {
+        ...scope, tenantId: 't2', actorUserId: 'u2', limit: 10,
+      });
+      expect(otherTenant.rows).toEqual([]);
       expect(
         first.rows.every(
           (row) =>
@@ -71,19 +89,19 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
       ).toBe(true);
       expect(first.rows[0].versions[0].metadataRevision).toBeNull();
       expect(first.rows[0].versions[0].parsing).toBeNull();
-      expect(first.rows[1].versions[0].metadataRevision).toBe(1);
-      expect(first.familyCounts).toEqual({ SB: 2 });
-      expect(first.ataCounts).toEqual({ '34': 1, __UNKNOWN__: 1 });
-      expect(first.aircraftModelCounts).toEqual({ '787': 1, __UNKNOWN__: 1 });
+      expect(first.rows[2].versions[0].metadataRevision).toBe(1);
+      expect(first.familyCounts).toEqual({ SB: 3 });
+      expect(first.ataCounts).toEqual({ '34': 1, __UNKNOWN__: 2 });
+      expect(first.aircraftModelCounts).toEqual({ '787': 1, __UNKNOWN__: 2 });
       const [next] = await listOwnedLibraryFamilies(db as never, {
         ...scope,
         cursor: {
           createdAt: new Date(first.rows[0].createdAt).toISOString(),
-          itemId: 'b',
+          itemId: 'hidden',
         },
       });
-      expect(next.rows.map((row) => row.familyId)).toEqual(['a']);
-      expect(next.totalCount).toBe(2);
+      expect(next.rows.map((row) => row.familyId)).toEqual(['b', 'a']);
+      expect(next.totalCount).toBe(3);
     });
     it('filters and searches metadata across the full authorized result', async () => {
       const [filtered] = await listOwnedLibraryFamilies(db as never, {
@@ -102,7 +120,7 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
         ...scope,
         ata: '__UNKNOWN__',
       });
-      expect(unknown.rows[0].familyId).toBe('b');
+      expect(unknown.rows[0].familyId).toBe('hidden');
       const [empty] = await listOwnedLibraryFamilies(db as never, {
         ...scope,
         search: 'absent',
@@ -110,7 +128,7 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
       expect(empty).toMatchObject({ rows: [], totalCount: 0, ataCounts: {} });
     });
     it('matches authoritative parent/child mentions exactly and preserves unknown documents in all results', async () => {
-      await client`insert into dm_document_version_metadata values ('a', ${JSON.stringify({ mentionedAircraftModels: { observations: [{ value: ' 787-9 ' }] } })}, 9)`;
+      await client`insert into dm_document_version_metadata values ('a', ${JSON.stringify(metadataForSource({ mentionedAircraftModels: { observations: [{ value: ' 787-9 ' }] } }))}, 9)`;
       try {
         const [parent] = await listOwnedLibraryFamilies(db as never, { ...scope, fleetMentionValues: ['B787', 'B787-9'].flatMap(libraryAircraftMentionAliases) });
         expect(parent.rows.map((row) => row.familyId)).toEqual(['a']);
@@ -118,14 +136,14 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
         expect(child.totalCount).toBe(1);
         const [wrong] = await listOwnedLibraryFamilies(db as never, { ...scope, fleetMentionValues: ['787-10'] });
         expect(wrong.totalCount).toBe(0);
-        const [all] = await listOwnedLibraryFamilies(db as never, scope);
-        expect(all.rows.map((row) => row.familyId)).toEqual(['b', 'a']);
+        const [all] = await listOwnedLibraryFamilies(db as never, { ...scope, limit: 10 });
+        expect(all.rows.map((row) => row.familyId)).toEqual(['hidden', 'b', 'a']);
       } finally {
         await client`delete from dm_document_version_metadata where metadata_revision = 9`;
       }
     });
     it('uses parameterized jsonb_exists for the production SB + ATA 4613 filter and exact aircraft values', async () => {
-      await client`insert into dm_document_version_metadata values ('a', ${JSON.stringify({ ata: { observations: [{ value: '4613' }] }, mentionedAircraftModels: { observations: [{ value: '737' }] } })}, 2)`;
+      await client`insert into dm_document_version_metadata values ('a', ${JSON.stringify(metadataForSource({ ata: { observations: [{ value: '4613' }] }, mentionedAircraftModels: { observations: [{ value: '737' }] } }))}, 2)`;
       try {
         const query = listOwnedLibraryFamilies(db as never, {
           ...scope,
@@ -143,11 +161,11 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
         const [result] = await query;
         expect(result.totalCount).toBe(1);
         expect(result.rows.map((row) => row.familyId)).toEqual(['a']);
-        expect(result.familyCounts).toEqual({ SB: 2 });
-        expect(result.ataCounts).toEqual({ '4613': 1, __UNKNOWN__: 1 });
+        expect(result.familyCounts).toEqual({ SB: 3 });
+        expect(result.ataCounts).toEqual({ '4613': 1, __UNKNOWN__: 2 });
         expect(result.aircraftModelCounts).toEqual({
           '737': 1,
-          __UNKNOWN__: 1,
+          __UNKNOWN__: 2,
         });
         const [ataOnly] = await listOwnedLibraryFamilies(db as never, {
           ...scope,
@@ -173,13 +191,13 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
           ata: '__UNKNOWN__',
           aircraftModel: '__UNKNOWN__',
         });
-        expect(unknown.rows.map((row) => row.familyId)).toEqual(['b']);
+        expect(unknown.rows.map((row) => row.familyId)).toEqual(['hidden', 'b']);
       } finally {
         await client`delete from dm_document_version_metadata where document_version_id='a' and metadata_revision=2`;
       }
     });
 
-    it('keeps authorized history under a matching family and never adds an unowned version', async () => {
+    it('keeps authorized history under a matching family and excludes versions without tenant provenance', async () => {
       await client`insert into dm_document_version values ('a-old','a','a','old-source','R0','','','old.pdf',90,'2026-08-01'), ('a-private','a','a','private-source','R2','','','private.pdf',110,'2026-09-02')`;
       await client`insert into dm_acquisition values ('a-old','old-source','u1','LINKED_EXACT_DOCUMENT_VERSION','tenant:t1:request:old')`;
       const [result] = await listOwnedLibraryFamilies(db as never, {
@@ -215,15 +233,16 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
         ['a-old', 1, 'Historical radio', '23', '737'],
         ['hidden', 99, 'Private revision', '99', '999'],
       ] as const) {
-        await client`insert into dm_document_version_metadata values (${version},${JSON.stringify({ title: { observations: [{ value: title }] }, ata: { observations: [{ value: ata }] }, mentionedAircraftModels: { observations: [{ value: model }] } })},${revision})`;
+        await client`insert into dm_document_version_metadata values (${version},${JSON.stringify(metadataForSource({ title: { observations: [{ value: title }] }, ata: { observations: [{ value: ata }] }, mentionedAircraftModels: { observations: [{ value: model }] } }, version === 'a-old' ? 90 : 100))},${revision})`;
       }
-      const [result] = await listOwnedLibraryFamilies(db as never, scope);
-      expect(result.totalCount).toBe(2);
-      expect(result.familyCounts).toEqual({ SB: 2 });
-      expect(result.ataCounts).toEqual({ '46': 1, '23': 1, __UNKNOWN__: 1 });
+      const [result] = await listOwnedLibraryFamilies(db as never, { ...scope, limit: 10 });
+      expect(result.totalCount).toBe(3);
+      expect(result.familyCounts).toEqual({ SB: 3 });
+      expect(result.ataCounts).toEqual({ '46': 1, '23': 1, '99': 1, __UNKNOWN__: 1 });
       expect(result.aircraftModelCounts).toEqual({
         '777': 1,
         '737': 1,
+        '999': 1,
         __UNKNOWN__: 1,
       });
       const family = result.rows.find((row) => row.familyId === 'a')!;
@@ -240,13 +259,10 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
       expect(
         family.versions[1].extractedMetadata?.title.observations[0].value,
       ).toBe('Historical radio');
-      for (const search of ['navigation', 'Private revision']) {
-        const [missing] = await listOwnedLibraryFamilies(db as never, {
-          ...scope,
-          search,
-        });
-        expect(missing.totalCount).toBe(0);
-      }
+      const [missing] = await listOwnedLibraryFamilies(db as never, { ...scope, search: 'navigation' });
+      expect(missing.totalCount).toBe(0);
+      const [otherUser] = await listOwnedLibraryFamilies(db as never, { ...scope, search: 'Private revision' });
+      expect(otherUser.rows.map((row) => row.familyId)).toEqual(['hidden']);
       const [historical] = await listOwnedLibraryFamilies(db as never, {
         ...scope,
         search: 'Historical radio',

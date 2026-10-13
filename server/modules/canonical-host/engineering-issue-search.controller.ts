@@ -73,7 +73,7 @@ export class EngineeringIssueSearchController {
     if (parsed !== undefined && (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 100)) {
       throw new BadRequestException('ENGINEERING_SEARCH_REBUILD_LIMIT_INVALID');
     }
-    return this.browserScope.run(request, () =>
+    return this.browserScope.runOAuth(request, () =>
       this.issues.rebuildProjection(parsed, hostActor(request), request));
   }
 }

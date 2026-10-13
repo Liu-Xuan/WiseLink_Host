@@ -4,7 +4,7 @@ jest.mock('./canonical-host-request-actor', () => ({
 import { EngineeringIssueSearchController } from './engineering-issue-search.controller';
 
 describe('EngineeringIssueSearchController', () => {
-  const scope = { run: jest.fn(async (_request, operation) => operation()) };
+  const scope = { runOAuth: jest.fn(async (_request, operation) => operation()) };
   it('rejects an invalid rebuild limit as a client error', async () => {
     const service = { rebuildProjection: jest.fn() };
     const controller = new EngineeringIssueSearchController(service as never, {} as never, scope as never);
@@ -19,6 +19,6 @@ describe('EngineeringIssueSearchController', () => {
     const request = { userContext: { tenantId: 'tenant', userId: 'user' } } as never;
     await expect(controller.rebuildProjection('25', request)).resolves.toEqual(receipt);
     expect(service.rebuildProjection).toHaveBeenCalledWith(25, expect.objectContaining({ tenantId: 'tenant', userId: 'user' }), request);
-    expect(scope.run).toHaveBeenCalledWith(request, expect.any(Function));
+    expect(scope.runOAuth).toHaveBeenCalledWith(request, expect.any(Function));
   });
 });

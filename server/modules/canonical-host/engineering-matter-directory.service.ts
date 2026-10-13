@@ -38,6 +38,7 @@ import type { CanonicalHostActor } from './canonical-host.types';
 import { parseMatterMaterial } from './matter-material';
 import { EngineeringMatterService } from './engineering-matter.service';
 import { EngineeringMatterWorkingService } from './engineering-matter-working.service';
+import { tenantFamilyIdentityPrefix } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
 
 type DirectoryOverallStatus =
   EngineeringMatterDirectoryResponse['items'][number]['overallStatus'];
@@ -76,7 +77,8 @@ export class EngineeringMatterDirectoryService {
       !identity ||
       !isHostedCanonicalFinalUserActor(identity) ||
       identity.tenantId !== actor.tenantId ||
-      identity.canonicalSubject.id !== actor.userId
+      identity.canonicalSubject.id !== actor.userId ||
+      identity.applicationScopeId !== actor.appId
     )
       throw directoryError('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE', 503);
     const limit = input.limit ?? 20;
@@ -115,7 +117,6 @@ export class EngineeringMatterDirectoryService {
                     workItem.workItemId,
                     engineeringMatterRevisionWorkItem.workItemId,
                   ),
-                  eq(workItem.requestedByUserId, actor.userId),
                 ),
               ),
           ),
@@ -223,14 +224,20 @@ export class EngineeringMatterDirectoryService {
             )
             .leftJoin(
               dmDocumentVersion,
-              eq(
-                dmDocumentVersion.documentVersionId,
-                workItem.documentVersionId,
+              and(
+                eq(dmDocumentVersion.documentVersionId, workItem.documentVersionId),
+                eq(dmDocumentVersion.documentId, workItem.documentId),
+                eq(dmDocumentVersion.sourceArtifactId, workItem.sourceArtifactId),
+                eq(dmDocumentVersion.pdfSha256, workItem.sourceFileSha256),
+                eq(dmDocumentVersion.byteLength, workItem.sourceByteLength),
               ),
             )
             .leftJoin(
               dmPublicationFamily,
-              eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId),
+              and(
+                eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId),
+                sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(actor.tenantId)})`,
+              ),
             )
             .where(
               and(
@@ -348,7 +355,6 @@ export class EngineeringMatterDirectoryService {
     const primaryByRevision: Map<string, string[]> = new Map();
     for (const link of linkRows) {
       if (
-        link.requestedByUserId !== actor.userId ||
         link.workItemDocumentId === null ||
         link.workItemDocumentVersionId === null ||
         link.versionDocumentId === null ||

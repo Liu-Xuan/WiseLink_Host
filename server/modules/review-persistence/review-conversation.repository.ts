@@ -477,18 +477,84 @@ export class ReviewConversationRepository {
       reviewConversationId: string;
       reviewTurnId: string;
       tenantId: string;
+      /** The actor recorded on the source, not the current browser reader. */
       actorId: string;
       workItemId: string;
+      /** Internal read after the caller's native tenant grant; no actor switch. */
+      readScope?: 'TENANT';
     },
     executor: DatabaseExecutor = this.db,
   ): Promise<{
     conversation: PersistedReviewConversation;
     turn: PersistedReviewTurn;
   } | null> {
+    if (input.readScope === 'TENANT')
+      return this.loadTenantBoundReviewTurn(input, executor);
     return this.loadActorBoundOpenClawTurn(
       { ...input, reviewTurnId: input.reviewTurnId },
       executor,
     );
+  }
+
+  private async loadTenantBoundReviewTurn(
+    input: {
+      reviewConversationId: string;
+      reviewTurnId: string;
+      tenantId: string;
+      actorId: string;
+      workItemId: string;
+    },
+    executor: DatabaseExecutor,
+  ): Promise<{
+    conversation: PersistedReviewConversation;
+    turn: PersistedReviewTurn;
+  } | null> {
+    assertOpenClawActorContext(input.actorId);
+    // Keep the authenticated native reader's SQL identity. The caller already
+    // checked the current tenant grant; these joins bind the exact stored source.
+    const [row] = await executor
+      .select({
+        conversation: conversationSelection(),
+        turn: turnSelection(),
+      })
+      .from(reviewConversation)
+      .innerJoin(
+        reviewTurn,
+        and(
+          eq(reviewTurn.reviewConversationId, reviewConversation.reviewConversationId),
+          eq(reviewTurn.tenantId, reviewConversation.tenantId),
+          eq(reviewTurn.actorId, reviewConversation.actorId),
+          eq(reviewTurn.workItemId, reviewConversation.workItemId),
+        ),
+      )
+      .innerJoin(
+        engineerSuppliedInput,
+        and(
+          eq(engineerSuppliedInput.engineerSuppliedInputId, reviewTurn.engineerSuppliedInputId),
+          eq(engineerSuppliedInput.tenantId, reviewConversation.tenantId),
+          eq(engineerSuppliedInput.actorId, reviewConversation.actorId),
+          eq(engineerSuppliedInput.workItemId, reviewConversation.workItemId),
+        ),
+      )
+      .innerJoin(
+        workItem,
+        and(
+          eq(workItem.workItemId, reviewConversation.workItemId),
+          eq(workItem.tenantId, reviewConversation.tenantId),
+        ),
+      )
+      .where(and(
+        eq(reviewConversation.reviewConversationId, input.reviewConversationId),
+        eq(reviewConversation.tenantId, input.tenantId),
+        eq(reviewConversation.actorId, input.actorId),
+        eq(reviewConversation.workItemId, input.workItemId),
+        eq(reviewConversation.status, ACTIVE_STATUS),
+        eq(reviewTurn.reviewTurnId, input.reviewTurnId),
+      ))
+      .limit(1);
+    return row
+      ? { conversation: row.conversation, turn: persistedTurn(row.turn) }
+      : null;
   }
 
   private async loadActorBoundOpenClawTurn(
@@ -1177,7 +1243,7 @@ export class ReviewConversationRepository {
           );
         const actors = this.actors;
         const sessions = this.sessions;
-        const replay = await sessions.withVerifiedServiceSql(
+        const replay = await sessions.withVerifiedReviewServiceSql(
           () =>
             actors.withActorTransaction(
               input.conversation.actorId,
@@ -1257,7 +1323,7 @@ export class ReviewConversationRepository {
                   throw reviewPersistenceConflict(
                     'DIALOGUE_ASSESSMENT_BASE_CHANGED',
                   );
-                await sessions.withVerifiedBrowserSql(() => insert(database));
+                await sessions.withVerifiedReviewBrowserSql(() => insert(database));
                 return null;
               },
             ),

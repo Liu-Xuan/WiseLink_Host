@@ -40,14 +40,18 @@ it('switches only SQL context and restores it after browser recheck and after ex
   process.env.SANDBOX_ID = 'constructed-unit-fixture'; delete process.env.MIAODA_LOCAL_DEV;
   try {
     const h = fixture(); const request = makeRequest();
-    await h.scope.run(request as never, async () => {
+    await h.scope.runOAuth(request as never, async () => {
       expect(request.userContext.isSystemAccount).toBe(false);
-      expect(h.sqlIdentity.getStore()?.isSystemAccount).toBe(true);
-      await expect(h.sessions.withVerifiedBrowserSql(async () => {
-        expect(h.sqlIdentity.getStore()).toBe(request.userContext);
-        throw new Error('read failed');
-      })).rejects.toThrow('read failed');
-      expect(h.sqlIdentity.getStore()?.isSystemAccount).toBe(true);
+      expect(h.sqlIdentity.getStore()).toBe(request.userContext);
+      await h.sessions.withVerifiedServiceSql(async () => {
+        expect(h.sqlIdentity.getStore()?.isSystemAccount).toBe(true);
+        await expect(h.sessions.withVerifiedBrowserSql(async () => {
+          expect(h.sqlIdentity.getStore()).toBe(request.userContext);
+          throw new Error('read failed');
+        })).rejects.toThrow('read failed');
+        expect(h.sqlIdentity.getStore()?.isSystemAccount).toBe(true);
+      });
+      expect(h.sqlIdentity.getStore()).toBe(request.userContext);
     });
     expect(h.sqlIdentity.getStore()).toBeUndefined();
     expect(request.userContext.isSystemAccount).toBe(false);

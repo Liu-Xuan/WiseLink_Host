@@ -19,7 +19,7 @@ export class DialogueController {
     @Query('beforeThreadRef') before?: string,
     @Query('workItemId') workItemId?: string,
   ) {
-    return this.browser.run(request, () =>
+    return this.browser.runRead(request, () =>
       this.service.list(request, before, workItemId),
     );
   }
@@ -33,7 +33,7 @@ export class DialogueController {
     @Req() request: Request,
     @Query('beforeMessageRef') before?: string,
   ) {
-    return this.browser.run(request, () =>
+    return this.browser.runRead(request, () =>
       this.service.read(ref, request, before),
     );
   }
@@ -43,7 +43,7 @@ export class DialogueController {
     @Query('workItemId') workItemId: string,
     @Req() request: Request,
   ) {
-    return this.browser.run(request, () =>
+    return this.browser.runRead(request, () =>
       this.service.currentContext(ref, workItemId, request),
     );
   }

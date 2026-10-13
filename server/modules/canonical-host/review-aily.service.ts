@@ -8,7 +8,10 @@ import {
 } from '../identity/aily-user-grant.codec';
 import { type AilyStreamProgress } from './aily-chat-stream';
 import { streamAilyChat } from './aily-chat-client';
-import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
+import {
+  EngineeringMatterWorkingRepository,
+  type EngineeringMatterWorkingTransactionExecutor,
+} from './engineering-matter-working.repository';
 
 export interface ReviewAilyActor {
   actorId: string;
@@ -44,11 +47,12 @@ export class ReviewAilyService {
 
   async availability(
     actor: ReviewAilyActor,
+    browserRead = false,
   ): Promise<{ available: boolean; reason?: string }> {
     if (!ailyAgentId()) return { available: false, reason: 'NOT_CONFIGURED' };
     if (!actor.sessionId)
       return { available: false, reason: 'USER_REAUTHORIZATION_REQUIRED' };
-    const grant = await this.grant(actor);
+    const grant = await this.grant(actor, browserRead);
     return grant
       ? { available: true }
       : { available: false, reason: 'USER_REAUTHORIZATION_REQUIRED' };
@@ -136,14 +140,16 @@ export class ReviewAilyService {
     actor: ReviewAilyActor,
     messageRef: string,
     queryRef: string,
+    browserRead = false,
   ) {
     if (
       !/^[0-9a-f-]{36}$/u.test(messageRef) ||
       !/^[0-9a-f-]{36}$/u.test(queryRef)
     )
       throw new Error('AILY_QUERY_INVALID');
-    const row = await this.actors.withActorTransaction(
+    const row = await this.actorRead(
       actor.actorId,
+      browserRead,
       async ({ database }) => {
         const rows = await database.execute<QueryRow>(sql`
         SELECT q.* FROM review_aily_query q JOIN dialogue_message m ON m.message_ref=q.message_ref
@@ -161,23 +167,13 @@ export class ReviewAilyService {
       (!Number.isFinite(new Date(row._created_at).getTime()) ||
         Date.now() - new Date(row._created_at).getTime() > 360_000)
     ) {
-      // A read from a new login can settle abandoned state using the query's
-      // original session binding, without using its token to contact the provider.
-      await this.update(
-        { ...actor, sessionId: row.session_id },
-        null,
-        queryRef,
-        'UNKNOWN',
-        row.chat_id,
-        row.answer_text,
-        'AILY_STREAM_RESULT_UNCONFIRMED',
-        row.remote_session_id,
-      );
-      return this.project({
+      // GET only predicts stale stream uncertainty. It never persists completion
+      // or contacts the provider; a delegated write may settle state separately.
+      return { ...this.project({
         ...row,
         status: 'UNKNOWN',
         error_code: 'AILY_STREAM_RESULT_UNCONFIRMED',
-      });
+      }), statusPersisted: false };
     }
     return this.project(row);
   }
@@ -347,10 +343,11 @@ export class ReviewAilyService {
     return this.project(row);
   }
 
-  private async grant(actor: ReviewAilyActor): Promise<string | null> {
+  private async grant(actor: ReviewAilyActor, browserRead = false): Promise<string | null> {
     if (!actor.sessionId || !ailyAgentId()) return null;
-    const row = await this.actors.withActorTransaction(
+    const row = await this.actorRead(
       actor.actorId,
+      browserRead,
       async ({ database }) => {
         const rows = await database
           .select({
@@ -410,6 +407,15 @@ export class ReviewAilyService {
         if (rows.length !== 1) throw new Error('AILY_QUERY_SAVE_FAILED');
       },
     );
+  }
+  private actorRead<T>(
+    actorId: string,
+    browserRead: boolean,
+    operation: (executor: EngineeringMatterWorkingTransactionExecutor) => Promise<T>,
+  ): Promise<T> {
+    return browserRead
+      ? this.actors.withBrowserActorTransaction(actorId, operation)
+      : this.actors.withActorTransaction(actorId, operation);
   }
   private project(row: QueryRow) {
     if (row.status === 'STARTING')

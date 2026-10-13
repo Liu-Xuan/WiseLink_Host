@@ -26,7 +26,7 @@ export interface OwnedLibraryFamilyQuery {
   limit: number;
 }
 
-/** DM owns identity/currentness. Owned tasks only establish visibility and reader links. */
+/** DM owns identity/currentness. Tenant tasks establish reader links. */
 export function listOwnedLibraryFamilies(
   db: PostgresJsDatabase,
   input: OwnedLibraryFamilyQuery,
@@ -48,10 +48,16 @@ export function listOwnedLibraryFamilies(
     )`.as('reader_rank'),
       })
       .from(workItem)
+      .innerJoin(dmDocumentVersion, and(
+        eq(dmDocumentVersion.documentVersionId, workItem.documentVersionId),
+        eq(dmDocumentVersion.documentId, workItem.documentId),
+        eq(dmDocumentVersion.sourceArtifactId, workItem.sourceArtifactId),
+        eq(dmDocumentVersion.pdfSha256, workItem.sourceFileSha256),
+        eq(dmDocumentVersion.byteLength, workItem.sourceByteLength),
+      ))
       .where(
         and(
           eq(workItem.tenantId, input.tenantId),
-          eq(workItem.requestedByUserId, input.actorUserId),
         ),
       ),
   );
@@ -132,7 +138,7 @@ export function listOwnedLibraryFamilies(
           'reader_work_item_id',
         ),
         workItemCount: sql<number>`coalesce(${owned.workItemCount}, 0)`.as(
-          'owned_task_count',
+          'tenant_task_count',
         ),
       })
       .from(dmDocument)
@@ -154,6 +160,8 @@ export function listOwnedLibraryFamilies(
             dmDocumentVersionMetadata.documentVersionId,
             dmDocumentVersion.documentVersionId,
           ),
+          sql`${dmDocumentVersionMetadata.extractedMetadata}->>'sourceSha256' = ${dmDocumentVersion.pdfSha256}`,
+          sql`${dmDocumentVersionMetadata.extractedMetadata}->>'sourceByteLength' = ${dmDocumentVersion.byteLength}::text`,
           // Metadata revisions are append-only; choose the latest for this exact
           // document version before search, grouping and facet counts.
           sql`${dmDocumentVersionMetadata.metadataRevision} = (
@@ -180,7 +188,6 @@ export function listOwnedLibraryFamilies(
             select 1 from ${dmAcquisition} a
             where a.document_version_id = ${dmDocumentVersion.documentVersionId}
               and a.source_artifact_id = ${dmDocumentVersion.sourceArtifactId}
-              and a.acquired_by = ${input.actorUserId}
               and a.status in ('COMMITTED_CANONICAL', 'LINKED_EXACT_DOCUMENT_VERSION')
               and starts_with(a.idempotency_key, ${`tenant:${encodeURIComponent(input.tenantId)}:request:`})
           ))`,

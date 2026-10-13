@@ -25,6 +25,18 @@ type HostedFinalUserActor =
   | CanonicalMiaodaFinalUserActorContext
   | CanonicalAilyFinalUserActorContext;
 
+const SHARED_READ_ACTIONS = new Set<CanonicalGrantableObjectAccessAction>([
+  'READ_WORK_ITEM', 'READ_DOCUMENT_PARSING', 'READ_LIBRARY_INDEX', 'QUERY_PARSED_UNITS',
+  'READ_CONFIGURATION_EVIDENCE', 'READ_BATCH_APPLICABILITY_RUN', 'READ_AEO_EDITING_DRAFT',
+]);
+
+function nativeSharedAction(actor: HostedFinalUserActor, action: CanonicalObjectAccessInput['action']): boolean {
+  return actor.transport === 'MIAODA_AUTHENTICATED_HTTP' &&
+    actor.identityProvenance === 'MIAODA_GATEWAY_USER_CONTEXT' &&
+    (SHARED_READ_ACTIONS.has(action as CanonicalGrantableObjectAccessAction) ||
+      action === 'RECORD_ENGINEER_REVIEW');
+}
+
 /**
  * Host-owned WorkItem relation adapter shared by native Miaoda browser and
  * signed Aily MCP identities. Identity proof stays at each transport edge;
@@ -76,15 +88,18 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
       return denied(input, 'CANONICAL_WORK_ITEM_REVISION_REQUIRED', 409);
     }
 
+    const shared = nativeSharedAction(input.actor, input.action);
     const ownerInput = {
       workItemId: input.accessRoot.id,
       tenantId: input.actor.tenantId,
       actorUserId: input.actor.canonicalSubject.id,
+      ...(shared ? { readScope: 'TENANT' as const } : {}),
     };
     const binding = database
       ? await this.workItems.loadAuthorizationBinding(ownerInput, database)
       : await this.workItems.loadAuthorizationBinding(ownerInput);
-    if (!ownedBindingMatches(binding, input.actor, input.accessRoot.id)) {
+    if (!(shared ? tenantBindingMatches(binding, input.actor, input.accessRoot.id)
+      : ownedBindingMatches(binding, input.actor, input.accessRoot.id))) {
       return denied(input, 'CANONICAL_WORK_ITEM_NOT_FOUND', 404);
     }
     if (
@@ -93,7 +108,9 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
     ) {
       return denied(input, 'CANONICAL_WORK_ITEM_REVISION_MISMATCH', 409);
     }
-    return grant(input.actor, grantableAction(input.action), binding);
+    return grant(input.actor, grantableAction(input.action), binding,
+      binding.requestedByUserId === input.actor.canonicalSubject.id ? 'OWNER'
+        : input.action === 'RECORD_ENGINEER_REVIEW' ? 'TENANT_REVIEWER' : 'TENANT_READER');
   }
 
   async freshReadBatch(
@@ -109,11 +126,15 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
       workItemId: input.accessRoot.id,
       tenantId: actor.tenantId,
       actorUserId: actor.canonicalSubject.id,
+      ...(nativeSharedAction(actor, 'READ_WORK_ITEM') ? { readScope: 'TENANT' as const } : {}),
     })));
     return inputs.map(input => {
       const binding = bindings.get(input.accessRoot.id) ?? null;
-      const value = ownedBindingMatches(binding, actor, input.accessRoot.id)
-        ? grant(actor, 'READ_WORK_ITEM', binding)
+      const value = (nativeSharedAction(actor, 'READ_WORK_ITEM')
+        ? tenantBindingMatches(binding, actor, input.accessRoot.id)
+        : ownedBindingMatches(binding, actor, input.accessRoot.id))
+        ? grant(actor, 'READ_WORK_ITEM', binding,
+          binding.requestedByUserId === actor.canonicalSubject.id ? 'OWNER' : 'TENANT_READER')
         : denied(input, 'CANONICAL_WORK_ITEM_NOT_FOUND', 404);
       return { status: 'fulfilled' as const, value };
     });
@@ -190,6 +211,7 @@ function grant(
   actor: HostedFinalUserActor,
   action: CanonicalGrantableObjectAccessAction,
   binding: WorkItemAuthorizationBinding,
+  relation: CanonicalObjectAccessGrant['actionPolicy']['objectRelation'] = 'OWNER',
 ): CanonicalObjectAccessGrant {
   const actorFacts = {
     canonicalSubject: actor.canonicalSubject,
@@ -209,14 +231,15 @@ function grant(
   };
   const actionPolicy = {
     action,
-    objectRelation: 'OWNER' as const,
+    objectRelation: relation,
     source: 'HOST_SERVER_ACTION_POLICY' as const,
     requiredPlatformRoles: [] as readonly string[],
     platformRoleEvaluation: 'NOT_REQUIRED' as const,
-    policyRevision: 'creator-only.v1' as const,
+    policyRevision: relation === 'OWNER' ? 'creator-only.v1' as const : relation === 'TENANT_REVIEWER'
+      ? 'tenant-engineering-review.v1' as const : 'tenant-shared-read.v1' as const,
   };
   const actorFingerprint = digest(JSON.stringify(actorFacts));
-  const accessRevision = `work-item:${binding.revision}:creator-only.v1`;
+  const accessRevision = `work-item:${binding.revision}:${actionPolicy.policyRevision}`;
   const authorizationFingerprint = digest(
     JSON.stringify({
       action,
@@ -248,7 +271,7 @@ function grant(
     canonicalSubject: actor.canonicalSubject,
     actorFingerprint,
     ownerFact: {
-      isOwner: true,
+      isOwner: binding.requestedByUserId === actor.canonicalSubject.id,
       ownerUserId: binding.requestedByUserId,
       source: 'HOST_WORK_ITEM_REQUESTED_BY',
     },
@@ -265,7 +288,7 @@ function grant(
           : 'MIAODA_GATEWAY_USER_CONTEXT',
       applicationScope: actor.applicationScopeProvenance,
       workspace: 'UNAVAILABLE',
-      objectAuthorization: 'HOST_WORK_ITEM_REQUESTED_BY',
+      objectAuthorization: relation === 'OWNER' ? 'HOST_WORK_ITEM_REQUESTED_BY' : 'HOST_WORK_ITEM_TENANT',
       memberAuthorization: 'UNAVAILABLE',
       session: oauth ? 'SERVER_OPAQUE_SESSION' : 'UNAVAILABLE',
       correlationFieldsAreAuthorizationInputs: false,
@@ -297,13 +320,15 @@ function ownedBindingMatches(
   workItemId: string,
 ): binding is WorkItemAuthorizationBinding {
   return Boolean(
-    binding &&
-    binding.workItemId === workItemId &&
-    binding.tenantId === actor.tenantId &&
-    binding.requestedByUserId === actor.canonicalSubject.id &&
-    Number.isSafeInteger(binding.revision) &&
-    binding.revision >= 0,
+    tenantBindingMatches(binding, actor, workItemId) &&
+    binding.requestedByUserId === actor.canonicalSubject.id,
   );
+}
+
+function tenantBindingMatches(binding: WorkItemAuthorizationBinding | null, actor: HostedFinalUserActor,
+  workItemId: string): binding is WorkItemAuthorizationBinding {
+  return Boolean(binding && binding.workItemId === workItemId && binding.tenantId === actor.tenantId &&
+    binding.requestedByUserId.trim() && Number.isSafeInteger(binding.revision) && binding.revision >= 0);
 }
 
 function validExpectedRevision(input: CanonicalObjectAccessInput): boolean {

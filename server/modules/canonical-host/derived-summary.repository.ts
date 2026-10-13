@@ -44,6 +44,24 @@ export class DerivedSummaryRepository {
     });
   }
 
+  /** A real browser actor may read another owner's saved material in the same
+   * tenant. Keep this capability separate from every reservation/write path. */
+  readBrowser<T>(actor: CanonicalHostActor, operation: (database: PostgresJsDatabase, reader: SummaryActor) => Promise<T>) {
+    const identity = actor.objectAccessActor;
+    if (!identity || !isHostedCanonicalFinalUserActor(identity) || identity.tenantId !== actor.tenantId ||
+      identity.canonicalSubject.id !== actor.userId || actor.appId !== 'app_17bzc551rsg')
+      throw summaryError('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE', 503);
+    if (identity.transport !== 'MIAODA_AUTHENTICATED_HTTP' ||
+      identity.identityProvenance !== 'MIAODA_GATEWAY_USER_CONTEXT')
+      return this.browser(actor, operation);
+    return this.transactions.withBrowserActorTransaction(actor.userId, async ({ database }) => {
+      const reader: SummaryActor = { tenantId: actor.tenantId, actorUserId: actor.userId, readScope: 'TENANT' };
+      await this.members.authorizeActor(reader, database);
+      return this.members.withNativeTransaction(reader, database, { kind: 'BROWSER', actor },
+        () => operation(database, reader));
+    });
+  }
+
   async runtime<T>(target: SummaryRuntimeTarget,
     operation: (database: PostgresJsDatabase, owner: SummaryActor, head: SummaryHead, attempt: SummaryAttempt) => Promise<T>) {
     if (target.scope.appId !== 'app_17bzc551rsg' || !target.scope.principalId || !target.scope.tenantId)
@@ -68,7 +86,8 @@ export class DerivedSummaryRepository {
 
   async head(summaryId: string, owner: SummaryActor, database: PostgresJsDatabase, lock = false): Promise<SummaryHead> {
     const query = database.select().from(derivedSummary).where(and(eq(derivedSummary.summaryId, summaryId),
-      eq(derivedSummary.tenantId, owner.tenantId), eq(derivedSummary.actorUserId, owner.actorUserId))).limit(1);
+      eq(derivedSummary.tenantId, owner.tenantId),
+      ...(owner.readScope === 'TENANT' ? [] : [eq(derivedSummary.actorUserId, owner.actorUserId)]))).limit(1);
     const [head] = await (lock ? query.for('update') : query);
     if (!head) throw summaryError('DERIVED_SUMMARY_UNAVAILABLE', 404);
     return head;
@@ -148,7 +167,8 @@ export class DerivedSummaryRepository {
     const workItems: DerivedSummaryContextBasis['workItems'] = [];
     for (const workItemId of [...workIds].sort()) {
       const [row] = await database.select().from(workItem).where(and(eq(workItem.tenantId, owner.tenantId),
-        eq(workItem.requestedByUserId, owner.actorUserId), eq(workItem.workItemId, workItemId))).limit(1);
+        eq(workItem.workItemId, workItemId),
+        ...(owner.readScope === 'TENANT' ? [] : [eq(workItem.requestedByUserId, owner.actorUserId)]))).limit(1);
       if (!row?.projectionJson) throw summaryError('DERIVED_SUMMARY_MEMBER_UNAVAILABLE', 404);
       const projection = JSON.parse(row.projectionJson) as CanonicalWorkItemProjection;
       const [latest] = await database.select({ ref: assessmentWorkRevision.assessmentWorkRevisionId,
@@ -169,7 +189,8 @@ export class DerivedSummaryRepository {
     for (const matterId of [...matterRefs.keys()].sort()) {
       const [head] = await database.select({ currentMatterRevisionId: engineeringMatter.currentMatterRevisionId })
         .from(engineeringMatter).where(and(eq(engineeringMatter.tenantId, owner.tenantId),
-          eq(engineeringMatter.createdByUserId, owner.actorUserId), eq(engineeringMatter.matterId, matterId))).limit(1);
+          eq(engineeringMatter.matterId, matterId),
+          ...(owner.readScope === 'TENANT' ? [] : [eq(engineeringMatter.createdByUserId, owner.actorUserId)]))).limit(1);
       if (!head) throw summaryError('DERIVED_SUMMARY_MEMBER_UNAVAILABLE', 404);
       const [latest] = await database.select({ ref: engineeringMatterWorkRevision.matterWorkRevisionId,
         revision: engineeringMatterWorkRevision.workingRevision }).from(engineeringMatterWorkRevision)
@@ -251,8 +272,11 @@ export class DerivedSummaryRepository {
   async saved(summaryId: string, summaryRef: string, owner: SummaryActor, database: PostgresJsDatabase) {
     const [row] = await database.select().from(derivedSummaryRevision).where(and(
       eq(derivedSummaryRevision.summaryId, summaryId), eq(derivedSummaryRevision.summaryRef, summaryRef),
-      eq(derivedSummaryRevision.tenantId, owner.tenantId), eq(derivedSummaryRevision.actorUserId, owner.actorUserId))).limit(1);
+      eq(derivedSummaryRevision.tenantId, owner.tenantId),
+      ...(owner.readScope === 'TENANT' ? [] : [eq(derivedSummaryRevision.actorUserId, owner.actorUserId)]))).limit(1);
     if (!row) throw summaryError('DERIVED_SUMMARY_REVISION_UNAVAILABLE', 404);
+    if (owner.readScope === 'TENANT' && row.actorUserId !== (await this.head(summaryId, owner, database)).actorUserId)
+      throw summaryError('DERIVED_SUMMARY_REVISION_UNAVAILABLE', 404);
     if (row.contentJson.summaryId !== summaryId || row.contentJson.summaryRef !== summaryRef || row.contentJson.revision !== row.revision)
       throw summaryError('DERIVED_SUMMARY_PERSISTENCE_INVALID');
     return row.contentJson;
@@ -263,8 +287,11 @@ export class DerivedSummaryRepository {
     if (!Number.isSafeInteger(revision) || revision < 1) throw summaryError('DERIVED_SUMMARY_PRIOR_REQUIRED', 400);
     const [row] = await database.select().from(derivedSummaryRevision).where(and(
       eq(derivedSummaryRevision.summaryId, summaryId), eq(derivedSummaryRevision.revision, revision),
-      eq(derivedSummaryRevision.tenantId, owner.tenantId), eq(derivedSummaryRevision.actorUserId, owner.actorUserId))).limit(1);
+      eq(derivedSummaryRevision.tenantId, owner.tenantId),
+      ...(owner.readScope === 'TENANT' ? [] : [eq(derivedSummaryRevision.actorUserId, owner.actorUserId)]))).limit(1);
     if (!row) throw summaryError('DERIVED_SUMMARY_REVISION_UNAVAILABLE', 404);
+    if (owner.readScope === 'TENANT' && row.actorUserId !== (await this.head(summaryId, owner, database)).actorUserId)
+      throw summaryError('DERIVED_SUMMARY_REVISION_UNAVAILABLE', 404);
     const saved = row.contentJson;
     if (saved.summaryId !== summaryId || saved.summaryRef !== row.summaryRef || saved.revision !== revision ||
       saved.classificationStatus !== 'CANDIDATE' || saved.candidateOnly !== true)

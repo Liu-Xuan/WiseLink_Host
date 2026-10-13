@@ -43,6 +43,8 @@ export interface DialogueQueryReadModel {
   answer: string | null;
   error: string | null;
   incomplete: boolean;
+  /** False for a stale-stream UNKNOWN inferred during this read, not committed. */
+  statusPersisted?: boolean;
 }
 
 export interface DialogueMessageReadModel {

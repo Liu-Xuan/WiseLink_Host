@@ -129,7 +129,6 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
       {
         tenantId: input.tenantId,
         documentVersionId: input.documentVersionId,
-        actorUserId: input.actorUserId,
       },
     );
     if (binding) return;
@@ -137,6 +136,7 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
       tenantId: input.tenantId,
       documentVersionId: input.documentVersionId,
       actorUserId: input.actorUserId,
+      readScope: 'TENANT',
     });
     if (!acquired) throw documentNotFound();
   }

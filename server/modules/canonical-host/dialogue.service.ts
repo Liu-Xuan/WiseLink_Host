@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   Injectable,
-  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import type {
@@ -11,7 +10,7 @@ import type {
 } from '@shared/dialogue.interface';
 import {
   SessionResolver,
-  type ResolvedSession,
+  type NativeBrowserIdentity,
 } from '../identity/session-resolver.service';
 import {
   DialogueRepository,
@@ -49,7 +48,7 @@ export class DialogueService {
       workItemValue === undefined ? undefined : dialogueText(workItemValue, 96);
     if (workItemId) await this.context.authorize(session, [workItemId]);
     return this.repository.list(
-      scope(session),
+      scope(session, true),
       before === undefined ? undefined : dialogueId(before),
       workItemId,
     );
@@ -73,6 +72,7 @@ export class DialogueService {
       await this.session(request),
       dialogueId(threadRef),
       before === undefined ? undefined : dialogueId(before),
+      true,
     );
   }
 
@@ -82,8 +82,8 @@ export class DialogueService {
     request: Request,
   ) {
     const session = await this.session(request);
-    await this.repository.read(scope(session), dialogueId(threadValue));
-    return this.context.current(session, [dialogueText(workItemValue, 96)]);
+    await this.repository.read(scope(session, true), dialogueId(threadValue));
+    return this.context.current(session, [dialogueText(workItemValue, 96)], true, true);
   }
 
   async append(threadValue: string, body: unknown, request: Request) {
@@ -297,11 +297,12 @@ export class DialogueService {
   }
 
   private async readFor(
-    session: ResolvedSession,
+    session: NativeBrowserIdentity,
     threadRef: string,
     before?: string,
+    browserRead = false,
   ): Promise<DialogueThreadReadModel> {
-    const state = await this.repository.read(scope(session), threadRef, before);
+    const state = await this.repository.read(scope(session, browserRead), threadRef, before);
     const focusWorkItemIds = JSON.parse(state.thread.focus_json) as string[];
     await this.context.authorize(session, [
       ...focusWorkItemIds,
@@ -311,10 +312,10 @@ export class DialogueService {
     for (const contribution of state.contributions) {
       await this.authorizeMessages(
         session,
-        await this.repository.contributionContext(scope(session), contribution),
+        await this.repository.contributionContext(scope(session, browserRead), contribution),
       );
     }
-    await this.settleMessages(session, state.messages);
+    await this.settleMessages(session, state.messages, browserRead);
     return {
       threadRef,
       revision: state.thread.revision,
@@ -322,14 +323,15 @@ export class DialogueService {
       focusWorkItemIds,
       messages: state.messages.map(messageModel),
       contributions: state.contributions.map(contributionModel),
-      aily: await this.aily.availability(scope(session)),
+      aily: await this.aily.availability(scope(session), browserRead),
       nextMessageCursor: state.nextMessageCursor,
     };
   }
 
   private async settleMessages(
-    session: ResolvedSession,
+    session: NativeBrowserIdentity,
     messages: DialogueMessageRow[],
+    browserRead = false,
   ) {
     for (const row of messages) {
       if (
@@ -340,8 +342,11 @@ export class DialogueService {
           scope(session),
           row.message_ref,
           row.query_ref,
+          browserRead,
         );
         row.query_status = result.status;
+        row.query_status_projected =
+          'statusPersisted' in result && result.statusPersisted === false;
         row.answer_text = result.answer;
         row.error_code = result.error;
       }
@@ -349,7 +354,7 @@ export class DialogueService {
   }
 
   private async authorizeMessages(
-    session: ResolvedSession,
+    session: NativeBrowserIdentity,
     messages: DialogueMessageRow[],
   ) {
     await this.context.authorize(
@@ -358,17 +363,16 @@ export class DialogueService {
     );
   }
   private async session(request: Request) {
-    const session = await this.sessions.resolve(request);
-    if (!session) throw new UnauthorizedException('IDENTITY_SESSION_REQUIRED');
-    return session;
+    return this.sessions.nativeBrowserIdentity(request);
   }
 }
 
-function scope(session: ResolvedSession) {
+function scope(session: NativeBrowserIdentity, browserRead = false) {
   return {
     tenantId: session.actor.tenantId,
     actorId: session.actor.canonicalSubject.id,
-    sessionId: session.session.id,
+    sessionId: session.oauthSession?.session.id,
+    ...(browserRead ? { browserRead: true as const } : {}),
   };
 }
 function messageModel(row: DialogueMessageRow): DialogueMessageReadModel {
@@ -394,6 +398,7 @@ function messageModel(row: DialogueMessageRow): DialogueMessageReadModel {
           answer: row.answer_text,
           error: row.error_code,
           incomplete: row.query_status !== 'COMPLETED',
+          statusPersisted: row.query_status_projected !== true,
         }
       : null,
   };

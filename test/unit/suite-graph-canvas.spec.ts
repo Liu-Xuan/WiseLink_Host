@@ -179,7 +179,7 @@ describe('SuiteGraphCanvas', () => {
     const realCytoscape = jest.requireActual('cytoscape') as typeof import('cytoscape');
     document.documentElement.setAttribute('data-wl-motion', 'off');
     mockCyFactory.mockImplementation((options) => realCytoscape({ ...options, headless: true, styleEnabled: false }));
-    const native = buildLibraryGraphPresentation({scope:'CURRENT_USER_DOCUMENT_CATALOG',versionMeaning:'ALL_READABLE_VERSIONS',
+    const native = buildLibraryGraphPresentation({scope:'TENANT_DOCUMENT_CATALOG',versionMeaning:'ALL_READABLE_VERSIONS',
       consistency:'LIVE_READ',relationMeaning:'CLASSIFICATION_AND_CONTAINMENT_ONLY',coverage:{documentReferences:'NOT_INDEXED',matterMemberships:'NOT_LOADED'},
       counts:{uniqueFamilyCount:12000,readableVersionCountInMatchingFamilies:50000},limit:50,hasMore:false,nextCursor:null,fileReadPerformed:false,modelRunPerformed:false,
       level:'clusters',groupBy:'ata',filters:{},countScope:'FILTERED_FAMILIES',clusterCountsOverlap:true,

@@ -34,11 +34,21 @@ export interface ResolvedSession {
   session: { id: string; revision: number; expiresAt: Date };
 }
 
+/** Hosted browser identity. OAuth is present only for a matching external grant. */
+export interface NativeBrowserIdentity {
+  actor: CanonicalMiaodaFinalUserActorContext;
+  oauthSession: ResolvedSession | null;
+}
+
 @Injectable()
 export class SessionResolver {
   private readonly requestSession = new AsyncLocalStorage<{
     request: Request;
     session: ResolvedSession | null;
+  }>();
+  private readonly browserIdentity = new AsyncLocalStorage<{
+    request: Request;
+    identity: NativeBrowserIdentity;
   }>();
 
   /** Reuse an identity verified before a server-only SQL scope, for this request only. */
@@ -50,6 +60,67 @@ export class SessionResolver {
     return this.requestSession.run({ request, session }, () =>
       operation(session),
     );
+  }
+
+  async withNativeBrowserIdentity<T>(
+    request: Request,
+    operation: (identity: NativeBrowserIdentity) => Promise<T>,
+  ): Promise<T> {
+    const actor = miaodaHostedFinalUserActor(request.userContext);
+    const session = await this.resolve(request);
+    if (session && (
+      session.actor.canonicalSubject.id !== actor.canonicalSubject.id ||
+      session.actor.tenantId !== actor.tenantId ||
+      session.actor.applicationScopeId !== actor.applicationScopeId
+    )) throw new ForbiddenException('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
+    const oauthSession = session;
+    const identity: NativeBrowserIdentity = { actor, oauthSession };
+    return this.browserIdentity.run({ request, identity }, () =>
+      operation(identity),
+    );
+  }
+
+  nativeBrowserIdentity(request: Request): NativeBrowserIdentity {
+    const verified = this.browserIdentity.getStore();
+    if (!verified || verified.request !== request)
+      throw new UnauthorizedException('NATIVE_BROWSER_IDENTITY_REQUIRED');
+    const native = miaodaHostedFinalUserActor(request.userContext);
+    if (
+      native.canonicalSubject.id !== verified.identity.actor.canonicalSubject.id ||
+      native.tenantId !== verified.identity.actor.tenantId ||
+      native.applicationScopeId !== verified.identity.actor.applicationScopeId
+    ) throw new ForbiddenException('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
+    return verified.identity;
+  }
+
+  /** Review and dialogue only: retain the real browser actor under service RLS. */
+  withVerifiedNativeBrowserServiceSql<T>(operation: () => Promise<T>): Promise<T> {
+    const verified = this.browserIdentity.getStore();
+    if (!verified) throw new UnauthorizedException('NATIVE_BROWSER_IDENTITY_REQUIRED');
+    const actor = this.nativeBrowserIdentity(verified.request).actor;
+    return this.runSql({
+      userContext: {
+        userId: actor.canonicalSubject.id,
+        tenantId: actor.tenantId,
+        appId: actor.applicationScopeId,
+        env: actor.env,
+        isSystemAccount: true,
+        roles: [...actor.platformRoles],
+      },
+    } as unknown as Request, operation);
+  }
+
+  /** Existing review transaction may run under OAuth or native browser scope. */
+  withVerifiedReviewServiceSql<T>(
+    operation: () => Promise<T>,
+    expectedActorId: string,
+  ): Promise<T> {
+    const verified = this.browserIdentity.getStore();
+    if (!verified) return this.withVerifiedServiceSql(operation, expectedActorId);
+    const actor = this.nativeBrowserIdentity(verified.request).actor;
+    if (actor.canonicalSubject.id !== expectedActorId)
+      throw new ForbiddenException('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
+    return this.withVerifiedNativeBrowserServiceSql(operation);
   }
 
   constructor(
@@ -77,9 +148,24 @@ export class SessionResolver {
     );
   }
 
-  /** Restore the same native browser SQL identity for existing browser-only writes. */
+  /** Preserve the legacy OAuth-backed browser SQL contract. */
   withVerifiedBrowserSql<T>(operation: () => Promise<T>): Promise<T> {
     return this.runSql(this.verifiedSqlRequest().request, operation);
+  }
+
+  /** Native authenticated SQL; never impersonates a service or another owner. */
+  withVerifiedNativeBrowserSql<T>(operation: () => Promise<T>): Promise<T> {
+    const verified = this.browserIdentity.getStore();
+    if (!verified) throw new UnauthorizedException('NATIVE_BROWSER_IDENTITY_REQUIRED');
+    this.nativeBrowserIdentity(verified.request);
+    return this.runSql(verified.request, operation);
+  }
+
+  /** Review's dialogue bridge accepts either existing OAuth or native SSO. */
+  withVerifiedReviewBrowserSql<T>(operation: () => Promise<T>): Promise<T> {
+    return this.browserIdentity.getStore()
+      ? this.withVerifiedNativeBrowserSql(operation)
+      : this.withVerifiedBrowserSql(operation);
   }
 
   private verifiedSqlRequest(expectedActorId?: string) {

@@ -98,7 +98,7 @@ export function mergeLibraryDocumentsRead(
     nextCursor: response.nextCursor,
     loading: false,
     loadingMore: false,
-    ...(response.scope === 'CURRENT_USER_DOCUMENT_CATALOG'
+    ...(response.scope === 'TENANT_DOCUMENT_CATALOG'
       ? {
           totalCount: response.totalCount,
           familyCounts: response.familyCounts,

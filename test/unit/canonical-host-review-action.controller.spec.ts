@@ -25,6 +25,7 @@ describe('CanonicalHostReviewActionController request boundary', () => {
     const service = { confirmDraft: jest.fn().mockResolvedValue({ ok: true }) };
     const controller = new CanonicalHostReviewActionController(
       service as never,
+      { runNativeWrite: (_request: unknown, operation: () => Promise<unknown>) => operation() } as never,
     );
 
     await controller.confirmDraft(

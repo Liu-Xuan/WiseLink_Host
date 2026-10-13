@@ -365,9 +365,9 @@ function target(
     closedAt: null,
   };
   const sessions = {
-    resolve: jest.fn(async () => ({
+    nativeBrowserIdentity: jest.fn(() => ({
       actor,
-      session: { id: 'session-1', revision: 1 },
+      oauthSession: null,
     })),
   };
   const objectAccess = {
@@ -631,9 +631,9 @@ function integratedTarget() {
   return {
     service: new CanonicalHostReviewActionService(
       {
-        resolve: async () => ({
+        nativeBrowserIdentity: () => ({
           actor: sessionActor,
-          session: { id: 'session-C7', revision: 1 },
+          oauthSession: null,
         }),
       } as never,
       {

@@ -36,7 +36,7 @@ function matter(matterId: string): EngineeringMatterDirectoryResponse {
 
 function document(familyId: string): CanonicalLibraryDocumentsResponse {
   return {
-    scope: 'CURRENT_USER_DOCUMENT_CATALOG', totalCount: 1,
+    scope: 'TENANT_DOCUMENT_CATALOG', totalCount: 1,
     familyCounts: {}, ataCounts: {}, aircraftModelCounts: {},
     order: 'FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC',
     items: [{ kind: 'DOCUMENT', familyId, documentId: familyId,

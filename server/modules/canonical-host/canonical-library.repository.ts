@@ -13,10 +13,12 @@ import type { CanonicalLibraryQuicklookResponse } from '@shared/api.interface';
 import { listOwnedLibraryFamilies } from '../document-management/src/hosted/nest/miaoda-hosted-library-query';
 import {
   assessmentWorkRevision,
+  dmDocument,
   dmDocumentVersion,
   dmPublicationFamily,
   workItem,
 } from '../../database/schema';
+import { tenantFamilyIdentityPrefix } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
 
 export interface CanonicalLibraryCursor {
   createdAt: string;
@@ -86,11 +88,18 @@ export class CanonicalLibraryRepository {
       .innerJoin(dmDocumentVersion, and(
         eq(dmDocumentVersion.documentVersionId, workItem.documentVersionId),
         eq(dmDocumentVersion.documentId, workItem.documentId),
+        eq(dmDocumentVersion.sourceArtifactId, workItem.sourceArtifactId),
+        eq(dmDocumentVersion.pdfSha256, workItem.sourceFileSha256),
+        eq(dmDocumentVersion.byteLength, workItem.sourceByteLength),
       ))
       .innerJoin(dmPublicationFamily, eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId))
+      .innerJoin(dmDocument, and(
+        eq(dmDocument.documentId, workItem.documentId),
+        eq(dmDocument.familyId, dmDocumentVersion.familyId),
+      ))
       .where(and(
         eq(workItem.tenantId, input.tenantId),
-        eq(workItem.requestedByUserId, input.actorUserId),
+        sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(input.tenantId)})`,
         eq(workItem.workItemId, input.workItemId),
       ))
       .limit(1);
@@ -125,7 +134,7 @@ export class CanonicalLibraryRepository {
   ) {
     const conditions = [
       eq(workItem.tenantId, input.tenantId),
-      eq(workItem.requestedByUserId, input.actorUserId),
+      sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(input.tenantId)})`,
     ];
     if (input.familyId)
       conditions.push(eq(dmPublicationFamily.familyId, input.familyId));
@@ -161,12 +170,19 @@ export class CanonicalLibraryRepository {
           and(
             eq(dmDocumentVersion.documentVersionId, workItem.documentVersionId),
             eq(dmDocumentVersion.documentId, workItem.documentId),
+            eq(dmDocumentVersion.sourceArtifactId, workItem.sourceArtifactId),
+            eq(dmDocumentVersion.pdfSha256, workItem.sourceFileSha256),
+            eq(dmDocumentVersion.byteLength, workItem.sourceByteLength),
           ),
         )
         .innerJoin(
           dmPublicationFamily,
           eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId),
         )
+        .innerJoin(dmDocument, and(
+          eq(dmDocument.documentId, workItem.documentId),
+          eq(dmDocument.familyId, dmDocumentVersion.familyId),
+        ))
         .where(and(...conditions))
         // Creation time is immutable: later review updates cannot move rows across pages.
         .orderBy(desc(workItem.createdAt), desc(workItem.workItemId))
@@ -203,16 +219,23 @@ export class CanonicalLibraryRepository {
         and(
           eq(dmDocumentVersion.documentVersionId, workItem.documentVersionId),
           eq(dmDocumentVersion.documentId, workItem.documentId),
+          eq(dmDocumentVersion.sourceArtifactId, workItem.sourceArtifactId),
+          eq(dmDocumentVersion.pdfSha256, workItem.sourceFileSha256),
+          eq(dmDocumentVersion.byteLength, workItem.sourceByteLength),
         ),
       )
       .innerJoin(
         dmPublicationFamily,
         eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId),
       )
+      .innerJoin(dmDocument, and(
+        eq(dmDocument.documentId, workItem.documentId),
+        eq(dmDocument.familyId, dmDocumentVersion.familyId),
+      ))
       .where(
         and(
           eq(workItem.tenantId, input.tenantId),
-          eq(workItem.requestedByUserId, input.actorUserId),
+          sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(input.tenantId)})`,
           eq(workItem.workItemId, input.workItemId),
         ),
       )

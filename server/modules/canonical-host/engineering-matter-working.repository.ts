@@ -385,10 +385,12 @@ export class EngineeringMatterWorkingRepository {
         SELECT (root.value ->> 'index')::integer AS "index",
           NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(root.value -> 'workItemIds') AS w(id)
             WHERE engineering_matter_work_item_owned_by_actor(
-              (root.value ->> 'tenantId')::varchar, w.id::varchar) IS NOT TRUE)
+              (root.value ->> 'tenantId')::varchar, w.id::varchar) IS NOT TRUE
+              AND native_app_work_item_readable((root.value ->> 'tenantId')::varchar, w.id::varchar) IS NOT TRUE)
           AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(root.value -> 'documentVersionIds') AS d(id)
             WHERE engineering_matter_document_owned_by_actor(
-              (root.value ->> 'tenantId')::varchar, d.id::varchar) IS NOT TRUE) AS "allowed"
+              (root.value ->> 'tenantId')::varchar, d.id::varchar) IS NOT TRUE
+              AND native_app_document_readable((root.value ->> 'tenantId')::varchar, d.id::varchar) IS NOT TRUE) AS "allowed"
         FROM jsonb_array_elements(${JSON.stringify(roots)}::jsonb) AS root(value)
       `)).then(rows => {
           observeEngineeringReadSync(observation, 'saved_sources_batch_distribution', () => {
@@ -696,6 +698,30 @@ export class EngineeringMatterWorkingRepository {
       currentMatterRevisionId: matter.currentMatterRevisionId,
       currentInputs,
     };
+  }
+
+  /** Native read path only. The runtime/write authorization above stays owner-scoped. */
+  async authorizeReadInputs(input: { tenantId: string; actorUserId: string; matterId: string;
+    basedOnMatterRevisionId?: string }, database: PostgresJsDatabase): Promise<EngineeringMatterRuntimeAuthorization> {
+    const [identity] = await database.execute<{ allowed: boolean }>(sql`SELECT
+      native_app_shared_read_allowed(${input.tenantId}) AND current_setting('app.user_id',true)=${input.actorUserId} AS allowed`);
+    if (identity?.allowed !== true) throw browserAuthorizationUnavailable();
+    const [matter] = await database.select({ revision: engineeringMatter.currentMatterRevisionId }).from(engineeringMatter)
+      .where(and(eq(engineeringMatter.tenantId, input.tenantId), eq(engineeringMatter.matterId, input.matterId))).limit(1);
+    if (!matter) throw runtimeAuthorizationUnavailable();
+    const revisions = new Set([matter.revision, ...(input.basedOnMatterRevisionId ? [input.basedOnMatterRevisionId] : [])]);
+    let currentInputs: EngineeringMatterWorkingInputBinding[] = [];
+    for (const revision of revisions) {
+      const [basis] = await database.select({ id: engineeringMatterRevision.matterRevisionId }).from(engineeringMatterRevision)
+        .where(and(eq(engineeringMatterRevision.tenantId, input.tenantId), eq(engineeringMatterRevision.matterId, input.matterId),
+          eq(engineeringMatterRevision.matterRevisionId, revision))).limit(1);
+      if (!basis) throw workingMembershipConflict();
+      await assertAllLinksReadable(database, input.tenantId, revision);
+      const inputs = await loadCurrentInputBindings(database, { tenantId: input.tenantId,
+        matterId: input.matterId, matterRevisionId: revision });
+      if (revision === matter.revision) currentInputs = inputs;
+    }
+    return { currentMatterRevisionId: matter.revision, currentInputs };
   }
 
   /** Re-authorize every frozen input and the exact prior work, not a latest substitute. */
@@ -1070,6 +1096,14 @@ async function assertAllLinksOwned(
   }
 }
 
+async function assertAllLinksReadable(executor: EngineeringMatterWorkingDatabaseExecutor,
+  tenantId: string, matterRevisionId: string): Promise<void> {
+  const [scope] = await executor.execute<{ allowed: boolean }>(sql`SELECT
+    engineering_matter_all_links_owned_by_actor(${tenantId},${matterRevisionId})
+      OR native_app_matter_revision_readable(${tenantId},${matterRevisionId}) AS allowed`);
+  if (scope?.allowed !== true) throw runtimeAuthorizationUnavailable();
+}
+
 export function engineeringMatterInputBinding(input: {
   workItemId: string;
   workItemRevision: number;
@@ -1299,7 +1333,7 @@ async function authorizedReadModel(
           eq(engineeringMatter.matterId, ref.subjectId), eq(engineeringMatter.createdByUserId, row.createdByUserId))).limit(1));
     if (!sourceMatter) throw runtimeAuthorizationUnavailable();
     await observeEngineeringRead(recursiveObservation, 'prior_current_links_await', () =>
-      assertAllLinksOwned(executor, row.tenantId, sourceMatter.currentMatterRevisionId));
+      assertAllLinksReadable(executor, row.tenantId, sourceMatter.currentMatterRevisionId));
     const [source] = await observeEngineeringRead(recursiveObservation, 'prior_saved_row_await', () =>
       executor.select().from(engineeringMatterWorkRevision).where(and(
         eq(engineeringMatterWorkRevision.tenantId, row.tenantId), eq(engineeringMatterWorkRevision.matterId, ref.subjectId),
@@ -1308,7 +1342,7 @@ async function authorizedReadModel(
     if (!source || source.workingRevision !== item.resultRevision || item.resultRef !== ref.workRef)
       throw runtimeAuthorizationUnavailable();
     await observeEngineeringRead(recursiveObservation, 'prior_saved_links_await', () =>
-      assertAllLinksOwned(executor, row.tenantId, source.basedOnMatterRevisionId));
+      assertAllLinksReadable(executor, row.tenantId, source.basedOnMatterRevisionId));
     const sourceRevision = await observeEngineeringRead(recursiveObservation, 'prior_recursive_read', () =>
       authorizedReadModel(source, executor, ancestry, recursiveObservation));
     observeEngineeringReadSync(recursiveObservation, 'prior_verify_reference_js', () => {
@@ -1410,9 +1444,11 @@ async function assertOwnedSources(
     SELECT NOT EXISTS (
       SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify([...workItemIds])}::jsonb) AS w(id)
       WHERE engineering_matter_work_item_owned_by_actor(${tenantId}, w.id::varchar) IS NOT TRUE
+        AND native_app_work_item_readable(${tenantId}, w.id::varchar) IS NOT TRUE
     ) AND NOT EXISTS (
       SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify([...documentVersionIds])}::jsonb) AS d(id)
       WHERE engineering_matter_document_owned_by_actor(${tenantId}, d.id::varchar) IS NOT TRUE
+        AND native_app_document_readable(${tenantId}, d.id::varchar) IS NOT TRUE
     ) AS allowed
   `);
   if (access?.allowed !== true) throw runtimeAuthorizationUnavailable();

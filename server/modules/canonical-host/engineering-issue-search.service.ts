@@ -127,14 +127,14 @@ export class EngineeringIssueSearchService {
             NOT EXISTS (SELECT 1 FROM assessment_work_revision newer WHERE newer.tenant_id=w.tenant_id
               AND newer.work_item_id=w.work_item_id AND newer.work_revision>w.work_revision) AS current
           FROM assessment_work_revision w
-          WHERE w.tenant_id=${actor.tenantId} AND w.created_by_user_id=${actor.userId}
+          WHERE w.tenant_id=${actor.tenantId}
           UNION ALL
           SELECT 'ENGINEERING_MATTER', w.matter_id, w.matter_work_revision_id,
             w.state_json::jsonb->'problemWork',
             NOT EXISTS (SELECT 1 FROM engineering_matter_work_revision newer WHERE newer.tenant_id=w.tenant_id
               AND newer.matter_id=w.matter_id AND newer.working_revision>w.working_revision)
           FROM engineering_matter_work_revision w
-          WHERE w.tenant_id=${actor.tenantId} AND w.created_by_user_id=${actor.userId}
+          WHERE w.tenant_id=${actor.tenantId}
         )
         SELECT kind AS "subjectKind", subject_id AS "subjectId", work_ref AS "workRef", current
         FROM works

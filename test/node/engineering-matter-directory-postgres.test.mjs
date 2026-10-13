@@ -81,6 +81,7 @@ test(
       assert.equal(alphaA.statements.length, 1);
       alphaA.statements.length = 0;
       assert.deepEqual(alphaPage.items.map((item) => item.matterId).sort(), [
+        'MAT-A-BETA',
         'MAT-A1',
         'MAT-A2',
         'MAT-A3',
@@ -128,19 +129,17 @@ test(
       );
       assert.deepEqual(
         firstPage.items.map((item) => item.matterId),
-        ['MAT-A3', 'MAT-A2'],
+        ['MAT-A-BETA', 'MAT-A3'],
       );
       assert.deepEqual(
         secondPage.items.map((item) => item.matterId),
-        ['MAT-A1'],
+        ['MAT-A2', 'MAT-A1'],
       );
       assert.equal(secondPage.nextCursor, null);
 
       const betaPage = await betaA.service.list({ limit: 50 }, betaA.actor);
-      assert.deepEqual(betaPage.items.map((item) => item.matterId).sort(), [
-        'MAT-A-BETA',
-        'MAT-A2',
-      ]);
+      assert.deepEqual(betaPage.items.map((item) => item.matterId).sort(),
+        alphaPage.items.map((item) => item.matterId).sort());
       const otherTenantPage = await alphaB.service.list(
         { limit: 50 },
         alphaB.actor,
@@ -184,7 +183,7 @@ test(
             role,
             schema,
             small: {
-              matterCount: 3,
+              matterCount: 4,
               normalCallMs: round(smallNormalMs),
               queryCount: smallStatements.length,
               queries: smallStatements.map((statement) => statement.query),
@@ -198,7 +197,7 @@ test(
               plans: scalePlans,
             },
             limitation:
-              'Local synthetic RLS reproduces tenant/actor and WorkItem ownership, not the full Miaoda gateway identity/provenance chain.',
+              'Local synthetic RLS reproduces tenant-scoped SELECT, not the full Miaoda gateway identity/provenance chain.',
           },
           null,
           2,
@@ -294,15 +293,22 @@ async function createFixtureSchema(admin, schema, role) {
       tenant_id varchar(128) NOT NULL,
       document_id varchar(96) NOT NULL,
       document_version_id varchar(96) NOT NULL,
-      requested_by_user_id varchar(255) NOT NULL
+      requested_by_user_id varchar(255) NOT NULL,
+      source_artifact_id varchar(96) NOT NULL DEFAULT 'fixture-artifact',
+      source_file_sha256 varchar(64) NOT NULL DEFAULT '${'f'.repeat(64)}',
+      source_byte_length bigint NOT NULL DEFAULT 100
     );
     CREATE TABLE "${schema}".dm_document_version (
       document_version_id varchar(96) PRIMARY KEY,
       document_id varchar(96) NOT NULL,
-      family_id varchar(96) NOT NULL
+      family_id varchar(96) NOT NULL,
+      source_artifact_id varchar(96) NOT NULL DEFAULT 'fixture-artifact',
+      pdf_sha256 varchar(64) NOT NULL DEFAULT '${'f'.repeat(64)}',
+      byte_length bigint NOT NULL DEFAULT 100
     );
     CREATE TABLE "${schema}".dm_publication_family (
-      family_id varchar(96) PRIMARY KEY
+      family_id varchar(96) PRIMARY KEY,
+      canonical_identity_key text NOT NULL
     );
     CREATE OR REPLACE FUNCTION "${schema}".directory_test_work_delay()
     RETURNS boolean LANGUAGE plpgsql AS $$
@@ -337,12 +343,9 @@ async function createFixtureSchema(admin, schema, role) {
         tenant_id = current_setting('app.tenant_id', true)
         AND "${schema}".directory_test_work_delay()
       );
-    CREATE POLICY work_item_owner ON "${schema}".work_item
+    CREATE POLICY work_item_tenant_read ON "${schema}".work_item
       FOR SELECT TO "${role}"
-      USING (
-        tenant_id = current_setting('app.tenant_id', true)
-        AND requested_by_user_id = current_setting('app.user_id', true)
-      );
+      USING (tenant_id = current_setting('app.tenant_id', true));
     CREATE POLICY document_version_read ON "${schema}".dm_document_version
       FOR SELECT TO "${role}" USING (true);
     CREATE POLICY publication_family_read ON "${schema}".dm_publication_family
@@ -514,8 +517,8 @@ async function seedMatter(admin, input) {
     const documentId = `DOC-${workItemId}`;
     const documentVersionId = `DV-${workItemId}`;
     const familyId = `FAM-${workItemId}`;
-    await admin`INSERT INTO dm_publication_family (family_id)
-      VALUES (${familyId}) ON CONFLICT DO NOTHING`;
+    await admin`INSERT INTO dm_publication_family (family_id, canonical_identity_key)
+      VALUES (${familyId}, ${`tenant:${encodeURIComponent(input.tenantId)}:family:${familyId}`}) ON CONFLICT DO NOTHING`;
     await admin`INSERT INTO dm_document_version (
       document_version_id, document_id, family_id
     ) VALUES (${documentVersionId}, ${documentId}, ${familyId})`;

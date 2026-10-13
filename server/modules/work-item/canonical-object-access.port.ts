@@ -200,7 +200,7 @@ export interface CanonicalObjectAccessGrant {
   };
   actorFingerprint: string;
   ownerFact: {
-    isOwner: true;
+    isOwner: boolean;
     ownerUserId: string;
     source: 'HOST_WORK_ITEM_REQUESTED_BY';
   };
@@ -210,11 +210,11 @@ export interface CanonicalObjectAccessGrant {
   };
   actionPolicy: {
     action: CanonicalGrantableObjectAccessAction;
-    objectRelation: 'OWNER';
+    objectRelation: 'OWNER' | 'TENANT_READER' | 'TENANT_REVIEWER';
     source: 'HOST_SERVER_ACTION_POLICY';
     requiredPlatformRoles: readonly string[];
     platformRoleEvaluation: 'NOT_REQUIRED' | 'SATISFIED';
-    policyRevision: 'creator-only.v1';
+    policyRevision: 'creator-only.v1' | 'tenant-shared-read.v1' | 'tenant-engineering-review.v1';
   };
   accessRevision: string;
   authorizationFingerprint: string;
@@ -228,7 +228,7 @@ export interface CanonicalObjectAccessGrant {
       | 'MIAODA_GATEWAY_APP_CONTEXT'
       | 'HOST_CONFIGURED_MIAODA_APP_ID';
     workspace: 'UNAVAILABLE';
-    objectAuthorization: 'HOST_WORK_ITEM_REQUESTED_BY';
+    objectAuthorization: 'HOST_WORK_ITEM_REQUESTED_BY' | 'HOST_WORK_ITEM_TENANT';
     memberAuthorization: 'UNAVAILABLE';
     session: 'UNAVAILABLE' | 'SERVER_OPAQUE_SESSION';
     correlationFieldsAreAuthorizationInputs: false;

@@ -23,7 +23,7 @@ import {
   isOpenClawAutomaticReviewConfigured,
   isOpenClawSuccessorReviewConfigured,
 } from '../canonical-host/configured-development-service-scope.authorization';
-import type { ResolvedSession } from '../identity/session-resolver.service';
+import type { NativeBrowserIdentity } from '../identity/session-resolver.service';
 import {
   CANONICAL_OBJECT_ACCESS,
   type CanonicalObjectAccessGrant,
@@ -139,6 +139,9 @@ export class ReviewConversationService {
       workItemId,
       'RECORD_ENGINEER_REVIEW',
     );
+    if (input.executionMode === 'AUTOMATIC' &&
+        (!authorized.grant.ownerFact.isOwner || !authorized.session.oauthSession))
+      throw externalDelegationRequired();
     const existing: PersistedReviewConversationAggregate =
       await this.requiredConversation(reviewConversationId);
     assertConversationBinding(existing.conversation, authorized);
@@ -247,6 +250,8 @@ export class ReviewConversationService {
     );
     let attachmentBindings: ReviewAttachmentBinding[] = [];
     if (input.attachmentSelection) {
+      if (!authorized.session.oauthSession)
+        throw externalDelegationRequired();
       const attachmentGrant: AuthorizedReviewAccess =
         await this.authorizeAttachment(
           authorized.session,
@@ -259,7 +264,7 @@ export class ReviewConversationService {
           selection: input.attachmentSelection,
           requestId: input.requestId,
           conversation: existing.conversation,
-          session: authorized.session,
+          session: authorized.session.oauthSession,
           grant: attachmentGrant.grant,
         },
       );
@@ -324,8 +329,8 @@ export class ReviewConversationService {
       executionRequested: input.executionRequested,
       overallRequested: input.overallRequested,
       ailySessionId:
-        input.purpose === 'CHAT' || input.purpose === 'UPDATE_ASSESSMENT'
-          ? input.authorized.session.session.id
+        (input.purpose === 'CHAT' || input.purpose === 'UPDATE_ASSESSMENT')
+          ? input.authorized.session.oauthSession?.session.id
           : undefined,
       currentRevision: input.authorized.grant.workItemRevision,
       attachmentBindings: input.attachmentBindings,
@@ -402,6 +407,8 @@ export class ReviewConversationService {
     model.reviewScope = selected;
     const conversation = aggregate.conversation;
     model.automaticExecutionAvailable =
+      Boolean(authorized?.grant.ownerFact.isOwner &&
+        authorized.session.oauthSession) &&
       conversation.status === 'ACTIVE' &&
       (await this.automaticExecutionAvailable(
         conversation,
@@ -409,6 +416,8 @@ export class ReviewConversationService {
         selected.kind !== 'WORK_ITEM',
       ));
     model.overallExecutionAvailable =
+      Boolean(authorized?.grant.ownerFact.isOwner &&
+        authorized.session.oauthSession) &&
       conversation.status === 'ACTIVE' &&
       (await this.successorExecutionAvailable(
         conversation,
@@ -574,9 +583,8 @@ export class ReviewConversationService {
     workItemId: string,
     action: 'READ_WORK_ITEM' | 'RECORD_ENGINEER_REVIEW',
   ): Promise<AuthorizedReviewAccess> {
-    const session: ResolvedSession | null =
-      await this.sessions.resolve(request);
-    if (!session) throw sessionRequired();
+    const session: NativeBrowserIdentity =
+      this.sessions.nativeBrowserIdentity(request);
     const result = await this.objectAccess.freshRead({
       actor: session.actor,
       action,
@@ -602,7 +610,7 @@ export class ReviewConversationService {
   }
 
   private async authorizeAttachment(
-    session: ResolvedSession,
+    session: NativeBrowserIdentity,
     workItemId: string,
     expectedWorkItemRevision: number,
   ): Promise<AuthorizedReviewAccess> {
@@ -632,7 +640,7 @@ export class ReviewConversationService {
 }
 
 interface AuthorizedReviewAccess {
-  session: ResolvedSession;
+  session: NativeBrowserIdentity;
   grant: CanonicalObjectAccessGrant;
 }
 
@@ -715,7 +723,7 @@ export function reviewTurnReadModel(
   };
 }
 
-function matterActor(session: ResolvedSession): CanonicalHostActor {
+function matterActor(session: NativeBrowserIdentity): CanonicalHostActor {
   return {
     userId: session.actor.canonicalSubject.id,
     tenantId: session.actor.tenantId,
@@ -749,16 +757,17 @@ function assertSameGrant(
     expected.grant.workItemId !== actual.grant.workItemId ||
     expected.grant.tenantId !== actual.grant.tenantId ||
     expected.grant.actorUserId !== actual.grant.actorUserId ||
-    expected.session.session.id !== actual.session.session.id
+    expected.session.oauthSession?.session.id !==
+      actual.session.oauthSession?.session.id
   ) {
     throw reviewNotFound();
   }
 }
 
-function sessionRequired(): Error & { code: string; statusCode: number } {
-  return Object.assign(new Error('A valid OAuth session is required.'), {
-    code: 'SESSION_REQUIRED',
-    statusCode: 401,
+function externalDelegationRequired(): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error('External review execution is not authorized.'), {
+    code: 'REVIEW_EXTERNAL_DELEGATION_REQUIRED',
+    statusCode: 403,
   });
 }
 

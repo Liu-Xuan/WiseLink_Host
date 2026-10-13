@@ -297,7 +297,7 @@ export function LibraryDocumentDirectory({
             </strong>
             <p>
               {authenticationRequired
-                ? '登录后可读取当前账户的资料目录。'
+                ? '登录后可读取本租户共享资料目录。'
                 : filtered
                   ? '调整搜索内容或分类筛选后重试。'
                   : '可粘贴已有工作链接，或通过上方受理入口添加获准使用的资料。'}

@@ -37,7 +37,9 @@ export async function readDocumentSummaryMember(
     WHERE r.tenant_id=${actor.tenantId} AND r.document_version_id=${member.documentVersionId}
       AND r.run_ref=${member.readingRunRef} AND r.reading_revision=${member.readingRevision}
       AND r.parse_run_id=${member.parseRunId} AND r.semantic_revision=${member.semanticRevision} AND r.status='SAVED'
-      AND document_translation_attempt_owned(r.tenant_id,${actor.actorUserId},r.document_version_id,r.parse_run_id,r.parse_revision)
+      AND ${actor.readScope === 'TENANT'
+        ? sql`native_app_document_readable(r.tenant_id,r.document_version_id)`
+        : sql`document_translation_attempt_owned(r.tenant_id,${actor.actorUserId},r.document_version_id,r.parse_run_id,r.parse_revision)`}
       AND NOT EXISTS (SELECT 1 FROM dm_document_reading_retraction x WHERE x.tenant_id=r.tenant_id AND x.run_ref=r.run_ref)`);
   const row = rows[0];
   if (!row)

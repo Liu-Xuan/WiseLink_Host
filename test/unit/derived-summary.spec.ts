@@ -40,7 +40,7 @@ describe('Explicit candidate aggregate admission', () => {
     expect(parseSummaryRequest(request)).toEqual(request);
     expect(parseSummaryRequest({ ...request, expectedSummaryRevision: 1 }, true)).toMatchObject({ expectedSummaryRevision: 1 });
   });
-  it.each(['tenantId', 'actorUserId', 'modelInput', 'producer', 'authority', 'contextBasis'])('rejects caller %s authority/content', key => {
+  it.each(['tenantId', 'actorUserId', 'readScope', 'modelInput', 'producer', 'authority', 'contextBasis'])('rejects caller %s authority/content', key => {
     expect(() => parseSummaryRequest({ ...request, [key]: 'forged' })).toThrow('DERIVED_SUMMARY_INPUT_INVALID');
   });
   it('rejects node/Matter impersonation, invalid ATA parentage and duplicate exact members', () => {

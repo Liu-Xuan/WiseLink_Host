@@ -154,7 +154,7 @@ describe('database-backed canonical library', () => {
     ).rejects.toThrow('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE');
     expect(fleet.readLibraryCatalog).not.toHaveBeenCalled();
   });
-  it('paginates a fresh owner-scoped database directory without any file dependencies', async () => {
+  it('paginates a fresh tenant-scoped database directory without any file dependencies', async () => {
     const { service, repository } = target();
     const first = await service.listTasks({ search: '737', limit: 2 }, actor);
     expect(repository.listTasks).toHaveBeenCalledWith({
@@ -192,7 +192,7 @@ describe('database-backed canonical library', () => {
   it('pages DM families with their complete visible version history, independently of task results', async () => {
     const { service, repository } = target();
     const first = await service.list({ search: 'old.pdf', limit: 2 }, actor);
-    expect(first.scope).toBe('CURRENT_USER_DOCUMENT_CATALOG');
+    expect(first.scope).toBe('TENANT_DOCUMENT_CATALOG');
     expect(first.items.map((item) => item.familyId)).toEqual([
       'family-c',
       'family-b',
@@ -256,7 +256,7 @@ describe('database-backed canonical library', () => {
     expect(result.fileReadPerformed).toBe(false);
   });
 
-  it('rejects identity/owner drift before querying rows, regardless of platform roles', async () => {
+  it('rejects identity drift before querying rows, regardless of platform roles', async () => {
     const { service, repository } = target();
     await expect(
       service.list(

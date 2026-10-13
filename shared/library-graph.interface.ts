@@ -45,7 +45,7 @@ export interface LibraryGraphFamily {
 export interface LibraryGraphVersion {
   kind: 'VERSION';
   documentVersionId: string;
-  /** Host-selected actor-owned reader for this exact DV, following the library's
+  /** Host-selected tenant reader for this exact DV, following the library's
    * existing ranking. A navigation hint; the destination rechecks authorization. */
   readerWorkItemId?: string;
   businessRevision: string;
@@ -53,7 +53,7 @@ export interface LibraryGraphVersion {
   isCurrent: boolean;
 }
 interface LibraryGraphResponseBase {
-  scope: 'CURRENT_USER_DOCUMENT_CATALOG';
+  scope: 'TENANT_DOCUMENT_CATALOG';
   versionMeaning: 'ALL_READABLE_VERSIONS';
   consistency: 'LIVE_READ';
   relationMeaning: 'CLASSIFICATION_AND_CONTAINMENT_ONLY';

@@ -8,7 +8,7 @@ import type {
   ReviewActionDraftCandidate,
 } from '@shared/api.interface';
 import { SessionResolver } from '../identity/session-resolver.service';
-import type { ResolvedSession } from '../identity/session-resolver.service';
+import type { NativeBrowserIdentity } from '../identity/session-resolver.service';
 import {
   parseReviewAttachmentParsedArtifact,
   reviewAttachmentEvidenceStatement,
@@ -54,9 +54,8 @@ export class CanonicalHostReviewActionService {
     input: ConfirmReviewActionDraftRequest,
     request: Request,
   ): Promise<ConfirmReviewActionDraftResponse> {
-    const session: ResolvedSession | null =
-      await this.sessions.resolve(request);
-    if (!session) throw sessionRequired();
+    const session: NativeBrowserIdentity =
+      this.sessions.nativeBrowserIdentity(request);
     const grant = await this.authorize(session, workItemId);
     const aggregate = await this.conversations.loadById(reviewConversationId);
     if (!aggregate) throw reviewNotFound();
@@ -181,7 +180,7 @@ export class CanonicalHostReviewActionService {
   }
 
   private async authorize(
-    session: ResolvedSession,
+    session: NativeBrowserIdentity,
     workItemId: string,
   ): Promise<CanonicalObjectAccessGrant> {
     const result = await this.objectAccess.freshRead({
@@ -270,7 +269,7 @@ export class CanonicalHostReviewActionService {
 function assertConfirmBinding(input: {
   conversation: PersistedReviewConversation;
   turn: PersistedReviewTurn;
-  session: ResolvedSession;
+  session: NativeBrowserIdentity;
   grant: CanonicalObjectAccessGrant;
 }): void {
   if (
@@ -346,7 +345,7 @@ function reviewActionComment(
   }.${assumptions}`;
 }
 
-function hostActor(session: ResolvedSession): CanonicalHostActor {
+function hostActor(session: NativeBrowserIdentity): CanonicalHostActor {
   return {
     userId: session.actor.canonicalSubject.id,
     tenantId: session.actor.tenantId,
@@ -355,13 +354,6 @@ function hostActor(session: ResolvedSession): CanonicalHostActor {
     env: session.actor.env,
     objectAccessActor: session.actor,
   };
-}
-
-function sessionRequired(): Error & { code: string; statusCode: number } {
-  return Object.assign(new Error('A valid OAuth session is required.'), {
-    code: 'SESSION_REQUIRED',
-    statusCode: 401,
-  });
 }
 
 function reviewNotFound(): Error & { code: string; statusCode: number } {

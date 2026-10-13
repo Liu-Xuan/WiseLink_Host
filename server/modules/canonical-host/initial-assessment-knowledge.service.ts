@@ -126,7 +126,7 @@ export class InitialAssessmentKnowledgeService {
   }
 
   async saved(
-    scope: InitialKnowledgeScope,
+    scope: InitialKnowledgeScope & { readScope?: 'TENANT' },
     attemptId?: string,
     database?: PostgresJsDatabase,
   ): Promise<AssessmentEvidence[]> {
@@ -134,8 +134,10 @@ export class InitialAssessmentKnowledgeService {
       const rows = await db.execute<SavedQuery>(sql`
         SELECT q.* FROM review_aily_query q JOIN action_attempt a ON a.attempt_id=q.attempt_ref
         JOIN work_item w ON w.work_item_id=a.work_item_id AND w.tenant_id=a.tenant_id
-        WHERE q.tenant_id=${scope.tenantId} AND q.actor_id=${scope.actorId}
-        AND w.tenant_id=${scope.tenantId} AND w.work_item_id=${scope.workItemId} AND w.requested_by_user_id=${scope.actorId}
+        WHERE q.tenant_id=${scope.tenantId} AND q.actor_id=a.actor_user_id AND q.tenant_id=a.tenant_id
+        AND ${scope.readScope === 'TENANT' ? sql`TRUE` : sql`q.actor_id=${scope.actorId}`}
+        AND w.tenant_id=${scope.tenantId} AND w.work_item_id=${scope.workItemId}
+        AND w.requested_by_user_id=q.actor_id
         AND a.action_type IN ('OPENCLAW_DYNAMIC_EVALUATION','OPENCLAW_OVERALL_SYNTHESIS')
         AND ${attemptId ? sql`q.attempt_ref=${attemptId}` : sql`TRUE`}`);
       return rows.flatMap(initialKnowledgeEvidence);

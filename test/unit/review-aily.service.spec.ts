@@ -41,10 +41,14 @@ describe('review Aily queries', () => {
     const withActorTransaction = jest.fn(async (_actor, operation) =>
       operation({ database: db }),
     );
+    const withBrowserActorTransaction = jest.fn(async (_actor, operation) =>
+      operation({ database: db }),
+    );
     const service = new ReviewAilyService({
       withActorTransaction,
+      withBrowserActorTransaction,
     } as unknown as EngineeringMatterWorkingRepository);
-    return { service, execute, withActorTransaction };
+    return { service, execute, withActorTransaction, withBrowserActorTransaction };
   }
 
   it('never makes a Feishu request without this session grant', async () => {
@@ -435,8 +439,8 @@ describe('review Aily queries', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('settles an abandoned message locally without regenerating from a new login', async () => {
-    const { service, execute } = harness(false);
+  it('projects an abandoned message as UNKNOWN without a GET-side write', async () => {
+    const { service, execute, withActorTransaction, withBrowserActorTransaction } = harness(false);
     execute
       .mockResolvedValueOnce([
         {
@@ -448,20 +452,24 @@ describe('review Aily queries', () => {
           remote_session_id: 'remote-1',
           _created_at: new Date(Date.now() - 361000),
         },
-      ])
-      .mockResolvedValueOnce([{ query_ref: queryRef }]);
+      ]);
     globalThis.fetch = jest.fn();
     expect(
       await service.resultMessage(
         { ...actor, sessionId: 'new-login' },
         messageRef,
         queryRef,
+        true,
       ),
     ).toMatchObject({
       status: 'UNKNOWN',
       answer: '部分',
       error: 'AILY_STREAM_RESULT_UNCONFIRMED',
+      statusPersisted: false,
     });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(withBrowserActorTransaction).toHaveBeenCalledTimes(1);
+    expect(withActorTransaction).not.toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

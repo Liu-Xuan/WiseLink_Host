@@ -58,7 +58,7 @@ it('supports native DV-only center and marks missing WorkItem-reference scope ex
   expect(data.references).toBeNull(); expect(data.matters).toBeNull();
   expect(api.getCanonicalLibraryQuicklook).not.toHaveBeenCalled(); expect(api.getRelatedContextPreview).not.toHaveBeenCalled();
   expect(matterApi.getEngineeringMatterDirectory).not.toHaveBeenCalled();
-  expect(data.notices.join('')).toContain('未提供已核对的阅读工作');
+  expect(data.notices.join('')).toContain('暂无关联阅读工作');
 });
 it('deduplicates same-family versions but never joins unrelated objects from text similarity', async () => {
   const p = familyPage(); p.items.push({...p.items[1],workItemId:'another-task-same-dv'});api.getCanonicalLibraryTasks.mockResolvedValue(p);
@@ -70,7 +70,7 @@ it('deduplicates same-family versions but never joins unrelated objects from tex
 it('bounds retained reference data and exposes missing server pagination', async () => {
   const p = referencePreview();p.mentions=Array.from({length:300},(_,i)=>referenceMention(i));p.totalMentionCount=300;
   api.getRelatedContextPreview.mockResolvedValue(p);const data=await read();
-  expect(data.references?.mentions).toHaveLength(40);expect(data.notices.join('')).toContain('尚无分页');
+  expect(data.references?.mentions).toHaveLength(40);expect(data.notices.join('')).toContain('当前显示 40 / 300 条引用出现位置');
   expect(buildDocumentNeighborhood(data).graph.groups.flatMap(g=>g.items).length).toBeLessThanOrEqual(64);
 });
 it('keeps empty separate from unavailable/partial', async () => {

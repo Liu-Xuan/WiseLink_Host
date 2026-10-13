@@ -1,37 +1,37 @@
-import {
-  ForbiddenException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { Request } from 'express';
 import { SessionResolver } from '../identity/session-resolver.service';
-import { miaodaHostedFinalUserActor } from '../work-item/production-miaoda-browser-ingress';
 
-/** Server-only SQL scope for this controller, after both independent identities agree. */
+/** Hosted native browser scope; external OAuth remains a separate delegation. */
 @Injectable()
 export class DialogueBrowserScope {
   constructor(private readonly sessions: SessionResolver) {}
 
-  async run<T>(request: Request, operation: () => Promise<T>): Promise<T> {
-    // Neither JSON/header actor fields nor background system callers qualify.
-    // This helper checks native Hosted provenance before resolving the opaque cookie.
-    const native = miaodaHostedFinalUserActor(request.userContext);
-    return this.sessions.withRequestSession(request, async (session) => {
-      if (!session)
-        throw new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED');
-      const actorId = session.actor.canonicalSubject.id;
-      if (
-        !/^[A-Za-z0-9_-]{1,255}$/u.test(actorId) ||
-        native.canonicalSubject.id !== actorId ||
-        native.tenantId !== session.actor.tenantId ||
-        native.applicationScopeId !== session.actor.applicationScopeId
-      )
-        throw new ForbiddenException('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
+  /** Read through platform authenticated SQL with the original native actor. */
+  async runRead<T>(request: Request, operation: () => Promise<T>): Promise<T> {
+    return this.sessions.withNativeBrowserIdentity(request, () =>
+      this.sessions.withVerifiedNativeBrowserSql(operation),
+    );
+  }
 
-      // Only the SQL async context changes; the original request and platform
-      // identity remain intact. Existing repositories still enforce service-role
-      // provenance and per-actor RLS. No browser/raw-table policy is opened.
-      return this.sessions.withVerifiedServiceSql(operation, actorId);
-    });
+  /** Browser-owned ReviewAction writes use the real actor's SQL role and RLS. */
+  async runNativeWrite<T>(request: Request, operation: () => Promise<T>): Promise<T> {
+    return this.sessions.withNativeBrowserIdentity(request, () =>
+      this.sessions.withVerifiedNativeBrowserSql(operation),
+    );
+  }
+
+  /** Internal browser mutation; the called service must check its fresh grant. */
+  async run<T>(request: Request, operation: () => Promise<T>): Promise<T> {
+    return this.sessions.withNativeBrowserIdentity(request, () =>
+      this.sessions.withVerifiedNativeBrowserServiceSql(operation),
+    );
+  }
+
+  /** Legacy OAuth-authorized mutation requiring the original request session ALS. */
+  async runOAuth<T>(request: Request, operation: () => Promise<T>): Promise<T> {
+    return this.sessions.withRequestSession(request, () =>
+      this.sessions.withVerifiedBrowserSql(operation),
+    );
   }
 }

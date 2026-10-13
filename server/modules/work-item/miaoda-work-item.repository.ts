@@ -1943,6 +1943,7 @@ export class MiaodaWorkItemRepository {
     workItemId: string;
     tenantId: string;
     actorUserId: string;
+    readScope?: 'TENANT';
   }, database: PostgresJsDatabase = this.db): Promise<WorkItemAuthorizationBinding | null> {
     const [row] = await database
       .select({
@@ -1960,7 +1961,7 @@ export class MiaodaWorkItemRepository {
         and(
           eq(workItem.workItemId, input.workItemId),
           eq(workItem.tenantId, input.tenantId),
-          eq(workItem.requestedByUserId, input.actorUserId),
+          input.readScope === 'TENANT' ? undefined : eq(workItem.requestedByUserId, input.actorUserId),
         ),
       )
       .limit(1);
@@ -1973,15 +1974,16 @@ export class MiaodaWorkItemRepository {
       workItemId: string;
       tenantId: string;
       actorUserId: string;
+      readScope?: 'TENANT';
     }[],
   ): Promise<Map<string, WorkItemAuthorizationBinding>> {
     if (inputs.length < 2 || inputs.length > 4)
       throw new Error('WORK_ITEM_AUTHORIZATION_BATCH_SIZE_INVALID');
-    const { tenantId, actorUserId } = inputs[0];
+    const { tenantId, actorUserId, readScope } = inputs[0];
     if (
       inputs.some(
         (input) =>
-          input.tenantId !== tenantId || input.actorUserId !== actorUserId,
+          input.tenantId !== tenantId || input.actorUserId !== actorUserId || input.readScope !== readScope,
       )
     )
       throw new Error('WORK_ITEM_AUTHORIZATION_BATCH_SCOPE_INVALID');
@@ -2000,7 +2002,7 @@ export class MiaodaWorkItemRepository {
       .where(
         and(
           eq(workItem.tenantId, tenantId),
-          eq(workItem.requestedByUserId, actorUserId),
+          readScope === 'TENANT' ? undefined : eq(workItem.requestedByUserId, actorUserId),
           inArray(workItem.workItemId, [
             ...new Set(inputs.map((input) => input.workItemId)),
           ]),

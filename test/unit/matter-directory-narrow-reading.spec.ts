@@ -288,6 +288,14 @@ function serviceFor(directoryFixture: DirectoryFixture) {
 }
 
 describe('engineering matter directory narrow reading', () => {
+  it('keeps a same-tenant matter visible when its linked work item belongs to another user', async () => {
+    const data = fixture();
+    data.links[0]!.requestedByUserId = 'another-tenant-member';
+    const response = await serviceFor(data).service.list({}, actor);
+    expect(response.items.map((item) => item.matterId)).toEqual(['MAT-1']);
+    expect(response.items[0]?.primaryWorkItemId).toBe('WI-1');
+  });
+
   it('returns the same directory fields, result brief and exact working revision', async () => {
     const f = serviceFor(fixture());
     const response = await f.service.list({}, actor);

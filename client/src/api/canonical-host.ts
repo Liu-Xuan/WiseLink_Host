@@ -1745,6 +1745,10 @@ async function reviewConversationRequest<T>(input: {
       );
     }
     if (response.status === 403 || response.status === 404) {
+      const denial = backendResponseError(
+        response.data, 'REVIEW_CONVERSATION_UNAVAILABLE', response.status,
+      );
+      if (denial.code === 'REVIEW_EXTERNAL_DELEGATION_REQUIRED') throw denial;
       throw canonicalObjectNotFound();
     }
     if (response.status < 200 || response.status >= 300) {
@@ -1832,6 +1836,13 @@ function normalizedReviewConversationError(
   error: unknown,
   requestGeneration: number,
 ): unknown {
+  if (responseStatus(error) === 403 &&
+      isRecord(error) && isRecord(error.response)) {
+    const denial = backendResponseError(
+      error.response.data, 'REVIEW_CONVERSATION_UNAVAILABLE', 403,
+    );
+    if (denial.code === 'REVIEW_EXTERNAL_DELEGATION_REQUIRED') return denial;
+  }
   if (
     responseStatus(error) === 401 &&
     isRecord(error) &&

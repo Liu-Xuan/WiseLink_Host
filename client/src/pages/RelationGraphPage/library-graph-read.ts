@@ -7,7 +7,7 @@ const text = (n:unknown,max:number,nonempty=false):n is string => typeof n === '
 /** Fail closed on a wrong-level, unbounded or ambiguous projection. No partial graph is invented. */
 export function validateLibraryGraphPage(page:CanonicalLibraryGraphResponse, request:CanonicalLibraryGraphRequest):CanonicalLibraryGraphResponse {
   const fail = () => { throw new Error('LIBRARY_GRAPH_RESPONSE_INVALID'); };
-  if (!page || page.scope !== 'CURRENT_USER_DOCUMENT_CATALOG' || page.level !== request.level
+  if (!page || page.scope !== 'TENANT_DOCUMENT_CATALOG' || page.level !== request.level
     || page.versionMeaning !== 'ALL_READABLE_VERSIONS' || page.consistency !== 'LIVE_READ'
     || page.relationMeaning !== 'CLASSIFICATION_AND_CONTAINMENT_ONLY'
     || page.coverage?.documentReferences !== 'NOT_INDEXED' || page.coverage.matterMemberships !== 'NOT_LOADED'

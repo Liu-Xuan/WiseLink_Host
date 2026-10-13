@@ -10,7 +10,10 @@ const actor = {
   tenantId: 'tenant-1',
   sessionProvenance: 'SERVER_OPAQUE_SESSION',
 };
-const session = { actor, session: { id: 'session-1' } };
+const session = {
+  actor,
+  oauthSession: { actor, session: { id: 'session-1' } },
+};
 const grant = {
   allowed: true,
   action: 'RECORD_ENGINEER_REVIEW',
@@ -18,6 +21,7 @@ const grant = {
   workItemRevision: 7,
   tenantId: 'tenant-1',
   actorUserId: 'actor-1',
+  ownerFact: { isOwner: true, ownerUserId: 'actor-1' },
 };
 const conversation = {
   reviewConversationId: 'RC-1',
@@ -51,6 +55,68 @@ const turn = {
 
 describe('ReviewConversationService session and ACL boundary', () => {
   afterEach(() => jest.restoreAllMocks());
+
+  it('reads and records B-owned review text on A work without OAuth or a model dispatch', async () => {
+    const setup = makeService();
+    setup.sessions.nativeBrowserIdentity.mockReturnValue({
+      actor, oauthSession: null,
+    });
+    setup.objectAccess.freshRead.mockImplementation(async ({ action }) => ({
+      ...grant,
+      action,
+      ownerFact: { isOwner: false, ownerUserId: 'actor-A' },
+    }));
+    setup.conversations.loadCurrent.mockResolvedValue({
+      conversation, turns: [],
+    });
+    const current = await setup.service.current('WI-1', {} as never);
+    expect(current.conversation?.automaticExecutionAvailable).toBe(false);
+    setup.conversations.loadById.mockResolvedValue({ conversation, turns: [] });
+    setup.conversations.appendTextTurn.mockResolvedValue({
+      turn, replayed: false,
+    });
+    await setup.service.appendTextTurn(
+      'WI-1', 'RC-1',
+      { requestId: 'native-text', userMessage: '仅记录内部复核意见' },
+      {} as never,
+    );
+    expect(setup.conversations.appendTextTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ailySessionId: undefined,
+        executionRequested: false,
+        conversation,
+      }),
+    );
+  });
+
+  it('requires separate external delegation before native review generation or attachment', async () => {
+    const setup = makeService();
+    setup.sessions.nativeBrowserIdentity.mockReturnValue({
+      actor, oauthSession: null,
+    });
+    setup.objectAccess.freshRead.mockResolvedValue({
+      ...grant,
+      ownerFact: { isOwner: false, ownerUserId: 'actor-A' },
+    });
+    await expect(setup.service.appendTextTurn(
+      'WI-1', 'RC-1',
+      { requestId: 'native-auto', userMessage: '生成', executionMode: 'AUTOMATIC' },
+      {} as never,
+    )).rejects.toMatchObject({ code: 'REVIEW_EXTERNAL_DELEGATION_REQUIRED' });
+    expect(setup.conversations.loadById).not.toHaveBeenCalled();
+    setup.conversations.loadById.mockResolvedValue({ conversation, turns: [] });
+    await expect(setup.service.appendTextTurn(
+      'WI-1', 'RC-1',
+      {
+        requestId: 'native-attachment', userMessage: '读取附件',
+        attachmentSelection: {
+          bucketId: 'default-bucket', filePath: 'private/report.pdf',
+        },
+      },
+      {} as never,
+    )).rejects.toMatchObject({ code: 'REVIEW_EXTERNAL_DELEGATION_REQUIRED' });
+    expect(setup.attachments.ingest).not.toHaveBeenCalled();
+  });
 
   it('binds a new explicit update to the currently verified request session', async () => {
     jest
@@ -353,10 +419,16 @@ describe('ReviewConversationService session and ACL boundary', () => {
 
   it('fails before repository access without an OAuth session', async () => {
     const setup = makeService();
-    setup.sessions.resolve.mockResolvedValue(null);
+    setup.sessions.nativeBrowserIdentity.mockImplementation(() => {
+      throw Object.assign(new Error('NATIVE_BROWSER_IDENTITY_REQUIRED'), {
+        code: 'NATIVE_BROWSER_IDENTITY_REQUIRED', statusCode: 401,
+      });
+    });
     await expect(
       setup.service.current('WI-1', {} as never),
-    ).rejects.toMatchObject({ code: 'SESSION_REQUIRED', statusCode: 401 });
+    ).rejects.toMatchObject({
+      code: 'NATIVE_BROWSER_IDENTITY_REQUIRED', statusCode: 401,
+    });
     expect(setup.objectAccess.freshRead).not.toHaveBeenCalled();
     expect(setup.conversations.loadCurrent).not.toHaveBeenCalled();
   });
@@ -502,7 +574,7 @@ describe('ReviewConversationService session and ACL boundary', () => {
       attachmentBindings: [],
       reviewScope: null,
     });
-    expect(setup.sessions.resolve.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(setup.sessions.nativeBrowserIdentity.mock.invocationCallOrder[0]).toBeLessThan(
       setup.objectAccess.freshRead.mock.invocationCallOrder[0],
     );
     expect(
@@ -615,7 +687,7 @@ describe('ReviewConversationService session and ACL boundary', () => {
       expect.objectContaining({
         requestId: 'request-1',
         conversation,
-        session,
+        session: session.oauthSession,
       }),
     );
     expect(result.turn.attachmentRefs).toEqual(['ATTACHMENT-1']);
@@ -760,7 +832,7 @@ describe('ReviewConversationService session and ACL boundary', () => {
       conversation,
       currentRevision: 7,
     });
-    expect(setup.sessions.resolve.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(setup.sessions.nativeBrowserIdentity.mock.invocationCallOrder[0]).toBeLessThan(
       setup.objectAccess.freshRead.mock.invocationCallOrder[0],
     );
     expect(
@@ -772,7 +844,7 @@ describe('ReviewConversationService session and ACL boundary', () => {
 });
 
 function makeService() {
-  const sessions = { resolve: jest.fn().mockResolvedValue(session) };
+  const sessions = { nativeBrowserIdentity: jest.fn().mockReturnValue(session) };
   const objectAccess = { freshRead: jest.fn().mockResolvedValue(grant) };
   const conversations = {
     createOrResume: jest.fn(),
