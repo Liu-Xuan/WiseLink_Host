@@ -23,7 +23,7 @@ import { MemoryTdmsRepository, nativeScope } from '../tdms-source/tdms-memory-do
 function sourceRow(
   index: number,
   documentVersionIds: string[],
-  state = 'In work',
+  state = 'Estimated',
   discipline = 'ATA 27',
 ): TdmsStoredRevision {
   const record: TdmsRecordRevision = {
@@ -66,6 +66,11 @@ function sourceRow(
     artifacts: [], unreadAttachments: [],
     sourceVerification: 'DECLARED_ONLY', currentness: 'SELECTED_HOST_OBSERVATION', selectedHead: true,
   };
+  record.rawFields.completeOwnedSource = {
+    reads: [1, 2].map(() => ({ owner: {
+      sourceRecordId: record.sourceRecordId, stateRaw: state, sourceVersion: record.sourceVersion,
+    } })),
+  };
   // Synthetic stored Host bindings test reading only, not collector/DM registration authority.
   return { scope: nativeScope, record };
 }
@@ -73,19 +78,47 @@ function sourceRow(
 function setup(rows: TdmsStoredRevision[] = []) {
   const memory = new MemoryTdmsRepository();
   memory.state.revisions = structuredClone(rows);
+  for (const { scope, record } of rows) {
+    const head = {
+      scope, recordRef: record.recordRef, recordKind: record.recordKind,
+      sourceRecordId: record.sourceRecordId, sourceRevisionRef: record.sourceRevisionRef,
+      observedAt: record.observedAt,
+    };
+    const index: number = memory.state.heads.findIndex((item) => item.recordRef === record.recordRef);
+    if (index < 0) memory.state.heads.push(head);
+    else if (Date.parse(head.observedAt) >= Date.parse(memory.state.heads[index]!.observedAt))
+      memory.state.heads[index] = head;
+  }
   const pages: TdmsCataloguePage[] = [];
   const repository: TdmsRepository = {
     transaction: <T>(operation: (tx: TdmsTransaction) => Promise<T>) =>
       memory.transaction((tx: TdmsTransaction) => operation({
         ...tx,
-        catalogue: async (scope: TdmsSourceScope, page?: TdmsCataloguePage) => {
+        documentVersionCatalogue: async (scope: TdmsSourceScope, page?: TdmsCataloguePage) => {
           if (!page) throw new Error('UNBOUNDED_QUERY');
           pages.push(page);
-          return rows.filter((row: TdmsStoredRevision) =>
+          const matching: TdmsStoredRevision[] = rows.filter((row: TdmsStoredRevision) =>
             row.scope.scopeId === scope.scopeId &&
-            (!page.after || row.record.sourceRevisionRef > page.after) &&
             (!page.documentVersionId || row.record.relatedDocumentVersionIds.includes(page.documentVersionId)),
-          ).sort((left: TdmsStoredRevision, right: TdmsStoredRevision) =>
+          );
+          const selected: TdmsStoredRevision[] = [];
+          const recordRefs: string[] = [...new Set(matching.map((row: TdmsStoredRevision) => row.record.recordRef))];
+          for (const recordRef of recordRefs) {
+            const head = memory.state.heads.find((item) => item.recordRef === recordRef);
+            const history = matching.filter((row: TdmsStoredRevision) => row.record.recordRef === recordRef);
+            const current = history.find((row: TdmsStoredRevision) => row.record.sourceRevisionRef === head?.sourceRevisionRef);
+            history.sort((left: TdmsStoredRevision, right: TdmsStoredRevision) =>
+              Date.parse(right.record.observedAt) - Date.parse(left.record.observedAt) ||
+              Date.parse(right.record.capturedAt) - Date.parse(left.record.capturedAt),
+            );
+            const row: TdmsStoredRevision = current ?? history[0]!;
+            selected.push({
+              ...row,
+              record: { ...row.record, selectedHead: row.record.sourceRevisionRef === head?.sourceRevisionRef },
+            });
+          }
+          return selected.filter((row: TdmsStoredRevision) => !page.after || row.record.sourceRevisionRef > page.after)
+            .sort((left: TdmsStoredRevision, right: TdmsStoredRevision) =>
             left.record.sourceRevisionRef.localeCompare(right.record.sourceRevisionRef),
           ).slice(0, page.limit);
         },
@@ -116,21 +149,27 @@ function setup(rows: TdmsStoredRevision[] = []) {
 }
 
 describe('TDMS exact version source reading; synthetic authority and records only', () => {
-  it('keeps both professional raw opinions and unapproved state while excluding another/unknown version', async () => {
+  it('keeps the approved professional body and the other lane metadata while excluding another/unknown version', async () => {
     const rows: TdmsStoredRevision[] = [
-      sourceRow(1, ['DV-R00']), sourceRow(2, ['DV-R00'], 'Estimated', 'ATA 28'),
+      sourceRow(1, ['DV-R00']), sourceRow(2, ['DV-R00'], 'Estimating', 'ATA 28'),
       sourceRow(3, ['DV-R01']), sourceRow(4, []),
     ];
     const f = setup(rows);
     const result = await f.service.readDocumentVersion(actor(), { documentVersionId: 'DV-R00' });
     expect(result.sourceStatus).toBe('AVAILABLE');
     expect(result.records.map((read) => read.record.sourceRevisionRef)).toEqual(['TDMS-REV-0001', 'TDMS-REV-0002']);
-    expect(result.records[0]!.record.state?.rawName).toBe('In work');
+    expect(result.records[0]!.record.state?.rawName).toBe('Estimated');
     expect(result.records[0]!.record.content.completeOwnedFields).toEqual(rows[0]!.record.content.completeOwnedFields);
     expect(result.records[0]!.record.content.opinions).toBeUndefined();
     expect(result.records[0]!.record.businessVersion?.rawRevision).toBe('R00');
     expect(result.records[0]!.record.sourceVersion).toEqual({ rawRevision: 'A', rawIteration: '2', confirmation: 'SOURCE_DECLARED' });
     expect(result.records[1]!.record.authors[0]!.role).toBe('ATA 28');
+    expect(result.records[1]!.record.state?.rawName).toBe('Estimating');
+    expect(result.records[1]!.record.content).toEqual({});
+    expect(result.records[1]!.record.rawFields).toEqual({});
+    expect(result.records[1]!.bodyReadPolicy?.kind).toBe('METADATA_ONLY');
+    expect(result.records[0]!.bodyReadPolicy?.kind).toBe('ESTIMATED_ASSESSMENT');
+    expect(JSON.stringify(result)).not.toContain('Synthetic raw opinion 2');
     expect(result.hasMore).toBe(false);
     expect(result.nextAfter).toBeNull();
     expect(f.pages).toEqual([{ documentVersionId: 'DV-R00', limit: 21 }]);
@@ -166,6 +205,43 @@ describe('TDMS exact version source reading; synthetic authority and records onl
     expect(third.nextAfter).toBeNull();
     expect(f.pages.every((page: TdmsCataloguePage) => page.limit === 3)).toBe(true);
     expect(f.memory.state.receipts).toHaveLength(5);
+  });
+
+  it('keeps the newest old-version observation after target changes and ignores late older observations', async () => {
+    const first: TdmsStoredRevision = sourceRow(1, ['DV-R00']);
+    first.record.observedAt = '2026-10-11T00:00:00.000Z';
+    first.record.capturedAt = '2026-10-11T00:01:00.000Z';
+    const revised: TdmsStoredRevision = sourceRow(2, ['DV-R00'], 'Estimated');
+    const current: TdmsStoredRevision = sourceRow(3, ['DV-R01'], 'Estimated');
+    current.record.observedAt = '2026-10-15T00:00:00.000Z';
+    current.record.capturedAt = '2026-10-15T00:01:00.000Z';
+    const late: TdmsStoredRevision = sourceRow(4, ['DV-R00']);
+    late.record.observedAt = '2026-10-10T00:00:00.000Z';
+    late.record.capturedAt = '2026-10-16T00:01:00.000Z';
+    for (const row of [revised, current, late]) {
+      row.record.recordRef = first.record.recordRef;
+      row.record.sourceRecordId = first.record.sourceRecordId;
+      row.record.rawFields.completeOwnedSource = {
+        reads: [1, 2].map(() => ({ owner: {
+          sourceRecordId: row.record.sourceRecordId, stateRaw: row.record.state?.rawName,
+          sourceVersion: row.record.sourceVersion,
+        } })),
+      };
+    }
+    const f = setup([first, revised, current, late, sourceRow(5, ['DV-R00'], 'In work', 'ATA 28')]);
+    const old = await f.service.readDocumentVersion(actor(), { documentVersionId: 'DV-R00', limit: 1 });
+    expect(old.records[0]!.record.sourceRevisionRef).toBe('TDMS-REV-0002');
+    expect(old.records[0]!.record.selectedHead).toBe(false);
+    expect(old.records[0]!.record.content.completeOwnedFields?.[0]?.value.rawValue).toBe('Synthetic raw opinion 2');
+    const tail = await f.service.readDocumentVersion(actor(), {
+      documentVersionId: 'DV-R00', limit: 1, after: old.nextAfter!,
+    });
+    expect(tail.records.map((read) => read.record.sourceRevisionRef)).toEqual(['TDMS-REV-0005']);
+    expect(tail.hasMore).toBe(false);
+    const newer = await f.service.readDocumentVersion(actor(), { documentVersionId: 'DV-R01' });
+    expect(newer.records[0]!.record.sourceRevisionRef).toBe('TDMS-REV-0003');
+    expect(newer.records[0]!.record.selectedHead).toBe(true);
+    expect(newer.records[0]!.record.content.completeOwnedFields?.[0]?.value.rawValue).toBe('Synthetic raw opinion 3');
   });
 
   it('allows two currently authorized same-tenant actors to read the same scope', async () => {

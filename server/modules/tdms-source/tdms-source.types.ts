@@ -171,6 +171,9 @@ export interface TdmsCataloguePage {
   /** Includes the one lookahead record; never exceeds the public page plus one. */
   limit: number;
 }
+export interface TdmsDocumentCataloguePage extends TdmsCataloguePage {
+  documentVersionId: string;
+}
 export interface TdmsTransaction {
   capture(
     scope: TdmsSourceScope,
@@ -189,6 +192,11 @@ export interface TdmsTransaction {
   catalogue(
     scope: TdmsSourceScope,
     page?: TdmsCataloguePage,
+  ): Promise<TdmsStoredRevision[]>;
+  /** Explicit port for version-bound historical observations; absence fails closed. */
+  documentVersionCatalogue?(
+    scope: TdmsSourceScope,
+    page: TdmsDocumentCataloguePage,
   ): Promise<TdmsStoredRevision[]>;
   history(
     scope: TdmsSourceScope,

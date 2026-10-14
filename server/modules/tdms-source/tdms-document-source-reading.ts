@@ -6,6 +6,7 @@ import type { TdmsFileServiceRecordReadResponse } from '@shared/tdms-file-servic
 import type { TdmsReadContext, TdmsReadReceipt } from '@shared/tdms-source.interface';
 import { assertPublicActor, sameScope } from './tdms-source.authorization';
 import { identifier, object, strict } from './tdms-source.validation';
+import { sourceBodyReadingProjection } from './tdms-assessment-body-policy';
 import {
   tdmsError,
   type TdmsDocumentAccess,
@@ -68,10 +69,12 @@ export async function readDocumentVersionSources(
   }
 
   const result = await repository.transaction(async (tx) => {
+    if (!tx.documentVersionCatalogue)
+      throw tdmsError('TDMS_DOCUMENT_SOURCE_REPOSITORY_UNCONFIGURED', 503);
     const rows: AuthorizedSourceRow[] = [];
     for (const grant of grants) {
       await dependencies.recheck(grant, context);
-      const page: TdmsStoredRevision[] = await tx.catalogue(grant.scope, {
+      const page: TdmsStoredRevision[] = await tx.documentVersionCatalogue(grant.scope, {
         documentVersionId,
         ...(after ? { after } : {}),
         limit: limit + 1,
@@ -97,8 +100,9 @@ export async function readDocumentVersionSources(
     for (const grant of grants) await dependencies.recheck(grant, context);
     const records: TdmsFileServiceRecordReadResponse[] = [];
     for (const { stored, grant } of window.slice(0, limit)) {
-      const receipt: TdmsReadReceipt = dependencies.receipt(
-        stored.record.sourceRevisionRef, grant, context,
+      const receipt: TdmsReadReceipt = sourceRecordReadReceipt(
+        stored.record,
+        dependencies.receipt(stored.record.sourceRevisionRef, grant, context),
       );
       await tx.saveReceipt({
         scope: grant.scope,
@@ -129,15 +133,31 @@ export async function readDocumentVersionSources(
   return result.response;
 }
 
+export function sourceRecordReadReceipt(
+  record: TdmsStoredRevision['record'],
+  receipt: TdmsReadReceipt,
+): TdmsReadReceipt {
+  const projection = sourceBodyReadingProjection(record);
+  return projection.bodyReadPolicy.kind === 'METADATA_ONLY'
+    ? { ...receipt, fieldPaths: [
+        'recordRef', 'sourceRevisionRef', 'sourceRecordId', 'recordKind', 'title',
+        'fileType', 'state', 'authors', 'sourceVersion', 'businessVersion',
+        'sourceModifiedAt', 'observedAt', 'capturedAt', 'relatedDocumentVersionIds',
+      ] }
+    : receipt;
+}
+
 export function sourceRecordReadResponse(
   stored: TdmsStoredRevision,
   receipt: TdmsReadReceipt,
   limitations: readonly string[],
 ): TdmsFileServiceRecordReadResponse {
+  const projection = sourceBodyReadingProjection(stored.record);
   return {
-    record: stored.record,
+    record: projection.record,
+    bodyReadPolicy: projection.bodyReadPolicy,
     selectedFields: null,
-    ...(stored.attachmentAcquisitions?.length
+    ...(projection.bodyReadPolicy.kind !== 'METADATA_ONLY' && stored.attachmentAcquisitions?.length
       ? {
           attachmentAcquisitions: stored.attachmentAcquisitions.map((fact) => ({
             ...fact,
@@ -148,6 +168,6 @@ export function sourceRecordReadResponse(
         }
       : {}),
     receipt,
-    limitations: [...limitations],
+    limitations: [...limitations, ...(projection.limitation ? [projection.limitation] : [])],
   };
 }

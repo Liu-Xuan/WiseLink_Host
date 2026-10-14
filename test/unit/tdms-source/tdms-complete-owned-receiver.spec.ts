@@ -646,17 +646,23 @@ describe('Complete1 through the existing Daily/native transaction and exact read
       proof = proofOf(env);
     for (const read of proof.reads) {
       read.owner.stateRaw = 'Estimating';
-      Object.assign(read.fields[0].value, {
-        state: 'NOT_APPLICABLE',
-        actualLabel: '评估意见:',
-        rawValue: null,
-        observedTotalCodepoints: 0,
-      });
+      // This is state metadata only. No opaque blank/truncated body value is retained.
+      for (const field of read.fields)
+        Object.assign(field.value, {
+          state: 'NOT_APPLICABLE',
+          rawValue: null,
+          observedTotalCodepoints: 0,
+        });
+      read.fields[0].value.actualLabel = '评估意见:';
     }
     env.package.records[0].state.rawName = 'Estimating';
     env.package.records[0].content.completeOwnedFields = copyComplete(
       proof.reads[1].fields,
     );
+    env.package.records[0].coverage.gaps = env.package.records[0].coverage.gaps
+      .filter((gap) => gap !== 'OWN_CONTENT_UNREAD');
+    env.package.coverage.gaps = env.package.coverage.gaps
+      .filter((gap) => gap !== 'OWN_CONTENT_UNREAD');
     sealComplete(env);
     const s = setup(env);
     await s.service.importDailyMetadata(actor(), env);
@@ -667,6 +673,10 @@ describe('Complete1 through the existing Daily/native transaction and exact read
       s.repository.state.revisions[0].record.content.completeOwnedFields![0]
         .value,
     ).toMatchObject({ state: 'NOT_APPLICABLE', rawValue: null });
+    expect(s.repository.state.revisions[0].record.content.completeOwnedFields!
+      .filter((field) => field.value.rawValue !== null)).toHaveLength(0);
+    expect(s.repository.state.revisions[0].record.artifacts).toHaveLength(0);
+    expect(s.repository.state.revisions[0].record.unreadAttachments).toHaveLength(0);
   });
   it('retains multiple owner/version-bound attachment identities and repeated role links as metadata', async () => {
     const env = syntheticCompleteEnvelope('EO'),

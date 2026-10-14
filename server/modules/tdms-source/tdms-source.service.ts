@@ -6,8 +6,14 @@ import type { TdmsPackageArtifact } from '@shared/tdms-source.interface';
 import type { TdmsDocumentSourceReadRequest } from '@shared/tdms-source-reading.interface';
 import {
   readDocumentVersionSources,
+  sourceRecordReadReceipt,
   sourceRecordReadResponse,
 } from './tdms-document-source-reading';
+import {
+  rejectEmbeddedAssessmentBodies,
+  safeSourceRecordSummary,
+  sourceBodyReadingProjection,
+} from './tdms-assessment-body-policy';
 import { fileServiceImport } from './tdms-file-service-import.validation';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
@@ -543,11 +549,9 @@ export class TdmsSourceService {
         context,
       );
       await this.assertRelatedDocuments(actor, row.stored.record);
-      const receipt = this.receipt(
-        ref,
-        'WIKI_NATIVE_RECORD',
-        row.grant,
-        context,
+      const receipt = sourceRecordReadReceipt(
+        row.stored.record,
+        this.receipt(ref, 'WIKI_NATIVE_RECORD', row.grant, context),
       );
       await this.recheck(actor, row.grant, 'READ_RECORD', context);
       await tx.saveReceipt({
@@ -684,6 +688,8 @@ export class TdmsSourceService {
       }> = [];
       for (const row of await tx.relations(actor.tenantId, ref)) {
         if (!sameScope(row.scope, root.grant.scope)) continue;
+        rejectEmbeddedAssessmentBodies(row.assertion.rawFields);
+        rejectEmbeddedAssessmentBodies(row.assertion.scope);
         // Both exact endpoints must be freshly readable. Denied neighbors do not leak titles/counts/adjacency.
         const endpoints: TdmsEndpointReadDependency[] = [];
         try {
@@ -1327,8 +1333,9 @@ export class TdmsSourceService {
       stored.record.recordKind,
       stored.record.sourceRecordId,
     );
+    const projection = sourceBodyReadingProjection(stored.record);
     stored.record = {
-      ...stored.record,
+      ...projection.record,
       selectedHead: head?.sourceRevisionRef === ref,
     };
     return { stored, grant };
@@ -1452,28 +1459,7 @@ function recordContent(
   };
 }
 function summary(r: TdmsRecordRevision): TdmsRecordSummary {
-  const {
-    captureRef,
-    sourceModifiedAt,
-    rawFields,
-    content,
-    fieldProvenance,
-    artifacts,
-    unreadAttachments,
-    selectedHead,
-    ...s
-  } = r;
-  void [
-    captureRef,
-    sourceModifiedAt,
-    rawFields,
-    content,
-    fieldProvenance,
-    artifacts,
-    unreadAttachments,
-    selectedHead,
-  ];
-  return s;
+  return safeSourceRecordSummary(r);
 }
 
 function isHiddenDocument(error: unknown): boolean {

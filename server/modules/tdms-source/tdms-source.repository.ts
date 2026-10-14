@@ -7,6 +7,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type {
   TdmsCapture,
   TdmsCataloguePage,
+  TdmsDocumentCataloguePage,
   TdmsRecordHead,
   TdmsRelationHead,
   TdmsRepository,
@@ -70,6 +71,42 @@ export class SqlTdmsTransaction implements TdmsTransaction {
       sql`SELECT v.data FROM tdms_record h JOIN tdms_record_revision v ON v.tenant_id=h.tenant_id AND v.source_revision_ref=h.source_revision_ref WHERE h.tenant_id=${s.tenantId} AND h.source_key=${s.sourceKey} AND h.source_instance_id=${s.sourceInstanceId} AND h.scope_id=${s.scopeId} ${after} ${documentVersion} ORDER BY h.source_revision_ref LIMIT ${page.limit}`,
     );
     return rows.map((r) => r.data);
+  }
+  async documentVersionCatalogue(s: TdmsSourceScope, page: TdmsDocumentCataloguePage) {
+    if (!Number.isSafeInteger(page.limit) || page.limit < 1 || page.limit > 51)
+      throw tdmsError('TDMS_CATALOGUE_LIMIT_INVALID');
+    const after: SQL = page.after
+      ? sql`WHERE selected.source_revision_ref > ${page.after}`
+      : sql``;
+    // Select one observation for each stable native record within the exact DV.
+    // A current head wins only while it still carries that explicit binding.
+    // Otherwise the newest source observation stays readable as history; a
+    // late import with older observedAt cannot replace it. The
+    // seek is outside DISTINCT ON so another revision cannot reappear on page 2.
+    const rows = await this.db.execute<{ data: TdmsStoredRevision }>(sql`
+      SELECT jsonb_set(selected.data, '{record,selectedHead}',
+        to_jsonb(selected.is_selected_head)) AS data
+      FROM (
+        SELECT DISTINCT ON (v.record_ref) v.data, v.source_revision_ref,
+          coalesce(h.source_revision_ref = v.source_revision_ref, false) AS is_selected_head
+        FROM tdms_record_revision v
+        LEFT JOIN tdms_record h ON h.tenant_id=v.tenant_id
+          AND h.source_key=v.source_key AND h.source_instance_id=v.source_instance_id
+          AND h.scope_id=v.scope_id AND h.record_ref=v.record_ref
+        WHERE v.tenant_id=${s.tenantId} AND v.source_key=${s.sourceKey}
+          AND v.source_instance_id=${s.sourceInstanceId} AND v.scope_id=${s.scopeId}
+          AND jsonb_exists(v.data->'record'->'relatedDocumentVersionIds',${page.documentVersionId})
+        ORDER BY v.record_ref,
+          coalesce(h.source_revision_ref = v.source_revision_ref, false) DESC,
+          (v.data->'record'->>'observedAt')::timestamptz DESC,
+          (v.data->'record'->>'capturedAt')::timestamptz DESC,
+          v.source_revision_ref DESC
+      ) selected
+      ${after}
+      ORDER BY selected.source_revision_ref
+      LIMIT ${page.limit}
+    `);
+    return rows.map((row) => row.data);
   }
   async history(s: TdmsSourceScope, recordRef: string) {
     const rows = await this.db.execute<{ data: TdmsStoredRevision }>(
