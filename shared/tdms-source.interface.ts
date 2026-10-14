@@ -1,4 +1,5 @@
 /** TDMS native records are immutable source observations, never current engineering decisions. */
+import type { TdmsSourceBodyReadPolicy } from './tdms-source-body-policy';
 export const TDMS_SOURCE_PACKAGE_SCHEMA =
   'wiselink.tdms-source-package.v1' as const;
 export type TdmsRecordKind =
@@ -364,6 +365,8 @@ export interface TdmsReadReceipt {
 }
 export interface TdmsRecordReadResponse {
   record: TdmsRecordRevision;
+  /** Host alone establishes this per-revision boundary; absence allows metadata only. */
+  bodyReadPolicy?: TdmsSourceBodyReadPolicy;
   selectedFields: Array<{
     fieldPath: string;
     selector: string;
