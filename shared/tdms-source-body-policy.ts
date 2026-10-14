@@ -12,7 +12,8 @@ export function canReadTdmsSourceBody(value: Pick<TdmsRecordReadResponse, 'recor
   const policy: TdmsSourceBodyReadPolicy | undefined = value.bodyReadPolicy;
   if (!policy || policy.kind === 'METADATA_ONLY' || policy.sourceRecordId !== value.record.sourceRecordId ||
       policy.sourceRevisionRef !== value.record.sourceRevisionRef) return false;
-  if (policy.kind === 'NON_OPINION_SOURCE') return true;
+  if (policy.kind === 'NON_OPINION_SOURCE')
+    return !['ENGINEER_ASSESSMENT', 'COMMENT', 'PROCESSING_SHEET'].includes(value.record.recordKind);
   return policy.kind === 'ESTIMATED_ASSESSMENT' && value.record.state?.rawName === 'Estimated' &&
     (value.record.state.rawCode === null || value.record.state.rawCode === 'Estimated');
 }

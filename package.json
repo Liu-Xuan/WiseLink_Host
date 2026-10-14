@@ -262,7 +262,8 @@
       "^d3-timer$": "<rootDir>/node_modules/d3-timer/dist/d3-timer.min.js",
       "^@server/(.*)$": "<rootDir>/server/$1",
       "^@shared/(.*)$": "<rootDir>/shared/$1",
-      "^@client/(.*)$": "<rootDir>/client/$1"
+      "^@client/(.*)$": "<rootDir>/client/$1",
+      "^@/(.*)$": "<rootDir>/client/src/$1"
     },
     "testMatch": [
       "<rootDir>/server/**/*.spec.ts",
