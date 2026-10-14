@@ -3,6 +3,13 @@ export type {
   TdmsDocumentSourceReadRequest,
   TdmsDocumentSourceReadResponse,
 } from './tdms-source-reading.interface';
+export type {
+  LcmSnapshotBrowseRequest,
+  LcmSnapshotRowsRequest,
+  LcmSnapshotSummary,
+  LcmSnapshotCatalogueResponse,
+  LcmSnapshotRowsResponse,
+} from './lcm-source-reading.interface';
 import type {
   AssessmentReadingResult,
   AssessmentReadingSummary,
