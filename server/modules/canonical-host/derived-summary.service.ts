@@ -23,6 +23,7 @@ import { assertSummaryContextBasis, assertSummaryContextUnchanged, publicSummary
 import { assertSummaryReplay, parseSummaryRequest, summaryError } from './derived-summary.validation';
 import { assertPreviousSummarySnapshot, buildSummaryRevisionContext } from './derived-summary-revision-context';
 import { HierarchicalWikiCompletion } from './hierarchical-wiki-completion';
+import { assertWikiLayerMembers, type WikiLevel } from './hierarchical-wiki-generation';
 
 export interface DerivedSummaryRuntimeTask extends DerivedSummaryTask {
   actionAttemptId: string;
@@ -68,7 +69,7 @@ export class DerivedSummaryService {
 
   /** Internal caller already holds a real browser or durable service delegation. */
   async reserve(input: RequestDerivedSummaryUpdate, owner: SummaryActor, head: SummaryHead,
-    database: PostgresJsDatabase): Promise<DerivedSummaryRequestReceipt> {
+    database: PostgresJsDatabase, wikiLevel?: WikiLevel): Promise<DerivedSummaryRequestReceipt> {
     const idempotencyKey = `derived-summary:${head.summaryId}:${input.requestId}`;
     const [prior] = await database.select({ attemptRef: actionAttempt.operationRef }).from(actionAttempt).where(and(
       eq(actionAttempt.tenantId, owner.tenantId), eq(actionAttempt.actorUserId, owner.actorUserId),
@@ -109,6 +110,7 @@ export class DerivedSummaryService {
       .where(and(eq(actionAttempt.tenantId, owner.tenantId), sql`action_attempt.summary_id = ${head.summaryId}`,
         inArray(actionAttempt.status, ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING']))).limit(1);
     if (serializedActive) throw summaryError('DERIVED_SUMMARY_REQUEST_ACTIVE');
+    if (wikiLevel !== undefined) assertWikiLayerMembers(wikiLevel, input.scope, input.members);
     // A pre-lock read is never a coherent seal. Repeat exact ACL/body and all
     // mutable observations after the supported head locks have been acquired.
     const locked = await this.members.readAll(contextBasis.memberNotices.map(item => item.member), owner, database, new Set([head.summaryId]));
@@ -148,6 +150,7 @@ export class DerivedSummaryService {
       executionModel, contextBasis,
       modelInput: { scope: input.scope, classificationStatus: 'CANDIDATE' as const,
         instruction: input.instruction, ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
+        ...(wikiLevel === undefined ? {} : { wikiLevel }),
         ...(revisionContext ? { revisionContext } : {}), members: readings, evidence, limitations } };
     const task: DerivedSummaryRuntimeTask = { ...taskBasis, taskInputHash: canonicalSha256(taskBasis) };
     // All new subject columns are inserted together: the DB identity constraint is immediate.
@@ -351,6 +354,8 @@ export function checkedSummaryTask(attempt: SummaryAttempt): DerivedSummaryRunti
       input.revisionContext!.requestedChange?.instruction !== input.instruction ||
       input.revisionContext!.inputChanges?.materialStrategy !== 'FULL_CURRENT_MATERIAL')))
     throw summaryError('DERIVED_SUMMARY_TASK_INVALID');
+  if (input.wikiLevel !== undefined)
+    assertWikiLayerMembers(input.wikiLevel, input.scope, input.members.map(item => item.member));
   if (task.contextBasis !== undefined) assertSummaryContextBasis(task.contextBasis);
   return task;
 }

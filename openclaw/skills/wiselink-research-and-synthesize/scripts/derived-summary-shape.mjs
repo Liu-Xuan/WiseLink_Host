@@ -42,6 +42,7 @@ export function validateDerivedSummaryMember(value) {
 export function validateDerivedSummaryModelInput(value) {
   assertSummaryExactKeys(value, ['scope', 'classificationStatus', 'instruction', 'members', 'evidence', 'limitations',
     ...(Object.hasOwn(value ?? {}, 'purpose') ? ['purpose'] : []),
+    ...(Object.hasOwn(value ?? {}, 'wikiLevel') ? ['wikiLevel'] : []),
     ...(Object.hasOwn(value ?? {}, 'revisionContext') ? ['revisionContext'] : [])],
     'DERIVED_SUMMARY_MODEL_INPUT_INVALID');
   if (Object.hasOwn(value, 'purpose') && !['SYNTHESIZE', 'REVISE_SAVED_SUMMARY'].includes(value.purpose))
@@ -65,6 +66,10 @@ export function validateDerivedSummaryModelInput(value) {
     if (memberRefs.has(reading.evidenceRef) || identities.has(identity)) fail('DERIVED_SUMMARY_MEMBER_DUPLICATE');
     memberRefs.add(reading.evidenceRef); identities.add(identity);
   }
+  if (Object.hasOwn(value, 'wikiLevel') &&
+      (value.wikiLevel !== scope.kind || !['ATA4', 'ATA2', 'FLEET'].includes(value.wikiLevel) ||
+       value.members.some(reading => (reading.member.kind === 'DERIVED_SUMMARY') !== (value.wikiLevel !== 'ATA4'))))
+    fail('DERIVED_SUMMARY_WIKI_LAYER_INVALID');
   derivedSummaryRegistry(value);
   validateDerivedSummaryRevisionContext(value, { assertSummaryExactKeys, validateDerivedSummaryMember,
     validateScope: scope => {

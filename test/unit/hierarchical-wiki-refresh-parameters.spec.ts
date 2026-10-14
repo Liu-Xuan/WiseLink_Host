@@ -66,7 +66,9 @@ test.each([true, false])('actual enable/refresh SQL keeps exact scope parameters
   // A literal operator must not masquerade as another platform bind marker.
   for (const call of [retained, sourceChange, membership]) expect(call.query).not.toContain('?');
   expect(f.calls.some(call => call.query.includes("SET member_json='{}'::jsonb"))).toBe(!allowed);
-  expect(Object.keys(f.row.state.versions)).toEqual(allowed ? ['MATTER:MAT-selected'] : []);
+  // The retained coarse membership remains classified, but a fleet generation
+  // now consumes only saved ATA2 children.
+  expect(Object.keys(f.row.state.versions)).toEqual([]);
   expect(f.summaries.reserve).not.toHaveBeenCalled();
 });
 

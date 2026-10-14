@@ -8,7 +8,10 @@ import { invokeHostedDerivedSummaryModel, derivedSummaryModelMessages, derivedSu
   DERIVED_SUMMARY_PROMPT_VERSION, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION,
   DERIVED_SUMMARY_REVISION_PROMPT_VERSION, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION,
   DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION, derivedSummarySparseRevisionModelMessages, validateDerivedSummarySparseCandidateReplay } from '../scripts/invoke-hosted-derived-summary-model.mjs';
+import { HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION } from '../scripts/invoke-hosted-derived-summary-model.mjs';
+import { hierarchicalWikiParentModelView, validateHierarchicalWikiParentModelView } from '../scripts/hierarchical-wiki-model-view.mjs';
 import { derivedSummaryRegistry, validateDerivedSummaryTask, validateDerivedSummaryContent,
+  validateDerivedSummaryModelInput,
   materializeDerivedSummaryContent, normalizeDerivedSummaryContent,
   validateDerivedSummaryReadSelection } from '../scripts/derived-summary-shape.mjs';
 import { createDerivedSummaryDeliveredView, projectDerivedSummaryReadReceipt } from '../scripts/derived-summary-read-projection.mjs';
@@ -1996,3 +1999,146 @@ for (const drift of ['missing carrier', 'receipt fields', 'fresh receipt pointer
   assert.equal(resumed.gatewayCalls.length, 0); assert.equal(resumed.calls.some(x => x.operation === 'SAVE_SUMMARY' || x.operation === 'FINISH'), false);
   assert.deepEqual(await checkpoint.readOptional('summary-model-state'), stateBefore); assert.deepEqual(await checkpoint.readOptional('summary-round-2.result'), finalBefore);
 }));
+
+// New Wiki-layer protocol fixtures are synthetic local descendants of the R1
+// shape. They are not newly obtained Host tasks, ACL proof or model results.
+function wikiEntry(level = 'ATA2', revising = false) {
+  const entry = structuredClone(r1Entry('synthesis'));
+  const value = JSON.parse(entry.taskEnvelopeJson), input = value.modelInput;
+  const leaf = input.members[0];
+  const evidence = structuredClone(input.evidence);
+  evidence[0].excerpt = 'WIKI_ROOT_BODY_SENTINEL_MUST_REQUIRE_EXPLICIT_READ';
+  input.scope = { ...input.scope, kind: level, ata4: null, ...(level === 'FLEET' ? { ata2: null } : {}) };
+  input.wikiLevel = level;
+  const { understanding: _understanding, ...childBasis } = leaf;
+  input.members = ['one', 'two'].map(id => ({ ...structuredClone(childBasis),
+    member: { kind: 'DERIVED_SUMMARY', summaryId: `DS-child-${id}`, summaryRef: `DSR-child-${id}`, summaryRevision: 2 },
+    evidenceRef: `wiki-child-${id}`, headline: `Exact saved child ${id}`,
+    body: `WIKI_CHILD_BODY_${id}: complete child conclusions, exclusions and unknowns.`, issues: [], evidence: structuredClone(evidence) }));
+  input.evidence = evidence;
+  input.purpose = revising ? 'REVISE_SAVED_SUMMARY' : 'SYNTHESIZE';
+  if (revising) {
+    const notices = input.members.map(({ member, current, overviewStatus, limitations }) => ({ member, current, overviewStatus, limitations }));
+    const roots = [...new Set(input.members.flatMap(item => item.rootRefs))].sort();
+    input.revisionContext = {
+      previousSummary: { summaryId: value.subject.summaryId, summaryRef: 'DSR-wiki-prior', revision: 1,
+        candidateOnly: true, content: { headline: 'Prior parent', listBrief: 'Prior selected children',
+          body: 'Prior derived parent [[wiki-child-one]]', limitations: ['Prior source limitations remain.'] },
+        scope: structuredClone(input.scope), members: input.members.map(item => ({ member: item.member,
+          evidenceRef: item.evidenceRef, resolvedIssueKeys: [], rootRefs: item.rootRefs })),
+        evidenceRefs: evidence.map(item => item.evidenceRef).sort(), rootRefs: roots, usedEvidenceRefs: ['wiki-child-one'],
+        noticesObservedAt: '2026-10-14T00:00:00Z', memberNotices: notices },
+      requestedChange: { instruction: input.instruction },
+      inputChanges: { basis: 'SAME_SELECTION', materialStrategy: 'FULL_CURRENT_MATERIAL',
+        addedMembers: [], removedMembers: [], replacedMembers: [], selectedIssueChanges: [],
+        scope: { previous: structuredClone(input.scope), current: structuredClone(input.scope), changedFields: [] },
+        sources: { addedEvidenceRefs: [], removedEvidenceRefs: [], addedRootRefs: [], removedRootRefs: [],
+          observationKind: 'HOST_NOTICES_NOT_PUBLISHER_CHANGE_LOG', priorMemberNotices: notices.map(({ member, ...notice }) => ({ member, saved: notice, current: notice })) } },
+    };
+  } else delete input.revisionContext;
+  delete value.contextBasis; // Synthetic transport fixture supplies no coherent Host lock proof.
+  value.expectedSummaryRevision = revising ? 1 : 0;
+  const { taskInputHash: _old, ...basis } = value;
+  value.taskInputHash = canonicalSha256(basis);
+  entry.taskEnvelopeJson = JSON.stringify(value); entry.taskInputHash = value.taskInputHash;
+  entry.binding.expectedSummaryRevision = value.expectedSummaryRevision;
+  return entry;
+}
+const wikiContent = input => ({ headline: 'Selected child Wiki synthesis', listBrief: 'Actual child coverage only',
+  body: input.members.map(item => `Saved child condition [[${item.evidenceRef}]]`).join('\n'), limitations: [] });
+
+for (const level of ['ATA2', 'FLEET']) for (const revising of [false, true])
+  test(`Wiki ${level}/${revising ? 'revision' : 'synthesis'} actual consumer sends all child bodies, no root body, saves and replays exact frozen candidate`, () => fixture(async root => {
+    const entry = wikiEntry(level, revising), input = r1Task(entry).modelInput;
+    const before = canonicalJson(input);
+    const h = r1Transport(root, entry, { sparse: true, gateway: (_round, init) => {
+      const request = JSON.parse(init.body);
+      const text = canonicalJson(request.messages);
+      assert.ok(text.includes('WIKI_CHILD_BODY_one')); assert.ok(text.includes('WIKI_CHILD_BODY_two'));
+      assert.equal(text.includes('WIKI_ROOT_BODY_SENTINEL'), false);
+      assert.deepEqual(request.tool_choice, { type: 'function', function: { name: 'return_wiselink_summary_step' } });
+      return gatewayStep({ action: 'SAVE_SUMMARY', content: wikiContent(input) });
+    } });
+    const result = await consumeHostedDerivedSummary(h.options, h.dependencies);
+    assert.equal(result.status, 'DERIVED_SUMMARY_SAVED'); assert.equal(result.candidateOnly, true);
+    assert.equal(h.gatewayCalls.length, 1); assert.equal(h.calls.filter(call => call.operation === 'READ_MEMBER_WORK').length, 1);
+    assert.equal(h.calls.some(call => call.operation === 'READ_SOURCES'), false);
+    assert.equal(h.saved.summary.producer.promptVersion, HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION);
+    assert.equal(h.saved.summary.producer.configuredModelRef, r1Task(entry).executionModel.modelRef);
+    const checkpoint = await r1Checkpoint(root, entry), candidate = await checkpoint.readOptional('summary-candidate');
+    const invocation = await checkpoint.readOptional('summary-invocation');
+    const replay = await validateDerivedSummarySparseCandidateReplay(input,
+      { checkpoint, executionModel: r1Task(entry).executionModel, sessionDiscriminator: invocation.sessionDiscriminator }, candidate);
+    assert.equal(replay.diagnostics.sourceBodyDelivered.length, 0); assert.equal(replay.diagnostics.memberOwnBodyDelivered.length, 2);
+    assert.equal(h.gatewayCalls.length, 1); assert.equal(canonicalJson(input), before);
+  }));
+
+test('Wiki root directory and Host member pre-read do not authorize a new source citation', () => fixture(async root => {
+  const entry = wikiEntry(), input = r1Task(entry).modelInput;
+  const h = r1Transport(root, entry, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY',
+    content: { ...wikiContent(input), body: `Unread original [[${input.evidence[0].evidenceRef}]]` } }) });
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /CITATION_REQUIRES_READ/u);
+  assert.equal(h.calls.some(call => call.operation === 'SAVE_SUMMARY'), false);
+}));
+
+test('Wiki explicit original backtracking delivers one exact root and permits its citation', () => fixture(async root => {
+  const entry = wikiEntry(), input = r1Task(entry).modelInput, ref = input.evidence[0].evidenceRef;
+  let rounds = 0;
+  const h = r1Transport(root, entry, { gateway: (_round, init) => {
+    const request = JSON.parse(init.body);
+    if (++rounds === 1) {
+      assert.equal(canonicalJson(request.messages).includes('WIKI_ROOT_BODY_SENTINEL'), false);
+      return gatewayStep({ action: 'READ_SOURCES', evidenceRefs: [ref], purpose: 'Investigate exact decisive original condition' });
+    }
+    assert.ok(canonicalJson(request.messages).includes('WIKI_ROOT_BODY_SENTINEL'));
+    return gatewayStep({ action: 'SAVE_SUMMARY', content: { ...wikiContent(input), body: `${wikiContent(input).body}\nExact original [[${ref}]]` } }, 'call-after-read');
+  } });
+  await consumeHostedDerivedSummary(h.options, h.dependencies);
+  assert.equal(h.calls.filter(call => call.operation === 'READ_SOURCES').length, 1);
+  const checkpoint = await r1Checkpoint(root, entry);
+  const candidate = await checkpoint.readOptional('summary-candidate');
+  assert.equal(candidate.diagnostics.sourceBodyDelivered.length, 1);
+}));
+
+test('Wiki source ACL failure is retained and cannot reach SAVE', () => fixture(async root => {
+  const entry = wikiEntry(), ref = r1Task(entry).modelInput.evidence[0].evidenceRef;
+  const h = r1Transport(root, entry, { gateway: () => gatewayStep({ action: 'READ_SOURCES', evidenceRefs: [ref], purpose: 'Decisive original' }),
+    tool: async input => { if (input.operation === 'READ_SOURCES') throw new Error('DERIVED_SUMMARY_SOURCE_UNAVAILABLE'); } });
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /SOURCE_UNAVAILABLE/u);
+  assert.equal(h.calls.some(call => call.operation === 'SAVE_SUMMARY'), false);
+}));
+
+test('Wiki restored checkpoint cannot switch to the ordinary full-root prompt or a changed child body', () => fixture(async root => {
+  const entry = wikiEntry(), input = r1Task(entry).modelInput;
+  const h = r1Transport(root, entry, { gateway: () => gatewayStep({ action: 'SAVE_SUMMARY', content: wikiContent(input) }) });
+  await consumeHostedDerivedSummary(h.options, h.dependencies);
+  const checkpoint = await r1Checkpoint(root, entry), candidate = await checkpoint.readOptional('summary-candidate');
+  const invocation = await checkpoint.readOptional('summary-invocation'), options = {
+    checkpoint, executionModel: r1Task(entry).executionModel, sessionDiscriminator: invocation.sessionDiscriminator };
+  const state = await checkpoint.readOptional('summary-model-state');
+  await checkpoint.write('summary-model-state', { ...state, promptVersion: DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION });
+  await assert.rejects(validateDerivedSummarySparseCandidateReplay(input, options, candidate), /PROMPT_BINDING_INVALID/u);
+  await checkpoint.write('summary-model-state', state);
+  const changed = structuredClone(input); changed.members[0].body += ' Unbound extra premise';
+  await assert.rejects(validateDerivedSummarySparseCandidateReplay(changed, options, candidate), /PROMPT_BINDING_INVALID/u);
+  assert.equal(h.gatewayCalls.length, 1);
+}));
+
+test('Wiki view keeps exact child and root identities, deduplicates shared roots and rejects registry/body substitution', () => {
+  const input = r1Task(wikiEntry()).modelInput, view = hierarchicalWikiParentModelView(input);
+  assert.equal(view.evidenceDirectory.length, input.evidence.length);
+  assert.equal(view.evidence.length, 0);
+  assert.deepEqual(view.members.map(item => item.member), input.members.map(item => item.member));
+  assert.deepEqual(view.members[0].leaves, input.members[0].leaves);
+  assert.equal(view.membersDirectory.some(item => Object.hasOwn(item, 'body') || Object.hasOwn(item, 'evidence')), false);
+  const forged = structuredClone(view); forged.evidence = input.evidence;
+  assert.throws(() => validateHierarchicalWikiParentModelView(forged, input), /WIKI_VIEW_BINDING_INVALID/u);
+  const changed = structuredClone(input); changed.evidence[0].documentVersionId = 'DV-foreign';
+  assert.throws(() => validateHierarchicalWikiParentModelView(view, changed), /DERIVED_SUMMARY_/u);
+});
+
+for (const change of [input => { input.wikiLevel = 'ATA4'; }, input => { input.members[0].member = member; },
+  input => { input.wikiLevel = 'UNRECOGNIZED'; }]) test('Wiki marker rejects a mismatched level or direct leaf before any Gateway call', () => {
+  const input = r1Task(wikiEntry()).modelInput; change(input);
+  assert.throws(() => validateDerivedSummaryModelInput(input), /DERIVED_SUMMARY_WIKI_LAYER_INVALID/u);
+});

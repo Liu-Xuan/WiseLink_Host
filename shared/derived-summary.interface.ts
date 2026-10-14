@@ -162,6 +162,8 @@ export interface DerivedSummaryTask {
     classificationStatus: 'CANDIDATE';
     instruction: string;
     purpose?: DerivedSummaryPurpose;
+    /** Sealed by the automatic Wiki caller; ordinary summaries omit it. */
+    wikiLevel?: DerivedSummaryScopeSelection['kind'];
     /** Explicit revision keeps the complete current material. */
     revisionContext?: DerivedSummaryRevisionContext;
     members: DerivedSummaryMemberReading[];

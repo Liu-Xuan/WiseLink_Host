@@ -126,6 +126,7 @@ describe('configured model captured only for new summary/Wiki reservations', () 
   it('captures real settings revision in a new reservation, then uses a changed setting for the next new request', async () => {
     const f = setup();
     const first = await f.reserve(command('configured-one'));
+    expect(f.task(first.attemptRef).modelInput).not.toHaveProperty('wikiLevel');
     expect(f.task(first.attemptRef).executionModel).toMatchObject({ modelRef: 'miaoda/glm-5.3', settingsRevision: 1 });
     expect(f.settingsRepository.read).toHaveBeenCalledWith(owner.tenantId, f.database);
     expect(JSON.parse(f.attempts.get(first.attemptRef)!.requestCommandJson!)).not.toHaveProperty('modelRef');
@@ -196,10 +197,13 @@ describe('configured model captured only for new summary/Wiki reservations', () 
 
   it('an existing Wiki with a stale registration model admits current configured model and resumes the same active snapshot', async () => {
     const f = setup(), legacy = f.row().modelRef;
+    // This selected leaf is an ATA4 generation, not a direct fleet member.
+    f.row().scope = summaryRevision().scope;
     const result = await f.wiki.next('2026-10-14T00:00:00Z');
     expect(result.status).toBe('SUMMARY_PENDING');
     if (result.status !== 'SUMMARY_PENDING') throw new Error('EXPECTED_OFFLINE_SUMMARY');
     const task = f.task(result.attemptRef);
+    expect(task.modelInput.wikiLevel).toBe('ATA4');
     expect(task.executionModel).toMatchObject({ modelRef: 'miaoda/glm-5.3', settingsRevision: 1 });
     expect(JSON.parse(f.attempts.get(result.attemptRef)!.requestCommandJson!)).not.toHaveProperty('modelRef');
     expect(f.row().modelRef).toBe(legacy);
@@ -207,6 +211,28 @@ describe('configured model captured only for new summary/Wiki reservations', () 
     expect(await f.wiki.next('2026-10-14T00:01:00Z')).toEqual(result);
     expect(f.task(result.attemptRef)).toEqual(task); expect(f.settingsRepository.read).not.toHaveBeenCalled();
     expect(f.attempts.size).toBe(1);
+  });
+
+  it('seals a parent Wiki with exact saved child identity while ordinary callers cannot request the internal marker', async () => {
+    const f = setup();
+    const child = { ...structuredClone(reading), member: { kind: 'DERIVED_SUMMARY' as const,
+      summaryId: 'DS-child-exact', summaryRef: 'DSR-child-exact', summaryRevision: 2 },
+      body: '完整的已保存子层正文', issues: [] };
+    f.members.readAll.mockResolvedValue([child]);
+    const basis = await f.repository.contextBasis();
+    f.repository.contextBasis.mockResolvedValue({ ...basis, memberNotices: contextMemberNotices([child]) });
+    const input = { ...command('wiki-parent'), members: [child.member] };
+    const receipt = await f.summaries.reserve(input, owner, f.head, f.database as never, 'FLEET');
+    expect(f.task(receipt.attemptRef).modelInput).toMatchObject({ wikiLevel: 'FLEET', members: [child] });
+    expect(JSON.parse(f.attempts.get(receipt.attemptRef)!.requestCommandJson!)).not.toHaveProperty('wikiLevel');
+    expect(() => parseSummaryRequest({ ...input, wikiLevel: 'FLEET' }, true)).toThrow('DERIVED_SUMMARY_INPUT_INVALID');
+  });
+
+  it('does not reserve or capture a model when a marked parent directly selects leaf work', async () => {
+    const f = setup();
+    await expect(f.summaries.reserve(command('mixed-parent'), owner, f.head, f.database as never, 'FLEET'))
+      .rejects.toThrow('WIKI_LAYER_MEMBERS_INVALID');
+    expect(f.attempts.size).toBe(0); expect(f.settingsRepository.read).not.toHaveBeenCalled();
   });
 
   it('new Wiki registration inherits available configured model without a GLM-only exception', async () => {

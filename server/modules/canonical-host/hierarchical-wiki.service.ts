@@ -50,6 +50,7 @@ import {
   type WikiRow,
 } from './hierarchical-wiki.persistence';
 import { readWikiInventory, wikiScopeFor } from './hierarchical-wiki-inventory';
+import { wikiDirectVersions, wikiLayerInstruction } from './hierarchical-wiki-generation';
 import { summaryError } from './derived-summary.validation';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { MatterActionAttemptService } from './matter-action-attempt.service';
@@ -526,7 +527,7 @@ export class HierarchicalWikiService {
                     ? 'REVISE_SAVED_SUMMARY'
                     : 'SYNTHESIZE',
                 instruction:
-                  `形成本范围完整综合认识，保留共同条件、差异、反证、来源、覆盖限制。根来源只计一次；候选不是正式采用。` +
+                  wikiLayerInstruction(row.scope.kind) +
                   `本次尚未完成的下层依赖：${JSON.stringify(row.state.waiting)}。不得宣称已覆盖这些新工作。`,
               };
               let receipt;
@@ -536,6 +537,7 @@ export class HierarchicalWikiService {
                   actor,
                   head,
                   database,
+                  row.scope.kind,
                 );
               } catch (error) {
                 if (
@@ -556,6 +558,7 @@ export class HierarchicalWikiService {
                   actor,
                   head,
                   database,
+                  row.scope.kind,
                 );
               }
               // Existing context locks precede the Wiki lock, just as in SAVE.
@@ -919,9 +922,7 @@ export class HierarchicalWikiService {
         }>(sql`
           SELECT member_key AS key,member_json AS member FROM hierarchical_wiki_membership WHERE wiki_id=${node.wikiId}
             AND basis_json->>'classificationStatus'='CONFIRMED' AND jsonb_exists(member_json, 'kind') ORDER BY member_key`);
-        const versions: WikiVersions = Object.fromEntries(
-          memberships.map((item) => [item.key, item.member]),
-        );
+        const versions: WikiVersions = wikiDirectVersions(node.scope.kind, memberships);
         const ata = node.scope.ata4 ?? node.scope.ata2;
         const touched = new Set(
           inventory.removed.map((item) => `${item.kind}:${item.id}`),
@@ -939,6 +940,11 @@ export class HierarchicalWikiService {
         for (const child of ordered.filter(
           (item) => item.parentWikiId === node.wikiId,
         )) {
+          if (
+            node.scope.kind === 'ATA4' ||
+            child.scope.kind !== (node.scope.kind === 'FLEET' ? 'ATA2' : 'ATA4') ||
+            (node.scope.kind === 'ATA2' && child.scope.ata2 !== node.scope.ata2)
+          ) throw summaryError('WIKI_LAYER_MEMBERS_INVALID');
           const head = await this.repository.head(
             child.summaryId,
             owner,
