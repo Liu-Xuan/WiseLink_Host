@@ -3,6 +3,11 @@ import type {
   TdmsFileServiceRecordReadResponse,
 } from '@shared/tdms-file-service-import.interface';
 import type { TdmsPackageArtifact } from '@shared/tdms-source.interface';
+import type { TdmsDocumentSourceReadRequest } from '@shared/tdms-source-reading.interface';
+import {
+  readDocumentVersionSources,
+  sourceRecordReadResponse,
+} from './tdms-document-source-reading';
 import { fileServiceImport } from './tdms-file-service-import.validation';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
@@ -451,6 +456,8 @@ export class TdmsSourceService {
     assertPublicActor(actor);
     const context = readContext(contextValue);
     if (after !== undefined) identifier(after);
+    if (context.documentVersionId)
+      await this.documents.assertRead(actor, context.documentVersionId);
     const grants = await this.authorization.catalogue(actor, context);
     if (!grants.length)
       return {
@@ -469,9 +476,23 @@ export class TdmsSourceService {
       for (const grant of grants) {
         this.assertGrant(actor, grant);
         await this.recheck(actor, grant, 'CATALOGUE', context);
-        for (const row of await tx.catalogue(grant.scope)) {
+        // Each scope contributes at most one public page and its lookahead.
+        // The bounded SQL seek runs before record bodies or linked-DM checks.
+        const rows: TdmsStoredRevision[] = await tx.catalogue(grant.scope, {
+          ...(after ? { after } : {}),
+          ...(context.documentVersionId
+            ? { documentVersionId: context.documentVersionId }
+            : {}),
+          limit: 51,
+        });
+        for (const row of rows) {
           if (!sameScope(row.scope, grant.scope))
             throw tdmsError('TDMS_STORED_SCOPE_MISMATCH', 409);
+          if (
+            context.documentVersionId &&
+            !row.record.relatedDocumentVersionIds.includes(context.documentVersionId)
+          )
+            continue;
           await this.assertRelatedDocuments(actor, row.record);
           records.push(summary(row.record));
         }
@@ -498,6 +519,8 @@ export class TdmsSourceService {
     });
     for (const id of result.documentVersionIds)
       await this.documents.assertRead(actor, id);
+    if (context.documentVersionId)
+      await this.documents.assertRead(actor, context.documentVersionId);
     for (const g of grants) await this.recheck(actor, g, 'CATALOGUE', context);
     return result.response;
   }
@@ -536,29 +559,24 @@ export class TdmsSourceService {
       await this.recheck(actor, row.grant, 'READ_RECORD', context);
       return {
         grant: row.grant,
-        response: {
-          record: row.stored.record,
-          selectedFields: null,
-          ...(row.stored.attachmentAcquisitions?.length
-            ? {
-                attachmentAcquisitions: row.stored.attachmentAcquisitions.map(
-                  (fact) => ({
-                    ...fact,
-                    currentSourcePermissionChecked: true as const,
-                    semanticReadPerformed: false as const,
-                    engineeringExecutionVerified: false as const,
-                  }),
-                ),
-              }
-            : {}),
-          receipt,
-          limitations: [...LIMITATIONS],
-        } as TdmsFileServiceRecordReadResponse,
+        response: sourceRecordReadResponse(row.stored, receipt, LIMITATIONS),
       };
     });
     await this.assertRelatedDocuments(actor, result.response.record);
     await this.recheck(actor, result.grant, 'READ_RECORD', context);
     return result.response;
+  }
+  readDocumentVersion(actor: TdmsPublicActor, input: TdmsDocumentSourceReadRequest) {
+    return readDocumentVersionSources(actor, input, {
+      repository: this.repository,
+      authorization: this.authorization,
+      documents: this.documents,
+      assertGrant: (grant: TdmsSourceGrant, scope?: TdmsSourceScope) => this.assertGrant(actor, grant, scope),
+      recheck: (grant: TdmsSourceGrant, context: TdmsReadContext) => this.recheck(actor, grant, 'READ_RECORD', context),
+      receipt: (ref: string, grant: TdmsSourceGrant, context: TdmsReadContext) =>
+        this.receipt(ref, 'WIKI_NATIVE_RECORD', grant, context),
+      limitations: LIMITATIONS,
+    });
   }
   async history(
     actor: TdmsPublicActor,

@@ -6,6 +6,7 @@ import {
 import { sql, type SQL } from 'drizzle-orm';
 import type {
   TdmsCapture,
+  TdmsCataloguePage,
   TdmsRecordHead,
   TdmsRelationHead,
   TdmsRepository,
@@ -56,9 +57,17 @@ export class SqlTdmsTransaction implements TdmsTransaction {
       sql`SELECT data FROM tdms_record_revision WHERE tenant_id=${tenantId} AND source_revision_ref=${ref}`,
     );
   }
-  async catalogue(s: TdmsSourceScope) {
+  async catalogue(s: TdmsSourceScope, page: TdmsCataloguePage = { limit: 51 }) {
+    if (!Number.isSafeInteger(page.limit) || page.limit < 1 || page.limit > 51)
+      throw tdmsError('TDMS_CATALOGUE_LIMIT_INVALID');
+    const after: SQL = page.after
+      ? sql`AND h.source_revision_ref > ${page.after}`
+      : sql``;
+    const documentVersion: SQL = page.documentVersionId
+      ? sql`AND jsonb_exists(v.data->'record'->'relatedDocumentVersionIds',${page.documentVersionId})`
+      : sql``;
     const rows = await this.db.execute<{ data: TdmsStoredRevision }>(
-      sql`SELECT v.data FROM tdms_record h JOIN tdms_record_revision v ON v.tenant_id=h.tenant_id AND v.source_revision_ref=h.source_revision_ref WHERE h.tenant_id=${s.tenantId} AND h.source_key=${s.sourceKey} AND h.source_instance_id=${s.sourceInstanceId} AND h.scope_id=${s.scopeId} ORDER BY h.source_revision_ref`,
+      sql`SELECT v.data FROM tdms_record h JOIN tdms_record_revision v ON v.tenant_id=h.tenant_id AND v.source_revision_ref=h.source_revision_ref WHERE h.tenant_id=${s.tenantId} AND h.source_key=${s.sourceKey} AND h.source_instance_id=${s.sourceInstanceId} AND h.scope_id=${s.scopeId} ${after} ${documentVersion} ORDER BY h.source_revision_ref LIMIT ${page.limit}`,
     );
     return rows.map((r) => r.data);
   }
