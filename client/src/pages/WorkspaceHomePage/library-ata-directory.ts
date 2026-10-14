@@ -1,10 +1,11 @@
 import type { CanonicalLibraryDocumentSummary, CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
 import type { DerivedSummaryScopeSelection } from '@shared/derived-summary.interface';
+import { libraryAircraftMentionAliases, libraryAircraftModelsQuery } from '@shared/library-aircraft-mentions';
 // Generated from the complete Atlas catalog; keep this synchronous title-only
 // projection out of the full definitions catalog's lazy route dependency.
 import catalog from './library-ata-titles.generated.json';
-import { documentClassificationValues, type LibraryCatalogFilters } from './library-classification';
+import { documentClassificationValues, matchesLibraryAircraftModels, type LibraryCatalogFilters } from './library-classification';
 import { matchesLibraryFleet } from './library-fleet-classification';
 
 export type AtaTitleScheme = keyof typeof catalog.schemes;
@@ -20,6 +21,8 @@ export interface AtaDirectoryNode {
   /** ATA2-only metadata belongs at this node; it does not create an ATA4 chapter. */
   directItems?: AtaDirectoryItem[];
   children: AtaDirectoryNode[];
+  /** Real Wiki scopes retain their fleet/model pins outside the ATA navigation order. */
+  scopePaths?: string[][];
 }
 
 export function ataDirectoryScopeMatches(node: AtaDirectoryNode, path: string[], scope: DerivedSummaryScopeSelection): boolean {
@@ -39,7 +42,9 @@ export function ataDirectoryScopeMatches(node: AtaDirectoryNode, path: string[],
  * section or source-specific code; the metadata contract does not disambiguate it.
  * Keep those original observations visible until their source meaning is verified. */
 export function ataDirectoryCode(value: string): { ata2: string; ata4: string | null } | null {
-  const match = /^(\d{2})(?:(\d{2})(?:\d{2})?)?$/u.exec(value);
+  const raw = value.trim();
+  if (!/^(?:\d{2}|\d{4}|\d{6}|\d{2}-\d{2}(?:-\d{2})?)$/u.test(raw)) return null;
+  const match = /^(\d{2})(?:(\d{2})(?:\d{2})?)?$/u.exec(raw.replace(/-/gu, ''));
   return match ? { ata2: match[1], ata4: match[2] ? `${match[1]}-${match[2]}` : null } : null;
 }
 
@@ -123,7 +128,13 @@ export function buildLibraryAtaDirectory(documents: CanonicalLibraryDocumentSumm
   const items = uniqueItems(documents.flatMap(document => document.versions.map(version => ({ document, version }))))
     .filter(item => {
       const document = unitDocument(item);
-      return matchesLibraryFleet(document, fleet, filters) && (['normalizedFamily', 'ata', 'aircraftModel'] as const).every(facet => {
+      const codes = documentClassificationValues(document, 'ata').map(ataDirectoryCode);
+      const nodeMatches = (!filters.ata2 || codes.some(code => code?.ata2 === filters.ata2) ||
+        (filters.ata2 === '__UNKNOWN__' && documentClassificationValues(document, 'ata').includes('__UNKNOWN__')) ||
+        (filters.ata2 === '__RAW__' && documentClassificationValues(document, 'ata').some(value => value !== '__UNKNOWN__' && !ataDirectoryCode(value)))) &&
+        (!filters.ata4 || (filters.ata4 === '__DIRECT__' ? codes.some(code => code?.ata2 === filters.ata2 && !code.ata4)
+          : codes.some(code => code?.ata4 === filters.ata4)));
+      return nodeMatches && matchesLibraryAircraftModels(document, filters) && matchesLibraryFleet(document, fleet, filters) && (['normalizedFamily', 'ata', 'aircraftModel'] as const).every(facet => {
         const selected = filters[facet];
         const grouping = facet === 'normalizedFamily' ? 'category' : facet === 'ata' ? 'ata' : 'aircraft';
         return !selected || documentClassificationValues(document, grouping).includes(selected);
@@ -152,13 +163,19 @@ export function buildLibraryAtaDirectory(documents: CanonicalLibraryDocumentSumm
   const outside = items.filter(item => !assigned.has(item));
   if (outside.length && !filters.fleetFamily && !filters.fleetModel) roots.push(node('__OUTSIDE_FLEET__', '未归入当前机队（资料保留）', 'fleet', outside, ataBranches(outside)));
   // Actual Wiki scopes add navigation paths, never document membership or counts.
-  const selectedAta = filters.ata ? ataDirectoryCode(filters.ata) : null;
+  const selectedAta = filters.ata ? ataDirectoryCode(filters.ata)
+    : filters.ata4 && filters.ata4 !== '__DIRECT__' ? ataDirectoryCode(filters.ata4)
+      : filters.ata2 ? ataDirectoryCode(filters.ata2) : null;
   const existingNodes = (nodes: AtaDirectoryNode[]): AtaDirectoryNode[] => nodes.flatMap(value => [value, ...existingNodes(value.children)]);
   for (const scope of wikiScopes) {
     if (!scope.fleetFamilyId || scope.fleetModelIds.length > 1 ||
       (filters.fleetFamily && filters.fleetFamily.toUpperCase() !== scope.fleetFamilyId.toUpperCase()) ||
       (filters.fleetModel && filters.fleetModel.toUpperCase() !== scope.fleetModelIds[0]?.toUpperCase())) continue;
-    if (filters.ata && (!selectedAta || (scope.kind !== 'FLEET' && scope.ata2 !== selectedAta.ata2) ||
+    if (filters.aircraftModels && scope.fleetModelIds.length) {
+      const selectedModels = (libraryAircraftModelsQuery(filters.aircraftModels) ?? []).map(value => value.toUpperCase());
+      if (!scope.fleetModelIds.some(model => libraryAircraftMentionAliases(model).some(alias => selectedModels.includes(alias)))) continue;
+    }
+    if ((filters.ata || filters.ata2 || filters.ata4) && (!selectedAta || (scope.kind !== 'FLEET' && scope.ata2 !== selectedAta.ata2) ||
       (scope.kind === 'ATA4' && selectedAta.ata4 && scope.ata4 !== selectedAta.ata4))) continue;
     if (scope.kind === 'ATA2' && !/^\d{2}$/u.test(scope.ata2 ?? '')) continue;
     if (scope.kind === 'ATA4' && !/^\d{2}-\d{2}$/u.test(scope.ata4 ?? '')) continue;
@@ -187,4 +204,38 @@ export function buildLibraryAtaDirectory(documents: CanonicalLibraryDocumentSumm
       chapter.children.push(node(scope.ata4!, `ATA${scope.ata4}`, 'ata4', []));
   }
   return roots;
+}
+
+export function libraryAtaScopeNodes(roots: AtaDirectoryNode[], scopes: DerivedSummaryScopeSelection[]) {
+  const found: { node: AtaDirectoryNode; path: string[] }[] = [];
+  const visit = (nodes: AtaDirectoryNode[], parent: string[]): void => {
+    for (const value of nodes) {
+      const path = [...parent, `${value.level}:${value.key}`];
+      if (scopes.some(scope => ataDirectoryScopeMatches(value, path, scope))) found.push({ node: value, path });
+      visit(value.children, path);
+    }
+  };
+  visit(roots, []);
+  return found;
+}
+
+/** ATA is the navigation order. Merge by exact document/version identities, never child sums. */
+export function libraryAtaChapterDirectory(roots: AtaDirectoryNode[], scopes: DerivedSummaryScopeSelection[] = []): AtaDirectoryNode[] {
+  const chapters = ataBranches(uniqueItems(roots.flatMap(root => root.items)));
+  for (const entry of libraryAtaScopeNodes(roots, scopes)) {
+    if (entry.node.level !== 'ata2' && entry.node.level !== 'ata4') continue;
+    const chapterCode = entry.node.key.slice(0, 2);
+    let chapter = chapters.find(value => value.level === 'ata2' && value.key === chapterCode);
+    if (!chapter) { chapter = node(chapterCode, `ATA${chapterCode}`, 'ata2', []); chapters.push(chapter); }
+    let target = chapter;
+    if (entry.node.level === 'ata4') {
+      let section = chapter.children.find(value => value.key === entry.node.key);
+      if (!section) { section = node(entry.node.key, `ATA${entry.node.key}`, 'ata4', []); chapter.children.push(section); }
+      target = section;
+    }
+    target.scopePaths = [...(target.scopePaths ?? []), entry.path];
+  }
+  const rank = (key: string): number => key.startsWith('__') ? 1 : 0;
+  for (const chapter of chapters) chapter.children.sort((a, b) => a.key.localeCompare(b.key));
+  return chapters.sort((a, b) => rank(a.key) - rank(b.key) || a.key.localeCompare(b.key));
 }

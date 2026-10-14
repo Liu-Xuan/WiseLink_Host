@@ -1,5 +1,8 @@
 import { prepareDerivedSummaryDdl } from '../../scripts/prepare-derived-summary-ddl.mjs';
 import { runHierarchicalWikiPostgres } from './helpers/hierarchical-wiki-postgres.fixture.mjs';
+import { configureUnclaimedWikiPostgres, unclaimedWikiModelSettings, verifyUnclaimedWikiPostgres }
+  from './helpers/hierarchical-wiki-unclaimed-postgres.fixture.mjs';
+import { postgresCapability, startOwnedPostgres, validateOwnedEndpoint } from '../pg/owned-postgres-cluster.mjs';
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -52,6 +55,49 @@ const member = { kind: 'WORK_ITEM_WORK', workItemId: 'WI-summary', documentVersi
 const request = { requestId: 'ATA4-request', scope: { kind: 'ATA4', title: 'B787 selected ATA46-00 materials',
   fleetFamilyId: 'B787', fleetModelIds: [], ata2: '46', ata4: '46-00', selectionReason: 'Explicit candidate selection, unconfirmed membership' },
   members: [member], instruction: 'Explain the selected saved work and retain old/new publication gaps', modelRef: 'miaoda/glm-5.3' };
+
+test('owned PG Wiki unclaimed hard-deadline reconciliation', { timeout: 120000, concurrency: false }, async t => {
+  const evidence = { engine: null, cases: [], lockWaits: [], actionAttemptRowLockSqlObserved: false,
+    finishTerminalCasSqlObserved: false, externalActions: { native: 0, platform: 0, model: 0, businessDatabase: 0 } };
+  let cluster;
+  try {
+    const capability = await postgresCapability();
+    assert.equal(capability.available, true, capability.reason);
+    cluster = await startOwnedPostgres(capability);
+    const databaseUrl = `postgres://tdms_test_owner@127.0.0.1:${cluster.expected.port}/${cluster.expected.database}`;
+    validateOwnedEndpoint(databaseUrl, cluster.expected);
+    const [identity] = await cluster.admin`SELECT current_database() AS database,host(inet_server_addr()) AS host,
+      inet_server_port() AS port,current_setting('data_directory') AS directory,version() AS version`;
+    assert.equal(identity.database, cluster.expected.database);
+    assert.equal(identity.directory, cluster.data);
+    evidence.engine = { ...identity, ownershipVerified: true, binaries: capability };
+    await t.test('constructed Wiki sources with real SDK roles, repositories, RLS, row locks and CAS', child =>
+      runHierarchicalWikiPostgres(child, { admin: cluster.admin, reset, seed, seedSemanticContext, semanticOriginal, nativeActor, databaseUrl,
+        configureUnclaimed: configureUnclaimedWikiPostgres, modelSettings: unclaimedWikiModelSettings,
+        verifyUnclaimed: (test, fixture) => verifyUnclaimedWikiPostgres(test, fixture, evidence),
+        observeSql: (_connection, query) => {
+          if (/action_attempt.*for update/iu.test(query)) evidence.actionAttemptRowLockSqlObserved = true;
+          if (/update "action_attempt" set/iu.test(query) && /"status" = \$\d+/u.test(query) && /"lease_generation" = \$\d+/u.test(query))
+            evidence.finishTerminalCasSqlObserved = true;
+        },
+      }));
+    assert.equal(evidence.cases.length, 8);
+    assert.equal(evidence.lockWaits.length, 2);
+    assert.equal(evidence.actionAttemptRowLockSqlObserved, true);
+    assert.equal(evidence.finishTerminalCasSqlObserved, true);
+  } catch (error) {
+    evidence.failure = { message: error.message, code: error.code ?? null,
+      command: error.command ?? null, exitCode: error.exitCode ?? null, diagnostic: error.diagnostic ?? null };
+    throw error;
+  } finally {
+    if (cluster) { await cluster.stop(); evidence.cleanup = { stoppedOwnedEngine: true, removedOwnedDataDirectory: true }; }
+    if (process.env.WIKI_UNCLAIMED_PG_REPORT) {
+      const path = process.env.WIKI_UNCLAIMED_PG_REPORT;
+      assert.ok(isAbsolute(path) && path.includes('/wiki-unclaimed-attempt-c257/real-pg-validation/'));
+      await writeFile(path, JSON.stringify(evidence, null, 2) + '\n', { mode: 0o600 });
+    }
+  }
+});
 
 test('real saved aggregate/upper consumer preserves exact work, pool1, CAS, lease and revocation',
   { skip: !databaseUrl, timeout: 180000 }, async t => {

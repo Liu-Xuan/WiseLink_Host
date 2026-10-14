@@ -4,7 +4,7 @@ import { StaticRouter } from 'react-router-dom/server';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
 import type { DerivedSummaryScopeSelection } from '@shared/derived-summary.interface';
 import { LibraryAtaHierarchy } from '@client/src/pages/WorkspaceHomePage/LibraryAtaHierarchy';
-import { ataDirectoryCode, ataDirectoryScopeMatches, ataDirectoryTitles, buildLibraryAtaDirectory, type AtaDirectoryNode } from '@client/src/pages/WorkspaceHomePage/library-ata-directory';
+import { ataDirectoryCode, ataDirectoryScopeMatches, ataDirectoryTitles, buildLibraryAtaDirectory, libraryAtaChapterDirectory, type AtaDirectoryNode } from '@client/src/pages/WorkspaceHomePage/library-ata-directory';
 import { libraryDocumentReadingRoute, libraryReadingParams, readingReturnTarget } from '@client/src/features/matter/reading-return';
 import { libraryFamily, libraryMetadata } from './fixtures/canonical-library';
 
@@ -32,8 +32,8 @@ function classified() {
 describe('authorized per-version aircraft / ATA browsing projection', () => {
   it('recognizes only explicit ATA observations and does not turn SB numbers into ATA4', () => {
     expect(ataDirectoryCode('23')).toEqual({ ata2: '23', ata4: null });
-    for (const value of ['2315', '231500']) expect(ataDirectoryCode(value)).toEqual({ ata2: '23', ata4: '23-15' });
-    for (const value of ['23-15', '23-15-00', '24-41', '31-39', '4600-00', '737-23-1234', '23-1234 SB', 'ATA 23', '3', '1234567']) expect(ataDirectoryCode(value)).toBeNull();
+    for (const value of ['2315', '231500', '23-15', '23-15-00']) expect(ataDirectoryCode(value)).toEqual({ ata2: '23', ata4: '23-15' });
+    for (const value of ['4600-00', '23-1500', '2315-00', '737-23-1234', '23-1234 SB', 'ATA 23', '3', '1234567']) expect(ataDirectoryCode(value)).toBeNull();
   });
   it('keeps different aircraft/ATA observations on their exact visible versions', () => {
     const document = classified();
@@ -81,12 +81,12 @@ describe('authorized per-version aircraft / ATA browsing projection', () => {
     document.versions[0].extractedMetadata = metadata;
     const before = JSON.stringify(document);
     const nodes = flatten(buildLibraryAtaDirectory([document], fleet));
-    for (const value of ['24-41', '31-39', '4600-00']) {
+    for (const value of ['4600-00']) {
       const raw = nodes.find(node => node.key === value)!;
       expect(raw.level).toBe('raw');
       expect(raw.items[0].version.documentVersionId).toBe(document.versions[0].documentVersionId);
     }
-    expect(nodes.filter(node => node.level === 'ata2').map(node => node.key)).toEqual(['31']);
+    expect(nodes.filter(node => node.level === 'ata2').map(node => node.key)).toEqual(['24', '31']);
     expect(nodes.find(node => node.key === '31-41')?.items).toHaveLength(1);
     expect(JSON.stringify(document)).toBe(before);
     const html = renderToStaticMarkup(createElement(StaticRouter, null, createElement(LibraryAtaHierarchy, {
@@ -108,11 +108,13 @@ describe('authorized per-version aircraft / ATA browsing projection', () => {
     const html = renderToStaticMarkup(createElement(StaticRouter, { location: `/library?${params}` }, createElement(LibraryAtaHierarchy, {
       documents: [classified()], fleetCatalog: fleet, filters: {}, hasMore: true, scheme: 'ispec', onSchemeChange: jest.fn(), onSelect: jest.fn(), navigationOnly: true,
     })));
-    expect(html).toContain('机型 → ATA2 → ATA4 → 文档版本');
-    expect(html).toContain('COMMUNICATIONS');
+    expect(html).toContain('ATA 目录');
+    expect(html).toContain('ATA23 通信');
     expect(html).toContain('卫星通信');
-    expect(html).toContain('ATA4 未细分');
-    expect(html).toContain('ATA_iSpec2200_ATA4_CN_EN_complete.xlsx');
+    expect(html).not.toContain('ATA4 未细分');
+    expect(html).not.toContain('ATA_iSpec2200_ATA4_CN_EN_complete.xlsx');
+    expect(html).not.toContain('>iSpec<');
+    expect(html).not.toContain('>JASC<');
     expect(html).toContain('/document-versions/DV-mixed-1');
     const route = new URL(libraryDocumentReadingRoute('DV-mixed-1', params), 'https://example.invalid');
     const returned = new URL(readingReturnTarget(route.searchParams, 'DV-mixed-1')!.route, 'https://example.invalid');
@@ -139,16 +141,16 @@ it('adds real Wiki-only scopes to the shared hierarchy without adding document m
   expect(JSON.stringify(scopes)).toBe(before);
 });
 
-it('retains exact raw ATA membership and does not use an unresolved source value to link a Wiki', () => {
+it('retains exact unresolved ATA membership and does not use it to link a Wiki', () => {
   const document = classified();
   document.versions = [document.versions[0]];
-  document.versions[0].extractedMetadata = libraryMetadata('23-15', '787-9');
+  document.versions[0].extractedMetadata = libraryMetadata('4600-00', '787-9');
   const before = JSON.stringify(document);
-  const roots = buildLibraryAtaDirectory([document], fleet, { ata: '23-15' }, [wikiScope()]);
-  const raw = flatten(roots).find(node => node.key === '23-15')!;
+  const roots = buildLibraryAtaDirectory([document], fleet, { ata: '4600-00' }, [wikiScope()]);
+  const raw = flatten(roots).find(node => node.key === '4600-00')!;
   expect(raw.level).toBe('raw');
   expect(raw.items.map(item => item.version.documentVersionId)).toEqual(['DV-mixed-2']);
-  expect(ataDirectoryScopeMatches(raw, ['fleet:787', 'model:787-9', 'raw:__RAW__', 'raw:23-15'], wikiScope())).toBe(false);
+  expect(ataDirectoryScopeMatches(raw, ['fleet:787', 'model:787-9', 'raw:__RAW__', 'raw:4600-00'], wikiScope())).toBe(false);
   expect(flatten(roots).some(node => node.level === 'ata4')).toBe(false);
   expect(JSON.stringify(document)).toBe(before);
 });
@@ -162,4 +164,23 @@ it('applies shared model and ATA filters to Wiki-only paths and does not infer d
   const nodes = flatten(buildLibraryAtaDirectory([document], fleet, { normalizedFamily: 'SB' }, scopes));
   expect(nodes.some(node => node.key === '24-10')).toBe(false);
   expect(nodes.filter(node => node.level === 'ata4').flatMap(node => node.items).map(item => item.version.documentVersionId)).toEqual(['DV-mixed-2']);
+});
+
+ it('renders ATA first and retains exact Wiki scope pins while deduplicating multi-model members', () => {
+  const document = classified();
+  document.versions[0].extractedMetadata!.mentionedAircraftModels.observations.push({ value: '787-10', status: 'PENDING_REVIEW', evidence: [] });
+  const scopes = [wikiScope(), wikiScope({ kind: 'FLEET', ata2: null, ata4: null, fleetModelIds: [] })];
+  const roots = libraryAtaChapterDirectory(buildLibraryAtaDirectory([document], fleet, {}, scopes), scopes);
+  expect(roots.map(node => node.key)).toEqual(['23', '34']);
+  expect(roots[0].items.map(item => item.version.documentVersionId)).toEqual(['DV-mixed-2']);
+  expect(roots[0].children[0].scopePaths).toEqual([['fleet:787', 'model:787-9', 'ata2:23', 'ata4:23-15']]);
+  const html = renderToStaticMarkup(createElement(StaticRouter, null, createElement(LibraryAtaHierarchy, {
+    documents: [document], fleetCatalog: fleet, filters: {}, hasMore: false, navigationOnly: true,
+    wikiScopes: scopes, onSelect: jest.fn(), showScopeActions: false,
+    renderNodeActions: (node, path) => scopes.filter(scope => ataDirectoryScopeMatches(node, path, scope))
+      .map(scope => createElement('a', { key: scope.kind, href: `/wiki/${scope.kind}` }, scope.kind)),
+  })));
+  expect(html).toContain('/wiki/ATA4'); expect(html).toContain('/wiki/FLEET');
+  expect(html).toContain('机型 Wiki');
+  expect(html).not.toContain('已加载'); expect(html).not.toContain('份 ·');
 });

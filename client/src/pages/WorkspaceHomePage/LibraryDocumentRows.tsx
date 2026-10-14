@@ -12,9 +12,10 @@ import { LibrarySummaryText } from './LibrarySummaryText';
 import { libraryCurrentVersion } from './library-document-selection';
 import { librarySourceStatus } from './library-source-status';
 import { metadataValues } from './library-classification';
+import { LibraryDocumentNumber } from './LibraryDocumentNumber';
 
 export function LibraryDocumentTableHead() {
-  return <thead><tr><th>标题 / 编号</th><th>版本</th><th>颁发时间</th><th>ATA</th><th>摘要</th><th><span className="sr-only">操作</span></th></tr></thead>;
+  return <thead><tr><th>文档编号</th><th>标题</th><th>版本</th><th>颁发时间</th><th>ATA</th><th>摘要</th><th><span className="sr-only">操作</span></th></tr></thead>;
 }
 
 /** The main list and ATA leaves use the same exact-version fields. */
@@ -27,22 +28,20 @@ export function LibraryDocumentVersionRow({ document, version, selected, onSelec
 }) {
   const identity = documentIdentityPresentation({ documentCode: document.documentCode,
     extractedMetadata: version?.extractedMetadata });
-  const title = identity.hasDocumentTitle ? identity.documentTitle : identity.documentNumber;
+  const title = identity.documentTitle;
   const publication = libraryPublicationPresentation(version);
   const reading = version ? projectLibraryDocumentReading(version) : null;
   const sourceStatus = version ? librarySourceStatus(version) : null;
   return <tr className={`${selected ? 'selected ' : ''}${version && !version.selectedVersionIsCurrent ? 'suite-version-row' : ''}`}
     data-document-version-id={version?.documentVersionId} tabIndex={0} onClick={onSelect}
     onKeyDown={event => { if (event.target === event.currentTarget && event.key === 'Enter') onSelect(); }}>
-    <td><div className="suite-doc-cell">{leading}<span><b>{title}</b>
-      {title !== identity.documentNumber ? <small>{identity.documentNumber}</small> : null}
-      {!identity.hasDocumentTitle ? <small>标题待核</small> : null}
-    </span></div></td>
-    <td><b>{version ? version.businessRevision || '未标注' : '当前版本待确认'}</b>
+    <td data-column="number"><div className="suite-doc-cell">{leading}<LibraryDocumentNumber value={document.documentCode} /></div></td>
+    <td data-column="title" className="suite-doc-title"><LibrarySummaryText text={title} label="标题" expandable={identity.hasDocumentTitle} /></td>
+    <td data-column="version" data-label="版本"><b>{version ? version.businessRevision || '未标注' : '当前版本待确认'}</b>
       {version ? <small>{version.selectedVersionIsCurrent ? '当前' : '历史'}</small> : null}</td>
-    <td title="原文颁发时间；不以修订、生成或入库日期替代">{publication.issueDate}</td>
-    <td title="原文 ATA 观察值，待核">{publication.ata}</td>
-    <td className="meaning">
+    <td data-column="issued" data-label="颁发时间" title="原文颁发时间">{publication.issueDate}</td>
+    <td data-column="ata" data-label="ATA" title="原文 ATA">{publication.ata}</td>
+    <td data-column="summary" className="meaning">
       <div data-reading-run-ref={reading?.readingRunRef ?? undefined}
         data-reading-revision={reading?.readingRevision ?? undefined}>
         <LibrarySummaryText key={version?.documentVersionId ?? document.familyId}
@@ -66,7 +65,7 @@ export function LibraryDocumentVersionRow({ document, version, selected, onSelec
         <p>{sourceStatus.sourceModified} · {sourceStatus.synchronized}</p>
       </details> : null}
     </td>
-    <td>{version ? <DocumentVersionLink version={version} familyId={document.familyId} compact>打开</DocumentVersionLink> : null}</td>
+    <td data-column="action">{version ? <DocumentVersionLink version={version} familyId={document.familyId} compact>打开</DocumentVersionLink> : null}</td>
   </tr>;
 }
 
@@ -86,7 +85,7 @@ export default function LibraryDocumentRows({
 }) {
   const scroll = useLibraryPaneScroll<HTMLDivElement>('listY', true, sessionGeneration);
   return <div {...scroll} className={`suite-library-table-wrap${compact ? ' is-compact' : ''}`}>
-    <table className="suite-library-table suite-library-data-table" aria-label="工程文档">
+    <table className="suite-library-table suite-library-data-table suite-document-table" aria-label="工程文档">
       <LibraryDocumentTableHead />
       <tbody>{documents.map(document => {
         const current = libraryCurrentVersion(document);

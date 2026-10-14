@@ -7,7 +7,7 @@ import {
   isCanonicalObjectNotFound,
 } from '@client/src/api/canonical-host';
 import { libraryReadErrorPresentation } from './library-read-error';
-import type { LibraryCatalogFilters } from './library-classification';
+import { libraryDocumentRequestFilters, type LibraryCatalogFilters } from './library-classification';
 import {
   beginLibraryDocumentsRead,
   mergeLibraryDocumentsRead,
@@ -32,6 +32,7 @@ export function useLibraryDocuments(
   const ata4 = mode === 'document' ? (filters.ata4 ?? '') : '';
   const aircraftModel =
     mode === 'document' ? (filters.aircraftModel ?? '') : '';
+  const aircraftModels = mode === 'document' ? (filters.aircraftModels ?? '') : '';
   const [read, setRead] = useState<LibraryDocumentsRead | null>(null);
   const fleetFamily = mode === 'document' ? (filters.fleetFamily ?? '') : '';
   const fleetModel = mode === 'document' ? (filters.fleetModel ?? '') : '';
@@ -63,6 +64,7 @@ export function useLibraryDocuments(
         ata2,
         ata4,
         aircraftModel,
+        aircraftModels,
         fleetFamily,
         fleetModel,
       };
@@ -85,6 +87,7 @@ export function useLibraryDocuments(
             ...(ata2 ? { ata2 } : {}),
             ...(ata4 ? { ata4 } : {}),
             ...(aircraftModel ? { aircraftModel } : {}),
+            ...libraryDocumentRequestFilters({ aircraftModels }),
             ...(fleetFamily ? { fleetFamily } : {}),
             ...(fleetModel ? { fleetModel } : {}),
           },
@@ -123,6 +126,7 @@ export function useLibraryDocuments(
       ata2,
       ata4,
       aircraftModel,
+      aircraftModels,
       fleetFamily,
       fleetModel,
     ],
@@ -147,6 +151,7 @@ export function useLibraryDocuments(
     (read.ata2 ?? '') === ata2 &&
     (read.ata4 ?? '') === ata4 &&
     (read.aircraftModel ?? '') === aircraftModel &&
+    (read.aircraftModels ?? '') === aircraftModels &&
     (read.fleetFamily ?? '') === fleetFamily &&
     (read.fleetModel ?? '') === fleetModel
       ? read

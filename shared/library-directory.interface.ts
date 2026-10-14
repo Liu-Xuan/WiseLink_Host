@@ -4,6 +4,9 @@ export interface CanonicalLibraryDirectoryRequest {
   fleetFamily?: string;
   fleetModel?: string;
   aircraftModel?: string;
+  aircraftModels?: string[];
+  /** ATA starts at chapters while retaining the same authorized membership. */
+  layout?: 'ATA';
   ata2?: string;
 }
 

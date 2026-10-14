@@ -29,7 +29,7 @@ import { useKnowledgeResources } from './useKnowledgeResources';
 import { SavedWorkIssueDirectory, savedWorkIssueRows } from './SavedWorkIssueDirectory';
 import SavedDocumentReadingArticle from './SavedDocumentReadingArticle';
 import KnowledgeAtaDirectory from './KnowledgeAtaDirectory';
-import type { LibraryCatalogFilters } from '../WorkspaceHomePage/library-classification';
+import { libraryDocumentRequestFilters, type LibraryCatalogFilters } from '../WorkspaceHomePage/library-classification';
 import './knowledge-lookup.css';
 import './knowledge-suite.css';
 
@@ -59,7 +59,7 @@ const knowledgeKind = (params: URLSearchParams): 'works' | 'matters' | 'sources'
   return hasWorkPin || requestedKind === 'works' ? 'works'
     : requestedKind === 'matters' ? 'matters' : 'sources';
 };
-const directoryFilterKeys = ['normalizedFamily', 'ata', 'aircraftModel', 'fleetFamily', 'fleetModel'] as const;
+const directoryFilterKeys = ['normalizedFamily', 'ata', 'ata2', 'ata4', 'aircraftModel', 'aircraftModels', 'fleetFamily', 'fleetModel'] as const;
 const directoryFilters = (params: URLSearchParams): LibraryCatalogFilters =>
   Object.fromEntries(directoryFilterKeys.map(key => [key, params.get(key) ?? '']));
 const directoryRequestFilters = (params: URLSearchParams): LibraryCatalogFilters =>
@@ -224,7 +224,8 @@ function KnowledgeCatalogue() {
     const requestFilters = directoryRequestFilters(currentParams.current);
     setDocuments(null); setDocumentsError(''); setDocumentsLoading(true);
     const timer = setTimeout(() => {
-      void getCanonicalLibraryDocuments({ search: query, cursor: after, limit: 24, ...requestFilters }, controller.signal).then(value => {
+      void Promise.resolve().then(() => getCanonicalLibraryDocuments({ search: query, cursor: after, limit: 24,
+        ...libraryDocumentRequestFilters(requestFilters) }, controller.signal)).then(value => {
         if (!controller.signal.aborted) { setDocuments(value); setLoadedKey(listKey); }
       }).catch(cause => { if (!controller.signal.aborted) setDocumentsError(failure(cause)); })
         .finally(() => { if (!controller.signal.aborted) setDocumentsLoading(false); });

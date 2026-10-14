@@ -68,6 +68,7 @@ export async function runHierarchicalWikiPostgres(t, fixture) {
     CREATE POLICY platform_native_crud ON hierarchical_wiki_scope TO authenticated,service_role,anon USING(true) WITH CHECK(true);
     CREATE POLICY platform_native_crud ON hierarchical_wiki_membership TO authenticated,service_role,anon USING(true) WITH CHECK(true);
     CREATE POLICY platform_native_crud ON hierarchical_wiki_change TO authenticated,service_role,anon USING(true) WITH CHECK(true);`);
+  if (fixture.configureUnclaimed) await fixture.configureUnclaimed(admin);
   const { drizzle } = require('drizzle-orm/postgres-js');
   const { sql } = require('drizzle-orm');
   const {
@@ -123,7 +124,7 @@ export async function runHierarchicalWikiPostgres(t, fixture) {
     principalId: 'service-summary',
     authorizationFingerprint: 'configured',
   };
-  const client = postgres(databaseUrl, { max: 1, onnotice() {} });
+  const client = postgres(databaseUrl, { max: 1, onnotice() {}, debug: fixture.observeSql });
   t.after(() => client.end({ timeout: 5 }));
   const database = drizzle(client);
   const context = new SqlExecutionContextMiddleware({ roleSchema: 'public' });
@@ -183,6 +184,7 @@ export async function runHierarchicalWikiPostgres(t, fixture) {
     originalReader,
   );
   const repository = new DerivedSummaryRepository(database, actors, members);
+  const models = fixture.modelSettings?.(database);
   const authorization = {
     authorizeOpenClawAutoWorkItemQueue: async () => serviceScope,
   };
@@ -192,6 +194,7 @@ export async function runHierarchicalWikiPostgres(t, fixture) {
     members,
     authorization,
     completion,
+    models,
   );
   const runtime = new DerivedSummaryRuntimeService(
     repository,
@@ -212,8 +215,10 @@ export async function runHierarchicalWikiPostgres(t, fixture) {
       }),
     },
     authorization,
+    undefined,
+    models,
   );
-  const concurrentClient = postgres(databaseUrl, { max: 1, onnotice() {} });
+  const concurrentClient = postgres(databaseUrl, { max: 1, onnotice() {}, debug: fixture.observeSql });
   t.after(() => concurrentClient.end({ timeout: 5 }));
   const concurrentDatabase = drizzle(concurrentClient);
   const concurrentActors = new EngineeringMatterWorkingRepository(
@@ -240,6 +245,8 @@ export async function runHierarchicalWikiPostgres(t, fixture) {
       }),
     },
     authorization,
+    undefined,
+    models,
   );
   const deferred = () => {
     let resolve;
@@ -366,6 +373,14 @@ export async function runHierarchicalWikiPostgres(t, fixture) {
   };
   await admin`INSERT INTO dm_document_version_metadata VALUES('DV-old',1,${admin.json(metadata)})`;
   const savedReading = await appendReading(1);
+  if (fixture.verifyUnclaimed) {
+    await fixture.verifyUnclaimed(t, {
+      admin, run, owner, serviceScope, actor, nativeActor, database, client, actors,
+      repository, members, summaries, runtime, wiki, concurrentClient, concurrentDatabase,
+      concurrentActors, concurrentRepository, concurrentWiki, savedReading,
+    });
+    return;
+  }
   let root;
   let ata4;
   let ata2;

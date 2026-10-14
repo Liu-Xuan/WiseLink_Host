@@ -2,6 +2,7 @@ import type { TdmsCatalogueResponse, TdmsHistoryResponse, TdmsReadContext, TdmsR
 import type { TdmsDocumentSourceReadRequest, TdmsDocumentSourceReadResponse } from '@shared/tdms-source-reading.interface';
 import type { LcmSnapshotBrowseRequest, LcmSnapshotCatalogueResponse, LcmSnapshotRowsRequest, LcmSnapshotRowsResponse } from '@shared/lcm-source-reading.interface';
 import type { CanonicalLibraryDirectoryRequest, CanonicalLibraryDirectoryResponse } from '@shared/library-directory.interface';
+import { libraryCatalogueQuery } from '@shared/library-aircraft-mentions';
 import type { TdmsFileServiceRecordReadResponse } from '@shared/tdms-file-service-import.interface';
 import { tdmsSourceReadForPreview } from '@client/src/features/tdms-source/tdms-assessment-body';
 import { canReadTdmsSourceBody } from '@shared/tdms-source-body-policy';
@@ -479,9 +480,9 @@ export async function getCanonicalLibraryDocuments(
   input: CanonicalLibraryDocumentsRequest = {},
   signal?: AbortSignal,
 ): Promise<CanonicalLibraryDocumentsResponse> {
+  const query = libraryCatalogueQuery(input);
   return readCanonicalLibrary<CanonicalLibraryDocumentsResponse>({
-    url: '/api/canonical-host/library/documents',
-    params: input,
+    url: `/api/canonical-host/library/documents${query ? `?${query}` : ''}`,
     signal,
   });
 }
@@ -492,16 +493,13 @@ export async function getCanonicalLibraryDirectory(
   signal?: AbortSignal,
 ): Promise<CanonicalLibraryDirectoryResponse> {
   const generation = clientSessionGeneration;
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(input)) {
-    if (value) query.set(key, value);
-  }
+  const query = libraryCatalogueQuery(input);
   const result = await readCanonicalLibrary<CanonicalLibraryDirectoryResponse>({
     url: `/api/canonical-host/library/directory?${query}`, signal,
   });
   if (signal?.aborted || generation !== clientSessionGeneration)
     throw new Error('CANONICAL_LIBRARY_DIRECTORY_OBSOLETE');
-  const level = input.ata2 ? 'ATA4' : input.aircraftModel ? 'ATA2' : 'AIRCRAFT_MODEL';
+  const level = input.ata2 ? 'ATA4' : input.layout === 'ATA' || input.aircraftModel || input.aircraftModels ? 'ATA2' : 'AIRCRAFT_MODEL';
   if (result.scope !== 'TENANT_DOCUMENT_CATALOG' || result.level !== level ||
       !Array.isArray(result.nodes) || result.nodes.some(node => node.level !== level))
     throw new Error('CANONICAL_LIBRARY_DIRECTORY_BINDING_MISMATCH');

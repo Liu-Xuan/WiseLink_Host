@@ -1,21 +1,7 @@
 import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
-import { Button } from '@client/src/components/ui/button';
-import {
-  documentLabel,
-  libraryVersionLabel,
-} from './library-document-presentation';
-import {
-  buildLibraryHierarchy,
-  libraryGroupingOrder,
-  LIBRARY_GROUPINGS,
-  LIBRARY_GROUPING_FACETS,
-  type LibraryHierarchyGroup,
-  type LibraryCatalogFilters,
-  type LibraryGrouping,
-} from './library-classification';
-import { DocumentVersionLink } from './DocumentVersionLink';
-import { metadataValues } from './library-classification';
+import { LibraryAtaHierarchy } from './LibraryAtaHierarchy';
+import type { LibraryCatalogFilters, LibraryGrouping } from './library-classification';
 
 interface LibraryHierarchyProps {
   documents: CanonicalLibraryDocumentSummary[];
@@ -30,123 +16,7 @@ interface LibraryHierarchyProps {
   fleetCatalog?: CanonicalLibraryFleetCatalog | null;
 }
 
-export function LibraryHierarchy({
-  documents,
-  selectedId,
-  hasMore,
-  onSelect,
-  grouping = 'category',
-  totalCount,
-  filters = {},
-  onFilterChange,
-  disabled = false,
-  fleetCatalog,
-}: LibraryHierarchyProps) {
-  const groups = buildLibraryHierarchy(documents, grouping, filters, fleetCatalog);
-  const labelFor = (dimension: LibraryGrouping) => LIBRARY_GROUPINGS.find((option) => option.value === dimension)?.label;
-
-  function documentRows(items: CanonicalLibraryDocumentSummary[]) {
-    return (
-      <ul className="library-family-tree">
-        {items.map((document) => (
-          <li key={document.familyId}>
-            <details
-              data-reading-key={`family:${document.familyId}`}
-              className={document.familyId === selectedId ? 'is-selected' : ''}
-            >
-              <summary>
-                <span>{documentLabel(document)}</span>
-                <small>{document.versions.length} 个可见版本</small>
-              </summary>
-              <div className="library-family-actions">
-                <span>
-                  {document.issuerAuthority} · {document.workItemCount}{' '}
-                  个评估任务
-                </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onSelect(document.familyId)}
-                  aria-pressed={document.familyId === selectedId}
-                >
-                  查看文档快览
-                </Button>
-              </div>
-              <ul
-                className="library-version-tree"
-                aria-label={`${documentLabel(document)} 版本`}
-              >
-                {document.versions.map((version) => (
-                  <li key={version.documentVersionId}>
-                    <DocumentVersionLink version={version} familyId={document.familyId}>
-                      <strong>{documentLabel(document)}</strong>
-                      <span>
-                        {libraryVersionLabel(version)} · {version.selectedVersionIsCurrent
-                          ? '当前版本'
-                          : '历史版本'}
-                      </span>
-                      {version.extractedMetadata ? (
-                        <small>
-                          {metadataValues(version.extractedMetadata.title).join(
-                            ' / ',
-                          ) || '文档标题待核'}
-                        </small>
-                      ) : (
-                        <small>文档标题待核</small>
-                      )}
-                      <small>原始文件 {version.originalFilename || '未标注'}</small>
-                    </DocumentVersionLink>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          </li>
-        ))}
-      </ul>
-    );
-  }
-
-  function categoryRows(items: LibraryHierarchyGroup[], depth = 0) {
-    return <div className="library-category-tree" data-depth={depth}>
-      {items.map((group) => {
-        const facet = LIBRARY_GROUPING_FACETS[group.dimension];
-        const pathLabel = Object.entries(group.pathFilters)
-          .filter(([, value]) => Boolean(value))
-          .map(([key, value]) => `${key === 'normalizedFamily' ? '类别' : key === 'ata' ? 'ATA' : key === 'fleetFamily' ? '父机型' : key === 'fleetModel' ? '子机型' : '机型'} ${value === '__UNKNOWN__' ? '未分类' : value}`).join(' / ');
-        return <details key={`${group.dimension}:${group.key}`} open={depth === 0 || Boolean(filters[facet])}
-          data-reading-key={`group:${JSON.stringify(group.pathFilters)}`}
-          data-facet={facet} data-facet-value={group.key}>
-          <summary>
-            <span className="library-branch-label"><small>{labelFor(group.dimension)}</small><strong>{group.label}</strong></span>
-            <span className="library-branch-count">已加载 {group.documents.length} 份</span>
-          </summary>
-          {onFilterChange ? <div className="library-branch-actions">
-            <Button variant="ghost" size="sm" disabled={disabled} aria-label={`筛选路径 ${pathLabel}`}
-              onClick={() => onFilterChange({ ...filters, ...group.pathFilters })}>筛选此路径</Button>
-          </div> : null}
-          {group.children.length ? categoryRows(group.children, depth + 1) : documentRows(group.documents)}
-        </details>;
-      })}
-    </div>;
-  }
-
-  return (
-    <section className="library-hierarchy" aria-label="文档分类目录">
-      <h3>资料分类（含历史版本）</h3>
-      <p className="library-hierarchy-order" aria-label="当前目录层级">
-        {libraryGroupingOrder(grouping).map((dimension) => labelFor(dimension)).join(' → ')} → 文档 → 版本
-      </p>
-      <p className="library-classification-note">
-        {totalCount === undefined
-          ? '全量统计尚未取得。'
-          : `当前搜索与筛选共 ${totalCount} 份文档。`}
-        {`已加载 ${documents.length} 份；下方树节点数量仅覆盖已加载的搜索结果。`}
-        {hasMore ? '可在下方加载更多。' : ''} 展开文档查看版本，或打开文档快览。
-      </p>
-      <details className="library-classification-note"><summary>目录分类</summary>
-        <p>三项筛选共同生效。ATA 与正文提及机型取自文档族内各版本的原文；机型层级取自当前有效机队。未分类资料可在文档快览查看依据或补提取。</p>
-      </details>
-      <div key={grouping}>{categoryRows(groups)}</div>
-    </section>
-  );
+export function LibraryHierarchy({ documents, selectedId, hasMore, onSelect, filters = {}, fleetCatalog }: LibraryHierarchyProps) {
+  return <LibraryAtaHierarchy navigationOnly documents={documents} selectedId={selectedId} hasMore={hasMore}
+    onSelect={onSelect} filters={filters} fleetCatalog={fleetCatalog ?? null} />;
 }

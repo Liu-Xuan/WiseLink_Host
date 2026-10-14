@@ -101,7 +101,7 @@ describe('ATA directory with the synchronous compact title catalog', () => {
     expect(getCanonicalLibraryFleetCatalog).toHaveBeenCalledTimes(1);
     expect(text()).toContain('正在读取工程文档');
     await act(async () => read.resolve(documents()));
-    expect(text()).toContain('Speech Communications');
+    expect(text()).toContain('语音通信');
     expect(text()).toContain('通信');
     expect(text()).toContain('ATA23-10');
     expect(text()).not.toContain('目录暂不可用');
@@ -109,19 +109,21 @@ describe('ATA directory with the synchronous compact title catalog', () => {
     expect(dom.window.document.querySelector('a[href*="DV-radio-2"]')).not.toBeNull();
   });
 
-  it('switches schemes repeatedly without title requests or another directory read and returns with fresh authorization', async () => {
+  it('keeps historical scheme URLs readable without visible switches or another directory read and returns with fresh authorization', async () => {
     jest.mocked(getCanonicalLibraryDocuments).mockResolvedValueOnce(documents()).mockResolvedValueOnce(documents('returned'));
     await act(async () => root.render(createElement(RouterProvider, { router })));
-    await click('JASC');
-    expect(text()).toContain('HF Communications System');
-    expect(text()).not.toContain('Speech Communications');
-    await click('iSpec');
-    expect(text()).toContain('Speech Communications');
+    expect(text()).not.toContain('JASC');
+    expect(text()).not.toContain('iSpec');
+    await act(async () => { await router.navigate('/library?catalogView=ata&ataTitleScheme=jasc'); });
+    expect(text()).toContain('HF通信系统');
+    expect(text()).not.toContain('语音通信');
+    await act(async () => { await router.navigate('/library?catalogView=ata&ataTitleScheme=ispec'); });
+    expect(text()).toContain('语音通信');
     expect(getCanonicalLibraryDocuments).toHaveBeenCalledTimes(1);
     expect(getCanonicalLibraryFleetCatalog).toHaveBeenCalledTimes(1);
     await act(async () => { await router.navigate('/away'); });
     await act(async () => { await router.navigate(-1); });
-    expect(text()).toContain('Speech Communications');
+    expect(text()).toContain('语音通信');
     expect(getCanonicalLibraryDocuments).toHaveBeenCalledTimes(2);
     expect(dom.window.document.querySelector('a[href*="DV-returned-1"]')).not.toBeNull();
     expect(dom.window.document.querySelector('a[href*="DV-radio-1"]')).toBeNull();
@@ -133,14 +135,14 @@ describe('ATA directory with the synchronous compact title catalog', () => {
       .mockResolvedValueOnce(documents('recovered'));
     await act(async () => root.render(createElement(RouterProvider, { router })));
     await click('刷新工程文档');
-    expect(text()).toContain('Speech Communications');
+    expect(text()).toContain('语音通信');
     expect(dom.window.document.querySelector('a[href*="DV-radio-1"]')).not.toBeNull();
     await act(async () => refresh.reject(new Error('network failure')));
     expect(text()).toContain('以下保留上次成功读取的目录');
-    expect(text()).toContain('Speech Communications');
+    expect(text()).toContain('语音通信');
     expect(dom.window.document.querySelector('a[href*="DV-radio-1"]')).not.toBeNull();
     await click('重试');
-    expect(text()).toContain('Speech Communications');
+    expect(text()).toContain('语音通信');
     expect(text()).not.toContain('未能更新');
     expect(dom.window.document.querySelector('a[href*="DV-recovered-1"]')).not.toBeNull();
     expect(dom.window.document.querySelector('a[href*="DV-radio-1"]')).toBeNull();
@@ -152,7 +154,7 @@ describe('ATA directory with the synchronous compact title catalog', () => {
     await act(async () => root.render(createElement(RouterProvider, { router })));
     expect(text()).toContain('目录暂不可用');
     await click('重试');
-    expect(text()).toContain('Speech Communications');
+    expect(text()).toContain('语音通信');
     expect(text()).not.toContain('目录暂不可用');
     expect(getCanonicalLibraryDocuments).toHaveBeenCalledTimes(2);
   });

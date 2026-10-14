@@ -732,3 +732,62 @@
 .suite-directory-options-panel .atlas-library-view-switch { display: flex; flex-wrap: wrap; gap: 4px; }
 .suite-directory-options-panel .library-ata-toolbar { padding: 4px 0; }
 .library-ata-results { min-width: 0; }
+
+/* Document identity leads; title, revision and saved reading keep separate columns. */
+.suite-document-table { min-width: 800px; }
+.suite-document-table th:nth-child(1) { width: 21%; }
+.suite-document-table th:nth-child(2) { width: 23%; }
+.suite-document-table th:nth-child(3) { width: 8%; }
+.suite-document-table th:nth-child(4) { width: 11%; }
+.suite-document-table th:nth-child(5) { width: 8%; }
+.suite-document-table th:nth-child(6) { width: 23%; }
+.suite-document-table th:nth-child(7) { width: 6%; }
+.library-document-number { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 2px 4px; min-width: 0; }
+.library-document-number > b { min-width: 0; overflow-wrap: anywhere; font-family: var(--wl-font); font-weight: 600; user-select: text; }
+.library-document-number .library-copy-number { --wl-control-size: var(--wl-control-size-sm); flex: 0 0 auto; color: var(--wl-muted); }
+.library-copy-number svg { width: 12px; height: 12px; }
+.library-document-number > small { flex-basis: 100%; }
+.suite-document-table .suite-doc-title { color: var(--wl-muted); font-weight: 400; }
+
+/* The detail reader uses the same system typography as the rest of the app. */
+.library-atlas-home .library-document-details { min-width: 0; font-family: var(--wl-font); font-size: var(--wl-text-body); font-weight: 400; line-height: 1.6; color: var(--wl-ink); }
+.library-atlas-home .library-document-details .library-quicklook-title h3,
+.library-atlas-home .library-document-details h4 { margin: 0 0 6px; font-family: inherit; font-size: var(--wl-text-body); font-weight: 600; line-height: 1.5; }
+.library-document-details .library-details-document-title { color: var(--wl-muted); font-size: var(--wl-text-body-sm); line-height: 1.5; font-weight: 400; }
+.library-document-details .library-selected-version,
+.library-document-details .library-quicklook-assessment,
+.library-document-details .library-quicklook-reading,
+.library-document-details .library-selected-version > p,
+.library-document-details .library-selected-version .suite-library-summary > p { font-family: inherit; font-size: var(--wl-text-body); font-weight: 400; line-height: 1.6; }
+.library-document-details .suite-library-key-facts { font-size: var(--wl-text-body-sm); }
+.library-document-details dt,
+.library-document-details .library-source-version-picker label,
+.library-document-details .library-quicklook-note { font-size: var(--wl-text-caption); line-height: 1.5; color: var(--wl-muted); }
+.library-document-details button,
+.library-document-details .library-source-version-picker [role='combobox'],
+.library-document-details .suite-library-summary button { font-family: inherit; font-size: var(--wl-text-body-sm); font-weight: 500; line-height: 1.5; }
+.library-document-details .library-quicklook-title > div { min-width: 0; width: 100%; }
+
+@media (min-width: 1025px) {
+  .library-atlas-home .library-surface { grid-template-columns: 170px minmax(0, 1fr) minmax(292px, 29%); }
+}
+@media (max-width: 1024px) and (min-width: 761px) {
+  .library-atlas-home .library-surface { grid-template-columns: 145px minmax(0, 1fr) 280px; }
+}
+@media (max-width: 760px) {
+  .suite-table-toolbar { position: relative; }
+  .suite-directory-options { position: static; }
+  .suite-directory-options-panel { left: 0; right: 0; top: calc(100% + 4px); width: auto; max-width: 100%; box-sizing: border-box; }
+  .suite-document-table, .suite-document-table tbody { display: block; min-width: 0; width: 100%; }
+  .suite-document-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .suite-document-table tbody > tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: 'number number' 'title title' 'version issued' 'ata ata' 'summary summary' 'action action'; padding: 8px; border-bottom: 1px solid var(--wl-border); }
+  .suite-document-table td { min-width: 0; padding: 4px; border: 0; }
+  .suite-document-table td[data-column='number'] { grid-area: number; }
+  .suite-document-table td[data-column='title'] { grid-area: title; }
+  .suite-document-table td[data-column='version'] { grid-area: version; }
+  .suite-document-table td[data-column='issued'] { grid-area: issued; }
+  .suite-document-table td[data-column='ata'] { grid-area: ata; }
+  .suite-document-table td[data-column='summary'] { grid-area: summary; }
+  .suite-document-table td[data-column='action'] { grid-area: action; }
+  .suite-document-table td[data-label]::before { display: block; color: var(--wl-muted); font-size: var(--wl-text-caption); content: attr(data-label); }
+}

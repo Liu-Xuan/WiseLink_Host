@@ -3226,6 +3226,8 @@ export interface CanonicalLibraryDocumentsRequest {
   ata2?: string;
   ata4?: string;
   aircraftModel?: string;
+  /** Exact source model union for navigation groups; never fleet applicability. */
+  aircraftModels?: string[];
   search?: string;
   cursor?: string;
   limit?: number;
@@ -3238,7 +3240,7 @@ export interface CanonicalLibraryDocumentsResponse {
   familyCounts: Record<string, number>;
   ataCounts: Record<string, number>;
   aircraftModelCounts: Record<string, number>;
-  order: 'FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC';
+  order: 'FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC' | 'DOCUMENT_NUMBER_EXACT_FIRST_FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC';
   items: CanonicalLibraryDocumentSummary[];
   nextCursor: string | null;
   fileReadPerformed: false;

@@ -1,5 +1,6 @@
 import type { CanonicalLibraryGraphRequest } from '@shared/library-graph.interface';
 import { readLibraryGraph } from './canonical-library-graph';
+import { createHash } from 'node:crypto';
 import { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import {
@@ -16,7 +17,7 @@ import type {
   CanonicalLibraryDirectoryRequest,
   CanonicalLibraryDirectoryResponse,
 } from '@shared/library-directory.interface';
-import { libraryAircraftMentionAliases } from '@shared/library-aircraft-mentions';
+import { libraryAircraftMentionAliases, libraryAircraftModelUnion, libraryCatalogueQuery } from '@shared/library-aircraft-mentions';
 import type {
   CanonicalLibraryDocumentSummary,
   CanonicalLibraryDocumentsRequest,
@@ -92,18 +93,26 @@ export class CanonicalLibraryService {
     actor: CanonicalHostActor,
   ): Promise<CanonicalLibraryDocumentsResponse> {
     const scope = ownedScope(actor);
+    const search = filterText(input.search, 200, 'LIBRARY_SEARCH_TOO_LONG');
+    try { libraryCatalogueQuery(input); }
+    catch (error: unknown) { throw new BadRequestException(error instanceof Error ? error.message : 'LIBRARY_AIRCRAFT_MODELS_INVALID'); }
     const {
-      normalizedFamily, ata, ata2, ata4, aircraftModel, fleetFamily,
+      normalizedFamily, ata, ata2, ata4, aircraftModel, aircraftModels, fleetFamily,
       fleetModel, fleetRevision, fleetMentionValues,
     } = await this.documentFilters(input, actor);
-    const nodeScope = [normalizedFamily, ata, ata2, ata4, aircraftModel];
-    const context = fleetFamily
+    const nodeScope: (string | string[])[] = [normalizedFamily, ata, ata2, ata4, aircraftModel];
+    if (aircraftModels) nodeScope.push(aircraftModels);
+    const filterContext = fleetFamily
       ? `DOCUMENTS:${JSON.stringify([
         ...nodeScope, fleetFamily, fleetModel, fleetRevision, fleetMentionValues,
       ])}`
-      : normalizedFamily || ata || ata2 || ata4 || aircraftModel
+      : normalizedFamily || ata || ata2 || ata4 || aircraftModel || aircraftModels
         ? `DOCUMENTS:${JSON.stringify(nodeScope)}`
         : 'DOCUMENTS';
+    // A concrete union can otherwise duplicate escaped source values inside the GET cursor.
+    // Only this new filter path uses a compact equality pin; document/source identities stay unchanged.
+    const cursorContext = aircraftModels ? `DOCUMENTS_MODELS:${createHash('sha256').update(filterContext).digest('hex')}` : filterContext;
+    const context = search ? `DOCUMENTS_NUMBER_SEARCH:${cursorContext}` : cursorContext;
     const query = listQuery(input, context);
     const [result] = await this.repository.listDocuments({
       ...scope,
@@ -113,12 +122,13 @@ export class CanonicalLibraryService {
       ata2,
       ata4,
       aircraftModel,
+      ...(aircraftModels ? { aircraftModels } : {}),
       ...(fleetMentionValues ? { fleetMentionValues } : {}),
     });
     const rows = result.rows;
     const items: CanonicalLibraryDocumentSummary[] = rows
       .slice(0, query.limit)
-      .map((row) => ({
+      .map(({ numberRank: _numberRank, ...row }) => ({
         ...row,
         kind: 'DOCUMENT',
         createdAt: new Date(row.createdAt).toISOString(),
@@ -135,11 +145,13 @@ export class CanonicalLibraryService {
       familyCounts: result.familyCounts,
       ataCounts: result.ataCounts,
       aircraftModelCounts: result.aircraftModelCounts,
-      order: 'FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC',
+      order: query.search ? 'DOCUMENT_NUMBER_EXACT_FIRST_FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC'
+        : 'FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC',
       items,
       nextCursor:
         rows.length > query.limit && last
-          ? encodeCursor(last.createdAt, last.familyId, query.search, context)
+          ? encodeCursor(last.createdAt, last.familyId, query.search, context,
+              query.search ? rows[items.length - 1].numberRank : undefined)
           : null,
       fileReadPerformed: false,
     };
@@ -151,11 +163,17 @@ export class CanonicalLibraryService {
   ): Promise<CanonicalLibraryDirectoryResponse> {
     const scope = ownedScope(actor);
     const search = filterText(input.search, 200, 'LIBRARY_SEARCH_TOO_LONG');
-    const { normalizedFamily, aircraftModel, ata2, fleetMentionValues } =
+    try { libraryCatalogueQuery(input); }
+    catch (error: unknown) { throw new BadRequestException(error instanceof Error ? error.message : 'LIBRARY_AIRCRAFT_MODELS_INVALID'); }
+    const { normalizedFamily, aircraftModel, aircraftModels, ata2, fleetMentionValues } =
       await this.documentFilters(input, actor);
+    if (input.layout !== undefined && input.layout !== 'ATA')
+      throw new BadRequestException('LIBRARY_DIRECTORY_LAYOUT_INVALID');
     // Directory and leaf lists intersect the same current fleet and raw model scopes.
     return this.repository.directory({
       ...scope, search, normalizedFamily, aircraftModel, ata2,
+      ...(aircraftModels ? { aircraftModels } : {}),
+      ...(input.layout ? { layout: input.layout } : {}),
       ...(fleetMentionValues ? { fleetMentionValues } : {}),
     });
   }
@@ -169,6 +187,11 @@ export class CanonicalLibraryService {
     const ata2 = filterText(input.ata2, 96, 'LIBRARY_FILTER_INVALID');
     const ata4 = filterText(input.ata4, 96, 'LIBRARY_FILTER_INVALID');
     const aircraftModel = filterText(input.aircraftModel, 96, 'LIBRARY_FILTER_INVALID');
+    let aircraftModels: string[] | undefined;
+    try { aircraftModels = libraryAircraftModelUnion(input.aircraftModels); }
+    catch (error: unknown) { throw new BadRequestException(error instanceof Error ? error.message : 'LIBRARY_AIRCRAFT_MODELS_INVALID'); }
+    if (aircraftModel && aircraftModels)
+      throw new BadRequestException('LIBRARY_AIRCRAFT_MODEL_FILTER_CONFLICT');
     const fleetFamily = filterText(input.fleetFamily, 96, 'LIBRARY_FLEET_FILTER_INVALID').toUpperCase();
     const fleetModel = filterText(input.fleetModel, 96, 'LIBRARY_FLEET_FILTER_INVALID').toUpperCase();
     if (fleetModel && !fleetFamily)
@@ -192,7 +215,7 @@ export class CanonicalLibraryService {
         catalog.source!.sourceSnapshotId, catalog.source!.authorityRevision, catalog.asOf,
       ];
     }
-    return { normalizedFamily, ata, ata2, ata4, aircraftModel, fleetFamily,
+    return { normalizedFamily, ata, ata2, ata4, aircraftModel, aircraftModels, fleetFamily,
       fleetModel, fleetMentionValues, fleetRevision };
   }
 
@@ -366,10 +389,12 @@ function decodeCursor(
       !cursor.itemId ||
       cursor.itemId.length > 96 ||
       cursor.search !== search ||
-      cursor.context !== context
+      cursor.context !== context ||
+      (context.startsWith('DOCUMENTS_NUMBER_SEARCH:') && cursor.numberRank !== 0 && cursor.numberRank !== 1)
     )
       throw new Error();
-    return { createdAt: cursor.createdAt, itemId: cursor.itemId };
+    return { createdAt: cursor.createdAt, itemId: cursor.itemId,
+      ...(cursor.numberRank === 0 || cursor.numberRank === 1 ? { numberRank: cursor.numberRank } : {}) };
   } catch {
     throw new BadRequestException('LIBRARY_CURSOR_INVALID');
   }
@@ -395,9 +420,10 @@ function encodeCursor(
   itemId: string,
   search: string,
   context: string,
+  numberRank?: 0 | 1,
 ): string {
   return Buffer.from(
-    JSON.stringify({ createdAt, itemId, search, context }),
+    JSON.stringify({ createdAt, itemId, search, context, ...(numberRank !== undefined ? { numberRank } : {}) }),
   ).toString('base64url');
 }
 

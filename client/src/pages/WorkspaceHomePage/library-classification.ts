@@ -4,6 +4,7 @@ import type {
   DocumentMetadataField,
 } from '@shared/api.interface';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
+import { libraryAircraftModelsQuery } from '@shared/library-aircraft-mentions';
 import { libraryFleetBranches, matchesLibraryFleet } from './library-fleet-classification';
 
 export type LibraryGrouping = 'category' | 'ata' | 'aircraft';
@@ -24,7 +25,18 @@ export type LibraryFacetKey = 'normalizedFamily' | 'ata' | 'ata2' | 'ata4' | 'ai
 export type LibraryCatalogFilters = Pick<
   CanonicalLibraryDocumentsRequest,
   LibraryFacetKey
->;
+> & { /** Serialized exact raw-model set in read-only URL state. */ aircraftModels?: string };
+
+export function libraryDocumentRequestFilters(filters: LibraryCatalogFilters): CanonicalLibraryDocumentsRequest {
+  const { aircraftModels, ...singleValues } = filters;
+  return { ...singleValues, ...(aircraftModels ? { aircraftModels: libraryAircraftModelsQuery(aircraftModels) } : {}) };
+}
+
+export function matchesLibraryAircraftModels(document: CanonicalLibraryDocumentSummary, filters: LibraryCatalogFilters): boolean {
+  if (!filters.aircraftModels) return true;
+  const models = libraryAircraftModelsQuery(filters.aircraftModels) ?? [];
+  return documentClassificationValues(document, 'aircraft').some((value: string) => models.includes(value.trim()));
+}
 export const LIBRARY_UNCLASSIFIED = '__UNKNOWN__';
 
 export function metadataValues(

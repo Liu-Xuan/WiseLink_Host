@@ -43,10 +43,12 @@ describe('document library associated assessment', () => {
       fileReadPerformed: false,
     };
     const correct = renderQuicklook(response);
-    expect(correct).toContain('关联评估短认识');
+    expect(correct).toContain('关联工程评估');
     expect(correct).toContain(response.result!.readingResult!.content.listBrief);
     expect(correct).toContain('/work-items/WI-NEW/analysis?panel=assessment');
-    expect(correct).toContain('文档自身解读尚未生成');
+    expect(correct).toContain('文档解读');
+    expect(correct).toContain('暂无已保存解读');
+    expect(correct).not.toContain('关联评估单独显示');
 
     const wrongVersion = renderQuicklook({ ...response, document: {
       ...response.document, documentVersionId: 'DV-787-1',

@@ -20,6 +20,7 @@ import LinkDocumentMatterMaterial from '@client/src/features/matter/LinkDocument
 import { useLibraryPaneScroll } from './useLibraryPaneScroll';
 import { libraryDocumentSelection } from './library-document-selection';
 import { LibraryDocumentSourceDialog } from './LibraryDocumentSourceDialog';
+import { LibraryDocumentNumber } from './LibraryDocumentNumber';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@client/src/components/ui/select';
 import {
   byteLabel,
@@ -125,7 +126,7 @@ export function LibraryDocumentDetails({
 
   return (
     <aside
-      className="library-quicklook-panel"
+      className="library-quicklook-panel library-document-details"
       aria-label="文档与版本"
       data-wl-material="g3"
     >
@@ -145,7 +146,9 @@ export function LibraryDocumentDetails({
         <div {...paneScroll} className="library-quicklook-scroll">
           <header className="library-quicklook-title">
             <div>
-              <h3>{selectedIdentity?.hasDocumentTitle ? selectedIdentity.documentTitle : selectedIdentity?.documentNumber}</h3>
+              <h3><LibraryDocumentNumber value={document.documentCode} /></h3>
+              {selectedIdentity?.hasDocumentTitle ? <div className="library-details-document-title">
+                <LibrarySummaryText text={selectedIdentity.documentTitle} label="标题" /></div> : null}
             </div>
           </header>
           <div className="library-source-version-picker">
@@ -159,14 +162,12 @@ export function LibraryDocumentDetails({
           </div>
           {selectedVersion && selectedReading ? <section className="library-selected-version" data-document-version-id={selectedVersion.documentVersionId}>
             <dl className="suite-library-key-facts">
-              {selectedIdentity?.documentTitle !== selectedIdentity?.documentNumber && selectedIdentity?.hasDocumentTitle
-                ? <div><dt>编号</dt><dd>{selectedIdentity.documentNumber}</dd></div> : null}
               <div><dt>版本</dt><dd>{selectedVersion.businessRevision || '未标注'} · {selectedVersion.selectedVersionIsCurrent ? '当前' : '历史'}</dd></div>
               <div><dt>颁发时间</dt><dd>{selectedPublication.issueDate}</dd></div>
               <div><dt>ATA</dt><dd>{selectedPublication.ata}</dd></div>
             </dl>
             <LibraryDocumentSourceDialog document={document} version={selectedVersion} onSelectVersion={selectVersion} />
-            <h4>{!selectedReading.brief && assessmentBrief ? '关联评估短认识' : '摘要'}</h4>
+            <h4>文档解读</h4>
             {selectedReading.brief ? (
               <div
                 className="library-quicklook-reading"
@@ -183,13 +184,11 @@ export function LibraryDocumentDetails({
                 ) : null}
               </div>
             ) : (
-              <p>{selectedReading.note || (selectedReading.status === 'NOT_GENERATED'
-                ? '文档自身解读尚未生成；关联评估单独显示。'
-                : '文档自身解读状态尚待核对。')}</p>
+              <p>{selectedReading.note || '暂无已保存解读'}</p>
             )}
             {!selectedReading.brief && selectedVersion.readerWorkItemId ? (
               <section className="library-quicklook-assessment" aria-label="同版本已保存评估">
-                {!assessmentBrief ? <h4>关联工程评估</h4> : null}
+                <h4>关联工程评估</h4>
                 {assessmentQuicklook.error ? (
                   <div role="alert">
                     <p>{assessmentQuicklook.error.message}</p>
@@ -208,7 +207,7 @@ export function LibraryDocumentDetails({
                     <Link to={`/work-items/${encodeURIComponent(matchingAssessment.document.workItemId)}/analysis?panel=assessment`}>查看完整评估与来源</Link>
                   </>
                 ) : (
-                  <p>该版本已有评估任务，尚无可显示的已保存问题摘要。</p>
+                  <p>暂无已保存评估摘要</p>
                 )}
               </section>
             ) : null}

@@ -336,11 +336,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
                   </NavLink>
                 ))}
               </nav>
-            ) : (
-              <p className="wl-sidebar-object-empty">
-                当前为独立文档版本阅读，可返回资料库选择事项或其他文档。
-              </p>
-            )}
+            ) : null}
           </div>
         ) : null}
 

@@ -18,8 +18,8 @@ describe('version-scoped metadata and full catalog facets', () => {
     }));
     expect(html).toContain('重新提取元数据');
     expect(html).toContain('查看上一修订证据');
-    expect(html).toContain('保留旧提取结果');
-    expect(html).toContain('不新建文档版本或评估任务');
+    expect(html).not.toContain('保留旧提取结果');
+    expect(html).not.toContain('不新建文档版本或评估任务');
     expect(html).not.toContain('只读核对本次请求');
   });
 
@@ -43,7 +43,7 @@ describe('version-scoped metadata and full catalog facets', () => {
     expect(html).toContain('原文第 1 页');
     expect(html).toContain('本次文本未检出');
     expect(html).toContain('非适用性');
-    expect(html).toContain('待核');
+    expect(html).toContain('测试原文标题');
     expect(html).toContain('&lt;script&gt;');
     expect(html).not.toContain('<script>');
   });
@@ -66,9 +66,9 @@ describe('version-scoped metadata and full catalog facets', () => {
     expect(html).toContain('100');
     expect(html).toContain('TFU');
     expect(html).toContain('AD');
-    expect(html).toContain('已选：未分类');
-    expect(html).toContain('筛选前');
-    expect(html).toContain('不能相加');
+    expect(html).toContain('更多机型');
+    expect(html).not.toContain('筛选前');
+    expect(html).not.toContain('不能相加');
     expect(html).toContain('不限');
   });
 

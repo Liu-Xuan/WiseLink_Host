@@ -73,7 +73,8 @@ function setup() {
           baseRevision: task.expectedSummaryRevision, deadlineAt: new Date(task.deadlineAt),
           taskEnvelopeJson: canonicalJson(task), taskInputHash: task.taskInputHash,
           executionModelJson: canonicalJson(task.executionModel), requestCommandJson: canonicalJson(input),
-          idempotencyKey: `derived-summary:${task.subject.summaryId}:${task.requestId}` } as SummaryAttempt;
+          idempotencyKey: `derived-summary:${task.subject.summaryId}:${task.requestId}`,
+          delegatedPrincipalId: runtimeScope.principalId } as SummaryAttempt;
         attempts.set(task.operationRef, attempt);
         return [];
       }

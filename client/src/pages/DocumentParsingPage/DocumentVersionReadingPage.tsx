@@ -257,9 +257,9 @@ export default function DocumentVersionReadingPage() {
   const currentImportReply = currentStatus && importReply?.documentVersionId === documentVersionId ? importReply : null;
   const checkingImport = Boolean(request.current && currentImportReply?.executionMode === 'LOCAL_MINERU_IMPORT');
   const parseFailure = latest?.errorCode === 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED'
-    ? '文档解析服务额度已用尽，待服务恢复后接续。'
+    ? '文档解析服务额度已用尽。'
     : latest && (latest.errorCode || latest.status === 'FAILED')
-      ? '文档解析暂未完成，已保存的内容仍可读取。' : null;
+      ? '文档解析暂未完成。' : null;
   // The activity entry is only available when the original reading exists for this exact
   // version and parse run; it pins the same parse run instead of the latest one.
   const activityEntryRoute = currentReading?.original ? (() => {
@@ -345,26 +345,25 @@ export default function DocumentVersionReadingPage() {
         {currentImportReply && <p role={currentImportReply.status === 'FAILED' ||
             (currentImportReply.status !== 'PUBLISHED' && Date.parse(currentImportReply.deadlineAt) <= Date.now()) ? 'alert' : 'status'}>
           导入版本 {currentImportReply.parseRevision} 的本次回执：已核验 {currentImportReply.verifiedArtifacts} 个文件。
-          {currentImportReply.status === 'FAILED' ? `解析未完成（${currentImportReply.errorCode ?? 'DOCUMENT_PARSE_FAILED'}），请刷新后查看恢复条件。`
+          {currentImportReply.status === 'FAILED' ? `解析未完成（${currentImportReply.errorCode ?? 'DOCUMENT_PARSE_FAILED'}）。`
             : currentImportReply.status === 'PUBLISHED' ? '已发布。'
-              : Date.parse(currentImportReply.deadlineAt) <= Date.now() ? '执行期限已过，请刷新后查看恢复条件。'
-                : '每次核对只继续一步，不会重新上传候选包。'}
+              : Date.parse(currentImportReply.deadlineAt) <= Date.now() ? '执行期限已过。'
+                : '处理中。'}
           执行期限：{currentImportReply.deadlineAt}。
         </p>}
         {currentStatus && !sending && !request.current && !currentSettingsRequest.current ? <LocalMineruImport key={documentVersionId} documentVersionId={documentVersionId}
           expectedPublishedRevision={currentStatus.publishedRun?.parseRevision ?? 0} onImported={() => setRefresh(value => value + 1)} /> : null}
-        {canRestartWithCurrentSettings && <p>按当前设置重新解析会创建新的解析版本，保留旧输入及已保存的历史。</p>}
         {latest?.errorCode && <p>处理原因：{latest.errorCode}</p>}
       </details>
       {error && <p role="alert">{error}</p>}
       {currentStatus && parseError && <p role="alert">{parseError}</p>}
       {unboundEvidence ? <p role="status">此保存依据没有工作项执行身份。已打开它绑定的确切文档版本，未猜测任务或具体段落位置。</p> : null}
       {currentStatus && !currentStatus.runtimeAvailable && <p role="status">
-        {currentStatus.runtime?.state === 'FAILED' ? '最近的文档处理未完成，已保存的范围仍可读取。' : '官方文档解析插件尚未配置。'}
+        {currentStatus.runtime?.state === 'FAILED' ? '最近的文档处理未完成。' : '官方文档解析插件尚未配置。'}
       </p>}
       {latest && <p role="status">{parseFailure ?? (latest.status === 'PUBLISHED' ? `解析版本 ${latest.parseRevision} 已发布。` :
         latest.status === 'FAILED' ? `解析未完成：${latest.errorCode ?? '请重试或联系维护人员'}` :
-        expired ? '执行期限已过，可重新发起解析。' : latest.waitingForLocalWorker ? '等待本机解析器接续。可以离开页面，任务会保留。' : latest.status === 'STAGING' ? `正在保存并核验产物，已核验 ${latest.verifiedArtifacts} 个文件。` : '正在解析原件，可离开页面后回来查看。')}</p>}
+        expired ? '执行期限已过。' : latest.waitingForLocalWorker ? '等待本机解析器接续。' : latest.status === 'STAGING' ? `正在保存并核验产物，已核验 ${latest.verifiedArtifacts} 个文件。` : '正在解析原件。')}</p>}
     </header>
     {TDMS_SOURCE_UI_ENABLED && (currentStatus || currentReading) && !rejectedRef.current ? <TdmsSourceEntry
       key={readingIdentity} context={{ documentVersionId }} enabled={TDMS_SOURCE_UI_ENABLED}

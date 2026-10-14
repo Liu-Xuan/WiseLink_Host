@@ -21,7 +21,7 @@ import {
   type CanonicalServiceScopeAuthorizationPort,
   type CanonicalVerifiedAutoWorkItemQueueScope,
 } from './canonical-service-scope.authorization';
-import { DerivedSummaryRepository } from './derived-summary.repository';
+import { DerivedSummaryRepository, type SummaryAttempt } from './derived-summary.repository';
 import {
   checkedSummaryTask,
   DerivedSummaryService,
@@ -38,8 +38,15 @@ import {
   mergeWikiDemand,
   wikiDemandState,
   wikiDue,
+  retryWikiDemand,
   type WikiVersions,
 } from './hierarchical-wiki-demand';
+import {
+  readActiveWikiAttempt,
+  reconcileWikiReservations,
+  wikiReservationNeedsReconciliation,
+  wikiRequestHasSavedRevision,
+} from './hierarchical-wiki-attempt-reconciliation';
 import {
   ensureWiki,
   lockWiki,
@@ -368,6 +375,15 @@ export class HierarchicalWikiService {
           owner.actorUserId,
           async ({ database }) => {
             await this.members.authorizeActor(actor, database);
+            errors.push(...(await reconcileWikiReservations(
+              database,
+              this.repository,
+              actor,
+              (await wikiRows(database, actor)).filter(
+                (row: WikiRow) => row.enabled && row.principalId === scope.principalId,
+              ),
+              now,
+            )));
             await this.refresh(database, actor, now);
             return (await wikiRows(database, actor)).filter(
               (row) => row.enabled && row.principalId === scope.principalId,
@@ -376,9 +392,11 @@ export class HierarchicalWikiService {
         );
       } catch (error) {
         const code =
-          error instanceof Error ? error.message : 'WIKI_DISCOVERY_FAILED';
+          error instanceof Error && /^[A-Z][A-Z0-9_:-]+$/u.test(error.message)
+            ? error.message
+            : 'WIKI_DISCOVERY_FAILED';
         this.logger.error(code);
-        errors.push('WIKI_DISCOVERY_FAILED');
+        errors.push(code);
         continue;
       }
       // Real prerequisite work has priority over a new aggregate. This invokes
@@ -475,26 +493,25 @@ export class HierarchicalWikiService {
                       summaryId: row.summaryId,
                       attemptRef: row.state.active.attemptRef,
                     };
+                  if (await wikiRequestHasSavedRevision(database, row, attempt))
+                    throw summaryError('WIKI_SAVED_RESERVATION_PENDING');
                   const locked = await lockWikiBranch(database, row);
                   if (
                     locked.state.active?.attemptRef !==
                     row.state.active.attemptRef
                   )
                     return null;
-                  const retryCount = locked.state.retryCount + 1;
-                  await storeWikiDemand(database, locked, {
-                    ...locked.state,
-                    active: null,
-                    retryCount,
-                    blocked:
-                      retryCount >= 3
-                        ? (attempt.errorCode ?? 'WIKI_ATTEMPT_FAILED')
-                        : null,
-                    dueAt: new Date(
-                      Date.parse(now) +
-                        [5, 15, 60][Math.min(retryCount - 1, 2)]! * 60_000,
-                    ).toISOString(),
-                  });
+                  await storeWikiDemand(
+                    database,
+                    locked,
+                    retryWikiDemand(
+                      locked.state,
+                      attempt.errorCode ??
+                        attempt.terminalReason ??
+                        'WIKI_ATTEMPT_FAILED',
+                      now,
+                    ),
+                  );
                   return null; // Commit registry cleanup before any later context/source reservation.
                 }
               const due = rows
@@ -973,7 +990,11 @@ export class HierarchicalWikiService {
               subjectId: child.summaryId,
               requestId: child.state.active?.requestId ?? null,
               documentVersionId: null,
-              status: wikiDemandState(child.state),
+              status: wikiDemandState(
+                child.state,
+                (await readActiveWikiAttempt(database, this.repository, child))
+                  ?.status,
+              ),
             });
         }
         const locked = await lockWiki(database, node);
@@ -1016,10 +1037,35 @@ export class HierarchicalWikiService {
 
   /** Body/native authorization runs after directory writer locks are released.
    * This keeps native/source → Wiki lock order while retaining the final guard. */
-  private readList(
+  private async readList(
     actor: CanonicalHostActor,
     cursor?: string,
   ): Promise<HierarchicalWikiList> {
+    // Expiration writes use the real owner's existing browser transaction;
+    // the separate tenant read remains unable to modify another owner's queue.
+    const now: string = new Date().toISOString();
+    const snapshot: { reconcile: true } | { reconcile: false; listing: HierarchicalWikiList } =
+      await this.repository.readBrowser(actor, async (database, reader) => {
+        const rows: WikiRow[] = await wikiRows(database, reader);
+        for (const row of rows.filter(
+          (item: WikiRow) => item.actorUserId === reader.actorUserId && item.state.active,
+        )) {
+          try {
+            const attempt: SummaryAttempt | null = await readActiveWikiAttempt(database, this.repository, row);
+            if (attempt && wikiReservationNeedsReconciliation(attempt, new Date(now)))
+              return { reconcile: true as const };
+          } catch (error) {
+            // RLS-hidden metadata cannot authorize expiration. listRows reports
+            // this exact row as blocked and keeps other readable rows available.
+            if (!(error instanceof Error) || error.message !== 'DERIVED_SUMMARY_ATTEMPT_UNAVAILABLE') throw error;
+          }
+        }
+        return { reconcile: false as const, listing: await this.listRows(rows, reader, database, cursor) };
+      });
+    if (snapshot.reconcile === false) return snapshot.listing;
+    await this.repository.browser(actor, async (database, owner) =>
+      reconcileWikiReservations(database, this.repository, owner, await wikiRows(database, owner), now),
+    );
     return this.repository.readBrowser(actor, async (database, owner) =>
       this.listRows(await wikiRows(database, owner), owner, database, cursor),
     );
@@ -1059,19 +1105,31 @@ export class HierarchicalWikiService {
       if (!denied) {
         const access = await database.execute<{
           allowed: boolean;
-        }>(owner.readScope === 'TENANT' ? sql`SELECT NOT EXISTS (
+        }>(
+          owner.readScope === 'TENANT'
+            ? sql`SELECT NOT EXISTS (
           SELECT 1 FROM jsonb_array_elements(${JSON.stringify(row.state.waiting)}::jsonb) gap
           WHERE CASE gap->>'kind'
             WHEN 'DOCUMENT' THEN native_app_document_readable(${owner.tenantId},gap->>'documentVersionId') IS NOT TRUE
             WHEN 'MATTER' THEN NOT EXISTS (SELECT 1 FROM engineering_matter e WHERE e.tenant_id=${owner.tenantId}
               AND e.matter_id=gap->>'subjectId')
-            ELSE false END) AS allowed` : sql`SELECT NOT EXISTS (
+            ELSE false END) AS allowed`
+            : sql`SELECT NOT EXISTS (
           SELECT 1 FROM jsonb_array_elements(${JSON.stringify(row.state.waiting)}::jsonb) gap
           WHERE CASE gap->>'kind'
             WHEN 'DOCUMENT' THEN engineering_matter_document_owned_by_actor(${owner.tenantId},gap->>'documentVersionId') IS NOT TRUE
             WHEN 'MATTER' THEN engineering_matter_owned_by_actor(${owner.tenantId},gap->>'subjectId') IS NOT TRUE
-            ELSE false END) AS allowed`);
+            ELSE false END) AS allowed`,
+        );
         if (access[0]?.allowed !== true) denied = 'WIKI_SOURCE_UNAVAILABLE';
+      }
+      let attempt: SummaryAttempt | null = null;
+      if (!denied) {
+        try { attempt = await readActiveWikiAttempt(database, this.repository, row); }
+        catch (error) {
+          if (!(error instanceof Error) || error.message !== 'DERIVED_SUMMARY_ATTEMPT_UNAVAILABLE') throw error;
+          denied = error.message;
+        }
       }
       items.push({
         wikiId: row.wikiId,
@@ -1081,20 +1139,52 @@ export class HierarchicalWikiService {
             ?.summaryId ?? null,
         scope: row.scope,
         enabled: row.enabled,
-        state: denied ? 'BLOCKED' : wikiDemandState(row.state),
+        state: denied ? 'BLOCKED' : wikiDemandState(row.state, attempt?.status),
         desiredGeneration: row.state.desiredGeneration,
         completedGeneration: row.state.completedGeneration,
         firstDirtyAt: row.state.firstDirtyAt,
         dueAt: row.state.dueAt,
         coveredMembers: denied ? [] : Object.values(row.state.delivered),
         waiting: denied ? [] : row.state.waiting,
-        errorCode: denied ?? row.state.blocked,
+        errorCode:
+          denied ??
+          row.state.blocked ??
+          attempt?.errorCode ??
+          row.state.lastAttemptErrorCode ??
+          (attempt &&
+          !['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
+            attempt.status,
+          )
+            ? 'WIKI_SAVED_RESERVATION_PENDING'
+            : null),
         coverage: 'AUTHORIZED_CLASSIFIED_HOST_MATERIAL',
         lastCheckedAt: row.state.lastCheckedAt,
         inventoryComplete:
           !!root?.lastInventoryAt && root.inventoryCursor === null,
       });
     }
+    // Dependency progress is read from this same authorized directory snapshot;
+    // an older inventory check must not keep a terminal child labeled RUNNING.
+    const currentStates: Map<string, HierarchicalWikiStatus['state']> = new Map(
+      items.map((item: HierarchicalWikiStatus) => [item.summaryId, item.state]),
+    );
+    const currentRequests: Map<string, string | null> = new Map(
+      rows.map((row: WikiRow) => [
+        row.summaryId,
+        row.state.active?.requestId ?? null,
+      ]),
+    );
+    for (const item of items)
+      item.waiting = item.waiting.map(
+        (gap: HierarchicalWikiStatus['waiting'][number]) =>
+          gap.kind === 'SUMMARY' && currentStates.has(gap.subjectId)
+            ? {
+                ...gap,
+                status: currentStates.get(gap.subjectId)!,
+                requestId: currentRequests.get(gap.subjectId) ?? null,
+              }
+            : gap,
+      );
     let after: [string, string] | null = null;
     if (cursor) {
       try {

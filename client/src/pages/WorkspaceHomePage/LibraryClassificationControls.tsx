@@ -1,13 +1,7 @@
 import { Button } from '@client/src/components/ui/button';
 import { LibraryFleetControls } from './LibraryFleetControls';
 import type { LibraryFleetRead } from './useLibraryFleetCatalog';
-import {
-  LIBRARY_GROUPINGS,
-  LIBRARY_UNCLASSIFIED,
-  type LibraryGrouping,
-  type LibraryCatalogFilters,
-  type LibraryFacetKey,
-} from './library-classification';
+import { LIBRARY_UNCLASSIFIED, type LibraryGrouping, type LibraryCatalogFilters } from './library-classification';
 
 export interface LibraryFacetCounts {
   familyCounts?: Record<string, number>;
@@ -15,16 +9,7 @@ export interface LibraryFacetCounts {
   aircraftModelCounts?: Record<string, number>;
 }
 
-export function LibraryClassificationControls({
-  grouping,
-  onGroupingChange,
-  filters,
-  onFilterChange,
-  counts,
-  disabled,
-  fleet,
-  showGrouping = true,
-}: {
+export function LibraryClassificationControls({ filters, onFilterChange, counts, disabled, fleet, showFleet = true }: {
   grouping: LibraryGrouping;
   onGroupingChange: (value: LibraryGrouping) => void;
   filters: LibraryCatalogFilters;
@@ -33,99 +18,25 @@ export function LibraryClassificationControls({
   disabled: boolean;
   fleet?: LibraryFleetRead;
   showGrouping?: boolean;
+  showFleet?: boolean;
 }) {
-  const facets: {
-    key: LibraryFacetKey;
-    label: string;
-    counts?: Record<string, number>;
-  }[] = [
-    { key: 'normalizedFamily', label: '文档类别', counts: counts.familyCounts },
-    { key: 'ata', label: 'ATA（待核）', counts: counts.ataCounts },
-  ];
-  return (
-    <section className="library-classification-controls" aria-label="目录层级与联合筛选">
-      {showGrouping ? <><div className="library-grouping-heading">
-        <strong>目录首层</strong>
-        <span>三项共同分类，只调整层级顺序</span>
+  return <section className="library-classification-controls" aria-label="资料筛选">
+    {showFleet ? <LibraryFleetControls fleet={fleet} counts={counts.aircraftModelCounts} filters={filters}
+      onFilterChange={onFilterChange} disabled={disabled} /> : null}
+    <div className="library-facet-row" role="group" aria-label="文档类别">
+      <strong>文档类别</strong><div className="library-grouping-controls">
+        <Button type="button" size="sm" variant="outline" className="library-facet-choice" disabled={disabled}
+          aria-pressed={!filters.normalizedFamily} onClick={() => onFilterChange({ ...filters, normalizedFamily: '' })}>不限</Button>
+        {Object.entries(counts.familyCounts ?? {}).sort(([a], [b]) => a.localeCompare(b, 'zh-CN', { numeric: true }))
+          .map(([rawValue, count]) => {
+            const value = rawValue || LIBRARY_UNCLASSIFIED;
+            return <Button type="button" key={value} size="sm" variant="outline" className="library-facet-choice" disabled={disabled}
+              aria-pressed={filters.normalizedFamily === value} onClick={() => onFilterChange({ ...filters, normalizedFamily: value })}>
+              {value === LIBRARY_UNCLASSIFIED ? '未分类' : value}<span className="library-facet-count">{count}</span></Button>;
+          })}
       </div>
-      <div
-        className="library-grouping-controls library-order-controls"
-        role="group"
-        aria-label="选择目录首层"
-      >
-        {LIBRARY_GROUPINGS.map((option) => (
-          <Button type="button"
-            key={option.value}
-            size="sm"
-            variant="outline"
-            className="library-facet-choice"
-            disabled={disabled}
-            aria-pressed={grouping === option.value}
-            onClick={() => onGroupingChange(option.value)}
-          >
-            {option.label}优先
-          </Button>
-        ))}
-      </div></> : null}
-      <details className="library-facet-controls" open>
-        <summary>联合筛选（含历史版本）</summary>
-        {facets.map((facet) => (
-          <div className="library-facet-row" key={facet.key} role="group" aria-label={facet.label}>
-            <strong>{facet.label}</strong>
-            <div className="library-grouping-controls">
-              <Button type="button"
-                size="sm"
-                variant="outline"
-                className="library-facet-choice"
-                disabled={disabled}
-                aria-pressed={!filters[facet.key]}
-                onClick={() => onFilterChange({ ...filters, [facet.key]: '',
-                  ...(facet.key === 'ata' ? { ata2: '', ata4: '' } : {}) })}
-              >
-                不限
-              </Button>
-              {Object.entries(facet.counts ?? {})
-                .sort(([a], [b]) =>
-                  a.localeCompare(b, 'zh-CN', { numeric: true }),
-                )
-                .map(([rawValue, count]) => {
-                  const value = rawValue || LIBRARY_UNCLASSIFIED;
-                  return (
-                    <Button type="button"
-                      key={value}
-                      size="sm"
-                      disabled={disabled}
-                      variant="outline"
-                      className="library-facet-choice"
-                      aria-pressed={filters[facet.key] === value}
-                      onClick={() =>
-                        onFilterChange({ ...filters, [facet.key]: value,
-                          ...(facet.key === 'ata' ? { ata2: '', ata4: '' } : {}) })
-                      }
-                    >
-                      {value === LIBRARY_UNCLASSIFIED ? '未分类' : value}
-                      <span className="library-facet-count">{count}</span>
-                    </Button>
-                  );
-                })}
-              {facet.counts === undefined ? (
-                <span role="status">分类统计尚未取得</span>
-              ) : null}
-            </div>
-            {filters[facet.key] ? (
-              <p className="library-classification-note">
-                已选：
-                {filters[facet.key] === LIBRARY_UNCLASSIFIED
-                  ? '未分类'
-                  : filters[facet.key]}
-              </p>
-            ) : null}
-          </div>
-        ))}
-        <LibraryFleetControls fleet={fleet} filters={filters} onFilterChange={onFilterChange} disabled={disabled} />
-        {Object.values(filters).some(Boolean) ? <Button type="button" variant="ghost" size="sm" className="library-clear-facets"
-          disabled={disabled} onClick={() => onFilterChange({})}>清除资料分类筛选（保留搜索）</Button> : null}
-      </details>
-    </section>
-  );
+    </div>
+    {Object.values(filters).some(Boolean) ? <Button type="button" variant="ghost" size="sm" className="library-clear-facets"
+      disabled={disabled} onClick={() => onFilterChange({})}>清除筛选</Button> : null}
+  </section>;
 }

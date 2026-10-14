@@ -3,6 +3,7 @@ import {
   normalizedEngineeringIssueReadingParams,
 } from './engineering-issue-reading';
 import { parseSituationReadingQuery } from '../trinity/situation-reading';
+import { libraryAircraftModelsQuery, LIBRARY_AIRCRAFT_MODELS_QUERY_LIMIT } from '@shared/library-aircraft-mentions';
 const LIBRARY_FILTERS = [
   'familyId',
   'search',
@@ -11,6 +12,7 @@ const LIBRARY_FILTERS = [
   'ata2',
   'ata4',
   'aircraftModel',
+  'aircraftModels',
   'fleetFamily',
   'fleetModel',
 ] as const;
@@ -30,19 +32,22 @@ export function knowledgeReadingIdentity(params: URLSearchParams):
   return { state: 'ok', identity: { subjectKind, subjectId, workRef } };
 }
 
-const KNOWLEDGE_READING_KEYS = ['query', 'subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'knowledgeIssueKey', 'scope', 'kind', 'after', 'listY', 'articleY', 'normalizedFamily', 'ata', 'aircraftModel', 'fleetFamily', 'fleetModel', 'ataTitleScheme'] as const;
+const KNOWLEDGE_READING_KEYS = ['query', 'subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'knowledgeIssueKey', 'scope', 'kind', 'after', 'listY', 'articleY', 'normalizedFamily', 'ata', 'ata2', 'ata4', 'aircraftModel', 'aircraftModels', 'fleetFamily', 'fleetModel', 'ataTitleScheme'] as const;
 
 export function knowledgeReadingParams(params: URLSearchParams): URLSearchParams {
   const result = new URLSearchParams();
   for (const key of KNOWLEDGE_READING_KEYS) {
     if (params.getAll(key).length !== 1) continue;
     const value = params.get(key) ?? '';
-    const limit = key === 'after' ? 2400 : key === 'query' ? 200 : 255;
+    const limit = key === 'aircraftModels' ? LIBRARY_AIRCRAFT_MODELS_QUERY_LIMIT : key === 'after' ? 2400 : key === 'query' ? 200 : 255;
     if (value.length > limit || /[\u0000-\u001f\u007f]/u.test(value)) continue;
     if (key === 'scope' && !['CURRENT', 'ALL', 'HISTORICAL'].includes(value)) continue;
     if (key === 'kind' && !['works', 'sources', 'matters'].includes(value)) continue;
     if (key === 'ataTitleScheme' && !['ispec', 'jasc'].includes(value)) continue;
     if (key === 'subjectKind' && !['WORK_ITEM', 'ENGINEERING_MATTER'].includes(value)) continue;
+    if (key === 'aircraftModels') {
+      try { libraryAircraftModelsQuery(value); } catch { continue; }
+    }
     if ((key === 'listY' || key === 'articleY') && !/^\d{1,7}$/.test(value)) continue;
     if (value) result.set(key, value);
   }
@@ -53,7 +58,7 @@ export function knowledgeReadingParams(params: URLSearchParams): URLSearchParams
 /** A Wiki may return to the same read-only knowledge state, never an arbitrary URL. */
 export function knowledgeReadingReturnRoute(params: URLSearchParams): string | null {
   const values = params.getAll('returnKnowledgeQuery');
-  if (values.length !== 1 || !values[0] || values[0].length > 4096) return null;
+  if (values.length !== 1 || !values[0] || values[0].length > 8192) return null;
   const state = new URLSearchParams(values[0]);
   if (knowledgeReadingIdentity(state).state === 'invalid') return null;
   const safe = knowledgeReadingParams(state);
@@ -66,7 +71,7 @@ export function knowledgeReadingReturnRoute(params: URLSearchParams): string | n
 export function knowledgeMatterReturnRoute(params: URLSearchParams, matterId: string, workRef: string): string | null {
   if (params.getAll('returnKnowledgeWorkQuery').length !== 1 || params.getAll('workRef').length !== 1 || params.get('workRef') !== workRef) return null;
   const raw = params.get('returnKnowledgeWorkQuery') ?? '';
-  if (!raw || raw.length > 4096) return null;
+  if (!raw || raw.length > 8192) return null;
   const state = new URLSearchParams(raw);
   const pin = knowledgeReadingIdentity(state);
   if (pin.state !== 'ok' || pin.identity.subjectKind !== 'ENGINEERING_MATTER' || pin.identity.subjectId !== matterId || pin.identity.workRef !== workRef || state.get('kind') === 'sources') return null;
@@ -86,6 +91,11 @@ export function libraryReadingParams(params: URLSearchParams): URLSearchParams {
   const result = new URLSearchParams({ mode });
   for (const key of LIBRARY_FILTERS) {
     if (params.getAll(key).length !== 1) continue;
+    if (key === 'aircraftModels') {
+      const raw = params.get(key) ?? '';
+      try { if (libraryAircraftModelsQuery(raw)) result.set(key, raw); } catch { /* Invalid filter is not a return pin. */ }
+      continue;
+    }
     const value = identifier(params.get(key));
     if (value) result.set(key, value);
   }
@@ -737,7 +747,7 @@ export function readingReturnTarget(
   const matterId = identifier(params.get('returnMatterId'));
   if (params.has('returnKnowledgeQuery')) {
     const query = params.get('returnKnowledgeQuery');
-    if (!query || query.length > 4096) return null;
+    if (!query || query.length > 8192) return null;
     const nested = new URLSearchParams(query);
     const identity = knowledgeReadingIdentity(nested);
     if (identity.state === 'invalid') return null;
@@ -808,7 +818,7 @@ export function readingReturnTarget(
   }
   if (params.has('returnLibraryQuery')) {
     const raw = params.get('returnLibraryQuery');
-    if (!raw || raw.length > 4096) return null;
+    if (!raw || raw.length > 8192) return null;
     const nested = new URLSearchParams(raw);
     if (!binding) {
       // Legacy reader links may carry the exact selection only inside the

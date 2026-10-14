@@ -7,6 +7,7 @@ import { useSummaryResource } from '@client/src/features/derived-summary/useSumm
 import { wikiStatusLabels } from '@client/src/features/derived-summary/hierarchical-wiki-presentation';
 import { LibraryAtaHierarchy } from '../WorkspaceHomePage/LibraryAtaHierarchy';
 import { LibraryClassificationControls } from '../WorkspaceHomePage/LibraryClassificationControls';
+import { LibraryFleetControls } from '../WorkspaceHomePage/LibraryFleetControls';
 import type { LibraryCatalogFilters } from '../WorkspaceHomePage/library-classification';
 import { ataDirectoryScopeMatches, type AtaTitleScheme } from '../WorkspaceHomePage/library-ata-directory';
 import { useLibraryDocuments } from '../WorkspaceHomePage/useLibraryDocuments';
@@ -51,8 +52,10 @@ export default function KnowledgeAtaDirectory({
   return <aside className="knowledge-directory-nav" aria-label="资料与 Wiki 目录">
     <div className="knowledge-directory-heading"><h2>资料与 Wiki</h2>
       <Button type="button" variant="ghost" size="sm" onClick={refresh}>刷新</Button></div>
+    <LibraryFleetControls fleet={fleet} counts={directory?.aircraftModelCounts} filters={filters}
+      onFilterChange={onFilterChange} disabled={loading} />
     <details className="knowledge-directory-filters"><summary>资料目录筛选</summary>
-      <LibraryClassificationControls grouping="ata" showGrouping={false} onGroupingChange={() => undefined}
+      <LibraryClassificationControls grouping="ata" showGrouping={false} showFleet={false} onGroupingChange={() => undefined}
         filters={filters} onFilterChange={onFilterChange} counts={directory ?? {}}
         fleet={fleet} disabled={loading} />
     </details>

@@ -9,6 +9,8 @@ export interface OwnedCanonicalLibraryDirectoryQuery {
   search: string;
   normalizedFamily?: string;
   aircraftModel?: string;
+  aircraftModels?: string[];
+  layout?: 'ATA';
   ata2?: string;
   fleetMentionValues?: string[];
 }
@@ -51,7 +53,16 @@ export function libraryAtaNodeFilter(
 export function libraryAircraftNodeFilter(
   values: SQL,
   aircraftModel?: string,
+  aircraftModels?: string[],
 ): SQL | undefined {
+  if (aircraftModels) {
+    const known: string[] = aircraftModels.filter((value: string) => value !== '__UNKNOWN__');
+    const exact: SQL = known.length ? sql`exists(select 1 from jsonb_array_elements_text(${values}) mention(value)
+      where btrim(mention.value) in (${sql.join(known.map((value: string) => sql`${value}`), sql`, `)}))` : sql`false`;
+    return aircraftModels.includes('__UNKNOWN__')
+      ? sql`(${exact} or not exists(select 1 from jsonb_array_elements_text(${values}) mention(value)
+          where nullif(btrim(value),'') is not null))` : exact;
+  }
   if (!aircraftModel) return undefined;
   return aircraftModel === '__UNKNOWN__'
     ? sql`not exists(select 1 from jsonb_array_elements_text(${values}) mention(value)
@@ -82,7 +93,7 @@ export function canonicalLibraryDirectoryStatement(
 ): SQL {
   const level: CanonicalLibraryDirectoryResponse['level'] = input.ata2
     ? 'ATA4'
-    : input.aircraftModel
+    : input.layout === 'ATA' || input.aircraftModel || input.aircraftModels
       ? 'ATA2'
       : 'AIRCRAFT_MODEL';
   const pattern: string = `%${input.search.replace(/[\\%_]/gu, '\\$&')}%`;
@@ -104,6 +115,7 @@ export function canonicalLibraryDirectoryStatement(
   const aircraftFilter: SQL | undefined = libraryAircraftNodeFilter(
     sql`aircraft_values`,
     input.aircraftModel,
+    input.aircraftModels,
   );
   const fleetFilter: SQL = input.fleetMentionValues
     ? sql`exists(select 1 from jsonb_array_elements_text(aircraft_values) mention(value)

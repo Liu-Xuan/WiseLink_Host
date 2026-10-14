@@ -46,6 +46,7 @@ function target() {
           const item = libraryFamily(id);
           return {
             ...item,
+            numberRank: 1 as const,
             createdAt: new Date(item.createdAt),
             updatedAt: new Date(item.updatedAt),
           };
@@ -301,4 +302,52 @@ describe('database-backed canonical library', () => {
     });
     expect(repository.quicklook).not.toHaveBeenCalled();
   });
+});
+
+it('validates exact source model unions, canonicalizes only the filter set and binds every member to the cursor', async () => {
+  const { service, repository } = target();
+  const models = ['737-800', '737-600', '737-800'];
+  const first = await service.list({ aircraftModels: models, limit: 1 }, actor);
+  expect(repository.listDocuments.mock.calls[0][0].aircraftModels).toEqual(['737-600', '737-800']);
+  expect(models).toEqual(['737-800', '737-600', '737-800']);
+  await service.list({ aircraftModels: ['737-800', '737-600'], cursor: first.nextCursor! }, actor);
+  await expect(service.list({ aircraftModels: ['737-800'], cursor: first.nextCursor! }, actor)).rejects.toThrow('LIBRARY_CURSOR_INVALID');
+  for (const models of [[], [''], ['x'.repeat(97)], Array.from({ length: 33 }, () => '737-800'), ['\u0000']])
+    await expect(service.list({ aircraftModels: models }, actor)).rejects.toThrow('LIBRARY_AIRCRAFT_MODELS_INVALID');
+  await expect(service.list({ aircraftModel: '737', aircraftModels: ['737-800'] }, actor)).rejects.toThrow('LIBRARY_AIRCRAFT_MODEL_FILTER_CONFLICT');
+});
+
+it('includes document-number ranking in search cursors and keeps legacy non-search cursor shape', async () => {
+  const { service, repository } = target();
+  repository.listDocuments.mockResolvedValue([{ totalCount: 2, familyCounts: {}, ataCounts: {}, aircraftModelCounts: {},
+    rows: [{ ...libraryFamily('exact'), documentCode: 'A320-32-1496', numberRank: 0 }, { ...libraryFamily('fragment'), documentCode: 'X-A320-32-1496', numberRank: 1 }] }]);
+  const first = await service.list({ search: 'a320-32-1496', limit: 1 }, actor);
+  expect(first.order).toBe('DOCUMENT_NUMBER_EXACT_FIRST_FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC');
+  const cursor = JSON.parse(Buffer.from(first.nextCursor!, 'base64url').toString('utf8'));
+  expect(cursor.numberRank).toBe(0);
+  await service.list({ search: 'a320-32-1496', limit: 1, cursor: first.nextCursor! }, actor);
+  expect(repository.listDocuments.mock.calls.at(-1)![0].cursor).toMatchObject({ numberRank: 0, itemId: 'exact' });
+  delete cursor.numberRank;
+  await expect(service.list({ search: 'a320-32-1496', cursor: Buffer.from(JSON.stringify(cursor)).toString('base64url') }, actor)).rejects.toThrow('LIBRARY_CURSOR_INVALID');
+  expect((await service.list({}, actor)).order).toBe('FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC');
+});
+
+it('pins the SQL number rank rather than applying a different JavaScript Unicode uppercase rule', async () => {
+  const { service, repository } = target();
+  repository.listDocuments.mockResolvedValue([{ totalCount: 2, familyCounts: {}, ataCounts: {}, aircraftModelCounts: {},
+    rows: [{ ...libraryFamily('unicode'), documentCode: 'ß', numberRank: 1 },
+      { ...libraryFamily('title'), documentCode: 'OTHER', numberRank: 1 }] }]);
+  const first = await service.list({ search: 'SS', limit: 1 }, actor);
+  const cursor = JSON.parse(Buffer.from(first.nextCursor!, 'base64url').toString('utf8'));
+  expect(cursor.numberRank).toBe(1);
+});
+
+it.each(['型号', '\\"'])('keeps a reachable Unicode/escaped %s filter cursor short and rejects over-budget unions explicitly', async (text: string) => {
+  const { service } = target();
+  const aircraftModels = Array.from({ length: 16 }, (_, index: number) => `${index.toString().padStart(2, '0')}${text.repeat(3)}`);
+  const first = await service.list({ aircraftModels, limit: 1, search: 'fixture' }, actor);
+  expect(first.nextCursor!.length).toBeLessThanOrEqual(2048);
+  await expect(service.list({ aircraftModels, cursor: first.nextCursor!, search: 'fixture' }, actor)).resolves.toMatchObject({ scope: 'TENANT_DOCUMENT_CATALOG' });
+  const tooLong = Array.from({ length: 32 }, (_, index: number) => `${index.toString().padStart(2, '0')}${text.repeat(48)}`.slice(0, 96));
+  await expect(service.list({ aircraftModels: tooLong }, actor)).rejects.toThrow('LIBRARY_AIRCRAFT_MODELS_TOO_LONG');
 });

@@ -10,8 +10,10 @@ it('groups compact observations under named ATA2 while preserving every raw face
   const chapters = buildLibraryAtaFacets(counts);
   expect(chapters.find(chapter => chapter.key === '23')?.label).toBe('ATA23 通信');
   expect(chapters.find(chapter => chapter.key === '34')?.entries.map(entry => entry.value)).toEqual(['3461', '3462']);
+  expect(chapters.find(chapter => chapter.key === '24')?.entries.map(entry => entry.value)).toEqual(['24-41']);
+  expect(chapters.find(chapter => chapter.key === '31')?.entries.map(entry => entry.value)).toEqual(['31-39', '3141']);
   expect(chapters.find(chapter => chapter.key === '__RAW__')?.entries.map(entry => entry.value))
-    .toEqual(['', '24-41', '31-39', '4600-00']);
+    .toEqual(['', '4600-00']);
   expect(chapters.flatMap(chapter => chapter.entries).map(entry => [entry.value, entry.count]).sort())
     .toEqual(Object.entries(counts).sort());
   expect(chapters.some(chapter => 'count' in chapter)).toBe(false);

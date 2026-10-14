@@ -195,6 +195,7 @@ test('Suite document return retains bounded family expansion and rejects ambiguo
   expect(libraryReadingParams(state).has('expandedFamilyIds')).toBe(false);
 });
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
+jest.mock('@lark-apaas/client-toolkit/components/UniversalLink', () => ({ UniversalLink: 'a' }));
 jest.mock('@client/src/features/matter/LinkDocumentMatterMaterial', () => ({ __esModule: true, default: 'span' }));
 jest.mock('@client/src/api/canonical-host', () => ({
   getCanonicalHostClientSessionGeneration: () => mockSession,
@@ -348,8 +349,8 @@ test('an unloaded selected family is not reported missing and does not silently 
   const html = renderToStaticMarkup(createElement(StaticRouter, { location: '/library?familyId=F-old' },
     createElement(LibraryDocumentDetails, { document: null, assessmentQuicklook: {data:null,loading:false,error:null,accessDenied:false}, selectionPending: true, onRefresh: jest.fn(), onViewTasks: jest.fn() })));
   expect(html).toContain('原选择尚未在当前读取范围内加载');
-  expect(html).toContain('不代表资料不存在');
-  expect(html).toContain('不会自动改选首行');
+  expect(html).toContain('可加载更多或调整筛选');
+  expect(html).not.toContain('class="library-selected-version"');
 });
 
 test('activity window pins are whitelist-only, single-occurrence, and carried through the exact return', () => {

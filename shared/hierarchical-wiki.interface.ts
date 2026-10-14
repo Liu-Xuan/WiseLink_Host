@@ -22,6 +22,7 @@ export interface HierarchicalWikiStatus {
     | 'CURRENT'
     | 'PENDING'
     | 'WAITING_UPSTREAM'
+    | 'QUEUED'
     | 'RUNNING'
     | 'PARTIAL'
     | 'BLOCKED';

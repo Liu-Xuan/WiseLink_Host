@@ -409,3 +409,25 @@
 .library-ata-navigation-docs > li { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding-block: 3px; font-size: 11px; }
 .library-ata-navigation-docs button { text-align: left; border: 0; padding: 0; background: transparent; color: var(--wl-ink); font: inherit; cursor: pointer; overflow-wrap: anywhere; }
 .library-ata-navigation-docs a { flex: 0 0 auto; color: var(--wl-accent); }
+
+.library-fleet-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 8px 10px; color: var(--wl-ink); font-family: var(--wl-font); font-size: var(--wl-text-caption); }
+.library-fleet-filter > strong { margin-right: 4px; font-weight: 500; }
+.library-fleet-filter .library-facet-choice { border-color: transparent; background: transparent; font: inherit; }
+.library-fleet-filter .library-facet-choice[aria-pressed='true'] { color: var(--wl-ink); background: var(--wl-selected); border-color: var(--wl-border); font-weight: 600; }
+.library-fleet-more { position: relative; min-width: 0; max-width: 100%; }
+.library-fleet-more > summary, .library-fleet-status > summary { padding: 4px 6px; color: var(--wl-muted); cursor: pointer; }
+.library-fleet-more[open] { flex-basis: 100%; }
+.library-fleet-more > div { max-width: 100%; max-height: 180px; overflow: auto; padding: 8px; border: 1px solid var(--wl-border); border-radius: 8px; background: var(--wl-sheet); }
+.library-fleet-more .library-facet-choice { max-width: 100%; height: auto; white-space: normal; overflow-wrap: anywhere; }
+.library-fleet-status { flex-basis: 100%; color: var(--wl-muted); }
+.library-fleet-status p { margin: 4px 6px; }
+.library-directory-anomalies, .library-wiki-directory { margin-top: 8px; color: var(--wl-muted); font-size: var(--wl-text-caption); }
+.library-directory-anomalies > summary, .library-wiki-directory > summary { padding: 6px 8px; cursor: pointer; }
+.library-ata-hierarchy .library-category-tree > details > summary { display: flex; align-items: baseline; gap: 8px; }
+.library-ata-hierarchy .library-category-tree > details > summary > small { margin-left: auto; font-variant-numeric: tabular-nums; }
+.library-ata-hierarchy .library-branch-label { min-width: 0; margin: 0; }
+.library-classification-controls { margin: 0; padding: 4px 0; border: 0; background: transparent; }
+.library-classification-controls .library-facet-row { grid-template-columns: 65px minmax(0, 1fr); }
+.library-source-directory-row .suite-folder-row > span { min-width: 0; overflow-wrap: anywhere; }
+.library-source-directory-row .suite-folder-row > small { flex: 0 0 auto; margin-left: auto; }
+.library-wiki-directory > div { padding: 4px 8px; }

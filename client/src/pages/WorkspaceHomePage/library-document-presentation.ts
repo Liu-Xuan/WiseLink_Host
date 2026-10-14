@@ -25,7 +25,7 @@ export function byteLabel(bytes: number): string {
 export function documentLabel(document: {
   documentCode: string;
 }): string {
-  return document.documentCode.trim() || '文档编号待核';
+  return document.documentCode.trim() || '未取得';
 }
 
 export function documentIdentityPresentation(input: {

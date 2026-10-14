@@ -1,4 +1,6 @@
-import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { StaticRouter } from 'react-router-dom/server';
+import { Children, isValidElement, createElement, type ReactElement, type ReactNode } from 'react';
 import { LibraryClassificationControls } from '../../client/src/pages/WorkspaceHomePage/LibraryClassificationControls';
 import { LibraryHierarchy } from '../../client/src/pages/WorkspaceHomePage/LibraryHierarchy';
 import { libraryFamily, libraryMetadata } from './fixtures/canonical-library';
@@ -23,33 +25,33 @@ describe('joint facet controls and directory path actions', () => {
     expect(buttons.some(button => Children.toArray(button.props.children).join('').includes('优先'))).toBe(false);
     expect(buttons.some(button => Children.toArray(button.props.children)[0] === 'SB')).toBe(true);
   });
-  it('changes hierarchy independently and edits one facet without dropping the others', () => {
+  it('keeps ATA order fixed and edits one category without dropping the other filters', () => {
     const onGroupingChange = jest.fn();
     const onFilterChange = jest.fn();
     const buttons = actions(LibraryClassificationControls({ grouping: 'category', onGroupingChange, filters, onFilterChange, disabled: false,
       counts: { familyCounts: { SB: 3, SL: 2 }, ataCounts: { '34': 3 }, aircraftModelCounts: { '737': 3 } } }));
     const order = buttons.find((button) => Children.toArray(button.props.children).join('') === 'ATA 编号优先');
-    expect(order).toBeDefined();
-    order?.props.onClick?.();
-    expect(onGroupingChange).toHaveBeenCalledWith('ata');
+    expect(order).toBeUndefined();
+    expect(onGroupingChange).not.toHaveBeenCalled();
     expect(onFilterChange).not.toHaveBeenCalled();
     const sl = buttons.find((button) => Children.toArray(button.props.children)[0] === 'SL');
     sl?.props.onClick?.();
     expect(onFilterChange).toHaveBeenLastCalledWith({ ...filters, normalizedFamily: 'SL' });
-    const clear = buttons.find((button) => button.props.children === '清除三项筛选（保留搜索）');
+    const clear = buttons.find((button) => button.props.children === '清除筛选');
     clear?.props.onClick?.();
     expect(onFilterChange).toHaveBeenLastCalledWith({});
   });
 
-  it('applies a complete tree path as the same three server filters', () => {
+  it('uses ATA navigation for legacy grouping URLs without discarding historical document links', () => {
     const document = libraryFamily('one');
     document.versions[0].extractedMetadata = libraryMetadata('34', '737');
-    const onFilterChange = jest.fn();
-    const buttons = actions(LibraryHierarchy({ documents: [document], selectedId: '', hasMore: true,
-      grouping: 'aircraft', filters: {}, onSelect: jest.fn(), onFilterChange }));
-    const leaf = buttons.find((button) => button.props['aria-label'] === '筛选路径 机型 737 / 类别 SB / ATA 34');
-    expect(leaf).toBeDefined();
-    leaf?.props.onClick?.();
-    expect(onFilterChange).toHaveBeenCalledWith(filters);
+    const html = renderToStaticMarkup(createElement(StaticRouter, { location: '/library?catalogView=tree&grouping=aircraft' },
+      createElement(LibraryHierarchy, { documents: [document], selectedId: '', hasMore: true,
+        grouping: 'aircraft', filters: {}, onSelect: jest.fn() })));
+    expect(html).toContain('ATA34 导航');
+    expect(html).toContain('/document-versions/DV-one-2');
+    expect(html).toContain('/document-versions/DV-one-1');
+    expect(html).not.toContain('父机型');
+    expect(html).not.toContain('筛选路径');
   });
 });

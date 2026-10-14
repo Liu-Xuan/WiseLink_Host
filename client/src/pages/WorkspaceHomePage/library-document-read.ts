@@ -22,6 +22,7 @@ export interface LibraryDocumentsRead {
   ata2?: string;
   ata4?: string;
   aircraftModel?: string;
+  aircraftModels?: string;
   fleetFamily?: string;
   fleetModel?: string;
   totalCount?: number;
@@ -40,6 +41,7 @@ function sameFilters(
     (a.ata2 ?? '') === (b.ata2 ?? '') &&
     (a.ata4 ?? '') === (b.ata4 ?? '') &&
     (a.aircraftModel ?? '') === (b.aircraftModel ?? '') &&
+    (a.aircraftModels ?? '') === (b.aircraftModels ?? '') &&
     (a.fleetFamily ?? '') === (b.fleetFamily ?? '') &&
     (a.fleetModel ?? '') === (b.fleetModel ?? '')
   );

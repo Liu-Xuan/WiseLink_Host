@@ -66,10 +66,30 @@ export function documentOriginalReadingCoverage(result: DocumentOriginalResult) 
     .map(finding => String(finding.findingId)));
   return { ...structuredClone(result.coverage), unresolvedRanges: result.coverage.unresolvedRanges.filter((_range, index) =>
     limitationIds.has(`${result.binding.parseRunId}:coverage:${index}`)).map(range => ({ ...structuredClone(range),
-      message: range.reason === 'TEXT_CONFLICT' || range.message.startsWith('PDF 文本') || range.message.startsWith('MinerU 范围外') ? range.message : range.reason === 'UNREAD' ? '本页尚无可读文字，请查看原页。'
+      message: range.message.startsWith('跨页表匹配已达到')
+        ? '跨页表逐页对齐尚未完成，已保留原表。'
+        : range.reason === 'TEXT_CONFLICT' || range.message.startsWith('PDF 文本') || range.message.startsWith('MinerU 范围外') ||
+        originalCrossPageRowDetail(result, range)
+        ? range.message : range.reason === 'UNREAD' ? '本页尚无可读文字，请查看原页。'
         : range.reason === 'FIGURE_UNINTERPRETED' ? '图示内的信息尚未完整解释或核验，请查看原页。'
           : '此处结构或定位尚未可靠确认，请查看原页。',
     })) };
+}
+
+/** The archived recovery records identify this concrete unresolved relation,
+ * including older messages. Other reading-message rules remain unchanged. */
+function originalCrossPageRowDetail(result: DocumentOriginalResult,
+  range: DocumentOriginalResult['coverage']['unresolvedRanges'][number]): boolean {
+  if (range.reason !== 'STRUCTURE_UNCERTAIN' || range.readingImpact !== 'LIMITATION') return false;
+  return range.unitIds.some((id: string) => {
+    const recovery: unknown = result.source.units.find(unit => unit.unitId === id)?.mapping.tableRecovery;
+    return recovery !== null && typeof recovery === 'object' && 'joinedRows' in recovery &&
+      Array.isArray(recovery.joinedRows) && recovery.joinedRows.some((row: unknown) => {
+        if (row === null || typeof row !== 'object' || !('pageIndexes' in row) || !Array.isArray(row.pageIndexes)) return false;
+        const pages: unknown[] = row.pageIndexes;
+        return pages.length === range.pageIndexes.length && range.pageIndexes.every((page: number) => pages.includes(page));
+      });
+  });
 }
 
 /** Shared meaning of a saved range; diagnostics remain available in the saved artifact. */

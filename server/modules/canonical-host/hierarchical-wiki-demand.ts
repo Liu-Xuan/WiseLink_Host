@@ -27,6 +27,8 @@ export interface WikiDemand {
     waiting: HierarchicalWikiStatus['waiting'];
   } | null;
   blocked: string | null;
+  /** Retain the last exact failure while the existing retry window is pending. */
+  lastAttemptErrorCode?: string | null;
   retryCount: number;
   lastCheckedAt: string | null;
   pendingEvents: {
@@ -58,6 +60,7 @@ export function emptyWikiDemand(): WikiDemand {
     waiting: [],
     active: null,
     blocked: null,
+    lastAttemptErrorCode: null,
     retryCount: 0,
     lastCheckedAt: null,
     pendingEvents: null,
@@ -142,6 +145,7 @@ export function mergeWikiDemand(
         ? 'IMPORTANT'
         : 'ORDINARY',
     blocked: null,
+    lastAttemptErrorCode: null,
     retryCount: 0,
     lastCheckedAt: input.now,
   };
@@ -199,6 +203,7 @@ export function completeWikiDemand(
     dueAt: current ? null : state.dueAt,
     priority: current ? 'ORDINARY' : state.priority,
     blocked: null,
+    lastAttemptErrorCode: null,
     retryCount: 0,
     lastCheckedAt: now,
   };
@@ -206,9 +211,16 @@ export function completeWikiDemand(
 
 export function wikiDemandState(
   state: WikiDemand,
+  attemptStatus?: string,
 ): HierarchicalWikiStatus['state'] {
   if (state.blocked) return 'BLOCKED';
-  if (state.active) return 'RUNNING';
+  if (state.active) {
+    if (['RUNNING', 'COMMITTING'].includes(attemptStatus ?? ''))
+      return 'RUNNING';
+    if (['QUEUED', 'RETRY_SCHEDULED'].includes(attemptStatus ?? ''))
+      return 'QUEUED';
+    return 'PENDING';
+  }
   if (state.waiting.length)
     return same(state.versions, state.lastGenerated) && !state.forceGeneration
       ? 'PARTIAL'
@@ -219,4 +231,24 @@ export function wikiDemandState(
       ? 'PARTIAL'
       : 'PENDING'
     : 'CURRENT';
+}
+
+/** An exact terminal request releases its reservation, never its saved body. */
+export function retryWikiDemand(
+  state: WikiDemand,
+  errorCode: string,
+  now: string,
+): WikiDemand {
+  const retryCount: number = state.retryCount + 1;
+  return {
+    ...state,
+    active: null,
+    retryCount,
+    lastAttemptErrorCode: errorCode,
+    blocked: retryCount >= 3 ? errorCode : null,
+    dueAt: new Date(
+      Date.parse(now) + [5, 15, 60][Math.min(retryCount - 1, 2)]! * minute,
+    ).toISOString(),
+    lastCheckedAt: now,
+  };
 }

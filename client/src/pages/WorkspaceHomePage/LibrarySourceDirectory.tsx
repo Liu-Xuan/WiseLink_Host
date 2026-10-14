@@ -6,6 +6,7 @@ import { Button } from '@client/src/components/ui/button';
 import { useTdmsReadResource } from '@client/src/features/tdms-source/useTdmsReadResource';
 import { ataDirectoryLabel, type AtaTitleScheme } from './library-ata-directory';
 import type { LibraryCatalogFilters } from './library-classification';
+import { libraryAircraftModelsQuery } from '@shared/library-aircraft-mentions';
 
 interface LibraryDirectoryNavigationProps {
   search: string;
@@ -26,34 +27,39 @@ function directoryNodeLabel(node: CanonicalLibraryDirectoryNode, scheme: AtaTitl
 export function LibrarySourceDirectory(props: LibraryDirectoryNavigationProps) {
   const { filters, search, sessionGeneration, authenticationRequired, refreshRevision } = props;
   const base: CanonicalLibraryDirectoryRequest = {
+    layout: 'ATA',
     ...(search ? { search } : {}),
     ...(filters.normalizedFamily ? { normalizedFamily: filters.normalizedFamily } : {}),
     ...(filters.fleetFamily ? { fleetFamily: filters.fleetFamily } : {}),
     ...(filters.fleetModel ? { fleetModel: filters.fleetModel } : {}),
+    ...(filters.aircraftModel ? { aircraftModel: filters.aircraftModel } : {}),
   };
+  const modelQuery = filters.aircraftModels;
+  let modelError = '';
+  try { if (modelQuery) libraryAircraftModelsQuery(modelQuery); }
+  catch (error: unknown) { modelError = error instanceof Error && error.message === 'LIBRARY_AIRCRAFT_MODELS_TOO_LONG'
+    ? '机型筛选超过请求长度，请缩小型号范围。' : '机型筛选参数无效，请重新选择。'; }
   const baseKey: string = JSON.stringify(base);
-  const key: string = JSON.stringify([baseKey, sessionGeneration, refreshRevision]);
+  const key: string = JSON.stringify([baseKey, modelQuery, sessionGeneration, refreshRevision]);
   const [deniedKey, setDeniedKey] = useState<string | null>(null);
   const [retry, setRetry] = useState<number>(0);
   const onDenied = useCallback((): void => setDeniedKey(key), [key]);
-  const load = useCallback((signal: AbortSignal) => getCanonicalLibraryDirectory(base, signal), [baseKey]);
+  const load = useCallback(async (signal: AbortSignal) => getCanonicalLibraryDirectory({ ...base,
+    ...(modelQuery ? { aircraftModels: libraryAircraftModelsQuery(modelQuery) } : {}) }, signal), [baseKey, modelQuery]);
   const active: boolean = !authenticationRequired && deniedKey !== key;
   const directory = useTdmsReadResource(`${key}:${retry}`, active, load, onDenied);
-  return <nav className="library-source-directory" aria-label="机型、ATA2 与 ATA4 目录">
-    <p className="suite-ata-note">机型 → ATA2 → ATA4 · 目录按明确当前版本分类。
-      版本数包含这些文档的全部可见正式历史版本；分类不代表适用机队。</p>
+  return <nav className="library-source-directory" aria-label="ATA2 与 ATA4 目录">
     {authenticationRequired ? <p role="status">请先登录，再读取资料目录。</p>
       : deniedKey === key ? <p role="alert">当前账户无法读取资料目录，原目录已清除。</p>
         : <>
-          {directory.loading ? <p role="status">正在读取机型目录…</p> : null}
-          {directory.error ? <p role="alert">目录读取失败：{directory.error}</p> : null}
+          {directory.loading ? <p role="status">正在读取 ATA 目录…</p> : null}
+          {directory.error ? <p role="alert">目录读取失败：{modelError || directory.error}</p> : null}
           {directory.value ? <>
-            <Button type="button" variant="ghost" className="suite-folder-row"
-              onClick={() => props.onFilterChange({ ...filters, aircraftModel: '', ata: '', ata2: '', ata4: '' })}>
-              <span>全部机型资料</span><small>{directory.value.documentCount} 份 · {directory.value.versionCount} 版</small>
-            </Button>
-            {directory.value.nodes.map(node => <LibrarySourceDirectoryNode key={`${key}:${node.value}`}
-              node={node} request={base} props={props} active={active} onAccessRejected={onDenied} />)}
+            {directory.value.nodes.filter(node => /^\d{2}$/u.test(node.value)).map(node => <LibrarySourceDirectoryNode key={`${key}:${node.value}`}
+              node={node} request={{ ...base, ...(modelQuery ? { aircraftModels: libraryAircraftModelsQuery(modelQuery) } : {}) }} props={props} active={active} onAccessRejected={onDenied} />)}
+            {directory.value.nodes.some(node => !/^\d{2}$/u.test(node.value)) ? <details className="library-directory-anomalies"><summary>未分类与待核</summary>
+              {directory.value.nodes.filter(node => !/^\d{2}$/u.test(node.value)).map(node => <LibrarySourceDirectoryNode key={`${key}:${node.value}`}
+                node={node} request={base} props={props} active={active} onAccessRejected={onDenied} />)}</details> : null}
             {!directory.value.nodes.length ? <p role="status">当前目录范围没有正式文档。</p> : null}
           </> : null}
         </>}
@@ -72,12 +78,10 @@ function LibrarySourceDirectoryNode({ node, request, props, active, onAccessReje
   const [manualOpen, setManualOpen] = useState<boolean | null>(null);
   const [retry, setRetry] = useState<number>(0);
   const { filters, scheme, sessionGeneration, refreshRevision } = props;
-  const selectedPath: boolean = node.level === 'AIRCRAFT_MODEL' ? filters.aircraftModel === node.value
-    : node.level === 'ATA2' ? filters.aircraftModel === request.aircraftModel && filters.ata2 === node.value
-      : filters.aircraftModel === request.aircraftModel && filters.ata2 === request.ata2 && filters.ata4 === node.value;
+  const selectedPath: boolean = node.level === 'ATA2' ? filters.ata2 === node.value
+    : filters.ata2 === request.ata2 && filters.ata4 === node.value;
   const open: boolean = manualOpen ?? selectedPath;
-  const childRequest: CanonicalLibraryDirectoryRequest = node.level === 'AIRCRAFT_MODEL'
-    ? { ...request, aircraftModel: node.value } : { ...request, ata2: node.value };
+  const childRequest: CanonicalLibraryDirectoryRequest = { ...request, ata2: node.value };
   const childKey: string = JSON.stringify([childRequest, sessionGeneration, refreshRevision, retry]);
   const load = useCallback((signal: AbortSignal) => getCanonicalLibraryDirectory(childRequest, signal), [childKey]);
   const children = useTdmsReadResource(childKey, active && open && node.hasChildren && node.level !== 'ATA4', load, onAccessRejected);
@@ -86,7 +90,6 @@ function LibrarySourceDirectoryNode({ node, request, props, active, onAccessReje
 
   function selectNode(): void {
     props.onFilterChange({ ...filters, ata: '',
-      aircraftModel: node.level === 'AIRCRAFT_MODEL' ? node.value : request.aircraftModel,
       ata2: node.level === 'ATA2' ? node.value : node.level === 'ATA4' ? request.ata2 : '',
       ata4: node.level === 'ATA4' ? node.value : '',
     });
@@ -99,17 +102,16 @@ function LibrarySourceDirectoryNode({ node, request, props, active, onAccessReje
         onClick={() => setManualOpen(!open)}>{open ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}</Button> : null}
       <button type="button" className={`suite-folder-row${selected ? ' active' : ''}`} aria-pressed={selected}
         onClick={selectNode}>
-        <span>{directoryNodeLabel(node, scheme)}<small>去重 {node.documentCount} 份 · {node.versionCount} 版</small></span>
+        <span>{directoryNodeLabel(node, scheme)}</span><small>{node.documentCount}</small>
       </button>
     </div>
     {node.level === 'ATA2' && /^\d{2}$/u.test(node.value) && node.directDocumentCount ? <button type="button"
       className={`suite-folder-row library-directory-direct${selectedPath && filters.ata4 === '__DIRECT__' ? ' active' : ''}`}
       aria-pressed={selectedPath && filters.ata4 === '__DIRECT__'}
-      onClick={() => props.onFilterChange({ ...filters, ata: '', aircraftModel: request.aircraftModel,
+      onClick={() => props.onFilterChange({ ...filters, ata: '',
         ata2: node.value, ata4: '__DIRECT__' })}>
-      <span>本级资料（仅有 ATA2）<small>去重 {node.directDocumentCount} 份 · {node.directVersionCount} 版</small></span>
+      <span>本级资料</span><small>{node.directDocumentCount}</small>
     </button> : null}
-    {node.rawValues.length ? <details><summary>原始分类值</summary><p className="suite-ata-note">{node.rawValues.join(' / ')}</p></details> : null}
     {open ? <div className="library-source-directory-children">
       {children.loading ? <p role="status">正在读取下一层目录…</p> : null}
       {children.error ? <p role="alert">{children.error}<Button type="button" variant="outline" size="sm"

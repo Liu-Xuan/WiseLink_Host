@@ -13,6 +13,7 @@ import { getEngineeringMatterDirectory } from '@client/src/api/engineering-matte
 import useMatterDirectory from '../../client/src/features/matter/useMatterDirectory';
 import { useLibraryDocuments } from '../../client/src/pages/WorkspaceHomePage/useLibraryDocuments';
 import { libraryViewMode } from '../../client/src/pages/WorkspaceHomePage/library-view-mode';
+import { libraryReadingParams, knowledgeReadingParams, knowledgeReadingReturnRoute } from '../../client/src/features/matter/reading-return';
 import { useLibraryDefaultSelection } from '../../client/src/pages/WorkspaceHomePage/useLibraryDefaultSelection';
 
 jest.mock('@client/src/api/canonical-host', () => ({
@@ -100,4 +101,25 @@ it('uses a fresh authorized first item after returning to either library mode', 
     }
     jest.clearAllMocks();
   }
+});
+
+it('retains exact raw-model unions and ATA nodes in library and knowledge read-only return context', () => {
+  const models = JSON.stringify(['737-600', '737-700', '737-800', '737-900']);
+  const input = new URLSearchParams({ mode: 'document', aircraftModels: models, ata2: '32', ata4: '32-10' });
+  expect(libraryReadingParams(input).get('aircraftModels')).toBe(models);
+  expect(libraryReadingParams(input).get('ata4')).toBe('32-10');
+  expect(knowledgeReadingParams(input).get('aircraftModels')).toBe(models);
+  expect(knowledgeReadingParams(input).get('ata4')).toBe('32-10');
+});
+
+it('retains reachable escaped model sets and a full cursor in the read-only knowledge return', () => {
+  const aircraftModels = JSON.stringify(Array.from({ length: 16 }, (_, index: number) =>
+    `${index.toString().padStart(2, '0')}${'\\"'.repeat(3)}`));
+  const params = new URLSearchParams({ aircraftModels, ata2: '32', after: 'c'.repeat(1800) });
+  expect(libraryReadingParams(params).get('aircraftModels')).toBe(aircraftModels);
+  expect(knowledgeReadingParams(params).get('aircraftModels')).toBe(aircraftModels);
+  expect(knowledgeReadingParams(params).get('after')).toHaveLength(1800);
+  const route = knowledgeReadingReturnRoute(new URLSearchParams({ returnKnowledgeQuery: params.toString() }));
+  expect(route).not.toBeNull();
+  expect(new URL(route!, 'https://example.test').searchParams.get('aircraftModels')).toBe(aircraftModels);
 });

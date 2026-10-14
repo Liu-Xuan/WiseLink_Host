@@ -1,4 +1,5 @@
-import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { act, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import { JSDOM } from 'jsdom';
@@ -67,9 +68,12 @@ describe('compact library information from exact saved sources', () => {
     const dom = new JSDOM(markup);
     const rows = [...dom.window.document.querySelectorAll('tbody > tr')];
     const cells = (index: number) => [...rows[index].querySelectorAll('td')].map(cell => cell.textContent);
-    expect(cells(0).slice(0, 4)).toEqual([`当前文档标题${document.documentCode}`, 'R2当前', '2026-10-01', '3461']);
-    expect(cells(1).slice(0, 4)).toEqual([`历史文档标题${document.documentCode}`, 'R1历史', '2025-08-07', '31-39']);
-    expect(cells(0)[4]).toContain('已保存摘要');
+    expect(cells(0).slice(0, 5)).toEqual([document.documentCode, '当前文档标题展开', 'R2当前', '2026-10-01', '3461']);
+    expect(cells(1).slice(0, 5)).toEqual([document.documentCode, '历史文档标题展开', 'R1历史', '2025-08-07', '31-39']);
+    expect(cells(0)[5]).toContain('已保存摘要');
+    expect([...dom.window.document.querySelectorAll('th')].map(cell => cell.textContent).slice(0, 3)).toEqual(['文档编号', '标题', '版本']);
+    expect(rows[0].querySelector('[aria-label="展开标题"]')).not.toBeNull();
+    expect(rows[0].querySelector('[aria-label^="复制文档编号"]')).not.toBeNull();
     expect(rows[0].textContent!.match(/当前文档标题/gu)).toHaveLength(1);
     const url = new URL(rows[1].querySelector('a')!.getAttribute('href')!, 'https://example.test');
     expect(url.pathname).toBe('/document-versions/DV-compact-1');
@@ -162,4 +166,50 @@ it('fleet catalog readiness retains exact matching and genuine empty results wit
     dom.window.close();
   }
   expect(JSON.stringify(catalog)).toBe(before);
+});
+
+it('never puts a title or internal identity in a missing document-number cell', () => {
+  const document = fixture(); document.documentCode = ' ';
+  const html = renderToStaticMarkup(createElement(StaticRouter, null, createElement('table', null,
+    createElement('tbody', null, createElement(LibraryDocumentVersionRow, { document, version: document.versions[0], onSelect: jest.fn() })))));
+  const dom = new JSDOM(html); const number = dom.window.document.querySelector('[data-column="number"]')!;
+  expect(number.textContent).toBe('未取得'); expect(number.querySelector('button')).toBeNull();
+  expect(dom.window.document.querySelector('[data-column="title"]')?.textContent).toContain('当前文档标题');
+  dom.window.close();
+});
+
+ it('copies the complete actual number and expands the title without changing the selected row', async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: 'https://example.test/library' });
+  const properties = ['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT'];
+  const original = new Map(properties.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  const writeText = jest.fn().mockResolvedValue(undefined);
+  Object.defineProperties(globalThis, {
+    window: { configurable: true, value: dom.window }, document: { configurable: true, value: dom.window.document },
+    navigator: { configurable: true, value: { clipboard: { writeText } } },
+    IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
+  });
+  const root = createRoot(dom.window.document.querySelector('#root')!);
+  const onSelect = jest.fn(); const document = fixture(); document.documentCode = 'A320-32-1496-LONG-COMPLETE-NUMBER';
+  try {
+    await act(async () => root.render(createElement(StaticRouter, null, createElement('table', null,
+      createElement('tbody', null, createElement(LibraryDocumentVersionRow, { document, version: document.versions[0], onSelect }))))));
+    const copy = dom.window.document.querySelector('[aria-label^="复制文档编号"]')!;
+    await act(async () => copy.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    expect(writeText).toHaveBeenCalledWith(document.documentCode);
+    expect(onSelect).not.toHaveBeenCalled();
+    const title = dom.window.document.querySelector('[aria-label="展开标题"]')!;
+    expect(title.getAttribute('aria-expanded')).toBe('false');
+    await act(async () => title.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    expect(dom.window.document.querySelector('[aria-label="收起标题"]')?.getAttribute('aria-expanded')).toBe('true');
+    expect(onSelect).not.toHaveBeenCalled();
+    writeText.mockRejectedValue(new Error('clipboard disabled'));
+    await act(async () => copy.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    expect(dom.window.document.querySelector('[data-column="number"] [role="alert"]')?.textContent).toContain('复制失败');
+  } finally {
+    await act(async () => root.unmount()); dom.window.close();
+    for (const key of properties) {
+      const descriptor = original.get(key);
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key);
+    }
+  }
 });

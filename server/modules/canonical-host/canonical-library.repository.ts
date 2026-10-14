@@ -27,6 +27,7 @@ import {
 export interface CanonicalLibraryCursor {
   createdAt: string;
   itemId: string;
+  numberRank?: 0 | 1;
 }
 
 export interface CanonicalLibraryQueryScope {
@@ -125,6 +126,7 @@ export class CanonicalLibraryRepository {
       ata2?: string;
       ata4?: string;
       aircraftModel?: string;
+      aircraftModels?: string[];
       fleetMentionValues?: string[];
       search: string;
       cursor: CanonicalLibraryCursor | null;

@@ -5,6 +5,7 @@ import { mineruPageFurniture } from '../../../../professional-input/mineru/miner
 import { originalPageLayout, type OriginalLayoutLine, type OriginalLayoutRun } from './document-original-layout';
 import { normalizeOriginalWhitespace, originalMarkdownText } from './document-original-text';
 import { documentOriginalStructuredSource } from './document-original-adapter';
+import { recoverMineruCrossPageTables, recoveredMineruTableCoversItems } from './document-mineru-cross-page-table';
 
 type Box = [number, number, number, number];
 type Region = { box: Box; discardedFurniture: boolean; native: boolean; footer: boolean; header: boolean;
@@ -30,6 +31,7 @@ export function reconcileMineruTextCoverage(input: {
   const generatedDates: Array<{ date: string; unitId: string; pageIndex: number }> = [];
   const layouts = input.extraction.pages.map(page => originalPageLayout(page));
   const headingAnchors = originalHeadingAnchors(original.source.units, input.extraction.pages, layouts);
+  recoverMineruCrossPageTables({ original, extraction: input.extraction, rawMiddle: input.rawMiddle });
   for (let pageIndex = 0; pageIndex < input.extraction.pageCount; pageIndex++) {
     const page = input.extraction.pages[pageIndex];
     if (page.pageIndex !== pageIndex) throw new Error('DOCUMENT_MINERU_COVERAGE_PAGE_MISMATCH');
@@ -104,6 +106,7 @@ export function reconcileMineruTextCoverage(input: {
       if (!original.coverage.readPageIndexes.includes(pageIndex)) original.coverage.readPageIndexes.push(pageIndex);
     }
     for (const [lineIndex, line] of layout.lines.entries()) {
+      if (recoveredMineruTableCoversItems(original, pageIndex, line.itemIndexes)) continue;
       const box: Box = [line.x, page.height - line.y - line.height, line.x + line.width, page.height - line.y];
       const touched = regions.filter(region => overlaps(box, region.box));
       if (touched.length) {
@@ -653,7 +656,8 @@ function readingMarkdown(units: TranslationStructuredSourceUnit[]): string {
     if (unit.kind === 'list') return units.filter(child => child.parentUnitId === unit.unitId).map(child => `- ${child.payload.text ?? ''}`).join('\n');
     if (unit.kind === 'table') {
       const raw = unit.payload.rawMineruContent as Record<string, unknown> | undefined;
-      return [unit.payload.caption, raw?.html, unit.payload.rawText].filter(value => typeof value === 'string' && value).join('\n\n');
+      return [unit.payload.caption, unit.payload.readingHtml ?? raw?.html, unit.payload.rawText]
+        .filter(value => typeof value === 'string' && value).join('\n\n');
     }
     if (unit.kind === 'figure' && typeof unit.payload.assetPath === 'string')
       return `${unit.payload.text ?? ''}\n\n![图示](${unit.payload.assetPath})`;

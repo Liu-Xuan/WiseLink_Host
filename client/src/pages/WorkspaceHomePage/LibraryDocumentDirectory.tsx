@@ -30,6 +30,7 @@ import { LibraryHierarchy } from './LibraryHierarchy';
 import { LibraryAtaHierarchy } from './LibraryAtaHierarchy';
 import LibraryDocumentRows from './LibraryDocumentRows';
 import { LibraryClassificationControls } from './LibraryClassificationControls';
+import { LibraryFleetControls } from './LibraryFleetControls';
 import type {
   LibraryCatalogFilters,
   LibraryGrouping,
@@ -76,7 +77,7 @@ export function LibraryDocumentDirectory({
   presentation,
   onPresentationChange,
 }: LibraryDocumentDirectoryProps) {
-  const [localGrouping, setLocalGrouping] = useState<LibraryGrouping>('category');
+  const [localGrouping, setLocalGrouping] = useState<LibraryGrouping>('ata');
   const [localView, setLocalView] = useState<'list' | 'tree' | 'ata'>('list');
   const [params, setParams] = useSearchParams();
   const expandedFamilyIds = (params.get('expandedFamilyIds') ?? '').split(',').filter(Boolean);
@@ -117,14 +118,14 @@ export function LibraryDocumentDirectory({
     <>
       <form className="suite-table-toolbar" onSubmit={onSearch}>
         <div className="suite-table-tabs"><strong>{taskMode ? '评估任务' : '工程文档'}</strong><button type="button" onClick={() => setParams({ mode: 'matter' })}>工程事项</button></div>
-        <label className="suite-table-query"><Search aria-hidden="true" /><Input aria-label={`搜索${label}`} value={searchText} maxLength={200} onChange={event => onSearchTextChange(event.target.value)} placeholder="名称、主题与版本…" /></label>
+        <label className="suite-table-query"><Search aria-hidden="true" /><Input aria-label={`搜索${label}`} value={searchText} maxLength={200} onChange={event => onSearchTextChange(event.target.value)} placeholder="文档编号、标题与版本…" /></label>
         <Button type="submit" size="sm" variant="outline" disabled={authenticationRequired}>搜索</Button>
         <Button type="button" variant="ghost" size="icon" onClick={onRefresh} disabled={directory.loading || authenticationRequired} aria-label={`刷新${label}`}><RefreshCw aria-hidden="true" /></Button>
         {!taskMode ? <details className="suite-directory-options"><summary>筛选 / 目录</summary>
           <div className="suite-directory-options-panel">
             <div className="atlas-library-view-switch"><Button type="button" variant="outline" size="sm" aria-pressed={catalogView === 'list'} onClick={() => setCatalogView('list')}>文档列表</Button><Button type="button" variant="outline" size="sm" aria-pressed={catalogView === 'tree'} onClick={() => setCatalogView('tree')}>分类目录</Button><Button type="button" variant="outline" size="sm" aria-pressed={catalogView === 'ata'} onClick={() => setCatalogView('ata')}>ATA 范围版本</Button></div>
             <Button type="button" variant="ghost" size="sm" onClick={toggleDensity}>{compact ? '标准行距' : '紧凑行距'}</Button>
-            <LibraryClassificationControls grouping={grouping} onGroupingChange={setGrouping} showGrouping={catalogView !== 'ata'} filters={filters} onFilterChange={onFilterChange ?? (() => undefined)} counts={directory} fleet={fleet} disabled={authenticationRequired || directory.loading || !onFilterChange} />
+            <LibraryClassificationControls grouping={grouping} onGroupingChange={setGrouping} showGrouping={false} showFleet={false} filters={filters} onFilterChange={onFilterChange ?? (() => undefined)} counts={directory} fleet={fleet} disabled={authenticationRequired || directory.loading || !onFilterChange} />
             <LibraryAtaHierarchy navigationOnly documents={directory.items.filter(item => item.kind === 'DOCUMENT')}
               fleetCatalog={fleet?.catalog ?? null} filters={filters} hasMore={Boolean(directory.nextCursor)}
               scheme={params.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
@@ -134,6 +135,8 @@ export function LibraryDocumentDirectory({
           </div>
         </details> : null}
       </form>
+      {!taskMode ? <LibraryFleetControls fleet={fleet} counts={directory.aircraftModelCounts} filters={filters}
+        onFilterChange={onFilterChange ?? (() => undefined)} disabled={authenticationRequired || directory.loading || !onFilterChange} /> : null}
       {!taskMode &&
       !directory.items.length &&
       directory.totalCount !== undefined ? (

@@ -1,5 +1,5 @@
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, ilike, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, lt, or, sql } from 'drizzle-orm';
 
 import type { CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
 import {
@@ -26,9 +26,10 @@ export interface OwnedLibraryFamilyQuery {
   ata2?: string;
   ata4?: string;
   aircraftModel?: string;
+  aircraftModels?: string[];
   /** Server-resolved values from the current tenant fleet; never user SQL. */
   fleetMentionValues?: string[];
-  cursor: { createdAt: string; itemId: string } | null;
+  cursor: { createdAt: string; itemId: string; numberRank?: 0 | 1 } | null;
   limit: number;
 }
 
@@ -209,6 +210,7 @@ export function listOwnedLibraryFamilies(
         familyId: versions.familyId,
         documentId: versions.documentId,
         documentCode: versions.documentCode,
+        numberRank: sql<0 | 1>`case when upper(btrim(${versions.documentCode}))=upper(${input.search}) then 0 else 1 end`.as('number_rank'),
         normalizedFamily: versions.normalizedFamily,
         issuerAuthority: versions.issuerAuthority,
         createdAt: versions.createdAt,
@@ -299,26 +301,22 @@ export function listOwnedLibraryFamilies(
               : sql`jsonb_exists(${matched.ataValues}, ${input.ata}::text)`
             : undefined,
           libraryAtaNodeFilter(sql`${matched.ataValues}`, input.ata2, input.ata4),
-          libraryAircraftNodeFilter(sql`${matched.aircraftValues}`, input.aircraftModel),
+          libraryAircraftNodeFilter(sql`${matched.aircraftValues}`, input.aircraftModel, input.aircraftModels),
         ),
       ),
   );
+  const seek = cursor ? or(lt(filtered.createdAt, new Date(cursor.createdAt)),
+    and(eq(filtered.createdAt, new Date(cursor.createdAt)), lt(filtered.familyId, cursor.itemId))) : undefined;
   const page = db.$with('library_family_page').as(
     db
       .select()
       .from(filtered)
       .where(
-        cursor
-          ? or(
-              lt(filtered.createdAt, new Date(cursor.createdAt)),
-              and(
-                eq(filtered.createdAt, new Date(cursor.createdAt)),
-                lt(filtered.familyId, cursor.itemId),
-              ),
-            )
-          : undefined,
+        cursor && input.search && cursor.numberRank !== undefined
+          ? or(gt(filtered.numberRank, cursor.numberRank), and(eq(filtered.numberRank, cursor.numberRank), seek))
+          : seek,
       )
-      .orderBy(desc(filtered.createdAt), desc(filtered.familyId))
+      .orderBy(...(input.search ? [asc(filtered.numberRank)] : []), desc(filtered.createdAt), desc(filtered.familyId))
       .limit(input.limit + 1),
   );
   return db
@@ -346,6 +344,7 @@ export function listOwnedLibraryFamilies(
           familyId: string;
           documentId: string;
           documentCode: string;
+          numberRank: 0 | 1;
           normalizedFamily: string;
           issuerAuthority: string;
           createdAt: string;
@@ -354,11 +353,11 @@ export function listOwnedLibraryFamilies(
           versions: CanonicalLibraryDocumentVersionSummary[];
         }>
       >`coalesce((select jsonb_agg(jsonb_build_object(
-      'familyId', ${page.familyId}, 'documentId', ${page.documentId}, 'documentCode', ${page.documentCode},
+      'familyId', ${page.familyId}, 'documentId', ${page.documentId}, 'documentCode', ${page.documentCode}, 'numberRank', ${page.numberRank},
       'normalizedFamily', ${page.normalizedFamily}, 'issuerAuthority', ${page.issuerAuthority},
       'createdAt', ${page.createdAt}, 'updatedAt', ${page.updatedAt},
       'workItemCount', ${page.workItemCount}, 'versions', ${page.versions}
-    ) order by ${page.createdAt} desc, ${page.familyId} desc) from ${page}), '[]'::jsonb)`,
+    ) order by ${input.search ? sql`${page.numberRank} asc,` : sql``} ${page.createdAt} desc, ${page.familyId} desc) from ${page}), '[]'::jsonb)`,
     })
     .from(sql`(values (1)) as one(value)`);
 }

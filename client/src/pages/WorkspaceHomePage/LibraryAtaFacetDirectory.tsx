@@ -18,7 +18,7 @@ export function LibraryAtaFacetDirectory({ counts, selected, scheme = 'ispec', d
         disabled={disabled || !entry.value.trim()} aria-pressed={selected === entry.value}
         title={`原始 ATA：${entry.value || '空值'}；${entry.count} 个文档族`}
         onClick={() => onSelect(entry.value)}>
-        <span>{entry.label}{ataDirectoryCode(entry.value)?.ata4 ? <small>原始标注 {entry.value}</small> : null}</span>
+        <span>{entry.label}</span>
         <small>{entry.count}</small>
       </button>)}
     </details>)}

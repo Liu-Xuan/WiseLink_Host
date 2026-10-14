@@ -97,6 +97,7 @@ function WorkspaceHomeContent() {
     ata2: searchParams.get('ata2') ?? '',
     ata4: searchParams.get('ata4') ?? '',
     aircraftModel: searchParams.get('aircraftModel') ?? '',
+    aircraftModels: searchParams.get('aircraftModels') ?? '',
     fleetFamily: searchParams.get('fleetFamily') ?? '',
     fleetModel: searchParams.get('fleetModel') ?? '',
   };
@@ -278,6 +279,7 @@ function WorkspaceHomeContent() {
       'ata2',
       'ata4',
       'aircraftModel',
+      'aircraftModels',
       'fleetFamily',
       'fleetModel',
     ] as const) {

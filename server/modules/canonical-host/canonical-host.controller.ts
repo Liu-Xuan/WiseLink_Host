@@ -1,4 +1,5 @@
 import { libraryGraphHttpRequest } from './canonical-library-graph';
+import { libraryAircraftModelsQuery, LIBRARY_CATALOG_PAGED_QUERY_BUDGET } from '@shared/library-aircraft-mentions';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import {
   BadRequestException,
@@ -126,6 +127,7 @@ export class CanonicalHostController {
     @Query('fleetModel') fleetModel?: string,
     @Query('ata2') ata2?: string,
     @Query('ata4') ata4?: string,
+    @Query('aircraftModels') aircraftModels?: string,
   ) {
     if (!this.libraryDocuments)
       throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
@@ -137,6 +139,7 @@ export class CanonicalHostController {
         ata2,
         ata4,
         aircraftModel,
+        aircraftModels: libraryModelsParameter(aircraftModels, httpRequest.originalUrl),
         fleetFamily,
         fleetModel,
         cursor,
@@ -157,11 +160,14 @@ export class CanonicalHostController {
     @Query('fleetModel') fleetModel?: string,
     @Query('aircraftModel') aircraftModel?: string,
     @Query('ata2') ata2?: string,
+    @Query('aircraftModels') aircraftModels?: string,
+    @Query('layout') layout?: 'ATA',
   ) {
     if (!this.libraryDocuments)
       throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
     return this.libraryDocuments.directory(
-      { search, normalizedFamily, fleetFamily, fleetModel, aircraftModel, ata2 },
+      { search, normalizedFamily, fleetFamily, fleetModel, aircraftModel, ata2,
+        aircraftModels: libraryModelsParameter(aircraftModels, httpRequest.originalUrl), layout },
       hostActor(httpRequest),
     );
   }
@@ -403,6 +409,13 @@ export class CanonicalHostController {
       }),
     };
   }
+}
+
+function libraryModelsParameter(value: string | undefined, originalUrl?: string): string[] | undefined {
+  if (value !== undefined && originalUrl && Buffer.byteLength(originalUrl, 'utf8') > LIBRARY_CATALOG_PAGED_QUERY_BUDGET)
+    throw new BadRequestException('LIBRARY_CATALOG_QUERY_TOO_LONG');
+  try { return libraryAircraftModelsQuery(value); }
+  catch (error: unknown) { throw new BadRequestException(error instanceof Error ? error.message : 'LIBRARY_AIRCRAFT_MODELS_INVALID'); }
 }
 
 function integratedAssessmentActionBody(body: unknown): void {
