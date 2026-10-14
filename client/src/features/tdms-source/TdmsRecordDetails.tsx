@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom';
 import type { TdmsPerson, TdmsRelationAssertion, TdmsExactEndpoint, TdmsRelationReadResponse } from '@shared/tdms-source.interface';
 import type { TdmsFileServiceRecordReadResponse } from '@shared/tdms-file-service-import.interface';
 import { tdmsFileTypeNote, tdmsJsonText, tdmsRawCodeLabel, tdmsRecordKindLabel, tdmsRevisionRuleNeedsVerification, tdmsSourceVersionLabel } from './tdms-source-presentation';
+import { TdmsOwnedSourceContent } from './TdmsOwnedSourceContent';
+import { canReadTdmsSourceBody } from '@shared/tdms-source-body-policy';
 
 const person = (value: TdmsPerson | null): string => value
   ? [value.name, value.sourcePersonId, value.role].filter(Boolean).join(' · ') || '作者信息未取得' : '作者信息未取得';
@@ -22,6 +24,25 @@ export function TdmsRecordDetails({ read, openDocument }: {
   openDocument?: (documentVersionId: string) => void;
 }) {
   const record = read.record;
+  if (!canReadTdmsSourceBody(read)) return <article className="tdms-record-details" aria-label="TDMS 未批准评估单元数据">
+    <h3>{record.title}</h3>
+    <p>{tdmsRecordKindLabel(record.recordKind)} · 原始状态 {tdmsRawCodeLabel(record.state)}</p>
+    <p className="tdms-source-eligibility-notice">{record.state?.rawName === 'Estimated'
+      ? '本条正文的读取准入尚未确认，仅显示元数据。'
+      : '未批准，未采集意见正文；批准后增量补取。'}
+      父处理单或其他专业的批准不能替代本条来源的正文准入。</p>
+    <dl className="tdms-source-fields">
+      <dt>原生评估单</dt><dd>{record.sourceRecordId}</dd>
+      <dt>TDMS 系统修订</dt><dd>{tdmsSourceVersionLabel(record.sourceVersion)}</dd>
+      <dt>业务文件版本</dt><dd>{record.businessVersion ? tdmsSourceVersionLabel(record.businessVersion, '业务文件') : '未取得'}</dd>
+      <dt>源作者或评估人</dt><dd>{people(record.authors)}</dd>
+      <dt>源修改时间</dt><dd>{record.sourceModifiedAt ?? '未取得'}</dd>
+      <dt>来源观察时间</dt><dd>{record.observedAt}</dd>
+      <dt>最近接收时间</dt><dd>{record.capturedAt}</dd>
+      <dt>实际目标版本</dt><dd>{record.relatedDocumentVersionIds.join(' · ') || '目标待绑定，不归入最新版本'}</dd>
+      <dt>Host 来源修订</dt><dd>{record.sourceRevisionRef}</dd>
+    </dl>
+  </article>;
   const content = record.content;
   const typeNote = tdmsFileTypeNote(record.fileType);
   const approvedCurrentObjectObservation = isApprovedCurrentObjectObservation(record.rawFields.opinionCollection);
@@ -32,6 +53,7 @@ export function TdmsRecordDetails({ read, openDocument }: {
     <p>原生记录 {record.sourceRecordId} · Host 快照修订 {record.sourceRevisionRef}</p>
     {approvedCurrentObjectObservation ? <p className="tdms-source-notice">批准状态来自本次页面观察；技术版本未确认，页面为分步读取。</p> : null}
     <p>{record.selectedHead ? '库内选定观察' : '准确历史观察'}；不据此推定发布方当前有效版本</p>
+    <p className="tdms-source-eligibility-notice">评估意见正文逐单核对 Estimated；来源批准状态不等于系统评估或正式采用。</p>
     <dl className="tdms-source-fields">
       <dt>业务文件版本</dt><dd>{record.businessVersion ? tdmsSourceVersionLabel(record.businessVersion, '业务文件') : '未取得，不由 TDMS 技术对象修订推定'}</dd>
       <dt>原始文件类型</dt><dd>{tdmsRawCodeLabel(record.fileType)}{record.fileType?.controlledMapping ? `（受控分类：${record.fileType.controlledMapping}）` : ''}</dd>
@@ -42,8 +64,11 @@ export function TdmsRecordDetails({ read, openDocument }: {
       {typeof sourceModifiedRaw === 'string' ? <><dt>源修改时间（原始显示）</dt><dd>{sourceModifiedRaw}</dd></> : null}
       <dt>观察时间</dt><dd>{record.observedAt}</dd>
       <dt>Host 取得时间</dt><dd>{record.capturedAt}</dd>
+      <dt>实际目标文档版本</dt><dd>{record.relatedDocumentVersionIds.length
+        ? record.relatedDocumentVersionIds.join(' · ') : '目标待绑定，不归入最新版本'}</dd>
       <dt>本次准确读取</dt><dd>{read.receipt.readAt} · 回执 {read.receipt.receiptRef}</dd>
     </dl>
+    <TdmsOwnedSourceContent read={read} />
     {typeNote ? <p className="tdms-source-notice">{typeNote}</p> : null}
     <section><h4>明确条件与保留事项</h4>{lines(content.conditions)}</section>
     <section><h4>源要求或措施</h4>{lines(content.requiredActions)}</section>
@@ -106,7 +131,8 @@ export function TdmsRecordDetails({ read, openDocument }: {
       </li>)}</ol> : <p>未取得来源事件。</p>}
     </section>
     {content.futureLcmLinks?.length ? <section><h4>LCM 相关来源</h4>
-      <p>LCM 软件构型尚未接入。</p>
+      <p>本记录与 LCM 构型的准确绑定尚未确认。</p>
+      <Link to="/library?mode=lcm">阅读已接收的软件构型快照</Link>
       {content.futureLcmLinks.map((link, index) => <pre key={index}>{tdmsJsonText(link)}</pre>)}
     </section> : null}
     <details><summary>原始字段与字段来源</summary>

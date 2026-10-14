@@ -9,6 +9,9 @@ import {
 } from './library-document-presentation';
 import { DocumentVersionLink } from './DocumentVersionLink';
 import { LibrarySummaryText } from './LibrarySummaryText';
+import { libraryCurrentVersion } from './library-document-selection';
+import { librarySourceStatus } from './library-source-status';
+import { metadataValues } from './library-classification';
 
 export function LibraryDocumentTableHead() {
   return <thead><tr><th>标题 / 编号</th><th>版本</th><th>颁发时间</th><th>ATA</th><th>摘要</th><th><span className="sr-only">操作</span></th></tr></thead>;
@@ -27,6 +30,7 @@ export function LibraryDocumentVersionRow({ document, version, selected, onSelec
   const title = identity.hasDocumentTitle ? identity.documentTitle : identity.documentNumber;
   const publication = libraryPublicationPresentation(version);
   const reading = version ? projectLibraryDocumentReading(version) : null;
+  const sourceStatus = version ? librarySourceStatus(version) : null;
   return <tr className={`${selected ? 'selected ' : ''}${version && !version.selectedVersionIsCurrent ? 'suite-version-row' : ''}`}
     data-document-version-id={version?.documentVersionId} tabIndex={0} onClick={onSelect}
     onKeyDown={event => { if (event.target === event.currentTarget && event.key === 'Enter') onSelect(); }}>
@@ -34,7 +38,7 @@ export function LibraryDocumentVersionRow({ document, version, selected, onSelec
       {title !== identity.documentNumber ? <small>{identity.documentNumber}</small> : null}
       {!identity.hasDocumentTitle ? <small>标题待核</small> : null}
     </span></div></td>
-    <td><b>{version ? version.businessRevision || '未标注' : '未返回'}</b>
+    <td><b>{version ? version.businessRevision || '未标注' : '当前版本待确认'}</b>
       {version ? <small>{version.selectedVersionIsCurrent ? '当前' : '历史'}</small> : null}</td>
     <td title="原文颁发时间；不以修订、生成或入库日期替代">{publication.issueDate}</td>
     <td title="原文 ATA 观察值，待核">{publication.ata}</td>
@@ -55,6 +59,12 @@ export function LibraryDocumentVersionRow({ document, version, selected, onSelec
           </details>
         ) : null}
       </div>
+      {sourceStatus && version ? <details className="suite-reading-more" onClick={event => event.stopPropagation()}>
+        <summary>{sourceStatus.received} · {sourceStatus.original} · {sourceStatus.parsing}</summary>
+        <p>类型 {document.normalizedFamily || '待分类'} · 机型 {metadataValues(version.extractedMetadata?.mentionedAircraftModels).join(' / ') || '待分类'}</p>
+        <p>{sourceStatus.opinions} · {sourceStatus.assessment}</p>
+        <p>{sourceStatus.sourceModified} · {sourceStatus.synchronized}</p>
+      </details> : null}
     </td>
     <td>{version ? <DocumentVersionLink version={version} familyId={document.familyId} compact>打开</DocumentVersionLink> : null}</td>
   </tr>;
@@ -79,7 +89,7 @@ export default function LibraryDocumentRows({
     <table className="suite-library-table suite-library-data-table" aria-label="工程文档">
       <LibraryDocumentTableHead />
       <tbody>{documents.map(document => {
-        const current = document.versions.find(version => version.selectedVersionIsCurrent) ?? null;
+        const current = libraryCurrentVersion(document);
         const expanded = expandedFamilyIds.includes(document.familyId);
         return <Fragment key={document.familyId}>
           <LibraryDocumentVersionRow document={document} version={current}

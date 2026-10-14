@@ -1,5 +1,9 @@
-import type { TdmsCatalogueResponse, TdmsReadContext, TdmsRelationReadResponse } from '@shared/tdms-source.interface';
+import type { TdmsCatalogueResponse, TdmsHistoryResponse, TdmsReadContext, TdmsRelationReadResponse } from '@shared/tdms-source.interface';
+import type { TdmsDocumentSourceReadRequest, TdmsDocumentSourceReadResponse } from '@shared/tdms-source-reading.interface';
+import type { LcmSnapshotBrowseRequest, LcmSnapshotCatalogueResponse, LcmSnapshotRowsRequest, LcmSnapshotRowsResponse } from '@shared/lcm-source-reading.interface';
 import type { TdmsFileServiceRecordReadResponse } from '@shared/tdms-file-service-import.interface';
+import { tdmsSourceReadForPreview } from '@client/src/features/tdms-source/tdms-assessment-body';
+import { canReadTdmsSourceBody } from '@shared/tdms-source-body-policy';
 import type { CanonicalLibraryGraphRequest, CanonicalLibraryGraphResponse } from '@shared/library-graph.interface';
 import type { DocumentParsingSettingsReadModel, UpdateDocumentParsingSettingsRequest } from '@shared/document-parsing-settings.interface';
 import type { DocumentRevisionReadingRequest, DocumentRevisionReadingResponse } from '@shared/document-revision-reading.interface';
@@ -622,8 +626,103 @@ export async function readTdmsSourceRecord(sourceRevisionRef: string,
   if (result.record?.sourceRevisionRef !== sourceRevisionRef ||
     result.receipt?.sourceRevisionRef !== sourceRevisionRef ||
     result.receipt.readPerformed !== true || result.receipt.purpose !== 'WIKI_NATIVE_RECORD' ||
-    result.selectedFields !== null)
+    (canReadTdmsSourceBody(result) && result.selectedFields !== null))
     throw new Error('TDMS_SOURCE_RECORD_BINDING_MISMATCH');
+  return tdmsSourceReadForPreview(result);
+}
+
+/** Retained raw records for one explicitly bound version; no source switch or OAuth flow. */
+export async function readTdmsDocumentSource(
+  input: TdmsDocumentSourceReadRequest,
+  signal?: AbortSignal,
+): Promise<TdmsDocumentSourceReadResponse> {
+  const generation = clientSessionGeneration;
+  const query = new URLSearchParams();
+  tdmsContextQuery({ documentVersionId: input.documentVersionId });
+  if (input.after) query.set('after', input.after);
+  if (input.limit !== undefined) query.set('limit', String(input.limit));
+  const result = await readCanonicalLibrary<TdmsDocumentSourceReadResponse>({
+    url: `/api/tdms-source/document-versions/${encodeURIComponent(input.documentVersionId)}?${query}`,
+    signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration)
+    throw new Error('TDMS_SOURCE_READ_OBSOLETE');
+  if (result.documentVersionId !== input.documentVersionId || !Array.isArray(result.records) ||
+      !['AVAILABLE', 'NO_BOUND_RECORDS'].includes(result.sourceStatus) ||
+      (result.sourceStatus === 'NO_BOUND_RECORDS' && (result.records.length || result.hasMore)) ||
+      (result.hasMore && !result.nextAfter) || result.records.some(read =>
+        !Array.isArray(read.record?.relatedDocumentVersionIds) ||
+        !read.record.relatedDocumentVersionIds.includes(input.documentVersionId) ||
+        read.receipt?.sourceRevisionRef !== read.record.sourceRevisionRef ||
+        read.receipt.readPerformed !== true || read.receipt.purpose !== 'WIKI_NATIVE_RECORD' ||
+        (canReadTdmsSourceBody(read) && read.selectedFields !== null))) {
+    throw new Error('TDMS_DOCUMENT_SOURCE_BINDING_MISMATCH');
+  }
+  return { documentVersionId: result.documentVersionId, sourceStatus: result.sourceStatus,
+    records: result.records.map(tdmsSourceReadForPreview), hasMore: result.hasMore, nextAfter: result.nextAfter };
+}
+
+export async function readTdmsSourceHistory(
+  sourceRevisionRef: string,
+  context: TdmsSourceBrowserReadContext,
+  after?: string,
+  signal?: AbortSignal,
+): Promise<TdmsHistoryResponse> {
+  const generation = clientSessionGeneration;
+  const query = tdmsContextQuery(context);
+  if (after) query.set('after', after);
+  const result = await readCanonicalLibrary<TdmsHistoryResponse>({
+    url: `/api/tdms-source/records/${encodeURIComponent(sourceRevisionRef)}/history?${query}`,
+    signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration)
+    throw new Error('TDMS_SOURCE_READ_OBSOLETE');
+  if (result.readPerformed !== false || !Array.isArray(result.versions) ||
+      result.versions.some(version => version.recordRef !== result.recordRef) ||
+      (result.hasMore && !result.nextAfter))
+    throw new Error('TDMS_SOURCE_HISTORY_BINDING_MISMATCH');
+  return result;
+}
+
+function lcmBrowseQuery(input: LcmSnapshotBrowseRequest): URLSearchParams {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(input)) {
+    if (value !== undefined && value !== '') query.set(key, String(value));
+  }
+  return query;
+}
+
+/** Host received snapshots remain candidates; a list read never refreshes the external LCM source. */
+export async function readLcmSourceSnapshots(
+  input: LcmSnapshotBrowseRequest = {},
+  signal?: AbortSignal,
+): Promise<LcmSnapshotCatalogueResponse> {
+  const generation = clientSessionGeneration;
+  const result = await readCanonicalLibrary<LcmSnapshotCatalogueResponse>({
+    url: `/api/lcm-source/snapshots?${lcmBrowseQuery(input)}`, signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration)
+    throw new Error('LCM_SOURCE_READ_OBSOLETE');
+  if (!Array.isArray(result.snapshots) || (result.hasMore && !result.nextAfter))
+    throw new Error('LCM_SOURCE_CATALOGUE_BINDING_MISMATCH');
+  return result;
+}
+
+export async function readLcmSourceSnapshotRows(
+  input: LcmSnapshotRowsRequest,
+  signal?: AbortSignal,
+): Promise<LcmSnapshotRowsResponse> {
+  const generation = clientSessionGeneration;
+  const { snapshotId, ...filters } = input;
+  const result = await readCanonicalLibrary<LcmSnapshotRowsResponse>({
+    url: `/api/lcm-source/snapshots/${encodeURIComponent(snapshotId)}?${lcmBrowseQuery(filters)}`,
+    signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration)
+    throw new Error('LCM_SOURCE_READ_OBSOLETE');
+  if (result.snapshot?.snapshotId !== snapshotId || !Array.isArray(result.records) ||
+      (result.hasMore && !result.nextAfter))
+    throw new Error('LCM_SOURCE_SNAPSHOT_BINDING_MISMATCH');
   return result;
 }
 

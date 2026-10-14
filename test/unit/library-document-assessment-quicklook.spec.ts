@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { createElement, type AnchorHTMLAttributes } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import type { CanonicalLibraryQuicklookResponse } from '@shared/api.interface';
@@ -12,6 +12,10 @@ jest.mock('@client/src/api/canonical-host', () => ({
   subscribeCanonicalHostClientSession: () => () => undefined,
 }));
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
+jest.mock('@lark-apaas/client-toolkit/components/UniversalLink', () => ({
+  UniversalLink: ({ to, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { to: string }) =>
+    createElement('a', { ...props, href: to }),
+}));
 jest.mock('@client/src/features/matter/LinkDocumentMatterMaterial', () => ({
   __esModule: true, default: () => null,
 }));

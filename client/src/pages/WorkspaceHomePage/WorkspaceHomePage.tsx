@@ -63,13 +63,20 @@ import {
 import './workspace-home.css';
 import './library-hierarchy.css';
 import './library-atlas.css';
+import './library-source-reading.css';
+import '@client/src/features/tdms-source/tdms-source-reading.css';
 import { useLibraryFleetCatalog } from './useLibraryFleetCatalog';
 import { useLibraryDefaultSelection } from './useLibraryDefaultSelection';
+import { libraryDocumentSelection } from './library-document-selection';
+import { LibrarySourceNavigation } from './LibrarySourceNavigation';
+import { LcmConfigurationLibrary } from './LcmConfigurationLibrary';
 import useReadingLocation from '@client/src/features/matter/useReadingLocation';
 import { libraryReadingScope, libraryTaskDocumentReadingRoute } from '@client/src/features/matter/reading-return';
 
 export default function WorkspaceHomePage() {
-  return <LibraryPaneScrollProvider><WorkspaceHomeContent /></LibraryPaneScrollProvider>;
+  const [params] = useSearchParams();
+  return <LibraryPaneScrollProvider>{params.get('mode') === 'lcm'
+    ? <LcmConfigurationLibrary /> : <WorkspaceHomeContent />}</LibraryPaneScrollProvider>;
 }
 
 function WorkspaceHomeContent() {
@@ -194,14 +201,10 @@ function WorkspaceHomeContent() {
   const selectedDocument = directory.items.find(
     (item) => item.kind === 'DOCUMENT' && item.familyId === familyId,
   );
-  const selectedDocumentVersion = selectedDocument?.kind === 'DOCUMENT'
-    ? searchParams.has('selectedDocumentVersionId')
-      ? searchParams.getAll('selectedDocumentVersionId').length === 1
-        ? selectedDocument.versions.find((version) =>
-          version.documentVersionId === searchParams.get('selectedDocumentVersionId'))
-        : undefined
-      : selectedDocument.versions.find((version) => version.selectedVersionIsCurrent)
-    : undefined;
+  const selectedDocumentVersion = libraryDocumentSelection(
+    selectedDocument?.kind === 'DOCUMENT' ? selectedDocument : null,
+    searchParams,
+  ).version;
   const documentAssessmentQuicklook = useLibraryQuicklook(
     treeMode === 'document' && selectedDocumentVersion?.documentReading?.status !== 'AVAILABLE'
       ? selectedDocumentVersion?.readerWorkItemId ?? '' : '',
@@ -428,6 +431,7 @@ function WorkspaceHomeContent() {
                   ? '最近任务'
                   : '资料库'}
             </h1>
+            <LibrarySourceNavigation current="document" />
             {treeMode !== 'document' ? <p className="library-home-lede">
               {treeMode === 'matter'
                 ? '从工程问题开始，阅读当前认识、措施前提与后续关注。'

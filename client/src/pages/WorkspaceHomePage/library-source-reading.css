@@ -1,0 +1,103 @@
+.library-source-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 12px;
+}
+.library-source-navigation a {
+  padding: 5px 9px;
+  border-radius: 5px;
+  color: var(--wl-muted);
+}
+.library-source-navigation a[aria-current='page'] {
+  color: var(--wl-accent);
+  background: var(--wl-selected);
+}
+.library-source-version-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding-block: 10px;
+  font-size: 12px;
+}
+.library-source-version-picker > span { color: var(--wl-muted); font-size: 11px; }
+.library-document-source-dialog {
+  --wl-accent: #367ad8;
+  --wl-ink: #1c2938;
+  --wl-muted: #55657b;
+  --wl-border: #e3e9f0;
+  --wl-sheet: #fff;
+  --wl-selected: #f0f5fc;
+  width: 96vw;
+  max-width: 1480px;
+  height: 92dvh;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 10px;
+  color: var(--wl-ink);
+  background: var(--wl-sheet);
+}
+.library-document-source-dialog [data-slot='dialog-header'] { padding-right: 24px; }
+.library-document-source-columns {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1.2fr) minmax(330px, 1fr);
+  gap: 16px;
+}
+.library-document-source-pdf,
+.library-document-source-info { min-width: 0; min-height: 0; overflow: auto; }
+.library-document-source-pdf { display: flex; flex-direction: column; background: var(--wl-selected); }
+.library-document-source-pdf .document-original-inline {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  font-size: 11px;
+}
+.library-document-source-pdf iframe { width: 100%; min-height: 300px; flex: 1; border: 0; background: white; }
+.library-document-source-pdf .document-original-inline-empty { padding: 20px; margin: auto; text-align: center; }
+.library-document-source-pdf .document-original-inline-empty p { line-height: 1.8; }
+.library-document-source-pdf .document-original-inline-label { color: var(--wl-muted); }
+.library-document-source-info { padding-inline: 4px; font-size: 12px; }
+.library-document-source-info .tdms-source-reading { margin: 0; padding: 12px; border-color: var(--wl-border); }
+.library-source-notice,
+.tdms-source-eligibility-notice {
+  padding: 8px 10px;
+  border-left: 3px solid var(--wl-accent, #367ad8);
+  color: var(--wl-ink, #1c2938);
+  background: var(--wl-selected, #f0f5fc);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.tdms-document-record { padding-block: 10px; border-bottom: 1px solid var(--wl-border, #e3e9f0); }
+.tdms-source-pagination,
+.library-source-pagination { display: flex; flex-wrap: wrap; gap: 8px; padding-block: 12px; }
+.tdms-owned-source-content { padding-block: 8px; }
+.library-lcm-boundary { margin: 0 20px 12px; }
+.library-lcm-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; padding: 0 20px 16px; }
+.library-lcm-filters > label { flex: 1 1 150px; max-width: 220px; font-size: 11px; }
+.library-lcm-filters > label > span { display: block; margin-bottom: 5px; color: var(--wl-muted); }
+.library-lcm-layout { display: grid; grid-template-columns: minmax(210px, 260px) minmax(0, 1fr); gap: 18px; padding: 0 20px 20px; }
+.library-lcm-layout .library-lcm-snapshots { display: block; overflow: auto; max-height: 78dvh; font-size: 12px; }
+.library-lcm-snapshots .suite-folder-row { white-space: normal; overflow-wrap: anywhere; }
+.library-lcm-snapshots .suite-folder-row > span { min-width: 0; }
+.library-lcm-snapshots small { display: block; margin-top: 4px; color: var(--wl-muted); font-size: 10px; }
+.library-lcm-detail { min-width: 0; max-height: 78dvh; overflow: auto; font-size: 12px; }
+.library-lcm-snapshot-facts h2 { margin-bottom: 10px; font-size: 16px; font-weight: 600; }
+.library-lcm-detail summary { cursor: pointer; padding-block: 6px; color: var(--wl-accent); }
+.library-lcm-record { border-top: 1px solid var(--wl-border); padding-block: 16px; }
+.library-lcm-record header { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; }
+.library-lcm-record header span { color: var(--wl-muted); }
+.library-lcm-record li,
+.library-lcm-record p { overflow-wrap: anywhere; line-height: 1.8; }
+@media (max-width: 860px) {
+  .library-document-source-columns { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+  .library-document-source-pdf { min-height: 420px; }
+  .library-document-source-info { overflow: visible; }
+  .library-lcm-layout { grid-template-columns: minmax(0, 1fr); }
+  .library-lcm-layout .library-lcm-snapshots { max-height: 260px; }
+  .library-lcm-detail { max-height: none; }
+}
