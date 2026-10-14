@@ -1,4 +1,8 @@
 import type { DocumentOriginalBinding } from './document-original.interface';
+export type {
+  TdmsDocumentSourceReadRequest,
+  TdmsDocumentSourceReadResponse,
+} from './tdms-source-reading.interface';
 import type {
   AssessmentReadingResult,
   AssessmentReadingSummary,
