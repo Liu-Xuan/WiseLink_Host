@@ -19,6 +19,8 @@ export interface LibraryDocumentsRead {
   error: LibraryReadErrorPresentation | null;
   normalizedFamily?: string;
   ata?: string;
+  ata2?: string;
+  ata4?: string;
   aircraftModel?: string;
   fleetFamily?: string;
   fleetModel?: string;
@@ -35,6 +37,8 @@ function sameFilters(
   return (
     (a.normalizedFamily ?? '') === (b.normalizedFamily ?? '') &&
     (a.ata ?? '') === (b.ata ?? '') &&
+    (a.ata2 ?? '') === (b.ata2 ?? '') &&
+    (a.ata4 ?? '') === (b.ata4 ?? '') &&
     (a.aircraftModel ?? '') === (b.aircraftModel ?? '') &&
     (a.fleetFamily ?? '') === (b.fleetFamily ?? '') &&
     (a.fleetModel ?? '') === (b.fleetModel ?? '')

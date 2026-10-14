@@ -17,6 +17,8 @@ export interface AtaDirectoryNode {
   label: string;
   level: 'fleet' | 'model' | 'ata2' | 'ata4' | 'raw';
   items: AtaDirectoryItem[];
+  /** ATA2-only metadata belongs at this node; it does not create an ATA4 chapter. */
+  directItems?: AtaDirectoryItem[];
   children: AtaDirectoryNode[];
 }
 
@@ -96,7 +98,7 @@ function ataBranches(items: AtaDirectoryItem[]): AtaDirectoryNode[] {
     for (const value of values) {
       const code = ataDirectoryCode(value);
       const chapter = code?.ata2 ?? (value === '__UNKNOWN__' ? '__UNKNOWN__' : '__RAW__');
-      const section = code ? code.ata4 ?? '__UNKNOWN__' : value;
+      const section = code ? code.ata4 ?? '__AT_CHAPTER__' : value;
       const sections = chapters.get(chapter) ?? new Map<string, AtaDirectoryItem[]>();
       sections.set(section, uniqueItems([...(sections.get(section) ?? []), item]));
       chapters.set(chapter, sections);
@@ -104,12 +106,15 @@ function ataBranches(items: AtaDirectoryItem[]): AtaDirectoryNode[] {
   }
   const rank = (key: string) => key === '__UNKNOWN__' ? 2 : key === '__RAW__' ? 1 : 0;
   const sorted = <T,>(map: Map<string, T>) => [...map].sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
-  return sorted(chapters).map(([chapter, sections]) => node(chapter,
+  return sorted(chapters).map(([chapter, sections]) => ({ ...node(chapter,
     chapter === '__UNKNOWN__' ? 'ATA 未分类' : chapter === '__RAW__' ? '原始 ATA 标注（含义待核）' : `ATA${chapter}`,
     /^\d{2}$/u.test(chapter) ? 'ata2' : 'raw', [...sections.values()].flat(),
-    sorted(sections).map(([section, members]) => node(section,
-      section === '__UNKNOWN__' ? 'ATA4 未细分 / 待核' : chapter === '__RAW__' ? `原始标注 ${section || '空值'}` : `ATA${section}`,
-      /^\d{2}-\d{2}$/u.test(section) && chapter !== '__RAW__' ? 'ata4' : 'raw', members))));
+    sorted(sections).filter(([section]) => section !== '__AT_CHAPTER__' && chapter !== '__UNKNOWN__').map(([section, members]) => node(section,
+      chapter === '__RAW__' ? `原始标注 ${section || '空值'}` : `ATA${section}`,
+      /^\d{2}-\d{2}$/u.test(section) && chapter !== '__RAW__' ? 'ata4' : 'raw', members))),
+    ...(/^\d{2}$/u.test(chapter) ? { directItems: uniqueItems(sections.get('__AT_CHAPTER__') ?? []) } : {}),
+    ...(chapter === '__UNKNOWN__' ? { directItems: uniqueItems([...sections.values()].flat()) } : {}),
+  }));
 }
 
 /** Actor-authorized visible versions are the only membership input. Aircraft and ATA

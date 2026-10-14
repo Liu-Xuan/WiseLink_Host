@@ -28,6 +28,30 @@ import { tdmsError } from './tdms-source.types';
 @Controller('api/tdms-source')
 export class TdmsSourceController {
   constructor(private readonly service: TdmsSourceService) {}
+  @Get('document-versions/:id')
+  @Header('Cache-Control', 'private, no-cache, must-revalidate')
+  @Header('Vary', 'Cookie, Authorization')
+  documentVersion(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Query() query: Record<string, unknown>,
+  ) {
+    const q = object(query);
+    strict(q, ['after', 'limit']);
+    const limit: number | undefined = q.limit === undefined
+      ? undefined
+      : typeof q.limit === 'string' && /^[1-9][0-9]*$/u.test(q.limit)
+        ? Number(q.limit)
+        : Number.NaN;
+    return this.service.readDocumentVersion(
+      miaodaHostedFinalUserActor(req.userContext),
+      {
+        documentVersionId: identifier(id),
+        ...(q.after === undefined ? {} : { after: identifier(q.after) }),
+        ...(limit === undefined ? {} : { limit }),
+      },
+    );
+  }
   @Get('records')
   @Header('Cache-Control', 'private, no-cache, must-revalidate')
   @Header('Vary', 'Cookie, Authorization')

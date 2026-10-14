@@ -164,6 +164,16 @@ export interface TdmsStoredReceipt {
   receipt: TdmsReadReceipt;
   context: TdmsReadContext;
 }
+export interface TdmsCataloguePage {
+  after?: string;
+  /** Existing explicit bindings only; an unresolved relation never matches. */
+  documentVersionId?: string;
+  /** Includes the one lookahead record; never exceeds the public page plus one. */
+  limit: number;
+}
+export interface TdmsDocumentCataloguePage extends TdmsCataloguePage {
+  documentVersionId: string;
+}
 export interface TdmsTransaction {
   capture(
     scope: TdmsSourceScope,
@@ -179,7 +189,15 @@ export interface TdmsTransaction {
     sourceRecordId: string,
   ): Promise<TdmsRecordHead | null>;
   revision(tenantId: string, ref: string): Promise<TdmsStoredRevision | null>;
-  catalogue(scope: TdmsSourceScope): Promise<TdmsStoredRevision[]>;
+  catalogue(
+    scope: TdmsSourceScope,
+    page?: TdmsCataloguePage,
+  ): Promise<TdmsStoredRevision[]>;
+  /** Explicit port for version-bound historical observations; absence fails closed. */
+  documentVersionCatalogue?(
+    scope: TdmsSourceScope,
+    page: TdmsDocumentCataloguePage,
+  ): Promise<TdmsStoredRevision[]>;
   history(
     scope: TdmsSourceScope,
     recordRef: string,

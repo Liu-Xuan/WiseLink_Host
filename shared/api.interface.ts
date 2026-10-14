@@ -1,4 +1,21 @@
 import type { DocumentOriginalBinding } from './document-original.interface';
+export type {
+  TdmsDocumentSourceReadRequest,
+  TdmsDocumentSourceReadResponse,
+} from './tdms-source-reading.interface';
+export type {
+  LcmSnapshotBrowseRequest,
+  LcmSnapshotRowsRequest,
+  LcmSnapshotSummary,
+  LcmSnapshotCatalogueResponse,
+  LcmSnapshotRowsResponse,
+} from './lcm-source-reading.interface';
+export type {
+  CanonicalLibraryDirectoryRequest,
+  CanonicalLibraryDirectoryNode,
+  CanonicalLibraryDirectoryResponse,
+} from './library-directory.interface';
+export type { TdmsSourceBodyReadPolicy } from './tdms-source-body-policy';
 import type {
   AssessmentReadingResult,
   AssessmentReadingSummary,
@@ -3205,6 +3222,9 @@ export interface CanonicalLibraryDocumentsRequest {
   fleetModel?: string;
   normalizedFamily?: string;
   ata?: string;
+  /** Directory node filters; ambiguous raw values are not silently normalized. */
+  ata2?: string;
+  ata4?: string;
   aircraftModel?: string;
   search?: string;
   cursor?: string;

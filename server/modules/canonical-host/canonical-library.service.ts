@@ -12,6 +12,10 @@ import {
 } from '@nestjs/common';
 import { CanonicalFleetMasterDataRepository } from './canonical-fleet-master-data.repository';
 import type { CanonicalLibraryFleetCatalog } from '@shared/library-fleet.interface';
+import type {
+  CanonicalLibraryDirectoryRequest,
+  CanonicalLibraryDirectoryResponse,
+} from '@shared/library-directory.interface';
 import { libraryAircraftMentionAliases } from '@shared/library-aircraft-mentions';
 import type {
   CanonicalLibraryDocumentSummary,
@@ -88,52 +92,17 @@ export class CanonicalLibraryService {
     actor: CanonicalHostActor,
   ): Promise<CanonicalLibraryDocumentsResponse> {
     const scope = ownedScope(actor);
-    const normalizedFamily = input.normalizedFamily?.trim() ?? '';
-    if (normalizedFamily.length > 96)
-      throw new BadRequestException('LIBRARY_FAMILY_INVALID');
-    const ata = input.ata?.trim() ?? '';
-    const aircraftModel = input.aircraftModel?.trim() ?? '';
-    if (ata.length > 96 || aircraftModel.length > 96)
-      throw new BadRequestException('LIBRARY_FILTER_INVALID');
-    const fleetFamily = input.fleetFamily?.trim().toUpperCase() ?? '';
-    const fleetModel = input.fleetModel?.trim().toUpperCase() ?? '';
-    if (
-      fleetFamily.length > 96 ||
-      fleetModel.length > 96 ||
-      (fleetModel && !fleetFamily) ||
-      (fleetFamily && aircraftModel)
-    ) {
-      throw new BadRequestException('LIBRARY_FLEET_FILTER_INVALID');
-    }
-    let fleetMentionValues: string[] | undefined;
-    let fleetRevision: string[] | undefined;
-    if (fleetFamily) {
-      const catalog = await this.fleetCatalog(actor);
-      if (catalog.status === 'MISSING')
-        throw new ServiceUnavailableException({
-          code: 'LIBRARY_FLEET_CATALOG_MISSING',
-        });
-      const family = catalog.families.find(
-        (item) => item.fleetFamily === fleetFamily,
-      );
-      if (!family || (fleetModel && !family.models.includes(fleetModel)))
-        throw new BadRequestException('LIBRARY_FLEET_FILTER_INVALID');
-      const selectedMentions = fleetModel
-        ? [fleetModel]
-        : [family.fleetFamily, ...family.models];
-      fleetMentionValues = [
-        ...new Set(selectedMentions.flatMap(libraryAircraftMentionAliases)),
-      ];
-      fleetRevision = [
-        catalog.source!.sourceSnapshotId,
-        catalog.source!.authorityRevision,
-        catalog.asOf,
-      ];
-    }
+    const {
+      normalizedFamily, ata, ata2, ata4, aircraftModel, fleetFamily,
+      fleetModel, fleetRevision, fleetMentionValues,
+    } = await this.documentFilters(input, actor);
+    const nodeScope = [normalizedFamily, ata, ata2, ata4, aircraftModel];
     const context = fleetFamily
-      ? `DOCUMENTS:${JSON.stringify([normalizedFamily, ata, fleetFamily, fleetModel, fleetRevision, fleetMentionValues])}`
-      : normalizedFamily || ata || aircraftModel
-        ? `DOCUMENTS:${JSON.stringify([normalizedFamily, ata, aircraftModel])}`
+      ? `DOCUMENTS:${JSON.stringify([
+        ...nodeScope, fleetFamily, fleetModel, fleetRevision, fleetMentionValues,
+      ])}`
+      : normalizedFamily || ata || ata2 || ata4 || aircraftModel
+        ? `DOCUMENTS:${JSON.stringify(nodeScope)}`
         : 'DOCUMENTS';
     const query = listQuery(input, context);
     const [result] = await this.repository.listDocuments({
@@ -141,6 +110,8 @@ export class CanonicalLibraryService {
       ...query,
       normalizedFamily,
       ata,
+      ata2,
+      ata4,
       aircraftModel,
       ...(fleetMentionValues ? { fleetMentionValues } : {}),
     });
@@ -172,6 +143,57 @@ export class CanonicalLibraryService {
           : null,
       fileReadPerformed: false,
     };
+  }
+
+  async directory(
+    input: CanonicalLibraryDirectoryRequest,
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalLibraryDirectoryResponse> {
+    const scope = ownedScope(actor);
+    const search = filterText(input.search, 200, 'LIBRARY_SEARCH_TOO_LONG');
+    const { normalizedFamily, aircraftModel, ata2, fleetMentionValues } =
+      await this.documentFilters(input, actor);
+    // Directory and leaf lists intersect the same current fleet and raw model scopes.
+    return this.repository.directory({
+      ...scope, search, normalizedFamily, aircraftModel, ata2,
+      ...(fleetMentionValues ? { fleetMentionValues } : {}),
+    });
+  }
+
+  private async documentFilters(
+    input: CanonicalLibraryDocumentsRequest,
+    actor: CanonicalHostActor,
+  ) {
+    const normalizedFamily = filterText(input.normalizedFamily, 96, 'LIBRARY_FAMILY_INVALID');
+    const ata = filterText(input.ata, 96, 'LIBRARY_FILTER_INVALID');
+    const ata2 = filterText(input.ata2, 96, 'LIBRARY_FILTER_INVALID');
+    const ata4 = filterText(input.ata4, 96, 'LIBRARY_FILTER_INVALID');
+    const aircraftModel = filterText(input.aircraftModel, 96, 'LIBRARY_FILTER_INVALID');
+    const fleetFamily = filterText(input.fleetFamily, 96, 'LIBRARY_FLEET_FILTER_INVALID').toUpperCase();
+    const fleetModel = filterText(input.fleetModel, 96, 'LIBRARY_FLEET_FILTER_INVALID').toUpperCase();
+    if (fleetModel && !fleetFamily)
+      throw new BadRequestException('LIBRARY_FLEET_FILTER_INVALID');
+    if ((ata2 && !/^(?:[0-9]{2}|__UNKNOWN__|__RAW__)$/u.test(ata2)) ||
+        (ata4 && !/^(?:[0-9]{2}-[0-9]{2}|__DIRECT__|__UNKNOWN__|__RAW__)$/u.test(ata4)) ||
+        (ata4 === '__DIRECT__' && !/^[0-9]{2}$/u.test(ata2)))
+      throw new BadRequestException('LIBRARY_FILTER_INVALID');
+    let fleetMentionValues: string[] | undefined;
+    let fleetRevision: string[] | undefined;
+    if (fleetFamily) {
+      const catalog = await this.fleetCatalog(actor);
+      if (catalog.status === 'MISSING')
+        throw new ServiceUnavailableException({ code: 'LIBRARY_FLEET_CATALOG_MISSING' });
+      const family = catalog.families.find((item) => item.fleetFamily === fleetFamily);
+      if (!family || (fleetModel && !family.models.includes(fleetModel)))
+        throw new BadRequestException('LIBRARY_FLEET_FILTER_INVALID');
+      const selectedMentions = fleetModel ? [fleetModel] : [family.fleetFamily, ...family.models];
+      fleetMentionValues = [...new Set(selectedMentions.flatMap(libraryAircraftMentionAliases))];
+      fleetRevision = [
+        catalog.source!.sourceSnapshotId, catalog.source!.authorityRevision, catalog.asOf,
+      ];
+    }
+    return { normalizedFamily, ata, ata2, ata4, aircraftModel, fleetFamily,
+      fleetModel, fleetMentionValues, fleetRevision };
   }
 
   async listTasks(
@@ -357,10 +379,15 @@ function listQuery(input: CanonicalLibraryDocumentsRequest, context: string) {
   const limit = input.limit ?? 20;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50)
     throw new BadRequestException('LIBRARY_LIMIT_INVALID');
-  const search = input.search?.trim() ?? '';
-  if (search.length > 200)
-    throw new BadRequestException('LIBRARY_SEARCH_TOO_LONG');
+  const search = filterText(input.search, 200, 'LIBRARY_SEARCH_TOO_LONG');
   return { limit, search, cursor: decodeCursor(input.cursor, search, context) };
+}
+
+function filterText(value: unknown, maximum: number, code: string): string {
+  if (value === undefined) return '';
+  if (typeof value !== 'string' || value.length > maximum || value.includes('\0'))
+    throw new BadRequestException(code);
+  return value.trim();
 }
 
 function encodeCursor(

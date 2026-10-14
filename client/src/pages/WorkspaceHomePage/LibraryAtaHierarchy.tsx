@@ -58,18 +58,22 @@ export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore,
       const titles = node.level === 'ata2' || node.level === 'ata4' ? ataDirectoryTitles(node.key, scheme) : [];
       const leafTitles = [...titles, ...path.filter(segment => segment.startsWith('ata2:'))
         .flatMap(segment => ataDirectoryTitles(segment.slice(5), scheme))];
+      const directItems = node.directItems ?? (!node.children.length ? node.items : []);
       return <details key={node.key} data-reading-key={`ata:${JSON.stringify(key)}`} open={path.length === 0 || Boolean(filters.ata)}>
-        <summary><span className="library-branch-label"><strong>{node.level === 'ata2' || node.level === 'ata4' ? ataDirectoryLabel(node.key, scheme) : node.label}</strong></span>{node.items.length ? <small>{new Set(node.items.map(item => item.document.familyId)).size} 份 · {node.items.length} 版</small> : null}</summary>
+        <summary><span className="library-branch-label"><strong>{node.level === 'ata2' || node.level === 'ata4' ? ataDirectoryLabel(node.key, scheme) : node.label}</strong></span>{node.items.length ? <small>已加载 {new Set(node.items.map(item => item.document.familyId)).size} 份 · {node.items.length} 版</small> : null}</summary>
         {renderNodeActions ? <div className="library-ata-node-actions">{renderNodeActions(node, key)}</div> : null}
-        {node.children.length ? branches(node.children, key) : <ul className="library-ata-navigation-docs">
-          {node.items.map(({ document, version }) => <li key={JSON.stringify([document.familyId, version.documentVersionId])}>
+        {directItems.length ? <>
+          {node.level === 'ata2' ? <p className="suite-ata-note">本级资料（仅有 ATA2，ATA4 未细分）</p> : null}
+          <ul className="library-ata-navigation-docs">
+          {directItems.map(({ document, version }) => <li key={JSON.stringify([document.familyId, version.documentVersionId])}>
             <button type="button" onClick={() => onSelectVersion ? onSelectVersion(document.familyId, version.documentVersionId) : onSelect(document.familyId)}>
               {documentLabel(document)} · {libraryVersionLabel(version)}
             </button>
             {documentReadingRoute ? <Link to={documentReadingRoute(version.documentVersionId)}>阅读</Link>
               : <DocumentVersionLink compact version={version} familyId={document.familyId}>阅读</DocumentVersionLink>}
           </li>)}
-        </ul>}
+        </ul></> : null}
+        {node.children.length ? branches(node.children, key) : null}
         {!node.children.length && (leafTitles.length || node.level === 'ata4') ? <details className="library-ata-node-more">
           <summary>章节来源与范围操作</summary>
           <div className="library-ata-titles">{leafTitles.map(title => <div key={JSON.stringify([title.titleZH, title.titleEN])}>
@@ -94,6 +98,7 @@ export function LibraryAtaHierarchy({ documents, fleetCatalog, filters, hasMore,
       <details className="library-ata-guide"><summary>目录说明</summary>
         <div>
           <p>机型 → ATA2 → ATA4 → 文档版本</p>
+          <p>本树计数为已加载范围内的去重文档数与版本数；父级按文档身份去重，不将各子组简单相加。</p>
           {hasMore ? <p>可在下方加载更多版本。</p> : null}
           <details><summary>章节与机型来源</summary>
             <p>机型提及与 ATA 取自同一文档版本。章节标题来自已收录的 2026-09-10 附件摘录，可展开查看源行；附件版次、机型及 iSpec/JASC 对应关系尚未核验。</p>

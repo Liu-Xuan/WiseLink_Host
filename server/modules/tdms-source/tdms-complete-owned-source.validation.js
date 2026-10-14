@@ -7,6 +7,7 @@ import {
 } from './tdms-own-reference-models';
 import { isNativeReloadProvenance } from './tdms-native-reload-provenance';
 import { assertCompleteOriginalNativeArtifacts } from './tdms-complete-original.validation';
+import { isAssessmentOpinionLabel } from './tdms-assessment-body-policy';
 import {
   parseReviewedAeoOwnBusinessNumber,
   validateReviewedAeoBusinessNumberEvidence,
@@ -1087,8 +1088,9 @@ function validateRoster(read, input) {
     )
       fail('TDMS_COMPLETE_OWN_EDITABLE_FIELD_REJECTED');
     if (
-      !['Approved', '已批准', 'Estimated'].includes(read.owner.stateRaw) &&
-      /评估意见|Assessment Opinion/iu.test(f.value.actualLabel) &&
+      isAssessmentOpinionLabel(f.value.actualLabel) &&
+      (!['SB_ASSESSMENT_FORM', 'ENGINEERING_ASSESSMENT', 'AD_PROCESSING_FORM', 'AD_ITEM'].includes(input.scopeId) ||
+        read.owner.stateRaw !== 'Estimated') &&
       (f.value.state !== 'NOT_APPLICABLE' || f.value.rawValue !== null)
     )
       fail(
@@ -1651,6 +1653,8 @@ export function validateCompleteRelationTable(t, input, owner) {
         actualLabel: c.actualLabel || 'COLUMN_' + i,
         locator: t.panelLocator,
       });
+      if (isAssessmentOpinionLabel(c.actualLabel) && c.rawValue !== null)
+        fail('TDMS_RELATED_ASSESSMENT_BODY_REQUIRES_OWN_ESTIMATED_RECORD');
     }
     array(row.sourceLinks, 30);
     for (const l of row.sourceLinks) {

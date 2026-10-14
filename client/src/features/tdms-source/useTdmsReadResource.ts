@@ -8,6 +8,19 @@ interface TdmsReadState<T> {
   error: string | null;
 }
 
+export function tdmsReadFailureMessage(error: unknown): string {
+  const code: unknown = error && typeof error === 'object' && 'code' in error
+    ? error.code : error instanceof Error ? error.message : null;
+  if (code === 'TDMS_SOURCE_AUTHORIZATION_UNCONFIGURED')
+    return '当前 Host 尚未配置 TDMS 来源读取授权，原始意见暂不可读；请由来源负责人完成已获准的接线。';
+  if (code === 'TDMS_SOURCE_DATABASE_UNCONFIGURED' || code === 'TDMS_SOURCE_REPOSITORY_UNCONFIGURED')
+    return '当前 Host 尚未连接 TDMS 已接收记录，来源阅读暂不可用。';
+  if (code === 'LCM_SOURCE_READING_UNCONFIGURED')
+    return '当前 Host 尚未配置 LCM 快照读取；需要来源负责人连接已获准的快照与读取授权。';
+  return tdmsReadDenied(error) ? '此来源暂不可读取，请重新核对来源与权限。'
+    : '来源读取未完成，请重试；未切换到其他版本。';
+}
+
 export function tdmsReadDenied(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const status = 'statusCode' in error ? Number(error.statusCode)
@@ -46,8 +59,7 @@ export function useTdmsReadResource<T>(
         if (tdmsReadDenied(error)) onDenied();
         // Do not display server error bodies or retain an earlier authorized excerpt.
         setState({ key, generation, value: null, loading: false,
-          error: tdmsReadDenied(error) ? '此来源暂不可读取，请重新核对来源与权限。'
-            : '来源读取未完成，请重试；未切换到其他版本。' });
+          error: tdmsReadFailureMessage(error) });
       });
     }
     return () => { controller.abort(); };

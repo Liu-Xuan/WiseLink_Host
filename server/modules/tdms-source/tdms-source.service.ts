@@ -3,6 +3,17 @@ import type {
   TdmsFileServiceRecordReadResponse,
 } from '@shared/tdms-file-service-import.interface';
 import type { TdmsPackageArtifact } from '@shared/tdms-source.interface';
+import type { TdmsDocumentSourceReadRequest } from '@shared/tdms-source-reading.interface';
+import {
+  readDocumentVersionSources,
+  sourceRecordReadReceipt,
+  sourceRecordReadResponse,
+} from './tdms-document-source-reading';
+import {
+  rejectEmbeddedAssessmentBodies,
+  safeSourceRecordSummary,
+  sourceBodyReadingProjection,
+} from './tdms-assessment-body-policy';
 import { fileServiceImport } from './tdms-file-service-import.validation';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
@@ -451,6 +462,8 @@ export class TdmsSourceService {
     assertPublicActor(actor);
     const context = readContext(contextValue);
     if (after !== undefined) identifier(after);
+    if (context.documentVersionId)
+      await this.documents.assertRead(actor, context.documentVersionId);
     const grants = await this.authorization.catalogue(actor, context);
     if (!grants.length)
       return {
@@ -469,9 +482,23 @@ export class TdmsSourceService {
       for (const grant of grants) {
         this.assertGrant(actor, grant);
         await this.recheck(actor, grant, 'CATALOGUE', context);
-        for (const row of await tx.catalogue(grant.scope)) {
+        // Each scope contributes at most one public page and its lookahead.
+        // The bounded SQL seek runs before record bodies or linked-DM checks.
+        const rows: TdmsStoredRevision[] = await tx.catalogue(grant.scope, {
+          ...(after ? { after } : {}),
+          ...(context.documentVersionId
+            ? { documentVersionId: context.documentVersionId }
+            : {}),
+          limit: 51,
+        });
+        for (const row of rows) {
           if (!sameScope(row.scope, grant.scope))
             throw tdmsError('TDMS_STORED_SCOPE_MISMATCH', 409);
+          if (
+            context.documentVersionId &&
+            !row.record.relatedDocumentVersionIds.includes(context.documentVersionId)
+          )
+            continue;
           await this.assertRelatedDocuments(actor, row.record);
           records.push(summary(row.record));
         }
@@ -498,6 +525,8 @@ export class TdmsSourceService {
     });
     for (const id of result.documentVersionIds)
       await this.documents.assertRead(actor, id);
+    if (context.documentVersionId)
+      await this.documents.assertRead(actor, context.documentVersionId);
     for (const g of grants) await this.recheck(actor, g, 'CATALOGUE', context);
     return result.response;
   }
@@ -520,11 +549,9 @@ export class TdmsSourceService {
         context,
       );
       await this.assertRelatedDocuments(actor, row.stored.record);
-      const receipt = this.receipt(
-        ref,
-        'WIKI_NATIVE_RECORD',
-        row.grant,
-        context,
+      const receipt = sourceRecordReadReceipt(
+        row.stored.record,
+        this.receipt(ref, 'WIKI_NATIVE_RECORD', row.grant, context),
       );
       await this.recheck(actor, row.grant, 'READ_RECORD', context);
       await tx.saveReceipt({
@@ -536,29 +563,24 @@ export class TdmsSourceService {
       await this.recheck(actor, row.grant, 'READ_RECORD', context);
       return {
         grant: row.grant,
-        response: {
-          record: row.stored.record,
-          selectedFields: null,
-          ...(row.stored.attachmentAcquisitions?.length
-            ? {
-                attachmentAcquisitions: row.stored.attachmentAcquisitions.map(
-                  (fact) => ({
-                    ...fact,
-                    currentSourcePermissionChecked: true as const,
-                    semanticReadPerformed: false as const,
-                    engineeringExecutionVerified: false as const,
-                  }),
-                ),
-              }
-            : {}),
-          receipt,
-          limitations: [...LIMITATIONS],
-        } as TdmsFileServiceRecordReadResponse,
+        response: sourceRecordReadResponse(row.stored, receipt, LIMITATIONS),
       };
     });
     await this.assertRelatedDocuments(actor, result.response.record);
     await this.recheck(actor, result.grant, 'READ_RECORD', context);
     return result.response;
+  }
+  readDocumentVersion(actor: TdmsPublicActor, input: TdmsDocumentSourceReadRequest) {
+    return readDocumentVersionSources(actor, input, {
+      repository: this.repository,
+      authorization: this.authorization,
+      documents: this.documents,
+      assertGrant: (grant: TdmsSourceGrant, scope?: TdmsSourceScope) => this.assertGrant(actor, grant, scope),
+      recheck: (grant: TdmsSourceGrant, context: TdmsReadContext) => this.recheck(actor, grant, 'READ_RECORD', context),
+      receipt: (ref: string, grant: TdmsSourceGrant, context: TdmsReadContext) =>
+        this.receipt(ref, 'WIKI_NATIVE_RECORD', grant, context),
+      limitations: LIMITATIONS,
+    });
   }
   async history(
     actor: TdmsPublicActor,
@@ -666,6 +688,8 @@ export class TdmsSourceService {
       }> = [];
       for (const row of await tx.relations(actor.tenantId, ref)) {
         if (!sameScope(row.scope, root.grant.scope)) continue;
+        rejectEmbeddedAssessmentBodies(row.assertion.rawFields);
+        rejectEmbeddedAssessmentBodies(row.assertion.scope);
         // Both exact endpoints must be freshly readable. Denied neighbors do not leak titles/counts/adjacency.
         const endpoints: TdmsEndpointReadDependency[] = [];
         try {
@@ -1309,8 +1333,9 @@ export class TdmsSourceService {
       stored.record.recordKind,
       stored.record.sourceRecordId,
     );
+    const projection = sourceBodyReadingProjection(stored.record);
     stored.record = {
-      ...stored.record,
+      ...projection.record,
       selectedHead: head?.sourceRevisionRef === ref,
     };
     return { stored, grant };
@@ -1434,28 +1459,7 @@ function recordContent(
   };
 }
 function summary(r: TdmsRecordRevision): TdmsRecordSummary {
-  const {
-    captureRef,
-    sourceModifiedAt,
-    rawFields,
-    content,
-    fieldProvenance,
-    artifacts,
-    unreadAttachments,
-    selectedHead,
-    ...s
-  } = r;
-  void [
-    captureRef,
-    sourceModifiedAt,
-    rawFields,
-    content,
-    fieldProvenance,
-    artifacts,
-    unreadAttachments,
-    selectedHead,
-  ];
-  return s;
+  return safeSourceRecordSummary(r);
 }
 
 function isHiddenDocument(error: unknown): boolean {

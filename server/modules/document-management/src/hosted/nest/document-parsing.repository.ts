@@ -28,6 +28,10 @@ export interface DocumentParseScope {
   automaticWorkItem?: DocumentAutomaticWorkItemFence;
 }
 export type DocumentParseRow = typeof dmDocumentParseRun.$inferSelect;
+/** Service-readable admission locator only; it is never source/actor authority. */
+export interface DocumentLocalWorkerBrowserAdmission {
+  tenantId: string; parseRunId: string; actorUserId: string; documentVersionId: string;
+}
 /** Internal only: never expose this receipt in artifact or reading projections. */
 export function documentLocalWorkerReceipt(run: DocumentParseRow) {
   return run.artifactProgress.find(item => item.relativePath === 'raw/mineru-candidate.json')?.localWorkerReceipt;
@@ -48,6 +52,27 @@ export function documentParseError(code: string, statusCode = 409) {
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class DocumentParsingRepository {
   constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase, private readonly leases: DocumentStepLeaseRepository) {}
+
+  async listLocalWorkerBrowserAdmissions(input: {
+    tenantId: string; parseRunId?: string; afterParseRunId?: string; limit?: number;
+  }): Promise<DocumentLocalWorkerBrowserAdmission[]> {
+    const limit = input.limit ?? 50;
+    if (!input.tenantId.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+        (input.parseRunId !== undefined && (!/^PRUN-[A-Za-z0-9-]{1,90}$/u.test(input.parseRunId) || input.afterParseRunId !== undefined)) ||
+        (input.afterParseRunId !== undefined && !/^PRUN-[A-Za-z0-9-]{1,90}$/u.test(input.afterParseRunId)))
+      throw documentParseError('DOCUMENT_LOCAL_WORKER_ARGUMENT_INVALID', 400);
+    const rows = await this.db.execute<DocumentLocalWorkerBrowserAdmission & Record<string, unknown>>(sql`
+      SELECT tenant_id AS "tenantId", parse_run_id AS "parseRunId", actor_user_id AS "actorUserId",
+        document_version_id AS "documentVersionId"
+      FROM local_mineru_browser_admissions(${input.tenantId},${input.parseRunId ?? null},${input.afterParseRunId ?? null},${limit})`);
+    if (rows.length > limit || rows.some(row => row.tenantId !== input.tenantId ||
+        !/^PRUN-[A-Za-z0-9-]{1,90}$/u.test(row.parseRunId) ||
+        typeof row.actorUserId !== 'string' || !row.actorUserId.trim() || row.actorUserId.length > 255 || /[\r\n\0]/u.test(row.actorUserId) ||
+        !/^[A-Za-z0-9:_-]{1,96}$/u.test(row.documentVersionId) ||
+        (input.parseRunId !== undefined && row.parseRunId !== input.parseRunId)))
+      throw documentParseError('DOCUMENT_LOCAL_WORKER_DISPATCH_BINDING_INVALID', 403);
+    return [...rows];
+  }
 
   async listLocalWorkerCandidates(tenantId: string, limit: number, scope: DocumentParseScope,
     includeSavedCandidate = false): Promise<DocumentParseRow[]> {
@@ -115,6 +140,9 @@ export class DocumentParsingRepository {
   }
 
   async current(scope: DocumentParseScope) {
+    // Same hard-deadline archive as reserve, restricted to the current actor.
+    // Status reads never extend an attempt or discard its lease/source/artifacts.
+    await this.expireInterruptedRuns(scope, this.db);
     const rows = await this.db.select().from(dmDocumentParseRun).where(scoped(scope))
       .orderBy(desc(dmDocumentParseRun.parseRevision));
     return { latest: rows[0] ?? null, published: rows.find(row => row.status === 'PUBLISHED') ?? null };
@@ -189,10 +217,7 @@ export class DocumentParsingRepository {
             or(isNull(dmDocumentParseRun.leaseExpiresAt), lte(dmDocumentParseRun.leaseExpiresAt, new Date()))));
       }
       // A hard processing deadline bounds interrupted runs. It is never extended by retrying a request.
-      await tx.update(dmDocumentParseRun).set({ status: 'FAILED',
-        errorCode: sql`coalesce(${dmDocumentParseRun.errorCode}, 'DOCUMENT_PARSE_INTERRUPTED')`, completedAt: new Date() })
-        .where(and(scoped(scope), eq(dmDocumentParseRun.actorUserId, scope.actorUserId),
-          inArray(dmDocumentParseRun.status, [...ACTIVE]), lte(dmDocumentParseRun.deadlineAt, new Date())));
+      await this.expireInterruptedRuns(scope, tx);
       const rows = await tx.select().from(dmDocumentParseRun).where(scoped(scope)).orderBy(desc(dmDocumentParseRun.parseRevision));
       if (rows.some(row => ACTIVE.includes(row.status as typeof ACTIVE[number]))) throw documentParseError('DOCUMENT_PARSE_ALREADY_RUNNING');
       const publishedRevision = rows.find(row => row.status === 'PUBLISHED')?.parseRevision ?? 0;
@@ -204,6 +229,14 @@ export class DocumentParsingRepository {
       if (!row) throw documentParseError('DOCUMENT_PARSE_RESERVATION_FAILED', 500);
       return { row, created: true };
     });
+  }
+
+  private expireInterruptedRuns(scope: DocumentParseScope, database: Pick<PostgresJsDatabase, 'update'>) {
+    const now = new Date();
+    return database.update(dmDocumentParseRun).set({ status: 'FAILED',
+      errorCode: sql`coalesce(${dmDocumentParseRun.errorCode}, 'DOCUMENT_PARSE_INTERRUPTED')`, completedAt: now })
+      .where(and(scoped(scope), eq(dmDocumentParseRun.actorUserId, scope.actorUserId),
+        inArray(dmDocumentParseRun.status, [...ACTIVE]), lte(dmDocumentParseRun.deadlineAt, now)));
   }
 
   async stage(scope: DocumentParseScope, parseRunId: string, fence: DocumentStepFence) {

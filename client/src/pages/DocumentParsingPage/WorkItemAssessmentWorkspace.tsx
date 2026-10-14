@@ -24,7 +24,6 @@ export default function WorkItemAssessmentWorkspace({
         <div>
           <p>当前事项 · {documentCode}</p>
           <h1>综合评估</h1>
-          <span>先读当前判断，再核对决定性条件、来源和保存范围。</span>
         </div>
         <div className="wl-assessment-heading-actions">
           <Button type="button" variant="outline" onClick={onOpenProcess}>

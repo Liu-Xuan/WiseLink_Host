@@ -18,6 +18,9 @@ import { LibraryMetadata } from './LibraryMetadata';
 import type { useLibraryQuicklook } from './useLibraryQuicklook';
 import LinkDocumentMatterMaterial from '@client/src/features/matter/LinkDocumentMatterMaterial';
 import { useLibraryPaneScroll } from './useLibraryPaneScroll';
+import { libraryDocumentSelection } from './library-document-selection';
+import { LibraryDocumentSourceDialog } from './LibraryDocumentSourceDialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@client/src/components/ui/select';
 import {
   byteLabel,
   documentIdentityPresentation,
@@ -46,17 +49,13 @@ export function LibraryDocumentDetails({
   selectionPending = false,
 }: LibraryDocumentDetailsProps) {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [baseline, setBaseline] = useState('');
   const [compare, setCompare] = useState('');
   const [revisionNote, setRevisionNote] = useState<string | null>(null);
   const paneScroll = useLibraryPaneScroll<HTMLDivElement>('quicklookY', Boolean(document), getCanonicalHostClientSessionGeneration());
-  const selectedVersionPin = searchParams.get('selectedDocumentVersionId');
-  const selectedVersion = searchParams.has('selectedDocumentVersionId')
-    ? searchParams.getAll('selectedDocumentVersionId').length === 1
-      ? document?.versions.find(version => version.documentVersionId === selectedVersionPin)
-      : undefined
-    : document?.versions.find(version => version.selectedVersionIsCurrent);
+  const selection = libraryDocumentSelection(document, searchParams);
+  const selectedVersion = selection.version;
   const selectedReading = selectedVersion
     ? projectLibraryDocumentReading(selectedVersion)
     : null;
@@ -74,6 +73,16 @@ export function LibraryDocumentDetails({
   const selectedIdentity = document ? documentIdentityPresentation({ documentCode: document.documentCode,
     extractedMetadata: selectedVersion?.extractedMetadata }) : null;
   const selectedPublication = libraryPublicationPresentation(selectedVersion ?? null);
+
+  const selectVersion = (documentVersionId: string): void => {
+    if (!document) return;
+    const next: URLSearchParams = new URLSearchParams(searchParams);
+    next.set('familyId', document.familyId);
+    next.set('selectedDocumentVersionId', documentVersionId);
+    next.delete('workItemId');
+    next.delete('quicklookY');
+    setSearchParams(next);
+  };
 
   useEffect(() => {
     if (!document) {
@@ -139,6 +148,15 @@ export function LibraryDocumentDetails({
               <h3>{selectedIdentity?.hasDocumentTitle ? selectedIdentity.documentTitle : selectedIdentity?.documentNumber}</h3>
             </div>
           </header>
+          <div className="library-source-version-picker">
+            <label htmlFor="library-selected-business-version">业务版次</label>
+            <Select value={selectedVersion?.documentVersionId ?? ''} onValueChange={selectVersion}>
+              <SelectTrigger id="library-selected-business-version"><SelectValue placeholder="请选择准确版本" /></SelectTrigger>
+              <SelectContent>{document.versions.map(version => <SelectItem key={version.documentVersionId} value={version.documentVersionId}>
+                {version.businessRevision || '版次未标注'} · {version.selectedVersionIsCurrent ? '当前登记' : '历史'}
+              </SelectItem>)}</SelectContent>
+            </Select>
+          </div>
           {selectedVersion && selectedReading ? <section className="library-selected-version" data-document-version-id={selectedVersion.documentVersionId}>
             <dl className="suite-library-key-facts">
               {selectedIdentity?.documentTitle !== selectedIdentity?.documentNumber && selectedIdentity?.hasDocumentTitle
@@ -147,6 +165,7 @@ export function LibraryDocumentDetails({
               <div><dt>颁发时间</dt><dd>{selectedPublication.issueDate}</dd></div>
               <div><dt>ATA</dt><dd>{selectedPublication.ata}</dd></div>
             </dl>
+            <LibraryDocumentSourceDialog document={document} version={selectedVersion} onSelectVersion={selectVersion} />
             <h4>{!selectedReading.brief && assessmentBrief ? '关联评估短认识' : '摘要'}</h4>
             {selectedReading.brief ? (
               <div
@@ -163,9 +182,11 @@ export function LibraryDocumentDetails({
                   </details>
                 ) : null}
               </div>
-            ) : !assessmentBrief ? (
-              <p>{selectedReading.note}</p>
-            ) : null}
+            ) : (
+              <p>{selectedReading.note || (selectedReading.status === 'NOT_GENERATED'
+                ? '文档自身解读尚未生成；关联评估单独显示。'
+                : '文档自身解读状态尚待核对。')}</p>
+            )}
             {!selectedReading.brief && selectedVersion.readerWorkItemId ? (
               <section className="library-quicklook-assessment" aria-label="同版本已保存评估">
                 {!assessmentBrief ? <h4>关联工程评估</h4> : null}
@@ -214,7 +235,9 @@ export function LibraryDocumentDetails({
             ) : null}
             <DocumentVersionLink version={selectedVersion} familyId={document.familyId}>进入精读工作台</DocumentVersionLink>
             <Link to={`/graph?${documentGraphReadingParams(selectedVersion.documentVersionId, selectedVersion.readerWorkItemId || undefined, {})}`}>文档关系图谱与时间</Link>
-          </section> : <p role="status">所选版本未在当前读取范围内返回，未替换为其他版本。</p>}
+          </section> : <p role="status">{selection.status === 'CURRENT_UNCONFIRMED'
+            ? '当前可用版本尚待确认，请从历史版本中明确选择。'
+            : '所选版本未在当前读取范围内返回，未替换为其他版本。'}</p>}
           {linkMatterId ? (
             <LinkDocumentMatterMaterial
               key={`${linkMatterId}:${document.familyId}`}

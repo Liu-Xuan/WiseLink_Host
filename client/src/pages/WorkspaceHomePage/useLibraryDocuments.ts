@@ -28,6 +28,8 @@ export function useLibraryDocuments(
   const normalizedFamily =
     mode === 'document' ? (filters.normalizedFamily ?? '') : '';
   const ata = mode === 'document' ? (filters.ata ?? '') : '';
+  const ata2 = mode === 'document' ? (filters.ata2 ?? '') : '';
+  const ata4 = mode === 'document' ? (filters.ata4 ?? '') : '';
   const aircraftModel =
     mode === 'document' ? (filters.aircraftModel ?? '') : '';
   const [read, setRead] = useState<LibraryDocumentsRead | null>(null);
@@ -58,6 +60,8 @@ export function useLibraryDocuments(
         error: null,
         normalizedFamily,
         ata,
+        ata2,
+        ata4,
         aircraftModel,
         fleetFamily,
         fleetModel,
@@ -78,6 +82,8 @@ export function useLibraryDocuments(
             ...(mode === 'tasks' && familyId ? { familyId } : {}),
             ...(normalizedFamily ? { normalizedFamily } : {}),
             ...(ata ? { ata } : {}),
+            ...(ata2 ? { ata2 } : {}),
+            ...(ata4 ? { ata4 } : {}),
             ...(aircraftModel ? { aircraftModel } : {}),
             ...(fleetFamily ? { fleetFamily } : {}),
             ...(fleetModel ? { fleetModel } : {}),
@@ -114,6 +120,8 @@ export function useLibraryDocuments(
       enabled,
       normalizedFamily,
       ata,
+      ata2,
+      ata4,
       aircraftModel,
       fleetFamily,
       fleetModel,
@@ -136,6 +144,8 @@ export function useLibraryDocuments(
     read.familyId === familyId &&
     (read.normalizedFamily ?? '') === normalizedFamily &&
     (read.ata ?? '') === ata &&
+    (read.ata2 ?? '') === ata2 &&
+    (read.ata4 ?? '') === ata4 &&
     (read.aircraftModel ?? '') === aircraftModel &&
     (read.fleetFamily ?? '') === fleetFamily &&
     (read.fleetModel ?? '') === fleetModel

@@ -8,6 +8,8 @@ const LIBRARY_FILTERS = [
   'search',
   'normalizedFamily',
   'ata',
+  'ata2',
+  'ata4',
   'aircraftModel',
   'fleetFamily',
   'fleetModel',

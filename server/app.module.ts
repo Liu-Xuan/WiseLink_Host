@@ -1,4 +1,5 @@
 import { TdmsSourceModule } from './modules/tdms-source/tdms-source.module';
+import { LcmSourceReadingModule } from './modules/lcm-export-staging/lcm-source-reading.module';
 import { APP_FILTER } from '@nestjs/core';
 import { Module } from '@nestjs/common';
 import { PlatformModule } from '@lark-apaas/fullstack-nestjs-core';
@@ -109,6 +110,7 @@ import { S1000dXmlStructuredPackageProducerAdapter } from './modules/s1000d-ingr
     CanonicalModelSettingsModule,
     ReviewPersistenceModule,
     TdmsSourceModule,
+    LcmSourceReadingModule,
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last

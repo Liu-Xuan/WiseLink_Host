@@ -79,7 +79,8 @@ export function LibraryClassificationControls({
                 className="library-facet-choice"
                 disabled={disabled}
                 aria-pressed={!filters[facet.key]}
-                onClick={() => onFilterChange({ ...filters, [facet.key]: '' })}
+                onClick={() => onFilterChange({ ...filters, [facet.key]: '',
+                  ...(facet.key === 'ata' ? { ata2: '', ata4: '' } : {}) })}
               >
                 不限
               </Button>
@@ -98,7 +99,8 @@ export function LibraryClassificationControls({
                       className="library-facet-choice"
                       aria-pressed={filters[facet.key] === value}
                       onClick={() =>
-                        onFilterChange({ ...filters, [facet.key]: value })
+                        onFilterChange({ ...filters, [facet.key]: value,
+                          ...(facet.key === 'ata' ? { ata2: '', ata4: '' } : {}) })
                       }
                     >
                       {value === LIBRARY_UNCLASSIFIED ? '未分类' : value}
@@ -122,7 +124,7 @@ export function LibraryClassificationControls({
         ))}
         <LibraryFleetControls fleet={fleet} filters={filters} onFilterChange={onFilterChange} disabled={disabled} />
         {Object.values(filters).some(Boolean) ? <Button type="button" variant="ghost" size="sm" className="library-clear-facets"
-          disabled={disabled} onClick={() => onFilterChange({})}>清除三项筛选（保留搜索）</Button> : null}
+          disabled={disabled} onClick={() => onFilterChange({})}>清除资料分类筛选（保留搜索）</Button> : null}
       </details>
     </section>
   );

@@ -45,6 +45,10 @@ export default function EngineeringQuicklook({
     'idle',
   );
 
+  const hasSavedAssessment = Boolean(
+    quicklook?.readingResult || quicklook?.resultIdentity,
+  );
+
   async function copyQuicklook(): Promise<void> {
     if (!quicklook) return;
     try {
@@ -103,50 +107,67 @@ export default function EngineeringQuicklook({
           <header className="library-quicklook-title">
             <div>
               <h3>{title}</h3>
-              <p>
-                {quicklook.authorityLabel} · {quicklook.freshnessLabel}
-              </p>
+              {hasSavedAssessment ? (
+                <p>
+                  {[quicklook.authorityLabel, quicklook.freshnessLabel]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              ) : null}
             </div>
-            <span className="library-quicklook-boundary">工程辅助</span>
           </header>
 
-          {quicklook.sourceReadNote ? (
+          {hasSavedAssessment && quicklook.sourceReadNote ? (
             <p className="library-quicklook-note">{quicklook.sourceReadNote}</p>
           ) : null}
 
-          {quicklook.readingResult ? (
+          {!hasSavedAssessment ? (
+            <div className="library-quicklook-empty" role="status">
+              <FileSearch2 aria-hidden="true" />
+              <strong>暂无已保存评估</strong>
+            </div>
+          ) : quicklook.readingResult ? (
             <SavedAssessmentReading
               result={quicklook.readingResult}
               onLocateDocument={onLocateDocument}
             />
           ) : (
             <>
-              <section className="library-quicklook-judgment">
-                <span>
-                  <Sparkles aria-hidden="true" /> 当前候选判断
-                </span>
-                <p>{quicklook.currentJudgment}</p>
-              </section>
+              {quicklook.currentJudgment ? (
+                <section className="library-quicklook-judgment">
+                  <span>
+                    <Sparkles aria-hidden="true" /> 当前判断
+                  </span>
+                  <p>{quicklook.currentJudgment}</p>
+                </section>
+              ) : null}
 
-              <dl className="library-quicklook-facts">
-                <div>
-                  <dt>适用范围</dt>
-                  <dd>{quicklook.applicabilitySummary}</dd>
-                </div>
-                <div>
-                  <dt>为什么需要关注</dt>
-                  <dd>{quicklook.whyItMatters}</dd>
-                </div>
-              </dl>
-
-              <section className="library-quicklook-section">
-                <h3>
-                  <Link2 aria-hidden="true" /> 关键依据
-                  {typeof quicklook.sourceCount === 'number' ? (
-                    <small>{quicklook.sourceCount} 条来源</small>
+              {quicklook.applicabilitySummary || quicklook.whyItMatters ? (
+                <dl className="library-quicklook-facts">
+                  {quicklook.applicabilitySummary ? (
+                    <div>
+                      <dt>适用范围</dt>
+                      <dd>{quicklook.applicabilitySummary}</dd>
+                    </div>
                   ) : null}
-                </h3>
-                {quicklook.keyEvidence.length > 0 ? (
+                  {quicklook.whyItMatters ? (
+                    <div>
+                      <dt>为什么需要关注</dt>
+                      <dd>{quicklook.whyItMatters}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              ) : null}
+
+              {quicklook.keyEvidence.length > 0 ? (
+                <section className="library-quicklook-section">
+                  <h3>
+                    <Link2 aria-hidden="true" /> 关键依据
+                    {typeof quicklook.sourceCount === 'number' ? (
+                      <small>{quicklook.sourceCount} 条来源</small>
+                    ) : null}
+                  </h3>
+
                   <ul>
                     {quicklook.keyEvidence.map((evidence, index: number) => (
                       <li key={`statement:${index}`}>
@@ -166,18 +187,15 @@ export default function EngineeringQuicklook({
                       </li>
                     ))}
                   </ul>
-                ) : (
-                  <p className="library-quicklook-missing">
-                    当前未返回可定位的关键依据。
-                  </p>
-                )}
-              </section>
+                </section>
+              ) : null}
 
-              <section className="library-quicklook-section is-warning">
-                <h3>
-                  <AlertTriangle aria-hidden="true" /> 未决问题
-                </h3>
-                {quicklook.unresolvedQuestions.length > 0 ? (
+              {quicklook.unresolvedQuestions.length > 0 ? (
+                <section className="library-quicklook-section is-warning">
+                  <h3>
+                    <AlertTriangle aria-hidden="true" /> 未决问题
+                  </h3>
+
                   <ul>
                     {quicklook.unresolvedQuestions.map(
                       (question: string, index: number) => (
@@ -185,18 +203,15 @@ export default function EngineeringQuicklook({
                       ),
                     )}
                   </ul>
-                ) : (
-                  <p className="library-quicklook-missing">
-                    当前没有明确返回的未决问题。
-                  </p>
-                )}
-              </section>
+                </section>
+              ) : null}
 
-              <section className="library-quicklook-section is-next">
-                <h3>
-                  <Check aria-hidden="true" /> 建议下一步
-                </h3>
-                {quicklook.recommendedActions.length > 0 ? (
+              {quicklook.recommendedActions.length > 0 ? (
+                <section className="library-quicklook-section is-next">
+                  <h3>
+                    <Check aria-hidden="true" /> 建议下一步
+                  </h3>
+
                   <ol>
                     {quicklook.recommendedActions.map(
                       (action: string, index: number) => (
@@ -204,37 +219,33 @@ export default function EngineeringQuicklook({
                       ),
                     )}
                   </ol>
-                ) : (
-                  <p className="library-quicklook-missing">
-                    可阅读原文，或继续进入复核查看已保存状态。
-                  </p>
-                )}
-              </section>
+                </section>
+              ) : null}
             </>
           )}
-          <details className="library-quicklook-family">
-            <summary>当前版本／派生产物</summary>
-            <dl>
-              <div>
-                <dt>当前版本</dt>
-                <dd>{quicklook.currentVersionLabel ?? 'Host 未返回'}</dd>
-              </div>
-              <div>
-                <dt>派生产物</dt>
-                <dd>
-                  {quicklook.derivedArtifactCount === null
-                    ? 'Host 未返回'
-                    : `${quicklook.derivedArtifactCount} 项`}
-                </dd>
-              </div>
-            </dl>
-            <p>
-              仅显示本次授权读取返回的版本与派生产物；不推断附件、历史版本或外部关联资料。
-            </p>
-            <Button type="button" variant="outline" onClick={onOpenFamily}>
-              打开当前资料 <ArrowRight aria-hidden="true" />
-            </Button>
-          </details>
+          {quicklook.currentVersionLabel ||
+          quicklook.derivedArtifactCount !== null ? (
+            <details className="library-quicklook-family">
+              <summary>当前版本／派生产物</summary>
+              <dl>
+                {quicklook.currentVersionLabel ? (
+                  <div>
+                    <dt>当前版本</dt>
+                    <dd>{quicklook.currentVersionLabel}</dd>
+                  </div>
+                ) : null}
+                {quicklook.derivedArtifactCount !== null ? (
+                  <div>
+                    <dt>派生产物</dt>
+                    <dd>{quicklook.derivedArtifactCount} 项</dd>
+                  </div>
+                ) : null}
+              </dl>
+              <Button type="button" variant="outline" onClick={onOpenFamily}>
+                打开当前资料 <ArrowRight aria-hidden="true" />
+              </Button>
+            </details>
+          ) : null}
 
           <div className="library-quicklook-actions">
             <Button type="button" onClick={onOpenWorkbench}>
@@ -243,22 +254,27 @@ export default function EngineeringQuicklook({
             <Button type="button" variant="outline" onClick={onContinueReview}>
               继续复核
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => void copyQuicklook()}
-            >
-              <ClipboardCopy aria-hidden="true" />
-              {copyState === 'copied'
-                ? '已复制'
-                : copyState === 'error'
-                  ? '复制不可用'
-                  : '结构化复制'}
-            </Button>
+            {!quicklook.currentVersionLabel &&
+            quicklook.derivedArtifactCount === null ? (
+              <Button type="button" variant="outline" onClick={onOpenFamily}>
+                打开当前资料 <ArrowRight aria-hidden="true" />
+              </Button>
+            ) : null}
+            {hasSavedAssessment ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => void copyQuicklook()}
+              >
+                <ClipboardCopy aria-hidden="true" />
+                {copyState === 'copied'
+                  ? '已复制'
+                  : copyState === 'error'
+                    ? '复制不可用'
+                    : '结构化复制'}
+              </Button>
+            ) : null}
           </div>
-          <p className="library-quicklook-note">
-            候选摘要仅用于辅助工程判断，不会自动确认、批准或发布。
-          </p>
         </div>
       )}
     </aside>

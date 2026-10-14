@@ -194,11 +194,8 @@ export function buildEngineeringQuicklook(
     authorityLabel: AUTHORITY_LABELS[view.authority],
     freshnessLabel: FRESHNESS_LABELS[view.freshness],
     currentJudgment:
-      readingResult?.content.headline ??
-      overall?.conclusion?.text ??
-      '当前资料尚未返回可直接使用的工程摘要，可先进入工作台查看结构化内容与原文。',
-    applicabilitySummary:
-      applicabilityStatements.join(' ') || '当前未返回适用范围摘要。',
+      readingResult?.content.headline ?? overall?.conclusion?.text ?? '',
+    applicabilitySummary: applicabilityStatements.join(' '),
     whyItMatters: firstNonEmpty(
       overall?.whyItMatters
         .map((statement: EngineeringStatementView) => statement.text)
@@ -206,7 +203,6 @@ export function buildEngineeringQuicklook(
       overall?.implementationImpact
         .map((statement: EngineeringStatementView) => statement.text)
         .join('\n\n'),
-      '当前未返回风险或影响摘要。',
     ),
     keyEvidence: evidenceStatements.map(statementEvidence),
     unresolvedQuestions,
@@ -220,9 +216,7 @@ export function buildEngineeringQuicklook(
     derivedArtifactCount: countQuicklookDerivedArtifacts(
       page.relatedDocuments.relations,
     ),
-    sourceReadNote: preferProblem
-      ? '这里展示已保存的问题认识；整体意见尚未形成或基于不同工作版本，不与新分析拼接。'
-      : undefined,
+    sourceReadNote: preferProblem ? '整体意见待更新' : undefined,
   };
 }
 
@@ -295,22 +289,19 @@ export function buildLibraryEngineeringQuicklook(
         ? '分析进行中 · 已保存工作'
         : result
           ? '已保存候选意见'
-          : '尚无候选意见',
-    freshnessLabel:
-      result?.status === 'STALE' ? '结论需更新' : '来源范围见依据',
+          : '',
+    freshnessLabel: result?.status === 'STALE' ? '结论需更新' : '',
     currentJudgment: firstNonEmpty(
       result?.readingResult?.content.headline,
       summary?.conclusion.text,
       result?.overallCandidate,
-      '当前资料尚无已保存的工程摘要，可进入工作台查看解析与评估进度。',
     ),
-    applicabilitySummary:
-      [
-        summary?.applicability.sourceScope.text,
-        summary?.applicability.fleetMatch.text,
-      ]
-        .filter(Boolean)
-        .join(' ') || '当前未返回适用范围摘要。',
+    applicabilitySummary: [
+      summary?.applicability.sourceScope.text,
+      summary?.applicability.fleetMatch.text,
+    ]
+      .filter(Boolean)
+      .join(' '),
     whyItMatters: firstNonEmpty(
       summary?.whyItMatters
         .map((statement: EngineeringStatementView) => statement.text)
@@ -318,7 +309,6 @@ export function buildLibraryEngineeringQuicklook(
       summary?.implementationImpact
         .map((statement: EngineeringStatementView) => statement.text)
         .join('\n\n'),
-      '当前未返回风险或影响摘要。',
     ),
     keyEvidence: evidenceStatements.map(statementEvidence),
     unresolvedQuestions,
@@ -331,8 +321,8 @@ export function buildLibraryEngineeringQuicklook(
       null,
     derivedArtifactCount: null,
     sourceReadNote: result?.jobAidRoundCompletion
-      ? `${result.jobAidRoundCompletion === 'IN_PROGRESS' ? '本轮分析尚未完成。' : result.jobAidRoundCompletion === 'COMPLETE_WITH_OPEN_QUESTIONS' ? '本轮分析完成，待确认事项仍保持开放。' : '本轮分析完成。'}${result.overallStatus === 'STALE' ? '整体意见基于较早工作版本；这里展示最新已保存认识。' : ''}原文核验范围与关键条件可在具体判断中查看。`
-      : '摘要来自已保存的评估结果；打开依据可核对其来源与范围。',
+      ? `${result.jobAidRoundCompletion === 'IN_PROGRESS' ? '本轮分析进行中' : result.jobAidRoundCompletion === 'COMPLETE_WITH_OPEN_QUESTIONS' ? '本轮分析完成，有待确认事项' : '本轮分析完成'}${result.overallStatus === 'STALE' ? ' · 整体意见待更新' : ''}`
+      : undefined,
   };
 }
 
@@ -366,32 +356,32 @@ export function quicklookMarkdown(
       ]),
     ].join('\n');
   }
-  const list = (items: string[]): string =>
-    items.length > 0
-      ? items.map((item: string) => `- ${item}`).join('\n')
-      : '- 当前未返回';
+  const sections: Array<[string, string]> = [
+    ['当前判断', quicklook.currentJudgment],
+    ['适用范围', quicklook.applicabilitySummary],
+    ['为什么需要关注', quicklook.whyItMatters],
+    [
+      '关键依据',
+      quicklook.keyEvidence.map((evidence) => `- ${evidence.label}`).join('\n'),
+    ],
+    [
+      '未决问题',
+      quicklook.unresolvedQuestions.map((item) => `- ${item}`).join('\n'),
+    ],
+    [
+      '建议下一步',
+      quicklook.recommendedActions.map((item) => `- ${item}`).join('\n'),
+    ],
+  ];
+  const labels = [quicklook.authorityLabel, quicklook.freshnessLabel]
+    .filter(Boolean)
+    .join(' · ');
   return [
     `# ${title}`,
-    '',
-    `> ${quicklook.authorityLabel} · ${quicklook.freshnessLabel}`,
+    ...(labels ? ['', `> ${labels}`] : []),
     ...(quicklook.sourceReadNote ? ['', quicklook.sourceReadNote] : []),
-    '',
-    '## 当前判断',
-    quicklook.currentJudgment,
-    '',
-    '## 适用范围',
-    quicklook.applicabilitySummary,
-    '',
-    '## 为什么需要关注',
-    quicklook.whyItMatters,
-    '',
-    '## 关键依据',
-    list(quicklook.keyEvidence.map((evidence) => evidence.label)),
-    '',
-    '## 未决问题',
-    list(quicklook.unresolvedQuestions),
-    '',
-    '## 建议下一步',
-    list(quicklook.recommendedActions),
+    ...sections
+      .filter(([, content]) => content.trim())
+      .flatMap(([heading, content]) => ['', `## ${heading}`, content]),
   ].join('\n');
 }

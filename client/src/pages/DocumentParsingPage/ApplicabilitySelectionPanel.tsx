@@ -177,10 +177,6 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
           <div>
             <span>系统自动评估</span>
             <h2>适用性范围</h2>
-            <p>
-              初始分析由 Host
-              自动冻结评估对象、时点和受控构型事实，不要求工程师先填写或确认。
-            </p>
           </div>
         </div>
         <div className="applicability-selection-statuses">
@@ -204,7 +200,6 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
           >
             {presentation.sourceLabel}
           </Badge>
-          <Badge variant="outline">缺失事实保持 UNKNOWN</Badge>
         </div>
       </header>
 
@@ -261,7 +256,9 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
                   : '事件源状态不可用'}
           </Badge>
         </div>
-        <p>{configurationEvidenceGuidance(evidenceStatus)}</p>
+        {evidenceStatus?.latestQuery ? (
+          <p>{configurationEvidenceGuidance(evidenceStatus)}</p>
+        ) : null}
         {evidenceStatus?.latestQuery ? (
           <dl className="configuration-evidence-query-summary">
             <div>
@@ -425,7 +422,7 @@ function configurationEvidenceGuidance(
 ): string {
   const latest = status?.latestQuery;
   if (!status || !latest) {
-    return '尚无构型事件查询记录；缺失事实继续保持 UNKNOWN。';
+    return '';
   }
   if (latest.terminalStatus === 'NOT_CONNECTED') {
     return '构型事件源未接通；本次真实查询未取得受控安装记录，缺失事实继续保持 UNKNOWN。';

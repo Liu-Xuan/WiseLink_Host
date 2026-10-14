@@ -9,7 +9,8 @@ import type {
 import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION, type CanonicalServiceScopeAuthorizationPort,
   type CanonicalVerifiedAutoWorkItemQueueScope } from './canonical-service-scope.authorization';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
-import { DocumentParsingRepository, documentParseError, documentLocalWorkerReceipt, type DocumentParseRow, type DocumentParseScope } from '../document-management/src/hosted/nest/document-parsing.repository';
+import { DocumentParsingRepository, documentParseError, documentLocalWorkerReceipt, type DocumentParseRow, type DocumentParseScope,
+  type DocumentLocalWorkerBrowserAdmission } from '../document-management/src/hosted/nest/document-parsing.repository';
 import { DocumentParsingHostedService } from '../document-management/src/hosted/nest/document-parsing-hosted.service';
 import { DocumentStepLeaseRepository, type DocumentStepFence } from '../document-management/src/hosted/nest/document-step-lease.repository';
 import { MiaodaHostedDocumentCatalog } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
@@ -67,6 +68,37 @@ export class LocalMineruWorkerService {
         if (status !== 403 && status !== 404 && !automaticLeaseLost) throw error;
         this.logger.warn(`Local MinerU skipped an inaccessible document delegation ${delegation.workItemId}.`);
       }
+    }
+    // A real browser start is already a durable admission. It does not require
+    // a historical completed WorkItem or an upload acquisition to be found.
+    let afterParseRunId: string | undefined;
+    for (let page = 0; page < 100; page++) {
+      const admissions = await this.repository.listLocalWorkerBrowserAdmissions({ tenantId: service.tenantId,
+        afterParseRunId, limit: 50 });
+      for (const admission of admissions) {
+        try {
+          const claimed = await this.withBrowserAdmission(service, admission, async loaded => {
+            const candidates = await this.repository.listLocalWorkerCandidates(service.tenantId, 50, loaded.scope, true);
+            if (!candidates.some(row => matchesBrowserAdmission(admission, row))) return null;
+            const fence = await this.leases.claim(loaded.scope, admission.parseRunId, browserOwner(service, admission.parseRunId), 120_000);
+            if (!fence) return null;
+            const run = loaded.run;
+            return { status: 'CLAIMED' as const, parseRunId: run.parseRunId, documentVersionId: run.documentVersionId,
+              sourceSha256: run.sourceBinding.pdfSha256, sourceByteLength: run.sourceBinding.byteLength,
+              settings: { ...run.sourceBinding.parserInput!.settings! }, deadlineAt: run.deadlineAt.toISOString(),
+              leaseExpiresAt: fence.leaseExpiresAt.toISOString(), ...recoveryPredecessor(run),
+              lease: { leaseOwner: fence.leaseOwner, leaseToken: fence.leaseToken, leaseGeneration: fence.leaseGeneration } };
+          });
+          if (claimed) return claimed;
+        } catch (error) {
+          const status = error && typeof error === 'object' && 'statusCode' in error ? error.statusCode : null;
+          if (status !== 403 && status !== 404) throw error;
+          this.logger.warn(`Local MinerU skipped an inaccessible browser admission ${admission.parseRunId}.`);
+        }
+      }
+      if (admissions.length < 50) break;
+      afterParseRunId = admissions.at(-1)!.parseRunId;
+      if (page === 99) throw documentParseError('LOCAL_MINERU_BROWSER_ADMISSION_LIMIT', 503);
     }
     // A browser-admitted parse has its own actor request and no automatic WorkItem
     // lease. A completed grant is only a service-readable actor/source directory.
@@ -242,6 +274,14 @@ export class LocalMineruWorkerService {
       if (result) return result.value;
     }
     if (identity.lease.leaseOwner === browserOwner(service, identity.parseRunId)) {
+      const admissions = await this.repository.listLocalWorkerBrowserAdmissions({ tenantId: service.tenantId,
+        parseRunId: identity.parseRunId, limit: 1 });
+      const admission = admissions[0];
+      if (admission?.documentVersionId === identity.documentVersionId) {
+        const result = await this.withBrowserAdmission(service, admission,
+          loaded => action(identity, loaded).then(value => ({ value })));
+        if (result) return result.value;
+      }
       let beforeWorkItemId: string | undefined;
       for (let page = 0; page < 100; page++) {
         const completed = await this.workItems.listCompletedLocalWorkerDiscovery({ tenantId: service.tenantId,
@@ -283,6 +323,24 @@ export class LocalMineruWorkerService {
       if (result) return result.value;
     }
     throw documentParseError('LOCAL_MINERU_RUN_NOT_FOUND', 404);
+  }
+
+  private async withBrowserAdmission<T>(service: CanonicalVerifiedAutoWorkItemQueueScope,
+    admission: DocumentLocalWorkerBrowserAdmission,
+    action: (loaded: Awaited<ReturnType<DocumentParsingHostedService['readLocalWorkerRun']>>) => Promise<T>,
+  ): Promise<T | null> {
+    if (admission.tenantId !== service.tenantId) throw documentParseError('LOCAL_MINERU_SERVICE_SCOPE_MISMATCH', 403);
+    return this.actors.withActorScope(admission.actorUserId, async () => {
+      const scope = { tenantId: service.tenantId, actorUserId: admission.actorUserId,
+        documentVersionId: admission.documentVersionId, roles: [] as string[] };
+      const row = await this.repository.readLocalWorkerById(service.tenantId, admission.parseRunId);
+      if (!row || !matchesBrowserAdmission(admission, row)) return null;
+      const loaded = await this.parsing.readLocalWorkerRun(row.parseRunId, scope);
+      if (!matchesBrowserAdmission(admission, loaded.run) || loaded.scope.automaticWorkItem ||
+          loaded.scope.actorUserId !== scope.actorUserId || loaded.scope.documentVersionId !== scope.documentVersionId) return null;
+      this.assertPrincipal(service, loaded.scope);
+      return action(loaded);
+    });
   }
 
   private async uploadScope(service: CanonicalVerifiedAutoWorkItemQueueScope, upload: {
@@ -350,6 +408,13 @@ type CompletedDiscovery = Awaited<ReturnType<MiaodaWorkItemRepository['listCompl
 function browserScope(service: CanonicalVerifiedAutoWorkItemQueueScope, discovery: CompletedDiscovery) {
   return { tenantId: service.tenantId, actorUserId: discovery.actorUserId,
     documentVersionId: discovery.documentVersionId, roles: [] as string[] };
+}
+function matchesBrowserAdmission(admission: DocumentLocalWorkerBrowserAdmission, run: DocumentParseRow): boolean {
+  return run.tenantId === admission.tenantId && run.actorUserId === admission.actorUserId &&
+    run.parseRunId === admission.parseRunId && run.documentVersionId === admission.documentVersionId &&
+    run.sourceBinding.documentVersionId === admission.documentVersionId && !run.sourceBinding.automaticWorkItem &&
+    run.sourceBinding.parserInput?.mode === 'LOCAL_MINERU_WORKER' &&
+    run.sourceBinding.parserInput.settings?.localMineruFallbackEnabled === true;
 }
 function matchesBrowserRun(discovery: CompletedDiscovery, run: DocumentParseRow): boolean {
   const binding = run.sourceBinding;

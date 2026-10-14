@@ -49,6 +49,7 @@ function setup() {
       documentVersionId: grant.documentVersionId }) };
   const actors = { withActorScope: jest.fn(async (_actor: string, action: () => Promise<unknown>) => action()) };
   const repository = { listLocalWorkerCandidates: jest.fn().mockResolvedValue([row]),
+    listLocalWorkerBrowserAdmissions: jest.fn().mockResolvedValue([]),
     readLocalWorkerById: jest.fn().mockResolvedValue(row) };
   const parsing = { readLocalWorkerRun: jest.fn().mockResolvedValue(loaded),
     readLocalWorkerOriginal: jest.fn().mockResolvedValue({ candidateReady: false, bytes: Buffer.from('%PDF-test') }),

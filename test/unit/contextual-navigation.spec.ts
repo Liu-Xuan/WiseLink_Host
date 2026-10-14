@@ -40,7 +40,7 @@ describe('R05.9 contextual navigation', () => {
     );
     expect(quicklook).toMatchObject({
       authorityLabel: '已保存候选意见',
-      freshnessLabel: '来源范围见依据',
+      freshnessLabel: '',
       currentJudgment: '需结合当前构型评估维修计划。',
       applicabilitySummary: '适用于资料列出的构型。 当前机队匹配尚待核对。',
       recommendedActions: ['核对飞机号与部件号。'],
@@ -62,7 +62,7 @@ describe('R05.9 contextual navigation', () => {
       '尚需当前机队构型',
     ]);
     const markdown = quicklookMarkdown('737-34-3830', quicklook);
-    expect(markdown).toContain('打开依据可核对其来源与范围');
+    expect(markdown).toContain('需结合当前构型评估维修计划。');
     expect(markdown).not.toContain('source-1');
     expect(markdown).not.toContain('当前有效');
   });
@@ -92,8 +92,8 @@ describe('R05.9 contextual navigation', () => {
     const response = { ...libraryQuicklook('WI-NO-RESULT'), result: null };
     const quicklook = buildLibraryEngineeringQuicklook(response);
     expect(response.document.packageRegistered).toBe(true);
-    expect(quicklook.authorityLabel).toBe('尚无候选意见');
-    expect(quicklook.currentJudgment).toContain('尚无已保存的工程摘要');
+    expect(quicklook.resultIdentity).toBeNull();
+    expect(quicklook.currentJudgment).toBe('');
     expect(quicklook.sourceCount).toBeUndefined();
     expect(quicklook.derivedArtifactCount).toBeNull();
   });
@@ -160,7 +160,6 @@ describe('R05.9 contextual navigation', () => {
 
     expect(markdown).toContain('当前资料支持继续执行计划维修');
     expect(markdown).toContain('还需核对当前机队构型');
-    expect(markdown).toContain('内容仅用于工程辅助，不代表批准或放行');
     expect(markdown).not.toContain('urn:internal:source-ref');
     expect(markdown).not.toContain('workItemId');
   });

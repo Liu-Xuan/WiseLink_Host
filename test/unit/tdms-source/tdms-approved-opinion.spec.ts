@@ -949,9 +949,13 @@ describe('new-ingress approved assessment content boundary', () => {
     evidence(p).approvalSubject = null;
     expect(sourcePackage(p)).toEqual(p);
   });
-  it('historical immutable draft observations remain readable without new-ingress validation or rewrite', async () => {
+  it('withholds legacy draft body while preserving exact approved history and immutable stored observations', async () => {
     const x = setup();
     const result = await x.service.importPackage(actor(), target, packet());
+    const approved = structuredClone(x.db.state.revisions[0]!);
+    approved.record.sourceRevisionRef = 'TDMS-REV-legitimate-approved-history';
+    approved.record.selectedHead = false;
+    x.db.state.revisions.push(approved);
     // Seed an existing pre-policy observation directly; this is a historical-read regression, not new import permission.
     const stored = x.db.state.revisions[0]!.record;
     stored.state = state('Estimating');
@@ -966,10 +970,17 @@ describe('new-ingress approved assessment content boundary', () => {
       ],
     };
     const before = structuredClone(x.db.state.revisions);
-    expect(
-      (await x.service.readRecord(actor(), result.recordRevisionRefs[0]!))
-        .record.content,
-    ).toEqual(stored.content);
+    const read = await x.service.readRecord(actor(), result.recordRevisionRefs[0]!);
+    expect(read.record.state).toEqual(state('Estimating'));
+    expect(read.record.content).toEqual({});
+    expect(read.record.rawFields).toEqual({});
+    expect(read.bodyReadPolicy?.kind).toBe('METADATA_ONLY');
+    expect(read.receipt.fieldPaths).not.toBeNull();
+    expect(JSON.stringify(read)).not.toContain('OLD-DRAFT');
+    const historical = await x.service.readRecord(actor(), approved.record.sourceRevisionRef);
+    expect(historical.record.selectedHead).toBe(false);
+    expect(historical.record.content).toEqual(approved.record.content);
+    expect(historical.bodyReadPolicy?.kind).toBe('ESTIMATED_ASSESSMENT');
     expect(x.db.state.revisions).toEqual(before);
   });
 });

@@ -12,6 +12,10 @@ import type {
   TdmsPackageRelation,
 } from '@shared/tdms-source.interface';
 import { tdmsError } from './tdms-source.types';
+import {
+  assertAssessmentBodyIngress,
+  rejectEmbeddedAssessmentBodies,
+} from './tdms-assessment-body-policy';
 
 /** Reuse the package validator's primitives without a circular module import. */
 interface ValidationPrimitives {
@@ -424,6 +428,7 @@ export function createOpinionCollectionIngress({
     observedAt: string;
     coverage: TdmsCoverage;
   }): void {
+    for (const record of p.records) assertAssessmentBodyIngress(record);
     assertCompleteOwnedNativePackage(p);
     assertNativeClassificationPackage(p);
     const bounded = p.records.some(
@@ -518,6 +523,8 @@ export function createOpinionCollectionIngress({
       for (const member of r.artifactMemberIds) owned.add(member);
     }
     for (const relation of p.relations) {
+      rejectEmbeddedAssessmentBodies(relation.rawFields);
+      rejectEmbeddedAssessmentBodies(relation.scope);
       rejectEmbeddedOpinions(relation.rawFields);
       rejectEmbeddedOpinions(relation.scope);
     }
