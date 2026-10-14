@@ -19,6 +19,10 @@ import {
   workItem,
 } from '../../database/schema';
 import { tenantFamilyIdentityPrefix } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
+import {
+  readCanonicalLibraryDirectory,
+  type OwnedCanonicalLibraryDirectoryQuery,
+} from './canonical-library-directory.query';
 
 export interface CanonicalLibraryCursor {
   createdAt: string;
@@ -110,10 +114,16 @@ export class CanonicalLibraryRepository {
     return listOwnedLibraryGraph(this.db, input);
   }
 
+  directory(input: OwnedCanonicalLibraryDirectoryQuery) {
+    return readCanonicalLibraryDirectory(this.db, input);
+  }
+
   listDocuments(
     input: CanonicalLibraryQueryScope & {
       normalizedFamily?: string;
       ata?: string;
+      ata2?: string;
+      ata4?: string;
       aircraftModel?: string;
       fleetMentionValues?: string[];
       search: string;

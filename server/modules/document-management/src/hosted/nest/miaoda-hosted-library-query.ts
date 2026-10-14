@@ -12,6 +12,10 @@ import {
 } from '@server/database/schema';
 import { tenantFamilyIdentityPrefix } from './miaoda-hosted-document-catalog';
 import { dmDocumentParseRun } from '@server/database/document-parsing.schema';
+import {
+  libraryAircraftNodeFilter,
+  libraryAtaNodeFilter,
+} from '@server/modules/canonical-host/canonical-library-directory.query';
 
 export interface OwnedLibraryFamilyQuery {
   tenantId: string;
@@ -19,6 +23,8 @@ export interface OwnedLibraryFamilyQuery {
   search: string;
   normalizedFamily?: string;
   ata?: string;
+  ata2?: string;
+  ata4?: string;
   aircraftModel?: string;
   /** Server-resolved values from the current tenant fleet; never user SQL. */
   fleetMentionValues?: string[];
@@ -209,12 +215,14 @@ export function listOwnedLibraryFamilies(
         updatedAt: versions.updatedAt,
         ataValues: sql<
           string[]
-        >`jsonb_path_query_array(jsonb_agg(${versions.extractedMetadata}), '$[*].ata.observations[*].value')`.as(
+        >`coalesce(jsonb_path_query_array(jsonb_agg(${versions.extractedMetadata})
+          filter(where ${versions.selectedVersionIsCurrent}), '$[*].ata.observations[*].value'), '[]'::jsonb)`.as(
           'ata_values',
         ),
         aircraftValues: sql<
           string[]
-        >`jsonb_path_query_array(jsonb_agg(${versions.extractedMetadata}), '$[*].mentionedAircraftModels.observations[*].value')`.as(
+        >`coalesce(jsonb_path_query_array(jsonb_agg(${versions.extractedMetadata})
+          filter(where ${versions.selectedVersionIsCurrent}), '$[*].mentionedAircraftModels.observations[*].value'), '[]'::jsonb)`.as(
           'aircraft_values',
         ),
         workItemCount: sql<number>`sum(${versions.workItemCount})::integer`.as(
@@ -290,11 +298,8 @@ export function listOwnedLibraryFamilies(
               ? sql`jsonb_array_length(${matched.ataValues}) = 0`
               : sql`jsonb_exists(${matched.ataValues}, ${input.ata}::text)`
             : undefined,
-          input.aircraftModel
-            ? input.aircraftModel === '__UNKNOWN__'
-              ? sql`jsonb_array_length(${matched.aircraftValues}) = 0`
-              : sql`jsonb_exists(${matched.aircraftValues}, ${input.aircraftModel}::text)`
-            : undefined,
+          libraryAtaNodeFilter(sql`${matched.ataValues}`, input.ata2, input.ata4),
+          libraryAircraftNodeFilter(sql`${matched.aircraftValues}`, input.aircraftModel),
         ),
       ),
   );

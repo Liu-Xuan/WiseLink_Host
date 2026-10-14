@@ -124,6 +124,8 @@ export class CanonicalHostController {
     @Query('aircraftModel') aircraftModel?: string,
     @Query('fleetFamily') fleetFamily?: string,
     @Query('fleetModel') fleetModel?: string,
+    @Query('ata2') ata2?: string,
+    @Query('ata4') ata4?: string,
   ) {
     if (!this.libraryDocuments)
       throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
@@ -132,6 +134,8 @@ export class CanonicalHostController {
         search,
         normalizedFamily,
         ata,
+        ata2,
+        ata4,
         aircraftModel,
         fleetFamily,
         fleetModel,
@@ -140,6 +144,24 @@ export class CanonicalHostController {
           ? {}
           : { limit: optionalSafeInteger(limit, 'limit') }),
       },
+      hostActor(httpRequest),
+    );
+  }
+
+  @Get('library/directory')
+  directory(
+    @Req() httpRequest: Request,
+    @Query('search') search?: string,
+    @Query('normalizedFamily') normalizedFamily?: string,
+    @Query('fleetFamily') fleetFamily?: string,
+    @Query('fleetModel') fleetModel?: string,
+    @Query('aircraftModel') aircraftModel?: string,
+    @Query('ata2') ata2?: string,
+  ) {
+    if (!this.libraryDocuments)
+      throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
+    return this.libraryDocuments.directory(
+      { search, normalizedFamily, fleetFamily, fleetModel, aircraftModel, ata2 },
       hostActor(httpRequest),
     );
   }
