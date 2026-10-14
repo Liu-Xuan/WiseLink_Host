@@ -183,7 +183,9 @@ export function LibraryDocumentDetails({
                 ) : null}
               </div>
             ) : (
-              <p>{selectedReading.note}</p>
+              <p>{selectedReading.note || (selectedReading.status === 'NOT_GENERATED'
+                ? '文档自身解读尚未生成；关联评估单独显示。'
+                : '文档自身解读状态尚待核对。')}</p>
             )}
             {!selectedReading.brief && selectedVersion.readerWorkItemId ? (
               <section className="library-quicklook-assessment" aria-label="同版本已保存评估">
