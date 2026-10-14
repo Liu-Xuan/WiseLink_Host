@@ -93,6 +93,25 @@
 .library-lcm-record header span { color: var(--wl-muted); }
 .library-lcm-record li,
 .library-lcm-record p { overflow-wrap: anywhere; line-height: 1.8; }
+.library-source-directory { font-size: 11px; }
+.library-source-directory-row { display: flex; gap: 2px; align-items: flex-start; }
+.library-source-directory-row .suite-folder-row { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.library-source-directory-row .suite-folder-row > span { display: block; min-width: 0; }
+.library-source-directory-row .suite-folder-row small { display: block; margin-top: 3px; color: var(--wl-muted); font-size: 10px; }
+.library-directory-expand { flex: 0 0 auto; }
+.library-source-directory-children { padding-left: 10px; }
+.library-source-directory-node > details { padding: 4px 8px; }
+.library-source-directory-node > details > summary { cursor: pointer; color: var(--wl-muted); font-size: 10px; }
+.library-source-directory p[role='alert'],
+.library-source-directory p[role='status'] { margin: 8px; line-height: 1.6; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .library-atlas-home .library-surface > .suite-library-folder {
+    display: block;
+    width: 100%;
+    max-height: 300px;
+    overflow: auto;
+  }
+}
 @media (max-width: 860px) {
   .library-document-source-columns { grid-template-columns: minmax(0, 1fr); overflow: auto; }
   .library-document-source-pdf { min-height: 420px; }

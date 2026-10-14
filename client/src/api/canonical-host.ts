@@ -1,6 +1,7 @@
 import type { TdmsCatalogueResponse, TdmsHistoryResponse, TdmsReadContext, TdmsRelationReadResponse } from '@shared/tdms-source.interface';
 import type { TdmsDocumentSourceReadRequest, TdmsDocumentSourceReadResponse } from '@shared/tdms-source-reading.interface';
 import type { LcmSnapshotBrowseRequest, LcmSnapshotCatalogueResponse, LcmSnapshotRowsRequest, LcmSnapshotRowsResponse } from '@shared/lcm-source-reading.interface';
+import type { CanonicalLibraryDirectoryRequest, CanonicalLibraryDirectoryResponse } from '@shared/library-directory.interface';
 import type { TdmsFileServiceRecordReadResponse } from '@shared/tdms-file-service-import.interface';
 import { tdmsSourceReadForPreview } from '@client/src/features/tdms-source/tdms-assessment-body';
 import { canReadTdmsSourceBody } from '@shared/tdms-source-body-policy';
@@ -483,6 +484,28 @@ export async function getCanonicalLibraryDocuments(
     params: input,
     signal,
   });
+}
+
+/** Per-node authoritative counts; no original, native opinion, parse or model read. */
+export async function getCanonicalLibraryDirectory(
+  input: CanonicalLibraryDirectoryRequest = {},
+  signal?: AbortSignal,
+): Promise<CanonicalLibraryDirectoryResponse> {
+  const generation = clientSessionGeneration;
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(input)) {
+    if (value) query.set(key, value);
+  }
+  const result = await readCanonicalLibrary<CanonicalLibraryDirectoryResponse>({
+    url: `/api/canonical-host/library/directory?${query}`, signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration)
+    throw new Error('CANONICAL_LIBRARY_DIRECTORY_OBSOLETE');
+  const level = input.ata2 ? 'ATA4' : input.aircraftModel ? 'ATA2' : 'AIRCRAFT_MODEL';
+  if (result.scope !== 'TENANT_DOCUMENT_CATALOG' || result.level !== level ||
+      !Array.isArray(result.nodes) || result.nodes.some(node => node.level !== level))
+    throw new Error('CANONICAL_LIBRARY_DIRECTORY_BINDING_MISMATCH');
+  return result;
 }
 
 /** Lightweight metadata graph page; no file or model operation. */

@@ -20,7 +20,7 @@ export interface LibraryCategoryGroup {
   documents: CanonicalLibraryDocumentSummary[];
 }
 
-export type LibraryFacetKey = 'normalizedFamily' | 'ata' | 'aircraftModel' | 'fleetFamily' | 'fleetModel';
+export type LibraryFacetKey = 'normalizedFamily' | 'ata' | 'ata2' | 'ata4' | 'aircraftModel' | 'fleetFamily' | 'fleetModel';
 export type LibraryCatalogFilters = Pick<
   CanonicalLibraryDocumentsRequest,
   LibraryFacetKey

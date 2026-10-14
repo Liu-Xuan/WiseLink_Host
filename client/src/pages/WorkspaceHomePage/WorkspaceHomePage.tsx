@@ -50,7 +50,7 @@ import {
 import { useLibraryDocuments } from './useLibraryDocuments';
 import { useLibraryQuicklook } from './useLibraryQuicklook';
 import { LibraryDocumentDirectory } from './LibraryDocumentDirectory';
-import { LibraryAtaFacetDirectory } from './LibraryAtaFacetDirectory';
+import { LibrarySourceDirectory } from './LibrarySourceDirectory';
 import { LibraryDocumentDetails } from './LibraryDocumentDetails';
 import { DocumentUpload } from './DocumentUpload';
 import type { LibraryCatalogFilters } from './library-classification';
@@ -94,6 +94,8 @@ function WorkspaceHomeContent() {
   const catalogFilters: LibraryCatalogFilters = {
     normalizedFamily: searchParams.get('normalizedFamily') ?? '',
     ata: searchParams.get('ata') ?? '',
+    ata2: searchParams.get('ata2') ?? '',
+    ata4: searchParams.get('ata4') ?? '',
     aircraftModel: searchParams.get('aircraftModel') ?? '',
     fleetFamily: searchParams.get('fleetFamily') ?? '',
     fleetModel: searchParams.get('fleetModel') ?? '',
@@ -273,6 +275,8 @@ function WorkspaceHomeContent() {
     for (const key of [
       'normalizedFamily',
       'ata',
+      'ata2',
+      'ata4',
       'aircraftModel',
       'fleetFamily',
       'fleetModel',
@@ -576,11 +580,14 @@ function WorkspaceHomeContent() {
             >
               <aside className="suite-library-folder" aria-label="资料分组">
                 <div className="suite-folder-head"><strong>资料分组</strong><span>目录</span></div>
-                <button type="button" className={`suite-folder-row${!Object.values(catalogFilters).some(Boolean) ? ' active' : ''}`} onClick={() => filterDocuments({})}><span>全部资料</span><small>{directory.totalCount ?? directory.items.length}</small></button>
-                <LibraryAtaFacetDirectory counts={directory.ataCounts ?? {}} selected={catalogFilters.ata ?? ''}
-                  scheme={searchParams.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
-                  disabled={authenticationRequired || directory.loading || treeMode === 'tasks'}
-                  onSelect={ata => filterDocuments({ ...catalogFilters, ata })} />
+                <button type="button" className={`suite-folder-row${!Object.values(catalogFilters).some(Boolean) ? ' active' : ''}`} onClick={() => filterDocuments({})}>
+                  <span>全部资料</span>{treeMode === 'document' && !Object.values(catalogFilters).some(Boolean)
+                    ? <small>{directory.totalCount ?? '待核'}</small> : null}
+                </button>
+                {treeMode === 'document' ? <LibrarySourceDirectory search={search} filters={catalogFilters}
+                  sessionGeneration={sessionGeneration} authenticationRequired={authenticationRequired}
+                  refreshRevision={refreshRevision} scheme={searchParams.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
+                  onFilterChange={filterDocuments} /> : null}
                 <div className="suite-folder-separator">阅读范围</div>
                 <button type="button" className={`suite-folder-row${treeMode === 'tasks' ? ' active' : ''}`} onClick={() => viewTasks()}><span>评估任务</span><small>{directory.items.length}</small></button>
                 <button type="button" className="suite-folder-row" onClick={() => filterDocuments({}, true)}><span>清除筛选</span></button>

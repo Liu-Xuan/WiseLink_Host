@@ -44,13 +44,29 @@ describe('per-assessment Estimated body boundary', () => {
     expect(rawFieldsGetter).not.toHaveBeenCalled();
     expect(artifactsGetter).not.toHaveBeenCalled();
     expect(selectedFieldsGetter).not.toHaveBeenCalled();
-    expect(html).toContain('未批准，未采集意见正文；批准后增量补取');
+    expect(html).toContain('本条仅显示元数据；评估意见须本评估单批准后增量取得');
+    expect(html).toContain('TDMS 来源元数据');
+    expect(html).toContain('原生记录');
+    expect(html).not.toContain('未采集意见正文');
     expect(html).toContain('source-unapproved');
     expect(html).toContain('R00');
     expect(html).not.toContain(DRAFT_MARKER);
     expect(JSON.stringify(preview)).not.toContain(DRAFT_MARKER);
     expect(preview.record.content).toEqual({});
     expect(preview.record.rawFields).toEqual({});
+  });
+
+  it('shows uncertain read admission for Estimated without policy and never accesses its body', () => {
+    const read = sourceRead('no-policy');
+    delete read.bodyReadPolicy;
+    const getter = jest.fn(() => body());
+    Object.defineProperty(read.record, 'content', { get: getter, enumerable: true });
+    const html = renderToStaticMarkup(createElement(StaticRouter, null, createElement(TdmsRecordDetails, { read })));
+    expect(html).toContain('本条正文的读取准入尚未确认，仅显示元数据');
+    expect(html).toContain('父处理单或其他专业的批准不能替代');
+    expect(getter).not.toHaveBeenCalled();
+    expect(html).not.toContain(DRAFT_MARKER);
+    expect(JSON.stringify(tdmsSourceReadForPreview(read))).not.toContain(DRAFT_MARKER);
   });
 
   it('keeps two approved professions, but does not let one approve a sibling or a historical draft', () => {

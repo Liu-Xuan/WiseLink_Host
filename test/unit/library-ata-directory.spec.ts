@@ -40,7 +40,10 @@ describe('authorized per-version aircraft / ATA browsing projection', () => {
     const roots = buildLibraryAtaDirectory([document], fleet);
     expect(roots.map(node => node.key)).toEqual(['787', '737MAX']);
     expect(flatten([roots[0]]).map(node => node.key)).toEqual(['787', '787-9', '23', '23-15']);
-    expect(flatten([roots[1]]).map(node => node.key)).toEqual(['737MAX', '737-8', '34', '__UNKNOWN__']);
+    expect(flatten([roots[1]]).map(node => node.key)).toEqual(['737MAX', '737-8', '34']);
+    expect(flatten([roots[1]]).find(node => node.level === 'ata2')?.directItems?.map(item => item.version.documentVersionId))
+      .toEqual(['DV-mixed-1']);
+    expect(flatten([roots[1]]).some(node => node.level === 'ata4')).toBe(false);
     expect(roots[0].items.map(item => item.version.documentVersionId)).toEqual(['DV-mixed-2']);
     expect(roots[1].items.map(item => item.version.documentVersionId)).toEqual(['DV-mixed-1']);
     expect(buildLibraryAtaDirectory([document], fleet, { fleetFamily: '787', ata: '34' })).toEqual([]);
@@ -63,7 +66,9 @@ describe('authorized per-version aircraft / ATA browsing projection', () => {
     expect(roots[0].children[1].items[0].version.documentVersionId).toBe('DV-broad-2');
     const unknown = libraryFamily('unknown');
     const missingFleet = buildLibraryAtaDirectory([unknown], null);
-    expect(flatten(missingFleet).map(node => node.key)).toEqual(['__OUTSIDE_FLEET__', '__UNKNOWN__', '__UNKNOWN__']);
+    expect(flatten(missingFleet).map(node => node.key)).toEqual(['__OUTSIDE_FLEET__', '__UNKNOWN__']);
+    expect(flatten(missingFleet).find(node => node.key === '__UNKNOWN__')?.directItems).toHaveLength(2);
+    expect(flatten(missingFleet).some(node => node.level === 'ata4')).toBe(false);
     expect(buildLibraryAtaDirectory([unknown], null, { fleetFamily: '787' })).toEqual([]);
   });
   it('retains every unresolved original value on its exact version instead of folding it into unknown or inferring a range', () => {

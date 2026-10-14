@@ -24,15 +24,15 @@ export function TdmsRecordDetails({ read, openDocument }: {
   openDocument?: (documentVersionId: string) => void;
 }) {
   const record = read.record;
-  if (!canReadTdmsSourceBody(read)) return <article className="tdms-record-details" aria-label="TDMS 未批准评估单元数据">
+  if (!canReadTdmsSourceBody(read)) return <article className="tdms-record-details" aria-label="TDMS 来源元数据">
     <h3>{record.title}</h3>
     <p>{tdmsRecordKindLabel(record.recordKind)} · 原始状态 {tdmsRawCodeLabel(record.state)}</p>
     <p className="tdms-source-eligibility-notice">{record.state?.rawName === 'Estimated'
       ? '本条正文的读取准入尚未确认，仅显示元数据。'
-      : '未批准，未采集意见正文；批准后增量补取。'}
+      : '本条仅显示元数据；评估意见须本评估单批准后增量取得。'}
       父处理单或其他专业的批准不能替代本条来源的正文准入。</p>
     <dl className="tdms-source-fields">
-      <dt>原生评估单</dt><dd>{record.sourceRecordId}</dd>
+      <dt>原生记录</dt><dd>{record.sourceRecordId}</dd>
       <dt>TDMS 系统修订</dt><dd>{tdmsSourceVersionLabel(record.sourceVersion)}</dd>
       <dt>业务文件版本</dt><dd>{record.businessVersion ? tdmsSourceVersionLabel(record.businessVersion, '业务文件') : '未取得'}</dd>
       <dt>源作者或评估人</dt><dd>{people(record.authors)}</dd>
