@@ -240,6 +240,9 @@ describe('formal TDMS P1 directory integration (synthetic, no business membershi
     expect(statement.sql).toContain('count(distinct document_version_id)');
     expect(statement.sql).toContain('group by value,family_id');
     expect(statement.sql).toContain('count(*)::integer from filtered');
+    // PG's polymorphic jsonb_build_object cannot infer an untyped bound string.
+    expect(statement.sql).toMatch(/\$[0-9]+::text as level/u);
+    expect(statement.sql).toMatch(/jsonb_build_object\('level',\$[0-9]+::text/u);
     for (const forbidden of [
       'projection_json',
       'dm_document_parse_run',

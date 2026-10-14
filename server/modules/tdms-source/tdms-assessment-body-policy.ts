@@ -240,7 +240,8 @@ export function sourceBodyReadingProjection(record: TdmsRecordRevision): {
   if (estimated && hasOwnEstimatedEvidence(record)) {
     kind = 'ESTIMATED_ASSESSMENT'; limitation = null;
   } else if (!assessment && isKnownNonOpinionSource(record)) {
-    kind = 'NON_OPINION_SOURCE'; limitation = null;
+    kind = record.recordKind === 'PROCESSING_SHEET' ? 'OWN_PROCESSING_FIELDS' : 'NON_OPINION_SOURCE';
+    limitation = null;
   }
   if (kind !== 'METADATA_ONLY') {
     try {
@@ -248,7 +249,7 @@ export function sourceBodyReadingProjection(record: TdmsRecordRevision): {
         (opinion) => !isEstimatedState(opinion.state) || !opinion.sourceSelector?.trim(),
       )) throw tdmsError('TDMS_ASSESSMENT_OPINION_OWN_STATE_UNCONFIRMED');
       assertNoRelatedAssessmentBody(record.rawFields, kind === 'ESTIMATED_ASSESSMENT');
-      if (kind === 'NON_OPINION_SOURCE') {
+      if (kind === 'NON_OPINION_SOURCE' || kind === 'OWN_PROCESSING_FIELDS') {
         assertNoParentOpinionFields(record.content.completeOwnedFields);
         assertNoParentOpinionFields(record.content.boundedOwnedBody);
         assertNoParentOpinionFields(record.content.ownedVisibleBusinessContent);

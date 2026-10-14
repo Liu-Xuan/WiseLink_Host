@@ -174,12 +174,12 @@ export function canonicalLibraryDirectoryStatement(
       array(select distinct raw_value from members raw where raw.value=node_families.value
         and raw_value is not null order by raw_value) as raw_values
     from node_families group by value
-  ) select 'TENANT_DOCUMENT_CATALOG' as scope,${level} as level,
+  ) select 'TENANT_DOCUMENT_CATALOG' as scope,${level}::text as level,
     (select count(*)::integer from filtered) as "documentCount",
     (select coalesce(sum(version_count),0)::integer from filtered) as "versionCount",
     (select count(*)::integer from direct_families) as "directDocumentCount",
     (select coalesce(sum(version_count),0)::integer from direct_families) as "directVersionCount",
-    coalesce((select jsonb_agg(jsonb_build_object('level',${level},'value',value,
+    coalesce((select jsonb_agg(jsonb_build_object('level',${level}::text,'value',value,
       'documentCount',document_count,'versionCount',version_count,
       'directDocumentCount',direct_document_count,'directVersionCount',direct_version_count,
       'rawValues',raw_values,'hasChildren',has_children) order by value collate "C") from nodes),'[]'::jsonb) as nodes`;

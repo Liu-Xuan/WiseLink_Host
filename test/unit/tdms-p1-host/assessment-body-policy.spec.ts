@@ -6,6 +6,7 @@ import {
 } from '@server/modules/tdms-source/tdms-assessment-body-policy';
 import { sourcePackage } from '@server/modules/tdms-source/tdms-source.validation';
 import { TdmsSourceService } from '@server/modules/tdms-source/tdms-source.service';
+import { adaptTdmsDailySource } from '@server/modules/tdms-source/tdms-daily-source-adapter';
 import type { TdmsSourceAuthorization } from '@server/modules/tdms-source/tdms-source.types';
 import { fixture, actor } from '../tdms-source/tdms-fixtures';
 import { MemoryTdmsRepository } from '../tdms-source/tdms-memory-double';
@@ -169,6 +170,42 @@ describe('Host estimated-only assessment body admission and exact legacy project
     expect(projection.bodyReadPolicy.kind).toBe('METADATA_ONLY');
     expect(rawValue).not.toHaveBeenCalled();
     expect(JSON.stringify(projection)).not.toContain(DRAFT_MARKER);
+  });
+
+  it('reads legitimate SB/SL own processing fields through the dedicated policy and keeps every child-body guard', () => {
+    const base: TdmsPackageRecord = adaptTdmsDailySource(
+      syntheticCompleteEnvelope('SB_PROCESSING_FORM'),
+    ).output.nativePackage.records[0]!;
+    for (const rawName of ['SB处理单', 'SL处理单']) {
+      base.fileType = { rawName, rawCode: null };
+      const projection = sourceBodyReadingProjection(stored(base));
+      expect(projection.bodyReadPolicy.kind).toBe('OWN_PROCESSING_FIELDS');
+      expect(canReadTdmsSourceBody(projection)).toBe(true);
+      expect(projection.record.content.completeOwnedFields).toEqual(base.content.completeOwnedFields);
+      expect(canReadTdmsSourceBody({ ...projection, bodyReadPolicy: {
+        ...projection.bodyReadPolicy, kind: 'NON_OPINION_SOURCE',
+      } })).toBe(false);
+    }
+    base.content.completeOwnedFields![0]!.value.actualLabel = '专业评估意见:';
+    const withheld = sourceBodyReadingProjection(stored(base));
+    expect(withheld.bodyReadPolicy.kind).toBe('METADATA_ONLY');
+    expect(canReadTdmsSourceBody(withheld)).toBe(false);
+    expect(withheld.record.content).toEqual({});
+  });
+
+  it('never upgrades conflicting assessment types through the own processing policy', () => {
+    const base: TdmsPackageRecord = adaptTdmsDailySource(
+      syntheticCompleteEnvelope('SB_PROCESSING_FORM'),
+    ).output.nativePackage.records[0]!;
+    base.fileType = { rawName: 'SB处理单', rawCode: 'SB评估单' };
+    base.state = { rawName: 'Estimating', rawCode: null };
+    const projection = sourceBodyReadingProjection(stored(base));
+    expect(projection.bodyReadPolicy.kind).toBe('METADATA_ONLY');
+    expect(canReadTdmsSourceBody({ record: stored(base), bodyReadPolicy: {
+      ...projection.bodyReadPolicy, kind: 'OWN_PROCESSING_FIELDS',
+    } })).toBe(false);
+    expect(projection.record.rawFields).toEqual({});
+    expect(projection.record.content).toEqual({});
   });
 
   it('keeps exact old approval and does not borrow a newer revision approval', () => {
