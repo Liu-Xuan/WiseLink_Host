@@ -10,7 +10,9 @@ export interface TdmsDocumentSourceReadRequest {
 export interface TdmsDocumentSourceReadResponse {
   documentVersionId: string;
   sourceStatus: 'AVAILABLE' | 'NO_BOUND_RECORDS';
-  /** Original source state/content and its independent read receipt are retained. */
+  /** Each assessment has its own status boundary: only Estimated revisions may
+   * contain opinion bodies. Other assessment states expose metadata alone.
+   * Parent/peer approval is never substituted for the selected assessment. */
   records: TdmsFileServiceRecordReadResponse[];
   hasMore: boolean;
   nextAfter: string | null;
