@@ -24,7 +24,6 @@ export function SavedWorkIssueDirectory({ read, selectedIssueKey, onOpen }: {
   if (!rows.length) return null;
   return <section className="knowledge-issue-directory" aria-label="已保存问题目录" data-work-ref={read.entry.workRef}>
     <h2>本工作的问题（{rows.length}）</h2>
-    <p>以下均为已保存的候选分析，状态按该工作记录显示。</p>
     {selectedIssueKey ? <Button size="sm" variant="ghost" onClick={() => onOpen('')}>显示本工作全部问题</Button> : null}
     <div className="knowledge-issue-table-scroll"><table>
       <thead><tr><th scope="col">问题</th><th scope="col">要求处理</th><th scope="col">待核问题</th><th scope="col">阅读</th></tr></thead>

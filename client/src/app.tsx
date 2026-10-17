@@ -12,6 +12,7 @@ import DerivedSummaryReadingPage from './features/derived-summary/DerivedSummary
 // Route chunks load on demand. AppContainer, identity providers and the
 // QueryClient stay mounted above the lazy boundary so navigation does not
 // rebuild them.
+const WikiGuideHomePage = lazy(() => import('./pages/WikiGuideHomePage'));
 const DialoguePage = lazy(() => import('./pages/DialoguePage'));
 const WorkItemOverviewPage = lazy(
   () => import('./features/workitem/WorkItemOverviewPage'),
@@ -110,6 +111,12 @@ const LibraryIndexRedirect = () => {
   );
 };
 
+function KnowledgeEntry() {
+  const { search } = useLocation();
+  return new URLSearchParams(search).size === 0
+    ? <Navigate to="/situation" replace /> : <KnowledgeLookupPage />;
+}
+
 const RoutesComponent = () => {
   return (
     <Routes>
@@ -203,14 +210,14 @@ const RoutesComponent = () => {
         <Route path="settings/models" element={<ModelSettingsPage />} />
         <Route path="settings/translation-glossary" element={<TranslationGlossaryPage />} />
         <Route path="external-discovery" element={<ExternalDiscoveryPage />} />
-        <Route path="situation" element={<EngineeringSituationPage />} />
+        <Route path="situation" element={<WikiGuideHomePage />} />
         <Route path="timeline" element={<EngineeringTimelinePage />} />
         <Route
           path="activity-graph"
           element={<EngineeringTimelinePage view="graph" />}
         />
         <Route path="graph" element={<RelationGraphPage />} />
-        <Route path="knowledge" element={<KnowledgeLookupPage />} />
+        <Route path="knowledge" element={<KnowledgeEntry />} />
         <Route
           path="work-items/:workItemId/analysis"
           element={<DocumentParsingPage />}

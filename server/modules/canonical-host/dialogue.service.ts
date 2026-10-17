@@ -146,7 +146,10 @@ export class DialogueService {
       ? (JSON.parse(replay.context_json) as DialogueGenerationContext)
       : this.context.generation(
           userText,
-          await this.context.current(session, focusIds),
+          // Saved JobAid evidence requires the original browser's SQL scope.
+          await this.sessions.withVerifiedNativeBrowserSql(() =>
+            this.context.current(session, focusIds, true, true),
+          ),
           state.messages,
         );
     if (generation.generationQuery.length > 60_000)

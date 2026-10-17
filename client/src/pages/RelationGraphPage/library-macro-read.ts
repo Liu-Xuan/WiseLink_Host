@@ -26,6 +26,18 @@ const aborted = (signal: AbortSignal) => { if (signal.aborted) throw new DOMExce
 const status = (reason: unknown) => summarizeCanonicalDocumentReadFailure(reason).statusCode;
 
 export async function readLibraryMacro(request: CanonicalLibraryGraphRequest, signal: AbortSignal): Promise<LibraryMacroRead> {
+  aborted(signal);
+  // This independent catalog read shares the caller's signal and existing scope.
+  // Settle rejection now so a slower document read cannot leave it unhandled.
+  const firstMatterPage: Promise<PromiseSettledResult<EngineeringMatterDirectoryResponse>> = Promise.resolve()
+    .then(() => {
+      aborted(signal);
+      return getEngineeringMatterDirectory({ limit: 50, cursor: undefined }, signal);
+    }).then(
+      (value: EngineeringMatterDirectoryResponse): PromiseFulfilledResult<EngineeringMatterDirectoryResponse> =>
+        ({ status: 'fulfilled', value }),
+      (reason: unknown): PromiseRejectedResult => ({ status: 'rejected', reason }),
+    );
   const read: LibraryMacroRead = { documents: [], matters: [], coverage: { documents: 'COMPLETE', matters: 'NOT_LOADED', references: 'NOT_INDEXED' }, issues: [] };
   // Old exact-family deep links remain valid. Their cursors belong to the old
   // endpoint, so start the same authorized scope afresh and load its levels together.
@@ -97,7 +109,11 @@ export async function readLibraryMacro(request: CanonicalLibraryGraphRequest, si
     let cursor: string | undefined;
     for (let page = 0; page < LIBRARY_MACRO_BUDGET.matterPages; page++) {
       aborted(signal);
-      const response = await getEngineeringMatterDirectory({ limit: 50, cursor }, signal);
+      const prefetched: PromiseSettledResult<EngineeringMatterDirectoryResponse> | null =
+        page === 0 ? await firstMatterPage : null;
+      if (prefetched?.status === 'rejected') throw prefetched.reason;
+      const response: EngineeringMatterDirectoryResponse = prefetched?.status === 'fulfilled'
+        ? prefetched.value : await getEngineeringMatterDirectory({ limit: 50, cursor }, signal);
       if (response.fileReadPerformed !== false || response.items.length > 50 || new Set(response.items.map(item => item.matterId)).size !== response.items.length || response.items.some(item => !item.matterId || directory.some(prior => prior.matterId === item.matterId))) throw invalid();
       directory.push(...response.items);
       cursor = response.nextCursor ?? undefined;
@@ -113,23 +129,16 @@ export async function readLibraryMacro(request: CanonicalLibraryGraphRequest, si
     read.issues.push('事项目录未能读回。');
     return read;
   }
-  for (let offset = 0; offset < directory.length; offset += LIBRARY_MACRO_BUDGET.concurrency) {
-    aborted(signal);
-    const results = await Promise.allSettled(directory.slice(offset, offset + LIBRARY_MACRO_BUDGET.concurrency).map(async item => {
-      const matter = await getEngineeringMatter(item.matterId, signal);
-      if (matter.matterId !== item.matterId || matter.currentRevision.matterRevisionId !== item.currentMatterRevisionId) throw invalid();
-      return matter;
-    }));
-    for (const result of results) {
-      if (result.status === 'fulfilled') read.matters.push(result.value);
-      else {
-        aborted(signal);
-        if (status(result.reason) === 401) throw result.reason;
-        const unavailable = [403, 404].includes(status(result.reason) ?? 0);
-        read.matterFailures ??= { unreadable: 0, failed: 0 };
-        read.matterFailures[unavailable ? 'unreadable' : 'failed']++;
-        read.coverage.matters = unavailable ? 'NOT_AUTHORIZED' : 'READ_FAILED';
-      }
+  const results: PromiseSettledResult<EngineeringMatterReadModel>[] = await readMacroMatters(directory, signal);
+  for (const result of results) {
+    if (result.status === 'fulfilled') read.matters.push(result.value);
+    else {
+      aborted(signal);
+      if (status(result.reason) === 401) throw result.reason;
+      const unavailable = [403, 404].includes(status(result.reason) ?? 0);
+      read.matterFailures ??= { unreadable: 0, failed: 0 };
+      read.matterFailures[unavailable ? 'unreadable' : 'failed']++;
+      read.coverage.matters = unavailable ? 'NOT_AUTHORIZED' : 'READ_FAILED';
     }
   }
   if (read.matterFailures?.unreadable) read.issues.push(`${read.matterFailures.unreadable} 项事项无权限或不可访问。`);
@@ -137,4 +146,40 @@ export async function readLibraryMacro(request: CanonicalLibraryGraphRequest, si
   if (read.matterFailures?.unreadable && read.matterFailures.failed) read.coverage.matters = 'PARTIAL';
   if (read.coverage.matters !== 'COMPLETE') read.issues.push('部分事项未读回。');
   return read;
+}
+
+/** Fill freed slots without raising the Host read budget or reordering results. */
+async function readMacroMatters(
+  directory: EngineeringMatterDirectoryResponse['items'],
+  signal: AbortSignal,
+): Promise<PromiseSettledResult<EngineeringMatterReadModel>[]> {
+  const results: PromiseSettledResult<EngineeringMatterReadModel>[] = [];
+  let nextIndex: number = 0;
+  let authenticationExpired: boolean = false;
+  const readNext = async (): Promise<void> => {
+    while (nextIndex < directory.length && !authenticationExpired) {
+      aborted(signal);
+      const index: number = nextIndex++;
+      const item: EngineeringMatterDirectoryResponse['items'][number] = directory[index];
+      try {
+        const matter: EngineeringMatterReadModel = await getEngineeringMatter(item.matterId, signal);
+        aborted(signal);
+        if (matter.matterId !== item.matterId ||
+            matter.currentRevision.matterRevisionId !== item.currentMatterRevisionId) throw invalid();
+        results[index] = { status: 'fulfilled', value: matter };
+      } catch (reason: unknown) {
+        aborted(signal);
+        results[index] = { status: 'rejected', reason };
+        if (status(reason) === 401) {
+          authenticationExpired = true;
+          throw reason;
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(LIBRARY_MACRO_BUDGET.concurrency, directory.length) }, readNext,
+  ));
+  aborted(signal);
+  return results;
 }

@@ -18,6 +18,7 @@ import type { DocumentOriginalResult } from '@shared/document-original.interface
 import { DocumentOriginalReader } from './DocumentOriginalReader';
 import DocumentOriginalCanvasPreview from './DocumentOriginalCanvasPreview';
 import { originalUnitPages } from './original-reading';
+import type { DocumentWorkbenchPanel } from './document-workbench-panel';
 
 export type DocumentSourceReaderMode = 'dual' | 'bilingual' | 'translation' | 'original' | 'pdf';
 
@@ -35,6 +36,15 @@ interface Props {
   initialLocationRequest?: number;
   onLocationSelect?: (page: number, unitId: string) => void;
   renderPdfPreview?: (page: number) => ReactNode;
+  activePanel?: DocumentWorkbenchPanel;
+  savedPanels?: ReactNode;
+  /** Standalone document reading shares its identity/actions with this toolbar. */
+  toolbar?: {
+    identity: ReactNode;
+    links?: ReactNode;
+    more?: ReactNode;
+    notices?: ReactNode;
+  };
 }
 
 const READER_MODES: Array<{ value: DocumentSourceReaderMode; label: string }> = [
@@ -57,15 +67,22 @@ export function DocumentSourceReadingWorkspace({
   initialLocationRequest = 0,
   onLocationSelect,
   renderPdfPreview,
+  toolbar,
+  activePanel = 'reader',
+  savedPanels,
 }: Props) {
   const workspaceActive: boolean = useWorkbenchPanelActive();
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const textScrollRef = useRef<HTMLDivElement>(null);
   const [split, setSplit] = useState(50);
   const [page, setPage] = useState(initialPage ?? 1);
   const [visiblePdfPage, setVisiblePdfPage] = useState(initialPage ?? 1);
   const [tocOpen, setTocOpen] = useState(() => typeof window === 'undefined' ||
     typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 761px)').matches);
   const [activeUnitId, setActiveUnitId] = useState<string | null>(initialUnitId ?? null);
+  const [pdfLocationRequest, setPdfLocationRequest] = useState(0);
+  const [pdfLocationIdentity, setPdfLocationIdentity] = useState(() =>
+    initialPage ? JSON.stringify([initialUnitId ?? '', initialLocationRequest]) : '');
   const [fullscreen, setFullscreen] = useState(false);
   const [fullscreenMessage, setFullscreenMessage] = useState<string | null>(null);
   const headings = useMemo(
@@ -80,17 +97,22 @@ export function DocumentSourceReadingWorkspace({
   );
 
   useEffect(() => {
-    if (initialPage) setPage(initialPage);
-  }, [initialPage]);
+    if (initialPage) {
+      setPage(initialPage);
+      setPdfLocationIdentity(JSON.stringify([initialUnitId ?? '', initialLocationRequest]));
+      setPdfLocationRequest((value: number) => value + 1);
+    }
+  }, [initialPage, initialUnitId, initialLocationRequest]);
 
   useEffect(() => {
-    if (initialUnitId) {
-      setActiveUnitId(initialUnitId);
-      window.requestAnimationFrame(() => {
-        document.getElementById(initialUnitId)?.scrollIntoView({ block: 'center' });
-      });
-    }
+    if (initialUnitId) setActiveUnitId(initialUnitId);
   }, [initialUnitId, initialLocationRequest]);
+
+  useEffect(() => {
+    if (!initialUnitId || activeUnitId !== initialUnitId || (mode !== 'dual' && mode !== 'original')) return;
+    const frame: number = window.requestAnimationFrame(() => scrollToUnit(initialUnitId, 'center'));
+    return () => window.cancelAnimationFrame(frame);
+  }, [initialUnitId, initialLocationRequest, mode, activeUnitId]);
 
   useEffect(() => {
     const update = () => setFullscreen(document.fullscreenElement === workspaceRef.current);
@@ -98,19 +120,35 @@ export function DocumentSourceReadingWorkspace({
     return () => document.removeEventListener('fullscreenchange', update);
   }, []);
 
-  function locateUnit(pageIndex: number, unitId: string): void {
+  function scrollToUnit(unitId: string, align: 'start' | 'center'): void {
+    const container: HTMLDivElement | null = textScrollRef.current;
+    if (!container || container.clientHeight === 0) return;
+    const target: HTMLElement | undefined = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-unit-id]'),
+    ).find((element: HTMLElement) => element.dataset.unitId === unitId);
+    if (!target) return;
+    const targetRect: DOMRect = target.getBoundingClientRect();
+    const inset: number = align === 'center'
+      ? Math.max(0, (container.clientHeight - targetRect.height) / 2) : 0;
+    container.scrollTo({ top: Math.max(0, container.scrollTop + targetRect.top
+      - container.getBoundingClientRect().top - inset), behavior: 'auto' });
+  }
+
+  function locateUnit(pageIndex: number, unitId: string, revealPdf: boolean = true): void {
     setPage(pageIndex);
     setActiveUnitId(unitId);
+    setPdfLocationIdentity(JSON.stringify([unitId, initialLocationRequest]));
+    setPdfLocationRequest((value: number) => value + 1);
     onLocationSelect?.(pageIndex, unitId);
-    if (mode === 'original') onModeChange('dual');
+    if (revealPdf && mode === 'original') onModeChange('dual');
   }
 
   function focusHeading(unitId: string): void {
     if (mode === 'bilingual' || mode === 'translation' || mode === 'pdf') onModeChange('original');
     setActiveUnitId(unitId);
-    window.requestAnimationFrame(() => {
-      document.getElementById(unitId)?.scrollIntoView({ block: 'start' });
-    });
+    const pages: number[] = originalUnitPages(original, unitId);
+    if (pages.length === 1) locateUnit(pages[0], unitId, false);
+    window.requestAnimationFrame(() => scrollToUnit(unitId, 'start'));
     if (window.innerWidth <= 760) setTocOpen(false);
   }
 
@@ -147,7 +185,7 @@ export function DocumentSourceReadingWorkspace({
   } as CSSProperties;
   const showText = mode === 'dual' || mode === 'original';
   const showPdf = mode === 'dual' || mode === 'pdf';
-  const pdfActive = workspaceActive && showPdf;
+  const pdfActive = workspaceActive && activePanel === 'reader' && showPdf;
   const showTranslation = mode === 'bilingual' || mode === 'translation';
   const targetBoxes = useMemo(() => {
     if (!activeUnitId) return null;
@@ -172,27 +210,45 @@ export function DocumentSourceReadingWorkspace({
     };
   }, [activeUnitId, original, page]);
 
+  const directoryControl = <Button type="button" size="sm" variant="ghost" aria-expanded={tocOpen}
+    onClick={() => setTocOpen(value => !value)}><List aria-hidden="true" />目录</Button>;
+  const modeControls = <div className="source-reader-mode-tabs" aria-label="阅读模式">
+    {READER_MODES.map(item => <button key={item.value} type="button" aria-pressed={mode === item.value}
+      onClick={() => onModeChange(item.value)}>{item.label}</button>)}
+  </div>;
+
   return (
-    <div className={`source-reader-workspace${tocOpen ? '' : ' no-toc'}`} ref={workspaceRef}>
+    <div className={`source-reader-workspace${toolbar ? ' has-compact-toolbar' : ''}${tocOpen ? '' : ' no-toc'}`}
+      ref={workspaceRef}>
       <header className="source-reader-toolbar">
-        <div className="source-reader-identity"><strong>{title}</strong><span>阅读版本 {original.binding.parseRevision}</span></div>
-        <Button type="button" size="sm" variant="ghost" aria-expanded={tocOpen} onClick={() => setTocOpen(value => !value)}>
-          <List aria-hidden="true" />目录
-        </Button>
-        <div className="source-reader-mode-tabs" aria-label="阅读模式">
-          {READER_MODES.map(item => <button key={item.value} type="button" aria-pressed={mode === item.value}
-            onClick={() => onModeChange(item.value)}>{item.label}</button>)}
-        </div>
+        {toolbar?.identity ?? <div className="source-reader-identity"><strong>{title}</strong><span>阅读版本 {original.binding.parseRevision}</span></div>}
+        {toolbar ? <div className="source-reader-primary-tools" hidden={activePanel !== 'reader'}>{directoryControl}{modeControls}</div>
+          : <>{directoryControl}{modeControls}</>}
+        {toolbar?.links}
+        {toolbar ? <div className="source-reader-window-tools">
+          <Button type="button" size="sm" variant="ghost" aria-label={fullscreen ? '退出全屏' : '全屏'}
+            onClick={() => void toggleFullscreen()}>
+            {fullscreen ? <Minimize aria-hidden="true" /> : <Expand aria-hidden="true" />}
+            <span className="source-reader-fullscreen-label">{fullscreen ? '退出全屏' : '全屏'}</span>
+          </Button>
+          <Button asChild size="sm" variant="outline" className="source-reader-return">
+            <Link to={returnRoute} title={returnLabel}><ArrowLeft aria-hidden="true" />
+              <span className="source-reader-return-label">{returnLabel}</span></Link>
+          </Button>
+          {toolbar.more}
+        </div> : <>
         <Button type="button" size="sm" variant="ghost" onClick={() => void toggleFullscreen()}>
           {fullscreen ? <Minimize aria-hidden="true" /> : <Expand aria-hidden="true" />}{fullscreen ? '退出全屏' : '全屏'}
         </Button>
         <Button asChild size="sm" variant="outline" className="source-reader-return">
           <Link to={returnRoute}><ArrowLeft aria-hidden="true" />{returnLabel}</Link>
         </Button>
+        </>}
       </header>
+      {toolbar?.notices}
       {fullscreenMessage ? <p className="source-reader-fullscreen-message" role="status">{fullscreenMessage}</p> : null}
 
-      <div className="source-reader-layout">
+      <div className="source-reader-layout" hidden={activePanel !== 'reader'} inert={activePanel !== 'reader'}>
       {tocOpen ? <aside className="source-reader-toc">
         <div className="source-reader-toc-modes" aria-label="目录类型">
           <button type="button" aria-pressed="true">作者章节</button>
@@ -210,11 +266,9 @@ export function DocumentSourceReadingWorkspace({
             <p>当前原文没有可用的作者章节标题。</p>
           )}
         </nav>
-        <div className="source-reader-toc-boundary">
-          <strong>固定解析版本</strong>
+        {toolbar && !toolbar.more ? <div className="source-reader-toc-boundary">
           <span>阅读版本 {original.binding.parseRevision}</span>
-          <span>业务主题目录暂不可用。</span>
-        </div>
+        </div> : null}
       </aside> : null}
 
       <section className={`source-reader-stage mode-${mode}`}>
@@ -229,7 +283,7 @@ export function DocumentSourceReadingWorkspace({
         >
             <div className="source-reader-primary" hidden={!showText}>
               <div className="source-reader-pane-title"><strong>连续结构化原文</strong></div>
-              <div className="source-reader-pane-scroll"><DocumentOriginalReader original={original}
+              <div className="source-reader-pane-scroll" ref={textScrollRef}><DocumentOriginalReader original={original}
                 activeUnitId={activeUnitId} onUnitLocate={locateUnit} /></div>
             </div>
             <div
@@ -260,13 +314,16 @@ export function DocumentSourceReadingWorkspace({
                   onVisiblePageChange={setVisiblePdfPage}
                   page={page}
                   autoLoad
-                  targetSignal={`${activeUnitId ?? ''}:${initialLocationRequest}`}
+                  targetSignal={JSON.stringify([pdfLocationIdentity, pdfLocationRequest])}
                   targetBoxes={targetBoxes}
                 />}
               </RetainedWorkbenchPanel>
             </div>
         </div>
       </section>
+      </div>
+      <div className="source-reader-saved-panels" hidden={activePanel === 'reader'}>
+        {savedPanels}
       </div>
     </div>
   );

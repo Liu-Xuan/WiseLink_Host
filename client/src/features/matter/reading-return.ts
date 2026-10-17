@@ -1,9 +1,14 @@
-import { graphReturnTarget } from '@client/src/pages/RelationGraphPage/suite-graph-return';
+import { wikiGuideReturnRoute } from '@client/src/lib/wiki-guide-route';
+import {
+  graphReturnTarget,
+  withGraphReturn,
+} from '@client/src/pages/RelationGraphPage/suite-graph-return';
 import {
   normalizedEngineeringIssueReadingParams,
 } from './engineering-issue-reading';
 import { parseSituationReadingQuery } from '../trinity/situation-reading';
 import { libraryAircraftModelsQuery, LIBRARY_AIRCRAFT_MODELS_QUERY_LIMIT } from '@shared/library-aircraft-mentions';
+import { clearLibraryDirectoryReading, libraryDirectoryReadingParams } from './library-directory-reading';
 const LIBRARY_FILTERS = [
   'familyId',
   'search',
@@ -32,15 +37,16 @@ export function knowledgeReadingIdentity(params: URLSearchParams):
   return { state: 'ok', identity: { subjectKind, subjectId, workRef } };
 }
 
-const KNOWLEDGE_READING_KEYS = ['query', 'subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'knowledgeIssueKey', 'scope', 'kind', 'after', 'listY', 'articleY', 'normalizedFamily', 'ata', 'ata2', 'ata4', 'aircraftModel', 'aircraftModels', 'fleetFamily', 'fleetModel', 'ataTitleScheme'] as const;
+const KNOWLEDGE_READING_KEYS = ['query', 'subjectKind', 'subjectId', 'workRef', 'documentVersionId', 'knowledgeIssueKey', 'scope', 'kind', 'after', 'listY', 'articleY', 'normalizedFamily', 'ata', 'ata2', 'ata4', 'aircraftModel', 'aircraftModels', 'fleetFamily', 'fleetModel', 'ataTitleScheme', 'returnWikiGuideQuery'] as const;
 
 export function knowledgeReadingParams(params: URLSearchParams): URLSearchParams {
   const result = new URLSearchParams();
   for (const key of KNOWLEDGE_READING_KEYS) {
     if (params.getAll(key).length !== 1) continue;
     const value = params.get(key) ?? '';
-    const limit = key === 'aircraftModels' ? LIBRARY_AIRCRAFT_MODELS_QUERY_LIMIT : key === 'after' ? 2400 : key === 'query' ? 200 : 255;
+    const limit = key === 'returnWikiGuideQuery' ? 8192 : key === 'aircraftModels' ? LIBRARY_AIRCRAFT_MODELS_QUERY_LIMIT : key === 'after' ? 2400 : key === 'query' ? 200 : 255;
     if (value.length > limit || /[\u0000-\u001f\u007f]/u.test(value)) continue;
+    if (key === 'returnWikiGuideQuery' && !wikiGuideReturnRoute(value)) continue;
     if (key === 'scope' && !['CURRENT', 'ALL', 'HISTORICAL'].includes(value)) continue;
     if (key === 'kind' && !['works', 'sources', 'matters'].includes(value)) continue;
     if (key === 'ataTitleScheme' && !['ispec', 'jasc'].includes(value)) continue;
@@ -62,6 +68,7 @@ export function knowledgeReadingReturnRoute(params: URLSearchParams): string | n
   const state = new URLSearchParams(values[0]);
   if (knowledgeReadingIdentity(state).state === 'invalid') return null;
   const safe = knowledgeReadingParams(state);
+  if ([...state.keys()].some(key => !(KNOWLEDGE_READING_KEYS as readonly string[]).includes(key))) return null;
   if (!safe.size || KNOWLEDGE_READING_KEYS.some(key => state.has(key) &&
     (state.getAll(key).length !== 1 || state.get(key) !== safe.get(key)))) return null;
   return `/knowledge?${safe}`;
@@ -122,6 +129,7 @@ export function libraryReadingParams(params: URLSearchParams): URLSearchParams {
     const value = params.get(key) ?? '';
     if (params.getAll(key).length === 1 && /^\d{1,7}$/.test(value)) result.set(key, value);
   }
+  for (const [key, value] of libraryDirectoryReadingParams(params)) result.set(key, value);
   if (params.getAll('catalogView').length === 1 && ['tree', 'ata'].includes(params.get('catalogView') ?? '')) result.set('catalogView', params.get('catalogView')!);
   if (params.getAll('ataTitleScheme').length === 1 && ['ispec', 'jasc'].includes(params.get('ataTitleScheme') ?? '')) result.set('ataTitleScheme', params.get('ataTitleScheme')!);
   if (params.get('grouping') === 'ata' || params.get('grouping') === 'aircraft')
@@ -134,7 +142,109 @@ export function libraryReadingScope(params: URLSearchParams): string {
   const state = libraryReadingParams(params);
   state.delete('listY');
   state.delete('quicklookY');
+  clearLibraryDirectoryReading(state);
   return `library:${state.toString()}`;
+}
+
+/** Exact directory intent, with the same field checks as a document-graph return. */
+function exactLibraryReadingParams(
+  params: URLSearchParams,
+): URLSearchParams | null {
+  const directory = libraryReadingParams(params);
+  return [...params.keys()].some((key) =>
+    params.getAll(key).length !== 1 || !directory.has(key) ||
+    (key !== 'expandedFamilyIds' && params.get(key) !== directory.get(key)))
+    ? null : directory;
+}
+
+function documentReadingIdentity(
+  path: string,
+  params: URLSearchParams,
+): string | null {
+  const match = /^\/document-versions\/([^/?#]+)(?:\/activities)?$/u.exec(path);
+  if (match) {
+    try {
+      const value = decodeURIComponent(match[1]);
+      return value && value === identifier(value) ? value : null;
+    } catch {
+      return null;
+    }
+  }
+  if (!/^\/work-items\/[^/?#]+\/(?:analysis|documents)$/u.test(path) &&
+    path !== '/timeline' && path !== '/activity-graph') return null;
+  const value = singleToken(params, 'documentVersionId');
+  return value && value === params.get('documentVersionId') ? value : null;
+}
+
+/**
+ * Global Atlas and object-graph entries share the existing, local reading return
+ * pins. They read the URL immediately, independently of directory data loading.
+ */
+export function withSourceReadingReturn(
+  route: string,
+  currentPathname: string,
+  origin: URLSearchParams,
+): string {
+  // This existing helper admits only registered local reader/matter paths and
+  // keeps the complete graph query, including its own directory/history return.
+  if (currentPathname === '/graph') {
+    // A legacy DV-only /graph entry dispatches to activity reading; its existing
+    // activity pins must not be recast as a matter/document-neighborhood graph.
+    const legacyActivity = !origin.has('scope') && [
+      'documentVersionId', 'parseRunId', 'candidateRevision', 'runRef',
+      'statementId', 'anchor', 'window',
+    ].some(key => origin.has(key));
+    return legacyActivity ? route : withGraphReturn(route, origin);
+  }
+  const queryStart = route.indexOf('?');
+  const path = queryStart === -1 ? route : route.slice(0, queryStart);
+  const params = new URLSearchParams(
+    queryStart === -1 ? '' : route.slice(queryStart + 1),
+  );
+  const documentVersionId = documentReadingIdentity(path, params);
+  if (!documentVersionId) return route;
+  let directory: URLSearchParams | null = null;
+  if (currentPathname === '/library') {
+    if ([...params.keys()].some(key => key.startsWith('return'))) return route;
+    directory = exactLibraryReadingParams(origin);
+  } else if (origin.has('returnLibraryQuery') || origin.has('returnGraphQuery')) {
+    const sourceVersion = documentReadingIdentity(currentPathname, origin);
+    const allowed = origin.has('returnLibraryQuery')
+      ? ['returnLibraryQuery', 'returnDocumentVersionId']
+      : ['returnGraphQuery', 'returnDocumentVersionId', 'returnGraphParseRunId'];
+    const exclusive = [...origin.keys()].every(key =>
+      !key.startsWith('return') || allowed.includes(key));
+    const bindingMatches = !origin.has('returnDocumentVersionId') ||
+      (origin.getAll('returnDocumentVersionId').length === 1 &&
+        origin.get('returnDocumentVersionId') === sourceVersion);
+    const valid = sourceVersion && exclusive && bindingMatches && readingReturnTarget(
+      origin, sourceVersion, origin.get('parseRunId'),
+    );
+    if (valid && origin.has('returnGraphQuery')) {
+      const graphRoute = withGraphReturn(
+        route, new URLSearchParams(origin.get('returnGraphQuery')!),
+      );
+      if (graphRoute !== route) return graphRoute;
+    }
+    // Keep invalid or conflicting intent rejected through activity replacements.
+    for (const key of [...params.keys()]) {
+      if (key.startsWith('return')) params.delete(key);
+    }
+    origin.forEach((value, key) => {
+      if (key.startsWith('return')) params.append(key, value);
+    });
+    if (!valid) {
+      params.set('returnDocumentVersionId', '');
+      return `${path}?${params}`;
+    }
+    if (!origin.has('returnLibraryQuery')) return `${path}?${params}`;
+    directory = exactLibraryReadingParams(
+      new URLSearchParams(origin.get('returnLibraryQuery')!),
+    );
+  } else return route;
+  params.set('returnDocumentVersionId', documentVersionId);
+  params.set('returnLibraryQuery', directory?.toString() ?? '');
+  return `${path}?${params}`;
 }
 
 export function libraryDocumentReadingRoute(
@@ -385,7 +495,20 @@ export function activityReadingParams(params: URLSearchParams): URLSearchParams 
   const window = activityWindowPin(params);
   if (window.state === 'ok') result.set('window', window.value);
   const returnLibraryQuery = params.getAll('returnLibraryQuery');
-  if (returnLibraryQuery.length === 1 && returnLibraryQuery[0]) {
+  if (params.has('returnLibraryQuery') && params.has('returnDocumentVersionId')) {
+    const binding = singleToken(params, 'returnDocumentVersionId');
+    const currentDocument = singleToken(params, 'documentVersionId');
+    const directory = returnLibraryQuery.length === 1 && returnLibraryQuery[0].length <= 8192
+      ? exactLibraryReadingParams(new URLSearchParams(returnLibraryQuery[0])) : null;
+    const exclusive = [...params.keys()].every(key => !key.startsWith('return') ||
+      key === 'returnLibraryQuery' || key === 'returnDocumentVersionId');
+    const valid = binding && binding === params.get('returnDocumentVersionId') &&
+      directory && returnLibraryQuery[0] && exclusive &&
+      (!params.has('documentVersionId') || (currentDocument === binding &&
+        currentDocument === params.get('documentVersionId')));
+    result.set('returnDocumentVersionId', valid ? binding : '');
+    result.set('returnLibraryQuery', valid ? directory.toString() : '');
+  } else if (returnLibraryQuery.length === 1 && returnLibraryQuery[0]) {
     const normalized = libraryReadingParams(
       new URLSearchParams(returnLibraryQuery[0]),
     ).toString();
@@ -416,6 +539,11 @@ export function activityReadingParams(params: URLSearchParams): URLSearchParams 
       const value = singleToken(params, key);
       if (value) result.set(key, value);
     }
+  } else if (params.has('returnGraphQuery')) {
+    // Discovery/view replacements must keep an explicit rejected graph return;
+    // dropping it would enable the toolbar's unrelated default-directory back.
+    result.set('returnGraphQuery', '');
+    result.set('returnDocumentVersionId', '');
   }
   result.sort();
   return result;
@@ -651,6 +779,22 @@ export function readingReturnTarget(
   currentWorkRef?: string,
   currentPathname?: string,
 ): { route: string; label: string } | null {
+  if (params.has('returnWikiGuideQuery')) {
+    const returns = [...params.keys()].filter(key => key.startsWith('return'));
+    const values = params.getAll('returnWikiGuideQuery');
+    if (values.length !== 1 || returns.some(key => !['returnWikiGuideQuery', 'returnDocumentVersionId'].includes(key))) return null;
+    const route = wikiGuideReturnRoute(values[0]);
+    if (!route) return null;
+    const summaryPage = /^\/summaries\/(?!new(?:$|\/))[^/]+$/u.test(currentPathname ?? '');
+    const workPage = currentPathname === '/knowledge' && knowledgeReadingIdentity(params).state === 'ok';
+    const documentPage = /^\/document-versions\/[^/]+$/u.test(currentPathname ?? '');
+    if (!summaryPage && !workPage && !documentPage) return null;
+    if (documentPage) {
+      const bindings = params.getAll('returnDocumentVersionId');
+      if (!documentVersionId || bindings.length !== 1 || bindings[0] !== documentVersionId) return null;
+    } else if (params.has('returnDocumentVersionId')) return null;
+    return { route, label: '返回 Wiki 导览' };
+  }
   if (params.has('returnLibraryGraphQuery')) return libraryGraphReturnTarget(params, currentPathname);
   const keys = [
     'returnSituationQuery',
@@ -681,6 +825,11 @@ export function readingReturnTarget(
     ].some((key) => params.getAll(key).length > 1)
   )
     return null;
+  if (params.has('returnKnowledgeQuery') && /^\/summaries\/(?!new(?:$|\/))[^/]+$/u.test(currentPathname ?? '')) {
+    if ([...params.keys()].some(key => key.startsWith('return') && key !== 'returnKnowledgeQuery')) return null;
+    const route = knowledgeReadingReturnRoute(params);
+    return route ? { route, label: '返回工程知识' } : null;
+  }
   if (params.has('returnSituationQuery')) {
     const allowedSituationReturnKeys = new Set([
       'returnSituationQuery',
@@ -832,8 +981,16 @@ export function readingReturnTarget(
         modes.length > 1 || (modes.length === 1 && modes[0] !== 'document'))
         return null;
     }
+    const directory: URLSearchParams = libraryReadingParams(nested);
+    // Document graphs keep explicit directory intent, including rejection,
+    // rather than dropping malformed or foreign fields into a default view.
+    // The directory selection may differ from a newly centered graph version.
+    if (params.get('scope') === 'document' && (
+      directory.get('mode') !== 'document' ||
+      !exactLibraryReadingParams(nested)
+    )) return null;
     return {
-      route: `/library?${libraryReadingParams(nested)}`,
+      route: `/library?${directory}`,
       label: nested.get('mode') === 'matter'
         ? '返回原事项目录'
         : nested.get('mode') === 'tasks'

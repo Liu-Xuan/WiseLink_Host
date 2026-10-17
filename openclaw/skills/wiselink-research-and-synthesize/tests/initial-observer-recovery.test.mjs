@@ -168,7 +168,7 @@ async function assertUnchanged(directory, snapshot) {
 
 test('initial durable round 9 resumes the same SAVE request with equal observer and no new model request', async t => {
   const f = await fixture(t);
-  await assert.rejects(f.first(), /HOSTED_INITIAL_CANCEL_FAILED:SYNTHETIC_SAVE_RESPONSE_LOST:SYNTHETIC_CANCEL_RESPONSE_LOST/u);
+  assert.equal((await f.first()).errorCode, 'SYNTHETIC_SAVE_RESPONSE_LOST');
   assert.equal(f.gatewayCalls.length, 9);
   assert.equal((await f.checkpoint.readOptional('assessment-state')).round, 9);
   const save = await f.checkpoint.readOptional('assessment-9-save');
@@ -194,21 +194,23 @@ test('initial durable round 9 resumes the same SAVE request with equal observer 
   assert.equal((await f.checkpoint.readOptional('assessment-current-claim')).leaseGeneration, 2);
 });
 
-test('initial durable round 9 rejects one changed observer field without SAVE or checkpoint replacement', async t => {
+test('initial durable round 9 preserves changed auxiliary observations while recovering the original SAVE', async t => {
   const f = await fixture(t);
-  await assert.rejects(f.first(), /SYNTHETIC_SAVE_RESPONSE_LOST/u);
+  assert.equal((await f.first()).errorCode, 'SYNTHETIC_SAVE_RESPONSE_LOST');
   const shape = await f.checkpoint.readOptional('model.output-shape-9');
   // Deliberately corrupt only this synthetic fixture before testing refusal.
   await f.checkpoint.write('model.output-shape-9', { ...shape, inputTokens: shape.inputTokens + 1 });
   const before = await persistedSnapshot(f.directory);
-  const stateBefore = await readFile(join(f.directory, 'assessment-state.json'));
   const callCount = f.toolCalls.length;
-  await assert.rejects(f.resume(), /HOSTED_INITIAL_CANCEL_FAILED:REVIEW_CHECKPOINT_VALUE_CHANGED:REVIEW_STOP-ATTEMPT_OUTCOME_UNKNOWN/u);
+  const result = await f.resume();
+  assert.equal(result.status, 'INITIAL_STAGE_SAVED');
+  assert.ok(result.localCheckpointWarnings.some(warning => warning.code === 'REVIEW_CHECKPOINT_AUXILIARY_OBSERVATION_FAILED'));
   assert.equal(f.gatewayCalls.length, 9);
   await assertUnchanged(f.directory, before);
-  assert.deepEqual(await readFile(join(f.directory, 'assessment-state.json')), stateBefore);
   const afterCalls = f.toolCalls.slice(callCount);
-  assert.equal(afterCalls.filter(call => ['save_assessment_work', 'read_assessment_work', 'cancel_action_attempt'].includes(call.name)).length, 0);
-  assert.equal(await f.checkpoint.readOptional('run-result'), null);
+  assert.equal(afterCalls.filter(call => call.name === 'cancel_action_attempt').length, 0);
+  const saves = f.toolCalls.filter(call => call.name === 'save_assessment_work' && call.args.expectedWorkRevision === 3);
+  assert.deepEqual(saves[0].args, saves[1].args);
+  assert.equal((await f.checkpoint.readOptional('run-result')).attemptStatus, 'UNKNOWN');
   assert.equal(await f.checkpoint.readOptional('stop-attempt.result'), null);
 });

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import {
   BookMarked,
-  Compass,
   Clock3,
+  Cpu,
   FileSearch2,
   LibraryBig,
   LifeBuoy,
@@ -24,7 +24,13 @@ import {
   WISELINK_CHINESE_NAME,
   WISELINK_DESCRIPTION,
 } from '@client/src/config/wiselink-brand';
-import { activityReadingParams, knowledgeReadingIdentity, knowledgeReadingParams, libraryGraphReturnRoute } from '@client/src/features/matter/reading-return';
+import {
+  activityReadingParams,
+  knowledgeReadingIdentity,
+  knowledgeReadingParams,
+  libraryGraphReturnRoute,
+  withSourceReadingReturn,
+} from '@client/src/features/matter/reading-return';
 import { LIBRARY_GRAPH_ROUTE } from '@client/src/pages/RelationGraphPage/library-graph-entry';
 import {
   Dialog,
@@ -69,9 +75,9 @@ const GLOBAL_NAV: Array<{
   end?: boolean;
 }> = [
   { to: '/library', label: '资料库', icon: LibraryBig },
-  { to: '/knowledge', label: '工程知识', icon: BookMarked },
+  { to: '/situation', label: '工程知识', icon: BookMarked },
+  { to: '/library?mode=lcm', label: '软件构型', icon: Cpu },
   { to: LIBRARY_GRAPH_ROUTE, label: '关系图谱', icon: Share2 },
-  { to: '/situation', label: '工程态势', icon: Compass },
   { to: '/library?mode=tasks', label: '工作进展', icon: Clock3 },
 ];
 
@@ -220,7 +226,9 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
       if (pinnedDocumentVersionId) {
         const query = activityReadingParams(currentSearchParams);
         query.set('documentVersionId', pinnedDocumentVersionId);
-        return `/activity-graph?${query}`;
+        return withSourceReadingReturn(
+          `/activity-graph?${query}`, location.pathname, currentSearchParams,
+        );
       }
       return target;
     }
@@ -229,7 +237,9 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
       if (pinnedDocumentVersionId) {
         const query = activityReadingParams(currentSearchParams);
         query.set('documentVersionId', pinnedDocumentVersionId);
-        return `${target}?${query}`;
+        return withSourceReadingReturn(
+          `${target}?${query}`, location.pathname, currentSearchParams,
+        );
       }
       if (graphMatterId) {
         const query = activityReadingParams(currentSearchParams);
@@ -250,8 +260,15 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
 
   const isTasksRoute =
     location.pathname === '/library' &&
-    new URLSearchParams(location.search).get('mode') === 'tasks';
-  const isLibraryRoute = location.pathname === '/library' && !isTasksRoute;
+    currentSearchParams.get('mode') === 'tasks';
+  const isLcmRoute =
+    location.pathname === '/library' &&
+    currentSearchParams.get('mode') === 'lcm';
+  const libraryRouteActive: Record<string, boolean> = {
+    '/library': location.pathname === '/library' && !isTasksRoute && !isLcmRoute,
+    '/library?mode=tasks': isTasksRoute,
+    '/library?mode=lcm': isLcmRoute,
+  };
 
   return (
     <>
@@ -261,13 +278,20 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
         aria-label="WiseLink 全局导航"
       >
         <div className="wl-sidebar-brand">
-          <span className="wiselink-app-mark" aria-hidden="true">
-            <WiseLinkBrandMark size={33} />
-          </span>
-          <span className="wl-sidebar-brand-text">
-            <strong>{WISELINK_PRODUCT_NAME}</strong>
-            <small title={WISELINK_CHINESE_NAME}>{WISELINK_CHINESE_NAME}</small>
-          </span>
+          <div className="wl-sidebar-brand-heading">
+            <span className="wiselink-app-mark" aria-hidden="true">
+              <WiseLinkBrandMark size={33} />
+            </span>
+            <span className="wl-sidebar-brand-text">
+              <strong>{WISELINK_PRODUCT_NAME}</strong>
+            </span>
+          </div>
+          <small
+            className="wl-sidebar-brand-subtitle"
+            title={WISELINK_CHINESE_NAME}
+          >
+            {WISELINK_CHINESE_NAME}
+          </small>
           <button
             type="button"
             className="wl-sidebar-close"
@@ -292,16 +316,10 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
                 end={item.end}
                 to={globalNavTarget(item.to)}
                 className={({ isActive }) => {
-                  const active =
-                    item.to === '/library'
-                      ? isLibraryRoute
-                      : item.to === '/library?mode=tasks'
-                        ? isTasksRoute
-                        : item.to === '/knowledge'
-                          ? isActive && !isTasksRoute
-                          : isActive;
+                  const active = libraryRouteActive[item.to] ?? isActive;
                   return `wl-shell-nav-link${active ? ' active' : ''}`;
                 }}
+                aria-current={libraryRouteActive[item.to] === false ? false : undefined}
                 aria-label={item.label}
                 title={item.label}
               >

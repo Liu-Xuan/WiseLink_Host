@@ -128,7 +128,10 @@ export type OpenClawResultBusinessOutcome =
  * Complete executor result. The model output is data inside the envelope; it
  * is never accepted as a free-standing string or silently replaced with {}.
  */
-export interface OpenClawResultEnvelope {
+export interface OpenClawModelResultEnvelope {
+  executionKind?: never;
+  modelRequests?: never;
+  sourceWork?: never;
   schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1';
   actionAttemptId: string;
   operationRef: string;
@@ -159,9 +162,24 @@ export interface OpenClawResultEnvelope {
   errorDetail: string | null;
 }
 
+/** A Host-authorized finish of an existing COMPLETE JAWR, without a model request. */
+export interface OpenClawSavedWorkReconciliationResultEnvelope extends Omit<
+  OpenClawModelResultEnvelope, 'modelVersion' | 'executionKind' | 'modelRequests' | 'sourceWork'
+> {
+  executionKind: 'HOST_SAVED_WORK_RECONCILIATION';
+  status: 'SUCCEEDED';
+  businessOutcome: 'CANDIDATE_READY';
+  candidateStatus: null;
+  modelRequests: 0;
+  modelVersion: null;
+  sourceWork: { workRevisionRef: string; sourceActionAttemptId: string };
+}
+
+export type OpenClawResultEnvelope = OpenClawModelResultEnvelope | OpenClawSavedWorkReconciliationResultEnvelope;
+
 export interface OpenClawMatterResultEnvelope extends Omit<
   OpenClawResultEnvelope,
-  'schemaVersion' | 'taskType' | 'workItemId' | 'modelVersion' | 'skillVersion' | 'runMetrics'
+  'schemaVersion' | 'taskType' | 'workItemId' | 'modelVersion' | 'skillVersion' | 'runMetrics' | 'executionKind' | 'modelRequests' | 'sourceWork'
 > {
   schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2';
   taskType: 'OPENCLAW_MATTER_ASSESSMENT';

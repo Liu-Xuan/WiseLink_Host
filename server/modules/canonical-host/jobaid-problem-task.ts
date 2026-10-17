@@ -1,3 +1,5 @@
+import type { JobAidPreparationScope, JobAidPreparationView } from './jobaid-preparation-view';
+import { automaticWorkItemTaskLease, type AutomaticWorkItemTaskLease } from '../action-attempt/automatic-work-item-attempt-lease';
 import { assertTdmsRuntimeTaskContext, type TdmsRuntimeTaskContext } from '../tdms-source/tdms-runtime-reader.port';
 import { tdmsJobAidDirectory } from './jobaid-tdms-context';
 import type { DocumentActivityAssessmentProjection } from './document-activity-assessment-projection';
@@ -78,6 +80,7 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
     | 'INITIAL_PROBLEM_ASSESSMENT'
     | 'OVERALL_CONSISTENCY'
     | 'PROBLEM_REVIEW';
+  preparation?: JobAidPreparationView;
   methodBinding: typeof JOBAID_METHOD_BINDING;
   documentOverview: CanonicalCommonAssessmentContext['primaryDocument'] & {
     sections: Array<{ title: string; sourceRefs: string[] }>;
@@ -102,6 +105,10 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
     title: string;
     versionLabel: string | null;
     locator: string | null;
+    documentVersionId?: string;
+    sourceRefId?: string;
+    parseRunId?: string;
+    carrierRangeRef?: string;
     sourceStatement?: Pick<DocumentActivityAssessmentProjection['entries'][number], 'reference'|'label'|'semanticFieldsAvailability'|'scopeBasis'|'sourceSchemaVersion'>;
   }>;
   /** New mixed Review alone inlines exact records once; initial/Overall read on demand. */
@@ -142,6 +149,18 @@ export function jobAidProblemModelWorkContent(content: JobAidProblemWorkContent)
 }
 
 export interface JobAidProblemTaskInput extends Record<string, unknown> {
+  /** Exact existing Review input selection, retained only in the trusted wrapper. */
+  preparationScope?: JobAidPreparationScope;
+  /** Sealed by Host for new automatic work only; absent on manual/historical tasks. */
+  automaticWorkItemLease?: AutomaticWorkItemTaskLease;
+  /** Exact saved candidate recovery; never a new model analysis. */
+  savedWorkReconciliation?: {
+    executionKind: 'HOST_SAVED_WORK_RECONCILIATION';
+    modelRequests: 0;
+    workRevisionRef: string;
+    workRevision: number;
+    sourceActionAttemptId: string;
+  };
   /** Optional only on newly sealed tasks; never backfilled into old checkpoints. */
   tdmsContext?: TdmsRuntimeTaskContext;
   schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA | typeof JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;
@@ -193,6 +212,18 @@ export function assertJobAidProblemTaskBinding(
     !isJobAidMethodBinding(input.modelInput.methodBinding)
   )
     throw new Error('JOBAID_TASK_BINDING_INVALID');
+  if (Object.hasOwn(input, 'automaticWorkItemLease') && input.automaticWorkItemLease === undefined)
+    throw new Error('AUTO_WORK_ITEM_TASK_LEASE_BINDING_INVALID');
+  automaticWorkItemTaskLease(input.automaticWorkItemLease);
+  const recovery = input.savedWorkReconciliation;
+  if (Object.hasOwn(input, 'savedWorkReconciliation') && (!recovery ||
+      recovery.executionKind !== 'HOST_SAVED_WORK_RECONCILIATION' || recovery.modelRequests !== 0 ||
+      input.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT' ||
+      input.previousWork?.content.roundCompletion !== 'COMPLETE' ||
+      recovery.workRevisionRef !== input.previousWork.workRevisionRef ||
+      recovery.workRevision !== input.previousWork.workRevision ||
+      recovery.sourceActionAttemptId !== input.previousWork.actionAttemptId))
+    throw new Error('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
   const nativeContext = input.tdmsContext === undefined ? undefined : assertTdmsRuntimeTaskContext(input.tdmsContext);
   if (nativeContext && (nativeContext.binding.actorUserId !== input.actorUserId ||
       nativeContext.binding.documentVersionId !== input.modelInput.documentOverview.documentVersionRef ||
@@ -231,12 +262,16 @@ export function assertJobAidProblemTaskBinding(
     item.packRef === input.modelInput.methodBinding.packRef);
   if (!boundMethods.length || !boundMethods.some(item => input.initiallyDeliveredRefs.includes(item.evidenceRef)))
     throw new Error('JOBAID_TASK_METHOD_BINDING_INVALID');
+  const identityDirectory = Array.isArray(input.modelInput.availableSources) &&
+    input.modelInput.availableSources.some(item => ['documentVersionId','sourceRefId','parseRunId','carrierRangeRef']
+      .some(key => Object.hasOwn(item,key)));
   const expectedSources = [...input.sourceCatalog.filter(item => item.kind !== 'TDMS_NATIVE_RECORD').map((item) => ({
     ref: item.evidenceRef,
     kind: item.kind,
     title: item.title,
     versionLabel: item.versionLabel,
     locator: 'locator' in item ? item.locator : null,
+    ...(identityDirectory ? jobAidSourceDirectoryIdentity(item) : {}),
     ...sourceStatementDirectory(item, projections),
   })), ...tdmsJobAidDirectory(nativeContext, input.sourceCatalog)];
   if (
@@ -276,6 +311,7 @@ export function buildJobAidProblemTask(input: {
   sourceActivityProjections?: DocumentActivityAssessmentProjection[];
   sourceStatementAvailability?: JobAidProblemModelInput['sourceStatementAvailability'];
   tdmsContext?: TdmsRuntimeTaskContext;
+  automaticWorkItemLease?: AutomaticWorkItemTaskLease;
 }): JobAidProblemTaskInput {
   const nativeContext = input.tdmsContext === undefined ? undefined : assertTdmsRuntimeTaskContext(input.tdmsContext);
   if (nativeContext && (nativeContext.binding.actorUserId !== input.actorUserId ||
@@ -394,6 +430,7 @@ export function buildJobAidProblemTask(input: {
     schemaVersion,
     actorUserId: input.actorUserId,
     permissionSnapshotVersion: input.permissionSnapshotVersion,
+    ...(input.automaticWorkItemLease ? { automaticWorkItemLease: automaticWorkItemTaskLease(input.automaticWorkItemLease) } : {}),
     sourceCatalog: catalog,
     ...(nativeContext ? {tdmsContext:structuredClone(nativeContext)} : {}),
     ...(statementContract ? {sourceActivityProjections:structuredClone(projections)} : {}),
@@ -434,6 +471,7 @@ export function buildJobAidProblemTask(input: {
         title: item.title,
         versionLabel: item.versionLabel,
         locator: 'locator' in item ? item.locator : null,
+        ...jobAidSourceDirectoryIdentity(item),
         ...sourceStatementDirectory(item, projections),
       })), ...tdmsJobAidDirectory(nativeContext, catalog)],
       deliveredEvidence: overallModelEvidenceRegistry(
@@ -464,6 +502,18 @@ export function buildJobAidProblemTask(input: {
       discussion: structuredClone(input.common.discussion),
     },
   };
+}
+
+function jobAidSourceDirectoryIdentity(item: AssessmentEvidence): {
+  documentVersionId?: string; sourceRefId?: string; parseRunId?: string; carrierRangeRef?: string;
+} {
+  if (item.kind !== 'DOCUMENT_PASSAGE') return {};
+  const prefix = `DOCUMENT_ORIGINAL:${item.documentVersionId}:`;
+  const parseRunId = item.evidenceRef.startsWith(prefix)
+    ? item.evidenceRef.slice(prefix.length).split(':')[0] : undefined;
+  return {documentVersionId:item.documentVersionId,sourceRefId:item.sourceRefId,
+    ...(parseRunId && /^[A-Za-z0-9._-]{1,96}$/u.test(parseRunId) && item.versionLabel === parseRunId
+      ? {parseRunId,carrierRangeRef:item.evidenceRef} : {})};
 }
 
 export function stableJobAidEvidence(

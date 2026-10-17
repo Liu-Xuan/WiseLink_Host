@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { CanonicalLibraryDirectoryNode, CanonicalLibraryDirectoryRequest } from '@shared/library-directory.interface';
 import { getCanonicalLibraryDirectory } from '@client/src/api/canonical-host';
@@ -8,7 +8,14 @@ import { ataDirectoryLabel, type AtaTitleScheme } from './library-ata-directory'
 import type { LibraryCatalogFilters } from './library-classification';
 import { libraryAircraftModelsQuery } from '@shared/library-aircraft-mentions';
 
-interface LibraryDirectoryNavigationProps {
+interface LibraryDirectoryReadingState {
+  expandedNodes: Readonly<Record<string, boolean>>;
+  onNodeChange: (node: string, open: boolean) => void;
+  onReadyChange: (ready: boolean) => void;
+  onAccessRejected: () => void;
+}
+
+export interface LibraryDirectoryNavigationProps {
   search: string;
   filters: LibraryCatalogFilters;
   sessionGeneration: number;
@@ -16,6 +23,7 @@ interface LibraryDirectoryNavigationProps {
   refreshRevision: number;
   scheme: AtaTitleScheme;
   onFilterChange: (filters: LibraryCatalogFilters) => void;
+  navigation?: LibraryDirectoryReadingState;
 }
 
 function directoryNodeLabel(node: CanonicalLibraryDirectoryNode, scheme: AtaTitleScheme): string {
@@ -43,11 +51,27 @@ export function LibrarySourceDirectory(props: LibraryDirectoryNavigationProps) {
   const key: string = JSON.stringify([baseKey, modelQuery, sessionGeneration, refreshRevision]);
   const [deniedKey, setDeniedKey] = useState<string | null>(null);
   const [retry, setRetry] = useState<number>(0);
-  const onDenied = useCallback((): void => setDeniedKey(key), [key]);
+  const navigation = useRef(props.navigation);
+  navigation.current = props.navigation;
+  const onDenied = useCallback((): void => {
+    setDeniedKey(key);
+    navigation.current?.onAccessRejected();
+  }, [key]);
+  const [childReadiness, setChildReadiness] = useState<{ key: string; nodes: Record<string, boolean> }>({ key, nodes: {} });
+  const onChildReady = useCallback((node: string, ready: boolean): void => {
+    setChildReadiness(prior => prior.key === key && prior.nodes[node] === ready ? prior
+      : { key, nodes: { ...(prior.key === key ? prior.nodes : {}), [node]: ready } });
+  }, [key]);
   const load = useCallback(async (signal: AbortSignal) => getCanonicalLibraryDirectory({ ...base,
     ...(modelQuery ? { aircraftModels: libraryAircraftModelsQuery(modelQuery) } : {}) }, signal), [baseKey, modelQuery]);
   const active: boolean = !authenticationRequired && deniedKey !== key;
   const directory = useTdmsReadResource(`${key}:${retry}`, active, load, onDenied);
+  const expanded: CanonicalLibraryDirectoryNode[] = directory.value?.nodes.filter(node =>
+    node.hasChildren && node.level === 'ATA2' &&
+    (props.navigation?.expandedNodes[node.value] ?? filters.ata2 === node.value)) ?? [];
+  const ready: boolean = active && !directory.loading && Boolean(directory.value) &&
+    expanded.every(node => childReadiness.key === key && childReadiness.nodes[node.value]);
+  useEffect(() => { props.navigation?.onReadyChange(ready); }, [props.navigation?.onReadyChange, ready]);
   return <nav className="library-source-directory" aria-label="ATA2 与 ATA4 目录">
     {authenticationRequired ? <p role="status">请先登录，再读取资料目录。</p>
       : deniedKey === key ? <p role="alert">当前账户无法读取资料目录，原目录已清除。</p>
@@ -56,10 +80,16 @@ export function LibrarySourceDirectory(props: LibraryDirectoryNavigationProps) {
           {directory.error ? <p role="alert">目录读取失败：{modelError || directory.error}</p> : null}
           {directory.value ? <>
             {directory.value.nodes.filter(node => /^\d{2}$/u.test(node.value)).map(node => <LibrarySourceDirectoryNode key={`${key}:${node.value}`}
-              node={node} request={{ ...base, ...(modelQuery ? { aircraftModels: libraryAircraftModelsQuery(modelQuery) } : {}) }} props={props} active={active} onAccessRejected={onDenied} />)}
-            {directory.value.nodes.some(node => !/^\d{2}$/u.test(node.value)) ? <details className="library-directory-anomalies"><summary>未分类与待核</summary>
+              node={node} request={{ ...base, ...(modelQuery ? { aircraftModels: libraryAircraftModelsQuery(modelQuery) } : {}) }} props={props} active={active} onAccessRejected={onDenied} onReadReady={onChildReady} />)}
+            {directory.value.nodes.some(node => !/^\d{2}$/u.test(node.value)) ? <details className="library-directory-anomalies"
+              open={props.navigation?.expandedNodes.__ANOMALIES__}
+              onToggle={event => {
+                const open: boolean = event.currentTarget.open;
+                if (props.navigation && open !== Boolean(props.navigation.expandedNodes.__ANOMALIES__))
+                  props.navigation.onNodeChange('__ANOMALIES__', open);
+              }}><summary>未分类与待核</summary>
               {directory.value.nodes.filter(node => !/^\d{2}$/u.test(node.value)).map(node => <LibrarySourceDirectoryNode key={`${key}:${node.value}`}
-                node={node} request={base} props={props} active={active} onAccessRejected={onDenied} />)}</details> : null}
+                node={node} request={base} props={props} active={active} onAccessRejected={onDenied} onReadReady={onChildReady} />)}</details> : null}
             {!directory.value.nodes.length ? <p role="status">当前目录范围没有正式文档。</p> : null}
           </> : null}
         </>}
@@ -68,23 +98,34 @@ export function LibrarySourceDirectory(props: LibraryDirectoryNavigationProps) {
   </nav>;
 }
 
-function LibrarySourceDirectoryNode({ node, request, props, active, onAccessRejected }: {
+function LibrarySourceDirectoryNode({ node, request, props, active, onAccessRejected, onReadReady }: {
   node: CanonicalLibraryDirectoryNode;
   request: CanonicalLibraryDirectoryRequest;
   props: LibraryDirectoryNavigationProps;
   active: boolean;
   onAccessRejected: () => void;
+  onReadReady: (node: string, ready: boolean) => void;
 }) {
   const [manualOpen, setManualOpen] = useState<boolean | null>(null);
   const [retry, setRetry] = useState<number>(0);
   const { filters, scheme, sessionGeneration, refreshRevision } = props;
   const selectedPath: boolean = node.level === 'ATA2' ? filters.ata2 === node.value
     : filters.ata2 === request.ata2 && filters.ata4 === node.value;
-  const open: boolean = manualOpen ?? selectedPath;
+  const open: boolean = props.navigation?.expandedNodes[node.value] ?? manualOpen ?? selectedPath;
+  const [visited, setVisited] = useState<boolean>(open);
+  useEffect(() => {
+    if (open) setVisited(true);
+  }, [open]);
+  // Keep this mounted node's read when collapsed. The parent key already changes
+  // with filters, session and refresh; access rejection still clears the tree.
+  const retainChildren: boolean = open || visited;
   const childRequest: CanonicalLibraryDirectoryRequest = { ...request, ata2: node.value };
   const childKey: string = JSON.stringify([childRequest, sessionGeneration, refreshRevision, retry]);
   const load = useCallback((signal: AbortSignal) => getCanonicalLibraryDirectory(childRequest, signal), [childKey]);
-  const children = useTdmsReadResource(childKey, active && open && node.hasChildren && node.level !== 'ATA4', load, onAccessRejected);
+  const children = useTdmsReadResource(childKey, active && retainChildren && node.hasChildren && node.level !== 'ATA4', load, onAccessRejected);
+  useEffect(() => {
+    if (node.level === 'ATA2') onReadReady(node.value, !children.loading);
+  }, [node.level, node.value, children.loading, onReadReady]);
   const selected: boolean = selectedPath && (node.level === 'ATA4' ||
     (node.level === 'ATA2' ? !filters.ata4 : !filters.ata2 && !filters.ata4));
 
@@ -99,7 +140,8 @@ function LibrarySourceDirectoryNode({ node, request, props, active, onAccessReje
     <div className="library-source-directory-row">
       {node.hasChildren && node.level !== 'ATA4' ? <Button type="button" variant="ghost" size="icon"
         className="library-directory-expand" aria-expanded={open} aria-label={`${open ? '收起' : '展开'}${directoryNodeLabel(node, scheme)}`}
-        onClick={() => setManualOpen(!open)}>{open ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}</Button> : null}
+        onClick={() => props.navigation ? props.navigation.onNodeChange(node.value, !open)
+          : setManualOpen(!open)}>{open ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}</Button> : null}
       <button type="button" className={`suite-folder-row${selected ? ' active' : ''}`} aria-pressed={selected}
         onClick={selectNode}>
         <span>{directoryNodeLabel(node, scheme)}</span><small>{node.documentCount}</small>
@@ -112,12 +154,12 @@ function LibrarySourceDirectoryNode({ node, request, props, active, onAccessReje
         ata2: node.value, ata4: '__DIRECT__' })}>
       <span>本级资料</span><small>{node.directDocumentCount}</small>
     </button> : null}
-    {open ? <div className="library-source-directory-children">
+    {retainChildren ? <div className="library-source-directory-children" hidden={!open}>
       {children.loading ? <p role="status">正在读取下一层目录…</p> : null}
       {children.error ? <p role="alert">{children.error}<Button type="button" variant="outline" size="sm"
         onClick={() => setRetry((value: number) => value + 1)}>重试此节点</Button></p> : null}
       {children.value?.nodes.map(child => <LibrarySourceDirectoryNode key={`${childKey}:${child.value}`}
-        node={child} request={childRequest} props={props} active={active} onAccessRejected={onAccessRejected} />)}
+        node={child} request={childRequest} props={props} active={active} onAccessRejected={onAccessRejected} onReadReady={onReadReady} />)}
     </div> : null}
   </div>;
 }

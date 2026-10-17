@@ -8,6 +8,8 @@ import type { SuiteDocumentGraphViewProps } from '@client/src/pages/RelationGrap
 import type { useSuiteGraphSources } from '@client/src/pages/RelationGraphPage/useSuiteGraphSources';
 import { documentNeighborhoodNodeId } from '@client/src/pages/RelationGraphPage/suite-document-neighborhood';
 import { documentGraphReadingParams, graphReturnTarget, withGraphReturn } from '@client/src/pages/RelationGraphPage/suite-graph-return';
+import TopBar from '@client/src/features/navigation/TopBar';
+import { libraryReadingParams } from '@client/src/features/matter/reading-return';
 import { documentStatus, documentQuicklook, referencePreview, familyPage, mattersPage } from './fixtures/document-neighborhood';
 
 jest.mock('@client/src/components/ui/button', () => ({
@@ -16,13 +18,21 @@ jest.mock('@client/src/components/ui/button', () => ({
 }));
 const { JSDOM } = require('jsdom');
 let mockSession = 1, mockDenied = false;
+let mockWithTopBar = false;
 let mockView: SuiteDocumentGraphViewProps;
 let mockSourcesInput: Parameters<typeof useSuiteGraphSources>[0];
 const mockActivities = new Map();
 const mockSelectSource = jest.fn();
 jest.mock('@client/src/pages/RelationGraphPage/SuiteDocumentGraphView', () => ({__esModule:true, default:(props: SuiteDocumentGraphViewProps)=>{
-  mockView=props;return createElement('div',{'data-testid':'document-view'},props.detail);
+  mockView=props;return createElement('div',{'data-testid':'document-view'},
+    props.onBack ? createElement('button', { 'data-testid': 'graph-local-return', onClick: props.onBack }, '返回') : null,
+    props.detail);
 }}));
+jest.mock('@client/src/components/CurrentUserControl', () => ({ __esModule: true, default: 'span' }));
+jest.mock('@client/src/features/atlas/AtlasLauncher', () => ({ __esModule: true, default: 'span' }));
+jest.mock('@client/src/app/providers/CurrentObjectContextProvider', () => ({
+  useCurrentObjectContext: () => ({ currentObject: null }), currentObjectKindLabel: () => '工程文档',
+}));
 jest.mock('@client/src/pages/RelationGraphPage/useSuiteGraphSources', () => ({useSuiteGraphSources:(input: Parameters<typeof useSuiteGraphSources>[0])=>{
   mockSourcesInput=input;return {activities:mockActivities,sources:[],loading:false,selectSource:mockSelectSource,expandSource:jest.fn()};
 }}));
@@ -38,12 +48,15 @@ const matterApi=jest.requireMock('@client/src/api/engineering-matter');
 let root:Root,container:HTMLDivElement,location='',locationState:unknown,navigate:ReturnType<typeof useNavigate>,dom:{window:Window & typeof globalThis};
 function Entry(){const [params]=useSearchParams();navigate=useNavigate();const here=useLocation();location=`${here.pathname}${here.search}`;locationState=here.state;
   if(params.get('scope')==='library') return createElement('div',null,'macro returned');
-  return here.pathname==='/graph'?createElement(SuiteDocumentGraphPage,{documentVersionId:params.get('documentVersionId')!,readerWorkItemId:params.get('readerWorkItemId')??undefined}):createElement('div',null,'source page');}
+  return here.pathname==='/graph'?createElement('div', null,
+    mockWithTopBar ? createElement(TopBar, { pathname: here.pathname, search: here.search,
+      mobileNavOpen: false, onToggleMobile: () => undefined }) : null,
+    createElement(SuiteDocumentGraphPage,{documentVersionId:params.get('documentVersionId')!,readerWorkItemId:params.get('readerWorkItemId')??undefined})):createElement('div',null,'source page');}
 function render(entry='/graph?scope=document&documentVersionId=dv-r3&readerWorkItemId=wi-r3'){root.render(createElement(MemoryRouter,{initialEntries:[entry]},createElement(Entry)));}
 async function settle(){await act(async()=>{await Promise.resolve();await Promise.resolve();});}
 beforeAll(()=>{dom=new JSDOM('<!doctype html><body></body>',{url:'https://example.test'});Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true});});
 afterAll(()=>dom.window.close());
-beforeEach(()=>{mockSession=1;mockDenied=false;mockActivities.clear();jest.clearAllMocks();container=document.createElement('div');document.body.appendChild(container);root=createRoot(container);
+beforeEach(()=>{mockSession=1;mockDenied=false;mockWithTopBar=false;mockActivities.clear();jest.clearAllMocks();container=document.createElement('div');document.body.appendChild(container);root=createRoot(container);
   api.readDocumentParsingStatus.mockImplementation(async(id:string)=>documentStatus(id));
   api.getCanonicalLibraryQuicklook.mockImplementation(async(wi:string)=>documentQuicklook(wi==='wi-ftd-r4'?'ftd-r4':wi.replace('wi-','dv-'),wi));
   api.getCanonicalLibraryTasks.mockResolvedValue(familyPage());
@@ -216,3 +229,103 @@ it('mounts v2 document details for the shared opt-in source contract and returns
   expect(mockView.timelineEvents.find(item => item.id === event.id)?.date).toBe('after approval');
   expect(container.querySelector('[data-testid="activity-statement-semantics"]')).not.toBeNull();
 });
+
+it.each(['local', 'global'] as const)('uses the %s return control for the same exact directory after graph state and source round trips', async control => {
+  mockWithTopBar = true;
+  const directory = libraryReadingParams(new URLSearchParams({ mode: 'document', familyId: 'family-a',
+    selectedDocumentVersionId: 'dv-r3', search: '737-SL', normalizedFamily: 'SL', ata2: '34', ata4: '3462',
+    aircraftModels: JSON.stringify(['737-700', '737-800']), expandedFamilyIds: 'family-a,family-b', listY: '735', quicklookY: '81' }));
+  const graph = documentGraphReadingParams('dv-r3', 'wi-r3', {},
+    new URLSearchParams({ returnDocumentVersionId: 'dv-r3', returnLibraryQuery: directory.toString() }));
+  await act(async () => render(`/graph?${graph}`)); await settle();
+  await act(async () => mockView.onStateChange({ density: 3, viewport: { zoom: .8, pan: { x: 22, y: 33 } } }, true));
+  await act(async () => mockView.onOpenSource());
+  const source = new URL(location, 'https://example.test');
+  const returned = graphReturnTarget(source.searchParams, 'dv-r3')!;
+  await act(async () => navigate(returned.route)); await settle();
+  const button = control === 'local'
+    ? container.querySelector<HTMLButtonElement>('[data-testid="graph-local-return"]')!
+    : container.querySelector<HTMLButtonElement>('button[aria-label="返回原文档目录"]')!;
+  expect(button).not.toBeNull();
+  await act(async () => button.click());
+  expect(location).toBe(`/library?${directory}`);
+});
+
+it.each(['wrong-version', 'duplicate', 'conflicting', 'empty'] as const)(
+  'rejects %s explicit library return in both controls before and after state replacement', async kind => {
+    mockWithTopBar = true;
+    const origin = new URLSearchParams({ returnDocumentVersionId: 'dv-r3',
+      returnLibraryQuery: 'mode=document&familyId=family-a&selectedDocumentVersionId=dv-r3' });
+    if (kind === 'wrong-version') origin.set('returnDocumentVersionId', 'different-version');
+    if (kind === 'duplicate') origin.append('returnLibraryQuery', origin.get('returnLibraryQuery')!);
+    if (kind === 'conflicting') origin.set('returnWorkItemId', 'different-work');
+    if (kind === 'empty') origin.set('returnLibraryQuery', '');
+    await act(async () => render(`/graph?scope=document&documentVersionId=dv-r3&readerWorkItemId=wi-r3&${origin}`)); await settle();
+    for (const persist of [false, true]) {
+      if (persist) await act(async () => mockView.onStateChange({ density: 4 }, true));
+      expect(mockView.onBack).toBeUndefined();
+      const button = container.querySelector<HTMLButtonElement>('button[aria-label="返回目标与当前版本不匹配"]')!;
+      expect(button.disabled).toBe(true);
+      const before = location;
+      await act(async () => button.click());
+      expect(location).toBe(before);
+    }
+  },
+);
+
+it('retains the original directory selection when the user centers another exact registered version', async () => {
+  mockWithTopBar = true;
+  const directory = libraryReadingParams(new URLSearchParams({ mode: 'document', familyId: 'family-a',
+    selectedDocumentVersionId: 'dv-r3', listY: '735', expandedFamilyIds: 'family-a' }));
+  const graph = documentGraphReadingParams('dv-r3', 'wi-r3', {},
+    new URLSearchParams({ returnDocumentVersionId: 'dv-r3', returnLibraryQuery: directory.toString() }));
+  await act(async () => render(`/graph?${graph}`)); await settle();
+  await act(async () => mockView.onSelect(documentNeighborhoodNodeId('dv-r4'))); await settle();
+  const center = [...container.querySelectorAll('button')].find(button => button.textContent === '以此版本为中心')!;
+  await act(async () => center.click()); await settle();
+  const params = new URL(location, 'https://example.test').searchParams;
+  expect(params.get('documentVersionId')).toBe('dv-r4');
+  expect(params.get('readerWorkItemId')).toBe('wi-r4');
+  expect(params.get('returnDocumentVersionId')).toBe('dv-r4');
+  expect(params.get('returnLibraryQuery')).toBe(directory.toString());
+  await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="返回原文档目录"]')!.click());
+  expect(location).toBe(`/library?${directory}`);
+});
+
+it('retains history-based local return for legacy document graph entries without return pins', async () => {
+  const prior = '/library?mode=document&familyId=family-a&listY=735';
+  await act(async () => render(prior));
+  await act(async () => navigate('/graph?scope=document&documentVersionId=dv-r3&readerWorkItemId=wi-r3')); await settle();
+  await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="graph-local-return"]')!.click());
+  expect(location).toBe(prior);
+});
+
+it.each([
+  ['absolute URL', 'https://example.invalid/library?selectedDocumentVersionId=dv-r3'],
+  ['duplicate selection', 'mode=document&familyId=family-a&selectedDocumentVersionId=dv-r3&selectedDocumentVersionId=dv-r4'],
+])('rejects %s nested directory intent in both controls across graph/source replacements',
+  async (_kind: string, raw: string) => {
+    mockWithTopBar = true;
+    const origin: URLSearchParams = new URLSearchParams({ returnDocumentVersionId: 'dv-r3',
+      returnLibraryQuery: raw });
+    await act(async () => render(`/graph?scope=document&documentVersionId=dv-r3&readerWorkItemId=wi-r3&${origin}`));
+    await settle();
+    for (const stage of ['entry', 'view', 'source'] as const) {
+      if (stage === 'view') await act(async () => mockView.onStateChange({ density: 4 }, true));
+      if (stage === 'source') {
+        await act(async () => mockView.onOpenSource());
+        const source: URL = new URL(location, 'https://example.test');
+        const returned: { route: string; label: string } = graphReturnTarget(source.searchParams, 'dv-r3')!;
+        await act(async () => navigate(returned.route)); await settle();
+      }
+      expect(new URL(location, 'https://example.test').searchParams.has('returnLibraryQuery')).toBe(true);
+      expect(mockView.onBack).toBeUndefined();
+      const button: HTMLButtonElement = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="返回目标与当前版本不匹配"]')!;
+      expect(button.disabled).toBe(true);
+      const before: string = location;
+      await act(async () => button.click());
+      expect(location).toBe(before);
+    }
+  },
+);

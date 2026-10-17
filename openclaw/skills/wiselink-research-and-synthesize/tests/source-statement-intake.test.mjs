@@ -6,10 +6,11 @@ import { join } from 'node:path';
 
 import { consumeHostedWorkItem } from '../scripts/consume-hosted-work-item.mjs';
 import { invokeHostedInitialModel } from '../scripts/invoke-hosted-initial-model.mjs';
+import { runDynamicEvaluation, runOverallSynthesis } from '../scripts/orchestrate-host-mcp.mjs';
 import { canonicalJson, canonicalSha256, validateResultEnvelope, validateTaskEnvelope,
   validateReviewTask, REVIEW_ALLOWED_OPERATIONS, REVIEW_JOBAID_TASK_SCHEMA,
   WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION, WISELINK_MODEL_POLICY_REF,
-  WISELINK_RUNTIME_APP_ID, WISELINK_PROFILE_REF, WISELINK_SKILL_COMPATIBILITY_REF,
+  WISELINK_RUNTIME_APP_ID, WISELINK_PROFILE_REF, WISELINK_SKILL_COMPATIBILITY_REF, WISELINK_SKILL_VERSION,
 } from '../scripts/validate-payload.mjs';
 
 // These are constructed transport fixtures. They prove the native intake and
@@ -171,17 +172,22 @@ function harness({ operation, input, steps, readReceipt }) {
     if (name === 'save_assessment_work') {
       saves.push(args);
       const content = JSON.parse(args.workJson);
+      assert.ok(content.overview.trim(), 'This constructed Host accepts an authored overview delta');
       const revision = { requestId: args.requestId, workRevisionRef: `JAWR-${operation}`, workRevision: args.expectedWorkRevision + 1,
-        content: { ...content, readSourceRefs: input.availableSources.map(x => x.ref) } };
+        content: { ...content, overviewStatus: 'CURRENT', readSourceRefs: input.availableSources.map(x => x.ref) } };
       readbacks.set(args.requestId, revision);
       return { workRevisionRef: revision.workRevisionRef, workRevision: revision.workRevision,
         roundCompletion: content.roundCompletion };
     }
-    if (name === 'read_assessment_work') return { revision: readbacks.get(args.requestId) ?? null };
+    if (name === 'read_assessment_work') return { revision: args.requestId ? readbacks.get(args.requestId) ?? null
+      : input.previousWork ? { ...input.previousWork, content: { ...input.previousWork.content,
+        overviewStatus: input.previousWork.overviewStatus } } : null };
     if (name === 'commit_dynamic_evaluation_candidate' || name === 'commit_overall_candidate') {
       validateResultEnvelope(task, args.result);
       assert.equal(JSON.parse(args.result.modelOutput).workRevisionRef, `JAWR-${operation}`);
       assert.equal(args.result.promptVersion, 'wiselink-jobaid-problem@v3');
+      assert.equal(args.result.toolVersions['jobaid-problem-guidance'],
+        'wiselink-jobaid-problem@v3.source-content-once.v2');
       assert.equal(args.result.toolVersions['jobaid-problem-protocol'], '3');
       committed = true;
       return name === 'commit_dynamic_evaluation_candidate'
@@ -251,7 +257,7 @@ test('initial v3 consumes directory then reads full saved statement and roots be
 }));
 
 test('Overall v3 consumes split >96-ref READ receipts with every full statement and context before save', () => withScratch(async checkpointRoot => {
-  const previous = { workRevisionRef: 'JAWR-initial', workRevision: 1,
+  const previous = { workRevisionRef: 'JAWR-initial', workRevision: 1, overviewStatus: 'NOT_AVAILABLE',
     content: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
       roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', overview: 'Existing initial work',
       readSourceRefs: [STATEMENT_REF, ROOT], issues: [] } };
@@ -280,6 +286,7 @@ test('Overall v3 consumes split >96-ref READ receipts with every full statement 
   };
   const fixture = harness({ operation: 'SYNTHESIZE_OVERALL', input, readReceipt,
     steps: [{ action: 'READ_SOURCES', sourceRefs: allRefs, purpose: 'Read all selected original and saved sources', context: 'EXACT' },
+      { action: 'READ_WORK', workRevisionRef: previous.workRevisionRef, issueKeys: [], includeOverview: true },
       { action: 'SAVE_WORK', workJson: JSON.stringify(work) },
       { action: 'FINISH', consistencyCheck: 'Saved conditions and unresolved applicability remain explicit.' }] });
   const result = await consumeHostedWorkItem({ workItemId: WORK_ITEM, checkpointRoot,
@@ -297,17 +304,19 @@ test('Overall v3 consumes split >96-ref READ receipts with every full statement 
   assert.equal(first.sourceStatements, undefined);
   assert.equal(first.activityContexts, undefined);
   assert.equal(first.availableSources.some(x => x.sourceStatement?.statement || x.sourceStatement?.quotes), false);
-  const readMessages = fixture.requests[1].messages.filter(x => x.role === 'tool')
-    .map(x => JSON.parse(x.content));
-  assert.equal(readMessages.length, 1, 'one aggregated Host receipt enters the model session');
-  const delivered = readMessages[0];
-  assert.equal(delivered.schemaVersion, 'wiselink.jobaid-source-read.v3');
+  const deliveredContext = JSON.parse(fixture.requests[1].messages[1].content);
+  const delivered = deliveredContext.deliveredSourceReads;
+  assert.equal(delivered.reads.length, 1, 'one aggregated Host receipt enters the existing evidence cache');
+  assert.equal(delivered.reads[0].schemaVersion, 'wiselink.jobaid-source-read.v3');
   assert.deepEqual(delivered.sourceStatements, statements);
   assert.deepEqual(delivered.activityContexts, contexts);
-  assert.deepEqual(delivered.sourceRefs, allRefs);
-  assert.deepEqual(delivered.evidence.map(x => x.evidenceRef), allRefs);
-  assert.deepEqual(roots.every(root => delivered.evidence.some(x => x.evidenceRef === root)), true);
-  assert.deepEqual(new Set(delivered.evidence.map(x => x.evidenceRef)).size, 97);
+  assert.deepEqual(delivered.reads[0].sourceRefs, allRefs);
+  assert.deepEqual(delivered.reads[0].evidenceRefs, allRefs);
+  assert.deepEqual(deliveredContext.deliveredEvidence.map(x => x.evidenceRef), allRefs);
+  assert.deepEqual(roots.every(root => deliveredContext.deliveredEvidence.some(x => x.evidenceRef === root)), true);
+  assert.deepEqual(new Set(deliveredContext.deliveredEvidence.map(x => x.evidenceRef)).size, 97);
+  for (const evidence of deliveredContext.deliveredEvidence.filter(x => x.kind === 'DOCUMENT_PASSAGE'))
+    assert.equal(fixture.requests[1].messages.map(x => x.content).join('\n').split(JSON.stringify(evidence.excerpt)).length - 1, 1);
   assert.deepEqual(JSON.parse(fixture.saves[0].workJson), work);
 }));
 
@@ -328,7 +337,10 @@ test('v3 availability states remain explicit while a sealed v2 envelope remains 
   }
 });
 
-test('known terminal gateway failure retains v3 provenance without reading or saving', async () => {
+for (const terminal of [false, true])
+test(terminal
+  ? 'known output length retains v3 provenance without reading or saving'
+  : 'gateway terminal uncertainty stays UNKNOWN without reading saving or known-failure provenance', async () => {
   const input = initialInput();
   let calls = 0;
   await assert.rejects(invokeHostedInitialModel({ operation: 'EVALUATE_JOBAID', modelInput: input }, {
@@ -340,16 +352,172 @@ test('known terminal gateway failure retains v3 provenance without reading or sa
     readAssessmentWork: async () => assert.fail('failure cannot read work'),
   }, { requestGateway: async () => {
     calls += 1;
+    if (terminal) return Response.json({ choices: [{ finish_reason: 'length',
+      message: { role: 'assistant', content: 'Constructed incomplete candidate' } }] });
     return new Response(JSON.stringify({ error: { message: 'constructed/model ended with an incomplete terminal response' } }),
       { status: 400 });
   } }), error => {
-    assert.equal(error.message, 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE');
-    assert.equal(error.terminalAssessmentFailure.errorCode, 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE');
-    assert.equal(error.terminalAssessmentFailure.provenance.promptVersion, 'wiselink-jobaid-problem@v3');
-    assert.equal(error.terminalAssessmentFailure.provenance.toolVersions['jobaid-problem-protocol'], '3');
+    if (terminal) {
+      assert.equal(error.message, 'JOBAID_MODEL_OUTPUT_LENGTH');
+      assert.equal(error.terminalAssessmentFailure.errorCode, 'JOBAID_MODEL_OUTPUT_LENGTH');
+      assert.equal(error.terminalAssessmentFailure.provenance.promptVersion, 'wiselink-jobaid-problem@v3.source-content-once.v2');
+      assert.equal(error.terminalAssessmentFailure.provenance.toolVersions['jobaid-problem-protocol'], '3');
+    } else {
+      assert.equal(error.message, 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE');
+      assert.equal(error.terminalAssessmentFailure, undefined);
+    }
     return true;
   });
   assert.equal(calls, 1);
+});
+
+
+function protocolWireFixture(protocol, operation, execute) {
+  const input = initialInput();
+  input.schemaVersion = `wiselink.jobaid-problem-task.v${protocol}`;
+  if (protocol === '2') {
+    delete input.evidenceProjectionVersion;
+    delete input.sourceStatementAvailability;
+    input.availableSources = [source(ROOT, 'DOCUMENT_PASSAGE')];
+  }
+  if (operation === 'SYNTHESIZE_OVERALL') {
+    input.purpose = 'OVERALL_CONSISTENCY';
+    input.externalDiscoveryResults = [];
+  }
+  const task = envelope(operation, input);
+  const results = [];
+  const callTool = async (name, args) => {
+    if (name === 'get_parse_status') return status(operation);
+    if (name === 'begin_dynamic_evaluation' || name === 'begin_overall_synthesis') return {
+      attemptRef: task.operationRef, status: 'RUNNING', leaseToken: 'constructed-lease',
+      leaseGeneration: 1, task, modelInput: input, selectedDiscoveryRefs: [],
+    };
+    if (name === 'heartbeat_action_attempt') return {
+      leaseExpiresAt: '2099-01-01T00:00:00.000Z',
+    };
+    if (name === 'commit_dynamic_evaluation_candidate' || name === 'commit_overall_candidate') {
+      validateResultEnvelope(task, args.result);
+      results.push(args.result);
+      // Same exact schema/protocol/base-prompt condition as Host commitProblem.
+      if (args.result.promptVersion !== `wiselink-jobaid-problem@v${protocol}` ||
+          args.result.toolVersions['jobaid-problem-protocol'] !== protocol)
+        throw new Error('JOBAID_RUNTIME_CAPABILITY_REQUIRED');
+      if (args.result.status === 'FAILED') return {
+        attemptRef: task.operationRef, status: 'FAILED', errorCode: args.result.errorCode,
+      };
+      return operation === 'EVALUATE_JOBAID'
+        ? { workItemId: WORK_ITEM, workItemRevision: 2, status: 'BASE_RULE_CANDIDATE_READY' }
+        : { workItemId: WORK_ITEM, workItemRevision: 2, status: 'OVERALL_CANDIDATE_READY',
+          overallSynthesis: { status: 'CANDIDATE_ONLY', authorityLevel: 'candidate_only',
+            externalDiscoveryIsEvidence: false } };
+    }
+    if (name === 'get_action_attempt_status') return {
+      attemptRef: task.operationRef, taskType: task.taskType, status: 'RUNNING',
+      recoveryAvailable: false, projectionApplied: false, commitStartedAt: null,
+      terminalReason: null, resultContentHash: null,
+    };
+    if (name === 'get_deep_link') return { workItemId: WORK_ITEM, deepLink: '/constructed/work-item' };
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  return { results, run: () => (operation === 'EVALUATE_JOBAID' ? runDynamicEvaluation : runOverallSynthesis)({
+    workItemId: WORK_ITEM, callTool, evaluateDynamicRules: execute, synthesizeOverall: execute,
+  }) };
+}
+
+function protocolProvenance(protocol, promptVersion = `wiselink-jobaid-problem@v${protocol}`) {
+  return { modelVersion: 'constructed-model-v1', promptVersion, skillVersion: WISELINK_SKILL_VERSION,
+    toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+      'jobaid-problem-protocol': protocol }, runMetrics: { durationMs: 1, inputUnits: 2, outputUnits: 3 } };
+}
+
+for (const protocol of ['2', '3']) for (const operation of ['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL']) {
+  test(`WorkItem protocol v${protocol} ${operation} fresh success retains exact guidance while declaring base protocol`, async () => {
+    const version = `wiselink-jobaid-problem@v${protocol}.source-content-once.v2`;
+    const provenance = protocolProvenance(protocol, version);
+    const original = structuredClone(provenance);
+    const fixture = protocolWireFixture(protocol, operation, async () => ({
+      output: { workRevisionRef: 'JAWR-constructed-success' }, provenance,
+    }));
+    const completed = await fixture.run();
+    assert.equal(completed.ok, true);
+    assert.equal(fixture.results.length, 1);
+    assert.equal(fixture.results[0].promptVersion, `wiselink-jobaid-problem@v${protocol}`);
+    assert.equal(fixture.results[0].toolVersions['jobaid-problem-guidance'], version);
+    assert.deepEqual(provenance, original, 'producer provenance and checkpoint declaration stay unchanged');
+  });
+
+  test(`WorkItem protocol v${protocol} ${operation} two terminal missing-tool responses produce a normal failed envelope`, async () => {
+    let requests = 0;
+    const shapes = [];
+    const fixture = protocolWireFixture(protocol, operation, (modelInput, hooks) =>
+      invokeHostedInitialModel({ operation, modelInput }, {
+        gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://constructed.invalid',
+        gatewayToken: 'constructed-only', configuredModelVersion: 'constructed-model-v1',
+        sessionDiscriminator: 'constructed-envelope-protocol',
+        ...hooks, observeModelOutput: async shape => shapes.push(shape),
+      }, { sleep: async () => {}, requestGateway: async () => {
+        requests++;
+        return Response.json({ choices: [{ finish_reason: 'stop',
+          message: { role: 'assistant', content: 'Constructed response without named tool' } }] });
+      } }));
+    const completed = await fixture.run();
+    assert.equal(completed.ok, false);
+    assert.equal(completed.outcome, 'FAILED');
+    assert.equal(completed.errorCode, 'JOBAID_PROTOCOL_REPAIR_EXHAUSTED');
+    assert.equal(requests, 2);
+    assert.equal(shapes.length, 2);
+    for (const shape of shapes) {
+      assert.equal(shape.httpStatus, 200);
+      assert.equal(shape.protocolCategory, 'NAMED_TOOL_MISSING');
+      assert.equal(shape.upstreamOutcome, 'TERMINAL_RESPONSE_OBSERVED');
+    }
+    assert.equal(fixture.results.length, 1);
+    const result = fixture.results[0];
+    assert.equal(result.status, 'FAILED');
+    assert.equal(result.modelOutput, null);
+    assert.equal(result.businessOutcome, 'NOT_PRODUCED');
+    assert.equal(result.promptVersion, `wiselink-jobaid-problem@v${protocol}`);
+    assert.equal(result.toolVersions['jobaid-problem-protocol'], protocol);
+    assert.equal(result.toolVersions['jobaid-problem-guidance'],
+      `wiselink-jobaid-problem@v${protocol}.source-content-once.v2`);
+  });
+
+  test(`WorkItem protocol v${protocol} ${operation} legacy base declaration is unchanged`, async () => {
+    const provenance = protocolProvenance(protocol);
+    const fixture = protocolWireFixture(protocol, operation, async () => ({
+      output: { workRevisionRef: 'JAWR-constructed-legacy' }, provenance,
+    }));
+    assert.equal((await fixture.run()).ok, true);
+    assert.equal(fixture.results[0].promptVersion, provenance.promptVersion);
+    assert.deepEqual(fixture.results[0].toolVersions, provenance.toolVersions);
+    assert.equal(Object.hasOwn(fixture.results[0].toolVersions, 'jobaid-problem-guidance'), false);
+  });
+}
+
+for (const [protocol, version, declaredProtocol] of [
+  ['2', 'wiselink-jobaid-problem@v2.source-content-once.v1', '2'],
+  ['3', 'wiselink-jobaid-problem@v3.source-content-once.v999', '3'],
+  ['2', 'wiselink-jobaid-problem@v3.source-content-once.v2', '3'],
+  ['3', 'wiselink-jobaid-problem@v3.source-content-once.v2', '2'],
+]) test(`WorkItem protocol does not relabel unsupported or mismatched declaration: ${protocol}/${version}/${declaredProtocol}`, async () => {
+  const provenance = protocolProvenance(declaredProtocol, version);
+  const fixture = protocolWireFixture(protocol, 'EVALUATE_JOBAID', async () => ({
+    output: { workRevisionRef: 'JAWR-constructed-unsupported' }, provenance,
+  }));
+  await assert.rejects(fixture.run(), /HOST_MCP_COMMIT_OUTCOME_UNKNOWN:JOBAID_RUNTIME_CAPABILITY_REQUIRED/u);
+  assert.equal(fixture.results.length, 1);
+  assert.equal(fixture.results[0].promptVersion, version);
+  assert.deepEqual(fixture.results[0].toolVersions, provenance.toolVersions);
+});
+
+test('WorkItem protocol refuses a conflicting existing guidance declaration before commit', async () => {
+  const provenance = protocolProvenance('2', 'wiselink-jobaid-problem@v2.source-content-once.v2');
+  provenance.toolVersions['jobaid-problem-guidance'] = 'constructed-different-guidance';
+  const fixture = protocolWireFixture('2', 'EVALUATE_JOBAID', async () => ({
+    output: { workRevisionRef: 'JAWR-constructed-conflict' }, provenance,
+  }));
+  await assert.rejects(fixture.run(), /HOST_MCP_JOBAID_GUIDANCE_VERSION_MISMATCH/u);
+  assert.equal(fixture.results.length, 0);
 });
 
 test('Review keeps its v2 JobAid task branch and rejects an initial/Overall v3 task there', () => {

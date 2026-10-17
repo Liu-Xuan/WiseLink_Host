@@ -30,21 +30,46 @@ describe('review material usage boundaries', () => {
     first.assistantCandidate!.sourceRefs = ['SRC-1', 'SRC-1', 'SRC-2'];
     const second = reviewUiTurn(2, true);
     second.inputRevision = 8;
+    first.assistantCandidate!.sourceBindings = ['SRC-1', 'SRC-2'].map((sourceRefId) => ({
+      sourceRefId, workItemId: 'WI-RELATED', documentVersionId: 'DV-RELATED',
+      originalSourceRefId: `original-${sourceRefId}`,
+    }));
+    second.assistantCandidate!.sourceBindings = [first.assistantCandidate!.sourceBindings[0]];
     const result = reviewMaterialReferences([first, second]);
     expect(result.attachments).toEqual([]);
     expect(result.citedSources).toEqual([
       {
+        key: JSON.stringify(['SRC-1', 'WI-RELATED', 'DV-RELATED', 'original-SRC-1']),
         sourceRef: 'SRC-1',
+        turn: first,
         citations: [
           { turnNo: 1, inputRevision: 7 },
           { turnNo: 2, inputRevision: 8 },
         ],
       },
-      { sourceRef: 'SRC-2', citations: [{ turnNo: 1, inputRevision: 7 }] },
+      { key: JSON.stringify(['SRC-2', 'WI-RELATED', 'DV-RELATED', 'original-SRC-2']),
+        sourceRef: 'SRC-2', turn: first, citations: [{ turnNo: 1, inputRevision: 7 }] },
     ]);
     expect(JSON.stringify(result)).not.toMatch(
       /adopted|readAt|selected|documentCount/,
     );
+  });
+
+  it('keeps an aliased citation attached to its exact turn when later bindings differ or are absent', () => {
+    const first = reviewUiTurn(1, true);
+    const second = reviewUiTurn(2, true);
+    const third = reviewUiTurn(3, true);
+    first.assistantCandidate!.sourceBindings = [{ sourceRefId: 'SRC-1',
+      workItemId: 'WI-A', documentVersionId: 'DV-A', originalSourceRefId: 'original-A' }];
+    second.assistantCandidate!.sourceBindings = [{ sourceRefId: 'SRC-1',
+      workItemId: 'WI-B', documentVersionId: 'DV-B', originalSourceRefId: 'original-B' }];
+    const sources = reviewMaterialReferences([third, second, first]).citedSources;
+    expect(sources.map((source) => source.turn.reviewTurnId)).toEqual(['TURN-1', 'TURN-2', 'TURN-3']);
+    expect(new Set(sources.map((source) => source.key)).size).toBe(3);
+    expect(sources.map((source) => source.citations)).toEqual([
+      [{ turnNo: 1, inputRevision: 7 }], [{ turnNo: 2, inputRevision: 7 }],
+      [{ turnNo: 3, inputRevision: 7 }],
+    ]);
   });
 
   it('groups repeated mentions by the Host target and retains an ungrouped unresolved occurrence', () => {

@@ -1,8 +1,13 @@
-import { Link } from 'react-router-dom';
+import type { LibraryViewMode } from './library-view-mode';
 
-export function LibrarySourceNavigation({ current }: { current: 'document' | 'lcm' }) {
-  return <nav className="library-source-navigation" aria-label="资料类型">
-    <Link to="/library?mode=document" aria-current={current === 'document' ? 'page' : undefined}>工程文档</Link>
-    <Link to="/library?mode=lcm" aria-current={current === 'lcm' ? 'page' : undefined}>软件构型</Link>
+export function LibrarySourceNavigation({ current, onModeChange }: {
+  current: LibraryViewMode;
+  onModeChange: (mode: LibraryViewMode) => void;
+}) {
+  return <nav className="library-source-navigation" aria-label="资料库视图">
+    <button type="button" aria-pressed={current === 'document'}
+      onClick={() => onModeChange('document')}>工程文档</button>
+    <button type="button" aria-pressed={current === 'matter'}
+      onClick={() => onModeChange('matter')}>工程事项</button>
   </nav>;
 }

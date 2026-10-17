@@ -37,7 +37,6 @@ export function DocumentOriginalInlinePreview({ documentVersionId, page = 1, aut
       <UniversalLink to={`${url}#page=${page}`} target="_blank" rel="noopener noreferrer">在新标签页打开第 {page} 页</UniversalLink>
     </> : <div className="document-original-inline-empty">
       <strong>原件按需读取</strong>
-      <p>读取后在此显示同一 DocumentVersion 的 PDF；未取得原件时不生成替代页面。</p>
       <Button type="button" variant="outline" disabled={busy} onClick={() => { void prepare(); }}>
         {busy ? '正在读取原件…' : '读取受控原件'}
       </Button>

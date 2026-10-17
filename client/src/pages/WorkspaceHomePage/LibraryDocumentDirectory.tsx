@@ -117,7 +117,7 @@ export function LibraryDocumentDirectory({
   return (
     <>
       <form className="suite-table-toolbar" onSubmit={onSearch}>
-        <div className="suite-table-tabs"><strong>{taskMode ? '评估任务' : '工程文档'}</strong><button type="button" onClick={() => setParams({ mode: 'matter' })}>工程事项</button></div>
+        {taskMode ? <strong className="suite-table-tabs">评估任务</strong> : null}
         <label className="suite-table-query"><Search aria-hidden="true" /><Input aria-label={`搜索${label}`} value={searchText} maxLength={200} onChange={event => onSearchTextChange(event.target.value)} placeholder="文档编号、标题与版本…" /></label>
         <Button type="submit" size="sm" variant="outline" disabled={authenticationRequired}>搜索</Button>
         <Button type="button" variant="ghost" size="icon" onClick={onRefresh} disabled={directory.loading || authenticationRequired} aria-label={`刷新${label}`}><RefreshCw aria-hidden="true" /></Button>

@@ -23,7 +23,7 @@ export default function ReviewMaterialsPanel({
   context: ReviewMaterialsContext;
   turns: ReviewTurnReadModel[];
   refreshing: boolean;
-  onLocateSourceRef: (sourceRef: string) => void;
+  onLocateSourceRef: (turn: ReviewTurnReadModel, sourceRef: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const references = reviewMaterialReferences(turns);
@@ -108,11 +108,11 @@ export default function ReviewMaterialsPanel({
               <>
                 <ul>
                   {references.citedSources.map((source, index) => (
-                    <li key={source.sourceRef}>
+                    <li key={source.key}>
                       <button
                         type="button"
                         title={source.sourceRef}
-                        onClick={() => onLocateSourceRef(source.sourceRef)}
+                        onClick={() => onLocateSourceRef(source.turn, source.sourceRef)}
                       >
                         <Link2 aria-hidden="true" />
                         {reviewSourceRefLabel(source.sourceRef, index)}

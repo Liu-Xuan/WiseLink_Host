@@ -2,7 +2,12 @@ import * as sourcePlanning from '../../server/modules/canonical-host/canonical-t
 import * as adapter from '../../server/modules/document-management/src/hosted/nest/document-original-adapter';
 import { buildDocumentSemanticMap } from '../../server/modules/document-management/src/hosted/nest/document-semantic-map';
 import { GENERIC_SEMANTIC_PROFILE } from '../../server/modules/document-management/src/hosted/nest/document-semantic-profile';
-import { documentOriginalEngineeringReading, findDocumentOriginalEvidence, prepareDocumentOriginalEngineeringReader } from '../../server/modules/canonical-host/document-original-engineering-reading';
+import {
+  documentOriginalEngineeringReading,
+  findDocumentOriginalEvidence,
+  prepareDocumentOriginalEngineeringReader,
+  prepareDocumentOriginalEvidenceFinder,
+} from '../../server/modules/canonical-host/document-original-engineering-reading';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 
 function fixture() {
@@ -104,6 +109,40 @@ it('each separately loaded original prepares its own exact content, with no cros
   expect(() => prepareDocumentOriginalEngineeringReader(invalid)).toThrow('BINDING_INVALID');
 });
 
+it('reuses one exact finder plan across refs without sharing source state or mutable evidence', () => {
+  const loaded = fixture();
+  loaded.structuredSource.units.push({ ...loaded.structuredSource.units[0], unitId: 'u3', order: 2,
+    payload: { text: 'Final condition from the same locator stays in its complete quote.' } });
+  const before = structuredClone(loaded);
+  const refs = loaded.structuredSource.sourceLocators.map(locator => locator.sourceRefId);
+  const expected = refs.map(ref => findDocumentOriginalEvidence(loaded, ref));
+  const plan = jest.spyOn(sourcePlanning, 'buildTranslationSourcePlan');
+  const coverage = jest.spyOn(adapter, 'documentOriginalReadingCoverage');
+  try {
+    const find = prepareDocumentOriginalEvidenceFinder(loaded);
+    expect(refs.map(find)).toEqual(expected);
+    const first = find(refs[0]);
+    first.excerpt = 'Caller changed its returned evidence.';
+    first.locator = 'Caller changed its returned locator.';
+    expect(find(refs[0])).toEqual(expected[0]);
+    expect(find(refs[1])).toEqual(expected[1]);
+    expect(() => find('SR-UNKNOWN')).toThrow('DOCUMENT_ORIGINAL_SOURCE_LOCATOR_MISSING');
+    expect(plan).toHaveBeenCalledTimes(1);
+    expect(coverage).toHaveBeenCalledTimes(1);
+    expect(loaded).toEqual(before);
+
+    // Even the same exact identity in a later authorization gets a fresh
+    // projection of the source actually loaded in that request.
+    const separatelyLoaded = structuredClone(loaded);
+    separatelyLoaded.structuredSource.units[0].payload.text = 'Separately loaded exact text.';
+    const fresh = prepareDocumentOriginalEvidenceFinder(separatelyLoaded);
+    expect(fresh(refs[0]).excerpt).toContain('Separately loaded exact text.');
+    expect(find(refs[0])).toEqual(expected[0]);
+    expect(plan).toHaveBeenCalledTimes(2);
+    expect(coverage).toHaveBeenCalledTimes(2);
+  } finally { plan.mockRestore(); coverage.mockRestore(); }
+});
+
 it('keeps semantic revisions scoped to their prepared reader and rejects a foreign source binding', () => {
   const loaded = fixture();
   const firstMap = buildDocumentSemanticMap({ original: loaded.original, profile: GENERIC_SEMANTIC_PROFILE, semanticRevision: 1 });
@@ -175,6 +214,12 @@ describe('exact original evidence lookup', () => {
       expect(evidence.sourceRefId).toBe(sourceRefId);
       expect(evidence.evidenceRef).toBe(`DOCUMENT_ORIGINAL:${FAA_DOCUMENT_VERSION}:${FAA_PARSE_RUN}:${sourceRefId}`);
       expect(evidence.workItemId).toBeNull();
+      expect(plan).toHaveBeenCalledTimes(1);
+      expect(loaded).toEqual(before);
+      plan.mockClear();
+      const find = prepareDocumentOriginalEvidenceFinder(loaded);
+      expect(find(sourceRefId)).toEqual(evidence);
+      expect(find(sourceRefId)).toEqual(evidence);
       expect(plan).toHaveBeenCalledTimes(1);
       expect(loaded).toEqual(before);
     } finally { plan.mockRestore(); }

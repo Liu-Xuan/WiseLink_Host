@@ -10,6 +10,7 @@ import { constants as fsConstants } from 'node:fs';
 import {
   chmod,
   link,
+  lstat,
   mkdir,
   open,
   readFile,
@@ -82,7 +83,7 @@ const REVIEW_RESPONSE_TYPES = [
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c53';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c53.source-content-once.v2';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -494,6 +495,10 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
       hostAttemptStatusAtCandidate: beginResult.status,
     } : {}),
     provenance: structuredClone(result.provenance),
+    ...(isRecord(result.committed?.assistantCandidate) &&
+      Object.hasOwn(result.committed.assistantCandidate, 'jobAidWorkingUpdate') ? {
+        jobAidWorkingUpdate: structuredClone(result.committed.assistantCandidate.jobAidWorkingUpdate),
+      } : {}),
     remoteCallCounts: Object.fromEntries([...callCounts].sort()),
     sessionRouting: beginResult?.nativeSessionKey ? 'HOST_SCOPED' : 'TURN_ISOLATED_LEGACY_HOST',
     authorityMutations: {
@@ -1064,7 +1069,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         const correction = isJobAid && isAssessmentUpdate
           ? [
               'The preceding model response ended before any tool call.',
-              `Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one concise candidate containing answer and non-null jobAidWorkingDelta.`,
+              `Continue this same Review using the sources already read. Call ${REVIEW_OUTPUT_FUNCTION_NAME} with one concise candidate containing answer and an explicit jobAidWorkingDelta. ${JOBAID_UNCHANGED_REVIEW_GUIDANCE}`,
               `Correct existing issues through jobAidWorkingDelta.issuePatches: use the exact prior issueKey from ${canonicalJson(previousIssueKeys)} and only fields that actually change, without restating the complete issue or adding nonempty issues beside patches.`,
               ...(targetIssueKeys.length ? [
                 `This turn permits changes only to issue keys ${canonicalJson(targetIssueKeys)}. Put every other prior issue key in unchangedIssueKeys; do not patch or retire it.`,
@@ -1271,7 +1276,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               : isJobAid && errorCode === 'REVIEW_JOBAID_CHANGESUMMARY_REQUIRED'
               ? 'Include a nonempty jobAidWorkingDelta.changeSummary that states the concrete engineering judgment changed in this round. Do not use the issue body as a process log or invent a change; keep the supported issue correction and submit a complete new candidate.'
               : isJobAid && errorCode === 'REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED'
-              ? 'The proposed JobAid update changes no issue, reading summary, overview, review condition or input disposition. This requested assessment correction must revise the affected existing issues using actually read evidence, or accurately explain why the requested correction cannot be made; do not claim an unchanged delta was saved. Keep unrelated issues unchanged and preserve the prior completion scope and open questions.'
+              ? `The empty work delta is not a substantive update. ${JOBAID_UNCHANGED_REVIEW_GUIDANCE}`
               : isJobAid && errorCode === 'REVIEW_ISSUE_OUT_OF_SCOPE'
               ? `The Host permits changes only to issue keys ${canonicalJson(input.input?.context?.issueEditScope?.targetIssueKeys ?? [])}. Submit only those keys in issuePatches or issues; put other prior keys in unchangedIssueKeys. Do not retire or rewrite an unrelated issue. Preserve supported findings and exact registered evidence refs; the rejected candidate was not saved.`
               : isJobAid && errorCode?.startsWith('REVIEW_WORK_OUT_OF_SCOPE:')
@@ -1293,7 +1298,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               : isJobAid && errorCode?.startsWith('REVIEW_JOBAID_PATCH_')
               ? 'Use issuePatches only for existing issueKeys in previousIssueKeys, with one or more actual changed fields per patch. Do not also submit nonempty issues. Omitted fields preserve prior values; explicit [] changes a collection. New issues require complete entries in issues. Keep every other prior issue in unchangedIssueKeys.'
               : isJobAid
-              ? 'Return the complete corrected JobAid candidate directly as the declared function arguments, without a candidate wrapper. Use an affected existing key from previousIssueKeys for a correction; create a new key only for a distinct new problem. Omitted previous issues remain saved. Every updated issue body must contain an inline [[evidenceRef]] copied from evidence actually read this turn and supporting that body. Keep the original question, unaffected issues and their premises. candidateEvidenceRefs may contain only current input.attachmentRefs actually read this turn; ordinary document SourceRefs belong in sourceRefs or working-delta evidence fields, never candidateEvidenceRefs. Omit empty sourceRefs, missingInputs, candidateEvidenceRefs and warnings; omission means no entries, never [""] or a placeholder object. Omit retiredIssues when retiring none. Omit reviewActionDraft and affectedItemIds; the driver owns their fixed no-formal-action values. For UPDATE_ASSESSMENT, jobAidWorkingDelta is mandatory and non-null: propose the actual local update and preserve unknowns. Only ordinary review answers may omit it when no work changes. Read any additional passage through the read function. Never invent references, drop findings merely to pass validation, or claim the rejected candidate was saved.'
+              ? 'Return the complete corrected JobAid candidate directly as the declared function arguments, without a candidate wrapper. Use an affected existing key from previousIssueKeys for a correction; create a new key only for a distinct new problem. Omitted previous issues remain saved. Every updated issue body must contain an inline [[evidenceRef]] copied from evidence actually read this turn and supporting that body. Keep the original question, unaffected issues and their premises. candidateEvidenceRefs may contain only current input.attachmentRefs actually read this turn; ordinary document SourceRefs belong in sourceRefs or working-delta evidence fields, never candidateEvidenceRefs. Omit empty sourceRefs, missingInputs, candidateEvidenceRefs and warnings; omission means no entries, never [""] or a placeholder object. Omit retiredIssues when retiring none. Omit reviewActionDraft and affectedItemIds; the driver owns their fixed no-formal-action values. For UPDATE_ASSESSMENT, jobAidWorkingDelta is mandatory: propose actual supported changes or explicitly return RESYNTHESIS_RESULT with null only for a completed, qualified unchanged comparison against exact previousWork, with all current frozen dialogue contributions read and missingInputs empty. Preserve genuine unknowns. Ordinary review explanations may omit it; omission never completes an assessment update. Read any additional passage through the read function. Never invent references, drop findings merely to pass validation, or claim the rejected candidate was saved.'
               : 'Correct the candidate using the current contract and registered evidence. Keep the original question, unchanged claims and source meaning. Read any additional passage through the read function. Every document premise in the resulting reading must be included in that input\'s checked coverage; an updated coverage entry replaces its old checked range, so include every cited passage for that input, not just representative anchors. Return the complete corrected candidate; do not invent evidence or coverage, remove a substantive finding merely to pass validation, or claim that anything was saved.',
           });
         deliverFullContextAfterRead();
@@ -2076,6 +2081,8 @@ function safeHostErrorCode(value) {
   if (value === 'Canonical API-key service scope is unavailable.' ||
       value === 'Error: Canonical API-key service scope is unavailable.')
     return 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE';
+  const queueFenceCode = value.match(/^(?:Error:\s*)?(AUTO_WORK_ITEM_(?:ATTEMPT_LEASE_REJECTED|TASK_LEASE_BINDING_REQUIRED|TASK_LEASE_BINDING_INVALID|LEASE_REQUIRED))(?=:|$)/u)?.[1];
+  if (queueFenceCode) return queueFenceCode;
   const pluginQuotaCode = value.match(/^(?:Error:\s*)?(DOCUMENT_PLUGIN_QUOTA_EXHAUSTED|DOCUMENT_PLUGIN_RATE_LIMITED)(?=:|$)/u)?.[1];
   if (pluginQuotaCode) return pluginQuotaCode;
   const code = value.match(/^(?:Error:\s*)?((?:CANONICAL|AILY|REVIEW|ACTION_ATTEMPT|OPENCLAW|ENGINEERING_MATTER|OVERALL|JOBAID|DYNAMIC_EVALUATION|CONFIGURATION_REEVALUATION|TRANSLATION|COMMON_CONTEXT|PACKAGE_ARTIFACT|SOURCE_CONTEXT|SOURCE_PAGE|DOCUMENT_READING|DERIVED_SUMMARY)_[A-Z0-9_]+)(?=:|$)/u)?.[1];
@@ -2086,7 +2093,33 @@ export async function createCheckpointStore(directory) {
   const root = requiredText(directory, 'REVIEW_CHECKPOINT_DIRECTORY_REQUIRED');
   await mkdir(root, { recursive: true, mode: 0o700 });
   await chmod(root, 0o700);
+  const diagnostics = [];
+  const note = (step, code) => diagnostics.push({ step, code });
+  const writeAuxiliary = async (step, value) => {
+    try { await writeCheckpoint(root, step, value); }
+    catch { note(step, 'REVIEW_CHECKPOINT_AUXILIARY_WRITE_FAILED'); }
+  };
   return {
+    diagnostics,
+    writeAuxiliary,
+    observeAuxiliary: async (step, value) => {
+      try { await writeCheckpointOnceOrEqual(root, step, value); }
+      catch { note(step, 'REVIEW_CHECKPOINT_AUXILIARY_OBSERVATION_FAILED'); }
+    },
+    quarantine: async step => {
+      if (typeof step !== 'string' || !/^[A-Za-z0-9_.-]+$/u.test(step))
+        throw new Error('REVIEW_CHECKPOINT_STEP_INVALID');
+      try {
+        const source = join(root, `${step}.json`);
+        const target = join(root, `quarantine-${step}-${randomUUID()}.json`);
+        await rename(source, target);
+        const info = await lstat(target);
+        if (info.isFile() && !info.isSymbolicLink()) await chmod(target, 0o600);
+        note(step, 'REVIEW_CHECKPOINT_QUARANTINED');
+      } catch (error) {
+        if (error?.code !== 'ENOENT') note(step, 'REVIEW_CHECKPOINT_QUARANTINE_FAILED');
+      }
+    },
     readOptional: (step) => readCheckpointOptional(root, step),
     withActiveClaimOwner: perform => withActiveClaimOwner(root, perform),
     // Read the actual namespace, including unfinished files; errors are not empty history.
@@ -2118,7 +2151,7 @@ export async function createCheckpointStore(directory) {
           const replayResult = await readCheckpointOptional(root, `${replayStep}.result`);
           if (replayResult) {
             assertCheckpointHash(replayResult, argsHash, replayStep);
-            await writeCheckpoint(root, `${step}.result`, { ...replayResult, step });
+            await writeAuxiliary(`${step}.result`, { ...replayResult, step });
             return structuredClone(replayResult.value);
           }
           const replayStarted = await readCheckpointOptional(root, `${replayStep}.started`);
@@ -2150,8 +2183,8 @@ export async function createCheckpointStore(directory) {
             finishedAt: new Date().toISOString(),
             value,
           };
-          await writeCheckpoint(root, `${replayStep}.result`, result);
-          await writeCheckpoint(root, `${step}.result`, { ...result, step });
+          await writeAuxiliary(`${replayStep}.result`, result);
+          await writeAuxiliary(`${step}.result`, { ...result, step });
           return structuredClone(value);
         }
         throw new Error('INITIAL_APPLICABILITY_BEGIN_REPLAY_LIMIT_REACHED');
@@ -2167,7 +2200,7 @@ export async function createCheckpointStore(directory) {
         value = await perform();
       } catch (error) {
         if (ambiguousCommit) {
-          await writeCheckpointOnce(root, `${step}.error`, {
+          await writeAuxiliary(`${step}.error`, {
             schemaVersion: DRIVER_SCHEMA,
             step,
             argsHash,
@@ -2179,7 +2212,7 @@ export async function createCheckpointStore(directory) {
         }
         throw error;
       }
-      await writeCheckpoint(root, `${step}.result`, {
+      await writeAuxiliary(`${step}.result`, {
         schemaVersion: DRIVER_SCHEMA,
         step,
         argsHash,
@@ -2191,10 +2224,34 @@ export async function createCheckpointStore(directory) {
   };
 }
 
+// Candidate caches never authorize Host work. Isolate one invalid record and
+// let the existing authorized query/claim path determine the current task.
+export async function readCheckpointCandidate(checkpoint, step, validate = value => value) {
+  let value;
+  try { value = await checkpoint.readOptional(step); }
+  catch (error) {
+    if (!(error instanceof SyntaxError) &&
+        !error?.message?.startsWith('REVIEW_CHECKPOINT_PERMISSIONS_INVALID:') &&
+        !error?.message?.startsWith('REVIEW_CHECKPOINT_TYPE_INVALID:')) throw error;
+    if (typeof checkpoint.quarantine !== 'function') throw error;
+    await checkpoint.quarantine(step);
+    return null;
+  }
+  if (value === null) return null;
+  try { return validate(value); }
+  catch (error) {
+    if (typeof checkpoint.quarantine !== 'function') throw error;
+    await checkpoint.quarantine(step);
+    return null;
+  }
+}
+
 async function readCheckpointOptional(root, step) {
   const path = join(root, `${step}.json`);
   try {
-    const info = await stat(path);
+    const info = await lstat(path);
+    if (!info.isFile() || info.isSymbolicLink())
+      throw new Error(`REVIEW_CHECKPOINT_TYPE_INVALID:${step}`);
     if ((info.mode & 0o077) !== 0) {
       throw new Error(`REVIEW_CHECKPOINT_PERMISSIONS_INVALID:${step}`);
     }
@@ -2866,7 +2923,7 @@ function jobAidReviewCandidateShape(attachmentRefs = [], isAssessmentUpdate = fa
         description: 'Only current engineer attachment refs actually read in this turn. Never document SourceRefs, method refs or work dependencies. Empty when no current attachments exist.',
         ...(attachmentRefs.length ? { items: { ...strings.items, enum: [...attachmentRefs] } } : { maxItems: 0 }),
       },
-      warnings: strings, jobAidWorkingDelta: { ...JOBAID_REVIEW_WORK_SHAPE, nullable: !isAssessmentUpdate },
+      warnings: strings, jobAidWorkingDelta: { ...JOBAID_REVIEW_WORK_SHAPE, nullable: true },
     },
   };
 }
@@ -2969,6 +3026,8 @@ function matterReviewGuidance(input) {
   ];
 }
 
+const JOBAID_UNCHANGED_REVIEW_GUIDANCE = 'For a JobAid UPDATE_ASSESSMENT, return an own jobAidWorkingDelta field. Propose a non-null substantive delta when the comparison changes saved work. Only after completing a substantive comparison against the exact existing previousWork and actually reading every current-request frozen dialogue contribution, a genuinely unchanged result may explicitly use responseType RESYNTHESIS_RESULT and jobAidWorkingDelta null with missingInputs empty. Explain the compared inputs and why the saved judgments remain supported in answer, preserving every existing issue and genuine unknown. An ordinary ANSWER, INPUT_REQUEST, omitted delta, empty fake delta or unread contribution is not completed unchanged work. Do not invent a change, JAWR, save, formal adoption or cleared unknown merely to finish; the Host decides exact UNCHANGED qualification and preserves the original saved work.';
+
 function jobAidReviewGuidance(input, { sourcesAlreadyRead = false } = {}) {
   return [
     `Return answer and any proposed candidate fields directly at the function-argument root. answer is required; sourceRefs, missingInputs, candidateEvidenceRefs and warnings are optional collections. Omit them when proposing no entries; never represent an empty collection as [""], null or a placeholder object. Explicitly supplied values are still fully validated. Do not wrap them in candidate or candidateJson, JSON.stringify them, or repeat them inside jobAidWorkingDelta. Include jobAidWorkingDelta when updating work; work fields belong only there and issue fields belong inside its issues or issuePatches. Use ordinary JSON arrays, with strings as string elements, not item objects. A nullable limitation or unknown classification is JSON null, never an empty string. responseType is optional display metadata: if omitted, the driver labels a work update RESYNTHESIS_RESULT and an ordinary reply ANSWER. When supplied, use ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Never emit reviewActionDraft or affectedItemIds: the driver binds the fixed no-formal-action values null and [] and rejects model-supplied formal fields.`,
@@ -2984,6 +3043,7 @@ function jobAidReviewGuidance(input, { sourcesAlreadyRead = false } = {}) {
     sourcesAlreadyRead
       ? 'The driver has already read all authorized DOCUMENT_PASSAGE resources delivered in SOURCE_REFS. The catalog alone is not a read receipt. Keep sourceRefs limited to those delivered resources; method evidence remains METHOD_CLAUSE in the working update and never pretends to be a document SourceRef. No source-read tool is available in this isolated request.'
       : 'Read relevant DOCUMENT_PASSAGE and ENGINEER_ATTACHMENT resources through the current source-read function. The catalog is not a read receipt. Previously saved sources freshly supplied in deliveredEvidence may support retained work; new citations require actual current delivery. Keep sourceRefs limited to resources read this turn; method evidence remains METHOD_CLAUSE in the working update and never pretends to be a document SourceRef. ENGINEER_ATTACHMENT proves only what the uploaded material reports, not implemented controls or controlled Host facts.',
+    ...(input.input?.context?.purpose === 'UPDATE_ASSESSMENT' ? [JOBAID_UNCHANGED_REVIEW_GUIDANCE] : []),
     JOBAID_WORK_GUIDANCE,
     'Review-only authoring form: for an existing issue correction, use issuePatches with its exact prior issueKey and only fields that truly change. The driver copies omitted fields from Host-frozen previousWork before the complete Host save; an explicit empty array changes and clears that collection. Do not restate old riskScenarios, measures, openQuestions or requirementHandling merely to preserve them. Do not include nonempty issues together with issuePatches. For a distinct new issue, use a complete entry in issues. Every revised body must be a standalone engineering judgment with a supporting inline [[evidenceRef]]; put the process or change summary in answer or changeSummary. Revise affected openQuestions when actually read evidence answers them, even if roundCompletion stays the same; preserve unresolved questions.',
     'For every non-null jobAidWorkingDelta include the exact schemaVersion and nonempty completionReason and changeSummary. Preserve the previous completionReason when the completion scope is unchanged; describe the actual correction in changeSummary. These fields are required even when issuePatches contain the only substantive change.',
@@ -3022,7 +3082,7 @@ function buildReviewPrompt(input, { currentTurnRequest } = {}) {
       'decisionSnapshot must contain exactly: assessmentAsOf, evidenceHorizon, currentBestJudgment, alternativeJudgments, decisionMaturity, decisiveFacts, assumptions, residualUncertainties, uncertaintyDispositions, controlsAndMitigations, monitoringPlan, validUntil, reviewBy, reopenTriggers, whatWouldChangeDecision, candidateOnly. Its uncertaintyDispositions must exactly equal the draft list and candidateOnly must be true.',
       'Copy only allowed revision, evaluation item, adopted input, source, attachment, and gap refs from INPUT. A draft proposes change but never confirms or executes it.',
     ]),
-    ...(input.input?.context?.purpose === 'UPDATE_ASSESSMENT' ? ['This explicit Update Assessment action consumes the selected discussion in context.discussion and the current saved assessment. Return a non-null jobAidWorkingDelta (JobAid) or matterWorkingDelta (Matter) containing the actual proposed work changes. An answer that merely describes changes is not an assessment update and will be rejected. For JobAid, update only the issue keys explicitly requested and list other saved issue keys as unchangedIssueKeys. Correct an existing JobAid issue through issuePatches with its exact prior issueKey and only fields actually changed; omitted fields retain the Host-frozen prior values. Keep the revised body as an independently readable engineering judgment, with change process in answer or changeSummary. Reassess affected open questions against actually read evidence; retain genuine unknowns without preserving questions the evidence answered. Preserve the prior completion scope unless the evidence justifies changing it. Assistant replies are candidates to evaluate, never authoritative facts. Do not import unselected native conversation memory or later messages.'] : []),
+    ...(input.input?.context?.purpose === 'UPDATE_ASSESSMENT' ? [isJobAid ? JOBAID_UNCHANGED_REVIEW_GUIDANCE : 'This explicit Update Assessment action consumes the selected discussion in context.discussion and the current saved assessment. Return a non-null jobAidWorkingDelta (JobAid) or matterWorkingDelta (Matter) containing the actual proposed work changes. An answer that merely describes changes is not an assessment update and will be rejected. For JobAid, update only the issue keys explicitly requested and list other saved issue keys as unchangedIssueKeys. Correct an existing JobAid issue through issuePatches with its exact prior issueKey and only fields actually changed; omitted fields retain the Host-frozen prior values. Keep the revised body as an independently readable engineering judgment, with change process in answer or changeSummary. Reassess affected open questions against actually read evidence; retain genuine unknowns without preserving questions the evidence answered. Preserve the prior completion scope unless the evidence justifies changing it. Assistant replies are candidates to evaluate, never authoritative facts. Do not import unselected native conversation memory or later messages.'] : []),
     'State the current best bounded judgment, remaining uncertainty, and what would change the judgment when relevant.',
     'Use context.commonContext when supplied: continue prior discussion and later engineer corrections, distinguishing historical working answers from adopted inputs and current evidence. Report omitted history or unavailable RAG honestly. Procedural-reference catalogs and historical attachment names do not mean their contents were read.',
     `Use ${REVIEW_READ_FUNCTION_NAME} as needed, then continue your analysis from the returned fragments. Start from ${isChat ? 'the engineer question and saved understanding' : isJobAid ? 'the saved issue and current question' : isMatter ? 'the Matter working focus' : 'the selected criterion'} and current question; read relevant engineer attachments as well when they affect the question. Do not read every available source just because it is listed.`,

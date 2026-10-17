@@ -20,6 +20,7 @@ import type { Request } from 'express';
 import type {
   CanonicalEngineerReviewDecision,
   CanonicalEntryQueryRequest,
+  ConfirmCanonicalOverallForAeoRequest,
 } from '@shared/api.interface';
 
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
@@ -367,9 +368,10 @@ export class CanonicalHostController {
     @Body() body: unknown,
     @Req() httpRequest: Request,
   ) {
-    integratedAssessmentActionBody(body);
+    const input = overallConfirmationBody(body);
     return this.integratedAssessments.confirmOpenClawOverallForAeo(
       requiredText(workItemId, 'workItemId'),
+      input,
       hostActor(httpRequest),
     );
   }
@@ -420,6 +422,19 @@ function libraryModelsParameter(value: string | undefined, originalUrl?: string)
 
 function integratedAssessmentActionBody(body: unknown): void {
   ordinaryBody(body, []);
+}
+
+function overallConfirmationBody(body: unknown): ConfirmCanonicalOverallForAeoRequest {
+  const value = ordinaryBody(body, [
+    'expectedRevision', 'expectedOverallRevision', 'expectedOverallArtifactRef',
+  ]);
+  return {
+    expectedRevision: requiredRevision(value.expectedRevision),
+    expectedOverallRevision: requiredRevision(value.expectedOverallRevision),
+    expectedOverallArtifactRef: requiredText(
+      value.expectedOverallArtifactRef, 'expectedOverallArtifactRef',
+    ),
+  };
 }
 
 function engineerReviewBody(body: unknown): {

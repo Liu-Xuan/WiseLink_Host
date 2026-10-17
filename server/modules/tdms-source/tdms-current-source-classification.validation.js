@@ -14,6 +14,10 @@ import {
   COMPLETE_OWN_PROFILES,
   validateCompleteSourceContext,
 } from './tdms-complete-owned-source.validation';
+import {
+  validateReviewedAdHandlingOwner,
+  validateReviewedAdHandlingBusinessMetadata,
+} from './tdms-reviewed-ad-handling-native-model';
 import { isNativeReloadProvenance } from './tdms-native-reload-provenance';
 export const DOCUMENT_TARGET_CLASSIFICATION_PROFILE =
   'REQUIRED_DOCUMENT_TARGET';
@@ -103,6 +107,10 @@ function typed(v) {
   return v;
 }
 export function validateDocumentTargetClassificationInput(raw) {
+  if (
+    raw?.classificationRevision === AD_HANDLING_TARGET_CLASSIFICATION_REVISION
+  )
+    return validateAdHandlingTargetClassificationInput(raw);
   const v = plainData(raw);
   assertKeys(v, DOCUMENT_TARGET_CLASSIFICATION_INPUT_KEYS);
   if (
@@ -249,6 +257,11 @@ export function documentTargetClassificationStableProjection(v) {
   );
 }
 export function validateDocumentTargetClassificationObservation(raw, rawInput) {
+  if (
+    rawInput?.classificationRevision ===
+    AD_HANDLING_TARGET_CLASSIFICATION_REVISION
+  )
+    return validateAdHandlingTargetClassificationObservation(raw, rawInput);
   const input = validateDocumentTargetClassificationInput(rawInput),
     v = plainData(raw);
   assertKeys(v, [
@@ -314,6 +327,11 @@ export function validateDocumentTargetClassificationObservation(raw, rawInput) {
   return v;
 }
 export function documentTargetClassificationRecord(raw, rawInput) {
+  if (
+    rawInput?.classificationRevision ===
+    AD_HANDLING_TARGET_CLASSIFICATION_REVISION
+  )
+    return adHandlingTargetClassificationRecord(raw, rawInput);
   const input = validateDocumentTargetClassificationInput(rawInput),
     o = validateDocumentTargetClassificationObservation(raw, input),
     owner = o.reads[1].owner,
@@ -1044,4 +1062,231 @@ export function assertNativeClassificationPackage(pkg) {
   };
   if (document) validateDocumentTargetClassificationRecord(record);
   else validateEngineeringClassificationRecord(record);
+}
+
+export const AD_HANDLING_TARGET_CLASSIFICATION_PROFILE =
+  'REQUIRED_AD_HANDLING_TARGET';
+
+export const AD_HANDLING_TARGET_CLASSIFICATION_PROFILE_REVISION =
+  'tdms-required-ad-handling-target@1';
+
+export const AD_HANDLING_TARGET_CLASSIFICATION_REVISION =
+  'tdms-required-ad-handling-own-classification@1';
+
+export const AD_HANDLING_TARGET_CLASSIFICATION_SCHEMA =
+  'wiselink.tdms-required-ad-handling-own-classification.v1';
+
+export const AD_HANDLING_TARGET_CLASSIFICATION_VERIFY =
+  'required_ad_handling_own_type_double_read_v1';
+
+export const AD_HANDLING_TARGET_CLASSIFICATION_INPUT_KEYS = Object.freeze([
+  'profileId',
+  'profileRevision',
+  'originalReferenceLabel',
+  'sourceObjectRef',
+  'expectedOwner',
+  'sourceProof',
+  'purpose',
+  'primaryPolicy',
+  'openIfMissing',
+  'classificationRevision',
+]);
+
+export function validateAdHandlingTargetClassificationInput(raw) {
+  const v = plainData(raw);
+  assertKeys(v, AD_HANDLING_TARGET_CLASSIFICATION_INPUT_KEYS);
+  if (
+    v.profileId !== AD_HANDLING_TARGET_CLASSIFICATION_PROFILE ||
+    v.profileRevision !== AD_HANDLING_TARGET_CLASSIFICATION_PROFILE_REVISION ||
+    v.classificationRevision !== AD_HANDLING_TARGET_CLASSIFICATION_REVISION ||
+    v.purpose !== 'COVERAGE' ||
+    v.primaryPolicy !== 'METADATA_ONLY' ||
+    v.openIfMissing !== false ||
+    !/^(?:OR|VR):wt\.change2\.WTChangeRequest2:\d{1,24}$/u.test(
+      v.sourceObjectRef || '',
+    ) ||
+    typeof v.originalReferenceLabel !== 'string' ||
+    v.originalReferenceLabel.length > 500
+  )
+    fail('TDMS_AD_HANDLING_TARGET_CLASSIFICATION_INPUT_INVALID');
+  assertKeys(v.expectedOwner, [
+    'nativeTypeId',
+    'sourceVersion',
+    'sourceModifiedRaw',
+  ]);
+  if (v.expectedOwner.nativeTypeId !== null)
+    fail('TDMS_AD_HANDLING_TARGET_CLASSIFICATION_INPUT_INVALID');
+  if (v.expectedOwner.sourceModifiedRaw !== null)
+    text(v.expectedOwner.sourceModifiedRaw, 200);
+  version(v.expectedOwner.sourceVersion);
+  if (
+    (v.expectedOwner.sourceVersion.confirmation === 'SOURCE_DECLARED' &&
+      !/^\d{1,20}$/u.test(v.expectedOwner.sourceVersion.rawIteration || '')) ||
+    (v.expectedOwner.sourceVersion.confirmation === 'VERSION_UNCONFIRMED' &&
+      stable(v.expectedOwner.sourceVersion) !== stable(unknown()))
+  )
+    fail('TDMS_AD_HANDLING_TARGET_CLASSIFICATION_INPUT_INVALID');
+  validateRequiredTargetSourceProof(v.sourceProof, v.sourceObjectRef);
+  return v;
+}
+
+export function adHandlingClassificationStableProjection(v) {
+  if (Array.isArray(v)) return v.map(adHandlingClassificationStableProjection);
+  if (!v || typeof v !== 'object') return v;
+  return Object.fromEntries(
+    Object.entries(v)
+      .filter(
+        ([k]) =>
+          ![
+            'observedAt',
+            'documentIdentity',
+            'nativeReloadProvenance',
+          ].includes(k),
+      )
+      .map(([k, x]) => [k, adHandlingClassificationStableProjection(x)]),
+  );
+}
+
+export function validateAdHandlingTargetClassificationObservation(
+  raw,
+  rawInput,
+) {
+  const input = validateAdHandlingTargetClassificationInput(rawInput),
+    v = plainData(raw);
+  assertKeys(v, [
+    'schemaVersion',
+    'classificationRevision',
+    'requestedCriteria',
+    'documentIdentity',
+    'nativeReloadProvenance',
+    'reads',
+    'resolvedScopeId',
+    'disposition',
+  ]);
+  if (
+    v.schemaVersion !== AD_HANDLING_TARGET_CLASSIFICATION_SCHEMA ||
+    v.classificationRevision !== AD_HANDLING_TARGET_CLASSIFICATION_REVISION ||
+    stable(v.requestedCriteria) !== stable(input) ||
+    !Array.isArray(v.reads) ||
+    v.reads.length !== 2 ||
+    v.resolvedScopeId !== 'AD_HANDLING_FORM' ||
+    v.disposition !== 'IN_SCOPE'
+  )
+    fail('TDMS_AD_HANDLING_TARGET_CLASSIFICATION_OBSERVATION_INVALID');
+  text(v.documentIdentity, 200);
+  for (const read of v.reads) {
+    assertKeys(read, [
+      'owner',
+      'ownMetadataFields',
+      'sourceContext',
+      'observedAt',
+    ]);
+    iso(read.observedAt);
+    validateCompleteOwnedOwner(read.owner, {
+      scopeId: 'AD_HANDLING_FORM',
+      sourceObjectRef: input.sourceObjectRef,
+      documentCode: read.owner.number,
+      expectedOwner: input.expectedOwner,
+      sourceProof: input.sourceProof,
+    });
+    validateReviewedAdHandlingOwner({
+      scopeId: 'AD_HANDLING_FORM',
+      owner: read.owner,
+    });
+    if (
+      !Array.isArray(read.ownMetadataFields) ||
+      read.ownMetadataFields.length !== 6
+    )
+      fail('TDMS_AD_HANDLING_TARGET_METADATA_LIMIT');
+    validateReviewedAdHandlingBusinessMetadata({
+      scopeId: 'AD_HANDLING_FORM',
+      owner: read.owner,
+      fields: read.ownMetadataFields,
+    });
+    for (const field of read.ownMetadataFields) {
+      assertKeys(field, [
+        'fieldId',
+        'tabId',
+        'sectionId',
+        'labelOrigin',
+        'nativeControl',
+        'value',
+        'links',
+      ]);
+      assertKeys(field.nativeControl, ['tag', 'readOnly', 'disabled']);
+      assertKeys(field.value, [
+        'state',
+        'actualLabel',
+        'rawValue',
+        'locator',
+        'observedTotalCodepoints',
+      ]);
+      text(field.fieldId, 700);
+    }
+    validateCompleteSourceContext(read.sourceContext);
+    if (Date.parse(read.owner.observedAt) > Date.parse(read.observedAt))
+      fail('TDMS_AD_HANDLING_TARGET_TIME_INVALID');
+  }
+  if (
+    !isNativeReloadProvenance(v.nativeReloadProvenance, {
+      sourceRecordId: input.sourceObjectRef,
+      documentIdentity: v.documentIdentity,
+      observedAt: v.reads[0].owner.observedAt,
+    }) ||
+    Date.parse(v.reads[0].observedAt) >
+      Date.parse(v.reads[1].owner.observedAt) ||
+    stable(adHandlingClassificationStableProjection(v.reads[0])) !==
+      stable(adHandlingClassificationStableProjection(v.reads[1]))
+  )
+    fail('TDMS_AD_HANDLING_TARGET_FRESH_DOUBLE_READ_REQUIRED');
+  return v;
+}
+
+export function adHandlingTargetClassificationRecord(raw, rawInput) {
+  const input = validateAdHandlingTargetClassificationInput(rawInput),
+    o = validateAdHandlingTargetClassificationObservation(raw, input),
+    owner = o.reads[1].owner;
+  const record = {
+    sourceRecordId: owner.sourceRecordId,
+    kind: 'OBSERVATION',
+    number: owner.number,
+    sourceVersion: owner.sourceVersion,
+    businessVersion: owner.businessVersion,
+    state: { rawCode: null, rawName: owner.stateRaw },
+    observedAt: o.reads[1].observedAt,
+    sourceModifiedAt: null,
+    authors: [],
+    rawFields: {
+      number: owner.number,
+      storageType: { rawCode: null, rawName: owner.rawHeaderType },
+      sourceModifiedRaw: owner.sourceModifiedRaw,
+      documentTargetClassification: o,
+    },
+    content: {},
+    provenance: [
+      {
+        fieldPath: 'rawFields.documentTargetClassification',
+        selector: '#infoPageIdentityDisplayType',
+        sourceModifiedAt: null,
+        observationRef: owner.sourceRecordId,
+      },
+    ],
+    coverage: {
+      status: 'PARTIAL',
+      gaps: [
+        'REQUIRED_AD_HANDLING_NATIVE_CLASSIFICATION_ONLY',
+        'OWN_COMPLETE_CONTENT_NOT_READ',
+      ],
+      readback: 'NON_ATOMIC',
+    },
+  };
+  record.snapshotId = snapshotIdentity(record);
+  return record;
+}
+
+export function validateAdHandlingTargetClassificationRecord(record) {
+  const o = record.rawFields?.documentTargetClassification,
+    expected = adHandlingTargetClassificationRecord(o, o?.requestedCriteria);
+  if (stable(expected) !== stable(record))
+    fail('TDMS_AD_HANDLING_TARGET_CLASSIFICATION_RECORD_INVALID');
 }

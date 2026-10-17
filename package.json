@@ -65,7 +65,10 @@
     "upgrade": "npx -y @lark-apaas/fullstack-cli@latest sync --disable-gen-openapi",
     "prepare": "chmod +x .githooks/pre-commit 2>/dev/null; git config core.hooksPath .githooks 2>/dev/null || true",
     "postinstall": "npx -y @lark-apaas/fullstack-cli@latest action-plugin init",
-    "dev:local": "node ./scripts/dev-local.js"
+    "dev:local": "node ./scripts/dev-local.js",
+    "test:lcm:native": "node --test test/node/lcm-native-matrix-postgres.test.mjs",
+    "test:lcm:unit": "jest --runInBand test/unit/lcm-matrix/native-core.spec.ts test/unit/lcm-matrix/native-reading.spec.ts test/unit/lcm-matrix/module-integration.spec.ts test/unit/lcm-matrix/source-authorization.spec.ts test/unit/lcm-matrix/personal-original.spec.ts",
+    "test:lcm:cleanup": "node --test test/node/lcm-native-cleanup-postgres.test.mjs"
   },
   "dependencies": {
     "@lark-apaas/aily-web-sdk": "0.0.12",

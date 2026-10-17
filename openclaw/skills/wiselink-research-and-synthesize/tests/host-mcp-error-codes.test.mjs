@@ -139,3 +139,29 @@ test('does not expand plugin error admission to unknown DOCUMENT codes or privat
     });
   }
 });
+
+test('only known automatic queue fence codes survive MCP serialization without private error detail', () => {
+  const codes = ['AUTO_WORK_ITEM_ATTEMPT_LEASE_REJECTED', 'AUTO_WORK_ITEM_TASK_LEASE_BINDING_REQUIRED',
+    'AUTO_WORK_ITEM_TASK_LEASE_BINDING_INVALID', 'AUTO_WORK_ITEM_LEASE_REQUIRED'];
+  for (const code of codes) {
+    for (const text of [code, `Error: ${code}:synthetic-private-error-body`]) {
+      assert.throws(() => readHostMcpJsonResult(JSON.parse(JSON.stringify({ isError: true,
+        content: [{ type: 'text', text }] })), 'save_assessment_work'), error => {
+        assert.equal(error.hostErrorCode, code);
+        assert.equal(errorCode(error), `REVIEW_HOST_MCP_TOOL_FAILED:save_assessment_work:${code}`);
+        assert.equal(JSON.stringify(error).includes('synthetic-private-error-body'), false);
+        return true;
+      });
+    }
+  }
+  for (const text of ['AUTO_WORK_ITEM_UNKNOWN:synthetic-private-error-body',
+    'AUTO_WORK_ITEM_ATTEMPT_LEASE_REJECTED_EXTRA', 'AUTO_WORK_ITEM_ATTEMPT_LEASE_REJECTED private-body',
+    'private-body AUTO_WORK_ITEM_ATTEMPT_LEASE_REJECTED']) {
+    assert.throws(() => readHostMcpJsonResult({ isError: true, content: [{ type: 'text', text }] },
+      'save_assessment_work'), error => {
+      assert.equal(error.hostErrorCode, null);
+      assert.equal(JSON.stringify(error).includes('private-body'), false);
+      return true;
+    });
+  }
+});

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 
 import type {
   CanonicalCommonAssessmentContext,
@@ -22,6 +23,7 @@ import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.reposito
 import type { FrozenReviewSourceRef } from './canonical-host-openclaw-review.contract';
 import {
   canonicalReferenceResolutionOr,
+  canonicalReferenceSelectionKey,
   deriveCanonicalReferenceMentionPreview,
   finalizeCanonicalReferenceMentionPreview,
   type CanonicalReferenceMentionCandidate,
@@ -35,6 +37,14 @@ import {
 } from './canonical-related-context-applicability';
 import { projectCanonicalStructuredContentUnit } from './canonical-structured-content-projection';
 import { sameReviewBusinessScope } from '../review-persistence/review-business-scope';
+import { DialogueRepository } from './dialogue.repository';
+import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
+import type {
+  JobAidEngineerPreparationFacts,
+  JobAidPreparationScope,
+  JobAidTaskPurpose,
+} from './jobaid-preparation-view';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
 
@@ -82,7 +92,81 @@ export class CanonicalHostCommonContextService {
     @Optional() private readonly reader?: UnifiedReaderService,
     @Optional()
     private readonly documentManagement?: DocumentManagementHostedService,
+    @Optional() private readonly dialogues?: DialogueRepository,
+    @Optional() private readonly engineerReviews?: CanonicalHostEngineerReviewService,
   ) {}
+
+  /** Full pending input index, independent of the bounded discussion summary.
+   * Caller retains the existing source authorization and actor SQL context. */
+  async readPreparationFacts(input: {
+    workItem: CanonicalWorkItemProjection;
+    tenantId: string;
+    actorUserId: string;
+    purpose: JobAidTaskPurpose;
+    selection?: JobAidPreparationScope;
+    browserRead?: true;
+  }): Promise<JobAidEngineerPreparationFacts> {
+    const scope = {tenantId:input.tenantId,actorId:input.actorUserId};
+    if (!await this.conversations.hasActiveOfficialActorMapping(scope))
+      throw new Error('JOBAID_ACTOR_AUTHORIZATION_CHANGED');
+    const loaded = await this.workItems.loadTenantScopedProjection(input.workItem.workItemId,input.tenantId);
+    if (!loaded || loaded.row.requestedByUserId !== input.actorUserId ||
+        loaded.row.documentVersionId !== input.workItem.source.documentVersionId)
+      throw new Error('COMMON_CONTEXT_WORK_ITEM_NOT_VISIBLE');
+    const selection = input.selection;
+    const aggregate = selection?.reviewConversationId
+      ? await this.conversations.loadById(selection.reviewConversationId)
+      : await this.conversations.loadCurrent({...scope,workItemId:input.workItem.workItemId});
+    if (aggregate && (aggregate.conversation.tenantId !== input.tenantId ||
+        aggregate.conversation.actorId !== input.actorUserId ||
+        aggregate.conversation.workItemId !== input.workItem.workItemId))
+      throw new Error('REVIEW_CONVERSATION_CHANGED');
+    if (selection?.reviewConversationId && !aggregate) throw new Error('REVIEW_CONVERSATION_CHANGED');
+    const turns = (aggregate?.turns ?? []).filter(turn =>
+      sameReviewBusinessScope(turn.reviewScope, undefined) &&
+      (selection?.beforeTurnNo === undefined || turn.turnNo < selection.beforeTurnNo) &&
+      (selection?.includedDiscussionTurnIds === undefined ||
+        selection.includedDiscussionTurnIds.includes(turn.reviewTurnId)),
+    );
+    const facts: JobAidEngineerPreparationFacts = {
+      pendingEngineerInputs:turns.filter(turn => !turn.assistantCandidate?.jobAidWorkingUpdate).map(turn => ({
+        ref:turn.engineerSuppliedInputId,revision:turn.inputRevision,kind:'REVIEW_INSTRUCTION',
+        text:turn.userMessage,sourcePart:'USER',origin:'REVIEW_CONVERSATION',recordedAt:turn.createdAt.toISOString(),
+      })),
+      savedUpdates:turns.flatMap(turn => {
+        const update = turn.assistantCandidate?.jobAidWorkingUpdate;
+        return update ? [{...structuredClone(update),instruction:turn.userMessage}] : [];
+      }),
+      humanConfirmedDecisions:[],humanConfirmationStatus:'NOT_RECORDED',limitations:[],
+    };
+    const currentTurn = aggregate?.turns.find(turn => turn.turnNo === selection?.beforeTurnNo);
+    if (currentTurn) facts.taskGoal = {instruction:currentTurn.userMessage,targetIssueKeys:[...(currentTurn.targetIssueKeys ?? [])]};
+    if (this.dialogues) {
+      const contributions = await this.dialogues.relevantContributions(
+        {...scope,...(input.browserRead ? {browserRead:true as const} : {})},[input.workItem.workItemId],
+      );
+      facts.pendingEngineerInputs.push(...contributions.filter(row => !row.consumed_working_ref &&
+        (input.purpose !== 'PROBLEM_REVIEW' || selection?.selectedContributionRefs?.includes(row.contribution_ref)),
+      ).map(row => ({ref:row.contribution_ref,revision:row.revision,kind:row.kind,text:row.selected_text,
+        sourcePart:row.source_part,origin:'PERSONAL_DIALOGUE' as const,
+        recordedAt:new Date(row._created_at).toISOString()})));
+    } else facts.limitations.push('PERSONAL_DIALOGUE_READER_UNAVAILABLE');
+    const projection = input.workItem.integratedAssessment?.engineerReviews;
+    if (projection && this.engineerReviews && !isJobAidProblemProjection(input.workItem.integratedAssessment?.baseRules)) {
+      const context = await this.engineerReviews.modelContext(input.workItem);
+      facts.humanConfirmedDecisions = context.effective.filter(review => review.status === 'ENGINEER_CONFIRMED').map(review => ({
+        sequence:review.sequence,criterionId:review.criterionId,baseRuleRevision:review.baseRuleRevision,
+        baseRuleArtifactSha256:review.baseRuleArtifactSha256,actionType:review.actionType,
+        decision:review.decision,status:review.status,comment:review.comment,recordedAt:review.recordedAt,
+        correctedAnalysisDirection:review.correctedAnalysisDirection,
+      }));
+      facts.humanConfirmationStatus = 'AVAILABLE';
+    } else if (projection) {
+      facts.humanConfirmationStatus = 'UNAVAILABLE';
+      facts.limitations.push('FORMAL_ENGINEER_CONFIRMATION_NOT_READABLE');
+    }
+    return facts;
+  }
 
   async buildForWorkItem(
     workItem: CanonicalWorkItemProjection,
@@ -274,7 +358,7 @@ export class CanonicalHostCommonContextService {
         readScope,
       );
       const mentions = candidates.map((mention) => {
-        const target = resolved.get(mention.normalizedTarget);
+        const target = resolved.get(canonicalReferenceSelectionKey(mention));
         return finalizeCanonicalReferenceMentionPreview({
           candidate: mention,
           primaryDocumentVersionRef: workItem.source.documentVersionId,
@@ -302,7 +386,8 @@ export class CanonicalHostCommonContextService {
         built.bytes,
       );
       const snapshot = built.snapshot;
-      const relatedResources = [...resolved.values()].flatMap(
+      const sourceReadings = uniqueReferenceReadings([...resolved.values()]);
+      const relatedResources = sourceReadings.flatMap(
         (entry) => entry.resourceRefs,
       );
       const availableByTarget = new Map(
@@ -312,7 +397,7 @@ export class CanonicalHostCommonContextService {
         ]),
       );
       return {
-        readingEvidence: [...resolved.values()].flatMap(
+        readingEvidence: sourceReadings.flatMap(
           (entry) => entry.readingEvidence ?? [],
         ),
         mentionSourceRefIds: new Set(
@@ -347,7 +432,7 @@ export class CanonicalHostCommonContextService {
             return {
               ...safeItem,
               availableRelatedSourceRefIds:
-                availableByTarget.get(item.normalizedTarget) ?? [],
+                availableByTarget.get(canonicalReferenceSelectionKey(item)) ?? [],
             };
           }),
         },
@@ -371,13 +456,9 @@ export class CanonicalHostCommonContextService {
     actorMappingActive: boolean,
     readScope: UnifiedArtifactReadScope,
   ): Promise<Map<string, ResolvedReviewReferenceTarget>> {
-    const targets = [
-      ...new Set(
-        mentions
-          .filter((item) => !item.initialResolutionState)
-          .map((item) => item.normalizedTarget),
-      ),
-    ];
+    const selections = new Map(mentions.filter(item => !item.initialResolutionState)
+      .map(item => [canonicalReferenceSelectionKey(item), item]));
+    const targets = [...selections.keys()];
     // This server-side review delegation has no browser session to replay.
     // Re-read its Host-owned identity mapping and owner binding before bytes.
     if (!actorMappingActive) {
@@ -397,11 +478,14 @@ export class CanonicalHostCommonContextService {
       );
     }
     let catalogTargets: Awaited<
-      ReturnType<DocumentManagementHostedService['listCurrentReferenceTargets']>
+      ReturnType<DocumentManagementHostedService['listReferenceTargets']>
     >;
     try {
       catalogTargets =
-        await this.documentManagement.listCurrentReferenceTargets(targets, {
+        await this.documentManagement.listReferenceTargets([...selections.values()].map(item => ({
+          canonicalDocumentNumber: item.normalizedTarget,
+          ...(item.requestedBusinessRevision === undefined ? {} : { requestedBusinessRevision: item.requestedBusinessRevision }),
+        })), {
           actorUserId: scope.actorId,
           tenantId: scope.tenantId,
           roles: [],
@@ -419,22 +503,23 @@ export class CanonicalHostCommonContextService {
       );
     }
     const result = new Map<string, ResolvedReviewReferenceTarget>();
-    const resolveTarget = async (target: string) => {
+    const resolveTarget = async (key: string) => {
+      const selection = selections.get(key)!;
       try {
         const matches = catalogTargets.filter(
           (candidate) =>
-            canonicalReferenceLookupKey(candidate.canonicalDocumentNumber) ===
-            canonicalReferenceLookupKey(target),
+            canonicalReferenceSelectionKey({ normalizedTarget: candidate.canonicalDocumentNumber,
+              requestedBusinessRevision: candidate.requestedBusinessRevision }) === key,
         );
         if (matches.length === 0) {
           result.set(
-            target,
+            key,
             unresolvedReviewReferenceTarget('DOCUMENT_NOT_INGESTED'),
           );
           return;
         }
         if (matches.length > 1) {
-          result.set(target, {
+          result.set(key, {
             resolution: {
               status: 'RESOLVED_MULTIPLE',
               candidateCount: matches.length,
@@ -453,7 +538,7 @@ export class CanonicalHostCommonContextService {
           });
         if (tenantBindings.length === 0) {
           result.set(
-            target,
+            key,
             unresolvedReviewReferenceTarget('DOCUMENT_NOT_INGESTED'),
           );
           return;
@@ -480,11 +565,11 @@ export class CanonicalHostCommonContextService {
           }
         }
         if (bindings.length === 0) {
-          result.set(target, unresolvedReviewReferenceTarget('ACCESS_DENIED'));
+          result.set(key, unresolvedReviewReferenceTarget('ACCESS_DENIED'));
           return;
         }
         if (bindings.length > 1) {
-          result.set(target, {
+          result.set(key, {
             resolution: {
               status: 'RESOLVED_MULTIPLE',
               candidateCount: bindings.length,
@@ -501,7 +586,7 @@ export class CanonicalHostCommonContextService {
           scope.tenantId,
         );
         if (!loaded?.projection.package) {
-          result.set(target, unresolvedReviewReferenceTarget('UNAVAILABLE'));
+          result.set(key, unresolvedReviewReferenceTarget('UNAVAILABLE'));
           return;
         }
         if (
@@ -516,7 +601,7 @@ export class CanonicalHostCommonContextService {
           loaded.projection.revision !== owned.revision ||
           loaded.projection.source.documentVersionId !== match.documentVersionId
         ) {
-          result.set(target, unresolvedReviewReferenceTarget('ACCESS_DENIED'));
+          result.set(key, unresolvedReviewReferenceTarget('ACCESS_DENIED'));
           return;
         }
         const targetWorkItem = loaded.projection;
@@ -531,7 +616,7 @@ export class CanonicalHostCommonContextService {
           packageBytes,
           targetWorkItem.package.artifact.ref,
           targetWorkItem.package.artifact.sha256,
-          target,
+          match.canonicalDocumentNumber,
           match.documentVersionId,
           applicability,
           readScope,
@@ -551,7 +636,7 @@ export class CanonicalHostCommonContextService {
             }
             return [
               {
-                evidenceRef: `overall-evidence:related:${targets.indexOf(target) + 1}:${index + 1}`,
+                evidenceRef: `overall-evidence:related:${targets.indexOf(key) + 1}:${index + 1}`,
                 kind: 'DOCUMENT_PASSAGE',
                 title: match.canonicalDocumentNumber,
                 versionLabel:
@@ -566,7 +651,7 @@ export class CanonicalHostCommonContextService {
             ];
           },
         );
-        result.set(target, {
+        result.set(key, {
           resolution: {
             status: 'RESOLVED_EXACT',
             workItemId: targetWorkItem.workItemId,
@@ -584,7 +669,7 @@ export class CanonicalHostCommonContextService {
         const reasonCode = relatedContextErrorCode(error);
         this.logger.warn(`Related Context target unavailable: ${reasonCode}`);
         result.set(
-          target,
+          key,
           unresolvedReviewReferenceTarget('UNAVAILABLE', reasonCode),
         );
       }
@@ -645,7 +730,7 @@ export function projectCommonAssessmentContext(
           const document = resource.value.relatedDocument as
             | Record<string, unknown>
             | undefined;
-          return document?.normalizedTarget === item.normalizedTarget;
+          return document?.documentVersionRef === item.resolvedDocumentVersionRef;
         });
         return {
           documentCode: item.normalizedTarget,
@@ -777,6 +862,25 @@ function unavailableReviewRelatedContext(
   };
 }
 
+/** Several citation selections can name the same exact publication. They keep
+ * separate snapshot items, while the unchanged source resource enters Review
+ * once. Never discard a different artifact, source value or authorization carrier. */
+function uniqueReferenceReadings(entries: ResolvedReviewReferenceTarget[]): ResolvedReviewReferenceTarget[] {
+  const selected = new Map<string, ResolvedReviewReferenceTarget>();
+  const comparable = (entry: ResolvedReviewReferenceTarget) => ({ ...entry,
+    readingEvidence: entry.readingEvidence?.map(({ evidenceRef: _occurrenceRef, ...evidence }) => evidence),
+  });
+  for (const entry of entries) {
+    if (entry.resolution.status !== 'RESOLVED_EXACT') continue;
+    const key = entry.resolution.documentVersionId;
+    const prior = selected.get(key);
+    if (prior && canonicalJson(comparable(prior)) !== canonicalJson(comparable(entry)))
+      throw new Error('COMMON_RELATED_SOURCE_IDENTITY_CHANGED');
+    if (!prior) selected.set(key, entry);
+  }
+  return [...selected.values()];
+}
+
 function unresolvedReviewReferenceTarget(
   status:
     | 'UNRESOLVED'
@@ -795,13 +899,6 @@ function unresolvedReviewReferenceTarget(
     resourceRefs: [],
     targetApplicability: 'NOT_EVALUATED',
   };
-}
-
-function canonicalReferenceLookupKey(value: string): string {
-  return value
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/gu, '');
 }
 
 function relatedContextErrorCode(error: unknown): string {

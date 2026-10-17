@@ -46,7 +46,7 @@ function contextFixture() {
     }),
   };
   const documentManagement = {
-    listCurrentReferenceTargets: jest.fn(async () => [{ canonicalDocumentNumber: target,
+    listReferenceTargets: jest.fn(async () => [{ canonicalDocumentNumber: target,
       documentVersionId: state.selectedVersion, issuerAuthority: 'BOEING' }]),
   };
   const service = new CanonicalHostCommonContextService({
@@ -77,8 +77,8 @@ describe('related source identity versus publisher currentness', () => {
       excerpt: 'Exact immutable text of DV-A', locator: 'page 2-2' })]);
     expect(result.common.relatedMaterials.items[0]).toMatchObject({ documentVersionRef: 'DV-A',
       readFragments: [{ sourceRefId: 'SRC-DV-A', excerpt: 'Exact immutable text of DV-A' }] });
-    expect(h.documentManagement.listCurrentReferenceTargets).toHaveBeenCalledWith(
-      ['777-FTD-31-21002'], expect.objectContaining({ tenantId: 'tenant-one', actorUserId: 'engineer-owner', roles: [] }));
+    expect(h.documentManagement.listReferenceTargets).toHaveBeenCalledWith(
+      [{ canonicalDocumentNumber: '777-FTD-31-21002' }], expect.objectContaining({ tenantId: 'tenant-one', actorUserId: 'engineer-owner', roles: [] }));
   });
 
   it('keeps the captured version exact when a new catalog head arrives during body reading', async () => {

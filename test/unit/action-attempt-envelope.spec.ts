@@ -311,3 +311,36 @@ function withoutContentHash<T extends { contentHash: string }>(
   const { contentHash: _contentHash, ...rest } = value;
   return rest;
 }
+
+describe('Host saved-work reconciliation result branch', () => {
+  function recoveryPair() {
+    const {inputHash:_inputHash,...base}=taskEnvelope();
+    const marker={executionKind:'HOST_SAVED_WORK_RECONCILIATION' as const,modelRequests:0 as const,
+      workRevisionRef:'JAWR-saved',workRevision:1,sourceActionAttemptId:'ATT-source'};
+    const task=sealTaskEnvelope({...base,modelInput:{...base.modelInput,savedWorkReconciliation:marker}});
+    const {modelVersion:_modelVersion,...ordinary}=withoutContentHash(resultEnvelope(task));
+    const result=sealResultEnvelope({...ordinary,executionKind:marker.executionKind,modelRequests:0,
+      modelVersion:null,sourceWork:{workRevisionRef:marker.workRevisionRef,sourceActionAttemptId:marker.sourceActionAttemptId},
+      modelOutput:JSON.stringify({workRevisionRef:marker.workRevisionRef}),runMetrics:{durationMs:3,inputUnits:0,outputUnits:0}});
+    return {task,result};
+  }
+  it('keeps null model provenance only for the exact sealed source work',()=>{
+    const {task,result}=recoveryPair();
+    expect(parseResultEnvelope({value:result,task})).toEqual(result);
+    expect(result.modelVersion).toBeNull();
+    expect(()=>parseResultEnvelope({value:result,task:taskEnvelope()})).toThrow('RESULT_SAVED_WORK_RECONCILIATION_INVALID');
+  });
+  it('rejects another source attempt and nonzero model units',()=>{
+    const {task,result}=recoveryPair();
+    const withoutHash=withoutContentHash(result);
+    expect(()=>parseResultEnvelope({task,value:sealResultEnvelope({...withoutHash,
+      sourceWork:{...result.sourceWork,sourceActionAttemptId:'ATT-other'}})})).toThrow('RESULT_SAVED_WORK_RECONCILIATION_INVALID');
+    expect(()=>parseResultEnvelope({task,value:sealResultEnvelope({...withoutHash,
+      runMetrics:{durationMs:1,inputUnits:1,outputUnits:0}})})).toThrow('RESULT_SAVED_WORK_RECONCILIATION_INVALID');
+  });
+  it('retains the ordinary model provenance requirement',()=>{
+    const task=taskEnvelope();
+    expect(()=>parseResultEnvelope({task,value:sealResultEnvelope({...withoutContentHash(resultEnvelope(task)),modelVersion:null})}))
+      .toThrow('RESULT_ENVELOPE_MODEL_VERSION_REQUIRED');
+  });
+});

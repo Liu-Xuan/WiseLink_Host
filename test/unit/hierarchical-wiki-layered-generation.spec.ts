@@ -13,7 +13,10 @@ import {
   wikiDue,
   wikiScopeKey,
 } from '../../server/modules/canonical-host/hierarchical-wiki-demand';
-import { wikiScopeFor } from '../../server/modules/canonical-host/hierarchical-wiki-inventory';
+import {
+  readWikiInventory,
+  wikiScopeFor,
+} from '../../server/modules/canonical-host/hierarchical-wiki-inventory';
 import { assertWikiLayerMembers } from '../../server/modules/canonical-host/hierarchical-wiki-generation';
 
 jest.mock(
@@ -60,7 +63,7 @@ const pointer = (id: string, revision = 1): DerivedSummaryMember => ({
 
 /** Real refresh and SAVE branch/CAS functions, with deterministic local SQL
  * rows. No physical PostgreSQL, remote source or model is involved. */
-function setup() {
+function setup(discoveredWorkItemId?: string) {
   const rows = [null, '46', '46-00'].map(
     (ata, index): WikiRow => ({
       wikiId: `WIKI-${index}`,
@@ -143,6 +146,10 @@ function setup() {
       async (statement: Parameters<PgDialect['sqlToQuery']>[0]) => {
         const query = dialect.sqlToQuery(statement);
         calls.push(query);
+        if (query.sql.includes("SELECT DISTINCT 'WORK_ITEM' AS kind"))
+          return discoveredWorkItemId
+            ? [{ kind: 'WORK_ITEM', subjectId: discoveredWorkItemId, important: true }]
+            : [];
         if (query.sql.includes('SELECT wiki_id AS "wikiId",member_key AS key'))
           return [...memberships].flatMap(([wikiId, items]) =>
             items.map((item) => ({ ...item, wikiId })),
@@ -248,6 +255,69 @@ test('refresh keeps saved document+matter only at ATA4 and exact saved child poi
       call.sql.includes('DELETE FROM hierarchical_wiki_membership'),
     ),
   ).toBe(false);
+});
+
+test('a missing old saved WI head is discovered before the next full inventory without a journal event', async () => {
+  const f = setup('WI-old-work13');
+  // The old inventory finished before WORK_ITEM leaves were introduced. The
+  // existing reading is unchanged; no new save/event or full-sweep deadline.
+  f.rows[0]!.lastInventoryAt = new Date().toISOString();
+  f.rows[0]!.lastEventSeq = '9';
+  jest.mocked(readWikiInventory).mockClear();
+  await f.service.update('DS-0', {}, { tenantId: owner.tenantId } as never);
+  expect(readWikiInventory).toHaveBeenCalledTimes(1);
+  expect(readWikiInventory).toHaveBeenCalledWith(
+    f.database,
+    owner,
+    expect.objectContaining(target),
+    [{ kind: 'WORK_ITEM', subjectId: 'WI-old-work13', important: true }],
+    null,
+    expect.anything(),
+  );
+  const query = f.calls.find((call) =>
+    call.sql.includes("SELECT DISTINCT 'WORK_ITEM' AS kind"),
+  )!;
+  expect(query.params).toEqual([
+    owner.actorUserId, owner.tenantId, owner.actorUserId, 'B787', '[]',
+    owner.tenantId, owner.tenantId,
+  ]);
+  expect(query.sql).toContain("m.basis_json->>'classificationStatus'='CONFIRMED'");
+  expect(query.sql).toContain("m.basis_json->>'documentVersionId'=d.document_version_id");
+  expect(query.sql).toContain("w.scope_json->>'kind'='ATA4'");
+  expect(query.sql).toContain('wi.source_file_sha256=d.pdf_sha256');
+  expect(query.sql).toContain('ORDER BY r.work_revision DESC LIMIT 1');
+  expect(query.sql).toContain('ORDER BY "subjectId" LIMIT 100');
+  expect(query.sql).not.toMatch(/content_json|created_by_user_id|a\.actor_user_id/u);
+  // Discovery only uses the original inventory; it does not reserve a model or
+  // reset a blocked demand before that inventory establishes changed inputs.
+  expect(f.calls.some((call) => call.sql.includes('INSERT INTO action_attempt'))).toBe(false);
+});
+
+test('unchanged WI heads do not reopen inventory or manufacture another generation', async () => {
+  const f = setup();
+  f.rows[0]!.lastInventoryAt = new Date().toISOString();
+  const before = f.rows.map((row) => structuredClone(row.state));
+  jest.mocked(readWikiInventory).mockClear();
+  await f.service.update('DS-0', {}, { tenantId: owner.tenantId } as never);
+  expect(readWikiInventory).not.toHaveBeenCalled();
+  expect(f.rows.map((row) => row.state)).toEqual(before);
+});
+
+test('existing assessment waiting rereads the exact DVI without head rediscovery', async () => {
+  const f = setup();
+  f.rows[0]!.lastInventoryAt = new Date().toISOString();
+  f.rows[2]!.state.waiting = [{
+    kind: 'DOCUMENT', subjectId: 'F-waiting', documentVersionId: 'DV-waiting',
+    requestId: 'saved-partial-request', status: 'SAVED_ASSESSMENT_NOT_READY',
+  }];
+  jest.mocked(readWikiInventory).mockClear();
+  await f.service.update('DS-0', {}, { tenantId: owner.tenantId } as never);
+  expect(readWikiInventory).toHaveBeenCalledTimes(1);
+  expect(readWikiInventory).toHaveBeenCalledWith(
+    f.database, owner, expect.objectContaining(target),
+    [{ kind: 'DOCUMENT', subjectId: 'DV-waiting', important: false }],
+    null, expect.anything(),
+  );
 });
 
 test('changed leaf waits at both parents; exact new saved child propagates only one layer per save', async () => {

@@ -18,6 +18,7 @@ export interface CanonicalReferenceMentionCandidate {
   unitOrdinal: number;
   matchedText: string;
   normalizedTarget: string;
+  requestedBusinessRevision?: string | null;
   documentType: CanonicalReferenceDocumentType;
   contextRole: CanonicalReferenceContextRole;
   relationCue: string | null;
@@ -99,6 +100,7 @@ interface MentionCandidate {
   end: number;
   matchedText: string;
   normalizedTarget: string;
+  requestedBusinessRevision?: string | null;
   documentType: CanonicalReferenceDocumentType;
   initialResolutionState?: 'UNRESOLVED' | 'UNSUPPORTED_DOCUMENT';
 }
@@ -132,7 +134,8 @@ export function deriveCanonicalReferenceMentionPreview(
     if (structured) {
       if (
         currentTarget === '' ||
-        normalizeCode(structured.normalizedTarget) !== currentTarget
+        normalizeCode(structured.normalizedTarget) !== currentTarget ||
+        structured.requestedBusinessRevision !== undefined
       ) {
         mentions.push(structured);
       }
@@ -144,11 +147,6 @@ export function deriveCanonicalReferenceMentionPreview(
       ...manualCandidates(unit.displayText),
       ...unsupportedPrefixedCandidates(unit.displayText),
     ]
-      .filter(
-        (candidate) =>
-          currentTarget === '' ||
-          normalizeCode(candidate.normalizedTarget) !== currentTarget,
-      )
       .sort(
         (left, right) =>
           left.start - right.start ||
@@ -170,7 +168,13 @@ export function deriveCanonicalReferenceMentionPreview(
 
     accepted
       .sort((left, right) => left.start - right.start)
-      .forEach((candidate) => {
+      .forEach((unversioned, candidateIndex) => {
+        const candidate = withReferenceRevision(unversioned, unit.displayText,
+          accepted[candidateIndex + 1]?.start ?? unit.displayText.length);
+        if (currentTarget !== '' && normalizeCode(candidate.normalizedTarget) === currentTarget &&
+            (candidate.requestedBusinessRevision === undefined ||
+             !/\b(?:refer(?:ence|red)?|see|prior|previous|earlier|historical|supersedes?)\b|引用|参见|参考|旧版|前版/iu
+               .test(unit.displayText.slice(Math.max(0, candidate.start - 100), candidate.start)))) return;
         const contextStart: number = Math.max(0, candidate.start - 140);
         const contextEnd: number = Math.min(
           unit.displayText.length,
@@ -188,6 +192,8 @@ export function deriveCanonicalReferenceMentionPreview(
           unitOrdinal: unit.ordinal,
           matchedText: candidate.matchedText,
           normalizedTarget: candidate.normalizedTarget,
+          ...(candidate.requestedBusinessRevision === undefined ? {} :
+            { requestedBusinessRevision: candidate.requestedBusinessRevision }),
           documentType: candidate.documentType,
           contextRole: role,
           relationCue: relationCue(localContext, role),
@@ -217,8 +223,7 @@ function preferStructuredReferenceRows(
       mention.mentionId.includes('-structured-') ||
       !structured.some(
         (owner) =>
-          normalizeCode(owner.normalizedTarget) ===
-            normalizeCode(mention.normalizedTarget) &&
+          canonicalReferenceSelectionKey(owner) === canonicalReferenceSelectionKey(mention) &&
           owner.sourceRefIds.some((sourceRefId) =>
             mention.sourceRefIds.includes(sourceRefId),
           ),
@@ -350,13 +355,32 @@ function structuredReferenceCandidate(
   const referenceFamily = textValue(value.referenceFamily)?.toUpperCase();
   if (!rawReferenceNumber || !referenceFamily) return null;
   const referenceNumberIsUsable = /\d/u.test(rawReferenceNumber);
-  const normalizedTarget = referenceNumberIsUsable ? rawReferenceNumber : '';
+  const revisionStart = rawReferenceNumber.search(/[\t ]+(?=\(?(?:REV(?:ISION)?\.?|R|ISSUE|ORIGINAL[\t ]+ISSUE|原版)(?=[\t :#\d.]|$))/iu);
+  const number = revisionStart < 0 ? rawReferenceNumber : rawReferenceNumber.slice(0, revisionStart);
+  const normalizedTarget = referenceNumberIsUsable ? number : '';
   const documentType = supportedDocumentType ?? 'UNKNOWN';
   const matchedText =
     textValue(value.sourceLine) ??
     [textValue(value.referenceType), rawReferenceNumber]
       .filter(Boolean)
       .join(' ');
+  const column = textValue(value.revisionLabel);
+  const columnRevision = column ? normalizedExplicitRevision(column) ?? column :
+    value.revisionLabel != null && typeof value.revisionLabel !== 'string' ? null : undefined;
+  const statedRevision = (suffix: string): string | null | undefined => {
+    const parsed = referenceRevisionSuffix(suffix).requestedBusinessRevision;
+    // The existing structured edition column can name a literal label outside
+    // the text parser's supported axes. Only its complete local label agrees.
+    return parsed === null && column !== null && suffix.trim() === column ? columnRevision : parsed;
+  };
+  const numberOffset = matchedText.indexOf(number);
+  const lineRevision = statedRevision(numberOffset < 0 ? '' :
+    matchedText.slice(numberOffset + number.length).split(/[;；\r\n]/u)[0]);
+  const numberRevision = revisionStart < 0 ? undefined :
+    statedRevision(rawReferenceNumber.slice(revisionStart));
+  const statedRevisions = [columnRevision, numberRevision, lineRevision].filter(revision => revision !== undefined);
+  const requestedBusinessRevision = statedRevisions.length === 0 ? undefined :
+    statedRevisions.some(revision => revision !== statedRevisions[0]) ? null : statedRevisions[0];
   const orderedLocators = orderedReferenceLocators(
     sourceUnit,
     rawReferenceNumber,
@@ -371,6 +395,7 @@ function structuredReferenceCandidate(
     unitOrdinal: unit.ordinal,
     matchedText,
     normalizedTarget,
+    ...(requestedBusinessRevision === undefined ? {} : { requestedBusinessRevision }),
     documentType,
     contextRole: 'RELATED_INFORMATION',
     relationCue: null,
@@ -378,13 +403,68 @@ function structuredReferenceCandidate(
     extractionMethod: 'STRUCTURED_REFERENCE',
     ...(!supportedDocumentType
       ? { initialResolutionState: 'UNSUPPORTED_DOCUMENT' as const }
-      : !referenceNumberIsUsable
+      : !referenceNumberIsUsable || requestedBusinessRevision === null
         ? { initialResolutionState: 'UNRESOLVED' as const }
         : {}),
     targetApplicability: 'NOT_EVALUATED',
     sourceRefIds,
     sourceLocators: orderedLocators,
   };
+}
+
+/** The same key follows the source-stated edition through both readers and the
+ * persisted snapshot. Missing and unparseable explicit editions are distinct. */
+export function canonicalReferenceSelectionKey(value: {
+  normalizedTarget: string; requestedBusinessRevision?: string | null; matchedText?: string;
+}): string {
+  return JSON.stringify([normalizeCode(value.normalizedTarget), value.requestedBusinessRevision === undefined
+    ? 'CURRENT' : value.requestedBusinessRevision === null ? ['UNRESOLVED', value.matchedText ?? '']
+      : ['EDITION', value.requestedBusinessRevision.trim().toUpperCase()]]);
+}
+
+function normalizedExplicitRevision(value: string): string | undefined {
+  const label = value.trim().replace(/^\((.*)\)$/u, '$1').trim();
+  const revision = label.match(/^(?:R|REV(?:ISION)?\.?)[\t ]*[:#]?[\t ]*(\d{1,4})$/iu);
+  if (revision) return `R${Number(revision[1])}`;
+  const issue = label.match(/^ISSUE[\t ]*#?[\t ]*(\d{1,6})$/iu);
+  if (issue) return `ISSUE ${Number(issue[1])}`;
+  if (/^(?:ORIGINAL[\t ]+ISSUE|原版)$/iu.test(label)) return 'ORIGINAL ISSUE';
+  return undefined;
+}
+
+const REFERENCE_REVISION_PREFIX = /^[\t ]*(?:[,，:：][\t ]*)?(?:\([\t ]*)?(?:REV(?:ISION)?\.?|R|ISSUE|ORIGINAL[\t ]+ISSUE|原版)(?=[\t :#\d.)]|$)/iu;
+const REFERENCE_REVISION_VALUE = /^[\t ]*(?:[,，:：][\t ]*)?(?:\([\t ]*)?((?:(?:REV(?:ISION)?\.?|R)[\t ]*[:#]?[\t ]*\d{1,4}|ISSUE[\t ]*#?[\t ]*\d{1,6}|ORIGINAL[\t ]+ISSUE|原版))(?=$|[^A-Z0-9])(?:[\t ]*\))?/iu;
+
+function referenceRevisionSuffix(text: string): { length: number; requestedBusinessRevision?: string | null } {
+  if (!REFERENCE_REVISION_PREFIX.test(text)) return { length: 0 };
+  const first = text.match(REFERENCE_REVISION_VALUE);
+  if (!first) return { length: text.length, requestedBusinessRevision: null };
+  const revision = normalizedExplicitRevision(first[1]);
+  let length = first[0].length;
+  let remainder = text.slice(length);
+  // A date or compound label is not the integer prefix of a known edition.
+  if (/^[\t ]*[./,\-][\t ]*\d/u.test(remainder))
+    return { length: text.length, requestedBusinessRevision: null };
+  while (true) {
+    const separator = remainder.match(/^[\t ]*(?:\/|,|\bor\b|\band\b|或|及)[\t ]*/iu);
+    if (!separator || !REFERENCE_REVISION_PREFIX.test(remainder.slice(separator[0].length))) break;
+    const next = remainder.slice(separator[0].length).match(REFERENCE_REVISION_VALUE);
+    if (!next || normalizedExplicitRevision(next[1]) !== revision)
+      return { length: text.length, requestedBusinessRevision: null };
+    length += separator[0].length + next[0].length;
+    remainder = text.slice(length);
+  }
+  return { length, requestedBusinessRevision: revision };
+}
+
+function withReferenceRevision(candidate: MentionCandidate, text: string, nextStart: number): MentionCandidate {
+  const suffix = text.slice(candidate.end, nextStart).split(/[;；\r\n]/u)[0];
+  const revision = referenceRevisionSuffix(suffix);
+  if (revision.requestedBusinessRevision === undefined) return candidate;
+  return { ...candidate, end: candidate.end + revision.length,
+    matchedText: candidate.matchedText + suffix.slice(0, revision.length),
+    requestedBusinessRevision: revision.requestedBusinessRevision,
+    ...(revision.requestedBusinessRevision === null ? { initialResolutionState: 'UNRESOLVED' as const } : {}) };
 }
 
 function orderedReferenceLocators(

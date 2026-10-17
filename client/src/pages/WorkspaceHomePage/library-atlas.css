@@ -767,6 +767,37 @@
 .library-document-details .library-source-version-picker [role='combobox'],
 .library-document-details .suite-library-summary button { font-family: inherit; font-size: var(--wl-text-body-sm); font-weight: 500; line-height: 1.5; }
 .library-document-details .library-quicklook-title > div { min-width: 0; width: 100%; }
+.library-document-details .library-document-action-row { display: flex; flex: 0 0 auto; flex-wrap: nowrap; align-items: center; gap: 4px; min-width: 0; padding: 0 12px 8px; overflow-x: auto; scrollbar-width: thin; }
+.library-document-action-row > button, .library-document-action-row > a { flex: 0 0 auto; font-size: var(--wl-text-caption); white-space: nowrap; }
+.library-document-action-row svg { width: 14px; height: 14px; }
+.library-document-action-row > a { display: inline-flex; align-items: center; padding: 6px 8px; border-radius: 6px; color: var(--wl-ink); text-decoration: none; }
+.library-document-action-row > a:hover { background: var(--wl-selected); }
+.library-document-details .library-quicklook-scroll { display: block; flex: 1; }
+.library-document-details .library-quicklook-title { margin-bottom: 10px; }
+.library-document-details .library-document-info { margin: 0 0 14px; gap: 6px 12px; }
+.library-document-info-version { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
+.library-document-info-version dd { flex: 1; min-width: 0; margin: 0; }
+.library-document-info-version [role='combobox'] { width: 100%; height: auto; min-height: var(--wl-control-size-sm); padding-block: 4px; font-size: var(--wl-text-caption); }
+.library-document-info-version [data-slot='select-value'] { display: block; min-width: 0; white-space: normal; overflow-wrap: anywhere; -webkit-line-clamp: unset; }
+.library-document-summary { margin-bottom: 16px; }
+.library-document-summary > p { margin: 0; }
+.library-document-summary .library-quicklook-conditions { margin-top: 6px; font-size: var(--wl-text-caption); }
+.library-assessment-provenance { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; font-size: var(--wl-text-caption); }
+.library-assessment-provenance a { color: var(--wl-accent); }
+.library-assessment-saved-work { font-size: var(--wl-text-caption); }
+.library-assessment-saved-work > summary { cursor: pointer; }
+.library-document-more-dialog { width: min(680px, calc(100vw - 24px)); max-height: 85dvh; overflow: auto; font-family: var(--wl-font); font-size: var(--wl-text-body); line-height: 1.6; }
+.library-document-more-dialog .library-revision-picker-fields [role='combobox'] { width: 100%; }
+.library-document-more-dialog .library-quicklook-history > summary { cursor: pointer; font-size: var(--wl-text-body-sm); }
+.library-atlas-home .library-workspace-header { display: flex; flex-direction: row; min-height: 0; padding: 6px 8px; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+.library-workspace-heading { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.library-atlas-home .library-workspace-header h1:not(.sr-only) { margin: 0; font-size: 18px; }
+.library-workspace-header .library-source-navigation { margin: 0; }
+.library-workspace-header .suite-library-actions > summary { padding: 5px 8px; }
+
+@media (min-width: 901px) {
+  .library-atlas-home .library-workspace-header ~ .library-surface { height: calc(100dvh - 168px); }
+}
 
 @media (min-width: 1025px) {
   .library-atlas-home .library-surface { grid-template-columns: 170px minmax(0, 1fr) minmax(292px, 29%); }
@@ -775,6 +806,9 @@
   .library-atlas-home .library-surface { grid-template-columns: 145px minmax(0, 1fr) 280px; }
 }
 @media (max-width: 760px) {
+  .library-workspace-header { position: relative; }
+  .library-workspace-header .suite-library-actions { position: static; }
+  .library-workspace-header .suite-library-actions-panel { left: 0; right: 0; top: calc(100% + 4px); width: auto; max-width: 100%; box-sizing: border-box; }
   .suite-table-toolbar { position: relative; }
   .suite-directory-options { position: static; }
   .suite-directory-options-panel { left: 0; right: 0; top: calc(100% + 4px); width: auto; max-width: 100%; box-sizing: border-box; }

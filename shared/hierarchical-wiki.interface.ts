@@ -38,6 +38,14 @@ export interface HierarchicalWikiStatus {
     documentVersionId: string | null;
     status: string;
   }>;
+  /** Exact readable active reservation; absent on older directory responses. */
+  activeRequest?: {
+    requestId: string;
+    attemptRef: string;
+    status: string;
+    claimCount: number | null;
+    executorSessionKey: string | null;
+  } | null;
   errorCode: string | null;
   /** Current authorized Host classifications only; publisher currentness stays unknown. */
   coverage: 'AUTHORIZED_CLASSIFIED_HOST_MATERIAL';

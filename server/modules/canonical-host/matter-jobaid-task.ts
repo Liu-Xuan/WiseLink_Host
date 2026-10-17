@@ -46,6 +46,9 @@ export function buildMatterJobAidTask(input: {
     coverage: input.previous ? 'PARTIAL' : 'NOT_REQUIRED',
     limitation: input.previous ? '已取得精确前次工作；外部正式工程文件和更早历史未声明齐全。' : null,
   };
+  const currentDocumentIds = new Set(input.inputs.map(binding => binding.documentVersionId));
+  const historicalDocumentIds = new Set((prior?.evidence ?? []).flatMap(item =>
+    item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : []));
   return {
     schemaVersion: MATTER_JOBAID_TASK_SCHEMA,
     correction: null as MatterIssueCorrectionPurpose | MatterOverviewCorrectionPurpose | null,
@@ -72,10 +75,12 @@ export function buildMatterJobAidTask(input: {
       focus: input.previous?.state.focus ?? null,
       trigger: structuredClone(input.trigger),
       sourceChanges: engineeringMatterPendingInputs(input.previous?.state ?? null, input.inputs),
-      availableDocuments: [...new Set([...input.inputs.map((binding) => binding.documentVersionId),
-        ...(prior?.evidence ?? []).flatMap(item => item.kind === 'DOCUMENT_PASSAGE' ? [item.documentVersionId] : []),
-      ])].map((documentVersionId) => ({
+      availableDocuments: [...new Set([...currentDocumentIds, ...historicalDocumentIds])].map((documentVersionId) => ({
         documentVersionId,
+        sourceRoles: [
+          ...(currentDocumentIds.has(documentVersionId) ? ['CURRENT_INPUT' as const] : []),
+          ...(historicalDocumentIds.has(documentVersionId) ? ['HISTORICAL_COMPARISON' as const] : []),
+        ],
         originalReadRef: `DOCUMENT_VERSION:${documentVersionId}:original:0`,
         boundOriginal: input.inputs.find(binding => binding.documentVersionId === documentVersionId)?.original ?? null,
         inputIds: input.inputs.filter((binding) => binding.documentVersionId === documentVersionId).map((binding) => binding.inputId),
@@ -103,7 +108,7 @@ export function buildMatterJobAidTask(input: {
       capabilities: [
         { capability: 'registered_source_reading', status: 'AVAILABLE' as const,
           impact: '本轮触发原因以trigger和sourceChanges为准，previousWork是历史认识，不是重复执行旧指令。来源或语义变化需核对所列新范围及条件，保留不受影响的既有问题。优先用originalReadRef读取boundOriginal绑定的已发布修订及其固定semantic revision；历史任务未捕获绑定时Host在首次读取确定版本。按返回nextOffset继续，原文修订变化只表示需要核查影响，不预设工程结论变化。PDF页文本层仍可独立读取；目录不代表已读，coverage限制须保留。' +
-            '来源变化先比较sourceChanges中的covered与current，再用实际读取返回的documentIdentity核对具体family、正式版次与目录选择；documentVersionId变化本身不证明厂家正式改版，parseRun或semantic revision变化也不是正式改版。确认同family正式改版后，依次读取本版Revision Description/Transmittal等发布方修订说明及其准确SourceRef、新版正文和完整条件，再对照previousWork中的历史评估与工程文件关联；系统文本diff不能冒充发布方说明。没有说明、现行性未核实或关键正文不可读时明确缺口，不能默认不变。普通参考更新只按实际内容调整事项认识，不能改写另一文件条款。即使工程结论不变，也须记录新版实际读取范围、比较和覆盖；不得把旧SourceRef直接替换为新版引用。未影响内容保留，综合须说明所依据准确工作和未覆盖变化。以上说明处理方法，不代表已取得两份正式版本或已完成比较。' },
+            '参考版本及对照范围由Host确定；availableDocuments.sourceRoles来自本轮精确输入和前次工作证据。CURRENT_INPUT只表示本轮输入，HISTORICAL_COMPARISON只表示历史对照，同一DVI可以兼有两种角色；均不证明发布方最新有效。来源现行性、是否同family正式改版及目录选版只消费Host提供的记录，不能由模型按标题、日期、编号、解析或工作修订推定，也不从多版本中另选默认依据。来源变化按sourceChanges中的covered与current比较已交付内容；有Host提供的发布方修订依据时，读取其准确SourceRef、对应正文及完整条件，再与所列历史工作对照。系统文本diff不能冒充发布方说明。未确定的现行性或正式改版保留原有限制，不由模型补裁。普通参考更新只按实际内容调整事项认识，不能改写另一文件条款。即使工程结论不变，也须记录实际读取范围、比较和覆盖；不得把旧SourceRef直接替换为另一版引用。未影响内容保留，综合须说明所依据准确工作和未覆盖变化。以上说明不代表已取得两份正式版本或已完成比较。' },
         { capability: 'fleet_configuration', status: 'NOT_CONNECTED' as const,
           impact: '未取得当前对象的受控装机、执行或构型查询。' },
         { capability: 'reliability_history', status: 'NOT_CONNECTED' as const,

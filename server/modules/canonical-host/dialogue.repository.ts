@@ -418,7 +418,7 @@ export class DialogueRepository {
 /** A request binding alone is not consumption: require its completed turn and
  * an actual saved work revision, for this exact contribution revision. */
 function consumedWorkingRef() {
-  return sql`(SELECT w.assessment_work_revision_id
+  const savedWork = sql`(SELECT w.assessment_work_revision_id
     FROM dialogue_assessment_request r
     JOIN review_turn t ON t.review_turn_id=r.review_turn_id
       AND t.tenant_id=r.tenant_id AND t.actor_id=r.actor_id
@@ -437,4 +437,63 @@ function consumedWorkingRef() {
       AND r.input_json::jsonb->'contributions' @> jsonb_build_array(
         jsonb_build_object('contributionRef',c.contribution_ref::text,'revision',c.revision))
     ORDER BY w.work_revision DESC LIMIT 1)`;
+
+  return sql`COALESCE(${savedWork}, (SELECT w.assessment_work_revision_id
+    FROM dialogue_assessment_request r
+    JOIN review_turn t ON t.review_turn_id=r.review_turn_id
+      AND t.tenant_id=r.tenant_id AND t.actor_id=r.actor_id
+      AND t.work_item_id=r.work_item_id
+      AND t.review_conversation_id=r.review_conversation_id
+      AND t.request_id='dialogue-' || r.request_ref::text
+    JOIN action_attempt a ON a.attempt_id=t.action_attempt_id
+      AND a.tenant_id=t.tenant_id AND a.actor_user_id=t.actor_id
+      AND a.work_item_id=t.work_item_id AND a.action_type='OPENCLAW_INTERACTIVE_REVIEW'
+    CROSS JOIN LATERAL (SELECT a.task_envelope_json::jsonb AS task,
+      a.result_envelope_json::jsonb AS result, t.result_provenance_json::jsonb AS provenance) frozen
+    CROSS JOIN LATERAL (SELECT frozen.provenance->'jobAidWorkingUpdate' AS receipt,
+      frozen.task->'modelInput' AS contract) proof
+    JOIN assessment_work_revision w ON w.assessment_work_revision_id=proof.receipt->>'workRevisionRef'
+      AND w.work_revision::text=proof.receipt->>'workRevision'
+      AND w.tenant_id=t.tenant_id AND w.work_item_id=t.work_item_id
+      AND w.created_by_user_id=t.actor_id AND w.document_version_id=a.document_version_id
+    WHERE r.tenant_id=c.tenant_id AND r.actor_id=c.actor_id AND r.work_item_id=c.work_item_id
+      AND t.assistant_completed_at IS NOT NULL AND t.assistant_response IS NOT NULL
+      AND t.response_type='RESYNTHESIS_RESULT' AND proof.receipt->>'status'='UNCHANGED'
+      AND proof.contract->>'schemaVersion'='wiselink.3_1.review_turn_task.v1.c5'
+      AND proof.contract->'context'->>'purpose'='UPDATE_ASSESSMENT'
+      AND proof.contract->>'requestId'=t.request_id
+      AND proof.contract->>'reviewTurnRef'=t.review_turn_id
+      AND proof.contract->>'reviewConversationRef'=t.review_conversation_id
+      AND frozen.task->>'actionAttemptId'=a.attempt_id
+      AND frozen.task->>'operationRef'=a.operation_ref
+      AND frozen.task->>'tenantId'=a.tenant_id AND frozen.task->>'workItemId'=a.work_item_id
+      AND frozen.task->>'documentVersionId'=a.document_version_id
+      AND frozen.task->>'inputRevision'=t.input_revision::text
+      AND a.input_revision=t.input_revision AND a.base_revision=t.input_revision
+      AND a.task_input_hash=frozen.task->>'inputHash'
+      AND frozen.result->>'status'='SUCCEEDED' AND frozen.result->>'businessOutcome'='CANDIDATE_READY'
+      AND t.result_content_hash=a.result_content_hash
+      AND frozen.result->>'contentHash'=a.result_content_hash
+      AND frozen.provenance->>'resultContentHash'=a.result_content_hash
+      AND frozen.provenance->>'actionAttemptRef'=a.operation_ref
+      AND proof.contract->'jobAidContext'->'previousWork'->>'workRevisionRef'=w.assessment_work_revision_id
+      AND proof.contract->'jobAidContext'->'previousWork'->>'workRevision'=w.work_revision::text
+      AND proof.contract->'jobAidContext'->'previousWork'->>'workItemId'=w.work_item_id
+      AND proof.contract->'jobAidContext'->'previousWork'->>'documentVersionId'=w.document_version_id
+      AND proof.contract->'jobAidContext'->'modelInput'->>'expectedWorkRevision'=w.work_revision::text
+      AND r.input_json::jsonb->'contributions' @> jsonb_build_array(
+        jsonb_build_object('contributionRef',c.contribution_ref::text,'revision',c.revision))
+      AND jsonb_typeof(proof.receipt->'readSourceRefs')='array'
+      AND EXISTS (SELECT 1 FROM jsonb_array_elements(CASE
+        WHEN jsonb_typeof(proof.contract->'jobAidContext'->'sourceCatalog')='array'
+        THEN proof.contract->'jobAidContext'->'sourceCatalog' ELSE '[]'::jsonb END) evidence
+        WHERE evidence->>'kind'='ENGINEER_STATEMENT' AND evidence->>'origin'='REVIEW_CONVERSATION'
+          AND evidence->>'reviewConversationId'=t.review_conversation_id
+          AND evidence->>'reviewTurnId'=t.review_turn_id
+          AND evidence->'dialogueSource'->>'requestRef'=r.request_ref::text
+          AND evidence->'dialogueSource'->>'contributionRef'=c.contribution_ref::text
+          AND evidence->'dialogueSource'->'revision'=to_jsonb(c.revision)
+          AND evidence->'dialogueSource'->'contextWorkItemIds' @> jsonb_build_array(c.work_item_id)
+          AND proof.receipt->'readSourceRefs' @> jsonb_build_array(evidence->>'evidenceRef'))
+    ORDER BY w.work_revision DESC LIMIT 1))`;
 }

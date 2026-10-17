@@ -382,6 +382,7 @@ export class ActionAttemptLifecycleService {
     }
     const updated = await this.repository.heartbeat({
       attemptId: row.attemptId,
+      automaticLeaseRequired: input.automaticLeaseRequired,
       leaseToken: input.leaseToken,
       leaseGeneration: input.leaseGeneration,
       now,
@@ -536,6 +537,7 @@ export class ActionAttemptLifecycleService {
     }
     const committing = await this.repository.markCommitting({
       attemptId: row.attemptId,
+      automaticLeaseRequired: input.automaticLeaseRequired,
       leaseToken: input.leaseToken,
       leaseGeneration: input.leaseGeneration,
       result,
@@ -705,10 +707,14 @@ export class ActionAttemptLifecycleService {
     tenantId: string;
     workItemId: string;
     reason: string;
+    automaticLeaseRequired?: boolean;
   }): Promise<ActionAttemptTerminalProjection> {
     const row = await this.requiredScoped(input.attemptRef, input);
+    if (row.status === 'CANCELLED' && row.cancelReason === input.reason.slice(0, 4000))
+      return terminalProjection(row);
     const result = await this.repository.requestCancel({
       attemptId: row.attemptId,
+      automaticLeaseRequired: input.automaticLeaseRequired,
       reason: input.reason,
       now: new Date(),
     });

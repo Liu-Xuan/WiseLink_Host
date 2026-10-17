@@ -54,6 +54,31 @@ describe('interactive review C2 task / C2 legacy and C3 current result contract'
     }
   });
 
+  it('C309 accepts an explicit completed JobAid no-change comparison against the exact previous work', () => {
+    const task = reviewTask();
+    task.schemaVersion = 'wiselink.3_1.review_turn_task.v1.c5';
+    task.context.purpose = 'UPDATE_ASSESSMENT';
+    task.jobAidContext = {
+      previousWork: { workRevisionRef: 'JAWR-OLD', workRevision: 4 },
+      modelInput: { expectedWorkRevision: 4, previousWork: { workRevisionRef: 'JAWR-OLD', workRevision: 4 } },
+    } as never;
+    const complete = {
+      schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c5',
+      responseType: 'RESYNTHESIS_RESULT', jobAidWorkingDelta: null,
+      answer: 'Compared the selected source with the existing assessment; its conditions and unknowns remain unchanged.',
+    };
+    expect(parseReviewTurnCandidateContract({task, result: reviewResult(task, complete)}))
+      .toMatchObject({responseType: 'RESYNTHESIS_RESULT', jobAidWorkingDelta: null});
+    for (const patch of [
+      {responseType: 'ANSWER'}, {responseType: 'INPUT_REQUEST'},
+      {jobAidWorkingDelta: undefined}, {missingInputs: ['comparison-evidence-not-read']},
+    ]) expect(() => parseReviewTurnCandidateContract({task, result: reviewResult(task, {...complete, ...patch})})).toThrow();
+    for (const previous of [null, {workRevisionRef: 'JAWR-OLD', workRevision: 3}]) {
+      task.jobAidContext!.previousWork = previous as never;
+      expect(() => parseReviewTurnCandidateContract({task, result: reviewResult(task, complete)})).toThrow();
+    }
+  });
+
   it('allows chat answers and rejects attempts to change an assessment through chat', () => {
     const task = reviewTask();
     task.context.purpose = 'CHAT';

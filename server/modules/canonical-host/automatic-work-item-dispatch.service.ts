@@ -1,3 +1,4 @@
+import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import { randomUUID } from 'node:crypto';
 import type { ApplyPendingModelConfigurationResponse } from '@shared/pending-model-configuration.interface';
 import { parsePendingModelConfigurationRequest } from './pending-model-configuration.request';
@@ -85,6 +86,7 @@ export class AutomaticWorkItemDispatchService {
     private readonly documentCatalog?: MiaodaHostedDocumentCatalog,
     @Optional()
     private readonly documentWork?: DocumentWorkRuntimeService,
+    @Optional() private readonly problemAssessment?: CanonicalJobAidProblemService,
   ) {}
 
   /** Explicit application of the saved setting; never discovery or model work. */
@@ -161,6 +163,8 @@ export class AutomaticWorkItemDispatchService {
         sourceArtifactId: authorization.sourceArtifactId,
         sourceFileSha256: authorization.sourceFileSha256,
         sourceByteLength: Number(authorization.sourceByteLength),
+        ...(this.problemAssessment ? {assertCommittingRecoveryAuthorized:(row,database)=>
+          this.problemAssessment!.assertAutomaticCommittingRecoveryAuthorized(row,authorization.actorUserId,database)} : {}),
         expectedWorkItemRevision: candidate.workItem.revision,
         leaseOwner: scope.principalId,
         leaseToken,
@@ -168,6 +172,7 @@ export class AutomaticWorkItemDispatchService {
         leaseExpiresAt,
       });
       if (!lease) continue;
+      await this.problemAssessment?.enqueueAutomaticTakeover(authorization.workItemId);
 
       return {
         status: 'CLAIMED',
@@ -177,7 +182,7 @@ export class AutomaticWorkItemDispatchService {
         workItemRevision: candidate.workItem.revision,
         leaseToken: lease.leaseToken,
         leaseGeneration: lease.leaseGeneration,
-        leaseExpiresAt: leaseExpiresAt.toISOString(),
+        leaseExpiresAt: (lease.leaseExpiresAt ?? leaseExpiresAt).toISOString(),
       };
     }
 
@@ -454,12 +459,8 @@ export class AutomaticWorkItemDispatchService {
       });
     } catch (error) {
       if (!isWorkItemNotFound(error)) throw error;
-      const replay = await this.workItems.readBlockedAutoProcessingLeaseReceipt({
-        ...leaseIdentity,
-        leaseToken: input.leaseToken,
-        leaseGeneration: input.leaseGeneration,
-      });
-      if (replay) return blockResponse(input.workItemId, replay, true);
+      const replay = await this.readAuthorizedOrdinaryBlockReplay(input, scope);
+      if (replay) return replay;
       throw error;
     }
 
@@ -483,7 +484,33 @@ export class AutomaticWorkItemDispatchService {
       now: new Date(),
     });
     if (!blocked) throw autoWorkItemLeaseConflict();
+    if (blocked.replayed) {
+      const replay = await this.readAuthorizedOrdinaryBlockReplay(input, scope);
+      if (!replay) throw autoWorkItemLeaseConflict();
+      return replay;
+    }
     return blockResponse(input.workItemId, blocked, blocked.replayed);
+  }
+
+  private async readAuthorizedOrdinaryBlockReplay(
+    input: BlockAutomaticWorkItemRequest,
+    scope: CanonicalVerifiedAutoWorkItemQueueScope,
+  ): Promise<BlockAutomaticWorkItemResponse | null> {
+    const identity = {tenantId:scope.tenantId,workItemId:input.workItemId,
+      leaseToken:input.leaseToken,leaseGeneration:input.leaseGeneration};
+    const replay = await this.workItems.readBlockedAutoProcessingLeaseReceipt(identity);
+    if (!replay || replay.blockedCode === CANCELLED_AUTOMATIC_WORK_ITEM_CODE) return null;
+    await this.assertBlockedReplaySourceAuthorized(replay.sourceBinding, scope);
+    if (!this.jobAidWork) throw sourceAuthorizationUnavailable();
+    // Bind only the actor persisted by Host intake; retain the existing
+    // service-role check and identity mapping RLS used by SAVE/read-work.
+    const authorized = await this.jobAidWork.withActorScope(replay.sourceBinding.actorUserId,
+      () => this.workItems.readBlockedAutoProcessingLeaseReceipt({
+        ...identity, sourceBinding: replay.sourceBinding,
+      }));
+    if (!authorized || authorized.blockedCode !== replay.blockedCode ||
+        authorized.blockedAt.getTime() !== replay.blockedAt.getTime()) throw autoWorkItemLeaseConflict();
+    return blockResponse(input.workItemId, authorized, true);
   }
 
   private async parkCancelledWorkItem(
@@ -543,8 +570,17 @@ export class AutomaticWorkItemDispatchService {
       sourceFileSha256: canonicalHostBareSha256(sourceBinding.sourceFileSha256),
       sourceByteLength: sourceBinding.sourceByteLength,
     };
+    await this.assertBlockedReplaySourceAuthorized(binding, scope);
+    return binding;
+  }
+
+  private async assertBlockedReplaySourceAuthorized(
+    binding: AutomaticSourceBinding,
+    scope: CanonicalVerifiedAutoWorkItemQueueScope,
+  ): Promise<void> {
+    if (!binding || !this.sourceAuthorization) throw sourceAuthorizationUnavailable();
     // A prior receipt is not a new SOURCE grant. Recheck the actual stored actor,
-    // same current source and current permission before the locked replay guard.
+    // same current source and current permission before the final exact guard.
     const permission = await this.sourceAuthorization.authorizeSourceRead({
       ...binding, tenantId: scope.tenantId, actorUserId: binding.actorUserId,
     });
@@ -565,7 +601,6 @@ export class AutomaticWorkItemDispatchService {
         source.version.pdfSha256 !== binding.sourceFileSha256 || source.artifact.sha256 !== binding.sourceFileSha256 ||
         Number(source.version.byteLength) !== binding.sourceByteLength ||
         Number(source.artifact.byteLength) !== binding.sourceByteLength) throw autoWorkItemLeaseConflict();
-    return binding;
   }
 
   private async readCurrentInitialAnalysis(

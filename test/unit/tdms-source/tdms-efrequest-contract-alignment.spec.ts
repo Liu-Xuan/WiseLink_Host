@@ -418,7 +418,16 @@ describe('EFRequest exact current C1 wire and C2 non-promotion boundary (synthet
     ).toBe('UNKNOWN');
   });
 
-  it.each(['Approved', '已批准', 'Estimated'])(
+  it.each(['Approved', '已批准'])(
+    'rejects %s native opinion literals outside the exact Estimated policy',
+    (state) => {
+      expect(() =>
+        adaptTdmsDailySource(syntheticEfRequest({ state })),
+      ).toThrow('TDMS_OPINION_STATE_NOT_ELIGIBLE');
+    },
+  );
+
+  it.each(['Estimated'])(
     'keeps eligible %s native opinion literals without adopting them as approved Host opinions',
     (state) => {
       const native = adaptTdmsDailySource(syntheticEfRequest({ state })).output

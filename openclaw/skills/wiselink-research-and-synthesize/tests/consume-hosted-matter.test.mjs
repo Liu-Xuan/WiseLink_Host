@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { consumeHostedMatter } from '../scripts/consume-hosted-matter.mjs';
@@ -113,6 +113,16 @@ test('Matter reads published original with exact evidence and returns its contin
 async function fixture(run) {
   const checkpointRoot = await mkdtemp(join(tmpdir(), 'matter-consumer-'));
   try { await run(checkpointRoot); } finally { await rm(checkpointRoot, { recursive: true, force: true }); }
+}
+// Only these isolated test roots use a serial owner seam. Production retains Linux flock.
+const ownedCheckpoints = new Set();
+async function createOwnedCheckpoint(directory) {
+  const checkpoint = await createCheckpointStore(directory);
+  return { ...checkpoint, withActiveClaimOwner: async perform => {
+    if (ownedCheckpoints.has(directory)) throw new Error('AUTO_WORK_ITEM_QUEUE_OWNER_BUSY');
+    ownedCheckpoints.add(directory);
+    try { return await perform(); } finally { ownedCheckpoints.delete(directory); }
+  } };
 }
 const task = { schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v2', taskType: 'OPENCLAW_MATTER_ASSESSMENT',
   deadline: '2099-01-01T00:00:00.000Z',
@@ -333,23 +343,34 @@ test('Matter reads at most four ranges at once and settles them before reporting
   assert.equal(calls.length, 4, 'later ranges are not started after a failed batch');
 });
 
-for (const failureCode of ['JOBAID_INCOMPLETE_TERMINAL_RESPONSE', 'JOBAID_WORK_JSON_INVALID'])
-test(`${failureCode} reports failure once and recovers a lost failure receipt without another generation`, () => fixture(async checkpointRoot => {
+for (const failureCode of ['JOBAID_INCOMPLETE_TERMINAL_RESPONSE', 'JOBAID_PROTOCOL_REPAIR_EXHAUSTED', 'JOBAID_NO_PROGRESS'])
+test(`${failureCode} ${failureCode === 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE'
+  ? 'keeps UNKNOWN and saved work without FINISH or another generation'
+  : 'reports failure once and recovers a lost failure receipt without another generation'}`, () => fixture(async checkpointRoot => {
   const boundTask = structuredClone(task);
   Object.assign(boundTask.executionModel, { displayName: 'Synthetic', providerKind: 'BUILT_IN', settingsRevision: 1,
     selectedAt: '2026-09-11T00:00:00.000Z' });
   Object.assign(boundTask.modelInput.modelInput, {
     subject: task.subject, methodBinding: { packRef: 'synthetic-method' }, availableSources: [], deliveredEvidence: [],
   });
-  let modelCalls = 0; let finishes = 0; let saved = 0; let committed;
+  let modelCalls = 0; let finishes = 0; let saved = 0; let reads = 0; let committed;
+  const calls = [];
   const dependencies = {
+    createCheckpoint: createOwnedCheckpoint,
     callTool: async (name, input) => {
-      if (name === 'next_matter_assessment') return { matterId: 'MAT-one', next: { attemptRef: 'AQ-one', status: 'RUNNING' } };
+      calls.push(input.operation ?? name);
+      if (name === 'next_matter_assessment') return { matterId: 'MAT-one', next: committed ? null : { attemptRef: 'AQ-one', status: 'RUNNING' } };
       if (input.operation === 'CLAIM') return { task: boundTask, status: 'RUNNING', attemptRef: 'AQ-one', leaseToken: 'lease', leaseGeneration: 1 };
       if (input.operation === 'HEARTBEAT') return {};
       if (input.operation === 'SAVE_WORK') { saved++; return { workRevisionRef: 'MWR-one', workRevision: 1, roundCompletion: 'COMPLETE' }; }
       if (input.operation === 'READ_SAVED_WORK') return null;
-      if (input.operation === 'STATUS') return { attemptRef: 'AQ-one', status: 'FAILED', resultContentHash: committed.contentHash };
+      if (input.operation === 'READ_SOURCES') {
+        reads++;
+        return { documentVersionId: 'DV-one', pageCount: 1, extractionScope: 'NATIVE_TEXT_LAYER',
+          pages: [{ page: 1, sourceRefId: 'DOCUMENT_VERSION:DV-one:page:1', textLayerStatus: 'PRESENT',
+            evidence: { evidenceRef: 'DOCUMENT_VERSION:DV-one:page:1', excerpt: 'Unchanged source text' } }] };
+      }
+      if (input.operation === 'STATUS') return { matterId: 'MAT-one', attemptRef: 'AQ-one', status: 'FAILED', resultContentHash: committed.contentHash };
       if (input.operation === 'FINISH') {
         finishes++;
         committed = input.result;
@@ -357,6 +378,9 @@ test(`${failureCode} reports failure once and recovers a lost failure receipt wi
         assert.equal(committed.modelOutput, null);
         assert.equal(committed.errorCode, failureCode);
         assert.equal(JSON.stringify(committed).includes('private-diagnostic'), false);
+        const locator = await (await createCheckpointStore(join(checkpointRoot, 'matter', 'MAT-one'))).readOptional('pending-finish');
+        assert.deepEqual(locator, { matterId: 'MAT-one', attemptRef: 'AQ-one', inputHash: boundTask.inputHash,
+          contentHash: committed.contentHash });
         throw new Error('failure receipt lost');
       }
       assert.fail(input.operation);
@@ -369,7 +393,12 @@ test(`${failureCode} reports failure once and recovers a lost failure receipt wi
         message: { role: 'assistant', content: null, tool_calls: [{ id: 'save-call', type: 'function', function: {
           name: 'return_wiselink_assessment_step', arguments: JSON.stringify({ step: { action: 'SAVE_WORK', workJson: '{"roundCompletion":"COMPLETE"}' } }),
         } }] } }] }));
-      if (failureCode === 'JOBAID_WORK_JSON_INVALID') return new Response(JSON.stringify({ model: 'synthetic', choices: [{ finish_reason: 'tool_calls',
+      if (failureCode === 'JOBAID_NO_PROGRESS') return Response.json({ model: 'synthetic', choices: [{ finish_reason: 'tool_calls',
+        message: { role: 'assistant', content: null, tool_calls: [{ id: `read-${modelCalls}`, type: 'function', function: {
+          name: 'return_wiselink_assessment_step', arguments: JSON.stringify({ step: { action: 'READ_SOURCES',
+            sourceRefs: ['DOCUMENT_VERSION:DV-one:page:1'], purpose: 'Inspect the same unchanged source', context: 'PAGE' } }),
+        } }] } }] });
+      if (failureCode === 'JOBAID_PROTOCOL_REPAIR_EXHAUSTED') return new Response(JSON.stringify({ model: 'synthetic', choices: [{ finish_reason: 'tool_calls',
         message: { role: 'assistant', content: null, tool_calls: [{ id: `invalid-${modelCalls}`, type: 'function', function: {
           name: 'return_wiselink_assessment_step', arguments: JSON.stringify({ step: { action: 'SAVE_WORK', workJson: '{"issues":[' } }),
         } }] } }] }));
@@ -378,11 +407,260 @@ test(`${failureCode} reports failure once and recovers a lost failure receipt wi
     } }),
   };
   const options = { matterId: 'MAT-one', checkpointRoot };
+  const checkpoint = await createCheckpointStore(join(checkpointRoot, 'matter', 'MAT-one', 'AQ-one'));
+  if (failureCode === 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE') {
+    const uncertain = error => {
+      assert.equal(error.message, 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE');
+      assert.equal(error.terminalAssessmentFailure, undefined);
+      assert.equal(error.message.includes('private-diagnostic'), false);
+      return true;
+    };
+    await assert.rejects(consumeHostedMatter(options, dependencies), uncertain);
+    const state = await checkpoint.readOptional('assessment-state');
+    const response = await checkpoint.readOptional('assessment-round-2.result');
+    const shape = await checkpoint.readOptional('assessment-round-2-output-shape');
+    assert.equal(shape.protocolCategory, 'TERMINAL_RESPONSE_MISSING');
+    assert.equal(shape.upstreamOutcome, 'UNKNOWN');
+    assert.equal(JSON.stringify(shape).includes('private-diagnostic'), false);
+    await assert.rejects(consumeHostedMatter(options, dependencies), uncertain);
+    assert.equal(modelCalls, 2);
+    assert.equal(finishes, 0);
+    assert.equal(saved, 1);
+    assert.equal(state.saved.workRevisionRef, 'MWR-one');
+    assert.deepEqual(await checkpoint.readOptional('assessment-state'), state);
+    assert.deepEqual(await checkpoint.readOptional('assessment-round-2.result'), response);
+    assert.equal(await checkpoint.readOptional('finish-result'), null);
+    assert.equal(await (await createCheckpointStore(join(checkpointRoot, 'matter', 'MAT-one'))).readOptional('pending-finish'), null);
+    return;
+  }
   await assert.rejects(consumeHostedMatter(options, dependencies), /failure receipt lost/);
+  const sealed = await checkpoint.readOptional('finish-result');
+  const priorCalls = calls.length;
   assert.equal((await consumeHostedMatter(options, dependencies)).status, 'MATTER_ASSESSMENT_FAILED');
-  assert.equal(modelCalls, failureCode === 'JOBAID_WORK_JSON_INVALID' ? 4 : 2);
+  assert.deepEqual(calls.slice(priorCalls), ['STATUS'], 'terminal recovery precedes next and never claims FAILED');
+  assert.equal(await (await createCheckpointStore(join(checkpointRoot, 'matter', 'MAT-one'))).readOptional('pending-finish'), null);
+  assert.equal(modelCalls, failureCode === 'JOBAID_NO_PROGRESS' ? 4 : 3);
+  assert.equal(reads, failureCode === 'JOBAID_NO_PROGRESS' ? 3 : 0);
   assert.equal(finishes, 1);
   assert.equal(saved, 1);
-  const checkpoint = await createCheckpointStore(join(checkpointRoot, 'matter', 'MAT-one', 'AQ-one'));
+  assert.equal(sealed.status, 'FAILED');
+  assert.equal(sealed.errorCode, failureCode);
+  assert.equal(sealed.promptVersion, 'wiselink-jobaid-problem@v2.source-content-once.v2');
+  assert.equal(sealed.toolVersions['jobaid-problem-protocol'], '2');
+  assert.deepEqual(await checkpoint.readOptional('finish-result'), sealed);
+  const state = await checkpoint.readOptional('assessment-state');
+  assert.equal(state.protocolRepairs, failureCode === 'JOBAID_PROTOCOL_REPAIR_EXHAUSTED' ? 1 : 0);
+  assert.equal(state.noProgressRepairs, failureCode === 'JOBAID_NO_PROGRESS' ? 1 : 0);
   assert.equal((await checkpoint.readOptional('assessment-state')).saved.workRevisionRef, 'MWR-one');
+}));
+
+test('a gateway error cannot become a known Matter failure from a legacy incomplete errorCode alone', () => fixture(async checkpointRoot => {
+  const failure = Object.assign(new Error('JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE'), {
+    terminalAssessmentFailure: { errorCode: 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE', provenance },
+  });
+  const operations = [];
+  await assert.rejects(consumeHostedMatter({ matterId: 'MAT-one', checkpointRoot }, {
+    callTool: async (name, input) => {
+      if (name === 'next_matter_assessment') return { matterId: 'MAT-one', next: { attemptRef: 'AQ-one', status: 'RUNNING' } };
+      operations.push(input.operation);
+      if (input.operation === 'CLAIM') return { task, status: 'RUNNING', attemptRef: 'AQ-one', leaseToken: 'lease', leaseGeneration: 1 };
+      if (input.operation === 'HEARTBEAT') return {};
+      assert.fail(input.operation);
+    },
+    invokeMatterModel: async () => { throw failure; },
+  }), error => error === failure);
+  assert.equal(operations.some(operation => ['SAVE_WORK', 'FINISH'].includes(operation)), false);
+}));
+
+async function pendingFailure(checkpointRoot) {
+  let sealed;
+  const dependencies = {
+    createCheckpoint: createOwnedCheckpoint,
+    callTool: async (name, input) => {
+      if (name === 'next_matter_assessment') return { matterId: 'MAT-one', next: { attemptRef: 'AQ-one', status: 'RUNNING' } };
+      if (input.operation === 'CLAIM') return { task, status: 'RUNNING', attemptRef: 'AQ-one', leaseToken: 'lease-one', leaseGeneration: 1 };
+      if (input.operation === 'FINISH') { sealed = input.result; throw new Error('finish receipt lost'); }
+      assert.fail(input.operation);
+    },
+    invokeMatterModel: async () => { throw Object.assign(new Error('JOBAID_PROTOCOL_REPAIR_EXHAUSTED'), {
+      terminalAssessmentFailure: { errorCode: 'JOBAID_PROTOCOL_REPAIR_EXHAUSTED', provenance },
+    }); },
+  };
+  const options = { matterId: 'MAT-one', checkpointRoot };
+  await assert.rejects(consumeHostedMatter(options, dependencies), /finish receipt lost/);
+  const directory = join(checkpointRoot, 'matter', 'MAT-one');
+  const checkpoint = await createCheckpointStore(directory);
+  const attempt = await createCheckpointStore(join(directory, 'AQ-one'));
+  const locator = await checkpoint.readOptional('pending-finish');
+  assert.deepEqual(locator, { matterId: 'MAT-one', attemptRef: 'AQ-one', inputHash: task.inputHash, contentHash: sealed.contentHash });
+  return { options, dependencies, sealed, directory, checkpoint, attempt, locator };
+}
+
+for (const attemptStatus of ['RUNNING', 'COMMITTING']) test(`a pending failed FINISH reuses the exact ${attemptStatus} attempt under its Host lease`, () => fixture(async checkpointRoot => {
+  const pending = await pendingFailure(checkpointRoot);
+  const calls = []; let finished = false;
+  const report = await consumeHostedMatter(pending.options, { ...pending.dependencies,
+    callTool: async (name, input) => {
+      assert.equal(name, 'matter_action_attempt');
+      assert.equal(input.matterId, 'MAT-one'); assert.equal(input.attemptRef, 'AQ-one');
+      calls.push(input.operation);
+      if (input.operation === 'STATUS') return { matterId: 'MAT-one', attemptRef: 'AQ-one',
+        status: finished ? 'FAILED' : attemptStatus, resultContentHash: attemptStatus === 'COMMITTING' || finished ? pending.sealed.contentHash : null };
+      if (input.operation === 'CLAIM') return { task, status: attemptStatus, attemptRef: 'AQ-one', leaseToken: 'lease-two', leaseGeneration: 2,
+        ...(attemptStatus === 'COMMITTING' ? { recoveryResult: pending.sealed } : {}) };
+      if (input.operation === 'FINISH') {
+        assert.equal(input.leaseToken, 'lease-two'); assert.equal(input.leaseGeneration, 2);
+        assert.deepEqual(input.result, pending.sealed); finished = true;
+        return { attemptRef: 'AQ-one', status: 'FAILED' };
+      }
+      assert.fail(input.operation);
+    },
+    invokeMatterModel: async () => assert.fail('sealed failure must not invoke a model'),
+  });
+  assert.equal(report.status, 'MATTER_ASSESSMENT_FAILED');
+  assert.deepEqual(calls, ['STATUS', 'CLAIM', 'STATUS', 'FINISH', 'STATUS']);
+  assert.equal(await pending.checkpoint.readOptional('pending-finish'), null);
+  assert.deepEqual(await pending.attempt.readOptional('finish-result'), pending.sealed);
+}));
+
+test('pending FINISH revalidation cannot turn a rejected claim or changed checkpoint into another model run', async t => {
+  const denied = new Error('ACTION_ATTEMPT_LEASE_FENCE_REJECTED');
+  for (const kind of ['claim-denied', 'changed-input', 'missing-result']) await t.test(kind, () => fixture(async checkpointRoot => {
+    const pending = await pendingFailure(checkpointRoot);
+    const bytes = await readFile(join(pending.directory, 'pending-finish.json'));
+    const calls = [];
+    await assert.rejects(consumeHostedMatter(pending.options, { ...pending.dependencies,
+      callTool: async (_name, input) => {
+        calls.push(input.operation);
+        if (input.operation === 'STATUS') return { matterId: 'MAT-one', attemptRef: 'AQ-one', status: 'RUNNING', resultContentHash: null };
+        assert.equal(input.operation, 'CLAIM');
+        if (kind === 'claim-denied') throw denied;
+        if (kind === 'missing-result') await pending.attempt.write('finish-result', null);
+        return { task: kind === 'changed-input' ? { ...task, inputHash: 'different-input' } : task,
+          status: 'RUNNING', attemptRef: 'AQ-one', leaseToken: 'lease-two', leaseGeneration: 2 };
+      },
+      invokeMatterModel: async () => assert.fail('lost result must not rearm generation'),
+    }), error => kind === 'claim-denied' ? error === denied : /MATTER_(CHECKPOINT|RESULT)_BINDING_MISMATCH/.test(error.message));
+    assert.deepEqual(calls, ['STATUS', 'CLAIM']);
+    assert.deepEqual(await readFile(join(pending.directory, 'pending-finish.json')), bytes);
+  }));
+});
+
+test('pending FINISH status errors, revoked access and conflicting terminal receipts preserve the original locator', async t => {
+  const denied = new Error('MATTER_REFERENCE_WORK_NOT_READABLE');
+  for (const [name, status, expected] of [
+    ['revoked', denied, denied],
+    ['cancelled', { status: 'CANCELLED', resultContentHash: null }, /MATTER_FINISH_RECOVERY_REQUIRES_ATTENTION/],
+    ['unknown', { status: 'UNKNOWN', resultContentHash: null }, /MATTER_FINISH_RECOVERY_REQUIRES_ATTENTION/],
+    ['missing hash', { status: 'FAILED', resultContentHash: null }, /MATTER_FINISH_RECOVERY_REQUIRES_ATTENTION/],
+    ['other hash', { status: 'FAILED', resultContentHash: 'a'.repeat(64) }, /MATTER_RESULT_BINDING_MISMATCH/],
+    ['other matter', { status: 'FAILED', matterId: 'MAT-other' }, /MATTER_RESULT_BINDING_MISMATCH/],
+    ['other attempt', { status: 'FAILED', attemptRef: 'AQ-other' }, /MATTER_RESULT_BINDING_MISMATCH/],
+  ]) await t.test(name, () => fixture(async checkpointRoot => {
+    const pending = await pendingFailure(checkpointRoot);
+    const bytes = await readFile(join(pending.directory, 'pending-finish.json'));
+    const calls = [];
+    await assert.rejects(consumeHostedMatter(pending.options, { ...pending.dependencies,
+      callTool: async (tool, input) => {
+        assert.equal(tool, 'matter_action_attempt'); calls.push(input.operation); assert.equal(input.operation, 'STATUS');
+        if (status instanceof Error) throw status;
+        return { matterId: 'MAT-one', attemptRef: 'AQ-one', resultContentHash: pending.sealed.contentHash, ...status };
+      },
+      invokeMatterModel: async () => assert.fail('must not dispatch'),
+    }), error => expected instanceof Error ? error === expected : expected.test(error.message));
+    assert.deepEqual(calls, ['STATUS']);
+    assert.deepEqual(await readFile(join(pending.directory, 'pending-finish.json')), bytes);
+    assert.deepEqual(await pending.attempt.readOptional('finish-result'), pending.sealed);
+  }));
+});
+
+test('a pending FINISH validates the exact original binding and canonical sealed body before Host reads', async t => {
+  for (const kind of ['locator', 'binding', 'body', 'missing-result']) await t.test(kind, () => fixture(async checkpointRoot => {
+    const pending = await pendingFailure(checkpointRoot);
+    if (kind === 'locator') await pending.checkpoint.write('pending-finish', { ...pending.locator, matterId: 'MAT-other' });
+    if (kind === 'binding') await pending.attempt.write('binding', { matterId: 'MAT-one', attemptRef: 'AQ-one', inputHash: 'different-input' });
+    if (kind === 'body') await pending.attempt.write('finish-result', { ...pending.sealed, errorCode: 'DIFFERENT_ERROR' });
+    if (kind === 'missing-result') await pending.attempt.write('finish-result', null);
+    const bytes = await readFile(join(pending.directory, 'pending-finish.json'));
+    await assert.rejects(consumeHostedMatter(pending.options, { ...pending.dependencies,
+      callTool: async () => assert.fail('invalid checkpoint must not authorize any Host action'),
+    }), /MATTER_(FINISH_LOCATOR_INVALID|CHECKPOINT_BINDING_MISMATCH|RESULT_BINDING_MISMATCH|RECOVERY_RESULT_MISSING)/);
+    assert.deepEqual(await readFile(join(pending.directory, 'pending-finish.json')), bytes);
+  }));
+});
+
+test('a fresh failed FINISH cannot overwrite another unresolved locator', () => fixture(async checkpointRoot => {
+  const checkpoint = await createCheckpointStore(join(checkpointRoot, 'matter', 'MAT-one'));
+  const other = { matterId: 'MAT-one', attemptRef: 'AQ-other', inputHash: 'other-input', contentHash: 'a'.repeat(64) };
+  const calls = [];
+  await assert.rejects(consumeHostedMatter({ matterId: 'MAT-one', checkpointRoot }, {
+    createCheckpoint: createOwnedCheckpoint,
+    callTool: async (name, input) => {
+      if (name === 'next_matter_assessment') return { matterId: 'MAT-one', next: { attemptRef: 'AQ-one', status: 'RUNNING' } };
+      calls.push(input.operation); assert.equal(input.operation, 'CLAIM');
+      return { task, status: 'RUNNING', attemptRef: 'AQ-one', leaseToken: 'lease', leaseGeneration: 1 };
+    },
+    invokeMatterModel: async () => {
+      await checkpoint.write('pending-finish', other);
+      throw Object.assign(new Error('JOBAID_NO_PROGRESS'), { terminalAssessmentFailure: { errorCode: 'JOBAID_NO_PROGRESS', provenance } });
+    },
+  }), /MATTER_FINISH_LOCATOR_CONFLICT/);
+  assert.deepEqual(calls, ['CLAIM']);
+  assert.deepEqual(await checkpoint.readOptional('pending-finish'), other);
+}));
+
+test('the pending FINISH owner is exclusive and unavailable ownership never falls back to an unlocked read', () => fixture(async checkpointRoot => {
+  const pending = await pendingFailure(checkpointRoot);
+  const bytes = await readFile(join(pending.directory, 'pending-finish.json'));
+  await assert.rejects(consumeHostedMatter(pending.options, { ...pending.dependencies,
+    createCheckpoint: async directory => ({ ...await createCheckpointStore(directory),
+      withActiveClaimOwner: async () => { throw new Error('AUTO_WORK_ITEM_QUEUE_OWNER_LOCK_UNAVAILABLE'); } }),
+    callTool: async () => assert.fail('must not query without the owner'),
+  }), /AUTO_WORK_ITEM_QUEUE_OWNER_LOCK_UNAVAILABLE/);
+  assert.deepEqual(await readFile(join(pending.directory, 'pending-finish.json')), bytes);
+  let release; let entered;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const started = new Promise(resolve => { entered = resolve; });
+  const dependencies = { ...pending.dependencies, callTool: async (_name, input) => {
+    assert.equal(input.operation, 'STATUS'); entered(); await blocked;
+    return { matterId: 'MAT-one', attemptRef: 'AQ-one', status: 'FAILED', resultContentHash: pending.sealed.contentHash };
+  } };
+  const first = consumeHostedMatter(pending.options, dependencies);
+  await started;
+  await assert.rejects(consumeHostedMatter(pending.options, dependencies), /AUTO_WORK_ITEM_QUEUE_OWNER_BUSY/);
+  assert.deepEqual(await readFile(join(pending.directory, 'pending-finish.json')), bytes);
+  release();
+  assert.equal((await first).status, 'MATTER_ASSESSMENT_FAILED');
+}));
+
+test('failed locator cleanup reports a bounded local warning without undoing a confirmed Host failure', () => fixture(async checkpointRoot => {
+  const pending = await pendingFailure(checkpointRoot);
+  const report = await consumeHostedMatter(pending.options, { ...pending.dependencies,
+    createCheckpoint: async directory => {
+      const checkpoint = await createOwnedCheckpoint(directory);
+      return directory === pending.directory ? { ...checkpoint, writeAuxiliary: async step => {
+        checkpoint.diagnostics.push({ step, code: 'REVIEW_CHECKPOINT_AUXILIARY_WRITE_FAILED' });
+      } } : checkpoint;
+    },
+    callTool: async (_name, input) => {
+      assert.equal(input.operation, 'STATUS');
+      return { matterId: 'MAT-one', attemptRef: 'AQ-one', status: 'FAILED', resultContentHash: pending.sealed.contentHash };
+    },
+  });
+  assert.equal(report.status, 'MATTER_ASSESSMENT_FAILED');
+  assert.deepEqual(report.localCheckpointWarnings, [{ step: 'pending-finish', code: 'REVIEW_CHECKPOINT_AUXILIARY_WRITE_FAILED' }]);
+  assert.deepEqual(await pending.checkpoint.readOptional('pending-finish'), pending.locator);
+}));
+
+test('old Matter checkpoints without a locator are not scanned or guessed when Host next is empty', () => fixture(async checkpointRoot => {
+  const pending = await pendingFailure(checkpointRoot);
+  await pending.checkpoint.write('pending-finish', null);
+  const calls = [];
+  const report = await consumeHostedMatter(pending.options, { ...pending.dependencies,
+    callTool: async (name, input) => { calls.push(name); assert.deepEqual(input, { matterId: 'MAT-one' });
+      assert.equal(name, 'next_matter_assessment'); return { matterId: 'MAT-one', next: null }; },
+  });
+  assert.equal(report.status, 'IDLE');
+  assert.deepEqual(calls, ['next_matter_assessment']);
+  assert.deepEqual(await pending.attempt.readOptional('finish-result'), pending.sealed);
 }));

@@ -155,18 +155,6 @@ export class CanonicalHostInitialAnalysisStatusService {
         ),
       )
       .orderBy(actionAttempt.actionType, desc(actionAttempt.attemptNo));
-    for (const row of rows) {
-      if (row.status !== 'RUNNING' || !row.attemptRef || !row.deadlineAt || row.deadlineAt > new Date()) continue;
-      const current = await this.attempts.reconcileRunningDeadline({
-        attemptRef: row.attemptRef,
-        tenantId: input.tenantId,
-        workItemId: input.workItem.workItemId,
-      });
-      row.status = current.status;
-      row.terminalReason = current.terminalReason;
-      row.errorCode = current.errorCode;
-      row.cancelReason = current.cancelReason;
-    }
     const originalImpactStages: Partial<Record<OriginalEngineeringStage, boolean>> = {};
     const execution = activeConfigurationEvidenceReevaluation(input.workItem)
       ? configurationEvidenceShadow(input.workItem) : input.workItem;

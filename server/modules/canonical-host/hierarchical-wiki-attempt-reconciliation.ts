@@ -114,7 +114,7 @@ export async function reconcileWikiReservations(
   if (owner.readScope === 'TENANT')
     throw summaryError('WIKI_OWNER_WRITE_SCOPE_REQUIRED');
   const time: Date = new Date(now);
-  const closed: Array<{ row: WikiRow; attempt: SummaryAttempt }> = [];
+  const closed: Array<{ row: WikiRow; attempt: SummaryAttempt; unclaimedTimeout: boolean }> = [];
   const errors: string[] = [];
   const owned: WikiRow[] = rows
     .filter(
@@ -128,6 +128,7 @@ export async function reconcileWikiReservations(
     );
   for (const row of owned) {
     let attempt: SummaryAttempt | null;
+    let unclaimedTimeout: boolean = false;
     try {
       attempt = await readActiveWikiAttempt(database, repository, row);
     } catch (error) {
@@ -173,6 +174,7 @@ export async function reconcileWikiReservations(
         now: time,
       });
       if (!expired) throw summaryError('WIKI_ATTEMPT_TIMEOUT_CAS_REJECTED');
+      unclaimedTimeout = true;
       attempt = await readActiveWikiAttempt(database, repository, row);
     }
     // A persisted result owns its original save/finish recovery. Do not clear
@@ -182,7 +184,7 @@ export async function reconcileWikiReservations(
       terminal.has(attempt.status) &&
       !(await wikiRequestHasSavedRevision(database, row, attempt))
     )
-      closed.push({ row, attempt });
+      closed.push({ row, attempt, unclaimedTimeout });
   }
   for (const item of closed) {
     const locked: WikiRow = await lockWikiBranch(database, item.row);
@@ -191,16 +193,19 @@ export async function reconcileWikiReservations(
       locked.state.active.requestId !== item.attempt.triggerRequestId
     )
       continue;
+    const errorCode: string = item.attempt.errorCode ??
+      item.attempt.terminalReason ?? 'WIKI_ATTEMPT_FAILED';
     await storeWikiDemand(
       database,
       locked,
-      retryWikiDemand(
-        locked.state,
-        item.attempt.errorCode ??
-          item.attempt.terminalReason ??
-          'WIKI_ATTEMPT_FAILED',
-        now,
-      ),
+      // Only this call's exact never-claimed timeout releases a reservation
+      // without spending the execution failure budget or changing its due time.
+      item.unclaimedTimeout ? {
+        ...locked.state,
+        active: null,
+        lastAttemptErrorCode: errorCode,
+        lastCheckedAt: now,
+      } : retryWikiDemand(locked.state, errorCode, now),
     );
   }
   return [...new Set(errors)];

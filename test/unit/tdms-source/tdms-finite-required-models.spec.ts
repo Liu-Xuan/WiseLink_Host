@@ -54,7 +54,9 @@ describe('finite Source models consumed by the existing Host wire (synthetic onl
         owner: read.owner,
         read,
       }),
-    ).toBe(golden.results.gridsPresent);
+      // The prior golden qualifies the original four grids only. The new frozen
+      // related-surface roster adds four independently required observations.
+    ).toBe(false);
     expect(
       validateReviewedEfRequestGridRosters({
         scopeId: golden.efModel.scopeId,

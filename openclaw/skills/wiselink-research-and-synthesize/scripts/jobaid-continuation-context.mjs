@@ -1,6 +1,42 @@
 import { isDeepStrictEqual } from 'node:util';
 import { sameTdmsNativeEvidenceBody } from './tdms-native-context.mjs';
 
+/** A Host-derived view, never a new task/correction authority. Old sealed tasks
+ * may omit it. A later Host read can refresh it without changing the attempt.
+ */
+export function refreshJobAidPreparation(input, preparation, binding = {}) {
+  if (preparation === undefined) return input;
+  const nonempty = value => typeof value === 'string' && value.trim().length > 0;
+  const strings = value => Array.isArray(value) && value.every(nonempty);
+  if (!preparation || preparation.schemaVersion !== 'wiselink.jobaid-preparation.v1' ||
+      preparation.taskPurpose !== input.purpose || !nonempty(preparation.goal) ||
+      !strings(preparation.targetIssueKeys) || !nonempty(preparation.documentVersionId) ||
+      !Number.isSafeInteger(preparation.taskInputRevision) || preparation.taskInputRevision < 0 ||
+      !Number.isSafeInteger(preparation.currentInputRevision) || preparation.currentInputRevision < 0 ||
+      typeof preparation.currentInputChanged !== 'boolean' ||
+      !Array.isArray(preparation.currentIssues) ||
+      !preparation.currentIssues.every(item => nonempty(item?.issueKey) && nonempty(item.question)) ||
+      !['unfinishedItems', 'pendingEngineerInputs', 'savedUpdates', 'humanConfirmedDecisions']
+        .every(key => Array.isArray(preparation[key])) ||
+      !['AVAILABLE', 'NOT_RECORDED', 'UNAVAILABLE'].includes(preparation.humanConfirmationStatus) ||
+      !strings(preparation.limitations) ||
+      !(preparation.lastSaved === null || preparation.lastSaved && nonempty(preparation.lastSaved.workRevisionRef) &&
+        Number.isSafeInteger(preparation.lastSaved.workRevision) && preparation.lastSaved.workRevision > 0 &&
+        Number.isSafeInteger(preparation.lastSaved.basedOnInputRevision)))
+    throw new Error('JOBAID_PREPARATION_INVALID');
+  const prior = input.preparation;
+  if (preparation.currentInputChanged ||
+      preparation.taskInputRevision !== preparation.currentInputRevision ||
+      (binding.inputRevision !== undefined && preparation.taskInputRevision !== binding.inputRevision) ||
+      (binding.documentVersionId !== undefined && preparation.documentVersionId !== binding.documentVersionId) ||
+      (prior && (prior.taskInputRevision !== preparation.taskInputRevision ||
+        prior.documentVersionId !== preparation.documentVersionId ||
+        prior.taskPurpose !== preparation.taskPurpose || prior.goal !== preparation.goal ||
+        !isDeepStrictEqual(prior.targetIssueKeys, preparation.targetIssueKeys))))
+    throw new Error('JOBAID_PREPARATION_VERSION_CHANGED');
+  return { ...input, preparation: structuredClone(preparation) };
+}
+
 function mergeExact(items, additions, key) {
   const byKey = new Map(items.map(item => [key(item), structuredClone(item)]));
   for (const item of additions) {
@@ -100,8 +136,19 @@ export function cacheJobAidKnowledgeReceipt(cache, receipt) {
 }
 
 export function projectJobAidContinuationContext(input, cache, targetWork) {
+  const exactTargets = targetWork && input.previousWork?.workRevisionRef === targetWork.workRevisionRef
+    ? new Set(targetWork.issues.map(issue => issue.issueKey)) : new Set();
+  const previousWork = input.previousWork?.content?.issues && exactTargets.size ? {
+    ...input.previousWork,
+    content: { ...input.previousWork.content, issues: input.previousWork.content.issues.map(issue => {
+      if (!exactTargets.has(issue.issueKey)) return issue;
+      const { body: _body, ...index } = issue;
+      return index;
+    }) },
+  } : input.previousWork;
   return {
     ...input,
+    ...(previousWork ? { previousWork } : {}),
     deliveredEvidence: structuredClone(cache.evidence),
     ...(cache.reads.length ? { deliveredSourceReads: {
       reads: structuredClone(cache.reads),

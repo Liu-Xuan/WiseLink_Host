@@ -12,6 +12,7 @@ import {
   currentRouteWorkItemId,
   currentRouteMatterId,
 } from '@client/src/app/providers/CurrentObjectContextProvider';
+import { withSourceReadingReturn } from '@client/src/features/matter/reading-return';
 const AtlasWorkspace = lazy(() => import('./AtlasWorkspace'));
 export default function AtlasLauncher() {
   const [open, setOpen] = useState(false);
@@ -64,7 +65,9 @@ export default function AtlasLauncher() {
             onClose={() => setOpen(false)}
             onNavigate={(route) => {
               setOpen(false);
-              navigate(route);
+              navigate(withSourceReadingReturn(
+                route, location.pathname, new URLSearchParams(location.search),
+              ));
             }}
           />
         </Suspense>

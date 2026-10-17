@@ -16,6 +16,7 @@ import {
   type ShellRouteContext,
 } from './shell-utils';
 import { readingReturnTarget } from '@client/src/features/matter/reading-return';
+import { readDocumentGraphEntry } from '@client/src/pages/RelationGraphPage/document-graph-route';
 
 interface TopBarProps {
   pathname: string;
@@ -43,6 +44,7 @@ const TopBar: React.FC<TopBarProps> = ({
   const { workItemId, matterId, documentVersionId, workRef } = routeContext;
   const crumbs: ShellCrumb[] = deriveBreadcrumbs(pathname, search);
   const searchParams = useMemo(() => new URLSearchParams(search), [search]);
+  const libraryToolbar: boolean = pathname === '/library' && searchParams.get('mode') !== 'lcm';
   const [query, setQuery] = useState(searchParams.get('query') ?? '');
   useEffect(() => {
     setQuery(searchParams.get('query') ?? '');
@@ -54,9 +56,15 @@ const TopBar: React.FC<TopBarProps> = ({
     pathname.match(/^\/document-versions\/[^/]+$/u)
       ? searchParams.get('parseRunId')
       : null;
-  const returnTarget = readingReturnTarget(
+  const documentGraphEntry = pathname === '/graph' &&
+    (searchParams.getAll('scope').includes('document') || searchParams.has('readerWorkItemId'))
+    ? readDocumentGraphEntry(searchParams) : null;
+  const returnDocumentVersionId = documentVersionId ||
+    (documentGraphEntry?.kind === 'document'
+      ? documentGraphEntry.documentVersionId : undefined);
+  const returnTarget = documentGraphEntry?.kind === 'invalid' ? null : readingReturnTarget(
     searchParams,
-    documentVersionId || undefined,
+    returnDocumentVersionId,
     requestedParseRun,
     matterId || undefined,
     workRef || undefined,
@@ -69,6 +77,7 @@ const TopBar: React.FC<TopBarProps> = ({
     'returnMatterGraphQuery', 'returnGraphQuery', 'returnGraphTargetMatterId', 'returnGraphTargetWorkRef', 'returnGraphParseRunId',
     'returnMatterId',
     'returnKnowledgeQuery',
+    'returnWikiGuideQuery',
     'returnLibraryQuery',
     'returnLibraryMatterId',
     'returnMatterLibraryQuery',
@@ -120,7 +129,7 @@ const TopBar: React.FC<TopBarProps> = ({
           )}
         </button>
 
-        <form
+        {pathname !== '/situation' ? <form
           className="wl-global-search"
           role="search"
           onSubmit={submitSearch}
@@ -134,7 +143,7 @@ const TopBar: React.FC<TopBarProps> = ({
             aria-label="搜索工程问题、ATA章节、文件与已有认识"
           />
           <kbd aria-hidden="true">/</kbd>
-        </form>
+        </form> : <span className="wl-topbar-item">工程知识</span>}
 
         <div className="wl-topbar-actions">
           {workRef ? (
@@ -171,7 +180,7 @@ const TopBar: React.FC<TopBarProps> = ({
         </div>
       </header>
 
-      <div className="wl-pagebar" role="navigation" aria-label="页面工具栏">
+      <div className={`wl-pagebar${libraryToolbar ? ' library-pagebar' : ''}`} role="navigation" aria-label="页面工具栏">
         <div className="wl-pagebar-breadcrumb">
           <button
             type="button"
@@ -223,8 +232,10 @@ const TopBar: React.FC<TopBarProps> = ({
               ))}
             </ol>
           </nav>
+          {libraryToolbar ? <div id="library-workspace-navigation" /> : null}
         </div>
         <div className="wl-pagebar-actions">
+          {libraryToolbar ? <div id="library-workspace-actions" /> : null}
           <button
             type="button"
             className="wl-pagebar-action"

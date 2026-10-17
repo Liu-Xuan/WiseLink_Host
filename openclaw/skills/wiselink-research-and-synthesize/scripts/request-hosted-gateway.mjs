@@ -110,6 +110,41 @@ export function classifyHostedGatewayFailure(payload) {
   return 'UNCLASSIFIED';
 }
 
+/** Assessment-only wire classification. It neither retries nor infers a
+ * provider outcome from an HTTP error or a gateway conversion failure.
+ */
+export function classifyHostedAssessmentProtocol(payload, { status, ok }) {
+  const failure = classifyHostedGatewayFailure(payload);
+  if (!ok || payload?.error) return {
+    category: failure === 'TOOL_CHOICE_NOT_SATISFIED' ? 'GATEWAY_TOOL_CONVERSION_FAILED'
+      : failure === 'INCOMPLETE_TERMINAL_RESPONSE' ? 'TERMINAL_RESPONSE_MISSING'
+        : HTTP_ERROR_TYPES.has(payload?.error?.type) ? 'UPSTREAM_ERROR_REPORTED' : 'GATEWAY_HTTP_ERROR',
+    knownTerminal: false, repairEligible: false, upstreamOutcome: 'UNKNOWN',
+    httpFailure: hostedGatewayHttpFailureDiagnostic(payload, status),
+  };
+  const choices = Array.isArray(payload?.choices) ? payload.choices : [];
+  const choice = choices[0];
+  const message = choice?.message;
+  if (choices.length !== 1)
+    return { category: 'TOOL_SCHEMA_INVALID', knownTerminal: false,
+      repairEligible: false, upstreamOutcome: 'UNKNOWN' };
+  if (choice.finish_reason === 'length') return { category: 'OUTPUT_LENGTH',
+    knownTerminal: true, repairEligible: false, upstreamOutcome: 'TERMINAL_RESPONSE_OBSERVED' };
+  const calls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+  const category = calls.length === 0 ? 'NAMED_TOOL_MISSING'
+    : calls.length !== 1 || message?.role !== 'assistant' || calls[0]?.type !== 'function'
+      ? 'TOOL_SCHEMA_INVALID'
+      : calls[0]?.function?.name !== 'return_wiselink_assessment_step' ? 'NAMED_TOOL_MISMATCH'
+        : typeof calls[0]?.id !== 'string' || !calls[0].id ||
+          typeof calls[0]?.function?.arguments !== 'string' ? 'TOOL_SCHEMA_INVALID' : null;
+  // A complete legal tool call does not require a finish_reason field. An
+  // absent reason stays unknown; it is neither inferred truncation nor proof
+  // that an incomplete/no-tool response is safe to replay.
+  const knownTerminal = ['stop', 'tool_calls'].includes(choice?.finish_reason);
+  return { category, knownTerminal, repairEligible: category !== null && knownTerminal,
+    upstreamOutcome: knownTerminal ? 'TERMINAL_RESPONSE_OBSERVED' : 'UNKNOWN' };
+}
+
 /** Two short retries across this turn, within its original operation deadline.
  * Only explicit transient HTTP responses or failures before connecting qualify.
  * Lost responses/timeouts are ambiguous and are never replayed here.

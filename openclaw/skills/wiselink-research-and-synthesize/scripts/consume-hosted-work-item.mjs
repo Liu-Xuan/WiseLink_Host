@@ -23,7 +23,8 @@ import { recoverNativeMatterResponse } from './recover-native-matter-response.mj
 import { invokeHostedJobAidProblemModel } from './run-jobaid-problem-assessment.mjs';
 import { invokeHostedInitialModel } from './invoke-hosted-initial-model.mjs';
 import { INITIAL_ASSESSMENT_OPERATIONS, findInitialAssessmentRecovery, initialStageCheckpointPath, initialApplicabilityCheckpointPointerPath,
-  assertFreshInitialAssessmentClaim, assertCommittingInitialClaim } from './initial-assessment-recovery.mjs';
+  assertFreshInitialAssessmentClaim, assertCommittingInitialClaim, optionalInitialStageRequest,
+  confirmInitialCommittingRecovery, finishInitialAssessmentPolicyFailure } from './initial-assessment-recovery.mjs';
 import { invokeHostedDocumentActivityModel } from './invoke-hosted-document-activity-model.mjs';
 import { consumeHostedDocumentReading } from './consume-hosted-document-reading.mjs';
 import { invokeHostedDocumentReadingModel } from './invoke-hosted-document-reading-model.mjs';
@@ -33,6 +34,7 @@ import { INITIAL_ANALYSIS_OPERATIONS, parseConfigurationEvidenceReevaluationStat
 import {
   assertHostedModelGatewayReady,
   createCheckpointStore,
+  readCheckpointCandidate,
   createHostAutoWorkItemQueueClient,
   createHostMcpConnection,
   invokeHostedReviewModel,
@@ -43,6 +45,7 @@ import {
   WISELINK_HOST_MCP_NAME,
   WISELINK_HOST_MCP_VERSION,
   WISELINK_SKILL_VERSION,
+  validateResultEnvelope,
 } from './validate-payload.mjs';
 
 const STAGE_BY_OPERATION = {
@@ -89,6 +92,17 @@ export async function consumeHostedWorkItem(options, dependencies) {
   let initial = readInitialStatus(statusResult, options.workItemId);
   assertExpectedInitialOperationStatus(options.expectedInitialOperation, initial);
   assertExplicitInitialStageRequest(options, initial);
+  if (options.queueCommitRecovery) {
+    const recovery = await confirmInitialCommittingRecovery(options, initial, dependencies);
+    if (!options.initialStageOnly || options.maxInitialStages !== 1 ||
+        !isDeepStrictEqual(recovery, options.queueCommitRecovery))
+      throw new Error('AUTO_WORK_ITEM_COMMITTING_RECOVERY_CHANGED');
+    const report = await runHostedInitialStage({ ...options, operation: recovery.operation,
+      initial, assessmentRecovery: recovery }, dependencies);
+    // This invocation only replays the original commit. A later normal tick
+    // must obtain Host authorization for the next persisted stage.
+    return { ...report, completedStages: report.status === 'INITIAL_STAGE_SAVED' ? [recovery.operation] : [] };
+  }
   if (options.repairingRecovery) {
     const operation = options.repairExpectedOperation;
     const stage = STAGE_BY_OPERATION[operation];
@@ -101,7 +115,7 @@ export async function consumeHostedWorkItem(options, dependencies) {
         observation.attemptRef !== options.repairActiveAttemptRef) {
       throw new Error('AUTO_WORK_ITEM_REPAIR_RECOVERY_CHANGED');
     }
-    const recovery = await findInitialAssessmentRecovery(options, initial);
+    const recovery = await findInitialAssessmentRecovery(options, initial, dependencies);
     if (!recovery || recovery.operation !== operation ||
         !['RECOVERY_CANDIDATE', 'RECOVERY_COMMITTING'].includes(recovery.status)) {
       throw new Error('AUTO_WORK_ITEM_REPAIR_RECOVERY_CHANGED');
@@ -149,7 +163,7 @@ export async function consumeHostedWorkItem(options, dependencies) {
     if (next.documentVersionId !== initial.documentVersionId) throw new Error('INITIAL_DOCUMENT_VERSION_DRIFT');
     initial = next;
   }
-  let assessmentRecovery = await findInitialAssessmentRecovery(options, initial);
+  let assessmentRecovery = await findInitialAssessmentRecovery(options, initial, dependencies);
   if (options.expectedInitialOperation && assessmentRecovery && assessmentRecovery.operation !== options.expectedInitialOperation)
     throw new Error('INITIAL_EXPECTED_OPERATION_MISMATCH');
   if (assessmentRecovery?.status === 'REQUIRES_ATTENTION') return { ...assessmentRecovery, completedStages: [] };
@@ -236,10 +250,16 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   if ((options.parkCancelledClaim && (options.finishBlockedClaim || options.repairStoppedClaim)) ||
       (options.finishCancelledClaim && (!options.finishBlockedClaim || options.parkCancelledClaim)))
     throw new Error('AUTO_WORK_ITEM_CANCELLATION_OPTIONS_INVALID');
-  return dependencies.checkpoint.withActiveClaimOwner(() => options.parkCancelledClaim
+  const report = await dependencies.checkpoint.withActiveClaimOwner(() => options.parkCancelledClaim
     ? parkCancelledAutomaticClaim(options, { ...dependencies, validateClaim: validateStoredAutoClaim })
     : options.finishBlockedClaim ? finishBlockedAutomaticClaim(options, dependencies)
       : consumeAutomaticWorkItemQueueTickOwned(options, dependencies));
+  return { ...report, ...checkpointWarnings(report?.localCheckpointWarnings, dependencies.checkpoint.diagnostics) };
+}
+
+function checkpointWarnings(...sources) {
+  const warnings = sources.filter(Array.isArray).flat();
+  return warnings.length ? { localCheckpointWarnings: warnings } : {};
 }
 
 async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
@@ -253,12 +273,21 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
     throw new Error('AUTO_WORK_ITEM_QUEUE_DEPENDENCIES_INVALID');
   }
 
-  const stored = await checkpoint.readOptional('active-claim');
-  let claim = stored === null ? null : validateStoredAutoClaim(stored);
+  let claim = await readCheckpointCandidate(checkpoint, 'active-claim', validateStoredAutoClaim);
+  const claimAtStart = claim;
+  let reclaimedQueueGrant = false;
+  let queueCommitRecovery = null;
+  let renewedCommitStatus = null;
   const activeWiki = await checkpoint.readOptional('active-wiki');
   if (activeWiki !== null) {
-    if (claim || options.repairStoppedClaim || typeof dependencies.consumeWikiIdle !== 'function')
+    if (options.repairStoppedClaim || typeof dependencies.consumeWikiIdle !== 'function' ||
+        (claim && !stoppedUnknownWikiEnabled(claim, options, dependencies)))
       throw new Error('AUTO_WORK_ITEM_WIKI_CHECKPOINT_CONFLICT');
+    if (claim) {
+      if (await checkpoint.readOptional('active-successor-overall') !== null)
+        throw new Error('AUTO_WORK_ITEM_WIKI_CHECKPOINT_CONFLICT');
+      return attentionWithWiki(automaticWorkItemAttention(claim, claim.attentionCode), dependencies);
+    }
     // UNKNOWN provider state owns this endpoint until exact cleanup is proven,
     // including when new user work has arrived or automatic Wiki was paused.
     return dependencies.consumeWikiIdle();
@@ -293,9 +322,15 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
   }
 
   if (claim?.blockReady) {
-    // Older consumers may have persisted an intent to BLOCK a runtime failure.
-    // Its response might already have committed, so never send that mutation
-    // again without a read-only receipt. Preserve the exact claim for review.
+    // Only a complete terminal-stage intent from this path can replay its
+    // original idempotent BLOCK. Legacy runtime-failure intents stay unknown.
+    if (claim.consumerStopped && !claim.completionReady &&
+        isInitialStageRequestBinding(claim.stoppedStageRequest) &&
+        claim.stoppedStageRequest.workItemId === claim.workItemId &&
+        claim.stoppedStageRequest.documentVersionId === claim.documentVersionId &&
+        claim.stoppedStageRequest.workItemRevision === claim.workItemRevision &&
+        STAGE_BY_OPERATION[claim.stoppedStageRequest.operation] === claim.blockReady.stage)
+      return settleTerminalAutomaticClaim(claim, checkpoint, dependencies);
     return automaticWorkItemAttention(claim, 'AUTO_WORK_ITEM_PRIOR_BLOCK_RECEIPT_UNCERTAIN');
   }
 
@@ -369,8 +404,17 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
     }
     if (previous && (next.leaseGeneration <= previous.leaseGeneration ||
         next.leaseToken === previous.leaseToken)) {
-      throw new Error('AUTO_WORK_ITEM_RECLAIM_FENCE_INVALID');
+      if (options.repairStoppedClaim || next.leaseGeneration !== previous.leaseGeneration ||
+          next.leaseToken !== previous.leaseToken || next.workItemRevision !== previous.workItemRevision)
+        throw new Error('AUTO_WORK_ITEM_RECLAIM_FENCE_INVALID');
+      renewedCommitStatus = await dependencies.readInitialStatus(next.workItemId);
+      assertAutomaticClaimStatusBinding(next, renewedCommitStatus);
+      if (renewedCommitStatus.workItemRevision !== previous.workItemRevision)
+        throw new Error('AUTO_WORK_ITEM_RECLAIM_FENCE_INVALID');
+      queueCommitRecovery = await confirmInitialCommittingRecovery(
+        { workItemId: next.workItemId }, renewedCommitStatus, dependencies);
     }
+    reclaimedQueueGrant = previous !== null && queueCommitRecovery === null;
     claim = {
       schemaVersion: 'wiselink.auto_work_item_claim.v1',
       workItemId: next.workItemId,
@@ -394,7 +438,7 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
     await checkpoint.write('active-claim', claim);
   }
 
-  let statusValue = await dependencies.readInitialStatus(claim.workItemId);
+  let statusValue = renewedCommitStatus ?? await dependencies.readInitialStatus(claim.workItemId);
   assertAutomaticClaimStatusBinding(claim, statusValue);
   if (options.repairStoppedClaim &&
       statusValue.workItemRevision !== claim.workItemRevision) {
@@ -462,9 +506,25 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
       options.repairAttemptRef)
     : null;
   const repairAttentionCode = repair ? claim.attentionCode : null;
-  const committingRecovery = claim.consumerStopped && statusValue.status === 'BUSY'
-    ? await findInitialAssessmentRecovery({ ...options, workItemId: claim.workItemId }, statusValue)
-    : null;
+  const terminal = !options.repairStoppedClaim && !retry && !queueCommitRecovery
+    ? terminalAutomaticClaim(claim, statusValue) : null;
+  if (terminal) {
+    if (typeof dependencies.blockWorkItem !== 'function' || typeof checkpoint.writeOnceOrEqual !== 'function')
+      return automaticWorkItemAttention(claim, 'AUTO_WORK_ITEM_BLOCK_FINALIZATION_UNAVAILABLE', statusValue);
+    if (!isDeepStrictEqual(await checkpoint.readOptional('active-claim'), claim))
+      throw new Error('AUTO_WORK_ITEM_CLAIM_CHANGED');
+    claim = { ...claim, consumerStopped: true, blockReady: terminal.blockReady,
+      stoppedStageRequest: terminal.stoppedStageRequest };
+    // The exact existing queue and stage identities survive a lost response.
+    // Persist before POST; no local failure or timeout invents a terminal stage.
+    await checkpoint.write('active-claim', claim);
+    return settleTerminalAutomaticClaim(claim, checkpoint, dependencies);
+  }
+  const committingRecovery = queueCommitRecovery ?? (claim.consumerStopped && statusValue.status === 'BUSY'
+    ? await findInitialAssessmentRecovery({ ...options, workItemId: claim.workItemId }, statusValue, dependencies)
+    : null);
+  const closingRecovery = committingRecovery?.status === 'RECOVERY_CANDIDATE' && committingRecovery.closeOnly
+    ? committingRecovery : null;
   const repairingRecovery = options.repairStoppedClaim &&
     ['RECOVERY_CANDIDATE', 'RECOVERY_COMMITTING'].includes(committingRecovery?.status) &&
     ['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(committingRecovery.operation) &&
@@ -473,19 +533,23 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
         STAGE_BY_OPERATION[committingRecovery.operation], options.repairAttemptRef);
   const explicitStageRequest = claim.consumerStopped && !retry && !repair &&
     !committingRecovery && !options.repairStoppedClaim
-    ? await stoppedClaimExplicitStageRequest(options, claim, statusValue, checkpoint, now)
+    ? await stoppedClaimExplicitStageRequest(options, claim, statusValue, checkpoint, now, reclaimedQueueGrant)
     : null;
   if (claim.completionReady) {
     claim = { ...claim, completionReady: false };
     await checkpoint.write('active-claim', claim);
   }
-  if (claim.consumerStopped && !retry && !repair && !repairingRecovery && !explicitStageRequest &&
+  if (claim.consumerStopped && !retry && !repair && !repairingRecovery && !closingRecovery && !explicitStageRequest &&
       !(committingRecovery?.status === 'RECOVERY_COMMITTING' && !options.repairStoppedClaim)) {
-    return automaticWorkItemAttention(
+    const attention = automaticWorkItemAttention(
       claim,
       claim.attentionCode ?? 'AUTO_WORK_ITEM_CONSUMER_STOPPED',
       statusValue,
     );
+    // Only this existing no-progress branch may yield. A new/reclaimed grant
+    // or changed latch must finish its ordinary tick before any Wiki work.
+    return stoppedUnknownWikiEnabled(claim, options, dependencies) && isDeepStrictEqual(claim, claimAtStart)
+      ? attentionWithWiki(attention, dependencies) : attention;
   }
   if (explicitStageRequest) {
     if (!isDeepStrictEqual(await checkpoint.readOptional('active-claim'), claim))
@@ -501,13 +565,13 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
       priorStoppedStageRequest: claim.stoppedStageRequest ?? null,
     });
   }
-  if ((retry || (committingRecovery?.status === 'RECOVERY_COMMITTING' &&
+  if ((retry || closingRecovery || (committingRecovery?.status === 'RECOVERY_COMMITTING' &&
       !options.repairStoppedClaim)) && claim.consumerStopped) {
     claim = { ...claim, consumerStopped: false, attentionCode: null };
     await checkpoint.write('active-claim', claim);
   }
 
-  const consumedOperation = retry?.operation ?? repair?.operation ?? statusValue.nextOperation;
+  const consumedOperation = queueCommitRecovery?.operation ?? closingRecovery?.operation ?? retry?.operation ?? repair?.operation ?? statusValue.nextOperation;
   const consumedRequestId = retry?.requestId ?? repair?.requestId ??
     statusValue.stages?.[STAGE_BY_OPERATION[consumedOperation]]?.requestId;
   const consumedWorkItemRevision = statusValue.workItemRevision;
@@ -521,6 +585,7 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
       // New items must use the context returned by Host status; a static
       // WorkItem's context reference cannot be inherited by a queued item.
       applicabilityContextRef: undefined,
+      ...(queueCommitRecovery ? { queueCommitRecovery } : {}),
       ...(explicitStageRequest ? { explicitStageRequest } : {}),
       ...(retry || repair ? { autoRetry: retry ?? repair } : {}),
       ...(repair ? { repairStoppedClaim: true, repairAttentionCode,
@@ -625,7 +690,77 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
     nextOperation: statusValue.nextOperation,
     stages: statusValue.stages,
     consumerStatus: typeof report?.status === 'string' ? report.status : 'UNKNOWN',
+    ...checkpointWarnings(report?.localCheckpointWarnings),
   };
+}
+
+function terminalAutomaticClaim(claim, initial) {
+  if (claim.completionReady || initial.workItemId !== claim.workItemId || initial.documentVersionId !== claim.documentVersionId ||
+      initial.workItemRevision !== claim.workItemRevision || !['FAILED', 'CONFLICT'].includes(initial.status) ||
+      initial.nextOperation !== null || !isRecord(initial.stages) ||
+      Object.values(initial.stages).some(stage => ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(stage?.attemptStatus)))
+    return null;
+  for (const [operation, stage] of Object.entries(STAGE_BY_OPERATION)) {
+    const observed = initial.stages[stage];
+    if (!['FAILED', 'CONFLICT'].includes(observed?.status) ||
+        !['FAILED', 'CONFLICT', 'TIMED_OUT', 'OBSOLETE'].includes(observed.attemptStatus)) continue;
+    const stoppedStageRequest = initialStageRequestBinding(claim, initial, operation, observed.requestId);
+    if (stoppedStageRequest) return { blockReady: { stage, status: observed.status }, stoppedStageRequest };
+  }
+  return null;
+}
+
+function terminalBlockedReceipt(value, claim, expectedReceipt) {
+  const expectedCode = `AUTO_WORK_ITEM_STAGE_${claim.blockReady.stage.toUpperCase()}_${claim.blockReady.status}`;
+  const keys = ['status', 'workItemId', 'blockedCode', 'blockedAt', 'replayed'];
+  if (!isRecord(value) || Object.keys(value).length !== keys.length ||
+      !Object.keys(value).every(key => keys.includes(key)) || value.status !== 'BLOCKED' ||
+      value.workItemId !== claim.workItemId || value.blockedCode !== expectedCode ||
+      typeof value.replayed !== 'boolean' || typeof value.blockedAt !== 'string' ||
+      !Number.isFinite(Date.parse(value.blockedAt)) || new Date(value.blockedAt).toISOString() !== value.blockedAt ||
+      (expectedReceipt && (value.replayed !== true || value.blockedAt !== expectedReceipt.blockedAt)))
+    throw new Error('AUTO_WORK_ITEM_BLOCK_RECEIPT_INVALID');
+  return value;
+}
+
+async function settleTerminalAutomaticClaim(claim, checkpoint, dependencies) {
+  if (typeof dependencies.blockWorkItem !== 'function' || typeof checkpoint.writeOnceOrEqual !== 'function')
+    return automaticWorkItemAttention(claim, 'AUTO_WORK_ITEM_BLOCK_FINALIZATION_UNAVAILABLE');
+  if (!isDeepStrictEqual(await checkpoint.readOptional('active-claim'), claim))
+    throw new Error('AUTO_WORK_ITEM_CLAIM_CHANGED');
+  const input = { workItemId: claim.workItemId, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration };
+  let receipt;
+  let confirmed;
+  try {
+    receipt = terminalBlockedReceipt(await dependencies.blockWorkItem(input), claim);
+    // The same ordinary POST reads its persisted receipt after BLOCK. It cannot
+    // block another grant: Host binds the original token and generation.
+    confirmed = receipt.replayed ? receipt
+      : terminalBlockedReceipt(await dependencies.blockWorkItem(input), claim, receipt);
+  } catch (error) {
+    if (!receipt) return { ...automaticWorkItemAttention(claim, 'AUTO_WORK_ITEM_BLOCK_RECEIPT_UNCERTAIN'),
+      blockErrorCode: safeAutomaticAttentionCode(errorCode(error)) };
+    return { ...receipt, claimRetained: true, localFinalizationPending: true,
+      errorCode: safeAutomaticAttentionCode(errorCode(error)) };
+  }
+  try {
+    if (!isDeepStrictEqual(await checkpoint.readOptional('active-claim'), claim))
+      throw new Error('AUTO_WORK_ITEM_CLAIM_CHANGED');
+    await checkpoint.writeOnceOrEqual(`blocked-claim-${claim.workItemId}-g${claim.leaseGeneration}`, {
+      schemaVersion: 'wiselink.auto_work_item_blocked_claim_archive.v1', claim, receipt: confirmed,
+    });
+    if (!isDeepStrictEqual(await checkpoint.readOptional('active-claim'), claim))
+      throw new Error('AUTO_WORK_ITEM_CLAIM_CHANGED');
+    await checkpoint.write('active-claim', null);
+  } catch (error) {
+    // Host BLOCK is already confirmed. Keep the original intent/receipt path
+    // recoverable when a local archive or cleanup cannot be persisted.
+    return { ...confirmed, claimRetained: true, localFinalizationPending: true,
+      errorCode: safeAutomaticAttentionCode(errorCode(error)) };
+  }
+  return { status: 'BLOCKED_CLAIM_FINALIZED', workItemId: claim.workItemId, requestId: claim.requestId,
+    documentVersionId: claim.documentVersionId, leaseGeneration: claim.leaseGeneration,
+    blockedCode: confirmed.blockedCode, blockedAt: confirmed.blockedAt, alreadyFinalized: receipt.replayed };
 }
 
 function validBlockedClaimExpectation(options) {
@@ -736,6 +871,8 @@ async function acknowledgeAndClearAutoClaim(
   dependencies,
   report,
 ) {
+  if (!isDeepStrictEqual(await checkpoint.readOptional('active-claim'), claim))
+    throw new Error('AUTO_WORK_ITEM_CLAIM_CHANGED');
   const acknowledgement = validateAutoAcknowledgement(
     await dependencies.acknowledgeWorkItem({
       workItemId: claim.workItemId,
@@ -744,13 +881,17 @@ async function acknowledgeAndClearAutoClaim(
     }),
     claim.workItemId,
   );
-  await checkpoint.write('active-claim', null);
+  if (isDeepStrictEqual(await checkpoint.readOptional('active-claim'), claim)) {
+    if (typeof checkpoint.writeAuxiliary === 'function') await checkpoint.writeAuxiliary('active-claim', null);
+    else await checkpoint.write('active-claim', null);
+  }
   return {
     status: 'ACKNOWLEDGED',
     workItemId: claim.workItemId,
     replayed: acknowledgement.replayed,
     acknowledgedAt: acknowledgement.acknowledgedAt,
     consumerStatus: typeof report?.status === 'string' ? report.status : 'COMPLETED',
+    ...checkpointWarnings(report?.localCheckpointWarnings),
   };
 }
 
@@ -848,7 +989,9 @@ function validateStoredSuccessorOverall(value, now) {
 }
 
 function validateClaimFields(value) {
-  if (!/^WI-[A-Za-z0-9_-]{1,93}$/u.test(value.workItemId) ||
+  if (typeof value.workItemId !== 'string' || typeof value.requestId !== 'string' ||
+      typeof value.documentVersionId !== 'string' || typeof value.leaseToken !== 'string' ||
+      !/^WI-[A-Za-z0-9_-]{1,93}$/u.test(value.workItemId) ||
       !/^REQ-[A-Za-z0-9_-]{1,92}$/u.test(value.requestId) ||
       !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(value.documentVersionId) ||
       !Number.isSafeInteger(value.workItemRevision) || value.workItemRevision < 0 ||
@@ -889,30 +1032,35 @@ function assertAutomaticClaimStatusBinding(claim, initial) {
 function isInitialStageRequestBinding(value) {
   return isRecord(value) && JSON.stringify(Object.keys(value).sort()) ===
     JSON.stringify(['attemptRef', 'documentVersionId', 'operation', 'requestId', 'workItemId', 'workItemRevision']) &&
-    /^WI-[A-Za-z0-9_-]{1,93}$/u.test(value.workItemId) &&
-    /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(value.documentVersionId) &&
+    typeof value.workItemId === 'string' && /^WI-[A-Za-z0-9_-]{1,93}$/u.test(value.workItemId) &&
+    typeof value.documentVersionId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(value.documentVersionId) &&
     Number.isSafeInteger(value.workItemRevision) && value.workItemRevision >= 0 &&
     INITIAL_ANALYSIS_OPERATIONS.includes(value.operation) &&
-    /^[A-Za-z0-9_-]{1,64}$/u.test(value.requestId) &&
-    /^AQ-[A-Za-z0-9-]{1,93}$/u.test(value.attemptRef);
+    (value.requestId === null || (typeof value.requestId === 'string' &&
+      /^[A-Za-z0-9_-]{1,64}$/u.test(value.requestId))) &&
+    typeof value.attemptRef === 'string' && /^AQ-[A-Za-z0-9-]{1,93}$/u.test(value.attemptRef);
 }
 
 function initialStageRequestBinding(claim, initial, operation, requestId) {
   const stage = initial.stages?.[STAGE_BY_OPERATION[operation]];
+  if (!stage || (Object.hasOwn(stage, 'requestId') && typeof stage.requestId !== 'string') ||
+      (requestId !== undefined && typeof requestId !== 'string')) return null;
   if (initial.workItemId !== claim.workItemId || initial.documentVersionId !== claim.documentVersionId ||
       initial.workItemRevision !== claim.workItemRevision || stage?.requestId !== requestId) return null;
   const binding = { workItemId: claim.workItemId, documentVersionId: claim.documentVersionId,
-    workItemRevision: claim.workItemRevision, operation, requestId, attemptRef: stage?.attemptRef };
+    workItemRevision: claim.workItemRevision, operation, requestId: requestId ?? null, attemptRef: stage?.attemptRef };
   return isInitialStageRequestBinding(binding) ? binding : null;
 }
 
-function pendingExplicitInitialStageRequest(claim, initial) {
+function pendingExplicitInitialStageRequest(claim, initial, hostQueueTakeover = false) {
   const operation = initial.nextOperation;
   const stage = initial.stages?.[STAGE_BY_OPERATION[operation]];
   if (initial.candidateOnly !== true || !['REQUIRED', 'WAITING_INPUT'].includes(initial.status) ||
       !['TRANSLATE', 'EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation) ||
       stage?.status !== 'PENDING' || stage.attemptStatus !== 'QUEUED' || stage.terminalCode !== null ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(stage.requestId ?? '') ||
+      typeof stage.requestId !== 'string' ||
+      !(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(stage.requestId) ||
+        hostQueueTakeover && /^[0-9a-f]{64}$/u.test(stage.requestId)) ||
       Object.values(initial.stages).some(observation => observation.status === 'BUSY' ||
         ['RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(observation.attemptStatus))) return null;
   if (operation !== 'TRANSLATE' &&
@@ -946,14 +1094,14 @@ function confirmedExplicitStageReport(report, expected, initial) {
     ['RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(stage.attemptStatus);
 }
 
-async function stoppedClaimExplicitStageRequest(options, claim, initial, checkpoint, now) {
+async function stoppedClaimExplicitStageRequest(options, claim, initial, checkpoint, now, hostQueueTakeover = false) {
   const currentTime = now();
   if (!(currentTime instanceof Date) || !Number.isFinite(currentTime.getTime()))
     throw new Error('AUTO_WORK_ITEM_QUEUE_CLOCK_INVALID');
   if (claim.completionReady || claim.blockReady || !isAbsolute(options.checkpointRoot ?? '') ||
       Date.parse(claim.leaseExpiresAt) <= currentTime.getTime() ||
       /(?:ACL|AUTH|PERMISSION|SOURCE_REVOKED|BINDING_CHANGED|VERSION_DRIFT)/u.test(claim.attentionCode ?? '')) return null;
-  const binding = pendingExplicitInitialStageRequest(claim, initial);
+  const binding = pendingExplicitInitialStageRequest(claim, initial, hostQueueTakeover);
   const stopped = claim.stoppedStageRequest;
   if (!binding || (claim.stoppedWorkItemRevision !== undefined &&
       claim.stoppedWorkItemRevision !== binding.workItemRevision) || (stopped && (stopped.requestId === binding.requestId ||
@@ -993,15 +1141,15 @@ async function unusedInitialStageCheckpoint(options, binding) {
 function assertExplicitInitialStageRequest(options, initial) {
   if (options.explicitStageRequest === undefined) return;
   const expected = options.explicitStageRequest;
-  if (!isInitialStageRequestBinding(expected)) throw new Error('AUTO_WORK_ITEM_EXPLICIT_STAGE_CHANGED');
-  const current = pendingExplicitInitialStageRequest(expected, initial);
+  if (!isInitialStageRequestBinding(expected) || typeof expected.requestId !== 'string') throw new Error('AUTO_WORK_ITEM_EXPLICIT_STAGE_CHANGED');
+  const current = pendingExplicitInitialStageRequest(expected, initial, /^[0-9a-f]{64}$/u.test(expected.requestId));
   if (!options.initialStageOnly || options.maxInitialStages !== 1 || options.workItemId !== expected?.workItemId ||
       !current ||
       Object.keys(expected).some(key => expected[key] !== current[key]))
     throw new Error('AUTO_WORK_ITEM_EXPLICIT_STAGE_CHANGED');
 }
 
-async function automaticRetryPlan(initial, workItemId, readSavedWork) {
+async function automaticRetryPlan(initial, workItemId) {
   if (!isRecord(initial) || initial.status !== 'FAILED' ||
       initial.nextOperation !== null || !isRecord(initial.stages) ||
       typeof initial.documentVersionId !== 'string') return null;
@@ -1012,35 +1160,20 @@ async function automaticRetryPlan(initial, workItemId, readSavedWork) {
     const observation = initial.stages[stage];
     if (observation?.status !== 'FAILED' ||
         typeof observation.attemptRef !== 'string' || !observation.attemptRef) continue;
-    const interrupted = ['CANCELLED', 'TIMED_OUT'].includes(observation.attemptStatus);
     const preparationFailed = observation.attemptStatus === 'FAILED' &&
       observation.terminalCode === 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED';
-    if (!interrupted && !preparationFailed) continue;
+    if (!preparationFailed) continue;
     // A failed authorization or changed source requires Host/user resolution,
     // even when the attempt was interrupted before commit.
     if (/(?:ACL|AUTH|PERMISSION|SOURCE_REVOKED|BINDING_CHANGED|VERSION_DRIFT)/u
       .test(observation.terminalCode ?? '')) continue;
-    let prefix = 'auto-retry';
-    if (/^auto-retry-[0-9a-f]{32}$/u.test(observation.requestId ?? '')) {
-      if (typeof readSavedWork !== 'function') continue;
-      const saved = await readSavedWork(observation.attemptRef, workItemId);
-      const revision = saved?.revision;
-      if (saved?.schemaVersion !== 'wiselink.jobaid-work-read.v2' ||
-          saved.executionStatus !== observation.attemptStatus ||
-          typeof saved.attemptId !== 'string' || !saved.attemptId ||
-          !Number.isSafeInteger(saved.inputWorkRevision) ||
-          saved.inputWorkRevision < 0 ||
-          revision?.actionAttemptId !== saved.attemptId ||
-          revision.workItemId !== workItemId ||
-          revision.documentVersionId !== initial.documentVersionId ||
-          revision.basedOnWorkItemRevision !== initial.workItemRevision ||
-          !Number.isSafeInteger(revision.workRevision) ||
-          revision.workRevision <= saved.inputWorkRevision) continue;
-      prefix = 'auto-resume-2';
-    } else if (observation.requestId?.startsWith('auto-')) continue;
+    // Cancelled/timed-out provider state does not prove generation stopped.
+    // Only the Host's before-execution preparation failure may use this old
+    // bounded retry. Partial progress never authorizes an automatic new model run.
+    if (typeof observation.requestId === 'string' && observation.requestId.startsWith('auto-')) continue;
     const identity = [workItemId, initial.documentVersionId, stage,
       observation.attemptRef].join(':');
-    const requestId = `${prefix}-${createHash('sha256').update(identity)
+    const requestId = `auto-retry-${createHash('sha256').update(identity)
       .digest('hex').slice(0, 32)}`;
     return { operation, attemptRef: observation.attemptRef, requestId };
   }
@@ -1098,6 +1231,22 @@ function isAutomaticBlockBinding(value) {
     ['FAILED', 'CONFLICT'].includes(value.status);
 }
 
+function stoppedUnknownWikiEnabled(claim, options, dependencies) {
+  return claim?.consumerStopped === true && claim.completionReady === false && claim.blockReady === null &&
+    claim.attentionCode === 'INITIAL_ASSESSMENT_MODEL_OUTCOME_UNKNOWN' &&
+    !options.repairStoppedClaim && !options.finishBlockedClaim && !options.parkCancelledClaim &&
+    !options.finishCancelledClaim && typeof dependencies.consumeWikiIdle === 'function';
+}
+
+async function attentionWithWiki(attention, dependencies) {
+  // This awaited call still owns the endpoint FD lock. It neither resumes nor
+  // proves termination of the stopped ordinary provider; keep its fault visible.
+  try { return { ...attention, wiki: await dependencies.consumeWikiIdle() }; }
+  catch (error) {
+    return { ...attention, wiki: { status: 'WIKI_ATTENTION', errorCode: safeAutomaticAttentionCode(errorCode(error)) } };
+  }
+}
+
 function automaticWorkItemAttention(claim, errorCode, initial, report) {
   return {
     status: 'REQUIRES_ATTENTION',
@@ -1112,6 +1261,7 @@ function automaticWorkItemAttention(claim, errorCode, initial, report) {
       stages: initial.stages,
     } : {}),
     ...(typeof report?.status === 'string' ? { consumerStatus: report.status } : {}),
+    ...checkpointWarnings(report?.localCheckpointWarnings),
   };
 }
 
@@ -1204,6 +1354,7 @@ export async function runHostedSuccessorOverall(pointer, dependencies) {
           queryAssessmentKnowledge: hooks.queryAssessmentKnowledge,
           saveAssessmentWork: hooks.saveAssessmentWork,
           readAssessmentWork: hooks.readAssessmentWork,
+          assessmentBinding: hooks.assessmentBinding,
           observeModelOutput: (shape, round = 1) => checkpoint.writeOnceOrEqual(
             `model.output-shape${round === 1 ? '' : '-' + round}`, shape),
           observeCandidateRejection },
@@ -1229,8 +1380,9 @@ export async function runHostedSuccessorOverall(pointer, dependencies) {
 export async function runHostedInitialStage(options, dependencies) {
   const { operation, initial } = options;
   if (!INITIAL_ANALYSIS_OPERATIONS.includes(operation)) throw new Error('INITIAL_OPERATION_INVALID');
-  const continuationRequestId = options.autoRetryRequestId ??
-    initial.stages[STAGE_BY_OPERATION[operation]]?.requestId;
+  const continuationRequestId = Object.hasOwn(options, 'autoRetryRequestId')
+    ? optionalInitialStageRequest(options, 'autoRetryRequestId')
+    : optionalInitialStageRequest(initial.stages[STAGE_BY_OPERATION[operation]]);
   if (options.explicitStageRequest &&
       (options.explicitStageRequest.operation !== operation ||
         options.explicitStageRequest.requestId !== continuationRequestId ||
@@ -1244,7 +1396,15 @@ export async function runHostedInitialStage(options, dependencies) {
     const pointer=await createCheckpointStore(initialApplicabilityCheckpointPointerPath(options));
     await pointer.write('active',{workItemRevision:initialWorkItemRevision,requestId:continuationRequestId ?? null});
   }
-  const binding = await checkpoint.readOptional('binding');
+  const binding = await readCheckpointCandidate(checkpoint, 'binding', value => {
+    if (!isRecord(value) || value.workItemId !== options.workItemId ||
+        value.documentVersionId !== initial.documentVersionId || value.operation !== operation ||
+        !Object.hasOwn(value, 'requestId') ||
+        (value.requestId !== null && (typeof value.requestId !== 'string' ||
+          !/^[A-Za-z0-9_-]{1,64}$/u.test(value.requestId))))
+      throw new Error('INITIAL_CHECKPOINT_REQUEST_INVALID');
+    return value;
+  });
   const exactBinding = {
     workItemId: options.workItemId, documentVersionId: initial.documentVersionId, operation,
   };
@@ -1253,11 +1413,13 @@ export async function runHostedInitialStage(options, dependencies) {
   }
   if (binding && continuationRequestId && binding.requestId !== continuationRequestId)
     throw new Error('INITIAL_CHECKPOINT_REQUEST_MISMATCH');
-  const runBinding = binding ?? { ...exactBinding, requestId: continuationRequestId ?? randomUUID() };
+  const runBinding = binding ?? { ...exactBinding, requestId: continuationRequestId ??
+    (operation === 'EXTRACT_APPLICABILITY' ? randomUUID() : null) };
   if (!binding) await checkpoint.writeOnce('binding', runBinding);
   // A completed initial stage is not an instruction to rerun it if Host state drifts.
-  const priorRun = await checkpoint.readOptional('run-result');
-  if (priorRun && !(options.assessmentRecovery?.status === 'RECOVERY_COMMITTING' &&
+  const priorRun = await readCheckpointCandidate(checkpoint, 'run-result');
+  if (priorRun && !(options.assessmentRecovery && priorRun.attemptStatus === 'UNKNOWN') &&
+      !(options.assessmentRecovery?.status === 'RECOVERY_COMMITTING' &&
     priorRun.status === 'REQUIRES_ATTENTION' && priorRun.operation === operation &&
     priorRun.stageStatus === 'BUSY'))
     throw new Error('INITIAL_COMPLETED_STAGE_HOST_DRIFT');
@@ -1274,6 +1436,13 @@ export async function runHostedInitialStage(options, dependencies) {
   let taskDeadline;
   const callTool = async (name, args) => {
     if (!INITIAL_TOOLS.has(name)) throw new Error('INITIAL_TOOL_NOT_ALLOWED');
+    if (options.queueCommitRecovery && !['get_parse_status', 'get_action_attempt_status',
+      INITIAL_ASSESSMENT_OPERATIONS[operation].begin, INITIAL_ASSESSMENT_OPERATIONS[operation].commit].includes(name))
+      throw new Error('AUTO_WORK_ITEM_COMMITTING_RECOVERY_TOOL_REJECTED');
+    if (options.queueCommitRecovery && name.startsWith('commit_') &&
+        (args.attemptRef !== options.queueCommitRecovery.attemptRef ||
+         args.result?.contentHash !== options.queueCommitRecovery.resultContentHash))
+      throw new Error('AUTO_WORK_ITEM_COMMITTING_RECOVERY_CHANGED');
     const scopedArgs = (['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation) ||
       (operation === 'EXTRACT_APPLICABILITY' && name !== 'begin_applicability_evaluation'))
       ? { ...args, workItemId: options.workItemId } : args;
@@ -1307,7 +1476,15 @@ export async function runHostedInitialStage(options, dependencies) {
       perform: () => dependencies.callTool(name, scopedArgs),
     });
     if (name.startsWith('begin_') && options.assessmentRecovery?.status === 'RECOVERY_COMMITTING')
-      assertCommittingInitialClaim(options.assessmentRecovery.previousClaim,value);
+      assertCommittingInitialClaim(options.assessmentRecovery.previousClaim ??
+        { attemptRef: options.assessmentRecovery.attemptRef }, value);
+    if (name.startsWith('begin_') && options.queueCommitRecovery) {
+      validateResultEnvelope(value.task, value.recoveryResult, { allowHistoricalSkillVersion: true });
+      if (value.task.workItemId !== options.workItemId || value.task.documentVersionId !== initial.documentVersionId ||
+          value.task.inputRevision !== initial.workItemRevision ||
+          value.recoveryResult.contentHash !== options.queueCommitRecovery.resultContentHash)
+        throw new Error('AUTO_WORK_ITEM_COMMITTING_RECOVERY_CHANGED');
+    }
     if (name === 'begin_applicability_evaluation' && recoveryBegin &&
       value.attemptRef !== options.assessmentRecovery.previousAttemptRef)
       throw new Error('INITIAL_APPLICABILITY_BEGIN_ATTEMPT_MISMATCH');
@@ -1325,6 +1502,7 @@ export async function runHostedInitialStage(options, dependencies) {
     return value;
   };
   const invoke = async (modelInput, runtimeHooks = {}) => {
+    if (options.queueCommitRecovery) throw new Error('AUTO_WORK_ITEM_COMMITTING_RECOVERY_MODEL_REJECTED');
     const assessment = problemAssessment && ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(modelInput.schemaVersion);
     const perform = () => {
       modelCallCount += 1;
@@ -1333,18 +1511,19 @@ export async function runHostedInitialStage(options, dependencies) {
         ...(assessment ? { assessmentCheckpoint: checkpoint, taskDeadline } : {}),
         heartbeat: runtimeHooks.heartbeat,
         timeoutMs: runtimeHooks.timeoutMs,
-        sessionDiscriminator: runtimeHooks.sessionDiscriminator ?? runBinding.requestId,
+        sessionDiscriminator: runtimeHooks.sessionDiscriminator ?? runBinding.requestId ?? startedAttempt,
         readAssessmentSources: runtimeHooks.readAssessmentSources,
         queryAssessmentKnowledge: runtimeHooks.queryAssessmentKnowledge,
         saveAssessmentWork: runtimeHooks.saveAssessmentWork,
         readAssessmentWork: runtimeHooks.readAssessmentWork,
-        observeModelOutput: (shape, round = 1) => checkpoint.writeOnceOrEqual(
+        assessmentBinding: runtimeHooks.assessmentBinding,
+        observeModelOutput: (shape, round = 1) => checkpoint.observeAuxiliary(
           `${runtimeHooks.checkpointKey ?? 'model'}.output-shape${round === 1 ? '' : '-' + round}`, shape,
         ),
-        observeTranslationFidelity: (report, round) => checkpoint.writeOnce(
+        observeTranslationFidelity: (report, round) => checkpoint.observeAuxiliary(
           `model.translation-fidelity-${round}`, report,
         ),
-        observeCandidateRejection: (report) => checkpoint.writeOnce(
+        observeCandidateRejection: (report) => checkpoint.observeAuxiliary(
           `model.candidate-rejection-${Number.isSafeInteger(report.modelRound)
             ? `${report.modelRound}-${report.correctionNo}` : report.correctionNo}`, report,
         ),
@@ -1361,10 +1540,12 @@ export async function runHostedInitialStage(options, dependencies) {
       mode: 'INITIAL_ANALYSIS', operation, workItemId: options.workItemId,
       expectedWorkItemId: options.workItemId,
       applicabilityContextRef: contextRef,
-      requestId: runBinding.requestId,
+      ...(runBinding.requestId ? { requestId: runBinding.requestId } : {}),
       ...(continuationRequestId ? { continuationRequestId } : {}),
       ...(options.configurationEvidenceReevaluation ? { configurationEvidenceReevaluation: options.configurationEvidenceReevaluation } : {}),
       providers: [], callTool,
+      ...(options.assessmentRecovery?.closeOnly ? { recoverAssessmentExecution: begin =>
+        finishInitialAssessmentPolicyFailure({ checkpoint, recovery: options.assessmentRecovery, begin, callTool }) } : {}),
       translate: invoke, extractApplicability: invoke,
       evaluateDynamicRules: invoke, synthesizeOverall: invoke,
       runtimeProvenance: dependencies.runtimeProvenance,
@@ -1377,46 +1558,37 @@ export async function runHostedInitialStage(options, dependencies) {
     const report = {
       status: stageDone ? 'INITIAL_STAGE_SAVED' : 'REQUIRES_ATTENTION',
       operation, stageStatus, nextOperation: after.nextOperation,
-      ...(startedAttempt ?? options.assessmentRecovery?.previousClaim?.attemptRef
-        ? { attemptRef: startedAttempt ?? options.assessmentRecovery.previousClaim.attemptRef } : {}),
+      ...(startedAttempt ?? options.assessmentRecovery?.previousClaim?.attemptRef ?? options.assessmentRecovery?.attemptRef
+        ? { attemptRef: startedAttempt ?? options.assessmentRecovery.previousClaim?.attemptRef ?? options.assessmentRecovery.attemptRef } : {}),
       outcome: result.outcome, modelCallCount,
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      ...(result.executionKind === 'HOST_SAVED_WORK_RECONCILIATION' && result.modelRequests === 0
+        ? { executionKind: result.executionKind, modelRequests: 0 } : {}),
       provenance: result.provenance,
       workItemRevision: after.workItemRevision,
       candidateOnly: true,
     };
     // An uncertain result is retained as attention, never converted into a retry.
     if (options.assessmentRecovery?.status === 'RECOVERY_COMMITTING')
-      await checkpoint.write('committing-recovery-result', report);
-    else await checkpoint.writeOnce('run-result', report);
-    return report;
+      await checkpoint.writeAuxiliary('committing-recovery-result', report);
+    else if (options.assessmentRecovery && priorRun)
+      await checkpoint.writeAuxiliary('assessment-recovery-result', report);
+    else await checkpoint.writeAuxiliary('run-result', report);
+    return checkpoint.diagnostics.length
+      ? { ...report, localCheckpointWarnings: [...checkpoint.diagnostics] } : report;
   } catch (error) {
     if (error?.message === 'INITIAL_ASSESSMENT_STILL_OWNED')
       return { status: 'BUSY', operation, nextOperation: null, modelCallCount, candidateOnly: true };
     if (startedAttempt && !finalCommitStarted) {
-      try {
-        const stopped = await checkpoint.remoteStep({
-          step: 'stop-attempt', args: { attemptRef: startedAttempt }, ambiguousCommit: false,
-          perform: () => dependencies.callTool('cancel_action_attempt', {
-            attemptRef: startedAttempt,
-            ...(['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL', 'EXTRACT_APPLICABILITY'].includes(operation)
-              ? { workItemId: options.workItemId } : {}),
-            reason: `HOSTED_INITIAL_EXECUTION_FAILED:${errorCode(error)}`,
-          }),
-        });
-        if (stopped.attemptRef !== startedAttempt || stopped.status !== 'CANCELLED')
-          throw new Error('HOSTED_INITIAL_STOP_NOT_CONFIRMED');
-        const gatewayTransportFailure = hostedGatewayTransportFailureDiagnostic(error);
-        const report = {
-          status: 'REQUIRES_ATTENTION', operation,
-          attemptRef: startedAttempt, attemptStatus: stopped.status,
-          errorCode: errorCode(error), modelCallCount, candidateOnly: true,
-          ...(gatewayTransportFailure ? { gatewayTransportFailure } : {}),
-        };
-        await checkpoint.writeOnce('run-result', report);
-        return report;
-      } catch (cancelError) {
-        throw new Error(`HOSTED_INITIAL_CANCEL_FAILED:${errorCode(error)}:${errorCode(cancelError)}`, { cause: error });
-      }
+      // Unknown provider/transport state is not user cancellation. Only the
+      // orchestrator's validated failed ResultEnvelope may finish a known failure.
+      const gatewayTransportFailure = hostedGatewayTransportFailureDiagnostic(error);
+      const report = { status: 'REQUIRES_ATTENTION', operation, attemptRef: startedAttempt,
+        attemptStatus: 'UNKNOWN', errorCode: errorCode(error), modelCallCount, candidateOnly: true,
+        ...(gatewayTransportFailure ? { gatewayTransportFailure } : {}) };
+      await checkpoint.writeAuxiliary('run-result', report);
+      return checkpoint.diagnostics.length
+        ? { ...report, localCheckpointWarnings: [...checkpoint.diagnostics] } : report;
     }
     throw error;
   }
@@ -1432,6 +1604,7 @@ function readInitialStatus(value, workItemId) {
     throw new Error('HOST_INITIAL_STATUS_UNAVAILABLE');
   }
   for (const stage of Object.values(STAGE_BY_OPERATION)) {
+    optionalInitialStageRequest(status.stages[stage]);
     if (!['PENDING', 'BUSY', 'SUCCEEDED', 'WAITING_INPUT', 'FAILED', 'CONFLICT'].includes(status.stages[stage]?.status)) {
       throw new Error('HOST_INITIAL_STATUS_INVALID');
     }
@@ -1927,6 +2100,7 @@ async function main(argv, env) {
         finishLeaseGeneration: Number(option(argv, '--finish-lease-generation')),
         finishBlockedAt: option(argv, '--finish-blocked-at') }, {
         checkpoint: automaticCheckpoint,
+        callTool: connection.callTool,
         ...createHostAutoWorkItemQueueClient(runtime),
         readInitialStatus: async id => readInitialStatus(
           await connection.callTool('get_parse_status', { workItemId: id }),

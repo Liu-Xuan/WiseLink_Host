@@ -420,9 +420,19 @@ export function parseReviewTurnCandidateContract(input: {
     requiredRecord(record.jobAidWorkingDelta, 'REVIEW_JOBAID_DELTA_INVALID');
   if (isMatter && record.reviewActionDraft !== null)
     fail('REVIEW_MATTER_FORMAL_ACTION_FORBIDDEN');
+  const previous = task.jobAidContext?.previousWork;
+  const projectedPrevious = task.jobAidContext?.modelInput.previousWork;
+  const unchangedJobAidUpdate = isJobAid && record.jobAidWorkingDelta === null &&
+    record.responseType === 'RESYNTHESIS_RESULT' &&
+    Array.isArray(record.missingInputs) && record.missingInputs.length === 0 &&
+    previous && typeof previous.workRevisionRef === 'string' && previous.workRevisionRef.trim() &&
+    Number.isSafeInteger(previous.workRevision) && previous.workRevision > 0 &&
+    previous.workRevision === task.jobAidContext?.modelInput.expectedWorkRevision &&
+    projectedPrevious?.workRevisionRef === previous.workRevisionRef &&
+    projectedPrevious?.workRevision === previous.workRevision;
   if (
     task.context.purpose === 'UPDATE_ASSESSMENT' &&
-    ((isJobAid && record.jobAidWorkingDelta == null) ||
+    ((isJobAid && record.jobAidWorkingDelta == null && !unchangedJobAidUpdate) ||
       (isMatter && record.matterWorkingDelta == null))
   )
     fail('REVIEW_UPDATE_WORKING_DELTA_REQUIRED');

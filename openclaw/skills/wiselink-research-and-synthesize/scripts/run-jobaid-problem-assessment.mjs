@@ -1,7 +1,7 @@
 import { assertTdmsNativeInput, assertTdmsNativeReadPacket } from './tdms-native-context.mjs';
 import { jobAidWorkTypeErrors, JOBAID_STEP_SHAPE, decodeJobAidValue, jobAidFunctionSchema } from './jobaid-work-shape.mjs';
 import { createJobAidEvidenceCache, cacheJobAidSourceRead, cacheJobAidKnowledgeReceipt, projectJobAidContinuationContext,
-  projectJobAidTargetWork, mergeJobAidTargetWork } from './jobaid-continuation-context.mjs';
+  projectJobAidTargetWork, mergeJobAidTargetWork, refreshJobAidPreparation } from './jobaid-continuation-context.mjs';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
@@ -20,14 +20,14 @@ import {
   WISELINK_PROFILE_REF,
   WISELINK_SKILL_VERSION,
 } from './validate-payload.mjs';
-import { classifyHostedGatewayFailure, requestHostedGateway } from './request-hosted-gateway.mjs';
+import { classifyHostedAssessmentProtocol, classifyHostedGatewayFailure, hostedGatewayTransportFailureDiagnostic,
+  requestHostedGateway } from './request-hosted-gateway.mjs';
 
 export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
 export const JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v3';
 export const isJobAidProblemInputSchema = schema => [JOBAID_PROBLEM_TASK_SCHEMA, JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA].includes(schema);
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2';
 const FUNCTION = 'return_wiselink_assessment_step';
-const INITIAL_JOBAID_READS_PER_SAVE = 1;
 const INITIAL_JOBAID_SOURCE_REFS_PER_READ = 4;
 export const JOBAID_GENERATION_POLICY = Object.freeze({
   version: 'continuous-body-batches-v5', requestMaxCompletionTokens: 16000,
@@ -110,7 +110,8 @@ export function parseJobAidWorkJson(value) {
   visit();
   return work;
 }
-import { JOBAID_PROBLEM_GUIDANCE as GUIDE } from './jobaid-problem-guidance.mjs';
+import { JOBAID_PROBLEM_GUIDANCE as GUIDE, LEGACY_JOBAID_PROBLEM_GUIDANCE as LEGACY_GUIDE,
+  SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION } from './jobaid-problem-guidance.mjs';
 
 export function validateJobAidProblemInput(input) {
   if (
@@ -297,7 +298,7 @@ function continuationModelInput(input, revision) {
   };
 }
 
-function sourceBatchPolicyFeedback(code, requestedCount, readsSinceSave) {
+function sourceBatchPolicyFeedback(code, requestedCount) {
   if (code === 'JOBAID_SOURCE_BATCH_TOO_LARGE') return {
     sourceReadPolicy: {
       maxSourceRefsPerRead: INITIAL_JOBAID_SOURCE_REFS_PER_READ,
@@ -306,15 +307,17 @@ function sourceBatchPolicyFeedback(code, requestedCount, readsSinceSave) {
     },
     instruction: `本次来源请求超过单批上限 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个，Host 未执行任何读取。只选择最相关且能支持一组完整判断的至多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个引用；不得声称其余来源已核验。`,
   };
-  if (code === 'JOBAID_SOURCE_BATCH_SAVE_REQUIRED') return {
-    sourceReadPolicy: {
-      maxReadActionsBeforeSave: INITIAL_JOBAID_READS_PER_SAVE,
-      readActionsSinceSave: readsSinceSave,
-      hostReadExecuted: false,
-    },
-    instruction: '自上次 Host 确认保存后已完成一个来源读取动作。本次未执行新的读取。无论本次 sourceRef 是否有效或已登记，都不得再次 READ_SOURCES；必须基于当前已交付正文保存一项有价值的完整工作增量，标记未覆盖范围；保存后运行器将读回完整工作并在新 OpenClaw 会话继续。',
-  };
   return {};
+}
+
+function stepMatchesShape(value, schema) {
+  if (value === undefined) return true;
+  if (schema.enum && !schema.enum.includes(value)) return false;
+  if (schema.type === 'object') return value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    (schema.required ?? []).every(key => Object.hasOwn(value, key)) &&
+    Object.keys(value).every(key => Object.hasOwn(schema.properties, key) && stepMatchesShape(value[key], schema.properties[key]));
+  if (schema.type === 'array') return Array.isArray(value) && value.every(item => stepMatchesShape(item, schema.items));
+  return typeof value === schema.type && (schema.minLength === undefined || value.length >= schema.minLength);
 }
 
 function sourceSelectionFeedback(requested, availableSources) {
@@ -435,6 +438,11 @@ export async function invokeHostedJobAidProblemModel(
   dependencies = {},
 ) {
   validateJobAidProblemInput(modelInput);
+  options = { ...options, executionModel: options.executionModel === undefined
+    ? undefined : structuredClone(options.executionModel),
+    registeredModelRefs: options.registeredModelRefs ? [...options.registeredModelRefs] : undefined };
+  executionModelHeaders(options);
+  modelInput = refreshJobAidPreparation(modelInput, modelInput.preparation, options.assessmentBinding);
   const maxCorrections = modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA ? 2 : 4;
   if ((modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA) !== (operation === 'ASSESS_MATTER'))
     throw new Error('JOBAID_PROBLEM_OPERATION_MISMATCH');
@@ -447,17 +455,21 @@ export async function invokeHostedJobAidProblemModel(
     !options.sessionDiscriminator
   )
     throw new Error('JOBAID_PROBLEM_RUNTIME_CAPABILITY_REQUIRED');
-  // The custom M3 Probe route can return a completed text response instead of
-  // the named function. Its gateway rejects that response as HTTP 502 when
-  // the function is forced, so allow the existing bounded text correction to
-  // request the exact function step without losing the model's first response.
-  const toolChoice = options.executionModel?.modelRef === 'm3probe/minimax-m3'
+  // GLM 5.3 and the custom M3 Probe route can complete without the named
+  // function. Forcing it can turn that response into a gateway HTTP 502 before
+  // the existing one-shot protocol correction can inspect it. Auto still
+  // accepts only the exact function step; gateway errors remain UNKNOWN.
+  const glmAutoToolChoice = options.executionModel?.modelRef === 'miaoda/glm-5.3';
+  const toolChoice = glmAutoToolChoice || options.executionModel?.modelRef === 'm3probe/minimax-m3'
     ? 'auto'
     : { type: 'function', function: { name: FUNCTION } };
   let startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? 30 * 60_000;
   const boundedInitialJobAid = operation === 'EVALUATE_JOBAID' &&
     isJobAidProblemInputSchema(modelInput.schemaVersion) && Boolean(modelInput.documentOverview);
+  const boundedWorkContext = boundedInitialJobAid ||
+    (isJobAidProblemInputSchema(modelInput.schemaVersion) && (modelInput.preparation !== undefined ||
+      (operation === 'SYNTHESIZE_OVERALL' && modelInput.purpose === 'OVERALL_CONSISTENCY')));
   const systemMessage = { role: 'system', content: GUIDE + (modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA
     ? '\n本任务主体是工程事项。本轮工作由 trigger 和 sourceChanges 指定，previousWork 是历史认识，不得将其旧指令当作本轮请求。availableDocuments 只是版本目录；有 boundOriginal 时，通过 READ_SOURCES 请求该项 originalReadRef，按返回 nextOffset 继续读取 DOCUMENT_VERSION:<documentVersionId>:original:<offset>。读取结果中的 semanticMap 是固定版本的章节导航；应读取有关正文、条件及必要其他范围，目录和角色不等于证据或工程结论。没有 boundOriginal 时才先请求 DOCUMENT_VERSION:<documentVersionId>:page:1，再按需读取后续页。实际未读的图表与范围保留限制。结合完整前次工作处理本轮变化，保留不受影响的问题；每个新任务必须保存本轮工作后才可 FINISH。' : '') };
   if (modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA &&
@@ -466,16 +478,17 @@ export async function invokeHostedJobAidProblemModel(
   }
   if(modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA) systemMessage.content += modelInput.sourceStatementAvailability?.semanticFieldsAvailability==='CAPTURED_FIELDS_ONLY' ? '\nsourceStatement 目录只是已保存解释候选的提示，尚未交付完整声明。使用该精确 ref 前 READ_SOURCES；回执 sourceStatements 保留既有 v1 字段，sourceSchemaVersion 明确区分 v1 与 v2；LEGACY_PARTIAL 表示新版字段未记录，v2 null/空数组只表示本候选未捕获。完整 times[]、否定、技术编号和条件须与引文一并读取，不把 SOURCE_REPORTED_COMPLETED 当作我方实施或有效。必要根原文与 actual readCoverage 不保证全文已读。候选不能证明适用性、执行或效果核验。' : '\nsourceStatement 目录只是已保存解释候选的提示，尚未交付完整声明。使用该精确 ref 前 READ_SOURCES；回执 sourceStatements 保留既有 v1 字段，LEGACY_PARTIAL 表示新版语义未记录，必要根原文与 actual readCoverage 不保证全文已读。候选不能证明适用性、执行或效果核验。';
   if (boundedInitialJobAid) {
-    systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每次 SAVE_WORK 前最多执行 ${INITIAL_JOBAID_READS_PER_SAVE} 个 READ_SOURCES 动作，每个动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs。READ_SOURCES 的每个 sourceRef 必须逐字复制 availableSources[].ref；不能从 sourceRefId、页码或解析单元编号自行拼接。首次保存工程问题前须取得原文；若当前 deliveredEvidence 已包含该精确原文，直接使用而不重复读取，否则先成功 READ_SOURCES。不能将来源读取失败写成工程结论。previousWork 展示 Host 已保存的问题目录和较短正文；省略的正文仍由 Host 完整保留。readSourceRefs 表示已保存的来源读取记录，不等于本会话已重新取得原文。优先继续未完成的问题和决定性未读来源，不因新会话重读已保存的同一批，也不重写未变问题。每批只提交有新原文支持的改动，保存后读回精确修订。headline 和 listBrief 必须写工程问题、措施、当前判断及关键限制，不能写“本批已读”“u10—u13”或工作修订号等过程日志；过程留在 changeSummary。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并说明尚未完成范围；不要声称未读来源已经核验。必要原文已覆盖、问题已保存时，检查概览与正文一致；如有过期表述，提交 issues:[] 的简短概览修订。方法资料只在影响当前判断时补读，不为凑齐目录而延长执行。完成必要原文覆盖与概览一致性检查后 FINISH；未连接的外部资料列为待确认，不阻止候选阶段结束。`;
+    systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每个 READ_SOURCES 动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs；可以连续读取有助于当前判断的不同来源或范围，不按读取次数强迫保存。只有形成有意义的认识、修正或完成状态变化时 SAVE_WORK，不提交空的过程日志。READ_SOURCES 的每个 sourceRef 必须逐字复制 availableSources[].ref；不能从 sourceRefId、页码或解析单元编号自行拼接。首次保存工程问题前须取得原文；若当前 deliveredEvidence 已包含该精确原文，直接使用而不重复读取，否则先成功 READ_SOURCES。不能将来源读取失败写成工程结论。previousWork 展示 Host 已保存的问题目录和较短正文；省略的正文仍由 Host 完整保留。readSourceRefs 表示已保存的来源读取记录，不等于本会话已重新取得原文。优先继续未完成的问题和决定性未读来源，不因新会话重读已保存的同一批，也不重写未变问题。每批只提交有新原文支持的改动，保存后读回精确修订。headline 和 listBrief 必须写工程问题、措施、当前判断及关键限制，不能写“本批已读”“u10—u13”或工作修订号等过程日志；过程留在 changeSummary。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并说明尚未完成范围；不要声称未读来源已经核验。必要原文已覆盖、问题已保存时，检查概览与正文一致；如有过期表述，提交 issues:[] 的简短概览修订。方法资料只在影响当前判断时补读，不为凑齐目录而延长执行。完成必要原文覆盖与概览一致性检查后 FINISH；未连接的外部资料列为待确认，不阻止候选阶段结束。`;
     systemMessage.content += '\nREAD_WORK 是本运行器的准确旧工作读取意图：{action:"READ_WORK",workRevisionRef:<previousWork.workRevisionRef>,issueKeys:[准确旧问题键],includeOverview:true|false}。更正已有问题前取得其完整基线；更正或检查综合时读取适用的旧 overview。只选本次需要的目标，不重读全部正文。targetWork 是该准确修订的完整比较材料，previousWork 的省略索引不能作为整项替换基线。deliveredEvidence 与 deliveredSourceReads 保留同一 attempt 已由 Host 实际交付的完整原文与回执语境，当前上下文中每份正文只出现一次；可直接使用其中已交付材料，不因保存换段重新 READ_SOURCES。缓存和 READ_WORK 不证明新来源核验或正式采用。';
   }
-  const projectForModel = boundedInitialJobAid
+  if (boundedWorkContext && !boundedInitialJobAid) systemMessage.content += '\npreparation 是 Host 派生的本轮目标、更正和已保存工作视图，不是新权限。previousWork 是紧凑目录；需要比较被省略的问题正文或综合时，通过 READ_WORK 取得该准确修订的目标完整基线。保留待处理工程师更正、已确认修正与未完成项；不以重读旧工作覆盖本轮更正。连续取得必要证据，不为读取次数提交空 SAVE。Overall 仍需完成一致性检查，只保存有意义的更正。';
+  const projectForModel = boundedWorkContext
     ? projectBoundedInitialJobAidInput
     : projectJobAidModelInput;
-  const stepShape = boundedInitialJobAid ? initialStepShape : transportStepShape;
-  let evidenceCache = boundedInitialJobAid ? createJobAidEvidenceCache(modelInput) : null;
+  const stepShape = boundedWorkContext ? initialStepShape : transportStepShape;
+  let evidenceCache = boundedWorkContext ? createJobAidEvidenceCache(modelInput) : null;
   let targetWork = null;
-  const modelContext = input => boundedInitialJobAid
+  const modelContext = input => boundedWorkContext
     ? projectJobAidContinuationContext(projectForModel(input), evidenceCache, targetWork)
     : projectForModel(input);
   let messages = [
@@ -487,11 +500,9 @@ export async function invokeHostedJobAidProblemModel(
   let sessionModelInput = modelInput;
   let expectedWorkRevision = modelInput.expectedWorkRevision;
   let sessionWorkRevision = modelInput.expectedWorkRevision;
-  let readsSinceSave = 0;
   let savedReadSourceRefs = Array.isArray(modelInput.previousWork?.content?.readSourceRefs)
     ? [...modelInput.previousWork.content.readSourceRefs] : [];
   let nativeSessionSegment = 0;
-  let forceSaveBeforeRead = false;
   // Host accepts a prior attempt's completed work only for Overall consistency.
   // Ordinary reassessment must save under this attempt, even if unchanged.
   const canReusePreviousWork = (operation === 'SYNTHESIZE_OVERALL' && modelInput.purpose === 'OVERALL_CONSISTENCY') ||
@@ -504,22 +515,26 @@ export async function invokeHostedJobAidProblemModel(
       }
     : null;
   let corrections = 0;
+  let protocolRepairs = 0;
+  let noProgressRepairs = 0;
+  let lastObservation = null;
   let inputUnits = 0;
   let outputUnits = 0;
   const checkpoint = options.assessmentCheckpoint;
   const baseGenerationPolicy = isJobAidProblemInputSchema(modelInput.schemaVersion) &&
     options.executionModel?.modelRef === 'm3probe/minimax-m3'
     ? M3_PROBE_WORK_ITEM_GENERATION_POLICY : JOBAID_GENERATION_POLICY;
-  const generationPolicy = boundedInitialJobAid ? { ...baseGenerationPolicy,
-    contextProjectionVersion: 'shared-evidence-target-work-v1' } : baseGenerationPolicy;
+  const generationPolicy = { ...baseGenerationPolicy, loopPolicyVersion: glmAutoToolChoice
+    ? 'stage-protocol-progress-glm53-auto-v2' : 'stage-protocol-progress-v1',
+    ...(boundedWorkContext ? { contextProjectionVersion: 'shared-evidence-target-work-v2' } : {}) };
   let scopeAdjustments = 0;
   let sourceMetadata = [];
   let sourceSelectionError = null;
   const persistAssessmentState = (nextRound) => checkpoint?.write('assessment-state', {
     round: nextRound, messages, expectedWorkRevision, saved, corrections, inputUnits, outputUnits,
-    scopeAdjustments, sourceMetadata, sessionModelInput, sessionWorkRevision, readsSinceSave,
-    savedReadSourceRefs, nativeSessionSegment, forceSaveBeforeRead,
-    ...(boundedInitialJobAid ? { evidenceCache, targetWork } : {}),
+    scopeAdjustments, sourceMetadata, sessionModelInput, sessionWorkRevision,
+    savedReadSourceRefs, nativeSessionSegment, protocolRepairs, noProgressRepairs, lastObservation,
+    ...(boundedWorkContext ? { evidenceCache, targetWork } : {}),
   });
   if (checkpoint) {
     const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,
@@ -535,22 +550,37 @@ export async function invokeHostedJobAidProblemModel(
   let round = 1;
   const restored = await checkpoint?.readOptional('assessment-state');
   if (restored) {
+    const originalSystem = restored.messages?.[0];
+    const legacySystem = LEGACY_GUIDE + systemMessage.content.slice(GUIDE.length);
+    if (originalSystem?.role !== 'system' ||
+        ![systemMessage.content, legacySystem].includes(originalSystem.content))
+      throw new Error('JOBAID_CHECKPOINT_POLICY_CHANGED');
+    // Continuation branches below reuse this object after READ/SAVE. Preserve
+    // the accepted checkpoint's original instructions, not this release's text.
+    systemMessage.content = originalSystem.content;
     ({ round, messages, expectedWorkRevision, saved, corrections, inputUnits, outputUnits } = restored);
+    protocolRepairs = restored.protocolRepairs;
+    noProgressRepairs = restored.noProgressRepairs;
+    lastObservation = restored.lastObservation ?? null;
+    if (![protocolRepairs, noProgressRepairs].every(value => Number.isSafeInteger(value) && value >= 0 && value <= 1))
+      throw new Error('JOBAID_CHECKPOINT_POLICY_CHANGED');
     sessionModelInput = restored.sessionModelInput ?? modelInput;
-    if (boundedInitialJobAid) {
+    sessionModelInput = refreshJobAidPreparation(sessionModelInput, sessionModelInput.preparation, options.assessmentBinding);
+    if (boundedWorkContext) {
       if (!restored.evidenceCache) throw new Error('JOBAID_CHECKPOINT_POLICY_CHANGED');
       evidenceCache = restored.evidenceCache;
       targetWork = restored.targetWork ?? null;
     }
     initialContextMessage = { role: 'user', content: JSON.stringify(modelContext(sessionModelInput)) };
     sessionWorkRevision = restored.sessionWorkRevision ?? modelInput.expectedWorkRevision;
-    readsSinceSave = restored.readsSinceSave ?? 0;
     savedReadSourceRefs = restored.savedReadSourceRefs ?? [];
     nativeSessionSegment = restored.nativeSessionSegment ?? 0;
-    forceSaveBeforeRead = restored.forceSaveBeforeRead ?? false;
     scopeAdjustments = restored.scopeAdjustments ?? 0;
     sourceMetadata = restored.sourceMetadata ?? [];
   } else await persistAssessmentState(round);
+  const promptVersion = (modelInput.schemaVersion === JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA
+    ? 'wiselink-jobaid-problem@v3' : 'wiselink-jobaid-problem@v2') +
+    (systemMessage.content.startsWith(GUIDE) ? SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION : '');
   const taskDeadlineMs = options.taskDeadline === undefined ? Infinity : Date.parse(options.taskDeadline);
   if (Number.isNaN(taskDeadlineMs)) throw new Error('JOBAID_TASK_DEADLINE_INVALID');
   // A checkpointed assessment with an absolute Host deadline measures
@@ -573,6 +603,12 @@ export async function invokeHostedJobAidProblemModel(
   if (activeModelBudget) for (let number = 1; number <= round; number++) await accountRound(number);
   const remainingBudgetMs = () => Math.min(taskDeadlineMs - Date.now(),
     timeoutMs - (activeModelBudget ? modelExecutionMs : Date.now() - startedAt));
+  const diagnosticBudget = remainingMs => ({
+    protocolRepairs, maxProtocolRepairs: 1, noProgressRepairs,
+    requestBudget: { maxRounds: 64, round, remainingMs,
+      transportRetries: 0, protocolRepairBackoffMs: 1000 },
+    metricUnits: { request: 'UTF8_BYTES', response: 'UTF8_BYTES', tokens: 'REPORTED_USAGE_OR_NULL' },
+  });
   const requestKey = async (kind) => {
     const key = `assessment-${round}-${kind}`;
     let value = await checkpoint?.readOptional(key);
@@ -581,6 +617,38 @@ export async function invokeHostedJobAidProblemModel(
       await checkpoint?.writeOnce(key, value);
     }
     return value.requestId;
+  };
+  const exactSavedOverviewStatus = () => [targetWork, sessionModelInput.previousWork].find(work =>
+    work && saved && work.workRevisionRef === saved.workRevisionRef &&
+    work.workRevision === saved.workRevision)?.overviewStatus ?? null;
+  const terminalFailure = (code, cause) => {
+    const error = new Error(code, cause ? { cause } : undefined);
+    error.terminalAssessmentFailure = { errorCode: code, provenance: {
+      modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
+      promptVersion,
+      skillVersion: WISELINK_SKILL_VERSION,
+      toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+        'jobaid-problem-protocol': modelInput.schemaVersion === JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA ? '3' : '2',
+        ...(modelInput.tdmsContext ? { 'tdms-native-context': '1' } : {}) },
+      runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
+    } };
+    return error;
+  };
+  const repairProtocol = async (category, protocol) => {
+    if (!protocol.knownTerminal) throw new Error(`JOBAID_PROTOCOL_${category}`);
+    if (protocolRepairs >= 1) throw terminalFailure('JOBAID_PROTOCOL_REPAIR_EXHAUSTED');
+    protocolRepairs++;
+    messages = [...messages, { role: 'user', content: JSON.stringify({
+      accepted: false, errorCode: `JOBAID_PROTOCOL_${category}`, expectedWorkRevision,
+      instruction: `The completed response did not provide one valid ${FUNCTION} step. Correct only this protocol error using the declared function and exact step schema. Preserve the current task, evidence, correction target and saved work; do not restart investigation, claim a SAVE occurred, or return prose instead of the named tool. This is the only protocol repair for this stage.`,
+      ...priorRejectedRatingCorrection(messages, sessionModelInput),
+    }) }];
+    await options.observeCandidateRejection?.({ modelRound: round, correctionNo: protocolRepairs,
+      code: `JOBAID_PROTOCOL_${category}`, repairScope: 'STAGE_PROTOCOL', maxRepairs: 1, delayMs: 1000 });
+    await persistAssessmentState(round + 1);
+    if (round >= 64 || remainingBudgetMs() <= 1000) throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
+    await options.heartbeat?.();
+    await (dependencies.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms))))(1000);
   };
   const save = async (work) => {
     const requestId = await requestKey('save');
@@ -621,7 +689,7 @@ export async function invokeHostedJobAidProblemModel(
     expectedWorkRevision = result.workRevision;
     saved = { requestId, workRevisionRef: result.workRevisionRef, workRevision: result.workRevision,
       roundCompletion: result.roundCompletion };
-    if (boundedInitialJobAid) {
+    if (boundedWorkContext) {
       if (!saveReadback?.revision)
         saveReadback = await options.readAssessmentWork({ requestId });
       const revision = saveReadback?.revision;
@@ -630,7 +698,8 @@ export async function invokeHostedJobAidProblemModel(
           revision.workRevision !== result.workRevision ||
           !revision.content)
         throw new Error('JOBAID_WORK_SAVE_READBACK_INVALID');
-      sessionModelInput = continuationModelInput(modelInput, revision);
+      sessionModelInput = refreshJobAidPreparation(continuationModelInput(sessionModelInput, revision),
+        saveReadback.preparation ?? result.preparation, options.assessmentBinding);
       targetWork = null;
       savedReadSourceRefs = Array.isArray(revision.content.readSourceRefs)
         ? [...revision.content.readSourceRefs] : [];
@@ -649,24 +718,15 @@ export async function invokeHostedJobAidProblemModel(
       throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');
     inputUnits += Buffer.byteLength(JSON.stringify(messages));
     const requestedModel = `openclaw/${WISELINK_PROFILE_REF}`;
-    const nativeSessionDiscriminator = boundedInitialJobAid && nativeSessionSegment > 0
+    const nativeSessionDiscriminator = boundedWorkContext && nativeSessionSegment > 0
       ? `${options.sessionDiscriminator}:work:${sessionWorkRevision}:segment:${nativeSessionSegment}`
       : sessionWorkRevision === modelInput.expectedWorkRevision
         ? options.sessionDiscriminator
         : `${options.sessionDiscriminator}:work:${sessionWorkRevision}`;
-    const focus = scopeAdjustments
-      ? 'Reduce the amount delivered in this unfinished batch while retaining the full engineering context. Choose one or several complete, meaningful issue updates; do not split conditions or reasoning fragments. Preserve saved work and do not continue a truncated JSON string.'
-      : boundedInitialJobAid
-        ? forceSaveBeforeRead
-          ? 'The Host has delivered one successful source-read receipt in this fresh native session. Submit a substantive SAVE_WORK for one coherent issue or one small related group now. Supply only changed issues and necessary summary fields; Host retains unchanged issues. If an existing target lacks its full exact work baseline, READ_WORK first, then SAVE_WORK; do not read another source batch. Preserve every condition, uncertainty and citation, and do not claim unread scopes verified.'
-          : 'Use primary original passages already in deliveredEvidence without reading them again. Otherwise, save each meaningful initial-analysis increment after one bounded source-read action. After a successful Host source read, the runtime starts a fresh native session with that exact evidence and requires SAVE_WORK. After a Host-confirmed SAVE_WORK, it starts another fresh native session containing the exact Host-read-back work and revision receipt. Do not accumulate more source reads before saving or claim unread scopes were verified.'
-        : 'Keep the shared engineering context and investigate across relevant sections and sources. Choose the number of complete issues that can be delivered in this batch; save substantive results promptly without first exhausting every issue. After SAVE_WORK continue automatically in this same session. Do not rewrite unchanged issues or summary fields. Before completion check cross-issue consistency and save only necessary synthesis or corrections.';
-    const requestStepShape = forceSaveBeforeRead ? {
-      ...stepShape,
-      required: ['action'],
-      properties: { ...stepShape.properties, action: { type: 'string', enum: ['SAVE_WORK', 'READ_WORK'] } },
-    } : stepShape;
-    const requestToolSchema = jobAidFunctionSchema(requestStepShape);
+    const focus = boundedWorkContext
+      ? 'Continue useful investigation across relevant sources and ranges. Reuse exact delivered evidence; READ_WORK only for a needed complete target baseline. SAVE_WORK only when understanding, a correction or completion state changes meaningfully. Do not manufacture an empty save because a read finished, repeat unchanged work, or claim unread scope verified.'
+      : 'Keep the shared engineering context and investigate relevant sections and sources. Save substantive changes promptly and preserve unchanged work. Before completion check cross-issue consistency and save only necessary synthesis or corrections.';
+    const requestToolSchema = jobAidFunctionSchema(stepShape);
     const requestMaxCompletionTokens = options.executionModel?.modelRef === 'miaoda/minimax-m3'
       ? generationPolicy.requestMaxCompletionTokens
       : isJobAidProblemInputSchema(modelInput.schemaVersion) &&
@@ -684,11 +744,7 @@ export async function invokeHostedJobAidProblemModel(
           type: 'function',
           function: {
             name: FUNCTION,
-            description: forceSaveBeforeRead
-              ? 'Return one substantive SAVE_WORK intent, or read an exact existing work target first. The deterministic Host caller executes and validates it.'
-              : boundedInitialJobAid
-                ? 'Return one source-read, exact-work-target-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.'
-                : 'Return one source-read, substantive-work-save, or finish intent. The deterministic Host caller executes it.',
+            description: 'Return one source-read, exact-work-target-read, substantive-work-save, or finish intent. The deterministic Host caller executes and validates it.',
             parameters: {
               type: 'object',
               additionalProperties: false,
@@ -716,7 +772,8 @@ export async function invokeHostedJobAidProblemModel(
     };
     const performRequest = async () => {
       if (round === 1 && options.recoveredInitialResponse) return options.recoveredInitialResponse;
-      const response = await (
+      let response;
+      try { response = await (
         dependencies.requestGateway ?? requestHostedGateway
       )(new URL('/v1/chat/completions', options.gatewayUrl), {
         method: 'POST',
@@ -728,18 +785,27 @@ export async function invokeHostedJobAidProblemModel(
         },
         body: requestBody,
         signal: AbortSignal.timeout(Math.min(remainingMs, 15 * 60_000)),
-      });
+      }); } catch (error) {
+        await options.observeModelOutput?.({ operation, round,
+          localTransportRequestOrdinal: round, upstreamDispatchCount: null,
+          protocolCategory: 'TRANSPORT_OUTCOME_UNKNOWN', upstreamOutcome: 'UNKNOWN',
+          transportFailure: hostedGatewayTransportFailureDiagnostic(error),
+          responseShape: null, finishReason: null, inputTokens: null, outputTokens: null,
+          ...diagnosticBudget(remainingMs), ...requestMetrics }, round);
+        throw error;
+      }
       const raw = await response.text();
       if (Buffer.byteLength(raw) > 4 * 1024 * 1024)
         throw new Error('JOBAID_MODEL_RESPONSE_TOO_LARGE');
-      return { raw, status: response.status, ok: response.ok };
+      return { raw, status: response.status, ok: response.ok, localTransportRequestOrdinal: round,
+        requestBudgetRemainingMs: remainingMs };
     };
     // Persist a complete response before executing its read/save intent. A lost
     // response remains unknown; a failed Host read can reuse this exact result.
     const response = checkpoint ? await checkpoint.remoteStep({
       step: `assessment-round-${round}`, args: { operation, messages, executionModel: options.executionModel ?? null,
         sessionDiscriminator: nativeSessionDiscriminator, generationPolicy, scopeAdjustments,
-        ...(boundedInitialJobAid ? { nativeSessionSegment, forceSaveBeforeRead, requestToolSchema } : {}) },
+        ...(boundedWorkContext ? { nativeSessionSegment, requestToolSchema } : {}) },
       ambiguousCommit: false, perform: performRequest,
     }) : await performRequest();
     await accountRound(round);
@@ -748,6 +814,13 @@ export async function invokeHostedJobAidProblemModel(
     try {
       payload = JSON.parse(raw);
     } catch {
+      await options.observeModelOutput?.({ operation, round,
+        localTransportRequestOrdinal: response.localTransportRequestOrdinal ?? null, upstreamDispatchCount: null,
+        protocolCategory: 'GATEWAY_JSON_INVALID', upstreamOutcome: 'UNKNOWN',
+        httpStatus: response.status, responseBytes: Buffer.byteLength(raw), responseShape: null,
+        finishReason: null, inputTokens: null, outputTokens: null,
+        ...diagnosticBudget(response.requestBudgetRemainingMs ?? null),
+        ...(requestMetrics ?? {}) }, round);
       throw new Error(`JOBAID_GATEWAY_INVALID_JSON_HTTP_${response.status}`);
     }
     const shape = summarizeHostedReviewModelOutputShape({
@@ -758,6 +831,23 @@ export async function invokeHostedJobAidProblemModel(
       expectedFunctionNames: [FUNCTION],
     });
     const gatewayFailure = response.ok ? null : classifyHostedGatewayFailure(payload);
+    let protocol = classifyHostedAssessmentProtocol(payload, response);
+    let step;
+    let parsedWork;
+    if (protocol.category === null) {
+      try {
+        const message = payload.choices[0].message;
+        const call = message.tool_calls[0];
+        if (shape.hasAnalysis || !isFunctionResponseContentSupported(message.content)) throw new Error();
+        const args = parseStrictJsonObject(call.function.arguments);
+        if (Object.keys(args).length !== 1 || !args.step || typeof args.step !== 'object' || Array.isArray(args.step))
+          throw new Error();
+        step = decodeJobAidValue(args.step, stepShape);
+        if (!stepMatchesShape(step, stepShape)) throw new Error();
+        if (step.workJson !== undefined) parsedWork = parseJobAidWorkJson(step.workJson);
+      } catch { protocol = { ...protocol, category: 'TOOL_SCHEMA_INVALID', repairEligible: protocol.knownTerminal }; }
+    }
+    const reportedTokens = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
     await options.observeModelOutput?.(
       {
         operation,
@@ -771,24 +861,31 @@ export async function invokeHostedJobAidProblemModel(
           ? Buffer.byteLength(payload.choices[0].message.tool_calls[0].function.arguments) : null,
         httpStatus: response.status,
         finishReason: payload?.choices?.[0]?.finish_reason ?? null,
-        inputTokens: payload?.usage?.prompt_tokens ?? null,
-        outputTokens: payload?.usage?.completion_tokens ?? null,
+        inputTokens: reportedTokens(payload?.usage?.prompt_tokens),
+        outputTokens: reportedTokens(payload?.usage?.completion_tokens),
         responseBytes: Buffer.byteLength(raw),
         outputChannel: shape.outputChannel,
+        responseShape: shape,
+        protocolCategory: protocol.category,
+        upstreamOutcome: protocol.upstreamOutcome,
+        ...(protocol.httpFailure ? { gatewayHttpFailure: protocol.httpFailure } : {}),
+        localTransportRequestOrdinal: response.localTransportRequestOrdinal ?? null,
+        upstreamDispatchCount: null,
+        ...diagnosticBudget(response.requestBudgetRemainingMs ?? null),
         ...(gatewayFailure ? { gatewayFailure } : {}),
       },
       round,
     );
-    // Only an explicit completion reason establishes truncation. Never infer
-    // length from generic 502/tool-choice failures or repair partial arguments.
-    if (payload.choices?.length === 1 && payload.choices[0].finish_reason === 'length') {
+    // Only a successful response without an explicit error can establish
+    // output length. Error envelopes remain unknown even with choices metadata.
+    if (protocol.category === 'OUTPUT_LENGTH') {
       if (scopeAdjustments >= generationPolicy.maxScopeAdjustments) {
         const error = new Error('JOBAID_MODEL_OUTPUT_LENGTH');
         error.terminalAssessmentFailure = {
           errorCode: 'JOBAID_MODEL_OUTPUT_LENGTH',
           provenance: {
             modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
-            promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
+            promptVersion, skillVersion: WISELINK_SKILL_VERSION,
             toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
             runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
           },
@@ -806,106 +903,28 @@ export async function invokeHostedJobAidProblemModel(
     // prove generation-only execution; an ambiguous 408/timeout is not retried.
     if (!response.ok) {
       const error = new Error(`JOBAID_GATEWAY_HTTP_${response.status}${gatewayFailure === 'UNCLASSIFIED' ? '' : ':' + gatewayFailure}`);
-      // The gateway explicitly reports an ended, incomplete invocation. This
-      // is a failed result, unlike a transport timeout with an unknown outcome.
-      if ((response.status === 400 && gatewayFailure === 'INCOMPLETE_TERMINAL_RESPONSE') ||
-          (response.status === 502 && gatewayFailure === 'TOOL_CHOICE_NOT_SATISFIED')) {
-        error.terminalAssessmentFailure = {
-          errorCode: 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE',
-          provenance: {
-            modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
-            promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
-            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
-            runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
-          },
-        };
-      }
+      // A gateway error/conversion report cannot prove provider termination.
       throw error;
     }
-    if (shape.hasAnalysis || payload.choices?.length !== 1)
-      throw new Error('JOBAID_MODEL_OUTPUT_CHANNEL_INVALID');
-    const choice = payload.choices[0];
+    const choice = payload.choices?.[0];
     const message = choice?.message;
     const call = message?.tool_calls?.[0];
-    // A completed text-only answer is known, unlike an interrupted generation.
-    // Keep its durable result and request a separate, bounded protocol correction.
-    if (choice.finish_reason === 'stop' && message?.role === 'assistant' &&
-        typeof message.content === 'string' && message.content.trim() &&
-        (message.tool_calls == null || (Array.isArray(message.tool_calls) && message.tool_calls.length === 0)) &&
-        message.function_call == null && corrections < maxCorrections) {
-      outputUnits += Buffer.byteLength(message.content);
-      corrections += 1;
-      const correction = { role: 'user', content: JSON.stringify({
-        accepted: false, errorCode: 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED', expectedWorkRevision,
-        instruction: `Your completed text-only response did not submit any step. Return exactly one ${FUNCTION} function call. Continue the existing investigation and correct the prior rejected work using its evidence and receipt; do not restart the assessment or treat prose as saved work. If the Host-saved work is complete and needs no further evidence or correction, call FINISH; otherwise call READ_SOURCES or SAVE_WORK as appropriate.`,
-        ...priorRejectedRatingCorrection(messages, modelInput),
-      }) };
-      // A confirmed SAVE has already been read back from Host. If this native
-      // segment has only produced text-only replies since that SAVE, rotate to
-      // a fresh segment with the exact saved-work context and receipt. Keeping
-      // the same native session repeatedly replays a growing model history.
-      // A source read or rejected work must stay in its original segment so its
-      // evidence and correction receipt are not lost.
-      const saveReceipt = messages[2]?.role === 'user'
-        ? parseStrictJsonObject(messages[2].content) : null;
-      const canRotateSavedText = boundedInitialJobAid && saved && !forceSaveBeforeRead &&
-        saveReceipt?.status === 'HOST_SAVE_CONFIRMED' &&
-        saveReceipt.workRevisionRef === saved.workRevisionRef &&
-        messages.slice(3).every(item => item.role === 'user' &&
-          parseStrictJsonObject(item.content)?.errorCode === 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED');
-      if (canRotateSavedText) {
-        nativeSessionSegment++;
-        messages = [systemMessage, initialContextMessage, messages[2], correction];
-      } else messages = [...messages, correction];
-      await options.observeCandidateRejection?.({ modelRound: round, correctionNo: corrections, code: 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED' });
-      await persistAssessmentState(round + 1);
+    if (protocol.category) {
+      await repairProtocol(protocol.category, protocol);
       continue;
     }
-    if (choice.finish_reason === 'stop' && message?.role === 'assistant' &&
-        typeof message.content === 'string' && message.content.trim() &&
-        (message.tool_calls == null || (Array.isArray(message.tool_calls) && message.tool_calls.length === 0)) &&
-        message.function_call == null && corrections >= maxCorrections) {
-      const error = new Error('JOBAID_MODEL_OUTPUT_FUNCTION_INVALID');
-      // All responses are durably complete and the bounded corrections are exhausted.
-      // Reuse the existing failed-result lifecycle instead of leaving a live lease
-      // to replay the same rejected response indefinitely. No candidate is accepted.
-      error.terminalAssessmentFailure = {
-        errorCode: 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE',
-        provenance: {
-          modelVersion: actualModelVersion(payload, choice, message,
-            options.executionModel ? `configured-route:${options.executionModel.modelRef}` : options.configuredModelVersion),
-          promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
-          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
-          runMetrics: { durationMs: Date.now() - startedAt, inputUnits,
-            outputUnits: outputUnits + Buffer.byteLength(message.content) },
-        },
-      };
-      throw error;
-    }
-    if (
-      !isFunctionResponseContentSupported(message?.content) ||
-      message?.tool_calls?.length !== 1 ||
-      call?.type !== 'function' ||
-      call.function?.name !== FUNCTION ||
-      typeof call.id !== 'string'
-    )
-      throw new Error('JOBAID_MODEL_OUTPUT_FUNCTION_INVALID');
     outputUnits += Buffer.byteLength(call.function.arguments);
     let receipt;
     let submittedWork;
     let sessionResetKind = null;
     let requestedSourceRefCount = null;
+    let observationResult;
+    let progressFeedback = null;
+    const progressBefore = structuredClone({ expectedWorkRevision, evidenceCache, targetWork,
+      preparation: sessionModelInput.preparation });
     sourceSelectionError = null;
     try {
-      const args = parseStrictJsonObject(call.function.arguments);
-      if (Object.keys(args).length !== 1 || !args.step || typeof args.step !== 'object' || Array.isArray(args.step))
-        throw new Error('JOBAID_STEP_OBJECT_REQUIRED');
-      if (Object.keys(args.step).some(key => !Object.hasOwn(stepShape.properties, key)))
-        throw new Error('JOBAID_STEP_FIELD_INVALID');
-      const step = decodeJobAidValue(args.step, stepShape);
       if (step.action === 'READ_SOURCES') {
-        if (boundedInitialJobAid && readsSinceSave >= INITIAL_JOBAID_READS_PER_SAVE)
-          throw new Error('JOBAID_SOURCE_BATCH_SAVE_REQUIRED');
         if (
           !Array.isArray(step.sourceRefs) ||
           !step.sourceRefs.length ||
@@ -927,17 +946,17 @@ export async function invokeHostedJobAidProblemModel(
         }, options.readAssessmentSources);
         if (receipt?.status !== 'AVAILABLE' || !Array.isArray(receipt.evidence))
           throw new Error('JOBAID_SOURCE_READ_FAILED');
-        if (boundedInitialJobAid) {
+        observationResult = structuredClone(receipt);
+        if (boundedWorkContext) {
           const cached = cacheJobAidSourceRead(evidenceCache, receipt);
           evidenceCache = cached.cache;
           receipt = cached.receipt;
+          observationResult = structuredClone(receipt);
           initialContextMessage = { role: 'user', content: JSON.stringify(modelContext(sessionModelInput)) };
-          readsSinceSave++;
-          forceSaveBeforeRead = true;
           nativeSessionSegment++;
           sessionResetKind = 'SOURCE_READ';
         }
-      } else if (step.action === 'READ_WORK' && boundedInitialJobAid) {
+      } else if (step.action === 'READ_WORK' && boundedWorkContext) {
         const expected = sessionModelInput.previousWork;
         if (!expected || step.workRevisionRef !== expected.workRevisionRef ||
             !Array.isArray(step.issueKeys) || typeof step.includeOverview !== 'boolean')
@@ -951,9 +970,14 @@ export async function invokeHostedJobAidProblemModel(
             revision.workRevision !== expected.workRevision || revision.workRevision !== expectedWorkRevision ||
             (requestId && revision.requestId !== requestId))
           throw new Error('JOBAID_WORK_REVISION_CONFLICT');
+        sessionModelInput = refreshJobAidPreparation(sessionModelInput, readback.preparation, options.assessmentBinding);
         receipt = projectJobAidTargetWork(revision, step.issueKeys, step.includeOverview);
+        observationResult = { status: receipt.status, workRevisionRef: receipt.workRevisionRef,
+          workRevision: receipt.workRevision, issueKeys: step.issueKeys, includeOverview: step.includeOverview };
         targetWork = mergeJobAidTargetWork(targetWork, receipt);
         initialContextMessage = { role: 'user', content: JSON.stringify(modelContext(sessionModelInput)) };
+        nativeSessionSegment++;
+        sessionResetKind = 'WORK_READ';
       } else if (step.action === 'QUERY_KNOWLEDGE') {
         if (typeof step.query !== 'string' || !step.query.trim() || step.query.length > 4000)
           throw new Error('JOBAID_KNOWLEDGE_QUERY_INVALID');
@@ -976,19 +1000,21 @@ export async function invokeHostedJobAidProblemModel(
           if (!['COMPLETED','FAILED','UNKNOWN','UNAVAILABLE'].includes(receipt?.status) || !Array.isArray(receipt.evidence))
             throw new Error('JOBAID_KNOWLEDGE_RECEIPT_INVALID');
         }
-        if (boundedInitialJobAid) {
+        if (boundedWorkContext) {
           evidenceCache = cacheJobAidKnowledgeReceipt(evidenceCache, receipt);
           initialContextMessage = { role: 'user', content: JSON.stringify(modelContext(sessionModelInput)) };
         }
+        observationResult = boundedWorkContext ? { status: receipt.status, queryRef: receipt.queryRef ?? null,
+          evidenceRefs: receipt.evidence.map(item => item.evidenceRef) } : structuredClone(receipt);
       } else if (step.action === 'SAVE_WORK' || step.action === 'FINISH') {
         if (step.workJson !== undefined) {
           if (boundedInitialJobAid && expectedWorkRevision === modelInput.expectedWorkRevision &&
-              !sessionModelInput.previousWork && readsSinceSave === 0 &&
-              !sessionModelInput.deliveredEvidence.some(item => item.kind === 'DOCUMENT_PASSAGE'))
+              !sessionModelInput.previousWork &&
+              !(evidenceCache?.evidence ?? sessionModelInput.deliveredEvidence).some(item => item.kind === 'DOCUMENT_PASSAGE'))
             throw new Error('JOBAID_PRIMARY_SOURCE_READ_REQUIRED');
           const priorWorkRevision = expectedWorkRevision;
-          submittedWork = parseJobAidWorkJson(step.workJson);
-          if (boundedInitialJobAid) {
+          submittedWork = parsedWork;
+          if (boundedWorkContext) {
             const priorKeys = new Set(sessionModelInput.previousWork?.content?.issues?.map(issue => issue.issueKey) ?? []);
             const completeKeys = new Set(targetWork && sessionModelInput.previousWork &&
               targetWork.workRevisionRef === sessionModelInput.previousWork.workRevisionRef
@@ -1014,9 +1040,7 @@ export async function invokeHostedJobAidProblemModel(
                 { repairs: normalized.repairs });
           }
           receipt = await save(submittedWork);
-          if (boundedInitialJobAid && expectedWorkRevision > priorWorkRevision) {
-            readsSinceSave = 0;
-            forceSaveBeforeRead = false;
+          if (boundedWorkContext && expectedWorkRevision > priorWorkRevision) {
             nativeSessionSegment++;
             sessionResetKind = 'SAVE';
           }
@@ -1027,6 +1051,8 @@ export async function invokeHostedJobAidProblemModel(
           if (!saved || (saved.roundCompletion === 'IN_PROGRESS' &&
               modelInput.overviewCorrectionProtocol !== 'OPENCLAW_SCOPED_V1'))
             throw new Error('JOBAID_COMPLETED_WORK_REQUIRED');
+          if (modelInput.purpose === 'OVERALL_CONSISTENCY' && exactSavedOverviewStatus() !== 'CURRENT')
+            throw new Error(`JOBAID_OVERALL_EXACT_WORK_REQUIRED:${saved.workRevisionRef}:OVERVIEW_${exactSavedOverviewStatus() ?? 'NOT_RECORDED'}`);
           if (
             modelInput.purpose === 'OVERALL_CONSISTENCY' &&
             (typeof step.consistencyCheck !== 'string' ||
@@ -1049,7 +1075,7 @@ export async function invokeHostedJobAidProblemModel(
                   ? `configured-route:${options.executionModel.modelRef}`
                   : options.configuredModelVersion,
               ),
-              promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2',
+              promptVersion,
               skillVersion: WISELINK_SKILL_VERSION,
               toolVersions: {
                 [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
@@ -1064,12 +1090,29 @@ export async function invokeHostedJobAidProblemModel(
           };
         }
       } else throw new Error('JOBAID_STEP_ACTION_INVALID');
+      const parameters = step.action === 'READ_SOURCES'
+        ? { sourceRefs: step.sourceRefs, purpose: step.purpose, context: step.context }
+        : step.action === 'READ_WORK' ? { workRevisionRef: step.workRevisionRef, issueKeys: step.issueKeys, includeOverview: step.includeOverview }
+          : step.action === 'QUERY_KNOWLEDGE' ? { query: step.query } : null;
+      const observation = parameters ? { action: step.action, parameters, result: observationResult ?? receipt } : null;
+      const progressed = !isDeepStrictEqual(progressBefore, { expectedWorkRevision, evidenceCache, targetWork,
+        preparation: sessionModelInput.preparation });
+      if (observation && !progressed && isDeepStrictEqual(lastObservation, observation)) {
+        if (noProgressRepairs >= 1) throw terminalFailure('JOBAID_NO_PROGRESS');
+        noProgressRepairs++;
+        progressFeedback = { accepted: false, errorCode: 'JOBAID_NO_PROGRESS',
+          instruction: 'The same operation, exact parameters and result produced no new evidence or saved understanding. Do not repeat it. Read a different necessary range, make a substantive supported work change, or FINISH only if the Host-saved round is complete. This is the only no-progress correction for this stage.' };
+        await options.observeCandidateRejection?.({ modelRound: round, correctionNo: noProgressRepairs,
+          code: 'JOBAID_NO_PROGRESS', repairScope: 'STAGE_PROGRESS', maxRepairs: 1 });
+      }
+      lastObservation = observation;
       corrections = 0;
     } catch (error) {
+      if (error?.terminalAssessmentFailure) throw error;
       const code = error?.hostErrorCode ?? error?.message ?? '';
       const invalidWorkJson = code === 'JOBAID_WORK_JSON_INVALID' && !submittedWork;
       const sourcePolicyNotFollowed = boundedInitialJobAid && corrections >= maxCorrections &&
-        ['JOBAID_SOURCE_BATCH_TOO_LARGE', 'JOBAID_SOURCE_BATCH_SAVE_REQUIRED'].includes(code);
+        code === 'JOBAID_SOURCE_BATCH_TOO_LARGE';
       if (corrections >= maxCorrections && (sourcePolicyNotFollowed || invalidWorkJson || (submittedWork && error?.hostErrorCode &&
           /^JOBAID_[A-Z_]+(?::[A-Za-z0-9:_-]+)?$/u.test(code) &&
           !/AUTHORIZATION|LEASE|REVISION_CONFLICT|VERSION_CHANGED|BUDGET|GATEWAY|READ_FAILED|ATTEMPT/.test(code)))) {
@@ -1079,7 +1122,7 @@ export async function invokeHostedJobAidProblemModel(
           ? 'JOBAID_SOURCE_BATCH_POLICY_NOT_FOLLOWED'
           : invalidWorkJson ? 'JOBAID_WORK_JSON_INVALID' : 'JOBAID_WORK_VALIDATION_FAILED', provenance: {
           modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
-          promptVersion: modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2', skillVersion: WISELINK_SKILL_VERSION,
+          promptVersion, skillVersion: WISELINK_SKILL_VERSION,
           toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
           runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
         } };
@@ -1094,7 +1137,7 @@ export async function invokeHostedJobAidProblemModel(
         throw error;
       corrections += 1;
       const shapeCorrection = workShapeCorrection(code, submittedWork, modelInput);
-      const sourcePolicy = sourceBatchPolicyFeedback(code, requestedSourceRefCount, readsSinceSave);
+      const sourcePolicy = sourceBatchPolicyFeedback(code, requestedSourceRefCount);
       receipt = {
         accepted: false,
         errorCode: code,
@@ -1103,6 +1146,12 @@ export async function invokeHostedJobAidProblemModel(
           'Correct only the rejected step or substantive work using the original evidence. Existing saved work remains available; never invent sources or turn failure into completion.',
         ...sourcePolicy,
         ...shapeCorrection,
+        ...(code.startsWith('JOBAID_OVERALL_EXACT_WORK_REQUIRED:') ? {
+          workRevisionRef: saved?.workRevisionRef ?? null,
+          workRevision: saved?.workRevision ?? null,
+          overviewStatus: exactSavedOverviewStatus(),
+          instruction: 'Only the exact Host-saved CURRENT overview can FINISH. Reading old work does not update its status. If status is not recorded here, READ_WORK for this exact revision with includeOverview:true. For STALE or NOT_AVAILABLE, revise the overview using the retained problem conclusions, source conditions and limitations, then SAVE a meaningful overview-only delta with issues:[]. FINISH only after the original save-key readback reports CURRENT. Do not mark the status yourself or submit an empty SAVE; unchanged CURRENT work needs no new SAVE.',
+        } : {}),
         ...(error.workReadRequired ? {
           workReadRequired: error.workReadRequired,
           instruction: 'No SAVE occurred. READ_WORK using workReadRequired first; the short issue index is not a complete replacement baseline. Then revise the complete issue or overview deliberately, preserving all unchanged conditions and professional records. Do not guess missing fields.',
@@ -1140,7 +1189,14 @@ export async function invokeHostedJobAidProblemModel(
         status: 'HOST_SOURCE_READ_CONFIRMED',
         expectedWorkRevision,
         sourceReadReceipt: projectJobAidReadReceipt(receipt, sourceMetadata),
-        instruction: '这是一次成功且已由 Host 确认的来源读取。当前新会话的 deliveredEvidence 和 deliveredSourceReads 已保留完整原文与回执语境。请立即提交一项有价值、完整的 SAVE_WORK；若已有目标缺少完整旧工作基线，先 READ_WORK，再保存。不得再读来源、不得声称未读来源已核验。保存后继续使用同一 attempt 的完整证据缓存。',
+        instruction: '这是一次成功且已由 Host 确认的来源读取。当前新会话的 deliveredEvidence 和 deliveredSourceReads 已保留完整原文与回执语境。可以继续取得当前判断所缺的其他来源或范围；已有目标缺少完整旧工作基线时按需 READ_WORK。形成有意义的完整变化时再 SAVE_WORK，不提交空的读取日志，不声称未读来源已核验。同一 attempt 的完整证据缓存继续保留。',
+      }) },
+    ] : sessionResetKind === 'WORK_READ' ? [
+      systemMessage, initialContextMessage,
+      { role: 'user', content: JSON.stringify({ status: 'HOST_WORK_READ_CONFIRMED',
+        workRevisionRef: receipt.workRevisionRef, workRevision: receipt.workRevision,
+        issueKeys: step.issueKeys, includeOverview: step.includeOverview,
+        instruction: 'targetWork 包含该准确已保存修订的完整比较材料；preparation 保留本轮目标和更正。只修改实际受影响内容，不将旧认识当作新原文或覆盖待处理更正。',
       }) },
     ] : sessionResetKind === 'SAVE' ? [
       systemMessage,
@@ -1151,7 +1207,7 @@ export async function invokeHostedJobAidProblemModel(
         workRevisionRef: saved.workRevisionRef,
         workRevision: saved.workRevision,
         roundCompletion: saved.roundCompletion,
-        instruction: `这是同一 Host attempt 在确认保存后的续段。previousWork 包含准确问题目录，readSourceRefs 只在其中列出一次；deliveredEvidence 与 deliveredSourceReads 保留本 attempt 的完整已交付证据。更正已有问题或概览前，用 READ_WORK 读取该准确修订的目标完整基线。只为缺少的决定性原文 READ_SOURCES，每次不超过 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} refs，随后保存完整增量，不重写未变化的问题。headline/listBrief 只写工程认识，过程留在 changeSummary。不得重放先前 SAVE_WORK。`,
+        instruction: `这是同一 Host attempt 在确认保存后的续段。previousWork 包含准确问题目录，readSourceRefs 只在其中列出一次；deliveredEvidence 与 deliveredSourceReads 保留本 attempt 的完整已交付证据。更正已有问题或概览前，用 READ_WORK 读取该准确修订的目标完整基线。只为缺少的决定性原文 READ_SOURCES，每次不超过 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} refs；有意义的认识变化后保存完整增量，不重写未变化的问题。headline/listBrief 只写工程认识，过程留在 changeSummary。不得重放先前 SAVE_WORK。`,
       }) },
     ] : [
       systemMessage,
@@ -1164,6 +1220,7 @@ export async function invokeHostedJobAidProblemModel(
         content: JSON.stringify(projectJobAidReadReceipt(receipt, sourceMetadata)),
       },
     ];
+    if (progressFeedback) messages.push({ role: 'user', content: JSON.stringify(progressFeedback) });
     await persistAssessmentState(round + 1);
   }
   throw new Error('JOBAID_MODEL_BUDGET_EXHAUSTED');

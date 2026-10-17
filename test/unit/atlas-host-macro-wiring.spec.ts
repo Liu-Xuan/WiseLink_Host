@@ -290,21 +290,24 @@ describe('Host Atlas loading and saved exact-version reading', () => {
     expect(latest.loading).toBe(false);
     expect(latest.macro?.counts.versions).toBe(2);
   });
-  it('surfaces a failed read rather than returning a successful zero-object panorama', async () => {
+  it('surfaces a failed document read without displaying the parallel directory or reading its details', async () => {
     docs.mockRejectedValue(
       Object.assign(new Error('network'), { code: 'ERR_NETWORK' }),
     );
+    directory.mockResolvedValue({ items: libraryMatterRows(), nextCursor: null, fileReadPerformed: false });
     await mount();
     expect(latest.loading).toBe(false);
     expect(latest.error).toContain('连接');
     expect(latest.macro).toBeUndefined();
-    expect(directory).not.toHaveBeenCalled();
+    expect(directory).toHaveBeenCalledTimes(1);
+    expect(matter).not.toHaveBeenCalled();
   });
   it('does not issue reads without authentication and does not replace Host with example data', async () => {
     await mount(panorama, 1, true);
     expect(latest.error).toContain('登录');
     expect(latest.loading).toBe(false);
     expect(docs).not.toHaveBeenCalled();
+    expect(directory).not.toHaveBeenCalled();
     expect(latest.graph.nodes).toEqual([]);
   });
   it('discards an old account completion and aborts the previous request when session changes', async () => {

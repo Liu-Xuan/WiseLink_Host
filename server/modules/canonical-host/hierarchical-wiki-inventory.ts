@@ -37,6 +37,21 @@ interface DocumentRow extends Record<string, unknown> {
   member: DerivedSummaryMember | null;
 }
 
+interface SavedWorkRow extends Record<string, unknown> {
+  workItemId: string;
+  documentVersionId: string;
+  familyId: string;
+  workRef: string | null;
+  workRevision: number | null;
+  savedDocumentVersionId: string | null;
+  savedByOwner: boolean | null;
+  requestId: string | null;
+  attemptStatus: string | null;
+  roundCompletion: string | null;
+  overviewStatus: string | null;
+  hasUnderstanding: boolean | null;
+}
+
 export function wikiClassifications(
   metadata: DocumentExtractedMetadata | null,
   scope: HierarchicalWikiEnableRequest,
@@ -122,10 +137,12 @@ export async function readWikiInventory(
     : { document: null, matter: null, documentDone: false, matterDone: false };
   const assignments = await database.execute<{
     familyId: string;
+    documentVersionId: string | null;
     ata: string | null;
     status: string;
   }>(sql`
     SELECT DISTINCT m.source_id AS "familyId",COALESCE(w.scope_json->>'ata4',w.scope_json->>'ata2') AS ata,
+      m.basis_json->>'documentVersionId' AS "documentVersionId",
       m.basis_json->>'classificationStatus' AS status
     FROM hierarchical_wiki_membership m JOIN hierarchical_wiki_scope w ON w.wiki_id=m.wiki_id
     WHERE m.tenant_id=${owner.tenantId} AND m.actor_user_id=${owner.actorUserId} AND m.source_kind='DOCUMENT'
@@ -218,6 +235,113 @@ export async function readWikiInventory(
           documentVersionId: row.documentVersionId,
           status: 'READING_NOT_READY',
         });
+    }
+  }
+  // A saved document assessment is a separate exact leaf, not a replacement
+  // DocumentReading. Select the latest revision before checking readiness so a
+  // newer partial/failed save can never expose an older complete work as current.
+  const savedWorks = documents.length
+    ? await database.execute<SavedWorkRow>(sql`
+    SELECT wi.work_item_id AS "workItemId",wi.document_version_id AS "documentVersionId",d.family_id AS "familyId",
+      r.assessment_work_revision_id AS "workRef",r.work_revision AS "workRevision",
+      r.document_version_id AS "savedDocumentVersionId",r.created_by_user_id=${owner.actorUserId} AS "savedByOwner",
+      r.request_id AS "requestId",a.status AS "attemptStatus",r.content_json::jsonb->>'roundCompletion' AS "roundCompletion",
+      r.content_json::jsonb->>'overviewStatus' AS "overviewStatus",
+      (jsonb_typeof(r.content_json::jsonb->'understanding')='string'
+        AND length(btrim(r.content_json::jsonb->>'understanding'))>0) AS "hasUnderstanding"
+    FROM work_item wi JOIN dm_document_version d ON d.document_version_id=wi.document_version_id
+      AND d.source_artifact_id=wi.source_artifact_id AND d.pdf_sha256=wi.source_file_sha256 AND d.byte_length=wi.source_byte_length
+    JOIN dm_publication_family f ON f.family_id=d.family_id AND f.current_document_version_id=d.document_version_id
+    LEFT JOIN LATERAL (SELECT w.assessment_work_revision_id,w.work_revision,w.document_version_id,w.created_by_user_id,
+      w.request_id,w.action_attempt_id,w.content_json FROM assessment_work_revision w
+      WHERE w.tenant_id=wi.tenant_id AND w.work_item_id=wi.work_item_id ORDER BY w.work_revision DESC LIMIT 1) r ON true
+    LEFT JOIN action_attempt a ON a.attempt_id=r.action_attempt_id AND a.tenant_id=wi.tenant_id
+      AND a.work_item_id=wi.work_item_id AND a.document_version_id=wi.document_version_id AND a.subject_kind='WORK_ITEM'
+      AND a.action_type IN ('OPENCLAW_DYNAMIC_EVALUATION','OPENCLAW_OVERALL_SYNTHESIS','OPENCLAW_INTERACTIVE_REVIEW')
+    WHERE wi.tenant_id=${owner.tenantId} AND wi.requested_by_user_id=${owner.actorUserId}
+      AND wi.document_version_id IN (SELECT jsonb_array_elements_text(${JSON.stringify(documents.map((row) => row.documentVersionId))}::jsonb))
+      AND engineering_matter_work_item_owned_by_actor(${owner.tenantId},wi.work_item_id)
+    ORDER BY wi.work_item_id`)
+    : [];
+  for (const saved of savedWorks) {
+    const familyAssignments = assignments.filter(
+      (item) => item.familyId === saved.familyId,
+    );
+    const excluded = familyAssignments
+      .filter(
+        (item) =>
+          item.status === 'EXCLUDED' &&
+          item.documentVersionId === saved.documentVersionId,
+      )
+      .map((item) => item.ata);
+    const confirmed = familyAssignments
+      .filter(
+        (item) =>
+          item.status === 'CONFIRMED' &&
+          item.documentVersionId === saved.documentVersionId &&
+          !excluded.includes(item.ata),
+      )
+      .map((item) => item.ata);
+    // A family classification can have just moved to its new current DVI in this
+    // inventory. Recheck it through existing document waiting, rather than admit
+    // the old binding or consume its event and wait for tomorrow's full sweep.
+    const awaitingCurrentBinding = familyAssignments
+      .filter(
+        (item) =>
+          item.status === 'CONFIRMED' &&
+          item.documentVersionId !== saved.documentVersionId &&
+          !excluded.includes(item.ata),
+      )
+      .map((item) => item.ata);
+    // NOT_AVAILABLE may carry the schema's nonempty placeholder. A real
+    // saved understanding may still be STALE or retain open questions/gaps.
+    const ready =
+      saved.workRef &&
+      saved.workRevision &&
+      saved.savedByOwner === true &&
+      saved.savedDocumentVersionId === saved.documentVersionId &&
+      saved.attemptStatus === 'SUCCEEDED' &&
+      ['COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS'].includes(
+        saved.roundCompletion ?? '',
+      ) &&
+      saved.overviewStatus !== 'NOT_AVAILABLE' &&
+      saved.hasUnderstanding === true;
+    for (const ata of new Set([...confirmed, ...awaitingCurrentBinding])) {
+      if (!ata || !/^\d{2}-\d{2}$/u.test(ata)) continue;
+      if (!confirmed.includes(ata) || !ready) {
+        waiting.push({
+          kind: 'DOCUMENT',
+          subjectId: saved.familyId,
+          documentVersionId: saved.documentVersionId,
+          requestId: saved.requestId,
+          ata,
+          status: confirmed.includes(ata)
+            ? 'SAVED_ASSESSMENT_NOT_READY'
+            : 'ASSESSMENT_CLASSIFICATION_PENDING',
+        });
+        continue;
+      }
+      items.push({
+        sourceKind: 'WORK_ITEM',
+        sourceId: saved.workItemId,
+        memberKey: `WORK_ITEM:${saved.workItemId}`,
+        ata,
+        member: {
+          kind: 'WORK_ITEM_WORK',
+          workItemId: saved.workItemId,
+          documentVersionId: saved.documentVersionId,
+          workRef: saved.workRef!,
+          workRevision: saved.workRevision!,
+          issueKeys: [],
+        },
+        basis: {
+          kind: 'CONFIRMED_MEMBER_FAMILY',
+          classificationStatus: 'CONFIRMED',
+          familyId: saved.familyId,
+          documentVersionId: saved.documentVersionId,
+          ata,
+        },
+      });
     }
   }
   const matterIds =
@@ -423,17 +547,28 @@ export async function readWikiInventory(
   }>(sql`SELECT DISTINCT m.source_kind AS kind,m.source_id AS id
     FROM hierarchical_wiki_membership m JOIN hierarchical_wiki_scope w ON w.wiki_id=m.wiki_id
     LEFT JOIN dm_publication_family f ON m.source_kind='DOCUMENT' AND f.family_id=m.source_id
+    LEFT JOIN work_item wi ON m.source_kind='WORK_ITEM' AND wi.tenant_id=m.tenant_id AND wi.work_item_id=m.source_id
     WHERE m.tenant_id=${owner.tenantId} AND m.actor_user_id=${owner.actorUserId}
       AND w.scope_json->>'fleetFamilyId'=${scope.fleetFamilyId}
       AND w.scope_json->'fleetModelIds'=${JSON.stringify(scope.fleetModelId ? [scope.fleetModelId] : [])}::jsonb
       AND CASE m.source_kind
         WHEN 'DOCUMENT' THEN engineering_matter_document_owned_by_actor(${owner.tenantId},f.current_document_version_id) IS NOT TRUE
         WHEN 'MATTER' THEN engineering_matter_owned_by_actor(${owner.tenantId},m.source_id) IS NOT TRUE
+        WHEN 'WORK_ITEM' THEN m.basis_json->>'familyId' IN
+          (SELECT jsonb_array_elements_text(${JSON.stringify(documents.map((row) => row.familyId))}::jsonb))
+          OR wi.work_item_id IS NULL OR wi.requested_by_user_id<>${owner.actorUserId}
+          OR engineering_matter_work_item_owned_by_actor(${owner.tenantId},m.source_id) IS NOT TRUE
+          OR engineering_matter_document_owned_by_actor(${owner.tenantId},wi.document_version_id) IS NOT TRUE
+          OR m.basis_json->>'documentVersionId' IS DISTINCT FROM wi.document_version_id
+          OR NOT EXISTS (SELECT 1 FROM dm_document_version d JOIN dm_publication_family p ON p.family_id=d.family_id
+            AND p.current_document_version_id=d.document_version_id WHERE d.document_version_id=wi.document_version_id
+            AND d.source_artifact_id=wi.source_artifact_id AND d.pdf_sha256=wi.source_file_sha256 AND d.byte_length=wi.source_byte_length)
         ELSE false END`);
   const removed = [
     ...new Map(
       [
         ...documents.map((row) => ({ kind: 'DOCUMENT', id: row.familyId })),
+        ...savedWorks.map((row) => ({ kind: 'WORK_ITEM', id: row.workItemId })),
         ...matters.map((row) => ({ kind: 'MATTER', id: row.matterId })),
         ...unavailable,
       ].map((row) => [JSON.stringify(row), row]),

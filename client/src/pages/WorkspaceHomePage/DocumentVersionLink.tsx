@@ -14,11 +14,13 @@ export function DocumentVersionLink({
   children,
   familyId,
   compact = false,
+  title,
 }: {
   version: CanonicalLibraryDocumentVersionSummary;
   children: ReactNode;
   familyId?: string;
   compact?: boolean;
+  title?: string;
 }) {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
@@ -30,7 +32,7 @@ export function DocumentVersionLink({
       : version.parsing ? '解析处理中' : '查看原件与解析';
   return (
     <Link
-      title={compact ? readingStatus : undefined}
+      title={title ?? (compact ? readingStatus : undefined)}
       to={
         inLibrary
           ? libraryDocumentReadingRoute(version.documentVersionId, params)

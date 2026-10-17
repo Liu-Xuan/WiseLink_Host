@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -14,6 +14,7 @@ import {
 import { createHostAutoWorkItemQueueClient } from '../scripts/run-hosted-review-turn.mjs';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
 import { initialStageCheckpointPath } from '../scripts/initial-assessment-recovery.mjs';
+import { consumeHierarchicalWikiIdle } from '../scripts/consume-hierarchical-wiki-queue.mjs';
 
 const START = Date.parse('2026-09-25T00:00:00.000Z');
 const TOKEN_1 = 'b1686364-7ee9-4ca1-a3aa-0b62794cb436';
@@ -344,7 +345,7 @@ test('a stopped queue claim resumes only an exact sealed Overall attempt', async
   const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-queue-committing-'));
   t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
   const claim = memoryCheckpoint({ ...storedClaim(), consumerStopped: true,
-    attentionCode: 'AUTO_WORK_ITEM_CONSUMER_STOPPED' });
+    attentionCode: 'INITIAL_ASSESSMENT_MODEL_OUTCOME_UNKNOWN' });
   const stageStore = await createCheckpointStore(initialStageCheckpointPath(
     { checkpointRoot, workItemId: 'WI-QUEUE' }, 'SYNTHESIZE_OVERALL', 'REQ-OVERALL'));
   const exact = { attemptRef: 'ATT-OVERALL', status: 'RUNNING', leaseGeneration: 2,
@@ -358,6 +359,7 @@ test('a stopped queue claim resumes only an exact sealed Overall attempt', async
     attemptRef: 'ATT-OVERALL', requestId: 'REQ-OVERALL' };
   let consumed = 0;
   const dependencies = { checkpoint: claim, now: () => new Date(START),
+    consumeWikiIdle: async () => assert.fail('sealed COMMITTING recovery has priority over Wiki'),
     nextWorkItem: async () => assert.fail('lease is live'),
     acknowledgeWorkItem: async () => ({ status: 'ACKNOWLEDGED', workItemId: 'WI-QUEUE',
       replayed: false, acknowledgedAt: new Date(START).toISOString() }),
@@ -831,7 +833,7 @@ test('unclassified stage failure stays available for diagnosis instead of blocki
   assert.equal(checkpoint.values.get('active-claim').consumerStopped, true);
 });
 
-test('cancelled execution gets one exact automatic continuation and retains the queue grant', async () => {
+test('cancelled execution cannot invent an automatic continuation and retains its queue grant', async () => {
   const checkpoint = memoryCheckpoint(null);
   const failed = status({
     overallStatus: 'FAILED', nextOperation: null,
@@ -856,13 +858,11 @@ test('cancelled execution gets one exact automatic continuation and retains the 
     },
   });
   assert.equal(result.status, 'REQUIRES_ATTENTION');
-  assert.equal(retry.operation, 'EVALUATE_JOBAID');
-  assert.equal(retry.attemptRef, failed.stages.jobAid.attemptRef);
-  assert.match(retry.requestId, /^auto-retry-[0-9a-f]{32}$/u);
+  assert.equal(retry, undefined);
   assert.equal(checkpoint.values.get('active-claim').consumerStopped, true);
 });
 
-test('a stopped claim resumes a recoverable failure on the next tick', async () => {
+test('a stopped cancelled claim does not turn provider uncertainty into an automatic retry', async () => {
   const checkpoint = memoryCheckpoint({ ...storedClaim(),
     consumerStopped: true, attentionCode: 'JOBAID_GATEWAY_HTTP_502' });
   const failed = status({ overallStatus: 'FAILED', nextOperation: null,
@@ -878,13 +878,125 @@ test('a stopped claim resumes a recoverable failure on the next tick', async () 
     acknowledgeWorkItem: async () => assert.fail('not yet complete'),
     blockWorkItem: async () => assert.fail('runtime failure cannot BLOCK'),
     readInitialStatus: async () => failed,
-    consumeWorkItem: async input => {
-      assert.equal(input.autoRetry.operation, 'SYNTHESIZE_OVERALL');
-      return { status: 'BUSY' };
+    consumeWorkItem: async () => assert.fail('cancelled attempt has no new Host stage grant'),
+  });
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(checkpoint.values.get('active-claim').consumerStopped, true);
+});
+
+function unknownStoppedClaim() {
+  return { ...storedClaim(), consumerStopped: true,
+    attentionCode: 'INITIAL_ASSESSMENT_MODEL_OUTCOME_UNKNOWN' };
+}
+
+function stoppedAttentionDependencies(checkpoint, extra = {}) {
+  return {
+    checkpoint, now: () => new Date(START),
+    nextWorkItem: async () => assert.fail('stopped live claim cannot take a new grant'),
+    acknowledgeWorkItem: async () => assert.fail('UNKNOWN cannot acknowledge'),
+    blockWorkItem: async () => assert.fail('UNKNOWN cannot block'),
+    consumeWorkItem: async () => assert.fail('UNKNOWN cannot repeat the ordinary model'),
+    readInitialStatus: async () => status(),
+    ...extra,
+  };
+}
+
+test('a stopped UNKNOWN claim preserves its attention while enabled Wiki runs under the same owner', async () => {
+  const claim = unknownStoppedClaim();
+  const checkpoint = memoryCheckpoint(claim);
+  const dependencies = stoppedAttentionDependencies(checkpoint, {
+    consumeWikiIdle: async () => {
+      await assert.rejects(consumeAutomaticWorkItemQueueTick({}, dependencies),
+        /AUTO_WORK_ITEM_QUEUE_OWNER_BUSY/u);
+      return { status: 'WIKI_DISPATCHED', summaryId: 'DS-wiki', attemptRef: 'AQ-wiki' };
     },
   });
+  const result = await consumeAutomaticWorkItemQueueTick({}, dependencies);
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(result.errorCode, claim.attentionCode);
+  assert.equal(result.workItemId, claim.workItemId);
+  assert.equal(result.requestId, claim.requestId);
+  assert.equal(result.documentVersionId, claim.documentVersionId);
+  assert.equal(result.initialStatus, 'REQUIRED');
+  assert.deepEqual(result.wiki, { status: 'WIKI_DISPATCHED', summaryId: 'DS-wiki', attemptRef: 'AQ-wiki' });
+  assert.deepEqual(checkpoint.values.get('active-claim'), claim);
+  assert.deepEqual(checkpoint.writes, []);
+  assert.equal(JSON.stringify(result).includes(claim.leaseToken), false);
+});
+
+for (const mode of ['disabled', 'idle', 'error']) {
+  test(`stopped UNKNOWN retains ordinary attention when Wiki is ${mode}`, async () => {
+    const claim = unknownStoppedClaim();
+    const checkpoint = memoryCheckpoint(claim);
+    const dependencies = stoppedAttentionDependencies(checkpoint, mode === 'disabled' ? {} : {
+      consumeWikiIdle: async () => {
+        if (mode === 'error') throw new Error('WIKI_ACTIVE_POINTER_INVALID');
+        return { status: 'IDLE' };
+      },
+    });
+    const result = await consumeAutomaticWorkItemQueueTick({}, dependencies);
+    assert.equal(result.status, 'REQUIRES_ATTENTION');
+    assert.equal(result.errorCode, claim.attentionCode);
+    assert.deepEqual(result.wiki, mode === 'disabled' ? undefined : mode === 'idle'
+      ? { status: 'IDLE' } : { status: 'WIKI_ATTENTION', errorCode: 'WIKI_ACTIVE_POINTER_INVALID' });
+    assert.deepEqual(checkpoint.values.get('active-claim'), claim);
+    assert.deepEqual(checkpoint.writes, []);
+  });
+}
+
+for (const attentionCode of ['AUTO_WORK_ITEM_CONSUMER_STOPPED',
+  'INITIAL_APPLICABILITY_MODEL_OUTCOME_UNKNOWN', 'JOBAID_SOURCE_AUTHORIZATION_CHANGED']) {
+  test(`Wiki does not turn unrelated stopped attention ${attentionCode} into idle`, async () => {
+    const claim = { ...unknownStoppedClaim(), attentionCode };
+    const checkpoint = memoryCheckpoint(claim);
+    const result = await consumeAutomaticWorkItemQueueTick({}, stoppedAttentionDependencies(checkpoint, {
+      consumeWikiIdle: async () => assert.fail('only the exact stopped assessment UNKNOWN may yield'),
+    }));
+    assert.equal(result.errorCode, attentionCode);
+    assert.equal(result.wiki, undefined);
+    assert.deepEqual(checkpoint.values.get('active-claim'), claim);
+  });
+}
+
+for (const change of [{ consumerStopped: false }, { completionReady: true },
+  { blockReady: { stage: 'jobAid', status: 'FAILED' } },
+  { attentionCode: 'AUTO_WORK_ITEM_CONSUMER_STOPPED' }]) {
+  test(`an active Wiki still rejects incompatible ordinary pointer ${JSON.stringify(change)}`, async () => {
+    const claim = { ...unknownStoppedClaim(), ...change };
+    const checkpoint = memoryCheckpoint(claim, { 'active-wiki': {
+      schemaVersion: 1, summaryId: 'DS-wiki', attemptRef: 'AQ-wiki', phase: 'PREPARING' } });
+    await assert.rejects(consumeAutomaticWorkItemQueueTick({}, stoppedAttentionDependencies(checkpoint, {
+      consumeWikiIdle: async () => assert.fail('conflicting pointer cannot dispatch'),
+    })), /AUTO_WORK_ITEM_WIKI_CHECKPOINT_CONFLICT/u);
+    assert.deepEqual(checkpoint.values.get('active-claim'), claim);
+    assert.deepEqual(checkpoint.writes, []);
+  });
+}
+
+test('an active Wiki cannot coexist with operator repair or a successor pointer', async () => {
+  for (const mode of ['repair', 'successor']) {
+    const checkpoint = memoryCheckpoint(unknownStoppedClaim(), {
+      'active-wiki': { schemaVersion: 1, summaryId: 'DS-wiki', attemptRef: 'AQ-wiki', phase: 'PREPARING' },
+      ...(mode === 'successor' ? { 'active-successor-overall': { workItemId: 'WI-other' } } : {}),
+    });
+    await assert.rejects(consumeAutomaticWorkItemQueueTick(mode === 'repair' ? { repairStoppedClaim: true } : {},
+      stoppedAttentionDependencies(checkpoint, {
+        consumeWikiIdle: async () => assert.fail('mixed recovery cannot dispatch'),
+      })), /AUTO_WORK_ITEM_WIKI_CHECKPOINT_CONFLICT/u);
+    assert.deepEqual(checkpoint.writes, []);
+  }
+});
+
+test('a resumable ordinary task takes priority over a new Wiki dispatch', async () => {
+  const checkpoint = memoryCheckpoint(storedClaim());
+  let consumed = 0;
+  const result = await consumeAutomaticWorkItemQueueTick({}, stoppedAttentionDependencies(checkpoint, {
+    consumeWorkItem: async () => { consumed++; return { status: 'INITIAL_STAGE_SAVED' }; },
+    consumeWikiIdle: async () => assert.fail('ordinary progress has priority'),
+  }));
   assert.equal(result.status, 'IN_PROGRESS');
-  assert.equal(checkpoint.values.get('active-claim').consumerStopped, false);
+  assert.equal(consumed, 1);
+  assert.equal(result.wiki, undefined);
 });
 
 test('failed retry is not retried again or BLOCKed', async () => {
@@ -1073,7 +1185,7 @@ test('repair refuses saved work, changed revision and authorization failure', as
   }
 });
 
-test('a failed first retry with newly saved work gets one bounded successor', async () => {
+test('newly saved partial work cannot authorize a successor after Host cancellation', async () => {
   const checkpoint = memoryCheckpoint({ ...storedClaim(), consumerStopped: true,
     attentionCode: 'HOSTED_GATEWAY_REQUEST_FAILED' });
   const failed = status({ overallStatus: 'FAILED', nextOperation: null,
@@ -1110,9 +1222,7 @@ test('a failed first retry with newly saved work gets one bounded successor', as
   };
   const result = await consumeAutomaticWorkItemQueueTick({}, dependencies);
   assert.equal(result.status, 'REQUIRES_ATTENTION');
-  assert.equal(successor.operation, 'EVALUATE_JOBAID');
-  assert.equal(successor.attemptRef, 'AQ-RETRY-WITH-WORK');
-  assert.match(successor.requestId, /^auto-resume-2-[0-9a-f]{32}$/u);
+  assert.equal(successor, undefined);
   for (const bad of [
     { ...saved, inputWorkRevision: 15 },
     { ...saved, revision: { ...saved.revision, actionAttemptId: 'ATT-OTHER' } },
@@ -1127,7 +1237,7 @@ test('a failed first retry with newly saved work gets one bounded successor', as
     });
     assert.equal(blocked.status, 'REQUIRES_ATTENTION');
   }
-  failed.stages.jobAid.requestId = successor.requestId;
+  failed.stages.jobAid.requestId = `auto-resume-2-${'b'.repeat(32)}`;
   failed.stages.jobAid.attemptRef = 'AQ-SECOND-FAILED';
   const exhausted = await consumeAutomaticWorkItemQueueTick({}, {
     ...dependencies,
@@ -1591,4 +1701,158 @@ test('source drift rejected before invocation cannot annotate or clear a differe
     { ...status(), documentVersionId: 'DV-FOREIGN' })), /AUTO_WORK_ITEM_STATUS_SOURCE_CHANGED/u);
   assert.deepEqual(checkpoint.values.get('active-claim'), original);
   assert.deepEqual(checkpoint.writes, []);
+});
+
+const wikiOptions = { enabled: true, checkpointRoot: '/synthetic/checkpoint', endpointKey: 'synthetic-endpoint',
+  runBudget: { timeoutMs: 60000, maxCompletionTokens: 32000, maxModelRequests: 4, reasoningEffort: 'low' } };
+
+const stoppedClaim = {
+  schemaVersion: 'wiselink.auto_work_item_claim.v1', workItemId: 'WI-ordinary', requestId: 'REQ-ordinary',
+  documentVersionId: 'DV-ordinary', workItemRevision: 3,
+  leaseToken: '559ce045-666a-4c47-b29d-370fa49857e4', leaseGeneration: 1,
+  leaseExpiresAt: '2099-01-01T00:00:00.000Z', completionReady: false, consumerStopped: true,
+  attentionCode: 'INITIAL_ASSESSMENT_MODEL_OUTCOME_UNKNOWN', blockReady: null,
+};
+
+test('a real stopped-UNKNOWN recovery preserves ordinary checkpoint bytes while the Wiki consumer claims reads and saves', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'wiki-stopped-ordinary-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const queueRoot = join(root, 'queue');
+  const queueStore = await createCheckpointStore(queueRoot);
+  let ownerHeld = false;
+  const checkpoint = { ...queueStore, withActiveClaimOwner: async perform => {
+    assert.equal(ownerHeld, false); ownerHeld = true;
+    try { return await perform(); } finally { ownerHeld = false; }
+  } };
+  await checkpoint.write('active-claim', stoppedClaim);
+  const stageRoot = initialStageCheckpointPath({ checkpointRoot: root, workItemId: stoppedClaim.workItemId },
+    'EVALUATE_JOBAID', 'request-ordinary');
+  const stage = await createCheckpointStore(stageRoot);
+  await stage.write('binding', { workItemId: stoppedClaim.workItemId, documentVersionId: stoppedClaim.documentVersionId,
+    operation: 'EVALUATE_JOBAID', requestId: 'request-ordinary' });
+  await stage.write('assessment-enabled', {});
+  await stage.write('assessment-state', { round: 1 });
+  await stage.write('assessment-current-claim', { status: 'RUNNING', attemptRef: 'AQ-ordinary-unknown',
+    leaseGeneration: 1, leaseExpiresAt: '2000-01-01T00:00:00.000Z', task: {
+      workItemId: stoppedClaim.workItemId, documentVersionId: stoppedClaim.documentVersionId,
+      deadline: '2099-01-01T00:00:00.000Z' } });
+  await stage.write('assessment-round-1.started', { retainedUnknownIntent: true });
+  const ordinaryFiles = await readdir(stageRoot);
+  const before = await Promise.all([readFile(join(queueRoot, 'active-claim.json')),
+    ...ordinaryFiles.map(name => readFile(join(stageRoot, name)))]);
+  const sealed = JSON.parse(await readFile(new URL('./fixtures/derived-summary-r1-sealed.json', import.meta.url), 'utf8'));
+  const task = JSON.parse(sealed.groups[0].variants[0].taskEnvelopeJson);
+  const target = { summaryId: task.subject.summaryId, attemptRef: task.operationRef };
+  const calls = [];
+  let saved = null;
+  let invocations = 0;
+  const callTool = async (name, input) => {
+    assert.equal(ownerHeld, true, 'all Wiki work stays inside the ordinary queue owner');
+    assert.equal(JSON.stringify(input).includes(stoppedClaim.leaseToken), false);
+    if (name === 'next_hierarchical_wiki') {
+      calls.push('NEXT_WIKI');
+      return { status: 'SUMMARY_PENDING', ...target };
+    }
+    assert.equal(name, 'derived_summary_attempt');
+    assert.equal(input.summaryId, target.summaryId);
+    assert.equal(input.attemptRef, target.attemptRef);
+    assert.equal(input.workItemId, undefined, 'the Wiki never inherits the stopped ordinary identity');
+    calls.push(input.operation);
+    switch (input.operation) {
+      case 'STATUS': return { ...target, status: 'QUEUED', savedSummaryRefs: [] };
+      case 'CLAIM': return { ...target, status: 'RUNNING', task, leaseToken: 'wiki-only-lease', leaseGeneration: 1,
+        leaseExpiresAt: '2099-01-01T00:00:00.000Z' };
+      case 'READ_SAVED_SUMMARY': return saved;
+      case 'READ_MEMBER_WORK': return { members: task.modelInput.members };
+      case 'READ_SOURCES': return { evidence: task.modelInput.evidence.filter(item => input.evidenceRefs.includes(item.evidenceRef)) };
+      case 'SAVE_SUMMARY': {
+        assert.equal(input.leaseToken, 'wiki-only-lease');
+        assert.equal(input.requestId, task.requestId);
+        assert.equal(input.expectedSummaryRevision, task.expectedSummaryRevision);
+        const receipt = { summaryId: target.summaryId, summaryRef: 'SUMR-local-wiki',
+          revision: task.expectedSummaryRevision + 1, replay: false };
+        const content = JSON.parse(input.contentJson);
+        saved = { receipt: { ...receipt, replay: true }, summary: { ...receipt, ...target,
+          scope: task.modelInput.scope, requestId: task.requestId, classificationStatus: 'CANDIDATE', candidateOnly: true,
+          content, producer: JSON.parse(input.provenanceJson), members: task.modelInput.members,
+          coverage: task.modelInput.members.map(member => ({ member: member.member, evidenceRef: member.evidenceRef,
+            delivered: true, used: content.body.includes(`[[${member.evidenceRef}]]`), rootRefs: member.rootRefs,
+            limitation: member.limitations.join('\n') })) } };
+        return receipt;
+      }
+      case 'FINISH': assert.ok(saved); return { ...target, status: 'SUCCEEDED', savedSummaryRef: saved.receipt.summaryRef };
+      default: assert.fail(input.operation);
+    }
+  };
+  const result = await consumeAutomaticWorkItemQueueTick({ checkpointRoot: root }, {
+    checkpoint,
+    nextWorkItem: async () => assert.fail('the stopped ordinary grant cannot be replaced'),
+    acknowledgeWorkItem: async () => assert.fail('ordinary UNKNOWN cannot acknowledge'),
+    blockWorkItem: async () => assert.fail('ordinary UNKNOWN cannot block'),
+    consumeWorkItem: async () => assert.fail('the ordinary model must not repeat'),
+    readInitialStatus: async () => ({ status: 'BUSY', nextOperation: null,
+      workItemId: stoppedClaim.workItemId, documentVersionId: stoppedClaim.documentVersionId, workItemRevision: 3,
+      stages: { translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+        jobAid: { status: 'BUSY', attemptStatus: 'RUNNING', attemptRef: 'AQ-ordinary-unknown', requestId: 'request-ordinary' },
+        overall: { status: 'PENDING' } } }),
+    callTool: async () => assert.fail('the existing UNKNOWN checkpoint already proves no ordinary replay'),
+    consumeWikiIdle: () => consumeHierarchicalWikiIdle({ ...wikiOptions, checkpointRoot: root }, {
+      checkpoint, callTool,
+      createGatewayPreparer: () => () => assert.fail('this offline candidate adapter never opens a provider'),
+      invokeModel: async (input, hooks) => {
+        invocations++;
+        assert.deepEqual(input, task.modelInput);
+        assert.deepEqual(hooks.executionModel, task.executionModel);
+        assert.deepEqual(hooks.runBudget, wikiOptions.runBudget);
+        const refs = task.modelInput.evidence.map(item => item.evidenceRef);
+        await hooks.readSources({ action: 'READ_SOURCES', evidenceRefs: refs, purpose: 'Read the exact registered source' });
+        return { content: { headline: 'Local selected Wiki candidate', listBrief: 'Exact source only.',
+          body: [...task.modelInput.members.map(item => `Selected work [[${item.evidenceRef}]].`),
+            ...refs.map(ref => `Exact source [[${ref}]].`)].join('\n'), limitations: task.modelInput.limitations },
+        provenance: { configuredModelRef: task.executionModel.modelRef, actualModel: 'offline-candidate-adapter',
+          promptVersion: 'offline-existing-summary-protocol', skillVersion: 'fixture', toolVersions: { host: 'fixture' } } };
+      },
+    }),
+  });
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(result.errorCode, stoppedClaim.attentionCode);
+  assert.equal(result.initialStatus, 'BUSY');
+  assert.equal(result.wiki.status, 'WIKI_DISPATCHED');
+  assert.equal(result.wiki.result.status, 'DERIVED_SUMMARY_SAVED');
+  assert.equal(invocations, 1);
+  assert.deepEqual(calls, ['NEXT_WIKI', 'STATUS', 'CLAIM', 'READ_SAVED_SUMMARY', 'READ_MEMBER_WORK',
+    'READ_SOURCES', 'SAVE_SUMMARY', 'READ_SAVED_SUMMARY', 'FINISH']);
+  assert.equal(await checkpoint.readOptional('active-wiki'), null);
+  assert.deepEqual(await readdir(stageRoot), ordinaryFiles);
+  assert.deepEqual(await Promise.all([readFile(join(queueRoot, 'active-claim.json')),
+    ...ordinaryFiles.map(name => readFile(join(stageRoot, name)))]), before);
+});
+
+test('an existing UNKNOWN Wiki resumes beside only the stopped ordinary UNKNOWN and keeps both pointers', async () => {
+  const checkpoint = memoryCheckpoint();
+  await checkpoint.write('active-claim', structuredClone(stoppedClaim));
+  const active = { schemaVersion: 1, kind: 'SUMMARY', summaryId: 'DS-exact', attemptRef: 'AQ-exact', phase: 'PREPARING' };
+  await checkpoint.write('active-wiki', active);
+  const before = JSON.stringify(await checkpoint.readOptional('active-claim'));
+  const dependencies = {
+    checkpoint,
+    nextWorkItem: () => assert.fail('an existing Wiki cannot take an ordinary grant'),
+    acknowledgeWorkItem: () => assert.fail('UNKNOWN ordinary result cannot acknowledge'),
+    consumeWorkItem: () => assert.fail('UNKNOWN ordinary model cannot repeat'),
+    readInitialStatus: () => assert.fail('existing Wiki owns the endpoint before ordinary recovery'),
+    consumeWikiIdle: () => consumeHierarchicalWikiIdle(wikiOptions, {
+      checkpoint, createCheckpoint: async () => memoryCheckpoint(),
+      callTool: () => assert.fail('no new Wiki admission or cleanup without terminal proof'),
+      createGatewayPreparer: () => () => assert.fail('no provider redispatch'),
+      consumeSummary: async () => ({ status: 'DERIVED_SUMMARY_SAVED' }),
+    }),
+  };
+  for (let tick = 0; tick < 2; tick++) {
+    const result = await consumeAutomaticWorkItemQueueTick({}, dependencies);
+    assert.equal(result.status, 'REQUIRES_ATTENTION');
+    assert.equal(result.errorCode, stoppedClaim.attentionCode);
+    assert.equal(result.wiki.errorCode, 'WIKI_PROVIDER_TERMINAL_UNKNOWN');
+    assert.deepEqual(await checkpoint.readOptional('active-wiki'), active);
+    assert.equal(JSON.stringify(await checkpoint.readOptional('active-claim')), before);
+  }
 });

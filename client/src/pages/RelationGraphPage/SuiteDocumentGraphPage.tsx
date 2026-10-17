@@ -3,6 +3,7 @@ import { LIBRARY_GRAPH_ROUTE } from './library-graph-entry';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
+import { readingReturnTarget } from '@client/src/features/matter/reading-return';
 import { Button } from '@client/src/components/ui/button';
 import { activateGraphLayoutSession } from './suite-graph-layout-memory';
 import { documentGraphReadingParams, graphReadingParams, libraryGraphReturnToken, readGraphReadingState, withGraphReturn, type SuiteGraphReadingState } from './suite-graph-return';
@@ -31,6 +32,9 @@ function DocumentGraphContent({ documentVersionId, readerWorkItemId, session, de
   const paramsString = params.toString();
   const macroToken = libraryGraphReturnToken(params);
   const macroReturn = macroToken ? readLibraryGraphReturn(macroToken,session) : null;
+  const returnTarget = readingReturnTarget(params, documentVersionId);
+  const returnRejected: boolean =
+    (params.has('returnLibraryQuery') || params.has('returnDocumentVersionId')) && !returnTarget;
   const request = useMemo(() => ({documentVersionId, readerWorkItemId,
     familyCursor: params.getAll('familyCursor').length === 1 ? params.get('familyCursor')! : undefined,
     matterCursor: params.getAll('matterCursor').length === 1 ? params.get('matterCursor')! : undefined,
@@ -111,9 +115,13 @@ function DocumentGraphContent({ documentVersionId, readerWorkItemId, session, de
       session={session} onRejected={rejectAccess} onOpen={openSource}
       onCenter={target => {
         persist(display.current);
-        const query = documentGraphReadingParams(target.documentVersionId, target.readerWorkItemId, {});
-        const token = libraryGraphReturnToken(paramsRef.current);
-        if (token) query.set('returnLibrarySnapshot', token);
+        const origin: URLSearchParams = new URLSearchParams();
+        paramsRef.current.forEach((value: string, key: string) => {
+          if (key.startsWith('return')) origin.append(key, value);
+        });
+        if (returnTarget && origin.has('returnLibraryQuery'))
+          origin.set('returnDocumentVersionId', target.documentVersionId);
+        const query = documentGraphReadingParams(target.documentVersionId, target.readerWorkItemId, {}, origin);
         navigate(`/graph?${query}`);
       }}
       onMatter={matterId => { persist(display.current); navigate(`/graph?${graphReadingParams(matterId, null, {}, paramsRef.current)}`); }}
@@ -137,5 +145,13 @@ function DocumentGraphContent({ documentVersionId, readerWorkItemId, session, de
     }} timelineEvents={timeline} timelineSources={sources.sources} timelineLoading={sources.loading}
     onSelectEvent={event => { relationSelection.current = []; setSelectedRelations([]); setEventId(event.id); if (event.nodeId) setSelectedId(event.nodeId); }}
     onExpandTimelineSource={sources.expandSource} onOpenEventTimeline={openTimeline} onRefresh={read.refresh}
-    onOpenSource={() => openSource(documentVersionId)} onBack={() => { persist(display.current); const token = libraryGraphReturnToken(paramsRef.current); const macro = token ? readLibraryGraphReturn(token,session) : null; if (macro) navigate(`/graph?${macro.query}`,{state:{libraryRoot:macro.root,libraryParent:macro.parent}}); else if (token) navigate(LIBRARY_GRAPH_ROUTE); else navigate(-1); }} />;
+    onOpenSource={() => openSource(documentVersionId)} onBack={returnRejected ? undefined : () => {
+      persist(display.current);
+      if (returnTarget) { navigate(returnTarget.route); return; }
+      const token = libraryGraphReturnToken(paramsRef.current);
+      const macro = token ? readLibraryGraphReturn(token,session) : null;
+      if (macro) navigate(`/graph?${macro.query}`,{state:{libraryRoot:macro.root,libraryParent:macro.parent}});
+      else if (token) navigate(LIBRARY_GRAPH_ROUTE);
+      else navigate(-1);
+    }} />;
 }

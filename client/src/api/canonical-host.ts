@@ -1,6 +1,12 @@
 import type { TdmsCatalogueResponse, TdmsHistoryResponse, TdmsReadContext, TdmsRelationReadResponse } from '@shared/tdms-source.interface';
 import type { TdmsDocumentSourceReadRequest, TdmsDocumentSourceReadResponse } from '@shared/tdms-source-reading.interface';
-import type { LcmSnapshotBrowseRequest, LcmSnapshotCatalogueResponse, LcmSnapshotRowsRequest, LcmSnapshotRowsResponse } from '@shared/lcm-source-reading.interface';
+import type { LcmSnapshotBrowseRequest, LcmSnapshotCatalogueResponse } from '@shared/lcm-source-reading.interface';
+import type { LcmExcelImportRequest, LcmExcelImportResponse, LcmPersonalLibraryResponse,
+  LcmUploadResolveRequest, LcmUploadResolveResponse } from '@shared/lcm-personal-import.interface';
+import type {
+  LcmMatrixBinding, LcmMatrixDetailRequest, LcmMatrixDetailResponse,
+} from '@shared/lcm-matrix.interface';
+import type { LcmNativeMatrixResponse } from '@shared/lcm-native-matrix.interface';
 import type { CanonicalLibraryDirectoryRequest, CanonicalLibraryDirectoryResponse } from '@shared/library-directory.interface';
 import { libraryCatalogueQuery } from '@shared/library-aircraft-mentions';
 import type { TdmsFileServiceRecordReadResponse } from '@shared/tdms-file-service-import.interface';
@@ -62,6 +68,7 @@ import type {
   CloseReviewConversationResponse,
   ConfirmReviewActionDraftRequest,
   ConfirmReviewActionDraftResponse,
+  ConfirmCanonicalOverallForAeoRequest,
   CreateOrResumeReviewConversationResponse,
   CurrentReviewConversationResponse,
   RequestCanonicalOverallRegenerationRequest,
@@ -554,7 +561,9 @@ async function readCanonicalLibrary<T>(input: {
   params?: CanonicalLibraryTasksRequest | DocumentMetadataReadQuery | CanonicalLibraryGraphRequest | (Omit<CanonicalLibraryGraphRequest, 'clusterValue'> & {clusterMissing: string});
   signal?: AbortSignal;
   method?: 'GET' | 'POST';
-  data?: DocumentUploadRequest | DocumentHistoricalImportRequest | DocumentMetadataReextractRequest | StartDocumentParseRequest;
+  data?: DocumentUploadRequest | DocumentHistoricalImportRequest | DocumentMetadataReextractRequest | StartDocumentParseRequest
+    | LcmMatrixDetailRequest | LcmExcelImportRequest | LcmUploadResolveRequest
+    | { snapshotIds: string[]; binding?: LcmMatrixBinding };
   oauthProtected?: boolean;
 }): Promise<T> {
   const requestGeneration = clientSessionGeneration;
@@ -713,6 +722,101 @@ function lcmBrowseQuery(input: LcmSnapshotBrowseRequest): URLSearchParams {
   return query;
 }
 
+export async function readLcmPersonalLibrary(signal?: AbortSignal): Promise<LcmPersonalLibraryResponse> {
+  const generation = clientSessionGeneration;
+  const result = await readCanonicalLibrary<LcmPersonalLibraryResponse>({ url: '/api/lcm-source/personal-library', signal });
+  if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('LCM_SOURCE_READ_OBSOLETE');
+  if (typeof result.hasSource !== 'boolean' || !Array.isArray(result.latestSnapshotIds) ||
+      result.latestSnapshotIds.some(id => !/^[a-f0-9]{64}$/u.test(id)) || !Number.isSafeInteger(result.snapshotCount))
+    throw new Error('LCM_PERSONAL_LIBRARY_INVALID');
+  return result;
+}
+
+export async function importLcmExcel(input: LcmExcelImportRequest): Promise<LcmExcelImportResponse> {
+  const generation = clientSessionGeneration;
+  const result = await readCanonicalLibrary<LcmExcelImportResponse>({ url: '/api/lcm-source/imports', method: 'POST', data: input });
+  if (generation !== clientSessionGeneration) throw new Error('LCM_SOURCE_READ_OBSOLETE');
+  if (result.requestId !== input.requestId || !/^[a-f0-9]{64}$/u.test(result.snapshotId) || result.candidateOnly !== true)
+    throw new Error('LCM_IMPORT_RESPONSE_INVALID');
+  return result;
+}
+
+export async function resolveLcmExcelUpload(input: LcmUploadResolveRequest): Promise<LcmUploadResolveResponse> {
+  const generation = clientSessionGeneration;
+  const result = await readCanonicalLibrary<LcmUploadResolveResponse>({
+    url: '/api/lcm-source/uploads/resolve', method: 'POST', data: input });
+  if (generation !== clientSessionGeneration) throw new Error('LCM_SOURCE_READ_OBSOLETE');
+  if (!result || (result.selection !== null && (!result.selection ||
+      result.selection.filePath !== input.filePath || !result.selection.bucketId || !result.selection.expectedProviderObjectId)))
+    throw new Error('LCM_UPLOAD_RECOVERY_INVALID');
+  return result;
+}
+
+export async function downloadLcmOriginal(snapshotId: string): Promise<Blob> {
+  const generation = clientSessionGeneration;
+  try {
+    const result = await axiosForBackend<Blob>({ url: `/api/lcm-source/snapshots/${encodeURIComponent(snapshotId)}/original`,
+      method: 'GET', responseType: 'blob' });
+    if (generation !== clientSessionGeneration) throw new Error('LCM_SOURCE_READ_OBSOLETE');
+    if (result.status < 200 || result.status >= 300)
+      throw backendResponseError(null, 'LCM_ORIGINAL_READ_FAILED', result.status);
+    return result.data;
+  } catch (error: unknown) { throw normalizedDirectObjectError(error, generation); }
+}
+
+function assertLcmMatrixBinding(expected: LcmMatrixBinding | undefined, actual: LcmMatrixBinding): void {
+  const keys: Array<keyof LcmMatrixBinding> = ['readSetRef', 'projectionRevision', 'scopeRef',
+    'permissionRevision', 'filterHash', 'orderRef'];
+  if (!actual || keys.some((key: keyof LcmMatrixBinding) => typeof actual[key] !== 'string' ||
+    !actual[key] || (expected && expected[key] !== actual[key])))
+    throw new Error('LCM_MATRIX_BINDING_CHANGED');
+}
+
+export async function readLcmNativeMatrix(input: { snapshotIds: string[] },
+  signal?: AbortSignal): Promise<LcmNativeMatrixResponse> {
+  const generation = clientSessionGeneration;
+  const result = await readCanonicalLibrary<LcmNativeMatrixResponse>({
+    url: '/api/lcm-source/matrix/native', method: 'POST', data: input, signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('LCM_SOURCE_READ_OBSOLETE');
+  assertLcmMatrixBinding(undefined, result.binding);
+  if (!Array.isArray(result.snapshots) || !Array.isArray(result.matrices) ||
+    result.snapshots.map(s => s.snapshotId).sort().join(',') !== input.snapshotIds.slice().sort().join(',') ||
+    result.snapshots.some(s => s.candidateOnly !== true || s.sourceAuthority !== 'unverified/local') ||
+    result.matrices.some(entry => !input.snapshotIds.includes(entry.snapshotId) || !entry.managementDomainRef ||
+      entry.matrix?.schemaVersion !== 'wiselink.lcm.native_matrix.v1' || entry.matrix.kind !== 'tail-matrix'))
+    throw new Error('LCM_MATRIX_RESPONSE_INVALID');
+  return result;
+}
+
+export async function authorizeLcmNativeMatrix(input: { snapshotIds: string[]; binding: LcmMatrixBinding },
+  signal?: AbortSignal): Promise<{ binding: LcmMatrixBinding }> {
+  const generation = clientSessionGeneration;
+  const result = await readCanonicalLibrary<{ binding: LcmMatrixBinding }>({
+    url: '/api/lcm-source/matrix/native/authorize', method: 'POST', data: input, signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('LCM_SOURCE_READ_OBSOLETE');
+  assertLcmMatrixBinding(input.binding, result.binding);
+  return result;
+}
+
+export async function readLcmNativeMatrixDetails(input: LcmMatrixDetailRequest,
+  signal?: AbortSignal): Promise<LcmMatrixDetailResponse> {
+  const generation = clientSessionGeneration;
+  const result = await readCanonicalLibrary<LcmMatrixDetailResponse>({
+    url: '/api/lcm-source/matrix/native/details', method: 'POST', data: input, signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('LCM_SOURCE_READ_OBSOLETE');
+  assertLcmMatrixBinding(input.binding, result.binding);
+  if (!Array.isArray(result.records) || ![null, 'LOCAL_REFERENCE_ONLY'].includes(result.originalUnavailableReason) ||
+    result.records.some(entry => !input.query.snapshotIds.includes(entry.snapshot?.snapshotId) ||
+      (input.softwareRef && input.softwareRef !== entry.softwareRef) ||
+      (input.aircraftRef && input.aircraftRef !== entry.aircraftRef) ||
+      (input.partNumber !== undefined && input.partNumber !== entry.record?.partNumber)))
+    throw new Error('LCM_MATRIX_DETAIL_BINDING_INVALID');
+  return result;
+}
+
 /** Host received snapshots remain candidates; a list read never refreshes the external LCM source. */
 export async function readLcmSourceSnapshots(
   input: LcmSnapshotBrowseRequest = {},
@@ -726,24 +830,6 @@ export async function readLcmSourceSnapshots(
     throw new Error('LCM_SOURCE_READ_OBSOLETE');
   if (!Array.isArray(result.snapshots) || (result.hasMore && !result.nextAfter))
     throw new Error('LCM_SOURCE_CATALOGUE_BINDING_MISMATCH');
-  return result;
-}
-
-export async function readLcmSourceSnapshotRows(
-  input: LcmSnapshotRowsRequest,
-  signal?: AbortSignal,
-): Promise<LcmSnapshotRowsResponse> {
-  const generation = clientSessionGeneration;
-  const { snapshotId, ...filters } = input;
-  const result = await readCanonicalLibrary<LcmSnapshotRowsResponse>({
-    url: `/api/lcm-source/snapshots/${encodeURIComponent(snapshotId)}?${lcmBrowseQuery(filters)}`,
-    signal,
-  });
-  if (signal?.aborted || generation !== clientSessionGeneration)
-    throw new Error('LCM_SOURCE_READ_OBSOLETE');
-  if (result.snapshot?.snapshotId !== snapshotId || !Array.isArray(result.records) ||
-      (result.hasMore && !result.nextAfter))
-    throw new Error('LCM_SOURCE_SNAPSHOT_BINDING_MISMATCH');
   return result;
 }
 
@@ -2192,13 +2278,14 @@ export async function queryParsedUnits(
 
 export async function confirmIntegratedOverallForAeo(
   workItemId: string,
+  input: ConfirmCanonicalOverallForAeoRequest,
 ): Promise<CanonicalWorkItemProjection> {
   const requestGeneration = clientSessionGeneration;
   try {
     const response = await axiosForBackend<CanonicalWorkItemProjection>({
       url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/integrated-assessment/confirm-for-aeo`,
       method: 'POST',
-      data: {},
+      data: input,
     });
     if (response.status === 401) {
       throw clientLoginRequired(
@@ -2209,9 +2296,21 @@ export async function confirmIntegratedOverallForAeo(
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
     }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'OPENCLAW_OVERALL_CONFIRMATION_FAILED',
+        response.status,
+      );
+    }
     return response.data;
   } catch (error) {
     logCanonicalRequestFailure('确认当前整体综合用于 AEO 失败', error);
+    if (responseStatus(error) === 409 && isRecord(error) && isRecord(error.response)) {
+      throw backendResponseError(
+        error.response.data, 'OPENCLAW_OVERALL_CONFIRMATION_FAILED', 409,
+      );
+    }
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }

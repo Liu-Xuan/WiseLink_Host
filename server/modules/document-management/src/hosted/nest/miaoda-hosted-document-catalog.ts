@@ -1121,7 +1121,7 @@ export class MiaodaHostedDocumentCatalog {
   }
 
   async recordAcquisition({ sourceArtifact, acquisition }) {
-    return this.db.transaction(async (transaction) => {
+    const commit = () => this.db.transaction(async (transaction) => {
       await transaction.insert(dmSourceArtifact).values({
         ...sourceArtifact,
         createdAt: asDate(sourceArtifact.createdAt),
@@ -1193,6 +1193,11 @@ export class MiaodaHostedDocumentCatalog {
         sourceDescriptor: parseJson(stored.sourceDescriptorJson),
       };
     });
+    if (acquisition.sourceChannel !== 'document_library_upload') return commit();
+    if (typeof acquisition.acquiredBy !== 'string' || !acquisition.acquiredBy.trim())
+      fail('ACQUISITION_ACTOR_REQUIRED', 'Verified upload registration requires its acquisition actor.');
+    if (!this.sessions) fail('VERIFIED_SQL_CONTEXT_UNAVAILABLE', 'Verified upload SQL context is unavailable.');
+    return this.sessions!.withVerifiedServiceSql(commit, acquisition.acquiredBy);
   }
 
   async listIngressDocuments({ tenantId }: { tenantId?: unknown } = {}) {

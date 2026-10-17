@@ -137,19 +137,15 @@ describe('Guided Atlas library uses saved business reading', () => {
           onCreateFromTask: jest.fn(),
           filteredByWorkItem: false,
           onViewAll: jest.fn(),
-          onViewDocuments: jest.fn(),
-          onViewTasks: jest.fn(),
           selectedId: '',
           onSelect: jest.fn(),
         }),
       ),
     );
     expect(html).toContain(rows[0].result!.listBrief);
-    expect(html).toContain('全部资料');
-    expect(html).toContain('ATA32');
-    expect(html).toContain('ATA34');
+    // The common source directory is owned by WorkspaceHomePage, outside these two panes.
+    expect(html).not.toContain('suite-library-folder');
     expect(html).toContain('工程事项');
-    expect(html).toContain('评估任务');
     expect(html).toContain('问题已更新，综合尚未覆盖');
     expect(html).not.toContain(rows[0].result!.decisiveClaims[0].text);
     expect(renderQuicklook(libraryMatterFixture())).toContain(rows[0].result!.decisiveClaims[0].text);

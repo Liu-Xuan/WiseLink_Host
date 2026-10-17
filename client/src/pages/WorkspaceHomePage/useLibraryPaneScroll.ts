@@ -15,12 +15,8 @@ export function LibraryPaneScrollProvider({ children }: { children: ReactNode })
   return createElement(PositionContext.Provider, { value: state }, children);
 }
 
-/** Each reading pane owns its position; no delayed write may cross a selection. */
-export function useLibraryPaneScroll<T extends HTMLElement>(
-  key: 'listY' | 'quicklookY',
-  ready: boolean,
-  session: number,
-) {
+/** One synchronous snapshot also lets directory controls preserve same-tick pane positions. */
+export function useLibraryReadingParams(session: number) {
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const shared = useContext(PositionContext);
@@ -29,6 +25,24 @@ export function useLibraryPaneScroll<T extends HTMLElement>(
   if (state.current.locationKey !== location.key || state.current.session !== session) {
     state.current = { locationKey: location.key, params, session };
   }
+  const update = (change: (next: URLSearchParams) => void): void => {
+    if (state.current.session !== session) return;
+    const next = new URLSearchParams(state.current.params);
+    change(next);
+    if (next.toString() === state.current.params.toString()) return;
+    state.current.params = next;
+    setParams(next, { replace: true, preventScrollReset: true });
+  };
+  return { params, state, update };
+}
+
+/** Each reading pane owns its position; no delayed write may cross a selection. */
+export function useLibraryPaneScroll<T extends HTMLElement>(
+  key: 'listY' | 'quicklookY',
+  ready: boolean,
+  session: number,
+) {
+  const { params, state, update } = useLibraryReadingParams(session);
   const ref = useRef<T>(null);
   const scope = libraryReadingScope(params);
   const identity = `${session}:${scope}`;
@@ -49,11 +63,10 @@ export function useLibraryPaneScroll<T extends HTMLElement>(
     const previous = state.current.params;
     if (state.current.session !== session || libraryReadingScope(previous) !== scope) return;
     if (top === (previous.get(key) ?? '0')) return;
-    const next = new URLSearchParams(previous);
-    if (top === '0') next.delete(key);
-    else next.set(key, top);
-    state.current.params = next;
-    setParams(next, { replace: true, preventScrollReset: true });
+    update(next => {
+      if (top === '0') next.delete(key);
+      else next.set(key, top);
+    });
   };
   return { ref, onScroll };
 }

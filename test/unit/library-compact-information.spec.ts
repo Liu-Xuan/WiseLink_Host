@@ -10,6 +10,7 @@ import { libraryFamily, libraryMetadata } from './fixtures/canonical-library';
 import { libraryMatterFixture } from './fixtures/library-matter';
 import { LibraryAtaHierarchy } from '@client/src/pages/WorkspaceHomePage/LibraryAtaHierarchy';
 import { LibraryDocumentDirectory } from '@client/src/pages/WorkspaceHomePage/LibraryDocumentDirectory';
+import { LibraryWorkspaceHeader } from '@client/src/pages/WorkspaceHomePage/LibraryWorkspaceHeader';
 import type { LibraryFleetRead } from '@client/src/pages/WorkspaceHomePage/useLibraryFleetCatalog';
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/components/ui/input', () => ({ Input: 'input' }));
@@ -18,6 +19,22 @@ jest.mock('@client/src/api/canonical-host', () => ({
   getCanonicalHostClientSessionGeneration: () => 1,
   subscribeCanonicalHostClientSession: () => () => undefined,
 }));
+
+it.each(['document', 'matter', 'tasks'] as const)('keeps one %s view switch and intake entry without repeating the shell title', mode => {
+  const dom = new JSDOM(renderToStaticMarkup(createElement(StaticRouter, null,
+    createElement(LibraryWorkspaceHeader, { mode, onModeChange: jest.fn(), children: createElement('div', null, '原接收资料内容') }))));
+  const header = dom.window.document.querySelector('.library-workspace-header')!;
+  expect(header.querySelector('h1')).toBeNull();
+  expect([...header.querySelectorAll('nav button')].map(button => button.textContent))
+    .toEqual(['工程文档', '工程事项']);
+  expect(header.textContent).not.toContain('软件构型');
+  expect(header.querySelectorAll('button[aria-pressed="true"]')).toHaveLength(mode === 'tasks' ? 0 : 1);
+  expect(header.querySelector('.suite-library-actions > summary')?.textContent).toBe('接收资料');
+  expect(header.querySelector('details')?.hasAttribute('open')).toBe(false);
+  expect(header.textContent).toContain('原接收资料内容');
+  expect(header.textContent).not.toContain('ENGINEERING LIBRARY');
+  dom.window.close();
+});
 
 function fixture() {
   const document = libraryFamily('compact');

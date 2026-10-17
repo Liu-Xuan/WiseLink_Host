@@ -86,20 +86,47 @@ function assertRange(offset: number, limit: number) {
 export type DocumentOriginalEngineeringReading = ReturnType<typeof documentOriginalEngineeringReading>;
 
 export function findDocumentOriginalEvidence(loaded: Parameters<typeof documentOriginalEngineeringReading>[0], sourceRefId: string) {
-  const includesRef = (value: unknown): boolean => {
-    if (Array.isArray(value)) return value.some(includesRef);
-    if (!value || typeof value !== 'object') return false;
-    return Object.entries(value).some(([key, child]) => key === 'sourceRefIds' && Array.isArray(child)
-      ? child.includes(sourceRefId) : includesRef(child));
+  return prepareDocumentOriginalEvidenceFinder(loaded)(sourceRefId);
+}
+
+/** One caller-owned lookup of an already loaded/authorized exact original.
+ * The index and reader never survive that caller's source authorization scope.
+ */
+export function prepareDocumentOriginalEvidenceFinder(loaded: LoadedOriginal) {
+  const offsetsByRef = new Map<string, number[]>();
+  loaded.structuredSource.units.forEach((unit, offset) => {
+    const refs = new Set<string>();
+    collectSourceRefs(unit, refs);
+    for (const ref of refs) {
+      const offsets = offsetsByRef.get(ref) ?? [];
+      offsets.push(offset);
+      offsetsByRef.set(ref, offsets);
+    }
+  });
+  let read: ReturnType<typeof prepareDocumentOriginalEngineeringReader> | undefined;
+  return (sourceRefId: string) => {
+    const offsets = offsetsByRef.get(sourceRefId);
+    if (!offsets) throw new Error('DOCUMENT_ORIGINAL_SOURCE_LOCATOR_MISSING');
+    read ??= prepareDocumentOriginalEngineeringReader(loaded);
+    // A structural container may own the ref without readable anchors. Its child
+    // units use the same ref; the prepared reader preserves their complete quote.
+    for (const offset of offsets) {
+      const evidence = read(offset, 1).evidence.find(item => item.sourceRefId === sourceRefId);
+      if (evidence) return evidence;
+    }
+    throw new Error('DOCUMENT_ORIGINAL_SOURCE_TEXT_MISSING');
   };
-  const offsets = loaded.structuredSource.units.flatMap((unit, offset) => includesRef(unit) ? [offset] : []);
-  if (!offsets.length) throw new Error('DOCUMENT_ORIGINAL_SOURCE_LOCATOR_MISSING');
-  const read = prepareDocumentOriginalEngineeringReader(loaded);
-  // A structural container may own the ref without readable anchors. Its child
-  // units use the same ref; the prepared reader preserves their complete quote.
-  for (const offset of offsets) {
-    const evidence = read(offset, 1).evidence.find(item => item.sourceRefId === sourceRefId);
-    if (evidence) return evidence;
+}
+
+function collectSourceRefs(value: unknown, refs: Set<string>): void {
+  if (Array.isArray(value)) {
+    for (const child of value) collectSourceRefs(child, refs);
+    return;
   }
-  throw new Error('DOCUMENT_ORIGINAL_SOURCE_TEXT_MISSING');
+  if (!value || typeof value !== 'object') return;
+  for (const [key, child] of Object.entries(value)) {
+    if (key === 'sourceRefIds' && Array.isArray(child)) {
+      for (const ref of child) if (typeof ref === 'string') refs.add(ref);
+    } else collectSourceRefs(child, refs);
+  }
 }

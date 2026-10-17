@@ -96,6 +96,19 @@ export function documentGraphReadingParams(documentVersionId: string, readerWork
   params.set('documentVersionId', documentVersionId);
   const libraryReturn = origin ? libraryGraphReturnToken(origin) : null;
   if (libraryReturn) params.set('returnLibrarySnapshot', libraryReturn);
+  // Keep directory identity through graph view-state replacement and source returns.
+  // A malformed intent stays explicit so both return controls reject it.
+  if (origin?.has('returnLibraryQuery')) {
+    const raw: string = single(origin, 'returnLibraryQuery');
+    const conflicting: boolean = [...origin.keys()].some((key: string) =>
+      key.startsWith('return') &&
+      !['returnLibraryQuery', 'returnDocumentVersionId'].includes(key));
+    params.set('returnLibraryQuery', !conflicting && raw.length <= 8192 ? raw : '');
+  }
+  if (origin?.has('returnDocumentVersionId')) {
+    const binding: string = single(origin, 'returnDocumentVersionId');
+    params.set('returnDocumentVersionId', text(binding) ? binding : '');
+  }
   if (readerWorkItemId) params.set('readerWorkItemId', readerWorkItemId);
   for (const name of ['familyCursor', 'matterCursor']) {
     const value = origin ? single(origin, name) : '';
@@ -158,9 +171,10 @@ export function withGraphReturn(route: string, graphQuery: URLSearchParams): str
   const raw = queryStart === -1 ? '' : route.slice(queryStart + 1);
   const match = /^\/(document-versions|matters)\/([^/]+)(\/process)?$/.exec(path);
   const workItemDocumentMatch = /^\/work-items\/([^/]+)\/(?:analysis|documents)$/.exec(path);
-  if (!match && !workItemDocumentMatch) return route;
+  const activityDocumentMatch = path === '/timeline' || path === '/activity-graph';
+  if (!match && !workItemDocumentMatch && !activityDocumentMatch) return route;
   const params = new URLSearchParams(raw);
-  if (workItemDocumentMatch) {
+  if (workItemDocumentMatch || activityDocumentMatch) {
     const documentVersions = params.getAll('documentVersionId');
     if (
       documentVersions.length !== 1

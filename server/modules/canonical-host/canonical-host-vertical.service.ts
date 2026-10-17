@@ -52,6 +52,7 @@ import {
 import { buildCanonicalPageProjections } from './canonical-host-page-projections';
 import {
   canonicalReferenceResolutionOr,
+  canonicalReferenceSelectionKey,
   deriveCanonicalReferenceMentionPreview,
   finalizeCanonicalReferenceMentionPreview,
   type CanonicalReferenceMentionCandidate,
@@ -936,15 +937,11 @@ export class CanonicalHostVerticalService {
     assessmentTarget: CanonicalRelatedContextAssessmentTarget | null,
     primaryDocumentVersionRef: string,
   ): Promise<CanonicalReferenceMentionPreviewItem[]> {
-    const targets = [
-      ...new Set(
-        mentions
-          .filter((item) => !item.initialResolutionState)
-          .map((item) => item.normalizedTarget),
-      ),
-    ];
+    const selections = new Map(mentions.filter(item => !item.initialResolutionState)
+      .map(item => [canonicalReferenceSelectionKey(item), item]));
+    const targets = [...selections.keys()];
     let catalogTargets: Awaited<
-      ReturnType<DocumentManagementHostedService['listCurrentReferenceTargets']>
+      ReturnType<DocumentManagementHostedService['listReferenceTargets']>
     >;
     if (!this.documentManagement) {
       return mentions.map((candidate) =>
@@ -960,7 +957,10 @@ export class CanonicalHostVerticalService {
     }
     try {
       catalogTargets =
-        await this.documentManagement.listCurrentReferenceTargets(targets, {
+        await this.documentManagement.listReferenceTargets([...selections.values()].map(item => ({
+          canonicalDocumentNumber: item.normalizedTarget,
+          ...(item.requestedBusinessRevision === undefined ? {} : { requestedBusinessRevision: item.requestedBusinessRevision }),
+        })), {
           actorUserId: actor.userId,
           tenantId: actor.tenantId,
           roles: [...actor.roles],
@@ -987,8 +987,8 @@ export class CanonicalHostVerticalService {
           await this.resolveReferenceTarget(
             catalogTargets.filter(
               (match) =>
-                canonicalReferenceLookupKey(match.canonicalDocumentNumber) ===
-                canonicalReferenceLookupKey(target),
+                canonicalReferenceSelectionKey({ normalizedTarget: match.canonicalDocumentNumber,
+                  requestedBusinessRevision: match.requestedBusinessRevision }) === target,
             ),
             actor,
             assessmentTarget,
@@ -997,7 +997,7 @@ export class CanonicalHostVerticalService {
       }),
     );
     return mentions.map((mention) => {
-      const resolved = resolutions.get(mention.normalizedTarget);
+      const resolved = resolutions.get(canonicalReferenceSelectionKey(mention));
       return finalizeCanonicalReferenceMentionPreview({
         candidate: mention,
         primaryDocumentVersionRef,
@@ -2251,13 +2251,6 @@ function multipleReferenceTargets(
     targetApplicability: 'NOT_EVALUATED',
     publisherCandidate: null,
   };
-}
-
-function canonicalReferenceLookupKey(value: string): string {
-  return value
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/gu, '');
 }
 
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {

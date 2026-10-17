@@ -1,3 +1,4 @@
+import { assertAutomaticWorkItemAttemptLease } from './automatic-work-item-attempt-lease';
 import { assertCancelledInitialContinuation, type CancelledInitialContinuationGuard } from './cancelled-initial-continuation';
 import { randomUUID } from 'node:crypto';
 
@@ -205,6 +206,7 @@ export class ActionAttemptRepository {
           eq(actionAttempt.tenantId, input.tenantId),
           inArray(actionAttempt.status, [...CANCELLABLE_STATUSES]),
           lte(actionAttempt.deadlineAt, input.now),
+          isNull(actionAttempt.cancelRequestedAt),
           isNull(actionAttempt.commitStartedAt),
           isNull(actionAttempt.resultEnvelopeJson),
           isNull(actionAttempt.resultContentHash),
@@ -238,6 +240,7 @@ export class ActionAttemptRepository {
             isNull(actionAttempt.deadlineAt),
             gt(actionAttempt.deadlineAt, input.now),
           ),
+          isNull(actionAttempt.cancelRequestedAt),
           isNull(actionAttempt.commitStartedAt),
           isNull(actionAttempt.resultEnvelopeJson),
           isNull(actionAttempt.resultContentHash),
@@ -741,13 +744,15 @@ export class ActionAttemptRepository {
 
   async heartbeat(input: {
     attemptId: string;
+    automaticLeaseRequired?: boolean;
     leaseToken: string;
     leaseGeneration: number;
     now: Date;
     leaseMs: number;
     reviewActivity?: ReviewRuntimeActivity;
   }): Promise<boolean> {
-    const updated = await this.db
+    return this.withAutomaticAttemptLease(input.attemptId, input.automaticLeaseRequired, async (database) => {
+    const updated = await database
       .update(actionAttempt)
       .set({
         lastHeartbeatAt: input.now,
@@ -775,17 +780,20 @@ export class ActionAttemptRepository {
       )
       .returning({ attemptId: actionAttempt.attemptId });
     return updated.length === 1;
+    });
   }
 
   async markCommitting(input: {
     attemptId: string;
+    automaticLeaseRequired?: boolean;
     leaseToken: string;
     leaseGeneration: number;
     result: AnyOpenClawResultEnvelope;
     now: Date;
     recoveryLeaseMs: number;
   }): Promise<ActionAttemptRow | null> {
-    const [updated] = await this.db
+    return this.withAutomaticAttemptLease(input.attemptId, input.automaticLeaseRequired, async (database) => {
+    const [updated] = await database
       .update(actionAttempt)
       .set({
         status: 'COMMITTING',
@@ -811,6 +819,7 @@ export class ActionAttemptRepository {
       )
       .returning();
     return (updated as ActionAttemptRow | undefined) ?? null;
+    });
   }
 
   async finishTerminal(input: {
@@ -833,6 +842,7 @@ export class ActionAttemptRepository {
     errorCode?: string;
     errorMessage?: string;
   }): Promise<boolean> {
+    return this.withAutomaticAttemptLease(input.attemptId, false, async (database) => {
     const predicates = [
       eq(actionAttempt.attemptId, input.attemptId),
       eq(actionAttempt.status, input.fromStatus),
@@ -843,7 +853,7 @@ export class ActionAttemptRepository {
     if (input.leaseGeneration !== undefined) {
       predicates.push(eq(actionAttempt.leaseGeneration, input.leaseGeneration));
     }
-    const updated = await this.db
+    const updated = await database
       .update(actionAttempt)
       .set({
         status: input.status,
@@ -865,6 +875,7 @@ export class ActionAttemptRepository {
       .where(and(...predicates))
       .returning({ attemptId: actionAttempt.attemptId });
     return updated.length === 1;
+    });
   }
 
   async recoverExpiredRunning(input: {
@@ -947,10 +958,12 @@ export class ActionAttemptRepository {
 
   async requestCancel(input: {
     attemptId: string;
+    automaticLeaseRequired?: boolean;
     reason: string;
     now: Date;
   }): Promise<'CANCELLED' | 'TOO_LATE' | 'NOT_ACTIVE'> {
-    const updated = await this.db
+    return this.withAutomaticAttemptLease(input.attemptId, input.automaticLeaseRequired, async (database) => {
+    const updated = await database
       .update(actionAttempt)
       .set({
         status: 'CANCELLED',
@@ -972,9 +985,10 @@ export class ActionAttemptRepository {
       )
       .returning({ attemptId: actionAttempt.attemptId });
     if (updated.length === 1) return 'CANCELLED';
-    const row = await this.readByAttemptId(input.attemptId);
+    const row = await new ActionAttemptRepository(database).readByAttemptId(input.attemptId);
     if (row?.status === 'COMMITTING' || row?.commitStartedAt) return 'TOO_LATE';
     return 'NOT_ACTIVE';
+    });
   }
 
   async finishResultGateFailure(input: {
@@ -999,6 +1013,18 @@ export class ActionAttemptRepository {
       now: input.now,
     });
   }
+  private async withAutomaticAttemptLease<T>(
+    attemptId: string,
+    required: boolean | undefined,
+    apply: (database: PostgresJsDatabase) => Promise<T>,
+  ): Promise<T> {
+    return this.db.transaction(async (database) => {
+      const row = await new ActionAttemptRepository(database).readByAttemptId(attemptId);
+      if (row) await assertAutomaticWorkItemAttemptLease(database, row, row.leaseOwner ?? '', required);
+      return apply(database);
+    });
+  }
+
 }
 
 function unclaimedInitialRequest(row: ActionAttemptRow) {
@@ -1050,4 +1076,6 @@ function activeAttemptConflict(): Error & { code: string; statusCode: number } {
     new Error('An active attempt already exists for this WorkItem and task.'),
     { code: 'ACTION_ATTEMPT_ACTIVE_CONFLICT', statusCode: 409 },
   );
+
+
 }

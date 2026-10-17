@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '../../../client/src/styles/tokens.css';
+@import '../../../client/src/styles/glass.css';
+@import '../../../client/src/styles/motion.css';
+@import '../../../client/src/tailwind-theme.css';
+@import '../../../client/src/typography.css';
+@import '../../../client/src/pages/WorkspaceHomePage/workspace-home.css';
+@import '../../../client/src/pages/WorkspaceHomePage/library-hierarchy.css';
+@import '../../../client/src/pages/WorkspaceHomePage/library-atlas.css';
+@import '../../../client/src/pages/WorkspaceHomePage/library-source-reading.css';
+@source '../../../client/src';
+@config '../../../tailwind.config.ts';
+html, body, #root { margin: 0; min-height: 100%; }
+html, body { background: var(--wl-bg); color: var(--wl-ink); font-family: var(--wl-font); }
+.fixture-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.fixture-controls button { border: 1px solid #aaa; border-radius: 4px; padding: 2px 5px; }

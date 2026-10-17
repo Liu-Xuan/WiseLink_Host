@@ -5,7 +5,7 @@ import type { DocumentTranslationReadingResponse } from '@shared/document-transl
 import LocalMineruImport from './LocalMineruImport';
 import { SemanticBilingualReader } from './SemanticBilingualReader';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '@client/src/components/ui/button';
 import { readDocumentTranslationReading, readDocumentParsingStatus, readParsedDocument, startDocumentParsing, subscribeCanonicalHostClientSession } from '@client/src/api/canonical-host';
 import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
@@ -18,10 +18,16 @@ import DocumentWikiReading from './DocumentWikiReading';
 import { libraryReadingParams, readingReturnTarget } from '@client/src/features/matter/reading-return';
 import { DocumentSourceReadingWorkspace, type DocumentSourceReaderMode } from './DocumentSourceReadingWorkspace';
 import { documentIdentityPresentation, libraryVersionLabel } from '../WorkspaceHomePage/library-document-presentation';
+import { DocumentReadingIdentity, DocumentReadingMore, DocumentReadingSavedLinks } from './DocumentVersionReadingToolbar';
+import { useDocumentReadingLinks } from './useDocumentReadingLinks';
+import DocumentSavedWorkPanels from './DocumentSavedWorkPanels';
+import { documentWorkbenchPanelRoute, readDocumentWorkbenchPanel } from './document-workbench-panel';
 
 export default function DocumentVersionReadingPage() {
   const { documentVersionId = '' } = useParams();
+  const { pathname } = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const workbenchPanel = readDocumentWorkbenchPanel(searchParams);
   const requestedRun = searchParams.get('parseRunId') || null;
   const requestedSource = searchParams.get('sourceRef') || null;
   const wikiSemantic = searchParams.get('semanticRevision');
@@ -39,10 +45,10 @@ export default function DocumentVersionReadingPage() {
     searchParams,
     documentVersionId,
     requestedRun,
+    undefined,
+    undefined,
+    pathname,
   );
-  // The body reading depends only on the exact version and run; a new external
-  // sourceRef anchor must not trigger a full reading request again.
-  const readingIdentity = JSON.stringify([documentVersionId, requestedRun]);
   const [status, setStatus] = useState<DocumentParsingStatus | null>(null);
   const [readingNavigation, setReadingNavigation] = useState<string | null>(null);
   const [reading, setReading] = useState<DocumentParsedReading | null>(null);
@@ -68,8 +74,24 @@ export default function DocumentVersionReadingPage() {
   const [parseError, setParseError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
   const loaded = useRef('');
+  const bodyPoll = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const request = useRef<StartDocumentParseRequest | null>(null);
   const currentSettingsRequest = useRef<StartDocumentParseRequest | null>(null);
+  const navigationScope = useRef({ documentVersionId, requestedRun, revision: 0,
+    identity: JSON.stringify([documentVersionId, requestedRun, 0]) });
+  if (navigationScope.current.documentVersionId !== documentVersionId || navigationScope.current.requestedRun !== requestedRun) {
+    const previous = navigationScope.current;
+    // Pinning the installed published run records a location, not a new reading.
+    const preserve: boolean = previous.documentVersionId === documentVersionId && previous.requestedRun === null &&
+      requestedRun !== null && searchParams.getAll('parseRunId').length === 1 && readingNavigation === previous.identity &&
+      reading?.documentVersionId === documentVersionId && reading.parseRunId === requestedRun &&
+      status?.documentVersionId === documentVersionId && status.publishedRun?.parseRunId === requestedRun &&
+      loaded.current === requestedRun && !rejectedRef.current && error === null;
+    const revision: number = previous.revision + (preserve ? 0 : 1);
+    navigationScope.current = { documentVersionId, requestedRun, revision,
+      identity: preserve ? previous.identity : JSON.stringify([documentVersionId, requestedRun, revision]) };
+  }
+  const readingIdentity = navigationScope.current.identity;
   const identity = useRef(readingIdentity);
   identity.current = readingIdentity;
 
@@ -96,6 +118,7 @@ export default function DocumentVersionReadingPage() {
     });
   }, [readingIdentity]);
 
+  useEffect(() => { if (requestedRun) clearTimeout(bodyPoll.current); }, [requestedRun]);
   useEffect(() => {
     const controller = new AbortController();
     bodyControllerRef.current = controller;
@@ -119,6 +142,8 @@ export default function DocumentVersionReadingPage() {
       }
     };
     const load = async () => {
+      // A current-run pin stops latest polling; an in-flight authorization read may still reject access.
+      if (!requestedRun && navigationScope.current.requestedRun) return;
       setError(null);
       if (requestedRun) {
         // A pinned run is authorized on its own: the body reading must never wait for the status read.
@@ -133,7 +158,7 @@ export default function DocumentVersionReadingPage() {
         const next = await readDocumentParsingStatus(documentVersionId, controller.signal);
         if (!current()) return;
         setStatus(next);
-        if (!requestedRun) {
+        if (!navigationScope.current.requestedRun) {
           const targetRun = next.publishedRun?.parseRunId;
           // A status poll still runs on every cycle so authorization and the
           // latest-run state are rechecked, but a successfully painted body is
@@ -147,8 +172,10 @@ export default function DocumentVersionReadingPage() {
             loaded.current = result.parseRunId; setReadingNavigation(readingIdentity); setReading(result); setSource(null);
           }
           if (next.latestRun && ['RUNNING', 'STAGING'].includes(next.latestRun.status) &&
-              !next.latestRun.errorCode && Date.parse(next.latestRun.deadlineAt) > Date.now() && current())
+              !next.latestRun.errorCode && Date.parse(next.latestRun.deadlineAt) > Date.now() && current()) {
             timer = setTimeout(() => { void load(); }, 5000);
+            bodyPoll.current = timer;
+          }
         }
       } catch (reason) {
         fail(reason);
@@ -162,12 +189,17 @@ export default function DocumentVersionReadingPage() {
   }, [readingIdentity, refresh]);
 
   const currentStatus = status?.documentVersionId === documentVersionId ? status : null;
+  const savedLinks = useDocumentReadingLinks(currentStatus, refresh, JSON.stringify([
+    documentVersionId, requestedRun ?? currentStatus?.publishedRun?.parseRunId,
+  ]));
   const currentReading = readingNavigation === readingIdentity && reading?.documentVersionId === documentVersionId && (!requestedRun || reading.parseRunId === requestedRun) ? reading : null;
   const currentTranslation = translation?.documentVersionId === documentVersionId && translation.parseRunId === currentReading?.parseRunId ? translation : null;
+  const needsTranslation: boolean = view === 'bilingual' || view === 'translation';
   useEffect(() => {
     const parseRunId = currentReading?.parseRunId;
     // Chinese loads on demand only: the default dual mode never requests translation.
-    if (!parseRunId || !currentReading?.original || (view !== 'bilingual' && view !== 'translation')) { setTranslation(null); return; }
+    // Both Chinese layouts share this reading and its in-flight request/poll deadline.
+    if (!parseRunId || !currentReading?.original || !needsTranslation) { setTranslation(null); return; }
     setTranslationPage(null); setTranslationError(null);
     let unstartedChecks = 0;
     const controller = new AbortController();
@@ -201,7 +233,7 @@ export default function DocumentVersionReadingPage() {
     };
     void load();
     return () => { controller.abort(); if (timer) clearTimeout(timer); };
-  }, [readingIdentity, currentReading?.parseRunId, view, refresh]);
+  }, [readingIdentity, currentReading?.parseRunId, needsTranslation, refresh]);
   const persistOriginalLocation = (page: number, unitId: string) => {
     if (!currentReading?.original || !Number.isSafeInteger(page) || page < 1) return;
     const unit = currentReading.original.source.units.find(item => item.unitId === unitId);
@@ -243,10 +275,6 @@ export default function DocumentVersionReadingPage() {
   const selectedUnit = activeSourceRef ? currentReading?.original?.source.units.find(unit => unit.sourceRefIds.includes(activeSourceRef)) : null;
   const initialLocationUnitId = localTranslationLocationIsCurrent ? translationUnitId : selectedUnit?.unitId;
   const initialLocationPage = localTranslationLocationIsCurrent ? translationPage : selectedLocation?.pageIndex != null ? selectedLocation.pageIndex + 1 : undefined;
-  useEffect(() => {
-    if ((view === 'dual' || view === 'original') && selectedUnit)
-      document.getElementById(selectedUnit.unitId)?.scrollIntoView({ block: 'center' });
-  }, [requestedSource, selectedUnit?.unitId, view]);
   const latest = currentStatus?.latestRun;
   const documentIdentity = documentIdentityPresentation({ documentCode: currentStatus?.documentCode ?? '',
     documentTitle: currentStatus?.documentTitle });
@@ -324,13 +352,42 @@ export default function DocumentVersionReadingPage() {
     ? <DocumentParsedImage documentVersionId={documentVersionId} parseRunId={currentReading.parseRunId} path={path} alt={alt} /> : null,
   [documentVersionId, currentReading?.parseRunId]);
 
-  return <main className="document-version-reading">
-    <header>
-      <Link to={returnTarget?.route ?? '/library?mode=document'}>{returnTarget?.label ?? '返回文档库'}</Link>
-      <h1>{currentStatus ? documentIdentity.documentNumber : '文档阅读'}</h1>
-      {currentStatus ? <p className="document-reading-identity">{documentIdentity.documentTitle} · {documentVersionLabel} · {currentStatus.selectedVersionIsCurrent ? '库内当前版本' : '历史版本'} · 原始文件 {currentStatus.originalFilename || '未标注'}</p> : null}
-      <details className="document-reading-maintenance">
-        <summary>文档处理</summary>
+  const toolbarIdentity = <DocumentReadingIdentity
+    number={currentStatus ? documentIdentity.documentNumber : '文档阅读'}
+    title={currentStatus ? documentIdentity.documentTitle : '正在读取文档…'}
+    version={documentVersionLabel} current={currentStatus?.selectedVersionIsCurrent} />;
+  const toolbarLinks = <DocumentReadingSavedLinks links={savedLinks} panelNavigation={{
+    active: workbenchPanel.panel, routes: {
+      reader: documentWorkbenchPanelRoute(searchParams, 'reader'),
+      assessment: documentWorkbenchPanelRoute(searchParams, 'assessment'),
+      wiki: documentWorkbenchPanelRoute(searchParams, 'wiki'),
+    },
+  }} />;
+  const savedPanels = <DocumentSavedWorkPanels key={JSON.stringify([savedLinks.scopeIdentity,
+    savedLinks.assessment?.result?.sourceResultId, savedLinks.assessment?.result?.revision])}
+    active={workbenchPanel.panel} links={savedLinks} onRetry={savedLinks.refreshSavedWork}
+    onRejected={savedLinks.rejectSavedWork} />;
+  const toolbarMore = <DocumentReadingMore>
+    <h2>文档信息与处理</h2>
+    {currentStatus ? <>
+      <p className="document-reading-full-title">{documentIdentity.documentTitle}</p>
+      <dl>
+        <div><dt>业务版次</dt><dd>{documentVersionLabel} · {currentStatus.selectedVersionIsCurrent ? '库内当前版本' : '历史版本'}</dd></div>
+        <div><dt>原始文件</dt><dd>{currentStatus.originalFilename || '未标注'}</dd></div>
+      </dl>
+    </> : null}
+    {currentReading ? <p>阅读版本 {currentReading.parseRevision} · {currentReading.parser.name} {currentReading.parser.version}</p> : null}
+    {requestedRun && currentReading ? <p>{currentStatus?.publishedRun?.parseRunId !== requestedRun ? '历史解析版本' : '指定解析版本'}：固定读取版本 {currentReading.parseRevision}。
+      {' '}<Link to={`/document-versions/${encodeURIComponent(documentVersionId)}`}>查看最新版本</Link></p> : null}
+    {currentReading?.titleEnhancement.status === 'FAILED' ? <p>标题层级增强未完成，当前显示解析器标题。{currentReading.titleEnhancement.code}</p> : null}
+    {unboundEvidence ? <p>此保存依据未提供工作项身份。</p> : null}
+    {activityEntryRoute ? <p><Link to={activityEntryRoute}>活动阅读</Link></p> : null}
+    {currentStatus && !currentStatus.runtimeAvailable ? <p>
+      {currentStatus.runtime?.state === 'FAILED' ? '最近的文档处理未完成。' : '官方文档解析插件尚未配置。'}
+    </p> : null}
+    {latest ? <p role="status">{parseFailure ?? (latest.status === 'PUBLISHED' ? `解析版本 ${latest.parseRevision} 已发布。` :
+      latest.status === 'FAILED' ? `解析未完成：${latest.errorCode ?? '请重试或联系维护人员'}` :
+      expired ? '执行期限已过。' : latest.waitingForLocalWorker ? '等待本机解析器接续。' : latest.status === 'STAGING' ? `正在保存并核验产物，已核验 ${latest.verifiedArtifacts} 个文件。` : '正在解析原件。')}</p> : null}
         <div className="document-reading-actions">
           <Button onClick={() => { void start(); }} disabled={!currentStatus?.runtimeAvailable || (busy && !request.current) || sending || Boolean(currentSettingsRequest.current)}>
             {sending ? '正在受理…' : checkingImport ? '核对同一导入请求（继续一步）' : request.current ? '核对解析请求' : busy ? (parseFailure ? '等待接续' : latest?.waitingForLocalWorker ? '等待本机解析' : '正在解析…') : currentStatus?.publishedRun ? '重新解析' : '解析文档'}
@@ -354,17 +411,37 @@ export default function DocumentVersionReadingPage() {
         {currentStatus && !sending && !request.current && !currentSettingsRequest.current ? <LocalMineruImport key={documentVersionId} documentVersionId={documentVersionId}
           expectedPublishedRevision={currentStatus.publishedRun?.parseRevision ?? 0} onImported={() => setRefresh(value => value + 1)} /> : null}
         {latest?.errorCode && <p>处理原因：{latest.errorCode}</p>}
-      </details>
-      {error && <p role="alert">{error}</p>}
-      {currentStatus && parseError && <p role="alert">{parseError}</p>}
-      {unboundEvidence ? <p role="status">此保存依据没有工作项执行身份。已打开它绑定的确切文档版本，未猜测任务或具体段落位置。</p> : null}
-      {currentStatus && !currentStatus.runtimeAvailable && <p role="status">
-        {currentStatus.runtime?.state === 'FAILED' ? '最近的文档处理未完成。' : '官方文档解析插件尚未配置。'}
-      </p>}
-      {latest && <p role="status">{parseFailure ?? (latest.status === 'PUBLISHED' ? `解析版本 ${latest.parseRevision} 已发布。` :
-        latest.status === 'FAILED' ? `解析未完成：${latest.errorCode ?? '请重试或联系维护人员'}` :
-        expired ? '执行期限已过。' : latest.waitingForLocalWorker ? '等待本机解析器接续。' : latest.status === 'STAGING' ? `正在保存并核验产物，已核验 ${latest.verifiedArtifacts} 个文件。` : '正在解析原件。')}</p>}
-    </header>
+  </DocumentReadingMore>;
+  const toolbarNotices = <>
+    {workbenchPanel.error ? <p role="alert">{workbenchPanel.error}</p> : null}
+    {error ? <p role="alert">{error}</p> : null}
+    {currentStatus && parseError ? <p role="alert">{parseError}</p> : null}
+    {savedLinks.error ? <p className="document-reading-link-error" role="alert">{savedLinks.error}
+      {' '}<Button size="sm" variant="ghost" onClick={() => setRefresh(value => value + 1)}>重试</Button></p> : null}
+    {wikiRequested && !pinnedWiki ? <p role="alert">文档 Wiki 的确切版本参数不完整或有重复，请从 Wiki 成员链接重新打开。</p> : null}
+    {currentReading && activeSourceRef ? <aside className="document-reading-location" aria-label="检索命中来源">
+      {selectedLocation ? <p role="status">已定位原文{selectedLocation.pageIndex !== null ? ` · 第 ${selectedLocation.pageIndex + 1} 页` : ' · 无物理页定位'}</p>
+        : <p role="alert">此解析版本中未找到指定来源。</p>}
+    </aside> : null}
+    {pinnedWiki && currentReading?.original ? <DocumentWikiReading documentVersionId={documentVersionId} parseRunId={requestedRun!}
+      semanticRevision={Number(wikiSemantic)} readingRevision={Number(wikiRevision)} readingRunRef={wikiRunRef}
+      onAccessRejected={rejectCurrentAccess} onLocate={unitId => {
+        const unit = currentReading.original!.source.units.find(item => item.unitId === unitId);
+        const location = unit && currentReading.original!.locations.find(item => unit.sourceRefIds.includes(item.sourceRefId));
+        if (location) persistOriginalLocation(location.pageIndex + 1, unitId);
+      }} /> : null}
+  </>;
+
+  return <main className={`document-version-reading document-version-reading-compact${currentReading?.original ? ' is-source-workspace' : ''}`}>
+    {!currentReading?.original ? <>
+      <header className="document-reading-standalone-toolbar">
+        {toolbarIdentity}{toolbarLinks}
+        <Button asChild size="sm" variant="outline"><Link to={returnTarget?.route ?? '/library?mode=document'}>
+          {returnTarget?.label ?? '返回文档库'}</Link></Button>
+        {toolbarMore}
+      </header>
+      {toolbarNotices}
+    </> : null}
     {TDMS_SOURCE_UI_ENABLED && (currentStatus || currentReading) && !rejectedRef.current ? <TdmsSourceEntry
       key={readingIdentity} context={{ documentVersionId }} enabled={TDMS_SOURCE_UI_ENABLED}
       onAccessRejected={() => {
@@ -372,24 +449,7 @@ export default function DocumentVersionReadingPage() {
       }}
     /> : null}
     {currentReading ? <>
-      {requestedRun && <p role="status">{currentStatus?.publishedRun?.parseRunId !== requestedRun ? '历史解析版本' : '指定解析版本'}：固定读取此版本，刷新不会切换到最新版本。 <Link to={`/document-versions/${encodeURIComponent(documentVersionId)}`}>查看最新版本</Link></p>}
-      {wikiRequested && !pinnedWiki ? <p role="alert">文档 Wiki 的确切版本参数不完整或有重复，请从 Wiki 成员链接重新打开。</p> : null}
-      {activeSourceRef && <aside aria-label="检索命中来源">
-        {selectedLocation ? <><strong>已定位检索命中来源</strong><p>{selectedLocation.pageIndex !== null
-          ? '对应正文已标出；点击文字可在右侧核对准确原件位置。'
-          : '对应正文已标出；此来源没有可用的物理页定位。'}</p></>
-          : <p role="alert">此解析版本中未找到指定来源，未替换为其他来源。</p>}
-      </aside>}
-      {currentReading.titleEnhancement.status === 'FAILED' && <p role="status">标题层级增强未完成，当前显示解析器标题。{currentReading.titleEnhancement.code}</p>}
-      <p className="document-reading-version">阅读版本 {currentReading.parseRevision} · {currentReading.parser.name} {currentReading.parser.version}</p>
       {currentReading.original ? <>
-        {pinnedWiki ? <DocumentWikiReading documentVersionId={documentVersionId} parseRunId={requestedRun!}
-          semanticRevision={Number(wikiSemantic)} readingRevision={Number(wikiRevision)} readingRunRef={wikiRunRef}
-          onAccessRejected={rejectCurrentAccess} onLocate={unitId => {
-            const unit = currentReading.original!.source.units.find(item => item.unitId === unitId);
-            const location = unit && currentReading.original!.locations.find(item => unit.sourceRefIds.includes(item.sourceRefId));
-            if (location) persistOriginalLocation(location.pageIndex + 1, unitId);
-          }} /> : null}
         <DocumentSourceReadingWorkspace
           key={`${currentReading.documentVersionId}:${currentReading.parseRunId}`}
           original={currentReading.original}
@@ -399,6 +459,8 @@ export default function DocumentVersionReadingPage() {
           returnRoute={returnTarget?.route ?? '/library?mode=document'}
           returnLabel={returnTarget?.label ?? '返回原处'}
           title={currentStatus ? `${documentIdentity.documentNumber} · ${documentIdentity.documentTitle}` : '文档阅读'}
+          toolbar={{ identity: toolbarIdentity, links: toolbarLinks, more: toolbarMore, notices: toolbarNotices }}
+          activePanel={workbenchPanel.panel} savedPanels={savedPanels}
           initialPage={initialLocationPage}
           initialUnitId={initialLocationUnitId}
           initialLocationRequest={translationLocationRequest}
@@ -413,19 +475,19 @@ export default function DocumentVersionReadingPage() {
               : <p role="status">正在核对中文交付状态…</p>}
           </section>}
         />
-        {activityEntryRoute ? <p className="document-reading-related"><Link to={activityEntryRoute}>查看同一解析版本的活动阅读</Link></p> : null}
-      </> : <MineruMarkdownReader markdown={currentReading.markdown} assets={currentReading.assets} projection={currentReading.projection}
-        renderImage={renderImage} onLocateSource={setSource} />}
+      </> : <div hidden={workbenchPanel.panel !== 'reader'}><MineruMarkdownReader markdown={currentReading.markdown} assets={currentReading.assets} projection={currentReading.projection}
+        renderImage={renderImage} onLocateSource={setSource} /></div>}
       {source && <aside className="document-reading-source" aria-label="原件来源">
         <strong>原件第 {source.pageIndex + 1} 页</strong>
         <DocumentOriginalPreview documentVersionId={documentVersionId} page={source.pageIndex + 1}>打开对应原件页</DocumentOriginalPreview>
         <Button variant="ghost" onClick={() => setSource(null)}>关闭来源</Button>
       </aside>}
-    </> : <p role="status">{error ? '内容未能读回，请查看上方错误或刷新重试。'
+    </> : workbenchPanel.panel === 'reader' ? <p role="status">{error ? '内容未能读回，请查看上方错误或刷新重试。'
       : currentStatus ? requestedRun ? '指定解析版本尚未读回；请查看读取状态或刷新重试。'
         : currentStatus.publishedRun ? '正在读取已发布的解析内容…'
           : '尚无已发布的解析内容。可以先查看原件。'
-        : '正在读取文档状态…'}</p>}
+        : '正在读取文档状态…'}</p> : null}
+    {!currentReading?.original && workbenchPanel.panel !== 'reader' ? savedPanels : null}
   </main>;
 }
 

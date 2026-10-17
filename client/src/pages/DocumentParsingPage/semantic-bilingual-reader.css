@@ -144,6 +144,10 @@
   overscroll-behavior: contain;
   padding: 22px clamp(16px, 3cqw, 42px) 80px;
 }
+/* The workbench supplies a bounded height; skip full-document flex-basis measurement there. */
+.parse-reader-bilingual-view .wl-semantic-pane-scroll {
+  flex: 1 1 0;
+}
 .wl-semantic-pane-scroll .wl-bilingual-block {
   max-width: 78ch;
   margin-inline: auto;

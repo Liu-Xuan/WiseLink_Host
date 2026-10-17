@@ -949,6 +949,7 @@ export class CanonicalHostOpenClawMcpService {
             tenantId: scope.tenantId,
             workItemId: scope.workItemId,
             principalId: scope.principalId,
+            automaticLeaseRequired: !!scope.automaticWorkItemLease,
             leaseToken: selectedLeaseToken,
             leaseGeneration: selectedLeaseGeneration,
             ...(selectedReviewProgress
@@ -1006,6 +1007,7 @@ export class CanonicalHostOpenClawMcpService {
             attemptRef: selectedAttemptRef,
             tenantId: scope.tenantId,
             workItemId: scope.workItemId,
+            automaticLeaseRequired: !!scope.automaticWorkItemLease,
             reason,
           }),
         );

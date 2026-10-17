@@ -32,11 +32,9 @@ describe('LCM candidate snapshot source reading', () => {
       { label: '构型实际生效时间', value: '未知' },
     ]));
     const html = renderToStaticMarkup(createElement(LcmSnapshotFacts, { snapshot: value }));
-    expect(html).toContain('不代表当前实时构型');
-    expect(html).toContain('本地候选快照');
     expect(html).toContain('时区未核验');
     expect(html).toContain('2 架');
     expect(html).toContain('仅有本地来源引用');
-    expect(renderToStaticMarkup(createElement(LcmSnapshotRecords, { records: [] }))).toContain('零结果不证明未安装');
+    expect(renderToStaticMarkup(createElement(LcmSnapshotRecords, { records: [] }))).toContain('当前筛选没有匹配记录。');
   });
 });

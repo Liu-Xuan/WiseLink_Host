@@ -1439,7 +1439,7 @@ test('requires 41 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c226',
+    'wiselink-research-and-synthesize@r09.c228',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -5081,7 +5081,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c53',
+    'wiselink.3_1.review_prompt.v1.c53.source-content-once.v2',
   );
 });
 
@@ -5134,7 +5134,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c53',
+    'wiselink.3_1.review_prompt.v1.c53.source-content-once.v2',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -7543,8 +7543,12 @@ test('source-read JobAid Review makes one compact correction after a proven empt
     } }, { status: 400 });
     assert.equal(body.tool_choice, 'required');
     assert.equal(body.tools[0].function.name, 'return_wiselink_review_candidate');
-    assert.ok(body.tools[0].function.parameters.properties.jobAidWorkingDelta.properties.issuePatches);
-    assert.deepEqual(body.tools[0].function.parameters.properties.jobAidWorkingDelta.required, ['schemaVersion', 'completionReason', 'changeSummary']);
+    const deltaSchema = body.tools[0].function.parameters.properties.jobAidWorkingDelta;
+    assert.equal(deltaSchema.anyOf.length, 2);
+    const objectDelta = deltaSchema.anyOf.find(branch => branch.type === 'object');
+    assert.ok(objectDelta.properties.issuePatches);
+    assert.deepEqual(objectDelta.required, ['schemaVersion', 'completionReason', 'changeSummary']);
+    assert.deepEqual(deltaSchema.anyOf.find(branch => branch.type === 'null'), { type: 'null' });
     const correction = body.messages.at(-1).content;
     assert.match(correction, /jobAidWorkingDelta\.issuePatches/u);
     assert.match(correction, /"existing","other"/u);
@@ -7586,8 +7590,12 @@ test('JobAid Review corrects missing completion reason and change summary before
   }, { requestGateway: async (_url, init) => {
     requests++;
     const body = JSON.parse(init.body);
-    assert.deepEqual(body.tools[0].function.parameters.properties.jobAidWorkingDelta.required,
-      ['schemaVersion', 'completionReason', 'changeSummary']);
+    const deltaSchema = body.tools[0].function.parameters.properties.jobAidWorkingDelta;
+    assert.equal(deltaSchema.anyOf.length, 2);
+    const objectDelta = deltaSchema.anyOf.find(branch => branch.type === 'object');
+    assert.ok(objectDelta.properties.issuePatches);
+    assert.deepEqual(objectDelta.required, ['schemaVersion', 'completionReason', 'changeSummary']);
+    assert.deepEqual(deltaSchema.anyOf.find(branch => branch.type === 'null'), { type: 'null' });
     if (requests > 1) {
       const feedback = JSON.parse(body.messages.at(-1).content);
       assert.equal(feedback.candidateAccepted, false);
@@ -8368,33 +8376,69 @@ test('JobAid Review returns the pair error after two earlier corrections before 
 
 test('JobAid update gives specific correction for an empty assessment delta', async () => {
   let requests = 0;
+  let validations = 0;
+  const errors = [];
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  task.context.purpose = 'UPDATE_ASSESSMENT';
+  const method = { evidenceRef: 'method:prior', kind: 'METHOD_CLAUSE', title: '条件与未知',
+    versionLabel: 'fixture', excerpt: '判断应保留尚未取得证据的适用条件。', locator: null };
+  const previousIssue = { issueKey: 'existing', question: 'Scope?',
+    body: '适用范围仍待受控证据确认。[[method:prior]]', riskScenarios: [], measures: [],
+    otherClassifications: [], openQuestions: [{ question: 'Scope?', affects: '单机适用判断',
+      nextEvidence: '准确单机构型记录', reason: '尚未取得受控记录' }], requirementHandling: [] };
+  const previousWork = { workRevisionRef: 'JAWR-empty-delta-prior-7', workRevision: 7,
+    content: { issues: [previousIssue], roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
+      completionReason: '单机构型仍待核。' } };
+  task.jobAidContext.previousWork = previousWork;
+  task.jobAidContext.sourceCatalog = [method];
+  task.jobAidContext.initiallyDeliveredRefs = [method.evidenceRef];
+  Object.assign(task.jobAidContext.modelInput, { expectedWorkRevision: 7,
+    previousWork: structuredClone(previousWork), deliveredEvidence: [method] });
+  task.context.problemAssessment = task.jobAidContext.modelInput;
+  const original = structuredClone(previousWork);
+  const unchanged = { ...candidate, responseType: 'RESYNTHESIS_RESULT', jobAidWorkingDelta: null,
+    answer: '已比较准确已存工作与当前输入，没有新增改变适用判断的证据；原判断和单机构型未知保留。' };
+  assert.doesNotThrow(() => validateReviewCandidate(task, unchanged));
+  assert.throws(() => validateReviewCandidate(task, { ...unchanged, responseType: 'ANSWER' }),
+    /REVIEW_UPDATE_WORKING_DELTA_REQUIRED/u);
+  assert.throws(() => validateReviewCandidate(task, { ...unchanged, missingInputs: ['本轮比较尚未完成'] }),
+    /REVIEW_UPDATE_WORKING_DELTA_REQUIRED/u);
+  const changedIssue = { ...previousIssue,
+    body: '已交付方法要求按受控记录判断适用范围；单机构型仍未知，当前不得认定适用或不适用。[[method:prior]]' };
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+    roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: '单机构型仍待核。',
+    changeSummary: '明确适用范围判断所需的受控记录。' };
   const result = await invokeReviewWithTransport({ input: { context: {
-    purpose: 'UPDATE_ASSESSMENT', problemAssessment: { previousWork: { content: {
-      issues: [{ issueKey: 'existing', openQuestions: [{ question: 'Scope?' }] }],
-    } } },
+    purpose: 'UPDATE_ASSESSMENT', problemAssessment: task.jobAidContext.modelInput,
   } } }, {
     gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
     validateCandidate: (value) => {
-      if (value.jobAidWorkingDelta?.issues.length === 0)
-        throw new Error('REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED');
+      validations++;
+      validateReviewCandidate(task, { ...candidate, ...value });
     },
+    observeCandidateRejection: event => errors.push(event.errorCode),
   }, { requestGateway: async (_url, init) => {
     const request = JSON.parse(init.body);
     if (++requests === 2) {
       const feedback = JSON.parse(request.messages.at(-1).content);
       assert.equal(feedback.validationError, 'REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED');
-      assert.match(feedback.instruction, /changes no issue/u);
+      assert.equal(feedback.candidateAccepted, false);
+      assert.match(feedback.instruction, /jobAidWorkingDelta null/u);
       assert.deepEqual(feedback.previousIssueKeys, ['existing']);
     }
     return Response.json({ choices: [{ message: { content: null, tool_calls: [{
       id: `candidate-${requests}`, type: 'function', function: {
         name: 'return_wiselink_review_candidate',
-        arguments: JSON.stringify({ answer: '局部更正', jobAidWorkingDelta: { issues: requests === 1 ? [] : [{ issueKey: 'existing' }] } }),
+        arguments: JSON.stringify({ answer: '局部更正', jobAidWorkingDelta: {
+          ...work, issues: requests === 1 ? [] : [changedIssue] } }),
       },
     }] } }] });
   } });
   assert.equal(requests, 2);
-  assert.deepEqual(result.output.jobAidWorkingDelta.issues, [{ issueKey: 'existing' }]);
+  assert.equal(validations, 2);
+  assert.deepEqual(errors, ['REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED']);
+  assert.deepEqual(result.output.jobAidWorkingDelta.issues, [changedIssue]);
+  assert.deepEqual(previousWork, original);
 });
 
 test('JobAid review corrects a partial issue before Host can clear saved collections', async () => {
@@ -8431,35 +8475,66 @@ test('JobAid review corrects a partial issue before Host can clear saved collect
 test('JobAid update first reads an authorized document before exposing the candidate channel', async () => {
   const requests = [];
   const reads = [];
+  let validations = 0;
+  const previousIssue = { issueKey: 'existing', question: '单机适用和实施条件是否已核实？',
+    body: '单机构型和实施证据仍待核。[[doc:prior]]', riskScenarios: [],
+    measures: [{ text: '保留受控核实要求', addresses: '确认单机范围', limitations: ['尚未取得实施证明'],
+      status: 'PROPOSED', basisRefs: ['doc:prior'] }], otherClassifications: [],
+    openQuestions: [{ question: '准确单机构型是什么？', affects: '单机适用判断',
+      nextEvidence: '受控构型和实施记录', reason: '本次原文没有提供单机事实' }], requirementHandling: [] };
+  const otherIssue = { ...structuredClone(previousIssue), issueKey: 'other', question: '其他既有问题？' };
+  const previousWork = { workRevisionRef: 'JAWR-read-first-prior-7', workRevision: 7,
+    content: { issues: [previousIssue, otherIssue], roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
+      completionReason: '单机构型和实施证据仍待核。' } };
+  const before = structuredClone(previousWork);
+  const revisedBody = '当前原文给出的适用条件仍需结合受控单机构型判断；本次阅读没有提供实施证明，相关未知保留。[[doc:one]]';
   const input = { input: { context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {
     availableSources: [{ ref: 'doc:one', kind: 'DOCUMENT_PASSAGE' }],
+    previousWork,
   } }, availableSourceRefIds: ['read:one'], attachmentRefs: [] } };
   const result = await invokeReviewWithTransport(input, {
     gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
     configuredModelVersion: 'fixture/provider',
-    readSourceRefs: async (ids) => { reads.push(ids); return [{ sourceRefId: 'read:one', evidenceRef: 'doc:one', excerpt: 'Actual source' }]; },
+    readSourceRefs: async (ids) => {
+      assert.equal(requests.length, 1);
+      assert.deepEqual(ids, ['read:one']);
+      reads.push(ids);
+      return [{ sourceRefId: 'read:one', evidenceRef: 'doc:one', excerpt: 'Actual source' }];
+    },
+    validateCandidate: value => {
+      validations++;
+      assert.equal(reads.length, 1);
+      validateJobAidUpdatedIssueBodies(value);
+      assert.equal(Object.hasOwn(value.jobAidWorkingDelta, 'issuePatches'), false);
+      assert.deepEqual(value.jobAidWorkingDelta.issues, [{ ...previousIssue, body: revisedBody }]);
+    },
   }, { requestGateway: async (_url, init) => {
     const body = JSON.parse(init.body);
     requests.push(body);
     const first = requests.length === 1;
+    assert.deepEqual(reads, first ? [] : [['read:one']]);
     return Response.json({ model: 'fixture/provider', choices: [{ message: { content: null,
       tool_calls: [{ id: `call-${requests.length}`, type: 'function', function: {
         name: first ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
         arguments: JSON.stringify(first ? { sourceRefIds: ['read:one'] } : {
-          answer: '已核对原文并提议局部更正', jobAidWorkingDelta: { issues: [], unchangedIssueKeys: ['other'] },
+          answer: '已核对原文并提议局部更正', sourceRefs: ['read:one'],
+          jobAidWorkingDelta: { schemaVersion: 'wiselink.jobaid-problem-work.v3',
+            issuePatches: [{ issueKey: 'existing', body: revisedBody }], unchangedIssueKeys: ['other'],
+            roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS',
+            completionReason: '单机构型和实施证据仍待核。', changeSummary: '按原文范围条件修正既有判断。' },
         }),
       } }],
     } }] });
   } });
+  assert.equal(requests.length, 2);
+  assert.equal(validations, 1);
   assert.deepEqual(reads, [['read:one']]);
   assert.deepEqual(requests[0].tools.map((tool) => tool.function.name), ['read_wiselink_review_sources']);
   assert.equal(requests[0].tool_choice, 'required');
   const sourceSelectionPrompt = requests[0].messages.find((message) => message.role === 'user' &&
     message.content.includes('\nAUTHORIZED_SOURCE_CATALOG:\n'))?.content;
   assert.equal(typeof sourceSelectionPrompt, 'string');
-  assert.match(sourceSelectionPrompt, /First call read_wiselink_review_sources/u);
   assert.doesNotMatch(sourceSelectionPrompt, /\nINPUT:\n/u);
-  assert.doesNotMatch(sourceSelectionPrompt, /Correct an existing JobAid issue through issuePatches/u);
   const catalogMarker = '\nAUTHORIZED_SOURCE_CATALOG:\n';
   assert.deepEqual(JSON.parse(sourceSelectionPrompt.slice(sourceSelectionPrompt.indexOf(catalogMarker) + catalogMarker.length)), {
     availableSourceRefIds: ['read:one'], availableSources: [{ ref: 'doc:one', kind: 'DOCUMENT_PASSAGE' }],
@@ -8470,10 +8545,15 @@ test('JobAid update first reads an authorized document before exposing the candi
   const fullPrompt = requests[1].messages.find((message) => message.role === 'user' &&
     message.content.includes('\nINPUT:\n'))?.content;
   assert.equal(typeof fullPrompt, 'string');
-  assert.match(fullPrompt, /Correct an existing JobAid issue through issuePatches/u);
-  assert.doesNotMatch(fullPrompt, /Every updated issue is a complete replacement/u);
   assert.match(requests[1].messages[2].content, /Actual source/u);
+  assert.equal(requests[1].messages.map(message => message.content).join('\n').split('Actual source').length - 1, 1);
   assert.equal(result.output.answer, '已核对原文并提议局部更正');
+  assert.deepEqual(result.output.sourceRefs, ['read:one']);
+  assert.deepEqual(result.output.jobAidWorkingDelta.issues, [{ ...previousIssue, body: revisedBody }]);
+  assert.deepEqual(result.output.jobAidWorkingDelta.unchangedIssueKeys, ['other']);
+  assert.equal(result.output.jobAidWorkingDelta.roundCompletion, before.content.roundCompletion);
+  assert.equal(result.output.jobAidWorkingDelta.completionReason, before.content.completionReason);
+  assert.deepEqual(previousWork, before);
 });
 
 test('repeated Review source read reuses evidence and asks for a candidate or a new source', async () => {
@@ -8645,7 +8725,8 @@ test('explicit assessment update rejects prose-only success and accepts a correc
     const request = JSON.parse(init.body);
     const schema = request.tools.find((tool) => tool.function.name === 'return_wiselink_review_candidate').function.parameters;
     assert.ok(schema.required.includes('jobAidWorkingDelta'));
-    assert.equal(schema.properties.jobAidWorkingDelta.type, 'object');
+    assert.ok(schema.properties.jobAidWorkingDelta.anyOf.some(branch => branch.type === 'object'));
+    assert.ok(schema.properties.jobAidWorkingDelta.anyOf.some(branch => branch.type === 'null'));
     const authored = ++requests === 1 ? { answer: '已更新，但未提供增量' } : { answer: '提议修正', jobAidWorkingDelta: work };
     return Response.json({ choices: [{ message: { content: null, tool_calls: [{
       id: `candidate-${requests}`, type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify(authored) },
@@ -10027,4 +10108,13 @@ test('requires strict registered derived_summary_attempt metadata without granti
     assert.throws(() => validateHostToolMetadata({ tools: drift }), /DERIVED_SUMMARY_SCHEMA_MISMATCH/);
   }
   assert.throws(() => validateHostToolMetadata({ tools: tools.filter(tool => tool.name !== 'derived_summary_attempt') }), /EXACT20_MISMATCH/);
+});
+
+
+test('scoped-0828 Matter assessment update still requires a non-null work delta', async () => {
+  const { reviewTask, delta } = await matterReviewFixture(1);
+  reviewTask.context.purpose = 'UPDATE_ASSESSMENT';
+  assert.throws(() => validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, null)),
+    /REVIEW_UPDATE_WORKING_DELTA_REQUIRED/u);
+  assert.doesNotThrow(() => validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, delta)));
 });

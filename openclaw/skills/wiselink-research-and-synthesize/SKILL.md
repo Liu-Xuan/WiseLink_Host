@@ -12,10 +12,12 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c226`
+- Skill：`wiselink-research-and-synthesize@r09.c228`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
+
+c228 接通 Host 授权的初始身份、保存读回、精确提交恢复与非取消终态收尾。坏本地记录只作隔离候选，任务与最后保存由 Host 确定；provider UNKNOWN 不重发。已保存 COMPLETE 工作仅在 Host 封存许可下零模型补齐原候选投影，再由独立 Overall 阶段综合。辅助 checkpoint 警告随回执保留，不推翻业务已保存或已完成的事实。
 
 c216 为已停止的自动队列 claim 增加显式取消停车与既有 BLOCK 重放归档。Host 核对精确最新 CANCELLED JobAid、原输入/来源/模型/修订并原子隔离旧写入；消费者先保存不可变 intent，保留 provider UNKNOWN，不重发未知 POST、不启动模型或自动派发新事项。须配套 Host 和正常安装更新，旧失败与已保存 JobAid 保留。
 
@@ -31,15 +33,15 @@ c198 允许自动队列 cron 附带一个经校验的 `--document-translation-re
 
 c181 的 JobAid Review 对已有问题允许 `issuePatches`：模型只提交确切问题键和实际更改字段；外部驱动从 Host 固定的上一修订补全遗漏字段后仍执行完整候选、来源和 Host 校验。显式空数组才清空旧集合；新增问题继续使用完整 `issues`。这只改变 Review 候选的编写形式，不改变 Host 保存合同、正式采用或授权范围。
 
-c169 在 Host 确认保存工作后，若 M3 Probe 连续返回完整纯文本而不调用函数，初始 JobAid 以确切保存修订和回执开启较短新会话继续纠正；已有来源读取或候选被拒绝时保留原证据与反馈上下文。仍不接受纯文本为已保存工作，不自动 FINISH，也不增加模型重试次数。
+c169 的纯文本自动换短会话继续纠正已由 JobAid/Overall 的单阶段协议修复替代：对已完整结束且可纠正的协议错误，整个阶段最多一次针对反馈与有界退避，合法操作不重置次数，仍受原轮数和时间预算约束。来源、已保存修订与更正目标继续保留；纯文本不作 SAVE、不自动 FINISH，网关或传输 UNKNOWN 不重发。
 
 c153 仅保留已知、无敏感正文的官方解析额度错误码，消费者明确呈现阻断原因；不重跑已失败插件、不将配置或额度故障直接 BLOCK。Host 的资料库和 Wiki 同时支持读取已经有效保存的成员问题评估。
 
 c152 为已有逐任务授权的自动队列补齐原文准备：缺少发布原文时，Host 幂等预约并有界执行官方解析，保存分页成果后接续分析；失败保留原因与原任务，不自动 BLOCK。普通状态读取仍只读，旧固定任务不继承自动授权。
 
-c145 在自动队列中对取消、超时和准备失败的 JobAid/Overall 尝试生成至多一次新请求；复用 Host 已保存工作，核对原文版本与尝试身份。失败仍需关注，运行故障不再自动 BLOCK 正常文档。
+c145 的取消、超时自动派生重试已收窄：当前仅对 Host 明确的 `ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED` 且可证明模型未开始的准备失败保留既有有界重试；普通取消或超时不派生新模型请求。
 c146 对 M3 Probe Large 的 JobAid/Overall 使用自动工具选择，允许既有有界协议校正处理完整纯文本回应；保存仍须经过结构、来源、工作版本与 Host 校验。
-c147 仅在首次自动重试确实保存新工作且 Host 身份、版本和来源仍一致时，再允许一个有界后继；短正文和已读来源随工作修订接续，默认摘要聚焦工程认识。
+c147 的部分工作自动后继规则已收窄：保存进展不证明 provider 已停止；部分分析只能使用 Host 明确持久化的新阶段资格继续，没有该证据时保留 UNKNOWN。
 c148 将新 JobAid/Overall 的首屏摘要明确限定为工程问题、措施和决定性条件；Overall 对超长标题或列表摘要在保存前同会话有界要求模型更正，不截断来源和正文。
 c165 对 Host 已完整交付的短篇原文直接开展 JobAid，不重复请求来源；独立日期和 TBD 不得推断先后关系，长文档仍按需分批读取。
 c166 仅增加 JobAid Hosted Gateway 请求的 UTF-8 字节数诊断（完整请求、messages、system、tools），不记录正文或凭据，不改变请求、业务判断或失败重试边界。
@@ -91,6 +93,8 @@ Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协�
 
 `run-jobaid-problem-assessment.mjs` 通过现有官方 Gateway 与确定性 Host 回调执行 `read_assessment_sources`、`query_assessment_knowledge`、`save_assessment_work`、`read_assessment_work`。模型只返回读取/保存/完成意图；requestId、lease、最终 sealed ResultEnvelope 由驱动持有。已保存内容可在失败后阅读，同一请求响应丢失先读回原请求，不重复生成已保存正文。最终提交只绑定已保存的精确工作版本；Overall 保留该版本的完整问题和条件，不重新执行旧 Base 流程。
 
+Host 在封存 task 的外层 `modelInput.savedWorkReconciliation` 精确许可时，驱动先核最后保存与原 SAVE key，再以 `executionKind=HOST_SAVED_WORK_RECONCILIATION`、`modelRequests=0`、`modelVersion=null` 和原 `sourceWork` 提交现有 COMPLETE 工作引用。该控制标记不进入模型；不伪造本轮模型运行。Host 在原 commit 事务中重核最新工作、输入、来源、当前权限和两种租约。已有 base 投影时直接按 Host 阶段进入 Overall；补投影后也由后续正常授权的独立 Overall 完成一致性检查。
+
 `wiselink.3_1.applicability_task.v2` 的 `sourceReadingMode=VERIFIED_ENGLISH` 使用实际英文 SourceExpressions/SourceContext，`bilingualBinding=null`、`bilingualSourceUnits=[]`。保持原 AST、Host Fleet 匹配与 UNKNOWN 边界。旧 v1 继续检查其原译文绑定。
 
 `wiselink.3_1.review_turn_task.v1.c5` 的模型上下文是 `context.problemAssessment`。新候选 c5 通过 `jobAidWorkingDelta` 表达受影响问题，未涉及问题由 Host 保留，撤回问题须说明理由；普通解释用 null。Host 在同一事务保存问题工作和 Review 回答，不执行正式 ReviewAction。详细协议见 [JobAid 问题工作](references/jobaid-problem-work.md)。
@@ -136,7 +140,8 @@ Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协�
 该状态来自现有 projection 与 ActionAttempt，
 不是消费者另建业务状态机。独立资料读取可有限并行；依赖分析与同一 WorkItem 的 CAS 写回保持有序。
 页面显式接续产生新的 Host requestId。阶段带 requestId 时，消费者将其原样传入相应 begin，并使用 requests/requestId 下的独立检查点；不能用旧失败检查点代替新请求，也不能为同一终态请求重新生成。
-`NOT_READY/BUSY` 不调用模型；普通失败不重放同一请求，未知结果停止并报告。自动队列对确切取消、超时或准备失败的 JobAid/Overall 可发起至多一次新请求，见下节。启用英文评估路径后，Host 可保留翻译失败并继续已授权的其他初始阶段；消费者只执行 Host 新读回的 nextOperation。普通 applicability 的
+未提供 continuation 属性是合法初始请求；已提供的 continuation 必须是合法字符串，不能以 undefined、null、数字或 JSON 丢失必需续接字段回退为初始。初始身份在本地绑定中明确保存为 `requestId:null`，不把该 null 作为 continuation 发送，也不以 AQ/UI/SAVE key 替代阶段 requestId。
+`NOT_READY` 或没有 Host 恢复许可的 `BUSY` 不调用模型；普通失败不重放同一请求，未知结果保留并报告。自动队列仅保留上述可证明模型未开始的准备失败重试；其他后继须由 Host 明确授权。启用英文评估路径后，Host 可保留翻译失败并继续已授权的其他初始阶段；消费者只执行 Host 新读回的 nextOperation。普通 applicability 的
 `WAITING_INPUT` 保持缺口，可继续 Host 指定的 JobAid/Overall；它不自动启动 P0B 重算。
 新 Host 未提供该字段时统一入口明确停止，原有单 operation 与 Review 入口仍兼容。
 运行范围只取已授权的 `--work-item-id`；新事项尚无 applicability context 时使用与 Host 配置一致的
@@ -150,9 +155,13 @@ Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协�
 WorkItem、不调用模型。新事项的 applicability context 从 Host fresh status 读取，租约保存在 endpoint 专属、私有
 checkpoint；模型和业务工具仍复用现有消费者、官方 Gateway、阶段级 checkpoint 与 Host CAS。
 
-租约过期后仅发送之前 checkpoint 的精确 `resumeWorkItemId`。Host 不返回同一事项时，本地 claim 与阶段 checkpoint
-全部保留并返回 `REQUIRES_ATTENTION`；绝不接着消费其他排队项。消费者只在 Host fresh status 确认初始 JobAid 和
-Overall 完成后 ACK。c145 对取消、超时或准备失败的 JobAid/Overall，按旧 attempt 与确切原文版本派生稳定的新请求，最多接续一次；再次失败或授权/版本变化则保留成果并报告关注。运行故障不再自动 BLOCK 文档；既有未确认 BLOCK 意图也不重发。模型结果不决定发现、续领或正式采用。
+本地 claim 完整可信且租约过期时，使用其精确 `resumeWorkItemId` 请求 Host 重验；身份不匹配时保留原记录并报告关注。claim/checkpoint 缺失或损坏时隔离局部坏记录，通过现有服务身份与当前来源权限正常调用 next-work-item，由 Host 选择合法任务；不猜 ID，不抢仍有效的执行者，不把本地缓存作为查询 Host 的前置真源。消费者只在 Host fresh status 确认初始 JobAid 和 Overall 完成后 ACK。
+
+`get_parse_status` 只观察；期限归整发生在授权领取或结束入口。SAVE 响应未知先按 Host 返回的原 saveKey 查询，不生成新 key 或重复写；缺少可信 saveKey 时先读 Host 最后保存。已保存部分工作不证明 provider 已结束，未获得新阶段资格时保持 UNKNOWN。queue grant 与 stage attempt lease 分开由 Host 事务校验，旧任一资格都不能写或释放新占位。
+
+Host 在两种旧 lease 均到期后，可能为准确 COMMITTING 原结果延长现有恢复窗口并返回相同 queue token/generation。消费者必须核当前精确 attempt、原 sealed ResultEnvelope 与 hash；该分支只重放原 JobAid/Overall commit，0 模型、0 SAVE，并在本 tick 结束。下一阶段由后续正常调度按当前持久阶段、权限和有效 grant 重新授权；同一 principal 不证明原进程已经退出，也不把该 token 当作新增的全局仅提交能力。
+
+当前 Host 明确的非取消终态可经既有普通 BLOCK 自然收尾，准确回执后归档原 claim，下一 tick 再领取独立事项，详见末节。单纯本地异常、仍 RUNNING/COMMITTING 或 provider UNKNOWN 不作为 BLOCK 依据；Host 已判定阶段超时后可收尾队列占位，但不声称 provider 已停止。已确认的保存、投影、BLOCK 或 ACK 不因辅助日志失败被改成业务失败；回执保留 stage 与 root 的有界 checkpoint 警告。
 修复部署后，操作员可在无其他消费者时单次使用 `--auto-queue --repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...` 接续已停止的精确 claim。它只接受自动重试后的无保存 Gateway 不完整终态，依据旧 attempt 与当前 Skill 版本派生稳定 requestId；普通定时命令不带此参数，失败后不能循环重放。
 c223 对已有停止标记的 claim，只有 Host 当前返回同事项、文档版本和工作修订的新显式 `PENDING/QUEUED` 请求，且该请求的独立检查点没有任何执行或保存意图，才通过原入口接续。消费者先持久化一次唤醒意图，再于第二次状态读取重验操作、请求和 attempt 绑定；未知结果保留停止记录。任务时限仍由 Host 核验，历史 provider UNKNOWN 不重放。
 静态 `--work-item-id`、Matter 和 DocumentVersion 命令仍使用原入口，不与 `--auto-queue` 混用。
@@ -198,9 +207,7 @@ P0B 时只接受 Host 给出的精确协调绑定
    `modelInputBase` 与第一批 SourceUnits；若 `partCount > 1`，官方 Hosted Agent 用同一工具按 `deliveryPart=1..N-1`
    顺序读取剩余可读 SourceUnits。每个完整 MCP tool result 按实际 JSON UTF-8 bytes 限在 14,000 内，不从托管
    日志恢复截断 JSON。
-3. 若 status 为 `COMMITTING`，只调用一次 `get_action_attempt_status`，校验 Host 已持久化
-   `recoveryResult.contentHash == resultContentHash == begin.recoveryResultContentHash` 后返回；不调用模型、不再次
-   commit。begin 只返回该有界 hash，完整 recoveryResult 由既有 status 工具读取。
+3. 若 status 为 `COMMITTING`，先用 `get_action_attempt_status` 核准确 attempt、当前授权及原 sealed ResultEnvelope/hash。JobAid/Overall 的既有恢复驱动只用原 attempt fence 和完全相同的结果幂等重放原 commit，不调用模型或 SAVE；其余旧 Translation、Applicability、Review 路径仍按原只读恢复规则处理，不因本条扩展重放权限。
 4. 历史 Translation 若 status 为 `RUNNING`，只使用 `delivery.modelInputBase + delivery.sourceUnits` 组成的 authority-free translation
    输入；attempt control/taskBinding 不混入翻译输入。收齐输入后 heartbeat，生成完成、commit 前再 heartbeat；生成期间
    不要求短周期回调，Host 的长租约覆盖该段运行。
@@ -220,9 +227,7 @@ P0B 时只接受 Host 给出的精确协调绑定
 
 Translation 不使用上述单次大参数：将 sealed ResultEnvelope 写为本轮 `commit-payload.json`，通过下文
 `UPLOAD_PART → FINALIZE` 形态提交。7. commit/finalize 后 fresh-read `get_parse_status`。Host 才负责 ResultGate、实际字节 persist/readback 和 WorkItem
-CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只调用一次 `get_action_attempt_status`。仅当同一 attempt 的
-`resultContentHash` 与本次 sealed ResultEnvelope `contentHash` 精确一致时返回只读恢复；否则 outcome unknown，
-绝不 blind retry。
+CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时先调用 `get_action_attempt_status`。仅在同一 attempt 的原结果 hash 精确一致时核回该提交；后续 JobAid/Overall COMMITTING 恢复仍受第 3 条与 Host 两种 fence 约束。缺少准确结果或授权时保持 UNKNOWN，不重新生成或盲重试。
 
 ### Translation v2
 
@@ -489,7 +494,7 @@ Aily 使用本轮用户的短期授权，驱动通过 `query_review_aily` 发起
 也不等于原文已验证。授权缺失、检索失败或仍在运行必须说明。不得调用写入、发消息或审批能力。
 驱动先从官方 OpenClaw 配置确认 `gateway.http.endpoints.chatCompletions.enabled=true`，未明确启用时在任何
 Host business begin 之前停止。完整 MCP 结果写入权限为 `0600` 的持久 checkpoint，目录限制为 `0700`：已完成
-步骤只从 checkpoint 恢复；model response 在 strict parse 前只额外写入不含原文的 `model.output-shape` v2 0600
+Review 已完成步骤复用本轮 checkpoint；这不把 checkpoint 变成自动 WorkItem 的定位或授权真源。model response 在 strict parse 前只额外写入不含原文的 `model.output-shape` v2 0600
 write-once checkpoint；同轮后续响应按序号保存。驱动向模型提供 `read_wiselink_review_sources` 与
 `return_wiselink_review_candidate` 两个 client function：前者只委托驱动读取当前 Host 已授权来源，后者仅序列化最终候选。
 CHAT 与 Matter 使用原生 `tool_choice=required`；JobAid c5 沿用 `auto`，但驱动同样要求实际收到唯一的读取或候选函数，纯文本不作结果。c37 的 Matter 输出函数只有 `candidateJson`
@@ -619,8 +624,8 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 
 当前 validator 强制：
 
-- `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c226`
+- 普通模型结果的 `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断；上述 Host saved-work reconciliation 分支诚实记录 `modelVersion=null`
+- `skillVersion=wiselink-research-and-synthesize@r09.c228`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
@@ -709,8 +714,10 @@ installed-baseline delta.
 [分层 Wiki 协议](references/hierarchical-wiki-work.md)。仅在兼容 Host/SQL/MCP/Skill 安装后，
 由原自动队列的同一 owner 开启 `--wiki-idle` 及明确预算；既存在途指针优先恢复。
 
-### 单 endpoint 自动队列失败收尾（r09.c212）
+### 单 endpoint 自动队列终态收尾（r09.c228）
 
 - `--auto-queue` 的正常 tick 与显式 `--finish-blocked-claim` 共用 `active-claim.owner.lock` 的 Linux util-linux `flock` 独占 FD owner，从首次读指针覆盖至 Host 等待及最后本地写；竞争、缺失工具或不支持的文件系统一律 fail-closed。锁文件不删除，FD close / 进程退出由内核释放锁；安装前必须确认旧版无锁 consumer 已退出，不能停止仍活跃任务。阶段内已有 heartbeat / 续租不重入此队列 owner 锁。
-- 操作员仅在已确认正式 BLOCKED 后，指定精确 WI / 原 request / DV / lease generation / blockedAt，使用 `--auto-queue --finish-blocked-claim --finish-work-item-id WI-... --finish-request-id REQ-... --finish-document-version-id DV --finish-lease-generation N --finish-blocked-at UTC`。此流程调用既有正式 BLOCK POST 并要求精确 `replayed=true` 回执，先不可变归档原 claim 与回执，再解除该本地绑定；归档内已有 leaseToken 留在可信私有 checkpoint，不得进入模型、公开输出或交付包。
-- 收尾返回 `BLOCKED_CLAIM_FINALIZED`，不以失败冒充成功 ACK，也不取消、重发或执行新模型。其他已授权任务由下一次原生正常 tick 领取。已归档的重复收尾不得触碰新 generation / 新 WI；无正式回执、网络歧义或归档失败均保留指针。独立 invocation 失败回执仅是可观测性证据，不自行投影停止或 BLOCK。
+- 普通失败 tick 保留 stopped 记录；下一自然 tick 仅在 Host fresh status 为 `FAILED/CONFLICT`、`nextOperation=null`，且准确 WI/DVI/revision、当前 grant 和非 CANCELLED 的 `FAILED/TIMED_OUT/OBSOLETE/CONFLICT` 阶段均匹配时，用既有普通 BLOCK 收尾。先持久化完整原身份意图，再以原 token/generation 核准确 `replayed=true`、blockedCode/blockedAt 回执，沿既有归档清除仍匹配的本地 claim。该 tick 结束，独立后继由下一 tick 正常领取；失败不冒充成功 ACK。
+- 普通 BLOCK 的原动作响应丢失时，完整意图只恢复同一原身份的幂等 POST 回执；Host 继续核原 grant 与当前 actor/source 权限。无准确回执、撤权、来源变化或新占位时不清 claim。Host 已 BLOCKED 但本地归档/清理失败时保留可从原回执重建的状态并报告 `BLOCKED`，不否认业务已完成；旧的不完整运行故障意图仍需关注，不据其猜测终态。
+- 显式历史收尾入口仍可由操作员在确认正式 BLOCKED 后，以精确 WI / 原 request / DV / lease generation / blockedAt 使用 `--auto-queue --finish-blocked-claim --finish-work-item-id WI-... --finish-request-id REQ-... --finish-document-version-id DV --finish-lease-generation N --finish-blocked-at UTC`。它要求原幂等回执并归档，旧 generation 不得清新 claim；归档内 leaseToken 仅留可信私有 checkpoint。
+- 真实 `CANCELLED` 保持独立、显式授权的 PARK/取消收尾边界，普通 BLOCK 不接纳；本规则不自动释放真取消，也不改写历史。RUNNING、COMMITTING 和单纯本地异常不走普通 BLOCK，不因占位收尾而重发 UNKNOWN 模型。独立 invocation 失败回执仅是观测证据，不自行授权业务终态。

@@ -2,13 +2,15 @@ import type { DocumentParseProgressArtifact, DocumentParseSourceBinding } from '
 import { FileDownloadBuilder } from '@lark-apaas/file-service';
 import type { DocumentOriginalArtifact } from '../../../shared/document-original.interface';
 import type { DocumentStepFence } from '../../../server/modules/document-management/src/hosted/nest/document-step-lease.repository';
-import { openDocumentPdfSession } from '../../../server/modules/document-management/src/hosted/nest/document-original-pdf';
+import { openDocumentPdfSession, type DocumentPdfExtraction } from '../../../server/modules/document-management/src/hosted/nest/document-original-pdf';
 jest.mock('../../../server/modules/document-management/src/hosted/nest/document-original-pdf', () => ({ openDocumentPdfSession: jest.fn() }));
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { decodeLocalMineruResult } from '../../../server/modules/professional-input/mineru/local-mineru-result-transport';
 import { DocumentParsingHostedService } from '../../../server/modules/document-management/src/hosted/nest/document-parsing-hosted.service';
-import { readLocalMineruCandidate } from '../../../server/modules/document-management/src/hosted/nest/document-mineru-local-candidate';
+import { DocumentOriginalStore, type DocumentOriginalBundle } from '../../../server/modules/document-management/src/hosted/nest/document-original-store';
+import * as localMineruCandidate from '../../../server/modules/document-management/src/hosted/nest/document-mineru-local-candidate';
+import * as mineruOriginalAdapter from '../../../server/modules/document-management/src/hosted/nest/document-mineru-original-adapter';
 import { sameParserInput } from '../../../server/modules/document-management/src/hosted/nest/document-parsing.repository';
 import { MiaodaFileServiceArtifactStore } from '../../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 import * as authority from '../../../server/modules/document-management/src/hosted/nest/document-upload-authority';
@@ -21,11 +23,17 @@ const encode = (value: unknown) => Buffer.from(JSON.stringify(value));
 const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 const context = { actorUserId: 'actor', tenantId: 'tenant', roles: [], appId: 'app_17bzc551rsg', env: 'production' };
 const request = { mode: 'LOCAL_MINERU_IMPORT', selection: { bucketId: 'bucket', filePath: '/candidate.json' }, requestId: 'local-request', expectedPublishedRevision: 0 };
-function fixture() {
-  const extract = jest.fn(async () => ({ pageCount: 1, pages: [{ pageIndex: 0, text: 'Exact original text.', width: 600, height: 800, rotation: 0,
-    items: [{ text: 'Exact original text.', transform: [10, 0, 0, 10, 10, 770], width: 100, height: 10, hasEOL: true }] }] }));
+function fixture(pageCount = 1) {
+  const extract = jest.fn(async (input: { pageStart: number } = { pageStart: 0 }): Promise<DocumentPdfExtraction> => ({ pageCount,
+    pages: Array.from({ length: Math.min(8, pageCount - input.pageStart) }, (_value: unknown, offset: number) => ({
+      pageIndex: input.pageStart + offset, text: 'Exact original text.', width: 600, height: 800, rotation: 0, ruledLines: null,
+      items: [{ text: 'Exact original text.', transform: [10, 0, 0, 10, 10, 770], width: 100, height: 10, hasEOL: true }] })) }));
   jest.mocked(openDocumentPdfSession).mockImplementation(async () => ({ extract, destroy: jest.fn(async () => undefined) }));
-  const bytes = encode(candidate());
+  const input = candidate();
+  input.raw.middle.pdf_info = Array.from({ length: pageCount }, (_value: unknown, index: number) =>
+    ({ page_idx: index, page_size: [600, 800] }));
+  input.raw.contentListV2 = Array.from({ length: pageCount }, () => structuredClone(input.raw.contentListV2[0]));
+  const bytes = encode(input);
   const binding = { documentVersionId: 'DV', documentId: 'DOC', familyId: 'FAM', sourceArtifactId: 'ART', pdfSha256: 'a'.repeat(64), byteLength: 1 };
   const selection = { bucketId: 'bucket', filePath: 'candidate.json', providerObjectId: 'candidate-object', sha256: digest(bytes), byteLength: bytes.length, bytes, readbackVerified: true };
   const run = { requestId: request.requestId, actorUserId: context.actorUserId, tenantId: context.tenantId, parseRunId: 'PR', documentVersionId: 'DV', parseRevision: 2, status: 'RUNNING', startedAt: new Date(), deadlineAt: new Date(Date.now() + 240000), completedAt: null as Date | null,
@@ -94,10 +102,22 @@ it('rejects unknown fields and does not let local mode silently use ordinary par
   await expect(f.service.start('DV', { requestId: 'x', expectedPublishedRevision: 0, selection: request.selection }, context)).rejects.toThrow('DOCUMENT_PARSE_INPUT_INVALID');
 });
 it('strictly validates parser version, asset content and package identities', () => {
-  const value = candidate(); expect(readLocalMineruCandidate(encode(value)).sourceSha256).toBe(value.source.sha256);
-  expect(() => readLocalMineruCandidate(encode({ ...value, workItemId: 'WI' }))).toThrow();
-  expect(() => readLocalMineruCandidate(encode({ ...value, parser: { ...value.parser, version: '9.9' } }))).toThrow();
-  expect(() => readLocalMineruCandidate(encode({ ...value, assets: [{ path: 'images/a.png', mediaType: 'image/png', byteLength: 1, sha256: 'b'.repeat(64), base64: 'AQ==' }] }))).toThrow();
+  const value = candidate(); expect(localMineruCandidate.readLocalMineruCandidate(encode(value)).sourceSha256).toBe(value.source.sha256);
+  expect(() => localMineruCandidate.readLocalMineruCandidate(encode({ ...value, workItemId: 'WI' }))).toThrow();
+  expect(() => localMineruCandidate.readLocalMineruCandidate(encode({ ...value, parser: { ...value.parser, version: '9.9' } }))).toThrow();
+  expect(() => localMineruCandidate.readLocalMineruCandidate(encode({ ...value, assets: [{ path: 'images/a.png', mediaType: 'image/png', byteLength: 1, sha256: 'b'.repeat(64), base64: 'AQ==' }] }))).toThrow();
+});
+it('reads a bounded input view and owns decoded assets independently of the input bytes', () => {
+  const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
+  const bytes = encode({ ...candidate(), assets: [{ path: 'images/a.png', mediaType: 'image/png', byteLength: png.length,
+    sha256: digest(png), base64: png.toString('base64') }] });
+  const storage = Buffer.concat([Buffer.from('prefix'), bytes, Buffer.from('suffix')]);
+  const view = new Uint8Array(storage.buffer, storage.byteOffset + 6, bytes.length);
+  const result = localMineruCandidate.readLocalMineruCandidate(view);
+  view.fill(0);
+  expect(result.assets[0].bytes).toEqual(new Uint8Array(png));
+  expect(result.assets[0].sha256).toBe(digest(png));
+  expect(result.rawArtifacts.markdown).toBe(candidate().raw.markdown);
 });
 it('repository input identity includes immutable object and input bytes', () => {
   const source = { documentVersionId: 'DV', documentId: 'DOC', familyId: 'FAM', sourceArtifactId: 'ART', pdfSha256: 'a'.repeat(64), byteLength: 1 };
@@ -127,7 +147,7 @@ it('captures settings once; disabling later blocks new imports while exact publi
 });
 it('checks image signatures independently of the supplied media type and matching digest', () => {
   const bytes = Buffer.from('not an image');
-  expect(() => readLocalMineruCandidate(encode({ ...candidate(), assets: [{ path: 'images/a.png', mediaType: 'image/png', byteLength: bytes.length,
+  expect(() => localMineruCandidate.readLocalMineruCandidate(encode({ ...candidate(), assets: [{ path: 'images/a.png', mediaType: 'image/png', byteLength: bytes.length,
     sha256: digest(bytes), base64: bytes.toString('base64') }] }))).toThrow('DOCUMENT_MINERU_CANDIDATE_INVALID');
 });
 it.each([true, false])('validates title levels against raw views and respects captured title switch=%s', async enabled => {
@@ -188,6 +208,12 @@ it('rechecks candidate authorization before publishing a recovered completed man
 });
 it('recovers local predecessor page checkpoints without extracting the same PDF again', async () => {
   const f = fixture(); const upload = f.scoped.upload.getMockImplementation()!;
+  const extract = f.extract.getMockImplementation()!;
+  f.extract.mockImplementationOnce(async () => {
+    const chunk = await extract();
+    chunk.pages.forEach(page => { delete page.ruledLines; });
+    return chunk;
+  });
   f.scoped.upload.mockImplementation(async (bytes, options) => {
     if (options.filePath.endsWith('raw/mineru-candidate.json')) throw new Error('CONSTRUCTED_UPLOAD_FAILED');
     return upload(bytes, options);
@@ -205,6 +231,155 @@ it('recovers local predecessor page checkpoints without extracting the same PDF 
   f.scoped.upload.mockImplementation(upload);
   await expect(f.service.start('DV', { requestId: `parse-resume-${oldId}`, expectedPublishedRevision: 0 }, context)).resolves.toMatchObject({ status: 'PUBLISHED' });
   expect(f.extract).toHaveBeenCalledTimes(1); expect(f.plugins.parseOriginal).not.toHaveBeenCalled();
+});
+
+async function publishedMultiGroupFixture() {
+  const f = fixture(25);
+  await f.service.start('DV', request, context);
+  await f.service.start('DV', request, context);
+  const previous = structuredClone(f.run);
+  f.repository.current.mockResolvedValue({ published: previous });
+  Object.assign(f.run, { parseRunId: 'NEXT', parseRevision: 3, expectedPublishedRevision: 2,
+    status: 'RUNNING', artifactProgress: [], manifestArtifact: null, errorCode: null, completedAt: null });
+  f.leases.claim.mockResolvedValue({ parseRunId: 'NEXT', leaseOwner: 'local', leaseToken: 'lease', leaseGeneration: 1 });
+  f.extract.mockClear(); f.repository.publish.mockClear();
+  const download = jest.spyOn(f.scoped, 'download');
+  const compose = jest.spyOn(mineruOriginalAdapter, 'documentMineruOriginal');
+  const fullLoad = jest.spyOn(DocumentOriginalStore.prototype, 'load');
+  const readingLoad = jest.spyOn(DocumentOriginalStore.prototype, 'loadForReading');
+  const next = { ...request, requestId: 'next-local', expectedPublishedRevision: 2 };
+  return { ...f, previous, next, download, compose, fullLoad, readingLoad };
+}
+
+it('validates assets on admission and final consumption without decoding them in an intermediate checkpoint', async () => {
+  const f = fixture(25);
+  const decode = jest.spyOn(localMineruCandidate, 'readLocalMineruCandidate');
+  await expect(f.service.start('DV', request, context)).resolves.toMatchObject({ status: 'STAGING' });
+  expect(decode).toHaveBeenCalledTimes(1);
+  expect(f.readSelection.mock.calls.filter(([selection]) => selection.filePath?.endsWith('candidate.json'))).toHaveLength(1);
+  await expect(f.service.start('DV', request, context)).resolves.toMatchObject({ status: 'PUBLISHED' });
+  expect(decode).toHaveBeenCalledTimes(2);
+  expect(f.readSelection.mock.calls.filter(([selection]) => selection.filePath?.endsWith('candidate.json'))).toHaveLength(3);
+});
+
+it.each(['sha256', 'byteLength', 'providerObjectId'])('rejects drift in pinned %s before continuing a checkpoint', async boundary => {
+  const f = fixture(25);
+  await f.service.start('DV', request, context);
+  const extracted = f.extract.mock.calls.length;
+  if (boundary === 'sha256') f.selection.sha256 = 'b'.repeat(64);
+  else if (boundary === 'byteLength') f.selection.byteLength += 1;
+  else f.selection.providerObjectId = 'replaced';
+  await expect(f.service.start('DV', request, context)).rejects.toThrow('DOCUMENT_PARSE_REQUEST_CONFLICT');
+  expect(f.extract).toHaveBeenCalledTimes(extracted);
+  expect(f.repository.publish).not.toHaveBeenCalled();
+});
+
+it('loads a previous manifest once per step, reads only reused pages, and defers local composition until complete', async () => {
+  const f = await publishedMultiGroupFixture();
+  await expect(f.service.start('DV', f.next, context)).resolves.toMatchObject({ status: 'STAGING', verifiedArtifacts: 2 });
+  expect(f.download.mock.calls.map(([path]: [string]) => path).filter((path: string) => path.includes('/PR/'))).toEqual([
+    'wiselink/parsed/DV/PR/original/manifest.json',
+    'wiselink/parsed/DV/PR/original/pages-0.json', 'wiselink/parsed/DV/PR/original/pages-8.json',
+  ]);
+  expect(f.compose).not.toHaveBeenCalled(); expect(f.fullLoad).not.toHaveBeenCalled();
+  expect(f.extract).not.toHaveBeenCalled();
+  f.download.mockClear(); f.readingLoad.mockClear();
+  await expect(f.service.start('DV', f.next, context)).resolves.toMatchObject({ status: 'PUBLISHED' });
+  expect(f.readingLoad.mock.calls.filter(([scope]) => scope.parseRunId === 'PR')).toHaveLength(1);
+  expect(f.download.mock.calls.map(([path]: [string]) => path).filter((path: string) => path.includes('/PR/'))).toEqual([
+    'wiselink/parsed/DV/PR/original/manifest.json',
+    'wiselink/parsed/DV/PR/original/pages-16.json', 'wiselink/parsed/DV/PR/original/pages-24.json',
+  ]);
+  expect(f.fullLoad.mock.calls.map(([scope]) => scope.parseRunId)).toEqual(['NEXT']);
+  for (const path of ['raw/mineru-candidate.json', 'raw/document.md', 'original/pages-0.json',
+    'original/pages-8.json', 'original/pages-16.json', 'original/pages-24.json']) {
+    expect(f.download.mock.calls.some(([filePath]: [string]) => filePath === `wiselink/parsed/DV/NEXT/${path}`)).toBe(true);
+  }
+  const bundle: DocumentOriginalBundle = JSON.parse(Buffer.from(f.content.get('wiselink/parsed/DV/NEXT/original/manifest.json')!.bytes).toString('utf8'));
+  expect(bundle.change).toEqual({ kind: 'LOCATOR_ONLY', previousParseRunId: 'PR', changedUnitIds: [], changedSourceRefIds: [] });
+  expect(f.compose).toHaveBeenCalledTimes(1); expect(f.extract).not.toHaveBeenCalled();
+});
+
+it('copies failed predecessor checkpoints without loading the published bundle during intermediate steps', async () => {
+  const f = await publishedMultiGroupFixture();
+  const decode = jest.spyOn(localMineruCandidate, 'readLocalMineruCandidate');
+  const oldId = 'PRUN-00000000-0000-4000-8000-000000000001';
+  const predecessor = structuredClone(f.previous);
+  predecessor.parseRunId = oldId; predecessor.status = 'FAILED'; predecessor.parseRevision = 3;
+  predecessor.expectedPublishedRevision = 2;
+  predecessor.artifactProgress = (f.previous.artifactProgress as DocumentOriginalArtifact[])
+    .filter((artifact: DocumentOriginalArtifact) => artifact.relativePath.startsWith('original/pages-'))
+    .map((artifact: DocumentOriginalArtifact) => {
+      const filePath = artifact.filePath.replace('/PR/', `/${oldId}/`);
+      f.content.set(filePath, structuredClone(f.content.get(artifact.filePath)!));
+      return { ...artifact, filePath, providerObjectId: `object:${filePath}` };
+    });
+  f.predecessors.set(oldId, predecessor); f.run.parseRevision = 4;
+  const resume = { requestId: `parse-resume-${oldId}`, expectedPublishedRevision: 2 };
+  await expect(f.service.start('DV', resume, context)).resolves.toMatchObject({ status: 'STAGING', verifiedArtifacts: 2 });
+  expect(f.readingLoad).not.toHaveBeenCalled(); expect(f.fullLoad).not.toHaveBeenCalled();
+  expect(f.compose).not.toHaveBeenCalled(); expect(f.extract).not.toHaveBeenCalled();
+  expect(decode).not.toHaveBeenCalled();
+  expect(f.download.mock.calls.filter(([path]: [string]) => path.includes(`/${oldId}/`))).toHaveLength(2);
+  await expect(f.service.start('DV', resume, context)).resolves.toMatchObject({ status: 'PUBLISHED' });
+  expect(f.readingLoad.mock.calls.filter(([scope]) => scope.parseRunId === 'PR')).toHaveLength(1);
+  expect(f.fullLoad.mock.calls.map(([scope]) => scope.parseRunId)).toEqual(['NEXT']);
+  expect(f.compose).toHaveBeenCalledTimes(1); expect(f.extract).not.toHaveBeenCalled();
+  expect(decode).toHaveBeenCalledTimes(1);
+});
+
+it('rejects damaged reused page bytes before composition and publication', async () => {
+  const f = await publishedMultiGroupFixture();
+  const page = f.content.get('wiselink/parsed/DV/PR/original/pages-0.json')!;
+  page.bytes[0] ^= 1;
+  await expect(f.service.start('DV', f.next, context)).rejects.toThrow('DOCUMENT_ORIGINAL_READBACK_DIGEST_MISMATCH');
+  expect(f.compose).not.toHaveBeenCalled(); expect(f.extract).not.toHaveBeenCalled();
+  expect(f.repository.publish).not.toHaveBeenCalled();
+});
+
+it('keeps publication CAS failures and fully audits a recovered completed manifest', async () => {
+  const f = await publishedMultiGroupFixture();
+  await f.service.start('DV', f.next, context);
+  f.repository.publish.mockRejectedValue(new Error('DOCUMENT_PARSE_REVISION_CONFLICT'));
+  await expect(f.service.start('DV', f.next, context)).rejects.toThrow('DOCUMENT_PARSE_REVISION_CONFLICT');
+  expect(f.run.status).toBe('STAGING'); expect(f.repository.publish).toHaveBeenCalledTimes(1);
+  f.fullLoad.mockClear(); f.download.mockClear();
+  const page = f.content.get('wiselink/parsed/DV/NEXT/original/pages-0.json')!;
+  page.bytes[0] ^= 1;
+  await expect(f.service.start('DV', f.next, context)).rejects.toThrow('DOCUMENT_ORIGINAL_READBACK_DIGEST_MISMATCH');
+  expect(f.fullLoad.mock.calls.map(([scope]) => scope.parseRunId)).toEqual(['NEXT']);
+  expect(f.repository.publish).toHaveBeenCalledTimes(1);
+  expect(f.run.status).toBe('STAGING');
+});
+
+it('freshly inspects legacy published PDF chunks in a new local parse without changing history', async () => {
+  const f = fixture(); const extract = f.extract.getMockImplementation()!;
+  f.extract.mockImplementationOnce(async () => {
+    const chunk = await extract();
+    chunk.pages.forEach(page => { delete page.ruledLines; });
+    return chunk;
+  });
+  await f.service.start('DV', request, context);
+  const oldPagePath = 'wiselink/parsed/DV/PR/original/pages-0.json';
+  const oldManifestPath = 'wiselink/parsed/DV/PR/original/manifest.json';
+  const oldPage = Buffer.from(f.content.get(oldPagePath)!.bytes);
+  const oldManifest = Buffer.from(f.content.get(oldManifestPath)!.bytes);
+  const previous = structuredClone(f.run);
+  f.repository.current.mockResolvedValue({ published: previous });
+  Object.assign(f.run, { parseRunId: 'NEXT', parseRevision: 3, expectedPublishedRevision: 2,
+    status: 'RUNNING', artifactProgress: [], manifestArtifact: null });
+  f.leases.claim.mockResolvedValue({ parseRunId: 'NEXT', leaseOwner: 'local', leaseToken: 'lease', leaseGeneration: 1 });
+  const next = { ...request, requestId: 'new-local-inspection', expectedPublishedRevision: 2 };
+  await expect(f.service.start('DV', next, context)).resolves.toMatchObject({ status: 'PUBLISHED' });
+  expect(f.extract).toHaveBeenCalledTimes(2);
+  expect(f.plugins.parseOriginal).not.toHaveBeenCalled();
+  const fresh: DocumentPdfExtraction = JSON.parse(Buffer.from(
+    f.content.get('wiselink/parsed/DV/NEXT/original/pages-0.json')!.bytes).toString('utf8'));
+  expect(fresh.pages[0].ruledLines).toBeNull();
+  expect(Buffer.from(f.content.get(oldPagePath)!.bytes)).toEqual(oldPage);
+  expect(Buffer.from(f.content.get(oldManifestPath)!.bytes)).toEqual(oldManifest);
+  await f.service.start('DV', next, context);
+  expect(f.extract).toHaveBeenCalledTimes(2);
 });
 
 it.each([true, false])('reuses exact PDF pages but not raw Markdown across producer switch localFirst=%s', async localFirst => {

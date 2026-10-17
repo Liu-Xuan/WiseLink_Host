@@ -129,7 +129,9 @@ describe('JobAid continuation requests', () => {
       const result=await h.service.commit(commitInput as never);
       expect(h.registrar.compareAndSet).toHaveBeenCalledWith(expect.objectContaining({
         expectedRevision:5,syncPrimaryAttempt:false,
-        jobAidWorkRevisionGuard:{tenantId:TENANT,workRevisionRef:'JAWR-PERSISTED-3'}}));
+        jobAidWorkRevisionGuard:{tenantId:TENANT,workRevisionRef:'JAWR-PERSISTED-3',
+          sourceGuard:{actorUserId:started.task.modelInput.actorUserId,
+            sourceBindings:started.task.modelInput.sourceBindings}}}));
       if(race) {
         expect(h.attempts.finishResultGateFailure).toHaveBeenCalled();
         expect(h.current().integratedAssessment!.overallSynthesis!.status).toBe('STALE');
@@ -196,6 +198,55 @@ describe('JobAid continuation requests', () => {
       const catalog = parseJobAidProblemTask(started.task).sourceCatalog.filter(item => item.kind === 'DOCUMENT_PASSAGE');
       expect(catalog).toHaveLength(1);
       expect(catalog[0].excerpt).toBe(loaded.structuredSource.units.map(unit => unit.payload.text).join('\n'));
+    } finally { plan.mockRestore(); }
+  });
+
+  it('prepares one exact finder per authorization of many distinct original refs and reloads on every work read', async () => {
+    const h = harness();
+    const loaded = await h.originalReader.readDocumentOriginal();
+    const first = loaded.structuredSource.units[0];
+    const locator = loaded.structuredSource.sourceLocators[0];
+    const location = loaded.original.locations[0];
+    const refs = Array.from({ length: 61 }, (_, index) => `SR-DISTINCT-${index}`);
+    loaded.structuredSource.units = refs.map((ref, index) => ({ ...first,
+      unitId: `u${index}`, order: index, sourceRefIds: [ref], sourceSegmentIds: [ref],
+      payload: { text: `Complete source condition ${index}; retain its exact exception.` } }));
+    loaded.structuredSource.sourceLocators = refs.map(sourceRefId => ({ ...locator,
+      sourceRefId, pageStart: 0, pageEnd: 0 }));
+    loaded.original.locations = refs.map(sourceRefId => ({ ...location, sourceRefId, pageIndex: 0 }));
+    loaded.original.coverage = { knownPageCount: 1, readPageIndexes: [0], unresolvedRanges: [] };
+    h.originalReader.readDocumentOriginal.mockResolvedValue(loaded);
+    h.originalReader.readDocumentOriginal.mockClear();
+    const plan = jest.spyOn(sourcePlanning, 'buildTranslationSourcePlan');
+    try {
+      const started = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT');
+      const catalog = parseJobAidProblemTask(started.task).sourceCatalog.filter(item => item.kind === 'DOCUMENT_PASSAGE');
+      expect(catalog.map(item => item.sourceRefId)).toEqual(refs);
+      expect(catalog.map(item => item.excerpt)).toEqual(loaded.structuredSource.units.map(unit => unit.payload.text));
+      // Preparation and its independent fresh authorization each build once,
+      // regardless of the number of refs in the exact original.
+      expect(plan).toHaveBeenCalledTimes(2);
+      expect(h.originalReader.readDocumentOriginal).toHaveBeenCalledTimes(2);
+      const frozen = structuredClone(started.task);
+      plan.mockClear();
+      h.originalReader.readDocumentOriginal.mockClear();
+      for (let read = 0; read < 2; read++) {
+        await expect(h.service.readAttemptWork(started.attemptRef, undefined, scope.workItemId))
+          .resolves.toMatchObject({ schemaVersion: 'wiselink.jobaid-work-read.v2', revision: null });
+      }
+      expect(plan).toHaveBeenCalledTimes(2);
+      expect(h.originalReader.readDocumentOriginal).toHaveBeenCalledTimes(2);
+      expect(h.task(started.attemptRef)).toEqual(frozen);
+      const changed = structuredClone(loaded);
+      changed.structuredSource.units[0].payload.text = 'Changed exact original text.';
+      h.originalReader.readDocumentOriginal.mockResolvedValue(changed);
+      await expect(h.service.readAttemptWork(started.attemptRef, undefined, scope.workItemId))
+        .rejects.toThrow('JOBAID_ORIGINAL_SOURCE_CHANGED');
+      h.originalReader.readDocumentOriginal.mockRejectedValue(new Error('SOURCE_ACCESS_REVOKED'));
+      await expect(h.service.readAttemptWork(started.attemptRef, undefined, scope.workItemId))
+        .rejects.toThrow('SOURCE_ACCESS_REVOKED');
+      expect(h.originalReader.readDocumentOriginal).toHaveBeenCalledTimes(4);
+      expect(h.task(started.attemptRef)).toEqual(frozen);
     } finally { plan.mockRestore(); }
   });
 
@@ -439,9 +490,15 @@ describe('JobAid continuation requests', () => {
     },
   );
 
-  it('continues from work saved by a cancelled exact Overall attempt', async () => {
+  const recoverableOverallTerminals = [
+    ['CANCELLED', null],
+    ['TIMED_OUT', 'ACTION_ATTEMPT_DEADLINE_EXCEEDED'],
+    ['TIMED_OUT', 'DEADLINE_EXCEEDED_DURING_LEASE'],
+  ] as const;
+
+  it.each(recoverableOverallTerminals)('continues from work saved by exact Overall %s / %s', async (status, terminalReason) => {
     const h = harness();
-    const base = savedWork();
+    const base = { ...savedWork(), workRevisionRef: 'JAWR-W0', workRevision: 1 };
     h.current().integratedAssessment = {
       status: 'BASE_RULE_CANDIDATE_READY',
       baseRules: { schemaVersion: JOBAID_PROBLEM_RESULT_SCHEMA,
@@ -450,11 +507,11 @@ describe('JobAid continuation requests', () => {
     h.work.listForRuntime.mockResolvedValue([base]);
     h.work.readByRefForRuntime.mockResolvedValue(base);
     const failed = await h.service.enqueueOverall(h.current(), TENANT, 'permission');
-    h.rows.get(failed.attemptRef)!.status = 'CANCELLED';
-    const newer: JobAidWorkRevision = { ...base, workRevisionRef: 'JAWR-OVERALL-4',
-      workRevision: 4, previousWorkRevisionRef: base.workRevisionRef,
+    Object.assign(h.rows.get(failed.attemptRef)!, { status, terminalReason });
+    const newer: JobAidWorkRevision = { ...base, workRevisionRef: 'JAWR-OVERALL-2',
+      workRevision: 2, previousWorkRevisionRef: base.workRevisionRef,
       actionAttemptId: h.task(failed.attemptRef).actionAttemptId,
-      requestId: 'SAVE-OVERALL-4' };
+      requestId: 'SAVE-OVERALL-2' };
     h.work.listForRuntime.mockResolvedValue([newer, base]);
     h.work.readByRefForRuntime.mockImplementation(async ({ workRevisionRef }: {workRevisionRef:string}) =>
       workRevisionRef === newer.workRevisionRef ? newer : base);
@@ -462,7 +519,12 @@ describe('JobAid continuation requests', () => {
     const continued = await h.service.begin(h.current(), scope, 'OVERALL_CONSISTENCY', REQUEST_2);
     const input = parseJobAidProblemTask(continued.task);
     expect(input.previousWork).toEqual(newer);
-    expect(input.modelInput.expectedWorkRevision).toBe(4);
+    expect(input.modelInput.expectedWorkRevision).toBe(2);
+    expect(h.current().integratedAssessment).toMatchObject({ baseRules: { workRevisionRef: base.workRevisionRef } });
+    expect(h.work.readByRefForRuntime).toHaveBeenCalledWith({
+      tenantId: TENANT, actorUserId: OWNER, workItemId: scope.workItemId,
+      workRevisionRef: newer.workRevisionRef,
+    });
     expect(h.attempts.readScopedById).toHaveBeenCalledWith({
       attemptId: newer.actionAttemptId, tenantId: TENANT, workItemId: scope.workItemId,
     });
@@ -472,15 +534,18 @@ describe('JobAid continuation requests', () => {
       .rejects.toThrow('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
   });
 
+  for (const [status, terminalReason] of recoverableOverallTerminals)
   it.each(['broken-chain', 'cycle', 'revision-gap', 'document-version', 'work-item', 'formal-version', 'unfinished', 'non-cancelled'] as const)(
-    'rejects %s in cancelled Overall recovery before claiming a queued continuation', async reason => {
+    `rejects %s in saved Overall recovery from ${status}/${terminalReason} before claiming a queued continuation`, async reason => {
       const h = harness(); const base = savedWork();
       h.current().integratedAssessment = { status: 'BASE_RULE_CANDIDATE_READY',
         baseRules: { schemaVersion: JOBAID_PROBLEM_RESULT_SCHEMA,
           workRevisionRef: base.workRevisionRef, workRevision: base.workRevision } } as never;
       h.work.listForRuntime.mockResolvedValue([base]); h.work.readByRefForRuntime.mockResolvedValue(base);
       const cancelled = await h.service.enqueueOverall(h.current(), TENANT, 'permission');
-      h.rows.get(cancelled.attemptRef)!.status = reason === 'non-cancelled' ? 'RUNNING' : 'CANCELLED';
+      Object.assign(h.rows.get(cancelled.attemptRef)!, {
+        status: reason === 'non-cancelled' ? 'RUNNING' : status, terminalReason,
+      });
       const newer: JobAidWorkRevision = { ...base, content: structuredClone(base.content),
         workRevisionRef: 'JAWR-OVERALL-INVALID', workRevision:4, previousWorkRevisionRef:base.workRevisionRef,
         actionAttemptId:h.task(cancelled.attemptRef).actionAttemptId, requestId:'SAVE-OVERALL-INVALID' };
@@ -498,6 +563,78 @@ describe('JobAid continuation requests', () => {
       await expect(h.service.begin(h.current(), scope, 'OVERALL_CONSISTENCY', REQUEST_2))
         .rejects.toThrow('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
       expect(h.rows.get(queued.attemptRef)!.status).toBe('QUEUED');
+    });
+
+  it.each([
+    ['RUNNING', 'ACTION_ATTEMPT_DEADLINE_EXCEEDED'],
+    ['COMMITTING', 'ACTION_ATTEMPT_DEADLINE_EXCEEDED'],
+    ['FAILED', 'ACTION_ATTEMPT_DEADLINE_EXCEEDED'],
+    ['FAILED', 'LEASE_EXPIRED_MAX_ATTEMPTS'],
+    ['OBSOLETE', 'ACTION_ATTEMPT_SUPERSEDED_AFTER_LEASE_EXPIRY'],
+    ['TIMED_OUT', null],
+    ['TIMED_OUT', 'UNRECOGNIZED_TIMEOUT'],
+    ['TIMED_OUT', 'LEASE_EXPIRED_MAX_ATTEMPTS'],
+  ] as const)('rejects %s / %s in saved Overall recovery', async (status, terminalReason) => {
+    const h = harness(); const base = savedWork();
+    h.current().integratedAssessment = { status: 'BASE_RULE_CANDIDATE_READY',
+      baseRules: { schemaVersion: JOBAID_PROBLEM_RESULT_SCHEMA,
+        workRevisionRef: base.workRevisionRef, workRevision: base.workRevision } } as never;
+    h.work.listForRuntime.mockResolvedValue([base]); h.work.readByRefForRuntime.mockResolvedValue(base);
+    const prior = await h.service.enqueueOverall(h.current(), TENANT, 'permission');
+    Object.assign(h.rows.get(prior.attemptRef)!, { status, terminalReason });
+    const newer: JobAidWorkRevision = { ...base, workRevisionRef: 'JAWR-OVERALL-4', workRevision: 4,
+      previousWorkRevisionRef: base.workRevisionRef, actionAttemptId: h.task(prior.attemptRef).actionAttemptId,
+      requestId: 'SAVE-OVERALL-4' };
+    h.work.listForRuntime.mockResolvedValue([newer, base]);
+    h.work.readByRefForRuntime.mockImplementation(async ({workRevisionRef}: {workRevisionRef:string}) =>
+      workRevisionRef === newer.workRevisionRef ? newer : base);
+    const queued = await h.enqueue(REQUEST_2, 'OVERALL_CONSISTENCY');
+    await expect(h.service.begin(h.current(), scope, 'OVERALL_CONSISTENCY', REQUEST_2))
+      .rejects.toThrow('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+    expect(h.rows.get(queued.attemptRef)!.status).toBe('QUEUED');
+  });
+
+  it.each(['current', 'actor-revoked', 'source-revoked', 'earlier-fake-timeout'] as const)(
+    'preserves the saved Overall recovery chain and authorization: %s', async mode => {
+      const h = harness(); const base = savedWork();
+      h.current().integratedAssessment = { status: 'BASE_RULE_CANDIDATE_READY',
+        baseRules: { schemaVersion: JOBAID_PROBLEM_RESULT_SCHEMA,
+          workRevisionRef: base.workRevisionRef, workRevision: base.workRevision } } as never;
+      h.work.listForRuntime.mockResolvedValue([base]); h.work.readByRefForRuntime.mockResolvedValue(base);
+      const first = await h.service.enqueueOverall(h.current(), TENANT, 'permission');
+      Object.assign(h.rows.get(first.attemptRef)!, {
+        status: 'TIMED_OUT', terminalReason: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED',
+      });
+      const middle: JobAidWorkRevision = { ...base, workRevisionRef: 'JAWR-OVERALL-4', workRevision: 4,
+        previousWorkRevisionRef: base.workRevisionRef, actionAttemptId: h.task(first.attemptRef).actionAttemptId,
+        requestId: 'SAVE-OVERALL-4' };
+      const saved = new Map([base, middle].map(work => [work.workRevisionRef, work]));
+      h.work.listForRuntime.mockImplementation(async () => [...saved.values()].reverse());
+      h.work.readByRefForRuntime.mockImplementation(async ({workRevisionRef}: {workRevisionRef:string}) =>
+        saved.get(workRevisionRef) ?? null);
+      await h.enqueue(REQUEST_2, 'OVERALL_CONSISTENCY');
+      const second = await h.service.begin(h.current(), scope, 'OVERALL_CONSISTENCY', REQUEST_2);
+      h.rows.get(second.attemptRef)!.status = 'CANCELLED';
+      const latest = { ...middle, workRevisionRef: 'JAWR-OVERALL-5', workRevision: 5,
+        previousWorkRevisionRef: middle.workRevisionRef, actionAttemptId: second.task.actionAttemptId,
+        requestId: 'SAVE-OVERALL-5', content: { ...middle.content, overviewStatus: 'STALE' as const } };
+      saved.set(latest.workRevisionRef, latest);
+      const queued = await h.enqueue(REQUEST_1, 'OVERALL_CONSISTENCY');
+      if (mode === 'actor-revoked') h.conversations.hasActiveOfficialActorMapping.mockResolvedValue(false);
+      if (mode === 'source-revoked') h.work.loadOwnedSourceBinding.mockResolvedValue(null as never);
+      if (mode === 'earlier-fake-timeout') h.rows.get(first.attemptRef)!.terminalReason = 'UNRECOGNIZED_TIMEOUT';
+      const begun = h.service.begin(h.current(), scope, 'OVERALL_CONSISTENCY', REQUEST_1);
+      if (mode !== 'current') {
+        await expect(begun).rejects.toThrow(mode === 'actor-revoked' ? 'JOBAID_ACTOR_AUTHORIZATION_CHANGED'
+          : mode === 'source-revoked' ? 'JOBAID_SOURCE_AUTHORIZATION_CHANGED' : 'JOBAID_OVERALL_EXACT_WORK_REQUIRED');
+        expect(h.rows.get(queued.attemptRef)!.status).toBe('QUEUED');
+        return;
+      }
+      const input = parseJobAidProblemTask((await begun).task);
+      expect(input.previousWork).toEqual(latest);
+      expect(input.modelInput.expectedWorkRevision).toBe(5);
+      expect(input.previousWork!.content.overviewStatus).toBe('STALE');
+      expect(h.current().integratedAssessment).toMatchObject({ baseRules: { workRevisionRef: base.workRevisionRef } });
     });
 
   it('prepares the same queued request with its reserved knowledge connector', async () => {

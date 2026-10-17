@@ -2,7 +2,8 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { JSDOM } from 'jsdom';
-import { configurationRecord, snapshot, sourceRead } from './fixtures';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { snapshot, sourceRead } from './fixtures';
 
 let sessionGeneration = 1;
 const sourcePage = jest.fn();
@@ -10,7 +11,7 @@ const sourceHistory = jest.fn();
 const sourceRecord = jest.fn();
 const sourceRelations = jest.fn();
 const lcmCatalogue = jest.fn();
-const lcmRows = jest.fn();
+const lcmMatrix = jest.fn();
 
 jest.mock('@client/src/api/canonical-host', () => ({
   getCanonicalHostClientSessionGeneration: () => sessionGeneration,
@@ -21,8 +22,13 @@ jest.mock('@client/src/api/canonical-host', () => ({
   readTdmsSourceRecord: (...args: unknown[]) => sourceRecord(...args),
   readTdmsSourceRelations: (...args: unknown[]) => sourceRelations(...args),
   readLcmSourceSnapshots: (...args: unknown[]) => lcmCatalogue(...args),
-  readLcmSourceSnapshotRows: (...args: unknown[]) => lcmRows(...args),
+  readLcmNativeMatrix: (...args: unknown[]) => lcmMatrix(...args),
+  authorizeLcmNativeMatrix: jest.fn(),
+  readLcmPersonalLibrary: async () => ({ hasSource: true, latestSnapshotIds: [], snapshotCount: 1 }),
+  importLcmExcel: jest.fn(), resolveLcmExcelUpload: jest.fn(), downloadLcmOriginal: jest.fn(),
 }));
+jest.mock('@client/src/components/business-ui/api/files/service', () => ({ uploadFile: jest.fn() }));
+jest.mock('@client/src/pages/WorkspaceHomePage/lcm-matrix.css', () => ({}));
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({
   useCurrentUserSession: () => ({ authenticationRequired: false, sessionGeneration }),
 }));
@@ -41,7 +47,8 @@ describe('source reading uses selected pages and user-triggered expansion', () =
   beforeEach(() => {
     dom = new JSDOM('<!doctype html><body></body>', { url: 'https://test.invalid/library' });
     for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document,
-      navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })) {
+      navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement,
+      getComputedStyle: dom.window.getComputedStyle.bind(dom.window), IS_REACT_ACT_ENVIRONMENT: true })) {
       originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
       Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
     }
@@ -49,7 +56,8 @@ describe('source reading uses selected pages and user-triggered expansion', () =
     dom.window.document.body.append(container);
     root = createRoot(container);
     sessionGeneration = 1;
-    [sourcePage, sourceHistory, sourceRecord, sourceRelations, lcmCatalogue, lcmRows].forEach(mock => mock.mockReset());
+    [sourcePage, sourceHistory, sourceRecord, sourceRelations, lcmCatalogue, lcmMatrix]
+      .forEach(mock => mock.mockReset());
   });
   afterEach(async () => {
     await act(async () => root.unmount());
@@ -99,18 +107,21 @@ describe('source reading uses selected pages and user-triggered expansion', () =
     expect(container.textContent).not.toContain('暂无已取得的记录');
   });
 
-  it('pins a historical LCM snapshot and reads only its requested row page', async () => {
-    lcmCatalogue.mockResolvedValue({ snapshots: [snapshot('newer')], hasMore: false, nextAfter: null });
-    lcmRows.mockResolvedValue({ snapshot: snapshot('older'), records: [configurationRecord()], hasMore: false, nextAfter: null });
+  it.each([false, true])('pins a historical native matrix without fetching row records (differencesOnly=%s)', async differencesOnly => {
+    const oldId = 'a'.repeat(64), newerId = 'b'.repeat(64);
+    lcmCatalogue.mockResolvedValue({ snapshots: [snapshot(newerId)], hasMore: false, nextAfter: null });
+    lcmMatrix.mockResolvedValue({ binding: { readSetRef: 'fixed-history', projectionRevision: 'r2', scopeRef: 'scope',
+      permissionRevision: 'p1', filterHash: 'f', orderRef: 'o' }, snapshots: [snapshot(oldId)],
+      matrices: [] });
     await act(async () => root.render(createElement(MemoryRouter, {
-      initialEntries: ['/library?mode=lcm&lcmSnapshotId=older&tailNumber=B-TEST&position=FIN-TEST'],
+      initialEntries: ['/library?mode=lcm&lcmSnapshotId=' + oldId + '&search=PN-TEST' +
+        (differencesOnly ? '&differencesOnly=1' : '')],
       future: { v7_startTransition: true, v7_relativeSplatPath: true },
-    }, createElement(LcmConfigurationLibrary))));
+    }, createElement(QueryClientProvider, { client: new QueryClient() }, createElement(LcmConfigurationLibrary)))));
     expect(lcmCatalogue).toHaveBeenCalledTimes(1);
-    expect(lcmRows).toHaveBeenCalledTimes(1);
-    expect(lcmRows.mock.calls[0][0]).toMatchObject({ snapshotId: 'older', tailNumber: 'B-TEST', position: 'FIN-TEST', limit: 24 });
-    expect(container.textContent).toContain('不代表当前实时构型');
-    expect(container.textContent).toContain('source-raw-state');
+    expect(lcmMatrix.mock.calls[0][0]).toEqual({ snapshotIds: [oldId] });
+    expect(lcmMatrix).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('当前筛选没有匹配记录。');
     expect(sourcePage).not.toHaveBeenCalled();
     expect(sourceRecord).not.toHaveBeenCalled();
   });

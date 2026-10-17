@@ -53,34 +53,56 @@ const RUNTIME_ENTRIES = (process.env.MIAODA_RUNTIME_ENTRIES || '')
     return false;
   });
 
-// Node.js 内置模块列表
-const BUILTIN_MODULES = new Set([
-  'assert', 'buffer', 'child_process', 'cluster', 'crypto', 'dgram', 'dns',
-  'events', 'fs', 'http', 'http2', 'https', 'net', 'os', 'path', 'stream',
-  'string_decoder', 'timers', 'tls', 'url', 'util', 'v8', 'vm', 'zlib',
-  'async_hooks', 'perf_hooks', 'worker_threads', 'inspector', 'trace_events'
-]);
-
 /**
- * 从完整路径中提取 npm 包名（优化版）
+ * 保留安装层级；嵌套依赖不能扁平替换为根目录同名包。
  */
-const nodeModulesSep = 'node_modules' + path.sep;
-function extractPackageName(filePath) {
-  const idx = filePath.lastIndexOf(nodeModulesSep);
-  if (idx === -1) return null;
+function isWithin(parent, child) {
+  const relative = path.relative(parent, child);
+  return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
 
-  const afterNodeModules = filePath.slice(idx + nodeModulesSep.length);
-  const slashIdx = afterNodeModules.indexOf(path.sep);
+function extractPackagePath(filePath) {
+  const absolute = path.resolve(ROOT_DIR, filePath);
+  if (!isWithin(ROOT_NODE_MODULES, absolute)) return null;
+  const parts = path.relative(ROOT_NODE_MODULES, absolute).split(path.sep);
+  // NFT 会输出 node_modules 自链接本身；它不是 npm 包。
+  if (!parts[0] || parts[0] === 'node_modules' || parts[0].startsWith('.')) return null;
+  const start = parts.lastIndexOf('node_modules') + 1;
+  const name = parts[start];
+  if (!name || name.startsWith('.')) return null;
+  const end = start + (name.startsWith('@') ? 2 : 1);
+  if (end > parts.length || !parts[end - 1]) return null;
+  return path.join(...parts.slice(0, end));
+}
 
-  // 处理 scoped package (@xxx/yyy)
-  if (afterNodeModules[0] === '@') {
-    const secondSlash = afterNodeModules.indexOf(path.sep, slashIdx + 1);
-    return secondSlash === -1
-      ? afterNodeModules
-      : afterNodeModules.slice(0, secondSlash);
+function readInstalledPackage(packagePath) {
+  const directory = path.join(ROOT_NODE_MODULES, packagePath);
+  const installedRoot = fs.realpathSync(ROOT_NODE_MODULES);
+  if (fs.realpathSync(directory) !== path.join(installedRoot, packagePath)) {
+    throw new Error(`运行依赖包必须位于实际安装层级内，不能借用树外包链接: ${packagePath}`);
   }
+  return JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8'));
+}
 
-  return slashIdx === -1 ? afterNodeModules : afterNodeModules.slice(0, slashIdx);
+/** 按依赖者的 Node 祖先查找顺序解析，只接受本次安装目录内的包。 */
+function resolveInstalledPackage(depName, ownerPath, required) {
+  const installedRoot = fs.realpathSync(ROOT_NODE_MODULES);
+  const boundary = path.dirname(installedRoot);
+  let current = ownerPath ? path.join(installedRoot, ownerPath) : boundary;
+  while (isWithin(boundary, current)) {
+    if (path.basename(current) !== 'node_modules') {
+      const candidate = path.join(current, 'node_modules', depName);
+      if (isWithin(installedRoot, candidate) && fs.existsSync(path.join(candidate, 'package.json'))) {
+        return path.relative(installedRoot, candidate);
+      }
+    }
+    if (current === boundary) break;
+    current = path.dirname(current);
+  }
+  if (required) {
+    throw new Error(`缺少必需运行依赖: ${ownerPath || '<root>'} -> ${depName}`);
+  }
+  return null;
 }
 
 /**
@@ -95,7 +117,14 @@ function removeDir(dir) {
 /**
  * 递归复制目录（优化版：优先使用硬链接）
  */
-function copyDir(src, dest, stats = { hardLinks: 0, copies: 0 }) {
+function copyDir(src, dest, stats = { hardLinks: 0, copies: 0 }, ancestors = new Set()) {
+  const realSource = fs.realpathSync(src);
+  const installedRoot = fs.realpathSync(ROOT_NODE_MODULES);
+  if (!isWithin(installedRoot, realSource)) {
+    throw new Error(`运行依赖复制来源越出安装目录: ${src} -> ${realSource}`);
+  }
+  if (ancestors.has(realSource)) throw new Error(`复制目录存在循环链接: ${src}`);
+  const parents = new Set([...ancestors, realSource]);
   if (!fs.existsSync(dest)) {
     fs.mkdirSync(dest, { recursive: true });
   }
@@ -103,19 +132,29 @@ function copyDir(src, dest, stats = { hardLinks: 0, copies: 0 }) {
   const entries = fs.readdirSync(src, { withFileTypes: true });
 
   for (const entry of entries) {
+    // 嵌套包由相同依赖闭包逐包复制，避免整棵复制及重复覆盖。
+    if (entry.name === 'node_modules') continue;
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
-
-    if (entry.isDirectory()) {
-      copyDir(srcPath, destPath, stats);
+    const sourceStat = entry.isSymbolicLink() ? fs.statSync(srcPath) : entry;
+    if (sourceStat.isDirectory()) {
+      copyDir(srcPath, destPath, stats, parents);
     } else {
+      if (!sourceStat.isFile()) throw new Error(`不能复制运行依赖中的非普通文件: ${srcPath}`);
+      // 文件链接解引用，输出不能借用源码树的链接目标。
+      const sourceFile = entry.isSymbolicLink()
+        ? fs.realpathSync(srcPath)
+        : path.join(realSource, entry.name);
+      if (!isWithin(installedRoot, sourceFile)) {
+        throw new Error(`运行依赖复制来源越出安装目录: ${srcPath} -> ${sourceFile}`);
+      }
       try {
         // 优先使用硬链接（CI 环境中安全，速度快，节省空间）
-        fs.linkSync(srcPath, destPath);
+        fs.linkSync(sourceFile, destPath);
         stats.hardLinks++;
       } catch {
         // 硬链接失败时回退到复制（如跨文件系统）
-        fs.copyFileSync(srcPath, destPath);
+        fs.copyFileSync(sourceFile, destPath);
         stats.copies++;
       }
     }
@@ -142,12 +181,8 @@ function copyPackagesSelectively(packages, rootNodeModules, outNodeModules) {
     const srcPath = path.join(rootNodeModules, pkg);
     const destPath = path.join(outNodeModules, pkg);
 
-    if (!fs.existsSync(srcPath)) {
-      copiedCount.failed++;
-      continue;
-    }
-
     try {
+      readInstalledPackage(pkg);
       // 确保父目录存在（处理 scoped packages）
       const destDir = path.dirname(destPath);
       if (!fs.existsSync(destDir)) {
@@ -158,8 +193,8 @@ function copyPackagesSelectively(packages, rootNodeModules, outNodeModules) {
       copyDir(srcPath, destPath, fileStats);
       copiedCount.success++;
     } catch (err) {
-      console.error(`   ⚠️  复制失败: ${pkg} - ${err.message}`);
       copiedCount.failed++;
+      throw new Error(`复制必需运行依赖失败: ${pkg} - ${err.message}`, { cause: err });
     }
   }
 
@@ -187,6 +222,9 @@ async function smartPrune() {
   }
 
   // 2. 使用 @vercel/nft 追踪依赖
+  if (!isWithin(fs.realpathSync(ROOT_DIR), fs.realpathSync(ROOT_NODE_MODULES))) {
+    throw new Error('node_modules 实际路径在 NFT base 之外，无法生成完整依赖包；请使用树内已有依赖副本');
+  }
   console.log('🔎 追踪实际依赖...');
   const analyzeStart = Date.now();
 
@@ -206,17 +244,15 @@ async function smartPrune() {
   const analyzeElapsed = Date.now() - analyzeStart;
   console.log(`   ✅ 分析完成，耗时: ${analyzeElapsed}ms\n`);
 
-  // 3. 提取 npm 包名（优化：减少字符串操作）
+  // 3. 提取 npm 包的实际安装路径
   const requiredPackages = new Set();
 
   for (const file of fileList) {
     // 快速跳过非 node_modules 文件
     if (!file.includes('node_modules')) continue;
 
-    const pkgName = extractPackageName(file);
-    if (pkgName && !BUILTIN_MODULES.has(pkgName)) {
-      requiredPackages.add(pkgName);
-    }
+    const packagePath = extractPackagePath(file);
+    if (packagePath) requiredPackages.add(packagePath);
   }
 
   console.log(`📦 静态分析需要 ${requiredPackages.size} 个 npm 包`);
@@ -226,6 +262,13 @@ async function smartPrune() {
   // @vercel/nft 无法追踪这类依赖，需要基于 package.json 声明补充
   // 策略：只对 nft 已追踪到的包递归，避免收集无关依赖
   const originalPackage = JSON.parse(fs.readFileSync(ROOT_PACKAGE_JSON, 'utf8'));
+
+  // 插件是实际运行根，必须与静态根一起补全依赖及必需 peer。
+  const actionPlugins = originalPackage.actionPlugins || {};
+  const actionPluginNames = Object.keys(actionPlugins);
+  for (const pluginName of actionPluginNames) {
+    requiredPackages.add(resolveInstalledPackage(pluginName, null, true));
+  }
 
   let addedSubDeps = 0;
   const visited = new Set(); // 防止循环依赖导致无限循环
@@ -238,34 +281,23 @@ async function smartPrune() {
     if (visited.has(depName)) continue;
     visited.add(depName);
 
-    const depPkgPath = path.join(ROOT_NODE_MODULES, depName, 'package.json');
-    if (!fs.existsSync(depPkgPath)) continue;
-
-    try {
-      const depPkg = JSON.parse(fs.readFileSync(depPkgPath, 'utf8'));
-      const subDeps = {
-        ...depPkg.dependencies,
-        ...depPkg.optionalDependencies,
-      };
-
-      for (const subDep of Object.keys(subDeps)) {
-        // 检查包是否存在于 node_modules 中
-        const subDepPath = path.join(ROOT_NODE_MODULES, subDep);
-        if (!fs.existsSync(subDepPath)) continue;
-
-        // 如果是新发现的包，添加到结果集并加入队列继续遍历
-        if (!requiredPackages.has(subDep)) {
-          requiredPackages.add(subDep);
-          addedSubDeps++;
-        }
-
-        // 无论是否已在 requiredPackages 中，都需要继续遍历其子依赖
-        if (!visited.has(subDep)) {
-          queue.push(subDep);
-        }
+    const depPkg = readInstalledPackage(depName);
+    const optionalDeps = depPkg.optionalDependencies || {};
+    const requiredDeps = { ...depPkg.dependencies };
+    // npm optionalDependencies 覆盖同名 dependencies。
+    for (const optional of Object.keys(optionalDeps)) delete requiredDeps[optional];
+    for (const peer of Object.keys(depPkg.peerDependencies || {})) {
+      if (!depPkg.peerDependenciesMeta?.[peer]?.optional) requiredDeps[peer] = depPkg.peerDependencies[peer];
+    }
+    const subDeps = new Set([...Object.keys(requiredDeps), ...Object.keys(optionalDeps)]);
+    for (const subDep of subDeps) {
+      const packagePath = resolveInstalledPackage(subDep, depName, Object.hasOwn(requiredDeps, subDep));
+      if (!packagePath) continue; // 未安装的声明 optional 依赖允许缺省。
+      if (!requiredPackages.has(packagePath)) {
+        requiredPackages.add(packagePath);
+        addedSubDeps++;
       }
-    } catch {
-      // 忽略解析错误
+      if (!visited.has(packagePath)) queue.push(packagePath);
     }
   }
 
@@ -273,32 +305,8 @@ async function smartPrune() {
     console.log(`📦 递归补充动态依赖，新增 ${addedSubDeps} 个包`);
   }
 
-  // 5. 处理 actionPlugins（动态加载的插件，无法被静态分析追踪）
-  const actionPlugins = originalPackage.actionPlugins || {};
-  const actionPluginNames = Object.keys(actionPlugins);
-
+  // 5. 插件已随运行闭包解析，保留插件声明及输出。
   if (actionPluginNames.length > 0) {
-    console.log(`🔌 发现 ${actionPluginNames.length} 个 Action 插件，添加到依赖列表...`);
-
-    for (const pluginName of actionPluginNames) {
-      requiredPackages.add(pluginName);
-
-      // 检查插件的 peerDependencies，也添加进去
-      const pluginPkgPath = path.join(ROOT_NODE_MODULES, pluginName, 'package.json');
-      if (fs.existsSync(pluginPkgPath)) {
-        try {
-          const pluginPkg = JSON.parse(fs.readFileSync(pluginPkgPath, 'utf8'));
-          if (pluginPkg.peerDependencies) {
-            for (const peerDep of Object.keys(pluginPkg.peerDependencies)) {
-              requiredPackages.add(peerDep);
-            }
-          }
-        } catch {
-          // 忽略解析错误
-        }
-      }
-    }
-
     console.log(`   ✅ 插件: ${actionPluginNames.join(', ')}`);
   }
 

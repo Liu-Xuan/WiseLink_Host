@@ -63,7 +63,9 @@ export class DocumentOriginalStore {
     assertMetadata(metadata, artifact);
     await onProgress({ ...artifact });
     const readback = await this.read(scope, artifact);
-    if (!Buffer.from(readback).equals(Buffer.from(snapshot))) throw new Error('DOCUMENT_ORIGINAL_READBACK_MISMATCH');
+    if (!Buffer.from(readback.buffer, readback.byteOffset, readback.byteLength)
+      .equals(Buffer.from(snapshot.buffer, snapshot.byteOffset, snapshot.byteLength)))
+      throw new Error('DOCUMENT_ORIGINAL_READBACK_MISMATCH');
     artifact.readback = 'VERIFIED';
     await onProgress({ ...artifact });
     return artifact;

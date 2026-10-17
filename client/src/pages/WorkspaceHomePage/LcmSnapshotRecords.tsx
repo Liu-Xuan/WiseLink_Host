@@ -1,15 +1,13 @@
 import type { LcmCandidateRecord } from '@shared/lcm-export-staging.interface';
 import type { LcmSnapshotSummary } from '@shared/lcm-source-reading.interface';
-import { lcmRecordPresentation, lcmSnapshotTimeFacts } from './lcm-source-presentation';
+import { lcmModelLabel, lcmModelNames, lcmRecordPresentation, lcmSnapshotTimeFacts } from './lcm-source-presentation';
 
 export function LcmSnapshotFacts({ snapshot }: { snapshot: LcmSnapshotSummary }) {
   return <section className="library-lcm-snapshot-facts" aria-label="所选 LCM 快照范围与时间">
     <h2>{snapshot.originalFileName}</h2>
-    <p className="library-source-notice">最近接收的快照不代表当前实时构型。
-      当前为本地候选快照，来源权威及完整性尚未核验。</p>
     <dl className="suite-library-key-facts">
       {lcmSnapshotTimeFacts(snapshot).map(fact => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}
-      <div><dt>覆盖机型</dt><dd>{snapshot.coveredAircraftModels.join(' / ') || '未取得'}</dd></div>
+      <div><dt>覆盖机型</dt><dd title={snapshot.coveredAircraftModels.join(' / ')}>{lcmModelNames(snapshot.coveredAircraftModels) || '未取得'}</dd></div>
       <div><dt>覆盖飞机</dt><dd>{snapshot.coveredAircraftCount} 架（实际范围，非全机队比例）</dd></div>
       <div><dt>快照行数</dt><dd>{snapshot.recordCount} 行</dd></div>
       <div><dt>来源系统实例</dt><dd>{snapshot.sourceInstanceId}</dd></div>
@@ -27,14 +25,13 @@ export function LcmSnapshotFacts({ snapshot }: { snapshot: LcmSnapshotSummary })
 
 export function LcmSnapshotRecords({ records }: { records: LcmCandidateRecord[] }) {
   return <section className="library-lcm-records" aria-label="LCM 软件构型记录">
-    <p className="library-source-notice">允装、实装及新生效分别显示。缺行或零结果不能证明已拆除或未安装。</p>
-    {!records.length ? <p role="status">当前筛选没有匹配记录；零结果不证明未安装。</p> : null}
+    {!records.length ? <p role="status">当前筛选没有匹配记录。</p> : null}
     {records.map(record => {
       const presentation = lcmRecordPresentation(record);
       return <article key={record.recordId} className="library-lcm-record" data-lcm-record-id={record.recordId}>
         <header><strong>{presentation.softwareName}</strong><span>{record.partNumber || '软件件号未取得'}</span></header>
         <dl className="suite-library-key-facts">
-          <div><dt>机型 / 飞机</dt><dd>{record.aircraftModel || '机型未取得'} · {record.tailNumber || '单机身份未取得'}</dd></div>
+          <div><dt>机型 / 飞机</dt><dd title={record.aircraftModel}>{lcmModelLabel(record.aircraftModel) || '机型未取得'} · {record.tailNumber || '单机身份未取得'}</dd></div>
           <div><dt>系统 / ATA</dt><dd>{presentation.system} · {presentation.ata}</dd></div>
           <div><dt>位置 / 功能</dt><dd>{presentation.position}</dd></div>
           <div><dt>软件版本</dt><dd>{presentation.softwareVersion}</dd></div>

@@ -10,7 +10,7 @@ export type LocalMineruTitleReceipt =
 /** The uploaded package is candidate data, never Host business identity or authorization. */
 export function readLocalMineruCandidate(bytes: Uint8Array): LocalMineruResult {
   if (!bytes.length || bytes.length > 64 * 1024 * 1024) fail();
-  const parsed: unknown = JSON.parse(Buffer.from(bytes).toString('utf8'));
+  const parsed: unknown = JSON.parse(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('utf8'));
   const hasTitle = parsed && typeof parsed === 'object' && 'titleEnhancement' in parsed;
   const candidate = object(parsed, ['schemaVersion', 'source', 'parser', 'raw', 'assets', ...(hasTitle ? ['titleEnhancement'] : [])]);
   if (candidate.schemaVersion !== 'wiselink.mineru.local-candidate.v1') fail();
@@ -36,7 +36,8 @@ export function readLocalMineruCandidate(bytes: Uint8Array): LocalMineruResult {
     if (actualType !== asset.mediaType) fail();
     const sha256 = createHash('sha256').update(content).digest('hex');
     if (!content.length || content.length > 32 * 1024 * 1024 || content.length !== asset.byteLength || sha256 !== asset.sha256) fail();
-    return { path, bytes: new Uint8Array(content), mediaType: asset.mediaType as 'image/png' | 'image/jpeg' | 'image/webp', sha256 };
+    return { path, bytes: new Uint8Array(content.buffer, content.byteOffset, content.byteLength),
+      mediaType: asset.mediaType as 'image/png' | 'image/jpeg' | 'image/webp', sha256 };
   });
   const rawArtifacts = { markdown: raw.markdown, contentListV2: raw.contentListV2, middle: raw.middle };
   const document = readMineruArtifacts({ ...rawArtifacts, assetPaths: assets.map(asset => asset.path) });

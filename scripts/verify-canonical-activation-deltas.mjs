@@ -212,7 +212,7 @@ assert.ok(source.includes("['解析包', 'package', 'workspace-package']"));
 assert.ok(source.includes("['Reader', 'reader', 'workspace-reader']"));
 assert.ok(!source.includes('.evaluateAssessment(workItemId)'));
 assert.ok(!source.includes('.resynthesizeAssessment(workItemId'));
-assert.ok(source.includes('confirmIntegratedOverallForAeo(workItemId)'));
+assert.ok(source.includes('confirmIntegratedOverallForAeo(workItemId, {'));
 assert.ok(source.includes('generateAeoCandidate(workItemId)'));
 assert.ok(source.includes('生成AEO候选'));
 assert.ok(source.includes('OpenClaw 动态 N + 整体综合'));

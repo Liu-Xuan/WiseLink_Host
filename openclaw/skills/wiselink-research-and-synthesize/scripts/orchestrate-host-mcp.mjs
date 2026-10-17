@@ -769,13 +769,9 @@ export async function runApplicabilityEvaluation({
   });
 }
 
-export async function runDynamicEvaluation({
-  workItemId,
-  continuationRequestId,
-  query,
-  callTool,
-  evaluateDynamicRules,
-}) {
+export async function runDynamicEvaluation(input) {
+  const { workItemId, query, callTool, evaluateDynamicRules } = input;
+  const continuationRequestId = optionalContinuationRequest(input);
   assertCallbacks(workItemId, callTool, evaluateDynamicRules);
   const before = await callTool('get_parse_status', { workItemId });
   const begin = await callTool('begin_dynamic_evaluation', { workItemId,
@@ -793,19 +789,20 @@ export async function runDynamicEvaluation({
   const problemV2 = ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(begin.modelInput?.schemaVersion);
   if (!problemV2) validatePayload('dynamic-rules-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
-  const execution = normalizeExecution(
-    await evaluateDynamicRules(structuredClone(begin.modelInput), problemV2 ? problemAssessmentHooks(begin, callTool) : undefined),
-  );
+  const reconciled = problemV2 ? await reconcileSavedInitialAssessment(begin, callTool) : null;
+  const execution = reconciled ?? await recoverAssessmentExecution(begin, problemV2, input.recoverAssessmentExecution) ?? await executeInitialAssessment(begin, problemV2, () =>
+    evaluateDynamicRules(structuredClone(begin.modelInput), problemV2 ? problemAssessmentHooks(begin, callTool) : undefined));
   await heartbeatAttempt(begin, callTool);
-  const serializedOutput = problemV2 ? execution.output : serializeDynamicRulesCommitOutput(
+  const serializedOutput = execution.failureCode ? null : problemV2 ? execution.output : serializeDynamicRulesCommitOutput(
     begin.modelInput,
     execution.output,
   );
   const result = sealResultEnvelope({
     task: begin.task,
     modelOutput: serializedOutput,
-    provenance: execution.provenance,
-    factsConsidered: problemV2 ? [execution.output.workRevisionRef] : execution.output.ruleResults.rows.map((row) => row[0]),
+    provenance: workItemJobAidProvenance(begin.modelInput, execution.provenance),
+    failureCode: execution.failureCode ?? null,
+    factsConsidered: execution.failureCode ? [] : problemV2 ? [execution.output.workRevisionRef] : execution.output.ruleResults.rows.map((row) => row[0]),
   });
   let committed = null;
   let after = null;
@@ -814,7 +811,8 @@ export async function runDynamicEvaluation({
       'commit_dynamic_evaluation_candidate',
       commitArgs(begin, result),
     );
-    assertDynamicCommit(committed, workItemId);
+    if (execution.failureCode) assertFailedAssessmentCommit(committed, begin, result);
+    else assertDynamicCommit(committed, workItemId);
   } catch (error) {
     return recoverCommitResponseLoss({
       mode: 'INITIAL_ANALYSIS',
@@ -848,21 +846,16 @@ export async function runDynamicEvaluation({
       result,
     }),
     commitRecoveredByReadback: false,
+    ...(reconciled ? { executionKind: 'HOST_SAVED_WORK_RECONCILIATION', modelRequests: 0 } : {}),
     parsed,
     parsedReaderSummary,
   };
 }
 
-export async function runOverallSynthesis({
-  workItemId,
-  continuationRequestId,
-  successorReviewTurnRef,
-  successorWorkRevisionRef,
-  providers = [],
-  callTool,
-  synthesizeOverall,
-  configurationEvidenceReevaluation,
-}) {
+export async function runOverallSynthesis(input) {
+  const { workItemId, successorReviewTurnRef, successorWorkRevisionRef,
+    providers = [], callTool, synthesizeOverall, configurationEvidenceReevaluation } = input;
+  const continuationRequestId = optionalContinuationRequest(input);
   assertCallbacks(workItemId, callTool, synthesizeOverall);
   const selectedProviders = validateProviders(providers);
   if (successorReviewTurnRef && (continuationRequestId || selectedProviders.length || configurationEvidenceReevaluation))
@@ -921,6 +914,7 @@ export async function runOverallSynthesis({
     synthesizeOverall,
     successorWorkRevisionRef,
     successorReviewTurnRef,
+    recoverAssessment: input.recoverAssessmentExecution,
   });
 }
 
@@ -954,23 +948,24 @@ async function completeOverall({
   resumed = false,
   successorWorkRevisionRef,
   successorReviewTurnRef,
+  recoverAssessment,
 }) {
   const problemV2 = ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(begin.modelInput?.schemaVersion);
   if (!problemV2) validatePayload('synthesis-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
-  const execution = normalizeExecution(
-    await synthesizeOverall(structuredClone(begin.modelInput), problemV2 ? problemAssessmentHooks(begin, callTool) : undefined),
-  );
+  const execution = await recoverAssessmentExecution(begin, problemV2, recoverAssessment) ?? await executeInitialAssessment(begin, problemV2, () =>
+    synthesizeOverall(structuredClone(begin.modelInput), problemV2 ? problemAssessmentHooks(begin, callTool) : undefined));
   await heartbeatAttempt(begin, callTool);
-  if (!problemV2) validatePayload('synthesis-pair', {
+  if (!problemV2 && !execution.failureCode) validatePayload('synthesis-pair', {
     input: begin.modelInput,
     output: execution.output,
   });
   const result = sealResultEnvelope({
     task: begin.task,
     modelOutput: execution.output,
-    provenance: execution.provenance,
-    factsConsidered: problemV2 ? [execution.output.workRevisionRef] : begin.modelInput.baseRuleResult.items.map(
+    provenance: workItemJobAidProvenance(begin.modelInput, execution.provenance),
+    failureCode: execution.failureCode ?? null,
+    factsConsidered: execution.failureCode ? [] : problemV2 ? [execution.output.workRevisionRef] : begin.modelInput.baseRuleResult.items.map(
       ({ criterionId }) => criterionId,
     ),
   });
@@ -981,8 +976,9 @@ async function completeOverall({
       'commit_overall_candidate',
       commitArgs(begin, result),
     );
-    assertOverallCommit(committed, workItemId);
-    if (successorWorkRevisionRef &&
+    if (execution.failureCode) assertFailedAssessmentCommit(committed, begin, result);
+    else assertOverallCommit(committed, workItemId);
+    if (!execution.failureCode && successorWorkRevisionRef &&
         committed.overallSynthesis.basedOnJobAidWorkRevisionRef !== successorWorkRevisionRef)
       throw new Error('HOST_MCP_SUCCESSOR_OVERALL_COMMIT_WORK_MISMATCH');
   } catch (error) {
@@ -1040,6 +1036,11 @@ export async function runInteractiveReviewTurn({
   });
   assertBegin(begin, 'OPENCLAW_INTERACTIVE_REVIEW');
   const task = validateReviewTask(begin.task.modelInput);
+  if (task.reviewConversationRef !== reviewConversationRef ||
+    task.requestId !== requestId ||
+    (workItemId && begin.task.workItemId !== workItemId)) {
+    throw new Error('HOST_MCP_REVIEW_TASK_BINDING_MISMATCH');
+  }
   if (begin.status === 'COMMITTING') {
     if (isolatedCandidate) throw new Error('REVIEW_ISOLATED_COMMITTING_FORBIDDEN');
     return recoverReviewCommitting(begin, callTool);
@@ -1050,7 +1051,7 @@ export async function runInteractiveReviewTurn({
   assertReviewContext(contextResult, begin, task);
   const readSourceRefIds = new Set();
   const readSourceRefs = async (sourceRefIds) => {
-    const requested = validateReviewSourceRefRequest(sourceRefIds, task);
+    const requested = validateReviewSourceRefRequest(sourceRefIds, task, begin.task.workItemId);
     const response = await callTool('read_source_refs', {
       attemptRef: begin.attemptRef,
       sourceRefIds: requested,
@@ -1078,10 +1079,10 @@ export async function runInteractiveReviewTurn({
     requested.forEach((sourceRefId) => readSourceRefIds.add(sourceRefId));
     return sanitized;
   };
-  const safeModelInput = buildReviewModelInput(task, contextResult);
+  const safeModelInput = buildReviewModelInput(task, contextResult, begin.task.workItemId);
   const validateCandidate = (value) => {
     const candidate = validateReviewCandidate(task, value);
-    assertReviewSourcesWereRead(candidate, readSourceRefIds, task, safeModelInput.context.matterWorking);
+    assertReviewSourcesWereRead(candidate, readSourceRefIds, task, safeModelInput.context.matterWorking, begin.task.workItemId);
     return candidate;
   };
   const execution = normalizeExecution(
@@ -1313,9 +1314,112 @@ export function assertOverallSynthesisReady(statusResult) {
   return statusResult;
 }
 
+function optionalContinuationRequest(input) {
+  if (!Object.hasOwn(input, 'continuationRequestId')) return undefined;
+  const requestId = input.continuationRequestId;
+  if (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/u.test(requestId))
+    throw new Error('INITIAL_CONTINUATION_REQUEST_INVALID');
+  return requestId;
+}
+
+async function reconcileSavedInitialAssessment(begin, callTool) {
+  const taskInput = begin.task.modelInput;
+  if (!Object.hasOwn(taskInput, 'savedWorkReconciliation')) return null;
+  const startedAt = Date.now();
+  const marker = taskInput.savedWorkReconciliation;
+  if (!marker || begin.task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
+      marker.executionKind !== 'HOST_SAVED_WORK_RECONCILIATION' || marker.modelRequests !== 0 ||
+      typeof marker.workRevisionRef !== 'string' || !marker.workRevisionRef ||
+      !Number.isSafeInteger(marker.workRevision) || marker.workRevision < 1 ||
+      typeof marker.sourceActionAttemptId !== 'string' || !marker.sourceActionAttemptId ||
+      begin.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT')
+    throw new Error('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
+  const latest = await callTool('read_assessment_work', { attemptRef: begin.attemptRef });
+  const revision = latest?.revision;
+  if (latest?.schemaVersion !== 'wiselink.jobaid-work-read.v2' ||
+      latest.attemptId !== begin.task.actionAttemptId || latest.executionStatus !== 'RUNNING' ||
+      revision?.workRevisionRef !== marker.workRevisionRef || revision.workRevision !== marker.workRevision ||
+      revision.actionAttemptId !== marker.sourceActionAttemptId ||
+      revision.workItemId !== begin.task.workItemId || revision.documentVersionId !== begin.task.documentVersionId ||
+      revision.basedOnWorkItemRevision !== begin.task.baseRevision ||
+      revision.content?.roundCompletion !== 'COMPLETE' ||
+      typeof revision.requestId !== 'string' || !revision.requestId)
+    throw new Error('JOBAID_SAVED_WORK_RECONCILIATION_READBACK_INVALID');
+  // Use only the Host-returned original SAVE key. The new task's marker grants
+  // this exact historical read; an actionAttemptId is never converted to an AQ id.
+  const original = await callTool('read_assessment_work', {
+    attemptRef: begin.attemptRef, requestId: revision.requestId,
+  });
+  if (original?.schemaVersion !== latest.schemaVersion || original.attemptId !== latest.attemptId ||
+      original.executionStatus !== 'RUNNING' || canonicalJson(original.revision) !== canonicalJson(revision))
+    throw new Error('JOBAID_SAVED_WORK_RECONCILIATION_READBACK_INVALID');
+  const protocol = begin.modelInput.schemaVersion === 'wiselink.jobaid-problem-task.v3' ? '3' : '2';
+  return { output: { workRevisionRef: marker.workRevisionRef }, provenance: {
+    executionKind: 'HOST_SAVED_WORK_RECONCILIATION', modelRequests: 0, modelVersion: null,
+    sourceWork: { workRevisionRef: marker.workRevisionRef, sourceActionAttemptId: marker.sourceActionAttemptId },
+    promptVersion: `wiselink-jobaid-problem@v${protocol}`,
+    skillVersion: WISELINK_SKILL_VERSION,
+    toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+      'jobaid-problem-protocol': protocol, 'host-saved-work-reconciliation': '1',
+      ...(taskInput.tdmsContext ? { 'tdms-native-context': '1' } : {}) },
+    runMetrics: { durationMs: Date.now() - startedAt, inputUnits: 0, outputUnits: 0 },
+  } };
+}
+
+async function recoverAssessmentExecution(begin, problemV2, recover) {
+  if (!problemV2 || recover === undefined) return null;
+  if (typeof recover !== 'function') throw new Error('INITIAL_ASSESSMENT_POLICY_CLOSURE_UNCONFIRMED');
+  const execution = await recover(begin);
+  if (!execution || Object.keys(execution).length !== 2 ||
+      execution.failureCode !== 'JOBAID_CHECKPOINT_POLICY_CHANGED')
+    throw new Error('INITIAL_ASSESSMENT_POLICY_CLOSURE_UNCONFIRMED');
+  validateRuntimeProvenance(execution.provenance);
+  return execution;
+}
+
+async function executeInitialAssessment(begin, problemV2, perform) {
+  try { return normalizeExecution(await perform()); }
+  catch (error) {
+    const failure = error?.terminalAssessmentFailure;
+    const knownFailure = [
+      'JOBAID_MODEL_OUTPUT_LENGTH', 'JOBAID_WORK_VALIDATION_FAILED',
+      'JOBAID_WORK_JSON_INVALID', 'JOBAID_SOURCE_BATCH_POLICY_NOT_FOLLOWED',
+      'JOBAID_PROTOCOL_REPAIR_EXHAUSTED', 'JOBAID_NO_PROGRESS',
+    ].includes(failure?.errorCode) || (failure?.errorCode === 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE' &&
+      error?.message === 'JOBAID_MODEL_OUTPUT_FUNCTION_INVALID');
+    if (!problemV2 || !knownFailure) throw error;
+    // A gateway/tool-choice error does not prove the provider stopped. Only
+    // these recorded complete/rejected responses can finish as known failure.
+    validateRuntimeProvenance(failure.provenance);
+    return { failureCode: failure.errorCode, provenance: failure.provenance };
+  }
+}
+
+function workItemJobAidProvenance(modelInput, provenance) {
+  const protocol = modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v3' ? '3'
+    : modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2' ? '2' : null;
+  // Only these two fresh guidance versions implement the Host's base protocol.
+  // Legacy/unknown declarations retain the existing strict Host validation.
+  if (!protocol ||
+      provenance.promptVersion !== `wiselink-jobaid-problem@v${protocol}.source-content-once.v2` ||
+      provenance.toolVersions['jobaid-problem-protocol'] !== protocol) return provenance;
+  const guidance = provenance.toolVersions['jobaid-problem-guidance'];
+  if (guidance !== undefined && guidance !== provenance.promptVersion)
+    throw new Error('HOST_MCP_JOBAID_GUIDANCE_VERSION_MISMATCH');
+  return { ...provenance, promptVersion: `wiselink-jobaid-problem@v${protocol}`,
+    toolVersions: { ...provenance.toolVersions, 'jobaid-problem-guidance': provenance.promptVersion } };
+}
+
+function assertFailedAssessmentCommit(value, begin, result) {
+  if (value?.status !== 'FAILED' || value.attemptRef !== begin.attemptRef ||
+      value.errorCode !== result.errorCode)
+    throw new Error('HOST_MCP_FAILED_ASSESSMENT_COMMIT_INVALID');
+}
+
 function problemAssessmentHooks(begin, callTool) {
   const control = { attemptRef: begin.attemptRef, leaseToken: begin.leaseToken, leaseGeneration: begin.leaseGeneration };
   return {
+    assessmentBinding: { documentVersionId: begin.task.documentVersionId, inputRevision: begin.task.inputRevision },
     heartbeat: () => heartbeatAttempt(begin, callTool),
     queryAssessmentKnowledge: (intent) => callTool('query_assessment_knowledge', { ...intent, ...control }),
     readAssessmentSources: (intent) => callTool('read_assessment_sources', { ...intent, ...control }),
@@ -1772,10 +1876,11 @@ function completedResult({
   result,
 }) {
   return {
-    ok: true,
+    ok: result.status !== 'FAILED',
     mode,
     operation,
-    outcome,
+    outcome: result.status === 'FAILED' ? 'FAILED' : outcome,
+    ...(result.errorCode ? { errorCode: result.errorCode } : {}),
     before,
     committed,
     after,
@@ -1786,6 +1891,9 @@ function completedResult({
 
 function resultProvenance(result) {
   return {
+    ...(result.executionKind === 'HOST_SAVED_WORK_RECONCILIATION' ? {
+      executionKind: result.executionKind, modelRequests: 0, sourceWork: structuredClone(result.sourceWork),
+    } : {}),
     modelVersion: result.modelVersion,
     promptVersion: result.promptVersion,
     skillVersion: result.skillVersion,
@@ -1932,7 +2040,7 @@ function assertReviewContext(value, begin, task) {
   }
 }
 
-function buildReviewModelInput(task, contextResult) {
+function buildReviewModelInput(task, contextResult, workItemId) {
   const context = sanitizeForModel(contextResult.context);
   return {
     schemaVersion: task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA ? 'wiselink.3_1.review_model_input.v1.c5' : task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA
@@ -1945,9 +2053,7 @@ function buildReviewModelInput(task, contextResult) {
     allowedEvaluationItemIds: [...task.allowedEvaluationItemIds],
     allowedAdoptedInputRefs: [...task.allowedAdoptedInputRefs],
     attachmentRefs: [...task.attachmentRefs],
-    availableSourceRefIds: task.resourceRefs.map(
-      ({ sourceRefId }) => sourceRefId,
-    ),
+    availableSourceRefIds: reviewReadableSourceRefIds(task, workItemId),
     context,
   };
 }
@@ -2024,7 +2130,28 @@ function sanitizeReviewGapControl(value, modelPath) {
   };
 }
 
-function validateReviewSourceRefRequest(sourceRefIds, task) {
+function reviewReadableSourceRefIds(task, workItemId) {
+  const refs = task.resourceRefs.map(({ sourceRefId }) => sourceRefId);
+  if (task.schemaVersion !== REVIEW_JOBAID_TASK_SCHEMA) return refs;
+  for (const item of task.jobAidContext.sourceCatalog) {
+    const source = item.dialogueSource;
+    if (item.kind !== 'ENGINEER_STATEMENT' || item.origin !== 'REVIEW_CONVERSATION' ||
+      !source || typeof source.requestRef !== 'string' || !source.requestRef.trim() ||
+      typeof source.contributionRef !== 'string' || !source.contributionRef.trim() ||
+      !Number.isSafeInteger(source.revision) || source.revision < 1 ||
+      // This exact request binding is persisted by DialogueAssessmentRepository.
+      // The evidenceRef remains the Host's opaque frozen value, never rebuilt.
+      task.requestId !== `dialogue-${source.requestRef}` ||
+      item.reviewConversationId !== task.reviewConversationRef ||
+      item.reviewTurnId !== task.reviewTurnRef ||
+      !Array.isArray(source.contextWorkItemIds) ||
+      !source.contextWorkItemIds.includes(workItemId)) continue;
+    refs.push(item.evidenceRef);
+  }
+  return [...new Set(refs)];
+}
+
+function validateReviewSourceRefRequest(sourceRefIds, task, workItemId) {
   if (
     !Array.isArray(sourceRefIds) ||
     sourceRefIds.length < 1 ||
@@ -2036,9 +2163,7 @@ function validateReviewSourceRefRequest(sourceRefIds, task) {
   ) {
     throw new Error('HOST_MCP_REVIEW_SOURCE_REF_REQUEST_INVALID');
   }
-  const allowed = new Set(
-    task.resourceRefs.map(({ sourceRefId }) => sourceRefId),
-  );
+  const allowed = new Set(reviewReadableSourceRefIds(task, workItemId));
   if (sourceRefIds.some((sourceRefId) => !allowed.has(sourceRefId))) {
     throw new Error('HOST_MCP_REVIEW_SOURCE_REF_NOT_ALLOWED');
   }
@@ -2072,8 +2197,16 @@ function sanitizeSourceRefReadback(value, attemptRef, requested) {
   );
 }
 
-function assertReviewSourcesWereRead(candidate, readSourceRefIds, task, matterWorking) {
+function assertReviewSourcesWereRead(candidate, readSourceRefIds, task, matterWorking, workItemId) {
   const used = reviewCandidateSourceRefIds(task, candidate);
+  if (task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA &&
+    task.context.purpose === 'UPDATE_ASSESSMENT' && candidate.jobAidWorkingDelta === null) {
+    const resources = new Set(task.resourceRefs.map((item) => item.sourceRefId));
+    // ALL_PENDING contributions are not initially delivered. A completed
+    // comparison must read each exact current-request frozen contribution.
+    used.push(...reviewReadableSourceRefIds(task, workItemId)
+      .filter((ref) => !resources.has(ref)));
+  }
   if (used.some((sourceRefId) => !readSourceRefIds.has(sourceRefId))) {
     throw new Error('REVIEW_CANDIDATE_SOURCE_REF_NOT_READ_THIS_TURN');
   }
@@ -2139,6 +2272,20 @@ function assertReviewCommit(value, attemptRef, task, candidate, result) {
   const saved = value?.assistantCandidate;
   const update = saved?.jobAidWorkingUpdate;
   const expected = task?.jobAidContext?.modelInput?.expectedWorkRevision;
+  const unchanged = task?.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA &&
+    task.context.purpose === 'UPDATE_ASSESSMENT' && candidate?.jobAidWorkingDelta === null;
+  const exactUnchangedReceipt = !unchanged || (
+    saved?.actionAttemptRef === attemptRef &&
+    saved?.provenance?.resultContentHash === result?.contentHash &&
+    update?.status === 'UNCHANGED' &&
+    update.workRevisionRef === task.jobAidContext.previousWork.workRevisionRef &&
+    update.workRevision === expected &&
+    Array.isArray(update.affectedIssueKeys) && update.affectedIssueKeys.length === 0);
+  const readProofValid = !isRecord(update) || !Object.hasOwn(update, 'readSourceRefs') ||
+    (Array.isArray(update.readSourceRefs) &&
+      update.readSourceRefs.every((ref) => typeof ref === 'string' && ref.trim() !== '' &&
+        task.jobAidContext?.sourceCatalog.some((item) => item.evidenceRef === ref)) &&
+      new Set(update.readSourceRefs).size === update.readSourceRefs.length);
   // A saved JobAid correction may invalidate its derived Overall. This is
   // permitted only by the Host's exact APPLIED receipt for this sealed result;
   // it does not authorize a formal ReviewAction or a WorkItem/current change.
@@ -2158,6 +2305,7 @@ function assertReviewCommit(value, attemptRef, task, candidate, result) {
     value.schemaVersion !== 'wiselink.3_1.review_turn_commit.v1.c2' ||
     value.attemptRef !== attemptRef ||
     value.status !== 'SUCCEEDED' ||
+    !exactUnchangedReceipt || !readProofValid ||
     value.authority?.candidatePersisted !== true ||
     value.authority?.reviewActionExecuted !== false ||
     value.authority?.workItemRevisionChanged !== false ||

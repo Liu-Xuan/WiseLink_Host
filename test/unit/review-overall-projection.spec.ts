@@ -90,6 +90,64 @@ const request: RequestCanonicalReviewOverallProjectionRequest = {
 };
 
 describe('deterministic saved Review Overall', () => {
+  it.each(['NOT_AVAILABLE', 'STALE'] as const)(
+    'rejects %s saved overview instead of projecting it as current',
+    (overviewStatus) => {
+      const revision: JobAidWorkRevision = saved();
+      revision.content.overviewStatus = overviewStatus;
+      const before: string = JSON.stringify(revision);
+      expect(() => buildJobAidOverallProjection({
+        workItem: item(),
+        revision,
+        artifact: {
+          ...artifact,
+          storeRole: 'UnifiedArtifactStoreCandidate',
+          mediaType: 'application/json',
+        },
+        actionAttemptId: 'ATT-OVERALL',
+        sourceResultId: 'openclaw-overall://REQ-1',
+        applicabilityStatus: 'UNKNOWN',
+      })).toThrow(
+        `JOBAID_OVERALL_EXACT_WORK_REQUIRED:${revision.workRevisionRef}:OVERVIEW_${overviewStatus}`,
+      );
+      expect(JSON.stringify(revision)).toBe(before);
+    },
+  );
+
+  it('projects an exact current saved overview with ordinary model provenance', () => {
+    const revision: JobAidWorkRevision = saved();
+    const projection = buildJobAidOverallProjection({
+      workItem: item(),
+      revision,
+      artifact: {
+        ...artifact,
+        storeRole: 'UnifiedArtifactStoreCandidate',
+        mediaType: 'application/json',
+      },
+      actionAttemptId: 'ATT-OVERALL',
+      sourceResultId: 'openclaw-overall://REQ-1',
+      applicabilityStatus: 'UNKNOWN',
+      modelProvenance: {
+        modelVersion: 'constructed-model',
+        promptVersion: 'constructed-prompt',
+        skillVersion: 'constructed-skill',
+        toolVersions: { protocol: '2' },
+      },
+    });
+    expect(projection).toMatchObject({
+      status: 'CANDIDATE_ONLY',
+      revision: 1,
+      actionAttemptId: 'ATT-OVERALL',
+      basedOnJobAidWorkRevisionRef: revision.workRevisionRef,
+      overallCandidate: revision.content.understanding,
+      staleReason: null,
+      modelVersion: 'constructed-model',
+    });
+    expect(projection.readingResult).toEqual(jobAidReadingResult(revision));
+    expect(projection).not.toHaveProperty('executionKind');
+    expect(projection).not.toHaveProperty('sourceReview');
+  });
+
   it('builds the candidate from saved work without model provenance or new prose', () => {
     const workItem = item();
     const revision = saved();

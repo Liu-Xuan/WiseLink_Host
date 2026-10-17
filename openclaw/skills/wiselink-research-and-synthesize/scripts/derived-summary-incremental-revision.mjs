@@ -12,11 +12,11 @@ const noticesValid = item => typeof item?.current === 'boolean' &&
   item.limitations.every(value => typeof value === 'string' && value.trim());
 
 /** Complete saved own-body, with references only. Root delivery is independent. */
-export function derivedSummarySparseMemberBody(reading) {
+export function derivedSummarySparseMemberBody(reading, registry) {
   validateDerivedSummaryReading(reading);
   const { evidence, body, ...member } = reading;
   return { ...member, ...(!Object.hasOwn(reading, 'understanding') ? { body } : {}),
-    evidenceRefs: summaryEvidenceRefs(evidence), ...summaryNativeReceiptFields(evidence) };
+    evidenceRefs: summaryEvidenceRefs(evidence), ...summaryNativeReceiptFields(evidence, registry) };
 }
 
 /** No target guessing, truncation, first-N or instruction-keyword selection.
@@ -42,11 +42,11 @@ export function derivedSummarySparseRevisionModelView(modelInput, { initialMembe
     const { body, understanding, evidence, issues, ...directory } = reading;
     return { ...structuredClone(directory), issues: issues.map(issue => ({ issueKey: issue.issueKey,
       ...(Object.hasOwn(issue, 'issueRef') ? { issueRef: issue.issueRef } : {}), question: issue.question })),
-      evidenceRefs: summaryEvidenceRefs(evidence), ...summaryNativeReceiptFields(evidence) };
+      evidenceRefs: summaryEvidenceRefs(evidence), ...summaryNativeReceiptFields(evidence, registry.evidence) };
   });
   view.evidenceDirectory = [...registry.evidence.values()].map(({ excerpt, ...directory }) => structuredClone(directory));
   view.members = modelInput.members.filter(reading => selected.has(reading.evidenceRef) ||
-    changedKeys.has(memberKey(reading.member))).map(derivedSummarySparseMemberBody);
+    changedKeys.has(memberKey(reading.member))).map(reading => derivedSummarySparseMemberBody(reading, registry.evidence));
   view.evidence = initialSourceRefs.map(ref => structuredClone(registry.evidence.get(ref)));
   return view;
 }

@@ -1,0 +1,99 @@
+.wiki-guide-home {
+  --wg-paper: var(--wl-sheet, #fff);
+  --wg-directory: var(--wl-sheet-muted, #f6f7f7);
+  --wg-ink: var(--wl-ink, #27292c);
+  --wg-secondary: var(--wl-muted, #555b62);
+  --wg-line: var(--wl-border, #e1e3e4);
+  --wg-active: var(--wl-selected, #e0e3e6);
+  --wg-green: #4c8073;
+  --wg-green-soft: #edf3ef;
+  min-width: 0; padding: 25px 24px 24px; color: var(--wg-ink); font-family: var(--wl-font); line-height: 1.6;
+}
+.wiki-guide-home * { box-sizing: border-box; }
+.wiki-guide-home h1, .wiki-guide-home h2, .wiki-guide-home h3, .wiki-guide-home p { margin: 0; }
+.wiki-guide-home h1 { font-size: 25px; line-height: 1.3; font-weight: 500; letter-spacing: -.035em; }
+.wiki-guide-home h2 { font-size: 21px; line-height: 1.4; font-weight: 500; letter-spacing: -.025em; }
+.wiki-guide-home h3, .wiki-guide-home strong { font-weight: 500; }
+.wg-heading, .wg-toolbar, .wg-model-bar, .wg-chapter-title, .wg-search-heading {
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px 16px;
+}
+.wg-heading { margin-bottom: 19px; align-items: baseline; }
+.wg-heading-actions { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--wg-secondary); }
+.wg-heading-actions > a:hover { text-decoration: underline; }
+.wg-toolbar { margin-bottom: 17px; gap: 12px; }
+.wg-models { display: flex; flex-wrap: wrap; align-items: center; padding: 3px; gap: 3px; background: var(--wg-active); border-radius: 10px; max-width: 100%; min-width: 0; }
+.wg-models button { border-radius: 7px; padding: 6px 16px; min-height: 36px; font-size: 13px; font-weight: 400; white-space: normal; overflow-wrap: anywhere; }
+.wg-models button[aria-pressed='true'] { background: var(--wg-paper); color: var(--wg-ink); font-weight: 500; }
+.wg-search {
+  flex: 1 1 260px; max-width: 325px; min-width: 0; display: flex; align-items: center; gap: 8px;
+  padding: 0 11px; border: 1px solid var(--wg-line); border-radius: 10px; background: var(--wg-paper);
+}
+.wg-search > svg { flex: 0 0 16px; color: var(--wg-secondary); }
+.wg-search input { min-width: 0; width: 100%; border: 0; border-radius: 0; padding: 8px 0; background: transparent; box-shadow: none; font-size: 13px; }
+.wg-workbench { border-radius: 15px; border: 1px solid var(--wg-line); background: var(--wg-paper); min-width: 0; overflow: clip; }
+.wg-model-bar { padding: 14px 20px; border-bottom: 1px solid var(--wg-line); }
+.wg-model-bar > div { display: flex; align-items: baseline; gap: 10px; }
+.wg-model-bar strong { font-size: 17px; }
+.wg-model-bar span, .wg-saved-label, .wg-empty-label { font-size: 12px; color: var(--wg-secondary); }
+.wg-text-action, .wg-section-action { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--wg-secondary); }
+.wg-text-action:hover, .wg-section-action:hover { color: var(--wg-ink); text-decoration: underline; text-underline-offset: 4px; }
+.wg-browser { display: grid; grid-template-columns: 173px minmax(0, 1fr); min-width: 0; }
+.wg-chapter-sidebar { min-width: 0; background: var(--wg-directory); padding: 17px 10px 17px 13px; }
+.wg-chapter-sidebar h2 { padding: 0 10px 10px; font-size: 12px; color: var(--wg-secondary); font-weight: 400; }
+.wg-chapter-sidebar ul, .wg-sections, .wg-results { margin: 0; padding: 0; list-style: none; }
+.wg-chapter-sidebar li + li { margin-top: 2px; }
+.wg-chapter-sidebar .wg-chapter {
+  display: flex; align-items: baseline; justify-content: flex-start; text-align: left; gap: 11px; white-space: normal;
+  width: 100%; min-height: 36px; padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 400;
+}
+.wg-chapter[aria-current='true'] { background: var(--wg-active); font-weight: 500; }
+.wg-code, .wg-section-code, .wg-eyebrow { font-family: var(--wl-mono); }
+.wg-code { color: var(--wg-secondary); font-size: 12px; }
+.wg-browser-content { min-width: 0; padding: 22px; }
+.wg-mobile-chapters { display: none; }
+.wg-eyebrow { display: block; color: var(--wg-green); font-size: 12px; margin-bottom: 5px; letter-spacing: .035em; }
+.wg-read-chapter { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border-radius: 8px; background: var(--wg-ink); color: var(--wg-paper); font-size: 12px; }
+.wg-saved-label { margin-top: 10px !important; }
+.wg-index-heading { margin-top: 23px; padding-bottom: 11px; border-bottom: 1px solid var(--wg-line); }
+.wg-index-heading h3 { font-size: 12px; color: var(--wg-secondary); }
+.wg-sections li + li, .wg-results li + li { border-top: 1px solid var(--wg-line); }
+.wg-section-entry { padding: 14px 0; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 13px; align-items: center; min-width: 0; }
+.wg-section-code { color: var(--wg-green); font-size: 13px; font-weight: 500; }
+.wg-section-entry strong { display: block; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.wg-section-entry p { font-size: 12px; color: var(--wg-secondary); margin-top: 4px; }
+.wg-section-action { justify-content: flex-end; }
+.wg-section-action > svg { display: none; }
+.wg-search-heading { padding-bottom: 17px; border-bottom: 1px solid var(--wg-line); }
+.wg-search-heading h2 { font-size: 17px; }
+.wg-results > li { padding: 16px 0; }
+.wg-result-kind { color: var(--wg-green); font-size: 11px; display: block; margin-bottom: 3px; }
+.wg-result-title { display: block; font-size: 14px; font-weight: 500; }
+.wg-result-title .wg-text-action { font: inherit; color: var(--wg-ink); }
+.wg-result-title:hover { text-decoration: underline; text-underline-offset: 4px; }
+.wg-result-path { color: var(--wg-secondary); font-size: 11px; line-height: 1.75; margin-top: 5px !important; overflow-wrap: anywhere; }
+.wg-more { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 12px; }
+.wg-message { margin: 12px 0 !important; }
+.wiki-guide-home a:focus-visible, .wiki-guide-home button:focus-visible, .wg-search:focus-within {
+  outline: 2px solid var(--wg-green); outline-offset: 2px;
+}
+.dark .wiki-guide-home, [data-theme='dark'] .wiki-guide-home { --wg-green: #a4c1b7; --wg-green-soft: #2a3d36; }
+@media (max-width: 620px) {
+  .wiki-guide-home { padding: 19px 16px; }
+  .wg-search { max-width: none; }
+  .wg-browser { display: block; }
+  .wg-chapter-sidebar { display: none; }
+  .wg-mobile-chapters { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; padding-bottom: 19px; font-size: 12px; }
+  .wg-mobile-chapters [data-slot='select-trigger'] { width: 100%; min-width: 0; white-space: normal; }
+  .wg-browser-content { padding: 18px; }
+  .wg-model-bar { padding: 13px 18px; }
+  .wg-section-entry { grid-template-columns: 44px minmax(0, 1fr); gap: 9px; }
+  .wg-section-action, .wg-section-entry > .wg-empty-label { grid-column: 2; justify-content: flex-start; }
+}
+@media (pointer: coarse), (max-width: 420px) {
+  .wiki-guide-home button, .wiki-guide-home input, .wiki-guide-home [data-slot='select-trigger'] { min-height: 44px; }
+  .wg-search input { font-size: 16px; }
+  .wg-text-action, .wg-read-chapter, .wg-section-action { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wiki-guide-home *, .wiki-guide-home *::before, .wiki-guide-home *::after { transition: none !important; animation: none !important; }
+}

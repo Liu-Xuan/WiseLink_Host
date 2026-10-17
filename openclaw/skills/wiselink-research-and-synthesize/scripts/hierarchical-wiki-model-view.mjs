@@ -14,10 +14,11 @@ export function hierarchicalWikiParentModelView(modelInput) {
   validateDerivedSummaryModelInput(modelInput);
   if (!isHierarchicalWikiParent(modelInput)) fail();
   const view = structuredClone(modelInput);
+  const registry = derivedSummaryRegistry(modelInput);
   view.modelViewStrategy = 'HIERARCHICAL_WIKI_PARENT_V1';
-  view.members = modelInput.members.map(derivedSummarySparseMemberBody);
+  view.members = modelInput.members.map(reading => derivedSummarySparseMemberBody(reading, registry.evidence));
   view.membersDirectory = view.members.map(({ body, ...directory }) => structuredClone(directory));
-  view.evidenceDirectory = [...derivedSummaryRegistry(modelInput).evidence.values()].map(evidence =>
+  view.evidenceDirectory = [...registry.evidence.values()].map(evidence =>
     Object.fromEntries(['evidenceRef', 'kind', 'title', 'versionLabel', 'workItemId',
       'documentVersionId', 'sourceRefId', 'locator'].filter(key => Object.hasOwn(evidence, key))
       .map(key => [key, structuredClone(evidence[key])])));

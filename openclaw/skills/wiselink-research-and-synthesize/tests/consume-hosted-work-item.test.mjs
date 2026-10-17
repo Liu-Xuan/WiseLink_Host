@@ -149,7 +149,7 @@ test('repair recovery rejects a second status read that advances or changes owne
   }
 });
 
-test('second continuation rechecks saved progress through the exact Host attempt', async t => {
+test('saved partial progress cannot authorize a second continuation after Host cancellation', async t => {
   const input = await options(t);
   const attemptRef = 'AQ-FIRST-RETRY';
   const requestId = `auto-resume-2-${createHash('sha256')
@@ -161,7 +161,7 @@ test('second continuation rechecks saved progress through the exact Host attempt
         requestId: `auto-retry-${'b'.repeat(32)}`, terminalCode: 'CANCELLED_BY_REQUEST' },
       overall: { status: 'PENDING' } } });
   let started = false;
-  const result = await consumeHostedWorkItem({ ...input, initialStageOnly: true,
+  await assert.rejects(consumeHostedWorkItem({ ...input, initialStageOnly: true,
     autoRetry: { operation: 'EVALUATE_JOBAID', attemptRef, requestId } }, {
     callTool: async (name, args) => {
       if (name === 'get_parse_status') return failed;
@@ -179,9 +179,8 @@ test('second continuation rechecks saved progress through the exact Host attempt
       started = true;
       return { outcome: 'CANDIDATE_ONLY' };
     },
-  });
-  assert.equal(started, true);
-  assert.equal(result.operation, 'EVALUATE_JOBAID');
+  }), /AUTO_WORK_ITEM_RETRY_STATUS_CHANGED/);
+  assert.equal(started, false);
 });
 
 test('CLI stage limit accepts only one WorkItem initial stage', () => {
@@ -537,7 +536,7 @@ test('one tick runs only the next Host stage and persists its exact binding', as
     invokeInitialModel: async ({ operation, modelInput }, hooks) => {
       assert.equal(operation, 'TRANSLATE');
       assert.deepEqual(modelInput, { sourceUnits: [] });
-      assert.match(hooks.sessionDiscriminator, /^[0-9a-f-]{36}$/u);
+      assert.equal(hooks.sessionDiscriminator, 'AQ-new', 'attempt scopes the Native session; it is not a stage requestId');
       assert.equal(hooks.executionModel.modelRef, 'dli/gpt-5.6-sol');
       assert.equal(hooks.heartbeat, heartbeat);
       await hooks.heartbeat();
@@ -778,7 +777,7 @@ test('c116 resumes a c115 Overall checkpoint without replaying begin', async t =
   assert.deepEqual(remoteCalls.map(call => call.name), ['get_parse_status']);
 });
 
-test('pre-commit failure cancels once; unknown final commit never cancels or replays', async (t) => {
+test('pre-commit uncertainty stays unknown; an unknown final commit never cancels or replays', async (t) => {
   for (const finalCommit of [false, true]) {
     const input = await options(t);
     const calls = [];
@@ -803,7 +802,7 @@ test('pre-commit failure cancels once; unknown final commit never cancels or rep
     await assert.rejects(consumeHostedWorkItem(input, dependencies));
     assert.equal(calls.filter((name) => name === 'begin_translation').length, 1);
     assert.equal(calls.filter((name) => name === 'commit_translation_candidate').length, finalCommit ? 1 : 0);
-    assert.equal(calls.filter((name) => name === 'cancel_action_attempt').length, finalCommit ? 0 : 1);
+    assert.equal(calls.filter((name) => name === 'cancel_action_attempt').length, 0);
   }
 });
 
@@ -814,7 +813,7 @@ test('Host identity mismatch stops before any operation', async (t) => {
   }), /HOST_INITIAL_STATUS_UNAVAILABLE/u);
 });
 
-test('a terminal Host validation failure retains its specific safe code through cancellation', async (t) => {
+test('a Host validation error retains its safe code without inventing user cancellation', async (t) => {
   const input = await options(t);
   const cancellations = [];
   const result = await consumeHostedWorkItem(input, {
@@ -836,11 +835,11 @@ test('a terminal Host validation failure retains its specific safe code through 
     },
   });
   assert.equal(result.errorCode, 'JOBAID_MEASURE_ADDRESSES_INVALID');
-  assert.equal(cancellations.length, 1);
-  assert.equal(cancellations[0].reason, 'HOSTED_INITIAL_EXECUTION_FAILED:JOBAID_MEASURE_ADDRESSES_INVALID');
+  assert.equal(cancellations.length, 0);
+  assert.equal(result.attemptStatus, 'UNKNOWN');
 });
 
-test('translation rejection diagnostics survive attempt cancellation and cannot be replayed', async (t) => {
+test('translation rejection diagnostics survive an uncertain attempt and cannot be replayed', async (t) => {
   const input = await options(t);
   const report = { round: 3, correctionRound: 2, findingCount: 1,
     findings: [{ unitIndex: 7, unitKey: 'unit-7', code: 'NUMBER_NOT_PRESERVED', ruleId: 'number.fidelity', message: 'number "28" appears 1x in the source but only 0x in the translation' }] };
@@ -869,7 +868,7 @@ test('translation rejection diagnostics survive attempt cancellation and cannot 
   const saved = JSON.parse(await readFile(join(input.checkpointRoot, 'WI-new/initial/TRANSLATE/model.translation-fidelity-3.json'), 'utf8'));
   assert.deepEqual(saved, report);
   await assert.rejects(consumeHostedWorkItem(input, dependencies));
-  assert.equal(cancelled, 1);
+  assert.equal(cancelled, 0);
   assert.equal(models, 1);
 });
 

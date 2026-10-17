@@ -4,11 +4,11 @@ jest.mock('@lark-apaas/client-toolkit/utils/resolveAppUrl', () => ({ resolveAppU
 jest.mock('@lark-apaas/client-toolkit/logger', () => ({ logger: { error: jest.fn() } }));
 
 import {
-  invalidateCanonicalHostClientSession, readLcmSourceSnapshotRows, readLcmSourceSnapshots,
+  invalidateCanonicalHostClientSession, readLcmSourceSnapshots,
   readTdmsDocumentSource,
 } from '@client/src/api/canonical-host';
 import { tdmsReadFailureMessage } from '@client/src/features/tdms-source/useTdmsReadResource';
-import { configurationRecord, snapshot, sourceRead } from './fixtures';
+import { snapshot, sourceRead } from './fixtures';
 
 describe('TDMS / LCM browser reads', () => {
   beforeEach(() => { invalidateCanonicalHostClientSession(); request.mockReset(); });
@@ -55,16 +55,13 @@ describe('TDMS / LCM browser reads', () => {
     });
   });
 
-  it('passes all LCM filters to Host, pins the exact historical snapshot, and performs GETs only', async () => {
+  it('passes LCM catalogue filters to Host and performs a GET only', async () => {
     const filters = { aircraftModel: 'B787-9', tailNumber: 'B-TEST', system: '测试系统', ata: '27',
       softwareName: '测试软件', partNumber: 'PN-TEST', position: 'FIN-TEST', limit: 24 };
     request.mockResolvedValueOnce({ status: 200, data: { snapshots: [snapshot()], hasMore: false, nextAfter: null } });
     await readLcmSourceSnapshots(filters);
-    request.mockResolvedValueOnce({ status: 200, data: { snapshot: snapshot('history/1'), records: [configurationRecord()],
-      hasMore: false, nextAfter: null } });
-    await readLcmSourceSnapshotRows({ ...filters, snapshotId: 'history/1' });
     const urls: URL[] = request.mock.calls.map(([call]) => new URL(call.url, 'https://test.invalid'));
-    expect(urls[1].pathname).toBe('/api/lcm-source/snapshots/history%2F1');
+    expect(urls[0].pathname).toBe('/api/lcm-source/snapshots');
     for (const url of urls) {
       expect(url.searchParams.get('system')).toBe('测试系统');
       expect(url.searchParams.get('ata')).toBe('27');
@@ -72,7 +69,5 @@ describe('TDMS / LCM browser reads', () => {
     }
     expect(request.mock.calls.every(([call]) => call.method === 'GET' && !('data' in call))).toBe(true);
     expect(request.mock.calls.every(([call]) => !/actor|tenant|model|work-item|attempt|oauth/u.test(call.url))).toBe(true);
-    request.mockResolvedValueOnce({ status: 200, data: { snapshot: snapshot('other'), records: [], hasMore: false, nextAfter: null } });
-    await expect(readLcmSourceSnapshotRows({ snapshotId: 'history/1' })).rejects.toThrow('LCM_SOURCE_SNAPSHOT_BINDING_MISMATCH');
   });
 });

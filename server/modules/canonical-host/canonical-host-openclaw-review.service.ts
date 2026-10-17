@@ -474,6 +474,21 @@ export class CanonicalHostOpenClawReviewService {
       )
     )
       throw reviewConflict('REVIEW_MATTER_CITED_SOURCE_NOT_READ');
+    const unchangedUpdate = authorized.contract.jobAidContext &&
+      authorized.turn.purpose === 'UPDATE_ASSESSMENT' && candidate.jobAidWorkingDelta === null;
+    if (unchangedUpdate && !authorized.turn.assistantCandidate) {
+      const requiredContributions = authorized.contract.jobAidContext!.sourceCatalog.filter((item) =>
+        item.kind === 'ENGINEER_STATEMENT' && item.origin === 'REVIEW_CONVERSATION' && item.dialogueSource &&
+        authorized.contract.requestId === `dialogue-${item.dialogueSource.requestRef}` &&
+        item.reviewConversationId === authorized.contract.reviewConversationRef &&
+        item.reviewTurnId === authorized.contract.reviewTurnRef,
+      );
+      if (requiredContributions.some((item) => !readRefs.has(item.evidenceRef)))
+        throw reviewConflict('REVIEW_JOBAID_CONTRIBUTION_NOT_READ');
+    }
+    // This set belongs to this decision, before prepareCommit seals its result.
+    // It must never be rebuilt from activities appended after that boundary.
+    const decisionReadRefs = new Set(readRefs);
     const matterCommand =
       matterContext && candidate.matterWorkingDelta
         ? matterWorkingCommand({
@@ -533,7 +548,7 @@ export class CanonicalHostOpenClawReviewService {
     };
     const persisted = authorized.contract.jobAidContext
       ? await this.persistJobAidCandidate(
-          authorized,
+          { ...authorized, row: prepared.row },
           candidate,
           persistenceInput,
           {
@@ -541,7 +556,8 @@ export class CanonicalHostOpenClawReviewService {
             leaseToken,
             leaseGeneration,
           },
-          readRefs,
+          decisionReadRefs,
+          !prepared.recovery,
         )
       : authorized.contract.matterContext
         ? await this.persistMatterCandidate(
@@ -582,6 +598,7 @@ export class CanonicalHostOpenClawReviewService {
     >[0],
     fence: { principalId: string; leaseToken: string; leaseGeneration: number },
     readRefs: Set<string>,
+    originalReadSnapshotAvailable: boolean,
   ) {
     if (!this.jobAid || !this.matterWorkingRepository)
       throw reviewConflict('REVIEW_JOBAID_RUNTIME_UNAVAILABLE');
@@ -606,14 +623,26 @@ export class CanonicalHostOpenClawReviewService {
       authorized.conversation.actorId,
       async ({ database }) => {
         let savedReviewWork: JobAidWorkRevision | null = null;
-        if (authorized.turn.assistantCandidate) {
-          if (
-            authorized.turn.assistantCandidate.actionAttemptRef !==
-            input.candidate.actionAttemptRef
-          )
+        const unchangedUpdate = authorized.turn.purpose === 'UPDATE_ASSESSMENT' &&
+          candidate.jobAidWorkingDelta === null;
+        let completed = authorized.turn.assistantCandidate;
+        if (!completed && unchangedUpdate && !originalReadSnapshotAvailable) {
+          // A concurrent request may already have persisted the original receipt.
+          const latest = await this.conversations.loadOpenClawTurnByIdBinding({
+            reviewConversationId: authorized.conversation.reviewConversationId,
+            reviewTurnId: authorized.turn.reviewTurnId,
+            tenantId: authorized.conversation.tenantId,
+            actorId: authorized.conversation.actorId,
+            workItemId: authorized.conversation.workItemId,
+          }, database);
+          completed = latest?.turn.assistantCandidate ?? null;
+          if (!completed) throw reviewConflict('REVIEW_JOBAID_READ_SNAPSHOT_UNAVAILABLE');
+        }
+        if (completed) {
+          if (completed.actionAttemptRef !== input.candidate.actionAttemptRef ||
+            completed.provenance.resultContentHash !== input.candidate.provenance.resultContentHash)
             throw reviewConflict('REVIEW_TURN_CANDIDATE_CONFLICT');
-          input.candidate.jobAidWorkingUpdate =
-            authorized.turn.assistantCandidate.jobAidWorkingUpdate;
+          input.candidate.jobAidWorkingUpdate = structuredClone(completed.jobAidWorkingUpdate);
         } else if (candidate.jobAidWorkingDelta) {
           const saved = await this.jobAid!.saveReviewWork(
             {
@@ -632,6 +661,7 @@ export class CanonicalHostOpenClawReviewService {
             status: 'APPLIED',
             workRevisionRef: saved.revision.workRevisionRef,
             workRevision: saved.revision.workRevision,
+            ...(originalReadSnapshotAvailable ? { readSourceRefs: [...readRefs] } : {}),
             affectedIssueKeys: reviewJobAidTargetIssueKeys(authorized.contract) ?? (Array.isArray(
               candidate.jobAidWorkingDelta.issues,
             )
@@ -641,11 +671,15 @@ export class CanonicalHostOpenClawReviewService {
               : []),
           };
         } else {
+          const previous = unchangedUpdate
+            ? await this.jobAid!.assertReviewWorkUnchanged({ row: authorized.row, task, fence }, database)
+            : task.previousWork;
           input.candidate.jobAidWorkingUpdate = {
             status: 'UNCHANGED',
-            workRevisionRef: task.previousWork?.workRevisionRef ?? null,
-            workRevision: task.previousWork?.workRevision ?? 0,
+            workRevisionRef: previous?.workRevisionRef ?? null,
+            workRevision: previous?.workRevision ?? 0,
             affectedIssueKeys: [],
+            ...(unchangedUpdate ? { readSourceRefs: [...readRefs] } : {}),
           };
         }
         const persisted = await this.conversations.persistOpenClawAssistantCandidate(

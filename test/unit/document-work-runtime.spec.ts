@@ -4,6 +4,331 @@ import { buildDocumentSemanticMap } from '../../server/modules/document-manageme
 import { GENERIC_SEMANTIC_PROFILE } from '../../server/modules/document-management/src/hosted/nest/document-semantic-profile';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import { documentDeliveryRequestId } from '../../server/modules/canonical-host/document-delivery-ref';
+import { DocumentReadingRuntimeService } from '../../server/modules/canonical-host/document-reading-runtime.service';
+import { DocumentReadingRunRepository, type DocumentReadingRun } from '../../server/modules/canonical-host/document-reading-run.repository';
+
+function uploadReadingReplayFixture(provideReadingRuns: boolean = true) {
+  const input = { acquisitionId: 'ACQ-one', documentVersionId: 'DV', actorUserId: 'actor' };
+  const deliveryRef = `acquisition:${input.acquisitionId}`;
+  const scope = { tenantId: 'tenant', actorUserId: input.actorUserId, documentVersionId: input.documentVersionId };
+  const original = originalFixture();
+  Object.assign(original.binding, { documentVersionId: 'DV', parseRunId: 'parse-one', parseRevision: 1,
+    sourceArtifactId: 'ART', sourceSha256: 'a'.repeat(64), sourceByteLength: 123 });
+  const newer = { ...original, binding: { ...original.binding, parseRunId: 'parse-two', parseRevision: 2 } };
+  const row: DocumentReadingRun = { runRef: 'DRR-one', requestId: documentDeliveryRequestId('reading', deliveryRef),
+    documentVersionId: 'DV', parseRunId: 'parse-one', parseRevision: 1, semanticRevision: 1,
+    manifestSha256: 'f'.repeat(64), expectedRevision: 0, readingRevision: 1, status: 'SAVED',
+    deadline: '2030-01-01T00:00:00Z', deliveredRanges: [], saveCommand: null, errorCode: null,
+    result: { schemaVersion: 'wiselink.document.reading.v1', readingRunRef: 'DRR-one', readingRevision: 1,
+      candidateOnly: true, headline: 'Original accepted reading', brief: { text: 'Original reading', quotes: [] },
+      explanation: [], criticalConditions: [], limitations: [],
+      sourceBinding: { original: original.binding, semanticRevision: 1 },
+      readCoverage: { status: 'PARTIAL_DELIVERY', deliveredUnitIds: [], totalUnitCount: original.source.units.length,
+        sourceCoverage: documentOriginalReadingCoverage(original) }, sourceAnchors: [],
+      producer: { skillVersion: 'test', modelVersion: 'stored-model' }, savedAt: '2026-10-17T00:00:00Z' } };
+  const authorization = { authorizeDocumentWork: jest.fn().mockResolvedValue(scope) };
+  const actors = { withActorScope: jest.fn(async (_actor: string, fn: () => Promise<unknown>) => fn()) };
+  const loaded = (parseRunId: string) => {
+    const source = parseRunId === row.parseRunId ? original : newer;
+    return { original: source, structuredSource: source.source, run: { parseRunId, status: 'PUBLISHED',
+      manifestArtifact: { relativePath: 'original/manifest.json', readback: 'VERIFIED',
+        sha256: parseRunId === row.parseRunId ? row.manifestSha256 : 'b'.repeat(64), byteLength: 4321 } } };
+  };
+  const parsing = { status: jest.fn().mockResolvedValue({ documentVersionId: 'DV',
+    latestRun: { parseRunId: 'parse-two', status: 'PUBLISHED', parseRevision: 2 } }),
+    start: jest.fn(), loadPublished: jest.fn(async (_documentVersionId: string, parseRunId: string) => loaded(parseRunId)),
+    inspectPublishedIdentity: jest.fn(async (_documentVersionId: string, parseRunId: string) => ({
+      familyId: 'family', binding: loaded(parseRunId).original.binding })) };
+  const reader = { readDocumentOriginal: parsing.loadPublished };
+  const semantics = { ensure: jest.fn().mockResolvedValue({ semanticRevision: 1 }),
+    read: jest.fn().mockResolvedValue({ semanticRevision: 1 }) };
+  const deliveryCatalog = { readDocumentUploadDeliveryIntents: jest.fn().mockResolvedValue([
+    { ...input, delivery: { reading: true, translation: 'NONE' } }]),
+    readOwnedAcquisitionVersionBinding: jest.fn().mockResolvedValue(true),
+    readOriginalRegistryIdentity: jest.fn().mockResolvedValue({
+      version: { sourceArtifactId: 'ART' }, source: { sha256: 'a'.repeat(64), byteLength: 123 } }),
+    markDocumentUploadDeliveryAdmitted: jest.fn() };
+  // Exercise the real BEGIN conflict guard. Only database I/O is replaced:
+  // its transaction finds the previously accepted request for parse-one.
+  const transactionExecute = jest.fn().mockImplementation(async () => [row]);
+  const database = { transaction: jest.fn(async (fn: (tx: { execute: typeof transactionExecute }) => Promise<unknown>) =>
+    fn({ execute: transactionExecute })) };
+  const runs = new DocumentReadingRunRepository(database as never);
+  const readRequest = jest.spyOn(runs, 'readRequest').mockImplementation(async () => row);
+  const begin = jest.spyOn(runs, 'begin');
+  const readRun = jest.spyOn(runs, 'readRun').mockImplementation(async () => row);
+  const currentRevision = jest.spyOn(runs, 'currentRevision').mockResolvedValue(0);
+  const expire = jest.spyOn(runs, 'expire').mockResolvedValue(undefined);
+  const readRetraction = jest.spyOn(runs, 'readRetraction').mockResolvedValue(null);
+  const selection = { modelRef: 'minimax/MiniMax-M2.5', displayName: 'Stored selection',
+    providerKind: 'BUILT_IN' as const, settingsRevision: 3, selectedAt: '2026-10-17T00:00:00Z' };
+  row.executionModel = selection;
+  const modelSettings = { captureForNewTask: jest.fn().mockResolvedValue(selection) };
+  const readingRuntime = new DocumentReadingRuntimeService(authorization as never, actors as never,
+    reader as never, semantics as never, parsing as never, runs, modelSettings as never);
+  const readingRun = jest.spyOn(readingRuntime, 'run');
+  const translationRuntime = { run: jest.fn().mockResolvedValue({ status: 'QUEUED' }) };
+  const service = new DocumentWorkRuntimeService(authorization as never, actors as never,
+    parsing as never, {} as never, reader as never, {} as never, semantics as never, {} as never,
+    {} as never, deliveryCatalog as never, readingRuntime, translationRuntime as never, undefined,
+    provideReadingRuns ? runs : undefined);
+  return { service, input, deliveryRef, scope, row, original, newer, authorization, actors, parsing,
+    reader, semantics, deliveryCatalog, runs, readRequest, begin, readRun, expire, readRetraction,
+    readingRun, translationRuntime, database, transactionExecute, currentRevision, modelSettings };
+}
+
+describe('automatic upload reading admission replay', () => {
+  it('resumes the accepted saved reading from parse-one after parse-two is published', async () => {
+    const f = uploadReadingReplayFixture();
+    await expect(f.service.prepareAutomaticUpload(f.input)).resolves.toEqual({
+      status: 'ADMITTED', documentVersionId: 'DV', parseRunId: 'parse-one' });
+    expect(f.readingRun).toHaveBeenCalledTimes(1);
+    expect(f.readingRun).toHaveBeenCalledWith({ action: 'READING_STATUS', documentVersionId: 'DV',
+      runRef: f.row.runRef, deliveryRef: f.deliveryRef });
+    expect(f.begin).not.toHaveBeenCalled();
+    expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
+    expect(f.semantics.ensure).not.toHaveBeenCalled();
+    expect(f.parsing.start).not.toHaveBeenCalled();
+    expect(f.parsing.inspectPublishedIdentity).toHaveBeenCalledWith('DV', 'parse-one', { ...f.scope, roles: [] });
+    expect(f.readRequest).toHaveBeenCalledWith({ ...f.scope, roles: [] }, f.row.requestId);
+    expect(f.modelSettings.captureForNewTask).not.toHaveBeenCalled();
+    expect(f.currentRevision).not.toHaveBeenCalled();
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).toHaveBeenCalledWith(f.input);
+  });
+
+  it.each(['QUEUED', 'RUNNING'] as const)('resumes an accepted %s reading without admitting another run', async status => {
+    const f = uploadReadingReplayFixture();
+    Object.assign(f.row, { status, readingRevision: null, result: null });
+    await f.service.prepareAutomaticUpload(f.input);
+    await f.service.prepareAutomaticUpload(f.input);
+    expect(f.readingRun.mock.calls.map(([command]) => command)).toEqual([
+      { action: 'READING_STATUS', documentVersionId: 'DV', runRef: 'DRR-one', deliveryRef: f.deliveryRef },
+      { action: 'READING_STATUS', documentVersionId: 'DV', runRef: 'DRR-one', deliveryRef: f.deliveryRef }]);
+    expect(f.begin).not.toHaveBeenCalled();
+    expect(f.reader.readDocumentOriginal).not.toHaveBeenCalled();
+    expect(f.semantics.ensure).not.toHaveBeenCalled();
+    expect(f.modelSettings.captureForNewTask).not.toHaveBeenCalled();
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['FAILED', 'CANCELLED', 'EXPIRED'] as const)('requires attention for an accepted %s reading', async status => {
+    const f = uploadReadingReplayFixture();
+    Object.assign(f.row, { status, readingRevision: null, result: null });
+    await expect(f.service.prepareAutomaticUpload(f.input)).resolves.toEqual({
+      status: 'REQUIRES_ATTENTION', documentVersionId: 'DV', parseRunId: 'parse-one',
+      errorCode: `DOCUMENT_READING_${status}` });
+    expect(f.begin).not.toHaveBeenCalled();
+    expect(f.parsing.start).not.toHaveBeenCalled();
+    expect(f.semantics.ensure).not.toHaveBeenCalled();
+    expect(f.translationRuntime.run).not.toHaveBeenCalled();
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+  });
+
+  it('uses the live STATUS outcome when a running reading expires during replay', async () => {
+    const f = uploadReadingReplayFixture();
+    Object.assign(f.row, { status: 'RUNNING', readingRevision: null, result: null });
+    f.expire.mockImplementationOnce(async () => {
+      f.row.status = 'EXPIRED';
+      f.row.errorCode = 'DOCUMENT_READING_DEADLINE_EXCEEDED';
+    });
+    await expect(f.service.prepareAutomaticUpload(f.input)).resolves.toEqual({
+      status: 'REQUIRES_ATTENTION', documentVersionId: 'DV', parseRunId: 'parse-one',
+      errorCode: 'DOCUMENT_READING_DEADLINE_EXCEEDED' });
+    expect(f.begin).not.toHaveBeenCalled();
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+  });
+
+  it('requires attention for a retracted saved reading without admitting another reading', async () => {
+    const f = uploadReadingReplayFixture();
+    f.readRetraction.mockResolvedValue({ runRef: f.row.runRef, readingRevision: 1,
+      requestId: 'review-one', reasonCode: 'SOURCE_ERROR', reviewReference: 'independent-review',
+      retractedAt: '2026-10-18T00:00:00Z' });
+    await expect(f.service.prepareAutomaticUpload(f.input)).resolves.toEqual({
+      status: 'REQUIRES_ATTENTION', documentVersionId: 'DV', parseRunId: 'parse-one',
+      errorCode: 'DOCUMENT_READING_RETRACTED' });
+    expect(await f.readingRun.mock.results[0].value).toMatchObject({ status: 'RETRACTED', result: null });
+    expect(f.begin).not.toHaveBeenCalled();
+    expect(f.translationRuntime.run).not.toHaveBeenCalled();
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+  });
+
+  it.each(['FAILED', 'CANCELLED', 'EXPIRED', 'RETRACTED'] as const)(
+    'keeps independently selected translation admitted when the reading is %s', async status => {
+      const f = uploadReadingReplayFixture();
+      f.deliveryCatalog.readDocumentUploadDeliveryIntents.mockResolvedValue([
+        { ...f.input, delivery: { reading: true, translation: 'ZH_FULL' } }]);
+      if (status === 'RETRACTED') f.readRetraction.mockResolvedValue({ runRef: f.row.runRef,
+        readingRevision: 1, requestId: 'review-one', reasonCode: 'SOURCE_ERROR',
+        reviewReference: 'independent-review', retractedAt: '2026-10-18T00:00:00Z' });
+      else Object.assign(f.row, { status, readingRevision: null, result: null });
+      await expect(f.service.prepareAutomaticUpload(f.input)).resolves.toEqual({
+        status: 'ADMITTED', documentVersionId: 'DV', parseRunId: 'parse-one' });
+      expect(await f.readingRun.mock.results[0].value).toMatchObject({ status });
+      expect(f.translationRuntime.run).toHaveBeenCalledWith({ action: 'START', documentVersionId: 'DV',
+        parseRunId: 'parse-one', deliveryRef: f.deliveryRef,
+        requestId: documentDeliveryRequestId('translation', f.deliveryRef) });
+      expect(f.begin).not.toHaveBeenCalled();
+      expect(f.parsing.start).not.toHaveBeenCalled();
+      expect(f.semantics.ensure).not.toHaveBeenCalled();
+      expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).toHaveBeenCalledWith(f.input);
+    });
+
+  it('fails explicitly before BEGIN when selected reading has no request repository', async () => {
+    const f = uploadReadingReplayFixture(false);
+    await expect(f.service.prepareAutomaticUpload(f.input))
+      .rejects.toThrow('DOCUMENT_UPLOAD_DELIVERY_READING_REPOSITORY_UNAVAILABLE');
+    expect(f.readRequest).not.toHaveBeenCalled();
+    expect(f.parsing.status).not.toHaveBeenCalled();
+    expect(f.parsing.start).not.toHaveBeenCalled();
+    expect(f.readingRun).not.toHaveBeenCalled();
+    expect(f.translationRuntime.run).not.toHaveBeenCalled();
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+  });
+
+  it.each([{ documentVersionId: 'other' }, { requestId: 'other' }])(
+    'rejects a request row outside the exact upload binding: %j', async change => {
+      const f = uploadReadingReplayFixture();
+      Object.assign(f.row, change);
+      await expect(f.service.prepareAutomaticUpload(f.input))
+        .rejects.toThrow('DOCUMENT_UPLOAD_DELIVERY_READING_SCOPE_MISMATCH');
+      expect(f.parsing.inspectPublishedIdentity).not.toHaveBeenCalled();
+      expect(f.readingRun).not.toHaveBeenCalled();
+      expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+    });
+
+  it('rechecks SOURCE authority before reading a prior request and READING authority before status mutation', async () => {
+    const f = uploadReadingReplayFixture();
+    f.authorization.authorizeDocumentWork.mockRejectedValueOnce(new Error('SOURCE_ACCESS_DENIED'));
+    await expect(f.service.prepareAutomaticUpload(f.input)).rejects.toThrow('SOURCE_ACCESS_DENIED');
+    expect(f.readRequest).not.toHaveBeenCalled();
+    expect(f.authorization.authorizeDocumentWork).toHaveBeenCalledWith({
+      documentVersionId: 'DV', deliveryRef: f.deliveryRef, purpose: 'SOURCE' });
+    f.authorization.authorizeDocumentWork.mockResolvedValueOnce(f.scope)
+      .mockRejectedValueOnce(new Error('READING_ACCESS_DENIED'));
+    await expect(f.service.prepareAutomaticUpload(f.input)).rejects.toThrow('READING_ACCESS_DENIED');
+    expect(f.parsing.inspectPublishedIdentity).toHaveBeenCalledTimes(1);
+    expect(f.expire).not.toHaveBeenCalled();
+    expect(f.begin).not.toHaveBeenCalled();
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+  });
+
+  it.each([{ actorUserId: 'other' }, { documentVersionId: 'other' }])(
+    'rejects an authorization scope mismatch before reading a prior request: %j', async change => {
+      const f = uploadReadingReplayFixture();
+      f.authorization.authorizeDocumentWork.mockResolvedValueOnce({ ...f.scope, ...change });
+      await expect(f.service.prepareAutomaticUpload(f.input)).rejects.toThrow('DOCUMENT_UPLOAD_DELIVERY_SCOPE_MISMATCH');
+      expect(f.readRequest).not.toHaveBeenCalled();
+      expect(f.readingRun).not.toHaveBeenCalled();
+    });
+
+  it.each(['intent', 'owner'] as const)('requires the current upload %s before looking up a prior reading', async denial => {
+    const f = uploadReadingReplayFixture();
+    if (denial === 'intent') f.deliveryCatalog.readDocumentUploadDeliveryIntents.mockResolvedValue([
+      { ...f.input, actorUserId: 'other', delivery: { reading: true, translation: 'NONE' } }]);
+    else f.deliveryCatalog.readOwnedAcquisitionVersionBinding.mockResolvedValue(false);
+    await expect(f.service.prepareAutomaticUpload(f.input)).rejects.toThrow('DOCUMENT_UPLOAD_DELIVERY_SOURCE_DENIED');
+    expect(f.readRequest).not.toHaveBeenCalled();
+    expect(f.readingRun).not.toHaveBeenCalled();
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+  });
+
+  it.each(['artifact', 'sha256', 'byteLength', 'missing'] as const)(
+    'rejects a changed current original registry identity: %s', async field => {
+      const f = uploadReadingReplayFixture();
+      f.deliveryCatalog.readOriginalRegistryIdentity.mockResolvedValue(field === 'missing' ? null : {
+        version: { sourceArtifactId: field === 'artifact' ? 'other' : 'ART' },
+        source: { sha256: (field === 'sha256' ? 'c' : 'a').repeat(64), byteLength: field === 'byteLength' ? 124 : 123 } });
+      await expect(f.service.prepareAutomaticUpload(f.input)).rejects.toThrow('DOCUMENT_UPLOAD_DELIVERY_SOURCE_CHANGED');
+      expect(f.readingRun).not.toHaveBeenCalled();
+      expect(f.begin).not.toHaveBeenCalled();
+      expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+    });
+
+  it.each([{ documentVersionId: 'other' }, { parseRunId: 'other' }, { parseRevision: 2 }])(
+    'rejects a changed prior published parse identity: %j', async change => {
+      const f = uploadReadingReplayFixture();
+      f.parsing.inspectPublishedIdentity.mockResolvedValueOnce({ familyId: 'family',
+        binding: { ...f.original.binding, ...change } });
+      await expect(f.service.prepareAutomaticUpload(f.input)).rejects.toThrow('DOCUMENT_UPLOAD_DELIVERY_SOURCE_CHANGED');
+      expect(f.readingRun).not.toHaveBeenCalled();
+      expect(f.begin).not.toHaveBeenCalled();
+      expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+    });
+
+  it('propagates a denied or no longer published prior parse without falling back to the latest parse', async () => {
+    const f = uploadReadingReplayFixture();
+    f.parsing.inspectPublishedIdentity.mockRejectedValueOnce(new Error('DOCUMENT_PARSE_SOURCE_CHANGED'));
+    await expect(f.service.prepareAutomaticUpload(f.input)).rejects.toThrow('DOCUMENT_PARSE_SOURCE_CHANGED');
+    expect(f.parsing.status).not.toHaveBeenCalled();
+    expect(f.parsing.start).not.toHaveBeenCalled();
+    expect(f.readingRun).not.toHaveBeenCalled();
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+  });
+
+  it('preserves the real BEGIN revision guard when first admission races with another saved reading', async () => {
+    const f = uploadReadingReplayFixture();
+    f.readRequest.mockResolvedValue(null);
+    f.transactionExecute.mockResolvedValueOnce([{}]).mockResolvedValueOnce([{}])
+      .mockResolvedValueOnce([]).mockResolvedValueOnce([{ revision: 1 }]);
+    await expect(f.service.prepareAutomaticUpload(f.input)).rejects.toThrow('DOCUMENT_READING_REVISION_CONFLICT');
+    expect(f.begin).toHaveBeenCalledWith(f.scope, expect.objectContaining({ parseRunId: 'parse-two',
+      parseRevision: 2, expectedRevision: 0, manifestSha256: 'b'.repeat(64) }));
+    expect(f.readingRun).toHaveBeenCalledTimes(1);
+    expect(f.readingRun).toHaveBeenCalledWith(expect.objectContaining({ action: 'READING_BEGIN' }));
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+  });
+
+  it('keeps a concurrent first-admission conflict visible and resumes the winner on a later retry', async () => {
+    const f = uploadReadingReplayFixture();
+    f.readRequest.mockResolvedValueOnce(null);
+    await expect(f.service.prepareAutomaticUpload(f.input)).rejects.toThrow('DOCUMENT_READING_REQUEST_CONFLICT');
+    expect(f.readingRun).toHaveBeenCalledTimes(1);
+    expect(f.begin).toHaveBeenCalledTimes(1);
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+    await expect(f.service.prepareAutomaticUpload(f.input)).resolves.toMatchObject({
+      status: 'ADMITTED', parseRunId: 'parse-one' });
+    expect(f.readingRun).toHaveBeenLastCalledWith({ action: 'READING_STATUS', documentVersionId: 'DV',
+      runRef: f.row.runRef, deliveryRef: f.deliveryRef });
+    expect(f.begin).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries selected translation with the original parse after first reading admission and translation failure', async () => {
+    const f = uploadReadingReplayFixture();
+    Object.assign(f.row, { status: 'QUEUED', readingRevision: null, result: null });
+    f.deliveryCatalog.readDocumentUploadDeliveryIntents.mockResolvedValue([
+      { ...f.input, delivery: { reading: true, translation: 'ZH_FULL' } }]);
+    f.parsing.status.mockResolvedValueOnce({ latestRun: { parseRunId: 'parse-one', status: 'PUBLISHED' } });
+    f.readRequest.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    f.transactionExecute.mockResolvedValueOnce([{}]).mockResolvedValueOnce([{}])
+      .mockResolvedValueOnce([]).mockResolvedValueOnce([{ revision: 0 }]).mockResolvedValueOnce([f.row]);
+    f.translationRuntime.run.mockRejectedValueOnce(new Error('TRANSLATION_ADMISSION_UNAVAILABLE'));
+    await expect(f.service.prepareAutomaticUpload(f.input)).rejects.toThrow('TRANSLATION_ADMISSION_UNAVAILABLE');
+    expect(f.begin).toHaveBeenCalledTimes(1);
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+    await expect(f.service.prepareAutomaticUpload(f.input)).resolves.toEqual({
+      status: 'ADMITTED', documentVersionId: 'DV', parseRunId: 'parse-one' });
+    const translation = { action: 'START', documentVersionId: 'DV', deliveryRef: f.deliveryRef,
+      parseRunId: 'parse-one', requestId: documentDeliveryRequestId('translation', f.deliveryRef) };
+    expect(f.translationRuntime.run.mock.calls).toEqual([[translation], [translation]]);
+    expect(f.readingRun).toHaveBeenLastCalledWith({ action: 'READING_STATUS', documentVersionId: 'DV',
+      runRef: f.row.runRef, deliveryRef: f.deliveryRef });
+    expect(f.begin).toHaveBeenCalledTimes(1);
+    expect(f.semantics.ensure).toHaveBeenCalledTimes(1);
+    expect(f.modelSettings.captureForNewTask).toHaveBeenCalledTimes(1);
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves translation request conflicts without marking the upload admitted', async () => {
+    const f = uploadReadingReplayFixture();
+    f.deliveryCatalog.readDocumentUploadDeliveryIntents.mockResolvedValue([
+      { ...f.input, delivery: { reading: true, translation: 'ZH_FULL' } }]);
+    f.translationRuntime.run.mockRejectedValueOnce(new Error('DOCUMENT_TRANSLATION_REQUEST_CONFLICT'));
+    await expect(f.service.prepareAutomaticUpload(f.input)).rejects.toThrow('DOCUMENT_TRANSLATION_REQUEST_CONFLICT');
+    expect(f.translationRuntime.run).toHaveBeenCalledWith(expect.objectContaining({ parseRunId: 'parse-one' }));
+    expect(f.begin).not.toHaveBeenCalled();
+    expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
+  });
+});
 
 function fixture() {
   const automaticScope = { workItemId: 'WI', appId: 'app_17bzc551rsg', tenantId: 'tenant', principalId: 'service',
@@ -36,12 +361,13 @@ function fixture() {
     }),
     markDocumentUploadDeliveryAdmitted: jest.fn() };
   const readingRuntime = { run: jest.fn() };
+  const readingRuns = { readRequest: jest.fn().mockResolvedValue(null) };
   const translationRuntime = { run: jest.fn() };
   const service = new DocumentWorkRuntimeService(authorization as never, actors as never, parsing as never, leases as never, reader as never, {} as never, semantics as never, revisions as never,
     deliveryWorkItems as never, deliveryCatalog as never,
-    readingRuntime as never, translationRuntime as never);
+    readingRuntime as never, translationRuntime as never, undefined, readingRuns as never);
   return { service, authorization, actors, parsing, leases, fence, semantics, revisions, automaticScope,
-    deliveryWorkItems, deliveryCatalog, readingRuntime, translationRuntime };
+    deliveryWorkItems, deliveryCatalog, readingRuntime, readingRuns, translationRuntime };
 }
 
 describe('authorized document step runtime', () => {

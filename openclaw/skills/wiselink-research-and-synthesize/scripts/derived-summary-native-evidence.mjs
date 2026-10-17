@@ -2,7 +2,27 @@ import { canonicalJson } from './validate-payload.mjs';
 import { sameTdmsNativeEvidenceBody } from './tdms-native-context.mjs';
 
 const fail = () => { throw new Error('DERIVED_SUMMARY_NATIVE_RECEIPT_INVALID'); };
+const failDocumentCarrier = () => { throw new Error('DERIVED_SUMMARY_DOCUMENT_CARRIER_INVALID'); };
+
+// Same canonical SourceRef forms as Host stableJobAidEvidence. SourceRef itself
+// may contain colons; only the DVI prefix and complete SourceRef suffix bind it.
+function canonicalDocumentSource(item) {
+  if (item?.kind !== 'DOCUMENT_PASSAGE' || typeof item.documentVersionId !== 'string' ||
+      !item.documentVersionId || typeof item.sourceRefId !== 'string' || !item.sourceRefId ||
+      typeof item.evidenceRef !== 'string' ||
+      !(item.workItemId === null || typeof item.workItemId === 'string' && item.workItemId.trim())) return false;
+  if (item.evidenceRef === `source:${item.documentVersionId}:${item.sourceRefId}`) return true;
+  const prefix = `DOCUMENT_ORIGINAL:${item.documentVersionId}:`, suffix = `:${item.sourceRefId}`;
+  return item.evidenceRef.startsWith(prefix) && item.evidenceRef.endsWith(suffix) &&
+    /^[A-Za-z0-9_-]{1,96}$/u.test(item.evidenceRef.slice(prefix.length, -suffix.length));
+}
+
 export function sameSummaryEvidence(left, right) {
+  if (canonicalDocumentSource(left) && canonicalDocumentSource(right)) {
+    const { workItemId: _leftWorkItemId, ...leftSource } = left;
+    const { workItemId: _rightWorkItemId, ...rightSource } = right;
+    return canonicalJson(leftSource) === canonicalJson(rightSource);
+  }
   if (left?.kind !== 'TDMS_NATIVE_RECORD' || right?.kind !== 'TDMS_NATIVE_RECORD')
     return canonicalJson(left) === canonicalJson(right);
   collectSummaryNativeReadReceipts([left, right]);
@@ -31,20 +51,74 @@ export function collectSummaryNativeReadReceipts(evidence) {
   }
   return [...receipts.values()];
 }
-export function summaryNativeReceiptFields(evidence) {
+export function summaryNativeReceiptFields(evidence, registry) {
   const nativeReadReceipts = collectSummaryNativeReadReceipts(evidence);
-  return nativeReadReceipts.length ? { nativeReadReceipts } : {};
+  const first = registry ?? new Map();
+  if (!registry) for (const item of evidence) if (!first.has(item.evidenceRef)) first.set(item.evidenceRef, item);
+  const changed = new Set(), counts = new Map();
+  for (const item of evidence) {
+    if (!canonicalDocumentSource(item)) continue;
+    const body = first.get(item.evidenceRef);
+    if (!sameSummaryEvidence(body, item)) failDocumentCarrier();
+    const count = (counts.get(item.evidenceRef) ?? 0) + 1;
+    counts.set(item.evidenceRef, count);
+    if (count > 1 || body.workItemId !== item.workItemId) changed.add(item.evidenceRef);
+  }
+  const documentWorkItemCarriers = evidence.filter(item => canonicalDocumentSource(item) && changed.has(item.evidenceRef))
+    .map(item => ({ evidenceRef: item.evidenceRef, workItemId: item.workItemId }));
+  return { ...(nativeReadReceipts.length ? { nativeReadReceipts } : {}),
+    ...(documentWorkItemCarriers.length ? { documentWorkItemCarriers } : {}) };
 }
 
 /** Reconstruct each exact saved member's historical carrier from the shared body
  * plus its separate receipt. Never substitute the registry member's receipt. */
 export function summaryEvidenceRefs(evidence) {
   const refs = evidence.map(item => item.evidenceRef);
-  return evidence.some(item => item.kind === 'TDMS_NATIVE_RECORD') ? [...new Set(refs)] : refs;
+  if (!evidence.some(item => item.kind === 'TDMS_NATIVE_RECORD')) return refs;
+  const seen = new Set();
+  return evidence.flatMap(item => {
+    const keep = canonicalDocumentSource(item) || !seen.has(item.evidenceRef);
+    seen.add(item.evidenceRef);
+    return keep ? [item.evidenceRef] : [];
+  });
 }
 export function restoreSummaryMemberEvidence(projected, registry) {
-  const evidence = projected.evidenceRefs.map(ref => structuredClone(registry.get(ref)?.value));
+  let evidence = projected.evidenceRefs.map(ref => structuredClone(registry.get(ref)?.value));
   if (evidence.some(item => !item)) fail();
+  const documentRows = new Map();
+  if (projected.documentWorkItemCarriers !== undefined) {
+    if (!Array.isArray(projected.documentWorkItemCarriers) || !projected.documentWorkItemCarriers.length)
+      failDocumentCarrier();
+    for (const row of projected.documentWorkItemCarriers) {
+      if (!row || typeof row !== 'object' || Array.isArray(row) ||
+          Object.keys(row).sort().join(',') !== 'evidenceRef,workItemId' ||
+          !projected.evidenceRefs.includes(row.evidenceRef) || !canonicalDocumentSource(registry.get(row.evidenceRef)?.value) ||
+          !(row.workItemId === null || typeof row.workItemId === 'string' && row.workItemId.trim())) failDocumentCarrier();
+      const rows = documentRows.get(row.evidenceRef) ?? [];
+      rows.push(row);documentRows.set(row.evidenceRef, rows);
+    }
+  }
+  const refCounts = new Map();
+  for (const ref of projected.evidenceRefs) refCounts.set(ref, (refCounts.get(ref) ?? 0) + 1);
+  for (const item of evidence) {
+    if (!canonicalDocumentSource(item)) continue;
+    const count = refCounts.get(item.evidenceRef);
+    if (documentRows.has(item.evidenceRef) ? documentRows.get(item.evidenceRef).length !== count : count > 1)
+      failDocumentCarrier();
+  }
+  if (projected.documentWorkItemCarriers !== undefined &&
+      canonicalJson(projected.documentWorkItemCarriers.map(row => row.evidenceRef)) !==
+      canonicalJson(projected.evidenceRefs.filter(ref => documentRows.has(ref)))) failDocumentCarrier();
+  const positions = new Map();
+  evidence = evidence.map(item => {
+    const rows = documentRows.get(item.evidenceRef);
+    if (!rows) return item;
+    const index = positions.get(item.evidenceRef) ?? 0;
+    positions.set(item.evidenceRef, index + 1);
+    const carrier = { ...item, workItemId: rows[index].workItemId };
+    if (!sameSummaryEvidence(item, carrier)) failDocumentCarrier();
+    return carrier;
+  });
   const native = evidence.filter(item => item.kind === 'TDMS_NATIVE_RECORD');
   if (!native.length) {
     if (projected.nativeReadReceipts !== undefined) fail();
@@ -69,14 +143,15 @@ export function restoreSummaryMemberEvidence(projected, registry) {
 
 /** Detached full-member delivery keeps one exact native body plus every receipt. */
 export function projectSummaryMemberNativeContent(value) {
-  if (!value.evidence.some(item => item.kind === 'TDMS_NATIVE_RECORD')) return structuredClone(value);
+  const fields = summaryNativeReceiptFields(value.evidence);
+  if (!fields.nativeReadReceipts && !fields.documentWorkItemCarriers) return structuredClone(value);
   const evidence = new Map();
   for (const item of value.evidence) {
     const previous = evidence.get(item.evidenceRef);
     if (previous && !sameSummaryEvidence(previous, item)) fail();
     if (!previous) evidence.set(item.evidenceRef, structuredClone(item));
   }
-  return {...structuredClone(value), evidence: [...evidence.values()], ...summaryNativeReceiptFields(value.evidence)};
+  return {...structuredClone(value), evidence: [...evidence.values()], ...fields};
 }
 
 /** Validate the complete batch before the caller mutates any delivery state. */

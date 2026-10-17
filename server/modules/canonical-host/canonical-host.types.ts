@@ -11,6 +11,7 @@ import type {
   U0Frozen2FailureBuildResult,
 } from '../unified-reader/unified-reader.types';
 import type { CanonicalMiaodaFinalUserActorContext } from '../work-item/canonical-object-access.port';
+import type { JobAidSourceBinding } from './jobaid-problem-task';
 
 export type CanonicalPdfFailureParameter = string | number | boolean | string[];
 
@@ -124,6 +125,16 @@ export interface CanonicalPermissionSnapshotPort {
   }, database?: PostgresJsDatabase): Promise<{ permissionSnapshotVersion: string }>;
 }
 
+export interface CanonicalJobAidWorkRevisionGuard {
+  tenantId: string;
+  workRevisionRef: string;
+  /** Host-sealed task authority; lock these sources before the grant and attempt. */
+  sourceGuard?: {
+    actorUserId: string;
+    sourceBindings: JobAidSourceBinding[];
+  };
+}
+
 export interface CanonicalWorkItemRegistrarPort {
   loadOrCreate(
     seed: Omit<CanonicalWorkItemProjection, 'revision'>,
@@ -135,7 +146,7 @@ export interface CanonicalWorkItemRegistrarPort {
     syncPrimaryAttempt?: boolean;
     applicabilityInputGuard?: { tenantId: string };
     /** Fences a successor Overall against a newer saved JobAid revision. */
-    jobAidWorkRevisionGuard?: { tenantId: string; workRevisionRef: string };
+    jobAidWorkRevisionGuard?: CanonicalJobAidWorkRevisionGuard;
     /** Recheck native source/receipt authority inside the exact projection CAS transaction. */
     nativeEvidenceGuard?: (database: PostgresJsDatabase) => Promise<void>;
   }): Promise<CanonicalWorkItemProjection>;

@@ -1,3 +1,8 @@
+import {
+  buildJobAidPreparationView, preparationAfterSavedWork, unavailableJobAidPreparationFacts,
+  type JobAidEngineerPreparationFacts, type JobAidPreparationScope,
+} from './jobaid-preparation-view';
+import { assertAutomaticWorkItemAttemptLease, taskAutomaticWorkItemLease } from '../action-attempt/automatic-work-item-attempt-lease';
 import type { CancelledInitialContinuationGuard } from '../action-attempt/cancelled-initial-continuation';
 import { TDMS_RUNTIME_READER, type TdmsRuntimeReaderPort, type TdmsRuntimeTaskContext } from '../tdms-source/tdms-runtime-reader.port';
 import { TDMS_NATIVE_EVIDENCE_VERIFIER, verifyTdmsNativeEvidence, assertTdmsNativeInTransaction, type TdmsNativeEvidenceVerifier } from './tdms-native-evidence-verifier.port';
@@ -13,7 +18,10 @@ import { originalApplicabilityResultMatches } from './original-applicability-cur
 import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { DocumentSemanticService } from './document-semantic.service';
-import { prepareDocumentOriginalEngineeringReader, findDocumentOriginalEvidence } from './document-original-engineering-reading';
+import {
+  prepareDocumentOriginalEngineeringReader,
+  prepareDocumentOriginalEvidenceFinder,
+} from './document-original-engineering-reading';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
@@ -45,6 +53,7 @@ import {
 } from '@shared/jobaid-problem-assessment.interface';
 import {
   canonicalJson,
+  canonicalSha256,
   parseTaskEnvelope,
 } from '../action-attempt/action-attempt-envelope';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
@@ -88,7 +97,10 @@ import {
   type CanonicalVerifiedServiceScope,
 } from './canonical-service-scope.authorization';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
-import { buildJobAidOverallProjection } from './jobaid-overall-projection';
+import {
+  assertJobAidOverallWorkCurrent,
+  buildJobAidOverallProjection,
+} from './jobaid-overall-projection';
 import { preflightCanonicalHostOpenClawResult, parseCanonicalHostOpenClawAttemptTask, parseCanonicalHostOpenClawStoredResult } from './canonical-host-openclaw-runtime-policy';
 import {
   overallModelEvidenceRegistry,
@@ -409,6 +421,60 @@ export class CanonicalJobAidProblemService {
       throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
     return this.work.publishedOriginalBinding({tenantId:scope.tenantId,actorUserId:loaded.row.requestedByUserId,
       workItemId:workItem.workItemId,documentVersionId:workItem.source.documentVersionId});
+  }
+
+  /** Queue recovery is already service/tenant/Source authorized. Rebind only
+   * its persisted actor on the existing transaction; do not acquire a pool connection. */
+  async assertAutomaticCommittingRecoveryAuthorized(row: ActionAttemptRow, actorUserId: string,
+    database: PostgresJsDatabase): Promise<void> {
+    if (!row.taskEnvelopeJson) throw new Error('JOBAID_TASK_BINDING_INVALID');
+    const task=parseJobAidProblemTask(parseTaskEnvelope(row.taskEnvelopeJson));
+    if (task.actorUserId !== actorUserId) throw new Error('JOBAID_ACTOR_AUTHORIZATION_CHANGED');
+    await this.work.withActorScope(actorUserId,async()=>{
+      await this.assertEvidenceOwned(task.sourceCatalog,row.tenantId,actorUserId,row.workItemId,database);
+      for (const binding of task.sourceBindings) {
+        const current=await this.work.loadOwnedSourceBinding({tenantId:row.tenantId,actorUserId,
+          workItemId:binding.workItemId,kind:binding.kind},database);
+        if (canonicalJson(current) !== canonicalJson(binding)) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+      }
+      const original=task.modelInput.documentOverview.original?.binding;
+      if (original) {
+        const current=await this.work.publishedOriginalBindingInTransaction({tenantId:row.tenantId,
+          actorUserId,workItemId:row.workItemId,documentVersionId:original.documentVersionId},database);
+        if(current.parseRunId !== original.parseRunId) throw new Error('JOBAID_ORIGINAL_REQUEST_CHANGED');
+      }
+    },database);
+  }
+
+  /** Called only after an authorized queue claim. The old sealed task remains immutable. */
+  async enqueueAutomaticTakeover(workItemId: string): Promise<void> {
+    const scope = await this.serviceScope.authorizeOpenClawWorkItem({operation:'BEGIN_DYNAMIC',workItemId});
+    if (!scope.automaticWorkItemLease || scope.workItemId !== workItemId) throw new Error('AUTO_WORK_ITEM_LEASE_REQUIRED');
+    const current = await this.registrar.getTenantScopedByWorkItemId({tenantId:scope.tenantId,workItemId});
+    const hasBase = isJobAidProblemProjection(current.integratedAssessment?.baseRules);
+    if (hasBase && current.integratedAssessment?.overallSynthesis?.status === 'CANDIDATE_ONLY') return;
+    const taskType = hasBase ? 'OPENCLAW_OVERALL_SYNTHESIS' : 'OPENCLAW_DYNAMIC_EVALUATION';
+    if (!this.database) throw new Error('JOBAID_DATABASE_REQUIRED');
+    const [previous] = await this.database.select().from(actionAttempt).where(and(
+      eq(actionAttempt.tenantId,scope.tenantId),eq(actionAttempt.workItemId,workItemId),
+      eq(actionAttempt.documentVersionId,current.source.documentVersionId),eq(actionAttempt.actionType,taskType)))
+      .orderBy(desc(actionAttempt.attemptNo)).limit(1);
+    if (!previous || !['TIMED_OUT','OBSOLETE'].includes(previous.status) || previous.cancelRequestedAt ||
+        !['ACTION_ATTEMPT_DEADLINE_EXCEEDED','ACTION_ATTEMPT_SUPERSEDED_AFTER_LEASE_EXPIRY'].includes(previous.terminalReason ?? '')) return;
+    const original = await this.readOriginalContinuationBinding(current,scope);
+    const latest = (await this.work.listForRuntime({tenantId:scope.tenantId,workItemId,
+      actorUserId:scope.automaticWorkItemLease.actorUserId}))[0];
+    // Expiry never proves that an unknown provider call has stopped. Only a
+    // never-started task or an exact INITIAL COMPLETE save can be resumed
+    // automatically. Saved problem work does not settle an Overall provider call.
+    if (previous.claimCount > 0 && (hasBase || !latest || latest.content.roundCompletion !== 'COMPLETE' ||
+        latest.basedOnWorkItemRevision !== current.revision)) return;
+    const requestId = canonicalSha256({purpose:'AUTOMATIC_INITIAL_TAKEOVER',taskType,
+      tenantId:scope.tenantId,workItemId,workItemRevision:current.revision,
+      authorization:scope.automaticWorkItemLease});
+    await this.work.withActorScope(scope.automaticWorkItemLease.actorUserId,()=>this.enqueueContinuation(
+      current,scope.tenantId,scope.authorizationFingerprint,requestId,
+      hasBase ? 'OVERALL_CONSISTENCY' : 'INITIAL_PROBLEM_ASSESSMENT',undefined,original));
   }
 
   /** The caller has verified Hosted WorkItem authority and a changed original. */
@@ -825,10 +891,10 @@ export class CanonicalJobAidProblemService {
             })
           : null;
         if (latestAttempt?.actionType === 'OPENCLAW_OVERALL_SYNTHESIS' &&
-          latestAttempt.status === 'CANCELLED') {
-          // A cancelled Overall has its own continuous, source-bound save chain.
+          canRecoverSavedOverallWork(latestAttempt)) {
+          // A Host-terminal Overall retains its continuous, source-bound save chain.
           // A Host Review marker never enters this recovery branch.
-          previousWork = await this.recoverCancelledOverallWork({
+          previousWork = await this.recoverSavedOverallWork({
             workItem, tenantId, actorUserId, baseWork,
             latestWorkRevisionRef: history[0]?.workRevisionRef,
           });
@@ -895,6 +961,10 @@ export class CanonicalJobAidProblemService {
       actorUserId,
       permissionSnapshotVersion: permissionSnapshotVersion,
       purpose,
+      ...(nativeAdmission?.scope.automaticWorkItemLease ? {automaticWorkItemLease: {
+        requestId: nativeAdmission.scope.automaticWorkItemLease.requestId,
+        leaseGeneration: nativeAdmission.scope.automaticWorkItemLease.leaseGeneration,
+      }} : {}),
       sourceCatalog,
       ...(tdmsContext ? {tdmsContext} : {}),
       ...(sourceActivityProjections ? {sourceActivityProjections,sourceStatementAvailability} : {}),
@@ -907,6 +977,19 @@ export class CanonicalJobAidProblemService {
     });
     taskInput.modelInput.documentOverview.original = { binding: original.original.binding, semanticMap,
       coverage: original.original.coverage, findings: original.structuredSource.findings };
+    const preparationScope: JobAidPreparationScope | undefined = purpose === 'PROBLEM_REVIEW'
+      ? {...reviewSelection,selectedContributionRefs:extraEvidence.flatMap(item => item.kind === 'ENGINEER_STATEMENT' && item.dialogueSource
+          ? [item.dialogueSource.contributionRef] : [])} : undefined;
+    if (preparationScope) taskInput.preparationScope = structuredClone(preparationScope);
+    const preparationFacts = await readInContext(() => this.readPreparationFacts({
+      workItem,tenantId,actorUserId,purpose,selection:preparationScope,
+      ...(requestContext ? {browserRead:true} : {}),
+    }));
+    taskInput.modelInput.preparation = buildJobAidPreparationView({
+      taskPurpose:purpose,taskInputRevision:workItem.revision,current:workItem,
+      documentVersionId:workItem.source.documentVersionId,originalBinding:original.original.binding,
+      latestWork:previousWork,facts:preparationFacts,
+    });
     if (purpose !== 'PROBLEM_REVIEW') {
       const loaded = await this.workItems.loadTenantScopedProjection(
         workItem.workItemId,
@@ -945,11 +1028,26 @@ export class CanonicalJobAidProblemService {
           fragments: [],
         };
     }
+    if (purpose === 'INITIAL_PROBLEM_ASSESSMENT' && previousWork?.content.roundCompletion === 'COMPLETE' &&
+        previousWork.basedOnWorkItemRevision === workItem.revision &&
+        !isJobAidProblemProjection(workItem.integratedAssessment?.baseRules)) {
+      const source = await this.attempts.readScopedById({attemptId:previousWork.actionAttemptId,tenantId,workItemId:workItem.workItemId});
+      const prior = source.taskEnvelopeJson ? parseJobAidProblemTask(parseTaskEnvelope(source.taskEnvelopeJson)) : null;
+      if (source.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' && source.status !== 'CANCELLED' &&
+          source.baseRevision === workItem.revision && source.inputRevision === workItem.revision && prior &&
+          source.documentVersionId === workItem.source.documentVersionId &&
+          canonicalJson(prior.sourceBindings) === canonicalJson(taskInput.sourceBindings) &&
+          canonicalJson(prior.modelInput.documentOverview.original?.binding) === canonicalJson(taskInput.modelInput.documentOverview.original?.binding)) {
+        taskInput.savedWorkReconciliation = {executionKind:'HOST_SAVED_WORK_RECONCILIATION',modelRequests:0,
+          workRevisionRef:previousWork.workRevisionRef,workRevision:previousWork.workRevision,
+          sourceActionAttemptId:previousWork.actionAttemptId};
+      }
+    }
     if (tdmsContext && nativeAdmission) await this.assertNativeTaskAuthorized(taskInput,nativeAdmission.scope);
     return taskInput;
   }
 
-  private async recoverCancelledOverallWork(input: {
+  private async recoverSavedOverallWork(input: {
     workItem: CanonicalWorkItemProjection;
     tenantId: string;
     actorUserId: string;
@@ -988,7 +1086,7 @@ export class CanonicalJobAidProblemService {
       const row = await this.attempts.readScopedById({
         attemptId, tenantId: input.tenantId, workItemId: input.workItem.workItemId,
       }).catch(() => null);
-      if (!row || row.status !== 'CANCELLED' ||
+      if (!row || !canRecoverSavedOverallWork(row) ||
         row.actionType !== 'OPENCLAW_OVERALL_SYNTHESIS' ||
         row.documentVersionId !== input.workItem.source.documentVersionId ||
         row.baseRevision !== input.workItem.revision || !row.taskEnvelopeJson)
@@ -1145,6 +1243,35 @@ export class CanonicalJobAidProblemService {
       },
       database,
     );
+  }
+
+  /** The Review caller keeps this check and its unchanged receipt in the same
+   * actor transaction. Return stored work, never the task's frozen copy. */
+  async assertReviewWorkUnchanged(
+    input: { row: ActionAttemptRow; task: JobAidProblemTaskInput; fence: JobAidWorkFence },
+    database: PostgresJsDatabase,
+  ): Promise<JobAidWorkRevision> {
+    const previous = input.task.previousWork;
+    if (!previous || input.task.modelInput.purpose !== 'PROBLEM_REVIEW' ||
+        input.task.actorUserId !== input.row.actorUserId ||
+        previous.workItemId !== input.row.workItemId ||
+        previous.documentVersionId !== input.row.documentVersionId ||
+        previous.workRevision !== input.task.modelInput.expectedWorkRevision)
+      throw new Error('JOBAID_REVIEW_UNCHANGED_BASIS_INVALID');
+    await this.assertEvidenceOwned(input.task.sourceCatalog, input.row.tenantId,
+      input.task.actorUserId, input.row.workItemId, database);
+    await this.assertSourceStatementReferences(input.task.sourceCatalog,
+      { tenantId: input.row.tenantId, actorUserId: input.task.actorUserId }, database);
+    const current = await this.work.assertReviewUnchanged({
+      row: input.row, actorUserId: input.task.actorUserId,
+      fence: { ...input.fence, allowCommittingReview: true },
+      sourceBindings: input.task.sourceBindings,
+      expectedWorkRevisionRef: previous.workRevisionRef,
+      expectedWorkRevision: input.task.modelInput.expectedWorkRevision,
+    }, database);
+    if (current.basedOnWorkItemRevision !== previous.basedOnWorkItemRevision)
+      throw new Error('JOBAID_REVIEW_UNCHANGED_BASIS_INVALID');
+    return current;
   }
 
   /** Called in the same short actor transaction as the work and Review receipt.
@@ -1699,7 +1826,7 @@ export class CanonicalJobAidProblemService {
     await this.work.recordSourceRead({
       row,
       actorUserId: taskInput.actorUserId,
-      fence: { ...input, principalId: scope.principalId },
+      fence: { ...input, principalId: scope.principalId, automaticLeaseRequired: !!scope.automaticWorkItemLease },
       sourceBindings: taskInput.sourceBindings,
       sourceRefs: selected.map((item) => item.evidenceRef),
       ...(nativeRead ? {nativeEvidence:nativeRead.evidence.map(parseAssessmentTdmsEvidence)} : {}),
@@ -1751,7 +1878,7 @@ export class CanonicalJobAidProblemService {
     );
     const observe = (status: JobAidKnowledgeObservationStatus) =>
       this.work.recordKnowledgeObservation({ row, actorUserId: taskInput.actorUserId,
-        fence: { ...input, principalId: scope.principalId },
+        fence: { ...input, principalId: scope.principalId, automaticLeaseRequired: !!scope.automaticWorkItemLease },
         sourceBindings: taskInput.sourceBindings, status });
     if (
       !this.knowledge ||
@@ -1805,7 +1932,7 @@ export class CanonicalJobAidProblemService {
       await this.work.recordSourceRead({
         row,
         actorUserId: taskInput.actorUserId,
-        fence: { ...input, principalId: scope.principalId },
+        fence: { ...input, principalId: scope.principalId, automaticLeaseRequired: !!scope.automaticWorkItemLease },
         sourceBindings: taskInput.sourceBindings,
         sourceRefs: receipt.evidence.map((item) => item.evidenceRef),
         purpose: '读取实际知识检索回执',
@@ -1814,6 +1941,28 @@ export class CanonicalJobAidProblemService {
       ...receipt,
       evidence: overallModelEvidenceRegistry(receipt.evidence, taskInput.modelInput.evidenceProjectionVersion),
     };
+  }
+
+  private readPreparationFacts(input: Parameters<CanonicalHostCommonContextService['readPreparationFacts']>[0]): Promise<JobAidEngineerPreparationFacts> {
+    // A missing optional reader is explicit in the view; it is never an empty
+    // claim that there were no corrections or human confirmations.
+    return typeof this.common.readPreparationFacts === 'function'
+      ? this.common.readPreparationFacts(input)
+      : Promise.resolve(unavailableJobAidPreparationFacts());
+  }
+
+  private async currentPreparation(row: ActionAttemptRow, taskInput: JobAidProblemTaskInput,
+    tenantId: string, latestWork: JobAidWorkRevision | null) {
+    const current = await this.registrar.getTenantScopedByWorkItemId({tenantId,workItemId:row.workItemId});
+    return this.work.withActorScope(taskInput.actorUserId, async () => {
+      const facts = await this.readPreparationFacts({workItem:current,tenantId,actorUserId:taskInput.actorUserId,
+        purpose:taskInput.modelInput.purpose,
+        selection:taskInput.preparationScope ?? (taskInput.modelInput.purpose === 'PROBLEM_REVIEW'
+          ? {includedDiscussionTurnIds:[],selectedContributionRefs:[]} : undefined)});
+      return buildJobAidPreparationView({taskPurpose:taskInput.modelInput.purpose,taskInputRevision:row.inputRevision,
+        current,documentVersionId:row.documentVersionId,originalBinding:taskInput.modelInput.documentOverview.original?.binding ?? null,
+        latestWork,facts,sealedGoal:taskInput.modelInput.preparation});
+    });
   }
 
   async saveWork(input: {
@@ -1844,6 +1993,7 @@ export class CanonicalJobAidProblemService {
       workItemId: scope.workItemId,
       actorUserId: taskInput.actorUserId,
     });
+    const preparation = await this.currentPreparation(row,taskInput,scope.tenantId,history[0] ?? null);
     const command: unknown = JSON.parse(input.workJson);
     const replay = history.find((item) => item.requestId === input.requestId);
     const previous = replay
@@ -1885,7 +2035,7 @@ export class CanonicalJobAidProblemService {
     const saved = await this.work.save({
       row,
       actorUserId: taskInput.actorUserId,
-      fence: { ...input, principalId: scope.principalId },
+      fence: { ...input, principalId: scope.principalId, automaticLeaseRequired: !!scope.automaticWorkItemLease },
       sourceBindings: taskInput.sourceBindings,
       requestId: input.requestId,
       expectedWorkRevision: input.expectedWorkRevision,
@@ -1909,6 +2059,8 @@ export class CanonicalJobAidProblemService {
       roundCompletion: saved.revision.content.roundCompletion,
       issueKeys: saved.revision.content.issues.map((issue) => issue.issueKey),
       currentUnderstanding: saved.revision.content.understanding,
+      preparation:preparationAfterSavedWork(preparation,
+        saved.revision.workRevision >= (history[0]?.workRevision ?? 0) ? saved.revision : history[0]),
     };
   }
 
@@ -1918,6 +2070,7 @@ export class CanonicalJobAidProblemService {
       'READ_ASSESSMENT_WORK',
       workItemId,
     );
+    await this.assertSourcesAuthorized(taskInput.sourceCatalog,taskInput,scope.tenantId,scope.workItemId,scope);
     const history = await this.work.listForRuntime({
       tenantId: scope.tenantId,
       workItemId: scope.workItemId,
@@ -1927,7 +2080,9 @@ export class CanonicalJobAidProblemService {
       ? (history.find(
           (item) =>
             item.requestId === requestId &&
-            item.actionAttemptId === row.attemptId,
+            (item.actionAttemptId === row.attemptId ||
+              (taskInput.savedWorkReconciliation?.workRevisionRef === item.workRevisionRef &&
+               taskInput.savedWorkReconciliation.sourceActionAttemptId === item.actionAttemptId)),
         ) ?? null)
       : (history[0] ?? null);
     if (revision)
@@ -1944,6 +2099,7 @@ export class CanonicalJobAidProblemService {
       inputWorkRevision: taskInput.modelInput.expectedWorkRevision,
       revision,
       executionStatus: row.status,
+      preparation:await this.currentPreparation(row,taskInput,scope.tenantId,history[0] ?? null),
     };
   }
 
@@ -1968,6 +2124,8 @@ export class CanonicalJobAidProblemService {
       result: input.result,
     });
     const taskInput = parseJobAidProblemTask(preflight.task);
+    if (input.scope.automaticWorkItemLease && !taskAutomaticWorkItemLease(input.row))
+      throw new Error('AUTO_WORK_ITEM_TASK_LEASE_BINDING_REQUIRED');
     if (
       preflight.result.toolVersions['jobaid-problem-protocol'] !== (taskInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2') ||
       preflight.result.promptVersion !== (taskInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'wiselink-jobaid-problem@v3':'wiselink-jobaid-problem@v2')
@@ -1986,6 +2144,7 @@ export class CanonicalJobAidProblemService {
       tenantId: input.scope.tenantId,
       workItemId: input.scope.workItemId,
       principalId: input.scope.principalId,
+      automaticLeaseRequired: !!input.scope.automaticWorkItemLease,
       leaseToken: input.leaseToken,
       leaseGeneration: input.leaseGeneration,
       result: preflight.result,
@@ -2043,12 +2202,21 @@ export class CanonicalJobAidProblemService {
       const allowedPriorForOverall =
         isOverall &&
         revision?.workRevisionRef === taskInput.previousWork?.workRevisionRef;
+      const savedRecovery = taskInput.savedWorkReconciliation;
+      const allowedSavedRecovery = !isOverall && savedRecovery &&
+        prepared.result.executionKind === 'HOST_SAVED_WORK_RECONCILIATION' &&
+        savedRecovery.workRevisionRef === revision?.workRevisionRef &&
+        savedRecovery.sourceActionAttemptId === revision?.actionAttemptId &&
+        revision?.content.roundCompletion === 'COMPLETE' && revision.basedOnWorkItemRevision === current.revision &&
+        !isJobAidProblemProjection(current.integratedAssessment?.baseRules);
+      if (savedRecovery && !allowedSavedRecovery && !isOverall)
+        throw new Error('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
       if (
         !revision ||
         revision.workRevisionRef !== history[0]?.workRevisionRef ||
         revision.documentVersionId !== current.source.documentVersionId ||
         (revision.actionAttemptId !== prepared.row.attemptId &&
-          !allowedPriorForOverall) ||
+          !allowedPriorForOverall && !allowedSavedRecovery) ||
         revision.content.roundCompletion === 'IN_PROGRESS'
       )
         throw new Error('JOBAID_COMPLETED_WORK_REQUIRED');
@@ -2088,10 +2256,12 @@ export class CanonicalJobAidProblemService {
         workItemId: current.workItemId,
         expectedRevision: prepared.task.baseRevision,
         syncPrimaryAttempt: false,
-        ...(taskInput.tdmsContext ? {
-          jobAidWorkRevisionGuard:{tenantId:input.scope.tenantId,workRevisionRef:revision.workRevisionRef},
-          nativeEvidenceGuard:(database:PostgresJsDatabase)=>this.assertNativeProjectionAuthorized(baseRules,taskInput,input.scope,database),
-        } : {}),
+        jobAidWorkRevisionGuard:{tenantId:input.scope.tenantId,workRevisionRef:revision.workRevisionRef,
+          sourceGuard:{actorUserId:taskInput.actorUserId,sourceBindings:taskInput.sourceBindings}},
+        nativeEvidenceGuard:(database:PostgresJsDatabase)=>this.work.withActorScope(taskInput.actorUserId,async()=>{
+          await this.assertProjectionWriteFence(database,prepared,taskInput,input.scope);
+          await this.assertNativeProjectionAuthorized(baseRules,taskInput,input.scope,database);
+        },database),
         next: withoutRevision(next),
       });
       await this.assertNativeProjectionAuthorized(baseRules,taskInput,input.scope);
@@ -2102,6 +2272,8 @@ export class CanonicalJobAidProblemService {
         workItemRevision: saved.revision,
         status: integrated.status,
         baseRules,
+        ...(allowedSavedRecovery ? {executionKind:'HOST_SAVED_WORK_RECONCILIATION' as const, modelRequests:0 as const,
+          workRevisionRef:revision.workRevisionRef,sourceActionAttemptId:revision.actionAttemptId} : {}),
       };
     } catch (error) {
       // An already-applied projection is recovered by the same commit identity;
@@ -2145,6 +2317,7 @@ export class CanonicalJobAidProblemService {
   ) {
     if (!output.consistencyCheck || !output.consistencyCheck.trim())
       throw new Error('JOBAID_OVERALL_CONSISTENCY_REQUIRED');
+    assertJobAidOverallWorkCurrent(revision);
     const marker = activeConfigurationEvidenceReevaluation(workItem);
     const effective = marker ? configurationEvidenceShadow(workItem) : workItem;
     const base = effective.integratedAssessment!.baseRules;
@@ -2232,10 +2405,12 @@ export class CanonicalJobAidProblemService {
       workItemId: workItem.workItemId,
       expectedRevision: prepared.task.baseRevision,
       syncPrimaryAttempt: false,
-      ...(taskInput.successorReviewTurnRef || taskInput.tdmsContext ? {
-        jobAidWorkRevisionGuard: { tenantId: prepared.row.tenantId, workRevisionRef: revision.workRevisionRef },
-      } : {}),
-      ...(taskInput.tdmsContext ? {nativeEvidenceGuard:(database:PostgresJsDatabase)=>this.assertNativeProjectionAuthorized(synthesis,taskInput,scope,database)} : {}),
+      jobAidWorkRevisionGuard: { tenantId: prepared.row.tenantId, workRevisionRef: revision.workRevisionRef,
+        sourceGuard:{actorUserId:taskInput.actorUserId,sourceBindings:taskInput.sourceBindings} },
+      nativeEvidenceGuard:(database:PostgresJsDatabase)=>this.work.withActorScope(taskInput.actorUserId,async()=>{
+        await this.assertProjectionWriteFence(database,prepared,taskInput,scope);
+        await this.assertNativeProjectionAuthorized(synthesis,taskInput,scope,database);
+      },database),
       next: withoutRevision(next),
     });
     await this.assertNativeProjectionAuthorized(synthesis,taskInput,scope);
@@ -2542,7 +2717,7 @@ export class CanonicalJobAidProblemService {
     if (originals.length) {
       if (!this.originalReader) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
       await this.work.withActorScope(input.actorUserId, async () => {
-        const loaded = new Map<string, Awaited<ReturnType<UnifiedReaderService['readDocumentOriginal']>>>();
+        const finders = new Map<string, ReturnType<typeof prepareDocumentOriginalEvidenceFinder>>();
         for (const item of originals) {
           const prefix = `DOCUMENT_ORIGINAL:${item.documentVersionId}:`;
           const parseRunId = item.evidenceRef.slice(prefix.length,-(item.sourceRefId.length+1));
@@ -2552,9 +2727,14 @@ export class CanonicalJobAidProblemService {
             !/^[A-Za-z0-9_-]{1,96}$/u.test(parseRunId)
           ) throw new Error('JOBAID_ORIGINAL_SOURCE_BINDING_INVALID');
           const key = `${item.documentVersionId}:${parseRunId}`;
-          if (!loaded.has(key)) loaded.set(key,await this.originalReader!.readDocumentOriginal(item.documentVersionId,parseRunId,
-            {tenantId,actorUserId:input.actorUserId,roles:[]}));
-          const actual = {...findDocumentOriginalEvidence(loaded.get(key)!,item.sourceRefId),workItemId:item.workItemId};
+          let find = finders.get(key);
+          if (!find) {
+            const loaded = await this.originalReader!.readDocumentOriginal(item.documentVersionId,parseRunId,
+              {tenantId,actorUserId:input.actorUserId,roles:[]});
+            find = prepareDocumentOriginalEvidenceFinder(loaded);
+            finders.set(key, find);
+          }
+          const actual = {...find(item.sourceRefId),workItemId:item.workItemId};
           if (canonicalJson(actual) !== canonicalJson(item)) throw new Error('JOBAID_ORIGINAL_SOURCE_CHANGED');
         }
       });
@@ -2794,6 +2974,43 @@ export class CanonicalJobAidProblemService {
     await verifyTdmsNativeEvidence(evidence, {tenantId,actorUserId}, this.nativeVerifier, database);
   }
 
+  private async assertProjectionWriteFence(database: PostgresJsDatabase,
+    prepared: PreparedActionAttemptCommit, input: JobAidProblemTaskInput,
+    scope: CanonicalVerifiedOpenClawAttemptScope): Promise<void> {
+    await assertAutomaticWorkItemAttemptLease(database,prepared.row,scope.principalId,!!scope.automaticWorkItemLease);
+    const [current] = await database.select().from(actionAttempt).where(and(
+      eq(actionAttempt.attemptId,prepared.row.attemptId),eq(actionAttempt.tenantId,scope.tenantId),
+      eq(actionAttempt.workItemId,scope.workItemId))).limit(1).for('update');
+    if (!current || current.status !== 'COMMITTING' || current.taskInputHash !== prepared.row.taskInputHash ||
+        current.resultContentHash !== prepared.result.contentHash || current.leaseOwner !== scope.principalId ||
+        current.leaseToken !== prepared.row.leaseToken || current.leaseGeneration !== prepared.row.leaseGeneration ||
+        current.cancelRequestedAt || !current.leaseExpiresAt || current.leaseExpiresAt <= new Date())
+      throw new Error('JOBAID_PROJECTION_LEASE_FENCE_REJECTED');
+    await this.assertEvidenceOwned(input.sourceCatalog,scope.tenantId,input.actorUserId,scope.workItemId,database);
+    const original = input.modelInput.documentOverview.original?.binding;
+    if (original) {
+      const published = await this.work.publishedOriginalBindingInTransaction({tenantId:scope.tenantId,
+        actorUserId:input.actorUserId,workItemId:scope.workItemId,documentVersionId:prepared.task.documentVersionId},database);
+      if (published.parseRunId !== original.parseRunId) throw new Error('JOBAID_ORIGINAL_REQUEST_CHANGED');
+    }
+    if (input.savedWorkReconciliation) {
+      const [saved] = await database.select().from(assessmentWorkRevision).where(and(
+        eq(assessmentWorkRevision.tenantId,scope.tenantId),eq(assessmentWorkRevision.workItemId,scope.workItemId),
+        eq(assessmentWorkRevision.assessmentWorkRevisionId,input.savedWorkReconciliation.workRevisionRef))).limit(1);
+      const [source] = await database.select().from(actionAttempt).where(and(
+        eq(actionAttempt.attemptId,input.savedWorkReconciliation.sourceActionAttemptId),
+        eq(actionAttempt.tenantId,scope.tenantId),eq(actionAttempt.workItemId,scope.workItemId))).limit(1);
+      if (!saved || saved.basedOnWorkItemRevision !== prepared.task.baseRevision ||
+          saved.documentVersionId !== prepared.task.documentVersionId || saved.actionAttemptId !== source?.attemptId ||
+          !source?.taskEnvelopeJson || source.status === 'CANCELLED')
+        throw new Error('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
+      const prior = parseJobAidProblemTask(parseTaskEnvelope(source.taskEnvelopeJson));
+      if (canonicalJson(prior.sourceBindings) !== canonicalJson(input.sourceBindings) ||
+          canonicalJson(prior.modelInput.documentOverview.original?.binding) !== canonicalJson(original))
+        throw new Error('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
+    }
+  }
+
   private async authorizedAttempt(
     attemptRef: string,
     operation:
@@ -2831,9 +3048,19 @@ export class CanonicalJobAidProblemService {
     if (taskInput.tdmsContext && (taskInput.tdmsContext.binding.taskContextRef !== row.operationRef ||
       taskInput.tdmsContext.binding.tenantId !== row.tenantId || taskInput.tdmsContext.binding.workItemId !== row.workItemId ||
       taskInput.tdmsContext.binding.documentVersionId !== row.documentVersionId)) throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
+    if (operation !== 'READ_ASSESSMENT_WORK' && scope.automaticWorkItemLease && !taskAutomaticWorkItemLease(row))
+      throw new Error('AUTO_WORK_ITEM_TASK_LEASE_BINDING_REQUIRED');
     await this.assertNativeTaskAuthorized(taskInput, scope);
     return { row, task, taskInput, scope };
   }
+}
+
+function canRecoverSavedOverallWork(row: Pick<ActionAttemptRow, 'status' | 'terminalReason'>): boolean {
+  // Only persisted deadline terminals join the existing cancellation recovery.
+  // This reuses saved work; it neither retries the old run nor proves a provider stopped.
+  return row.status === 'CANCELLED' || (row.status === 'TIMED_OUT' &&
+    ['ACTION_ATTEMPT_DEADLINE_EXCEEDED', 'DEADLINE_EXCEEDED_DURING_LEASE']
+      .includes(row.terminalReason ?? ''));
 }
 
 function parseFinishOutput(value: string | null): {

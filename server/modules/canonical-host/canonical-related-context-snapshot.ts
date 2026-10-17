@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { canonicalReferenceSelectionKey } from './canonical-reference-mention-preview';
 
 import type {
   CanonicalReferenceContextRole,
@@ -95,7 +96,7 @@ function snapshotItems(
   >();
   for (const mention of mentions) {
     const groupingKey =
-      mention.normalizedTarget.trim() || `mention:${mention.mentionRef}`;
+      mention.normalizedTarget.trim() ? canonicalReferenceSelectionKey(mention) : `mention:${mention.mentionRef}`;
     const current = grouped.get(groupingKey);
     if (current) {
       mention.sourceRefIds.forEach((sourceRef) =>
@@ -138,6 +139,8 @@ function snapshotItems(
       mentionRefs: [...group.mentionRefs],
       retrievalChannel: 'EXPLICIT_REFERENCE',
       normalizedTarget: group.first.normalizedTarget,
+      ...(group.first.requestedBusinessRevision === undefined ? {} :
+        { requestedBusinessRevision: group.first.requestedBusinessRevision }),
       mentionSourceRefs: [...group.sourceRefs],
       relatedDocumentRef: resolved ? resolution.workItemId : null,
       authorizedExternalRef: null,

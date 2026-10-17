@@ -26,6 +26,7 @@ function material(
 ): CanonicalRelatedContextSnapshotItem {
   return {
     normalizedTarget: code,
+    resolvedDocumentVersionRef: `DV-${code}`,
     documentType: procedure ? 'AMM' : 'FTD',
     contributionRoleCandidates: [
       procedure ? 'IMPLEMENTATION_INSTRUCTION' : 'TECHNICAL_BACKGROUND',
@@ -59,7 +60,7 @@ describe('shared pre-evaluation context', () => {
           resourceArtifactSha256: 'a'.repeat(64),
           value: {
             quote: `Actual text for ${item.normalizedTarget}`,
-            relatedDocument: { normalizedTarget: item.normalizedTarget },
+            relatedDocument: { normalizedTarget: item.normalizedTarget, documentVersionRef: item.resolvedDocumentVersionRef },
           },
         })),
       },
@@ -331,7 +332,7 @@ describe('shared pre-evaluation context', () => {
         ]),
       } as never,
       {
-        listCurrentReferenceTargets: jest.fn(async () =>
+        listReferenceTargets: jest.fn(async () =>
           targets.map((code, index) => ({
             canonicalDocumentNumber: code,
             documentVersionId: bindings[index].documentVersionId,

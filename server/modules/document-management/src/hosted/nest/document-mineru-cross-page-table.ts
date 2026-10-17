@@ -3,6 +3,7 @@ import type { TranslationStructuredSourceUnit } from '@shared/canonical-translat
 import { readMineruTranslationTable, type MineruTranslationTable } from '../../../../professional-input/mineru/mineru-table';
 import { originalPageLayout, type OriginalLayoutRun } from './document-original-layout';
 import type { DocumentPdfExtraction, DocumentPdfPage } from './document-original-pdf';
+import { recoverPdfRuledTableGroup, type PdfRuledTableGroup } from './document-mineru-pdf-grid';
 
 type Box = [number, number, number, number];
 interface NativeTable { page: DocumentPdfPage; box: Box; sourcePointer: string; table: MineruTranslationTable }
@@ -11,7 +12,8 @@ interface PhysicalRow { cells: Array<CellMatch | null> }
 interface GridCell { cellId: string; columnIndex: number; rowSpan: number; colSpan: number; isHeader: boolean;
   textAvailability: string; inlineContent: Array<{ text: string; sourceRefIds: string[] }> }
 interface GridRow { rowId: string; cells: GridCell[] }
-interface RecoveryPage { pageIndex: number; sourcePointer: string; box: Box; itemIndexes: number[] }
+interface RecoveryPage { pageIndex: number; sourcePointer: string; box: Box; itemIndexes: number[];
+  ruledGrid?: PdfRuledTableGroup['grids'][number]; pdfSourceArtifactPath?: string }
 interface SearchBudget { remaining: number; exhausted: boolean }
 // Shared by candidate checks, row combinations and global alignment across one
 // merged table's physical pages. Lease checks cannot interrupt synchronous search.
@@ -42,14 +44,19 @@ export function recoverMineruCrossPageTables(input: {
       const page: DocumentPdfPage | undefined = extraction.pages[Number(entry.mapping.pageIndex)];
       return page ? nativeTable(rawPages[page.pageIndex], entry, page) : null;
     });
-    const tables: NativeTable[] = native.filter((entry: NativeTable | null): entry is NativeTable => entry !== null);
+    let tables: NativeTable[] = native.filter((entry: NativeTable | null): entry is NativeTable => entry !== null);
     const merged: MineruTranslationTable | null = inertTable(object(unit.payload.rawMineruContent)?.html);
+    let ruled: PdfRuledTableGroup | null = null;
     if (tables.length !== units.length || !merged || !sameMergedRows(merged, tables)) {
-      uncertain(original, unit, units, '合并表与保留的逐页原始表无法唯一对应；未重建单元格或跨页行，请核对原页。');
-      continue;
+      ruled = tables.length === units.length && merged ? recoverPdfRuledTableGroup(tables, merged) : null;
+      if (!ruled) {
+        uncertain(original, unit, units, '合并表与保留的逐页原始表无法唯一对应；未重建单元格或跨页行，请核对原页。');
+        continue;
+      }
+      tables = ruled.tables;
     }
     const budget: SearchBudget = { remaining: TABLE_RECOVERY_SEARCH_WORK_LIMIT, exhausted: false };
-    const located: Array<PhysicalRow[] | null> = tables.map((table: NativeTable) => locateTable(table, budget));
+    const located: Array<PhysicalRow[] | null> = ruled?.located ?? tables.map((table: NativeTable) => locateTable(table, budget));
     if (located.some((rows: PhysicalRow[] | null) => rows === null)) {
       uncertain(original, unit, units, budget.exhausted
         ? `跨页表匹配已达到 ${TABLE_RECOVERY_SEARCH_WORK_LIMIT} 步预算，尚未确定完整对应；保留原表。`
@@ -62,27 +69,33 @@ export function recoverMineruCrossPageTables(input: {
     for (const [tableIndex, table] of tables.entries()) {
       const physical: PhysicalRow[] = located[tableIndex]!;
       pages.push({ pageIndex: table.page.pageIndex, box: table.box, sourcePointer: table.sourcePointer,
+        ...(ruled ? { ruledGrid: ruled.grids[tableIndex],
+          pdfSourceArtifactPath: `original/pages-${Math.floor(table.page.pageIndex / 8) * 8}.json` } : {}),
         itemIndexes: physical.flatMap((row: PhysicalRow) => row.cells.flatMap((cell: CellMatch | null) =>
           cell?.runs.flatMap((run: OriginalLayoutRun) => run.itemIndexes) ?? [])) });
       for (const [rowIndex, row] of physical.entries()) {
         const grid: GridRow = { rowId: `${unit.unitId}:p${table.page.pageIndex}:r${rowIndex}`, cells: [] };
         for (const [column, match] of row.cells.entries()) {
-          const ref: string = `${grid.rowId}:c${column}:source`;
-          const text: string = match?.text ?? '';
-          original.source.sourceLocators.push({ sourceRefId: ref, kind: 'PDF_PAGE', artifactId: original.binding.sourceArtifactId,
-            pageStart: table.page.pageIndex, pageEnd: table.page.pageIndex, charStart: null, charEnd: null, charOffsetUnit: null,
-            normalizedPath: null, xpath: null, elementId: null, quote: match ? text : null, bbox: null });
-          original.locations.push({ sourceRefId: ref, precision: match ? 'TEXT_ITEM' : 'NATIVE_SELECTOR',
-            coordinateSpace: match ? 'PDF_VIEWPORT_TOP_LEFT' : null, pageIndex: table.page.pageIndex,
-            viewportWidth: match ? table.page.width : null, viewportHeight: match ? table.page.height : null,
-            boxes: match?.runs.flatMap((run: OriginalLayoutRun) => run.boxes.map((box: Box) => [...box] as Box)) ?? [] });
+          const parts: Array<CellMatch | null> = ruled && match ? match.runs.map((run: OriginalLayoutRun) =>
+            ({ text: run.text, runs: [run], box: runBox(run) })) : [match];
+          const inlineContent = parts.map((part: CellMatch | null, index: number) => {
+            const ref: string = `${grid.rowId}:c${column}${ruled && part ? `:run${index}` : ''}:source`;
+            original.source.sourceLocators.push({ sourceRefId: ref, kind: 'PDF_PAGE', artifactId: original.binding.sourceArtifactId,
+              pageStart: table.page.pageIndex, pageEnd: table.page.pageIndex, charStart: null, charEnd: null, charOffsetUnit: null,
+              normalizedPath: null, xpath: null, elementId: null, quote: part?.text ?? null, bbox: null });
+            original.locations.push({ sourceRefId: ref, precision: part ? 'TEXT_ITEM' : 'NATIVE_SELECTOR',
+              coordinateSpace: part ? 'PDF_VIEWPORT_TOP_LEFT' : null, pageIndex: table.page.pageIndex,
+              viewportWidth: part ? table.page.width : null, viewportHeight: part ? table.page.height : null,
+              boxes: part?.runs.flatMap((run: OriginalLayoutRun) => run.boxes.map((box: Box) => [...box] as Box)) ?? [] });
+            unit.sourceRefIds.push(ref); unit.sourceSegmentIds.push(ref);
+            return { text: `${index ? '\n' : ''}${part?.text ?? ''}`, sourceRefIds: [ref] };
+          });
           grid.cells.push({ cellId: `${grid.rowId}:c${column}`, columnIndex: column, rowSpan: 1, colSpan: 1,
             isHeader: table.table.cells[rowIndex * row.cells.length + column].header,
-            textAvailability: match ? 'TEXT_AVAILABLE' : 'NO_TEXT_ITEMS', inlineContent: [{ text, sourceRefIds: [ref] }] });
-          unit.sourceRefIds.push(ref); unit.sourceSegmentIds.push(ref);
+            textAvailability: match ? 'TEXT_AVAILABLE' : 'NO_TEXT_ITEMS', inlineContent });
         }
         if (tableIndex > 0 && rowIndex === 0) continue; // Repeated physical header refs remain archived above.
-        if (tableIndex > 0 && rowIndex === 1 && boundaryContinuation(tables, located, tableIndex)) {
+        if (!ruled && tableIndex > 0 && rowIndex === 1 && boundaryContinuation(tables, located, tableIndex)) {
           const previous: GridRow = rows[rows.length - 1];
           for (const [column, cell] of grid.cells.entries()) if (row.cells[column])
             previous.cells[column].inlineContent.push(...cell.inlineContent.map((run: { text: string; sourceRefIds: string[] }) =>
@@ -91,28 +104,38 @@ export function recoverMineruCrossPageTables(input: {
             pageIndexes: [tables[tableIndex - 1].page.pageIndex, table.page.pageIndex] });
         } else rows.push(grid);
       }
-      if (!original.coverage.readPageIndexes.includes(table.page.pageIndex))
+      // PDF-only text has the existing literal-supplement reading qualification,
+      // now inside its physical cell instead of a duplicate paragraph. A ruled
+      // grid alone does not upgrade the unresolved page/configuration semantics.
+      const pdfSupplement: boolean = ruled?.grids[tableIndex].rawSpanMatches
+        .some((match) => match.extraction === 'PDFJS_TEXT_LAYER') ?? false;
+      if ((!ruled || pdfSupplement) && !original.coverage.readPageIndexes.includes(table.page.pageIndex))
         original.coverage.readPageIndexes.push(table.page.pageIndex);
     }
     unit.payload.rowGroups = [{ rows }];
     unit.payload.readingHtml = gridHtml(rows);
     unit.mapping = { ...unit.mapping, supplementation: 'CROSS_PAGE_TABLE_CELLS',
       textItems: pages.map((page: RecoveryPage) => ({ pageIndex: page.pageIndex, itemIndexes: page.itemIndexes })),
-      tableRecovery: { method: 'PREPROC_GRID_EXACT_PDF_ITEMS', physicalTables: pages, joinedRows } };
+      tableRecovery: { method: ruled ? 'PDF_RULED_GRID_EXACT_PAGE_SPANS' : 'PREPROC_GRID_EXACT_PDF_ITEMS',
+        physicalTables: pages, joinedRows, ...(ruled ? { mergedSpanMatches: ruled.mergedSpanMatches } : {}) } };
     for (const entry of continuations) entry.mapping.tableRecovery = { recoveredByUnitId: unit.unitId };
     for (const range of original.coverage.unresolvedRanges) {
       const recoveredEmpty: boolean = range.reason === 'STRUCTURE_UNCERTAIN' && range.unitIds.length > 0 &&
         range.unitIds.every((id: string) => continuations.some((entry: TranslationStructuredSourceUnit) => entry.unitId === id));
       if (recoveredEmpty || (range.reason === 'UNREAD' && range.pageIndexes.every((pageIndex: number) =>
         pages.some((page: RecoveryPage) => page.pageIndex === pageIndex)))) {
-        range.reason = 'STRUCTURE_UNCERTAIN'; range.readingImpact = 'DIAGNOSTIC';
+        range.reason = 'STRUCTURE_UNCERTAIN'; range.readingImpact = ruled ? 'LIMITATION' : 'DIAGNOSTIC';
         range.unitIds = [...new Set([...range.unitIds, unit.unitId])];
-        range.message = 'MinerU 合并后留下空表块；保留的逐页原始表已与同源 PDF 文字完整对应，单元格物理页和文字位置已恢复。';
+        range.message = ruled
+          ? 'PDF 线网格及原候选文字已核对，原件独有文字按页补入；空配置未补值，跨页行和配置关系仍未确认。'
+          : 'MinerU 合并后留下空表块；保留的逐页原始表已与同源 PDF 文字完整对应，单元格物理页和文字位置已恢复。';
       }
     }
     original.source.findings.push({ findingId: `${unit.unitId}:cross-page-table-recovery`, code: 'PDF_TABLE_PAGE_RECOVERY',
-      severity: 'warning', readingImpact: 'DIAGNOSTIC', blocking: false,
-      message: '逐页原始表与 PDF 文字逐格完整核对；原合并表、空续表块和原始指针保留，页内单元格来源已恢复。',
+      severity: 'warning', readingImpact: ruled ? 'LIMITATION' : 'DIAGNOSTIC', blocking: false,
+      message: ruled
+        ? 'PDF 线网格及全部原候选文字已核对，原件独有文字按页补入；阅读投影按物理页分行，原始候选和引用保留。'
+        : '逐页原始表与 PDF 文字逐格完整核对；原合并表、空续表块和原始指针保留，页内单元格来源已恢复。',
       affectedUnitIds: units.map((entry: TranslationStructuredSourceUnit) => entry.unitId),
       sourceRefIds: [...unit.sourceRefIds], pageIndexes: pages.map((page: RecoveryPage) => page.pageIndex) });
     for (const joined of joinedRows) original.coverage.unresolvedRanges.push({ reason: 'STRUCTURE_UNCERTAIN',

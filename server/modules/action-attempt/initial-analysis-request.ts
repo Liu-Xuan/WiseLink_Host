@@ -11,7 +11,7 @@ const requestSchema = z.strictObject({
     'OPENCLAW_DYNAMIC_EVALUATION',
     'OPENCLAW_OVERALL_SYNTHESIS',
   ]),
-  requestId: z.union([z.string().uuid(), z.string().regex(/^original-[1-9][0-9]{0,15}$/)]),
+  requestId: z.union([z.string().uuid(), z.string().regex(/^original-[1-9][0-9]{0,15}$/), z.string().regex(/^[a-f0-9]{64}$/u)]),
   originalParseRunId: z.string().min(1).max(200).optional(),
   /** Browser queues exact intent; genuine runtime admission resolves native metadata. */
   nativeOverallAdmission: z.strictObject({
@@ -39,7 +39,7 @@ export function buildInitialAnalysisRequestInput(
   if (request.nativeOverallAdmission &&
       (request.taskType !== 'OPENCLAW_OVERALL_SYNTHESIS' || !request.originalParseRunId))
     throw new Error('JOBAID_TDMS_OVERALL_REQUEST_INVALID');
-  if (request.requestId.startsWith('original-') && !request.originalParseRunId)
+  if ((request.requestId.startsWith('original-') || /^[a-f0-9]{64}$/u.test(request.requestId)) && !request.originalParseRunId)
     throw new Error('ACTION_ATTEMPT_INITIAL_REQUEST_ORIGINAL_SCOPE_INVALID');
   if (request.originalParseRunId && request.taskType === 'OPENCLAW_TRANSLATE')
     throw new Error('ACTION_ATTEMPT_INITIAL_REQUEST_ORIGINAL_SCOPE_INVALID');

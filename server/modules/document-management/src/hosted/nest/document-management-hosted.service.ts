@@ -8,6 +8,7 @@ import { documentSourcePageRange, documentSourceReading } from './document-sourc
 import { PdfjsDistLayoutExtractor } from '../../../../professional-input/parser/pdfjs-dist-layout-extractor.adapter';
 import { controlledPdfByteView, readActualPdfPageCount } from '../../migrated/ingress/pdfDocumentIdentityOwner.js';
 import { extractActualPdfMetadata } from '../../migrated/ingress/pdfDocumentMetadata.js';
+import { compareDocumentIngressVersions, documentIngressIdentityFromDescriptor } from '../../migrated/ingress/documentIngressPreflight.js';
 import { HttpException, Inject, Injectable, Optional } from '@nestjs/common';
 import { EngineeringMatterService } from '../../../../canonical-host/engineering-matter.service';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
@@ -53,6 +54,7 @@ export interface HostedCurrentReferenceTarget {
   canonicalDocumentNumber: string;
   documentFamily: string;
   issuerAuthority: string;
+  requestedBusinessRevision?: string;
 }
 
 @Injectable()
@@ -358,28 +360,48 @@ export class DocumentManagementHostedService {
     canonicalDocumentNumbers: readonly string[],
     context: HostedRequestContext,
   ): Promise<HostedCurrentReferenceTarget[]> {
+    return this.listReferenceTargets(canonicalDocumentNumbers.map(canonicalDocumentNumber => ({ canonicalDocumentNumber })), context);
+  }
+
+  /** Select publication editions before per-DVI body authorization. An explicit
+   * edition never falls back to the family head or another readable edition. */
+  async listReferenceTargets(
+    selections: readonly { canonicalDocumentNumber: string; requestedBusinessRevision?: string | null }[],
+    context: HostedRequestContext,
+  ): Promise<HostedCurrentReferenceTarget[]> {
     assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
-    const lookupKeys = new Set(
-      canonicalDocumentNumbers.map(canonicalDocumentNumberLookupKey),
-    );
     const documents = await this.catalog.listIngressDocuments({
       tenantId: context.tenantId,
     });
-    return documents
-      .filter(
-        (document) =>
-          document.versionStatus === 'CANONICAL_CURRENT' &&
-          lookupKeys.has(
-            canonicalDocumentNumberLookupKey(document.detail.documentCode),
-          ),
-      )
-      .map((document) => ({
+    const unique = new Map(selections.map(selection => [JSON.stringify([
+      canonicalDocumentNumberLookupKey(selection.canonicalDocumentNumber),
+      selection.requestedBusinessRevision === undefined ? [] : [selection.requestedBusinessRevision],
+    ]), selection]));
+    return [...unique.values()].flatMap(selection => documents.filter(document => {
+      if (canonicalDocumentNumberLookupKey(document.detail.documentCode) !==
+          canonicalDocumentNumberLookupKey(selection.canonicalDocumentNumber)) return false;
+      if (selection.requestedBusinessRevision === undefined) return document.versionStatus === 'CANONICAL_CURRENT';
+      if (!selection.requestedBusinessRevision?.trim()) return false;
+      const actual = document.detail.businessRevision?.trim().toUpperCase();
+      const requested = selection.requestedBusinessRevision.trim().toUpperCase();
+      // An existing structured edition label can match literally even when its
+      // axis cannot be ordered. Never turn V18 (or a date) into REV:18.
+      if (actual === requested) return true;
+      const descriptor = { documentCode: document.detail.documentCode };
+      const family = { issuer: document.detail.issuerAuthority, canonicalDocumentFamily: document.detail.documentFamily };
+      return compareDocumentIngressVersions(
+        documentIngressIdentityFromDescriptor({ ...descriptor, businessRevision: requested }, family),
+        documentIngressIdentityFromDescriptor({ ...descriptor, businessRevision: actual }, family),
+      ) === 0;
+    }).map(document => ({
         familyId: document.familyId,
         documentVersionId: document.documentVersionId,
         canonicalDocumentNumber: document.detail.documentCode,
         documentFamily: document.detail.documentFamily,
         issuerAuthority: document.detail.issuerAuthority,
-      }));
+        ...(selection.requestedBusinessRevision === undefined ? {} :
+          { requestedBusinessRevision: selection.requestedBusinessRevision }),
+      })));
   }
 }
 

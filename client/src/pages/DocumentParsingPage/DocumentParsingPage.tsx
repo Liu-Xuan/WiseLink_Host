@@ -711,11 +711,16 @@ export default function DocumentParsingPage() {
   }
 
   async function confirmOverallForAeo(): Promise<void> {
-    if (loading) return;
+    const overall = data.workItem.integratedAssessment?.overallSynthesis;
+    if (loading || assessmentAction !== null || !overall) return;
     setAssessmentAction('CONFIRM_OVERALL_FOR_AEO');
     setAssessmentError(null);
     try {
-      await canonicalHost.confirmIntegratedOverallForAeo(workItemId);
+      await canonicalHost.confirmIntegratedOverallForAeo(workItemId, {
+        expectedRevision: data.workItem.revision,
+        expectedOverallRevision: overall.revision,
+        expectedOverallArtifactRef: overall.artifact.ref,
+      });
       await load(activeQuery);
     } catch (cause) {
       setAssessmentError(actionErrorLabel(cause));

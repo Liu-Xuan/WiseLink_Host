@@ -1,5 +1,3 @@
-import type { LcmCandidateRecord } from './lcm-export-staging.interface';
-
 /** Browser filters contain no tenant, actor, source grant or database query. */
 export interface LcmSnapshotBrowseRequest {
   aircraftModel?: string;
@@ -13,10 +11,6 @@ export interface LcmSnapshotBrowseRequest {
   limit?: number;
 }
 
-export interface LcmSnapshotRowsRequest extends LcmSnapshotBrowseRequest {
-  snapshotId: string;
-}
-
 export interface LcmSnapshotSummary {
   snapshotId: string;
   sourceInstanceId: string;
@@ -25,7 +19,7 @@ export interface LcmSnapshotSummary {
   originalFileName: string;
   originalSha256: string;
   originalByteLength: number;
-  originalAvailability: 'LOCAL_REFERENCE_ONLY';
+  originalAvailability: 'LOCAL_REFERENCE_ONLY' | 'HOST_FILE_SERVICE';
   sourceObservedAt: string | null;
   sourceObservedDate: string | null;
   sourceTimeZone: string | null;
@@ -37,6 +31,7 @@ export interface LcmSnapshotSummary {
   sourceEffectiveAt: null;
   coveredAircraftModels: string[];
   coveredAircraftCount: number;
+  /** Native source data rows (the matrix body carries exact row/column coordinates). */
   recordCount: number;
   completeness: 'UNVERIFIED';
   sourceAuthority: 'unverified/local';
@@ -46,13 +41,6 @@ export interface LcmSnapshotSummary {
 
 export interface LcmSnapshotCatalogueResponse {
   snapshots: LcmSnapshotSummary[];
-  hasMore: boolean;
-  nextAfter: string | null;
-}
-
-export interface LcmSnapshotRowsResponse {
-  snapshot: LcmSnapshotSummary;
-  records: LcmCandidateRecord[];
   hasMore: boolean;
   nextAfter: string | null;
 }

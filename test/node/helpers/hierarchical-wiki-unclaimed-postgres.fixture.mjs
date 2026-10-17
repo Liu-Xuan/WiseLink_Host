@@ -35,6 +35,7 @@ export async function configureUnclaimedWikiPostgres(admin) {
   );
   for (const name of [
     'native_app_shared_read_allowed',
+    'native_app_work_item_readable',
     'native_app_document_readable',
   ]) {
     const statement = nativeRead.match(
@@ -176,6 +177,14 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
     executionModelJson: row.execution_model_json,
     principalId: row.summary_delegated_principal_id,
   });
+  const scheduling = (state) => ({
+    retryCount: state.retryCount,
+    blocked: state.blocked,
+    dueAt: state.dueAt,
+    versions: state.versions,
+    waiting: state.waiting,
+    desiredGeneration: state.desiredGeneration,
+  });
   const prepare = async (admittedAt = Date.now()) => {
     await f.admin`UPDATE hierarchical_wiki_scope SET enabled=false`;
     const actorId = `wiki-pg-${++caseNumber}`;
@@ -194,6 +203,7 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
       ),
     );
     const root = first.items.find((item) => item.scope.kind === 'FLEET');
+    assert.equal(root.activeRequest, null);
     await browser(actor, () =>
       f.wiki.classify(
         root.summaryId,
@@ -245,12 +255,18 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
     'real GET expiration CAS is idempotent under competing physical readers',
     async () => {
       const p = await prepare(Date.now() - 2 * 60 * 60_000);
+      const original = await registry(p);
+      const before = { ...original.state_json, retryCount: 2 };
+      await f.admin`UPDATE hierarchical_wiki_scope SET state_json=${f.admin.json(before)}
+        WHERE summary_id=${p.target.summaryId}`;
       const [one, two] = await Promise.all([
         read(p),
         read(p, f.concurrentWiki),
       ]);
       assert.equal(item(one, p).errorCode, 'DERIVED_SUMMARY_DEADLINE_EXCEEDED');
       assert.equal(item(two, p).errorCode, 'DERIVED_SUMMARY_DEADLINE_EXCEEDED');
+      assert.equal(item(one, p).activeRequest, null);
+      assert.equal(item(two, p).activeRequest, null);
       const expired = await attempt(p),
         retried = await registry(p);
       assert.equal(expired.status, 'TIMED_OUT');
@@ -260,7 +276,8 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
       assert.ok(expired.completed_at);
       assert.deepEqual(frozen(expired), frozen(p.before));
       assert.equal(retried.state_json.active, null);
-      assert.equal(retried.state_json.retryCount, 1);
+      assert.equal(retried.state_json.retryCount, 2);
+      assert.deepEqual(scheduling(retried.state_json), scheduling(before));
       await read(p);
       await read(p);
       assert.equal((await attempt(p)).row_version, expired.row_version);
@@ -270,32 +287,54 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
       assert.equal(count.n, 1);
       record('GET expiration + concurrent/repeated idempotency', {
         statusAfter: expired.status,
-        retryCount: 1,
+        retryCount: 2,
         immutableOriginalPreserved: true,
       });
     },
   );
 
   await t.test(
-    'normal next expires the old reservation and preserves original failure/model/source seals',
+    'normal next preserves retry two, re-reserves once in the same tick and reuses the new request',
     async () => {
       const p = await prepare(Date.now() - 2 * 60 * 60_000);
+      const original = await registry(p);
+      const before = { ...original.state_json, retryCount: 2,
+        dueAt: new Date(Date.now() - 1000).toISOString() };
+      await f.admin`UPDATE hierarchical_wiki_scope SET state_json=${f.admin.json(before)}
+        WHERE summary_id=${p.target.summaryId}`;
       await f.admin`UPDATE action_attempt SET error_code='WIKI_FIXTURE_ORIGINAL_CAUSE',terminal_reason='ORIGINAL_FIXTURE_REASON'
       WHERE operation_ref=${p.target.attemptRef}`;
-      await hosted(() => f.wiki.next());
+      const next = await hosted(() => f.wiki.next());
       const expired = await attempt(p),
         r = await registry(p);
       assert.equal(expired.status, 'TIMED_OUT');
       assert.equal(expired.error_code, 'WIKI_FIXTURE_ORIGINAL_CAUSE');
       assert.equal(expired.terminal_reason, 'ORIGINAL_FIXTURE_REASON');
       assert.deepEqual(frozen(expired), frozen(p.before));
-      assert.equal(r.state_json.active, null);
+      assert.equal(next.status, 'SUMMARY_PENDING');
+      assert.equal(next.summaryId, p.target.summaryId);
+      assert.notEqual(next.attemptRef, p.target.attemptRef);
+      assert.equal(r.state_json.active.attemptRef, next.attemptRef);
+      assert.deepEqual(scheduling(r.state_json), scheduling(before));
+      assert.equal(item(await read(p), p).activeRequest.attemptRef, next.attemptRef);
+      const again = await hosted(() => f.wiki.next());
+      assert.equal(again.status, 'SUMMARY_PENDING');
+      assert.equal(again.summaryId, next.summaryId);
+      assert.equal(again.attemptRef, next.attemptRef);
+      assert.deepEqual(scheduling((await registry(p)).state_json), scheduling(before));
+      const [count] = await f.admin`SELECT count(*)::int AS n FROM action_attempt
+        WHERE summary_id=${p.target.summaryId}`;
+      assert.equal(count.n, 2);
       assert.equal(
         r.state_json.lastAttemptErrorCode,
         'WIKI_FIXTURE_ORIGINAL_CAUSE',
       );
-      record('next expiration preserves original cause and frozen input', {
+      record('next expiration preserves budget/input and re-reserves exactly once', {
         statusAfter: expired.status,
+        retryCount: r.state_json.retryCount,
+        sameTickNewReservation: true,
+        secondNextReusesReservation: true,
+        originalCauseAndSealsPreserved: true,
       });
     },
   );
@@ -304,9 +343,67 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
     'unexpired QUEUED stays queued without extending or rewriting the immutable original',
     async () => {
       const p = await prepare();
-      assert.equal(item(await read(p), p).state, 'QUEUED');
+      const listed = item(await read(p), p);
+      assert.equal(listed.state, 'QUEUED');
+      assert.deepEqual(listed.activeRequest, {
+        requestId: p.before.trigger_request_id,
+        attemptRef: p.target.attemptRef,
+        status: 'QUEUED',
+        claimCount: 0,
+        executorSessionKey: null,
+      });
+      const exact = await browser(p.actor, () =>
+        f.summaries.status(
+          listed.summaryId,
+          listed.activeRequest.attemptRef,
+          p.actor,
+        ),
+      );
+      assert.equal(exact.attemptRef, listed.activeRequest.attemptRef);
+      assert.equal(exact.summaryId, listed.summaryId);
+      assert.equal(exact.status, listed.activeRequest.status);
+      await assert.rejects(
+        browser(p.actor, () =>
+          f.summaries.status(listed.summaryId, 'AQ-unrelated-fixture', p.actor),
+        ),
+        (error) => error.message === 'DERIVED_SUMMARY_ATTEMPT_UNAVAILABLE',
+      );
+
+      // The read model distinguishes an absent legacy counter from a real zero.
+      const originalAttempt = f.repository.attempt.bind(f.repository);
+      try {
+        f.repository.attempt = async (...args) => {
+          const value = await originalAttempt(...args);
+          return value.operationRef === p.target.attemptRef
+            ? { ...value, claimCount: undefined, executorSessionKey: undefined }
+            : value;
+        };
+        const missing = item(await read(p), p).activeRequest;
+        assert.equal(missing.claimCount, null);
+        assert.equal(missing.executorSessionKey, null);
+        f.repository.attempt = async (...args) => {
+          const value = await originalAttempt(...args);
+          return value.operationRef === p.target.attemptRef
+            ? { ...value, triggerRequestId: 'different-current-request-fixture' }
+            : value;
+        };
+        await assert.rejects(
+          read(p),
+          (error) => error.message === 'WIKI_ATTEMPT_BINDING_MISMATCH',
+        );
+      } finally {
+        f.repository.attempt = originalAttempt;
+      }
       const row = await attempt(p),
         r = await registry(p);
+      await f.admin`UPDATE hierarchical_wiki_scope SET state_json=${f.admin.json({
+        ...r.state_json,
+        lastAttemptErrorCode: 'DERIVED_SUMMARY_DEADLINE_EXCEEDED',
+      })} WHERE summary_id=${p.target.summaryId}`;
+      const priorError = item(await read(p), p);
+      assert.equal(priorError.errorCode, 'DERIVED_SUMMARY_DEADLINE_EXCEEDED');
+      assert.equal(priorError.activeRequest.status, 'QUEUED');
+      assert.equal(priorError.activeRequest.attemptRef, p.target.attemptRef);
       const next = await hosted(() => f.wiki.next());
       assert.equal(next.attemptRef, p.target.attemptRef);
       await read(p);
@@ -316,7 +413,12 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
         r.state_json.active.attemptRef,
       );
       assert.deepEqual(frozen(await attempt(p)), frozen(p.before));
-      record('unexpired QUEUED unchanged', { presentedState: 'QUEUED' });
+      record('unexpired QUEUED unchanged', {
+        presentedState: 'QUEUED',
+        exactStatusBinding: true,
+        missingMetadataNull: true,
+        mismatchedRequestRejected: true,
+      });
     },
   );
 
@@ -325,7 +427,8 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
     async () => {
       const p = await prepare(Date.now() - 2 * 60 * 60_000);
       const other = f.nativeActor('other-actor', f.owner.tenantId);
-      await browser(other, () => f.wiki.list(other));
+      const otherListing = await browser(other, () => f.wiki.list(other));
+      assert.equal(item(otherListing, p)?.activeRequest ?? null, null);
       await browser(other, () =>
         f.repository.browser(other, async (database) => {
           const [role] =
@@ -400,6 +503,7 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
       const blocked = item(await read(p), p);
       assert.equal(blocked.state, 'BLOCKED');
       assert.equal(blocked.errorCode, 'DERIVED_SUMMARY_ATTEMPT_UNAVAILABLE');
+      assert.equal(blocked.activeRequest, null);
       assert.equal((await attempt(p)).row_version, p.before.row_version);
       assert.equal(
         (await registry(p)).state_json.active.attemptRef,
@@ -459,6 +563,13 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
         assert.equal(row.status, 'RUNNING');
         assert.equal(row.claim_count, 1);
         assert.equal(row.lease_generation, 1);
+        assert.deepEqual(item(listed.value, p).activeRequest, {
+          requestId: row.trigger_request_id,
+          attemptRef: row.operation_ref,
+          status: row.status,
+          claimCount: row.claim_count,
+          executorSessionKey: row.executor_session_key,
+        });
         assert.deepEqual(frozen(row), frozen(p.before));
         assert.equal(
           (await registry(p)).state_json.active.attemptRef,
@@ -526,7 +637,7 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
         assert.equal(claimed.error?.message, 'DERIVED_SUMMARY_TIMED_OUT');
         assert.equal((await attempt(p)).status, 'TIMED_OUT');
         assert.equal((await attempt(p)).claim_count, 0);
-        assert.equal((await registry(p)).state_json.retryCount, 1);
+        assert.equal((await registry(p)).state_json.retryCount, 0);
         record(
           'GET timeout wins actual row lock and competing CLAIM cannot revive',
           { claimError: claimed.error.message },

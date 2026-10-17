@@ -32,7 +32,28 @@ export async function consumeHostedMatter(options, dependencies) {
     if (current.current === null) return { status: 'PREFLIGHT_NO_WORK', ...summary };
     if (options.matterPreflightOnly) return { status: 'PREFLIGHT_READY', ...summary };
   }
-  const pending = await dependencies.callTool('next_matter_assessment', { matterId: options.matterId });
+  const locatorCheckpoint = options.checkpointRoot
+    ? await (dependencies.createCheckpoint ?? createCheckpointStore)(join(options.checkpointRoot, 'matter', encodeURIComponent(options.matterId)))
+    : null;
+  if (locatorCheckpoint && await locatorCheckpoint.readOptional('pending-finish') !== null) {
+    const recovered = await locatorCheckpoint.withActiveClaimOwner(async () => {
+      const locator = await locatorCheckpoint.readOptional('pending-finish');
+      if (locator === null) return null;
+      const { target, result } = await readPendingFailedFinish(options, dependencies, locator);
+      const status = await readFailedFinishStatus(dependencies, target, result);
+      if (status.status === 'FAILED' && status.resultContentHash === result.contentHash)
+        return confirmFailedFinish(locatorCheckpoint, locator, target, result);
+      if (!['RUNNING', 'COMMITTING'].includes(status.status)) throw new Error('MATTER_FINISH_RECOVERY_REQUIRES_ATTENTION');
+      return consumeMatterAttempt(options, dependencies, locatorCheckpoint, { target, locator, status: status.status });
+    });
+    if (recovered !== null) return recovered;
+  }
+  return consumeMatterAttempt(options, dependencies, locatorCheckpoint);
+}
+
+async function consumeMatterAttempt(options, dependencies, locatorCheckpoint, recovery = null) {
+  const pending = recovery ? { matterId: options.matterId, next: { ...recovery.target, status: recovery.status } }
+    : await dependencies.callTool('next_matter_assessment', { matterId: options.matterId });
   if (pending?.matterId !== options.matterId) throw new Error('MATTER_PENDING_BINDING_MISMATCH');
   if (!pending.next) return { status: 'IDLE', matterId: options.matterId };
   const target = { matterId: options.matterId, attemptRef: pending.next.attemptRef };
@@ -89,6 +110,8 @@ export async function consumeHostedMatter(options, dependencies) {
       workRevisionRef: finished.workRevisionRef, candidateOnly: true, overallReviewPending: true };
   }
   let result = claim.recoveryResult ?? await checkpoint.readOptional('finish-result');
+  if (recovery && (!result || result.status !== 'FAILED' || result.contentHash !== recovery.locator.contentHash))
+    throw new Error('MATTER_RESULT_BINDING_MISMATCH');
   const recoveredResult = Boolean(result);
   if (!result && claim.status === 'COMMITTING') throw new Error('MATTER_RECOVERY_RESULT_MISSING');
   if (!result) {
@@ -169,7 +192,12 @@ export async function consumeHostedMatter(options, dependencies) {
           await checkpoint.remoteStep({ step: 'model', args: { inputHash: task.inputHash }, ambiguousCommit: false, perform });
       } catch (error) {
         const failure = error?.terminalAssessmentFailure;
-        if (!['JOBAID_INCOMPLETE_TERMINAL_RESPONSE', 'JOBAID_MODEL_OUTPUT_LENGTH', 'JOBAID_WORK_VALIDATION_FAILED', 'JOBAID_WORK_JSON_INVALID'].includes(failure?.errorCode)) throw error;
+        const knownFailure = [
+          'JOBAID_MODEL_OUTPUT_LENGTH', 'JOBAID_WORK_VALIDATION_FAILED', 'JOBAID_WORK_JSON_INVALID',
+          'JOBAID_PROTOCOL_REPAIR_EXHAUSTED', 'JOBAID_NO_PROGRESS',
+        ].includes(failure?.errorCode) || (failure?.errorCode === 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE' &&
+          error?.message === 'JOBAID_MODEL_OUTPUT_FUNCTION_INVALID');
+        if (!knownFailure) throw error;
         validateRuntimeProvenance(failure.provenance);
         execution = { failureCode: failure.errorCode, provenance: failure.provenance };
       }
@@ -192,24 +220,77 @@ export async function consumeHostedMatter(options, dependencies) {
   if (result.operationRef !== target.attemptRef || result.subject?.matterId !== target.matterId ||
     result.actionAttemptId !== task.actionAttemptId || result.baseRevision !== task.baseRevision ||
     canonicalSha256(body) !== contentHash) throw new Error('MATTER_RESULT_BINDING_MISMATCH');
-  if (recoveredResult) {
-    const status = await dependencies.callTool('matter_action_attempt', { ...target, operation: 'STATUS' });
-    if (status.attemptRef !== target.attemptRef ||
+  const finish = async () => {
+    const locator = { ...binding, contentHash };
+    if (result.status === 'FAILED') {
+      const pendingFinish = await locatorCheckpoint.readOptional('pending-finish');
+      if ((pendingFinish !== null && canonicalSha256(pendingFinish) !== canonicalSha256(locator)) ||
+          (recovery && canonicalSha256(recovery.locator) !== canonicalSha256(locator)))
+        throw new Error('MATTER_FINISH_LOCATOR_CONFLICT');
+      // This is only an exact locator. Host STATUS and the original lease still authorize every operation.
+      if (pendingFinish === null) await locatorCheckpoint.write('pending-finish', locator);
+    }
+    if (recoveredResult) {
+      const status = result.status === 'FAILED' ? await readFailedFinishStatus(dependencies, target, result)
+        : await dependencies.callTool('matter_action_attempt', { ...target, operation: 'STATUS' });
+      if (status.attemptRef !== target.attemptRef ||
+        (status.resultContentHash && status.resultContentHash !== result.contentHash)) throw new Error('MATTER_RESULT_BINDING_MISMATCH');
+      if (status.status === result.status && status.resultContentHash === result.contentHash)
+        return result.status === 'FAILED'
+          ? confirmFailedFinish(locatorCheckpoint, locator, target, result)
+          : { status: savedStatus, ...target, workRevisionRef: JSON.parse(result.modelOutput).workRevisionRef, candidateOnly: true };
+      if (!['RUNNING', 'COMMITTING'].includes(status.status)) throw new Error('MATTER_FINISH_RECOVERY_REQUIRES_ATTENTION');
+    }
+    const finished = await call('FINISH', { result });
+    if (result.status === 'FAILED') {
+      if (finished.status !== 'FAILED' || finished.attemptRef !== target.attemptRef) throw new Error('MATTER_FINISH_READBACK_MISMATCH');
+      const status = await readFailedFinishStatus(dependencies, target, result);
+      if (status.status !== 'FAILED' || status.resultContentHash !== contentHash) throw new Error('MATTER_FINISH_READBACK_MISMATCH');
+      return confirmFailedFinish(locatorCheckpoint, locator, target, result);
+    }
+    if (finished.status !== 'SUCCEEDED' || finished.attemptRef !== target.attemptRef ||
+      finished.workRevisionRef !== JSON.parse(result.modelOutput).workRevisionRef) throw new Error('MATTER_FINISH_READBACK_MISMATCH');
+    return { status: savedStatus, ...target, workRevisionRef: finished.workRevisionRef, candidateOnly: true };
+  };
+  return result.status === 'FAILED' && !recovery ? locatorCheckpoint.withActiveClaimOwner(finish) : finish();
+}
+
+async function readPendingFailedFinish(options, dependencies, locator) {
+  if (!locator || Object.keys(locator).sort().join(',') !== 'attemptRef,contentHash,inputHash,matterId' ||
+      locator.matterId !== options.matterId || typeof locator.attemptRef !== 'string' || !locator.attemptRef ||
+      typeof locator.inputHash !== 'string' || !locator.inputHash || !/^[a-f0-9]{64}$/u.test(locator.contentHash))
+    throw new Error('MATTER_FINISH_LOCATOR_INVALID');
+  const { contentHash, ...binding } = locator;
+  const target = { matterId: binding.matterId, attemptRef: binding.attemptRef };
+  const checkpoint = await (dependencies.createCheckpoint ?? createCheckpointStore)(join(options.checkpointRoot, 'matter',
+    encodeURIComponent(target.matterId), encodeURIComponent(target.attemptRef)));
+  if (canonicalSha256(await checkpoint.readOptional('binding')) !== canonicalSha256(binding))
+    throw new Error('MATTER_CHECKPOINT_BINDING_MISMATCH');
+  const result = await checkpoint.readOptional('finish-result');
+  if (!result) throw new Error('MATTER_RECOVERY_RESULT_MISSING');
+  const { contentHash: resultHash, ...body } = result;
+  if (resultHash !== contentHash || canonicalSha256(body) !== contentHash || result.status !== 'FAILED' ||
+      result.schemaVersion !== 'wiselink.3_1.openclaw_result_envelope.v2' || result.taskType !== 'OPENCLAW_MATTER_ASSESSMENT' ||
+      result.subject?.kind !== 'ENGINEERING_MATTER' || result.subject.matterId !== target.matterId ||
+      result.operationRef !== target.attemptRef || typeof result.errorCode !== 'string' || !result.errorCode)
+    throw new Error('MATTER_RESULT_BINDING_MISMATCH');
+  return { target, result };
+}
+
+async function readFailedFinishStatus(dependencies, target, result) {
+  const status = await dependencies.callTool('matter_action_attempt', { ...target, operation: 'STATUS' });
+  if (!status || status.matterId !== target.matterId || status.attemptRef !== target.attemptRef ||
       (status.resultContentHash && status.resultContentHash !== result.contentHash)) throw new Error('MATTER_RESULT_BINDING_MISMATCH');
-    if (status.status === result.status && status.resultContentHash === result.contentHash)
-      return result.status === 'FAILED'
-        ? { status: 'MATTER_ASSESSMENT_FAILED', ...target, errorCode: result.errorCode }
-        : { status: savedStatus, ...target, workRevisionRef: JSON.parse(result.modelOutput).workRevisionRef, candidateOnly: true };
-    if (!['RUNNING', 'COMMITTING'].includes(status.status)) throw new Error('MATTER_FINISH_RECOVERY_REQUIRES_ATTENTION');
-  }
-  const finished = await call('FINISH', { result });
-  if (result.status === 'FAILED') {
-    if (finished.status !== 'FAILED' || finished.attemptRef !== target.attemptRef) throw new Error('MATTER_FINISH_READBACK_MISMATCH');
-    return { status: 'MATTER_ASSESSMENT_FAILED', ...target, errorCode: result.errorCode };
-  }
-  if (finished.status !== 'SUCCEEDED' || finished.attemptRef !== target.attemptRef ||
-    finished.workRevisionRef !== JSON.parse(result.modelOutput).workRevisionRef) throw new Error('MATTER_FINISH_READBACK_MISMATCH');
-  return { status: savedStatus, ...target, workRevisionRef: finished.workRevisionRef, candidateOnly: true };
+  return status;
+}
+
+async function confirmFailedFinish(checkpoint, locator, target, result) {
+  if (canonicalSha256(await checkpoint.readOptional('pending-finish')) !== canonicalSha256(locator))
+    throw new Error('MATTER_FINISH_LOCATOR_CONFLICT');
+  // A failed local cleanup cannot undo the authorized Host receipt; a retained locator can be checked again.
+  await checkpoint.writeAuxiliary('pending-finish', null);
+  return { status: 'MATTER_ASSESSMENT_FAILED', ...target, errorCode: result.errorCode,
+    ...(checkpoint.diagnostics.length ? { localCheckpointWarnings: [...checkpoint.diagnostics] } : {}) };
 }
 
 function modelWork(content) {

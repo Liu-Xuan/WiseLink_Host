@@ -1,6 +1,6 @@
 import type { DerivedSummaryMember, DerivedSummaryScopeSelection } from '@shared/derived-summary.interface';
 import type { EngineeringKnowledgeRead } from '@shared/engineering-issue-search.interface';
-import { knowledgeReadingReturnRoute } from '@client/src/features/matter/reading-return';
+import { knowledgeReadingReturnRoute, readingReturnTarget } from '@client/src/features/matter/reading-return';
 
 const summaryBoilerplate = new Set([
   '仅覆盖显式选取的精确保存成员；未选成员、其他ATA和其他机型均未覆盖。',
@@ -14,6 +14,19 @@ export function summaryReadingLimitations(values: string[]): string[] {
 
 /** Continue only the existing, validated knowledge return state through internal reading links. */
 export function summaryReadingRoute(route: string, params: URLSearchParams): string {
+  if (params.has('returnWikiGuideQuery')) {
+    const target = readingReturnTarget(params, undefined, null, undefined, undefined, '/summaries/selected');
+    const [path, raw = ''] = route.split('?');
+    if (!target || !(/^\/summaries\/(?!new(?:$|\/))[^/]+$/u.test(path) || /^\/document-versions\/[^/]+$/u.test(path) || path === '/knowledge')) return route;
+    const query = new URLSearchParams(raw);
+    if ([...query.keys()].some(key => key.startsWith('return'))) return route;
+    if (path.startsWith('/document-versions/')) {
+      try { query.set('returnDocumentVersionId', decodeURIComponent(path.slice('/document-versions/'.length))); }
+      catch { return route; }
+    }
+    query.set('returnWikiGuideQuery', params.get('returnWikiGuideQuery')!);
+    return `${path}?${query}`;
+  }
   const knowledgeReturn = knowledgeReadingReturnRoute(params);
   if (!knowledgeReturn || (!route.startsWith('/summaries/') && !route.startsWith('/document-versions/'))) return route;
   const index = route.indexOf('?');

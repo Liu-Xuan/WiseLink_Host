@@ -139,7 +139,7 @@ export function derivedSummaryRegistry(modelInput) {
     if (!object(item) || !text(item.evidenceRef)) fail('DERIVED_SUMMARY_EVIDENCE_INVALID');
     const previous = evidence.get(item.evidenceRef);
     if (previous && !sameSummaryEvidence(previous, item)) fail('DERIVED_SUMMARY_EVIDENCE_IDENTITY_DRIFT');
-    if (!previous || item.kind !== 'TDMS_NATIVE_RECORD') evidence.set(item.evidenceRef, item);
+    if (!previous) evidence.set(item.evidenceRef, item);
   }
   if ([...members.keys()].some(ref => evidence.has(ref))) fail('DERIVED_SUMMARY_REF_KIND_COLLISION');
   return { members, evidence };

@@ -1,3 +1,5 @@
+import type { JobAidWorkRevision } from '../../shared/jobaid-problem-assessment.interface';
+import { JOBAID_METHOD_BINDING } from '../../server/modules/canonical-host/jobaid-method-pack';
 import type {
   CanonicalApplicabilityCandidateProjection,
   CanonicalApplicabilityInputProjection,
@@ -11,6 +13,7 @@ import {
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 import type {
   OpenClawResultEnvelope,
+  OpenClawModelResultEnvelope,
   OpenClawTaskEnvelope,
 } from '../../server/modules/action-attempt/action-attempt-envelope.types';
 import type {
@@ -37,6 +40,7 @@ import { assertJobAidProblemTaskBinding, buildJobAidProblemTask } from '../../se
 import { overallModelEvidenceRegistry } from '../../server/modules/canonical-host/overall-assessment-reading';
 import { projectCommonAssessmentContext } from '../../server/modules/canonical-host/canonical-host-common-context.service';
 import type { AssessmentEvidence } from '../../shared/assessment-reading.interface';
+import { DocumentManagementHostedService } from '../../server/modules/document-management/src/hosted/nest/document-management-hosted.service';
 
 describe('CanonicalHostOpenClawReviewService', () => {
   it.each([undefined, 'SOURCE_CONTEXT_V1', 'SOURCE_CONTEXT_V2'] as const)(
@@ -646,6 +650,59 @@ describe('CanonicalHostOpenClawReviewService', () => {
           },
         },
       ],
+    });
+  });
+
+  describe('exact edition selections through normal Review resource merge', () => {
+    const oldSandbox = process.env.SANDBOX_ID;
+    const oldLocal = process.env.MIAODA_LOCAL_DEV;
+    beforeAll(() => { process.env.SANDBOX_ID = 'review-edition-unit'; delete process.env.MIAODA_LOCAL_DEV; });
+    afterAll(() => {
+      if (oldSandbox === undefined) delete process.env.SANDBOX_ID; else process.env.SANDBOX_ID = oldSandbox;
+      if (oldLocal === undefined) delete process.env.MIAODA_LOCAL_DEV; else process.env.MIAODA_LOCAL_DEV = oldLocal;
+    });
+
+    const exactHarness = () => {
+      const harness = reviewHarness(false, true);
+      harness.reader!.readAllSourceUnits.mockResolvedValue([{
+        unitId: 'UNIT-REL-1', kind: 'paragraph', sourceRefIds: ['SRC-REL'],
+        text: 'Service Letter 777-SL-31-064; Service Letter 777-SL-31-064 Original Issue; Service Letter 777-SL-31-064 R0.',
+      }]);
+      const dm = new DocumentManagementHostedService({ from: () => {
+        throw new Error('CATALOG_SELECTION_MUST_NOT_READ_FILES');
+      } } as never, { listIngressDocuments: jest.fn(async () => [{
+        familyId: 'FAMILY-SL-1', documentVersionId: 'DV-SL-1', versionStatus: 'CANONICAL_CURRENT',
+        detail: { documentCode: '777-SL-31-064', documentFamily: 'SL', issuerAuthority: 'BOEING', businessRevision: 'ORIGINAL ISSUE' },
+      }]) } as never, {} as never);
+      Object.assign(harness.commonContext, { documentManagement: dm });
+      return harness;
+    };
+
+    it('keeps default and two equivalent edition requests while registering their exact source once', async () => {
+      const harness = exactHarness();
+      const begin = await harness.service.begin('RC-1', 'request-1');
+      const contract = parseReviewTurnTaskContract(begin.task.modelInput);
+      expect(contract.resourceRefs.filter(item => item.sourceRefId === 'TARGET-SRC-1')).toHaveLength(1);
+      expect(contract.resourceRefs.find(item => item.sourceRefId === 'TARGET-SRC-1')?.value.relatedDocument)
+        .not.toHaveProperty('requestedBusinessRevision');
+      expect(begin.task.modelInput.context).toMatchObject({ relatedContext: { items: [
+        expect.objectContaining({ resolvedDocumentVersionRef: 'DV-SL-1' }),
+        expect.objectContaining({ requestedBusinessRevision: 'ORIGINAL ISSUE', resolvedDocumentVersionRef: 'DV-SL-1' }),
+        expect.objectContaining({ requestedBusinessRevision: 'R0', resolvedDocumentVersionRef: 'DV-SL-1' }),
+      ] } });
+      await expect(harness.service.readSourceRefs('AQ-REVIEW-1', ['TARGET-SRC-1'])).resolves.toMatchObject({
+        sourceRefs: [{ sourceRefId: 'TARGET-SRC-1', relatedDocument: { documentVersionRef: 'DV-SL-1' } }],
+      });
+    });
+
+    it('still rejects a genuine SourceRef collision with a different primary artifact', async () => {
+      const harness = exactHarness();
+      const originalRead = harness.artifactStore.readActualBytes.getMockImplementation()!;
+      harness.artifactStore.readActualBytes.mockImplementation(async artifact => artifact.ref === 'artifact://related-package'
+        ? new TextEncoder().encode(JSON.stringify({ sourceRefs: [{ sourceRefId: 'SRC-1', pageStart: 1, pageEnd: 1,
+          quote: 'A different registered source value.' }] })) : originalRead(artifact));
+      await expect(harness.service.begin('RC-1', 'request-1')).rejects.toThrow('REVIEW_RESOURCE_REF_COLLISION');
+      expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
     });
   });
 
@@ -1602,7 +1659,7 @@ function reviewHarness(
     : undefined;
   const documentManagement = withRelatedContext
     ? {
-        listCurrentReferenceTargets: jest.fn(async () => [
+        listReferenceTargets: jest.fn(async () => [
           {
             familyId: 'FAMILY-SL-1',
             documentVersionId: 'DV-SL-1',
@@ -1669,6 +1726,9 @@ function reviewHarness(
       callback(executor),
     ),
   };
+  const commonContext = new CanonicalHostCommonContextService(
+    conversations as never, workItems as never, artifactStore as never, reader as never, documentManagement as never,
+  );
   const service = new CanonicalHostOpenClawReviewService(
     conversations as never,
     workItems as never,
@@ -1678,18 +1738,13 @@ function reviewHarness(
     artifactStore as never,
     serviceScope as never,
     dispatch as never,
-    new CanonicalHostCommonContextService(
-      conversations as never,
-      workItems as never,
-      artifactStore as never,
-      reader as never,
-      documentManagement as never,
-    ),
+    commonContext,
     matterWorking as never,
     matterRepository as never,
   );
   return {
     service,
+    commonContext,
     dispatch,
     attempts,
     conversations,
@@ -1724,7 +1779,7 @@ function reviewHarness(
       modelVersion: string = 'GLM-5.3',
       profileRef: string = REVIEW_PROFILE_REF,
       withDraft: boolean = false,
-    ): OpenClawResultEnvelope {
+    ): OpenClawModelResultEnvelope {
       return sealResultEnvelope({
         schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',
         actionAttemptId: selectedTask.actionAttemptId,
@@ -1857,7 +1912,7 @@ function initialMatterDelta(
 }
 
 function matterResult(
-  result: OpenClawResultEnvelope,
+  result: OpenClawModelResultEnvelope,
   delta: MatterWorkingDeltaProposal,
 ): OpenClawResultEnvelope {
   const { contentHash: _hash, ...fields } = result;
@@ -2088,3 +2143,580 @@ function matchingApplicabilityResult(
     },
   };
 }
+
+
+// C309 service wiring only: existing public begin/read/commit paths with unit
+// ports. The transaction object is an identity sentinel, not SQL/PG/auth proof.
+async function c309ReviewHarness() {
+  const h = reviewHarness();
+  const binding = await h.conversations.loadOpenClawTurnBinding();
+  const requestRef = '44444444-4444-4444-8444-444444444444';
+  const contributionRef = '22222222-2222-4222-8222-222222222222';
+  const selectedText = '原前提仍需要受控证据，本次摘录没有证明已经执行。';
+  Object.assign(binding.turn, {
+    purpose: 'UPDATE_ASSESSMENT',
+    requestId: `dialogue-${requestRef}`,
+  });
+  const loaded = await h.workItems.loadTenantScopedProjection('WI-1');
+  loaded.projection.integratedAssessment = null;
+  const item = parsedWorkItem();
+  const previous: JobAidWorkRevision = {
+    workRevisionRef: 'JAWR-C309-4',
+    workItemId: 'WI-1',
+    workRevision: 4,
+    previousWorkRevisionRef: null,
+    requestId: 'original-save',
+    actionAttemptId: 'ATT-ORIGINAL',
+    basedOnWorkItemRevision: 7,
+    documentVersionId: 'DV-1',
+    createdAt: '2026-08-25T10:00:00Z',
+    content: {
+      schemaVersion: 'wiselink.jobaid-problem-work.v3' as const,
+      headline: '原有条件',
+      listBrief: '执行证据仍未知',
+      understanding: '不能根据摘录确认实际执行。',
+      decisiveIssueKeys: [],
+      overviewStatus: 'CURRENT' as const,
+      issues: [],
+      roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS' as const,
+      completionReason: '保留未决条件',
+      changeSummary: '原工作',
+      unchangedExplanation: '保留已有未知',
+      methodBinding: structuredClone(JOBAID_METHOD_BINDING),
+      evidence: [],
+      readSourceRefs: [],
+      capabilities: [],
+      historyReview: {
+        required: false,
+        priorAssessmentRefs: [],
+        engineeringDocumentRefs: [],
+        coverage: 'NOT_REQUIRED' as const,
+        limitation: null,
+      },
+    },
+  };
+  const document: AssessmentEvidence = {
+    kind: 'DOCUMENT_PASSAGE',
+    evidenceRef: 'source:DV-1:SRC-1',
+    workItemId: 'WI-1',
+    documentVersionId: 'DV-1',
+    sourceRefId: 'SRC-1',
+    title: '受控原文',
+    versionLabel: 'Original',
+    excerpt: '执行资格仍有条件。',
+    locator: 'page 1',
+  };
+  const prepared = buildJobAidProblemTask({
+    workItem: item,
+    actorUserId: 'actor-1',
+    permissionSnapshotVersion: 'unit-permission',
+    purpose: 'PROBLEM_REVIEW',
+    sourceCatalog: [document],
+    sourceBindings: [
+      {
+        workItemId: 'WI-1',
+        documentVersionId: 'DV-1',
+        artifactRef: item.package!.artifact.ref,
+        artifactSha256: item.package!.artifact.sha256,
+      },
+    ],
+    common: projectCommonAssessmentContext(
+      item,
+      {
+        context: { status: 'UNAVAILABLE', reason: 'UNIT_ONLY' },
+        documentReadingStatus: 'AVAILABLE',
+        items: [],
+        sections: [],
+        resourceRefs: [],
+      },
+      [],
+    ),
+    previousWork: null,
+    expectedWorkRevision: 0,
+    priorAssessmentRefs: [],
+  });
+  previous.content.methodBinding = structuredClone(
+    prepared.modelInput.methodBinding,
+  );
+  const jobAid = {
+    enabledForNewTasks: () => true,
+    prepareReview: jest.fn(async (input: { evidence: AssessmentEvidence[] }) =>
+      buildJobAidProblemTask({
+        workItem: item,
+        actorUserId: 'actor-1',
+        permissionSnapshotVersion: 'unit-permission',
+        purpose: 'PROBLEM_REVIEW',
+        sourceCatalog: [document, ...input.evidence],
+        sourceBindings: prepared.sourceBindings,
+        common: projectCommonAssessmentContext(
+          item,
+          {
+            context: { status: 'UNAVAILABLE', reason: 'UNIT_ONLY' },
+            documentReadingStatus: 'AVAILABLE',
+            items: [],
+            sections: [],
+            resourceRefs: [],
+          },
+          [],
+        ),
+        previousWork: previous,
+        expectedWorkRevision: 4,
+        priorAssessmentRefs: [],
+      }),
+    ),
+    assertReviewSources: jest.fn(
+      async (input: Parameters<typeof assertJobAidProblemTaskBinding>[0]) =>
+        assertJobAidProblemTaskBinding(input),
+    ),
+    prepareReviewWork: jest.fn(),
+    assertReviewWorkUnchanged: jest.fn(
+      async (_input: unknown, _database: unknown) => structuredClone(previous),
+    ),
+    saveReviewWork: jest.fn(async (_input: unknown, _database: unknown) => ({
+      revision: {
+        ...structuredClone(previous),
+        workRevisionRef: 'JAWR-C309-5',
+        workRevision: 5,
+      },
+    })),
+    invalidateReviewOverall: jest.fn(async () => true),
+  };
+  const transaction = jest.fn(
+    async (
+      actor: string,
+      operation: (executor: typeof h.executor) => Promise<unknown>,
+    ) => {
+      expect(actor).toBe('actor-1');
+      return operation(h.executor);
+    },
+  );
+  const dialogueAssessments = {
+    findForTurn: jest.fn(async () => ({
+      request_ref: requestRef,
+      request_json: JSON.stringify({ collectionMode: 'ALL_PENDING' }),
+      input_json: JSON.stringify({
+        contextWorkItemIds: ['WI-1'],
+        contributions: [
+          {
+            contributionRef,
+            revision: 2,
+            messageRef: 'message-c309',
+            selectedText,
+            sourcePart: 'USER',
+            kind: 'CORRECTION',
+            origin: 'FEISHU_EXCERPT',
+            sourceContext: [
+              {
+                messageRef: 'message-c309',
+                userText: selectedText,
+                assistantText: null,
+              },
+            ],
+          },
+        ],
+      }),
+    })),
+  };
+  Object.assign(h.service, {
+    jobAid,
+    dialogueAssessments,
+    matterWorkingRepository: { withActorTransaction: transaction },
+  });
+  h.dispatch.recordEvidenceActivity.mockImplementation(
+    async (row: ActionAttemptRow, entry: unknown) => {
+      row.reviewActivityJson = JSON.stringify([
+        ...JSON.parse(row.reviewActivityJson ?? '[]'),
+        entry,
+      ]);
+    },
+  );
+  const begin = await h.service.begin('RC-1', binding.turn.requestId);
+  const state = { row: await h.attempts.readScoped() };
+  h.attempts.readScoped.mockImplementation(async () => state.row);
+  const task = parseReviewTurnTaskContract(begin.task.modelInput);
+  const contribution = task.jobAidContext!.sourceCatalog.find(
+    (entry) => entry.kind === 'ENGINEER_STATEMENT' && entry.dialogueSource,
+  )!;
+  const result = (delta: Record<string, unknown> | null = null) => {
+    const base = h.result(begin.task, {
+      'wiselink-openclaw-engineering-assessment': '1.2.0',
+    });
+    const { contentHash: _hash, ...envelope } = base;
+    return sealResultEnvelope({
+      ...envelope,
+      modelOutput: JSON.stringify({
+        ...JSON.parse(envelope.modelOutput!),
+        schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c5',
+        responseType: 'RESYNTHESIS_RESULT',
+        sourceRefs: [],
+        jobAidWorkingDelta: delta,
+        answer:
+          '已比较当前摘录与准确已存工作，未增加执行证明；原条件、判断和真实未知保留，完成比较但不更改工作。',
+      }),
+    });
+  };
+  const prepare = h.attempts.prepareCommit.getMockImplementation()!;
+  h.attempts.prepareCommit.mockImplementation(async (input) => {
+    const response = await prepare(input);
+    state.row = {
+      ...state.row,
+      status: 'COMMITTING',
+      resultEnvelopeJson: JSON.stringify(input.result),
+      resultContentHash: input.result.contentHash,
+    };
+    return { ...response, row: state.row };
+  });
+  const commit = (sealed = result()) =>
+    h.service.commit(
+      begin.attemptRef,
+      begin.leaseToken,
+      begin.leaseGeneration,
+      sealed,
+      'WI-1',
+    );
+  const read = (refs = [contribution.evidenceRef]) =>
+    h.service.readSourceRefs(begin.attemptRef, refs, 'WI-1');
+  return {
+    h,
+    begin,
+    get row() {
+      return state.row;
+    },
+    task,
+    previous,
+    contribution,
+    document,
+    jobAid,
+    transaction,
+    binding,
+    result,
+    commit,
+    read,
+  };
+}
+
+describe('C309 scoped-0828 service commit', () => {
+  it('freezes actual reads before prepare and checks unchanged work in the same actor transaction without SAVE or invalidation', async () => {
+    const f = await c309ReviewHarness();
+    const values = await f.read();
+    expect(JSON.parse(String(values.sourceRefs[0].excerpt))).toMatchObject({
+      contributionRef: '22222222-2222-4222-8222-222222222222',
+      revision: 2,
+    });
+    const original = JSON.stringify(f.previous);
+    const prepare = f.h.attempts.prepareCommit.getMockImplementation()!;
+    f.h.attempts.prepareCommit.mockImplementation(async (input) => {
+      await f.read([f.document.evidenceRef]);
+      return prepare(input);
+    });
+    const sealed = f.result();
+    const committed = await f.commit(sealed);
+    expect(committed).toMatchObject({
+      status: 'SUCCEEDED',
+      assistantCandidate: {
+        jobAidWorkingUpdate: {
+          status: 'UNCHANGED',
+          workRevisionRef: f.previous.workRevisionRef,
+          workRevision: 4,
+          affectedIssueKeys: [],
+          readSourceRefs: [f.contribution.evidenceRef],
+        },
+      },
+      authority: {
+        staleMarked: false,
+        currentChanged: false,
+        workItemRevisionChanged: false,
+        reviewActionExecuted: false,
+      },
+    });
+    expect(JSON.parse(f.row.reviewActivityJson!)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceRefIds: [f.document.evidenceRef] }),
+      ]),
+    );
+    expect(f.jobAid.assertReviewWorkUnchanged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        row: f.row,
+        task: f.task.jobAidContext,
+        fence: {
+          principalId: 'service:openclaw',
+          leaseToken: f.begin.leaseToken,
+          leaseGeneration: f.begin.leaseGeneration,
+        },
+      }),
+      f.h.executor.database,
+    );
+    const checkedInput = f.jobAid.assertReviewWorkUnchanged.mock.calls[0][0];
+    if (!checkedInput || typeof checkedInput !== 'object')
+      throw new Error('UNIT_UNCHANGED_INPUT_REQUIRED');
+    expect(Reflect.get(checkedInput, 'row')).toBe(f.row);
+    expect(f.row.status).toBe('COMMITTING');
+    expect(
+      f.h.conversations.persistOpenClawAssistantCandidate,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidate: expect.objectContaining({
+          provenance: expect.objectContaining({
+            resultContentHash: sealed.contentHash,
+          }),
+        }),
+      }),
+      f.h.executor.database,
+    );
+    expect(f.jobAid.saveReviewWork).not.toHaveBeenCalled();
+    expect(f.jobAid.invalidateReviewOverall).not.toHaveBeenCalled();
+    expect(f.jobAid.prepareReviewWork).not.toHaveBeenCalled();
+    expect(JSON.stringify(f.previous)).toBe(original);
+  });
+
+  it('rejects a qualified null before prepare when the exact current contribution has not been read', async () => {
+    const f = await c309ReviewHarness();
+    await expect(f.commit()).rejects.toThrow(
+      'REVIEW_JOBAID_CONTRIBUTION_NOT_READ',
+    );
+    expect(f.h.attempts.prepareCommit).not.toHaveBeenCalled();
+    expect(f.jobAid.assertReviewWorkUnchanged).not.toHaveBeenCalled();
+    expect(
+      f.h.conversations.persistOpenClawAssistantCandidate,
+    ).not.toHaveBeenCalled();
+    expect(
+      f.h.attempts.finishCandidatePersistenceSuccess,
+    ).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'JOBAID_WORK_REVISION_CONFLICT',
+    'JOBAID_SOURCE_AUTHORIZATION_CHANGED',
+    'JOBAID_WORK_LEASE_FENCE_REJECTED',
+  ])(
+    'propagates unchanged-helper rejection %s without persisting or finishing the sealed result',
+    async (code) => {
+      const f = await c309ReviewHarness();
+      await f.read();
+      const denial = new Error(code);
+      f.jobAid.assertReviewWorkUnchanged.mockRejectedValue(denial);
+      const sealed = f.result();
+      await expect(f.commit(sealed)).rejects.toBe(denial);
+      expect(f.row.status).toBe('COMMITTING');
+      expect(f.row.resultContentHash).toBe(sealed.contentHash);
+      expect(f.row.resultEnvelopeJson).toBe(JSON.stringify(sealed));
+      expect(f.jobAid.assertReviewWorkUnchanged).toHaveBeenCalledTimes(1);
+      expect(
+        f.h.conversations.persistOpenClawAssistantCandidate,
+      ).not.toHaveBeenCalled();
+      expect(
+        f.h.attempts.finishCandidatePersistenceSuccess,
+      ).not.toHaveBeenCalled();
+      expect(f.jobAid.saveReviewWork).not.toHaveBeenCalled();
+      expect(f.jobAid.invalidateReviewOverall).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { recovery: false, proof: true },
+    { recovery: true, proof: true },
+    { recovery: true, proof: false },
+  ])(
+    'replays the original stored receipt recovery=$recovery proof=$proof without adding late reads or rechecking a new basis',
+    async ({ recovery, proof }) => {
+      const f = await c309ReviewHarness();
+      await f.read();
+      const sealed = f.result();
+      const first = await f.commit(sealed);
+      if (!('assistantCandidate' in first))
+        throw new Error('UNIT_RECEIPT_REQUIRED');
+      const saved = structuredClone(first.assistantCandidate);
+      if (!proof)
+        Reflect.deleteProperty(saved.jobAidWorkingUpdate!, 'readSourceRefs');
+      f.binding.turn.assistantCandidate = saved;
+      await f.read([f.document.evidenceRef]);
+      const prepare = f.h.attempts.prepareCommit.getMockImplementation()!;
+      f.h.attempts.prepareCommit.mockImplementation(async (input) => ({
+        ...(await prepare(input)),
+        recovery,
+      }));
+      f.jobAid.assertReviewWorkUnchanged.mockClear();
+      f.jobAid.assertReviewWorkUnchanged.mockRejectedValue(
+        new Error('UNIT_NEW_BASIS_MUST_NOT_RUN'),
+      );
+      const replay = await f.commit(sealed);
+      if (!('assistantCandidate' in replay))
+        throw new Error('UNIT_RECEIPT_REQUIRED');
+      expect(replay.assistantCandidate.jobAidWorkingUpdate).toEqual(
+        saved.jobAidWorkingUpdate,
+      );
+      expect(
+        Object.hasOwn(
+          replay.assistantCandidate.jobAidWorkingUpdate!,
+          'readSourceRefs',
+        ),
+      ).toBe(proof);
+      expect(replay.replayed).toBe(recovery);
+      expect(f.jobAid.assertReviewWorkUnchanged).not.toHaveBeenCalled();
+      expect(f.jobAid.saveReviewWork).not.toHaveBeenCalled();
+      expect(f.jobAid.invalidateReviewOverall).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reuses a same-tuple receipt found by the recovery reread without rebuilding proof or rechecking the basis', async () => {
+    const f = await c309ReviewHarness();
+    await f.read();
+    const sealed = f.result();
+    const first = await f.commit(sealed);
+    if (!('assistantCandidate' in first))
+      throw new Error('UNIT_RECEIPT_REQUIRED');
+    const saved = structuredClone(first.assistantCandidate);
+    await f.read([f.document.evidenceRef]);
+    f.binding.turn.assistantCandidate = null;
+    f.h.conversations.loadOpenClawTurnByIdBinding.mockClear();
+    f.h.conversations.loadOpenClawTurnByIdBinding
+      .mockResolvedValueOnce(f.binding)
+      .mockResolvedValueOnce({
+        ...f.binding,
+        turn: { ...f.binding.turn, assistantCandidate: saved },
+      });
+    const prepare = f.h.attempts.prepareCommit.getMockImplementation()!;
+    f.h.attempts.prepareCommit.mockImplementation(async (input) => ({
+      ...(await prepare(input)),
+      recovery: true,
+    }));
+    f.jobAid.assertReviewWorkUnchanged.mockClear();
+    f.jobAid.assertReviewWorkUnchanged.mockRejectedValue(
+      new Error('UNIT_NEW_BASIS_MUST_NOT_RUN'),
+    );
+    const replay = await f.commit(sealed);
+    expect(replay).toMatchObject({
+      replayed: true,
+      assistantCandidate: { jobAidWorkingUpdate: saved.jobAidWorkingUpdate },
+    });
+    expect(
+      f.h.conversations.loadOpenClawTurnByIdBinding,
+    ).toHaveBeenNthCalledWith(
+      2,
+      {
+        reviewConversationId: 'RC-1',
+        reviewTurnId: 'RT-1',
+        tenantId: 'tenant-1',
+        actorId: 'actor-1',
+        workItemId: 'WI-1',
+      },
+      f.h.executor.database,
+    );
+    expect(f.jobAid.assertReviewWorkUnchanged).not.toHaveBeenCalled();
+    expect(f.jobAid.saveReviewWork).not.toHaveBeenCalled();
+    expect(f.jobAid.invalidateReviewOverall).not.toHaveBeenCalled();
+  });
+
+  it('rejects recovery with no original receipt after an exact tuple reread while retaining the sealed result and hash', async () => {
+    const f = await c309ReviewHarness();
+    await f.read();
+    const sealed = f.result();
+    const prepare = f.h.attempts.prepareCommit.getMockImplementation()!;
+    f.h.attempts.prepareCommit.mockImplementation(async (input) => ({
+      ...(await prepare(input)),
+      recovery: true,
+    }));
+    f.h.conversations.loadOpenClawTurnByIdBinding.mockClear();
+    await expect(f.commit(sealed)).rejects.toThrow(
+      'REVIEW_JOBAID_READ_SNAPSHOT_UNAVAILABLE',
+    );
+    expect(
+      f.h.conversations.loadOpenClawTurnByIdBinding,
+    ).toHaveBeenNthCalledWith(
+      2,
+      {
+        reviewConversationId: 'RC-1',
+        reviewTurnId: 'RT-1',
+        tenantId: 'tenant-1',
+        actorId: 'actor-1',
+        workItemId: 'WI-1',
+      },
+      f.h.executor.database,
+    );
+    expect(f.row.resultContentHash).toBe(sealed.contentHash);
+    expect(f.row.resultEnvelopeJson).toBe(JSON.stringify(sealed));
+    expect(f.row.status).toBe('COMMITTING');
+    expect(f.jobAid.assertReviewWorkUnchanged).not.toHaveBeenCalled();
+    expect(f.jobAid.saveReviewWork).not.toHaveBeenCalled();
+    expect(
+      f.h.conversations.persistOpenClawAssistantCandidate,
+    ).not.toHaveBeenCalled();
+    expect(
+      f.h.attempts.finishCandidatePersistenceSuccess,
+    ).not.toHaveBeenCalled();
+  });
+
+  it.each(['attempt', 'result hash'] as const)(
+    'refuses a stored receipt with a different %s',
+    async (mismatch) => {
+      const f = await c309ReviewHarness();
+      await f.read();
+      const sealed = f.result();
+      const first = await f.commit(sealed);
+      if (!('assistantCandidate' in first))
+        throw new Error('UNIT_RECEIPT_REQUIRED');
+      const saved = structuredClone(first.assistantCandidate);
+      if (mismatch === 'attempt') saved.actionAttemptRef = 'AQ-OTHER';
+      else saved.provenance.resultContentHash = 'f'.repeat(64);
+      f.binding.turn.assistantCandidate = saved;
+      f.jobAid.assertReviewWorkUnchanged.mockClear();
+      f.h.conversations.persistOpenClawAssistantCandidate.mockClear();
+      f.h.attempts.finishCandidatePersistenceSuccess.mockClear();
+      await expect(f.commit(sealed)).rejects.toThrow(
+        'REVIEW_TURN_CANDIDATE_CONFLICT',
+      );
+      expect(f.jobAid.assertReviewWorkUnchanged).not.toHaveBeenCalled();
+      expect(
+        f.h.conversations.persistOpenClawAssistantCandidate,
+      ).not.toHaveBeenCalled();
+      expect(
+        f.h.attempts.finishCandidatePersistenceSuccess,
+      ).not.toHaveBeenCalled();
+      expect(f.row.resultContentHash).toBe(sealed.contentHash);
+    },
+  );
+
+  it('keeps APPLIED on the existing SAVE and stale path with its original actual-read snapshot', async () => {
+    const f = await c309ReviewHarness();
+    await f.read();
+    const prepare = f.h.attempts.prepareCommit.getMockImplementation()!;
+    f.h.attempts.prepareCommit.mockImplementation(async (input) => {
+      await f.read([f.document.evidenceRef]);
+      return prepare(input);
+    });
+    const committed = await f.commit(
+      f.result({
+        schemaVersion: 'wiselink.jobaid-problem-work.v3',
+        issues: [],
+        overview: '受控原文新增综合判断，仍保留执行未知。',
+        completionReason: '完成范围保持',
+        changeSummary: '更新综合候选',
+      }),
+    );
+    expect(committed).toMatchObject({
+      assistantCandidate: {
+        jobAidWorkingUpdate: {
+          status: 'APPLIED',
+          workRevisionRef: 'JAWR-C309-5',
+          workRevision: 5,
+          readSourceRefs: [f.contribution.evidenceRef],
+        },
+      },
+      authority: { staleMarked: true },
+    });
+    expect(f.jobAid.saveReviewWork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        row: f.row,
+        actualReadRefs: new Set([f.contribution.evidenceRef]),
+      }),
+      f.h.executor.database,
+    );
+    expect(f.jobAid.invalidateReviewOverall).toHaveBeenCalledWith(
+      f.row,
+      expect.objectContaining({ workRevisionRef: 'JAWR-C309-5' }),
+      'actor-1',
+      f.h.executor.database,
+    );
+    expect(f.jobAid.assertReviewWorkUnchanged).not.toHaveBeenCalled();
+  });
+});

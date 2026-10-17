@@ -1,3 +1,6 @@
+import { taskAutomaticWorkItemLease } from '../action-attempt/automatic-work-item-attempt-lease';
+import { ACTION_ATTEMPT_COMMIT_RECOVERY_MS } from '../action-attempt/action-attempt.types';
+import { ActionAttemptRepository } from '../action-attempt/action-attempt.repository';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -45,10 +48,12 @@ import {
 } from '../../database/schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { canonicalModelError, taskModelSelection } from '../model-settings/canonical-model-catalog';
-import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { canonicalJson, parseTaskEnvelope, parseStoredResultEnvelope } from '../action-attempt/action-attempt-envelope';
 import { documentDeliveryRequestId } from '../canonical-host/document-delivery-ref';
 import { preserveWorkItemModelConfigurationAudit } from './model-configuration-audit';
 import { MiaodaDocumentVersionSourceResolver } from './miaoda-document-version-source.resolver';
+import type { CanonicalJobAidWorkRevisionGuard } from '../canonical-host/canonical-host.types';
+import { canonicalHostBareSha256 } from '../canonical-host/canonical-host-sha256';
 import {
   parkCancelledAutoProcessingLease,
   type CancelledAutoProcessingLeaseInput,
@@ -194,6 +199,10 @@ export type AutoWorkItemQueueWorkItem = Pick<
   | 'packageId'
 >;
 
+export type AutoWorkItemBlockedSourceBinding = Pick<AutoWorkItemAuthorizationBinding,
+  'workItemId' | 'requestId' | 'actorUserId' | 'documentId' | 'documentVersionId' |
+  'sourceArtifactId' | 'sourceFileSha256' | 'sourceByteLength'>;
+
 export interface AutoWorkItemProjectionSnapshot {
   row: Pick<
     typeof workItem.$inferSelect,
@@ -203,6 +212,7 @@ export interface AutoWorkItemProjectionSnapshot {
 }
 
 export interface AutoWorkItemLease {
+  leaseExpiresAt?: Date;
   leaseGeneration: number;
   leaseToken: string;
 }
@@ -912,8 +922,82 @@ export class MiaodaWorkItemRepository {
     leaseToken: string;
     now: Date;
     leaseExpiresAt: Date;
+    assertCommittingRecoveryAuthorized?: (row: import('../action-attempt/action-attempt.types').ActionAttemptRow, database: PostgresJsDatabase) => Promise<void>;
   }): Promise<AutoWorkItemLease | null> {
-    const [claimed] = await this.db
+    return this.db.transaction(async (database) => {
+      // SAVE/CAS and queue takeover share WorkItem -> grant -> attempt order.
+      const [owner] = await database.select({ revision: workItem.revision, projectionJson:workItem.projectionJson }).from(workItem)
+        .where(and(eq(workItem.tenantId, input.tenantId), eq(workItem.workItemId, input.workItemId)))
+        .limit(1).for('update');
+      if (!owner || owner.revision !== input.expectedWorkItemRevision) return null;
+      const [grant] = await database.select().from(autoWorkItemAuthorization)
+        .where(and(eq(autoWorkItemAuthorization.tenantId, input.tenantId),
+          eq(autoWorkItemAuthorization.workItemId, input.workItemId)))
+        .limit(1).for('update');
+      if (!grant || (grant.status !== 'WAITING' &&
+          !(grant.status === 'LEASED' && grant.leaseExpiresAt && grant.leaseExpiresAt <= input.now))) return null;
+      const attempts = new ActionAttemptRepository(database);
+      for (const actionType of ['OPENCLAW_TRANSLATE', 'OPENCLAW_APPLICABILITY_EVALUATION',
+        'OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS']) {
+        await attempts.terminalizeExpiredActiveForSuccessor({tenantId:input.tenantId,
+          workItemId:input.workItemId,actionType,now:input.now});
+      }
+      // A live worker retains ownership. A departed COMMITTING worker may
+      // resume only its exact immutable result under the original owner/fences.
+      const [active] = await database.select().from(actionAttempt)
+        .where(and(eq(actionAttempt.tenantId,input.tenantId),eq(actionAttempt.workItemId,input.workItemId),
+          inArray(actionAttempt.status,['RUNNING','COMMITTING']))).limit(1).for('update');
+      if (active) {
+        if (active.status !== 'COMMITTING' || !active.leaseExpiresAt || active.leaseExpiresAt > input.now ||
+            active.leaseOwner !== input.leaseOwner ||
+            grant.leaseOwner !== input.leaseOwner || !grant.leaseToken ||
+            grant.requestId !== input.requestId || grant.actorUserId !== input.actorUserId ||
+            grant.documentId !== input.documentId || grant.documentVersionId !== input.documentVersionId ||
+            grant.sourceArtifactId !== input.sourceArtifactId || grant.sourceFileSha256 !== input.sourceFileSha256 ||
+            Number(grant.sourceByteLength) !== input.sourceByteLength ||
+            !active.taskEnvelopeJson || !active.resultEnvelopeJson || !active.resultContentHash ||
+            active.cancelRequestedAt || !active.commitStartedAt || !active.leaseToken) return null;
+        let committedProjection=false;
+        try {
+          const task=parseTaskEnvelope(active.taskEnvelopeJson);
+          const result=parseStoredResultEnvelope({value:active.resultEnvelopeJson,task});
+          const binding=taskAutomaticWorkItemLease(active);
+          if (!binding || binding.requestId !== grant.requestId || binding.leaseGeneration !== grant.leaseGeneration ||
+              task.actionAttemptId !== active.attemptId || task.operationRef !== active.operationRef ||
+              task.inputHash !== active.taskInputHash || task.tenantId !== input.tenantId ||
+              task.workItemId !== input.workItemId || task.documentVersionId !== input.documentVersionId ||
+              result.contentHash !== active.resultContentHash || result.status !== 'SUCCEEDED') return null;
+          const projection=JSON.parse(owner.projectionJson ?? 'null') as CanonicalWorkItemProjection | null;
+          const saved=active.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' ? projection?.integratedAssessment?.baseRules :
+            active.actionType === 'OPENCLAW_OVERALL_SYNTHESIS' ? projection?.integratedAssessment?.overallSynthesis : null;
+          const output:unknown=JSON.parse(result.modelOutput ?? 'null');
+          const savedWorkRef=saved && 'workRevisionRef' in saved ? saved.workRevisionRef :
+            saved && 'basedOnJobAidWorkRevisionRef' in saved ? saved.basedOnJobAidWorkRevisionRef : null;
+          committedProjection=!!saved && saved.actionAttemptId===active.attemptId &&
+            projection?.source.documentVersionId===task.documentVersionId && owner.revision===task.baseRevision+1 &&
+            !!output && typeof output==='object' && 'workRevisionRef' in output && output.workRevisionRef===savedWorkRef;
+        } catch { return null; }
+        if (!input.assertCommittingRecoveryAuthorized) return null;
+        await input.assertCommittingRecoveryAuthorized(active,database);
+        if (committedProjection) {
+          // This is Host reconciliation of an already committed exact result,
+          // not a departed worker releasing a successor's execution slot.
+          await database.update(actionAttempt).set({status:'SUCCEEDED',projectionApplied:true,
+            terminalReason:'COMMIT_RECONCILED_FROM_PROJECTION',completedAt:input.now,updatedAt:input.now,
+            leaseOwner:null,leaseToken:null,leaseExpiresAt:null,leaseSlot:null})
+            .where(and(eq(actionAttempt.attemptId,active.attemptId),eq(actionAttempt.status,'COMMITTING'),
+              eq(actionAttempt.resultContentHash,active.resultContentHash)));
+        } else {
+        const recoveryExpiresAt=new Date(input.now.getTime()+ACTION_ATTEMPT_COMMIT_RECOVERY_MS);
+        await database.update(actionAttempt).set({leaseExpiresAt:recoveryExpiresAt,updatedAt:input.now})
+          .where(and(eq(actionAttempt.attemptId,active.attemptId),eq(actionAttempt.status,'COMMITTING'),
+            eq(actionAttempt.resultContentHash,active.resultContentHash)));
+        await database.update(autoWorkItemAuthorization).set({leaseExpiresAt:recoveryExpiresAt,updatedAt:input.now})
+          .where(and(eq(autoWorkItemAuthorization.tenantId,input.tenantId),eq(autoWorkItemAuthorization.workItemId,input.workItemId)));
+        return {leaseGeneration:grant.leaseGeneration,leaseToken:grant.leaseToken,leaseExpiresAt:recoveryExpiresAt};
+        }
+      }
+    const [claimed] = await database
       .update(autoWorkItemAuthorization)
       .set({
         status: 'LEASED',
@@ -981,6 +1065,7 @@ export class MiaodaWorkItemRepository {
       leaseGeneration: claimed.leaseGeneration,
       leaseToken: claimed.leaseToken,
     };
+    });
   }
 
   /** Service-readable grant discovery only. WorkItem and parse rows are rechecked under its actor. */
@@ -1447,7 +1532,8 @@ export class MiaodaWorkItemRepository {
     workItemId: string;
     leaseToken: string;
     leaseGeneration: number;
-  }): Promise<{ blockedAt: Date; blockedCode: string } | null> {
+    sourceBinding?: AutoWorkItemBlockedSourceBinding;
+  }): Promise<{ blockedAt: Date; blockedCode: string; sourceBinding: AutoWorkItemBlockedSourceBinding } | null> {
     const leaseTokenHash = createHash('sha256')
       .update(input.leaseToken)
       .digest('hex');
@@ -1455,6 +1541,16 @@ export class MiaodaWorkItemRepository {
       .select({
         blockedAt: autoWorkItemAuthorization.blockedAt,
         blockedCode: autoWorkItemAuthorization.blockedCode,
+        sourceBinding: {
+          workItemId: autoWorkItemAuthorization.workItemId,
+          requestId: autoWorkItemAuthorization.requestId,
+          actorUserId: autoWorkItemAuthorization.actorUserId,
+          documentId: autoWorkItemAuthorization.documentId,
+          documentVersionId: autoWorkItemAuthorization.documentVersionId,
+          sourceArtifactId: autoWorkItemAuthorization.sourceArtifactId,
+          sourceFileSha256: autoWorkItemAuthorization.sourceFileSha256,
+          sourceByteLength: autoWorkItemAuthorization.sourceByteLength,
+        },
       })
       .from(autoWorkItemAuthorization)
       .where(
@@ -1467,11 +1563,51 @@ export class MiaodaWorkItemRepository {
             autoWorkItemAuthorization.blockedLeaseGeneration,
             input.leaseGeneration,
           ),
+          ...(input.sourceBinding ? [and(
+            eq(autoWorkItemAuthorization.grantKind, 'MIAODA_CANONICAL_PARSE_REQUEST'),
+            eq(autoWorkItemAuthorization.leaseGeneration, input.leaseGeneration),
+            eq(autoWorkItemAuthorization.workItemId, input.sourceBinding.workItemId),
+            eq(autoWorkItemAuthorization.requestId, input.sourceBinding.requestId),
+            eq(autoWorkItemAuthorization.actorUserId, input.sourceBinding.actorUserId),
+            eq(autoWorkItemAuthorization.documentId, input.sourceBinding.documentId),
+            eq(autoWorkItemAuthorization.documentVersionId, input.sourceBinding.documentVersionId),
+            eq(autoWorkItemAuthorization.sourceArtifactId, input.sourceBinding.sourceArtifactId),
+            eq(autoWorkItemAuthorization.sourceFileSha256, input.sourceBinding.sourceFileSha256),
+            eq(autoWorkItemAuthorization.sourceByteLength, input.sourceBinding.sourceByteLength),
+            // The same official actor mapping required by JobAid SAVE must
+            // still authorize this receipt; tenant document read is broader.
+            sql`EXISTS (SELECT 1 FROM identity_subject_mapping actor_mapping
+              WHERE actor_mapping.miaoda_user_id=${input.sourceBinding.actorUserId}
+                AND actor_mapping.miaoda_tenant_id=${input.tenantId}
+                AND actor_mapping.expected_client_id='cli_aadde8b579f95bc9'
+                AND actor_mapping.status='ACTIVE')`,
+            // The original grant tuple, never a tuple reconstructed from a
+            // newer source, must still describe the current WI and projection.
+            sql`EXISTS (SELECT 1 FROM work_item wi
+              WHERE wi.tenant_id=${input.tenantId} AND wi.work_item_id=${input.sourceBinding.workItemId}
+                AND wi.request_id=${input.sourceBinding.requestId}
+                AND wi.requested_by_user_id=${input.sourceBinding.actorUserId}
+                AND wi.document_id=${input.sourceBinding.documentId}
+                AND wi.document_version_id=${input.sourceBinding.documentVersionId}
+                AND wi.source_artifact_id=${input.sourceBinding.sourceArtifactId}
+                AND wi.source_file_sha256=${input.sourceBinding.sourceFileSha256}
+                AND wi.source_byte_length=${input.sourceBinding.sourceByteLength}
+                AND wi.action_type='PARSE_PDF' AND wi.status='CANDIDATE_READBACK_VERIFIED'
+                AND wi.package_id IS NOT NULL
+                AND wi.projection_json::jsonb->>'workItemId'=${input.sourceBinding.workItemId}
+                AND wi.projection_json::jsonb->>'requestId'=${input.sourceBinding.requestId}
+                AND wi.projection_json::jsonb->'source'->>'documentId'=${input.sourceBinding.documentId}
+                AND wi.projection_json::jsonb->'source'->>'documentVersionId'=${input.sourceBinding.documentVersionId}
+                AND wi.projection_json::jsonb->'source'->>'sourceArtifactId'=${input.sourceBinding.sourceArtifactId}
+                AND wi.projection_json::jsonb->'source'->>'sourceFileSha256' IN
+                  (${input.sourceBinding.sourceFileSha256}, ${`sha256:${input.sourceBinding.sourceFileSha256}`})
+                AND wi.projection_json::jsonb->'source'->>'sourceByteLength'=${String(input.sourceBinding.sourceByteLength)})`,
+          )] : []),
         ),
       )
       .limit(1);
     return blocked?.blockedAt && blocked.blockedCode
-      ? { blockedAt: blocked.blockedAt, blockedCode: blocked.blockedCode }
+      ? { blockedAt: blocked.blockedAt, blockedCode: blocked.blockedCode, sourceBinding: blocked.sourceBinding }
       : null;
   }
 
@@ -2240,7 +2376,7 @@ export class MiaodaWorkItemRepository {
     next: Omit<CanonicalWorkItemProjection, 'revision'>;
     syncPrimaryAttempt?: boolean;
     applicabilityInputGuard?: { tenantId: string };
-    jobAidWorkRevisionGuard?: { tenantId: string; workRevisionRef: string };
+    jobAidWorkRevisionGuard?: CanonicalJobAidWorkRevisionGuard;
     nativeEvidenceGuard?: (database: PostgresJsDatabase) => Promise<void>;
   }): Promise<CanonicalWorkItemProjection> {
     this.requireNativeProjectionGuard(input);
@@ -2253,7 +2389,38 @@ export class MiaodaWorkItemRepository {
         input.applicabilityInputGuard
       )
         throw new Error('JOBAID_OVERALL_WORK_CAS_GUARD_INVALID');
+      const sources = guard.sourceGuard;
+      if (sources !== undefined && (!sources || !sources.actorUserId?.trim() ||
+          !Array.isArray(sources.sourceBindings) || !sources.sourceBindings.length ||
+          sources.sourceBindings.some((binding) => !binding || !binding.workItemId?.trim() ||
+            !binding.documentVersionId?.trim() || !binding.artifactRef?.trim() ||
+            !binding.artifactSha256?.trim() || (binding.kind !== undefined && binding.kind !== 'SOURCE_FILE')) ||
+          new Set(sources.sourceBindings.map((binding) => binding.workItemId)).size !== sources.sourceBindings.length ||
+          !sources.sourceBindings.some((binding) => binding.workItemId === input.workItemId)))
+        throw new Error('JOBAID_SOURCE_CAS_GUARD_INVALID');
       return this.db.transaction(async (transaction) => {
+        // SAVE takes the same bytewise WI order. No grant/attempt lock may
+        // precede any of these source locks, including the primary WI.
+        if (sources) for (const binding of [...sources.sourceBindings].sort((a, b) =>
+          a.workItemId < b.workItemId ? -1 : a.workItemId > b.workItemId ? 1 : 0)) {
+          const [source] = await transaction.select({
+            documentVersionId: workItem.documentVersionId,
+            projectionJson: workItem.projectionJson,
+          }).from(workItem).where(and(
+            eq(workItem.workItemId, binding.workItemId),
+            eq(workItem.tenantId, guard.tenantId),
+            eq(workItem.requestedByUserId, sources.actorUserId),
+          )).limit(1).for('update');
+          if (!source?.projectionJson || source.documentVersionId !== binding.documentVersionId)
+            throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+          const projection = JSON.parse(source.projectionJson) as CanonicalWorkItemProjection;
+          if (binding.kind === 'SOURCE_FILE'
+            ? projection.source?.sourceArtifactId !== binding.artifactRef ||
+              canonicalHostBareSha256(projection.source?.sourceFileSha256) !== binding.artifactSha256
+            : projection.package?.artifact?.ref !== binding.artifactRef ||
+              projection.package?.artifact?.sha256 !== binding.artifactSha256)
+            throw new Error('JOBAID_SOURCE_VERSION_CHANGED');
+        }
         const [owner] = await transaction
           .select({
             revision: workItem.revision,

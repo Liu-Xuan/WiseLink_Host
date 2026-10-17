@@ -75,8 +75,10 @@ export class SessionResolver {
     )) throw new ForbiddenException('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
     const oauthSession = session;
     const identity: NativeBrowserIdentity = { actor, oauthSession };
-    return this.browserIdentity.run({ request, identity }, () =>
-      operation(identity),
+    // Retain the session verified before any SQL role switch for this request.
+    // resolve(request, database) still revalidates storage in its transaction.
+    return this.requestSession.run({ request, session }, () =>
+      this.browserIdentity.run({ request, identity }, () => operation(identity)),
     );
   }
 

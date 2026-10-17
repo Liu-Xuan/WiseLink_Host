@@ -3,6 +3,7 @@ import type {
   CanonicalRelatedContextPreviewResponse,
   ReviewTurnReadModel,
 } from '@shared/api.interface';
+import { reviewSourceBinding, type ReviewSourceBinding } from './review-scope';
 
 export interface ReviewPrimaryMaterial {
   title: string;
@@ -16,7 +17,9 @@ export interface ReviewAttachmentMaterial {
 }
 
 export interface ReviewCitedSource {
+  key: string;
   sourceRef: string;
+  turn: ReviewTurnReadModel;
   citations: Array<{ turnNo: number; inputRevision: number }>;
 }
 
@@ -41,14 +44,20 @@ export function reviewMaterialReferences(turns: ReviewTurnReadModel[]): {
     for (const sourceRef of new Set(
       turn.assistantCandidate?.sourceRefs ?? [],
     )) {
-      const item = citedSources.get(sourceRef) ?? { sourceRef, citations: [] };
+      const binding: ReviewSourceBinding | null = reviewSourceBinding(turn, sourceRef);
+      const key: string = JSON.stringify(binding
+        ? [sourceRef, binding.workItemId, binding.documentVersionId, binding.originalSourceRefId]
+        : [sourceRef, turn.reviewTurnId]);
+      const item: ReviewCitedSource = citedSources.get(key) ?? {
+        key, sourceRef, turn, citations: [],
+      };
       if (!item.citations.some((citation) => citation.turnNo === turn.turnNo)) {
         item.citations.push({
           turnNo: turn.turnNo,
           inputRevision: turn.inputRevision,
         });
       }
-      citedSources.set(sourceRef, item);
+      citedSources.set(key, item);
     }
   }
   return {

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Post,
   Query,
@@ -40,6 +41,12 @@ const classification = z.strictObject({
 @Controller('api/canonical-host/hierarchical-wiki')
 export class HierarchicalWikiController {
   constructor(private readonly wiki: HierarchicalWikiService) {}
+
+  @Get('navigation')
+  @Header('Cache-Control', 'private, no-store')
+  navigation(@Query() query: Record<string, unknown>, @Req() request: Request) {
+    return this.wiki.navigation(query, hostActor(request));
+  }
 
   @Get()
   list(

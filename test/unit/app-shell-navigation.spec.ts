@@ -184,3 +184,22 @@ test('WorkItem navigation retains the existing assessment and reader paths', () 
     ]),
   );
 });
+
+test('document-scope graph toolbar uses only validated exact directory return pins', () => {
+  const params = new URLSearchParams({ scope: 'document', documentVersionId: 'DV-old', readerWorkItemId: 'WI-old',
+    returnDocumentVersionId: 'DV-old', returnLibraryQuery: 'mode=document&familyId=F-old&selectedDocumentVersionId=DV-old&listY=735' });
+  expect(renderTopBar('/graph', `?${params}`)).toContain('aria-label="返回原文档目录"');
+  for (const invalid of ['wrong-version', 'duplicate-version', 'mixed-scope', 'empty-version'] as const) {
+    const changed = new URLSearchParams(params);
+    if (invalid === 'wrong-version') changed.set('returnDocumentVersionId', 'DV-other');
+    if (invalid === 'duplicate-version') changed.append('documentVersionId', 'DV-old');
+    if (invalid === 'mixed-scope') changed.set('matterId', 'MAT-other');
+    if (invalid === 'empty-version') changed.set('documentVersionId', '');
+    expect(renderTopBar('/graph', `?${changed}`)).toContain('aria-label="返回目标与当前版本不匹配"');
+    expect(renderTopBar('/graph', `?${changed}`)).toContain('disabled=""');
+  }
+  expect(renderTopBar('/graph', '?scope=document&documentVersionId=DV-old&readerWorkItemId=WI-old'))
+    .toContain('aria-label="返回原阅读位置"');
+  expect(renderTopBar('/graph', '?scope=library&returnWorkItemId=WI-parent'))
+    .toContain('aria-label="返回评估简报"');
+});

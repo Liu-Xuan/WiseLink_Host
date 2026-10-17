@@ -100,6 +100,9 @@ describe('dialogue API interaction boundaries', () => {
     const service = new DialogueService(
       {
         nativeBrowserIdentity: jest.fn().mockReturnValue(session),
+        withVerifiedNativeBrowserSql: jest.fn(
+          async (run: () => Promise<unknown>) => run(),
+        ),
       } as unknown as SessionResolver,
       repository as unknown as DialogueRepository,
       context as unknown as DialogueContextService,

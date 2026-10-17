@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c226';
+  'wiselink-research-and-synthesize@r09.c228';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -3255,16 +3255,23 @@ export function sealResultEnvelope({
   task,
   modelOutput,
   provenance,
+  failureCode = null,
   sourceRefs = task?.sourceRefs,
   outputArtifactRefs = [],
   factsConsidered = [],
   warnings = [],
 }) {
   validateTaskEnvelope(task);
-  validateRuntimeProvenance(provenance);
-  const serializedModelOutput =
+  const reconciliation = Object.hasOwn(provenance ?? {}, 'executionKind');
+  if (reconciliation) validateSavedWorkReconciliationProvenance(task, provenance);
+  else validateRuntimeProvenance(provenance);
+  if (reconciliation && failureCode !== null) fail('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
+  if (failureCode !== null && (typeof failureCode !== 'string' ||
+      !/^[A-Z][A-Z0-9_]{0,127}$/u.test(failureCode)))
+    fail('RESULT_ENVELOPE_FAILURE_CODE_INVALID');
+  const serializedModelOutput = failureCode ? null :
     typeof modelOutput === 'string' ? modelOutput : canonicalJson(modelOutput);
-  nonEmpty(serializedModelOutput, 'RESULT_ENVELOPE_MODEL_OUTPUT_REQUIRED');
+  if (!failureCode) nonEmpty(serializedModelOutput, 'RESULT_ENVELOPE_MODEL_OUTPUT_REQUIRED');
   const envelope = {
     schemaVersion: RESULT_ENVELOPE_SCHEMA,
     actionAttemptId: task.actionAttemptId,
@@ -3272,8 +3279,8 @@ export function sealResultEnvelope({
     taskType: task.taskType,
     workItemId: task.workItemId,
     baseRevision: task.baseRevision,
-    status: 'SUCCEEDED',
-    businessOutcome: 'CANDIDATE_READY',
+    status: failureCode ? 'FAILED' : 'SUCCEEDED',
+    businessOutcome: failureCode ? 'NOT_PRODUCED' : 'CANDIDATE_READY',
     candidateStatus: null,
     modelOutput: serializedModelOutput,
     outputArtifactRefs: structuredClone(outputArtifactRefs),
@@ -3287,7 +3294,9 @@ export function sealResultEnvelope({
     skillVersion: provenance.skillVersion,
     toolVersions: structuredClone(provenance.toolVersions),
     runMetrics: structuredClone(provenance.runMetrics),
-    errorCode: null,
+    ...(reconciliation ? { executionKind: provenance.executionKind, modelRequests: provenance.modelRequests,
+      sourceWork: structuredClone(provenance.sourceWork) } : {}),
+    errorCode: failureCode,
     errorDetail: null,
   };
   const sealed = { ...envelope, contentHash: canonicalSha256(envelope) };
@@ -3604,7 +3613,7 @@ function validateResultEnvelopeBinding(task, result, options = {}) {
       'errorCode',
       'errorDetail',
     ],
-    [],
+    ['executionKind', 'modelRequests', 'sourceWork'],
     'result envelope',
   );
   equal(
@@ -3664,13 +3673,28 @@ function validateResultEnvelopeBinding(task, result, options = {}) {
   );
   arrayOfText(result.conflicts, 'RESULT_ENVELOPE_CONFLICTS_INVALID');
   arrayOfText(result.warnings, 'RESULT_ENVELOPE_WARNINGS_INVALID');
-  validateRuntimeProvenance({
+  const provenance = {
     modelVersion: result.modelVersion,
     promptVersion: result.promptVersion,
     skillVersion: result.skillVersion,
     toolVersions: result.toolVersions,
     runMetrics: result.runMetrics,
-  }, options);
+  };
+  if (Object.hasOwn(result, 'executionKind')) {
+    validateSavedWorkReconciliationProvenance(task, { ...provenance,
+      executionKind: result.executionKind, modelRequests: result.modelRequests, sourceWork: result.sourceWork }, options);
+    if (result.status !== 'SUCCEEDED' || result.modelOutput === null)
+      fail('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
+    let output;
+    try { output = JSON.parse(result.modelOutput); } catch { fail('JOBAID_SAVED_WORK_RECONCILIATION_INVALID'); }
+    if (!output || output.workRevisionRef !== result.sourceWork.workRevisionRef)
+      fail('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
+  } else {
+    if (Object.hasOwn(result, 'modelRequests') || Object.hasOwn(result, 'sourceWork') ||
+        result.toolVersions?.['host-saved-work-reconciliation'] !== undefined)
+      fail('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
+    validateRuntimeProvenance(provenance, options);
+  }
   nullableText(result.errorCode, 'RESULT_ENVELOPE_ERROR_CODE_INVALID');
   nullableText(result.errorDetail, 'RESULT_ENVELOPE_ERROR_DETAIL_INVALID');
   if (result.status === 'SUCCEEDED') {
@@ -3747,6 +3771,42 @@ export function validateRuntimeProvenance(value, options = {}) {
   ) {
     fail('RUNTIME_MODEL_PROVENANCE_UNREADABLE');
   }
+  return validateProvenanceFields(value, options);
+}
+
+function validateSavedWorkReconciliationProvenance(task, value, options = {}) {
+  exactKeys(value, ['modelVersion', 'promptVersion', 'skillVersion', 'toolVersions', 'runMetrics',
+    'executionKind', 'modelRequests', 'sourceWork'], [], 'saved work reconciliation provenance');
+  const marker = task.modelInput.savedWorkReconciliation;
+  const previous = task.modelInput.previousWork;
+  const protocol = task.modelInput.schemaVersion === 'wiselink.jobaid-problem-task.v3' ? '3' :
+    task.modelInput.schemaVersion === 'wiselink.jobaid-problem-task.v2' ? '2' : null;
+  if (marker) exactKeys(marker, ['executionKind', 'modelRequests', 'workRevisionRef', 'workRevision',
+    'sourceActionAttemptId'], [], 'saved work reconciliation marker');
+  if (!protocol || task.modelInput.modelInput?.purpose !== 'INITIAL_PROBLEM_ASSESSMENT' ||
+      value.promptVersion !== `wiselink-jobaid-problem@v${protocol}` ||
+      value.toolVersions?.['jobaid-problem-protocol'] !== protocol ||
+      task.modelInput.tdmsContext && value.toolVersions?.['tdms-native-context'] !== '1')
+    fail('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
+  if (task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' || !marker ||
+      marker.executionKind !== 'HOST_SAVED_WORK_RECONCILIATION' || marker.modelRequests !== 0 ||
+      value.executionKind !== marker.executionKind || value.modelRequests !== 0 || value.modelVersion !== null ||
+      typeof marker.workRevisionRef !== 'string' || !marker.workRevisionRef ||
+      !Number.isSafeInteger(marker.workRevision) || marker.workRevision < 1 ||
+      typeof marker.sourceActionAttemptId !== 'string' || !marker.sourceActionAttemptId ||
+      previous?.workRevisionRef !== marker.workRevisionRef || previous.workRevision !== marker.workRevision ||
+      previous.actionAttemptId !== marker.sourceActionAttemptId || previous.content?.roundCompletion !== 'COMPLETE')
+    fail('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
+  exactKeys(value.sourceWork, ['workRevisionRef', 'sourceActionAttemptId'], [], 'saved source work');
+  if (value.sourceWork.workRevisionRef !== marker.workRevisionRef ||
+      value.sourceWork.sourceActionAttemptId !== marker.sourceActionAttemptId ||
+      value.toolVersions?.['host-saved-work-reconciliation'] !== '1' ||
+      value.runMetrics?.inputUnits !== 0 || value.runMetrics?.outputUnits !== 0)
+    fail('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
+  return validateProvenanceFields(value, options);
+}
+
+function validateProvenanceFields(value, options = {}) {
   nonEmpty(value.promptVersion, 'RUNTIME_PROMPT_VERSION_REQUIRED');
   if (options.allowHistoricalSkillVersion) {
     const escapedRef = WISELINK_SKILL_COMPATIBILITY_REF.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
@@ -4366,7 +4426,9 @@ export function validateReviewCandidate(task, candidate) {
   );
   uniqueTextArray(candidate.warnings, 'REVIEW_CANDIDATE_WARNINGS_INVALID');
   if (task.context.purpose === 'UPDATE_ASSESSMENT' &&
-      ((isJobAid && candidate.jobAidWorkingDelta == null) || (isMatter && candidate.matterWorkingDelta == null))) {
+      ((isJobAid && candidate.jobAidWorkingDelta == null &&
+        !isQualifiedJobAidUnchanged(task, candidate)) ||
+        (isMatter && candidate.matterWorkingDelta == null))) {
     fail('REVIEW_UPDATE_WORKING_DELTA_REQUIRED');
   }
   if (task.context.purpose === 'CHAT' && (candidate.reviewActionDraft !== null || candidate.matterWorkingDelta != null || candidate.jobAidWorkingDelta != null || candidate.affectedItemIds.length > 0 || candidate.responseType === 'REVIEW_ACTION_DRAFT' || candidate.responseType === 'RESYNTHESIS_RESULT')) fail('REVIEW_CHAT_ASSESSMENT_MUTATION_FORBIDDEN');
@@ -5080,6 +5142,22 @@ function validateFrozenJobAidReviewContext(task) {
       excerpt: item.excerpt, locator: item.locator ?? null, sourceRefId: item.evidenceRef }), 'REVIEW_JOBAID_RESOURCE_BINDING_INVALID');
   }
 }
+function isQualifiedJobAidUnchanged(task, candidate) {
+  const previous = task.jobAidContext.previousWork;
+  const model = task.jobAidContext.modelInput;
+  return Object.hasOwn(candidate, 'jobAidWorkingDelta') &&
+    candidate.jobAidWorkingDelta === null && candidate.responseType === 'RESYNTHESIS_RESULT' &&
+    candidate.missingInputs.length === 0 &&
+    typeof previous?.workRevisionRef === 'string' && previous.workRevisionRef.trim() !== '' &&
+    Number.isSafeInteger(previous.workRevision) && previous.workRevision > 0 &&
+    previous.content && typeof previous.content === 'object' && !Array.isArray(previous.content) &&
+    model.previousWork?.workRevisionRef === previous.workRevisionRef &&
+    model.previousWork?.workRevision === previous.workRevision &&
+    model.previousWork?.content && typeof model.previousWork.content === 'object' &&
+    !Array.isArray(model.previousWork.content) &&
+    model.expectedWorkRevision === previous.workRevision;
+}
+
 function validateJobAidReviewDelta(task, delta) {
   if (delta === null) return;
   if (task.context.purpose === 'UPDATE_ASSESSMENT' && Array.isArray(delta?.issues) &&

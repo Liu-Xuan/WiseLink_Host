@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
 import { invokeHostedJobAidProblemModel, JOBAID_GENERATION_POLICY } from '../scripts/run-jobaid-problem-assessment.mjs';
-import { createJobAidEvidenceCache, cacheJobAidSourceRead, projectJobAidContinuationContext }
+import { createJobAidEvidenceCache, cacheJobAidSourceRead, projectJobAidContinuationContext, refreshJobAidPreparation }
   from '../scripts/jobaid-continuation-context.mjs';
 import { assertTdmsNativeReadPacket, sameTdmsNativeEvidenceBody } from '../scripts/tdms-native-context.mjs';
 
@@ -135,11 +135,105 @@ function addNativeDirectory(input, carrier) {
 
 function assertNamedContract(calls) {
   for (const call of calls) {
-    assert.deepEqual(call.tool_choice, { type: 'function', function: { name: 'return_wiselink_assessment_step' } });
+    assert.equal(call.tool_choice, 'auto');
+    assert.deepEqual(call.tools.map(tool => ({ type: tool.type, name: tool.function?.name })),
+      [{ type: 'function', name: 'return_wiselink_assessment_step' }]);
+    const parameters = call.tools[0].function.parameters;
+    assert.equal(parameters.type, 'object');
+    assert.equal(parameters.additionalProperties, false);
+    assert.deepEqual(parameters.required, ['step']);
+    assert.deepEqual(Object.keys(parameters.properties), ['step']);
+    const step = parameters.properties.step;
+    assert.equal(step.type, 'object');
+    assert.equal(step.additionalProperties, false);
+    assert.deepEqual(step.required, ['action']);
+    assert.deepEqual(step.properties.action, { type: 'string',
+      enum: ['READ_SOURCES', 'QUERY_KNOWLEDGE', 'SAVE_WORK', 'FINISH', 'READ_WORK'] });
+    assert.deepEqual({ type: step.properties.workJson.type, minLength: step.properties.workJson.minLength },
+      { type: 'string', minLength: 2 });
     assert.equal(call.parallel_tool_calls, false); assert.equal(call.n, 1); assert.equal(call.stream, false);
     assert.equal(call.max_completion_tokens, undefined, 'the frozen GLM output budget is not changed');
   }
 }
+
+function preparation(extra = {}) {
+  return { schemaVersion: 'wiselink.jobaid-preparation.v1', taskPurpose: 'INITIAL_PROBLEM_ASSESSMENT',
+    goal: '更正既有问题的构型条件', targetIssueKeys: ['existing'], taskInputRevision: 7, currentInputRevision: 7,
+    currentInputChanged: false, documentVersionId: 'DV-preparation', originalBinding: null,
+    lastSaved: { workRevisionRef: 'JAWR-1', workRevision: 1, basedOnInputRevision: 7 },
+    currentIssues: [{ issueKey: 'existing', question: '当前措施的条件是什么？' }],
+    unfinishedItems: [{ issueKey: 'existing', kind: 'OPEN_QUESTION', description: '构型仍待核对' }],
+    pendingEngineerInputs: [{ ref: 'turn-fixture', revision: 1, kind: 'REVIEW_INSTRUCTION', text: '更正旧构型结论',
+      sourcePart: 'USER', origin: 'REVIEW_CONVERSATION', recordedAt: '2026-10-15T00:00:00Z' }],
+    savedUpdates: [], humanConfirmedDecisions: [], humanConfirmationStatus: 'NOT_RECORDED', limitations: [], ...extra };
+}
+
+test('G04 fresh Host preparation survives target reading, source reading and exact saved-work continuation', async () => {
+  const f = fixture([{ action: 'READ_WORK', workRevisionRef: 'JAWR-1', issueKeys: ['existing'], includeOverview: true },
+    readSources, workUpdate([{ issueKey: 'existing', question: '当前措施的条件是什么？',
+      body: '旧构型结论已按本轮更正，前提仍未确认 [[source:2]]' }], true), { action: 'FINISH' }]);
+  f.input.preparation = preparation();
+  f.options.assessmentBinding = { inputRevision: 7, documentVersionId: 'DV-preparation' };
+  const original = structuredClone(f.input);
+  const reader = f.options.readAssessmentWork;
+  f.options.readAssessmentWork = async args => {
+    const value = await reader(args);
+    return { ...value, preparation: preparation({
+      pendingEngineerInputs: [{ ...preparation().pendingEngineerInputs[0], text: '保留新的更正目标：构型尚未核对' }],
+      lastSaved: value.revision ? { workRevisionRef: value.revision.workRevisionRef,
+        workRevision: value.revision.workRevision, basedOnInputRevision: 7 } : null,
+    }) };
+  };
+  await f.run();
+  for (const request of f.calls.slice(1)) {
+    const context = JSON.parse(request.messages[1].content);
+    assert.equal(context.preparation.goal, preparation().goal);
+    assert.deepEqual(context.preparation.targetIssueKeys, ['existing']);
+    assert.equal(context.preparation.pendingEngineerInputs[0].text, '保留新的更正目标：构型尚未核对');
+    assert.equal(context.preparation.humanConfirmationStatus, 'NOT_RECORDED');
+  }
+  assert.equal(JSON.parse(f.calls.at(-1).messages[1].content).preparation.lastSaved.workRevisionRef, 'JAWR-2');
+  assert.equal(f.saves.length, 1);
+  assert.deepEqual(f.input, original, 'Host input and its original preparation remain unchanged');
+});
+
+test('G04 changed Host input stops after READ_WORK before another model dispatch or SAVE', async () => {
+  const f = fixture([{ action: 'READ_WORK', workRevisionRef: 'JAWR-1', issueKeys: ['existing'], includeOverview: true }]);
+  f.input.preparation = preparation();
+  const reader = f.options.readAssessmentWork;
+  f.options.readAssessmentWork = async args => ({ ...await reader(args),
+    preparation: preparation({ currentInputRevision: 8, currentInputChanged: true }) });
+  await assert.rejects(f.run(), /JOBAID_PREPARATION_VERSION_CHANGED/u);
+  assert.equal(f.calls.length, 1); assert.equal(f.saves.length, 0);
+  assert.equal(f.input.preparation.taskInputRevision, 7);
+  assert.equal(f.input.preparation.documentVersionId, 'DV-preparation');
+});
+
+test('G04 preparation cannot replace the exact task version or invent an initial view from incomplete JSON', () => {
+  const input = fixture([]).input;
+  assert.equal(refreshJobAidPreparation(input, undefined), input, 'old sealed task remains compatible');
+  assert.throws(() => refreshJobAidPreparation(input, preparation(), { inputRevision: 8 }), /VERSION_CHANGED/u);
+  assert.throws(() => refreshJobAidPreparation(input, preparation(), { documentVersionId: 'DV-other' }), /VERSION_CHANGED/u);
+  assert.throws(() => refreshJobAidPreparation(input, { schemaVersion: 'wiselink.jobaid-preparation.v1' }), /PREPARATION_INVALID/u);
+});
+
+test('G05 a complete work target occurs once and source identity preserves distinct versions and ranges', () => {
+  const input = fixture([]).input;
+  input.previousWork.content.issues[0].body = 'ONE_FULL_SAVED_BODY';
+  const target = { workRevisionRef: input.previousWork.workRevisionRef,
+    issues: [structuredClone(input.previousWork.content.issues[0])] };
+  let cache = createJobAidEvidenceCache(input);
+  for (const ref of ['DOCUMENT_ORIGINAL:DV-a:parse1:unit1:p1', 'DOCUMENT_ORIGINAL:DV-a:parse1:unit2:p2',
+    'DOCUMENT_ORIGINAL:DV-a:parse2:unit1:p1']) cache = cacheJobAidSourceRead(cache, {
+      status: 'AVAILABLE', scope: 'EXACT', sourceRefs: [ref], completeRequestedScope: true,
+      evidence: [{ ...source(ref), excerpt: 'The same text can have different source identities.', truncated: true }],
+    }).cache;
+  const projected = projectJobAidContinuationContext(input, cache, target);
+  assert.equal(JSON.stringify(projected).split('ONE_FULL_SAVED_BODY').length - 1, 1);
+  assert.equal(projected.deliveredEvidence.length, 4);
+  assert.equal(projected.deliveredEvidence.filter(item => item.truncated === true).length, 3);
+  assert.equal(input.previousWork.content.issues[0].body, 'ONE_FULL_SAVED_BODY');
+});
 
 test('actual read bodies occur once per fresh segment and survive a Host-confirmed save', async () => {
   const f = fixture([readSources, workUpdate([newIssue], true), { action: 'FINISH' }]);
@@ -283,7 +377,7 @@ test('an abbreviated old issue cannot be saved until its exact complete target a
       assert.equal(f.saves.length, 0, 'no incomplete issue reaches Host SAVE');
     }
     if (n === 3) {
-      const full = JSON.parse(payload.messages.at(-1).content);
+      const full = JSON.parse(payload.messages[1].content).targetWork;
       assert.deepEqual(full.issues, [f.fullIssue]);
       assert.equal(full.overview, f.prior.content.understanding);
       assert.ok(full.issues[0].body.length > 4000);
@@ -336,12 +430,12 @@ test('target reading preserves Host source authorization instead of serving a st
   assert.equal(authorizedReads, 1); assert.equal(f.calls.length, 1); assert.equal(f.saves.length, 0);
 });
 
-test('the cache and work-target intent do not allow a second source batch before SAVE', async () => {
+test('an exact repeated source read gets progress feedback rather than forcing an empty SAVE', async () => {
   const f = fixture([readSources, readSources, workUpdate([newIssue], true), { action: 'FINISH' }]);
   await f.run();
-  assert.equal(f.reads.length, 1); assert.equal(f.saves.length, 1);
+  assert.equal(f.reads.length, 2); assert.equal(f.saves.length, 1);
   const rejection = JSON.parse(f.calls[2].messages.at(-1).content);
-  assert.equal(rejection.errorCode, 'JOBAID_SOURCE_BATCH_SAVE_REQUIRED');
+  assert.equal(rejection.errorCode, 'JOBAID_NO_PROGRESS');
   assertNamedContract(f.calls);
 });
 

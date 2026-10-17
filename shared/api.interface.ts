@@ -1,14 +1,17 @@
 import type { DocumentOriginalBinding } from './document-original.interface';
+export type { LcmNativeMatrix, LcmNativeMatrixResponse } from './lcm-native-matrix.interface';
+export type {
+  LcmMatrixQuery, LcmMatrixBinding, LcmMatrixWindowRequest, LcmMatrixResponse,
+  LcmMatrixDetailRequest, LcmMatrixDetailResponse,
+} from './lcm-matrix.interface';
 export type {
   TdmsDocumentSourceReadRequest,
   TdmsDocumentSourceReadResponse,
 } from './tdms-source-reading.interface';
 export type {
   LcmSnapshotBrowseRequest,
-  LcmSnapshotRowsRequest,
   LcmSnapshotSummary,
   LcmSnapshotCatalogueResponse,
-  LcmSnapshotRowsResponse,
 } from './lcm-source-reading.interface';
 export type {
   CanonicalLibraryDirectoryRequest,
@@ -186,6 +189,8 @@ export interface ReviewTurnAssistantCandidate {
     workRevisionRef: string | null;
     workRevision: number;
     affectedIssueKeys: string[];
+    /** Host-observed READ set before this commit decision; absent on legacy receipts. */
+    readSourceRefs?: string[];
   };
   /** Resolve task-local Review citations back to their original document reader. */
   sourceBindings?: Array<{
@@ -774,6 +779,9 @@ export interface CanonicalReferenceMentionPreviewItem {
   unitOrdinal: number;
   matchedText: string;
   normalizedTarget: string;
+  /** Source-stated publication edition. Absent selects the registered current
+   * edition; null means an explicit edition could not be resolved safely. */
+  requestedBusinessRevision?: string | null;
   documentType: CanonicalReferenceDocumentType;
   contextRole: CanonicalReferenceContextRole;
   targetResolution: CanonicalReferenceTargetResolution;
@@ -790,6 +798,7 @@ export interface CanonicalRelatedContextSnapshotItem {
   mentionRefs: string[];
   retrievalChannel: 'EXPLICIT_REFERENCE';
   normalizedTarget: string;
+  requestedBusinessRevision?: string | null;
   mentionSourceRefs: string[];
   relatedDocumentRef: string | null;
   authorizedExternalRef: null;
@@ -2103,6 +2112,13 @@ export interface CanonicalEngineerReviewPageContext {
   ledger: CanonicalEngineerReviewLedgerProjection | null;
   gapLedger: CanonicalAssessmentGapLedgerProjection;
   items: CanonicalEngineerReviewPageItem[];
+}
+
+/** The exact saved Overall the engineer read before explicitly confirming it. */
+export interface ConfirmCanonicalOverallForAeoRequest {
+  expectedRevision: number;
+  expectedOverallRevision: number;
+  expectedOverallArtifactRef: string;
 }
 
 export interface CanonicalOverallForAeoConfirmationProjection {

@@ -9,12 +9,16 @@ function fixture(overview = false) {
     actionAttemptId: 'ATT-c', operationRef: 'AQ-c', subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-c' },
     deadline: '2099-01-01T00:00:00.000Z', baseRevision: 11, inputHash: 'bound-input', modelInput: { schemaVersion: 'wiselink.matter-jobaid-task.v2',
       correction: { kind: overview ? 'ENGINEERING_OVERVIEW_CORRECTION' : 'ENGINEERING_ISSUE_CORRECTION', expectedWorkRef: 'MWR-BASE' } } };
-  const calls = []; const checkpoints = new Map();
+  const calls = []; const checkpointNamespaces = new Map();
   let mode = 'RUNNING'; let failSave = false; let failGeneration = false; let badFinish = false; let unchanged = false;
   const dependencies = {
-    createCheckpoint: async () => ({ readOptional: async key => checkpoints.get(key),
-      remoteStep: async ({ perform }) => perform(),
-      writeOnce: async (key, value) => { assert.equal(checkpoints.has(key), false); checkpoints.set(key, value); } }),
+    createCheckpoint: async directory => {
+      if (!checkpointNamespaces.has(directory)) checkpointNamespaces.set(directory, new Map());
+      const checkpoints = checkpointNamespaces.get(directory);
+      return { readOptional: async key => checkpoints.has(key) ? checkpoints.get(key) : null,
+        remoteStep: async ({ perform }) => perform(),
+        writeOnce: async (key, value) => { assert.equal(checkpoints.has(key), false); checkpoints.set(key, value); } };
+    },
     invokeMatterModel: async () => assert.fail('Correction must not invoke the Hosted investigation model'),
     callTool: async (name, input, requestOptions) => {
       if (input.operation === 'GENERATE_ISSUE_CORRECTION') {

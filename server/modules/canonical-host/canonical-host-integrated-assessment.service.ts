@@ -4,6 +4,7 @@ import type {
   CanonicalBaseRuleCandidateProjection,
   CanonicalIntegratedAssessmentProjection,
   CanonicalOverallForAeoConfirmationProjection,
+  ConfirmCanonicalOverallForAeoRequest,
   CanonicalOpenClawOverallProjection,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
@@ -273,6 +274,7 @@ export class CanonicalHostIntegratedAssessmentService {
 
   async confirmOpenClawOverallForAeo(
     workItemId: string,
+    input: ConfirmCanonicalOverallForAeoRequest,
     actor: CanonicalHostActor,
   ): Promise<CanonicalWorkItemProjection> {
     let authorized = await this.authorizeAndLoad(
@@ -281,6 +283,7 @@ export class CanonicalHostIntegratedAssessmentService {
       'CONFIRM_OPENCLAW_OVERALL_FOR_AEO',
     );
     let workItem = requiredParsedWorkItem(authorized.workItem);
+    assertDisplayedOverall(input, workItem);
     let integrated = requiredReadyOverall(workItem);
     const existing = integrated.overallForAeoConfirmation ?? null;
     if (existing) {
@@ -305,6 +308,7 @@ export class CanonicalHostIntegratedAssessmentService {
         'CONFIRM_OPENCLAW_OVERALL_FOR_AEO',
       );
       workItem = requiredParsedWorkItem(authorized.workItem);
+      assertDisplayedOverall(input, workItem);
       integrated = requiredReadyOverall(workItem);
       const completed = integrated.overallForAeoConfirmation ?? null;
       if (completed?.actionAttemptId === attempt.attemptId) {
@@ -351,6 +355,9 @@ export class CanonicalHostIntegratedAssessmentService {
         errorCode: errorCode(error),
         errorMessage: errorMessage(error),
       });
+      if (errorCode(error) === 'WORK_ITEM_CAS_CONFLICT') {
+        throw overallConfirmationConflict();
+      }
       throw error;
     }
   }
@@ -421,6 +428,26 @@ function assertOverallBindsCurrentReviews(
   ) {
     throw new Error('OPENCLAW_OVERALL_ENGINEER_REVIEW_BINDING_STALE');
   }
+}
+
+function assertDisplayedOverall(
+  input: ConfirmCanonicalOverallForAeoRequest,
+  workItem: CanonicalWorkItemProjection,
+): void {
+  const overall = workItem.integratedAssessment?.overallSynthesis;
+  if (
+    !overall ||
+    input.expectedRevision !== workItem.revision ||
+    input.expectedOverallRevision !== overall.revision ||
+    input.expectedOverallArtifactRef !== overall.artifact.ref
+  ) {
+    throw overallConfirmationConflict();
+  }
+}
+
+function overallConfirmationConflict(): Error & { code: string; statusCode: number } {
+  const code = 'OPENCLAW_OVERALL_CONFIRMATION_REVISION_STALE';
+  return Object.assign(new Error(code), { code, statusCode: 409 });
 }
 
 function assertConfirmationBindsCurrentOverall(

@@ -146,6 +146,45 @@ export class DocumentWorkRuntimeService {
       if (!intent || !await this.deliveryCatalog.readOwnedAcquisitionVersionBinding({
         ...scope, acquisitionId: input.acquisitionId }))
         throw new Error('DOCUMENT_UPLOAD_DELIVERY_SOURCE_DENIED');
+      const deliveryRef = `acquisition:${input.acquisitionId}`;
+      const readingRequestId = documentDeliveryRequestId('reading', deliveryRef);
+      if (intent.delivery.reading && !this.readingRuns)
+        throw new Error('DOCUMENT_UPLOAD_DELIVERY_READING_REPOSITORY_UNAVAILABLE');
+      const prior = intent.delivery.reading && this.readingRuns
+        ? await this.readingRuns.readRequest(scope, readingRequestId) : null;
+      if (prior) {
+        if (prior.documentVersionId !== scope.documentVersionId || prior.requestId !== readingRequestId)
+          throw new Error('DOCUMENT_UPLOAD_DELIVERY_READING_SCOPE_MISMATCH');
+        // Admission pins the original parse. A later published parse is not a
+        // reason to BEGIN the same request against different source inputs.
+        const published = await this.parsing.inspectPublishedIdentity(
+          scope.documentVersionId, prior.parseRunId, scope);
+        const source = await this.deliveryCatalog.readOriginalRegistryIdentity(
+          scope.documentVersionId, scope.tenantId);
+        if (!source || published.binding.documentVersionId !== scope.documentVersionId ||
+            published.binding.parseRunId !== prior.parseRunId ||
+            published.binding.parseRevision !== prior.parseRevision ||
+            published.binding.sourceArtifactId !== source.version.sourceArtifactId ||
+            published.binding.sourceSha256 !== source.source.sha256 ||
+            published.binding.sourceByteLength !== source.source.byteLength)
+          throw new Error('DOCUMENT_UPLOAD_DELIVERY_SOURCE_CHANGED');
+        const reading = await this.readingRuntime.run({ action: 'READING_STATUS',
+          documentVersionId: scope.documentVersionId, runRef: prior.runRef, deliveryRef });
+        if (!('status' in reading)) throw new Error('DOCUMENT_UPLOAD_DELIVERY_READING_STATUS_REQUIRED');
+        // Translation admission is independent of the reading outcome.
+        if (intent.delivery.translation !== 'ZH_FULL' && !['SAVED', 'QUEUED', 'RUNNING'].includes(reading.status))
+          return { status: 'REQUIRES_ATTENTION' as const,
+            documentVersionId: scope.documentVersionId, parseRunId: prior.parseRunId,
+            errorCode: reading.errorCode ?? `DOCUMENT_READING_${reading.status}` };
+        if (intent.delivery.translation === 'ZH_FULL') await this.translationRuntime.run({
+          action: 'START', documentVersionId: scope.documentVersionId, deliveryRef,
+          parseRunId: prior.parseRunId,
+          requestId: documentDeliveryRequestId('translation', deliveryRef),
+        });
+        await this.deliveryCatalog.markDocumentUploadDeliveryAdmitted(input);
+        return { status: 'ADMITTED' as const, documentVersionId: scope.documentVersionId,
+          parseRunId: prior.parseRunId };
+      }
       const state = await this.parsing.status(scope.documentVersionId, scope);
       let run = state.latestRun;
       if (!run) {

@@ -71,6 +71,19 @@ export interface TdmsCompleteOwnedField {
     nativeColumnLabel?: string;
     nativeColumnToken?: string | null;
   }>;
+  /** Raw capture context only; Host independently decides body eligibility. */
+  rawTextQualification?: {
+    semanticPurpose: 'SEMANTIC_PURPOSE_UNKNOWN';
+    ownerSourceRecordId: string;
+    ownStateRaw: string;
+    observedAt: string;
+    reasonCode:
+      | 'TDMS_ESTIMATING_STATE_ONLY_REQUIRED'
+      | 'TDMS_OPINION_STATE_NOT_ELIGIBLE'
+      | null;
+  };
+  /** Preserve the reviewed anonymous caption's exact codepoints. */
+  rawCaptionText?: string;
 }
 export interface TdmsSourceContent {
   /** Complete1 own-part literals remain PARTIAL and independently authorized. */

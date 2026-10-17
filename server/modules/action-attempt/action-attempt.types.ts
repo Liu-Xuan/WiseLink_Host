@@ -69,6 +69,8 @@ export type ReserveAndClaimResult = OpenClawLeaseClaim & {
 };
 
 export interface ActionAttemptFence {
+  /** Trusted Host scope only; not accepted from the tool caller. */
+  automaticLeaseRequired?: boolean;
   attemptRef: string;
   leaseToken: string;
   leaseGeneration: number;

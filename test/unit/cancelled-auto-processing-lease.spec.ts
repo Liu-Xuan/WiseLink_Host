@@ -13,7 +13,7 @@ const TOKEN = 'b1686364-7ee9-4ca1-a3aa-0b62794cb436';
 const MODEL = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM 5.3', providerKind: 'BUILT_IN' as const,
   settingsRevision: 1, selectedAt: NOW.toISOString() };
 
-function fixture() {
+function fixture(creator: 'owner' | 'canonical-service' = 'owner') {
   const task = sealTaskEnvelope({ schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
     actionAttemptId: 'ATT-old', operationRef: 'AQ-old', taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
     priority: 100, tenantId: 'tenant-fixture', workItemId: 'WI-fixture', inputRevision: 3, baseRevision: 3,
@@ -27,7 +27,8 @@ function fixture() {
     status: 'CANDIDATE_READBACK_VERIFIED', packageId: 'PKG-fixture', analysisModelJson: canonicalJson(MODEL),
     projectionJson: canonicalJson({ workItemId: 'WI-fixture', requestId: 'REQ-parse', revision: 3,
       phase: 'CANDIDATE_READBACK_VERIFIED', source, package: { packageId: 'PKG-fixture' } }) };
-  const target = { tenantId: owner.tenantId, actorUserId: owner.requestedByUserId,
+  const target = { tenantId: owner.tenantId,
+    actorUserId: creator === 'canonical-service' ? 'service:openclaw-main' : owner.requestedByUserId,
     workItemId: owner.workItemId, documentVersionId: owner.documentVersionId, subjectKind: 'WORK_ITEM',
     requestOrigin: 'OPENCLAW_MCP_V1', status: 'CANCELLED', attemptId: task.actionAttemptId,
     operationRef: task.operationRef, actionType: task.taskType, attemptNo: 6, triggerRequestId: 'REQ-job',
@@ -94,8 +95,9 @@ function fixture() {
     setBeforeLock: (perform: typeof beforeLock) => { beforeLock = perform; } };
 }
 
-test('uses the shared WI FOR UPDATE then all-attempt locks, and preserves all JA/attempt/source data', async () => {
-  const f = fixture(); const before = canonicalJson({ owner: f.owner, attempts: f.attempts });
+test.each(['owner', 'canonical-service'] as const)(
+  'uses the shared WI FOR UPDATE then all-attempt locks, and preserves all JA/attempt/source data (%s creator)', async creator => {
+  const f = fixture(creator); const before = canonicalJson({ owner: f.owner, attempts: f.attempts });
   await expect(f.repository.parkCancelledAutoProcessingLease(f.input)).resolves.toEqual({
     blockedAt: NOW, blockedCode: 'AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED', replayed: false,
   });
@@ -112,6 +114,21 @@ test('uses the shared WI FOR UPDATE then all-attempt locks, and preserves all JA
   expect(fk?.reference().columns.map(column => column.name)).toEqual(['work_item_id']);
   expect(fk?.reference().foreignColumns.map(column => column.name)).toEqual(['work_item_id']);
 });
+
+test.each(['owner', 'grant', 'source', 'model', 'later-attempt', 'service-actor'])(
+  'canonical service creation does not bypass the %s binding', async boundary => {
+    const f = fixture('canonical-service');
+    if (boundary === 'owner') f.owner.requestedByUserId = 'other-engineer';
+    if (boundary === 'grant') f.grant.actorUserId = 'other-engineer';
+    if (boundary === 'source') f.target.documentVersionId = 'DV-other';
+    if (boundary === 'model') f.target.executionModelJson = canonicalJson({ ...MODEL, settingsRevision: 2 });
+    if (boundary === 'service-actor') f.target.actorUserId = 'service:unrelated';
+    if (boundary === 'later-attempt') f.attempts.push({ ...f.target,
+      attemptId: 'ATT-later', operationRef: 'AQ-later', attemptNo: 7, createdAt: NOW });
+    await expect(f.repository.parkCancelledAutoProcessingLease(f.input)).resolves.toBeNull();
+    expect(f.db.update).not.toHaveBeenCalled();
+  },
+);
 
 test.each([
   { operationRef: 'AQ-new' }, { attemptNo: 7 }, { triggerRequestId: 'REQ-new' },

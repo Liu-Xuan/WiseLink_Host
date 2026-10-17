@@ -61,6 +61,8 @@ import { wikiDirectVersions, wikiLayerInstruction } from './hierarchical-wiki-ge
 import { summaryError } from './derived-summary.validation';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { MatterActionAttemptService } from './matter-action-attempt.service';
+import { readWikiGuideNavigation } from './hierarchical-wiki-navigation';
+import type { WikiGuideNavigationPage } from '@shared/wiki-guide.interface';
 import type {
   CanonicalMatterAttemptAuthorization,
   CanonicalVerifiedMatterAttemptScope,
@@ -143,6 +145,11 @@ export class HierarchicalWikiService {
     cursor?: string,
   ): Promise<HierarchicalWikiList> {
     return this.readList(actor, cursor);
+  }
+
+  navigation(input: unknown, actor: CanonicalHostActor): Promise<WikiGuideNavigationPage> {
+    return this.repository.readBrowser(actor, (database, reader) =>
+      readWikiGuideNavigation(database, reader, input));
   }
 
   /** Explicit browser engineering-analysis delegation, distinct from reading
@@ -802,11 +809,57 @@ export class HierarchicalWikiService {
           AND w.scope_json->>'fleetFamilyId'=${root.scope.fleetFamilyId} AND w.scope_json->'fleetModelIds'=${JSON.stringify(root.scope.fleetModelIds)}::jsonb
           AND (m.basis_json->>'matterRevisionId' IS DISTINCT FROM e.current_matter_revision_id OR
             m.member_json->>'workRef' IS DISTINCT FROM latest.matter_work_revision_id) ORDER BY "subjectId" LIMIT 100`);
+      // Existing saved WI work may predate its journal or the WI inventory
+      // branch. Compare only immutable head metadata here; the original
+      // inventory still decides readiness and exact member authorization.
+      // Already-waiting missing heads are reread by waitingDocs, leaving this
+      // bounded discovery page free for other families. Real prior members
+      // always remain eligible for invalidation by a newer partial head.
+      const workItemChanges = await database.execute<{
+        kind: string;
+        subjectId: string;
+        important: boolean;
+      }>(sql`
+        SELECT DISTINCT 'WORK_ITEM' AS kind,wi.work_item_id AS "subjectId",true AS important
+        FROM hierarchical_wiki_membership m JOIN hierarchical_wiki_scope w ON w.wiki_id=m.wiki_id
+          AND w.tenant_id=m.tenant_id AND w.actor_user_id=m.actor_user_id
+        JOIN dm_publication_family f ON f.family_id=m.source_id
+        JOIN dm_document_version d ON d.document_version_id=f.current_document_version_id
+        JOIN work_item wi ON wi.tenant_id=m.tenant_id AND wi.document_version_id=d.document_version_id
+          AND wi.source_artifact_id=d.source_artifact_id AND wi.source_file_sha256=d.pdf_sha256
+          AND wi.source_byte_length=d.byte_length AND wi.requested_by_user_id=${owner.actorUserId}
+        JOIN LATERAL (SELECT r.assessment_work_revision_id,r.work_revision FROM assessment_work_revision r
+          WHERE r.tenant_id=wi.tenant_id AND r.work_item_id=wi.work_item_id ORDER BY r.work_revision DESC LIMIT 1) latest ON true
+        LEFT JOIN hierarchical_wiki_membership prior ON prior.wiki_id=m.wiki_id
+          AND prior.tenant_id=m.tenant_id AND prior.actor_user_id=m.actor_user_id
+          AND prior.source_kind='WORK_ITEM' AND prior.source_id=wi.work_item_id
+          AND prior.member_key='WORK_ITEM:'||wi.work_item_id
+        WHERE m.tenant_id=${owner.tenantId} AND m.actor_user_id=${owner.actorUserId} AND m.source_kind='DOCUMENT'
+          AND m.basis_json->>'classificationStatus'='CONFIRMED'
+          AND m.basis_json->>'documentVersionId'=d.document_version_id AND w.scope_json->>'kind'='ATA4'
+          AND w.scope_json->>'fleetFamilyId'=${root.scope.fleetFamilyId}
+          AND w.scope_json->'fleetModelIds'=${JSON.stringify(root.scope.fleetModelIds)}::jsonb
+          AND engineering_matter_work_item_owned_by_actor(${owner.tenantId},wi.work_item_id)
+          AND engineering_matter_document_owned_by_actor(${owner.tenantId},d.document_version_id)
+          AND (prior.member_key IS NOT NULL OR NOT EXISTS (
+            SELECT 1 FROM hierarchical_wiki_scope pending
+            CROSS JOIN LATERAL jsonb_array_elements(pending.state_json->'waiting') gap
+            WHERE pending.tenant_id=m.tenant_id AND pending.actor_user_id=m.actor_user_id
+              AND pending.scope_json->>'fleetFamilyId'=w.scope_json->>'fleetFamilyId'
+              AND pending.scope_json->'fleetModelIds'=w.scope_json->'fleetModelIds'
+              AND gap->>'kind'='DOCUMENT' AND gap->>'subjectId'=f.family_id
+              AND gap->>'documentVersionId'=d.document_version_id
+              AND gap->>'status'='SAVED_ASSESSMENT_NOT_READY'))
+          AND (prior.member_json->>'workRef' IS DISTINCT FROM latest.assessment_work_revision_id
+            OR prior.member_json->'workRevision' IS DISTINCT FROM to_jsonb(latest.work_revision)
+            OR prior.member_json->>'documentVersionId' IS DISTINCT FROM wi.document_version_id)
+        ORDER BY "subjectId" LIMIT 100`);
       if (
         !full &&
         !events.length &&
         !sourceChanges.length &&
         !matterChanges.length &&
+        !workItemChanges.length &&
         !waitingDocs.length &&
         !waitingMatters.length &&
         !root.state.pendingEvents &&
@@ -823,6 +876,7 @@ export class HierarchicalWikiService {
         (events.length ||
         sourceChanges.length ||
         matterChanges.length ||
+        workItemChanges.length ||
         waitingDocs.length ||
         waitingMatters.length
           ? {
@@ -831,6 +885,7 @@ export class HierarchicalWikiService {
                 ...events,
                 ...sourceChanges,
                 ...matterChanges,
+                ...workItemChanges,
                 ...[...waitingDocs, ...waitingMatters].map((item) => ({
                   ...item,
                   important: false,
@@ -1146,6 +1201,17 @@ export class HierarchicalWikiService {
         dueAt: row.state.dueAt,
         coveredMembers: denied ? [] : Object.values(row.state.delivered),
         waiting: denied ? [] : row.state.waiting,
+        activeRequest:
+          !denied && row.state.active && attempt &&
+          ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(attempt.status)
+            ? {
+                requestId: row.state.active.requestId,
+                attemptRef: attempt.operationRef!,
+                status: attempt.status,
+                claimCount: attempt.claimCount ?? null,
+                executorSessionKey: attempt.executorSessionKey ?? null,
+              }
+            : null,
         errorCode:
           denied ??
           row.state.blocked ??

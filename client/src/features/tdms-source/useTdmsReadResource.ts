@@ -17,6 +17,16 @@ export function tdmsReadFailureMessage(error: unknown): string {
     return '当前 Host 尚未连接 TDMS 已接收记录，来源阅读暂不可用。';
   if (code === 'LCM_SOURCE_READING_UNCONFIGURED')
     return '当前 Host 尚未配置 LCM 快照读取；需要来源负责人连接已获准的快照与读取授权。';
+  if (code === 'LCM_MATRIX_READING_UNCONFIGURED')
+    return '当前 Host 尚未连接 LCM 完整范围矩阵读取，构型统计待核实。';
+  if (code === 'LCM_MATRIX_DOMAIN_UNCONFIGURED')
+    return 'LCM 管理域尚未由 Host 确认，暂不能聚合软件名称。';
+  if (code === 'LCM_MATRIX_READ_INCOMPLETE')
+    return '所选读取集未完整取得，构型统计待核实。';
+  if (code === 'LCM_MATRIX_TEMPORAL_OVERLAP')
+    return '同一软件与飞机的所选快照存在不同或未知时点，请分别选择准确快照读取。';
+  if (code === 'LCM_MATRIX_BINDING_CHANGED' || code === 'LCM_SOURCE_PERMISSION_CHANGED')
+    return '来源范围或读取权限已变化，请重新读取所选快照。';
   return tdmsReadDenied(error) ? '此来源暂不可读取，请重新核对来源与权限。'
     : '来源读取未完成，请重试；未切换到其他版本。';
 }

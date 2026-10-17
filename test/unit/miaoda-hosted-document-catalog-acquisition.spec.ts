@@ -1,4 +1,9 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import type { Request } from 'express';
+import { SessionResolver } from '../../server/modules/identity/session-resolver.service';
+import type { VerifiedIdentity } from '../../server/modules/identity/identity.types';
+import { CANONICAL_MIAODA_APP_ID } from '../../server/modules/canonical-host/canonical-host.constants';
 
 import {
   dmAcquisition,
@@ -47,6 +52,55 @@ interface RecordAcquisitionInput {
 }
 
 describe('MiaodaHostedDocumentCatalog acquisition boundary', () => {
+  it('enters the existing verified upload SQL scope before the source/acquisition transaction', async () => {
+    const fixture = verifiedUploadCatalog();
+    await expect(fixture.run()).resolves.toMatchObject({ acquisitionId: 'ACQUISITION-1', acquiredBy: 'engineer-1' });
+    expect(fixture.scopes).toEqual([{ userId: 'engineer-1', isSystemAccount: true, roles: [] }]);
+    expect(fixture.database.state.operations).toEqual([
+      'insert-source-artifact', 'read-source-artifact', 'insert-acquisition', 'read-acquisition',
+    ]);
+    expect(fixture.database.state.artifacts[0]).toMatchObject({ ...fixture.input.sourceArtifact,
+      createdAt: new Date(fixture.input.sourceArtifact.createdAt) });
+  });
+
+  it.each([
+    ['missing OAuth session', { missingSession: true }, 'OFFICIAL_OAUTH_SESSION_REQUIRED'],
+    ['expired OAuth session', { expired: true }, 'OFFICIAL_OAUTH_SESSION_REQUIRED'],
+    ['different native actor', { nativeActor: 'engineer-other' }, 'DIALOGUE_BROWSER_IDENTITY_MISMATCH'],
+    ['different native tenant', { nativeTenant: 'tenant-other' }, 'DIALOGUE_BROWSER_IDENTITY_MISMATCH'],
+    ['different acquisition owner', { acquiredBy: 'engineer-other' }, 'DIALOGUE_BROWSER_IDENTITY_MISMATCH'],
+  ] as const)('rejects %s before entering a source registration transaction', async (_label, options, error) => {
+    const fixture = verifiedUploadCatalog(options);
+    await expect(fixture.run()).rejects.toThrow(error);
+    expect(fixture.database.db.transaction).not.toHaveBeenCalled();
+    expect(fixture.scopes).toEqual([]);
+  });
+
+  it('fails closed when upload registration has no verified SQL provider or acquisition actor', async () => {
+    const database = catalogDatabase();
+    const input = recordAcquisitionInput(); input.acquisition.sourceChannel = 'document_library_upload';
+    await expect(new MiaodaHostedDocumentCatalog(database.db as never).recordAcquisition(input))
+      .rejects.toMatchObject({ code: 'VERIFIED_SQL_CONTEXT_UNAVAILABLE' });
+    input.acquisition.acquiredBy = '';
+    await expect(new MiaodaHostedDocumentCatalog(database.db as never).recordAcquisition(input))
+      .rejects.toMatchObject({ code: 'ACQUISITION_ACTOR_REQUIRED' });
+    expect(database.db.transaction).not.toHaveBeenCalled();
+  });
+
+  it('keeps the same upload request idempotent and preserves source/acquisition rollback', async () => {
+    const fixture = verifiedUploadCatalog();
+    await fixture.run(); await fixture.run();
+    expect(fixture.database.state.artifacts).toHaveLength(1);
+    expect(fixture.database.state.acquisitions).toHaveLength(1);
+    expect(fixture.database.state.acquisitions[0]).toMatchObject({
+      idempotencyKey: fixture.input.acquisition.idempotencyKey, sourceRef: fixture.input.acquisition.sourceRef,
+    });
+    const failing = verifiedUploadCatalog({ failAcquisitionInsert: true });
+    await expect(failing.run()).rejects.toThrow('ACQUISITION_INSERT_FAILED');
+    expect(failing.database.state.artifacts).toHaveLength(0);
+    expect(failing.database.state.acquisitions).toHaveLength(0);
+  });
+
   it('registers and reads back source plus acquisition in one short transaction', async () => {
     const fixture = catalogDatabase();
     const catalog = new MiaodaHostedDocumentCatalog(fixture.db as never);
@@ -407,7 +461,51 @@ function recordAcquisitionInput(): RecordAcquisitionInput {
   };
 }
 
-function catalogDatabase(options: { failAcquisitionInsert?: boolean } = {}): {
+function verifiedUploadCatalog(options: {
+  missingSession?: boolean; expired?: boolean; nativeActor?: string; nativeTenant?: string;
+  acquiredBy?: string; failAcquisitionInsert?: boolean;
+} = {}) {
+  const priorSandbox = process.env.SANDBOX_ID, priorLocal = process.env.MIAODA_LOCAL_DEV;
+  const identity: VerifiedIdentity = {
+    subjectMappingId: '11111111-1111-4111-8111-111111111111', provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+    miaodaUserId: 'engineer-1', tenantId: 'tenant-1', feishuUserId: null, feishuOpenId: 'ou_fixture',
+    namespacedSubject: { namespace: 'FEISHU_OPEN_ID', subject: 'ou_fixture', tenantKey: 'tenant-key-fixture' },
+    verifiedAt: '2026-10-15T00:00:00.000Z',
+  };
+  const request = { headers: { cookie: 'wl_session=constructed-source-session' }, userContext: {
+    userId: options.nativeActor ?? 'engineer-1', tenantId: options.nativeTenant ?? 'tenant-1',
+    appId: CANONICAL_MIAODA_APP_ID, env: 'runtime', roles: [],
+  } } as unknown as Request;
+  const sql = new AsyncLocalStorage<Request['userContext']>();
+  const scopes: Array<Request['userContext']> = [];
+  const database = catalogDatabase({ failAcquisitionInsert: options.failAcquisitionInsert,
+    assertSqlContext: () => {
+      if (!sql.getStore()?.isSystemAccount || sql.getStore()?.userId !== 'engineer-1')
+        throw Object.assign(new Error('Source registration requires its verified Host SQL context.'), { code: '42501' });
+    } });
+  const sessions = new SessionResolver({ validate: jest.fn(async () => options.missingSession ? null : {
+    identity, sessionId: 'session-fixture', revision: 1, expiresAt: new Date(Date.now() + (options.expired ? -1 : 60_000)),
+  }) } as never, { applicationScopeId: CANONICAL_MIAODA_APP_ID, sessionEnvironment: 'runtime' } as never,
+  { use: (scoped: Request, _response: unknown, next: () => void) => {
+    scopes.push(scoped.userContext); sql.run(scoped.userContext, next);
+  } } as never);
+  const catalog = new MiaodaHostedDocumentCatalog(database.db as never, sessions);
+  const input = recordAcquisitionInput();
+  input.acquisition.sourceChannel = 'document_library_upload';
+  input.acquisition.acquiredBy = options.acquiredBy ?? 'engineer-1';
+  input.acquisition.sourceRef = 'DOCUMENT_UPLOAD:engineer-1:request-fixture';
+  input.acquisition.idempotencyKey = 'tenant:tenant-1:request:document-upload:engineer-1:request-fixture';
+  return { database, scopes, input, async run() {
+    process.env.SANDBOX_ID = 'unit-source-registration'; delete process.env.MIAODA_LOCAL_DEV;
+    try { return await sessions.withRequestSession(request, () => catalog.recordAcquisition(input)); }
+    finally {
+      if (priorSandbox === undefined) delete process.env.SANDBOX_ID; else process.env.SANDBOX_ID = priorSandbox;
+      if (priorLocal === undefined) delete process.env.MIAODA_LOCAL_DEV; else process.env.MIAODA_LOCAL_DEV = priorLocal;
+    }
+  } };
+}
+
+function catalogDatabase(options: { failAcquisitionInsert?: boolean; assertSqlContext?: () => void } = {}): {
   db: { transaction: jest.Mock };
   state: CatalogState;
 } {
@@ -466,6 +564,7 @@ function catalogDatabase(options: { failAcquisitionInsert?: boolean } = {}): {
   const db = {
     transaction: jest.fn(
       async (callback: (executor: typeof transaction) => Promise<unknown>) => {
+        options.assertSqlContext?.();
         const artifactSnapshot = state.artifacts.map(
           (row: Record<string, unknown>) => ({ ...row }),
         );

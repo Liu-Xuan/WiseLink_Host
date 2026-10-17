@@ -36,7 +36,14 @@ export function sealTaskEnvelope(
 }
 
 export function sealResultEnvelope(
-  envelope: Omit<OpenClawResultEnvelope, 'contentHash'>,
+  envelope: Omit<import('./action-attempt-envelope.types').OpenClawModelResultEnvelope, 'contentHash'>,
+): import('./action-attempt-envelope.types').OpenClawModelResultEnvelope;
+export function sealResultEnvelope(
+  envelope: Omit<import('./action-attempt-envelope.types').OpenClawSavedWorkReconciliationResultEnvelope, 'contentHash'>,
+): import('./action-attempt-envelope.types').OpenClawSavedWorkReconciliationResultEnvelope;
+export function sealResultEnvelope(
+  envelope: Omit<import('./action-attempt-envelope.types').OpenClawModelResultEnvelope, 'contentHash'> |
+    Omit<import('./action-attempt-envelope.types').OpenClawSavedWorkReconciliationResultEnvelope, 'contentHash'>,
 ): OpenClawResultEnvelope {
   return { ...envelope, contentHash: canonicalSha256(envelope) };
 }
@@ -224,6 +231,7 @@ export function parseResultEnvelope(input: {
       'contentHash',
       'errorCode',
       'errorDetail',
+      ...('executionKind' in value ? ['executionKind','modelRequests','sourceWork'] : []),
     ],
     'RESULT_ENVELOPE_SCHEMA_INVALID',
   );
@@ -346,6 +354,18 @@ function assertResultFields(
   const correction = task.schemaVersion === 'wiselink.3_1.openclaw_task_envelope.v2' &&
     isRecord(task.modelInput.correction) &&
     ['ENGINEERING_ISSUE_CORRECTION', 'ENGINEERING_OVERVIEW_CORRECTION'].includes(String(task.modelInput.correction.kind));
+  const savedRecovery = 'executionKind' in result && result.executionKind === 'HOST_SAVED_WORK_RECONCILIATION';
+  if (savedRecovery) {
+    const marker = task.modelInput.savedWorkReconciliation;
+    if (task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' || !isRecord(marker) ||
+        marker.executionKind !== result.executionKind || marker.modelRequests !== 0 || result.modelRequests !== 0 ||
+        result.modelVersion !== null || !isRecord(result.sourceWork)) fail('RESULT_SAVED_WORK_RECONCILIATION_INVALID');
+    assertExactKeys(result.sourceWork,['workRevisionRef','sourceActionAttemptId'],'RESULT_SAVED_WORK_RECONCILIATION_INVALID');
+    if (result.sourceWork.workRevisionRef !== marker.workRevisionRef ||
+        result.sourceWork.sourceActionAttemptId !== marker.sourceActionAttemptId ||
+        result.runMetrics.inputUnits !== 0 || result.runMetrics.outputUnits !== 0)
+      fail('RESULT_SAVED_WORK_RECONCILIATION_INVALID');
+  }
   if (correction) {
     if (!('producer' in result) || !isRecord(result.producer)) fail('RESULT_OFFICIAL_PLUGIN_PRODUCER_REQUIRED');
     const producer = result.producer;
@@ -358,7 +378,7 @@ function assertResultFields(
       fail('RESULT_OFFICIAL_PLUGIN_PRODUCER_INVALID');
   } else {
     if ('producer' in result) fail('RESULT_EXECUTION_PURPOSE_MISMATCH');
-    requiredText(result.modelVersion, 'RESULT_ENVELOPE_MODEL_VERSION_REQUIRED');
+    if (!savedRecovery) requiredText(result.modelVersion, 'RESULT_ENVELOPE_MODEL_VERSION_REQUIRED');
     requiredText(result.skillVersion, 'RESULT_ENVELOPE_SKILL_VERSION_REQUIRED');
   }
   requiredText(result.promptVersion, 'RESULT_ENVELOPE_PROMPT_VERSION_REQUIRED');

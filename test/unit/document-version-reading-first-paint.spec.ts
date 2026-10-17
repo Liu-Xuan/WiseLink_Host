@@ -10,6 +10,8 @@ import { originalFixture } from './document-parsing/fixtures/document-original.f
 const { JSDOM } = require('jsdom');
 
 jest.mock('@client/src/pages/DocumentParsingPage/document-version-reading.css', () => ({}), { virtual: true });
+// Saved-panel behavior has its own full consumer/retention suite.
+jest.mock('@client/src/pages/DocumentParsingPage/DocumentSavedWorkPanels', () => ({ __esModule: true, default: () => null }));
 jest.mock('@client/src/components/ui/button', () => ({
   Button: ({ children, onClick, disabled }: { children: ReactNode; onClick?: () => void; disabled?: boolean }) =>
     createElement('button', { onClick, disabled }, children),
@@ -36,13 +38,18 @@ jest.mock('@client/src/pages/DocumentParsingPage/SemanticBilingualReader', () =>
     '双语对照已渲染'),
 }));
 jest.mock('@client/src/pages/DocumentParsingPage/DocumentSourceReadingWorkspace', () => ({
-  DocumentSourceReadingWorkspace: (props: { mode: string; onModeChange: (mode: string) => void; bilingualContent: ReactNode; initialPage?: number; initialUnitId?: string; onLocationSelect?: (page: number, unitId: string) => void }) =>
+  DocumentSourceReadingWorkspace: (props: { mode: string; onModeChange: (mode: string) => void; bilingualContent: ReactNode; initialPage?: number; initialUnitId?: string; onLocationSelect?: (page: number, unitId: string) => void; returnRoute?: string; returnLabel?: string;
+    toolbar?: { identity: ReactNode; links?: ReactNode; more?: ReactNode; notices?: ReactNode } }) =>
     createElement('div', { 'data-mode': props.mode, 'data-initial-page': props.initialPage, 'data-initial-unit': props.initialUnitId },
+      createElement('header', null, props.toolbar?.identity, props.toolbar?.links, props.toolbar?.more,
+        props.returnRoute ? createElement('a', { href: props.returnRoute }, props.returnLabel) : null),
+      props.toolbar?.notices,
       createElement('button', { id: 'select-original-source', onClick: () => props.onLocationSelect?.(2, 'u2') }, '定位原文段落'),
       createElement('button', { id: 'select-unregistered-page', onClick: () => props.onLocationSelect?.(3, 'u2') }, '未登记页'),
       createElement('button', { id: 'select-unknown-source', onClick: () => props.onLocationSelect?.(2, 'unregistered-unit') }, '未知段落'),
       createElement('button', { id: 'switch-bilingual', onClick: () => props.onModeChange('bilingual') }, '切中英对照'),
       createElement('button', { id: 'switch-translation', onClick: () => props.onModeChange('translation') }, '切中文阅读'),
+      createElement('button', { id: 'switch-dual', onClick: () => props.onModeChange('dual') }, '切回原文'),
       props.bilingualContent),
 }));
 
@@ -56,6 +63,9 @@ jest.mock('@client/src/api/document-wiki',()=>({readDocumentWiki:(...args:unknow
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider',()=>({useCurrentUserSession:()=>({sessionGeneration:1,authenticationRequired:false})}));
 jest.mock('@client/src/api/canonical-host', () => ({
   getCanonicalHostClientSessionGeneration:()=>1,
+  getCanonicalLibraryDocuments: async () => ({ items: [{ familyId: 'FAM-1', versions: [
+    { documentVersionId: 'DV1', readerWorkItemId: '' }, { documentVersionId: 'DV2', readerWorkItemId: '' },
+  ] }], nextCursor: null }),
   readDocumentParsingStatus: (...args: unknown[]) => mockStatus(...args),
   readParsedDocument: (...args: unknown[]) => mockReading(...args),
   readDocumentTranslationReading: (...args: unknown[]) => mockTranslation(...args),
@@ -132,6 +142,22 @@ beforeEach(() => {
     documentVersionId: 'DV1', parseRunId: 'PR1',
     execution: { status: 'SUCCEEDED' }, translation: { schemaVersion: 'constructed' },
   });
+});
+
+test('Wiki guide source reader exposes its validated return and rejects a different document binding', async () => {
+  const guide = new URLSearchParams({ wikiRoot: 'DS-11111111-1111-4111-8111-111111111111',
+    wikiChapter: 'DS-22222222-2222-4222-8222-222222222222', wikiQuery: 'software', wikiY: '312' }).toString();
+  const query = new URLSearchParams({ parseRunId: 'PR1', returnWikiGuideQuery: guide, returnDocumentVersionId: 'DV1' });
+  await mount(query.toString());
+  const links = Array.from(container.querySelectorAll<HTMLAnchorElement>('a'))
+    .filter(link => link.textContent?.includes('返回 Wiki 导览'));
+  expect(links.length).toBeGreaterThan(0);
+  const target = new URL(links[0].href);
+  expect(target.pathname).toBe('/situation'); expect(target.searchParams.get('wikiY')).toBe('312');
+  query.set('returnDocumentVersionId', 'DV-other');
+  await navigate(`/document-versions/DV1?${query}`);
+  expect(Array.from(container.querySelectorAll('a')).some(link => link.textContent?.includes('返回 Wiki 导览'))).toBe(false);
+  expect(mockStart).not.toHaveBeenCalled();
 });
 
 test('Wiki member link reads the exact semantic/reading revision and retains full conditions',async()=>{
@@ -220,7 +246,9 @@ it('renders the pinned body before the status read resolves and never requests t
   resolveStatus(statusPayload());
   await act(async () => {});
   expect(container.querySelector('h1')?.textContent).toBe('SB-TEST-001');
-  expect(container.textContent).toContain('测试服务通告 · R2 · 库内当前版本');
+  expect(container.querySelector('.document-reading-toolbar-identity p')?.textContent).toBe('测试服务通告');
+  expect(container.querySelector('.document-reading-business-version')?.textContent).toBe('R2');
+  expect(container.querySelector('.document-reading-more-panel')?.textContent).toContain('R2 · 库内当前版本');
   expect(container.textContent).toContain('constructed.pdf');
 });
 
@@ -264,10 +292,10 @@ it('replaces the published loading state with a read error when the body request
   expect(container.textContent).not.toContain('正在读取已发布的解析内容');
 });
 
-it('explains when direct evidence has no task-bound paragraph location', async () => {
+it('retains unbound evidence context in the collapsed document information', async () => {
   await mount('parseRunId=PR1&unboundEvidence=1');
-  expect(container.textContent).toContain('没有工作项执行身份');
-  expect(container.textContent).toContain('未猜测任务或具体段落位置');
+  expect(container.querySelector('.document-reading-more-panel')?.textContent).toContain('此保存依据未提供工作项身份');
+  expect(container.querySelector('.document-reading-more')?.hasAttribute('open')).toBe(false);
 });
 
 it('loads translation only after switching to bilingual mode, once', async () => {
@@ -290,6 +318,80 @@ it('loads the same saved translation on demand in Chinese reading mode', async (
   expect(mockTranslation).toHaveBeenCalledTimes(1);
   expect(mockTranslation).toHaveBeenCalledWith('DV1', 'PR1', expect.anything());
   expect(container.querySelector('[data-reading-mode="translation"]')).not.toBeNull();
+});
+
+async function switchReadingMode(id: 'switch-bilingual' | 'switch-translation' | 'switch-dual'): Promise<void> {
+  await act(async () => container.querySelector<HTMLButtonElement>(`#${id}`)!.click());
+}
+
+it('translation view group keeps the in-flight response when switching between Chinese layouts', async () => {
+  const pending: Array<{ signal: AbortSignal; resolve: (value: unknown) => void }> = [];
+  mockTranslation.mockImplementation((_documentId: string, _parseId: string, signal: AbortSignal) =>
+    new Promise(resolve => pending.push({ signal, resolve })));
+  await mount('parseRunId=PR1');
+  await switchReadingMode('switch-bilingual');
+  expect(pending).toHaveLength(1);
+  await switchReadingMode('switch-translation');
+  await switchReadingMode('switch-bilingual');
+  expect(pending).toHaveLength(1);
+  expect(pending[0].signal.aborted).toBe(false);
+  await act(async () => pending[0].resolve({
+    documentVersionId: 'DV1', parseRunId: 'PR1', execution: { status: 'SUCCEEDED' },
+    translation: { schemaVersion: 'constructed' },
+  }));
+  expect(container.querySelector('[data-bilingual="rendered"]')).not.toBeNull();
+  expect(mockStart).not.toHaveBeenCalled();
+});
+
+it('translation view group reuses the saved response but performs a fresh read after returning from original mode', async () => {
+  await mount('parseRunId=PR1');
+  await switchReadingMode('switch-bilingual');
+  await switchReadingMode('switch-translation');
+  expect(container.querySelector('[data-reading-mode="translation"]')).not.toBeNull();
+  await switchReadingMode('switch-bilingual');
+  expect(mockTranslation).toHaveBeenCalledTimes(1);
+  await switchReadingMode('switch-dual');
+  expect(container.querySelector('[data-bilingual="rendered"]')).toBeNull();
+  await switchReadingMode('switch-translation');
+  expect(mockTranslation).toHaveBeenCalledTimes(2);
+  expect(container.querySelector('[data-reading-mode="translation"]')).not.toBeNull();
+  expect(mockStart).not.toHaveBeenCalled();
+});
+
+it('translation view group preserves its existing polling deadline instead of restarting the read', async () => {
+  jest.useFakeTimers();
+  try {
+    mockTranslation.mockResolvedValue({
+      documentVersionId: 'DV1', parseRunId: 'PR1', execution: { status: 'RUNNING' },
+      translation: { schemaVersion: 'constructed' },
+    });
+    await mount('parseRunId=PR1');
+    await switchReadingMode('switch-bilingual');
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    await switchReadingMode('switch-translation');
+    expect(mockTranslation).toHaveBeenCalledTimes(1);
+    await act(async () => { jest.advanceTimersByTime(1000); });
+    expect(mockTranslation).toHaveBeenCalledTimes(2);
+    expect(mockStart).not.toHaveBeenCalled();
+  } finally { jest.useRealTimers(); }
+});
+
+it.each([401, 403, 404])('translation view group still rejects both bodies on a continued request returning %s', async statusCode => {
+  const pending: Array<{ reject: (reason: Error) => void }> = [];
+  mockTranslation.mockImplementation(() => new Promise((_resolve, reject) => pending.push({ reject })));
+  let resolveStatus!: (value: unknown) => void;
+  mockStatus.mockImplementation(() => new Promise(resolve => { resolveStatus = resolve; }));
+  await mount('parseRunId=PR1');
+  await switchReadingMode('switch-bilingual');
+  await switchReadingMode('switch-translation');
+  await act(async () => pending[0].reject(Object.assign(new Error('中文读取拒绝'), { statusCode })));
+  expect(container.textContent).not.toContain('阅读版本 3');
+  expect(container.querySelector('[data-bilingual="rendered"]')).toBeNull();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('中文读取拒绝');
+  await act(async () => resolveStatus(statusPayload()));
+  expect(container.textContent).not.toContain('阅读版本 3');
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('中文读取拒绝');
+  expect(mockStart).not.toHaveBeenCalled();
 });
 
 it('changing only the external sourceRef anchor does not refetch the body reading', async () => {
@@ -522,7 +624,7 @@ it('shows a persisted quota pause instead of progress and stops status polling w
       deadlineAt: '2030-01-01T00:00:00Z', errorCode: 'DOCUMENT_PLUGIN_QUOTA_EXHAUSTED', verifiedArtifacts: 0,
     } });
     await mount();
-    expect(container.textContent).toContain('文档解析服务额度已用尽，待服务恢复后接续。');
+    expect(container.textContent).toContain('文档解析服务额度已用尽。');
     expect(container.textContent).not.toContain('正在保存并核验产物');
     expect(container.textContent).not.toContain('正在解析原件');
     expect(container.textContent).toContain('constructed');
@@ -543,7 +645,7 @@ it('shows waiting for the local parser without implying saved or running work', 
     executionMode: 'LOCAL_MINERU_WORKER', waitingForLocalWorker: true,
   } });
   await mount();
-  expect(container.textContent).toContain('等待本机解析器接续。可以离开页面，任务会保留。');
+  expect(container.textContent).toContain('等待本机解析器接续。');
   expect(container.textContent).not.toContain('正在保存并核验产物');
   expect(container.textContent).not.toContain('正在解析原件');
   expect(container.textContent).toContain('constructed');

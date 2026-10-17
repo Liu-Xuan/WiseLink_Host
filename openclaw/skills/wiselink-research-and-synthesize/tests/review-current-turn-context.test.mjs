@@ -3,6 +3,7 @@ import test from 'node:test';
 import { invokeHostedReviewModel } from '../scripts/run-hosted-review-turn.mjs';
 import { canonicalJson } from '../scripts/validate-payload.mjs';
 import { packet, record } from './fixtures/source-statement-v2-wire.fixture.mjs';
+import { SOURCE_CONTENT_SYNTHESIS_GUIDANCE } from '../scripts/jobaid-problem-guidance.mjs';
 
 // Synthetic transport and Host-read callbacks only. No provider, SDK, secrets,
 // business mutation or platform access participates in these tests.
@@ -83,6 +84,7 @@ test('initial source selection waits for an accepted actual read before full Hos
       assert.deepEqual(feedback(body).currentTurnRequest, currentRequest);
       assert.deepEqual(feedback(body).sourceRefs, await sourceReader(['page1']));
       assert.deepEqual(fullInputs(body), [input]);
+      assert.ok(body.messages.some(message => message.content?.includes(SOURCE_CONTENT_SYNTHESIS_GUIDANCE)));
       assert.equal(body.messages.at(-1).role, 'user');
       assert.ok(body.tools.some((tool) => tool.function.name === candidateName));
       return candidate();

@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '../../../client/src/styles/tokens.css';
+@import '../../../client/src/styles/glass.css';
+@import '../../../client/src/styles/motion.css';
+@import '../../../client/src/tailwind-theme.css';
+@import '../../../client/src/typography.css';
+@source '../../../client/src';
+@config '../../../tailwind.config.ts';
+html, body, #root { margin: 0; min-width: 100%; min-height: 100%; }
+html, body { background: var(--wl-bg); color: var(--wl-ink); font-family: var(--wl-font); }

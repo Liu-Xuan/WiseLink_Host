@@ -16,9 +16,42 @@ describe('explicit dialogue assessment submission', () => {
     contributions: [{ contributionRef, expectedRevision: 1 }],
     userMessage: '重新判断这个前提',
   };
-  function harness() {
+  function harness(browserScope: 'LEGACY' | 'NATIVE' = 'LEGACY') {
+    // Unit port double only: model the existing bridge contract without
+    // constructing a Hosted identity, SQL middleware, or request ALS.
+    let activeSqlScope: typeof browserScope | null = null;
+    const reviewSqlScopes: string[] = [];
+    const contextSqlScopes: string[] = [];
+    const runBrowserSql = async (run: () => Promise<unknown>) => {
+      const previous = activeSqlScope;
+      activeSqlScope = browserScope;
+      try {
+        return await run();
+      } finally {
+        activeSqlScope = previous;
+      }
+    };
+    const withVerifiedBrowserSql = jest.fn(
+      async (run: () => Promise<unknown>) => {
+        if (browserScope !== 'LEGACY')
+          throw new Error('OFFICIAL_OAUTH_SESSION_REQUIRED');
+        return runBrowserSql(run);
+      },
+    );
+    const withVerifiedReviewBrowserSql = jest.fn(
+      async (run: () => Promise<unknown>) =>
+        browserScope === 'NATIVE'
+          ? runBrowserSql(run)
+          : withVerifiedBrowserSql(run),
+    );
+    const recordReviewSql = (operation: string) => {
+      if (activeSqlScope !== browserScope)
+        throw new Error('UNIT_REVIEW_BROWSER_SQL_REQUIRED');
+      reviewSqlScopes.push(`${operation}:${activeSqlScope}`);
+    };
     const sessions = {
-      withVerifiedBrowserSql: jest.fn(async (run) => run()),
+      withVerifiedBrowserSql,
+      withVerifiedReviewBrowserSql,
       resolve: jest.fn().mockResolvedValue({
         actor: { canonicalSubject: { id: 'actor' }, tenantId: 'tenant' },
       }),
@@ -57,29 +90,41 @@ describe('explicit dialogue assessment submission', () => {
       authorize: jest.fn().mockResolvedValue([]),
       current: jest
         .fn()
-        .mockResolvedValue([{ workItemRevision: 7, workingRef: 'work-4' }]),
+        .mockImplementation(async () => {
+          if (activeSqlScope !== browserScope)
+            throw new Error('UNIT_CURRENT_BROWSER_SQL_REQUIRED');
+          contextSqlScopes.push(browserScope);
+          return [{ workItemRevision: 7, workingRef: 'work-4' }];
+        }),
     };
     const assessments = {
       find: jest.fn().mockResolvedValue(null),
       create: jest.fn(
-        async (_scope, _threadRef, body, snapshot, text, conversationId) => ({
-          request_ref: '44444444-4444-4444-8444-444444444444',
-          request_json: canonicalJson(body),
-          input_json: JSON.stringify(snapshot),
-          user_message: text,
-          review_conversation_id: conversationId,
-        }),
+        async (_scope, _threadRef, body, snapshot, text, conversationId) => {
+          expect(activeSqlScope).toBeNull();
+          return {
+            request_ref: '44444444-4444-4444-8444-444444444444',
+            request_json: canonicalJson(body),
+            input_json: JSON.stringify(snapshot),
+            user_message: text,
+            review_conversation_id: conversationId,
+          };
+        },
       ),
       findTurn: jest.fn().mockResolvedValue(null),
-      bind: jest.fn().mockResolvedValue(undefined),
+      bind: jest.fn(async () => {
+        expect(activeSqlScope).toBeNull();
+      }),
     };
     const reviews = {
-      createOrResume: jest
-        .fn()
-        .mockResolvedValue({ conversation: { reviewConversationId: 'RC-A' } }),
-      appendTextTurn: jest
-        .fn()
-        .mockResolvedValue({ turn: { reviewTurnId: 'RT-A' }, replayed: false }),
+      createOrResume: jest.fn().mockImplementation(async () => {
+        recordReviewSql('createOrResume');
+        return { conversation: { reviewConversationId: 'RC-A' } };
+      }),
+      appendTextTurn: jest.fn().mockImplementation(async () => {
+        recordReviewSql('appendTextTurn');
+        return { turn: { reviewTurnId: 'RT-A' }, replayed: false };
+      }),
     };
     const service = new DialogueAssessmentService(
       sessions as never,
@@ -88,8 +133,189 @@ describe('explicit dialogue assessment submission', () => {
       assessments as never,
       reviews as never,
     );
-    return { service, sessions, dialogues, context, assessments, reviews };
+    return {
+      service,
+      sessions,
+      dialogues,
+      context,
+      assessments,
+      reviews,
+      reviewSqlScopes,
+      contextSqlScopes,
+    };
   }
+
+  function frozenRequest(h: ReturnType<typeof harness>) {
+    const frozen = {
+      request_ref: '44444444-4444-4444-8444-444444444444',
+      request_json: canonicalJson(input),
+      input_json: '{"contextWorkItemIds":["WI-A","WI-B"],"contributions":[]}',
+      user_message: 'first exact selected input',
+      review_conversation_id: 'RC-old',
+    };
+    h.assessments.find.mockResolvedValue(frozen);
+    return frozen;
+  }
+
+  it('creates and dispatches a fresh request through the existing native browser bridge', async () => {
+    const h = harness('NATIVE');
+    await expect(h.service.request(threadRef, input, request)).resolves.toEqual(
+      {
+        requestRef: '44444444-4444-4444-8444-444444444444',
+        workItemId: 'WI-A',
+        reviewConversationId: 'RC-A',
+        reviewTurnId: 'RT-A',
+        replayed: false,
+      },
+    );
+    expect(h.reviewSqlScopes).toEqual([
+      'createOrResume:NATIVE',
+      'appendTextTurn:NATIVE',
+    ]);
+    expect(h.contextSqlScopes).toEqual(['NATIVE']);
+    expect(h.context.current).toHaveBeenCalledWith(
+      expect.anything(), ['WI-A'], false, true,
+    );
+    expect(h.sessions.withVerifiedBrowserSql).not.toHaveBeenCalled();
+    expect(h.reviews.createOrResume).toHaveBeenCalledWith('WI-A', request);
+    expect(h.assessments.create.mock.calls[0].slice(0, 3)).toEqual([
+      { actorId: 'actor', tenantId: 'tenant' },
+      threadRef,
+      input,
+    ]);
+    expect(h.reviews.appendTextTurn).toHaveBeenCalledWith(
+      'WI-A',
+      'RC-A',
+      expect.objectContaining({
+        requestId: 'dialogue-44444444-4444-4444-8444-444444444444',
+        purpose: 'UPDATE_ASSESSMENT',
+        expectedInputRevision: 7,
+      }),
+      request,
+    );
+    expect(h.assessments.bind).toHaveBeenCalledWith(
+      { actorId: 'actor', tenantId: 'tenant' },
+      expect.objectContaining({ review_conversation_id: 'RC-A' }),
+      'RT-A',
+    );
+  });
+
+  it('resumes a stored request with no turn through the native bridge using its original identity and input', async () => {
+    const h = harness('NATIVE');
+    const frozen = frozenRequest(h);
+    await expect(
+      h.service.request(threadRef, input, request),
+    ).resolves.toMatchObject({
+      reviewConversationId: 'RC-old',
+      reviewTurnId: 'RT-A',
+      replayed: true,
+    });
+    expect(h.reviewSqlScopes).toEqual(['appendTextTurn:NATIVE']);
+    expect(h.sessions.withVerifiedBrowserSql).not.toHaveBeenCalled();
+    expect(h.reviews.createOrResume).not.toHaveBeenCalled();
+    expect(h.assessments.create).not.toHaveBeenCalled();
+    expect(h.context.current).not.toHaveBeenCalled();
+    expect(h.dialogues.relevantContributions).not.toHaveBeenCalled();
+    expect(h.reviews.appendTextTurn).toHaveBeenCalledWith(
+      'WI-A',
+      'RC-old',
+      expect.objectContaining({
+        requestId: `dialogue-${frozen.request_ref}`,
+        userMessage: frozen.user_message,
+        expectedInputRevision: 7,
+      }),
+      request,
+    );
+    expect(h.assessments.bind).toHaveBeenCalledWith(
+      { actorId: 'actor', tenantId: 'tenant' },
+      frozen,
+      'RT-A',
+    );
+  });
+
+  it('rejects a missing opaque session before any read or review callback', async () => {
+    const h = harness('NATIVE');
+    h.sessions.resolve.mockResolvedValue(null);
+    await expect(h.service.request(threadRef, input, request)).rejects.toThrow(
+      'IDENTITY_SESSION_REQUIRED',
+    );
+    expect(h.dialogues.read).not.toHaveBeenCalled();
+    expect(h.context.authorize).not.toHaveBeenCalled();
+    expect(h.assessments.find).not.toHaveBeenCalled();
+    expect(h.sessions.withVerifiedReviewBrowserSql).not.toHaveBeenCalled();
+    expect(h.reviewSqlScopes).toEqual([]);
+  });
+
+  it.each(['fresh', 'stored'] as const)(
+    'preserves the bridge rejection for a %s request without review writes or binding',
+    async (kind) => {
+      const h = harness('NATIVE');
+      if (kind === 'stored') frozenRequest(h);
+      const denial = new Error('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
+      h.sessions.withVerifiedReviewBrowserSql.mockRejectedValue(denial);
+      await expect(h.service.request(threadRef, input, request)).rejects.toBe(
+        denial,
+      );
+      expect(h.reviews.createOrResume).not.toHaveBeenCalled();
+      expect(h.reviews.appendTextTurn).not.toHaveBeenCalled();
+      expect(h.assessments.create).not.toHaveBeenCalled();
+      expect(h.assessments.bind).not.toHaveBeenCalled();
+      expect(h.reviewSqlScopes).toEqual([]);
+    },
+  );
+
+  it.each(['fresh', 'stored'] as const)(
+    'rechecks inherited source access before bridging a %s request',
+    async (kind) => {
+      const h = harness('NATIVE');
+      if (kind === 'stored') frozenRequest(h);
+      const denial = new Error('OBJECT_ACCESS_DENIED');
+      h.context.authorize
+        .mockResolvedValueOnce([])
+        .mockRejectedValueOnce(denial);
+      await expect(h.service.request(threadRef, input, request)).rejects.toBe(
+        denial,
+      );
+      expect(h.context.authorize).toHaveBeenNthCalledWith(
+        2,
+        expect.anything(),
+        kind === 'fresh' ? ['WI-B', 'WI-A', 'WI-B'] : ['WI-A', 'WI-B'],
+      );
+      expect(h.sessions.withVerifiedReviewBrowserSql).toHaveBeenCalledTimes(
+        kind === 'fresh' ? 1 : 0,
+      );
+      expect(h.reviews.createOrResume).not.toHaveBeenCalled();
+      expect(h.reviews.appendTextTurn).not.toHaveBeenCalled();
+      expect(h.assessments.bind).not.toHaveBeenCalled();
+    },
+  );
+
+  it('recovers an existing native turn with fresh source access and no bridge or redispatch', async () => {
+    const h = harness('NATIVE');
+    const frozen = frozenRequest(h);
+    h.assessments.findTurn.mockResolvedValue('RT-original');
+    await expect(
+      h.service.request(threadRef, input, request),
+    ).resolves.toMatchObject({
+      reviewConversationId: 'RC-old',
+      reviewTurnId: 'RT-original',
+      replayed: true,
+    });
+    expect(h.context.authorize).toHaveBeenNthCalledWith(2, expect.anything(), [
+      'WI-A',
+      'WI-B',
+    ]);
+    expect(h.assessments.bind).toHaveBeenCalledWith(
+      { actorId: 'actor', tenantId: 'tenant' },
+      frozen,
+      'RT-original',
+    );
+    expect(h.sessions.withVerifiedReviewBrowserSql).not.toHaveBeenCalled();
+    expect(h.sessions.withVerifiedBrowserSql).not.toHaveBeenCalled();
+    expect(h.reviews.createOrResume).not.toHaveBeenCalled();
+    expect(h.reviews.appendTextTurn).not.toHaveBeenCalled();
+    expect(h.reviewSqlScopes).toEqual([]);
+  });
   it('collects 21 pending contributions without truncation or expanding the explicit selection limit', async () => {
     const h = harness();
     const available = Array.from({ length: 21 }, (_, index) => ({
@@ -159,11 +385,12 @@ describe('explicit dialogue assessment submission', () => {
       'WI-B',
     ]);
     expect(result.reviewTurnId).toBe('RT-A');
-    expect(h.sessions.withVerifiedBrowserSql).toHaveBeenCalledTimes(2);
+    expect(h.sessions.withVerifiedBrowserSql).toHaveBeenCalledTimes(3);
   });
   it.each([
     { workItemRevision: 8, workingRef: 'work-4' },
     { workItemRevision: 7, workingRef: 'work-5' },
+    { workItemRevision: 7, workingRef: null },
   ])(
     'rejects a changed assessment base before creating or dispatching',
     async (current) => {
@@ -176,6 +403,18 @@ describe('explicit dialogue assessment submission', () => {
       expect(h.reviews.appendTextTurn).not.toHaveBeenCalled();
     },
   );
+  it('keeps an empty ALL_PENDING request free of assessment writes and review dispatch', async () => {
+    const h = harness('NATIVE');
+    h.dialogues.relevantContributions.mockResolvedValue([]);
+    await expect(h.service.request(threadRef, {
+      ...input, contributions: [], collectionMode: 'ALL_PENDING',
+    }, request)).rejects.toThrow('DIALOGUE_NO_PENDING_CONTRIBUTIONS');
+    expect(h.contextSqlScopes).toEqual(['NATIVE']);
+    expect(h.assessments.create).not.toHaveBeenCalled();
+    expect(h.assessments.bind).not.toHaveBeenCalled();
+    expect(h.reviews.createOrResume).not.toHaveBeenCalled();
+    expect(h.reviews.appendTextTurn).not.toHaveBeenCalled();
+  });
   it('rejects withdrawn contributions and denies stale inherited source access', async () => {
     const h = harness();
     h.dialogues.relevantContributions.mockResolvedValue([]);

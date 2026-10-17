@@ -22,6 +22,14 @@ import {
 } from './tdms-metadata-aditem.fixture';
 
 const validate = prepareTdmsDailySourceImport;
+function estimatedAdItem() {
+  const env = syntheticAdItem();
+  // A separate constructed own-state observation. Never rewrite the original
+  // Source-qualified In Work fixture or its recorded snapshot fingerprints.
+  for (const read of proofOfCurrent(env).reads)
+    read.owner.stateRaw = 'Estimated';
+  return resealMetadata(env);
+}
 const cases = {
   adItem: syntheticAdItem,
   efMetadata: syntheticEfNamedMetadata,
@@ -33,7 +41,7 @@ const cases = {
 };
 describe('new Source metadata and partial AD_ITEM through the existing Host consumer', () => {
   it.each(Object.keys(cases) as Array<keyof typeof cases>)(
-    'accepts Source-pure-qualified synthetic %s without changing its record or snapshot',
+    'qualifies Source-pure synthetic %s at prepare without changing its record or snapshot',
     (name) => {
       const env = cases[name](),
         before = JSON.stringify(env),
@@ -41,6 +49,14 @@ describe('new Source metadata and partial AD_ITEM through the existing Host cons
       expect(currentRecordHash(env)).toBe(expected.recordSha256);
       expect(env.package.records[0].snapshotId).toBe(expected.snapshotId);
       expect(validate(env).envelope).toEqual(env);
+      if (name === 'adItem') {
+        expect(env.package.records[0].state.rawName).toBe('In Work');
+        expect(() => adaptTdmsDailySource(env)).toThrow(
+          'TDMS_UNAPPROVED_ASSESSMENT_BODY_FORBIDDEN',
+        );
+        expect(JSON.stringify(env)).toBe(before);
+        return;
+      }
       const native = adaptTdmsDailySource(env).output.nativePackage;
       expect(JSON.stringify(env)).toBe(before);
       expect(native.coverage.status).toBe('PARTIAL');
@@ -132,7 +148,7 @@ describe('new Source metadata and partial AD_ITEM through the existing Host cons
     expect(native.coverage.gaps).toContain('OWN_LAYOUT_REPRESENTATIVE_PENDING');
   });
   it('keeps current AD_ITEM own users reference-only, row creator unresolved, and all unknown own identity facets', () => {
-    const env = syntheticAdItem(),
+    const env = estimatedAdItem(),
       native = adaptTdmsDailySource(env).output.nativePackage,
       record = native.records[0],
       p: any = record.rawFields.completeOwnedSource;
@@ -345,7 +361,7 @@ describe('new Source metadata and partial AD_ITEM through the existing Host cons
     },
   );
   it('uses normal memory import/reconcile/idempotence and ten-key receipts with retained partial readback', async () => {
-    const env = syntheticAdItem(),
+    const env = estimatedAdItem(),
       adapted = adaptTdmsDailySource(env),
       claims = copyComplete(adapted.memberClaims),
       repository = new MemoryTdmsRepository();

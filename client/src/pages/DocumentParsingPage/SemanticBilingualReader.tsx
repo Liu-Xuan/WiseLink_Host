@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Copy, Download } from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
 import InitialAnalysisContinueButton from '@client/src/features/review/InitialAnalysisContinueButton';
@@ -7,19 +7,19 @@ import type {
   CanonicalReaderTranslationProjection,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
-import type { TranslationWorkspaceReadingV2 } from '@shared/canonical-translation-v2.interface';
-import { SemanticBlockContent } from './SemanticBlockContent';
+import type {
+  TranslationSourceAnchorV2,
+  TranslationWorkspaceReadingV2,
+} from '@shared/canonical-translation-v2.interface';
+import { SemanticPaneBlock, SemanticSingleBlock } from './SemanticReadingBlocks';
+import { indexSemanticReadingAnchors, semanticBlockSelection } from './semantic-reading-index';
 import { LegacyBilingualReader } from './LegacyBilingualReader';
-import { TranslationRevisionEditor } from './TranslationRevisionEditor';
 import {
   semanticReadingCoverage,
   semanticReadingStatusLabels,
   semanticReadingText,
-  semanticReadingIssues,
   semanticReadingExport,
   semanticReadingHeading,
-  semanticSourceLinks,
-  translationIssueOriginLabels,
   type SemanticReadingMode,
   type SemanticReadingBlock,
 } from './semantic-reading';
@@ -34,6 +34,8 @@ interface Props {
   onContinuationRequested?: () => void;
   mode?: SemanticReadingMode;
 }
+
+const NO_ANCHORS: TranslationSourceAnchorV2[] = [];
 
 const executionLabels: Record<string, string> = {
   PENDING: '等待开始',
@@ -80,19 +82,24 @@ function SemanticWorkspaceReader({
     translation: new Map<string, HTMLElement>(),
   });
   const bilingualAnchorNodes = useRef({
-    original: new Map<string, HTMLElement>(),
-    translation: new Map<string, HTMLElement>(),
+    original: new Map<string, Map<string, HTMLElement>>(),
+    translation: new Map<string, Map<string, HTMLElement>>(),
   });
   const reading: TranslationWorkspaceReadingV2 =
     revisedReading && revisedReading.rowVersion >= hostReading.rowVersion
       ? revisedReading
       : hostReading;
-  const view = semanticReadingCoverage(reading);
-  const blocks = [...reading.blocks].sort(
-    (a, b) => a.source.order - b.source.order,
-  );
-  const outline = blocks.filter((block) => semanticReadingHeading(block) !== null);
-  const hasReadable: boolean = blocks.some((block) => block.selected);
+  const { view, blocks, outline, anchorsByBlock, hasReadable } = useMemo(() => {
+    const blocks = [...reading.blocks].sort((a, b) => a.source.order - b.source.order);
+    return {
+      view: semanticReadingCoverage(reading),
+      blocks,
+      outline: blocks.filter((block) => semanticReadingHeading(block) !== null),
+      anchorsByBlock: indexSemanticReadingAnchors(blocks, reading.anchors),
+      hasReadable: blocks.some((block) => block.selected),
+    };
+  }, [reading]);
+  const selectedIds = useMemo(() => new Set(selectedAnchors), [selectedAnchors]);
   const execution = props.initialAnalysis?.stages.translation;
   const continueAllowed: boolean =
     props.initialAnalysis?.continuationOperations?.includes('TRANSLATE') ===
@@ -102,7 +109,7 @@ function SemanticWorkspaceReader({
       ? '尚无可计算文字范围'
       : `${Math.floor(view.readablePercent * 10) / 10}% 的原文已有可读中文`;
 
-  function focusBlock(blockId: string | null, ids: string[], scroll = false): void {
+  const focusBlock = useCallback((blockId: string | null, ids: string[], scroll = false): void => {
     setFocusedBlock(blockId);
     setSelectedAnchors(ids);
     if (!blockId) return;
@@ -117,12 +124,13 @@ function SemanticWorkspaceReader({
         .get(blockId)
         ?.scrollIntoView({ block: 'start', behavior: 'auto' });
       const anchorNode = ids
-        .map((id) => bilingualAnchorNodes.current.original.get(id) ?? bilingualAnchorNodes.current.translation.get(id))
+        .map((id) => bilingualAnchorNodes.current.original.get(blockId)?.get(id) ??
+          bilingualAnchorNodes.current.translation.get(blockId)?.get(id))
         .find((node): node is HTMLElement => Boolean(node));
       anchorNode?.scrollIntoView({ block: 'center', behavior: 'auto' });
       blockNodes.current.get(blockId)?.focus({ preventScroll: true });
     }
-  }
+  }, []);
   async function copyReading(): Promise<void> {
     try {
       await navigator.clipboard.writeText(semanticReadingText(reading));
@@ -244,10 +252,7 @@ function SemanticWorkspaceReader({
                 {block.selected?.candidate.elements
                   .map((element) => element.translatedText)
                   .join(' ') ||
-                  reading.anchors
-                    .filter((anchor) =>
-                      block.source.anchorIds.includes(anchor.anchorId),
-                    )
+                  (anchorsByBlock.get(block) ?? NO_ANCHORS)
                     .map((anchor) => anchor.sourceText)
                     .join(' ') ||
                   '无文字标题'}
@@ -293,7 +298,8 @@ function SemanticWorkspaceReader({
               <SemanticPane
                 side="original"
                 blocks={blocks}
-                reading={reading}
+                anchorsByBlock={anchorsByBlock}
+                selectedIds={selectedIds}
                 focusedBlock={focusedBlock}
                 selectedAnchors={selectedAnchors}
                 nodes={bilingualPaneNodes.current.original}
@@ -309,7 +315,8 @@ function SemanticWorkspaceReader({
               <SemanticPane
                 side="translation"
                 blocks={blocks}
-                reading={reading}
+                anchorsByBlock={anchorsByBlock}
+                selectedIds={selectedIds}
                 focusedBlock={focusedBlock}
                 selectedAnchors={selectedAnchors}
                 nodes={bilingualPaneNodes.current.translation}
@@ -323,190 +330,27 @@ function SemanticWorkspaceReader({
                 onContinuationRequested={props.onContinuationRequested}
               />
             </div>
-          ) : blocks.map((block) => {
-            const sourceAnchors = reading.anchors.filter((anchor) =>
-              block.source.anchorIds.includes(anchor.anchorId),
-            );
-            const isFocused: boolean = focusedBlock === block.source.blockId;
-            return (
-              <article
-                className={`wl-bilingual-block kind-${block.source.kind}${isFocused ? ' is-selected' : ''}`}
-                key={block.source.blockId}
-                data-semantic-block={block.source.blockId}
-                tabIndex={-1}
-                ref={(node) => {
-                  if (node) blockNodes.current.set(block.source.blockId, node);
-                  else blockNodes.current.delete(block.source.blockId);
-                }}
-              >
-                <div
-                  className="wl-semantic-single"
-                >
-                  {mode !== 'translation' ? (
-                    <div lang="en">
-                      <SemanticBlockContent
-                        block={block}
-                        anchors={sourceAnchors}
-                        original
-                        selectedAnchors={selectedAnchors}
-                        onFocus={(ids) => focusBlock(block.source.blockId, ids)}
-                      />
-                    </div>
-                  ) : null}
-                  {mode !== 'original' ? (
-                    <div lang="zh-CN">
-                      <SemanticBlockContent
-                        block={block}
-                        anchors={sourceAnchors}
-                        original={false}
-                        selectedAnchors={selectedAnchors}
-                        onFocus={(ids) => focusBlock(block.source.blockId, ids)}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-                {semanticReadingIssues(block).length ? (
-                  <ul className="wl-bilingual-issues">
-                    {semanticReadingIssues(block).map((issue, index) => (
-                      <li
-                        key={`${issue.code}-${index}`}
-                        data-severity={issue.severity}
-                      >
-                        <strong>
-                          {translationIssueOriginLabels[issue.origin]} ·{' '}
-                          {issue.severity === 'BLOCK'
-                            ? '阅读限制'
-                            : issue.severity === 'REVIEW'
-                              ? '说明'
-                              : '提示'}
-                          ：
-                        </strong>
-                        {issue.message}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                <footer>
-                  <button
-                    type="button"
-                    aria-expanded={isFocused}
-                    onClick={() =>
-                      isFocused
-                        ? setFocusedBlock(null)
-                        : focusBlock(
-                            block.source.blockId,
-                            block.source.anchorIds,
-                          )
-                    }
-                  >
-                    查看来源与修订
-                  </button>
-                  {block.selected && isFocused ? (
-                    <span>
-                      译文修订 {block.selected.contentRevision}
-                      {block.selected.provenance.authorKind === 'ENGINEER'
-                        ? ' · 人工修订候选'
-                        : ''}
-                    </span>
-                  ) : (
-                    <span>
-                      {semanticReadingStatusLabels[block.readingStatus]}
-                    </span>
-                  )}
-                </footer>
-                {isFocused ? (
-                  <div className="wl-semantic-context">
-                    <p>
-                      本语义范围对应 {sourceAnchors.length}{' '}
-                      个原文片段；来源位置以实际记录为准。
-                    </p>
-                    <div className="wl-bilingual-actions">
-                      {semanticSourceLinks(sourceAnchors).map(
-                        ({ anchor, ref, label }) => (
-                          <button
-                            type="button"
-                            key={ref}
-                            onClick={() => {
-                              setSelectedAnchors([anchor.anchorId]);
-                              props.onSourceRefSelect(anchor.sourceUnitId, ref);
-                            }}
-                          >
-                            {label}
-                          </button>
-                        ),
-                      )}
-                    </div>
-                    {mode === 'translation' ? (
-                      <div className="wl-semantic-source-context" lang="en">
-                        <SemanticBlockContent
-                          block={block}
-                          anchors={sourceAnchors}
-                          original
-                          selectedAnchors={selectedAnchors}
-                          onFocus={setSelectedAnchors}
-                        />
-                      </div>
-                    ) : null}
-                    {props.workItem ? (
-                      <TranslationRevisionEditor
-                        workItem={props.workItem}
-                        workspaceId={reading.workspaceId}
-                        blockId={block.source.blockId}
-                        onSaved={setRevisedReading}
-                      />
-                    ) : null}
-                    {props.workItem &&
-                    props.canRequestBlockTranslation &&
-                    !block.source.sourceIssues.some(
-                      (issue) => issue.severity === 'BLOCK',
-                    ) ? (
-                      <InitialAnalysisContinueButton
-                        workItemId={props.workItem.workItemId}
-                        expectedRevision={props.workItem.revision}
-                        operation="TRANSLATE"
-                        blockIds={[block.source.blockId]}
-                        label="重新翻译此完整语义范围"
-                        onQueued={() => {
-                          setFeedback(
-                            '局部翻译请求已保存，原可读版本保留到新候选检查通过。',
-                          );
-                          props.onContinuationRequested?.();
-                        }}
-                      />
-                    ) : null}
-                    <p className="wl-bilingual-scope">
-                      暂无已保存的译文说明。
-                    </p>
-                    {block.selected ? (
-                      <details>
-                        <summary>版本来源与检查</summary>
-                        <p>
-                          保存：
-                          {new Date(block.selected.savedAt).toLocaleString(
-                            'zh-CN',
-                          )}{' '}
-                          · 检查：
-                          {block.selected.checkedAt
-                            ? new Date(block.selected.checkedAt).toLocaleString(
-                                'zh-CN',
-                              )
-                            : '待检查'}
-                        </p>
-                        {block.selected.provenance.reusedFrom ? <p>复用此前译文：原文与实际使用的上下文未变化，未重新调用翻译。</p> : null}
-                        <p>
-                          {block.selected.provenance.authorKind === 'ENGINEER'
-                            ? '工程师修订候选'
-                            : block.selected.provenance.producer?.kind === 'OFFICIAL_PLUGIN'
-                              ? '官方文档翻译 · 具体模型未报告'
-                              : `执行模型：${block.selected.provenance.executionModel?.displayName ?? block.selected.provenance.modelVersion ?? '平台未报告'}`}
-                        </p>
-                      </details>
-                    ) : null}
-                  </div>
-                ) : null}
-              </article>
-            );
-          })}
+          ) : blocks.map((block) => (
+            <SemanticSingleBlock
+              key={block.source.blockId}
+              block={block}
+              anchors={anchorsByBlock.get(block) ?? NO_ANCHORS}
+              isFocused={focusedBlock === block.source.blockId}
+              selectedAnchors={semanticBlockSelection(block, selectedAnchors, selectedIds)}
+              nodes={blockNodes.current}
+              mode={mode}
+              onFocus={focusBlock}
+              onFocusedBlockChange={setFocusedBlock}
+              onSelectionChange={setSelectedAnchors}
+              onSourceRefSelect={props.onSourceRefSelect}
+              workItem={props.workItem}
+              workspaceId={reading.workspaceId}
+              canRequestBlockTranslation={props.canRequestBlockTranslation}
+              onRevisionSaved={setRevisedReading}
+              onContinuationRequested={props.onContinuationRequested}
+              onFeedback={setFeedback}
+            />
+          ))}
         </div>
       </div>
     </div>
@@ -514,28 +358,18 @@ function SemanticWorkspaceReader({
 }
 
 function SemanticPane({
-  side,
-  blocks,
-  reading,
-  focusedBlock,
-  selectedAnchors,
-  nodes,
-  anchorNodes,
-  onFocus,
-  onSourceRefSelect,
-  workItem,
-  workspaceId,
-  canRequestBlockTranslation,
-  onRevisionSaved,
-  onContinuationRequested,
+  side, blocks, anchorsByBlock, focusedBlock, selectedAnchors, selectedIds,
+  nodes, anchorNodes, onFocus, onSourceRefSelect, workItem, workspaceId,
+  canRequestBlockTranslation, onRevisionSaved, onContinuationRequested,
 }: {
   side: 'original' | 'translation';
   blocks: SemanticReadingBlock[];
-  reading: TranslationWorkspaceReadingV2;
+  anchorsByBlock: ReadonlyMap<SemanticReadingBlock, TranslationSourceAnchorV2[]>;
   focusedBlock: string | null;
   selectedAnchors: string[];
+  selectedIds: ReadonlySet<string>;
   nodes: Map<string, HTMLElement>;
-  anchorNodes: Map<string, HTMLElement>;
+  anchorNodes: Map<string, Map<string, HTMLElement>>;
   onFocus: (blockId: string | null, ids: string[], scroll?: boolean) => void;
   onSourceRefSelect: (unitId: string, sourceRef: string) => void;
   workItem?: Pick<CanonicalWorkItemProjection, 'workItemId' | 'revision'>;
@@ -549,91 +383,25 @@ function SemanticPane({
     <section className={`wl-semantic-pane is-${side}`} aria-label={original ? '连续原文' : '连续中文阅读'}>
       <h3 className="wl-semantic-pane-title">{original ? '原文' : '中文'}</h3>
       <div className="wl-semantic-pane-scroll">
-        {blocks.map((block) => {
-          const sourceAnchors = reading.anchors.filter((anchor) =>
-            block.source.anchorIds.includes(anchor.anchorId),
-          );
-          const isFocused = focusedBlock === block.source.blockId;
-          return (
-            <article
-              className={`wl-bilingual-block kind-${block.source.kind}${isFocused ? ' is-selected' : ''}`}
-              key={block.source.blockId}
-              data-semantic-block={block.source.blockId}
-              tabIndex={-1}
-              ref={(node) => {
-                if (node) nodes.set(block.source.blockId, node);
-                else nodes.delete(block.source.blockId);
-              }}
-            >
-              <SemanticBlockContent
-                block={block}
-                anchors={sourceAnchors}
-                original={original}
-                selectedAnchors={selectedAnchors}
-                onFocus={(ids) => onFocus(block.source.blockId, ids)}
-                onAnchorNode={(ids, node) => {
-                  ids.forEach((id) => {
-                    if (node) anchorNodes.set(id, node);
-                    else anchorNodes.delete(id);
-                  });
-                }}
-              />
-              {!original && semanticReadingIssues(block).length ? (
-                <ul className="wl-bilingual-issues">
-                  {semanticReadingIssues(block).map((issue, index) => (
-                    <li key={`${issue.code}-${index}`} data-severity={issue.severity}>
-                      <strong>{translationIssueOriginLabels[issue.origin]}：</strong>{issue.message}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              <footer>
-                <button
-                  type="button"
-                  aria-expanded={isFocused}
-                  onClick={() => isFocused ? onFocus(null, []) : onFocus(block.source.blockId, block.source.anchorIds)}
-                >
-                  {isFocused ? '收起来源' : '查看来源'}
-                </button>
-                <span>{semanticReadingStatusLabels[block.readingStatus]}</span>
-              </footer>
-              {!original && isFocused ? (
-                <div className="wl-semantic-context">
-                  <p>本语义范围对应 {sourceAnchors.length} 个原文片段；来源位置以实际记录为准。</p>
-                  <div className="wl-bilingual-actions">
-                    {semanticSourceLinks(sourceAnchors).map(({ anchor, ref, label }) => (
-                      <button
-                        type="button"
-                        key={ref}
-                        onClick={() => onSourceRefSelect(anchor.sourceUnitId, ref)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  {workItem ? (
-                    <TranslationRevisionEditor
-                      workItem={workItem}
-                      workspaceId={workspaceId}
-                      blockId={block.source.blockId}
-                      onSaved={onRevisionSaved}
-                    />
-                  ) : null}
-                  {workItem && canRequestBlockTranslation ? (
-                    <InitialAnalysisContinueButton
-                      workItemId={workItem.workItemId}
-                      expectedRevision={workItem.revision}
-                      operation="TRANSLATE"
-                      blockIds={[block.source.blockId]}
-                      label="重新翻译此完整语义范围"
-                      onQueued={onContinuationRequested}
-                    />
-                  ) : null}
-                </div>
-              ) : null}
-            </article>
-          );
-        })}
+        {blocks.map((block) => (
+          <SemanticPaneBlock
+            key={block.source.blockId}
+            block={block}
+            anchors={anchorsByBlock.get(block) ?? NO_ANCHORS}
+            isFocused={focusedBlock === block.source.blockId}
+            selectedAnchors={semanticBlockSelection(block, selectedAnchors, selectedIds)}
+            original={original}
+            nodes={nodes}
+            anchorNodes={anchorNodes}
+            onFocus={onFocus}
+            onSourceRefSelect={onSourceRefSelect}
+            workItem={workItem}
+            workspaceId={workspaceId}
+            canRequestBlockTranslation={canRequestBlockTranslation}
+            onRevisionSaved={onRevisionSaved}
+            onContinuationRequested={onContinuationRequested}
+          />
+        ))}
       </div>
     </section>
   );

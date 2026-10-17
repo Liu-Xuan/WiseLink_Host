@@ -1,9 +1,10 @@
 import { documentGraphReadingParams } from '@client/src/pages/RelationGraphPage/suite-graph-return';
-import { ArrowRight, FileSearch2, History } from 'lucide-react';
+import { ArrowRight, FileSearch2, MoreHorizontal } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@client/src/components/ui/dialog';
 import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import { saveReadingLocation } from '@client/src/features/matter/reading-location';
 import {
@@ -66,6 +67,8 @@ export function LibraryDocumentDetails({
       ? assessmentQuicklook.data
       : null;
   const assessmentBrief = matchingAssessment?.result?.readingResult?.content.listBrief?.trim() ?? '';
+  const overallJudgment = matchingAssessment?.result?.engineeringSummary?.conclusion.text.trim() ||
+    matchingAssessment?.result?.overallCandidate?.trim() || '';
   const readingConditionCount = selectedReading
     ? selectedReading.criticalConditions.length +
       selectedReading.limitations.length +
@@ -74,6 +77,14 @@ export function LibraryDocumentDetails({
   const selectedIdentity = document ? documentIdentityPresentation({ documentCode: document.documentCode,
     extractedMetadata: selectedVersion?.extractedMetadata }) : null;
   const selectedPublication = libraryPublicationPresentation(selectedVersion ?? null);
+  const graphReturnOrigin: URLSearchParams = new URLSearchParams();
+  if (document && selectedVersion) {
+    const directory: URLSearchParams = new URLSearchParams(searchParams);
+    directory.set('familyId', document.familyId);
+    directory.set('selectedDocumentVersionId', selectedVersion.documentVersionId);
+    graphReturnOrigin.set('returnDocumentVersionId', selectedVersion.documentVersionId);
+    graphReturnOrigin.set('returnLibraryQuery', libraryReadingParams(directory).toString());
+  }
 
   const selectVersion = (documentVersionId: string): void => {
     if (!document) return;
@@ -124,245 +135,180 @@ export function LibraryDocumentDetails({
     navigate(`/document-revisions?${revisionReadingParams(query).toString()}`);
   };
 
-  return (
-    <aside
-      className="library-quicklook-panel library-document-details"
-      aria-label="文档与版本"
-      data-wl-material="g3"
-    >
-      <div className="library-panel-heading">
-        <div>
-          <h2>文档详情</h2>
+  const moreActions = document ? <Dialog>
+    <DialogTrigger asChild>
+      <Button type="button" variant="ghost" size="sm"
+        title="版本历史、改版比较与更多操作" aria-label="版本历史、改版比较与更多操作">
+        <MoreHorizontal aria-hidden="true" />更多
+      </Button>
+    </DialogTrigger>
+    <DialogContent className="library-document-more-dialog">
+      <DialogHeader>
+        <DialogTitle>文档版本与更多</DialogTitle>
+        <DialogDescription>{document.documentCode.trim() || '未取得编号'}</DialogDescription>
+      </DialogHeader>
+      <details className="library-quicklook-history" open>
+        <summary>改版比较与全部版本（{document.versions.length}）</summary>
+        <div className="library-revision-picker">
+          <div className="library-revision-picker-fields">
+            <label>基线端
+              <Select value={baseline} onValueChange={setBaseline}>
+                <SelectTrigger><SelectValue placeholder="选择基线版本" /></SelectTrigger>
+                <SelectContent>{document.versions.map(version => <SelectItem key={version.documentVersionId}
+                  value={version.documentVersionId}>{libraryVersionLabel(version)}</SelectItem>)}</SelectContent>
+              </Select>
+            </label>
+            <label>比较目标端
+              <Select value={compare} onValueChange={setCompare}>
+                <SelectTrigger><SelectValue placeholder="选择比较版本" /></SelectTrigger>
+                <SelectContent>{document.versions.map(version => <SelectItem key={version.documentVersionId}
+                  value={version.documentVersionId}>{libraryVersionLabel(version)}</SelectItem>)}</SelectContent>
+              </Select>
+            </label>
+          </div>
+          {revisionNote ? <p className="library-revision-picker-error" role="alert">{revisionNote}</p> : null}
+          {document.versions.length < 2 ? <p className="library-revision-picker-single">
+            该文档只有一个可见版本，暂无法进行改版比较。
+          </p> : <div className="library-quicklook-actions">
+            <Button type="button" onClick={openRevisionComparison}>进入改版比较<ArrowRight aria-hidden="true" /></Button>
+          </div>}
         </div>
-        <History aria-hidden="true" />
-      </div>
-      {!document ? (
-        <div className="library-quicklook-empty" role="status">
-          <FileSearch2 aria-hidden="true" />
-          <strong>{selectionPending ? '原选择尚未在当前读取范围内加载' : '选择工程文档查看版本'}</strong>
-          <p>{selectionPending ? '所选文档未在当前目录页中，可加载更多或调整筛选。' : '同一文档的版本集中在这里，评估记录可在最近任务中查看。'}</p>
-        </div>
-      ) : (
-        <div {...paneScroll} className="library-quicklook-scroll">
-          <header className="library-quicklook-title">
-            <div>
-              <h3><LibraryDocumentNumber value={document.documentCode} /></h3>
-              {selectedIdentity?.hasDocumentTitle ? <div className="library-details-document-title">
-                <LibrarySummaryText text={selectedIdentity.documentTitle} label="标题" /></div> : null}
+        <ol className="library-version-list" aria-label="文档版本历史">
+          {document.versions.map(version => <li key={version.documentVersionId}>
+            <div className="library-version-heading">
+              <strong>{libraryVersionLabel(version)}</strong>
+              <span className={version.selectedVersionIsCurrent ? 'library-version-current' : undefined}>
+                {version.selectedVersionIsCurrent ? '当前版本' : '历史版本'}</span>
             </div>
-          </header>
-          <div className="library-source-version-picker">
-            <label htmlFor="library-selected-business-version">业务版次</label>
-            <Select value={selectedVersion?.documentVersionId ?? ''} onValueChange={selectVersion}>
-              <SelectTrigger id="library-selected-business-version"><SelectValue placeholder="请选择准确版本" /></SelectTrigger>
-              <SelectContent>{document.versions.map(version => <SelectItem key={version.documentVersionId} value={version.documentVersionId}>
+            <dl className="library-quicklook-facts">
+              <div><dt>{version.revisionDate ? '版本日期' : '来源生成日期'}</dt>
+                <dd>{version.revisionDate || version.sourceGeneratedDate || '未标注'}</dd></div>
+              <div><dt>入库时间</dt><dd>{libraryDateLabel(version.committedAt)}</dd></div>
+              <div><dt>原文</dt><dd>{version.originalFilename} · {byteLabel(version.byteLength)}</dd></div>
+              <div><dt>评估记录</dt><dd>{version.workItemCount} 个任务</dd></div>
+            </dl>
+            <DocumentVersionLink version={version} familyId={document.familyId}>
+              打开原文<ArrowRight aria-hidden="true" />
+            </DocumentVersionLink>
+            <LibraryMetadata version={version} onRefresh={onRefresh} />
+          </li>)}
+        </ol>
+      </details>
+      {linkMatterId ? <LinkDocumentMatterMaterial key={`${linkMatterId}:${document.familyId}`}
+        matterId={linkMatterId} document={document} /> : null}
+    </DialogContent>
+  </Dialog> : null;
+
+  return (
+    <aside className="library-quicklook-panel library-document-details"
+      aria-label="文档与版本" data-wl-material="g3">
+      <div className="library-panel-heading"><h2>文档详情</h2></div>
+      {document ? <div className="library-document-action-row" role="group" aria-label="文档操作">
+        {selectedVersion ? <>
+          <LibraryDocumentSourceDialog compact document={document} version={selectedVersion}
+            onSelectVersion={selectVersion} />
+          <DocumentVersionLink compact version={selectedVersion} familyId={document.familyId}
+            title="进入精读工作台，查看所选版本原件与解析">精读</DocumentVersionLink>
+        </> : null}
+        <Button type="button" variant="ghost" size="sm"
+          title={`查看本文档评估任务（${document.workItemCount}）`}
+          aria-label={`查看本文档评估任务（${document.workItemCount}）`}
+          onClick={() => onViewTasks(document.familyId)}>评估</Button>
+        {selectedVersion ? <Link title="文档关系图谱与时间" aria-label="文档关系图谱与时间"
+          to={`/graph?${documentGraphReadingParams(selectedVersion.documentVersionId,
+            selectedVersion.readerWorkItemId || undefined, {}, graphReturnOrigin)}`}>图谱</Link> : null}
+        {moreActions}
+      </div> : null}
+      {!document ? <div className="library-quicklook-empty" role="status">
+        <FileSearch2 aria-hidden="true" />
+        <strong>{selectionPending ? '原选择尚未在当前读取范围内加载' : '选择工程文档查看版本'}</strong>
+        <p>{selectionPending ? '所选文档未在当前目录页中，可加载更多或调整筛选。'
+          : '同一文档的版本集中在这里，评估记录可在最近任务中查看。'}</p>
+      </div> : <div {...paneScroll} className="library-quicklook-scroll">
+        <header className="library-quicklook-title">
+          <div>
+            <h3><LibraryDocumentNumber value={document.documentCode} /></h3>
+            {selectedIdentity?.hasDocumentTitle ? <div className="library-details-document-title">
+              <LibrarySummaryText key={selectedVersion?.documentVersionId} text={selectedIdentity.documentTitle}
+                label="标题" /></div> : null}
+          </div>
+        </header>
+        <dl className="suite-library-key-facts library-document-info" aria-label="原文信息">
+          <div className="library-document-info-version">
+            <dt><label htmlFor="library-selected-business-version">版次</label></dt>
+            <dd><Select value={selectedVersion?.documentVersionId ?? ''} onValueChange={selectVersion}>
+              <SelectTrigger id="library-selected-business-version" size="sm">
+                <SelectValue placeholder="选择版本">{selectedVersion
+                  ? `${selectedVersion.businessRevision || '未标注'} · ${selectedVersion.selectedVersionIsCurrent ? '当前' : '历史'}`
+                  : undefined}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>{document.versions.map(version => <SelectItem key={version.documentVersionId}
+                value={version.documentVersionId}>
                 {version.businessRevision || '版次未标注'} · {version.selectedVersionIsCurrent ? '当前登记' : '历史'}
               </SelectItem>)}</SelectContent>
-            </Select>
+            </Select></dd>
           </div>
-          {selectedVersion && selectedReading ? <section className="library-selected-version" data-document-version-id={selectedVersion.documentVersionId}>
-            <dl className="suite-library-key-facts">
-              <div><dt>版本</dt><dd>{selectedVersion.businessRevision || '未标注'} · {selectedVersion.selectedVersionIsCurrent ? '当前' : '历史'}</dd></div>
-              <div><dt>颁发时间</dt><dd>{selectedPublication.issueDate}</dd></div>
-              <div><dt>ATA</dt><dd>{selectedPublication.ata}</dd></div>
-            </dl>
-            <LibraryDocumentSourceDialog document={document} version={selectedVersion} onSelectVersion={selectVersion} />
-            <h4>文档解读</h4>
-            {selectedReading.brief ? (
-              <div
-                className="library-quicklook-reading"
-                data-reading-run-ref={selectedReading.readingRunRef ?? undefined}
-                data-reading-revision={selectedReading.readingRevision ?? undefined}
-              >
-                <LibrarySummaryText key={selectedVersion.documentVersionId}
-                  text={libraryDistinctBrief(selectedReading.brief, selectedIdentity?.documentTitle ?? '', selectedIdentity?.documentNumber)} />
-                {selectedReading.coverageStatus === 'PARTIAL_DELIVERY' ? (
-                  <details><summary>保存与来源</summary>
-                    <p>已保存阅读范围 {selectedReading.deliveredUnitCount}/{selectedReading.totalUnitCount}</p>
-                    {selectedReading.savedAt ? <p>保存时间：{selectedReading.savedAt}</p> : null}
-                  </details>
-                ) : null}
-              </div>
-            ) : (
-              <p>{selectedReading.note || '暂无已保存解读'}</p>
-            )}
-            {!selectedReading.brief && selectedVersion.readerWorkItemId ? (
-              <section className="library-quicklook-assessment" aria-label="同版本已保存评估">
-                <h4>关联工程评估</h4>
-                {assessmentQuicklook.error ? (
-                  <div role="alert">
-                    <p>{assessmentQuicklook.error.message}</p>
-                    <Button type="button" variant="outline" size="sm" onClick={onRefresh}>重试读取</Button>
-                  </div>
-                ) : assessmentQuicklook.loading ? (
-                  <p role="status">正在核对同版本已保存工作…</p>
-                ) : assessmentBrief && matchingAssessment ? (
-                  <>
-                    <p className="library-quicklook-assessment-status">{matchingAssessment.result?.jobAidRoundCompletion === 'IN_PROGRESS'
-                      ? '已保存的部分问题工作；综合结论尚待完成。'
-                      : matchingAssessment.result?.overallStatus === 'CURRENT'
-                        ? '已保存的问题工作；综合候选当前有效。'
-                        : '已保存的问题工作；综合状态请进入工作台核对。'}</p>
-                    <LibrarySummaryText key={selectedVersion.documentVersionId} text={assessmentBrief} />
-                    <Link to={`/work-items/${encodeURIComponent(matchingAssessment.document.workItemId)}/analysis?panel=assessment`}>查看完整评估与来源</Link>
-                  </>
-                ) : (
-                  <p>暂无已保存评估摘要</p>
-                )}
-              </section>
-            ) : null}
-            {readingConditionCount > 0 ? (
-              <details
-                key={selectedVersion.documentVersionId}
-                className="library-quicklook-conditions"
-              >
-                <summary>
-                  关键条件与阅读限制（{readingConditionCount} 项）
-                </summary>
-                <ul>
-                  {selectedReading.criticalConditions.map((condition) => (
-                    <li key={`condition:${condition}`}>{condition}</li>
-                  ))}
-                  {selectedReading.limitations.map((limitation) => (
-                    <li key={`limitation:${limitation}`}>{limitation}</li>
-                  ))}
-                  {selectedReading.sourceLimitations.map((sourceLimitation) => (
-                    <li key={`source:${sourceLimitation}`}>{sourceLimitation}</li>
-                  ))}
-                </ul>
-              </details>
-            ) : null}
-            <DocumentVersionLink version={selectedVersion} familyId={document.familyId}>进入精读工作台</DocumentVersionLink>
-            <Link to={`/graph?${documentGraphReadingParams(selectedVersion.documentVersionId, selectedVersion.readerWorkItemId || undefined, {})}`}>文档关系图谱与时间</Link>
-          </section> : <p role="status">{selection.status === 'CURRENT_UNCONFIRMED'
-            ? '当前可用版本尚待确认，请从历史版本中明确选择。'
-            : '所选版本未在当前读取范围内返回，未替换为其他版本。'}</p>}
-          {linkMatterId ? (
-            <LinkDocumentMatterMaterial
-              key={`${linkMatterId}:${document.familyId}`}
-              matterId={linkMatterId}
-              document={document}
-            />
-          ) : null}
-          <details className="library-quicklook-history">
-            <summary>改版比较与全部版本（{document.versions.length}）</summary>
-          <p className="library-quicklook-note">版本状态以文档管理模块的登记为准。重复评估关联已有文档版本。颁发时间与 ATA 为原文观察值，待核；修订、生成及入库日期分别保留。</p>
-          <div className="library-revision-picker">
-            <p className="library-revision-picker-note">
-              选择基线版本与比较目标版本，查看改版差异。
-            </p>
-            <div className="library-revision-picker-fields">
-              <label>
-                基线端
-                <select
-                  value={baseline}
-                  onChange={(event) => setBaseline(event.target.value)}
-                >
-                  {document.versions.map((version) => (
-                    <option
-                      key={version.documentVersionId}
-                      value={version.documentVersionId}
-                    >
-                      {libraryVersionLabel(version)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                比较目标端
-                <select
-                  value={compare}
-                  onChange={(event) => setCompare(event.target.value)}
-                >
-                  {document.versions.map((version) => (
-                    <option
-                      key={version.documentVersionId}
-                      value={version.documentVersionId}
-                    >
-                      {libraryVersionLabel(version)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {revisionNote ? (
-              <p className="library-revision-picker-error" role="alert">
-                {revisionNote}
-              </p>
-            ) : null}
-            {document.versions.length < 2 ? (
-              <p className="library-revision-picker-single">
-                该文档只有一个可见版本，暂无法进行改版比较。
-              </p>
-            ) : (
-              <div className="library-quicklook-actions">
-                <Button type="button" onClick={openRevisionComparison}>
-                  进入改版比较 <ArrowRight aria-hidden="true" />
-                </Button>
-              </div>
-            )}
-          </div>
-          <ol className="library-version-list" aria-label="文档版本历史">
-            {document.versions.map((version) => (
-              <li key={version.documentVersionId}>
-                <div className="library-version-heading">
-                  <strong>{libraryVersionLabel(version)}</strong>
-                  <span
-                    className={
-                      version.selectedVersionIsCurrent
-                        ? 'library-version-current'
-                        : undefined
-                    }
-                  >
-                    {version.selectedVersionIsCurrent ? '当前版本' : '历史版本'}
-                  </span>
+          <div><dt>颁发时间</dt><dd>{selectedPublication.issueDate}</dd></div>
+          <div><dt>ATA</dt><dd>{selectedPublication.ata}</dd></div>
+          <div><dt>类型</dt><dd>{document.normalizedFamily || '未取得'}</dd></div>
+          <div><dt>颁发机构</dt><dd>{document.issuerAuthority || '未取得'}</dd></div>
+        </dl>
+        {selectedVersion && selectedReading ? <section className="library-selected-version"
+          data-document-version-id={selectedVersion.documentVersionId}>
+          <section className="library-document-summary" aria-label="文档摘要">
+            <h4>文档摘要</h4>
+            {selectedReading.brief ? <div className="library-quicklook-reading"
+              data-reading-run-ref={selectedReading.readingRunRef ?? undefined}
+              data-reading-revision={selectedReading.readingRevision ?? undefined}>
+              <LibrarySummaryText key={selectedVersion.documentVersionId}
+                text={libraryDistinctBrief(selectedReading.brief, selectedIdentity?.documentTitle ?? '',
+                  selectedIdentity?.documentNumber)} />
+              {selectedReading.coverageStatus === 'PARTIAL_DELIVERY' ? <details><summary>保存与来源</summary>
+                <p>已保存阅读范围 {selectedReading.deliveredUnitCount}/{selectedReading.totalUnitCount}</p>
+                {selectedReading.savedAt ? <p>保存时间：{selectedReading.savedAt}</p> : null}
+              </details> : null}
+            </div> : <p>{selectedReading.note || '暂无已保存解读'}</p>}
+            {readingConditionCount > 0 ? <details key={selectedVersion.documentVersionId}
+              className="library-quicklook-conditions">
+              <summary>关键条件与阅读限制（{readingConditionCount} 项）</summary>
+              <ul>
+                {selectedReading.criticalConditions.map(condition => <li key={`condition:${condition}`}>{condition}</li>)}
+                {selectedReading.limitations.map(limitation => <li key={`limitation:${limitation}`}>{limitation}</li>)}
+                {selectedReading.sourceLimitations.map(sourceLimitation =>
+                  <li key={`source:${sourceLimitation}`}>{sourceLimitation}</li>)}
+              </ul>
+            </details> : null}
+          </section>
+          <section className="library-quicklook-assessment" aria-label="同版本已保存评估"
+            data-assessment-result-id={matchingAssessment?.result?.sourceResultId}
+            data-assessment-revision={matchingAssessment?.result?.revision}>
+            <h4>{overallJudgment ? '综合判断' : assessmentBrief ? '工程评估' : '综合判断'}</h4>
+            {assessmentQuicklook.error ? <div role="alert">
+              <p>{assessmentQuicklook.error.message}</p>
+              <Button type="button" variant="outline" size="sm" onClick={onRefresh}>重试读取</Button>
+            </div> : assessmentQuicklook.loading ? <p role="status">正在读取已保存评估…</p>
+              : matchingAssessment && (overallJudgment || assessmentBrief) ? <>
+                <LibrarySummaryText key={selectedVersion.documentVersionId} label={overallJudgment ? '综合判断' : '工程评估'}
+                  text={overallJudgment || assessmentBrief} />
+                <div className="library-assessment-provenance">
+                  <span className="library-quicklook-assessment-status">{matchingAssessment.result?.status === 'STALE' ||
+                    matchingAssessment.result?.overallStatus === 'STALE' ? '已保存 · 历史结果'
+                      : matchingAssessment.result?.jobAidRoundCompletion === 'IN_PROGRESS'
+                        ? '已保存 · 进行中' : '已保存 · 候选'}</span>
+                  <Link title="查看同版本完整评估与来源"
+                    to={`/work-items/${encodeURIComponent(matchingAssessment.document.workItemId)}/analysis?panel=assessment`}>
+                    完整评估与来源
+                  </Link>
                 </div>
-                <dl className="library-quicklook-facts">
-                  <div>
-                    <dt>
-                      {version.revisionDate ? '版本日期' : '来源生成日期'}
-                    </dt>
-                    <dd>
-                      {version.revisionDate ||
-                        version.sourceGeneratedDate ||
-                        '未标注'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>入库时间</dt>
-                    <dd>{libraryDateLabel(version.committedAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>原文</dt>
-                    <dd>
-                      {version.originalFilename} ·{' '}
-                      {byteLabel(version.byteLength)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>评估记录</dt>
-                    <dd>{version.workItemCount} 个任务</dd>
-                  </div>
-                </dl>
-                <DocumentVersionLink version={version} familyId={document.familyId}>
-                  打开原文 <ArrowRight aria-hidden="true" />
-                </DocumentVersionLink>
-                <LibraryMetadata version={version} onRefresh={onRefresh} />
-              </li>
-            ))}
-          </ol>
-          </details>
-          <div className="library-quicklook-actions">
-            <Button
-              type="button"
-              onClick={() => onViewTasks(document.familyId)}
-            >
-              查看评估任务（{document.workItemCount}）
-              <ArrowRight aria-hidden="true" />
-            </Button>
-          </div>
-        </div>
-      )}
+                {overallJudgment && assessmentBrief ? <details className="library-assessment-saved-work">
+                  <summary>工程评估摘要</summary><LibrarySummaryText text={assessmentBrief} />
+                </details> : null}
+              </> : <p>暂无已保存综合判断</p>}
+          </section>
+        </section> : <p role="status">{selection.status === 'CURRENT_UNCONFIRMED'
+          ? '当前可用版本尚待确认，请从历史版本中明确选择。'
+          : '所选版本未在当前读取范围内返回，未替换为其他版本。'}</p>}
+      </div>}
     </aside>
   );
 }

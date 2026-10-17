@@ -8,7 +8,6 @@ import type useMatterDirectory from '@client/src/features/matter/useMatterDirect
 import type { useLibraryDocuments } from './useLibraryDocuments';
 import { libraryDateLabel, libraryDistinctBrief, libraryMatterSourceAta } from './library-document-presentation';
 import { LibrarySummaryText } from './LibrarySummaryText';
-import { LibraryAtaFacetDirectory } from './LibraryAtaFacetDirectory';
 import LibraryMatterQuicklook from './LibraryMatterQuicklook';
 import type { EngineeringMatterWorkspaceRead } from '@client/src/api/engineering-matter';
 import { savedReadingSummary } from '@client/src/features/matter/AssessmentReadingListSummary';
@@ -28,8 +27,6 @@ export default function LibraryMatterDirectory({
   onCreateFromTask,
   filteredByWorkItem,
   onViewAll,
-  onViewDocuments,
-  onViewTasks,
   onSelect,
 }: {
   directory: ReturnType<typeof useMatterDirectory>;
@@ -44,8 +41,6 @@ export default function LibraryMatterDirectory({
   onCreateFromTask(): void;
   filteredByWorkItem: boolean;
   onViewAll(): void;
-  onViewDocuments(ata?: string): void;
-  onViewTasks(): void;
   onSelect(matterId: string): void;
 }) {
   const [searchParams] = useSearchParams();
@@ -69,42 +64,10 @@ export default function LibraryMatterDirectory({
   });
   const selected = directory.items.find((item) => item.matterId === selectedId);
   return (
-    <section
-      className="atlas-library-browser suite-matter-browser"
-      aria-label="工程事项目录"
-      aria-busy={directory.loading || documentDirectory.loading}
-    >
-      <aside className="suite-library-folder" aria-label="事项分组">
-        <div className="suite-folder-head"><strong>资料分组</strong><span>目录</span></div>
-        <button type="button" className="suite-folder-row" onClick={() => onViewDocuments()}>
-          <span>全部资料</span>
-          <small>
-            {documentDirectory.loading
-              ? '读取中'
-              : documentDirectory.error
-                ? '暂不可用'
-                : documentDirectory.totalCount ?? documentDirectory.items.length}
-          </small>
-        </button>
-        {documentDirectory.error ? (
-          <p role="alert">资料目录暂不可用，可刷新后重试。</p>
-        ) : null}
-        <LibraryAtaFacetDirectory counts={documentDirectory.ataCounts ?? {}}
-          selected="" scheme={searchParams.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
-          onSelect={ata => onViewDocuments(ata)} />
-        {filteredByWorkItem ? <p>当前按关联任务筛选。</p> : null}
-        <div className="suite-folder-separator">阅读范围</div>
-        <button type="button" className="suite-folder-row active" onClick={onViewAll}>
-          <span>工程事项</span>
-          <small>{directory.items.length}</small>
-        </button>
-        <button type="button" className="suite-folder-row" onClick={onViewTasks}>
-          <span>评估任务</span>
-        </button>
-        <p>展示本租户共享的工程事项。</p>
-      </aside>
-      <div className="atlas-library-list">
-        <form className="atlas-library-search" onSubmit={onSearch}>
+    <>
+      <div className="atlas-library-list library-tree-panel">
+        <form className="suite-table-toolbar" onSubmit={onSearch}>
+          <label className="suite-table-query">
           <Search aria-hidden="true" />
           <Input
             aria-label="搜索工程事项"
@@ -113,8 +76,10 @@ export default function LibraryMatterDirectory({
             placeholder="查找工程问题或事项标题"
             maxLength={200}
           />
+          </label>
           <Button
             type="submit"
+            size="sm"
             variant="outline"
             disabled={authenticationRequired}
           >
@@ -145,7 +110,7 @@ export default function LibraryMatterDirectory({
             {directory.items.length ? ' 保留上次成功读回的目录。' : ''}
           </p>
         ) : null}
-        <div {...paneScroll} className="suite-matter-list-scroll"><table className="suite-library-table suite-library-data-table" aria-label="工程事项">
+        <div {...paneScroll} className="suite-matter-list-scroll"><table className="suite-library-table suite-library-data-table suite-matter-table" aria-label="工程事项">
           <thead><tr><th>标题 / 事项 ID</th><th>工作修订</th><th>更新时间</th><th>关联资料 ATA</th><th>摘要</th><th><span className="sr-only">操作</span></th></tr></thead>
           <tbody>{items.map(matter => <tr key={matter.matterId}
             className={matter.matterId === selectedId ? 'selected' : ''}
@@ -153,9 +118,9 @@ export default function LibraryMatterDirectory({
             tabIndex={0} onClick={() => onSelect(matter.matterId)}
             onKeyDown={event => { if (event.target === event.currentTarget && event.key === 'Enter') onSelect(matter.matterId); }}>
             <td><div className="suite-doc-cell"><span><b>{matter.title}</b><small className="suite-library-object-id" title={matter.matterId}>{matter.matterId}</small></span></div></td>
-            <td><b>{matter.workingRevision}</b>{matter.result?.roundCompletion === 'IN_PROGRESS' ? <small>分析进行中</small> : null}</td>
-            <td>{libraryDateLabel(matter.updatedAt)}</td>
-            <td title="关联资料的原文 ATA">{libraryMatterSourceAta(selectedRead?.matter.matterId === matter.matterId ? selectedRead.matter : null,
+            <td data-label="工作修订"><b>{matter.workingRevision}</b>{matter.result?.roundCompletion === 'IN_PROGRESS' ? <small>分析进行中</small> : null}</td>
+            <td data-label="更新时间">{libraryDateLabel(matter.updatedAt)}</td>
+            <td data-label="关联资料 ATA" title="关联资料的原文 ATA">{libraryMatterSourceAta(selectedRead?.matter.matterId === matter.matterId ? selectedRead.matter : null,
               documentDirectory.items.filter(document => document.kind === 'DOCUMENT'))}</td>
             <td className="meaning"><LibrarySummaryText expandable={Boolean(matter.result?.listBrief) && matter.overallStatus !== 'NOT_AVAILABLE'} text={matter.overallStatus === 'NOT_AVAILABLE'
               ? '问题正文已保存，综合认识尚未形成。' : matter.result?.listBrief
@@ -210,6 +175,6 @@ export default function LibraryMatterDirectory({
           documents={documentDirectory.items.filter(document => document.kind === 'DOCUMENT')}
         />
       ) : <aside className="atlas-library-inspector"><h2>快速理解</h2><p>{selectedId ? '所选事项尚未在当前读取范围内返回，可加载更多或核对筛选。' : '选择一个事项，查看当前认识和关键条件。'}</p></aside>}
-    </section>
+    </>
   );
 }

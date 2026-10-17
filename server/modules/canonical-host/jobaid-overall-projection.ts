@@ -6,6 +6,14 @@ import type {
 import type { JobAidWorkRevision } from '@shared/jobaid-problem-assessment.interface';
 import { jobAidReadingResult } from './jobaid-problem-work';
 
+/** Completed issues do not establish that their saved overview covers them. */
+export function assertJobAidOverallWorkCurrent(revision: JobAidWorkRevision): void {
+  if (revision.content.overviewStatus !== 'CURRENT')
+    throw new Error(
+      `JOBAID_OVERALL_EXACT_WORK_REQUIRED:${revision.workRevisionRef}:OVERVIEW_${revision.content.overviewStatus}`,
+    );
+}
+
 /** The saved v3 work is the only source of candidate text and counts. */
 export function buildJobAidOverallProjection(input: {
   workItem: CanonicalWorkItemProjection;
@@ -28,6 +36,7 @@ export function buildJobAidOverallProjection(input: {
   const base = input.workItem.integratedAssessment?.baseRules;
   if (!base) throw new Error('JOBAID_OVERALL_BASE_VERSION_INVALID');
   const revision = input.revision;
+  assertJobAidOverallWorkCurrent(revision);
   return {
     status: 'CANDIDATE_ONLY',
     revision: (input.workItem.integratedAssessment?.overallSynthesis?.revision ?? 0) + 1,

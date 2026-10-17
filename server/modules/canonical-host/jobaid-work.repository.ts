@@ -1,3 +1,4 @@
+import { assertAutomaticWorkItemAttemptLease } from '../action-attempt/automatic-work-item-attempt-lease';
 import type { AssessmentTdmsNativeEvidence } from '@shared/assessment-tdms-evidence';
 import { tdmsReadObservation } from './jobaid-tdms-context';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
@@ -39,6 +40,14 @@ export interface JobAidWorkFence {
   leaseToken: string;
   leaseGeneration: number;
   allowCommittingReview?: boolean;
+  automaticLeaseRequired?: boolean;
+}
+
+interface JobAidSaveScope {
+  row: ActionAttemptRow;
+  actorUserId: string;
+  fence: JobAidWorkFence;
+  sourceBindings: JobAidSourceBinding[];
 }
 
 export function assertJobAidWorkFence(
@@ -79,8 +88,8 @@ export class JobAidWorkRepository {
     @Optional() private readonly wikiChanges?: HierarchicalWikiChanges,
   ) {}
 
-  async withActorScope<T>(actorUserId: string, operation: () => Promise<T>): Promise<T> {
-    return this.actorTransactions.withActorScope(actorUserId, operation);
+  async withActorScope<T>(actorUserId: string, operation: () => Promise<T>, database?: PostgresJsDatabase): Promise<T> {
+    return this.actorTransactions.withActorScope(actorUserId, operation, database);
   }
 
   async publishedOriginalBinding(input: { tenantId: string; actorUserId: string; workItemId: string; documentVersionId: string }) {
@@ -477,35 +486,7 @@ export class JobAidWorkRepository {
     const commandJson = canonicalJson(input.command);
     const apply = async (database: PostgresJsDatabase) => {
       await input.assertNativeAuthorized?.(database);
-      const primary = await this.lockSources(
-        database,
-        input.row,
-        input.actorUserId,
-        input.sourceBindings,
-      );
-      const [attempt] = await database
-        .select()
-        .from(actionAttempt)
-        .where(
-          and(
-            eq(actionAttempt.attemptId, input.row.attemptId),
-            eq(actionAttempt.tenantId, input.row.tenantId),
-            eq(actionAttempt.workItemId, input.row.workItemId),
-          ),
-        )
-        .for('update');
-      if (
-        !attempt ||
-        attempt.taskInputHash !== input.row.taskInputHash ||
-        attempt.baseRevision !== input.row.baseRevision ||
-        attempt.documentVersionId !== input.row.documentVersionId ||
-        ![
-          'OPENCLAW_DYNAMIC_EVALUATION',
-          'OPENCLAW_OVERALL_SYNTHESIS',
-          'OPENCLAW_INTERACTIVE_REVIEW',
-        ].includes(attempt.actionType)
-      )
-        throw new Error('JOBAID_SAVE_ATTEMPT_CHANGED');
+      const { primary, attempt } = await this.lockSaveScope(input, database);
       const [existing] = await database
         .select()
         .from(assessmentWorkRevision)
@@ -578,6 +559,56 @@ export class JobAidWorkRepository {
         );
   }
 
+  /** Check an unchanged Review under its caller's already-held actor
+   * transaction. All work writers lock these sources before comparing latest. */
+  async assertReviewUnchanged(
+    input: JobAidSaveScope & { expectedWorkRevisionRef: string; expectedWorkRevision: number },
+    database: PostgresJsDatabase,
+  ): Promise<JobAidWorkRevision> {
+    if (!input.expectedWorkRevisionRef?.trim() || !Number.isSafeInteger(input.expectedWorkRevision) ||
+        input.expectedWorkRevision < 1)
+      throw new Error('JOBAID_REVIEW_UNCHANGED_BASIS_INVALID');
+    return this.actorTransactions.withActorScope(input.actorUserId, async () => {
+      const { primary, attempt } = await this.lockSaveScope(input, database);
+      if (attempt.actionType !== 'OPENCLAW_INTERACTIVE_REVIEW' || attempt.actionType !== input.row.actionType ||
+          attempt.actorUserId !== input.actorUserId || attempt.actorUserId !== input.row.actorUserId ||
+          attempt.inputRevision !== input.row.inputRevision || attempt.inputRevision !== attempt.baseRevision ||
+          attempt.requestOrigin !== ACTION_ATTEMPT_REQUEST_ORIGIN || attempt.requestOrigin !== input.row.requestOrigin)
+        throw new Error('JOBAID_REVIEW_SAVE_BINDING_INVALID');
+      assertJobAidWorkFence(attempt, { ...input.fence, allowCommittingReview: true });
+      if (primary.documentVersionId !== attempt.documentVersionId)
+        throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+      if (primary.revision !== attempt.baseRevision) throw new Error('JOBAID_SAVE_WORK_ITEM_CHANGED');
+      const latest = await this.latest({ tenantId: attempt.tenantId, workItemId: attempt.workItemId }, database);
+      if (!latest || latest.workRevisionRef !== input.expectedWorkRevisionRef ||
+          latest.workRevision !== input.expectedWorkRevision)
+        throw new Error('JOBAID_WORK_REVISION_CONFLICT');
+      const current = await this.readByRefForRuntimeInTransaction({
+        tenantId: attempt.tenantId, workItemId: attempt.workItemId, actorUserId: input.actorUserId,
+        workRevisionRef: input.expectedWorkRevisionRef,
+      }, database);
+      if (!current || current.documentVersionId !== attempt.documentVersionId ||
+          current.workRevision !== input.expectedWorkRevision)
+        throw new Error('JOBAID_REVIEW_UNCHANGED_BASIS_INVALID');
+      return current;
+    }, database);
+  }
+
+  private async lockSaveScope(input: JobAidSaveScope, database: PostgresJsDatabase) {
+    const primary = await this.lockSources(database, input.row, input.actorUserId, input.sourceBindings);
+    await assertAutomaticWorkItemAttemptLease(database, input.row, input.fence.principalId, input.fence.automaticLeaseRequired);
+    const [attempt] = await database.select().from(actionAttempt).where(and(
+      eq(actionAttempt.attemptId, input.row.attemptId),
+      eq(actionAttempt.tenantId, input.row.tenantId),
+      eq(actionAttempt.workItemId, input.row.workItemId),
+    )).for('update');
+    if (!attempt || attempt.taskInputHash !== input.row.taskInputHash ||
+        attempt.baseRevision !== input.row.baseRevision || attempt.documentVersionId !== input.row.documentVersionId ||
+        !['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS', 'OPENCLAW_INTERACTIVE_REVIEW'].includes(attempt.actionType))
+      throw new Error('JOBAID_SAVE_ATTEMPT_CHANGED');
+    return { primary, attempt };
+  }
+
   async recordSourceRead(input: {
     row: ActionAttemptRow;
     actorUserId: string;
@@ -631,6 +662,7 @@ export class JobAidWorkRepository {
           input.actorUserId,
           input.sourceBindings,
         );
+        await assertAutomaticWorkItemAttemptLease(database, input.row, input.fence.principalId, input.fence.automaticLeaseRequired);
         const [attempt] = await database
           .select()
           .from(actionAttempt)
@@ -686,7 +718,7 @@ export class JobAidWorkRepository {
       .limit(1);
     if (!mapping) throw new Error('JOBAID_ACTOR_AUTHORIZATION_CHANGED');
     const ordered = [...bindings].sort((a, b) =>
-      a.workItemId.localeCompare(b.workItemId),
+      a.workItemId < b.workItemId ? -1 : a.workItemId > b.workItemId ? 1 : 0,
     );
     if (!ordered.some((item) => item.workItemId === attempt.workItemId))
       throw new Error('JOBAID_PRIMARY_SOURCE_BINDING_MISSING');
@@ -710,12 +742,13 @@ export class JobAidWorkRepository {
       )
         throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
       const projection = JSON.parse(row.projectionJson) as {
-        package?: { artifact?: { sha256?: string } };
+        package?: { artifact?: { ref?: string; sha256?: string } };
         source?: {sourceArtifactId?: string;sourceFileSha256?: string};
       };
       if (binding.kind === 'SOURCE_FILE'
         ? projection.source?.sourceArtifactId !== binding.artifactRef || canonicalHostBareSha256(projection.source?.sourceFileSha256) !== binding.artifactSha256
-        : projection.package?.artifact?.sha256 !== binding.artifactSha256)
+        : projection.package?.artifact?.ref !== binding.artifactRef ||
+          projection.package?.artifact?.sha256 !== binding.artifactSha256)
         throw new Error('JOBAID_SOURCE_VERSION_CHANGED');
       if (row.workItemId === attempt.workItemId) primary = row;
     }

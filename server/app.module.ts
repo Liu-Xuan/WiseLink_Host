@@ -1,4 +1,10 @@
 import { TdmsSourceModule } from './modules/tdms-source/tdms-source.module';
+import { MiaodaTdmsDocumentAccess } from './modules/tdms-source/miaoda-tdms-document-access';
+import { UnconfiguredTdmsSourceAuthorization } from './modules/tdms-source/tdms-source.authorization';
+import {
+  TDMS_DOCUMENT_ACCESS,
+  TDMS_SOURCE_AUTHORIZATION,
+} from './modules/tdms-source/tdms-source.types';
 import { LcmSourceReadingModule } from './modules/lcm-export-staging/lcm-source-reading.module';
 import { APP_FILTER } from '@nestjs/core';
 import { Module } from '@nestjs/common';
@@ -109,8 +115,18 @@ import { S1000dXmlStructuredPackageProducerAdapter } from './modules/s1000d-ingr
     IdentityModule,
     CanonicalModelSettingsModule,
     ReviewPersistenceModule,
-    TdmsSourceModule,
-    LcmSourceReadingModule,
+    TdmsSourceModule.register({
+      imports: [DocumentManagementRuntimeModule],
+      authorizationProvider: {
+        provide: TDMS_SOURCE_AUTHORIZATION,
+        useExisting: UnconfiguredTdmsSourceAuthorization,
+      },
+      documentAccessProvider: {
+        provide: TDMS_DOCUMENT_ACCESS,
+        useClass: MiaodaTdmsDocumentAccess,
+      },
+    }),
+    LcmSourceReadingModule.forHost(),
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last

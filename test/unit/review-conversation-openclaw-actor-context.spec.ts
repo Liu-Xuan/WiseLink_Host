@@ -402,7 +402,12 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
     });
   });
 
-  it('persists and reads a hosted candidate with actor context in one statement', async () => {
+  it.each([
+    undefined,
+    {status: 'UNCHANGED' as const, workRevisionRef: 'JAWR-OLD', workRevision: 4, affectedIssueKeys: []},
+    {status: 'UNCHANGED' as const, workRevisionRef: 'JAWR-OLD', workRevision: 4, affectedIssueKeys: [], readSourceRefs: ['opaque-current-contribution-ref']},
+    {status: 'APPLIED' as const, workRevisionRef: 'JAWR-NEW', workRevision: 5, affectedIssueKeys: ['ISSUE-1'], readSourceRefs: ['opaque-current-contribution-ref', 'SRC-1']},
+  ])('C309 persists and reads a hosted candidate with its original receipt %j in one statement', async (receipt) => {
     const resultContentHash = 'a'.repeat(64);
     const completedAt = new Date('2026-09-02T12:00:00.000Z');
     const db = {
@@ -439,6 +444,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
             },
             resultContentHash,
             actionAttemptRef: 'AQ-1',
+            ...(receipt ? {jobAidWorkingUpdate: receipt} : {}),
           }),
           resultContentHash,
           actionAttemptId: 'ATT-1',
@@ -484,6 +490,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
       },
       actionAttemptId: 'ATT-1',
       candidate: {
+        ...(receipt ? {jobAidWorkingUpdate: receipt} : {}),
         responseType: 'INPUT_REQUEST',
         answer: 'Controlled AD evidence is required.',
         sourceRefs: [],
@@ -510,6 +517,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
 
     expect(persisted.replayed).toBe(false);
     expect(persisted.turn.assistantCandidate?.actionAttemptRef).toBe('AQ-1');
+    expect(persisted.turn.assistantCandidate?.jobAidWorkingUpdate).toEqual(receipt);
     expect(db.execute).toHaveBeenCalledTimes(1);
     expect(db.transaction).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();

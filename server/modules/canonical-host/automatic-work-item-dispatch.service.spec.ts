@@ -769,11 +769,47 @@ describe('AutomaticWorkItemDispatchService', () => {
       expect(workItems.parkCancelledAutoProcessingLease).not.toHaveBeenCalled();
     });
 
+  it('reauthorizes an ordinary receipt with its original stored source tuple before exact readback', async () => {
+    const workItems = repositoryDouble([]);
+    workItems.readBlockedAutoProcessingLeaseReceipt.mockResolvedValue({blockedAt:NOW,
+      blockedCode:'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED',sourceBinding:blockedSourceBinding()});
+    const lease = leaseAuthorizationDouble();
+    lease.authorizeActiveLease.mockRejectedValue(Object.assign(new Error('not found'), {
+      code:'CANONICAL_WORK_ITEM_NOT_FOUND',statusCode:404,
+    }));
+    const acl = sourceAuthorizationDouble();
+    const service = dispatchService(workItems,sourceDouble(),acl,lease);
+    const input = {workItemId:WORK_ITEM_ID,leaseToken:'b1686364-7ee9-4ca1-a3aa-0b62794cb436',leaseGeneration:3};
+    await expect(service.blockWorkItem(input)).resolves.toMatchObject({status:'BLOCKED',replayed:true});
+    expect(acl.authorizeSourceRead).toHaveBeenCalledWith({...blockedSourceBinding(),tenantId:TENANT_ID});
+    expect(workItems.readBlockedAutoProcessingLeaseReceipt).toHaveBeenLastCalledWith({
+      ...input,tenantId:TENANT_ID,sourceBinding:blockedSourceBinding(),
+    });
+    expect(workItems.blockAutoProcessingLease).not.toHaveBeenCalled();
+  });
+
+  it('does not turn a cancellation receipt into an ordinary release receipt', async () => {
+    const workItems = repositoryDouble([]);
+    workItems.readBlockedAutoProcessingLeaseReceipt.mockResolvedValue({blockedAt:NOW,
+      blockedCode:'AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED',sourceBinding:blockedSourceBinding()});
+    const lease = leaseAuthorizationDouble();
+    lease.authorizeActiveLease.mockRejectedValue(Object.assign(new Error('not found'), {
+      code:'CANONICAL_WORK_ITEM_NOT_FOUND',statusCode:404,
+    }));
+    const acl = sourceAuthorizationDouble();
+    const service = dispatchService(workItems,sourceDouble(),acl,lease);
+    await expect(service.blockWorkItem({workItemId:WORK_ITEM_ID,
+      leaseToken:'b1686364-7ee9-4ca1-a3aa-0b62794cb436',leaseGeneration:3})).rejects.toThrow();
+    expect(acl.authorizeSourceRead).not.toHaveBeenCalled();
+    expect(workItems.parkCancelledAutoProcessingLease).not.toHaveBeenCalled();
+  });
+
   it('rechecks actual source/actor permission for an explicit existing cancellation replay', async () => {
     const workItems = repositoryDouble([]);
     workItems.loadAutoProcessingProjection.mockResolvedValue(currentSnapshot(12));
     workItems.readBlockedAutoProcessingLeaseReceipt.mockResolvedValue({
       blockedAt: NOW, blockedCode: 'AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED',
+      sourceBinding: blockedSourceBinding(),
     });
     workItems.parkCancelledAutoProcessingLease.mockResolvedValue({
       blockedAt: NOW, blockedCode: 'AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED', replayed: true,
@@ -801,7 +837,8 @@ describe('AutomaticWorkItemDispatchService', () => {
       const workItems = repositoryDouble([]);
       workItems.loadAutoProcessingProjection.mockResolvedValue(currentSnapshot(12));
       workItems.readBlockedAutoProcessingLeaseReceipt.mockResolvedValue({ blockedAt: NOW,
-        blockedCode: change === 'wrong-receipt' ? 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED' : 'AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED' });
+        blockedCode: change === 'wrong-receipt' ? 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED' : 'AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED',
+        sourceBinding: blockedSourceBinding() });
       const lease = leaseAuthorizationDouble();
       lease.authorizeActiveLease.mockRejectedValue(Object.assign(new Error('opaque'), {
         code: change === 'unknown-lease' ? 'SOURCE_TRANSPORT_FAILED' : 'CANONICAL_WORK_ITEM_NOT_FOUND', statusCode: 404,
@@ -1245,6 +1282,8 @@ function dispatchService(
     sourceAuthorization ?? undefined,
     leaseAuthorization,
     initial as unknown as CanonicalHostInitialAnalysisStatusService,
+    undefined,
+    {withActorScope: async <T>(_actor: string, operation: () => Promise<T>) => operation()} as JobAidWorkRepository,
   );
 }
 
@@ -1257,6 +1296,12 @@ function cancellationBinding(): AutomaticWorkItemCancellationBinding {
     inputRevision: 12, baseRevision: 12, inputHash: 'd'.repeat(64),
     executionModel: { modelRef: 'miaoda/glm-5.3', displayName: 'GLM 5.3',
       providerKind: 'BUILT_IN', settingsRevision: 1, selectedAt: '2026-09-25T00:00:00.000Z' } };
+}
+
+function blockedSourceBinding() {
+  return {workItemId:WORK_ITEM_ID,requestId:REQUEST_ID,actorUserId:ACTOR_ID,
+    documentId:DOCUMENT_ID,documentVersionId:DOCUMENT_VERSION_ID,
+    sourceArtifactId:SOURCE_ARTIFACT_ID,sourceFileSha256:SOURCE_SHA256,sourceByteLength:1024};
 }
 
 function cancelledInitialStatus() {

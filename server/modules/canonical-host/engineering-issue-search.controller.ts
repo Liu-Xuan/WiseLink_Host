@@ -15,6 +15,12 @@ export class EngineeringIssueSearchController {
   constructor(private readonly issues: EngineeringIssueSearchService, private readonly sources: DocumentSourceSearchService,
     private readonly browserScope: DialogueBrowserScope) {}
 
+  @Get('wiki-guide')
+  @Header('Cache-Control', 'private, no-store')
+  wikiGuide(@Query() query: Record<string, unknown>, @Req() request: Request) {
+    return this.issues.wikiGuide(query, hostActor(request));
+  }
+
   @Get('catalogue')
   @Header('Cache-Control', 'private, no-store')
   catalogue(@Query('search') search: string | undefined, @Query('scope') scope: EngineeringKnowledgeScope = 'CURRENT',

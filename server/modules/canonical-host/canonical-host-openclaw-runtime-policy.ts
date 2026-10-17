@@ -84,8 +84,23 @@ export function assertCanonicalHostOpenClawRuntimePolicy(
   task: OpenClawTaskEnvelope,
 ): void {
   const policy = CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY;
+  if (isSavedWorkReconciliationResult(result)) {
+    const marker = task.modelInput.savedWorkReconciliation as { executionKind?: unknown; modelRequests?: unknown; workRevisionRef?: unknown } | undefined;
+    let output: unknown;
+    try { output = JSON.parse(result.modelOutput ?? 'null'); } catch { output = null; }
+    if (task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' || !marker ||
+        marker.executionKind !== 'HOST_SAVED_WORK_RECONCILIATION' || marker.modelRequests !== 0 ||
+        result.status !== 'SUCCEEDED' || result.businessOutcome !== 'CANDIDATE_READY' ||
+        result.toolVersions['host-saved-work-reconciliation'] !== '1' ||
+        result.runMetrics.inputUnits !== 0 || result.runMetrics.outputUnits !== 0 ||
+        !output || typeof output !== 'object' || !('workRevisionRef' in output) ||
+        output.workRevisionRef !== marker.workRevisionRef)
+      throw policyError('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
+  } else if (result.toolVersions['host-saved-work-reconciliation'] !== undefined) {
+    throw policyError('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
+  }
   if (
-    !hasReadableActualModelProvenance(result.modelVersion) ||
+    (!isSavedWorkReconciliationResult(result) && !hasReadableActualModelProvenance(result.modelVersion)) ||
     !isCanonicalHostOpenClawSkillVersionCompatible(result.skillVersion) ||
     result.toolVersions[policy.mcpServerName] !== policy.mcpServerVersion ||
     !result.promptVersion.trim()
@@ -151,7 +166,8 @@ function parseCompatibleSkillRevision(
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
-function hasReadableActualModelProvenance(value: string): boolean {
+function hasReadableActualModelProvenance(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
   const normalized = value.trim().toLowerCase();
   return (
     normalized !== '' &&
@@ -173,4 +189,8 @@ export class CanonicalHostOpenClawRuntimePolicyError extends Error {
 
 function policyError(code: string): CanonicalHostOpenClawRuntimePolicyError {
   return new CanonicalHostOpenClawRuntimePolicyError(code);
+}
+
+function isSavedWorkReconciliationResult(result: OpenClawResultEnvelope): result is import('../action-attempt/action-attempt-envelope.types').OpenClawSavedWorkReconciliationResultEnvelope {
+  return result.executionKind === 'HOST_SAVED_WORK_RECONCILIATION';
 }

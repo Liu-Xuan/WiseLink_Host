@@ -168,6 +168,12 @@ async function syncDocumentManagementAssets() {
   await mkdir(target, { recursive: true });
   await cp(source, target, { recursive: true, force: true });
 
+  // Browser labels and server chapter-name search use the same generated ATA data.
+  const ataTitlesPath = 'client/src/pages/WorkspaceHomePage/library-ata-titles.generated.json';
+  const ataTitlesTarget = resolve(root, 'dist/server/runtime-assets/wiki-guide/library-ata-titles.generated.json');
+  await mkdir(resolve(ataTitlesTarget, '..'), { recursive: true });
+  await copyFile(resolve(root, ataTitlesPath), ataTitlesTarget);
+
   const technicalPublicationContractSource = resolve(
     root,
     'server/runtime-assets/technical-publication-parsed-package/v1-frozen-2',

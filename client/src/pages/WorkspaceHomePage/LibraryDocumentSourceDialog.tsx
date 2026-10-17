@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { BookOpen } from 'lucide-react';
 import type { CanonicalLibraryDocumentSummary, CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@client/src/components/ui/dialog';
@@ -8,17 +9,23 @@ import { DocumentOriginalInlinePreview } from './DocumentOriginalPreview';
 import { documentIdentityPresentation, libraryPublicationPresentation } from './library-document-presentation';
 
 /** Browsing a source does not require a parse, an assessment or an adopted engineering decision. */
-export function LibraryDocumentSourceDialog({ document, version, onSelectVersion }: {
+export function LibraryDocumentSourceDialog({ document, version, onSelectVersion, compact = false }: {
   document: CanonicalLibraryDocumentSummary;
   version: CanonicalLibraryDocumentVersionSummary;
   onSelectVersion: (documentVersionId: string) => void;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState<boolean>(false);
   const identity = documentIdentityPresentation({ documentCode: document.documentCode,
     extractedMetadata: version.extractedMetadata });
   const publication = libraryPublicationPresentation(version);
   return <Dialog open={open} onOpenChange={setOpen}>
-    <Button type="button" variant="outline" onClick={() => setOpen(true)}>直接阅读 PDF 与 TDMS 来源意见</Button>
+    <Button type="button" variant="outline" size={compact ? 'sm' : 'default'}
+      className={compact ? 'library-document-primary-action' : undefined}
+      title="直接阅读所选版本 PDF 与 TDMS 来源意见"
+      aria-label="直接阅读所选版本 PDF 与 TDMS 来源意见" onClick={() => setOpen(true)}>
+      {compact ? <><BookOpen aria-hidden="true" />阅读</> : '直接阅读 PDF 与 TDMS 来源意见'}
+    </Button>
     <DialogContent className="library-document-source-dialog max-w-[96vw]">
       <DialogHeader>
         <DialogTitle>{identity.documentNumber} · 业务版次 {version.businessRevision || '未标注'}</DialogTitle>

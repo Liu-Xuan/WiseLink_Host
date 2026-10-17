@@ -11,6 +11,7 @@ import { createSummaryGatewaySession } from './derived-summary-native-gateway.mj
 import { requestHostedGateway, createHostedReviewRequester } from './request-hosted-gateway.mjs';
 import { canonicalJson, WISELINK_PROFILE_REF, WISELINK_SKILL_VERSION,
   WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from './validate-payload.mjs';
+import { SOURCE_CONTENT_SYNTHESIS_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION } from './jobaid-problem-guidance.mjs';
 import { assertSummaryExactKeys, completeDerivedSummaryWorkBody, derivedSummaryRegistry, derivedSummaryStepTool,
   validateDerivedSummaryContent, normalizeDerivedSummaryContent, materializeDerivedSummaryContent, validateDerivedSummaryModelInput, validateDerivedSummaryReadSelection,
 } from './derived-summary-shape.mjs';
@@ -67,14 +68,23 @@ const HIERARCHICAL_WIKI_PARENT_SYSTEM_MESSAGE = `${DERIVED_SUMMARY_SYSTEM_MESSAG
   'When purpose is REVISE_SAVED_SUMMARY, previousSummary is the complete exact derived candidate to revise using requestedChange and all current child bodies. Return the complete revised candidate, never a patch. Prior citations may be retained only when their exact immutable current bindings permit derived reuse; that is not a fresh original read or a correctness proof. Preserve current and historical limitations, conflicts, exclusions and unknowns.',
 ].join('\n')}`;
 const HIERARCHICAL_WIKI_PARENT_INPUT_PREFIX = 'Synthesize this Wiki layer from all exact saved child Wiki bodies, with registered roots available for explicit backtracking.\nINPUT:\n';
-const sparseRevisionPrompt = version => version === DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION;
-const wikiParentPrompt = version => version === HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION;
+// Only newly initialized states use this known text revision. Old messages and
+// their original remote-step hashes/producers remain byte-identical on replay.
+const contentOnceVersions = [DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION,
+  DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION, HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION];
+const summaryBasePromptVersion = version => typeof version === 'string' &&
+  contentOnceVersions.some(base => version === `${base}${SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION}`)
+  ? version.slice(0, -SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION.length) : version;
+const summarySystemText = (text, version) => version !== summaryBasePromptVersion(version)
+  ? `${text}\n${SOURCE_CONTENT_SYNTHESIS_GUIDANCE}` : text;
+const sparseRevisionPrompt = version => summaryBasePromptVersion(version) === DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION;
+const wikiParentPrompt = version => summaryBasePromptVersion(version) === HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION;
 const sparseDeliveryPrompt = version => sparseRevisionPrompt(version) || wikiParentPrompt(version);
 
-const revisionPrompt = version => [DERIVED_SUMMARY_REVISION_PROMPT_VERSION, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION].includes(version);
-const cachePrefixPrompt = version => [DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION].includes(version);
+const revisionPrompt = version => [DERIVED_SUMMARY_REVISION_PROMPT_VERSION, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION].includes(summaryBasePromptVersion(version));
+const cachePrefixPrompt = version => [DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION].includes(summaryBasePromptVersion(version));
 const projectedReads = version => sparseDeliveryPrompt(version) || [DERIVED_SUMMARY_PROMPT_VERSION, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION,
-  DERIVED_SUMMARY_REVISION_PROMPT_VERSION, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION].includes(version);
+  DERIVED_SUMMARY_REVISION_PROMPT_VERSION, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION].includes(summaryBasePromptVersion(version));
 const inputPrefix = version => wikiParentPrompt(version) ? HIERARCHICAL_WIKI_PARENT_INPUT_PREFIX : sparseRevisionPrompt(version) ? DERIVED_SUMMARY_SPARSE_REVISION_INPUT_PREFIX : revisionPrompt(version) ? DERIVED_SUMMARY_REVISION_INPUT_PREFIX : DERIVED_SUMMARY_INPUT_PREFIX;
 
 function evidenceOnlyModelView(modelInput) {
@@ -82,7 +92,7 @@ function evidenceOnlyModelView(modelInput) {
   const registry = derivedSummaryRegistry(modelInput);
   const view = structuredClone(modelInput);
   view.members = view.members.map(({ evidence, ...member }) => ({
-    ...member, evidenceRefs: summaryEvidenceRefs(evidence), ...summaryNativeReceiptFields(evidence),
+    ...member, evidenceRefs: summaryEvidenceRefs(evidence), ...summaryNativeReceiptFields(evidence, registry.evidence),
   }));
   view.evidence = structuredClone([...registry.evidence.values()]);
   return view;
@@ -128,6 +138,7 @@ export function hierarchicalWikiParentModelMessages(modelInput) {
 /** Interpret only supported complete transcripts. Never rewrite saved messages. */
 function storedSummaryPromptVersion(state, registry, modelInput, options = {}) {
   const invalid = () => { throw new Error('DERIVED_SUMMARY_MODEL_PROMPT_BINDING_INVALID'); };
+  const version = summaryBasePromptVersion(state?.promptVersion);
   if (!Number.isSafeInteger(state?.round) || state.round < 0 || !Array.isArray(state.messages) ||
       state.messages.length !== 2 + state.round * 2 || state.messages[0]?.role !== 'system' ||
       state.messages[1]?.role !== 'user' || typeof state.messages[1].content !== 'string' ||
@@ -151,7 +162,7 @@ function storedSummaryPromptVersion(state, registry, modelInput, options = {}) {
   }
   if (wikiParentPrompt(state.promptVersion)) {
     try {
-      if (!isHierarchicalWikiParent(modelInput) || state.messages[0].content !== HIERARCHICAL_WIKI_PARENT_SYSTEM_MESSAGE ||
+      if (!isHierarchicalWikiParent(modelInput) || state.messages[0].content !== summarySystemText(HIERARCHICAL_WIKI_PARENT_SYSTEM_MESSAGE, state.promptVersion) ||
           !state.messages[1].content.startsWith(HIERARCHICAL_WIKI_PARENT_INPUT_PREFIX)) invalid();
       const input = parseStrictJsonObject(state.messages[1].content.slice(HIERARCHICAL_WIKI_PARENT_INPUT_PREFIX.length));
       validateHierarchicalWikiParentModelView(input, modelInput, { restoring: true });
@@ -163,7 +174,7 @@ function storedSummaryPromptVersion(state, registry, modelInput, options = {}) {
   if (sparseRevisionPrompt(state.promptVersion)) {
     try {
       if (modelInput.purpose !== 'REVISE_SAVED_SUMMARY' ||
-          state.messages[0].content !== DERIVED_SUMMARY_SPARSE_REVISION_SYSTEM_MESSAGE ||
+          state.messages[0].content !== summarySystemText(DERIVED_SUMMARY_SPARSE_REVISION_SYSTEM_MESSAGE, state.promptVersion) ||
           !state.messages[1].content.startsWith(DERIVED_SUMMARY_SPARSE_REVISION_INPUT_PREFIX)) invalid();
       const input = parseStrictJsonObject(state.messages[1].content.slice(DERIVED_SUMMARY_SPARSE_REVISION_INPUT_PREFIX.length));
       validateDerivedSummarySparseRevisionModelView(input, modelInput, { ...options, restoring: true });
@@ -173,7 +184,7 @@ function storedSummaryPromptVersion(state, registry, modelInput, options = {}) {
   }
   const revising = revisionPrompt(state.promptVersion);
   if (revising !== (modelInput.purpose === 'REVISE_SAVED_SUMMARY') ||
-      state.messages[0].content !== (revising ? DERIVED_SUMMARY_REVISION_SYSTEM_MESSAGE : DERIVED_SUMMARY_SYSTEM_MESSAGE)) invalid();
+      state.messages[0].content !== summarySystemText(revising ? DERIVED_SUMMARY_REVISION_SYSTEM_MESSAGE : DERIVED_SUMMARY_SYSTEM_MESSAGE, state.promptVersion)) invalid();
   try {
     const prefix = inputPrefix(state.promptVersion);
     if (!state.messages[1].content.startsWith(prefix)) invalid();
@@ -186,20 +197,21 @@ function storedSummaryPromptVersion(state, registry, modelInput, options = {}) {
     };
     if ([DERIVED_SUMMARY_PROMPT_VERSION, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION,
       DERIVED_SUMMARY_REVISION_PROMPT_VERSION, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION,
-      PROBLEM_CONTENT_PROMPT_VERSION, EVIDENCE_ONLY_PROMPT_VERSION].includes(state.promptVersion)) {
+      PROBLEM_CONTENT_PROMPT_VERSION, EVIDENCE_ONLY_PROMPT_VERSION].includes(version)) {
       const evidence = derivedSummaryRegistry({ members: [], evidence: input.evidence }).evidence;
-      const original = { ...input, members: input.members.map(({ evidenceRefs, nativeReadReceipts, ...member }) => {
+      const original = { ...input, members: input.members.map(({ evidenceRefs, nativeReadReceipts, documentWorkItemCarriers, ...member }) => {
         if (Object.hasOwn(member, 'evidence') || !Array.isArray(evidenceRefs)) invalid();
         if (Object.hasOwn(member, 'understanding')) {
-          if (state.promptVersion === EVIDENCE_ONLY_PROMPT_VERSION || Object.hasOwn(member, 'body')) invalid();
+          if (version === EVIDENCE_ONLY_PROMPT_VERSION || Object.hasOwn(member, 'body')) invalid();
           member = { ...member, body: completeDerivedSummaryWorkBody(member.understanding, member.issues) };
         }
         const restorationRegistry = new Map([...evidence].map(([ref, value]) => [ref, { value }]));
         return { ...member, evidence: restoreSummaryMemberEvidence({ evidenceRefs,
-          ...(nativeReadReceipts === undefined ? {} : { nativeReadReceipts }) }, restorationRegistry) };
+          ...(nativeReadReceipts === undefined ? {} : { nativeReadReceipts }),
+          ...(documentWorkItemCarriers === undefined ? {} : { documentWorkItemCarriers }) }, restorationRegistry) };
       }) };
       validateDerivedSummaryModelInput(original);
-      const project = state.promptVersion === EVIDENCE_ONLY_PROMPT_VERSION ? evidenceOnlyModelView : derivedSummaryModelView;
+      const project = version === EVIDENCE_ONLY_PROMPT_VERSION ? evidenceOnlyModelView : derivedSummaryModelView;
       if (canonicalJson(project(original)) !== canonicalJson(input)) invalid();
       assertCurrentBinding(project(modelInput));
       if (cachePrefixPrompt(state.promptVersion) &&
@@ -283,10 +295,13 @@ export async function invokeHostedDerivedSummaryModel(modelInput, options, depen
       throw new Error('DERIVED_SUMMARY_CHECKPOINT_INVENTORY_REQUIRED');
     if (await checkpoint.hasEntries('summary-round-') || await checkpoint.hasEntries('summary-gateway.'))
       throw new Error('DERIVED_SUMMARY_MODEL_PROMPT_BINDING_INVALID');
-    state = { round: 0, promptVersion: isHierarchicalWikiParent(modelInput) ? HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION : modelInput.purpose === 'REVISE_SAVED_SUMMARY'
-      ? DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION : DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION,
-      messages: isHierarchicalWikiParent(modelInput) ? hierarchicalWikiParentModelMessages(modelInput) : modelInput.purpose === 'REVISE_SAVED_SUMMARY'
-        ? derivedSummarySparseRevisionModelMessages(modelInput, options) : derivedSummaryCachePrefixModelMessages(modelInput) };
+    const baseVersion = isHierarchicalWikiParent(modelInput) ? HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION : modelInput.purpose === 'REVISE_SAVED_SUMMARY'
+      ? DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION : DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION;
+    const messages = isHierarchicalWikiParent(modelInput) ? hierarchicalWikiParentModelMessages(modelInput) : modelInput.purpose === 'REVISE_SAVED_SUMMARY'
+      ? derivedSummarySparseRevisionModelMessages(modelInput, options) : derivedSummaryCachePrefixModelMessages(modelInput);
+    const promptVersion = `${baseVersion}${SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION}`;
+    messages[0] = { ...messages[0], content: summarySystemText(messages[0].content, promptVersion) };
+    state = { round: 0, promptVersion, messages };
     await checkpoint.write('summary-model-state', state);
   }
   const promptVersion = storedSummaryPromptVersion(state, registry, modelInput, options);

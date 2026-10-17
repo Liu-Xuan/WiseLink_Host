@@ -46,6 +46,10 @@ import { EngineeringSearchProjectionWriter } from './engineering-search-projecti
 import { EngineeringReadPhaseObservation, engineeringReadTimelineLogParts,
   engineeringReadWindowLogParts,
   observeEngineeringRead } from './engineering-read-phase-observation';
+import type { WikiGuideIssuePage } from '@shared/wiki-guide.interface';
+import { DerivedSummaryRepository } from './derived-summary.repository';
+import { readWikiGuideIssuePage, wikiGuideIssueReadStats,
+  type WikiGuideAuthorizedWork, type WikiGuideIssueCandidate } from './engineering-wiki-issue-page';
 
 type IssueIdentity = Pick<
   EngineeringIssueSearchHit,
@@ -67,7 +71,45 @@ export class EngineeringIssueSearchService {
     @Optional() @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceAuthorization?: CanonicalServiceScopeAuthorizationPort,
     @Optional() private readonly sessions?: SessionResolver,
+    @Optional() private readonly summaryReads?: DerivedSummaryRepository,
   ) {}
+
+  async wikiGuide(query: unknown, actor: CanonicalHostActor): Promise<WikiGuideIssuePage> {
+    this.requireActor(actor);
+    if (!this.summaryReads) throw new ServiceUnavailableException('WIKI_GUIDE_READ_SCOPE_UNAVAILABLE');
+    const summaryReads = this.summaryReads;
+    const stats = wikiGuideIssueReadStats();
+    const started = Date.now();
+    let completed = false;
+    try {
+      const result = await readWikiGuideIssuePage({
+        query, stats,
+        withMetadataScope: operation => summaryReads.readBrowser(actor, operation),
+        loadWork: candidate => this.wikiGuideAuthorizedWork(candidate, actor),
+        isAccessUnavailable,
+      });
+      completed = true;
+      return result;
+    } finally {
+      try {
+        this.logger.log({ event: 'WIKI_GUIDE_ISSUE_READ', status: completed ? 'ok' : 'error',
+          ...stats, durationMs: Date.now() - started });
+      } catch { /* Read observations cannot alter authorization or error precedence. */ }
+    }
+  }
+
+  private async wikiGuideAuthorizedWork(candidate: WikiGuideIssueCandidate,
+    actor: CanonicalHostActor): Promise<WikiGuideAuthorizedWork> {
+    const saved = await this.loadWork(candidate, actor);
+    if ('content' in saved) return { subjectKind: 'WORK_ITEM', subjectId: saved.workItemId,
+      workRef: saved.workRevisionRef, workRevision: saved.workRevision,
+      documentVersionId: saved.documentVersionId, issues: saved.content.issues };
+    const content = saved.state.problemWork;
+    if (!content) throw new NotFoundException('ENGINEERING_KNOWLEDGE_WORK_NOT_FOUND');
+    return { subjectKind: 'ENGINEERING_MATTER', subjectId: saved.matterId,
+      workRef: saved.matterWorkRevisionId, workRevision: saved.workingRevision,
+      documentVersionId: null, issues: content.issues };
+  }
 
   /** Browses saved explanations without generating text or requiring a keyword. */
   async catalogue(query: string, scope: EngineeringKnowledgeScope, after: string | undefined,

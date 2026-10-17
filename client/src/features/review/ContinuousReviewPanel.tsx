@@ -351,6 +351,7 @@ export default function ContinuousReviewPanel({
   function locateTurnSource(
     turn: ReviewTurnReadModel,
     sourceRef: string,
+    requireExactBinding = false,
   ): void {
     const binding: ReviewSourceBinding | null = reviewSourceBinding(
       turn,
@@ -360,11 +361,11 @@ export default function ContinuousReviewPanel({
       onLocateSourceBinding(binding);
       return;
     }
-    if (binding?.workItemId === workItemId) {
+    if (!requireExactBinding && binding?.workItemId === workItemId) {
       onLocateSourceRef(binding.originalSourceRefId);
       return;
     }
-    if (matterId || binding) {
+    if (requireExactBinding || matterId || binding) {
       setError(
         reviewInputError(
           'REVIEW_SOURCE_BINDING_UNAVAILABLE',
@@ -443,7 +444,7 @@ export default function ContinuousReviewPanel({
             context={materials}
             turns={conversation?.turns ?? []}
             refreshing={refreshing}
-            onLocateSourceRef={onLocateSourceRef}
+            onLocateSourceRef={(turn, sourceRef) => locateTurnSource(turn, sourceRef, true)}
           />
         ) : null}
 

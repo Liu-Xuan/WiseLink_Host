@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { validatePayload } from '../scripts/validate-payload.mjs';
 import { record, packet } from './fixtures/source-statement-v2-wire.fixture.mjs';
+import { invokeHostedInitialModel } from '../scripts/invoke-hosted-initial-model.mjs';
+import { SOURCE_CONTENT_SYNTHESIS_GUIDANCE } from '../scripts/jobaid-problem-guidance.mjs';
 
 // Synthetic synthesis DTO mirrors the actual Host producer; no external calls.
 const time = '2026-08-31T23:30:00-08:00';
@@ -23,6 +25,24 @@ function input(version = 'SOURCE_CONTEXT_V1') {
   return { ...synthesisInput(), evidenceProjectionVersion: version, evidenceRegistry: sourceRows() };
 }
 const validate = value => validatePayload('synthesis-input', value);
+
+test('actual Overall request carries shared synthesis rules and every exact source carrier unchanged', async () => {
+  const value = input();
+  const original = structuredClone(value);
+  let requests = 0;
+  await assert.rejects(invokeHostedInitialModel({ operation: 'SYNTHESIZE_OVERALL', modelInput: value }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://fixture.invalid', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture-model', sessionDiscriminator: 'overall-content-once',
+  }, { requestGateway: async (_url, request) => {
+    requests++;
+    const body = JSON.parse(request.body);
+    assert.ok(body.messages[0].content.includes(SOURCE_CONTENT_SYNTHESIS_GUIDANCE));
+    assert.deepEqual(JSON.parse(body.messages[1].content), original);
+    throw new Error('FIXTURE_CAPTURED_OVERALL_REQUEST');
+  } }), /FIXTURE_CAPTURED_OVERALL_REQUEST/u);
+  assert.equal(requests, 1);
+  assert.deepEqual(value, original);
+});
 
 test('actual synthesis consumer accepts Host-shaped V1 after JSON recovery without fabricating dates', () => {
   const value = JSON.parse(JSON.stringify(input()));

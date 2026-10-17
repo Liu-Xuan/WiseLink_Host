@@ -94,10 +94,19 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
 }
 
 .wl-sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 2px;
   margin: 0 7px 33px;
+}
+
+.wl-sidebar-brand-heading {
+  display: flex;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
 }
 
 .wl-sidebar-brand-text {
@@ -115,11 +124,17 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
   white-space: nowrap;
 }
 
-.wl-sidebar-brand-text small {
+.wl-sidebar-brand-subtitle {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-height: 27px;
   color: var(--wl-muted);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
-  overflow-wrap: anywhere;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .brand .brand-copy {
@@ -143,6 +158,8 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
 
 .wl-sidebar-close {
   display: none;
+  grid-column: 2;
+  grid-row: 1;
   margin-left: auto;
 }
 
@@ -851,6 +868,7 @@ select:focus-visible {
     margin: 3px 0 23px;
   }
   .wl-sidebar-brand-text,
+  .wl-sidebar-brand-subtitle,
   .wl-sidebar-group-label,
   .wl-sidebar-quote,
   .wl-sidebar-nav a span,
@@ -897,7 +915,6 @@ select:focus-visible {
   }
   .wl-sidebar-brand {
     margin: 8px 0 22px;
-    gap: 7px;
   }
   .wl-sidebar-quote {
     display: none;
@@ -1049,8 +1066,7 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
 }
 
 .wiselink-app-shell .wl-sidebar-brand {
-  margin: 0 6px 30px;
-  gap: 7px;
+  margin: 0 0 30px;
 }
 
 .wiselink-app-shell .wl-sidebar-brand-text strong {
@@ -1102,6 +1118,7 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
   }
 
   .wiselink-app-shell .wl-sidebar-brand-text,
+  .wiselink-app-shell .wl-sidebar-brand-subtitle,
   .wiselink-app-shell .wl-sidebar-group-label,
   .wiselink-app-shell .wl-sidebar-quote,
   .wiselink-app-shell .wl-sidebar-nav a span,
@@ -1160,6 +1177,7 @@ html[data-wl-theme='dark'] .wiselink-app-shell {
   }
 
   .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-brand-text,
+  .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-brand-subtitle,
   .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-group-label,
   .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-quote,
   .wiselink-app-shell .wl-sidebar.is-open .wl-sidebar-nav a span,

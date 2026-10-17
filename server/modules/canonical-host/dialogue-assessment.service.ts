@@ -58,10 +58,9 @@ export class DialogueAssessmentService {
     if (stored && stored.request_json !== canonicalJson(input))
       dialogueConflict('DIALOGUE_REQUEST_REPLAY_CONFLICT');
     if (!stored) {
-      const [current] = await this.context.current(
-        session,
-        [input.workItemId],
-        false,
+      // Restore service SQL after reading the saved work as its browser actor.
+      const [current] = await this.sessions.withVerifiedReviewBrowserSql(() =>
+        this.context.current(session, [input.workItemId], false, true),
       );
       if (
         current.workItemRevision !== input.expectedWorkItemRevision ||
@@ -132,8 +131,8 @@ export class DialogueAssessmentService {
       ].join('\n\n');
       if (userMessage.length > 20_000)
         throw new BadRequestException('DIALOGUE_ASSESSMENT_INPUT_TOO_LARGE');
-      const conversation = await this.sessions.withVerifiedBrowserSql(() =>
-        this.reviews.createOrResume(input.workItemId, httpRequest),
+      const conversation = await this.sessions.withVerifiedReviewBrowserSql(
+        () => this.reviews.createOrResume(input.workItemId, httpRequest),
       );
       stored = await this.assessments.create(
         scope,
@@ -162,7 +161,7 @@ export class DialogueAssessmentService {
       };
     }
     const dispatchRequest = stored;
-    const result = await this.sessions.withVerifiedBrowserSql(() =>
+    const result = await this.sessions.withVerifiedReviewBrowserSql(() =>
       this.reviews.appendTextTurn(
         input.workItemId,
         dispatchRequest.review_conversation_id,

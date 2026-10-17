@@ -18,6 +18,9 @@ import { createDerivedSummaryDeliveredView, projectDerivedSummaryReadReceipt } f
 import { canonicalJson, canonicalSha256 } from '../scripts/validate-payload.mjs';
 import { createCheckpointStore, executionModelHeaders, readHostMcpJsonResult } from '../scripts/run-hosted-review-turn.mjs';
 import { serializeDerivedSummaryCachePrefix } from '../scripts/derived-summary-cache-prefix.mjs';
+import { SOURCE_CONTENT_SYNTHESIS_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION } from '../scripts/jobaid-problem-guidance.mjs';
+const freshSynthesisMessages = messages => messages.map((message, index) => index === 0
+  ? { ...message, content: `${message.content}\n${SOURCE_CONTENT_SYNTHESIS_GUIDANCE}` } : message);
 
 const member = { kind: 'WORK_ITEM_WORK', workItemId: 'WI-one', documentVersionId: 'DV-one',
   workRef: 'WR-historical', workRevision: 2, issueKeys: ['issue-conditions'] };
@@ -171,11 +174,12 @@ test('real summary adapter reads exact members and roots then saves, exact-reads
   assert.deepEqual(candidateSchema.properties.limitations,
     { type: 'array', minItems: 0, items: { type: 'string', minLength: 1, maxLength: 4000, pattern: '\\S' } });
   const systemPrompt = h.gatewayCalls[0].messages[0].content;
+  assert.ok(systemPrompt.includes(SOURCE_CONTENT_SYNTHESIS_GUIDANCE));
   assert.match(systemPrompt, /limitations is an array of nonempty strings and may be empty/);
   assert.match(systemPrompt, /Follow the length requested by this task instruction/);
   const checkpoint = await createCheckpointStore(join(root, 'derived-summary', 'host', 'DS-one', 'AQ-one'));
   assert.equal((await checkpoint.readOptional('summary-candidate')).provenance.actualModel, 'synthetic-actual/model-v1');
-  assert.equal(h.saved.summary.producer.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION);
+  assert.equal(h.saved.summary.producer.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION + SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION);
   assert.deepEqual(h.saved.summary.content, content);
 }));
 
@@ -597,7 +601,8 @@ test('model view transmits each exact source once and preserves both member sour
 });
 
 test('model view includes member-only evidence and does not merge different refs with identical excerpts', () => {
-  const other = { ...source, evidenceRef: 'root-two', sourceRefId: 'SRC-two' };
+  const other = { ...source, evidenceRef: 'root-two', sourceRefId: 'SRC-two',
+    documentVersionId: 'DV-two', versionLabel: 'R2' };
   const selected = { ...structuredClone(modelInput), evidence: [],
     members: [{ ...structuredClone(reading), evidence: [source, other], rootRefs: ['root-ref', 'root-two'] }] };
   const view = summaryInputFromMessages(selected);
@@ -632,15 +637,15 @@ test('model view still refuses one evidence ref bound to conflicting exact conte
   assert.throws(() => derivedSummaryModelMessages(conflict), /DERIVED_SUMMARY_EVIDENCE_IDENTITY_DRIFT/);
 });
 
-test('new deduplicated multi-round state keeps v2 instructions and explicit input projection', () => fixture(async root => {
+test('new synthesis state appends shared content rules while preserving the explicit input projection', () => fixture(async root => {
   const steps = [{ action: 'READ_MEMBER_WORK', evidenceRefs: ['member-ref'], purpose: 'Inspect selected work' },
     { action: 'READ_SOURCES', evidenceRefs: ['root-ref'], purpose: 'Verify the conditional original' },
     { action: 'SAVE_SUMMARY', content }];
   const h = harness(root, { gateway: n => gatewayStep(steps[n - 1], `dedup-call-${n}`) });
   await consumeHostedDerivedSummary(h.options, h.dependencies);
   const state = await (await summaryCheckpoint(root)).readOptional('summary-model-state');
-  assert.equal(state.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION);
-  assert.equal(state.messages[0].content, legacySummaryV2SystemMessage);
+  assert.equal(state.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION + SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION);
+  assert.equal(state.messages[0].content, `${legacySummaryV2SystemMessage}\n${SOURCE_CONTENT_SYNTHESIS_GUIDANCE}`);
   assert.equal(state.round, 2);
   assert.equal(h.saved.summary.producer.promptVersion, state.promptVersion);
   assert.deepEqual(h.gatewayCalls.map(call => call.messages[0]), [state.messages[0], state.messages[0], state.messages[0]]);
@@ -1171,8 +1176,8 @@ test('P2 repeated member/source READs keep exact receipts and complete call pair
     : { action: 'SAVE_SUMMARY', content }, `p2-repeat-${n}`) });
   await consumeHostedDerivedSummary(h.options, h.dependencies);
   const checkpoint = await summaryCheckpoint(root); const state = await checkpoint.readOptional('summary-model-state');
-  assert.equal(state.round, reads.length); assert.equal(state.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION);
-  assert.equal(state.messages[0].content, legacySummaryV2SystemMessage);
+  assert.equal(state.round, reads.length); assert.equal(state.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION + SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION);
+  assert.equal(state.messages[0].content, `${legacySummaryV2SystemMessage}\n${SOURCE_CONTENT_SYNTHESIS_GUIDANCE}`);
   for (let round = 0; round < reads.length; round++) {
     const receipt = await checkpoint.readOptional(`summary-round-${round}-read`);
     assert.deepEqual(receipt, reads[round].action === 'READ_MEMBER_WORK' ? { members: [reading] } : { evidence: [source] });
@@ -1501,10 +1506,10 @@ for (const key of ['summary-round-0.started', 'summary-round-0.result', 'summary
 test('fresh cache-prefix state has explicit version, exact ordered INPUT and original v2 instructions', () => fixture(async root => {
   const h = harness(root); await consumeHostedDerivedSummary(h.options, h.dependencies);
   const checkpoint = await summaryCheckpoint(root); const state = await checkpoint.readOptional('summary-model-state');
-  assert.equal(state.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION);
-  assert.deepEqual(state.messages, derivedSummaryCachePrefixModelMessages(modelInput));
+  assert.equal(state.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION + SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION);
+  assert.deepEqual(state.messages, freshSynthesisMessages(derivedSummaryCachePrefixModelMessages(modelInput)));
   assert.deepEqual(h.gatewayCalls[0].messages, state.messages);
-  assert.equal(state.messages[0].content, legacySummaryV2SystemMessage);
+  assert.equal(state.messages[0].content, `${legacySummaryV2SystemMessage}\n${SOURCE_CONTENT_SYNTHESIS_GUIDANCE}`);
   const view = JSON.parse(state.messages[1].content.split('INPUT:\n')[1]);
   assert.deepEqual(view, derivedSummaryModelView(modelInput));
   assert.deepEqual(Object.keys(view), ['evidence', 'members', 'classificationStatus', 'scope', 'limitations', 'instruction']);
@@ -1818,7 +1823,8 @@ for (const entry of r1Sealed.groups.find(group => group.name === 'native').varia
     await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /native synthetic lost finish/u);
     const checkpoint = await r1Checkpoint(root, entry); const state = await checkpoint.readOptional('summary-model-state');
     const version = sealed.modelInput.purpose === 'REVISE_SAVED_SUMMARY'
-      ? DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION : DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION;
+      ? DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION
+      : DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION + SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION;
     assert.equal(state.promptVersion, version); assert.equal(state.round, 2); assert.equal(h.gatewayCalls.length, 3);
     const input = JSON.parse(state.messages[1].content.split('INPUT:\n')[1]);
     assert.deepEqual(input.members.map(item => item.leaves), sealed.modelInput.members.map(item => item.leaves));
@@ -1861,9 +1867,9 @@ for (const group of ['legacy', 'synthesis']) test(`R1 actual ${group} consumer k
   const entry = r1Entry(group); const raw = entry.taskEnvelopeJson; const h = r1Transport(root, entry);
   await consumeHostedDerivedSummary(h.options, h.dependencies);
   const state = await (await r1Checkpoint(root, entry)).readOptional('summary-model-state');
-  assert.equal(state.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION);
-  assert.equal(state.messages[0].content, legacySummaryV2SystemMessage);
-  assert.deepEqual(state.messages, derivedSummaryCachePrefixModelMessages(h.task.modelInput));
+  assert.equal(state.promptVersion, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION + SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION);
+  assert.equal(state.messages[0].content, `${legacySummaryV2SystemMessage}\n${SOURCE_CONTENT_SYNTHESIS_GUIDANCE}`);
+  assert.deepEqual(state.messages, freshSynthesisMessages(derivedSummaryCachePrefixModelMessages(h.task.modelInput)));
   assert.equal(h.saved.summary.producer.promptVersion, state.promptVersion);
   assert.equal(entry.taskEnvelopeJson, raw);
 }));
@@ -1893,7 +1899,7 @@ for (const basis of ['SAME_SELECTION', 'CHANGED_SELECTION'])
     const entry = r1Entry('revision', basis); const h = r2Transport(root, entry);
     await consumeHostedDerivedSummary(h.options, h.dependencies);
     const checkpoint = await r1Checkpoint(root, entry); const state = await checkpoint.readOptional('summary-model-state');
-    assert.equal(state.promptVersion, DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION);
+    assert.equal(state.promptVersion, DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION + SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION);
     const view = JSON.parse(state.messages[1].content.split('INPUT:\n')[1]);
     assert.equal(view.modelViewStrategy, 'SPARSE_REVISION_V1'); assert.equal(view.evidence.length, 0);
     if (basis === 'SAME_SELECTION') assert.equal(view.members.length, 0);
@@ -2063,7 +2069,7 @@ for (const level of ['ATA2', 'FLEET']) for (const revising of [false, true])
     assert.equal(result.status, 'DERIVED_SUMMARY_SAVED'); assert.equal(result.candidateOnly, true);
     assert.equal(h.gatewayCalls.length, 1); assert.equal(h.calls.filter(call => call.operation === 'READ_MEMBER_WORK').length, 1);
     assert.equal(h.calls.some(call => call.operation === 'READ_SOURCES'), false);
-    assert.equal(h.saved.summary.producer.promptVersion, HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION);
+    assert.equal(h.saved.summary.producer.promptVersion, HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION + SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION);
     assert.equal(h.saved.summary.producer.configuredModelRef, r1Task(entry).executionModel.modelRef);
     const checkpoint = await r1Checkpoint(root, entry), candidate = await checkpoint.readOptional('summary-candidate');
     const invocation = await checkpoint.readOptional('summary-invocation');

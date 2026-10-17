@@ -96,10 +96,9 @@ async function stageFixture(t) {
   const dependencies = error => ({
     callTool: async (name, args) => {
       calls.push({ name, args });
-      if (name === 'begin_dynamic_evaluation') return { status: 'RUNNING', attemptRef: 'AQ-diag',
+      assert.equal(name, 'begin_dynamic_evaluation', 'an unknown transport outcome cannot cancel the attempt');
+      return { status: 'RUNNING', attemptRef: 'AQ-diag',
         task: { deadline: '2099-01-01T00:00:00.000Z' }, modelInput };
-      assert.equal(name, 'cancel_action_attempt');
-      return { status: 'CANCELLED', attemptRef: 'AQ-diag' };
     },
     runInitial: async run => {
       await run.callTool('begin_dynamic_evaluation', { workItemId: options.workItemId, requestId });
@@ -110,16 +109,15 @@ async function stageFixture(t) {
   return { options, directory, checkpoint, calls, dependencies, modelCount: () => models };
 }
 
-test('confirmed initial cancellation persists the fixed cause without altering reason or replaying', async t => {
+test('unknown initial transport outcome preserves its safe diagnostic without cancellation or model replay', async t => {
   const f = await stageFixture(t);
   const error = transportError();
   const dependencies = f.dependencies(error);
   const result = await runHostedInitialStage(f.options, dependencies);
   assert.equal(result.errorCode, 'HOSTED_GATEWAY_REQUEST_FAILED');
-  assert.equal(result.attemptStatus, 'CANCELLED');
+  assert.equal(result.attemptStatus, 'UNKNOWN');
   assert.deepEqual(result.gatewayTransportFailure, hostedGatewayTransportFailureDiagnostic(error));
-  assert.deepEqual(f.calls.map(call => call.name), ['begin_dynamic_evaluation', 'cancel_action_attempt']);
-  assert.equal(f.calls[1].args.reason, 'HOSTED_INITIAL_EXECUTION_FAILED:HOSTED_GATEWAY_REQUEST_FAILED');
+  assert.deepEqual(f.calls.map(call => call.name), ['begin_dynamic_evaluation']);
   assert.equal(f.modelCount(), 1);
   const bytes = await readFile(join(f.directory, 'run-result.json'));
   assert.deepEqual(JSON.parse(bytes), result);
@@ -127,7 +125,7 @@ test('confirmed initial cancellation persists the fixed cause without altering r
   await assert.rejects(runHostedInitialStage(f.options, dependencies), /INITIAL_COMPLETED_STAGE_HOST_DRIFT/u);
   assert.deepEqual(await readFile(join(f.directory, 'run-result.json')), bytes);
   assert.equal(f.modelCount(), 1);
-  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls.length, 1);
 });
 
 test('ordinary Host failure has no transport annotation and an unrecorded cause stays unknown', async t => {

@@ -28,6 +28,12 @@ import type { SessionResolver } from '../../server/modules/identity/session-reso
 
 import { CanonicalHostController } from '../../server/modules/canonical-host/canonical-host.controller';
 
+const OVERALL_CONFIRMATION = {
+  expectedRevision: 8,
+  expectedOverallRevision: 2,
+  expectedOverallArtifactRef: 'artifact://overall-result-2',
+};
+
 const HOST_REQUEST = {
   userContext: {
     userId: 'engineer-1001',
@@ -363,13 +369,13 @@ describe('CanonicalHostController assessment actions', () => {
     expect(engineerReviews.recordReview).not.toHaveBeenCalled();
   });
 
-  it('exposes only the human AEO confirmation as an authenticated empty-body action', async () => {
+  it('binds authenticated human AEO confirmation to the displayed versions', async () => {
     const { controller, integratedAssessments } = target();
 
     await expect(
       controller.confirmOpenClawOverallForAeo(
         'WI-SB-1001',
-        {},
+        OVERALL_CONFIRMATION,
         HOST_REQUEST as never,
       ),
     ).resolves.toEqual({ revision: 9 });
@@ -378,6 +384,7 @@ describe('CanonicalHostController assessment actions', () => {
       integratedAssessments.confirmOpenClawOverallForAeo,
     ).toHaveBeenCalledWith(
       'WI-SB-1001',
+      OVERALL_CONFIRMATION,
       expect.objectContaining({ userId: 'engineer-1001' }),
     );
   });
@@ -386,7 +393,7 @@ describe('CanonicalHostController assessment actions', () => {
     const { controller, integratedAssessments } = target();
 
     expectIdentityHandoffUnavailable(() =>
-      controller.confirmOpenClawOverallForAeo('WI-SB-1001', {}, {
+      controller.confirmOpenClawOverallForAeo('WI-SB-1001', OVERALL_CONFIRMATION, {
         userContext: null,
       } as never),
     );
@@ -411,6 +418,21 @@ describe('CanonicalHostController assessment actions', () => {
     expect(
       integratedAssessments.confirmOpenClawOverallForAeo,
     ).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {},
+    { ...OVERALL_CONFIRMATION, expectedRevision: '8' },
+    { ...OVERALL_CONFIRMATION, expectedOverallRevision: 0 },
+    { ...OVERALL_CONFIRMATION, expectedOverallArtifactRef: '' },
+    { ...OVERALL_CONFIRMATION, expectedOverallArtifactRef: undefined },
+    { ...OVERALL_CONFIRMATION, actor: 'client-actor' },
+  ])('rejects malformed displayed Overall bindings before confirmation: %o', (body) => {
+    const { controller, integratedAssessments } = target();
+    expect(() => controller.confirmOpenClawOverallForAeo(
+      'WI-SB-1001', body, HOST_REQUEST as never,
+    )).toThrow(BadRequestException);
+    expect(integratedAssessments.confirmOpenClawOverallForAeo).not.toHaveBeenCalled();
   });
 
   it('exposes AEO candidate generation only as an authenticated empty-body action', async () => {

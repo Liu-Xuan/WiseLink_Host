@@ -268,7 +268,12 @@ describe('sidebar global navigation identity', () => {
   it('carries the library matter and document selection into graph and timeline', async () => {
     await mount('/library?selectedMatterId=M7&selectedDocumentVersionId=DV7');
     expect(href('当前对象图谱')).toBe('/graph?matterId=M7');
-    expect(href('工程时间轴')).toBe('/timeline?documentVersionId=DV7');
+    const timeline = new URL(href('工程时间轴')!, 'https://example.test');
+    expect(timeline.pathname).toBe('/timeline');
+    expect(timeline.searchParams.get('documentVersionId')).toBe('DV7');
+    expect(timeline.searchParams.get('returnLibraryQuery')).toBe('');
+    await act(async () => container.querySelector<HTMLAnchorElement>('a[aria-label="工程时间轴"]')!.click());
+    expect(container.querySelector<HTMLButtonElement>('.wl-pagebar-back')?.disabled).toBe(true);
   });
 
   it('keeps an invalid empty matter pin visibly blocked instead of degrading to a bare default entry', async () => {

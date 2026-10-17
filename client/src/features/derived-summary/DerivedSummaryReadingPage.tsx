@@ -8,18 +8,19 @@ import { summaryMemberKey, summaryMemberVersionLabel, summaryMemberSavedRef, sum
 import { useSummaryResource } from './useSummaryResource';
 import DerivedSummaryBody from './DerivedSummaryBody';
 import DocumentVersionIdentityLabel from './DocumentVersionIdentityLabel';
-import { knowledgeReadingReturnRoute } from '@client/src/features/matter/reading-return';
+import { readingReturnTarget } from '@client/src/features/matter/reading-return';
 
 export default function DerivedSummaryReadingPage() {
   const { summaryId = '' } = useParams();
   const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
   const [params] = useSearchParams();
-  const knowledgeReturn = knowledgeReadingReturnRoute(params);
+  const readingReturn = readingReturnTarget(params, undefined, null, undefined, undefined, `/summaries/${encodeURIComponent(summaryId)}`);
   const refs = params.getAll('summaryRef');
   const attempts = params.getAll('attemptRef');
   const invalid = refs.length > 1 || attempts.length > 1 || refs.some(ref => !ref.trim()) || attempts.some(ref => !ref.trim());
   return <main className="mx-auto max-w-5xl space-y-5 p-4 md:p-8" aria-label="资料综合阅读">
-    <Link className="underline" to={knowledgeReturn ?? '/summaries'}>{knowledgeReturn ? '返回工程知识' : '返回资料综合目录'}</Link>
+    {readingReturn ? <Link className="underline" to={readingReturn.route}>{readingReturn.label}</Link>
+      : <Link className="underline" to="/summaries">返回资料综合目录</Link>}
     {authenticationRequired ? <p role="alert">请先登录。</p>
       : invalid ? <p role="alert">版本或请求链接无效，请从目录重新进入。</p>
       : <SummaryReading key={`${sessionGeneration}:${summaryId}:${refs[0] ?? ''}:${attempts[0] ?? ''}`} id={summaryId} refPin={refs[0]} attempt={attempts[0]} session={sessionGeneration} />}

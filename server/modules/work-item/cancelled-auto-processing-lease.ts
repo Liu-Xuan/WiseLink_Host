@@ -116,7 +116,11 @@ export function matchesCancelledAttempt(
   const expected = input.expectedCancellation;
   if (target.tenantId !== input.tenantId || target.workItemId !== input.workItemId ||
       target.subjectKind !== 'WORK_ITEM' || target.requestOrigin !== 'OPENCLAW_MCP_V1' ||
-      target.actorUserId !== owner.requestedByUserId || target.documentVersionId !== owner.documentVersionId ||
+      // Canonical JobAid continuations are reserved by this service actor;
+      // the engineer remains bound separately by the WI, source grant and
+      // active-lease authorization. Preserve owner-created historical attempts.
+      (target.actorUserId !== owner.requestedByUserId && target.actorUserId !== 'service:openclaw-main') ||
+      target.documentVersionId !== owner.documentVersionId ||
       target.operationRef !== expected.attemptRef || target.attemptNo !== expected.attemptNo ||
       target.actionType !== expected.actionType || target.triggerRequestId !== expected.attemptRequestId ||
       target.inputRevision !== expected.inputRevision || target.baseRevision !== expected.baseRevision ||

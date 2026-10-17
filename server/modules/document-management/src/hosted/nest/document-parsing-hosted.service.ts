@@ -30,6 +30,10 @@ import { composeDocumentOriginal } from './document-original-compose';
 import { documentOriginalStructuredSource, documentOriginalReadingCoverage } from './document-original-adapter';
 
 type ReadScope = { actorUserId: string; tenantId: string; roles: string[]; appId?: string; env?: string; automaticWorkItem?: DocumentParseScope['automaticWorkItem'] };
+type PreviousOriginal = { bundle: DocumentOriginalBundle; scope: ReturnType<typeof storageScope> };
+type ReadPreviousOriginal = () => Promise<PreviousOriginal | null>;
+type LocalImportInput = Extract<NonNullable<DocumentParseSourceBinding['parserInput']>, { mode: 'LOCAL_MINERU_IMPORT' }>;
+type MetadataSource = NonNullable<Awaited<ReturnType<MiaodaHostedDocumentCatalog['readMetadataSource']>>>;
 const PAGE_GROUP_SIZE = 8;
 const MAX_PAGE_GROUPS_PER_STEP = 2;
 const STEP_CONTINUATION_BUDGET_MS = 10_000;
@@ -113,19 +117,8 @@ export class DocumentParsingHostedService {
         if (admitted) await this.assertLocalCandidateRead(admitted, context);
         else await this.authorizer.assertCanImportLocalCandidate!({ ...context, documentVersionId, selection, runtimeIngestAuthority });
       };
-      await assertCandidate();
-      const selected = await this.originals.readSelection(selection);
-      const candidate = readLocalMineruCandidate(selected.bytes);
-      const original = await this.originals.readSelection({ bucketId: source.source.bucketId, filePath: source.source.filePath });
-      if (!selected.readbackVerified || !original.readbackVerified || original.sha256 !== source.version.pdfSha256 || original.byteLength !== source.version.byteLength ||
-          original.sha256 !== source.source.sha256 || original.byteLength !== source.source.byteLength ||
-          original.providerObjectId !== source.source.providerObjectId || original.providerVersionId !== source.source.providerVersionId ||
-          candidate.sourceSha256 !== original.sha256 || candidate.sourceByteLength !== original.byteLength)
-        throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
-      await this.assertRead(documentVersionId, context);
-      await assertCandidate();
-      parserInput = { mode: 'LOCAL_MINERU_IMPORT', bucketId: selected.bucketId, filePath: selected.filePath.replace(/^\/+/, ''),
-        providerObjectId: selected.providerObjectId, sha256: selected.sha256, byteLength: selected.byteLength };
+      parserInput = await this.validateLocalImport(documentVersionId, selection, source, context, assertCandidate, admitted,
+        predecessorId ? 'DOCUMENT_PARSE_RECOVERY_BINDING_MISMATCH' : 'DOCUMENT_PARSE_REQUEST_CONFLICT');
 
       const snapshot = pinned?.settings;
       if (snapshot) parserInput.settings = snapshot;
@@ -314,54 +307,26 @@ export class DocumentParsingHostedService {
         throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
       // A derived parse revision may reuse verified inputs from the same immutable PDF.
       // Descriptors are copied into this run's namespace; no previous history is overwritten.
-      let reusable: { bundle: DocumentOriginalBundle; scope: ReturnType<typeof storageScope> } | null = null;
-      if (run.expectedPublishedRevision > 0) {
-        const previous = (await this.repository.current(scope)).published;
-        if (previous && previous.parseRunId !== run.parseRunId && previous.parseRevision === run.expectedPublishedRevision &&
-            previous.manifestArtifact?.relativePath === 'original/manifest.json' &&
-            previous.sourceBinding.sourceArtifactId === run.sourceBinding.sourceArtifactId &&
-            previous.sourceBinding.pdfSha256 === run.sourceBinding.pdfSha256 &&
-            previous.sourceBinding.byteLength === run.sourceBinding.byteLength) {
-          const priorScope = storageScope(previous);
-          const priorBundle = await this.store.load(priorScope, originalArtifact(previous.manifestArtifact), originalBinding(previous));
-          reusable = { scope: priorScope, bundle: priorBundle };
-        }
-      }
+      let previousOriginal: Promise<PreviousOriginal | null> | undefined;
+      const readPrevious: ReadPreviousOriginal = () =>
+        previousOriginal ??= this.loadPreviousOriginal(run, context);
       const recovery = await DocumentOriginalRecovery.load(run, id => this.repository.read(scope, id), this.store, assertActive);
       if (run.sourceBinding.parserInput) {
         const pinned = run.sourceBinding.parserInput;
+        const checkpoint = await this.checkpointPdfPages(run, original, assertActive, record, executionStartedAt, readPrevious, recovery);
+        if (checkpoint.status === 'STAGING') return stepResult(run, checkpoint.coverage, 'STAGING');
         const selected = pinned.mode === 'LOCAL_MINERU_IMPORT' ? await this.originals.readSelection(pinned) : { bytes: workerCandidate! };
         if (pinned.mode === 'LOCAL_MINERU_IMPORT' && ('readbackVerified' in selected) &&
             (!selected.readbackVerified || selected.providerObjectId !== pinned.providerObjectId || selected.sha256 !== pinned.sha256 || selected.byteLength !== pinned.byteLength))
           throw documentParseError('DOCUMENT_MINERU_CANDIDATE_CHANGED');
-        const candidate = readLocalMineruCandidate(selected.bytes);
-        if (candidate.sourceSha256 !== original.sha256 || candidate.sourceByteLength !== original.byteLength)
-          throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
-        let titleEnhancement: DocumentParsedReading['titleEnhancement'] = { status: 'DISABLED' };
-        let validatedTitleLevels: Array<{ id: string; level: number }> | undefined;
-        if (pinned.settings?.titleEnhancementEnabled) {
-          const receipt = candidate.titleEnhancement;
-          const rawDocument = readMineruArtifacts({ ...candidate.rawArtifacts, assetPaths: candidate.assets.map(asset => asset.path) });
-          if (receipt?.status === 'APPLIED') {
-            const enhanced = await enhanceMineruTitles({ document: rawDocument, assets: candidate.assets,
-              contentListV2: candidate.rawArtifacts.contentListV2, middle: candidate.rawArtifacts.middle }, async () => ({ levels: receipt.levels }));
-            titleEnhancement = enhanced.titleEnhancement;
-            if (titleEnhancement.status === 'APPLIED') validatedTitleLevels = receipt.levels;
-          } else if (receipt?.status === 'FAILED') titleEnhancement = receipt;
-          else if (!rawDocument.blocks.some(block => block.type === 'title')) titleEnhancement = { status: 'NOT_APPLICABLE' };
-          else titleEnhancement = { status: 'FAILED', code: 'TITLE_RESULT_MISSING' };
-        }
-        const mineruOriginal = documentMineruOriginal({ binding, documentVersion: run.sourceBinding, result: candidate, validatedTitleLevels });
-        const checkpoint = await this.checkpointPdfPages(run, original, assertActive, record, executionStartedAt, reusable, recovery);
-        if (checkpoint.status === 'STAGING') return stepResult(run, checkpoint.coverage, 'STAGING');
-        const result = reconcileMineruTextCoverage({ original: mineruOriginal, extraction: checkpoint.extraction,
-          rawMiddle: candidate.rawArtifacts.middle, rawContentListV2: candidate.rawArtifacts.contentListV2 });
+        const composed = await this.composeLocalOriginal(run, selected.bytes, checkpoint.extraction);
+        const result = composed.original;
         await assertActive();
         const rawMineruCandidate = await this.store.save(storage, 'MANIFEST', selected.bytes, record, 'raw/mineru-candidate.json', assertActive);
-        const rawMarkdown = await this.store.save(storage, 'RAW_MARKDOWN', Buffer.from(candidate.rawArtifacts.markdown), record, undefined, assertActive);
-        const change = await this.originalChange(run, result, context);
+        const rawMarkdown = await this.store.save(storage, 'RAW_MARKDOWN', Buffer.from(composed.rawMarkdown), record, undefined, assertActive);
+        const change = await this.originalChange(run, result, context, readPrevious);
         const bundle: DocumentOriginalBundle = { schemaVersion: 'wiselink.document.bundle.v1', original: result,
-          rawPdfArtifacts: checkpoint.pageArtifacts, rawMineruCandidate, rawMarkdown, change, titleEnhancement };
+          rawPdfArtifacts: checkpoint.pageArtifacts, rawMineruCandidate, rawMarkdown, change, titleEnhancement: composed.titleEnhancement };
         const manifest = await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(bundle)), record, undefined, assertActive);
         await this.store.load(storage, manifest, binding);
         await assertActive();
@@ -376,6 +341,7 @@ export class DocumentParsingHostedService {
         const bytes = new Uint8Array(recoveredRaw);
         raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record, assertActive) };
       }
+      const reusable = raw ? null : await readPrevious();
       if (!raw && reusable?.bundle.original.producer.kind === 'OFFICIAL_PLUGIN_HYBRID') {
         const bytes = new Uint8Array(await this.store.read(reusable.scope, reusable.bundle.rawMarkdown));
         raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record, assertActive) };
@@ -387,7 +353,7 @@ export class DocumentParsingHostedService {
         const bytes = Buffer.from(parsed.markdown);
         raw = { bytes, artifact: await saveOriginalRaw(this.store, run, bytes, record, assertActive) };
       } else await record(raw.artifact);
-      const checkpoint = await this.checkpointPdfPages(run, original, assertActive, record, executionStartedAt, reusable, recovery);
+      const checkpoint = await this.checkpointPdfPages(run, original, assertActive, record, executionStartedAt, readPrevious, recovery);
       if (checkpoint.status === 'STAGING') return stepResult(run, checkpoint.coverage, 'STAGING');
       const { pageArtifacts, extraction } = checkpoint;
       const markdown = Buffer.from(raw.bytes).toString('utf8');
@@ -395,7 +361,7 @@ export class DocumentParsingHostedService {
         producer: { kind: 'OFFICIAL_PLUGIN_HYBRID', instanceId: 'wl-document-parser', pluginVersion: '1.0.16',
           actionKey: 'parseDocToMarkdown', concreteModel: null, extractedAt: null } });
       documentOriginalStructuredSource(result, binding);
-      const change = await this.originalChange(run, result, context);
+      const change = await this.originalChange(run, result, context, readPrevious);
       const bundle: DocumentOriginalBundle = { change, schemaVersion: 'wiselink.document.bundle.v1', original: result,
         rawPdfArtifacts: pageArtifacts, rawMarkdown: raw.artifact };
       const manifest = await this.store.save(storage, 'MANIFEST', Buffer.from(JSON.stringify(bundle)), record, undefined, assertActive);
@@ -495,7 +461,7 @@ export class DocumentParsingHostedService {
   }
   private async checkpointPdfPages(run: DocumentParseRow, original: { bytes: Uint8Array; byteLength: number },
     assertActive: () => Promise<void>, record: (artifact: DocumentOriginalArtifact) => Promise<void>, executionStartedAt: number,
-    reusable: { bundle: DocumentOriginalBundle; scope: ReturnType<typeof storageScope> } | null,
+    readPrevious: ReadPreviousOriginal,
     recovery: DocumentOriginalRecovery,
   ): Promise<{ status: 'STAGING'; coverage: DocumentOriginalStepResult['coverage'] } |
     { status: 'COMPLETE'; extraction: DocumentPdfExtraction; pageArtifacts: DocumentOriginalArtifact[] }> {
@@ -536,10 +502,19 @@ export class DocumentParsingHostedService {
           assertPageChunk(JSON.parse(Buffer.from(bytes).toString('utf8')), pageStart, pageCount);
           recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path, assertActive) };
         }
+        const reusable = recovered ? null : await readPrevious();
         const reusablePage = reusable?.bundle.rawPdfArtifacts.find(item => item.relativePath === path);
         if (!recovered && reusable && reusablePage) {
           const bytes = new Uint8Array(await this.store.read(reusable.scope, reusablePage));
-          recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path, assertActive) };
+          const chunk: DocumentPdfExtraction = JSON.parse(Buffer.from(bytes).toString('utf8'));
+          assertPageChunk(chunk, pageStart, pageCount);
+          // New local compositions need the current PDF inspection, including an
+          // explicit null when lines could not be established. Legacy published
+          // chunks remain immutable; same-run and failed-run recovery above still
+          // preserve their exact checkpoints rather than silently replacing them.
+          if (!run.sourceBinding.parserInput || chunk.pages.every(page => page.ruledLines !== undefined)) {
+            recovered = { bytes, artifact: await this.store.save(storage, 'MANIFEST', bytes, record, path, assertActive) };
+          }
         }
         if (!recovered && !pdfSession) pdfSession = await openDocumentPdfSession({ bytes: original.bytes, assertActive });
         const chunk: DocumentPdfExtraction = recovered
@@ -580,6 +555,61 @@ export class DocumentParsingHostedService {
     } finally { await pdfSession?.destroy(); }
   }
 
+  private async validateLocalImport(documentVersionId: string, selection: { bucketId: string; filePath: string },
+    source: MetadataSource, context: ReadScope, assertCandidate: () => Promise<void>,
+    admitted: DocumentParseRow | null, conflictCode: string): Promise<LocalImportInput> {
+    await assertCandidate();
+    const selected = await this.originals.readSelection(selection);
+    const pinned = admitted?.sourceBinding.parserInput;
+    if (pinned?.mode === 'LOCAL_MINERU_IMPORT' && (selected.bucketId !== pinned.bucketId ||
+        selected.filePath.replace(/^\/+/, '') !== pinned.filePath || selected.providerObjectId !== pinned.providerObjectId ||
+        selected.sha256 !== pinned.sha256 || selected.byteLength !== pinned.byteLength)) throw documentParseError(conflictCode);
+    // An admitted exact digest already binds the fully validated assets. Replays
+    // recheck the actual bytes without decoding every asset into this async frame.
+    const candidate = admitted && pinned?.mode === 'LOCAL_MINERU_IMPORT'
+      ? { sourceSha256: admitted.sourceBinding.pdfSha256, sourceByteLength: admitted.sourceBinding.byteLength }
+      : readLocalMineruCandidate(selected.bytes);
+    const original = await this.originals.readSelection({ bucketId: source.source.bucketId, filePath: source.source.filePath });
+    if (!selected.readbackVerified || !original.readbackVerified || original.sha256 !== source.version.pdfSha256 || original.byteLength !== source.version.byteLength ||
+        original.sha256 !== source.source.sha256 || original.byteLength !== source.source.byteLength ||
+        original.providerObjectId !== source.source.providerObjectId || original.providerVersionId !== source.source.providerVersionId ||
+        candidate.sourceSha256 !== original.sha256 || candidate.sourceByteLength !== original.byteLength)
+      throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
+    await this.assertRead(documentVersionId, context);
+    await assertCandidate();
+    // Only the descriptor escapes. Large input/decoded objects cannot survive in
+    // start's suspended frame while the bounded step reads its own inputs.
+    return { mode: 'LOCAL_MINERU_IMPORT', bucketId: selected.bucketId, filePath: selected.filePath.replace(/^\/+/, ''),
+      providerObjectId: selected.providerObjectId, sha256: selected.sha256, byteLength: selected.byteLength };
+  }
+
+  private async composeLocalOriginal(run: DocumentParseRow, bytes: Uint8Array, extraction: DocumentPdfExtraction): Promise<{
+    original: DocumentOriginalBundle['original']; rawMarkdown: string; titleEnhancement: DocumentParsedReading['titleEnhancement'];
+  }> {
+    const candidate = readLocalMineruCandidate(bytes);
+    const binding = originalBinding(run);
+    if (candidate.sourceSha256 !== binding.sourceSha256 || candidate.sourceByteLength !== binding.sourceByteLength)
+      throw documentParseError('DOCUMENT_PARSE_ORIGINAL_MISMATCH');
+    let titleEnhancement: DocumentParsedReading['titleEnhancement'] = { status: 'DISABLED' };
+    let validatedTitleLevels: Array<{ id: string; level: number }> | undefined;
+    if (run.sourceBinding.parserInput?.settings?.titleEnhancementEnabled) {
+      const receipt = candidate.titleEnhancement;
+      const rawDocument = readMineruArtifacts({ ...candidate.rawArtifacts, assetPaths: candidate.assets.map(asset => asset.path) });
+      if (receipt?.status === 'APPLIED') {
+        const enhanced = await enhanceMineruTitles({ document: rawDocument, assets: candidate.assets,
+          contentListV2: candidate.rawArtifacts.contentListV2, middle: candidate.rawArtifacts.middle }, async () => ({ levels: receipt.levels }));
+        titleEnhancement = enhanced.titleEnhancement;
+        if (titleEnhancement.status === 'APPLIED') validatedTitleLevels = receipt.levels;
+      } else if (receipt?.status === 'FAILED') titleEnhancement = receipt;
+      else if (!rawDocument.blocks.some(block => block.type === 'title')) titleEnhancement = { status: 'NOT_APPLICABLE' };
+      else titleEnhancement = { status: 'FAILED', code: 'TITLE_RESULT_MISSING' };
+    }
+    const original = documentMineruOriginal({ binding, documentVersion: run.sourceBinding, result: candidate, validatedTitleLevels });
+    return { original: reconcileMineruTextCoverage({ original, extraction,
+      rawMiddle: candidate.rawArtifacts.middle, rawContentListV2: candidate.rawArtifacts.contentListV2 }),
+      rawMarkdown: candidate.rawArtifacts.markdown, titleEnhancement };
+  }
+
   private async assertLocalCandidateRead(run: DocumentParseRow, context: ReadScope): Promise<void> {
     if (!this.authorizer.assertCanReadLocalCandidate)
       throw documentParseError('DOCUMENT_LOCAL_MINERU_AUTHORIZATION_UNAVAILABLE', 503);
@@ -597,14 +627,32 @@ export class DocumentParsingHostedService {
     }
   }
 
-  private async originalChange(run: DocumentParseRow, original: DocumentOriginalBundle['original'], context: ReadScope) {
+  private async loadPreviousOriginal(run: DocumentParseRow, context: ReadScope): Promise<PreviousOriginal | null> {
+    if (run.expectedPublishedRevision === 0) return null;
+    const previous = (await this.repository.current({ ...context, documentVersionId: run.documentVersionId })).published;
+    if (!previous || previous.parseRunId === run.parseRunId || previous.parseRevision !== run.expectedPublishedRevision ||
+        previous.manifestArtifact?.relativePath !== 'original/manifest.json' ||
+        previous.sourceBinding.sourceArtifactId !== run.sourceBinding.sourceArtifactId ||
+        previous.sourceBinding.pdfSha256 !== run.sourceBinding.pdfSha256 ||
+        previous.sourceBinding.byteLength !== run.sourceBinding.byteLength) return null;
+    const scope = storageScope(previous);
+    // The manifest carries the comparison and page descriptors. Each reused page
+    // still receives its own complete readback; unrelated old raw files are not inputs.
+    const bundle = await this.store.loadForReading(scope, originalArtifact(previous.manifestArtifact), originalBinding(previous));
+    return { scope, bundle };
+  }
+
+  private async originalChange(run: DocumentParseRow, original: DocumentOriginalBundle['original'], context: ReadScope,
+    readPrevious?: ReadPreviousOriginal) {
     if (run.expectedPublishedRevision === 0) return compareDocumentOriginal(null, original);
     const previous = (await this.repository.current({ ...context, documentVersionId: run.documentVersionId })).published;
     if (!previous || previous.parseRevision !== run.expectedPublishedRevision) throw documentParseError('DOCUMENT_PARSE_REVISION_CONFLICT');
     if (previous.manifestArtifact?.relativePath !== 'original/manifest.json') return {
       ...compareDocumentOriginal(null, original), kind: 'IMPACT_UNRESOLVED' as const, previousParseRunId: previous.parseRunId,
     };
-    const loaded = await this.store.load(storageScope(previous), originalArtifact(previous.manifestArtifact), originalBinding(previous));
+    const reusable = readPrevious ? await readPrevious() : null;
+    const loaded = reusable?.bundle.original.binding.parseRunId === previous.parseRunId ? reusable.bundle
+      : await this.store.loadForReading(storageScope(previous), originalArtifact(previous.manifestArtifact), originalBinding(previous));
     await this.assertRead(run.documentVersionId, context);
     return compareDocumentOriginal(loaded.original, original);
   }

@@ -13,6 +13,14 @@ const { JSDOM } = require('jsdom');
 // authorization-aware byte hook. No historical reader modules are introduced.
 
 jest.mock('@client/src/pages/DocumentParsingPage/document-version-reading.css', () => ({}), { virtual: true });
+// Saved-panel behavior has its own full consumer/retention suite.
+jest.mock('@client/src/pages/DocumentParsingPage/DocumentSavedWorkPanels', () => ({ __esModule: true, default: () => null }));
+jest.mock('@client/src/api/document-wiki', () => ({
+  readDocumentWiki: jest.fn(() => { throw new Error('Unexpected document Wiki request during ordinary source reading'); }),
+}));
+jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({
+  useCurrentUserSession: () => ({ sessionGeneration: 1, authenticationRequired: false }),
+}));
 jest.mock('@client/src/components/ui/button', () => ({
   Button: ({ children, asChild, ...props }: { children: ReactNode; asChild?: boolean }) =>
     asChild ? children : createElement('button', props, children),
@@ -60,6 +68,9 @@ jest.mock('@client/src/api/canonical-host', () => ({
   readDocumentTranslationReading: (...args: unknown[]) => mockTranslation(...args),
   startDocumentParsing: (...args: unknown[]) => mockStart(...args),
   getCanonicalHostClientSessionGeneration: () => 1,
+  getCanonicalLibraryDocuments: async () => ({ items: [{ familyId: 'FAM-1', versions: [
+    { documentVersionId: 'DV1', readerWorkItemId: '' },
+  ] }], nextCursor: null }),
   readDocumentVersionOriginal: (...args: unknown[]) => mockOriginalRead(...args),
   readDocumentVersionOriginalIdentity: (...args: unknown[]) => mockOriginalIdentity(...args),
   subscribeCanonicalHostClientSession: (callback: () => void) => {
@@ -125,6 +136,7 @@ beforeEach(() => {
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   }
   Object.defineProperty(dom.window, 'requestAnimationFrame', { value: (callback: FrameRequestCallback) => { callback(0); return 0; } });
+  Object.defineProperty(dom.window, 'cancelAnimationFrame', { value: () => undefined });
   Object.defineProperty(dom.window.HTMLElement.prototype, 'scrollIntoView', { value: () => undefined });
   for (const [key, value] of Object.entries({ createObjectURL: mockCreate, revokeObjectURL: mockRevoke })) {
     oldGlobals.set(`URL.${key}`, Object.getOwnPropertyDescriptor(URL, key));
@@ -177,12 +189,13 @@ it.each([375, 760, 761, 899, 900])('opens the real page/workspace/preview compos
   expect(container.querySelector('[data-pdf]')?.closest('[hidden]')).toBeNull();
   expect(container.textContent).not.toContain('读取受控原件');
   expect(container.textContent).not.toContain('查看原件');
-  expect(container.querySelector('.document-reading-maintenance')?.hasAttribute('open')).toBe(false);
+  expect(container.querySelector('.document-reading-more')?.hasAttribute('open')).toBe(false);
   expect(mockTranslation).not.toHaveBeenCalled();
 });
 
 it('opens the exact sourceRef page and changes source targets without rereading bytes or body', async () => {
   await mount('parseRunId=PR1&sourceRef=SR-TEST-P2');
+  expect(container.querySelector('main.is-source-workspace > .source-reader-workspace')).not.toBeNull();
   expect(container.querySelector('[data-pdf]')?.getAttribute('data-page')).toBe('2');
   expect(JSON.parse(container.querySelector('[data-pdf]')!.getAttribute('data-scope')!)).toEqual([
     'DV1', 'PR1', 3, 'ART-TEST', 'a'.repeat(64),
@@ -214,6 +227,7 @@ it('keeps the existing markdown fallback without inventing a structured original
   mockReading.mockResolvedValueOnce({ ...readingPayload(), original: null });
   await mount();
   expect(container.textContent).toContain('constructed');
+  expect(container.querySelector('main.is-source-workspace')).toBeNull();
   expect(container.querySelector('.source-reader-workspace')).toBeNull();
   expect(mockOriginalRead).not.toHaveBeenCalled();
 });

@@ -35,7 +35,7 @@ import type { DocumentAssessmentEvidence } from '@client/src/features/matter/ass
 import LibraryMatterDirectory from './LibraryMatterDirectory';
 import TaskMatterActions from '@client/src/features/matter/TaskMatterActions';
 import useMatterDirectory from '@client/src/features/matter/useMatterDirectory';
-import { libraryViewMode } from './library-view-mode';
+import { libraryViewMode, type LibraryViewMode } from './library-view-mode';
 import { HostedDevelopmentIntake } from './HostedDevelopmentIntake';
 import {
   assertSameWorkItemReparseReadback,
@@ -50,7 +50,7 @@ import {
 import { useLibraryDocuments } from './useLibraryDocuments';
 import { useLibraryQuicklook } from './useLibraryQuicklook';
 import { LibraryDocumentDirectory } from './LibraryDocumentDirectory';
-import { LibrarySourceDirectory } from './LibrarySourceDirectory';
+import { LibrarySourceDirectoryPane } from './LibrarySourceDirectoryPane';
 import { LibraryDocumentDetails } from './LibraryDocumentDetails';
 import { DocumentUpload } from './DocumentUpload';
 import type { LibraryCatalogFilters } from './library-classification';
@@ -64,11 +64,13 @@ import './workspace-home.css';
 import './library-hierarchy.css';
 import './library-atlas.css';
 import './library-source-reading.css';
+import './library-workspace.css';
 import '@client/src/features/tdms-source/tdms-source-reading.css';
 import { useLibraryFleetCatalog } from './useLibraryFleetCatalog';
 import { useLibraryDefaultSelection } from './useLibraryDefaultSelection';
 import { libraryDocumentSelection } from './library-document-selection';
-import { LibrarySourceNavigation } from './LibrarySourceNavigation';
+import { LibraryWorkspaceHeader } from './LibraryWorkspaceHeader';
+import { useLibraryViewState } from './useLibraryViewState';
 import { LcmConfigurationLibrary } from './LcmConfigurationLibrary';
 import useReadingLocation from '@client/src/features/matter/useReadingLocation';
 import { libraryReadingScope, libraryTaskDocumentReadingRoute } from '@client/src/features/matter/reading-return';
@@ -88,21 +90,29 @@ function WorkspaceHomeContent() {
     searchParams.get('workItemId')?.trim() ?? '';
   const search: string = searchParams.get('search')?.trim() ?? '';
   const treeMode = libraryViewMode(searchParams);
+  const viewState = useLibraryViewState(searchParams, sessionGeneration);
+  const documentParams: URLSearchParams = viewState.viewParams('document');
+  const matterParams: URLSearchParams = viewState.viewParams('matter');
+  const taskParams: URLSearchParams = viewState.viewParams('tasks');
+  const documentSearch: string = documentParams.get('search') ?? '';
   const linkMatterId = searchParams.get('linkMatterId')?.trim() ?? '';
   const selectedMatterId = searchParams.get('selectedMatterId')?.trim() ?? '';
   const familyId = searchParams.get('familyId')?.trim() ?? '';
   const catalogFilters: LibraryCatalogFilters = {
-    normalizedFamily: searchParams.get('normalizedFamily') ?? '',
-    ata: searchParams.get('ata') ?? '',
-    ata2: searchParams.get('ata2') ?? '',
-    ata4: searchParams.get('ata4') ?? '',
-    aircraftModel: searchParams.get('aircraftModel') ?? '',
-    aircraftModels: searchParams.get('aircraftModels') ?? '',
-    fleetFamily: searchParams.get('fleetFamily') ?? '',
-    fleetModel: searchParams.get('fleetModel') ?? '',
+    normalizedFamily: documentParams.get('normalizedFamily') ?? '',
+    ata: documentParams.get('ata') ?? '',
+    ata2: documentParams.get('ata2') ?? '',
+    ata4: documentParams.get('ata4') ?? '',
+    aircraftModel: documentParams.get('aircraftModel') ?? '',
+    aircraftModels: documentParams.get('aircraftModels') ?? '',
+    fleetFamily: documentParams.get('fleetFamily') ?? '',
+    fleetModel: documentParams.get('fleetModel') ?? '',
   };
   const [workItemId, setWorkItemId] = useState<string>('');
-  const [searchText, setSearchText] = useState<string>(search);
+  const [searchDrafts, setSearchDrafts] = useState<Partial<Record<LibraryViewMode, string>>>({});
+  const searchText: string = searchDrafts[treeMode] ?? search;
+  const committedSearch = useRef<Partial<Record<LibraryViewMode, string>>>({ [treeMode]: search });
+  const setSearchText = (value: string): void => setSearchDrafts(prior => ({ ...prior, [treeMode]: value }));
   const [loadedSessionGeneration, setLoadedSessionGeneration] = useState<
     number | null
   >(null);
@@ -115,29 +125,33 @@ function WorkspaceHomeContent() {
   const [retryError, setRetryError] = useState<string | null>(null);
   const selectionRef = useRef(deepLinkedWorkItemId);
   selectionRef.current = deepLinkedWorkItemId;
-  const directory = useLibraryDocuments(
-    treeMode === 'matter' ? '' : search,
+  const documents = useLibraryDocuments(
+    documentSearch,
     sessionGeneration,
     authenticationRequired,
     refreshRevision,
-    treeMode === 'tasks' ? 'tasks' : 'document',
-    treeMode === 'tasks' ? familyId : '',
+    'document',
+    '',
     !authenticationRequired,
-    treeMode === 'matter' ? {} : catalogFilters,
+    catalogFilters,
   );
+  const tasks = useLibraryDocuments(taskParams.get('search') ?? '', sessionGeneration,
+    authenticationRequired, refreshRevision, 'tasks', taskParams.get('familyId') ?? '',
+    viewState.visited('tasks') && !authenticationRequired);
+  const directory = treeMode === 'tasks' ? tasks : documents;
   useReadingLocation(libraryReadingScope(searchParams), sessionGeneration,
     treeMode === 'document' && !authenticationRequired && !directory.loading && !directory.error,
     { claim: null, focusClaimId: null, discussionClaimId: null });
   const fleet = useLibraryFleetCatalog(
     sessionGeneration,
-    treeMode === 'document' && !authenticationRequired,
+    !authenticationRequired,
     refreshRevision,
   );
   const matters = useMatterDirectory(
-    search,
-    deepLinkedWorkItemId,
+    matterParams.get('search') ?? '',
+    matterParams.get('workItemId') ?? '',
     sessionGeneration,
-    treeMode === 'matter' && !authenticationRequired,
+    viewState.visited('matter') && !authenticationRequired,
     refreshRevision,
   );
   useLibraryDefaultSelection(
@@ -162,7 +176,15 @@ function WorkspaceHomeContent() {
     if (quicklook.accessDenied) directory.discard(deepLinkedWorkItemId);
   }, [deepLinkedWorkItemId, directory.discard, quicklook.accessDenied]);
 
-  useEffect(() => setSearchText(search), [search]);
+  useEffect(() => {
+    if (committedSearch.current[treeMode] !== search) {
+      committedSearch.current[treeMode] = search;
+      setSearchDrafts(prior => ({ ...prior, [treeMode]: search }));
+    }
+  }, [search, treeMode]);
+  useEffect(() => {
+    setSearchDrafts({});
+  }, [sessionGeneration]);
   useEffect(() => {
     setWorkItemId('');
     setRetryError(null);
@@ -201,16 +223,15 @@ function WorkspaceHomeContent() {
     sessionDataVisible && developmentIntakeAvailable;
   const data = quicklook.data;
   const projection = data?.document ?? null;
-  const selectedDocument = directory.items.find(
-    (item) => item.kind === 'DOCUMENT' && item.familyId === familyId,
+  const selectedDocument = documents.items.find(
+    (item) => item.kind === 'DOCUMENT' && item.familyId === documentParams.get('familyId'),
   );
   const selectedDocumentVersion = libraryDocumentSelection(
     selectedDocument?.kind === 'DOCUMENT' ? selectedDocument : null,
-    searchParams,
+    documentParams,
   ).version;
   const documentAssessmentQuicklook = useLibraryQuicklook(
-    treeMode === 'document' && selectedDocumentVersion?.documentReading?.status !== 'AVAILABLE'
-      ? selectedDocumentVersion?.readerWorkItemId ?? '' : '',
+    selectedDocumentVersion?.readerWorkItemId ?? '',
     sessionGeneration,
     authenticationRequired,
     refreshRevision,
@@ -265,10 +286,11 @@ function WorkspaceHomeContent() {
   }
 
   function filterDocuments(filters: LibraryCatalogFilters, clearSearch = false): void {
-    const params = new URLSearchParams(searchParams);
+    const params = viewState.switchParams('document');
     params.set('mode', 'document');
     params.delete('familyId');
     params.delete('workItemId');
+    params.delete('selectedMatterId');
     params.delete('selectedDocumentVersionId');
     params.delete('listY');
     params.delete('quicklookY');
@@ -301,7 +323,12 @@ function WorkspaceHomeContent() {
   }
 
   function viewMatters(): void {
-    setSearchParams({ mode: 'matter' });
+    const params: URLSearchParams = viewState.switchParams('matter');
+    params.delete('workItemId');
+    params.delete('selectedMatterId');
+    params.delete('listY');
+    params.delete('quicklookY');
+    setSearchParams(params);
   }
 
   function selectMatter(targetMatterId: string): void {
@@ -424,27 +451,10 @@ function WorkspaceHomeContent() {
   return (
     <main
       className="library-home library-atlas-home"
-      aria-busy={directory.loading || quicklook.loading || matters.loading}
+      aria-busy={treeMode === 'matter' ? matters.loading : directory.loading || quicklook.loading}
     >
       <div className="atlas-library-content">
-        <header className="library-home-header">
-          <div>
-            <p className="library-home-eyebrow">ENGINEERING LIBRARY</p>
-            <h1>
-              {treeMode === 'matter'
-                ? '工程资料库'
-                : treeMode === 'tasks'
-                  ? '最近任务'
-                  : '资料库'}
-            </h1>
-            <LibrarySourceNavigation current="document" />
-            {treeMode !== 'document' ? <p className="library-home-lede">
-              {treeMode === 'matter'
-                ? '从工程问题开始，阅读当前认识、措施前提与后续关注。'
-                : '查看每次工程评估的进展与候选判断，继续评估与讨论。'}
-            </p> : null}
-          </div>
-          <details className="suite-library-actions"><summary>接收资料与更多</summary><div className="suite-library-actions-panel">
+        <LibraryWorkspaceHeader mode={treeMode} onModeChange={mode => setSearchParams(viewState.switchParams(mode))}>
         <div className="library-reading-tools">
           <details className="library-reading-help">
             <summary>阅读帮助</summary>
@@ -522,8 +532,7 @@ function WorkspaceHomeContent() {
           />
         ) : null}
 
-          </div></details>
-        </header>
+        </LibraryWorkspaceHeader>
 
         {error ? (
           <div className="library-alert" role="alert">
@@ -538,29 +547,6 @@ function WorkspaceHomeContent() {
           </div>
         ) : null}
 
-        {treeMode === 'matter' ? (
-          <LibraryMatterDirectory
-            key={`${sessionGeneration}:${search}:${deepLinkedWorkItemId}:${refreshRevision}`}
-            directory={matters}
-            documentDirectory={directory}
-            sessionGeneration={sessionGeneration}
-            authenticationRequired={authenticationRequired}
-            searchText={searchText}
-            selectedId={selectedMatterId}
-            filteredByWorkItem={Boolean(deepLinkedWorkItemId)}
-            onSearchTextChange={setSearchText}
-            onSearch={handleSearch}
-            onRefresh={refresh}
-            onCreateFromTask={() => viewTasks()}
-            onViewAll={viewMatters}
-            onViewDocuments={(ata?: string) =>
-              filterDocuments(ata ? { ata } : {}, true)
-            }
-            onViewTasks={() => viewTasks()}
-            onSelect={selectMatter}
-          />
-        ) : (
-          <>
             {treeMode === 'tasks' ? (
               <TaskMatterActions
                 key={`${sessionGeneration}:${linkMatterId}:${projection?.workItemId ?? ''}`}
@@ -574,26 +560,41 @@ function WorkspaceHomeContent() {
                 }
               />
             ) : null}
-            <section
-              className="library-surface"
-              aria-label={
-                treeMode === 'tasks' ? '评估任务与工程快览' : '工程文档与版本'
-              }
-            >
-              <aside className="suite-library-folder" aria-label="资料分组">
-                <div className="suite-folder-head"><strong>资料分组</strong><span>目录</span></div>
+        <section className="library-surface library-directory-shell"
+          aria-label={treeMode === 'matter' ? '工程事项目录' : treeMode === 'tasks' ? '评估任务与工程快览' : '工程文档与版本'}>
+              <LibrarySourceDirectoryPane search={documentSearch} filters={catalogFilters}
+                sessionGeneration={sessionGeneration} authenticationRequired={authenticationRequired}
+                refreshRevision={refreshRevision} scheme={searchParams.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
+                onFilterChange={filterDocuments} before={<>
+                <div className="suite-folder-head"><strong>{treeMode === 'matter' ? '来源文档' : '资料分组'}</strong><span>目录</span></div>
                 <button type="button" className={`suite-folder-row${!Object.values(catalogFilters).some(Boolean) ? ' active' : ''}`} onClick={() => filterDocuments({})}>
-                  <span>全部资料</span>{treeMode === 'document' && !Object.values(catalogFilters).some(Boolean)
+                  <span>全部工程文档</span>{treeMode === 'document' && !Object.values(catalogFilters).some(Boolean)
                     ? <small>{directory.totalCount ?? '待核'}</small> : null}
                 </button>
-                {treeMode === 'document' ? <LibrarySourceDirectory search={search} filters={catalogFilters}
-                  sessionGeneration={sessionGeneration} authenticationRequired={authenticationRequired}
-                  refreshRevision={refreshRevision} scheme={searchParams.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
-                  onFilterChange={filterDocuments} /> : null}
+                </>} after={<>
                 <div className="suite-folder-separator">阅读范围</div>
-                <button type="button" className={`suite-folder-row${treeMode === 'tasks' ? ' active' : ''}`} onClick={() => viewTasks()}><span>评估任务</span><small>{directory.items.length}</small></button>
+                <button type="button" className={`suite-folder-row${treeMode === 'tasks' ? ' active' : ''}`} onClick={() => viewTasks()}><span>评估任务</span><small>{tasks.items.length || '—'}</small></button>
                 <button type="button" className="suite-folder-row" onClick={() => filterDocuments({}, true)}><span>清除筛选</span></button>
-              </aside>
+                </>} />
+          {treeMode === 'matter' ? (
+          <LibraryMatterDirectory
+            key={`${sessionGeneration}:${search}:${deepLinkedWorkItemId}:${refreshRevision}`}
+            directory={matters}
+            documentDirectory={documents}
+            sessionGeneration={sessionGeneration}
+            authenticationRequired={authenticationRequired}
+            searchText={searchText}
+            selectedId={selectedMatterId}
+            filteredByWorkItem={Boolean(deepLinkedWorkItemId)}
+            onSearchTextChange={setSearchText}
+            onSearch={handleSearch}
+            onRefresh={refresh}
+            onCreateFromTask={() => viewTasks()}
+            onViewAll={viewMatters}
+            onSelect={selectMatter}
+          />
+          ) : (
+            <>
               <section
                 className="library-tree-panel"
                 aria-label={
@@ -759,9 +760,9 @@ function WorkspaceHomeContent() {
                   }}
                 />
               )}
-            </section>
-          </>
-        )}
+            </>
+          )}
+        </section>
       </div>
     </main>
   );

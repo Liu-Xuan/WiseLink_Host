@@ -18,6 +18,7 @@ import { contextWorkNotices } from './derived-summary-current-context';
 import { summaryError, summaryMemberRef } from './derived-summary.validation';
 import { readDocumentSummaryMember, documentReadingAnchorEvidence } from './derived-summary-document-reading';
 import { buildTranslationSourcePlan } from './canonical-translation-source-plan';
+import { stableJobAidEvidence } from './jobaid-problem-task';
 
 import { TDMS_NATIVE_EVIDENCE_VERIFIER, verifyTdmsNativeEvidence, assertTdmsNativeInTransaction,
   type TdmsNativeEvidenceVerifier, type TdmsNativeSummaryCaller } from './tdms-native-evidence-verifier.port';
@@ -169,8 +170,10 @@ export class DerivedSummaryMembersService {
     }
     nativeCarriers.push(...structuredClone(evidence.filter(item => item.kind === 'TDMS_NATIVE_RECORD')));
     await this.verifyNativeEvidence(evidence, actor, database);
-    evidence = retainSummaryNativeCarriers(mergeSummaryEvidence(evidence), evidence);
+    // A shared document body may carry distinct WI execution identities. Check
+    // every original carrier before the aggregate registry keeps that body once.
     await this.authorizeEvidence(evidence, actor, database, path);
+    evidence = retainSummaryMemberCarriers(mergeSummaryEvidence(evidence), evidence);
     // Each root keeps its carrier/version; a prior candidate is never counted as a new source.
     const roots = assessmentEvidenceRoots(evidence.map(item => item.evidenceRef), evidence);
     if (roots.unresolvedRefs.length) throw summaryError('DERIVED_SUMMARY_ROOT_LINEAGE_UNAVAILABLE');
@@ -216,7 +219,7 @@ export class DerivedSummaryMembersService {
     await this.verifyNativeEvidence(nativeCarriers, actor, database);
     // The immutable aggregate registry retains one body. Exact nested member
     // delivery retains each distinct descendant READ receipt for that body.
-    const evidence = retainSummaryNativeCarriers(saved.evidence, descendants);
+    const evidence = retainSummaryMemberCarriers(saved.evidence, descendants);
     return { member, evidenceRef: summaryMemberRef(member), headline: saved.content.headline, body: saved.content.body,
       issues: [], evidence, rootRefs: [...new Set(children.flatMap(item => item.rootRefs))],
       limitations: ['这是派生候选摘要，不是新增独立证据。仅覆盖已保存的精确成员。', ...saved.content.limitations,
@@ -384,16 +387,37 @@ function completeBody(overview: string, issues: JobAidProblemIssue[]): string {
 function uniqueMembers(members: DerivedSummaryMember[]): DerivedSummaryMember[] {
   return [...new Map(members.map(member => [summaryMemberRef(member), member])).values()];
 }
-/** The registry has already validated exact bodies and receipt provenance.
- * Member delivery retains each original carrier; a shared body never substitutes
- * one READ receipt for another, including two receipts in the same saved leaf. */
-function retainSummaryNativeCarriers(registry: AssessmentEvidence[], carriers: AssessmentEvidence[]): AssessmentEvidence[] {
+/** The registry has already validated exact bodies and carrier provenance.
+ * Member delivery retains each original WI carrier and native READ receipt,
+ * including distinct carriers in the same saved leaf. */
+function retainSummaryMemberCarriers(registry: AssessmentEvidence[], carriers: AssessmentEvidence[]): AssessmentEvidence[] {
   return registry.flatMap<AssessmentEvidence>(item => {
+    if (isCanonicalSummaryDocumentSource(item)) {
+      const originals = carriers.filter((value): value is Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }> =>
+        value.kind === 'DOCUMENT_PASSAGE' && value.evidenceRef === item.evidenceRef);
+      return originals.length ? [...new Map(originals.map(value => [value.workItemId, structuredClone(value)])).values()]
+        : [structuredClone(item)];
+    }
     if (item.kind !== 'TDMS_NATIVE_RECORD') return [structuredClone(item)];
     const native = carriers.filter((value): value is Extract<AssessmentEvidence, { kind: 'TDMS_NATIVE_RECORD' }> =>
       value.kind === 'TDMS_NATIVE_RECORD' && value.evidenceRef === item.evidenceRef);
     return [...new Map(native.map(value => [value.nativeReadReceipt.receiptRef, structuredClone(value)])).values()];
   });
+}
+
+function isCanonicalSummaryDocumentSource(item: AssessmentEvidence): item is Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }> {
+  if (item.kind !== 'DOCUMENT_PASSAGE') return false;
+  try { return stableJobAidEvidence(item).evidenceRef === item.evidenceRef; }
+  catch { return false; }
+}
+
+/** Reuse the JobAid document SourceRef contract; the WI is a carrier identity,
+ * not another document root. Keep the first exact carrier without rewriting it. */
+function sameSummaryDocumentSource(first: AssessmentEvidence, next: AssessmentEvidence): boolean {
+  if (!isCanonicalSummaryDocumentSource(first) || !isCanonicalSummaryDocumentSource(next)) return false;
+  const { workItemId: _firstWorkItemId, ...firstSource } = first;
+  const { workItemId: _nextWorkItemId, ...nextSource } = next;
+  return canonicalJson(firstSource) === canonicalJson(nextSource);
 }
 
 export function mergeSummaryEvidence(evidence: AssessmentEvidence[]): AssessmentEvidence[] {
@@ -416,7 +440,10 @@ export function mergeSummaryEvidence(evidence: AssessmentEvidence[]): Assessment
         // Keep one body/initial receipt; exact member snapshots retain every READ.
         continue;
       }
-      if (canonicalJson(old) !== canonicalJson(item)) throw summaryError('DERIVED_SUMMARY_EVIDENCE_IDENTITY_CONFLICT');
+      if (canonicalJson(old) !== canonicalJson(item)) {
+        if (!sameSummaryDocumentSource(old, item)) throw summaryError('DERIVED_SUMMARY_EVIDENCE_IDENTITY_CONFLICT');
+        continue;
+      }
     }
     registry.set(item.evidenceRef, structuredClone(item));
   }

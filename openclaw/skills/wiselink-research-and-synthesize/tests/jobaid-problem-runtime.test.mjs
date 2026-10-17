@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createCheckpointStore } from '../scripts/run-hosted-review-turn.mjs';
 import { invokeHostedJobAidProblemModel, projectJobAidModelInput, projectBoundedInitialJobAidInput, canonicalizeKnownJobAidSourceAliases, JOBAID_GENERATION_POLICY } from '../scripts/run-jobaid-problem-assessment.mjs';
+import { JOBAID_PROBLEM_GUIDANCE, LEGACY_JOBAID_PROBLEM_GUIDANCE,
+  SOURCE_CONTENT_SYNTHESIS_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION } from '../scripts/jobaid-problem-guidance.mjs';
 
 test('source spelling repair uses only unique exact Host catalog refs and preserves the candidate', () => {
   const exact = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:PRUN-example:u32:p1';
@@ -187,7 +189,7 @@ test('M3 Probe incomplete HTTP 400 records its bounded request without inferring
     kind: 'DOCUMENT_PASSAGE', excerpt: '含中文的原文条件：适用于全部目标飞机。' }];
   await assert.rejects(f.run(input), error => {
     assert.equal(error.message, 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE');
-    assert.equal(error.terminalAssessmentFailure?.errorCode, 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE');
+    assert.equal(error.terminalAssessmentFailure, undefined, 'a gateway error is not proof of provider termination');
     assert.notEqual(error.terminalAssessmentFailure?.errorCode, 'JOBAID_MODEL_OUTPUT_LENGTH');
     return true;
   });
@@ -408,7 +410,7 @@ test('a completed text-only correction resumes from its durable response and pre
   };
   let interrupted = false;
   f.options.observeCandidateRejection = async event => {
-    if (event.code === 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED' && !interrupted) {
+    if (event.code === 'JOBAID_PROTOCOL_NAMED_TOOL_MISSING' && !interrupted) {
       interrupted = true; throw new Error('Simulated process interruption');
     }
   };
@@ -425,7 +427,7 @@ test('a completed text-only correction resumes from its durable response and pre
   assert.deepEqual(rejection.fieldErrors[0].sourceKinds, ['ENGINEER_STATEMENT']);
   assert.match(rejection.instruction, /null.*preserve the scenario/);
   const correctionMessages = f.calls[2].messages;
-  assert.equal(JSON.parse(correctionMessages.at(-1).content).errorCode, 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED');
+  assert.equal(JSON.parse(correctionMessages.at(-1).content).errorCode, 'JOBAID_PROTOCOL_NAMED_TOOL_MISSING');
   assert.equal(JSON.parse(correctionMessages.at(-1).content).priorRejection.fieldErrors[0].path,
     'work.issues[0].riskScenarios[0].likelihood');
   assert.ok(correctionMessages.some(message => message.role === 'tool' && message.content.includes('JOBAID_LIKELIHOOD_BUSINESS_EVIDENCE_REQUIRED')));
@@ -433,7 +435,7 @@ test('a completed text-only correction resumes from its durable response and pre
   assert.deepEqual(f.saves[0] && JSON.parse(f.saves[0].workJson), corrected);
 }));
 
-test('text-only replies after a confirmed JobAid save rotate compact native sessions without resaving', () => persisted(async checkpoint => {
+test('one protocol repair after a confirmed JobAid save preserves its compact session without resaving', () => persisted(async checkpoint => {
   const input = initialChunkModelInput();
   input.availableSources = input.availableSources.slice(0, 1);
   input.deliveredEvidence = [{ evidenceRef: input.availableSources[0].ref,
@@ -454,7 +456,7 @@ test('text-only replies after a confirmed JobAid save rotate compact native sess
   const gateway = f.dependencies.requestGateway;
   let generations = 0;
   f.dependencies.requestGateway = async (url, request) => {
-    if (++generations !== 2 && generations !== 3) return gateway(url, request);
+    if (++generations !== 2) return gateway(url, request);
     f.calls.push(JSON.parse(request.body));
     return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: {
       role: 'assistant', content: 'A long completed explanation instead of the required function.',
@@ -463,24 +465,23 @@ test('text-only replies after a confirmed JobAid save rotate compact native sess
   const result = await f.run(input);
   assert.equal(result.output.workRevisionRef, 'JAWR-1');
   const state = await checkpoint.readOptional('assessment-state');
-  assert.equal(state.round, 4);
-  assert.equal(state.nativeSessionSegment, 3);
+  assert.equal(state.round, 3);
+  assert.equal(state.nativeSessionSegment, 1);
+  assert.equal(state.protocolRepairs, 1);
   assert.equal(state.saved.workRevisionRef, 'JAWR-1');
   assert.equal(state.messages.length, 4);
-  assert.equal(generations, 4);
+  assert.equal(generations, 3);
   assert.equal(f.saves.length, 1);
   assert.equal(f.reads.length, 0);
-  assert.notEqual(f.calls[1].user, f.calls[2].user);
-  assert.notEqual(f.calls[2].user, f.calls[3].user);
+  assert.equal(f.calls[1].user, f.calls[2].user);
   assert.equal(f.calls[2].messages.length, 4);
-  assert.equal(f.calls[3].messages.length, 4);
-  assert.equal(JSON.parse(f.calls[3].messages[1].content).previousWork.workRevisionRef, 'JAWR-1');
-  assert.equal(JSON.parse(f.calls[3].messages[2].content).status, 'HOST_SAVE_CONFIRMED');
-  assert.equal(JSON.parse(f.calls[3].messages[3].content).errorCode, 'JOBAID_MODEL_OUTPUT_FUNCTION_REQUIRED');
-  assert.equal(JSON.stringify(f.calls[3].messages).includes('A long completed explanation'), false);
+  assert.equal(JSON.parse(f.calls[2].messages[1].content).previousWork.workRevisionRef, 'JAWR-1');
+  assert.equal(JSON.parse(f.calls[2].messages[2].content).status, 'HOST_SAVE_CONFIRMED');
+  assert.equal(JSON.parse(f.calls[2].messages[3].content).errorCode, 'JOBAID_PROTOCOL_NAMED_TOOL_MISSING');
+  assert.equal(JSON.stringify(f.calls[2].messages).includes('A long completed explanation'), false);
 }));
 
-test('text-only protocol corrections are bounded and truncated or foreign calls are not repaired', async () => {
+test('protocol correction is once per stage for complete text or foreign calls, while explicit truncation is not repaired', async () => {
   for (const mode of ['text', 'truncated', 'foreign-call']) {
     const f = fixture([]); let calls = 0;
     f.dependencies.requestGateway = async () => {
@@ -491,12 +492,12 @@ test('text-only protocol corrections are bounded and truncated or foreign calls 
         } : {}) } }] }), { status: 200 });
     };
     await assert.rejects(f.run(), error => {
-      assert.match(error.message, mode === 'truncated' ? /JOBAID_MODEL_OUTPUT_LENGTH/ : /JOBAID_MODEL_OUTPUT_FUNCTION_INVALID/);
+      assert.match(error.message, mode === 'truncated' ? /JOBAID_MODEL_OUTPUT_LENGTH/ : /JOBAID_PROTOCOL_REPAIR_EXHAUSTED/);
       assert.equal(error.terminalAssessmentFailure?.errorCode,
-        mode === 'text' ? 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE' : mode === 'truncated' ? 'JOBAID_MODEL_OUTPUT_LENGTH' : undefined);
+        mode === 'truncated' ? 'JOBAID_MODEL_OUTPUT_LENGTH' : 'JOBAID_PROTOCOL_REPAIR_EXHAUSTED');
       return true;
     });
-    assert.equal(calls, mode === 'text' ? 5 : 1);
+    assert.equal(calls, mode === 'truncated' ? 1 : 2);
     assert.equal(f.saves.length, 0);
   }
 });
@@ -506,6 +507,78 @@ async function persisted(run) {
   try { await run(await createCheckpointStore(directory)); }
   finally { await rm(directory, { recursive: true, force: true }); }
 }
+
+test('the actual Matter model receives exact Host input/history roles without selecting or rewriting editions', async () => {
+  const documents = [
+    { documentVersionId: 'dv', sourceRoles: ['CURRENT_INPUT', 'HISTORICAL_COMPARISON'],
+      inputIds: ['input-current'], originalReadRef: 'DOCUMENT_VERSION:dv:original:0',
+      boundOriginal: { parseRunId: 'PRUN-current', parseRevision: 4 }, readingScope: 'NOT_READ_THIS_ATTEMPT' },
+    { documentVersionId: 'dv-old', sourceRoles: ['HISTORICAL_COMPARISON'],
+      inputIds: [], originalReadRef: 'DOCUMENT_VERSION:dv-old:original:0',
+      boundOriginal: null, readingScope: 'NOT_READ_THIS_ATTEMPT' },
+  ];
+  const input = { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
+    subject: { kind: 'ENGINEERING_MATTER', matterId: 'MAT-roles' }, availableDocuments: documents };
+  const before = structuredClone(input);
+  const f = fixture([{ action: 'SAVE_WORK', work: { ...completed, headline: '选定版本条件',
+    listBrief: '对照Host交付正文。', issues: [] } }, { action: 'FINISH' }]);
+  const result = await invokeHostedJobAidProblemModel({ operation: 'ASSESS_MATTER', modelInput: input },
+    f.options, f.dependencies);
+  const delivered = JSON.parse(f.calls[0].messages[1].content);
+  assert.deepEqual(delivered.availableDocuments, documents);
+  assert.equal(f.calls[0].messages[0].content.includes(SOURCE_CONTENT_SYNTHESIS_GUIDANCE), true);
+  assert.match(SOURCE_CONTENT_SYNTHESIS_GUIDANCE, /Host algorithms determine the exact reference editions/);
+  assert.match(SOURCE_CONTENT_SYNTHESIS_GUIDANCE, /Neither role nor a registered catalog current selection proves/);
+  assert.equal(result.provenance.promptVersion, 'wiselink-jobaid-problem@v2.source-content-once.v2');
+  assert.equal(f.reads.length, 0);
+  assert.deepEqual(input, before);
+});
+
+for (const legacy of [false, true]) test(`assessment READ/SAVE continuation preserves its accepted system text, legacy=${legacy}`, () => persisted(async checkpoint => {
+  const input = modelInput();
+  const f = fixture([
+    { action: 'READ_SOURCES', sourceRefs: [input.availableSources[0].ref], purpose: 'Read exact original', context: 'PAGE' },
+    { action: 'SAVE_WORK', work: completed }, { action: 'FINISH' },
+  ], { assessmentCheckpoint: checkpoint, heartbeat: async () => { throw new Error('FIXTURE_BEFORE_DISPATCH'); } });
+  await assert.rejects(f.run(input), /FIXTURE_BEFORE_DISPATCH/u);
+  assert.equal(f.calls.length, 0);
+  const state = await checkpoint.readOptional('assessment-state');
+  if (legacy) {
+    assert.ok(state.messages[0].content.startsWith(JOBAID_PROBLEM_GUIDANCE));
+    state.messages[0].content = LEGACY_JOBAID_PROBLEM_GUIDANCE + state.messages[0].content.slice(JOBAID_PROBLEM_GUIDANCE.length);
+    await checkpoint.write('assessment-state', state);
+  }
+  const originalSystem = structuredClone(state.messages[0]);
+  f.options.heartbeat = async () => {};
+  const result = await f.run(input);
+  assert.equal(f.calls.length, 3);
+  assert.equal(f.reads.length, 1);
+  assert.equal(f.saves.length, 1);
+  for (const call of f.calls) {
+    const message = call.messages[0];
+    const runtimeBoundary = message.content.lastIndexOf('\n');
+    const policy = JSON.parse(message.content.slice(runtimeBoundary + 1));
+    assert.deepEqual(Object.keys(policy), ['generationPolicy', 'scopeAdjustment', 'expectedWorkRevision', 'savedWork', 'focus']);
+    assert.equal(policy.generationPolicy.version, JOBAID_GENERATION_POLICY.version);
+    assert.deepEqual({ ...message, content: message.content.slice(0, runtimeBoundary) }, originalSystem);
+  }
+  assert.equal(originalSystem.content.includes(SOURCE_CONTENT_SYNTHESIS_GUIDANCE), !legacy);
+  assert.equal(result.provenance.promptVersion,
+    'wiselink-jobaid-problem@v2' + (legacy ? '' : SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION));
+}));
+
+test('assessment rejects an unrecognized checkpoint system before another dispatch', () => persisted(async checkpoint => {
+  const f = fixture([], { assessmentCheckpoint: checkpoint,
+    heartbeat: async () => { throw new Error('FIXTURE_BEFORE_DISPATCH'); } });
+  await assert.rejects(f.run(), /FIXTURE_BEFORE_DISPATCH/u);
+  const state = await checkpoint.readOptional('assessment-state');
+  state.messages[0].content = 'Unrecognized replacement instructions';
+  await checkpoint.write('assessment-state', state);
+  f.options.heartbeat = async () => {};
+  await assert.rejects(f.run(), /JOBAID_CHECKPOINT_POLICY_CHANGED/u);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.saves.length, 0);
+}));
 
 for (const matter of [false, true]) test(`checkpointed assessment counts execution within the Host deadline, Matter=${matter}`, () => persisted(async checkpoint => {
   const input = matter ? { ...modelInput(), schemaVersion: 'wiselink.matter-jobaid-task.v2',
@@ -719,6 +792,7 @@ test('Overall consistency reuses the exact completed work and does not re-save u
     previousWork: {
       workRevisionRef: 'JAWR-3',
       workRevision: 3,
+      overviewStatus: 'CURRENT',
       content: completed,
     },
   });
@@ -898,7 +972,7 @@ test('typed Overall finish preserves quotes and line breaks with one JSON encodi
   const consistencyCheck = '保留原文 "Do not install"。\n路径示例 C:\\maintenance；条件仍待确认。';
   const f = fixture([{ action: 'FINISH', consistencyCheck }]);
   const result = await f.run({ ...modelInput(), purpose: 'OVERALL_CONSISTENCY', expectedWorkRevision: 1,
-    previousWork: { workRevisionRef: 'JAWR-1', workRevision: 1, content: completed } });
+    previousWork: { workRevisionRef: 'JAWR-1', workRevision: 1, overviewStatus: 'CURRENT', content: completed } });
   assert.equal(result.output.workRevisionRef, 'JAWR-1');
   assert.equal(result.output.consistencyCheck, consistencyCheck);
   assert.equal(f.saves.length, 0);
@@ -1036,7 +1110,7 @@ test('overlapping source batches cannot silently replace different source conten
   })), /JOBAID_SOURCE_READ_FAILED:INCONSISTENT_EVIDENCE/);
 });
 
-test('initial JobAid bounds reads before save, then rotates only with exact saved-work readback', async () => {
+test('initial JobAid bounds each source selection and preserves exact saved-work and target readback', async () => {
   const input = initialChunkModelInput();
   const refs = input.availableSources.map(source => source.ref);
   const firstWork = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: 'First batch',
@@ -1082,32 +1156,32 @@ test('initial JobAid bounds reads before save, then rotates only with exact save
   assert.equal(tooLargeReceipt.errorCode, 'JOBAID_SOURCE_BATCH_TOO_LARGE');
   assert.equal(tooLargeReceipt.sourceReadPolicy.hostReadExecuted, false);
   assert.match(tooLargeReceipt.instruction, /Host 未执行任何读取/u);
-  const saveRequiredReceipt = JSON.parse(f.calls[3].messages.at(-1).content);
-  assert.equal(saveRequiredReceipt.errorCode, 'JOBAID_SOURCE_BATCH_SAVE_REQUIRED');
-  assert.equal(saveRequiredReceipt.sourceReadPolicy.hostReadExecuted, false);
-  assert.match(saveRequiredReceipt.instruction, /必须基于当前已交付正文保存/u);
+  const unregisteredReceipt = JSON.parse(f.calls[3].messages.at(-1).content);
+  assert.equal(unregisteredReceipt.errorCode, 'JOBAID_SOURCE_NOT_REGISTERED');
+  assert.equal(unregisteredReceipt.sourceSelection.hostReadExecuted, false);
 
   assert.equal(f.calls[0].user, f.calls[1].user,
     'an invalid source selection can be corrected before a successful read');
   assert.notEqual(f.calls[1].user, f.calls[2].user,
     'a successful Host read starts a fresh native session before model generation continues');
   assert.equal(f.calls[2].user, f.calls[3].user,
-    'the read receipt and required save stay together in the fresh session');
-  const saveOnlyStep = f.calls[2].tools[0].function.parameters.properties.step;
-  assert.deepEqual(saveOnlyStep.properties.action.enum, ['SAVE_WORK', 'READ_WORK']);
-  assert.equal(saveOnlyStep.properties.action.enum.includes('READ_SOURCES'), false);
-  assert.deepEqual(saveOnlyStep.required, ['action'], 'READ_WORK has no workJson');
-  assert.equal(saveOnlyStep.properties.workJson.type, 'string');
-  assert.equal(saveOnlyStep.properties.workJson.minLength, 2);
-  assert.match(f.calls[2].messages[0].content, /one coherent issue/u);
+    'the exact read receipt and source rejection remain in their context');
+  const continuationStep = f.calls[2].tools[0].function.parameters.properties.step;
+  assert.ok(continuationStep.properties.action.enum.includes('SAVE_WORK'));
+  assert.ok(continuationStep.properties.action.enum.includes('READ_WORK'));
+  assert.equal(continuationStep.properties.action.enum.includes('READ_SOURCES'), true);
+  assert.deepEqual(continuationStep.required, ['action'], 'READ_WORK has no workJson');
+  assert.equal(continuationStep.properties.workJson.type, 'string');
+  assert.equal(continuationStep.properties.workJson.minLength, 2);
+  assert.match(f.calls[2].messages[0].content, /Continue useful investigation/u);
   assert.match(f.calls[4].messages[2].content, /不超过 4 refs/u);
   assert.deepEqual(f.calls[2].tool_choice, { type: 'function', function: { name: 'return_wiselink_assessment_step' } });
   assert.notEqual(f.calls[4].user, f.calls[5].user,
-    'each successful source read starts a fresh save-only session');
+    'each successful source read rebuilds a complete evidence context');
   assert.equal(f.calls[5].user, f.calls[6].user,
     'a rejected incomplete baseline stays in the same source segment');
-  assert.equal(f.calls[6].user, f.calls[7].user,
-    'exact READ_WORK and the subsequent SAVE share their source segment');
+  assert.notEqual(f.calls[6].user, f.calls[7].user,
+    'exact READ_WORK rebuilds one complete target context before SAVE');
   assert.notEqual(f.calls[7].user, f.calls[8].user,
     'each exact saved revision begins the next native session');
   const sourceContinuation = JSON.parse(f.calls[2].messages[2].content);
@@ -1138,12 +1212,12 @@ test('initial JobAid bounds reads before save, then rotates only with exact save
   const baselineRequired = JSON.parse(f.calls[6].messages.at(-1).content);
   assert.equal(baselineRequired.errorCode, 'JOBAID_WORK_BASELINE_READ_REQUIRED');
   assert.deepEqual(baselineRequired.workReadRequired, { workRevisionRef: 'JAWR-1', issueKeys: ['condition-a'], includeOverview: true });
-  const fullTarget = JSON.parse(f.calls[7].messages.at(-1).content);
+  const fullTarget = JSON.parse(f.calls[7].messages[1].content).targetWork;
   assert.deepEqual(fullTarget.issues, firstWork.issues);
   assert.equal(fullTarget.overview, firstWork.overview);
 });
 
-test('an unregistered source correction can recover, then the successful Host read gets a save-only fresh session', async () => {
+test('an unregistered source correction retains the full contract after an authorized read', async () => {
   const input = initialChunkModelInput();
   input.availableSources[0].ref = 'source:ftd:1:p0';
   const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: 'Initial finding',
@@ -1160,7 +1234,7 @@ test('an unregistered source correction can recover, then the successful Host re
   f.options.readAssessmentSources = async request => {
     f.reads.push(request);
     return { status: 'AVAILABLE', scope: request.context, completeRequestedScope: true,
-      sourceRefs: request.sourceRefs, evidence: request.sourceRefs.map(evidenceRef => ({ evidenceRef, excerpt: 'Condition A.' })) };
+      sourceRefs: request.sourceRefs, evidence: request.sourceRefs.map(evidenceRef => ({ evidenceRef, kind: 'DOCUMENT_PASSAGE', excerpt: 'Condition A.' })) };
   };
 
   const result = await f.run(input);
@@ -1185,10 +1259,11 @@ test('an unregistered source correction can recover, then the successful Host re
   const read = sourceContext.deliveredSourceReads.reads[continuation.sourceReadReceipt.cachedReadIndex];
   assert.deepEqual(read.sourceRefs, ['source:ftd:1:p0']);
   assert.deepEqual(read.evidenceRefs, ['source:ftd:1:p0']);
-  assert.deepEqual(sourceContext.deliveredEvidence, [{ evidenceRef: 'source:ftd:1:p0', excerpt: 'Condition A.' }]);
+  assert.deepEqual(sourceContext.deliveredEvidence, [{ evidenceRef: 'source:ftd:1:p0', kind: 'DOCUMENT_PASSAGE', excerpt: 'Condition A.' }]);
   const stepSchema = f.calls[2].tools[0].function.parameters.properties.step;
-  assert.deepEqual(stepSchema.properties.action.enum, ['SAVE_WORK', 'READ_WORK']);
-  assert.equal(stepSchema.properties.action.enum.includes('READ_SOURCES'), false);
+  assert.ok(stepSchema.properties.action.enum.includes('READ_WORK'));
+  assert.ok(stepSchema.properties.action.enum.includes('SAVE_WORK'));
+  assert.equal(stepSchema.properties.action.enum.includes('READ_SOURCES'), true);
   assert.deepEqual(stepSchema.required, ['action'], 'READ_WORK has no workJson');
   assert.equal(stepSchema.properties.workJson.type, 'string');
   assert.equal(stepSchema.properties.workJson.minLength, 2);
@@ -1222,32 +1297,30 @@ test('initial JobAid cannot save a status-only issue before a primary source rea
   assert.match(rejection.instruction, /READ_SOURCES/u);
 });
 
-test('R2 READ_WORK transport still rejects a bodyless SAVE and keeps the source batch fenced', async () => {
+test('a bodyless SAVE is rejected while another useful source read remains available', async () => {
   const input = initialChunkModelInput();
   const f = fixture([
     { action: 'READ_SOURCES', sourceRefs: ['source:ftd:1'], purpose: 'read registered source', context: 'PAGE' },
     { action: 'SAVE_WORK' },
-    { action: 'READ_SOURCES', sourceRefs: ['source:ftd:2'], purpose: 'must not execute', context: 'PAGE' },
+    { action: 'READ_SOURCES', sourceRefs: ['source:ftd:2'], purpose: 'read the next relevant range', context: 'PAGE' },
     { action: 'SAVE_WORK', work: completed },
     { action: 'FINISH' },
   ]);
   f.options.readAssessmentSources = async request => {
     f.reads.push(request);
     return { status: 'AVAILABLE', scope: request.context, completeRequestedScope: true, sourceRefs: request.sourceRefs,
-      evidence: [{ evidenceRef: 'source:ftd:1', excerpt: 'Complete original condition.' }] };
+      evidence: request.sourceRefs.map(evidenceRef => ({ evidenceRef, kind: 'DOCUMENT_PASSAGE', excerpt: 'Complete original condition.' })) };
   };
   const result = await f.run(input);
   assert.equal(result.output.workRevisionRef, 'JAWR-1');
-  assert.equal(f.reads.length, 1); assert.equal(f.saves.length, 1);
+  assert.equal(f.reads.length, 2); assert.equal(f.saves.length, 1);
   assert.equal(JSON.parse(f.calls[2].messages.at(-1).content).errorCode, 'JOBAID_WORK_REQUIRED');
-  const blocked = JSON.parse(f.calls[3].messages.at(-1).content);
-  assert.equal(blocked.errorCode, 'JOBAID_SOURCE_BATCH_SAVE_REQUIRED');
-  assert.equal(blocked.sourceReadPolicy.hostReadExecuted, false);
+  assert.deepEqual(f.reads[1].sourceRefs, ['source:ftd:2']);
   assert.equal(f.calls[1].user, f.calls[2].user);
-  assert.equal(f.calls[2].user, f.calls[3].user);
+  assert.notEqual(f.calls[2].user, f.calls[3].user);
 });
 
-test('a confirmed source read and save-only session survive checkpoint resume without another Host read', () => persisted(async checkpoint => {
+test('a confirmed source read and continuous-investigation context survive checkpoint resume without another Host read', () => persisted(async checkpoint => {
   const input = initialChunkModelInput();
   const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: 'Recovered finding',
     listBrief: 'One source checked.', overview: 'Saved after a bounded source read.',
@@ -1261,7 +1334,7 @@ test('a confirmed source read and save-only session survive checkpoint resume wi
   f.options.readAssessmentSources = async request => {
     f.reads.push(request);
     return { status: 'AVAILABLE', scope: request.context, completeRequestedScope: true,
-      sourceRefs: request.sourceRefs, evidence: request.sourceRefs.map(evidenceRef => ({ evidenceRef, excerpt: 'Checked.' })) };
+      sourceRefs: request.sourceRefs, evidence: request.sourceRefs.map(evidenceRef => ({ evidenceRef, kind: 'DOCUMENT_PASSAGE', excerpt: 'Checked.' })) };
   };
   let heartbeatCount = 0;
   f.options.heartbeat = async () => {
@@ -1271,8 +1344,8 @@ test('a confirmed source read and save-only session survive checkpoint resume wi
   await assert.rejects(f.run(input), /simulated interruption after durable read/u);
   const checkpointed = await checkpoint.readOptional('assessment-state');
   assert.equal(checkpointed.round, 2);
-  assert.equal(checkpointed.readsSinceSave, 1);
-  assert.equal(checkpointed.forceSaveBeforeRead, true);
+  assert.equal(Object.hasOwn(checkpointed, 'readsSinceSave'), false);
+  assert.equal(Object.hasOwn(checkpointed, 'forceSaveBeforeRead'), false);
   assert.equal(checkpointed.nativeSessionSegment, 1);
   const persistedRead = JSON.parse(checkpointed.messages[2].content);
   assert.equal(persistedRead.status, 'HOST_SOURCE_READ_CONFIRMED');
@@ -1280,7 +1353,7 @@ test('a confirmed source read and save-only session survive checkpoint resume wi
   const read = persistedContext.deliveredSourceReads.reads[persistedRead.sourceReadReceipt.cachedReadIndex];
   assert.deepEqual(read.sourceRefs, ['source:ftd:1']);
   assert.deepEqual(read.evidenceRefs, ['source:ftd:1']);
-  assert.deepEqual(persistedContext.deliveredEvidence, [{ evidenceRef: 'source:ftd:1', excerpt: 'Checked.' }]);
+  assert.deepEqual(persistedContext.deliveredEvidence, [{ evidenceRef: 'source:ftd:1', kind: 'DOCUMENT_PASSAGE', excerpt: 'Checked.' }]);
   assert.deepEqual(persistedContext.deliveredEvidence, checkpointed.evidenceCache.evidence);
   assert.deepEqual(persistedContext.deliveredSourceReads.reads, checkpointed.evidenceCache.reads);
 
@@ -1291,12 +1364,13 @@ test('a confirmed source read and save-only session survive checkpoint resume wi
   assert.equal(f.saves.length, 1);
   assert.notEqual(f.calls[0].user, f.calls[1].user);
   const saveStep = f.calls[1].tools[0].function.parameters.properties.step;
-  assert.deepEqual(saveStep.properties.action.enum, ['SAVE_WORK', 'READ_WORK']);
-  assert.equal(saveStep.properties.action.enum.includes('READ_SOURCES'), false);
+  assert.ok(saveStep.properties.action.enum.includes('SAVE_WORK'));
+  assert.ok(saveStep.properties.action.enum.includes('READ_WORK'));
+  assert.equal(saveStep.properties.action.enum.includes('READ_SOURCES'), true);
   assert.deepEqual(saveStep.required, ['action'], 'READ_WORK has no workJson');
   assert.equal(saveStep.properties.workJson.type, 'string');
   assert.equal(saveStep.properties.workJson.minLength, 2);
-  assert.equal((await checkpoint.readOptional('assessment-state')).forceSaveBeforeRead, false);
+  assert.equal(Object.hasOwn(await checkpoint.readOptional('assessment-state'), 'forceSaveBeforeRead'), false);
 }));
 
 test('an oversized READ_SOURCES response is checkpointed once and the same attempt can correct it', () => persisted(async checkpoint => {
@@ -1315,7 +1389,7 @@ test('an oversized READ_SOURCES response is checkpointed once and the same attem
   f.options.readAssessmentSources = async request => {
     f.reads.push(request);
     return { status: 'AVAILABLE', scope: request.context, completeRequestedScope: true,
-      sourceRefs: request.sourceRefs, evidence: request.sourceRefs.map(evidenceRef => ({ evidenceRef, excerpt: 'read' })) };
+      sourceRefs: request.sourceRefs, evidence: request.sourceRefs.map(evidenceRef => ({ evidenceRef, kind: 'DOCUMENT_PASSAGE', excerpt: 'read' })) };
   };
   const save = f.options.saveAssessmentWork;
   f.options.saveAssessmentWork = async request => {
@@ -1426,7 +1500,7 @@ test('the single structured channel still permits reading, saving and finishing'
 });
 
 
-test('the installed gateway named-tool failure settles as a known failed result without another model request', async () => {
+test('the historical gateway named-tool signature preserves UNKNOWN without another model request', async () => {
   const f = fixture([]); let requests = 0;
   f.dependencies.requestGateway = async () => {
     requests++;
@@ -1435,7 +1509,7 @@ test('the installed gateway named-tool failure settles as a known failed result 
   };
   await assert.rejects(f.run(), error => {
     assert.equal(error.message, 'JOBAID_GATEWAY_HTTP_502:TOOL_CHOICE_NOT_SATISFIED');
-    assert.equal(error.terminalAssessmentFailure?.errorCode, 'JOBAID_INCOMPLETE_TERMINAL_RESPONSE');
+    assert.equal(error.terminalAssessmentFailure, undefined, 'a gateway error is not proof of provider termination');
     return true;
   });
   assert.equal(requests, 1);
@@ -1579,7 +1653,7 @@ test('observed singleton sourceRefs envelope is lossless and does not coerce wor
 });
 
 for (const status of [200, 502]) {
-  test(`explicit completion length precedes HTTP ${status}; incomplete parameters never execute`, async () => {
+  test(`explicit length is terminal only for successful HTTP ${status}; incomplete parameters never execute`, async () => {
     const f = fixture([]);
     let calls = 0;
     f.dependencies.requestGateway = async () => {
@@ -1589,7 +1663,14 @@ for (const status of [200, 502]) {
           name: 'return_wiselink_assessment_step', arguments: '{"step":' } }] }
       }], usage: { completion_tokens: 16000 } }), { status });
     };
-    await assert.rejects(f.run(), error => error.terminalAssessmentFailure?.errorCode === 'JOBAID_MODEL_OUTPUT_LENGTH');
+    await assert.rejects(f.run(), error => {
+      if (status === 200) assert.equal(error.terminalAssessmentFailure?.errorCode, 'JOBAID_MODEL_OUTPUT_LENGTH');
+      else {
+        assert.equal(error.message, 'JOBAID_GATEWAY_HTTP_502');
+        assert.equal(error.terminalAssessmentFailure, undefined);
+      }
+      return true;
+    });
     assert.equal(calls, 1);
     assert.equal(f.saves.length, 0);
     assert.equal(f.reads.length, 0);
@@ -1636,11 +1717,11 @@ test('exhausted explicit Host work rejection is terminal; unknown save response 
 
 test('exhausted malformed nested work JSON is terminal without a save or extra model call', async () => {
   const f = fixture(Array.from({ length: 5 }, () => ({ action: 'SAVE_WORK', workJson: '{"issues":[' })));
-  await assert.rejects(f.run(), error => error.message === 'JOBAID_WORK_JSON_INVALID' &&
-    error.terminalAssessmentFailure?.errorCode === 'JOBAID_WORK_JSON_INVALID');
-  assert.equal(f.calls.length, 5);
+  await assert.rejects(f.run(), error => error.message === 'JOBAID_PROTOCOL_REPAIR_EXHAUSTED' &&
+    error.terminalAssessmentFailure?.errorCode === 'JOBAID_PROTOCOL_REPAIR_EXHAUSTED');
+  assert.equal(f.calls.length, 2);
   assert.equal(f.saves.length, 0);
-  assert.equal(JSON.parse(f.calls[1].messages.at(-1).content).errorCode, 'JOBAID_WORK_JSON_INVALID');
+  assert.equal(JSON.parse(f.calls[1].messages.at(-1).content).errorCode, 'JOBAID_PROTOCOL_TOOL_SCHEMA_INVALID');
 });
 
 test('long change summary has no artificial limit and reaches SAVE unchanged', async () => {

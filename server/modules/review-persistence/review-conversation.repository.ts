@@ -2050,7 +2050,13 @@ function storedJobAidReceipt(
     row.affectedIssueKeys.some((key) => typeof key !== 'string' || !key)
   )
     throw new Error('REVIEW_JOBAID_RECEIPT_INVALID');
+  const hasReadSnapshot = Object.hasOwn(row, 'readSourceRefs');
+  if (hasReadSnapshot && (!Array.isArray(row.readSourceRefs) ||
+    row.readSourceRefs.some((ref) => typeof ref !== 'string' || !ref.trim()) ||
+    new Set(row.readSourceRefs).size !== row.readSourceRefs.length))
+    throw new Error('REVIEW_JOBAID_RECEIPT_INVALID');
   return {
+    ...(hasReadSnapshot ? { readSourceRefs: [...row.readSourceRefs as string[]] } : {}),
     status: row.status as 'APPLIED' | 'UNCHANGED',
     workRevisionRef:
       row.workRevisionRef === null

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { documentPdfRuledLines, type DocumentPdfRuledLine } from './document-original-pdf-rules';
 
 /** The actual PDF.js text layer, retained independently of plugin organization. */
 export interface DocumentPdfPage {
@@ -12,6 +13,8 @@ export interface DocumentPdfPage {
   rotation: number;
   /** Count of image painting operations, not a claim to have interpreted images. Null means inspection failed. */
   imagePaintOperations?: number | null;
+  /** Actual stroked lines in viewport coordinates. Absent on older cached pages. */
+  ruledLines?: DocumentPdfRuledLine[] | null;
   items: Array<{ text: string; transform: number[]; width: number; height: number; hasEOL: boolean }>;
 }
 export interface DocumentPdfExtraction { pageCount: number; pages: DocumentPdfPage[] }
@@ -76,19 +79,22 @@ export async function openDocumentPdfSession(input: {
               height: item.height, hasEOL: item.hasEOL,
             }] : []);
             let imagePaintOperations: number | null = null;
+            let ruledLines: DocumentPdfRuledLine[] | null = null;
             try {
               const operations = await page.getOperatorList({ annotationMode: pdfjs.AnnotationMode.DISABLE });
               const imageOperators = new Set([pdfjs.OPS.paintImageXObject, pdfjs.OPS.paintInlineImageXObject,
                 pdfjs.OPS.paintImageMaskXObject, pdfjs.OPS.paintImageMaskXObjectGroup, pdfjs.OPS.paintInlineImageXObjectGroup,
                 pdfjs.OPS.paintImageXObjectRepeat, pdfjs.OPS.paintImageMaskXObjectRepeat, pdfjs.OPS.paintSolidColorImageMask]);
               imagePaintOperations = operations.fnArray.filter(operation => imageOperators.has(operation)).length;
+              ruledLines = documentPdfRuledLines({ ...operations, operators: pdfjs.OPS,
+                viewportTransform: viewport.transform });
             } catch {
               // Text stays available, with an explicit incomplete-visual-inspection
               // marker in the persisted page. Do not describe a failed scan as zero images.
             }
             await input.assertActive();
             pages.push({ pageIndex: index, width: viewport.width, height: viewport.height,
-              rotation: viewport.rotation, imagePaintOperations, items,
+              rotation: viewport.rotation, imagePaintOperations, ruledLines, items,
               text: items.map(item => item.text + (item.hasEOL ? '\n' : ' ')).join('').trim() });
           } finally { page.cleanup(); }
         }

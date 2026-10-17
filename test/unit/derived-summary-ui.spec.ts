@@ -126,6 +126,23 @@ test('a failed directory reauthorization clears retained scope and source labels
   expect(container.textContent).toContain('来源重新授权未通过');expect(container.textContent).not.toContain('待续评测试事项');
   expect(container.textContent).not.toContain('测试ATA4 Wiki');
 });
+test('window focus retains the mounted exact reading while its fresh read is pending', async () => {
+  await mount('/summaries/DS-1?summaryRef=DSR-1');
+  const savedBody = container.querySelector('[data-body]');
+  expect(savedBody).not.toBeNull();
+  const savedText = savedBody?.textContent;
+  let resolveRefresh!: (value: ReturnType<typeof summaryExact>) => void;
+  mockExact.mockImplementationOnce(() => new Promise<ReturnType<typeof summaryExact>>(resolve => { resolveRefresh = resolve; }));
+
+  await act(async () => { dom.window.dispatchEvent(new dom.window.Event('focus')); });
+
+  expect(mockExact).toHaveBeenCalledTimes(2);
+  expect(container.querySelector('[data-body]')).toBe(savedBody);
+  expect(savedBody?.textContent).toBe(savedText);
+  await act(async () => resolveRefresh(summaryExact()));
+  expect(container.querySelector('[data-body]')).toBe(savedBody);
+});
+
 test('exact historical reading keeps old body and upper child ref while source changes remain visible', async () => {
   const exact = summaryExact();
   exact.revision.members[0].leaves = [exact.revision.members[0].member,

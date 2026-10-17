@@ -37,6 +37,21 @@ describe('document FileService recovery (isolated storage double)', () => {
   }
   const scope = { documentVersionId: 'DV-TEST', parseRunId: 'PR-TEST', bucketId: 'bucket' };
   const bytes = Buffer.from('Exact original.');
+  it('keeps an owned snapshot when the caller changes its bytes during storage I/O', async () => {
+    const { store, scoped } = setup();
+    const input = Buffer.from('A-12');
+    scoped.getFileMetadata.mockImplementationOnce(async () => { input.fill(0); return null; });
+    const artifact = await store.save(scope, 'RAW_MARKDOWN', input, async () => undefined);
+    expect(Buffer.from(await store.read(scope, artifact)).toString()).toBe('A-12');
+  });
+  it.each(['A-12', 'B-12'])('compares only the bounded readback view: %s', async value => {
+    const { store } = setup();
+    const backing = Buffer.from(`xx${value}yy`);
+    jest.spyOn(store, 'read').mockResolvedValueOnce(new Uint8Array(backing.buffer, backing.byteOffset + 2, 4));
+    const saved = store.save(scope, 'RAW_MARKDOWN', Buffer.from('A-12'), async () => undefined);
+    if (value === 'A-12') await expect(saved).resolves.toMatchObject({ readback: 'VERIFIED' });
+    else await expect(saved).rejects.toThrow('DOCUMENT_ORIGINAL_READBACK_MISMATCH');
+  });
   it('recovers a no-HTTP upload response lost after commit without a second upload', async () => {
     const { store, scoped } = setup(); const progress = jest.fn(); const assertActive = jest.fn(async () => undefined);
     const upload = scoped.upload.getMockImplementation()!;

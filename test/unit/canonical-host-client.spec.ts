@@ -1297,7 +1297,9 @@ describe('canonical host assessment client', () => {
   it('exposes only the explicit human confirmation action to the browser', async () => {
     request.mockResolvedValue({ status: 200, data: { revision: 10 } });
 
-    await expect(confirmIntegratedOverallForAeo('WI-SB-1001')).resolves.toEqual(
+    const input = { expectedRevision: 9, expectedOverallRevision: 2,
+      expectedOverallArtifactRef: 'artifact://overall-2' };
+    await expect(confirmIntegratedOverallForAeo('WI-SB-1001', input)).resolves.toEqual(
       {
         revision: 10,
       },
@@ -1306,9 +1308,24 @@ describe('canonical host assessment client', () => {
     expect(request).toHaveBeenCalledWith({
       url: '/api/canonical-host/work-items/WI-SB-1001/integrated-assessment/confirm-for-aeo',
       method: 'POST',
-      data: {},
+      data: input,
     });
   });
+
+  it.each(['resolved', 'rejected'] as const)(
+    'preserves an AEO confirmation HTTP 409 from a %s response', async (mode) => {
+      const data = { code: 'OPENCLAW_OVERALL_CONFIRMATION_REVISION_STALE' };
+      if (mode === 'resolved') request.mockResolvedValue({ status: 409, data });
+      else request.mockRejectedValue({ isAxiosError: true, response: { status: 409, data } });
+      await expect(confirmIntegratedOverallForAeo('WI-SB-1001', {
+        expectedRevision: 9, expectedOverallRevision: 2,
+        expectedOverallArtifactRef: 'artifact://overall-2',
+      })).rejects.toMatchObject({
+        code: data.code, statusCode: 409,
+      });
+      expect(request).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('sends no client target or authority when generating the AEO candidate', async () => {
     request.mockResolvedValue({

@@ -34,7 +34,8 @@ export function createDerivedSummaryDeliveredView(view) {
       location: { messageIndex: 1, inputPointer: `/evidence/${index}` } });
   }
   for (const [index, projected] of (view.members ?? []).entries()) {
-    const { evidenceRefs, nativeReadReceipts: _nativeReadReceipts, ...member } = projected;
+    const { evidenceRefs, nativeReadReceipts: _nativeReadReceipts,
+      documentWorkItemCarriers: _documentWorkItemCarriers, ...member } = projected;
     if (!Array.isArray(evidenceRefs) || evidenceRefs.some(ref => !delivered.evidence.has(ref))) continue;
     const reading = { ...member, evidence: restoreSummaryMemberEvidence(projected, delivered.evidence) };
     if (Object.hasOwn(member, 'understanding'))
@@ -138,10 +139,10 @@ export function createDerivedSummarySparseDeliveredView(view, registry) {
   for (const [index, value] of view.members.entries()) {
     const expected = registry.members.get(value?.evidenceRef);
     if (!expected || delivered.members.has(value.evidenceRef) ||
-        canonicalJson(memberContent(value)) !== canonicalJson(memberContent(derivedSummarySparseMemberBody(expected)))) fail();
+        canonicalJson(memberContent(value)) !== canonicalJson(memberContent(derivedSummarySparseMemberBody(expected, registry.evidence)))) fail();
     const evidence = restoreSummaryMemberEvidence(value, restorationRegistry);
     carriers.push(...evidence);
-    const { evidenceRefs, nativeReadReceipts: _receipts, ...own } = value;
+    const { evidenceRefs, nativeReadReceipts: _receipts, documentWorkItemCarriers: _documentCarriers, ...own } = value;
     const reading = { ...own, evidence, ...(Object.hasOwn(own, 'understanding')
       ? { body: completeDerivedSummaryWorkBody(own.understanding, own.issues) } : {}) };
     validateDerivedSummaryReading(reading);
@@ -170,7 +171,7 @@ export function projectDerivedSummarySparseReadReceipt(receipt, intent, registry
   const ownBody = value => {
     const { evidence, body, ...own } = value;
     return { ...own, ...(!Object.hasOwn(value, 'understanding') ? { body } : {}),
-      evidenceRefs: summaryEvidenceRefs(evidence), ...summaryNativeReceiptFields(evidence) };
+      evidenceRefs: summaryEvidenceRefs(evidence), ...summaryNativeReceiptFields(evidence, registry.evidence) };
   };
   // All raw contents, nested immutable roots and prior delivery must match before
   // any ledger is changed. Fresh notices are validated, then preserved in full.

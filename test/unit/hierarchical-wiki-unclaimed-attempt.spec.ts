@@ -1,9 +1,13 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { getTableColumns } from 'drizzle-orm';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import { actionAttempt } from '../../server/database/schema';
+import type { DerivedSummaryRequestReceipt, RequestDerivedSummaryUpdate } from '../../shared/derived-summary.interface';
 import { HierarchicalWikiService } from '../../server/modules/canonical-host/hierarchical-wiki.service';
 import {
   emptyWikiDemand,
   wikiDemandState,
+  wikiDue,
 } from '../../server/modules/canonical-host/hierarchical-wiki-demand';
 import { reconcileWikiReservations } from '../../server/modules/canonical-host/hierarchical-wiki-attempt-reconciliation';
 import type {
@@ -78,7 +82,7 @@ function request(index = 1): SummaryAttempt {
     priority: 100,
     inputRevision: 0,
     baseRevision: 0,
-    taskEnvelopeJson: 'sealed-original-task',
+    taskEnvelopeJson: '{"fixture":"sealed-original-task","modelInput":{}}',
     taskInputHash: 'a'.repeat(64),
     executionModelJson: '{"modelRef":"miaoda/glm-5.3"}',
     idempotencyKey: `request-${index}`,
@@ -155,6 +159,11 @@ function setup(count = 1) {
       onLock?.();
       return [{ id: params[0] }];
     }
+    if (query.includes('from "action_attempt"')) {
+      const attempt = [...attempts.values()].find((item: SummaryAttempt) => params.includes(item.attemptId));
+      return attempt ? [Object.fromEntries(Object.entries(getTableColumns(actionAttempt))
+        .map(([key, column]) => [column.name, attempt[key as keyof SummaryAttempt]]))] : [];
+    }
     if (query.startsWith('update "action_attempt"')) {
       const attempt: SummaryAttempt | undefined = [...attempts.values()].find(
         (item: SummaryAttempt) => params.includes(item.attemptId),
@@ -219,6 +228,9 @@ function setup(count = 1) {
       });
     },
   };
+  // finishTerminal checks any existing automatic WorkItem lease in its own
+  // Drizzle transaction; this fixture's Wiki task has no such lease.
+  Object.assign(client, { begin: async (operation: (session: typeof client) => Promise<unknown>) => operation(client) });
   const database: PostgresJsDatabase = drizzle(client as never);
   const transaction = jest.fn(
     async (
@@ -263,13 +275,14 @@ function setup(count = 1) {
     ),
   };
   const summaries = {
-    reserve: jest.fn(async () => {
+    reserve: jest.fn(async (_input: RequestDerivedSummaryUpdate): Promise<DerivedSummaryRequestReceipt> => {
       throw new Error('UNEXPECTED_NEW_WIKI_REQUEST');
     }),
   };
   const members = {
     authorizeActor: jest.fn(async () => undefined),
     readAll: jest.fn(async () => []),
+    withNativeTransaction: jest.fn(async () => undefined),
   };
   const runtimeTransaction = jest.fn(
     async (
@@ -330,6 +343,26 @@ beforeEach(() => {
 });
 afterEach(() => jest.useRealTimers());
 
+test('an exact unclaimed timeout preserves retry two and remains due without consuming the execution budget', async () => {
+  const f = setup();
+  f.rows[0]!.state.retryCount = 2;
+  const before = structuredClone(f.rows[0]!.state);
+  await f.expire();
+  expect(f.attempts.get('AQ-1')!.status).toBe('TIMED_OUT');
+  expect(f.rows[0]!.state).toEqual({
+    ...before,
+    active: null,
+    lastAttemptErrorCode: 'DERIVED_SUMMARY_DEADLINE_EXCEEDED',
+    lastCheckedAt: now,
+  });
+  expect(wikiDue(f.rows[0]!.state, f.rows[0]!.scope.kind, now)).toBe(true);
+  await f.expire();
+  expect(f.rows[0]!.state.retryCount).toBe(2);
+  expect(f.rows[0]!.state.blocked).toBeNull();
+  expect(f.rows[0]!.state.dueAt).toBe(before.dueAt);
+  expect(f.calls.filter((call) => call.query.startsWith('update "action_attempt"'))).toHaveLength(1);
+});
+
 test('normal GET records the original unclaimed hard deadline and releases only that registry reservation', async () => {
   const f = setup(),
     original: SummaryAttempt = structuredClone(f.attempts.get('AQ-1')!);
@@ -344,9 +377,10 @@ test('normal GET records the original unclaimed hard deadline and releases only 
   });
   expect(f.rows[0]!.state).toMatchObject({
     active: null,
-    retryCount: 1,
-    dueAt: '2026-10-14T08:05:00.000Z',
+    retryCount: 0,
+    dueAt: '2026-10-14T06:05:00.000Z',
     lastAttemptErrorCode: 'DERIVED_SUMMARY_DEADLINE_EXCEEDED',
+    lastCheckedAt: now,
   });
   expect(listing.items[0]).toMatchObject({
     state: 'PENDING',
@@ -366,15 +400,74 @@ test('normal GET records the original unclaimed hard deadline and releases only 
   ).toEqual([original.attemptId, owner.tenantId, owner.actorUserId]);
 });
 
-test('normal next commits expiration and uses the existing retry window rather than re-reserving in the same tick', async () => {
+test('normal next can re-reserve retry two in the same tick and then reuses that new reservation', async () => {
   const f = setup();
-  expect(await f.service.next(now)).toEqual({ status: 'IDLE' });
+  f.rows[0]!.state.retryCount = 2;
+  const before = structuredClone(f.rows[0]!.state);
+  // Only the admission/auth dependencies are constructed here. The actual next
+  // consumer must expire, select, persist active and then reuse its new request.
+  f.summaries.reserve.mockImplementationOnce(async (input: RequestDerivedSummaryUpdate) => {
+    const next: SummaryAttempt = { ...request(2), summaryId: 'DS-1', operationRef: 'AQ-new',
+      triggerRequestId: input.requestId, deadlineAt: new Date('2026-10-14T09:00:00.000Z') };
+    f.attempts.set('AQ-new', next);
+    return { summaryId: 'DS-1', attemptRef: 'AQ-new', status: 'QUEUED', created: true };
+  });
+  const expected = { status: 'SUMMARY_PENDING', summaryId: 'DS-1', attemptRef: 'AQ-new' };
+  expect(await f.service.next(now)).toEqual(expected);
   expect(f.attempts.get('AQ-1')!.status).toBe('TIMED_OUT');
-  expect(f.rows[0]!.state.active).toBeNull();
+  expect(f.rows[0]!.state.active).toMatchObject({ attemptRef: 'AQ-new', generation: before.desiredGeneration });
+  expect(f.rows[0]!.state).toEqual({ ...before,
+    active: f.rows[0]!.state.active,
+    lastAttemptErrorCode: 'DERIVED_SUMMARY_DEADLINE_EXCEEDED', lastCheckedAt: now });
+  expect(f.rows[0]!.state.active?.requestId).toBe(f.summaries.reserve.mock.calls[0]![0].requestId);
+  expect(await f.service.next(now)).toEqual(expected);
+  expect(f.rows[0]!.state.retryCount).toBe(2);
+  expect(f.rows[0]!.state.blocked).toBeNull();
+  expect(f.rows[0]!.state.versions).toEqual(before.versions);
+  expect(f.rows[0]!.state.waiting).toEqual(before.waiting);
+  expect(f.rows[0]!.state.desiredGeneration).toBe(before.desiredGeneration);
   expect(f.runtimeTransaction).toHaveBeenCalledWith(
     owner.actorUserId,
     expect.any(Function),
   );
+  expect(f.summaries.reserve).toHaveBeenCalledTimes(1);
+});
+
+test.each(['FAILED', 'TIMED_OUT'])(
+  'an actual executed %s still consumes retry two and blocks at three', async (status: string) => {
+    const f = setup();
+    f.rows[0]!.state.retryCount = 2;
+    Object.assign(f.attempts.get('AQ-1')!, { status, claimCount: 1, leaseGeneration: 1,
+      startedAt: new Date('2026-10-14T06:30:00Z'), completedAt: new Date(now),
+      errorCode: 'ACTUAL_EXECUTION_FAILED' });
+    await f.expire();
+    expect(f.rows[0]!.state).toMatchObject({ active: null, retryCount: 3,
+      blocked: 'ACTUAL_EXECUTION_FAILED', lastAttemptErrorCode: 'ACTUAL_EXECUTION_FAILED',
+      dueAt: '2026-10-14T09:00:00.000Z', lastCheckedAt: now });
+    await f.expire();
+    expect(f.rows[0]!.state.retryCount).toBe(3);
+    expect(await f.service.next(now)).toEqual({ status: 'IDLE' });
+    expect(f.summaries.reserve).not.toHaveBeenCalled();
+  },
+);
+
+test('a historical TIMED_OUT string is not this call\'s exact unclaimed CAS classification', async () => {
+  const f = setup();
+  f.rows[0]!.state.retryCount = 2;
+  Object.assign(f.attempts.get('AQ-1')!, { status: 'TIMED_OUT', completedAt: new Date(now),
+    errorCode: 'DERIVED_SUMMARY_DEADLINE_EXCEEDED' });
+  await f.expire();
+  expect(f.rows[0]!.state).toMatchObject({ active: null, retryCount: 3,
+    blocked: 'DERIVED_SUMMARY_DEADLINE_EXCEEDED' });
+});
+
+test('an exact unclaimed cleanup preserves an existing block and a future due time', async () => {
+  const f = setup();
+  Object.assign(f.rows[0]!.state, { retryCount: 2, blocked: 'EXISTING_FAILURE', dueAt: '2026-10-14T09:00:00.000Z' });
+  await f.expire();
+  expect(f.rows[0]!.state).toMatchObject({ active: null, retryCount: 2,
+    blocked: 'EXISTING_FAILURE', dueAt: '2026-10-14T09:00:00.000Z' });
+  expect(await f.service.next(now)).toEqual({ status: 'IDLE' });
   expect(f.summaries.reserve).not.toHaveBeenCalled();
 });
 
@@ -586,14 +679,14 @@ test('an RLS-hidden reservation remains explicit while another authorized reserv
   expect(f.rows[1]!.state.active).toBeNull();
 });
 
-test('original failure code and sealed model/input remain intact through the existing retry backoff', async () => {
+test('original failure code and sealed model/input remain intact through unclaimed reservation cleanup', async () => {
   const f = setup();
   f.attempts.get('AQ-1')!.errorCode = 'ORIGINAL_DIAGNOSTIC';
   await f.expire();
   expect(f.attempts.get('AQ-1')!).toMatchObject({
     errorCode: 'ORIGINAL_DIAGNOSTIC',
     executionModelJson: '{"modelRef":"miaoda/glm-5.3"}',
-    taskEnvelopeJson: 'sealed-original-task',
+    taskEnvelopeJson: '{"fixture":"sealed-original-task","modelInput":{}}',
     deadlineAt: deadline,
   });
   expect(f.rows[0]!.state.lastAttemptErrorCode).toBe('ORIGINAL_DIAGNOSTIC');

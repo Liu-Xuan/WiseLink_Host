@@ -25,8 +25,55 @@ describe('Matter JobAid task protocol', () => {
     expect(task.modelInput.sourceChanges).toEqual([{ inputId: 'WI-new', current: binding,
       covered: null, reasons: ['NOT_COVERED'] }]);
     expect(task.modelInput.availableDocuments[0].boundOriginal).toEqual(binding.original);
+    expect(task.modelInput.availableDocuments[0].sourceRoles).toEqual(['CURRENT_INPUT']);
     expect(task.modelInput.availableDocuments[0].readingScope).toBe('NOT_READ_THIS_ATTEMPT');
     expect(task.modelInput.trigger).toEqual({ kind: 'SOURCE_CHANGE', inputIds: ['WI-new'] });
+  });
+
+  it('keeps prior-only evidence as exact historical comparison without inventing a current binding', () => {
+    const previous = previousWithWork();
+    const before = structuredClone(previous);
+    const task = buildMatterJobAidTask({ matterId: 'MAT-test', matterRevisionId: 'MR-1',
+      actorUserId: 'actor-1', title: 'Historical comparison', inputs: [], previous,
+      trigger: { kind: 'USER_REQUEST', requestId: 'REQ-history', instruction: '比较已保存依据' } });
+    expect(task.modelInput.availableDocuments).toEqual([{
+      documentVersionId: 'DV-1', sourceRoles: ['HISTORICAL_COMPARISON'],
+      originalReadRef: 'DOCUMENT_VERSION:DV-1:original:0', boundOriginal: null,
+      inputIds: [], readingScope: 'NOT_READ_THIS_ATTEMPT',
+    }]);
+    expect(task.sourceCatalog.find(item => item.evidenceRef === retainedEvidence.evidenceRef)).toEqual(retainedEvidence);
+    expect(task.modelInput.deliveredEvidence.some(item => item.evidenceRef === retainedEvidence.evidenceRef)).toBe(true);
+    expect(previous).toEqual(before);
+  });
+
+  it('merges current and historical roles by exact DVI while retaining every input identity and history', () => {
+    const previous = previousWithWork();
+    const original = { parseRunId: 'PRUN-6', parseRevision: 6,
+      semantic: { revision: 1, profileRef: 'boeing.ftd.sections.v1' } };
+    const binding = { inputId: 'WI-current', workItemId: 'WI-current', workItemRevision: 3,
+      documentVersionId: 'DV-1', resultRef: null, resultRevision: null, original };
+    const inputs = [binding, { ...binding, inputId: 'WI-also-current', workItemId: 'WI-also-current' },
+      { ...binding, inputId: 'WI-next', workItemId: 'WI-next', documentVersionId: 'DV-next' }];
+    const task = buildMatterJobAidTask({ matterId: 'MAT-test', matterRevisionId: 'MR-1',
+      actorUserId: 'actor-1', title: 'Host selected inputs', inputs, previous,
+      trigger: { kind: 'USER_REQUEST', requestId: 'REQ-dual', instruction: '比较选定正文' } });
+    expect(task.modelInput.availableDocuments.map(item => [item.documentVersionId, item.sourceRoles])).toEqual([
+      ['DV-1', ['CURRENT_INPUT', 'HISTORICAL_COMPARISON']], ['DV-next', ['CURRENT_INPUT']],
+    ]);
+    expect(task.modelInput.availableDocuments[0].inputIds).toEqual(['WI-current', 'WI-also-current']);
+    expect(task.modelInput.availableDocuments[0].boundOriginal).toEqual(original);
+    expect(task.sourceCatalog.find(item => item.evidenceRef === retainedEvidence.evidenceRef)).toEqual(retainedEvidence);
+    const impact = task.modelInput.capabilities.find(item => item.capability === 'registered_source_reading')?.impact;
+    expect(impact).toContain('均不证明发布方最新有效');
+    expect(impact).toContain('参考版本及对照范围由Host确定');
+  });
+
+  it('does not turn non-document prior evidence into a current or historical document role', () => {
+    const task = buildMatterJobAidTask({ matterId: 'MAT-test', matterRevisionId: 'MR-1',
+      actorUserId: 'actor-1', title: 'No document input', inputs: [],
+      previous: previousWithWork({ evidence: [JOBAID_METHOD_EVIDENCE[0]], readSourceRefs: [] }),
+      trigger: { kind: 'USER_REQUEST', requestId: 'REQ-method', instruction: '继续当前工作' } });
+    expect(task.modelInput.availableDocuments).toEqual([]);
   });
 
   it('rejects a previous revision that has only the retired summary shape', () => {

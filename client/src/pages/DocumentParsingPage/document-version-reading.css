@@ -101,7 +101,7 @@
 .source-reader-identity span { color: var(--wl-muted, #70777d); font-size: 9px; }
 .source-reader-fullscreen-message { margin: 0 0 8px; color: var(--wl-muted, #70777d); font-size: 11px; }
 .source-reader-workspace .source-reader-toc, .source-reader-workspace .source-reader-stage { border-radius: 13px; }
-.source-reader-workspace .source-reader-toc { min-height: 0; padding: 0; }
+.source-reader-workspace .source-reader-toc { min-height: 0; max-height: min(660px, calc(100dvh - 210px)); padding: 0; }
 .source-reader-workspace .source-reader-toc-modes { width: calc(100% - 16px); margin: 10px 8px 0; }
 .source-reader-workspace .source-reader-toc nav { gap: 3px; margin-top: 7px; padding: 3px 9px 12px; }
 .source-reader-workspace .source-reader-toc nav button { position: relative; padding: 10px 28px 10px 10px; border-radius: 8px; }
@@ -109,7 +109,7 @@
 .source-reader-workspace .source-reader-toc nav button.is-selected { background: color-mix(in srgb, var(--wl-accent, #466f65) 9%, var(--wl-sheet, #fff)); color: var(--wl-accent, #466f65); box-shadow: inset 2px 0 var(--wl-accent, #466f65); }
 .source-reader-workspace .source-reader-toc-boundary { padding: 15px; }
 .source-reader-workspace .source-reader-stage { min-height: 0; }
-.source-reader-workspace .source-reader-columns { height: 100%; min-height: 650px; }
+.source-reader-workspace .source-reader-columns { height: min(660px, calc(100dvh - 210px)); min-height: 0; }
 .source-reader-primary, .source-reader-pdf-pane, .source-reader-translation { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .source-reader-pane-title { display: flex; align-items: center; justify-content: space-between; flex: 0 0 auto; gap: 10px; min-height: 42px; padding: 11px 16px; border-bottom: 1px solid var(--wl-border, #e1e4e5); font-size: 12px; }
 .source-reader-pane-title span { color: var(--wl-muted, #70777d); font-size: 10px; }
@@ -117,10 +117,18 @@
 .source-reader-workspace .document-original-reader { padding: 27px 29px 55px; }
 .original-locatable.is-selected { background: color-mix(in srgb, var(--wl-accent, #466f65) 7%, var(--wl-sheet, #fff)); box-shadow: inset 2px 0 var(--wl-accent, #466f65); }
 .source-reader-pdf-pane .document-original-inline { flex: 1; min-height: 0; }
+.source-reader-pdf-pane .parse-pdf-viewer, .source-reader-pdf-pane .parse-pdf-viewer-state,
+.source-reader-pdf-pane .parse-pdf-pages { min-height: 0; }
 .source-reader-pdf-pane .document-original-inline iframe { height: calc(100% - 54px); min-height: 540px; }
-.source-reader-translation .source-reader-bilingual { flex: 1; height: auto; min-height: 0; }
+/* Keep the saved-reading wrapper in the pane height chain; content still scrolls in full. */
+.source-reader-translation .source-reader-bilingual { display: flex; flex: 1; flex-direction: column; height: auto; min-height: 0; }
+.source-reader-translation .source-reader-bilingual > section { display: flex; flex: 1 1 0%; min-height: 0; flex-direction: column; }
+.source-reader-translation .source-reader-bilingual > section > .wl-bilingual-reader { flex: 1 1 0%; min-height: 0; }
+.source-reader-translation .source-reader-bilingual .wl-semantic-pane-scroll { flex: 1 1 0; }
 .source-reader-workspace:fullscreen { padding: 12px; background: var(--wl-canvas, #f4f5f5); }
 .source-reader-workspace:fullscreen .source-reader-layout, .source-reader-workspace:fullscreen .source-reader-columns { min-height: 0; }
+.source-reader-workspace:fullscreen .source-reader-columns { height: 100%; }
+.source-reader-workspace:fullscreen .source-reader-toc { max-height: none; }
 
 @media (max-width: 1500px) {
   .source-reader-workspace > .source-reader-layout { grid-template-columns: 175px minmax(0, 1fr); }
@@ -164,6 +172,95 @@
 .reader-preview-pdf-paper i { display: block; width: 100%; height: 180px; border: 1px solid var(--wl-border, #e1e4e5); background: repeating-linear-gradient(0deg, transparent 0 14px, var(--wl-canvas, #f4f5f5) 15px 16px); }
 .reader-preview-translation { padding: 26px 32px; color: var(--wl-ink, #27292c); line-height: 1.9; }
 
+/* The standalone source page has one toolbar for identity and reading controls. */
+.document-version-reading-compact { padding-top: 10px; }
+.document-reading-standalone-toolbar, .has-compact-toolbar > .source-reader-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 52px; margin: 0; padding: 4px 0 10px; }
+.document-reading-toolbar-identity { flex: 1 1 220px; min-width: 190px; max-width: 290px; }
+.document-reading-toolbar-identity > div { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.document-version-reading-compact .document-reading-toolbar-identity h1 { flex: 0 0 auto; margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -.02em; line-height: 1.5; }
+.document-reading-business-version { min-width: 0; overflow: hidden; color: var(--wl-muted, #70777d); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.document-reading-toolbar-identity p { overflow: hidden; margin: 0; color: var(--wl-muted, #70777d); font-size: 11px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.source-reader-primary-tools, .source-reader-window-tools, .document-reading-saved-links { display: flex; align-items: center; flex-wrap: nowrap; gap: 4px; }
+.source-reader-primary-tools, .source-reader-window-tools { flex: 0 0 auto; }
+.source-reader-window-tools { margin-left: auto; }
+.document-reading-saved-links { flex: 0 0 auto; }
+.has-compact-toolbar .source-reader-mode-tabs { order: 0; width: auto; overflow: auto; border: 1px solid var(--wl-border, #e1e4e5); border-radius: 9px; }
+.has-compact-toolbar .source-reader-mode-tabs button { flex: 0 0 auto; padding: 5px 9px; font-size: 11px; white-space: nowrap; }
+.has-compact-toolbar .source-reader-return { order: 0; margin: 0; }
+.document-reading-more { position: relative; flex: 0 0 auto; }
+.document-reading-more > summary { display: flex; align-items: center; gap: 5px; min-height: var(--wl-control-size-sm, 32px); padding: 0 9px; border-radius: 6px; color: var(--wl-muted, #70777d); font-size: 12px; cursor: pointer; list-style: none; }
+.document-reading-more > summary::-webkit-details-marker { display: none; }
+.document-reading-more > summary svg { width: 16px; height: 16px; }
+.document-reading-more > summary:hover, .document-reading-more[open] > summary { background: var(--wl-accent-soft, #e7f0ed); color: var(--wl-accent, #466f65); }
+.document-reading-more > summary:focus-visible { outline: 2px solid var(--wl-accent, #466f65); outline-offset: 2px; }
+.document-reading-more-panel { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; width: min(440px, calc(100vw - 32px)); max-height: min(620px, 75dvh); overflow: auto; padding: 18px; border: 1px solid var(--wl-border, #e1e4e5); border-radius: 12px; background: var(--wl-sheet, #fff); box-shadow: 0 8px 30px rgba(31, 36, 39, .16); font-size: 12px; line-height: 1.6; }
+.document-reading-more-panel h2 { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+.document-reading-more-panel p { margin: 8px 0; overflow-wrap: anywhere; }
+.document-reading-more-panel .document-reading-full-title { color: var(--wl-ink, #27292c); font-size: 13px; }
+.document-reading-more-panel dl { display: grid; gap: 6px; margin: 12px 0; }
+.document-reading-more-panel dl > div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; }
+.document-reading-more-panel dt { color: var(--wl-muted, #70777d); }
+.document-reading-more-panel dd { margin: 0; overflow-wrap: anywhere; }
+.document-reading-more-panel a { color: var(--wl-accent, #466f65); text-decoration: underline; text-underline-offset: 3px; }
+.document-reading-more-panel .document-reading-actions { gap: 7px; margin: 12px 0; }
+.document-reading-location [role="status"] { margin: 0 0 8px; }
+.document-reading-link-error { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+
+@media (min-width: 961px) and (max-width: 1400px) {
+  .has-compact-toolbar > .source-reader-toolbar { flex-wrap: nowrap; }
+  .has-compact-toolbar .source-reader-primary-tools { flex-shrink: 1; min-width: 0; }
+  .has-compact-toolbar .source-reader-mode-tabs { min-width: 0; }
+}
+
+@media (max-width: 960px) {
+  .has-compact-toolbar > .source-reader-toolbar { gap: 6px; }
+  .has-compact-toolbar .source-reader-primary-tools { order: 3; width: 100%; min-width: 0; }
+  .has-compact-toolbar .source-reader-mode-tabs { flex: 0 1 auto; }
+  .document-reading-toolbar-identity { max-width: none; }
+}
+
+@media (max-width: 640px) {
+  .document-version-reading-compact { padding-top: 8px; }
+  .document-reading-toolbar-identity { flex-basis: 100%; }
+  .source-reader-window-tools { gap: 2px; }
+  .has-compact-toolbar .document-reading-saved-links svg, .source-reader-fullscreen-label { display: none; }
+  .source-reader-return-label { max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .has-compact-toolbar .source-reader-primary-tools > button { flex-shrink: 0; }
+  .has-compact-toolbar .source-reader-mode-tabs { flex: 1 1 auto; }
+  .has-compact-toolbar .source-reader-mode-tabs button { padding: 5px 8px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .source-reader-workspace *, .source-reader-workspace *::before, .source-reader-workspace *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+/* The standalone source workspace fills the space below the actual app chrome. */
+.wiselink-app-body > .document-version-reading-compact.is-source-workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.wiselink-app-body > .document-version-reading-compact.is-source-workspace > .source-reader-workspace { flex: 1; min-height: 0; }
+.wiselink-app-body > .document-version-reading-compact.is-source-workspace .source-reader-workspace > :not(.source-reader-layout, .source-reader-saved-panels) { flex-shrink: 0; }
+.wiselink-app-body > .document-version-reading-compact.is-source-workspace .source-reader-toc { max-height: 100%; }
+.wiselink-app-body > .document-version-reading-compact.is-source-workspace .source-reader-columns,
+.wiselink-app-body > .document-version-reading-compact.is-source-workspace .source-reader-translation { height: 100%; min-height: 0; }
+
+@media (max-width: 760px) {
+  .wiselink-app-body > .document-version-reading-compact.is-source-workspace .source-reader-toc { max-height: min(48dvh, 100%); }
+  .wiselink-app-body > .document-version-reading-compact.is-source-workspace .source-reader-stage { overflow: auto; overscroll-behavior: contain; }
+  .wiselink-app-body > .document-version-reading-compact.is-source-workspace .source-reader-columns { height: auto; }
+  .wiselink-app-body > .document-version-reading-compact.is-source-workspace .source-reader-primary,
+  .wiselink-app-body > .document-version-reading-compact.is-source-workspace .source-reader-pdf-pane { flex-shrink: 0; }
+}
+
+.source-reader-workspace > [hidden], .source-reader-primary-tools[hidden] { display: none !important; }
+.source-reader-saved-panels { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.source-reader-saved-panels > .wl-retained-panel { height: 100%; min-height: 0; }
+.source-reader-saved-panels > .wl-retained-panel[hidden] { display: none !important; }
+.document-saved-work-panel { position: relative; height: 100%; min-height: 0; border: 1px solid var(--wl-border, #e1e4e5); border-radius: 13px; background: var(--wl-sheet, #fff); }
+.document-saved-work-scroll { height: 100%; overflow: auto; overscroll-behavior: contain; padding: 24px 28px 48px; font-size: 14px; line-height: 1.85; }
+.document-saved-work-scroll > header, .document-saved-source > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.document-saved-work-scroll h2 { margin: 0; font-size: 19px; }
+.document-saved-work-scroll h3 { margin: 20px 0 12px; font-size: 17px; font-weight: 600; }
+.document-saved-work-scroll p { margin: 10px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.document-saved-issue { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--wl-border, #e1e4e5); }
+.document-saved-source { position: absolute; inset: 0; z-index: 2; overflow: auto; padding: 24px 28px; border-radius: inherit; background: var(--wl-sheet, #fff); }
+.document-saved-source-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.document-reading-saved-links a[aria-current='page'] { background: var(--wl-accent-soft, #e7f0ed); color: var(--wl-accent, #466f65); }

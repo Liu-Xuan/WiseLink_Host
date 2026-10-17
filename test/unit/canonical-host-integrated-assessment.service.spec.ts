@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import type {
   CanonicalWorkItemProjection,
+  ConfirmCanonicalOverallForAeoRequest,
   UnifiedPackageArtifactDescriptor,
 } from '@shared/api.interface';
 import { CanonicalHostIntegratedAssessmentService } from '../../server/modules/canonical-host/canonical-host-integrated-assessment.service';
@@ -253,6 +254,85 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
     ]);
   });
 
+  it.each<Partial<ConfirmCanonicalOverallForAeoRequest>>([
+    { expectedRevision: 1 },
+    { expectedOverallRevision: 99 },
+    { expectedOverallArtifactRef: 'artifact://another-overall' },
+  ])('rejects a mismatched displayed Overall before any confirmation write: %o', async (changed) => {
+    const registrar = new MemoryRegistrar(workItem());
+    const store = new MemoryArtifactStore();
+    const repository = actionAttempts();
+    const service = new CanonicalHostIntegratedAssessmentService(
+      registrar, authorization(), permissionSnapshots(), mutableBasePort(),
+      mutableOverallPort(), store, repository as never,
+    );
+    await service.persistBaseRuleCandidate('WI-TEST', ACTOR);
+    const displayed = await service.persistOpenClawOverall('WI-TEST', ACTOR);
+    const beforeAttempts = repository.reserveAssessmentAction.mock.calls.length;
+    const beforeArtifacts = store.values.size;
+
+    await expect(service.confirmOpenClawOverallForAeo(
+      'WI-TEST', { ...confirmationRequest(displayed), ...changed }, ACTOR,
+    )).rejects.toMatchObject({
+      code: 'OPENCLAW_OVERALL_CONFIRMATION_REVISION_STALE', statusCode: 409,
+    });
+    expect(repository.reserveAssessmentAction).toHaveBeenCalledTimes(beforeAttempts);
+    expect(store.values.size).toBe(beforeArtifacts);
+    expect(await registrar.getByWorkItemId()).toEqual(displayed);
+  });
+
+  it('does not confirm a replacement Overall published after the page was read', async () => {
+    const registrar = new MemoryRegistrar(workItem());
+    const store = new MemoryArtifactStore();
+    const repository = actionAttempts();
+    const overallPort = mutableOverallPort();
+    const service = new CanonicalHostIntegratedAssessmentService(
+      registrar, authorization(), permissionSnapshots(), mutableBasePort(),
+      overallPort, store, repository as never,
+    );
+    await service.persistBaseRuleCandidate('WI-TEST', ACTOR);
+    const displayed = await service.persistOpenClawOverall('WI-TEST', ACTOR);
+    overallPort.sourceResultId = 'OPENCLAW-REPLACEMENT';
+    overallPort.artifactBytes = bytes({ source: 'replacement' });
+    const replacement = await service.persistOpenClawOverall('WI-TEST', ACTOR);
+    const beforeAttempts = repository.reserveAssessmentAction.mock.calls.length;
+
+    await expect(service.confirmOpenClawOverallForAeo(
+      'WI-TEST', confirmationRequest(displayed), ACTOR,
+    )).rejects.toMatchObject({ statusCode: 409 });
+    expect(repository.reserveAssessmentAction).toHaveBeenCalledTimes(beforeAttempts);
+    expect(await registrar.getByWorkItemId()).toEqual(replacement);
+    expect(replacement.integratedAssessment?.overallForAeoConfirmation).toBeNull();
+  });
+
+  it('keeps the CAS fence when the WorkItem changes after the fresh confirmation check', async () => {
+    const registrar = new MemoryRegistrar(workItem());
+    const repository = actionAttempts();
+    const service = new CanonicalHostIntegratedAssessmentService(
+      registrar, authorization(), permissionSnapshots(), mutableBasePort(),
+      mutableOverallPort(), new MemoryArtifactStore(), repository as never,
+    );
+    await service.persistBaseRuleCandidate('WI-TEST', ACTOR);
+    const displayed = await service.persistOpenClawOverall('WI-TEST', ACTOR);
+    repository.reserveAssessmentAction.mockImplementationOnce(async () => {
+      await registrar.compareAndSet({
+        expectedRevision: displayed.revision,
+        next: withoutRevisionForTest(displayed),
+      });
+      return { attemptId: 'ATT-CONCURRENT-CONFIRM', created: true };
+    });
+
+    await expect(service.confirmOpenClawOverallForAeo(
+      'WI-TEST', confirmationRequest(displayed), ACTOR,
+    )).rejects.toMatchObject({ statusCode: 409 });
+    const current = await registrar.getByWorkItemId();
+    expect(current.revision).toBe(displayed.revision + 1);
+    expect(current.integratedAssessment?.overallForAeoConfirmation).toBeNull();
+    expect(repository.failAssessmentAction).toHaveBeenCalledWith(expect.objectContaining({
+      attemptId: 'ATT-CONCURRENT-CONFIRM', errorCode: 'WORK_ITEM_CAS_CONFLICT',
+    }));
+  });
+
   it('records one server-owned human confirmation against the current overall candidate', async () => {
     const registrar = new MemoryRegistrar(workItem());
     const store = new MemoryArtifactStore();
@@ -271,6 +351,7 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
     const overall = await service.persistOpenClawOverall('WI-TEST', ACTOR);
     const confirmed = await service.confirmOpenClawOverallForAeo(
       'WI-TEST',
+      confirmationRequest(await registrar.getByWorkItemId()),
       ACTOR,
     );
 
@@ -304,7 +385,9 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
     );
 
     await expect(
-      service.confirmOpenClawOverallForAeo('WI-TEST', ACTOR),
+      service.confirmOpenClawOverallForAeo(
+        'WI-TEST', confirmationRequest(await registrar.getByWorkItemId()), ACTOR,
+      ),
     ).resolves.toEqual(confirmed);
     expect(repository.reserveAssessmentAction).toHaveBeenCalledTimes(3);
   });
@@ -324,7 +407,9 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
 
     await service.persistBaseRuleCandidate('WI-TEST', ACTOR);
     await service.persistOpenClawOverall('WI-TEST', ACTOR);
-    const first = await service.confirmOpenClawOverallForAeo('WI-TEST', ACTOR);
+    const first = await service.confirmOpenClawOverallForAeo(
+      'WI-TEST', confirmationRequest(await registrar.getByWorkItemId()), ACTOR,
+    );
     const afterUnrelatedCas = await registrar.compareAndSet({
       expectedRevision: first.revision,
       next: withoutRevisionForTest(first),
@@ -332,6 +417,7 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
 
     const reconfirmed = await service.confirmOpenClawOverallForAeo(
       'WI-TEST',
+      confirmationRequest(await registrar.getByWorkItemId()),
       ACTOR,
     );
 
@@ -385,7 +471,9 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
       repository.reserveAssessmentAction.mock.calls.length;
 
     await expect(
-      service.confirmOpenClawOverallForAeo('WI-TEST', ACTOR),
+      service.confirmOpenClawOverallForAeo(
+        'WI-TEST', confirmationRequest(await registrar.getByWorkItemId()), ACTOR,
+      ),
     ).rejects.toMatchObject({
       code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
       statusCode: 404,
@@ -411,7 +499,9 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
 
     await service.persistBaseRuleCandidate('WI-TEST', ACTOR);
     await service.persistOpenClawOverall('WI-TEST', ACTOR);
-    await service.confirmOpenClawOverallForAeo('WI-TEST', ACTOR);
+    await service.confirmOpenClawOverallForAeo(
+      'WI-TEST', confirmationRequest(await registrar.getByWorkItemId()), ACTOR,
+    );
     overallPort.sourceResultId = 'OPENCLAW-RESULT-CHANGED';
     overallPort.artifactBytes = bytes({ source: 'CHANGED' });
 
@@ -424,7 +514,9 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
       changed.integratedAssessment?.overallForAeoConfirmation ?? null,
     ).toBeNull();
 
-    await service.confirmOpenClawOverallForAeo('WI-TEST', ACTOR);
+    await service.confirmOpenClawOverallForAeo(
+      'WI-TEST', confirmationRequest(await registrar.getByWorkItemId()), ACTOR,
+    );
     basePort.sourceResultId = 'BASE-RESULT-CHANGED';
     basePort.artifactBytes = bytes({ source: 'BASE-CHANGED' });
     const refreshedBase = await service.persistBaseRuleCandidate(
@@ -506,7 +598,9 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
     );
 
     await expect(
-      service.confirmOpenClawOverallForAeo('WI-TEST', ACTOR),
+      service.confirmOpenClawOverallForAeo(
+        'WI-TEST', confirmationRequest(staleWorkItem), ACTOR,
+      ),
     ).rejects.toThrow('OPENCLAW_OVERALL_NOT_READY_FOR_AEO_CONFIRMATION');
     expect(repository.reserveAssessmentAction).not.toHaveBeenCalled();
   });
@@ -798,4 +892,16 @@ function withoutRevisionForTest(
 ): Omit<CanonicalWorkItemProjection, 'revision'> {
   const { revision: _revision, ...projection } = value;
   return projection;
+}
+
+function confirmationRequest(
+  displayed: CanonicalWorkItemProjection,
+): ConfirmCanonicalOverallForAeoRequest {
+  const overall = displayed.integratedAssessment?.overallSynthesis;
+  if (!overall) throw new Error('TEST_OVERALL_REQUIRED');
+  return {
+    expectedRevision: displayed.revision,
+    expectedOverallRevision: overall.revision,
+    expectedOverallArtifactRef: overall.artifact.ref,
+  };
 }
