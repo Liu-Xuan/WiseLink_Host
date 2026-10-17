@@ -102,6 +102,6 @@ import { IdentityRepository } from './identity.repository';
     SessionStore,
     SessionResolver,
   ],
-  exports: [SessionResolver],
+  exports: [SessionResolver, OAUTH_CONFIG],
 })
 export class IdentityModule {}

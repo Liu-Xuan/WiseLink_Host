@@ -19,11 +19,22 @@ import type {
   TdmsStoredSelection,
 } from './tdms-receiver.types';
 import { checkedReceiverSelection } from './tdms-receiver-selection.validation';
+import { CANONICAL_MIAODA_APP_ID } from '../canonical-host/canonical-host.constants';
+import {
+  TDMS_BOUND_SCHEMA,
+  TDMS_BOUND_SQL_ROLES,
+  TdmsReceiverIdentityProfile,
+} from './tdms-receiver-identity-profile';
 
 @Injectable()
 export class TdmsReceiverRepository {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly database: PostgresJsDatabase,
+    @Inject(TdmsReceiverIdentityProfile)
+    private readonly identityProfile: Pick<
+      TdmsReceiverIdentityProfile,
+      'current'
+    >,
   ) {}
 
   transaction<T>(
@@ -113,9 +124,9 @@ export class TdmsReceiverRepository {
     requestId: string,
     bindingId: string,
   ): Promise<TdmsStoredSelection | null> {
-    await assertTdmsReceiverScope(scope);
     const database = tdmsReceiverDatabase() ?? this.database;
     await this.assertActor(database, actor);
+    await assertTdmsReceiverScope(scope);
     const rows = await database.execute<{
       data: TdmsStoredSelection;
       consistent: boolean;
@@ -189,11 +200,43 @@ export class TdmsReceiverRepository {
     actor: TdmsPublicActor,
   ): Promise<void> {
     assertPublicActor(actor);
-    const [observed] = await database.execute<{ actorId: string | null }>(
-      sql`SELECT current_setting('app.user_id',true) AS "actorId"`,
-    );
+    const profile = this.identityProfile.current();
+    // The SDK does not forward Gateway tenant/app into SQL. Reject the supplied
+    // verified actor against the controlled deployment profile before any SQL.
+    if (
+      actor.tenantId !== profile.tenantId ||
+      actor.applicationScopeId !== CANONICAL_MIAODA_APP_ID
+    )
+      throw tdmsError('TDMS_RECEIVER_IDENTITY_PROFILE_MISMATCH', 403);
+    const [observed] = await database.execute<{
+      actorId: string | null;
+      schemaName: string | null;
+      roleName: string;
+    }>(sql`SELECT current_setting('app.user_id',true) AS "actorId",
+      current_schema() AS "schemaName", current_user AS "roleName"`);
     if (observed?.actorId !== actor.canonicalSubject.id)
       throw tdmsError('TDMS_RECEIVER_SQL_ACTOR_MISMATCH', 401);
+    if (
+      observed.schemaName !== TDMS_BOUND_SCHEMA ||
+      !TDMS_BOUND_SQL_ROLES.some((role) => role === observed.roleName)
+    )
+      throw tdmsError('TDMS_RECEIVER_SQL_CONTEXT_MISMATCH', 503);
+    try {
+      // The same invoker predicate used by RLS compares these parameters with
+      // its compiled profile and freshly visible ACTIVE mapping. No grant or
+      // session is inferred from a mapping, and no identity GUC is introduced.
+      const [bound] = await database.execute<{ bound: boolean }>(
+        sql`SELECT workspace_aadkpkjef3slu.tdms_act_bound_identity(
+          ${profile.tenantId}::text, ${profile.clientId}::text) AS bound`,
+      );
+      if (bound?.bound !== true)
+        throw tdmsError('TDMS_RECEIVER_BOUND_IDENTITY_MISMATCH', 403);
+    } catch (error) {
+      const code = databaseErrorCode(error);
+      if (code === '42883' || code === '42P01')
+        throw tdmsError('TDMS_RECEIVER_BOUND_IDENTITY_STORAGE_UNCONFIGURED', 503);
+      throw error;
+    }
   }
 }
 

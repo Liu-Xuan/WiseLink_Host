@@ -21,6 +21,14 @@ Host 内部补充 receiver binding、selection preflight、selection stage/read 
 
 Selection 读取返回 `TDMS_UPLOAD_SELECTION_UNAVAILABLE` / 404，表示当前授权视图不可用，既可能不存在，也可能受成员 RLS 隐藏；该响应不证明对象物理不存在。Native 只有在精确包 preflight 通过且原来源、身份与会话绑定不变时才能进入新取得路径；浏览器 STAGE 再次校验。其他 404、明确拒绝和未知写入结果不触发自动重发。
 
+## 接收身份部署配置
+
+`TdmsReceiverIdentityProfile` 复用现有 `OAUTH_CONFIG` 的 client，只增加受控配置项 `WISELINK_TDMS_BOUND_TENANT_ID`。这个值须由真实当前身份与部署归属核对后配置；不从来源包、调用者、身份映射或其他业务的租户变量自动填入，也不授予来源权限。未配置时应用仍正常启动，只有实际接收调用返回未配置错误。
+
+接收仓库在 authority、selection 和关联保存前比较当前 actor 的 tenant/app，再核 SQL 中的 actor、准确 workspace 与两个已核 runtime suffix 角色，并调用 `workspace_aadkpkjef3slu.tdms_act_bound_identity(tenant, client)`。配套 SQL 必须在同一受控部署中提供这个 invoker 函数、固定八表 tenant 并接入原 RLS；函数核对固定 tenant/client 与当前 ACTIVE 映射。映射的一致性不等于来源批准，SDK 未向 SQL 传入的任意请求 tenant/app 也不会因此恢复。原 session、来源动作／成员、事务和撤销链继续适用。
+
+当前公开 SQL 草案仍不能直接作为正式启用批次。准确 profile、九表 SQL、代码及来源登记须按实际环境一起审阅；本地测试和配置项存在均不证明已有真实 binding 或接收回执。
+
 ## Native 工厂
 
 ```text

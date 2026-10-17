@@ -98,21 +98,23 @@ test(
         'tdms_fixture_app_' + randomUUID().replaceAll('-', '').slice(0, 16);
       const serviceLogin =
         'tdms_fixture_app_' + randomUUID().replaceAll('-', '').slice(0, 16);
-      await admin.unsafe(`CREATE ROLE authenticated NOLOGIN NOSUPERUSER NOBYPASSRLS;
-        CREATE ROLE service_role NOLOGIN NOSUPERUSER NOBYPASSRLS;
+      await admin.unsafe(`CREATE ROLE authenticated_workspace_aadkpkjef3slu NOLOGIN NOSUPERUSER NOBYPASSRLS;
+        CREATE ROLE service_role_workspace_aadkpkjef3slu NOLOGIN NOSUPERUSER NOBYPASSRLS;
         CREATE ROLE ${authLogin} LOGIN NOSUPERUSER NOBYPASSRLS;
         CREATE ROLE ${serviceLogin} LOGIN NOSUPERUSER NOBYPASSRLS;
-        GRANT authenticated TO ${authLogin}; GRANT service_role TO ${serviceLogin};
-        CREATE SCHEMA receiver_fixture; SET search_path TO receiver_fixture,pg_catalog;`);
+        GRANT authenticated_workspace_aadkpkjef3slu TO ${authLogin}; GRANT service_role_workspace_aadkpkjef3slu TO ${serviceLogin};
+        CREATE SCHEMA workspace_aadkpkjef3slu; SET search_path TO workspace_aadkpkjef3slu,pg_catalog;`);
       for (const file of [
         'tdms-source-rebuild-v1.draft.sql',
         'tdms-receiver-runtime.draft.sql',
       ])
         await admin.unsafe(
-          await readFile(
+          (await readFile(
             new URL('../../server/database/' + file, import.meta.url),
             'utf8',
-          ),
+          ))
+            .replace(/\bauthenticated\b/gu, 'authenticated_workspace_aadkpkjef3slu')
+            .replace(/\bservice_role\b/gu, 'service_role_workspace_aadkpkjef3slu'),
         );
       // Existing identity tables, reduced to columns the real SessionStore/Repository actually consume.
       // Tokens/mappings are local synthetic fixtures, never a Source authority.
@@ -122,14 +124,20 @@ test(
         CREATE TABLE identity_session(id uuid PRIMARY KEY,session_token_hash text,subject_mapping_id uuid,
         feishu_user_id text,revision integer,expires_at timestamptz(3),revoked_at timestamptz(3),
         last_seen_at timestamptz(3),_updated_at timestamptz(3));
-        GRANT USAGE ON SCHEMA receiver_fixture TO authenticated,service_role;
-        GRANT SELECT ON tdms_source_receiver,tdms_source_receiver_grant TO authenticated,service_role;
-        GRANT SELECT,INSERT ON tdms_upload_selection_association TO authenticated,service_role;
-        GRANT SELECT,UPDATE ON identity_session TO authenticated,service_role;
-        GRANT SELECT ON identity_subject_mapping TO authenticated,service_role;`);
+        GRANT USAGE ON SCHEMA workspace_aadkpkjef3slu TO authenticated_workspace_aadkpkjef3slu,service_role_workspace_aadkpkjef3slu;
+        GRANT SELECT ON tdms_source_receiver,tdms_source_receiver_grant TO authenticated_workspace_aadkpkjef3slu,service_role_workspace_aadkpkjef3slu;
+        GRANT SELECT,INSERT ON tdms_upload_selection_association TO authenticated_workspace_aadkpkjef3slu,service_role_workspace_aadkpkjef3slu;
+        GRANT SELECT,UPDATE ON identity_session TO authenticated_workspace_aadkpkjef3slu,service_role_workspace_aadkpkjef3slu;
+        GRANT SELECT ON identity_subject_mapping TO authenticated_workspace_aadkpkjef3slu,service_role_workspace_aadkpkjef3slu;`);
+      // Same bound-identity function as the private SQL profile renderer, with
+      // explicit synthetic T/C. The reduced mapping here has no full identity
+      // policies; this legacy test still does not prove production identity RLS.
+      await admin.unsafe(await readFile(
+        new URL('../pg/tdms-bound-identity.fixture.sql', import.meta.url), 'utf8',
+      ));
       // Grant UPDATE deliberately to prove that no Source UPDATE RLS policy means zero mutations.
       await admin.unsafe(
-        'GRANT UPDATE ON tdms_source_receiver,tdms_source_receiver_grant TO authenticated,service_role',
+        'GRANT UPDATE ON tdms_source_receiver,tdms_source_receiver_grant TO authenticated_workspace_aadkpkjef3slu,service_role_workspace_aadkpkjef3slu',
       );
       for (const table of [
         'tdms_capture',
@@ -142,8 +150,8 @@ test(
         // Base draft name is checked below; no production policy is installed here.
         const [exists] = await admin`SELECT to_regclass(${table}) AS name`;
         if (!exists.name) continue;
-        await admin.unsafe(`GRANT SELECT,INSERT,UPDATE ON ${table} TO authenticated,service_role;
-          CREATE POLICY local_native_scope ON ${table} TO authenticated,service_role
+        await admin.unsafe(`GRANT SELECT,INSERT,UPDATE ON ${table} TO authenticated_workspace_aadkpkjef3slu,service_role_workspace_aadkpkjef3slu;
+          CREATE POLICY local_native_scope ON ${table} TO authenticated_workspace_aadkpkjef3slu,service_role_workspace_aadkpkjef3slu
           USING (tenant_id='tenant-a' AND source_key='TDMS' AND source_instance_id='synthetic-instance'
             AND scope_id='synthetic-scope' AND current_setting('app.user_id',true)='123')
           WITH CHECK (tenant_id='tenant-a' AND source_key='TDMS' AND source_instance_id='synthetic-instance'
@@ -175,8 +183,11 @@ test(
         now()+interval '1 hour',NULL,now(),now())`;
       const authClient = await owned.connect(authLogin),
         serviceClient = await owned.connect(serviceLogin);
+      // Fixture logins hold only the matching suffix role; no plain role exists.
+      await authClient.unsafe('SET ROLE authenticated_workspace_aadkpkjef3slu');
+      await serviceClient.unsafe('SET ROLE service_role_workspace_aadkpkjef3slu');
       for (const c of [authClient, serviceClient]) {
-        await c.unsafe('SET search_path TO receiver_fixture,pg_catalog');
+        await c.unsafe('SET search_path TO workspace_aadkpkjef3slu,pg_catalog');
         await c`SELECT set_config('app.user_id',${a.canonicalSubject.id},false)`;
         const [id] =
           await c`SELECT current_user AS role,r.rolsuper,r.rolbypassrls FROM pg_roles r WHERE r.rolname=current_user`;
@@ -220,7 +231,9 @@ test(
         },
         sqlMiddleware,
       );
-      const receivers = new TdmsReceiverRepository(db),
+      const receivers = new TdmsReceiverRepository(db, {
+          current: () => ({ tenantId: a.tenantId, clientId: 'synthetic-client' }),
+        }),
         authorization = new MiaodaTdmsSourceAuthorization(receivers);
       const artifacts = new MiaodaTdmsDailyArtifactStore(
         f.files,
@@ -289,11 +302,10 @@ test(
       await t.test(
         'unprovisioned actual authority storage is explicit503, with no login/package fallback',
         async () => {
+          // Keep the newly required bound schema/helper intact. Only hide the
+          // authority table to exercise the original real 42P01 -> typed503 path.
           await admin.unsafe(
-            'CREATE SCHEMA receiver_unconfigured; GRANT USAGE ON SCHEMA receiver_unconfigured TO authenticated',
-          );
-          await authClient.unsafe(
-            'SET search_path TO receiver_unconfigured,pg_catalog',
+            'ALTER TABLE tdms_source_receiver RENAME TO tdms_source_receiver_unconfigured',
           );
           try {
             await assert.rejects(authorization.catalogue(a, {}), {
@@ -301,8 +313,8 @@ test(
               statusCode: 503,
             });
           } finally {
-            await authClient.unsafe(
-              'SET search_path TO receiver_fixture,pg_catalog',
+            await admin.unsafe(
+              'ALTER TABLE tdms_source_receiver_unconfigured RENAME TO tdms_source_receiver',
             );
           }
           assert.equal(await count(), 0);
@@ -1456,7 +1468,7 @@ test(
         },
       );
       const [policies] =
-        await admin`SELECT count(*)::int AS n FROM pg_policies WHERE schemaname='receiver_fixture'
+        await admin`SELECT count(*)::int AS n FROM pg_policies WHERE schemaname='workspace_aadkpkjef3slu'
         AND tablename IN ('tdms_source_receiver','tdms_source_receiver_grant') AND cmd IN ('UPDATE','INSERT','DELETE','ALL')`;
       assert.equal(policies.n, 0);
       t.diagnostic(

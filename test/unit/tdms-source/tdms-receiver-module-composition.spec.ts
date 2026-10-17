@@ -6,6 +6,7 @@ import {
 } from '@lark-apaas/fullstack-nestjs-core';
 import { IdentityModule } from '../../../server/modules/identity/identity.module';
 import { SessionResolver } from '../../../server/modules/identity/session-resolver.service';
+import { OAUTH_CONFIG } from '../../../server/modules/identity/oauth-config.port';
 import { DocumentManagementRuntimeModule } from '../../../server/modules/document-management-runtime/document-management-runtime.module';
 import { MiaodaHostedDocumentCatalog } from '../../../server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog';
 import { TdmsSourceModule } from '../../../server/modules/tdms-source/tdms-source.module';
@@ -40,8 +41,20 @@ import type { Request } from 'express';
 })
 class FixturePlatformModule {}
 @Module({
-  providers: [{ provide: SessionResolver, useValue: {} }],
-  exports: [SessionResolver],
+  providers: [
+    { provide: SessionResolver, useValue: {} },
+    // Explicit synthetic port for the real receiver profile provider; no default
+    // production profile is introduced by this module-composition fixture.
+    {
+      provide: OAUTH_CONFIG,
+      useValue: {
+        clientId: 'synthetic-client',
+        configured: false,
+        applicationScopeId: 'app_17bzc551rsg',
+      },
+    },
+  ],
+  exports: [SessionResolver, OAUTH_CONFIG],
 })
 class FixtureIdentityModule {}
 @Module({

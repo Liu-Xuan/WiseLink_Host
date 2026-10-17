@@ -6,10 +6,12 @@ import { MiaodaTdmsDailyArtifactStore } from './miaoda-tdms-daily-artifact-store
 import { TdmsReceiverRepository } from './tdms-receiver.repository';
 import { TdmsReceiverService } from './tdms-receiver.service';
 import { TdmsReceiverController } from './tdms-receiver.controller';
+import { TdmsReceiverIdentityProfile } from './tdms-receiver-identity-profile';
 
 @Module({
   imports: [IdentityModule, DocumentManagementRuntimeModule],
   providers: [
+    TdmsReceiverIdentityProfile,
     TdmsReceiverRepository,
     MiaodaTdmsSourceAuthorization,
     MiaodaTdmsDailyArtifactStore,
