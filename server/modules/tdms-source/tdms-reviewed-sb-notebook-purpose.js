@@ -1,8 +1,9 @@
-// Pure SB consumer model selectively vendored from Source 0.2.76 / handoff @9.
+// Pure consumer selected from complete Source0.2.83 / handoff @13.
 import { tdmsError } from './tdms-source.types';
+import { SB_NOTEBOOK_NATIVE_TABLE } from './tdms-reviewed-sb-notebook-native-table';
 export const REVIEWED_SB_NOTEBOOK_MODEL = Object.freeze({
-  schemaVersion: 'wiselink.tdms-sb-notebook-mixed.v1',
-  modelRevision: 'tdms-reviewed-sb-notebook-mixed@1',
+  schemaVersion: 'wiselink.tdms-sb-notebook-mixed.v2',
+  modelRevision: 'tdms-reviewed-sb-notebook-mixed@2',
   reasonCode: 'TDMS_COMPLETE_SB_NOTEBOOK_MIXED',
   businessGridId: 'netmarkets.notebookfolder.referenceNotebook',
   panels: [
@@ -149,7 +150,7 @@ export const REVIEWED_SB_NOTEBOOK_MODEL = Object.freeze({
   ],
 });
 // These exact notebook components preserve observed references only. No row body or historical enumeration is certified.
-export function createSbNotebookValidator(model) {
+export function createSbNotebookValidator(model, nativeTools = null) {
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const exact = (v, keys) =>
     v &&
@@ -157,8 +158,11 @@ export function createSbNotebookValidator(model) {
     !Array.isArray(v) &&
     Object.keys(v).length === keys.length &&
     keys.every((k) => Object.hasOwn(v, k));
-  const fail = () => {
-    throw tdmsError('TDMS_COMPLETE_SB_NOTEBOOK_PURPOSE_INVALID');
+  const fail = (stage) => {
+    throw Object.assign(
+      tdmsError('TDMS_COMPLETE_SB_NOTEBOOK_PURPOSE_INVALID'),
+      { stage },
+    );
   };
   const ownerMatches = (scopeId, owner) =>
     ['SB', 'SL', 'SIL', 'SB-IN', 'MT'].includes(scopeId) &&
@@ -182,16 +186,23 @@ export function createSbNotebookValidator(model) {
   }
   function timelineReady(embedded, owner, initial = false) {
     if (
-      !exact(embedded, ['id', 'rawSrc', 'readyState', 'bodyState']) ||
+      !exact(embedded, [
+        'id',
+        'rawSrc',
+        'documentUrl',
+        'readyState',
+        'bodyState',
+      ]) ||
       embedded.id !== 'timelineIFrame' ||
       embedded.bodyState !== 'NOT_READ' ||
       !(
         initial ? ['loading', 'interactive', 'complete'] : ['complete']
       ).includes(embedded.readyState)
     )
-      fail();
+      fail(initial ? 'INITIAL_TIMELINE' : 'TIMELINE');
     try {
-      if (typeof embedded.rawSrc !== 'string') fail();
+      if (typeof embedded.rawSrc !== 'string')
+        fail(initial ? 'INITIAL_TIMELINE' : 'TIMELINE');
       const u = new URL(embedded.rawSrc);
       if (
         u.origin !== 'http://tdms.airchina.com' ||
@@ -214,10 +225,23 @@ export function createSbNotebookValidator(model) {
               u.searchParams.get(k) !== (k === 'u8' ? '1' : 'thirdLevelNav')),
         )
       )
-        fail();
+        fail(initial ? 'INITIAL_TIMELINE' : 'TIMELINE');
     } catch {
-      fail();
+      fail(initial ? 'INITIAL_TIMELINE' : 'TIMELINE');
     }
+    // A native src can already be set while the iframe still owns its initial
+    // completed about:blank document. Only that observed first document may wait.
+    if (
+      initial &&
+      embedded.documentUrl === 'about:blank' &&
+      embedded.readyState === 'complete'
+    )
+      return false;
+    if (
+      typeof embedded.documentUrl !== 'string' ||
+      embedded.documentUrl !== embedded.rawSrc
+    )
+      fail(initial ? 'INITIAL_TIMELINE' : 'TIMELINE');
     return embedded.readyState === 'complete';
   }
   function validate(e, { scopeId, owner, tab, read }) {
@@ -253,10 +277,10 @@ export function createSbNotebookValidator(model) {
       e.purpose !== 'MANAGEMENT_REFERENCES_AND_REQUIRED_NOTEBOOK_LINKS' ||
       e.bodyState !== 'NOT_READ' ||
       e.enumerationState !== 'NOT_ENUMERATED' ||
-      e.settledReads !== 2 ||
-      !same(e.before, e.after)
+      e.settledReads !== 2
     )
-      fail();
+      fail('PURPOSE_BINDING');
+    if (!same(e.before, e.after)) fail('FRAME_CHANGED');
     const f = e.before;
     if (
       !exact(f, [
@@ -287,7 +311,7 @@ export function createSbNotebookValidator(model) {
       !Array.isArray(f.rawReferences) ||
       f.rawReferences.length > 10000
     )
-      fail();
+      fail('FRAME_SHAPE');
     for (const [i, g] of f.grids.entries()) {
       const m = p.grids[i];
       if (
@@ -299,7 +323,7 @@ export function createSbNotebookValidator(model) {
         g.renderedRowCount < 0 ||
         g.renderedRowCount > 10000
       )
-        fail();
+        fail('COLUMNS');
     }
     for (const r of f.rawReferences)
       if (
@@ -309,12 +333,12 @@ export function createSbNotebookValidator(model) {
         typeof r.rawHref !== 'string' ||
         r.rawHref.length > 20000
       )
-        fail();
+        fail('REFERENCES');
     if (
       !Array.isArray(f.embeddedReferences) ||
       f.embeddedReferences.length !== 1
     )
-      fail();
+      fail('TIMELINE');
     timelineReady(f.embeddedReferences[0], owner);
     const business = read.relationTables.filter((t) => t.tabId === tab.tabId);
     if (
@@ -324,18 +348,24 @@ export function createSbNotebookValidator(model) {
       !same(business[0].ownerSourceVersion, owner.sourceVersion) ||
       read.fields.some((f) => f.tabId === tab.tabId)
     )
-      fail();
+      fail('PURPOSE_BINDING');
+    const native = nativeTools?.validateTable(business[0], {
+      scopeId,
+      owner,
+      read,
+    });
     const complete =
-      business[0].enumerationState === 'VALUE' &&
-      business[0].rows.every((row) =>
-        row.cells.every((c) => ['VALUE', 'BLANK'].includes(c.state)),
-      );
+      native?.complete === true ||
+      (business[0].enumerationState === 'VALUE' &&
+        business[0].rows.every((row) =>
+          row.cells.every((c) => ['VALUE', 'BLANK'].includes(c.state)),
+        ));
     if (
       tab.required !== true ||
       tab.state !== (complete ? 'VALUE' : 'NOT_READ') ||
       tab.reasonCode !== (complete ? null : model.reasonCode)
     )
-      fail();
+      fail('PURPOSE_BINDING');
     return {
       complete,
       reasonCode: complete ? null : model.reasonCode,
@@ -345,6 +375,9 @@ export function createSbNotebookValidator(model) {
   }
   return { panel, validate, timelineReady };
 }
-const validator = createSbNotebookValidator(REVIEWED_SB_NOTEBOOK_MODEL);
+const validator = createSbNotebookValidator(
+  REVIEWED_SB_NOTEBOOK_MODEL,
+  SB_NOTEBOOK_NATIVE_TABLE,
+);
 export const reviewedSbNotebookPanel = validator.panel;
 export const validateReviewedSbNotebookPurpose = validator.validate;

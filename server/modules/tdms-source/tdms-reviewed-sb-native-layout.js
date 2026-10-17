@@ -1,4 +1,4 @@
-// Pure SB consumer model selectively vendored from Source 0.2.73 / handoff @8.
+// Pure consumer selected from complete Source0.2.83 / handoff @13.
 import { tdmsError } from './tdms-source.types';
 export const REVIEWED_SB_NATIVE_LAYOUT_MODEL = Object.freeze({
   schemaVersion: 'wiselink.tdms-sb-native-layout.v1',
@@ -1081,6 +1081,29 @@ export function createSbNativeLayoutValidator(model) {
     owner.nativeTypeEvidence?.state === 'VALUE' &&
     owner.nativeTypeEvidence.rawValue === owner.nativeTypeId &&
     owner.rawHeaderType === 'SB文档';
+  // Only this observed column of the SB relation tree has three native captions.
+  // Preserve raw frames; this copy is used exclusively for model admission.
+  function canonicalGrids(grids, tabId) {
+    if (
+      tabId !== 'infoPageinfoPanelID__infoPage_myTab_object_sbRelatedTab' ||
+      !Array.isArray(grids)
+    )
+      return grids;
+    return grids.map((g) =>
+      g?.gridId !== 'mytreetable' || !Array.isArray(g.columns)
+        ? g
+        : {
+            ...g,
+            columns: g.columns.map((c, i) =>
+              i === 5 &&
+              c?.nativeColumnToken === 'IBA|BizNo' &&
+              ['SB评估单编号', 'SB/SL文档编号'].includes(c.actualLabel)
+                ? { ...c, actualLabel: 'SB处理单编号' }
+                : c,
+            ),
+          },
+    );
+  }
   function validate({ scopeId, owner, read }) {
     const e = read.sbNativeLayoutEvidence;
     if (e === undefined) return false;
@@ -1133,7 +1156,7 @@ export function createSbNativeLayoutValidator(model) {
         f.panelId !== p.panelLocator.slice(1) ||
         f.visible !== true ||
         !same(f.componentIds, p.componentIds) ||
-        !same(f.grids, p.grids) ||
+        !same(canonicalGrids(f.grids, p.tabId), p.grids) ||
         !same(f.sections, p.sections) ||
         !same(f.embeddedIds, p.embeddedIds) ||
         f.loading !== false ||
@@ -1141,10 +1164,26 @@ export function createSbNativeLayoutValidator(model) {
         f.unknownControlCount !== 0
       )
         fail();
+      if (
+        p.tabId === 'infoPageinfoPanelID__infoPage_myTab_object_sbRelatedTab'
+      ) {
+        const table = read.relationTables?.find(
+          (t) => t.gridId === 'mytreetable',
+        );
+        if (
+          table &&
+          (!same(table.nativeTreeEvidence?.columns, f.grids[0].columns) ||
+            !same(
+              table.rawHeaders,
+              f.grids[0].columns.map((c) => c.actualLabel),
+            ))
+        )
+          fail();
+      }
     }
     return true;
   }
-  return { model, ownerKnown, validate };
+  return { model, ownerKnown, canonicalGrids, validate };
 }
 export const SB_NATIVE_LAYOUT = createSbNativeLayoutValidator(
   REVIEWED_SB_NATIVE_LAYOUT_MODEL,

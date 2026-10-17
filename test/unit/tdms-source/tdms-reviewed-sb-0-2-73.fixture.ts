@@ -781,6 +781,9 @@ export function syntheticSbPanels(state = 'Estimated') {
           frame.embeddedReferences = [
             {
               id: 'timelineIFrame',
+              documentUrl:
+                'http://tdms.airchina.com/Windchill/app/netmarkets/jsp/history/timelineHistory-iframe.jsp?oid=' +
+                read.owner.sourceRecordId,
               readyState: 'complete',
               bodyState: 'NOT_READ',
               rawSrc:
@@ -852,6 +855,9 @@ export function syntheticSbPanels(state = 'Estimated') {
     frame.embeddedReferences = [
       {
         id: 'timelineIFrame',
+        documentUrl:
+          'http://tdms.airchina.com/Windchill/app/netmarkets/jsp/history/timelineHistory-iframe.jsp?oid=' +
+          read.owner.sourceRecordId,
         readyState: 'complete',
         bodyState: 'NOT_READ',
         rawSrc:

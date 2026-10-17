@@ -118,10 +118,10 @@ describe('Source 0.2.76 @9 timeline identity through Host consumers (synthetic P
     (tabId) => {
       const env = syntheticTimelineCapture(SB_TIMELINE_PATHS[0]);
       setTimelinePath(env, SB_TIMELINE_PATHS[1], 1, tabId);
-      sealSb(env);
-      expect(() => prepareTdmsDailySourceImport(env)).toThrow(
-        'TDMS_COMPLETE_OWN_OBSERVATION_CHANGED',
-      );
+      expect(() => {
+        sealSb(env);
+        return prepareTdmsDailySourceImport(env);
+      }).toThrow('TDMS_COMPLETE_OWN_OBSERVATION_CHANGED');
     },
   );
 
@@ -192,9 +192,12 @@ describe('Source 0.2.76 @9 timeline identity through Host consumers (synthetic P
           for (const frame of [
             tab.purposeEvidence.before,
             tab.purposeEvidence.after,
-          ])
+          ]) {
             frame.embeddedReferences[0]!.rawSrc +=
               '&u8=1&AjaxEnabled=thirdLevelNav';
+            frame.embeddedReferences[0]!.documentUrl =
+              frame.embeddedReferences[0]!.rawSrc;
+          }
         }
         sealSb(env);
         const raw = JSON.stringify(env);

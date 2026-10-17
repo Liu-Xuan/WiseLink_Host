@@ -1,3 +1,5 @@
+import { SB_NOTEBOOK_NATIVE_TABLE as sbNotebookNative } from './tdms-reviewed-sb-notebook-native-table';
+import { nativeOriginalFormat } from './tdms-native-original-formats';
 import {
   reviewedSbHistoryPanel,
   validateReviewedSbHistoryPurpose,
@@ -272,60 +274,95 @@ function normalizeCompleteCaptureLocators(value, key = '') {
 }
 // Only content identity merges these validated native routes. Raw evidence and
 // the same-capture double-read comparison keep their original URL strings.
-function completeTimelineIdentityRecord(record) {
-  const proof = record.rawFields?.completeOwnedSource;
-  if (!proof) return record;
+function assertCompleteIdentityReadShape(proof) {
   if (!Array.isArray(proof.reads)) fail('TDMS_COMPLETE_OWN_FIELDS_INVALID');
-  const reads = proof.reads.map((read) => {
-    // This projection is called before full observation validation. Preserve the
-    // existing typed malformed-SB boundary before map or a purpose validator.
+  for (const read of proof.reads) {
     if (
       !read ||
       typeof read !== 'object' ||
       Array.isArray(read) ||
       !Array.isArray(read.tabs) ||
-      read.tabs.some(
-        (tab) => !tab || typeof tab !== 'object' || Array.isArray(tab),
+      !Array.isArray(read.relationTables) ||
+      [...read.tabs, ...read.relationTables].some(
+        (value) => !value || typeof value !== 'object' || Array.isArray(value),
       )
     )
       fail('TDMS_COMPLETE_OWN_FIELDS_INVALID');
     assertCompleteSbReadShape(read);
-    return {
-      ...read,
-      tabs: read.tabs.map((tab) => {
-        const context = {
-          scopeId: proof.requestedCriteria?.scopeId,
-          owner: read.owner,
-          tab,
-          read,
-        };
-        const validate = reviewedSbHistoryPanel(context)
-          ? validateReviewedSbHistoryPurpose
-          : reviewedSbNotebookPanel(context)
-            ? validateReviewedSbNotebookPurpose
-            : null;
-        if (!validate) return tab;
-        validate(tab.purposeEvidence, context);
-        const frame = (value) => ({
-          ...value,
-          embeddedReferences: value.embeddedReferences.map((embedded) => {
-            const url = new URL(embedded.rawSrc);
-            url.pathname =
-              '/Windchill/netmarkets/jsp/history/timelineHistory-iframe.jsp';
-            return { ...embedded, rawSrc: url.href };
-          }),
-        });
-        return {
-          ...tab,
-          purposeEvidence: {
-            ...tab.purposeEvidence,
-            before: frame(tab.purposeEvidence.before),
-            after: frame(tab.purposeEvidence.after),
-          },
-        };
-      }),
-    };
-  });
+  }
+}
+function completeTimelineIdentityRecord(record) {
+  const proof = record.rawFields?.completeOwnedSource;
+  if (!proof) return record;
+  assertCompleteIdentityReadShape(proof);
+  if (proof.requestedCriteria?.collectionStage === 'OWNER_PRIMARY') {
+    validateCompleteOwnedObservation(
+      {
+        schemaVersion: proof.schemaVersion,
+        requestedCriteria: proof.requestedCriteria,
+        documentIdentity: proof.documentIdentity,
+        nativeReloadProvenance: proof.nativeReloadProvenance,
+        reads: proof.reads,
+      },
+      proof.requestedCriteria,
+    );
+    return record;
+  }
+  if (
+    proof.reads.some((read) =>
+      read.tabs.some((tab) =>
+        tab.purposeEvidence?.before?.embeddedReferences?.some(
+          (e) => e.id === 'timelineIFrame',
+        ),
+      ),
+    )
+  )
+    validateCompleteOwnedObservation(
+      {
+        schemaVersion: proof.schemaVersion,
+        requestedCriteria: proof.requestedCriteria,
+        documentIdentity: proof.documentIdentity,
+        nativeReloadProvenance: proof.nativeReloadProvenance,
+        reads: proof.reads,
+      },
+      proof.requestedCriteria,
+    );
+  const reads = proof.reads.map((read) => ({
+    ...read,
+    tabs: read.tabs.map((tab) => {
+      const context = {
+        scopeId: proof.requestedCriteria.scopeId,
+        owner: read.owner,
+        tab,
+        read,
+      };
+      const validate = reviewedSbHistoryPanel(context)
+        ? validateReviewedSbHistoryPurpose
+        : reviewedSbNotebookPanel(context)
+          ? validateReviewedSbNotebookPurpose
+          : null;
+      if (!validate) return tab;
+      validate(tab.purposeEvidence, context);
+      const frame = (value) => ({
+        ...value,
+        embeddedReferences: value.embeddedReferences.map((embedded) => {
+          const url = new URL(embedded.rawSrc);
+          url.pathname =
+            '/Windchill/netmarkets/jsp/history/timelineHistory-iframe.jsp';
+          const { documentUrl, ...identity } = embedded;
+          return { ...identity, rawSrc: url.href };
+        }),
+      });
+      return {
+        ...tab,
+        purposeEvidence: {
+          ...tab.purposeEvidence,
+          before: frame(tab.purposeEvidence.before),
+          after: frame(tab.purposeEvidence.after),
+        },
+      };
+    }),
+  }));
   return {
     ...record,
     rawFields: {
@@ -334,10 +371,67 @@ function completeTimelineIdentityRecord(record) {
     },
   };
 }
+function completeSbColumnIdentityRecord(record) {
+  const proof = record.rawFields?.completeOwnedSource;
+  if (proof) assertCompleteIdentityReadShape(proof);
+  if (
+    !proof?.reads?.some((read) =>
+      read.relationTables?.some(
+        (t) => t.nativeTreeEvidence && t.gridId === 'mytreetable',
+      ),
+    )
+  )
+    return record;
+  validateCompleteOwnedObservation(
+    {
+      schemaVersion: proof.schemaVersion,
+      requestedCriteria: proof.requestedCriteria,
+      documentIdentity: proof.documentIdentity,
+      nativeReloadProvenance: proof.nativeReloadProvenance,
+      reads: proof.reads,
+    },
+    proof.requestedCriteria,
+  );
+  const copy = JSON.parse(JSON.stringify(record));
+  for (const read of copy.rawFields.completeOwnedSource.reads) {
+    for (const table of read.relationTables)
+      if (
+        table.nativeTreeEvidence &&
+        table.gridId === 'mytreetable' &&
+        table.tabId ===
+          'infoPageinfoPanelID__infoPage_myTab_object_sbRelatedTab'
+      ) {
+        const label = 'SB处理单编号',
+          e = table.nativeTreeEvidence;
+        table.rawHeaders[5] = label;
+        e.columns[5].actualLabel = label;
+        for (const row of table.rows) row.cells[5].actualLabel = label;
+        for (const row of e.rowMetadata) row.columns[5].actualLabel = label;
+        for (const phase of e.windows) {
+          for (const row of phase.rows) row.cells[5].actualLabel = label;
+          for (const row of phase.rowMetadata)
+            row.columns[5].actualLabel = label;
+        }
+      }
+    for (const panel of read.sbNativeLayoutEvidence?.panels || [])
+      for (const key of ['before', 'after'])
+        panel[key].grids = SB_NATIVE_LAYOUT.canonicalGrids(
+          panel[key].grids,
+          panel.tabId,
+        );
+  }
+  return copy;
+}
 export function completeContentIdentityProjection(record) {
   const value = normalizeCompleteCaptureLocators(
       withoutTimes(
-        completeOwnedStableProjection(completeTimelineIdentityRecord(record)),
+        completeOwnedStableProjection(
+          sbNotebookNative.projectRecord(
+            completeTimelineIdentityRecord(
+              completeSbColumnIdentityRecord(record),
+            ),
+          ),
+        ),
       ),
     ),
     proof = value.rawFields?.completeOwnedSource;
@@ -877,7 +971,17 @@ function sourceProof(v, p, input) {
 export function validateCompleteOwnedInput(raw) {
   const v = plainData(raw),
     p = completeOwnProfile(v.scopeId);
-  assertKeys(v, COMPLETE_OWN_INPUT_KEYS);
+  assertKeys(
+    v,
+    [...COMPLETE_OWN_INPUT_KEYS, 'collectionStage'],
+    COMPLETE_OWN_INPUT_KEYS,
+  );
+  if (
+    Object.hasOwn(v, 'collectionStage') &&
+    (v.collectionStage !== 'OWNER_PRIMARY' ||
+      !['SB', 'SIL', 'SB-IN', 'SL', 'MT', 'AD'].includes(v.scopeId))
+  )
+    fail('TDMS_COMPLETE_OWN_STAGE_INVALID');
   if (
     v.profileRevision !== COMPLETE_OWN_PROFILE_REVISION ||
     v.purpose !== 'COVERAGE' ||
@@ -1155,7 +1259,136 @@ export function validateCompleteOwnedOwner(
     if (o.scopeEvidence[k] !== null) text(o.scopeEvidence[k], 200);
   validateReviewedAdHandlingOwner({ scopeId: input.scopeId, owner: o });
 }
+function assertOwnerPrimaryStageRoster(read) {
+  const invalid = () => fail('TDMS_COMPLETE_OWNER_PRIMARY_STAGE_INVALID');
+  const roster = read.rosterEvidence;
+  if (
+    !roster ||
+    typeof roster !== 'object' ||
+    Array.isArray(roster) ||
+    !['structuralRosters', 'unreadControls', 'unknownRequiredSurfaces'].every(
+      (key) => Array.isArray(roster[key]),
+    ) ||
+    roster.structuralRosters.some(
+      (value) =>
+        !value ||
+        typeof value !== 'object' ||
+        Array.isArray(value) ||
+        !value.before ||
+        typeof value.before !== 'object' ||
+        Array.isArray(value.before),
+    )
+  )
+    invalid();
+}
+function validateOwnerPrimaryStage(read, input) {
+  if (input.collectionStage !== 'OWNER_PRIMARY') return;
+  const invalid = () => fail('TDMS_COMPLETE_OWNER_PRIMARY_STAGE_INVALID');
+  const p = completeOwnProfile(input.scopeId),
+    details = read.tabs.filter((t) => t.panelLocator === p.detailPanel);
+  if (
+    details.length !== 1 ||
+    read.sbNativeLayoutEvidence !== undefined ||
+    read.relationTables.length ||
+    read.rosterEvidence.layoutEvidencePending !== true
+  )
+    invalid();
+  const detail = details[0],
+    rosters = read.rosterEvidence.structuralRosters;
+  const unresolved = read.fields.filter((f) =>
+    ['NOT_READ', 'NOT_LOADED', 'TRUNCATED', 'ACCESS_DENIED'].includes(
+      f.value?.state,
+    ),
+  );
+  const gated = unresolved[0],
+    stateOnly =
+      input.scopeId === 'AD' &&
+      read.owner.stateRaw === 'Estimating' &&
+      unresolved.length === 1 &&
+      gated.value.actualLabel === '' &&
+      gated.value.state === 'NOT_READ' &&
+      gated.value.rawValue === null &&
+      gated.value.observedTotalCodepoints === 0 &&
+      gated.links.length === 0 &&
+      gated.rawTextQualification?.reasonCode ===
+        'TDMS_ESTIMATING_STATE_ONLY_REQUIRED';
+  if (
+    detail.required !== true ||
+    detail.state !== (stateOnly ? 'NOT_READ' : 'VALUE') ||
+    detail.reasonCode !==
+      (stateOnly ? 'TDMS_COMPLETE_OWN_NATIVE_SURFACE_UNREAD' : null) ||
+    (!stateOnly && unresolved.length)
+  )
+    invalid();
+  if (
+    read.rosterEvidence.unreadControls.length ||
+    read.rosterEvidence.unknownRequiredSurfaces.some(
+      (locator) =>
+        !read.tabs.some(
+          (t) => t.tabId !== detail.tabId && t.panelLocator === locator,
+        ) && !(stateOnly && locator === gated.value.locator),
+    )
+  )
+    invalid();
+  if (
+    rosters.length !== 1 ||
+    rosters[0].tabId !== detail.tabId ||
+    rosters[0].before.loadingPresent ||
+    read.fields.some((f) => f.tabId !== detail.tabId) ||
+    read.sections.some((s) => s.tabId !== detail.tabId) ||
+    read.fields.length !== rosters[0].before.declaredFieldCount ||
+    read.sections.length !== rosters[0].before.declaredSectionCount
+  )
+    invalid();
+  for (const tab of read.tabs.filter((t) => t.tabId !== detail.tabId))
+    if (
+      tab.state !== 'NOT_READ' ||
+      tab.required !== true ||
+      tab.reasonCode !== 'TDMS_COMPLETE_OWNER_PRIMARY_STAGE_DEFERRED' ||
+      tab.purposeEvidence !== undefined ||
+      !read.rosterEvidence.unknownRequiredSurfaces.includes(tab.panelLocator)
+    )
+      invalid();
+  const primary = read.attachments.filter((a) => a.role === 'PRIMARY'),
+    m = primary[0]?.primaryMetadata;
+  if (
+    ['SIL', 'SB-IN'].includes(input.scopeId) &&
+    !['Approved', 'Estimated', '已批准'].includes(read.owner.stateRaw)
+  )
+    invalid();
+  if (
+    primary.length !== 1 ||
+    primary[0].state !== 'VALUE' ||
+    m?.metadataRevision !== COMPLETE_PRIMARY_METADATA_REVISION ||
+    m.metadataState !== 'VALUE' ||
+    !Array.isArray(m.metadataGapCodes) ||
+    m.metadataGapCodes.length ||
+    m.bytesCollected !== false ||
+    !nativeOriginalFormat(m.format) ||
+    read.owner.sourceVersion.confirmation !== 'SOURCE_DECLARED'
+  )
+    invalid();
+
+  // @13 AD stage has no relation rows to establish same-row business version.
+  // Preserve its exact empty-declaration fallback without importing AD queries.
+  if (input.scopeId === 'AD') {
+    const e = read.owner.businessVersionEvidence;
+    if (e.actualLabel === 'AD版本') fail('TDMS_AD_SAME_ROW_VERSION_INVALID');
+    if (
+      read.owner.businessVersion !== null ||
+      e.state !== 'NOT_READ' ||
+      e.actualLabel !== 'Business Version:' ||
+      e.rawValue !== null ||
+      e.observedTotalCodepoints !== 0 ||
+      e.locator !== p.detailPanel + ' [unreviewed-business-version-model]'
+    )
+      fail('TDMS_AD_BUSINESS_VERSION_UNREVIEWED');
+  }
+}
 function validateRoster(read, input) {
+  // This stage is prevalidated during snapshot projection, before raw roster helpers.
+  if (input.collectionStage === 'OWNER_PRIMARY')
+    assertOwnerPrimaryStageRoster(read);
   const p = completeOwnProfile(input.scopeId);
   for (const key of ['tabs', 'sections', 'fields', 'attachments'])
     array(read[key], key === 'fields' ? 1000 : 200);
@@ -1488,11 +1721,14 @@ function validateRoster(read, input) {
     rosterEvidence: read.rosterEvidence,
     contentTabIds: read.tabs.map((t) => t.tabId),
   });
-  validateReviewedCompleteTabPurposes({
-    scopeId: input.scopeId,
-    owner: read.owner,
-    read,
-  });
+  if (input.collectionStage === 'OWNER_PRIMARY')
+    validateOwnerPrimaryStage(read, input);
+  else
+    validateReviewedCompleteTabPurposes({
+      scopeId: input.scopeId,
+      owner: read.owner,
+      read,
+    });
   const modifiedMirrors = validateReviewedEfRequestModifiedMirrors({
     scopeId: input.scopeId,
     owner: read.owner,
@@ -1873,6 +2109,11 @@ export function validateCompleteRelationTable(t, input, owner, read = null) {
   const sbUsesStatus = sbTable
     ? sbStructure.validateTable(t, { scopeId: input.scopeId, owner, read })
     : null;
+  const nativeNotebook = sbNotebookNative.validateTable(t, {
+    scopeId: input.scopeId,
+    owner,
+    read,
+  });
   const efUsesStatus =
     sbUsesStatus ||
     (isReviewedEfStructureTable(t)
@@ -2136,6 +2377,7 @@ export function validateCompleteRelationTable(t, input, owner, read = null) {
   if (
     t.enumerationState === 'VALUE' &&
     !sbTreeStatus?.enumerationComplete &&
+    !nativeNotebook?.enumerationComplete &&
     (!contiguous ||
       !t.countEvidence.exact ||
       !t.terminal.nativeTerminal ||
@@ -2224,13 +2466,13 @@ export function validateCompleteRelationTable(t, input, owner, read = null) {
     relatedQuery?.complete !== true
   )
     fail(relatedQuery?.reasonCode || 'TDMS_EFREQUEST_RELATED_QUERY_INVALID');
-  if (!sbTable)
+  if (!sbTable && !nativeNotebook)
     validateReviewedEfRequestRelatedSurfaceEvidence(t.relatedSurfaceEvidence, {
       scopeId: input.scopeId,
       owner,
       table: t,
     });
-  if (!sbTreeStatus)
+  if (!sbTreeStatus && !nativeNotebook)
     validateReviewedAdHandlingTreeTable({
       scopeId: input.scopeId,
       owner,

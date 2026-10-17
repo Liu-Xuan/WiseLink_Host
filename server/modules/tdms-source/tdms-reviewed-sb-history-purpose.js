@@ -1,8 +1,8 @@
-// Pure SB consumer model selectively vendored from Source 0.2.76 / handoff @9.
+// Pure consumer selected from complete Source0.2.83 / handoff @13.
 import { tdmsError } from './tdms-source.types';
 export const REVIEWED_SB_HISTORY_MODEL = Object.freeze({
-  schemaVersion: 'wiselink.tdms-sb-history-reference.v1',
-  modelRevision: 'tdms-reviewed-sb-history-reference@1',
+  schemaVersion: 'wiselink.tdms-sb-history-reference.v2',
+  modelRevision: 'tdms-reviewed-sb-history-reference@2',
   reasonCode: 'TDMS_COMPLETE_SB_HISTORY_REFERENCE_ONLY',
   panels: [
     {
@@ -76,8 +76,10 @@ export function createSbHistoryValidator(model) {
     !Array.isArray(v) &&
     Object.keys(v).length === keys.length &&
     keys.every((k) => Object.hasOwn(v, k));
-  const fail = () => {
-    throw tdmsError('TDMS_COMPLETE_SB_HISTORY_PURPOSE_INVALID');
+  const fail = (stage) => {
+    throw Object.assign(tdmsError('TDMS_COMPLETE_SB_HISTORY_PURPOSE_INVALID'), {
+      stage,
+    });
   };
   const ownerMatches = (scopeId, owner) =>
     ['SB', 'SL', 'SIL', 'SB-IN', 'MT'].includes(scopeId) &&
@@ -101,16 +103,23 @@ export function createSbHistoryValidator(model) {
   }
   function timelineReady(embedded, owner, initial = false) {
     if (
-      !exact(embedded, ['id', 'rawSrc', 'readyState', 'bodyState']) ||
+      !exact(embedded, [
+        'id',
+        'rawSrc',
+        'documentUrl',
+        'readyState',
+        'bodyState',
+      ]) ||
       embedded.id !== 'timelineIFrame' ||
       embedded.bodyState !== 'NOT_READ' ||
       !(
         initial ? ['loading', 'interactive', 'complete'] : ['complete']
       ).includes(embedded.readyState)
     )
-      fail();
+      fail(initial ? 'INITIAL_TIMELINE' : 'TIMELINE');
     try {
-      if (typeof embedded.rawSrc !== 'string') fail();
+      if (typeof embedded.rawSrc !== 'string')
+        fail(initial ? 'INITIAL_TIMELINE' : 'TIMELINE');
       const u = new URL(embedded.rawSrc);
       if (
         u.origin !== 'http://tdms.airchina.com' ||
@@ -133,10 +142,23 @@ export function createSbHistoryValidator(model) {
               u.searchParams.get(k) !== (k === 'u8' ? '1' : 'thirdLevelNav')),
         )
       )
-        fail();
+        fail(initial ? 'INITIAL_TIMELINE' : 'TIMELINE');
     } catch {
-      fail();
+      fail(initial ? 'INITIAL_TIMELINE' : 'TIMELINE');
     }
+    // A native src can already be set while the iframe still owns its initial
+    // completed about:blank document. Only that observed first document may wait.
+    if (
+      initial &&
+      embedded.documentUrl === 'about:blank' &&
+      embedded.readyState === 'complete'
+    )
+      return false;
+    if (
+      typeof embedded.documentUrl !== 'string' ||
+      embedded.documentUrl !== embedded.rawSrc
+    )
+      fail(initial ? 'INITIAL_TIMELINE' : 'TIMELINE');
     return embedded.readyState === 'complete';
   }
   function validate(e, { scopeId, owner, tab, read }) {
@@ -172,10 +194,10 @@ export function createSbHistoryValidator(model) {
       e.purpose !== 'HISTORY_REFERENCE_ONLY' ||
       e.bodyState !== 'NOT_READ' ||
       e.enumerationState !== 'NOT_ENUMERATED' ||
-      e.settledReads !== 2 ||
-      !same(e.before, e.after)
+      e.settledReads !== 2
     )
-      fail();
+      fail('PURPOSE_BINDING');
+    if (!same(e.before, e.after)) fail('FRAME_CHANGED');
     const f = e.before;
     if (
       !exact(f, [
@@ -207,7 +229,7 @@ export function createSbHistoryValidator(model) {
       !Array.isArray(f.rawReferences) ||
       f.rawReferences.length > 10000
     )
-      fail();
+      fail('FRAME_SHAPE');
     for (const [i, g] of f.grids.entries()) {
       const m = p.grids[i];
       if (
@@ -219,7 +241,7 @@ export function createSbHistoryValidator(model) {
         g.renderedRowCount < 0 ||
         g.renderedRowCount > 10000
       )
-        fail();
+        fail('COLUMNS');
     }
     for (const r of f.rawReferences)
       if (
@@ -229,14 +251,14 @@ export function createSbHistoryValidator(model) {
         typeof r.rawHref !== 'string' ||
         r.rawHref.length > 20000
       )
-        fail();
+        fail('REFERENCES');
     if (
       !Array.isArray(f.historyMetadata) ||
       f.historyMetadata.length !== f.grids[0].renderedRowCount ||
       !Array.isArray(f.embeddedReferences) ||
       f.embeddedReferences.length !== 1
     )
-      fail();
+      fail('METADATA');
     for (const row of f.historyMetadata) {
       if (
         !exact(row, ['rowOrdinal', 'version', 'predecessor', 'revision']) ||
@@ -244,24 +266,25 @@ export function createSbHistoryValidator(model) {
         row.rowOrdinal < 0 ||
         row.rowOrdinal >= f.historyMetadata.length
       )
-        fail();
+        fail('METADATA');
       for (const key of ['version', 'predecessor', 'revision'])
-        if (typeof row[key] !== 'string' || row[key].length > 20000) fail();
+        if (typeof row[key] !== 'string' || row[key].length > 20000)
+          fail('METADATA');
     }
     if (
       new Set(f.historyMetadata.map((r) => r.rowOrdinal)).size !==
       f.historyMetadata.length
     )
-      fail();
+      fail('METADATA');
     timelineReady(f.embeddedReferences[0], owner);
     if (
       tab.required !== false ||
       tab.state !== 'NOT_READ' ||
       tab.reasonCode !== model.reasonCode
     )
-      fail();
+      fail('PURPOSE_BINDING');
     for (const key of ['fields', 'sections', 'relationTables'])
-      if (read[key]?.some((x) => x.tabId === p.tabId)) fail();
+      if (read[key]?.some((x) => x.tabId === p.tabId)) fail('PURPOSE_BINDING');
     return { complete: true, bodyRead: false, enumerationComplete: false };
   }
   return { panel, validate, timelineReady };

@@ -15,6 +15,7 @@ import { TdmsSourceService } from '../../../server/modules/tdms-source/tdms-sour
 import { HostDecisionTdmsSourceAuthorization } from '../../../server/modules/tdms-source/tdms-source.authorization';
 import { MemoryTdmsRepository, nativeScope } from './tdms-memory-double';
 import { actor } from './tdms-fixtures';
+import { hash } from '../../../server/modules/tdms-source/tdms-source.validation';
 import {
   syntheticSbDetails,
   syntheticSbPanels,
@@ -43,7 +44,13 @@ const editDetails = (
 const editPanels = (fn: (read: any) => void) => {
   const env = withSbStructureEvidence();
   for (const read of sbProof(env).reads) fn(read);
-  return sealSb(env);
+  // These are rejection-only inputs. Preserve the invalid raw proof so actual
+  // prepare, rather than the now-prevalidating snapshot helper, rejects it.
+  env.package.records[0].content.completeOwnedFields = sbCopy(
+    sbProof(env).reads[1].fields,
+  );
+  env.requestId = 'TDMSIMPORT-' + hash(env.package);
+  return env;
 };
 
 describe('Source 0.2.73 SB proofs through the existing Host consumer (synthetic)', () => {
@@ -477,10 +484,10 @@ describe('Source 0.2.73 SB proofs through the existing Host consumer (synthetic)
       tab.state = 'VALUE';
       tab.reasonCode = null;
     }
-    sealSb(env);
-    expect(() => validate(env)).toThrow(
-      'TDMS_REVIEWED_COMPLETE_TAB_PURPOSE_INVALID',
-    );
+    expect(() => {
+      sealSb(env);
+      return validate(env);
+    }).toThrow('TDMS_REVIEWED_COMPLETE_TAB_PURPOSE_INVALID');
   });
 
   it('binds a partial Structure-only observation to the actual Source origin', () => {

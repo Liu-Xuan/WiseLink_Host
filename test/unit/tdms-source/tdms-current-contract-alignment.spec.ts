@@ -314,7 +314,7 @@ describe('frozen TDMS 0.2.54 current Host wire alignment', () => {
       );
     },
   );
-  it('preserves 已批准 own assessment literals without adopting an opinion', () => {
+  it('rejects 已批准 own assessment opinion text outside exact Estimated admission', () => {
     const env = syntheticCompleteEnvelope('SB_ASSESSMENT_FORM'),
       p = proofOfCurrent(env);
     for (const read of p.reads) {
@@ -326,11 +326,11 @@ describe('frozen TDMS 0.2.54 current Host wire alignment', () => {
       p.reads[1].fields,
     );
     sealComplete(env);
-    const result = adaptTdmsDailySource(env).output.nativePackage.records[0];
-    expect(result.content.completeOwnedFields![0].value.rawValue).toContain(
-      'TBD',
+    expect(() => adaptTdmsDailySource(env)).toThrow(
+      'TDMS_OPINION_STATE_NOT_ELIGIBLE',
     );
-    expect(result.content.opinions).toBeUndefined();
+    expect(env.package.records[0].state.rawName).toBe('已批准');
+    expect(p.reads[1].fields[0].value.rawValue).toContain('TBD');
   });
   it('accepts 201 exact observed edges through inner projection and retained service assertions', async () => {
     const env = currentManyEdges(),

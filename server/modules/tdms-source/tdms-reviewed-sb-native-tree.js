@@ -1,4 +1,4 @@
-// Pure SB consumer model selectively vendored from Source 0.2.73 / handoff @8.
+// Pure consumer selected from complete Source0.2.83 / handoff @13.
 import { tdmsError } from './tdms-source.types';
 // This self-contained factory is also the browser-side shared validator. Keep
 // source facts here; the producer cannot pass a completeness exemption.
@@ -251,7 +251,7 @@ export function createReviewedSbNativeTreeTools() {
           fail();
       stack.push({ row, shape, state });
     }
-    for (const [i] of out.rows.entries()) {
+    for (const [i, row] of out.rows.entries()) {
       const state = shapeState(out.rowShapes[i]),
         next = out.rows[i + 1];
       if (state.expanded && (!next || next.treeDepth !== state.depth + 1))
@@ -328,7 +328,28 @@ export function createReviewedSbNativeTreeTools() {
       fail('TDMS_COMPLETE_SB_NATIVE_TREE_QUERY_UNREVIEWED');
     return true;
   }
-  function validateMetadata(metadata, rows) {
+  function columnKnown(actualLabel, nativeColumnToken, index) {
+    const expected = model.columns[index];
+    return (
+      !!expected &&
+      nativeColumnToken === expected.nativeColumnToken &&
+      (actualLabel === expected.actualLabel ||
+        (index === 5 &&
+          ['SB评估单编号', 'SB/SL文档编号'].includes(actualLabel)))
+    );
+  }
+  function columnsKnown(columns) {
+    return (
+      Array.isArray(columns) &&
+      columns.length === model.columns.length &&
+      columns.every(
+        (c, i) =>
+          keys(c, ['actualLabel', 'nativeColumnToken']) &&
+          columnKnown(c.actualLabel, c.nativeColumnToken, i),
+      )
+    );
+  }
+  function validateMetadata(metadata, rows, columns = model.columns) {
     if (!Array.isArray(metadata) || metadata.length !== rows.length) fail();
     for (const [i, entry] of metadata.entries()) {
       if (
@@ -340,7 +361,7 @@ export function createReviewedSbNativeTreeTools() {
       )
         fail();
       for (const [j, c] of entry.columns.entries()) {
-        const spec = model.columns[j];
+        const spec = columns[j];
         if (
           !keys(c, [
             'nativeColumnToken',
@@ -479,7 +500,8 @@ export function createReviewedSbNativeTreeTools() {
       }),
     );
   }
-  function validatePhase(phase, table, owner) {
+  function validatePhase(phase, table, owner, columns = model.columns) {
+    if (!columnsKnown(columns)) fail();
     if (
       !keys(phase, [
         'ordinal',
@@ -506,7 +528,7 @@ export function createReviewedSbNativeTreeTools() {
       !same(rebuilt.rowShapes, phase.rowShapes)
     )
       fail();
-    validateMetadata(phase.rowMetadata, phase.rows);
+    validateMetadata(phase.rowMetadata, phase.rows, columns);
     let ownerSeen = 0;
     for (const [i, row] of phase.rows.entries()) {
       const shape = phase.rowShapes[i],
@@ -547,7 +569,7 @@ export function createReviewedSbNativeTreeTools() {
         fail();
       for (const [j, c] of row.cells.entries())
         if (
-          c.actualLabel !== model.columns[j].actualLabel ||
+          c.actualLabel !== columns[j].actualLabel ||
           (j === 1 &&
             (c.state !== 'VALUE' ||
               c.rawValue !== link.numberRaw ||
@@ -560,12 +582,15 @@ export function createReviewedSbNativeTreeTools() {
           fail();
       if (i === 0) {
         const ownMetadata = phase.rowMetadata[i].columns;
+        // Native tree textContent retains repeated ASCII spaces that the own
+        // detail innerText collapses. Compare display spacing only; keep raw evidence.
         if (
           link.targetRef !== owner.sourceRecordId ||
           row.treeDepth !== 0 ||
           link.numberRaw !== owner.number ||
           ownMetadata[6].rawText?.trim() !== owner.stateRaw.trim() ||
-          ownMetadata[8].rawText?.trim() !== owner.sourceModifiedRaw.trim()
+          ownMetadata[8].rawText?.replace(/ +/gu, ' ').trim() !==
+            owner.sourceModifiedRaw.replace(/ +/gu, ' ').trim()
         )
           fail('TDMS_COMPLETE_SB_NATIVE_TREE_OWNER_CHANGED');
         ownerSeen++;
@@ -744,10 +769,10 @@ export function createReviewedSbNativeTreeTools() {
       e.ownModifiedRaw !== owner.sourceModifiedRaw ||
       e.rawHeaderIdentifier !== owner.rawHeaderIdentifier ||
       e.settledReads !== 2 ||
-      !same(e.columns, model.columns) ||
+      !columnsKnown(e.columns) ||
       !same(
         t.rawHeaders,
-        model.columns.map((c) => c.actualLabel),
+        e.columns.map((c) => c.actualLabel),
       ) ||
       t.tableTitle !== model.tableTitle ||
       t.scanMode !== 'TREE' ||
@@ -764,7 +789,7 @@ export function createReviewedSbNativeTreeTools() {
     const used = new Set();
     for (const [i, phase] of e.windows.entries()) {
       if (phase.ordinal !== i) fail();
-      validatePhase(phase, t, owner);
+      validatePhase(phase, t, owner, e.columns);
       for (const ordinal of phase.windowOrdinals) {
         if (used.has(ordinal)) fail();
         used.add(ordinal);
@@ -963,6 +988,8 @@ export function createReviewedSbNativeTreeTools() {
     bind,
     rowIdentity,
     validateQuery,
+    columnKnown,
+    columnsKnown,
     validateMetadata,
     metadataComplete,
     validatePhase,

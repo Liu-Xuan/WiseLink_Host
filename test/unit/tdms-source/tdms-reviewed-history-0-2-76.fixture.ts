@@ -22,6 +22,7 @@ export type SbTimelineRead = ReturnType<typeof sbProof>['reads'][number];
 export interface SbTimelineEmbedded {
   id: string;
   rawSrc: string;
+  documentUrl: string;
   readyState: string;
   bodyState: string;
 }
@@ -75,6 +76,7 @@ export function setTimelinePath(
           pathname +
           '?oid=' +
           read.owner.sourceRecordId;
+        embedded.documentUrl = embedded.rawSrc;
       }
     }
   }
