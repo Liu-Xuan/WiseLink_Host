@@ -354,19 +354,26 @@ describe('Source 0.2.73 SB proofs through the existing Host consumer (synthetic)
       ].map((change) => [name, change, model, error] as const),
     ),
   )('rejects %s purpose %s', (_name, change, model, error) => {
-    const env = editPanels((read) => {
-      const t = read.tabs.find(
-          (tab: any) => tab.tabId === model.panels[0].tabId,
-        ),
-        p = t.purposeEvidence;
-      if (change === 'owner') p.ownerSourceRecordId += '0';
-      if (change === 'source-version') p.sourceVersion.rawRevision = 'B';
-      if (change === 'body') p.bodyState = 'VALUE';
-      if (change === 'optional') t.required = !t.required;
-      if (change === 'column')
-        p.before.grids[0].columns[0].actualLabel = 'unreviewed';
-      if (change === 'unknown-surface') p.before.unknownSurfaceCount = 1;
-    });
+    const arrange = () =>
+      editPanels((read) => {
+        const t = read.tabs.find(
+            (tab: any) => tab.tabId === model.panels[0].tabId,
+          ),
+          p = t.purposeEvidence;
+        if (change === 'owner') p.ownerSourceRecordId += '0';
+        if (change === 'source-version') p.sourceVersion.rawRevision = 'B';
+        if (change === 'body') p.bodyState = 'VALUE';
+        if (change === 'optional') t.required = !t.required;
+        if (change === 'column')
+          p.before.grids[0].columns[0].actualLabel = 'unreviewed';
+        if (change === 'unknown-surface') p.before.unknownSurfaceCount = 1;
+      });
+    if (_name === 'history' || _name === 'notebook') {
+      // These purposes can now reject in identity projection during arrange.
+      expect(() => validate(arrange())).toThrow(error);
+      return;
+    }
+    const env = arrange();
     expect(() => validate(env)).toThrow(error);
   });
 
@@ -378,26 +385,37 @@ describe('Source 0.2.73 SB proofs through the existing Host consumer (synthetic)
     'history-body',
     'notebook-body',
   ])('rejects alias/reference promotion %s', (change) => {
-    const env = editPanels((read) => {
-      const e = (model: any) =>
-        read.tabs.find((t: any) => t.tabId === model.panels[0].tabId)
-          .purposeEvidence;
-      const fields = e(REVIEWED_SB_FIELDS_ALIAS_MODEL),
-        blank = fields.before.aliasFields.find((f: any) => f.label === '');
-      if (change === 'missing-alias-blank-proof')
-        delete blank.strictBlankEvidence;
-      if (change === 'alias-nonempty') blank.rawValue = 'unreviewed body';
-      if (change === 'alias-canonical-id') blank.canonicalFieldId += '-other';
-      if (change === 'attachment-data-changed')
-        e(REVIEWED_SB_ATTACHMENT_ALIAS_MODEL).aliasTable.rawHeaders[0] =
-          'Other';
-      if (change === 'history-body')
-        e(REVIEWED_SB_HISTORY_MODEL).before.embeddedReferences[0].bodyState =
-          'VALUE';
-      if (change === 'notebook-body')
-        e(REVIEWED_SB_NOTEBOOK_MODEL).before.embeddedReferences[0].bodyState =
-          'VALUE';
-    });
+    const arrange = () =>
+      editPanels((read) => {
+        const e = (model: any) =>
+          read.tabs.find((t: any) => t.tabId === model.panels[0].tabId)
+            .purposeEvidence;
+        const fields = e(REVIEWED_SB_FIELDS_ALIAS_MODEL),
+          blank = fields.before.aliasFields.find((f: any) => f.label === '');
+        if (change === 'missing-alias-blank-proof')
+          delete blank.strictBlankEvidence;
+        if (change === 'alias-nonempty') blank.rawValue = 'unreviewed body';
+        if (change === 'alias-canonical-id') blank.canonicalFieldId += '-other';
+        if (change === 'attachment-data-changed')
+          e(REVIEWED_SB_ATTACHMENT_ALIAS_MODEL).aliasTable.rawHeaders[0] =
+            'Other';
+        if (change === 'history-body')
+          e(REVIEWED_SB_HISTORY_MODEL).before.embeddedReferences[0].bodyState =
+            'VALUE';
+        if (change === 'notebook-body')
+          e(REVIEWED_SB_NOTEBOOK_MODEL).before.embeddedReferences[0].bodyState =
+            'VALUE';
+      });
+    if (change === 'history-body' || change === 'notebook-body') {
+      // Keep the same bad input even when projection refuses it before prepare.
+      expect(() => validate(arrange())).toThrow(
+        change === 'history-body'
+          ? 'TDMS_COMPLETE_SB_HISTORY_PURPOSE_INVALID'
+          : 'TDMS_COMPLETE_SB_NOTEBOOK_PURPOSE_INVALID',
+      );
+      return;
+    }
+    const env = arrange();
     expect(() => validate(env)).toThrow('TDMS_COMPLETE_SB_');
   });
 

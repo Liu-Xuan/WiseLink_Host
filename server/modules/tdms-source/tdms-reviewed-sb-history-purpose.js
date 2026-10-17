@@ -1,4 +1,4 @@
-// Pure SB consumer model selectively vendored from Source 0.2.73 / handoff @8.
+// Pure SB consumer model selectively vendored from Source 0.2.76 / handoff @9.
 import { tdmsError } from './tdms-source.types';
 export const REVIEWED_SB_HISTORY_MODEL = Object.freeze({
   schemaVersion: 'wiselink.tdms-sb-history-reference.v1',
@@ -98,6 +98,46 @@ export function createSbHistoryValidator(model) {
             p.panelLocator === tab.panelLocator,
         ) || null
       : null;
+  }
+  function timelineReady(embedded, owner, initial = false) {
+    if (
+      !exact(embedded, ['id', 'rawSrc', 'readyState', 'bodyState']) ||
+      embedded.id !== 'timelineIFrame' ||
+      embedded.bodyState !== 'NOT_READ' ||
+      !(
+        initial ? ['loading', 'interactive', 'complete'] : ['complete']
+      ).includes(embedded.readyState)
+    )
+      fail();
+    try {
+      if (typeof embedded.rawSrc !== 'string') fail();
+      const u = new URL(embedded.rawSrc);
+      if (
+        u.origin !== 'http://tdms.airchina.com' ||
+        u.username ||
+        u.password ||
+        u.hash ||
+        ![
+          '/Windchill/app/netmarkets/jsp/history/timelineHistory-iframe.jsp',
+          '/Windchill/netmarkets/jsp/history/timelineHistory-iframe.jsp',
+        ].includes(u.pathname) ||
+        u.searchParams.getAll('oid').length !== 1 ||
+        u.searchParams.get('oid') !== owner.sourceRecordId ||
+        [...u.searchParams.keys()].some(
+          (k) => !['oid', 'u8', 'AjaxEnabled'].includes(k),
+        ) ||
+        ['u8', 'AjaxEnabled'].some(
+          (k) =>
+            u.searchParams.getAll(k).length > 1 ||
+            (u.searchParams.has(k) &&
+              u.searchParams.get(k) !== (k === 'u8' ? '1' : 'thirdLevelNav')),
+        )
+      )
+        fail();
+    } catch {
+      fail();
+    }
+    return embedded.readyState === 'complete';
   }
   function validate(e, { scopeId, owner, tab, read }) {
     const p = panel({ scopeId, owner, tab });
@@ -213,30 +253,7 @@ export function createSbHistoryValidator(model) {
       f.historyMetadata.length
     )
       fail();
-    const embedded = f.embeddedReferences[0];
-    if (
-      !exact(embedded, ['id', 'rawSrc', 'readyState', 'bodyState']) ||
-      embedded.id !== 'timelineIFrame' ||
-      embedded.readyState !== 'complete' ||
-      embedded.bodyState !== 'NOT_READ'
-    )
-      fail();
-    try {
-      const u = new URL(embedded.rawSrc);
-      if (
-        u.origin !== 'http://tdms.airchina.com' ||
-        u.pathname !==
-          '/Windchill/app/netmarkets/jsp/history/timelineHistory-iframe.jsp' ||
-        u.searchParams.getAll('oid').length !== 1 ||
-        u.searchParams.get('oid') !== owner.sourceRecordId ||
-        [...u.searchParams.keys()].some(
-          (k) => !['oid', 'u8', 'AjaxEnabled'].includes(k),
-        )
-      )
-        fail();
-    } catch {
-      fail();
-    }
+    timelineReady(f.embeddedReferences[0], owner);
     if (
       tab.required !== false ||
       tab.state !== 'NOT_READ' ||
@@ -247,7 +264,7 @@ export function createSbHistoryValidator(model) {
       if (read[key]?.some((x) => x.tabId === p.tabId)) fail();
     return { complete: true, bodyRead: false, enumerationComplete: false };
   }
-  return { panel, validate };
+  return { panel, validate, timelineReady };
 }
 const validator = createSbHistoryValidator(REVIEWED_SB_HISTORY_MODEL);
 export const reviewedSbHistoryPanel = validator.panel;

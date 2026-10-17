@@ -1,3 +1,11 @@
+import {
+  reviewedSbHistoryPanel,
+  validateReviewedSbHistoryPurpose,
+} from './tdms-reviewed-sb-history-purpose';
+import {
+  reviewedSbNotebookPanel,
+  validateReviewedSbNotebookPurpose,
+} from './tdms-reviewed-sb-notebook-purpose';
 import { SB_ANONYMOUS_STRICT_BLANK as sbAnonymousBlank } from './tdms-reviewed-sb-anonymous-strict-blank';
 import {
   reviewedSbNativeTreeReadStatus,
@@ -262,9 +270,75 @@ function normalizeCompleteCaptureLocators(value, key = '') {
       )
     : value;
 }
+// Only content identity merges these validated native routes. Raw evidence and
+// the same-capture double-read comparison keep their original URL strings.
+function completeTimelineIdentityRecord(record) {
+  const proof = record.rawFields?.completeOwnedSource;
+  if (!proof) return record;
+  if (!Array.isArray(proof.reads)) fail('TDMS_COMPLETE_OWN_FIELDS_INVALID');
+  const reads = proof.reads.map((read) => {
+    // This projection is called before full observation validation. Preserve the
+    // existing typed malformed-SB boundary before map or a purpose validator.
+    if (
+      !read ||
+      typeof read !== 'object' ||
+      Array.isArray(read) ||
+      !Array.isArray(read.tabs) ||
+      read.tabs.some(
+        (tab) => !tab || typeof tab !== 'object' || Array.isArray(tab),
+      )
+    )
+      fail('TDMS_COMPLETE_OWN_FIELDS_INVALID');
+    assertCompleteSbReadShape(read);
+    return {
+      ...read,
+      tabs: read.tabs.map((tab) => {
+        const context = {
+          scopeId: proof.requestedCriteria?.scopeId,
+          owner: read.owner,
+          tab,
+          read,
+        };
+        const validate = reviewedSbHistoryPanel(context)
+          ? validateReviewedSbHistoryPurpose
+          : reviewedSbNotebookPanel(context)
+            ? validateReviewedSbNotebookPurpose
+            : null;
+        if (!validate) return tab;
+        validate(tab.purposeEvidence, context);
+        const frame = (value) => ({
+          ...value,
+          embeddedReferences: value.embeddedReferences.map((embedded) => {
+            const url = new URL(embedded.rawSrc);
+            url.pathname =
+              '/Windchill/netmarkets/jsp/history/timelineHistory-iframe.jsp';
+            return { ...embedded, rawSrc: url.href };
+          }),
+        });
+        return {
+          ...tab,
+          purposeEvidence: {
+            ...tab.purposeEvidence,
+            before: frame(tab.purposeEvidence.before),
+            after: frame(tab.purposeEvidence.after),
+          },
+        };
+      }),
+    };
+  });
+  return {
+    ...record,
+    rawFields: {
+      ...record.rawFields,
+      completeOwnedSource: { ...proof, reads },
+    },
+  };
+}
 export function completeContentIdentityProjection(record) {
   const value = normalizeCompleteCaptureLocators(
-      withoutTimes(completeOwnedStableProjection(record)),
+      withoutTimes(
+        completeOwnedStableProjection(completeTimelineIdentityRecord(record)),
+      ),
     ),
     proof = value.rawFields?.completeOwnedSource;
   if (proof) {
@@ -650,7 +724,7 @@ const states = new Set(EVIDENCE_STATES),
   });
 export const completeOwnedVerificationKind = (input) =>
   input?.contentMode === COMPLETE_OWN_MODE ? COMPLETE_OWN_VERIFY : null;
-export function completeOwnedStableProjection(v) {
+function assertCompleteSbReadShape(v) {
   // The daily snapshot path also calls this before full read validation. The
   // Source projectors require arrays of native observations, never arbitrary
   // caller objects. Reject malformed SB reads before invoking those helpers.
@@ -665,6 +739,9 @@ export function completeOwnedStableProjection(v) {
       )
         fail('TDMS_COMPLETE_OWN_FIELDS_INVALID');
   }
+}
+export function completeOwnedStableProjection(v) {
+  assertCompleteSbReadShape(v);
   v = sbAnonymousBlank.project(sbStructure.projection(v));
   v = reviewedAdItemEfrBodySemanticProjection(
     reviewedEfStructureSemanticProjection(v),

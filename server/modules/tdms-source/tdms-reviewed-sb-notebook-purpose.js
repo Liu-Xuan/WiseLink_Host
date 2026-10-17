@@ -1,4 +1,4 @@
-// Pure SB consumer model selectively vendored from Source 0.2.73 / handoff @8.
+// Pure SB consumer model selectively vendored from Source 0.2.76 / handoff @9.
 import { tdmsError } from './tdms-source.types';
 export const REVIEWED_SB_NOTEBOOK_MODEL = Object.freeze({
   schemaVersion: 'wiselink.tdms-sb-notebook-mixed.v1',
@@ -180,6 +180,46 @@ export function createSbNotebookValidator(model) {
         ) || null
       : null;
   }
+  function timelineReady(embedded, owner, initial = false) {
+    if (
+      !exact(embedded, ['id', 'rawSrc', 'readyState', 'bodyState']) ||
+      embedded.id !== 'timelineIFrame' ||
+      embedded.bodyState !== 'NOT_READ' ||
+      !(
+        initial ? ['loading', 'interactive', 'complete'] : ['complete']
+      ).includes(embedded.readyState)
+    )
+      fail();
+    try {
+      if (typeof embedded.rawSrc !== 'string') fail();
+      const u = new URL(embedded.rawSrc);
+      if (
+        u.origin !== 'http://tdms.airchina.com' ||
+        u.username ||
+        u.password ||
+        u.hash ||
+        ![
+          '/Windchill/app/netmarkets/jsp/history/timelineHistory-iframe.jsp',
+          '/Windchill/netmarkets/jsp/history/timelineHistory-iframe.jsp',
+        ].includes(u.pathname) ||
+        u.searchParams.getAll('oid').length !== 1 ||
+        u.searchParams.get('oid') !== owner.sourceRecordId ||
+        [...u.searchParams.keys()].some(
+          (k) => !['oid', 'u8', 'AjaxEnabled'].includes(k),
+        ) ||
+        ['u8', 'AjaxEnabled'].some(
+          (k) =>
+            u.searchParams.getAll(k).length > 1 ||
+            (u.searchParams.has(k) &&
+              u.searchParams.get(k) !== (k === 'u8' ? '1' : 'thirdLevelNav')),
+        )
+      )
+        fail();
+    } catch {
+      fail();
+    }
+    return embedded.readyState === 'complete';
+  }
   function validate(e, { scopeId, owner, tab, read }) {
     const p = panel({ scopeId, owner, tab });
     if (
@@ -275,30 +315,7 @@ export function createSbNotebookValidator(model) {
       f.embeddedReferences.length !== 1
     )
       fail();
-    const embedded = f.embeddedReferences[0];
-    if (
-      !exact(embedded, ['id', 'rawSrc', 'readyState', 'bodyState']) ||
-      embedded.id !== 'timelineIFrame' ||
-      embedded.readyState !== 'complete' ||
-      embedded.bodyState !== 'NOT_READ'
-    )
-      fail();
-    try {
-      const u = new URL(embedded.rawSrc);
-      if (
-        u.origin !== 'http://tdms.airchina.com' ||
-        u.pathname !==
-          '/Windchill/app/netmarkets/jsp/history/timelineHistory-iframe.jsp' ||
-        u.searchParams.getAll('oid').length !== 1 ||
-        u.searchParams.get('oid') !== owner.sourceRecordId ||
-        [...u.searchParams.keys()].some(
-          (k) => !['oid', 'u8', 'AjaxEnabled'].includes(k),
-        )
-      )
-        fail();
-    } catch {
-      fail();
-    }
+    timelineReady(f.embeddedReferences[0], owner);
     const business = read.relationTables.filter((t) => t.tabId === tab.tabId);
     if (
       business.length !== 1 ||
@@ -326,7 +343,7 @@ export function createSbNotebookValidator(model) {
       managementEnumerationComplete: false,
     };
   }
-  return { panel, validate };
+  return { panel, validate, timelineReady };
 }
 const validator = createSbNotebookValidator(REVIEWED_SB_NOTEBOOK_MODEL);
 export const reviewedSbNotebookPanel = validator.panel;
