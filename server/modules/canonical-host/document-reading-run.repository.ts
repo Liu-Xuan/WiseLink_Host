@@ -10,6 +10,7 @@ import { parseExecutionModel, readStoredExecutionModel } from '../model-settings
 
 import { dmDocumentReadingRun } from '../../database/document-reading.schema';
 import { HierarchicalWikiChanges } from './hierarchical-wiki-changes';
+import { DocumentReadingRequestConflict } from './document-reading-request-conflict';
 
 export type DocumentReadingScope = { tenantId: string; actorUserId: string; documentVersionId: string };
 export type DocumentReadingFence = { runRef: string; leaseOwner: string; leaseToken: string; leaseGeneration: number };
@@ -174,7 +175,7 @@ export class DocumentReadingRunRepository {
         if (prior.documentVersionId !== scope.documentVersionId || prior.parseRunId !== input.parseRunId ||
           prior.semanticRevision !== input.semanticRevision || prior.expectedRevision !== input.expectedRevision ||
           prior.manifestSha256 !== input.manifestSha256)
-          throw new Error('DOCUMENT_READING_REQUEST_CONFLICT');
+          throw new DocumentReadingRequestConflict({ ...scope, requestId: input.requestId });
         return prior;
       }
       // Replays above preserve their original control snapshot, even when the WI

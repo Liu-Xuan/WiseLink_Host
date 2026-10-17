@@ -278,10 +278,12 @@ describe('automatic upload reading admission replay', () => {
     expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();
   });
 
-  it('keeps a concurrent first-admission conflict visible and resumes the winner on a later retry', async () => {
+  it('reports a concurrent first-admission conflict as attention and resumes the winner on a later retry', async () => {
     const f = uploadReadingReplayFixture();
     f.readRequest.mockResolvedValueOnce(null);
-    await expect(f.service.prepareAutomaticUpload(f.input)).rejects.toThrow('DOCUMENT_READING_REQUEST_CONFLICT');
+    await expect(f.service.prepareAutomaticUpload(f.input)).resolves.toEqual({
+      status: 'REQUIRES_ATTENTION', documentVersionId: 'DV', parseRunId: 'parse-two',
+      errorCode: 'DOCUMENT_READING_REQUEST_CONFLICT' });
     expect(f.readingRun).toHaveBeenCalledTimes(1);
     expect(f.begin).toHaveBeenCalledTimes(1);
     expect(f.deliveryCatalog.markDocumentUploadDeliveryAdmitted).not.toHaveBeenCalled();

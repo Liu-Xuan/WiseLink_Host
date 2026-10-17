@@ -67,6 +67,8 @@ import { MiaodaApplicabilityControlledSelectionAdapter } from './miaoda-applicab
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
 import { CanonicalHostCommonContextService } from './canonical-host-common-context.service';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
+import { CanonicalJobAidWorkCorrectionService } from './canonical-jobaid-work-correction.service';
+import { CanonicalJobAidWorkCorrectionController } from './canonical-jobaid-work-correction.controller';
 import { JobAidWorkRepository } from './jobaid-work.repository';
 import { DerivedSummaryController } from './derived-summary.controller';
 import { DerivedSummaryService } from './derived-summary.service';
@@ -242,6 +244,7 @@ export interface CanonicalHostModuleOptions {
     LocalMineruWorkerOpenApiController,
     OauthSessionDevelopmentWorkItemController,
     CanonicalHostReviewActionController,
+    CanonicalJobAidWorkCorrectionController,
     CanonicalHostApplicabilitySelectionController,
     CanonicalHostOverallRegenerationController,
     CanonicalHostReviewOverallProjectionController,
@@ -299,6 +302,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostCommonContextService,
     EngineeringIssueSearchService,
     CanonicalJobAidProblemService,
+    CanonicalJobAidWorkCorrectionService,
     JobAidWorkRepository,
     DerivedSummaryService,
     DerivedSummaryRuntimeService,
@@ -514,6 +518,7 @@ export class CanonicalHostModule {
     LocalMineruWorkerOpenApiController,
         OauthSessionDevelopmentWorkItemController,
         CanonicalHostReviewActionController,
+        CanonicalJobAidWorkCorrectionController,
         CanonicalHostApplicabilitySelectionController,
         CanonicalHostOverallRegenerationController,
         CanonicalHostReviewOverallProjectionController,
@@ -600,6 +605,7 @@ export class CanonicalHostModule {
         CanonicalHostCommonContextService,
         EngineeringIssueSearchService,
         CanonicalJobAidProblemService,
+        CanonicalJobAidWorkCorrectionService,
         JobAidWorkRepository,
         DerivedSummaryService,
         DerivedSummaryRuntimeService,

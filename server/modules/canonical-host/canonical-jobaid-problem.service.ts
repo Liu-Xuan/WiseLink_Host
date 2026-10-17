@@ -2885,6 +2885,16 @@ export class CanonicalJobAidProblemService {
     await verifyTdmsNativeEvidence(evidence, { tenantId, actorUserId }, this.nativeVerifier, database);
   }
 
+  /** OWNER manual SAVE checks on its caller's held actor transaction; no external PDF/model I/O. */
+  async assertManualCorrectionEvidence(
+    evidence: AssessmentEvidence[], actor: { tenantId: string; actorUserId: string },
+    workItemId: string, database: PostgresJsDatabase,
+  ): Promise<void> {
+    await this.assertEvidenceOwned(evidence, actor.tenantId, actor.actorUserId, workItemId, database);
+    await this.assertSourceStatementReferences(evidence, actor, database);
+    await this.assertEvidenceOwned(evidence, actor.tenantId, actor.actorUserId, workItemId, database);
+  }
+
   private async assertEvidenceOwned(
     evidence: AssessmentEvidence[],
     tenantId: string,

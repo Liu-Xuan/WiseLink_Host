@@ -13,6 +13,7 @@ import type { DocumentParseScope } from '../document-management/src/hosted/nest/
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
 import { DocumentSemanticService } from './document-semantic.service';
 import { DocumentReadingRuntimeService } from './document-reading-runtime.service';
+import { DocumentReadingRequestConflict } from './document-reading-request-conflict';
 import { DocumentTranslationRuntimeService } from './document-translation-runtime.service';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import { MiaodaHostedDocumentCatalog } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
@@ -218,13 +219,25 @@ export class DocumentWorkRuntimeService {
       const loaded = await this.reader.readDocumentOriginal(
         scope.documentVersionId, run.parseRunId, scope);
       const semantic = await this.semantics.ensure(scope, loaded);
-      if (intent.delivery.reading) await this.readingRuntime.run({
-        action: 'READING_BEGIN', documentVersionId: scope.documentVersionId,
-        deliveryRef: `acquisition:${input.acquisitionId}`,
-        parseRunId: run.parseRunId, semanticRevision: semantic.semanticRevision,
-        requestId: documentDeliveryRequestId('reading', `acquisition:${input.acquisitionId}`),
-        expectedRevision: 0,
-      });
+      if (intent.delivery.reading) {
+        try {
+          await this.readingRuntime.run({
+            action: 'READING_BEGIN', documentVersionId: scope.documentVersionId,
+            deliveryRef, parseRunId: run.parseRunId,
+            semanticRevision: semantic.semanticRevision,
+            requestId: readingRequestId, expectedRevision: 0,
+          });
+        } catch (error) {
+          if (!(error instanceof DocumentReadingRequestConflict) ||
+              error.tenantId !== scope.tenantId || error.actorUserId !== scope.actorUserId ||
+              error.documentVersionId !== scope.documentVersionId || error.requestId !== readingRequestId)
+            throw error;
+          this.logger.warn(`Document delivery ${deliveryRef} reading request ${readingRequestId}: ${error.code}.`);
+          return { status: 'REQUIRES_ATTENTION' as const,
+            documentVersionId: scope.documentVersionId, parseRunId: run.parseRunId,
+            errorCode: error.code };
+        }
+      }
       if (intent.delivery.translation === 'ZH_FULL') await this.translationRuntime.run({
         action: 'START', documentVersionId: scope.documentVersionId,
         deliveryRef: `acquisition:${input.acquisitionId}`,
