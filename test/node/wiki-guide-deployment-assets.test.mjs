@@ -61,11 +61,10 @@ describe('physical server-only deployment layout', { concurrency: false }, () =>
     assert(lstatSync(dependencies).isDirectory(), 'Packaged node_modules must be a real directory');
     root = realpathSync(mkdtempSync(join(tmpdir(), 'wiselink-guide-deployment-')));
     copyDependencies(dependencies, join(root, 'node_modules'));
-    for (const name of [modulePath, assetPath, 'package.json']) {
-      const destination = join(root, name);
-      mkdirSync(dirname(destination), { recursive: true });
-      copyFileSync(join(packagedRoot, name), destination);
-    }
+    copyDependencies(join(packagedRoot, 'server'), join(root, 'server'));
+    if (existsSync(join(packagedRoot, 'shared')))
+      copyDependencies(join(packagedRoot, 'shared'), join(root, 'shared'));
+    copyFileSync(join(packagedRoot, 'package.json'), join(root, 'package.json'));
     assert.equal(existsSync(join(root, 'client')), false);
   });
   after(() => { if (root) rmSync(root, { recursive: true, force: true }); });
@@ -82,15 +81,17 @@ describe('physical server-only deployment layout', { concurrency: false }, () =>
       assert.equal(process.permission.has('fs.read', root), true);
       assert.equal(process.permission.has('fs.read', dirname(root)), false);
       const load = createRequire(join(root, ${JSON.stringify(modulePath)}));
-      let result;
-      ${body}
-      const loaded = Object.keys(require.cache).map(file => realpathSync(file));
-      for (const file of loaded) {
-        const name = relative(root, file);
-        assert(!isAbsolute(name) && name !== '..' && !name.startsWith('..' + sep),
-          'Loaded a module outside the independent deployment: ' + file);
-      }
-      process.stdout.write(JSON.stringify({ ...result, loadedModuleCount: loaded.length }));
+      (async () => {
+        let result;
+        ${body}
+        const loaded = Object.keys(require.cache).map(file => realpathSync(file));
+        for (const file of loaded) {
+          const name = relative(root, file);
+          assert(!isAbsolute(name) && name !== '..' && !name.startsWith('..' + sep),
+            'Loaded a module outside the independent deployment: ' + file);
+        }
+        process.stdout.write(JSON.stringify({ ...result, loadedModuleCount: loaded.length }));
+      })().catch(error => { console.error(error); process.exitCode = 1; });
     `;
     // Standard Node permissions also prevent ancestor/global dependencies from
     // filling a missing peer. No preload, loader hook, NODE_PATH or source mount.
@@ -131,6 +132,62 @@ describe('physical server-only deployment layout', { concurrency: false }, () =>
     assert(loadedModuleCount > 0);
     assert.deepEqual(readFileSync(join(root, assetPath)),
       readFileSync('client/src/pages/WorkspaceHomePage/library-ata-titles.generated.json'));
+  });
+
+  it('starts packaged correction routes over HTTP and rejects unavailable native identity without writing', () => {
+    const result = run(`
+      load('reflect-metadata');
+      const { Controller, Get, Module } = load('@nestjs/common');
+      const { NestFactory } = load('@nestjs/core');
+      const { CanonicalJobAidWorkCorrectionController: ProductController } = load(join(root,
+        'server/modules/canonical-host/canonical-jobaid-work-correction.controller.js'));
+      const { CanonicalJobAidWorkCorrectionService: ProductService } = load(join(root,
+        'server/modules/canonical-host/canonical-jobaid-work-correction.service.js'));
+      const { DialogueBrowserScope } = load(join(root,
+        'server/modules/canonical-host/dialogue-browser-scope.service.js'));
+      const { DocumentReadingRequestConflict } = load(join(root,
+        'server/modules/canonical-host/document-reading-request-conflict.js'));
+      const { GlobalExceptionFilter } = load(join(root, 'server/common/filters/exception.filter.js'));
+      let businessCalls = 0;
+      const denyBusiness = () => { businessCalls++; throw new Error('UNEXPECTED_ENGINEERING_CALL'); };
+      class ProbeController {
+        conflict() { throw new DocumentReadingRequestConflict({ tenantId: 'probe-tenant',
+          actorUserId: 'probe-actor', documentVersionId: 'probe-document', requestId: 'probe-request' }); }
+      }
+      Controller('probe')(ProbeController);
+      Get('reading-conflict')(ProbeController.prototype, 'conflict',
+        Object.getOwnPropertyDescriptor(ProbeController.prototype, 'conflict'));
+      class ProbeModule {}
+      Module({ controllers: [ProductController, ProbeController], providers: [
+        { provide: ProductService, useValue: { save: denyBusiness, read: denyBusiness } },
+        { provide: DialogueBrowserScope, useValue: { run: denyBusiness } },
+      ] })(ProbeModule);
+      const app = await NestFactory.create(ProbeModule, { logger: false });
+      try {
+        app.useGlobalFilters(new GlobalExceptionFilter());
+        await app.listen(0, '127.0.0.1');
+        const base = 'http://127.0.0.1:' + app.getHttpServer().address().port;
+        const route = '/api/canonical-host/work-items/WI-probe/assessment-work/corrections';
+        for (const [path, init] of [[route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }],
+          [route + '/request-probe', { method: 'GET' }]]) {
+          const response = await fetch(base + path, init);
+          const body = await response.json();
+          assert.equal(response.status, 503, JSON.stringify(body));
+          assert.equal(body.error.code, 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE');
+        }
+        const response = await fetch(base + '/probe/reading-conflict');
+        assert.equal(response.status, 409);
+        assert.equal((await response.json()).error.code, 'DOCUMENT_READING_REQUEST_CONFLICT');
+        assert.equal(businessCalls, 0);
+        result = { actualCorrectionRoutes: ['POST', 'GET'], nativeIdentityUnavailable: 503,
+          compiledConflictAndFilterStatus: 409, businessCalls, provider: 'DENY_ONLY_FIXTURE' };
+      } finally { await app.close(); }
+    `);
+    assert.equal(result.status, 0, result.stderr);
+    const proof = JSON.parse(result.stdout);
+    assert.deepEqual(proof.actualCorrectionRoutes, ['POST', 'GET']);
+    assert.equal(proof.businessCalls, 0);
+    assert(proof.loadedModuleCount > 0);
   });
 
   it('missing deployment catalogue fails explicitly instead of returning an empty chapter search', () => {

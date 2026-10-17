@@ -1,5 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
+// The platform's bundled CJS entry loads this declared runtime dependency;
+// keep it explicit so dependency tracing includes it in an isolated package.
+import '@nestjs/config';
 import { configureApp } from '@lark-apaas/fullstack-nestjs-core';
 import { join } from 'path';
 import { __express as hbsExpressEngine } from 'hbs';
