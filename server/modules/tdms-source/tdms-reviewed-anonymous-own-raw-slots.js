@@ -1,3 +1,4 @@
+import { SB_ANONYMOUS_STRICT_BLANK as sbBlank } from './tdms-reviewed-sb-anonymous-strict-blank';
 // Pure Source model from the SHA-qualified 21/11 file handoff; no collector or authority.
 import { tdmsError } from './tdms-source.types';
 const freeze = (value) => {
@@ -8,6 +9,456 @@ const freeze = (value) => {
   return value;
 };
 export const REVIEWED_ANONYMOUS_OWN_RAW_MODELS = freeze({
+  SB: {
+    modelRevision: 'tdms-reviewed-sb-document-anonymous-own-raw@1',
+    scopeId: 'SB',
+    nativeClass: 'wt.doc.WTDocument',
+    nativeTypeId: 'WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument',
+    nativeHeaderType: 'SB文档',
+    detailTabId:
+      'infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails',
+    detailTabLabel: 'Details',
+    detailPanel: '#infoPage_myTab_object_docInfoDefaultDetails',
+    sections: [
+      {
+        sectionId: 'General',
+        sectionLabel: 'General',
+        dataStoreId: 'dataStoreGeneral',
+        fieldLabels: [
+          'Name:',
+          'Status:',
+          'Primary Content:',
+          'Modified By:',
+          'Last Modified:',
+        ],
+      },
+      {
+        sectionId: 'BusinessAttributesGroup',
+        sectionLabel: 'Business',
+        dataStoreId: 'dataStoreBusinessAttributesGroup',
+        fieldLabels: [
+          'SB/SL文档编号:',
+          'SB/SL版本:',
+          'OEM厂商类型:',
+          'OEM厂商:',
+          '类型:',
+          'SB/SL标题:',
+          '是否紧急:',
+          '颁发日期:',
+          '原创建者:',
+          '原创建时间:',
+        ],
+      },
+      {
+        sectionId: 'MoreAttributesGroup',
+        sectionLabel: 'System',
+        dataStoreId: 'dataStoreMoreAttributesGroup',
+        fieldLabels: [
+          'Description:',
+          '',
+          'Format Name:',
+          'State:',
+          'Context:',
+          'Location:',
+          'Life Cycle Template:',
+          'Team Template:',
+          'Created By:',
+          'Modified By:',
+          'Created On:',
+          'Last Modified:',
+        ],
+      },
+    ],
+    rosterCount: 27,
+    anonymousOccurrenceZeroBased: 16,
+    sectionId: 'MoreAttributesGroup',
+    sectionLabel: 'System',
+    dataStoreId: 'dataStoreMoreAttributesGroup',
+    sectionOccurrenceZeroBased: 1,
+    previousLabel: 'Description:',
+    nextLabel: 'Format Name:',
+    captionTag: 'TD',
+    captionClass: 'attributePanel-label',
+    valueTag: 'TD',
+    valueClass: 'attributePanel-value',
+    anonymousRow: {
+      rowZeroBased: 0,
+      captionChildOneBased: 5,
+      valueChildOneBased: 6,
+      childClasses: [
+        'attributePanel-asterisk',
+        'attributePanel-label',
+        'attributePanel-value',
+        'attributePanel-asterisk',
+        'attributePanel-label',
+        'attributePanel-value',
+      ],
+    },
+    evidenceRef:
+      'current-source-reload-failure-0.2.72/SL_NATIVE_LAYOUT_DECODED.json',
+    evidenceSha256:
+      '29a3e311f460aceff23095b43b98b26319e68eb0e5483f6eacd3a007c77966c2',
+  },
+  SIL: {
+    modelRevision: 'tdms-reviewed-sb-document-anonymous-own-raw@1',
+    scopeId: 'SIL',
+    nativeClass: 'wt.doc.WTDocument',
+    nativeTypeId: 'WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument',
+    nativeHeaderType: 'SB文档',
+    detailTabId:
+      'infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails',
+    detailTabLabel: 'Details',
+    detailPanel: '#infoPage_myTab_object_docInfoDefaultDetails',
+    sections: [
+      {
+        sectionId: 'General',
+        sectionLabel: 'General',
+        dataStoreId: 'dataStoreGeneral',
+        fieldLabels: [
+          'Name:',
+          'Status:',
+          'Primary Content:',
+          'Modified By:',
+          'Last Modified:',
+        ],
+      },
+      {
+        sectionId: 'BusinessAttributesGroup',
+        sectionLabel: 'Business',
+        dataStoreId: 'dataStoreBusinessAttributesGroup',
+        fieldLabels: [
+          'SB/SL文档编号:',
+          'SB/SL版本:',
+          'OEM厂商类型:',
+          'OEM厂商:',
+          '类型:',
+          'SB/SL标题:',
+          '是否紧急:',
+          '颁发日期:',
+          '原创建者:',
+          '原创建时间:',
+        ],
+      },
+      {
+        sectionId: 'MoreAttributesGroup',
+        sectionLabel: 'System',
+        dataStoreId: 'dataStoreMoreAttributesGroup',
+        fieldLabels: [
+          'Description:',
+          '',
+          'Format Name:',
+          'State:',
+          'Context:',
+          'Location:',
+          'Life Cycle Template:',
+          'Team Template:',
+          'Created By:',
+          'Modified By:',
+          'Created On:',
+          'Last Modified:',
+        ],
+      },
+    ],
+    rosterCount: 27,
+    anonymousOccurrenceZeroBased: 16,
+    sectionId: 'MoreAttributesGroup',
+    sectionLabel: 'System',
+    dataStoreId: 'dataStoreMoreAttributesGroup',
+    sectionOccurrenceZeroBased: 1,
+    previousLabel: 'Description:',
+    nextLabel: 'Format Name:',
+    captionTag: 'TD',
+    captionClass: 'attributePanel-label',
+    valueTag: 'TD',
+    valueClass: 'attributePanel-value',
+    anonymousRow: {
+      rowZeroBased: 0,
+      captionChildOneBased: 5,
+      valueChildOneBased: 6,
+      childClasses: [
+        'attributePanel-asterisk',
+        'attributePanel-label',
+        'attributePanel-value',
+        'attributePanel-asterisk',
+        'attributePanel-label',
+        'attributePanel-value',
+      ],
+    },
+    evidenceRef:
+      'current-source-reload-failure-0.2.72/SL_NATIVE_LAYOUT_DECODED.json',
+    evidenceSha256:
+      '29a3e311f460aceff23095b43b98b26319e68eb0e5483f6eacd3a007c77966c2',
+  },
+  'SB-IN': {
+    modelRevision: 'tdms-reviewed-sb-document-anonymous-own-raw@1',
+    scopeId: 'SB-IN',
+    nativeClass: 'wt.doc.WTDocument',
+    nativeTypeId: 'WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument',
+    nativeHeaderType: 'SB文档',
+    detailTabId:
+      'infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails',
+    detailTabLabel: 'Details',
+    detailPanel: '#infoPage_myTab_object_docInfoDefaultDetails',
+    sections: [
+      {
+        sectionId: 'General',
+        sectionLabel: 'General',
+        dataStoreId: 'dataStoreGeneral',
+        fieldLabels: [
+          'Name:',
+          'Status:',
+          'Primary Content:',
+          'Modified By:',
+          'Last Modified:',
+        ],
+      },
+      {
+        sectionId: 'BusinessAttributesGroup',
+        sectionLabel: 'Business',
+        dataStoreId: 'dataStoreBusinessAttributesGroup',
+        fieldLabels: [
+          'SB/SL文档编号:',
+          'SB/SL版本:',
+          'OEM厂商类型:',
+          'OEM厂商:',
+          '类型:',
+          'SB/SL标题:',
+          '是否紧急:',
+          '颁发日期:',
+          '原创建者:',
+          '原创建时间:',
+        ],
+      },
+      {
+        sectionId: 'MoreAttributesGroup',
+        sectionLabel: 'System',
+        dataStoreId: 'dataStoreMoreAttributesGroup',
+        fieldLabels: [
+          'Description:',
+          '',
+          'Format Name:',
+          'State:',
+          'Context:',
+          'Location:',
+          'Life Cycle Template:',
+          'Team Template:',
+          'Created By:',
+          'Modified By:',
+          'Created On:',
+          'Last Modified:',
+        ],
+      },
+    ],
+    rosterCount: 27,
+    anonymousOccurrenceZeroBased: 16,
+    sectionId: 'MoreAttributesGroup',
+    sectionLabel: 'System',
+    dataStoreId: 'dataStoreMoreAttributesGroup',
+    sectionOccurrenceZeroBased: 1,
+    previousLabel: 'Description:',
+    nextLabel: 'Format Name:',
+    captionTag: 'TD',
+    captionClass: 'attributePanel-label',
+    valueTag: 'TD',
+    valueClass: 'attributePanel-value',
+    anonymousRow: {
+      rowZeroBased: 0,
+      captionChildOneBased: 5,
+      valueChildOneBased: 6,
+      childClasses: [
+        'attributePanel-asterisk',
+        'attributePanel-label',
+        'attributePanel-value',
+        'attributePanel-asterisk',
+        'attributePanel-label',
+        'attributePanel-value',
+      ],
+    },
+    evidenceRef:
+      'current-source-reload-failure-0.2.72/SL_NATIVE_LAYOUT_DECODED.json',
+    evidenceSha256:
+      '29a3e311f460aceff23095b43b98b26319e68eb0e5483f6eacd3a007c77966c2',
+  },
+  SL: {
+    modelRevision: 'tdms-reviewed-sb-document-anonymous-own-raw@1',
+    scopeId: 'SL',
+    nativeClass: 'wt.doc.WTDocument',
+    nativeTypeId: 'WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument',
+    nativeHeaderType: 'SB文档',
+    detailTabId:
+      'infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails',
+    detailTabLabel: 'Details',
+    detailPanel: '#infoPage_myTab_object_docInfoDefaultDetails',
+    sections: [
+      {
+        sectionId: 'General',
+        sectionLabel: 'General',
+        dataStoreId: 'dataStoreGeneral',
+        fieldLabels: [
+          'Name:',
+          'Status:',
+          'Primary Content:',
+          'Modified By:',
+          'Last Modified:',
+        ],
+      },
+      {
+        sectionId: 'BusinessAttributesGroup',
+        sectionLabel: 'Business',
+        dataStoreId: 'dataStoreBusinessAttributesGroup',
+        fieldLabels: [
+          'SB/SL文档编号:',
+          'SB/SL版本:',
+          'OEM厂商类型:',
+          'OEM厂商:',
+          '类型:',
+          'SB/SL标题:',
+          '是否紧急:',
+          '颁发日期:',
+          '原创建者:',
+          '原创建时间:',
+        ],
+      },
+      {
+        sectionId: 'MoreAttributesGroup',
+        sectionLabel: 'System',
+        dataStoreId: 'dataStoreMoreAttributesGroup',
+        fieldLabels: [
+          'Description:',
+          '',
+          'Format Name:',
+          'State:',
+          'Context:',
+          'Location:',
+          'Life Cycle Template:',
+          'Team Template:',
+          'Created By:',
+          'Modified By:',
+          'Created On:',
+          'Last Modified:',
+        ],
+      },
+    ],
+    rosterCount: 27,
+    anonymousOccurrenceZeroBased: 16,
+    sectionId: 'MoreAttributesGroup',
+    sectionLabel: 'System',
+    dataStoreId: 'dataStoreMoreAttributesGroup',
+    sectionOccurrenceZeroBased: 1,
+    previousLabel: 'Description:',
+    nextLabel: 'Format Name:',
+    captionTag: 'TD',
+    captionClass: 'attributePanel-label',
+    valueTag: 'TD',
+    valueClass: 'attributePanel-value',
+    anonymousRow: {
+      rowZeroBased: 0,
+      captionChildOneBased: 5,
+      valueChildOneBased: 6,
+      childClasses: [
+        'attributePanel-asterisk',
+        'attributePanel-label',
+        'attributePanel-value',
+        'attributePanel-asterisk',
+        'attributePanel-label',
+        'attributePanel-value',
+      ],
+    },
+    evidenceRef:
+      'current-source-reload-failure-0.2.72/SL_NATIVE_LAYOUT_DECODED.json',
+    evidenceSha256:
+      '29a3e311f460aceff23095b43b98b26319e68eb0e5483f6eacd3a007c77966c2',
+  },
+  MT: {
+    modelRevision: 'tdms-reviewed-sb-document-anonymous-own-raw@1',
+    scopeId: 'MT',
+    nativeClass: 'wt.doc.WTDocument',
+    nativeTypeId: 'WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument',
+    nativeHeaderType: 'SB文档',
+    detailTabId:
+      'infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails',
+    detailTabLabel: 'Details',
+    detailPanel: '#infoPage_myTab_object_docInfoDefaultDetails',
+    sections: [
+      {
+        sectionId: 'General',
+        sectionLabel: 'General',
+        dataStoreId: 'dataStoreGeneral',
+        fieldLabels: [
+          'Name:',
+          'Status:',
+          'Primary Content:',
+          'Modified By:',
+          'Last Modified:',
+        ],
+      },
+      {
+        sectionId: 'BusinessAttributesGroup',
+        sectionLabel: 'Business',
+        dataStoreId: 'dataStoreBusinessAttributesGroup',
+        fieldLabels: [
+          'SB/SL文档编号:',
+          'SB/SL版本:',
+          'OEM厂商类型:',
+          'OEM厂商:',
+          '类型:',
+          'SB/SL标题:',
+          '是否紧急:',
+          '颁发日期:',
+          '原创建者:',
+          '原创建时间:',
+        ],
+      },
+      {
+        sectionId: 'MoreAttributesGroup',
+        sectionLabel: 'System',
+        dataStoreId: 'dataStoreMoreAttributesGroup',
+        fieldLabels: [
+          'Description:',
+          '',
+          'Format Name:',
+          'State:',
+          'Context:',
+          'Location:',
+          'Life Cycle Template:',
+          'Team Template:',
+          'Created By:',
+          'Modified By:',
+          'Created On:',
+          'Last Modified:',
+        ],
+      },
+    ],
+    rosterCount: 27,
+    anonymousOccurrenceZeroBased: 16,
+    sectionId: 'MoreAttributesGroup',
+    sectionLabel: 'System',
+    dataStoreId: 'dataStoreMoreAttributesGroup',
+    sectionOccurrenceZeroBased: 1,
+    previousLabel: 'Description:',
+    nextLabel: 'Format Name:',
+    captionTag: 'TD',
+    captionClass: 'attributePanel-label',
+    valueTag: 'TD',
+    valueClass: 'attributePanel-value',
+    anonymousRow: {
+      rowZeroBased: 0,
+      captionChildOneBased: 5,
+      valueChildOneBased: 6,
+      childClasses: [
+        'attributePanel-asterisk',
+        'attributePanel-label',
+        'attributePanel-value',
+        'attributePanel-asterisk',
+        'attributePanel-label',
+        'attributePanel-value',
+      ],
+    },
+    evidenceRef:
+      'current-source-reload-failure-0.2.72/SL_NATIVE_LAYOUT_DECODED.json',
+    evidenceSha256:
+      '29a3e311f460aceff23095b43b98b26319e68eb0e5483f6eacd3a007c77966c2',
+  },
   ENGINEERING_ASSESSMENT: {
     modelRevision: 'tdms-reviewed-ef-ad-anonymous-own-raw@1',
     scopeId: 'ENGINEERING_ASSESSMENT',
@@ -346,7 +797,11 @@ export function validateReviewedAnonymousOwnRawField({
   if (!m) return false;
   const context = slotContext({ scopeId, owner, read });
   if (field !== context.field) {
-    if (own(field, 'rawTextQualification') || own(field, 'rawCaptionText'))
+    if (
+      own(field, 'rawTextQualification') ||
+      own(field, 'rawCaptionText') ||
+      own(field, 'strictBlankEvidence')
+    )
       reject('TDMS_ANONYMOUS_OWN_RAW_QUALIFICATION_INVALID');
     return false;
   }
@@ -374,7 +829,17 @@ export function validateReviewedAnonymousOwnRawField({
   )
     reject('TDMS_ANONYMOUS_OWN_RAW_QUALIFICATION_INVALID');
   const value = field.value,
-    isEligible = eligible(owner.stateRaw);
+    isEligible = eligible(owner.stateRaw),
+    hasBlank = own(field, 'strictBlankEvidence');
+  const strictBlank =
+    hasBlank &&
+    sbBlank.field(field.strictBlankEvidence, { scopeId, owner, read, field });
+  if (
+    sbBlank.model.scopeIds.includes(scopeId) &&
+    ['VALUE', 'BLANK', 'TRUNCATED'].includes(value.state) &&
+    !strictBlank
+  )
+    reject('TDMS_COMPLETE_SB_ANONYMOUS_STRICT_BLANK_UNPROVEN');
   const reason = isEligible
     ? null
     : owner.stateRaw === 'Estimating'
@@ -384,6 +849,7 @@ export function validateReviewedAnonymousOwnRawField({
     reject('TDMS_ANONYMOUS_OWN_RAW_QUALIFICATION_INVALID');
   if (
     !isEligible &&
+    !strictBlank &&
     (value.state !== 'NOT_READ' ||
       value.rawValue !== null ||
       value.observedTotalCodepoints !== 0 ||

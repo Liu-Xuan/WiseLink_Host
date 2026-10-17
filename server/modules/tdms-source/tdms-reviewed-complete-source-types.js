@@ -1,3 +1,24 @@
+import { SB_DOCUMENT_STRUCTURE_ADAPTER as sbStructure } from './tdms-reviewed-sb-document-structure-native-model';
+import {
+  reviewedSbNotebookPanel,
+  validateReviewedSbNotebookPurpose,
+} from './tdms-reviewed-sb-notebook-purpose';
+import {
+  reviewedSbAttachmentAliasPanel,
+  validateReviewedSbAttachmentAliasPurpose,
+} from './tdms-reviewed-sb-attachment-alias-purpose';
+import {
+  reviewedSbFieldsAliasPanel,
+  validateReviewedSbFieldsAliasPurpose,
+} from './tdms-reviewed-sb-fields-alias-purpose';
+import {
+  reviewedSbHistoryPanel,
+  validateReviewedSbHistoryPurpose,
+} from './tdms-reviewed-sb-history-purpose';
+import {
+  reviewedSbManagementPanel,
+  validateReviewedSbManagementPurpose,
+} from './tdms-reviewed-sb-management-purpose';
 // Pure EFRequest surface contract from the SHA-qualified 2026-10-14 code delta.
 // Native fields describe observations; they do not supply source authority.
 import { tdmsError } from './tdms-source.types';
@@ -3047,6 +3068,71 @@ export function validateReviewedCompleteTabPurposes({
   if (!Array.isArray(read?.tabs)) rejectPurpose();
   let excluded = 0;
   for (const tab of read.tabs) {
+    if (sbStructure.isTab({ scopeId, owner, tab })) {
+      const purpose = sbStructure.validate(tab.purposeEvidence, {
+        scopeId,
+        owner,
+        tab,
+        read,
+      });
+      if (
+        !purpose?.complete &&
+        (tab.required !== true ||
+          tab.state !== 'NOT_READ' ||
+          tab.reasonCode !== sbStructure.model.stopReason)
+      )
+        rejectPurpose();
+      continue;
+    }
+    if (reviewedSbNotebookPanel({ scopeId, owner, tab })) {
+      validateReviewedSbNotebookPurpose(tab.purposeEvidence, {
+        scopeId,
+        owner,
+        tab,
+        read,
+      });
+      continue;
+    }
+    if (reviewedSbAttachmentAliasPanel({ scopeId, owner, tab })) {
+      validateReviewedSbAttachmentAliasPurpose(tab.purposeEvidence, {
+        scopeId,
+        owner,
+        tab,
+        read,
+      });
+      excluded++;
+      continue;
+    }
+    if (reviewedSbFieldsAliasPanel({ scopeId, owner, tab })) {
+      validateReviewedSbFieldsAliasPurpose(tab.purposeEvidence, {
+        scopeId,
+        owner,
+        tab,
+        read,
+      });
+      excluded++;
+      continue;
+    }
+    if (reviewedSbHistoryPanel({ scopeId, owner, tab })) {
+      validateReviewedSbHistoryPurpose(tab.purposeEvidence, {
+        scopeId,
+        owner,
+        tab,
+        read,
+      });
+      excluded++;
+      continue;
+    }
+    if (reviewedSbManagementPanel({ scopeId, owner, tab })) {
+      validateReviewedSbManagementPurpose(tab.purposeEvidence, {
+        scopeId,
+        owner,
+        tab,
+        read,
+      });
+      excluded++;
+      continue;
+    }
     if (scopeId === 'AD_HANDLING_FORM' && tab.purposeEvidence !== undefined) {
       validateReviewedAdHandlingSurfaceEvidence(tab.purposeEvidence, {
         scopeId,
@@ -3075,7 +3161,9 @@ export function validateReviewedCompleteTabPurposes({
         rejectPurpose();
       if (
         structurePurpose?.complete &&
-        (tab.required !== true || tab.state !== 'VALUE' || tab.reasonCode !== null)
+        (tab.required !== true ||
+          tab.state !== 'VALUE' ||
+          tab.reasonCode !== null)
       )
         rejectPurpose();
       continue;
@@ -3252,7 +3340,8 @@ export function validateReviewedCompleteTabRoster({
     !(
       isReviewedEfRequestOwner({ scopeId, owner }) ||
       isReviewedAdItemOwner({ scopeId, owner }) ||
-      isReviewedAdHandlingOwner({ scopeId, owner })
+      isReviewedAdHandlingOwner({ scopeId, owner }) ||
+      isReviewedSbDocumentOwner({ scopeId, owner })
     )
   )
     reject();
@@ -3278,8 +3367,9 @@ export function validateReviewedCompleteTabRoster({
   )
     reject();
   const c = controls[0],
-    m =
-      scopeId === 'AD_HANDLING_FORM'
+    m = isReviewedSbDocumentOwner({ scopeId, owner })
+      ? REVIEWED_SB_DOCUMENT_NATIVE_MODEL
+      : scopeId === 'AD_HANDLING_FORM'
         ? REVIEWED_AD_HANDLING_NATIVE_MODEL
         : scopeId === 'AD_ITEM'
           ? REVIEWED_AD_ITEM_NATIVE_MODEL
@@ -3462,6 +3552,116 @@ export function validateReviewedAdModifiedMirrors({
 } = {}) {
   if (!isReviewedAdModifiedMirrorOwner({ scopeId, owner })) return false;
   const m = REVIEWED_AD_MODIFIED_MIRROR_MODEL,
+    rows = Array.isArray(fields)
+      ? fields.filter((f) => f?.value?.actualLabel === 'Last Modified:')
+      : [];
+  const error = (code) => {
+    throw tdmsError(code);
+  };
+  if (
+    rows.length !== 2 ||
+    m.modifiedMirrors.some((spec, index) => {
+      const f = rows[index],
+        sectionId = m.detailTabId + '::' + spec.sectionId,
+        matching = Array.isArray(sections)
+          ? sections.filter((s) => s?.sectionId === sectionId)
+          : [],
+        section = matching[0];
+      return (
+        f.tabId !== m.detailTabId ||
+        f.sectionId !== sectionId ||
+        f.labelOrigin !== 'NATIVE_SOURCE_DECLARED' ||
+        f.nativeControl?.tag !== 'TD' ||
+        f.nativeControl.readOnly !== null ||
+        f.nativeControl.disabled !== null ||
+        f.fieldId !== f.value.locator ||
+        typeof f.value.locator !== 'string' ||
+        !f.value.locator.startsWith(
+          m.detailPanel + ' #' + spec.dataStoreId + ' > ',
+        ) ||
+        !Array.isArray(f.links) ||
+        f.links.length !== 0 ||
+        matching.length !== 1 ||
+        section.tabId !== m.detailTabId ||
+        section.panelLocator !== m.detailPanel + ' #' + spec.sectionId ||
+        section.label !== spec.sectionLabel ||
+        section.sourceDeclared !== true ||
+        section.state !== 'VALUE'
+      );
+    })
+  )
+    error('TDMS_COMPLETE_OWN_MODIFIED_MIRROR_INVALID');
+  if (rows.some((f) => f.value.state !== 'VALUE'))
+    error('TDMS_COMPLETE_OWN_MODIFIED_MIRROR_UNREAD');
+  if (
+    typeof owner.sourceModifiedRaw !== 'string' ||
+    !owner.sourceModifiedRaw.trim() ||
+    rows.some(
+      (f) =>
+        f.value.rawValue !== owner.sourceModifiedRaw ||
+        f.value.observedTotalCodepoints !== [...owner.sourceModifiedRaw].length,
+    )
+  )
+    error('TDMS_COMPLETE_OWN_MODIFIED_MIRROR_CHANGED');
+  return { state: 'VALUE', unreadLocators: [] };
+}
+
+export const REVIEWED_SB_DOCUMENT_NATIVE_MODEL = Object.freeze({
+  modelRevision: 'tdms-reviewed-sb-document-own-details@1',
+  scopeId: 'SB_DOCUMENT',
+  nativeClass: 'wt.doc.WTDocument',
+  nativeTypeId: 'WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument',
+  nativeHeaderType: 'SB文档',
+  detailTabId:
+    'infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails',
+  detailPanel: '#infoPage_myTab_object_docInfoDefaultDetails',
+  modifiedMirrors: [
+    {
+      sectionId: 'General',
+      sectionLabel: 'General',
+      dataStoreId: 'dataStoreGeneral',
+    },
+    {
+      sectionId: 'MoreAttributesGroup',
+      sectionLabel: 'System',
+      dataStoreId: 'dataStoreMoreAttributesGroup',
+    },
+  ],
+  evidenceRef:
+    'current-source-reload-failure-0.2.72/SL_NATIVE_LAYOUT_DECODED.json',
+  evidenceSha256:
+    '29a3e311f460aceff23095b43b98b26319e68eb0e5483f6eacd3a007c77966c2',
+  scopeIds: ['SB', 'SIL', 'SB-IN', 'SL', 'MT'],
+  rootLocator: '#infoPagemainInfoPagePanel',
+  nonContentControl: {
+    actionId: 'infoPageinfoPanelID__new_tab_action',
+    tag: 'LI',
+    classToken: 'x-tab-with-icon',
+    rawCaption: '',
+    semantic: 'NATIVE_TAB_CREATE_ACTION',
+  },
+});
+export function isReviewedSbDocumentOwner({ scopeId, owner } = {}) {
+  const m = REVIEWED_SB_DOCUMENT_NATIVE_MODEL;
+  return (
+    m.scopeIds.includes(scopeId) &&
+    nativeRef.test(owner?.sourceRecordId || '') &&
+    owner.nativeTypeId === m.nativeTypeId &&
+    owner.nativeTypeEvidence?.state === 'VALUE' &&
+    owner.nativeTypeEvidence.rawValue === m.nativeTypeId &&
+    owner.rawHeaderType === m.nativeHeaderType &&
+    owner.scopeEvidence?.businessType === scopeId
+  );
+}
+
+export function validateReviewedSbDocumentModifiedMirrors({
+  scopeId,
+  owner,
+  fields,
+  sections,
+} = {}) {
+  if (!isReviewedSbDocumentOwner({ scopeId, owner })) return false;
+  const m = REVIEWED_SB_DOCUMENT_NATIVE_MODEL,
     rows = Array.isArray(fields)
       ? fields.filter((f) => f?.value?.actualLabel === 'Last Modified:')
       : [];

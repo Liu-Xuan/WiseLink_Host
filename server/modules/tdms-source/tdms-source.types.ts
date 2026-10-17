@@ -43,6 +43,8 @@ export type TdmsAction =
 export interface TdmsSourceGrant {
   scope: TdmsSourceScope;
   permissionRevision: string;
+  /** Server-only exact audience, when the authority is member-bounded rather than source-wide. */
+  permittedMembers?: TdmsImportMemberClaims;
 }
 /** All are untrusted source claims until a Host provider checks current membership and rights. */
 export interface TdmsImportMemberClaims {
@@ -168,6 +170,8 @@ export interface TdmsCataloguePage {
   after?: string;
   /** Existing explicit bindings only; an unresolved relation never matches. */
   documentVersionId?: string;
+  /** Current server authority; filter before LIMIT so denied rows cannot hide a permitted page. */
+  permittedRecords?: TdmsImportMemberClaims['records'];
   /** Includes the one lookahead record; never exceeds the public page plus one. */
   limit: number;
 }
@@ -230,6 +234,8 @@ export interface TdmsArtifactStore {
     scope: TdmsSourceScope;
     actor: TdmsPublicActor;
     packageId: string;
+    /** Host-computed digest of the unchanged daily package, never a Source grant. */
+    payloadDigest: string;
     observation: TdmsDailyArtifactObservation;
   }): Promise<TdmsArtifactSelection>;
   /** Current owner/default bucket/exact object and bytes checks; never ordinary DV ingestion. */

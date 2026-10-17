@@ -1,9 +1,9 @@
-# WiseLink Host 技术状态
+# WiseLink Host source status
 
-此分支公开同步 WiseLink 当前 Host 源码，包含资料库与阅读页、LCM 原生矩阵、分层 Wiki、TDMS 接口与校验等实现。
+Current canonical source: `b1b57306f96bcd3d3f74debf9589f27ccd86549b` (parent `ae9399a4519eeb748509ceefa9bca20e7950636b`).
 
-本次对应 canonical 源码提交 `ae9399a4519eeb748509ceefa9bca20e7950636b`。包含阅读请求冲突隔离、保留历史与审计的工程师文字更正接口，以及平台启动依赖的打包修复。相关检查、独立审查、完整构建及隔离部署包 HTTP 启动检查已通过。
+This snapshot connects current Native identity and scoped Source authorization to daily TDMS intake, exact-member reads and immutable candidate upload associations. The existing three client routes, import receipt and Host version/CAS decisions remain in place. It includes the existing-session Native factory and the selectively reviewed SB pure consumers from Source 0.2.73; newer Source closures are adopted separately after review.
 
-公开仓库使用当前源码快照和本技术概要。工程业务数据、原件、私人运行回执与详细协调记录保存在私有环境中。
+Local validation includes both TypeScript checks, affected consumer tests, receiver PostgreSQL tests and independent member-policy checks. The exact source completed a full build with all 4028 tracked inputs restored, four physical deployment-package checks, and full AppModule startup with nine actual HTTP checks. Full application checks used declared external SDK/database fixtures; the actual entry, 43 modules, 56 controllers, business service/repository/Drizzle reads and refusal paths were preserved, with no model invocation.
 
-GitHub 源码同步与实际应用部署分别记录。
+[Receiver wiring and Native factory](TDMS_RECEIVER_RUNTIME_20261018.md) documents the code and activation prerequisites. Production database/Source provisioning, live deployment and real ingestion have their own acceptance records. This public tree contains the accepted code and this technical summary; private operational records are excluded.

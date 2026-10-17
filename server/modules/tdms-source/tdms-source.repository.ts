@@ -18,6 +18,7 @@ import type {
   TdmsTransaction,
 } from './tdms-source.types';
 import { tdmsError } from './tdms-source.types';
+import { withTdmsReceiverDatabase } from './tdms-receiver-sql-context';
 /** Existing verified HTTP middleware owns DB actor context; never impersonates a service caller. */
 @Injectable()
 export class MiaodaTdmsSourceRepository implements TdmsRepository {
@@ -26,7 +27,9 @@ export class MiaodaTdmsSourceRepository implements TdmsRepository {
   ) {}
   transaction<T>(operation: (tx: TdmsTransaction) => Promise<T>): Promise<T> {
     return this.db.transaction((db) =>
-      operation(new SqlTdmsTransaction(db as PostgresJsDatabase)),
+      withTdmsReceiverDatabase(db as PostgresJsDatabase, () =>
+        operation(new SqlTdmsTransaction(db as PostgresJsDatabase)),
+      ),
     );
   }
 }
@@ -67,12 +70,21 @@ export class SqlTdmsTransaction implements TdmsTransaction {
     const documentVersion: SQL = page.documentVersionId
       ? sql`AND jsonb_exists(v.data->'record'->'relatedDocumentVersionIds',${page.documentVersionId})`
       : sql``;
+    const members: SQL =
+      page.permittedRecords === undefined
+        ? sql``
+        : sql`AND EXISTS (
+      SELECT 1 FROM jsonb_array_elements(${JSON.stringify(page.permittedRecords)}::jsonb) approved
+      WHERE approved->>'recordKind'=h.record_kind AND approved->>'sourceRecordId'=h.source_record_id)`;
     const rows = await this.db.execute<{ data: TdmsStoredRevision }>(
-      sql`SELECT v.data FROM tdms_record h JOIN tdms_record_revision v ON v.tenant_id=h.tenant_id AND v.source_revision_ref=h.source_revision_ref WHERE h.tenant_id=${s.tenantId} AND h.source_key=${s.sourceKey} AND h.source_instance_id=${s.sourceInstanceId} AND h.scope_id=${s.scopeId} ${after} ${documentVersion} ORDER BY h.source_revision_ref LIMIT ${page.limit}`,
+      sql`SELECT v.data FROM tdms_record h JOIN tdms_record_revision v ON v.tenant_id=h.tenant_id AND v.source_revision_ref=h.source_revision_ref WHERE h.tenant_id=${s.tenantId} AND h.source_key=${s.sourceKey} AND h.source_instance_id=${s.sourceInstanceId} AND h.scope_id=${s.scopeId} ${after} ${documentVersion} ${members} ORDER BY h.source_revision_ref LIMIT ${page.limit}`,
     );
     return rows.map((r) => r.data);
   }
-  async documentVersionCatalogue(s: TdmsSourceScope, page: TdmsDocumentCataloguePage) {
+  async documentVersionCatalogue(
+    s: TdmsSourceScope,
+    page: TdmsDocumentCataloguePage,
+  ) {
     if (!Number.isSafeInteger(page.limit) || page.limit < 1 || page.limit > 51)
       throw tdmsError('TDMS_CATALOGUE_LIMIT_INVALID');
     const after: SQL = page.after

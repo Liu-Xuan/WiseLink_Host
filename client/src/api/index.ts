@@ -6,3 +6,4 @@ export * as derivedSummary from './derived-summary';
 export * as hierarchicalWiki from './hierarchical-wiki';
 
 export * as wikiGuide from './wiki-guide';
+export * as tdmsSourceNative from './tdms-source-native';

@@ -1,4 +1,4 @@
-import React, { lazy } from 'react';
+import React, { lazy, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import Layout from './components/Layout';
@@ -8,6 +8,7 @@ import TranslationGlossaryPage from './pages/TranslationGlossaryPage/Translation
 import DerivedSummaryListPage from './features/derived-summary/DerivedSummaryListPage';
 import DerivedSummaryComposePage from './features/derived-summary/DerivedSummaryComposePage';
 import DerivedSummaryReadingPage from './features/derived-summary/DerivedSummaryReadingPage';
+import { installTdmsNativeHostBridge } from './utils/tdms-native-host-bridge';
 
 // Route chunks load on demand. AppContainer, identity providers and the
 // QueryClient stay mounted above the lazy boundary so navigation does not
@@ -118,6 +119,7 @@ function KnowledgeEntry() {
 }
 
 const RoutesComponent = () => {
+  useEffect(installTdmsNativeHostBridge, []);
   return (
     <Routes>
       <Route
