@@ -28,7 +28,23 @@ export function createReviewedSbAnonymousStrictBlank(M) {
     !Array.isArray(v) &&
     Object.keys(v).length === ks.length &&
     ks.every((k) => Object.hasOwn(v, k));
-  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const same = (a, b) => {
+    if (a === b) return true;
+    if (
+      !a ||
+      !b ||
+      typeof a !== 'object' ||
+      typeof b !== 'object' ||
+      Array.isArray(a) !== Array.isArray(b)
+    )
+      return false;
+    if (Array.isArray(a) && a.length !== b.length) return false;
+    const keys = Object.keys(a);
+    return (
+      keys.length === Object.keys(b).length &&
+      keys.every((k) => Object.hasOwn(b, k) && same(a[k], b[k]))
+    );
+  };
   const bad = () => {
     throw tdmsError('TDMS_COMPLETE_SB_ANONYMOUS_STRICT_BLANK_UNPROVEN');
   };

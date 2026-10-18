@@ -1,9 +1,9 @@
 # WiseLink Host source status
 
-Current canonical source: **45c0a56e153094748743b6cfc7e233746a8df42b** (parent 6082709006d886f06852dbd5fa15adff4b355291).
+Current canonical source: **71a151d83d4c83a7108baee369a16ca19954e68b** (parent 45c0a56e153094748743b6cfc7e233746a8df42b).
 
-The Native transport now supports an explicitly configured existing Chrome browser WebSocket alongside the previous loopback HTTP discovery path. It selects an existing exact Host page, attaches with a pinned session, invokes the unchanged bridge, then detaches and closes. It does not discover endpoints, launch or navigate Chrome, read credentials, or resubmit an unknown POST. Receiver identity, Source authority, preflight and immutable original-byte checks remain unchanged.
+TDMS persisted-object comparisons now ignore object property order while preserving exact key sets, types, recursive values and array order. Ten reviewed comparison helpers are used by existing Host validators. Synthetic regression coverage exercises admission, committed-row readback, replay and SourceRef consistency.
 
-Local validation includes 36 transport checks and 10 independent counterexamples. The exact canonical commit passes the complete build with all 4039 tracked inputs restored and four physical deployment-package checks. These checks use synthetic peers; they do not establish a real Chrome connection or Source reception. The previous reviewed Source0.2.83/@13 pure consumers remain in this snapshot; later unintegrated handoffs are not included.
+The canonical candidate passed its existing regression checks and complete build. This public source projection reuses those results. Receiver identity checks, immutable source and artifact bindings, and the existing Native transport remain part of the current source snapshot.
 
-[Receiver wiring, deployment identity, Source consumers and Native transport](TDMS_RECEIVER_RUNTIME_20261018.md) describes actual consumers and prerequisites. Database/profile activation, formal Source registration, an authorized usable endpoint and real business reception remain separate steps. Private operational records and private development history are excluded from this public source snapshot.
+[Receiver wiring, deployment identity, Source consumers and Native transport](TDMS_RECEIVER_RUNTIME_20261018.md) describes the runtime interfaces and prerequisites. Deployment and real reception evidence are maintained separately. Private operational records and private development history are excluded from this public source snapshot.
