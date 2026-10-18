@@ -48,14 +48,28 @@ export function validateNativeTransportConfig(raw) {
     'sourceStateDirectory', 'targetId', 'receiverId']);
   if (value.schemaVersion !== 'wiselink.tdms-native-host-transport-config.v1')
     fail('TDMS_NATIVE_TRANSPORT_CONFIG_INVALID', 400);
-  const endpoint = loopbackUrl(value.chromeDevtoolsEndpoint, ['http:']);
-  if (endpoint.pathname !== '/') fail('TDMS_NATIVE_CHROME_ENDPOINT_INVALID', 400);
+  const browser = /^ws:\/\/(127\.0\.0\.1|\[::1\]|localhost):([1-9]\d{0,4})\/devtools\/browser\/([A-Za-z0-9_-]{1,160})$/u
+    .exec(text(value.chromeDevtoolsEndpoint, 2000));
+  let endpoint;
+  if (browser) {
+    if (Number(browser[2]) > 65535) fail('TDMS_NATIVE_CHROME_ENDPOINT_INVALID', 400);
+    endpoint = value.chromeDevtoolsEndpoint;
+  } else {
+    let url;
+    try { url = loopbackUrl(value.chromeDevtoolsEndpoint, ['http:']); }
+    catch (error) {
+      if (error?.code) throw error;
+      fail('TDMS_NATIVE_CHROME_ENDPOINT_INVALID', 400);
+    }
+    if (url.pathname !== '/') fail('TDMS_NATIVE_CHROME_ENDPOINT_INVALID', 400);
+    endpoint = url.origin;
+  }
   if (!path.isAbsolute(text(value.sourceStateDirectory, 4000)))
     fail('TDMS_NATIVE_SOURCE_STATE_DIRECTORY_INVALID', 400);
   if (value.targetId !== undefined && !/^[A-Za-z0-9_-]{1,160}$/u.test(text(value.targetId)))
     fail('TDMS_NATIVE_CHROME_TARGET_INVALID', 400);
   if (value.receiverId !== undefined) text(value.receiverId);
-  return Object.freeze({ ...value, chromeDevtoolsEndpoint: endpoint.origin });
+  return Object.freeze({ ...value, chromeDevtoolsEndpoint: endpoint });
 }
 export function validateReceiverBinding(raw) {
   const value = exact(raw?.data ?? raw, bindingKeys);
@@ -110,10 +124,85 @@ async function currentTarget(config) {
   return url.href;
 }
 
+// Browser-level CDP is opt-in by the exact configured endpoint. Only existing
+// targets are inspected/attached; no profile discovery, launch or navigation.
+async function invokeBrowserPage(config, expression, argument) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(config.chromeDevtoolsEndpoint);
+    let phase = 1, sessionId, finished = false, cleanupTimer;
+    const unknown = () => Object.assign(new Error('TDMS_HOST_RECEIPT_UNKNOWN'), {
+      code: 'TDMS_HOST_RECEIPT_UNKNOWN', statusCode: 503,
+      reconciliation: { phase: argument.operation, requestId: argument.requestId ?? argument.body?.requestId,
+        bindingId: argument.bindingId, nextAction: 'READ_ORIGINAL_REQUEST_AND_EXACT_SOURCE_REFS' },
+    });
+    let complete;
+    const finish = (error, value) => {
+      if (finished) return;
+      finished = true; clearTimeout(timer);
+      let closed = false;
+      complete = () => {
+        if (closed) return;
+        closed = true; clearTimeout(cleanupTimer); socket.close();
+        if (error) reject(error); else resolve(value);
+      };
+      if (sessionId && socket.readyState === WebSocket.OPEN) {
+        cleanupTimer = setTimeout(complete, 1000);
+        try { socket.send(JSON.stringify({id:4, method:'Target.detachFromTarget', params:{sessionId}})); }
+        catch { complete(); }
+      } else complete();
+    };
+    const send = (id, method, params, session) => {
+      try { socket.send(JSON.stringify({id, method, params, ...(session ? {sessionId:session} : {})})); }
+      catch { finish(unknown()); }
+    };
+    const timer = setTimeout(() => finish(unknown()), 45_000);
+    socket.addEventListener('open', () => send(1, 'Target.getTargets', {}));
+    socket.addEventListener('message', event => {
+      let message;
+      try { message = JSON.parse(String(event.data)); } catch { finish(unknown()); return; }
+      if (!message || typeof message !== 'object' || Array.isArray(message)) { finish(unknown()); return; }
+      if (finished) { if (message.id === 4 && message.sessionId === undefined) complete(); return; }
+      if (message.method === 'Target.detachedFromTarget' && message.params?.sessionId === sessionId) {
+        finish(unknown()); return;
+      }
+      if (message.id !== phase) return;
+      if ((phase === 3 ? message.sessionId !== sessionId : message.sessionId !== undefined)) {
+        finish(unknown()); return;
+      }
+      if (phase === 1) {
+        if (message.error || !Array.isArray(message.result?.targetInfos)) { finish(unknown()); return; }
+        const matches = message.result.targetInfos.filter(value => validTarget(value) &&
+          (!config.targetId || value.targetId === config.targetId));
+        if (matches.length !== 1) {
+          finish(Object.assign(new Error('Host page selection failed'), {
+            code:matches.length ? 'TDMS_NATIVE_CHROME_TARGET_AMBIGUOUS' : 'TDMS_NATIVE_AUTHENTICATED_HOST_PAGE_REQUIRED', statusCode:409 }));
+          return;
+        }
+        if (typeof matches[0].targetId !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/u.test(matches[0].targetId)) { finish(unknown()); return; }
+        phase = 2; send(2, 'Target.attachToTarget', {targetId:matches[0].targetId, flatten:true});
+      } else if (phase === 2) {
+        if (message.error || typeof message.result?.sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/u.test(message.result.sessionId)) {
+          finish(Object.assign(new Error('TDMS_NATIVE_CHROME_ATTACH_FAILED'), {code:'TDMS_NATIVE_CHROME_ATTACH_FAILED',statusCode:503}));
+          return;
+        }
+        sessionId = message.result.sessionId; phase = 3;
+        send(3, 'Runtime.evaluate', {expression, awaitPromise:true, returnByValue:true, timeout:40_000}, sessionId);
+      } else {
+        if (message.error || message.result?.exceptionDetails || !message.result?.result ||
+            !Object.hasOwn(message.result.result, 'value')) { finish(unknown()); return; }
+        finish(null, message.result.result.value);
+      }
+    });
+    socket.addEventListener('error', () => { if (finished) complete(); else finish(unknown()); });
+    socket.addEventListener('close', () => { if (finished) complete(); else finish(unknown()); });
+  });
+}
+
 /** Each invocation closes its connection; CLI completion leaves no live socket.
  * A disconnected/expired invocation is never resubmitted automatically. */
 async function invokeInExistingPage(config, argument) {
-  const endpoint = await currentTarget(config);
+  const browser = config.chromeDevtoolsEndpoint.startsWith('ws:');
+  const endpoint = browser ? null : await currentTarget(config);
   const expression = `(async () => {
     if (location.origin !== ${JSON.stringify(ORIGIN)} ||
         !location.pathname.startsWith(${JSON.stringify(PREFIX)}))
@@ -128,7 +217,7 @@ async function invokeInExistingPage(config, argument) {
       phase:error?.phase,requestId:error?.requestId,bindingId:error?.bindingId,
       filePath:error?.filePath,nextAction:error?.nextAction}; }
   })()`;
-  const result = await new Promise((resolve, reject) => {
+  const result = browser ? await invokeBrowserPage(config, expression, argument) : await new Promise((resolve, reject) => {
     const socket = new WebSocket(endpoint);
     let settled = false;
     const finish = (error, value) => {

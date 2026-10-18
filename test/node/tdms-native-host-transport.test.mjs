@@ -263,3 +263,219 @@ test('no-argument factory uses actual local CDP HTTP/WebSocket framing; lost POS
     await new Promise(resolve => server.close(resolve));
   }
 }));
+
+const hostPage = targetId => ({ targetId, type: 'page',
+  url: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/library' });
+async function browserPeer(run, options = {}) {
+  await fixture(async directory => {
+    const commands = [], operations = [], clients = new Set(); let httpCalls = 0;
+    const server = createServer((_req, res) => { httpCalls++; res.writeHead(500); res.end('HTTP discovery forbidden'); });
+    const wss = new WebSocketServer({ server });
+    wss.on('connection', socket => {
+      clients.add(socket);
+      socket.on('close', () => clients.delete(socket));
+      socket.on('message', async data => {
+        const c = JSON.parse(String(data)); commands.push(c);
+        const reply = (result, sessionId = c.sessionId) => socket.send(JSON.stringify({id:c.id,
+          ...(sessionId === undefined ? {} : {sessionId}), result}));
+        if (c.method === 'Target.getTargets') { reply({targetInfos:options.targets ?? [hostPage('pageA')]},options.controlSession); return; }
+        if (c.method === 'Target.attachToTarget') {
+          if (options.attachError) socket.send(JSON.stringify({id:c.id,error:{code:-32000,message:'synthetic attach failed'}}));
+          else if (options.attachClose) socket.close();
+          else if (options.badSession) reply({sessionId:42});
+          else reply({sessionId:'sessionA'});
+          return;
+        }
+        if (c.method === 'Target.detachFromTarget') {
+          if(options.detachError) socket.send(JSON.stringify({id:c.id,error:{code:-32000,message:'synthetic detach failure'}}));
+          else if(options.detachSession) reply({},'otherSession');
+          else reply({}); return;
+        }
+        assert.equal(c.method, 'Runtime.evaluate'); assert.equal(c.sessionId, 'sessionA');
+        assert.equal(c.params.awaitPromise,true); assert.equal(c.params.returnByValue,true); assert.equal(c.params.timeout,40_000);
+        const value = await vm.runInNewContext(c.params.expression, {
+          location:{origin:options.pageOrigin ?? 'https://hv5zjf4j8yb.feishuapp.com',pathname:'/app/app_17bzc551rsg/library'},
+          window:{__wiselinkTdmsNativeBridge:{schemaVersion:'wiselink.tdms-native-host-bridge.v1',invoke:async input => {
+            operations.push(input);
+            return options.invoke ? options.invoke(input, socket) : input.operation === 'RECEIVER' ? receiver() : {saved:true,requestId};
+          }}},
+        });
+        if (options.drop?.(operations.at(-1),socket)) return;
+        if (options.malformedReply) socket.send('null');
+        else if (options.wrongSession) reply({result:{value}},'otherSession');
+        else reply({result:{value}});
+      });
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const filename = path.join(directory,'config.json');
+    await writeFile(filename,JSON.stringify({schemaVersion:'wiselink.tdms-native-host-transport-config.v1',
+      chromeDevtoolsEndpoint:`ws://127.0.0.1:${server.address().port}/devtools/browser/syntheticBrowser`,
+      sourceStateDirectory:directory,...(options.targetId ? {targetId:options.targetId} : {})}),{mode:0o600});
+    const old = process.env.WISELINK_TDMS_NATIVE_TRANSPORT_CONFIG;
+    process.env.WISELINK_TDMS_NATIVE_TRANSPORT_CONFIG=filename;
+    const waitClosed = () => Promise.all([...clients].map(socket=>new Promise(resolve=>socket.once('close',resolve))));
+    try { await run({commands,operations,clients,directory,create:createNativeTransport,waitClosed}); assert.equal(httpCalls,0); }
+    finally {
+      if(old===undefined) delete process.env.WISELINK_TDMS_NATIVE_TRANSPORT_CONFIG; else process.env.WISELINK_TDMS_NATIVE_TRANSPORT_CONFIG=old;
+      for(const socket of wss.clients) socket.terminate();
+      await new Promise(resolve=>wss.close(resolve)); await new Promise(resolve=>server.close(resolve));
+    }
+  });
+}
+
+test('explicit browser WebSocket configuration accepts only exact loopback authority/port/browser path', () => {
+  const config = {schemaVersion:'wiselink.tdms-native-host-transport-config.v1',sourceStateDirectory:'/synthetic-state'};
+  for(const host of ['127.0.0.1','[::1]','localhost'])
+    assert.equal(validateNativeTransportConfig({...config,chromeDevtoolsEndpoint:`ws://${host}:9222/devtools/browser/synthetic-id`}).chromeDevtoolsEndpoint,
+      `ws://${host}:9222/devtools/browser/synthetic-id`);
+  for(const endpoint of ['wss://localhost:9222/devtools/browser/id','ws://localhost/devtools/browser/id',
+    'ws://localhost:0/devtools/browser/id','ws://localhost:65536/devtools/browser/id',
+    'ws://127.1:9222/devtools/browser/id','ws://2130706433:9222/devtools/browser/id',
+    'ws://localhost.evil:9222/devtools/browser/id','ws://remote.invalid:9222/devtools/browser/id',
+    'ws://user:secret@localhost:9222/devtools/browser/id','ws://localhost:9222/devtools/page/id',
+    'ws://localhost:9222/devtools/browser/id?token=synthetic','ws://localhost:9222/devtools/browser/id#fragment',
+    'ws://localhost:9222/devtools/browser/','ws://localhost:9222/devtools/browser/id/../other'])
+    assert.throws(()=>validateNativeTransportConfig({...config,chromeDevtoolsEndpoint:endpoint}),error=>error.code==='TDMS_NATIVE_CHROME_ENDPOINT_INVALID'&&error.statusCode===400);
+});
+
+test('actual browser-WebSocket factory selects and attaches existing Host page, pins each call, detaches/closes', async () => {
+  await browserPeer(async peer => {
+    const transport = await peer.create();
+    assert.deepEqual(await transport.request(`/api/tdms-source-imports/${requestId}`,{method:'GET'}),{saved:true,requestId});
+    assert.deepEqual(peer.commands.map(c=>c.method),Array(3).fill(['Target.getTargets','Target.attachToTarget','Runtime.evaluate','Target.detachFromTarget']).flat());
+    assert.ok(peer.commands.filter(c=>c.method==='Target.attachToTarget').every(c=>c.params.targetId==='pageA'&&c.params.flatten===true));
+    assert.ok(peer.commands.filter(c=>c.method==='Target.detachFromTarget').every(c=>c.params.sessionId==='sessionA'&&c.sessionId===undefined));
+    assert.deepEqual(peer.operations.map(i=>i.operation),['RECEIVER','RECEIVER','REQUEST']);
+    assert.deepEqual(JSON.parse(JSON.stringify(peer.operations[2].expectedReceiverBinding)),receiver());
+    await peer.waitClosed(); assert.equal(peer.clients.size,0);
+  });
+});
+
+test('browser target selection refuses ambiguity, foreign origin/app and non-page targets before attachment', async t => {
+  for(const [name,targets,code] of [
+    ['ambiguous',[hostPage('pageA'),hostPage('pageB')],'TDMS_NATIVE_CHROME_TARGET_AMBIGUOUS'],
+    ['origin',[{...hostPage('pageA'),url:'https://other.invalid/app/app_17bzc551rsg/'}],'TDMS_NATIVE_AUTHENTICATED_HOST_PAGE_REQUIRED'],
+    ['app',[{...hostPage('pageA'),url:'https://hv5zjf4j8yb.feishuapp.com/app/app_other/'}],'TDMS_NATIVE_AUTHENTICATED_HOST_PAGE_REQUIRED'],
+    ['non-page',[{...hostPage('pageA'),type:'service_worker'}],'TDMS_NATIVE_AUTHENTICATED_HOST_PAGE_REQUIRED'],
+    ['credential',[{...hostPage('pageA'),url:'https://user@hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/'}],'TDMS_NATIVE_AUTHENTICATED_HOST_PAGE_REQUIRED'],
+  ]) await t.test(name,()=>browserPeer(async peer=>{
+    await assert.rejects(peer.create(),error=>error.code===code&&error.statusCode===409);
+    assert.deepEqual(peer.commands.map(c=>c.method),['Target.getTargets']);
+    assert.equal(peer.operations.length,0); await peer.waitClosed();
+  },{targets}));
+  await browserPeer(async peer=>{
+    await peer.create();
+    assert.equal(peer.commands.find(c=>c.method==='Target.attachToTarget').params.targetId,'pageB');
+  },{targets:[hostPage('pageA'),hostPage('pageB')],targetId:'pageB'});
+});
+
+test('browser attachment and session/protocol failures never reach a Host POST and release sockets', async t => {
+  for(const [name,options,code] of [
+    ['attach-error',{attachError:true},'TDMS_NATIVE_CHROME_ATTACH_FAILED'],
+    ['invalid-session-type',{badSession:true},'TDMS_NATIVE_CHROME_ATTACH_FAILED'],
+    ['attach-close',{attachClose:true},'TDMS_HOST_RECEIPT_UNKNOWN'],
+    ['wrong-evaluate-session',{wrongSession:true},'TDMS_HOST_RECEIPT_UNKNOWN'],
+    ['wrong-control-session',{controlSession:'unrelated-session'},'TDMS_HOST_RECEIPT_UNKNOWN'],
+    ['malformed-response',{malformedReply:true},'TDMS_HOST_RECEIPT_UNKNOWN'],
+    ['page-changed-after-selection',{pageOrigin:'https://other.invalid'},'TDMS_NATIVE_HOST_PAGE_CHANGED'],
+  ]) await t.test(name,()=>browserPeer(async peer=>{
+    await assert.rejects(peer.create(),error=>error.code===code);
+    assert.equal(peer.operations.filter(i=>i.method==='POST').length,0);
+    assert.ok(peer.commands.every(c=>['Target.getTargets','Target.attachToTarget','Runtime.evaluate','Target.detachFromTarget'].includes(c.method)));
+    if(options.wrongSession||options.malformedReply||options.pageOrigin)
+      assert.equal(peer.commands.filter(c=>c.method==='Target.detachFromTarget').length,1);
+    await peer.waitClosed(); assert.equal(peer.clients.size,0);
+  },options));
+});
+
+test('WS preflight exact-member rejection precedes missing bytes and never uploads or imports', async () => {
+  await browserPeer(async peer=>{
+    const transport=await peer.create();
+    await assert.rejects(transport.request('/api/tdms-source-imports',{method:'POST',body:{requestId,
+      package:{artifactBindings:[{bindingId,blobSha256:'d'.repeat(64),byteLength:9}]}}}),
+      error=>error.code==='TDMS_IMPORT_MEMBER_SCOPE_ADMISSION_REQUIRED'&&error.statusCode===403);
+    assert.deepEqual(peer.operations.map(i=>i.operation),['RECEIVER','RECEIVER','PREFLIGHT']);
+    assert.deepEqual(JSON.parse(JSON.stringify(peer.operations.at(-1).expectedReceiverBinding)),receiver());
+  },{invoke:async input=>{
+    if(input.operation==='RECEIVER') return receiver();
+    throw Object.assign(new Error('synthetic denied'),{code:'TDMS_IMPORT_MEMBER_SCOPE_ADMISSION_REQUIRED',statusCode:403});
+  }});
+});
+
+test('WS lost/expired POST remains unknown; only explicit original-request GET follows, with no resend', async t => {
+  for(const mode of ['close','timeout']) await t.test(mode,async t=>{
+    let posts=0,reads=0;
+    if(mode==='timeout') {
+      const original=setTimeout;
+      t.mock.method(globalThis,'setTimeout',(fn,ms,...args)=>original(fn,ms===45_000?25:ms,...args));
+    }
+    await browserPeer(async peer=>{
+      const transport=await peer.create();
+      await assert.rejects(transport.request('/api/tdms-source-imports',{method:'POST',body:{requestId,package:{artifactBindings:[]}}}),
+        error=>error.code==='TDMS_HOST_RECEIPT_UNKNOWN'&&error.reconciliation.requestId===requestId&&
+          error.reconciliation.nextAction==='READ_ORIGINAL_REQUEST_AND_EXACT_SOURCE_REFS');
+      assert.equal(posts,1); assert.equal(reads,0);
+      assert.deepEqual(await transport.request(`/api/tdms-source-imports/${requestId}`,{method:'GET'}),{saved:true,requestId});
+      assert.equal(posts,1); assert.equal(reads,1);
+      await peer.waitClosed(); assert.equal(peer.clients.size,0);
+    },{invoke:async input=>{
+      if(input.operation==='RECEIVER') return receiver();
+      if(input.method==='POST') {posts++; return {saved:true};}
+      reads++; assert.equal(input.route,`/api/tdms-source-imports/${requestId}`); return {saved:true,requestId};
+    },drop:(input,socket)=>{
+      if(input.method!=='POST') return false;
+      if(mode==='close') socket.close(); return true;
+    }});
+  });
+});
+
+test('actual browser WS carries admitted synthetic original CAS bytes through one STAGE and one POST unchanged', async () => {
+  const bytes=Buffer.from('owned synthetic browser WS original'),sha=createHash('sha256').update(bytes).digest('hex');
+  const artifact={bindingId,blobSha256:sha,byteLength:bytes.length};
+  const pkg={packageId:'synthetic-ws-stage',artifactBindings:[artifact],untouched:{version:null}};
+  await browserPeer(async peer=>{
+    const dir=path.join(peer.directory,'blobs',sha.slice(0,2));
+    await mkdir(dir,{recursive:true}); await writeFile(path.join(dir,sha),bytes);
+    const transport=await peer.create();
+    assert.deepEqual(await transport.request('/api/tdms-source-imports',{method:'POST',body:{requestId,package:pkg}}),{saved:true});
+    assert.deepEqual(peer.operations.map(i=>i.operation),['RECEIVER','RECEIVER','PREFLIGHT','FIND_STAGE','RECEIVER','RECEIVER','STAGE','REQUEST']);
+    assert.equal(peer.operations.filter(i=>i.operation==='STAGE').length,1);
+    assert.equal(peer.operations.filter(i=>i.method==='POST').length,1);
+  },{invoke:async input=>{
+    if(input.operation==='RECEIVER') return receiver();
+    assert.deepEqual(JSON.parse(JSON.stringify(input.expectedReceiverBinding)),receiver());
+    if(input.operation==='PREFLIGHT') return {requestId,bindingId,receiverId:receiver().receiverId,payloadDigest:digest,status:'AUTHORIZED_UPLOAD'};
+    if(input.operation==='FIND_STAGE') throw unavailable();
+    if(input.operation==='STAGE') {
+      assert.equal(input.bytesBase64,bytes.toString('base64')); assert.deepEqual(JSON.parse(JSON.stringify(input.package)),pkg);
+      return {requestId,bindingId,receiverId:receiver().receiverId,packageId:pkg.packageId,payloadDigest:digest,
+        status:'STAGED_CANDIDATE',sha256:sha,byteLength:bytes.length,readbackVerified:true,documentVersionId:null};
+    }
+    assert.deepEqual(JSON.parse(JSON.stringify(input.body.package)),pkg); return {saved:true};
+  }});
+});
+
+test('detach failure closes the socket without rewriting a determined bridge response', async () => {
+  await browserPeer(async peer=>{
+    const transport=await peer.create();
+    assert.deepEqual(await transport.request(`/api/tdms-source-imports/${requestId}`,{method:'GET'}),{saved:true,requestId});
+    assert.equal(peer.commands.filter(c=>c.method==='Target.detachFromTarget').length,3);
+    await peer.waitClosed(); assert.equal(peer.clients.size,0);
+  },{detachError:true});
+});
+
+test('existing HTTP URL normalization still accepts its original uppercase protocol spelling', () => {
+  assert.equal(validateNativeTransportConfig({schemaVersion:'wiselink.tdms-native-host-transport-config.v1',
+    chromeDevtoolsEndpoint:'HTTP://127.0.0.1:9222/',sourceStateDirectory:'/synthetic-state'}).chromeDevtoolsEndpoint,'http://127.0.0.1:9222');
+});
+
+test('a session-bearing browser detach reply is ignored until bounded close, preserving the known result', async t => {
+  const original=setTimeout; let deadlines=0;
+  t.mock.method(globalThis,'setTimeout',(fn,ms,...args)=>original(ms===1000?()=>{deadlines++;fn();}:fn,ms===1000?25:ms,...args));
+  await browserPeer(async peer=>{
+    const transport=await peer.create();
+    assert.deepEqual(await transport.request(`/api/tdms-source-imports/${requestId}`,{method:'GET'}),{saved:true,requestId});
+    assert.equal(deadlines,3);
+    await peer.waitClosed(); assert.equal(peer.clients.size,0);
+  },{detachSession:true});
+});

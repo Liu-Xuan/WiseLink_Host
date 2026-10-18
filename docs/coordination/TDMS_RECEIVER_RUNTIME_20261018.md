@@ -46,17 +46,28 @@ Selection 读取返回 `TDMS_UPLOAD_SELECTION_UNAVAILABLE` / 404，表示当前�
 ~/Library/Application Support/WiseLink/tdms-host-native-transport.json
 ```
 
-可通过 `WISELINK_TDMS_NATIVE_TRANSPORT_CONFIG` 指定另一个绝对路径。示例仅说明结构，不能作为真实运行配置：
+可通过 `WISELINK_TDMS_NATIVE_TRANSPORT_CONFIG` 指定另一个绝对路径。示例中的端点和目录均为占位符，不能直接载入；实际值由既有 Chrome 与 Source 状态目录的 owner 提供并核对：
 
 ```json
 {
   "schemaVersion": "wiselink.tdms-native-host-transport-config.v1",
-  "chromeDevtoolsEndpoint": "http://127.0.0.1:9222",
+  "chromeDevtoolsEndpoint": "<已确认且获准使用的既有 Chrome loopback CDP 端点>",
   "sourceStateDirectory": "/absolute/path/to/source-state"
 }
 ```
 
-可选 `targetId` 与 `receiverId` 用于消除已有目标歧义。配置不得含 actor、凭据或任意外部端点；文件须为当前用户所有的普通文件，不能是符号链接，也不能允许组或其他用户写入。模块还核对现有 CDP 页面的准确 Host、app、WebSocket 和绑定。原件仅从声明 Source CAS 内按准确哈希与长度读取。
+同一 v1 配置支持两种显式端点：
+
+- 既有 HTTP discovery：数值 loopback `127.0.0.1` 或 `[::1]`、明确端口及根路径；按原 `/json/list` 选取同 host/port 的 page WebSocket。
+- 既有 browser WebSocket：精确 `ws://127.0.0.1:<port>/devtools/browser/<id>`，也接受 `[::1]` 或 `localhost`；端口必须明确且在 1–65535 内，browser id 仅限字母、数字、下划线和连字符。该模式不接受远端、`wss`、凭据、查询参数、fragment 或 page 路径，也不回退到 HTTP discovery。
+
+可选 `targetId` 与 `receiverId` 用于消除已有目标歧义。`targetId` 必须是实际 CDP target id，不能填入浏览器工具自己的 page 编号。配置不得含 actor、凭据或任意外部端点；文件须为当前用户所有的普通文件，不能是符号链接，也不能允许组或其他用户写入。模块还核对现有 CDP 页面的准确 Host、app、WebSocket 和绑定。原件仅从声明 Source CAS 内按准确哈希与长度读取。
+
+browser WebSocket 的每次调用只连接已配置端点，执行 `Target.getTargets`、对唯一准确 Host 页面 `Target.attachToTarget`（`flatten: true`）、同 session 的 `Runtime.evaluate`，最后 detach 并关闭连接。指定 target 时不改选其它页面；Runtime 在调用原桥前再次核对页面 origin/app。控制响应不得带外层 session，Runtime 响应必须匹配附着 session。协议字段依据 [Chrome DevTools Target 定义](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Target.pdl)。
+
+既有调用 45 秒、Runtime 40 秒边界保留；detach 最多等待 1 秒，不改写已经确定的业务结果。断线、超时或错误 session 的未定结果保持 UNKNOWN，只按原请求与准确 SourceRef 对账，不自动重发。11 字段接收绑定、来源权限、preflight 先于原件字节、CAS 核验及原三路由保持原样。
+
+工厂不读取 Chrome profile、端口文件或进程，不猜端口、不启动 Chrome、不创建、激活或导航页面，也不提交远程调试授权。`--autoConnect` 配置、端点文件中的线索或工具现有连接均不能证明另一个产品调用者已获准连接；若正常连接出现新的远程调试确认，须先明确调用者、准确端点、用途和范围。
 
 ## 来源代码消费
 
@@ -81,7 +92,7 @@ OWNER_PRIMARY 沿用原 Complete1 schema，不增加路由。它只证明准确 
 
 实际消费者检查覆盖 prepare/adapter、receiver preflight/stage/read、daily POST/replay/GET 与准确 SourceRef；外部身份、数据库及文件存储使用明确合成端口。既有真实代表的导出 metadata 也只经过本地纯 prepare/adapter，不读取 PDF、不产生接收回执。已保存原件候选仍是 REVIEW_REQUIRED/null DVI，不能据此声称正式映射或工程排队完成。
 
-当前 Native 工厂仍只接受数值 loopback HTTP discovery，再核对同 host/port 的 page WebSocket。Chrome --autoConnect 的 browser WebSocket 代码线索不证明该 HTTP 端点或目标可用；没有新增浏览器、凭据、连接发现或自动重试逻辑。是否需要协议适配，须先取得同一既有 Chrome 的准确可用连接资料。
+Native 工厂的两种显式连接方式已接入同一个实际 `createNativeTransport` 消费者。本地合成 HTTP/WS peer 检查与独立反例证明协议、目标/session 绑定、清理及未知结果处理；它们不证明真实 Chrome 连接或业务接收。已有同一 Chrome 的正常 Host 身份接口 200，但当前线上旧版 receiver binding 返回 404，页面没有 Native bridge；仍须部署准确代码、完成正式来源登记并取得可用端点与目标。
 
 ## 运行前置与验收
 
