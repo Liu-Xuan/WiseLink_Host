@@ -12,9 +12,11 @@ import type {
   TdmsSourcePackage,
 } from '@shared/tdms-source.interface';
 import type { CanonicalMiaodaFinalUserActorContext } from '../work-item/canonical-object-access.port';
+import type { TdmsDocumentUploadBinding } from '../document-management/src/hosted/nest/document-upload-authority';
 import type {
   TdmsDailyMetadataEnvelope,
   TdmsDailyMetadataImportReceipt,
+  TdmsDailyMetadataProjectedImportReceipt,
 } from './tdms-daily-metadata-contract';
 import type { TdmsDailyArtifactObservation } from './tdms-daily-metadata-contract';
 import type {
@@ -26,6 +28,18 @@ export const TDMS_REPOSITORY = Symbol('TDMS_REPOSITORY');
 export const TDMS_SOURCE_AUTHORIZATION = Symbol('TDMS_SOURCE_AUTHORIZATION');
 export const TDMS_ARTIFACT_STORE = Symbol('TDMS_ARTIFACT_STORE');
 export const TDMS_DOCUMENT_ACCESS = Symbol('TDMS_DOCUMENT_ACCESS');
+export const TDMS_FORMAL_REGISTRATION = Symbol('TDMS_FORMAL_REGISTRATION');
+
+export interface TdmsFormalRegistrationPort {
+  project(actor: TdmsPublicActor, scope: TdmsSourceScope, envelope: TdmsDailyMetadataEnvelope,
+    receipt: TdmsDailyMetadataImportReceipt, read: TdmsFormalReceiptRead): Promise<TdmsDailyMetadataProjectedImportReceipt>;
+}
+export interface TdmsFormalReceiptRead {
+  action: 'READ_HISTORY' | 'READ_RECORD';
+  claims: TdmsImportMemberClaims;
+  bindingIds: string[];
+}
+
 export interface TdmsSourceScope {
   tenantId: string;
   sourceKey: string;
@@ -101,6 +115,8 @@ export interface TdmsSourceAuthorization {
 }
 export interface TdmsDocumentAccess {
   assertRead(actor: TdmsPublicActor, documentVersionId: string): Promise<void>;
+  /** Verified committed DM lineage only; no caller-supplied version association. */
+  sourceBindings?(actor: TdmsPublicActor, documentVersionId: string): Promise<TdmsDocumentUploadBinding[]>;
 }
 export interface TdmsCapture {
   scope: TdmsSourceScope;
@@ -177,6 +193,8 @@ export interface TdmsCataloguePage {
 }
 export interface TdmsDocumentCataloguePage extends TdmsCataloguePage {
   documentVersionId: string;
+  /** Exact retained observations resolved from the existing committed DM lineage. */
+  sourceRevisionRefs?: string[];
 }
 export interface TdmsTransaction {
   capture(

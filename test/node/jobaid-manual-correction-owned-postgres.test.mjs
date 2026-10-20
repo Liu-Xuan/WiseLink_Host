@@ -46,7 +46,14 @@ test('manual correction: real consumer, transaction, recovery and disjoint Postg
     if (savedSandbox === undefined) delete process.env.SANDBOX_ID; else process.env.SANDBOX_ID = savedSandbox;
     if (savedLocal === undefined) delete process.env.MIAODA_LOCAL_DEV; else process.env.MIAODA_LOCAL_DEV = savedLocal;
   });
+  await admin.unsafe(`CREATE SCHEMA wiselink_jobaid_test;
+    SET search_path TO wiselink_jobaid_test`);
   await resetQ1Database(admin);
+  // Match the hosted schema and original policy role before applying the candidate.
+  await admin.unsafe(`GRANT USAGE ON SCHEMA wiselink_jobaid_test TO service_role,authenticated;
+    GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA wiselink_jobaid_test TO service_role,authenticated;
+    ALTER POLICY assessment_work_revision_hosted_candidate_insert ON assessment_work_revision
+      TO service_role_wiselink_jobaid_test`);
   // Fixture-only native read admission: exact local authenticated role, active
   // mapping and owned WI/DVI. This is narrower than deployed 0078 shared reads.
   await admin.unsafe(`CREATE FUNCTION native_app_shared_read_allowed(target_tenant varchar)
@@ -63,6 +70,7 @@ test('manual correction: real consumer, transaction, recovery and disjoint Postg
   const login = `tdms_fixture_app_${randomUUID().replaceAll('-', '').slice(0, 16)}`;
   await admin.unsafe(`CREATE ROLE ${login} LOGIN NOSUPERUSER NOBYPASSRLS
     IN ROLE authenticated_wiselink_jobaid_test,service_role_wiselink_jobaid_test`);
+  await admin.unsafe(`ALTER ROLE ${login} SET search_path TO wiselink_jobaid_test`);
   const client = await cluster.connect(login);
   const db = drizzle(client);
   const sqlContext = new SqlExecutionContextMiddleware({ roleSchema: 'wiselink_jobaid_test' });

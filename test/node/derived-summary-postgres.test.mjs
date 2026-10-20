@@ -81,7 +81,7 @@ test('owned PG Wiki unclaimed hard-deadline reconciliation', { timeout: 120000, 
             evidence.finishTerminalCasSqlObserved = true;
         },
       }));
-    assert.equal(evidence.cases.length, 8);
+    assert.equal(evidence.cases.length, 10);
     assert.equal(evidence.lockWaits.length, 2);
     assert.equal(evidence.actionAttemptRowLockSqlObserved, true);
     assert.equal(evidence.finishTerminalCasSqlObserved, true);

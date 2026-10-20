@@ -59,17 +59,16 @@ describe('saved JobAid context inside existing reading surfaces', () => {
     const html = renderToStaticMarkup(createElement(SavedJobAidMethodNotice, { work }));
     expect(html).toContain('受控版本身份待确认');
     expect(html).toContain('R00 内容转述，与 R01 正文配套待核');
-    expect(html).toContain('可含此前沿用资料');
     expect(html).not.toContain('本版登记版本已确认');
     expect(html).not.toContain('合规');
-    expect(html).toContain('不能宣称本轮已读取全部原件');
+    expect(html).not.toContain('本轮已读取全部原件');
   });
 
   it('does not invent attachment 5 facts for a missing historical method binding', () => {
     const work = revision().state.problemWork!;
     delete (work as Partial<typeof work>).methodBinding;
     const html = renderToStaticMarkup(createElement(SavedJobAidMethodNotice, { work }));
-    expect(html).toContain('未取得本版方法绑定');
+    expect(html).toContain('方法版本未提供');
     expect(html).toContain('未取得本版附件 5 的绑定');
     expect(html).not.toContain('R00 内容转述');
     expect(html).not.toContain('本版登记版本已确认');
@@ -82,10 +81,11 @@ describe('saved JobAid context inside existing reading surfaces', () => {
     issue.riskScenarios = []; issue.requirementHandling = []; issue.openQuestions = []; issue.measures = [];
     const html = render(work);
     expect(html).toContain('未取得本版保存正文');
-    expect(html).toContain('未登记结构化条件或局限');
-    expect(html).toContain('未登记未决问题，不等于不存在未知');
-    expect(html).toContain('未登记风险情景，不等于没有风险');
-    expect(html).toContain('未登记要求处理记录，不能认定方法已覆盖');
+    const dom = new JSDOM(html);
+    const context = dom.window.document.querySelector('[data-saved-context-issue="issue-test"]');
+    expect(context?.textContent).toBe('');
+    expect(html).not.toContain('没有风险');
+    expect(html).not.toContain('已核实覆盖');
     expect(html).not.toContain('0 分');
     expect(work.state.substantiveResult!.content.claims).toEqual([]);
   });
@@ -99,7 +99,7 @@ describe('saved JobAid context inside existing reading surfaces', () => {
     expect(html.match(/未定级/gu)).toHaveLength(3);
     expect(html).toContain('依据不足，未计算');
     expect(html).toContain('保存候选认为有效');
-    expect(html).toContain('不能证明控制有效，也不能据此降低剩余风险');
+    expect(html).toContain('措施限制：不能替代有效性验证');
     expect(html).not.toContain('Host 已验证');
     expect(html).not.toContain('0 分');
   });
@@ -112,8 +112,8 @@ describe('saved JobAid context inside existing reading surfaces', () => {
     work.state.problemWork!.evidence = [];
     const html = render(work);
     expect(html).toContain('现有综合尚未覆盖本次问题更新');
-    expect(html).toContain('未登记对象依据，不能将处理状态视为覆盖已核实');
-    expect(html).toContain('未能读回，不能视为已核实');
+    expect(html).toContain('对象依据未提供');
+    expect(html).toContain('依据 evidence-test 读取失败');
     expect(html).not.toContain('仅适用于构型 A。');
     expect(work.matterWorkRevisionId).toBe('MWR-exact-old');
   });

@@ -191,3 +191,72 @@
     padding: 24px 20px 50px;
   }
 }
+.wl-jobaid-correction,
+.wl-jobaid-correction-message {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.wl-jobaid-correction {
+  padding: 16px;
+  border: 1px solid var(--parse-rule, var(--border));
+  border-radius: var(--wl-radius-md, 8px);
+  background: var(--wl-surface-subtle, var(--muted));
+  font-size: 13px;
+  line-height: 1.8;
+}
+.wl-jobaid-correction-heading,
+.wl-jobaid-correction-buttons,
+.wl-jobaid-correction-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.wl-jobaid-correction-heading span {
+  color: var(--parse-muted, var(--muted-foreground));
+}
+.wl-jobaid-correction fieldset,
+.wl-jobaid-correction-context,
+.wl-jobaid-correction-scenario {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  margin-block: 12px;
+}
+.wl-jobaid-correction label {
+  font-weight: 600;
+}
+.wl-jobaid-correction textarea,
+.wl-jobaid-correction select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 10px;
+  color: inherit;
+  background: var(--wl-surface-solid, var(--background));
+  border: 1px solid var(--parse-rule, var(--border));
+  border-radius: var(--wl-radius-sm, 4px);
+  font: inherit;
+}
+.wl-jobaid-correction textarea {
+  resize: vertical;
+}
+.wl-jobaid-correction textarea:focus-visible,
+.wl-jobaid-correction select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.wl-jobaid-correction-evidence summary {
+  cursor: pointer;
+}
+.wl-jobaid-correction-evidence label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-block: 6px;
+  overflow-wrap: anywhere;
+  font-weight: 400;
+}
+.wl-jobaid-correction-buttons {
+  margin-top: 14px;
+}

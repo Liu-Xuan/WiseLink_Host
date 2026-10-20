@@ -1,8 +1,9 @@
 import type { DocumentMetadataReadRequest, DocumentMetadataReadResponse, DocumentMetadataReextractRequest, DocumentMetadataReextractResponse } from '@shared/api.interface';
 import { decodeExtractedMetadata } from './document-metadata-decode';
-import { mintDocumentUploadAuthority } from './document-upload-authority';
+import { mintDocumentUploadAuthority, isMintedDocumentUploadAuthority } from './document-upload-authority';
 import type { DocumentLibraryUploadRequest, DocumentUploadResponse } from '@shared/api.interface';
 import type { DocumentUploadAuthority } from './document-upload-authority';
+import type { DocumentSourceReadContext } from './document-source-read.port';
 import { createHash } from 'node:crypto';
 import { documentSourcePageRange, documentSourceReading } from './document-source-reading';
 import { PdfjsDistLayoutExtractor } from '../../../../professional-input/parser/pdfjs-dist-layout-extractor.adapter';
@@ -33,6 +34,7 @@ export interface HostedRequestContext {
   roles: string[];
   appId: string;
   env: string;
+  sourceReadContext?: DocumentSourceReadContext;
   runtimeIngestAuthority?: {
     mode:
       | 'HOSTED_OAUTH_SESSION_DEVELOPMENT_RUN'
@@ -97,8 +99,24 @@ export class DocumentManagementHostedService {
         descriptor: input.documentDelivery
           ? { documentDeliveryIntent: input.documentDelivery }
           : {},
-      }, { ...context, runtimeIngestAuthority: mintDocumentUploadAuthority(context) });
+      }, { ...context, runtimeIngestAuthority: isMintedDocumentUploadAuthority(context.runtimeIngestAuthority, context)
+          ? context.runtimeIngestAuthority : mintDocumentUploadAuthority(context) });
       return this.uploadResponseWithCurrent(receipt, context);
+    });
+  }
+
+  /** Internal exact-request read; no mutable TDMS registration mirror or write-on-GET. */
+  async readDocumentLibraryUpload(request: unknown, context: HostedRequestContext): Promise<Record<string, unknown> | null> {
+    return publicDmOperation(async () => {
+      assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+      const input = documentLibraryUploadInput(request);
+      if (input.documentDelivery) throw Object.assign(new Error('Registration cannot request model delivery.'), { code: 'TDMS_FORMAL_DELIVERY_FORBIDDEN', statusCode: 400 });
+      return this.core.readFileServiceIngestion({
+        idempotencyKey: `document-upload:${context.actorUserId}:${input.requestId}`,
+        selection: input.selection, sourceChannel: 'document_library_upload',
+        sourceRef: `DOCUMENT_UPLOAD:${context.actorUserId}:${input.requestId}`, descriptor: {},
+      }, { ...context, runtimeIngestAuthority: isMintedDocumentUploadAuthority(context.runtimeIngestAuthority, context)
+        ? context.runtimeIngestAuthority : mintDocumentUploadAuthority(context) });
     });
   }
 
@@ -218,6 +236,7 @@ export class DocumentManagementHostedService {
       );
     }
     const family = await this.catalog.readFamily(version.familyId);
+    await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
     return { version, family };
   }
 
@@ -227,13 +246,17 @@ export class DocumentManagementHostedService {
       await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
       const row = await this.catalog.readMetadataSource(documentVersionId, context.tenantId);
       if (!row) throw Object.assign(new Error('Document metadata source is unavailable.'), { code: 'DOCUMENT_VERSION_NOT_FOUND', statusCode: 404 });
-      if (row.metadata?.extractedMetadata) return { ...metadataReceipt(documentVersionId, row.metadata), disposition: 'ALREADY_PRESENT' as const };
+      if (row.metadata?.extractedMetadata) {
+        await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
+        return { ...metadataReceipt(documentVersionId, row.metadata), disposition: 'ALREADY_PRESENT' as const };
+      }
       const selected = await this.readRegisteredOriginal(row);
       const extractedMetadata = this.extractRegisteredMetadata(row, selected);
       // Recheck visibility after the source read and before inserting the derived record.
       await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
       const result = await this.catalog.fillMissingExtractedMetadata({ documentVersionId, sourceSha256: selected.sha256,
         sourceByteLength: selected.byteLength, extractedMetadata });
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
       return { documentVersionId, ...result, extractedMetadata: decodeExtractedMetadata(result.extractedMetadata) };
     });
   }
@@ -247,6 +270,7 @@ export class DocumentManagementHostedService {
       if (!row) throw Object.assign(new Error('Document metadata source is unavailable.'), { code: 'DOCUMENT_VERSION_NOT_FOUND', statusCode: 404 });
       const metadata = query.revision !== undefined || query.requestId !== undefined
         ? await this.catalog.readExtractedMetadata({ documentVersionId, ...query }) : row.metadata;
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
       return metadataReceipt(documentVersionId, metadata);
     });
   }
@@ -263,6 +287,7 @@ export class DocumentManagementHostedService {
         if (replay.metadataRevision - 1 !== input.expectedMetadataRevision) {
           throw Object.assign(new Error('Metadata request ID was already used with another expected revision.'), { code: 'DOCUMENT_METADATA_REQUEST_CONFLICT', statusCode: 409 });
         }
+        await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
         return { documentVersionId, metadataId: replay.id, metadataRevision: replay.metadataRevision, requestId: input.requestId,
           extractedMetadata: decodeExtractedMetadata(replay.extractedMetadata), disposition: 'IDEMPOTENT_REPLAY' };
       }
@@ -274,6 +299,7 @@ export class DocumentManagementHostedService {
       await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
       const result = await this.catalog.appendExtractedMetadata({ documentVersionId, ...input,
         sourceSha256: selected.sha256, sourceByteLength: selected.byteLength, extractedMetadata });
+      await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
       return { documentVersionId, metadataId: result.metadata.id, metadataRevision: result.metadata.metadataRevision,
         requestId: input.requestId, extractedMetadata: decodeExtractedMetadata(result.metadata.extractedMetadata), disposition: result.disposition };
     });
@@ -337,9 +363,12 @@ export class DocumentManagementHostedService {
 
   /** Internal service call after executor scope authorization; never impersonates browser ingress. */
   async readDocumentSourcePagesForRuntime(documentVersionId: string, request: unknown,
-    scope: { actorUserId: string; tenantId: string; roles?: string[] }) {
+    scope: { actorUserId: string; tenantId: string; roles?: string[]; sourceReadContext?: DocumentSourceReadContext }) {
     return publicDmOperation(async () => {
-      const context = { actorUserId: scope.actorUserId, tenantId: scope.tenantId, roles: [...(scope.roles ?? [])] };
+      // Only an existing server-issued request reference survives. Runtime
+      // actor/tenant strings alone do not mint a browser or Source identity.
+      const context = { actorUserId: scope.actorUserId, tenantId: scope.tenantId, roles: [...(scope.roles ?? [])],
+        sourceReadContext: scope.sourceReadContext };
       const range = documentSourcePageRange(request);
       await this.authorizer.assertCanRead({ ...context, action: 'DOCUMENT_READ', documentVersionId });
       const row = await this.catalog.readMetadataSource(documentVersionId, context.tenantId);

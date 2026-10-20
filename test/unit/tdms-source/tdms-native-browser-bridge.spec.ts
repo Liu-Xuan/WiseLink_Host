@@ -241,4 +241,86 @@ describe('same-origin native Source upload transport (synthetic external ports)'
     expect(upload).toHaveBeenCalledTimes(1);
     expect(sourceRequest.mock.calls.filter(([input]) => input.method === 'POST' && !input.url.endsWith('/preflight'))).toHaveLength(0);
   });
+
+  const registered = {
+    schemaVersion: 'wiselink.tdms-formal-document-registration.v1', requestId, bindingId,
+    receiverId: receiver.receiverId, payloadDigest, documentUploadRequestId: 'synthetic-upload',
+    sourceAttachmentId: binding.sourceAttachmentId, sourceAttachmentVersion: null,
+    status: 'COMMITTED', documentVersionId: 'synthetic-real-port-dvi', preflightId: 'synthetic-preflight',
+    sha256: hash, byteLength: raw.length, readbackVerified: true, mappedAt: '2026-10-18T00:00:00.000Z',
+  };
+  const registrationMissing = () => ({ response: { status: 404,
+    data: { code: 'TDMS_FORMAL_REGISTRATION_UNAVAILABLE' } } });
+  const register = () => tdmsNativeBrowserBridge.invoke({ operation: 'REGISTER', requestId, bindingId,
+    package: pkg, expectedReceiverBinding: receiver });
+
+  it('registers once then reads the original formal receipt without another upload', async () => {
+    let saved = false;
+    sourceRequest.mockImplementation(async (input: HttpInput) => {
+      expect(input.url).toMatch(/\/registration$/u);
+      if (input.method === 'POST') { saved = true; return { data: registered }; }
+      if (!saved) throw registrationMissing();
+      return { data: registered };
+    });
+    expect(await register()).toEqual(registered);
+    expect(sourceRequest.mock.calls.map(([input]) => input.method)).toEqual(['GET', 'POST', 'GET']);
+    expect(upload).not.toHaveBeenCalled(); expect(list).not.toHaveBeenCalled();
+  });
+
+  it('only reads an existing formal registration; does not repeat REGISTER POST', async () => {
+    sourceRequest.mockResolvedValue({ data: registered });
+    expect(await register()).toEqual(registered);
+    expect(sourceRequest.mock.calls.map(([input]) => input.method)).toEqual(['GET']);
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('keeps a successful REGISTER POST read-only when its confirmation GET is lost and a later GET is404', async () => {
+    let reads = 0;
+    sourceRequest.mockImplementation(async (input: HttpInput) => {
+      if (input.method === 'POST') return { status: 200, data: registered };
+      reads++;
+      if (reads === 2) throw new Error('synthetic lost GET after successful REGISTER');
+      if (reads >= 4) return { status: 200, data: registered };
+      throw registrationMissing();
+    });
+    await expect(register()).rejects.toMatchObject({ code: 'TDMS_HOST_RECEIPT_UNKNOWN', statusCode: 503 });
+    const second = await register().then((value: unknown) => ({ value }), (error: unknown) => ({ error }));
+    expect(sourceRequest.mock.calls.filter(([input]) => input.method === 'POST')).toHaveLength(1);
+    expect(second).toMatchObject({ error: { code: 'TDMS_HOST_RECEIPT_UNKNOWN', phase: 'REGISTER' } });
+    expect(await register()).toEqual(registered);
+    expect(sourceRequest.mock.calls.map(([input]) => input.method)).toEqual(['GET', 'POST', 'GET', 'GET', 'GET']);
+    expect(upload).not.toHaveBeenCalled(); expect(list).not.toHaveBeenCalled();
+  });
+
+  it.each(['POST', 'GET'] as const)('preserves a business403 from %s after REGISTER issuance and still forbids a second POST', async (phase) => {
+    let issued = false, refused = false;
+    sourceRequest.mockImplementation(async (input: HttpInput) => {
+      if (input.method === 'POST') issued = true;
+      if (issued && !refused && input.method === phase) {
+        refused = true;
+        throw { response: { status: 403, data: { code: 'TDMS_SOURCE_PERMISSION_CHANGED' } } };
+      }
+      if (input.method === 'POST') return { status: 200, data: registered };
+      throw registrationMissing();
+    });
+    await expect(register()).rejects.toMatchObject({ code: 'TDMS_SOURCE_PERMISSION_CHANGED', statusCode: 403 });
+    await expect(register()).rejects.toMatchObject({ code: 'TDMS_HOST_RECEIPT_UNKNOWN', phase: 'REGISTER' });
+    expect(sourceRequest.mock.calls.filter(([input]) => input.method === 'POST')).toHaveLength(1);
+    sourceRequest.mockResolvedValue({ status: 200, data: registered });
+    expect(await register()).toEqual(registered);
+    expect(upload).not.toHaveBeenCalled(); expect(list).not.toHaveBeenCalled();
+  });
+
+  it('keeps a lost REGISTER outcome read-only until the same registration is actually visible', async () => {
+    sourceRequest.mockImplementation(async (input: HttpInput) => {
+      if (input.method === 'POST') throw new Error('synthetic lost REGISTER response');
+      throw registrationMissing();
+    });
+    await expect(register()).rejects.toMatchObject({ code: 'TDMS_HOST_RECEIPT_UNKNOWN', phase: 'REGISTER' });
+    await expect(register()).rejects.toMatchObject({ code: 'TDMS_HOST_RECEIPT_UNKNOWN', phase: 'REGISTER' });
+    expect(sourceRequest.mock.calls.filter(([input]) => input.method === 'POST')).toHaveLength(1);
+    sourceRequest.mockResolvedValue({ data: registered });
+    expect(await register()).toEqual(registered);
+    expect(upload).not.toHaveBeenCalled();
+  });
 });

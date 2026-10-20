@@ -451,7 +451,7 @@ test.each(['FAILED', 'TIMED_OUT'])(
   },
 );
 
-test('a historical TIMED_OUT string is not this call\'s exact unclaimed CAS classification', async () => {
+test('a historical TIMED_OUT string without an exact deadline terminal reason still consumes retry', async () => {
   const f = setup();
   f.rows[0]!.state.retryCount = 2;
   Object.assign(f.attempts.get('AQ-1')!, { status: 'TIMED_OUT', completedAt: new Date(now),
@@ -460,6 +460,66 @@ test('a historical TIMED_OUT string is not this call\'s exact unclaimed CAS clas
   expect(f.rows[0]!.state).toMatchObject({ active: null, retryCount: 3,
     blocked: 'DERIVED_SUMMARY_DEADLINE_EXCEEDED' });
 });
+
+test.each([
+  ['runtime', 'DERIVED_SUMMARY_DEADLINE_EXCEEDED', null],
+  ['Wiki writer', 'DERIVED_SUMMARY_DEADLINE_EXCEEDED', 'DERIVED_SUMMARY_DEADLINE_EXCEEDED'],
+  ['generic writer', 'ACTION_ATTEMPT_DEADLINE_EXCEEDED', null],
+])('a %s deadline writer that already closed an unclaimed row does not spend execution retry',
+  async (_writer: string, terminalReason: string, errorCode: string | null) => {
+    const f = setup();
+    f.rows[0]!.state.retryCount = 1;
+    const before = structuredClone(f.rows[0]!.state);
+    Object.assign(f.attempts.get('AQ-1')!, { status: 'TIMED_OUT',
+      completedAt: new Date(now), terminalReason, errorCode });
+    const terminal = structuredClone(f.attempts.get('AQ-1')!);
+    await f.expire();
+    expect(f.attempts.get('AQ-1')).toEqual(terminal);
+    expect(f.rows[0]!.state).toEqual({ ...before, active: null,
+      lastAttemptErrorCode: errorCode ?? terminalReason, lastCheckedAt: now });
+    expect(wikiDue(f.rows[0]!.state, f.rows[0]!.scope.kind, now)).toBe(true);
+    await f.expire();
+    expect(f.rows[0]!.state.retryCount).toBe(1);
+    expect(f.calls.some((call) => call.query.startsWith('update "action_attempt"'))).toBe(false);
+  });
+
+test.each([
+  ['missing completion', { completedAt: null }],
+  ['premature completion', { completedAt: new Date('2026-10-14T07:00:00Z') }],
+  ['future completion', { completedAt: new Date('2026-10-14T09:00:00Z') }],
+  ['other failure code', { errorCode: 'ACTUAL_EXECUTION_FAILED' }],
+  ['previous claim', { claimCount: 1 }],
+  ['previous retry', { retryCount: 1 }],
+  ['previous lease', { leaseGeneration: 1 }],
+  ['executor evidence', { executorSessionKey: 'provider-unknown' }],
+])('a prior timeout with %s is not classified as an unclaimed deadline',
+  async (_label: string, changed: Partial<SummaryAttempt>) => {
+    const f = setup();
+    f.rows[0]!.state.retryCount = 2;
+    Object.assign(f.attempts.get('AQ-1')!, { status: 'TIMED_OUT',
+      completedAt: new Date(now), terminalReason: 'DERIVED_SUMMARY_DEADLINE_EXCEEDED',
+      ...changed });
+    await f.expire();
+    expect(f.rows[0]!.state.retryCount).toBe(3);
+    expect(f.rows[0]!.state.blocked).not.toBeNull();
+  });
+
+test.each(['DERIVED_SUMMARY_DEADLINE_EXCEEDED', 'ACTION_ATTEMPT_DEADLINE_EXCEEDED'])(
+  'normal next preserves execution retry when %s wins before its reconciliation row lock',
+  async (terminalReason: string) => {
+    const f = setup();
+    f.rows[0]!.state.retryCount = 1;
+    const before = structuredClone(f.rows[0]!.state);
+    f.onLock(() => Object.assign(f.attempts.get('AQ-1')!, {
+      status: 'TIMED_OUT', completedAt: new Date(now), terminalReason,
+    }));
+    expect(await f.service.next(now)).toEqual({ status: 'IDLE' });
+    expect(f.rows[0]!.state).toEqual({ ...before, active: null,
+      lastAttemptErrorCode: terminalReason, lastCheckedAt: now });
+    expect(f.attempts.get('AQ-1')!.claimCount).toBe(0);
+    expect(f.calls.some((call) => call.query.startsWith('update "action_attempt"'))).toBe(false);
+    expect(f.summaries.reserve).not.toHaveBeenCalled();
+  });
 
 test('an exact unclaimed cleanup preserves an existing block and a future due time', async () => {
   const f = setup();

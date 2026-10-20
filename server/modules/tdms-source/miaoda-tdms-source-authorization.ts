@@ -11,6 +11,7 @@ import type {
   TdmsPublicActor,
   TdmsSourceScope,
 } from './tdms-source.types';
+import { readContext } from './tdms-source.validation';
 import type { TdmsReceiverAuthority } from './tdms-receiver.types';
 
 @Injectable()
@@ -18,7 +19,10 @@ export class MiaodaTdmsSourceAuthorization extends HostDecisionTdmsSourceAuthori
   constructor(private readonly receivers: TdmsReceiverRepository) {
     super(
       async ({ actor, scope, action, context }) => {
-        if (Object.keys(context).length)
+        const reading = readContext(context);
+        // A DVI restricts the existing read query; it grants no Source rights.
+        // The service independently checks its current exact document policy.
+        if (reading.matterId)
           throw tdmsError('TDMS_RECEIVER_CONTEXT_AUTHORITY_UNCONFIGURED', 503);
         return (await receivers.authorities(actor, scope)).flatMap((row) => {
           const value = receiverAuthority(row, actor, action);

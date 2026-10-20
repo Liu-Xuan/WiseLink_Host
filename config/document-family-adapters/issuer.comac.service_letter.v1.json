@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.comac.service_letter.v1",
+  "extends": "generic.service_letter.v1",
+  "issuerPolicy": {
+    "issuer": "COMAC",
+    "issuerAliases": ["上海\\s*飞机\\s*客户\\s*服务\\s*有限公司", "\\bCOMAC\\b"]
+  },
+  "docFamily": "SL",
+  "subtype": "service_letter",
+  "templateMode": "issuer_overlay_source_bounded",
+  "formatOverlay": "generic_service_letter",
+  "matchPolicy": {
+    "priority": 40,
+    "sourceTypes": ["comac_service_letter"],
+    "filenamePatterns": [],
+    "docFamilyPatterns": [],
+    "issuerAliases": ["上海\\s*飞机\\s*客户\\s*服务\\s*有限公司"],
+    "textPatterns": ["服务\\s*信函[\\s\\S]{0,200}上海\\s*飞机\\s*客户\\s*服务\\s*有限公司", "上海\\s*飞机\\s*客户\\s*服务\\s*有限公司[\\s\\S]{0,200}服务\\s*信函"]
+  }
+}

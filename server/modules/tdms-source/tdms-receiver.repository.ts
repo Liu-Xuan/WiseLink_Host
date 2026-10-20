@@ -18,7 +18,10 @@ import type {
   TdmsReceiverRow,
   TdmsStoredSelection,
 } from './tdms-receiver.types';
-import { checkedReceiverSelection } from './tdms-receiver-selection.validation';
+import {
+  assertReceiverSelectionRevision,
+  checkedReceiverSelection,
+} from './tdms-receiver-selection.validation';
 import { CANONICAL_MIAODA_APP_ID } from '../canonical-host/canonical-host.constants';
 import {
   TDMS_BOUND_SCHEMA,
@@ -173,6 +176,7 @@ export class TdmsReceiverRepository {
       stored.receipt.requestId,
       stored.receipt.bindingId,
     );
+    assertReceiverSelectionRevision(stored, authority);
     await database.execute(sql`INSERT INTO tdms_upload_selection_association
       (tenant_id,application_scope_id,actor_subject_id,source_key,source_instance_id,scope_id,request_id,binding_id,
        receiver_id,receiver_revision,grant_revision,permission_revision,package_id,payload_digest,member_claims_json,data_json)

@@ -76,6 +76,8 @@ export function receiverClaims(value: unknown): TdmsImportMemberClaims {
         sourceRecordId: identifier(owner.sourceRecordId),
       };
     });
+    if (owners.length > 10000 || new Set(owners.map(canonical)).size !== owners.length)
+      throw tdmsError('TDMS_RECEIVER_MEMBER_CONFIGURATION_INVALID', 503);
     return {
       memberId: identifier(row.memberId),
       sourceAttachmentId:

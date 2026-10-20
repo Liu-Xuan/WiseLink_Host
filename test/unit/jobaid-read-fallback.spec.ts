@@ -15,6 +15,7 @@ jest.mock('@client/src/api/canonical-host', () => ({
   subscribeCanonicalHostClientSession: () => () => undefined,
   readJobAidAssessmentWork: (...args: unknown[]) => mockRead(...args),
 }));
+jest.mock('@client/src/features/matter/saved-jobaid-reading.css', () => ({}));
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/features/review/InitialAnalysisContinueButton', () => ({
   __esModule: true,

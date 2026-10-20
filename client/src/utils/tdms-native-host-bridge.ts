@@ -3,9 +3,9 @@ import { getDefaultBucketId } from '@lark-apaas/client-toolkit/tools/storage';
 import { uploadFile } from '../components/business-ui/api/files/service';
 import {
   readTdmsNativeReceiver, readTdmsUploadAssociation, stageTdmsUploadAssociation,
-  preflightTdmsUpload, tdmsNativeError, tdmsNativeRequest,
+  preflightTdmsUpload, tdmsNativeError, tdmsNativeRequest, readTdmsFormalRegistration, registerTdmsOriginal,
 } from '../api/tdms-source-native';
-import type { TdmsNativeReceiverBinding, TdmsUploadSelectionAssociationReceipt, TdmsUploadSelectionPreflight } from '@shared/tdms-receiver.interface';
+import type { TdmsFormalDocumentRegistrationReceipt, TdmsNativeReceiverBinding, TdmsUploadSelectionAssociationReceipt, TdmsUploadSelectionPreflight } from '@shared/tdms-receiver.interface';
 
 export const TDMS_NATIVE_BRIDGE_KEY = '__wiselinkTdmsNativeBridge';
 const BRIDGE_SCHEMA = 'wiselink.tdms-native-host-bridge.v1';
@@ -132,6 +132,57 @@ async function stageOriginal(input: Record<string, unknown>, expected: TdmsNativ
     { package: pkg, selection }, expected), requestId, binding, preflight, pkg.packageId);
 }
 
+const unknownRegistrations = new Set<string>();
+async function registerOriginal(input: Record<string, unknown>, expected: TdmsNativeReceiverBinding): Promise<TdmsFormalDocumentRegistrationReceipt> {
+  const requestId = text(input.requestId), bindingId = text(input.bindingId);
+  const pkg = input.package;
+  if (!record(pkg) || !Array.isArray(pkg.artifactBindings)) throw tdmsNativeError('TDMS_NATIVE_PACKAGE_REQUIRED', 400);
+  const bindings = pkg.artifactBindings.filter((value: unknown): value is Record<string, unknown> => record(value) && value.bindingId === bindingId);
+  if (bindings.length !== 1) throw tdmsNativeError('TDMS_NATIVE_ARTIFACT_AMBIGUOUS', 409);
+  const binding = bindings[0];
+  const key = `${requestId}:${bindingId}`;
+  const check = (value: TdmsFormalDocumentRegistrationReceipt) => {
+    if (value.schemaVersion !== 'wiselink.tdms-formal-document-registration.v1' ||
+        value.requestId !== requestId || value.bindingId !== bindingId || value.receiverId !== expected.receiverId ||
+        requestId !== `TDMSIMPORT-${value.payloadDigest}` || value.sha256 !== binding.blobSha256 || value.byteLength !== binding.byteLength ||
+        !['COMMITTED', 'REVIEW_REQUIRED', 'PENDING'].includes(value.status) ||
+        (value.status === 'COMMITTED' && (!value.documentVersionId || !value.preflightId || value.readbackVerified !== true ||
+          !value.mappedAt || !Number.isFinite(Date.parse(value.mappedAt)))) ||
+        (value.status !== 'COMMITTED' && (value.documentVersionId !== null || value.readbackVerified !== false)))
+      throw tdmsNativeError('TDMS_NATIVE_REGISTRATION_MISMATCH', 409);
+    if (value.status === 'PENDING') throw tdmsNativeError('TDMS_FORMAL_REGISTRATION_PENDING', 409);
+    unknownRegistrations.delete(key);
+    return value;
+  };
+  try { return check(await readTdmsFormalRegistration(requestId, bindingId, expected)); }
+  catch (error: unknown) {
+    if (!record(error) || error.code !== 'TDMS_FORMAL_REGISTRATION_UNAVAILABLE' || error.statusCode !== 404) throw error;
+    if (unknownRegistrations.has(key)) throw Object.assign(tdmsNativeError('TDMS_HOST_RECEIPT_UNKNOWN'),
+      { phase: 'REGISTER', requestId, bindingId, nextAction: 'READ_ORIGINAL_REGISTRATION' });
+  }
+  await assertCurrentReceiver(expected);
+  if (unknownRegistrations.has(key)) throw Object.assign(tdmsNativeError('TDMS_HOST_RECEIPT_UNKNOWN'),
+    { phase: 'REGISTER', requestId, bindingId, nextAction: 'READ_ORIGINAL_REGISTRATION' });
+  // Even an HTTP business error may follow a committed DM write. Only a
+  // validated original GET can clear this key once its POST has been issued.
+  unknownRegistrations.add(key);
+  try { await registerTdmsOriginal(requestId, bindingId, pkg, expected); }
+  catch (error: unknown) {
+    if (!record(error) || typeof error.statusCode !== 'number' || error.statusCode >= 500) {
+      // A lost POST response may have committed. Only read the same request; never resend it.
+      try { return check(await readTdmsFormalRegistration(requestId, bindingId, expected)); }
+      catch (readError: unknown) {
+        if (record(readError) && typeof readError.statusCode === 'number' && readError.statusCode < 500 &&
+            readError.code !== 'TDMS_FORMAL_REGISTRATION_UNAVAILABLE') throw readError;
+        throw Object.assign(tdmsNativeError('TDMS_HOST_RECEIPT_UNKNOWN'),
+          { phase: 'REGISTER', requestId, bindingId, nextAction: 'READ_ORIGINAL_REGISTRATION' });
+      }
+    }
+    throw error;
+  }
+  return check(await readTdmsFormalRegistration(requestId, bindingId, expected));
+}
+
 export const tdmsNativeBrowserBridge = Object.freeze({
   schemaVersion: BRIDGE_SCHEMA,
   async invoke(value: unknown): Promise<unknown> {
@@ -146,6 +197,7 @@ export const tdmsNativeBrowserBridge = Object.freeze({
     if (value.operation === 'FIND_STAGE')
       return readTdmsUploadAssociation(text(value.requestId), text(value.bindingId), expected);
     if (value.operation === 'STAGE') return stageOriginal(value, expected);
+    if (value.operation === 'REGISTER') return registerOriginal(value, expected);
     if (value.operation === 'REQUEST' && (value.method === 'GET' || value.method === 'POST'))
       return tdmsNativeRequest(text(value.route), value.method, value.body, expected);
     throw tdmsNativeError('TDMS_NATIVE_OPERATION_FORBIDDEN', 400);

@@ -1,5 +1,7 @@
 # WiseLink R10 当前执行计划
 
+**2026-10-20 当前交付顺序：** 以[公开交付目标](coordination/WISELINK_CURRENT_GOAL_20261020.md)为准，先交核心链小版本，TDMS 最小接入独立推进。下文保留设计与历史背景，不作为当前部署或真实业务验收回执。
+
 **2026-09-29 当前 Goal 与执行范围：** 采用[来源驱动设计](coordination/WL_SOURCE_DRIVEN_DESIGN_20260929.md)、[P0—P7 开发与验收计划](coordination/WL_SOURCE_DRIVEN_PLAN_20260929.md)及[配套 Goal](coordination/WL_SOURCE_DRIVEN_GOAL_20260929.md)，替代 9 月 28 日 Goal 的优先级和完成范围。指定工程云盘只读取得与手工上传进入统一受理；按实际身份、版本及用途复用阅读成果、开展初评或后继更新。保留已发布的 OpenClaw 翻译、MinerU、Review 与三类 Wiki 入口，独立推进已知错误更正。新设计要求的正式换版实证现列入本阶段验收。下文冲突的历史入口选择、固定逐文档授权及旧运行路线以该设计明确规则为准；实际部署和核验状态统一见 `docs/coordination/M_INTEGRATION.md`，设计中的旧基线不代表当前环境。
 
 **修订日期：2026-09-16（Asia/Shanghai）**

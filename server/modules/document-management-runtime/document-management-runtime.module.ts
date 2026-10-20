@@ -8,11 +8,12 @@ import { OrdinaryDocumentManagementAuthorizer } from './ordinary-document-manage
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { EngineeringMatterModule } from '../canonical-host/engineering-matter.module';
 import { IdentityModule } from '../identity/identity.module';
+import { TdmsSourceAuthorityModule } from '../tdms-source/tdms-source-authority.module';
 
 @Module({
   imports: [
     DocumentManagementHostedModule.register({
-      imports: [WorkItemRuntimeModule, EngineeringMatterModule, IdentityModule],
+      imports: [WorkItemRuntimeModule, EngineeringMatterModule, IdentityModule, TdmsSourceAuthorityModule],
       authorizerProvider: {
         provide: DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
         useClass: OrdinaryDocumentManagementAuthorizer,

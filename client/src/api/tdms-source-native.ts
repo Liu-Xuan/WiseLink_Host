@@ -1,6 +1,7 @@
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 import type {
   TdmsNativeReceiverBinding,
+  TdmsFormalDocumentRegistrationReceipt,
   TdmsUploadSelectionAssociationReceipt,
   TdmsUploadSelectionAssociationRequest,
   TdmsUploadSelectionPreflight,
@@ -40,7 +41,7 @@ export function assertTdmsNativeRoute(route: string, method: 'GET' | 'POST'): vo
       parsed.searchParams.getAll('sourceRef').length === 1 &&
       /^TDMS:(SNAPSHOT|FIELD|RELATION|ARTIFACT):/u.test(parsed.searchParams.get('sourceRef') ?? '')) return;
   if (!parsed.search && (method === 'GET' || method === 'POST') &&
-      /^\/api\/tdms-source-imports\/[A-Za-z0-9_-]{1,160}\/artifacts\/[A-Za-z0-9_-]{1,160}\/selection$/u.test(path)) return;
+      /^\/api\/tdms-source-imports\/[A-Za-z0-9_-]{1,160}\/artifacts\/[A-Za-z0-9_-]{1,160}\/(?:selection|registration)$/u.test(path)) return;
   if (method === 'POST' && !parsed.search &&
       /^\/api\/tdms-source-imports\/[A-Za-z0-9_-]{1,160}\/artifacts\/[A-Za-z0-9_-]{1,160}\/selection\/preflight$/u.test(path)) return;
   if (method === 'GET' && !parsed.search &&
@@ -101,4 +102,14 @@ export function preflightTdmsUpload(
   requestId: string, bindingId: string, pkg: unknown, expectedReceiver?: TdmsNativeReceiverBinding,
 ): Promise<TdmsUploadSelectionPreflight> {
   return tdmsNativeRequest(tdmsSelectionRoute(requestId, bindingId) + '/preflight', 'POST', { package: pkg }, expectedReceiver);
+}
+
+export function readTdmsFormalRegistration(requestId: string, bindingId: string,
+  expected: TdmsNativeReceiverBinding): Promise<TdmsFormalDocumentRegistrationReceipt> {
+  return tdmsNativeRequest(tdmsSelectionRoute(requestId, bindingId).replace(/\/selection$/u, '/registration'), 'GET', undefined, expected);
+}
+
+export function registerTdmsOriginal(requestId: string, bindingId: string, pkg: unknown,
+  expected: TdmsNativeReceiverBinding): Promise<TdmsFormalDocumentRegistrationReceipt> {
+  return tdmsNativeRequest(tdmsSelectionRoute(requestId, bindingId).replace(/\/selection$/u, '/registration'), 'POST', { package: pkg }, expected);
 }

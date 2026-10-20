@@ -19,6 +19,10 @@ GET  /api/tdms-source-refs?sourceRef=...
 
 Host 内部补充 receiver binding、selection preflight、selection stage/read 接口。它们不是来源侧新增正式采用协议。已核验文件仍为 `STAGED_CANDIDATE`；`documentVersionId` 保持 null，后续正式映射独立处理。
 
+单个厂家 owner 和一份 PRIMARY PDF 可经独立的 `POST /api/tdms-source-imports/:requestId/artifacts/:bindingId/registration` 接入既有 DM 正式文件登记；同路径 GET 只读回原登记。该操作仍核对当前 IMPORT、READ_RECORD、准确成员和原绑定，不启动解析、翻译、模型或评估。原 daily 运输先保留来源，再调用此登记并 GET 原 request；未知登记结果仅对账，不重发不确定的写入。
+
+正式 DVI 的来源阅读复用既有 DM 已提交 acquisition lineage 和原 capture 的 nativeRetention 精确修订。版本目录、单条和历史读取仅在响应中投影已核 DVI 关联，不改写原候选回执或来源记录。当前 Source 成员在分页前过滤并在释放前重核；文件读取权和 Source 读权分别成立。来源目标未知时不按文号、标题或最新版本猜关联。
+
 Selection 读取返回 `TDMS_UPLOAD_SELECTION_UNAVAILABLE` / 404，表示当前授权视图不可用，既可能不存在，也可能受成员 RLS 隐藏；该响应不证明对象物理不存在。Native 只有在精确包 preflight 通过且原来源、身份与会话绑定不变时才能进入新取得路径；浏览器 STAGE 再次校验。其他 404、明确拒绝和未知写入结果不触发自动重发。
 
 ## 接收身份部署配置

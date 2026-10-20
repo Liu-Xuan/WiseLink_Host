@@ -22,6 +22,7 @@ import {
 } from '../../../../work-item/production-miaoda-browser-ingress';
 import { DocumentManagementHostedService } from './document-management-hosted.service';
 import { SessionResolver } from '../../../../identity/session-resolver.service';
+import { mintDocumentSourceReadContext } from './document-source-read.port';
 
 export function contextFromRequest(request: Request) {
   const user = request.userContext;
@@ -40,6 +41,7 @@ export function contextFromRequest(request: Request) {
     roles: Array.isArray(user.roles) ? [...user.roles] : [],
     appId: String(user.appId ?? ''),
     env: String(user.env ?? ''),
+    sourceReadContext: mintDocumentSourceReadContext(request),
   };
 }
 @NeedLogin()
@@ -166,6 +168,7 @@ export class DocumentManagementHostedController {
   }
 
   @Get('document-versions/:documentVersionId')
+  @Header('Cache-Control', 'private, no-store')
   getDocumentVersion(
     @Param('documentVersionId') documentVersionId: string,
     @Req() request: Request,

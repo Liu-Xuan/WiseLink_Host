@@ -1,3 +1,4 @@
+import { deduplicateSummaryNotices } from '@shared/derived-summary-engineering-content';
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
@@ -139,8 +140,9 @@ export class DerivedSummaryService {
     const attemptRef = `AQ-${randomUUID().replaceAll('-', '')}`;
     const deadline = new Date(now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS);
     const evidence = mergeSummaryEvidence(readings.flatMap(member => member.evidence));
-    const limitations = ['仅覆盖显式选取的精确保存成员；未选成员、其他ATA和其他机型均未覆盖。',
-      ...readings.flatMap(member => member.limitations)];
+    // Project only a new aggregate input; raw member notices still own context seals and runtime reads.
+    const limitations = deduplicateSummaryNotices(['仅覆盖显式选取的精确保存成员；未选成员、其他ATA和其他机型均未覆盖。',
+      ...readings.flatMap(member => member.limitations)]);
     const revisionContext = lockedPrior ? buildSummaryRevisionContext(input, lockedPrior.saved,
       lockedPrior.fresh, readings, now.toISOString()) : undefined;
     const taskBasis = { schemaVersion: 'wiselink.derived-summary-task.v1' as const,

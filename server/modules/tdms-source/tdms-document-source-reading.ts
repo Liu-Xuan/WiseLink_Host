@@ -7,6 +7,7 @@ import type { TdmsReadContext, TdmsReadReceipt } from '@shared/tdms-source.inter
 import { assertPublicActor, sameScope } from './tdms-source.authorization';
 import { identifier, object, strict } from './tdms-source.validation';
 import { sourceBodyReadingProjection } from './tdms-assessment-body-policy';
+import { documentBoundSourceRevisions } from './tdms-document-source-bindings';
 import {
   tdmsError,
   type TdmsDocumentAccess,
@@ -24,6 +25,7 @@ interface DocumentSourceReadingDependencies {
   documents: TdmsDocumentAccess;
   assertGrant(grant: TdmsSourceGrant, scope?: TdmsSourceScope): void;
   recheck(grant: TdmsSourceGrant, context: TdmsReadContext): Promise<void>;
+  checkMembers?(grant: TdmsSourceGrant, stored: TdmsStoredRevision): Promise<void>;
   receipt(ref: string, grant: TdmsSourceGrant, context: TdmsReadContext): TdmsReadReceipt;
   limitations: readonly string[];
 }
@@ -50,6 +52,8 @@ export async function readDocumentVersionSources(
     throw tdmsError('TDMS_SOURCE_AUTHORIZATION_UNCONFIGURED', 503);
   const context: TdmsReadContext = { documentVersionId };
   await documents.assertRead(actor, documentVersionId);
+  const sourceBindings = documents.sourceBindings
+    ? await documents.sourceBindings(actor, documentVersionId) : [];
   const catalogueGrants: TdmsSourceGrant[] = await authorization.catalogue(actor, context);
   if (!catalogueGrants.length) throw tdmsError('TDMS_SOURCE_NOT_FOUND', 404);
   const grants: TdmsSourceGrant[] = [];
@@ -74,18 +78,28 @@ export async function readDocumentVersionSources(
     const rows: AuthorizedSourceRow[] = [];
     for (const grant of grants) {
       await dependencies.recheck(grant, context);
+      const sourceRevisionRefs = await documentBoundSourceRevisions(actor, grant.scope, sourceBindings, tx);
+      const boundRefs = new Set(sourceRevisionRefs);
       const page: TdmsStoredRevision[] = await tx.documentVersionCatalogue(grant.scope, {
         documentVersionId,
+        ...(sourceRevisionRefs.length ? { sourceRevisionRefs } : {}),
+        ...(grant.permittedMembers ? { permittedRecords: grant.permittedMembers.records } : {}),
         ...(after ? { after } : {}),
         limit: limit + 1,
       });
       for (const stored of page) {
         if (!sameScope(stored.scope, grant.scope))
           throw tdmsError('TDMS_STORED_SCOPE_MISMATCH', 409);
-        if (!stored.record.relatedDocumentVersionIds.includes(documentVersionId))
+        if (grant.permittedMembers && !grant.permittedMembers.records.some(member =>
+          member.recordKind === stored.record.recordKind && member.sourceRecordId === stored.record.sourceRecordId))
+          continue;
+        const explicit = stored.record.relatedDocumentVersionIds.includes(documentVersionId);
+        if (!explicit && !boundRefs.has(stored.record.sourceRevisionRef))
           throw tdmsError('TDMS_DOCUMENT_SOURCE_BINDING_MISMATCH', 409);
+        const projected = explicit ? stored : { ...stored, record: { ...stored.record,
+          relatedDocumentVersionIds: [...stored.record.relatedDocumentVersionIds, documentVersionId] } };
         if (!after || stored.record.sourceRevisionRef > after)
-          rows.push({ stored, grant });
+          rows.push({ stored: projected, grant });
       }
       await dependencies.recheck(grant, context);
     }
@@ -94,9 +108,14 @@ export async function readDocumentVersionSources(
     );
     const window: AuthorizedSourceRow[] = rows.slice(0, limit + 1);
     // The lookahead determines hasMore. It must meet the same current read authority.
-    for (const row of window)
+    for (const row of window) {
+      if (row.grant.permittedMembers) {
+        if (!dependencies.checkMembers) throw tdmsError('TDMS_READ_MEMBER_ADMISSION_UNCONFIGURED', 503);
+        await dependencies.checkMembers(row.grant, row.stored);
+      }
       for (const id of row.stored.record.relatedDocumentVersionIds)
         await documents.assertRead(actor, id);
+    }
     for (const grant of grants) await dependencies.recheck(grant, context);
     const records: TdmsFileServiceRecordReadResponse[] = [];
     for (const { stored, grant } of window.slice(0, limit)) {
@@ -126,9 +145,11 @@ export async function readDocumentVersionSources(
   });
   // Fresh after commit/receipt waits; a prior successful read never acts as cached authority.
   await documents.assertRead(actor, documentVersionId);
-  for (const { stored } of result.window)
+  for (const { stored, grant } of result.window) {
+    if (grant.permittedMembers) await dependencies.checkMembers!(grant, stored);
     for (const id of stored.record.relatedDocumentVersionIds)
       await documents.assertRead(actor, id);
+  }
   for (const grant of grants) await dependencies.recheck(grant, context);
   return result.response;
 }

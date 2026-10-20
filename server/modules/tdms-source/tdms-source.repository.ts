@@ -90,6 +90,13 @@ export class SqlTdmsTransaction implements TdmsTransaction {
     const after: SQL = page.after
       ? sql`WHERE selected.source_revision_ref > ${page.after}`
       : sql``;
+    const sourceBinding: SQL = page.sourceRevisionRefs?.length
+      ? sql`OR jsonb_exists(${JSON.stringify(page.sourceRevisionRefs)}::jsonb,v.source_revision_ref)`
+      : sql``;
+    const members: SQL = page.permittedRecords === undefined ? sql`` : sql`AND EXISTS (
+      SELECT 1 FROM jsonb_array_elements(${JSON.stringify(page.permittedRecords)}::jsonb) approved
+      WHERE approved->>'recordKind'=v.data->'record'->>'recordKind'
+        AND approved->>'sourceRecordId'=v.data->'record'->>'sourceRecordId')`;
     // Select one observation for each stable native record within the exact DV.
     // A current head wins only while it still carries that explicit binding.
     // Otherwise the newest source observation stays readable as history; a
@@ -107,7 +114,8 @@ export class SqlTdmsTransaction implements TdmsTransaction {
           AND h.scope_id=v.scope_id AND h.record_ref=v.record_ref
         WHERE v.tenant_id=${s.tenantId} AND v.source_key=${s.sourceKey}
           AND v.source_instance_id=${s.sourceInstanceId} AND v.scope_id=${s.scopeId}
-          AND jsonb_exists(v.data->'record'->'relatedDocumentVersionIds',${page.documentVersionId})
+          AND (jsonb_exists(v.data->'record'->'relatedDocumentVersionIds',${page.documentVersionId}) ${sourceBinding})
+          ${members}
         ORDER BY v.record_ref,
           coalesce(h.source_revision_ref = v.source_revision_ref, false) DESC,
           (v.data->'record'->>'observedAt')::timestamptz DESC,
@@ -149,7 +157,7 @@ export class SqlTdmsTransaction implements TdmsTransaction {
     let rows;
     if (expected === null)
       rows = await this.db.execute(
-        sql`INSERT INTO tdms_record (tenant_id,source_key,source_instance_id,scope_id,record_kind,source_record_id,record_ref,source_revision_ref,data) VALUES (${s.tenantId},${s.sourceKey},${s.sourceInstanceId},${s.scopeId},${head.recordKind},${head.sourceRecordId},${head.recordRef},${head.sourceRevisionRef},${JSON.stringify(head)}::jsonb) ON CONFLICT DO NOTHING RETURNING record_ref`,
+        sql`INSERT INTO tdms_record (tenant_id,source_key,source_instance_id,scope_id,record_kind,source_record_id,record_ref,source_revision_ref,data) VALUES (${s.tenantId},${s.sourceKey},${s.sourceInstanceId},${s.scopeId},${head.recordKind},${head.sourceRecordId},${head.recordRef},${head.sourceRevisionRef},${JSON.stringify(head)}::jsonb) ON CONFLICT (tenant_id,source_key,source_instance_id,scope_id,record_kind,source_record_id) DO NOTHING RETURNING record_ref`,
       );
     else if (revision.record.selectedHead)
       rows = await this.db.execute(
@@ -181,7 +189,7 @@ export class SqlTdmsTransaction implements TdmsTransaction {
     let rows;
     if (expected === null)
       rows = await this.db.execute(
-        sql`INSERT INTO tdms_relation (tenant_id,source_key,source_instance_id,scope_id,source_relation_id,relation_ref,assertion_ref,data) VALUES (${s.tenantId},${s.sourceKey},${s.sourceInstanceId},${s.scopeId},${head.sourceRelationId},${head.relationRef},${head.assertionRef},${JSON.stringify(head)}::jsonb) ON CONFLICT DO NOTHING RETURNING relation_ref`,
+        sql`INSERT INTO tdms_relation (tenant_id,source_key,source_instance_id,scope_id,source_relation_id,relation_ref,assertion_ref,data) VALUES (${s.tenantId},${s.sourceKey},${s.sourceInstanceId},${s.scopeId},${head.sourceRelationId},${head.relationRef},${head.assertionRef},${JSON.stringify(head)}::jsonb) ON CONFLICT (tenant_id,source_key,source_instance_id,scope_id,source_relation_id) DO NOTHING RETURNING relation_ref`,
       );
     else if (a.selectedHead)
       rows = await this.db.execute(
@@ -197,7 +205,7 @@ export class SqlTdmsTransaction implements TdmsTransaction {
   async saveCapture(c: TdmsCapture) {
     const s = c.scope;
     const rows = await this.db.execute(
-      sql`INSERT INTO tdms_capture (tenant_id,source_key,source_instance_id,scope_id,package_id,capture_ref,data) VALUES (${s.tenantId},${s.sourceKey},${s.sourceInstanceId},${s.scopeId},${c.packageId},${c.receipt.captureRef},${JSON.stringify(c)}::jsonb) ON CONFLICT DO NOTHING RETURNING capture_ref`,
+      sql`INSERT INTO tdms_capture (tenant_id,source_key,source_instance_id,scope_id,package_id,capture_ref,data) VALUES (${s.tenantId},${s.sourceKey},${s.sourceInstanceId},${s.scopeId},${c.packageId},${c.receipt.captureRef},${JSON.stringify(c)}::jsonb) ON CONFLICT (tenant_id,source_key,source_instance_id,scope_id,package_id) DO NOTHING RETURNING capture_ref`,
     );
     if (rows.length !== 1)
       throw tdmsError('TDMS_PACKAGE_IDEMPOTENCY_CONFLICT', 409);

@@ -135,6 +135,9 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
   const {
     wikiRows,
   } = require('../../../server/modules/canonical-host/hierarchical-wiki.persistence.ts');
+  const {
+    ActionAttemptRepository,
+  } = require('../../../server/modules/action-attempt/action-attempt.repository.ts');
   const concurrentRuntime = new DerivedSummaryRuntimeService(
     f.concurrentRepository,
     f.members,
@@ -250,6 +253,47 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
   };
   const record = (name, details) =>
     evidence.cases.push({ name, status: 'PASS', ...details });
+
+  for (const writer of ['runtime CLAIM', 'generic deadline writer']) {
+    await t.test(
+      `${writer} first closes an unclaimed row; later GET preserves execution retry and due time`,
+      async () => {
+        const p = await prepare(Date.now() - 2 * 60 * 60_000);
+        const original = await registry(p);
+        const before = { ...original.state_json, retryCount: 1 };
+        await f.admin`UPDATE hierarchical_wiki_scope SET state_json=${f.admin.json(before)}
+          WHERE summary_id=${p.target.summaryId}`;
+        if (writer === 'runtime CLAIM') {
+          await assert.rejects(hosted(() => f.runtime.claim(p.target)), /DERIVED_SUMMARY_TIMED_OUT/u);
+        } else {
+          await hosted(() => f.repository.runtime(p.target, async (database, _owner, _head, row) => {
+            const finished = await new ActionAttemptRepository(database).finishTerminal({
+              attemptId: row.attemptId, fromStatus: 'QUEUED', status: 'TIMED_OUT',
+              terminalReason: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED', now: new Date(),
+            });
+            assert.equal(finished, true);
+          }));
+        }
+        const terminal = await attempt(p);
+        assert.equal(terminal.status, 'TIMED_OUT');
+        assert.equal(terminal.claim_count, 0);
+        assert.equal(terminal.lease_generation, 0);
+        assert.equal(terminal.started_at, null);
+        assert.deepEqual(frozen(terminal), frozen(p.before));
+        await read(p);
+        const after = await registry(p);
+        assert.equal(after.state_json.active, null);
+        assert.deepEqual(scheduling(after.state_json), scheduling(before));
+        assert.equal((await attempt(p)).row_version, terminal.row_version);
+        await read(p);
+        assert.equal((await registry(p)).row_version, after.row_version);
+        record(`${writer} unclaimed terminal observed later`, {
+          statusAfter: terminal.status, retryCount: after.state_json.retryCount,
+          deadlineAndTaskUnchanged: true, terminalRowUnchanged: true,
+        });
+      },
+    );
+  }
 
   await t.test(
     'real GET expiration CAS is idempotent under competing physical readers',

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { TdmsSourceService } from '../../../server/modules/tdms-source/tdms-source.service';
 import { TdmsReceiverService } from '../../../server/modules/tdms-source/tdms-receiver.service';
 import { MiaodaTdmsSourceAuthorization } from '../../../server/modules/tdms-source/miaoda-tdms-source-authorization';
@@ -10,7 +11,7 @@ import { MemoryTdmsRepository } from './tdms-memory-double';
 import { actor } from './tdms-fixtures';
 import type { TdmsStoredSelection } from '../../../server/modules/tdms-source/tdms-receiver.types';
 
-import { hash } from '../../../server/modules/tdms-source/tdms-source.validation';
+import { hash, object } from '../../../server/modules/tdms-source/tdms-source.validation';
 import {
   currentDerivedOriginal,
   proofOfCurrent,
@@ -38,6 +39,16 @@ export function syntheticOwnerPrimaryStage(
   format = 'PDF',
 ) {
   const original = currentDerivedOriginal(format);
+  if (format === 'PDF') {
+    // Synthetic staging bytes only, not a parsable or formally registered PDF.
+    // The actual artifact store checks PDF magic before retaining a candidate.
+    original.bytes = Buffer.concat([Buffer.from('%PDF-1.7\n'), original.bytes]);
+    const sha256 = createHash('sha256').update(original.bytes).digest('hex');
+    const byteLength = original.bytes.length;
+    Object.assign(original.env.package.artifactBindings[0], { blobSha256: sha256, byteLength });
+    Object.assign(object(original.env.package.query.originalAcquisition), { bytesSha256: sha256, byteLength });
+    Object.assign(original.selection, { sha256, byteLength });
+  }
   const env =
       scope === 'AD'
         ? syntheticCompleteEnvelope('AD')

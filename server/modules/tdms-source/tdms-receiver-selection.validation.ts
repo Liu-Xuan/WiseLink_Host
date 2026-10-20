@@ -9,7 +9,7 @@ import {
   strict,
 } from './tdms-source.validation';
 import { tdmsError } from './tdms-source.types';
-import type { TdmsPublicActor, TdmsSourceScope } from './tdms-source.types';
+import type { TdmsImportMemberClaims, TdmsPublicActor, TdmsSourceScope } from './tdms-source.types';
 import type {
   TdmsReceiverAuthority,
   TdmsStoredSelection,
@@ -32,7 +32,44 @@ export function receiverSelectionPackage(
   const observation = matches[0]!;
   if (observation.sourceAttachmentId === null)
     throw tdmsError('TDMS_DAILY_ARTIFACT_IDENTITY_UNCONFIRMED', 503);
-  return { prepared, observation };
+  const owners = prepared.envelope.package.records.filter(
+    (record) => record.snapshotId === observation.ownerSnapshotId,
+  );
+  if (owners.length !== 1)
+    throw tdmsError('TDMS_UPLOAD_ASSOCIATION_INTEGRITY_CONFLICT', 409);
+  const ownerRecord: TdmsStoredSelection['ownerRecord'] = {
+    snapshotId: owners[0]!.snapshotId,
+    recordKind: owners[0]!.kind,
+    sourceRecordId: owners[0]!.sourceRecordId,
+  };
+  return { prepared, observation, ownerRecord,
+    memberClaims: receiverSelectionClaims(ownerRecord, observation) };
+}
+
+/** The association retains exactly its selected attachment and its actual owner. */
+export function receiverSelectionClaims(
+  ownerRecord: TdmsStoredSelection['ownerRecord'],
+  observation: TdmsStoredSelection['observation'],
+): TdmsImportMemberClaims {
+  const owner = object(ownerRecord);
+  strict(owner, ['snapshotId', 'recordKind', 'sourceRecordId']);
+  if (identifier(owner.snapshotId) !== observation.ownerSnapshotId)
+    throw tdmsError('TDMS_UPLOAD_ASSOCIATION_INTEGRITY_CONFLICT', 409);
+  const record = {
+    recordKind: identifier(owner.recordKind),
+    sourceRecordId: identifier(owner.sourceRecordId),
+  };
+  return {
+    records: [record],
+    artifacts: [{
+      memberId: identifier(observation.bindingId),
+      sourceAttachmentId: identifier(observation.sourceAttachmentId),
+      sourceAttachmentVersion: null,
+      owners: [{ ...record }],
+    }],
+    relationIds: [],
+    relatedDocumentVersionIds: [],
+  };
 }
 
 export function receiverArtifact(
@@ -81,6 +118,7 @@ export function checkedReceiverSelection(
     'payloadDigest',
     'packageId',
     'memberClaims',
+    'ownerRecord',
     'observation',
     'artifact',
     'receipt',
@@ -91,6 +129,7 @@ export function checkedReceiverSelection(
     observation,
     value.artifact.selection,
   );
+  const expectedClaims = receiverSelectionClaims(value.ownerRecord, observation);
   const expectedReceipt = {
     schemaVersion: 'wiselink.tdms-upload-selection-association.v1',
     requestId,
@@ -114,6 +153,7 @@ export function checkedReceiverSelection(
     observation.bindingId !== bindingId ||
     canonical(value.artifact) !== canonical(expectedArtifact) ||
     canonical(receipt) !== canonical(expectedReceipt) ||
+    canonical(receiverClaims(value.memberClaims)) !== canonical(expectedClaims) ||
     !/^[a-f0-9]{64}$/u.test(value.payloadDigest) ||
     !Number.isSafeInteger(observation.byteLength) ||
     observation.byteLength <= 0 ||
@@ -124,7 +164,6 @@ export function checkedReceiverSelection(
     value.grantRevision < 1
   )
     throw tdmsError('TDMS_UPLOAD_ASSOCIATION_INTEGRITY_CONFLICT', 409);
-  receiverClaims(value.memberClaims);
   return value;
 }
 

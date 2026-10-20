@@ -61,6 +61,18 @@ describe('controlled Source authority decisions (synthetic fixture; physical DB 
       ),
     ).rejects.toMatchObject({ code: 'TDMS_SOURCE_NOT_FOUND' });
   });
+  it('exact DVI read context preserves independent Source decisions while Matter context stays unconfigured', async () => {
+    const f = setup();
+    const context = { documentVersionId: 'DV-synthetic-exact' };
+    await expect(f.authorization.catalogue(actor(), context)).resolves.toEqual([
+      expect.objectContaining({ scope: f.scope, permittedMembers: f.prepared.memberClaims }),
+    ]);
+    f.actions.READ_RECORD.allowed = false;
+    await expect(f.authorization.authorize(actor(), f.scope, 'READ_RECORD', context))
+      .rejects.toMatchObject({ code: 'TDMS_SOURCE_NOT_FOUND', statusCode: 404 });
+    await expect(f.authorization.catalogue(actor(), { matterId: 'synthetic-matter' }))
+      .rejects.toMatchObject({ code: 'TDMS_RECEIVER_CONTEXT_AUTHORITY_UNCONFIGURED', statusCode: 503 });
+  });
   it.each([
     'grant',
     'registry',

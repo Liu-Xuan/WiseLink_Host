@@ -75,6 +75,11 @@ export interface TdmsStoredSelection {
   payloadDigest: string;
   packageId: string;
   memberClaims: TdmsImportMemberClaims;
+  ownerRecord: {
+    snapshotId: string;
+    recordKind: string;
+    sourceRecordId: string;
+  };
   observation: TdmsDailyArtifactObservation;
   artifact: TdmsArtifactSelection;
   receipt: TdmsUploadSelectionAssociationReceipt;

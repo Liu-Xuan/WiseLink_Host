@@ -4,7 +4,7 @@ import type { CanonicalLibraryDocumentSummary, CanonicalLibraryDocumentsResponse
 import { listHierarchicalWiki } from '@client/src/api/hierarchical-wiki';
 import { Button } from '@client/src/components/ui/button';
 import { useSummaryResource } from '@client/src/features/derived-summary/useSummaryResource';
-import { wikiStatusLabels } from '@client/src/features/derived-summary/hierarchical-wiki-presentation';
+import { wikiDirectoryFailureMessage, wikiStatusLabels } from '@client/src/features/derived-summary/hierarchical-wiki-presentation';
 import { LibraryAtaHierarchy } from '../WorkspaceHomePage/LibraryAtaHierarchy';
 import { LibraryClassificationControls } from '../WorkspaceHomePage/LibraryClassificationControls';
 import { LibraryFleetControls } from '../WorkspaceHomePage/LibraryFleetControls';
@@ -80,7 +80,7 @@ export default function KnowledgeAtaDirectory({
         </Link>
           {item.waiting.length ? <small>{item.waiting.length}项下层更新待汇总</small> : null}
           {!item.inventoryComplete ? <small>资料盘点进行中</small> : null}
-          {item.errorCode ? <p role="alert">更新未完成（{item.errorCode}）。</p> : null}
+          {wikiDirectoryFailureMessage(item) ? <p role="alert">{wikiDirectoryFailureMessage(item)}</p> : null}
         </div>)}</>} /> : null}
     {nextCursor ? <Button type="button" variant="outline" size="sm" disabled={loading}
       onClick={() => kind === 'sources' ? onNextSourcePage(nextCursor) : navigation.loadMore()}>加载更多资料</Button> : null}

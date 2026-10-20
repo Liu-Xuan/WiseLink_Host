@@ -1,5 +1,37 @@
 import type { TdmsArtifactSelection } from './tdms-file-service-import.interface';
 
+/** Independent DM lineage readback; never overwrites the retained candidate receipt. */
+export interface TdmsFormalDocumentRegistrationReceipt {
+  schemaVersion: 'wiselink.tdms-formal-document-registration.v1';
+  requestId: string;
+  bindingId: string;
+  payloadDigest: string;
+  receiverId: string;
+  documentUploadRequestId: string;
+  sourceAttachmentId: string;
+  sourceAttachmentVersion: null;
+  status: 'COMMITTED' | 'REVIEW_REQUIRED' | 'PENDING';
+  documentVersionId: string | null;
+  preflightId: string | null;
+  sha256: string;
+  byteLength: number;
+  readbackVerified: boolean;
+  mappedAt: string | null;
+}
+
+export interface TdmsFormalDocumentMapping {
+  requestId: string;
+  bindingId: string;
+  sourceRef: string;
+  status: 'COMMITTED' | 'REVIEW_REQUIRED';
+  documentVersionId: string | null;
+  preflightId: string | null;
+  sha256: string;
+  byteLength: number;
+  readbackVerified: boolean;
+  mappedAt: string;
+}
+
 /** Current Host metadata only. Session identity never grants Source access. */
 export interface TdmsNativeReceiverBinding {
   schemaVersion: 'wiselink.tdms-native-host-receiver-binding.v1';

@@ -425,6 +425,59 @@ function extractBoeingServiceLetter({ firstPageText }) {
   };
 }
 
+function extractComacServiceLetter({ firstPageText, layout }) {
+  const runs = (Array.isArray(layout?.textRuns) ? layout.textRuns : [])
+    .filter((run) => Number(run.page) === 1 && Number.isFinite(run.x) && Number.isFinite(run.y))
+    .sort((left, right) => right.y - left.y || left.x - right.x);
+  const rows = [];
+  for (const run of runs) {
+    const row = rows.find((value) => Math.abs(value.y - run.y) <= 2);
+    if (row) row.runs.push(run);
+    else rows.push({ y: run.y, runs: [run] });
+  }
+  // COMAC draws the form labels first and the values at the end of the stream.
+  // Rejoin actual visual rows; text-object order is not publication reading order.
+  const visualText = rows.length ? rows.map((row) => row.runs
+    .sort((left, right) => left.x - right.x).map((run) => run.text).join(' ')).join('\n')
+    : firstPageText;
+  const text = visualText.replace(/\s+/gu, '');
+  if (!text.includes('上海飞机客户服务有限公司') ||
+      !text.includes('服务信函') || !/(?:有效性|适用性)[:：]C919飞机/u.test(text)) return null;
+  const adapterId = 'issuer.comac.service_letter.v1';
+  const labelledCodes = [...visualText.matchAll(/编\s*号\s*[:：]\s*(\S+)/gu)];
+  const headers = labelledCodes.map((match) => match[1].match(/^(SL-\d{2}-\d{4})-(R\d{2})$/u));
+  if (headers.some((match) => !match)) {
+    fail('DM_PDF_IDENTITY_UNRESOLVED', 'COMAC primary code is outside the supported publication format.', { adapterId });
+  }
+  const documentCode = singleIdentityCandidate(headers.map((m) => m[1]), adapterId, 'document code');
+  const businessRevision = singleIdentityCandidate(headers.map((m) => m[2]), adapterId, 'business revision');
+  if (!documentCode || !businessRevision) return null;
+  const dateField = (label, allowNa) => {
+    const values = [...visualText.matchAll(new RegExp(`${[...label].join('\\s*')}\\s*[:：]\\s*(\\S*)`, 'gu'))].map((m) => {
+      if (allowNa && /^N\/?A$/iu.test(m[1])) return 'N/A';
+      const parts = m[1].match(/^(\d{4})-(\d{2})-(\d{2})$/u);
+      const value = parts ? validDate(parts[1], parts[2], parts[3]) : '';
+      if (!value) fail('DM_PDF_IDENTITY_UNRESOLVED', 'COMAC publication has an invalid labelled date.', { adapterId, label });
+      return value;
+    });
+    return singleIdentityCandidate(values, adapterId, label);
+  };
+  const originalDate = dateField('原版日期', false);
+  const revisionValue = dateField('修订日期', true);
+  const revisedDate = revisionValue === 'N/A' ? '' : revisionValue;
+  if (!originalDate || (businessRevision !== 'R00' && !revisedDate)) return null;
+  if (businessRevision === 'R00' && revisedDate && revisedDate !== originalDate) {
+    fail('DM_PDF_IDENTITY_CONFLICT', 'COMAC original issue has a conflicting revision date.', { adapterId });
+  }
+  return {
+    documentCode,
+    businessRevision,
+    revisionDate: businessRevision === 'R00' ? originalDate : revisedDate,
+    sourceGeneratedDate: '',
+    sourceType: 'comac_service_letter',
+  };
+}
+
 const BOEING_SB_CODE_PATTERN =
   '(?:737MAX|737NG|737|747|757|767|777|787)-\\d{2}(?:A?\\d{4}|-\\d{4})';
 const BOEING_787_PUBLICATION_CODE_PATTERN = 'B787-\\d{5}-SB\\d{6}-\\d{2}';
@@ -760,6 +813,7 @@ const ACTIVATED_IDENTITY_OWNERS = new Map([
   ['issuer.caac.cad.v1', extractCaacCad],
   [AIRBUS_TFU_ADAPTER_ID, extractAirbusTechnicalFollowUp],
   ['issuer.boeing.service_letter.v1', extractBoeingServiceLetter],
+  ['issuer.comac.service_letter.v1', extractComacServiceLetter],
   ['issuer.boeing.service_bulletin.v1', extractBoeingServiceBulletin],
   ['issuer.airbus.service_bulletin.v1', extractAirbusServiceBulletin],
   ['issuer.honeywell.sil.v1', extractHoneywellServiceInformationLetter],

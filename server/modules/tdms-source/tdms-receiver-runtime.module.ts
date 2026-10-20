@@ -1,27 +1,26 @@
+import { TdmsFormalDocumentRegistrationService } from './tdms-formal-document-registration.service';
+import { TdmsFormalDocumentRegistrationController } from './tdms-formal-document-registration.controller';
 import { Module } from '@nestjs/common';
 import { IdentityModule } from '../identity/identity.module';
 import { DocumentManagementRuntimeModule } from '../document-management-runtime/document-management-runtime.module';
-import { MiaodaTdmsSourceAuthorization } from './miaoda-tdms-source-authorization';
 import { MiaodaTdmsDailyArtifactStore } from './miaoda-tdms-daily-artifact-store';
-import { TdmsReceiverRepository } from './tdms-receiver.repository';
 import { TdmsReceiverService } from './tdms-receiver.service';
 import { TdmsReceiverController } from './tdms-receiver.controller';
-import { TdmsReceiverIdentityProfile } from './tdms-receiver-identity-profile';
+import { TdmsSourceAuthorityModule } from './tdms-source-authority.module';
 
 @Module({
-  imports: [IdentityModule, DocumentManagementRuntimeModule],
+  imports: [IdentityModule, TdmsSourceAuthorityModule, DocumentManagementRuntimeModule],
   providers: [
-    TdmsReceiverIdentityProfile,
-    TdmsReceiverRepository,
-    MiaodaTdmsSourceAuthorization,
     MiaodaTdmsDailyArtifactStore,
     TdmsReceiverService,
+    TdmsFormalDocumentRegistrationService,
   ],
-  controllers: [TdmsReceiverController],
+  controllers: [TdmsReceiverController, TdmsFormalDocumentRegistrationController],
   exports: [
-    MiaodaTdmsSourceAuthorization,
+    TdmsSourceAuthorityModule,
     MiaodaTdmsDailyArtifactStore,
     TdmsReceiverService,
+    TdmsFormalDocumentRegistrationService,
   ],
 })
 export class TdmsReceiverRuntimeModule {}

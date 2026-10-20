@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { MiaodaTdmsArtifactStore } from '../../../server/modules/tdms-source/miaoda-tdms-artifact-store';
 import { nativeScope } from './tdms-memory-double';
 import { actor } from './tdms-fixtures';
+import { deterministicId } from '../../../server/modules/document-management/src/runtime/valueTools.js';
 
 function setup(options: { corrupt?: boolean; linked?: boolean } = {}) {
   const objects = new Map<string, { metadata: any; bytes: Buffer }>();
@@ -67,6 +68,30 @@ function setup(options: { corrupt?: boolean; linked?: boolean } = {}) {
   };
 }
 describe('actual candidate adapter against FileService and catalog doubles', () => {
+  it('shares the ordinary canonical PDF identity without conferring a formal document version', async () => {
+    const s = setup();
+    const bytes = Buffer.from('%PDF-1.7\nsynthetic retained byte identity\n%%EOF');
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    Object.assign(s.artifact, { fileName: 'publication.pdf', mediaType: 'application/pdf',
+      sha256, byteLength: bytes.length, bytesBase64: bytes.toString('base64') });
+    const result = await s.store.acquire({ scope: nativeScope, actor: actor(), packageId: 'p', artifact: s.artifact });
+    expect(s.uploads).toHaveLength(1);
+    expect(s.uploads[0].filePath).toBe(`document-management/source/sha256/${sha256.slice(0, 2)}/${sha256}.pdf`);
+    expect(result.sourceArtifactId).toBe(deterministicId('source_artifact', sha256, bytes.length));
+    expect(result.documentVersionId).toBeNull();
+    expect(s.catalog.recordAcquisition.mock.calls[0][0].acquisition.sourceDescriptor.candidateOnly).toBe(true);
+  });
+
+  it('does not label non-PDF bytes as canonical PDF merely because the declared MIME says PDF', async () => {
+    const s = setup();
+    s.artifact.mediaType = 'application/pdf';
+    s.artifact.fileName = 'claimed.pdf';
+    await expect(s.store.acquire({ scope: nativeScope, actor: actor(), packageId: 'p', artifact: s.artifact }))
+      .rejects.toMatchObject({ code: 'TDMS_PDF_ARTIFACT_FORMAT_INVALID', statusCode: 422 });
+    expect(s.uploads).toHaveLength(0);
+    expect(s.catalog.recordAcquisition).not.toHaveBeenCalled();
+  });
+
   it('stores arbitrary bytes once with a controlled non-PDF immutable path and readback', async () => {
     const s = setup();
     const result = await s.store.acquire({

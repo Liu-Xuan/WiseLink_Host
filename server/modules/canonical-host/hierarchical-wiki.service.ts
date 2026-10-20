@@ -38,12 +38,12 @@ import {
   mergeWikiDemand,
   wikiDemandState,
   wikiDue,
-  retryWikiDemand,
   type WikiVersions,
 } from './hierarchical-wiki-demand';
 import {
   readActiveWikiAttempt,
   reconcileWikiReservations,
+  releaseWikiAttemptReservation,
   wikiReservationNeedsReconciliation,
   wikiRequestHasSavedRevision,
 } from './hierarchical-wiki-attempt-reconciliation';
@@ -511,11 +511,9 @@ export class HierarchicalWikiService {
                   await storeWikiDemand(
                     database,
                     locked,
-                    retryWikiDemand(
+                    releaseWikiAttemptReservation(
                       locked.state,
-                      attempt.errorCode ??
-                        attempt.terminalReason ??
-                        'WIKI_ATTEMPT_FAILED',
+                      attempt,
                       now,
                     ),
                   );

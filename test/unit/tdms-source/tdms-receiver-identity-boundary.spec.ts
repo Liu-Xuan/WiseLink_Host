@@ -14,13 +14,17 @@ import {
 } from '../../../server/modules/identity/oauth-config.port';
 import { DocumentManagementRuntimeModule } from '../../../server/modules/document-management-runtime/document-management-runtime.module';
 import { MiaodaHostedDocumentCatalog } from '../../../server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog';
+import { DocumentManagementHostedService } from '../../../server/modules/document-management/src/hosted/nest/document-management-hosted.service';
 import { TdmsReceiverRuntimeModule } from '../../../server/modules/tdms-source/tdms-receiver-runtime.module';
 import { TdmsReceiverRepository } from '../../../server/modules/tdms-source/tdms-receiver.repository';
 import { TdmsReceiverIdentityProfile } from '../../../server/modules/tdms-source/tdms-receiver-identity-profile';
 import { MiaodaTdmsSourceAuthorization } from '../../../server/modules/tdms-source/miaoda-tdms-source-authorization';
 import { MiaodaTdmsDailyArtifactStore } from '../../../server/modules/tdms-source/miaoda-tdms-daily-artifact-store';
 import { receiverAuthority } from '../../../server/modules/tdms-source/tdms-receiver-authorization.validation';
-import { receiverArtifact } from '../../../server/modules/tdms-source/tdms-receiver-selection.validation';
+import {
+  receiverArtifact,
+  receiverSelectionPackage,
+} from '../../../server/modules/tdms-source/tdms-receiver-selection.validation';
 import {
   withTdmsReceiverDatabase,
   withTdmsReceiverExpectation,
@@ -74,6 +78,9 @@ function setup() {
   const authorization = new MiaodaTdmsSourceAuthorization(receivers);
   const authority = receiverAuthority(fixture.row, actor(), 'IMPORT')!;
   const artifact = receiverArtifact(fixture.binding, fixture.selection);
+  const selected = receiverSelectionPackage(
+    fixture.envelope.requestId, fixture.binding.bindingId, fixture.envelope.package,
+  );
   const stored: TdmsStoredSelection = {
     scope: authority.scope,
     applicationScopeId: actor().applicationScopeId,
@@ -84,7 +91,8 @@ function setup() {
     permissionRevision: authority.permissionRevision,
     payloadDigest: fixture.prepared.payloadDigest,
     packageId: fixture.envelope.package.packageId,
-    memberClaims: fixture.prepared.memberClaims,
+    memberClaims: selected.memberClaims,
+    ownerRecord: selected.ownerRecord,
     observation: fixture.binding,
     artifact,
     receipt: {
@@ -140,8 +148,11 @@ class FixturePlatformModule {
   }
 }
 @Module({
-  providers: [{ provide: MiaodaHostedDocumentCatalog, useValue: {} }],
-  exports: [MiaodaHostedDocumentCatalog],
+  providers: [
+    { provide: MiaodaHostedDocumentCatalog, useValue: {} },
+    { provide: DocumentManagementHostedService, useValue: {} },
+  ],
+  exports: [MiaodaHostedDocumentCatalog, DocumentManagementHostedService],
 })
 class FixtureDocumentModule {}
 

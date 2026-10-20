@@ -17,7 +17,7 @@ import { Input } from '@client/src/components/ui/input';
 import { useSummaryResource } from './useSummaryResource';
 import { useTaskModelOptions } from '@client/src/features/review/TaskModelPicker';
 import SavedWorkSelector from './SavedWorkSelector';
-import { wikiStatusLabels } from './hierarchical-wiki-presentation';
+import { wikiDirectoryFailureMessage, wikiStatusLabels } from './hierarchical-wiki-presentation';
 
 export { wikiStatusLabels } from './hierarchical-wiki-presentation';
 
@@ -396,8 +396,8 @@ export default function HierarchicalWikiDirectory({
                 资料盘点进行中
               </p>
             ) : null}
-            {item.errorCode ? (
-              <p role="alert">更新未完成（{item.errorCode}）。</p>
+            {wikiDirectoryFailureMessage(item) ? (
+              <p role="alert">{wikiDirectoryFailureMessage(item)}</p>
             ) : null}
             <Button
               variant="outline"

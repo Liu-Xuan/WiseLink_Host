@@ -16,6 +16,7 @@ import {
   ProductionMiaodaBrowserObjectIngressGuard,
 } from '../work-item/production-miaoda-browser-ingress';
 import { TdmsSourceService } from './tdms-source.service';
+import { withDocumentSourceReadRequest } from '../document-management/src/hosted/nest/document-source-read.port';
 import {
   identifier,
   object,
@@ -43,14 +44,14 @@ export class TdmsSourceController {
       : typeof q.limit === 'string' && /^[1-9][0-9]*$/u.test(q.limit)
         ? Number(q.limit)
         : Number.NaN;
-    return this.service.readDocumentVersion(
+    return withDocumentSourceReadRequest(req, () => this.service.readDocumentVersion(
       miaodaHostedFinalUserActor(req.userContext),
       {
         documentVersionId: identifier(id),
         ...(q.after === undefined ? {} : { after: identifier(q.after) }),
         ...(limit === undefined ? {} : { limit }),
       },
-    );
+    ));
   }
   @Get('records')
   @Header('Cache-Control', 'private, no-cache, must-revalidate')
@@ -59,11 +60,11 @@ export class TdmsSourceController {
     const q = object(query);
     strict(q, ['matterId', 'documentVersionId', 'after']);
     const { after, ...context } = q;
-    return this.service.catalogue(
+    return withDocumentSourceReadRequest(req, () => this.service.catalogue(
       miaodaHostedFinalUserActor(req.userContext),
       readContext(context),
       after === undefined ? undefined : identifier(after),
-    );
+    ));
   }
   @Get('records/:ref')
   @Header('Cache-Control', 'private, no-cache, must-revalidate')
@@ -73,11 +74,11 @@ export class TdmsSourceController {
     @Param('ref') ref: string,
     @Query() query: Record<string, unknown>,
   ) {
-    return this.service.readRecord(
+    return withDocumentSourceReadRequest(req, () => this.service.readRecord(
       miaodaHostedFinalUserActor(req.userContext),
       identifier(ref),
       browserContext(query),
-    );
+    ));
   }
   @Get('records/:ref/history')
   @Header('Cache-Control', 'private, no-cache, must-revalidate')
@@ -90,12 +91,12 @@ export class TdmsSourceController {
     const q = object(query);
     strict(q, ['matterId', 'documentVersionId', 'after']);
     const { after, ...context } = q;
-    return this.service.history(
+    return withDocumentSourceReadRequest(req, () => this.service.history(
       miaodaHostedFinalUserActor(req.userContext),
       identifier(ref),
       readContext(context),
       after === undefined ? undefined : identifier(after),
-    );
+    ));
   }
   @Get('records/:ref/relations')
   @Header('Cache-Control', 'private, no-cache, must-revalidate')
@@ -105,24 +106,24 @@ export class TdmsSourceController {
     @Param('ref') ref: string,
     @Query() query: Record<string, unknown>,
   ) {
-    return this.service.readRelations(
+    return withDocumentSourceReadRequest(req, () => this.service.readRelations(
       miaodaHostedFinalUserActor(req.userContext),
       identifier(ref),
       browserContext(query),
-    );
+    ));
   }
   @Post('imports/file-service')
   importFileServicePackage(@Req() req: Request, @Body() body: unknown) {
-    return this.service.importFileServicePackage(
+    return withDocumentSourceReadRequest(req, () => this.service.importFileServicePackage(
       miaodaHostedFinalUserActor(req.userContext),
       body,
-    );
+    ));
   }
   @Post('imports')
   importPackage(@Req() req: Request, @Body() body: unknown) {
     const b = object(body);
     strict(b, ['sourceKey', 'sourceInstanceId', 'scopeId', 'package']);
-    return this.service.importPackage(
+    return withDocumentSourceReadRequest(req, () => this.service.importPackage(
       miaodaHostedFinalUserActor(req.userContext),
       {
         sourceKey: identifier(b.sourceKey),
@@ -130,7 +131,7 @@ export class TdmsSourceController {
         scopeId: identifier(b.scopeId),
       },
       b.package,
-    );
+    ));
   }
 }
 function browserContext(value: unknown) {

@@ -89,6 +89,7 @@ export function useJobAidWorkingRead(
     data: JobAidWorkingReadModel | null;
     error: string | null;
     temporaryError: boolean;
+    refreshing: boolean;
     /** A rejected JobAid read cannot regain base fallback by retrying JobAid. */
     revokedBaseReadProof: object | null | undefined;
   }>({
@@ -96,6 +97,7 @@ export function useJobAidWorkingRead(
     data: null,
     error: null,
     temporaryError: false,
+    refreshing: true,
     revokedBaseReadProof: undefined,
   });
   const [retry, setRetry] = useState(0);
@@ -106,6 +108,7 @@ export function useJobAidWorkingRead(
     )
       stopped.current = { key, baseReadProof, failed: false };
     if (!active || !visible || stopped.current.failed) return;
+    setState((previous) => ({ ...previous, refreshing: true }));
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const obsolete = () =>
@@ -133,6 +136,7 @@ export function useJobAidWorkingRead(
           ),
           error: null,
           temporaryError: false,
+          refreshing: false,
           revokedBaseReadProof:
             previous.key === key ? previous.revokedBaseReadProof : undefined,
         }));
@@ -152,6 +156,7 @@ export function useJobAidWorkingRead(
           error:
             caught instanceof Error ? caught.message : '已保存评估暂时无法读取',
           temporaryError,
+          refreshing: false,
           revokedBaseReadProof: temporaryError
             ? previous.key === key
               ? previous.revokedBaseReadProof
@@ -170,12 +175,14 @@ export function useJobAidWorkingRead(
     data: state.key === key ? state.data : null,
     error: state.key === key ? state.error : null,
     temporaryError: state.key === key && state.temporaryError,
+    refreshing: state.key !== key || state.refreshing,
     baseFallbackAllowed:
       state.key === key &&
       (state.revokedBaseReadProof === undefined ||
         state.revokedBaseReadProof !== baseReadProof),
     refresh: () => {
       stopped.current = { key, baseReadProof, failed: false };
+      setState((previous) => ({ ...previous, refreshing: true }));
       setRetry((value) => value + 1);
     },
   };

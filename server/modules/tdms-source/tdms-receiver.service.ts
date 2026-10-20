@@ -13,7 +13,7 @@ import {
 import { MiaodaTdmsSourceAuthorization } from './miaoda-tdms-source-authorization';
 import { MiaodaTdmsDailyArtifactStore } from './miaoda-tdms-daily-artifact-store';
 import { TdmsReceiverRepository } from './tdms-receiver.repository';
-import type { TdmsPublicActor, TdmsSourceScope } from './tdms-source.types';
+import type { TdmsPublicActor, TdmsSourceScope, TdmsFormalReceiptRead } from './tdms-source.types';
 import { tdmsError } from './tdms-source.types';
 import { sameScope } from './tdms-source.authorization';
 import type {
@@ -27,7 +27,7 @@ import {
   receiverArtifact,
   receiverSelectionPackage,
 } from './tdms-receiver-selection.validation';
-import { identifier, object, strict } from './tdms-source.validation';
+import { canonical, identifier, object, strict } from './tdms-source.validation';
 import { dailyRequestId } from './tdms-daily-metadata.readback';
 import {
   assertExpectedTdmsReceiver,
@@ -37,7 +37,16 @@ import {
   assertTdmsReceiverScope,
   tdmsReceiverExpectedScope,
   withTdmsReceiverExpectation,
+  withTdmsReceiverDatabase,
 } from './tdms-receiver-sql-context';
+
+
+export interface TdmsRegistrationSelection {
+  actor: TdmsPublicActor;
+  authority: TdmsReceiverAuthority;
+  stored: TdmsStoredSelection;
+  checkpoint(database?: PostgresJsDatabase): Promise<void>;
+}
 
 @Injectable()
 export class TdmsReceiverService {
@@ -99,7 +108,7 @@ export class TdmsReceiverService {
   ): Promise<TdmsUploadSelectionPreflight> {
     const input = object(body);
     strict(input, ['package']);
-    const { prepared } = receiverSelectionPackage(
+    const { prepared, memberClaims } = receiverSelectionPackage(
       requestId,
       bindingId,
       input.package,
@@ -108,7 +117,7 @@ export class TdmsReceiverService {
       this.receivers.transaction(async (db) => {
         await this.currentSession(request, db, actor, session);
         const authority = await this.scope(actor);
-        await this.authorizePackage(actor, authority, prepared.memberClaims);
+        await this.authorizePackage(actor, authority, memberClaims);
         return {
           requestId,
           bindingId,
@@ -128,7 +137,7 @@ export class TdmsReceiverService {
   ): Promise<TdmsUploadSelectionAssociationReceipt> {
     const input = object(body);
     strict(input, ['package', 'selection']);
-    const { prepared, observation } = receiverSelectionPackage(
+    const { prepared, observation, memberClaims, ownerRecord } = receiverSelectionPackage(
       requestId,
       bindingId,
       input.package,
@@ -136,7 +145,7 @@ export class TdmsReceiverService {
     const artifact = receiverArtifact(observation, input.selection);
     return this.verified(request, async (actor, session) => {
       const authority = await this.scope(actor);
-      await this.authorizePackage(actor, authority, prepared.memberClaims);
+      await this.authorizePackage(actor, authority, memberClaims);
       const expected = expectedTdmsReceiver(request);
       if (expected)
         await this.receivers.transaction((db) =>
@@ -159,7 +168,7 @@ export class TdmsReceiverService {
         candidate.documentVersionId !== null
       )
         throw tdmsError('TDMS_CONTROLLED_ARTIFACT_BINDING_INVALID');
-      return this.sessions.withVerifiedNativeBrowserServiceSql(() =>
+      await this.sessions.withVerifiedNativeBrowserServiceSql(() =>
         this.receivers.transaction(async (db) => {
           await this.currentSession(request, db, actor, session);
           const expected = expectedTdmsReceiver(request);
@@ -172,7 +181,7 @@ export class TdmsReceiverService {
           );
           if (current.permissionRevision !== authority.permissionRevision)
             throw tdmsError('TDMS_SOURCE_PERMISSION_CHANGED', 409);
-          await this.authorizePackage(actor, current, prepared.memberClaims);
+          await this.authorizePackage(actor, current, memberClaims);
           const receipt: TdmsUploadSelectionAssociationReceipt = {
             schemaVersion: 'wiselink.tdms-upload-selection-association.v1',
             requestId,
@@ -199,7 +208,8 @@ export class TdmsReceiverService {
             permissionRevision: current.permissionRevision,
             payloadDigest: prepared.payloadDigest,
             packageId: prepared.envelope.package.packageId,
-            memberClaims: prepared.memberClaims,
+            memberClaims,
+            ownerRecord,
             observation,
             artifact,
             receipt,
@@ -208,6 +218,9 @@ export class TdmsReceiverService {
             .receipt;
         }),
       );
+      // Commit can win immediately before a revocation. Read through the current
+      // native actor again; a retained association alone cannot release a receipt.
+      return this.read(request, requestId, bindingId);
     });
   }
 
@@ -248,6 +261,58 @@ export class TdmsReceiverService {
         return structuredClone(stored.receipt);
       }),
     );
+  }
+
+  /** Source and session stay live across I/O; the final checkpoint takes the existing shared lock in the DM transaction. */
+  withRegistrationSelection<T>(request: Request, requestId: string, bindingId: string,
+    operation: (selection: TdmsRegistrationSelection) => Promise<T>): Promise<T> {
+    return this.verified(request, async (actor, session) => {
+      const authority = await this.scope(actor);
+      const selected = await this.registrationSelection(actor, authority.scope, requestId, bindingId,
+        (db) => this.currentSession(request, db, actor, session).then(() => undefined));
+      if (!selected) throw tdmsError('TDMS_UPLOAD_SELECTION_UNAVAILABLE', 404);
+      return operation(selected);
+    });
+  }
+
+  async registrationSelection(actor: TdmsPublicActor, scope: TdmsSourceScope,
+    requestId: string, bindingId: string,
+    sessionCheck?: (database: PostgresJsDatabase) => Promise<void>,
+    readAccess?: TdmsFormalReceiptRead): Promise<TdmsRegistrationSelection | null> {
+    dailyRequestId(requestId);
+    identifier(bindingId);
+    const read = async (database: PostgresJsDatabase) => {
+      await sessionCheck?.(database);
+      const authority = await this.authorization.current(actor, scope, readAccess?.action ?? 'IMPORT');
+      if (readAccess) assertReceiverMembers(readAccess.claims, authority.decision.permittedMembers);
+      else await this.authorization.current(actor, scope, 'READ_RECORD');
+      const stored = await this.receivers.selection(actor, scope, requestId, bindingId);
+      if (!stored) {
+        // This actor's view has no association. It does not prove global absence.
+        if (readAccess) return null;
+        throw tdmsError('TDMS_UPLOAD_SELECTION_UNAVAILABLE', 404);
+      }
+      checkedReceiverSelection(stored, actor, scope, requestId, bindingId);
+      if (readAccess) {
+        // A changed IMPORT grant cannot revoke an independently current read.
+        // The retained Source/receiver identity itself must still be exact.
+        if (stored.receiverId !== authority.row.receiverId ||
+          stored.receiverRevision !== authority.row.revision)
+          throw tdmsError('TDMS_SOURCE_PERMISSION_CHANGED', 409);
+      } else assertReceiverSelectionRevision(stored, authority);
+      if (!readAccess) await this.authorizePackage(actor, authority, stored.memberClaims);
+      return { actor, authority, stored };
+    };
+    const original = await this.receivers.transaction(read);
+    if (!original) return null;
+    const check = async (database: PostgresJsDatabase) => {
+      const current = await read(database);
+      if (!current || canonical(current.stored) !== canonical(original.stored))
+        throw tdmsError('TDMS_UPLOAD_ASSOCIATION_CONFLICT', 409);
+    };
+    return { ...original, checkpoint: (database) => database
+      ? withTdmsReceiverDatabase(database, () => check(database))
+      : this.receivers.transaction(check) };
   }
 
   private async scope(actor: TdmsPublicActor): Promise<TdmsReceiverAuthority> {

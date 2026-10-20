@@ -1,4 +1,5 @@
 import JobAidExecutionActivity from './JobAidExecutionActivity';
+import JobAidWorkCorrectionControl from './JobAidWorkCorrectionControl';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import { Button } from '@client/src/components/ui/button';
@@ -72,7 +73,7 @@ export default function JobAidProblemWorkspace(props: Props) {
 }
 
 function JobAidWorkspaceRead(props: Props) {
-  const { data, error, temporaryError, baseFallbackAllowed, refresh } =
+  const { data, error, temporaryError, baseFallbackAllowed, refreshing, refresh } =
     useJobAidWorkingRead(props.workItemId, props.baseReadProof ?? null);
   const showBaseAfterTemporaryFailure =
     temporaryError && props.baseReadConfirmed && baseFallbackAllowed;
@@ -108,6 +109,8 @@ function JobAidWorkspaceRead(props: Props) {
           <JobAidProblemReading
             {...props}
             data={data}
+            correctionAvailable={!!props.baseReadConfirmed && !error && !refreshing}
+            onCorrectionConfirmed={refresh}
             onContinue={() => {
               refresh();
               props.onUpdated?.();
@@ -134,9 +137,14 @@ export function JobAidProblemReading({
   overall,
   onContinue,
   presentation = 'default',
+  baseRevision,
+  correctionAvailable = false,
+  onCorrectionConfirmed = () => undefined,
 }: Omit<Props, 'workItemId' | 'children' | 'onUpdated'> & {
   data: JobAidWorkingReadModel;
   onContinue?: () => void;
+  correctionAvailable?: boolean;
+  onCorrectionConfirmed?: () => void;
 }) {
   const [tab, setTab] = useState<'understanding' | 'issues' | 'method'>(
     'issues',
@@ -147,6 +155,9 @@ export function JobAidProblemReading({
   const allowed = initialAnalysis?.continuationOperations ?? [];
   const actions = (
     <div className="wl-jobaid-actions">
+      {current?.content.issues.length ? <JobAidWorkCorrectionControl
+        work={current} workItemRevision={baseRevision} available={correctionAvailable}
+        onConfirmed={onCorrectionConfirmed} /> : null}
       {initialAnalysis
         ? (['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'] as const)
             .filter((operation) => allowed.includes(operation))

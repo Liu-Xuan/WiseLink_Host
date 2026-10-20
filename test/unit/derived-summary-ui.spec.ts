@@ -197,10 +197,10 @@ test.each([legacyCoverageLimitation, `${legacyCoverageLimitation} 另有待核�
   const before = JSON.stringify(exact); mockExact.mockResolvedValue(exact);
   await mount('/summaries/DS-1?summaryRef=DSR-1');
   const coverage = container.querySelector('[aria-label="确切成员与覆盖"]')!;
-  const paragraphs = Array.from(coverage.querySelectorAll('p')).map(item => item.textContent);
-  expect(paragraphs).toContain(limitation === legacyCoverageLimitation ? '正文未直接引用该成员工作。' : limitation);
-  if (limitation === legacyCoverageLimitation) expect(paragraphs).not.toContain(legacyCoverageLimitation);
-  expect(Array.from(coverage.querySelectorAll('li')).map(item => item.textContent)).toContain(legacyCoverageLimitation);
+  const notes = Array.from(coverage.querySelectorAll('li')).map(item => item.textContent);
+  expect(notes).toContain(limitation === legacyCoverageLimitation ? '正文未直接引用该成员工作。' : limitation);
+  expect(notes.filter(item => item === '正文未直接引用该成员工作。')).toHaveLength(1);
+  expect(notes).not.toContain(legacyCoverageLimitation);
   for (const retained of ['成员条件须保留。', '来源新版尚未核对。', '构型待核', '当前工作已有新变化，原概述未覆盖'])
     expect(coverage.textContent).toContain(retained);
   expect(container.textContent).toContain('正文范围限制须保留。');
@@ -596,4 +596,53 @@ test.each(['retired/model', 'loading'])('Wiki does not register an unavailable/u
   await act(async () => { family.value = 'B787'; family.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
   const enable = Array.from(container.querySelectorAll('button')).find(button => button.textContent === '建立并启用自动更新')!;
   expect(enable.disabled).toBe(true); await click('建立并启用自动更新'); expect(mockWikiEnable).not.toHaveBeenCalled();
+});
+
+
+test.each(['RUNNING', 'QUEUED', 'BLOCKED'] as const)(
+  'Wiki directory keeps current %s distinct from an older failed attempt', async state => {
+    const listing = wikiDirectory();
+    const target = listing.items.find(item => item.scope.kind === 'ATA4')!;
+    target.state = state;
+    target.errorCode = 'DERIVED_SUMMARY_DEADLINE_EXCEEDED';
+    mockWikiList.mockResolvedValue(listing);
+    await mount('/summaries');
+    const row = container.querySelector('a[href="/summaries/DS-ata4"]')?.closest('li')!;
+    expect(row).toBeDefined();
+    if (state === 'BLOCKED') expect(row.querySelector('[role="alert"]')?.textContent).toContain('更新未完成');
+    else {
+      expect(row.textContent).toContain(state === 'RUNNING' ? '正在生成' : '排队等待执行');
+      expect(row.querySelector('[role="alert"]')).toBeNull();
+    }
+    expect(row.textContent).not.toContain('DERIVED_SUMMARY_DEADLINE_EXCEEDED');
+  },
+);
+
+
+test('engineer reading projects known process noise once, preserves exact child pins and never mutates saved content', async () => {
+  const exact = summaryExact();
+  exact.revision.content.headline = 'B787 ATA 45 候选综合：ACARS 上行错误（候选，未完成分类）';
+  exact.revision.content.limitations = [
+    '这是派生候选摘要，不是新增独立证据。仅覆盖已保存的精确成员。',
+    '来源版本document_version_fixture是本地目录当前选择；发布方现行有效状态未核，不代表适用性、正式采用或其他版本覆盖。',
+    'FTD 为参考性文档，生产纳入为 TBD，机型差异未核。',
+    'FTD 为参考性文档，生产纳入为 TBD，机型差异未核。',
+    'MSN 装机软件版本与workaround副作用尚未确认。',
+  ];
+  exact.revision.members[0].member = { kind: 'DERIVED_SUMMARY', summaryId: 'DS-child', summaryRef: 'DSR-child-exact', summaryRevision: 4 };
+  exact.revision.members[0].headline = 'ATA 45-00 候选汇总：ACARS 上行错误（候选，未完成分类）';
+  const original = JSON.stringify(exact);
+  mockExact.mockResolvedValue(exact);
+  await mount('/summaries/DS-1?summaryRef=DSR-1');
+  expect(container.querySelector('h1')?.textContent).toBe('B787 ATA 45 综合：ACARS 上行错误');
+  const conditions = container.querySelector('[aria-label="概述限制"]')!;
+  expect(conditions.textContent).toContain('工程条件与待核事项');
+  expect(conditions.querySelectorAll('li')).toHaveLength(2);
+  expect(conditions.textContent).toContain('FTD 为参考性文档，生产纳入为 TBD，机型差异未核。');
+  expect(conditions.textContent).toContain('MSN 装机软件版本与workaround副作用尚未确认。');
+  expect(conditions.textContent).not.toContain('正式采用');
+  const child = Array.from(container.querySelectorAll('a')).find(link => link.textContent === 'ATA 45-00 汇总：ACARS 上行错误')!;
+  expect(new URL(child.href).searchParams.get('summaryRef')).toBe('DSR-child-exact');
+  expect(JSON.stringify(exact)).toBe(original);
+  expect(exact.revision.candidateOnly).toBe(true);
 });

@@ -18,6 +18,7 @@ import type { DocumentRevisionReadingRequest, DocumentRevisionReadingResponse } 
 import type { DocumentSemanticReadingRequest, DocumentSemanticReadingResponse } from '@shared/document-semantic-map.interface';
 import type { DocumentActivityReadingRequest, DocumentActivityReadingResponse, DocumentActivityVersionedReadingResponse, AnyDocumentActivityReadingResponse } from '@shared/document-activity.interface';
 import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
+import type { JobAidWorkCorrectionReceipt, JobAidWorkCorrectionRequest } from '@shared/jobaid-work-correction.interface';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse,
   EngineeringIssueReferenceRequest, EngineeringIssueReferenceReceipt, EngineeringIssueReferenceStatus } from '@shared/engineering-issue-search.interface';
@@ -1268,6 +1269,58 @@ export function readJobAidAssessmentWork(
     operation: '读取已保存的问题评估',
     signal,
   });
+}
+
+export function saveJobAidWorkCorrection(
+  workItemId: string,
+  input: JobAidWorkCorrectionRequest,
+): Promise<JobAidWorkCorrectionReceipt> {
+  return jobAidWorkCorrectionRequest(workItemId, input);
+}
+
+export function readJobAidWorkCorrection(
+  workItemId: string,
+  requestId: string,
+): Promise<JobAidWorkCorrectionReceipt> {
+  return jobAidWorkCorrectionRequest(workItemId, requestId);
+}
+
+/** Native browser identity only; no delegated/model or OAuth preflight. */
+async function jobAidWorkCorrectionRequest(
+  workItemId: string,
+  input: JobAidWorkCorrectionRequest | string,
+): Promise<JobAidWorkCorrectionReceipt> {
+  const generation: number = clientSessionGeneration;
+  const reading: boolean = typeof input === 'string';
+  const path: string = `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/assessment-work/corrections`;
+  try {
+    const response = await axiosForBackend<JobAidWorkCorrectionReceipt>({
+      url: typeof input === 'string' ? `${path}/${encodeURIComponent(input)}` : path,
+      method: reading ? 'GET' : 'POST',
+      timeout: 45_000,
+      ...(reading ? { headers: { 'Cache-Control': 'no-cache' } } : { data: input }),
+    });
+    if (response.status < 200 || response.status >= 300)
+      throw backendResponseError(response.data, 'JOBAID_CORRECTION_UNAVAILABLE', response.status);
+    if (generation !== clientSessionGeneration)
+      throw Object.assign(new Error('当前登录身份已变化，请重新读取。'), {
+        code: 'JOBAID_CORRECTION_SESSION_CHANGED',
+      });
+    return response.data;
+  } catch (caught: unknown) {
+    const status: number | null = responseStatus(caught) ??
+      (isRecord(caught) && typeof caught.statusCode === 'number' ? caught.statusCode : null);
+    const failure = isRecord(caught) && isRecord(caught.response)
+      ? backendResponseError(caught.response.data, 'JOBAID_CORRECTION_UNAVAILABLE', status ?? undefined)
+      : caught;
+    if (status === 401) requireCanonicalHostClientAuthentication(generation);
+    // A missing receipt is distinct from an inaccessible WorkItem. Neither
+    // proves a previous POST failed; callers retain the same request identity.
+    if (status === 404 && isRecord(failure) && failure.code === 'JOBAID_CORRECTION_REQUEST_NOT_FOUND')
+      throw failure;
+    if (status === 403 || status === 404) throw canonicalObjectNotFound();
+    throw failure;
+  }
 }
 
 export function searchEngineeringIssues(search: string, scope: 'CURRENT' | 'HISTORY' = 'CURRENT'): Promise<EngineeringIssueSearchResponse> {

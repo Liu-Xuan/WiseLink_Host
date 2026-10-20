@@ -282,6 +282,7 @@ export async function readOriginalBlob(stateDirectory, binding) {
 
 export function createBoundNativeTransport(config, invoke) {
   let baseline;
+  const pendingRegistrations = new Set();
   const binding = async () => {
     const current = validateReceiverBinding(await invoke({ operation: 'RECEIVER',
       ...(baseline ? { expectedReceiverBinding: baseline } : {}),
@@ -336,10 +337,65 @@ export function createBoundNativeTransport(config, invoke) {
             fail('TDMS_NATIVE_UPLOAD_ASSOCIATION_MISMATCH', 409);
         }
       }
-      return invokeBound({ operation: 'REQUEST', route, method: input.method,
+      const pkg = input.method === 'POST' ? input.body.package : null;
+      const primary = singlePrimaryRegistration(pkg);
+      const key = primary ? `${input.body.requestId}:${primary.bindingId}` : null;
+      // A lost REGISTER response may have written. On a later explicit attempt,
+      // reconcile that exact registration before issuing any further POST.
+      const reconciling = key && pendingRegistrations.has(key);
+      const receipt = reconciling ? null : await invokeBound({ operation: 'REQUEST', route, method: input.method,
         ...(input.body === undefined ? {} : { body: input.body }) });
+      if (!primary) return receipt;
+      const requestId = input.body.requestId;
+      pendingRegistrations.add(key);
+      const registration = await invokeBound(reconciling
+        ? { operation: 'REQUEST', method: 'GET',
+          route: `/api/tdms-source-imports/${requestId}/artifacts/${primary.bindingId}/registration` }
+        : { operation: 'REGISTER', requestId, bindingId: primary.bindingId, package: pkg });
+      assertPrimaryRegistration(registration, requestId, primary, baseline);
+      pendingRegistrations.delete(key);
+      // Read the original retained request through the unchanged daily route.
+      // Registration never rewrites its immutable candidate capture.
+      const readback = await invokeBound({ operation: 'REQUEST', method: 'GET',
+        route: `/api/tdms-source-imports/${requestId}` });
+      const projected = readback?.receipt;
+      const mappings = projected?.documentVersionMappings?.filter(value => value.bindingId === primary.bindingId);
+      if (projected?.requestId !== requestId || projected.payloadDigest !== registration.payloadDigest ||
+          mappings?.length !== 1 || mappings[0].sha256 !== registration.sha256 ||
+          mappings[0].byteLength !== registration.byteLength ||
+          (registration.status === 'COMMITTED' && (mappings[0].status !== 'COMMITTED' ||
+            mappings[0].documentVersionId !== registration.documentVersionId ||
+            mappings[0].preflightId !== registration.preflightId || mappings[0].readbackVerified !== true ||
+            mappings[0].mappedAt !== registration.mappedAt)))
+        fail('TDMS_NATIVE_REGISTRATION_READBACK_MISMATCH', 409);
+      return projected;
     },
   });
+}
+
+/** Formal registration is the existing single owner/PRIMARY lane only. */
+function singlePrimaryRegistration(pkg) {
+  if (!pkg || !pkg.query || !Object.hasOwn(pkg.query, 'originalAcquisition') ||
+      !Array.isArray(pkg.records) || pkg.records.length !== 1 ||
+      !Array.isArray(pkg.edges) || pkg.edges.length ||
+      !Array.isArray(pkg.artifactBindings) || pkg.artifactBindings.length !== 1) return null;
+  const owner = pkg.records[0], artifact = pkg.artifactBindings[0];
+  return owner.kind === 'MANUFACTURER_FILE' && owner.snapshotId === artifact.ownerSnapshotId &&
+    ['primary', 'PRIMARY'].includes(artifact.role) && artifact.mediaType === 'application/pdf' &&
+    typeof artifact.sourceAttachmentId === 'string' && artifact.sourceAttachmentId ? artifact : null;
+}
+
+function assertPrimaryRegistration(value, requestId, artifact, receiver) {
+  if (value?.schemaVersion !== 'wiselink.tdms-formal-document-registration.v1' ||
+      value.requestId !== requestId || value.bindingId !== artifact.bindingId ||
+      value.receiverId !== receiver.receiverId || requestId !== `TDMSIMPORT-${value.payloadDigest}` ||
+      value.sourceAttachmentId !== artifact.sourceAttachmentId || value.sourceAttachmentVersion !== null ||
+      value.sha256 !== artifact.blobSha256 || value.byteLength !== artifact.byteLength ||
+      !['COMMITTED', 'REVIEW_REQUIRED'].includes(value.status) ||
+      (value.status === 'COMMITTED' && (!value.documentVersionId || !value.preflightId ||
+        value.readbackVerified !== true || !value.mappedAt || !Number.isFinite(Date.parse(value.mappedAt)))) ||
+      (value.status === 'REVIEW_REQUIRED' && (value.documentVersionId !== null || value.readbackVerified !== false)))
+    fail('TDMS_NATIVE_REGISTRATION_MISMATCH', 409);
 }
 
 /** Factory called with no arguments by the existing reviewed Source loader. */

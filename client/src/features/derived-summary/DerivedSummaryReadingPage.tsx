@@ -4,7 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { readDerivedSummary, readDerivedSummaryRequest, readDerivedSummaryExact } from '@client/src/api/derived-summary';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { Button } from '@client/src/components/ui/button';
-import { summaryMemberKey, summaryMemberVersionLabel, summaryMemberSavedRef, summaryMemberRoute, upperSummaryRoute, summaryReadingLimitations, summaryReadingRoute } from './summary-selection';
+import { summaryMemberKey, summaryMemberVersionLabel, summaryMemberSavedRef, summaryMemberRoute, upperSummaryRoute, summaryReadingLimitations, summaryReadingRoute, summaryReadingHeadline, summaryReadingText } from './summary-selection';
 import { useSummaryResource } from './useSummaryResource';
 import DerivedSummaryBody from './DerivedSummaryBody';
 import DocumentVersionIdentityLabel from './DocumentVersionIdentityLabel';
@@ -44,6 +44,11 @@ function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?:
   const value = read.data;
   const revision = value?.reading.revision;
   const automatic = value?.reading.automaticWiki;
+  const displayedRevision = revision ? { ...revision,
+    content: { ...revision.content, body: summaryReadingText(revision.content.body) },
+    members: revision.members.map(member => ({ ...member,
+      headline: summaryReadingHeadline(member.headline), body: summaryReadingText(member.body) })),
+  } : undefined;
   const limitations = summaryReadingLimitations(revision?.content.limitations ?? []);
   return <>
     <Button variant="outline" onClick={read.refresh}>刷新</Button>
@@ -60,9 +65,9 @@ function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?:
       {!automatic && value.status && ['FAILED', 'CANCELLED', 'CONFLICT'].includes(value.status.status)
         ? <Link className="underline" to={`/summaries/${encodeURIComponent(id)}/update`}>明确重新选取范围与成员，发起新请求</Link> : null}
     </> : null}
-    {revision && value ? <article className="space-y-5" data-summary-ref={revision.summaryRef} data-summary-revision={revision.revision}>
+    {revision && value && displayedRevision ? <article className="space-y-5" data-summary-ref={revision.summaryRef} data-summary-revision={revision.revision}>
       <SummaryContextStatus status={value.reading.contextStatus} />
-      <header className="space-y-2"><h1 className="text-2xl font-semibold">{revision.content.headline}</h1>
+      <header className="space-y-2"><h1 className="text-2xl font-semibold">{summaryReadingHeadline(revision.content.headline)}</h1>
         <p>{revision.scope.title}</p>
         <details><summary>保存记录</summary>
           <p>{revision.summaryRef === value.reading.currentSummaryRef ? '当前保存修订' : '历史保存修订'} {revision.revision} · {new Date(revision.createdAt).toLocaleString('zh-CN')}</p>
@@ -78,8 +83,8 @@ function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?:
             <Link className="underline" to={upperSummaryRoute(id, revision.summaryRef, revision.scope)}>用此版本形成上层资料综合</Link></>}
           {value.reading.parentSummaryId ? <Link className="underline" to={readingRoute(`/summaries/${encodeURIComponent(value.reading.parentSummaryId)}`)}>阅读上层 Wiki</Link> : null}</div>
       </header>
-      <DerivedSummaryBody key={revision.summaryRef} revision={revision} />
-      {limitations.length ? <section className="space-y-2" aria-label="概述限制"><h2 className="text-lg font-semibold">限制与未覆盖范围</h2>
+      <DerivedSummaryBody key={revision.summaryRef} revision={displayedRevision} />
+      {limitations.length ? <section className="space-y-2" aria-label="概述限制"><h2 className="text-lg font-semibold">工程条件与待核事项</h2>
         <ul className="list-disc space-y-1 pl-5">{limitations.map((item, index) => <li key={index}>{item}</li>)}</ul>
       </section> : null}
       <section className="space-y-3" aria-label="确切成员与覆盖"><h2 className="text-lg font-semibold">选定资料与来源</h2>
@@ -88,15 +93,16 @@ function SummaryReading({ id, refPin, attempt, session }: { id: string; refPin?:
           const notice = value.reading.memberNotices.find(item => summaryMemberKey(item.member) === summaryMemberKey(member.member));
           const coverageLimitation = coverage?.limitation === '成员已交付，但正文未直接引用；不能宣称已对该成员完成综合。'
             ? '正文未直接引用该成员工作。' : coverage?.limitation;
+          const memberLimitations = summaryReadingLimitations([...(coverageLimitation?.split(/\r?\n/u) ?? []),
+            ...member.limitations, ...(notice?.limitations ?? [])]);
           return <div className="space-y-2 rounded-md border border-border p-3" key={summaryMemberKey(member.member)}>
-            <Link className="font-semibold underline" to={readingRoute(summaryMemberRoute(member.member))}>{member.headline}</Link>
+            <Link className="font-semibold underline" to={readingRoute(summaryMemberRoute(member.member))}>{summaryReadingHeadline(member.headline)}</Link>
             <p>{summaryMemberVersionLabel(member.member)}</p>
             {member.member.kind === 'WORK_ITEM_WORK' ? <DocumentVersionIdentityLabel documentVersionId={member.member.documentVersionId} session={session} /> : null}
             <details><summary className="cursor-pointer">覆盖与来源</summary>
               <p>{notice ? notice.current ? '当前成员工作' : '历史依据或成员工作已变化' : '成员现行性未能重新核对'} · 综合{member.overviewStatus === 'CURRENT' ? '已覆盖该工作' : member.overviewStatus === 'STALE' ? '待更新' : '尚未形成'}</p>
               <p>{coverage ? `${coverage.delivered ? 'Host已读取成员工作' : 'Host未读取成员工作'} · ${coverage.used ? '正文直接引用成员工作' : '正文未直接引用成员工作'}` : '覆盖记录不可用，不能扩大已覆盖范围'}</p>
-              {coverageLimitation ? <p>{coverageLimitation}</p> : null}
-              <ul className="list-disc pl-5">{summaryReadingLimitations([...member.limitations, ...(notice?.limitations ?? [])]).map((item, index) => <li key={index}>{item}</li>)}</ul>
+              <ul className="list-disc pl-5">{memberLimitations.map((item, index) => <li key={index}>{item}</li>)}</ul>
               <details><summary className="cursor-pointer">原始来源与下层资料</summary>
                 <ul className="space-y-1 break-all text-xs">{member.rootRefs.map(root => <li key={root}>{root}</li>)}</ul>
                 <ul>{member.leaves.map(leaf => <li key={summaryMemberKey(leaf)}><Link className="underline" to={readingRoute(summaryMemberRoute(leaf))}>叶子工作：{summaryMemberSavedRef(leaf)}</Link></li>)}</ul>

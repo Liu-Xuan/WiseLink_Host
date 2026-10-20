@@ -22,6 +22,7 @@ import { dailyRequestId, dailySourceRef } from './tdms-daily-metadata.readback';
 import { TdmsReceiverService } from './tdms-receiver.service';
 import { expectedTdmsReceiver } from './tdms-receiver-expectation';
 import { tdmsError } from './tdms-source.types';
+import { withDocumentSourceReadRequest } from '../document-management/src/hosted/nest/document-source-read.port';
 
 @NeedLogin()
 @UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
@@ -73,9 +74,11 @@ export class TdmsDailyMetadataController {
   }
 
   private withExpected<T>(req: Request, operation: () => T): T | Promise<T> {
-    if (expectedTdmsReceiver(req) === null) return operation();
-    if (!this.receiver)
-      throw tdmsError('TDMS_RECEIVER_EXPECTATION_UNCONFIGURED', 503);
-    return this.receiver.withExpected(req, operation);
+    return withDocumentSourceReadRequest(req, () => {
+      if (expectedTdmsReceiver(req) === null) return operation();
+      if (!this.receiver)
+        throw tdmsError('TDMS_RECEIVER_EXPECTATION_UNCONFIGURED', 503);
+      return this.receiver.withExpected(req, operation);
+    });
   }
 }

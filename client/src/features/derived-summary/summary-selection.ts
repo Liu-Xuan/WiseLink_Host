@@ -2,14 +2,12 @@ import type { DerivedSummaryMember, DerivedSummaryScopeSelection } from '@shared
 import type { EngineeringKnowledgeRead } from '@shared/engineering-issue-search.interface';
 import { knowledgeReadingReturnRoute, readingReturnTarget } from '@client/src/features/matter/reading-return';
 
-const summaryBoilerplate = new Set([
-  '仅覆盖显式选取的精确保存成员；未选成员、其他ATA和其他机型均未覆盖。',
-  '机型/ATA为用户选取的候选分类，成员归属和适用性未核。不是受控事实、批准或正式采用。',
-  '独立文件解读为派生候选，不是事项评估、适用性结论或正式采用。',
-].map(value => value.replace(/\s+/gu, '')));
+import { summaryEngineeringLimitations } from '@shared/derived-summary-engineering-content';
+export { summaryEngineeringHeadline as summaryReadingHeadline,
+  summaryEngineeringText as summaryReadingText } from '@shared/derived-summary-engineering-content';
 
 export function summaryReadingLimitations(values: string[]): string[] {
-  return values.filter(value => !summaryBoilerplate.has(value.replace(/\s+/gu, '')));
+  return summaryEngineeringLimitations(values);
 }
 
 /** Continue only the existing, validated knowledge return state through internal reading links. */

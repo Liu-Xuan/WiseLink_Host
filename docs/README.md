@@ -2,6 +2,7 @@
 
 ## 当前说明
 
+- [当前交付目标](coordination/WISELINK_CURRENT_GOAL_20261020.md)：核心链优先、TDMS 最小接入及公开源码与运行证据的边界。
 - [R10 当前执行计划](WISELINK_R10_EXECUTION_PLAN.md)：独立评审后的 Goal、四步实施顺序、当前进度与并行分工，后续开发从这里继续。
 - [R10 当前正文](WISELINK_R10_CURRENT.md)：现行云文档正文镜像，具体 revision 见文件开头；区分评估前共同上下文、普通工作记录与正式采用，并纳入 UI-N02 Satin 前端设计。
 - [UI-N02 Silver / Carbon Satin 设计接入](design/r10-satin/README.md)：新视觉/交互依据、原设计和材质参考、前端并行批次及与 Host 的最小接线；静态原型不等于线上能力。
