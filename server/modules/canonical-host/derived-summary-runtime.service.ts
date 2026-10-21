@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { deduplicateSummaryNotices } from '@shared/derived-summary-engineering-content';
+import { assertSummaryMatterContent } from './derived-summary-matter-catalog';
 import { Injectable, Optional } from '@nestjs/common';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, eq, sql } from 'drizzle-orm';
@@ -191,7 +193,8 @@ export class DerivedSummaryRuntimeService {
       const selected = refs.map(ref => {
         const member = readings.find(item => item.evidenceRef === ref);
         if (!member) throw summaryError('DERIVED_SUMMARY_MEMBER_NOT_REGISTERED', 404);
-        return member;
+        // Preserve raw member/context snapshots; do not repeatedly deliver inherited lists.
+        return { ...member, limitations: deduplicateSummaryNotices(member.limitations) };
       });
       await record(current, { kind: 'DERIVED_SUMMARY_MEMBERS_READ', evidenceRefs: refs,
         purpose: target.purpose, observedAt: new Date().toISOString() }, database);
@@ -249,9 +252,15 @@ export class DerivedSummaryRuntimeService {
       const readings = await this.checkMembers(current, owner, database, prior?.attemptId !== current.attemptId);
       const task = checkedSummaryTask(current);
       if (task.taskInputHash !== initial.task.taskInputHash) throw summaryError('DERIVED_SUMMARY_TASK_INVALID');
-      const savedContent = { ...content, limitations: [...new Set([...task.modelInput.limitations, ...content.limitations])] };
+      const limitations = [...task.modelInput.limitations, ...content.limitations];
+      const savedContent = { ...content, limitations: deduplicateSummaryNotices(limitations) };
       if (prior) {
-        if (prior.attemptId !== current.attemptId || canonicalJson(prior.contentJson.content) !== canonicalJson(savedContent) ||
+        // Previously saved requests used an exact-string Set. Replay their original
+        // serialization without rewriting history or accepting a different body.
+        const legacyContent = { ...content, limitations: [...new Set(limitations)] };
+        if (prior.attemptId !== current.attemptId ||
+          (canonicalJson(prior.contentJson.content) !== canonicalJson(savedContent) &&
+            canonicalJson(prior.contentJson.content) !== canonicalJson(legacyContent)) ||
           canonicalJson(prior.contentJson.producer ?? null) !== canonicalJson(producer ?? null))
           throw summaryError('DERIVED_SUMMARY_SAVE_REQUEST_ID_REUSED');
         return { ...saveReceipt(prior.contentJson, true),
@@ -262,6 +271,7 @@ export class DerivedSummaryRuntimeService {
       const allowed = new Set([...task.modelInput.members.map(item => item.evidenceRef),
         ...task.modelInput.evidence.map(item => item.evidenceRef)]);
       const usedEvidenceRefs = summaryCitations(content, allowed);
+      if (task.contextBasis?.wikiMatterCatalog) assertSummaryMatterContent(content, task.contextBasis.wikiMatterCatalog);
       const bodyRefs = summaryCitations({ ...content, limitations: [] }, allowed);
       const events = JSON.parse(current.reviewActivityJson ?? '[]') as Array<{ kind: string; evidenceRefs?: string[] }>;
       const delivered = new Set(events.filter(item => item.kind === 'DERIVED_SUMMARY_MEMBERS_READ').flatMap(item => item.evidenceRefs ?? []));

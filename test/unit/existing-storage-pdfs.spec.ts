@@ -1,15 +1,39 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { listDevelopmentExistingPdfs } from '@client/src/api/canonical-host';
+import { listExistingStoragePdfs } from '../../client/src/pages/WorkspaceHomePage/existing-storage-pdfs';
+
+jest.mock('@client/src/api/canonical-host', () => ({
+  listDevelopmentExistingPdfs: jest.fn(),
+}));
 
 import {
   EXISTING_PDF_PAGE_SIZE,
   ExistingStoragePdfListError,
   existingStoragePdfVisibleText,
+  existingStoragePdfCoverageMessage,
   formatStorageUpdatedAt,
   toExistingStoragePdfListError,
 } from '../../client/src/pages/WorkspaceHomePage/existing-storage-pdf-model';
 
 describe('official Storage PDF selection', () => {
+  it('preserves incomplete source coverage instead of turning a truncated search into a complete empty result', async () => {
+    jest.mocked(listDevelopmentExistingPdfs).mockResolvedValue({
+      schemaVersion: 'wiselink.3_1.oauth_session_existing_pdf_page.v1',
+      items: [],
+      hasNextPage: false,
+      sourceTruncated: true,
+    });
+    const page = await listExistingStoragePdfs({
+      search: '787', offset: 0, signal: new AbortController().signal,
+    });
+    expect(page).toHaveProperty('sourceTruncated', true);
+    expect(existingStoragePdfCoverageMessage(page.sourceTruncated)).toBe(
+      '当前仅显示部分文件，可按编号或完整文件名查找已登记原件。',
+    );
+    expect(existingStoragePdfCoverageMessage(false)).toBeNull();
+  });
+
   it('uses the Host-owned FileService list so list and ingest share one resolvable selection', async () => {
     const [source, intake] = await Promise.all([
       readFile(
@@ -41,6 +65,8 @@ describe('official Storage PDF selection', () => {
     expect(intake).not.toContain('.owner');
     expect(intake).not.toContain('.metadata');
     expect(intake).not.toContain('777-34-0425.pdf');
+    expect(intake).toContain('setPickerSourceTruncated(page.sourceTruncated)');
+    expect(intake).toContain('existingStoragePdfCoverageMessage(pickerSourceTruncated)');
   });
 
   it('exposes only the display name and formatted update time to the picker', () => {
@@ -75,5 +101,14 @@ describe('official Storage PDF selection', () => {
     expect(error.code).toBe('AUTH_REQUIRED');
     expect(error.message).toBe('AUTH_REQUIRED');
     expect(error.message).not.toContain('signed cookie payload');
+  });
+
+  it('reports a changed original binding without exposing a provider locator', () => {
+    const error = toExistingStoragePdfListError(Object.assign(
+      new Error('private provider locator'),
+      { code: 'WORK_ITEM_EXISTING_PDF_SELECTION_CHANGED', statusCode: 409 },
+    ));
+    expect(error.code).toBe('SOURCE_CHANGED');
+    expect(error.message).not.toContain('private provider locator');
   });
 });

@@ -4,7 +4,6 @@ import {
   summaryEngineeringLimitations,
   summaryEngineeringText,
 } from '@shared/derived-summary-engineering-content';
-import { wikiLayerInstruction } from '../../server/modules/canonical-host/hierarchical-wiki-generation';
 
 test('mechanical inheritance is stable and keeps distinct citations, editions and conditions', () => {
   const original = ['需核对构型 A.1 [[source-a]]', '需核对构型 A.1 [[source-a]]',
@@ -55,10 +54,33 @@ test('removes only the explicit adoption clause from a mixed substantive restric
   expect(summaryEngineeringText(text)).not.toContain('本候选');
 });
 
-test('free-form layer prose is preserved because its variable scope may carry engineering conditions', () => {
+test('the exact layer introduction is projected out without changing the following engineering body', () => {
   const intro = '本层为 B787 · ATA 45（ATA2）候选综合，由其唯一已保存的 ATA 45-00 子层候选正文 [[child-exact]] 形成，保留该子层身份及其全部继承限制；本层为派生候选，非新增独立证据。';
   const body = 'CMCF 配置报告的 ACARS 上行请求异常；重启的副作用尚未确认。 [[child-exact]]';
-  expect(summaryEngineeringText(`${intro}\n\n${body}`)).toBe(`${intro}\n\n${body}`);
+  expect(summaryEngineeringText(`${intro}\n\n${body}`)).toBe(body);
+  expect(summaryEngineeringText(`${intro} ${body}`)).toBe(body);
+  expect(summaryEngineeringText('本层为派生候选，非新增独立证据。' + body)).toBe(body);
+});
+
+test('a known brief prefix is removed while its following conditions, dates, negation and citation remain exact', () => {
+  const body = 'OPS 1.2 更新日期 TBD，未发布 SB；故障恢复不能保证成功。 [[child-exact]]';
+  expect(summaryEngineeringText('以ATA45-00子层候选为唯一来源综合：' + body)).toBe(body);
+  expect(summaryEngineeringText('以 ATA 45-00（仅适用于 OPS 1.2）子层候选为唯一来源综合：' + body))
+    .toBe('以 ATA 45-00（仅适用于 OPS 1.2）子层候选为唯一来源综合：' + body);
+  expect(summaryEngineeringText('保留该子层身份及其全部继承限制；本层为派生候选，非新增独立证据。' + body)).toBe(body);
+});
+
+test('only the known source-count tail loses process wording; the fleet data gap and engineering conditions remain', () => {
+  const tail = '单一根来源派生，机队数据未接入，不构成机队层面结论';
+  expect(summaryEngineeringText(`SB TBD，11/04/2027 不是实际完成日。${tail}。`))
+    .toBe('SB TBD，11/04/2027 不是实际完成日。机队数据未接入。');
+  expect(summaryEngineeringText(`${tail} [[exact-child]]；仅 OPS 1.2，OPS 1.3 未确认适用。`))
+    .toBe('机队数据未接入 [[exact-child]]；仅 OPS 1.2，OPS 1.3 未确认适用。');
+  for (const value of [
+    '单一根来源派生，OPS 1.2 未确认适用，不构成机队层面结论。',
+    '机队数据未接入，不构成机队层面结论，因为软件1.3不适用。',
+    '单一根来源派生（仅 OSS 1.2），机队数据未接入，不构成机队层面结论。',
+  ]) expect(summaryEngineeringText(value)).toBe(value);
 });
 
 test('headlines remove workflow labels without dropping the engineering problem or changing technical candidates', () => {
@@ -67,13 +89,6 @@ test('headlines remove workflow labels without dropping the engineering problem 
   expect(summaryEngineeringHeadline('候选故障机理与备用配置适用条件')).toBe('候选故障机理与备用配置适用条件');
 });
 
-test('new Wiki task instruction requires engineering titles and substantive conditions, not internal status prose', () => {
-  const instruction = wikiLayerInstruction('ATA2');
-  expect(instruction).toContain('标题直接写工程问题与对象');
-  expect(instruction).toContain('内部记录，不逐层复制进正文或limitations');
-  expect(instruction).toContain('参考属性');
-  expect(instruction).toContain('workaround实际缺口必须保留');
-});
 
 
 test('known coverage bookkeeping becomes one factual label while an extended condition stays intact', () => {

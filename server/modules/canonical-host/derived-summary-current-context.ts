@@ -3,6 +3,7 @@ import type { DerivedSummaryContextBasis, DerivedSummaryContextStatus,
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { summaryError, summaryMemberRef } from './derived-summary.validation';
+import { assertSummaryMatterCatalog } from './derived-summary-matter-catalog';
 
 /** Stable identities only; the existing evidence registry remains the body owner. */
 export function contextMemberNotices(readings: DerivedSummaryMemberReading[]): DerivedSummaryContextBasis['memberNotices'] {
@@ -32,6 +33,7 @@ export function assertSummaryContextBasis(basis: DerivedSummaryContextBasis): vo
         !(item.currentReadingRunRef === null || typeof item.currentReadingRunRef === 'string' && item.currentReadingRunRef.trim()) ||
         !(item.currentReadingRevision === null || Number.isSafeInteger(item.currentReadingRevision) && item.currentReadingRevision > 0)))))
     throw summaryError('DERIVED_SUMMARY_CONTEXT_INVALID');
+  if (basis.wikiMatterCatalog !== undefined) assertSummaryMatterCatalog(basis.wikiMatterCatalog);
 }
 
 export function summaryContextStatus(frozen: DerivedSummaryContextBasis | undefined,
@@ -42,7 +44,7 @@ export function summaryContextStatus(frozen: DerivedSummaryContextBasis | undefi
   assertSummaryContextBasis(frozen);
   if (!fresh) throw summaryError('DERIVED_SUMMARY_CONTEXT_INVALID');
   assertSummaryContextBasis(fresh);
-  const changed = (['memberNotices', 'sources', 'workItems', 'matters', 'summaries', 'documentReadings'] as const)
+  const changed = (['memberNotices', 'sources', 'workItems', 'matters', 'summaries', 'documentReadings', 'wikiMatterCatalog'] as const)
     .filter(key => canonicalJson(frozen[key]) !== canonicalJson(fresh[key]));
   const coverageGap = fresh.memberNotices.some(item => !item.current || item.overviewStatus !== 'CURRENT') ||
     fresh.sources.some(item => item.selectedHead !== item.documentVersionId) ||

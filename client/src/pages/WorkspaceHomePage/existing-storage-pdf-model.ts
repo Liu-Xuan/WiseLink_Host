@@ -12,6 +12,13 @@ export interface ExistingStoragePdfOption {
 export interface ExistingStoragePdfPage {
   items: ExistingStoragePdfOption[];
   hasNextPage: boolean;
+  sourceTruncated: boolean;
+}
+
+export function existingStoragePdfCoverageMessage(sourceTruncated: boolean): string | null {
+  return sourceTruncated
+    ? '当前仅显示部分文件，可按编号或完整文件名查找已登记原件。'
+    : null;
 }
 
 export interface ExistingStoragePdfVisibleText {
@@ -23,6 +30,7 @@ export type ExistingStoragePdfListErrorCode =
   | 'OAUTH_REQUIRED'
   | 'AUTH_REQUIRED'
   | 'BUCKET_UNAVAILABLE'
+  | 'SOURCE_CHANGED'
   | 'LIST_FAILED';
 
 export class ExistingStoragePdfListError extends Error {
@@ -49,6 +57,10 @@ export function existingStoragePdfVisibleText(
 export function toExistingStoragePdfListError(
   reason: unknown,
 ): ExistingStoragePdfListError {
+  if (reason && typeof reason === 'object' && 'code' in reason &&
+      reason.code === 'WORK_ITEM_EXISTING_PDF_SELECTION_CHANGED') {
+    return new ExistingStoragePdfListError('SOURCE_CHANGED');
+  }
   const message =
     reason instanceof Error ? reason.message : String(reason ?? '');
   if (message === 'OFFICIAL_OAUTH_SESSION_REQUIRED') {

@@ -243,8 +243,9 @@ export class EngineeringMatterRepository {
       // Lock every old and requested family before Matter. The expected
       // revision is immutable; the CAS below proves it is still the head.
       // Include the default marker even if its material has been replaced.
-      // SHARE conflicts with intake's NO KEY UPDATE, but not another editor
-      // or the FK KEY SHARE locks used by an intake's nested revision.
+      // Relationship writers conflict with a Wiki's family SHARE seal even
+      // when this Matter was previously unrelated and absent from its vector.
+      // NO KEY UPDATE remains compatible with the revision's FK KEY SHARE.
       await database.execute(sql`
         SELECT f.family_id FROM dm_publication_family f
         WHERE current_setting('app.user_id', true) = ${input.actorUserId}
@@ -262,7 +263,7 @@ export class EngineeringMatterRepository {
             FROM jsonb_array_elements(${canonicalJson(command.upserts)}::jsonb) item
             WHERE engineering_matter_material_owned_by_actor(${input.tenantId}::varchar, item)
           )
-        ORDER BY f.family_id FOR SHARE OF f`);
+        ORDER BY f.family_id FOR NO KEY UPDATE OF f`);
       return this.reviseMaterialsInTransaction(input, database);
     });
   }
@@ -377,6 +378,7 @@ export class EngineeringMatterRepository {
     const now: Date = new Date();
     try {
       await this.db.transaction(async (transaction) => {
+        await this.lockWorkItemFamily(input.tenantId, input.actorUserId, input.primaryWorkItemId, transaction);
         await transaction.insert(engineeringMatter).values({
           matterId,
           tenantId: input.tenantId,
@@ -439,6 +441,7 @@ export class EngineeringMatterRepository {
   }): Promise<EngineeringMatterLinkResult> {
     try {
       return await this.db.transaction(async (transaction) => {
+        await this.lockWorkItemFamily(input.tenantId, input.actorUserId, input.workItemId, transaction);
         const matterScope = sql`
           FROM engineering_matter
           WHERE tenant_id = ${input.tenantId} AND matter_id = ${input.matterId}
@@ -603,6 +606,20 @@ export class EngineeringMatterRepository {
       }
       throw error;
     }
+  }
+
+  /** Use the existing source key before the Matter head. This closes addition
+   * phantoms for a selected WorkItem/document without a new lock namespace. */
+  private async lockWorkItemFamily(tenantId: string, actorUserId: string, workItemId: string,
+    database: PostgresJsDatabase): Promise<void> {
+    const rows = await database.execute(sql`SELECT f.family_id FROM work_item w
+      JOIN dm_document_version v ON v.document_version_id=w.document_version_id
+      JOIN dm_publication_family f ON f.family_id=v.family_id
+      WHERE w.tenant_id=${tenantId} AND w.work_item_id=${workItemId}
+        AND current_setting('app.user_id',true)=${actorUserId}
+        AND engineering_matter_work_item_owned_by_actor(${tenantId}::varchar, w.work_item_id)
+      FOR NO KEY UPDATE OF f`);
+    if (!rows.length) throw matterNotFound();
   }
 
   async loadCurrent(

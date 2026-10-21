@@ -12,6 +12,7 @@ export {
   EXISTING_PDF_PAGE_SIZE,
   ExistingStoragePdfListError,
   existingStoragePdfVisibleText,
+  existingStoragePdfCoverageMessage,
   type ExistingStoragePdfOption,
 } from './existing-storage-pdf-model';
 
@@ -33,6 +34,7 @@ export async function listExistingStoragePdfs(input: {
         updatedLabel: formatStorageUpdatedAt(item.updatedAt),
       })),
       hasNextPage: page.hasNextPage,
+      sourceTruncated: page.sourceTruncated,
     };
   } catch (reason) {
     if (isAbortError(reason) || reason instanceof ExistingStoragePdfListError) {

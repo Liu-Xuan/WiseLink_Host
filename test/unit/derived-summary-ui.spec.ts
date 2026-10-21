@@ -2,7 +2,8 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { summaryPendingKey } from '@client/src/features/derived-summary/summary-pending-request';
-import type { DerivedSummaryReadModel, DerivedSummaryScopeSelection, RequestDerivedSummaryUpdate } from '@shared/derived-summary.interface';
+import type { DerivedSummaryMatterCatalogProjection, DerivedSummaryReadModel,
+  DerivedSummaryScopeSelection, RequestDerivedSummaryUpdate } from '@shared/derived-summary.interface';
 import type { HierarchicalWikiList, HierarchicalWikiStatus } from '@shared/hierarchical-wiki.interface';
 import DerivedSummaryReadingPage from '@client/src/features/derived-summary/DerivedSummaryReadingPage';
 import DerivedSummaryComposePage from '@client/src/features/derived-summary/DerivedSummaryComposePage';
@@ -46,7 +47,11 @@ jest.mock('@client/src/components/ui/button', () => ({ Button: ({ asChild: _asCh
 jest.mock('@client/src/components/ui/input', () => ({ Input: (props: import('react').ComponentProps<'input'>) => createElement('input', props) }));
 jest.mock('@client/src/components/ui/textarea', () => ({ Textarea: ({ onChange }: { onChange: (event: { target: { value: string } }) => void }) => createElement('button', { onClick: () => onChange({ target: { value: mockInstruction } }) }, '填写生成要求') }));
 jest.mock('@client/src/components/ui/checkbox', () => ({ Checkbox: ({ checked, disabled, onCheckedChange }: { checked: boolean; disabled: boolean; onCheckedChange: (value: boolean) => void }) => createElement('button', { disabled, 'aria-label': '确认选定范围', onClick: () => onCheckedChange(!checked) }, String(checked)) }));
-jest.mock('@client/src/features/derived-summary/DerivedSummaryBody', () => ({ __esModule: true, default: ({ revision }: { revision: { content: { body: string } } }) => createElement('div', { 'data-body': true }, revision.content.body) }));
+jest.mock('@client/src/features/derived-summary/DerivedSummaryBody', () => ({ __esModule: true, default: ({ revision, wikiCatalog, conditions, matterCatalog }: {
+  revision: { content: { body: string } }; wikiCatalog?: boolean; conditions?: import('react').ReactNode;
+  matterCatalog?: DerivedSummaryMatterCatalogProjection;
+}) => createElement('div', { 'data-wiki-catalog': wikiCatalog, 'data-matter-catalog': JSON.stringify(matterCatalog) },
+  createElement('div', { 'data-body': true }, revision.content.body), conditions) }));
 jest.mock('@client/src/features/derived-summary/SavedWorkSelector', () => ({ __esModule: true, default: ({ onAdd }: { onAdd: (value: unknown) => void }) => createElement('button', { onClick: () => onAdd({ member: { kind: 'WORK_ITEM_WORK', workItemId: 'WI-explicit', documentVersionId: 'DV-old', workRef: 'JAWR-work23', workRevision: 23, issueKeys: ['I1', 'I2', 'I3', 'I4'] }, headline: '四个确切问题', current: true }) }, '明确加入四个问题') }));
 jest.mock('@client/src/features/derived-summary/ChildSummarySelector', () => ({ __esModule: true, default: () => createElement('p', null, '子概述尚未选定') }));
 jest.mock('@client/src/features/derived-summary/SummaryScopeFields', () => ({ __esModule: true, default: ({ scope, onChange }: { scope: DerivedSummaryScopeSelection; onChange: (value: DerivedSummaryScopeSelection) => void }) => createElement('button', { onClick: () => onChange({ ...scope, selectionReason: '仅旧DV工作23，未覆盖新版本。' }) }, '明确范围理由') }));
@@ -283,7 +288,7 @@ test('current, parent and exact child Wiki navigation keep the original knowledg
       .toEqual(Object.fromEntries(new URLSearchParams(state)));
     if (text.includes('DSR-child-exact')) expect(url.searchParams.get('summaryRef')).toBe('DSR-child-exact');
   }
-  await act(async () => find('阅读上层 Wiki').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+  await act(async () => find('阅读上层 Wiki').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true })));
   expect(router.state.location.pathname).toBe('/summaries/DS-parent');
   const back = new URL(container.querySelector<HTMLAnchorElement>('main > a')!.href);
   expect(back.pathname).toBe('/knowledge');
@@ -380,6 +385,12 @@ test('head route retains context status independently of its current saved point
   expect(container.textContent).toContain('当前保存修订'); expect(container.textContent).toContain('保存依据未变化');
   expect(container.textContent).toContain('发布方现行有效状态未核'); expect(container.textContent).toContain('仅选定资料，未纳入其他 ATA4');
   expect(container.textContent).not.toContain('UNCHANGED_HOST_CONTEXT'); expect(mockExact).not.toHaveBeenCalled();
+  const metadata = container.querySelector<HTMLDetailsElement>('[aria-label="阅读依据与记录"]')!;
+  const body = container.querySelector('[data-body]')!;
+  expect(metadata.open).toBe(false);
+  expect(body.compareDocumentPosition(metadata) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(container.querySelector('[aria-label="保存依据上下文"]')?.closest('[aria-label="阅读依据与记录"]')).toBe(metadata);
+  expect(container.querySelector('[aria-label="概述限制"]')?.closest('details')).toBeNull();
 });
 test('exact changed-context warning retains the exact saved body and does not expose vector details', async () => {
   const exact = summaryExact(); exact.contextStatus = { ...unchangedContext, state: 'RECHECK_REQUIRED',
@@ -388,6 +399,10 @@ test('exact changed-context warning retains the exact saved body and does not ex
   expect(container.textContent).toContain('保存依据需要核对'); expect(container.textContent).toContain('解析或语义登记已变化');
   expect(container.textContent).toContain('确切正文 DSR-1'); expect(container.textContent).not.toContain('private-vector');
   expect(container.textContent).not.toContain('contextBasis'); expect(container.querySelector('script')).toBeNull();
+  const status = container.querySelector<HTMLDetailsElement>('[aria-label="保存依据上下文"]')!;
+  expect(status.open).toBe(true);
+  expect(status.closest('[aria-label="阅读依据与记录"]')).toBeNull();
+  expect(status.compareDocumentPosition(container.querySelector('[data-body]')!) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 test('missing status shows legacy unchecked without replacing historical body', async () => {
   await mount('/summaries/DS-1?summaryRef=DSR-1');
@@ -622,6 +637,8 @@ test.each(['RUNNING', 'QUEUED', 'BLOCKED'] as const)(
 test('engineer reading projects known process noise once, preserves exact child pins and never mutates saved content', async () => {
   const exact = summaryExact();
   exact.revision.content.headline = 'B787 ATA 45 候选综合：ACARS 上行错误（候选，未完成分类）';
+  exact.revision.content.body = '这是派生候选摘要，不是新增独立证据。仅覆盖已保存的精确成员。\n\n'
+    + '仅配置 A 可用，配置 B 尚未比较；原件故障恢复段落尚未取得。 [[child-exact]]';
   exact.revision.content.limitations = [
     '这是派生候选摘要，不是新增独立证据。仅覆盖已保存的精确成员。',
     '来源版本document_version_fixture是本地目录当前选择；发布方现行有效状态未核，不代表适用性、正式采用或其他版本覆盖。',
@@ -635,6 +652,8 @@ test('engineer reading projects known process noise once, preserves exact child 
   mockExact.mockResolvedValue(exact);
   await mount('/summaries/DS-1?summaryRef=DSR-1');
   expect(container.querySelector('h1')?.textContent).toBe('B787 ATA 45 综合：ACARS 上行错误');
+  expect(container.querySelector('[data-body]')?.textContent)
+    .toBe('仅配置 A 可用，配置 B 尚未比较；原件故障恢复段落尚未取得。 [[child-exact]]');
   const conditions = container.querySelector('[aria-label="概述限制"]')!;
   expect(conditions.textContent).toContain('工程条件与待核事项');
   expect(conditions.querySelectorAll('li')).toHaveLength(2);
@@ -645,4 +664,39 @@ test('engineer reading projects known process noise once, preserves exact child 
   expect(new URL(child.href).searchParams.get('summaryRef')).toBe('DSR-child-exact');
   expect(JSON.stringify(exact)).toBe(original);
   expect(exact.revision.candidateOnly).toBe(true);
+});
+
+test('the exact automatic Wiki page passes its saved body and engineering conditions to the real entry consumer', async () => {
+  const exact = summaryExact();
+  exact.automaticWiki = true;
+  exact.matterCatalog = { basis: 'SAVED_INPUT', catalog: { schemaVersion: 'wiselink.wiki-matter-catalog.v1',
+    entries: [], unbound: [{ memberRef: exact.revision.members[0].evidenceRef, leaf: exact.revision.members[0].member, sourceRefs: [] }] } };
+  exact.revision.content.headline = 'B787 ATA 46 综合：配置报告异常';
+  exact.revision.content.listBrief = '以 ATA 46-00 子层候选为唯一来源综合：版本 1.2 未关闭，SB TBD。';
+  exact.revision.content.body = '本层为 B787 · ATA 46（ATA2）候选综合，由其唯一已保存的 ATA 46-00 子层候选正文 [[child-exact]] 形成，保留该子层身份及其全部继承限制；本层为派生候选，非新增独立证据。'
+    + '\n\n仅版本 1.2；重启副作用未核。 [[child-exact]]';
+  exact.revision.content.limitations = ['SB TBD，日期 11/04/2027 为预计值，不能确认已完成。'];
+  const before = JSON.stringify(exact);
+  mockExact.mockResolvedValue(exact);
+  await mount('/summaries/DS-1?summaryRef=DSR-1');
+  const consumer = container.querySelector('[data-wiki-catalog="true"]')!;
+  expect(consumer).not.toBeNull();
+  expect(JSON.parse(consumer.getAttribute('data-matter-catalog')!)).toEqual(exact.matterCatalog);
+  expect(container.querySelector('[aria-label="阅读依据与记录"]')?.textContent).toContain('本次生成时封存的事项关联。');
+  expect(container.querySelector('h1')?.textContent).toBe(exact.revision.scope.title);
+  expect(consumer.querySelector('[data-body]')?.textContent).toBe('仅版本 1.2；重启副作用未核。 [[child-exact]]');
+  expect(consumer.textContent).toContain('SB TBD，日期 11/04/2027 为预计值，不能确认已完成。');
+  expect(container.querySelector('[aria-label="阅读依据与记录"]')?.textContent).not.toContain('SB TBD');
+  expect(JSON.stringify(exact)).toBe(before);
+});
+
+test('the current automatic Wiki route carries current formal relationships into the actual body consumer', async () => {
+  const head = summaryHead(); head.automaticWiki = true;
+  head.matterCatalog = { basis: 'CURRENT_RELATIONSHIPS', catalog: { schemaVersion: 'wiselink.wiki-matter-catalog.v1',
+    entries: [], unbound: [{ memberRef: head.current!.members[0].evidenceRef, leaf: head.current!.members[0].member, sourceRefs: [] }] } };
+  mockHead.mockResolvedValue(head);
+  await mount('/summaries/DS-1');
+  const consumer = container.querySelector('[data-wiki-catalog="true"]')!;
+  expect(JSON.parse(consumer.getAttribute('data-matter-catalog')!)).toEqual(head.matterCatalog);
+  expect(container.querySelector('[aria-label="阅读依据与记录"]')?.textContent).toContain('当前登记关系；此历史正文未封存事项关联。');
 });

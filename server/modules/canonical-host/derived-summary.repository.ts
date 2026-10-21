@@ -9,7 +9,8 @@ import {
 import { actionAttempt, assessmentWorkRevision, dmDocumentVersion, dmPublicationFamily, engineeringMatter,
   engineeringMatterWorkRevision, workItem } from '../../database/schema';
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
-import type { DerivedSummaryContextBasis, DerivedSummaryMember, DerivedSummaryMemberReading } from '@shared/derived-summary.interface';
+import type { DerivedSummaryContextBasis, DerivedSummaryMatterCatalog, DerivedSummaryMember,
+  DerivedSummaryMemberReading } from '@shared/derived-summary.interface';
 import { contextMemberNotices, contextWorkNotices } from './derived-summary-current-context';
 import type { CanonicalVerifiedAutoWorkItemQueueScope } from './canonical-service-scope.authorization';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
@@ -17,6 +18,7 @@ import type { CanonicalHostActor } from './canonical-host.types';
 import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
 import { summaryError } from './derived-summary.validation';
 import { DerivedSummaryMembersService, mergeSummaryEvidence, type SummaryActor } from './derived-summary-members.service';
+import { authorizeSummaryMatterCatalog, readSummaryMatterCatalog } from './derived-summary-matter-catalog';
 
 export type SummaryHead = typeof derivedSummary.$inferSelect;
 export type SummaryAttempt = typeof actionAttempt.$inferSelect & typeof derivedSummaryAttemptBinding.$inferSelect;
@@ -107,8 +109,16 @@ export class DerivedSummaryRepository {
 
   /** All callers already authorized exact member bodies. Capture only Host-owned
    * mutable identities, never infer a publisher's latest/effective version. */
+  async wikiMatterCatalog(readings: DerivedSummaryMemberReading[], owner: SummaryActor, database: PostgresJsDatabase) {
+    return readSummaryMatterCatalog(readings, owner, database, this.members, this.transactions);
+  }
+
+  async authorizeMatterCatalog(catalog: DerivedSummaryMatterCatalog, owner: SummaryActor, database: PostgresJsDatabase) {
+    await authorizeSummaryMatterCatalog(catalog, owner, database, this.transactions);
+  }
+
   async contextBasis(readings: DerivedSummaryMemberReading[], owner: SummaryActor,
-    database: PostgresJsDatabase): Promise<DerivedSummaryContextBasis> {
+    database: PostgresJsDatabase, wikiMatterCatalog?: DerivedSummaryMatterCatalog): Promise<DerivedSummaryContextBasis> {
     const allReadings = [...readings];
     const selected: DerivedSummaryMember[] = [...readings.flatMap(item => [item.member, ...item.leaves])];
     const summaries: DerivedSummaryContextBasis['summaries'] = [];
@@ -142,6 +152,8 @@ export class DerivedSummaryRepository {
     }
     for (const item of evidence) if (item.kind === 'PRIOR_RESULT' && item.sourceWork)
       addMatter(item.sourceWork.subjectId, item.sourceWork.workRef);
+    for (const entry of wikiMatterCatalog?.entries ?? []) if (!matterRefs.has(entry.matterId))
+      matterRefs.set(entry.matterId, new Set());
     const sources: DerivedSummaryContextBasis['sources'] = [];
     for (const documentVersionId of [...documentIds].sort()) {
       const [row] = await database.select({ familyId: dmPublicationFamily.familyId,
@@ -220,6 +232,7 @@ export class DerivedSummaryRepository {
     }
     return { schemaVersion: 'wiselink.derived-summary-context.v1', memberNotices: contextMemberNotices(allReadings), sources, workItems, matters,
       ...(documentReadings.length ? { documentReadings } : {}),
+      ...(wikiMatterCatalog ? { wikiMatterCatalog } : {}),
       summaries: [...new Map(summaries.map(item => [item.summaryId, item])).values()].sort((a, b) =>
         a.summaryId < b.summaryId ? -1 : a.summaryId > b.summaryId ? 1 : 0),
       uncoordinatedDependencies: [...(sources.length ? ['DOCUMENT_LIFECYCLE_NOT_FENCED'] : []),

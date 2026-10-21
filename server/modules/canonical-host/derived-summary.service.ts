@@ -25,6 +25,7 @@ import { assertSummaryReplay, parseSummaryRequest, summaryError } from './derive
 import { assertPreviousSummarySnapshot, buildSummaryRevisionContext } from './derived-summary-revision-context';
 import { HierarchicalWikiCompletion } from './hierarchical-wiki-completion';
 import { assertWikiLayerMembers, type WikiLevel } from './hierarchical-wiki-generation';
+import { summaryMatterInstruction } from './derived-summary-matter-catalog';
 
 export interface DerivedSummaryRuntimeTask extends DerivedSummaryTask {
   actionAttemptId: string;
@@ -92,7 +93,8 @@ export class DerivedSummaryService {
     if (input.members.some(member => member.kind === 'DERIVED_SUMMARY' && member.summaryId === head.summaryId))
       throw summaryError('DERIVED_SUMMARY_SELF_MEMBER', 400);
     const contextReadings = [...readings, ...(priorContext?.fresh ?? [])];
-    const contextBasis = await this.repository.contextBasis(contextReadings, owner, database);
+    const matterCatalog = wikiLevel === undefined ? undefined : await this.repository.wikiMatterCatalog(readings, owner, database);
+    const contextBasis = await this.repository.contextBasis(contextReadings, owner, database, matterCatalog);
     await this.repository.lockContext(contextBasis, owner, database, head.summaryId);
     head = await this.repository.head(head.summaryId, owner, database);
     // Concurrent reservation can commit while the dependency locks are awaited.
@@ -120,13 +122,15 @@ export class DerivedSummaryService {
       if (!fresh) throw summaryError('DERIVED_SUMMARY_CONTEXT_CHANGED');
       assertMemberSnapshot(item, fresh);
     }
-    assertSummaryContextUnchanged(contextBasis, await this.repository.contextBasis(locked, owner, database));
     readings = readings.map(item => locked.find(value => canonicalJson(value.member) === canonicalJson(item.member))!);
+    assertSummaryContextUnchanged(contextBasis, await this.repository.contextBasis(locked, owner, database,
+      matterCatalog ? await this.repository.wikiMatterCatalog(readings, owner, database) : undefined));
     const lockedPrior = priorContext ? await this.revisionPrior(head, input.expectedSummaryRevision, owner, database) : null;
     if (priorContext && canonicalJson(priorContext.saved) !== canonicalJson(lockedPrior!.saved))
       throw summaryError('DERIVED_SUMMARY_PRIOR_CONTENT_CHANGED');
     assertSummaryContextUnchanged(contextBasis, await this.repository.contextBasis(
-      [...readings, ...(lockedPrior?.fresh ?? [])], owner, database));
+      [...readings, ...(lockedPrior?.fresh ?? [])], owner, database,
+      matterCatalog ? await this.repository.wikiMatterCatalog(readings, owner, database) : undefined));
     const scope = await this.authorization.authorizeOpenClawAutoWorkItemQueue();
     if (scope.appId !== 'app_17bzc551rsg' || scope.tenantId !== owner.tenantId || !scope.principalId)
       throw summaryError('DERIVED_SUMMARY_EXECUTOR_UNAVAILABLE', 503);
@@ -140,10 +144,11 @@ export class DerivedSummaryService {
     const attemptRef = `AQ-${randomUUID().replaceAll('-', '')}`;
     const deadline = new Date(now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS);
     const evidence = mergeSummaryEvidence(readings.flatMap(member => member.evidence));
-    // Project only a new aggregate input; raw member notices still own context seals and runtime reads.
+    // Raw notices still bind the context seal; only the new synthesis input is projected.
     const limitations = deduplicateSummaryNotices(['仅覆盖显式选取的精确保存成员；未选成员、其他ATA和其他机型均未覆盖。',
       ...readings.flatMap(member => member.limitations)]);
-    const revisionContext = lockedPrior ? buildSummaryRevisionContext(input, lockedPrior.saved,
+    const instruction = summaryMatterInstruction(input.instruction, matterCatalog);
+    const revisionContext = lockedPrior ? buildSummaryRevisionContext({ ...input, instruction }, lockedPrior.saved,
       lockedPrior.fresh, readings, now.toISOString()) : undefined;
     const taskBasis = { schemaVersion: 'wiselink.derived-summary-task.v1' as const,
       taskType: 'OPENCLAW_DERIVED_SUMMARY' as const, subject: { kind: 'DERIVED_SUMMARY' as const, summaryId: head.summaryId },
@@ -151,9 +156,11 @@ export class DerivedSummaryService {
       actionAttemptId: attemptId, operationRef: attemptRef, deadlineAt: deadline.toISOString(),
       executionModel, contextBasis,
       modelInput: { scope: input.scope, classificationStatus: 'CANDIDATE' as const,
-        instruction: input.instruction, ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
+        instruction, ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
         ...(wikiLevel === undefined ? {} : { wikiLevel }),
-        ...(revisionContext ? { revisionContext } : {}), members: readings, evidence, limitations } };
+        ...(revisionContext ? { revisionContext } : {}),
+        members: readings.map(member => ({ ...member, limitations: deduplicateSummaryNotices(member.limitations) })),
+        evidence, limitations } };
     const task: DerivedSummaryRuntimeTask = { ...taskBasis, taskInputHash: canonicalSha256(taskBasis) };
     // All new subject columns are inserted together: the DB identity constraint is immediate.
     await database.execute(sql`INSERT INTO action_attempt (
@@ -190,9 +197,11 @@ export class DerivedSummaryService {
       const head = await this.repository.head(summaryId, owner, database);
       const saved = await this.repository.saved(summaryId, summaryRef, owner, database);
       const selected = await this.checkRevision(saved, owner, database);
+      const wiki = await this.wiki?.metadata(summaryId, database);
       return { summaryId, currentSummaryRef: head.currentSummaryRef, currentRevision: head.currentRevision,
         revision: publicSummaryRevision(saved), memberNotices: selected.map(memberNotice),
-        contextStatus: await this.revisionContextStatus(saved, owner, database), ...await this.wiki?.metadata(summaryId, database) };
+        contextStatus: await this.revisionContextStatus(saved, owner, database), ...wiki,
+        ...(wiki?.automaticWiki ? { matterCatalog: await this.readMatterCatalog(saved, selected, owner, database) } : {}) };
     });
   }
 
@@ -237,7 +246,8 @@ export class DerivedSummaryService {
     }
     if (options.requireCurrentContext) {
       if (!task.contextBasis) throw summaryError('DERIVED_SUMMARY_CONTEXT_BASIS_REQUIRED');
-      assertSummaryContextUnchanged(task.contextBasis, await this.repository.contextBasis([...current, ...priorReadings], owner, database));
+      assertSummaryContextUnchanged(task.contextBasis, await this.repository.contextBasis([...current, ...priorReadings], owner, database,
+        task.contextBasis.wikiMatterCatalog ? await this.repository.wikiMatterCatalog(current, owner, database) : undefined));
     }
     return current;
   }
@@ -268,10 +278,14 @@ export class DerivedSummaryService {
   async revisionContextStatus(saved: DerivedSummaryRevision, owner: SummaryActor, database: PostgresJsDatabase) {
     if (!saved.contextBasis) return summaryContextStatus(undefined);
     const fresh = await this.members.readAll(saved.contextBasis.memberNotices.map(item => item.member), owner, database, new Set([saved.summaryId]));
-    return summaryContextStatus(saved.contextBasis, await this.repository.contextBasis(fresh, owner, database));
+    const catalogSelection = saved.contextBasis.wikiMatterCatalog ? await this.checkRevision(saved, owner, database) : [];
+    return summaryContextStatus(saved.contextBasis, await this.repository.contextBasis(fresh, owner, database,
+      saved.contextBasis.wikiMatterCatalog ? await this.repository.wikiMatterCatalog(catalogSelection, owner, database) : undefined));
   }
 
   async checkRevision(saved: DerivedSummaryRevision, owner: SummaryActor, database: PostgresJsDatabase) {
+    if (saved.contextBasis?.wikiMatterCatalog)
+      await this.repository.authorizeMatterCatalog(saved.contextBasis.wikiMatterCatalog, owner, database);
     const current = await this.members.readAll(saved.members.map(item => item.member), owner, database, new Set([saved.summaryId]));
     if (current.length !== saved.members.length) throw summaryError('DERIVED_SUMMARY_PERSISTENCE_INVALID');
     for (let i = 0; i < current.length; i++) assertMemberSnapshot(saved.members[i]!, current[i]!);
@@ -292,7 +306,17 @@ export class DerivedSummaryService {
     return { summaryId: head.summaryId, scope: head.scopeJson, classificationStatus: 'CANDIDATE', ...wiki,
       currentSummaryRef: head.currentSummaryRef, currentRevision: head.currentRevision, current: current ? publicSummaryRevision(current) : null,
       memberNotices: members.map(memberNotice),
+      ...(wiki?.automaticWiki && current ? { matterCatalog: await this.readMatterCatalog(current, members, owner, database) } : {}),
       contextStatus: current ? await this.revisionContextStatus(current, owner, database) : summaryContextStatus(undefined) };
+  }
+
+  private async readMatterCatalog(saved: DerivedSummaryRevision,
+    selected: Awaited<ReturnType<DerivedSummaryMembersService['readAll']>>, owner: SummaryActor, database: PostgresJsDatabase) {
+    // The saved snapshot remains immutable. Legacy text receives current formal
+    // navigation only; a later relationship is never presented as its input seal.
+    return saved.contextBasis?.wikiMatterCatalog
+      ? { basis: 'SAVED_INPUT' as const, catalog: saved.contextBasis.wikiMatterCatalog }
+      : { basis: 'CURRENT_RELATIONSHIPS' as const, catalog: await this.repository.wikiMatterCatalog(selected, owner, database) };
   }
 }
 
@@ -345,7 +369,9 @@ export function checkedSummaryTask(attempt: SummaryAttempt): DerivedSummaryRunti
     input.classificationStatus !== 'CANDIDATE' || !Array.isArray(input.members) ||
     (purpose !== 'SYNTHESIZE' && purpose !== 'REVISE_SAVED_SUMMARY') ||
     command.requestId !== task.requestId || command.expectedSummaryRevision !== task.expectedSummaryRevision ||
-    (command.modelRef !== undefined && command.modelRef !== task.executionModel.modelRef) || command.instruction !== input.instruction ||
+    (command.modelRef !== undefined && command.modelRef !== task.executionModel.modelRef) ||
+    input.instruction !== summaryMatterInstruction(command.instruction, input.wikiLevel ? task.contextBasis?.wikiMatterCatalog : undefined) ||
+    (task.contextBasis?.wikiMatterCatalog !== undefined && input.wikiLevel === undefined) ||
     canonicalJson(command.scope) !== canonicalJson(input.scope) ||
     canonicalJson(command.members) !== canonicalJson(input.members.map(item => item.member)) ||
     Object.hasOwn(command, 'purpose') !== Object.hasOwn(input, 'purpose') || purpose !== (command.purpose ?? 'SYNTHESIZE') ||

@@ -2,6 +2,7 @@ import type { AssessmentEvidence } from './assessment-reading.interface';
 import type { JobAidProblemIssue } from './jobaid-problem-assessment.interface';
 import type { EngineeringMatterCorrectionNotice, EngineeringMatterOverviewCorrectionNotice,
   EngineeringMatterReferenceWorkNotice } from './matter-working.interface';
+import type { MatterMaterialLink } from './matter-material.interface';
 
 /** Explicit analysis scope; classification candidates never grant applicability. */
 export interface DerivedSummaryScopeSelection {
@@ -127,6 +128,7 @@ export interface DerivedSummaryReadModel extends DerivedSummaryMetadata {
   current: DerivedSummaryRevision | null;
   memberNotices: Array<{ member: DerivedSummaryMember; current: boolean; limitations: string[] }>;
   contextStatus?: DerivedSummaryContextStatus;
+  matterCatalog?: DerivedSummaryMatterCatalogProjection;
 }
 
 /** Exact saved body and fresh notices for those selected members only. */
@@ -139,6 +141,25 @@ export interface DerivedSummaryRevisionReadModel {
   contextStatus?: DerivedSummaryContextStatus;
   automaticWiki?: true;
   parentSummaryId?: string | null;
+  matterCatalog?: DerivedSummaryMatterCatalogProjection;
+}
+
+/** Host-owned association snapshot. These identities organize existing inputs;
+ * they grant no access, add no evidence and convey no engineering status. */
+export interface DerivedSummaryMatterCatalog {
+  schemaVersion: 'wiselink.wiki-matter-catalog.v1';
+  entries: Array<{ matterId: string; matterRevisionId: string; title: string;
+    bindings: Array<{ memberRef: string; leaf: DerivedSummaryMember; sourceRefs: string[];
+      association: { kind: 'MATTER_WORK' } | { kind: 'WORK_ITEM_LINK' | 'LINKED_DOCUMENT'; workItemId: string }
+        | { kind: 'MEMBER_MATERIAL'; material: MatterMaterialLink }
+        | { kind: 'REFERENCE_CONTEXT'; material: MatterMaterialLink; supportingLeafRefs: string[] } }> }>;
+  /** Exact selected inputs without a formal association; never synthetic Matters. */
+  unbound: Array<{ memberRef: string; leaf: DerivedSummaryMember; sourceRefs: string[] }>;
+}
+
+export interface DerivedSummaryMatterCatalogProjection {
+  basis: 'SAVED_INPUT' | 'CURRENT_RELATIONSHIPS';
+  catalog: DerivedSummaryMatterCatalog;
 }
 
 export interface DerivedSummaryRequestStatus {
@@ -248,6 +269,8 @@ export interface DerivedSummaryContextBasis {
   /** Absent on historical contexts; exact independent reading heads and withdrawal. */
   documentReadings?: Array<{ documentVersionId: string; parseRunId: string; semanticRevision: number;
     readingRunRef: string; currentReadingRunRef: string | null; currentReadingRevision: number | null }>;
+  /** Optional Host control metadata; old tasks and saved bodies stay unchanged. */
+  wikiMatterCatalog?: DerivedSummaryMatterCatalog;
   /** These axes are outside this bounded atomic fence and remain unknown. */
   uncoordinatedDependencies: string[];
 }

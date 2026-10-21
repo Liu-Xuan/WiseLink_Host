@@ -19,6 +19,7 @@ import { summaryError, summaryMemberRef } from './derived-summary.validation';
 import { readDocumentSummaryMember, documentReadingAnchorEvidence } from './derived-summary-document-reading';
 import { buildTranslationSourcePlan } from './canonical-translation-source-plan';
 import { stableJobAidEvidence } from './jobaid-problem-task';
+import { authorizeSummaryMatterCatalog } from './derived-summary-matter-catalog';
 
 import { TDMS_NATIVE_EVIDENCE_VERIFIER, verifyTdmsNativeEvidence, assertTdmsNativeInTransaction,
   type TdmsNativeEvidenceVerifier, type TdmsNativeSummaryCaller } from './tdms-native-evidence-verifier.port';
@@ -205,6 +206,8 @@ export class DerivedSummaryMembersService {
     const saved = row.contentJson;
     if (saved.summaryId !== member.summaryId || saved.summaryRef !== member.summaryRef || saved.revision !== member.summaryRevision)
       throw summaryError('DERIVED_SUMMARY_PERSISTENCE_INVALID');
+    if (saved.contextBasis?.wikiMatterCatalog)
+      await authorizeSummaryMatterCatalog(saved.contextBasis.wikiMatterCatalog, actor, database, this.matters);
     nativeCarriers.push(...structuredClone(saved.evidence.filter(item => item.kind === 'TDMS_NATIVE_RECORD')));
     await this.verifyNativeEvidence(saved.evidence, actor, database);
     const children = await this.readAll(saved.members.map(item => item.member), actor, database, path, nativeCarriers);

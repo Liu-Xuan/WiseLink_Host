@@ -34,7 +34,10 @@ import {
   DocumentManagementHostedService,
   type HostedRequestContext,
 } from '../document-management/src/hosted/nest';
-import { MiaodaDocumentVersionSourceResolver } from './miaoda-document-version-source.resolver';
+import {
+  MiaodaDocumentVersionSourceResolver,
+  type OwnedFileServicePdfSelection,
+} from './miaoda-document-version-source.resolver';
 import { isHostedCanonicalFinalUserActor } from './miaoda-hosted-canonical-object-access.adapter';
 import { MiaodaWorkItemRepository } from './miaoda-work-item.repository';
 import { SessionResolver } from '../identity/session-resolver.service';
@@ -97,6 +100,12 @@ interface ExistingParseRunTarget {
   expectedRevision: number;
 }
 
+export interface ExistingPdfListItem {
+  selection: { bucketId: string; filePath: string };
+  displayName: string;
+  updatedAt: string;
+}
+
 const DEVELOPMENT_RUN_TOKEN_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
@@ -135,15 +144,18 @@ export class OrdinaryWorkItemService {
       });
     }
     const actor = oauthSessionDevelopmentActor(sessionActor, gatewayActor);
+    const search = String(input.search ?? '').trim().toLocaleLowerCase();
+    if (search.length > 255) {
+      throw Object.assign(new Error('search is too long.'), {
+        code: 'WORK_ITEM_INPUT_INVALID', statusCode: 400,
+      });
+    }
+    const offset = boundedListOffset(input.offset);
     const bucketId = await this.fileService.getDefaultBucket();
     const listed = await this.fileService.from(bucketId).list('', {
       maxKeys: 200,
     });
-    const search = String(input.search ?? '')
-      .trim()
-      .toLocaleLowerCase();
-    const offset = boundedListOffset(input.offset);
-    const ownedPdfs = listed.attachments.flatMap((metadata) => {
+    const listedPdfs: ExistingPdfListItem[] = listed.attachments.flatMap((metadata) => {
       const filePath = normalizedExistingPdfPath(metadata.filePath);
       const displayName = String(metadata.name ?? '').trim();
       if (
@@ -162,6 +174,31 @@ export class OrdinaryWorkItemService {
         },
       ];
     });
+    const selected = new Map<string, ExistingPdfListItem>(listedPdfs.map((item: ExistingPdfListItem) => [
+      JSON.stringify(item.selection), item,
+    ]));
+    let registeredTruncated = false;
+    if (search) {
+      const registered = await this.resolver.listOwnedFileServicePdfSelections({
+        tenantId: actor.tenantId, actorUserId: actor.userId, bucketId, search,
+      });
+      registeredTruncated = registered.sourceTruncated;
+      for (const original of registered.items) {
+        const key = JSON.stringify({ bucketId: original.selectionBucketId,
+          filePath: original.selectionFilePath });
+        // A fresh denial must not fall back to the older SDK list snapshot.
+        selected.delete(key);
+        // The installed SDK strips leading slashes before provider I/O. Remove
+        // only that documented alias, while retaining the acquisition spelling.
+        const providerPath = normalizedExistingPdfPath(original.selectionFilePath);
+        if (providerPath) selected.delete(JSON.stringify({
+          bucketId: original.selectionBucketId, filePath: providerPath,
+        }));
+        const item = await this.readRegisteredPdfOption(original, actor, bucketId);
+        if (item) selected.set(key, item);
+      }
+    }
+    const ownedPdfs = [...selected.values()];
     ownedPdfs.sort((left, right) => {
       const updatedOrder =
         existingPdfUpdatedTimestamp(right.updatedAt) -
@@ -176,8 +213,52 @@ export class OrdinaryWorkItemService {
       schemaVersion: 'wiselink.3_1.oauth_session_existing_pdf_page.v1' as const,
       items: ownedPdfs.slice(offset, offset + pageSize),
       hasNextPage: ownedPdfs.length > offset + pageSize,
-      sourceTruncated: listed.hasMore,
+      sourceTruncated: listed.hasMore || registeredTruncated,
     };
+  }
+
+  private async readRegisteredPdfOption(
+    original: OwnedFileServicePdfSelection,
+    actor: CanonicalHostActor,
+    bucketId: string,
+  ): Promise<ExistingPdfListItem | null> {
+    const filePath = normalizedExistingPdfPath(original.selectionFilePath);
+    if (original.selectionBucketId !== bucketId || !filePath) return null;
+    try {
+      await this.documentManagement.getDocumentVersion(
+        original.documentVersionId, hostedRequestContext(actor, true),
+      );
+      const resolved = await this.resolver.resolve(original.documentVersionId, {
+        requireCurrent: true, expectedCreatorUserId: actor.userId,
+      });
+      if (resolved.version.documentVersionId !== original.documentVersionId ||
+          resolved.version.sourceArtifactId !== original.sourceArtifactId ||
+          resolved.version.pdfSha256 !== original.pdfSha256 ||
+          Number(resolved.version.byteLength) !== original.byteLength) {
+        throw existingPdfSelectionChanged();
+      }
+      const metadata = await this.fileService!.from(bucketId)
+        .getFileMetadata(original.selectionFilePath);
+      if (!metadata || !sameExactUserId(metadata.createdBy?.userID, actor.userId)) return null;
+      if (metadata.bucketID !== bucketId ||
+          normalizedExistingPdfPath(metadata.filePath) !== filePath ||
+          metadata.id !== original.providerObjectId ||
+          metadata.id !== original.providerVersionId ||
+          metadata.metadata?.mimeType !== 'application/pdf' ||
+          Number(metadata.metadata?.contentLength) !== original.byteLength ||
+          !String(metadata.name ?? '').trim().toLocaleLowerCase().endsWith('.pdf')) {
+        throw existingPdfSelectionChanged();
+      }
+      return {
+        // Retain the caller-facing acquisition path exactly for existing ingest replay.
+        selection: { bucketId, filePath: original.selectionFilePath },
+        displayName: metadata.name.trim(),
+        updatedAt: String(metadata.updatedAt ?? ''),
+      };
+    } catch (reason: unknown) {
+      if (existingPdfReadDenied(reason)) return null;
+      throw reason;
+    }
   }
 
   async parsePdf(
@@ -1036,4 +1117,19 @@ function sameExactUserId(value: unknown, actorUserId: string): boolean {
 function existingPdfUpdatedTimestamp(value: string): number {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function existingPdfSelectionChanged(): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error('The registered original selection changed.'), {
+    code: 'WORK_ITEM_EXISTING_PDF_SELECTION_CHANGED', statusCode: 409,
+  });
+}
+
+function existingPdfReadDenied(reason: unknown): boolean {
+  if (!reason || typeof reason !== 'object') return false;
+  const error = reason as { statusCode?: unknown; status?: unknown; code?: unknown; message?: unknown };
+  return error.statusCode === 403 || error.statusCode === 404 ||
+    error.status === 403 || error.status === 404 ||
+    ['DOCUMENT_VERSION_NOT_FOUND', 'DOCUMENT_VERSION_NOT_CURRENT',
+      'DOCUMENT_VERSION_CURRENTNESS_UNVERIFIED'].includes(String(error.code ?? error.message));
 }

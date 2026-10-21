@@ -79,8 +79,13 @@ function target() {
   const documentManagement = {
     assertCanIngest: jest.fn().mockResolvedValue(undefined),
     ingestFileServiceSelection: jest.fn(),
+    getDocumentVersion: jest.fn().mockResolvedValue({}),
   };
   const resolver = {
+    listOwnedFileServicePdfSelections: jest.fn().mockResolvedValue({
+      items: [],
+      sourceTruncated: false,
+    }),
     resolve: jest.fn().mockResolvedValue({
       version: {
         documentId: 'document-sb',
@@ -151,6 +156,7 @@ function target() {
   };
   const fileServiceBucket = {
     list: jest.fn().mockResolvedValue({ attachments: [], hasMore: false }),
+    getFileMetadata: jest.fn(),
   };
   const fileService = {
     getDefaultBucket: jest.fn().mockResolvedValue('bucket-default'),
@@ -186,6 +192,34 @@ function target() {
       sessions as never,
     ),
   };
+}
+
+function registeredPdfTarget() {
+  const instance = target();
+  const original = {
+    documentVersionId: 'document-version-sb',
+    sourceArtifactId: 'artifact-sb',
+    selectionBucketId: 'bucket-default',
+    selectionFilePath: 'wiselink/dev-intake/registered-run/787-ftd-original.pdf',
+    providerObjectId: 'original-object',
+    providerVersionId: 'original-object',
+    pdfSha256: 'a'.repeat(64),
+    byteLength: 1024,
+  };
+  const metadata = {
+    id: original.providerObjectId,
+    name: '787-ftd-original.pdf',
+    filePath: '/' + original.selectionFilePath,
+    bucketID: original.selectionBucketId,
+    createdBy: { userID: ACTOR.userId },
+    metadata: { mimeType: 'application/pdf', contentLength: '1024' },
+    updatedAt: '2026-09-11T00:23:33.562Z',
+  };
+  instance.resolver.listOwnedFileServicePdfSelections.mockResolvedValue({
+    items: [original], sourceTruncated: false,
+  });
+  instance.fileServiceBucket.getFileMetadata.mockResolvedValue(metadata);
+  return { ...instance, original, metadata };
 }
 
 function verticalResult() {
@@ -518,6 +552,217 @@ describe('OrdinaryWorkItemService run identity', () => {
       code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
     });
     expect(targetValue.fileService.getDefaultBucket).not.toHaveBeenCalled();
+  });
+
+  it('finds a registered original beyond the SDK first page using its exact acquisition selection', async () => {
+    const instance = target();
+    const originalPath = 'wiselink/dev-intake/registered-run/787-ftd-original.pdf';
+    instance.fileServiceBucket.list.mockResolvedValue({
+      attachments: Array.from({ length: 200 }, (_value: unknown, index: number) => ({
+        name: `unrelated-${index}.pdf`,
+        filePath: `recent/unrelated-${index}.pdf`,
+        createdBy: { userID: 'another-user' },
+      })),
+      hasMore: true,
+    });
+    instance.resolver.listOwnedFileServicePdfSelections.mockResolvedValue({
+      items: [{
+        documentVersionId: 'document-version-sb',
+        sourceArtifactId: 'artifact-sb',
+        selectionBucketId: 'bucket-default',
+        selectionFilePath: originalPath,
+        providerObjectId: 'original-object',
+        providerVersionId: 'original-object',
+        pdfSha256: 'a'.repeat(64),
+        byteLength: 1024,
+      }],
+      sourceTruncated: false,
+    });
+    instance.fileServiceBucket.getFileMetadata.mockResolvedValue({
+      id: 'original-object',
+      name: '787-ftd-original.pdf',
+      filePath: '/' + originalPath,
+      bucketID: 'bucket-default',
+      createdBy: { userID: ACTOR.userId },
+      metadata: { mimeType: 'application/pdf', contentLength: '1024' },
+      updatedAt: '2026-09-11T00:23:33.562Z',
+    });
+
+    await expect(instance.service.listOauthSessionDevelopmentPdfs(
+      { search: '787', offset: 0 }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR,
+    )).resolves.toMatchObject({
+      items: [{
+        selection: { bucketId: 'bucket-default', filePath: originalPath },
+        displayName: '787-ftd-original.pdf',
+      }],
+      hasNextPage: false,
+      sourceTruncated: true,
+    });
+    expect(instance.fileServiceBucket.getFileMetadata).toHaveBeenCalledWith(originalPath);
+    expect(instance.documentManagement.ingestFileServiceSelection).not.toHaveBeenCalled();
+    expect(instance.repository.reserve).not.toHaveBeenCalled();
+    expect(instance.vertical.runPdf).not.toHaveBeenCalled();
+  });
+
+  it('resolves a document-number search through fresh document access and current identity checks', async () => {
+    const instance = registeredPdfTarget();
+    const page = await instance.service.listOauthSessionDevelopmentPdfs(
+      { search: 'BOEING-FTD-45-25001', offset: 0 }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR,
+    );
+    expect(page.items).toHaveLength(1);
+    expect(instance.resolver.listOwnedFileServicePdfSelections).toHaveBeenCalledWith({
+      tenantId: ACTOR.tenantId, actorUserId: ACTOR.userId,
+      bucketId: 'bucket-default', search: 'boeing-ftd-45-25001',
+    });
+    expect(instance.documentManagement.getDocumentVersion).toHaveBeenCalledWith(
+      'document-version-sb', expect.objectContaining({
+        actorUserId: ACTOR.userId, tenantId: ACTOR.tenantId,
+        runtimeIngestAuthority: expect.objectContaining({ mode: 'HOSTED_OAUTH_SESSION_DEVELOPMENT_RUN' }),
+      }),
+    );
+    expect(instance.resolver.resolve).toHaveBeenCalledWith('document-version-sb', {
+      requireCurrent: true, expectedCreatorUserId: ACTOR.userId,
+    });
+  });
+
+  it('preserves the exact acquisition locator and never substitutes its SHA-addressed source copy', async () => {
+    const instance = registeredPdfTarget();
+    const originalPath = '/' + instance.original.selectionFilePath;
+    instance.original.selectionFilePath = originalPath;
+    const shaCopyPath = `document-management/source/sha256/aa/${'a'.repeat(64)}.pdf`;
+    instance.fileServiceBucket.list.mockResolvedValue({
+      attachments: [{ ...instance.metadata, name: `${'a'.repeat(64)}.pdf`, filePath: shaCopyPath }],
+      hasMore: true,
+    });
+    const page = await instance.service.listOauthSessionDevelopmentPdfs(
+      { search: '787', offset: 0 }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR,
+    );
+    expect(page.items.map(item => item.selection.filePath)).toEqual([originalPath]);
+    expect(instance.fileServiceBucket.getFileMetadata).toHaveBeenCalledWith(originalPath);
+    expect(instance.fileServiceBucket.getFileMetadata).not.toHaveBeenCalledWith(shaCopyPath);
+    expect(instance.documentManagement.ingestFileServiceSelection).not.toHaveBeenCalled();
+  });
+
+  it('keeps same-name originals distinct by exact acquisition selection instead of merging their content or names', async () => {
+    const instance = registeredPdfTarget();
+    const second = { ...instance.original,
+      selectionFilePath: 'wiselink/dev-intake/another-run/787-ftd-original.pdf',
+      providerObjectId: 'second-original-object', providerVersionId: 'second-original-object' };
+    instance.resolver.listOwnedFileServicePdfSelections.mockResolvedValue({
+      items: [instance.original, second], sourceTruncated: false,
+    });
+    instance.fileServiceBucket.getFileMetadata.mockImplementation((filePath: string) => Promise.resolve(
+      filePath === instance.original.selectionFilePath ? instance.metadata : {
+        ...instance.metadata, id: second.providerObjectId, filePath: second.selectionFilePath,
+      },
+    ));
+    const page = await instance.service.listOauthSessionDevelopmentPdfs(
+      { search: '787', offset: 0 }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR,
+    );
+    expect(page.items).toHaveLength(2);
+    expect(new Set(page.items.map(item => item.selection.filePath))).toEqual(
+      new Set([instance.original.selectionFilePath, second.selectionFilePath]),
+    );
+  });
+
+  it.each(['other-owner', 'missing', 'forbidden', 'not-found'])('omits the unavailable %s original without falling back to a stale listed selection', async (mode: string) => {
+    const instance = registeredPdfTarget();
+    instance.fileServiceBucket.list.mockResolvedValue({
+      attachments: [{ ...instance.metadata, createdBy: { ...instance.metadata.createdBy } }],
+      hasMore: false,
+    });
+    if (mode === 'other-owner') instance.metadata.createdBy.userID = 'another-user';
+    if (mode === 'missing') instance.fileServiceBucket.getFileMetadata.mockResolvedValue(null);
+    if (mode === 'forbidden' || mode === 'not-found') {
+      instance.fileServiceBucket.getFileMetadata.mockRejectedValue(Object.assign(
+        new Error('not readable'), { statusCode: mode === 'forbidden' ? 403 : 404 },
+      ));
+    }
+    const page = await instance.service.listOauthSessionDevelopmentPdfs(
+      { search: '787', offset: 0 }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR,
+    );
+    expect(page.items).toEqual([]);
+  });
+
+  it.each(['DOCUMENT_VERSION_NOT_CURRENT', 'DOCUMENT_VERSION_NOT_FOUND', 'DOCUMENT_VERSION_CURRENTNESS_UNVERIFIED'])('preserves the existing %s rejection before exact provider metadata access', async (code: string) => {
+    const instance = registeredPdfTarget();
+    instance.resolver.resolve.mockRejectedValue(Object.assign(new Error(code), { code }));
+    const page = await instance.service.listOauthSessionDevelopmentPdfs(
+      { search: '787', offset: 0 }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR,
+    );
+    expect(page.items).toEqual([]);
+    expect(instance.fileServiceBucket.getFileMetadata).not.toHaveBeenCalled();
+  });
+
+  it('keeps an explicit current document denial and never proceeds to FileService', async () => {
+    const instance = registeredPdfTarget();
+    instance.documentManagement.getDocumentVersion.mockRejectedValue(Object.assign(
+      new Error('revoked'), { statusCode: 403 },
+    ));
+    await expect(instance.service.listOauthSessionDevelopmentPdfs(
+      { search: '787', offset: 0 }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR,
+    )).resolves.toMatchObject({ items: [] });
+    expect(instance.resolver.resolve).not.toHaveBeenCalled();
+    expect(instance.fileServiceBucket.getFileMetadata).not.toHaveBeenCalled();
+  });
+
+  it('does not revive a denied original through the SDK leading-slash alias in the older list', async () => {
+    const instance = registeredPdfTarget();
+    instance.original.selectionFilePath = '/' + instance.original.selectionFilePath;
+    instance.fileServiceBucket.list.mockResolvedValue({ attachments: [instance.metadata], hasMore: false });
+    instance.documentManagement.getDocumentVersion.mockRejectedValue(Object.assign(
+      new Error('revoked'), { statusCode: 403 },
+    ));
+    await expect(instance.service.listOauthSessionDevelopmentPdfs(
+      { search: '787', offset: 0 }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR,
+    )).resolves.toMatchObject({ items: [] });
+    expect(instance.fileServiceBucket.getFileMetadata).not.toHaveBeenCalled();
+  });
+
+  it.each(['object', 'version', 'path', 'bucket', 'length'])('reports an exact %s identity conflict instead of silently selecting another object', async (field: string) => {
+    const instance = registeredPdfTarget();
+    if (field === 'object') instance.metadata.id = 'replacement-object';
+    if (field === 'version') instance.original.providerVersionId = 'different-version';
+    if (field === 'path') instance.metadata.filePath = '/different/original.pdf';
+    if (field === 'bucket') instance.metadata.bucketID = 'another-bucket';
+    if (field === 'length') instance.metadata.metadata.contentLength = '2048';
+    await expect(instance.service.listOauthSessionDevelopmentPdfs(
+      { search: '787', offset: 0 }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR,
+    )).rejects.toMatchObject({ code: 'WORK_ITEM_EXISTING_PDF_SELECTION_CHANGED', statusCode: 409 });
+    expect(instance.repository.reserve).not.toHaveBeenCalled();
+  });
+
+  it('preserves a provider outage instead of returning an authoritative empty search', async () => {
+    const instance = registeredPdfTarget();
+    const outage = Object.assign(new Error('temporary provider failure'), { statusCode: 503 });
+    instance.fileServiceBucket.getFileMetadata.mockRejectedValue(outage);
+    await expect(instance.service.listOauthSessionDevelopmentPdfs(
+      { search: '787', offset: 0 }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR,
+    )).rejects.toBe(outage);
+  });
+
+  it('reports bounded registered-source coverage even when the SDK list itself is complete', async () => {
+    const instance = registeredPdfTarget();
+    instance.resolver.listOwnedFileServicePdfSelections.mockResolvedValue({
+      items: [instance.original], sourceTruncated: true,
+    });
+    await expect(instance.service.listOauthSessionDevelopmentPdfs(
+      { search: '787', offset: 0 }, OAUTH_SESSION_ACTOR, GATEWAY_ACTOR,
+    )).resolves.toMatchObject({ sourceTruncated: true });
+  });
+
+  it('rejects a different tenant and missing DEV role before any locator lookup', async () => {
+    const instance = registeredPdfTarget();
+    await expect(instance.service.listOauthSessionDevelopmentPdfs(
+      { search: '787', offset: 0 }, OAUTH_SESSION_ACTOR,
+      { ...GATEWAY_ACTOR, tenantId: 'another-tenant' },
+    )).rejects.toMatchObject({ code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE' });
+    await expect(instance.service.listOauthSessionDevelopmentPdfs(
+      { search: '787', offset: 0 }, OAUTH_SESSION_ACTOR,
+      { ...GATEWAY_ACTOR, platformRoles: [] },
+    )).rejects.toMatchObject({ code: 'DEVELOPMENT_WORK_ITEM_ROLE_REQUIRED' });
+    expect(instance.fileService.getDefaultBucket).not.toHaveBeenCalled();
+    expect(instance.resolver.listOwnedFileServicePdfSelections).not.toHaveBeenCalled();
   });
 
   it('rejects a forged selection before every DM, FileService, binding, resolver, reserve, attempt, and vertical I/O', async () => {

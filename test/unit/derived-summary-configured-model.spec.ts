@@ -1,5 +1,6 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
-import type { RequestDerivedSummaryUpdate, DerivedSummaryContextBasis } from '@shared/derived-summary.interface';
+import type { RequestDerivedSummaryUpdate, DerivedSummaryContextBasis, DerivedSummaryMatterCatalog,
+  DerivedSummaryMemberReading } from '@shared/derived-summary.interface';
 import { canonicalJson } from '../../server/modules/action-attempt/action-attempt-envelope';
 import { CanonicalModelSettingsService } from '../../server/modules/model-settings/canonical-model-settings.service';
 import { DerivedSummaryService, checkedSummaryTask, type DerivedSummaryRuntimeTask } from '../../server/modules/canonical-host/derived-summary.service';
@@ -10,6 +11,7 @@ import type { WikiRow } from '../../server/modules/canonical-host/hierarchical-w
 import { emptyWikiDemand } from '../../server/modules/canonical-host/hierarchical-wiki-demand';
 import { parseSummaryRequest } from '../../server/modules/canonical-host/derived-summary.validation';
 import { summaryRevision } from './fixtures/derived-summary';
+import { buildSummaryMatterCatalog, summaryMatterInstruction } from '../../server/modules/canonical-host/derived-summary-matter-catalog';
 
 const dialect = new PgDialect();
 const owner = { tenantId: 'tenant-model', actorUserId: 'actor-model' };
@@ -100,7 +102,12 @@ function setup() {
   };
   const repository = { head: jest.fn(async () => head), attempt: jest.fn(async (_id: string, ref: string) => {
     const saved = attempts.get(ref); if (!saved) throw new Error('OFFLINE_ATTEMPT_MISSING'); return saved;
-  }), contextBasis: jest.fn(async () => structuredClone(basis)), lockContext: jest.fn(async () => undefined),
+  }), contextBasis: jest.fn(async (_selected?: DerivedSummaryMemberReading[], _owner?: unknown, _database?: unknown,
+    catalog?: DerivedSummaryMatterCatalog) => ({ ...structuredClone(basis), ...(catalog ? { wikiMatterCatalog: catalog } : {}) })),
+    wikiMatterCatalog: jest.fn(async (selected: DerivedSummaryMemberReading[]) => buildSummaryMatterCatalog(selected,
+      [{ ...reading, leaves: [reading.member] }], [{ matterId: 'MAT-formal', matterRevisionId: 'MREV-formal',
+        title: '正式工程事项', materials: [], links: [{ workItemId: 'WI-1', documentVersionId: 'DV-1' }] }])),
+    lockContext: jest.fn(async () => undefined),
     browser: jest.fn(async (_actor: unknown, operation: Function) => operation(database, owner)) };
   const members = { readAll: jest.fn(async () => [structuredClone(reading)]),
     authorizeActor: jest.fn(async () => undefined),
@@ -221,12 +228,44 @@ describe('configured model captured only for new summary/Wiki reservations', () 
       body: '完整的已保存子层正文', issues: [] };
     f.members.readAll.mockResolvedValue([child]);
     const basis = await f.repository.contextBasis();
-    f.repository.contextBasis.mockResolvedValue({ ...basis, memberNotices: contextMemberNotices([child]) });
+    f.repository.contextBasis.mockImplementation(async (_readings, _owner, _database, catalog) => ({
+      ...basis, memberNotices: contextMemberNotices([child]), ...(catalog ? { wikiMatterCatalog: catalog } : {}),
+    }));
     const input = { ...command('wiki-parent'), members: [child.member] };
     const receipt = await f.summaries.reserve(input, owner, f.head, f.database as never, 'FLEET');
     expect(f.task(receipt.attemptRef).modelInput).toMatchObject({ wikiLevel: 'FLEET', members: [child] });
     expect(JSON.parse(f.attempts.get(receipt.attemptRef)!.requestCommandJson!)).not.toHaveProperty('wikiLevel');
     expect(() => parseSummaryRequest({ ...input, wikiLevel: 'FLEET' }, true)).toThrow('DERIVED_SUMMARY_INPUT_INVALID');
+  });
+
+  it('seals Host Matter IDs in the existing instruction and context while keeping the original command/member schema exact', async () => {
+    const f = setup();
+    const input = { ...command('matter-seal'), scope: summaryRevision().scope };
+    const receipt = await f.summaries.reserve(input, owner, f.head, f.database as never, 'ATA4');
+    const task = f.task(receipt.attemptRef);
+    expect(task.contextBasis?.wikiMatterCatalog?.entries.map(entry => entry.matterId)).toEqual(['MAT-formal']);
+    expect(task.modelInput.instruction).toBe(summaryMatterInstruction(input.instruction, task.contextBasis?.wikiMatterCatalog));
+    expect(JSON.parse(f.attempts.get(receipt.attemptRef)!.requestCommandJson!)).toEqual(input);
+    expect(Object.keys(task.modelInput).sort()).toEqual(['classificationStatus', 'evidence', 'instruction', 'limitations', 'members', 'scope', 'wikiLevel']);
+    expect(task.modelInput.members).toEqual([reading]);
+    const before = structuredClone(task);
+    f.repository.wikiMatterCatalog.mockImplementation(async selected => ({
+      ...buildSummaryMatterCatalog(selected, [reading], []), entries: [],
+    }));
+    await expect(f.summaries.checkTaskAccess(task, owner, f.database as never, { requireCurrentContext: true }))
+      .rejects.toThrow('DERIVED_SUMMARY_CONTEXT_CHANGED');
+    expect(task).toEqual(before);
+  });
+
+  it('a newly added formal association while source locks are awaited prevents any sealed task or model capture', async () => {
+    const f = setup();
+    f.repository.lockContext.mockImplementationOnce(async () => {
+      f.repository.wikiMatterCatalog.mockResolvedValueOnce({ schemaVersion: 'wiselink.wiki-matter-catalog.v1',
+        entries: [], unbound: [{ memberRef: reading.evidenceRef, leaf: reading.member, sourceRefs: [] }] });
+    });
+    await expect(f.summaries.reserve({ ...command('matter-race'), scope: summaryRevision().scope },
+      owner, f.head, f.database as never, 'ATA4')).rejects.toThrow('DERIVED_SUMMARY_CONTEXT_CHANGED');
+    expect(f.attempts.size).toBe(0); expect(f.settingsRepository.read).not.toHaveBeenCalled();
   });
 
   it('does not reserve or capture a model when a marked parent directly selects leaf work', async () => {

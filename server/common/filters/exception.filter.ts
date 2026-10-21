@@ -44,10 +44,20 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       // HTTP异常
       httpStatus = exception.getStatus() as HttpStatus;
       const exceptionResponse = exception.getResponse();
+      // A missing Host OAuth session must not invalidate the platform login.
+      // Preserve only this explicit 401 code; other HTTP errors keep their mapping.
+      const hostSessionRequired: boolean =
+        httpStatus === HttpStatus.UNAUTHORIZED &&
+        typeof exceptionResponse === 'object' &&
+        exceptionResponse !== null &&
+        'code' in exceptionResponse &&
+        exceptionResponse.code === 'SESSION_REQUIRED';
 
       errorResponse = {
         error: {
-          code: HTTP_STATUS_TO_RESPONSE_CODE_MAP[httpStatus],
+          code: hostSessionRequired
+            ? 'SESSION_REQUIRED'
+            : HTTP_STATUS_TO_RESPONSE_CODE_MAP[httpStatus],
           message:
             typeof exceptionResponse === 'string'
               ? exceptionResponse

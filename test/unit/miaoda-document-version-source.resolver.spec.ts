@@ -8,6 +8,23 @@ import {
   dmSourceArtifact,
 } from '../../server/database/schema';
 import { MiaodaDocumentVersionSourceResolver } from '../../server/modules/work-item/miaoda-document-version-source.resolver';
+import type { OwnedFileServicePdfSelection } from '../../server/modules/work-item/miaoda-document-version-source.resolver';
+
+function registeredSelectionQuery(rows: OwnedFileServicePdfSelection[]) {
+  const builder = drizzle({} as never);
+  let compiled: { sql: string; params: unknown[] } | undefined;
+  const db = { select: (fields: never) => ({ from: (table: never) => {
+    const statement = builder.select(fields).from(table);
+    const limit = statement.limit.bind(statement);
+    jest.spyOn(statement, 'limit').mockImplementation((count: number) => {
+      compiled = limit(count).toSQL();
+      return Promise.resolve(rows) as never;
+    });
+    return statement;
+  } }) };
+  return { resolver: new MiaodaDocumentVersionSourceResolver(db as never),
+    compiled: () => compiled };
+}
 
 function database(value: ReturnType<typeof resolvedValue>) {
   const query = {
@@ -187,5 +204,50 @@ describe('member source identity projection', () => {
     db.query.limit.mockResolvedValue([]);
     const resolver = new MiaodaDocumentVersionSourceResolver(db as never);
     await expect(resolver.resolveIdentity('missing')).rejects.toThrow('DOCUMENT_VERSION_NOT_FOUND');
+  });
+});
+
+describe('registered owned original PDF lookup', () => {
+  it('uses only parameterized actor/tenant/default-bucket scope and exact committed acquisition bindings', async () => {
+    const query = registeredSelectionQuery([]);
+    const search = "787_%' OR true --";
+    await expect(query.resolver.listOwnedFileServicePdfSelections({
+      tenantId: 'tenant/a', actorUserId: 'owner-a', bucketId: 'default-bucket', search,
+    })).resolves.toEqual({ items: [], sourceTruncated: false });
+    const compiled = query.compiled();
+    expect(compiled).toBeDefined();
+    expect(compiled?.sql).not.toContain(search);
+    expect(compiled?.params).toEqual([
+      'COMMITTED', 'owner-a', 'default-bucket', 'canonical_miaoda_document_selection',
+      'COMMITTED_CANONICAL', 'LINKED_EXACT_DOCUMENT_VERSION', 'COMMITTED_IMMUTABLE',
+      'application/pdf', 'tenant:tenant%2Fa:family:', 'tenant:tenant%2Fa:request:',
+      search.toLocaleLowerCase(), search.toLocaleLowerCase(), 25,
+    ]);
+    expect(compiled?.sql).toContain('"dm_acquisition"."document_version_id" = "dm_document_version"."document_version_id"');
+    expect(compiled?.sql).toContain('"dm_acquisition"."source_artifact_id" = "dm_document_version"."source_artifact_id"');
+    expect(compiled?.sql).toContain('"dm_ingress_preflight"."acquisition_id" = "dm_acquisition"."acquisition_id"');
+    expect(compiled?.sql).toContain('"dm_ingress_preflight"."document_version_id" = "dm_document_version"."document_version_id"');
+    expect(compiled?.sql).toContain('"dm_publication_family"."current_document_version_id" = "dm_document_version"."document_version_id"');
+    expect(compiled?.sql).toContain('lower("dm_document_version"."original_filename")');
+    expect(compiled?.sql).toContain('lower("dm_publication_family"."canonical_document_number")');
+    expect(compiled?.sql).toContain('"dm_acquisition"."selection_file_path"');
+    expect(compiled?.sql).not.toContain('"dm_source_artifact"."file_path"');
+    expect(compiled?.sql).not.toMatch(/\b(?:insert|update|delete|alter|create)\b/iu);
+  });
+
+  it('bounds exact provider reads and preserves incomplete registered-source coverage', async () => {
+    const rows: OwnedFileServicePdfSelection[] = Array.from({ length: 25 }, (_value: unknown, index: number) => ({
+      documentVersionId: `dv-${index}`, sourceArtifactId: `artifact-${index}`,
+      selectionBucketId: 'default-bucket', selectionFilePath: `originals/${index}.pdf`,
+      providerObjectId: `original-${index}`, providerVersionId: `original-${index}`,
+      pdfSha256: 'a'.repeat(64), byteLength: 1024,
+    }));
+    const query = registeredSelectionQuery(rows);
+    const page = await query.resolver.listOwnedFileServicePdfSelections({
+      tenantId: 'tenant-a', actorUserId: 'owner-a', bucketId: 'default-bucket', search: '787',
+    });
+    expect(page.items).toEqual(rows.slice(0, 24));
+    expect(page.sourceTruncated).toBe(true);
+    expect(query.compiled()?.params.at(-1)).toBe(25);
   });
 });

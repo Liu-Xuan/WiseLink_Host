@@ -35,6 +35,7 @@ import {
   ExistingStoragePdfListError,
   type ExistingStoragePdfOption,
   existingStoragePdfVisibleText,
+  existingStoragePdfCoverageMessage,
   listExistingStoragePdfs,
 } from './existing-storage-pdfs';
 import {
@@ -94,6 +95,7 @@ export function HostedDevelopmentIntake() {
   const [searchQuery, setSearchQuery] = useState('');
   const [pickerOffset, setPickerOffset] = useState(0);
   const [pickerHasNext, setPickerHasNext] = useState(false);
+  const [pickerSourceTruncated, setPickerSourceTruncated] = useState(false);
   const [pickerReload, setPickerReload] = useState(0);
   const submissionInFlightRef = useRef(false);
   const busy =
@@ -119,6 +121,7 @@ export function HostedDevelopmentIntake() {
     setSearchQuery('');
     setPickerOffset(0);
     setPickerHasNext(false);
+    setPickerSourceTruncated(false);
   }, [sessionGeneration]);
 
   useEffect(() => {
@@ -136,6 +139,7 @@ export function HostedDevelopmentIntake() {
         if (controller.signal.aborted) return;
         setPickerItems(page.items);
         setPickerHasNext(page.hasNextPage);
+        setPickerSourceTruncated(page.sourceTruncated);
         setPickerPhase('ready');
       })
       .catch((reason: unknown) => {
@@ -148,6 +152,7 @@ export function HostedDevelopmentIntake() {
         }
         setPickerItems([]);
         setPickerHasNext(false);
+        setPickerSourceTruncated(false);
         setPickerPhase('failed');
         setPickerError(existingPickerError(reason));
       });
@@ -471,13 +476,13 @@ export function HostedDevelopmentIntake() {
                 submitStorageSearch();
               }}
             >
-              <label htmlFor="hosted-existing-pdf-search">搜索文件名</label>
+              <label htmlFor="hosted-existing-pdf-search">搜索文件名或文件编号</label>
               <div>
                 <input
                   id="hosted-existing-pdf-search"
                   type="search"
                   value={searchDraft}
-                  placeholder="输入 PDF 文件名"
+                  placeholder="输入 PDF 文件名或文件编号"
                   disabled={pickerPhase === 'loading'}
                   onChange={(event) => setSearchDraft(event.target.value)}
                 />
@@ -491,6 +496,11 @@ export function HostedDevelopmentIntake() {
                 </Button>
               </div>
             </form>
+            {pickerPhase === 'ready' && pickerSourceTruncated ? (
+              <p className="hosted-intake-existing-state" role="status">
+                {existingStoragePdfCoverageMessage(pickerSourceTruncated)}
+              </p>
+            ) : null}
             <div
               className="hosted-intake-existing-results"
               aria-live="polite"
@@ -649,6 +659,9 @@ function existingPickerError(reason: unknown): string {
     }
     if (reason.code === 'BUCKET_UNAVAILABLE') {
       return '当前会话尚未提供可用的文件空间，请稍后重试或改为本机上传。';
+    }
+    if (reason.code === 'SOURCE_CHANGED') {
+      return '已登记原件的文件绑定已变化，请核对原件后重试。';
     }
   }
   return '暂时无法读取已上传 PDF，请稍后重试或改为本机上传。';
