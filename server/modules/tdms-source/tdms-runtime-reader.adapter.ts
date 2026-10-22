@@ -15,7 +15,8 @@ import {
   type TdmsProcessingCohortContextInput,
   type TdmsApprovedOpinionReference,
 } from '../canonical-host/tdms-approved-opinion-context';
-import { assertPublicActor, sameScope } from './tdms-source.authorization';
+import { sameScope } from './tdms-source.authorization';
+import { assertTdmsSourceActor, type TdmsSourceActor } from './tdms-runtime-delegation';
 import {
   canonical,
   identifier,
@@ -23,11 +24,13 @@ import {
   strict,
 } from './tdms-source.validation';
 import { processingSetFacts } from './tdms-processing-set.references';
-import type { TdmsProcessingSetRepository } from './tdms-processing-set.types';
+import type {
+  TdmsProcessingSetRepository,
+  TdmsStoredRevisionMetadata,
+} from './tdms-processing-set.types';
 import { TdmsProcessingSetService } from './tdms-processing-set.service';
 import type {
   TdmsDocumentAccess,
-  TdmsPublicActor,
   TdmsSourceAuthorization,
   TdmsSourceGrant,
   TdmsStoredRevision,
@@ -86,7 +89,7 @@ export interface TdmsRuntimeAuthority {
   authenticate(
     principal: TdmsRuntimePrincipal,
     binding: TdmsRuntimeTaskBinding,
-  ): Promise<TdmsPublicActor>;
+  ): Promise<TdmsSourceActor>;
   resolveSelections(
     principal: TdmsRuntimePrincipal,
     binding: TdmsRuntimeTaskBinding,
@@ -101,7 +104,7 @@ export interface TdmsRuntimeAuthority {
   readProjectionFacts(input: {
     principal: TdmsRuntimePrincipal;
     binding: TdmsRuntimeTaskBinding;
-    actor: TdmsPublicActor;
+    actor: TdmsSourceActor;
     set: TdmsProcessingRevisionSet;
     records: TdmsRuntimeRecordMetadata[];
     assertions: TdmsStoredAssertion[];
@@ -121,7 +124,7 @@ export interface TdmsRuntimeAuthority {
 }
 interface Snapshot {
   context: TdmsRuntimeTaskContext;
-  actor: TdmsPublicActor;
+  actor: TdmsSourceActor;
   grants: TdmsSourceGrant[];
   records: TdmsRuntimeRecordMetadata[];
 }
@@ -138,10 +141,10 @@ const LIMITATIONS = [
  * body store, synthetic actor, Wiki receipt reuse or permission fallback. */
 export class HostTdmsRuntimeReader implements TdmsRuntimeReaderPort {
   constructor(
-    private readonly sets: TdmsProcessingSetService,
+    private readonly sets: TdmsProcessingSetService<TdmsSourceActor>,
     private readonly repository: TdmsProcessingSetRepository,
-    private readonly authorization: TdmsSourceAuthorization,
-    private readonly documents: TdmsDocumentAccess,
+    private readonly authorization: TdmsSourceAuthorization<TdmsSourceActor>,
+    private readonly documents: TdmsDocumentAccess<TdmsSourceActor>,
     private readonly authority?: TdmsRuntimeAuthority,
   ) {}
   async discover(
@@ -422,7 +425,7 @@ export class HostTdmsRuntimeReader implements TdmsRuntimeReaderPort {
     ])
       identifier(value);
     const actor = await this.authority.authenticate(principal, binding);
-    assertPublicActor(actor);
+    assertTdmsSourceActor(actor);
     if (
       actor.canonicalSubject.id !== binding.actorUserId ||
       actor.tenantId !== binding.tenantId ||
@@ -432,7 +435,7 @@ export class HostTdmsRuntimeReader implements TdmsRuntimeReaderPort {
     return actor;
   }
   private async sourceAccess(
-    actor: TdmsPublicActor,
+    actor: TdmsSourceActor,
     scope: TdmsRuntimeSelection['scope'],
     binding: TdmsRuntimeTaskBinding,
   ) {
@@ -815,7 +818,9 @@ function identity(
     businessVersion: record.businessVersion ?? null,
   };
 }
-function metadataOf(value: TdmsStoredRevision): TdmsRuntimeRecordMetadata {
+function metadataOf(
+  value: TdmsStoredRevisionMetadata,
+): TdmsRuntimeRecordMetadata {
   const r = value.record;
   // Deliberate finite copy. Object spreading/destructuring a revision reads content getters.
   const record: TdmsRecordSummary = {

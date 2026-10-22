@@ -97,6 +97,8 @@ export interface CanonicalVerifiedApplicabilityContextScope extends CanonicalVer
 }
 
 export interface CanonicalServiceScopeAuthorizationPort {
+  /** Pure transport/configuration check. Object and lease checks use the caller's TX. */
+  assertOpenClawWorkItemTransport?(scope: CanonicalVerifiedServiceScope): Promise<void>;
   authorizeOpenClawAutoWorkItemQueue(): Promise<CanonicalVerifiedAutoWorkItemQueueScope>;
   assertAutoWorkItemQueueTransport(): Promise<void>;
   authorizeDocumentWork?(input: {

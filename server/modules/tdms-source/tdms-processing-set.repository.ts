@@ -14,7 +14,9 @@ import { SqlTdmsTransaction } from './tdms-source.repository';
 import type {
   TdmsProcessingSetRepository,
   TdmsProcessingSetTransaction,
+  TdmsStoredRevisionMetadata,
 } from './tdms-processing-set.types';
+import { TDMS_PROCESSING_METADATA_FIELDS } from './tdms-processing-set.types';
 
 /** Explicit inactive repository seam, using the existing actor-scoped transaction. */
 export class MiaodaTdmsProcessingSetRepository implements TdmsProcessingSetRepository {
@@ -43,6 +45,35 @@ export class SqlTdmsProcessingSetTransaction
     );
     if (!rows[0]) return null;
     if (rows[0].data_kind !== 'object')
+      throw tdmsError('TDMS_SET_STORED_DATA_INVALID', 409);
+    return storedData(rows[0].data);
+  }
+  async revisionMetadata(tenantId: string, ref: string) {
+    const rows = await this.setDb.execute<{
+      data: TdmsStoredRevisionMetadata;
+      data_kind: string;
+      record_kind: string;
+      raw_fields_kind: string;
+    }>(sql`SELECT jsonb_build_object('scope',data->'scope','record',
+      (SELECT coalesce(jsonb_object_agg(field.key,field.value),'{}'::jsonb)
+        FROM jsonb_each(CASE WHEN jsonb_typeof(data->'record')='object'
+          THEN data->'record' ELSE '{}'::jsonb END) AS field
+        WHERE field.key IN (${sql.join(
+          TDMS_PROCESSING_METADATA_FIELDS.map((key) => sql`${key}`),
+          sql`, `,
+        )}))
+      || jsonb_build_object('rawFields',jsonb_build_object(
+        'sourceModifiedRaw',data#>'{record,rawFields,sourceModifiedRaw}',
+        'opinionCollection',data#>'{record,rawFields,opinionCollection}'))) AS data,
+      jsonb_typeof(data) AS data_kind,jsonb_typeof(data->'record') AS record_kind,
+      jsonb_typeof(data#>'{record,rawFields}') AS raw_fields_kind
+      FROM tdms_record_revision WHERE tenant_id=${tenantId} AND source_revision_ref=${ref}`);
+    if (!rows[0]) return null;
+    if (
+      [rows[0].data_kind, rows[0].record_kind, rows[0].raw_fields_kind].some(
+        (kind) => kind !== 'object',
+      )
+    )
       throw tdmsError('TDMS_SET_STORED_DATA_INVALID', 409);
     return storedData(rows[0].data);
   }

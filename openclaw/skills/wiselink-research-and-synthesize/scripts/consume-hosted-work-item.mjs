@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, readdir } from 'node:fs/promises';
+import { lstat, readFile, readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import process from 'node:process';
@@ -80,6 +80,9 @@ const HOST_ERROR_TOOLS = new Set([...INITIAL_TOOLS,
 export async function consumeHostedWorkItem(options, dependencies) {
   assertSingleConsumerSubject(options);
   assertExpectedInitialOperationMode(options);
+  assertJobAidRunLimits(options);
+  if (options.workItemId && (await readExplicitJobAidBudgets(options)).length && !options.jobAidRunLimits)
+    throw new Error('JOBAID_RUN_LIMIT_REQUIRED');
   if ((options.matterPreflightOnly || options.matterExpectedSnapshot !== undefined) && !options.matterId)
     throw new Error('MATTER_PREFLIGHT_TARGET_REQUIRED');
   if (options.matterPreflightOnly && options.matterExpectedSnapshot !== undefined)
@@ -253,8 +256,109 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   const report = await dependencies.checkpoint.withActiveClaimOwner(() => options.parkCancelledClaim
     ? parkCancelledAutomaticClaim(options, { ...dependencies, validateClaim: validateStoredAutoClaim })
     : options.finishBlockedClaim ? finishBlockedAutomaticClaim(options, dependencies)
-      : consumeAutomaticWorkItemQueueTickOwned(options, dependencies));
+      : consumeAutomaticQueueTurn(options, dependencies));
   return { ...report, ...checkpointWarnings(report?.localCheckpointWarnings, dependencies.checkpoint.diagnostics) };
+}
+
+export function automaticQueueBatchOptions(argv) {
+  const flags = ['--queue-max-items', '--queue-tick-budget-ms'];
+  if (flags.some(flag => argv.filter(arg => arg === flag).length > 1 ||
+      argv.some(arg => arg.startsWith(flag + '='))))
+    throw new Error('AUTO_QUEUE_BATCH_OPTIONS_INVALID');
+  const maxQueueItems = Number(option(argv, flags[0]) ?? 4);
+  const queueTickBudgetMs = Number(option(argv, flags[1]) ?? 15 * 60_000);
+  if (!Number.isSafeInteger(maxQueueItems) || maxQueueItems < 1 || maxQueueItems > 16 ||
+      !Number.isSafeInteger(queueTickBudgetMs) || queueTickBudgetMs < 1000 || queueTickBudgetMs > 15 * 60_000)
+    throw new Error('AUTO_QUEUE_BATCH_OPTIONS_INVALID');
+  return { maxQueueItems, queueTickBudgetMs };
+}
+
+function completedAutomaticDispatch(report) {
+  if (['ACKNOWLEDGED', 'WIKI_DISPATCHED', 'WIKI_MATTER_DISPATCHED'].includes(report?.status)) return true;
+  if (report?.status === 'REVIEW_DISPATCHED')
+    return ['CANDIDATE_SAVED', 'IDLE'].includes(report.review?.status);
+  if (report?.status === 'OVERALL_DISPATCHED') return report.overall?.status === 'SUCCESSOR_OVERALL_SAVED';
+  return report?.status === 'DOCUMENT_DISPATCHED' &&
+    ['DOCUMENT_READY', 'DOCUMENT_READY_WITH_LIMITATIONS', 'READING_SAVED', 'IDLE'].includes(report.document?.status);
+}
+
+async function automaticQueueBoundary(checkpoint) {
+  return (await Promise.all(['active-claim', 'active-wiki', 'active-successor-overall']
+    .map(key => checkpoint.readOptional(key)))).every(value => value === null);
+}
+
+async function consumeAutomaticQueueTurn(options, dependencies) {
+  if (options.repairStoppedClaim || typeof dependencies.consumeWikiIdle !== 'function')
+    return consumeAutomaticWorkItemQueueTickOwned(options, dependencies);
+  const { checkpoint } = dependencies;
+  // Existing work, provider UNKNOWN and successor recovery precede the fairness
+  // cursor. A damaged new cursor can never preempt or block those recoveries.
+  if (!await automaticQueueBoundary(checkpoint)) {
+    const report = await consumeAutomaticWorkItemQueueTickOwned(options, dependencies);
+    if ((completedAutomaticDispatch(report) || report.status === 'WIKI_ATTENTION') &&
+        await automaticQueueBoundary(checkpoint))
+      await checkpoint.write('queue-turn', report.status.startsWith('WIKI_') ? 'WORK' : 'WIKI');
+    return report;
+  }
+  const turn = await checkpoint.readOptional('queue-turn');
+  if (turn !== null && !['WORK', 'WIKI'].includes(turn)) throw new Error('AUTO_QUEUE_TURN_INVALID');
+  let wiki;
+  const nextWiki = () => wiki ??= Promise.resolve().then(() => dependencies.consumeWikiIdle());
+  if (turn === 'WIKI' && await automaticQueueBoundary(checkpoint)) {
+    const result = await nextWiki();
+    const releasedAttention = result.status === 'WIKI_ATTENTION' && await automaticQueueBoundary(checkpoint);
+    if (!['IDLE', 'ATTENTION'].includes(result.status) && !releasedAttention) {
+      if (completedAutomaticDispatch(result) && await automaticQueueBoundary(checkpoint))
+        await checkpoint.write('queue-turn', 'WORK');
+      return result;
+    }
+    // An empty Wiki queue yields to ordinary work in the same tick. Preserve an
+    // explicit discovery ATTENTION without calling or generating that Wiki twice.
+    await checkpoint.write('queue-turn', 'WORK');
+  }
+  const report = await consumeAutomaticWorkItemQueueTickOwned(options, {
+    ...dependencies, consumeWikiIdle: nextWiki,
+  });
+  if (completedAutomaticDispatch(report) && await automaticQueueBoundary(checkpoint))
+    await checkpoint.write('queue-turn', report.status.startsWith('WIKI_') ? 'WORK' : 'WIKI');
+  const observedWiki = wiki ? await wiki : null;
+  return ['ATTENTION', 'WIKI_ATTENTION'].includes(observedWiki?.status) && report !== observedWiki
+    ? { ...report, wikiAttention: observedWiki } : report;
+}
+
+/** One endpoint owner remains held across a bounded sequential batch. Never
+ * start another subject after pending/UNKNOWN/attention or an active pointer. */
+export async function consumeAutomaticWorkItemQueueBatch(options, dependencies) {
+  if (options.repairStoppedClaim || options.finishBlockedClaim || options.parkCancelledClaim)
+    return consumeAutomaticWorkItemQueueTick(options, dependencies);
+  const limits = automaticQueueBatchOptions([
+    '--queue-max-items', String(options.maxQueueItems ?? 4),
+    '--queue-tick-budget-ms', String(options.queueTickBudgetMs ?? 15 * 60_000),
+  ]);
+  if (typeof dependencies.checkpoint?.withActiveClaimOwner !== 'function')
+    throw new Error('AUTO_WORK_ITEM_QUEUE_DEPENDENCIES_INVALID');
+  const monotonicNow = dependencies.monotonicNow ?? (() => performance.now());
+  const startedAt = monotonicNow();
+  const reports = [];
+  let stopReason = 'ITEM_LIMIT';
+  await dependencies.checkpoint.withActiveClaimOwner(async () => {
+    for (let index = 0; index < limits.maxQueueItems; index += 1) {
+      const report = await consumeAutomaticQueueTurn(options, dependencies);
+      reports.push(report);
+      if ((!completedAutomaticDispatch(report) && report?.status !== 'EXPLICIT_BUDGET_DEFERRED') ||
+          !await automaticQueueBoundary(dependencies.checkpoint)) {
+        stopReason = 'PENDING_OR_IDLE';
+        break;
+      }
+      if (monotonicNow() - startedAt >= limits.queueTickBudgetMs) {
+        stopReason = 'TIME_BUDGET';
+        break;
+      }
+    }
+  });
+  const report = reports.length === 1 ? reports[0] : { status: 'AUTO_QUEUE_BATCH', reports };
+  return { ...report, queueBatch: { ...limits, processedItems: reports.length, stopReason },
+    ...checkpointWarnings(dependencies.checkpoint.diagnostics) };
 }
 
 function checkpointWarnings(...sources) {
@@ -319,6 +423,11 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
     if (claim || options.repairStoppedClaim || typeof dependencies.consumeSuccessorOverall !== 'function')
       throw new Error('AUTO_WORK_ITEM_SUCCESSOR_CHECKPOINT_CONFLICT');
     return consumeSuccessorOverallPointer(activeSuccessor, checkpoint, dependencies.consumeSuccessorOverall);
+  }
+
+  if (claim) {
+    const deferred = await deferExplicitJobAidClaim(options, claim, checkpoint);
+    if (deferred) return deferred;
   }
 
   if (claim?.blockReady) {
@@ -437,6 +546,9 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
     };
     await checkpoint.write('active-claim', claim);
   }
+
+  const deferred = await deferExplicitJobAidClaim(options, claim, checkpoint);
+  if (deferred) return deferred;
 
   let statusValue = renewedCommitStatus ?? await dependencies.readInitialStatus(claim.workItemId);
   assertAutomaticClaimStatusBinding(claim, statusValue);
@@ -1132,7 +1244,19 @@ async function unusedInitialStageCheckpoint(options, binding) {
       if (!info.isDirectory() || info.isSymbolicLink())
         throw new Error('AUTO_WORK_ITEM_EXPLICIT_CHECKPOINT_UNAVAILABLE');
     }
-    return (await readdir(directory)).length === 0;
+    const entries = await readdir(directory);
+    if (entries.length === 0) return true;
+    // An operator may prepare only this new Host request's opt-in budget.
+    // Any execution intent, reservation or prior binding still forbids replay.
+    if (!options.jobAidRunLimits || entries.length !== 1 || entries[0] !== 'jobaid-run-budget.json') return false;
+    const budgetPath = join(directory, entries[0]);
+    const info = await lstat(budgetPath);
+    if (!info.isFile() || info.isSymbolicLink() || info.mode & 0o077) return false;
+    const budget = JSON.parse(await readFile(budgetPath, 'utf8'));
+    return budget.explicitOnly === true && budget.active === null &&
+      isDeepStrictEqual(budget.selection, problemContinuationBudgetSelection(binding)) &&
+      isDeepStrictEqual(budget.limits, options.jobAidRunLimits) &&
+      isDeepStrictEqual(budget.counts, { modelRequests: 0, saves: 0, finishes: 0 });
   } catch (error) {
     throw new Error('AUTO_WORK_ITEM_EXPLICIT_CHECKPOINT_UNAVAILABLE', { cause: error });
   }
@@ -1379,6 +1503,7 @@ export async function runHostedSuccessorOverall(pointer, dependencies) {
 
 export async function runHostedInitialStage(options, dependencies) {
   const { operation, initial } = options;
+  assertJobAidRunLimits(options, operation);
   if (!INITIAL_ANALYSIS_OPERATIONS.includes(operation)) throw new Error('INITIAL_OPERATION_INVALID');
   const continuationRequestId = Object.hasOwn(options, 'autoRetryRequestId')
     ? optionalInitialStageRequest(options, 'autoRetryRequestId')
@@ -1413,6 +1538,24 @@ export async function runHostedInitialStage(options, dependencies) {
   }
   if (binding && continuationRequestId && binding.requestId !== continuationRequestId)
     throw new Error('INITIAL_CHECKPOINT_REQUEST_MISMATCH');
+  const preparedBudget = (await readExplicitJobAidBudgets(options))
+    .find(item => item.state.selection.operation === operation);
+  const budgetSelection = ['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation)
+    ? { ...exactBinding, requestId: continuationRequestId ?? null } : undefined;
+  const requestScopedBudget = preparedBudget && continuationRequestId &&
+    preparedBudget.state.selection.requestId !== continuationRequestId;
+  if (requestScopedBudget) {
+    if (options.explicitStageRequest === undefined) throw new Error('JOBAID_RUN_LIMIT_SELECTION_CHANGED');
+    assertExplicitProblemContinuationRequest(options, initial, operation);
+    if (preparedBudget.state.selection.requestId !== null ||
+        preparedBudget.state.selection.documentVersionId !== initial.documentVersionId ||
+        (await checkpoint.readOptional('jobaid-run-budget'))?.explicitOnly !== true)
+      throw new Error('JOBAID_CONTINUATION_BUDGET_REQUIRED');
+  }
+  const budgetCheckpoint = requestScopedBudget ? checkpoint : preparedBudget?.checkpoint ?? (options.jobAidRunLimits
+    ? await createCheckpointStore(initialStageCheckpointPath(options, operation)) : checkpoint);
+  const jobAidBudget = await createJobAidRunBudget(budgetCheckpoint, options.jobAidRunLimits,
+    Boolean(binding), budgetSelection);
   const runBinding = binding ?? { ...exactBinding, requestId: continuationRequestId ??
     (operation === 'EXTRACT_APPLICABILITY' ? randomUUID() : null) };
   if (!binding) await checkpoint.writeOnce('binding', runBinding);
@@ -1448,7 +1591,7 @@ export async function runHostedInitialStage(options, dependencies) {
       ? { ...args, workItemId: options.workItemId } : args;
     const count = (callCounts.get(name) ?? 0) + 1;
     callCounts.set(name, count);
-    if (name.startsWith('commit_') && args.phase !== 'UPLOAD_PART') finalCommitStarted = true;
+    if (!jobAidBudget && name.startsWith('commit_') && args.phase !== 'UPLOAD_PART') finalCommitStarted = true;
     const freshAssessmentCall = problemAssessment && !name.startsWith('commit_');
     const recoveryBegin = options.assessmentRecovery?.status === 'RECOVERY_BEGIN';
     const sealedCommitReplay = options.assessmentRecovery?.status === 'RECOVERY_COMMITTING' &&
@@ -1465,16 +1608,37 @@ export async function runHostedInitialStage(options, dependencies) {
       !await checkpoint.readOptional('begin_applicability_evaluation-1.result') &&
       !await checkpoint.readOptional('model.started') &&
       !await checkpoint.readOptional('commit_applicability_candidate-1.started');
+    const dispatch = async () => {
+      const perform = () => {
+        if (name.startsWith('commit_') && args.phase !== 'UPLOAD_PART') finalCommitStarted = true;
+        return dependencies.callTool(name, scopedArgs);
+      };
+      const kind = name === 'save_assessment_work' ? 'saves'
+        : ['commit_dynamic_evaluation_candidate', 'commit_overall_candidate'].includes(name) ? 'finishes' : null;
+      return jobAidBudget && kind ? jobAidBudget.dispatch(kind, perform, args) : perform();
+    };
     const value = freshAssessmentCall || sealedCommitReplay || sealedStatusRead ||
       (options.assessmentRecovery && name.startsWith('begin_') && !recoveryBegin)
-      ? await dependencies.callTool(name, scopedArgs) : await checkpoint.remoteStep({
+      ? await dispatch() : await checkpoint.remoteStep({
       // Keep c114 checkpoint identity stable for an already-started JobAid run.
       // The exact WorkItem is also frozen in the enclosing checkpoint binding.
       step: `${name}-${count}`, args,
       ambiguousCommit: name.startsWith('commit_'),
       allowExactReplay: exactApplicabilityBeginReplay,
-      perform: () => dependencies.callTool(name, scopedArgs),
+      perform: dispatch,
     });
+    if (requestScopedBudget && name.startsWith('begin_')) {
+      const expected = options.explicitStageRequest;
+      const task = value.task;
+      const key = operation === 'EVALUATE_JOBAID' ? 'dynamic' : 'overall';
+      if (name !== INITIAL_ASSESSMENT_OPERATIONS[operation].begin || value.status !== 'RUNNING' ||
+          value.attemptRef !== expected.attemptRef || task?.operationRef !== expected.attemptRef ||
+          task.workItemId !== expected.workItemId || task.documentVersionId !== expected.documentVersionId ||
+          task.inputRevision !== expected.workItemRevision || task.baseRevision !== expected.workItemRevision ||
+          task.idempotencyKey !== `openclaw-v2:${key}:${expected.workItemId}:${expected.documentVersionId}:${expected.requestId}`)
+        throw new Error('AUTO_WORK_ITEM_EXPLICIT_STAGE_CHANGED');
+    }
+    await jobAidBudget?.reconcile(name, value);
     if (name.startsWith('begin_') && options.assessmentRecovery?.status === 'RECOVERY_COMMITTING')
       assertCommittingInitialClaim(options.assessmentRecovery.previousClaim ??
         { attemptRef: options.assessmentRecovery.attemptRef }, value);
@@ -1504,6 +1668,7 @@ export async function runHostedInitialStage(options, dependencies) {
   const invoke = async (modelInput, runtimeHooks = {}) => {
     if (options.queueCommitRecovery) throw new Error('AUTO_WORK_ITEM_COMMITTING_RECOVERY_MODEL_REJECTED');
     const assessment = problemAssessment && ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(modelInput.schemaVersion);
+    if (jobAidBudget && !assessment) throw new Error('JOBAID_RUN_LIMIT_PROTOCOL_REQUIRED');
     const perform = () => {
       modelCallCount += 1;
       return dependencies.invokeInitialModel({ operation, modelInput }, {
@@ -1516,6 +1681,7 @@ export async function runHostedInitialStage(options, dependencies) {
         queryAssessmentKnowledge: runtimeHooks.queryAssessmentKnowledge,
         saveAssessmentWork: runtimeHooks.saveAssessmentWork,
         readAssessmentWork: runtimeHooks.readAssessmentWork,
+        ...(jobAidBudget ? { runModelRequest: perform => jobAidBudget.dispatch('modelRequests', perform) } : {}),
         assessmentBinding: runtimeHooks.assessmentBinding,
         observeModelOutput: (shape, round = 1) => checkpoint.observeAuxiliary(
           `${runtimeHooks.checkpointKey ?? 'model'}.output-shape${round === 1 ? '' : '-' + round}`, shape,
@@ -1567,6 +1733,7 @@ export async function runHostedInitialStage(options, dependencies) {
       provenance: result.provenance,
       workItemRevision: after.workItemRevision,
       candidateOnly: true,
+      ...(jobAidBudget ? { jobAidRunBudget: jobAidBudget.snapshot() } : {}),
     };
     // An uncertain result is retained as attention, never converted into a retry.
     if (options.assessmentRecovery?.status === 'RECOVERY_COMMITTING')
@@ -1579,12 +1746,13 @@ export async function runHostedInitialStage(options, dependencies) {
   } catch (error) {
     if (error?.message === 'INITIAL_ASSESSMENT_STILL_OWNED')
       return { status: 'BUSY', operation, nextOperation: null, modelCallCount, candidateOnly: true };
-    if (startedAttempt && !finalCommitStarted) {
+    if (startedAttempt && (!finalCommitStarted || jobAidBudget)) {
       // Unknown provider/transport state is not user cancellation. Only the
       // orchestrator's validated failed ResultEnvelope may finish a known failure.
       const gatewayTransportFailure = hostedGatewayTransportFailureDiagnostic(error);
       const report = { status: 'REQUIRES_ATTENTION', operation, attemptRef: startedAttempt,
         attemptStatus: 'UNKNOWN', errorCode: errorCode(error), modelCallCount, candidateOnly: true,
+        ...(jobAidBudget ? { jobAidRunBudget: jobAidBudget.snapshot() } : {}),
         ...(gatewayTransportFailure ? { gatewayTransportFailure } : {}) };
       await checkpoint.writeAuxiliary('run-result', report);
       return checkpoint.diagnostics.length
@@ -1597,6 +1765,7 @@ export async function runHostedInitialStage(options, dependencies) {
 function readInitialStatus(value, workItemId) {
   const status = value?.initialAnalysis;
   if (value?.entry?.workItemId !== workItemId || !status || status.candidateOnly !== true ||
+    (status.workItemId !== undefined && status.workItemId !== workItemId) ||
     typeof status.documentVersionId !== 'string' || !status.documentVersionId ||
     !Number.isSafeInteger(status.workItemRevision) || !status.stages ||
     !['NOT_READY', 'REQUIRED', 'BUSY', 'WAITING_INPUT', 'FAILED', 'CONFLICT', 'SUCCEEDED'].includes(status.status) ||
@@ -1637,6 +1806,236 @@ function option(argv, name) {
   return index < 0 ? undefined : argv[index + 1];
 }
 
+const JOBAID_RUN_LIMIT_FLAGS = {
+  modelRequests: '--jobaid-max-model-requests',
+  saves: '--jobaid-max-saves',
+  finishes: '--jobaid-max-finishes',
+};
+
+function assertJobAidRunLimits(options, operation) {
+  const limits = options.jobAidRunLimits;
+  if (limits === undefined) return;
+  const keys = Object.keys(JOBAID_RUN_LIMIT_FLAGS);
+  if (!isRecord(limits) || Object.keys(limits).length !== keys.length ||
+      keys.some(key => !Number.isSafeInteger(limits[key]) || limits[key] < 1))
+    throw new Error('JOBAID_RUN_LIMIT_INVALID');
+  if (!options.workItemId || options.matterId || options.documentVersionId ||
+      options.initialStageOnly !== true || options.maxInitialStages !== 1 ||
+      !['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(options.expectedInitialOperation) ||
+      (operation !== undefined && operation !== options.expectedInitialOperation) ||
+      options.autoRetry || options.repairingRecovery || options.repairStoppedClaim || options.queueCommitRecovery)
+    throw new Error('JOBAID_RUN_LIMIT_SCOPE_INVALID');
+}
+
+/** Opt-in limits apply only to one explicitly selected problem-assessment stage. */
+export function jobAidRunLimitOptions(argv, options) {
+  const flags = Object.values(JOBAID_RUN_LIMIT_FLAGS);
+  if (argv.some(arg => arg.startsWith('--jobaid-') && !flags.includes(arg)))
+    throw new Error('JOBAID_RUN_LIMIT_INVALID');
+  const present = flags.some(flag => argv.some(arg => arg === flag || arg.startsWith(`${flag}=`)));
+  if (!present) return {};
+  const limits = {};
+  for (const [key, flag] of Object.entries(JOBAID_RUN_LIMIT_FLAGS)) {
+    const value = option(argv, flag);
+    if (argv.filter(arg => arg === flag).length !== 1 ||
+        argv.some(arg => arg.startsWith(`${flag}=`)) || !/^[1-9]\d*$/u.test(value ?? ''))
+      throw new Error('JOBAID_RUN_LIMIT_INVALID');
+    limits[key] = Number(value);
+  }
+  assertJobAidRunLimits({ ...options, jobAidRunLimits: limits });
+  return { jobAidRunLimits: limits };
+}
+
+/** Reuse the stage checkpoint: reserved calls survive a restart and cannot gain
+ * more quota by changing/removing options. A lost outcome permits reads only.
+ * Reservations are conservative if a process stops before dispatch; they are
+ * never a claim about Gateway-internal provider dispatches.
+ */
+async function createJobAidRunBudget(checkpoint, limits, hasBinding, selection) {
+  const step = 'jobaid-run-budget';
+  let state = await checkpoint.readOptional(step);
+  if (!limits && !state) return null;
+  if (!limits) throw new Error('JOBAID_RUN_LIMIT_REQUIRED');
+  limits = { ...limits };
+  if (!state) {
+    if (hasBinding) throw new Error('JOBAID_RUN_LIMIT_LEGACY_CHECKPOINT');
+    state = { limits, counts: { modelRequests: 0, saves: 0, finishes: 0 }, active: null,
+      ...(selection ? { explicitOnly: true, selection } : {}) };
+    await checkpoint.writeOnce(step, state);
+  } else if (!isDeepStrictEqual(state.limits, limits) ||
+      Object.keys(limits).some(key => !Number.isSafeInteger(state.counts?.[key]) ||
+        state.counts[key] < 0 || state.counts[key] > limits[key]) ||
+      (state.active !== null && !Object.hasOwn(limits, state.active?.kind))) {
+    throw new Error('JOBAID_RUN_LIMIT_CHECKPOINT_CHANGED');
+  }
+  if (selection && !isDeepStrictEqual(state.selection, selection))
+    throw new Error('JOBAID_RUN_LIMIT_SELECTION_CHANGED');
+  const complete = async () => {
+    state = { ...state, active: null };
+    await checkpoint.write(step, state);
+  };
+  return {
+    snapshot: () => ({ limits: { ...state.limits }, dispatchReservations: { ...state.counts },
+      pendingOutcome: state.active?.kind ?? null, upstreamDispatchCount: null }),
+    dispatch: async (kind, perform, args = {}) => {
+      if (state.active) throw new Error('JOBAID_RUN_OUTCOME_UNKNOWN');
+      if (state.counts[kind] >= limits[kind]) {
+        const label = kind === 'modelRequests' ? 'MODEL_HTTP' : kind === 'saves' ? 'SAVE' : 'FINISH';
+        throw new Error(`JOBAID_${label}_BUDGET_EXHAUSTED`);
+      }
+      // Exclusive existing checkpoint writes also stop competing consumers
+      // from reserving the same ordinal before either dispatches.
+      await checkpoint.writeOnce(`${step}-${kind}-${state.counts[kind] + 1}`, {
+        kind, ordinal: state.counts[kind] + 1,
+      });
+      state = { ...state, counts: { ...state.counts, [kind]: state.counts[kind] + 1 },
+        active: { kind, ...(kind === 'saves' ? { requestId: args.requestId } : {}),
+          ...(kind === 'finishes' ? { attemptRef: args.attemptRef, contentHash: args.result?.contentHash } : {}) } };
+      await checkpoint.write(step, state);
+      let value;
+      try { value = await perform(); }
+      catch (error) {
+        // Host materializes requirementHandling before work.save. This exact
+        // received validation rejection is a known non-write, still charged
+        // against the SAVE cap. Other Host errors may follow a committed write.
+        if (kind === 'saves' && error?.receivedHostToolError === true &&
+            error.hostToolName === 'save_assessment_work' &&
+            error.hostErrorCode === 'JOBAID_REQUIREMENTS_INVALID') await complete();
+        throw error;
+      }
+      await complete();
+      return value;
+    },
+    reconcile: async (name, value) => {
+      const active = state.active;
+      if ((name === 'read_assessment_work' && active?.kind === 'saves' &&
+          typeof active.requestId === 'string' && value?.revision?.requestId === active.requestId) ||
+          (name === 'get_action_attempt_status' && active?.kind === 'finishes' &&
+          typeof active.contentHash === 'string' && value?.attemptRef === active.attemptRef &&
+          value?.resultContentHash === active.contentHash && ['SUCCEEDED', 'WAITING_INPUT', 'FAILED'].includes(value?.status)))
+        await complete();
+    },
+  };
+}
+
+/** Prepare only the two existing stage budgets before a controlled initial run.
+ * The selection is WI/operation scoped: a later request suffix is not new quota.
+ * This writes local control metadata only and never claims or calls Host.
+ */
+export async function prepareExplicitJobAidRunBudgets(options) {
+  assertSingleConsumerSubject({ workItemId: options.workItemId, matterId: options.matterId });
+  if (!isAbsolute(options.checkpointRoot ?? '') ||
+      !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(options.documentVersionId ?? '') ||
+      options.matterId)
+    throw new Error('JOBAID_RUN_LIMIT_SELECTION_INVALID');
+  const stages = [['EVALUATE_JOBAID', options.jobAidRunLimits],
+    ['SYNTHESIZE_OVERALL', options.overallRunLimits]];
+  for (const [operation, limits] of stages) {
+    assertJobAidRunLimits({ ...options, documentVersionId: undefined, initialStageOnly: true,
+      maxInitialStages: 1, expectedInitialOperation: operation, jobAidRunLimits: limits });
+    if (!limits) throw new Error('JOBAID_RUN_LIMIT_INVALID');
+  }
+  const prepared = [];
+  for (const [operation, limits] of stages) {
+    const checkpoint = await createCheckpointStore(initialStageCheckpointPath(options, operation));
+    const selection = { workItemId: options.workItemId, documentVersionId: options.documentVersionId,
+      operation, requestId: null };
+    const budget = await createJobAidRunBudget(checkpoint, limits,
+      (await checkpoint.readOptional('binding')) !== null, selection);
+    prepared.push({ operation, ...budget.snapshot() });
+  }
+  return { workItemId: options.workItemId, documentVersionId: options.documentVersionId, prepared };
+}
+
+function problemContinuationBudgetSelection(binding) {
+  return { workItemId: binding.workItemId, documentVersionId: binding.documentVersionId,
+    operation: binding.operation, requestId: binding.requestId };
+}
+
+function assertExplicitProblemContinuationRequest(options, initial, operation) {
+  assertExplicitInitialStageRequest(options, initial);
+  const binding = options.explicitStageRequest;
+  if (!binding || binding.operation !== operation || !['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation) ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(binding.requestId ?? ''))
+    throw new Error('AUTO_WORK_ITEM_EXPLICIT_STAGE_CHANGED');
+  return binding;
+}
+
+/** Opt-in control preparation for one normal Host continuation. Its limits
+ * are supplied by the reviewed run configuration, not a product-wide ledger.
+ * The previous stage budget and its UNKNOWN outcome remain untouched. */
+export async function prepareExplicitJobAidContinuationBudget(options, dependencies) {
+  assertSingleConsumerSubject(options);
+  assertJobAidRunLimits(options, options.expectedInitialOperation);
+  if (!isAbsolute(options.checkpointRoot ?? '') || !options.jobAidRunLimits ||
+      typeof dependencies?.callTool !== 'function') throw new Error('JOBAID_RUN_LIMIT_SELECTION_INVALID');
+  const initial = readInitialStatus(await dependencies.callTool('get_parse_status',
+    { workItemId: options.workItemId }), options.workItemId);
+  assertExpectedInitialOperationStatus(options.expectedInitialOperation, initial);
+  const binding = assertExplicitProblemContinuationRequest(options, initial, options.expectedInitialOperation);
+  const previous = (await readExplicitJobAidBudgets(options))
+    .find(item => item.state.selection.operation === binding.operation);
+  if (!previous || previous.state.selection.requestId !== null ||
+      previous.state.selection.documentVersionId !== binding.documentVersionId)
+    throw new Error('JOBAID_CONTINUATION_ORIGINAL_BUDGET_REQUIRED');
+  if (!await unusedInitialStageCheckpoint(options, binding))
+    throw new Error('AUTO_WORK_ITEM_EXPLICIT_CHECKPOINT_CHANGED');
+  const checkpoint = await createCheckpointStore(initialStageCheckpointPath(options, binding.operation, binding.requestId));
+  const selection = problemContinuationBudgetSelection(binding);
+  const budget = await createJobAidRunBudget(checkpoint, options.jobAidRunLimits, false, selection);
+  return { status: 'EXPLICIT_CONTINUATION_BUDGET_PREPARED', selection,
+    previousRunBudget: { limits: { ...previous.state.limits },
+      dispatchReservations: { ...previous.state.counts }, pendingOutcome: previous.state.active?.kind ?? null },
+    ...budget.snapshot() };
+}
+
+async function readExplicitJobAidBudgets(options) {
+  if (!options.workItemId || typeof options.checkpointRoot !== 'string') return [];
+  const budgets = [];
+  for (const operation of ['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL']) {
+    const directory = initialStageCheckpointPath(options, operation).trim();
+    try { await lstat(join(directory, 'jobaid-run-budget.json')); }
+    catch (error) { if (error?.code === 'ENOENT') continue; throw error; }
+    const checkpoint = await createCheckpointStore(directory);
+    const state = await checkpoint.readOptional('jobaid-run-budget');
+    const selected = state?.selection;
+    if (!isRecord(state) || state.explicitOnly !== true || !isRecord(selected) ||
+        !isDeepStrictEqual(Object.keys(selected).sort(), ['documentVersionId', 'operation', 'requestId', 'workItemId']) ||
+        selected.workItemId !== options.workItemId || selected.operation !== operation ||
+        !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(selected.documentVersionId ?? '') ||
+        (selected.requestId !== null && !/^[A-Za-z0-9_-]{1,64}$/u.test(selected.requestId ?? '')) ||
+        !isRecord(state.limits) || !isRecord(state.counts) ||
+        !isDeepStrictEqual(Object.keys(state.limits).sort(), ['finishes', 'modelRequests', 'saves']) ||
+        !isDeepStrictEqual(Object.keys(state.counts).sort(), ['finishes', 'modelRequests', 'saves']) ||
+        Object.keys(state.limits).some(key => !Number.isSafeInteger(state.limits[key]) || state.limits[key] < 1 ||
+          !Number.isSafeInteger(state.counts[key]) || state.counts[key] < 0 || state.counts[key] > state.limits[key]) ||
+        (state.active !== null && !Object.hasOwn(state.limits, state.active?.kind)))
+      throw new Error('JOBAID_RUN_LIMIT_CHECKPOINT_CHANGED');
+    budgets.push({ checkpoint, state });
+  }
+  if (budgets.some(item => item.state.selection.documentVersionId !== budgets[0].state.selection.documentVersionId))
+    throw new Error('JOBAID_RUN_LIMIT_SELECTION_CHANGED');
+  return budgets;
+}
+
+async function deferExplicitJobAidClaim(options, claim, automaticCheckpoint) {
+  const [budget] = await readExplicitJobAidBudgets({ ...options, workItemId: claim.workItemId });
+  if (!budget) return null;
+  if (budget.state.selection.documentVersionId !== claim.documentVersionId)
+    throw new Error('JOBAID_RUN_LIMIT_SELECTION_CHANGED');
+  // Retain the exact real lease and all UNKNOWN/attention fields before ending
+  // this local automatic consumption. This is neither Host ACK nor BLOCK.
+  const receipt = `jobaid-run-budget-automatic-claim-${claim.leaseGeneration}-${randomUUID()}`;
+  await budget.checkpoint.writeOnce(receipt, claim);
+  if (!isDeepStrictEqual(await budget.checkpoint.readOptional(receipt), claim) ||
+      !isDeepStrictEqual(await automaticCheckpoint.readOptional('active-claim'), claim))
+    throw new Error('AUTO_WORK_ITEM_CLAIM_CHANGED');
+  await automaticCheckpoint.write('active-claim', null);
+  return { status: 'EXPLICIT_BUDGET_DEFERRED', workItemId: claim.workItemId,
+    documentVersionId: claim.documentVersionId, leaseGeneration: claim.leaseGeneration,
+    preservedClaimStep: receipt };
+}
+
 export function initialStageLimit(argv, workItemId, matterId, documentVersionId) {
   if (argv.some(arg => arg.startsWith('--max-initial-stages='))) {
     throw new Error('INITIAL_STAGE_LIMIT_INVALID');
@@ -1669,6 +2068,7 @@ export function automaticWorkItemQueueMode(argv) {
   const parks = argv.filter(arg => arg === '--park-cancelled-claim').length;
   const cancelledFinishes = argv.filter(arg => arg === '--finish-cancelled-claim').length;
   const expectations = argv.filter(arg => arg === '--park-expectation-file').length;
+  const batchFlags = argv.some(arg => arg.startsWith('--queue-'));
   const finishFields = ['--finish-work-item-id', '--finish-request-id', '--finish-document-version-id',
     '--finish-lease-generation', '--finish-blocked-at'];
   if (finishes > 1 || finishFields.some(flag => argv.filter(arg => arg === flag).length !== finishes) ||
@@ -1679,12 +2079,15 @@ export function automaticWorkItemQueueMode(argv) {
   if (wiki > 1 || (wiki && (repairs || finishes || parks || cancelledFinishes)))
     throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
   if (!occurrences) {
-    if (wiki) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+    if (wiki || batchFlags) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
     if (repairs || repairWorkItems || repairAttempts || finishes || parks || cancelledFinishes || expectations)
       throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
     return false;
   }
   if (occurrences !== 1) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+  if (batchFlags && (repairs || finishes || parks || cancelledFinishes))
+    throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+  automaticQueueBatchOptions(argv);
   if (recoveries > 1 || (recoveries && !/^[A-Za-z0-9_-]{1,96}$/u.test(
     option(argv, '--document-translation-recovery') ?? '')))
     throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
@@ -1698,6 +2101,7 @@ export function automaticWorkItemQueueMode(argv) {
     '--document-translation-recovery', '--park-expectation-file', ...finishFields,
     '--wiki-timeout-ms', '--wiki-max-completion-tokens', '--wiki-max-model-requests',
     '--wiki-reasoning-effort', '--wiki-provider-timeout-seconds',
+    '--queue-max-items', '--queue-tick-budget-ms',
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -1999,6 +2403,9 @@ async function main(argv, env) {
   if (argv.includes('--help')) {
     process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue [--park-cancelled-claim --park-expectation-file ABSOLUTE_0600_JSON] [--document-translation-recovery ID] [--repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...] [--finish-blocked-claim --finish-work-item-id WI-... --finish-request-id REQ-... --finish-document-version-id DV --finish-lease-generation N --finish-blocked-at UTC [--finish-cancelled-claim --park-expectation-file ABSOLUTE_0600_JSON]]] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. After Host admission repair, one document translation recovery ID may be added to the existing cron so the next natural tick checks Host again without clearing the old checkpoint. --repair-stopped-claim with both exact identity flags permits one operator-triggered successor only for a stopped claim with a failed no-work JobAid/Overall auto-retry after a bounded gateway change; it is never a cron option. --finish-blocked-claim is an operator-only exact existing BLOCK replay finalization; it archives the original claim/receipt under the endpoint owner lock, never ACKs a failure, and leaves new dispatch to the next natural tick. It requires Linux util-linux flock; competing owners and unsupported locking fail closed. --park-cancelled-claim is a separate operator-only, single BLOCK POST for the exact latest cancelled JobAid; it always retains the stopped claim and provider UNKNOWN. Only --finish-cancelled-claim with an exact private expectation file extends finalization to an existing cancellation BLOCK replay; it cannot create a fresh BLOCK or retry an unknown POST. Both require the compatible Host and a normal Skill/MCP installation, and are never cron options. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
     process.stdout.write('Wiki idle consumption: add --wiki-idle --wiki-timeout-ms N --wiki-max-completion-tokens N --wiki-max-model-requests N to --auto-queue, with --openclaw-config PATH; optionally --wiki-reasoning-effort low|high|max and --wiki-provider-timeout-seconds N. Uses the existing Hosted GLM5.3 profile, endpoint owner lock and capacity. An unresolved active-wiki checkpoint resumes before new user work; provider UNKNOWN or durable Host COMMITTING keeps it pinned. Platform backstop reserves the same Host queue. Install compatible Host/MCP/schema before enabling these flags.\n');
+    process.stdout.write('Explicit problem-assessment run limits: with --work-item-id WI-... --max-initial-stages 1 --expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL, optionally supply all three --jobaid-max-model-requests N --jobaid-max-saves N --jobaid-max-finishes N (positive integers). These cap local Hosted Gateway HTTP attempts, actual save_assessment_work calls and the selected stage commit calls. FINISH with workJson consumes a SAVE too. Each stage retains its own limits and dispatch reservations in its existing checkpoint; a lost outcome or exhausted budget stops without retry, forced save/finish, or advancing to another stage. They do not bound Gateway-internal provider dispatches. Without these flags normal behavior is unchanged.\n');
+    process.stdout.write('Controlled queue runs may prepare both existing stage budgets with prepareExplicitJobAidRunBudgets before claiming the exact WI. The budgets bind WI/operation and original request, so another request suffix cannot reset them. Natural automatic consumption retains a protected WI claim in that stage checkpoint and defers it without Host ACK/BLOCK; other queue items may continue. Host NEXT may still claim it again after lease expiry and perform its normal grant/attempt/takeover writes before this local guard sees it. This is not permanent preclaim exclusion.\n');
+    process.stdout.write('Automatic queue: --queue-max-items 1..16 (default 4), --queue-tick-budget-ms 1000..900000 (default 900000). Subjects run sequentially under the same endpoint lock; the time budget is checked between subjects and never aborts a running request. With --wiki-idle, completed ordinary work and Wiki alternate at free subject boundaries; empty Wiki probes yield in the same tick. Operator recovery remains one operation.\n');
     return;
   }
   const autoQueue = automaticWorkItemQueueMode(argv);
@@ -2029,6 +2436,9 @@ async function main(argv, env) {
   const stageLimit = autoQueue
     ? {}
     : initialStageLimit(argv, workItemId, matterId, documentVersionId);
+  const jobAidLimits = jobAidRunLimitOptions(argv, {
+    workItemId, matterId, documentVersionId, ...stageLimit,
+  });
   const runtime = await resolveRuntimeConfig(argv, env);
   if (!autoQueue && !matterPreflightOnly) assertHostedModelGatewayReady(runtime);
   const activityRunRef = option(argv, '--activity-run-ref');
@@ -2089,7 +2499,8 @@ async function main(argv, env) {
     const automaticCheckpoint = autoQueue ? await createCheckpointStore(join(checkpointRoot,
       'automatic-work-item-queue', encodeURIComponent(endpoint.origin + endpoint.pathname))) : null;
     const result = autoQueue
-      ? await consumeAutomaticWorkItemQueueTick({ checkpointRoot, repairStoppedClaim,
+      ? await consumeAutomaticWorkItemQueueBatch({ checkpointRoot, repairStoppedClaim,
+        ...automaticQueueBatchOptions(argv),
         repairWorkItemId, repairAttemptRef, finishBlockedClaim: argv.includes('--finish-blocked-claim'),
         parkCancelledClaim: argv.includes('--park-cancelled-claim'),
         finishCancelledClaim: argv.includes('--finish-cancelled-claim'),
@@ -2179,6 +2590,7 @@ async function main(argv, env) {
         matterExpectedSnapshot,
         documentVersionId,
         ...stageLimit,
+        ...jobAidLimits,
         applicabilityContextRef: option(argv, '--applicability-context-ref'),
         checkpointRoot,
         activityRunRef,

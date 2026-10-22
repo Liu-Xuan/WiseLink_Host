@@ -164,7 +164,7 @@ export class AutomaticWorkItemDispatchService {
         sourceFileSha256: authorization.sourceFileSha256,
         sourceByteLength: Number(authorization.sourceByteLength),
         ...(this.problemAssessment ? {assertCommittingRecoveryAuthorized:(row,database)=>
-          this.problemAssessment!.assertAutomaticCommittingRecoveryAuthorized(row,authorization.actorUserId,database)} : {}),
+          this.problemAssessment!.assertAutomaticCommittingRecoveryAuthorized(row,authorization.actorUserId,database,scope)} : {}),
         expectedWorkItemRevision: candidate.workItem.revision,
         leaseOwner: scope.principalId,
         leaseToken,

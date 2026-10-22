@@ -1,3 +1,6 @@
+import type { JobAidProblemWorkContent } from '@shared/jobaid-problem-assessment.interface';
+import { parseAssessmentTdmsEvidence, type AssessmentTdmsNativeEvidence } from '@shared/assessment-tdms-evidence';
+import { tdmsSourceVersionLabel } from '@/features/tdms-source/tdms-source-presentation';
 import type { ReadState, RuntimeEdge, RuntimeProjection, RuntimeNode } from './monitor-types';
 
 /** Structural subset of the verified b37 JobAidWorkingReadModel. */
@@ -14,6 +17,7 @@ export interface JobAidWorkingObservation {
     basedOnWorkItemRevision: number;
     documentVersionId: string;
     createdAt: string;
+    content?: Pick<JobAidProblemWorkContent, 'evidence'>;
   } | null;
   latestAttempt: { attemptId: string; status: string; inputRevision: number | null; createdAt?: string; startedAt?: string | null; firstSavedAt?: string | null; completedAt?: string | null } | null;
   executionStatus: string | null;
@@ -32,6 +36,44 @@ export interface ProjectionContext {
   readError?: string | null;
 }
 
+export interface SavedNativeObservation {
+  navigationRef: string;
+  evidence: AssessmentTdmsNativeEvidence;
+}
+
+/** The parent read supplies authority. This validates saved carriers for display;
+ * it never creates a read receipt or decides current source validity. */
+export function savedNativeObservations(work: JobAidWorkingObservation['current']): {
+  observations: SavedNativeObservation[];
+  gaps: string[];
+} {
+  if (!work?.content) return { observations: [], gaps: [] };
+  const candidates = new Map<string, SavedNativeObservation[]>();
+  const gaps: string[] = [];
+  for (const [index, item] of work.content.evidence.entries()) {
+    if (item.kind !== 'TDMS_NATIVE_RECORD') continue;
+    try {
+      const evidence = parseAssessmentTdmsEvidence(item);
+      // Ordinary tuple identity preserves the exact saved revision and receipt.
+      const navigationRef = `saved-tdms:${encodeURIComponent(JSON.stringify([
+        work.workRevisionRef, evidence.evidenceRef,
+        evidence.nativeSource.sourceRevisionRef, evidence.nativeReadReceipt.receiptRef,
+      ]))}`;
+      const group = candidates.get(navigationRef) ?? [];
+      group.push({ navigationRef, evidence });
+      candidates.set(navigationRef, group);
+    } catch {
+      gaps.push(`第 ${index + 1} 条 TDMS 证据的源版本、批准依据或读取回执不完整，未建立读取关系`);
+    }
+  }
+  const observations: SavedNativeObservation[] = [];
+  for (const group of candidates.values()) {
+    if (group.length !== 1) gaps.push('同一保存证据与回执出现重复，未建立该读取关系');
+    else observations.push(group[0]!);
+  }
+  return { observations, gaps };
+}
+
 /** Pure WorkItem adapter. executionStatus lacks actionType and is not assigned to a node. */
 export function adaptJobAidWorkingRead(
   read: JobAidWorkingObservation | null,
@@ -45,6 +87,7 @@ export function adaptJobAidWorkingRead(
     throw new Error('JobAid 保存工作不属于当前 WorkItem');
   }
   const work = read.current;
+  const native = savedNativeObservations(work);
   const latest = read.latestAttempt;
   const basedOn = read.overallBasedOnWorkRevisionRef;
   const differentWork = !!work && !!basedOn && work.workRevisionRef !== basedOn;
@@ -69,7 +112,9 @@ export function adaptJobAidWorkingRead(
       completedAt: latest.completedAt ?? undefined,
     }] : [],
     outputs: work ? [{label:`工作 ${work.workRevision}`,ref:work.workRevisionRef}] : [],
-    inputRefs: work ? [{label:'该工作使用的资料版本',ref:work.documentVersionId}] : [],
+    inputRefs: work ? [{label:'该工作使用的资料版本',ref:work.documentVersionId}, ...native.observations.map(({ navigationRef, evidence }) => ({
+      label: `已保存 TDMS 来源 · ${evidence.title} · 回执 ${evidence.nativeReadReceipt.receiptRef}`, ref: navigationRef,
+    }))] : [],
   };
   const overall: RuntimeNode = {
     id:'assessment.overall',label:'综合建议',group:'工程工作',kind:'task',
@@ -84,10 +129,35 @@ export function adaptJobAidWorkingRead(
     requestCompleteness:'not_provided',
     requests:[],outputs:[],inputRefs:basedOn ? [{label:'综合实际采用的工作',ref:basedOn}] : [],
   };
-  const edges: RuntimeEdge[] = [];
+  const companyRecords: RuntimeNode = {
+    id: 'business.company_records', label: 'TDMS 公司记录', group: '公司与机队事实', kind: 'fact',
+    execution: native.observations.length ? '历史 READ 回执已随工作保存' : '未取得可核对的历史 READ 回执',
+    artifact: `${native.observations.length} 条可核对的已保存原生证据`,
+    coverage: { label: '当前有效性 UNKNOWN；最新性与完整覆盖未提供', tone: 'wait' },
+    business: native.observations.length ? '源声明批准依据随证据保存；本回执未创建工程正式采用，执行未验证'
+      : '未取得可核对的来源证据；工程采用与执行情况未提供',
+    summary: [work ? `仅工作 ${work.workRevision}（${work.workRevisionRef}）保存的来源证据`
+      : '尚无已保存工作可投影来源读取',
+      !native.observations.length ? '本次响应没有可核对的原生读取证据，不能据此断言从未读取' : '',
+      ...native.gaps].filter(Boolean).join('。'),
+    coverageScope: '历史回执对应的精确源观察与字段；父页面读回时间不代表 TDMS 新读取或实时有效',
+    requestCoverage: '源读取回执另列，不作为 JobAid 请求或尝试', requestCompleteness: 'not_provided',
+    requests: [], outputs: work && native.observations.length ? [{ label: `保存这些证据的工作 ${work.workRevision}`, ref: work.workRevisionRef }] : [],
+    inputRefs: native.observations.map(({ navigationRef, evidence }) => ({
+      label: `${evidence.title} · ${tdmsSourceVersionLabel(evidence.nativeSource.sourceVersion)} · 历史 READ ${evidence.nativeReadReceipt.readAt} · 回执 ${evidence.nativeReadReceipt.receiptRef}`,
+      ref: navigationRef,
+    })),
+  };
+  const edges: RuntimeEdge[] = native.observations.map(({ navigationRef, evidence }) => ({
+    id: navigationRef, templateId: 'company.research',
+    from: companyRecords.id, to: research.id, status: 'consumed',
+    label: `历史 READ ${evidence.nativeReadReceipt.readAt} · ${tdmsSourceVersionLabel(evidence.nativeSource.sourceVersion)} · 已保存于工作 ${work!.workRevision}`,
+    refs: [evidence.nativeSource.sourceRevisionRef, evidence.nativeReadReceipt.receiptRef, evidence.evidenceRef, work!.workRevisionRef],
+  }));
   if (basedOn) edges.push({
     id:`${read.workItemId}:overall:consumed:${basedOn}`,templateId:'research.overall',
-    from:research.id,to:overall.id,status:'consumed',label:'综合实际采用的工作',refs:[basedOn],
+    from:research.id,to:overall.id,status:work?.workRevisionRef === basedOn ? 'consumed' : 'unknown',
+    label:work?.workRevisionRef === basedOn ? '综合实际采用当前工作' : '综合采用其他工作；该工作来源证据未在本次响应中提供',refs:[basedOn],
   });
   if (differentWork && work) edges.push({
     id:`${read.workItemId}:overall:pending:${work.workRevisionRef}`,templateId:'change.work',
@@ -98,6 +168,6 @@ export function adaptJobAidWorkingRead(
     meta:{mode:context.mode,observedAt:context.observedAt,environment:context.environment,scopeKey:context.scopeKey,
       readState:context.readState,readError:context.readError},
     scope:{id:read.workItemId,label:context.label,model:'WorkItem · 已保存工作与综合关系',kind:'work_item'},
-    nodes:[research,overall],edges,
+    nodes:[companyRecords,research,overall],edges,
   };
 }

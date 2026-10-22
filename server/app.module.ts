@@ -1,6 +1,7 @@
 import { TdmsSourceModule } from './modules/tdms-source/tdms-source.module';
 import { MiaodaTdmsDocumentAccess } from './modules/tdms-source/miaoda-tdms-document-access';
-import { UnconfiguredTdmsSourceAuthorization } from './modules/tdms-source/tdms-source.authorization';
+import { TdmsBrowserSourceAuthorization } from './modules/tdms-source/tdms-browser-source-authorization';
+import { TdmsSourceReadAuthorityModule } from './modules/tdms-source/tdms-source-read-authority.module';
 import {
   TDMS_DOCUMENT_ACCESS,
   TDMS_SOURCE_AUTHORIZATION,
@@ -116,10 +117,10 @@ import { S1000dXmlStructuredPackageProducerAdapter } from './modules/s1000d-ingr
     CanonicalModelSettingsModule,
     ReviewPersistenceModule,
     TdmsSourceModule.register({
-      imports: [DocumentManagementRuntimeModule],
+      imports: [DocumentManagementRuntimeModule, TdmsSourceReadAuthorityModule],
       authorizationProvider: {
         provide: TDMS_SOURCE_AUTHORIZATION,
-        useExisting: UnconfiguredTdmsSourceAuthorization,
+        useExisting: TdmsBrowserSourceAuthorization,
       },
       documentAccessProvider: {
         provide: TDMS_DOCUMENT_ACCESS,

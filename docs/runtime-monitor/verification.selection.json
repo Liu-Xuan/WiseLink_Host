@@ -1,12 +1,18 @@
 {
   "changedNodeIds": [
     "knowledge.wiki",
-    "business.software_configuration"
+    "business.software_configuration",
+    "business.company_records",
+    "business.aeo_execution",
+    "assessment.research",
+    "assessment.overall"
   ],
   "changedEdgeIds": [
     "reading.wiki",
     "research.wiki",
-    "wiki.parent"
+    "wiki.parent",
+    "company.research",
+    "research.overall"
   ],
   "scenarioIds": [
     "V04",
@@ -22,7 +28,10 @@
     "V31",
     "V37",
     "V38",
-    "V41"
+    "V41",
+    "V26",
+    "V28",
+    "V44"
   ],
-  "reason": "P0—P6本批真实改动：工作语义、本人已有上传翻译续接、准确原生单机来源阅读、ATA2保存成员及Wiki投影、保存后ACK锁序；只映射这些链路，不宣称全部场景或实际业务通过。"
+  "reason": "本批增加真实来源权限、保留事实/运行reader和普通WorkItem/Summary/恢复消费，以及父响应历史READ图；V44仅保留缺项边界，生产当前批准、原件取得及运行仍未完成。各类证据按实际SHA和范围分列。"
 }

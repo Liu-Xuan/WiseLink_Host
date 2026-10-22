@@ -59,7 +59,7 @@ export interface TdmsRuntimeReaderPort {
   discover(
     principal: TdmsRuntimePrincipal,
     binding: TdmsRuntimeTaskBinding,
-  ): Promise<TdmsRuntimeTaskContext>;
+  ): Promise<TdmsRuntimeTaskContext | null>;
   assertAuthorized(
     principal: TdmsRuntimePrincipal,
     context: TdmsRuntimeTaskContext,

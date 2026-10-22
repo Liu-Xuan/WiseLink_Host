@@ -8,8 +8,9 @@ import { invokeHostedDerivedSummaryModel, derivedSummaryModelMessages, derivedSu
   DERIVED_SUMMARY_PROMPT_VERSION, DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION,
   DERIVED_SUMMARY_REVISION_PROMPT_VERSION, DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION,
   DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION, derivedSummarySparseRevisionModelMessages, validateDerivedSummarySparseCandidateReplay } from '../scripts/invoke-hosted-derived-summary-model.mjs';
-import { HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION } from '../scripts/invoke-hosted-derived-summary-model.mjs';
+import { HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION, hierarchicalWikiParentModelMessages } from '../scripts/invoke-hosted-derived-summary-model.mjs';
 import { hierarchicalWikiParentModelView, validateHierarchicalWikiParentModelView } from '../scripts/hierarchical-wiki-model-view.mjs';
+import { derivedSummarySparseMemberBody } from '../scripts/derived-summary-incremental-revision.mjs';
 import { derivedSummaryRegistry, validateDerivedSummaryTask, validateDerivedSummaryContent,
   validateDerivedSummaryModelInput,
   materializeDerivedSummaryContent, normalizeDerivedSummaryContent,
@@ -2142,6 +2143,170 @@ test('Wiki view keeps exact child and root identities, deduplicates shared roots
   const changed = structuredClone(input); changed.evidence[0].documentVersionId = 'DV-foreign';
   assert.throws(() => validateHierarchicalWikiParentModelView(view, changed), /DERIVED_SUMMARY_/u);
 });
+
+const wikiMethodRefs = ['method:applicability', 'method:revision', 'method:risk', 'method:scope'];
+function methodWikiEntry(childCount = 1, change = () => {}) {
+  const entry = wikiEntry(), value = r1Task(entry), input = value.modelInput;
+  const methods = wikiMethodRefs.map(ref => ({ evidenceRef: ref, kind: 'METHOD_CLAUSE', title: `Synthetic ${ref}`,
+    versionLabel: 'synthetic-1', excerpt: `WIKI_METHOD_BODY_SENTINEL ${ref}`, packRef: 'synthetic-pack',
+    methodRef: ref, sourceIdentity: 'synthetic-method-pack', locator: ref, sourceVersionStatus: 'CONFIRMED' }));
+  const evidence = [...methods, ...Array.from({ length: 96 }, (_value, index) => ({ ...source,
+    evidenceRef: `synthetic-root-${index}`, excerpt: `WIKI_ROOT_BODY_SENTINEL ${index}` }))];
+  input.members = input.members.slice(0, childCount);
+  input.members[0].member = { kind: 'DERIVED_SUMMARY', summaryId: 'DS-c9dfb23c-decc-4e38-8523-59f5e28fb8e7',
+    summaryRef: 'DSR-1e311b9b-9d11-4ca3-ad84-33184c0e7561', summaryRevision: 1 };
+  input.members[0].evidenceRef = 'DERIVED_SUMMARY:DS-c9dfb23c-decc-4e38-8523-59f5e28fb8e7:DSR-1e311b9b-9d11-4ca3-ad84-33184c0e7561';
+  for (const child of input.members) {
+    child.evidence = structuredClone(evidence); child.rootRefs = evidence.map(item => item.evidenceRef);
+    child.body = wikiMethodRefs.map(ref => `Saved conditional method use [[${ref}]].`).join('\n');
+    child.limitations = ['Saved method applicability remains conditional [[method:scope]].'];
+  }
+  input.evidence = evidence; input.limitations = [...new Set(input.members.flatMap(child => child.limitations))];
+  change(input);
+  const { taskInputHash: _prior, ...basis } = value;
+  value.taskInputHash = canonicalSha256(basis);
+  entry.taskEnvelopeJson = JSON.stringify(value); entry.taskInputHash = value.taskInputHash;
+  return entry;
+}
+const wikiRequestView = init => JSON.parse(JSON.parse(init.body).messages[1].content.split('INPUT:\n')[1]);
+
+test('Wiki actual four method ref shape maps inherited child citations, saves with 1/100/1/0 delivery and preserves raw snapshots', () => fixture(async root => {
+  const entry = methodWikiEntry(), input = r1Task(entry).modelInput, before = canonicalJson(input);
+  const h = r1Transport(root, entry, { sparse: true, gateway: (_round, init) => {
+    const view = wikiRequestView(init);
+    assert.equal(view.modelViewStrategy, 'HIERARCHICAL_WIKI_PARENT_V2');
+    assert.equal(view.members.length, 1); assert.equal(view.evidenceDirectory.length, 100); assert.equal(view.evidence.length, 0);
+    for (const ref of wikiMethodRefs) {
+      assert.equal(view.members[0].body.includes(`[[${ref}]]`), false);
+      assert.equal(view.limitations.some(text => text.includes(`[[${ref}]]`)), false);
+    }
+    assert.equal(canonicalJson(JSON.parse(init.body).messages).includes('WIKI_METHOD_BODY_SENTINEL'), false);
+    return gatewayStep({ action: 'SAVE_SUMMARY', content: { ...wikiContent(input), body: view.members[0].body } });
+  } });
+  await consumeHostedDerivedSummary(h.options, h.dependencies);
+  const checkpoint = await r1Checkpoint(root, entry), candidate = await checkpoint.readOptional('summary-candidate');
+  assert.equal(candidate.diagnostics.memberOwnBodyDelivered.length, 1);
+  assert.equal(candidate.diagnostics.sourceBodyDelivered.length, 0);
+  assert.equal(h.calls.some(call => call.operation === 'READ_SOURCES'), false);
+  assert.equal(canonicalJson((await checkpoint.readOptional('binding')).task.modelInput), before);
+  assert.equal(canonicalJson(input), before);
+}));
+
+test('Wiki siblings keep their own child identities and one shared root registry without new source delivery', () => fixture(async root => {
+  const entry = methodWikiEntry(2), input = r1Task(entry).modelInput, before = canonicalJson(input);
+  const h = r1Transport(root, entry, { sparse: true, gateway: (_round, init) => {
+    const view = wikiRequestView(init);
+    assert.equal(view.evidenceDirectory.length, 100);
+    for (const [index, child] of view.members.entries()) {
+      assert.equal(child.body, input.members[index].body.replace(/\[\[method:[^\]]+\]\]/gu, `[[${child.evidenceRef}]]`));
+      assert.deepEqual(child.rootRefs, input.members[index].rootRefs);
+    }
+    assert.ok(view.limitations[0].includes(`[[${input.members[0].evidenceRef}]]`));
+    assert.ok(view.limitations[0].includes(`[[${input.members[1].evidenceRef}]]`));
+    return gatewayStep({ action: 'SAVE_SUMMARY', content: { ...wikiContent(input), body: view.members.map(child => child.body).join('\n') } });
+  } });
+  await consumeHostedDerivedSummary(h.options, h.dependencies);
+  assert.equal(h.calls.some(call => call.operation === 'READ_SOURCES'), false);
+  assert.equal(canonicalJson(input), before);
+}));
+
+test('Wiki repeated member READ projects inherited citations in fresh notices and leaves its original receipt unchanged', () => fixture(async root => {
+  const entry = methodWikiEntry(), input = r1Task(entry).modelInput;
+  const h = r1Transport(root, entry, { sparse: true, gateway: (round, init) => {
+    if (round === 1) return gatewayStep({ action: 'READ_MEMBER_WORK', evidenceRefs: [input.members[0].evidenceRef], purpose: 'Recheck exact saved child notices' });
+    const receipt = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
+    assert.equal(receipt.items[0].status, 'CONFIRMED_SAME_CONTENT');
+    assert.equal(receipt.items[0].notices.limitations[0].includes('[[method:scope]]'), false);
+    return gatewayStep({ action: 'SAVE_SUMMARY', content: wikiContent(input) }, 'after-member');
+  } });
+  await consumeHostedDerivedSummary(h.options, h.dependencies);
+  const checkpoint = await r1Checkpoint(root, entry);
+  assert.deepEqual(await checkpoint.readOptional('summary-round-0-read'), { members: input.members });
+  assert.equal((await checkpoint.readOptional('summary-candidate')).diagnostics.sourceBodyDelivered.length, 0);
+}));
+
+test('Wiki method source remains available only through an explicit successful source READ', () => fixture(async root => {
+  const entry = methodWikiEntry(), input = r1Task(entry).modelInput;
+  const h = r1Transport(root, entry, { sparse: true, gateway: (round, init) => {
+    if (round === 1) return gatewayStep({ action: 'READ_SOURCES', evidenceRefs: ['method:risk'], purpose: 'Investigate the exact method condition' });
+    assert.ok(canonicalJson(JSON.parse(init.body).messages).includes('WIKI_METHOD_BODY_SENTINEL method:risk'));
+    return gatewayStep({ action: 'SAVE_SUMMARY', content: { ...wikiContent(input), body: `${wikiContent(input).body}\nMethod condition [[method:risk]].` } }, 'after-method');
+  } });
+  await consumeHostedDerivedSummary(h.options, h.dependencies);
+  assert.equal((await (await r1Checkpoint(root, entry)).readOptional('summary-candidate')).diagnostics.sourceBodyDelivered.length, 1);
+}));
+
+for (const [label, ref, expected] of [['unregistered', 'foreign-unregistered-ref', /CITATION_NOT_REGISTERED/u],
+  ['registered only on sibling', 'sibling-only-root', /CITATION_REQUIRES_READ/u]])
+  test(`Wiki projection does not swallow a ${label} citation`, () => fixture(async root => {
+    const entry = methodWikiEntry(2, input => {
+      input.members[0].body += ` Unowned [[${ref}]].`;
+      if (label !== 'unregistered') {
+        const extra = { ...source, evidenceRef: ref };
+        input.members[1].evidence.push(extra); input.evidence.push(extra);
+      }
+    }), input = r1Task(entry).modelInput;
+    const h = r1Transport(root, entry, { sparse: true, gateway: (_round, init) => {
+      const view = wikiRequestView(init);
+      assert.ok(view.members[0].body.includes(`[[${ref}]]`));
+      return gatewayStep({ action: 'SAVE_SUMMARY', content: { ...wikiContent(input), body: view.members[0].body } });
+    } });
+    await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), expected);
+    assert.equal(h.calls.some(call => call.operation === 'SAVE_SUMMARY'), false);
+  }));
+
+test('Wiki new method citation still requires a source read after inherited citation attribution', () => fixture(async root => {
+  const entry = methodWikiEntry(), input = r1Task(entry).modelInput;
+  const h = r1Transport(root, entry, { sparse: true, gateway: () => gatewayStep({ action: 'SAVE_SUMMARY',
+    content: { ...wikiContent(input), body: `${wikiContent(input).body}\nNew direct method [[method:revision]].` } }) });
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /CITATION_REQUIRES_READ/u);
+  assert.equal(h.calls.some(call => call.operation === 'SAVE_SUMMARY'), false);
+}));
+
+for (const [operation, code] of [['READ_MEMBER_WORK', 'DERIVED_SUMMARY_MEMBER_UNAVAILABLE'],
+  ['READ_MEMBER_WORK', 'DERIVED_SUMMARY_SOURCE_UNAVAILABLE'], ['READ_SOURCES', 'DERIVED_SUMMARY_ORIGINAL_CHANGED']])
+  test(`Wiki citation projection preserves ${code} at ${operation}`, () => fixture(async root => {
+    const entry = methodWikiEntry();
+    const h = r1Transport(root, entry, { sparse: true,
+      gateway: () => gatewayStep({ action: 'READ_SOURCES', evidenceRefs: ['method:risk'], purpose: 'Exact method check' }),
+      tool: input => { if (input.operation === operation) throw new Error(code); } });
+    await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), error => error.message === code);
+    assert.equal(h.calls.some(call => call.operation === 'SAVE_SUMMARY'), false);
+    assert.equal(h.gatewayCalls.length, operation === 'READ_MEMBER_WORK' ? 0 : 1);
+  }));
+
+test('Wiki source content drift in the upfront exact member read stops before model or SAVE', () => fixture(async root => {
+  const entry = methodWikiEntry(), input = r1Task(entry).modelInput;
+  const changed = structuredClone(input.members); changed[0].evidence[0].excerpt += ' Different source content';
+  const h = r1Transport(root, entry, { sparse: true, tool: input => input.operation === 'READ_MEMBER_WORK' ? { members: changed } : undefined });
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /MEMBER_READ_BINDING_MISMATCH/u);
+  assert.equal(h.gatewayCalls.length, 0); assert.equal(h.calls.some(call => call.operation === 'SAVE_SUMMARY'), false);
+}));
+
+test('Wiki c228 completed round0 remains unchanged and cannot be reused under the new projection prompt', () => fixture(async root => {
+  const entry = wikiEntry(), input = r1Task(entry).modelInput, checkpoint = await r1Checkpoint(root, entry);
+  const oldVersion = 'wiselink.derived-summary-prompt.v3.wiki-parent.read-projection.v1.source-content-once.v2';
+  const messages = freshSynthesisMessages(hierarchicalWikiParentModelMessages(input));
+  const view = wikiRequestView({ body: JSON.stringify({ messages }) });
+  view.modelViewStrategy = 'HIERARCHICAL_WIKI_PARENT_V1';
+  const registry = derivedSummaryRegistry(input);
+  view.members = input.members.map(child => derivedSummarySparseMemberBody(child, registry.evidence));
+  view.membersDirectory = view.members.map(({ body: _body, ...directory }) => structuredClone(directory));
+  messages[1].content = `${messages[1].content.split('INPUT:\n')[0]}INPUT:\n${canonicalJson(view)}`;
+  const oldLine = 'modelViewStrategy HIERARCHICAL_WIKI_PARENT_V1 delivers all selected child saved own-bodies. membersDirectory and evidenceDirectory are exact directories, not original bodies. The full root registry is Host-eligible only; neither Host pre-reads nor child citations establish that root bodies were delivered or freshly verified in this run. Do not repeat root bodies into the parent synthesis or count shared roots as independent evidence.';
+  messages[0].content = messages[0].content.split('\n').map(line => line.startsWith('modelViewStrategy HIERARCHICAL_WIKI_PARENT_V2') ? oldLine : line).join('\n');
+  const state = { round: 0, promptVersion: oldVersion, messages }, invocation = { sessionDiscriminator: 'old-c228-round0' };
+  await checkpoint.write('summary-model-state', state); await checkpoint.write('summary-invocation', invocation);
+  await checkpoint.remoteStep({ step: 'summary-round-0', ambiguousCommit: false,
+    args: { messages, executionModel: r1Task(entry).executionModel, ...invocation, promptVersion: oldVersion },
+    perform: async () => { const response = gatewayStep({ action: 'SAVE_SUMMARY', content: wikiContent(input) });
+      return { raw: await response.text(), status: response.status, ok: response.ok }; } });
+  const completed = await checkpoint.readOptional('summary-round-0.result'), h = r1Transport(root, entry, { sparse: true });
+  await assert.rejects(consumeHostedDerivedSummary(h.options, h.dependencies), /MODEL_PROMPT_BINDING_INVALID/u);
+  assert.deepEqual(await checkpoint.readOptional('summary-model-state'), state);
+  assert.deepEqual(await checkpoint.readOptional('summary-round-0.result'), completed);
+  assert.equal(h.gatewayCalls.length, 0); assert.equal(h.calls.some(call => call.operation === 'SAVE_SUMMARY'), false);
+}));
 
 for (const change of [input => { input.wikiLevel = 'ATA4'; }, input => { input.scope.kind = input.wikiLevel = 'FLEET'; input.scope.ata2 = null; input.members[0].member = member; },
   input => { input.wikiLevel = 'UNRECOGNIZED'; }]) test('Wiki marker rejects a mismatched level or direct leaf before any Gateway call', () => {

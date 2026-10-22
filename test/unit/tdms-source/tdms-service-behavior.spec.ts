@@ -39,7 +39,7 @@ function setup() {
         records: claims.records.filter(
           (r) =>
             r.recordKind === 'ENGINEERING_FILE' &&
-            ['AEO-1', 'CEO-S-2'].includes(r.sourceRecordId),
+            ['AEO-1', 'AEO-2'].includes(r.sourceRecordId),
         ),
         artifacts: claims.artifacts.filter((a) =>
           ['s', 'attachment', 'meta'].includes(a.sourceAttachmentId),
@@ -304,8 +304,8 @@ describe('new native service transactions and permission boundaries', () => {
     p.records.push({
       ...structuredClone(p.records[0]!),
       itemId: 'b',
-      sourceRecordId: 'CEO-S-2',
-      fileType: { rawCode: 'CEO-S', rawName: 'CEO-S' },
+      sourceRecordId: 'AEO-2',
+      fileType: { rawCode: 'AEO', rawName: 'AEO' },
     });
     p.relations = [
       {

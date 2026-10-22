@@ -2,6 +2,8 @@ import type {
   TdmsEngineeringExecutionReading,
   TdmsEngineeringExecutionRow,
   TdmsEngineeringExecutionWindow,
+  TdmsEngineeringFeedbackPageRow,
+  TdmsEngineeringFeedbackPageWindow,
 } from '@shared/tdms-engineering-execution.interface';
 import type { TdmsRecordReadResponse, TdmsSourceVersion } from '@shared/tdms-source.interface';
 import { canReadTdmsSourceBody } from '@shared/tdms-source-body-policy';
@@ -11,6 +13,7 @@ import {
 } from './tdms-complete-owned-source.validation';
 import { canonical } from './tdms-source.validation';
 import { tdmsError } from './tdms-source.types';
+import { REVIEWED_AEO_RELATED_STATUS_NATIVE_VIEW_MODEL } from './tdms-reviewed-aeo-related-status-native-view';
 
 interface ValidatedStatusTable {
   tableId: string;
@@ -19,6 +22,9 @@ interface ValidatedStatusTable {
   gridId: string;
   enumerationState: string;
   stopReason: string | null;
+  observedAt: string;
+  reportedTotal: number | null;
+  rows: Array<Pick<TdmsEngineeringFeedbackPageRow, 'occurrenceId' | 'cells' | 'sourceLinks'>>;
   sourceViewEvidence?: Record<string, unknown>;
   nativeStatusProof?: {
     statusTable: {
@@ -73,7 +79,32 @@ export function engineeringExecutionReading(
       selected.owner.number !== record.rawFields.number || selected.owner.stateRaw !== record.state?.rawName ||
       selected.observedAt !== record.observedAt) invalid();
   const windows: TdmsEngineeringExecutionWindow[] = [];
+  const applicabilityWindows: TdmsEngineeringFeedbackPageWindow[] = [];
   for (const table of selected.relationTables) {
+    const view = table.sourceViewEvidence;
+    // The existing validator has bound this reviewed native view to this exact
+    // owner, technical/business version, visible columns and actual row windows.
+    // Generic grids and unknown views do not establish current AEO applicability.
+    if (proof.scopeId === 'AEO' &&
+        view?.schemaVersion === REVIEWED_AEO_RELATED_STATUS_NATIVE_VIEW_MODEL.schemaVersion) {
+      const rows = table.rows.map(row => {
+        const aircraft = row.cells.find(cell => cell.actualLabel === 'AC/ENG/APU');
+        if (!aircraft) invalid();
+        return { occurrenceId: row.occurrenceId, cells: structuredClone(row.cells),
+          sourceLinks: structuredClone(row.sourceLinks), aircraftNumberRaw: aircraft.rawValue,
+          aircraftNumberState: aircraft.state };
+      });
+      const known = rows.filter(row => row.aircraftNumberState === 'VALUE' && row.aircraftNumberRaw !== null);
+      applicabilityWindows.push({
+        tableId: table.tableId, tableTitle: table.tableTitle,
+        sourceLocator: `${table.panelLocator} #${table.gridId}`, observedAt: table.observedAt,
+        enumerationState: table.enumerationState, stopReason: table.stopReason,
+        reportedRowCount: table.reportedTotal, applicabilityBasis: 'CURRENT_AEO_FEEDBACK_PAGE',
+        aircraftNumbers: [...new Set(known.map(row => row.aircraftNumberRaw!))],
+        unknownAircraftRowCount: rows.length - known.length,
+        sourceViewEvidence: structuredClone(view), rows,
+      });
+    }
     if (table.gridId !== 'relatedStatusLinkTable' || !table.nativeStatusProof) continue;
     const status = table.nativeStatusProof.statusTable;
     windows.push({
@@ -91,13 +122,14 @@ export function engineeringExecutionReading(
       rows: structuredClone(status.rows),
     });
   }
-  if (!windows.length) return;
+  if (!windows.length && !applicabilityWindows.length) return;
   return {
     sourceRevisionRef: record.sourceRevisionRef,
     sourceRecordId: record.sourceRecordId,
     sourceVersion: structuredClone(record.sourceVersion),
     businessVersion: structuredClone(record.businessVersion ?? null),
     windows,
+    ...(applicabilityWindows.length ? { applicabilityWindows } : {}),
     requirementCoverage: 'NOT_CAPTURED',
     targetAircraftCoverage: 'UNKNOWN',
     executionVerified: false,

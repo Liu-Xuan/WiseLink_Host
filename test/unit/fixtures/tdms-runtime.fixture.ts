@@ -3,6 +3,7 @@ import {
   type TdmsRuntimeAuthority,
 } from '@server/modules/tdms-source/tdms-runtime-reader.adapter';
 import { TdmsProcessingSetService } from '@server/modules/tdms-source/tdms-processing-set.service';
+import { TDMS_PROCESSING_METADATA_FIELDS } from '@server/modules/tdms-source/tdms-processing-set.types';
 import { createSharedFoundationTdmsSourceAuthorization } from '@server/modules/tdms-source/tdms-shared-foundation.authorization';
 import type {
   TdmsRuntimePrincipal,
@@ -12,6 +13,7 @@ import type {
   TdmsProcessingSetRepository,
   TdmsProcessingSetTransaction,
   TdmsProcessingSetAuthority,
+  TdmsStoredRevisionMetadata,
 } from '@server/modules/tdms-source/tdms-processing-set.types';
 import type {
   TdmsProcessingRevisionSet,
@@ -436,6 +438,26 @@ export function tdmsRuntimeFixture(
       await control.onRevision?.(ref);
       const value = revisions.get(ref);
       return value?.scope.tenantId === tenant ? value : null;
+    },
+    revisionMetadata: async (tenant, ref) => {
+      await control.onRevision?.(ref);
+      const value = revisions.get(ref);
+      if (value?.scope.tenantId !== tenant) return null;
+      return {
+        scope: value.scope,
+        record: {
+          ...Object.fromEntries(
+            TDMS_PROCESSING_METADATA_FIELDS.map((key) => [
+              key,
+              value.record[key],
+            ]),
+          ),
+          rawFields: {
+            sourceModifiedRaw: value.record.rawFields.sourceModifiedRaw,
+            opinionCollection: value.record.rawFields.opinionCollection,
+          },
+        },
+      } as TdmsStoredRevisionMetadata;
     },
     catalogue: async () => [],
     history: async () => [],

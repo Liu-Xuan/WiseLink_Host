@@ -2,17 +2,63 @@ import type {
   TdmsProcessingRevisionSet,
   TdmsProcessingSetHead,
 } from '@shared/tdms-processing-set.interface';
-import type { TdmsReadContext } from '@shared/tdms-source.interface';
+import type {
+  TdmsReadContext,
+  TdmsRecordRevision,
+} from '@shared/tdms-source.interface';
 import type {
   TdmsPublicActor,
   TdmsSourceScope,
-  TdmsStoredRevision,
   TdmsStoredAssertion,
   TdmsTransaction,
 } from './tdms-source.types';
 import { tdmsError } from './tdms-source.types';
 
+/** Finite SQL projection: neither opinion content nor opaque raw/capture payloads. */
+export const TDMS_PROCESSING_METADATA_FIELDS = [
+  'recordRef',
+  'sourceRevisionRef',
+  'recordKind',
+  'sourceRecordId',
+  'sourceKey',
+  'sourceInstanceId',
+  'title',
+  'fileType',
+  'sourceVersion',
+  'businessVersion',
+  'state',
+  'authors',
+  'observedAt',
+  'capturedAt',
+  'coverage',
+  'relatedDocumentVersionIds',
+  'fieldSelectors',
+  'sourceVerification',
+  'currentness',
+  'captureRef',
+  'sourceModifiedAt',
+  'fieldProvenance',
+  'artifacts',
+  'unreadAttachments',
+  'selectedHead',
+] as const satisfies readonly (keyof TdmsRecordRevision)[];
+
+export interface TdmsStoredRevisionMetadata {
+  scope: TdmsSourceScope;
+  record: Pick<
+    TdmsRecordRevision,
+    (typeof TDMS_PROCESSING_METADATA_FIELDS)[number]
+  > & {
+    rawFields: { sourceModifiedRaw?: unknown; opinionCollection?: unknown };
+  };
+}
+
 export interface TdmsProcessingSetTransaction extends TdmsTransaction {
+  /** Project in storage before returning data; never fall back to the body lookup. */
+  revisionMetadata(
+    tenantId: string,
+    ref: string,
+  ): Promise<TdmsStoredRevisionMetadata | null>;
   processingSet(
     scope: TdmsSourceScope,
     ref: string,
@@ -45,24 +91,24 @@ export interface TdmsProcessingSetRepository {
  * retention or read authority AND selected-object/DM ACL. Capture actor is not an ACL.
  * These methods must verify proof refs against authority, not trust submitted strings.
  * No adapter is configured by this first slice. */
-export interface TdmsProcessingSetAuthority {
+export interface TdmsProcessingSetAuthority<Actor = TdmsPublicActor> {
   readonly available: boolean;
   assertScopeAccess(input: {
-    actor: TdmsPublicActor;
+    actor: Actor;
     scope: TdmsSourceScope;
     action: 'RETAIN' | 'READ';
     context: TdmsReadContext;
   }): Promise<void>;
   assertAccess(input: {
-    actor: TdmsPublicActor;
+    actor: Actor;
     action: 'RETAIN' | 'READ';
     context: TdmsReadContext;
     set: TdmsProcessingRevisionSet;
-    revisions: readonly TdmsStoredRevision[];
+    revisions: readonly TdmsStoredRevisionMetadata[];
     assertions: readonly TdmsStoredAssertion[];
   }): Promise<void>;
   compare(input: {
-    actor: TdmsPublicActor;
+    actor: Actor;
     selected: TdmsProcessingRevisionSet;
     candidate: TdmsProcessingRevisionSet;
   }): Promise<{

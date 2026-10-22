@@ -64,6 +64,22 @@ export class DerivedSummaryMembersService {
     } finally { this.nativeTransactions.delete(database); }
   }
 
+  /** Only a durable terminal result may replace the execution lease proof. The
+   * verifier independently locks and checks that exact saved request/attempt. */
+  useSavedNativeResult(database: PostgresJsDatabase, requestId: string): void {
+    const frame = this.nativeTransactions.get(database);
+    if (!frame || frame.caller.kind !== 'RUNTIME' || !requestId.trim())
+      throw summaryError('DERIVED_SUMMARY_NATIVE_SAVED_RESULT_CONTEXT_REQUIRED');
+    frame.caller = { ...frame.caller, purpose: 'SAVED_RESULT', requestId };
+  }
+
+  async verifyNativeInTransaction(evidence: AssessmentEvidence[], actor: SummaryActor,
+    database: PostgresJsDatabase): Promise<void> {
+    if (!this.nativeTransactions.has(database))
+      throw summaryError('DERIVED_SUMMARY_NATIVE_TRANSACTION_CONTEXT_REQUIRED');
+    await this.verifyNativeEvidence(evidence, actor, database);
+  }
+
   private async verifyNativeEvidence(evidence: AssessmentEvidence[], actor: SummaryActor, database?: PostgresJsDatabase): Promise<void> {
     const frame = database === undefined ? undefined : this.nativeTransactions.get(database);
     if (frame) {
@@ -126,7 +142,8 @@ export class DerivedSummaryMembersService {
     let overviewStatus: DerivedSummaryMemberReading['overviewStatus'];
     if (member.kind === 'WORK_ITEM_WORK') {
       const saved = await this.jobAid.readSummaryMemberInTransaction({ ...actor,
-        workItemId: member.workItemId, workRef: member.workRef }, database);
+        workItemId: member.workItemId, workRef: member.workRef }, database,
+        evidence => this.verifyNativeEvidence(evidence, actor, database));
       if (saved.revision.workRevision !== member.workRevision ||
         saved.revision.documentVersionId !== member.documentVersionId) throw summaryError('DERIVED_SUMMARY_MEMBER_VERSION_MISMATCH');
       const content = saved.revision.content;
@@ -300,8 +317,14 @@ export class DerivedSummaryMembersService {
   }
 
   /** Original artifact IO happens after the caller has released its transaction. */
-  async verifyOriginalEvidence(evidence: AssessmentEvidence[], actor: SummaryActor): Promise<void> {
-    await this.verifyNativeEvidence(evidence, actor);
+  async verifyOriginalEvidence(evidence: AssessmentEvidence[], actor: SummaryActor,
+    verifyNativeCaller?: () => Promise<void>): Promise<void> {
+    const native = async () => {
+      if (!evidence.some(item => item.kind === 'TDMS_NATIVE_RECORD')) return;
+      if (verifyNativeCaller) await verifyNativeCaller();
+      else await this.verifyNativeEvidence(evidence, actor);
+    };
+    await native();
     const originals = evidence.filter((item): item is Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }> =>
       item.kind === 'DOCUMENT_PASSAGE' && (item.evidenceRef.startsWith('DOCUMENT_ORIGINAL:') ||
         item.evidenceRef.startsWith('DOCUMENT_READING_ORIGINAL:')));
@@ -348,7 +371,7 @@ export class DerivedSummaryMembersService {
     };
     if (actor.readScope === 'TENANT') await verify();
     else await this.matters.withActorScope(actor.actorUserId, verify);
-    await this.verifyNativeEvidence(evidence, actor);
+    await native();
   }
   private authorizeMatter(input: SummaryActor & { matterId: string; basedOnMatterRevisionId?: string },
     database: PostgresJsDatabase) {

@@ -1,3 +1,4 @@
+import { assertReadStoredMembers, assertReadGrantsCurrent } from './tdms-read-member-scope';
 import type {
   TdmsDocumentSourceReadRequest,
   TdmsDocumentSourceReadResponse,
@@ -24,7 +25,7 @@ interface DocumentSourceReadingDependencies {
   authorization: TdmsSourceAuthorization;
   documents: TdmsDocumentAccess;
   assertGrant(grant: TdmsSourceGrant, scope?: TdmsSourceScope): void;
-  recheck(grant: TdmsSourceGrant, context: TdmsReadContext): Promise<void>;
+  recheck(grant: TdmsSourceGrant, context: TdmsReadContext): Promise<unknown>;
   receipt(ref: string, grant: TdmsSourceGrant, context: TdmsReadContext): TdmsReadReceipt;
   limitations: readonly string[];
 }
@@ -78,6 +79,7 @@ export async function readDocumentVersionSources(
       const page: TdmsStoredRevision[] = await tx.documentVersionCatalogue(grant.scope, {
         documentVersionId,
         ...(after ? { after } : {}),
+        ...(grant.permittedMembers ? { permittedRecords: grant.permittedMembers.records } : {}),
         limit: limit + 1,
       });
       for (const stored of page) {
@@ -85,6 +87,7 @@ export async function readDocumentVersionSources(
           throw tdmsError('TDMS_STORED_SCOPE_MISMATCH', 409);
         if (!stored.record.relatedDocumentVersionIds.includes(documentVersionId))
           throw tdmsError('TDMS_DOCUMENT_SOURCE_BINDING_MISMATCH', 409);
+        assertReadStoredMembers(grant, stored);
         if (!after || stored.record.sourceRevisionRef > after)
           rows.push({ stored, grant });
       }
@@ -131,6 +134,7 @@ export async function readDocumentVersionSources(
     for (const id of stored.record.relatedDocumentVersionIds)
       await documents.assertRead(actor, id);
   for (const grant of grants) await dependencies.recheck(grant, context);
+  assertReadGrantsCurrent(grants);
   return result.response;
 }
 

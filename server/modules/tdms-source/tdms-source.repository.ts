@@ -68,7 +68,7 @@ export class SqlTdmsTransaction implements TdmsTransaction {
       ? sql`AND jsonb_exists(v.data->'record'->'relatedDocumentVersionIds',${page.documentVersionId})`
       : sql``;
     const rows = await this.db.execute<{ data: TdmsStoredRevision }>(
-      sql`SELECT v.data FROM tdms_record h JOIN tdms_record_revision v ON v.tenant_id=h.tenant_id AND v.source_revision_ref=h.source_revision_ref WHERE h.tenant_id=${s.tenantId} AND h.source_key=${s.sourceKey} AND h.source_instance_id=${s.sourceInstanceId} AND h.scope_id=${s.scopeId} ${after} ${documentVersion} ORDER BY h.source_revision_ref LIMIT ${page.limit}`,
+      sql`SELECT v.data FROM tdms_record h JOIN tdms_record_revision v ON v.tenant_id=h.tenant_id AND v.source_revision_ref=h.source_revision_ref WHERE h.tenant_id=${s.tenantId} AND h.source_key=${s.sourceKey} AND h.source_instance_id=${s.sourceInstanceId} AND h.scope_id=${s.scopeId} ${after} ${documentVersion} ${permittedRecords(page)} ORDER BY h.source_revision_ref LIMIT ${page.limit}`,
     );
     return rows.map((r) => r.data);
   }
@@ -96,6 +96,7 @@ export class SqlTdmsTransaction implements TdmsTransaction {
         WHERE v.tenant_id=${s.tenantId} AND v.source_key=${s.sourceKey}
           AND v.source_instance_id=${s.sourceInstanceId} AND v.scope_id=${s.scopeId}
           AND jsonb_exists(v.data->'record'->'relatedDocumentVersionIds',${page.documentVersionId})
+          ${permittedRecords(page)}
         ORDER BY v.record_ref,
           coalesce(h.source_revision_ref = v.source_revision_ref, false) DESC,
           (v.data->'record'->>'observedAt')::timestamptz DESC,
@@ -199,4 +200,12 @@ export class SqlTdmsTransaction implements TdmsTransaction {
 }
 function scope(s: TdmsSourceScope): SQL {
   return sql`tenant_id=${s.tenantId} AND source_key=${s.sourceKey} AND source_instance_id=${s.sourceInstanceId} AND scope_id=${s.scopeId}`;
+}
+
+/** Current Host member scope is applied before DISTINCT/seek/limit and body materialization. */
+function permittedRecords(page: TdmsCataloguePage): SQL {
+  if (page.permittedRecords === undefined) return sql``;
+  return sql`AND EXISTS (SELECT 1 FROM jsonb_array_elements(${JSON.stringify(page.permittedRecords)}::jsonb) member
+    WHERE member->>'recordKind'=v.data->'record'->>'recordKind'
+      AND member->>'sourceRecordId'=v.data->'record'->>'sourceRecordId')`;
 }

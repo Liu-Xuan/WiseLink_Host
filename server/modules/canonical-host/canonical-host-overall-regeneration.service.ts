@@ -325,6 +325,7 @@ export class CanonicalHostOverallRegenerationService {
         )
           throw regenerationConflict('WORK_ITEM_CAS_CONFLICT');
         const evidence: AssessmentEvidence[] = [];
+        const workRevisionRefs = new Set<string>();
         const read = async (workRevisionRef: string, workRevision?: number) => {
           const [owned] = await database
             .select({ ref: assessmentWorkRevision.assessmentWorkRevisionId })
@@ -362,6 +363,7 @@ export class CanonicalHostOverallRegenerationService {
             (workRevision !== undefined && saved.workRevision !== workRevision)
           )
             throw regenerationConflict('TDMS_NATIVE_PROJECTION_WORK_MISMATCH');
+          workRevisionRefs.add(saved.workRevisionRef);
           return saved;
         };
         const selected = await read(
@@ -411,6 +413,7 @@ export class CanonicalHostOverallRegenerationService {
               documentVersionId: item.source.documentVersionId,
               workItemRevision: row.revision,
               workRevisionRef: binding.workRevisionRef,
+              workRevisionRefs: [...workRevisionRefs],
             },
             evidence,
             database,
@@ -544,6 +547,7 @@ export class CanonicalHostOverallRegenerationService {
         authorized.grant.tenantId,
         authorized.grant.authorizationFingerprint,
         true,
+        {browserActor:authorized.session.actor},
       );
     } else {
       await this.overall.enqueueUserRequestedRegeneration({

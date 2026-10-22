@@ -26,16 +26,25 @@ export function adaptEngineeringExecutionRead(
     throw new Error('单机执行观察与当前准确来源或读取回执不一致');
   const rows = execution.windows.flatMap(window => window.rows);
   const aircraft = new Set(rows.map(row => row.executionStatus.assetRef));
-  const outputs = execution.windows.flatMap(window => [
+  const applicability = execution.applicabilityWindows ?? [];
+  const applicabilityRows = applicability.flatMap(window => window.rows);
+  const aircraftNumbers = new Set(applicability.flatMap(window => window.aircraftNumbers));
+  const outputs = [...execution.windows.flatMap(window => [
     { label: `${window.tableTitle} · 已读 ${window.rows.length} 行`,
       ref: engineeringExecutionSourceRef(revision, window.tableId) },
     ...window.rows.map(row => ({ label: `${row.number} · ${row.executionStatus.assetNumber ?? row.executionStatus.assetRef} · 源状态 ${row.stateRaw}`,
       ref: engineeringExecutionSourceRef(revision, window.tableId, row.sourceRecordId) })),
-  ]);
-  const coverage = { label: '未知：逐项执行要求与完整目标机队未取得', tone: 'wait' as const };
-  const coverageScope = '仅本修订已读来源窗口；无逐要求身份和完整目标分母，不计算整份完成率';
+  ]), ...applicability.flatMap(window => [
+    { label: `适用飞机号 · ${window.tableTitle} · 已读 ${window.rows.length} 行`,
+      ref: engineeringExecutionSourceRef(revision, `applicability:${window.tableId}`) },
+    ...window.rows.map(row => ({ label: `${row.occurrenceId} · ${row.aircraftNumberState === 'VALUE'
+      ? row.aircraftNumberRaw : `机号未完整取得（${row.aircraftNumberState}）`}`,
+      ref: engineeringExecutionSourceRef(revision, `applicability:${window.tableId}`, row.occurrenceId) })),
+  ])];
+  const coverage = { label: applicability.length ? '反馈页面机号已读；整份执行核验未知' : '整份执行核验未知', tone: 'wait' as const };
+  const coverageScope = '仅本修订已读来源窗口；反馈页机号按原生列保留，不计算整份完成率';
   const requestCoverage = '未提供全局请求或尝试集合；来源状态行不是 Host 执行请求';
-  const windows = execution.windows.map(window => `${window.tableTitle}（${window.tableId}）：观察 ${window.observedAt}，`
+  const windows = [...execution.windows, ...applicability].map(window => `${window.tableTitle}（${window.tableId}）：观察 ${window.observedAt}，`
     + `已读 ${window.rows.length} / 源声明 ${window.reportedRowCount} 行，枚举 ${window.enumerationState}`
     + `${window.stopReason ? `，停止原因 ${window.stopReason}` : ''}`).join('；');
   return {
@@ -47,10 +56,11 @@ export function adaptEngineeringExecutionRead(
     nodes: [{
       id: 'business.aeo_execution', label: '工程文件单机来源观察', group: '公司与机队事实', kind: 'fact',
       execution: '未取得 Host 执行请求；仅观察来源行',
-      artifact: `已读 ${execution.windows.length} 个窗口、${rows.length} 条来源行、${aircraft.size} 个飞机原生身份`,
+      artifact: `已读 ${execution.windows.length} 个状态窗口、${rows.length} 条来源行、${aircraft.size} 个飞机原生身份`
+        + (applicability.length ? `；${applicability.length} 个反馈页面窗口、${applicabilityRows.length} 行、${aircraftNumbers.size} 个不同适用机号` : ''),
       coverage, coverageScope, business: '整份落实状态未知；来源 Completed、反馈关联或执行日期不证明业务完成',
       sourceObservedAt: read.record.observedAt,
-      summary: `Host 取得时间 ${read.record.capturedAt}。${windows || '未取得来源窗口。'} 执行要求覆盖 NOT_CAPTURED；目标机队 UNKNOWN；执行核验未完成。`,
+      summary: `Host 取得时间 ${read.record.capturedAt}。${windows || '未取得来源窗口。'} 机号范围以反馈页面为依据；执行核验未完成。`,
       requestCompleteness: 'not_provided', requestCoverage, requests: [], outputs, inputRefs: [],
     }, {
       id: 'surface.reading', label: '本修订单机来源表', group: '阅读交付', kind: 'view',

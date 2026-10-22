@@ -138,7 +138,7 @@ c24 可选控制元数据兼容旧任务，但旧 Skill 不接受新字段，因
    优先读回非空、可识别的实际 `modelVersion`；响应未提供时，绑定任务记录 `configured-route:<modelRef>`，旧任务才使用唯一 configured endpoint。它们只证明路由，不解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c229`；
+   `wiselink-research-and-synthesize@r09.c234`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 36 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
@@ -273,6 +273,31 @@ authenticated user。
   begin/context/SourceRef，第二次 recovery 若仍无 model result 必须停止。
 
 ## 每轮证据
+
+仅对明确选定的单 WorkItem 单个初始 JobAid 或 Overall 阶段，可在正常 consumer 上组合
+`--max-initial-stages 1 --expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL`，并同时指定
+`--jobaid-max-model-requests N --jobaid-max-saves N --jobaid-max-finishes N`。
+三个正整数分别限制本地 Hosted Gateway HTTP 尝试、实际 `save_assessment_work`
+和该阶段的 `commit_dynamic_evaluation_candidate` 或 `commit_overall_candidate` 调用；不是 Gateway 内部模型分发次数。
+FINISH 带 `workJson` 时，先执行的 SAVE 也计入同一保存上限。未提供三个参数时，
+正式默认行为保持；两个阶段分别保留自己的预算。这些参数不能用于 Review、Matter、Document 或自动队列。
+
+上限及发送前预留沿用该阶段私有 checkpoint；不能向已开始的旧 checkpoint 追加上限，
+也不能失败后删除参数或加大上限。越限或结果未知时停止，不强行保存、结束或进入下一阶段。
+
+受控自动队列试验可在精确新 WI 领取前，用现有导出函数
+`prepareExplicitJobAidRunBudgets` 预置两个阶段预算。预算位于 WI/operation 的原有目录，
+包含固定 DVI 和原 request 绑定；另一个 request 后缀不能获得新额度。
+自然自动消费者会先把该 WI 的真实 claim（包括 UNKNOWN/attention）完整保存在阶段
+checkpoint，再结束本机 active 消费，让其他普通事项继续；不发送 ACK/BLOCK 或伪造业务终态。
+未受保护的其他 WI 和原 UNKNOWN 恢复规则保持。保护记录不可读或绑定损坏时拒绝继续。
+Host NEXT 仍可能在该 WI 的租约过期后正常重领、更新 grant/generation、终止过期 attempt，
+并按真实规则创建接管续接；这些动作发生在本机 guard 之前，必须列入试验范围，
+不能称为永久领取前排除或无副作用跳过。
+发送前预留可能因进程中断而保守计入，不能作为请求已到达上游的证明。
+SAVE/FINISH 响应丢失继续只读原请求/准确状态；新上限不授权重发。
+验收还须分别列明必要原文读取、租约心跳、知识查询、文件持久化及投影写入，
+三个上限不能替代这些动作本身的授权。
 
 保留脱敏证据：
 

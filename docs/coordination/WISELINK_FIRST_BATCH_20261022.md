@@ -206,3 +206,61 @@ python3 scripts/runtime-monitor/build_previews.py --snapshot docs/runtime-monito
 4. 安装后逐文件核对130文件、版本/Ready及安装目录的受影响验证，保留安装器元数据。调度配置与安装前逐项比较，不创建业务请求、不清pending或活动指针、不重启未知调用。若原会话存在在途执行，等待既有执行正常结束，不强制接管。
 
 该技术包不包含新生产模型调用、真实业务SAVE、来源权限扩展或正式采用。真实TDMS措施正文/准确关系、完整AEO要求与目标，以及SEM工程资料缺项分别保留继续条件；技术发布成功也不关闭这些业务缺口。
+
+### 2026-10-23 来源口径纠正与交付预检
+
+用户已于 2026-10-22 23:48 批准 `25c7faa108b14c1e991bca4704087365505a5340` 整批技术交付。`origin` 的 `codex/first-batch-mainline-20261022` 已普通推送并读回同一 SHA；Host 发布尚未发起。本节更新当前执行状态，前文的“尚未创建远端引用”保留为当时准备记录。
+
+实际 Native 已安装 `r09.c233`（源码 `cebfcf6340d15c92d0f6e3cba05383935e4c2eaf`）。原 c229 包不含该安装版本的恢复、预算及 Wiki 保护，因此停止使用该旧包，已重组并审查 c234：源码 `d1725e182277ea504f697b5e0fbd872f9837a0e7`，技能 tree `1bfa433c969b1885742db94bdf2a51120d9c18f3`，132 文件、1002345 字节，ZIP SHA256 `d4e9bc284cf387da1cd013d8dc6e60034712908179a9d6226838f8bf4b05d317`。完整 Skill 打包校验及422项定向 Native 验证通过；原 c233 消费者文件保持一致。只读核对真实16项调度，仅原 C136 启用；尚未暂停、安装或新增业务执行。替换包已向用户单独提交确认。
+
+公开同步检查扩大到 GitHub 所有现有分支/标签的未公开历史后，发现原25c祖先含未公开生产对象记录，故未向 GitHub 推送该历史。已准备公开替代分支 `codex/mainline-public-delivery-20261023`，提交 `12693186d0f07b7b0e815b4d9ff1a47372895d8d`，父提交为已公开 `b37f69caaa00979f79a9633023a38649534dae2b`；4365个路径与25c比较，4364个相同，仅 `docs/coordination/M_INTEGRATION.md` 保持已公开的脱敏内容。原私有历史保留。该新分支双远端同名同步与c234替换已一并提交确认，尚未执行。
+
+用户明确公司意见来自**已批准评估单意见及关联工程文件**，无需再找独立“公司措施”文档；工程文件关联本身不证明其正文已经READ。当前不解析AEO正文，适用飞机号使用反馈单页面，未来接入AEO结构化文件。因此前文把“完整AEO正文解析/独立公司措施正文”作为当前核心前提的描述已撤回。
+
+后续隔离候选 `codex/source-clarification-20261023` 集成了三项已审查变更：c234整合 `882d4d94`、反馈页适用对象 `3cbe6ebb`、元数据SQL正文隔离 `e4d72e22`。反馈页使用准确owner/version的AC、ENG、APU原列值，去重编号但保留重复原行、空值及截断未知；覆盖源读取、页面和运行图92项验证通过。元数据查询在PG返回前去除content、opaque rawFields和附件获取载荷，显式正文READ保留；真实PG修复前失败/修复后通过，74项单元、类型与生产lint通过。它们不在原25c发布源中，后续候选尚未发布。
+
+2026-10-23 00:16(+08)官方只读核对确认线上9张TDMS来源/授权/关系/receipt表存在，当前CLI身份可见计数均0；`tdms_processing_revision_set` / `tdms_processing_set_head` 不在完整表清单中。此处只报告CLI可见结果。已有cebfcf代码具有可复用receiver/grant及精确身份核验，当前实现仍需补齐后台服务委托Source context、真实retained processing set/批准意见事实生产以及reader/verifier装配。没有创建新grant、导入材料、触发模型/SAVE或正式采用。
+
+后续集成源码 `e4d72e22c3283fed77e1763ad66243298c1b2417` 实际执行4套110项相关回归与1项隔离PG验证均通过，双端类型通过；记录于 `tmp/source-clarification-evidence/`。这是本地集成证据，尚无部署或真实业务运行证据。
+
+### 2026-10-23 当前来源授权与浏览器读取接入
+
+后续候选在 `067fd8053269675085b4301f19c55d53e90b11c0` 之后选择性合入真实保留数据读取 `e6dda9bd`（作者 `0777fd37`，仅元数据和现有明确关系）与 Host 委托基础层 `49295937`（作者 `d2fd697c`）。后者分开实际服务执行者和最终用户，复用当前 WorkItem/自动授权/租约及已封存任务的准确身份；只读 receiver 使用真实 SQL actor、受控部署身份、当前映射与独立 Source grant。没有创建或迁移生产数据。
+
+浏览器来源读取提交 `38fb3de8f2eec3523e4ab6b9b75a16a23dde1a84`（父 `49295937`）将 AppModule 的实际 Source 读入口接到 `TdmsBrowserSourceAuthorization`。该 provider 每次返回有界的 record/artifact/relation 成员和最早有效期；本批仅支持既有 Miaoda Gateway 浏览器身份及空上下文/准确 DocumentVersion 上下文，其他对象上下文明示拒绝。IMPORT 及附件获取仍无绑定，不因读授权扩展写权限。已保存来源的成员范围按 recordKind/sourceRecordId 确定，附件另核准确身份和版本；这不是额外创造的一份逐版本记录授权。
+
+来源目录与文档关联目录在 SQL DISTINCT/seek/LIMIT 前按授权成员过滤；详情、附件获取事实与关系两端在释放前分别核对，权限版本、成员内容或有效期漂移都阻止返回。现有明确 whole-scope 的测试/Host provider 仍保持原语义，显式空成员集为 deny-all。原批准前正文隔离及独立文档读取策略保留。
+
+实际验证：新增6项有界成员单测通过；真实模块组合测试通过（只替换平台基础设施，不替换新授权 provider）；真实非 superuser/non-bypass PostgreSQL 下新7项结果通过、0跳过，验证来源正文/真实receipt、56个同scope隐藏记录在分页前排除、DVI独立读取策略、关系及双端权限、写receipt期间受控撤权导致无正文返回并回滚receipt。另3套37项历史/返回/文档读取回归通过，原 service-behavior 中无关关系fixture使用未被现有正文策略接受的CEO-S类型，改为同类AEO关系fixture后28项通过；未放宽生产正文策略。服务端类型和受影响生产文件lint通过。原始日志保留在本地 `tmp/source-clarification-evidence/browser-source-*.log` 与 `browser-bounded-tests.log`。
+
+这些证据属于本地实现及隔离验证。真实来源表、grant和processing set的生产状态仍以上节官方只读观察为准；本批未进行Host发布、Native安装、来源导入、新模型或业务SAVE。
+
+### 2026-10-23 Native 实际消费者与历史 READ 图集成
+
+本节更新当前实现。业务代码为 `5f753f3f06a63ffa9a669474d2ccee344c82bbbc`，本地分支 `codex/source-clarification-20261023`。它是原已批准 `25c7faa1` 之后的后续候选，未推送或发布，不替换已批准包。M1/M2新增第七条 `company.approved-opinion`，保留开发接线、测试、部署、实际运行四列；M3接入父读取中实际保存的TDMS证据。
+
+| 集成提交 | 父提交 | 作者提交与范围 |
+| --- | --- | --- |
+| `a0869bd7f86768f7b19c0ca1b4dbb77a20286cdf` | `38fb3de8f2eec3523e4ab6b9b75a16a23dde1a84` | `ab725712ece1f726c1754de19932cd4da1b17844`，真实browser/summary caller与保存证据校验；经P1中转c9c8639c |
+| `d22caef316d8bce5fffa20d3bee82bcd2bdd69fc` | `a0869bd7f86768f7b19c0ca1b4dbb77a20286cdf` | `e16e62096d5508ebf2aacb24fd1d7c6ba064a87e`，真实Summary完整消费测试；经P1中转1a7059e0 |
+| `961221a5d792b99ce16b1bc4700433c40a647260` | `d22caef316d8bce5fffa20d3bee82bcd2bdd69fc` | `3cdcd5479e9bdbe107fa69f30b7d82168d6428b3`，真实运行reader、同事务receipt/原件来源及Host消费者/恢复接线 |
+| `c971254dc0ffcd0f88f4b006aa09ddaa83d3fab6` | `961221a5d792b99ce16b1bc4700433c40a647260` | `57d13c0da94bd1c1f2f330167b18daed93a71718`，M3保存来源图和详情 |
+| `5f753f3f06a63ffa9a669474d2ccee344c82bbbc` | `c971254dc0ffcd0f88f4b006aa09ddaa83d3fab6` | 集成审查修正新边为v1.6准确ID `company.research`，补入已有断言 |
+
+`CanonicalHostModule` 的 runtime reader 与 native verifier 已注册真实 `TdmsProductionRuntimeReader`。普通非TDMS来源在明确标记发现前退出，不因新Native配置影响原BEGIN/SAVE/读取。TDMS来源从真实已登记DM acquisition/nativeRetention及准确附件/来源关系定位，不按标题或内容hash猜身份。服务执行者、最终用户、真实SQL role、当前Source audience、选定对象、WorkItem/自动授权/attempt租约在原事务核对；元数据发现不读取journal正文，不计为READ。
+
+JobAid READ先落准确回执，SAVE、Overall消费、浏览器读回及Summary再核原journal、receipt、集合成员和保留内容。Summary以自身实际request/attempt租约核验；已完成结果只用准确持久化结果的SAVED_RESULT条件，不借用无关WorkItem lease。真实并发测试复现的Summary收尾锁序已修正为先head后attempt。既有过期COMMITTING恢复只核验封存结果指向的准确已保存工作；后续未消费READ不能改变原结果，不增加READ、模型调用或执行租约。
+
+M3的`business.company_records → assessment.research`使用已保存父响应中的evidence、sourceRevision、原READ receipt及workRevision完整身份；详情明确历史READ时间、来源观察时间和父页面读回时间。旧Overall仍指向原workRef时显示unknown及当前工作pending，不能把新TDMS依据配给旧Overall。临时刷新错误保留获权观察，撤权/会话或事项切换清理；组件无新fetch。
+
+验证按原执行范围登记，不合计为全产品通过：
+
+- 作者134项单元、Native/恢复9项和原Host COMMITTING6项真实PG使用最终未提交工作树；其后仅排版/注释变化再提交，行为与3cdcd相同，不能称为该提交完整树原地执行。
+- authority7项真实PG在较早工作树阶段运行；完整Summary消费4项在独立clone复制对应消费者后运行，包含finish锁序先红后绿。保留原日志及上述执行范围，不将它们的执行SHA倒填为最终提交。
+- M3作者3套15项通过；集成契约边ID修正后2套11项通过。后者包括真实adapter/React/custom-element行为，不等于线上浏览器视觉。
+- 集成c971的双端类型检查通过；实际Nest Source组合和有界成员2套7项通过。生产构建首次因未提交协调文档被`SERVER_BUILD_FINGERPRINT:GIT_WORKTREE_DIRTY`保护拒绝，未绕过；干净提交后的构建另记结果。
+- 原日志统一保留于本地忽略目录 `tmp/source-clarification-evidence/`，包括 `native-runtime-unit.log`、`native-authority-postgres.log`、`native-recovery-postgres.log`、`native-summary-consumer-postgres.log`、`native-core-recovery-postgres.log`、`native-monitor-author.log`、`integrated-source-composition.log` 和 `integrated-native-monitor.log`。
+
+生产retained事实当前只能给出 `validity=UNKNOWN`，没有有效性assertion，成员为 `QUALIFIED + APPROVAL_VALIDITY_UNKNOWN`，批准正文READ返回 `TDMS_RUNTIME_OPINION_NOT_APPROVED`；这是明确的剩余缺口。正向PG的ACTIVE为测试事实。Review/successor及OAuth Native未接通；关联工程文件未自动取得PDF，V44获取/解析/恢复闭环未验。当前不解析AEO正文，适用飞机号继续使用反馈页。没有线上DDL、grant、来源导入、Native安装、新模型、业务SAVE或正式采用。
+
+最终构建回执：干净候选 `2a5b36eed33713f93e326f4f3e11a8b5fe903ff3` 生产构建通过，服务端内嵌同一SHA，构建时间 `2026-10-22T17:26:17.738Z`；Vite保留已有大chunk提示。该提交相对业务5f只改7个协调/验证记录文件，本回执后继仍为纯记录。快照QA首次误传JSON作为契约参数被明确拒绝，改用实际Markdown契约后39/39通过；没有修改校验逻辑。Chrome实测第七条接线、P3+company+V44+运行组合筛选及准确下钻，保留UNKNOWN与PDF缺口，warn/error为空；截图为本地 `tmp/source-clarification-evidence/native-wiring-browser.png`。此证据仅为M2离线验证页，真实业务与M3私有JSON视觉回放仍未验。本节记录不要求重跑未改业务或再次构建。

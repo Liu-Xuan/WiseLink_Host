@@ -12,10 +12,16 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c229`
+- Skill：`wiselink-research-and-synthesize@r09.c234`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
+
+c234 保留已安装 c233 的队列轮转、阶段预算及准确请求续接保护，接入 Host 封存的 JobAid semantic.v1 和 ATA2 直接已保存成员。纯子 Wiki 继续使用引文归属 V2；含直接成员的 ATA2 沿既有完整材料或稀疏修订读取，保持准确来源和保存边界。
+
+c230 在既有自动队列 owner 锁内增加 WORK／Wiki 消费机会轮转和有界顺序批量：每轮默认最多 4 项，可配置 1–16 项，主体间准入预算默认 15 分钟。只在当前主体确认完成且活动指针清空后取下一项；不增加同时执行槽、单任务模型额度或租约，不中断在途请求。操作者恢复仍为单操作。
+
+c229 在上层 Wiki 的新模型读取投影中，将子成果已登记的继承来源引文归属到准确子 Wiki。原保存正文、来源身份、同源不重复增强和读取账本保留；需要原文或方法核实时仍显式 READ_SOURCES。新 parent prompt 不复用旧 round0 缓存。
 
 c228 接通 Host 授权的初始身份、保存读回、精确提交恢复与非取消终态收尾。坏本地记录只作隔离候选，任务与最后保存由 Host 确定；provider UNKNOWN 不重发。已保存 COMPLETE 工作仅在 Host 封存许可下零模型补齐原候选投影，再由独立 Overall 阶段综合。辅助 checkpoint 警告随回执保留，不推翻业务已保存或已完成的事实。
 
@@ -625,7 +631,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - 普通模型结果的 `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断；上述 Host saved-work reconciliation 分支诚实记录 `modelVersion=null`
-- `skillVersion=wiselink-research-and-synthesize@r09.c229`
+- `skillVersion=wiselink-research-and-synthesize@r09.c234`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
@@ -714,7 +720,7 @@ installed-baseline delta.
 [分层 Wiki 协议](references/hierarchical-wiki-work.md)。仅在兼容 Host/SQL/MCP/Skill 安装后，
 由原自动队列的同一 owner 开启 `--wiki-idle` 及明确预算；既存在途指针优先恢复。
 
-### 单 endpoint 自动队列终态收尾（r09.c229）
+### 单 endpoint 自动队列终态收尾（r09.c228）
 
 - `--auto-queue` 的正常 tick 与显式 `--finish-blocked-claim` 共用 `active-claim.owner.lock` 的 Linux util-linux `flock` 独占 FD owner，从首次读指针覆盖至 Host 等待及最后本地写；竞争、缺失工具或不支持的文件系统一律 fail-closed。锁文件不删除，FD close / 进程退出由内核释放锁；安装前必须确认旧版无锁 consumer 已退出，不能停止仍活跃任务。阶段内已有 heartbeat / 续租不重入此队列 owner 锁。
 - 普通失败 tick 保留 stopped 记录；下一自然 tick 仅在 Host fresh status 为 `FAILED/CONFLICT`、`nextOperation=null`，且准确 WI/DVI/revision、当前 grant 和非 CANCELLED 的 `FAILED/TIMED_OUT/OBSOLETE/CONFLICT` 阶段均匹配时，用既有普通 BLOCK 收尾。先持久化完整原身份意图，再以原 token/generation 核准确 `replayed=true`、blockedCode/blockedAt 回执，沿既有归档清除仍匹配的本地 claim。该 tick 结束，独立后继由下一 tick 正常领取；失败不冒充成功 ACK。

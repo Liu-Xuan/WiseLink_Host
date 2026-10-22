@@ -5,6 +5,7 @@ import type { TdmsFileServiceRecordReadResponse } from '@shared/tdms-file-servic
 import { TdmsRecordDetails } from '@client/src/features/tdms-source/TdmsRecordDetails';
 import { TdmsEngineeringExecution } from '@client/src/features/tdms-source/TdmsEngineeringExecution';
 import { sourceRead } from './fixtures';
+import { withFeedbackPage } from './engineering-feedback.fixture';
 
 function reading(): TdmsFileServiceRecordReadResponse {
   const read = sourceRead('engineering-1');
@@ -49,7 +50,7 @@ describe('engineering execution source reading in the existing record detail con
     expect(html).toContain('未取得反馈单关联');
     expect(html).toContain('反馈单正文未由此读取');
     expect(html).toContain('反馈日期、计划日期未作为独立字段取得');
-    expect(html).toContain('逐项执行要求和完整目标机队尚未取得');
+    expect(html).toContain('仅展示本修订已读来源窗口，不计算整份完成率');
     expect(html).toContain('原生视图与筛选依据未取得');
     expect(html).not.toMatch(/\d+\s*%/u);
   });
@@ -59,6 +60,17 @@ describe('engineering execution source reading in the existing record detail con
     const html = render(read);
     expect(html).toContain('本来源窗口没有单机状态行；不据此认定目标机队为空或全部完成');
     expect(html).toContain('已读 0 条来源行 · 已知 0 个飞机原生身份');
+  });
+  it('uses feedback-page aircraft numbers while retaining repeated rows, missing fields and prior-version references', () => {
+    const read = withFeedbackPage(reading());
+    const html = render(read);
+    for (const literal of ['适用飞机号（反馈页面）', 'SYNTHETIC-AIRCRAFT', 'page-row-0', 'page-row-1', 'page-row-2',
+      'Completed', 'Not completed', 'SYNTHETIC PRIOR EXECUTION', 'PRIOR-AEO-R16', 'OR:wt.epm.EPMDocument:123',
+      'BLANK', '反馈单正文未由关联身份推定已读']) expect(html).toContain(literal);
+    expect(html).toContain('已读 3 条反馈页面行 · 1 个不同机号 · 1 行机号未完整取得');
+    expect(html).not.toContain('结构化单机执行反馈尚未取得');
+    expect(html).not.toContain('逐项执行要求和完整目标机队尚未取得');
+    expect(html).not.toMatch(/\d+\s*%/u);
   });
   it('keeps unavailable structured rows explicit and refuses a different revision', () => {
     const read = reading();

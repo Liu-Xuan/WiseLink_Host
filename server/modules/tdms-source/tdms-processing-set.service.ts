@@ -6,7 +6,8 @@ import type {
 import type { TdmsReadContext } from '@shared/tdms-source.interface';
 import type { TdmsPublicActor, TdmsSourceScope } from './tdms-source.types';
 import { tdmsError } from './tdms-source.types';
-import { assertPublicActor, sameScope } from './tdms-source.authorization';
+import { assertTdmsSourceActor, type TdmsSourceActor } from './tdms-runtime-delegation';
+import { sameScope } from './tdms-source.authorization';
 import { canonical, identifier, readContext } from './tdms-source.validation';
 import { processingSet } from './tdms-processing-set.validation';
 import { processingSetFacts } from './tdms-processing-set.references';
@@ -18,13 +19,13 @@ import type {
 /** First-slice inactive Host service. No HTTP claims, collector, native READ, model
  * or source IO. An explicitly bound authority must verify current proofs/ACLs.
  * Frozen reads are ref-only and freshly authorized; they are not body receipts. */
-export class TdmsProcessingSetService {
+export class TdmsProcessingSetService<Actor extends TdmsSourceActor = TdmsPublicActor> {
   constructor(
     private readonly repository: TdmsProcessingSetRepository,
-    private readonly authority: TdmsProcessingSetAuthority,
+    private readonly authority: TdmsProcessingSetAuthority<Actor>,
   ) {}
   async save(
-    actor: TdmsPublicActor,
+    actor: Actor,
     value: unknown,
     expectedGeneration: number | null,
   ): Promise<TdmsProcessingSetSaveReceipt> {
@@ -145,7 +146,7 @@ export class TdmsProcessingSetService {
     return receipt;
   }
   async readFrozen(
-    actor: TdmsPublicActor,
+    actor: Actor,
     s: TdmsSourceScope,
     ref: string,
     contextValue: TdmsReadContext = {},
@@ -176,7 +177,7 @@ export class TdmsProcessingSetService {
     return result.set;
   }
   async readSelected(
-    actor: TdmsPublicActor,
+    actor: Actor,
     s: TdmsSourceScope,
     family: string,
     context: TdmsReadContext = {},
@@ -221,7 +222,7 @@ export class TdmsProcessingSetService {
     return { head, set };
   }
   async history(
-    actor: TdmsPublicActor,
+    actor: Actor,
     s: TdmsSourceScope,
     family: string,
     context: TdmsReadContext = {},
@@ -258,12 +259,12 @@ export class TdmsProcessingSetService {
       nextAfter: rows.length > 50 ? sets[49]!.setRevisionRef : null,
     };
   }
-  private ready(actor: TdmsPublicActor): void {
-    assertPublicActor(actor);
+  private ready(actor: Actor): void {
+    assertTdmsSourceActor(actor);
     if (!this.authority.available)
       throw tdmsError('TDMS_PROCESSING_SET_AUTHORITY_UNCONFIGURED', 503);
   }
-  private scope(actor: TdmsPublicActor, s: TdmsSourceScope): void {
+  private scope(actor: Actor, s: TdmsSourceScope): void {
     if (s.tenantId !== actor.tenantId)
       throw tdmsError('TDMS_SOURCE_NOT_FOUND', 404);
   }

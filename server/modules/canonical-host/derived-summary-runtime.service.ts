@@ -5,6 +5,7 @@ import { Injectable, Optional } from '@nestjs/common';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, eq, sql } from 'drizzle-orm';
 import type { DerivedSummaryProducer, DerivedSummaryRevision } from '@shared/derived-summary.interface';
+import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { derivedSummary, derivedSummaryRevision } from '../../database/derived-summary.schema';
 import { actionAttempt } from '../../database/schema';
 import { ActionAttemptRepository, isLeaseSlotConflict } from '../action-attempt/action-attempt.repository';
@@ -69,8 +70,6 @@ export class DerivedSummaryRuntimeService {
       const task = checkedSummaryTask(row);
       const saved = await this.savedForRequest(target.summaryId, task.requestId, owner, database);
       const recoveringSaved = saved?.attemptId === row.attemptId;
-      await this.checkMembers(row, owner, database, !recoveringSaved);
-      if (recoveringSaved) await this.summaries.checkRevision(saved.contentJson, owner, database);
       const queue = new ActionAttemptRepository(database);
       const now = new Date();
       if (row.status === 'RUNNING' && row.leaseExpiresAt && row.leaseExpiresAt <= now) {
@@ -83,8 +82,11 @@ export class DerivedSummaryRuntimeService {
           leaseGeneration: row.leaseGeneration });
         return { error: 'DERIVED_SUMMARY_TIMED_OUT' };
       }
-      if (row.status === 'RUNNING' && row.leaseOwner === target.scope.principalId && row.leaseExpiresAt && row.leaseExpiresAt > now)
+      if (row.status === 'RUNNING' && row.leaseOwner === target.scope.principalId && row.leaseExpiresAt && row.leaseExpiresAt > now) {
+        await this.checkMembers(row, owner, database, !recoveringSaved);
+        if (recoveringSaved) await this.summaries.checkRevision(saved.contentJson, owner, database);
         return runningClaim(target.summaryId, row);
+      }
       if (!['QUEUED', 'RETRY_SCHEDULED'].includes(row.status)) return { error: `DERIVED_SUMMARY_${row.status}` };
       if (head.currentRevision !== task.expectedSummaryRevision && saved?.attemptId !== row.attemptId) {
         await queue.finishTerminal({ attemptId: row.attemptId, fromStatus: row.status, status: 'CONFLICT',
@@ -99,8 +101,14 @@ export class DerivedSummaryRuntimeService {
             expectedClaimCount: row.claimCount, expectedLeaseGeneration: row.leaseGeneration,
             operationRef: target.attemptRef, startedAt: row.startedAt, leaseOwner: target.scope.principalId,
             leaseSlot, now, leaseMs: ACTION_ATTEMPT_LEASE_MS, propagateSlotConflict: true }));
-          if (claimed) return runningClaim(target.summaryId,
-            await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database));
+          if (claimed) {
+            const current = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
+            // Native member bodies require the actual lease created in this same
+            // transaction. Any access failure rolls that claim back as well.
+            await this.checkMembers(current, owner, database, !recoveringSaved);
+            if (recoveringSaved) await this.summaries.checkRevision(saved.contentJson, owner, database);
+            return runningClaim(target.summaryId, current);
+          }
         } catch (error) { if (!isLeaseSlotConflict(error)) throw error; }
       }
       return { error: 'DERIVED_SUMMARY_CLAIM_UNAVAILABLE' };
@@ -119,7 +127,7 @@ export class DerivedSummaryRuntimeService {
         await this.checkMembers(row, owner, database, saved?.attemptId !== row.attemptId);
         return { owner, evidence: await this.summaries.taskEvidence(task, owner, database), hash: task.taskInputHash };
       });
-      await this.members.verifyOriginalEvidence(initial.evidence, initial.owner);
+      await this.verifyOriginalEvidence(target, initial.evidence, initial.owner);
       await this.repository.runtime(target, async (database, owner, _head, attempt) => {
         await this.lockGenerationContext(attempt, owner, database);
         await lockAttempt(attempt, database);
@@ -136,8 +144,9 @@ export class DerivedSummaryRuntimeService {
   }
 
   status(target: SummaryRuntimeTarget) {
-    return this.repository.runtime(target, async (database, owner, _head, attempt) => {
-      await this.checkMembers(attempt, owner, database, false);
+    return this.repository.runtime(target, async (database, _owner, _head, attempt) => {
+      // This response has only status/error/reference metadata. The repository
+      // verifies the durable owner and delegated attempt without reading bodies.
       return summaryRequestStatus(target.summaryId, attempt, database);
     });
   }
@@ -215,7 +224,7 @@ export class DerivedSummaryRuntimeService {
       });
       return { owner, evidence, originals: await this.summaries.taskEvidence(task, owner, database), hash: attempt.taskInputHash };
     });
-    await this.members.verifyOriginalEvidence(initial.originals, initial.owner);
+    await this.verifyOriginalEvidence(target, initial.originals, initial.owner);
     return this.repository.runtime(target, async (database, owner, _head, attempt) => {
       await this.lockGenerationContext(attempt, owner, database);
       await lockAttempt(attempt, database);
@@ -236,12 +245,14 @@ export class DerivedSummaryRuntimeService {
       if (target.requestId !== task.requestId || target.expectedSummaryRevision !== task.expectedSummaryRevision)
         throw summaryError('DERIVED_SUMMARY_SAVE_BINDING_INVALID');
       const saved = await this.savedForRequest(target.summaryId, target.requestId, owner, database);
+      if (saved?.attemptId === attempt.attemptId && attempt.status === 'SUCCEEDED')
+        this.members.useSavedNativeResult(database, target.requestId);
       await this.checkMembers(attempt, owner, database, saved?.attemptId !== attempt.attemptId);
       return { owner, task, evidence: await this.summaries.taskEvidence(task, owner, database) };
     });
     // Revalidate exact original artifacts without retaining a DB connection. The
     // final transaction repeats all authorization, content identity and lease checks.
-    await this.members.verifyOriginalEvidence(initial.evidence, initial.owner);
+    await this.verifyOriginalEvidence(target, initial.evidence, initial.owner);
     const producer = parseProducer(target.provenanceJson, initial.task.executionModel.modelRef);
     return this.repository.runtime(target, async (database, owner, _head, attempt) => {
       await this.lockGenerationContext(attempt, owner, database);
@@ -249,6 +260,8 @@ export class DerivedSummaryRuntimeService {
       await lockAttempt(attempt, database);
       const current = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
       const prior = await this.savedForRequest(target.summaryId, target.requestId, owner, database);
+      if (prior?.attemptId === current.attemptId && current.status === 'SUCCEEDED')
+        this.members.useSavedNativeResult(database, target.requestId);
       const readings = await this.checkMembers(current, owner, database, prior?.attemptId !== current.attemptId);
       const task = checkedSummaryTask(current);
       if (task.taskInputHash !== initial.task.taskInputHash) throw summaryError('DERIVED_SUMMARY_TASK_INVALID');
@@ -306,6 +319,7 @@ export class DerivedSummaryRuntimeService {
 
   readSaved(target: SummaryRuntimeTarget & { requestId: string }) {
     return this.repository.runtime(target, async (database, owner, _head, attempt) => {
+      if (attempt.status === 'SUCCEEDED') this.members.useSavedNativeResult(database, target.requestId);
       await this.checkMembers(attempt, owner, database, false);
       const saved = await this.savedForRequest(target.summaryId, target.requestId, owner, database);
       if (!saved || saved.attemptId !== attempt.attemptId) throw summaryError('DERIVED_SUMMARY_SAVE_NOT_FOUND', 404);
@@ -317,8 +331,10 @@ export class DerivedSummaryRuntimeService {
 
   finish(target: FencedTarget & { requestId: string }) {
     return this.repository.runtime(target, async (database, owner, head, attempt) => {
+      head = await this.repository.head(target.summaryId, owner, database, true);
       await lockAttempt(attempt, database);
       const row = await this.repository.attempt(target.summaryId, target.attemptRef, owner.tenantId, database);
+      if (row.status === 'SUCCEEDED') this.members.useSavedNativeResult(database, target.requestId);
       await this.checkMembers(row, owner, database, false);
       const saved = await this.savedForRequest(target.summaryId, target.requestId, owner, database);
       if (!saved || saved.attemptId !== row.attemptId || row.triggerRequestId !== target.requestId)
@@ -335,6 +351,7 @@ export class DerivedSummaryRuntimeService {
       await database.update(actionAttempt).set({ resultEnvelopeJson: canonicalJson({ summaryRef: saved.summaryRef,
         revision: saved.revision, requestId: target.requestId }), resultContentHash: canonicalSha256(saved.contentJson) })
         .where(eq(actionAttempt.attemptId, row.attemptId));
+      this.members.useSavedNativeResult(database, target.requestId);
       return finished(target, saved.summaryRef);
     });
   }
@@ -342,6 +359,19 @@ export class DerivedSummaryRuntimeService {
   private async lockGenerationContext(attempt: SummaryAttempt, owner: SummaryActor, database: PostgresJsDatabase) {
     const task = checkedSummaryTask(attempt);
     if (task.contextBasis) await this.repository.lockContext(task.contextBasis, owner, database, task.subject.summaryId);
+  }
+
+  private verifyOriginalEvidence(target: SummaryRuntimeTarget, evidence: AssessmentEvidence[], owner: SummaryActor) {
+    // Each native check opens and closes its authentic summary transaction. The
+    // intervening original-artifact IO holds no connection and borrows no WorkItem lease.
+    return this.members.verifyOriginalEvidence(evidence, owner, () => this.repository.runtime(target,
+      async (database, current, _head, attempt) => {
+        if (current.tenantId !== owner.tenantId || current.actorUserId !== owner.actorUserId)
+          throw summaryError('TDMS_NATIVE_EVIDENCE_ACTOR_INVALID');
+        if (attempt.status === 'SUCCEEDED')
+          this.members.useSavedNativeResult(database, checkedSummaryTask(attempt).requestId);
+        await this.members.verifyNativeInTransaction(evidence, current, database);
+      }));
   }
 
   private async checkMembers(attempt: SummaryAttempt, owner: SummaryActor, database: PostgresJsDatabase,

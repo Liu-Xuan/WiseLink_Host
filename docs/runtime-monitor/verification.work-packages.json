@@ -45,13 +45,16 @@
       "id": "P3",
       "label": "P3 · TDMS实际来源与公司措施",
       "bindingIds": [
-        "feedback.reading"
+        "feedback.reading",
+        "company.approved-opinion"
       ],
       "scenarioIds": [
+        "V12",
         "V23",
-        "V24"
+        "V24",
+        "V44"
       ],
-      "nextAction": "来源读取代码与隔离验证具备；当前AppModule来源授权/原件store及分析runtime reader/verifier未装配。真实权限、准确原件登记与独立公司措施正文消费仍待接通。"
+      "nextAction": "Gateway来源只读及Host真实运行reader/verifier已接；生产批准有效性UNKNOWN与processing set/grant来源仍待取得。关联工程文件正文保持独立READ条件，不用测试批准fixture替代线上事实。"
     },
     {
       "id": "P4",
@@ -68,19 +71,20 @@
         "V38",
         "V41"
       ],
-      "nextAction": "AEO原生来源窗口及LCM矩阵/单机诊断已接。完整AEO要求/目标/替代关系仍缺；LCM候选读取不提升为实时装机或AEO完成。"
+      "nextAction": "反馈页适用编号与有界浏览器来源授权已接入并完成隔离验证。发布后只读核对获权准确反馈单；空值/截断继续未知，未来直接接结构化AEO文件。"
     },
     {
       "id": "P5",
       "label": "P5 · Wiki与有限增量",
       "bindingIds": [
-        "wiki.saved-reading"
+        "wiki.saved-reading",
+        "company.approved-opinion"
       ],
       "scenarioIds": [
         "V18",
         "V20"
       ],
-      "nextAction": "ATA2直接成员消费与Wiki目录诊断已接；准备Host/Native准确包，真实跨资料生成及批准变化消费仍待其来源和授权。"
+      "nextAction": "ATA2成员与真实Summary Native消费链已通过隔离验证；生产当前批准来源缺口未关闭。仅在准确来源和原请求授权满足时执行实际跨资料生成。"
     },
     {
       "id": "P6",
@@ -92,7 +96,7 @@
         "V08",
         "V10"
       ],
-      "nextAction": "ACK和迟到配置锁序修复已通过4项真实PG竞争回归；实际阶段时间与官方同窗聚合已取得。发布后观察正常恢复；容量、全局积压和首次可读保持未知。"
+      "nextAction": "ACK和迟到配置锁序修复已通过4项真实PG竞争回归；实际阶段时间与官方同窗聚合已取得。发布后观察正常恢复；容量、全局积压和首次可读保持未知。 Native过期COMMITTING恢复和Summary收尾锁序已完成定向PG核验，不增READ、模型或租约。"
     }
   ]
 }

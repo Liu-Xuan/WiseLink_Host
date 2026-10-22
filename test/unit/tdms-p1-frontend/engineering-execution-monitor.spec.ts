@@ -4,6 +4,7 @@ import type { WiseLinkMonitorElement } from '@client/src/pages/DocumentParsingPa
 import { adaptEngineeringExecutionRead, engineeringExecutionDiagnosticReference, engineeringExecutionMonitorScope,
   engineeringExecutionSourceRef } from '@client/src/features/tdms-source/tdms-engineering-execution-monitor';
 import { sourceRead } from './fixtures';
+import { withFeedbackPage } from './engineering-feedback.fixture';
 
 let sessionGeneration = 1;
 const sourcePage = jest.fn();
@@ -123,6 +124,23 @@ it('keeps an empty source window readable without inventing target completeness 
   expect(adaptEngineeringExecutionRead(read)!.edges).toEqual([]);
   delete read.engineeringExecution;
   expect(adaptEngineeringExecutionRead(read)).toBeNull();
+});
+
+it('locates each current feedback-page row without converting aircraft coverage into execution completion', async () => {
+  const read = withFeedbackPage(reading());
+  const runtime = adaptEngineeringExecutionRead(read, parentScope)!;
+  expect(runtime.nodes[0].artifact).toContain('1 个反馈页面窗口、3 行、1 个不同适用机号');
+  expect(runtime.nodes[0].coverage).toMatchObject({ label: expect.stringContaining('整份执行核验未知') });
+  expect(runtime.nodes[0].outputs).toHaveLength(4);
+  expect(runtime.nodes[0].outputs[3].label).toContain('机号未完整取得（BLANK）');
+  await mountDetail(read);
+  const monitor = await openMonitor();
+  const ref = engineeringExecutionSourceRef(read.record.sourceRevisionRef, 'applicability:relatedStatusLinkTable', 'page-row-1');
+  const button = Array.from(monitor.shadowRoot!.querySelectorAll<HTMLButtonElement>('[data-nav="artifact"]'))
+    .find(item => item.dataset.ref === ref)!;
+  await act(async () => button.click());
+  expect(document.activeElement?.getAttribute('data-tdms-execution-ref')).toBe(ref);
+  expect(dom.window.HTMLElement.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
 });
 
 it('refuses mismatched revisions and receipts, and never inspects a denied body', () => {

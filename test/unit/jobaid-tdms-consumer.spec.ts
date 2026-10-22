@@ -64,8 +64,10 @@ import { tdmsReadObservation, resolvedTdmsReadEvidence, sameTdmsEvidenceBody } f
 function serviceHarness(override: {context?:TdmsRuntimeTaskContext;principal?:CanonicalVerifiedServiceScope;reader?:TdmsRuntimeReaderPort;verifier?:TdmsNativeEvidenceVerifier} = {}) {
   const taskInput=task(true,override.context??nativeContext()); let allowed=true; let readCount=0; let revokeOnRecord=false;
   const principal=override.principal??{tenantId:'fixture-tenant',workItemId:'WI-TEST',principalId:'executor',appId:'app_17bzc551rsg',authorizationFingerprint:'fixture-auth'};
+  if (principal.automaticWorkItemLease) taskInput.automaticWorkItemLease={
+    requestId:principal.automaticWorkItemLease.requestId,leaseGeneration:principal.automaticWorkItemLease.leaseGeneration};
   const envelope=sealTaskEnvelope({schemaVersion:'wiselink.3_1.openclaw_task_envelope.v1',actionAttemptId:'ATT-TEST',operationRef:'OP-TEST',taskType:'OPENCLAW_DYNAMIC_EVALUATION',priority:1,tenantId:principal.tenantId,workItemId:'WI-TEST',inputRevision:1,baseRevision:1,documentVersionId:'DV-TEST',sourceRefs:[],allowedConnectors:[],hostResolvedMissingInputs:[],modelInput:taskInput,deadline:'2099-01-01T00:00:00Z',idempotencyKey:'fixture'});
-  const row={attemptId:'ATT-TEST',operationRef:'OP-TEST',tenantId:principal.tenantId,workItemId:'WI-TEST',documentVersionId:'DV-TEST',actionType:envelope.taskType,status:'RUNNING',taskEnvelopeJson:canonicalJson(envelope),reviewActivityJson:'[]',leaseOwner:principal.principalId,leaseToken:'lease',leaseGeneration:1,leaseExpiresAt:new Date('2099-01-01'),deadlineAt:new Date('2099-01-01'),cancelRequestedAt:null} as ActionAttemptRow;
+  const row={attemptId:'ATT-TEST',operationRef:'OP-TEST',tenantId:principal.tenantId,workItemId:'WI-TEST',documentVersionId:'DV-TEST',inputRevision:1,baseRevision:1,actionType:envelope.taskType,status:'RUNNING',taskEnvelopeJson:canonicalJson(envelope),reviewActivityJson:'[]',leaseOwner:principal.principalId,leaseToken:'lease',leaseGeneration:1,leaseExpiresAt:new Date('2099-01-01'),deadlineAt:new Date('2099-01-01'),cancelRequestedAt:null} as ActionAttemptRow;
   const history:JobAidWorkRevision[]=[];
   const database={fixtureTransaction:'source-read-and-save'} as unknown as PostgresJsDatabase;
   let transactionHeld=false;
@@ -100,6 +102,7 @@ function serviceHarness(override: {context?:TdmsRuntimeTaskContext;principal?:Ca
     })),
   };
   const service=new CanonicalJobAidProblemService({} as never,{} as never,{authorizeOpenClawAttempt:async()=>principal} as never,{} as never,{} as never,{readScoped:async()=>row} as never,{loadAuthorizationBinding:async()=>({documentVersionId:'DV-TEST'})} as never,{hasActiveOfficialActorMapping:async()=>true} as never,{} as never,work as never,undefined,undefined,undefined,undefined,undefined,undefined,override.reader??reader,override.verifier??verifier);
+  Object.assign(service,{registrar:{getTenantScopedByWorkItemId:async()=>structuredClone(item)}});
   const fence={attemptRef:'OP-TEST',leaseToken:'lease',leaseGeneration:1};
   const targetRef=taskInput.modelInput.availableSources.find(item=>item.kind==='TDMS_NATIVE_RECORD')!.ref;
   const command={schemaVersion:'wiselink.jobaid-problem-work.v3',headline:'Conditional native judgment',listBrief:'Configuration remains to be verified',overview:'Source professional judgment, not execution proof',issues:[{issueKey:'native-condition',question:'Is configuration eligible?',body:`The approved source opinion is conditional [[${targetRef}]].`,riskScenarios:[],measures:[],otherClassifications:[],openQuestions:[],requirementHandling:[]}],roundCompletion:'COMPLETE_WITH_OPEN_QUESTIONS',completionReason:'Source read; configuration remains unresolved',changeSummary:'Added source judgment',unchangedExplanation:'No prior conclusion replaced'};

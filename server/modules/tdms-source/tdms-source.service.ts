@@ -1,3 +1,4 @@
+import { assertReadRecordMember, assertReadStoredMembers, assertReadRelationMember, assertReadGrantsCurrent } from './tdms-read-member-scope';
 import type {
   TdmsArtifactSelection,
   TdmsFileServiceRecordReadResponse,
@@ -91,6 +92,7 @@ type PreparedSourcePackage = Omit<TdmsSourcePackage, 'artifacts'> & {
 type TdmsEndpointReadDependency = {
   documentVersionIds: string[];
   grant?: TdmsSourceGrant;
+  record?: TdmsRecordSummary;
 };
 const LIMITATIONS = [
   'SOURCE_DECLARED_NOT_INDEPENDENTLY_VERIFIED',
@@ -489,6 +491,7 @@ export class TdmsSourceService {
           ...(context.documentVersionId
             ? { documentVersionId: context.documentVersionId }
             : {}),
+          ...(grant.permittedMembers ? { permittedRecords: grant.permittedMembers.records } : {}),
           limit: 51,
         });
         for (const row of rows) {
@@ -499,6 +502,7 @@ export class TdmsSourceService {
             !row.record.relatedDocumentVersionIds.includes(context.documentVersionId)
           )
             continue;
+          assertReadRecordMember(grant, row.record);
           await this.assertRelatedDocuments(actor, row.record);
           records.push(summary(row.record));
         }
@@ -528,6 +532,7 @@ export class TdmsSourceService {
     if (context.documentVersionId)
       await this.documents.assertRead(actor, context.documentVersionId);
     for (const g of grants) await this.recheck(actor, g, 'CATALOGUE', context);
+    assertReadGrantsCurrent(grants);
     return result.response;
   }
   async readRecord(
@@ -563,11 +568,13 @@ export class TdmsSourceService {
       await this.recheck(actor, row.grant, 'READ_RECORD', context);
       return {
         grant: row.grant,
+        stored: row.stored,
         response: sourceRecordReadResponse(row.stored, receipt, LIMITATIONS),
       };
     });
     await this.assertRelatedDocuments(actor, result.response.record);
-    await this.recheck(actor, result.grant, 'READ_RECORD', context);
+    const fresh = await this.recheck(actor, result.grant, 'READ_RECORD', context);
+    assertReadStoredMembers(fresh, result.stored);
     return result.response;
   }
   readDocumentVersion(actor: TdmsPublicActor, input: TdmsDocumentSourceReadRequest) {
@@ -619,6 +626,7 @@ export class TdmsSourceService {
         )
           throw tdmsError('TDMS_STORED_SCOPE_MISMATCH', 409);
         try {
+          assertReadRecordMember(root.grant, row.record);
           await this.assertRelatedDocuments(actor, row.record);
         } catch (error) {
           if (isHiddenDocument(error)) continue;
@@ -688,6 +696,8 @@ export class TdmsSourceService {
       }> = [];
       for (const row of await tx.relations(actor.tenantId, ref)) {
         if (!sameScope(row.scope, root.grant.scope)) continue;
+        try { assertReadRelationMember(root.grant, row.assertion.sourceRelationId); }
+        catch (error) { if (isHiddenDocument(error)) continue; throw error; }
         rejectEmbeddedAssessmentBodies(row.assertion.rawFields);
         rejectEmbeddedAssessmentBodies(row.assertion.scope);
         // Both exact endpoints must be freshly readable. Denied neighbors do not leak titles/counts/adjacency.
@@ -763,8 +773,10 @@ export class TdmsSourceService {
     for (const { assertion, endpoints } of result.releaseDependencies) {
       try {
         for (const endpoint of endpoints) {
-          if (endpoint.grant)
-            await this.recheck(actor, endpoint.grant, 'READ_RECORD', context);
+          if (endpoint.grant) {
+            const fresh = await this.recheck(actor, endpoint.grant, 'READ_RECORD', context);
+            if (endpoint.record) assertReadRecordMember(fresh, endpoint.record);
+          }
           for (const id of endpoint.documentVersionIds)
             await this.documents.assertRead(actor, id);
         }
@@ -775,6 +787,8 @@ export class TdmsSourceService {
       visibleRelations.push(assertion);
     }
     await this.recheck(actor, result.grant, 'READ_RELATIONS', context);
+    assertReadGrantsCurrent([result.grant, ...result.releaseDependencies.flatMap(({ endpoints }) =>
+      endpoints.flatMap(endpoint => endpoint.grant ? [endpoint.grant] : []))]);
     return { ...result.response, relations: visibleRelations };
   }
   async importPackage(
@@ -1328,6 +1342,8 @@ export class TdmsSourceService {
       context,
     );
     this.assertGrant(actor, grant, stored.scope);
+    if (action === 'READ_RECORD') assertReadStoredMembers(grant, stored);
+    else assertReadRecordMember(grant, stored.record);
     const head = await tx.recordHead(
       stored.scope,
       stored.record.recordKind,
@@ -1364,6 +1380,7 @@ export class TdmsSourceService {
     await this.recheck(actor, row.grant, 'READ_RECORD', context);
     return {
       grant: row.grant,
+      record: row.stored.record,
       documentVersionIds: row.stored.record.relatedDocumentVersionIds,
     };
   }
@@ -1404,8 +1421,11 @@ export class TdmsSourceService {
       context,
     );
     this.assertGrant(actor, fresh, grant.scope);
-    if (fresh.permissionRevision !== grant.permissionRevision)
+    if (fresh.permissionRevision !== grant.permissionRevision ||
+      canonical(fresh.permittedMembers ?? null) !== canonical(grant.permittedMembers ?? null) ||
+      fresh.validUntil !== grant.validUntil)
       throw tdmsError('TDMS_SOURCE_PERMISSION_CHANGED', 409);
+    return fresh;
   }
   private receipt(
     ref: string,

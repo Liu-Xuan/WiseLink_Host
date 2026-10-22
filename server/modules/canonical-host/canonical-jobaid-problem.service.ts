@@ -6,7 +6,8 @@ import {
 import { assertAutomaticWorkItemAttemptLease, taskAutomaticWorkItemLease } from '../action-attempt/automatic-work-item-attempt-lease';
 import type { CancelledInitialContinuationGuard } from '../action-attempt/cancelled-initial-continuation';
 import { TDMS_RUNTIME_READER, type TdmsRuntimeReaderPort, type TdmsRuntimeTaskContext } from '../tdms-source/tdms-runtime-reader.port';
-import { TDMS_NATIVE_EVIDENCE_VERIFIER, verifyTdmsNativeEvidence, assertTdmsNativeInTransaction, type TdmsNativeEvidenceVerifier } from './tdms-native-evidence-verifier.port';
+import { TDMS_NATIVE_EVIDENCE_VERIFIER, verifyTdmsNativeEvidence, assertTdmsNativeInTransaction, type TdmsNativeEvidenceVerifier,
+  type TdmsNativeTransactionInput } from './tdms-native-evidence-verifier.port';
 import { parseAssessmentTdmsEvidence } from '@shared/assessment-tdms-evidence';
 import { mergeTdmsReadEvidence, resolvedTdmsReadEvidence, tdmsJobAidDirectory } from './jobaid-tdms-context';
 import { DocumentActivityRunRepository } from './document-activity-run.repository';
@@ -56,6 +57,7 @@ import {
   canonicalJson,
   canonicalSha256,
   parseTaskEnvelope,
+  parseStoredResultEnvelope,
 } from '../action-attempt/action-attempt-envelope';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
 import {
@@ -258,7 +260,7 @@ export class CanonicalJobAidProblemService {
     // A queued task still names its sealed work. Recheck the exact Host marker
     // before claiming so a later Review cannot expose obsolete model input.
     if (purpose === 'OVERALL_CONSISTENCY' && workItem.overallRegenerationRequest)
-      await this.reviewOverallRegenerationBinding({workItem,tenantId:scope.tenantId,actorUserId},false);
+      await this.reviewOverallRegenerationBinding({workItem,tenantId:scope.tenantId,actorUserId,nativeCaller:{runtimeScope:scope}},false);
     const claim = await this.attempts.reserveAndClaim({
       workItemId: workItem.workItemId,
       taskType,
@@ -427,12 +429,30 @@ export class CanonicalJobAidProblemService {
   /** Queue recovery is already service/tenant/Source authorized. Rebind only
    * its persisted actor on the existing transaction; do not acquire a pool connection. */
   async assertAutomaticCommittingRecoveryAuthorized(row: ActionAttemptRow, actorUserId: string,
-    database: PostgresJsDatabase): Promise<void> {
+    database: PostgresJsDatabase, recoveryScope?: NonNullable<TdmsNativeTransactionInput['recoveryCaller']>['scope']): Promise<void> {
     if (!row.taskEnvelopeJson) throw new Error('JOBAID_TASK_BINDING_INVALID');
     const task=parseJobAidProblemTask(parseTaskEnvelope(row.taskEnvelopeJson));
     if (task.actorUserId !== actorUserId) throw new Error('JOBAID_ACTOR_AUTHORIZATION_CHANGED');
     await this.work.withActorScope(actorUserId,async()=>{
-      await this.assertEvidenceOwned(task.sourceCatalog,row.tenantId,actorUserId,row.workItemId,database);
+      const result=row.resultEnvelopeJson?parseStoredResultEnvelope({value:row.resultEnvelopeJson,task:parseTaskEnvelope(row.taskEnvelopeJson!)}):null;
+      let resultWorkRef:string|undefined;
+      if(result?.modelOutput) {
+        const output:unknown=JSON.parse(result.modelOutput);
+        if(output && typeof output==='object' && 'workRevisionRef' in output && typeof output.workRevisionRef==='string') resultWorkRef=output.workRevisionRef;
+      }
+      const saved=resultWorkRef?await this.work.readByRef({tenantId:row.tenantId,workItemId:row.workItemId,workRevisionRef:resultWorkRef},database):null;
+      // Recover only the result's exact saved body. Later unused READs remain in
+      // the journal; the receipt verifier checks the consumed carriers against it.
+      const evidence=[...task.sourceCatalog,...(saved?.content.evidence??[])];
+      const assertNative=async(native:AssessmentEvidence[])=>{
+        if(!native.some(item=>item.kind==='TDMS_NATIVE_RECORD')) return;
+        if(!recoveryScope||!saved||saved.documentVersionId!==row.documentVersionId||!row.taskInputHash||!row.resultContentHash||!row.operationRef)
+          throw new Error('TDMS_COMMIT_RECOVERY_CALLER_REQUIRED');
+        await assertTdmsNativeInTransaction({actor:{tenantId:row.tenantId,actorUserId},recoveryCaller:{scope:recoveryScope,
+          workItemId:row.workItemId,documentVersionId:row.documentVersionId,attemptRef:row.operationRef,
+          taskInputHash:row.taskInputHash,resultContentHash:row.resultContentHash},evidence:native,database},this.nativeVerifier);
+      };
+      await this.assertEvidenceOwned(evidence,row.tenantId,actorUserId,row.workItemId,database,assertNative);
       for (const binding of task.sourceBindings) {
         const current=await this.work.loadOwnedSourceBinding({tenantId:row.tenantId,actorUserId,
           workItemId:binding.workItemId,kind:binding.kind},database);
@@ -444,6 +464,7 @@ export class CanonicalJobAidProblemService {
           actorUserId,workItemId:row.workItemId,documentVersionId:original.documentVersionId},database);
         if(current.parseRunId !== original.parseRunId) throw new Error('JOBAID_ORIGINAL_REQUEST_CHANGED');
       }
+      await assertNative(evidence);
     },database);
   }
 
@@ -655,6 +676,8 @@ export class CanonicalJobAidProblemService {
     tenantId: string,
     permissionSnapshotVersion: string,
     requestContext = false,
+    nativeCaller?: {runtimeScope:CanonicalVerifiedServiceScope} |
+      {browserActor:NonNullable<TdmsNativeTransactionInput['browserCaller']>['actor']},
   ) {
     const loaded = await this.workItems.loadTenantScopedProjection(
       workItem.workItemId,
@@ -664,7 +687,7 @@ export class CanonicalJobAidProblemService {
       throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
     const reviewBinding = workItem.overallRegenerationRequest
       ? await this.reviewOverallRegenerationBinding(
-        { workItem, tenantId, actorUserId: loaded.row.requestedByUserId },
+        { workItem, tenantId, actorUserId: loaded.row.requestedByUserId, nativeCaller },
         requestContext,
       ) : undefined;
     const base = workItem.integratedAssessment?.baseRules;
@@ -943,10 +966,10 @@ export class CanonicalJobAidProblemService {
     }
     let tdmsContext: TdmsRuntimeTaskContext | undefined;
     if (nativeAdmission && this.tdmsReader && purpose !== 'PROBLEM_REVIEW') {
-      tdmsContext = await this.tdmsReader.discover({scope:nativeAdmission.scope,actorUserId},
+      tdmsContext = (await this.tdmsReader.discover({scope:nativeAdmission.scope,actorUserId},
         {tenantId,workItemId:workItem.workItemId,documentVersionId:workItem.source.documentVersionId,
-          actorUserId,taskContextRef:nativeAdmission.taskContextRef});
-      await this.tdmsReader.assertAuthorized({scope:nativeAdmission.scope,actorUserId},tdmsContext);
+          actorUserId,taskContextRef:nativeAdmission.taskContextRef})) ?? undefined;
+      if (tdmsContext) await this.tdmsReader.assertAuthorized({scope:nativeAdmission.scope,actorUserId},tdmsContext);
     }
     // Authorize the complete new input inside buildModelInput, before the
     // lifecycle persists or claims an attempt. begin also rechecks replays.
@@ -956,6 +979,7 @@ export class CanonicalJobAidProblemService {
       tenantId,
       actorUserId,
       requestContext,
+      tdmsContext && nativeAdmission ? {runtime:{principal:{scope:nativeAdmission.scope,actorUserId},context:tdmsContext,phase:'ADMISSION'}} : undefined,
     );
     const taskInput = buildJobAidProblemTask({
       workItem: assessmentWorkItem,
@@ -1128,13 +1152,13 @@ export class CanonicalJobAidProblemService {
   async readSummaryMemberInTransaction(input: {
     tenantId: string; actorUserId: string; workItemId: string; workRef: string;
     readScope?: 'TENANT';
-  }, database: PostgresJsDatabase) {
+  }, database: PostgresJsDatabase, assertNative?: (evidence: AssessmentEvidence[]) => Promise<void>) {
     const revision = await this.work.readByRef({ tenantId: input.tenantId,
       workItemId: input.workItemId, workRevisionRef: input.workRef }, database);
     if (!revision) throw new Error('JOBAID_WORK_NOT_FOUND');
     await (input.readScope === 'TENANT' ? this.assertEvidenceReadable(revision.content.evidence, input.tenantId,
-      input.actorUserId, input.workItemId, database) : this.assertEvidenceOwned(revision.content.evidence, input.tenantId,
-      input.actorUserId, input.workItemId, database));
+      input.actorUserId, input.workItemId, database, assertNative) : this.assertEvidenceOwned(revision.content.evidence, input.tenantId,
+      input.actorUserId, input.workItemId, database, assertNative));
     const [row] = await database.select({ projectionJson: workItemTable.projectionJson }).from(workItemTable)
       .where(and(eq(workItemTable.tenantId, input.tenantId), eq(workItemTable.workItemId, input.workItemId),
         input.readScope === 'TENANT' ? undefined : eq(workItemTable.requestedByUserId, input.actorUserId))).limit(1);
@@ -1363,6 +1387,8 @@ export class CanonicalJobAidProblemService {
       workItem: CanonicalWorkItemProjection;
       tenantId: string;
       actorUserId: string;
+      nativeCaller?: {runtimeScope:CanonicalVerifiedServiceScope} |
+        {browserActor:NonNullable<TdmsNativeTransactionInput['browserCaller']>['actor']};
     },
     requestContext = true,
     stage: 'REQUEST' | 'EXECUTION' = 'EXECUTION',
@@ -1410,7 +1436,8 @@ export class CanonicalJobAidProblemService {
       this.reviewRegenerationBaseRevision(input.workItem, input.actorUserId,
         latest.workRevisionRef, latest.workRevision);
       await this.sourceBindings(latest.content.evidence, input.workItem,
-        input.tenantId, input.actorUserId, requestContext);
+        input.tenantId, input.actorUserId, requestContext,
+        await this.savedReadNativeContext(input,latest));
       return { workRevisionRef: latest.workRevisionRef, workRevision: latest.workRevision };
     }
     if (latest.workRevisionRef === base.workRevisionRef)
@@ -2506,7 +2533,9 @@ export class CanonicalJobAidProblemService {
     if (!revision || revision.workItemId !== workItemId || revision.workRevisionRef !== workRevisionRef || !revision.content)
       throw jobAidBrowserWorkUnavailable();
     // Projection rebuild is an owner-authorized writer, not a shared browser read.
-    await this.assertEvidenceOwned(revision.content.evidence, actor.tenantId, actor.userId, workItemId, database);
+    await this.assertEvidenceOwned(revision.content.evidence, actor.tenantId, actor.userId, workItemId, database,
+      this.browserNativeAssertion(actor,{workItemId,documentVersionId:revision.documentVersionId,
+        workItemRevision:access.workItemRevision},[workRevisionRef],database));
     return revision;
   }
 
@@ -2536,6 +2565,7 @@ export class CanonicalJobAidProblemService {
     await this.assertBrowserEvidenceOwned(
       readingResult.evidence, actor.tenantId, actor.userId, workItemId,
       actor.objectAccessActor?.identityProvenance === 'MIAODA_GATEWAY_USER_CONTEXT',
+      {actor,workItem,workRevisionRefs:[workRevisionRef]},
     );
     return { revision, overall: { status: overall.status, readingResult } };
   }
@@ -2558,7 +2588,8 @@ export class CanonicalJobAidProblemService {
     });
     if (!revision) throw jobAidBrowserWorkUnavailable();
     await this.assertBrowserEvidenceOwned(revision.content.evidence, actor.tenantId, actor.userId, workItemId,
-      actor.objectAccessActor?.identityProvenance === 'MIAODA_GATEWAY_USER_CONTEXT');
+      actor.objectAccessActor?.identityProvenance === 'MIAODA_GATEWAY_USER_CONTEXT',
+      {actor,workItem,workRevisionRefs:[workRevisionRef]});
     return { workItem, revision };
   }
 
@@ -2588,6 +2619,7 @@ export class CanonicalJobAidProblemService {
         actor.userId,
         workItemId,
         actor.objectAccessActor?.identityProvenance === 'MIAODA_GATEWAY_USER_CONTEXT',
+        {actor,workItem,workRevisionRefs:[current.workRevisionRef]},
       );
     const activity = execution ? projectJobAidActivity(execution, savedActivity) : null;
     const overall = workItem.integratedAssessment?.overallSynthesis;
@@ -2655,6 +2687,7 @@ export class CanonicalJobAidProblemService {
     tenantId: string,
     actorUserId: string,
     requestContext = false,
+    nativeContext?: Pick<TdmsNativeTransactionInput,'runtime'|'browserCaller'>,
   ): Promise<JobAidSourceBinding[]> {
     const ids = new Set([
       primary.workItemId,
@@ -2672,6 +2705,7 @@ export class CanonicalJobAidProblemService {
         actorUserId,
         primary.workItemId,
         database,
+        nativeContext ? evidence => assertTdmsNativeInTransaction({actor:{tenantId,actorUserId},...nativeContext,evidence,database},this.nativeVerifier) : undefined,
       );
       const bindings: JobAidSourceBinding[] = [];
       for (const workItemId of ids) {
@@ -2685,6 +2719,24 @@ export class CanonicalJobAidProblemService {
       return bindings;
       },
     );
+  }
+
+  private async savedReadNativeContext(input:{workItem:CanonicalWorkItemProjection;tenantId:string;actorUserId:string;
+    nativeCaller?:{runtimeScope:CanonicalVerifiedServiceScope}|
+      {browserActor:NonNullable<TdmsNativeTransactionInput['browserCaller']>['actor']}},saved:JobAidWorkRevision):
+    Promise<Pick<TdmsNativeTransactionInput,'runtime'|'browserCaller'>|undefined> {
+    if (!saved.content.evidence.some(item=>item.kind==='TDMS_NATIVE_RECORD')) return undefined;
+    const caller=input.nativeCaller;
+    if (!caller) throw new Error('TDMS_RUNTIME_CALLER_AUTHORIZATION_NOT_CONNECTED');
+    if ('browserActor' in caller) return {browserCaller:{actor:caller.browserActor,action:'READ_WORK_ITEM',
+      workItemId:input.workItem.workItemId,documentVersionId:input.workItem.source.documentVersionId,
+      workItemRevision:input.workItem.revision,workRevisionRef:saved.workRevisionRef,workRevisionRefs:[saved.workRevisionRef]}};
+    if (!this.tdmsReader) throw new Error('TDMS_RUNTIME_CALLER_AUTHORIZATION_NOT_CONNECTED');
+    const principal={scope:caller.runtimeScope,actorUserId:input.actorUserId};
+    const context=await this.tdmsReader.discover(principal,{tenantId:input.tenantId,workItemId:input.workItem.workItemId,
+      documentVersionId:input.workItem.source.documentVersionId,actorUserId:input.actorUserId,taskContextRef:'TDMS_OVERALL_ADMISSION'});
+    if (!context) throw new Error('TDMS_RUNTIME_CALLER_AUTHORIZATION_NOT_CONNECTED');
+    return {runtime:{principal,context,phase:'ADMISSION'}};
   }
 
   private async assertSourcesAuthorized(
@@ -2704,6 +2756,9 @@ export class CanonicalJobAidProblemService {
           input.actorUserId,
           workItemId,
           database,
+          input.tdmsContext && runtimeScope ? evidence => assertTdmsNativeInTransaction({actor:{tenantId,actorUserId:input.actorUserId},
+            runtime:{principal:{scope:runtimeScope,actorUserId:input.actorUserId},context:input.tdmsContext!,
+              ...('attemptRef' in runtimeScope?{}:{phase:'ADMISSION' as const})},evidence,database},this.nativeVerifier) : undefined,
         );
         for (const binding of input.sourceBindings) {
           const current = await this.work.loadOwnedSourceBinding(
@@ -2827,8 +2882,20 @@ export class CanonicalJobAidProblemService {
     actorUserId: string,
     workItemId: string,
     sharedRead = false,
+    native?: {actor:CanonicalHostActor;workItem:CanonicalWorkItemProjection;workRevisionRefs:string[]},
   ): Promise<void> {
     try {
+      if (evidence.some(item=>item.kind==='TDMS_NATIVE_RECORD') && native) {
+        if (!this.database) throw new Error('JOBAID_REQUEST_DATABASE_UNAVAILABLE');
+        return await this.database.transaction(async tx=>{
+          const database=tx as PostgresJsDatabase;
+          const assertNative=this.browserNativeAssertion(native.actor,{workItemId,
+            documentVersionId:native.workItem.source.documentVersionId,workItemRevision:native.workItem.revision},
+            native.workRevisionRefs,database);
+          await (sharedRead ? this.assertEvidenceReadable(evidence,tenantId,actorUserId,workItemId,database,assertNative)
+            : this.assertEvidenceOwned(evidence,tenantId,actorUserId,workItemId,database,assertNative));
+        });
+      }
       await (sharedRead ? this.assertEvidenceReadable(evidence, tenantId, actorUserId, workItemId)
         : this.assertEvidenceOwned(evidence, tenantId, actorUserId, workItemId));
     } catch (cause: unknown) {
@@ -2848,9 +2915,27 @@ export class CanonicalJobAidProblemService {
     }
   }
 
+  private browserNativeAssertion(actor:CanonicalHostActor,
+    binding:{workItemId:string;documentVersionId:string;workItemRevision:number},
+    workRevisionRefs:string[],database:PostgresJsDatabase):(evidence:AssessmentEvidence[])=>Promise<void> {
+    return async evidence=>{
+      if (!evidence.some(item=>item.kind==='TDMS_NATIVE_RECORD')) return;
+      const identity=actor.objectAccessActor;
+      if (!identity || !isHostedCanonicalFinalUserActor(identity) || identity.tenantId!==actor.tenantId ||
+          identity.canonicalSubject.id!==actor.userId || actor.appId!==identity.applicationScopeId)
+        throw jobAidBrowserWorkUnavailable();
+      const refs=[...new Set(workRevisionRefs)];
+      if (!refs.length) throw new Error('TDMS_NATIVE_PROJECTION_WORK_REQUIRED');
+      await assertTdmsNativeInTransaction({actor:{tenantId:actor.tenantId,actorUserId:actor.userId},
+        browserCaller:{actor:identity,action:'READ_WORK_ITEM',...binding,workRevisionRef:refs[0]!,workRevisionRefs:refs},
+        evidence,database},this.nativeVerifier);
+    };
+  }
+
   /** Read an immutable saved candidate under the current native reader, not its creator. */
   private async assertEvidenceReadable(evidence: AssessmentEvidence[], tenantId: string,
-    actorUserId: string, primaryWorkItemId: string, connection?: PostgresJsDatabase): Promise<void> {
+    actorUserId: string, primaryWorkItemId: string, connection?: PostgresJsDatabase,
+    assertNative?: (evidence: AssessmentEvidence[]) => Promise<void>): Promise<void> {
     const database = connection ?? this.database;
     if (!database) throw new Error('JOBAID_SOURCE_AUTHORIZATION_UNAVAILABLE');
     const workIds = new Set<string>([primaryWorkItemId]);
@@ -2867,7 +2952,8 @@ export class CanonicalJobAidProblemService {
       AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(${JSON.stringify([...documentIds])}::jsonb) d(id)
         WHERE native_app_document_readable(${tenantId},d.id::varchar) IS NOT TRUE) AS allowed`);
     if (access?.allowed !== true) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
-    await verifyTdmsNativeEvidence(evidence, { tenantId, actorUserId }, this.nativeVerifier, database);
+    if (assertNative) await assertNative(evidence);
+    else await verifyTdmsNativeEvidence(evidence, { tenantId, actorUserId }, this.nativeVerifier, database);
     const queried = evidence.filter(item => item.kind === 'QUERY_RECEIPT' && item.queryProvenance?.origin === 'AILY_RETRIEVAL');
     if (queried.length) {
       const saved = await this.knowledge?.saved({ tenantId, actorId: actorUserId,
@@ -2894,7 +2980,8 @@ export class CanonicalJobAidProblemService {
         attachment.parsedArtifact.ref !== item.artifactRef || attachment.parsedArtifact.sha256 !== item.artifactSha256)
         throw new Error('JOBAID_ATTACHMENT_AUTHORIZATION_CHANGED');
     }
-    await verifyTdmsNativeEvidence(evidence, { tenantId, actorUserId }, this.nativeVerifier, database);
+    if (assertNative) await assertNative(evidence);
+    else await verifyTdmsNativeEvidence(evidence, { tenantId, actorUserId }, this.nativeVerifier, database);
   }
 
   private async assertEvidenceOwned(
@@ -2903,8 +2990,10 @@ export class CanonicalJobAidProblemService {
     actorUserId: string,
     primaryWorkItemId: string,
     database?: PostgresJsDatabase,
+    assertNative?: (evidence: AssessmentEvidence[]) => Promise<void>,
   ): Promise<void> {
-    await verifyTdmsNativeEvidence(evidence, {tenantId,actorUserId}, this.nativeVerifier, database);
+    if (assertNative) await assertNative(evidence);
+    else await verifyTdmsNativeEvidence(evidence, {tenantId,actorUserId}, this.nativeVerifier, database);
     if (
       !(await this.conversations.hasActiveOfficialActorMapping(
         { tenantId, actorId: actorUserId },
@@ -2983,7 +3072,8 @@ export class CanonicalJobAidProblemService {
       )
         throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
     }
-    await verifyTdmsNativeEvidence(evidence, {tenantId,actorUserId}, this.nativeVerifier, database);
+    if (assertNative) await assertNative(evidence);
+    else await verifyTdmsNativeEvidence(evidence, {tenantId,actorUserId}, this.nativeVerifier, database);
   }
 
   private async assertProjectionWriteFence(database: PostgresJsDatabase,
@@ -2998,7 +3088,9 @@ export class CanonicalJobAidProblemService {
         current.leaseToken !== prepared.row.leaseToken || current.leaseGeneration !== prepared.row.leaseGeneration ||
         current.cancelRequestedAt || !current.leaseExpiresAt || current.leaseExpiresAt <= new Date())
       throw new Error('JOBAID_PROJECTION_LEASE_FENCE_REJECTED');
-    await this.assertEvidenceOwned(input.sourceCatalog,scope.tenantId,input.actorUserId,scope.workItemId,database);
+    await this.assertEvidenceOwned(input.sourceCatalog,scope.tenantId,input.actorUserId,scope.workItemId,database,
+      input.tdmsContext ? evidence=>assertTdmsNativeInTransaction({actor:{tenantId:scope.tenantId,actorUserId:input.actorUserId},
+        runtime:{principal:{scope,actorUserId:input.actorUserId},context:input.tdmsContext!},evidence,database},this.nativeVerifier) : undefined);
     const original = input.modelInput.documentOverview.original?.binding;
     if (original) {
       const published = await this.work.publishedOriginalBindingInTransaction({tenantId:scope.tenantId,

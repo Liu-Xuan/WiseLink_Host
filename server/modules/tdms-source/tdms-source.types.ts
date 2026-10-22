@@ -43,6 +43,10 @@ export type TdmsAction =
 export interface TdmsSourceGrant {
   scope: TdmsSourceScope;
   permissionRevision: string;
+  /** Present for member-bounded Host decisions; omitted only by whole-scope providers. */
+  permittedMembers?: TdmsImportMemberClaims;
+  /** Earliest controlled Source/grant/action expiry; checked synchronously at release. */
+  validUntil?: string;
 }
 /** All are untrusted source claims until a Host provider checks current membership and rights. */
 export interface TdmsImportMemberClaims {
@@ -73,32 +77,32 @@ export interface TdmsReadMemberAdmission extends TdmsSourceGrant {
 }
 /** Host-owned provider must freshly verify BOTH native source audience and selected object ACL.
  * A package, a source identity, a cached roster and roles alone are never such proof. */
-export interface TdmsSourceAuthorization {
+export interface TdmsSourceAuthorization<Actor = TdmsPublicActor> {
   readonly available: boolean;
   authorizeImport(
-    actor: TdmsPublicActor,
+    actor: Actor,
     scope: TdmsSourceScope,
     claims: TdmsImportMemberClaims,
   ): Promise<TdmsImportAdmission>;
   authorizeReadMembers?(
-    actor: TdmsPublicActor,
+    actor: Actor,
     scope: TdmsSourceScope,
     action: 'READ_RECORD' | 'READ_HISTORY',
     claims: TdmsImportMemberClaims,
   ): Promise<TdmsReadMemberAdmission>;
   catalogue(
-    actor: TdmsPublicActor,
+    actor: Actor,
     context: TdmsReadContext,
   ): Promise<TdmsSourceGrant[]>;
   authorize(
-    actor: TdmsPublicActor,
+    actor: Actor,
     scope: TdmsSourceScope,
     action: TdmsAction,
     context: TdmsReadContext,
   ): Promise<TdmsSourceGrant>;
 }
-export interface TdmsDocumentAccess {
-  assertRead(actor: TdmsPublicActor, documentVersionId: string): Promise<void>;
+export interface TdmsDocumentAccess<Actor = TdmsPublicActor> {
+  assertRead(actor: Actor, documentVersionId: string): Promise<void>;
 }
 export interface TdmsCapture {
   scope: TdmsSourceScope;
@@ -165,6 +169,8 @@ export interface TdmsStoredReceipt {
   context: TdmsReadContext;
 }
 export interface TdmsCataloguePage {
+  /** Filter before pagination, using the current Host decision, never request input. */
+  permittedRecords?: TdmsImportMemberClaims['records'];
   after?: string;
   /** Existing explicit bindings only; an unresolved relation never matches. */
   documentVersionId?: string;

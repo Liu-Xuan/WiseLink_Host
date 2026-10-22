@@ -22,7 +22,10 @@ import type {
   TdmsProcessingSetRepository,
   TdmsProcessingSetTransaction,
 } from '@server/modules/tdms-source/tdms-processing-set.types';
-import { UnconfiguredTdmsProcessingSetAuthority } from '@server/modules/tdms-source/tdms-processing-set.types';
+import {
+  TDMS_PROCESSING_METADATA_FIELDS,
+  UnconfiguredTdmsProcessingSetAuthority,
+} from '@server/modules/tdms-source/tdms-processing-set.types';
 import { processingSet } from '@server/modules/tdms-source/tdms-processing-set.validation';
 
 const scope: TdmsSourceScope = {
@@ -184,6 +187,26 @@ class MemoryRepository implements TdmsProcessingSetRepository {
       recordHead: async () => null,
       revision: async (tenantId: string, ref: string) =>
         this.revisions.get(revisionKey(tenantId, ref)) ?? null,
+      revisionMetadata: async (tenantId: string, ref: string) => {
+        const value = this.revisions.get(revisionKey(tenantId, ref));
+        if (!value) return null;
+        const record = Object.fromEntries(
+          TDMS_PROCESSING_METADATA_FIELDS.map((key) => [
+            key,
+            value.record[key],
+          ]),
+        );
+        return {
+          scope: value.scope,
+          record: {
+            ...record,
+            rawFields: {
+              sourceModifiedRaw: value.record.rawFields.sourceModifiedRaw,
+              opinionCollection: value.record.rawFields.opinionCollection,
+            },
+          },
+        };
+      },
       catalogue: async () => [],
       history: async () => [],
       relationHead: async () => null,

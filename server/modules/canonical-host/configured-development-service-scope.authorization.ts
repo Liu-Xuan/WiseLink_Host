@@ -248,6 +248,26 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     };
   }
 
+  async assertOpenClawWorkItemTransport(scope: CanonicalVerifiedServiceScope): Promise<void> {
+    const configured = configuredStaticWorkItemScope();
+    const staticAllowed = configured && (scope.workItemId === configured.workItemId ||
+      additionalWorkItemIds(configured.workItemId).includes(scope.workItemId));
+    if (staticAllowed) {
+      const expected = exactWorkItemScope(configured, scope.workItemId);
+      if (scope.principalId !== expected.principalId || scope.appId !== expected.appId ||
+          scope.tenantId !== expected.tenantId || scope.authorizationFingerprint !== expected.authorizationFingerprint ||
+          scope.automaticWorkItemLease || scope.successorReviewDelegation) throw scopeNotFound();
+      return;
+    }
+    // This performs no repository query. The handed transaction independently
+    // verifies the exact live queue grant; a fingerprint alone is never a grant.
+    const config = requiredAutoWorkItemQueueConfig();
+    if (scope.principalId !== config.principalId || scope.appId !== CANONICAL_APP_ID ||
+        scope.tenantId !== config.tenantId || !scope.automaticWorkItemLease ||
+        scope.successorReviewDelegation || scope.authorizationFingerprint !== automaticWorkItemScopeFingerprint(config,
+          {...scope.automaticWorkItemLease,workItemId:scope.workItemId})) throw scopeNotFound();
+  }
+
   async authorizeOpenClawWorkItem(input: {
     operation:
       | 'BEGIN_DYNAMIC'
@@ -552,23 +572,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       appId: CANONICAL_APP_ID,
       tenantId: config.tenantId,
       workItemId,
-      authorizationFingerprint: fingerprint([
-        'openclaw-auto-work-item-lease.v1',
-        config.environment,
-        CANONICAL_APP_ID,
-        config.principalId,
-        config.tenantId,
-        lease.workItemId,
-        lease.requestId,
-        lease.actorUserId,
-        lease.documentId,
-        lease.documentVersionId,
-        lease.sourceArtifactId,
-        lease.sourceFileSha256,
-        String(lease.sourceByteLength),
-        String(lease.leaseGeneration),
-        lease.leaseExpiresAt,
-      ]),
+      authorizationFingerprint: automaticWorkItemScopeFingerprint(config, lease),
       automaticWorkItemLease: {
         requestId: lease.requestId,
         actorUserId: lease.actorUserId,
@@ -984,4 +988,16 @@ function successorReviewScope(
       JSON.stringify(delegation),
     ]),
   };
+}
+
+function automaticWorkItemScopeFingerprint(
+  config: AutoWorkItemQueueScopeConfig,
+  lease: NonNullable<CanonicalVerifiedServiceScope['automaticWorkItemLease']> & { workItemId: string },
+): string {
+  return fingerprint([
+    'openclaw-auto-work-item-lease.v1', config.environment, CANONICAL_APP_ID,
+    config.principalId, config.tenantId, lease.workItemId, lease.requestId, lease.actorUserId,
+    lease.documentId, lease.documentVersionId, lease.sourceArtifactId, lease.sourceFileSha256,
+    String(lease.sourceByteLength), String(lease.leaseGeneration), lease.leaseExpiresAt,
+  ]);
 }

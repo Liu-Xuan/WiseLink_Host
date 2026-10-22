@@ -3,25 +3,26 @@ import type {
   TdmsSourceVersion,
   TdmsExactEndpoint,
 } from '@shared/tdms-source.interface';
-import type {
-  TdmsStoredRevision,
-  TdmsStoredAssertion,
-} from './tdms-source.types';
+import type { TdmsStoredAssertion } from './tdms-source.types';
 import { tdmsError } from './tdms-source.types';
 import { sameScope } from './tdms-source.authorization';
 import { canonical } from './tdms-source.validation';
-import type { TdmsProcessingSetTransaction } from './tdms-processing-set.types';
+import type {
+  TdmsProcessingSetTransaction,
+  TdmsStoredRevisionMetadata,
+} from './tdms-processing-set.types';
 
 /** Transaction-local exact references; never body reading or source authority. */
 export async function processingSetFacts(
   tx: TdmsProcessingSetTransaction,
   set: TdmsProcessingRevisionSet,
 ) {
-  const revisions: TdmsStoredRevision[] = [],
+  const revisions: TdmsStoredRevisionMetadata[] = [],
     assertions: TdmsStoredAssertion[] = [];
-  const loaded = new Map<string, TdmsStoredRevision>();
+  const loaded = new Map<string, TdmsStoredRevisionMetadata>();
   const revision = async (ref: string, kinds: string[]) => {
-    const r = loaded.get(ref) ?? (await tx.revision(set.scope.tenantId, ref));
+    const r =
+      loaded.get(ref) ?? (await tx.revisionMetadata(set.scope.tenantId, ref));
     if (
       !r ||
       !r.scope ||

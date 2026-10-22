@@ -780,8 +780,7 @@ export async function invokeHostedJobAidProblemModel(
       systemBytes: Buffer.byteLength(requestPayload.messages[0].content),
       toolsBytes: Buffer.byteLength(JSON.stringify(requestPayload.tools)),
     };
-    const performRequest = async () => {
-      if (round === 1 && options.recoveredInitialResponse) return options.recoveredInitialResponse;
+    const requestModel = async () => {
       let response;
       try { response = await (
         dependencies.requestGateway ?? requestHostedGateway
@@ -809,6 +808,10 @@ export async function invokeHostedJobAidProblemModel(
         throw new Error('JOBAID_MODEL_RESPONSE_TOO_LARGE');
       return { raw, status: response.status, ok: response.ok, localTransportRequestOrdinal: round,
         requestBudgetRemainingMs: remainingMs };
+    };
+    const performRequest = async () => {
+      if (round === 1 && options.recoveredInitialResponse) return options.recoveredInitialResponse;
+      return options.runModelRequest ? options.runModelRequest(requestModel) : requestModel();
     };
     // Persist a complete response before executing its read/save intent. A lost
     // response remains unknown; a failed Host read can reuse this exact result.

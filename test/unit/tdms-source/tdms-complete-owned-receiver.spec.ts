@@ -21,6 +21,8 @@ import {
 import { MemoryTdmsRepository, nativeScope } from './tdms-memory-double';
 import { actor } from './tdms-fixtures';
 import { engineeringExecutionReading } from '../../../server/modules/tdms-source/tdms-engineering-execution-reading';
+import { syntheticAeoNativeView } from './tdms-source-t1-current-notice.fixture';
+import { resealT1 } from './tdms-source-t1.fixture';
 import {
   syntheticAeoEnvelope,
   aeoProof,
@@ -1071,6 +1073,44 @@ describe('Complete1 through the existing Daily/native transaction and exact read
     const read = await s.service.readRecord(actor(), s.repository.state.revisions[0].record.sourceRevisionRef);
     expect(read.engineeringExecution).toMatchObject({ sourceVersion: { rawRevision: 'N', rawIteration: '3' },
       businessVersion: { rawRevision: 'R17', rawIteration: null }, windows: [{ reportedRowCount: 2, observedAircraftCount: 1 }] });
+  });
+  it.each(['VALUE', 'BLANK', 'TRUNCATED'] as const)('reads current AEO feedback-page aircraft numbers without parsing AEO content (%s)', async state => {
+    const env = syntheticAeoNativeView(), proof = aeoProof(env);
+    for (const observation of proof.reads) {
+      const table = observation.relationTables[0];
+      for (const row of table.rows) {
+        const cell = row.cells.find((value: { actualLabel: string }) => value.actualLabel === 'AC/ENG/APU');
+        cell.state = state;
+        cell.rawValue = state === 'BLANK' ? '' : 'SYNTHETIC-AIRCRAFT';
+        cell.observedTotalCodepoints = cell.rawValue.length + (state === 'TRUNCATED' ? 3 : 0);
+      }
+    }
+    resealT1(env);
+    const s = setup(env);
+    await s.service.importDailyMetadata(actor(), env);
+    const record = s.repository.state.revisions[0].record;
+    const read = await s.service.readRecord(actor(), record.sourceRevisionRef);
+    const execution = read.engineeringExecution!;
+    const page = execution.applicabilityWindows![0];
+    expect(execution).toMatchObject({ sourceVersion: { rawRevision: 'N', rawIteration: '3' },
+      businessVersion: { rawRevision: 'R17', rawIteration: null }, windows: [], executionVerified: false });
+    expect(page).toMatchObject({ applicabilityBasis: 'CURRENT_AEO_FEEDBACK_PAGE',
+      aircraftNumbers: state === 'VALUE' ? ['SYNTHETIC-AIRCRAFT'] : [],
+      unknownAircraftRowCount: state === 'VALUE' ? 0 : 2, reportedRowCount: 2, enumerationState: 'VALUE' });
+    expect(page.rows.map(row => row.occurrenceId)).toEqual(['relatedStatusLinkTable:ROW0', 'relatedStatusLinkTable:ROW1']);
+    expect(page.rows.map(row => row.aircraftNumberState)).toEqual([state, state]);
+    expect(page.rows.map(row => row.cells)).toEqual(proof.reads[1].relationTables[0].rows.map((row: { cells: unknown }) => row.cells));
+    expect(page.sourceViewEvidence).toEqual(proof.reads[1].relationTables[0].sourceViewEvidence);
+    expect(page.rows[0].cells.find(cell => cell.actualLabel === 'Execute Time')!.rawValue).toBe('SYNTHETIC PRIOR SOURCE ASSERTION');
+    page.rows[0].cells[0].rawValue = 'consumer mutation';
+    expect((await s.service.readRecord(actor(), record.sourceRevisionRef)).engineeringExecution!
+      .applicabilityWindows![0].rows[0].cells[0].rawValue).not.toBe('consumer mutation');
+    const mismatch = copyComplete(record);
+    mismatch.businessVersion!.rawRevision = 'R18';
+    expect(() => engineeringExecutionReading({ record: mismatch, bodyReadPolicy: read.bodyReadPolicy }))
+      .toThrow('TDMS_ENGINEERING_EXECUTION_SOURCE_BINDING_INVALID');
+    s.state.sourceReadAllowed = false;
+    await expect(s.service.readRecord(actor(), record.sourceRevisionRef)).rejects.toThrow();
   });
   it.each([
     'owner-version',

@@ -124,13 +124,14 @@ it('actual Summary native release passes exact runtime caller and TX identity af
   expect(h.verifier.authorize).not.toHaveBeenCalled();expect(h.verifier.readExactEvidence).not.toHaveBeenCalled();
 });
 
-it('metadata-only STATUS rechecks hidden native carriers after its last await and rolls back',async()=>{
+it('metadata-only STATUS returns no native carrier and does not borrow an execution lease',async()=>{
   const h=await harness('METADATA');
-  await expect(h.runtime.status(h.target)).rejects.toThrow('FIXTURE_NATIVE_REVOKED_AFTER_AWAIT');
-  const last=h.verifier.assertInTransaction.mock.calls.at(-1)?.[0];
-  expect(last).toMatchObject({database:h.database,evidence:[h.evidence],summaryCaller:{kind:'RUNTIME',
-    summaryId:h.target.summaryId,attemptRef:h.target.attemptRef,scope}});
-  expect(h.state.rollbacks).toBe(1);expect(h.state.journal).toBe(0);
+  h.verifier.assertInTransaction.mockClear();h.jobAid.readSummaryMemberInTransaction.mockClear();
+  await expect(h.runtime.status(h.target)).resolves.toEqual({summaryId:'summary-1',attemptRef:'operation-1',
+    status:'RUNNING',errorCode:null,savedSummaryRefs:[]});
+  expect(h.verifier.assertInTransaction).not.toHaveBeenCalled();
+  expect(h.jobAid.readSummaryMemberInTransaction).not.toHaveBeenCalled();
+  expect(h.state.rollbacks).toBe(0);expect(h.state.journal).toBe(0);
 });
 
 it('transaction-local native frame rejects reentry and is removed after failure',async()=>{

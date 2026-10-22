@@ -32,7 +32,7 @@ export function taskAutomaticWorkItemLease(row: Pick<ActionAttemptRow, 'taskEnve
  * The grant remains locked until the actual write commits, including CAS. */
 export async function assertAutomaticWorkItemAttemptLease(
   database: PostgresJsDatabase,
-  row: ActionAttemptRow,
+  row: Pick<ActionAttemptRow, 'tenantId' | 'workItemId' | 'documentVersionId' | 'taskEnvelopeJson'>,
   principalId: string,
   required = false,
 ): Promise<void> {
@@ -41,7 +41,9 @@ export async function assertAutomaticWorkItemAttemptLease(
     if (required) throw new Error('AUTO_WORK_ITEM_TASK_LEASE_BINDING_REQUIRED');
     return;
   }
-  const [owner] = await database.select().from(workItem).where(and(
+  const [owner] = await database.select({requestedByUserId:workItem.requestedByUserId,requestId:workItem.requestId,
+    documentId:workItem.documentId,documentVersionId:workItem.documentVersionId,sourceArtifactId:workItem.sourceArtifactId,
+    sourceFileSha256:workItem.sourceFileSha256,sourceByteLength:workItem.sourceByteLength}).from(workItem).where(and(
     eq(workItem.tenantId, row.tenantId), eq(workItem.workItemId, row.workItemId),
   )).limit(1).for('update');
   const [grant] = await database.select().from(autoWorkItemAuthorization).where(and(

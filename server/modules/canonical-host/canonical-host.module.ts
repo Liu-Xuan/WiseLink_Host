@@ -1,3 +1,7 @@
+import { TdmsProductionRuntimeReader } from '../tdms-source/tdms-production-runtime-reader';
+import { TdmsReceiverIdentityModule } from '../tdms-source/tdms-receiver-identity.module';
+import { TDMS_RUNTIME_READER } from '../tdms-source/tdms-runtime-reader.port';
+import { TDMS_NATIVE_EVIDENCE_VERIFIER } from './tdms-native-evidence-verifier.port';
 import { CanonicalModelSettingsModule } from '../model-settings/canonical-model-settings.module';
 import { LocalMineruWorkerService } from './local-mineru-worker.service';
 import { LocalMineruWorkerOpenApiController } from './local-mineru-worker.openapi.controller';
@@ -223,6 +227,7 @@ export interface CanonicalHostModuleOptions {
 
 @Module({
   imports: [
+    TdmsReceiverIdentityModule,
     CanonicalModelSettingsModule,
     EngineeringMatterModule,
     ActionAttemptModule,
@@ -303,6 +308,9 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostCommonContextService,
     EngineeringIssueSearchService,
     CanonicalJobAidProblemService,
+    TdmsProductionRuntimeReader,
+    {provide:TDMS_RUNTIME_READER,useExisting:TdmsProductionRuntimeReader},
+    {provide:TDMS_NATIVE_EVIDENCE_VERIFIER,useExisting:TdmsProductionRuntimeReader},
     JobAidWorkRepository,
     DerivedSummaryService,
     DerivedSummaryRuntimeService,
