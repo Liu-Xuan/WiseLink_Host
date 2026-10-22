@@ -15,7 +15,6 @@ jest.mock('@client/src/api/canonical-host', () => ({
   subscribeCanonicalHostClientSession: () => () => undefined,
   readJobAidAssessmentWork: (...args: unknown[]) => mockRead(...args),
 }));
-jest.mock('@client/src/features/matter/saved-jobaid-reading.css', () => ({}));
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/features/review/InitialAnalysisContinueButton', () => ({
   __esModule: true,
@@ -26,6 +25,7 @@ jest.mock('@client/src/features/matter/SavedAssessmentReading', () => ({
   default: 'section',
 }));
 jest.mock('@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css', () => ({}));
+jest.mock('@client/src/features/matter/saved-jobaid-reading.css', () => ({}));
 
 let root: Root;
 let dom: InstanceType<typeof JSDOM>;
@@ -209,4 +209,23 @@ it('ignores a late JobAid response after the base revision changes', async () =>
   await act(async () => resolveOld(enabledRead('WI-A')));
   expect(container.textContent).toContain('原有评估 WI-A 修订 4');
   expect(container.querySelector('[data-work-revision-ref="work-current-test"]')).toBeNull();
+});
+
+it('uses the parent snapshot without another read and retains reading selection on a base refresh', async () => {
+  const data = enabledRead('WI-shared');
+  const workingRead = { data, error: null, isRefreshing: false, temporaryError: false, baseFallbackAllowed: true,
+    observedAt: '2026-10-22T12:00:00Z', refresh: jest.fn() };
+  const paint = async (baseRevision: number) => act(async () => {
+    root.render(createElement(JobAidProblemWorkspace, {
+      workItemId: 'WI-shared', baseRevision, workingRead,
+      onLocateDocument: () => undefined,
+    }));
+  });
+  await paint(1);
+  const method = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === '方法与要求');
+  expect(method).toBeDefined();
+  await act(async () => method!.click());
+  await paint(2);
+  expect(container.textContent).toContain('方法与原始要求');
+  expect(mockRead).not.toHaveBeenCalled();
 });

@@ -131,6 +131,18 @@ describe('matterJobAidSourceRegistry', () => {
       .toThrow('JOBAID_PREVIOUS_WORK_INCOMPLETE');
   });
 
+  it('enriches only identical legacy method metadata in a new catalog while retaining the saved snapshot', () => {
+    const current = JOBAID_METHOD_EVIDENCE.find(item => item.evidenceRef === 'method:risk')!;
+    if (current.kind !== 'METHOD_CLAUSE') throw new Error('METHOD_FIXTURE_INVALID');
+    const { classificationDefinitions: _definitions, ...legacy } = structuredClone(current);
+    const previous = previousWithWork({ evidence: [legacy], readSourceRefs: [legacy.evidenceRef] });
+    const before = structuredClone(previous);
+    expect(matterJobAidSourceRegistry(previous).sourceCatalog.find(item => item.evidenceRef === legacy.evidenceRef)).toEqual(current);
+    expect(previous).toEqual(before);
+    const changed = previousWithWork({ evidence: [{ ...current, classificationDefinitions: [] }] });
+    expect(() => matterJobAidSourceRegistry(changed)).toThrow('JOBAID_PRIOR_SOURCE_CHANGED');
+  });
+
   it('rejects a retained source whose registered content changed', () => {
     const forged = { ...JOBAID_METHOD_EVIDENCE[0], title: 'Forged method title' };
     const previous = previousWithWork({ evidence: [forged] });

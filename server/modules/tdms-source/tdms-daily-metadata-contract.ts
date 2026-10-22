@@ -1,4 +1,3 @@
-import type { TdmsFormalDocumentMapping } from '@shared/tdms-receiver.interface';
 import {
   completeContentIdentityProjection,
   COMPLETE_OWN_PACKAGE_MAX_BYTES,
@@ -102,11 +101,6 @@ export interface TdmsDailyArtifactObservation {
   evidenceLocator: string;
 }
 /** Exact ten-key receipt accepted by the frozen host-client; never synthesized by preparation. */
-/** Returned projection only; persisted capture validation below remains candidate-only. */
-export type TdmsDailyMetadataProjectedImportReceipt = Omit<TdmsDailyMetadataImportReceipt, 'documentVersionMappings'> & {
-  documentVersionMappings: TdmsFormalDocumentMapping[];
-};
-
 export interface TdmsDailyMetadataImportReceipt {
   schemaVersion: 'wiselink.tdms-source-import-receipt.v1';
   requestId: string;

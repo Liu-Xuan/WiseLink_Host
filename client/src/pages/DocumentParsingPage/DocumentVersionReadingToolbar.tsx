@@ -18,15 +18,16 @@ export function DocumentReadingIdentity({ number, title, version, current }: {
 
 export function DocumentReadingSavedLinks({ links, panelNavigation }: {
   links: DocumentReadingLinks & { loading: boolean };
-  panelNavigation?: { active: DocumentWorkbenchPanel; routes: Record<DocumentWorkbenchPanel, string> };
+  panelNavigation?: { active: DocumentWorkbenchPanel; routes: Record<'reader' | 'assessment' | 'wiki', string> & { interpretation?: string } };
 }) {
   if (panelNavigation) return <nav className="document-reading-saved-links" aria-label="原文与同版本已保存工作">
     {([
       { panel: 'reader', label: '原文', icon: FileText },
+      { panel: 'interpretation', label: '解读', icon: BookOpen },
       { panel: 'assessment', label: '评估', icon: ClipboardList },
       { panel: 'wiki', label: 'Wiki', icon: BookOpen },
-    ] as const).map(item => <Button key={item.panel} asChild variant="ghost" size="sm">
-      <Link to={panelNavigation.routes[item.panel]}
+    ] as const).filter(item => panelNavigation.routes[item.panel]).map(item => <Button key={item.panel} asChild variant="ghost" size="sm">
+      <Link to={panelNavigation.routes[item.panel]!}
         aria-current={panelNavigation.active === item.panel ? 'page' : undefined}>
         <item.icon aria-hidden="true" />{item.label}
       </Link>

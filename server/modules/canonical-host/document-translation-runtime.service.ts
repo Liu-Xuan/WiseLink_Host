@@ -1,3 +1,4 @@
+import type { DocumentTranslationBrowserAction } from '@shared/document-translation-browser.interface';
 import { requireDocumentTranslationModel } from '../action-attempt/document-translation-model';
 import { DocumentParsingHostedService } from '../document-management/src/hosted/nest/document-parsing-hosted.service';
 import { DocumentSemanticService } from './document-semantic.service';
@@ -27,20 +28,34 @@ export class DocumentTranslationRuntimeService {
     private readonly v2: CanonicalTranslationV2Service,
     private readonly modelSettings: CanonicalModelSettingsService) {}
 
+  /** Server-only browser admission. The browser can never provide service identity or worker commands. */
+  async continueForBrowser(input: { action: DocumentTranslationBrowserAction; documentVersionId: string;
+    parseRunId: string; deliveryRef: string; attemptRef: string }, scope: DocumentTranslationScope,
+    assertAuthorized: () => Promise<void>) {
+    return this.run(input, { scope, assertAuthorized });
+  }
+
   async run(input: { action: 'START' | 'RECOVER' | 'RECOVER_EXPIRED' | 'CONTINUE_PARTIAL' | 'RECOVER_PARTIAL_INPUT' | 'RECOVER_KNOWN_FAILURE' | 'RESUME_KNOWN_FAILURE' | 'STATUS' | 'STEP' | 'CANCEL' | 'CLAIM' | 'HEARTBEAT' | 'RELEASE' | 'WORKSPACE' | 'FINISH' | 'FAIL'; documentVersionId: string;
     parseRunId: string; deliveryRef?: string; requestId?: string; attemptRef?: string;
-    leaseToken?: string; leaseGeneration?: number; phase?: string; workspaceCommand?: unknown; errorCode?: string }) {
+    leaseToken?: string; leaseGeneration?: number; phase?: string; workspaceCommand?: unknown; errorCode?: string },
+    browser?: { scope: DocumentTranslationScope; assertAuthorized: () => Promise<void> }) {
     if (!this.authorization.authorizeDocumentWork) throw canonicalServiceScopeUnavailable();
     const auth = await this.authorization.authorizeDocumentWork({ documentVersionId: input.documentVersionId,
       deliveryRef: input.deliveryRef, purpose: input.action === 'CANCEL' ? 'CANCEL' : 'TRANSLATION' });
     if (auth.documentVersionId !== input.documentVersionId) throw new Error('DOCUMENT_TRANSLATION_AUTHORIZATION_SCOPE_MISMATCH');
     const scope: DocumentTranslationScope = { tenantId: auth.tenantId, actorUserId: auth.actorUserId, documentVersionId: auth.documentVersionId };
+    if (browser && (browser.scope.tenantId !== scope.tenantId || browser.scope.actorUserId !== scope.actorUserId ||
+        browser.scope.documentVersionId !== scope.documentVersionId ||
+        !['RESUME_KNOWN_FAILURE', 'RECOVER_KNOWN_FAILURE', 'CONTINUE_PARTIAL', 'RECOVER_EXPIRED'].includes(input.action)))
+      throw new Error('DOCUMENT_TRANSLATION_BROWSER_SCOPE_MISMATCH');
+    await browser?.assertAuthorized();
     return this.actors.withActorScope(scope.actorUserId, async () => {
       const expectedRequestId = input.deliveryRef
         ? documentDeliveryRequestId('translation', input.deliveryRef) : undefined;
       if (expectedRequestId && input.action === 'START' && input.requestId !== expectedRequestId)
         throw new Error('DOCUMENT_TRANSLATION_DELIVERY_REQUEST_MISMATCH');
       const read = async () => {
+        await browser?.assertAuthorized();
         const original = await this.reader.readDocumentOriginal(scope.documentVersionId, input.parseRunId, { ...scope, roles: [] });
         const binding = original.original.binding;
         if (auth.sourceBinding && (auth.sourceBinding.sourceArtifactId !== binding.sourceArtifactId ||

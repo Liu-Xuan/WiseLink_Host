@@ -275,6 +275,25 @@ describe('configured model captured only for new summary/Wiki reservations', () 
     expect(f.attempts.size).toBe(0); expect(f.settingsRepository.read).not.toHaveBeenCalled();
   });
 
+  it('ATA2 reserves its exact direct saved work and resumes the original sealed body, roots and model', async () => {
+    const f = setup();
+    f.row().scope = { ...summaryRevision().scope, kind: 'ATA2', ata4: null };
+    const receipt = await f.wiki.next('2026-10-14T00:00:00Z');
+    expect(receipt.status).toBe('SUMMARY_PENDING');
+    if (receipt.status !== 'SUMMARY_PENDING') throw new Error('EXPECTED_OFFLINE_SUMMARY');
+    const task = f.task(receipt.attemptRef);
+    expect(task.modelInput).toMatchObject({ wikiLevel: 'ATA2', scope: { kind: 'ATA2', ata4: null } });
+    expect(task.modelInput.members[0]).toMatchObject({ member: reading.member, body: reading.body,
+      leaves: reading.leaves, rootRefs: reading.rootRefs });
+    expect(task.modelInput.instruction).toContain('不推造四位ATA');
+    expect(task.contextBasis?.wikiMatterCatalog).toBeDefined();
+    f.setSetting('miaoda/miaoda-model-flash', 2); f.settingsRepository.read.mockClear();
+    expect(await f.wiki.next('2026-10-14T00:01:00Z')).toEqual(receipt);
+    expect(f.task(receipt.attemptRef)).toEqual(task);
+    expect(f.settingsRepository.read).not.toHaveBeenCalled();
+    expect(f.attempts.size).toBe(1);
+  });
+
   it('new Wiki registration inherits available configured model without a GLM-only exception', async () => {
     const f = setup(); f.removeWiki(); f.setSetting('miaoda/miaoda-model-flash', 4);
     await f.wiki.enable({ fleetFamilyId: scope.fleetFamilyId, fleetModelId: null }, { tenantId: owner.tenantId } as never);

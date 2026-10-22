@@ -38,12 +38,12 @@ import {
   mergeWikiDemand,
   wikiDemandState,
   wikiDue,
+  retryWikiDemand,
   type WikiVersions,
 } from './hierarchical-wiki-demand';
 import {
   readActiveWikiAttempt,
   reconcileWikiReservations,
-  releaseWikiAttemptReservation,
   wikiReservationNeedsReconciliation,
   wikiRequestHasSavedRevision,
 } from './hierarchical-wiki-attempt-reconciliation';
@@ -511,9 +511,11 @@ export class HierarchicalWikiService {
                   await storeWikiDemand(
                     database,
                     locked,
-                    releaseWikiAttemptReservation(
+                    retryWikiDemand(
                       locked.state,
-                      attempt,
+                      attempt.errorCode ??
+                        attempt.terminalReason ??
+                        'WIKI_ATTEMPT_FAILED',
                       now,
                     ),
                   );
@@ -834,7 +836,7 @@ export class HierarchicalWikiService {
           AND prior.member_key='WORK_ITEM:'||wi.work_item_id
         WHERE m.tenant_id=${owner.tenantId} AND m.actor_user_id=${owner.actorUserId} AND m.source_kind='DOCUMENT'
           AND m.basis_json->>'classificationStatus'='CONFIRMED'
-          AND m.basis_json->>'documentVersionId'=d.document_version_id AND w.scope_json->>'kind'='ATA4'
+          AND m.basis_json->>'documentVersionId'=d.document_version_id AND w.scope_json->>'kind' IN ('ATA4','ATA2')
           AND w.scope_json->>'fleetFamilyId'=${root.scope.fleetFamilyId}
           AND w.scope_json->'fleetModelIds'=${JSON.stringify(root.scope.fleetModelIds)}::jsonb
           AND engineering_matter_work_item_owned_by_actor(${owner.tenantId},wi.work_item_id)

@@ -4,7 +4,6 @@ import type {
 } from '@shared/tdms-file-service-import.interface';
 import type { TdmsPackageArtifact } from '@shared/tdms-source.interface';
 import type { TdmsDocumentSourceReadRequest } from '@shared/tdms-source-reading.interface';
-import { documentBoundSourceRevisions } from './tdms-document-source-bindings';
 import {
   readDocumentVersionSources,
   sourceRecordReadReceipt,
@@ -17,7 +16,7 @@ import {
 } from './tdms-assessment-body-policy';
 import { fileServiceImport } from './tdms-file-service-import.validation';
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type {
   TdmsArtifactBinding,
   TdmsCatalogueResponse,
@@ -36,10 +35,6 @@ import type {
   TdmsSourcePackage,
 } from '@shared/tdms-source.interface';
 import { assertPublicActor, sameScope } from './tdms-source.authorization';
-import {
-  assertTdmsReceiverScope,
-  tdmsReceiverExpectedScope,
-} from './tdms-receiver-sql-context';
 import {
   prepareTdmsDailyMetadataImport,
   prepareTdmsDailySourceImport,
@@ -72,12 +67,10 @@ import {
 import {
   TDMS_ARTIFACT_STORE,
   TDMS_DOCUMENT_ACCESS,
-  TDMS_FORMAL_REGISTRATION,
   TDMS_REPOSITORY,
   TDMS_SOURCE_AUTHORIZATION,
   tdmsError,
   type TdmsArtifactStore,
-  type TdmsFormalRegistrationPort,
   type TdmsCapture,
   type TdmsDocumentAccess,
   type TdmsPublicActor,
@@ -114,7 +107,6 @@ export class TdmsSourceService {
     @Inject(TDMS_ARTIFACT_STORE) private readonly artifacts: TdmsArtifactStore,
     @Inject(TDMS_DOCUMENT_ACCESS)
     private readonly documents: TdmsDocumentAccess,
-    @Optional() @Inject(TDMS_FORMAL_REGISTRATION) private readonly registration?: TdmsFormalRegistrationPort,
   ) {}
 
   async importDailyMetadata(actor: TdmsPublicActor, raw: unknown) {
@@ -235,7 +227,7 @@ export class TdmsSourceService {
       return null;
     });
     await this.recheckImport(actor, admission, claims);
-    if (prior) return this.projectDailyReceipt(actor, scope, prepared.envelope, prior, 'READ_RECORD', claims);
+    if (prior) return prior;
     const selections: TdmsArtifactSelection[] = [];
     for (const observation of prepared.envelope.package.artifactBindings) {
       // Null is retained by preparation but cannot become an invented attachment identity.
@@ -248,7 +240,6 @@ export class TdmsSourceService {
         actor,
         scope,
         packageId: prepared.envelope.requestId,
-        payloadDigest: prepared.payloadDigest,
         observation: structuredClone(observation),
       });
       if (
@@ -294,7 +285,7 @@ export class TdmsSourceService {
       return value.receipt;
     });
     await this.recheckImport(actor, admission, claims);
-    return this.projectDailyReceipt(actor, scope, prepared.envelope, saved, 'READ_RECORD', claims);
+    return saved;
   }
 
   async readDailyMetadataImport(actor: TdmsPublicActor, requestId: string) {
@@ -319,7 +310,7 @@ export class TdmsSourceService {
       'READ_HISTORY',
       saved.memberClaims,
     );
-    return { receipt: await this.projectDailyReceipt(actor, grant.scope, saved.envelope, saved.receipt, 'READ_HISTORY', saved.memberClaims), package: saved.envelope.package };
+    return { receipt: saved.receipt, package: saved.envelope.package };
   }
 
   async readDailySourceRef(actor: TdmsPublicActor, sourceRef: string) {
@@ -341,16 +332,7 @@ export class TdmsSourceService {
       saved.receipt.documentVersionMappings,
     );
     await this.checkDailyReadMembers(actor, grant, 'READ_RECORD', read.claims);
-    const visibleBindings = new Set(read.response.artifactBindings.map((binding) => binding.bindingId));
-    const projected = await this.projectDailyReceipt(actor, grant.scope, saved.envelope, saved.receipt, 'READ_RECORD', read.claims, [...visibleBindings]);
-    return { ...read.response, documentVersionMappings: projected.documentVersionMappings.filter(mapping => visibleBindings.has(mapping.bindingId)) };
-  }
-
-  private projectDailyReceipt(actor: TdmsPublicActor, scope: TdmsSourceScope,
-    envelope: Parameters<TdmsFormalRegistrationPort['project']>[2], receipt: TdmsDailyMetadataImportReceipt,
-    action: 'READ_HISTORY' | 'READ_RECORD', claims: TdmsImportMemberClaims,
-    bindingIds = envelope.package.artifactBindings.map((binding) => binding.bindingId)) {
-    return this.registration ? this.registration.project(actor, scope, envelope, receipt, {action, claims, bindingIds}) : Promise.resolve(structuredClone(receipt));
+    return read.response;
   }
 
   private requireDailyAuthorization() {
@@ -360,12 +342,10 @@ export class TdmsSourceService {
   private async dailyGrants(actor: TdmsPublicActor) {
     this.requireDailyAuthorization();
     const grants = await this.authorization.catalogue(actor, {});
-    const expectedScope = await tdmsReceiverExpectedScope();
     const result: TdmsSourceGrant[] = [];
     for (const grant of grants) {
       this.assertGrant(actor, grant);
       if (grant.scope.sourceKey !== 'TDMS') continue;
-      if (expectedScope && !sameScope(grant.scope, expectedScope)) continue;
       const existing = result.find((g) => sameScope(g.scope, grant.scope));
       if (existing && existing.permissionRevision !== grant.permissionRevision)
         throw tdmsError('TDMS_SOURCE_PERMISSION_CHANGED', 409);
@@ -391,7 +371,6 @@ export class TdmsSourceService {
         grant: TdmsSourceGrant;
       }> = [];
       for (const grant of grants) {
-        await assertTdmsReceiverScope(grant.scope);
         await this.recheck(actor, grant, action, {});
         for (const row of await lookup(tx, grant.scope))
           matches.push({ row, grant });
@@ -410,7 +389,6 @@ export class TdmsSourceService {
     action: 'READ_RECORD' | 'READ_HISTORY',
     claims: TdmsImportMemberClaims,
   ) {
-    await assertTdmsReceiverScope(grant.scope);
     const authorize = this.authorization.authorizeReadMembers;
     if (!authorize)
       throw tdmsError('TDMS_READ_MEMBER_ADMISSION_UNCONFIGURED', 503);
@@ -474,7 +452,6 @@ export class TdmsSourceService {
     check(fresh);
     if (first.authorityRef !== fresh.authorityRef)
       throw tdmsError('TDMS_SOURCE_PERMISSION_CHANGED', 409);
-    await assertTdmsReceiverScope(grant.scope);
   }
 
   async catalogue(
@@ -487,8 +464,6 @@ export class TdmsSourceService {
     if (after !== undefined) identifier(after);
     if (context.documentVersionId)
       await this.documents.assertRead(actor, context.documentVersionId);
-    const sourceBindings = context.documentVersionId && this.documents.sourceBindings
-      ? await this.documents.sourceBindings(actor, context.documentVersionId) : [];
     const grants = await this.authorization.catalogue(actor, context);
     if (!grants.length)
       return {
@@ -509,36 +484,19 @@ export class TdmsSourceService {
         await this.recheck(actor, grant, 'CATALOGUE', context);
         // Each scope contributes at most one public page and its lookahead.
         // The bounded SQL seek runs before record bodies or linked-DM checks.
-        const sourceRevisionRefs = await documentBoundSourceRevisions(actor, grant.scope, sourceBindings, tx);
-        const page = {
-          ...(grant.permittedMembers === undefined
-            ? {}
-            : { permittedRecords: grant.permittedMembers.records }),
+        const rows: TdmsStoredRevision[] = await tx.catalogue(grant.scope, {
           ...(after ? { after } : {}),
           ...(context.documentVersionId
             ? { documentVersionId: context.documentVersionId }
             : {}),
           limit: 51,
-        };
-        if (sourceRevisionRefs.length && !tx.documentVersionCatalogue)
-          throw tdmsError('TDMS_DOCUMENT_SOURCE_REPOSITORY_UNCONFIGURED', 503);
-        const rows: TdmsStoredRevision[] = sourceRevisionRefs.length
-          ? await tx.documentVersionCatalogue!(grant.scope, { ...page,
-            documentVersionId: context.documentVersionId!, sourceRevisionRefs })
-          : await tx.catalogue(grant.scope, page);
-        for (const original of rows) {
-          const row = context.documentVersionId && sourceRevisionRefs.includes(original.record.sourceRevisionRef)
-            ? { ...original, record: { ...original.record,
-              relatedDocumentVersionIds: [...new Set([...original.record.relatedDocumentVersionIds, context.documentVersionId])] } }
-            : original;
+        });
+        for (const row of rows) {
           if (!sameScope(row.scope, grant.scope))
             throw tdmsError('TDMS_STORED_SCOPE_MISMATCH', 409);
-          if (!permittedNativeRecord(grant, row.record)) continue;
           if (
             context.documentVersionId &&
-            !row.record.relatedDocumentVersionIds.includes(
-              context.documentVersionId,
-            )
+            !row.record.relatedDocumentVersionIds.includes(context.documentVersionId)
           )
             continue;
           await this.assertRelatedDocuments(actor, row.record);
@@ -554,7 +512,7 @@ export class TdmsSourceService {
         .slice(0, 51);
       return {
         // The lookahead member also determines released pagination metadata.
-        documentVersionIds: window.flatMap((r) => r.relatedDocumentVersionIds),
+        documentVersionIds: window.flatMap(r => r.relatedDocumentVersionIds),
         response: {
           records: window.slice(0, 50),
           sourceStatus: 'AVAILABLE' as const,
@@ -612,25 +570,15 @@ export class TdmsSourceService {
     await this.recheck(actor, result.grant, 'READ_RECORD', context);
     return result.response;
   }
-  readDocumentVersion(
-    actor: TdmsPublicActor,
-    input: TdmsDocumentSourceReadRequest,
-  ) {
+  readDocumentVersion(actor: TdmsPublicActor, input: TdmsDocumentSourceReadRequest) {
     return readDocumentVersionSources(actor, input, {
       repository: this.repository,
       authorization: this.authorization,
       documents: this.documents,
-      assertGrant: (grant: TdmsSourceGrant, scope?: TdmsSourceScope) =>
-        this.assertGrant(actor, grant, scope),
-      recheck: (grant: TdmsSourceGrant, context: TdmsReadContext) =>
-        this.recheck(actor, grant, 'READ_RECORD', context),
-      checkMembers: (grant: TdmsSourceGrant, stored: TdmsStoredRevision) =>
-        this.checkDailyReadMembers(actor, grant, 'READ_RECORD', nativeReadClaims(stored, true)),
-      receipt: (
-        ref: string,
-        grant: TdmsSourceGrant,
-        context: TdmsReadContext,
-      ) => this.receipt(ref, 'WIKI_NATIVE_RECORD', grant, context),
+      assertGrant: (grant: TdmsSourceGrant, scope?: TdmsSourceScope) => this.assertGrant(actor, grant, scope),
+      recheck: (grant: TdmsSourceGrant, context: TdmsReadContext) => this.recheck(actor, grant, 'READ_RECORD', context),
+      receipt: (ref: string, grant: TdmsSourceGrant, context: TdmsReadContext) =>
+        this.receipt(ref, 'WIKI_NATIVE_RECORD', grant, context),
       limitations: LIMITATIONS,
     });
   }
@@ -662,8 +610,7 @@ export class TdmsSourceService {
         record.sourceRecordId,
       );
       const visible: TdmsHistoryEntry[] = [];
-      for (const original of await tx.history(root.grant.scope, record.recordRef)) {
-        const row = await this.documentContextRecord(tx, actor, original, context, false);
+      for (const row of await tx.history(root.grant.scope, record.recordRef)) {
         if (
           !sameScope(row.scope, root.grant.scope) ||
           row.record.recordRef !== record.recordRef ||
@@ -741,36 +688,25 @@ export class TdmsSourceService {
       }> = [];
       for (const row of await tx.relations(actor.tenantId, ref)) {
         if (!sameScope(row.scope, root.grant.scope)) continue;
-        if (
-          root.grant.permittedMembers &&
-          !root.grant.permittedMembers.relationIds.includes(
-            row.assertion.sourceRelationId,
-          )
-        )
-          continue;
         rejectEmbeddedAssessmentBodies(row.assertion.rawFields);
         rejectEmbeddedAssessmentBodies(row.assertion.scope);
         // Both exact endpoints must be freshly readable. Denied neighbors do not leak titles/counts/adjacency.
         const endpoints: TdmsEndpointReadDependency[] = [];
         try {
-          endpoints.push(
-            await this.authorizeEndpoint(
-              tx,
-              actor,
-              row.scope,
-              row.assertion.from,
-              context,
-            ),
-          );
-          endpoints.push(
-            await this.authorizeEndpoint(
-              tx,
-              actor,
-              row.scope,
-              row.assertion.to,
-              context,
-            ),
-          );
+          endpoints.push(await this.authorizeEndpoint(
+            tx,
+            actor,
+            row.scope,
+            row.assertion.from,
+            context,
+          ));
+          endpoints.push(await this.authorizeEndpoint(
+            tx,
+            actor,
+            row.scope,
+            row.assertion.to,
+            context,
+          ));
         } catch (error) {
           if (
             error &&
@@ -1392,43 +1328,17 @@ export class TdmsSourceService {
       context,
     );
     this.assertGrant(actor, grant, stored.scope);
-    if (grant.permittedMembers !== undefined) {
-      if (action === 'READ_RECORD' || action === 'READ_HISTORY')
-        await this.checkDailyReadMembers(
-          actor,
-          grant,
-          action,
-          nativeReadClaims(stored, action === 'READ_RECORD'),
-        );
-      else if (!permittedNativeRecord(grant, stored.record))
-        throw tdmsError('TDMS_READ_MEMBER_SCOPE_ADMISSION_REQUIRED', 403);
-    }
     const head = await tx.recordHead(
       stored.scope,
       stored.record.recordKind,
       stored.record.sourceRecordId,
     );
-    const bound = await this.documentContextRecord(tx, actor, stored, context, true);
-    const projection = sourceBodyReadingProjection(bound.record);
-    const record = {
+    const projection = sourceBodyReadingProjection(stored.record);
+    stored.record = {
       ...projection.record,
       selectedHead: head?.sourceRevisionRef === ref,
     };
-    return { stored: { ...bound, record }, grant };
-  }
-  private async documentContextRecord(tx: TdmsTransaction, actor: TdmsPublicActor,
-    stored: TdmsStoredRevision, context: TdmsReadContext, requireBinding: boolean) {
-    const id = context.documentVersionId;
-    if (!id || stored.record.relatedDocumentVersionIds.includes(id)) return stored;
-    await this.documents.assertRead(actor, id);
-    const bindings = this.documents.sourceBindings ? await this.documents.sourceBindings(actor, id) : [];
-    const refs = await documentBoundSourceRevisions(actor, stored.scope, bindings, tx);
-    if (!refs.includes(stored.record.sourceRevisionRef)) {
-      if (requireBinding) throw tdmsError('TDMS_SOURCE_NOT_FOUND', 404);
-      return stored;
-    }
-    return { ...stored, record: { ...stored.record,
-      relatedDocumentVersionIds: [...stored.record.relatedDocumentVersionIds, id] } };
+    return { stored, grant };
   }
   private async authorizeEndpoint(
     tx: TdmsTransaction,
@@ -1550,49 +1460,6 @@ function recordContent(
 }
 function summary(r: TdmsRecordRevision): TdmsRecordSummary {
   return safeSourceRecordSummary(r);
-}
-
-function permittedNativeRecord(
-  grant: TdmsSourceGrant,
-  record: TdmsRecordRevision,
-): boolean {
-  return (
-    grant.permittedMembers === undefined ||
-    grant.permittedMembers.records.some(
-      (member) =>
-        member.recordKind === record.recordKind &&
-        member.sourceRecordId === record.sourceRecordId,
-    )
-  );
-}
-
-function nativeReadClaims(
-  stored: TdmsStoredRevision,
-  includeArtifactMetadata: boolean,
-): TdmsImportMemberClaims {
-  const owner = {
-    recordKind: stored.record.recordKind,
-    sourceRecordId: stored.record.sourceRecordId,
-  };
-  return {
-    records: [owner],
-    relationIds: [],
-    artifacts: includeArtifactMetadata
-      ? stored.record.artifacts.map((binding) => {
-          const identity = stored.artifactIdentities?.find(
-            (a) => a.memberId === binding.memberId,
-          );
-          if (!identity)
-            throw tdmsError('TDMS_READ_MEMBER_IDENTITY_UNAVAILABLE', 503);
-          return {
-            memberId: identity.memberId,
-            sourceAttachmentId: identity.sourceAttachmentId,
-            sourceAttachmentVersion: identity.sourceAttachmentVersion,
-            owners: [owner],
-          };
-        })
-      : [],
-  };
 }
 
 function isHiddenDocument(error: unknown): boolean {

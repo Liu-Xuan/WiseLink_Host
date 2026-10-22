@@ -16,9 +16,11 @@ import {
   COMPLETE_OWN_PACKAGE_MAX_BYTES,
   COMPLETE_OWN_REQUEST_MAX_BYTES,
   COMPLETE_OWN_OBSERVATION_MAX_BYTES,
+  completeOwnedTargetOccurrences,
 } from '../../../server/modules/tdms-source/tdms-complete-owned-source.validation';
 import { MemoryTdmsRepository, nativeScope } from './tdms-memory-double';
 import { actor } from './tdms-fixtures';
+import { engineeringExecutionReading } from '../../../server/modules/tdms-source/tdms-engineering-execution-reading';
 import {
   syntheticAeoEnvelope,
   aeoProof,
@@ -36,10 +38,11 @@ import {
 function setup(env = syntheticCompleteEnvelope()) {
   const claims = copyComplete(adaptTdmsDailySource(env).memberClaims),
     repository = new MemoryTdmsRepository();
-  const state = { canImport: true, canRead: true, revision: 'synthetic-1' };
+  const state = { canImport: true, canRead: true, sourceReadAllowed: true, revision: 'synthetic-1' };
   // Independent synthetic decisions for these exact members only. Never registered in AppModule.
   const authority = new HostDecisionTdmsSourceAuthorization(
-    async () => [{ scope: nativeScope, permissionRevision: state.revision }],
+    async ({ action }) => action === 'READ_RECORD' && !state.sourceReadAllowed
+      ? [] : [{ scope: nativeScope, permissionRevision: state.revision }],
     async ({ grant }) => ({
       ...grant,
       authorityRef: 'synthetic-import',
@@ -90,7 +93,7 @@ function sealRelationEnvelope(
   return env;
 }
 
-function withReusedStatus() {
+function withReusedStatus(rowCount = 1) {
   const env = withCompleteRelation(syntheticCompleteEnvelope('EO')),
     r = env.package.records[0],
     proof = proofOf(env),
@@ -137,18 +140,35 @@ function withReusedStatus() {
         complete: true,
       },
     };
+    if (rowCount !== 1) {
+      const nativeRow = copyComplete(table.rows[0]);
+      const statusRow = copyComplete(table.nativeStatusProof.statusTable.rows[0]);
+      table.rows = Array.from({ length: rowCount }, (_, index) => ({
+        ...copyComplete(nativeRow), occurrenceId: `row-${index}`, globalIndex: index, nativeRowId: `native-row-${index}`,
+        sourceLinks: [{ ...copyComplete(nativeRow.sourceLinks[0]),
+          targetRef: target.replace(/999$/u, String(999 + index)),
+          rawHref: '/infoPage?oid=' + target.replace(/999$/u, String(999 + index)),
+          locator: `#relations row-${index} Number` }],
+      }));
+      table.nativeStatusProof.statusTable.rows = Array.from({ length: rowCount }, (_, index) => ({
+        ...copyComplete(statusRow), sourceRecordId: target.replace(/999$/u, String(999 + index)),
+        stateRaw: index === 0 ? statusRow.stateRaw : 'Not completed',
+      }));
+      table.nativeStatusProof.statusTable.reportedCount = rowCount;
+      table.reportedTotal = rowCount;
+      table.countEvidence.rawText = `(${rowCount} objects)`;
+      Object.assign(table.terminal, { total: rowCount, captured: rowCount, trueZero: rowCount === 0 });
+      Object.assign(table.windows[0], { reportedTotal: rowCount,
+        rowOccurrenceIds: table.rows.map(row => row.occurrenceId),
+        globalIndices: table.rows.map(row => row.globalIndex) });
+    }
   }
-  Object.assign(
-    (proof.targetOccurrences as Array<Record<string, unknown>>)[0],
-    {
-      targetRef: target,
-      rawHref: '/infoPage?oid=' + target,
-      nativeLinkRole: 'STATUS_LINK',
-      nativeColumnToken: 'number',
-      modelRoleOrigin: 'REVIEWED_NATIVE_COLUMN_MODEL',
-    },
-  );
-  env.package.edges[0].toSourceRecordId = target;
+  const occurrences: Array<{ targetRef: string; locator: string }> = completeOwnedTargetOccurrences(proof);
+  proof.targetOccurrences = occurrences;
+  const edge = env.package.edges[0];
+  env.package.edges = occurrences.map((occurrence: { targetRef: string; locator: string }) => ({
+    ...edge, toSourceRecordId: occurrence.targetRef, evidenceLocator: occurrence.locator,
+  }));
   return sealRelationEnvelope(env);
 }
 
@@ -961,6 +981,31 @@ describe('Complete1 through the existing Daily/native transaction and exact read
     expect(s.repository.state.revisions[0].record.coverage.status).toBe(
       'PARTIAL',
     );
+    const source = s.repository.state.revisions[0].record;
+    const read = await s.service.readRecord(actor(), source.sourceRevisionRef);
+    expect(read.engineeringExecution).toMatchObject({
+      sourceRevisionRef: source.sourceRevisionRef,
+      sourceRecordId: source.sourceRecordId,
+      sourceVersion: source.sourceVersion,
+      businessVersion: source.businessVersion,
+      requirementCoverage: 'NOT_CAPTURED', targetAircraftCoverage: 'UNKNOWN', executionVerified: false,
+      windows: [{ reportedRowCount: 1, observedAircraftCount: 1, sourceViewEvidence: null,
+        observedAt: env.package.records[0].observedAt,
+        rows: proofOf(env).reads[1].relationTables[0].nativeStatusProof.statusTable.rows }],
+    });
+    expect(read.receipt.sourceRevisionRef).toBe(source.sourceRevisionRef);
+    expect(read.receipt.executionVerified).toBe(false);
+    expect(s.repository.state.revisions[0].record).toEqual(source);
+    // The typed reading is detached from immutable retained raw observations.
+    read.engineeringExecution!.windows[0].rows[0].stateRaw = 'changed by consumer';
+    expect((await s.service.readRecord(actor(), source.sourceRevisionRef))
+      .engineeringExecution!.windows[0].rows[0].stateRaw).toBe('Feedback pending');
+    const mismatch = copyComplete(source);
+    mismatch.sourceVersion.rawRevision = 'other';
+    expect(() => engineeringExecutionReading({ record: mismatch, bodyReadPolicy: read.bodyReadPolicy }))
+      .toThrow('TDMS_ENGINEERING_EXECUTION_SOURCE_BINDING_INVALID');
+    s.state.sourceReadAllowed = false;
+    await expect(s.service.readRecord(actor(), source.sourceRevisionRef)).rejects.toThrow();
     const native = copyComplete(adaptTdmsDailySource(env).output.nativePackage);
     const rawProof = native.records[0].rawFields.completeOwnedSource as any;
     rawProof.reads[1].relationTables[0].nativeStatusProof.statusTable.complete = false;
@@ -968,10 +1013,72 @@ describe('Complete1 through the existing Daily/native transaction and exact read
       'TDMS_ENGINEERING_REUSED_STATUS_INVALID',
     );
   });
+  it('does not dereference engineering raw content without an exact current body policy', () => {
+    const env = withReusedStatus();
+    const record = adaptTdmsDailySource(env).output.nativePackage.records[0];
+    const raw = jest.fn(() => record.rawFields);
+    const saved = {
+      ...record, recordRef: 'record', sourceRevisionRef: 'revision', sourceKey: 'key', sourceInstanceId: 'instance',
+      capturedAt: record.observedAt, fieldSelectors: [], sourceVerification: 'DECLARED_ONLY' as const,
+      currentness: 'SELECTED_HOST_OBSERVATION' as const, captureRef: 'capture', selectedHead: true,
+      artifacts: [], unreadAttachments: [],
+    };
+    Object.defineProperty(saved, 'rawFields', { get: raw });
+    expect(engineeringExecutionReading({ record: saved })).toBeUndefined();
+    expect(engineeringExecutionReading({ record: saved, bodyReadPolicy: {
+      kind: 'NON_OPINION_SOURCE', sourceRecordId: record.sourceRecordId, sourceRevisionRef: 'other',
+    } })).toBeUndefined();
+    expect(raw).not.toHaveBeenCalled();
+  });
+  it.each([0, 2])('projects %i source rows without inventing requirements, targets or completed aircraft', async rowCount => {
+    const env = withReusedStatus(rowCount), s = setup(env);
+    await s.service.importDailyMetadata(actor(), env);
+    const read = await s.service.readRecord(actor(), s.repository.state.revisions[0].record.sourceRevisionRef);
+    const window = read.engineeringExecution!.windows[0];
+    expect(window.rows).toEqual(proofOf(env).reads[1].relationTables[0].nativeStatusProof.statusTable.rows);
+    expect(window.rows).toHaveLength(rowCount);
+    expect(window.observedAircraftCount).toBe(rowCount ? 1 : 0);
+    expect(read.engineeringExecution!.targetAircraftCoverage).toBe('UNKNOWN');
+    expect(read.engineeringExecution!.requirementCoverage).toBe('NOT_CAPTURED');
+    if (rowCount === 2) {
+      expect(window.rows.map(row => row.stateRaw)).toEqual(['Feedback pending', 'Not completed']);
+      expect(window.rows[0].executionStatus.feedbackRef).toBe(window.rows[1].executionStatus.feedbackRef);
+    }
+  });
+  it('keeps the AEO business revision separate and does not infer structured execution from raw grid cells', async () => {
+    const rawOnly = syntheticAeoEnvelope(2), rawService = setup(rawOnly);
+    await rawService.service.importDailyMetadata(actor(), rawOnly);
+    expect((await rawService.service.readRecord(actor(), rawService.repository.state.revisions[0].record.sourceRevisionRef))
+      .engineeringExecution).toBeUndefined();
+
+    const env = syntheticAeoEnvelope(2), proof = aeoProof(env);
+    const sourceStatus = proofOf(withReusedStatus()).reads[1].relationTables[0].nativeStatusProof;
+    for (const read of proof.reads) {
+      const table = read.relationTables[0];
+      table.nativeStatusProof = { ...copyComplete(sourceStatus), ownerSourceRecordId: read.owner.sourceRecordId,
+        ownerSourceVersion: copyComplete(read.owner.sourceVersion), engineeringDocumentNumber: read.owner.number,
+        statusTable: { ownerSourceRecordId: read.owner.sourceRecordId, reportedCount: 2, complete: true,
+          observedAt: read.observedAt, rows: table.rows.map((row: { sourceLinks: Array<{ targetRef: string }> }) => ({
+            ...copyComplete(sourceStatus.statusTable.rows[0]), sourceRecordId: row.sourceLinks[0].targetRef,
+            executionStatus: { ...copyComplete(sourceStatus.statusTable.rows[0].executionStatus),
+              engineeringDocumentRef: read.owner.sourceRecordId, engineeringDocumentNumber: read.owner.number },
+          })) },
+      };
+    }
+    resealAeo(env);
+    const s = setup(env);
+    await s.service.importDailyMetadata(actor(), env);
+    const read = await s.service.readRecord(actor(), s.repository.state.revisions[0].record.sourceRevisionRef);
+    expect(read.engineeringExecution).toMatchObject({ sourceVersion: { rawRevision: 'N', rawIteration: '3' },
+      businessVersion: { rawRevision: 'R17', rawIteration: null }, windows: [{ reportedRowCount: 2, observedAircraftCount: 1 }] });
+  });
   it.each([
     'owner-version',
     'count',
     'document-number',
+    'same-number-other-document',
+    'unproved-reference-alias',
+    'proof-document-number',
     'missing-target',
     'column-role',
     'column-token',
@@ -988,6 +1095,15 @@ describe('Complete1 through the existing Daily/native transaction and exact read
       if (change === 'count') status.reportedCount = 2;
       if (change === 'document-number')
         status.rows[0].executionStatus.engineeringDocumentNumber = 'OTHER';
+      if (change === 'same-number-other-document')
+        status.rows[0].executionStatus.engineeringDocumentRef = 'OR:wt.epm.EPMDocument:987654321';
+      if (change === 'unproved-reference-alias')
+        status.rows[0].executionStatus.engineeringDocumentRef =
+          status.rows[0].executionStatus.engineeringDocumentRef.replace(/^OR:/u, 'VR:');
+      if (change === 'proof-document-number') {
+        table.nativeStatusProof.engineeringDocumentNumber = 'OTHER';
+        status.rows[0].executionStatus.engineeringDocumentNumber = 'OTHER';
+      }
       if (change === 'missing-target')
         table.rows[0].sourceLinks[0].targetRef =
           'OR:com.airchina.tdms.statuslink.TDMSStatusLink:998';
@@ -1004,6 +1120,9 @@ describe('Complete1 through the existing Daily/native transaction and exact read
       'owner-version': 'TDMS_COMPLETE_ENGINEERING_REUSED_STATUS_UNVERIFIED',
       count: 'TDMS_ENGINEERING_REUSED_STATUS_INVALID',
       'document-number': 'TDMS_ENGINEERING_STATUS_VERSION_MISMATCH',
+      'same-number-other-document': 'TDMS_ENGINEERING_STATUS_VERSION_MISMATCH',
+      'unproved-reference-alias': 'TDMS_ENGINEERING_STATUS_VERSION_MISMATCH',
+      'proof-document-number': 'TDMS_COMPLETE_ENGINEERING_REUSED_STATUS_UNVERIFIED',
       'missing-target': 'TDMS_COMPLETE_ENGINEERING_REUSED_STATUS_UNVERIFIED',
       'column-role': 'TDMS_COMPLETE_RELATION_ROLE_INVALID',
       'column-token': 'TDMS_COMPLETE_RELATION_ROLE_INVALID',

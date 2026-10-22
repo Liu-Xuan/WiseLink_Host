@@ -8,7 +8,20 @@ import { libraryFamily } from './fixtures/canonical-library';
 import { savedDocumentReadingFixture, savedDocumentReadingPreview } from './fixtures/saved-document-reading';
 
 const mockRead = jest.fn();
-jest.mock('@client/src/api/canonical-host', () => ({ readSavedDocumentReading: (...args: unknown[]) => mockRead(...args) }));
+const mockReadIdentityRefetch = jest.fn(async () => ({ error: null }));
+jest.mock('@client/src/api/canonical-host', () => ({
+  getCanonicalHostClientSessionGeneration: () => 1,
+  readSavedDocumentReading: (...args: unknown[]) => mockRead(...args),
+}));
+jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({
+  useCurrentUserSession: () => ({ authenticationRequired: false }),
+}));
+jest.mock('@client/src/features/matter/useEngineeringMatter', () => ({
+  useEngineeringMatterQueryIdentity: () => ({
+    identity: { appId: 'test-app', tenantId: 'tenant-1', actorId: 'actor-1', sessionGeneration: 1 },
+    identityQuery: { isFetching: false, error: null, refetch: mockReadIdentityRefetch },
+  }),
+}));
 
 let dom: JSDOM;
 let root: Root;
@@ -191,4 +204,82 @@ it('aborts an old document read when selection changes and ignores its late resp
   await act(async () => resolve(first.response));
   expect(container.textContent).toContain('另一份文档');
   expect(container.textContent).not.toContain(first.reading.headline);
+});
+
+it.each([{ code: 'ERR_NETWORK' }, { statusCode: 503 }])('retains full exact DRR prose and old source links after a temporary failure %j', async failure => {
+  const f = fixture();
+  const before = JSON.stringify(f);
+  mockRead.mockResolvedValueOnce(f.response).mockRejectedValueOnce(Object.assign(new Error('temporary full read failure'), failure));
+  await render(f.version);
+  await act(async () => dom.window.dispatchEvent(new dom.window.Event('focus')));
+  expect(container.textContent).toContain(f.reading.explanation[0].text);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('保留同版正文');
+  const source = [...container.querySelectorAll<HTMLButtonElement>('button')]
+    .find(button => button.textContent?.includes('Check configuration.'))!;
+  await act(async () => source.click());
+  const route = new URL(openSource.mock.calls[0][0], 'https://example.test');
+  expect(route.searchParams.get('parseRunId')).toBe('parse-1');
+  expect(route.searchParams.get('sourceRef')).toBe('source-ref-parse-1');
+  expect(JSON.stringify(f)).toBe(before);
+});
+
+it('source denial suppresses both old full prose and preview through a later network failure', async () => {
+  const f = fixture();
+  mockRead.mockResolvedValueOnce(f.response)
+    .mockRejectedValueOnce(Object.assign(new Error('source revoked'), { statusCode: 403, code: 'ERR_NETWORK' }))
+    .mockRejectedValueOnce(Object.assign(new Error('network unavailable'), { code: 'ERR_NETWORK' }));
+  await render(f.version);
+  await act(async () => dom.window.dispatchEvent(new dom.window.Event('focus')));
+  expect(container.textContent).not.toContain(f.reading.brief.text);
+  expect(container.textContent).not.toContain(f.reading.explanation[0].text);
+  await act(async () => container.querySelector<HTMLButtonElement>('[role="alert"] button')!.click());
+  expect(container.textContent).not.toContain(f.reading.brief.text);
+  expect(container.textContent).not.toContain(f.reading.explanation[0].text);
+});
+
+it.each(['RETRACTED', 'NOT_GENERATED'] as const)('a fresh %s reply removes previously displayed DRR prose', async status => {
+  const f = fixture();
+  mockRead.mockResolvedValueOnce(f.response).mockResolvedValueOnce({ ...f.response, status, reading: null });
+  await render(f.version);
+  await act(async () => dom.window.dispatchEvent(new dom.window.Event('focus')));
+  expect(container.textContent).not.toContain(f.reading.brief.text);
+  expect(container.textContent).not.toContain(f.reading.explanation[0].text);
+  expect(container.textContent).toContain(status === 'RETRACTED' ? '解读已撤回' : '暂无已保存解读');
+});
+
+it('an envelope binding mismatch clears prior prose instead of retaining it as a transport failure', async () => {
+  const f = fixture();
+  mockRead.mockResolvedValueOnce(f.response).mockResolvedValueOnce({ ...f.response, sourceBinding: {
+    ...f.response.sourceBinding, original: { ...f.response.sourceBinding.original, sourceSha256: 'b'.repeat(64) },
+  } });
+  await render(f.version);
+  await act(async () => dom.window.dispatchEvent(new dom.window.Event('focus')));
+  expect(container.textContent).not.toContain(f.reading.explanation[0].text);
+  expect(container.textContent).not.toContain(f.reading.brief.text);
+  expect(container.textContent).toContain('DOCUMENT_READING_BINDING_MISMATCH');
+});
+
+it('a full-binding change with the same DRR label isolates the old body and rejects its late reply', async () => {
+  const f = fixture();
+  let resolveOld!: (value: DocumentReadingResponse) => void;
+  let resolveNew!: (value: DocumentReadingResponse) => void;
+  mockRead.mockResolvedValueOnce(f.response)
+    .mockImplementationOnce(() => new Promise<DocumentReadingResponse>(resolve => { resolveOld = resolve; }))
+    .mockImplementationOnce(() => new Promise<DocumentReadingResponse>(resolve => { resolveNew = resolve; }));
+  await render(f.version);
+  await act(async () => dom.window.dispatchEvent(new dom.window.Event('focus')));
+  const oldSignal = mockRead.mock.calls[1][1] as AbortSignal;
+  const next = structuredClone(f);
+  next.reading.sourceBinding.original.parseRunId = 'parse-other';
+  next.reading.sourceBinding.semanticRevision = 2;
+  next.reading.explanation[0].text = 'New exact binding explanation';
+  next.version.documentReading = { status: 'AVAILABLE', reading: savedDocumentReadingPreview(next.reading) };
+  next.response = { ...next.response, sourceBinding: next.reading.sourceBinding, reading: next.reading };
+  await render(next.version);
+  expect(oldSignal.aborted).toBe(true);
+  expect(container.textContent).not.toContain(f.reading.explanation[0].text);
+  await act(async () => resolveOld(f.response));
+  expect(container.textContent).not.toContain(f.reading.explanation[0].text);
+  await act(async () => resolveNew(next.response));
+  expect(container.textContent).toContain('New exact binding explanation');
 });

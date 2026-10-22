@@ -1,3 +1,5 @@
+import DocumentTranslationContinuation from './DocumentTranslationContinuation';
+import DocumentTranslationRuntimeDiagnostic from './runtime-monitor/DocumentTranslationRuntimeDiagnostic';
 import TdmsSourceEntry from '@client/src/features/tdms-source/TdmsSourceEntry';
 import { TDMS_SOURCE_UI_ENABLED } from '@client/src/features/tdms-source/tdms-source-enabled';
 import { documentParseRecoveryRequestId } from '@shared/document-parsing-recovery';
@@ -21,13 +23,13 @@ import { documentIdentityPresentation, libraryVersionLabel } from '../WorkspaceH
 import { DocumentReadingIdentity, DocumentReadingMore, DocumentReadingSavedLinks } from './DocumentVersionReadingToolbar';
 import { useDocumentReadingLinks } from './useDocumentReadingLinks';
 import DocumentSavedWorkPanels from './DocumentSavedWorkPanels';
+import RetainedWorkbenchPanel from '@client/src/features/workbench/RetainedWorkbenchPanel';
 import { documentWorkbenchPanelRoute, readDocumentWorkbenchPanel } from './document-workbench-panel';
 
 export default function DocumentVersionReadingPage() {
   const { documentVersionId = '' } = useParams();
   const { pathname } = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const workbenchPanel = readDocumentWorkbenchPanel(searchParams);
   const requestedRun = searchParams.get('parseRunId') || null;
   const requestedSource = searchParams.get('sourceRef') || null;
   const wikiSemantic = searchParams.get('semanticRevision');
@@ -39,6 +41,7 @@ export default function DocumentVersionReadingPage() {
     searchParams.getAll('readingRunRef').length <= 1 && (!searchParams.has('readingRunRef') || !!wikiRunRef?.trim()) &&
     wikiSemantic && wikiRevision && /^[1-9][0-9]*$/u.test(wikiSemantic) &&
     /^[1-9][0-9]*$/u.test(wikiRevision) && Number.isSafeInteger(Number(wikiSemantic)) && Number.isSafeInteger(Number(wikiRevision));
+  const workbenchPanel = readDocumentWorkbenchPanel(searchParams, pinnedWiki ? 'interpretation' : 'reader');
   const unboundEvidence = searchParams.getAll('unboundEvidence').length === 1 &&
     searchParams.get('unboundEvidence') === '1';
   const returnTarget = readingReturnTarget(
@@ -55,6 +58,10 @@ export default function DocumentVersionReadingPage() {
   const [source, setSource] = useState<MineruReaderSource | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [translation, setTranslation] = useState<DocumentTranslationReadingResponse | null>(null);
+  const [translationObservedAt, setTranslationObservedAt] = useState<string | null>(null);
+  const [translationRefreshing, setTranslationRefreshing] = useState(false);
+  const [translationLocateRevision, setTranslationLocateRevision] = useState<{ revisionId: string; request: number } | null>(null);
+  const translationContinuationRef = useRef<HTMLDivElement | null>(null);
   const [translationPage, setTranslationPage] = useState<number | null>(null);
   const [translationUnitId, setTranslationUnitId] = useState<string | null>(null);
   const [translationSourceContext, setTranslationSourceContext] = useState<string | null>(requestedSource);
@@ -100,6 +107,7 @@ export default function DocumentVersionReadingPage() {
     request.current = null; currentSettingsRequest.current = null; parseInFlight.current = false;
     setImportReply(null); setParseError(null); setSending(false);
     setStatus(null); setReading(null); setTranslation(null); setSource(null); loaded.current = '';
+    setTranslationObservedAt(null); setTranslationLocateRevision(null);
   }, []);
 
   useEffect(() => {
@@ -108,11 +116,13 @@ export default function DocumentVersionReadingPage() {
     parseInFlight.current = false; setImportReply(null); setParseError(null);
     setTranslation(null); setTranslationPage(null); setTranslationUnitId(null); setTranslationSourceContext(requestedSource); setTranslationError(null); setView('dual');
     setTranslationLocationRequest(0);
+    setTranslationObservedAt(null); setTranslationLocateRevision(null);
     loaded.current = ''; request.current = null; currentSettingsRequest.current = null;
     return subscribeCanonicalHostClientSession(() => {
       epoch.current++;
       rejectedRef.current = false;
       setStatus(null); setReading(null); setSource(null); setTranslation(null); setTranslationPage(null); setTranslationUnitId(null); setTranslationSourceContext(requestedSource); setTranslationError(null);
+      setTranslationObservedAt(null); setTranslationLocateRevision(null);
       loaded.current = ''; request.current = null; currentSettingsRequest.current = null;
       parseInFlight.current = false; setImportReply(null); setParseError(null); setSending(false); setRefresh(value => value + 1);
     });
@@ -207,10 +217,14 @@ export default function DocumentVersionReadingPage() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const current = () => !controller.signal.aborted && identity.current === readingIdentity && epoch.current === generation;
     const load = async () => {
+      setTranslationRefreshing(true);
       try {
         const result = await readDocumentTranslationReading(documentVersionId, parseRunId, controller.signal);
         if (!current()) return;
+        if (result.documentVersionId !== documentVersionId || result.parseRunId !== parseRunId)
+          throw new Error('译文读回与当前文档解析版本不一致。');
         setTranslation(result); setTranslationError(null);
+        setTranslationObservedAt(new Date().toISOString());
         const waiting = !result.execution && ++unstartedChecks < 6;
         if (waiting || (result.execution && ['PENDING', 'QUEUED', 'RUNNING', 'COMMITTING', 'RETRY_SCHEDULED'].includes(result.execution.status)))
           timer = setTimeout(() => { void load(); }, 5000);
@@ -229,12 +243,14 @@ export default function DocumentVersionReadingPage() {
         } else {
           setTranslationError(reason instanceof Error ? reason.message : '中文读取未完成，请刷新重试。');
         }
+      } finally {
+        if (current()) setTranslationRefreshing(false);
       }
     };
     void load();
     return () => { controller.abort(); if (timer) clearTimeout(timer); };
   }, [readingIdentity, currentReading?.parseRunId, needsTranslation, refresh]);
-  const persistOriginalLocation = (page: number, unitId: string) => {
+  const persistOriginalLocation = (page: number, unitId: string, revealOriginal: boolean = false) => {
     if (!currentReading?.original || !Number.isSafeInteger(page) || page < 1) return;
     const unit = currentReading.original.source.units.find(item => item.unitId === unitId);
     const sourceRef = unit?.sourceRefIds.find(ref => currentReading.original!.locations.some(
@@ -246,6 +262,7 @@ export default function DocumentVersionReadingPage() {
     const next = new URLSearchParams(searchParams);
     next.set('parseRunId', currentReading.parseRunId);
     next.set('sourceRef', sourceRef);
+    if (revealOriginal) { next.set('panel', 'reader'); setView('dual'); }
     setSearchParams(next, { replace: true });
   };
   const locateTranslationSource = (unitId: string, sourceRef: string) => {
@@ -359,14 +376,31 @@ export default function DocumentVersionReadingPage() {
   const toolbarLinks = <DocumentReadingSavedLinks links={savedLinks} panelNavigation={{
     active: workbenchPanel.panel, routes: {
       reader: documentWorkbenchPanelRoute(searchParams, 'reader'),
+      interpretation: pinnedWiki ? documentWorkbenchPanelRoute(searchParams, 'interpretation') : undefined,
       assessment: documentWorkbenchPanelRoute(searchParams, 'assessment'),
       wiki: documentWorkbenchPanelRoute(searchParams, 'wiki'),
     },
   }} />;
-  const savedPanels = <DocumentSavedWorkPanels key={JSON.stringify([savedLinks.scopeIdentity,
+  const savedPanels = <><DocumentSavedWorkPanels key={JSON.stringify([savedLinks.scopeIdentity,
     savedLinks.assessment?.result?.sourceResultId, savedLinks.assessment?.result?.revision])}
     active={workbenchPanel.panel} links={savedLinks} onRetry={savedLinks.refreshSavedWork}
-    onRejected={savedLinks.rejectSavedWork} />;
+    onRejected={savedLinks.rejectSavedWork} />
+    <RetainedWorkbenchPanel key={JSON.stringify([readingIdentity, wikiSemantic, wikiRevision, wikiRunRef,
+      currentReading?.original?.binding])} active={workbenchPanel.panel === 'interpretation'}>
+      <section className="document-saved-work-panel" aria-label="同版本文档解读">
+        <div className="document-saved-work-scroll">
+          {pinnedWiki && currentReading?.original ? <DocumentWikiReading documentVersionId={documentVersionId} parseRunId={requestedRun!}
+            semanticRevision={Number(wikiSemantic)} readingRevision={Number(wikiRevision)} readingRunRef={wikiRunRef}
+            originalBinding={currentReading.original.binding}
+            onAccessRejected={rejectCurrentAccess} onLocate={unitId => {
+              const unit = currentReading.original!.source.units.find(item => item.unitId === unitId);
+              const location = unit && currentReading.original!.locations.find(item => unit.sourceRefIds.includes(item.sourceRefId));
+              if (location) persistOriginalLocation(location.pageIndex + 1, unitId, true);
+            }} /> : <p role="status">{pinnedWiki ? '正在读取同版原文与解读…' : '请从文档解读链接打开确切保存修订。'}</p>}
+        </div>
+      </section>
+    </RetainedWorkbenchPanel>
+  </>;
   const toolbarMore = <DocumentReadingMore>
     <h2>文档信息与处理</h2>
     {currentStatus ? <>
@@ -423,13 +457,6 @@ export default function DocumentVersionReadingPage() {
       {selectedLocation ? <p role="status">已定位原文{selectedLocation.pageIndex !== null ? ` · 第 ${selectedLocation.pageIndex + 1} 页` : ' · 无物理页定位'}</p>
         : <p role="alert">此解析版本中未找到指定来源。</p>}
     </aside> : null}
-    {pinnedWiki && currentReading?.original ? <DocumentWikiReading documentVersionId={documentVersionId} parseRunId={requestedRun!}
-      semanticRevision={Number(wikiSemantic)} readingRevision={Number(wikiRevision)} readingRunRef={wikiRunRef}
-      onAccessRejected={rejectCurrentAccess} onLocate={unitId => {
-        const unit = currentReading.original!.source.units.find(item => item.unitId === unitId);
-        const location = unit && currentReading.original!.locations.find(item => unit.sourceRefIds.includes(item.sourceRefId));
-        if (location) persistOriginalLocation(location.pageIndex + 1, unitId);
-      }} /> : null}
   </>;
 
   return <main className={`document-version-reading document-version-reading-compact${currentReading?.original ? ' is-source-workspace' : ''}`}>
@@ -466,11 +493,25 @@ export default function DocumentVersionReadingPage() {
           initialLocationRequest={translationLocationRequest}
           onLocationSelect={persistOriginalLocation}
           bilingualContent={<section aria-label="已保存中文阅读">
+            {currentReading && <div ref={translationContinuationRef} tabIndex={-1}><DocumentTranslationContinuation
+              key={`${readingIdentity}:${currentReading.parseRunId}`}
+              documentVersionId={documentVersionId} parseRunId={currentReading.parseRunId}
+              observationKey={`${refresh}:${currentTranslation?.execution?.status ?? ''}:${currentTranslation?.execution?.errorCode ?? ''}`}
+              onContinued={() => setRefresh(value => value + 1)}
+              onAccessRejected={(message) => { rejectCurrentAccess(); setError(message); }} /></div>}
             {translationError && <p role="alert">{translationError}</p>}
             {currentTranslation && !currentTranslation.execution && currentTranslation.translation.status === 'UNAVAILABLE' &&
               <p role="status">此解析版本尚无中文任务记录；如已选择中文交付，当前尚未受理。</p>}
             {currentTranslation?.execution && <p role="status">{translationExecutionLabel(currentTranslation.execution.status)}{currentTranslation.execution.errorCode ? `（${currentTranslation.execution.errorCode}）` : ''}</p>}
+            <DocumentTranslationRuntimeDiagnostic read={currentTranslation}
+              documentVersionId={documentVersionId} parseRunId={currentReading.parseRunId}
+              scopeKey={`${readingIdentity}:${epoch.current}:${currentReading.parseRunId}`}
+              observedAt={translationObservedAt} error={translationError} refreshing={translationRefreshing}
+              onRefresh={() => setRefresh(value => value + 1)}
+              onOpenContinuation={() => { translationContinuationRef.current?.scrollIntoView({ block: 'center' }); translationContinuationRef.current?.focus(); }}
+              onLocateRevision={revisionId => setTranslationLocateRevision(previous => ({ revisionId, request: (previous?.request ?? 0) + 1 }))} />
             {currentTranslation ? <SemanticBilingualReader translation={currentTranslation.translation} onSourceRefSelect={locateTranslationSource}
+              locateRevision={translationLocateRevision}
               mode={view === 'translation' ? 'translation' : 'bilingual'} />
               : <p role="status">正在核对中文交付状态…</p>}
           </section>}

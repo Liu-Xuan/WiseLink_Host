@@ -1,3 +1,5 @@
+import { verifyBrowserTranslationPostgres } from './fixtures/document-translation-browser-postgres.fixture';
+import { documentDeliveryRequestId } from '../../server/modules/canonical-host/document-delivery-ref';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { readFileSync } from 'node:fs';
@@ -19,7 +21,7 @@ const databaseUrl = process.env.DOCUMENT_TRANSLATION_RESUME_TEST_DATABASE_URL;
 const describePg = databaseUrl ? describe : describe.skip;
 const scope = { tenantId: 'resume-tenant', actorUserId: 'resume-actor', documentVersionId: 'DV-resume' };
 const parseRunId = 'PR-resume';
-const rootRequestId = 'auto-translation-0123456789abcdef0123456789abcdef';
+const rootRequestId = documentDeliveryRequestId('translation', 'acquisition:ACQ-browser');
 const artifact = { storeRole: 'UnifiedArtifactStoreCandidate' as const,
   ref: `document-original://${scope.documentVersionId}/${parseRunId}`,
   sha256: 'b'.repeat(64), byteLength: 100, mediaType: 'application/json' as const };
@@ -232,6 +234,10 @@ describePg('saved document translation recovery on isolated PostgreSQL temp tabl
     }
     return data;
   }
+
+  it('native browser GET/POST use real SDK roles, RLS and actor scope for one exact successor', async () => {
+    await verifyBrowserTranslationPostgres(client, databaseUrl!, await seed(), scope.actorUserId);
+  });
 
   it('queues a unique successor, keeps saved candidates, and NEXT checks the old pending revision', async () => {
     const data = await seed();

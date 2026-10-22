@@ -6,6 +6,7 @@ import DocumentWikiReading from '../../client/src/pages/DocumentParsingPage/Docu
 import type { DocumentParseRunSummary } from '@shared/document-parsing.interface';
 import type { DocumentOriginalCoverage } from '@shared/document-original.interface';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
+import { savedDocumentReadingFixture } from './fixtures/saved-document-reading';
 
 const { JSDOM } = require('jsdom');
 
@@ -39,7 +40,7 @@ jest.mock('@client/src/pages/DocumentParsingPage/SemanticBilingualReader', () =>
 }));
 jest.mock('@client/src/pages/DocumentParsingPage/DocumentSourceReadingWorkspace', () => ({
   DocumentSourceReadingWorkspace: (props: { mode: string; onModeChange: (mode: string) => void; bilingualContent: ReactNode; initialPage?: number; initialUnitId?: string; onLocationSelect?: (page: number, unitId: string) => void; returnRoute?: string; returnLabel?: string;
-    toolbar?: { identity: ReactNode; links?: ReactNode; more?: ReactNode; notices?: ReactNode } }) =>
+    toolbar?: { identity: ReactNode; links?: ReactNode; more?: ReactNode; notices?: ReactNode }; savedPanels?: ReactNode }) =>
     createElement('div', { 'data-mode': props.mode, 'data-initial-page': props.initialPage, 'data-initial-unit': props.initialUnitId },
       createElement('header', null, props.toolbar?.identity, props.toolbar?.links, props.toolbar?.more,
         props.returnRoute ? createElement('a', { href: props.returnRoute }, props.returnLabel) : null),
@@ -50,7 +51,7 @@ jest.mock('@client/src/pages/DocumentParsingPage/DocumentSourceReadingWorkspace'
       createElement('button', { id: 'switch-bilingual', onClick: () => props.onModeChange('bilingual') }, '切中英对照'),
       createElement('button', { id: 'switch-translation', onClick: () => props.onModeChange('translation') }, '切中文阅读'),
       createElement('button', { id: 'switch-dual', onClick: () => props.onModeChange('dual') }, '切回原文'),
-      props.bilingualContent),
+      props.bilingualContent, props.savedPanels),
 }));
 
 const mockStatus = jest.fn();
@@ -59,6 +60,13 @@ const mockTranslation = jest.fn();
 const mockStart = jest.fn();
 const mockSessionCallbacks: Array<() => void> = [];
 const mockWiki=jest.fn();
+const mockReadIdentityRefetch = jest.fn(async () => ({ error: null }));
+jest.mock('@client/src/features/matter/useEngineeringMatter', () => ({
+  useEngineeringMatterQueryIdentity: () => ({
+    identity: { appId: 'test-app', tenantId: 'tenant-1', actorId: 'actor-1', sessionGeneration: 1 },
+    identityQuery: { isFetching: false, error: null, refetch: mockReadIdentityRefetch },
+  }),
+}));
 jest.mock('@client/src/api/document-wiki',()=>({readDocumentWiki:(...args:unknown[])=>mockWiki(...args)}));
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider',()=>({useCurrentUserSession:()=>({sessionGeneration:1,authenticationRequired:false})}));
 jest.mock('@client/src/api/canonical-host', () => ({
@@ -167,7 +175,8 @@ test('Wiki member link reads the exact semantic/reading revision and retains ful
       message: 'Unseen page retained.', readingImpact: 'LIMITATION' }],
   };
   const coverageBefore = JSON.stringify(sourceCoverage);
-  mockWiki.mockResolvedValue({status:'AVAILABLE',reading:{readingRunRef:'DRR-1',readingRevision:2,headline:'Saved conditional Wiki',
+  const sourceBinding = { original: originalFixture().binding, semanticRevision: 4 };
+  mockWiki.mockResolvedValue({status:'AVAILABLE',sourceBinding,reading:{sourceBinding,readingRunRef:'DRR-1',readingRevision:2,headline:'Saved conditional Wiki',
     brief:{text:'Only after condition X is verified.',quotes:[]},explanation:[{text:'Complete saved explanation; applicability is unconfirmed.',quotes:[]}],
     criticalConditions:[{text:'Do not act before verifying X.',quotes:[]}],limitations:['Selected original has gaps.'],sourceAnchors:[],
     readCoverage:{deliveredUnitIds:['u1'],totalUnitCount:2,status:'PARTIAL_DELIVERY',sourceCoverage}}});
@@ -183,14 +192,15 @@ test('Wiki member link reads the exact semantic/reading revision and retains ful
 });
 
 test('withdrawn exact Wiki stops its body without switching to another revision',async()=>{
-  mockWiki.mockResolvedValue({status:'RETRACTED',reading:null});
+  mockWiki.mockResolvedValue({status:'RETRACTED',sourceBinding: { original: originalFixture().binding, semanticRevision: 4 },reading:null});
   await mount('parseRunId=PR1&semanticRevision=4&readingRevision=2&readingRunRef=DRR-1');
   expect(container.textContent).toContain('该文档 Wiki 已撤回');
   expect(mockWiki).toHaveBeenCalledTimes(1);expect(mockStart).not.toHaveBeenCalled();
 });
 
 test('changing only the saved Wiki run pin clears the prior body before effects run', async () => {
-  mockWiki.mockResolvedValueOnce({ status: 'AVAILABLE', reading: {
+  const sourceBinding = { original: originalFixture().binding, semanticRevision: 4 };
+  mockWiki.mockResolvedValueOnce({ status: 'AVAILABLE', sourceBinding, reading: { sourceBinding,
     readingRunRef: 'DRR-1', readingRevision: 2, headline: 'Previous pinned Wiki body',
     brief: { text: 'Saved engineering explanation.', quotes: [] }, explanation: [],
     criticalConditions: [], limitations: [], sourceAnchors: [],
@@ -203,7 +213,7 @@ test('changing only the saved Wiki run pin clears the prior body before effects 
     useLayoutEffect(() => { captures.push(container.textContent ?? ''); }, [runRef]);
     return createElement(DocumentWikiReading, {
       documentVersionId: 'DV1', parseRunId: 'PR1', semanticRevision: 4,
-      readingRevision: 2, readingRunRef: runRef, onAccessRejected, onLocate,
+      readingRevision: 2, readingRunRef: runRef, originalBinding: sourceBinding.original, onAccessRejected, onLocate,
     });
   }
   root = createRoot(container);
@@ -214,6 +224,23 @@ test('changing only the saved Wiki run pin clears the prior body before effects 
   expect(captures[0]).not.toContain('Previous pinned Wiki body');
   expect(container.textContent).not.toContain('Previous pinned Wiki body');
   expect(mockWiki).toHaveBeenCalledTimes(2);
+  expect(mockStart).not.toHaveBeenCalled();
+});
+
+test('a temporary DRR refresh failure retains its exact full body; source denial clears it and the original', async () => {
+  const reading = savedDocumentReadingFixture('DV1');
+  const sourceBinding = { original: originalFixture().binding, semanticRevision: 4 };
+  reading.sourceBinding = sourceBinding; reading.readingRevision = 2; reading.readingRunRef = 'DRR-1';
+  mockWiki.mockResolvedValueOnce({ status: 'AVAILABLE', sourceBinding, reading })
+    .mockRejectedValueOnce(Object.assign(new Error('temporary DRR failure'), { statusCode: 503 }))
+    .mockRejectedValueOnce(Object.assign(new Error('source denied'), { statusCode: 403 }));
+  await mount('parseRunId=PR1&semanticRevision=4&readingRevision=2&readingRunRef=DRR-1');
+  await act(async () => dom.window.dispatchEvent(new dom.window.Event('focus')));
+  expect(container.textContent).toContain(reading.explanation[0].text);
+  expect(container.querySelector('[aria-label="文档解读"] [role="alert"]')?.textContent).toContain('保留同版正文');
+  await act(async () => dom.window.dispatchEvent(new dom.window.Event('focus')));
+  expect(container.textContent).not.toContain(reading.explanation[0].text);
+  expect(container.querySelector('[data-mode]')).toBeNull();
   expect(mockStart).not.toHaveBeenCalled();
 });
 

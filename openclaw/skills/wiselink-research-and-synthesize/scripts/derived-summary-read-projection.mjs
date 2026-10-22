@@ -1,6 +1,5 @@
-import { sameSummaryEvidence, summaryNativeReceiptFields, projectSummaryMemberNativeContent, restoreSummaryMemberEvidence, checkSummaryNativeReceiptHistory } from './derived-summary-native-evidence.mjs';
+import { sameSummaryEvidence, summaryNativeReceiptFields, summaryEvidenceRefs, projectSummaryMemberNativeContent, restoreSummaryMemberEvidence, checkSummaryNativeReceiptHistory } from './derived-summary-native-evidence.mjs';
 import { derivedSummarySparseMemberBody } from './derived-summary-incremental-revision.mjs';
-import { hierarchicalWikiParentMemberBody } from './hierarchical-wiki-model-view.mjs';
 import { canonicalJson } from './validate-payload.mjs';
 import { assertSummaryExactKeys, completeDerivedSummaryWorkBody, validateDerivedSummaryReading,
   validateDerivedSummaryReadSelection } from './derived-summary-shape.mjs';
@@ -123,8 +122,6 @@ export function createDerivedSummarySparseDeliveredView(view, registry) {
       !Array.isArray(view.evidence) || !Array.isArray(view.membersDirectory)) fail();
   const restorationRegistry = new Map([...registry.evidence].map(([ref, value]) => [ref, { value }]));
   const carriers = [];
-  const memberBody = view.modelViewStrategy === 'HIERARCHICAL_WIKI_PARENT_V2'
-    ? hierarchicalWikiParentMemberBody : derivedSummarySparseMemberBody;
   // Validate directory receipt metadata, without promoting it to body delivery.
   for (const directory of view.membersDirectory) {
     if (!registry.members.has(directory?.evidenceRef)) fail();
@@ -142,7 +139,7 @@ export function createDerivedSummarySparseDeliveredView(view, registry) {
   for (const [index, value] of view.members.entries()) {
     const expected = registry.members.get(value?.evidenceRef);
     if (!expected || delivered.members.has(value.evidenceRef) ||
-        canonicalJson(memberContent(value)) !== canonicalJson(memberContent(memberBody(expected, registry.evidence)))) fail();
+        canonicalJson(memberContent(value)) !== canonicalJson(memberContent(derivedSummarySparseMemberBody(expected, registry.evidence)))) fail();
     const evidence = restoreSummaryMemberEvidence(value, restorationRegistry);
     carriers.push(...evidence);
     const { evidenceRefs, nativeReadReceipts: _receipts, documentWorkItemCarriers: _documentCarriers, ...own } = value;
@@ -163,7 +160,7 @@ export function createDerivedSummarySparseDeliveredView(view, registry) {
 /** Raw receipts stay complete in the original round checkpoint. Only this new
  * version strips nested sources from member tool messages after whole-receipt
  * binding validation, and never promotes Host-only data to model delivery. */
-export function projectDerivedSummarySparseReadReceipt(receipt, intent, registry, delivered, { round, messageIndex, wikiParent = false }) {
+export function projectDerivedSummarySparseReadReceipt(receipt, intent, registry, delivered, { round, messageIndex }) {
   validateDerivedSummaryReadSelection(intent, registry, intent.action);
   const field = assertDerivedSummaryReadReceiptShape(receipt, intent.action);
   const values = receipt[field];
@@ -171,7 +168,11 @@ export function projectDerivedSummarySparseReadReceipt(receipt, intent, registry
       values.length !== intent.evidenceRefs.length || new Set(values.map(value => value?.evidenceRef)).size !== values.length) fail();
   const target = field === 'members' ? delivered.members : delivered.evidence;
   const allowed = field === 'members' ? registry.members : registry.evidence;
-  const ownBody = value => (wikiParent ? hierarchicalWikiParentMemberBody : derivedSummarySparseMemberBody)(value, registry.evidence);
+  const ownBody = value => {
+    const { evidence, body, ...own } = value;
+    return { ...own, ...(!Object.hasOwn(value, 'understanding') ? { body } : {}),
+      evidenceRefs: summaryEvidenceRefs(evidence), ...summaryNativeReceiptFields(evidence, registry.evidence) };
+  };
   // All raw contents, nested immutable roots and prior delivery must match before
   // any ledger is changed. Fresh notices are validated, then preserved in full.
   for (const value of values) {
@@ -189,7 +190,7 @@ export function projectDerivedSummarySparseReadReceipt(receipt, intent, registry
   const items = values.map((value, index) => {
     const previous = target.get(value.evidenceRef);
     const notices = field === 'members'
-      ? { current: value.current, overviewStatus: value.overviewStatus, limitations: structuredClone(ownBody(value).limitations) }
+      ? { current: value.current, overviewStatus: value.overviewStatus, limitations: structuredClone(value.limitations) }
       : { inheritedSourceReadIsNotFreshVerification: true };
     if (previous) return { evidenceRef: value.evidenceRef, status: 'CONFIRMED_SAME_CONTENT',
       contentLocation: structuredClone(previous.location), notices, ...nativeReceiptProjection(field === 'members' ? value.evidence : [value], messageIndex, `/items/${index}`) };

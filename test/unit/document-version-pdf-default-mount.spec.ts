@@ -18,6 +18,9 @@ jest.mock('@client/src/pages/DocumentParsingPage/DocumentSavedWorkPanels', () =>
 jest.mock('@client/src/api/document-wiki', () => ({
   readDocumentWiki: jest.fn(() => { throw new Error('Unexpected document Wiki request during ordinary source reading'); }),
 }));
+jest.mock('@client/src/features/matter/useEngineeringMatter', () => ({
+  useEngineeringMatterQueryIdentity: () => { throw new Error('Unexpected document interpretation during ordinary source reading'); },
+}));
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({
   useCurrentUserSession: () => ({ sessionGeneration: 1, authenticationRequired: false }),
 }));

@@ -1,3 +1,4 @@
+import { assertJobAidSemanticContent } from './jobaid-semantic-content';
 import {
   buildJobAidPreparationView, preparationAfterSavedWork, unavailableJobAidPreparationFacts,
   type JobAidEngineerPreparationFacts, type JobAidPreparationScope,
@@ -1190,6 +1191,7 @@ export class CanonicalJobAidProblemService {
     targetIssueKeys?: string[],
   ) {
     const content = materializeJobAidWork(proposal, {
+      contentValidationVersion: task.contentValidationVersion,
       methodBinding: task.modelInput.methodBinding,
       workItemId,
       previous: task.previousWork?.content ?? null,
@@ -2013,6 +2015,7 @@ export class CanonicalJobAidProblemService {
     await verifyTdmsNativeEvidence(nativeReads,{tenantId:scope.tenantId,actorUserId:taskInput.actorUserId},this.nativeVerifier);
     await this.assertNativeTaskAuthorized(taskInput,scope);
     const content = materializeJobAidWork(command, {
+      contentValidationVersion: taskInput.contentValidationVersion,
       methodBinding: taskInput.modelInput.methodBinding,
       workItemId: scope.workItemId,
       previous: previous?.content ?? null,
@@ -2139,6 +2142,15 @@ export class CanonicalJobAidProblemService {
       input.scope.workItemId,
       input.scope,
     );
+    if (taskInput.contentValidationVersion && input.row.status !== 'COMMITTING' && input.row.status !== 'SUCCEEDED' &&
+        preflight.task.taskType === 'OPENCLAW_OVERALL_SYNTHESIS') {
+      const finish = parseFinishOutput(preflight.result.modelOutput);
+      const saved = await this.work.listForRuntime({tenantId: input.scope.tenantId,
+        workItemId: input.scope.workItemId, actorUserId: taskInput.actorUserId});
+      const selected = saved.find(item => item.workRevisionRef === finish.workRevisionRef);
+      if (!selected) throw new Error('JOBAID_OVERALL_WORK_REQUIRED');
+      assertJobAidSemanticContent(selected.content, selected.content.evidence);
+    }
     const prepared = await this.attempts.prepareCommit({
       attemptRef: input.scope.attemptRef,
       tenantId: input.scope.tenantId,
@@ -2883,16 +2895,6 @@ export class CanonicalJobAidProblemService {
         throw new Error('JOBAID_ATTACHMENT_AUTHORIZATION_CHANGED');
     }
     await verifyTdmsNativeEvidence(evidence, { tenantId, actorUserId }, this.nativeVerifier, database);
-  }
-
-  /** OWNER manual SAVE checks on its caller's held actor transaction; no external PDF/model I/O. */
-  async assertManualCorrectionEvidence(
-    evidence: AssessmentEvidence[], actor: { tenantId: string; actorUserId: string },
-    workItemId: string, database: PostgresJsDatabase,
-  ): Promise<void> {
-    await this.assertEvidenceOwned(evidence, actor.tenantId, actor.actorUserId, workItemId, database);
-    await this.assertSourceStatementReferences(evidence, actor, database);
-    await this.assertEvidenceOwned(evidence, actor.tenantId, actor.actorUserId, workItemId, database);
   }
 
   private async assertEvidenceOwned(

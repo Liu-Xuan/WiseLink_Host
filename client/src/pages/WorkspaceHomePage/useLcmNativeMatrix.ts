@@ -7,12 +7,13 @@ import { useLcmMatrixResource } from './useLcmMatrixResource';
 export function useLcmNativeMatrix(snapshotIds: string[], sessionGeneration: number, refresh: number,
   enabled: boolean, onLost: (error?: unknown) => void) {
   const idsKey: string = JSON.stringify(snapshotIds);
-  const load = useCallback((signal: AbortSignal) => readLcmNativeMatrix({
-    snapshotIds: JSON.parse(idsKey) as string[],
-  }, signal), [idsKey]);
+  const load = useCallback(async (signal: AbortSignal) => ({
+    data: await readLcmNativeMatrix({ snapshotIds: JSON.parse(idsKey) as string[] }, signal),
+    observedAt: new Date().toISOString(),
+  }), [idsKey]);
   const resource = useLcmMatrixResource(JSON.stringify(['native', sessionGeneration, idsKey, refresh]),
     enabled, load, onLost);
-  const index = useMemo(() => resource.value ? buildLcmNativeIndex(resource.value) : null, [resource.value]);
+  const index = useMemo(() => resource.value ? buildLcmNativeIndex(resource.value.data) : null, [resource.value]);
 
   useEffect(() => {
     if (!index || !enabled) return;
@@ -30,5 +31,5 @@ export function useLcmNativeMatrix(snapshotIds: string[], sessionGeneration: num
     window.addEventListener('focus', recheck);
     return () => { controller.abort(); clearInterval(timer); window.removeEventListener('focus', recheck); };
   }, [index, idsKey, enabled, onLost]);
-  return { index, loading: resource.loading, error: resource.error };
+  return { index, observedAt: resource.value?.observedAt ?? null, loading: resource.loading, error: resource.error };
 }

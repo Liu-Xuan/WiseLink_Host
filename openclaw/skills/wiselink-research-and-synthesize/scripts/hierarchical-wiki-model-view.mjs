@@ -2,29 +2,15 @@ import { canonicalJson } from './validate-payload.mjs';
 import { derivedSummaryRegistry, validateDerivedSummaryModelInput } from './derived-summary-shape.mjs';
 import { derivedSummarySparseMemberBody } from './derived-summary-incremental-revision.mjs';
 
-export const isHierarchicalWikiParent = input => ['ATA2', 'FLEET'].includes(input?.wikiLevel);
+// The child-only prompt remains byte-identical for sealed tasks. ATA2 with
+// direct saved leaves uses the existing full-material/revision consumer, whose
+// prompt supports both leaf work and summaries without suppressing either.
+export const isHierarchicalWikiParent = input => ['ATA2', 'FLEET'].includes(input?.wikiLevel) &&
+  Array.isArray(input.members) && input.members.every(reading => reading.member.kind === 'DERIVED_SUMMARY');
 const fail = () => { throw new Error('DERIVED_SUMMARY_WIKI_VIEW_BINDING_INVALID'); };
 const noticesValid = item => typeof item?.current === 'boolean' &&
   ['CURRENT', 'STALE', 'NOT_AVAILABLE'].includes(item.overviewStatus) && Array.isArray(item.limitations) &&
   item.limitations.every(value => typeof value === 'string' && value.trim());
-
-// These are citations inside this exact saved child, not fresh parent reads.
-// Unknown refs and refs belonging only to another child remain visible.
-const childOwnsSource = (child, ref, registry) => registry.has(ref) &&
-  child.evidence.some(evidence => evidence.evidenceRef === ref);
-const attributeChildCitations = (text, children, registry) => text.replace(/\[\[([^\]]+)\]\]/gu, (citation, ref) => {
-  const owners = children.filter(child => childOwnsSource(child, ref, registry));
-  return owners.length ? [...new Set(owners.map(child => `[[${child.evidenceRef}]]`))].join(' ') : citation;
-});
-
-/** Detached model text only; immutable Host work and the source registry stay exact. */
-export function hierarchicalWikiParentMemberBody(reading, registry) {
-  if (reading.member.kind !== 'DERIVED_SUMMARY') fail();
-  const own = derivedSummarySparseMemberBody(reading, registry);
-  return { ...own, headline: attributeChildCitations(own.headline, [reading], registry),
-    body: attributeChildCitations(own.body, [reading], registry),
-    limitations: own.limitations.map(text => attributeChildCitations(text, [reading], registry)) };
-}
 
 /** All exact child own-bodies, one root directory and no inherited root bodies.
  * The complete eligible registry stays sealed by Host for explicit READ_SOURCES. */
@@ -33,10 +19,8 @@ export function hierarchicalWikiParentModelView(modelInput) {
   if (!isHierarchicalWikiParent(modelInput)) fail();
   const view = structuredClone(modelInput);
   const registry = derivedSummaryRegistry(modelInput);
-  view.modelViewStrategy = 'HIERARCHICAL_WIKI_PARENT_V2';
-  view.members = modelInput.members.map(reading => hierarchicalWikiParentMemberBody(reading, registry.evidence));
-  view.limitations = modelInput.limitations.map(text => attributeChildCitations(text,
-    modelInput.members.filter(reading => reading.limitations.includes(text)), registry.evidence));
+  view.modelViewStrategy = 'HIERARCHICAL_WIKI_PARENT_V1';
+  view.members = modelInput.members.map(reading => derivedSummarySparseMemberBody(reading, registry.evidence));
   view.membersDirectory = view.members.map(({ body, ...directory }) => structuredClone(directory));
   view.evidenceDirectory = [...registry.evidence.values()].map(evidence =>
     Object.fromEntries(['evidenceRef', 'kind', 'title', 'versionLabel', 'workItemId',

@@ -1,0 +1,98 @@
+{
+  "workPackages": [
+    {
+      "id": "P0",
+      "label": "P0 · 第一批交付与接线可视化",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V04",
+        "V05",
+        "V08",
+        "V10",
+        "V12",
+        "V30"
+      ],
+      "nextAction": "M2离线浏览器筛选/下钻已核对。准备准确候选的同步/发布；真实图私有JSON回放仍待允许的文件选择，保留原待验状态。"
+    },
+    {
+      "id": "P1",
+      "label": "P1 · 严重性依据与方法处置",
+      "bindingIds": [
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "nextAction": "新任务语义/旧封存恢复产品修复已完成；真实低严重性定义及工程事实仍待补，按具体授权做正文级验收。"
+    },
+    {
+      "id": "P2",
+      "label": "P2 · 阅读与翻译接续",
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "scenarioIds": [
+        "V04",
+        "V05"
+      ],
+      "nextAction": "本人已有上传翻译续接及译文运行图已接；发布后核对真实浏览器入口，保留部分译文与原请求。"
+    },
+    {
+      "id": "P3",
+      "label": "P3 · TDMS实际来源与公司措施",
+      "bindingIds": [
+        "feedback.reading"
+      ],
+      "scenarioIds": [
+        "V23",
+        "V24"
+      ],
+      "nextAction": "来源读取代码与隔离验证具备；当前AppModule来源授权/原件store及分析runtime reader/verifier未装配。真实权限、准确原件登记与独立公司措施正文消费仍待接通。"
+    },
+    {
+      "id": "P4",
+      "label": "P4 · 原生单机落实读取",
+      "bindingIds": [
+        "feedback.reading",
+        "configuration.reading"
+      ],
+      "scenarioIds": [
+        "V23",
+        "V24",
+        "V31",
+        "V37",
+        "V38",
+        "V41"
+      ],
+      "nextAction": "AEO原生来源窗口及LCM矩阵/单机诊断已接。完整AEO要求/目标/替代关系仍缺；LCM候选读取不提升为实时装机或AEO完成。"
+    },
+    {
+      "id": "P5",
+      "label": "P5 · Wiki与有限增量",
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "scenarioIds": [
+        "V18",
+        "V20"
+      ],
+      "nextAction": "ATA2直接成员消费与Wiki目录诊断已接；准备Host/Native准确包，真实跨资料生成及批准变化消费仍待其来源和授权。"
+    },
+    {
+      "id": "P6",
+      "label": "P6 · 执行恢复与效率",
+      "bindingIds": [
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10"
+      ],
+      "nextAction": "ACK和迟到配置锁序修复已通过4项真实PG竞争回归；实际阶段时间与官方同窗聚合已取得。发布后观察正常恢复；容量、全局积压和首次可读保持未知。"
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c230';
+  'wiselink-research-and-synthesize@r09.c229';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -4968,6 +4968,8 @@ function jobAidDeltaEvidenceEntries(delta) {
     (issue.riskScenarios ?? []).forEach((risk, ri) => {
       for (const key of ['severity', 'likelihood', 'importantEvent'])
         refs(`${path}.riskScenarios[${ri}].${key}.basisRefs`, risk[key]?.basisRefs);
+      for (const key of ['severity', 'likelihood'])
+        if (risk[key]?.definitionMatch) add(`${path}.riskScenarios[${ri}].${key}.definitionMatch.methodRef`, risk[key].definitionMatch.methodRef);
     });
     for (const key of ['measures', 'otherClassifications', 'requirementHandling']) {
       (issue[key] ?? []).forEach((item, ii) => {
@@ -5084,6 +5086,7 @@ export function validateSourceStatementContext(context) {
 
 function projectStatementReviewEvidence(item) {
   const base={evidenceRef:item.evidenceRef,kind:item.kind,title:item.title,versionLabel:item.versionLabel,excerpt:item.excerpt,locator:item.locator??null};
+  if(item.kind==='METHOD_CLAUSE'&&item.classificationDefinitions)base.classificationDefinitions=structuredClone(item.classificationDefinitions);
   if(item.kind==='PRIOR_RESULT') {
     base.originalEvidenceRefs=[...item.originalEvidenceRefs];
     if(item.sourceWork)base.sourceWork=item.sourceWork;
@@ -5099,6 +5102,9 @@ function validateFrozenJobAidReviewContext(task) {
   assertObject(jobAid, 'REVIEW_JOBAID_CONTEXT_REQUIRED');
   equal(jobAid.schemaVersion, 'wiselink.jobaid-problem-task.v2', 'REVIEW_JOBAID_CONTEXT_INVALID');
   equal(jobAid.modelInput?.purpose, 'PROBLEM_REVIEW', 'REVIEW_JOBAID_CONTEXT_INVALID');
+  if (jobAid.contentValidationVersion !== jobAid.modelInput.contentValidationVersion ||
+      (jobAid.contentValidationVersion !== undefined && jobAid.contentValidationVersion !== 'jobaid-semantic.v1'))
+    fail('REVIEW_JOBAID_CONTENT_VALIDATION_VERSION_INVALID');
   equal(canonicalJson(task.context.problemAssessment), canonicalJson(jobAid.modelInput), 'REVIEW_JOBAID_MODEL_CONTEXT_DRIFT');
   if (task.selectedEvaluationItemId !== null || task.allowedEvaluationItemIds.length || task.allowedAdoptedInputRefs.length) fail('REVIEW_JOBAID_EVALUATION_SCOPE_INVALID');
   array(jobAid.sourceCatalog, 'REVIEW_JOBAID_SOURCE_CATALOG_REQUIRED');
@@ -5131,6 +5137,7 @@ function validateFrozenJobAidReviewContext(task) {
   }
   const delivered = jobAid.sourceCatalog.filter((item) => jobAid.initiallyDeliveredRefs.includes(item.evidenceRef)).map((item) => statementMode ? projectStatementReviewEvidence(item) : ({
     evidenceRef: item.evidenceRef, kind: item.kind, title: item.title, versionLabel: item.versionLabel, excerpt: item.excerpt, locator: item.locator ?? null,
+    ...(item.kind === 'METHOD_CLAUSE' && item.classificationDefinitions ? {classificationDefinitions: structuredClone(item.classificationDefinitions)} : {}),
   }));
   equal(canonicalJson(delivered), canonicalJson(jobAid.modelInput.deliveredEvidence), 'REVIEW_JOBAID_DELIVERED_EVIDENCE_DRIFT');
   for (const resource of task.resourceRefs) {

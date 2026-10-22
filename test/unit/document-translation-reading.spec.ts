@@ -52,4 +52,14 @@ describe('independent document browser reading', () => {
     await expect(f.controller.read('DV', '', f.request)).rejects.toThrow('IDENTITY_INVALID');
     expect(f.reader.readDocumentOriginal).toHaveBeenCalledTimes(1);
   });
+  it('projects only exact attempt identity and stored event times without inventing readiness or ACK', async () => {
+    const f = setup();
+    f.attempts.latest.mockResolvedValueOnce({ producerRunId: 'parse', status: 'SUCCEEDED', attemptId: 'ATT-exact',
+      errorCode: null, createdAt: new Date('2026-10-22T10:00:00Z'), startedAt: new Date('2026-10-22T10:01:00Z'),
+      completedAt: new Date('2026-10-22T10:02:00Z') });
+    expect((await f.controller.read('DV', 'parse', f.request)).execution).toEqual({
+      status: 'SUCCEEDED', errorCode: null, attemptId: 'ATT-exact', createdAt: '2026-10-22T10:00:00.000Z',
+      startedAt: '2026-10-22T10:01:00.000Z', completedAt: '2026-10-22T10:02:00.000Z',
+    });
+  });
 });

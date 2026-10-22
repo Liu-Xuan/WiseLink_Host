@@ -253,108 +253,8 @@ export async function consumeAutomaticWorkItemQueueTick(options, dependencies) {
   const report = await dependencies.checkpoint.withActiveClaimOwner(() => options.parkCancelledClaim
     ? parkCancelledAutomaticClaim(options, { ...dependencies, validateClaim: validateStoredAutoClaim })
     : options.finishBlockedClaim ? finishBlockedAutomaticClaim(options, dependencies)
-      : consumeAutomaticQueueTurn(options, dependencies));
+      : consumeAutomaticWorkItemQueueTickOwned(options, dependencies));
   return { ...report, ...checkpointWarnings(report?.localCheckpointWarnings, dependencies.checkpoint.diagnostics) };
-}
-
-export function automaticQueueBatchOptions(argv) {
-  const flags = ['--queue-max-items', '--queue-tick-budget-ms'];
-  if (flags.some(flag => argv.filter(arg => arg === flag).length > 1 ||
-      argv.some(arg => arg.startsWith(flag + '='))))
-    throw new Error('AUTO_QUEUE_BATCH_OPTIONS_INVALID');
-  const maxQueueItems = Number(option(argv, flags[0]) ?? 4);
-  const queueTickBudgetMs = Number(option(argv, flags[1]) ?? 15 * 60_000);
-  if (!Number.isSafeInteger(maxQueueItems) || maxQueueItems < 1 || maxQueueItems > 16 ||
-      !Number.isSafeInteger(queueTickBudgetMs) || queueTickBudgetMs < 1000 || queueTickBudgetMs > 15 * 60_000)
-    throw new Error('AUTO_QUEUE_BATCH_OPTIONS_INVALID');
-  return { maxQueueItems, queueTickBudgetMs };
-}
-
-function completedAutomaticDispatch(report) {
-  if (['ACKNOWLEDGED', 'WIKI_DISPATCHED', 'WIKI_MATTER_DISPATCHED'].includes(report?.status)) return true;
-  if (report?.status === 'REVIEW_DISPATCHED')
-    return ['CANDIDATE_SAVED', 'IDLE'].includes(report.review?.status);
-  if (report?.status === 'OVERALL_DISPATCHED') return report.overall?.status === 'SUCCESSOR_OVERALL_SAVED';
-  return report?.status === 'DOCUMENT_DISPATCHED' &&
-    ['DOCUMENT_READY', 'DOCUMENT_READY_WITH_LIMITATIONS', 'READING_SAVED', 'IDLE'].includes(report.document?.status);
-}
-
-async function automaticQueueBoundary(checkpoint) {
-  return (await Promise.all(['active-claim', 'active-wiki', 'active-successor-overall']
-    .map(key => checkpoint.readOptional(key)))).every(value => value === null);
-}
-
-async function consumeAutomaticQueueTurn(options, dependencies) {
-  if (options.repairStoppedClaim || typeof dependencies.consumeWikiIdle !== 'function')
-    return consumeAutomaticWorkItemQueueTickOwned(options, dependencies);
-  const { checkpoint } = dependencies;
-  // Existing work, provider UNKNOWN and successor recovery precede the fairness
-  // cursor. A damaged new cursor can never preempt or block those recoveries.
-  if (!await automaticQueueBoundary(checkpoint)) {
-    const report = await consumeAutomaticWorkItemQueueTickOwned(options, dependencies);
-    if ((completedAutomaticDispatch(report) || report.status === 'WIKI_ATTENTION') &&
-        await automaticQueueBoundary(checkpoint))
-      await checkpoint.write('queue-turn', report.status.startsWith('WIKI_') ? 'WORK' : 'WIKI');
-    return report;
-  }
-  const turn = await checkpoint.readOptional('queue-turn');
-  if (turn !== null && !['WORK', 'WIKI'].includes(turn)) throw new Error('AUTO_QUEUE_TURN_INVALID');
-  let wiki;
-  const nextWiki = () => wiki ??= Promise.resolve().then(() => dependencies.consumeWikiIdle());
-  if (turn === 'WIKI' && await automaticQueueBoundary(checkpoint)) {
-    const result = await nextWiki();
-    const releasedAttention = result.status === 'WIKI_ATTENTION' && await automaticQueueBoundary(checkpoint);
-    if (!['IDLE', 'ATTENTION'].includes(result.status) && !releasedAttention) {
-      if (completedAutomaticDispatch(result) && await automaticQueueBoundary(checkpoint))
-        await checkpoint.write('queue-turn', 'WORK');
-      return result;
-    }
-    // An empty Wiki queue yields to ordinary work in the same tick. Preserve an
-    // explicit discovery ATTENTION without calling or generating that Wiki twice.
-    await checkpoint.write('queue-turn', 'WORK');
-  }
-  const report = await consumeAutomaticWorkItemQueueTickOwned(options, {
-    ...dependencies, consumeWikiIdle: nextWiki,
-  });
-  if (completedAutomaticDispatch(report) && await automaticQueueBoundary(checkpoint))
-    await checkpoint.write('queue-turn', report.status.startsWith('WIKI_') ? 'WORK' : 'WIKI');
-  const observedWiki = wiki ? await wiki : null;
-  return ['ATTENTION', 'WIKI_ATTENTION'].includes(observedWiki?.status) && report !== observedWiki
-    ? { ...report, wikiAttention: observedWiki } : report;
-}
-
-/** One endpoint owner remains held across a bounded sequential batch. Never
- * start another subject after pending/UNKNOWN/attention or an active pointer. */
-export async function consumeAutomaticWorkItemQueueBatch(options, dependencies) {
-  if (options.repairStoppedClaim || options.finishBlockedClaim || options.parkCancelledClaim)
-    return consumeAutomaticWorkItemQueueTick(options, dependencies);
-  const limits = automaticQueueBatchOptions([
-    '--queue-max-items', String(options.maxQueueItems ?? 4),
-    '--queue-tick-budget-ms', String(options.queueTickBudgetMs ?? 15 * 60_000),
-  ]);
-  if (typeof dependencies.checkpoint?.withActiveClaimOwner !== 'function')
-    throw new Error('AUTO_WORK_ITEM_QUEUE_DEPENDENCIES_INVALID');
-  const monotonicNow = dependencies.monotonicNow ?? (() => performance.now());
-  const startedAt = monotonicNow();
-  const reports = [];
-  let stopReason = 'ITEM_LIMIT';
-  await dependencies.checkpoint.withActiveClaimOwner(async () => {
-    for (let index = 0; index < limits.maxQueueItems; index += 1) {
-      const report = await consumeAutomaticQueueTurn(options, dependencies);
-      reports.push(report);
-      if (!completedAutomaticDispatch(report) || !await automaticQueueBoundary(dependencies.checkpoint)) {
-        stopReason = 'PENDING_OR_IDLE';
-        break;
-      }
-      if (monotonicNow() - startedAt >= limits.queueTickBudgetMs) {
-        stopReason = 'TIME_BUDGET';
-        break;
-      }
-    }
-  });
-  const report = reports.length === 1 ? reports[0] : { status: 'AUTO_QUEUE_BATCH', reports };
-  return { ...report, queueBatch: { ...limits, processedItems: reports.length, stopReason },
-    ...checkpointWarnings(dependencies.checkpoint.diagnostics) };
 }
 
 function checkpointWarnings(...sources) {
@@ -1769,7 +1669,6 @@ export function automaticWorkItemQueueMode(argv) {
   const parks = argv.filter(arg => arg === '--park-cancelled-claim').length;
   const cancelledFinishes = argv.filter(arg => arg === '--finish-cancelled-claim').length;
   const expectations = argv.filter(arg => arg === '--park-expectation-file').length;
-  const batchFlags = argv.some(arg => arg.startsWith('--queue-'));
   const finishFields = ['--finish-work-item-id', '--finish-request-id', '--finish-document-version-id',
     '--finish-lease-generation', '--finish-blocked-at'];
   if (finishes > 1 || finishFields.some(flag => argv.filter(arg => arg === flag).length !== finishes) ||
@@ -1780,15 +1679,12 @@ export function automaticWorkItemQueueMode(argv) {
   if (wiki > 1 || (wiki && (repairs || finishes || parks || cancelledFinishes)))
     throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
   if (!occurrences) {
-    if (wiki || batchFlags) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
+    if (wiki) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
     if (repairs || repairWorkItems || repairAttempts || finishes || parks || cancelledFinishes || expectations)
       throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
     return false;
   }
   if (occurrences !== 1) throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
-  if (batchFlags && (repairs || finishes || parks || cancelledFinishes))
-    throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
-  automaticQueueBatchOptions(argv);
   if (recoveries > 1 || (recoveries && !/^[A-Za-z0-9_-]{1,96}$/u.test(
     option(argv, '--document-translation-recovery') ?? '')))
     throw new Error('AUTO_WORK_ITEM_QUEUE_OPTIONS_INVALID');
@@ -1802,7 +1698,6 @@ export function automaticWorkItemQueueMode(argv) {
     '--document-translation-recovery', '--park-expectation-file', ...finishFields,
     '--wiki-timeout-ms', '--wiki-max-completion-tokens', '--wiki-max-model-requests',
     '--wiki-reasoning-effort', '--wiki-provider-timeout-seconds',
-    '--queue-max-items', '--queue-tick-budget-ms',
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -2104,7 +1999,6 @@ async function main(argv, env) {
   if (argv.includes('--help')) {
     process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue [--park-cancelled-claim --park-expectation-file ABSOLUTE_0600_JSON] [--document-translation-recovery ID] [--repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...] [--finish-blocked-claim --finish-work-item-id WI-... --finish-request-id REQ-... --finish-document-version-id DV --finish-lease-generation N --finish-blocked-at UTC [--finish-cancelled-claim --park-expectation-file ABSOLUTE_0600_JSON]]] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. After Host admission repair, one document translation recovery ID may be added to the existing cron so the next natural tick checks Host again without clearing the old checkpoint. --repair-stopped-claim with both exact identity flags permits one operator-triggered successor only for a stopped claim with a failed no-work JobAid/Overall auto-retry after a bounded gateway change; it is never a cron option. --finish-blocked-claim is an operator-only exact existing BLOCK replay finalization; it archives the original claim/receipt under the endpoint owner lock, never ACKs a failure, and leaves new dispatch to the next natural tick. It requires Linux util-linux flock; competing owners and unsupported locking fail closed. --park-cancelled-claim is a separate operator-only, single BLOCK POST for the exact latest cancelled JobAid; it always retains the stopped claim and provider UNKNOWN. Only --finish-cancelled-claim with an exact private expectation file extends finalization to an existing cancellation BLOCK replay; it cannot create a fresh BLOCK or retry an unknown POST. Both require the compatible Host and a normal Skill/MCP installation, and are never cron options. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
     process.stdout.write('Wiki idle consumption: add --wiki-idle --wiki-timeout-ms N --wiki-max-completion-tokens N --wiki-max-model-requests N to --auto-queue, with --openclaw-config PATH; optionally --wiki-reasoning-effort low|high|max and --wiki-provider-timeout-seconds N. Uses the existing Hosted GLM5.3 profile, endpoint owner lock and capacity. An unresolved active-wiki checkpoint resumes before new user work; provider UNKNOWN or durable Host COMMITTING keeps it pinned. Platform backstop reserves the same Host queue. Install compatible Host/MCP/schema before enabling these flags.\n');
-    process.stdout.write('Automatic queue: --queue-max-items 1..16 (default 4), --queue-tick-budget-ms 1000..900000 (default 900000). Subjects run sequentially under the same endpoint lock; the time budget is checked between subjects and never aborts a running request. With --wiki-idle, completed ordinary work and Wiki alternate at free subject boundaries; empty Wiki probes yield in the same tick. Operator recovery remains one operation.\n');
     return;
   }
   const autoQueue = automaticWorkItemQueueMode(argv);
@@ -2195,8 +2089,7 @@ async function main(argv, env) {
     const automaticCheckpoint = autoQueue ? await createCheckpointStore(join(checkpointRoot,
       'automatic-work-item-queue', encodeURIComponent(endpoint.origin + endpoint.pathname))) : null;
     const result = autoQueue
-      ? await consumeAutomaticWorkItemQueueBatch({ checkpointRoot, repairStoppedClaim,
-        ...automaticQueueBatchOptions(argv),
+      ? await consumeAutomaticWorkItemQueueTick({ checkpointRoot, repairStoppedClaim,
         repairWorkItemId, repairAttemptRef, finishBlockedClaim: argv.includes('--finish-blocked-claim'),
         parkCancelledClaim: argv.includes('--park-cancelled-claim'),
         finishCancelledClaim: argv.includes('--finish-cancelled-claim'),

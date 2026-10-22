@@ -1,14 +1,9 @@
 import { TdmsSourceModule } from './modules/tdms-source/tdms-source.module';
 import { MiaodaTdmsDocumentAccess } from './modules/tdms-source/miaoda-tdms-document-access';
-import { TdmsReceiverRuntimeModule } from './modules/tdms-source/tdms-receiver-runtime.module';
-import { MiaodaTdmsSourceAuthorization } from './modules/tdms-source/miaoda-tdms-source-authorization';
-import { MiaodaTdmsDailyArtifactStore } from './modules/tdms-source/miaoda-tdms-daily-artifact-store';
-import { TdmsFormalDocumentRegistrationService } from './modules/tdms-source/tdms-formal-document-registration.service';
+import { UnconfiguredTdmsSourceAuthorization } from './modules/tdms-source/tdms-source.authorization';
 import {
   TDMS_DOCUMENT_ACCESS,
-  TDMS_ARTIFACT_STORE,
   TDMS_SOURCE_AUTHORIZATION,
-  TDMS_FORMAL_REGISTRATION,
 } from './modules/tdms-source/tdms-source.types';
 import { LcmSourceReadingModule } from './modules/lcm-export-staging/lcm-source-reading.module';
 import { APP_FILTER } from '@nestjs/core';
@@ -121,22 +116,14 @@ import { S1000dXmlStructuredPackageProducerAdapter } from './modules/s1000d-ingr
     CanonicalModelSettingsModule,
     ReviewPersistenceModule,
     TdmsSourceModule.register({
-      imports: [DocumentManagementRuntimeModule, TdmsReceiverRuntimeModule],
+      imports: [DocumentManagementRuntimeModule],
       authorizationProvider: {
         provide: TDMS_SOURCE_AUTHORIZATION,
-        useExisting: MiaodaTdmsSourceAuthorization,
+        useExisting: UnconfiguredTdmsSourceAuthorization,
       },
       documentAccessProvider: {
         provide: TDMS_DOCUMENT_ACCESS,
         useClass: MiaodaTdmsDocumentAccess,
-      },
-      artifactStoreProvider: {
-        provide: TDMS_ARTIFACT_STORE,
-        useExisting: MiaodaTdmsDailyArtifactStore,
-      },
-      formalRegistrationProvider: {
-        provide: TDMS_FORMAL_REGISTRATION,
-        useExisting: TdmsFormalDocumentRegistrationService,
       },
     }),
     LcmSourceReadingModule.forHost(),

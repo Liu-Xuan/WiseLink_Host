@@ -43,8 +43,8 @@ const {
 let current: ReturnType<typeof useJobAidWorkingRead>;
 let root: Root;
 let container: HTMLElement;
-function Probe({ id }: { id: string }) {
-  current = useJobAidWorkingRead(id);
+function Probe({ id, enabled = true }: { id: string; enabled?: boolean }) {
+  current = useJobAidWorkingRead(id, null, enabled);
   return null;
 }
 function page(
@@ -63,9 +63,9 @@ function page(
     overallBasedOnWorkRevisionRef: null,
   };
 }
-async function render(id = 'WI-one') {
+async function render(id = 'WI-one', enabled = true) {
   await act(async () => {
-    root.render(createElement(Probe, { id }));
+    root.render(createElement(Probe, { id, enabled }));
   });
 }
 async function advance(ms: number) {
@@ -217,4 +217,29 @@ it('session or WorkItem change immediately hides previous data and rejects old i
   expect(current.data).toBeNull();
   await act(async () => resolve(page('SUCCEEDED')));
   expect(current.data).toBeNull();
+});
+
+it('clears the shared observation when the authorized parent is unavailable', async () => {
+  mockRead.mockResolvedValueOnce(page('SUCCEEDED')).mockImplementation(() => new Promise(() => {}));
+  await render();
+  expect(current.observedAt).not.toBeNull();
+  await render('WI-one', false);
+  expect(current.data).toBeNull();
+  expect(current.observedAt).toBeNull();
+  await render();
+  expect(current.data).toBeNull();
+});
+
+it('keeps the same observation while refresh is pending and advances it only on success', async () => {
+  let resolve: (value: JobAidWorkingReadModel) => void = () => {};
+  mockRead.mockResolvedValueOnce(page('SUCCEEDED')).mockImplementationOnce(() => new Promise<JobAidWorkingReadModel>((done) => { resolve = done; }));
+  await render();
+  const previous = current.data;
+  const observedAt = current.observedAt;
+  await act(async () => current.refresh());
+  expect(current.isRefreshing).toBe(true);
+  expect(current.data).toBe(previous);
+  expect(current.observedAt).toBe(observedAt);
+  await act(async () => resolve(page('SUCCEEDED')));
+  expect(current.isRefreshing).toBe(false);
 });

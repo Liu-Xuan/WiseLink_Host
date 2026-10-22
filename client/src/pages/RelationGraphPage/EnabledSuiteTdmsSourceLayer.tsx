@@ -63,7 +63,9 @@ export default function EnabledSuiteTdmsSourceLayer(props: SuiteTdmsSourceLayerP
       {tdms.relations.value ? <TdmsSourceRelations read={tdms.relations.value} onOpen={tdms.readBody} openDocument={props.openDocument} /> : null}
       {tdms.body.loading ? <p role="status">正在读取准确来源正文…</p> : null}
       {tdms.body.error ? <p role="alert">{tdms.body.error}</p> : null}
-      {tdms.body.value ? <><TdmsRecordDetails read={tdms.body.value} openDocument={props.openDocument} />
+      {tdms.body.value ? <><TdmsRecordDetails read={tdms.body.value} openDocument={props.openDocument}
+        monitorScopeKey={JSON.stringify([props.session, props.matterId, props.workRef, sourceAccessEpoch])}
+        onRefresh={() => tdms.readBody(tdms.body.value!.record.sourceRevisionRef)} />
         <button onClick={tdms.closeBody}>收起准确来源正文</button></> : null}
     </section>
   </>;

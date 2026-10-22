@@ -10,6 +10,8 @@ describe('resolveVendoredU0PythonModulePath', () => {
     ['x64', '3.9.2', 'linux-x64-cp39'],
     ['arm64', '3.10.12', 'linux-arm64-cp310'],
     ['x64', '3.10.16', 'linux-x64-cp310'],
+    ['arm64', '3.13.5', 'linux-arm64-cp313'],
+    ['x64', '3.13.5', 'linux-x64-cp313'],
   ] as const)(
     'selects the exact Linux CPython %s %s directory',
     (arch, pythonVersion, directory) => {

@@ -12,18 +12,18 @@ const rawWork = { assessmentWorkRevisionId: 'saved', workItemId: 'WI', workRevis
   contentJson: JSON.stringify({ schemaVersion: 'wiselink.jobaid-problem-work.v3', issues: [], evidence: [] }) };
 
 it('reads execution/body/bounded receipts in one parameterized statement without changing transaction type', async () => {
-  const execute = jest.fn((_query: SQL) => Promise.resolve([{ execution, latestAttempt: { attemptId: 'attempt', status: 'RUNNING', inputRevision: 3 }, current: rawWork, savedActivity: [saved] }]));
+  const execute = jest.fn((_query: SQL) => Promise.resolve([{ execution, latestAttempt: { attemptId: 'attempt', status: 'RUNNING', inputRevision: 3, createdAt: '2026-09-23T08:00:00+08:00', startedAt: null, completedAt: null, firstSavedAt: saved.createdAt }, current: rawWork, savedActivity: [saved] }]));
   const transaction = jest.fn(() => { throw new Error('Switch transaction type failed'); });
   const repository = new JobAidWorkRepository({ execute, transaction } as never, {} as never, {} as never);
   const result = await repository.readBrowserSnapshot({ tenantId: 'tenant', workItemId: 'WI', documentVersionId: 'DV' });
   expect(execute).toHaveBeenCalledTimes(1);
   expect(transaction).not.toHaveBeenCalled();
   expect(result.execution).toEqual(execution);
-  expect(result.latestAttempt).toEqual({ attemptId: 'attempt', status: 'RUNNING', inputRevision: 3 });
+  expect(result.latestAttempt).toEqual({ attemptId: 'attempt', status: 'RUNNING', inputRevision: 3, createdAt: '2026-09-23T00:00:00.000Z', startedAt: null, completedAt: null, firstSavedAt: '2026-09-23T00:00:00.000Z' });
   expect(result.current).toMatchObject({ workRevisionRef: 'saved', actionAttemptId: 'attempt', documentVersionId: 'DV' });
   expect(result.savedActivity).toEqual([{ ...saved, createdAt: new Date(saved.createdAt) }]);
   const query = new PgDialect().sqlToQuery(execute.mock.calls[0][0]);
-  expect(query.params).toEqual(['tenant', 'WI', 'DV', ACTION_ATTEMPT_REQUEST_ORIGIN, 'tenant', 'WI', 'DV', ACTION_ATTEMPT_REQUEST_ORIGIN, 'tenant', 'WI', 'tenant', 'WI', 'DV', 51]);
+  expect(query.params).toEqual(['tenant', 'WI', 'DV', ACTION_ATTEMPT_REQUEST_ORIGIN, 'tenant', 'WI', 'DV', 'tenant', 'WI', 'DV', ACTION_ATTEMPT_REQUEST_ORIGIN, 'tenant', 'WI', 'tenant', 'WI', 'DV', 51]);
   expect(query.sql).not.toMatch(/\b(?:set transaction|begin|commit)\b/iu);
   expect(query.sql).toContain('"subject_kind" = \'WORK_ITEM\'');
   expect(query.sql).toContain("'OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS'");

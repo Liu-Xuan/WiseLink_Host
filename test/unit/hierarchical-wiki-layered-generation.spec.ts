@@ -17,7 +17,7 @@ import {
   readWikiInventory,
   wikiScopeFor,
 } from '../../server/modules/canonical-host/hierarchical-wiki-inventory';
-import { assertWikiLayerMembers } from '../../server/modules/canonical-host/hierarchical-wiki-generation';
+import { assertWikiLayerMembers, wikiDirectVersions } from '../../server/modules/canonical-host/hierarchical-wiki-generation';
 
 jest.mock(
   '../../server/modules/canonical-host/hierarchical-wiki-inventory',
@@ -112,14 +112,10 @@ function setup(discoveredWorkItemId?: string) {
     ],
   ]);
   for (let index = 2; index >= 0; index--) {
-    const versions =
-      index === 2
-        ? Object.fromEntries(
-            memberships
-              .get(rows[index]!.wikiId)!
-              .map((item) => [item.key, item.member]),
-          )
-        : { [`SUMMARY:DS-${index + 1}`]: pointer(String(index + 1)) };
+    const versions = {
+      ...wikiDirectVersions(rows[index]!.scope.kind, memberships.get(rows[index]!.wikiId)!),
+      ...(index < 2 ? { [`SUMMARY:DS-${index + 1}`]: pointer(String(index + 1)) } : {}),
+    };
     rows[index]!.state = {
       ...emptyWikiDemand(),
       desiredGeneration: 1,
@@ -242,12 +238,12 @@ function setup(discoveredWorkItemId?: string) {
   };
 }
 
-test('refresh keeps saved document+matter only at ATA4 and exact saved child pointers at ATA2/fleet', async () => {
+test('refresh keeps exact directly classified ATA2 leaves beside saved children without promoting fleet leaves', async () => {
   const f = setup(),
     classifications = structuredClone([...f.memberships]);
   await f.refresh();
   expect(Object.values(f.rows[2]!.state.versions)).toEqual([doc, matter]);
-  expect(Object.values(f.rows[1]!.state.versions)).toEqual([pointer('2')]);
+  expect(Object.values(f.rows[1]!.state.versions)).toEqual([{ ...matter, matterId: 'MAT-coarse-ata2' }, pointer('2')]);
   expect(Object.values(f.rows[0]!.state.versions)).toEqual([pointer('1')]);
   expect([...f.memberships]).toEqual(classifications);
   expect(
@@ -283,7 +279,7 @@ test('a missing old saved WI head is discovered before the next full inventory w
   ]);
   expect(query.sql).toContain("m.basis_json->>'classificationStatus'='CONFIRMED'");
   expect(query.sql).toContain("m.basis_json->>'documentVersionId'=d.document_version_id");
-  expect(query.sql).toContain("w.scope_json->>'kind'='ATA4'");
+  expect(query.sql).toContain("w.scope_json->>'kind' IN ('ATA4','ATA2')");
   expect(query.sql).toContain('wi.source_file_sha256=d.pdf_sha256');
   expect(query.sql).toContain('ORDER BY r.work_revision DESC LIMIT 1');
   expect(query.sql).toContain('ORDER BY "subjectId" LIMIT 100');
@@ -335,7 +331,7 @@ test('changed leaf waits at both parents; exact new saved child propagates only 
   expect(f.rows[0]!.state.waiting.map((item) => item.subjectId)).toContain(
     'DS-1',
   );
-  expect(Object.values(f.rows[1]!.state.versions)).toEqual([pointer('2')]);
+  expect(Object.values(f.rows[1]!.state.versions)).toEqual([{ ...matter, matterId: 'MAT-coarse-ata2' }, pointer('2')]);
   const beforeMaximumWait = new Date(
     Date.parse(f.rows[1]!.state.firstDirtyAt!) + 239 * 60_000,
   ).toISOString();
@@ -355,7 +351,7 @@ test('changed leaf waits at both parents; exact new saved child propagates only 
     currentSummaryRef: 'DSR-2-2',
   });
   await f.refresh();
-  expect(Object.values(f.rows[1]!.state.versions)).toEqual([pointer('2', 2)]);
+  expect(Object.values(f.rows[1]!.state.versions)).toEqual([{ ...matter, matterId: 'MAT-coarse-ata2' }, pointer('2', 2)]);
   expect(f.rows[1]!.state.waiting).toEqual([]);
   expect(Object.values(f.rows[0]!.state.versions)).toEqual([pointer('1')]);
   expect(f.rows[0]!.state.waiting.map((item) => item.subjectId)).toContain(
@@ -417,15 +413,29 @@ test('an ATA4 child from a different chapter cannot bind to the ATA2 parent', as
   await expect(f.refresh()).rejects.toThrow('WIKI_LAYER_MEMBERS_INVALID');
 });
 
-test.each(['ATA2', 'FLEET'] as const)(
-  'marked %s refuses a direct original member rather than silently mixing it',
-  (level) => {
-    expect(() =>
-      assertWikiLayerMembers(
-        level,
-        wikiScopeFor(target, level === 'ATA2' ? '46' : null),
-        [doc],
-      ),
-    ).toThrow('WIKI_LAYER_MEMBERS_INVALID');
-  },
-);
+test('ATA2 accepts its direct saved members and children while FLEET still rejects direct leaves', () => {
+  expect(() => assertWikiLayerMembers('ATA2', wikiScopeFor(target, '46'), [doc, matter, pointer('2')])).not.toThrow();
+  expect(() => assertWikiLayerMembers('FLEET', wikiScopeFor(target, null), [doc])).toThrow('WIKI_LAYER_MEMBERS_INVALID');
+  expect(() => assertWikiLayerMembers('ATA4', wikiScopeFor(target, '46-00'), [pointer('2')])).toThrow('WIKI_LAYER_MEMBERS_INVALID');
+});
+
+test('ATA2-only membership absent from old consumed scope becomes pending without inventing ATA4 or changing fleet coverage', async () => {
+  const f = setup();
+  f.rows.splice(2);
+  f.memberships.delete('WIKI-2');
+  const middle = f.rows[1]!;
+  middle.state = emptyWikiDemand();
+  const fleetBefore = structuredClone(f.rows[0]!.state.versions);
+  await f.refresh();
+  expect(middle.state.versions).toEqual({ 'MATTER:coarse-ata2': { ...matter, matterId: 'MAT-coarse-ata2' } });
+  expect(middle.state.desiredGeneration).toBe(1);
+  expect(middle.state.firstDirtyAt).not.toBeNull();
+  expect(f.rows.map(row => row.scope.kind)).toEqual(['FLEET', 'ATA2']);
+  expect(f.rows[0]!.state.versions).toEqual(fleetBefore);
+  expect(f.rows[0]!.state.waiting).toEqual([expect.objectContaining({ kind: 'SUMMARY', subjectId: middle.summaryId })]);
+  expect(f.calls.some(call => call.sql.includes('INSERT INTO action_attempt') ||
+    call.sql.includes('INSERT INTO hierarchical_wiki_scope'))).toBe(false);
+  const generation = middle.state.desiredGeneration;
+  await f.refresh();
+  expect(middle.state.desiredGeneration).toBe(generation);
+});

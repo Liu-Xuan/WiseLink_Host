@@ -393,6 +393,20 @@ const EXPECTED_VENDOR_RUNTIMES: Record<string, ExpectedVendorRuntime> = {
     soabiPrefix: 'cpython-310-x86_64',
     rpdsNativeSuffix: 'rpds.cpython-310-x86_64-linux-gnu.so',
   },
+  'linux-arm64-cp313': {
+    system: 'linux',
+    machine: 'aarch64',
+    pythonPrefix: '3.13.',
+    soabiPrefix: 'cpython-313-aarch64',
+    rpdsNativeSuffix: 'rpds.cpython-313-aarch64-linux-gnu.so',
+  },
+  'linux-x64-cp313': {
+    system: 'linux',
+    machine: 'x86_64',
+    pythonPrefix: '3.13.',
+    soabiPrefix: 'cpython-313-x86_64',
+    rpdsNativeSuffix: 'rpds.cpython-313-x86_64-linux-gnu.so',
+  },
   // Local real-run verification vendor (genuine x86_64 CPython 3.10 under
   // Rosetta on macOS). Hosted resolution never selects these directories;
   // resolveVendoredU0PythonModulePath only resolves linux-*.

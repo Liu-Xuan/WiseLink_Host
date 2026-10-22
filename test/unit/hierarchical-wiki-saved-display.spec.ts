@@ -1,9 +1,10 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
-import type { DerivedSummaryScopeSelection } from '@shared/derived-summary.interface';
+import type { DerivedSummaryMemberReading, DerivedSummaryScopeSelection } from '@shared/derived-summary.interface';
 import { HierarchicalWikiCompletion } from '../../server/modules/canonical-host/hierarchical-wiki-completion';
 import { DerivedSummaryService } from '../../server/modules/canonical-host/derived-summary.service';
 import { emptyWikiDemand } from '../../server/modules/canonical-host/hierarchical-wiki-demand';
 import { summaryRevision } from './fixtures/derived-summary';
+import { buildSummaryMatterCatalog } from '../../server/modules/canonical-host/derived-summary-matter-catalog';
 
 /** Exercises real metadata -> public read -> checkRevision. Storage and ACL
  * reads are local doubles; these cases do not establish physical RLS proof. */
@@ -125,6 +126,8 @@ function setup(kind = 'ATA2', sourceKind = 'MATTER') {
       currentRevision: revision.revision,
     })),
     saved: jest.fn(async () => revision),
+    wikiMatterCatalog: jest.fn(async (selected: DerivedSummaryMemberReading[]) =>
+      buildSummaryMatterCatalog(selected, [coarse], [])),
   };
   const members = {
     readAll: jest.fn(async () => structuredClone(revision.members)),

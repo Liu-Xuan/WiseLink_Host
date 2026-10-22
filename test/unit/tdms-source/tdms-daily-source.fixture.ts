@@ -157,7 +157,7 @@ export function syntheticFullDailyEnvelope(): TdmsDailyMetadataEnvelope {
   };
   return seal(env);
 }
-/** Synthetic assessment owners use the existing Estimated body ingress. */
+/** Native own-visible literals are separate from the Estimated opinion contract. */
 export function syntheticOwnedRecord(
   id: number,
   kind: 'PROCESSING_SHEET' | 'ENGINEER_ASSESSMENT',
@@ -278,7 +278,7 @@ export function syntheticOwnedRecord(
       confirmation: 'SOURCE_DECLARED' as const,
     },
     businessVersionLabel: type + '版本:',
-    stateRaw: ad || kind === 'ENGINEER_ASSESSMENT' ? 'Estimated' : 'Source state',
+    stateRaw: 'Source state',
     sourceCreatedRaw: 'unknown timezone literal',
     sourceModifiedRaw: 'source modification literal',
     contextRaw: 'owned source context',

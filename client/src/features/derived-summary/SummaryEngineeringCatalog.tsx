@@ -22,57 +22,77 @@ export default function SummaryEngineeringCatalog({ revision, readingRoute, rend
   const catalog = summaryEntryCatalog(revision.content);
   const formal = matterCatalog?.catalog;
   const savedStructure: boolean = matterCatalog?.basis === 'SAVED_INPUT';
-  // A complete legacy report may be shown within its one formal Matter only
-  // when every selected leaf is bound there. Chapter/title similarity is unused.
-  const oneMatter: boolean = formal?.entries.length === 1 && formal.unbound.length === 0;
-  const legacyEntry = !catalog.structured && oneMatter ? catalog.entries[0] : undefined;
+  // Only the saved association snapshot can bind prose to a formal Matter.
+  // Fresh navigation relationships cannot retrospectively assign old prose,
+  // including when the current catalogue happens to contain just one Matter.
+  const boundStructure: boolean = savedStructure && catalog.structured && catalog.entries.every(entry =>
+    Boolean(entry.matterId && formal?.entries.some(matter => matter.matterId === entry.matterId)));
+  const legacyEntry = !catalog.structured ? catalog.entries[0] : undefined;
   const unboundBody = savedStructure ? summaryUnboundBody(revision.content) : '';
   return <section className="summary-engineering-catalog" aria-label="工程事项目录">
-    <h2 className="text-lg font-semibold">工程事项</h2>
-    {savedStructure && brief ? <div className="summary-entry-intro">{renderMarkdown(brief)}</div> : null}
-    {matterCatalog?.basis === 'CURRENT_RELATIONSHIPS'
-      ? <p className="text-sm text-muted-foreground">按当前登记事项导航；正文保留原保存版本。</p> : null}
-    {!formal ? <p>事项关联尚未提供。</p> : !formal.entries.length ? <p>暂无正式事项关联。</p> : null}
-    <ul>{formal?.entries.map((matter: DerivedSummaryMatterCatalog['entries'][number]) => {
-      const entry: SummaryEngineeringEntry | undefined = savedStructure
-        ? catalog.entries.find(item => item.matterId === matter.matterId) : legacyEntry;
+    {boundStructure ? <>
+      <h2 className="text-lg font-semibold">工程事项</h2>
+      {brief ? <div className="summary-entry-intro">{renderMarkdown(brief)}</div> : null}
+      {catalog.intro ? <div className="summary-entry-intro">{renderMarkdown(catalog.intro)}</div> : null}
+      <ul>{formal?.entries.map((matter: DerivedSummaryMatterCatalog['entries'][number]) => {
+      const entry: SummaryEngineeringEntry | undefined = catalog.entries.find(item => item.matterId === matter.matterId);
       return <li className="summary-engineering-entry" key={matter.matterId} data-matter-id={matter.matterId}>
       <div className="summary-entry-title">{renderMarkdown(`### ${matter.title}`)}</div>
-      <dl className="summary-entry-progress">{entry?.previews.length ? entry.previews.map((preview, position: number) =>
+      {entry?.previews.length ? <dl className="summary-entry-progress">{entry.previews.map((preview, position: number) =>
         <div key={position}><dt>{preview.label}</dt><dd><SummaryProgressText preview={preview}
-          renderMarkdown={renderMarkdown} /></dd></div>)
-        : <div><dt>当前状态</dt><dd>—</dd></div>}</dl>
-      <details className="summary-entry-detail"><summary>展开事项详情</summary>
-        {entry?.matterId && entry.title && entry.title !== matter.title ? <div aria-label="保存正文标题">
+          renderMarkdown={renderMarkdown} /></dd></div>)}</dl> : null}
+      {entry?.matterId && entry.title && entry.title !== matter.title ? <div aria-label="保存正文标题">
           <p className="text-sm text-muted-foreground">保存正文标题</p>
           {renderMarkdown(`#### ${entry.title}`)}
         </div> : null}
-        {legacyEntry ? renderMarkdown(`#### ${summaryReadingHeadline(revision.content.headline)}`) : null}
-        {legacyEntry && brief ? renderMarkdown(brief) : null}
-        {entry?.body ? renderMarkdown(entry.body) : null}
-        {legacyEntry ? conditions : null}
+      {entry?.body ? <div className="summary-entry-body">{renderMarkdown(entry.body)}</div>
+        : !entry ? <p className="text-sm text-muted-foreground">此保存版本未记录该事项正文。</p> : null}
+      <details className="summary-entry-detail"><summary>事项资料与关联</summary>
         <Link className="underline" to={readingRoute(`/matters/${encodeURIComponent(matter.matterId)}`)}>打开工程事项</Link>
         <MatterBindings bindings={matter.bindings} revision={revision} readingRoute={readingRoute} />
-        {matter.bindings.map(binding => binding.association.kind === 'MEMBER_MATERIAL' || binding.association.kind === 'REFERENCE_CONTEXT'
-          ? [binding.association.material.scope, binding.association.material.contribution] : [])
-          .flat().filter((value, index, values) => value && values.indexOf(value) === index)
-          .map((value, index) => <p className="whitespace-pre-wrap" key={index}>{value}</p>)}
+        <MatterBindingContext bindings={matter.bindings} />
       </details>
     </li>; })}</ul>
-    {formal?.unbound.length ? <details className="summary-entry-detail"><summary>未归属资料</summary>
-      {unboundBody ? renderMarkdown(unboundBody) : null}
-      <MatterBindings bindings={formal.unbound} revision={revision} readingRoute={readingRoute} />
-    </details> : null}
-    {!legacyEntry ? conditions : null}
-    {!savedStructure && !legacyEntry ? <details className="summary-entry-detail"><summary>本层已保存正文</summary>
+      {unboundBody ? <section aria-label="未归属资料正文">
+        <h2 className="text-lg font-semibold">未归属资料</h2>{renderMarkdown(unboundBody)}
+      </section> : null}
+    </> : <section className="summary-saved-reading" aria-label="本层已保存正文">
+      <h2 className="text-lg font-semibold">本层已保存正文</h2>
+      <p className="mb-4 text-sm text-muted-foreground">按原保存范围阅读；事项导航另列于下方。</p>
       {renderMarkdown(`### ${summaryReadingHeadline(revision.content.headline)}`)}
       {brief ? renderMarkdown(brief) : null}
-      {renderMarkdown(summaryReadingText(revision.content.body))}
+      {legacyEntry?.previews.length ? <dl className="summary-entry-progress">{legacyEntry.previews.map((preview, position: number) =>
+        <div key={position}><dt>{preview.label}</dt><dd><SummaryProgressText preview={preview}
+          renderMarkdown={renderMarkdown} /></dd></div>)}</dl> : null}
+      {renderMarkdown(legacyEntry ? legacyEntry.body : summaryReadingText(revision.content.body))}
+    </section>}
+    {conditions}
+    {!boundStructure ? <details className="summary-entry-detail" aria-label="事项导航">
+      <summary>当前事项导航{formal?.entries.length ? `（${formal.entries.length}）` : ''}</summary>
+      {matterCatalog?.basis === 'CURRENT_RELATIONSHIPS'
+        ? <p className="text-sm text-muted-foreground">当前登记关系；此保存正文未封存事项归属。</p> : null}
+      {!formal ? <p>事项关联尚未提供。</p> : !formal.entries.length ? <p>暂无正式事项关联。</p> : null}
+      <ul className="space-y-4 py-2">{formal?.entries.map(matter => <li key={matter.matterId} data-matter-id={matter.matterId}>
+        <Link className="font-semibold underline" to={readingRoute(`/matters/${encodeURIComponent(matter.matterId)}`)}>{matter.title}</Link>
+        <MatterBindings bindings={matter.bindings} revision={revision} readingRoute={readingRoute} />
+        <MatterBindingContext bindings={matter.bindings} />
+      </li>)}</ul>
       {!formal ? <ul>{revision.members.map(member => <li key={summaryMemberKey(member.member)}>
         <Link className="underline" to={readingRoute(summaryMemberRoute(member.member))}>
           {summaryReadingHeadline(member.headline)}</Link></li>)}</ul> : null}
     </details> : null}
+    {formal?.unbound.length ? <details className="summary-entry-detail"><summary>未归属资料与来源</summary>
+      <MatterBindings bindings={formal.unbound} revision={revision} readingRoute={readingRoute} />
+    </details> : null}
   </section>;
+}
+
+function MatterBindingContext({ bindings }: { bindings: DerivedSummaryMatterCatalog['entries'][number]['bindings'] }) {
+  const contexts: string[] = bindings.flatMap(binding =>
+    binding.association.kind === 'MEMBER_MATERIAL' || binding.association.kind === 'REFERENCE_CONTEXT'
+      ? [binding.association.material.scope, binding.association.material.contribution] : [])
+    .filter((value: string, index: number, values: string[]) => Boolean(value) && values.indexOf(value) === index);
+  return <>{contexts.map((value: string, index: number) => <p className="whitespace-pre-wrap" key={index}>{value}</p>)}</>;
 }
 
 function MatterBindings({ bindings, revision, readingRoute }: {

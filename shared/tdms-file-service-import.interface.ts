@@ -3,6 +3,7 @@ import type {
   TdmsSourcePackage,
   TdmsRecordReadResponse,
 } from './tdms-source.interface';
+import type { TdmsEngineeringExecutionReading } from './tdms-engineering-execution.interface';
 /** Small transport envelope; locators/object pins are not TDMS business identity or authority. */
 export interface TdmsArtifactSelection extends Omit<
   TdmsPackageArtifact,
@@ -40,4 +41,5 @@ export interface TdmsAttachmentAcquisitionFact {
 }
 export interface TdmsFileServiceRecordReadResponse extends TdmsRecordReadResponse {
   attachmentAcquisitions?: TdmsAttachmentAcquisitionFact[];
+  engineeringExecution?: TdmsEngineeringExecutionReading;
 }

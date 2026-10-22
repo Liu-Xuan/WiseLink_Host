@@ -8,7 +8,7 @@ import type {
 } from '../review-persistence/review-conversation.repository';
 import type { PersistedMatterReviewScope } from '../review-persistence/review-business-scope';
 import type { FrozenReviewSourceRef } from './canonical-host-openclaw-review.contract';
-import { JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE } from './jobaid-method-pack';
+import { JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE, mergeJobAidEvidenceSnapshot } from './jobaid-method-pack';
 import type { EngineeringMatterWorkingBasis } from './engineering-matter-working.service';
 import {
   engineeringMatterPendingInputs,
@@ -66,9 +66,9 @@ export function buildMatterReviewContext(input: {
   );
   for (const method of JOBAID_METHOD_EVIDENCE) {
     const priorMethod = evidence.get(method.evidenceRef);
-    if (priorMethod && JSON.stringify(priorMethod) !== JSON.stringify(method))
-      fail('REVIEW_MATTER_EVIDENCE_IDENTITY_DRIFT');
-    evidence.set(method.evidenceRef, structuredClone(method));
+    const merged = priorMethod ? mergeJobAidEvidenceSnapshot(priorMethod, method) : structuredClone(method);
+    if (!merged) fail('REVIEW_MATTER_EVIDENCE_IDENTITY_DRIFT');
+    evidence.set(method.evidenceRef, merged);
   }
   const resourceRefs: FrozenReviewSourceRef[] = [];
   const evidenceSources: FrozenMatterReviewContext['evidenceSources'] = [];

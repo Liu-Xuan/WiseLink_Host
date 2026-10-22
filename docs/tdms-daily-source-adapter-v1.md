@@ -47,8 +47,8 @@ old import grant.
 
 ## Remaining production bindings
 
-The standalone `TdmsSourceModule` defaults to `UnconfiguredTdmsSourceAuthorization`:
-all three routes then return `TDMS_SOURCE_AUTHORIZATION_UNCONFIGURED` (503), before
+The default `TdmsSourceModule` still uses `UnconfiguredTdmsSourceAuthorization`:
+all three routes return `TDMS_SOURCE_AUTHORIZATION_UNCONFIGURED` (503), before
 storage or artifact resolution. A server integration must bind
 `TDMS_SOURCE_AUTHORIZATION` through `TdmsSourceModule.register`, using actual
 current TDMS source/scope/object audience decisions for the verified final user,
@@ -56,10 +56,7 @@ tenant and application. `HostDecisionTdmsSourceAuthorization` requires independe
 current scope, import-member and read-member decisions and permission revisions;
 it does not supply those decisions itself. Directory readability, a source
 package, roles, environment flags, BridgeToken and Cookie are not substitutes.
-The canonical application now supplies `MiaodaTdmsSourceAuthorization` and the
-daily artifact store through `TdmsReceiverRuntimeModule`; see
-[the receiver implementation](coordination/TDMS_RECEIVER_RUNTIME_20261018.md).
-That wiring still requires real current source decisions and receiver bindings.
+No supported native TDMS decision provider is configured by this change.
 
 Artifact declarations are not upload selections. The separately server-bound
 `TdmsArtifactStore.resolveDailySelection` must supply the exact source-authorized
@@ -144,12 +141,8 @@ roles. A reload must replace the native document, bypass cache, settle twice and
 finish before the source observation. Reload evidence remains in the saved
 envelope and digest; only its comparison projection omits it. Reviewed user and
 context references retain their raw own-field occurrences without emitting
-business edges. Unknown field roles stay unknown. The native `已批准` state stays
-an original source state. An assessment opinion field with a value requires the
-exact `Estimated` state and eligible owner scope. A non-Estimated assessment
-cannot carry a body merely because it is not mapped to `content.opinions`.
-The separate state-only metadata path retains its existing empty-field and
-attachment restrictions; no opinion admission is added by this alignment.
+business edges. Unknown field roles stay unknown. The native `已批准` state can
+retain an own assessment literal, without mapping it to an adopted opinion.
 
 `documentTargetClassification` and `engineeringClassification` validate their
 own two native reads, exact owner/proof/version/context, disposition and snapshot

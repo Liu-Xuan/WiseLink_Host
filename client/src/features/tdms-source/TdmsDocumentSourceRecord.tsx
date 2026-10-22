@@ -9,12 +9,14 @@ import { TdmsRecordDetails, TdmsSourceRelations } from './TdmsRecordDetails';
 import { tdmsRawCodeLabel, tdmsRecordKindLabel, tdmsSourceVersionLabel } from './tdms-source-presentation';
 import { useTdmsReadResource } from './useTdmsReadResource';
 
-export function TdmsDocumentSourceRecord({ read, context, sessionGeneration, enabled, onAccessRejected }: {
+export function TdmsDocumentSourceRecord({ read, context, sessionGeneration, enabled, onAccessRejected, monitorScopeKey, onRefresh }: {
   read: TdmsFileServiceRecordReadResponse;
   context: TdmsSourceBrowserReadContext;
   sessionGeneration: number;
   enabled: boolean;
   onAccessRejected: () => void;
+  monitorScopeKey?: string;
+  onRefresh?: () => void;
 }) {
   const [historyOpen, setHistoryOpen] = useState<boolean>(false);
   const [relationsOpen, setRelationsOpen] = useState<boolean>(false);
@@ -45,9 +47,10 @@ export function TdmsDocumentSourceRecord({ read, context, sessionGeneration, ena
   ), [revision, versionId]);
   const relations = useTdmsReadResource(`${scope}:relations`, enabled && relationsOpen,
     relationsLoad, onAccessRejected);
+  const reloadRecord = (): void => setRetry((value: number) => value + 1);
 
   return <section className="tdms-document-record" aria-label={`${tdmsRecordKindLabel(read.record.recordKind)} ${read.record.title}`}>
-    <TdmsRecordDetails read={read} />
+    <TdmsRecordDetails read={read} monitorScopeKey={monitorScopeKey ?? scope} onRefresh={onRefresh} />
     <details onToggle={event => setHistoryOpen(event.currentTarget.open)}>
       <summary>该来源记录的修订历史</summary>
       {history.loading ? <p role="status">正在读取源修订历史…</p> : null}
@@ -81,9 +84,9 @@ export function TdmsDocumentSourceRecord({ read, context, sessionGeneration, ena
         onClick={() => setSelectedRevision('')}>收起修订</Button></header>
       {historical.loading ? <p role="status">正在读取准确来源修订…</p> : null}
       {historical.error ? <p role="alert">{historical.error}</p> : null}
-      {historical.value ? <TdmsRecordDetails read={historical.value} /> : null}
+      {historical.value ? <TdmsRecordDetails read={historical.value} monitorScopeKey={monitorScopeKey ?? scope} onRefresh={reloadRecord} /> : null}
     </section> : null}
     {history.error || historical.error || relations.error ? <Button type="button" variant="outline" size="sm"
-      onClick={() => setRetry((value: number) => value + 1)}>重试此记录</Button> : null}
+      onClick={reloadRecord}>重试此记录</Button> : null}
   </section>;
 }

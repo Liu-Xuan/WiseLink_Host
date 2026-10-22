@@ -460,9 +460,10 @@ describe('derived summary runtime freshness fence (transaction-double proof, not
     expect(modelView.stdout).not.toContain('selectedHead');
     expect(modelView.stdout).not.toContain('currentGeneration');
     expect(task2.taskInputHash).toBe(canonicalSha256((({ taskInputHash: _hash, ...fields }) => fields)(task2)));
+    const transactionsBeforeClaim = database.transaction.mock.calls.length;
     const claim2 = await runtime.claim(target('S2', 1, receipt2.attemptRef) as never);
     expect(claim2).toMatchObject({ status: 'RUNNING', task: task2, leaseGeneration: 1 });
-    expect(database.transaction).toHaveBeenCalledTimes(1);
+    expect(database.transaction).toHaveBeenCalledTimes(transactionsBeforeClaim + 1);
     const target2 = { ...target('S2', 1, receipt2.attemptRef), leaseToken: claim2.leaseToken,
       leaseGeneration: claim2.leaseGeneration };
     await runtime.readMemberWork({ ...target2, evidenceRefs: [reading.evidenceRef],

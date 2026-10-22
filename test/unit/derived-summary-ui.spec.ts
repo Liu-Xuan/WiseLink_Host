@@ -28,6 +28,13 @@ const mockFleetCatalog = jest.fn();
 let mockSession = 1;
 let mockAuthenticationRequired = false;
 let mockInstruction = '仅工作23四问题，保留历史和未覆盖范围。';
+const mockReadIdentityRefetch = jest.fn(async () => ({ error: null }));
+jest.mock('@client/src/features/matter/useEngineeringMatter', () => ({
+  useEngineeringMatterQueryIdentity: () => ({
+    identity: { appId: 'test-app', tenantId: 'tenant-1', actorId: 'actor-1', sessionGeneration: mockSession },
+    identityQuery: { isFetching: false, error: null, refetch: mockReadIdentityRefetch },
+  }),
+}));
 jest.mock('@client/src/api/derived-summary', () => ({
   readDerivedSummary: (...args: unknown[]) => mockHead(...args), readDerivedSummaryExact: (...args: unknown[]) => mockExact(...args),
   readDerivedSummaryRequest: (...args: unknown[]) => mockStatus(...args), createDerivedSummary: (...args: unknown[]) => mockCreate(...args),
@@ -47,10 +54,12 @@ jest.mock('@client/src/components/ui/button', () => ({ Button: ({ asChild: _asCh
 jest.mock('@client/src/components/ui/input', () => ({ Input: (props: import('react').ComponentProps<'input'>) => createElement('input', props) }));
 jest.mock('@client/src/components/ui/textarea', () => ({ Textarea: ({ onChange }: { onChange: (event: { target: { value: string } }) => void }) => createElement('button', { onClick: () => onChange({ target: { value: mockInstruction } }) }, '填写生成要求') }));
 jest.mock('@client/src/components/ui/checkbox', () => ({ Checkbox: ({ checked, disabled, onCheckedChange }: { checked: boolean; disabled: boolean; onCheckedChange: (value: boolean) => void }) => createElement('button', { disabled, 'aria-label': '确认选定范围', onClick: () => onCheckedChange(!checked) }, String(checked)) }));
-jest.mock('@client/src/features/derived-summary/DerivedSummaryBody', () => ({ __esModule: true, default: ({ revision, wikiCatalog, conditions, matterCatalog }: {
+jest.mock('@client/src/features/derived-summary/DerivedSummaryBody', () => ({ __esModule: true, default: ({ revision, wikiCatalog, conditions, matterCatalog, processingRecords }: {
   revision: { content: { body: string } }; wikiCatalog?: boolean; conditions?: import('react').ReactNode;
   matterCatalog?: DerivedSummaryMatterCatalogProjection;
-}) => createElement('div', { 'data-wiki-catalog': wikiCatalog, 'data-matter-catalog': JSON.stringify(matterCatalog) },
+  processingRecords?: string[];
+}) => createElement('div', { 'data-wiki-catalog': wikiCatalog, 'data-matter-catalog': JSON.stringify(matterCatalog),
+  'data-processing-records': JSON.stringify(processingRecords) },
   createElement('div', { 'data-body': true }, revision.content.body), conditions) }));
 jest.mock('@client/src/features/derived-summary/SavedWorkSelector', () => ({ __esModule: true, default: ({ onAdd }: { onAdd: (value: unknown) => void }) => createElement('button', { onClick: () => onAdd({ member: { kind: 'WORK_ITEM_WORK', workItemId: 'WI-explicit', documentVersionId: 'DV-old', workRef: 'JAWR-work23', workRevision: 23, issueKeys: ['I1', 'I2', 'I3', 'I4'] }, headline: '四个确切问题', current: true }) }, '明确加入四个问题') }));
 jest.mock('@client/src/features/derived-summary/ChildSummarySelector', () => ({ __esModule: true, default: () => createElement('p', null, '子概述尚未选定') }));
@@ -146,6 +155,18 @@ test('window focus retains the mounted exact reading while its fresh read is pen
   expect(savedBody?.textContent).toBe(savedText);
   await act(async () => resolveRefresh(summaryExact()));
   expect(container.querySelector('[data-body]')).toBe(savedBody);
+});
+
+test('a temporary Wiki failure retains the displayed exact revision without relabeling it current', async () => {
+  await mount('/summaries/DS-1?summaryRef=DSR-1');
+  const savedBody = container.querySelector('[data-body]');
+  mockExact.mockRejectedValueOnce(Object.assign(new Error('临时网络中断'), { code: 'ERR_NETWORK' }));
+  await act(async () => dom.window.dispatchEvent(new dom.window.Event('focus')));
+  expect(container.querySelector('[data-body]')).toBe(savedBody);
+  expect(container.textContent).toContain('确切正文 DSR-1');
+  expect(container.textContent).toContain('保留已读保存修订');
+  expect(container.textContent).toContain('上次读回的保存修订');
+  expect(container.textContent).not.toContain('确切正文 DSR-2');
 });
 
 test('exact historical reading keeps old body and upper child ref while source changes remain visible', async () => {
@@ -614,26 +635,6 @@ test.each(['retired/model', 'loading'])('Wiki does not register an unavailable/u
 });
 
 
-test.each(['RUNNING', 'QUEUED', 'BLOCKED'] as const)(
-  'Wiki directory keeps current %s distinct from an older failed attempt', async state => {
-    const listing = wikiDirectory();
-    const target = listing.items.find(item => item.scope.kind === 'ATA4')!;
-    target.state = state;
-    target.errorCode = 'DERIVED_SUMMARY_DEADLINE_EXCEEDED';
-    mockWikiList.mockResolvedValue(listing);
-    await mount('/summaries');
-    const row = container.querySelector('a[href="/summaries/DS-ata4"]')?.closest('li')!;
-    expect(row).toBeDefined();
-    if (state === 'BLOCKED') expect(row.querySelector('[role="alert"]')?.textContent).toContain('更新未完成');
-    else {
-      expect(row.textContent).toContain(state === 'RUNNING' ? '正在生成' : '排队等待执行');
-      expect(row.querySelector('[role="alert"]')).toBeNull();
-    }
-    expect(row.textContent).not.toContain('DERIVED_SUMMARY_DEADLINE_EXCEEDED');
-  },
-);
-
-
 test('engineer reading projects known process noise once, preserves exact child pins and never mutates saved content', async () => {
   const exact = summaryExact();
   exact.revision.content.headline = 'B787 ATA 45 候选综合：ACARS 上行错误（候选，未完成分类）';
@@ -685,6 +686,10 @@ test('the exact automatic Wiki page passes its saved body and engineering condit
   expect(container.querySelector('[aria-label="阅读依据与记录"]')?.textContent).toContain('本次生成时封存的事项关联。');
   expect(container.querySelector('h1')?.textContent).toBe(exact.revision.scope.title);
   expect(consumer.querySelector('[data-body]')?.textContent).toBe('仅版本 1.2；重启副作用未核。 [[child-exact]]');
+  expect(JSON.parse(consumer.getAttribute('data-processing-records')!)).toEqual([
+    '本层为 B787 · ATA 46（ATA2）候选综合，由其唯一已保存的 ATA 46-00 子层候选正文 [[child-exact]] 形成，保留该子层身份及其全部继承限制；本层为派生候选，非新增独立证据。',
+    '以 ATA 46-00 子层候选为唯一来源综合：',
+  ]);
   expect(consumer.textContent).toContain('SB TBD，日期 11/04/2027 为预计值，不能确认已完成。');
   expect(container.querySelector('[aria-label="阅读依据与记录"]')?.textContent).not.toContain('SB TBD');
   expect(JSON.stringify(exact)).toBe(before);

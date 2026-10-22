@@ -10,7 +10,7 @@ function setup() {
   };
   return {
     authorization,
-    documents: new MiaodaTdmsDocumentAccess(authorization, {} as never),
+    documents: new MiaodaTdmsDocumentAccess(authorization),
   };
 }
 

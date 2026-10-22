@@ -28,6 +28,7 @@ import {
   JOBAID_METHOD_BINDING,
   JOBAID_METHOD_EVIDENCE,
   isJobAidMethodBinding,
+  mergeJobAidEvidenceSnapshot,
 } from './jobaid-method-pack';
 import { overallModelEvidenceRegistry, OVERALL_EVIDENCE_SOURCE_CONTEXT_VERSION,
   OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION, type OverallEvidenceProjectionVersion } from './overall-assessment-reading';
@@ -71,6 +72,7 @@ export function jobAidSourceFileReference(item: CanonicalWorkItemProjection) {
 }
 
 export interface JobAidProblemModelInput extends Record<string, unknown> {
+  contentValidationVersion?: 'jobaid-semantic.v1';
   /** Metadata only. A directory and approval provenance are not a body READ. */
   tdmsContext?: Pick<TdmsRuntimeTaskContext, 'schemaVersion' | 'projection'>;
   schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA | typeof JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;
@@ -149,6 +151,7 @@ export function jobAidProblemModelWorkContent(content: JobAidProblemWorkContent)
 }
 
 export interface JobAidProblemTaskInput extends Record<string, unknown> {
+  contentValidationVersion?: 'jobaid-semantic.v1';
   /** Exact existing Review input selection, retained only in the trusted wrapper. */
   preparationScope?: JobAidPreparationScope;
   /** Sealed by Host for new automatic work only; absent on manual/historical tasks. */
@@ -212,6 +215,9 @@ export function assertJobAidProblemTaskBinding(
     !isJobAidMethodBinding(input.modelInput.methodBinding)
   )
     throw new Error('JOBAID_TASK_BINDING_INVALID');
+  if (input.contentValidationVersion !== input.modelInput.contentValidationVersion ||
+      (input.contentValidationVersion !== undefined && input.contentValidationVersion !== 'jobaid-semantic.v1'))
+    throw new Error('JOBAID_CONTENT_VALIDATION_VERSION_INVALID');
   if (Object.hasOwn(input, 'automaticWorkItemLease') && input.automaticWorkItemLease === undefined)
     throw new Error('AUTO_WORK_ITEM_TASK_LEASE_BINDING_INVALID');
   automaticWorkItemTaskLease(input.automaticWorkItemLease);
@@ -334,16 +340,16 @@ export function buildJobAidProblemTask(input: {
     ...structuredClone(JOBAID_METHOD_EVIDENCE),
   ]) {
     const prior = byRef.get(item.evidenceRef);
-    if (prior && canonicalJson(prior) !== canonicalJson(item))
-      throw new Error('JOBAID_SOURCE_CATALOG_CONFLICT');
-    byRef.set(item.evidenceRef, item);
+    const merged = prior ? mergeJobAidEvidenceSnapshot(prior, item) : item;
+    if (!merged) throw new Error('JOBAID_SOURCE_CATALOG_CONFLICT');
+    byRef.set(item.evidenceRef, merged);
   }
   const previousWork = input.previousWork;
   for (const item of previousWork?.content.evidence ?? []) {
     const current = byRef.get(item.evidenceRef);
-    if (current && canonicalJson(current) !== canonicalJson(item))
-      throw new Error('JOBAID_PRIOR_SOURCE_CHANGED');
-    byRef.set(item.evidenceRef, structuredClone(item));
+    const merged = current ? mergeJobAidEvidenceSnapshot(current, item) : structuredClone(item);
+    if (!merged) throw new Error('JOBAID_PRIOR_SOURCE_CHANGED');
+    byRef.set(item.evidenceRef, merged);
   }
   const catalog = [...byRef.values()];
   const sourceStatementRefs = new Set(catalog.filter(e=>e.kind==='PRIOR_RESULT'&&e.sourceStatement).map(e=>e.evidenceRef));
@@ -428,6 +434,7 @@ export function buildJobAidProblemTask(input: {
   const applicability = input.workItem.applicability;
   return {
     schemaVersion,
+    contentValidationVersion: 'jobaid-semantic.v1',
     actorUserId: input.actorUserId,
     permissionSnapshotVersion: input.permissionSnapshotVersion,
     ...(input.automaticWorkItemLease ? { automaticWorkItemLease: automaticWorkItemTaskLease(input.automaticWorkItemLease) } : {}),
@@ -439,6 +446,7 @@ export function buildJobAidProblemTask(input: {
     previousWork: structuredClone(previousWork),
     modelInput: {
       schemaVersion,
+      contentValidationVersion: 'jobaid-semantic.v1',
       ...(nativeContext ? {tdmsContext:{schemaVersion:nativeContext.schemaVersion,projection:structuredClone(nativeContext.projection)}} : {}),
       ...(projectionVersion ? { evidenceProjectionVersion: projectionVersion } : {}),
       purpose: input.purpose,

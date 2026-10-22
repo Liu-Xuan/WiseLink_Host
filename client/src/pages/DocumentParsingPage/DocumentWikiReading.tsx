@@ -1,8 +1,10 @@
 import { useCallback } from 'react';
 import type { DocumentReadingStatement } from '@shared/document-reading.interface';
+import type { DocumentOriginalBinding } from '@shared/document-original.interface';
 import { readDocumentWiki } from '@client/src/api/document-wiki';
+import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
-import { useSummaryResource } from '@client/src/features/derived-summary/useSummaryResource';
+import { useAuthorizedSummaryResource } from '@client/src/features/derived-summary/useAuthorizedSummaryResource';
 import { Button } from '@client/src/components/ui/button';
 import { documentReadingLimitations } from './document-reading-presentation';
 
@@ -14,6 +16,7 @@ export default function DocumentWikiReading({
   semanticRevision,
   readingRevision,
   readingRunRef,
+  originalBinding,
   onAccessRejected,
   onLocate,
 }: {
@@ -22,6 +25,7 @@ export default function DocumentWikiReading({
   semanticRevision: number;
   readingRevision: number;
   readingRunRef?: string;
+  originalBinding: DocumentOriginalBinding;
   onAccessRejected(): void;
   onLocate(unitId: string): void;
 }) {
@@ -39,10 +43,17 @@ export default function DocumentWikiReading({
           result.reading.readingRunRef !== readingRunRef
         )
           throw new Error('文档 Wiki 版本不一致。');
+        const matches = (binding: DocumentOriginalBinding): boolean =>
+          (Object.keys(originalBinding) as Array<keyof DocumentOriginalBinding>)
+            .every(key => binding[key] === originalBinding[key]);
+        if (!matches(result.sourceBinding.original) ||
+          (result.reading && !matches(result.reading.sourceBinding.original)))
+          throw new Error('文档 Wiki 来源绑定不一致。');
         return result;
       } catch (reason) {
         if (
           !signal.aborted &&
+          sessionGeneration === getCanonicalHostClientSessionGeneration() &&
           typeof reason === 'object' &&
           reason !== null &&
           'statusCode' in reason &&
@@ -58,16 +69,19 @@ export default function DocumentWikiReading({
       semanticRevision,
       readingRevision,
       readingRunRef,
+      originalBinding,
       onAccessRejected,
+      sessionGeneration,
     ],
   );
-  const resource = useSummaryResource(
+  const resource = useAuthorizedSummaryResource(
     JSON.stringify([
       documentVersionId,
       parseRunId,
       semanticRevision,
       readingRevision,
       readingRunRef,
+      originalBinding,
     ]),
     sessionGeneration,
     load,
@@ -110,7 +124,7 @@ export default function DocumentWikiReading({
       {resource.loading ? (
         <p role="status">正在读取文档解读…</p>
       ) : null}
-      {resource.error ? <p role="alert">{resource.error}</p> : null}
+      {resource.error ? <p role="alert">{resource.error}{resource.retainedAfterError && reading ? ' 保留同版正文。' : ''}</p> : null}
       {resource.data?.status === 'RETRACTED' ? (
         <p role="alert">该文档 Wiki 已撤回。</p>
       ) : null}

@@ -36,8 +36,9 @@ describe('same-object refresh wiring', () => {
     expect(overview).toMatch(
       /!authenticationRequired &&\s*viewSessionGeneration === sessionGeneration &&\s*view\?\.document.workItemId === workItemId/u,
     );
+    expect(parsing).toContain('仍显示上次读回的内容，尚未确认最新状态');
+    expect(overview).toContain('正在刷新当前结果');
     for (const source of [parsing, overview]) {
-      expect(source).toContain('仍显示上次读回的内容，尚未确认最新状态');
       expect(source).toMatch(
         /disabled(?::\s*|=\{)loading \|\| overallRegeneration.disabled/u,
       );

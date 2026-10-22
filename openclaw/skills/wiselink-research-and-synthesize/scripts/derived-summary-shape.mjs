@@ -68,7 +68,8 @@ export function validateDerivedSummaryModelInput(value) {
   }
   if (Object.hasOwn(value, 'wikiLevel') &&
       (value.wikiLevel !== scope.kind || !['ATA4', 'ATA2', 'FLEET'].includes(value.wikiLevel) ||
-       value.members.some(reading => (reading.member.kind === 'DERIVED_SUMMARY') !== (value.wikiLevel !== 'ATA4'))))
+       value.members.some(reading => (value.wikiLevel === 'ATA4' && reading.member.kind === 'DERIVED_SUMMARY') ||
+         (value.wikiLevel === 'FLEET' && reading.member.kind !== 'DERIVED_SUMMARY'))))
     fail('DERIVED_SUMMARY_WIKI_LAYER_INVALID');
   derivedSummaryRegistry(value);
   validateDerivedSummaryRevisionContext(value, { assertSummaryExactKeys, validateDerivedSummaryMember,

@@ -3,7 +3,7 @@ import type { JobAidProblemWorkContent } from '@shared/jobaid-problem-assessment
 import type { EngineeringMatterWorkingInputBinding, EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
 import type { EngineeringMatterAttemptTrigger } from '../action-attempt/action-attempt-envelope.types';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
-import { JOBAID_CORE_METHOD_REFS, JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE } from './jobaid-method-pack';
+import { JOBAID_CORE_METHOD_REFS, JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE, mergeJobAidEvidenceSnapshot } from './jobaid-method-pack';
 import { jobAidProblemModelWorkContent } from './jobaid-problem-task';
 import { overallModelEvidenceRegistry } from './overall-assessment-reading';
 import { engineeringMatterPendingInputs } from './engineering-matter-working-state';
@@ -150,9 +150,9 @@ export function matterJobAidSourceRegistry(
   const registry = new Map<string, AssessmentEvidence>();
   for (const evidence of [...JOBAID_METHOD_EVIDENCE, ...(prior?.evidence ?? [])]) {
     const existing = registry.get(evidence.evidenceRef);
-    if (existing && canonicalJson(existing) !== canonicalJson(evidence))
-      throw new Error('JOBAID_PRIOR_SOURCE_CHANGED');
-    registry.set(evidence.evidenceRef, structuredClone(evidence));
+    const merged = existing ? mergeJobAidEvidenceSnapshot(existing, evidence) : structuredClone(evidence);
+    if (!merged) throw new Error('JOBAID_PRIOR_SOURCE_CHANGED');
+    registry.set(evidence.evidenceRef, merged);
   }
   const sourceCatalog = [...registry.values()];
   const eligibleEvidenceRefs = [...new Set([...JOBAID_CORE_METHOD_REFS, ...(prior?.readSourceRefs ?? [])])];

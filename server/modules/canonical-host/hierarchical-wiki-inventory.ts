@@ -307,7 +307,7 @@ export async function readWikiInventory(
       saved.overviewStatus !== 'NOT_AVAILABLE' &&
       saved.hasUnderstanding === true;
     for (const ata of new Set([...confirmed, ...awaitingCurrentBinding])) {
-      if (!ata || !/^\d{2}-\d{2}$/u.test(ata)) continue;
+      if (!ata || !/^\d{2}(?:-\d{2})?$/u.test(ata)) continue;
       if (!confirmed.includes(ata) || !ready) {
         waiting.push({
           kind: 'DOCUMENT',

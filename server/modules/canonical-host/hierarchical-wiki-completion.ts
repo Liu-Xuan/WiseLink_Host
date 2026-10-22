@@ -39,10 +39,10 @@ export class HierarchicalWikiCompletion {
       !Object.hasOwn(row.state.versions, key));
     let valid = missing.length === 0;
     if (!valid && ['ATA2', 'FLEET'].includes(row.scopeKind)) {
-      // The generation policy no longer selects coarse original material, but
-      // that alone must not hide an existing saved body. Classification removal
+      // Historical generation policy omitted coarse original material. Until
+      // reconciliation, that alone must not hide its saved body. Classification removal
       // still hides it; readHead/checkRevision still reauthorizes every body and
-      // SourceRef. These keys never return to the new generation/coverage set.
+      // SourceRef. This read does not add keys to generation or coverage.
       const retained = await database.execute<{ key: string; sourceKind: string; sourceId: string }>(sql`
         SELECT member_key AS key,source_kind AS "sourceKind",source_id AS "sourceId"
         FROM hierarchical_wiki_membership WHERE wiki_id=${row.wikiId}

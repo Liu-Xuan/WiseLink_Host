@@ -102,7 +102,8 @@ describe('semantic document reading', () => {
         onSourceRefSelect: jest.fn(),
       }),
     );
-    expect(html).toContain('不代表全文或图像内容已经完成');
+    expect(html).toContain('文字覆盖率 100%，还有 2 个来源单元待处理。');
+    expect(html).toContain('尚未形成完整交付产物');
     reading.coverage.registeredSourceCharacters = 0;
     expect(semanticReadingCoverage(reading).readablePercent).toBeNull();
   });

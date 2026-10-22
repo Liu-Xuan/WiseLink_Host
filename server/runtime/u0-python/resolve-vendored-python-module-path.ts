@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 const CPYTHON_39_PREFIX = '3.9.';
 const CPYTHON_310_PREFIX = '3.10.';
+const CPYTHON_313_PREFIX = '3.13.';
 
 export function resolveVendoredU0PythonModulePath(input: {
   platform?: NodeJS.Platform;
@@ -18,13 +19,15 @@ export function resolveVendoredU0PythonModulePath(input: {
   if (arch !== 'arm64' && arch !== 'x64') {
     throw new Error('FULL_U0_VALIDATOR_UNAVAILABLE:PYTHON_VENDOR_ARCH');
   }
-  const minor: 'cp39' | 'cp310' | null = input.pythonVersion.startsWith(
+  const minor: 'cp39' | 'cp310' | 'cp313' | null = input.pythonVersion.startsWith(
     CPYTHON_39_PREFIX,
   )
     ? 'cp39'
     : input.pythonVersion.startsWith(CPYTHON_310_PREFIX)
       ? 'cp310'
-      : null;
+      : input.pythonVersion.startsWith(CPYTHON_313_PREFIX)
+        ? 'cp313'
+        : null;
   if (minor === null) {
     throw new Error('FULL_U0_VALIDATOR_UNAVAILABLE:PYTHON_VENDOR_PLATFORM');
   }

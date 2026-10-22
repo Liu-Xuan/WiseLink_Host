@@ -1,5 +1,4 @@
 import JobAidExecutionActivity from './JobAidExecutionActivity';
-import JobAidWorkCorrectionControl from './JobAidWorkCorrectionControl';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import { Button } from '@client/src/components/ui/button';
@@ -19,12 +18,13 @@ import {
   JobAidIssueArticle,
   JobAidRequirement,
 } from './JobAidIssueArticle';
-import { useJobAidWorkingRead } from './useJobAidWorkingRead';
+import { useJobAidWorkingRead, type JobAidWorkingReadState } from './useJobAidWorkingRead';
 import './jobaid-problem-workspace.css';
 
 interface Props {
   workItemId: string;
   baseRevision?: number;
+  workingRead?: JobAidWorkingReadState;
   baseReadConfirmed?: boolean;
   baseReadProof?: object;
   onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
@@ -66,15 +66,25 @@ export default function JobAidProblemWorkspace(props: Props) {
   const session: number = getCanonicalHostClientSessionGeneration();
   return (
     <JobAidWorkspaceRead
-      key={`${session}:${props.workItemId}:${props.baseRevision ?? ''}`}
+      key={`${session}:${props.workItemId}:${props.workingRead ? 'shared' : props.baseRevision ?? ''}`}
       {...props}
     />
   );
 }
 
 function JobAidWorkspaceRead(props: Props) {
-  const { data, error, temporaryError, baseFallbackAllowed, refreshing, refresh } =
-    useJobAidWorkingRead(props.workItemId, props.baseReadProof ?? null);
+  return props.workingRead ? (
+    <JobAidWorkspaceSnapshot {...props} workingRead={props.workingRead} />
+  ) : <JobAidWorkspaceOwnRead {...props} />;
+}
+
+function JobAidWorkspaceOwnRead(props: Props) {
+  const workingRead = useJobAidWorkingRead(props.workItemId, props.baseReadProof ?? null);
+  return <JobAidWorkspaceSnapshot {...props} workingRead={workingRead} />;
+}
+
+function JobAidWorkspaceSnapshot(props: Props & { workingRead: JobAidWorkingReadState }) {
+  const { data, error, temporaryError, baseFallbackAllowed, refresh } = props.workingRead;
   const showBaseAfterTemporaryFailure =
     temporaryError && props.baseReadConfirmed && baseFallbackAllowed;
   const signature: string = `${data?.current?.workRevisionRef ?? ''}:${data?.overallStatus ?? ''}:${data?.overallBasedOnWorkRevisionRef ?? ''}`;
@@ -109,8 +119,6 @@ function JobAidWorkspaceRead(props: Props) {
           <JobAidProblemReading
             {...props}
             data={data}
-            correctionAvailable={!!props.baseReadConfirmed && !error && !refreshing}
-            onCorrectionConfirmed={refresh}
             onContinue={() => {
               refresh();
               props.onUpdated?.();
@@ -137,14 +145,9 @@ export function JobAidProblemReading({
   overall,
   onContinue,
   presentation = 'default',
-  baseRevision,
-  correctionAvailable = false,
-  onCorrectionConfirmed = () => undefined,
 }: Omit<Props, 'workItemId' | 'children' | 'onUpdated'> & {
   data: JobAidWorkingReadModel;
   onContinue?: () => void;
-  correctionAvailable?: boolean;
-  onCorrectionConfirmed?: () => void;
 }) {
   const [tab, setTab] = useState<'understanding' | 'issues' | 'method'>(
     'issues',
@@ -155,9 +158,6 @@ export function JobAidProblemReading({
   const allowed = initialAnalysis?.continuationOperations ?? [];
   const actions = (
     <div className="wl-jobaid-actions">
-      {current?.content.issues.length ? <JobAidWorkCorrectionControl
-        work={current} workItemRevision={baseRevision} available={correctionAvailable}
-        onConfirmed={onCorrectionConfirmed} /> : null}
       {initialAnalysis
         ? (['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'] as const)
             .filter((operation) => allowed.includes(operation))

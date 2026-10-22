@@ -1,6 +1,8 @@
 import type { AssessmentTdmsNativeEvidence } from '@shared/assessment-tdms-evidence';
+import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { parseAssessmentTdmsEvidence } from '@shared/assessment-tdms-evidence';
 import { canonicalJson } from '@server/modules/action-attempt/action-attempt-envelope';
+import { JOBAID_METHOD_EVIDENCE } from '@server/modules/canonical-host/jobaid-method-pack';
 import { overallModelEvidenceRegistry } from '@server/modules/canonical-host/overall-assessment-reading';
 import { consumeOpenClawOverallSynthesisOutput, type OpenClawOverallSynthesisInput } from '@server/modules/canonical-host/openclaw-overall-synthesis.processor';
 import { tdmsNativeEvidenceFixture } from './fixtures/tdms-native-evidence.fixture';
@@ -104,5 +106,60 @@ describe('synthetic Overall native registry actual consumer', () => {
     expect(() => parseAssessmentTdmsEvidence(changed)).not.toThrow();
     f.input.evidenceRegistry = overallModelEvidenceRegistry([changed], 'SOURCE_CONTEXT_V1');
     expect(() => consumeOpenClawOverallSynthesisOutput(f.input, f.output, [f.evidence])).toThrow('OVERALL_READING_EVIDENCE_INPUT_MISMATCH');
+  });
+});
+
+type MethodEvidence = Extract<AssessmentEvidence, { kind: 'METHOD_CLAUSE' }>;
+function methodFixture() {
+  const f = fixture();
+  const method = structuredClone(JOBAID_METHOD_EVIDENCE.find(
+    (item): item is MethodEvidence => item.kind === 'METHOD_CLAUSE' && item.evidenceRef === 'method:risk',
+  )!);
+  const evidence = [f.evidence, method];
+  f.input.evidenceRegistry = overallModelEvidenceRegistry(evidence, 'SOURCE_CONTEXT_V1');
+  const output = JSON.parse(f.output);
+  output.engineeringSummary.claims.push({
+    claimId: 'C2', text: '可能性仍需核对单机和机队暴露；方法定义不证明实际发生率。', basis: 'CONDITIONAL_INFERENCE',
+    premises: [{ evidenceRef: method.evidenceRef, role: 'CONTEXT', explanation: method.classificationDefinitions![0].definitionQuote,
+      limitation: '未取得实际暴露及发生记录，保持未知。' }],
+  });
+  output.engineeringSummary.decisiveClaimIds.push('C2');
+  return { ...f, output: JSON.stringify(output), method, evidence, summary: output.engineeringSummary };
+}
+
+describe('Overall method definitions actual consumer', () => {
+  it('accepts independently sealed input and carrier with exact definition content', () => {
+    const f = methodFixture();
+    const input = JSON.parse(canonicalJson(reverseKeys(f.input)));
+    const evidence = JSON.parse(JSON.stringify(f.evidence));
+    expect(input.evidenceRegistry[1].classificationDefinitions).not.toBe(f.method.classificationDefinitions);
+    expect(input.evidenceRegistry[1].classificationDefinitions).toEqual(f.method.classificationDefinitions);
+    const consumed = consumeOpenClawOverallSynthesisOutput(input, f.output, evidence);
+    expect(consumed.engineeringSummary).toEqual(f.summary);
+    expect(evidence).toEqual(f.evidence);
+  });
+
+  const changes: Array<[string, (definitions: NonNullable<MethodEvidence['classificationDefinitions']>) => void]> = [
+    ['dimension', definitions => { definitions[0].dimension = 'SEVERITY'; }],
+    ['label', definitions => { definitions[0].label = 'altered label'; }],
+    ['definitionQuote', definitions => { definitions[0].definitionQuote = 'altered definition'; }],
+    ['order', definitions => { definitions.reverse(); }],
+    ['missing entry', definitions => { definitions.pop(); }],
+    ['extra entry', definitions => { definitions.push({ ...definitions[0] }); }],
+  ];
+  it.each(changes)('rejects %s drift from the exact Host method carrier', (_name, change) => {
+    const f = methodFixture();
+    change(f.input.evidenceRegistry![1].classificationDefinitions!);
+    expect(() => consumeOpenClawOverallSynthesisOutput(f.input, f.output, f.evidence))
+      .toThrow('OVERALL_READING_EVIDENCE_INPUT_MISMATCH');
+  });
+
+  it('keeps absent legacy definitions absent and rejects one-sided omission', () => {
+    const f = methodFixture();
+    delete f.input.evidenceRegistry![1].classificationDefinitions;
+    expect(() => consumeOpenClawOverallSynthesisOutput(f.input, f.output, f.evidence))
+      .toThrow('OVERALL_READING_EVIDENCE_INPUT_SHAPE_INVALID');
+    delete f.method.classificationDefinitions;
+    expect(() => consumeOpenClawOverallSynthesisOutput(f.input, f.output, f.evidence)).not.toThrow();
   });
 });

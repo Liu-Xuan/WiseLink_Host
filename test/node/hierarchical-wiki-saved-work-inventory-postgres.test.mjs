@@ -221,7 +221,7 @@ test(
       const leaves = (result) =>
         result.items.filter((item) => item.sourceKind === 'WORK_ITEM');
 
-      await t.test('normal refresh discovers missing or changed WI heads using one bounded metadata query', async () => {
+      await t.test('normal refresh discovers missing or changed WI heads using one bounded metadata query', async (discoveryTest) => {
         const dialect = new PgDialect();
         const root = {
           wikiId: 'WIKI-root', summaryId: 'DS-root', ...owner,
@@ -263,6 +263,32 @@ test(
         assert.ok(ids.includes('WI-placeholder'));
         for (const id of ['WI-wrong-actor', 'WI-wrong-tenant', 'WI-old-DVI', 'WI-stale-source', 'WI-unrelated'])
           assert.ok(!ids.includes(id), id);
+        await discoveryTest.test('ATA2-only classification discovers unconsumed saved work and releases its exact waiting input', async () => {
+          const originalScopes = await run('SELECT wiki_id,scope_json FROM hierarchical_wiki_scope');
+          try {
+            await run("UPDATE hierarchical_wiki_scope SET scope_json=(scope_json-'ata4') || jsonb_build_object('kind','ATA2','ata2',left(scope_json->>'ata4',2))");
+            assert.ok((await discover()).some(row => row.subjectId === 'WI-ordinary'),
+              'an unconsumed old saved member must be discovered without a new save journal event');
+            const scoped = await read();
+            assert.deepEqual(leaves(scoped).filter(row => row.sourceId === 'WI-ordinary').map(row => row.ata), ['31', '34']);
+            assert.ok(scoped.items.every(row => row.ata === '31' || row.ata === '34'));
+            const gaps = scoped.waiting.filter(row => row.status === 'SAVED_ASSESSMENT_NOT_READY' && row.requestId === 'WI-partial-JAWR-2-REQ');
+            assert.equal(gaps.length, 2);
+            const ref = await revision('WI-partial', 3);
+            const resumed = await readWikiInventory(database, owner, target,
+              gaps.map(row => ({ kind: 'DOCUMENT', subjectId: row.documentVersionId })), null,
+              { authorizeRuntimeInputs: async () => assert.fail('no Matter inputs') });
+            assert.deepEqual(leaves(resumed).filter(row => row.sourceId === 'WI-partial')
+              .map(row => [row.ata, row.member.workRef]), [['31', ref], ['34', ref]]);
+            assert.ok(!resumed.waiting.some(row => row.requestId === 'WI-partial-JAWR-2-REQ'));
+            assert.equal((await run("SELECT count(*)::int AS n FROM hierarchical_wiki_scope WHERE scope_json->>'kind'='ATA4'"))[0].n, 0);
+          } finally {
+            for (const row of originalScopes) await run('UPDATE hierarchical_wiki_scope SET scope_json=$1::jsonb WHERE wiki_id=$2',
+              [sql.json(row.scope_json), row.wiki_id]);
+            await run("DELETE FROM assessment_work_revision WHERE work_item_id='WI-partial' AND work_revision=3");
+            await run("DELETE FROM action_attempt WHERE attempt_id='WI-partial-JAWR-3-ATT'");
+          }
+        });
         try {
           for (const ata of ['31-00', '34-00']) await run(
             "INSERT INTO hierarchical_wiki_membership VALUES($1,$2,$3,'WORK_ITEM:WI-ordinary','WORK_ITEM','WI-ordinary',$4::jsonb,$5::jsonb)",

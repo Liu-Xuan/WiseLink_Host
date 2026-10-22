@@ -10,8 +10,7 @@ import {
   resolveActualPdfDocumentIdentity,
 } from '../migrated/ingress/pdfDocumentIdentityOwner.js';
 import { normalizeUploadDescriptor } from '../migrated/ingress/uploadDescriptor.js';
-import { deterministicId, sha256Hex, stableStringify } from '../runtime/valueTools.js';
-import { assertDocumentUploadAuthorityCurrent, assertDocumentUploadSourceIdentity, tdmsDocumentUploadBinding } from './nest/document-upload-authority';
+import { deterministicId, sha256Hex } from '../runtime/valueTools.js';
 import { PdfjsDistLayoutExtractor } from '../../../professional-input/parser/pdfjs-dist-layout-extractor.adapter';
 
 const NEW_VERSION_DECISIONS = new Set([
@@ -592,28 +591,6 @@ export class DocumentManagementHostedCore {
     };
   }
 
-  /** Read only the original upload lineage. This never starts/resumes an ingest. */
-  async readFileServiceIngestion(request = {}, serverContext = {}) {
-    rejectSelfReportedAuthority(request);
-    const actorUserId = required(serverContext.actorUserId, 'serverContext.actorUserId');
-    const tenantId = required(serverContext.tenantId, 'serverContext.tenantId');
-    const authority = serverContext.runtimeIngestAuthority;
-    await assertDocumentUploadAuthorityCurrent(authority, { actorUserId, tenantId });
-    const requestKey = required(request.idempotencyKey, 'request.idempotencyKey');
-    const scoped = tenantScopedIdempotencyKey(tenantId, requestKey);
-    const result = await this.catalog.findIngestionByIdempotency({
-      idempotencyKey: scoped, expectedAcquisitionId: deterministicId('acquisition', scoped),
-      actorUserId, tenantId, sourceChannel: request.sourceChannel, sourceRef: request.sourceRef,
-      selection: request.selection, documentDeliveryIntent: request.descriptor?.documentDeliveryIntent,
-    });
-    await assertDocumentUploadAuthorityCurrent(authority, { actorUserId, tenantId });
-    const binding = tdmsDocumentUploadBinding(authority, { actorUserId, tenantId });
-    if (result?.status === 'COMMITTED' && binding &&
-        stableStringify(result.tdmsRegistration) !== stableStringify(binding))
-      fail('TDMS_FORMAL_REGISTRATION_LINEAGE_CONFLICT', 'Upload lineage belongs to another Source registration.');
-    return result;
-  }
-
   async ingestFileServiceSelection(request = {}, serverContext = {}) {
     rejectSelfReportedAuthority(request);
     const actorUserId = required(
@@ -656,8 +633,7 @@ export class DocumentManagementHostedCore {
     );
     const ingestRoles = Array.isArray(serverContext.roles) ? [...serverContext.roles] : [];
     const runtimeIngestAuthority = serverContext.runtimeIngestAuthority;
-    const assertCanIngest = async () => {
-      await this.authorizer.assertCanIngest({
+    const assertCanIngest = () => this.authorizer.assertCanIngest({
       actorUserId,
       tenantId,
       roles: [...ingestRoles],
@@ -671,9 +647,6 @@ export class DocumentManagementHostedCore {
           }
         : {}),
     });
-      if (runtimeIngestAuthority?.mode === 'HOSTED_MIAODA_DOCUMENT_UPLOAD')
-        await assertDocumentUploadAuthorityCurrent(runtimeIngestAuthority, { actorUserId, tenantId });
-    };
     await assertCanIngest();
 
     let existingIngestion = await this.catalog.findIngestionByIdempotency({
@@ -739,12 +712,6 @@ export class DocumentManagementHostedCore {
         'Selection receipt does not match actual bytes.',
       );
     }
-    const tdmsBinding = tdmsDocumentUploadBinding(runtimeIngestAuthority, { actorUserId, tenantId });
-    if (tdmsBinding && (selected.bucketId !== tdmsBinding.selection.bucketId ||
-        String(selected.filePath).replace(/^\/+/, '') !== tdmsBinding.selection.filePath.replace(/^\/+/, '') ||
-        selected.providerObjectId !== tdmsBinding.selection.expectedProviderObjectId ||
-        actualSha256 !== tdmsBinding.sha256 || selected.byteLength !== tdmsBinding.byteLength))
-      fail('TDMS_FORMAL_SELECTION_CONFLICT', 'Formal registration must use the original exact Source selection and bytes.');
     const inspectionSha256 = sha256Hex(pdfByteView.bytes);
     let pdfLayout;
     try {
@@ -797,7 +764,6 @@ export class DocumentManagementHostedCore {
           byteViewNormalization: pdfByteView.normalization,
           originalFilename: selected.fileName,
         });
-    assertDocumentUploadSourceIdentity(runtimeIngestAuthority, { actorUserId, tenantId }, pdfObservation);
     const sourceArtifactId = deterministicId(
       'source_artifact',
       actualSha256,
@@ -853,7 +819,6 @@ export class DocumentManagementHostedCore {
       if (
         reuse?.disposition !== 'ORPHAN_RECOVERY_ALLOWED' &&
         reuse?.disposition !== 'CATALOGED_SOURCE_REUSE_ALLOWED' &&
-        reuse?.disposition !== 'INDEPENDENT_TDMS_CANDIDATE_REUSE_ALLOWED' &&
         reuse?.disposition !== 'REVIEW_ATTACHMENT_RESIDUAL_RECOVERY_ALLOWED'
       ) {
         fail(
@@ -871,12 +836,6 @@ export class DocumentManagementHostedCore {
       actualSha256,
       pdfObservation,
     });
-    const sourceBinding = tdmsDocumentUploadBinding(runtimeIngestAuthority, { actorUserId, tenantId });
-    if (sourceBinding) {
-      sourceDescriptor.tdmsRegistration = sourceBinding;
-      sourceDescriptor.providerStorageFilename = selected.fileName;
-      sourceDescriptor.originalFilename = sourceBinding.filename;
-    }
     const sourceArtifactRecord = {
       sourceArtifactId,
       sha256: actualSha256,
@@ -1071,7 +1030,6 @@ export class DocumentManagementHostedCore {
         ...(request.sourceChannel === 'document_library_upload' &&
           serverContext.runtimeIngestAuthority?.mode === 'HOSTED_MIAODA_DOCUMENT_UPLOAD'
           ? { uploadCommit: {
-              authority: runtimeIngestAuthority,
               actorUserId, tenantId, selection,
               selectedProviderObjectId: selected.providerObjectId,
               selectedProviderVersionId: selected.providerVersionId,
@@ -1223,7 +1181,6 @@ export class DocumentManagementHostedCore {
       ...(request.sourceChannel === 'document_library_upload' &&
         serverContext.runtimeIngestAuthority?.mode === 'HOSTED_MIAODA_DOCUMENT_UPLOAD'
         ? { uploadCommit: {
-              authority: runtimeIngestAuthority,
             actorUserId, tenantId, selection,
             selectedProviderObjectId: selected.providerObjectId,
             selectedProviderVersionId: selected.providerVersionId,

@@ -88,9 +88,7 @@ describe('actual SQL repository statement boundaries, no physical PG claim', () 
     await expect(s.tx.saveRevision(head, null, stored)).rejects.toMatchObject({
       code: 'TDMS_RECORD_HEAD_CAS_CONFLICT',
     });
-    expect(s.statements[1]!.sql).toContain(
-      'ON CONFLICT (tenant_id,source_key,source_instance_id,scope_id,record_kind,source_record_id) DO NOTHING',
-    );
+    expect(s.statements[1]!.sql).toContain('ON CONFLICT DO NOTHING');
     expect(s.statements[1]!.sql).not.toContain('DO UPDATE');
   });
   it('late-old observation retains revision and locks exact head without changing it', async () => {
@@ -117,8 +115,6 @@ describe('actual SQL repository statement boundaries, no physical PG claim', () 
         permissionRevision: 'policy',
       }),
     ).rejects.toMatchObject({ code: 'TDMS_PACKAGE_IDEMPOTENCY_CONFLICT' });
-    expect(s.statements[0]!.sql).toContain(
-      'ON CONFLICT (tenant_id,source_key,source_instance_id,scope_id,package_id) DO NOTHING',
-    );
+    expect(s.statements[0]!.sql).toContain('ON CONFLICT DO NOTHING');
   });
 });

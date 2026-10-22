@@ -1,3 +1,4 @@
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { JobAidMethodBinding } from '@shared/jobaid-problem-assessment.interface';
 
@@ -117,6 +118,13 @@ export const JOBAID_METHOD_EVIDENCE: AssessmentEvidence[] = clauses.map(
     locator,
     excerpt,
     sourceVersionStatus: 'VERSION_UNCONFIRMED',
+    ...(key === 'risk' ? { classificationDefinitions: [
+      { dimension: 'LIKELIHOOD' as const, label: '可能', definitionQuote: '单机寿命预期/机队持续发生' },
+      { dimension: 'LIKELIHOOD' as const, label: '不大可能', definitionQuote: '单机不太可能但机队可多次' },
+      { dimension: 'LIKELIHOOD' as const, label: '不可能（极少）', definitionQuote: '单机预期不发生但机队可有限次' },
+      { dimension: 'LIKELIHOOD' as const, label: '极不可能（极端少）', definitionQuote: '机队范围预期不会发生' },
+      { dimension: 'SEVERITY' as const, label: '严重', definitionQuote: '空停、重力放起落架、爆胎/脱胎、空中释压、通讯中断、客货舱火警/烟雾六类重要事件严重性为严重并提级管控，但须核对实际情景' },
+    ] } : {}),
   }),
 );
 
@@ -126,3 +134,21 @@ export const JOBAID_CORE_METHOD_REFS = [
   'method:risk',
   'method:revision',
 ];
+
+/** Merge a newly prepared catalog without changing any stored source snapshot. */
+export function mergeJobAidEvidenceSnapshot(
+  existing: AssessmentEvidence,
+  incoming: AssessmentEvidence,
+): AssessmentEvidence | null {
+  if (canonicalJson(existing) === canonicalJson(incoming)) return structuredClone(existing);
+  if (existing.kind !== 'METHOD_CLAUSE' || incoming.kind !== 'METHOD_CLAUSE') return null;
+  const [legacy, enriched] = existing.classificationDefinitions === undefined
+    ? [existing, incoming] : [incoming, existing];
+  if (legacy.classificationDefinitions !== undefined || enriched.classificationDefinitions === undefined) return null;
+  const { classificationDefinitions: _definitions, ...original } = enriched;
+  // Exact original identity, version, locator, excerpt and all other fields must
+  // match. Only the running Host's own derived metadata can enrich a new task.
+  const trusted = JOBAID_METHOD_EVIDENCE.find(item => item.evidenceRef === enriched.evidenceRef);
+  return canonicalJson(legacy) === canonicalJson(original) && trusted &&
+    canonicalJson(enriched) === canonicalJson(trusted) ? structuredClone(enriched) : null;
+}

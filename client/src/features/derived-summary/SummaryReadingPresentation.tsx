@@ -21,17 +21,30 @@ export function SummaryReadingNavigation({ revision, parentSummaryId, readingRou
   </nav>;
 }
 
-export function SummaryReadingConditions({ conditions, readingRoute }: ReadingPresentationProps & {
+export function SummaryReadingConditions({ conditions, records = [], readingRoute }: ReadingPresentationProps & {
+  conditions: SummaryReadingCondition[];
+  records?: SummaryReadingCondition[];
+}) {
+  return <>
+    {conditions.length ? <section className="space-y-2" aria-label="概述限制">
+    <h2 className="text-lg font-semibold">工程条件与待核事项</h2>
+    <SummaryConditionList conditions={conditions} readingRoute={readingRoute} />
+    </section> : null}
+    {records.length ? <details className="summary-entry-detail" aria-label="处理与范围记录">
+      <summary>处理与范围记录（{records.length}）</summary>
+      <SummaryConditionList conditions={records} readingRoute={readingRoute} />
+    </details> : null}
+  </>;
+}
+
+function SummaryConditionList({ conditions, readingRoute }: ReadingPresentationProps & {
   conditions: SummaryReadingCondition[];
 }) {
-  return conditions.length ? <section className="space-y-2" aria-label="概述限制">
-    <h2 className="text-lg font-semibold">工程条件与待核事项</h2>
-    <ul className="list-disc space-y-3 pl-5">{conditions.map((condition: SummaryReadingCondition, index: number) => <li key={index}>
+  return <ul className="list-disc space-y-3 pl-5">{conditions.map((condition: SummaryReadingCondition, index: number) => <li key={index}>
       <p>{condition.text}</p>
       {condition.inheritedFrom.length ? <details className="text-sm"><summary className="cursor-pointer text-muted-foreground">同文出处（{condition.inheritedFrom.length}份已保存成员）</summary>
         <ul>{condition.inheritedFrom.map(member => <li key={summaryMemberKey(member.member)}><Link className="break-words underline"
           to={readingRoute(summaryMemberRoute(member.member))}>{summaryReadingHeadline(member.headline)} · {summaryMemberVersionLabel(member.member)}</Link></li>)}</ul>
       </details> : null}
-    </li>)}</ul>
-  </section> : null;
+    </li>)}</ul>;
 }

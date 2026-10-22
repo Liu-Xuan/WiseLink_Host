@@ -40,6 +40,9 @@
 .summary-entry-detail { margin-top: 1rem; }
 .summary-entry-detail > summary { cursor: pointer; color: var(--primary); font-weight: 550; }
 .summary-entry-detail[open] > summary { margin-bottom: 1rem; }
+.summary-saved-reading > h2 { margin-bottom: .5rem; }
+.summary-entry-body { margin-top: 1.25rem; }
+.summary-engineering-catalog > section + section { margin-top: 2rem; }
 @media (max-width: 640px) {
   .summary-entry-progress > div { grid-template-columns: minmax(0, 1fr); gap: .2rem; }
 }

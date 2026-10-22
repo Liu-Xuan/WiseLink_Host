@@ -575,6 +575,38 @@ describe('translation v2 quality and actual reading coverage', () => {
       ]),
     );
   });
+  it('reuses readable blocks and checks saved candidates before generating missing ranges', () => {
+    const sourcePlan = plan(['A description.', 'Another description.', 'A final description.'], true);
+    const state = workspace(sourcePlan);
+    const first = revision(sourcePlan, candidate(sourcePlan, '一项说明。'));
+    first.check = checkTranslationBlockV2({ plan: sourcePlan, candidate: first.candidate });
+    first.selectedForReading = true;
+    const second = revision(sourcePlan, {
+      blockId: sourcePlan.blocks[1].blockId,
+      elements: [{ elementId: 'e2', kind: 'paragraph', translatedText: '另一项说明。',
+        anchorIds: sourcePlan.blocks[1].anchorIds }],
+    });
+    second.blockRevisionId = 'TB-second';
+    second.dependencies.sourceAnchorIds = sourcePlan.blocks[1].anchorIds;
+    const records = [first, second];
+    const before = JSON.stringify(first);
+    const partial = buildTranslationWorkspaceReadingV2(state, records);
+    expect(partial.completeness).toBe('PARTIAL');
+    expect(partial.blocks.map(block => block.readingStatus)).toEqual(['READABLE', 'PENDING_CHECK', 'MISSING']);
+    expect(nextTranslationWorkV2(state, records, partial)).toEqual({ kind: 'LOCAL_CHECK', revision: second });
+    second.check = checkTranslationBlockV2({ plan: sourcePlan, candidate: second.candidate });
+    expect(second.check.semanticCheck).toBe('NOT_REQUIRED');
+    expect(second.check.issues.some(issue => issue.severity === 'BLOCK')).toBe(false);
+    second.selectedForReading = true;
+    const checked = buildTranslationWorkspaceReadingV2(state, records);
+    expect(checked.coverage.readableSourceCharacters).toBeGreaterThan(partial.coverage.readableSourceCharacters);
+    expect(nextTranslationWorkV2(state, records, checked)).toMatchObject({
+      kind: 'GENERATE', blockIds: [sourcePlan.blocks[2].blockId],
+    });
+    expect(JSON.stringify(first)).toBe(before);
+    expect(checked.blocks[0].selected?.blockRevisionId).toBe(first.blockRevisionId);
+  });
+
   it('keeps missing, saved pending, blocked and readable as distinct facts and retains original model attribution', () => {
     const sourcePlan = plan(['A description.']);
     const value = candidate(sourcePlan, '一项说明。');

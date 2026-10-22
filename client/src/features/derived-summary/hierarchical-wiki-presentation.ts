@@ -10,9 +10,3 @@ export const wikiStatusLabels: Record<HierarchicalWikiStatus['state'], string> =
   PARTIAL: '部分覆盖，仍有待补材料',
   BLOCKED: '更新未完成',
 };
-
-/** Directory errors describe the present attempt; older diagnostics stay in history. */
-export function wikiDirectoryFailureMessage(item: Pick<HierarchicalWikiStatus, 'state' | 'errorCode'>): string | null {
-  if (!item.errorCode || item.state === 'RUNNING' || item.state === 'QUEUED') return null;
-  return '更新未完成，可打开 Wiki 核对进度。';
-}

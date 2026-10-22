@@ -17,7 +17,8 @@ import { Input } from '@client/src/components/ui/input';
 import { useSummaryResource } from './useSummaryResource';
 import { useTaskModelOptions } from '@client/src/features/review/TaskModelPicker';
 import SavedWorkSelector from './SavedWorkSelector';
-import { wikiDirectoryFailureMessage, wikiStatusLabels } from './hierarchical-wiki-presentation';
+import { wikiStatusLabels } from './hierarchical-wiki-presentation';
+import HierarchicalWikiRuntimeDiagnostic from './HierarchicalWikiRuntimeDiagnostic';
 
 export { wikiStatusLabels } from './hierarchical-wiki-presentation';
 
@@ -32,7 +33,10 @@ export default function HierarchicalWikiDirectory({
   const [documentCursor, setDocumentCursor] = useState<string | undefined>();
   const [search, setSearch] = useState('');
   const load = useCallback(
-    (signal: AbortSignal) => listHierarchicalWiki(signal, classificationCursor),
+    async (signal: AbortSignal) => ({
+      ...await listHierarchicalWiki(signal, classificationCursor),
+      observedAt: new Date().toISOString(),
+    }),
     [classificationCursor],
   );
   const loadCatalog = useCallback(
@@ -396,9 +400,11 @@ export default function HierarchicalWikiDirectory({
                 资料盘点进行中
               </p>
             ) : null}
-            {wikiDirectoryFailureMessage(item) ? (
-              <p role="alert">{wikiDirectoryFailureMessage(item)}</p>
+            {item.errorCode ? (
+              <p role="alert">更新未完成（{item.errorCode}）。</p>
             ) : null}
+            <HierarchicalWikiRuntimeDiagnostic wiki={item} session={session}
+              observedAt={data.data!.observedAt} refreshing={data.loading} onRefresh={data.refresh} />
             <Button
               variant="outline"
               size="sm"

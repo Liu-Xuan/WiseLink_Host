@@ -20,6 +20,10 @@ export function collectIssueEvidenceUses(issue: Pick<JobAidProblemIssue,
     uses.push({ evidenceRef: match[1], issueKey: issue.issueKey, position: `body/${match.index}`, role: 'BODY' });
   }
   issue.riskScenarios.forEach((risk, index) => {
+    for (const field of ['severity', 'likelihood'] as const) {
+      const definition = risk[field]?.definitionMatch;
+      if (definition) add([definition.methodRef], `riskScenarios/${index}/${field}/definitionMatch/methodRef`, 'METHOD');
+    }
     add(risk.severity?.basisRefs ?? [], `riskScenarios/${index}/severity/basisRefs`, 'SEVERITY');
     add(risk.likelihood?.basisRefs ?? [], `riskScenarios/${index}/likelihood/basisRefs`, 'LIKELIHOOD');
     add(risk.importantEvent?.basisRefs ?? [], `riskScenarios/${index}/importantEvent/basisRefs`, 'IMPORTANT_EVENT');

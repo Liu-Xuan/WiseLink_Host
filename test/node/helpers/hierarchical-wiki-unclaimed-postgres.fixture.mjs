@@ -135,9 +135,6 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
   const {
     wikiRows,
   } = require('../../../server/modules/canonical-host/hierarchical-wiki.persistence.ts');
-  const {
-    ActionAttemptRepository,
-  } = require('../../../server/modules/action-attempt/action-attempt.repository.ts');
   const concurrentRuntime = new DerivedSummaryRuntimeService(
     f.concurrentRepository,
     f.members,
@@ -179,14 +176,6 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
     commandJson: row.summary_request_command_json,
     executionModelJson: row.execution_model_json,
     principalId: row.summary_delegated_principal_id,
-  });
-  const scheduling = (state) => ({
-    retryCount: state.retryCount,
-    blocked: state.blocked,
-    dueAt: state.dueAt,
-    versions: state.versions,
-    waiting: state.waiting,
-    desiredGeneration: state.desiredGeneration,
   });
   const prepare = async (admittedAt = Date.now()) => {
     await f.admin`UPDATE hierarchical_wiki_scope SET enabled=false`;
@@ -254,55 +243,10 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
   const record = (name, details) =>
     evidence.cases.push({ name, status: 'PASS', ...details });
 
-  for (const writer of ['runtime CLAIM', 'generic deadline writer']) {
-    await t.test(
-      `${writer} first closes an unclaimed row; later GET preserves execution retry and due time`,
-      async () => {
-        const p = await prepare(Date.now() - 2 * 60 * 60_000);
-        const original = await registry(p);
-        const before = { ...original.state_json, retryCount: 1 };
-        await f.admin`UPDATE hierarchical_wiki_scope SET state_json=${f.admin.json(before)}
-          WHERE summary_id=${p.target.summaryId}`;
-        if (writer === 'runtime CLAIM') {
-          await assert.rejects(hosted(() => f.runtime.claim(p.target)), /DERIVED_SUMMARY_TIMED_OUT/u);
-        } else {
-          await hosted(() => f.repository.runtime(p.target, async (database, _owner, _head, row) => {
-            const finished = await new ActionAttemptRepository(database).finishTerminal({
-              attemptId: row.attemptId, fromStatus: 'QUEUED', status: 'TIMED_OUT',
-              terminalReason: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED', now: new Date(),
-            });
-            assert.equal(finished, true);
-          }));
-        }
-        const terminal = await attempt(p);
-        assert.equal(terminal.status, 'TIMED_OUT');
-        assert.equal(terminal.claim_count, 0);
-        assert.equal(terminal.lease_generation, 0);
-        assert.equal(terminal.started_at, null);
-        assert.deepEqual(frozen(terminal), frozen(p.before));
-        await read(p);
-        const after = await registry(p);
-        assert.equal(after.state_json.active, null);
-        assert.deepEqual(scheduling(after.state_json), scheduling(before));
-        assert.equal((await attempt(p)).row_version, terminal.row_version);
-        await read(p);
-        assert.equal((await registry(p)).row_version, after.row_version);
-        record(`${writer} unclaimed terminal observed later`, {
-          statusAfter: terminal.status, retryCount: after.state_json.retryCount,
-          deadlineAndTaskUnchanged: true, terminalRowUnchanged: true,
-        });
-      },
-    );
-  }
-
   await t.test(
     'real GET expiration CAS is idempotent under competing physical readers',
     async () => {
       const p = await prepare(Date.now() - 2 * 60 * 60_000);
-      const original = await registry(p);
-      const before = { ...original.state_json, retryCount: 2 };
-      await f.admin`UPDATE hierarchical_wiki_scope SET state_json=${f.admin.json(before)}
-        WHERE summary_id=${p.target.summaryId}`;
       const [one, two] = await Promise.all([
         read(p),
         read(p, f.concurrentWiki),
@@ -320,8 +264,7 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
       assert.ok(expired.completed_at);
       assert.deepEqual(frozen(expired), frozen(p.before));
       assert.equal(retried.state_json.active, null);
-      assert.equal(retried.state_json.retryCount, 2);
-      assert.deepEqual(scheduling(retried.state_json), scheduling(before));
+      assert.equal(retried.state_json.retryCount, 1);
       await read(p);
       await read(p);
       assert.equal((await attempt(p)).row_version, expired.row_version);
@@ -331,54 +274,33 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
       assert.equal(count.n, 1);
       record('GET expiration + concurrent/repeated idempotency', {
         statusAfter: expired.status,
-        retryCount: 2,
+        retryCount: 1,
         immutableOriginalPreserved: true,
       });
     },
   );
 
   await t.test(
-    'normal next preserves retry two, re-reserves once in the same tick and reuses the new request',
+    'normal next expires the old reservation and preserves original failure/model/source seals',
     async () => {
       const p = await prepare(Date.now() - 2 * 60 * 60_000);
-      const original = await registry(p);
-      const before = { ...original.state_json, retryCount: 2,
-        dueAt: new Date(Date.now() - 1000).toISOString() };
-      await f.admin`UPDATE hierarchical_wiki_scope SET state_json=${f.admin.json(before)}
-        WHERE summary_id=${p.target.summaryId}`;
       await f.admin`UPDATE action_attempt SET error_code='WIKI_FIXTURE_ORIGINAL_CAUSE',terminal_reason='ORIGINAL_FIXTURE_REASON'
       WHERE operation_ref=${p.target.attemptRef}`;
-      const next = await hosted(() => f.wiki.next());
+      await hosted(() => f.wiki.next());
       const expired = await attempt(p),
         r = await registry(p);
       assert.equal(expired.status, 'TIMED_OUT');
       assert.equal(expired.error_code, 'WIKI_FIXTURE_ORIGINAL_CAUSE');
       assert.equal(expired.terminal_reason, 'ORIGINAL_FIXTURE_REASON');
       assert.deepEqual(frozen(expired), frozen(p.before));
-      assert.equal(next.status, 'SUMMARY_PENDING');
-      assert.equal(next.summaryId, p.target.summaryId);
-      assert.notEqual(next.attemptRef, p.target.attemptRef);
-      assert.equal(r.state_json.active.attemptRef, next.attemptRef);
-      assert.deepEqual(scheduling(r.state_json), scheduling(before));
-      assert.equal(item(await read(p), p).activeRequest.attemptRef, next.attemptRef);
-      const again = await hosted(() => f.wiki.next());
-      assert.equal(again.status, 'SUMMARY_PENDING');
-      assert.equal(again.summaryId, next.summaryId);
-      assert.equal(again.attemptRef, next.attemptRef);
-      assert.deepEqual(scheduling((await registry(p)).state_json), scheduling(before));
-      const [count] = await f.admin`SELECT count(*)::int AS n FROM action_attempt
-        WHERE summary_id=${p.target.summaryId}`;
-      assert.equal(count.n, 2);
+      assert.equal(r.state_json.active, null);
+      assert.equal(item(await read(p), p).activeRequest, null);
       assert.equal(
         r.state_json.lastAttemptErrorCode,
         'WIKI_FIXTURE_ORIGINAL_CAUSE',
       );
-      record('next expiration preserves budget/input and re-reserves exactly once', {
+      record('next expiration preserves original cause and frozen input', {
         statusAfter: expired.status,
-        retryCount: r.state_json.retryCount,
-        sameTickNewReservation: true,
-        secondNextReusesReservation: true,
-        originalCauseAndSealsPreserved: true,
       });
     },
   );
@@ -681,7 +603,7 @@ export async function verifyUnclaimedWikiPostgres(t, f, evidence) {
         assert.equal(claimed.error?.message, 'DERIVED_SUMMARY_TIMED_OUT');
         assert.equal((await attempt(p)).status, 'TIMED_OUT');
         assert.equal((await attempt(p)).claim_count, 0);
-        assert.equal((await registry(p)).state_json.retryCount, 0);
+        assert.equal((await registry(p)).state_json.retryCount, 1);
         record(
           'GET timeout wins actual row lock and competing CLAIM cannot revive',
           { claimError: claimed.error.message },

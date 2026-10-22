@@ -21,6 +21,7 @@ jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({
 }));
 jest.mock('@client/src/pages/WorkspaceHomePage/lcm-matrix.css', () => ({}));
 jest.mock('@client/src/pages/WorkspaceHomePage/LcmExcelImport', () => ({ LcmExcelImport: () => null }));
+jest.mock('@client/src/pages/WorkspaceHomePage/LcmRuntimeDiagnostic', () => ({ LcmRuntimeDiagnostic: () => null }));
 jest.mock('@client/src/components/ui/dialog', () => {
   const react = jest.requireActual<typeof import('react')>('react');
   const frame = ({ children }: { children?: ReactNode }) => react.createElement('div', null, children);

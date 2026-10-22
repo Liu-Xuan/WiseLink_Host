@@ -15,8 +15,7 @@ export function preserveJobAidRead(
   return previous?.workItemId === next.workItemId &&
     previous.enabled === next.enabled &&
     previous.current?.workRevisionRef === next.current?.workRevisionRef &&
-    previous.latestAttempt?.attemptId === next.latestAttempt?.attemptId &&
-    previous.latestAttempt?.status === next.latestAttempt?.status &&
+    JSON.stringify(previous.latestAttempt) === JSON.stringify(next.latestAttempt) &&
     previous.executionStatus === next.executionStatus &&
     JSON.stringify(previous.activity) === JSON.stringify(next.activity) &&
     previous.currentInputChanged === next.currentInputChanged &&
@@ -62,6 +61,7 @@ export function shouldPollJobAidRead(value: JobAidWorkingReadModel): boolean {
 export function useJobAidWorkingRead(
   workItemId: string,
   baseReadProof: object | null = null,
+  enabled = true,
 ) {
   const active = useWorkbenchPanelActive();
   const session = useSyncExternalStore(
@@ -89,7 +89,8 @@ export function useJobAidWorkingRead(
     data: JobAidWorkingReadModel | null;
     error: string | null;
     temporaryError: boolean;
-    refreshing: boolean;
+    isRefreshing: boolean;
+    observedAt: string | null;
     /** A rejected JobAid read cannot regain base fallback by retrying JobAid. */
     revokedBaseReadProof: object | null | undefined;
   }>({
@@ -97,7 +98,8 @@ export function useJobAidWorkingRead(
     data: null,
     error: null,
     temporaryError: false,
-    refreshing: true,
+    isRefreshing: false,
+    observedAt: null,
     revokedBaseReadProof: undefined,
   });
   const [retry, setRetry] = useState(0);
@@ -107,14 +109,18 @@ export function useJobAidWorkingRead(
       stopped.current.baseReadProof !== baseReadProof
     )
       stopped.current = { key, baseReadProof, failed: false };
+    if (!enabled) {
+      setState((previous) => ({ ...previous, data: null, observedAt: null, error: null, isRefreshing: false }));
+      return;
+    }
     if (!active || !visible || stopped.current.failed) return;
-    setState((previous) => ({ ...previous, refreshing: true }));
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const obsolete = () =>
       controller.signal.aborted ||
       session !== getCanonicalHostClientSessionGeneration();
     const read = async (): Promise<void> => {
+      setState((previous) => ({ ...previous, isRefreshing: true }));
       try {
         const result = await readJobAidAssessmentWork(
           workItemId,
@@ -136,7 +142,8 @@ export function useJobAidWorkingRead(
           ),
           error: null,
           temporaryError: false,
-          refreshing: false,
+          isRefreshing: false,
+          observedAt: new Date().toISOString(),
           revokedBaseReadProof:
             previous.key === key ? previous.revokedBaseReadProof : undefined,
         }));
@@ -156,7 +163,8 @@ export function useJobAidWorkingRead(
           error:
             caught instanceof Error ? caught.message : '已保存评估暂时无法读取',
           temporaryError,
-          refreshing: false,
+          isRefreshing: false,
+          observedAt: previous.key === key && temporaryError ? previous.observedAt : null,
           revokedBaseReadProof: temporaryError
             ? previous.key === key
               ? previous.revokedBaseReadProof
@@ -170,20 +178,22 @@ export function useJobAidWorkingRead(
       controller.abort();
       clearTimeout(timer);
     };
-  }, [workItemId, key, session, active, visible, retry, baseReadProof]);
+  }, [workItemId, key, session, active, visible, retry, baseReadProof, enabled]);
   return {
-    data: state.key === key ? state.data : null,
+    data: enabled && state.key === key ? state.data : null,
+    isRefreshing: enabled && state.isRefreshing,
+    observedAt: enabled && state.key === key ? state.observedAt : null,
     error: state.key === key ? state.error : null,
     temporaryError: state.key === key && state.temporaryError,
-    refreshing: state.key !== key || state.refreshing,
     baseFallbackAllowed:
       state.key === key &&
       (state.revokedBaseReadProof === undefined ||
         state.revokedBaseReadProof !== baseReadProof),
     refresh: () => {
       stopped.current = { key, baseReadProof, failed: false };
-      setState((previous) => ({ ...previous, refreshing: true }));
       setRetry((value) => value + 1);
     },
   };
 }
+
+export type JobAidWorkingReadState = ReturnType<typeof useJobAidWorkingRead>;

@@ -163,6 +163,7 @@ function fixtureBrowserActor(userId, tenantId) {
 export async function startCoreP1HostFixture({
   matter = false,
   browser = false,
+  legacySemanticTasks = false,
 } = {}) {
   const cluster = await startOwnedPostgres(await postgresCapability());
   const sql = cluster.admin;
@@ -205,6 +206,9 @@ export async function startCoreP1HostFixture({
   }
   try {
     await resetQ1Database(sql);
+    // Q1 adds current columns mechanically; retain the production subject default
+    // for WorkItem-only fixtures too (0034 otherwise runs only in Matter mode).
+    await sql.unsafe("ALTER TABLE action_attempt ALTER COLUMN subject_kind SET DEFAULT 'WORK_ITEM'");
     // Existing personal-dialogue storage/policies, only in this owned cluster.
     // Aily is not invoked; its real table is required by contribution reads.
     await sql.unsafe('CREATE TABLE identity_session(id uuid PRIMARY KEY)');
@@ -517,6 +521,18 @@ export async function startCoreP1HostFixture({
       undefined,
       browser ? objectAccess : undefined,
     );
+    // Reproduce a pre-upgrade sealed task without changing production task construction.
+    const buildInput = problem.buildInput.bind(problem);
+    problem.buildInput = async (...args) => {
+      const input = await buildInput(...args);
+      if (legacySemanticTasks) {
+        delete input.contentValidationVersion;
+        delete input.modelInput.contentValidationVersion;
+        for (const evidence of [...input.sourceCatalog, ...input.modelInput.deliveredEvidence])
+          if (evidence.kind === 'METHOD_CLAUSE') delete evidence.classificationDefinitions;
+      }
+      return input;
+    };
     // One deterministic interleaving after the real preparation read. SAVE,
     // authorization, locks and CAS continue through their actual services.
     let nextPreparationHook;
@@ -976,6 +992,7 @@ export async function startCoreP1HostFixture({
         originalReader,
       );
     return {
+      setSemanticContract(enabled) { legacySemanticTasks = !enabled; },
       sql,
       db,
       hosted,
@@ -1131,6 +1148,18 @@ export async function startCoreP1HostFixture({
         clockOffset += milliseconds;
         return { offsetMs: clockOffset, hostNow: new Date().toISOString() };
       },
+      async readArtifact(artifact) {
+        assert.match(artifact.sha256, /^[a-f0-9]{64}$/u);
+        assert.equal(artifact.ref, `artifact://core-p1/${artifact.sha256}`);
+        const bytes = await readFile(join(files, artifact.sha256));
+        assert.equal(bytes.byteLength, artifact.byteLength);
+        assert.equal(createHash('sha256').update(bytes).digest('hex'), artifact.sha256);
+        return JSON.parse(bytes.toString('utf8'));
+      },
+      readBrowserSnapshot: (workItemId) => hosted(() => actors.withActorScope(actorUserId,
+        () => work.readBrowserSnapshot({
+          tenantId, workItemId, documentVersionId: original.binding.documentVersionId,
+        }))),
       armArtifactPersistHook(callback) {
         assert.equal(nextArtifactHook, undefined);
         nextArtifactHook = callback;

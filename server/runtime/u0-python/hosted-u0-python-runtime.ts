@@ -1,10 +1,42 @@
 import { execFile } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { resolveVendoredU0PythonModulePath } from './resolve-vendored-python-module-path';
 
 const execFileAsync = promisify(execFile);
-const PYTHON_CANDIDATES = ['python3', 'python', '/usr/bin/python3'] as const;
+
+interface HostedU0PythonCandidate {
+  executable: string;
+  diagnosticLabel: string;
+}
+
+function hostedPythonCandidates(): HostedU0PythonCandidate[] {
+  const mineruHome: string =
+    process.env.WL_MINERU_HOME?.trim() ||
+    join(tmpdir(), 'wiselink-mineru-runtime', '3.4.5');
+  return [
+    // A newer system default must not hide an already installed supported ABI.
+    { executable: 'python3.10', diagnosticLabel: 'python3.10' },
+    { executable: '/usr/local/bin/python3.10', diagnosticLabel: 'local-cp310' },
+    { executable: '/usr/bin/python3.10', diagnosticLabel: 'system-cp310' },
+    { executable: 'python3.9', diagnosticLabel: 'python3.9' },
+    { executable: '/usr/local/bin/python3.9', diagnosticLabel: 'local-cp39' },
+    { executable: '/usr/bin/python3.9', diagnosticLabel: 'system-cp39' },
+    // Reuse only an already restored Host runtime; never start MinerU or restore
+    // deployment files while reading a workbench. Requests cannot choose it.
+    ...(isAbsolute(mineruHome)
+      ? [{
+          executable: join(mineruHome, 'python/bin/python3.10'),
+          diagnosticLabel: 'mineru-cp310',
+        }]
+      : []),
+    { executable: 'python3', diagnosticLabel: 'python3' },
+    { executable: 'python', diagnosticLabel: 'python' },
+    { executable: '/usr/bin/python3', diagnosticLabel: 'system-python3' },
+  ];
+}
 
 export interface HostedU0PythonRuntime {
   pythonExecutable: string;
@@ -25,7 +57,9 @@ export interface HostedU0PythonInspection {
 
 export async function resolveHostedU0PythonRuntime(): Promise<HostedU0PythonRuntime> {
   let lastVendorError: Error | null = null;
-  for (const pythonExecutable of PYTHON_CANDIDATES) {
+  const detectedVersions: string[] = [];
+  for (const candidate of hostedPythonCandidates()) {
+    const pythonExecutable: string = candidate.executable;
     try {
       const { stdout, stderr } = await execFileAsync(
         pythonExecutable,
@@ -35,6 +69,7 @@ export async function resolveHostedU0PythonRuntime(): Promise<HostedU0PythonRunt
       const match = `${stdout}\n${stderr}`.match(/Python\s+(\d+\.\d+\.\d+)/);
       if (!match) continue;
       const pythonVersion = match[1];
+      detectedVersions.push(`${candidate.diagnosticLabel}=${pythonVersion}`);
       try {
         const pythonModulePath = resolveVendoredU0PythonModulePath({
           pythonVersion,
@@ -58,7 +93,13 @@ export async function resolveHostedU0PythonRuntime(): Promise<HostedU0PythonRunt
       // select an executable or a module path.
     }
   }
-  if (lastVendorError) throw lastVendorError;
+  if (lastVendorError) {
+    // Fixed labels and parsed numeric versions distinguish ABI mismatch from a
+    // missing runtime without exposing configured paths or command output.
+    throw new Error(
+      `${lastVendorError.message}:DETECTED_PYTHON_VERSIONS=${detectedVersions.join(',')}`,
+    );
+  }
   throw new Error('FULL_U0_VALIDATOR_UNAVAILABLE:PYTHON_VENDOR_RUNTIME');
 }
 
@@ -96,7 +137,7 @@ export async function inspectHostedU0PythonRuntime(
     inspection.python !== runtime.pythonVersion ||
     inspection.system !== 'linux' ||
     !allowedMachines.has(inspection.machine) ||
-    !/^cpython-(39|310)-/.test(inspection.soabi ?? '') ||
+    !/^cpython-(39|310|313)-/.test(inspection.soabi ?? '') ||
     Object.values(inspection.origins).some(
       (origin) => !origin.startsWith(`${runtime.pythonModulePath}/`),
     )

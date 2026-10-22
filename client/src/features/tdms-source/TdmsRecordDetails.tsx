@@ -3,6 +3,7 @@ import type { TdmsPerson, TdmsRelationAssertion, TdmsExactEndpoint, TdmsRelation
 import type { TdmsFileServiceRecordReadResponse } from '@shared/tdms-file-service-import.interface';
 import { tdmsFileTypeNote, tdmsJsonText, tdmsRawCodeLabel, tdmsRecordKindLabel, tdmsRevisionRuleNeedsVerification, tdmsSourceVersionLabel } from './tdms-source-presentation';
 import { TdmsOwnedSourceContent } from './TdmsOwnedSourceContent';
+import { TdmsEngineeringExecution } from './TdmsEngineeringExecution';
 import { canReadTdmsSourceBody } from '@shared/tdms-source-body-policy';
 
 const person = (value: TdmsPerson | null): string => value
@@ -19,9 +20,11 @@ function isApprovedCurrentObjectObservation(value: unknown): boolean {
     collection.reason === 'APPROVED_CURRENT_OBJECT_OBSERVATION';
 }
 
-export function TdmsRecordDetails({ read, openDocument }: {
+export function TdmsRecordDetails({ read, openDocument, monitorScopeKey, onRefresh }: {
   read: TdmsFileServiceRecordReadResponse;
   openDocument?: (documentVersionId: string) => void;
+  monitorScopeKey?: string;
+  onRefresh?: () => void;
 }) {
   const record = read.record;
   if (!canReadTdmsSourceBody(read)) return <article className="tdms-record-details" aria-label="TDMS 来源元数据">
@@ -68,6 +71,7 @@ export function TdmsRecordDetails({ read, openDocument }: {
       <dt>本次准确读取</dt><dd>{read.receipt.readAt} · 回执 {read.receipt.receiptRef}</dd>
     </dl>
     <TdmsOwnedSourceContent read={read} />
+    <TdmsEngineeringExecution read={read} monitorScopeKey={monitorScopeKey} onRefresh={onRefresh} />
     {typeNote ? <p className="tdms-source-notice">{typeNote}</p> : null}
     <section><h4>明确条件与保留事项</h4>{lines(content.conditions)}</section>
     <section><h4>源要求或措施</h4>{lines(content.requiredActions)}</section>

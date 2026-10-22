@@ -6,7 +6,7 @@ const sourceSelection = list(text); // only the observed READ sourceRefs singlet
 const object = (properties) => ({ type: 'object', additionalProperties: false, properties });
 const choice = (...values) => ({ type: 'string', enum: values });
 const nullable = (schema) => ({ ...schema, nullable: true });
-const classification = (...labels) => nullable(object({ label: choice(...labels), reason: text, basisRefs: texts }));
+const classification = (...labels) => nullable(object({ label: choice(...labels), reason: text, basisRefs: texts, definitionMatch: object({methodRef: text, definitionQuote: text}) }));
 const envelope = (item) => ({ type: 'object', additionalProperties: false,
   required: ['item'], properties: { item } });
 
@@ -67,8 +67,8 @@ export const JOBAID_WORK_UPDATE_SHAPE = object({
     openQuestions: list(object({ question: text, affects: text, nextEvidence: text, reason: text })),
     requirementHandling: list(object({ methodRef: { ...text,
       description: 'Exact registered METHOD_CLAUSE evidenceRef supporting this requirement, for example method:risk; JA_AC_R01 is a riskScenarios.method value, not an evidenceRef.' }, requirement: text, conditions: texts,
-      treatment: choice('ADDRESSED', 'CONDITIONS_UNCONFIRMED', 'NOT_APPLICABLE_WITH_BASIS', 'LATER_BUSINESS_STAGE', 'NOT_YET_ADDRESSED'),
-      basisRefs: texts, explanation: text })),
+      treatment: choice('ADDRESSED', 'CONDITIONS_UNCONFIRMED', 'NOT_APPLICABLE_WITH_BASIS', 'LATER_BUSINESS_STAGE', 'NOT_YET_ADDRESSED', 'CONFLICT'),
+      basisRefs: texts, explanation: text, bodyQuote: text })),
   })),
 });
 

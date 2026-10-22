@@ -1,0 +1,28 @@
+{
+  "changedNodeIds": [
+    "knowledge.wiki",
+    "business.software_configuration"
+  ],
+  "changedEdgeIds": [
+    "reading.wiki",
+    "research.wiki",
+    "wiki.parent"
+  ],
+  "scenarioIds": [
+    "V04",
+    "V05",
+    "V08",
+    "V10",
+    "V12",
+    "V30",
+    "V23",
+    "V24",
+    "V18",
+    "V20",
+    "V31",
+    "V37",
+    "V38",
+    "V41"
+  ],
+  "reason": "P0—P6本批真实改动：工作语义、本人已有上传翻译续接、准确原生单机来源阅读、ATA2保存成员及Wiki投影、保存后ACK锁序；只映射这些链路，不宣称全部场景或实际业务通过。"
+}

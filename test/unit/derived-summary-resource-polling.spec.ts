@@ -105,4 +105,22 @@ describe('summary reading polling with a slow response', () => {
     await act(async () => pending[1]!.resolve('当前账号正文'));
     expect(current.data).toBe('当前账号正文');
   });
+
+  it('clears an already visible body on account change and keeps the new read fenced from late cleanup', async () => {
+    await render();
+    await act(async () => pending[0]!.resolve('上一账号已保存正文'));
+    await advance(15_000);
+    mockGeneration = 2;
+    await render('fleet', 2);
+    expect(current.data).toBeNull();
+    expect(dom.window.document.body.textContent).not.toContain('上一账号已保存正文');
+    expect(pending[1]!.signal.aborted).toBe(true);
+    await act(async () => pending[1]!.resolve('上一账号延迟响应'));
+    await advance(15_000);
+    expect(current.data).toBeNull();
+    expect(load).toHaveBeenCalledTimes(3);
+    expect(pending[2]!.signal.aborted).toBe(false);
+    await act(async () => pending[2]!.resolve('当前账号精确正文'));
+    expect(current.data).toBe('当前账号精确正文');
+  });
 });

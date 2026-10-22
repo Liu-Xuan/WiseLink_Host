@@ -818,13 +818,14 @@ export class MiaodaWorkItemRepository {
     tenantId: string; principalId: string;
   }): Promise<import('@shared/pending-model-configuration.interface').ApplyPendingModelConfigurationResponse> {
     return this.db.transaction(async tx => {
-      // Queue claim UPDATE locks this same row; no browser/RLS bypass is used.
+      // Match claim, SAVE and ACK: WorkItem -> grant. An exact configuration
+      // replay can arrive after claim, so it must share their lock order too.
+      const [owner] = await tx.select().from(workItem).where(and(
+        eq(workItem.tenantId, input.tenantId), eq(workItem.workItemId, input.workItemId),
+      )).limit(1).for('update');
       const [grant] = await tx.select().from(autoWorkItemAuthorization).where(and(
         eq(autoWorkItemAuthorization.tenantId, input.tenantId),
         eq(autoWorkItemAuthorization.workItemId, input.workItemId),
-      )).limit(1).for('update');
-      const [owner] = await tx.select().from(workItem).where(and(
-        eq(workItem.tenantId, input.tenantId), eq(workItem.workItemId, input.workItemId),
       )).limit(1).for('update');
       if (!grant || !owner || grant.requestId !== input.requestId ||
           owner.requestId !== input.requestId || owner.requestedByUserId !== grant.actorUserId ||
@@ -1231,6 +1232,16 @@ export class MiaodaWorkItemRepository {
     now: Date;
   }): Promise<{ acknowledgedAt: Date; replayed: boolean } | null> {
     return this.db.transaction(async (transaction) => {
+      // Match SAVE and queue takeover: WorkItem -> grant. Otherwise ACK can
+      // hold the grant while its receipt waits on a writer holding WorkItem.
+      await transaction
+        .select({ workItemId: workItem.workItemId })
+        .from(workItem)
+        .where(and(
+          eq(workItem.tenantId, input.tenantId),
+          eq(workItem.workItemId, input.workItemId),
+        ))
+        .for('update');
       const leaseTokenHash = createHash('sha256')
         .update(input.leaseToken)
         .digest('hex');

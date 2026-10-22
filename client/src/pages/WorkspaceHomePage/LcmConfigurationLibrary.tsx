@@ -21,6 +21,8 @@ import { lcmMatrixAccessLost, lcmQueryFromRoute, readLcmExpansion, writeLcmExpan
 import { LCM_MATRIX_QUERY_ROOT, useLcmMatrixResource } from './useLcmMatrixResource';
 import { lcmModelNames, lcmSnapshotStateDate } from './lcm-source-presentation';
 import { lcmNativeSelectionIsBlank } from './lcm-matrix-presentation';
+import { lcmDiagnosticScopeKey } from './adapt-lcm-native-read';
+import { LcmRuntimeDiagnostic } from './LcmRuntimeDiagnostic';
 import './lcm-matrix.css';
 
 /** The existing /library LCM entry, AppShell, identity and QueryClient remain mounted. */
@@ -53,6 +55,7 @@ export function LcmConfigurationLibrary() {
   const scroll = useRef({ x: Number(params.get('mxX')) || 0, y: Number(params.get('mxY')) || 0 });
   const routeRef = useRef(params); routeRef.current = params;
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readingSurface = useRef<HTMLDivElement | null>(null);
 
   const onLost = useCallback((error?: unknown): void => {
     setDeniedScope(scopeRef.current); setSelection(null);
@@ -151,6 +154,9 @@ export function LcmConfigurationLibrary() {
     }
     updateRoute(next, { replace });
   }
+  function refreshReadSet(): void {
+    setCatalogueAfter(undefined); setRefresh(value => value + 1);
+  }
   function updateRoute(next: URLSearchParams, options?: NavigateOptions): void {
     // Compose rapid repeated clicks from the latest requested route, before React's transition commits.
     routeRef.current = next; setParams(next, options);
@@ -234,6 +240,8 @@ export function LcmConfigurationLibrary() {
     ...(catalogueHistory?.scope === catalogueScope ? catalogueHistory.snapshots : []),
     ...(catalogue.value?.snapshots ?? []), ...(index?.snapshots ?? []),
   ].map(snapshot => [snapshot.snapshotId, snapshot])).values()] : [];
+  const diagnosticScope = native.index ? lcmDiagnosticScopeKey(viewScope, native.index.data.binding,
+    isAircraft ? aircraftRef : null) : null;
   return <main className={'library-home library-atlas-home library-lcm-home mx-root' + (fullscreen ? ' mx-fullscreen' : '')}
     aria-busy={native.loading || catalogue.loading}>
     <div className="atlas-library-content">
@@ -243,7 +251,7 @@ export function LcmConfigurationLibrary() {
           <Button variant={isAircraft ? 'secondary' : 'ghost'} disabled={!index?.aircraftOrder.length}
             onClick={() => { if (index) openAircraft(aircraftRef ?? index.aircraftOrder[0]); }}>单机构型</Button>
           <Button variant="outline" size="sm" disabled={authenticationRequired}
-            onClick={() => { setCatalogueAfter(undefined); setRefresh(value => value + 1); }}>重新读取</Button></div>
+            onClick={refreshReadSet}>重新读取</Button></div>
       </header>
       <LcmExcelImport sessionGeneration={sessionGeneration} disabled={authenticationRequired}
         onImported={() => {
@@ -259,6 +267,13 @@ export function LcmConfigurationLibrary() {
         stateDate={stateDate} loading={native.loading} readSetSnapshots={native.index?.data.snapshots ?? []}
         onSearch={setSearch} onModel={toggleModel} onField={field} onExpand={expandAll} onAircraftScope={() => setScopeDialog('aircraft')}
         onReadSet={() => setScopeDialog('snapshots')} onFullscreen={() => setFullscreen(value => !value)} />
+      {enabled && !notice && native.index && index && native.observedAt && diagnosticScope ?
+        <LcmRuntimeDiagnostic key={diagnosticScope} read={native.index.data} matrix={index} scopeKey={diagnosticScope}
+          aircraftRef={isAircraft ? aircraftRef : null} observedAt={native.observedAt} onRefresh={refreshReadSet}
+          onOpenReading={() => {
+            readingSurface.current?.scrollIntoView({ block: 'start' });
+            readingSurface.current?.focus({ preventScroll: true });
+          }} /> : null}
       {notice ? <p className="library-source-notice" role="alert">{notice}</p> : null}
       {enabled && !notice && personal.value?.hasSource === false
         ? <p role="status">导入 LCM Excel 后即可查看构型。</p> : null}
@@ -268,6 +283,7 @@ export function LcmConfigurationLibrary() {
       {enabled && !notice && native.loading && !index ? <p role="status">正在读取固定范围的构型矩阵…</p> : null}
       {enabled && !notice && stateDate && !query.snapshotIds.length
         ? <p role="status">所选状态日 {stateDate}：0 个已读取快照。</p> : null}
+      <div ref={readingSurface} tabIndex={-1} aria-label={isAircraft && aircraftRef ? '当前单机构型阅读' : '当前构型矩阵阅读'}>
       {index && !notice ? index.softwareIndex.length === 0
         ? <p role="status">当前筛选没有匹配记录。</p>
         : isAircraft && aircraftRef ? <LcmAircraftTable query={query} matrix={index} aircraftRef={aircraftRef}
@@ -277,6 +293,7 @@ export function LcmConfigurationLibrary() {
             savedSelection={savedSelection} isSourceBlank={selection => Boolean(native.index && selection.aircraftRef &&
               lcmNativeSelectionIsBlank(native.index, query, selection.softwareRef, selection.aircraftRef, selection.partNumber))}
             onSort={ref => field('lcmAnchor', ref)} onSelect={selectRecord} onAircraft={openAircraft} /> : null}
+      </div>
       {index && selection && !notice ? <LcmEvidenceDrawer query={query} matrix={index} selection={selection}
         onClose={() => setSelection(null)} onLost={onLost} onSort={ref => field('lcmAnchor', ref)} /> : null}
       <LcmMatrixScopeDialog kind={scopeDialog}

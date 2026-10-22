@@ -36,6 +36,7 @@ export function JobAidRequirement({
         <p key={condition}>适用条件：{condition}</p>
       ))}
       <p>{item.explanation}</p>
+      {item.bodyQuote && <blockquote>正文定位：{item.bodyQuote}</blockquote>}
       {children}
     </section>
   );

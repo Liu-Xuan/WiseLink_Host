@@ -28,7 +28,7 @@ import {
   configurationEvidenceShadow,
   createConfigurationEvidenceReevaluation,
 } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
-import { JOBAID_METHOD_BINDING } from '../../server/modules/canonical-host/jobaid-method-pack';
+import { JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE } from '../../server/modules/canonical-host/jobaid-method-pack';
 import { assertJobAidProblemTaskBinding, buildJobAidProblemTask, parseJobAidProblemTask } from '../../server/modules/canonical-host/jobaid-problem-task';
 
 const REQUEST_1 = '00000000-0000-4000-8000-000000000101';
@@ -345,6 +345,43 @@ describe('JobAid continuation requests', () => {
       .toBe('Corrected condition.');
     expect(assertJobAidProblemTaskBinding(task)).toBe(task);
   });
+  it.each(['INITIAL_PROBLEM_ASSESSMENT', 'OVERALL_CONSISTENCY', 'PROBLEM_REVIEW'] as const)(
+    'prepares %s from a real legacy method snapshot without rewriting the saved work', purpose => {
+      const workItem = projection();
+      const common = projectCommonAssessmentContext(workItem, {
+        context: { status: 'AVAILABLE' }, documentReadingStatus: 'AVAILABLE',
+        items: [], sections: [], resourceRefs: [],
+      }, []);
+      const current = JOBAID_METHOD_EVIDENCE.find(item => item.evidenceRef === 'method:risk')!;
+      if (current.kind !== 'METHOD_CLAUSE') throw new Error('METHOD_FIXTURE_INVALID');
+      const { classificationDefinitions: _definitions, ...legacy } = structuredClone(current);
+      const previousWork = savedWork();
+      previousWork.content.evidence = [legacy];
+      previousWork.content.readSourceRefs = [legacy.evidenceRef];
+      const before = structuredClone(previousWork);
+      const input = { workItem, actorUserId: OWNER, permissionSnapshotVersion: 'permission',
+        purpose, sourceBindings: [], common, previousWork,
+        expectedWorkRevision: previousWork.workRevision, priorAssessmentRefs: [previousWork.workRevisionRef] };
+      for (const sourceCatalog of [[], [legacy]]) {
+        const task = buildJobAidProblemTask({ ...input, sourceCatalog });
+        expect(task.sourceCatalog.find(item => item.evidenceRef === legacy.evidenceRef)).toEqual(current);
+        expect(task.modelInput.deliveredEvidence.find(item => item.evidenceRef === legacy.evidenceRef))
+          .toHaveProperty('classificationDefinitions', current.classificationDefinitions);
+        expect(task.previousWork).toEqual(before);
+        expect(previousWork).toEqual(before);
+        expect(assertJobAidProblemTaskBinding(task)).toBe(task);
+      }
+      for (const field of ['sourceIdentity', 'versionLabel', 'locator', 'excerpt', 'packRef', 'methodRef', 'sourceVersionStatus', 'title'] as const) {
+        const changed = { ...legacy, [field]: `${legacy[field]} changed` };
+        previousWork.content.evidence = [changed];
+        expect(() => buildJobAidProblemTask({ ...input, sourceCatalog: [] })).toThrow('JOBAID_PRIOR_SOURCE_CHANGED');
+        previousWork.content.evidence = [legacy];
+        expect(() => buildJobAidProblemTask({ ...input, sourceCatalog: [changed] })).toThrow('JOBAID_SOURCE_CATALOG_CONFLICT');
+      }
+      previousWork.content.evidence = [{ ...current, classificationDefinitions: [] }];
+      expect(() => buildJobAidProblemTask({ ...input, sourceCatalog: [] })).toThrow('JOBAID_PRIOR_SOURCE_CHANGED');
+    });
+
   it('delivers a complete short current original without treating a large original as partly read', () => {
     const workItem = projection();
     const common = projectCommonAssessmentContext(workItem, {

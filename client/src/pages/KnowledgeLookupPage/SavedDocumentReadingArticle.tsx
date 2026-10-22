@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { readSavedDocumentReading } from '@client/src/api/canonical-host';
-import { isRevokedMatterError } from '@client/src/features/matter/matter-read-error';
+import { useCallback } from 'react';
+import { getCanonicalHostClientSessionGeneration, readSavedDocumentReading } from '@client/src/api/canonical-host';
+import { useAuthorizedSummaryResource } from '@client/src/features/derived-summary/useAuthorizedSummaryResource';
 import type { CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
 import type { DocumentReadingQuote, DocumentReadingResponse, DocumentReadingRevision, DocumentReadingStatement } from '@shared/document-reading.interface';
 import { libraryDateLabel, projectLibraryDocumentReading } from '../WorkspaceHomePage/library-document-presentation';
@@ -60,42 +60,43 @@ export default function SavedDocumentReadingArticle({ version, onOpenSource }: {
 }) {
   const preview = version.documentReading && ['AVAILABLE', 'SOURCE_CHANGED'].includes(version.documentReading.status)
     ? version.documentReading.reading : null;
-  const identity = JSON.stringify([version.documentVersionId, preview?.readingRunRef, preview?.readingRevision]);
-  const [saved, setSaved] = useState<{ identity: string; status: DocumentReadingResponse['status']; reading: DocumentReadingRevision | null } | null>(null);
-  const [error, setError] = useState<{ detail: string; hidesContent: boolean } | null>(null);
-  const [retry, setRetry] = useState(0);
-  useEffect(() => {
-    const request = new AbortController();
-    setSaved(null); setError(null);
-    if (!preview || preview.sourceBinding.original.documentVersionId !== version.documentVersionId) return;
-    void readSavedDocumentReading({ documentVersionId: version.documentVersionId,
+  const identity = JSON.stringify([version.documentVersionId, preview?.sourceBinding,
+    preview?.readingRunRef, preview?.readingRevision]);
+  const load = useCallback(async (signal: AbortSignal): Promise<DocumentReadingResponse> => {
+    if (!preview || preview.sourceBinding.original.documentVersionId !== version.documentVersionId)
+      throw new Error('DOCUMENT_READING_BINDING_MISMATCH');
+    const result = await readSavedDocumentReading({ documentVersionId: version.documentVersionId,
       parseRunId: preview.sourceBinding.original.parseRunId, semanticRevision: preview.sourceBinding.semanticRevision,
-      readingRevision: preview.readingRevision }, request.signal).then(result => {
-      if (request.signal.aborted) return;
-      if (result.reading && (result.reading.readingRunRef !== preview.readingRunRef || result.reading.readingRevision !== preview.readingRevision ||
-          result.reading.sourceBinding.semanticRevision !== preview.sourceBinding.semanticRevision ||
-          (Object.keys(preview.sourceBinding.original) as Array<keyof DocumentReadingRevision['sourceBinding']['original']>)
-            .some(key => result.reading!.sourceBinding.original[key] !== preview.sourceBinding.original[key])))
-        throw new Error('DOCUMENT_READING_BINDING_MISMATCH');
-      setSaved({ identity, status: result.status, reading: result.status === 'AVAILABLE' ? result.reading : null });
-    }).catch(reason => {
-      if (request.signal.aborted) return;
-      const detail = reason instanceof Error ? reason.message : '文档解读读取失败';
-      setError({ detail, hidesContent: isRevokedMatterError(reason) || detail === 'DOCUMENT_READING_BINDING_MISMATCH' || detail === 'DOCUMENT_READING_OBSOLETE' });
-    });
-    return () => request.abort();
-  }, [identity, retry]);
-  const current = saved?.identity === identity ? saved : null;
-  if (current?.reading) return <SavedDocumentReadingBody reading={current.reading} onOpenSource={onOpenSource} />;
+      readingRevision: preview.readingRevision }, signal);
+    const matches = (binding: DocumentReadingRevision['sourceBinding']): boolean =>
+      binding.semanticRevision === preview.sourceBinding.semanticRevision &&
+        (Object.keys(preview.sourceBinding.original) as Array<keyof DocumentReadingRevision['sourceBinding']['original']>)
+          .every(key => binding.original[key] === preview.sourceBinding.original[key]);
+    if (!matches(result.sourceBinding) || (result.reading &&
+      (result.reading.readingRunRef !== preview.readingRunRef || result.reading.readingRevision !== preview.readingRevision ||
+        !matches(result.reading.sourceBinding))))
+      throw new Error('DOCUMENT_READING_BINDING_MISMATCH');
+    return result;
+  }, [identity]);
+  const resource = useAuthorizedSummaryResource(identity, getCanonicalHostClientSessionGeneration(), load,
+    { enabled: Boolean(preview) });
+  const current = resource.data;
+  const error = resource.error;
+  const showPreview = resource.authorized && !resource.withheld && !current && (!error || resource.temporaryError);
   const projected = projectLibraryDocumentReading(version);
   return <>
-    <h2>{current || error?.hidesContent ? projected.fileTitle : projected.headline || projected.fileTitle}</h2>
-    {!current && projected.brief && !error?.hidesContent ? <p className="article-lead">{projected.brief}</p> : null}
-    {!current && !error?.hidesContent && projected.conditionLines.length ? <section className="knowledge-prose"><h2>关键条件与说明</h2>
+    {resource.loading && !current ? <p role="status">正在读取文档解读…</p> : null}
+    {error ? <div role="alert"><p>解读读取失败。{resource.retainedAfterError && current?.reading ? '保留同版正文。' : ''}
+      <button type="button" onClick={() => { void resource.refresh(); }}>重试</button></p>
+      <details><summary>错误详情</summary>{error}</details></div> : null}
+    {current?.status === 'AVAILABLE' && current.reading
+      ? <SavedDocumentReadingBody reading={current.reading} onOpenSource={onOpenSource} /> : <>
+    <h2>{showPreview ? projected.headline || projected.fileTitle : projected.fileTitle}</h2>
+    {showPreview && projected.brief ? <p className="article-lead">{projected.brief}</p> : null}
+    {showPreview && projected.conditionLines.length ? <section className="knowledge-prose"><h2>关键条件与说明</h2>
       <ul>{projected.conditionLines.map((line, index) => <li key={index}>{line}</li>)}</ul></section> : null}
-    {error ? <div role="alert"><p>解读读取失败。<button type="button" onClick={() => setRetry(value => value + 1)}>重试</button></p>
-      <details><summary>错误详情</summary>{error.detail}</details></div> : null}
     {!error && (current?.status === 'RETRACTED' || projected.status === 'RETRACTED') ? <p>解读已撤回。</p> : null}
     {!error && (current?.status === 'NOT_GENERATED' || (!preview && projected.status !== 'RETRACTED')) ? <p>暂无已保存解读。</p> : null}
+    </>}
   </>;
 }

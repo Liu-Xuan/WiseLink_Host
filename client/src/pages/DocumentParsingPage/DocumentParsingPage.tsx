@@ -1,3 +1,5 @@
+import { useJobAidWorkingRead } from './useJobAidWorkingRead';
+import WorkItemRuntimeDiagnostic from './runtime-monitor/WorkItemRuntimeDiagnostic';
 import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import JobAidProblemWorkspace from './JobAidProblemWorkspace';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -285,6 +287,7 @@ export default function DocumentParsingPage() {
       pageData.workItem.source.documentVersionId === expectedDocumentVersionId)
       ? pageData
       : null;
+  const workingRead = useJobAidWorkingRead(workItemId, data, Boolean(data));
   const latestLoadRef = useRef({
     workItemId,
     sessionGeneration,
@@ -1298,6 +1301,7 @@ export default function DocumentParsingPage() {
             ) : null}
             <JobAidProblemWorkspace
               workItemId={workItemId}
+              workingRead={workingRead}
               baseRevision={data.workItem.revision}
               baseReadConfirmed={!loading}
               baseReadProof={data}
@@ -1622,6 +1626,7 @@ export default function DocumentParsingPage() {
         <RetainedWorkbenchPanel active={activeNode === 'review'}>
           <JobAidProblemWorkspace
             workItemId={workItemId}
+            workingRead={workingRead}
             baseRevision={data.workItem.revision}
             baseReadConfirmed={!loading}
             baseReadProof={data}
@@ -1833,12 +1838,21 @@ export default function DocumentParsingPage() {
         </RetainedWorkbenchPanel>
 
         {activeNode === 'overall' ? (
-          <WorkItemProcessWorkspace
-            data={data}
-            onOpenAssessment={() => updateDeepLink({ panel: 'assessment' })}
-            onOpenReview={() => updateDeepLink({ panel: 'review' })}
-            onRefresh={() => void load(activeQuery)}
-          />
+          <>
+            <WorkItemRuntimeDiagnostic
+              read={workingRead}
+              workItemId={workItemId}
+              sessionGeneration={sessionGeneration}
+              onRefresh={() => { workingRead.refresh(); void load(activeQuery); }}
+              onOpenPanel={(panel) => updateDeepLink({ panel })}
+            />
+            <WorkItemProcessWorkspace
+              data={data}
+              onOpenAssessment={() => updateDeepLink({ panel: 'assessment' })}
+              onOpenReview={() => updateDeepLink({ panel: 'review' })}
+              onRefresh={() => { workingRead.refresh(); void load(activeQuery); }}
+            />
+          </>
         ) : null}
 
         {activeNode === 'aeo' ? (

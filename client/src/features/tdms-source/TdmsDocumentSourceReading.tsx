@@ -29,12 +29,13 @@ export function TdmsDocumentSourceReading({ documentVersionId, enabled = true }:
   const active: boolean = enabled && !authenticationRequired && deniedScope !== scope;
   const page = useTdmsReadResource(JSON.stringify([scope, after]), active, load, onDenied);
   const context: TdmsSourceBrowserReadContext = { documentVersionId };
+  const reload = (): void => setRefresh((value: number) => value + 1);
 
   return <section className="tdms-source-reading tdms-document-source-reading" aria-label="TDMS 原始意见与关联记录"
     data-document-version-id={documentVersionId}>
     <header><h3>TDMS 原始意见与关联记录</h3>
       <Button type="button" variant="ghost" size="sm" disabled={authenticationRequired || !enabled}
-        onClick={() => setRefresh((value: number) => value + 1)}>重新读取</Button></header>
+        onClick={reload}>重新读取</Button></header>
     {authenticationRequired ? <p role="alert">请先登录，再读取来源意见。</p>
       : deniedScope === scope ? <p role="alert">当前账户不能读取此版本的 TDMS 来源，原意见及关系已清除。</p>
         : <>
@@ -49,7 +50,8 @@ export function TdmsDocumentSourceReading({ documentVersionId, enabled = true }:
             </p> : null}
             {page.value.records.map(read => <TdmsDocumentSourceRecord
               key={read.record.sourceRevisionRef} read={read} context={context}
-              sessionGeneration={sessionGeneration} enabled={active} onAccessRejected={onDenied} />)}
+              sessionGeneration={sessionGeneration} enabled={active} onAccessRejected={onDenied}
+              monitorScopeKey={scope} onRefresh={reload} />)}
             <div className="tdms-source-pagination">
               {cursors.length > 1 ? <Button type="button" variant="outline" size="sm"
                 onClick={() => setPagination({ scope, cursors: cursors.slice(0, -1) })}>上一页意见</Button> : null}

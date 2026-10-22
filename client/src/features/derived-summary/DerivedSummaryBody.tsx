@@ -16,16 +16,17 @@ import SummaryEngineeringCatalog from './SummaryEngineeringCatalog';
 type SelectedCitation = { kind: 'MEMBER'; member: DerivedSummaryMemberReading }
   | { kind: 'EVIDENCE'; evidence: AssessmentEvidence };
 
-export default function DerivedSummaryBody({ revision, wikiCatalog = false, conditions, matterCatalog }: {
+export default function DerivedSummaryBody({ revision, wikiCatalog = false, conditions, matterCatalog, processingRecords = [] }: {
   revision: DerivedSummaryRevision; wikiCatalog?: boolean; conditions?: ReactNode;
   matterCatalog?: DerivedSummaryMatterCatalogProjection;
+  processingRecords?: string[];
 }) {
   const [source, setSource] = useState<DocumentAssessmentEvidence | null>(null);
   const [citation, setCitation] = useState<SelectedCitation | null>(null);
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const brief = summaryReadingBrief(revision.content);
-  const citationBody = [brief, revision.content.body].filter(Boolean).join('\n\n');
+  const citationBody = [brief, revision.content.body, ...processingRecords].filter(Boolean).join('\n\n');
   const citationLabel = (reference: string) => revision.members.find(item => item.evidenceRef === reference)?.headline ??
     (revision.evidence.some(item => item.evidenceRef === reference) ? '来源依据' : undefined);
   const locateSource = (value: DocumentAssessmentEvidence) => {
@@ -51,6 +52,11 @@ export default function DerivedSummaryBody({ revision, wikiCatalog = false, cond
           citationLabel={citationLabel} onCitation={openCitation} />} />
       : <SummaryMarkdown body={revision.content.body} citationBody={citationBody} foldSupportingSections
         citationLabel={citationLabel} onCitation={openCitation} />}
+    {processingRecords.length ? <details className="summary-entry-detail" aria-label="正文处理记录">
+      <summary>正文范围与处理记录</summary>
+      {processingRecords.map((body: string, index: number) => <SummaryMarkdown key={index} body={body}
+        citationBody={citationBody} citationLabel={citationLabel} onCitation={openCitation} />)}
+    </details> : null}
     <Dialog open={citation !== null} onOpenChange={(open: boolean) => { if (!open) setCitation(null); }}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader><DialogTitle>{citation?.kind === 'MEMBER' ? citation.member.headline : '来源依据'}</DialogTitle>

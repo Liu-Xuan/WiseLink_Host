@@ -33,6 +33,11 @@ const completeFingerprint = {
   releaseId: 'host-release',
   apiContractVersion: 'host-contract',
 };
+const pendingReadiness = {
+  schemaVersion: 'wiselink.3_1.unified_reader_readiness.v0.candidate',
+  status: 'VERIFICATION_PENDING',
+  blockers: ['HOSTED_CANONICAL_RUNTIME_UNVERIFIED'],
+};
 
 function probeResult(body: unknown, status = 200) {
   return [{ path: '/api/runtime-probe', status, body }];
@@ -255,8 +260,63 @@ describe('runtime probe fingerprint page', () => {
 
   function respond(body: unknown): void {
     request.mockResolvedValueOnce({ status: 200, data: body });
-    request.mockResolvedValueOnce({ status: 200, data: { status: 'VERIFICATION_PENDING' } });
+    request.mockResolvedValueOnce({ status: 200, data: pendingReadiness });
   }
+
+  function section(title: string): HTMLElement | undefined {
+    return Array.from(container.querySelectorAll('section')).find(
+      (element) => element.querySelector('h2')?.textContent === title,
+    );
+  }
+
+  it('shows HTTP 200 BLOCKED failures and pending candidate readiness as separate results', async () => {
+    respond({
+      ...completeFingerprint,
+      status: 'BLOCKED',
+      checks: {
+        pythonExecutable: {
+          status: 'FAIL', detail: 'system-python3: Python 3.13.5 is unsupported',
+        },
+        temporaryFile: { status: 'PASS', detail: 'temporary file check passed' },
+        strictReader: { status: 'FAIL', detail: 'STRICT_READER_PREREQUISITES_BLOCKED' },
+      },
+      blockers: ['HOSTED_PYTHON_EXECUTABLE_NOT_FOUND'],
+    });
+    await mount();
+
+    const runtime = section('运行环境检查');
+    expect(runtime?.textContent).toContain('运行环境检查受阻（BLOCKED）');
+    expect(runtime?.textContent).toContain('Python 运行环境');
+    expect(runtime?.textContent).toContain('system-python3: Python 3.13.5 is unsupported');
+    expect(runtime?.textContent).toContain('原文严格读取');
+    expect(runtime?.textContent).toContain('STRICT_READER_PREREQUISITES_BLOCKED');
+    expect(runtime?.textContent).toContain('HOSTED_PYTHON_EXECUTABLE_NOT_FOUND');
+    expect(runtime?.textContent).not.toContain('temporary file check passed');
+    expect(section('候选阅读就绪检查')?.textContent).toContain('候选阅读就绪状态：待验证（VERIFICATION_PENDING）');
+    expect(section('候选阅读就绪检查')?.textContent).toContain('HOSTED_CANONICAL_RUNTIME_UNVERIFIED');
+    expect(container.textContent).not.toContain('当前连接可用');
+    expect(displayed('Host 部署提交')).toBe('host-commit');
+  });
+
+  it('shows a passing runtime independently of pending candidate verification', async () => {
+    respond(completeFingerprint);
+    await mount();
+    expect(section('运行环境检查')?.textContent).toContain('运行环境检查通过（PASS）');
+    expect(section('候选阅读就绪检查')?.textContent).toContain('待验证（VERIFICATION_PENDING）');
+    expect(container.textContent).not.toContain('当前连接可用');
+  });
+
+  it.each([
+    { status: 503, body: completeFingerprint, expected: '检查请求失败（HTTP 503）' },
+    { status: 200, body: { ...completeFingerprint, schemaVersion: 'wrong-schema' }, expected: '暂时无法确认检查结果' },
+  ])('does not infer availability from an invalid or unsuccessful response: %j', async ({ status, body, expected }) => {
+    request.mockResolvedValueOnce({ status, data: body });
+    request.mockResolvedValueOnce({ status: 200, data: pendingReadiness });
+    await mount();
+    expect(section('运行环境检查')?.textContent).toContain(expected);
+    expect(section('运行环境检查')?.textContent).not.toContain('检查通过');
+    expect(container.textContent).not.toContain('当前连接可用');
+  });
 
   it('displays complete metadata from the Host without replacing it with frontend values', async () => {
     respond(completeFingerprint);
@@ -303,14 +363,20 @@ describe('runtime probe fingerprint page', () => {
 
   it.each(['runtime', 'readiness'])('shows the error when the %s read fails', async (stage) => {
     if (stage === 'readiness') {
-      request.mockResolvedValueOnce({ status: 200, data: completeFingerprint });
+      request.mockResolvedValueOnce({
+        status: 200, data: { ...completeFingerprint, status: 'BLOCKED' },
+      });
     }
     request.mockRejectedValueOnce(new Error('read unavailable'));
     await mount();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('连接检查失败');
-    expect(displayed('Host 部署提交')).toBe('未知');
-    expect(displayed('妙搭 Release')).toBe('未知');
-    expect(displayed('API 合同')).toBe('未知');
+    expect(displayed('Host 部署提交')).toBe(stage === 'readiness' ? 'host-commit' : '未知');
+    expect(displayed('妙搭 Release')).toBe(stage === 'readiness' ? 'host-release' : '未知');
+    expect(displayed('API 合同')).toBe(stage === 'readiness' ? 'host-contract' : '未知');
+    expect(container.textContent).not.toContain('当前连接可用');
+    if (stage === 'readiness') {
+      expect(section('运行环境检查')?.textContent).toContain('运行环境检查受阻（BLOCKED）');
+    }
     expect(request).toHaveBeenCalledTimes(stage === 'readiness' ? 2 : 1);
   });
 });

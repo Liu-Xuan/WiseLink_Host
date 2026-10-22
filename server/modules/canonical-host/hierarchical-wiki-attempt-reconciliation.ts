@@ -8,7 +8,7 @@ import type {
   SummaryAttempt,
 } from './derived-summary.repository';
 import type { SummaryActor } from './derived-summary-members.service';
-import { retryWikiDemand, type WikiDemand } from './hierarchical-wiki-demand';
+import { retryWikiDemand } from './hierarchical-wiki-demand';
 import {
   lockWikiBranch,
   storeWikiDemand,
@@ -71,14 +71,18 @@ export async function wikiRequestHasSavedRevision(
   return saved.length > 0;
 }
 
-function neverExecuted(attempt: SummaryAttempt): boolean {
+function expiredUnclaimed(attempt: SummaryAttempt, now: Date): boolean {
   return (
+    attempt.status === 'QUEUED' &&
+    attempt.deadlineAt !== null &&
+    attempt.deadlineAt <= now &&
     attempt.claimCount === 0 &&
     attempt.retryCount === 0 &&
     attempt.leaseGeneration === 0 &&
     attempt.projectionApplied === false &&
     [
       attempt.startedAt,
+      attempt.completedAt,
       attempt.lastHeartbeatAt,
       attempt.executorSessionKey,
       attempt.leaseOwner,
@@ -91,41 +95,6 @@ function neverExecuted(attempt: SummaryAttempt): boolean {
       attempt.cancelRequestedAt,
     ].every((value: unknown) => value === null)
   );
-}
-
-function expiredUnclaimed(attempt: SummaryAttempt, now: Date): boolean {
-  return attempt.status === 'QUEUED' && attempt.completedAt === null &&
-    attempt.deadlineAt !== null && attempt.deadlineAt <= now &&
-    neverExecuted(attempt);
-}
-
-/** The runtime or generic deadline writer may finish this row before Wiki
- * reconciliation sees it. Require the same no-execution proof and an exact
- * deadline terminal record; an arbitrary historical timeout is insufficient. */
-function recordedUnclaimedTimeout(attempt: SummaryAttempt, now: Date): boolean {
-  const codes: ReadonlySet<string> = new Set([
-    'DERIVED_SUMMARY_DEADLINE_EXCEEDED',
-    'ACTION_ATTEMPT_DEADLINE_EXCEEDED',
-  ]);
-  return attempt.status === 'TIMED_OUT' && neverExecuted(attempt) &&
-    attempt.deadlineAt !== null && attempt.deadlineAt <= now &&
-    attempt.completedAt !== null && attempt.completedAt >= attempt.deadlineAt &&
-    attempt.completedAt <= now &&
-    codes.has(attempt.terminalReason ?? '') &&
-    (attempt.errorCode === null || codes.has(attempt.errorCode));
-}
-
-export function releaseWikiAttemptReservation(
-  state: WikiDemand,
-  attempt: SummaryAttempt,
-  now: string,
-  unclaimedByCurrentWriter = false,
-): WikiDemand {
-  const errorCode: string = attempt.errorCode ??
-    attempt.terminalReason ?? 'WIKI_ATTEMPT_FAILED';
-  return unclaimedByCurrentWriter || recordedUnclaimedTimeout(attempt, new Date(now))
-    ? { ...state, active: null, lastAttemptErrorCode: errorCode, lastCheckedAt: now }
-    : retryWikiDemand(state, errorCode, now);
 }
 
 export function wikiReservationNeedsReconciliation(attempt: SummaryAttempt, now: Date): boolean {
@@ -145,7 +114,7 @@ export async function reconcileWikiReservations(
   if (owner.readScope === 'TENANT')
     throw summaryError('WIKI_OWNER_WRITE_SCOPE_REQUIRED');
   const time: Date = new Date(now);
-  const closed: Array<{ row: WikiRow; attempt: SummaryAttempt; unclaimedTimeout: boolean }> = [];
+  const closed: Array<{ row: WikiRow; attempt: SummaryAttempt }> = [];
   const errors: string[] = [];
   const owned: WikiRow[] = rows
     .filter(
@@ -159,7 +128,6 @@ export async function reconcileWikiReservations(
     );
   for (const row of owned) {
     let attempt: SummaryAttempt | null;
-    let unclaimedTimeout: boolean = false;
     try {
       attempt = await readActiveWikiAttempt(database, repository, row);
     } catch (error) {
@@ -205,7 +173,6 @@ export async function reconcileWikiReservations(
         now: time,
       });
       if (!expired) throw summaryError('WIKI_ATTEMPT_TIMEOUT_CAS_REJECTED');
-      unclaimedTimeout = true;
       attempt = await readActiveWikiAttempt(database, repository, row);
     }
     // A persisted result owns its original save/finish recovery. Do not clear
@@ -215,8 +182,7 @@ export async function reconcileWikiReservations(
       terminal.has(attempt.status) &&
       !(await wikiRequestHasSavedRevision(database, row, attempt))
     )
-      closed.push({ row, attempt,
-        unclaimedTimeout: unclaimedTimeout || recordedUnclaimedTimeout(attempt, time) });
+      closed.push({ row, attempt });
   }
   for (const item of closed) {
     const locked: WikiRow = await lockWikiBranch(database, item.row);
@@ -228,10 +194,13 @@ export async function reconcileWikiReservations(
     await storeWikiDemand(
       database,
       locked,
-      // A proven never-claimed deadline timeout releases only the reservation,
-      // including when another deadline writer won first. Preserve the original
-      // terminal record and do not spend execution retries or defer its due time.
-      releaseWikiAttemptReservation(locked.state, item.attempt, now, item.unclaimedTimeout),
+      retryWikiDemand(
+        locked.state,
+        item.attempt.errorCode ??
+          item.attempt.terminalReason ??
+          'WIKI_ATTEMPT_FAILED',
+        now,
+      ),
     );
   }
   return [...new Set(errors)];

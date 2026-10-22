@@ -56,9 +56,9 @@ export async function getHostedRuntimeFingerprint(): Promise<HostedRuntimeFinger
   return fingerprint;
 }
 
-export async function getReadOnlyRuntimeProbe(): Promise<
-  ReadOnlyProbeResult[]
-> {
+export async function getReadOnlyRuntimeProbe(
+  onResult?: (result: ReadOnlyProbeResult) => void,
+): Promise<ReadOnlyProbeResult[]> {
   const paths = ['/api/runtime-probe', '/api/unified-reader/readiness'];
 
   const results: ReadOnlyProbeResult[] = [];
@@ -67,7 +67,9 @@ export async function getReadOnlyRuntimeProbe(): Promise<
       url: path,
       method: 'GET',
     });
-    results.push({ path, status: response.status, body: response.data });
+    const result = { path, status: response.status, body: response.data };
+    results.push(result);
+    onResult?.(result);
   }
   return results;
 }

@@ -857,12 +857,17 @@ describe('MiaodaWorkItemRepository readable completion receipt', () => {
     const where = jest.fn().mockReturnValue({ returning });
     const set = jest.fn().mockReturnValue({ where });
     const update = jest.fn().mockReturnValue({ set });
-    const executor = { update };
+    const lock = jest.fn().mockResolvedValue([{ workItemId: 'WI-A' }]);
+    const from = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({ for: lock }),
+    });
+    const select = jest.fn().mockReturnValue({ from });
+    const executor = { select, update };
     const transaction = jest.fn(async (run: (db: typeof executor) => unknown) =>
       run(executor),
     );
     const target = new MiaodaWorkItemRepository({ transaction } as never);
-    return { target, transaction, update, set };
+    return { target, transaction, update, set, from, lock };
   }
   const input = {
     tenantId: 'tenant-A',
@@ -879,6 +884,8 @@ describe('MiaodaWorkItemRepository readable completion receipt', () => {
       fixture.target.acknowledgeAutoProcessingLease(input),
     ).resolves.toEqual({ acknowledgedAt: now, replayed: false });
     expect(fixture.transaction).toHaveBeenCalledTimes(1);
+    expect(fixture.from).toHaveBeenCalledWith(workItem);
+    expect(fixture.lock).toHaveBeenCalledWith('update');
     expect(fixture.update.mock.calls.map(([table]) => table)).toEqual([
       autoWorkItemAuthorization,
       workItem,

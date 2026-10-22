@@ -1,10 +1,5 @@
 import { assertAutomaticWorkItemAttemptLease } from '../action-attempt/automatic-work-item-attempt-lease';
 import type { AssessmentTdmsNativeEvidence } from '@shared/assessment-tdms-evidence';
-import type { JobAidWorkCorrectionReceipt, JobAidWorkCorrectionRequest } from '@shared/jobaid-work-correction.interface';
-import { JOBAID_WORK_CORRECTION_RECEIPT_SCHEMA } from '@shared/jobaid-work-correction.interface';
-import { correctionError, JOBAID_MANUAL_CORRECTION_ACTION, JOBAID_MANUAL_CORRECTION_AUDIT,
-  JOBAID_MANUAL_CORRECTION_ORIGIN, materializeManualJobAidCorrection,
-  parseJobAidWorkCorrectionRequest } from './jobaid-work-correction';
 import { tdmsReadObservation } from './jobaid-tdms-context';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
@@ -22,6 +17,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type {
   JobAidProblemWorkContent,
   JobAidWorkRevision,
+  JobAidWorkingReadModel,
 } from '@shared/jobaid-problem-assessment.interface';
 import {
   actionAttempt,
@@ -53,22 +49,6 @@ interface JobAidSaveScope {
   actorUserId: string;
   fence: JobAidWorkFence;
   sourceBindings: JobAidSourceBinding[];
-}
-
-interface ManualCorrectionScope {
-  tenantId: string;
-  actorUserId: string;
-  workItemId: string;
-  assertAuthorized(database: PostgresJsDatabase, base: JobAidWorkRevision, workItemRevision: number): Promise<void>;
-}
-type ManualCorrectionReceipt = Omit<JobAidWorkCorrectionReceipt, 'work' | 'replayed'>;
-interface ManualCorrectionAudit {
-  schemaVersion: typeof JOBAID_MANUAL_CORRECTION_AUDIT;
-  executionKind: 'HOST_MANUAL_CORRECTION';
-  modelRequests: 0;
-  semanticReanalysisPerformed: false;
-  request: JobAidWorkCorrectionRequest;
-  receipt: ManualCorrectionReceipt | null;
 }
 
 export function assertJobAidWorkFence(
@@ -379,7 +359,7 @@ export class JobAidWorkRepository {
   }) {
     const rows = await this.db.execute<{
       execution: JobAidExecutionObservation | null;
-      latestAttempt: { attemptId: string; status: string; inputRevision: number | null } | null;
+      latestAttempt: JobAidWorkingReadModel['latestAttempt'];
       current: (Omit<StoredJobAidWork, 'createdAt'> & { createdAt: string }) | null;
       savedActivity: Array<Omit<JobAidSavedActivityObservation, 'createdAt'> & { createdAt: string }>;
     }>(sql`
@@ -397,7 +377,14 @@ export class JobAidWorkRepository {
           ${actionAttempt.createdAt} DESC, ${actionAttempt.attemptId} DESC LIMIT 1
       ), selected_dynamic AS (
         SELECT ${actionAttempt.attemptId} AS "attemptId", ${actionAttempt.status} AS "status",
-          ${actionAttempt.inputRevision} AS "inputRevision"
+          ${actionAttempt.inputRevision} AS "inputRevision",
+          ${actionAttempt.createdAt} AS "createdAt", ${actionAttempt.startedAt} AS "startedAt",
+          ${actionAttempt.completedAt} AS "completedAt",
+          (SELECT min(${assessmentWorkRevision.createdAt}) FROM ${assessmentWorkRevision}
+            WHERE ${assessmentWorkRevision.tenantId} = ${input.tenantId}
+              AND ${assessmentWorkRevision.workItemId} = ${input.workItemId}
+              AND ${assessmentWorkRevision.documentVersionId} = ${input.documentVersionId}
+              AND ${assessmentWorkRevision.actionAttemptId} = ${actionAttempt.attemptId}) AS "firstSavedAt"
         FROM ${actionAttempt}
         WHERE ${actionAttempt.tenantId} = ${input.tenantId}
           AND ${actionAttempt.workItemId} = ${input.workItemId}
@@ -436,7 +423,13 @@ export class JobAidWorkRepository {
     `);
     const row = rows[0];
     if (!row) throw new Error('JOBAID_SNAPSHOT_READBACK_MISSING');
-    return { execution: row.execution, latestAttempt: row.latestAttempt,
+    return { execution: row.execution, latestAttempt: row.latestAttempt ? {
+      ...row.latestAttempt,
+      createdAt: new Date(row.latestAttempt.createdAt!).toISOString(),
+      startedAt: row.latestAttempt.startedAt ? new Date(row.latestAttempt.startedAt).toISOString() : null,
+      completedAt: row.latestAttempt.completedAt ? new Date(row.latestAttempt.completedAt).toISOString() : null,
+      firstSavedAt: row.latestAttempt.firstSavedAt ? new Date(row.latestAttempt.firstSavedAt).toISOString() : null,
+    } : null,
       current: row.current ? project({ ...row.current, createdAt: new Date(row.current.createdAt) }) : null,
       savedActivity: row.savedActivity.map(saved => ({ ...saved, createdAt: new Date(saved.createdAt) })) };
   }
@@ -580,172 +573,6 @@ export class JobAidWorkRepository {
         );
   }
 
-  /** Explicit synchronous Host producer. It never enters the runtime SAVE lease branch. */
-  async saveManualCorrection(input: ManualCorrectionScope & { request: JobAidWorkCorrectionRequest }): Promise<JobAidWorkCorrectionReceipt> {
-    const request = parseJobAidWorkCorrectionRequest(input.request);
-    return this.withActorTransaction(input.actorUserId, async (database) => {
-      const { base, primary } = await this.lockManualCorrectionSources(input, request, database);
-      await input.assertAuthorized(database, base, primary.revision);
-      const prior = await this.manualCorrectionExecution(input, request.requestId, database);
-      if (prior) {
-        if (canonicalJson(prior.request) !== canonicalJson(request))
-          throw correctionError('JOBAID_CORRECTION_REQUEST_REUSE');
-        return this.readManualCorrectionReceipt(input, prior, primary.revision, database);
-      }
-      if (primary.revision !== request.expectedWorkItemRevision)
-        throw correctionError('JOBAID_CORRECTION_WORK_ITEM_CONFLICT');
-      const latest = await this.latest(input, database);
-      if (!latest || latest.workRevisionRef !== request.baseWorkRef || latest.workRevision !== request.baseWorkRevision)
-        throw correctionError('JOBAID_CORRECTION_BASE_CONFLICT');
-      const [reused] = await database.select({ id: assessmentWorkRevision.assessmentWorkRevisionId })
-        .from(assessmentWorkRevision).where(and(eq(assessmentWorkRevision.tenantId, input.tenantId),
-          eq(assessmentWorkRevision.workItemId, input.workItemId), eq(assessmentWorkRevision.requestId, request.requestId))).limit(1);
-      if (reused) throw correctionError('JOBAID_CORRECTION_REQUEST_REUSE');
-      const active = await database.select({ id: actionAttempt.attemptId }).from(actionAttempt).where(and(
-        eq(actionAttempt.tenantId, input.tenantId), eq(actionAttempt.workItemId, input.workItemId),
-        inArray(actionAttempt.actionType, ['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS', 'OPENCLAW_INTERACTIVE_REVIEW']),
-        inArray(actionAttempt.status, ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING']),
-      )).limit(1);
-      if (active.length) throw correctionError('JOBAID_CORRECTION_ACTIVE_EXECUTION');
-      const prepared = materializeManualJobAidCorrection(base, request);
-      const attemptId = `ATT-${randomUUID()}`;
-      const now = new Date();
-      const audit: ManualCorrectionAudit = { schemaVersion: JOBAID_MANUAL_CORRECTION_AUDIT,
-        executionKind: 'HOST_MANUAL_CORRECTION', modelRequests: 0, semanticReanalysisPerformed: false,
-        request, receipt: null };
-      const [last] = await database.select({ number: actionAttempt.attemptNo }).from(actionAttempt).where(and(
-        eq(actionAttempt.workItemId, input.workItemId), eq(actionAttempt.actionType, JOBAID_MANUAL_CORRECTION_ACTION),
-      )).orderBy(desc(actionAttempt.attemptNo)).limit(1);
-      await database.insert(actionAttempt).values({ attemptId,
-        operationRef: `manual-correction://${attemptId.slice(4)}`, subjectKind: 'WORK_ITEM',
-        workItemId: input.workItemId, tenantId: input.tenantId, actorUserId: input.actorUserId,
-        actionType: JOBAID_MANUAL_CORRECTION_ACTION, requestOrigin: JOBAID_MANUAL_CORRECTION_ORIGIN,
-        triggerRequestId: request.requestId, attemptNo: (last?.number ?? 0) + 1, status: 'COMMITTING',
-        documentVersionId: base.documentVersionId, inputRevision: primary.revision, baseRevision: primary.revision,
-        reviewActivityJson: canonicalJson(audit), maxAttempts: 1, startedAt: now, commitStartedAt: now,
-        createdAt: now, updatedAt: now });
-      let work: JobAidWorkRevision = base;
-      if (prepared.changedFields.length) {
-        const [saved] = await database.insert(assessmentWorkRevision).values({
-          assessmentWorkRevisionId: `JAWR-${randomUUID()}`, tenantId: input.tenantId,
-          workItemId: input.workItemId, workRevision: base.workRevision + 1,
-          previousWorkRevisionId: base.workRevisionRef, requestId: request.requestId, actionAttemptId: attemptId,
-          basedOnWorkItemRevision: primary.revision, documentVersionId: base.documentVersionId,
-          commandJson: canonicalJson(request), contentJson: canonicalJson(prepared.content), createdByUserId: input.actorUserId,
-        }).returning();
-        if (!saved) throw correctionError('JOBAID_CORRECTION_SAVE_READBACK_MISSING');
-        work = project(saved);
-        await this.searchProjection.enqueuePending({ tenantId: input.tenantId, ownerKind: 'USER', ownerId: input.actorUserId,
-          subjectId: input.workItemId, revisionRef: work.workRevisionRef, database });
-        await this.wikiChanges?.record({ tenantId: input.tenantId, actorUserId: input.actorUserId,
-          kind: 'WORK_ITEM', subjectId: input.workItemId, versionRef: work.workRevisionRef }, database);
-      }
-      await input.assertAuthorized(database, base, primary.revision);
-      const receipt: ManualCorrectionReceipt = { schemaVersion: JOBAID_WORK_CORRECTION_RECEIPT_SCHEMA,
-        requestId: request.requestId, executionKind: 'HOST_MANUAL_CORRECTION', modelRequests: 0,
-        semanticReanalysisPerformed: false, status: prepared.changedFields.length ? 'SAVED' : 'UNCHANGED',
-        executionAttemptId: attemptId, workItemId: input.workItemId, baseWorkRef: base.workRevisionRef,
-        baseWorkRevision: base.workRevision, workRevisionRef: work.workRevisionRef, workRevision: work.workRevision,
-        workItemRevision: primary.revision, changedFields: prepared.changedFields,
-        adopted: false, candidateCarrierAdvanced: false };
-      audit.receipt = receipt;
-      const updated = await database.update(actionAttempt).set({ status: 'SUCCEEDED', reviewActivityJson: canonicalJson(audit),
-        completedAt: new Date(), updatedAt: new Date() }).where(and(eq(actionAttempt.attemptId, attemptId),
-        eq(actionAttempt.status, 'COMMITTING'))).returning({ id: actionAttempt.attemptId });
-      if (updated.length !== 1) throw correctionError('JOBAID_CORRECTION_AUDIT_CONFLICT');
-      await input.assertAuthorized(database, base, primary.revision);
-      return { ...receipt, work, replayed: false };
-    });
-  }
-
-  async readManualCorrection(input: ManualCorrectionScope & { requestId: string }): Promise<JobAidWorkCorrectionReceipt> {
-    return this.withActorTransaction(input.actorUserId, async (database) => {
-      const audit = await this.manualCorrectionExecution(input, input.requestId, database);
-      if (!audit) throw correctionError('JOBAID_CORRECTION_REQUEST_NOT_FOUND', 404);
-      const { primary } = await this.lockManualCorrectionSources(input, audit.request, database);
-      return this.readManualCorrectionReceipt(input, audit, primary.revision, database);
-    });
-  }
-
-  private async lockManualCorrectionSources(input: ManualCorrectionScope, request: JobAidWorkCorrectionRequest,
-    database: PostgresJsDatabase) {
-    const base = await this.readByRef({ ...input, workRevisionRef: request.baseWorkRef }, database);
-    if (!base || base.workRevision !== request.baseWorkRevision || base.workItemId !== input.workItemId)
-      throw correctionError('JOBAID_CORRECTION_BASE_CONFLICT');
-    const ids = new Set<string>([input.workItemId]);
-    for (const evidence of base.content.evidence) {
-      if ((evidence.kind === 'DOCUMENT_PASSAGE' || evidence.kind === 'ENGINEER_ATTACHMENT') && evidence.workItemId)
-        ids.add(evidence.workItemId);
-      for (const id of evidence.dialogueSource?.contextWorkItemIds ?? []) ids.add(id);
-    }
-    const bindings: JobAidSourceBinding[] = [];
-    for (const workItemId of ids) {
-      const binding = await this.loadOwnedSourceBinding({ ...input, workItemId, kind: 'SOURCE_FILE' }, database);
-      if (!binding) throw correctionError('JOBAID_SOURCE_AUTHORIZATION_CHANGED', 403);
-      bindings.push(binding);
-    }
-    const primary = await this.lockSources(database, input, input.actorUserId, bindings);
-    if (primary.documentVersionId !== base.documentVersionId)
-      throw correctionError('JOBAID_CORRECTION_SOURCE_CONFLICT');
-    return { base, primary };
-  }
-
-  private async manualCorrectionExecution(input: Pick<ManualCorrectionScope, 'tenantId' | 'actorUserId' | 'workItemId'>,
-    requestId: string, database: PostgresJsDatabase): Promise<ManualCorrectionAudit | null> {
-    const rows = await database.select().from(actionAttempt).where(and(
-      eq(actionAttempt.tenantId, input.tenantId), eq(actionAttempt.workItemId, input.workItemId),
-      eq(actionAttempt.actorUserId, input.actorUserId), eq(actionAttempt.actionType, JOBAID_MANUAL_CORRECTION_ACTION),
-      eq(actionAttempt.triggerRequestId, requestId),
-    )).limit(2);
-    if (!rows.length) return null;
-    const row = rows[0]!;
-    let audit: ManualCorrectionAudit | null;
-    try { audit = JSON.parse(row.reviewActivityJson ?? 'null') as ManualCorrectionAudit | null; }
-    catch { throw correctionError('JOBAID_CORRECTION_AUDIT_INVALID'); }
-    if (rows.length !== 1 || row.status !== 'SUCCEEDED' || row.requestOrigin !== JOBAID_MANUAL_CORRECTION_ORIGIN ||
-      row.subjectKind !== 'WORK_ITEM' || row.leaseToken || row.leaseOwner || row.leaseExpiresAt ||
-      row.leaseGeneration !== 0 || row.leaseSlot !== null || row.matterId !== null || row.matterRevisionId !== null ||
-      row.cancelRequestedAt || !row.completedAt || row.resultEnvelopeJson ||
-      row.executionModelJson || row.taskEnvelopeJson || !audit || audit.schemaVersion !== JOBAID_MANUAL_CORRECTION_AUDIT ||
-      audit.executionKind !== 'HOST_MANUAL_CORRECTION' || audit.modelRequests !== 0 || audit.semanticReanalysisPerformed !== false ||
-      !audit.receipt || audit.receipt.executionAttemptId !== row.attemptId || audit.receipt.requestId !== requestId ||
-      audit.receipt.schemaVersion !== JOBAID_WORK_CORRECTION_RECEIPT_SCHEMA ||
-      audit.receipt.executionKind !== 'HOST_MANUAL_CORRECTION' || audit.receipt.modelRequests !== 0 ||
-      audit.receipt.semanticReanalysisPerformed !== false || audit.receipt.workItemId !== input.workItemId ||
-      audit.receipt.adopted !== false || audit.receipt.candidateCarrierAdvanced !== false)
-      throw correctionError('JOBAID_CORRECTION_AUDIT_INVALID');
-    audit.request = parseJobAidWorkCorrectionRequest(audit.request);
-    const base = await this.readByRef({ ...input, workRevisionRef: audit.request.baseWorkRef }, database);
-    if (!base) throw correctionError('JOBAID_CORRECTION_BASE_CONFLICT');
-    if (audit.request.requestId !== requestId || audit.request.expectedWorkItemRevision !== row.baseRevision ||
-      row.inputRevision !== row.baseRevision || audit.receipt.workItemRevision !== row.baseRevision ||
-      audit.receipt.baseWorkRef !== audit.request.baseWorkRef || audit.receipt.baseWorkRevision !== audit.request.baseWorkRevision ||
-      row.documentVersionId !== base.documentVersionId)
-      throw correctionError('JOBAID_CORRECTION_AUDIT_INVALID');
-    return audit;
-  }
-
-  private async readManualCorrectionReceipt(input: ManualCorrectionScope, audit: ManualCorrectionAudit,
-    workItemRevision: number, database: PostgresJsDatabase): Promise<JobAidWorkCorrectionReceipt> {
-    const receipt = audit.receipt!;
-    const base = await this.readByRef({ ...input, workRevisionRef: audit.request.baseWorkRef }, database);
-    if (!base) throw correctionError('JOBAID_CORRECTION_AUDIT_INVALID');
-    await input.assertAuthorized(database, base, workItemRevision);
-    const work = await this.readByRef({ ...input, workRevisionRef: receipt.workRevisionRef }, database);
-    const expected = materializeManualJobAidCorrection(base, audit.request);
-    if (!work || receipt.baseWorkRef !== base.workRevisionRef || receipt.baseWorkRevision !== base.workRevision ||
-      receipt.workRevision !== work.workRevision || canonicalJson(receipt.changedFields) !== canonicalJson(expected.changedFields) ||
-      (receipt.status === 'SAVED' ? work.requestId !== audit.request.requestId ||
-        work.actionAttemptId !== receipt.executionAttemptId || work.previousWorkRevisionRef !== base.workRevisionRef ||
-        work.basedOnWorkItemRevision !== receipt.workItemRevision || work.documentVersionId !== base.documentVersionId ||
-        work.workRevision !== base.workRevision + 1 || !expected.changedFields.length ||
-        canonicalJson(work.content) !== canonicalJson(expected.content)
-        : receipt.status !== 'UNCHANGED' || expected.changedFields.length !== 0 || work.workRevisionRef !== base.workRevisionRef))
-      throw correctionError('JOBAID_CORRECTION_AUDIT_INVALID');
-    await input.assertAuthorized(database, work, workItemRevision);
-    return { ...receipt, work, replayed: true };
-  }
-
   /** Check an unchanged Review under its caller's already-held actor
    * transaction. All work writers lock these sources before comparing latest. */
   async assertReviewUnchanged(
@@ -887,7 +714,7 @@ export class JobAidWorkRepository {
 
   private async lockSources(
     db: PostgresJsDatabase,
-    attempt: Pick<ActionAttemptRow, 'tenantId' | 'workItemId'>,
+    attempt: ActionAttemptRow,
     actorUserId: string,
     bindings: JobAidSourceBinding[],
   ) {

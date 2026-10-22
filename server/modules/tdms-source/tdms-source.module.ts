@@ -10,7 +10,6 @@ import {
 import {
   TDMS_ARTIFACT_STORE,
   TDMS_DOCUMENT_ACCESS,
-  TDMS_FORMAL_REGISTRATION,
   TDMS_REPOSITORY,
   TDMS_SOURCE_AUTHORIZATION,
   tdmsError,
@@ -47,13 +46,11 @@ export class TdmsSourceModule {
     authorizationProvider: Provider;
     documentAccessProvider?: Provider;
     artifactStoreProvider?: Provider;
-    formalRegistrationProvider?: Provider;
   }): DynamicModule {
     const bindings: Array<[Provider | undefined, symbol]> = [
       [options?.authorizationProvider, TDMS_SOURCE_AUTHORIZATION],
       [options?.documentAccessProvider, TDMS_DOCUMENT_ACCESS],
       [options?.artifactStoreProvider, TDMS_ARTIFACT_STORE],
-      [options?.formalRegistrationProvider, TDMS_FORMAL_REGISTRATION],
     ];
     for (const [provider, token] of bindings) {
       if (provider === undefined && token !== TDMS_SOURCE_AUTHORIZATION)
@@ -71,7 +68,6 @@ export class TdmsSourceModule {
       imports: options.imports ?? [],
       providers: [
         options.authorizationProvider,
-        ...(options.formalRegistrationProvider ? [options.formalRegistrationProvider] : []),
         ...(options.documentAccessProvider
           ? [options.documentAccessProvider]
           : []),

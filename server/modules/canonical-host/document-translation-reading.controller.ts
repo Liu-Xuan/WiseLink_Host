@@ -67,7 +67,9 @@ export class DocumentTranslationReadingController {
       result.translation = { status: 'SEMANTIC_READING_AID_AVAILABLE', reading: buildTranslationWorkspaceReadingV2(snapshot.workspace, snapshot.revisions) };
     }
     const attempt = await this.attempts.latest({ ...context, documentVersionId });
-    if (attempt?.producerRunId === parseRunId) result.execution = { status: attempt.status, errorCode: attempt.errorCode };
+    if (attempt?.producerRunId === parseRunId) result.execution = { status: attempt.status, errorCode: attempt.errorCode,
+      attemptId: attempt.attemptId, createdAt: attempt.createdAt.toISOString(),
+      startedAt: attempt.startedAt?.toISOString() ?? null, completedAt: attempt.completedAt?.toISOString() ?? null };
     // Recheck source access after storage reads; prior output never grants access.
     await this.parsing.status(documentVersionId, context);
     return result;

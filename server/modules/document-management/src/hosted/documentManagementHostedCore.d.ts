@@ -31,19 +31,8 @@ export interface HostedCorePorts {
 
 export class DocumentManagementHostedCore {
   constructor(ports: HostedCorePorts);
-  refreshHistoricalImport(
-    preflightId: string,
-    serverContext: unknown,
-  ): Promise<Record<string, unknown>>;
-  confirmHistoricalImport(
-    preflightId: string,
-    request: unknown,
-    serverContext: unknown,
-  ): Promise<Record<string, unknown>>;
-  readFileServiceIngestion(
-    request: unknown,
-    serverContext: unknown,
-  ): Promise<Record<string, unknown> | null>;
+  refreshHistoricalImport(preflightId: string, serverContext: unknown): Promise<Record<string, unknown>>;
+  confirmHistoricalImport(preflightId: string, request: unknown, serverContext: unknown): Promise<Record<string, unknown>>;
   ingestFileServiceSelection(
     request: unknown,
     serverContext: unknown,

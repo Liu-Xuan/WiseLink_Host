@@ -7,6 +7,7 @@ import { originalFixture } from './document-parsing/fixtures/document-original.f
 import { libraryDocuments, libraryQuicklook } from './fixtures/canonical-library';
 import { summaryKnowledge } from './fixtures/derived-summary';
 import { jobAidReadingFixture } from './semantic-reading-ui.fixtures';
+import { savedDocumentReadingFixture } from './fixtures/saved-document-reading';
 import { buildJobAidOverallProjection } from '../../server/modules/canonical-host/jobaid-overall-projection';
 import { documentWorkbenchPanelRoute, readDocumentWorkbenchPanel } from '../../client/src/pages/DocumentParsingPage/document-workbench-panel';
 
@@ -14,6 +15,14 @@ const mockStatus = jest.fn(), mockReading = jest.fn(), mockCatalogue = jest.fn()
 const mockQuicklook = jest.fn(), mockKnowledge = jest.fn(), mockLegacy = jest.fn();
 const mockStart = jest.fn(), mockTranslation = jest.fn();
 const mockPdfMount = jest.fn(), mockPdfUnmount = jest.fn();
+const mockWiki = jest.fn();
+const mockReadIdentityRefetch = jest.fn(async () => ({ error: null }));
+jest.mock('@client/src/features/matter/useEngineeringMatter', () => ({
+  useEngineeringMatterQueryIdentity: () => ({
+    identity: { appId: 'test-app', tenantId: 'tenant-1', actorId: 'actor-1', sessionGeneration: 1 },
+    identityQuery: { isFetching: false, error: null, refetch: mockReadIdentityRefetch },
+  }),
+}));
 jest.mock('@client/src/api/canonical-host', () => {
   let generation = 1;
   const sessions = new Set<() => void>();
@@ -41,7 +50,7 @@ jest.mock('@client/src/features/matter/ClaimEvidenceDialog', () => ({ __esModule
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({
   useCurrentUserSession: () => ({ sessionGeneration: 1, authenticationRequired: false }),
 }));
-jest.mock('@client/src/api/document-wiki', () => ({ readDocumentWiki: jest.fn() }));
+jest.mock('@client/src/api/document-wiki', () => ({ readDocumentWiki: (...args: unknown[]) => mockWiki(...args) }));
 jest.mock('@client/src/components/business-ui/api/files/service', () => ({ uploadFile: jest.fn() }));
 jest.mock('@client/src/components/ui/button', () => ({
   Button: ({ children, asChild, ...props }: { children: ReactNode; asChild?: boolean }) =>
@@ -122,7 +131,7 @@ async function mount(query = baseQuery): Promise<void> {
   await act(async () => root.render(createElement(RouterProvider, { router, future: { v7_startTransition: true } })));
 }
 beforeEach(() => {
-  jest.clearAllMocks(); host.__resetSession(); fullscreen = null;
+  jest.clearAllMocks(); mockWiki.mockReset(); host.__resetSession(); fullscreen = null;
   dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://example.test/' });
   for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document,
     navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })) {
@@ -149,6 +158,71 @@ beforeEach(() => {
   mockQuicklook.mockImplementation(async (id: string) => id === 'WI-OLD' ? saved() : saved('DV-FAM-2', 'WI-NEW', 'JAWR-NEW'));
   mockKnowledge.mockImplementation(async (identity: { subjectId: string }) => identity.subjectId === 'WI-OLD'
     ? knowledge() : knowledge('DV-FAM-2', 'WI-NEW', 'JAWR-NEW'));
+});
+
+it.each(['', '&panel=reader'])('separates the exact DRR interpretation from source/PDF modes on entry %s', async panel => {
+  const sourceBinding = { original: reading().original.binding, semanticRevision: 4 };
+  const exact = savedDocumentReadingFixture('DV-FAM-1');
+  exact.sourceBinding = sourceBinding; exact.readingRevision = 2; exact.readingRunRef = 'DRR-EXACT-1';
+  exact.sourceAnchors[0].sourceUnitId = 'u2'; exact.sourceAnchors[0].sourceRefIds = ['SR-TEST-P2'];
+  mockWiki.mockResolvedValue({ status: 'AVAILABLE', sourceBinding, reading: exact });
+  const pins = `${baseQuery}&semanticRevision=4&readingRevision=2&readingRunRef=DRR-EXACT-1`;
+  await mount(`${pins}${panel}`);
+  const layout = container.querySelector<HTMLElement>('.source-reader-layout')!;
+  if (!panel) {
+    expect(container.querySelector('.document-reading-saved-links a[aria-current="page"]')?.textContent).toBe('解读');
+    expect(layout.hidden).toBe(true);
+    expect(container.querySelector('[aria-label="文档解读"]')?.closest('[hidden]')).toBeNull();
+    expect(container.querySelector('[aria-label="文档解读"]')?.closest('.document-saved-work-scroll')).not.toBeNull();
+    await click('原文');
+  } else expect(mockWiki).not.toHaveBeenCalled();
+  expect(layout.hidden).toBe(false);
+  expect(container.querySelector('.source-reader-stage')?.className).toContain('mode-dual');
+  expect(container.querySelector('.source-reader-primary')?.closest('[hidden]')).toBeNull();
+  expect(container.querySelector('[data-pdf-instance]')?.closest('[hidden]')).toBeNull();
+  expect(container.querySelector('.source-reader-toolbar [aria-label="文档解读"]')).toBeNull();
+  for (const label of ['仅原文', '仅原件', '原文＋原件']) {
+    await button(label);
+    const article = container.querySelector('[aria-label="文档解读"]');
+    if (article) expect(article.closest('[hidden]')).not.toBeNull();
+    const params = new URLSearchParams(router.state.location.search);
+    expect(params.get('parseRunId')).toBe('PR1');
+    expect(params.get('semanticRevision')).toBe('4');
+    expect(params.get('readingRevision')).toBe('2');
+    expect(params.get('readingRunRef')).toBe('DRR-EXACT-1');
+    expect(params.get('returnLibraryQuery')).toBe(libraryQuery);
+  }
+  await click('解读');
+  expect(mockWiki).toHaveBeenCalledTimes(1);
+  expect(mockWiki.mock.calls[0][0]).toEqual({ documentVersionId: 'DV-FAM-1', parseRunId: 'PR1', semanticRevision: 4, readingRevision: 2 });
+  expect(container.querySelector('[aria-label="文档解读"]')?.textContent).toContain(exact.explanation[0].text);
+  expect(layout.hidden).toBe(true);
+  const sourceButton = container.querySelector<HTMLButtonElement>('[aria-label="文档解读"] details button')!;
+  await act(async () => sourceButton.click());
+  expect(new URLSearchParams(router.state.location.search).get('panel')).toBe('reader');
+  expect(new URLSearchParams(router.state.location.search).get('sourceRef')).toBe('SR-TEST-P2');
+  expect(layout.hidden).toBe(false);
+  expect(container.querySelector('.source-reader-stage')?.className).toContain('mode-dual');
+  await click('评估'); await click('Wiki');
+  expect(container.querySelector('[aria-label="同版本已保存Wiki"]')?.textContent).toContain('Complete saved understanding');
+  expect(container.querySelector('[aria-label="文档解读"]')?.closest('[hidden]')).not.toBeNull();
+  expect(mockStart).not.toHaveBeenCalled(); expect(mockTranslation).not.toHaveBeenCalled();
+  expect(mockReading).toHaveBeenCalledTimes(1);
+});
+
+it('a hidden old DRR cannot reject the next document after its exact source binding changes', async () => {
+  let rejectOld!: (reason: Error) => void;
+  mockWiki.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject; }));
+  await mount(`${baseQuery}&semanticRevision=4&readingRevision=2&readingRunRef=DRR-OLD`);
+  const oldSignal = mockWiki.mock.calls[0][1] as AbortSignal;
+  await click('原文');
+  await act(async () => { await router.navigate('/document-versions/DV-FAM-2?parseRunId=PR2&panel=reader'); });
+  expect(oldSignal.aborted).toBe(true);
+  await act(async () => rejectOld(Object.assign(new Error('Old source denied'), { statusCode: 403 })));
+  expect(container.querySelector('.source-reader-layout')).not.toBeNull();
+  expect(mockReading).toHaveBeenLastCalledWith('DV-FAM-2', 'PR2', expect.anything());
+  expect(container.textContent).not.toContain('Old source denied');
+  expect(mockStart).not.toHaveBeenCalled();
 });
 afterEach(async () => {
   if (root) await act(async () => root.unmount());

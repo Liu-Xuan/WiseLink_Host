@@ -35,31 +35,50 @@ function internalSummaryClause(value: string): boolean {
 
 /** Only the known layer introduction grammar. A qualifier inside either scope
  * makes the match fail, so an engineering condition can never be swallowed. */
-function withoutLayerIntroduction(value: string): string {
+function withoutLayerIntroduction(value: string, processingRecords?: string[]): string {
+  const recordIntroduction = (text: string): string => { processingRecords?.push(text.trim()); return ''; };
   return value
-    .replace(/^本层为\s*[A-Za-z0-9_-]+\s*(?:[·•/]\s*)?ATA\s*\d{2}(?:-\d{2})?\s*(?:[（(](?:ATA2|ATA4)[）)])?\s*候选综合，由其唯一已保存的\s*ATA\s*\d{2}(?:-\d{2})?\s*子层候选正文\s*(?:\[\[[^\[\]\r\n]+\]\]\s*)?形成，保留该子层身份及其全部继承限制[；;]\s*本层为派生候选，非新增独立证据[。.]\s*/u, '')
-    .replace(/^以\s*ATA\s*\d{2}(?:-\d{2})?\s*子层候选为唯一来源综合[：:]\s*/u, '')
-    .replace(/^保留该子层身份及其全部继承限制[；;]\s*本层为派生候选，非新增独立证据[。.]\s*/u, '')
-    .replace(/^本层为派生候选，非新增独立证据[。.]\s*/u, '')
-    .replace(/(^|[。；;]\s*)单一根来源派生，机队数据未接入，不构成机队层面结论(?=[。；;]|\s*\[\[|$)/gu, '$1机队数据未接入');
+    .replace(/^本层为\s*[A-Za-z0-9_-]+\s*(?:[·•/]\s*)?ATA\s*\d{2}(?:-\d{2})?\s*(?:[（(](?:ATA2|ATA4)[）)])?\s*候选综合，由其唯一已保存的\s*ATA\s*\d{2}(?:-\d{2})?\s*子层候选正文\s*(?:\[\[[^\[\]\r\n]+\]\]\s*)?形成，保留该子层身份及其全部继承限制(?:[；;]\s*本层为派生候选，非新增独立证据)?(?:[。.]|$)\s*/u, recordIntroduction)
+    .replace(/^以\s*ATA\s*\d{2}(?:-\d{2})?\s*子层候选为唯一来源综合[：:]\s*/u, recordIntroduction)
+    .replace(/^保留该子层身份及其全部继承限制[；;]\s*本层为派生候选，非新增独立证据[。.]\s*/u, recordIntroduction)
+    .replace(/^本层为派生候选，非新增独立证据[。.]\s*/u, recordIntroduction)
+    .replace(/(^|[。；;]\s*)单一根来源派生，机队数据未接入，不构成机队层面结论(?=[。；;]|\s*\[\[|$)/gu,
+      (text: string, prefix: string) => {
+        processingRecords?.push(text.slice(prefix.length)); return `${prefix}机队数据未接入`;
+      });
 }
 
-/** Engineer-facing projection only. Saved source text and Host control metadata are untouched. */
-export function summaryEngineeringText(value: string): string {
+function projectEngineeringText(value: string, processingRecords?: string[]): string {
   return value.split(/\n\s*\n/gu).flatMap((paragraph: string) => {
-    const text = withoutLayerIntroduction(paragraph.trim());
+    const text = withoutLayerIntroduction(paragraph.trim(), processingRecords);
     if (!text) return [];
     if (text === '成员已交付，但正文未直接引用；不能宣称已对该成员完成综合。')
       return ['正文未直接引用该成员工作。'];
-    if (internalSummaryNotice(text)) return [];
+    if (internalSummaryNotice(text)) { processingRecords?.push(text); return []; }
     // All other free-form layer/dependency text may carry engineering conditions.
     const clauses = text.match(/[^；;。]+[；;。]?/gu) ?? [];
-    const kept = clauses.filter((clause: string) => !internalSummaryClause(clause));
+    const kept = clauses.filter((clause: string) => {
+      if (!internalSummaryClause(clause)) return true;
+      processingRecords?.push(clause.trim()); return false;
+    });
     // Preserve the original paragraph byte-for-byte unless an explicit control clause was removed.
     const projected = kept.length === clauses.length
       ? text === paragraph.trim() ? paragraph : text : kept.join('').trim();
     return projected.trim() ? [projected] : [];
   }).join('\n\n');
+}
+
+/** Engineer-facing projection only. Saved source text and Host control metadata are untouched. */
+export function summaryEngineeringText(value: string): string {
+  return projectEngineeringText(value);
+}
+
+/** The same exact projection grammars expose their removed processing prose
+ * for optional reading, including any saved citations in those introductions. */
+export function summaryEngineeringProcessingRecords(value: string): string[] {
+  const records: string[] = [];
+  projectEngineeringText(value, records);
+  return deduplicateSummaryNotices(records);
 }
 
 export function summaryEngineeringLimitations(values: readonly string[]): string[] {

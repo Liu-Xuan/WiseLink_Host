@@ -13,6 +13,8 @@ import { JSDOM } from 'jsdom';
 let outputDirectory;
 let SummaryMarkdown;
 let SummaryEngineeringCatalog;
+let SummaryReadingConditions;
+let summaryWikiReadingConditions;
 let parseSummaryContent;
 let summaryCitations;
 before(async () => {
@@ -23,11 +25,14 @@ before(async () => {
   await build({ stdin: { contents: [
     "export { default as SummaryMarkdown } from './client/src/features/derived-summary/SummaryMarkdown.tsx';",
     "export { default as SummaryEngineeringCatalog } from './client/src/features/derived-summary/SummaryEngineeringCatalog.tsx';",
+    "export { SummaryReadingConditions } from './client/src/features/derived-summary/SummaryReadingPresentation.tsx';",
+    "export { summaryWikiReadingConditions } from './client/src/features/derived-summary/summary-reading-presentation.ts';",
     "export { parseSummaryContent, summaryCitations } from './server/modules/canonical-host/derived-summary.validation.ts';",
   ].join('\n'), resolveDir: root, sourcefile: 'wiki-reading-test.ts', loader: 'ts' },
     outfile: output, absWorkingDir: root, bundle: true, platform: 'node', format: 'esm',
     packages: 'external', loader: { '.css': 'empty' }, logLevel: 'silent' });
-  ({ SummaryMarkdown, SummaryEngineeringCatalog, parseSummaryContent, summaryCitations } = await import(pathToFileURL(output).href));
+  ({ SummaryMarkdown, SummaryEngineeringCatalog, SummaryReadingConditions, summaryWikiReadingConditions,
+    parseSummaryContent, summaryCitations } = await import(pathToFileURL(output).href));
 });
 after(async () => { if (outputDirectory) await rm(outputDirectory, { recursive: true, force: true }); });
 
@@ -37,32 +42,106 @@ function render(body, onCitation = () => {}) {
     onCitation });
 }
 
-function renderCatalog(body, onCitation = () => {}, headline = 'B787 ATA45-00 汇总：配置报告异常') {
+function renderCatalog(body, onCitation = () => {}, headline = 'B787 ATA45-00 汇总：配置报告异常', matterIds = ['MAT-1']) {
   const revision = { scope: { kind: 'ATA4', fleetFamilyId: 'B787', ata2: '45', ata4: '45-00' },
     content: { headline, listBrief: '软件 1.2，SB TBD。', body, limitations: [] }, members: [] };
   summaryCitations(parseSummaryContent(revision.content), new Set(['SOURCE-A']));
   return createElement(MemoryRouter, { future: { v7_startTransition: true, v7_relativeSplatPath: true } }, createElement(SummaryEngineeringCatalog, { revision,
     matterCatalog: { basis: body.includes('## 事项：') ? 'SAVED_INPUT' : 'CURRENT_RELATIONSHIPS',
-      catalog: { schemaVersion: 'wiselink.wiki-matter-catalog.v1', entries: [{ matterId: 'MAT-1',
-        matterRevisionId: 'MREV-1', title: '配置报告异常', bindings: [{ memberRef: 'SOURCE-A',
+      catalog: { schemaVersion: 'wiselink.wiki-matter-catalog.v1', entries: matterIds.map(matterId => ({ matterId,
+        matterRevisionId: `MREV-${matterId}`, title: '配置报告异常', bindings: [{ memberRef: 'SOURCE-A',
           leaf: { kind: 'DOCUMENT_READING', documentVersionId: 'DV-1', parseRunId: 'PARSE-1', semanticRevision: 2,
-            readingRunRef: 'DRR-1', readingRevision: 1 }, sourceRefs: ['SOURCE-A'], association: { kind: 'MATTER_WORK' } }] }], unbound: [] } },
+            readingRunRef: 'DRR-1', readingRevision: 1 }, sourceRefs: ['SOURCE-A'], association: { kind: 'MATTER_WORK' } }] })), unbound: [] } },
     readingRoute: route => route, renderMarkdown: fragment => createElement(SummaryMarkdown, { body: fragment,
       citationBody: body, citationLabel: reference => reference === 'SOURCE-A' ? 'Exact saved revision 1.2' : undefined,
       onCitation, foldSupportingSections: true }) }));
 }
 
-test('a legacy saved headline retains its unique engineering condition and exact citation inside formal Matter detail', () => {
+test('a legacy saved headline retains its condition and exact citation in separate default history reading', () => {
   const body = '**Status 与最终措施**：SB TBD，未关闭。 [[SOURCE-A]]\n\n'
     + '[doc]: https://synthetic.invalid/original?parseRunId=PARSE-r1&semanticRevision=2';
   const headline = '仅版本 1.2，构型 B 不适用，SB 尚未发布。 [[SOURCE-A]] [原件][doc]';
   const dom = new JSDOM(renderToStaticMarkup(renderCatalog(body, () => {}, headline)));
-  const originalTitle = dom.window.document.querySelector('.summary-entry-detail h4');
+  const originalTitle = dom.window.document.querySelector('.summary-saved-reading h3');
   assert.match(originalTitle?.textContent ?? '', /仅版本 1\.2，构型 B 不适用，SB 尚未发布/);
   assert.equal(originalTitle?.querySelector('button.summary-citation')?.textContent, '[1]');
   assert.equal(originalTitle?.querySelector('a')?.getAttribute('href'), 'https://synthetic.invalid/original?parseRunId=PARSE-r1&semanticRevision=2');
   assert.doesNotMatch(originalTitle?.textContent ?? '', /\[\[SOURCE-A\]\]/);
   assert.equal(dom.window.document.querySelectorAll('[data-matter-id]').length, 1);
+  dom.window.close();
+});
+
+function defaultReadingText(node) {
+  if (node.nodeType === 3) return node.textContent;
+  const children = node.tagName === 'DETAILS' && !node.open
+    ? [node.querySelector(':scope > summary')].filter(Boolean) : [...node.childNodes];
+  return children.map(defaultReadingText).join('');
+}
+
+test('legacy facts are visible before current navigation; the same DVI can still navigate two distinct Matters', () => {
+  const body = '**背景**：单系统配置上行影响 ACARS 与 BROADBAND；所有系统请求不受影响。 [[SOURCE-A]]'
+    + '\n\n**Status 与最终措施**：仅生产与实验室识别，未收到在役报告；SB TBD，OPS 无设定日期。 [[SOURCE-A]]'
+    + '\n\n**临时措施**：GPM 重启；副作用未核。 [[SOURCE-A]]';
+  const dom = new JSDOM(renderToStaticMarkup(renderCatalog(body, () => {}, '历史保存认识', ['MAT-A', 'MAT-B'])));
+  const document = dom.window.document;
+  const visible = defaultReadingText(document.body);
+  assert.match(visible, /SB TBD，OPS 无设定日期/);
+  assert.match(visible, /所有系统请求不受影响/);
+  assert.match(visible, /GPM 重启；副作用未核/);
+  assert.doesNotMatch(visible, /当前状态|配置报告异常/);
+  assert.equal(document.querySelector('.summary-saved-reading')?.closest('details'), null);
+  assert.equal(document.querySelectorAll('[data-matter-id]').length, 2);
+  assert.equal(document.querySelectorAll('a[href="/matters/MAT-A"]').length, 1);
+  assert.equal(document.querySelectorAll('a[href="/matters/MAT-B"]').length, 1);
+  const sources = [...document.querySelectorAll('a[href^="/document-versions/"]')];
+  assert.equal(sources.length, 2);
+  assert.equal(sources[0].getAttribute('href'), sources[1].getAttribute('href'));
+  assert.match(sources[0].getAttribute('href'), /readingRunRef=DRR-1/);
+  assert.equal(document.querySelector('[aria-label="事项导航"]')?.open, false);
+  assert.equal(document.querySelector('.summary-saved-reading [data-matter-id]'), null);
+  dom.window.close();
+});
+
+test('saved Matter background and measures are default reading while only its sources fold', () => {
+  const body = '## 事项：MAT-1 | 配置异常\n\n### 当前进展\n未关闭，SB TBD。 [[SOURCE-A]]'
+    + '\n\n### 背景\n仅版本 1.2；1.3 未核。 [[SOURCE-A]]\n\n### 分析\n12 项不等于 13 项。'
+    + '\n\n### 临时措施\n构型 B 不适用。\n\n### 最终措施\nOPS 更新无设定日期。'
+    + '\n\n### 依据与来源\n同一根原文。 [[SOURCE-A]]';
+  const dom = new JSDOM(renderToStaticMarkup(renderCatalog(body)));
+  const document = dom.window.document;
+  const visible = defaultReadingText(document.body);
+  for (const text of ['未关闭，SB TBD', '仅版本 1.2；1.3 未核', '12 项不等于 13 项', '构型 B 不适用', 'OPS 更新无设定日期'])
+    assert.ok(visible.includes(text), text);
+  assert.doesNotMatch(visible, /同一根原文/);
+  assert.equal(document.querySelector('.summary-entry-body')?.closest('details'), null);
+  assert.ok(document.querySelector('[data-matter-id="MAT-1"] .summary-entry-detail'));
+  assert.equal(document.querySelectorAll('.summary-citation').length, 3);
+  dom.window.close();
+});
+
+test('processing records retain their exact saved source pin while engineering conditions stay visible', () => {
+  const parser = '文档解析采用 PDFJS_TEXT_LAYER 提取；"Other Model(s)" 为空白，无法判定其他机型相关性；-8/-9/-10。';
+  const dependency = '本次尚未完成的下层依赖：三份 DOCUMENT 类保存评估仍为 SAVED_ASSESSMENT_NOT_READY'
+    + '（subjectId family_fixture，requestId 含 JA-save-first、JA-save-second 等），不得宣称已覆盖这些新工作。';
+  const revision = { content: { limitations: [parser, dependency, 'SB TBD，11/04/2027 不是实际完成日。'] },
+    members: [{ limitations: [parser, dependency], headline: '确切子层', member: {
+      kind: 'DERIVED_SUMMARY', summaryId: 'DS-child', summaryRef: 'DSR-r4', summaryRevision: 4,
+    } }] };
+  const before = JSON.stringify(revision);
+  const groups = summaryWikiReadingConditions(revision);
+  const dom = new JSDOM(renderToStaticMarkup(createElement(MemoryRouter, null,
+    createElement(SummaryReadingConditions, { conditions: groups.engineering, records: groups.records,
+      readingRoute: route => route + '&returnWikiGuideQuery=preserved' }))));
+  const document = dom.window.document;
+  const visible = defaultReadingText(document.body);
+  assert.match(visible, /无法判定其他机型相关性；-8\/-9\/-10/);
+  assert.match(visible, /SB TBD，11\/04\/2027 不是实际完成日/);
+  assert.doesNotMatch(visible, /PDFJS_TEXT_LAYER|SAVED_ASSESSMENT_NOT_READY|JA-save-first/);
+  const records = document.querySelector('[aria-label="处理与范围记录"]');
+  assert.equal(records.open, false);
+  assert.match(records.textContent, /JA-save-first、JA-save-second/);
+  assert.ok(records.querySelector('a')?.getAttribute('href')?.includes('summaryRef=DSR-r4&returnWikiGuideQuery=preserved'));
+  assert.equal(JSON.stringify(revision), before);
   dom.window.close();
 });
 
@@ -343,6 +422,19 @@ test('actual summary body opens the selected saved member and retains its exact 
       content: { ...revision.content, listBrief: revision.content.body } } }))));
     assert.equal(container.querySelector('.summary-reading-brief'), null);
     assert.equal(container.querySelectorAll('.summary-citation').length, 1);
+    await act(async () => root.render(createElement(MemoryRouter, {
+      future: { v7_startTransition: true, v7_relativeSplatPath: true },
+    }, createElement(Body, { key: 'wiki-processing-record', revision, wikiCatalog: true,
+      processingRecords: ['本层为派生候选，非新增独立证据。 [[MEMBER-A]]'] }))));
+    const processing = container.querySelector('[aria-label="正文处理记录"]');
+    assert.equal(processing?.open, false);
+    assert.doesNotMatch(defaultReadingText(container), /本层为派生候选/);
+    assert.equal(processing?.querySelector('.summary-citation')?.textContent, '[1]');
+    await act(async () => processing.querySelector('.summary-citation')
+      .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    assert.match(dom.window.document.querySelector('[role="dialog"]')?.textContent ?? '', /Exact child/);
+    assert.match(dom.window.document.querySelector('[role="dialog"] a')?.getAttribute('href') ?? '', /summaryRef=DSR-child-r4/);
+    assert.equal(JSON.stringify(revision), before);
     await act(async () => root.render(null));
     assert.equal(dom.window.document.querySelector('[role="dialog"]'), null);
     assert.doesNotMatch(dom.window.document.body.textContent, /Exact child/);

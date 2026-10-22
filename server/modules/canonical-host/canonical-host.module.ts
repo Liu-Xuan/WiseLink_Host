@@ -67,8 +67,7 @@ import { MiaodaApplicabilityControlledSelectionAdapter } from './miaoda-applicab
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
 import { CanonicalHostCommonContextService } from './canonical-host-common-context.service';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
-import { CanonicalJobAidWorkCorrectionService } from './canonical-jobaid-work-correction.service';
-import { CanonicalJobAidWorkCorrectionController } from './canonical-jobaid-work-correction.controller';
+import { CanonicalJobAidManualCorrectionUnavailableController } from './canonical-jobaid-manual-correction-unavailable.controller';
 import { JobAidWorkRepository } from './jobaid-work.repository';
 import { DerivedSummaryController } from './derived-summary.controller';
 import { DerivedSummaryService } from './derived-summary.service';
@@ -86,6 +85,8 @@ import { DocumentSourceSearchService } from './document-source-search.service';
 import { DocumentTranslationRuntimeService } from './document-translation-runtime.service';
 import { DocumentRevisionReadingService } from './document-revision-reading.service';
 import { DocumentTranslationReadingController } from './document-translation-reading.controller';
+import { DocumentTranslationBrowserController } from './document-translation-browser.controller';
+import { DocumentTranslationBrowserService } from './document-translation-browser.service';
 import { DocumentActivityReadingController } from './document-activity-reading.controller';
 import { DocumentActivityRunRepository } from './document-activity-run.repository';
 import { DocumentActivityRuntimeService } from './document-activity-runtime.service';
@@ -244,7 +245,7 @@ export interface CanonicalHostModuleOptions {
     LocalMineruWorkerOpenApiController,
     OauthSessionDevelopmentWorkItemController,
     CanonicalHostReviewActionController,
-    CanonicalJobAidWorkCorrectionController,
+    CanonicalJobAidManualCorrectionUnavailableController,
     CanonicalHostApplicabilitySelectionController,
     CanonicalHostOverallRegenerationController,
     CanonicalHostReviewOverallProjectionController,
@@ -302,7 +303,6 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostCommonContextService,
     EngineeringIssueSearchService,
     CanonicalJobAidProblemService,
-    CanonicalJobAidWorkCorrectionService,
     JobAidWorkRepository,
     DerivedSummaryService,
     DerivedSummaryRuntimeService,
@@ -505,6 +505,7 @@ export class CanonicalHostModule {
       ],
       controllers: [
         DocumentTranslationReadingController,
+        DocumentTranslationBrowserController,
         DocumentActivityReadingController,
         DocumentReadingController,
         DocumentReadingListController,
@@ -518,7 +519,7 @@ export class CanonicalHostModule {
     LocalMineruWorkerOpenApiController,
         OauthSessionDevelopmentWorkItemController,
         CanonicalHostReviewActionController,
-        CanonicalJobAidWorkCorrectionController,
+        CanonicalJobAidManualCorrectionUnavailableController,
         CanonicalHostApplicabilitySelectionController,
         CanonicalHostOverallRegenerationController,
         CanonicalHostReviewOverallProjectionController,
@@ -605,7 +606,6 @@ export class CanonicalHostModule {
         CanonicalHostCommonContextService,
         EngineeringIssueSearchService,
         CanonicalJobAidProblemService,
-        CanonicalJobAidWorkCorrectionService,
         JobAidWorkRepository,
         DerivedSummaryService,
         DerivedSummaryRuntimeService,
@@ -627,6 +627,7 @@ export class CanonicalHostModule {
         DocumentReadingListService,
         DocumentSourceSearchService,
         DocumentTranslationRuntimeService,
+        DocumentTranslationBrowserService,
         DocumentTranslationAttemptRepository,
         CanonicalHostReviewActionService,
         HostOwnedV1TranslationRuleSetPrivateProvider,

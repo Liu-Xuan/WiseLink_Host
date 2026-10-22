@@ -7,13 +7,13 @@ import { summaryError } from './derived-summary.validation';
 
 export type WikiLevel = DerivedSummaryScopeSelection['kind'];
 
-/** Coarse classifications stay in the original membership directory. Only the
- * ATA4 layer consumes saved leaf work directly; parents consume saved children. */
+/** The membership directory already fixes each leaf's confirmed ATA scope.
+ * ATA2 can consume its directly classified leaves alongside saved ATA4 children. */
 export function wikiDirectVersions(
   level: WikiLevel,
   memberships: Array<{ key: string; member: DerivedSummaryMember }>,
 ): WikiVersions {
-  return level === 'ATA4'
+  return level === 'ATA4' || level === 'ATA2'
     ? Object.fromEntries(memberships.map((item) => [item.key, item.member]))
     : {};
 }
@@ -27,7 +27,8 @@ export function assertWikiLayerMembers(
     level !== scope.kind ||
     !['ATA4', 'ATA2', 'FLEET'].includes(level) ||
     members.some(
-      (member) => (member.kind === 'DERIVED_SUMMARY') !== (level !== 'ATA4'),
+      (member) => (level === 'ATA4' && member.kind === 'DERIVED_SUMMARY') ||
+        (level === 'FLEET' && member.kind !== 'DERIVED_SUMMARY'),
     )
   )
     throw summaryError('WIKI_LAYER_MEMBERS_INVALID');
@@ -38,7 +39,7 @@ export function wikiLayerInstruction(level: WikiLevel): string {
     level === 'ATA4'
       ? '本层汇总对应工程文档解读和工程事项已保存的完整成果。'
       : level === 'ATA2'
-        ? '本层只以所属四位ATA Wiki的精确已保存正文形成综合。'
+        ? '本层汇总所属四位ATA Wiki的精确已保存正文，以及Host明确直接归入本两位ATA的文档解读和工作成果。直接成员保持两位ATA归属，不推造四位ATA；同一根来源在直接成员与子Wiki出现时不重复计为独立证据。'
         : '本层只以所属两位ATA Wiki的精确已保存正文形成机型综合。';
   // This instruction already travels in the sealed task; existing saved work is never rewritten for layout.
   const reading = [

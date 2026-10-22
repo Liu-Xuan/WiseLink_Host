@@ -21,6 +21,7 @@ jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/pages/WorkspaceHomePage/lcm-matrix.css', () => ({}));
 jest.mock('@client/src/pages/WorkspaceHomePage/LcmExcelImport', () => ({ LcmExcelImport: () => null }));
+jest.mock('@client/src/pages/WorkspaceHomePage/LcmRuntimeDiagnostic', () => ({ LcmRuntimeDiagnostic: () => null }));
 jest.mock('@client/src/pages/WorkspaceHomePage/LcmEvidenceDrawer', () => ({ LcmEvidenceDrawer: () => {
   const react = jest.requireActual<typeof import('react')>('react');
   return react.createElement('div', { 'data-testid': 'evidence' }, '当前证据');

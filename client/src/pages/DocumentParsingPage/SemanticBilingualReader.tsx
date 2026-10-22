@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Download } from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
 import InitialAnalysisContinueButton from '@client/src/features/review/InitialAnalysisContinueButton';
@@ -33,6 +33,7 @@ interface Props {
   initialAnalysis?: CanonicalInitialAnalysisReadModel | null;
   onContinuationRequested?: () => void;
   mode?: SemanticReadingMode;
+  locateRevision?: { revisionId: string; request: number } | null;
 }
 
 const NO_ANCHORS: TranslationSourceAnchorV2[] = [];
@@ -131,6 +132,14 @@ function SemanticWorkspaceReader({
       blockNodes.current.get(blockId)?.focus({ preventScroll: true });
     }
   }, []);
+  const lastLocated = useRef<Props['locateRevision']>(null);
+  useEffect(() => {
+    if (!props.locateRevision || lastLocated.current === props.locateRevision) return;
+    const block = reading.blocks.find(item => item.readingStatus === 'READABLE' &&
+      item.selected?.selectedForReading && item.selected.blockRevisionId === props.locateRevision!.revisionId);
+    lastLocated.current = props.locateRevision;
+    if (block) focusBlock(block.source.blockId, block.source.anchorIds, true);
+  }, [props.locateRevision, reading, focusBlock]);
   async function copyReading(): Promise<void> {
     try {
       await navigator.clipboard.writeText(semanticReadingText(reading));

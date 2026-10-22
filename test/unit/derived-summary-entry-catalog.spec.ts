@@ -69,9 +69,9 @@ test('an old combined status paragraph is shown verbatim once without guessing r
   expect(entry.previews[0].body).not.toContain('SB 已发布');
 });
 
-test('the real catalog component exposes entry status and folds each full detail independently', () => {
+test('saved Matter prose follows its progress directly while its source records fold independently', () => {
   const revision = summaryRevision();
-  revision.content.body = '## 事项：MAT-1 | 软件配置异常\n\n### 当前状态\n未关闭。 [[child-r4]]'
+  revision.content.body = '仅构型 A；构型 B 不适用，12 项尚未核。\n\n## 事项：MAT-1 | 软件配置异常\n\n### 当前状态\n未关闭。 [[child-r4]]'
     + '\n\n### FTD / SL / SB\nFTD 已发布，SB TBD。 [[child-r4]]'
     + '\n\n### 背景\n仅版本 1.2。 [[child-r4]]\n\n## 事项：MAT-2 | 电源异常\n\n### 分析\n尚未核对。';
   const html: string = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(SummaryEngineeringCatalog, {
@@ -81,14 +81,17 @@ test('the real catalog component exposes entry status and folds each full detail
     conditions: createElement('section', { 'data-engineering-conditions': true }, '构型差异未核，不能保证适用。'),
   })));
   expect(html).toContain('aria-label="工程事项目录"');
+  expect(html.indexOf('仅构型 A；构型 B 不适用，12 项尚未核。')).toBeLessThan(html.indexOf('### 正式事项 1'));
   expect(html).toContain('### 正式事项 1');
   expect(html).toContain('aria-label="保存正文标题"');
   expect(html).toContain('#### 软件配置异常');
   expect(html).toContain('FTD 已发布，SB TBD。 [[child-r4]]');
-  expect(html).toContain('<dt>当前状态</dt><dd>—</dd>');
+  expect(html).not.toContain('<dt>当前状态</dt><dd>—</dd>');
   expect(html.match(/<details /gu)).toHaveLength(2);
   expect(html).not.toContain(' open');
   expect(html).toContain('仅版本 1.2。 [[child-r4]]');
+  expect(html.indexOf('仅版本 1.2。')).toBeLessThan(html.indexOf('<details '));
+  expect(html).toContain('事项资料与关联');
   expect(html).toContain('构型差异未核，不能保证适用。');
   expect(html).toContain('summary-entry-progress-content line-clamp-3');
   expect(html).toContain('aria-expanded="false"');
@@ -128,7 +131,7 @@ test('a legacy parent report cannot collapse several child topics into its headl
   expect(html).not.toContain('data-matter-id=');
 });
 
-test('one formally bound legacy Matter keeps its exact status, conditions and sources without a title-based decision', () => {
+test('even one current Matter cannot retrospectively own a legacy report or its status', () => {
   const revision = summaryRevision();
   revision.content.headline = '仅版本 1.2，构型 B 不适用，SB 尚未发布。 [[MEMBER-1]]';
   revision.content.body = '**Status 与最终措施**：未关闭，SB TBD；12 项未核，OPS 无设定日期。 [[MEMBER-1]]'
@@ -140,12 +143,13 @@ test('one formally bound legacy Matter keeps its exact status, conditions and so
     renderMarkdown: (body: string): ReactNode => createElement('div', null, body),
   })));
   expect(html.match(/data-matter-id=/gu)).toHaveLength(1);
-  expect(html).toContain('### 正式事项 1');
-  expect(html).toContain('#### 仅版本 1.2，构型 B 不适用，SB 尚未发布。 [[MEMBER-1]]');
+  expect(html).toContain('正式事项 1');
+  expect(html).toContain('### 仅版本 1.2，构型 B 不适用，SB 尚未发布。 [[MEMBER-1]]');
   expect(html).toContain('未关闭，SB TBD；12 项未核，OPS 无设定日期。 [[MEMBER-1]]');
   expect(html).toContain('仅构型 A，构型 B 不适用。 [[MEMBER-1]]');
   expect(html).toContain('subjectId=WI-1&amp;workRef=JAWR-1');
-  expect(html).toContain('按当前登记事项导航；正文保留原保存版本。');
+  expect(html.indexOf('仅构型 A，构型 B 不适用。')).toBeLessThan(html.indexOf('aria-label="事项导航"'));
+  expect(html).toContain('当前登记关系；此保存正文未封存事项归属。');
   expect(JSON.stringify(revision)).toBe(before);
 });
 
@@ -158,10 +162,27 @@ test('current relations cannot retrospectively split an old mixed report or turn
     renderMarkdown: (body: string): ReactNode => createElement('div', null, body),
   })));
   expect(html.match(/data-matter-id=/gu)).toHaveLength(2);
-  expect(html.match(/<dt>当前状态<\/dt><dd>—<\/dd>/gu)).toHaveLength(2);
+  expect(html).not.toContain('<dt>当前状态</dt><dd>—</dd>');
   expect(html).toContain('本层已保存正文');
   expect(html.match(/另一问题未关闭，SB TBD/gu)).toHaveLength(1);
   expect(html).not.toContain('已关闭');
+});
+
+test('explicit progress precedes publication details without inventing a state for an unmentioned Matter', () => {
+  const revision = summaryRevision();
+  revision.content.body = '## 事项：MAT-A | 配置报告异常\n\n### FTD / SL / SB\nSB TBD。'
+    + '\n\n### 当前进展\n未记载关闭。\n\n### 背景\n构型 B 不适用。';
+  const before = JSON.stringify(revision);
+  const entry = summaryEntryCatalog(revision.content).entries[0];
+  expect(entry.previews.map(preview => preview.label)).toEqual(['当前进展', 'FTD / SL / SB']);
+  const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(SummaryEngineeringCatalog, {
+    revision, matterCatalog: matterProjection(['MAT-A', 'MAT-B']), readingRoute: (route: string) => route,
+    renderMarkdown: (body: string): ReactNode => createElement('div', null, body),
+  })));
+  expect(html).toContain('此保存版本未记录该事项正文。');
+  expect(html).not.toContain('<dd>—</dd>');
+  expect(html.indexOf('未记载关闭。')).toBeLessThan(html.indexOf('SB TBD。'));
+  expect(JSON.stringify(revision)).toBe(before);
 });
 
 test.each(['ATA4', 'ATA2', 'FLEET'] as const)('the admitted %s task instruction feeds the existing body SAVE contract', level => {

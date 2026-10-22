@@ -52,6 +52,8 @@ function engineeringEntry(title: string, body: string, legacy: boolean): Summary
       ranges.push({ start, end: match.index + match[0].length });
     }
   }
+  previews.sort((left: SummaryEntryPreview, right: SummaryEntryPreview) =>
+    Number(progressTitles.has(right.label)) - Number(progressTitles.has(left.label)));
   return { title, body: withoutRanges(body, ranges), previews };
 }
 

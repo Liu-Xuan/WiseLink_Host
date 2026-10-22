@@ -13,6 +13,8 @@ interface Props {
   identityKey: string;
   session: number;
   preserveWhileLoading?: boolean;
+  preserveAfterTemporaryError?: boolean;
+  visible?: boolean;
 }
 
 interface PendingRead {
@@ -32,12 +34,14 @@ const oldGlobals = new Map<string, PropertyDescriptor | undefined>();
 function Reading(props: Props) {
   const value = useSummaryResource(props.identityKey, props.session, load, {
     preserveWhileLoading: props.preserveWhileLoading,
+    preserveAfterTemporaryError: props.preserveAfterTemporaryError, visible: props.visible,
   });
   useLayoutEffect(() => {
     commits.push({ data: value.data, loading: value.loading });
   });
   return createElement('section', null,
-    createElement('p', { 'data-reading': true }, value.data ?? ''),
+    createElement('p', { 'data-reading': true, 'data-retained': value.retainedAfterError,
+      'data-withheld': value.withheld }, value.data ?? ''),
     value.loading ? createElement('p', { role: 'status' }, 'Reading current data') : null,
     value.error ? createElement('p', { role: 'alert' }, value.error) : null,
   );
@@ -156,4 +160,59 @@ it('removes retained content when the refreshed read rejects access', async () =
   expect(body()).toBe('');
   expect(container.querySelector('[role="alert"]')?.textContent).toBe('Access rejected');
   expect(container.querySelector('[role="status"]')).toBeNull();
+});
+
+it.each([
+  { statusCode: 500 }, { statusCode: 503 },
+  { code: 'ERR_NETWORK' }, { code: 'ECONNABORTED' }, { code: 'ETIMEDOUT' }, { code: 'ECONNRESET' },
+])('retains the exact displayed read after a temporary failure %j', async failure => {
+  await render({ identityKey: 'DVI:parse-1:semantic-2:DRR-1:r1', session: 1, preserveAfterTemporaryError: true });
+  await resolveRead(0, 'Saved revision 1; version B is not applicable.');
+  await focusWindow();
+  await act(async () => pending[1].reject(Object.assign(new Error('temporary read failed'), failure)));
+  expect(body()).toBe('Saved revision 1; version B is not applicable.');
+  expect(container.querySelector('[data-reading]')?.getAttribute('data-retained')).toBe('true');
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('temporary read failed');
+  await focusWindow();
+  await resolveRead(2, 'Newly authorized revision 2');
+  expect(body()).toBe('Newly authorized revision 2');
+});
+
+it.each([
+  { statusCode: 401 }, { statusCode: 403, code: 'ERR_NETWORK' }, { statusCode: 404 },
+  { statusCode: 409 }, { code: 'DOCUMENT_READING_BINDING_MISMATCH' }, {},
+])('clears text on a non-temporary failure and cannot revive it after another network error %j', async failure => {
+  await render({ identityKey: 'exact-reading', session: 1, preserveAfterTemporaryError: true });
+  await resolveRead(0, 'Previously authorized prose');
+  await focusWindow();
+  await act(async () => pending[1].reject(Object.assign(new Error('read rejected'), failure)));
+  expect(body()).toBe('');
+  expect(container.querySelector('[data-reading]')?.getAttribute('data-withheld')).toBe('true');
+  await focusWindow();
+  await act(async () => pending[2].reject(Object.assign(new Error('network later failed'), { code: 'ERR_NETWORK' })));
+  expect(body()).toBe('');
+  expect(container.querySelector('[data-reading]')?.getAttribute('data-withheld')).toBe('true');
+});
+
+it('a disabled authorization epoch hides text before effects and rejects a late reply after recovery', async () => {
+  await render({ identityKey: 'exact-reading', session: 1, preserveAfterTemporaryError: true });
+  await resolveRead(0, 'Previously authorized prose');
+  await focusWindow();
+  commits.length = 0;
+  await render({ identityKey: 'exact-reading', session: 1, preserveAfterTemporaryError: true, visible: false });
+  expect(commits[0].data).toBeNull();
+  expect(pending[1].signal.aborted).toBe(true);
+  await render({ identityKey: 'exact-reading', session: 1, preserveAfterTemporaryError: true, visible: true });
+  await resolveRead(1, 'Late rejected-epoch prose');
+  expect(body()).toBe('');
+  await resolveRead(2, 'Freshly authorized prose');
+  expect(body()).toBe('Freshly authorized prose');
+});
+
+it('the original preserveWhileLoading option alone still clears a settled network failure', async () => {
+  await render({ identityKey: 'ordinary-directory', session: 1, preserveWhileLoading: true });
+  await resolveRead(0, 'Previously read directory');
+  await focusWindow();
+  await act(async () => pending[1].reject(Object.assign(new Error('temporary failure'), { statusCode: 503 })));
+  expect(body()).toBe('');
 });

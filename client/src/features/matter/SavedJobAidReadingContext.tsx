@@ -11,6 +11,7 @@ import './saved-jobaid-reading.css';
 export const jobAidTreatmentLabels: Record<JobAidRequirementHandling['treatment'], string> = {
   ADDRESSED: '已处理',
   CONDITIONS_UNCONFIRMED: '条件待确认',
+  CONFLICT: '依据冲突',
   NOT_APPLICABLE_WITH_BASIS: '有依据地不适用',
   LATER_BUSINESS_STAGE: '属于后续业务阶段',
   NOT_YET_ADDRESSED: '尚未处理',
@@ -82,6 +83,7 @@ export function SavedJobAidIssueContext({ issue, evidence, onLocateDocument }: {
       <h4>{item.requirement} · {jobAidTreatmentLabels[item.treatment]}</h4>
       {item.conditions.map((condition: string, position: number) => <p key={position}>适用条件：{condition}</p>)}
       <p>{item.explanation}</p>
+      {item.bodyQuote && <blockquote>正文定位：{item.bodyQuote}</blockquote>}
       {!item.basisRefs.length ? <p className="wl-saved-jobaid-caveat">对象依据未提供。</p> : null}
     </section>)}
     {questions.length ? <section className="wl-jobaid-open-questions">

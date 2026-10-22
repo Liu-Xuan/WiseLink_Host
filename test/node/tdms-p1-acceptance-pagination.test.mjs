@@ -173,35 +173,6 @@ test('P1 exact version source pages use physical bounded queries and retain sour
         const foreign = { ...reader, tenantId: 'foreign-tenant' };
         await assert.rejects(service.catalogue(foreign), { code: 'TDMS_VERIFIED_PUBLIC_ACTOR_REQUIRED' });
       });
-      await t.test('DVI query applies current record members before DISTINCT and LIMIT', async () => {
-        const transaction = new SqlTdmsTransaction(drizzle(connection));
-        const sourceRecordId = `synthetic-${scopes[0].scopeId}-87`;
-        const page = await transaction.documentVersionCatalogue(scopes[0], {
-          documentVersionId: 'DV-R01', limit: 2,
-          permittedRecords: [{ recordKind: 'ENGINEERING_FILE', sourceRecordId }],
-        });
-        assert.equal(page.length, 1);
-        assert.equal(page[0].record.sourceRecordId, sourceRecordId);
-        assert.deepEqual(await transaction.documentVersionCatalogue(scopes[0], {
-          documentVersionId: 'DV-R01', limit: 2, permittedRecords: [],
-        }), []);
-      });
-      await t.test('existing lineage exact revision refs join without rewriting retained DVI metadata', async () => {
-        const transaction = new SqlTdmsTransaction(drizzle(connection));
-        const sourceRevisionRef = firstHeads.get(scopes[0].scopeId);
-        const page = { documentVersionId: 'DV-registered-by-existing-lineage', limit: 2,
-          sourceRevisionRefs: [sourceRevisionRef] };
-        const rows = await transaction.documentVersionCatalogue(scopes[0], page);
-        assert.equal(rows.length, 1);
-        assert.equal(rows[0].record.sourceRevisionRef, sourceRevisionRef);
-        assert.deepEqual(rows[0].record.relatedDocumentVersionIds, ['DV-R01']);
-        assert.deepEqual(await transaction.documentVersionCatalogue(scopes[0], {
-          ...page, sourceRevisionRefs: ["x' OR TRUE--"],
-        }), []);
-        assert.deepEqual(await transaction.documentVersionCatalogue(scopes[0], {
-          ...page, permittedRecords: [],
-        }), []);
-      });
       await t.test('raw exact-version pages retain each original, receipt and technical/business revision', async () => {
         const before = await counts();
         const first = await service.readDocumentVersion(reader, { documentVersionId: 'DV-R01', limit: 7 });

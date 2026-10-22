@@ -523,6 +523,20 @@ test('frozen issue edit scope passes Host and native task validation and reaches
     executionPolicy: { ...legacy.executionPolicy,
       toolPolicyRef: REVIEW_JOBAID_TOOL_POLICY_REF } });
   validateReviewTask(contract);
+  const historical = structuredClone(contract);
+  delete historical.jobAidContext.contentValidationVersion;
+  delete historical.jobAidContext.modelInput.contentValidationVersion;
+  delete historical.context.problemAssessment.contentValidationVersion;
+  for (const item of [...historical.jobAidContext.sourceCatalog,
+    ...historical.jobAidContext.modelInput.deliveredEvidence, ...historical.context.problemAssessment.deliveredEvidence])
+    if (item.kind === 'METHOD_CLAUSE') delete item.classificationDefinitions;
+  assert.doesNotThrow(() => validateReviewTask(historical));
+  const mismatch = structuredClone(contract);
+  delete mismatch.jobAidContext.contentValidationVersion;
+  assert.throws(() => validateReviewTask(mismatch), /CONTENT_VALIDATION_VERSION_INVALID/);
+  const drift = structuredClone(contract);
+  drift.jobAidContext.sourceCatalog.find(item => item.evidenceRef === 'method:risk').classificationDefinitions = [];
+  assert.throws(() => validateReviewTask(drift), /DELIVERED_EVIDENCE_DRIFT/);
   assert.deepEqual(projectJobAidUpdateInput({ context: contract.context })
     .context.issueEditScope, scope);
   assert.throws(() => parseReviewTurnTaskContract({ ...contract,

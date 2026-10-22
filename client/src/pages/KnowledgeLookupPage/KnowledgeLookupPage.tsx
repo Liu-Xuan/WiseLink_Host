@@ -9,6 +9,8 @@ import type { EngineeringKnowledgeEntry, EngineeringKnowledgeIdentity, Engineeri
 import { getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
 import { getEngineeringMatterDirectory } from '@client/src/api/engineering-matter';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
+import { useEngineeringMatterQueryIdentity } from '@client/src/features/matter/useEngineeringMatter';
+import { isRevokedMatterError } from '@client/src/features/matter/matter-read-error';
 import EngineeringIssueBody from '@client/src/features/matter/EngineeringIssueBody';
 import { compactReadingSummary } from '@client/src/features/matter/compact-reading-summary';
 import { JobAidIssueArticle } from '@client/src/pages/DocumentParsingPage/JobAidIssueArticle';
@@ -71,14 +73,26 @@ const catalogueStateKey = (params: URLSearchParams) => JSON.stringify([
 
 export default function KnowledgeLookupPage() {
   const { sessionGeneration, authenticationRequired } = useCurrentUserSession();
+  const [params] = useSearchParams();
+  const { identityQuery, identity } = useEngineeringMatterQueryIdentity(!authenticationRequired, sessionGeneration);
+  // The source directory owns the preview props as well as the full reader.
+  // A denial also replaces this instance and aborts its reads. Later identity
+  // failures cannot restore those discarded props without a new directory read.
+  const catalogueIdentity = JSON.stringify([identity?.appId, identity?.tenantId, identity?.actorId,
+    sessionGeneration, knowledgeKind(params) === 'sources' && isRevokedMatterError(identityQuery.error)]);
   return <main className="wl-knowledge-suite" aria-label="工程知识">
     <header className="page-heading"><h1>工程知识</h1></header>
     {authenticationRequired ? <p role="alert">请先登录。</p>
-      : <KnowledgeCatalogue key={sessionGeneration} />}
+      : <KnowledgeCatalogue key={catalogueIdentity}
+        sourceIdentityReady={Boolean(identity) && !identityQuery.error}
+        sourceIdentityError={identityQuery.error}
+        retrySourceIdentity={() => { void identityQuery.refetch({ cancelRefetch: false }); }} />}
   </main>;
 }
 
-function KnowledgeCatalogue() {
+function KnowledgeCatalogue({ sourceIdentityReady, sourceIdentityError, retrySourceIdentity }: {
+  sourceIdentityReady: boolean; sourceIdentityError: unknown; retrySourceIdentity: () => void;
+}) {
   const { sessionGeneration } = useCurrentUserSession();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -135,16 +149,22 @@ function KnowledgeCatalogue() {
     (relatedKey !== selectedRelatedKey || relatedLoading);
   const sourceReadingBlocked = sourceBlockedSelection === selection;
   const page = sourceReadingBlocked ? null : knowledge.page, read = sourceReadingBlocked ? null : knowledge.read;
-  const loading = kind === 'works' ? knowledge.loading : kind === 'matters' ? mattersLoading : documentsLoading;
+  const sourceError = sourceIdentityError ? failure(sourceIdentityError) : documentsError;
+  const sourceLoading = documentsLoading && !documents && !sourceError;
+  const loading = kind === 'works' ? knowledge.loading : kind === 'matters' ? mattersLoading : sourceLoading;
   const error = kind === 'works' ? knowledge.catalogueError ? failure(knowledge.catalogueError) : ''
-    : kind === 'matters' ? mattersError : documentsError;
+    : kind === 'matters' ? mattersError : sourceError;
   const reading = knowledge.reading;
   const readError = knowledge.workError ? failure(knowledge.workError) : '';
   const selectedIssueKey = params.getAll('knowledgeIssueKey').length === 1 ? params.get('knowledgeIssueKey') ?? '' : '';
   const issueRows = read ? savedWorkIssueRows(read.content.issues) : [];
   const visibleIssues = issueRows.filter(row => !selectedIssueKey || row.issueKey === selectedIssueKey).flatMap(row => row.variants);
   const [retry, setRetry] = useState(0);
-  function retryRead() { setSourceBlockedSelection(null); setSourceSuspendedSelection(null); setRetry(value => value + 1); void knowledge.refresh(); }
+  function retryRead() {
+    setSourceBlockedSelection(null); setSourceSuspendedSelection(null); setRetry(value => value + 1);
+    if (kind === 'sources' && sourceIdentityError) retrySourceIdentity();
+    void knowledge.refresh();
+  }
   const [source, setSource] = useState<{ documentVersionId: string; sourceRef: string | null } | null>(null);
   const [expandedFamilies, setExpandedFamilies] = useState<Record<string, boolean>>({});
   const [expandedConditions, setExpandedConditions] = useState<Record<string, boolean>>({});
@@ -152,6 +172,7 @@ function KnowledgeCatalogue() {
   const currentParams = useRef(params); currentParams.current = params;
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingScroll = useRef<Record<string, string>>({});
+  const priorSourceIdentityReady = useRef(sourceIdentityReady);
 
   function clearPendingScroll() {
     if (scrollTimer.current) clearTimeout(scrollTimer.current);
@@ -219,19 +240,28 @@ function KnowledgeCatalogue() {
     itemPin.state === 'ok' ? itemPin.workItemId : null, knowledge.currentWork, setParams]);
 
   useEffect(() => {
-    if (kind !== 'sources') return;
+    const identityResumed = !priorSourceIdentityReady.current && sourceIdentityReady;
+    priorSourceIdentityReady.current = sourceIdentityReady;
+    if (kind !== 'sources' || !sourceIdentityReady) return;
     const controller = new AbortController();
     const requestFilters = directoryRequestFilters(currentParams.current);
-    setDocuments(null); setDocumentsError(''); setDocumentsLoading(true);
+    // Keep the already displayed directory/body during a same-scope identity
+    // recovery. Denial and scope changes have already mounted an empty catalogue.
+    if (!identityResumed) setDocuments(null);
+    setDocumentsError(''); setDocumentsLoading(true);
     const timer = setTimeout(() => {
       void Promise.resolve().then(() => getCanonicalLibraryDocuments({ search: query, cursor: after, limit: 24,
         ...libraryDocumentRequestFilters(requestFilters) }, controller.signal)).then(value => {
         if (!controller.signal.aborted) { setDocuments(value); setLoadedKey(listKey); }
-      }).catch(cause => { if (!controller.signal.aborted) setDocumentsError(failure(cause)); })
+      }).catch(cause => {
+        if (controller.signal.aborted) return;
+        if (isRevokedMatterError(cause)) setDocuments(null);
+        setDocumentsError(failure(cause));
+      })
         .finally(() => { if (!controller.signal.aborted) setDocumentsLoading(false); });
     }, query ? 250 : 0);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [query, scope, kind, after, retry, filterKey]);
+  }, [query, scope, kind, after, retry, filterKey, sourceIdentityReady]);
 
   useEffect(() => {
     if (kind !== 'matters') return;
@@ -350,7 +380,7 @@ function KnowledgeCatalogue() {
     {error && <p role="alert">{error} <button onClick={retryRead}>重试</button></p>}
     <div className="knowledge-directory-layout">
       <KnowledgeAtaDirectory kind={kind} session={sessionGeneration} refreshRevision={retry}
-        sourceDirectory={documents} sourceLoading={documentsLoading} sourceError={documentsError}
+        sourceDirectory={documents} sourceLoading={sourceLoading} sourceError={sourceError}
         filters={filters} onFilterChange={filterDirectory} scheme={params.get('ataTitleScheme') === 'jasc' ? 'jasc' : 'ispec'}
         onSchemeChange={scheme => setParams(prior => { const next = new URLSearchParams(prior); next.set('ataTitleScheme', scheme); return next; }, { replace: true })}
         onRefresh={retryRead} onNextSourcePage={nextPage} selectedDocumentVersionId={versionPin.length === 1 ? versionPin[0] : ''}

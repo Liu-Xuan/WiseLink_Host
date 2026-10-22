@@ -1,7 +1,4 @@
 import { z } from 'zod/v4';
-import { PgDialect } from 'drizzle-orm/pg-core';
-import { DerivedSummaryService, type DerivedSummaryRuntimeTask } from '../../server/modules/canonical-host/derived-summary.service';
-import { contextMemberNotices } from '../../server/modules/canonical-host/derived-summary-current-context';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { DerivedSummaryMemberReading } from '@shared/derived-summary.interface';
 import { assertSummaryReplay, parseSummaryRequest, parseSummaryContent, summaryCitations, summaryMemberRef } from '../../server/modules/canonical-host/derived-summary.validation';
@@ -208,49 +205,4 @@ describe('Selected catalog notices and summary identity cycles', () => {
     expect(notices.join('')).toContain('本地目录'); expect(notices.join('')).toContain('发布方现行有效状态未核');
     expect(notices.join('')).not.toContain('当前正式版'); expect(notices.join('')).not.toContain('DV-new');
   });
-});
-
-
-test('new reservation deduplicates aggregate limitations while raw members and context seals still detect real changes', async () => {
-  const owner = { tenantId: 'dedup-tenant', actorUserId: 'dedup-actor' };
-  const raw: DerivedSummaryMemberReading = { member, evidenceRef: summaryMemberRef(member),
-    headline: 'ACARS 上行错误', body: '精确工程正文', issues: [], evidence: [], rootRefs: [],
-    limitations: ['需核对 MSN 软件版本。', '需核对 MSN 软件版本。', '仅适用于 OSS 1.2。'],
-    current: true, overviewStatus: 'CURRENT', leaves: [member] };
-  const before = JSON.stringify(raw);
-  const tasks: DerivedSummaryRuntimeTask[] = [];
-  const dialect = new PgDialect();
-  const query = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), limit: jest.fn().mockResolvedValue([]) };
-  const database = { select: jest.fn().mockReturnValue(query),
-    execute: jest.fn(async (statement: Parameters<PgDialect['sqlToQuery']>[0]) => {
-      for (const value of dialect.sqlToQuery(statement).params) {
-        if (typeof value !== 'string' || !value.startsWith('{')) continue;
-        const parsed = JSON.parse(value);
-        if (parsed.taskType === 'OPENCLAW_DERIVED_SUMMARY') tasks.push(parsed);
-      }
-      return [];
-    }) };
-  const head = { summaryId: 'DS-new-dedup', currentRevision: 0, currentSummaryRef: null };
-  const repository = { head: jest.fn().mockResolvedValue(head), lockContext: jest.fn().mockResolvedValue(undefined),
-    contextBasis: jest.fn(async (readings: DerivedSummaryMemberReading[]) => ({
-      schemaVersion: 'wiselink.derived-summary-context.v1' as const, memberNotices: contextMemberNotices(readings),
-      sources: [], workItems: [], matters: [], summaries: [], uncoordinatedDependencies: [],
-    })), attempt: jest.fn(async () => ({ operationRef: tasks[0]!.operationRef, status: 'QUEUED' })) };
-  const members = { readAll: jest.fn(async () => [structuredClone(raw)]) };
-  const service = new DerivedSummaryService(repository as never, members as never,
-    { authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({ appId: 'app_17bzc551rsg',
-      tenantId: owner.tenantId, principalId: 'service-one' }) } as never);
-  const receipt = await service.reserve({ ...request, expectedSummaryRevision: 0 }, owner, head as never, database as never);
-  expect(receipt).toMatchObject({ status: 'QUEUED', created: true });
-  expect(tasks).toHaveLength(1);
-  const task = tasks[0]!;
-  expect(task.modelInput.members[0]).toEqual(raw);
-  expect(task.modelInput.limitations.filter(value => value === raw.limitations[0])).toHaveLength(1);
-  expect(task.contextBasis!.memberNotices[0]!.limitations).toEqual(raw.limitations);
-  expect(JSON.stringify(raw)).toBe(before);
-  expect(task.modelInput.members[0]!.body).toBe(raw.body);
-  await expect(service.checkTaskAccess(task, owner, database as never, { requireCurrentContext: true })).resolves.toHaveLength(1);
-  raw.limitations.push('MSN 1001 装机软件版本已变化。');
-  await expect(service.checkTaskAccess(task, owner, database as never, { requireCurrentContext: true }))
-    .rejects.toThrow('DERIVED_SUMMARY_CONTEXT_CHANGED');
 });

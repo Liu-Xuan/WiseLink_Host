@@ -491,6 +491,34 @@ describe('independent document translation runtime', () => {
     expect(f.plugins.executeStep).not.toHaveBeenCalled();
     expect(f.attempts.reserve.mock.calls[0][3].modelRef).toBe('m3probe/minimax-m3');
   });
+  it.each(['PARTIAL', 'COMPLETE'] as const)(
+    'finishes %s using the saved workspace, then releases this execution without generating again', async (completeness) => {
+      const f = setup();
+      const started = await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });
+      if (!('attemptRef' in started)) throw new Error('expected attempt');
+      const row = await f.attempts.latest();
+      if (!row) throw new Error('expected stored attempt');
+      Object.assign(row, { status: 'RUNNING', leaseOwner: 'worker' });
+      const assembled = { completeness, manifest: { workspaceId: 'workspace' } };
+      f.v2.assembleDocument.mockResolvedValueOnce(assembled);
+      f.attempts.finish.mockImplementationOnce(async (_scope, _fence, result) => {
+        Object.assign(row, { status: 'SUCCEEDED', terminalReason: result.status });
+      });
+      const result = await f.service.run({ action: 'FINISH', ...f.binding,
+        attemptRef: started.attemptRef!, leaseToken: 'token', leaseGeneration: 1 });
+      expect(f.attempts.finish).toHaveBeenCalledWith(
+        expect.objectContaining({ actorUserId: 'actor' }),
+        expect.objectContaining({ attemptRef: started.attemptRef, leaseToken: 'token', leaseGeneration: 1 }),
+        { workspaceId: 'workspace', status: completeness === 'PARTIAL' ? 'REMAINING_LIMITATIONS' : 'DONE',
+          artifact: assembled });
+      expect(result).toMatchObject({ status: 'SUCCEEDED' });
+      expect(f.attempts.release).toHaveBeenCalledTimes(1);
+      expect(f.attempts.release.mock.invocationCallOrder[0]).toBeGreaterThan(f.attempts.finish.mock.invocationCallOrder[0]);
+      expect(f.v2.executeDocument).not.toHaveBeenCalled();
+      expect(f.plugins.executeStep).not.toHaveBeenCalled();
+      expect(f.attempts.reserve).toHaveBeenCalledTimes(1);
+    });
+
   it('claims only a stored Hosted M3 route and stops an interrupted generation before dispatch', async () => {
     const f = setup();
     const started = await f.service.run({ action: 'START', ...f.binding, requestId: 'request' });

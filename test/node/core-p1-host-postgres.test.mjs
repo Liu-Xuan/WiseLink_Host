@@ -937,3 +937,108 @@ test('BLOCK old queue qualification cannot release a new authorized grant', () =
     })));
     assert.deepEqual(await f.snapshot(),before);
   }));
+
+
+test('Overall consumes the new saved condition in its actual input and persisted artifact, then ACKs', () =>
+  usingFixture(async (f) => {
+    // Constructed source and model output; real Host services, SQL, artifact bytes.
+    // This checks content transport, not model reasoning or production acceptance.
+    const observations = {};
+    const { queue, claim } = await opened(f);
+    const initial = await f.readBrowserSnapshot(claim.task.workItemId);
+    assert.equal(initial.latestAttempt.attemptId, claim.task.actionAttemptId);
+    assert.ok(initial.latestAttempt.createdAt);
+    assert.ok(initial.latestAttempt.startedAt);
+    assert.equal(initial.latestAttempt.firstSavedAt, null);
+    assert.equal(initial.latestAttempt.completedAt, null);
+    const first = await f.callTool('save_assessment_work', saveArgs(f, claim));
+    const updated = f.proposal(claim);
+    const ref = claim.task.modelInput.sourceCatalog.find(item => item.kind === 'DOCUMENT_PASSAGE').evidenceRef;
+    const condition = 'Do not use method M unless condition X is met.';
+    const exception = 'Keep the original part number A-12, limit -0.25 and exception together.';
+    assert.ok(f.original.source.units[0].payload.text.includes(condition));
+    assert.ok(f.original.source.units[0].payload.text.includes(exception));
+    updated.overview = `${condition} ${exception} Target condition X remains unverified. [[${ref}]]`;
+    updated.issues[0].body = updated.overview;
+    const second = await f.callTool('save_assessment_work', {
+      ...saveArgs(f, claim, 'save-new-condition'), expectedWorkRevision: 1,
+      workJson: JSON.stringify(updated),
+    });
+    const readback = await f.callTool('read_assessment_work', {
+      attemptRef: claim.attemptRef, workItemId: claim.task.workItemId, requestId: 'save-new-condition',
+    });
+    observations.firstReadableObservedAt = new Date().toISOString();
+    assert.equal(readback.revision.workRevisionRef, second.workRevisionRef);
+    assert.notEqual(second.workRevisionRef, first.workRevisionRef);
+    await f.callTool('commit_dynamic_evaluation_candidate', commitArgs(f, claim, second.workRevisionRef));
+    const overall = await f.callTool('begin_overall_synthesis', { workItemId: claim.task.workItemId });
+    const input = overall.modelInput.previousWork;
+    assert.equal(input.workRevisionRef, second.workRevisionRef);
+    assert.equal(input.workRevision, 2);
+    assert.ok(JSON.stringify(input.content).includes(condition));
+    assert.ok(JSON.stringify(input.content).includes(exception));
+    const check = 'Condition X remains unverified; preserve A-12 and -0.25 together with its exception.';
+    const finished = await f.callTool('commit_overall_candidate',
+      commitArgs(f, overall, second.workRevisionRef, check));
+    const artifact = await f.readArtifact(finished.overallSynthesis.artifact);
+    assert.deepEqual(artifact.analysis, readback.revision);
+    assert.equal(artifact.consistencyCheck, check);
+    assert.ok(JSON.stringify(artifact.readingResult).includes(condition));
+    assert.ok(JSON.stringify(artifact.readingResult).includes(exception));
+    assert.equal(artifact.adopted, false);
+    const ack = await f.acknowledgeWorkItem({ workItemId: claim.task.workItemId,
+      leaseToken: queue.leaseToken, leaseGeneration: queue.leaseGeneration });
+    observations.acknowledgementObservedAt = new Date().toISOString();
+    assert.equal(ack.status, 'ACKNOWLEDGED');
+    const snapshot = await f.snapshot();
+    const read = await f.readBrowserSnapshot(claim.task.workItemId);
+    const dynamic = snapshot.attempts.find(item => item.attempt_id === claim.task.actionAttemptId);
+    const persistedOverall = snapshot.attempts.find(item => item.attempt_id === overall.task.actionAttemptId);
+    const persistedInput = JSON.parse(persistedOverall.task_envelope_json).modelInput.modelInput.previousWork;
+    assert.deepEqual(persistedInput, input);
+    assert.equal(persistedOverall.status, 'SUCCEEDED');
+    const firstSaved = snapshot.work.find(item => item.assessment_work_revision_id === first.workRevisionRef);
+    assert.equal(read.latestAttempt.createdAt, new Date(dynamic.created_at).toISOString());
+    assert.equal(read.latestAttempt.startedAt, new Date(dynamic.started_at).toISOString());
+    assert.equal(read.latestAttempt.completedAt, new Date(dynamic.completed_at).toISOString());
+    assert.equal(read.latestAttempt.firstSavedAt, new Date(firstSaved.created_at).toISOString());
+    assert.equal(snapshot.work.length, 2);
+    // No readiness transition or first-readable event is persisted by this protocol.
+    console.log(JSON.stringify({ scenario: 'isolated-overall-content-consumption',
+      modelCalls: 0, productionCalls: 0, requestRecordedAt: read.latestAttempt.createdAt,
+      readyAt: null, startedAt: read.latestAttempt.startedAt,
+      firstSavedAt: read.latestAttempt.firstSavedAt, firstReadablePersistedAt: null,
+      executionCompletedAt: read.latestAttempt.completedAt, ...observations }));
+  }));
+
+test('semantic upgrade: legacy saved and sealed COMMITTING recover, new Overall rejects unsupported rating before seal', async () => {
+  const f=await startCoreP1HostFixture({legacySemanticTasks:true});
+  try {
+    const {claim}=await opened(f);
+    assert.equal(claim.task.modelInput.contentValidationVersion,undefined);
+    assert.equal(claim.task.modelInput.sourceCatalog.find(item=>item.evidenceRef==='method:risk').classificationDefinitions,undefined);
+    const proposal=f.proposal(claim);
+    const ref=claim.task.modelInput.sourceCatalog.find(item=>item.kind==='DOCUMENT_PASSAGE').evidenceRef;
+    proposal.issues[0].riskScenarios=[{scenario:'Synthetic loss of function',conditions:['exposure unknown'],method:'JA_AC_R01',
+      severity:{label:'轻微',reason:'Historical unsupported inference',basisRefs:[ref]},likelihood:null,
+      limitations:['frequency unknown'],controlComparison:'proposed inspection is not implemented'}];
+    // Change the preparation policy while this old task is still RUNNING.
+    f.setSemanticContract(true);
+    const saved=await f.callTool('save_assessment_work',{...saveArgs(f,claim),workJson:JSON.stringify(proposal)});
+    const args=await prepareExactCommit(f,claim,saved);
+    // The pre-upgrade sealed task also recovers exactly after entering COMMITTING.
+    const recovered=await f.callTool('commit_dynamic_evaluation_candidate',args);
+    assert.equal(recovered.baseRules.workRevisionRef,saved.workRevisionRef);
+    const overall=await f.callTool('begin_overall_synthesis',{workItemId:claim.task.workItemId});
+    assert.equal(overall.modelInput.contentValidationVersion,'jobaid-semantic.v1');
+    const mismatched=structuredClone(overall.task.modelInput);
+    delete mismatched.modelInput.contentValidationVersion;
+    assert.throws(()=>assertJobAidProblemTaskBinding(mismatched),/CONTENT_VALIDATION_VERSION_INVALID/);
+    const before=await f.snapshot();
+    await assert.rejects(f.callTool('commit_overall_candidate',commitArgs(f,overall,saved.workRevisionRef,'Synthetic comparison')),
+      /SEVERITY_DEFINITION_REQUIRED/);
+    const after=await f.snapshot();
+    assert.deepEqual(after.attempts,before.attempts);
+    assert.deepEqual(after.work,before.work);
+  } finally {await f.close();}
+});

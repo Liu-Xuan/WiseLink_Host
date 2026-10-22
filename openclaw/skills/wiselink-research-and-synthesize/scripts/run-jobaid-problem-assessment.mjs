@@ -111,7 +111,7 @@ export function parseJobAidWorkJson(value) {
   return work;
 }
 import { JOBAID_PROBLEM_GUIDANCE as GUIDE, LEGACY_JOBAID_PROBLEM_GUIDANCE as LEGACY_GUIDE,
-  SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION } from './jobaid-problem-guidance.mjs';
+  SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION, JOBAID_SEMANTIC_GUIDANCE } from './jobaid-problem-guidance.mjs';
 
 export function validateJobAidProblemInput(input) {
   if (
@@ -129,6 +129,8 @@ export function validateJobAidProblemInput(input) {
     input.expectedWorkRevision < 0
   )
     throw new Error('JOBAID_PROBLEM_INPUT_INVALID');
+  if (input.contentValidationVersion !== undefined && input.contentValidationVersion !== 'jobaid-semantic.v1')
+    throw new Error('JOBAID_CONTENT_VALIDATION_VERSION_INVALID');
   if(input.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA && (input.evidenceProjectionVersion!=='SOURCE_CONTEXT_V2' ||
     !['AVAILABLE','NOT_SAVED','NOT_INDEXED'].includes(input.sourceStatementAvailability?.status) || !['LEGACY_PARTIAL','CAPTURED_FIELDS_ONLY'].includes(input.sourceStatementAvailability?.semanticFieldsAvailability) ||
     !Array.isArray(input.sourceStatementAvailability?.limitations))) throw new Error('JOBAID_SOURCE_STATEMENT_INPUT_INVALID');
@@ -210,10 +212,17 @@ export function projectBoundedInitialJobAidInput(input) {
           question: issue.question,
           ...(typeof issue.body === 'string' && issue.body.length <= 4000
             ? { body: issue.body } : {}),
-          openQuestions: (issue.openQuestions ?? []).map(item => ({
-            question: item.question,
-            nextEvidence: item.nextEvidence,
-          })),
+          ...(input.contentValidationVersion === 'jobaid-semantic.v1' ? {
+            riskScenarios: structuredClone(issue.riskScenarios ?? []),
+            measures: structuredClone(issue.measures ?? []),
+            requirementHandling: structuredClone(issue.requirementHandling ?? []),
+            otherClassifications: structuredClone(issue.otherClassifications ?? []),
+            sourceDependencies: structuredClone(issue.sourceDependencies ?? []),
+            premiseRefs: structuredClone(issue.premiseRefs ?? []),
+            openQuestions: structuredClone(issue.openQuestions ?? []),
+          } : {openQuestions: (issue.openQuestions ?? []).map(item => ({
+            question: item.question, nextEvidence: item.nextEvidence,
+          }))}),
         })),
       },
     },
@@ -476,6 +485,7 @@ export async function invokeHostedJobAidProblemModel(
       modelInput.overviewCorrectionProtocol === 'OPENCLAW_SCOPED_V1') {
     systemMessage.content += '\n本轮是明确指定的工程事项综合更正。以 overviewCorrection.expectedWorkRef 对应的 previousWork 为准确基线，按 correctionReason 核对已保存的全部问题、当前综合及完成说明。问题正文只是比较语境，不自动重新认证为原文。只使用 overviewCorrection.evidenceRefs 所指本轮已交付证据作新综合的引用；缺少决定性依据时保留限制。新的 overview 面向工程师，用简短段落给出主要判断、决定性条件、下一步或尚缺资料；过程与展开的论证留在问题正文和依据中，关键限制仍须在综合里说清。SAVE_WORK 只提交一个完整的综合更正：issues:[]、新的 overview、completionReason、changeSummary，roundCompletion 与 previousWork.content 相同；不得提交问题正文、摘要或其他工作字段。即使旧综合标记 STALE，也要实际核对后形成综合，不把状态本身当作结论。保存回执后 FINISH；本轮不作正式采用。';
   }
+  if (modelInput.contentValidationVersion === 'jobaid-semantic.v1') systemMessage.content += '\n' + JOBAID_SEMANTIC_GUIDANCE;
   if(modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA) systemMessage.content += modelInput.sourceStatementAvailability?.semanticFieldsAvailability==='CAPTURED_FIELDS_ONLY' ? '\nsourceStatement 目录只是已保存解释候选的提示，尚未交付完整声明。使用该精确 ref 前 READ_SOURCES；回执 sourceStatements 保留既有 v1 字段，sourceSchemaVersion 明确区分 v1 与 v2；LEGACY_PARTIAL 表示新版字段未记录，v2 null/空数组只表示本候选未捕获。完整 times[]、否定、技术编号和条件须与引文一并读取，不把 SOURCE_REPORTED_COMPLETED 当作我方实施或有效。必要根原文与 actual readCoverage 不保证全文已读。候选不能证明适用性、执行或效果核验。' : '\nsourceStatement 目录只是已保存解释候选的提示，尚未交付完整声明。使用该精确 ref 前 READ_SOURCES；回执 sourceStatements 保留既有 v1 字段，LEGACY_PARTIAL 表示新版语义未记录，必要根原文与 actual readCoverage 不保证全文已读。候选不能证明适用性、执行或效果核验。';
   if (boundedInitialJobAid) {
     systemMessage.content += `\n本次初始 JobAid 执行按可核验批次推进：每个 READ_SOURCES 动作最多 ${INITIAL_JOBAID_SOURCE_REFS_PER_READ} 个 sourceRefs；可以连续读取有助于当前判断的不同来源或范围，不按读取次数强迫保存。只有形成有意义的认识、修正或完成状态变化时 SAVE_WORK，不提交空的过程日志。READ_SOURCES 的每个 sourceRef 必须逐字复制 availableSources[].ref；不能从 sourceRefId、页码或解析单元编号自行拼接。首次保存工程问题前须取得原文；若当前 deliveredEvidence 已包含该精确原文，直接使用而不重复读取，否则先成功 READ_SOURCES。不能将来源读取失败写成工程结论。previousWork 展示 Host 已保存的问题目录和较短正文；省略的正文仍由 Host 完整保留。readSourceRefs 表示已保存的来源读取记录，不等于本会话已重新取得原文。优先继续未完成的问题和决定性未读来源，不因新会话重读已保存的同一批，也不重写未变问题。每批只提交有新原文支持的改动，保存后读回精确修订。headline 和 listBrief 必须写工程问题、措施、当前判断及关键限制，不能写“本批已读”“u10—u13”或工作修订号等过程日志；过程留在 changeSummary。保存有价值的完整增量时用 IN_PROGRESS 或 COMPLETE_WITH_OPEN_QUESTIONS，并说明尚未完成范围；不要声称未读来源已经核验。必要原文已覆盖、问题已保存时，检查概览与正文一致；如有过期表述，提交 issues:[] 的简短概览修订。方法资料只在影响当前判断时补读，不为凑齐目录而延长执行。完成必要原文覆盖与概览一致性检查后 FINISH；未连接的外部资料列为待确认，不阻止候选阶段结束。`;

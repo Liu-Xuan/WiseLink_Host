@@ -15,18 +15,6 @@ import {
   type HostedRequestContext,
 } from '../../server/modules/document-management/src/hosted/nest/document-management-hosted.service';
 
-// An explicit independent ordinary lineage port for pre-existing ordinary-only cases.
-// Absence of provenance is never used as permission; Source-backed cases are below.
-function ordinaryReadCatalog(allowed = false) {
-  return {
-    readDocumentSourceReadProvenance: jest.fn().mockResolvedValue({
-      documentVersionId: 'DV-1', sourceArtifactId: 'SOURCE-1', sha256: 'a'.repeat(64), byteLength: 100,
-      independentOrdinary: true, sourceBindings: [],
-    }),
-    readOwnedAcquisitionVersionBinding: jest.fn().mockResolvedValue(allowed),
-  };
-}
-
 const creatorContext = {
   actorUserId: 'user-creator',
   tenantId: 'tenant-a',
@@ -134,7 +122,6 @@ describe('ordinary document-management authorization', () => {
     const authorizer = new OrdinaryDocumentManagementAuthorizer(
       repository as never,
       {} as never,
-      ordinaryReadCatalog() as never,
     );
 
     await expect(
@@ -149,6 +136,7 @@ describe('ordinary document-management authorization', () => {
     ).toHaveBeenCalledWith({
       tenantId: creatorContext.tenantId,
       documentVersionId: 'DV-1',
+      actorUserId: creatorContext.actorUserId,
     });
   });
 
@@ -160,7 +148,11 @@ describe('ordinary document-management authorization', () => {
           .fn()
           .mockResolvedValue(null),
       };
-      const catalog = ordinaryReadCatalog(allowed);
+      const catalog = {
+        readOwnedAcquisitionVersionBinding: jest
+          .fn()
+          .mockResolvedValue(allowed),
+      };
       const authorizer = new OrdinaryDocumentManagementAuthorizer(
         repository as never,
         {} as never,
@@ -180,7 +172,6 @@ describe('ordinary document-management authorization', () => {
         actorUserId: creatorContext.actorUserId,
         tenantId: creatorContext.tenantId,
         documentVersionId: 'DV-1',
-        readScope: 'TENANT',
       });
     },
   );
@@ -207,7 +198,6 @@ describe('ordinary document-management authorization', () => {
       const authorizer = new OrdinaryDocumentManagementAuthorizer(
         repository as never,
         {} as never,
-        ordinaryReadCatalog() as never,
       );
 
       await expect(
@@ -715,7 +705,7 @@ describe('local MinerU candidate authorization with real native upload authority
         mode: 'LOCAL_MINERU_IMPORT', ...selection, providerObjectId: metadata.id, sha256: 'a'.repeat(64), byteLength: 20,
         settings: { revision: 1, localMineruFallbackEnabled: true, titleEnhancementEnabled: false } } } };
     const parsing = { read: jest.fn().mockResolvedValue(run) };
-    const authorizer = new OrdinaryDocumentManagementAuthorizer(workItems as never, files as never, ordinaryReadCatalog() as never, parsing as never);
+    const authorizer = new OrdinaryDocumentManagementAuthorizer(workItems as never, files as never, undefined, parsing as never);
     const scope = { actorUserId: creatorContext.actorUserId, tenantId: creatorContext.tenantId, roles: [], documentVersionId: 'DV-1' };
     return { selection, metadata, files, workItems, run, parsing, authorizer, scope };
   }
@@ -774,53 +764,5 @@ describe('local MinerU candidate authorization with real native upload authority
     f.files.getFileMetadata.mockRejectedValue({ status: 403 });
     await expect(f.authorizer.assertCanReadLocalCandidate({ ...f.scope, parseRunId: f.run.parseRunId }))
       .rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN', statusCode: 403 });
-  });
-});
-
-
-describe('ordinary authorizer provenance precedes tenant/WorkItem fast paths', () => {
-  const readInput = { ...creatorContext, action: 'DOCUMENT_READ' as const, documentVersionId: 'DV-1' };
-  it('refuses unavailable provenance even when a WorkItem is tenant-visible', async () => {
-    const workItems = { loadTenantDocumentAuthorizationBinding: jest.fn().mockResolvedValue(binding()) };
-    const authorizer = new OrdinaryDocumentManagementAuthorizer(workItems as never, {} as never);
-    await expect(authorizer.assertCanRead(readInput)).rejects.toMatchObject({ code: 'DOCUMENT_SOURCE_READ_PROVENANCE_UNAVAILABLE', statusCode: 503 });
-    expect(workItems.loadTenantDocumentAuthorizationBinding).not.toHaveBeenCalled();
-  });
-  it('does not treat unknown lineage as independent ordinary publication', async () => {
-    const workItems = { loadTenantDocumentAuthorizationBinding: jest.fn().mockResolvedValue(binding()) };
-    const catalog = ordinaryReadCatalog(true); catalog.readDocumentSourceReadProvenance.mockResolvedValue(null);
-    const authorizer = new OrdinaryDocumentManagementAuthorizer(workItems as never, {} as never, catalog as never);
-    await expect(authorizer.assertCanRead(readInput)).rejects.toMatchObject({ code: 'DOCUMENT_VERSION_NOT_FOUND' });
-    expect(workItems.loadTenantDocumentAuthorizationBinding).not.toHaveBeenCalled();
-    expect(catalog.readOwnedAcquisitionVersionBinding).not.toHaveBeenCalled();
-  });
-  it('a Source-only provenance cannot omit the configured current Source port', async () => {
-    const workItems = { loadTenantDocumentAuthorizationBinding: jest.fn().mockResolvedValue(binding()) };
-    const catalog = ordinaryReadCatalog(true);
-    catalog.readDocumentSourceReadProvenance.mockResolvedValue({ independentOrdinary: false, sourceBindings: [{ syntheticPersistedBinding: true }] });
-    const authorizer = new OrdinaryDocumentManagementAuthorizer(workItems as never, {} as never, catalog as never);
-    await expect(authorizer.assertCanRead(readInput)).rejects.toMatchObject({ code: 'DOCUMENT_SOURCE_READ_UNAVAILABLE', statusCode: 503 });
-    expect(workItems.loadTenantDocumentAuthorizationBinding).not.toHaveBeenCalled();
-  });
-  it('a Source decision error cannot fall through to an existing WorkItem', async () => {
-    const workItems = { loadTenantDocumentAuthorizationBinding: jest.fn().mockResolvedValue(binding()) };
-    const catalog = ordinaryReadCatalog(true);
-    catalog.readDocumentSourceReadProvenance.mockResolvedValue({ independentOrdinary: false, sourceBindings: [{ syntheticPersistedBinding: true }] });
-    const failure = Object.assign(new Error('Source unavailable'), { code: 'TDMS_RECEIVER_AUTHORITY_STORAGE_UNCONFIGURED', statusCode: 503 });
-    const sourceRead = { assertCurrent: jest.fn().mockRejectedValue(failure) };
-    const authorizer = new OrdinaryDocumentManagementAuthorizer(workItems as never, {} as never, catalog as never, undefined, sourceRead);
-    await expect(authorizer.assertCanRead(readInput)).rejects.toBe(failure);
-    expect(workItems.loadTenantDocumentAuthorizationBinding).not.toHaveBeenCalled();
-    expect(catalog.readOwnedAcquisitionVersionBinding).not.toHaveBeenCalled();
-  });
-  it('independent ordinary provenance preserves ordinary rights but does not grant a missing right', async () => {
-    const workItems = { loadTenantDocumentAuthorizationBinding: jest.fn().mockResolvedValue(null) };
-    const catalog = ordinaryReadCatalog(true);
-    const sourceRead = { assertCurrent: jest.fn().mockRejectedValue(new Error('Should not call Source')) };
-    const authorizer = new OrdinaryDocumentManagementAuthorizer(workItems as never, {} as never, catalog as never, undefined, sourceRead);
-    await expect(authorizer.assertCanRead(readInput)).resolves.toBeUndefined();
-    catalog.readOwnedAcquisitionVersionBinding.mockResolvedValue(false);
-    await expect(authorizer.assertCanRead(readInput)).rejects.toMatchObject({ code: 'DOCUMENT_VERSION_NOT_FOUND' });
-    expect(sourceRead.assertCurrent).not.toHaveBeenCalled();
   });
 });

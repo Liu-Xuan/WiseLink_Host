@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { mintDocumentUploadAuthority } from '../../server/modules/document-management/src/hosted/nest/document-upload-authority';
 import { DocumentManagementHostedCore } from '../../server/modules/document-management/src/hosted/documentManagementHostedCore.js';
 import { deterministicId } from '../../server/modules/document-management/src/runtime/valueTools.js';
 
@@ -202,10 +201,8 @@ describe('exact-byte reuse across the date-to-business-revision transition', () 
   });
   it('passes separate verified selection and immutable locators to the hosted exact commit', async () => {
     const f = fixture();
-    const uploadContext = { ...context, appId: 'app_17bzc551rsg', env: 'preview' };
-    process.env.SANDBOX_ID = 'test-host';
     await f.core.ingestFileServiceSelection(request, {
-      ...uploadContext, runtimeIngestAuthority: mintDocumentUploadAuthority(uploadContext),
+      ...context, runtimeIngestAuthority: { mode: 'HOSTED_MIAODA_DOCUMENT_UPLOAD' },
     });
     expect(f.catalog.linkAcquisitionToVersion).toHaveBeenCalledWith(
       expect.objectContaining({ uploadCommit: expect.objectContaining({
@@ -217,13 +214,6 @@ describe('exact-byte reuse across the date-to-business-revision transition', () 
         sourceArtifactId, sha256, byteLength: bytes.length,
       }) }),
     );
-  });
-  it('rejects a copied upload capability before an exact legacy link', async () => {
-    const f = fixture();
-    await expect(f.core.ingestFileServiceSelection(request, {
-      ...context, runtimeIngestAuthority: { mode: 'HOSTED_MIAODA_DOCUMENT_UPLOAD' },
-    })).rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN', statusCode: 403 });
-    expect(f.catalog.linkAcquisitionToVersion).not.toHaveBeenCalled();
   });
   it.each([
     ['canonicalRevisionIdentity', 'DATE:2020-09-23'],

@@ -1,8 +1,9 @@
+import { readStoredOverallEvidence, overallModelEvidenceRegistry } from '../../server/modules/canonical-host/overall-assessment-reading';
 import { JOBAID_PROBLEM_WORK_SCHEMA, jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { collectEvidenceUses } from '@shared/jobaid-evidence-uses';
 import { materializeJobAidWork, calculateJaAcRisk, assertJobAidIssueEditScope } from '../../server/modules/canonical-host/jobaid-problem-work';
-import { JOBAID_METHOD_BINDING } from '../../server/modules/canonical-host/jobaid-method-pack';
+import { JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE } from '../../server/modules/canonical-host/jobaid-method-pack';
 import { materializeMatterJobAidCommand } from '../../server/modules/canonical-host/matter-jobaid-save';
 import { engineeringMatterPendingInputs, engineeringMatterWorkingChangeFromCommand, materializeEngineeringMatterWorkingState, parseEngineeringMatterWorkingState } from '../../server/modules/canonical-host/engineering-matter-working-state';
 import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-working.interface';
@@ -350,4 +351,100 @@ test('initial work requires an explicit summary, but saved copy survives overvie
  const next=materializeJobAidWork(update([],{headline:undefined,listBrief:undefined,overview:'已有综合正文'}),{...context,previous:first});
  expect(next.headline).toBe(first.headline); expect(next.listBrief).toBe(first.listBrief);
  expect(next.issues).toEqual(first.issues);
+});
+
+// New semantic checks use synthetic source facts; the private production candidate is never a fixture.
+describe('versioned semantic evidence and method dispositions', () => {
+  const strictContext = { ...context, contentValidationVersion: 'jobaid-semantic.v1' as const,
+    evidence: [...context.evidence, ...JOBAID_METHOD_EVIDENCE],
+    readSourceRefs: [...context.readSourceRefs, ...JOBAID_METHOD_EVIDENCE.map(item => item.evidenceRef)] };
+  const risk = {scenario:'持续指示对功能影响待核对', conditions:['五秒条件'], method:'JA_AC_R01', severity:null,
+    likelihood:null, limitations:['严重性定义与机队发生资料未提供'], controlComparison:'建议检查尚未实施，不证明有效。'};
+  const question = {question:'功能后果与频率如何对应定义？', affects:'风险判断', nextEvidence:'取得定义及机队暴露记录', reason:'当前资料不足'};
+  const body = `五秒条件 尚未确认。[[${source.evidenceRef}]] [[method:risk]]`;
+  const row = {methodRef:'method:risk',requirement:'后果和频率对应定义',conditions:['持续指示'],treatment:'CONDITIONS_UNCONFIRMED',
+    basisRefs:[source.evidenceRef],explanation:'当前定义和资料不足',bodyQuote:'五秒条件\n尚未确认。'};
+  const proposal = () => update([{...issue('S', body),riskScenarios:[risk],openQuestions:[question],requirementHandling:[row]}] as never,
+    {roundCompletion:'COMPLETE_WITH_OPEN_QUESTIONS'});
+  test('unknown dimensions stay null with visible limitations and unresolved method', () => {
+    const work=materializeJobAidWork(proposal(),strictContext);
+    expect(work.issues[0].riskScenarios[0]).toMatchObject({severity:null,likelihood:null,score:null,riskGrade:null});
+    expect(work.issues[0].requirementHandling[0].bodyQuote).toBe(row.bodyQuote);
+    expect(()=>materializeJobAidWork({...proposal(),roundCompletion:'COMPLETE'},strictContext)).toThrow();
+  });
+  test('label numbers and absent safety statement cannot establish a severity definition', () => {
+    const raw=proposal();Object.assign(raw.issues[0],{riskScenarios:[{...risk,severity:{label:'轻微',reason:'源文未提安全',basisRefs:[source.evidenceRef]}}]});
+    expect(()=>materializeJobAidWork(raw,strictContext)).toThrow('SEVERITY_DEFINITION_REQUIRED');
+    Object.assign(raw.issues[0],{riskScenarios:[{...risk,severity:{label:'轻微',reason:'源文未提安全',basisRefs:[source.evidenceRef],
+      definitionMatch:{methodRef:'method:risk',definitionQuote:'轻微3'}}}]});
+    expect(()=>materializeJobAidWork(raw,strictContext)).toThrow('SEVERITY_DEFINITION_NOT_DELIVERED');
+    // The same historical payload remains readable/replayable under its original task contract.
+    expect(()=>materializeJobAidWork(raw,{...strictContext,contentValidationVersion:undefined})).not.toThrow();
+  });
+  test('actual likelihood definition survives save with exact evidence use', () => {
+    const raw=proposal();Object.assign(raw.issues[0],{riskScenarios:[{...risk,likelihood:{label:'不大可能',reason:'所引单机和机队资料对应此定义',
+      basisRefs:[source.evidenceRef],definitionMatch:{methodRef:'method:risk',definitionQuote:'单机不太可能但机队可多次'}}}]});
+    const work=materializeJobAidWork(raw,strictContext);
+    expect(work.issues[0].riskScenarios[0].likelihood?.definitionMatch?.methodRef).toBe('method:risk');
+    expect(collectEvidenceUses(work)).toContainEqual(expect.objectContaining({role:'METHOD',evidenceRef:'method:risk'}));
+  });
+  test('the delivered six-event severity rule requires its actual event scenario and keeps the original matrix', () => {
+    const raw=proposal();
+    const method=JOBAID_METHOD_EVIDENCE.find(item=>item.evidenceRef==='method:risk');
+    if(method?.kind!=='METHOD_CLAUSE') throw new Error('METHOD_FIXTURE_INVALID');
+    const definitionQuote=method.classificationDefinitions!.find(item=>item.dimension==='SEVERITY')!.definitionQuote;
+    const rated={...risk,severity:{label:'严重',reason:'空停对应已交付的六类重要事件定义',basisRefs:[source.evidenceRef],
+      definitionMatch:{methodRef:'method:risk',definitionQuote}},
+      likelihood:{label:'不大可能',reason:'已交付机队资料对应此定义',basisRefs:[source.evidenceRef],
+        definitionMatch:{methodRef:'method:risk',definitionQuote:'单机不太可能但机队可多次'}}};
+    Object.assign(raw.issues[0],{riskScenarios:[rated]});
+    expect(()=>materializeJobAidWork(raw,strictContext)).toThrow('IMPORTANT_EVENT_SCENARIO_REQUIRED');
+    raw.roundCompletion='COMPLETE';
+    Object.assign(raw.issues[0],{openQuestions:[],requirementHandling:[{...row,treatment:'ADDRESSED'}],
+      riskScenarios:[{...rated,importantEvent:{event:'空中停车',reason:'方法列有空停',basisRefs:['method:risk']}}]});
+    // Business citations on the dimensions do not establish the important event itself.
+    expect(()=>materializeJobAidWork(raw,strictContext)).toThrow('IMPORTANT_EVENT_BUSINESS_BASIS_REQUIRED');
+    const historical=materializeJobAidWork(raw,{...strictContext,contentValidationVersion:undefined});
+    expect(historical.roundCompletion).toBe('COMPLETE');
+    expect(historical.issues[0].riskScenarios[0].score).toBe(49);
+    const eventBody=`合成事件报告记载空中停车及所引机队发生资料。[[${source.evidenceRef}]] [[method:risk]]`;
+    Object.assign(raw.issues[0],{body:eventBody,
+      requirementHandling:[{...row,treatment:'ADDRESSED',bodyQuote:'合成事件报告记载空中停车及所引机队发生资料。'}],
+      riskScenarios:[{...rated,importantEvent:{event:'空中停车',reason:'合成原文明确报告空停',basisRefs:[source.evidenceRef,'method:risk']}}]});
+    const eventContext={...strictContext,evidence:strictContext.evidence.map(item=>item.evidenceRef===source.evidenceRef
+      ? {...item,excerpt:'Synthetic report: an in-flight shutdown occurred; supplied fleet records map to the stated likelihood definition.'} : item)};
+    const work=materializeJobAidWork(raw,eventContext);
+    expect(work.roundCompletion).toBe('COMPLETE');
+    expect(work.issues[0].riskScenarios[0]).toMatchObject({score:49,riskGrade:4});
+  });
+  test('used methods require body location and nonapplicability requires actual business basis', () => {
+    for (const replacement of [[],[{...row,bodyQuote:'不存在的正文'}],[{...row,treatment:'NOT_APPLICABLE_WITH_BASIS',basisRefs:['method:risk']}]]) {
+      const raw=proposal();Object.assign(raw.issues[0],{requirementHandling:replacement});
+      expect(()=>materializeJobAidWork(raw,strictContext)).toThrow('JOBAID_SEMANTIC_');
+    }
+    const raw=proposal();Object.assign(raw.issues[0],{requirementHandling:[{...row,treatment:'CONFLICT'}]});
+    expect(materializeJobAidWork(raw,strictContext).issues[0].requirementHandling[0].treatment).toBe('CONFLICT');
+  });
+  test('a method used by structured measure evidence also needs a disposition', () => {
+    const raw=proposal();Object.assign(raw.issues[0],{measures:[{text:'建议检查',addresses:'持续条件',limitations:['效果未知'],
+      status:'PROPOSED',basisRefs:[source.evidenceRef,'method:controls']}]});
+    expect(()=>materializeJobAidWork(raw,strictContext)).toThrow('USED_METHOD_DISPOSITION_REQUIRED');
+  });
+  test('formatting does not erase negation, and pending states need a real unresolved question',()=>{
+    const raw=proposal();Object.assign(raw.issues[0],{requirementHandling:[{...row,bodyQuote:'五秒条件已确认。'}]});
+    expect(()=>materializeJobAidWork(raw,strictContext)).toThrow('BODY_LOCATION');
+    Object.assign(raw.issues[0],{requirementHandling:[row],openQuestions:[]});
+    expect(()=>materializeJobAidWork(raw,strictContext)).toThrow('UNRESOLVED_QUESTION');
+  });
+});
+
+test('method definitions survive stored evidence and the delivered model registry without fabricating severity rules',()=>{
+  const evidence=readStoredOverallEvidence(JSON.parse(JSON.stringify(JOBAID_METHOD_EVIDENCE)));
+  expect(evidence).toEqual(JOBAID_METHOD_EVIDENCE);
+  const risk=overallModelEvidenceRegistry(evidence).find(item=>item.evidenceRef==='method:risk')!;
+  expect(risk.classificationDefinitions?.filter(item=>item.dimension==='LIKELIHOOD')).toHaveLength(4);
+  expect(risk.classificationDefinitions?.filter(item=>item.dimension==='SEVERITY').map(item=>item.label)).toEqual(['严重']);
+  const invalid=structuredClone(evidence);const method=invalid.find(item=>item.kind==='METHOD_CLAUSE'&&item.methodRef==='method:risk');
+  if(method?.kind==='METHOD_CLAUSE') method.classificationDefinitions![0].definitionQuote='invented definition';
+  expect(()=>readStoredOverallEvidence(invalid)).toThrow('METHOD_DEFINITIONS_INVALID');
 });

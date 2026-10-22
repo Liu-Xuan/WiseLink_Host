@@ -21,7 +21,7 @@ export const DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION = `${DERIVED_SUMMARY_PR
 export const DERIVED_SUMMARY_REVISION_PROMPT_VERSION = 'wiselink.derived-summary-prompt.v2.evidence-problem-dedup.read-projection.saved-revision.v1';
 export const DERIVED_SUMMARY_REVISION_CACHE_PREFIX_PROMPT_VERSION = `${DERIVED_SUMMARY_REVISION_PROMPT_VERSION}.cache-prefix.v1`;
 export const DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION = 'wiselink.derived-summary-prompt.v3.sparse-revision.read-projection.v1';
-export const HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION = 'wiselink.derived-summary-prompt.v3.wiki-parent.read-projection.v2.child-citations.v1';
+export const HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION = 'wiselink.derived-summary-prompt.v3.wiki-parent.read-projection.v1';
 export const DERIVED_SUMMARY_FUNCTION = 'return_wiselink_summary_step';
 
 import { serializeDerivedSummaryCachePrefix } from './derived-summary-cache-prefix.mjs';
@@ -63,7 +63,7 @@ ${[
 const DERIVED_SUMMARY_SPARSE_REVISION_INPUT_PREFIX = 'Revise the exact saved candidate using prior, exact current directories, changes and necessary full bodies.\nINPUT:\n';
 const HIERARCHICAL_WIKI_PARENT_SYSTEM_MESSAGE = `${DERIVED_SUMMARY_SYSTEM_MESSAGE}\n${[
   'This automatic Wiki task strictly synthesizes one layer from complete saved child Wiki bodies: ATA2 uses its ATA4 children; FLEET uses its ATA2 children. Use every relevant selected child, retain exact child identities and inherited leaf/root limitations, and describe only the actual selected coverage. Do not mix unclassified or coarsely classified original material into the parent body or invent an ATA4 classification.',
-  'modelViewStrategy HIERARCHICAL_WIKI_PARENT_V2 delivers all selected child saved own-bodies, attributing their registered inherited source citations to the exact child evidenceRef. This changes citation ownership in the model view only, not saved text or source history. membersDirectory and evidenceDirectory are exact directories, not original bodies. The full root registry is Host-eligible only; neither Host pre-reads nor child citations establish that root bodies were delivered or freshly verified in this run. Do not repeat root bodies into the parent synthesis or count shared roots as independent evidence.',
+  'modelViewStrategy HIERARCHICAL_WIKI_PARENT_V1 delivers all selected child saved own-bodies. membersDirectory and evidenceDirectory are exact directories, not original bodies. The full root registry is Host-eligible only; neither Host pre-reads nor child citations establish that root bodies were delivered or freshly verified in this run. Do not repeat root bodies into the parent synthesis or count shared roots as independent evidence.',
   'Cite the exact child refs supporting the synthesis. When a decisive original condition needs investigation, READ_SOURCES retrieves only the exact registered roots through existing authorization. A new root citation requires its complete body in these messages; a directory or embedded child citation does not deliver it.',
   'When purpose is REVISE_SAVED_SUMMARY, previousSummary is the complete exact derived candidate to revise using requestedChange and all current child bodies. Return the complete revised candidate, never a patch. Prior citations may be retained only when their exact immutable current bindings permit derived reuse; that is not a fresh original read or a correctness proof. Preserve current and historical limitations, conflicts, exclusions and unknowns.',
 ].join('\n')}`;
@@ -247,8 +247,7 @@ async function assertStoredSummaryReadHistory(state, promptVersion, checkpoint, 
       perform: async () => { throw new Error('DERIVED_SUMMARY_MODEL_PROMPT_BINDING_INVALID'); } });
     const parsed = parseResponse(response);
     const projection = projectRead(receipt, parsed.step, registry,
-      delivered ?? { members: new Map(), evidence: new Map() }, { round, messageIndex: 3 + round * 2,
-        wikiParent: wikiParentPrompt(promptVersion) });
+      delivered ?? { members: new Map(), evidence: new Map() }, { round, messageIndex: 3 + round * 2 });
     if (canonicalJson(parsed.toolCall) !== canonicalJson(state.messages[2 + round * 2].tool_calls[0]) ||
         canonicalJson(projected ? projection : receipt) !== state.messages[3 + round * 2].content)
       throw new Error('DERIVED_SUMMARY_MODEL_PROMPT_BINDING_INVALID');
@@ -361,8 +360,7 @@ export async function invokeHostedDerivedSummaryModel(modelInput, options, depen
       await checkpoint.writeOnce(receiptKey, receipt);
     }
     const projection = projectRead(receipt, step, registry,
-      delivered ?? { members: new Map(), evidence: new Map() }, { round, messageIndex: 3 + round * 2,
-        wikiParent: wikiParentPrompt(promptVersion) });
+      delivered ?? { members: new Map(), evidence: new Map() }, { round, messageIndex: 3 + round * 2 });
     state = { round: round + 1, promptVersion, messages: [...state.messages,
       { role: 'assistant', content: null, tool_calls: [parsed.toolCall] },
       { role: 'tool', tool_call_id: parsed.toolCall.id, content: canonicalJson(projectedReads(promptVersion) ? projection : receipt) }] };

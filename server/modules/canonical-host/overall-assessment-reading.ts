@@ -34,6 +34,7 @@ type OverallEvidenceSourceContext =
   | Pick<Extract<AssessmentEvidence, { kind: 'PRIOR_RESULT' }>, 'resultRef' | 'resultRevision'>;
 
 export interface OverallModelEvidence {
+  classificationDefinitions?: Extract<AssessmentEvidence, {kind: 'METHOD_CLAUSE'}>['classificationDefinitions'];
   /** Historical source-declared native context with its original task READ. */
   nativeSource?: AssessmentTdmsNativeEvidence['nativeSource'];
   nativeScope?: AssessmentTdmsNativeEvidence['nativeScope'];
@@ -70,6 +71,7 @@ export function overallModelEvidenceRegistry(
     versionLabel: item.versionLabel,
     excerpt: item.excerpt,
     locator: 'locator' in item ? item.locator : null,
+    ...(item.kind === 'METHOD_CLAUSE' && item.classificationDefinitions ? {classificationDefinitions: structuredClone(item.classificationDefinitions)} : {}),
     ...(item.kind === 'TDMS_NATIVE_RECORD' ? projectNativeEvidence(item) : {}),
     ...(item.kind === 'PRIOR_RESULT' ? { originalEvidenceRefs: [...item.originalEvidenceRefs],
       ...(item.sourceWork ? { sourceWork: structuredClone(item.sourceWork) } : {}),
@@ -210,6 +212,7 @@ export function readStoredOverallEvidence(
             ),
             locator: text(item.locator, 'OVERALL_METHOD_LOCATOR_INVALID'),
             sourceVersionStatus: item.sourceVersionStatus,
+            ...(item.classificationDefinitions !== undefined ? {classificationDefinitions: parseClassificationDefinitions(item.classificationDefinitions, common.excerpt)} : {}),
           };
         case 'DOCUMENT_PASSAGE':
           return {
@@ -669,4 +672,15 @@ function readDialogueEvidenceSource(value: unknown) {
       'DIALOGUE_EVIDENCE_CONTEXT_INVALID',
     ).map((id) => text(id, 'DIALOGUE_EVIDENCE_CONTEXT_INVALID')),
   };
+}
+
+function parseClassificationDefinitions(raw: unknown, excerpt: string): NonNullable<Extract<AssessmentEvidence, {kind: 'METHOD_CLAUSE'}>['classificationDefinitions']> {
+  if (!Array.isArray(raw)) throw new Error('OVERALL_METHOD_DEFINITIONS_INVALID');
+  return raw.map(value => {
+    if (!value || typeof value !== 'object' || !['SEVERITY', 'LIKELIHOOD'].includes(value.dimension) ||
+        typeof value.label !== 'string' || !value.label.trim() || typeof value.definitionQuote !== 'string' ||
+        !value.definitionQuote.trim() || !excerpt.replace(/\s+/gu, '').includes(value.definitionQuote.replace(/\s+/gu, '')))
+      throw new Error('OVERALL_METHOD_DEFINITIONS_INVALID');
+    return {dimension: value.dimension, label: value.label, definitionQuote: value.definitionQuote};
+  });
 }

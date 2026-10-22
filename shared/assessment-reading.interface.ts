@@ -184,6 +184,7 @@ export type AssessmentEvidence = {
     }
   | {
       kind: 'METHOD_CLAUSE';
+      classificationDefinitions?: Array<{ dimension: 'SEVERITY' | 'LIKELIHOOD'; label: string; definitionQuote: string }>;
       packRef: string;
       methodRef: string;
       sourceIdentity: string;

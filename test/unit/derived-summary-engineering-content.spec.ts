@@ -2,6 +2,7 @@ import {
   deduplicateSummaryNotices,
   summaryEngineeringHeadline,
   summaryEngineeringLimitations,
+  summaryEngineeringProcessingRecords,
   summaryEngineeringText,
 } from '@shared/derived-summary-engineering-content';
 
@@ -60,6 +61,20 @@ test('the exact layer introduction is projected out without changing the followi
   expect(summaryEngineeringText(`${intro}\n\n${body}`)).toBe(body);
   expect(summaryEngineeringText(`${intro} ${body}`)).toBe(body);
   expect(summaryEngineeringText('本层为派生候选，非新增独立证据。' + body)).toBe(body);
+  expect(summaryEngineeringProcessingRecords(`${intro}\n\n${body}`)).toEqual([intro]);
+});
+
+test('the named pure identity sentences are retained as records, including a standalone unpunctuated introduction', () => {
+  const intro = '本层为B787•ATA45（ATA2）候选综合，由其唯一已保存的ATA45-00子层候选正文形成，保留该子层身份及其全部继承限制';
+  const identity = '本层为派生候选，非新增独立证据。';
+  const prefix = '以ATA45-00子层候选为唯一来源综合：';
+  const engineering = 'SB TBD；仅 OSS 1.2，1.3 未确认适用；12 项不等于 13 项。 [[child-exact]]';
+  const value = `${intro}\n\n${identity}\n\n${prefix}${engineering}`;
+  expect(summaryEngineeringText(value)).toBe(engineering);
+  expect(summaryEngineeringProcessingRecords(value)).toEqual([intro, identity, prefix]);
+  const mixed = intro.replace('ATA45-00子层', 'ATA45-00（仅适用于 OSS 1.2）子层');
+  expect(summaryEngineeringText(mixed)).toBe(mixed);
+  expect(summaryEngineeringProcessingRecords(mixed)).toEqual([]);
 });
 
 test('a known brief prefix is removed while its following conditions, dates, negation and citation remain exact', () => {

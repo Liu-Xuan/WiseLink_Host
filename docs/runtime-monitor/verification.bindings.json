@@ -1,0 +1,411 @@
+{
+  "bindings": [
+    {
+      "id": "research.overall",
+      "title": "JobAid 保存 → Overall 实际消费",
+      "nodeIds": [
+        "assessment.research",
+        "assessment.overall"
+      ],
+      "edgeIds": [
+        "research.overall"
+      ],
+      "consistencyScenarioIds": [
+        "V12"
+      ],
+      "workPackageIds": [
+        "P0",
+        "P1"
+      ],
+      "sourceRevision": "a04c59db668b5162f0e7499bb21ff09732b6307b",
+      "originReviewedRevision": "1ec900f05ed28e1a0164a084fb3ee7b0f618d9f0",
+      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。",
+      "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "producer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.saveWork",
+      "consumer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.buildInput; #commitOverall",
+      "executionOwner": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#consumeHostedWorkItem / #runHostedInitialStage：当前有效领取者执行；Host action_attempt约束唯一fence。",
+      "recoveryOwner": "server/modules/work-item/miaoda-work-item.repository.ts#MiaodaWorkItemRepository.claimAutoProcessingCandidate：Host核对封存原结果，原owner/fence恢复；消费者通过原入口接续，不另建结果真源。",
+      "authority": {
+        "requestRecord": "action_attempt.task_envelope_json / attempt_id / operation_ref；server/modules/canonical-host/canonical-jobaid-problem.service.ts#begin",
+        "artifactRecord": "assessment_work_revision及Overall不可变artifact.analysis；work_item.projection_json.integratedAssessment.overallSynthesis；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commitOverall",
+        "consumedInputField": "task_envelope_json.modelInput.previousWork（完整工作）及.modelInput.modelInput.previousWork（实际模型投影）；Overall.basedOnJobAidWorkRevisionRef；server/modules/canonical-host/jobaid-problem-task.ts#jobAidProblemModelWorkContent",
+        "ready": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#buildInput：读取准确已存工作，核对最新工作、文档版次和roundCompletion；保留允许的未核实条件，不以翻译完成替代本项条件。",
+        "saved": "server/modules/canonical-host/jobaid-work.repository.ts#JobAidWorkRepository.save：来源授权、actor、lease fence、工作修订CAS及事务；保存与执行终态分别成立。",
+        "current": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commitOverall：jobAidWorkRevisionGuard和projection CAS；#readBrowser按准确workRef判CURRENT/STALE，不按保存时间猜消费。"
+      },
+      "decisionEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#buildInput; server/modules/canonical-host/jobaid-overall-projection.ts#assertJobAidOverallWorkCurrent",
+      "projectionEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commitOverall; server/modules/canonical-host/jobaid-overall-projection.ts#buildJobAidOverallProjection",
+      "readEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#readAttemptWork; #readBrowserRevision; #readBrowser",
+      "actionEntries": [
+        "server/modules/canonical-host/canonical-jobaid-problem.service.ts#begin：按准确WorkItem、请求范围与权限受理",
+        "server/modules/canonical-host/canonical-jobaid-problem.service.ts#saveWork：按attemptRef/token/generation/requestId/expectedWorkRevision保存",
+        "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit：封存及提交准确workRevisionRef；原提交恢复仍使用原结果",
+        "server/modules/canonical-host/jobaid-semantic-content.ts#assertJobAidSemanticContent：仅新jobaid-semantic.v1任务检查等级定义/业务与重要事件依据、方法要求正文位置和未决项；旧封存提交按原版本恢复。"
+      ],
+      "validationRefs": [
+        "test/node/core-p1-host-postgres.test.mjs",
+        "test/unit/jobaid-current-execution.spec.ts",
+        "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+        "test/unit/jobaid-problem-work.spec.ts",
+        "test/unit/canonical-jobaid-problem-continuation.spec.ts",
+        "test/node/jobaid-review-protocol.test.mjs",
+        "test/node/jobaid-semantic-context.test.mjs"
+      ],
+      "authorRevision": "357292e26174b69504ee315898609f6ed6beef14",
+      "gaps": [
+        {
+          "id": "research.overall.semantic",
+          "kind": "runtime",
+          "reason": "P1已实现新任务内容边界与实际消费者保真，并修复方法快照升级兼容；真实资料尚缺通用低严重性定义/部分工程事实，SEM-01/02真实内容验收保持开放。",
+          "nextAction": "以新任务准确读取原工程资料和方法要求，补真实定义/后果或保留未知，保存后核对Overall实际输入及独立正文；需新模型/真实SAVE按具体授权执行。"
+        },
+        {
+          "id": "research.overall.deployment",
+          "kind": "deployment",
+          "reason": "薄诊断及时间字段候选尚未部署，旧生产运行不等同当前候选通过。",
+          "nextAction": "按发布授权独立记录准确候选发布指纹，再只读核对原页面；不要重复已有业务SAVE。"
+        },
+        {
+          "id": "research.overall.browser",
+          "kind": "test",
+          "reason": "真实JSON的自动浏览器导入受扩展本地文件权限限制；4项真实数据组件测试已过，浏览器视觉仍未验。",
+          "nextAction": "用户通过允许的原生文件选择完成导入后，核对正文/诊断及导航；不改变权限或额外提供私有文件服务。"
+        }
+      ]
+    },
+    {
+      "id": "translation.reading",
+      "title": "翻译块保存 → 检查/选用 → 阅读",
+      "nodeIds": [
+        "document.translation",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "artifact.reading"
+      ],
+      "consistencyScenarioIds": [
+        "V04",
+        "V05"
+      ],
+      "workPackageIds": [
+        "P0",
+        "P2"
+      ],
+      "sourceRevision": "a04c59db668b5162f0e7499bb21ff09732b6307b",
+      "originReviewedRevision": "1ec900f05ed28e1a0164a084fb3ee7b0f618d9f0",
+      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。",
+      "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "producer": "server/modules/canonical-host/canonical-translation-v2.service.ts#CanonicalTranslationV2Service.executeDocument",
+      "consumer": "server/modules/canonical-host/document-translation-reading.controller.ts#DocumentTranslationReadingController.read; server/modules/canonical-host/canonical-translation-v2-quality.ts#buildTranslationWorkspaceReadingV2",
+      "executionOwner": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#advanceDocumentTranslation：服务消费者调用受fence约束的Host运行入口；server/modules/canonical-host/document-translation-runtime.service.ts#DocumentTranslationRuntimeService.run",
+      "recoveryOwner": "server/modules/canonical-host/document-translation-runtime.service.ts#run：RECOVER_EXPIRED / RECOVER_KNOWN_FAILURE / RESUME_KNOWN_FAILURE / CONTINUE_PARTIAL按原request/attempt、准确来源及保存块判断；未知生成不自动重发。",
+      "authority": {
+        "requestRecord": "action_attempt的DOCUMENT_VERSION翻译请求及task_envelope_json；server/modules/action-attempt/document-translation-attempt.repository.ts#DocumentTranslationAttemptRepository.claim",
+        "artifactRecord": "translation_workspace / translation_block_revision及result_artifact_json/result_manifest_json；server/modules/canonical-host/canonical-translation-workspace.repository.ts#saveCandidates; #saveFinalArtifact",
+        "consumedInputField": "workspace.parsedArtifactRef/parsedArtifactSha256、planRevision/contextRevision；blockRevisionId及manifest.blockRevisions；server/modules/canonical-host/canonical-translation-workspace.repository.ts#readForSource; #checkAndSelectBatch",
+        "ready": "server/modules/canonical-host/document-translation-runtime.service.ts#run：准确parseRunId/来源授权及请求范围；server/modules/canonical-host/canonical-translation-v2.service.ts#executeScoped：按实际块任务判断生成/检查。",
+        "saved": "server/modules/canonical-host/canonical-translation-workspace.repository.ts#saveCandidates：事务及withFencedWorkspace，已存候选不等同可读；保存块在其他批失败时仍保留。",
+        "current": "server/modules/canonical-host/canonical-translation-workspace.repository.ts#checkAndSelectBatch：块检查及选用；server/modules/canonical-host/canonical-translation-v2-quality.ts#buildTranslationWorkspaceReadingV2：只投影实际selected/check状态并保留缺口。"
+      },
+      "decisionEntry": "server/modules/canonical-host/canonical-translation-v2.service.ts#executeScoped; server/modules/canonical-host/canonical-translation-v2-quality.ts#checkTranslationBlockV2",
+      "projectionEntry": "server/modules/canonical-host/canonical-translation-v2-quality.ts#buildTranslationWorkspaceReadingV2；client/src/pages/DocumentParsingPage/runtime-monitor/adapt-document-translation-read.ts#adaptDocumentTranslationRead复用父级同一获权读回，仅选用块形成阅读边，PARTIAL与执行终态分轴。",
+      "readEntry": "server/modules/canonical-host/document-translation-reading.controller.ts#read：按准确原文来源读取并复核访问权；#readSemantic; #readRevision；DocumentVersionReadingPage中文阅读区“查看译文运行图”，parent共用读取；成果定位当前selected blockRevisionId，尝试导航回续接入口并重核当前状态。",
+      "actionEntries": [
+        "GET/POST /api/document-management/document-versions/:documentVersionId/translation-continuation → DocumentTranslationBrowserService.prepare/continue → SessionResolver受限native浏览器SQL桥 → DocumentTranslationRuntimeService.continueForBrowser；仅本人已有UPLOAD/ZH_FULL交付，actor/tenant/source/准确parse每次重检，不向浏览器交付service凭据。",
+        "server/modules/canonical-host/document-translation-runtime.service.ts#run：START/CLAIM/HEARTBEAT/WORKSPACE，service-scope及token/generation授权",
+        "server/modules/canonical-host/document-translation-runtime.service.ts#run：RECOVER_EXPIRED/CONTINUE_PARTIAL/RECOVER_PARTIAL_INPUT/RECOVER_KNOWN_FAILURE/RESUME_KNOWN_FAILURE",
+        "server/modules/canonical-host/document-translation-runtime.service.ts#run：FINISH/RELEASE/CANCEL/FAIL；先保存并收尾，再释放原占用"
+      ],
+      "validationRefs": [
+        "test/unit/canonical-translation-v2-quality.spec.ts",
+        "test/unit/document-translation-runtime.spec.ts",
+        "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+        "test/unit/document-translation-browser.spec.ts",
+        "test/unit/document-translation-saved-recovery-postgres.spec.ts",
+        "test/unit/document-translation-runtime-diagnostic.spec.ts"
+      ],
+      "integratedTestRevision": "3b45e15c7500992589a1935729a71f481e75cb99",
+      "gaps": [
+        {
+          "id": "translation.reading.runtime",
+          "kind": "runtime",
+          "reason": "第一批是部分块保存/检查/选用及已知失败恢复的定向隔离回归，未声称新生产翻译运行。",
+          "nextAction": "复用准确已保存块核对V04/V05的存量读取证据；需新运行时单独记录请求和已选块，不默认生成整篇。"
+        },
+        {
+          "id": "translation.reading.browser-scope",
+          "kind": "runtime",
+          "reason": "正常浏览器入口已完成本人既有UPLOAD/ZH_FULL范围的代码与真实隔离RLS验证；尚未发布/实际用户运行，其他来源的续接仍需其原授权入口。",
+          "nextAction": "发布后以已有获权本人上传对象核对GET与部分译文；需要POST时以准确原attempt请求执行，不生成重复请求或全篇重译。"
+        }
+      ]
+    },
+    {
+      "id": "save.finish",
+      "title": "业务保存 → 执行收尾",
+      "nodeIds": [
+        "assessment.research",
+        "assessment.overall"
+      ],
+      "edgeIds": [],
+      "consistencyScenarioIds": [
+        "V08",
+        "V10"
+      ],
+      "workPackageIds": [
+        "P0",
+        "P1",
+        "P6"
+      ],
+      "sourceRevision": "a04c59db668b5162f0e7499bb21ff09732b6307b",
+      "originReviewedRevision": "1ec900f05ed28e1a0164a084fb3ee7b0f618d9f0",
+      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。；已真实复现ACK与WorkItem写者、迟到配置入口的40P01并统一锁序；4项真实隔离PG保留并发拒绝和准确重放。",
+      "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "producer": "server/modules/canonical-host/jobaid-work.repository.ts#JobAidWorkRepository.save",
+      "consumer": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#ActionAttemptLifecycleService.finishProjectionSuccess; openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#acknowledgeAndClearAutoClaim",
+      "executionOwner": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#consumeAutomaticWorkItemQueueTick：单一active-claim owner执行；Host分别维护action_attempt和auto_work_item_authorization，不能以清本地记录代替释放。",
+      "recoveryOwner": "server/modules/work-item/miaoda-work-item.repository.ts#claimAutoProcessingCandidate：核对原owner/generation/封存结果hash；投影已写则校正终态，否则延续COMMITTING。外层消费者仅以准确token/generation调用ACK。",
+      "authority": {
+        "requestRecord": "action_attempt.task_envelope_json/result_envelope_json/result_content_hash及auto_work_item_authorization；server/modules/work-item/miaoda-work-item.repository.ts#claimAutoProcessingCandidate",
+        "artifactRecord": "assessment_work_revision、work_item.projection_json、action_attempt.projection_applied；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit",
+        "consumedInputField": "封存result.modelOutput.workRevisionRef、task.baseRevision、原attemptId/leaseGeneration；auto_work_item_authorization的requestId/token/generation；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit; server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease",
+        "ready": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts#AutomaticWorkItemDispatchService.acknowledgeWorkItem：重新授权准确租约并由readCurrentInitialAnalysis检查Host成功判据；不是worker退出即成功。",
+        "saved": "server/modules/canonical-host/jobaid-work.repository.ts#save及server/modules/canonical-host/canonical-jobaid-problem.service.ts#readAttemptWork：幂等SAVE与独立读回在执行终态前即可成立。",
+        "current": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#finishProjectionSuccess：准确投影完成；server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease：确认当前授权完成；本地active-claim仅在有效ACK后清理。"
+      },
+      "decisionEntry": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#prepareCommit; server/modules/canonical-host/automatic-work-item-dispatch.service.ts#acknowledgeWorkItem",
+      "projectionEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commitOverall; server/modules/action-attempt/action-attempt-lifecycle.service.ts#finishProjectionSuccess",
+      "readEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#readAttemptWork; server/modules/work-item/miaoda-work-item.repository.ts#readCompletedAutoProcessingLeaseReceipt",
+      "actionEntries": [
+        "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit：封存后的恢复只接受原准确结果",
+        "server/modules/canonical-host/automatic-work-item-dispatch.service.ts#nextWorkItem：受权恢复领取",
+        "server/modules/canonical-host/automatic-work-item-dispatch.service.ts#acknowledgeWorkItem：同token/generation幂等ACK",
+        "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#acknowledgeAndClearAutoClaim：校验ACK后清本地领取",
+        "server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease/#applyPendingModelConfiguration：准确WorkItem先于grant加锁；同事务保留token/generation、expected revision及ACK幂等回执。"
+      ],
+      "validationRefs": [
+        "test/node/core-p1-host-postgres.test.mjs",
+        "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+        "test/node/automatic-work-item-ack-postgres.test.mjs"
+      ],
+      "authorRevision": "357292e26174b69504ee315898609f6ed6beef14",
+      "gaps": [
+        {
+          "id": "save.finish.timeline",
+          "kind": "runtime",
+          "reason": "历史就绪时刻、首次可读持久事件不在现有记录中；dynamic completedAt也不是队列ACK时间。",
+          "nextAction": "报告中分别保留未提供字段和实际首次读回/ACK观察时刻；不从updatedAt或导入时间回填。"
+        },
+        {
+          "id": "save.finish.deployment",
+          "kind": "deployment",
+          "reason": "现有保存/收尾已运行；本批新增时间读模型和诊断尚未发布。",
+          "nextAction": "保留既有真实保存/收尾证据，后续候选发布单独登记，不为补状态重复模型或SAVE。"
+        },
+        {
+          "id": "save.finish.capacity",
+          "kind": "runtime",
+          "reason": "真实单事项时间和同窗官方聚合已取得，但Ready/首次可读/生产ACK、未知调用/提交积压以及容量上限仍未知；不能把长等待归因于资源饱和。",
+          "nextAction": "发布并在既有准确记录上观察恢复行为；只取得实际请求范围的新增时间，不补造历史时间、不先扩worker或替换队列。"
+        }
+      ]
+    },
+    {
+      "id": "feedback.reading",
+      "title": "原生单机状态窗口 → 准确来源阅读",
+      "nodeIds": [
+        "business.aeo_execution",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "artifact.reading"
+      ],
+      "consistencyScenarioIds": [
+        "V23",
+        "V24"
+      ],
+      "workPackageIds": [
+        "P3",
+        "P4"
+      ],
+      "sourceRevision": "a04c59db668b5162f0e7499bb21ff09732b6307b",
+      "reviewScope": "本批保留真实原生结构与精确来源身份，隔离服务导入→读取→typed消费者已验证；未将未知逐要求与目标分母补造。",
+      "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "producer": "server/modules/tdms-source/tdms-complete-owned-source.validation.js#validateCompleteRelationTable/#validateReusedEngineeringStatusTable：nativeStatusProof工程编号与exact owner/sourceRecordId逐一核对。",
+      "consumer": "client/src/features/tdms-source/TdmsRecordDetails.tsx → TdmsEngineeringExecution.tsx：所有已有准确来源详情入口共用单机表。",
+      "executionOwner": "现有TDMS来源接收/读取者；本读取不创建执行请求或调用模型。",
+      "authority": {
+        "requestRecord": "tdms_read_receipt及已有来源授权；不是新的AEO执行任务。",
+        "artifactRecord": "tdms_record_revision.rawFields.completeOwnedSource.reads[].relationTables[].nativeStatusProof.statusTable",
+        "consumedInputField": "TdmsFileServiceRecordReadResponse.engineeringExecution：exact sourceRevisionRef/sourceRecordId/sourceVersion/businessVersion及windows.rows",
+        "ready": "已通过来源授权、bodyReadPolicy与Complete1两次稳定观察；EO/EF/AEO原生status proof字段完整才投影。",
+        "saved": "已有不可变tdms_record_revision；不从来源读取推断正式文档登记或业务执行。",
+        "current": "只显示当前请求准确修订及receipt.readAt；历史源状态、sourceObservedAt/capturedAt/readAt各保留原含义。"
+      },
+      "decisionEntry": "server/modules/tdms-source/tdms-engineering-execution-reading.ts#engineeringExecutionReading",
+      "projectionEntry": "server/modules/tdms-source/tdms-document-source-reading.ts#sourceRecordReadResponse → engineeringExecutionReading；client/src/features/tdms-source/tdms-engineering-execution-monitor.ts#adaptEngineeringExecutionRead仅从同一父级读响应投影，按准确scope/revision/table/row定位原表。",
+      "readEntry": "TdmsSourceController GET records/:ref / document-versions/:id → TdmsSourceService → TdmsRecordDetails；TdmsRecordDetails → TdmsEngineeringExecutionDiagnostic“运行诊断”复用父级刷新，无独立fetch。",
+      "actionEntries": [
+        "来源详情仅获权读取；不写正式批准、完成或模型请求。"
+      ],
+      "validationRefs": [
+        "test/unit/tdms-source/tdms-complete-owned-receiver.spec.ts",
+        "test/unit/tdms-p1-frontend/engineering-execution.spec.ts",
+        "test/unit/tdms-p1-frontend/engineering-execution-monitor.spec.ts"
+      ],
+      "gaps": [
+        {
+          "id": "feedback.reading.requirements",
+          "kind": "runtime",
+          "reason": "当前原生窗口没有逐项要求ID与完整目标机队分母；同机多反馈和版本均保留，未计算整份完成率。",
+          "nextAction": "获权取得原生逐要求身份、准确版本/目标、反馈更正/作废/取代关系后，再实现逐要求逐机汇总。"
+        },
+        {
+          "id": "feedback.reading.tdms-provider",
+          "kind": "runtime",
+          "reason": "来源读取代码及隔离验证已具备；当前AppModule来源授权仍为Unconfigured且artifact store缺省，分析TDMS_RUNTIME_READER/TDMS_NATIVE_EVIDENCE_VERIFIER也未装配。不能将开发者CLI读取视作后台来源权限或正式原件登记。",
+          "nextAction": "真实TdmsRuntimeAuthority、ProcessingSet服务/授权和可验证receipt来源到齐后装配；准确工程文件原件登记还需独立留存授权，独立公司措施不借批准意见carrier替代。"
+        },
+        {
+          "id": "feedback.reading.deployment",
+          "kind": "deployment",
+          "reason": "本批单机表与来源身份修复尚未发布。",
+          "nextAction": "按具体发布包完成技术发布后，只读核对已有获权来源。"
+        }
+      ]
+    },
+    {
+      "id": "wiki.saved-reading",
+      "title": "已保存成员 → 准确 Wiki 层级与阅读",
+      "nodeIds": [
+        "document.reading",
+        "assessment.research",
+        "knowledge.wiki",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "reading.wiki",
+        "research.wiki",
+        "wiki.parent",
+        "artifact.reading"
+      ],
+      "consistencyScenarioIds": [
+        "V18",
+        "V20"
+      ],
+      "workPackageIds": [
+        "P5"
+      ],
+      "sourceRevision": "a04c59db668b5162f0e7499bb21ff09732b6307b",
+      "reviewScope": "ATA2准确直接成员与既有ATA4/子层共同消费；目录诊断只投影获权覆盖和活跃请求。三类业务变化的全部触发策略不在本增量通过范围。",
+      "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "producer": "server/modules/canonical-host/hierarchical-wiki-inventory.ts#readWikiInventory/#wikiClassifications；已确认归属的文档和已保存工作按真实ATA2/ATA4层级进入，成员kind为DOCUMENT_READING、WORK_ITEM_WORK、MATTER_WORK或DERIVED_SUMMARY。",
+      "consumer": "server/modules/canonical-host/hierarchical-wiki-generation.ts#assertWikiLayerMembers/#wikiDirectVersions；openclaw/skills/wiselink-research-and-synthesize/scripts/hierarchical-wiki-model-view.mjs和derived-summary-shape.mjs消费准确成员。",
+      "executionOwner": "HierarchicalWikiService.next → 已有DerivedSummary预留/领取与Native消费；仅原授权任务执行模型。",
+      "recoveryOwner": "既有derived summary attempt原request/lease恢复；目录读取/展开不预留或启动任务。",
+      "authority": {
+        "requestRecord": "hierarchical_wiki_scope目标/完成generation与既有derived summary activeRequest/attemptRef；HierarchicalWikiService.next。",
+        "artifactRecord": "既有derived summary已保存修订、准确成员与根来源；HierarchicalWikiCompletion.saved → hierarchical-wiki.persistence.ts#completeSavedWiki匹配active versions及revision.coverage delivered/used后更新覆盖。",
+        "consumedInputField": "modelInput.members[].member.kind为DOCUMENT_READING/WORK_ITEM_WORK/MATTER_WORK/DERIVED_SUMMARY；ATA2 direct成员保留准确已保存workRef与原文，不伪造ATA4。",
+        "ready": "readWikiInventory与assertWikiLayerMembers按真实范围/来源可读性和授权核定；FLEET层不直接接收leaf。",
+        "saved": "既有DerivedSummary保存入口和事务；准确输入及根来源形成不可变成果，保存后才更新覆盖。",
+        "current": "目录completedGeneration/coveredMembers只表示Host报告的覆盖，当前正文summaryRef须由原阅读页独立核对。"
+      },
+      "decisionEntry": "server/modules/canonical-host/hierarchical-wiki.service.ts#next/#refresh；hierarchical-wiki-generation.ts#assertWikiLayerMembers。",
+      "projectionEntry": "client/src/features/derived-summary/adapt-hierarchical-wiki-status.ts#adaptHierarchicalWikiStatus；当前保存正文准确修订未在目录返回，artifact.reading边保持unknown。",
+      "readEntry": "HierarchicalWikiService.list → HierarchicalWikiDirectory → HierarchicalWikiRuntimeDiagnostic；父级目录读一次，按成功读取记录observedAt，刷新复用原回调。",
+      "actionEntries": [
+        "已有/summaries/:summaryId读取正文；summaryMemberRoute进入准确文档/工作/子摘要；活跃request携带原attemptRef进入已有读取页。",
+        "运行图展开、切换和刷新不启用Wiki策略、不调用模型或写业务。"
+      ],
+      "validationRefs": [
+        "test/unit/hierarchical-wiki-layered-generation.spec.ts",
+        "test/unit/hierarchical-wiki-saved-work-inventory.spec.ts",
+        "test/node/hierarchical-wiki-saved-work-inventory-postgres.test.mjs",
+        "test/unit/hierarchical-wiki-runtime-diagnostic.spec.ts",
+        "test/unit/hierarchical-wiki-runtime-diagnostic-ui.spec.ts"
+      ],
+      "gaps": [
+        {
+          "id": "wiki.saved-reading.runtime",
+          "kind": "runtime",
+          "reason": "本增量为隔离内容消费及应用内读取投影验证；未新增生产Wiki生成，目录不含确切当前正文修订。",
+          "nextAction": "发布后只读原目录和保存正文；新生成仅在已有授权且存在实际跨资料价值的准确请求中进行。"
+        },
+        {
+          "id": "wiki.saved-reading.impact",
+          "kind": "source_review",
+          "reason": "ATA2成员遗漏已修复；公司批准/措施变化及已登记待补条件命中的实际端到端策略仍需来源与消费者核对。",
+          "nextAction": "先完成P3准确资料与实际内容消费，再按三类变化验证最小更新范围，不为缺源重复生成。"
+        },
+        {
+          "id": "wiki.saved-reading.deployment",
+          "kind": "deployment",
+          "reason": "Host与Native本增量尚未部署。",
+          "nextAction": "按同一审阅包分别发布Host与准确Native技能包，并保留各自回执。"
+        }
+      ]
+    },
+    {
+      "id": "configuration.reading",
+      "title": "获权 LCM 快照 → 原生矩阵/单机阅读",
+      "nodeIds": [
+        "business.software_configuration",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "artifact.reading"
+      ],
+      "consistencyScenarioIds": [
+        "V31",
+        "V37",
+        "V38",
+        "V41"
+      ],
+      "workPackageIds": [
+        "P4"
+      ],
+      "sourceRevision": "a04c59db668b5162f0e7499bb21ff09732b6307b",
+      "reviewScope": "保留既有候选来源及原生状态语义；只给当前获权读取集增加诊断，不宣称AEO/适用性已经消费。",
+      "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "producer": "LcmNativeMatrixRepository.importSnapshot事务保存lcm_configuration_snapshot和不可变lcm_native_matrix_snapshot。",
+      "consumer": "client/src/pages/WorkspaceHomePage/LcmConfigurationLibrary.tsx：同一native.index经lcmNativeWindow/Viewport或lcmNativeAircraftRows进入原矩阵/单机及源记录入口。",
+      "executionOwner": "既有LCM导入/读取服务；当前诊断不创建执行请求。",
+      "recoveryOwner": "既有LCM来源读取及客户端scope/permission失效处理；读取图不进行调度恢复。",
+      "authority": {
+        "requestRecord": "本次获权read set/binding和准确snapshotIds；不把快照读取虚构为模型请求。",
+        "artifactRecord": "lcm_configuration_snapshot与lcm_native_matrix_snapshot；候选来源authority/completeness保持unverified。",
+        "consumedInputField": "LcmNativeMatrixResponse.binding六字段及exact snapshotIds；候选限定、原生矩阵、源位置和各来源时间保留。",
+        "ready": "LcmSnapshotBrowserRepository.nativeMatrixReadSet按owner/scope取准确快照；LcmNativeMatrixReadingService.read核验rawSha/模型/结构/grant并在返回前重新授权。",
+        "saved": "既有importSnapshot事务；候选导入保存不代表已核实实时装机。",
+        "current": "当前session/refresh/query/binding/aircraft scope下已读快照；撤权或读集切换立即隐藏，晚到读回不替换当前scope。"
+      },
+      "decisionEntry": "server/modules/lcm-export-staging/lcm-native-matrix-reading.service.ts#LcmNativeMatrixReadingService.read；客户端既有readLcmNativeMatrix完整绑定校验。",
+      "projectionEntry": "client/src/pages/WorkspaceHomePage/adapt-lcm-native-read.ts#adaptLcmNativeRead；business.software_configuration → surface.reading只绑定同一readSet。",
+      "readEntry": "LcmConfigurationLibrary → useLcmNativeMatrix → readLcmNativeMatrix；成功读回后设置observedAt，切本地视图不改变观察时间。",
+      "actionEntries": [
+        "LcmRuntimeDiagnostic复用父refreshReadSet；导航仅核对当前scope/node/ref/readSet/snapshot后聚焦本页矩阵/单机入口，原源记录按钮继续既有读取。"
+      ],
+      "validationRefs": [
+        "test/unit/lcm-matrix/runtime-diagnostic.spec.ts",
+        "test/unit/lcm-matrix/runtime-diagnostic-ui.spec.ts",
+        "test/unit/lcm-matrix/native-local-ui.spec.ts",
+        "test/unit/lcm-matrix/selection-followup-ui.spec.ts"
+      ],
+      "gaps": [
+        {
+          "id": "configuration.reading.runtime",
+          "kind": "runtime",
+          "reason": "既有LCM候选快照阅读能力已保留，新诊断未做线上浏览器核验；当前观察与有限覆盖不能推为实时全机队或AEO完成。",
+          "nextAction": "发布后只读现有获权快照，核对原生值、位置和时间；实际关联工程条件时另核具体消费者和证据。"
+        },
+        {
+          "id": "configuration.reading.deployment",
+          "kind": "deployment",
+          "reason": "本批LCM运行图尚未部署。",
+          "nextAction": "按本批技术发布包交付原应用，再核对真实入口与准确读取集。"
+        }
+      ]
+    }
+  ]
+}

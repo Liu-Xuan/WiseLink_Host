@@ -109,6 +109,9 @@ export default function TdmsSourceReading({ context, enabled = false, authorizat
     setExpandedGraphRecord(null); setRelationRetry(0); setReadRetry(0);
     if (identityQuery.error) void identityQuery.refetch();
   }
+  function reloadRecord() {
+    setReadRetry(value => value + 1); setRelationsSelection(null);
+  }
   function openRevision(revision: string) {
     setSelection({ scope: scopeKey, revisions: [...revisions, revision] });
     setRelationsSelection(null); setReadRetry(0); setRelationRetry(0); setExpandedGraphRecord(null);
@@ -188,11 +191,11 @@ export default function TdmsSourceReading({ context, enabled = false, authorizat
             </> : null}
           </> : null}
           {details.loading ? <p role="status">正在授权读取此准确修订…</p> : null}
-          {details.error ? <p role="alert">{details.error} <button type="button" onClick={() => { setReadRetry(value => value + 1); setRelationsSelection(null); }}>重试此修订</button></p> : null}
+          {details.error ? <p role="alert">{details.error} <button type="button" onClick={reloadRecord}>重试此修订</button></p> : null}
           {details.value ? <>
             <p className="tdms-source-read-receipt">此准确源记录已读回 · {details.value.receipt.readAt}</p>
             <Coverage value={details.value.record.coverage} />
-            <TdmsRecordDetails read={details.value} openDocument={openDocument} />
+            <TdmsRecordDetails read={details.value} openDocument={openDocument} monitorScopeKey={scopeKey} onRefresh={reloadRecord} />
             <button type="button" onClick={openRecordRelations}
               aria-expanded={!graphFirst && relationsSelection === detailKey}>{graphFirst ? '查看此准确记录的关系概览' : relationsSelection === detailKey ? '收起来源关系' : '授权读取此修订的来源关系'}</button>
             {relations.loading ? <p role="status">正在读取此准确修订的获准关系…</p> : null}

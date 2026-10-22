@@ -8,6 +8,7 @@ import {
   type JobAidProblemWorkContent,
   type JobAidRiskScenario,
 } from '@shared/jobaid-problem-assessment.interface';
+import { assertJobAidSemanticContent } from './jobaid-semantic-content';
 import { isJobAidMethodBinding } from './jobaid-method-pack';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
@@ -98,6 +99,7 @@ export type JobAidWorkValidationContext = (
   | { workItemId: string; matterId?: never }
   | { matterId: string; workItemId?: never }
 ) & {
+  contentValidationVersion?: 'jobaid-semantic.v1';
   methodBinding: JobAidProblemWorkContent['methodBinding'];
   previous: JobAidProblemWorkContent | null;
   /** Used only when validating an already persisted revision. */
@@ -180,6 +182,10 @@ export function materializeJobAidWork(
             label: text(proposal.label, `${label}_LABEL`),
             reason: text(proposal.reason, `${label}_REASON`),
             basisRefs,
+            ...(proposal.definitionMatch !== undefined ? { definitionMatch: (() => {
+              const match = object(proposal.definitionMatch, 'DEFINITION_MATCH');
+              return {methodRef: refs([match.methodRef], 'DEFINITION_METHOD')[0], definitionQuote: text(match.definitionQuote, 'DEFINITION_QUOTE')};
+            })() } : {}),
           };
         };
         const severity = classification(risk.severity, 'SEVERITY');
@@ -294,11 +300,13 @@ export function materializeJobAidWork(
               'NOT_APPLICABLE_WITH_BASIS',
               'LATER_BUSINESS_STAGE',
               'NOT_YET_ADDRESSED',
+              'CONFLICT',
             ] as const,
             'REQUIREMENT_TREATMENT',
           ),
           basisRefs: refs(requirement.basisRefs, 'REQUIREMENT_BASIS', true),
           explanation: text(requirement.explanation, 'REQUIREMENT_EXPLANATION'),
+          ...(requirement.bodyQuote !== undefined ? {bodyQuote: text(requirement.bodyQuote, 'REQUIREMENT_BODY_QUOTE')} : {}),
         };
       });
       const sourceDependencies: string[] = [];
@@ -400,6 +408,7 @@ export function materializeJobAidWork(
     )
   )
     fail('OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION');
+  if (context.contentValidationVersion) assertJobAidSemanticContent({issues: updates, roundCompletion}, context.evidence);
   const unchangedExplanation = text(
     value.unchangedExplanation === undefined
       ? '未提交的问题和总体字段按既有工作保留；保留不代表本批重新验证。'
@@ -460,12 +469,13 @@ function object(value: unknown, name: string): Record<string, unknown> {
   const fields: Record<string, string[]> = {
     RETIRED_ISSUE: ['issueKey', 'reason'],
     RISK: ['scenario', 'conditions', 'method', 'severity', 'likelihood', 'importantEvent', 'limitations', 'controlComparison', 'score', 'riskGrade'],
-    SEVERITY: ['label', 'reason', 'basisRefs'], LIKELIHOOD: ['label', 'reason', 'basisRefs'],
+    SEVERITY: ['label', 'reason', 'basisRefs', 'definitionMatch'], LIKELIHOOD: ['label', 'reason', 'basisRefs', 'definitionMatch'],
+    DEFINITION_MATCH: ['methodRef', 'definitionQuote'],
     IMPORTANT_EVENT: ['event', 'basisRefs', 'reason'],
     MEASURE: ['text', 'addresses', 'limitations', 'status', 'basisRefs'],
     OTHER_CLASSIFICATION: ['method', 'value', 'reason', 'basisRefs'],
     OPEN_QUESTION: ['question', 'affects', 'nextEvidence', 'reason'],
-    REQUIREMENT: ['methodRef', 'requirement', 'conditions', 'treatment', 'basisRefs', 'explanation'],
+    REQUIREMENT: ['methodRef', 'requirement', 'conditions', 'treatment', 'basisRefs', 'explanation', 'bodyQuote'],
   };
   if (fields[name]) exact(result, fields[name]);
   return result;

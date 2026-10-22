@@ -506,7 +506,7 @@ export function consumeOpenClawOverallSynthesisOutput(
       for (const [key, value] of Object.entries(expected)) {
         const structured = ['sourceContext', 'queryProvenance', 'sourceWork',
           'sourceStatement', 'originalEvidenceRefs', 'nativeSource',
-          'nativeScope', 'nativeReadReceipt'].includes(key);
+          'nativeScope', 'nativeReadReceipt', 'classificationDefinitions'].includes(key);
         same(structured ? canonicalJson(actual[key]) : actual[key],
           structured ? canonicalJson(value) : value, 'OVERALL_READING_EVIDENCE_INPUT_MISMATCH');
       }

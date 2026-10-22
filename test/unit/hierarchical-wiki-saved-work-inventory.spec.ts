@@ -163,19 +163,13 @@ it('adds two exact saved WI leaves at each confirmed ATA4 without replacing the 
       { kind: 'WORK_ITEM', id: 'WI-second' },
     ]),
   );
-  // Existing parent policy continues to consume only saved children, not these leaves.
+  // Only memberships from the exact scope are passed to this projection.
   expect(
     wikiDirectVersions(
       'ATA4',
       leaves.map((item) => ({ key: item.memberKey, member: item.member! })),
     ),
   ).not.toEqual({});
-  expect(
-    wikiDirectVersions(
-      'ATA2',
-      leaves.map((item) => ({ key: item.memberKey, member: item.member! })),
-    ),
-  ).toEqual({});
   expect(
     wikiDirectVersions(
       'FLEET',
@@ -219,7 +213,6 @@ it.each([
     [assignment(), { ...assignment(), status: 'EXCLUDED' }],
   ],
   ['a family-only classification', [assignment(null)]],
-  ['a coarse ATA2 classification', [assignment('31')]],
 ])(
   'does not promote %s into a saved work leaf',
   async (_label, assignments) => {
@@ -227,6 +220,20 @@ it.each([
     expect(workItems(result)).toEqual([]);
   },
 );
+
+it('keeps ATA2-only saved assessment and independent document reading at their confirmed chapter', async () => {
+  const result = await setup({ assignments: [assignment('31')] }).read([
+    { kind: 'WORK_ITEM', subjectId: 'WI-selected' },
+  ]);
+  expect(result.items.map(item => item.ata)).toEqual(['31', '31']);
+  expect(workItems(result)[0]?.member).toEqual({ kind: 'WORK_ITEM_WORK', workItemId: 'WI-selected',
+    documentVersionId: 'DV-current', workRef: 'JAWR-current', workRevision: 3, issueKeys: [] });
+  expect(wikiDirectVersions('ATA2', result.items.map(item => ({ key: item.memberKey, member: item.member! }))))
+    .toEqual({ 'DOCUMENT_FAMILY:F-selected': documentReading, 'WORK_ITEM:WI-selected': workItems(result)[0]!.member });
+  const pending = await setup({ assignments: [assignment('31')], works: [{ ...savedWork(), attemptStatus: 'RUNNING' }] }).read();
+  expect(workItems(pending)).toEqual([]);
+  expect(pending.waiting).toContainEqual(expect.objectContaining({ ata: '31', status: 'SAVED_ASSESSMENT_NOT_READY' }));
+});
 
 it('does not convert an aircraft mention, including another model, into confirmed assessment membership', async () => {
   const documents = [

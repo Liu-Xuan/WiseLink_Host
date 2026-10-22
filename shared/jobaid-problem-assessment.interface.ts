@@ -83,6 +83,8 @@ export interface JobAidMethodBinding {
 }
 
 export interface JobAidClassificationProposal {
+  /** Exact delivered method definition; optional only for historical work. */
+  definitionMatch?: { methodRef: string; definitionQuote: string };
   label: string;
   reason: string;
   basisRefs: string[];
@@ -112,7 +114,10 @@ export interface JobAidRequirementHandling {
     | 'CONDITIONS_UNCONFIRMED'
     | 'NOT_APPLICABLE_WITH_BASIS'
     | 'LATER_BUSINESS_STAGE'
-    | 'NOT_YET_ADDRESSED';
+    | 'NOT_YET_ADDRESSED'
+    | 'CONFLICT';
+  /** A traceable passage in the issue body; whitespace is normalized when matching. */
+  bodyQuote?: string;
   basisRefs: string[];
   explanation: string;
 }
@@ -233,6 +238,12 @@ export interface JobAidWorkingReadModel {
     attemptId: string;
     status: string;
     inputRevision: number | null;
+    /** Exact dynamic-attempt record times, not Overall or queue ACK times. */
+    createdAt?: string;
+    startedAt?: string | null;
+    completedAt?: string | null;
+    /** Earliest saved revision belonging to this exact attempt; not first read. */
+    firstSavedAt?: string | null;
   } | null;
   executionStatus: string | null;
   /** Optional for compatibility with Host versions before activity projection. */
