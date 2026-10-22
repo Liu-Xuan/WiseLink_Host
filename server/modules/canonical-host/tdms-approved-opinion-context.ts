@@ -76,7 +76,8 @@ export interface TdmsOpinionAssessmentFact extends NativeIdentity {
     before: ApprovalObservation | null;
     after: ApprovalObservation | null;
   } | null;
-  /** A current source validity fact, separate from immutable capture approval. */
+  /** A current source validity fact, separate from immutable capture approval.
+   * assertionRef can identify the exact retained native state observation. */
   validity: {
     status: 'ACTIVE' | 'REVOKED' | 'UNKNOWN';
     assertionRef: string | null;

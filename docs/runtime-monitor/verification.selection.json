@@ -36,7 +36,8 @@
     "V28",
     "V44",
     "V03",
-    "V16"
+    "V16",
+    "V53"
   ],
-  "reason": "累计来源/Native消费者增量上，新增三组事项首屏、局部适用性投影和显式delegation下到期条件回查。旧证据保留实际源码；V44及真实批准/三类变化全流程保持缺项，未发布或新增线上业务。"
+  "reason": "累计候选接入自身 Estimated 批准映射，保留v1.6稳定ID和真实provider→reader→receipt。作者19PG/244unit原执行SHA保留，761完整Git tree相同，集成未重跑业务测试。b561已批准但发布创建拒绝无release_id；c234已安装暂停。V44、实际Source/在线刷新、原生撤销取代及真实SEM/模型SAVE仍缺项。"
 }

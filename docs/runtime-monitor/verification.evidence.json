@@ -1824,6 +1824,193 @@
       "testLevel": "integration",
       "summary": "公开453cb7ef正常pre-commit全ESLint/双端TypeScript/Stylelint及完整生产构建通过，双端内嵌同一完整SHA，最终依赖裁剪477/477通过。与来源97a2完整树4402路径仅公开协调记录不同，业务代码等同66e70d1d。前两次本机缓存权限/外链依赖失败分别保留；未改规则。仅技术构建，不是部署或真实业务运行。",
       "originalReportRef": "private:tmp/source-clarification-evidence/build-453cb7ef.log"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T21:26:45.169128+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-validity.source.company.approved-opinion",
+      "kind": "source_review",
+      "status": "passed",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [
+        "V24",
+        "V26",
+        "V53"
+      ],
+      "summary": "独立 Astra 接受准确 ff0；正常 cherry-pick 761 完整 Git tree 与 ff0 相同。已核对真实 provider/serialized context/RuntimeReader/receipt consumer，不要求 validity 引用对应 relation 表行。Estimated 自身状态映射修复已本地完成，原授权、准确owner/version和正文门槛不变。 当前81与761差异仅9个记录/生成文件，产品与测试blob不变；本轮准确81正常完整构建及双端immutable指纹通过，不等于线上运行。",
+      "originReviewedRevision": "ff0d89cbaaa7fcd91dfe7f11999644fd828ec142",
+      "integrationRevision": "761568ec2462e36a97f79cca989104011c464c59",
+      "evidenceObservation": "本轮核对集成及既有审查结论，不冒充新的非作者审查或线上运行。",
+      "implementationRevision": "761568ec2462e36a97f79cca989104011c464c59"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "ff0d89cbaaa7fcd91dfe7f11999644fd828ec142",
+      "environmentId": "local:owned-postgresql",
+      "observedAt": "2026-10-22T21:19:29.402766+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-validity.test.owned-postgresql",
+      "kind": "test",
+      "status": "passed",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [
+        "V24",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "summary": "作者最终源码 ff0 的真实隔离 PostgreSQL 19/19，fail/skip0；两条自身Estimated意见同时ACTIVE并实际READ，分别持久化准确receipt，discover不漏正文。缺state/Estimating/冲突rawCode、父单/稳定版本、owner/version/before-after、cohort/mapping/body边界保留。V53仅多意见/草稿准入子范围，不代表真实Overall内容验收。",
+      "originalReportRef": "private:/private/tmp/wiselink-tdms-estimated-validity-20261023/tmp/estimated-evidence/retained-runtime-green.log",
+      "executedAt": null,
+      "integrationRevision": "761568ec2462e36a97f79cca989104011c464c59",
+      "evidenceObservation": "observedAt为原日志复核时刻；实际执行版本仍ff0。761与ff0完整tree一致，按明确范围复用，不改写SHA或自动升级为线上通过。"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "ff0d89cbaaa7fcd91dfe7f11999644fd828ec142",
+      "environmentId": "local:isolated-tests",
+      "observedAt": "2026-10-22T21:19:29.402766+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-validity.test.related-unit",
+      "kind": "test",
+      "status": "passed",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [
+        "V24",
+        "V26",
+        "V53"
+      ],
+      "testLevel": "unit",
+      "summary": "作者最终源码 ff0 的5个关联单测套件244/244通过，包含原显式撤销、SOURCE_EXPLICIT取代、新草稿不覆盖旧批准、准确actor/Source撤权；正常precommit通过。不是新增生产数据或线上验收，本轮集成不重复这些业务测试。",
+      "originalReportRef": "private:/private/tmp/wiselink-tdms-estimated-validity-20261023/tmp/estimated-evidence/targeted-unit.log",
+      "executedAt": null,
+      "integrationRevision": "761568ec2462e36a97f79cca989104011c464c59",
+      "evidenceObservation": "observedAt为原日志复核时刻，执行源码及原日志保持；761与ff0完整Git tree相同。"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T21:26:45.169128+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-validity.deployment.local-candidate",
+      "kind": "deployment",
+      "status": "not_run",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "summary": "b561整批技术授权有效，双远端已读回；Host创建一次400002552拒绝、release_id=null，最近正式运行仍6c。原c234已安装/132文件/Ready/422通过且16cron全暂停。准确81本地构建成功，Estimated未推送/发布；C私有源及恢复目标更正已准备并独审、等待唯一更正确认，C产品tree仍只含b561，不含Estimated。",
+      "implementationRevision": "761568ec2462e36a97f79cca989104011c464c59"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T21:26:45.169128+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-validity.runtime.local-candidate",
+      "kind": "runtime",
+      "status": "not_run",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "summary": "本轮仅本地代码/记录/生成展示；未刷新实际TDMS在线状态，未导入Source/grant/processing set，未新增真实SEM验证、模型/SAVE或正式采用。旧M3只投影原父响应，不造运行数据。",
+      "implementationRevision": "761568ec2462e36a97f79cca989104011c464c59"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "b56133d45f507129e81fb3250370250808594bad",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T21:06:56.469435+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "delivery-b561.deployment.create-rejected",
+      "kind": "deployment",
+      "status": "failed",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "deploymentRef": null,
+      "summary": "用户已批准b561整批技术交付，origin/github均读回b561。官方release create只调用1次，被400002552（分支落后于主分支）拒绝，release_id=null；没有新发布，最近正式版本仍6c。新私有发布源与准确目标更正另行准备，不撤销旧授权，也不在本轮重发。",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-b561-release/attempt-result.json"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "d1725e182277ea504f697b5e0fbd872f9837a0e7",
+      "environmentId": "native:app_17c3zn24kv2",
+      "observedAt": "2026-10-22T21:19:29.402766+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "delivery-c234.deployment.installed-paused",
+      "kind": "deployment",
+      "status": "passed",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish",
+        "wiki.saved-reading"
+      ],
+      "deploymentRef": "native:app_17c3zn24kv2:skill:wiselink-research-and-synthesize@r09.c234",
+      "summary": "主控确认原Native c234已正常安装：132文件准确匹配、Ready、安装目录必需自测422/422通过；16条cron全部暂停。保留原安装回执与恢复目标边界，不重装、不伪填Host目标，也不证明Host Estimated已上线。",
+      "evidenceObservation": "本条按主控回传的安装核对结论登记；observedAt是记录复核时间，不伪造原安装时间。",
+      "executedAt": null
+    },
+    {
+      "id": "estimated-followup.test.final-build",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "environmentId": "local:isolated-production-build",
+      "observedAt": "2026-10-22T21:26:45.169128+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "scenarioIds": [
+        "V30"
+      ],
+      "testLevel": "integration",
+      "summary": "干净81baa5a7在实体独立clone正常完整npm run build一次通过，42.188秒，477/477依赖、0失败；复制既有完整依赖、不重新解析、不改裁剪规则。服务端静态fingerprint及前端编译常量/实际sourceCommit getter绑定均为准确81。只保留已有模块类型、静态/动态混用与大chunk提示。M1/M2的39项QA和实际生成HTML交互已核对；不是部署、浏览器线上运行或真实Source/模型SAVE验收。",
+      "originalReportRef": "private:tmp/estimated-integration-evidence/final-build.log",
+      "readbackRef": "private:tmp/estimated-integration-evidence/final-build-verification.json",
+      "executedAt": "2026-10-22T21:23:43.885834+00:00",
+      "completedAt": "2026-10-22T21:24:26.073744+00:00",
+      "buildDirectory": "/private/tmp/wiselink-estimated-final-build-20261023",
+      "evidenceObservation": "首次校验方式用Node动态导入前端产物触发浏览器window依赖失败，保留原失败日志；改为编译产物AST验证immutable常量绑定，未执行应用、未重建、未扩大业务测试。"
     }
   ]
 }

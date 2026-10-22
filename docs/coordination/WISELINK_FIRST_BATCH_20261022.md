@@ -1,6 +1,6 @@
 # 第一批实施与隔离验证 — 2026-10-22
 
-本批已完成实际代码、隔离验证和存量真实对象的独立只读核对。尚未发布本批代码；生产环境仍为 `6c073de7b6e1e2ce126cf46f405beade388a3639`，已由官方发布查询确认。没有新增生产模型调用、保存、审批或正式采用。
+当前状态（2026-10-23）：用户已批准 `b56133d45f507129e81fb3250370250808594bad` 整批技术交付；原 Host 发布创建被平台 `400002552` 拒绝、没有 release_id，最近正式运行仍为 `6c073de7b6e1e2ce126cf46f405beade388a3639`。原 Native c234 已安装并核对 132 文件、Ready、安装自测 422/422；16 条 cron 全部暂停，不能据此宣称 Estimated 已上线。本地已接入用户明确确认的 Estimated 批准语义，准确实现与验证见末节。下文保留各历史时点的准备、授权和运行证据；旧“技术包待授权”及“Estimated 不足以证明批准”的当前结论由末节更正。没有新增生产模型调用、保存、审批或正式采用。
 
 ## 实施结果
 
@@ -261,7 +261,7 @@ M3的`business.company_records → assessment.research`使用已保存父响应�
 - 集成c971的双端类型检查通过；实际Nest Source组合和有界成员2套7项通过。生产构建首次因未提交协调文档被`SERVER_BUILD_FINGERPRINT:GIT_WORKTREE_DIRTY`保护拒绝，未绕过；干净提交后的构建另记结果。
 - 原日志统一保留于本地忽略目录 `tmp/source-clarification-evidence/`，包括 `native-runtime-unit.log`、`native-authority-postgres.log`、`native-recovery-postgres.log`、`native-summary-consumer-postgres.log`、`native-core-recovery-postgres.log`、`native-monitor-author.log`、`integrated-source-composition.log` 和 `integrated-native-monitor.log`。
 
-生产retained事实当前只能给出 `validity=UNKNOWN`，没有有效性assertion，成员为 `QUALIFIED + APPROVAL_VALIDITY_UNKNOWN`，批准正文READ返回 `TDMS_RUNTIME_OPINION_NOT_APPROVED`；这是明确的剩余缺口。正向PG的ACTIVE为测试事实。Review/successor及OAuth Native未接通；关联工程文件未自动取得PDF，V44获取/解析/恢复闭环未验。当前不解析AEO正文，适用飞机号继续使用反馈页。没有线上DDL、grant、来源导入、Native安装、新模型、业务SAVE或正式采用。
+当时实现回执（已由末节 Estimated 修正取代）：retained provider 曾固定给出 `validity=UNKNOWN`，成员为 `QUALIFIED + APPROVAL_VALIDITY_UNKNOWN`，批准正文 READ 返回 `TDMS_RUNTIME_OPINION_NOT_APPROVED`。这是旧实现的行为，不再作为需要另找批准业务规则的当前结论。Review/successor 及 OAuth Native 未接通、关联工程文件未自动取得 PDF、V44 获取/解析/恢复未验的范围继续单列。当轮没有线上 DDL、grant、来源导入、Native 安装、新模型、业务 SAVE 或正式采用。
 
 最终构建回执：干净候选 `2a5b36eed33713f93e326f4f3e11a8b5fe903ff3` 生产构建通过，服务端内嵌同一SHA，构建时间 `2026-10-22T17:26:17.738Z`；Vite保留已有大chunk提示。该提交相对业务5f只改7个协调/验证记录文件，本回执后继仍为纯记录。快照QA首次误传JSON作为契约参数被明确拒绝，改用实际Markdown契约后39/39通过；没有修改校验逻辑。Chrome实测第七条接线、P3+company+V44+运行组合筛选及准确下钻，保留UNKNOWN与PDF缺口，warn/error为空；截图为本地 `tmp/source-clarification-evidence/native-wiring-browser.png`。此证据仅为M2离线验证页，真实业务与M3私有JSON视觉回放仍未验。本节记录不要求重跑未改业务或再次构建。
 
@@ -291,7 +291,7 @@ Wiki原自动入口只遍历waiting MATTER，会漏掉“输入均已覆盖、�
 
 M1增加`matter.saved-reading`实际接线，复用v1.6的`artifact.reading`及现有节点；Wiki补充到期回查的原入口与边界，不改稳定契约ID。M2共8条接线，源码、测试、部署、运行分别保留实际范围；Chrome的P2＋事项阅读＋V24＋运行组合筛选/下钻显示准确入口及正式清单缺口，warn/error为空，截图为`tmp/source-clarification-evidence/reading-wiring-browser.png`。M3仍为原Host读取的投影，本轮未增加第二状态或调度器。
 
-剩余核心条件仍明确未完成：新的准确技术包尚待授权/发布；真实当前批准、处理集合及来源授权/受控持久化链尚缺；SEM工程事实及真实内容级保存验收未完成；三类生产变化的实际最小更新范围未验；M3私有JSON视觉回放仍待原允许的文件选择。AEO本期不解析正文，继续按用户指定的反馈页飞机号口径；未来接结构化文件。没有把到期PG、合成浏览器或技术构建当作这些真实业务条件完成。
+此段原为技术授权前的阶段记录，已由后续 b561 整批授权和末节状态更正：旧 b561 技术授权有效；新私有发布源更正仍在准备。真正待项为实际 Source/grant/processing set、OAuth 新设备/offline 授权、未结构化撤销/取代解码、SEM 工程事实及真实内容级模型/SAVE 验收，三类生产变化的实际最小更新范围和 M3 私有 JSON 视觉回放仍未验。Estimated 的批准语义已确认，不再列作待业务规则。AEO 本期不解析正文，继续按反馈页飞机号口径，未来接结构化文件。
 
 主控集成 `66e70d1d` 的真实Wiki页面/read hook mount已补验8/8通过，涵盖准确修订、历史、更正/引用提示与401/403/404撤权清除；日志为`tmp/source-clarification-evidence/p2-integrated-mount.log`。测试仅有既有React Router v7 future flag提示；Chrome实际预览无warn/error。
 
@@ -304,6 +304,41 @@ M1增加`matter.saved-reading`实际接线，复用v1.6的`artifact.reading`及�
 
 2026-10-23 02:06(+08)左右重新只读核对：原Host正式release仍为`7699275636347882791`、`finished`、提交`6c073de7b6e1e2ce126cf46f405beade388a3639`、无error logs；数据库dev→main预览`changes=[]`。双远端拟用同名`refs/heads/codex/source-clarification-public-20261023`尚不存在。本次没有外部推送、发布、Native上传/安装或生产业务写入。官方CLI凭据刷新曾被沙箱本地存储限制阻断，经正常权限审批后只读查询成功。
 
-本批拟提交用户确认的技术范围为：最终公开候选分别普通推送到已授权`origin`和`github`的上述单条同名分支、原Host `app_17bzc551rsg`正式发布、原Native `app_17c3zn24kv2`按已有受控脚本安装原样c234包。c234的132个文件、源码`d1725e182277ea504f697b5e0fbd872f9837a0e7`、Skill tree `1bfa433c969b1885742db94bdf2a51120d9c18f3`和ZIP SHA256 `d4e9bc284cf387da1cd013d8dc6e60034712908179a9d6226838f8bf4b05d317`均未变。安装及恢复仍分两阶段；只临时暂停原启用调度、等原消费者自然空闲、安装后保持暂停，待原Host精确交付提交正式发布并核验运行指纹后，才恢复原启用集合。最终精确提交与脚本SHA由本地私有准备回执记录，执行前再次只读核对在途状态。该准备不扩展此前25c/c229的精确授权。
+以下为授权前准备记录；用户后续已批准 b561 整批技术交付，实际结果见末节。当时拟提交的技术范围为：最终公开候选分别普通推送到已授权`origin`和`github`的上述单条同名分支、原Host `app_17bzc551rsg`正式发布、原Native `app_17c3zn24kv2`按已有受控脚本安装原样c234包。c234的132个文件、源码`d1725e182277ea504f697b5e0fbd872f9837a0e7`、Skill tree `1bfa433c969b1885742db94bdf2a51120d9c18f3`和ZIP SHA256 `d4e9bc284cf387da1cd013d8dc6e60034712908179a9d6226838f8bf4b05d317`均未变。安装及恢复仍分两阶段；只临时暂停原启用调度、等原消费者自然空闲、安装后保持暂停，待原Host精确交付提交正式发布并核验运行指纹后，才恢复原启用集合。最终精确提交与脚本SHA由本地私有准备回执记录，执行前再次只读核对在途状态。该准备不扩展此前25c/c229的精确授权。
 
-剩余事实与授权依赖：真实TDMS来源/grant/processing set、批准意见当前有效性及撤销/取代依据、工程附件的准确字节与版本关系、SEM两项工程事实和内容级验收；三类变化的实际更新范围仍需真实变化验证。生产`Estimated`字段和稳定采集不足以替代当前批准证明；正向PG测试ACTIVE不是生产事实。公司意见继续按用户指定的已批准评估单意见及关联工程文件取得，AEO本期不解析正文，反馈页提供适用飞机号。真实M3私有JSON视觉回放仍保持待验。整体持续Goal未完成，本次只交付已完成的独立代码与可审阅技术包。
+该段原把 Estimated 之外的批准证明列作前提，现由用户明确“就是 estimated”更正：自身准确 Estimated 就是批准/当前有效状态，稳定版本仍不能替代自身状态；本地映射已完成。真正剩余依赖为实际 TDMS 来源/grant/processing set、线上状态刷新、未结构化撤销/取代解码、工程附件准确字节与版本关系、SEM 两项工程事实和内容级模型/SAVE 验收；三类变化仍需真实变化验证。公司意见继续按用户指定的已批准评估单意见及关联工程文件取得，AEO本期不解析正文，反馈页提供适用飞机号。真实M3私有JSON视觉回放仍保持待验。整体持续Goal未完成，本次只交付已完成的独立代码与可审阅技术包。
+
+
+### 2026-10-23 Estimated 映射集成与技术交付当前状态
+
+本节替代前文把技术包授权、Estimated 业务语义列作当前缺口的结论。用户明确公司意见来自已批准评估单意见及关联工程文件，并确认评估单自身 `Estimated` 就是批准/当前有效状态；不再要求第三方有效性证明。当前后续候选仍仅本地，没有推送、发布、来源导入、模型、业务 SAVE 或正式采用。
+
+| 准确提交 | 父提交 | 范围及审查 |
+| --- | --- | --- |
+| `ff0d89cbaaa7fcd91dfe7f11999644fd828ec142` | `07dcd5efce6716f08b5ae881b23bc528cca69e3e` | 独立 clone 的 2 个产品文件和 1 个 PG 测试；非作者 Astra 接受，无必需修正 |
+| `761568ec2462e36a97f79cca989104011c464c59` | `07dcd5efce6716f08b5ae881b23bc528cca69e3e` | 正常 cherry-pick ff0，完整 Git tree `56c5c9875e98c71c7da7943b9ba29b7c89212795` 相同；未覆盖根检出或公开 b561 |
+
+实际消费者已接线：`TdmsRetainedRuntimeFacts.readProjectionFacts` 在原授权事务重读准确 `ENGINEER_ASSESSMENT` 自身状态，复用 `isEstimatedState`。符合 Estimated 时映射 `ACTIVE`，依据引用就是该真实 `sourceRevisionRef`；缺状态、Estimating 或冲突 rawCode 仍 `UNKNOWN/null`。现有 projector、RuntimeReader、native verifier、before/after、准确 source/owner/version/actor、正文、保存/CAS 及正式采用门槛保持。多份批准意见可以并存，新草稿不覆盖旧批准；明确撤销及 SOURCE_EXPLICIT 取代规则保留。不从父单、同 ATA、标题或稳定版本推断批准，不另造有效性证书、关系平台或 DDL。
+
+| 原验证与源码时点 | 实际结果 |
+| --- | --- |
+| ff0 最终源码，真实自有隔离 PostgreSQL | 19/19，fail/skip 0；provider→projector→真实 reader→持久 receipt，两条意见准确 a/b 引用，discover 无正文泄漏；状态、owner/version、before/after、cohort/mapping/body 负例通过 |
+| ff0 最终源码，5 个关联单测套件 | 244/244，含原显式撤销、取代、新草稿及 actor/Source 撤权边界；正常提交钩子通过 |
+| 集成 761 | 与 ff0 完整 Git tree 相同，明确复用原日志，不改写执行 SHA、不重跑业务测试；本轮 M1/M2 与最终候选构建单独记录 |
+
+首轮隔离库因 sandbox 禁止 SysV shared memory 在 initdb 阶段停止，获准仅本机测试提权后完成先红后绿：旧 provider + 新断言 19 项中 6 通过/13 失败，修正后 19/19；不曾连接生产数据库。原日志保留在 `/private/tmp/wiselink-tdms-estimated-validity-20261023/tmp/estimated-evidence/`，本轮集成证据放在候选 `tmp/estimated-integration-evidence/`。
+
+M1 仍是 v1.6，B.5 明确已确认语义，E.3 记录实际生产者/消费者与验证；原节点和关系 ID 不变。M2 更新 `company.approved-opinion` 的 own-state/receipt 接线、P0/P3/P5 下一动作、实际缺口和八条接线当前部署记录，生成同一可筛选下钻 HTML 与 snapshot。旧证据保留原源码/时间，19PG/244unit 显式记录原执行版本及 tree 相同的适用范围，不自动继承为线上通过。M3 继续只投影父响应已经保存的真实 READ；本轮没有手写运行状态或新增请求。
+
+技术交付授权与实际结果分别如下：用户已批准准确 `b56133d45f507129e81fb3250370250808594bad` 整批，origin/github 均已读回。原 Host release create 一次被平台 `400002552` 拒绝，`release_id=null`；最近正式 release `7699275636347882791` 仍为 `6c073de7b6e1e2ce126cf46f405beade388a3639`。新私有发布源及安装恢复目标更正已完成准备与独立审查，等待用户唯一更正确认，不在本轮执行；C 产品 tree 仍只含原 b561，不包含本地 Estimated。原 Native c234 的 132 文件、Ready 和安装自测 422/422 已由主控确认，16 条 cron 全部暂停；不重装、不伪填 Host 目标，不把 Native 安装说成 Estimated 上线。
+
+仍需完成的是实际 TDMS 在线状态刷新与 Source/grant/processing set、未结构化撤销/取代解码、准确原文 V44、OAuth 新设备/offline 授权、真实 SEM 工程事实和内容级模型/SAVE，以及三类生产变化和 M3 私有 JSON 视觉回放。新私有技术更正与这些实际业务动作各按准确范围准备和授权；旧 b561 授权不失效，Estimated 语义也不再重新求证。
+
+本轮展示验证：现有 Python 快照 QA 39/39 通过；实际生成 HTML 的 jsdom 核对八条接线、P3＋company＋V53＋runtime 联合筛选及节点到准确 binding 下钻，四列状态与原 ff0 测试身份正确，diagnostics 为空。该检查是离线生成页交互，不冒充 Chrome 视觉或生产业务验收。原日志为 `tmp/estimated-integration-evidence/snapshot-qa.log` 与 `generated-m2-check.log`。
+
+
+本轮最终构建回执：记录提交 `81baa5a7f843e9fe232d6c45f195c1ab579ce05e` 直接父 `761568ec2462e36a97f79cca989104011c464c59`，仅改 9 个 M1/M2/执行记录文件，正常完整提交钩子通过。已在独立实体目录 `/private/tmp/wiselink-estimated-final-build-20261023` 对准确干净 81 执行一次正常 `npm run build`，开始 `2026-10-22T21:23:43.885834Z`，结束 `2026-10-22T21:24:26.073744Z`，exit0，约42.188秒。复制既有完整依赖，使用已获准缓存 `/private/tmp/wiselink-public-build-npm-cache-20261023`，没有重新 install/解析依赖，也没有修改构建或裁剪保护。最终依赖477/477、失败0，构建后工作树干净。
+
+服务端 immutable `build-fingerprint.json.sourceCommit` 和前端编译产物中绑定 `sourceCommit` getter 的不可变常量均为完整 `81baa5a7f843e9fe232d6c45f195c1ab579ce05e`；两端构建时间分别 `2026-10-22T21:24:02.315Z` 与 `2026-10-22T21:23:51.393Z`。前端只保留已有 MODULE_TYPELESS、静态/动态混用和大chunk提示。初次产物校验尝试用 Node 导入前端浏览器模块遇 `window is not defined`，原失败日志保留；之后用编译产物 AST 核对实际常量及 getter 绑定通过，未执行浏览器应用、未追加构建或业务测试。
+
+本轮四个固定子日志在主控确认的独占构建窗口生成，全部按新mtime归档，没有将旧日志计为本次证明。原日志和实体目录、构建归属、双端指纹、裁剪与警告记录在 `tmp/estimated-integration-evidence/final-build-result.json`、`final-build-verification.json`、`final-build*.log`、`final-gen-*.log`；初次校验失败在 `final-build-verification-initial-node-import.log`。本回执后的提交仅更新这些事实和生成的M2快照，沿用准确81构建，不重复业务测试或构建。当前本地展示为 `docs/runtime-monitor/WiseLink_Wiring_Verification.html`，源码目标明确为81；M3未增加或伪造运行数据。

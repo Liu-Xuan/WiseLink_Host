@@ -8,6 +8,7 @@ import type {
   TdmsOpinionSourceFact,
   TdmsProcessingCohortContextInput,
 } from '../canonical-host/tdms-approved-opinion-context';
+import { isEstimatedState } from './tdms-assessment-body-policy';
 import { sameScope } from './tdms-source.authorization';
 import {
   canonical,
@@ -219,9 +220,14 @@ function projectionFacts(
         : { sourceModifiedRaw: value.sourceModifiedRaw }),
       coverage: structuredClone(value.record.coverage),
       approval: approvalMetadata(value.opinionCollection),
-      // Immutable before/after capture proof is not a current validity decision.
-      // No production current-validity fact is retained by the existing schema.
-      validity: { status: 'UNKNOWN', assertionRef: null },
+      // TDMS Estimated is this assessment's native approval/validity state.
+      // Keep its exact retained observation as provenance; own capture, version
+      // and source applicability gates remain the projector's responsibility.
+      validity:
+        value.record.recordKind === 'ENGINEER_ASSESSMENT' &&
+        isEstimatedState(value.record.state)
+          ? { status: 'ACTIVE', assertionRef: value.record.sourceRevisionRef }
+          : { status: 'UNKNOWN', assertionRef: null },
       lane: null,
       // The existing projector accesses locators only after the assessment's
       // independent own approval gate. Do not inspect pending opinion fields.

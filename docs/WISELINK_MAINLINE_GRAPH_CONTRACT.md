@@ -1,6 +1,6 @@
 # WiseLink 主线流程图契约
 
-版本：1.6 复核修订稿 · 日期：2026-10-22 · 业务时区：Asia/Shanghai
+版本：1.6 复核修订稿 · 日期：2026-10-23 · 业务时区：Asia/Shanghai
 
 ## 设计结论
 
@@ -439,7 +439,9 @@ Overall 使用准确已保存工作及其需要的适用性、批准意见、原
 
 ### B.5 公司意见、正式动作与 AEO 落实
 
-**公司批准意见。** 保留评估单、专业意见的原生身份、准确版本、专业范围、状态、条件及修订关系。批准意见集合只接收按该记录类型核定的已批准意见；若其映射以 Estimated 表示评估完成/批准，则按已核对的语义使用。Estimating 草稿意见不进入批准意见库，也不覆盖已批准意见。同一处理单下多份评估单可同时有效，不能只取最后一份；处理单改版与关联评估单同步核对版本关系。总体批准状态不能代替各专业的实际内容；只有总状态而无明细时显示已取得范围。意见有条件或冲突时保留其具体条件和对象，附件保存准确版本并关联原评估记录。
+**公司批准意见。** 用户已明确公司意见来自已批准评估单意见及关联工程文件，并于 2026-10-23 确认评估单自身的 `Estimated` 就是当前批准/有效状态。Host 按准确留存的 `ENGINEER_ASSESSMENT` 原生状态映射；复用既有 `isEstimatedState`，只有 `rawName=Estimated` 且 `rawCode` 为 `Estimated` 或未暴露时成立，不增加第三方有效性证明。依据引用指向该评估单的真实 `sourceRevisionRef`，不另造有效性证书或关系记录。Host 继续核对准确 source、owner、version、actor、before/after 与正文资格，保存、CAS 和正式采用仍走原入口。
+
+保留评估单、专业意见的原生身份、准确版本、专业范围、条件及修订关系。缺状态、`Estimating` 或冲突 rawCode 保持未知；稳定版本、处理单状态、同 ATA 或标题均不推导批准。草稿意见不进入批准意见库，也不覆盖旧批准意见。同一处理单下多份评估单可同时有效，不能只取最后一份；处理单改版与关联评估单同步核对版本关系。明确的撤销或取代按准确原生关系处理，未结构化解码的关系如实保留缺项。总体状态不能代替各专业内容；只有总状态而无明细时显示已取得范围。意见有条件或冲突时保留具体条件和对象，附件保存准确版本并关联原评估记录。
 
 **公司工程文件。** 关联准确颁发版本、措施、对象、期限和被替代关系。已有正式文件独立进入事实区；系统建议紧邻显示与公司安排的关系。新草稿不替换有效批准版本，某专业批准不代表其他专业都已批准。
 
@@ -660,6 +662,12 @@ v1.3 报告使用了本地主检出 b02395537a948fbe427f232f5a52ab59ba43efe0、�
 | `jobaid-work.repository.ts` 与 `canonical-jobaid-problem.service.ts` | latestAttempt 只取最新调查尝试；executionStatus 从调查与综合中选取，但未返回 actionType；overallStatus 根据候选及工作引用判定 | 不把共享 executionStatus 同时赋给两个节点；CURRENT 不扩义为全部依据覆盖或正式批准；attemptId 不伪装 requestId |
 
 上述字段存在不代表所有服务已按目标接线。组件接口为展示适配设计，具体 API 和动作沿当前实际服务绑定。
+
+### E.3 Estimated 已确认语义与真实留存接线（2026-10-23）
+
+`business.company_records → assessment.research` 继续使用 `company.research`，不新增节点、关系 ID 或状态平台。`TdmsRetainedRuntimeFacts.readProjectionFacts` 在原授权事务重新读取准确 revision 的自身状态，符合 Estimated 时给出 `ACTIVE + sourceRevisionRef`；现有 projector、RuntimeReader、native evidence verifier 和 receipt 消费链继续核对集合、映射、正文及当前授权。元数据 discover 不读取正文，真正 READ 才形成回执。
+
+本地作者提交 `ff0d89cbaaa7fcd91dfe7f11999644fd828ec142` 已经非作者 Astra 接受，并正常选择性集成为 `761568ec2462e36a97f79cca989104011c464c59`；两者完整 Git tree 相同。作者最终源码的真实隔离 PostgreSQL 19/19、关联单测 5 套件 244/244 和正常提交钩子通过，执行版本与原日志保留，未为集成重复业务测试。此证据支持本地接线，不证明线上 TDMS 状态已刷新或 Estimated 修正已经发布。实际 Source/grant/processing set、未结构化撤销/取代解码、关联工程原文 V44、真实 SEM 内容及模型/SAVE 仍按各自准确范围继续。
 
 ## 附录 F. 后续来源规划
 

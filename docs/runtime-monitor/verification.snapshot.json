@@ -2,15 +2,15 @@
   "formatVersion": 1,
   "snapshot": {
     "dataMode": "snapshot",
-    "generatedAt": "2026-10-22T18:11:14.390339+00:00",
+    "generatedAt": "2026-10-22T21:26:45.235234+00:00",
     "contract": {
       "version": "1.6 复核修订稿",
       "source": "WISELINK_MAINLINE_GRAPH_CONTRACT.md",
-      "sourceRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
       "sourceRevisionType": "sha256"
     },
     "target": {
-      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
       "environmentId": "host:app_17bzc551rsg:online"
     },
     "workPackages": [
@@ -30,7 +30,7 @@
           "V12",
           "V30"
         ],
-        "nextAction": "M2离线浏览器筛选/下钻已核对。准备准确候选的同步/发布；真实图私有JSON回放仍待允许的文件选择，保留原待验状态。"
+        "nextAction": "b561整批授权有效；Host创建400002552拒绝无release_id，c234已安装且16cron暂停。C私有源/恢复目标更正包已独审、等待唯一更正确认，C不含Estimated。本地Estimated 81baa5a7完整构建及双端指纹已通过；后续公开安全候选另行准备。"
       },
       {
         "id": "P1",
@@ -71,9 +71,10 @@
           "V12",
           "V23",
           "V24",
-          "V44"
+          "V44",
+          "V53"
         ],
-        "nextAction": "Gateway来源只读及Host真实运行reader/verifier已接；生产批准有效性UNKNOWN与processing set/grant来源仍待取得。关联工程文件正文保持独立READ条件，不用测试批准fixture替代线上事实。"
+        "nextAction": "用户已确认自身 Estimated=批准/当前有效，本地 retained provider 已接入并通过19PG/244unit及独立Astra审查。实际 Source/grant/processing set、线上刷新、未结构化撤销/取代与原文V44仍待接入；OAuth新设备/offline另按准确授权准备。"
       },
       {
         "id": "P4",
@@ -104,7 +105,7 @@
           "V20",
           "V16"
         ],
-        "nextAction": "显式delegation的Matter到期条件漏唤醒已修复，真实PG核对撤权、未来时间及原occurrence幂等。生产三类变化仍依赖准确Source/当前批准证明，不为缺源重复生成。"
+        "nextAction": "显式 delegation 的到期条件漏唤醒已修复；Estimated 语义和本地映射已定。三类生产变化仍需实际Source/准确版本和变化事实，真实SEM与模型/SAVE按具体授权验收，不为缺源重复生成。"
       },
       {
         "id": "P6",
@@ -1170,8 +1171,8 @@
         {
           "id": "research.overall.deployment",
           "kind": "deployment",
-          "reason": "薄诊断及时间字段候选尚未部署，旧生产运行不等同当前候选通过。",
-          "nextAction": "按发布授权独立记录准确候选发布指纹，再只读核对原页面；不要重复已有业务SAVE。"
+          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
+          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
         },
         {
           "id": "research.overall.browser",
@@ -1308,8 +1309,8 @@
         {
           "id": "save.finish.deployment",
           "kind": "deployment",
-          "reason": "现有保存/收尾已运行；本批新增时间读模型和诊断尚未发布。",
-          "nextAction": "保留既有真实保存/收尾证据，后续候选发布单独登记，不为补状态重复模型或SAVE。"
+          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
+          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
         },
         {
           "id": "save.finish.capacity",
@@ -1375,8 +1376,8 @@
         {
           "id": "feedback.reading.deployment",
           "kind": "deployment",
-          "reason": "反馈单适用编号修正已在后续候选本地集成验证，未包含于已批准25c发布源，尚未部署。",
-          "nextAction": "按具体发布包完成技术发布后，只读核对已有获权来源。"
+          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
+          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
         },
         {
           "id": "feedback.reading.runtime",
@@ -1451,14 +1452,14 @@
         {
           "id": "wiki.saved-reading.impact",
           "kind": "source_review",
-          "reason": "ATA2成员与显式授权Matter到期条件漏唤醒已修复。普通反馈、批准/措施及技术条件三类生产变化的全流程仍依赖实际来源和批准有效性接入。",
+          "reason": "ATA2 成员与显式授权 Matter 到期条件漏唤醒已修复。Estimated 批准语义与本地映射已确定，三类生产变化全流程仍需实际 Source/版本/状态刷新和原生撤销取代关系。",
           "nextAction": "在实际获权来源成立后按三类变化核对最小调用范围；本轮不以到期条件PG用例替代全部业务变化验证。"
         },
         {
           "id": "wiki.saved-reading.deployment",
           "kind": "deployment",
-          "reason": "Host与Native本增量尚未部署。",
-          "nextAction": "按同一审阅包分别发布Host与准确Native技能包，并保留各自回执。"
+          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
+          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
         }
       ]
     },
@@ -1518,8 +1519,8 @@
         {
           "id": "configuration.reading.deployment",
           "kind": "deployment",
-          "reason": "本批LCM运行图尚未部署。",
-          "nextAction": "按本批技术发布包交付原应用，再核对真实入口与准确读取集。"
+          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
+          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
         }
       ]
     },
@@ -1541,16 +1542,17 @@
       "consistencyScenarioIds": [
         "V12",
         "V24",
-        "V44"
+        "V44",
+        "V53"
       ],
       "workPackageIds": [
         "P3",
         "P5"
       ],
-      "sourceRevision": "5f753f3f06a63ffa9a669474d2ccee344c82bbbc",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "实际Host服务委托、保留事实读取、Native READ/原回执校验及保存消费者已装配；生产批准有效性仍UNKNOWN并拒绝正文。关联工程文件只作为准确关系，未自动取得PDF。M3只投影父响应已有的历史READ证据。",
-      "producer": "server/modules/tdms-source/tdms-retained-runtime-facts.ts：同一事务读不可变record/processing set/head及明确关系；tdms-production-runtime-reader.ts#discover/#read → tdms-runtime-session.ts，原正文通过准确READ留下tdms_read_receipt。",
+      "reviewScope": "用户已确认评估单自身 Estimated 就是批准/当前有效状态。真实 retained provider 已复用原策略接入 ACTIVE + 准确 sourceRevisionRef，独立 Astra 接受 ff0，761 与其完整 Git tree 相同。既有 reader/verifier、集合、owner/version/actor、before/after、正文及保存/CAS 门槛保留；实际线上刷新、Source/grant/processing set、原文 V44 与未结构化撤销/取代解码仍未验证。 当前构建81baa5a7相对761仅9个协调/验证记录文件变化，产品与测试blob未变；正常完整构建通过，双端immutable sourceCommit准确。",
+      "producer": "server/modules/tdms-source/tdms-retained-runtime-facts.ts#readProjectionFacts/#projectionFacts：在既有授权事务重读准确 record.state；自身 ENGINEER_ASSESSMENT 符合 isEstimatedState 时产生 ACTIVE，依据为真实 sourceRevisionRef，否则 UNKNOWN/null。tdms-production-runtime-reader.ts#discover/#read → tdms-runtime-session.ts → 原 tdms_read_receipt；不另造关系或有效性证书。",
       "consumer": "CanonicalJobAidProblemService的buildInput/readSources/saveWork/commit及browser read；DerivedSummaryMembersService.read的WORK_ITEM_WORK和DerivedSummaryRuntimeService的claim/save/finish/readSaved，供现有Wiki成员消费。",
       "executionOwner": "现有Host服务执行者：真实service SQL role、Host transport授权、WorkItem owner与DVI、自动授权精确source tuple、活跃attempt lease；Summary使用自己实际summary/request/attempt，不借用WorkItem租约。",
       "recoveryOwner": "tdms-recovery-delegation.ts + CanonicalJobAidProblemService.assertAutomaticCommittingRecoveryAuthorized：原队列同事务锁WorkItem→grant→attempt，双方lease已过期、原generation及封存hash一致，仅核对准确已存结果；不新增READ/模型/租约。",
@@ -1558,9 +1560,9 @@
         "requestRecord": "action_attempt.task_envelope_json.modelInput.tdmsContext、实际executor与modelInput.actorUserId；原tdms_read_receipt的scope/actor/receipt/sourceRevision/context及reviewActivityJson中的真实READ。",
         "artifactRecord": "tdms_record_revision、tdms_processing_revision_set/tdms_processing_set_head、assessment_work_revision.content.evidence、derived_summary_revision；工程原文须独立DM acquisition/nativeRetention及准确artifact/parse绑定。",
         "consumedInputField": "TDMS_NATIVE_RECORD的nativeSource、nativeScope.processingSetBinding/approval/fieldSelectors和nativeReadReceipt；保存工作准确evidence与Overall.basedOnJobAidWorkRevisionRef、Summary准确member workRef逐项比较。",
-        "ready": "先获权元数据发现，再要求真实Source授权、准确集合/成员、当前批准证明和原件身份；UNKNOWN保持拒绝。非TDMS文档在检测到明确标记前退出，不受未配置Native来源影响。",
+        "ready": "真实 Source/对象授权、准确 processing set/成员与版本、评估单自身 Estimated、before/after 和正文 provenance 分别满足；缺状态/Estimating/冲突 rawCode 不成立，父单/同ATA/标题/稳定版本不推导批准。不再要求 Estimated 之外的第三方批准证明。",
         "saved": "真实READ先留下不可变receipt；SAVE事务重新比较原回执、journal、准确内容、集合和当前权限，随后按既有token/generation/CAS保存。没有READ不能以关联元数据填充证据。",
-        "current": "保存回执证明历史读取，不证明来源实时有效或最新；所有消费重新检查当前授权/批准/集合。M3只在Overall basedOn等于当前workRef时连接consumed，旧绑定unknown且当前工作pending。"
+        "current": "依据准确留存的本评估单 Estimated 状态，明确撤销/取代规则仍保留；线上状态刷新及原生未结构化关系解码尚未验证/实现。原 receipt 证明准确历史 READ，后续消费继续重核当前授权/版本/集合；M3仍只投影已有父响应。"
       },
       "decisionEntry": "TdmsProductionRuntimeReader.assertInTransaction → TdmsRuntimeSession；TdmsBrowserNativeVerifier → tdms-native-saved-work.ts，分别核验真正browser/summary/recovery caller；OAuth Native及Review/successor仍拒绝。",
       "projectionEntry": "client/src/pages/DocumentParsingPage/runtime-monitor/adapt-jobaid-working-read.ts#savedNativeObservations/#adaptJobAidWorkingRead：business.company_records→assessment.research使用v1.6 company.research；历史READ时间与父观察时间分别显示。",
@@ -1575,14 +1577,19 @@
         "test/node/tdms-summary-native-consumer-postgres.test.mjs",
         "test/node/core-p1-host-postgres.test.mjs",
         "test/unit/tdms-native-runtime-monitor.spec.ts",
-        "test/unit/tdms-native-runtime-monitor-ui.spec.ts"
+        "test/unit/tdms-native-runtime-monitor-ui.spec.ts",
+        "test/node/tdms-retained-runtime-postgres.test.mjs",
+        "test/unit/tdms-approved-opinion-context.spec.ts",
+        "test/unit/tdms-source/tdms-runtime-reader.spec.ts",
+        "test/unit/tdms-source/tdms-approved-opinion.spec.ts",
+        "test/unit/tdms-p1-host/assessment-body-policy.spec.ts"
       ],
       "gaps": [
         {
           "id": "company.approved-opinion.current-proof",
           "kind": "runtime",
-          "reason": "生产retained观察不能独立证明当前批准有效性，provider明确返回UNKNOWN；本地PG正向批准为测试fixture，不是线上来源。00:16官方CLI可见相关表计数0且processing set/head不在表清单。",
-          "nextAction": "取得实际获权当前批准/处理集合及受控持久化来源后再接通正文；缺证明持续拒绝，不由模型或状态字符串宣布有效。"
+          "reason": "Estimated 业务语义及本地真实 retained provider 映射已完成、独审接受；尚未验证实际 TDMS 在线状态刷新，实际 Source/grant/processing set 及准确原件仍未取得。历史 CLI 可见零计数不被改写为已接收。",
+          "nextAction": "复用原来源、授权、版本和处理集合接入真实获权记录，按自身 Estimated 读取；只在准确外部动作获准后执行实际刷新/接收，不再向用户索取相同批准语义证明。"
         },
         {
           "id": "company.approved-opinion.original",
@@ -1593,14 +1600,20 @@
         {
           "id": "company.approved-opinion.caller-scope",
           "kind": "source_review",
-          "reason": "本批支持普通WorkItem、Gateway浏览器、真实Summary及既有COMMITTING恢复；Review/successor和OAuth Native的独立委托仍未接通。",
-          "nextAction": "需要这些入口时接入各自实际调用者和生命周期，当前保持typed deny，不能复用无关活跃租约。"
+          "reason": "普通 WorkItem、Gateway 浏览器、真实 Summary 及既有 COMMITTING 恢复已接入；Review 的独立调用者及 OAuth Native 新设备/offline 授权仍未接通。",
+          "nextAction": "按准确入口与生命周期准备 OAuth/设备授权及 Review 委托范围；保留现有 typed deny，不借无关活跃租约。"
         },
         {
           "id": "company.approved-opinion.deployment",
           "kind": "deployment",
-          "reason": "代码位于来源口径纠正后的本地候选，未包含在已批准25c发布源，尚未发布。",
-          "nextAction": "以准确后续候选形成技术包并确认发布范围，随后只读核对实际获权对象；新业务模型/SAVE另按原授权边界。"
+          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
+          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
+        },
+        {
+          "id": "company.approved-opinion.native-lifecycle",
+          "kind": "runtime",
+          "reason": "显式撤销与 SOURCE_EXPLICIT 取代的既有规则及测试保留；本次未实现原生未结构化撤销/取代关系解码，也未验证线上变更刷新。",
+          "nextAction": "取得准确原生关系及作用版本后接入既有规则，保留多专业意见和新草稿与旧批准并存，不按时间或标题推断取代。"
         }
       ]
     },
@@ -1665,8 +1678,8 @@
         {
           "id": "matter.saved-reading.deployment",
           "kind": "deployment",
-          "reason": "本增量仅在隔离候选和合成Chrome预览核对，尚未发布。",
-          "nextAction": "准确技术交付获准后发布并只读核对原获权事项。"
+          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
+          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
         }
       ]
     }
@@ -1709,9 +1722,10 @@
       "V28",
       "V44",
       "V03",
-      "V16"
+      "V16",
+      "V53"
     ],
-    "reason": "累计来源/Native消费者增量上，新增三组事项首屏、局部适用性投影和显式delegation下到期条件回查。旧证据保留实际源码；V44及真实批准/三类变化全流程保持缺项，未发布或新增线上业务。"
+    "reason": "累计候选接入自身 Estimated 批准映射，保留v1.6稳定ID和真实provider→reader→receipt。作者19PG/244unit原执行SHA保留，761完整Git tree相同，集成未重跑业务测试。b561已批准但发布创建拒绝无release_id；c234已安装暂停。V44、实际Source/在线刷新、原生撤销取代及真实SEM/模型SAVE仍缺项。"
   },
   "evidence": [
     {
@@ -3538,6 +3552,193 @@
       "testLevel": "integration",
       "summary": "公开453cb7ef正常pre-commit全ESLint/双端TypeScript/Stylelint及完整生产构建通过，双端内嵌同一完整SHA，最终依赖裁剪477/477通过。与来源97a2完整树4402路径仅公开协调记录不同，业务代码等同66e70d1d。前两次本机缓存权限/外链依赖失败分别保留；未改规则。仅技术构建，不是部署或真实业务运行。",
       "originalReportRef": "private:tmp/source-clarification-evidence/build-453cb7ef.log"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T21:26:45.169128+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-validity.source.company.approved-opinion",
+      "kind": "source_review",
+      "status": "passed",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [
+        "V24",
+        "V26",
+        "V53"
+      ],
+      "summary": "独立 Astra 接受准确 ff0；正常 cherry-pick 761 完整 Git tree 与 ff0 相同。已核对真实 provider/serialized context/RuntimeReader/receipt consumer，不要求 validity 引用对应 relation 表行。Estimated 自身状态映射修复已本地完成，原授权、准确owner/version和正文门槛不变。 当前81与761差异仅9个记录/生成文件，产品与测试blob不变；本轮准确81正常完整构建及双端immutable指纹通过，不等于线上运行。",
+      "originReviewedRevision": "ff0d89cbaaa7fcd91dfe7f11999644fd828ec142",
+      "integrationRevision": "761568ec2462e36a97f79cca989104011c464c59",
+      "evidenceObservation": "本轮核对集成及既有审查结论，不冒充新的非作者审查或线上运行。",
+      "implementationRevision": "761568ec2462e36a97f79cca989104011c464c59"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "ff0d89cbaaa7fcd91dfe7f11999644fd828ec142",
+      "environmentId": "local:owned-postgresql",
+      "observedAt": "2026-10-22T21:19:29.402766+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-validity.test.owned-postgresql",
+      "kind": "test",
+      "status": "passed",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [
+        "V24",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "summary": "作者最终源码 ff0 的真实隔离 PostgreSQL 19/19，fail/skip0；两条自身Estimated意见同时ACTIVE并实际READ，分别持久化准确receipt，discover不漏正文。缺state/Estimating/冲突rawCode、父单/稳定版本、owner/version/before-after、cohort/mapping/body边界保留。V53仅多意见/草稿准入子范围，不代表真实Overall内容验收。",
+      "originalReportRef": "private:/private/tmp/wiselink-tdms-estimated-validity-20261023/tmp/estimated-evidence/retained-runtime-green.log",
+      "executedAt": null,
+      "integrationRevision": "761568ec2462e36a97f79cca989104011c464c59",
+      "evidenceObservation": "observedAt为原日志复核时刻；实际执行版本仍ff0。761与ff0完整tree一致，按明确范围复用，不改写SHA或自动升级为线上通过。"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "ff0d89cbaaa7fcd91dfe7f11999644fd828ec142",
+      "environmentId": "local:isolated-tests",
+      "observedAt": "2026-10-22T21:19:29.402766+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-validity.test.related-unit",
+      "kind": "test",
+      "status": "passed",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [
+        "V24",
+        "V26",
+        "V53"
+      ],
+      "testLevel": "unit",
+      "summary": "作者最终源码 ff0 的5个关联单测套件244/244通过，包含原显式撤销、SOURCE_EXPLICIT取代、新草稿不覆盖旧批准、准确actor/Source撤权；正常precommit通过。不是新增生产数据或线上验收，本轮集成不重复这些业务测试。",
+      "originalReportRef": "private:/private/tmp/wiselink-tdms-estimated-validity-20261023/tmp/estimated-evidence/targeted-unit.log",
+      "executedAt": null,
+      "integrationRevision": "761568ec2462e36a97f79cca989104011c464c59",
+      "evidenceObservation": "observedAt为原日志复核时刻，执行源码及原日志保持；761与ff0完整Git tree相同。"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T21:26:45.169128+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-validity.deployment.local-candidate",
+      "kind": "deployment",
+      "status": "not_run",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "summary": "b561整批技术授权有效，双远端已读回；Host创建一次400002552拒绝、release_id=null，最近正式运行仍6c。原c234已安装/132文件/Ready/422通过且16cron全暂停。准确81本地构建成功，Estimated未推送/发布；C私有源及恢复目标更正已准备并独审、等待唯一更正确认，C产品tree仍只含b561，不含Estimated。",
+      "implementationRevision": "761568ec2462e36a97f79cca989104011c464c59"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T21:26:45.169128+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-validity.runtime.local-candidate",
+      "kind": "runtime",
+      "status": "not_run",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "summary": "本轮仅本地代码/记录/生成展示；未刷新实际TDMS在线状态，未导入Source/grant/processing set，未新增真实SEM验证、模型/SAVE或正式采用。旧M3只投影原父响应，不造运行数据。",
+      "implementationRevision": "761568ec2462e36a97f79cca989104011c464c59"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "b56133d45f507129e81fb3250370250808594bad",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T21:06:56.469435+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "delivery-b561.deployment.create-rejected",
+      "kind": "deployment",
+      "status": "failed",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "deploymentRef": null,
+      "summary": "用户已批准b561整批技术交付，origin/github均读回b561。官方release create只调用1次，被400002552（分支落后于主分支）拒绝，release_id=null；没有新发布，最近正式版本仍6c。新私有发布源与准确目标更正另行准备，不撤销旧授权，也不在本轮重发。",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-b561-release/attempt-result.json"
+    },
+    {
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "d1725e182277ea504f697b5e0fbd872f9837a0e7",
+      "environmentId": "native:app_17c3zn24kv2",
+      "observedAt": "2026-10-22T21:19:29.402766+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "delivery-c234.deployment.installed-paused",
+      "kind": "deployment",
+      "status": "passed",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish",
+        "wiki.saved-reading"
+      ],
+      "deploymentRef": "native:app_17c3zn24kv2:skill:wiselink-research-and-synthesize@r09.c234",
+      "summary": "主控确认原Native c234已正常安装：132文件准确匹配、Ready、安装目录必需自测422/422通过；16条cron全部暂停。保留原安装回执与恢复目标边界，不重装、不伪填Host目标，也不证明Host Estimated已上线。",
+      "evidenceObservation": "本条按主控回传的安装核对结论登记；observedAt是记录复核时间，不伪造原安装时间。",
+      "executedAt": null
+    },
+    {
+      "id": "estimated-followup.test.final-build",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "environmentId": "local:isolated-production-build",
+      "observedAt": "2026-10-22T21:26:45.169128+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "scenarioIds": [
+        "V30"
+      ],
+      "testLevel": "integration",
+      "summary": "干净81baa5a7在实体独立clone正常完整npm run build一次通过，42.188秒，477/477依赖、0失败；复制既有完整依赖、不重新解析、不改裁剪规则。服务端静态fingerprint及前端编译常量/实际sourceCommit getter绑定均为准确81。只保留已有模块类型、静态/动态混用与大chunk提示。M1/M2的39项QA和实际生成HTML交互已核对；不是部署、浏览器线上运行或真实Source/模型SAVE验收。",
+      "originalReportRef": "private:tmp/estimated-integration-evidence/final-build.log",
+      "readbackRef": "private:tmp/estimated-integration-evidence/final-build-verification.json",
+      "executedAt": "2026-10-22T21:23:43.885834+00:00",
+      "completedAt": "2026-10-22T21:24:26.073744+00:00",
+      "buildDirectory": "/private/tmp/wiselink-estimated-final-build-20261023",
+      "evidenceObservation": "首次校验方式用Node动态导入前端产物触发浏览器window依赖失败，保留原失败日志；改为编译产物AST验证immutable常量绑定，未执行应用、未重建、未扩大业务测试。"
     }
   ]
 }

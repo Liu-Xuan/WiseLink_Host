@@ -16,7 +16,7 @@
         "V12",
         "V30"
       ],
-      "nextAction": "M2离线浏览器筛选/下钻已核对。准备准确候选的同步/发布；真实图私有JSON回放仍待允许的文件选择，保留原待验状态。"
+      "nextAction": "b561整批授权有效；Host创建400002552拒绝无release_id，c234已安装且16cron暂停。C私有源/恢复目标更正包已独审、等待唯一更正确认，C不含Estimated。本地Estimated 81baa5a7完整构建及双端指纹已通过；后续公开安全候选另行准备。"
     },
     {
       "id": "P1",
@@ -57,9 +57,10 @@
         "V12",
         "V23",
         "V24",
-        "V44"
+        "V44",
+        "V53"
       ],
-      "nextAction": "Gateway来源只读及Host真实运行reader/verifier已接；生产批准有效性UNKNOWN与processing set/grant来源仍待取得。关联工程文件正文保持独立READ条件，不用测试批准fixture替代线上事实。"
+      "nextAction": "用户已确认自身 Estimated=批准/当前有效，本地 retained provider 已接入并通过19PG/244unit及独立Astra审查。实际 Source/grant/processing set、线上刷新、未结构化撤销/取代与原文V44仍待接入；OAuth新设备/offline另按准确授权准备。"
     },
     {
       "id": "P4",
@@ -90,7 +91,7 @@
         "V20",
         "V16"
       ],
-      "nextAction": "显式delegation的Matter到期条件漏唤醒已修复，真实PG核对撤权、未来时间及原occurrence幂等。生产三类变化仍依赖准确Source/当前批准证明，不为缺源重复生成。"
+      "nextAction": "显式 delegation 的到期条件漏唤醒已修复；Estimated 语义和本地映射已定。三类生产变化仍需实际Source/准确版本和变化事实，真实SEM与模型/SAVE按具体授权验收，不为缺源重复生成。"
     },
     {
       "id": "P6",
