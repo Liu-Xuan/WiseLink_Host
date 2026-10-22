@@ -1800,6 +1800,30 @@
       ],
       "testLevel": "e2e",
       "screenshotRef": "private:tmp/source-clarification-evidence/reading-wiring-browser.png"
+    },
+    {
+      "id": "reading-followup.test.public-build",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "453cb7ef5aef6a8a0549980b7bf26a85b9d2019c",
+      "implementationRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "local:public-candidate-production-build",
+      "observedAt": "2026-10-22T18:11:14.345851+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "testLevel": "integration",
+      "summary": "公开453cb7ef正常pre-commit全ESLint/双端TypeScript/Stylelint及完整生产构建通过，双端内嵌同一完整SHA，最终依赖裁剪477/477通过。与来源97a2完整树4402路径仅公开协调记录不同，业务代码等同66e70d1d。前两次本机缓存权限/外链依赖失败分别保留；未改规则。仅技术构建，不是部署或真实业务运行。",
+      "originalReportRef": "private:tmp/source-clarification-evidence/build-453cb7ef.log"
     }
   ]
 }
