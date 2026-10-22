@@ -361,6 +361,9 @@ function catalogEntry(
 ): EngineeringMatterCatalogEntry {
   const { row, projection } = authorized.scoped;
   const { version, family } = authorized.source;
+  const applicability = projection?.applicability;
+  const applicabilityMatchesSource = applicability?.documentId === version.documentId &&
+    applicability?.documentVersionId === version.documentVersionId;
   const sourceNavigation: EngineeringMatterCatalogEntry['sourceNavigation'] =
     projection?.package
       ? {
@@ -382,6 +385,19 @@ function catalogEntry(
     currentWorkItemRevision: row.revision,
     workItemChangedSinceLink: row.revision !== link.linkedAtWorkItemRevision,
     workItemStatus: row.status,
+    applicability: applicability && applicabilityMatchesSource ? {
+      documentVersionId: applicability.documentVersionId,
+      inputRevision: applicability.inputRevision,
+      status: applicability.status,
+      currentness: applicability.currentness,
+      staleReason: applicability.staleReason,
+      decision: applicability.decision,
+      aircraftNumber: applicability.aircraftNumber,
+      assessmentAsOf: applicability.assessmentAsOf,
+      blockingUnknownCount: applicability.blockingUnknownCount,
+    } : null,
+    applicabilityUnavailableReason: applicability && !applicabilityMatchesSource
+      ? 'SOURCE_MISMATCH' : null,
     document: {
       documentId: version.documentId,
       documentVersionId: version.documentVersionId,

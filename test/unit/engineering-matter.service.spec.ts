@@ -35,6 +35,61 @@ const snapshot: EngineeringMatterSnapshot = {
 };
 
 describe('EngineeringMatterService', () => {
+  function applicabilityCatalog(documentVersionId = 'DV-FTD') {
+    const source = workItem('WI-FTD');
+    const applicability = {
+      documentId: 'DOC-FTD', documentVersionId, inputRevision: 4,
+      status: 'STALE', currentness: 'STALE', staleReason: 'FLEET_FACTS_CHANGED',
+      decision: 'NOT_APPLICABLE', aircraftNumber: 'TEST-001',
+      assessmentAsOf: '2026-10-22', blockingUnknownCount: 2,
+      artifact: { bucketId: 'PRIVATE_BUCKET', filePath: 'PRIVATE_ARTIFACT' },
+      fleetSourceSnapshotId: 'PRIVATE_FLEET_SNAPSHOT',
+    };
+    const workItems = { loadTenantScopedProjection: jest.fn().mockResolvedValue({
+      ...source, projection: { ...source.projection, applicability },
+    }) };
+    const documentVersions = { resolve: jest.fn().mockResolvedValue(documentVersion('DV-FTD')) };
+    const objectAccess = { freshRead: jest.fn().mockResolvedValue({
+      allowed: true, workItemId: 'WI-FTD', documentVersionId: 'DV-FTD',
+    }) };
+    const service = new EngineeringMatterService(
+      { loadCurrent: jest.fn().mockResolvedValue({ ...snapshot, links: [snapshot.links[0]] }) } as unknown as EngineeringMatterRepository,
+      workItems as unknown as MiaodaWorkItemRepository,
+      documentVersions as unknown as MiaodaDocumentVersionSourceResolver,
+      objectAccess as unknown as CanonicalObjectAccessPort,
+    );
+    return { service, workItems, documentVersions, objectAccess };
+  }
+
+  it('reuses the exact authorized applicability module result without exposing its artifact or recomputing a fleet decision', async () => {
+    const h = applicabilityCatalog();
+    const model = await h.service.read('MAT-1', actor());
+    expect(model.catalog.entries[0].applicability).toEqual({
+      documentVersionId: 'DV-FTD', inputRevision: 4,
+      status: 'STALE', currentness: 'STALE', staleReason: 'FLEET_FACTS_CHANGED',
+      decision: 'NOT_APPLICABLE', aircraftNumber: 'TEST-001',
+      assessmentAsOf: '2026-10-22', blockingUnknownCount: 2,
+    });
+    expect(JSON.stringify(model)).not.toContain('PRIVATE_');
+    expect(h.objectAccess.freshRead).toHaveBeenCalledTimes(1);
+    expect(h.workItems.loadTenantScopedProjection).toHaveBeenCalledTimes(1);
+    expect(h.documentVersions.resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it('withholds mismatched applicability while retaining the authorized Matter and exact member source', async () => {
+    const h = applicabilityCatalog('DV-OTHER');
+    const model = await h.service.read('MAT-1', actor());
+    expect(model.catalog.entries[0]).toMatchObject({
+      workItemId: 'WI-FTD', document: { documentVersionId: 'DV-FTD' },
+      applicability: null, applicabilityUnavailableReason: 'SOURCE_MISMATCH',
+    });
+    expect(JSON.stringify(model)).not.toContain('DV-OTHER');
+    expect(JSON.stringify(model)).not.toContain('TEST-001');
+    expect(JSON.stringify(model)).not.toContain('PRIVATE_');
+    expect(h.objectAccess.freshRead).toHaveBeenCalledTimes(1);
+    expect(h.documentVersions.resolve).toHaveBeenCalledTimes(1);
+  });
+
   it('links a verified uploaded WorkItem to its family Matter only once', async () => {
     const linked: string[] = [];
     const matters = {

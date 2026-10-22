@@ -1391,6 +1391,415 @@
       "summary": "干净2a5b候选生产构建通过，内嵌同SHA；它相对业务5f仅含7个协调/验证记录文件。生成器39项通过；Chrome新增第7条接线显示正确，P3+company+V44+运行组合筛选和下钻显示UNKNOWN/PDF缺口，warn/error为空。仅M2离线页，无线上业务或私有JSON回放。",
       "originalReportRef": "private:tmp/source-clarification-evidence/clean-build.log",
       "screenshotRef": "private:tmp/source-clarification-evidence/native-wiring-browser.png"
+    },
+    {
+      "id": "reading-followup.source",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "local:integrated-candidate",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "主控和独立审查核对三组真实页面消费、历史隔离、更正/引用提示、原授权后的局部适用性，以及Wiki显式delegation到期回查；范围不含尚缺Source的正式意见或生产三类变化验证。",
+      "bindingIds": [
+        "matter.saved-reading",
+        "wiki.saved-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V16",
+        "V24",
+        "V26"
+      ]
+    },
+    {
+      "id": "reading-followup.test.author",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": null,
+      "environmentId": "local:unit-and-react-mount",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "作者分阶段30个不同测试通过，不能称为最终完整树统一执行。服务6与reference7的对应文件之后未改；Wiki mount8后首屏依赖仍改局部文案，问题阅读2/历史稳定1为阶段回归。server tsc与CSS对应最终文件；client tsc/ESLint后仍改候选标签/断言/空行。最终首屏6另列精确记录。",
+      "bindingIds": [
+        "matter.saved-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26"
+      ],
+      "testLevel": "integration",
+      "implementationRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "originalReportRef": "private:tmp/source-clarification-evidence/p2-matter-projection-final.log",
+      "baseRevision": "c0fc9a968571b63d0597e33e76aab655445ccdcc",
+      "authorRevision": "b898573bebffa3571597c211fcf0cf6ea36e02bf"
+    },
+    {
+      "id": "reading-followup.test.browser",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "local:chrome:synthetic-component",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "Chrome实际渲染已集成组件：三组首屏同时可见，候选/正式读取缺项分开；历史视图不含当前适用性；保存依据可展开，warn/error为空。仅合成组件预览，不是生产事项浏览器验收。",
+      "bindingIds": [
+        "matter.saved-reading"
+      ],
+      "scenarioIds": [
+        "V12",
+        "V24"
+      ],
+      "testLevel": "e2e",
+      "screenshotRef": "private:tmp/source-clarification-evidence/matter-reading-browser.png"
+    },
+    {
+      "id": "reading-followup.test.wiki-revisit",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "46c091e598cdc1d858160effb48da350cec3b4da",
+      "environmentId": "local:isolated-postgresql",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "真实PG先红IDLE!=MATTER_PENDING，修复后7/7（6子+父）且0skip；未来、disabled delegation、非CONFIRMED、inactive owner、重复原attempt及终态不重开均核对。相关3套unit16/16，tsc/lint/语法通过；集成仅同样2文件。",
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "scenarioIds": [
+        "V16",
+        "V20"
+      ],
+      "testLevel": "integration",
+      "implementationRevision": "6d4809f7e5232222ec3efc8bf653d88661e366d8",
+      "originalReportRef": "private:tmp/source-clarification-evidence/p5-wiki-revisit-green.log"
+    },
+    {
+      "id": "reading-followup.test.existing-unclaimed",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "46c091e598cdc1d858160effb48da350cec3b4da",
+      "environmentId": "local:unit",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "扩展检查旧hierarchical-wiki-unclaimed-attempt套件7fail/15pass；纯c0fc基线同样复现，测试client缺begin导致旧租约夹具失败。此次不改该生命周期或把结果记绿。",
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "testLevel": "unit",
+      "originalReportRef": "private:tmp/source-clarification-evidence/p5-wiki-unclaimed-baseline.log"
+    },
+    {
+      "id": "reading-followup.test.shared-identity",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "91b96a2a424fd88320bc61b9aaeeeeb9c5eaa23c",
+      "environmentId": "local:nest-composition",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "重复注册身份provider曾被正常公开候选precommit拒绝；改为共享TdmsReceiverIdentityModule后真实Source模块composition1/1。公开84af相同代码树正常全eslint/双端tsc/stylelint通过；仅M_INTEGRATION保持已公开文本，未绕过hook。",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "testLevel": "integration",
+      "originalReportRef": "private:tmp/source-clarification-evidence/shared-identity-composition.log",
+      "publicCandidateRevision": "84af274858b624afa3449beaed4399298d5b7753"
+    },
+    {
+      "id": "reading-followup.deployment.research.overall",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "当前后续候选尚未发布；原25c/c229授权与新的公开候选/c234替代包范围分开处理。",
+      "bindingIds": [
+        "research.overall"
+      ]
+    },
+    {
+      "id": "reading-followup.runtime.research.overall",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "未执行本候选生产模型、业务SAVE、来源导入或正式采用；历史业务证据保留原源码及时间。",
+      "bindingIds": [
+        "research.overall"
+      ]
+    },
+    {
+      "id": "reading-followup.deployment.translation.reading",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "当前后续候选尚未发布；原25c/c229授权与新的公开候选/c234替代包范围分开处理。",
+      "bindingIds": [
+        "translation.reading"
+      ]
+    },
+    {
+      "id": "reading-followup.runtime.translation.reading",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "未执行本候选生产模型、业务SAVE、来源导入或正式采用；历史业务证据保留原源码及时间。",
+      "bindingIds": [
+        "translation.reading"
+      ]
+    },
+    {
+      "id": "reading-followup.deployment.save.finish",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "当前后续候选尚未发布；原25c/c229授权与新的公开候选/c234替代包范围分开处理。",
+      "bindingIds": [
+        "save.finish"
+      ]
+    },
+    {
+      "id": "reading-followup.runtime.save.finish",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "未执行本候选生产模型、业务SAVE、来源导入或正式采用；历史业务证据保留原源码及时间。",
+      "bindingIds": [
+        "save.finish"
+      ]
+    },
+    {
+      "id": "reading-followup.deployment.feedback.reading",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "当前后续候选尚未发布；原25c/c229授权与新的公开候选/c234替代包范围分开处理。",
+      "bindingIds": [
+        "feedback.reading"
+      ]
+    },
+    {
+      "id": "reading-followup.runtime.feedback.reading",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "未执行本候选生产模型、业务SAVE、来源导入或正式采用；历史业务证据保留原源码及时间。",
+      "bindingIds": [
+        "feedback.reading"
+      ]
+    },
+    {
+      "id": "reading-followup.deployment.wiki.saved-reading",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "当前后续候选尚未发布；原25c/c229授权与新的公开候选/c234替代包范围分开处理。",
+      "bindingIds": [
+        "wiki.saved-reading"
+      ]
+    },
+    {
+      "id": "reading-followup.runtime.wiki.saved-reading",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "未执行本候选生产模型、业务SAVE、来源导入或正式采用；历史业务证据保留原源码及时间。",
+      "bindingIds": [
+        "wiki.saved-reading"
+      ]
+    },
+    {
+      "id": "reading-followup.deployment.configuration.reading",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "当前后续候选尚未发布；原25c/c229授权与新的公开候选/c234替代包范围分开处理。",
+      "bindingIds": [
+        "configuration.reading"
+      ]
+    },
+    {
+      "id": "reading-followup.runtime.configuration.reading",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "未执行本候选生产模型、业务SAVE、来源导入或正式采用；历史业务证据保留原源码及时间。",
+      "bindingIds": [
+        "configuration.reading"
+      ]
+    },
+    {
+      "id": "reading-followup.deployment.company.approved-opinion",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "当前后续候选尚未发布；原25c/c229授权与新的公开候选/c234替代包范围分开处理。",
+      "bindingIds": [
+        "company.approved-opinion"
+      ]
+    },
+    {
+      "id": "reading-followup.runtime.company.approved-opinion",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "未执行本候选生产模型、业务SAVE、来源导入或正式采用；历史业务证据保留原源码及时间。",
+      "bindingIds": [
+        "company.approved-opinion"
+      ]
+    },
+    {
+      "id": "reading-followup.deployment.matter.saved-reading",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "当前后续候选尚未发布；原25c/c229授权与新的公开候选/c234替代包范围分开处理。",
+      "bindingIds": [
+        "matter.saved-reading"
+      ]
+    },
+    {
+      "id": "reading-followup.runtime.matter.saved-reading",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "未执行本候选生产模型、业务SAVE、来源导入或正式采用；历史业务证据保留原源码及时间。",
+      "bindingIds": [
+        "matter.saved-reading"
+      ]
+    },
+    {
+      "id": "reading-followup.test.final-firstscreen",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "b898573bebffa3571597c211fcf0cf6ea36e02bf",
+      "environmentId": "local:unit-and-react-mount",
+      "observedAt": "2026-10-22T17:57:03.078276+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "首屏最后6项在所有代码/断言/空行修改后执行，随后原样提交b898573b；覆盖三组内容、历史隔离、STALE/NOT_AVAILABLE与局部来源不符提示。",
+      "bindingIds": [
+        "matter.saved-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26"
+      ],
+      "testLevel": "integration",
+      "implementationRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "originalReportRef": "private:tmp/source-clarification-evidence/p2-matter-firstscreen-final.log",
+      "baseRevision": "c0fc9a968571b63d0597e33e76aab655445ccdcc",
+      "authorRevision": "b898573bebffa3571597c211fcf0cf6ea36e02bf"
+    },
+    {
+      "id": "reading-followup.test.integrated-mount",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "local:react-mount",
+      "observedAt": "2026-10-22T18:00:41.321898+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "集成66e70d1d实际Wiki页面+read hook mount8/8通过，覆盖准确修订、历史不替换、更正/引用提示常显及401/403/404撤权清除；只含已有React Router v7 future flag提示，无测试失败。",
+      "bindingIds": [
+        "matter.saved-reading"
+      ],
+      "scenarioIds": [
+        "V12",
+        "V26"
+      ],
+      "testLevel": "integration",
+      "originalReportRef": "private:tmp/source-clarification-evidence/p2-integrated-mount.log"
+    },
+    {
+      "id": "reading-followup.test.verification-browser",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "b8c07ccacf47a333771130225233a0284ac5ef3650efd407b0ad2a8e5730270c",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "environmentId": "local:chrome:verification-html",
+      "observedAt": "2026-10-22T18:00:41.322255+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "Chrome核对8条接线及P2+matter.saved-reading+V24+运行组合筛选和下钻，准确入口、正式清单缺项和未发布状态保留，warn/error为空；仅离线验证页。",
+      "bindingIds": [
+        "matter.saved-reading"
+      ],
+      "scenarioIds": [
+        "V30"
+      ],
+      "testLevel": "e2e",
+      "screenshotRef": "private:tmp/source-clarification-evidence/reading-wiring-browser.png"
     }
   ]
 }

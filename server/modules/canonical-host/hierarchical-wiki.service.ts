@@ -408,14 +408,23 @@ export class HierarchicalWikiService {
       }
       // Real prerequisite work has priority over a new aggregate. This invokes
       // the existing SOURCE_CHANGE/revisit admission and its idempotency keys.
+      // A saved revisit can become due with every input already covered, so it
+      // has no waiting row. Recheck only explicitly delegated upstream Matters.
       for (const matterId of [
-        ...new Set(
-          candidates.flatMap((row) =>
+        ...new Set([
+          ...candidates.flatMap((row) =>
             row.state.waiting
               .filter((item) => item.kind === 'MATTER')
               .map((item) => item.subjectId),
           ),
-        ),
+          ...candidates.flatMap((row: WikiRow) =>
+            row.scope.kind === 'FLEET'
+              ? Object.keys(row.upstreamDelegations).filter(
+                  (id: string) => row.upstreamDelegations[id]?.enabled,
+                )
+              : [],
+          ),
+        ]),
       ]) {
         if (
           !this.matterAttempts ||

@@ -99,7 +99,7 @@ describe('real Wiki page + read hook + frozen recent changes mount', () => {
     await act(async () => button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
   }
   async function sourceChoice() {
-    const details = Array.from(container.querySelectorAll('details')).find(item => item.querySelector('summary')?.textContent === '来源活动解释候选')!;
+    const details = Array.from(container.querySelectorAll('details')).find(item => item.querySelector('summary')?.textContent === '来源活动解读')!;
     await act(async () => { details.open = true; details.dispatchEvent(new dom.window.Event('toggle')); });
     const select = container.querySelector<HTMLSelectElement>('[aria-label="时间声明来源"]')!;
     await act(async () => { select.value = select.options[1].value; select.dispatchEvent(new dom.window.Event('change', { bubbles: true })); });
@@ -107,6 +107,12 @@ describe('real Wiki page + read hook + frozen recent changes mount', () => {
 
   it('passes only the exact read work, same-scope unique primary and saved source choices', async () => {
     await mount();
+    const firstScreen = container.querySelector('.matter-first-screen')!;
+    expect(firstScreen.getAttribute('data-matter-work-ref')).toBe('test-working-3');
+    expect(firstScreen.closest('details')).toBeNull();
+    expect(Array.from(firstScreen.querySelectorAll(':scope > section > h2')).map(item => item.textContent))
+      .toEqual(['当前判断与范围', '公司安排与落实', '变化与下一步']);
+    expect(firstScreen.textContent).toContain('核对目标飞机实际软件标准');
     expect(container.querySelector('[data-work-ref="test-working-3"]')).not.toBeNull();
     expect(mockReviewGet).toHaveBeenCalledWith('primary-test', { kind: 'ENGINEERING_MATTER', matterId: 'ui-test-matter' });
     expect(mockReviewGet).toHaveBeenCalledTimes(1);
@@ -124,14 +130,49 @@ describe('real Wiki page + read hook + frozen recent changes mount', () => {
     const old = structuredClone(workspace().working.current!);
     old.matterWorkRevisionId = 'old-working-2'; old.workingRevision = 2;
     old.state.problemWork!.issues[0].body = '历史保存判断不得替换。';
+    old.changeSummary = '历史首屏只保留原保存变化。';
     mockWorkGet.mockResolvedValue(old);
     await mount('?workRef=old-working-2');
+    const firstScreen = container.querySelector('.matter-first-screen')!;
+    expect(firstScreen.getAttribute('data-matter-work-ref')).toBe('old-working-2');
+    expect(firstScreen.textContent).toContain('历史首屏只保留原保存变化');
+    expect(firstScreen.textContent).not.toContain('本机队范围 · 已有适用性模块');
     expect(container.querySelector('[data-work-ref="old-working-2"]')).not.toBeNull();
     expect(container.textContent).toContain('历史保存判断不得替换');
     expect(mockReviewGet).not.toHaveBeenCalled();
     await sourceChoice();
     expect(mockStatusGet).not.toHaveBeenCalled(); expect(mockActivityGet).not.toHaveBeenCalled();
-    expect(container.textContent).toContain('不会读取最新候选');
+    expect(container.textContent).toContain('该历史工作暂无来源活动解读');
+  });
+
+  it('keeps saved-work corrections and reference staleness visible before collapsed analysis', async () => {
+    const value = workspace();
+    const revision = value.working.current!;
+    revision.state.problemWork!.overviewStatus = 'STALE';
+    revision.correctionNotices = [{ attemptRef: 'correction-test', issueKey: 'condition',
+      reason: '更正需要核对原限制。', attemptStatus: 'SUCCEEDED', correctedWorkRef: 'corrected-test-work' }];
+    revision.overviewCorrectionNotices = [{ attemptRef: 'overview-check-test', targetWorkRef: 'test-working-3',
+      reason: '综合中的条件需核对。', attemptStatus: 'QUEUED', savedWorkRef: null, savedWorkingRevision: null }];
+    revision.referenceWorkNotices = [{ sourceWork: { subjectKind: 'ENGINEERING_MATTER', subjectId: 'reference-matter',
+      workRef: 'reference-old-work', issueKey: 'reference-condition' }, evidenceRef: 'reference-test',
+      affectedIssueKeys: [revision.state.problemWork!.issues[0].issueKey], overviewStatus: 'STALE', correctionNotices: [] }];
+    revision.referenceWorkNotices.push({ ...revision.referenceWorkNotices[0], evidenceRef: 'outside-test',
+      affectedIssueKeys: ['outside-saved-issues'], correctionNotices: [{ attemptRef: 'outside-correction-test',
+        issueKey: 'outside-saved-issues', reason: '不属于本版问题的引用提示。', attemptStatus: 'RUNNING', correctedWorkRef: null }] });
+    mockWorkspaceGet.mockResolvedValue(value);
+    await mount();
+    for (const text of ['此版本已有后继更正', '综合中的条件需核对', '其综合尚未覆盖当时的问题更新',
+      '此前保存的系统候选判断，尚未覆盖本次问题更新']) {
+      const paragraph = Array.from(container.querySelectorAll('p')).find(item => item.textContent?.includes(text));
+      expect(paragraph).toBeDefined();
+      expect(paragraph!.closest('details')).toBeNull();
+    }
+    const referenceLink = Array.from(container.querySelectorAll('a')).find(item => item.textContent === '阅读所引版本及其条件');
+    expect(referenceLink?.getAttribute('href')).toContain('sourceWorkRef=reference-old-work');
+    expect(referenceLink?.closest('section')?.querySelector('h3')?.textContent)
+      .toBe(`影响问题：${revision.state.problemWork!.issues[0].question}`);
+    expect(container.textContent).not.toContain('不属于本版问题的引用提示');
+    expect(container.querySelector('[aria-label="已保存的问题分析"]')?.closest('details')?.open).toBe(false);
   });
 
   it('does not select a Review anchor when primary membership is ambiguous', async () => {
@@ -149,6 +190,7 @@ describe('real Wiki page + read hook + frozen recent changes mount', () => {
     mockWorkspaceGet.mockRejectedValueOnce(Object.assign(new Error('permission removed'), { statusCode }));
     await click('重新读取');
     expect(container.querySelector('[data-saved-context-issue]')).toBeNull();
+    expect(container.querySelector('.matter-first-screen')).toBeNull();
     expect(container.querySelector('[data-work-ref]')).toBeNull();
     expect(container.textContent).not.toContain('当前构型是什么？');
   });
@@ -162,6 +204,7 @@ describe('real Wiki page + read hook + frozen recent changes mount', () => {
     await act(async () => router.navigate('/matters/ui-test-matter?panel=brief'));
     expect(container.querySelector('[data-work-ref]')).toBeNull();
     expect(container.querySelector('[data-saved-context-issue]')).toBeNull();
+    expect(container.querySelector('.matter-first-screen')).toBeNull();
     expect(mockReviewGet).toHaveBeenCalledTimes(reviewReads);
   });
 });

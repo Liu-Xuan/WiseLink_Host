@@ -275,7 +275,7 @@ export default function MatterPosture({
         >
           <h2>我方措施记录</h2>
           <p>
-            暂无措施颁发、计划、执行及效果记录。
+            当前读取未提供措施颁发、计划、执行及效果记录。
           </p>
         </section>
         <section

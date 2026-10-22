@@ -3343,6 +3343,14 @@ export interface EngineeringMatterCatalogEntry {
   currentWorkItemRevision: number;
   workItemChangedSinceLink: boolean;
   workItemStatus: string;
+  /** Read-only reuse of this exact WorkItem's existing applicability module.
+   * This is not a Matter-level decision or proof of installed configuration. */
+  applicability?: Pick<CanonicalApplicabilityCandidateProjection,
+    'documentVersionId' | 'inputRevision' | 'status' | 'currentness' |
+    'staleReason' | 'decision' | 'aircraftNumber' | 'assessmentAsOf' |
+    'blockingUnknownCount'> | null;
+  /** A withheld derived projection does not block the authorized Matter read. */
+  applicabilityUnavailableReason?: 'SOURCE_MISMATCH' | null;
   document: {
     documentId: string;
     documentVersionId: string;

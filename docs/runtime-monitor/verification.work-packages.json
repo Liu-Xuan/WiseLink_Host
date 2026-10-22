@@ -33,13 +33,18 @@
       "id": "P2",
       "label": "P2 · 阅读与翻译接续",
       "bindingIds": [
-        "translation.reading"
+        "translation.reading",
+        "matter.saved-reading"
       ],
       "scenarioIds": [
         "V04",
-        "V05"
+        "V05",
+        "V03",
+        "V12",
+        "V24",
+        "V26"
       ],
-      "nextAction": "本人已有上传翻译续接及译文运行图已接；发布后核对真实浏览器入口，保留部分译文与原请求。"
+      "nextAction": "三组首屏、准确历史/更正提示与既有适用性投影已接入并通过合成Chrome核对；翻译原请求续接保持。发布后只读核对实际页面；公司正式清单仍待真实Source接入。"
     },
     {
       "id": "P3",
@@ -82,9 +87,10 @@
       ],
       "scenarioIds": [
         "V18",
-        "V20"
+        "V20",
+        "V16"
       ],
-      "nextAction": "ATA2成员与真实Summary Native消费链已通过隔离验证；生产当前批准来源缺口未关闭。仅在准确来源和原请求授权满足时执行实际跨资料生成。"
+      "nextAction": "显式delegation的Matter到期条件漏唤醒已修复，真实PG核对撤权、未来时间及原occurrence幂等。生产三类变化仍依赖准确Source/当前批准证明，不为缺源重复生成。"
     },
     {
       "id": "P6",

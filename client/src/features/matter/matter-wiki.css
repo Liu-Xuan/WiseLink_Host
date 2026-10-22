@@ -80,6 +80,24 @@
   min-height: 0;
 }
 
+.matter-first-screen {
+  display: grid;
+  gap: 20px;
+}
+
+.matter-first-screen > section {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--wl-border);
+  border-radius: 12px;
+}
+
+@media (min-width: 1200px) {
+  .matter-first-screen {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 899px) {
   .matter-wiki-page {
     padding-inline: 12px;

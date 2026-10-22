@@ -142,6 +142,15 @@ test(
       GRANT SELECT,INSERT,UPDATE ON derived_summary,derived_summary_revision TO authenticated,service_role;
       GRANT SELECT ON dm_document_reading_run,dm_document_reading_retraction TO authenticated,service_role;
       GRANT UPDATE ON dm_document_version TO authenticated,service_role;`);
+    // Keep the older fixture aligned with the current browser read predicates;
+    // Hosted Matter admission still uses the actual owner/delegation RLS.
+    const nativeRead = await readFile('migrations/0078_native_tenant_shared_read.sql', 'utf8');
+    for (const name of ['native_app_shared_read_allowed', 'native_app_work_item_readable',
+      'native_app_document_readable', 'native_app_matter_revision_readable']) {
+      const definition = nativeRead.match(new RegExp(`CREATE OR REPLACE FUNCTION ${name}\\([\\s\\S]*?\\$\\$;`, 'u'))?.[0];
+      assert.ok(definition);
+      await admin.unsafe(definition.replaceAll('workspace_aadkpkjef3slu', 'public').replaceAll("'63849986'", "'tenant-A'"));
+    }
     const owner = await fixture.reserveActorService('actor-A');
     t.after(() => owner.release());
     const scope = {
@@ -494,6 +503,9 @@ test(
               purpose: 'Constructed saved members',
             }),
           );
+          const sourceRefs = claim.task.modelInput.evidence.map(item => item.evidenceRef);
+          await hosted(() => runtime.readSources({ ...target, ...fence,
+            evidenceRefs: sourceRefs, purpose: 'Constructed exact Matter sources' }));
           const value = await hosted(() =>
             runtime.save({
               ...target,
@@ -503,7 +515,7 @@ test(
               contentJson: JSON.stringify({
                 headline: 'Constructed comprehensive Wiki',
                 listBrief: 'Exact source coverage',
-                body: refs.map((ref) => `[[${ref}]]`).join(' '),
+                body: `## 事项: ${matterId}\n${[...refs, ...sourceRefs].map((ref) => `[[${ref}]]`).join(' ')}`,
                 limitations: ['Synthetic; no live model.'],
               }),
             }),
@@ -527,6 +539,71 @@ test(
           ).status,
           'IDLE',
         );
+      },
+    );
+    await t.test(
+      'a saved due condition wakes an explicitly delegated fully covered Matter through Wiki polling',
+      async () => {
+        const target = { tenantId: scope.tenantId, actorUserId: 'actor-A', matterId };
+        const saveCondition = async (at, requestId) => {
+          const basis = await hosted(() => working.withActorTransaction('actor-A', async (executor) => ({
+            current: await executor.loadCurrent(target),
+            inputs: (await executor.authorizeRuntimeInputs(target)).currentInputs,
+          })));
+          return browser(() => working.commit({ ...target, source: null, currentInputs: basis.inputs, command: {
+            requestId, expectedWorkingRevision: basis.current.workingRevision,
+            basedOnMatterRevisionId: basis.current.basedOnMatterRevisionId,
+            updateKind: 'CORRECTION', changeSummary: 'Save an explicit synthetic revisit time.',
+            nextFocus: null, claimDelta: null, openQuestionDelta: null,
+            reviewConditionDelta: { upserts: [{ itemId: 'wiki-explicit-due', text: 'Recheck the unresolved condition.',
+              basisRefs: [], when: { kind: 'DUE_AT', at } }], retirements: [], explicitlyUnchangedItemIds: [] },
+            nextSubstantiveResult: null, substantiveInputs: [], coverageUpdates: [],
+          } }));
+        };
+        const attemptCount = async () => (await admin`SELECT count(*)::int AS n FROM action_attempt WHERE matter_id=${matterId}`)[0].n;
+        const before = await attemptCount();
+        await saveCondition('2099-01-01T00:00:00Z', 'wiki-future-condition');
+        assert.equal((await hosted(() => wiki.next())).status, 'IDLE');
+        assert.equal(await attemptCount(), before, 'future conditions do not admit engineering work');
+
+        const dueWork = await saveCondition('2000-01-01T00:00:00Z', 'wiki-due-condition');
+        const list = await browser(() => wiki.list(owner.actor));
+        assert.equal(list.items.some(item => item.waiting.some(waiting => waiting.subjectId === matterId)), false,
+          'all current Matter inputs are already covered: the due condition alone must wake it');
+
+        await browser(() => wiki.delegateMatter(root.summaryId, { matterId, enabled: false }, owner.actor));
+        assert.notEqual((await hosted(() => wiki.next())).status, 'MATTER_PENDING');
+        assert.equal(await attemptCount(), before, 'a disabled delegation does not admit a due condition');
+        await browser(() => wiki.delegateMatter(root.summaryId, { matterId, enabled: true }, owner.actor));
+
+        await browser(() => wiki.classify(root.summaryId,
+          { sourceKind: 'MATTER', sourceId: matterId, ata: '46-00', included: false }, owner.actor));
+        assert.notEqual((await hosted(() => wiki.next())).status, 'MATTER_PENDING');
+        await assert.rejects(hosted(() => wiki.authorizeMatter({ matterId })), /WIKI_MATTER_DELEGATION_UNAVAILABLE/u);
+        assert.equal(await attemptCount(), before, 'a non-CONFIRMED membership does not admit a due condition');
+        await browser(() => wiki.classify(root.summaryId,
+          { sourceKind: 'MATTER', sourceId: matterId, ata: '46-00', included: true }, owner.actor));
+
+        await admin`UPDATE identity_subject_mapping SET status='REVOKED' WHERE miaoda_user_id='actor-A'`;
+        assert.equal((await hosted(() => wiki.next())).status, 'IDLE');
+        await assert.rejects(hosted(() => wiki.authorizeMatter({ matterId })), /WIKI_MATTER_DELEGATION_UNAVAILABLE/u);
+        assert.equal(await attemptCount(), before, 'an inactive mapped owner does not admit a due condition');
+        await admin`UPDATE identity_subject_mapping SET status='ACTIVE' WHERE miaoda_user_id='actor-A'`;
+
+        const due = await hosted(() => wiki.next());
+        assert.equal(due.status, 'MATTER_PENDING');
+        assert.equal(due.matterId, matterId);
+        const [attempt] = await admin`SELECT idempotency_key,task_envelope_json FROM action_attempt WHERE operation_ref=${due.attemptRef}`;
+        assert.match(attempt.idempotency_key, /^matter-revisit:/u);
+        assert.deepEqual(JSON.parse(attempt.task_envelope_json).trigger, {
+          kind: 'REVISIT', workRef: dueWork.revision.matterWorkRevisionId, conditionIds: ['wiki-explicit-due'],
+        });
+        assert.equal((await hosted(() => wiki.next())).attemptRef, due.attemptRef);
+        assert.equal(await attemptCount(), before + 1, 'repeated polling reuses the original persisted occurrence');
+        await hosted(() => writer.cancel({ ...target, principalId: scope.principalId, attemptRef: due.attemptRef,
+          reason: 'Constructed due condition and duplicate polling verified.' }));
+        assert.notEqual((await hosted(() => wiki.next())).status, 'MATTER_PENDING');
+        assert.equal(await attemptCount(), before + 1, 'the same overdue condition does not rearm a terminal attempt');
       },
     );
     await t.test(

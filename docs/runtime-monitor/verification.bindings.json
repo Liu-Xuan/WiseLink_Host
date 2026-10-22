@@ -295,17 +295,18 @@
       ],
       "consistencyScenarioIds": [
         "V18",
-        "V20"
+        "V20",
+        "V16"
       ],
       "workPackageIds": [
         "P5"
       ],
-      "sourceRevision": "5f753f3f06a63ffa9a669474d2ccee344c82bbbc",
-      "reviewScope": "ATA2准确直接成员与既有ATA4/子层共同消费；目录诊断只投影获权覆盖和活跃请求。三类业务变化的全部触发策略不在本增量通过范围。；本批已接WORK_ITEM_WORK内Native证据的真实Summary委托与原文IO前后核对，完整隔离消费链通过；生产当前批准证据仍缺。",
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "reviewScope": "ATA2准确直接成员与既有ATA4/子层共同消费；目录诊断只投影获权覆盖和活跃请求。三类业务变化的全部触发策略不在本增量通过范围。；本批已接WORK_ITEM_WORK内Native证据的真实Summary委托与原文IO前后核对，完整隔离消费链通过；生产当前批准证据仍缺。 本轮补齐已明确授权且无waiting行的Matter到期复核；只扩大既有delegation内候选遍历，原SQL身份/确认归属/来源与持久化occurrence幂等不变。",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
       "producer": "server/modules/canonical-host/hierarchical-wiki-inventory.ts#readWikiInventory/#wikiClassifications；已确认归属的文档和已保存工作按真实ATA2/ATA4层级进入，成员kind为DOCUMENT_READING、WORK_ITEM_WORK、MATTER_WORK或DERIVED_SUMMARY。",
       "consumer": "server/modules/canonical-host/hierarchical-wiki-generation.ts#assertWikiLayerMembers/#wikiDirectVersions；openclaw/skills/wiselink-research-and-synthesize/scripts/hierarchical-wiki-model-view.mjs和derived-summary-shape.mjs消费准确成员。",
-      "executionOwner": "HierarchicalWikiService.next → 已有DerivedSummary预留/领取与Native消费；仅原授权任务执行模型。",
+      "executionOwner": "HierarchicalWikiService.next → 已有DerivedSummary预留/领取与Native消费；仅原授权任务执行模型。 对enabled FLEET upstreamDelegations中的准确Matter检查原nextForRuntime，DUE_AT未到期不受理，同条件复用原attempt。",
       "recoveryOwner": "既有derived summary attempt原request/lease恢复；目录读取/展开不预留或启动任务。",
       "authority": {
         "requestRecord": "hierarchical_wiki_scope目标/完成generation与既有derived summary activeRequest/attemptRef；HierarchicalWikiService.next。",
@@ -320,7 +321,8 @@
       "readEntry": "HierarchicalWikiService.list → HierarchicalWikiDirectory → HierarchicalWikiRuntimeDiagnostic；父级目录读一次，按成功读取记录observedAt，刷新复用原回调。",
       "actionEntries": [
         "已有/summaries/:summaryId读取正文；summaryMemberRoute进入准确文档/工作/子摘要；活跃request携带原attemptRef进入已有读取页。",
-        "运行图展开、切换和刷新不启用Wiki策略、不调用模型或写业务。"
+        "运行图展开、切换和刷新不启用Wiki策略、不调用模型或写业务。",
+        "HierarchicalWikiService.next：waiting MATTER与当前enabled FLEET显式upstreamDelegations精确ID合并；authorizeMatter及actor一致后调用原nextForRuntime，不遍历全部Matter或创建新策略。"
       ],
       "validationRefs": [
         "test/unit/hierarchical-wiki-layered-generation.spec.ts",
@@ -328,7 +330,8 @@
         "test/node/hierarchical-wiki-saved-work-inventory-postgres.test.mjs",
         "test/unit/hierarchical-wiki-runtime-diagnostic.spec.ts",
         "test/unit/hierarchical-wiki-runtime-diagnostic-ui.spec.ts",
-        "test/node/tdms-summary-native-consumer-postgres.test.mjs"
+        "test/node/tdms-summary-native-consumer-postgres.test.mjs",
+        "test/node/hierarchical-wiki-matter-postgres.test.mjs"
       ],
       "gaps": [
         {
@@ -340,8 +343,8 @@
         {
           "id": "wiki.saved-reading.impact",
           "kind": "source_review",
-          "reason": "ATA2成员遗漏已修复；公司批准/措施变化及已登记待补条件命中的实际端到端策略仍需来源与消费者核对。",
-          "nextAction": "先完成P3准确资料与实际内容消费，再按三类变化验证最小更新范围，不为缺源重复生成。"
+          "reason": "ATA2成员与显式授权Matter到期条件漏唤醒已修复。普通反馈、批准/措施及技术条件三类生产变化的全流程仍依赖实际来源和批准有效性接入。",
+          "nextAction": "在实际获权来源成立后按三类变化核对最小调用范围；本轮不以到期条件PG用例替代全部业务变化验证。"
         },
         {
           "id": "wiki.saved-reading.deployment",
@@ -490,6 +493,72 @@
           "kind": "deployment",
           "reason": "代码位于来源口径纠正后的本地候选，未包含在已批准25c发布源，尚未发布。",
           "nextAction": "以准确后续候选形成技术包并确认发布范围，随后只读核对实际获权对象；新业务模型/SAVE另按原授权边界。"
+        }
+      ]
+    },
+    {
+      "id": "matter.saved-reading",
+      "title": "保存事项判断与已有适用性 → 三组首屏阅读",
+      "nodeIds": [
+        "assessment.applicability",
+        "assessment.research",
+        "assessment.overall",
+        "business.company_records",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "artifact.reading"
+      ],
+      "consistencyScenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26"
+      ],
+      "workPackageIds": [
+        "P2"
+      ],
+      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
+      "authorRevision": "b898573bebffa3571597c211fcf0cf6ea36e02bf",
+      "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "reviewScope": "首屏真实消费者复用准确displayedRevision；公司批准、工程文件及AEO清单本次未取得，明确缺项，系统候选不替代正式安排。更正/引用过期提示常显；本轮不改TDMS开关或新增业务请求。",
+      "producer": "EngineeringMatterWorkingService的既有保存修订；EngineeringMatterService.catalogEntry在原freshRead/WI/DVI授权后白名单投影既有applicability，不另算事项适用性。",
+      "consumer": "client/src/features/matter/EngineeringMatterPage.tsx → MatterSavedWorkNotices + MatterFirstScreenReading；完整问题分析保留在原MatterProblemWork。",
+      "executionOwner": "浏览器只读已获权事项和保存修订；页面展示不启动模型、审批或正式采用。",
+      "recoveryOwner": "复用原事项读取与requestedWorkRef生命周期；历史请求失败不回填当前成果，撤权按原路径清除。",
+      "authority": {
+        "requestRecord": "既有Matter读取及准确requestedWorkRef；此投影不新增action_attempt。",
+        "artifactRecord": "engineering_matter_work_revision与原WorkItem.projection_json.applicability；当前/历史各保留准确保存修订。",
+        "consumedInputField": "displayedRevision.state.problemWork/substantiveResult/openQuestions/reviewConditions、changeSummary/change；当前模式才使用catalog.entries[].applicability与working.pendingInputs。",
+        "ready": "原Matter及全部关联WorkItem/来源授权成立；applicability来源不匹配仅返回null+SOURCE_MISMATCH，不返回旧DVI/机号/结论，也不扩大成全页失败。",
+        "saved": "仅展示原保存结果，不新增业务保存或改写正式意见。",
+        "current": "requestedWorkRef存在时严格使用displayedRevision且不叠加当前适用性/待纳入资料；STALE/NOT_AVAILABLE和更正/引用影响按原保存范围明确显示。"
+      },
+      "decisionEntry": "EngineeringMatterService.catalogEntry；MatterFirstScreenReading的exact/STALE判断只解释既有模块结果，不推导全机队结论。",
+      "projectionEntry": "client/src/features/matter/MatterFirstScreenReading.tsx：当前判断与范围、公司安排与落实、变化与下一步；MatterSavedWorkNotices常显本版更正及affectedIssueKeys对应引用变化。",
+      "readEntry": "原EngineeringMatterPage的事项简报；依据按钮复用onLocateDocument/onOpenClaim原准确入口，长清单原生details保留完整条件。",
+      "actionEntries": [
+        "切换历史/当前只更新读取视图；已有运行图与自动分析记录保留在原侧栏，不新增调度真源。",
+        "来源不符适用性局部隐藏并明确提示，其余已获权事项和资料继续可读。"
+      ],
+      "validationRefs": [
+        "test/unit/matter-first-screen-reading.spec.ts",
+        "test/unit/engineering-matter.service.spec.ts",
+        "test/unit/wiki-reading-mount.spec.ts",
+        "test/unit/matter-work-reference.spec.ts"
+      ],
+      "gaps": [
+        {
+          "id": "matter.saved-reading.company",
+          "kind": "runtime",
+          "reason": "真实事项读取尚未提供可核对的批准意见、正式工程文件/AEO进展和期限；页面明确未取得，只有保存的系统候选建议。",
+          "nextAction": "随P3实际获权当前批准来源接入现有读取；不把候选建议或读取缺项当成正式公司安排。"
+        },
+        {
+          "id": "matter.saved-reading.deployment",
+          "kind": "deployment",
+          "reason": "本增量仅在隔离候选和合成Chrome预览核对，尚未发布。",
+          "nextAction": "准确技术交付获准后发布并只读核对原获权事项。"
         }
       ]
     }

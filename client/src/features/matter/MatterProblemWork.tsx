@@ -2,8 +2,7 @@ import type { EngineeringMatterWorkingRevisionReadModel } from '@shared/matter-w
 import { JobAidIssueArticle } from '@client/src/pages/DocumentParsingPage/JobAidIssueArticle';
 import type { DocumentAssessmentEvidence } from './assessment-reading';
 import ReferenceWorkNotices from './ReferenceWorkNotices';
-import OverviewCorrectionNotices from './OverviewCorrectionNotices';
-import OverviewSourceWork from './OverviewSourceWork';
+import MatterSavedWorkNotices from './MatterSavedWorkNotices';
 import EngineeringIssueBody from './EngineeringIssueBody';
 import { SavedJobAidIssueContext, SavedJobAidMethodNotice } from './SavedJobAidReadingContext';
 import '@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css';
@@ -13,11 +12,13 @@ export default function MatterProblemWork({
   onLocateDocument,
   showReferenceNotices = true,
   showMethodNotice = true,
+  showSavedWorkNotices = true,
 }: {
   revision: EngineeringMatterWorkingRevisionReadModel | null;
   onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
   showReferenceNotices?: boolean;
   showMethodNotice?: boolean;
+  showSavedWorkNotices?: boolean;
 }) {
   const work = revision?.state.problemWork;
   if (!work || !revision) return null;
@@ -39,22 +40,7 @@ export default function MatterProblemWork({
             : '问题正文可读；综合尚未形成。'}
         </p>
       ) : null}
-      <OverviewSourceWork matterId={revision.matterId} source={revision.overviewSourceWork} overviewStatus={work.overviewStatus} />
-      <OverviewCorrectionNotices
-        matterId={revision.matterId}
-        notices={revision.overviewCorrectionNotices}
-      />
-      {revision.correctionNotices?.map((notice) => (
-        <p key={notice.attemptRef} role="note" className="text-sm leading-7">
-          问题 {notice.issueKey}：
-          {notice.unchanged
-            ? '已完成比较并保留原认识。'
-            : notice.correctedWorkRef
-              ? '此版本已有后继更正；当前展示仍为原版本。'
-              : '已登记待核更正，尚未取得更正后的保存结果。'}{' '}
-          {notice.reason}
-        </p>
-      ))}
+      {showSavedWorkNotices ? <MatterSavedWorkNotices revision={revision} /> : null}
       {work.issues.map((issue) => (
         <article
           key={issue.issueRef}

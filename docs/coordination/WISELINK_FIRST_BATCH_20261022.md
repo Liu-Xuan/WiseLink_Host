@@ -264,3 +264,33 @@ M3的`business.company_records → assessment.research`使用已保存父响应�
 生产retained事实当前只能给出 `validity=UNKNOWN`，没有有效性assertion，成员为 `QUALIFIED + APPROVAL_VALIDITY_UNKNOWN`，批准正文READ返回 `TDMS_RUNTIME_OPINION_NOT_APPROVED`；这是明确的剩余缺口。正向PG的ACTIVE为测试事实。Review/successor及OAuth Native未接通；关联工程文件未自动取得PDF，V44获取/解析/恢复闭环未验。当前不解析AEO正文，适用飞机号继续使用反馈页。没有线上DDL、grant、来源导入、Native安装、新模型、业务SAVE或正式采用。
 
 最终构建回执：干净候选 `2a5b36eed33713f93e326f4f3e11a8b5fe903ff3` 生产构建通过，服务端内嵌同一SHA，构建时间 `2026-10-22T17:26:17.738Z`；Vite保留已有大chunk提示。该提交相对业务5f只改7个协调/验证记录文件，本回执后继仍为纯记录。快照QA首次误传JSON作为契约参数被明确拒绝，改用实际Markdown契约后39/39通过；没有修改校验逻辑。Chrome实测第七条接线、P3+company+V44+运行组合筛选及准确下钻，保留UNKNOWN与PDF缺口，warn/error为空；截图为本地 `tmp/source-clarification-evidence/native-wiring-browser.png`。此证据仅为M2离线验证页，真实业务与M3私有JSON视觉回放仍未验。本节记录不要求重跑未改业务或再次构建。
+
+### 2026-10-23 三组事项阅读与已授权到期回查
+
+本轮业务代码为 `66e70d1d9fe3ec76407ce6a12f72b84906c88603`，后继协调记录和验证快照不改变此代码。继续使用来源澄清隔离候选，未修改主检出；本轮没有外部同步、发布、Native安装或生产业务写入。
+
+| 集成提交 | 父提交 | 范围与作者提交 |
+| --- | --- | --- |
+| `91b96a2a424fd88320bc61b9aaeeeeb9c5eaa23c` | `c0fc9a968571b63d0597e33e76aab655445ccdcc` | 3个模块文件；共享TdmsReceiverIdentityModule消除重复provider注册，身份和来源策略不变 |
+| `6d4809f7e5232222ec3efc8bf653d88661e366d8` | `91b96a2a424fd88320bc61b9aaeeeeb9c5eaa23c` | Wiki service及真实PG测试2文件；作者 `46c091e598cdc1d858160effb48da350cec3b4da` |
+| `66e70d1d9fe3ec76407ce6a12f72b84906c88603` | `6d4809f7e5232222ec3efc8bf653d88661e366d8` | 事项页面/组件、CSS、已有catalog投影、shared类型及定向测试12文件；作者 `b898573bebffa3571597c211fcf0cf6ea36e02bf` |
+
+事项首屏按“当前判断与范围、公司安排与落实、变化与下一步”组织。真实页面传入准确`displayedRevision`，复用保存工作、未决项、复核条件及原依据导航；长清单可展开，首项完整条件和下一步保持可见。历史工作不叠加当前适用性或待纳入资料，更正和引用过期提示保留在折叠外，引用影响按本版问题范围显示。公司正式意见/工程文件/AEO清单本次仍未取得，页面明确读取缺项，系统候选建议单独显示。
+
+适用性只复用原获权WorkItem的模块投影，返回有限字段及原对象、时间和STALE含义。若投影来源与该资料不符，只返回`null + SOURCE_MISMATCH`，不释放旧DVI、机号或结论，其他已获权资料和事项仍可读。原Matter、WorkItem、Source授权链未放宽；没有新增全机队结论、审批或采用。
+
+Wiki原自动入口只遍历waiting MATTER，会漏掉“输入均已覆盖、但保存的DUE_AT条件已到期”。本轮只把当前enabled FLEET上的显式enabled upstreamDelegations准确ID合入候选，随后继续原SQL principal/ACTIVE用户/CONFIRMED成员授权、actor一致、nextForRuntime与持久化occurrence幂等。没有遍历全部Matter或启用新策略。
+
+实际验证与归属：
+
+- 共享身份模块的真实Source Nest composition 1/1通过。正常公开候选precommit曾报告重复provider，修复后代码相同的公开 `84af274858b624afa3449beaed4399298d5b7753` 全eslint、双端tsc、stylelint通过；没有绕过hook。
+- Wiki作者提交的真实PG先红后绿，7/7（6个子测试和父测试）、0跳过；未来条件、关闭delegation、非CONFIRMED成员、inactive用户、重复原attempt和终态不重开均覆盖。相关3套单测16/16与类型/lint/语法通过。
+- 额外旧`hierarchical-wiki-unclaimed-attempt`套件7失败/15通过，在纯`c0fc9a9`基线同样复现，原因是测试client缺`begin`。本次没有修改该生命周期，也没有将这项检查记为通过。
+- 首屏作者分阶段共30个不同测试通过，不能称为最终完整树统一运行：最后首屏6项在全部修改完成后运行并原样提交；服务6/reference7对应文件之后未改；Wiki mount8后首屏依赖仍改局部提示，问题阅读2/历史稳定1为阶段回归。server类型和CSS对应最终文件；client类型与scoped ESLint后仍有候选标签、断言和空行修改。主控只补受这一后续修改影响的实际mount验证，另由最终正常提交检查覆盖静态检查。
+- 主控Chrome使用集成代码和纯合成fixture核对三组同屏、候选与正式缺项、历史不叠加当前适用性、保存依据展开，warn/error为空。静态预览首次因平台CSS的开发期inspector引用失败，改用仓库现有隔离预览主题后成功；只提供编译后的合成静态资源，没有提供私有业务JSON服务。截图为`tmp/source-clarification-evidence/matter-reading-browser.png`，不替代生产事项或M3私有数据视觉验收。
+
+M1增加`matter.saved-reading`实际接线，复用v1.6的`artifact.reading`及现有节点；Wiki补充到期回查的原入口与边界，不改稳定契约ID。M2共8条接线，源码、测试、部署、运行分别保留实际范围；Chrome的P2＋事项阅读＋V24＋运行组合筛选/下钻显示准确入口及正式清单缺口，warn/error为空，截图为`tmp/source-clarification-evidence/reading-wiring-browser.png`。M3仍为原Host读取的投影，本轮未增加第二状态或调度器。
+
+剩余核心条件仍明确未完成：新的准确技术包尚待授权/发布；真实当前批准、处理集合及来源授权/受控持久化链尚缺；SEM工程事实及真实内容级保存验收未完成；三类生产变化的实际最小更新范围未验；M3私有JSON视觉回放仍待原允许的文件选择。AEO本期不解析正文，继续按用户指定的反馈页飞机号口径；未来接结构化文件。没有把到期PG、合成浏览器或技术构建当作这些真实业务条件完成。
+
+主控集成 `66e70d1d` 的真实Wiki页面/read hook mount已补验8/8通过，涵盖准确修订、历史、更正/引用提示与401/403/404撤权清除；日志为`tmp/source-clarification-evidence/p2-integrated-mount.log`。测试仅有既有React Router v7 future flag提示；Chrome实际预览无warn/error。

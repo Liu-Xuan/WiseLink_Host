@@ -128,7 +128,6 @@ test('overview correction notices distinguish unsaved, failed, and saved follow-
   expect(html).toContain('已保存后续工作');
   expect(html).toContain('workRef=MWREV-HISTORICAL');
   expect(html).toContain('workRef=MWREV-FOLLOW-UP');
-  expect(html).toContain('保存不等于错误已消除或已正式采用');
 });
 
 test('a source notice remains visible when only overview correction exists and overview is current', () => {

@@ -5,14 +5,17 @@
     "business.company_records",
     "business.aeo_execution",
     "assessment.research",
-    "assessment.overall"
+    "assessment.overall",
+    "assessment.applicability",
+    "surface.reading"
   ],
   "changedEdgeIds": [
     "reading.wiki",
     "research.wiki",
     "wiki.parent",
     "company.research",
-    "research.overall"
+    "research.overall",
+    "artifact.reading"
   ],
   "scenarioIds": [
     "V04",
@@ -31,7 +34,9 @@
     "V41",
     "V26",
     "V28",
-    "V44"
+    "V44",
+    "V03",
+    "V16"
   ],
-  "reason": "本批增加真实来源权限、保留事实/运行reader和普通WorkItem/Summary/恢复消费，以及父响应历史READ图；V44仅保留缺项边界，生产当前批准、原件取得及运行仍未完成。各类证据按实际SHA和范围分列。"
+  "reason": "累计来源/Native消费者增量上，新增三组事项首屏、局部适用性投影和显式delegation下到期条件回查。旧证据保留实际源码；V44及真实批准/三类变化全流程保持缺项，未发布或新增线上业务。"
 }

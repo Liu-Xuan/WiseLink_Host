@@ -34,6 +34,8 @@ import MatterMaterials from './MatterMaterials';
 import MatterWorkingDetails from './MatterWorkingDetails';
 import MatterExecutionSummary from './MatterExecutionSummary';
 import MatterProblemWork from './MatterProblemWork';
+import MatterFirstScreenReading from './MatterFirstScreenReading';
+import MatterSavedWorkNotices from './MatterSavedWorkNotices';
 import { SavedJobAidMethodNotice } from './SavedJobAidReadingContext';
 import WikiRecentChanges from './WikiRecentChanges';
 import OverviewSourceWork from './OverviewSourceWork';
@@ -347,13 +349,6 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
           {navigationError}
         </p>
       ) : null}
-      {!requestedWorkRef && !workspaceRevoked && !loading && !error ? (
-        <MatterExecutionSummary matterId={matterId}
-          matterRevisionId={data.working.currentMatterRevisionId}
-          workingRevision={data.working.currentWorkingRevision}
-          inputScopeKey={JSON.stringify(data.working.pendingInputs.map(input => input.current))}
-          sessionGeneration={sessionGeneration} />
-      ) : null}
       {requestedWorkRef &&
       !requestedRevisionRead.withheld &&
       !workspaceRevoked ? (
@@ -434,6 +429,21 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 问题正文已保存，当前范围尚未形成综合认识。
               </p>
             ) : null}
+            {displayedRevision?.state.problemWork ? <MatterSavedWorkNotices
+              revision={displayedRevision} includeReferences
+            /> : null}
+            {!requestedWorkRef || displayedRevision ? <MatterFirstScreenReading
+              revision={displayedRevision}
+              members={data.matter.catalog.entries}
+              pendingInputs={requestedWorkRef ? [] : data.working.pendingInputs}
+              historical={Boolean(requestedWorkRef)}
+              onLocateDocument={openDocument}
+              onOpenClaim={(selection, trigger) => {
+                triggerRef.current = trigger;
+                setFocusClaimId(selection.claimId);
+                setClaimSelection(selection);
+              }}
+            /> : null}
             {requestedWorkRef && !displayedRevision ? (
               <div className="space-y-4">
                 <h2 className="text-xl font-semibold">指定工作尚未读回</h2>
@@ -447,14 +457,9 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                   overviewStatus === 'STALE' ? '此前综合' : '当前综合'
                 }
               >
-                {overviewStatus === 'STALE' ? <h2>此前综合</h2> : null}
-                <AssessmentReadingBrief
-                  result={result}
-                  depth="list"
-                />
                 <details className="mt-5 border-t border-border pt-4">
                   <summary className="cursor-pointer text-sm font-medium">
-                    展开综合意见、判断与依据
+                    {overviewStatus === 'STALE' ? '展开此前综合、判断与依据' : '展开综合意见、判断与依据'}
                   </summary>
                   <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-7">
                     {result.content.lead}
@@ -494,11 +499,16 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
               members={data.matter.catalog.entries} sessionGeneration={sessionGeneration} /> : null}
             {displayedRevision?.state.problemWork ? <SavedJobAidMethodNotice work={displayedRevision.state.problemWork} /> : null}
             {displayedRevision && result && !displayedRevision.state.problemWork ? <OverviewSourceWork matterId={matterId} source={displayedRevision.overviewSourceWork} /> : null}
-            <MatterProblemWork
-              revision={displayedRevision}
-              onLocateDocument={openDocument}
-              showMethodNotice={false}
-            />
+            {displayedRevision?.state.problemWork ? <details className="mt-5 border-t border-border pt-4">
+              <summary className="cursor-pointer text-sm font-medium">展开完整问题分析与方法依据</summary>
+              <MatterProblemWork
+                revision={displayedRevision}
+                onLocateDocument={openDocument}
+                showMethodNotice={false}
+                showSavedWorkNotices={false}
+                showReferenceNotices={false}
+              />
+            </details> : null}
             {TDMS_SOURCE_UI_ENABLED && !workspaceRevoked && (!requestedWorkRef || displayedRevision) ? <TdmsSourceEntry
               key={JSON.stringify([matterId, requestedWorkRef])}
               context={{ matterId }} enabled={TDMS_SOURCE_UI_ENABLED && !sourceReadSuspended} onAccessRejected={rejectTdmsAccess}
@@ -543,13 +553,21 @@ const MatterWorkspace: FC<MatterWorkspaceProps> = ({
                 ) : null}
                 <details className="border-t border-border pt-4">
                   <summary className="cursor-pointer text-sm font-medium">
-                    展开工作过程、变化记录与待核问题
+                    展开输入比较与工作覆盖细节
                   </summary>
                   <div className="mt-4">
                     <MatterWorkingDetails working={data.working}
                       members={data.matter.catalog.entries} />
                   </div>
                 </details>
+                {!workspaceRevoked && !loading && !error ? <details className="border-t border-border pt-4">
+                  <summary className="cursor-pointer text-sm font-medium">自动分析运行记录</summary>
+                  <div className="mt-4"><MatterExecutionSummary matterId={matterId}
+                    matterRevisionId={data.working.currentMatterRevisionId}
+                    workingRevision={data.working.currentWorkingRevision}
+                    inputScopeKey={JSON.stringify(data.working.pendingInputs.map(input => input.current))}
+                    sessionGeneration={sessionGeneration} /></div>
+                </details> : null}
               </>
             )}
           </aside>
