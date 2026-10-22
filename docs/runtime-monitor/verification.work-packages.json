@@ -16,7 +16,7 @@
         "V12",
         "V30"
       ],
-      "nextAction": "b561整批授权有效；Host创建400002552拒绝无release_id，c234已安装且16cron暂停。C私有源/恢复目标更正包已独审、等待唯一更正确认，C不含Estimated。本地Estimated 81baa5a7完整构建及双端指纹已通过；后续公开安全候选另行准备。"
+      "nextAction": "C de091c3已finished且实际前后端为C，产品tree与b561相同；原应用OAuth单次授权/登录通过，两个原对象CLI只读一致。Native已单次恢复原C136，16项仅其启用、其余15禁用，M3同一存量事项的3节点/准确refs/两条导航和单次刷新已通过，数据缺项保留。本地Estimated沿用81构建；E/D仅本地准备，未推送发布。"
     },
     {
       "id": "P1",
@@ -44,7 +44,7 @@
         "V24",
         "V26"
       ],
-      "nextAction": "三组首屏、准确历史/更正提示与既有适用性投影已接入并通过合成Chrome核对；翻译原请求续接保持。发布后只读核对实际页面；公司正式清单仍待真实Source接入。"
+      "nextAction": "三组首屏、准确历史/更正提示与既有适用性投影已随C部署；同一原获权事项M3的准确refs/两条导航/单次刷新已通过，Overall集合与TDMS事实仍缺；翻译GET/POST未新增验收。公司正式清单仍待真实Source接入。"
     },
     {
       "id": "P3",
@@ -60,7 +60,7 @@
         "V44",
         "V53"
       ],
-      "nextAction": "用户已确认自身 Estimated=批准/当前有效，本地 retained provider 已接入并通过19PG/244unit及独立Astra审查。实际 Source/grant/processing set、线上刷新、未结构化撤销/取代与原文V44仍待接入；OAuth新设备/offline另按准确授权准备。"
+      "nextAction": "用户确认自身Estimated=批准/当前有效，本地retained provider已接入并通过19PG/244unit及独立Astra审查，尚未部署。C已运行但不含此修正；原应用device/offline单次OAuth及登录已通过。实际Source/grant/processing set、线上刷新、未结构化撤销/取代、原文V44及独立Review/Native入口仍待真实接入。"
     },
     {
       "id": "P4",
@@ -77,7 +77,7 @@
         "V38",
         "V41"
       ],
-      "nextAction": "反馈页适用编号与有界浏览器来源授权已接入并完成隔离验证。发布后只读核对获权准确反馈单；空值/截断继续未知，未来直接接结构化AEO文件。"
+      "nextAction": "反馈页适用编号与有界浏览器来源授权已随C部署，隔离验证保留；取得获权准确反馈单后只读核对。空值/截断保持未知，未来接结构化AEO文件。"
     },
     {
       "id": "P5",
@@ -103,7 +103,7 @@
         "V08",
         "V10"
       ],
-      "nextAction": "ACK和迟到配置锁序修复已通过4项真实PG竞争回归；实际阶段时间与官方同窗聚合已取得。发布后观察正常恢复；容量、全局积压和首次可读保持未知。 Native过期COMMITTING恢复和Summary收尾锁序已完成定向PG核验，不增READ、模型或租约。"
+      "nextAction": "ACK、迟到配置锁序、Native过期COMMITTING恢复和Summary锁序已随C部署，既有定向PG证据保留。原c234安装回执不变，原helper单次恢复成功，完整16项仅C136 enabled、其余15 disabled，原脚本/配置保持；容量、全局积压和首次可读保持未知，不追加READ/模型/租约。"
     }
   ]
 }

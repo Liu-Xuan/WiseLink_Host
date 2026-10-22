@@ -1,5 +1,19 @@
 # WiseLink Host source status
 
+## 2026-10-23 delivery status
+
+The approved private Host source C `de091c3ba6f9f201d60e1f6bf1f781e11662fa39` is published as release `7699611310187924507`, officially `finished` with empty error logs. The executed frontend DOM and original backend Response identify C. Its product tree equals the previously approved b561 tree and does not include the later local Estimated mapping.
+
+The original application's single device/offline OAuth authorization and login were verified. Two exact pre-existing authorized object reads each returned one row with all selected fields unchanged. The same authenticated application page passed the scoped M3 graph, exact saved-work/Overall references, two existing navigations and one normal read-only refresh. Actual backend XHR status was 304 cache negotiation. Overall attempt collection, TDMS latestness/coverage and Ready/first-readable/ACK times remain unavailable; the existing work has zero verifiable saved native evidence, which does not prove it was never read. The candidate reader still reports seven blockers.
+
+Native c234 was restored once through the reviewed unchanged helper: only the originally enabled C136 is enabled among 16 schedules, with the other 15 disabled and all observed idle. The original installation record, scripts and configuration remain unchanged. The original turn completed with streaming false and queue zero. No reinstall, repeated product tests or business model/SAVE/adoption action was included.
+
+The subsequent Estimated candidate remains local and unpublished. It uses the user's confirmed own-assessment `Estimated` approval meaning, the retained provider/reader/receipt implementation accepted by independent Astra review, the original 19 PostgreSQL and 244 unit checks, and the exact 81 build. This record-only update reuses those original source identities and the build; it does not claim Estimated is live. Actual TDMS intake/refresh, unstructured revocation/supersession decoding, exact engineering originals and SEM/content-level model/SAVE acceptance remain open. See the [current first-batch record](WISELINK_FIRST_BATCH_20261022.md) for scoped technical evidence and the [verification page](../runtime-monitor/WiseLink_Wiring_Verification.html) for filtering and drill-down.
+
+Private operational evidence and private development ancestors are excluded from this public source projection. C runtime and Native restoration are separate from the unpublished Estimated candidate's deployment.
+
+## Earlier reviewed source projection
+
 The public source projection preserves the reviewed combined functionality and selectively adds these source changes:
 
 | Source | Included scope |

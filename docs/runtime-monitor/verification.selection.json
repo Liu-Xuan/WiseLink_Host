@@ -39,5 +39,5 @@
     "V16",
     "V53"
   ],
-  "reason": "累计候选接入自身 Estimated 批准映射，保留v1.6稳定ID和真实provider→reader→receipt。作者19PG/244unit原执行SHA保留，761完整Git tree相同，集成未重跑业务测试。b561已批准但发布创建拒绝无release_id；c234已安装暂停。V44、实际Source/在线刷新、原生撤销取代及真实SEM/模型SAVE仍缺项。"
+  "reason": "本地Estimated自身批准映射已完成，v1.6稳定ID及真实provider→reader→receipt不变；作者19PG/244unit和准确81构建保持原执行身份。C de091c3已正式finished且实际双端确认，C产品tree仍为b561、不含Estimated；原应用device/offline单次OAuth及登录通过。Native已单次恢复原C136且完整16项读回一致，M3同一事项3节点/准确refs/导航/单次刷新已实际通过，数据范围缺项保留，Source/线上刷新/原生撤销取代/SEM及真实模型SAVE缺项继续。"
 }

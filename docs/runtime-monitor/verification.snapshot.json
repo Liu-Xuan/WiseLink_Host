@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "snapshot": {
     "dataMode": "snapshot",
-    "generatedAt": "2026-10-22T21:26:45.235234+00:00",
+    "generatedAt": "2026-10-22T22:33:59.252231+00:00",
     "contract": {
       "version": "1.6 复核修订稿",
       "source": "WISELINK_MAINLINE_GRAPH_CONTRACT.md",
-      "sourceRevision": "f58be279a16a2004ee155d1196c87f25a3f2f657aea19b21ce7391183f7e2fd2",
+      "sourceRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
       "sourceRevisionType": "sha256"
     },
     "target": {
@@ -30,7 +30,7 @@
           "V12",
           "V30"
         ],
-        "nextAction": "b561整批授权有效；Host创建400002552拒绝无release_id，c234已安装且16cron暂停。C私有源/恢复目标更正包已独审、等待唯一更正确认，C不含Estimated。本地Estimated 81baa5a7完整构建及双端指纹已通过；后续公开安全候选另行准备。"
+        "nextAction": "C de091c3已finished且实际前后端为C，产品tree与b561相同；原应用OAuth单次授权/登录通过，两个原对象CLI只读一致。Native已单次恢复原C136，16项仅其启用、其余15禁用，M3同一存量事项的3节点/准确refs/两条导航和单次刷新已通过，数据缺项保留。本地Estimated沿用81构建；E/D仅本地准备，未推送发布。"
       },
       {
         "id": "P1",
@@ -58,7 +58,7 @@
           "V24",
           "V26"
         ],
-        "nextAction": "三组首屏、准确历史/更正提示与既有适用性投影已接入并通过合成Chrome核对；翻译原请求续接保持。发布后只读核对实际页面；公司正式清单仍待真实Source接入。"
+        "nextAction": "三组首屏、准确历史/更正提示与既有适用性投影已随C部署；同一原获权事项M3的准确refs/两条导航/单次刷新已通过，Overall集合与TDMS事实仍缺；翻译GET/POST未新增验收。公司正式清单仍待真实Source接入。"
       },
       {
         "id": "P3",
@@ -74,7 +74,7 @@
           "V44",
           "V53"
         ],
-        "nextAction": "用户已确认自身 Estimated=批准/当前有效，本地 retained provider 已接入并通过19PG/244unit及独立Astra审查。实际 Source/grant/processing set、线上刷新、未结构化撤销/取代与原文V44仍待接入；OAuth新设备/offline另按准确授权准备。"
+        "nextAction": "用户确认自身Estimated=批准/当前有效，本地retained provider已接入并通过19PG/244unit及独立Astra审查，尚未部署。C已运行但不含此修正；原应用device/offline单次OAuth及登录已通过。实际Source/grant/processing set、线上刷新、未结构化撤销/取代、原文V44及独立Review/Native入口仍待真实接入。"
       },
       {
         "id": "P4",
@@ -91,7 +91,7 @@
           "V38",
           "V41"
         ],
-        "nextAction": "反馈页适用编号与有界浏览器来源授权已接入并完成隔离验证。发布后只读核对获权准确反馈单；空值/截断继续未知，未来直接接结构化AEO文件。"
+        "nextAction": "反馈页适用编号与有界浏览器来源授权已随C部署，隔离验证保留；取得获权准确反馈单后只读核对。空值/截断保持未知，未来接结构化AEO文件。"
       },
       {
         "id": "P5",
@@ -117,7 +117,7 @@
           "V08",
           "V10"
         ],
-        "nextAction": "ACK和迟到配置锁序修复已通过4项真实PG竞争回归；实际阶段时间与官方同窗聚合已取得。发布后观察正常恢复；容量、全局积压和首次可读保持未知。 Native过期COMMITTING恢复和Summary收尾锁序已完成定向PG核验，不增READ、模型或租约。"
+        "nextAction": "ACK、迟到配置锁序、Native过期COMMITTING恢复和Summary锁序已随C部署，既有定向PG证据保留。原c234安装回执不变，原helper单次恢复成功，完整16项仅C136 enabled、其余15 disabled，原脚本/配置保持；容量、全局积压和首次可读保持未知，不追加READ/模型/租约。"
       }
     ]
   },
@@ -1171,14 +1171,14 @@
         {
           "id": "research.overall.deployment",
           "kind": "deployment",
-          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
-          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
+          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
+          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
         },
         {
-          "id": "research.overall.browser",
-          "kind": "test",
-          "reason": "真实JSON的自动浏览器导入受扩展本地文件权限限制；4项真实数据组件测试已过，浏览器视觉仍未验。",
-          "nextAction": "用户通过允许的原生文件选择完成导入后，核对正文/诊断及导航；不改变权限或额外提供私有文件服务。"
+          "id": "research.overall.m3-scope",
+          "kind": "runtime",
+          "reason": "本批C的真实M3已验同一事项3节点/2路径、工作1 SUCCEEDED、准确工作/资料版本及Overall当前输入、两条引用导航和单次刷新无诊断错误；Overall尝试集合未提供，不能声称完整执行历史或新内容验收。",
+          "nextAction": "保留这次C存量只读技术验收；后续只按实际读模型补充准确尝试集合与内容级范围，不再因历史本地JSON自动导入受限而把该段浏览器验收列为未完成。"
         }
       ]
     },
@@ -1244,8 +1244,8 @@
         {
           "id": "translation.reading.browser-scope",
           "kind": "runtime",
-          "reason": "正常浏览器入口已完成本人既有UPLOAD/ZH_FULL范围的代码与真实隔离RLS验证；尚未发布/实际用户运行，其他来源的续接仍需其原授权入口。",
-          "nextAction": "发布后以已有获权本人上传对象核对GET与部分译文；需要POST时以准确原attempt请求执行，不生成重复请求或全篇重译。"
+          "reason": "正常浏览器入口已随C部署，原本人UPLOAD/ZH_FULL范围的代码与真实隔离RLS验证保留；本批未新增实际用户翻译GET/POST验收，其他来源仍需其原授权入口。",
+          "nextAction": "以已有获权本人上传对象核对GET与部分译文；需要POST时按准确原attempt请求执行，不生成重复请求或全篇重译。"
         }
       ]
     },
@@ -1309,8 +1309,8 @@
         {
           "id": "save.finish.deployment",
           "kind": "deployment",
-          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
-          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
+          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
+          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
         },
         {
           "id": "save.finish.capacity",
@@ -1370,20 +1370,20 @@
         {
           "id": "feedback.reading.current-authority",
           "kind": "runtime",
-          "reason": "只读授权及成员过滤已接实际页面入口并通过隔离PG；线上CLI身份可见来源/授权/receipt为零，尚无获权反馈单原文的线上读回。该provider仅支持既有Gateway浏览器{}或准确DVI上下文，其他对象上下文明确拒绝；不提供导入/附件获取授权。",
-          "nextAction": "发布后使用已有真实来源grant与准确反馈单修订只读核验；缺授权或来源时报告准确缺项，不以测试fixture或关联元数据替代原文。"
+          "reason": "只读授权及成员过滤已随C接入实际页面入口并通过隔离PG；历史CLI身份可见来源/授权/receipt为零，尚无获权反馈单原文的线上读回。provider仅支持既有Gateway浏览器{}或准确DVI上下文，其他上下文明拒；不提供导入/附件获取授权。",
+          "nextAction": "取得已有真实来源grant与准确反馈单修订后只读核验；缺授权或来源时报告准确缺项，不以fixture或关联元数据替代原文。"
         },
         {
           "id": "feedback.reading.deployment",
           "kind": "deployment",
-          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
-          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
+          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
+          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
         },
         {
           "id": "feedback.reading.runtime",
           "kind": "runtime",
-          "reason": "反馈单适用编号消费已完成隔离验证；真实获权来源与线上页面尚待读回。空编号、截断窗口和未获权原文仍保留未知。",
-          "nextAction": "发布相应后续候选并取得准确反馈单来源后，核对页面飞机号、原状态行、准确版本及来源定位；未来结构化AEO文件作为后续能力。"
+          "reason": "反馈单适用编号消费已随C部署且隔离验证通过；真实获权来源与线上页面尚待读回。空编号、截断窗口和未获权原文仍保留未知。",
+          "nextAction": "取得准确反馈单来源后核对页面飞机号、原状态行、准确版本及来源定位；未来结构化AEO文件作为后续能力。"
         }
       ]
     },
@@ -1446,8 +1446,8 @@
         {
           "id": "wiki.saved-reading.runtime",
           "kind": "runtime",
-          "reason": "本增量为隔离内容消费及应用内读取投影验证；未新增生产Wiki生成，目录不含确切当前正文修订。",
-          "nextAction": "发布后只读原目录和保存正文；新生成仅在已有授权且存在实际跨资料价值的准确请求中进行。"
+          "reason": "本增量的应用内读取投影已随C部署，隔离内容消费验证保留；本批未新增生产Wiki生成，目录不含确切当前正文修订。",
+          "nextAction": "只读原目录和保存正文；新生成仅在已有授权且存在实际跨资料价值的准确请求中进行。"
         },
         {
           "id": "wiki.saved-reading.impact",
@@ -1458,8 +1458,8 @@
         {
           "id": "wiki.saved-reading.deployment",
           "kind": "deployment",
-          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
-          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
+          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
+          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
         }
       ]
     },
@@ -1513,14 +1513,14 @@
         {
           "id": "configuration.reading.runtime",
           "kind": "runtime",
-          "reason": "既有LCM候选快照阅读能力已保留，新诊断未做线上浏览器核验；当前观察与有限覆盖不能推为实时全机队或AEO完成。",
-          "nextAction": "发布后只读现有获权快照，核对原生值、位置和时间；实际关联工程条件时另核具体消费者和证据。"
+          "reason": "既有LCM候选快照读取及新诊断已随C部署，新诊断尚未做线上浏览器核验；当前观察与有限覆盖不能推为实时全机队或AEO完成。",
+          "nextAction": "只读现有获权快照，核对原生值、位置和时间；关联工程条件时另核具体消费者和证据。"
         },
         {
           "id": "configuration.reading.deployment",
           "kind": "deployment",
-          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
-          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
+          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
+          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
         }
       ]
     },
@@ -1588,7 +1588,7 @@
         {
           "id": "company.approved-opinion.current-proof",
           "kind": "runtime",
-          "reason": "Estimated 业务语义及本地真实 retained provider 映射已完成、独审接受；尚未验证实际 TDMS 在线状态刷新，实际 Source/grant/processing set 及准确原件仍未取得。历史 CLI 可见零计数不被改写为已接收。",
+          "reason": "Estimated业务语义和本地真实retained provider映射已完成并独审接受，尚未部署。实际C的M3节点仍为UNKNOWN、最新性/覆盖未提供，当前工作可核对保存原生证据0；这不证明从未读取。实际TDMS在线刷新、Source/grant/processing set和准确原件仍未取得。",
           "nextAction": "复用原来源、授权、版本和处理集合接入真实获权记录，按自身 Estimated 读取；只在准确外部动作获准后执行实际刷新/接收，不再向用户索取相同批准语义证明。"
         },
         {
@@ -1600,14 +1600,14 @@
         {
           "id": "company.approved-opinion.caller-scope",
           "kind": "source_review",
-          "reason": "普通 WorkItem、Gateway 浏览器、真实 Summary 及既有 COMMITTING 恢复已接入；Review 的独立调用者及 OAuth Native 新设备/offline 授权仍未接通。",
-          "nextAction": "按准确入口与生命周期准备 OAuth/设备授权及 Review 委托范围；保留现有 typed deny，不借无关活跃租约。"
+          "reason": "普通WorkItem、Gateway浏览器、真实Summary及既有COMMITTING恢复已接入。原应用device/offline已获授权，单次OAuth后登录验证成功；这不代替Review独立调用者及其他Native生命周期入口的装配与核验。",
+          "nextAction": "按准确Review/Native入口补齐所需调用者和生命周期范围；保留typed deny，不借无关活跃租约，不再索取本次已完成的device/offline授权。"
         },
         {
           "id": "company.approved-opinion.deployment",
           "kind": "deployment",
-          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
-          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
+          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
+          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
         },
         {
           "id": "company.approved-opinion.native-lifecycle",
@@ -1678,8 +1678,8 @@
         {
           "id": "matter.saved-reading.deployment",
           "kind": "deployment",
-          "reason": "旧 b561 整批技术授权有效，双远端已读回；Host 创建一次被平台 400002552 拒绝、没有 release_id，最近生产仍为 6c。c234 已安装/132文件/Ready/422通过且16cron全暂停；本地 Estimated 后续候选未发布。",
-          "nextAction": "新私有发布源及准确恢复目标更正包已完成准备与独立审查，等待用户唯一更正确认后按准确范围执行；C产品tree仍只含原b561，不含Estimated。本轮不推不发布、不重装或恢复Native，Estimated后续技术包另行准备。"
+          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
+          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
         }
       ]
     }
@@ -1725,7 +1725,7 @@
       "V16",
       "V53"
     ],
-    "reason": "累计候选接入自身 Estimated 批准映射，保留v1.6稳定ID和真实provider→reader→receipt。作者19PG/244unit原执行SHA保留，761完整Git tree相同，集成未重跑业务测试。b561已批准但发布创建拒绝无release_id；c234已安装暂停。V44、实际Source/在线刷新、原生撤销取代及真实SEM/模型SAVE仍缺项。"
+    "reason": "本地Estimated自身批准映射已完成，v1.6稳定ID及真实provider→reader→receipt不变；作者19PG/244unit和准确81构建保持原执行身份。C de091c3已正式finished且实际双端确认，C产品tree仍为b561、不含Estimated；原应用device/offline单次OAuth及登录通过。Native已单次恢复原C136且完整16项读回一致，M3同一事项3节点/准确refs/导航/单次刷新已实际通过，数据范围缺项保留，Source/线上刷新/原生撤销取代/SEM及真实模型SAVE缺项继续。"
   },
   "evidence": [
     {
@@ -3739,6 +3739,213 @@
       "completedAt": "2026-10-22T21:24:26.073744+00:00",
       "buildDirectory": "/private/tmp/wiselink-estimated-final-build-20261023",
       "evidenceObservation": "首次校验方式用Node动态导入前端产物触发浏览器window依赖失败，保留原失败日志；改为编译产物AST验证immutable常量绑定，未执行应用、未重建、未扩大业务测试。"
+    },
+    {
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "delivery-c-closeout.deployment.finished",
+      "kind": "deployment",
+      "status": "passed",
+      "sourceRevision": "de091c3ba6f9f201d60e1f6bf1f781e11662fa39",
+      "observedAt": "2026-10-22T22:07:15.622655Z",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "deploymentRef": "7699611310187924507",
+      "summary": "C官方GET22:06:34.956627Z finished/error_logs空，22:07:15.622655Z latest同ID/同提交。C产品tree严格等于b561，不含本地Estimated；前次b561创建400002552/无release_id仍保留原失败身份。",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-de091c3-release/readonly-release-followup/result.json"
+    },
+    {
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "delivery-c-closeout.runtime.frontend",
+      "kind": "runtime",
+      "status": "passed",
+      "sourceRevision": "de091c3ba6f9f201d60e1f6bf1f781e11662fa39",
+      "observedAt": "2026-10-22T22:19:54.852Z",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "deploymentRef": "7699611310187924507",
+      "summary": "原Host已登录浏览器实际执行DOM确认完整C提交。技术runtime PASS；candidate reader仍VERIFICATION_PENDING/7 blockers，不把前端实际运行等同所有业务或TDMS接收通过。",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-de091c3-release/frontend-runtime.actual.json"
+    },
+    {
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "delivery-c-closeout.runtime.backend",
+      "kind": "runtime",
+      "status": "passed",
+      "sourceRevision": "de091c3ba6f9f201d60e1f6bf1f781e11662fa39",
+      "observedAt": "2026-10-22T22:18:46.552Z",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "deploymentRef": "7699611310187924507",
+      "summary": "浏览器完整原Response确认C、SERVER_BUILD_ARTIFACT/PASS，serverBuildTime21:59:39.801Z；实际XHR HTTP304 Not Modified为缓存协商，不改写为200。直接导航缺CSRF曾拒绝，未改安全策略。",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-de091c3-release/runtime-observation.actual.json"
+    },
+    {
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "delivery-c-closeout.runtime.existing-authorized-readback",
+      "kind": "runtime",
+      "status": "passed",
+      "sourceRevision": "de091c3ba6f9f201d60e1f6bf1f781e11662fa39",
+      "observedAt": "2026-10-22T22:22:24.581662Z",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "matter.saved-reading"
+      ],
+      "deploymentRef": "7699611310187924507",
+      "summary": "原获权工作与Overall的两次官方CLI user/RLS单SELECT分别22:22:24.430431Z/24.581662Z返回，各1行，全部选出字段与发布前一致；准确工作/修订/Overall/artifact对应，正式采用false。仅存量只读核验，无新模型/SAVE；M3实际浏览器读取/导航另有独立原始观察，不混作本条CLI证据。",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-de091c3-release/existing-authorized-readback/summary.private.json"
+    },
+    {
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "delivery-c-closeout.runtime.oauth-original-app",
+      "kind": "runtime",
+      "status": "passed",
+      "sourceRevision": "de091c3ba6f9f201d60e1f6bf1f781e11662fa39",
+      "observedAt": "2026-10-22T22:20:57.278660Z",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "deploymentRef": "7699611310187924507",
+      "summary": "原应用device/offline已获用户授权；原记录singleAuthorizeClick=true、loginActuallyVerified=true、sameOriginalApp=true，追加授权点击0，后续同登录session完成C实际页面。只证明本次授权及登录，不扩义为全部Native/Review调用入口通过。",
+      "evidenceObservation": "observedAt为运行包记录时刻，不推造OAuth授权精确完成时间。",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-de091c3-release/runtime-observation.actual.json"
+    },
+    {
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "delivery-c-closeout.source.local-estimated-applicability",
+      "kind": "source_review",
+      "status": "passed",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "observedAt": "2026-10-22T22:30:22.914354+00:00",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [
+        "V24",
+        "V26",
+        "V53"
+      ],
+      "summary": "本轮核对0bc之后只变记录/生成页，Estimated产品与PG测试仍是761/作者ff0原blob；非作者Astra接受、19PG/244unit与准确81完整构建归属原样保留。C实际发布不含Estimated；本条仅既有审查在未改产品上的适用性核对，不冒充新非作者审查或重复测试。",
+      "originReviewedRevision": "ff0d89cbaaa7fcd91dfe7f11999644fd828ec142",
+      "implementationRevision": "761568ec2462e36a97f79cca989104011c464c59"
+    },
+    {
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "delivery-c-closeout.deployment.local-estimated",
+      "kind": "deployment",
+      "status": "not_run",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "observedAt": "2026-10-22T22:30:22.914354+00:00",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "summary": "实际生产为C de091c3/release7699611310187924507，官方finished及双端实际运行均确认；C严格等于b561产品tree，不含Estimated。本地81构建通过但后续Estimated E/D仍仅本地准备，未推送/发布；不再把旧b561拒绝或C更正确认列为当前部署阻塞。"
+    },
+    {
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "delivery-c-closeout.runtime.local-estimated",
+      "kind": "runtime",
+      "status": "not_run",
+      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "observedAt": "2026-10-22T22:30:22.914354+00:00",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "summary": "本地Estimated尚无线上运行或真实TDMS状态刷新；C既有对象只读、OAuth登录和双端运行分别登记原source/time。实际Source/grant/processing set、V44、未结构化撤销取代、SEM及真实模型SAVE仍缺；Native单次恢复及完整16项读回分别成立；M3存量事项的3节点/准确refs/导航/单次刷新已实际验收，缺项仍保留；不造运行数据，不继承为Estimated线上通过。"
+    },
+    {
+      "id": "delivery-c-closeout.deployment.native-restored",
+      "kind": "deployment",
+      "status": "passed",
+      "sourceRevision": "de091c3ba6f9f201d60e1f6bf1f781e11662fa39",
+      "environmentId": "native:app_17c3zn24kv2",
+      "observedAt": "2026-10-22T22:27:45.950Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "save.finish",
+        "wiki.saved-reading",
+        "company.approved-opinion"
+      ],
+      "deploymentRef": "native:app_17c3zn24kv2:skill:wiselink-research-and-synthesize@r09.c234",
+      "summary": "原样helper单次恢复成功，ORIGINAL_ENABLEMENT_RESTORED_WITH_EXACT_HOST_SUBSTITUTION，准确C/release7699611310187924507；原installed仍b561不伪改。完整16项读回仅原C136 enabled，其余15 disabled，全部running=false；单次enable exit0，原脚本/helper和配置与备份一致。未重装、未重跑422产品测试、不等待自然业务运行，不当作业务模型/SAVE验收。 原会话已completed/is_streaming=false/queue0，未追加验证或操作。",
+      "evidenceObservation": "按主控及原唯一Native operator回传的实际工具终态/完整读回安全摘要登记，精确私有证据由主控保管；observedAt是实际完整cron读回时刻。 sourceRevision表示恢复所需的准确Host目标C，不把它伪写为Native安装源；c234原安装记录仍保留原b561目标。",
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "originalReportRef": "private:tmp/source-clarification-evidence/native-c234-host-de091c3-restore/actual-restore/16-restore-terminal.json",
+      "readbackRef": "private:tmp/source-clarification-evidence/native-c234-host-de091c3-restore/actual-restore/13-cron16.readback.json"
+    },
+    {
+      "id": "delivery-c-closeout.runtime.m3-existing-object",
+      "kind": "runtime",
+      "status": "passed",
+      "sourceRevision": "de091c3ba6f9f201d60e1f6bf1f781e11662fa39",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-22T22:29:53.994Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "deploymentRef": "7699611310187924507",
+      "summary": "原Host已登录真实同一事项：分析过程/动态→流程3节点/2路径（JobAid调查、综合建议、TDMS公司记录），工作1 SUCCEEDED；准确保存工作/资料版本匹配原获权对象，Overall实际输入为同一当前工作，两条原引用均导航综合评估。单次22:28:31.607Z只读刷新，无诊断读取错误。Overall尝试集合、TDMS最新性/覆盖和Ready/首次可读/ACK未提供；TDMS UNKNOWN/保存原生证据0不证明从未读。reader仍7 blockers，无模型/SAVE/采用。",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-de091c3-release/m3-existing-object-browser/technical-summary.public-safe.json",
+      "evidenceObservation": "源C由稳定官方release/current及实际双端runtime proof绑定，该M3页不另有可见页面指纹。实际视口截图在原工具回执、私有DOM已持久保存，无独立PNG文件。",
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377"
     }
   ]
 }

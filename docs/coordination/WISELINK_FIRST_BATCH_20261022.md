@@ -1,6 +1,6 @@
 # 第一批实施与隔离验证 — 2026-10-22
 
-当前状态（2026-10-23）：用户已批准 `b56133d45f507129e81fb3250370250808594bad` 整批技术交付；原 Host 发布创建被平台 `400002552` 拒绝、没有 release_id，最近正式运行仍为 `6c073de7b6e1e2ce126cf46f405beade388a3639`。原 Native c234 已安装并核对 132 文件、Ready、安装自测 422/422；16 条 cron 全部暂停，不能据此宣称 Estimated 已上线。本地已接入用户明确确认的 Estimated 批准语义，准确实现与验证见末节。下文保留各历史时点的准备、授权和运行证据；旧“技术包待授权”及“Estimated 不足以证明批准”的当前结论由末节更正。没有新增生产模型调用、保存、审批或正式采用。
+当前状态（2026-10-23）：用户批准的 C 更正源 `de091c3ba6f9f201d60e1f6bf1f781e11662fa39` 已正式发布，release `7699611310187924507` / finished / error_logs 空，实际前端 DOM 和后端原 Response 均确认 C。C 产品 tree 与原 b561 完全相同，不含本地 Estimated 修正。原应用单次 OAuth 授权后登录验证成功；两个原获权对象的只读 SELECT 各 1 行，选出字段与发布前一致，没有新增模型、SAVE 或正式采用。Native c234 通过原 helper 单次恢复原唯一启用调度；完整 16 项读回确认仅 C136 启用、其余 15 项禁用，全部 running=false，原安装记录/脚本/配置保持。M3 同一原获权事项的流程、准确引用导航及单次只读刷新已实际核对，保留其明确数据缺项。准确结果见末节。下文各历史时点仍保留，旧“技术包待授权”“Estimated 尚待相同业务规则证明”和“最近生产仍为 6c”均不作为当前结论。
 
 ## 实施结果
 
@@ -309,7 +309,7 @@ M1增加`matter.saved-reading`实际接线，复用v1.6的`artifact.reading`及�
 该段原把 Estimated 之外的批准证明列作前提，现由用户明确“就是 estimated”更正：自身准确 Estimated 就是批准/当前有效状态，稳定版本仍不能替代自身状态；本地映射已完成。真正剩余依赖为实际 TDMS 来源/grant/processing set、线上状态刷新、未结构化撤销/取代解码、工程附件准确字节与版本关系、SEM 两项工程事实和内容级模型/SAVE 验收；三类变化仍需真实变化验证。公司意见继续按用户指定的已批准评估单意见及关联工程文件取得，AEO本期不解析正文，反馈页提供适用飞机号。真实M3私有JSON视觉回放仍保持待验。整体持续Goal未完成，本次只交付已完成的独立代码与可审阅技术包。
 
 
-### 2026-10-23 Estimated 映射集成与技术交付当前状态
+### 2026-10-23 Estimated 映射集成与技术交付（C 发布前记录）
 
 本节替代前文把技术包授权、Estimated 业务语义列作当前缺口的结论。用户明确公司意见来自已批准评估单意见及关联工程文件，并确认评估单自身 `Estimated` 就是批准/当前有效状态；不再要求第三方有效性证明。当前后续候选仍仅本地，没有推送、发布、来源导入、模型、业务 SAVE 或正式采用。
 
@@ -342,3 +342,28 @@ M1 仍是 v1.6，B.5 明确已确认语义，E.3 记录实际生产者/消费者
 服务端 immutable `build-fingerprint.json.sourceCommit` 和前端编译产物中绑定 `sourceCommit` getter 的不可变常量均为完整 `81baa5a7f843e9fe232d6c45f195c1ab579ce05e`；两端构建时间分别 `2026-10-22T21:24:02.315Z` 与 `2026-10-22T21:23:51.393Z`。前端只保留已有 MODULE_TYPELESS、静态/动态混用和大chunk提示。初次产物校验尝试用 Node 导入前端浏览器模块遇 `window is not defined`，原失败日志保留；之后用编译产物 AST 核对实际常量及 getter 绑定通过，未执行浏览器应用、未追加构建或业务测试。
 
 本轮四个固定子日志在主控确认的独占构建窗口生成，全部按新mtime归档，没有将旧日志计为本次证明。原日志和实体目录、构建归属、双端指纹、裁剪与警告记录在 `tmp/estimated-integration-evidence/final-build-result.json`、`final-build-verification.json`、`final-build*.log`、`final-gen-*.log`；初次校验失败在 `final-build-verification-initial-node-import.log`。本回执后的提交仅更新这些事实和生成的M2快照，沿用准确81构建，不重复业务测试或构建。当前本地展示为 `docs/runtime-monitor/WiseLink_Wiring_Verification.html`，源码目标明确为81；M3未增加或伪造运行数据。
+
+### 2026-10-23 C 实际发布、运行与后续 Estimated 本地候选
+
+本节是当前交付状态，前文 C 发布前的拒绝、准备、待授权与暂停观察仍是其原时点事实。用户已批准 origin-only C 更正源及原应用的 device/offline 授权。C 只是让原 b561 产品接入准确 origin main 的私有发布源，产品 tree `dbb579e435ed879481cfb38760744a69dd35ac2d` 与 b561 相同；不含本地 Estimated。已审核的公开 Estimated 候选 E 与后续私有 D 仍是下一批本地准备，未推送、未发布。
+
+| 已取得的原始证据 | 准确结果与范围 |
+| --- | --- |
+| 官方 C 发布 | release `7699611310187924507`，准确提交 `de091c3ba6f9f201d60e1f6bf1f781e11662fa39`；单次 create 返回后只跟踪同 ID。官方 GET `2026-10-22T22:06:34.956627Z` 为 finished、error_logs 空；`22:07:15.622655Z` 的 latest 同 ID/同提交。原 b561 的 `400002552` / 无 release_id 保留为前次失败，不是本次 C 结果。 |
+| 实际前端执行 | `2026-10-22T22:19:54.852Z` 原 Host 已登录浏览器的实际 DOM 显示完整 C 提交；不是本地产物或静态文件推断。技术运行 PASS 与 candidate reader `VERIFICATION_PENDING` / 7 个 blockers 分别成立。 |
+| 实际后端 Response | `2026-10-22T22:18:46.552Z` 完整复制的原 Response 显示 C、`SERVER_BUILD_ARTIFACT`、PASS，server build time `2026-10-22T21:59:39.801Z`。实际 XHR 网络状态是 HTTP 304 Not Modified，属于缓存协商，未改写为 200。直接导航 API 曾因缺 CSRF header 被拒绝，未改安全策略。 |
+| 原应用 OAuth | 用户已批准 device/offline 范围，单次授权后 `loginActuallyVerified=true`，后续同一登录 session 完成实际 C 运行页面核对；追加授权点击 0。不把这次登录扩义为全部 Native/Review 调用者已接通。 |
+| 原获权对象独立读回 | 官方 CLI user/RLS 的两次准确单 SELECT 分别于 `2026-10-22T22:22:24.430431Z`、`22:22:24.581662Z` 返回，各 1 行，全部选出字段与发布前原获权对象一致。准确工作/版本/修订、Overall 消费与不可变 artifact 对应；正式采用 false。无新模型、SAVE、持久化成果或业务写入。 |
+| Native 恢复 | 原 c234 安装 132 文件/Ready/必需自测 422/422 的原回执保留。已审原样 helper 单次恢复成功，状态 `ORIGINAL_ENABLEMENT_RESTORED_WITH_EXACT_HOST_SUBSTITUTION`，精确 C/release；原安装仍记原 b561。`2026-10-22T22:27:45.950Z` 完整 16 项读回仅 C136 enabled，其余 15 项 disabled，全部 running=false。原脚本/helper、配置与备份一致，单次 enable exit0。未重装或重跑产品测试，不以恢复代替业务验收。 |
+| M3 实际页面 | `2026-10-22T22:25:50.013Z`—`22:29:53.994Z` 原 Host 已登录同一事项，分析过程/动态→流程实际 3 节点、2 条 SVG 路径（JobAid 调查、综合建议、TDMS 公司记录）；工作修订 1、SUCCEEDED。准确保存工作/资料版本与原获权对象一致，Overall 实际输入指向同一当前工作，两个原引用导航均进入综合评估。仅 1 次正常只读刷新，Host client readback `22:28:31.607Z`，无诊断读取错误。该页源 C 由稳定真实 runtime proof 绑定，不声称页面另有独立指纹。 |
+
+Host 原始包在本地忽略的 `tmp/source-clarification-evidence/host-de091c3-release/`，operator attestation SHA256 为 `0fc898be8990bd566e7cab66cf75be8e6a64c5b3850c405cd9074b30dc6fdcc0`；官方跟踪记录在其 `readonly-release-followup/`，两个对象的私有摘要为 `existing-authorized-readback/summary.private.json`。Git 仅登记脱敏结果、准确技术提交和证据路径，不含真实业务对象或正文。独立 P2 已接受本批 C 运行包；Native 单次恢复及完整调度读回的安全摘要由原唯一 operator 回传，原会话已 completed、is_streaming=false、queue=0，未追加验证或操作，不等待后续自然业务运行。Native 最终索引为 `tmp/source-clarification-evidence/native-c234-host-de091c3-restore/actual-restore/16-restore-terminal.json`（SHA256 `920360662e4d049c9fd5eb43284f40f8e2f87a71e0df64fb2022d6e484d85d97`），原 complete 与完整 cron 读回分别为同目录 `13-complete.readback.json`、`13-cron16.readback.json`，只保留私有原件。M3 脱敏摘要 `m3-existing-object-browser/technical-summary.public-safe.json` 的 SHA256 为 `a2ff90046e3396ff7fb1894e9e95e2b6f4578270acfddaaeb2f697c6601cc486`。实际视口截图存在于原 operator 工具回执，私有 DOM 已持久保存；没有另行 PNG 文件，不补造截图路径。
+
+M3 本次验收只覆盖同一存量事项的读取、准确引用与导航/刷新，不证明新生成或新保存。Overall 尝试集合未由读模型提供；TDMS 节点当前有效性 UNKNOWN，最新性/全覆盖未提供，当前工作可核对的已保存原生证据为 0（不证明从未读取）；Ready、首次可读与 ACK 时刻未提供。runtime reader 原有 VERIFICATION_PENDING/7 blockers 保留。这些缺项与 C 技术发布、M3 只读技术验收分别成立，不能用新鲜页面时间补造历史业务时间。
+
+本地 Estimated 的实现仍为 761 / 作者 ff0，真实隔离 PG 19/19、关联单测 244/244 与非作者 Astra 接受范围保持；准确 81 的正常完整生产构建及双端 immutable sourceCommit 继续沿用。本轮在 0bc 之后只更新记录与生成快照，不重复已通过的业务测试或构建。M1 v1.6 稳定 ID 不变；M2 明确区分已运行 C 与未部署 Estimated，旧证据保留原 source/time，M3 只登记实际父响应投影与真实浏览器观察。
+
+剩余工程范围仍是实际 TDMS Source/grant/processing set 与在线状态刷新、未结构化撤销/取代解码、准确工程原文 V44、独立 Review/Native 调用入口、真实 SEM 工程事实和内容级模型/SAVE，以及三类真实变化的最小消费范围。原 b561 技术授权、Estimated 批准语义和本次已完成的原应用 OAuth 不再列作待用户确认。
+
+
+本次 C 收尾只在准确 `0bc2d1cc920d0ce2b7193e3abf17c9278d287a74` 之后更新 9 个记录/生成文件；未改产品、测试、依赖或构建输入，沿用准确 81 构建。受影响快照 QA 39/39、实际生成 HTML 的 jsdom 八条接线/P3＋company＋V53＋runtime 联合筛选和节点下钻通过，diagnostics 空；M1 的 13 节点/47 关系/54 场景/10 规则目录完全不变。旧 115 条 evidence 的字段、source 和时间逐条保持，新增 C/OAuth/Native/M3 证据不冒充本地 Estimated 的线上结果。生成页检查首轮脚本误用不存在的 `snapshot.contractRevision` 字段而停在断言，改为真实 `snapshot.contract.sourceRevision` 后通过；原失败日志保留，没有改产品校验或重跑业务测试。日志为 `tmp/estimated-integration-evidence/c-closeout-snapshot-qa.log`、`c-closeout-generated-m2-check.log`、`c-closeout-generated-m2-initial-wrong-contract-path.log`。
