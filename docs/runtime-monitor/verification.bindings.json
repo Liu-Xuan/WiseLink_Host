@@ -17,12 +17,12 @@
         "P0",
         "P1"
       ],
-      "sourceRevision": "c72e4a9b521af283b8f5de4a60599a5dad137804",
+      "sourceRevision": "4255e5a27e89311156fc6e1039adad89cdf3756b",
       "originReviewedRevision": "1ec900f05ed28e1a0164a084fb3ee7b0f618d9f0",
-      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。 较早16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。 后继Overall使用新实际attempt/lease及准确保存的Review work，普通迟到SAVE不因新Review恢复获权；PG026隔离fixture证明不替代真实SEM/生产运行。 本批c72补入JA-AC§3.1独立四级严重性材料并交付新任务，旧risk原字节/六事件guard及封存task不改；170项Jest与2项Node实际执行于提交前ae65工作区加本批七文件，随后正常提交对应产品字节。clean c72单次正常build通过，真实SEM/部署/模型及业务SAVE尚未运行。",
+      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。 较早16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。 后继Overall使用新实际attempt/lease及准确保存的Review work，普通迟到SAVE不因新Review恢复获权；PG026隔离fixture证明不替代真实SEM/生产运行。 本批c72补入JA-AC§3.1独立四级严重性材料并交付新任务，旧risk原字节/六事件guard及封存task不改；170项Jest与2项Node实际执行于提交前ae65工作区加本批七文件，随后正常提交对应产品字节。clean c72单次正常build通过，真实SEM/部署/模型及业务SAVE尚未运行。 本批4255仅核对M3选中执行观察的同快照白名单、父hook刷新及调查/综合实际消费；完整请求历史、生产及真实内容未由本地验证补齐。原失败与私有React单树环境修复保留，六套89项及窄PG1项按实际执行来源登记。",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
       "producer": "server/modules/canonical-host/jobaid-method-pack.ts#JOBAID_METHOD_EVIDENCE / #JOBAID_CORE_METHOD_REFS → jobaid-problem-task.ts#buildJobAidProblemTask / matter-jobaid-task.ts#matterJobAidSourceRegistry；CanonicalJobAidProblemService.saveWork保存准确工作。",
-      "consumer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.buildInput / #commitOverall；jobaidReadingResult → readStoredOverallEvidence / overallModelEvidenceRegistry → consumeOpenClawOverallSynthesisOutput消费准确方法材料和保存正文。",
+      "consumer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.buildInput / #commitOverall；jobaidReadingResult → readStoredOverallEvidence / overallModelEvidenceRegistry → consumeOpenClawOverallSynthesisOutput消费准确方法材料和保存正文。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。",
       "executionOwner": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#consumeHostedWorkItem / #runHostedInitialStage：当前有效领取者执行；Host action_attempt约束唯一fence。",
       "recoveryOwner": "server/modules/work-item/miaoda-work-item.repository.ts#MiaodaWorkItemRepository.claimAutoProcessingCandidate：Host核对封存原结果，原owner/fence恢复；消费者通过原入口接续，不另建结果真源。",
       "authority": {
@@ -34,7 +34,7 @@
         "current": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commitOverall：jobAidWorkRevisionGuard和projection CAS；#readBrowser按准确workRef判CURRENT/STALE，不按保存时间猜消费。"
       },
       "decisionEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#buildInput; server/modules/canonical-host/jobaid-overall-projection.ts#assertJobAidOverallWorkCurrent",
-      "projectionEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commitOverall; server/modules/canonical-host/jobaid-overall-projection.ts#buildJobAidOverallProjection",
+      "projectionEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commitOverall; server/modules/canonical-host/jobaid-overall-projection.ts#buildJobAidOverallProjection 4255的readBrowserSnapshot原单SQL选中行与service白名单selectedExecution接通M3，父hook比较同状态换identity/时间，旧missing/null仍未知。",
       "readEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#readAttemptWork; #readBrowserRevision; #readBrowser",
       "actionEntries": [
         "server/modules/canonical-host/canonical-jobaid-problem.service.ts#begin：按准确WorkItem、请求范围与权限受理",
@@ -53,7 +53,10 @@
         "test/node/jobaid-semantic-context.test.mjs",
         "test/unit/jobaid-severity-definitions.spec.ts",
         "test/unit/matter-jobaid-task.spec.ts",
-        "test/unit/overall-native-registry-roundtrip.spec.ts"
+        "test/unit/overall-native-registry-roundtrip.spec.ts",
+        "test/unit/jobaid-selected-execution.spec.ts",
+        "test/unit/jobaid-problem-reading-ui.spec.ts",
+        "test/unit/work-item-runtime-diagnostic.spec.ts"
       ],
       "authorRevision": "357292e26174b69504ee315898609f6ed6beef14",
       "gaps": [
@@ -66,8 +69,8 @@
         {
           "id": "research.overall.m3-scope",
           "kind": "runtime",
-          "reason": "D已实际核对同一旧事项的3节点、工作1 SUCCEEDED、同版Overall消费、原保存正文及准确版本PDF；页面显示“当前查询未返回这条依据”，当前渲染units未命中原ref，后台响应未取得，单次显式刷新后未证实新时间推进。Overall尝试集合未提供，不能声称完整执行历史或新内容验收。",
-          "nextAction": "保留本次D限定只读结果和PARTIAL引用诊断；仅按当前D代码分析该原ref定位，不清定位/扩大查询或把PDF可读当精确定位通过。真实内容/新运行按其具体授权继续。"
+          "reason": "M3选中Overall/调查尝试的实际父响应投影已本地实现并窄验证，仍只是一行选中观察及独立latest dynamic，不是完整请求集合。尚未部署/真实运行；原D三节点、准确工作/PDF读回、引用PARTIAL及刷新时间未证实仍保持原历史范围，就绪/首次可读与新内容验收缺项不补造。",
+          "nextAction": "按具体发布/运行范围核对生产新父响应与有限尝试显示，保留准确身份/时间、成果及覆盖独立；原定位PARTIAL、真实内容和完整历史缺项分别推进，不用本地测试替代。"
         }
       ],
       "previousReviewedRevision": "5f753f3f06a63ffa9a669474d2ccee344c82bbbc"
@@ -582,12 +585,12 @@
         "P0",
         "P2"
       ],
-      "sourceRevision": "251941f4fda4d515909208efd842610246661adc",
+      "sourceRevision": "4255e5a27e89311156fc6e1039adad89cdf3756b",
       "authorRevision": "0fd28f3d5514a9187fa67c39cd1e19e4d0854492",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "历史UI-only批次：公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw在该历史UI-only批次未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。 该历史UI-only批次正常hook与完整build在准确9d源码成立；经批准的公开E4dec与私有De1d完整tree相同，准确D已正式发布。该UI记录恢复与原/新只读观察分别记录，未重跑该历史产品测试或本地build；本轮16b新构建另按实际来源和时间登记。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。 本轮已将接受的0fd CHAT及恢复修正原样集成到产品251941f4fda4d515909208efd842610246661adc；仅十个指定文件，消费者和接口基线一致。原59/后继31按原执行与blob范围复用、非相加；本次完整技术构建另记，不冒充部署或真实业务。",
+      "reviewScope": "历史UI-only批次：公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw在该历史UI-only批次未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。 该历史UI-only批次正常hook与完整build在准确9d源码成立；经批准的公开E4dec与私有De1d完整tree相同，准确D已正式发布。该UI记录恢复与原/新只读观察分别记录，未重跑该历史产品测试或本地build；本轮16b新构建另按实际来源和时间登记。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。 本轮已将接受的0fd CHAT及恢复修正原样集成到产品251941f4fda4d515909208efd842610246661adc；仅十个指定文件，消费者和接口基线一致。原59/后继31按原执行与blob范围复用、非相加；本次完整技术构建另记，不冒充部署或真实业务。 本批4255仅核对M3选中执行观察的同快照白名单、父hook刷新及调查/综合实际消费；完整请求历史、生产及真实内容未由本地验证补齐。原失败与私有React单树环境修复保留，六套89项及窄PG1项按实际执行来源登记。",
       "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。 普通CHAT由Host既有Review turn保存问题与候选回复，不产生评估工作或正式采用。",
-      "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。 当前CHAT实际链为DocumentAssessmentReview → ContinuousReviewPanel → ReviewChatComposer；既有WorkItem/Matter复用同一获权Review面板。",
+      "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。 当前CHAT实际链为DocumentAssessmentReview → ContinuousReviewPanel → ReviewChatComposer；既有WorkItem/Matter复用同一获权Review面板。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。",
       "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。 普通CHAT显式appendReviewTextTurn(CHAT/AUTOMATIC)，Host提供当前owner/OAuth/executor能力；短轮询读回并暂停隐藏panel，CHAT不触发工作刷新。",
       "recoveryOwner": "原页面读取epoch/session隔离及草稿scope继续有效；未知CHAT保留原requestId/body/会话和业务范围，读回核对或显式原样重试。同会话STALE_CONTEXT仍须Host当前能力；CLOSED/空/换会话由用户显式归档结果未知记录，不复制或自动重发。新问题/会话另需显式操作，草稿和未知记录仅页面内存；session变化清除。未知SAVE仍走原Host恢复。",
       "authority": {
@@ -599,7 +602,7 @@
         "current": "Overall自身CANDIDATE_ONLY且staleReason null、working CURRENT与准确workRef共同判断；同DVI新解析/保存成果更新不重建稳定草稿实例。"
       },
       "decisionEntry": "useDocumentReadingLinks.ts#resolveDocumentReadingAssociation；useDocumentAssessmentPage.ts；DocumentAssessmentOverview.tsx；documentAssessmentAeoEligible。 ContinuousReviewPanel.tsx、ReviewChatComposer.tsx、reviewChatSendIntent。",
-      "projectionEntry": "DocumentAssessmentWorkspace.tsx读取同一workingRead；本地16b的WorkItemRuntimeDiagnostic消费可信原请求autoProcessingAcknowledgement，父hook处理出现/替换/null；已发布De1d历史UI仍只用其原投影。受限returnAssessmentQuery不充当授权。 CHAT历史与回复继续来自Host Review conversation投影，M3不增加客户端状态。",
+      "projectionEntry": "DocumentAssessmentWorkspace.tsx读取同一workingRead；本地16b的WorkItemRuntimeDiagnostic消费可信原请求autoProcessingAcknowledgement，父hook处理出现/替换/null；已发布De1d历史UI仍只用其原投影。受限returnAssessmentQuery不充当授权。 CHAT历史与回复继续来自Host Review conversation投影，M3不增加客户端状态。 4255的readBrowserSnapshot原单SQL选中行与service白名单selectedExecution接通M3，父hook比较同状态换identity/时间，旧missing/null仍未知。",
       "readEntry": "/document-versions/:DVI?panel=assessment；assessmentTab=overall/investigation/review/process及条件aeo。精确引用经exactDocumentSourceRoute回历史parseRunId+完整ref。 review签内沿同一获权会话读回CHAT/评估历史，准确来源仍使用原SourceRef导航。",
       "actionEntries": [
         "打开/切签/focus/刷新/依据导航只读；坏locator toast拒绝且页面URL/原evidence保持。",
@@ -617,7 +620,12 @@
         "test/unit/review-draft-store.spec.ts",
         "test/unit/review-submission.spec.ts",
         "test/unit/review-material-source-interactions.spec.ts",
-        "test/unit/continuous-review-state.spec.ts"
+        "test/unit/continuous-review-state.spec.ts",
+        "test/unit/jobaid-selected-execution.spec.ts",
+        "test/unit/jobaid-current-execution.spec.ts",
+        "test/unit/jobaid-problem-reading-ui.spec.ts",
+        "test/unit/work-item-runtime-diagnostic.spec.ts",
+        "test/node/core-p1-host-postgres.test.mjs"
       ],
       "gaps": [
         {
@@ -637,6 +645,12 @@
           "kind": "runtime",
           "reason": "本批没有真实CHAT模型/业务SAVE、STALE_CONTEXT未知发送对账或CLOSED/换会话的线上验收；原测试是隔离组件/本地证据。独立文档与新Aily跨对象问答仍未接通。",
           "nextAction": "部署及具体运行条件成立后，在获权WorkItem/Matter按实际范围读回原请求、准确来源和身份/对象切换；不为聊天伪造对象、借权限或自动重发。"
+        },
+        {
+          "id": "document.assessment-reading.selected-execution-runtime",
+          "kind": "runtime",
+          "reason": "4255的M3父响应selected执行观察和真实面板导航已在本地消费者实现；尚未部署或在真实资料库入口核对，不宣称生产Overall尝试集合、就绪/首次可读或业务验收已完成。",
+          "nextAction": "按具体授权部署后核对父响应的准确动作/attempt/时间和范围提示；不伪造requestId、逐attempt详情或正式业务状态。"
         }
       ],
       "previousReviewedRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5"

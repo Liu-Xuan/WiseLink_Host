@@ -3903,6 +3903,185 @@
       ],
       "plannedOnly": true,
       "summary": "当前方案状态记录：本批仅更新SEM方法及记录，新Aily的sourceRevision/consumer等接线仍为null；没有新增源码适配、连接、查询或执行。四层保持not_run，observedAt为null，不将旧成功复制为本轮验收。"
+    },
+    {
+      "contractRevision": "60f77e4c4b0c30fcf40613728a5bd71a1ab88d46ed0b729f71096c3972ef90f3",
+      "sourceRevision": "4255e5a27e89311156fc6e1039adad89cdf3756b",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "id": "m3.selected-execution.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "environmentId": "local:m3-selected-execution",
+      "observedAt": "2026-10-23T11:27:34.175215+00:00",
+      "summary": "独立审查接受原单SQL同scope/排序/LIMIT1扩列、service安全白名单、父hook比较、调查/综合有限观察归属与准确导航；11文件，旧readCurrentExecution及生产权限不改。仅M3源码范围，非部署或完整请求历史。"
+    },
+    {
+      "contractRevision": "60f77e4c4b0c30fcf40613728a5bd71a1ab88d46ed0b729f71096c3972ef90f3",
+      "sourceRevision": "4255e5a27e89311156fc6e1039adad89cdf3756b",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "id": "m3.selected-execution.jest.test",
+      "kind": "test",
+      "status": "passed",
+      "environmentId": "local:isolated-candidate-react-tree",
+      "observedAt": "2026-10-23T11:11:24.538507+00:00",
+      "testLevel": "unit",
+      "worktreeHeadAtExecution": "9c4cd9237ae015b57034115583ca0ada7c8a68d9",
+      "executedContractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "executionState": "9c4工作区加本批11文件，随后正常提交4255；未在clean产品重跑。",
+      "summary": "原三套33项通过，原失败三组件套件在私有同一真实React/DOM/scheduler树下56/56通过，六套不同用例共89；保留所有原mapper且无mock/产品配置改动。覆盖同状态换身份、动态两观察/同ID去重、旧字段unknown、真实组件时间/面板导航与撤权。原跨根失败另列，不将probe或全54场景计入。"
+    },
+    {
+      "contractRevision": "60f77e4c4b0c30fcf40613728a5bd71a1ab88d46ed0b729f71096c3972ef90f3",
+      "sourceRevision": "4255e5a27e89311156fc6e1039adad89cdf3756b",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "id": "m3.selected-execution.pg.test",
+      "kind": "test",
+      "status": "passed",
+      "environmentId": "local:owned-loopback-postgres-restricted-role",
+      "observedAt": "2026-10-23T10:58:10.709214+00:00",
+      "testLevel": "integration",
+      "worktreeHeadAtExecution": "9c4cd9237ae015b57034115583ca0ada7c8a68d9",
+      "executedContractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "summary": "仅core-p1一个新窄例1/1，通过既有matter+browser真实helper/RLS及browser service验证同SQL row字段/operationRef/时间和foreignWI/DVI排除。合成SAVE、实际Overall seal与原结果恢复三状态；终态故障及4调度行属fixture构造，modelCalls0/productionCalls0，非生产或工程内容验收。"
+    },
+    {
+      "contractRevision": "60f77e4c4b0c30fcf40613728a5bd71a1ab88d46ed0b729f71096c3972ef90f3",
+      "sourceRevision": "4255e5a27e89311156fc6e1039adad89cdf3756b",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "id": "m3.selected-execution.normal-build.test",
+      "kind": "test",
+      "status": "passed",
+      "environmentId": "local:normal-full-build",
+      "observedAt": "2026-10-23T11:19:33.143584+00:00",
+      "testLevel": "integration",
+      "executedContractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "frontendBuildTime": "2026-10-23T11:18:50.078Z",
+      "serverBuildTime": "2026-10-23T11:19:01.636Z",
+      "frontendFingerprintSha256": "a170744290b1948db12229c43782fdb75d575d5873a348e8223a16fef943825e",
+      "serverFingerprintSha256": "07d8801510dc5a2b93633876786ec7f78656dd8101775a514dc30665aaa3cdbd",
+      "summary": "准确clean4255一次标准npm run build，2026-10-23T11:18:40.056053+00:00—2026-10-23T11:19:33.143584+00:00，exit0/53.088s、四sublogs fresh，双端指纹同4255。既有历史路径/模块/导入/chunk警告未压制；构建完成且保存clean后才改docs，此项不声明V12业务验收。"
+    },
+    {
+      "contractRevision": "60f77e4c4b0c30fcf40613728a5bd71a1ab88d46ed0b729f71096c3972ef90f3",
+      "sourceRevision": "4255e5a27e89311156fc6e1039adad89cdf3756b",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "id": "m3.selected-execution.deployment",
+      "kind": "deployment",
+      "status": "not_run",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "summary": "本批只有独立本地产品/记录候选，未push或部署；没有改既有Host发布、Native或原D8f/c235待批范围。此项为状态记录，无新线上查询。"
+    },
+    {
+      "contractRevision": "60f77e4c4b0c30fcf40613728a5bd71a1ab88d46ed0b729f71096c3972ef90f3",
+      "sourceRevision": "4255e5a27e89311156fc6e1039adad89cdf3756b",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "id": "m3.selected-execution.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "summary": "M3本地消费者已实现，未进行生产父响应读取、真实模型/READ/SAVE、SEM内容验收或正式采用。有限选中观察不代表完整尝试集合，就绪/首次可读未补造。"
+    },
+    {
+      "id": "m3.selected-execution.original-jest-cross-root.test",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "sourceRevision": "9c4cd9237ae015b57034115583ca0ada7c8a68d9",
+      "environmentId": "local:original-jest-cross-root",
+      "observedAt": "2026-10-23T10:47:48.802896+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "testLevel": "unit",
+      "executionState": "记录原执行的9c4工作区加本批变更；不倒填后继SHA或契约。",
+      "summary": "原run01三组件套件21失败/35通过，另三套33通过；跨根React使Hook dispatcher不一致。 原失败保留，修复后实际通过另列；此条不是生产或业务验收。"
+    },
+    {
+      "id": "m3.selected-execution.fresh-cache-cross-root.test",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "sourceRevision": "9c4cd9237ae015b57034115583ca0ada7c8a68d9",
+      "environmentId": "local:fresh-cache-cross-root",
+      "observedAt": "2026-10-23T10:58:22.330434+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "testLevel": "unit",
+      "executionState": "记录原执行的9c4工作区加本批变更；不倒填后继SHA或契约。",
+      "summary": "独立新cache仍21失败/35通过，否定只因旧cache；后续probe实证跨根双React。 原失败保留，修复后实际通过另列；此条不是生产或业务验收。"
+    },
+    {
+      "id": "m3.selected-execution.browser-fixture-missing-helper.test",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "sourceRevision": "9c4cd9237ae015b57034115583ca0ada7c8a68d9",
+      "environmentId": "local:browser-fixture-missing-helper",
+      "observedAt": "2026-10-23T10:47:45.182436+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "testLevel": "integration",
+      "executionState": "记录原执行的9c4工作区加本批变更；不倒填后继SHA或契约。",
+      "summary": "仅browser模式缺native_app_shared_read_allowed，未通过首个browser证据授权检查；采用既有matter+browser真实helper后同窄例通过，无stub或生产授权修改。 原失败保留，修复后实际通过另列；此条不是生产或业务验收。"
     }
   ]
 }

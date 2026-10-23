@@ -512,3 +512,21 @@ M1 E.10与M2的 `research.overall` / P1反映新定义材料、实际consumer及
 
 
 监控snapshot与HTML均由既有generator生成，exit 0；本批共201条证据（原192逐值保留，SEM新增5条和当前Aily方案not-run 4条），目录仍为13/47/54/10，其他binding及P1以外工作包逐值相同。首次jsdom记录显示检查因夹具未提供ResizeObserver而失败，补常规DOM测试替身后定向检查通过，原失败私有保留；没有修改产品代码。原选择集合保持，`research.overall`测试显示“所选场景部分覆盖”，本批仅声明V12限定用例；新Aily四列分别保持尚未执行、尚未执行、尚未部署、尚未核对真实运行，没有虚构新连接或运行时间。
+
+
+## 2026-10-23 M3 选中执行观察接线与窄验证
+
+产品 `4255e5a27e89311156fc6e1039adad89cdf3756b`，父 `9c4cd9237ae015b57034115583ca0ada7c8a68d9`，tree `691d34d937a44482514a1ee2e298922e7366af34`。范围为shared JobAidWorkingReadModel、JobAidWorkRepository浏览器快照、CanonicalJobAidProblemService.readBrowser、useJobAidWorkingRead、M3 adapter和WorkItemRuntimeDiagnostic六个生产文件；另五个测试文件为jobaid-current-execution、jobaid-problem-reading-ui、jobaid-selected-execution、work-item-runtime-diagnostic及core-p1-host-postgres。正常hook及独立审查接受；没有改生产schema、readCurrentExecution、授权、端点、轮询或Native。
+
+| 实际验证 | 结果及边界 |
+| --- | --- |
+| 原六套Jest的仓库/服务、adapter和TDMS原投影三套 | `2026-10-23T10:47:17.201246+00:00`—`2026-10-23T10:47:48.802896+00:00` 内三套33项通过；同一run中另三套21失败/35通过，失败原样保留，不把该run记为全过。 |
+| 原失败三个组件套件 | 私有单树mapper配置，`2026-10-23T11:10:58.551086+00:00`—`2026-10-23T11:11:24.538507+00:00`，三套56/56、exit 0；同工作号换attempt、调查/综合归属、准确时间、面板导航、旧响应和正常撤权均在真实组件范围。六套不同用例合计89，未计诊断probe为产品覆盖。 |
+| core-p1现成隔离PG中的一个新定向case | `2026-10-23T10:58:01.025035+00:00`—`2026-10-23T10:58:10.709214+00:00`，1/1、exit 0；真实受限角色/RLS、browser service和同SQL快照的同row字段，排除foreign WI/DVI。合成来源/结果驱动实际SAVE与Overall RUNNING、seal后COMMITTING、原结果恢复SUCCEEDED；终态写故障和四条调度行是fixture构造，modelCalls=0/productionCalls=0。 |
+| 正常提交钩子及标准build | 正常提交产生4255。clean 4255一次 `npm run build` 于 `2026-10-23T11:18:40.056053+00:00`—`2026-10-23T11:19:33.143584+00:00` exit 0、53.088秒；四子日志fresh，477/477依赖包、0复制失败。原tsconfig和构建警告保留。 |
+
+上述测试执行于9c4工作区加本批11文件，随后正常提交保持对应产品字节；未写作clean 4255重跑。原Jest run01三组件套件失败，独立cache run02仍21失败，probe证明候选组件React与主根renderer React跨根双实例；修复只使用本批私有配置将React/React DOM/scheduler映射同一候选真实树，保留原mapper，无组件mock/产品配置修改/依赖安装升级。PG run01的browser单独模式缺native_app_shared_read_allowed，改用既有matter+browser完整fixture的真实helper后通过，没有削弱授权或改生产。全部原失败、配置和invocation/result私有保留；未重跑整套PG、全54场景或Native。
+
+前端编译AST绑定sourceCommit为4255，buildTime `2026-10-23T11:18:50.078Z`，JS SHA256 `a170744290b1948db12229c43782fdb75d575d5873a348e8223a16fef943825e`；后端不可变JSON同4255，buildTime `2026-10-23T11:19:01.636Z`，SHA256 `07d8801510dc5a2b93633876786ec7f78656dd8101775a514dc30665aaa3cdbd`。只读产物，不执行浏览器应用。构建后clean证据先保存，随后才更新M1/M2/coord；文档后继不重build或倒填source。
+
+新M3按动作展示选中执行观察，旧active dynamic与新terminal不同ID时保留两条，只有同ID可共享首次保存时间。执行、成果、CURRENT/STALE依据覆盖、外层ACK及正式业务分列；综合导航只打开原综合面板，不定位单attempt或重试。原201证据逐值保留，M1目录不变，M2仅本批接线/测试/未部署未真实运行登记，不扩大其他链路或P5。尚未推送、发布、真实业务模型/READ/SAVE或正式采用，原待批D8f/c235范围不动。

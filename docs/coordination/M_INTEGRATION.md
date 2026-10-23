@@ -1,5 +1,15 @@
 # Integration source record
 
+## 2026-10-23 M3 选中执行观察的本地接线
+
+产品 `4255e5a27e89311156fc6e1039adad89cdf3756b`，父 `9c4cd9237ae015b57034115583ca0ada7c8a68d9`，tree `691d34d937a44482514a1ee2e298922e7366af34`；11文件、正常提交钩子及独立审查通过。原单SQL快照已取得的同一执行行，经可选selectedExecution白名单和父hook接入调查/综合节点；真实operation_ref、同一行时间及尝试身份保留。旧活跃调查与更新终态异ID时两个有限观察共存，同ID去重；成果、综合采用关系、覆盖与外层ACK独立，综合行只打开综合面板。
+
+测试实际执行于9c4工作区加本批11文件：原三套33项通过，另三套经私有真实单树React/DOM/scheduler映射后56项通过，共六套89个不同用例；窄隔离PG 1/1通过。React两次原失败与PG缺helper失败保留：独立cache没有解决跨根React，运行时probe才确认renderer与组件使用两份React；私有配置保留全部原mapper，无mock、未改产品配置或依赖。PG使用现成matter+browser模式安装真实授权helper/RLS，没有stub授权；验证合成SAVE、真实Overall seal/恢复及四条调度构造行，modelCalls=0/productionCalls=0。
+
+准确clean产品一次标准build于 `2026-10-23T11:18:40.056053+00:00`—`2026-10-23T11:19:33.143584+00:00` exit 0、53.088秒；四子日志fresh，双端指纹均为产品4255。前端buildTime `2026-10-23T11:18:50.078Z`，后端 `2026-10-23T11:19:01.636Z`；前端只检查编译AST，未执行应用。候选外历史tsconfig解析诊断及已有模块/导入/chunk警告原样保留，不声称零警告。构建完成并记录clean状态后才写本记录，不倒填文档后继为构建来源。
+
+M1 E.11、M2的research.overall和document.assessment-reading及本批记录同步更新；原201证据、其他接线和P5逐值保留，未扩大无关currentness验证。M3本地消费者已实现，生产部署、真实读取/内容验收、完整请求历史、就绪/首次可读及正式业务缺项仍按原范围。本批未发布、DDL、安装Native或开展外部模型/READ/SAVE；原待批D8f与c235不变。Git同步以实际remote/ref读回为准。
+
 ## 2026-10-23 JA-AC 四级严重性定义的本地接线
 
 产品提交 `c72e4a9b521af283b8f5de4a60599a5dad137804`，父提交 `ae65f1b34870f95b2bfe9501448ed1e1845c431d`，tree `901a99bef95585aa0f8eac40a5f47449afeff36e`；正常提交钩子通过，独立审查接受。JA-AC Revision 01（2023-11-27）§3.1、PDF物理第6—7页/印刷第5—6页的四级严重性定义，以独立 `method:severity-definitions` 加入新任务实际交付。旧 `method:risk` 的 excerpt、分类定义和六事件条件逐字保留；通用严重性匹配允许无六事件记录，但仍须实际业务依据，缺后果与暴露资料时保持未知。受控 Host 版本绑定仍为 `VERSION_UNCONFIRMED` / null DVI。

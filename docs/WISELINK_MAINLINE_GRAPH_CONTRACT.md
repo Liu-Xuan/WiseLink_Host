@@ -779,3 +779,14 @@ v1.1 的 LCM 支线、v1.2 的未来来源规划、v1.3 的 TDMS PDF 主线全�
 旧 `method:risk` excerpt及 `classificationDefinitions` 逐字不变，沿用该条款六事件严重性定义时仍须具体importantEvent及业务依据；新通用四档匹配可处理无六事件的严重后果，仍须所交付的实际业务依据和正文方法处置。方法条款不能替代后果事实；缺事实时严重性、可能性、分数及风险等级保持未知。旧保存快照和已封存任务按原材料、原合同恢复，不向旧task回填新core ref。
 
 测试在ae65工作区加本批七文件上实际执行，Jest 5套件/170项、Node投影2项通过，随后正常提交为c72；没有在clean c72重复执行测试。准确clean c72的一次正常完整构建通过，实际时间、双端指纹和文件范围见[FIRST_BATCH本批记录](coordination/WISELINK_FIRST_BATCH_20261022.md)。M1的13节点、47关系、54场景和10规则不变；M2保留原192证据对象并追加本批限定记录，M3继续使用实际父响应。本批尚未部署或开展真实模型/READ/SAVE、SEM正文验收及正式采用，Native身份与c235包没有变化。
+
+
+### E.11 M3 当前选中执行观察的实际消费（2026-10-23）
+
+本批产品 `4255e5a27e89311156fc6e1039adad89cdf3756b`（父 `9c4cd9237ae015b57034115583ca0ada7c8a68d9`）接通此前已在同一数据库快照取得、但在父读模型中丢失动作类型的选中执行观察。`JobAidWorkRepository.readBrowserSnapshot` 仅扩展原selected_execution的同一行列投影，保留原tenant/WorkItem/DVI/来源/动作过滤、活跃优先排序及LIMIT 1；没有增加查询集合、表、端点或轮询。`CanonicalJobAidProblemService.readBrowser` 白名单输出可选selectedExecution的动作、准确attemptId、原operation_ref、状态和该行已有记录/开始/终态时间，旧readCurrentExecution路径不变。
+
+`useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic` 将综合尝试归入综合，将调查尝试归入调查。选中旧活跃调查与较新终态调查异ID时保留两个有限观察，同ID去重且只有同ID才保留首次保存时间。父hook比较新增观察，避免同工作号/同状态换尝试时吞掉更新。旧响应缺字段或null时继续未知，不据此断言没有综合历史。界面只说明本次读取返回的尝试与有限观察；尝试身份不充作请求ID，综合行只打开原综合面板并明确不定位单条尝试、不重试。
+
+执行、已有成果、综合采用工作与CURRENT/STALE覆盖、外层ACK及正式业务分别表达；本次读取时间不冒充事件时间，就绪和首次可读缺项不补造。切对象、会话或撤权按原父响应边界清理。11个产品/测试文件经独立审查、相关六套89项与一个窄隔离PG例验证；PG使用合成来源/结果、真实Host服务/受限角色及browser读取，实际Overall seal/恢复三状态与四条调度构造行的范围分别保留。
+
+准确clean产品的一次标准构建、实际测试工作区/时间、React跨根测试夹具失败和私有单树映射修复均见[FIRST_BATCH本批记录](coordination/WISELINK_FIRST_BATCH_20261022.md)。固定13节点、47关系、54场景、10规则不变，M2原201证据逐值保留；M3消费实际父响应的本地实现已完成，尚未部署或真实业务运行，不能把本地观察接线写成生产尝试历史已齐全。
