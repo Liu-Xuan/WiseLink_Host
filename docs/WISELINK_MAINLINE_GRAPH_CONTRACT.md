@@ -675,6 +675,14 @@ v1.3 报告使用了本地主检出 b02395537a948fbe427f232f5a52ab59ba43efe0、�
 
 本地 Estimated 沿用准确 81 的既有完整构建、ff0 的 19 项真实隔离 PG 与 244 项单测，仍未部署。Native 原 c234 安装回执保留，已审原 helper 单次恢复成功，完整 16 项读回仅原 C136 启用、其余 15 项禁用，原安装记录/脚本/配置保持；M3 已在同一原获权事项实际核对 3 节点/2 条路径、工作 1 SUCCEEDED、准确工作和资料版本、Overall 当前输入、两条引用导航及单次正常只读刷新，无诊断读取错误。Overall 尝试集合、TDMS 最新性/覆盖与 Ready/首次可读/ACK 仍未提供；TDMS 当前 UNKNOWN、可核对保存原生证据 0 不被扩义为从未读取。各原始观察、时间和后续真实结果记在 [FIRST_BATCH 当前末节](coordination/WISELINK_FIRST_BATCH_20261022.md)，不从技术发布推断 TDMS 已接收、SEM 内容合格或公司工程措施已正式采用。
 
+### E.5 Estimated D 实际技术发布与限定只读结果（2026-10-23）
+
+用户已批准本批 Estimated 技术交付。公开 E `800af5fc41b0d1d05048937fa8a0c79acd2a8c16` 已普通快进同步到 origin/github 原同名 codex 分支；私有 D `062e3ab3d10b29a88add508929625e9a76e4064f` 只同步 origin，产品 tree 与 E 完全相同。原 Host release `7699657613396610040` 在 `2026-10-23T00:50:41.421538Z` 官方 GET 为 finished、准确 D、error_logs 空，`00:51:00.751345Z` latest 同 ID。原已登录浏览器实际前端 D 与后端 D / `SERVER_BUILD_ARTIFACT` / PASS 分别于 `00:51:36.125Z`、`00:52:02.562Z` 读回，后端实际 XHR 为 200。技术部署现已完成，E.3 的映射不再列作未发布；原 ff0 的 19 PG/244 unit、准确 81 的完整构建继续保留原执行身份，不改写为 D 重跑。
+
+同一原获权事项实际显示 JobAid、综合、TDMS 三节点；保存工作修订 1 为 SUCCEEDED，综合准确消费同一工作，原保存正文可读。一条保存依据显示原 sourceRef/解析修订 6，导航到准确文档版本及两页受控 PDF；但页面显示“当前查询未返回这条依据”，当前渲染 units 未命中原 ref；未取得后台请求/响应，定位验收为 PARTIAL。单次显式诊断刷新后的新观察时间未获证明，随后可见页面仍已读回并保持原工作/综合关系，不把旧客户端时间当作刷新完成或业务事件时间。私有引用和原文不进入本记录。
+
+本批数据库 dev→main preview 为空，没有执行 DDL；Native c234 未暂停、安装、恢复或重启。原 C/Native 历史证据保留，本次不重验其调度状态。D 不含后续 ACK 浏览器读模型、Review saved-native 或 fresh-native READ 候选。实际 TDMS Source/grant/processing set/状态刷新、原文 V44、未结构化撤销/取代、SEM 与新模型/SAVE/正式采用均未由本次只读技术核验完成。Overall 尝试集合、TDMS 最新性/覆盖及浏览器 Ready/首次可读/ACK 仍缺；当前可核对保存 native 为 0 不能推断从未读取。详见 [FIRST_BATCH 本批末节](coordination/WISELINK_FIRST_BATCH_20261022.md)。
+
 ## 附录 F. 后续来源规划
 
 可靠性、故障与手册资料分别接入，先提供准确阅读，再验证一个具体问题的实际消费，随后按需要增加趋势观察与策略。当前 13 节点可承载这些入口；具体消费者明确前不增加通用平台或固定模型流水线。

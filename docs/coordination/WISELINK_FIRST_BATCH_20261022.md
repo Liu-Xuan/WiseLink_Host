@@ -1,6 +1,6 @@
 # 第一批实施与隔离验证 — 2026-10-22
 
-当前状态（2026-10-23）：用户批准的 C 更正源 `de091c3ba6f9f201d60e1f6bf1f781e11662fa39` 已正式发布，release `7699611310187924507` / finished / error_logs 空，实际前端 DOM 和后端原 Response 均确认 C。C 产品 tree 与原 b561 完全相同，不含本地 Estimated 修正。原应用单次 OAuth 授权后登录验证成功；两个原获权对象的只读 SELECT 各 1 行，选出字段与发布前一致，没有新增模型、SAVE 或正式采用。Native c234 通过原 helper 单次恢复原唯一启用调度；完整 16 项读回确认仅 C136 启用、其余 15 项禁用，全部 running=false，原安装记录/脚本/配置保持。M3 同一原获权事项的流程、准确引用导航及单次只读刷新已实际核对，保留其明确数据缺项。准确结果见末节。下文各历史时点仍保留，旧“技术包待授权”“Estimated 尚待相同业务规则证明”和“最近生产仍为 6c”均不作为当前结论。
+当前状态（2026-10-23）：用户批准的 Estimated E 已普通快进同步 origin/github 原同名 codex 分支，私有 D `062e3ab3d10b29a88add508929625e9a76e4064f` 仅 origin。原 Host release `7699657613396610040` 已 finished/error_logs 空，实际前端 D 与后端 D / SERVER_BUILD_ARTIFACT / PASS 均已确认。同一原获权事项的已保存工作、综合关系、正文和准确版本 PDF 可读；精确结构化引用定位未命中，单次刷新未证实新时间推进，均单列缺项。Native c234 本批未操作，DB preview 空且无 DDL，没有新模型、业务 SAVE 或正式采用。D 不含后续 ACK/Review 候选。下文历史时点原样保留，当前结果以末节为准。
 
 ## 实施结果
 
@@ -343,9 +343,9 @@ M1 仍是 v1.6，B.5 明确已确认语义，E.3 记录实际生产者/消费者
 
 本轮四个固定子日志在主控确认的独占构建窗口生成，全部按新mtime归档，没有将旧日志计为本次证明。原日志和实体目录、构建归属、双端指纹、裁剪与警告记录在 `tmp/estimated-integration-evidence/final-build-result.json`、`final-build-verification.json`、`final-build*.log`、`final-gen-*.log`；初次校验失败在 `final-build-verification-initial-node-import.log`。本回执后的提交仅更新这些事实和生成的M2快照，沿用准确81构建，不重复业务测试或构建。当前本地展示为 `docs/runtime-monitor/WiseLink_Wiring_Verification.html`，源码目标明确为81；M3未增加或伪造运行数据。
 
-### 2026-10-23 C 实际发布、运行与后续 Estimated 本地候选
+### 2026-10-23 C 实际发布、运行与后续 Estimated 本地候选（历史时点）
 
-本节是当前交付状态，前文 C 发布前的拒绝、准备、待授权与暂停观察仍是其原时点事实。用户已批准 origin-only C 更正源及原应用的 device/offline 授权。C 只是让原 b561 产品接入准确 origin main 的私有发布源，产品 tree `dbb579e435ed879481cfb38760744a69dd35ac2d` 与 b561 相同；不含本地 Estimated。已审核的公开 Estimated 候选 E 与后续私有 D 仍是下一批本地准备，未推送、未发布。
+本节保留 C 交付时点，前文 C 发布前的拒绝、准备、待授权与暂停观察仍是其原时点事实；后续 Estimated D 已发布的当前结果见下一节。用户已批准 origin-only C 更正源及原应用的 device/offline 授权。C 只是让原 b561 产品接入准确 origin main 的私有发布源，产品 tree `dbb579e435ed879481cfb38760744a69dd35ac2d` 与 b561 相同；不含本地 Estimated。已审核的公开 Estimated 候选 E 与后续私有 D 仍是下一批本地准备，未推送、未发布。
 
 | 已取得的原始证据 | 准确结果与范围 |
 | --- | --- |
@@ -367,3 +367,28 @@ M3 本次验收只覆盖同一存量事项的读取、准确引用与导航/刷�
 
 
 本次 C 收尾只在准确 `0bc2d1cc920d0ce2b7193e3abf17c9278d287a74` 之后更新 9 个记录/生成文件；未改产品、测试、依赖或构建输入，沿用准确 81 构建。受影响快照 QA 39/39、实际生成 HTML 的 jsdom 八条接线/P3＋company＋V53＋runtime 联合筛选和节点下钻通过，diagnostics 空；M1 的 13 节点/47 关系/54 场景/10 规则目录完全不变。旧 115 条 evidence 的字段、source 和时间逐条保持，新增 C/OAuth/Native/M3 证据不冒充本地 Estimated 的线上结果。生成页检查首轮脚本误用不存在的 `snapshot.contractRevision` 字段而停在断言，改为真实 `snapshot.contract.sourceRevision` 后通过；原失败日志保留，没有改产品校验或重跑业务测试。日志为 `tmp/estimated-integration-evidence/c-closeout-snapshot-qa.log`、`c-closeout-generated-m2-check.log`、`c-closeout-generated-m2-initial-wrong-contract-path.log`。
+
+### 2026-10-23 Estimated E/D 实际交付、运行与限定 M3 读回
+
+用户已明确批准本批 Estimated 技术交付；以下均为实际动作或观察，不把官方发布、双端运行、存量阅读和新业务运行相互替代。
+
+| 证据 | 准确结果与范围 |
+| --- | --- |
+| 公开 E 同步 | 准确 `800af5fc41b0d1d05048937fa8a0c79acd2a8c16`，原同名 `codex/source-clarification-public-20261023` 单条普通快进。origin `2026-10-23T00:46:23.565947Z`、github `00:46:50.543099Z` 分别 ls-remote 读回精确 E。没有推 main、force 或其他 ref。 |
+| 私有 D 同步 | 准确 `062e3ab3d10b29a88add508929625e9a76e4064f`，只向 origin 原同名 `codex/host-estimated-release-20261023` 普通推送，`00:47:22.342322Z` 读回。D parents 为 E 和当时核对的 origin main，完整 tree `de51001b79b422456a99fc9ec5043ac1ac79d7e9` 与 E 相同；私有 main/D 历史没有进入公开对象库。 |
+| 数据库边界 | 官方发布前 dev→main preview `changes=[]`。本批没有迁移或 DDL；后续 Review 的本地 lock-only policy 不在 D 中。 |
+| 官方 release | 只创建一次 `7699657613396610040`，`00:47:39.842958Z` 返回 publishing；随后只跟踪同 ID。`00:50:41.421538Z` exact GET 为 finished、准确 D、error_logs 空，`00:51:00.751345Z` latest 同 ID/finished。发布期间曾返回旧 C commit_id，仅终态用于 D 证明。 |
+| 实际前端 | 原已登录 tab 在正常重载后，`00:51:36.125Z` 实际 DOM 显示完整 D，frontend build time `00:48:12.647Z`；不是本地静态产物推断。原 UI 的 release/API 字段仍未知，不填入假值。 |
+| 实际后端 | `00:52:02.562Z` 原生 Chrome DevTools 的实际 `/api/runtime-probe` XHR Response：D、`SERVER_BUILD_ARTIFACT`、PASS，server build time `00:48:35.102Z`，HTTP 200。没有直接导航 API、改 CSRF 或复制凭据。candidate reader 仍 VERIFICATION_PENDING/7 blockers。 |
+| M3 与旧正文 | `00:54:12.233Z` 同一原获权事项显示 JobAid、综合、TDMS 三节点；工作修订 1 SUCCEEDED，综合明确消费同一当前工作。`00:55:12.538Z` 点击准确保存工作引用后进入综合评估，原工作修订 1/原保存时间及四问题正文可读，45 输入依据/45 已读来源引用可见；无新生成或保存。 |
+| 单引用定位 PARTIAL | `00:55:26.933Z` 一条已保存依据显示原 sourceRef 与解析修订 6；`00:55:40.851Z` 导航到准确文档版本，`00:55:53.249Z` 两页受控 PDF 可读。页面显示“当前查询未返回这条依据”，当前渲染 units 未命中原 ref；后台请求/响应未取得，精确结构化定位未通过；未清除定位、扩大或重新执行来源查询。 |
+| 刷新观察 INCONCLUSIVE | 单次“重新读取”后的观察超时；`00:57:07.185Z` 仍可见已读回、work 1 SUCCEEDED 与同版综合，显示客户端读回时间 `00:55:43.435Z`。没有证明点击后时间推进，没有重复点击，也不把该时间当历史业务事件。现成 Network 未捕获该源查询，参数/响应元数据未取得，不补造 HTTP 状态。 |
+| Native 与业务边界 | 本批没有暂停、安装、恢复、重启或重新查询 Native；原 c234/C136 历史恢复证据保持其原时间。没有新业务任务、模型、TDMS READ、SAVE 或正式采用。D 不包含后续 ACK 浏览器读模型及 Review 两段本地候选。 |
+
+原始官方/Git/运行回执与单引用私有诊断在忽略目录 `tmp/source-clarification-evidence/host-estimated-d062-release/`；M3 脱敏摘要 `m3-existing-object-browser/technical-summary.refined.public-safe.json` SHA256 `9b1d58c47f7f2a62c6fc6e48b2a55698a86356ed94b84608a02ed2cbbf2858c0`。准确 sourceRef、业务对象、原文、导航 query 与未捕获项仅在 private receipt 中；真实截图在原操作工具回执，没有补造 PNG 路径。浏览器观察超时仅作观察诊断，不等同授权失败、发布失败或未知动作被重复执行。
+
+接线、测试、部署、运行继续分列：Estimated 产品沿用已接受作者 ff0/集成 761、19 个真实隔离 PG 与 244 个单测；准确 81 的唯一完整构建及双端 immutable 构建归属保留，477/477 为依赖处理数、不是测试数。本批产品/测试/构建输入未改变，不重复产品测试或构建。M2 快照目标是实际部署 D，旧证据 source/time/hash 原样保留，新证据只覆盖其真实技术范围；冻结 HTML 的组件逻辑不改，后续 M2 测试显示小修不混入 D。
+
+TDMS 节点当前 UNKNOWN、最新性/完整覆盖未提供，0 条可核对保存 native 不证明从未读取；Overall 尝试集合与 Ready/首次可读/浏览器 ACK 字段仍不可得。本批不证明 Estimated 路径已处理真实 Source/grant/processing set 或状态刷新，也不证明原文 V44、原生未结构化撤销/取代、SEM 工程事实、新模型/SAVE 或正式采用通过。精确结构化引用缺口交有限代码分析，不能被准确 PDF 可读掩盖。
+
+本次记录校验：仅 9 个 docs/JSON/生成 HTML 文件；M1 的 13 节点/47 关系/54 场景/10 规则目录和原 125 条 evidence 值均保持，新增 8 条只覆盖本批实际范围。快照 QA 39/39；实际生成 HTML 的 P3＋company＋V53＋runtime 和 P0＋research/Overall＋V12＋runtime 联合筛选、节点/关系到准确 binding 下钻通过，diagnostics 空；公司真实运行仍“尚未核对”，调查/综合按实际显示“失败 / 通过并存”。冻结组件源码和嵌入快照一致，没有混入后续 M2 显示修复。私有检查首两次分别误期望旧失败标签和未展示的类名，原断言失败保留；仅校正为真实混合标签与既有 consumer 字段后通过，未改产品或证据来迎合检查。原始 QA/生成页日志在同一私有发布证据目录。

@@ -60,16 +60,10 @@
           "nextAction": "以新任务准确读取原工程资料和方法要求，补真实定义/后果或保留未知，保存后核对Overall实际输入及独立正文；需新模型/真实SAVE按具体授权执行。"
         },
         {
-          "id": "research.overall.deployment",
-          "kind": "deployment",
-          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
-          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
-        },
-        {
           "id": "research.overall.m3-scope",
           "kind": "runtime",
-          "reason": "本批C的真实M3已验同一事项3节点/2路径、工作1 SUCCEEDED、准确工作/资料版本及Overall当前输入、两条引用导航和单次刷新无诊断错误；Overall尝试集合未提供，不能声称完整执行历史或新内容验收。",
-          "nextAction": "保留这次C存量只读技术验收；后续只按实际读模型补充准确尝试集合与内容级范围，不再因历史本地JSON自动导入受限而把该段浏览器验收列为未完成。"
+          "reason": "D已实际核对同一旧事项的3节点、工作1 SUCCEEDED、同版Overall消费、原保存正文及准确版本PDF；页面显示“当前查询未返回这条依据”，当前渲染units未命中原ref，后台响应未取得，单次显式刷新后未证实新时间推进。Overall尝试集合未提供，不能声称完整执行历史或新内容验收。",
+          "nextAction": "保留本次D限定只读结果和PARTIAL引用诊断；仅按当前D代码分析该原ref定位，不清定位/扩大查询或把PDF可读当精确定位通过。真实内容/新运行按其具体授权继续。"
         }
       ]
     },
@@ -198,12 +192,6 @@
           "nextAction": "报告中分别保留未提供字段和实际首次读回/ACK观察时刻；不从updatedAt或导入时间回填。"
         },
         {
-          "id": "save.finish.deployment",
-          "kind": "deployment",
-          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
-          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
-        },
-        {
           "id": "save.finish.capacity",
           "kind": "runtime",
           "reason": "真实单事项时间和同窗官方聚合已取得，但Ready/首次可读/生产ACK、未知调用/提交积压以及容量上限仍未知；不能把长等待归因于资源饱和。",
@@ -263,12 +251,6 @@
           "kind": "runtime",
           "reason": "只读授权及成员过滤已随C接入实际页面入口并通过隔离PG；历史CLI身份可见来源/授权/receipt为零，尚无获权反馈单原文的线上读回。provider仅支持既有Gateway浏览器{}或准确DVI上下文，其他上下文明拒；不提供导入/附件获取授权。",
           "nextAction": "取得已有真实来源grant与准确反馈单修订后只读核验；缺授权或来源时报告准确缺项，不以fixture或关联元数据替代原文。"
-        },
-        {
-          "id": "feedback.reading.deployment",
-          "kind": "deployment",
-          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
-          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
         },
         {
           "id": "feedback.reading.runtime",
@@ -345,12 +327,6 @@
           "kind": "source_review",
           "reason": "ATA2 成员与显式授权 Matter 到期条件漏唤醒已修复。Estimated 批准语义与本地映射已确定，三类生产变化全流程仍需实际 Source/版本/状态刷新和原生撤销取代关系。",
           "nextAction": "在实际获权来源成立后按三类变化核对最小调用范围；本轮不以到期条件PG用例替代全部业务变化验证。"
-        },
-        {
-          "id": "wiki.saved-reading.deployment",
-          "kind": "deployment",
-          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
-          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
         }
       ]
     },
@@ -406,12 +382,6 @@
           "kind": "runtime",
           "reason": "既有LCM候选快照读取及新诊断已随C部署，新诊断尚未做线上浏览器核验；当前观察与有限覆盖不能推为实时全机队或AEO完成。",
           "nextAction": "只读现有获权快照，核对原生值、位置和时间；关联工程条件时另核具体消费者和证据。"
-        },
-        {
-          "id": "configuration.reading.deployment",
-          "kind": "deployment",
-          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
-          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
         }
       ]
     },
@@ -479,8 +449,8 @@
         {
           "id": "company.approved-opinion.current-proof",
           "kind": "runtime",
-          "reason": "Estimated业务语义和本地真实retained provider映射已完成并独审接受，尚未部署。实际C的M3节点仍为UNKNOWN、最新性/覆盖未提供，当前工作可核对保存原生证据0；这不证明从未读取。实际TDMS在线刷新、Source/grant/processing set和准确原件仍未取得。",
-          "nextAction": "复用原来源、授权、版本和处理集合接入真实获权记录，按自身 Estimated 读取；只在准确外部动作获准后执行实际刷新/接收，不再向用户索取相同批准语义证明。"
+          "reason": "Estimated自身批准映射已随D正式部署并有实际双端D指纹；本批没有执行真实TDMS状态刷新。原事项节点仍UNKNOWN，最新性/覆盖未提供，当前可核对保存native为0不证明从未读取；实际Source/grant/processing set与原件仍缺。",
+          "nextAction": "按已有准确来源/授权/版本和处理集合接入真实获权记录，执行动作仍按具体范围；不再把已完成Estimated技术发布或原device/offline授权列为待项。"
         },
         {
           "id": "company.approved-opinion.original",
@@ -493,12 +463,6 @@
           "kind": "source_review",
           "reason": "普通WorkItem、Gateway浏览器、真实Summary及既有COMMITTING恢复已接入。原应用device/offline已获授权，单次OAuth后登录验证成功；这不代替Review独立调用者及其他Native生命周期入口的装配与核验。",
           "nextAction": "按准确Review/Native入口补齐所需调用者和生命周期范围；保留typed deny，不借无关活跃租约，不再索取本次已完成的device/offline授权。"
-        },
-        {
-          "id": "company.approved-opinion.deployment",
-          "kind": "deployment",
-          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
-          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
         },
         {
           "id": "company.approved-opinion.native-lifecycle",
@@ -565,12 +529,6 @@
           "kind": "runtime",
           "reason": "真实事项读取尚未提供可核对的批准意见、正式工程文件/AEO进展和期限；页面明确未取得，只有保存的系统候选建议。",
           "nextAction": "随P3实际获权当前批准来源接入现有读取；不把候选建议或读取缺项当成正式公司安排。"
-        },
-        {
-          "id": "matter.saved-reading.deployment",
-          "kind": "deployment",
-          "reason": "C de091c3 已正式发布，release7699611310187924507 finished、error_logs空，实际前端DOM及后端原Response均确认C；C产品tree与b561相同，不含Estimated。本快照源码目标仍是本地81，Estimated尚未推送或部署。",
-          "nextAction": "原b561授权与C更正确认均已执行，不再等待同项授权。原Native c234安装回执保留；原helper单次恢复成功，16项仅C136 enabled、其余15 disabled，原脚本/配置保持；后续公开E/私有D仅本地准备，不能把C证据继承为Estimated已运行。"
         }
       ]
     }

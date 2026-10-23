@@ -2218,6 +2218,151 @@
       "originalReportRef": "private:tmp/source-clarification-evidence/host-de091c3-release/m3-existing-object-browser/technical-summary.public-safe.json",
       "evidenceObservation": "源C由稳定官方release/current及实际双端runtime proof绑定，该M3页不另有可见页面指纹。实际视口截图在原工具回执、私有DOM已持久保存，无独立PNG文件。",
       "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377"
+    },
+    {
+      "contractRevision": "6c370b5b871d10a76af615816356565eda1bc99d887b5ab9a0fe92a7d5c4a518",
+      "sourceRevision": "062e3ab3d10b29a88add508929625e9a76e4064f",
+      "environmentId": "local:estimated-published-source-identity",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-d.delivery.source-identity",
+      "kind": "source_review",
+      "status": "passed",
+      "observedAt": "2026-10-23T00:47:22.342322+00:00",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "summary": "已审E/D准确HEAD/clean、E双端800与D仅origin062实际读回；D tree与E相同，保留原ff0/761实现及19PG/244unit、81构建身份。本条是已审技术源身份适用性核对，不冒充新的非作者审查、测试或线上业务。",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-estimated-d062-release/readback-D-origin.json"
+    },
+    {
+      "contractRevision": "6c370b5b871d10a76af615816356565eda1bc99d887b5ab9a0fe92a7d5c4a518",
+      "sourceRevision": "062e3ab3d10b29a88add508929625e9a76e4064f",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-d.delivery.deployment-finished",
+      "kind": "deployment",
+      "status": "passed",
+      "observedAt": "2026-10-23T00:51:00.751345+00:00",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading"
+      ],
+      "summary": "唯一create release7699657613396610040；00:50:41.421538Z exact GET finished/commit D/errors[]，00:51:00.751345Z latest同ID。DBpreview changes=[]、无DDL，Native未动；不含后续ACK/Review。",
+      "deploymentRef": "7699657613396610040",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-estimated-d062-release/release-get-005.json",
+      "readbackRef": "private:tmp/source-clarification-evidence/host-estimated-d062-release/release-list-current.json"
+    },
+    {
+      "contractRevision": "6c370b5b871d10a76af615816356565eda1bc99d887b5ab9a0fe92a7d5c4a518",
+      "sourceRevision": "062e3ab3d10b29a88add508929625e9a76e4064f",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-d.runtime.frontend-fingerprint",
+      "kind": "runtime",
+      "status": "passed",
+      "observedAt": "2026-10-23T00:51:36.125Z",
+      "bindingIds": [],
+      "summary": "原已登录Host tab正常重载后的实际DOM执行frontendSourceCommit D，build00:48:12.647Z；仅应用级指纹，不替代任何binding业务运行。页面release/API仍未知，candidate reader VERIFICATION_PENDING/7。",
+      "deploymentRef": "7699657613396610040",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-estimated-d062-release/frontend-runtime.actual.json"
+    },
+    {
+      "contractRevision": "6c370b5b871d10a76af615816356565eda1bc99d887b5ab9a0fe92a7d5c4a518",
+      "sourceRevision": "062e3ab3d10b29a88add508929625e9a76e4064f",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-d.runtime.backend-fingerprint",
+      "kind": "runtime",
+      "status": "passed",
+      "observedAt": "2026-10-23T00:52:02.562Z",
+      "bindingIds": [],
+      "summary": "原生DevTools实际/api/runtime-probe XHR HTTP200，deployedCommit D、SERVER_BUILD_ARTIFACT、serverBuild00:48:35.102Z、PASS。仅应用级技术响应，不把静态build或GET/list代替执行证据。",
+      "deploymentRef": "7699657613396610040",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-estimated-d062-release/backend-runtime.actual.json"
+    },
+    {
+      "contractRevision": "6c370b5b871d10a76af615816356565eda1bc99d887b5ab9a0fe92a7d5c4a518",
+      "sourceRevision": "062e3ab3d10b29a88add508929625e9a76e4064f",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-d.runtime.m3-saved-consumer",
+      "kind": "runtime",
+      "status": "passed",
+      "observedAt": "2026-10-23T00:55:53.249Z",
+      "bindingIds": [
+        "research.overall",
+        "matter.saved-reading"
+      ],
+      "summary": "同一原获权事项3节点，工作修订1 SUCCEEDED，Overall准确消费同一工作；原保存四问题正文/45输入依据/45已读ref可见，保存引用导航及准确版本两页PDF可读。仅已存读取，不证明新业务运行；TDMS UNKNOWN/0保存native不推从未读，Overall集合与时刻缺项保留。",
+      "deploymentRef": "7699657613396610040",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-estimated-d062-release/m3-existing-object-browser/technical-summary.refined.public-safe.json"
+    },
+    {
+      "contractRevision": "6c370b5b871d10a76af615816356565eda1bc99d887b5ab9a0fe92a7d5c4a518",
+      "sourceRevision": "062e3ab3d10b29a88add508929625e9a76e4064f",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-d.runtime.precise-source-locator",
+      "kind": "runtime",
+      "status": "failed",
+      "observedAt": "2026-10-23T00:55:40.851Z",
+      "bindingIds": [
+        "research.overall",
+        "matter.saved-reading"
+      ],
+      "summary": "一条原保存依据已显示sourceRef/解析修订6，但页面显示“当前查询未返回这条依据”，当前渲染units未命中原ref；未取得后台请求/响应；定位PARTIAL。准确版本PDF可读不关闭此缺口。现成Network未留源请求，未清定位/重查/扩大范围；私有原ref和route/query留诊断。",
+      "deploymentRef": "7699657613396610040",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-estimated-d062-release/m3-existing-object-browser/source-locator-diagnostic.private.json"
+    },
+    {
+      "contractRevision": "6c370b5b871d10a76af615816356565eda1bc99d887b5ab9a0fe92a7d5c4a518",
+      "sourceRevision": "062e3ab3d10b29a88add508929625e9a76e4064f",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-d.runtime.single-refresh-observation",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "observedAt": "2026-10-23T00:57:07.185Z",
+      "bindingIds": [
+        "research.overall",
+        "matter.saved-reading"
+      ],
+      "summary": "单次重新读取后观察超时，随后页面仍已读回/工作1SUCCEEDED/同版综合，显示00:55:43.435Z；未证实点击后时间推进，不重复点击、不称刷新通过或补业务时间。",
+      "deploymentRef": "7699657613396610040",
+      "originalReportRef": "private:tmp/source-clarification-evidence/host-estimated-d062-release/m3-existing-object-browser/observation.actual.private.json"
+    },
+    {
+      "contractRevision": "6c370b5b871d10a76af615816356565eda1bc99d887b5ab9a0fe92a7d5c4a518",
+      "sourceRevision": "062e3ab3d10b29a88add508929625e9a76e4064f",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "id": "estimated-d.runtime.actual-tdms-business-not-run",
+      "kind": "runtime",
+      "status": "not_run",
+      "observedAt": "2026-10-23T00:57:47.549Z",
+      "bindingIds": [
+        "company.approved-opinion",
+        "feedback.reading",
+        "configuration.reading",
+        "translation.reading",
+        "wiki.saved-reading",
+        "save.finish"
+      ],
+      "summary": "D技术部署和应用指纹成立；本批未验证真实TDMS Source/grant/set/状态刷新、未结构化撤销取代、V44或SEM/模型/SAVE/正式采用。未操作Native，后续ACK浏览器字段/Review代码未部署，不借存量M3或客户端时间充业务证明。",
+      "deploymentRef": "7699657613396610040"
     }
   ]
 }
