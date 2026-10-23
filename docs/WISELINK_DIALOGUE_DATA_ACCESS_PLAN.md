@@ -41,7 +41,7 @@ flowchart LR
 | `registerCanonicalHostReadonlyMcpTools` | 现有 WorkItem 状态、解析内容、服务端深链能力 | 这些工具以单个 WorkItem 为入口，不是已完成的全局检索工具组 |
 | `read_matter_current_work` 等现有 OpenClaw MCP | 已绑定运行授权下的事项读取 | 其自动任务/service-scope 权限不能直接授予自由问答 |
 | `CANONICAL_AILY_AGENT_ID` 及只读入口身份边界 | 现有入口白名单与身份规则 | 当前仍是旧入口；agentId 只是来源标识，不是最终用户或 ACL。更换常量不构成接入 |
-| Review CHAT/AUTOMATIC 与前端独立候选 | 首批已有获权 WorkItem/事项的连续讨论和短轮询 | 主控审查、选择性集成及真实运行；独立文档随后接入 |
+| Review CHAT/AUTOMATIC 与前端已集成入口 | 已在产品提交 `251941f4fda4d515909208efd842610246661adc` 接入获权 WorkItem/事项的连续讨论、短轮询及未知发送恢复 | 尚未部署、尚未真实运行；无 WorkItem 的独立文档入口尚未接通 |
 
 官方文档提供自定义 MCP 和企业工作伙伴 OpenAPI 路线。通用 OpenAPI 文档与新版企业工作伙伴介绍对渠道的描述存在差异，因此本实例能否使用 Web SDK/API 必须看实际渠道配置和接口回执；本方案不假定管理页链接可直接嵌入，也不把 agentId 当作旧 SDK 的 channelToken。[MCP 文档](https://aily.feishu.cn/hc/1u7kleqg_wzukhwud)；[OpenAPI 文档](https://aily.feishu.cn/hc/1u7kleqg_t973w36g)；[企业工作伙伴说明](https://aily.feishu.cn/hc/1u7kleqg_ef4valfx)。
 
@@ -73,7 +73,7 @@ flowchart LR
 ## 5. 实施顺序和验收
 
 1. 先交付主线 M1/M2/M3 收口及既有 Host/Native 候选。真实 SEM、TDMS 授权/刷新和三类变化验证继续按原流程推进。
-2. 审查、集成已有获权事项 OpenClaw CHAT 前端；确认 CHAT 不写评估，未知请求先读回/沿原请求处理，切对象或身份后迟到结果不串入。独立文档后续接入。
+2. 已有获权 WorkItem/事项 OpenClaw CHAT 前端及未知发送恢复已集成为 `251941f4fda4d515909208efd842610246661adc`，本地技术构建通过；尚未部署、尚未真实运行。真实验收继续核对 CHAT 不写评估、未知请求沿原请求处理、切对象或身份后迟到结果不串入；无 WorkItem 的独立文档入口尚未接通。
 3. 核实新 Aily 实例的可用渠道、最终用户委托与 Host 可达性，准备只读工具的实际适配。确定具体可见数据及运行身份后再配置连接；本次没有启用连接器或新授权。
 4. 用获准样本完成最小真实闭环，再扩展数据：无预选对象检索至少两个独立文档/事项；展开完整依据并准确跳回；撤权后不可继续取新数据；历史与当前明确区分；资料不足明确说明；普通问答不生成评估工作。Host 中后续合法更新后，再询问能够读到准确新工作及尚未覆盖的综合状态。
 

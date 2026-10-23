@@ -17,12 +17,12 @@
         "P0",
         "P1"
       ],
-      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "sourceRevision": "c72e4a9b521af283b8f5de4a60599a5dad137804",
       "originReviewedRevision": "1ec900f05ed28e1a0164a084fb3ee7b0f618d9f0",
-      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。 后继Overall使用新实际attempt/lease及准确保存的Review work，普通迟到SAVE不因新Review恢复获权；PG026隔离fixture证明不替代真实SEM/生产运行。",
+      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。 较早16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。 后继Overall使用新实际attempt/lease及准确保存的Review work，普通迟到SAVE不因新Review恢复获权；PG026隔离fixture证明不替代真实SEM/生产运行。 本批c72补入JA-AC§3.1独立四级严重性材料并交付新任务，旧risk原字节/六事件guard及封存task不改；170项Jest与2项Node实际执行于提交前ae65工作区加本批七文件，随后正常提交对应产品字节。clean c72单次正常build通过，真实SEM/部署/模型及业务SAVE尚未运行。",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "producer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.saveWork",
-      "consumer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.buildInput; #commitOverall",
+      "producer": "server/modules/canonical-host/jobaid-method-pack.ts#JOBAID_METHOD_EVIDENCE / #JOBAID_CORE_METHOD_REFS → jobaid-problem-task.ts#buildJobAidProblemTask / matter-jobaid-task.ts#matterJobAidSourceRegistry；CanonicalJobAidProblemService.saveWork保存准确工作。",
+      "consumer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.buildInput / #commitOverall；jobaidReadingResult → readStoredOverallEvidence / overallModelEvidenceRegistry → consumeOpenClawOverallSynthesisOutput消费准确方法材料和保存正文。",
       "executionOwner": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#consumeHostedWorkItem / #runHostedInitialStage：当前有效领取者执行；Host action_attempt约束唯一fence。",
       "recoveryOwner": "server/modules/work-item/miaoda-work-item.repository.ts#MiaodaWorkItemRepository.claimAutoProcessingCandidate：Host核对封存原结果，原owner/fence恢复；消费者通过原入口接续，不另建结果真源。",
       "authority": {
@@ -40,7 +40,8 @@
         "server/modules/canonical-host/canonical-jobaid-problem.service.ts#begin：按准确WorkItem、请求范围与权限受理",
         "server/modules/canonical-host/canonical-jobaid-problem.service.ts#saveWork：按attemptRef/token/generation/requestId/expectedWorkRevision保存",
         "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit：封存及提交准确workRevisionRef；原提交恢复仍使用原结果",
-        "server/modules/canonical-host/jobaid-semantic-content.ts#assertJobAidSemanticContent：仅新jobaid-semantic.v1任务检查等级定义/业务与重要事件依据、方法要求正文位置和未决项；旧封存提交按原版本恢复。"
+        "server/modules/canonical-host/jobaid-semantic-content.ts#assertJobAidSemanticContent：仅新jobaid-semantic.v1任务检查等级定义/业务与重要事件依据、方法要求正文位置和未决项；旧封存提交按原版本恢复。",
+        "server/modules/canonical-host/jobaid-method-pack.ts#method:severity-definitions：新任务实际交付JA-AC四级一般定义；业务依据、方法处置正文及旧risk六事件要求继续校验，封存task按原材料恢复。"
       ],
       "validationRefs": [
         "test/node/core-p1-host-postgres.test.mjs",
@@ -49,15 +50,18 @@
         "test/unit/jobaid-problem-work.spec.ts",
         "test/unit/canonical-jobaid-problem-continuation.spec.ts",
         "test/node/jobaid-review-protocol.test.mjs",
-        "test/node/jobaid-semantic-context.test.mjs"
+        "test/node/jobaid-semantic-context.test.mjs",
+        "test/unit/jobaid-severity-definitions.spec.ts",
+        "test/unit/matter-jobaid-task.spec.ts",
+        "test/unit/overall-native-registry-roundtrip.spec.ts"
       ],
       "authorRevision": "357292e26174b69504ee315898609f6ed6beef14",
       "gaps": [
         {
           "id": "research.overall.semantic",
           "kind": "runtime",
-          "reason": "P1已实现新任务内容边界与实际消费者保真，并修复方法快照升级兼容；真实资料尚缺通用低严重性定义/部分工程事实，SEM-01/02真实内容验收保持开放。",
-          "nextAction": "以新任务准确读取原工程资料和方法要求，补真实定义/后果或保留未知，保存后核对Overall实际输入及独立正文；需新模型/真实SAVE按具体授权执行。"
+          "reason": "JA-AC§3.1四级一般严重性定义已从原件取得并接入新任务/保存/Overall实际消费者；受控Host版本尚未绑定，仍VERSION_UNCONFIRMED/null DVI。真实SEM的后果、暴露及控制事实不足，SEM-01/02正文级模型/SAVE/Overall验收仍开放；本批仅源码及合成隔离用例，尚未部署。",
+          "nextAction": "核实Host受控JA-AC版次，并按具体授权补实际后果、暴露及控制资料或保留未知；用新任务核对方法匹配、正文处置和保存后Overall实际输入，真实模型/READ/SAVE另按既有授权范围执行。"
         },
         {
           "id": "research.overall.m3-scope",

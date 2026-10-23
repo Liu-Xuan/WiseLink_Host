@@ -3715,6 +3715,194 @@
       "plannedOnly": true,
       "summary": "本次记录目标已变为新的本地CHAT产品与M1契约；新Aily适配、可信最终用户和准确Host只读工具仍未连接或验收，binding的source/consumer/执行/读取入口保持null。仅沿当前目标保留not_run，不代表新线上查询、源码适配或测试执行。",
       "testLevel": "e2e"
+    },
+    {
+      "contractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "sourceRevision": "c72e4a9b521af283b8f5de4a60599a5dad137804",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "id": "sem.severity-definitions.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "environmentId": "local:sem-severity-candidate",
+      "observedAt": "2026-10-23T10:14:28.390738+00:00",
+      "summary": "独立源码审查接受四级原件定义、新任务实际交付、旧risk字节与六事件/业务guard保留、封存task不回填及实际保存/Overall消费者。产品c72父ae65、七文件；受控版次仍未确认。此条为源码接线审查，不是部署或真实业务通过。"
+    },
+    {
+      "contractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "sourceRevision": "c72e4a9b521af283b8f5de4a60599a5dad137804",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "id": "sem.severity-definitions.targeted.test",
+      "kind": "test",
+      "status": "passed",
+      "environmentId": "local:sem-severity-synthetic-unit",
+      "observedAt": "2026-10-23T10:06:30.545748+00:00",
+      "testLevel": "unit",
+      "worktreeHeadAtExecution": "ae65f1b34870f95b2bfe9501448ed1e1845c431d",
+      "executedContractRevision": "05111ed107d0deba9f46ebaa391bf29bcd0d93e304955553997ec013fcd01a35",
+      "executionState": "ae65工作区加本批七个未提交文件；随后正常提交c72，未在clean c72重跑。",
+      "summary": "Jest五个相关套件170项通过（10:06:07.256431–10:06:30.545748Z），Node语义投影2项通过（10:06:19.497351–10:06:19.585812Z）。范围包括四档合成后果、generic严重无importantEvent、缺业务依据拒绝/缺事实未知、旧六事件guard、封存兼容、Native投影及真实Overall consumer；两组不混算为真实SEM或全54场景。当前契约仅追加对应接线记录，执行时契约及工作区来源另列。"
+    },
+    {
+      "contractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "sourceRevision": "c72e4a9b521af283b8f5de4a60599a5dad137804",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall"
+      ],
+      "scenarioIds": [],
+      "id": "sem.severity-definitions.normal-build.test",
+      "kind": "test",
+      "status": "passed",
+      "environmentId": "local:normal-full-build",
+      "observedAt": "2026-10-23T10:09:15.772621+00:00",
+      "testLevel": "integration",
+      "executedContractRevision": "05111ed107d0deba9f46ebaa391bf29bcd0d93e304955553997ec013fcd01a35",
+      "frontendBuildTime": "2026-10-23T10:08:35.773Z",
+      "serverBuildTime": "2026-10-23T10:08:46.654Z",
+      "frontendFingerprintSha256": "730ba143f02c85e615d937564105dbfb0978fc737163c86dbfc8b97535c24d2c",
+      "serverFingerprintSha256": "50643cc651128b516c7041ec0afe4ce0598950d6bc7baa8c165d898a93b6d490",
+      "normalBuildAttempts": 1,
+      "completedNormalBuilds": 1,
+      "summary": "准确clean c72一次正常npm run build，10:08:25.632909–10:09:15.772621Z、exit0/50.140s，四子日志fresh、477/477依赖0失败；双端不可变指纹均c72，前端仅检查编译AST绑定，未执行应用。文档后继不倒填构建来源，此项不声明V12业务验收。"
+    },
+    {
+      "contractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "sourceRevision": "c72e4a9b521af283b8f5de4a60599a5dad137804",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "id": "sem.severity-definitions.deployment",
+      "kind": "deployment",
+      "status": "not_run",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "summary": "本批产品与文档仅在独立本地候选准备；未推送或部署，不改变既有Host发布或Native/c235安装身份。此条为交付状态记录，没有新线上查询。"
+    },
+    {
+      "contractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "sourceRevision": "c72e4a9b521af283b8f5de4a60599a5dad137804",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V12"
+      ],
+      "id": "sem.severity-definitions.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "summary": "未开展本批真实模型/READ/SAVE、SEM正文级验收、Overall新业务运行或正式采用。一般定义已取得；Host受控版次、真实后果/暴露/控制事实仍待核，不由合成用例补造。"
+    },
+    {
+      "id": "sem.records.aily-planned.source_review",
+      "kind": "source_review",
+      "status": "not_run",
+      "contractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "sourceRevision": "c72e4a9b521af283b8f5de4a60599a5dad137804",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "plannedOnly": true,
+      "summary": "当前方案状态记录：本批仅更新SEM方法及记录，新Aily的sourceRevision/consumer等接线仍为null；没有新增源码适配、连接、查询或执行。四层保持not_run，observedAt为null，不将旧成功复制为本轮验收。"
+    },
+    {
+      "id": "sem.records.aily-planned.test",
+      "kind": "test",
+      "status": "not_run",
+      "contractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "sourceRevision": "c72e4a9b521af283b8f5de4a60599a5dad137804",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "plannedOnly": true,
+      "summary": "当前方案状态记录：本批仅更新SEM方法及记录，新Aily的sourceRevision/consumer等接线仍为null；没有新增源码适配、连接、查询或执行。四层保持not_run，observedAt为null，不将旧成功复制为本轮验收。",
+      "testLevel": "e2e"
+    },
+    {
+      "id": "sem.records.aily-planned.deployment",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "sourceRevision": "c72e4a9b521af283b8f5de4a60599a5dad137804",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "plannedOnly": true,
+      "summary": "当前方案状态记录：本批仅更新SEM方法及记录，新Aily的sourceRevision/consumer等接线仍为null；没有新增源码适配、连接、查询或执行。四层保持not_run，observedAt为null，不将旧成功复制为本轮验收。"
+    },
+    {
+      "id": "sem.records.aily-planned.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "aff78219f84ed518276173f71c2f0b53413cbbfc8835de1092e8b662dfd14556",
+      "sourceRevision": "c72e4a9b521af283b8f5de4a60599a5dad137804",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "plannedOnly": true,
+      "summary": "当前方案状态记录：本批仅更新SEM方法及记录，新Aily的sourceRevision/consumer等接线仍为null；没有新增源码适配、连接、查询或执行。四层保持not_run，observedAt为null，不将旧成功复制为本轮验收。"
     }
   ]
 }

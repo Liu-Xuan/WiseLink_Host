@@ -489,3 +489,26 @@ Native最后已证实安装c234；当前安装/cron/inflight尚未完整获准�
 本次正常 `npm run build` 最终于 2026-10-23T08:38:50.595713+00:00–2026-10-23T08:39:33.655043+00:00 exit 0，wrapper 43.066 秒；四子日志均 fresh，477 required/477 copied/0 failed 是包数。server immutable sourceCommit 为产品提交，buildTime 2026-10-23T08:39:08.049Z；client 编译 AST 的不可变常量及 getter 同 SHA，buildTime 2026-10-23T08:38:57.777Z。22 条候选外历史 tsconfig 诊断连同其余非致命提示原样留日志，不压警告。首次沙箱 DNS 在 init 失败；获准联网后第二次在 NFT 检查拒绝树外依赖 symlink；将原已备依赖 APFS 复制成检出内真实目录后，第三次正常全量完成。两次失败分别保留，未改 pipeline 或削弱检查。
 
 只更新 M1 E.8/E.9、本记录、M_INTEGRATION 顶段和六份既有 runtime-monitor 输入/生成文件；原 184 个 evidence 对象逐值保留，新增八条限定的源码、两批原测试适用、本次技术构建、未部署和未运行记录；当前目标下新Aily的源码适配/测试仍显式not_run。M1 目录仍 13/47/54/10，新 Aily binding 仍 planned/null；历史 Aily 失败保留原时间范围。另按本次只读观察，在现有对话方案补充官方连接器、工作身份 HTTP 与 MCP 渠道的能力/限制一段，实际能力仍未连接。生成 HTML 初次核对发现目标源码/契约更新后旧 Aily not_run 显示为历史范围，失败回执保留；补两条当前范围 not_run 并关联当前未部署/未运行记录后，仅重生成改变的输入，同一 JSDOM 筛选与节点/关系下钻检查通过、diagnostics 空，不称浏览器视觉验证。192 条是证据目录条数，不是完成度。M3 继续实际父级投影，不由记录或本地构建造业务状态。旧 16b build/c235 包保持原来源，没有重打包、推送、发布、远端安装/DDL 或真实模型/READ/SAVE。
+
+
+## 2026-10-23 JA-AC 四级严重性方法材料与确定性消费
+
+本批产品为 `c72e4a9b521af283b8f5de4a60599a5dad137804`，父 `ae65f1b34870f95b2bfe9501448ed1e1845c431d`，tree `901a99bef95585aa0f8eac40a5f47449afeff36e`；正常提交钩子和独立审查通过。七文件范围为 `server/modules/canonical-host/jobaid-method-pack.ts`、`jobaid-semantic-content.ts`（仅注释），`test/unit/jobaid-severity-definitions.spec.ts`、`test/unit/canonical-jobaid-problem-continuation.spec.ts`、`matter-jobaid-task.spec.ts`、`overall-native-registry-roundtrip.spec.ts` 和 `test/node/jobaid-semantic-context.test.mjs`。
+
+方法来源为 JA-AC Revision 01（2023-11-27）§3.1，PDF物理第6—7页、印刷第5—6页；四条定义quote已与原件核对。新增独立 `method:severity-definitions` 并进入新任务core交付，旧risk材料和六事件guard保留。一般严重性材料缺口已补；受控Host文档版本尚未绑定，仍为 `VERSION_UNCONFIRMED` / null DVI。真实工程的后果、暴露及控制事实不足继续列为未知，材料取得不代表真实SEM内容验收完成。
+
+| 本批验证 | 实际结果与范围 |
+| --- | --- |
+| `npm test -- --runInBand test/unit/jobaid-severity-definitions.spec.ts test/unit/jobaid-problem-work.spec.ts test/unit/canonical-jobaid-problem-continuation.spec.ts test/unit/matter-jobaid-task.spec.ts test/unit/overall-native-registry-roundtrip.spec.ts` | `2026-10-23T10:06:07.256431+00:00`—`10:06:30.545748+00:00`，5套件/170项通过。四档合成后果保存、generic严重无importantEvent、业务依据拒绝及事实未知、旧六事件限制、封存/快照兼容和实际Overall consumer均在范围内。 |
+| `node --test test/node/jobaid-semantic-context.test.mjs` | `2026-10-23T10:06:19.497351+00:00`—`10:06:19.585812+00:00`，2项通过；普通及有界Native投影保留完整定义、匹配和处置正文。 |
+| 正常提交钩子 | `2026-10-23T10:07:20.027282+00:00`—`10:07:44.040332+00:00`，exit 0，产生产品c72。 |
+| 一次正常 `npm run build` | clean c72，`2026-10-23T10:08:25.632909+00:00`—`10:09:15.772621+00:00`，exit 0、50.140秒；官方init及完整流水线正常，477/477依赖包、0失败，四固定子日志fresh。 |
+
+170项与2项是不同套件范围，均执行于提交前的ae65工作区加本批七文件；正常提交c72保持相同产品字节，不能写作clean c72重跑。未重跑全54场景、PG、Native或publisher。已有node_modules的lockfile与候选相同，使用APFS复制成候选内真实目录，没有新增npm install或修改构建检查。所有本批invocation/result与原始日志仅在本地交接目录保留。
+
+双端编译产物均指向c72：前端buildTime `2026-10-23T10:08:35.773Z`，编译JS SHA256 `730ba143f02c85e615d937564105dbfb0978fc737163c86dbfc8b97535c24d2c`；后端buildTime `2026-10-23T10:08:46.654Z`，不可变JSON SHA256 `50643cc651128b516c7041ec0afe4ce0598950d6bc7baa8c165d898a93b6d490`。前端仅核对编译AST的const/getter绑定，没有执行浏览器应用。文档/监控后继保持该构建来源，不为文字改动再次构建。
+
+M1 E.10与M2的 `research.overall` / P1反映新定义材料、实际consumer及仍缺事实；原192证据逐值保留，历史失败、not-run和原执行身份不改写。新Aily继续保持null接线与四层未执行；对话方案同时更正已集成CHAT提交251941f4及未部署/未真实运行，无WorkItem的独立文档入口尚未接通。M3沿实际父响应，不生成额外状态。本批没有推送、发布、安装、DDL、真实模型/READ/SAVE或正式采用；此前待批交付及c235身份不被此独立候选替换。
+
+
+监控snapshot与HTML均由既有generator生成，exit 0；本批共201条证据（原192逐值保留，SEM新增5条和当前Aily方案not-run 4条），目录仍为13/47/54/10，其他binding及P1以外工作包逐值相同。首次jsdom记录显示检查因夹具未提供ResizeObserver而失败，补常规DOM测试替身后定向检查通过，原失败私有保留；没有修改产品代码。原选择集合保持，`research.overall`测试显示“所选场景部分覆盖”，本批仅声明V12限定用例；新Aily四列分别保持尚未执行、尚未执行、尚未部署、尚未核对真实运行，没有虚构新连接或运行时间。

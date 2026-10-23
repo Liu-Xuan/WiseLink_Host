@@ -768,3 +768,14 @@ OpenClaw 首批交互沿已有获权 Review 的 CHAT/AUTOMATIC 及短轮询；�
 | v1.6 复核修订 | 修正证据缺字段误匹配及接入范围；资源分类不扩成六套控制；补清在途交接、短事务、内容验收与收益衡量；统一成果闭环优先顺序 |
 
 v1.1 的 LCM 支线、v1.2 的未来来源规划、v1.3 的 TDMS PDF 主线全部保留；专项细节下沉后不再与共同规则重复维护。每次修订以成果是否更容易取得、判断是否更准确、等待是否更具体、恢复是否可复用来评价。
+
+
+### E.10 JA-AC 四级严重性定义与实际保存/综合链（2026-10-23）
+
+产品提交 `c72e4a9b521af283b8f5de4a60599a5dad137804`（父 `ae65f1b34870f95b2bfe9501448ed1e1845c431d`）从既有 JA-AC Revision 01（2023-11-27）§3.1、PDF物理第6—7页/印刷第5—6页补入四级严重性定义，使用独立 `method:severity-definitions`。这是一份既有方法原件的材料补充；受控Host版本身份尚未确认，`JOBAID_METHOD_BINDING` 的版本及各源 `VERSION_UNCONFIRMED` / null DVI保留。一般严重性定义已取得，不能继续将它列为未取得；实际对象的后果、暴露和控制事实仍需分别取得。
+
+`JOBAID_CORE_METHOD_REFS → buildJobAidProblemTask / matterJobAidSourceRegistry → deliveredEvidence` 将新条款交付给新INITIAL、OVERALL及REVIEW任务。既有Native普通/有界投影保留定义与上次保存的匹配/处置正文。`assertJobAidSemanticContent → materializeJobAidWork / materializeMatterJobAidCommand → jobAidReadingResult → readStoredOverallEvidence / overallModelEvidenceRegistry → consumeOpenClawOverallSynthesisOutput` 使用同一方法材料和准确保存工作；没有增加规则层、schema或数据库对象。
+
+旧 `method:risk` excerpt及 `classificationDefinitions` 逐字不变，沿用该条款六事件严重性定义时仍须具体importantEvent及业务依据；新通用四档匹配可处理无六事件的严重后果，仍须所交付的实际业务依据和正文方法处置。方法条款不能替代后果事实；缺事实时严重性、可能性、分数及风险等级保持未知。旧保存快照和已封存任务按原材料、原合同恢复，不向旧task回填新core ref。
+
+测试在ae65工作区加本批七文件上实际执行，Jest 5套件/170项、Node投影2项通过，随后正常提交为c72；没有在clean c72重复执行测试。准确clean c72的一次正常完整构建通过，实际时间、双端指纹和文件范围见[FIRST_BATCH本批记录](coordination/WISELINK_FIRST_BATCH_20261022.md)。M1的13节点、47关系、54场景和10规则不变；M2保留原192证据对象并追加本批限定记录，M3继续使用实际父响应。本批尚未部署或开展真实模型/READ/SAVE、SEM正文验收及正式采用，Native身份与c235包没有变化。
