@@ -32,7 +32,9 @@ interface Props {
   overall?: CanonicalOpenClawOverallProjection | null;
   onUpdated?: () => void;
   children?: ReactNode;
-  presentation?: 'default' | 'assessment';
+  presentation?: 'default' | 'assessment' | 'investigation';
+  initialIssueKey?: string | null;
+  onIssueSelect?(issueKey: string): void;
 }
 const completionLabels = {
   IN_PROGRESS: '分析进行中',
@@ -145,6 +147,7 @@ export function JobAidProblemReading({
   overall,
   onContinue,
   presentation = 'default',
+  initialIssueKey, onIssueSelect,
 }: Omit<Props, 'workItemId' | 'children' | 'onUpdated'> & {
   data: JobAidWorkingReadModel;
   onContinue?: () => void;
@@ -152,7 +155,7 @@ export function JobAidProblemReading({
   const [tab, setTab] = useState<'understanding' | 'issues' | 'method'>(
     'issues',
   );
-  const [selectedIssue, setSelectedIssue] = useState<string | null>(null);
+  const [selectedIssue, setSelectedIssue] = useState<string | null>(initialIssueKey ?? null);
   const nodes = useRef(new Map<string, HTMLElement>());
   const current = data.current;
   const allowed = initialAnalysis?.continuationOperations ?? [];
@@ -190,7 +193,7 @@ export function JobAidProblemReading({
     return (
       <section
         className={`wl-jobaid-workspace${
-          presentation === 'assessment' ? ' is-assessment' : ''
+          presentation !== 'default' ? ' is-assessment' : ''
         }`}
       >
         <p>
@@ -219,6 +222,7 @@ export function JobAidProblemReading({
   );
   function locateIssue(issueKey: string): void {
     setSelectedIssue(issueKey);
+    onIssueSelect?.(issueKey);
     nodes.current
       .get(issueKey)
       ?.scrollIntoView({ block: 'start', behavior: 'auto' });
@@ -271,7 +275,7 @@ export function JobAidProblemReading({
     <section
       aria-label="JobAid 问题分析"
       className={`wl-jobaid-workspace${
-        presentation === 'assessment' ? ' is-assessment' : ''
+        presentation !== 'default' ? ' is-assessment' : ''
       }`}
       data-work-revision-ref={current.workRevisionRef}
     >
@@ -311,7 +315,7 @@ export function JobAidProblemReading({
           当前展示已保存的问题分析；尚未读到与本工作版本一致的整体意见。
         </p>
       ) : null}
-      <div className="wl-jobaid-tabs" aria-label="问题分析阅读视图">
+      {presentation !== 'investigation' ? <div className="wl-jobaid-tabs" aria-label="问题分析阅读视图">
         {(
           [
             ['understanding', '当前认识'],
@@ -329,8 +333,8 @@ export function JobAidProblemReading({
             {label}
           </Button>
         ))}
-      </div>
-      {tab === 'understanding' ? (
+      </div> : null}
+      {presentation !== 'investigation' && tab === 'understanding' ? (
         <div className="wl-jobaid-reading">
           <SavedAssessmentReading
             result={reading}
@@ -359,15 +363,17 @@ export function JobAidProblemReading({
           ) : null}
         </div>
       ) : null}
-      {tab === 'issues' ? (
+      {presentation === 'investigation' || tab === 'issues' ? (
         <div
           className={`wl-jobaid-layout${content.issues.length ? ' has-issues' : ''}`}
         >
-          {presentation === 'assessment' ? issueReading : issueIndex}
-          {presentation === 'assessment' ? issueIndex : issueReading}
+          {presentation !== 'default' ? issueReading : issueIndex}
+          {presentation !== 'default' ? issueIndex : issueReading}
         </div>
       ) : null}
-      {tab === 'method' ? (
+      {presentation === 'investigation' || tab === 'method' ? (
+        <details open={presentation !== 'investigation' ? true : undefined}>
+        <summary hidden={presentation !== 'investigation'}>方法与要求</summary>
         <div className="wl-jobaid-reading">
           <h2>方法与原始要求</h2>
           <p>方法包版本：{content.methodBinding.version}</p>
@@ -424,6 +430,7 @@ export function JobAidProblemReading({
             label="本轮实际资料"
           />
         </div>
+        </details>
       ) : null}
     </section>
   );

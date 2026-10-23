@@ -13,6 +13,8 @@ export interface DocumentReadingLinks {
   assessmentNote: string;
   wikiNote: string;
   error: string | null;
+  wikiError?: string | null;
+  wikiLoading?: boolean;
   assessment?: CanonicalLibraryQuicklookResponse;
   knowledge?: EngineeringKnowledgeRead;
 }
@@ -20,9 +22,11 @@ export interface DocumentReadingLinks {
 export const EMPTY_DOCUMENT_READING_LINKS: DocumentReadingLinks = {
   assessmentRoute: null,
   wikiRoute: null,
-  assessmentNote: '暂无同版本已保存评估',
+  assessmentNote: '此版本尚未关联评估工作',
   wikiNote: '暂无同版本已保存工程知识',
   error: null,
+  wikiError: null,
+  wikiLoading: false,
 };
 
 const DOCUMENT_READING_LINK_PAGE_SIZE = 50;
@@ -32,6 +36,7 @@ const DOCUMENT_READING_LINK_MAX_PAGES = 4;
 export async function readDocumentReadingLinks(
   status: DocumentParsingStatus,
   signal: AbortSignal,
+  onAssociation?: (links: DocumentReadingLinks) => void,
 ): Promise<DocumentReadingLinks> {
   const document = await readExactLibraryFamily(status, signal);
   const version = document?.versions.find((item) =>
@@ -45,23 +50,25 @@ export async function readDocumentReadingLinks(
       saved.document.documentVersionId !== status.documentVersionId ||
       saved.document.familyId !== status.familyId)
     throw new Error('评估关联与当前文档版本不一致，请刷新重试。');
-  if (!saved.result) return EMPTY_DOCUMENT_READING_LINKS;
-  const reading = saved.result.readingResult;
+  const reading = saved.result?.readingResult;
   if (reading && (reading.scope.kind !== 'WORK_ITEM' ||
       reading.scope.workItemId !== workItemId ||
       reading.scope.documentVersionId !== status.documentVersionId ||
-      reading.resultRef !== saved.result.sourceResultId || reading.resultRevision !== saved.result.revision))
+      reading.resultRef !== saved.result?.sourceResultId || reading.resultRevision !== saved.result?.revision))
     throw new Error('评估正文与当前文档版本不一致，请刷新重试。');
   const links: DocumentReadingLinks = {
     ...EMPTY_DOCUMENT_READING_LINKS,
     assessment: saved,
     assessmentRoute: `/work-items/${encodeURIComponent(workItemId)}/analysis?${
       new URLSearchParams({ panel: 'assessment', documentVersionId: status.documentVersionId })}`,
-    assessmentNote: '查看同版本已保存综合与评估',
+    assessmentNote: saved.result ? '查看同版本评估工作' : '查看此版本关联的评估工作与运行状态',
   };
+  const canReadWiki: boolean = Boolean(saved.result?.jobAidRoundCompletion && saved.result.readingResult);
+  // The authorized association is useful before a saved result or Wiki exists.
+  onAssociation?.({ ...links, wikiLoading: canReadWiki });
   // Only JobAid quicklook results carry an actual saved work revision. A legacy
   // Overall result id is not a Wiki workRef and must never be repurposed as one.
-  if (!saved.result.jobAidRoundCompletion || !saved.result.readingResult) return links;
+  if (!saved.result?.jobAidRoundCompletion || !saved.result.readingResult) return links;
   const workRef = saved.result.sourceResultId;
   const identity = { subjectKind: 'WORK_ITEM' as const, subjectId: workItemId, workRef };
   try {
@@ -84,9 +91,8 @@ export async function readDocumentReadingLinks(
     if (signal.aborted) throw reason;
     const message = reason instanceof Error ? reason.message : '工程知识读取未完成，请刷新重试。';
     const code = reason && typeof reason === 'object' && 'statusCode' in reason ? Number(reason.statusCode) : null;
-    if (code !== null && [401, 403, 404].includes(code))
-      return { ...EMPTY_DOCUMENT_READING_LINKS, assessmentNote: message, wikiNote: message, error: message };
-    return { ...links, wikiNote: message, error: message };
+    if (code === 401) throw reason;
+    return { ...links, wikiNote: message, wikiError: message };
   }
 }
 

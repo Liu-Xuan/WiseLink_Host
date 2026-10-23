@@ -11,7 +11,6 @@ import RetainedWorkbenchPanel from '@client/src/features/workbench/RetainedWorkb
 import { Button } from '@client/src/components/ui/button';
 import { JobAidIssueArticle } from './JobAidIssueArticle';
 import DocumentSavedEvidenceSource from './DocumentSavedEvidenceSource';
-import DocumentSavedLegacyAssessment from './DocumentSavedLegacyAssessment';
 import type { DocumentReadingLinks } from './document-reading-links';
 import type { DocumentWorkbenchPanel } from './document-workbench-panel';
 
@@ -24,9 +23,6 @@ interface Props {
 
 export default function DocumentSavedWorkPanels(props: Props) {
   return <>
-    <RetainedWorkbenchPanel active={props.active === 'assessment'}>
-      <SavedWorkPanel {...props} kind="assessment" />
-    </RetainedWorkbenchPanel>
     <RetainedWorkbenchPanel active={props.active === 'wiki'}>
       <SavedWorkPanel {...props} kind="wiki" />
     </RetainedWorkbenchPanel>
@@ -40,12 +36,11 @@ function SavedWorkPanel({ kind, links, onRetry, onRejected }: Props & { kind: 'a
   return <section className="document-saved-work-panel" aria-label={`同版本已保存${label}`}>
     <div className="document-saved-work-scroll" inert={Boolean(source)} aria-hidden={source ? true : undefined}>
       <header><h2>{label}</h2><Button size="sm" variant="outline" onClick={onRetry}>重新读取</Button></header>
-      {links.loading ? <p role="status">正在读取同版本保存内容…</p> : read ? <FullSavedWork read={read} kind={kind} onLocateDocument={setSource} />
-        : kind === 'assessment' && links.assessment && !links.assessment.result?.jobAidRoundCompletion
-          ? <DocumentSavedLegacyAssessment saved={links.assessment} onLocateDocument={setSource} onRejected={onRejected} />
-          : links.error ? <p role="alert">{links.error}</p> : <p>{kind === 'assessment' ? links.assessmentNote : links.wikiNote}</p>}
+      {links.loading || links.wikiLoading ? <p role="status">正在读取同版本 Wiki…</p>
+        : read ? <FullSavedWork read={read} kind={kind} onLocateDocument={setSource} />
+          : links.wikiError || links.error ? <p role="alert">{links.wikiError ?? links.error}</p> : <p>{links.wikiNote}</p>}
     </div>
-    {source ? <DocumentSavedEvidenceSource evidence={source} onClose={() => setSource(null)} onRejected={onRejected} /> : null}
+    {source && read ? <DocumentSavedEvidenceSource evidence={source} onClose={() => setSource(null)} onRejected={onRejected} /> : null}
   </section>;
 }
 

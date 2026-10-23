@@ -17,12 +17,15 @@ const mockCatalogue = jest.fn();
 const mockQuicklook = jest.fn();
 const mockKnowledge = jest.fn();
 let mockGeneration = 1;
+let mockAuthenticationRequired = false;
 const mockSessions: Array<() => void> = [];
 jest.mock('@client/src/api/canonical-host', () => ({
   getCanonicalLibraryDocuments: (...args: unknown[]) => mockCatalogue(...args),
   getCanonicalLibraryQuicklook: (...args: unknown[]) => mockQuicklook(...args),
   readEngineeringKnowledgeWork: (...args: unknown[]) => mockKnowledge(...args),
   getCanonicalHostClientSessionGeneration: () => mockGeneration,
+  isCanonicalHostClientSessionAuthenticationRequired: () => mockAuthenticationRequired,
+  requireCanonicalHostClientAuthentication: () => { mockAuthenticationRequired = true; mockGeneration++; mockSessions.forEach(callback => callback()); },
   subscribeCanonicalHostClientSession: (callback: () => void) => {
     mockSessions.push(callback);
     return () => undefined;
@@ -59,7 +62,7 @@ function saved(workItemId = 'WI-OLD', workRef = 'JAWR-OLD', version = 'DV-FAM-1'
 }
 
 beforeEach(() => {
-  jest.resetAllMocks(); mockGeneration = 1; mockSessions.length = 0;
+  jest.resetAllMocks(); mockGeneration = 1; mockAuthenticationRequired = false; mockSessions.length = 0;
   mockCatalogue.mockResolvedValue(libraryDocuments(['FAM']));
   mockQuicklook.mockResolvedValue(saved());
   mockKnowledge.mockResolvedValue(wiki());
@@ -137,13 +140,13 @@ it('rejects a saved assessment body whose exact work revision differs from its a
   expect(mockKnowledge).not.toHaveBeenCalled();
 });
 
-it('keeps unavailable entries disabled when no work or saved result exists', async () => {
+it('disables a missing work association but retains a legitimate work before its first result', async () => {
   const catalogue = libraryDocuments(['FAM']); catalogue.items[0].versions[1].readerWorkItemId = '';
   mockCatalogue.mockResolvedValueOnce(catalogue);
   expect(await readDocumentReadingLinks(status(), new AbortController().signal)).toEqual(EMPTY_DOCUMENT_READING_LINKS);
   expect(mockQuicklook).not.toHaveBeenCalled();
   mockQuicklook.mockResolvedValue({ ...saved(), result: null });
-  expect(await readDocumentReadingLinks(status(), new AbortController().signal)).toEqual(EMPTY_DOCUMENT_READING_LINKS);
+  expect((await readDocumentReadingLinks(status(), new AbortController().signal)).assessment?.document.workItemId).toBe('WI-OLD');
   expect(mockKnowledge).not.toHaveBeenCalled();
 });
 
@@ -160,21 +163,33 @@ it('keeps an existing legacy assessment without fabricating a Wiki work referenc
 it('rejects a Wiki body bound to another document even when its entry identity matches', async () => {
   mockKnowledge.mockResolvedValue(wiki('WI-OLD', 'JAWR-OLD', 'DV-FAM-2'));
   const links = await readDocumentReadingLinks(status(), new AbortController().signal);
-  expect(links.wikiRoute).toBeNull(); expect(links.error).toContain('与当前文档版本不一致');
+  expect(links.wikiRoute).toBeNull(); expect(links.wikiError).toContain('与当前文档版本不一致');
 });
 
-it.each([401, 403, 404])('clears both related entries after terminal saved-work rejection %i', async (statusCode) => {
-  mockKnowledge.mockRejectedValue(Object.assign(new Error('已保存工作不可访问'), { statusCode }));
+it.each([403, 404])('retains the association after independent Wiki rejection %i', async (statusCode) => {
+  mockKnowledge.mockRejectedValue(Object.assign(new Error('Wiki不可访问'), { statusCode }));
   const links = await readDocumentReadingLinks(status(), new AbortController().signal);
-  expect(links.assessmentRoute).toBeNull(); expect(links.wikiRoute).toBeNull();
-  expect(links.error).toBe('已保存工作不可访问');
+  expect(links.assessment?.document.workItemId).toBe('WI-OLD'); expect(links.wikiRoute).toBeNull();
+  expect(links.wikiError).toBe('Wiki不可访问'); expect(links.error).toBeNull();
+});
+it('propagates Wiki401 for global session cleanup', async () => {
+  mockKnowledge.mockRejectedValue(Object.assign(new Error('身份失效'), { statusCode: 401 }));
+  await expect(readDocumentReadingLinks(status(), new AbortController().signal)).rejects.toThrow('身份失效');
+});
+it('publishes the verified association before a pending Wiki read', async () => {
+  const association = jest.fn(); let finish!: (value: ReturnType<typeof wiki>) => void;
+  mockKnowledge.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const pending = readDocumentReadingLinks(status(), new AbortController().signal, association);
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  expect(association).toHaveBeenCalledWith(expect.objectContaining({ assessment: expect.any(Object), wikiLoading: true }));
+  finish(wiki()); await pending;
 });
 
 it('does not hide an independent assessment when only the Wiki read transiently fails', async () => {
   mockKnowledge.mockRejectedValue(new Error('工程知识读取超时'));
   const links = await readDocumentReadingLinks(status(), new AbortController().signal);
   expect(links.assessmentRoute).toContain('WI-OLD'); expect(links.wikiRoute).toBeNull();
-  expect(links.error).toBe('工程知识读取超时');
+  expect(links.wikiError).toBe('工程知识读取超时');
 });
 
 async function withHook(test: (container: HTMLElement, render: (value: DocumentParsingStatus) => Promise<void>) => Promise<void>) {

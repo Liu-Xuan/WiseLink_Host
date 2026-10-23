@@ -7,9 +7,11 @@ import type { DocumentTranslationReadingResponse } from '@shared/document-transl
 import LocalMineruImport from './LocalMineruImport';
 import { SemanticBilingualReader } from './SemanticBilingualReader';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '@client/src/components/ui/button';
-import { readDocumentTranslationReading, readDocumentParsingStatus, readParsedDocument, startDocumentParsing, subscribeCanonicalHostClientSession } from '@client/src/api/canonical-host';
+import { getCanonicalHostClientSessionGeneration, isCanonicalHostClientSessionAuthenticationRequired,
+  readDocumentTranslationReading, readDocumentParsingStatus, readParsedDocument, startDocumentParsing,
+  subscribeCanonicalHostClientSession } from '@client/src/api/canonical-host';
 import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
 import type { MineruReaderSource } from '@shared/mineru-reading.interface';
 import { MineruMarkdownReader } from './MineruMarkdownReader';
@@ -24,11 +26,15 @@ import { DocumentReadingIdentity, DocumentReadingMore, DocumentReadingSavedLinks
 import { useDocumentReadingLinks } from './useDocumentReadingLinks';
 import DocumentSavedWorkPanels from './DocumentSavedWorkPanels';
 import RetainedWorkbenchPanel from '@client/src/features/workbench/RetainedWorkbenchPanel';
-import { documentWorkbenchPanelRoute, readDocumentWorkbenchPanel } from './document-workbench-panel';
+import { documentAssessmentExactSourceRoute, documentAssessmentReturnParams, documentAssessmentReturnTarget,
+  documentWorkbenchPanelRoute, readDocumentWorkbenchPanel } from './document-workbench-panel';
+import DocumentAssessmentWorkspace, { type AssessmentSourceSelection } from './DocumentAssessmentWorkspace';
+import { writeReviewDraft } from '@client/src/features/review/review-draft-store';
 
 export default function DocumentVersionReadingPage() {
   const { documentVersionId = '' } = useParams();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedRun = searchParams.get('parseRunId') || null;
   const requestedSource = searchParams.get('sourceRef') || null;
@@ -44,7 +50,7 @@ export default function DocumentVersionReadingPage() {
   const workbenchPanel = readDocumentWorkbenchPanel(searchParams, pinnedWiki ? 'interpretation' : 'reader');
   const unboundEvidence = searchParams.getAll('unboundEvidence').length === 1 &&
     searchParams.get('unboundEvidence') === '1';
-  const returnTarget = readingReturnTarget(
+  const returnTarget = documentAssessmentReturnTarget(searchParams, documentVersionId) ?? readingReturnTarget(
     searchParams,
     documentVersionId,
     requestedRun,
@@ -57,6 +63,12 @@ export default function DocumentVersionReadingPage() {
   const [reading, setReading] = useState<DocumentParsedReading | null>(null);
   const [source, setSource] = useState<MineruReaderSource | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sourceNavigationError, setSourceNavigationError] = useState<string | null>(null);
+  const [manualSourceVersion, setManualSourceVersion] = useState<string | null>(null);
+  const pageRef = useRef<HTMLElement>(null);
+  const fullscreenTarget = useCallback(() => pageRef.current, []);
+  const assessmentDraftRef = useRef<string | null>(null);
+  const businessPanelsRef = useRef<HTMLDivElement | null>(null);
   const [translation, setTranslation] = useState<DocumentTranslationReadingResponse | null>(null);
   const [translationObservedAt, setTranslationObservedAt] = useState<string | null>(null);
   const [translationRefreshing, setTranslationRefreshing] = useState(false);
@@ -103,6 +115,9 @@ export default function DocumentVersionReadingPage() {
   identity.current = readingIdentity;
 
   const rejectCurrentAccess = useCallback(() => {
+    if (assessmentDraftRef.current)
+      writeReviewDraft(assessmentDraftRef.current, '', getCanonicalHostClientSessionGeneration());
+    setSourceNavigationError(null); setManualSourceVersion(null);
     rejectedRef.current = true; epoch.current++; bodyControllerRef.current?.abort();
     request.current = null; currentSettingsRequest.current = null; parseInFlight.current = false;
     setImportReply(null); setParseError(null); setSending(false);
@@ -112,7 +127,8 @@ export default function DocumentVersionReadingPage() {
 
   useEffect(() => {
     epoch.current++;
-    setStatus(null); setReading(null); setSource(null); setError(null); setSending(false);
+    setStatus(previous => previous?.documentVersionId === documentVersionId ? previous : null);
+    setReading(null); setSource(null); setError(null); setSourceNavigationError(null); setManualSourceVersion(null); setSending(false);
     parseInFlight.current = false; setImportReply(null); setParseError(null);
     setTranslation(null); setTranslationPage(null); setTranslationUnitId(null); setTranslationSourceContext(requestedSource); setTranslationError(null); setView('dual');
     setTranslationLocationRequest(0);
@@ -120,7 +136,7 @@ export default function DocumentVersionReadingPage() {
     loaded.current = ''; request.current = null; currentSettingsRequest.current = null;
     return subscribeCanonicalHostClientSession(() => {
       epoch.current++;
-      rejectedRef.current = false;
+      rejectedRef.current = false; setSourceNavigationError(null); setManualSourceVersion(null);
       setStatus(null); setReading(null); setSource(null); setTranslation(null); setTranslationPage(null); setTranslationUnitId(null); setTranslationSourceContext(requestedSource); setTranslationError(null);
       setTranslationObservedAt(null); setTranslationLocateRevision(null);
       loaded.current = ''; request.current = null; currentSettingsRequest.current = null;
@@ -130,6 +146,7 @@ export default function DocumentVersionReadingPage() {
 
   useEffect(() => { if (requestedRun) clearTimeout(bodyPoll.current); }, [requestedRun]);
   useEffect(() => {
+    if (isCanonicalHostClientSessionAuthenticationRequired()) return;
     const controller = new AbortController();
     bodyControllerRef.current = controller;
     if (refresh > 0) loaded.current = '';
@@ -202,6 +219,8 @@ export default function DocumentVersionReadingPage() {
   const savedLinks = useDocumentReadingLinks(currentStatus, refresh, JSON.stringify([
     documentVersionId, requestedRun ?? currentStatus?.publishedRun?.parseRunId,
   ]));
+  assessmentDraftRef.current = savedLinks.assessment
+    ? `document-assessment:${savedLinks.sessionGeneration}:${documentVersionId}:${savedLinks.assessment.document.workItemId}` : null;
   const currentReading = readingNavigation === readingIdentity && reading?.documentVersionId === documentVersionId && (!requestedRun || reading.parseRunId === requestedRun) ? reading : null;
   const currentTranslation = translation?.documentVersionId === documentVersionId && translation.parseRunId === currentReading?.parseRunId ? translation : null;
   const needsTranslation: boolean = view === 'bilingual' || view === 'translation';
@@ -209,7 +228,7 @@ export default function DocumentVersionReadingPage() {
     const parseRunId = currentReading?.parseRunId;
     // Chinese loads on demand only: the default dual mode never requests translation.
     // Both Chinese layouts share this reading and its in-flight request/poll deadline.
-    if (!parseRunId || !currentReading?.original || !needsTranslation) { setTranslation(null); return; }
+    if (!parseRunId || !currentReading?.original || !needsTranslation || isCanonicalHostClientSessionAuthenticationRequired()) { setTranslation(null); return; }
     setTranslationPage(null); setTranslationError(null);
     let unstartedChecks = 0;
     const controller = new AbortController();
@@ -381,10 +400,54 @@ export default function DocumentVersionReadingPage() {
       wiki: documentWorkbenchPanelRoute(searchParams, 'wiki'),
     },
   }} />;
-  const savedPanels = <><DocumentSavedWorkPanels key={JSON.stringify([savedLinks.scopeIdentity,
+  function openAssessmentSource(evidence: AssessmentSourceSelection): void {
+    setManualSourceVersion(null);
+    try {
+      const exact: string | null = documentAssessmentExactSourceRoute(evidence);
+      if (!exact && !evidence.workItemId) {
+        setSourceNavigationError('这条保存依据未登记解析位置，不能定位保存时的原文。可手动核对该文档版本原件。');
+        setManualSourceVersion(evidence.documentVersionId); return;
+      }
+      const route: string = exact ?? `/work-items/${encodeURIComponent(evidence.workItemId!)}/analysis?${new URLSearchParams({
+        panel: 'reader', readerMode: 'structured', sourceRef: evidence.sourceRefId, documentVersionId: evidence.documentVersionId,
+      })}`;
+      const at: number = route.indexOf('?');
+      const params: URLSearchParams = new URLSearchParams(route.slice(at + 1));
+      const returns: URLSearchParams = documentAssessmentReturnParams(documentVersionId, searchParams,
+        { documentVersionId: evidence.documentVersionId }, businessPanelsRef.current?.querySelector<HTMLElement>('.document-assessment-content > .wl-retained-panel:not([hidden])')?.scrollTop ?? 0);
+      returns.forEach((value, key) => params.set(key, value));
+      setSourceNavigationError(null);
+      navigate(`${route.slice(0, at)}?${params}`);
+    } catch (reason: unknown) {
+      setSourceNavigationError(reason instanceof Error ? reason.message : '原文定位未能核定。');
+    }
+  }
+  const openAssessmentReader = (): void => {
+    const next: URLSearchParams = new URLSearchParams(searchParams); next.set('panel', 'reader'); setSearchParams(next);
+  };
+  const savedPanels = <>
+    <RetainedWorkbenchPanel active={workbenchPanel.panel === 'assessment'}>
+      {savedLinks.assessment ? <DocumentAssessmentWorkspace
+        key={JSON.stringify([savedLinks.sessionGeneration, documentVersionId, savedLinks.assessment.document.workItemId])}
+        association={savedLinks.assessment} documentVersionId={documentVersionId} sessionGeneration={savedLinks.sessionGeneration}
+        associationRefreshing={savedLinks.loading} wikiError={savedLinks.wikiError} onRejected={message => { setSourceNavigationError(null); setManualSourceVersion(null); savedLinks.rejectSavedWork(message); }}
+        onLocateDocument={openAssessmentSource} onOpenReader={openAssessmentReader} onOpenRelatedWork={workItemId => {
+          try {
+          const params: URLSearchParams = new URLSearchParams({ panel: 'reader', readerMode: 'structured' });
+          documentAssessmentReturnParams(documentVersionId, searchParams, { workItemId }, businessPanelsRef.current?.querySelector<HTMLElement>('.document-assessment-content > .wl-retained-panel:not([hidden])')?.scrollTop ?? 0)
+            .forEach((value, key) => params.set(key, value));
+          navigate(`/work-items/${encodeURIComponent(workItemId)}/analysis?${params}`);
+          } catch (reason: unknown) { setSourceNavigationError(reason instanceof Error ? reason.message : '关联来源返回未核定。'); }
+        }} /> : <section className="document-saved-work-panel" aria-label="文档版本评估工作区">
+          {savedLinks.loading ? <p role="status">正在核对本版本评估关联…</p>
+            : savedLinks.error ? <p role="alert">{savedLinks.error}</p> : <p>{savedLinks.assessmentNote}</p>}
+          <Button size="sm" variant="outline" onClick={savedLinks.refreshSavedWork}>重新读取</Button>
+        </section>}
+    </RetainedWorkbenchPanel>
+    <DocumentSavedWorkPanels key={JSON.stringify([savedLinks.scopeIdentity,
     savedLinks.assessment?.result?.sourceResultId, savedLinks.assessment?.result?.revision])}
     active={workbenchPanel.panel} links={savedLinks} onRetry={savedLinks.refreshSavedWork}
-    onRejected={savedLinks.rejectSavedWork} />
+    onRejected={savedLinks.rejectWiki} />
     <RetainedWorkbenchPanel key={JSON.stringify([readingIdentity, wikiSemantic, wikiRevision, wikiRunRef,
       currentReading?.original?.binding])} active={workbenchPanel.panel === 'interpretation'}>
       <section className="document-saved-work-panel" aria-label="同版本文档解读">
@@ -449,6 +512,8 @@ export default function DocumentVersionReadingPage() {
   const toolbarNotices = <>
     {workbenchPanel.error ? <p role="alert">{workbenchPanel.error}</p> : null}
     {error ? <p role="alert">{error}</p> : null}
+    {sourceNavigationError ? <p role="alert">{sourceNavigationError}{manualSourceVersion ? <Link
+      to={`/document-versions/${encodeURIComponent(manualSourceVersion)}`}>手动核对该版本原件（未登记解析位置）</Link> : null}</p> : null}
     {currentStatus && parseError ? <p role="alert">{parseError}</p> : null}
     {savedLinks.error ? <p className="document-reading-link-error" role="alert">{savedLinks.error}
       {' '}<Button size="sm" variant="ghost" onClick={() => setRefresh(value => value + 1)}>重试</Button></p> : null}
@@ -459,7 +524,7 @@ export default function DocumentVersionReadingPage() {
     </aside> : null}
   </>;
 
-  return <main className={`document-version-reading document-version-reading-compact${currentReading?.original ? ' is-source-workspace' : ''}`}>
+  return <main ref={pageRef} className={`document-version-reading document-version-reading-compact${currentReading?.original ? ' is-source-workspace' : ''}${workbenchPanel.panel !== 'reader' ? ' is-business-workspace' : ''}`}>
     {!currentReading?.original ? <>
       <header className="document-reading-standalone-toolbar">
         {toolbarIdentity}{toolbarLinks}
@@ -479,6 +544,7 @@ export default function DocumentVersionReadingPage() {
       {currentReading.original ? <>
         <DocumentSourceReadingWorkspace
           key={`${currentReading.documentVersionId}:${currentReading.parseRunId}`}
+          fullscreenTarget={fullscreenTarget}
           original={currentReading.original}
           documentVersionId={documentVersionId}
           mode={view}
@@ -487,7 +553,7 @@ export default function DocumentVersionReadingPage() {
           returnLabel={returnTarget?.label ?? '返回原处'}
           title={currentStatus ? `${documentIdentity.documentNumber} · ${documentIdentity.documentTitle}` : '文档阅读'}
           toolbar={{ identity: toolbarIdentity, links: toolbarLinks, more: toolbarMore, notices: toolbarNotices }}
-          activePanel={workbenchPanel.panel} savedPanels={savedPanels}
+          activePanel={workbenchPanel.panel}
           initialPage={initialLocationPage}
           initialUnitId={initialLocationUnitId}
           initialLocationRequest={translationLocationRequest}
@@ -528,7 +594,7 @@ export default function DocumentVersionReadingPage() {
         : currentStatus.publishedRun ? '正在读取已发布的解析内容…'
           : '尚无已发布的解析内容。可以先查看原件。'
         : '正在读取文档状态…'}</p> : null}
-    {!currentReading?.original && workbenchPanel.panel !== 'reader' ? savedPanels : null}
+    <div className="document-reading-business-panels" ref={businessPanelsRef} hidden={workbenchPanel.panel === 'reader'}>{savedPanels}</div>
   </main>;
 }
 

@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getCanonicalHostClientSessionGeneration,
+  isCanonicalHostClientSessionAuthenticationRequired,
+  requireCanonicalHostClientAuthentication,
   subscribeCanonicalHostClientSession,
 } from '@client/src/api/canonical-host';
 import type { DocumentParsingStatus } from '@shared/document-parsing.interface';
@@ -20,44 +22,75 @@ export function useDocumentReadingLinks(status: DocumentParsingStatus | null, re
   const [session, setSession] = useState(getCanonicalHostClientSessionGeneration);
   const [retry, setRetry] = useState(0);
   const [snapshot, setSnapshot] = useState<LinksSnapshot | null>(null);
+  const [loadingIdentity, setLoadingIdentity] = useState<string | null>(null);
+  const epoch = useRef(0);
+  const controllerRef = useRef<AbortController | null>(null);
   const identity: string = JSON.stringify([
     status?.documentVersionId, status?.familyId, status?.documentCode,
-    status?.normalizedFamily, readingScope, session, refresh, retry,
+    status?.normalizedFamily, session,
   ]);
   const refreshSavedWork = useCallback(() => {
-    setSnapshot(null); setRetry(value => value + 1);
+    setRetry(value => value + 1);
   }, []);
   useEffect(() => {
     window.addEventListener('focus', refreshSavedWork);
     return () => window.removeEventListener('focus', refreshSavedWork);
   }, [refreshSavedWork]);
   useEffect(() => subscribeCanonicalHostClientSession(() => {
+    epoch.current++; controllerRef.current?.abort();
     setSnapshot(null);
+    setLoadingIdentity(null);
     setSession(getCanonicalHostClientSessionGeneration());
   }), []);
   useEffect(() => {
-    setSnapshot(null);
-    if (!status) return;
+    if (!status || isCanonicalHostClientSessionAuthenticationRequired()) return;
     const controller: AbortController = new AbortController();
+    controllerRef.current = controller;
+    const readingEpoch: number = ++epoch.current;
+    setLoadingIdentity(identity);
     const generation: number = getCanonicalHostClientSessionGeneration();
     const current = (): boolean => !controller.signal.aborted &&
+      readingEpoch === epoch.current &&
       generation === getCanonicalHostClientSessionGeneration();
-    void readDocumentReadingLinks(status, controller.signal).then((links: DocumentReadingLinks) => {
-      if (current()) setSnapshot({ identity, links });
+    const receive = (links: DocumentReadingLinks): void => {
+      if (!current()) return;
+      setSnapshot({ identity, links });
+      setLoadingIdentity(null);
+    };
+    void readDocumentReadingLinks(status, controller.signal, receive).then((links: DocumentReadingLinks) => {
+      receive(links);
     }).catch((reason: unknown) => {
       if (!current()) return;
+      const statusCode: number | null = reason && typeof reason === 'object' && 'statusCode' in reason
+        ? Number(reason.statusCode) : null;
+      if (statusCode === 401) {
+        requireCanonicalHostClientAuthentication(generation);
+        return;
+      }
       const error: string = reason instanceof Error ? reason.message : '评估关联读取未完成，请刷新重试。';
+      setLoadingIdentity(null);
       setSnapshot({ identity, links: {
         ...EMPTY_DOCUMENT_READING_LINKS, assessmentNote: error, wikiNote: error, error,
       } });
     });
-    return () => controller.abort();
-  }, [identity]);
-  const links = snapshot?.identity === identity && session === getCanonicalHostClientSessionGeneration()
+    return () => { controller.abort(); };
+  }, [identity, readingScope, refresh, retry]);
+  const links = status && !isCanonicalHostClientSessionAuthenticationRequired() &&
+    snapshot?.identity === identity && session === getCanonicalHostClientSessionGeneration()
     ? snapshot.links : EMPTY_DOCUMENT_READING_LINKS;
-  const rejectSavedWork = useCallback((error: string): void => setSnapshot({ identity, links: {
-    ...EMPTY_DOCUMENT_READING_LINKS, assessmentNote: error, wikiNote: error, error,
-  } }), [identity]);
-  return { ...links, loading: Boolean(status && snapshot?.identity !== identity),
-    scopeIdentity: identity, refreshSavedWork, rejectSavedWork };
+  const rejectSavedWork = useCallback((error: string): void => {
+    epoch.current++; controllerRef.current?.abort(); setLoadingIdentity(null);
+    setSnapshot({ identity, links: {
+      ...EMPTY_DOCUMENT_READING_LINKS, assessmentNote: error, wikiNote: error, error,
+    } });
+  }, [identity]);
+  const rejectWiki = useCallback((error: string): void => {
+    epoch.current++; controllerRef.current?.abort(); setLoadingIdentity(null);
+    setSnapshot(previous => previous?.identity === identity ? { identity, links: {
+      ...previous.links, knowledge: undefined, wikiRoute: null, wikiLoading: false, wikiError: error, wikiNote: error,
+    } } : previous);
+  }, [identity]);
+  return { ...links, loading: Boolean(status && (snapshot?.identity !== identity || loadingIdentity === identity)),
+    scopeIdentity: JSON.stringify([session, status?.documentVersionId]), sessionGeneration: session,
+    refreshSavedWork, rejectSavedWork, rejectWiki };
 }

@@ -38,6 +38,7 @@ interface Props {
   renderPdfPreview?: (page: number) => ReactNode;
   activePanel?: DocumentWorkbenchPanel;
   savedPanels?: ReactNode;
+  fullscreenTarget?: () => HTMLElement | null;
   /** Standalone document reading shares its identity/actions with this toolbar. */
   toolbar?: {
     identity: ReactNode;
@@ -69,7 +70,7 @@ export function DocumentSourceReadingWorkspace({
   renderPdfPreview,
   toolbar,
   activePanel = 'reader',
-  savedPanels,
+  savedPanels, fullscreenTarget,
 }: Props) {
   const workspaceActive: boolean = useWorkbenchPanelActive();
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -115,10 +116,11 @@ export function DocumentSourceReadingWorkspace({
   }, [initialUnitId, initialLocationRequest, mode, activeUnitId]);
 
   useEffect(() => {
-    const update = () => setFullscreen(document.fullscreenElement === workspaceRef.current);
+    const update = () => setFullscreen(document.fullscreenElement === (fullscreenTarget?.() ?? workspaceRef.current));
+    update();
     document.addEventListener('fullscreenchange', update);
     return () => document.removeEventListener('fullscreenchange', update);
-  }, []);
+  }, [fullscreenTarget]);
 
   function scrollToUnit(unitId: string, align: 'start' | 'center'): void {
     const container: HTMLDivElement | null = textScrollRef.current;
@@ -172,8 +174,9 @@ export function DocumentSourceReadingWorkspace({
   async function toggleFullscreen(): Promise<void> {
     setFullscreenMessage(null);
     try {
+      const target: HTMLElement | null = fullscreenTarget?.() ?? workspaceRef.current;
       if (document.fullscreenElement) await document.exitFullscreen();
-      else if (workspaceRef.current?.requestFullscreen) await workspaceRef.current.requestFullscreen();
+      else if (target?.requestFullscreen) await target.requestFullscreen();
       else setFullscreenMessage('当前浏览器不支持全屏，可继续在当前页面阅读。');
     } catch (reason: unknown) {
       setFullscreenMessage(reason instanceof Error ? `全屏未开启：${reason.message}` : '全屏未开启，可继续在当前页面阅读。');
@@ -218,7 +221,7 @@ export function DocumentSourceReadingWorkspace({
   </div>;
 
   return (
-    <div className={`source-reader-workspace${toolbar ? ' has-compact-toolbar' : ''}${tocOpen ? '' : ' no-toc'}`}
+    <div className={`source-reader-workspace${toolbar ? ' has-compact-toolbar' : ''}${tocOpen ? '' : ' no-toc'}${activePanel !== 'reader' && !savedPanels ? ' is-navigation-only' : ''}`}
       ref={workspaceRef}>
       <header className="source-reader-toolbar">
         {toolbar?.identity ?? <div className="source-reader-identity"><strong>{title}</strong><span>阅读版本 {original.binding.parseRevision}</span></div>}
@@ -322,9 +325,9 @@ export function DocumentSourceReadingWorkspace({
         </div>
       </section>
       </div>
-      <div className="source-reader-saved-panels" hidden={activePanel === 'reader'}>
+      {savedPanels ? <div className="source-reader-saved-panels" hidden={activePanel === 'reader'}>
         {savedPanels}
-      </div>
+      </div> : null}
     </div>
   );
 }

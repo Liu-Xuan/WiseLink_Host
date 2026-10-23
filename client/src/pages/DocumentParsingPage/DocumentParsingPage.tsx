@@ -1,4 +1,6 @@
 import { useJobAidWorkingRead } from './useJobAidWorkingRead';
+import { useDocumentAssessmentActions } from './useDocumentAssessmentActions';
+import { documentAssessmentReturnTarget } from './document-workbench-panel';
 import WorkItemRuntimeDiagnostic from './runtime-monitor/WorkItemRuntimeDiagnostic';
 import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import JobAidProblemWorkspace from './JobAidProblemWorkspace';
@@ -125,24 +127,6 @@ function formatBytes(bytes: number): string {
   return `${bytes.toLocaleString('zh-CN')} 字节`;
 }
 
-function actionErrorLabel(reason: unknown): string {
-  const message =
-    reason instanceof Error ? reason.message : String(reason ?? '');
-  if (/CRITERION_AND_COMMENT_REQUIRED/iu.test(message)) {
-    return '请选择评估项并填写说明。';
-  }
-  if (/FORBIDDEN|UNAUTHORIZED|ACCESS_DENIED|401|403/iu.test(message)) {
-    return '当前账户没有执行此操作的权限。';
-  }
-  if (/NOT_FOUND|404/iu.test(message)) {
-    return '当前事项或评估内容已不可用，请返回资料库重新进入。';
-  }
-  if (/REVISION|CONFLICT|STALE|409|VERSION/iu.test(message)) {
-    return '当前事项已产生新版本，请刷新后基于最新结果继续。';
-  }
-  return '操作未完成，请刷新当前事项后重试。';
-}
-
 const REVIEW_DECISION_LABELS: Record<CanonicalEngineerReviewDecision, string> =
   {
     confirmed_pass: '确认通过',
@@ -254,23 +238,11 @@ export default function DocumentParsingPage() {
     workItemId: string;
     sessionGeneration: number;
   } | null>(null);
-  const [assessmentAction, setAssessmentAction] = useState<
-    'CONFIRM_OVERALL_FOR_AEO' | 'GENERATE_AEO_CANDIDATE' | null
-  >(null);
-  const [assessmentError, setAssessmentError] = useState<string | null>(null);
-  const [reviewDecision, setReviewDecision] =
-    useState<CanonicalEngineerReviewDecision>('deferred');
-  const [reviewComment, setReviewComment] = useState('');
-  const [reviewSubmitting, setReviewSubmitting] = useState(false);
-  /** 保存前影响预览开关（§4.3 先显示影响预览，再写入） */
-  const [reviewPreviewOpen, setReviewPreviewOpen] = useState(false);
   const [continuousReviewReceipt, setContinuousReviewReceipt] = useState<
     ConfirmReviewActionDraftResponse['reviewAction'] | null
   >(null);
   const [reviewOverallRefreshGeneration, setReviewOverallRefreshGeneration] =
     useState(0);
-  /** 版本冲突反馈（§4.3 冲突不自动覆盖，提供刷新） */
-  const [conflictMessage, setConflictMessage] = useState<string | null>(null);
   const [treeMode, setTreeMode] = useState<NavigatorMode>('document');
   const [treeSelection, setTreeSelection] = useState<string | undefined>(
     undefined,
@@ -290,6 +262,17 @@ export default function DocumentParsingPage() {
       ? pageData
       : null;
   const workingRead = useJobAidWorkingRead(workItemId, data, Boolean(data));
+  const actionCriterion: string = resolveAssessmentRuleSelection(
+    data?.engineerReviewContext?.items, searchParams.get('criterion')?.trim(),
+  ) ?? '';
+  const { assessmentAction, assessmentError, setAssessmentError,
+    reviewDecision, setReviewDecision, reviewComment, setReviewComment,
+    reviewSubmitting, reviewPreviewOpen, setReviewPreviewOpen,
+    conflictMessage, setConflictMessage, recordEngineerReview,
+    confirmOverallForAeo, generateAeoCandidate } = useDocumentAssessmentActions({
+      page: data, sessionGeneration, refreshing: loading,
+      selectedReviewCriterion: actionCriterion, onRefresh: () => load(activeQuery),
+    });
   const latestLoadRef = useRef({
     workItemId,
     sessionGeneration,
@@ -715,71 +698,6 @@ export default function DocumentParsingPage() {
     }
   }
 
-  async function confirmOverallForAeo(): Promise<void> {
-    const overall = data.workItem.integratedAssessment?.overallSynthesis;
-    if (loading || assessmentAction !== null || !overall) return;
-    setAssessmentAction('CONFIRM_OVERALL_FOR_AEO');
-    setAssessmentError(null);
-    try {
-      await canonicalHost.confirmIntegratedOverallForAeo(workItemId, {
-        expectedRevision: data.workItem.revision,
-        expectedOverallRevision: overall.revision,
-        expectedOverallArtifactRef: overall.artifact.ref,
-      });
-      await load(activeQuery);
-    } catch (cause) {
-      setAssessmentError(actionErrorLabel(cause));
-    } finally {
-      setAssessmentAction(null);
-    }
-  }
-
-  async function generateAeoCandidate(): Promise<void> {
-    if (loading) return;
-    setAssessmentAction('GENERATE_AEO_CANDIDATE');
-    setAssessmentError(null);
-    try {
-      await canonicalHost.generateAeoCandidate(workItemId);
-      await load(activeQuery);
-    } catch (cause) {
-      setAssessmentError(actionErrorLabel(cause));
-    } finally {
-      setAssessmentAction(null);
-    }
-  }
-
-  async function recordEngineerReview(): Promise<void> {
-    if (loading) return;
-    if (!selectedReviewCriterion || !reviewComment.trim()) {
-      setAssessmentError('请选择评估项并填写说明。');
-      return;
-    }
-    setReviewSubmitting(true);
-    setAssessmentError(null);
-    setConflictMessage(null);
-    try {
-      await canonicalHost.recordEngineerReview(workItemId, {
-        expectedRevision: data.workItem.revision,
-        criterionId: selectedReviewCriterion,
-        decision: reviewDecision,
-        comment: reviewComment.trim(),
-      });
-      setReviewComment('');
-      setReviewPreviewOpen(false);
-      await load(activeQuery);
-    } catch (cause) {
-      const message =
-        cause instanceof Error ? cause.message : 'ENGINEER_REVIEW_FAILED';
-      if (/revision|conflict|409|version/i.test(message)) {
-        setConflictMessage(message);
-      } else {
-        setAssessmentError(actionErrorLabel(cause));
-      }
-    } finally {
-      setReviewSubmitting(false);
-    }
-  }
-
   function handleTabChange(key: string): void {
     const node = getWorkbenchNode(key);
     updateDeepLink({
@@ -932,7 +850,9 @@ export default function DocumentParsingPage() {
         contextLabel={`${pkg?.documentIdentity?.documentCode ?? fileLabel} · ${WORKBENCH_TABS.find((tab) => tab.key === activeNode)?.label ?? '综合评估'}`}
         navigator={
           <>
-            <ReadingReturnLink />
+            {documentAssessmentReturnTarget(searchParams, data.workItem.source.documentVersionId, workItemId)
+              ? <Link to={documentAssessmentReturnTarget(searchParams, data.workItem.source.documentVersionId, workItemId)!.route}>返回文档评估</Link>
+              : <ReadingReturnLink />}
             <NavigatorTree
               nodes={data.libraryIndex.nodes}
               mode={treeMode}

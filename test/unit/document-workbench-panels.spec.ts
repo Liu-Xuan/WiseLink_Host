@@ -9,7 +9,7 @@ import { summaryKnowledge } from './fixtures/derived-summary';
 import { jobAidReadingFixture } from './semantic-reading-ui.fixtures';
 import { savedDocumentReadingFixture } from './fixtures/saved-document-reading';
 import { buildJobAidOverallProjection } from '../../server/modules/canonical-host/jobaid-overall-projection';
-import { documentWorkbenchPanelRoute, readDocumentWorkbenchPanel } from '../../client/src/pages/DocumentParsingPage/document-workbench-panel';
+import { documentAssessmentReturnParams, documentAssessmentReturnTarget, documentWorkbenchPanelRoute, readDocumentWorkbenchPanel } from '../../client/src/pages/DocumentParsingPage/document-workbench-panel';
 
 const mockStatus = jest.fn(), mockReading = jest.fn(), mockCatalogue = jest.fn();
 const mockQuicklook = jest.fn(), mockKnowledge = jest.fn(), mockLegacy = jest.fn();
@@ -35,7 +35,10 @@ jest.mock('@client/src/api/canonical-host', () => {
     getDocumentParsingPage: (...args: unknown[]) => mockLegacy(...args),
     startDocumentParsing: (...args: unknown[]) => mockStart(...args),
     readDocumentTranslationReading: (...args: unknown[]) => mockTranslation(...args),
+    prepareDocumentTranslationContinuation: async () => ({ available: false }),
     getCanonicalHostClientSessionGeneration: () => generation,
+    isCanonicalHostClientSessionAuthenticationRequired: () => false,
+    requireCanonicalHostClientAuthentication: () => { generation++; sessions.forEach(callback => callback()); },
     subscribeCanonicalHostClientSession: (callback: () => void) => {
       sessions.add(callback); return () => sessions.delete(callback);
     },
@@ -43,6 +46,14 @@ jest.mock('@client/src/api/canonical-host', () => {
     __resetSession: () => { generation = 1; },
   };
 });
+// This suite verifies the reader/Wiki shell. The new assessment's real hooks and business
+// controls are exercised by document-assessment-workspace.spec.ts.
+jest.mock('@client/src/pages/DocumentParsingPage/DocumentAssessmentWorkspace', () => ({
+  __esModule: true, default: ({ association }: { association: { document: { workItemId: string } } }) =>
+    createElement('section', { 'aria-label': 'Synthetic assessment binding' },
+      createElement('div', { className: 'assessment-shell-scroll' }, `Assessment binding ${association.document.workItemId}`)),
+}));
+jest.mock('@client/src/pages/DocumentParsingPage/runtime-monitor/DocumentTranslationRuntimeDiagnostic', () => ({ __esModule: true, default: () => null }));
 jest.mock('@client/src/pages/DocumentParsingPage/document-version-reading.css', () => ({}));
 jest.mock('@client/src/features/matter/saved-jobaid-reading.css', () => ({}));
 jest.mock('@client/src/pages/DocumentParsingPage/assessment-rule-workspace.css', () => ({}));
@@ -240,28 +251,25 @@ it('retains original, panel scroll, mode and fullscreen across tabs/history with
   const outline = container.querySelector<HTMLElement>('.source-reader-toc')!;
   original.scrollTop = 248; outline.scrollTop = 83;
   await button('仅原文'); await button('全屏');
-  expect(fullscreen).toBe(workspace);
+  expect(fullscreen).toBe(container.querySelector('main'));
   await click('评估');
   expect(router.state.location.pathname).toBe('/document-versions/DV-FAM-1');
   expect(new URLSearchParams(router.state.location.search).get('returnLibraryQuery')).toBe(libraryQuery);
   expect(container.querySelector('.source-reader-workspace')).toBe(workspace);
-  expect(container.textContent).toContain('Complete saved understanding');
-  const issue = knowledge().content.issues[0];
-  expect(container.textContent).toContain(issue.question);
-  expect(container.textContent).toContain(issue.openQuestions[0].question);
-  const assessment = container.querySelector<HTMLElement>('.document-saved-work-scroll')!;
+  expect(container.textContent).toContain('Assessment binding WI-OLD');
+  const assessment = container.querySelector<HTMLElement>('.assessment-shell-scroll')!;
   assessment.scrollTop = 357;
   await click('Wiki');
-  const wiki = container.querySelectorAll<HTMLElement>('.document-saved-work-scroll')[1]; wiki.scrollTop = 219;
+  const wiki = container.querySelector<HTMLElement>('.document-saved-work-scroll')!; wiki.scrollTop = 219;
   await act(async () => { await router.navigate(-1); });
   expect(readDocumentWorkbenchPanel(new URLSearchParams(router.state.location.search)).panel).toBe('assessment');
-  expect(container.querySelector('.document-saved-work-scroll')).toBe(assessment);
+  expect(container.querySelector('.assessment-shell-scroll')).toBe(assessment);
   expect(assessment.scrollTop).toBe(357);
   await act(async () => { await router.navigate(-1); });
   expect(original.scrollTop).toBe(248); expect(outline.scrollTop).toBe(83);
   expect(container.querySelector('.source-reader-stage')?.className).toContain('mode-original');
   await act(async () => { await router.navigate(1); }); await click('Wiki');
-  expect(wiki.scrollTop).toBe(219); expect(fullscreen).toBe(workspace);
+  expect(wiki.scrollTop).toBe(219); expect(fullscreen).toBe(container.querySelector('main'));
   expect(mockReading).toHaveBeenCalledTimes(1); expect(mockStatus).toHaveBeenCalledTimes(1);
   expect(mockCatalogue).toHaveBeenCalledTimes(1); expect(mockQuicklook).toHaveBeenCalledTimes(1);
   expect(mockKnowledge).toHaveBeenCalledTimes(1); expect(mockPdfMount).toHaveBeenCalledTimes(1);
@@ -325,14 +333,11 @@ function assertSingleSavedProblems(panel: Element, read: ReturnType<typeof fiveI
   expect(panel.querySelectorAll('.document-saved-issue')).toHaveLength(5);
 }
 
-it('shows the saved brief and each complete question once in assessment and Wiki while the work is in progress', async () => {
+it('keeps the complete saved Wiki separate from the delegated assessment work while in progress', async () => {
   const read = fiveIssueKnowledge();
   mockKnowledge.mockResolvedValue(read);
   await mount(`${baseQuery}&panel=assessment`);
-  const assessment = container.querySelector('[aria-label="同版本已保存评估"]')!;
-  assertSingleSavedProblems(assessment, read);
-  expect(assessment.textContent).toContain(read.entry.listBrief);
-  expect(assessment.querySelector('[aria-label="已保存综合意见"]')).toBeNull();
+  expect(container.textContent).toContain('Assessment binding WI-OLD');
   await click('Wiki');
   const wiki = container.querySelector('[aria-label="同版本已保存Wiki"]')!;
   assertSingleSavedProblems(wiki, read);
@@ -359,8 +364,8 @@ it.each(['CANDIDATE_ONLY', 'STALE'] as const)('preserves a distinct %s overall w
         premises: [{ evidenceRef: 'evidence-test', role: 'LIMITS', explanation: 'Synthetic source limit.',
           limitation: 'Synthetic applicability is unconfirmed.' }] }] } } };
   mockKnowledge.mockResolvedValue(read);
-  await mount(`${baseQuery}&panel=assessment`);
-  const panel = container.querySelector('[aria-label="同版本已保存评估"]')!;
+  await mount(`${baseQuery}&panel=wiki`);
+  const panel = container.querySelector('[aria-label="同版本已保存Wiki"]')!;
   const overall = panel.querySelector('[aria-label="已保存综合意见"]')!;
   expect(overall.textContent).toContain(read.overall.readingResult.content.headline);
   expect(overall.textContent).toContain(read.overall.readingResult.content.lead);
@@ -404,8 +409,8 @@ it.each(['CANDIDATE_ONLY', 'STALE', 'DISTINCT_EVIDENCE'] as const)('preserves fu
     evidence.excerpt = 'Distinct overall exact body-only evidence condition.';
   }
   mockKnowledge.mockResolvedValue(read);
-  await mount(`${baseQuery}&panel=assessment`);
-  const panel = container.querySelector('[aria-label="同版本已保存评估"]')!;
+  await mount(`${baseQuery}&panel=wiki`);
+  const panel = container.querySelector('[aria-label="同版本已保存Wiki"]')!;
   const overall = panel.querySelector('[aria-label="已保存综合意见"]')!;
   expect(overall.textContent).toContain('Synthetic source understanding, without an implementation decision.');
   expect(overall.textContent).toContain('原文适用条件');
@@ -515,7 +520,7 @@ it.each(['new published run', 'access denial'] as const)('keeps the current pin 
 it('reads exact saved work without a published parse and keeps the original empty state in the reader', async () => {
   mockStatus.mockResolvedValue({ ...status(), publishedRun: null, latestRun: null });
   await mount('panel=assessment');
-  expect(container.querySelector('[aria-label="同版本已保存评估"]')?.textContent).toContain('Complete saved understanding DV-FAM-1');
+  expect(container.textContent).toContain('Assessment binding WI-OLD');
   expect(container.textContent).not.toContain('尚无已发布的解析内容。');
   await click('Wiki');
   expect(container.querySelector('[aria-label="同版本已保存Wiki"]')?.textContent).toContain('Complete saved understanding DV-FAM-1');
@@ -526,14 +531,15 @@ it('reads exact saved work without a published parse and keeps the original empt
   expect(container.textContent).toContain('尚无已发布的解析内容。');
 });
 
-it('opens an unavailable or rejected result in the same panel without generating work', async () => {
+it('retains the assessment association without a result and isolates Wiki rejection', async () => {
   mockQuicklook.mockResolvedValue({ ...saved(), result: null });
   await mount(); await click('评估');
-  expect(container.querySelector('[aria-label="同版本已保存评估"]')?.textContent).toContain('暂无同版本已保存评估');
+  expect(container.textContent).toContain('Assessment binding WI-OLD');
   expect(router.state.location.pathname).toBe('/document-versions/DV-FAM-1');
-  mockQuicklook.mockResolvedValue(saved()); mockKnowledge.mockRejectedValue(Object.assign(new Error('保存工作拒读'), { statusCode: 403 }));
-  await button('重新读取');
-  expect(container.querySelector('[aria-label="同版本已保存评估"]')?.textContent).toContain('保存工作拒读');
+  mockQuicklook.mockResolvedValue(saved()); mockKnowledge.mockRejectedValue(Object.assign(new Error('Wiki拒读'), { statusCode: 403 }));
+  await act(async () => window.dispatchEvent(new dom.window.Event('focus')));
+  expect(container.textContent).toContain('Assessment binding WI-OLD');
+  await click('Wiki'); expect(container.textContent).toContain('Wiki拒读');
   expect(container.querySelector('[data-work-ref]')).toBeNull(); expect(mockStart).not.toHaveBeenCalled();
 });
 
@@ -583,29 +589,11 @@ it('reads the saved citation parse rather than the currently published parse', a
   expect(mockStart).not.toHaveBeenCalled();
 });
 
-it('loads the existing full legacy assessment once, including rules, basis and unknown conditions', async () => {
-  const response = saved();
-  if (!response.result?.readingResult) throw new Error('Saved reading fixture missing');
-  delete response.result.jobAidRoundCompletion;
-  response.result.sourceResultId = 'LEGACY-SAVED'; response.result.readingResult.resultRef = 'LEGACY-SAVED';
-  response.result.readingResult.content.lead = 'Complete legacy overall, including its exact saved assumptions.';
+it('delegates legitimate legacy work without treating Wiki as the assessment', async () => {
+  const response = saved(); delete response.result!.jobAidRoundCompletion;
   mockQuicklook.mockResolvedValue(response);
-  mockLegacy.mockResolvedValue({ workItem: { workItemId: 'WI-OLD', source: { documentVersionId: 'DV-FAM-1' },
-    integratedAssessment: { overallSynthesis: { sourceResultId: 'LEGACY-SAVED', revision: 2,
-      readingResult: response.result.readingResult, missingInputs: ['Installed configuration remains unknown.'] } } },
-    engineerReviewContext: { items: [{ criterionId: 'RULE-1', criterionName: 'Saved complete rule',
-      evaluationQuestion: 'What is the installed configuration?', decisionRule: 'Verify the exact source requirement.',
-      appliesWhen: 'Only if the stored applicability condition is verified.', dynamicResult: 'UNDETERMINED',
-      candidateConclusion: 'UNKNOWN', humanReviewRequired: true, latestReview: null,
-      factsConsidered: ['An exact source fact'], analysisSummary: 'Saved full rule analysis',
-      missingInputs: ['Current configuration unknown'], sourceRefs: ['SAVED-REF'] }] } });
-  await mount(); await click('评估');
-  expect(container.textContent).toContain('Complete legacy overall');
-  expect(container.textContent).toContain('Saved complete rule');
-  expect(container.textContent).toContain('Only if the stored applicability condition is verified.');
-  expect(container.textContent).toContain('Installed configuration remains unknown.');
-  await click('Wiki'); await click('评估');
-  expect(mockLegacy).toHaveBeenCalledTimes(1); expect(mockStart).not.toHaveBeenCalled();
+  await mount(); await click('评估'); expect(container.textContent).toContain('Assessment binding WI-OLD');
+  expect(mockKnowledge).not.toHaveBeenCalled(); expect(mockStart).not.toHaveBeenCalled();
 });
 
 it('preserves return and source pins in panel links and rejects duplicate panel parameters', () => {
@@ -615,3 +603,22 @@ it('preserves return and source pins in panel links and rejects duplicate panel 
   expect(switched.get('parseRunId')).toBe('PR1'); expect(switched.get('sourceRef')).toBe('exact-source');
   expect(readDocumentWorkbenchPanel(new URLSearchParams('panel=wiki&panel=reader')).error).toBeTruthy();
 });
+
+// Return query carries bounded reading state only, never a URL or permission.
+it('restores the existing library return state and rejects tampered assessment return bindings', () => {
+  const origin = new URLSearchParams(baseQuery); origin.set('panel', 'assessment');
+  origin.set('assessmentTab', 'review'); origin.set('assessmentCriterion', 'RULE-1');
+  const params = documentAssessmentReturnParams('DV-FAM-1', origin, { documentVersionId: 'DV-FAM-2' }, 248);
+  const target = documentAssessmentReturnTarget(params, 'DV-FAM-2'); expect(target).not.toBeNull();
+  const restored = new URLSearchParams(target!.route.split('?')[1]);
+  expect(restored.get('returnLibraryQuery')).toBe(libraryQuery); expect(restored.get('assessmentScroll')).toBe('248');
+  expect(documentAssessmentReturnTarget(params, 'OTHER')).toBeNull();
+  params.set('returnAssessmentSourceVersionId', ''); params.set('returnAssessmentSourceWorkItemId', 'WI-OLD');
+  expect(documentAssessmentReturnTarget(params, 'DV-FAM-2', 'WI-OLD')).toBeNull();
+});
+it.each(['returnUrl=https://outside.invalid', 'assessmentTab=review&assessmentTab=aeo', 'parseRunId=a&parseRunId=b'])(
+  'rejects an unbounded or duplicate nested assessment return: %s', extra => {
+    const nested = `documentVersionId=DV-FAM-1&panel=assessment&${extra}`;
+    const params = new URLSearchParams({ returnAssessmentSourceVersionId: 'DV-FAM-2', returnAssessmentQuery: nested });
+    expect(documentAssessmentReturnTarget(params, 'DV-FAM-2')).toBeNull();
+  });
