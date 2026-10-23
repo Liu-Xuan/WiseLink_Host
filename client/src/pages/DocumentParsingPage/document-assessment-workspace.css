@@ -15,6 +15,24 @@
 .document-assessment-content h2 { font-size: 21px; line-height: 1.4; }
 .document-assessment-content h3 { font-size: 17px; line-height: 1.5; }
 .document-assessment-content .wl-jobaid-workspace { padding: 0; }
+/* This independent entry owns its reading columns regardless of legacy lazy CSS. */
+.document-assessment-workspace .wl-jobaid-workspace.is-assessment { display: block; }
+.document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-layout.has-issues { display: grid; grid-template-columns: minmax(0, 1fr) clamp(180px, 22cqw, 248px); gap: 20px; align-items: start; }
+.document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-layout.has-issues > * { min-width: 0; box-sizing: border-box; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-layout.has-issues > .wl-jobaid-reading { grid-column: 1; grid-row: 1; width: 100%; max-width: 88ch; margin: 0 auto; padding: 24px clamp(16px, 2.5cqw, 32px) 48px; }
+.document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-layout.has-issues > .wl-jobaid-index { display: block; position: sticky; top: 0; grid-column: 2; grid-row: 1; width: auto; max-height: min(68dvh, 680px); overflow: auto; padding: 12px; border-left: 1px solid var(--wl-border, #ddd); }
+.document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-index::before { content: none; }
+.document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-index > span { margin: 0 0 10px; font-size: 12px; }
+.document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-index button { width: 100%; padding: 8px; border-radius: 6px; font-size: 12px; line-height: 1.75; }
+.document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-reading > header h2 { margin-bottom: 14px; font-size: 21px; line-height: 1.5; letter-spacing: 0; }
+.document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-reading > header p { margin: 10px 0; color: var(--wl-ink, #27292c); font-size: 15px; line-height: 1.95; }
+.document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-issue h3 { font-size: 17px; }
+.document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-issue p { font-size: 15px; line-height: 1.95; }
+@container (width <= 780px) {
+  .document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-layout.has-issues { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-layout.has-issues > .wl-jobaid-index { position: static; grid-column: 1; grid-row: 1; width: 100%; max-height: 180px; padding: 8px 0; border-left: 0; border-bottom: 1px solid var(--wl-border, #ddd); }
+  .document-assessment-workspace .wl-jobaid-workspace.is-assessment .wl-jobaid-layout.has-issues > .wl-jobaid-reading { grid-column: 1; grid-row: 2; max-width: none; margin: 0; padding: 12px 0 36px; }
+}
 .document-assessment-review-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
 .document-assessment-review-form label { display: grid; gap: 6px; font-size: 13px; }
 .document-assessment-review-comment { grid-column: 1 / -1; }
