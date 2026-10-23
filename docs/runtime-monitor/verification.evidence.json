@@ -2363,6 +2363,167 @@
       ],
       "summary": "D技术部署和应用指纹成立；本批未验证真实TDMS Source/grant/set/状态刷新、未结构化撤销取代、V44或SEM/模型/SAVE/正式采用。未操作Native，后续ACK浏览器字段/Review代码未部署，不借存量M3或客户端时间充业务证明。",
       "deploymentRef": "7699657613396610040"
+    },
+    {
+      "id": "document-assessment.test.ui-base",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "139c0a842d1b791d3c79d7e656d416fa09229e2e",
+      "environmentId": "local:isolated-react-jsdom",
+      "observedAt": "2026-10-23T03:59:41.972344+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "65不同受影响用例=19关联读取+20真实新组件/API流+26原reader/Wiki壳层与受限返回；按各原日志复用，未重跑。不是65条端到端链。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "integration",
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-document-assessment-integration-evidence-20261023/handoff-139c0a.json"
+    },
+    {
+      "id": "document-assessment.test.ui-delta",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "26f505db3558ccca16cc04b43037145a212d2b6b",
+      "environmentId": "local:isolated-react-jsdom",
+      "observedAt": "2026-10-23T03:59:41.972344+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "5个新增真实组件用例：Overall自身STALE/non-null staleReason，原文pending→ready、保存revision3→4保留真实草稿实例，合法Wiki guide来源返回；原20项本次未选中。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "integration",
+      "scenarioIds": [
+        "V12",
+        "V15",
+        "V24",
+        "V28"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-document-assessment-integration-evidence-20261023/p2-delta-targeted.log"
+    },
+    {
+      "id": "document-assessment.test.locator",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "7673ca1ad3e4405e26a420affdd92f0858554e4c",
+      "environmentId": "local:isolated-react-jsdom",
+      "observedAt": "2026-10-23T03:59:41.972344+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "19个真实已保存正文按钮/callback用例通过：same-WI、cross-WI、准确DVI/旧run/fullref/受限返回、legacy与坏locator零导航。React单实例测试环境首次失败保留，最终正确环境通过；未改产品依赖。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "integration",
+      "scenarioIds": [
+        "V03",
+        "V15",
+        "V24",
+        "V28"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-workitem-exact-source-reader-20261023/tmp/workitem-exact-source-evidence/13-final-handoff.json"
+    },
+    {
+      "id": "document-assessment.test.reader-existing",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "7673ca1ad3e4405e26a420affdd92f0858554e4c",
+      "environmentId": "local:isolated-react-jsdom",
+      "observedAt": "2026-10-23T03:59:41.972344+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "原reader固定run、unknown-ref、foreign-run实际3例通过；旧401/403/404三例因未变mock缺prepareDocumentTranslationContinuation未到权限断言，不计PASS。消费者未改，此轮不为旧mock扩大回归。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "integration",
+      "scenarioIds": [
+        "V03",
+        "V15"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-workitem-exact-source-reader-20261023/tmp/workitem-exact-source-evidence/13-final-handoff.json"
+    },
+    {
+      "id": "document-assessment.test.m2-display",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "be986c0f4800281afdff40b714486f87140406eb",
+      "environmentId": "local:isolated-jsdom",
+      "observedAt": "2026-10-23T03:59:41.972344+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "M2显示修复25/25：测试实际环境独立于部署目标、不同SHA/契约缺失不补覆盖、旧适用说明只显示、部署/runtime仍精确匹配。原15失败/10通过复现与正常hook环境路径修复保留；本批未重复25项。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "unit",
+      "scenarioIds": [
+        "V30"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-m2-test-display-evidence-20261023/handoff.md"
+    },
+    {
+      "id": "document-assessment.test.browser-local",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "26f505db3558ccca16cc04b43037145a212d2b6b",
+      "environmentId": "local:synthetic-cua-browser",
+      "observedAt": "2026-10-23T02:54:08.410967+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "真实页面+合成API/外部Aily与PDF隔离：桌面四业务签/只读条件AEO/M3、实际工程师说明草稿经原文/Wiki/刷新保留、历史PR-HISTORIC/fullref命中与受限返回、390px窄屏通过。不是线上；浏览器未驱动pending→ready/revision3→4，未执行生成/确认/SAVE。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "e2e",
+      "scenarioIds": [
+        "V03",
+        "V24",
+        "V28"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-document-assessment-integration-evidence-20261023/browser-review/42-final-browser-handoff.json"
+    },
+    {
+      "id": "document-assessment.test.browser-css",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "3e790ffffd42c9af0c781557ae516164ba70fbd1",
+      "environmentId": "local:synthetic-cua-browser",
+      "observedAt": "2026-10-23T02:51:14.024Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "CSS-only后实际33..40补验：桌面正文831.45px/目录248px，长正文1079.5px跨签保留；390px正文/目录各323px，目录上置max180px，1212px滚动保留。原11的196px正文真实失败保留；IAB全屏缺API、一次独立Chrome not granted均未验。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "e2e",
+      "scenarioIds": [
+        "V03",
+        "V28"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-document-assessment-integration-evidence-20261023/browser-review/42-final-browser-handoff.json"
     }
   ]
 }

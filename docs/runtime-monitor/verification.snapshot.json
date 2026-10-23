@@ -2,15 +2,15 @@
   "formatVersion": 1,
   "snapshot": {
     "dataMode": "snapshot",
-    "generatedAt": "2026-10-23T01:10:55.272738+00:00",
+    "generatedAt": "2026-10-23T04:00:12.846585+00:00",
     "contract": {
       "version": "1.6 复核修订稿",
       "source": "WISELINK_MAINLINE_GRAPH_CONTRACT.md",
-      "sourceRevision": "6c370b5b871d10a76af615816356565eda1bc99d887b5ab9a0fe92a7d5c4a518",
+      "sourceRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
       "sourceRevisionType": "sha256"
     },
     "target": {
-      "sourceRevision": "062e3ab3d10b29a88add508929625e9a76e4064f",
+      "sourceRevision": "bd6e5b3cb110d19635c7d537672f7d8f346db14e",
       "environmentId": "host:app_17bzc551rsg:online"
     },
     "workPackages": [
@@ -20,7 +20,8 @@
         "bindingIds": [
           "research.overall",
           "translation.reading",
-          "save.finish"
+          "save.finish",
+          "document.assessment-reading"
         ],
         "scenarioIds": [
           "V04",
@@ -28,9 +29,14 @@
           "V08",
           "V10",
           "V12",
-          "V30"
+          "V30",
+          "V03",
+          "V15",
+          "V24",
+          "V26",
+          "V28"
         ],
-        "nextAction": "E800已普通FF同步origin/github；D062仅origin并以release7699657613396610040 finished，真实前后端D/SERVER_BUILD_ARTIFACT/PASS。M3旧工作/综合/正文及准确PDF可读；精确结构化定位PARTIAL，单次刷新新时间未证实。原19PG/244unit/81构建不重跑；Native本批未动，实际Source/业务缺项保留。"
+        "nextAction": "生产D062/release7699657613396610040实际证据保持；本批UI-only与M2显示修复已接受并本地组装，最终正常构建/记录待收口。候选未推送/发布，不含ACK/Review/Native或DDL/model/SAVE。"
       },
       {
         "id": "P1",
@@ -48,7 +54,8 @@
         "label": "P2 · 阅读与翻译接续",
         "bindingIds": [
           "translation.reading",
-          "matter.saved-reading"
+          "matter.saved-reading",
+          "document.assessment-reading"
         ],
         "scenarioIds": [
           "V04",
@@ -56,9 +63,12 @@
           "V03",
           "V12",
           "V24",
-          "V26"
+          "V26",
+          "V15",
+          "V28",
+          "V30"
         ],
-        "nextAction": "既有阅读接线已包含于D；同一原事项保存正文及准确文档版本两页PDF可读，一条精确结构化引用未命中，有限代码诊断待续。翻译GET/POST本批未新增验收；不把PDF可读扩为原文V44或公司正式清单通过。"
+        "nextAction": "资料库评估已挂实际四业务签/条件AEO及准确历史解析来源、受限返回；70 UI、19 locator、3旧reader和synthetic浏览器按原SHA复用。新组合不重复产品用例；原D062定位PARTIAL保留，部署后只读真实验收待做，全屏仍环境未验。"
       },
       {
         "id": "P3",
@@ -1640,6 +1650,77 @@
           "nextAction": "随P3实际获权当前批准来源接入现有读取；不把候选建议或读取缺项当成正式公司安排。"
         }
       ]
+    },
+    {
+      "id": "document.assessment-reading",
+      "title": "准确文档版本 → 资料库评估与保存依据原文",
+      "nodeIds": [
+        "assessment.research",
+        "assessment.overall",
+        "assessment.applicability",
+        "business.aeo_execution",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "artifact.reading"
+      ],
+      "consistencyScenarioIds": [
+        "V03",
+        "V12",
+        "V15",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "workPackageIds": [
+        "P0",
+        "P2"
+      ],
+      "sourceRevision": "bd6e5b3cb110d19635c7d537672f7d8f346db14e",
+      "authorRevision": "3e790ffffd42c9af0c781557ae516164ba70fbd1",
+      "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "reviewScope": "公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。",
+      "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。",
+      "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。",
+      "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。",
+      "recoveryOwner": "原页面读取epoch/session隔离、暂时失败保留获权观察，401清session、fresh WI拒绝清评估/草稿；未知SAVE仍按原请求，不由此UI新造恢复。",
+      "authority": {
+        "requestRecord": "原DVI/version reader WI与Quicklook确切关联；getDocumentParsingPage(workItemId, freshness:mutation)独立授权，本UI不新建action_attempt。",
+        "artifactRecord": "原WorkItem.projection、assessment_work_revision、Overall准确artifact及document parsed artifact；只读原保存正文。",
+        "consumedInputField": "fullpage.workItem/source.documentVersionId、workingRead.current.workRevisionRef、Overall.basedOnJobAidWorkRevisionRef；保存evidence.locator的parseRunId/sourceRefId。",
+        "ready": "确切session+DVI+WI、fresh fullpage与当前association/wikiError授权proof一致；读取不是生成/保存前置探测。",
+        "saved": "仅显示既有已保存成果；ReviewImpactPreview之后的显式legacy/CAS与AEO确认/生成保留原Host决定权，不自动保存。",
+        "current": "Overall自身CANDIDATE_ONLY且staleReason null、working CURRENT与准确workRef共同判断；同DVI新解析/保存成果更新不重建稳定草稿实例。"
+      },
+      "decisionEntry": "useDocumentReadingLinks.ts#resolveDocumentReadingAssociation；useDocumentAssessmentPage.ts；DocumentAssessmentOverview.tsx；documentAssessmentAeoEligible。",
+      "projectionEntry": "DocumentAssessmentWorkspace.tsx读取同一workingRead；WorkItemRuntimeDiagnostic仅复用c8已有投影，不包含后续ACK字段；受限returnAssessmentQuery不充当授权。",
+      "readEntry": "/document-versions/:DVI?panel=assessment；assessmentTab=overall/investigation/review/process及条件aeo。精确引用经exactDocumentSourceRoute回历史parseRunId+完整ref。",
+      "actionEntries": [
+        "打开/切签/focus/刷新/依据导航只读；坏locator toast拒绝且页面URL/原evidence保持。",
+        "useDocumentAssessmentActions.ts抽取原recordEngineerReview、confirmIntegratedOverallForAeo、generateAeoCandidate；既有Overall/Review控制器继续只接受显式动作。"
+      ],
+      "validationRefs": [
+        "test/unit/document-reading-links.spec.ts",
+        "test/unit/document-assessment-workspace.spec.ts",
+        "test/unit/document-workbench-panels.spec.ts",
+        "test/unit/workitem-exact-source-navigation.spec.ts",
+        "test/unit/runtime-monitor-verification-ui.spec.ts"
+      ],
+      "gaps": [
+        {
+          "id": "document.assessment-reading.deployment",
+          "kind": "deployment",
+          "reason": "本批仅本地可审准备，公开/私有候选未推送、未发布；生产仍D062。",
+          "nextAction": "审核准确E/D、构建和Host-only范围后由唯一operator按另行确认执行，不附Native/DDL/模型/SAVE。"
+        },
+        {
+          "id": "document.assessment-reading.runtime",
+          "kind": "runtime",
+          "reason": "实际线上新入口尚未验；原D062引用定位PARTIAL保持。合成浏览器全屏环境拒绝、无动态撤权/真实PDF/Aily或新业务写入，范围不能扩为真实业务验收。",
+          "nextAction": "后续准确部署后按原获权对象只读验收新入口、历史定位与受限返回；新业务动作另按其授权。"
+        }
+      ]
     }
   ],
   "selection": {
@@ -1681,9 +1762,10 @@
       "V44",
       "V03",
       "V16",
-      "V53"
+      "V53",
+      "V15"
     ],
-    "reason": "本批E800双远端普通FF与origin-only D062正式发布已完成，实际前端D/后端D SERVER_BUILD_ARTIFACT及PASS。快照目标改为真实部署D；19PG/244unit与81构建保持原source/time。M3旧工作/综合/正文/准确PDF已读，精确结构化定位PARTIAL、单次刷新时间推进未证实。Native未操作，无新业务READ/模型/SAVE/采用/DDL；后续ACK/Review不在D中。"
+    "reason": "本批UI-only资料库评估融合+精确保存依据导航+已接受M2测试显示修复；生产仍D062/release7699657613396610040，原实际事实保留。候选未推送/发布，server/shared/Native/ACK/Review不纳入；原测试SHA与合成浏览器边界独立，最终构建另补准确回执。"
   },
   "evidence": [
     {
@@ -4049,6 +4131,167 @@
       ],
       "summary": "D技术部署和应用指纹成立；本批未验证真实TDMS Source/grant/set/状态刷新、未结构化撤销取代、V44或SEM/模型/SAVE/正式采用。未操作Native，后续ACK浏览器字段/Review代码未部署，不借存量M3或客户端时间充业务证明。",
       "deploymentRef": "7699657613396610040"
+    },
+    {
+      "id": "document-assessment.test.ui-base",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "139c0a842d1b791d3c79d7e656d416fa09229e2e",
+      "environmentId": "local:isolated-react-jsdom",
+      "observedAt": "2026-10-23T03:59:41.972344+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "65不同受影响用例=19关联读取+20真实新组件/API流+26原reader/Wiki壳层与受限返回；按各原日志复用，未重跑。不是65条端到端链。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "integration",
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-document-assessment-integration-evidence-20261023/handoff-139c0a.json"
+    },
+    {
+      "id": "document-assessment.test.ui-delta",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "26f505db3558ccca16cc04b43037145a212d2b6b",
+      "environmentId": "local:isolated-react-jsdom",
+      "observedAt": "2026-10-23T03:59:41.972344+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "5个新增真实组件用例：Overall自身STALE/non-null staleReason，原文pending→ready、保存revision3→4保留真实草稿实例，合法Wiki guide来源返回；原20项本次未选中。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "integration",
+      "scenarioIds": [
+        "V12",
+        "V15",
+        "V24",
+        "V28"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-document-assessment-integration-evidence-20261023/p2-delta-targeted.log"
+    },
+    {
+      "id": "document-assessment.test.locator",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "7673ca1ad3e4405e26a420affdd92f0858554e4c",
+      "environmentId": "local:isolated-react-jsdom",
+      "observedAt": "2026-10-23T03:59:41.972344+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "19个真实已保存正文按钮/callback用例通过：same-WI、cross-WI、准确DVI/旧run/fullref/受限返回、legacy与坏locator零导航。React单实例测试环境首次失败保留，最终正确环境通过；未改产品依赖。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "integration",
+      "scenarioIds": [
+        "V03",
+        "V15",
+        "V24",
+        "V28"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-workitem-exact-source-reader-20261023/tmp/workitem-exact-source-evidence/13-final-handoff.json"
+    },
+    {
+      "id": "document-assessment.test.reader-existing",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "7673ca1ad3e4405e26a420affdd92f0858554e4c",
+      "environmentId": "local:isolated-react-jsdom",
+      "observedAt": "2026-10-23T03:59:41.972344+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "原reader固定run、unknown-ref、foreign-run实际3例通过；旧401/403/404三例因未变mock缺prepareDocumentTranslationContinuation未到权限断言，不计PASS。消费者未改，此轮不为旧mock扩大回归。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "integration",
+      "scenarioIds": [
+        "V03",
+        "V15"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-workitem-exact-source-reader-20261023/tmp/workitem-exact-source-evidence/13-final-handoff.json"
+    },
+    {
+      "id": "document-assessment.test.m2-display",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "be986c0f4800281afdff40b714486f87140406eb",
+      "environmentId": "local:isolated-jsdom",
+      "observedAt": "2026-10-23T03:59:41.972344+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "M2显示修复25/25：测试实际环境独立于部署目标、不同SHA/契约缺失不补覆盖、旧适用说明只显示、部署/runtime仍精确匹配。原15失败/10通过复现与正常hook环境路径修复保留；本批未重复25项。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "unit",
+      "scenarioIds": [
+        "V30"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-m2-test-display-evidence-20261023/handoff.md"
+    },
+    {
+      "id": "document-assessment.test.browser-local",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "26f505db3558ccca16cc04b43037145a212d2b6b",
+      "environmentId": "local:synthetic-cua-browser",
+      "observedAt": "2026-10-23T02:54:08.410967+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "真实页面+合成API/外部Aily与PDF隔离：桌面四业务签/只读条件AEO/M3、实际工程师说明草稿经原文/Wiki/刷新保留、历史PR-HISTORIC/fullref命中与受限返回、390px窄屏通过。不是线上；浏览器未驱动pending→ready/revision3→4，未执行生成/确认/SAVE。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "e2e",
+      "scenarioIds": [
+        "V03",
+        "V24",
+        "V28"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-document-assessment-integration-evidence-20261023/browser-review/42-final-browser-handoff.json"
+    },
+    {
+      "id": "document-assessment.test.browser-css",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a86ecb3a46f05ab205442eb4aa557d3fe8f92e3c182acf69ca4ba375e16b66c5",
+      "sourceRevision": "3e790ffffd42c9af0c781557ae516164ba70fbd1",
+      "environmentId": "local:synthetic-cua-browser",
+      "observedAt": "2026-10-23T02:51:14.024Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "summary": "CSS-only后实际33..40补验：桌面正文831.45px/目录248px，长正文1079.5px跨签保留；390px正文/目录各323px，目录上置max180px，1212px滚动保留。原11的196px正文真实失败保留；IAB全屏缺API、一次独立Chrome not granted均未验。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
+      "testLevel": "e2e",
+      "scenarioIds": [
+        "V03",
+        "V28"
+      ],
+      "originalReportRef": "private:/private/tmp/wiselink-document-assessment-integration-evidence-20261023/browser-review/42-final-browser-handoff.json"
     }
   ]
 }

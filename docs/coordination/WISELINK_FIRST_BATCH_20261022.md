@@ -392,3 +392,24 @@ M3 本次验收只覆盖同一存量事项的读取、准确引用与导航/刷�
 TDMS 节点当前 UNKNOWN、最新性/完整覆盖未提供，0 条可核对保存 native 不证明从未读取；Overall 尝试集合与 Ready/首次可读/浏览器 ACK 字段仍不可得。本批不证明 Estimated 路径已处理真实 Source/grant/processing set 或状态刷新，也不证明原文 V44、原生未结构化撤销/取代、SEM 工程事实、新模型/SAVE 或正式采用通过。精确结构化引用缺口交有限代码分析，不能被准确 PDF 可读掩盖。
 
 本次记录校验：仅 9 个 docs/JSON/生成 HTML 文件；M1 的 13 节点/47 关系/54 场景/10 规则目录和原 125 条 evidence 值均保持，新增 8 条只覆盖本批实际范围。快照 QA 39/39；实际生成 HTML 的 P3＋company＋V53＋runtime 和 P0＋research/Overall＋V12＋runtime 联合筛选、节点/关系到准确 binding 下钻通过，diagnostics 空；公司真实运行仍“尚未核对”，调查/综合按实际显示“失败 / 通过并存”。冻结组件源码和嵌入快照一致，没有混入后续 M2 显示修复。私有检查首两次分别误期望旧失败标签和未展示的类名，原断言失败保留；仅校正为真实混合标签与既有 consumer 字段后通过，未改产品或证据来迎合检查。原始 QA/生成页日志在同一私有发布证据目录。
+
+
+### 2026-10-23 资料库评估融合 UI-only 可审候选
+
+本节接续生产 D062 的真实记录，不覆盖前文。当前只准备本地下一批：公开安全基线 `c8a27a22dd21286e7078d4992ea40776bb81031c`，产品组合 `bd6e5b3cb110d19635c7d537672f7d8f346db14e`。按顺序正常选择 locator `62540a75130d31458f2aed3c7348d4280f5d7bcd`（等价已审7673，不重复引入）、UI `139c0a842d1b791d3c79d7e656d416fa09229e2e`、最小修正 `26f505db3558ccca16cc04b43037145a212d2b6b`、CSS `3e790ffffd42c9af0c781557ae516164ba70fbd1`，再选 M2 显示 `be986c0f4800281afdff40b714486f87140406eb`。原父2ed6私有历史不进入公开对象库；正常cherry在私有中间clone完成，再只按公开可达分支正常clone。公开组合的21个UI blob与3e790、M2两文件与be986完全相同。
+
+依赖核对：c8→作者父基线仅有 WorkItemRuntimeDiagnostic、useJobAidWorkingRead 和 shared JobAid 接口的可选ACK差异；新UI所用API/props已在c8，完全不依赖ACK。server/shared/openclaw相对c8字节不变；不夹带后续Host Review/Native、有界READ、c235或ACK新读模型。生产仍D062 / release `7699657613396610040`，其实际引用定位PARTIAL和刷新新时间未证实保持，不能用本地合成结果关闭。
+
+|已接受验证|原执行源码/环境|本批适用范围|
+|---|---|---|
+|UI65：关联19＋真实新组件20＋原reader/Wiki壳层/返回26|139c0a，隔离React/JSDOM；原三个日志独立|四业务签、授权/撤权/late、真实草稿/动作门槛及壳层；不是65条端到端链。|
+|UI最小修正5|26f505，隔离React/JSDOM，仅新增命名用例|Overall自身状态、原文pending→ready、保存3→4保留真实实例与合法Wiki guide来源返回；不冒称浏览器驱动了两个转换。|
+|locator19＋原reader3|原7673正常hook；隔离React/JSDOM|实际已保存正文按钮/callback与固定旧run/unknownref/foreignrun。旧401/403/404三例未到断言，不计通过，不修旧mock扩范围。|
+|M2显示25|be986，隔离JSDOM|测试实际环境与部署目标分开，source/contract仍严格；applicableProductRevision仅解释，不自动点绿。原失败和中性物理目录修正日志保留。|
+|独立实际合成浏览器|26f505四签/草稿/M3/历史来源返回；3e790仅CSS受影响33..40；最后观察02:51:14.024Z|桌面1280×720、窄屏390×844、真实工程师说明草稿、准确旧run命中、受限返回及长正文滚动。原11排版FAIL经CSS修正后通过；原Vite旧serve和长rawCDP等待均保留为环境事实。|
+
+合成浏览器完整交接 `private:/private/tmp/wiselink-document-assessment-integration-evidence-20261023/browser-review/42-final-browser-handoff.json`，SHA256 `96c8d0c316f8a8bf70adeb3980dca733592b0246f8771a6053845955ff6e216c`。真实源码指纹是3e790/treee53d，API与外部Aily/PDF wrapper隔离；不是真实线上运行。IAB全屏能力缺失、独立Chrome一次普通按钮not granted仍未验，不forceAPI/改权限/重试；原文pending→ready/保存3→4只有组件用例，不充浏览器观察；动态撤权、真实PDF/Aily与新业务动作未验。各计数按不同范围分别保留，不相加为整体覆盖。
+
+M1保持v1.6稳定目录，在E.6及既有bindings增加准确 `document.assessment-reading` 消费记录；M2继续同一生成器、四列、工作包/接线/场景/缺口筛选与下钻，旧133条证据字段/source/time逐值保留。M3只挂现有父读取投影；生产Ready/首次可读/ACK缺项不回填。本轮新public组合只需正常hook、一次完整最终build及实际生成页筛选/下钻；旧受影响测试不无因重跑，原SHA/契约/环境与适用说明独立展示。
+
+fresh origin main于 `2026-10-23T03:51:56.859360+00:00` 实际读回 `2bc6ac71b29720d622da4a6fcc11e14a027ff170`（准确时间见私有原回执）；其parents为旧02f和已批准D062，tree与D062/E800同为de51001b，无额外产品修改。首次只读ls-remote仅因sandbox拒绝既有凭据helper锁文件而未到远端；正常require_escalated续用同一已登录helper后成功，没有新增OAuth/身份/角色或远端写。最终私有D只增加该准确main祖先并保留公开完整tree。当前未构造最终D、未推送/发布；完整构建和收口回执将在后续纯记录提交补齐。需要发布的具体技术范围仅Host/UI＋M2显示，无Native、DDL、模型/SAVE/正式采用。

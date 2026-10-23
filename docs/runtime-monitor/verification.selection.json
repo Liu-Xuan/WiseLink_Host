@@ -37,7 +37,8 @@
     "V44",
     "V03",
     "V16",
-    "V53"
+    "V53",
+    "V15"
   ],
-  "reason": "本批E800双远端普通FF与origin-only D062正式发布已完成，实际前端D/后端D SERVER_BUILD_ARTIFACT及PASS。快照目标改为真实部署D；19PG/244unit与81构建保持原source/time。M3旧工作/综合/正文/准确PDF已读，精确结构化定位PARTIAL、单次刷新时间推进未证实。Native未操作，无新业务READ/模型/SAVE/采用/DDL；后续ACK/Review不在D中。"
+  "reason": "本批UI-only资料库评估融合+精确保存依据导航+已接受M2测试显示修复；生产仍D062/release7699657613396610040，原实际事实保留。候选未推送/发布，server/shared/Native/ACK/Review不纳入；原测试SHA与合成浏览器边界独立，最终构建另补准确回执。"
 }

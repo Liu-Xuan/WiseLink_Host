@@ -683,6 +683,18 @@ v1.3 报告使用了本地主检出 b02395537a948fbe427f232f5a52ab59ba43efe0、�
 
 本批数据库 dev→main preview 为空，没有执行 DDL；Native c234 未暂停、安装、恢复或重启。原 C/Native 历史证据保留，本次不重验其调度状态。D 不含后续 ACK 浏览器读模型、Review saved-native 或 fresh-native READ 候选。实际 TDMS Source/grant/processing set/状态刷新、原文 V44、未结构化撤销/取代、SEM 与新模型/SAVE/正式采用均未由本次只读技术核验完成。Overall 尝试集合、TDMS 最新性/覆盖及浏览器 Ready/首次可读/ACK 仍缺；当前可核对保存 native 为 0 不能推断从未读取。详见 [FIRST_BATCH 本批末节](coordination/WISELINK_FIRST_BATCH_20261022.md)。
 
+### E.6 资料库评估融合的本地消费入口（2026-10-23）
+
+本批在公开安全 c8 基线上选择已接受的 locator、资料库评估融合、当前性/受限返回与局部排版修正，并接入已有 M2 测试显示修复。13 个节点、47 条关系、54 个场景和 10 条规则保持；`document.assessment-reading` 只是现有 bindings 中的实际接线记录，复用 `artifact.reading`、`assessment.research`、`assessment.overall`、`assessment.applicability`、`business.aeo_execution` 和 `surface.reading`，没有新增状态真源或调度器。
+
+`DocumentVersionReadingPage → useDocumentReadingLinks` 用确切 DVI 核对版本 reader WorkItem 与 Quicklook 关联；新 `DocumentAssessmentWorkspace → useDocumentAssessmentPage` 独立 fresh fullpage 授权后共用一份 `useJobAidWorkingRead`。综合、调查、复核、分析过程及原条件 AEO 挂实际消费者，不嵌旧整页。原文、评估与 Wiki 保持顶层；稳定 session/DVI/WorkItem 身份保留草稿、区签和滚动，隐藏区暂停轮询，撤权/切对象按既有身份清理。M3 仍由同一已获权 JobAid 读模型投影，不新增运行记录。
+
+保存依据回原文先使用已有 exact locator：准确 DocumentVersion、保存时 parseRunId 与完整 sourceRef 同时保留，并只带受限的评估/事项/资料库返回参数；显式错误 locator 拒绝导航，不猜解析号或回落 latest。无解析定位的 legacy 调用保持原路径及诚实提示。当前标签同时核对实际 Overall.status、staleReason 与 workRef。Review/CAS、AEO 确认后生成及 Overall 动作均复用原端点且只由显式动作触发。
+
+UI 作者 65 个受影响用例及 5 个最小修正用例、locator 19 个按钮/回调用例、3 个原 reader 固定 run/未知 ref/foreign run 用例和 M2 25 个用例保留原执行源码/环境；各组不相加为端到端覆盖。原 401/403/404 reader 三例因未变 mock 缺 prepareDocumentTranslationContinuation 未到断言，不计通过。独立合成浏览器在 26f505 验四业务签/M3/草稿/准确历史来源与受限返回，并在 CSS-only 3e790 验修复后的桌面/窄屏/目录/滚动；原 196px 排版失败保留。IAB 不支持全屏、独立 Chrome 一次普通按钮被 not granted 拒绝，均未验。浏览器没有驱动原文 pending→ready 和保存成果 3→4，两转换由作者新增真实组件用例另证，不能混作浏览器观察。
+
+这些是本地未发布 UI 候选的接线和验证；本轮不纳入 ACK 读模型、Review Host/Native 协议或 c235，不改 server/shared/Native、DDL、模型、SAVE 或正式采用。生产仍为 E.5 的 D062 / release7699657613396610040，原真实引用定位 PARTIAL 和刷新时间未证实保持。候选构建及后续发布范围由 FIRST_BATCH 末节和 M_INTEGRATION 当前段准确登记，不从合成浏览器推断已上线。
+
 ## 附录 F. 后续来源规划
 
 可靠性、故障与手册资料分别接入，先提供准确阅读，再验证一个具体问题的实际消费，随后按需要增加趋势观察与策略。当前 13 节点可承载这些入口；具体消费者明确前不增加通用平台或固定模型流水线。

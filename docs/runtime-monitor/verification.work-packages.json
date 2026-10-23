@@ -6,7 +6,8 @@
       "bindingIds": [
         "research.overall",
         "translation.reading",
-        "save.finish"
+        "save.finish",
+        "document.assessment-reading"
       ],
       "scenarioIds": [
         "V04",
@@ -14,9 +15,14 @@
         "V08",
         "V10",
         "V12",
-        "V30"
+        "V30",
+        "V03",
+        "V15",
+        "V24",
+        "V26",
+        "V28"
       ],
-      "nextAction": "E800已普通FF同步origin/github；D062仅origin并以release7699657613396610040 finished，真实前后端D/SERVER_BUILD_ARTIFACT/PASS。M3旧工作/综合/正文及准确PDF可读；精确结构化定位PARTIAL，单次刷新新时间未证实。原19PG/244unit/81构建不重跑；Native本批未动，实际Source/业务缺项保留。"
+      "nextAction": "生产D062/release7699657613396610040实际证据保持；本批UI-only与M2显示修复已接受并本地组装，最终正常构建/记录待收口。候选未推送/发布，不含ACK/Review/Native或DDL/model/SAVE。"
     },
     {
       "id": "P1",
@@ -34,7 +40,8 @@
       "label": "P2 · 阅读与翻译接续",
       "bindingIds": [
         "translation.reading",
-        "matter.saved-reading"
+        "matter.saved-reading",
+        "document.assessment-reading"
       ],
       "scenarioIds": [
         "V04",
@@ -42,9 +49,12 @@
         "V03",
         "V12",
         "V24",
-        "V26"
+        "V26",
+        "V15",
+        "V28",
+        "V30"
       ],
-      "nextAction": "既有阅读接线已包含于D；同一原事项保存正文及准确文档版本两页PDF可读，一条精确结构化引用未命中，有限代码诊断待续。翻译GET/POST本批未新增验收；不把PDF可读扩为原文V44或公司正式清单通过。"
+      "nextAction": "资料库评估已挂实际四业务签/条件AEO及准确历史解析来源、受限返回；70 UI、19 locator、3旧reader和synthetic浏览器按原SHA复用。新组合不重复产品用例；原D062定位PARTIAL保留，部署后只读真实验收待做，全屏仍环境未验。"
     },
     {
       "id": "P3",

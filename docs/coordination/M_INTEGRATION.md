@@ -1,5 +1,15 @@
 # Integration source record
 
+## 2026-10-23 local document-assessment UI candidate
+
+This Host-only UI candidate starts from the public-safe c8 source and selects the accepted exact-source locator, document-version assessment workspace, currentness/return fixes, scoped investigation CSS and M2 test-display fix. Existing API/props are present on c8; the three optional ACK differences from the authors' baseline are excluded. Server, shared contracts and Native bytes remain unchanged. It includes no subsequent ACK/Review/Native protocol or c235 identity.
+
+Original/assessment/Wiki remain top-level. The new assessment workspace mounts the actual Overall, investigation, review, process/M3 and conditional AEO consumers with independent exact WorkItem authorization and one shared working read. Exact saved citations retain DVI, historical parse run and full ref, with restricted return parameters. Refresh, tab changes and reading trigger no model or save. Existing explicit operations retain their Host authorization/CAS controls.
+
+The accepted 70 UI cases, locator19, existing-reader3 and M2-display25 keep their distinct original execution revisions and environments. They are reused because affected blobs match; they are not relabeled as tests executed on this new public SHA. Independent local synthetic CUA observations cover four business tabs/M3, actual explanation draft retention, historical source/return and the CSS-fixed desktop/narrow investigation layout. Fullscreen remains environment-unverified; dynamic permissions, real PDF/Aily, browser pending-to-ready/revision transitions and production behavior are outside those browser observations. Original layout and environment failures remain in private evidence.
+
+A final normal build and the two immutable source fingerprints are still to be recorded for this exact candidate. No push, release, online SQL, Native packaging/install or model/SAVE/adoption was performed in this preparation. Production remains D062/release7699657613396610040 and its source-locator PARTIAL result below is unchanged. Current origin main was read as the platform merge of that existing D; no unrelated product changes were found. Public history excludes private ancestors; a later origin-only Host candidate must retain exactly this public tree.
+
 ## 2026-10-23 current Estimated technical delivery
 
 The approved public E `800af5fc41b0d1d05048937fa8a0c79acd2a8c16` was fast-forwarded independently to the original same-name origin and github codex branch. Private D `062e3ab3d10b29a88add508929625e9a76e4064f` was pushed only to origin; its complete tree equals E. Official Host release `7699657613396610040` is finished at the exact D commit with no errors, and latest lists the same release.

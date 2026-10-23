@@ -531,6 +531,77 @@
           "nextAction": "随P3实际获权当前批准来源接入现有读取；不把候选建议或读取缺项当成正式公司安排。"
         }
       ]
+    },
+    {
+      "id": "document.assessment-reading",
+      "title": "准确文档版本 → 资料库评估与保存依据原文",
+      "nodeIds": [
+        "assessment.research",
+        "assessment.overall",
+        "assessment.applicability",
+        "business.aeo_execution",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "artifact.reading"
+      ],
+      "consistencyScenarioIds": [
+        "V03",
+        "V12",
+        "V15",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "workPackageIds": [
+        "P0",
+        "P2"
+      ],
+      "sourceRevision": "bd6e5b3cb110d19635c7d537672f7d8f346db14e",
+      "authorRevision": "3e790ffffd42c9af0c781557ae516164ba70fbd1",
+      "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "reviewScope": "公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。",
+      "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。",
+      "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。",
+      "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。",
+      "recoveryOwner": "原页面读取epoch/session隔离、暂时失败保留获权观察，401清session、fresh WI拒绝清评估/草稿；未知SAVE仍按原请求，不由此UI新造恢复。",
+      "authority": {
+        "requestRecord": "原DVI/version reader WI与Quicklook确切关联；getDocumentParsingPage(workItemId, freshness:mutation)独立授权，本UI不新建action_attempt。",
+        "artifactRecord": "原WorkItem.projection、assessment_work_revision、Overall准确artifact及document parsed artifact；只读原保存正文。",
+        "consumedInputField": "fullpage.workItem/source.documentVersionId、workingRead.current.workRevisionRef、Overall.basedOnJobAidWorkRevisionRef；保存evidence.locator的parseRunId/sourceRefId。",
+        "ready": "确切session+DVI+WI、fresh fullpage与当前association/wikiError授权proof一致；读取不是生成/保存前置探测。",
+        "saved": "仅显示既有已保存成果；ReviewImpactPreview之后的显式legacy/CAS与AEO确认/生成保留原Host决定权，不自动保存。",
+        "current": "Overall自身CANDIDATE_ONLY且staleReason null、working CURRENT与准确workRef共同判断；同DVI新解析/保存成果更新不重建稳定草稿实例。"
+      },
+      "decisionEntry": "useDocumentReadingLinks.ts#resolveDocumentReadingAssociation；useDocumentAssessmentPage.ts；DocumentAssessmentOverview.tsx；documentAssessmentAeoEligible。",
+      "projectionEntry": "DocumentAssessmentWorkspace.tsx读取同一workingRead；WorkItemRuntimeDiagnostic仅复用c8已有投影，不包含后续ACK字段；受限returnAssessmentQuery不充当授权。",
+      "readEntry": "/document-versions/:DVI?panel=assessment；assessmentTab=overall/investigation/review/process及条件aeo。精确引用经exactDocumentSourceRoute回历史parseRunId+完整ref。",
+      "actionEntries": [
+        "打开/切签/focus/刷新/依据导航只读；坏locator toast拒绝且页面URL/原evidence保持。",
+        "useDocumentAssessmentActions.ts抽取原recordEngineerReview、confirmIntegratedOverallForAeo、generateAeoCandidate；既有Overall/Review控制器继续只接受显式动作。"
+      ],
+      "validationRefs": [
+        "test/unit/document-reading-links.spec.ts",
+        "test/unit/document-assessment-workspace.spec.ts",
+        "test/unit/document-workbench-panels.spec.ts",
+        "test/unit/workitem-exact-source-navigation.spec.ts",
+        "test/unit/runtime-monitor-verification-ui.spec.ts"
+      ],
+      "gaps": [
+        {
+          "id": "document.assessment-reading.deployment",
+          "kind": "deployment",
+          "reason": "本批仅本地可审准备，公开/私有候选未推送、未发布；生产仍D062。",
+          "nextAction": "审核准确E/D、构建和Host-only范围后由唯一operator按另行确认执行，不附Native/DDL/模型/SAVE。"
+        },
+        {
+          "id": "document.assessment-reading.runtime",
+          "kind": "runtime",
+          "reason": "实际线上新入口尚未验；原D062引用定位PARTIAL保持。合成浏览器全屏环境拒绝、无动态撤权/真实PDF/Aily或新业务写入，范围不能扩为真实业务验收。",
+          "nextAction": "后续准确部署后按原获权对象只读验收新入口、历史定位与受限返回；新业务动作另按其授权。"
+        }
+      ]
     }
   ]
 }
