@@ -7,7 +7,8 @@
         "research.overall",
         "translation.reading",
         "save.finish",
-        "document.assessment-reading"
+        "document.assessment-reading",
+        "dialogue.cross-object-reading"
       ],
       "scenarioIds": [
         "V04",
@@ -22,7 +23,7 @@
         "V26",
         "V28"
       ],
-      "nextAction": "UI已发布De1d/release7699717588535888913，原实际证据及E2/D2记录同步保持；本地16b精确恢复ACK/Review/Native源码、正常hook/一次build/publisher完成。交根审核本轮九records与准确E/D，不重复已通过UI或产品测试。"
+      "nextAction": "主线M1/R10与OpenClaw交互/新Aily问答分工文档已收口；既有16b产品/构建/包来源保持，当前E/D纯docs后继待准确Git交接。新Aily仅planned接线，不阻塞已有获权工作台交互；技术发布/安装/DDL与真实业务仍各按具体授权。"
     },
     {
       "id": "P1",
@@ -41,7 +42,8 @@
       "bindingIds": [
         "translation.reading",
         "matter.saved-reading",
-        "document.assessment-reading"
+        "document.assessment-reading",
+        "dialogue.cross-object-reading"
       ],
       "scenarioIds": [
         "V04",
@@ -54,7 +56,7 @@
         "V28",
         "V30"
       ],
-      "nextAction": "真实AD四签/M3/独立Wiki与准确历史来源第8页/受限返回已有原证据；恢复后同一入口一次PDF200且11页实际可读，原500历史保留。Aily30s ready timeout/灰白及工具响应暂停混杂仍未完成，局部OAuth与全屏等限制分开记录。"
+      "nextAction": "真实AD四签/M3/独立Wiki与准确历史来源第8页/受限返回已有原证据；恢复后同一入口一次PDF200且11页实际可读，原500历史保留。Aily30s ready timeout/灰白及工具响应暂停混杂仍未完成，局部OAuth与全屏等限制分开记录。 主线明确工作台OpenClaw CHAT与新Aily无预选跨对象问答分工；fdf CHAT UI独立待审，不在本包。新Aily需可信最终用户、官方渠道和窄范围只读适配，复用现有搜索/展开/深链；数据未接通，不替换agentId或借后台授权。"
     },
     {
       "id": "P3",

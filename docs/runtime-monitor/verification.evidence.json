@@ -3349,6 +3349,180 @@
         "V44",
         "V53"
       ]
+    },
+    {
+      "id": "mainline-closure.docs.existing-wiring",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "f567153a12fdc69d6aacd1d77d3eb1eccdf8472df40273fef0b94e9faf23baea",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:documentation-closure",
+      "observedAt": "2026-10-23T07:35:40.363363+00:00",
+      "reportRef": "docs/coordination/M_INTEGRATION.md",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "wiki.saved-reading",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V30",
+        "V53"
+      ],
+      "summary": "当前M1主文/E.8、R10及对话分工文档收口；现有五条16b接线的产品/消费者字节相对已审E基线完全不变。此复核只支持既有源码接线，不是新Aily适配、fdf CHAT UI集成、测试、部署或真实运行通过。",
+      "evidenceScope": "Documentation alignment and identical existing product bytes only",
+      "documentPatchSha256": "2224eff732a403a815e24ae3c8aa7c461647901f24b63c7298767e1190a43aad",
+      "previousReviewedPublicRevision": "a909915d30076b9d2bc7de41101d450afc212d56"
+    },
+    {
+      "id": "mainline-closure.aily-planned.source_review",
+      "kind": "source_review",
+      "status": "not_run",
+      "contractRevision": "f567153a12fdc69d6aacd1d77d3eb1eccdf8472df40273fef0b94e9faf23baea",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T07:35:40.363363+00:00",
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "summary": "设计/计划状态：无预选对象自由问答的数据复用和身份/版本边界已写清；新Aily真实适配/工具/最终用户委托尚未接通或验收，当前consumer与执行读取入口null；无远端配置、模型/READ/SAVE或发布。",
+      "plannedOnly": true
+    },
+    {
+      "id": "mainline-closure.aily-planned.test",
+      "kind": "test",
+      "status": "not_run",
+      "contractRevision": "f567153a12fdc69d6aacd1d77d3eb1eccdf8472df40273fef0b94e9faf23baea",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "summary": "设计/计划状态：无预选对象自由问答的数据复用和身份/版本边界已写清；新Aily真实适配/工具/最终用户委托尚未接通或验收，当前consumer与执行读取入口null；无远端配置、模型/READ/SAVE或发布。",
+      "plannedOnly": true,
+      "testLevel": "e2e"
+    },
+    {
+      "id": "mainline-closure.aily-planned.deployment",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "f567153a12fdc69d6aacd1d77d3eb1eccdf8472df40273fef0b94e9faf23baea",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "summary": "设计/计划状态：无预选对象自由问答的数据复用和身份/版本边界已写清；新Aily真实适配/工具/最终用户委托尚未接通或验收，当前consumer与执行读取入口null；无远端配置、模型/READ/SAVE或发布。",
+      "plannedOnly": true
+    },
+    {
+      "id": "mainline-closure.aily-planned.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "f567153a12fdc69d6aacd1d77d3eb1eccdf8472df40273fef0b94e9faf23baea",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "summary": "设计/计划状态：无预选对象自由问答的数据复用和身份/版本边界已写清；新Aily真实适配/工具/最终用户委托尚未接通或验收，当前consumer与执行读取入口null；无远端配置、模型/READ/SAVE或发布。",
+      "plannedOnly": true
+    },
+    {
+      "id": "mainline-closure.existing-candidate.deployment",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "f567153a12fdc69d6aacd1d77d3eb1eccdf8472df40273fef0b94e9faf23baea",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "wiki.saved-reading",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V30",
+        "V53"
+      ],
+      "summary": "本次仅准确本地候选的主线文档后继，没有新后端发布/安装/DDL或真实模型READSAVE；原UI实际De1d发布与原177条观察保持原身份。当前not_run不代表重新查询线上，也不关闭独立fdf CHAT或新Aily接入缺项。"
+    },
+    {
+      "id": "mainline-closure.existing-candidate.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "f567153a12fdc69d6aacd1d77d3eb1eccdf8472df40273fef0b94e9faf23baea",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "wiki.saved-reading",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V30",
+        "V53"
+      ],
+      "summary": "本次仅准确本地候选的主线文档后继，没有新后端发布/安装/DDL或真实模型READSAVE；原UI实际De1d发布与原177条观察保持原身份。当前not_run不代表重新查询线上，也不关闭独立fdf CHAT或新Aily接入缺项。"
     }
   ]
 }

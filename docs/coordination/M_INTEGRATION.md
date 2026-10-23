@@ -1,5 +1,17 @@
 # Integration source record
 
+## 2026-10-23 主线规则收口与对话分工
+
+用户优先级已落实到 R10_CURRENT、R10_EXECUTION_PLAN、M1 主文/E.8 及[对话数据接入方案](../WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md)：主线先闭合准确来源、保存、恢复、同版阅读及按影响更新；OpenClaw 承担工作台交互分析，新 Aily 承担不强制预选对象的跨文档/事项自由问答。M1 目录不变，M2 保留原 177 条证据的执行身份和时间，M3 沿实际父响应，不据此生成线上完成状态。
+
+主线正常记录提交为 `6769169acc844b462a64d85663f1dfb8702028f3`，父提交为下节准确 16b 源码。本地准备基线 E `a909915d30076b9d2bc7de41101d450afc212d56` / D `b76264938745e89371851b47ac4171f3aa07271f` 同树 `8e1ee4672f2a76a1a91876857400edc99ec7b744`；本节及配套文档为其后续文档修订，不改变下节构建/Native 包的原来源。最终文档后继 E/D 以实际 Git 交接为准，不倒填原构建 SHA。
+
+OpenClaw CHAT 独立前端候选 `fdf07b60476c6f03a37257f9258b61f534ea1ade` 的父提交是 16b，改 6 个 Review 前端文件和 4 个测试文件；作者报告 59 个不同定向用例通过，其中 15 个新增组件用例，正常 hook 通过。尚待主控消费者审查和选择性集成，不在上述 E/D 主线包内，也未发布。未知发送意图只沿现有页面内存草稿生命周期保留，不声称完整浏览器重载后仍在；Host 会话和结果仍是唯一业务来源。
+
+新 Aily 的本次只读页面观察：角色已描述厂家原文和 WiseLink 服务；所显示连接器列表中未见 WiseLink，工作上下文显示未开启。未据此断言全部飞书内置能力不可用，也未修改配置。代码已有浏览器跨工作/事项搜索、准确工作与来源读取；新 Aily 的可信用户身份、只读工具接线及该实例的 API/SDK 渠道尚未验收。具体复用点、接入条件、阶段和验收见方案。
+
+本次规则修订不触发发布、DDL、Native 安装或生产问答。17c 运行时预检发送曾被自动审批拒绝，指令未送出；当前安装/cron/在途缺项仍需针对该目标和预检内容的明确授权，其他文档与本地交付继续。
+
 ## 2026-10-23 recovered ACK / Review / Native delivery preparation
 
 Current local source is `16b727a3a440d9c164cbbc6c29a97836229709dc`, a normal-hook commit of the exact recovered 107 product/test/migration changes. This is a new source mapping, not the missing historical53d whole tree: nine historical records/generated outputs were not fully restored. Latest accepted UI records E2 `c8da2246de2339364bb88d82c4a6e7792a08a00d` / D2 `a59c15279647009dd3542e807798383683174f10` are retained, including all155 existing evidence values. Their three exact same-name ref readbacks completed at06:22:42Z. Actual online Host remains D `e1d2d92a2e58fe752ed3f70f472619f4373ef8d5` / release `7699717588535888913`; those record successors did not trigger another release.

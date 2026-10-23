@@ -40,5 +40,5 @@
     "V53",
     "V15"
   ],
-  "reason": "当前M2目标为本地准确源码16b的ACK/Review/Native交付准备；原UI De1d正式发布及155条既有证据保持原身份。原PG027/028失败→ae025窄修复→最终PG029隔离正常consumer成功，fixture置过期不称自然TTL。新build/publisher记录实际16b和执行时契约，适用说明不补新契约覆盖。三lock-only SQL未实施、Native当前运行预检待明确授权；无新后端发布/安装/DDL/真实模型/READ/SAVE。"
+  "reason": "本批仅主线图契约/R10/对话数据分工文档收口，产品代码仍准确16b，旧177证据原source/time/value保留。已有ACK/Review/Native本地源码、新16b build/publisher与实际UI De1d发布分开；新Aily无预选跨对象问答只为planned接线，consumer/执行/读取入口null、四列not_run；独立fdf CHAT UI未纳入。未新增build/publisher/product tests、push/release/DDL/17c发送或真实模型READSAVE。"
 }

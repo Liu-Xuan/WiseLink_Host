@@ -614,9 +614,91 @@
           "kind": "runtime",
           "reason": "真实四签/M3/Wiki、准确结构化原文第8页与受限返回已有原证据；原件历史HTTP500独立保留，恢复后一次正常GET200/11页PDF可读。Aily当前ENV_UNVERIFIED/30s ready timeout/灰白未通过，iframe终态受工具paused-document-response边界未获；局部OAuth/保存核对、全屏与动态权限/版本转换仍未验证。",
           "nextAction": "沿用已发布E/D和现有SDK；保留Aily未完成及历史500未知根因，按独立分析结论选择下一最小修法，不制造ready协议、登录扩scope、重复已通过链路或业务写入。"
+        },
+        {
+          "id": "document.assessment-reading.openclaw-chat-ui",
+          "kind": "source_review",
+          "reason": "工作台OpenClaw CHAT前端fdf07独立候选尚待主控审查，不在当前主线包；Host既有CHAT与评估更新、当前UI实际读取范围分别保留，不能以作者59项报告当本包已集成或已发布。",
+          "nextAction": "主控审查准确consumer/原请求恢复/对象身份切换后选择性集成；独立文档后续接入，不为聊天伪造评估对象或借用权限。"
         }
       ],
       "previousReviewedRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5"
+    },
+    {
+      "id": "dialogue.cross-object-reading",
+      "title": "新 Aily 跨文档/事项问答 → 权限内搜索与准确展开（方案）",
+      "nodeIds": [
+        "source.original",
+        "assessment.research",
+        "assessment.overall",
+        "knowledge.wiki",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "artifact.reading",
+        "research.wiki",
+        "reading.wiki"
+      ],
+      "consistencyScenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "workPackageIds": [
+        "P0",
+        "P2"
+      ],
+      "sourceRevision": null,
+      "evidenceScopeRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "reviewScope": "仅用户确认的分工与数据接入方案；不新增业务node/edge、不改产品。新Aily无需预选对象；真实最终用户委托、Host逐对象授权、准确版本/原文/work/Wiki读取及官方渠道/适配尚未接通或验收。",
+      "producer": "拟复用EngineeringIssueSearchService.search/read/catalogue/readKnowledge、DocumentSourceSearchService、readBrowserRevision/readWorkingRevision及Host派生深链；现有浏览器/单WorkItem MCP不是已发布的全局Aily工具组。",
+      "consumer": null,
+      "executionOwner": null,
+      "recoveryOwner": null,
+      "authority": {
+        "requestRecord": null,
+        "artifactRecord": "目标为既有原文/版本、assessment/engineering-matter work和Wiki保存工作；不另存第二套当前结论。",
+        "consumedInputField": null,
+        "ready": "待平台验证的最终用户委托与Host tenant/actor映射及逐对象核权；agentId/模型参数不授予身份。",
+        "saved": "普通只读问答不保存评估或正式采用；明确更新时经准确工作台对象与既有Host流程。",
+        "current": "每次检索/展开重核权限和当前指针，历史回答保留原版本/取得时间；缓存不代替重新获权。"
+      },
+      "decisionEntry": null,
+      "projectionEntry": null,
+      "readEntry": null,
+      "actionEntries": [],
+      "validationRefs": [
+        "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md"
+      ],
+      "gaps": [
+        {
+          "id": "dialogue.cross-object-reading.adapter",
+          "kind": "source_review",
+          "reason": "新Aily只读工具适配、可信最终用户身份和该实例API/SDK渠道尚未接通；当前consumer/执行/读取入口为null。旧入口常量或后台自动任务service-scope不能代替。",
+          "nextAction": "选择实际能够完整核权的一条官方渠道，复用现有搜索/阅读服务并准备窄范围只读接线；本次不配置连接器/身份或授新数据范围。"
+        },
+        {
+          "id": "dialogue.cross-object-reading.validation",
+          "kind": "test",
+          "reason": "尚无新Aily跨两个独立文档/事项、准确展开/导航、撤权/历史当前与资料不足的真实链路；文档本身不充通过。",
+          "nextAction": "完成可信用户与适配后，以获准样本验证；普通问答不更新评估，后续合法工作变化须能准确读出及显示Overall未覆盖。"
+        },
+        {
+          "id": "dialogue.cross-object-reading.deployment",
+          "kind": "deployment",
+          "reason": "本次未发布新Aily数据工具、修改远端配置、共享私人会话或替换agentId/channelToken。",
+          "nextAction": "具体运行身份、目的地及可见数据确认后，再配置获准连接并记录准确版本/回执；未接通则据实说明。"
+        },
+        {
+          "id": "dialogue.cross-object-reading.runtime",
+          "kind": "runtime",
+          "reason": "本次没有新Aily真实模型/数据读取/业务SAVE或跨对象问答验收；原UI Aily iframe历史失败仍按原证据保留，不能推导新渠道状态。",
+          "nextAction": "在具体授权及真实连接成立后记录请求/版本/来源/引用与等待时间；不预估更快或更稳定，不用历史缓存代替授权。"
+        }
+      ]
     }
   ]
 }
