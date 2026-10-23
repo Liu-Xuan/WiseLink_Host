@@ -52,6 +52,13 @@ function choose(id: string, value: string): void {
 }
 function click(selector: string): void { root().querySelector<HTMLButtonElement>(selector)!.click(); }
 function rows(): string[] { return Array.from(root().querySelectorAll('tbody tr')).map(row => row.textContent ?? ''); }
+function cells(): string[] {
+  return Array.from(root().querySelectorAll('tbody tr:first-child td')).map((cell: Element) => cell.textContent ?? '');
+}
+function evidenceDetail(id: string): HTMLElement {
+  return Array.from(root().querySelectorAll<HTMLElement>('article')).find((article: HTMLElement) =>
+    article.querySelector('summary')?.textContent === '完整证据 ' + id)!;
+}
 beforeEach(() => {
   monitor = document.createElement('wiselink-monitor') as WiseLinkMonitorElement;
   document.body.append(monitor);
@@ -145,4 +152,151 @@ it('labels matching not_run by column and keeps inconclusive distinct from failu
   expect(rows()[0]).not.toContain('存在失败');
   data.evidence[3].sourceRevision = 'old'; monitor.verification = data;
   expect(rows()[0]).toContain('历史 / 示例证据');
+});
+
+it.each(['integration', 'e2e'] as const)('shows same-source local %s evidence independently of the deployment target', (testLevel: 'integration' | 'e2e') => {
+  const data: VerificationSnapshot = snapshot();
+  data.snapshot.target.environmentId = 'host:app:online';
+  data.evidence = data.evidence.slice(0, 2);
+  Object.assign(data.evidence[1], {
+    testLevel, environmentId: 'local:isolated-production-build',
+    reportRef: 'local-build.log', summary: '准确本地源码构建；未部署',
+  });
+  data.evidence.push(...(['deployment', 'runtime'] as const).map((kind: 'deployment' | 'runtime') => ({
+    id: kind, kind, status: 'not_run', sourceRevision: 'candidate-new', contractRevision,
+    environmentId: 'host:app:online', bindingIds: ['save.finish'],
+  })));
+  monitor.verification = data;
+  expect(cells()[2]).toBe('本地验证 · 通过记录');
+  expect(cells()[3]).toBe('尚未部署');
+  expect(cells()[4]).toBe('尚未核对真实运行');
+  const detail: HTMLElement = evidenceDetail('test-save');
+  expect(detail.textContent).toContain('candidate-new');
+  expect(detail.textContent).toContain('local:isolated-production-build');
+  expect(detail.textContent).toContain('local-build.log');
+  expect(detail.querySelector('.evidence-summary')?.textContent).toBe('准确本地源码构建；未部署');
+});
+
+it('shows nonlocal tests in their actual environment even when the deployment environment is absent', () => {
+  const data: VerificationSnapshot = snapshot();
+  Object.assign(data.evidence[1], { testLevel: 'integration', environmentId: 'ci:isolated-integration' });
+  monitor.verification = data;
+  expect(cells()[2]).toBe('测试通过 · 环境见详情');
+  expect(evidenceDetail('test-save').textContent).toContain('ci:isolated-integration');
+  data.snapshot.target.environmentId = null;
+  monitor.verification = data;
+  expect(cells()[2]).toBe('测试通过 · 环境见详情');
+});
+
+it.each([null, undefined, ''])('requires an actual integration environment when it is %s', (environmentId: string | null | undefined) => {
+  const data: VerificationSnapshot = snapshot();
+  Object.assign(data.evidence[1], { testLevel: 'integration', environmentId });
+  monitor.verification = data;
+  expect(cells()[2]).toBe('测试环境未记录');
+  expect(evidenceDetail('test-save').textContent).toContain('测试环境未记录');
+  expect(cells()[2]).not.toContain('其他提交');
+});
+
+it('keeps the selected denominator and excludes another source even with an applicability note', () => {
+  const data: VerificationSnapshot = snapshot();
+  data.bindings[0].consistencyScenarioIds = ['V01', 'V02'];
+  Object.assign(data.evidence[1], { testLevel: 'integration', environmentId: 'local:integration' });
+  data.evidence.push({
+    ...data.evidence[1], id: 'other-scenario', sourceRevision: 'candidate-old', scenarioIds: ['V02'],
+    applicableProductRevision: 'candidate-new',
+  });
+  const selection: string = JSON.stringify(data.selection);
+  monitor.verification = data;
+  expect(cells()[2]).toBe('所选场景部分覆盖');
+  choose('scenario-filter', 'V01');
+  expect(cells()[2]).toBe('所选场景部分覆盖');
+  expect(JSON.stringify(monitor.verification!.selection)).toBe(selection);
+  expect(evidenceDetail('other-scenario').textContent).toContain('其他提交的验证');
+  expect(evidenceDetail('other-scenario').textContent).toContain('适用说明（未计入当前覆盖）');
+});
+
+it('labels another source only in test scope and preserves the original evidence and applicability note', () => {
+  const data: VerificationSnapshot = snapshot();
+  data.evidence.forEach((record: VerificationSnapshot['evidence'][number]) => { record.sourceRevision = 'candidate-old'; });
+  Object.assign(data.evidence[1], {
+    applicableProductRevision: 'candidate-new <script>说明</script>', summary: '旧提交的原始验证范围',
+  });
+  data.evidence.push({
+    id: 'old-deployment', kind: 'deployment', status: 'passed', sourceRevision: 'candidate-old',
+    contractRevision, environmentId: 'isolated-test', bindingIds: ['save.finish'],
+  });
+  monitor.verification = data;
+  expect(cells()[2]).toBe('其他提交的验证');
+  expect(cells()[1]).toBe('历史 / 示例证据');
+  expect(cells()[3]).toBe('历史 / 示例证据');
+  expect(cells()[4]).toBe('历史 / 示例证据');
+  const detail: HTMLElement = evidenceDetail('test-save');
+  expect(detail.textContent).toContain('其他提交的验证');
+  expect(detail.textContent).toContain('candidate-old');
+  expect(detail.textContent).toContain('test.log');
+  expect(detail.textContent).toContain('旧提交的原始验证范围');
+  expect(detail.querySelector('.evidence-applicability')?.textContent).toContain('适用说明（未计入当前覆盖）');
+  expect(detail.querySelector('.evidence-applicability')?.textContent).toContain('candidate-new <script>说明</script>');
+  expect(detail.querySelector('script')).toBeNull();
+  expect(evidenceDetail('historical-runtime').textContent).not.toContain('其他提交的验证');
+});
+
+it.each([null, undefined])('keeps an unknown execution source %s unverified despite an applicability note', (sourceRevision: null | undefined) => {
+  const data: VerificationSnapshot = snapshot();
+  Object.assign(data.evidence[1], { sourceRevision, applicableProductRevision: 'candidate-new' });
+  monitor.verification = data;
+  expect(cells()[2]).toBe('执行版本未核定');
+  expect(evidenceDetail('test-save').textContent).toContain('执行版本未核定');
+  expect(evidenceDetail('test-save').textContent).toContain('适用说明（未计入当前覆盖）');
+  expect(cells()[2]).not.toContain('通过');
+});
+
+it.each(['record', 'snapshot'] as const)('keeps %s demo test evidence separate from current tests', (scope: 'record' | 'snapshot') => {
+  const data: VerificationSnapshot = snapshot();
+  if (scope === 'record') data.evidence[1].mode = 'demo';
+  else data.snapshot.dataMode = 'demo';
+  monitor.verification = data;
+  expect(cells()[2]).toBe('示例证据');
+  expect(evidenceDetail('test-save').textContent).toContain('示例证据');
+});
+
+it.each([null, 'b'.repeat(64)])('keeps missing or mismatched test contract identity %s explicit', (revision: string | null) => {
+  const data: VerificationSnapshot = snapshot();
+  data.evidence[1].contractRevision = revision;
+  monitor.verification = data;
+  const expected: string = revision === null ? '适用契约未核定' : '适用契约不匹配';
+  expect(cells()[2]).toBe(expected);
+  expect(evidenceDetail('test-save').textContent).toContain(expected);
+  expect(cells()[2]).not.toContain('其他提交');
+});
+
+it.each(['unit', 'contract'] as const)('keeps explicit %s tests independent of environment requirements', (testLevel: 'unit' | 'contract') => {
+  const data: VerificationSnapshot = snapshot();
+  Object.assign(data.evidence[1], { testLevel, environmentId: null });
+  data.snapshot.target.environmentId = null;
+  monitor.verification = data;
+  expect(cells()[2]).toBe('测试范围匹配 · 通过记录');
+});
+
+it('preserves simultaneous matching failed and passed tests in the local environment', () => {
+  const data: VerificationSnapshot = snapshot();
+  Object.assign(data.evidence[1], { testLevel: 'integration', environmentId: 'local:integration' });
+  data.evidence.push({ ...data.evidence[1], id: 'failed-test', status: 'failed' });
+  monitor.verification = data;
+  expect(cells()[2]).toBe('失败 / 通过并存');
+});
+
+it('still requires deployment and runtime evidence to match the target environment', () => {
+  const data: VerificationSnapshot = snapshot();
+  data.evidence = (['deployment', 'runtime'] as const).map((kind: 'deployment' | 'runtime') => ({
+    id: kind, kind, status: 'not_run', sourceRevision: 'candidate-new', contractRevision,
+    environmentId: 'local:integration', bindingIds: ['save.finish'],
+  }));
+  monitor.verification = data;
+  expect(cells()[3]).toBe('历史 / 示例证据');
+  expect(cells()[4]).toBe('历史 / 示例证据');
+  data.evidence.forEach((record: VerificationSnapshot['evidence'][number]) => { record.environmentId = 'isolated-test'; });
+  monitor.verification = data;
+  expect(cells()[3]).toBe('尚未部署');
+  expect(cells()[4]).toBe('尚未核对真实运行');
 });

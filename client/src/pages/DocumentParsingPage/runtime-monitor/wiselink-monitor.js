@@ -309,7 +309,19 @@ class WiseLinkMonitor extends HTMLElement {
       && !this.isDemo(data.snapshot) && !this.isDemo(record)
       && record.contractRevision === data.snapshot.contract.sourceRevision
       && record.sourceRevision === target.sourceRevision
-      && (!this.requiresEnvironment(record) || nonempty(target.environmentId) && nonempty(record.environmentId) && record.environmentId === target.environmentId);
+      && (!this.requiresEnvironment(record) || nonempty(record.environmentId)
+        && (record.kind === 'test' || nonempty(target.environmentId) && record.environmentId === target.environmentId));
+  }
+  testScopeMismatch(data, record) {
+    if (this.isDemo(data.snapshot) || this.isDemo(record)) return '示例证据';
+    const issues = [], target = data.snapshot.target;
+    if (!nonempty(record.sourceRevision)) issues.push('执行版本未核定');
+    else if (nonempty(target?.sourceRevision) && record.sourceRevision !== target.sourceRevision) issues.push('其他提交的验证');
+    if (!nonempty(target?.sourceRevision)) issues.push('源码目标未定 · 有历史证据');
+    if (!nonempty(record.contractRevision)) issues.push('适用契约未核定');
+    else if (record.contractRevision !== data.snapshot.contract.sourceRevision) issues.push('适用契约不匹配');
+    if (this.requiresEnvironment(record) && !nonempty(record.environmentId)) issues.push('测试环境未记录');
+    return issues.join('；');
   }
   selectedScenarios(data, item) {
     const related = new Set(item.itemKind === 'scenario' ? [item.id] : item.consistencyScenarioIds ?? []);
@@ -336,8 +348,9 @@ class WiseLinkMonitor extends HTMLElement {
       records = records.filter(record => (record.scenarioIds ?? []).some(id => selection.includes(id)));
     }
     if (!records.length) return column === 'tests' ? '未验证' : '未记录';
-    if (!nonempty(data.snapshot.target?.sourceRevision)) return '源码目标未定 · 有历史证据';
     const current = records.filter(record => this.matches(data,record));
+    if (!current.length && column === 'tests') return [...new Set(records.map(record => this.testScopeMismatch(data,record)))].join(' / ');
+    if (!nonempty(data.snapshot.target?.sourceRevision)) return '源码目标未定 · 有历史证据';
     if (!current.length) {
       if (records.some(record => !nonempty(record.contractRevision))) return '适用契约未核定';
       if (!nonempty(data.snapshot.target?.environmentId) && records.every(record => this.requiresEnvironment(record))) return '环境目标未定 · 有历史证据';
@@ -350,7 +363,11 @@ class WiseLinkMonitor extends HTMLElement {
     if (passed.some(record => !this.sufficient(record,kind,item))) return '通过记录缺证据';
     if (column === 'tests' && !selection.every(id => passed.some(record => (record.scenarioIds ?? []).includes(id)))) return '所选场景部分覆盖';
     if (column === 'wiring') return '源码范围匹配 · 通过记录';
-    if (column === 'tests' && passed.every(record => !this.requiresEnvironment(record))) return '测试范围匹配 · 通过记录';
+    if (column === 'tests') {
+      if (passed.every(record => !this.requiresEnvironment(record))) return '测试范围匹配 · 通过记录';
+      return passed.every(record => !this.requiresEnvironment(record) || record.environmentId.startsWith('local:'))
+        ? '本地验证 · 通过记录' : '测试通过 · 环境见详情';
+    }
     return '目标匹配 · 通过记录';
   }
   relatedBindings(data, item) {
@@ -389,8 +406,9 @@ class WiseLinkMonitor extends HTMLElement {
     return JSON.stringify([item,bindings,this.itemWorkPackages(data,item)]).toLowerCase().includes(this._verificationFilter.toLowerCase());
   }
   verificationEvidenceDetail(data, records) {
-    return records.length ? records.map(record => `<article><p><strong>${esc(record.kind)} · ${esc(record.status)}</strong> · ${this.matches(data,record) ? '范围匹配；结果仍见独立证据列' : '历史 / 范围未匹配；不证明当前候选通过'}</p>
+    return records.length ? records.map(record => `<article><p><strong>${esc(record.kind)} · ${esc(record.status)}</strong> · ${this.matches(data,record) ? '范围匹配；结果仍见独立证据列' : `${esc(record.kind === 'test' ? this.testScopeMismatch(data,record) : '历史 / 范围未匹配')}；不证明当前候选通过`}</p>
       ${nonempty(record.summary) ? `<p class="evidence-summary">${esc(record.summary)}</p>` : ''}
+      ${nonempty(record.applicableProductRevision) ? `<p class="evidence-applicability">适用说明（未计入当前覆盖）：${esc(record.applicableProductRevision)}</p>` : ''}
       <dl class="axes"><dt>观察时间</dt><dd>${esc(record.observedAt || '未记录')}</dd><dt>源码</dt><dd class="mono">${esc(record.sourceRevision || '未核定')}</dd><dt>环境</dt><dd>${esc(record.environmentId || '未记录；仅明确单元/契约测试可不要求环境')}</dd><dt>报告引用</dt><dd class="mono">${esc(record.reportRef || '未记录')}</dd></dl>
       <details><summary>完整证据 ${esc(record.id)}</summary><pre>${esc(JSON.stringify(record,null,2))}</pre></details></article>`).join('') : '<p class="muted">没有已导入证据；不表示已通过。</p>';
   }
