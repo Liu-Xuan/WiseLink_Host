@@ -3,6 +3,7 @@ import WorkItemRuntimeDiagnostic from './runtime-monitor/WorkItemRuntimeDiagnost
 import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import JobAidProblemWorkspace from './JobAidProblemWorkspace';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { toast } from 'sonner';
 import {
   Link,
   useLocation,
@@ -48,6 +49,7 @@ import { buildCurrentObjectContext } from '@client/src/features/navigation/conte
 import SavedAssessmentReading from '@client/src/features/matter/SavedAssessmentReading';
 import ReadingReturnLink from '@client/src/features/matter/ReadingReturnLink';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
+import { exactDocumentSourceRoute } from '@client/src/features/matter/matter-navigation';
 import type { ReviewSourceBinding } from '@client/src/features/review/review-scope';
 import { assertDocumentReadingVersion } from './document-parsing-load';
 
@@ -832,9 +834,30 @@ export default function DocumentParsingPage() {
     evidence: Pick<
       DocumentAssessmentEvidence,
       'workItemId' | 'documentVersionId' | 'sourceRefId'
-    >,
+    > & { locator?: string },
   ): void {
-    if (evidence.workItemId === workItemId) {
+    const exactRoute: string | null = exactDocumentSourceRoute(evidence);
+    if (!exactRoute && evidence.locator) {
+      let locator: unknown;
+      let invalidParseLocator: boolean = false;
+      try {
+        locator = JSON.parse(evidence.locator);
+      } catch {
+        invalidParseLocator = evidence.locator.trim().startsWith('{');
+      }
+      if (
+        invalidParseLocator ||
+        (locator !== null &&
+          typeof locator === 'object' &&
+          Object.prototype.hasOwnProperty.call(locator, 'parseRunId'))
+      ) {
+        toast.error(
+          '这条保存依据的解析定位不完整或与来源不一致，暂不能打开原文。',
+        );
+        return;
+      }
+    }
+    if (!exactRoute && evidence.workItemId === workItemId) {
       updateDeepLink({
         panel: 'reader',
         readerMode: 'structured',
@@ -844,12 +867,14 @@ export default function DocumentParsingPage() {
       });
       return;
     }
-    const params: URLSearchParams = new URLSearchParams({
-      panel: 'reader',
-      readerMode: 'structured',
-      sourceRef: evidence.sourceRefId,
-      documentVersionId: evidence.documentVersionId,
-    });
+    const params: URLSearchParams = exactRoute
+      ? new URLSearchParams(exactRoute.split('?')[1])
+      : new URLSearchParams({
+          panel: 'reader',
+          readerMode: 'structured',
+          sourceRef: evidence.sourceRefId,
+          documentVersionId: evidence.documentVersionId,
+        });
     const returnMatterId: string =
       searchParams.get('returnMatterId')?.trim() ?? '';
     const returnLibraryWorkItemId =
@@ -867,7 +892,9 @@ export default function DocumentParsingPage() {
         searchParams.get('returnWorkItemId') || workItemId,
       );
     navigate(
-      `/work-items/${encodeURIComponent(evidence.workItemId)}/analysis?${params.toString()}`,
+      exactRoute
+        ? `${exactRoute.split('?')[0]}?${params.toString()}`
+        : `/work-items/${encodeURIComponent(evidence.workItemId)}/analysis?${params.toString()}`,
     );
   }
 
