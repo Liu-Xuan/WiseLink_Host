@@ -1361,7 +1361,7 @@ function target(input: {
       canonicalSubject: { namespace: 'MIAODA_USER_ID', id: ACTOR_ID },
     },
   };
-  const sessions = { resolve: jest.fn(async () => session) };
+  const sessions = { nativeBrowserIdentity: jest.fn(() => session) };
   const objectAccess = {
     freshRead: jest.fn(async ({ action, accessRoot }) =>
       input.denyAccess
@@ -1383,6 +1383,7 @@ function target(input: {
             documentVersionId: current.source.documentVersionId,
             tenantId: TENANT_ID,
             actorUserId: ACTOR_ID,
+            actionPolicy: { objectRelation: 'OWNER' },
           },
     ),
   };

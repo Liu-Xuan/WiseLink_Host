@@ -8,7 +8,6 @@ import type {
 } from '@shared/api.interface';
 import { canonicalSha256 } from '../../action-attempt/action-attempt-envelope';
 import { SessionResolver } from '../../identity/session-resolver.service';
-import type { ResolvedSession } from '../../identity/session-resolver.service';
 import {
   CANONICAL_OBJECT_ACCESS,
   type CanonicalObjectAccessGrant,
@@ -64,7 +63,6 @@ const HISTORY_LIMIT = 20;
 const QUERY_DEADLINE_MS = 60_000;
 
 interface AuthorizedConfigurationAccess {
-  session: ResolvedSession;
   grant: CanonicalObjectAccessGrant;
   workItem: CanonicalWorkItemProjection;
 }
@@ -624,11 +622,9 @@ export class ConfigurationEvidenceService {
     action: 'READ_CONFIGURATION_EVIDENCE' | 'REFRESH_CONFIGURATION_EVIDENCE',
     httpRequest: Request,
   ): Promise<AuthorizedConfigurationAccess> {
-    const session: ResolvedSession | null =
-      await this.sessions.resolve(httpRequest);
-    if (!session) throw sessionRequired();
+    const actor = this.sessions.nativeBrowserIdentity(httpRequest).actor;
     const result = await this.objectAccess.freshRead({
-      actor: session.actor,
+      actor,
       action,
       accessRoot: { kind: 'WORK_ITEM', id: workItemId },
     });
@@ -638,6 +634,8 @@ export class ConfigurationEvidenceService {
         statusCode: result.statusCode,
       });
     }
+    // Retain these routes' owner scope; generic native READ can grant TENANT_READER.
+    if (result.actionPolicy.objectRelation !== 'OWNER') throw configurationNotFound();
     const workItem = await this.registrar.getTenantScopedByWorkItemId({
       workItemId,
       tenantId: result.tenantId,
@@ -645,15 +643,15 @@ export class ConfigurationEvidenceService {
     if (
       result.action !== action ||
       result.workItemId !== workItemId ||
-      result.tenantId !== session.actor.tenantId ||
-      result.actorUserId !== session.actor.canonicalSubject.id ||
+      result.tenantId !== actor.tenantId ||
+      result.actorUserId !== actor.canonicalSubject.id ||
       result.workItemRevision !== workItem.revision ||
       result.requestId !== workItem.requestId ||
       result.documentVersionId !== workItem.source.documentVersionId
     ) {
       throw configurationNotFound();
     }
-    return { session, grant: result, workItem };
+    return { grant: result, workItem };
   }
 }
 
@@ -1206,13 +1204,6 @@ function requiredIsoDateTime(value: unknown, code: string): string {
     throw configurationBadRequest(code);
   }
   return value;
-}
-
-function sessionRequired(): Error & { code: string; statusCode: number } {
-  return Object.assign(new Error('A valid OAuth session is required.'), {
-    code: 'SESSION_REQUIRED',
-    statusCode: 401,
-  });
 }
 
 function configurationBadRequest(

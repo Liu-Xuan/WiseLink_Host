@@ -468,6 +468,7 @@ function selectionHarness(options: { deny?: boolean } = {}) {
             documentVersionId: 'DV-1',
             tenantId: 'tenant-1',
             actorUserId: 'user-1',
+            actionPolicy: { objectRelation: 'OWNER' as const },
           },
     ),
   };
@@ -479,7 +480,7 @@ function selectionHarness(options: { deny?: boolean } = {}) {
     readCurrent: jest.fn<Promise<unknown>, [unknown]>(async () => null),
   };
   const sessions = {
-    resolve: jest.fn(async () => ({ actor })),
+    nativeBrowserIdentity: jest.fn(() => ({ actor })),
   };
   const service = new CanonicalHostApplicabilitySelectionService(
     sessions as never,

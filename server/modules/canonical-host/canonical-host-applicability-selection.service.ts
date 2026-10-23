@@ -14,9 +14,9 @@ import type {
 } from '@shared/api.interface';
 import type { FleetMasterDataSource } from '../assessment-workbench/applicability-fleet/fleetMasterData';
 import { SessionResolver } from '../identity/session-resolver.service';
-import type { ResolvedSession } from '../identity/session-resolver.service';
 import {
   CANONICAL_OBJECT_ACCESS,
+  type CanonicalMiaodaFinalUserActorContext,
   type CanonicalObjectAccessGrant,
   type CanonicalObjectAccessPort,
 } from '../work-item/canonical-object-access.port';
@@ -40,12 +40,12 @@ export class CanonicalHostApplicabilitySelectionService {
     workItemId: string,
     request: Request,
   ): Promise<CanonicalApplicabilitySelectionReadModel> {
-    const session = await this.requireSession(request);
-    const grant = await this.authorize(session, workItemId, 'READ_WORK_ITEM');
-    const workItem = await this.freshWorkItem(session, grant);
+    const actor = this.sessions.nativeBrowserIdentity(request).actor;
+    const grant = await this.authorize(actor, workItemId, 'READ_WORK_ITEM');
+    const workItem = await this.freshWorkItem(actor, grant);
     const selection = requiredSelection(workItem);
     const fleet = await this.fleetRepository.readCurrentForAircraft({
-      tenantId: session.actor.tenantId,
+      tenantId: actor.tenantId,
       aircraftIdentifier: selection.aircraftIdentifier,
       asOf: selection.asOf,
     });
@@ -56,10 +56,10 @@ export class CanonicalHostApplicabilitySelectionService {
     workItemId: string,
     request: Request,
   ): Promise<CanonicalApplicabilitySelectionReviewAvailability> {
-    const session = await this.requireSession(request);
-    const grant = await this.authorize(session, workItemId,
+    const actor = this.sessions.nativeBrowserIdentity(request).actor;
+    const grant = await this.authorize(actor, workItemId,
       'CONFIGURE_APPLICABILITY_SELECTION');
-    await this.freshWorkItem(session, grant);
+    await this.freshWorkItem(actor, grant);
     return { enabled: reviewActionEnabledFor(workItemId) };
   }
 
@@ -68,25 +68,25 @@ export class CanonicalHostApplicabilitySelectionService {
     input: PreviewCanonicalApplicabilitySelectionRequest,
     request: Request,
   ): Promise<CanonicalApplicabilitySelectionReviewDraft> {
-    const session = await this.requireSession(request);
+    const actor = this.sessions.nativeBrowserIdentity(request).actor;
     const grant = await this.authorize(
-      session, workItemId, 'CONFIGURE_APPLICABILITY_SELECTION',
+      actor, workItemId, 'CONFIGURE_APPLICABILITY_SELECTION',
     );
-    const workItem = await this.freshWorkItem(session, grant);
+    const workItem = await this.freshWorkItem(actor, grant);
     requireReviewActionEnabled(workItemId);
     assertParsedWorkItem(workItem);
     if (input.expectedWorkItemRevision !== workItem.revision)
       throw conflict('CANONICAL_WORK_ITEM_REVISION_MISMATCH');
     const aircraftIdentifier = normalizeAircraftIdentifier(input.aircraftIdentifier);
     const asOf = requiredIsoDate(input.asOf);
-    const fleet = await this.checkedFleet(session.actor.tenantId, aircraftIdentifier, asOf);
+    const fleet = await this.checkedFleet(actor.tenantId, aircraftIdentifier, asOf);
     const current = workItem.applicabilityControlledSelection;
     if (current && validSelection(current, workItem) &&
       current.aircraftIdentifier === aircraftIdentifier && current.asOf === asOf &&
       selectionMatchesFleet(current, fleet))
       throw conflict('APPLICABILITY_SELECTION_ALREADY_CURRENT');
     return reviewDraft(workItem, aircraftIdentifier, asOf, fleet,
-      session.actor.tenantId, session.actor.canonicalSubject.id);
+      actor.tenantId, actor.canonicalSubject.id);
   }
 
   async confirmReviewAction(
@@ -94,11 +94,11 @@ export class CanonicalHostApplicabilitySelectionService {
     input: ConfirmCanonicalApplicabilitySelectionRequest,
     request: Request,
   ): Promise<CanonicalApplicabilitySelectionReadModel> {
-    const session = await this.requireSession(request);
+    const actor = this.sessions.nativeBrowserIdentity(request).actor;
     const grant = await this.authorize(
-      session, workItemId, 'CONFIGURE_APPLICABILITY_SELECTION',
+      actor, workItemId, 'CONFIGURE_APPLICABILITY_SELECTION',
     );
-    const workItem = await this.freshWorkItem(session, grant);
+    const workItem = await this.freshWorkItem(actor, grant);
     requireReviewActionEnabled(workItemId);
     if (input.confirmed !== true) throw badRequest('APPLICABILITY_SELECTION_CONFIRMATION_REQUIRED');
     assertParsedWorkItem(workItem);
@@ -108,15 +108,15 @@ export class CanonicalHostApplicabilitySelectionService {
       draft.documentVersionId !== workItem.source.documentVersionId ||
       draft.expectedWorkItemRevision !== workItem.revision)
       throw conflict('APPLICABILITY_SELECTION_REVIEW_DRAFT_STALE');
-    assertReviewDraftSignature(draft, session.actor.tenantId,
-      session.actor.canonicalSubject.id);
+    assertReviewDraftSignature(draft, actor.tenantId,
+      actor.canonicalSubject.id);
     const aircraftIdentifier = normalizeAircraftIdentifier(draft.aircraftIdentifier);
     const asOf = requiredIsoDate(draft.asOf);
-    const fleet = await this.checkedFleet(session.actor.tenantId, aircraftIdentifier, asOf);
+    const fleet = await this.checkedFleet(actor.tenantId, aircraftIdentifier, asOf);
     if (!sameFleetSource(draft.fleetSource, fleet))
       throw conflict('APPLICABILITY_SELECTION_REVIEW_DRAFT_STALE');
     await this.persistSelection(workItem, fleet, aircraftIdentifier, asOf,
-      session.actor.canonicalSubject.id);
+      actor.canonicalSubject.id);
     const readback = await this.read(workItemId, request);
     if (readback.workItemRevision !== draft.expectedWorkItemRevision + 1 ||
       readback.documentVersionId !== draft.documentVersionId ||
@@ -137,19 +137,19 @@ export class CanonicalHostApplicabilitySelectionService {
   ): Promise<CanonicalApplicabilitySelectionReadModel> {
     // Internal legacy call path; no controller exposes this as a bare write.
     // Browser confirmation uses the signed preview path above.
-    const session = await this.requireSession(request);
+    const actor = this.sessions.nativeBrowserIdentity(request).actor;
     const grant = await this.authorize(
-      session,
+      actor,
       workItemId,
       'CONFIGURE_APPLICABILITY_SELECTION',
     );
-    const workItem = await this.freshWorkItem(session, grant);
+    const workItem = await this.freshWorkItem(actor, grant);
     assertParsedWorkItem(workItem);
     const aircraftIdentifier = normalizeAircraftIdentifier(
       input.aircraftIdentifier,
     );
     const asOf = requiredIsoDate(input.asOf);
-    const fleet = await this.checkedFleet(session.actor.tenantId, aircraftIdentifier, asOf);
+    const fleet = await this.checkedFleet(actor.tenantId, aircraftIdentifier, asOf);
     return this.persistSelection(workItem, fleet, aircraftIdentifier, asOf);
   }
 
@@ -229,22 +229,13 @@ export class CanonicalHostApplicabilitySelectionService {
     return readModel(updated, selection, fleet);
   }
 
-  private async requireSession(request: Request): Promise<ResolvedSession> {
-    const session = await this.sessions.resolve(request);
-    if (session) return session;
-    throw Object.assign(new Error('SESSION_REQUIRED'), {
-      code: 'SESSION_REQUIRED',
-      statusCode: 401,
-    });
-  }
-
   private async authorize(
-    session: ResolvedSession,
+    actor: CanonicalMiaodaFinalUserActorContext,
     workItemId: string,
     action: 'READ_WORK_ITEM' | 'CONFIGURE_APPLICABILITY_SELECTION',
   ): Promise<CanonicalObjectAccessGrant> {
     const result = await this.objectAccess.freshRead({
-      actor: session.actor,
+      actor,
       action,
       accessRoot: { kind: 'WORK_ITEM', id: workItemId },
     });
@@ -254,11 +245,13 @@ export class CanonicalHostApplicabilitySelectionService {
         statusCode: result.statusCode,
       });
     }
+    // Retain these routes' owner scope; generic native READ can grant TENANT_READER.
     if (
       result.action !== action ||
+      result.actionPolicy.objectRelation !== 'OWNER' ||
       result.workItemId !== workItemId ||
-      result.tenantId !== session.actor.tenantId ||
-      result.actorUserId !== session.actor.canonicalSubject.id
+      result.tenantId !== actor.tenantId ||
+      result.actorUserId !== actor.canonicalSubject.id
     ) {
       throw notFound();
     }
@@ -266,11 +259,11 @@ export class CanonicalHostApplicabilitySelectionService {
   }
 
   private async freshWorkItem(
-    session: ResolvedSession,
+    actor: CanonicalMiaodaFinalUserActorContext,
     grant: CanonicalObjectAccessGrant,
   ): Promise<CanonicalWorkItemProjection> {
     const workItem = await this.registrar.getTenantScopedByWorkItemId({
-      tenantId: session.actor.tenantId,
+      tenantId: actor.tenantId,
       workItemId: grant.workItemId,
     });
     if (

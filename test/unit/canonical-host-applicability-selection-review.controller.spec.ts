@@ -19,7 +19,8 @@ describe('applicability selection ReviewAction request boundary', () => {
   it('passes only exact preview and signed confirmation fields to the service', () => {
     const service = { read: jest.fn(), reviewAvailability: jest.fn(),
       previewReviewAction: jest.fn(), confirmReviewAction: jest.fn() };
-    const controller = new CanonicalHostApplicabilitySelectionController(service as never);
+    const browser = { runNativeWrite: jest.fn((_request: unknown, operation: () => unknown) => operation()) };
+    const controller = new CanonicalHostApplicabilitySelectionController(service as never, browser as never);
     const preview = { aircraftIdentifier: 'B-1234', asOf: '2026-08-27',
       expectedWorkItemRevision: 7 };
     controller.preview(' WI-1 ', preview, {} as never);
@@ -42,5 +43,6 @@ describe('applicability selection ReviewAction request boundary', () => {
       draft: { ...draft, selectedByUserId: 'forged' }, confirmed: true,
     }, {} as never)).toThrow('APPLICABILITY_SELECTION_REVIEW_BODY_INVALID');
     expect(service.confirmReviewAction).toHaveBeenCalledTimes(1);
+    expect(browser.runNativeWrite).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 
@@ -10,18 +10,24 @@ import type {
   ConfigurationEvidenceSnapshotReadResponse,
 } from './configuration-evidence.persistence.types';
 import { ConfigurationEvidenceService } from './configuration-evidence.service';
+import { DialogueBrowserScope } from '../dialogue-browser-scope.service';
+import { ProductionMiaodaBrowserObjectIngressGuard } from '../../work-item/production-miaoda-browser-ingress';
 
 @NeedLogin()
+@UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
 @Controller('api/canonical-host/work-items/:workItemId/configuration-evidence')
 export class ConfigurationEvidenceController {
-  constructor(private readonly service: ConfigurationEvidenceService) {}
+  constructor(
+    private readonly service: ConfigurationEvidenceService,
+    private readonly browser: DialogueBrowserScope,
+  ) {}
 
   @Get('status')
   status(
     @Param('workItemId') workItemId: string,
     @Req() request: Request,
   ): Promise<CanonicalConfigurationEvidenceStatusReadModel> {
-    return this.service.status(workItemId, request);
+    return this.browser.runRead(request, () => this.service.status(workItemId, request));
   }
 
   @Post('queries')
@@ -30,7 +36,7 @@ export class ConfigurationEvidenceController {
     @Body() body: unknown,
     @Req() request: Request,
   ): Promise<ConfigurationEvidenceQueryResponse> {
-    return this.service.query(workItemId, body, request);
+    return this.browser.runNativeWrite(request, () => this.service.query(workItemId, body, request));
   }
 
   @Get('queries/:queryAttemptRef')
@@ -39,7 +45,7 @@ export class ConfigurationEvidenceController {
     @Param('queryAttemptRef') queryAttemptRef: string,
     @Req() request: Request,
   ): Promise<ConfigurationEvidenceQueryResponse> {
-    return this.service.queryStatus(workItemId, queryAttemptRef, request);
+    return this.browser.runRead(request, () => this.service.queryStatus(workItemId, queryAttemptRef, request));
   }
 
   @Post('candidate-evidence/:candidateEvidenceRef/adoptions')
@@ -49,7 +55,8 @@ export class ConfigurationEvidenceController {
     @Body() body: unknown,
     @Req() request: Request,
   ): Promise<ConfigurationEvidenceAdoptionResponse> {
-    return this.service.adopt(workItemId, candidateEvidenceRef, body, request);
+    return this.browser.runNativeWrite(request, () =>
+      this.service.adopt(workItemId, candidateEvidenceRef, body, request));
   }
 
   @Get('snapshots/current')
@@ -57,7 +64,7 @@ export class ConfigurationEvidenceController {
     @Param('workItemId') workItemId: string,
     @Req() request: Request,
   ): Promise<ConfigurationEvidenceCurrentReadModel> {
-    return this.service.current(workItemId, request);
+    return this.browser.runRead(request, () => this.service.current(workItemId, request));
   }
 
   @Get('snapshots/:snapshotId')
@@ -66,6 +73,6 @@ export class ConfigurationEvidenceController {
     @Param('snapshotId') snapshotId: string,
     @Req() request: Request,
   ): Promise<ConfigurationEvidenceSnapshotReadResponse> {
-    return this.service.snapshot(workItemId, snapshotId, request);
+    return this.browser.runRead(request, () => this.service.snapshot(workItemId, snapshotId, request));
   }
 }
