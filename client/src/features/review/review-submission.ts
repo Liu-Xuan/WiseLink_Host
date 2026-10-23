@@ -6,6 +6,34 @@ import type {
 } from '@shared/api.interface';
 import { sameReviewScope } from './review-scope';
 
+export interface ReviewChatSendIntent {
+  workItemId: string;
+  reviewConversationId: string;
+  request: Pick<
+    AppendReviewTextTurnRequest,
+    'requestId' | 'userMessage' | 'reviewScope'
+  > & { purpose: 'CHAT'; executionMode: 'AUTOMATIC' };
+}
+
+export function reviewChatSendIntent(
+  requestId: string,
+  conversation: ReviewConversationReadModel,
+  userMessage: string,
+  reviewScope?: AppendMatterReviewScope,
+): ReviewChatSendIntent {
+  return {
+    workItemId: conversation.workItemId,
+    reviewConversationId: conversation.reviewConversationId,
+    request: {
+      requestId,
+      userMessage: userMessage.trim(),
+      purpose: 'CHAT',
+      executionMode: 'AUTOMATIC',
+      ...(reviewScope ? { reviewScope: { ...reviewScope } } : {}),
+    },
+  };
+}
+
 export function assessmentDiscussionTurns(
   conversation: ReviewConversationReadModel,
 ): ReviewTurnReadModel[] {

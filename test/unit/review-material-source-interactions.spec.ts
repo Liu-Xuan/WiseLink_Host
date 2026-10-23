@@ -13,6 +13,7 @@ jest.mock('@client/src/api', () => ({ canonicalHost: {
 } }));
 jest.mock('@client/src/api/canonical-host', () => ({
   getCanonicalHostClientSessionGeneration: () => 1,
+  subscribeCanonicalHostClientSession: () => () => undefined,
 }));
 jest.mock('@client/src/api/runtime-probe', () => ({ getHostedRuntimeFingerprint: jest.fn() }));
 jest.mock('@client/src/config/runtime-build', () => ({ runtimeBuildFingerprint: {
@@ -26,7 +27,9 @@ jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/components/ui/textarea', () => ({ Textarea: 'textarea' }));
 jest.mock('../../client/src/features/review/useReviewDraft', () => {
   const setMessage = jest.fn();
-  return { __esModule: true, default: () => ['', setMessage] };
+  return { __esModule: true, default: () => ['', setMessage],
+    usePendingReviewChat: () => [null, setMessage],
+    useUnconfirmedReviewChats: () => [[], setMessage] };
 });
 jest.mock('../../client/src/features/review/useReviewWorkingRefresh', () => ({
   __esModule: true, default: () => null,

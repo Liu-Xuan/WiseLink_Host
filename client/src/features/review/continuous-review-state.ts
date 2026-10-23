@@ -150,11 +150,20 @@ export function reviewOperationErrorPresentation(
   const message = errorMessage(reason);
   const code = recordString(error, 'code');
   const statusCode = recordNumber(error, 'statusCode');
+  if (code === 'REVIEW_EXTERNAL_DELEGATION_REQUIRED') {
+    return {
+      title: '当前账号不能执行自动回复',
+      message:
+        '自动回复需要当前事项的负责人身份和有效的飞书来源授权，请核对账号并重新读取。',
+      code,
+      retryable: recordBoolean(error, 'retryable'),
+      operatorAction: recordString(error, 'operatorAction'),
+    };
+  }
   if (code === 'OFFICIAL_OAUTH_SESSION_REQUIRED') {
     return {
       title: '需要连接飞书身份',
-      message:
-        '本应用的飞书身份连接缺失或已过期。请重新连接后返回本事项读取。',
+      message: '本应用的飞书身份连接缺失或已过期。请重新连接后返回本事项读取。',
       code,
       retryable: null,
       operatorAction: null,
@@ -177,8 +186,11 @@ export function reviewOperationErrorPresentation(
     userMessage =
       '当前浏览器缺少安全请求标识能力，请使用受支持的飞书客户端或浏览器。';
   }
-  if (operation === 'refresh' && code === 'REVIEW_CONVERSATION_READ_TIMEOUT' &&
-      !reviewErrorRevokesReadback(reason)) {
+  if (
+    operation === 'refresh' &&
+    code === 'REVIEW_CONVERSATION_READ_TIMEOUT' &&
+    !reviewErrorRevokesReadback(reason)
+  ) {
     userMessage = '读取讨论超时，请重新读取；已保存记录仍可供追溯。';
   } else if (operation === 'refresh' && !reviewErrorRevokesReadback(reason)) {
     userMessage = '未能读取最新复核记录，请重新读取；未提交的草稿仍保留。';
@@ -194,6 +206,9 @@ export function reviewOperationErrorPresentation(
 
 export function reviewErrorRevokesReadback(reason: unknown): boolean {
   const error = errorRecord(reason);
+  // This code denies automatic execution, not the already authorized readback.
+  if (recordString(error, 'code') === 'REVIEW_EXTERNAL_DELEGATION_REQUIRED')
+    return false;
   const status = recordNumber(error, 'statusCode');
   return (
     [401, 403, 404].includes(status ?? 0) ||

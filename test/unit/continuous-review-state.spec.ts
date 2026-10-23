@@ -69,7 +69,7 @@ describe('continuous review client state', () => {
 
   it('keeps stale-read disclosure during failure and retry until a successful readback', () => {
     expect(reviewReadbackMessage(true, false)).toContain('上次读回的投影');
-    expect(reviewReadbackMessage(false, true)).toContain('不代表最新执行状态');
+    expect(reviewReadbackMessage(false, true)).toContain('显示上次读取内容');
     expect(reviewReadbackMessage(true, true)).toContain('仍显示旧投影');
     expect(reviewReadbackMessage(false, false)).toBeNull();
   });
@@ -91,7 +91,7 @@ describe('continuous review client state', () => {
     ).toContain('授权');
   });
 
-  it('preserves the legacy draft readback and revoked-access cleanup after dialogue migration', async () => {
+  it('retains scoped editable CHAT drafts and revoked-access cleanup', async () => {
     const source = await readFile(
       resolve(
         __dirname,
@@ -100,7 +100,9 @@ describe('continuous review client state', () => {
       'utf8',
     );
 
-    expect(source).toMatch(/<Textarea value=\{message\} readOnly/u);
+    expect(source).toContain('<ReviewChatComposer');
+    expect(source).toContain('message={message}');
+    expect(source).not.toContain('<ContextualDialogue');
     expect(source).not.toContain('async function appendTurn');
     expect(source).toMatch(
       /reviewErrorRevokesReadback\(reason\)[\s\S]*?setConversation\(null\)[\s\S]*?setMessage\(''\)/u,

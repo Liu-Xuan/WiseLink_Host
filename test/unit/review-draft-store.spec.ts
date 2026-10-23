@@ -16,6 +16,10 @@ import {
   readReviewDraft,
   subscribeReviewDraft,
   writeReviewDraft,
+  readPendingReviewChat,
+  writePendingReviewChat,
+  readUnconfirmedReviewChats,
+  retainUnconfirmedReviewChat,
 } from '../../client/src/features/review/review-draft-store';
 
 describe('unsubmitted Review draft retention', () => {
@@ -65,4 +69,52 @@ describe('unsubmitted Review draft retention', () => {
     expect(readReviewDraft('matter:1')).toBe('');
     expect(readReviewDraft('matter:2')).toBe('仍未发送');
   });
+});
+
+it('retains the exact unconfirmed CHAT intent by scope and clears it across identity changes', () => {
+  const request = {
+    workItemId: 'WI-scoped',
+    reviewConversationId: 'RC-scoped',
+    request: {
+      requestId: 'same-request',
+      purpose: 'CHAT' as const,
+      executionMode: 'AUTOMATIC' as const,
+      userMessage: '未确认的发送',
+    },
+  };
+  const session = mockSession;
+  writePendingReviewChat('matter:pending', request, session);
+  expect(readPendingReviewChat('matter:pending')).toBe(request);
+  expect(readPendingReviewChat('matter:other')).toBeNull();
+  mockSession += 1;
+  mockSessionChange();
+  expect(readPendingReviewChat('matter:pending')).toBeNull();
+  writePendingReviewChat('matter:pending', request, session);
+  expect(readPendingReviewChat('matter:pending')).toBeNull();
+});
+
+it('moves an unknown send only on explicit request, retaining its body and clearing it on session change', () => {
+  const pending = {
+    workItemId: 'WI-retained',
+    reviewConversationId: 'RC-retained',
+    request: {
+      requestId: 'same-original',
+      userMessage: '原问题',
+      purpose: 'CHAT' as const,
+      executionMode: 'AUTOMATIC' as const,
+    },
+  };
+  writeReviewDraft('scope:retained', '原问题', mockSession);
+  writeReviewDraft('scope:other', '其他范围草稿', mockSession);
+  writePendingReviewChat('scope:retained', pending, mockSession);
+  expect(readUnconfirmedReviewChats('scope:retained')).toHaveLength(0);
+  retainUnconfirmedReviewChat('scope:retained', mockSession);
+  expect(readPendingReviewChat('scope:retained')).toBeNull();
+  expect(readUnconfirmedReviewChats('scope:retained')).toEqual([pending]);
+  expect(readReviewDraft('scope:retained')).toBe('');
+  expect(readReviewDraft('scope:other')).toBe('其他范围草稿');
+  expect(readUnconfirmedReviewChats('scope:other')).toHaveLength(0);
+  mockSession += 1;
+  mockSessionChange();
+  expect(readUnconfirmedReviewChats('scope:retained')).toHaveLength(0);
 });
