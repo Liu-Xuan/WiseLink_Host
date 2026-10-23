@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 
 import {
   DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
@@ -21,6 +22,7 @@ export class MiaodaAutomaticWorkItemSourceAuthorizationAdapter implements Automa
 
   async authorizeSourceRead(
     input: AutomaticWorkItemSourceAuthorizationInput,
+    database?: PostgresJsDatabase,
   ): Promise<AutomaticWorkItemSourceAuthorizationResult> {
     try {
       await this.documentAuthorization.assertCanRead({
@@ -29,7 +31,7 @@ export class MiaodaAutomaticWorkItemSourceAuthorizationAdapter implements Automa
         roles: [],
         action: 'DOCUMENT_READ',
         documentVersionId: input.documentVersionId,
-      });
+      }, database);
     } catch (error) {
       if (isHostReadPolicyDenial(error)) {
         return {

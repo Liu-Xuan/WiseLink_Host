@@ -1,7 +1,7 @@
 import { DocumentParsingRepository } from '../document-management/src/hosted/nest/document-parsing.repository';
 import { isMintedDocumentUploadAuthority } from '../document-management/src/hosted/nest/document-upload-authority';
 import { Injectable, Optional } from '@nestjs/common';
-import { FileService } from '@lark-apaas/fullstack-nestjs-core';
+import { FileService, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 
 import type { DocumentManagementIngestAuthorizer } from '../document-management/src/hosted/nest/document-management-hosted.tokens';
 import {
@@ -123,13 +123,14 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
     roles: string[];
     action: 'DOCUMENT_READ';
     documentVersionId: string;
-  }): Promise<void> {
+  }, database?: PostgresJsDatabase): Promise<void> {
     assertAuthenticated(input);
     const binding = await this.workItems.loadTenantDocumentAuthorizationBinding(
       {
         tenantId: input.tenantId,
         documentVersionId: input.documentVersionId,
       },
+      database,
     );
     if (binding) return;
     const acquired = await this.catalog?.readOwnedAcquisitionVersionBinding({
@@ -137,7 +138,7 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
       documentVersionId: input.documentVersionId,
       actorUserId: input.actorUserId,
       readScope: 'TENANT',
-    });
+    }, database);
     if (!acquired) throw documentNotFound();
   }
 }

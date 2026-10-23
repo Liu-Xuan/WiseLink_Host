@@ -109,6 +109,11 @@ describe('owner-requested initial continuation', () => {
     expect(h.sessions.withVerifiedReviewServiceSql).toHaveBeenCalledWith(expect.any(Function), actor.userId);
     expect(h.authorization.authorize).toHaveBeenLastCalledWith({actor,action:'EVALUATE_JOB_AID',workItemId:h.workItem.workItemId},'same-transaction');
     expect(h.sourceAuthorization.authorizeSourceRead).toHaveBeenCalledTimes(1);
+    expect(h.sourceAuthorization.authorizeSourceRead).toHaveBeenCalledWith({
+      tenantId:actor.tenantId,actorUserId:actor.userId,workItemId:h.workItem.workItemId,
+      requestId:h.workItem.requestId,...h.workItem.source,
+      sourceFileSha256:h.workItem.source.sourceFileSha256.replace(/^sha256:/u,''),
+    },'same-transaction');
     for (const invalid of [{action:'DOCUMENT_WRITE'},{authorizationPolicy:'OTHER_POLICY'}]) {
       h.sourceAuthorization.authorizeSourceRead.mockImplementationOnce(async (input:unknown)=>({...input as object,allowed:true,action:'DOCUMENT_READ',authorizationPolicy:'MIAODA_HOST_DOCUMENT_READ',...invalid}) as never);
       await expect(h.send({...request,operation:'EVALUATE_JOBAID'})).rejects.toThrow('BINDING_CHANGED');

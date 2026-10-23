@@ -1882,8 +1882,8 @@ export class MiaodaHostedDocumentCatalog {
   }
 
   async readOwnedAcquisitionVersionBinding(input: { documentVersionId: string; tenantId: string;
-    actorUserId: string; acquisitionId?: string; readScope?: 'TENANT' }): Promise<boolean> {
-    const [row] = await this.db.select({ documentVersionId: dmDocumentVersion.documentVersionId })
+    actorUserId: string; acquisitionId?: string; readScope?: 'TENANT' }, database: PostgresJsDatabase = this.db): Promise<boolean> {
+    const [row] = await database.select({ documentVersionId: dmDocumentVersion.documentVersionId })
       .from(dmDocumentVersion)
       .innerJoin(dmPublicationFamily, eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId))
       .innerJoin(dmAcquisition, and(eq(dmAcquisition.documentVersionId, dmDocumentVersion.documentVersionId),

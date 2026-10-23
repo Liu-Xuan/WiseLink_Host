@@ -2267,7 +2267,7 @@ export class MiaodaWorkItemRepository {
     tenantId: string;
     documentVersionId: string;
     actorUserId?: string;
-  }): Promise<WorkItemAuthorizationBinding | null> {
+  }, database: PostgresJsDatabase = this.db): Promise<WorkItemAuthorizationBinding | null> {
     const conditions = [
       eq(workItem.tenantId, input.tenantId),
       eq(workItem.documentVersionId, input.documentVersionId),
@@ -2275,7 +2275,7 @@ export class MiaodaWorkItemRepository {
     if (input.actorUserId) {
       conditions.push(eq(workItem.requestedByUserId, input.actorUserId));
     }
-    const [row] = await this.db
+    const [row] = await database
       .select({
         workItemId: workItem.workItemId,
         revision: workItem.revision,

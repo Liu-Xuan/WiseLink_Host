@@ -16,7 +16,7 @@ const { drizzle } = require('drizzle-orm/postgres-js');
 const { sql, eq, and, desc } = require('drizzle-orm');
 const { getTableConfig } = require('drizzle-orm/pg-core');
 const { SqlExecutionContextMiddleware } = require('@lark-apaas/fullstack-nestjs-core');
-const { workItem, actionAttempt } = require('../../server/database/schema.ts');
+const { workItem, actionAttempt, dmDocumentVersion, dmPublicationFamily, dmAcquisition } = require('../../server/database/schema.ts');
 const { SessionResolver } = require('../../server/modules/identity/session-resolver.service.ts');
 const { ProductionMiaodaBrowserObjectIngressGuard } = require('../../server/modules/work-item/production-miaoda-browser-ingress.ts');
 const { MiaodaDocumentVersionSourceResolver } = require('../../server/modules/work-item/miaoda-document-version-source.resolver.ts');
@@ -30,6 +30,10 @@ const { CanonicalModelSettingsRepository } = require('../../server/modules/model
 const { CanonicalModelSettingsService } = require('../../server/modules/model-settings/canonical-model-settings.service.ts');
 const { canonicalJson, sealTaskEnvelope } = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
 const { buildInitialAnalysisRequestInput } = require('../../server/modules/action-attempt/initial-analysis-request.ts');
+const { MiaodaWorkItemRepository } = require('../../server/modules/work-item/miaoda-work-item.repository.ts');
+const { OrdinaryDocumentManagementAuthorizer } = require('../../server/modules/document-management-runtime/ordinary-document-management-authorizer.ts');
+const { MiaodaHostedDocumentCatalog, tenantFamilyIdentityPrefix } = require('../../server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog.ts');
+const { MiaodaAutomaticWorkItemSourceAuthorizationAdapter } = require('../../server/modules/canonical-host/miaoda-automatic-work-item-source-authorization.adapter.ts');
 
 const TENANT = 'tenant-native-initial', OWNER = 'owner-native-initial', READER = 'reader-native-initial';
 const APP = 'app_17bzc551rsg', WI = 'WI-native-initial', PERMISSION = 'permission-native-initial';
@@ -46,8 +50,9 @@ const additionsOnly = process.env.NATIVE_INITIAL_TEST_ADDITIONS_ONLY === '1';
 
 // Real native scope, SDK SQL middleware, lifecycle/model capture, repository,
 // guard and 0062-0065 grant RLS. Parser/page composition, object-action decisions
-// and current Source I/O are bounded substitutes; this is not a gateway or
-// production Source-service test. No external/model transport is permitted.
+// and Source resolution are bounded substitutes. The transaction Source cases
+// use the real read-policy adapter, authorizer and repositories, not a gateway.
+// No external/model transport is permitted.
 test('native owner requests one exact terminal successor atomically under real restricted PG roles',
   { timeout: 120000 }, async t => {
     const cluster = await startOwnedPostgres(await postgresCapability());
@@ -74,7 +79,8 @@ test('native owner requests one exact terminal successor atomically under real r
         CREATE ROLE ${nativeRole} NOLOGIN NOSUPERUSER NOBYPASSRLS IN ROLE authenticated;
         CREATE ROLE ${serviceRole} NOLOGIN NOSUPERUSER NOBYPASSRLS IN ROLE service_role;
         CREATE ROLE tdms_fixture_app_1234567890abcdef LOGIN NOSUPERUSER NOBYPASSRLS IN ROLE ${nativeRole},${serviceRole};`);
-      for (const [name, table] of [['work_item', workItem], ['action_attempt', actionAttempt]]) {
+      for (const [name, table] of [['work_item', workItem], ['action_attempt', actionAttempt],
+        ['dm_document_version', dmDocumentVersion], ['dm_publication_family', dmPublicationFamily], ['dm_acquisition', dmAcquisition]]) {
         const columns = getTableConfig(table).columns.map(column => `"${column.name}" ${column.getSQLType()}`);
         await admin.unsafe(`CREATE TABLE ${name} (${columns.join(',')}); ALTER TABLE ${name} ENABLE ROW LEVEL SECURITY;`);
       }
@@ -88,8 +94,13 @@ test('native owner requests one exact terminal successor atomically under real r
           USING(tenant_id='${TENANT}' AND current_setting('app.user_id',true) IN ('${OWNER}','${READER}'));
         CREATE POLICY fixture_native_attempt ON action_attempt FOR SELECT TO ${nativeRole}
           USING(tenant_id='${TENANT}' AND current_setting('app.user_id',true) IN ('${OWNER}','${READER}'));
-        CREATE POLICY fixture_service_work ON work_item FOR ALL TO ${serviceRole} USING(true) WITH CHECK(true);
+        CREATE POLICY fixture_service_work ON work_item FOR ALL TO ${serviceRole}
+          USING(current_setting('fixture.source_read_denied',true) IS DISTINCT FROM '1'
+            AND NULLIF(current_setting('fixture.source_read_error',true),'')::integer IS NULL) WITH CHECK(true);
         CREATE POLICY fixture_service_attempt ON action_attempt FOR ALL TO ${serviceRole} USING(true) WITH CHECK(true);`);
+      for (const table of ['dm_document_version', 'dm_publication_family', 'dm_acquisition'])
+        await admin.unsafe(`GRANT SELECT ON ${table} TO ${serviceRole};
+          CREATE POLICY fixture_source_catalog ON ${table} FOR SELECT TO ${serviceRole} USING(true)`);
       for (const name of ['0062_auto_work_item_authorization.sql', '0063_auto_work_item_lease_ack.sql',
         '0064_auto_work_item_block_receipt.sql', '0065_auto_work_item_authenticated_intake.sql'])
         await admin.unsafe(await readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8'));
@@ -108,6 +119,31 @@ test('native owner requests one exact terminal successor atomically under real r
         identity: { miaodaUserId: token, tenantId: TENANT, verifiedAt: new Date().toISOString(), feishuOpenId: 'fixture-open' },
       }) }, { applicationScopeId: APP, sessionEnvironment: 'runtime' }, middleware);
       const repo = new ActionAttemptRepository(db);
+      const realSourceRepository = new MiaodaWorkItemRepository(db);
+      const realSourceCatalog = new MiaodaHostedDocumentCatalog(db);
+      const realSourceAuthorization = new MiaodaAutomaticWorkItemSourceAuthorizationAdapter(
+        new OrdinaryDocumentManagementAuthorizer(realSourceRepository, {}, realSourceCatalog));
+      const sourceExecutors = [], pendingSourceReads = [];
+      let realSourceMode = null;
+      async function boundedSourceRead(input, database) {
+        if (realSourceMode === null)
+          return { ...input, allowed: sourceAllowed, action: 'DOCUMENT_READ', authorizationPolicy: 'MIAODA_HOST_DOCUMENT_READ' };
+        sourceExecutors.push(database);
+        if (realSourceMode === 'DENIED')
+          await database.execute(sql`SELECT set_config('fixture.source_read_denied','1',true)`);
+        if (realSourceMode === 'ERROR')
+          await database.execute(sql`SELECT set_config('fixture.source_read_error','invalid',true)`);
+        const pending = realSourceAuthorization.authorizeSourceRead(input, database);
+        pendingSourceReads.push(pending);
+        let timer;
+        try {
+          return await Promise.race([pending, new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('FIXTURE_SOURCE_EXECUTOR_LEFT_HELD_TRANSACTION')), 750);
+          })]);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
       const lifecycle = new ActionAttemptLifecycleService(repo,
         new CanonicalModelSettingsService(new CanonicalModelSettingsRepository(db)));
       const initial = new CanonicalHostInitialAnalysisStatusService(db, lifecycle, undefined, undefined, undefined, sessions);
@@ -166,7 +202,7 @@ test('native owner requests one exact terminal successor atomically under real r
       const continuation = new CanonicalInitialAnalysisContinuationController(new CanonicalInitialAnalysisContinuationService(
         authorization, permissions, registrar, lifecycle, initial, {}, jobAid, sessions,
         { availability: async () => ({ available: false }) },
-        { authorizeSourceRead: async input => ({ ...input, allowed: sourceAllowed, action: 'DOCUMENT_READ', authorizationPolicy: 'MIAODA_HOST_DOCUMENT_READ' }) }), sessions);
+        { authorizeSourceRead: boundedSourceRead }), sessions);
       const statusInput = async (_id, actor) => {
         const item = await registrar.getTenantScopedByWorkItemId({ tenantId: actor.tenantId, workItemId: WI });
         if (!item) throw new Error('CANONICAL_WORK_ITEM_NOT_FOUND');
@@ -180,6 +216,7 @@ test('native owner requests one exact terminal successor atomically under real r
       let oldRows;
       async function seed(status = 'TIMED_OUT') {
         sourceAllowed = true; sourceCurrent = true; permissionCurrent = true; beforeReserve = undefined;
+        realSourceMode = null; sourceExecutors.length = 0;
         await admin.unsafe('TRUNCATE action_attempt,auto_work_item_authorization,work_item,fixture_grant_release_count CASCADE');
         await admin`INSERT INTO work_item(tenant_id,work_item_id,request_id,requested_by_user_id,revision,action_type,status,
           document_id,document_version_id,source_artifact_id,source_file_sha256,source_byte_length,
@@ -328,6 +365,47 @@ test('native owner requests one exact terminal successor atomically under real r
         assert.deepEqual(results.map(row => row.replayed).sort(), [false, true]);
         assert.equal((await admin`SELECT count(*)::integer AS n FROM action_attempt`)[0].n, 3);
         assert.equal((await admin`SELECT count(*)::integer AS n FROM fixture_grant_release_count`)[0].n, 1);
+      });
+      await additionTest('transaction Source: real adapter authorizer repository finishes while the only pool connection holds the WI lock', async () => {
+        await seed(); realSourceMode = 'ALLOWED';
+        try {
+          const result = await post();
+          assert.equal(result.status, 'QUEUED');
+          assert.equal(sourceExecutors.length, 1);
+          assert.ok(sourceExecutors[0], 'SOURCE_MUST_RECEIVE_THE_RESERVATION_TRANSACTION');
+          assert.equal((await admin`SELECT count(*)::integer AS n FROM action_attempt`)[0].n, 3);
+          assert.deepEqual(await admin`SELECT * FROM action_attempt WHERE attempt_no<=2 ORDER BY attempt_no`, oldRows);
+          assert.equal((await admin`SELECT status FROM auto_work_item_authorization`)[0].status, 'WAITING');
+          assert.equal((await admin`SELECT count(*)::integer AS n FROM fixture_grant_release_count`)[0].n, 1);
+        } finally { await Promise.allSettled(pendingSourceReads); }
+      });
+      await additionTest('transaction Source: real catalog fallback uses the held executor without a matching WI binding', async () => {
+        await seed(); realSourceMode = 'ALLOWED';
+        const fallbackDvi = 'DV-source-fallback';
+        await admin`INSERT INTO dm_publication_family(family_id,canonical_identity_key)
+          VALUES('FAMILY-source-fallback',${tenantFamilyIdentityPrefix(TENANT) + 'fallback'})`;
+        await admin`INSERT INTO dm_document_version(document_version_id,family_id,source_artifact_id)
+          VALUES(${fallbackDvi},'FAMILY-source-fallback','ART-source-fallback')`;
+        await admin`INSERT INTO dm_acquisition(document_version_id,source_artifact_id,status,idempotency_key,acquired_by)
+          VALUES(${fallbackDvi},'ART-source-fallback','COMMITTED_CANONICAL',${'tenant:' + encodeURIComponent(TENANT) + ':request:fallback'},${OWNER})`;
+        const req = request();
+        try {
+          await sessions.withNativeBrowserIdentity(req, () => sessions.withVerifiedReviewServiceSql(() =>
+            db.transaction(async transaction => {
+              await transaction.select().from(workItem).where(eq(workItem.workItemId, WI)).for('update');
+              const permission = await boundedSourceRead({tenantId:TENANT,actorUserId:OWNER,workItemId:WI,
+                requestId:projection.requestId,...SOURCE,documentVersionId:fallbackDvi}, transaction);
+              assert.equal(permission.allowed, true);
+            }), OWNER));
+          await assertUnchanged();
+        } finally { await Promise.allSettled(pendingSourceReads); }
+      });
+      for (const mode of ['DENIED', 'ERROR']) await additionTest('transaction Source: real ' + mode + ' leaves no new ATT and keeps the blocked grant', async () => {
+        await seed(); realSourceMode = mode;
+        try {
+          await assert.rejects(post(), mode === 'DENIED' ? /BINDING_CHANGED/u : error => error.cause?.code === '22P02');
+          await assertUnchanged();
+        } finally { await Promise.allSettled(pendingSourceReads); }
       });
       assert.equal(externalCalls, 0);
       t.diagnostic(JSON.stringify({ ownedEndpoint: cluster.instance, ownedDatabase: cluster.identity.name,

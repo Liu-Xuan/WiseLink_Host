@@ -1,3 +1,5 @@
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+
 /** Fresh, authoritative source ACL checks required before an enrolled item is dispatched. */
 export const AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION = Symbol(
   'AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION',
@@ -40,5 +42,6 @@ export type AutomaticWorkItemSourceAuthorizationResult =
 export interface AutomaticWorkItemSourceAuthorizationPort {
   authorizeSourceRead(
     input: AutomaticWorkItemSourceAuthorizationInput,
+    database?: PostgresJsDatabase,
   ): Promise<AutomaticWorkItemSourceAuthorizationResult>;
 }

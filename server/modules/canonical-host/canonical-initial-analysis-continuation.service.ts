@@ -277,7 +277,7 @@ export class CanonicalInitialAnalysisContinuationService {
                     '',
                   ),
                   sourceByteLength: source.sourceByteLength,
-                });
+                }, database);
               if (
                 !permission.allowed || permission.action !== 'DOCUMENT_READ' || permission.authorizationPolicy !== 'MIAODA_HOST_DOCUMENT_READ' ||
                 permission.tenantId !== actor.tenantId ||
