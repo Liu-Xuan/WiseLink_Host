@@ -310,6 +310,8 @@ COMMITTING 保留原准确结果与恢复 fence，目标上与模型生成容量
 
 Markdown 维护规则正文和稳定 ID。轻量规范索引读取节点/边/场景及关联，接线记录维护真实入口，测试/部署/运行结果复用已有回执。静态 HTML 从这些材料生成或导入快照，用于筛选关键链路、定位缺口和查看证据；HTML 不另存手工“已完成”状态。
 
+现有M2的10条关键binding映射11个节点、6条关系；这些数仅表示已登记的映射范围，不是13节点/47关系的开发完成率。未登记来源或关系先定位现有生产者、权威保存行、实际消费者及原证据，再补关键接线；不能据登记缺项重做已有保存、恢复或整张关系目录。
+
 静态验证页显示契约版本、目标源码、目标环境、原始观察/生成时间和离线快照标识。导入时间不替代观察时间。未确定目标代码时不判断“当前已验证”；环境未定时仍可查看准确源码范围的审阅或明确环境独立的测试，但不能推导部署或运行通过。实际运行证据需包含准确对象、请求、输入、成果及独立读回。
 
 证据关联带明确类型和范围。bindingId 与 edgeId 可以同名，不能因此共享通过状态；同一 V 编号也不代表另一条接线已验证。契约和源码身份缺失不能相等成有效匹配。每项证据仅归入其实际支持的链路、场景及证据类型，环境要求按前述类型区分。
@@ -790,3 +792,19 @@ v1.1 的 LCM 支线、v1.2 的未来来源规划、v1.3 的 TDMS PDF 主线全�
 执行、已有成果、综合采用工作与CURRENT/STALE覆盖、外层ACK及正式业务分别表达；本次读取时间不冒充事件时间，就绪和首次可读缺项不补造。切对象、会话或撤权按原父响应边界清理。11个产品/测试文件经独立审查、相关六套89项与一个窄隔离PG例验证；PG使用合成来源/结果、真实Host服务/受限角色及browser读取，实际Overall seal/恢复三状态与四条调度构造行的范围分别保留。
 
 准确clean产品的一次标准构建、实际测试工作区/时间、React跨根测试夹具失败和私有单树映射修复均见[FIRST_BATCH本批记录](coordination/WISELINK_FIRST_BATCH_20261022.md)。固定13节点、47关系、54场景、10规则不变，M2原201证据逐值保留；M3消费实际父响应的本地实现已完成，尚未部署或真实业务运行，不能把本地观察接线写成生产尝试历史已齐全。
+
+
+### E.12 787 技术交付与主线有限读回（2026-10-24）
+
+本节记录日为Asia/Shanghai的2026-10-24，事件均为2026-10-23 UTC。当前Host准确787 / tree841170与公开安全a909同tree，非docs受控输入与产品4255相同；准确SHA、官方finished发布、双端执行指纹、online三条policy、原c235安装141文件/1852测试及原C136一次恢复见[M集成当前记录](coordination/M_INTEGRATION.md)及[FIRST_BATCH本次记录](coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-受控技术切换与主线阅读收口)。技术切换已结束，旧D8f/c234/待DDL批准只保留为历史；相关测试和build沿真实执行源码/时间复用，不改写为在787新跑。未手工调用新业务模型、Native READ、SAVE或正式采用。
+
+| 主线已有责任 | 实际生产者、权威行及消费者 | 本次证明与继续核验 |
+| --- | --- | --- |
+| 准确原文 → 工程证据 | `document-parsing-hosted.service.ts#inspectPublishedIdentity/#loadPublished` 核对DVI/parseRun/原artifact；`document-original-store.ts#loadForReading`及adapter核对manifest/SourceRef/locator，`document-original-engineering-reading.ts`交付准确原文锚点。文件位于document-management/src/hosted/nest及canonical-host现有目录。 | 有限UI中原文与保存引用指向同一准确目标；新模型是否实际使用该语义仍需当次delivered/READ内容及正文核验。 |
+| 调查输入 → 保存工作 | `CanonicalJobAidProblemService#buildInput/#readSources/#saveWork`；`jobaid-problem-task.ts` 区分availableSources目录与deliveredEvidence真交付、完整previousWork，额外READ保留实际refs。`JobAidWorkRepository#save`的assessmentWorkRevision行保存workRevisionRef/workRevision/actionAttemptId/basedOnWorkItemRevision/DVI/previousRef/command/content，事务、锁、CAS与幂等保留。 | 既有保存work1四问题可读；历史parseRun须沿原actionAttempt/taskEnvelope追溯，不能把当前latest parse当旧work输入。本次无新SAVE。 |
+| 保存工作 → Overall | `CanonicalJobAidProblemService#buildInput/#commit/#commitOverall` 以准确previousWork正文/ref/revision及finish.workRef核对保存行、consistencyCheck、CURRENT及source/work guards；`jobaid-overall-projection.ts`保存实际analysis/readingResult及basedOnJobAidWorkRevisionRef。 | 有限UI确认Overall消费同保存工作及同DVI正文相符；同ref不是SEM正文使用证明，下一次内容核验仍须实际modelInput、保存issues及Overall finish/artifact。正式采用保持原流程。 |
+| 同快照 → 正文/诊断 | `readBrowser/#readBrowserSnapshot → useJobAidWorkingRead → DocumentAssessmentOverview/JobAidProblemWorkspace/WorkItemRuntimeDiagnostic` 共享准确current/selectedExecution/活动及来源重核。 | 787读取链已观察；不是完整请求集合、动态权限/版本转换或生产Ready/firstReadable/ACK历史验收。 |
+
+真实eligibility GET在 `15:36:34.944Z` 返回401 / REVIEW_OVERALL_LOGIN_REQUIRED。页面原生飞书身份有效，而专用服务仍只认Host OAuth；本地保存工作读取、更新和结果核对的身份接线不一致，修复进行中。客户端误显刷新重试；顶部“工作修订5”应为事项修订5，保存workRevision1正确。修复尚未提交/部署，不能把再次授权提示当身份修复；外部Source授权另有真实范围。历史空窗口/未知原因不回改，本次实际日志诊断另记。四层证据保持独立，不给save.finish的V08/V10或SEM增加业务通过数。
+
+OpenClaw CHAT已在787交付，获权事项真实对话和未知发送恢复尚未验收，独立文档后续接入；新Aily跨对象问答的可信用户身份及Host适配未接通，保持null入口。M1目录与原10条binding ID不变，原211证据逐值保留后追加本次记录。图映射只是实施定位，真实SEM、TDMS来源/刷新、三类变化与下游覆盖、正式业务及未提供的历史时间继续按各自消费者推进。

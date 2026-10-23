@@ -4099,6 +4099,296 @@
       "deploymentRef": null,
       "summary": "一次已获权对象的正常浏览器只读观察：前端与Host可见指纹同旧De1d，当前release ID/API contract在UI未知。初次导航16.5s仍加载、25.585s内工具见有用正文；唯一显式刷新使客户端读回时间由11:55:55.964Z变为11:56:22.775Z，同一准确工作/修订1保留，10.884s内工具见刷新结束；一次热切换2.629s内见同一修订正文，同时显示“暂时无法核对已保存评估，请刷新后重试。”，新鲜保存评估核对未成功。仅有限阅读/刷新/正文可见；官方online/user日志与trace对同一准确eligibility路由的11:56:50—11:57:30Z窗口查询均成功但结果为空；该窗不含初次导航，未观察到HTTP status、未确证原因，警告保持UNRESOLVED，不能称无错误或全流程通过。上述单次操作至工具观察上界含缓存、工具往返与观察间隔，不是HTTP耗时、ready、firstReadable、ACK或P95；不赋save.finish/V08/V10运行覆盖，不适用于未部署4255/5808，未触发模型/Native READ/SAVE/采用。",
       "originalReportRef": "private:tmp/p6-current-read-observation-20261023/result.private.json"
+    },
+    {
+      "id": "controlled-switch.787.existing-consumers.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T16:08:51.372826+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "对准确787/a909同tree与4255非docs输入映射、published原文/SourceRef→真实交付或READ→SAVE权威行→Overall previousWork/finish/artifact→同快照阅读的现有消费者做有限定位；不是重审全部13节点/47关系，也不证明当次模型语义或正式采用。原89项/窄PG1项/build保留实际源码、时间和原失败，未为本记录重跑。",
+      "reviewScope": "现有消费者定位及准确树映射；M1 E.12；页面/ReviewOverall身份路径不一致仍未修复。"
+    },
+    {
+      "id": "controlled-switch.787.host.deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T13:45:20.163193Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "translation.reading",
+        "save.finish",
+        "feedback.reading",
+        "wiki.saved-reading",
+        "configuration.reading",
+        "company.approved-opinion",
+        "matter.saved-reading",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "单次正常官方Host release finished、error_logs空，准确提交787。所有非docs受控输入与4255相同，含已接受CHAT、M3、ACK/Review消费者；仅说明这些既有消费者代码随Host技术部署，不证明每条业务链、真实模型/READ/SAVE或内容验收完成。中间态旧提交字段保留为历史。",
+      "deploymentRef": "host:release:7699857234712661230",
+      "publicDeliveryRevision": "a9095ecd256af36268370aea92b8005847aba8a7",
+      "deliveredTree": "84117036e8eda2f7e34318be3ba499ce35b86088",
+      "unchangedNonDocsBaseline": "4255e5a27e89311156fc6e1039adad89cdf3756b",
+      "observedTimeSemantics": "本次工具观察终态的上界，不是平台准确finish时间。"
+    },
+    {
+      "id": "controlled-switch.787.dual-fingerprints.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T13:49:25.131Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "实际用户页面前端13:49:05.201Z与Host13:49:25.131Z均为787，前端buildTime13:41:00.992Z、环境PASS。UI未提供release/API合同，candidate reading仍VERIFICATION_PENDING。此为技术执行指纹，不是业务输入/成果/独立读回充分证明，不给V08/V10或SEM加通过。",
+      "frontendObservedAt": "2026-10-23T13:49:05.201Z",
+      "frontendBuildTime": "2026-10-23T13:41:00.992Z"
+    },
+    {
+      "id": "controlled-switch.787.online-lock-policies.deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T13:48:27.991086Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "save.finish",
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [],
+      "summary": "原dev精确事务/前提和三条policy六条DROP/CREATE经官方差异进入发布；online实际三policy定义、角色、USING/CHECK及RLS与已接受dev一致。技术DDL已完成，不表示已运行真实Native业务或扩大Source/grant。",
+      "deploymentRef": "host:release:7699857234712661230",
+      "policyCount": 3
+    },
+    {
+      "id": "controlled-switch.c235.installed.deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "native:app_17c3zn24kv2:installed",
+      "observedAt": "2026-10-23T13:36:38.167234Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "save.finish",
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [],
+      "summary": "原c235包未改字节或重打包，实际安装141文件bytes/SHA/mode均匹配，安装目录原1852项测试全部通过、0失败，原c234完整备份保留。测试属于该Native安装目录/源码，不能改记为Host787新跑或业务场景覆盖；原路径/ZIP模式与null退出码纠正另保留。",
+      "deploymentRef": "native:wiselink-research-and-synthesize@r09.c235",
+      "installedFileCount": 141,
+      "installedTestsPassed": 1852,
+      "installedTestsFailed": 0,
+      "observedTimeSemantics": "本次安装核验的fresh观察，不倒填准确安装或测试终止时间。"
+    },
+    {
+      "id": "controlled-switch.c136.restored.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "native:app_17c3zn24kv2:installed",
+      "observedAt": "2026-10-23T13:52:11.879Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "save.finish"
+      ],
+      "scenarioIds": [],
+      "summary": "原C136经正常入口一次恢复enabled，其余15项保持disabled，原配置仅更新时间不同。原观察区间13:52:08.212Z—13:52:11.879Z；未手工触发新消费者/业务模型/READ/SAVE。恢复后自然运行不充作本批smoke，未证明全Host队列空或历史UNKNOWN清零。",
+      "observationIntervalUtc": [
+        "2026-10-23T13:52:08.212Z",
+        "2026-10-23T13:52:11.879Z"
+      ]
+    },
+    {
+      "id": "controlled-switch.787.core-reading.bounded-runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T15:48:59.464Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "正常用户有限只读链：15:35:53.433Z导航，15:36:44.350Z前工具见有用正文，客户端显示读回15:36:40.318Z；准确原文/保存引用目标相符、保存work1四问题可读、Overall消费同work、同DVI综合与问题正文一致。同时保存评估eligibility警告存在。没有新模型、Native READ/SAVE、聊天发送、正式采用、配置写、显式刷新或隐藏HTTP；不是SEM实际模型输入/内容验收，时间不代表Ready/firstReadable/HTTP延迟/ACK/P95。",
+      "savedWorkRevision": 1,
+      "savedQuestionsReadable": 4,
+      "observedTimeSemantics": "有限UI报告recordedAt；首次正文工具观察与客户端读回另列，未推造事件时间。"
+    },
+    {
+      "id": "controlled-switch.787.eligibility-authentication.runtime",
+      "kind": "runtime",
+      "status": "failed",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T15:36:34.944Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "官方787 Trace和同请求日志确认首次正常导航eligibility GET真实401 / REVIEW_OVERALL_LOGIN_REQUIRED。页面原生飞书身份已成立，但ReviewOverall专用服务仍只认Host OAuth，读取/更新/结果核对身份路径不一致；统一接线修复进行中、未提交/部署。客户端误显刷新重试，要求用户再次授权不是修复。外部Source子区OAuth另列，不据此把两范围授权混为一因；不是未开发接口。本次诊断优先于较早NOT_ESTABLISHED摘要，原历史证据不改。",
+      "routeTemplate": "/api/canonical-host/work-items/:workItemId/integrated-assessment/review-overall-projections/eligibility",
+      "httpStatus": 401,
+      "errorCode": "REVIEW_OVERALL_LOGIN_REQUIRED",
+      "diagnosticRecordedAt": "2026-10-23T15:50:45.521665+00:00",
+      "diagnosticQueryWindowUtc": [
+        "2026-10-23T15:35:50Z",
+        "2026-10-23T15:43:10Z"
+      ]
+    },
+    {
+      "id": "controlled-switch.787.revision-label.runtime",
+      "kind": "runtime",
+      "status": "failed",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T15:48:59.464Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "同一有限UI顶部显示工作修订5，实际DocumentAssessmentWorkspace取page.workItem.revision，应标事项修订5；DocumentAssessmentOverview的保存workRevision1正确，同work/同DVI已读正文相符。不据标签差异断言保存了不同正文。标签修复在独立本地候选准备，未提交/部署。",
+      "observedTimeSemantics": "有限UI报告recordedAt，不当作标签变更事件时间。"
+    },
+    {
+      "id": "controlled-switch.787.openclaw-chat.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "已集成CHAT251941f4随787技术发布；本批chatSendActions=0，获权WorkItem/Matter真实对话、STALE_CONTEXT原请求对账/显式原样重试、CLOSED未知记录及身份/对象切换尚未验收。独立文档入口随后接通；新Aily另有未接通的身份/适配边界。"
+    },
+    {
+      "id": "controlled-switch.787.aily-planned.source_review",
+      "kind": "source_review",
+      "status": "not_run",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "summary": "当前方案状态：新Aily承担无需预选对象的跨文档/事项QA；Host可信最终用户授权检索、准确版本expand、保存work与引用深链适配尚未接通。sourceRevision/consumer/owner/readEntry继续null；787既有CHAT发布不代表新Aily接入。没有新增配置、身份、查询、执行或模型/业务SAVE，四层保持not_run，observedAt为null。",
+      "plannedOnly": true
+    },
+    {
+      "id": "controlled-switch.787.aily-planned.test",
+      "kind": "test",
+      "status": "not_run",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "summary": "当前方案状态：新Aily承担无需预选对象的跨文档/事项QA；Host可信最终用户授权检索、准确版本expand、保存work与引用深链适配尚未接通。sourceRevision/consumer/owner/readEntry继续null；787既有CHAT发布不代表新Aily接入。没有新增配置、身份、查询、执行或模型/业务SAVE，四层保持not_run，observedAt为null。",
+      "plannedOnly": true
+    },
+    {
+      "id": "controlled-switch.787.aily-planned.deployment",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "summary": "当前方案状态：新Aily承担无需预选对象的跨文档/事项QA；Host可信最终用户授权检索、准确版本expand、保存work与引用深链适配尚未接通。sourceRevision/consumer/owner/readEntry继续null；787既有CHAT发布不代表新Aily接入。没有新增配置、身份、查询、执行或模型/业务SAVE，四层保持not_run，observedAt为null。",
+      "plannedOnly": true
+    },
+    {
+      "id": "controlled-switch.787.aily-planned.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "1bcb28fd5124865159705a1df61513db786a71a2c121b2b732090c97e0b23736",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "summary": "当前方案状态：新Aily承担无需预选对象的跨文档/事项QA；Host可信最终用户授权检索、准确版本expand、保存work与引用深链适配尚未接通。sourceRevision/consumer/owner/readEntry继续null；787既有CHAT发布不代表新Aily接入。没有新增配置、身份、查询、执行或模型/业务SAVE，四层保持not_run，observedAt为null。",
+      "plannedOnly": true
     }
   ]
 }

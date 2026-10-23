@@ -1,5 +1,19 @@
 # Integration source record
 
+## 2026-10-24 当前收口：787 技术切换完成，主线阅读及身份断点分别登记
+
+本节记录于 Asia/Shanghai 的 2026-10-24；以下事件时间均保留原始 2026-10-23 UTC。当前 Host 为 `78797f5ab30d645e8231cfc4baf7f2b398a75e48`，官方 release `7699857234712661230` 单次正常发布 finished、error_logs 为空，终态在 `13:45:20.163193Z` 前观察到。公开安全交付 `a9095ecd256af36268370aea92b8005847aba8a7` 与 Host 787 完整 tree 同为 `84117036e8eda2f7e34318be3ba499ce35b86088`；所有非 docs 受控输入与产品 `4255e5a27e89311156fc6e1039adad89cdf3756b` 相同。原六套89项、窄隔离PG1项及标准完整构建保留实际4255/提交前工作区和原时间，未为记录合并或切换重跑。较早章节中的“尚未发布”“待批D8f/c235”只描述当时阶段。
+
+实际用户页面在 `13:49:05.201Z` 读到前端787、buildTime `13:41:00.992Z`，`13:49:25.131Z` 读到Host787及环境PASS；UI未提供release/API合同，candidate reading仍为VERIFICATION_PENDING。三条lock-only policy在正式online目录的实际定义、角色、USING/CHECK及RLS已读回，与已接受dev定义一致；不是待执行DDL。Native原c235包未改字节或重打包，实际安装141文件的bytes/SHA/mode一致，安装目录原1852项测试全部通过，原c234完整备份保留。原C136在 `13:52:08.212Z`—`13:52:11.879Z` 正常入口一次恢复enabled，其余15项保持disabled；没有手工触发新业务模型、Native READ、SAVE或正式采用。恢复后自然运行不充作本批业务smoke，也未证明全Host队列空或历史UNKNOWN清零。
+
+主线当前先闭合准确原文、保存工作、综合消费和同版阅读。787的一次正常用户有限UI链在 `15:35:53.433Z` 导航后，`15:36:44.350Z` 前工具观察到正文：既有准确原文/保存引用目标一致，保存工作修订1的四个问题可读，Overall消费同一保存工作，同DVI综合与问题正文相符。这是既有成果的阅读核对，没有新生成，也未证明本轮特定原文语义已进入实际模型输入或SEM内容验收。原调查输入/交付与READ、SAVE权威行、Overall previousWork/finish/artifact及页面消费者的准确接线见[M1 E.12](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e12-787-技术交付与主线有限读回2026-10-24)和M2，引用相同不代替正文级消费证明。
+
+本次初导航实际 `GET /api/canonical-host/work-items/:workItemId/integrated-assessment/review-overall-projections/eligibility` 在 `15:36:34.944Z` 返回HTTP401 / `REVIEW_OVERALL_LOGIN_REQUIRED`，官方Trace和同请求日志已确认，后续诊断覆盖 `15:35:50Z`—`15:43:10Z`。页面原生飞书身份已成立，但ReviewOverall专用服务仍只认Host OAuth，读取、更新与结果核对的身份路径不一致；这是已有接口的身份接线缺陷。客户端把它显示为“暂时无法核对已保存评估，请刷新后重试。”，刷新不是修复。统一接线修复正在独立候选中准备，尚未提交或部署；不能以追加OAuth提示或要求用户再次授权作为完成。外部Source/机队子区的OAuth授权是另一范围，不与本地保存工作身份混记。更早public-safe摘要的NOT_ESTABLISHED及空查询仅保留其原观察窗口，不覆盖本次已定位401。
+
+同一UI顶部“工作修订5”实际取事项修订，应标为“事项修订5”；底部保存workRevision1正确，现有读回不支持保存正文被错误替换。标签修复也仍属未部署候选。时间均为UI/工具观察时刻或上界，未测得准确Ready、firstReadable、HTTP延迟、生产ACK或P95。
+
+OpenClaw CHAT产品251941f4已随787技术发布，已有获权WorkItem/Matter的真实对话及未知发送恢复验收尚未执行；无WorkItem独立文档随后接入。新Aily继续承担跨文档/事项问答，目标仍为Host可信最终用户授权检索、准确版本展开、work阅读及引用深链；适配器/可信身份未接通，不能写已接入。M1仍为13节点、47关系、54场景、10规则；M2现有10条关键binding映射11节点、6条关系，只是映射登记范围，不能换算开发完成率，也不能将未登记来源视为要重做。原211证据对象和全部binding ID保留，追加真实技术/有限运行及待验记录；M3继续投影实际父响应。本轮只更新现有记录与离线生成页，未执行新发布、安装、DDL或业务操作。
+
 ## 2026-10-23 M3 选中执行观察的本地接线
 
 产品 `4255e5a27e89311156fc6e1039adad89cdf3756b`，父 `9c4cd9237ae015b57034115583ca0ada7c8a68d9`，tree `691d34d937a44482514a1ee2e298922e7366af34`；11文件、正常提交钩子及独立审查通过。原单SQL快照已取得的同一执行行，经可选selectedExecution白名单和父hook接入调查/综合节点；真实operation_ref、同一行时间及尝试身份保留。旧活跃调查与更新终态异ID时两个有限观察共存，同ID去重；成果、综合采用关系、覆盖与外层ACK独立，综合行只打开综合面板。

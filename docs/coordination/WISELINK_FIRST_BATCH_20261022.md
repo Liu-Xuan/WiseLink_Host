@@ -1,6 +1,6 @@
 # 第一批实施与隔离验证 — 2026-10-22
 
-当前状态（2026-10-23）：用户批准的 Estimated E 已普通快进同步 origin/github 原同名 codex 分支，私有 D `062e3ab3d10b29a88add508929625e9a76e4064f` 仅 origin。原 Host release `7699657613396610040` 已 finished/error_logs 空，实际前端 D 与后端 D / SERVER_BUILD_ARTIFACT / PASS 均已确认。同一原获权事项的已保存工作、综合关系、正文和准确版本 PDF 可读；精确结构化引用定位未命中，单次刷新未证实新时间推进，均单列缺项。Native c234 本批未操作，DB preview 空且无 DDL，没有新模型、业务 SAVE 或正式采用。D 不含后续 ACK/Review 候选。下文历史时点原样保留，当前结果以末节为准。
+当前状态（2026-10-24，Asia/Shanghai）：Host准确787的受控技术切换已完成，官方release7699857234712661230 finished，实际双端787指纹、online三条policy、Native原c235安装141文件/1852项测试及原C136一次恢复均已读回。2026-10-23 UTC的一次有限UI链确认既有准确原文→保存工作修订1四问题→Overall消费同work→同DVI阅读相符；不代表新模型输入、SEM或业务整体完成。最新实际401已定位为页面原生飞书身份与ReviewOverall只认Host OAuth的身份接线不一致，统一接线与“事项修订5”标签修复进行中，尚未提交/部署。OpenClaw CHAT已随787发布但未真实对话验收；新Aily适配器/可信身份未接通。下文保留历史时点，当前证据、边界和下一步见末节及M_INTEGRATION顶部。
 
 ## 实施结果
 
@@ -530,3 +530,28 @@ M1 E.10与M2的 `research.overall` / P1反映新定义材料、实际consumer及
 前端编译AST绑定sourceCommit为4255，buildTime `2026-10-23T11:18:50.078Z`，JS SHA256 `a170744290b1948db12229c43782fdb75d575d5873a348e8223a16fef943825e`；后端不可变JSON同4255，buildTime `2026-10-23T11:19:01.636Z`，SHA256 `07d8801510dc5a2b93633876786ec7f78656dd8101775a514dc30665aaa3cdbd`。只读产物，不执行浏览器应用。构建后clean证据先保存，随后才更新M1/M2/coord；文档后继不重build或倒填source。
 
 新M3按动作展示选中执行观察，旧active dynamic与新terminal不同ID时保留两条，只有同ID可共享首次保存时间。执行、成果、CURRENT/STALE依据覆盖、外层ACK及正式业务分列；综合导航只打开原综合面板，不定位单attempt或重试。原201证据逐值保留，M1目录不变，M2仅本批接线/测试/未部署未真实运行登记，不扩大其他链路或P5。尚未推送、发布、真实业务模型/READ/SAVE或正式采用，原待批D8f/c235范围不动。
+
+
+## 2026-10-24 受控技术切换与主线阅读收口
+
+记录日期按Asia/Shanghai；下表全部事件保持2026-10-23 UTC，不将记录后继当作新产品构建或发布。Host准确 `78797f5ab30d645e8231cfc4baf7f2b398a75e48` / tree `84117036e8eda2f7e34318be3ba499ce35b86088` 与公开安全交付 `a9095ecd256af36268370aea92b8005847aba8a7` 同tree，非docs受控输入与4255相同。六套89项、窄PG1项和一次标准build保留原实际执行身份/时间，未因本批记录或切换重跑。
+
+| 本次实际证据 | 结果及边界 |
+| --- | --- |
+| 正常Host发布与双端指纹 | 单次官方release `7699857234712661230` finished、无error，`13:45:20.163193Z` 前观察到终态；`13:49:05.201Z` 前端787/buildTime `13:41:00.992Z`，`13:49:25.131Z` Host787/环境PASS。UI的release/API合同未知，candidate reading仍VERIFICATION_PENDING。 |
+| 三条lock-only policy | 原dev精确事务/前提及六条DROP/CREATE进入正式差异；`13:48:27.991086Z` 前实际online定义、角色、USING/CHECK与RLS读回和已接受dev一致。该技术动作已完成，不能继续列为待DDL批准。 |
+| 原Native c235安装 | 原包未重打包，实际安装141文件bytes/SHA/mode匹配；安装目录原1852项测试通过、0失败，c234完整备份保留。测试属于实际Native安装身份，不改记为Host787业务场景覆盖。 |
+| 原调度恢复 | `13:52:08.212Z`—`13:52:11.879Z` 一次正常恢复原C136 enabled，其余15项disabled；原配置仅更新时间不同。没有手工触发新业务模型/READ/SAVE；自然运行不充作smoke，不推导全队列空或历史UNKNOWN清零。 |
+| 既有主线有限UI阅读 | `15:35:53.433Z` 发导航，`15:36:44.350Z` 前工具见正文，客户端显示读回时间 `15:36:40.318Z`。准确原文/保存引用目标一致；保存工作修订1四问题、Overall消费同work、同DVI综合和问题正文相符。只证明既有保存成果的有限阅读，不证明新生成、特定语义实际模型输入或SEM全文验收。 |
+| 最新eligibility错误 | 初导航 `15:36:34.944Z` 的真实GET返回401 / `REVIEW_OVERALL_LOGIN_REQUIRED`，覆盖首次导航的官方Trace/同请求日志已确认。页面原生飞书身份已成立，但ReviewOverall专用服务仍只认Host OAuth，读取/更新/结果核对身份路径不一致；并非接口未开发。统一接线修复进行中，未提交/部署，不以要求再次授权或刷新当解决。外部Source OAuth范围另列。 |
+| 修订标签 | 顶部“工作修订5”取自事项revision，应标“事项修订5”；保存workRevision1及已读正文对应正确。独立本地候选修复尚未部署，不据标签差异推导保存了不同正文。 |
+
+本次原始工具、UI和诊断仍在私有交接归档；公开投影只保留准确源码、时间、参数化路由、计数与限制，不复制业务对象/账号、正文、Trace/日志ID、signed URL或OAuth参数。较早摘要的eligibility NOT_ESTABLISHED和空窗口结果原样保留为历史，本次新诊断另追加，不回改历史证据。首次Chrome导航工具超时后页面实际正常出现，没有第二次初导航、显式刷新、隐藏HTTP或新业务生成。所列时间均为工具/UI观察或区间，不能充作Ready、firstReadable、HTTP耗时、生产ACK或P95。
+
+主线既有消费者已定位：准确published原文由document-parsing-hosted/document-original-store/adapter核对，再由document-original-engineering-reading形成带SourceRef/parseRun locator的工程证据；jobaid-problem-task的deliveredEvidence才是真交付，availableSources只是目录。SAVE在jobaid-work.repository的assessmentWorkRevision权威行保存workRef/revision/attempt/事项版次/DVI/正文，历史parseRun沿原attempt envelope追溯。Overall的previousWork和finish/artifact、guard/CAS及readBrowser同快照接至现有Overview/调查/M3；详见M1 E.12。接线登记不替代实际输入与保存正文的语义验收。
+
+M2继续使用原10条binding，映射覆盖11节点/6关系；M1目录13/47/54/10不变。原211条证据逐值保留，实际发布/安装/恢复/有限阅读、身份失败、标签和CHAT/Aily待验另追加；同一生成器产出snapshot/HTML，四层分别显示。七个工作包nextAction从787已发布事实起步，保留用户已有选择与过滤。图上的未登记证据是登记或具体核验工作，先查已有真实消费者，不重建保存、恢复、来源或47关系。
+
+尚未验收的范围继续包括：SEM真实后果/暴露/控制事实与实际模型→SAVE→Overall内容使用，TDMS真实Source/grant/processing set与线上刷新、撤销/取代/V44，三类变化及下游覆盖，生产ACK/Ready/首次可读与完整请求历史。获权WorkItem/Matter OpenClaw CHAT代码已在787，但真实对话/未知发送恢复尚未执行；独立文档随后接入。新Aily的Host可信最终用户身份、窄只读适配、跨对象检索/准确展开/work及引用导航未接通，不冒称已上线。本记录未启动Host、重跑全产品build/tests或新业务动作。
+
+本轮记录验证：既有snapshot/HTML生成器成功，225条证据中新增14条，原211对象与基线逐值相等；catalog、10个binding ID、选择数组及七个工作包非nextAction字段保留，HTML内嵌数据与snapshot相等，新增passed记录不增加业务场景覆盖。快照QA为39/39。真实custom element的jsdom定向显示核对通过：787技术部署独立通过、资料库运行保留失败、新Aily四列保持未执行/未部署/未核对，P6过滤不修改selection。首轮因jsdom未实现window.scrollTo而报错，添加常规DOM替身后通过；ResizeObserver/scrollTo替身只用于该验证，未改产品代码，原失败输出保留。公开新增文本经私有标识与凭据模式检查，无已知业务/会话/Trace/账号或signed URL泄漏。未跑全产品build/tests。
