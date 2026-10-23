@@ -23,10 +23,10 @@
         "V26",
         "V28"
       ],
-      "nextAction": "主线M1/M2/M3沿同一准确来源/保存/消费收口；787/原c235技术切换完成。f2be→7455已提交、审查并合并413，原测试与一次标准完整build通过；下一步准确发布/双端及原页面身份读回，401仍开放。仅document.assessment-reading局部身份，不抬整条SAVE/LCM/SEM业务通过。CHAT真实对话和新Aily分别待验；11节点/6关系/10binding为映射范围，不重做47关系或凑完成率。",
+      "nextAction": "技术发布和原页面身份读回已闭合；接下来独立收口原生初次分析与准确BLOCKED失败后继，再执行正常新请求的实际模型→SAVE→Overall→阅读。reader仍待验证，不把三200和一409或既有work1读取算成完整业务通过；CHAT真实对话、新Aily和内容验收继续分列。",
       "progress": {
-        "delivered": "主线目录13/47/54/10、10binding及787/原c235既有技术交付保留。f2be→7455局部原生身份及事项修订label已正常提交/接受，普通合并41325870一次标准完整build通过，原28/13及分次55/8测试按准确来源登记；原225证据逐值保留，当前233条。",
-        "remaining": "候选未推送/发布；线上787的401与标签需准确发布后原用户读回，完整schema diff空只属只读预检。有限阅读不关闭SEM、真实Source/变化缺口；CHAT真实对话及新Aily接入仍待验。",
+        "delivered": "公开94分别同步origin/github，私有a7仅origin，原Host单次release7699919694665632785 finished且双端a7；最终及后续官方结构差异为空。原页面四GET明确200/409 NOT_CONFIGURED/200/200，旧OAuth/核对警告消失；既有FTD事项5/保存工作1正文可读。原233证据逐值保留，本次追加8条有限记录；13/47/54/10、10binding和选择数组不变。",
+        "remaining": "reader仍VERIFICATION_PENDING；8页原文可读但本轮新模型/SAVE/Overall尚未运行。初次分析及准确BLOCKED失败后继修复仅独立候选、未发布；受控选择未配置、构型来源未接通和SEM/CHAT/Aily等真实内容仍缺。",
         "owner": "主控集成及各既有消费者负责范围",
         "acceptance": "图、接线、工作包与严格证据引用同一份当前记录；准确版本/来源/失败可追溯，技术交付和真实业务验收分别成立，映射数不换算为完成率。",
         "evidenceIds": [
@@ -43,7 +43,15 @@
           "native-assessment.panels.jest55-separated",
           "native-assessment.panels.pg8",
           "native-assessment.41325870.full-build",
-          "native-assessment.preflight.online-baseline"
+          "native-assessment.preflight.online-baseline",
+          "native-assessment.a7.same-name-refs.deployment",
+          "native-assessment.a7.host-finished.deployment",
+          "native-assessment.a7.native-user-fingerprint.runtime",
+          "native-assessment.a7.three-get-http200.runtime",
+          "native-assessment.a7.controlled-selection-http409.runtime",
+          "native-assessment.a7.existing-work-readable.runtime",
+          "native-assessment.a7.new-cycle-pending.runtime",
+          "native-assessment.a7.readonly-deployment-recheck.deployment"
         ]
       }
     },
@@ -91,10 +99,10 @@
         "V28",
         "V30"
       ],
-      "nextAction": "787有限既有原文/work1/Overall同work/同DVI阅读保留；统一原生身份及事项修订label的f2be→7455已提交/测试并合并413完整构建，待准确发布后核对原页面读取/更新/结果、owner与身份切换，实际401仍开放。没有新增翻译/Native读取或SAVE/LCM内容验收。CHAT已部署待真实对话/未知恢复，独立文档随后；新Aily可信用户/适配/准确展开/work/引用深链未接通，旧PDF/Aily失败保留。",
+      "nextAction": "保留已发布a7的正常原页面阅读及准确四GET结果；待独立初次分析/失败后继修复交付后，以新显式请求完成模型、SAVE、Overall和同版重读。reader/外部Source和受控选择缺项按实际处理，真实CHAT/未知恢复与新Aily继续独立推进，不新增翻译或Native运行。",
       "progress": {
-        "delivered": "原文、翻译接续、事项与已存评估阅读消费者已在787继承交付。当前有限UI确认准确原文/保存引用、work1四问题、Overall消费同work及同DVI正文相符。获权WorkItem/Matter CHAT251941f4及M3选中观察已随787技术发布。 局部ReviewOverall、适用性和构型本地入口的原生用户scope候选f2be→7455已提交、测试/审查并合并413完整构建；事项修订标签只改名称，保存workRevision不变。",
-        "remaining": "候选未发布，原787实际401及标签错误仍待原用户页面核对；本地测试/构建不代表真实上游身份注入、线上RLS组合或整条保存/LCM内容通过。真实CHAT/未知发送恢复未验收，独立文档随后，新Aily可信用户/Host只读适配未接通。",
+        "delivered": "原生身份/事项修订标签修复已随准确a7技术发布，双端a7、runtime PASS；正常用户页面旧核对及额外OAuth提示消失。三个GET明确200，受控选择GET明确409 NOT_CONFIGURED；另有既有FTD调查/综合及保存工作修订1的只读正文证据。",
+        "remaining": "reader仍VERIFICATION_PENDING；受控选择未配置和构型来源未接通不由技术发布关闭。原文8页可读尚不证明新模型/SAVE/Overall消费；初次分析/准确BLOCKED后继候选未发布，CHAT真实对话、未知发送恢复及新Aily可信适配未验收。",
         "owner": "既有阅读前端、ReviewOverall身份、OpenClaw交互及Aily只读适配范围",
         "acceptance": "同一原生用户身份下保存工作读取、更新及结果核对一致；CHAT换对象/身份及未知发送不串上下文、不重复发送。新Aily经Host逐对象核权完成跨对象检索、准确版本展开、work与引用导航；外部Source授权另按真实范围核验。",
         "evidenceIds": [
@@ -113,7 +121,15 @@
           "native-assessment.panels.jest55-separated",
           "native-assessment.panels.pg8",
           "native-assessment.41325870.full-build",
-          "native-assessment.preflight.online-baseline"
+          "native-assessment.preflight.online-baseline",
+          "native-assessment.a7.same-name-refs.deployment",
+          "native-assessment.a7.host-finished.deployment",
+          "native-assessment.a7.native-user-fingerprint.runtime",
+          "native-assessment.a7.three-get-http200.runtime",
+          "native-assessment.a7.controlled-selection-http409.runtime",
+          "native-assessment.a7.existing-work-readable.runtime",
+          "native-assessment.a7.new-cycle-pending.runtime",
+          "native-assessment.a7.readonly-deployment-recheck.deployment"
         ]
       }
     },
@@ -213,10 +229,10 @@
         "V08",
         "V10"
       ],
-      "nextAction": "787/原c235受控技术切换已结束；局部原生身份/标签f2be→7455已提交、原测试和413一次标准完整build通过，待准确发布与原用户读回，401运行缺口未关闭。只增加native actor非system及本机受限PG的局部回归，不改身份模块/迁移/policy、不增加V08/V10。继续沿真实请求核对SAVE/封存/终态/外层ACK和实际时间，不推导全队列空或补历史Ready/首次可读，不重复切换。",
+      "nextAction": "原a7技术发布和局部身份读回已完成，不重复发布或改调度。独立候选收口原生初次分析/准确BLOCKED失败后继后，由本人显式新请求核模型、保存、Overall及外层完成；旧失败/结果及未知保持，不补历史Ready/首次可读，不增加V08/V10。",
       "progress": {
-        "delivered": "ACK独立读模型及封存恢复代码已在787交付；原c235实际141文件匹配、安装目录1852项测试通过，原C136一次恢复enabled、其他15项disabled。技术切换已结束；保存核对警告已由实际日志定位为401身份路径不一致。 f2be→7455局部native actor/非system及受限本机PG回归通过，普通合并413一次完整构建、编译装配通过；没有身份模块/迁移/policy改动。",
-        "remaining": "候选尚未发布，实际401/标签仍待发布后原页面核对；本机HTTP/PG不证明线上身份注入或角色/RLS组合。未新增业务模型/READ/SAVE或生产ACK/恢复验收，Ready/首次可读、完整请求历史及全队列空仍未证明。",
+        "delivered": "公开94/私有a7准确同步、一次Host release finished/error_logs=[]，双端a7；官方结构差异为空，无新DDL、Native或调度。原正常页面身份及标签有限读回、四GET真实200/409 NOT_CONFIGURED/200/200已取得；原413构建与历史c235/1852/C136记录保留原身份。",
+        "remaining": "本轮新模型/SAVE/Overall与生产恢复/ACK未运行；准确BLOCKED失败后继及原生初次分析修复仅独立候选、未发布。reader待验证、全请求历史/全队列空及Ready/首次可读仍未证明；当前有限读取不能替代业务恢复验收。",
         "owner": "执行恢复、Host读模型及保存阅读前端",
         "acceptance": "准确业务请求、封存、保存成果、执行终态、外层ACK与页面可对应；恢复复用原结果且无重复业务写。身份修复有准确技术版本和真实读回；只登记实际取得的Ready/首次可读事件，不补造历史时间。",
         "evidenceIds": [
@@ -230,7 +246,15 @@
           "native-assessment.review-overall.pg13",
           "native-assessment.panels.pg8",
           "native-assessment.41325870.full-build",
-          "native-assessment.preflight.online-baseline"
+          "native-assessment.preflight.online-baseline",
+          "native-assessment.a7.same-name-refs.deployment",
+          "native-assessment.a7.host-finished.deployment",
+          "native-assessment.a7.native-user-fingerprint.runtime",
+          "native-assessment.a7.three-get-http200.runtime",
+          "native-assessment.a7.controlled-selection-http409.runtime",
+          "native-assessment.a7.existing-work-readable.runtime",
+          "native-assessment.a7.new-cycle-pending.runtime",
+          "native-assessment.a7.readonly-deployment-recheck.deployment"
         ]
       }
     }

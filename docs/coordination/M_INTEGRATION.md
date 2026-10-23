@@ -1,6 +1,19 @@
 # Integration source record
 
-## 2026-10-24 当前候选：原生身份修复已提交、测试及完整构建，待发布读回
+## 2026-10-24 准确发布与原用户页面读回
+
+公开交付 `94c24efa746984a7edbf8b76719e1ffcfa549bed` 已分别普通同步至 origin/github 同名开发分支；准确 Host 后继 `a7fb08e9b9b89e24d933479d5823a92624f90994` 仅同步 origin 同名分支。原 Host 单次 release `7699919694665632785` 在 `2026-10-23T17:49:18.813945Z`—`17:49:21.428079Z` 读回 finished、准确 a7、error_logs=[]。最后发布前完整 dev→online 结构差异为空，本次无 DDL、新 Native 安装或调度；后续 `18:12:39.017304Z` 完整差异仍为空，`18:12:49.452677Z` 同 release 仍为准确 a7/finished。原413的一次本机构建仍保留原来源，未为记录后继重建或改写指纹。
+
+正常已登录用户原页面读回浏览器源码与 Host 部署均为完整 a7，浏览器 buildTime 为 `2026-10-23T17:47:27.346Z`，runtime PASS；UI releaseId/API合同仍未知，reader仍 VERIFICATION_PENDING。事项修订标签已正确，旧保存评估核对警告和额外 OAuth 连接提示消失。已有 FTD 的事项修订5、保存工作修订1及调查/综合正文可读；这里只证明既有成果的正常阅读，不倒推旧模型实际输入。
+
+同一次原页面 `17:49:00Z`—`17:52:00Z` 短窗的官方 gateway/app_web 正向访问记录明确：Review Overall eligibility=200，applicability-selection=409 / `APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED`，同 review-action=200，configuration-evidence/status=200。409 不记作200或受控选择已配置；构型来源未接通仍是业务缺项。没有使用“无 error”推断成功，也没有为取证扩大观察或重复业务请求。
+
+原文8页现可读，但本轮新模型、SAVE、Overall及重读的最小真实循环尚未运行。原生初次分析及准确BLOCKED失败后继的独立产品37ae0f8becc476ffe65e0d91729f797c0f125723（父94c24efa）已正常提交、尚未发布；产品测试与发布准备另单登记，本记录不扩写其计数。旧失败和原结果保持。reader、SEM、CHAT、新 Aily 与其他内容/正式业务验收继续分列，未新增完整场景通过或Native/调度动作。
+
+M2同一 evidence 仅追加8条有限记录，原233条逐值原样保留；当前241条。只更新document.assessment-reading的当前阅读/运行缺口、P0/P2/P6摘要和selection.reason；13/47/54/10目录、10条binding ID、所有场景和三组选择数组不变。现有 generator 沿用户已接受五组图样式生成snapshot/HTML，仅做最小数据一致性验证，不重跑44项原样式QA或旧产品build。私有原件按正常发布、页面、短窗HTTP与原始失败分别归档，公开记录不包含实际actor、私有样本标识或业务正文。
+
+
+## 2026-10-24 发布前候选准备记录
 
 记录日为Asia/Shanghai的2026-10-24；以下运行与构建时间均保留2026-10-23 UTC。首批 `f2be52eb7d721b041651c1e6b4f0ee684385b697`（父a909）包含ReviewOverall两份服务端接线、事项修订标签及四份测试；后继 `7455e34a4668878976049821efdebe55bffc04b9`（父f2be）包含适用性选择/构型证据四份服务端接线及五份测试。两批正常hook提交并经独立审查接受，普通合并后当前准确候选为 `41325870f27236f839ba9d8fc20ca68eefd6939a`，父 `183f5d3fa9a3a38272c184b520e4f45b5115b9fe` / `7455e34a4668878976049821efdebe55bffc04b9`，tree `a9049a02701be535fa039b0e7ef7103ad0216180`。原生浏览器已登录用户的本地读取/更新/结果核对复用既有DialogueBrowserScope；保留NeedLogin、production ingress guard、逐对象action/owner/tenant/source/version、CAS/事务与显式确认，不新增身份层、policy或第二次OAuth入口。适用性/构型面板显式保持原owner范围；外部来源未配置仍NOT_CONNECTED/UNKNOWN。
 

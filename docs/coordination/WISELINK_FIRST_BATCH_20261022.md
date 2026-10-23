@@ -1,6 +1,6 @@
 # 第一批实施与隔离验证 — 2026-10-22
 
-当前状态（2026-10-24，Asia/Shanghai）：线上仍为准确Host787，原受控技术切换、双端指纹、online三policy、原Native c235安装141文件/1852测试及C136一次恢复保留。统一原生身份和事项修订标签的f2be→7455已正常提交、接受并普通合并为41325870；原28 Jest/13 PG及后继分次55 Jest/8 PG按实际源码与时间登记，clean413的一次标准完整build通过。官方只读预检最新release仍787 finished，完整schema diff为空；候选未推送/发布，实际401与标签需发布后原页面读回。有限既有原文→work1→Overall同work→同DVI阅读不证明新模型/SEM或整体业务完成；CHAT真实对话未验收，新Aily未接通。下文历史时点保留，当前候选与精确时间见末节。
+当前状态（2026-10-24，Asia/Shanghai）：公开94已双远端同步，准确Host后继a7仅origin同步并经单次release7699919694665632785 finished，双端a7。原正常用户页面的事项修订标签、已存评估核对及额外OAuth提示已有限读回修复；官方4GET明确200/409 NOT_CONFIGURED/200/200，既有FTD事项5/保存工作1调查及综合可读。reader仍VERIFICATION_PENDING，原文8页可读但本轮新模型/SAVE/Overall尚未运行；初次分析/准确BLOCKED失败后继修复仅独立候选且未发布。无新DDL/Native/调度，不新增完整业务场景通过；详细当前事实见末节，历史记录仍保留其原时点。
 
 ## 实施结果
 
@@ -580,3 +580,15 @@ HTTP使用真实应用SDK/middleware/AuthNPaasGuard/production guard与scope，�
 公开候选继续对应origin/github的同名 `codex/native-assessment-delivery-20261024` 分支；正式Host后继将另沿已发布787 lineage准备独立origin-only ref，再与最终公开提交普通合并为同tree。两种ref分别交付，不直接把纯公开ref当正式main后继；本批未创建该私有后继，也未将其对象导入公开候选，准确Host ref由后继交付批指定。
 
 原线上401和标签错误仍待准确发布后原用户页面核对，未关闭runtime gap。CHAT技术发布和真实对话/未知恢复、新Aily可信用户/只读适配仍各自分开；没有新业务模型/READ/SAVE、SEM/LCM内容或正式采用验收。M2原225 evidence逐值保留，追加两source、四原测试、一个准确413 build和一个只读预检共8条，全部只绑定document.assessment-reading局部身份、scenarioIds为空；不增加V08/V10通过。10条binding ID、目录13/47/54/10及三组选择数组保留，仅当前reason与P0/P2/P6更新。snapshot/HTML按既有generator沿用用户样式；本批仅验证新引用、历史225和payload一致，不重跑未变44QA或产品build，不执行DOM/browser，未浏览器视觉验收。
+
+## 2026-10-24 准确发布与原用户页面读回
+
+公开交付 `94c24efa746984a7edbf8b76719e1ffcfa549bed` 已分别普通同步至 origin/github 同名开发分支；准确 Host 后继 `a7fb08e9b9b89e24d933479d5823a92624f90994` 仅同步 origin 同名分支。原 Host 单次 release `7699919694665632785` 在 `2026-10-23T17:49:18.813945Z`—`17:49:21.428079Z` 读回 finished、准确 a7、error_logs=[]。最后发布前完整 dev→online 结构差异为空，本次无 DDL、新 Native 安装或调度；后续 `18:12:39.017304Z` 完整差异仍为空，`18:12:49.452677Z` 同 release 仍为准确 a7/finished。原413的一次本机构建仍保留原来源，未为记录后继重建或改写指纹。
+
+正常已登录用户原页面读回浏览器源码与 Host 部署均为完整 a7，浏览器 buildTime 为 `2026-10-23T17:47:27.346Z`，runtime PASS；UI releaseId/API合同仍未知，reader仍 VERIFICATION_PENDING。事项修订标签已正确，旧保存评估核对警告和额外 OAuth 连接提示消失。已有 FTD 的事项修订5、保存工作修订1及调查/综合正文可读；这里只证明既有成果的正常阅读，不倒推旧模型实际输入。
+
+同一次原页面 `17:49:00Z`—`17:52:00Z` 短窗的官方 gateway/app_web 正向访问记录明确：Review Overall eligibility=200，applicability-selection=409 / `APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED`，同 review-action=200，configuration-evidence/status=200。409 不记作200或受控选择已配置；构型来源未接通仍是业务缺项。没有使用“无 error”推断成功，也没有为取证扩大观察或重复业务请求。
+
+原文8页现可读，但本轮新模型、SAVE、Overall及重读的最小真实循环尚未运行。原生初次分析及准确BLOCKED失败后继的独立产品37ae0f8becc476ffe65e0d91729f797c0f125723（父94c24efa）已正常提交、尚未发布；产品测试与发布准备另单登记，本记录不扩写其计数。旧失败和原结果保持。reader、SEM、CHAT、新 Aily 与其他内容/正式业务验收继续分列，未新增完整场景通过或Native/调度动作。
+
+M2同一 evidence 仅追加8条有限记录，原233条逐值原样保留；当前241条。只更新document.assessment-reading的当前阅读/运行缺口、P0/P2/P6摘要和selection.reason；13/47/54/10目录、10条binding ID、所有场景和三组选择数组不变。现有 generator 沿用户已接受五组图样式生成snapshot/HTML，仅做最小数据一致性验证，不重跑44项原样式QA或旧产品build。私有原件按正常发布、页面、短窗HTTP与原始失败分别归档，公开记录不包含实际actor、私有样本标识或业务正文。
