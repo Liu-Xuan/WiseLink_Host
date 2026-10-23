@@ -4389,6 +4389,212 @@
       ],
       "summary": "当前方案状态：新Aily承担无需预选对象的跨文档/事项QA；Host可信最终用户授权检索、准确版本expand、保存work与引用深链适配尚未接通。sourceRevision/consumer/owner/readEntry继续null；787既有CHAT发布不代表新Aily接入。没有新增配置、身份、查询、执行或模型/业务SAVE，四层保持not_run，observedAt为null。",
       "plannedOnly": true
+    },
+    {
+      "id": "native-assessment.review-overall.source",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "f2be52eb7d721b041651c1e6b4f0ee684385b697",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "已接受首批两server接入既有DialogueBrowserScope/native actor并保留NeedLogin/guard、逐对象action/source/version/CAS；事项修订标签只改名称。正常hook提交于2026-10-23T16:28:33Z（Git提交时间，不冒充审查观察时间）；没有独立review时刻，observedAt为null。未部署，不能关闭原401/标签runtime。",
+      "committedAt": "2026-10-23T16:28:33Z",
+      "inputRefs": [
+        "server/modules/canonical-host/canonical-host-review-overall-projection.controller.ts",
+        "server/modules/canonical-host/canonical-host-review-overall-projection.service.ts",
+        "client/src/pages/DocumentParsingPage/DocumentAssessmentWorkspace.tsx"
+      ],
+      "reviewScope": "已接受f2be局部消费者源码和正常提交；不是新身份层、额外OAuth入口或SAVE/LCM业务通过。"
+    },
+    {
+      "id": "native-assessment.review-overall.jest28",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "f2be52eb7d721b041651c1e6b4f0ee684385b697",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": "2026-10-23T16:19:33.680Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "三套28项通过。原Jest report startTime为16:19:23.957Z，observedAt只取最后suite endTime，非命令完成时间；无独立invocation。实际a909工作区加首批文件，最终f2be保持接受字节，不称clean f2be或413重跑。真实SDK/guard/scope使用合成gateway及有界SQL fixture，不证明线上注入/数据库。",
+      "testLevel": "integration",
+      "executionSourceRevision": "a9095ecd256af36268370aea92b8005847aba8a7",
+      "runStartedAt": "2026-10-23T16:19:23.957Z",
+      "timeBasis": "original Jest report startTime / last suite endTime; no separate invocation",
+      "inputRefs": [
+        "test/unit/review-overall-projection.spec.ts",
+        "test/unit/review-overall-projection.controller.spec.ts",
+        "test/unit/review-overall-projection-browser.spec.ts"
+      ]
+    },
+    {
+      "id": "native-assessment.review-overall.pg13",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "f2be52eb7d721b041651c1e6b4f0ee684385b697",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": "2026-10-23T16:24:09.081767Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "原invocation 16:24:04.008647Z—16:24:09.081767Z，隔离PG13/13、exit0且无跳过；在a909+首批文件执行，最终f2be映射，不是413重跑。受限本机actor核native/可选session、mapping/source/version/CAS/rollback；不证明线上policy部署或所有后置失败零artifact。",
+      "testLevel": "integration",
+      "executionSourceRevision": "a9095ecd256af36268370aea92b8005847aba8a7",
+      "runStartedAt": "2026-10-23T16:24:04.008647Z",
+      "timeBasis": "original run.json invocation",
+      "inputRefs": [
+        "test/node/review-overall-projection-service-postgres.test.mjs"
+      ]
+    },
+    {
+      "id": "native-assessment.panels.source",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "7455e34a4668878976049821efdebe55bffc04b9",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "已接受适用性/构型四server复用native actor、GET runRead/POST runNativeWrite并显式保留原OWNER范围；NeedLogin/guard、action/grant/source/version/CAS/显式确认不变。正常hook提交于2026-10-23T16:53:05Z（Git提交时刻，不冒充审查时间），无独立review观察时间。来源未配置仍NOT_CONNECTED/UNKNOWN；未部署、不扩整条LCM。",
+      "committedAt": "2026-10-23T16:53:05Z",
+      "inputRefs": [
+        "server/modules/canonical-host/canonical-host-applicability-selection.controller.ts",
+        "server/modules/canonical-host/canonical-host-applicability-selection.service.ts",
+        "server/modules/canonical-host/configuration-evidence/configuration-evidence.controller.ts",
+        "server/modules/canonical-host/configuration-evidence/configuration-evidence.service.ts"
+      ],
+      "reviewScope": "后继7455四server局部身份消费者；不新增身份映射/policy/外部连接。"
+    },
+    {
+      "id": "native-assessment.panels.jest55-separated",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "7455e34a4668878976049821efdebe55bffc04b9",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": "2026-10-23T16:48:47Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "分次55有效通过：run01 16:47:37Z—16:47:48Z整次exit1（新增HTTP suite TS2322），原三套36通过；run02 16:48:03Z—16:48:09Z为17通过/2 Fleet夹具失败；仅修夹具后HTTP run03 16:48:41Z—16:48:47Z 19/19 exit0。不称单次55或把run02重复相加。实际f2be工作区加后继文件，最终7455映射，未在413执行。HTTP合成gateway/SQL-context不能证明线上认证/RLS。",
+      "testLevel": "integration",
+      "executionSourceRevision": "f2be52eb7d721b041651c1e6b4f0ee684385b697",
+      "timeBasis": "separate original invocation records",
+      "runs": [
+        {
+          "name": "combined-run01",
+          "startedAt": "2026-10-23T16:47:37Z",
+          "endedAt": "2026-10-23T16:47:48Z",
+          "exitCode": 1,
+          "effectivePassed": 36
+        },
+        {
+          "name": "http-run02",
+          "startedAt": "2026-10-23T16:48:03Z",
+          "endedAt": "2026-10-23T16:48:09Z",
+          "exitCode": 1,
+          "passed": 17,
+          "failed": 2,
+          "counted": false
+        },
+        {
+          "name": "http-run03",
+          "startedAt": "2026-10-23T16:48:41Z",
+          "endedAt": "2026-10-23T16:48:47Z",
+          "exitCode": 0,
+          "effectivePassed": 19
+        }
+      ],
+      "inputRefs": [
+        "test/unit/canonical-host-applicability-controlled-selection.spec.ts",
+        "test/unit/canonical-host-applicability-selection-review.controller.spec.ts",
+        "test/unit/configuration-evidence/configuration-evidence.service.spec.ts",
+        "test/unit/native-applicability-configuration-browser.spec.ts"
+      ]
+    },
+    {
+      "id": "native-assessment.panels.pg8",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "7455e34a4668878976049821efdebe55bffc04b9",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": "2026-10-23T16:44:21.717376Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "原PG run03 invocation 16:44:18.984703Z—16:44:21.717376Z，8/8 exit0/无跳过；执行于f2be+后继文件、最终7455映射，不是413重跑。本机受限角色/所选迁移和代表性policy核query/adopt/read/replay、selection/CAS、mapping/RLS/source-head撤回；外部I/O为fixture。run02 6/8因Drizzle cause.code断言失败，run01端口准备失败原样保留，不称全部历史全绿。",
+      "testLevel": "integration",
+      "executionSourceRevision": "f2be52eb7d721b041651c1e6b4f0ee684385b697",
+      "runStartedAt": "2026-10-23T16:44:18.984703Z",
+      "timeBasis": "original run03 run.json invocation",
+      "inputRefs": [
+        "test/node/native-assessment-panels-postgres.test.mjs"
+      ]
+    },
+    {
+      "id": "native-assessment.41325870.full-build",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "41325870f27236f839ba9d8fc20ca68eefd6939a",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": "2026-10-23T17:01:30.780167Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "准确clean413一次标准npm run build，only_frontend_change未设置；17:00:44.822824Z—17:01:30.780167Z exit0、45.959秒，原流水线完整、四子日志fresh，479依赖复制/0失败、前后clean。双端编译指纹413，前端17:00:52.690Z/后端17:01:02.100Z，176 API/37页面及13局部端点/三controller编译装配静态核对。原warning保留；没有重跑上述suite、启动应用或执行页面，更不代表发布/线上401已消除。",
+      "testLevel": "integration",
+      "runStartedAt": "2026-10-23T17:00:44.822824Z",
+      "timeBasis": "actual full-build invocation/result; fingerprints from generated artifacts",
+      "inputRefs": [
+        "scripts/build.sh"
+      ],
+      "outputRefs": [
+        "dist/server/runtime-assets/host-build/build-fingerprint.json",
+        "dist/client/assets/runtime-build-DXhsSHhy.js",
+        "dist/api-routes.json",
+        "dist/page-routes.json"
+      ]
+    },
+    {
+      "id": "native-assessment.preflight.online-baseline",
+      "kind": "deployment",
+      "status": "inconclusive",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T16:52:01.113928Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "官方原用户身份只读一次最近release-list（16:50:57.600126Z），缺commit故只读该最新ID详情（16:52:01.113928Z）：7699857234712661230 finished/787/error_logs空；完整未过滤db-env-diff（16:50:59.689224Z）changes空，CLI语义dev→online、原target main。仅该时点结构差异与线上基线，不证明业务行一致或新413已部署；无SQL/迁移/同步/发布/安装/调度/认证写。",
+      "timeBasis": "original official CLI invocation/result end times",
+      "deploymentRef": "7699857234712661230"
     }
   ]
 }

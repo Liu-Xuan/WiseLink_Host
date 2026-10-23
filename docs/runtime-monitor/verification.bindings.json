@@ -588,9 +588,9 @@
       "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
       "authorRevision": "0fd28f3d5514a9187fa67c39cd1e19e4d0854492",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "当前787已正常发布，公开安全a909同tree、非docs受控输入与4255相同；准确原测试/构建身份保留，未为切换重跑。本次追加实际发布、online policy、原c235安装/测试、一次调度恢复与有限读回，不把技术交付当业务整体完成。 已接受CHAT251941f4及M3选中观察均在787；本次正常用户准确原文→保存work1四问题→Overall同work→同DVI阅读有限核对成立。页面飞书身份与ReviewOverall只认Host OAuth不一致的401，以及顶部事项/保存工作修订标签混淆仍为未部署修复；原Aily iframe历史失败不代表新渠道。",
+      "reviewScope": "当前787已正常发布，公开安全a909同tree、非docs受控输入与4255相同；准确原测试/构建身份保留，未为切换重跑。本次追加实际发布、online policy、原c235安装/测试、一次调度恢复与有限读回，不把技术交付当业务整体完成。 已接受CHAT251941f4及M3选中观察均在787；本次正常用户准确原文→保存work1四问题→Overall同work→同DVI阅读有限核对成立。线上787的401与修订标签失败保留；统一原生身份及标签的f2be→7455已正常提交、接受并合并为41325870，原测试与一次完整build通过，尚未发布/真实页面核对；原Aily iframe历史失败不代表新渠道。",
       "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。 普通CHAT由Host既有Review turn保存问题与候选回复，不产生评估工作或正式采用。",
-      "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。 当前CHAT实际链为DocumentAssessmentReview → ContinuousReviewPanel → ReviewChatComposer；既有WorkItem/Matter复用同一获权Review面板。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。 ReviewOverall核对由client/src/features/workitem/useReviewOverallProjection.ts调用专用eligibility/request/status；787的CanonicalHostReviewOverallProjectionService.authorized仅经SessionResolver认Host OAuth，与页面原生飞书身份路径不一致，统一接线修复未部署。",
+      "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。 当前CHAT实际链为DocumentAssessmentReview → ContinuousReviewPanel → ReviewChatComposer；既有WorkItem/Matter复用同一获权Review面板。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。 ReviewOverall核对由client/src/features/workitem/useReviewOverallProjection.ts调用专用eligibility/request/status；787的CanonicalHostReviewOverallProjectionService.authorized仅经SessionResolver认Host OAuth，与页面原生飞书身份路径不一致，统一接线修复尚未部署。候选f2be→7455在ReviewOverall、applicability-selection、configuration-evidence既有controller/service复用DialogueBrowserScope（GET runRead、POST runNativeWrite）和request-local native actor，保留NeedLogin/production guard、owner/action/source/version及CAS；41325870一次完整build与编译装配通过，不代表线上消费者已更换。",
       "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。 普通CHAT显式appendReviewTextTurn(CHAT/AUTOMATIC)，Host提供当前owner/OAuth/executor能力；短轮询读回并暂停隐藏panel，CHAT不触发工作刷新。",
       "recoveryOwner": "原页面读取epoch/session隔离及草稿scope继续有效；未知CHAT保留原requestId/body/会话和业务范围，读回核对或显式原样重试。同会话STALE_CONTEXT仍须Host当前能力；CLOSED/空/换会话由用户显式归档结果未知记录，不复制或自动重发。新问题/会话另需显式操作，草稿和未知记录仅页面内存；session变化清除。未知SAVE仍走原Host恢复。",
       "authority": {
@@ -625,14 +625,23 @@
         "test/unit/jobaid-current-execution.spec.ts",
         "test/unit/jobaid-problem-reading-ui.spec.ts",
         "test/unit/work-item-runtime-diagnostic.spec.ts",
-        "test/node/core-p1-host-postgres.test.mjs"
+        "test/node/core-p1-host-postgres.test.mjs",
+        "test/unit/review-overall-projection.spec.ts",
+        "test/unit/review-overall-projection.controller.spec.ts",
+        "test/unit/review-overall-projection-browser.spec.ts",
+        "test/node/review-overall-projection-service-postgres.test.mjs",
+        "test/unit/canonical-host-applicability-controlled-selection.spec.ts",
+        "test/unit/canonical-host-applicability-selection-review.controller.spec.ts",
+        "test/unit/configuration-evidence/configuration-evidence.service.spec.ts",
+        "test/unit/native-applicability-configuration-browser.spec.ts",
+        "test/node/native-assessment-panels-postgres.test.mjs"
       ],
       "gaps": [
         {
           "id": "document.assessment-reading.runtime",
           "kind": "runtime",
-          "reason": "787有限UI链确认准确原文/保存引用、work1四问题、Overall消费同work及同DVI正文；同时eligibility实际401 REVIEW_OVERALL_LOGIN_REQUIRED，页面原生飞书身份成立但专用服务仍只认Host OAuth。客户端误显刷新重试；顶部工作修订5应为事项修订5，保存workRevision1正确。统一身份与标签修复进行中，未提交/部署；外部Source OAuth另列。历史PDF500、后一次200/11页及旧Aily30秒ready timeout保留原范围。",
-          "nextAction": "接收并审查统一读取/更新/结果核对身份的候选及事项修订标签，按准确版本验证后再登记实际技术发布/用户读回；不把再次授权或刷新当修复。继续保留全屏、动态权限/版本转换和旧Aily未决事实。"
+          "reason": "787有限UI链确认准确原文/保存引用、work1四问题、Overall同work及同DVI正文；实际eligibility401 REVIEW_OVERALL_LOGIN_REQUIRED与事项修订标签错误仍未获发布后读回。f2be→7455统一原生身份及标签已正常提交/接受、原28 Jest/13 PG和分次55 Jest/8 PG及准确413一次完整build通过，但尚未发布；不以候选通过关闭runtime。外部Source授权、历史PDF/Aily及全屏/动态转换缺口仍按原范围保留。",
+          "nextAction": "按正式交付流程完成准确413后继技术发布及双端指纹读回，再在原已登录用户页面核对本地评估读取/更新/结果、适用性/构型owner范围和身份切换；不要求第二次OAuth当修复，不增加模型/SAVE/LCM业务验收。保留历史PDF、全屏/动态权限/版本及旧Aily未决事实。"
         },
         {
           "id": "document.assessment-reading.openclaw-chat-ui",

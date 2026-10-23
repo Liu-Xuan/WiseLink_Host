@@ -1,10 +1,22 @@
 # Integration source record
 
+## 2026-10-24 当前候选：原生身份修复已提交、测试及完整构建，待发布读回
+
+记录日为Asia/Shanghai的2026-10-24；以下运行与构建时间均保留2026-10-23 UTC。首批 `f2be52eb7d721b041651c1e6b4f0ee684385b697`（父a909）包含ReviewOverall两份服务端接线、事项修订标签及四份测试；后继 `7455e34a4668878976049821efdebe55bffc04b9`（父f2be）包含适用性选择/构型证据四份服务端接线及五份测试。两批正常hook提交并经独立审查接受，普通合并后当前准确候选为 `41325870f27236f839ba9d8fc20ca68eefd6939a`，父 `183f5d3fa9a3a38272c184b520e4f45b5115b9fe` / `7455e34a4668878976049821efdebe55bffc04b9`，tree `a9049a02701be535fa039b0e7ef7103ad0216180`。原生浏览器已登录用户的本地读取/更新/结果核对复用既有DialogueBrowserScope；保留NeedLogin、production ingress guard、逐对象action/owner/tenant/source/version、CAS/事务与显式确认，不新增身份层、policy或第二次OAuth入口。适用性/构型面板显式保持原owner范围；外部来源未配置仍NOT_CONNECTED/UNKNOWN。
+
+公开候选继续对应origin/github的同名 `codex/native-assessment-delivery-20261024` 分支；正式Host后继将另沿已发布787 lineage准备独立origin-only ref，再与最终公开提交普通合并为同tree。两种ref分别交付，不直接把纯公开ref当正式main后继；本批未创建该私有后继，也未将其对象导入公开候选，准确Host ref由后继交付批指定。
+
+原测试分别归属提交前相应工作区与最终接受文件映射：首批28 Jest / 13隔离PG；后继分次55 Jest（失败组合run01中的原三套36通过，加修正夹具后HTTP run03的19通过）/8隔离PG。原失败和各运行时间保留，不称单次55通过，不记为413重跑。准确clean 413的一次标准 `npm run build` 于 `17:00:44.822824Z`—`17:01:30.780167Z` exit0，45.959秒，四子日志fresh、479依赖复制/0失败；双端编译指纹均为413，前端buildTime `17:00:52.690Z`、后端 `17:01:02.100Z`。176 API/37页面及13个受影响端点、三controller的service/DialogueBrowserScope编译装配已静态核对；构建前后clean。既有tsconfig/module-type/mixed-import/chunk警告保留，不因此重构建，未执行应用或页面。
+
+官方用户身份只读预检在 `16:50:57.600126Z` 返回最近一条release、因list未含commit而于 `16:52:01.113928Z` 单次读取该ID：线上仍为787、release7699857234712661230 finished、error_logs空。`16:50:59.689224Z` 的完整未过滤db-env-diff为changes空，CLI表示dev→online、原始target为main；只证明该窗口没有待同步结构差异，不证明业务行相同。新候选未推送/发布，也没有SQL、迁移、同步、安装、调度或新认证。
+
+实际787的eligibility401与标签失败仍开放；候选已提交/验证不等于真实用户页面已修复。准确发布和双端读回后再核对原用户本地评估读取/更新/结果、owner及身份切换；外部Source授权另列。CHAT仍待真实对话/未知发送恢复，新Aily可信用户/Host适配未接通；SEM、SAVE、LCM及正式采用不新增业务通过。M2只追加8条局部记录至233条，原225对象逐值保留；仅现有document.assessment-reading接线补消费者说明，P0/P2/P6更新当前摘要。13/47/54/10、10条binding及三组选择数组不变；selection.reason只更新当前说明，沿用用户指定样式。详细时间和边界见[FIRST_BATCH本批记录](WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建)。
+
 ## 2026-10-24 接线图沿用用户指定主线进展样式
 
 本地展示基于已接受记录提交ead8，继承用户指定reference中的五组13节点可点击图、真实契约方向/全局范围、详情及P0—P6已交付/缺口/下一步/负责范围/完成条件、下方严格证据核对。原生graph/monitor与现有generator一起维护，后续生成自动沿用；reference的旧4255/211条进度数据没有导入。当前准确787事实、225条证据对象、10条binding、selection及各工作包原nextAction保持，progress只作引用既有证据的有界阅读摘要，不生成完成率或新业务通过。
 
-M1只新增展示维护约定，文件指纹变化不改写历史证据的契约/执行身份，也不要求为文案重跑业务；严格核对继续按原记录范围解释。401身份统一接线及事项修订标签的产品修复并行进行，尚未部署。此次仅本地文本源码审查、语法及静态数据QA，未浏览器视觉验收；不代表新Host发布、Native操作、模型/READ/SAVE或真实对话验收。
+M1只新增展示维护约定，文件指纹变化不改写历史证据的契约/执行身份，也不要求为文案重跑业务；严格核对继续按原记录范围解释。401身份统一接线及事项修订标签的产品修复已正常提交、合并并完成本地测试/完整构建，尚未部署；当前准确候选见顶部。此次仅本地文本源码审查、语法及静态数据QA，未浏览器视觉验收；不代表新Host发布、Native操作、模型/READ/SAVE或真实对话验收。
 
 现有snapshot/HTML生成器成功，静态快照QA44/44；225证据、10 binding及selection输入文件与ead8逐字节相等，P0—P6只新增progress字段且全部evidenceIds指向现有记录。目录仍13/47/54/10，五组13节点和31类明确节点方向（35段）来自契约，其余保留关系清单。两个JS组件与生成页两个inline script均只做语法解析，三个Python源只做语法/数据检查；AST核对M3运行投影、读取/导航与其它原方法不变，共用方法只增加verification审计控件分支。reference页面的JavaScript没有被执行，也没有用DOM或其它入口观察被拒页面。
 
@@ -16,7 +28,7 @@ M1只新增展示维护约定，文件指纹变化不改写历史证据的契约
 
 主线当前先闭合准确原文、保存工作、综合消费和同版阅读。787的一次正常用户有限UI链在 `15:35:53.433Z` 导航后，`15:36:44.350Z` 前工具观察到正文：既有准确原文/保存引用目标一致，保存工作修订1的四个问题可读，Overall消费同一保存工作，同DVI综合与问题正文相符。这是既有成果的阅读核对，没有新生成，也未证明本轮特定原文语义已进入实际模型输入或SEM内容验收。原调查输入/交付与READ、SAVE权威行、Overall previousWork/finish/artifact及页面消费者的准确接线见[M1 E.12](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e12-787-技术交付与主线有限读回2026-10-24)和M2，引用相同不代替正文级消费证明。
 
-本次初导航实际 `GET /api/canonical-host/work-items/:workItemId/integrated-assessment/review-overall-projections/eligibility` 在 `15:36:34.944Z` 返回HTTP401 / `REVIEW_OVERALL_LOGIN_REQUIRED`，官方Trace和同请求日志已确认，后续诊断覆盖 `15:35:50Z`—`15:43:10Z`。页面原生飞书身份已成立，但ReviewOverall专用服务仍只认Host OAuth，读取、更新与结果核对的身份路径不一致；这是已有接口的身份接线缺陷。客户端把它显示为“暂时无法核对已保存评估，请刷新后重试。”，刷新不是修复。统一接线修复正在独立候选中准备，尚未提交或部署；不能以追加OAuth提示或要求用户再次授权作为完成。外部Source/机队子区的OAuth授权是另一范围，不与本地保存工作身份混记。更早public-safe摘要的NOT_ESTABLISHED及空查询仅保留其原观察窗口，不覆盖本次已定位401。
+本次初导航实际 `GET /api/canonical-host/work-items/:workItemId/integrated-assessment/review-overall-projections/eligibility` 在 `15:36:34.944Z` 返回HTTP401 / `REVIEW_OVERALL_LOGIN_REQUIRED`，官方Trace和同请求日志已确认，后续诊断覆盖 `15:35:50Z`—`15:43:10Z`。页面原生飞书身份已成立，但ReviewOverall专用服务仍只认Host OAuth，读取、更新与结果核对的身份路径不一致；这是已有接口的身份接线缺陷。客户端把它显示为“暂时无法核对已保存评估，请刷新后重试。”，刷新不是修复。该诊断时修复尚未提交或部署；后继准确候选已提交并完成本地测试/构建，当前状态见顶部；不能以追加OAuth提示或要求用户再次授权作为完成。适用性/构型子区自动GET同属本地状态读取，已纳入7455原生身份候选；实际外部Source取数所需委托另按真实调用处理，当前installationEvents未配置。更早public-safe摘要的NOT_ESTABLISHED及空查询仅保留其原观察窗口，不覆盖本次已定位401。
 
 同一UI顶部“工作修订5”实际取事项修订，应标为“事项修订5”；底部保存workRevision1正确，现有读回不支持保存正文被错误替换。标签修复也仍属未部署候选。时间均为UI/工具观察时刻或上界，未测得准确Ready、firstReadable、HTTP延迟、生产ACK或P95。
 

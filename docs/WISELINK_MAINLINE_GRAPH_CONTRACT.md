@@ -807,6 +807,15 @@ v1.1 的 LCM 支线、v1.2 的未来来源规划、v1.3 的 TDMS PDF 主线全�
 | 保存工作 → Overall | `CanonicalJobAidProblemService#buildInput/#commit/#commitOverall` 以准确previousWork正文/ref/revision及finish.workRef核对保存行、consistencyCheck、CURRENT及source/work guards；`jobaid-overall-projection.ts`保存实际analysis/readingResult及basedOnJobAidWorkRevisionRef。 | 有限UI确认Overall消费同保存工作及同DVI正文相符；同ref不是SEM正文使用证明，下一次内容核验仍须实际modelInput、保存issues及Overall finish/artifact。正式采用保持原流程。 |
 | 同快照 → 正文/诊断 | `readBrowser/#readBrowserSnapshot → useJobAidWorkingRead → DocumentAssessmentOverview/JobAidProblemWorkspace/WorkItemRuntimeDiagnostic` 共享准确current/selectedExecution/活动及来源重核。 | 787读取链已观察；不是完整请求集合、动态权限/版本转换或生产Ready/firstReadable/ACK历史验收。 |
 
-真实eligibility GET在 `15:36:34.944Z` 返回401 / REVIEW_OVERALL_LOGIN_REQUIRED。页面原生飞书身份有效，而专用服务仍只认Host OAuth；本地保存工作读取、更新和结果核对的身份接线不一致，修复进行中。客户端误显刷新重试；顶部“工作修订5”应为事项修订5，保存workRevision1正确。修复尚未提交/部署，不能把再次授权提示当身份修复；外部Source授权另有真实范围。历史空窗口/未知原因不回改，本次实际日志诊断另记。四层证据保持独立，不给save.finish的V08/V10或SEM增加业务通过数。
+真实eligibility GET在 `15:36:34.944Z` 返回401 / REVIEW_OVERALL_LOGIN_REQUIRED。页面原生飞书身份有效，而专用服务仍只认Host OAuth；本地保存工作读取、更新和结果核对的身份接线不一致，修复进行中。客户端误显刷新重试；顶部“工作修订5”应为事项修订5，保存workRevision1正确。该读回时修复尚未提交/部署；后继已提交/测试/构建候选见E.13，线上仍待发布读回，不能把再次授权提示当身份修复；外部Source授权另有真实范围。历史空窗口/未知原因不回改，本次实际日志诊断另记。四层证据保持独立，不给save.finish的V08/V10或SEM增加业务通过数。
 
 OpenClaw CHAT已在787交付，获权事项真实对话和未知发送恢复尚未验收，独立文档后续接入；新Aily跨对象问答的可信用户身份及Host适配未接通，保持null入口。M1目录与原10条binding ID不变，原211证据逐值保留后追加本次记录。图映射只是实施定位，真实SEM、TDMS来源/刷新、三类变化与下游覆盖、正式业务及未提供的历史时间继续按各自消费者推进。
+
+
+### E.13 原生身份局部消费者与已构建候选（2026-10-24）
+
+线上仍为准确787；原eligibility401与标签失败保留，候选已提交/测试不替代真实页面修复读回。首批 `f2be52eb7d721b041651c1e6b4f0ee684385b697` 于2026-10-23 `16:28:33Z` 正常提交ReviewOverall controller/service与事项修订label；后继 `7455e34a4668878976049821efdebe55bffc04b9` 于 `16:53:05Z` 正常提交applicability-selection及configuration-evidence的controller/service。只补现有document.assessment-reading局部消费：原controller保留NeedLogin/production guard，既有DialogueBrowserScope的GET runRead、POST runNativeWrite与request-local native actor贯穿读取、更新、结果核对；原owner/action、tenant/source/version、事务/CAS/幂等及显式确认仍在，不新建身份层/policy/额外OAuth入口。构型来源未连接仍NOT_CONNECTED/UNKNOWN，外部Source委托与本地状态分开。
+
+首批28 Jest/13隔离PG与后继分次55 Jest/8隔离PG分别来自提交前对应工作区和最终文件映射，原失败、report/invocation时间及合成HTTP/本机PG限制见[FIRST_BATCH本批表](coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建)，不是在集成413重跑。普通合并候选 `41325870f27236f839ba9d8fc20ca68eefd6939a`（tree `a9049a02701be535fa039b0e7ef7103ad0216180`）于 `17:00:44.822824Z`—`17:01:30.780167Z` 一次标准完整build通过、前后clean；双端编译指纹为413，176 API/37页面及13个局部端点和三controller依赖装配仅按产物静态核对。官方只读最新release/detail仍787 finished、完整schema diff为空，候选未同步/发布。发布及原用户读回是下一步，401 runtime尚未关闭。
+
+本批没有新业务模型/READ/SAVE或SEM/LCM内容验收；CHAT真实对话及新Aily适配未完成。M2原225证据逐值保留，新增8条仅绑定document.assessment-reading，scenarioIds为空，不给整条SAVE、V08/V10增加通过。目录13/47/54/10、10binding与用户三组选择数组不变；snapshot/HTML沿用用户指定样式，更新当前摘要/reason。生成及引用/payload静态检查不执行页面或DOM，也未进行浏览器视觉验收。

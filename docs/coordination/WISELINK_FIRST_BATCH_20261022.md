@@ -1,6 +1,6 @@
 # 第一批实施与隔离验证 — 2026-10-22
 
-当前状态（2026-10-24，Asia/Shanghai）：Host准确787的受控技术切换已完成，官方release7699857234712661230 finished，实际双端787指纹、online三条policy、Native原c235安装141文件/1852项测试及原C136一次恢复均已读回。2026-10-23 UTC的一次有限UI链确认既有准确原文→保存工作修订1四问题→Overall消费同work→同DVI阅读相符；不代表新模型输入、SEM或业务整体完成。最新实际401已定位为页面原生飞书身份与ReviewOverall只认Host OAuth的身份接线不一致，统一接线与“事项修订5”标签修复进行中，尚未提交/部署。OpenClaw CHAT已随787发布但未真实对话验收；新Aily适配器/可信身份未接通。下文保留历史时点，当前证据、边界和下一步见末节及M_INTEGRATION顶部。
+当前状态（2026-10-24，Asia/Shanghai）：线上仍为准确Host787，原受控技术切换、双端指纹、online三policy、原Native c235安装141文件/1852测试及C136一次恢复保留。统一原生身份和事项修订标签的f2be→7455已正常提交、接受并普通合并为41325870；原28 Jest/13 PG及后继分次55 Jest/8 PG按实际源码与时间登记，clean413的一次标准完整build通过。官方只读预检最新release仍787 finished，完整schema diff为空；候选未推送/发布，实际401与标签需发布后原页面读回。有限既有原文→work1→Overall同work→同DVI阅读不证明新模型/SEM或整体业务完成；CHAT真实对话未验收，新Aily未接通。下文历史时点保留，当前候选与精确时间见末节。
 
 ## 实施结果
 
@@ -543,7 +543,7 @@ M1 E.10与M2的 `research.overall` / P1反映新定义材料、实际consumer及
 | 原Native c235安装 | 原包未重打包，实际安装141文件bytes/SHA/mode匹配；安装目录原1852项测试通过、0失败，c234完整备份保留。测试属于实际Native安装身份，不改记为Host787业务场景覆盖。 |
 | 原调度恢复 | `13:52:08.212Z`—`13:52:11.879Z` 一次正常恢复原C136 enabled，其余15项disabled；原配置仅更新时间不同。没有手工触发新业务模型/READ/SAVE；自然运行不充作smoke，不推导全队列空或历史UNKNOWN清零。 |
 | 既有主线有限UI阅读 | `15:35:53.433Z` 发导航，`15:36:44.350Z` 前工具见正文，客户端显示读回时间 `15:36:40.318Z`。准确原文/保存引用目标一致；保存工作修订1四问题、Overall消费同work、同DVI综合和问题正文相符。只证明既有保存成果的有限阅读，不证明新生成、特定语义实际模型输入或SEM全文验收。 |
-| 最新eligibility错误 | 初导航 `15:36:34.944Z` 的真实GET返回401 / `REVIEW_OVERALL_LOGIN_REQUIRED`，覆盖首次导航的官方Trace/同请求日志已确认。页面原生飞书身份已成立，但ReviewOverall专用服务仍只认Host OAuth，读取/更新/结果核对身份路径不一致；并非接口未开发。统一接线修复进行中，未提交/部署，不以要求再次授权或刷新当解决。外部Source OAuth范围另列。 |
+| 最新eligibility错误 | 初导航 `15:36:34.944Z` 的真实GET返回401 / `REVIEW_OVERALL_LOGIN_REQUIRED`，覆盖首次导航的官方Trace/同请求日志已确认。页面原生飞书身份已成立，但ReviewOverall专用服务仍只认Host OAuth，读取/更新/结果核对身份路径不一致；并非接口未开发。该读回时修复尚未提交/部署；后继已提交、测试及构建候选见本文件最新节，线上缺口仍待发布读回，不以要求再次授权或刷新当解决。外部Source OAuth范围另列。 |
 | 修订标签 | 顶部“工作修订5”取自事项revision，应标“事项修订5”；保存workRevision1及已读正文对应正确。独立本地候选修复尚未部署，不据标签差异推导保存了不同正文。 |
 
 本次原始工具、UI和诊断仍在私有交接归档；公开投影只保留准确源码、时间、参数化路由、计数与限制，不复制业务对象/账号、正文、Trace/日志ID、signed URL或OAuth参数。较早摘要的eligibility NOT_ESTABLISHED和空窗口结果原样保留为历史，本次新诊断另追加，不回改历史证据。首次Chrome导航工具超时后页面实际正常出现，没有第二次初导航、显式刷新、隐藏HTTP或新业务生成。所列时间均为工具/UI观察或区间，不能充作Ready、firstReadable、HTTP耗时、生产ACK或P95。
@@ -555,3 +555,28 @@ M2继续使用原10条binding，映射覆盖11节点/6关系；M1目录13/47/54/
 尚未验收的范围继续包括：SEM真实后果/暴露/控制事实与实际模型→SAVE→Overall内容使用，TDMS真实Source/grant/processing set与线上刷新、撤销/取代/V44，三类变化及下游覆盖，生产ACK/Ready/首次可读与完整请求历史。获权WorkItem/Matter OpenClaw CHAT代码已在787，但真实对话/未知发送恢复尚未执行；独立文档随后接入。新Aily的Host可信最终用户身份、窄只读适配、跨对象检索/准确展开/work及引用导航未接通，不冒称已上线。本记录未启动Host、重跑全产品build/tests或新业务动作。
 
 本轮记录验证：既有snapshot/HTML生成器成功，225条证据中新增14条，原211对象与基线逐值相等；catalog、10个binding ID、选择数组及七个工作包非nextAction字段保留，HTML内嵌数据与snapshot相等，新增passed记录不增加业务场景覆盖。快照QA为39/39。真实custom element的jsdom定向显示核对通过：787技术部署独立通过、资料库运行保留失败、新Aily四列保持未执行/未部署/未核对，P6过滤不修改selection。首轮因jsdom未实现window.scrollTo而报错，添加常规DOM替身后通过；ResizeObserver/scrollTo替身只用于该验证，未改产品代码，原失败输出保留。公开新增文本经私有标识与凭据模式检查，无已知业务/会话/Trace/账号或signed URL泄漏。未跑全产品build/tests。
+
+
+## 2026-10-24 原生身份修复候选与一次完整构建
+
+记录日为Asia/Shanghai的2026-10-24；本节全部事件时间为2026-10-23 UTC。已接受产品首批 `f2be52eb7d721b041651c1e6b4f0ee684385b697`，父 `a9095ecd256af36268370aea92b8005847aba8a7`，tree `6512511948881febfa7ded95e43bcb503a58dc19`，正常提交时刻 `16:28:33Z`；后继 `7455e34a4668878976049821efdebe55bffc04b9`，父f2be，tree `6b36ec254285ab1c9606d6079fde2897786f0c24`，正常提交时刻 `16:53:05Z`。首批两server＋一label＋四tests、后继四server＋五tests均正常hook提交、独立审查接受。公开docs/style的1a758f9与首批产品普通合并为183f5d3，后继再普通合并为准确候选 `41325870f27236f839ba9d8fc20ca68eefd6939a`；parents `183f5d3fa9a3a38272c184b520e4f45b5115b9fe` / `7455e34a4668878976049821efdebe55bffc04b9`，tree `a9049a02701be535fa039b0e7ef7103ad0216180`，无冲突、正常hook通过。没有从旧私有发布历史取对象或覆盖在途写者。
+
+产品局部消费者为ReviewOverall controller/service、applicability-selection controller/service、configuration-evidence controller/service，复用既有DialogueBrowserScope：GET runRead、POST runNativeWrite，service从request-local nativeBrowserIdentity取actor。保留NeedLogin、production ingress guard、对象action及owner/tenant/source/version、锁内重核、CAS/事务/幂等和显式确认，不新增身份resolver/policy或额外OAuth入口。可选OAuth只在存在且匹配native user/tenant/app时兼容；适用性/构型面板保持原owner范围，同tenant一般READ不扩大面板权限。构型外部port无新连接/凭据，未配置仍NOT_CONNECTED/UNKNOWN，不当FALSE或自动采用。标签只将page.workItem.revision的“工作修订”改为“事项修订”，数字及保存workRevision不变。
+
+| 原执行及源码映射 | 实际结果、原时间与限制 |
+| --- | --- |
+| 首批Jest：`review-overall-projection.spec.ts`、`review-overall-projection.controller.spec.ts`、`review-overall-projection-browser.spec.ts` | 原report startTime `16:19:23.957Z`、最后suite结束 `16:19:33.680Z`，三套28通过；没有独立invocation，后者不是推测的命令完成时刻。在a909工作区加首批文件执行，最终正常f2be保留接受字节，不写clean f2be/413重跑。 |
+| 首批隔离PG：`test/node/review-overall-projection-service-postgres.test.mjs` | 原invocation `16:24:04.008647Z`—`16:24:09.081767Z`，13/13、exit0，无跳过；本机隔离库及受限actor验证native/可选session、精确映射、来源/版本/CAS/rollback。 |
+| 后继Jest：`canonical-host-applicability-controlled-selection.spec.ts`、`canonical-host-applicability-selection-review.controller.spec.ts`、`configuration-evidence/configuration-evidence.service.spec.ts`、`native-applicability-configuration-browser.spec.ts` | 分次55有效通过：组合run01 `16:47:37Z`—`16:47:48Z` 整次exit1（新增HTTP suite TS2322编译失败），原三套36通过；HTTP run02 `16:48:03Z`—`16:48:09Z` 17通过/2夹具失败；补nullable Fleet字段后HTTP run03 `16:48:41Z`—`16:48:47Z` 19/19、exit0。不能记单次55全绿，不重复加run02的17。执行于f2be工作区加后继文件，最终7455映射接受字节，未在413执行suite。 |
+| 后继隔离PG：`test/node/native-assessment-panels-postgres.test.mjs` | run03 `16:44:18.984703Z`—`16:44:21.717376Z`，8/8、exit0，无跳过；query/adopt/read/replay、selection preview/confirm/CAS及mapping/RLS/source-head撤回。run02 `16:43:28.488518Z`—`16:43:31.368266Z` 的6通过/2失败是错误断言读取顶层code而非Drizzle cause.code；原RLS已正确拒绝，仅修断言。run01沙箱端口准备失败未启动PG/测试、无时间字段，不补造时间。 |
+| 一次标准完整构建：准确clean413 | `npm run build`，只移除环境中的only_frontend_change；原脚本步骤完整执行，`17:00:44.822824Z`—`17:01:30.780167Z`，exit0、45.959秒。四固定子日志fresh，479依赖复制、0失败。复用同package/lock的已有依赖实体复制，无安装、lock/config/脚本修改；构建前后clean，无插件无关tracked修改。 |
+
+HTTP使用真实应用SDK/middleware/AuthNPaasGuard/production guard与scope，但gateway context/hosted provenance及SQL-context为合成有界fixture，不证明上游签名或线上注入；PG是本机隔离受限角色/所选真实迁移和代表性policy，不证明线上部署组合。source-head撤回和外部I/O替代保留各自范围，事务后置失败可能已经生成候选artifact，只验收无业务/receipt提交，不宣称零artifact。原失败/撤回的OAuth提示方案及标签CSS环境问题保留私有日志，不计入本次身份组。
+
+双端编译产物均为413：前端 `17:00:52.690Z`，不可变const/getter的JS SHA256 `c8cd56e5a577327d9112a416f4b472fe30457129e4d86b22d81036a7dea9df28`；后端不可变fingerprint `17:01:02.100Z`。生成176 API/37页面，ReviewOverall3、适用性4、构型6个受影响端点均存在；三controller的service/DialogueBrowserScope注入及静态/动态Module注册按编译AST核对。仅静态读产物，没有执行应用、Nest启动、HTTP smoke或页面。22条候选外tsconfig诊断、module-type、动态/静态混用import及大于800KB chunk等既有警告完整保留，未抑制或据此重复构建。四子日志及完整invocation/result只在本地私有交接目录归档。
+
+官方CLI沿原用户身份只读：最近一条release在 `16:50:57.600126Z` 返回，list未含commit，故只对该最新ID于 `16:52:01.113928Z` 读取一次详情，仍为release7699857234712661230 / 787 / finished / error_logs空；并非先读旧ID后声称没有新发布。`16:50:59.689224Z` 的完整未过滤dev→online schema diff为changes空，原始目标字段为main。该窗口仅确定结构差异为空与当前发布基线，不证明业务行一致或新候选发布。候选origin仍本地clone地址，canonical origin/github同名codex ref仅记待同步；没有push、发布、SQL/迁移/同步、安装/调度或新认证。
+
+公开候选继续对应origin/github的同名 `codex/native-assessment-delivery-20261024` 分支；正式Host后继将另沿已发布787 lineage准备独立origin-only ref，再与最终公开提交普通合并为同tree。两种ref分别交付，不直接把纯公开ref当正式main后继；本批未创建该私有后继，也未将其对象导入公开候选，准确Host ref由后继交付批指定。
+
+原线上401和标签错误仍待准确发布后原用户页面核对，未关闭runtime gap。CHAT技术发布和真实对话/未知恢复、新Aily可信用户/只读适配仍各自分开；没有新业务模型/READ/SAVE、SEM/LCM内容或正式采用验收。M2原225 evidence逐值保留，追加两source、四原测试、一个准确413 build和一个只读预检共8条，全部只绑定document.assessment-reading局部身份、scenarioIds为空；不增加V08/V10通过。10条binding ID、目录13/47/54/10及三组选择数组保留，仅当前reason与P0/P2/P6更新。snapshot/HTML按既有generator沿用用户样式；本批仅验证新引用、历史225和payload一致，不重跑未变44QA或产品build，不执行DOM/browser，未浏览器视觉验收。

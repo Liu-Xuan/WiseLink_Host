@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "snapshot": {
     "dataMode": "snapshot",
-    "generatedAt": "2026-10-23T16:28:53.968279+00:00",
+    "generatedAt": "2026-10-23T17:11:21.459751+00:00",
     "contract": {
       "version": "1.6 复核修订稿",
       "source": "WISELINK_MAINLINE_GRAPH_CONTRACT.md",
-      "sourceRevision": "88f0ca32d1a67cfff839f15e604d8811c4b73fb18dfaa3ce589c60a890a77e6b",
+      "sourceRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
       "sourceRevisionType": "sha256"
     },
     "target": {
@@ -37,10 +37,10 @@
           "V26",
           "V28"
         ],
-        "nextAction": "主线M1/M2/M3继续按同一准确来源/保存/消费含义收口；787/原c235技术切换、online三policy及C136一次恢复已完成。有限UI只读链成立，401为页面原生飞书身份与ReviewOverall只认Host OAuth不一致，统一身份/事项修订标签候选未提交部署。先查实际消费者补关键接线；11节点/6关系/10binding是映射数，不重做47关系或凑完成率。CHAT真实对话及新Aily仍按各自范围待验。",
+        "nextAction": "主线M1/M2/M3沿同一准确来源/保存/消费收口；787/原c235技术切换完成。f2be→7455已提交、审查并合并413，原测试与一次标准完整build通过；下一步准确发布/双端及原页面身份读回，401仍开放。仅document.assessment-reading局部身份，不抬整条SAVE/LCM/SEM业务通过。CHAT真实对话和新Aily分别待验；11节点/6关系/10binding为映射范围，不重做47关系或凑完成率。",
         "progress": {
-          "delivered": "主线契约13节点/47关系/54场景/10规则及现有10条binding已登记；映射覆盖11节点/6关系。准确Host787已正常发布、双端读回一致，online三条policy与dev一致，原Native c235安装141文件/1852测试通过、原C136一次恢复。225条证据保留准确来源。",
-          "remaining": "技术切换已经完成，业务整体仍未验收。有限既有工作阅读不关闭SEM、真实来源与变化缺口；ReviewOverall原生身份统一接线及事项修订标签修复进行中，尚未部署。CHAT真实对话和新Aily接入分别待验。",
+          "delivered": "主线目录13/47/54/10、10binding及787/原c235既有技术交付保留。f2be→7455局部原生身份及事项修订label已正常提交/接受，普通合并41325870一次标准完整build通过，原28/13及分次55/8测试按准确来源登记；原225证据逐值保留，当前233条。",
+          "remaining": "候选未推送/发布；线上787的401与标签需准确发布后原用户读回，完整schema diff空只属只读预检。有限阅读不关闭SEM、真实Source/变化缺口；CHAT真实对话及新Aily接入仍待验。",
           "owner": "主控集成及各既有消费者负责范围",
           "acceptance": "图、接线、工作包与严格证据引用同一份当前记录；准确版本/来源/失败可追溯，技术交付和真实业务验收分别成立，映射数不换算为完成率。",
           "evidenceIds": [
@@ -49,7 +49,15 @@
             "controlled-switch.787.online-lock-policies.deployment",
             "controlled-switch.c235.installed.deployment",
             "controlled-switch.c136.restored.runtime",
-            "controlled-switch.787.core-reading.bounded-runtime"
+            "controlled-switch.787.core-reading.bounded-runtime",
+            "native-assessment.review-overall.source",
+            "native-assessment.review-overall.jest28",
+            "native-assessment.review-overall.pg13",
+            "native-assessment.panels.source",
+            "native-assessment.panels.jest55-separated",
+            "native-assessment.panels.pg8",
+            "native-assessment.41325870.full-build",
+            "native-assessment.preflight.online-baseline"
           ]
         }
       },
@@ -97,10 +105,10 @@
           "V28",
           "V30"
         ],
-        "nextAction": "787有限UI核对准确原文/保存引用、work1四问题、Overall同work及同DVI正文成立；正常浏览器翻译接续及原有阅读消费者已继承部署，但没有新增翻译/真实Native读取验收。先统一已登录飞书页面与ReviewOverall读取/更新/核对身份，标签应为事项修订5；候选未提交部署。CHAT已部署待真实对话/未知发送恢复，独立文档随后；新Aily可信最终用户、只读适配、准确展开/work/引用深链未接通。旧PDF/Aily失败保留原范围。",
+        "nextAction": "787有限既有原文/work1/Overall同work/同DVI阅读保留；统一原生身份及事项修订label的f2be→7455已提交/测试并合并413完整构建，待准确发布后核对原页面读取/更新/结果、owner与身份切换，实际401仍开放。没有新增翻译/Native读取或SAVE/LCM内容验收。CHAT已部署待真实对话/未知恢复，独立文档随后；新Aily可信用户/适配/准确展开/work/引用深链未接通，旧PDF/Aily失败保留。",
         "progress": {
-          "delivered": "原文、翻译接续、事项与已存评估阅读消费者已在787继承交付。当前有限UI确认准确原文/保存引用、work1四问题、Overall消费同work及同DVI正文相符。获权WorkItem/Matter CHAT251941f4及M3选中观察已随787技术发布。",
-          "remaining": "页面原生飞书身份成立，但ReviewOverall仍只认Host OAuth，eligibility实际401；统一读取/更新/结果核对身份与事项修订5标签修复进行中，未部署。真实CHAT/未知发送恢复未验收，独立文档入口随后；新Aily可信用户/Host只读适配仍未接通。",
+          "delivered": "原文、翻译接续、事项与已存评估阅读消费者已在787继承交付。当前有限UI确认准确原文/保存引用、work1四问题、Overall消费同work及同DVI正文相符。获权WorkItem/Matter CHAT251941f4及M3选中观察已随787技术发布。 局部ReviewOverall、适用性和构型本地入口的原生用户scope候选f2be→7455已提交、测试/审查并合并413完整构建；事项修订标签只改名称，保存workRevision不变。",
+          "remaining": "候选未发布，原787实际401及标签错误仍待原用户页面核对；本地测试/构建不代表真实上游身份注入、线上RLS组合或整条保存/LCM内容通过。真实CHAT/未知发送恢复未验收，独立文档随后，新Aily可信用户/Host只读适配未接通。",
           "owner": "既有阅读前端、ReviewOverall身份、OpenClaw交互及Aily只读适配范围",
           "acceptance": "同一原生用户身份下保存工作读取、更新及结果核对一致；CHAT换对象/身份及未知发送不串上下文、不重复发送。新Aily经Host逐对象核权完成跨对象检索、准确版本展开、work与引用导航；外部Source授权另按真实范围核验。",
           "evidenceIds": [
@@ -111,7 +119,15 @@
             "controlled-switch.787.eligibility-authentication.runtime",
             "controlled-switch.787.revision-label.runtime",
             "controlled-switch.787.openclaw-chat.runtime",
-            "controlled-switch.787.aily-planned.source_review"
+            "controlled-switch.787.aily-planned.source_review",
+            "native-assessment.review-overall.source",
+            "native-assessment.review-overall.jest28",
+            "native-assessment.review-overall.pg13",
+            "native-assessment.panels.source",
+            "native-assessment.panels.jest55-separated",
+            "native-assessment.panels.pg8",
+            "native-assessment.41325870.full-build",
+            "native-assessment.preflight.online-baseline"
           ]
         }
       },
@@ -211,10 +227,10 @@
           "V08",
           "V10"
         ],
-        "nextAction": "受控技术切换已结束：准确787 finished/双端一致，原c235实际141文件匹配及1852测试通过，online三policy一致，原C136一次恢复enabled而其他15disabled。保留原c234备份、原包/失败和正常在途对账边界；本次未手工触发新模型/READ/SAVE，不增加V08/V10。下一步仅沿受影响真实请求核对SAVE/封存恢复/终态/外层ACK及实际新增时间，Ready/首次可读/完整请求历史和全队列空仍未证明，不重复切换或清checkpoint。",
+        "nextAction": "787/原c235受控技术切换已结束；局部原生身份/标签f2be→7455已提交、原测试和413一次标准完整build通过，待准确发布与原用户读回，401运行缺口未关闭。只增加native actor非system及本机受限PG的局部回归，不改身份模块/迁移/policy、不增加V08/V10。继续沿真实请求核对SAVE/封存/终态/外层ACK和实际时间，不推导全队列空或补历史Ready/首次可读，不重复切换。",
         "progress": {
-          "delivered": "ACK独立读模型及封存恢复代码已在787交付；原c235实际141文件匹配、安装目录1852项测试通过，原C136一次恢复enabled、其他15项disabled。技术切换已结束；保存核对警告已由实际日志定位为401身份路径不一致。",
-          "remaining": "本批未手工新增业务模型/READ/SAVE或生产ACK/恢复验收，Ready/首次可读及完整请求历史缺失，未证明全队列空。统一原生身份及标签修复未部署，不能把诊断完成当作警告已消除。",
+          "delivered": "ACK独立读模型及封存恢复代码已在787交付；原c235实际141文件匹配、安装目录1852项测试通过，原C136一次恢复enabled、其他15项disabled。技术切换已结束；保存核对警告已由实际日志定位为401身份路径不一致。 f2be→7455局部native actor/非system及受限本机PG回归通过，普通合并413一次完整构建、编译装配通过；没有身份模块/迁移/policy改动。",
+          "remaining": "候选尚未发布，实际401/标签仍待发布后原页面核对；本机HTTP/PG不证明线上身份注入或角色/RLS组合。未新增业务模型/READ/SAVE或生产ACK/恢复验收，Ready/首次可读、完整请求历史及全队列空仍未证明。",
           "owner": "执行恢复、Host读模型及保存阅读前端",
           "acceptance": "准确业务请求、封存、保存成果、执行终态、外层ACK与页面可对应；恢复复用原结果且无重复业务写。身份修复有准确技术版本和真实读回；只登记实际取得的Ready/首次可读事件，不补造历史时间。",
           "evidenceIds": [
@@ -224,7 +240,11 @@
             "controlled-switch.787.host.deployment",
             "controlled-switch.c235.installed.deployment",
             "controlled-switch.c136.restored.runtime",
-            "controlled-switch.787.eligibility-authentication.runtime"
+            "controlled-switch.787.eligibility-authentication.runtime",
+            "native-assessment.review-overall.pg13",
+            "native-assessment.panels.pg8",
+            "native-assessment.41325870.full-build",
+            "native-assessment.preflight.online-baseline"
           ]
         }
       }
@@ -1806,9 +1826,9 @@
       "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
       "authorRevision": "0fd28f3d5514a9187fa67c39cd1e19e4d0854492",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "当前787已正常发布，公开安全a909同tree、非docs受控输入与4255相同；准确原测试/构建身份保留，未为切换重跑。本次追加实际发布、online policy、原c235安装/测试、一次调度恢复与有限读回，不把技术交付当业务整体完成。 已接受CHAT251941f4及M3选中观察均在787；本次正常用户准确原文→保存work1四问题→Overall同work→同DVI阅读有限核对成立。页面飞书身份与ReviewOverall只认Host OAuth不一致的401，以及顶部事项/保存工作修订标签混淆仍为未部署修复；原Aily iframe历史失败不代表新渠道。",
+      "reviewScope": "当前787已正常发布，公开安全a909同tree、非docs受控输入与4255相同；准确原测试/构建身份保留，未为切换重跑。本次追加实际发布、online policy、原c235安装/测试、一次调度恢复与有限读回，不把技术交付当业务整体完成。 已接受CHAT251941f4及M3选中观察均在787；本次正常用户准确原文→保存work1四问题→Overall同work→同DVI阅读有限核对成立。线上787的401与修订标签失败保留；统一原生身份及标签的f2be→7455已正常提交、接受并合并为41325870，原测试与一次完整build通过，尚未发布/真实页面核对；原Aily iframe历史失败不代表新渠道。",
       "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。 普通CHAT由Host既有Review turn保存问题与候选回复，不产生评估工作或正式采用。",
-      "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。 当前CHAT实际链为DocumentAssessmentReview → ContinuousReviewPanel → ReviewChatComposer；既有WorkItem/Matter复用同一获权Review面板。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。 ReviewOverall核对由client/src/features/workitem/useReviewOverallProjection.ts调用专用eligibility/request/status；787的CanonicalHostReviewOverallProjectionService.authorized仅经SessionResolver认Host OAuth，与页面原生飞书身份路径不一致，统一接线修复未部署。",
+      "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。 当前CHAT实际链为DocumentAssessmentReview → ContinuousReviewPanel → ReviewChatComposer；既有WorkItem/Matter复用同一获权Review面板。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。 ReviewOverall核对由client/src/features/workitem/useReviewOverallProjection.ts调用专用eligibility/request/status；787的CanonicalHostReviewOverallProjectionService.authorized仅经SessionResolver认Host OAuth，与页面原生飞书身份路径不一致，统一接线修复尚未部署。候选f2be→7455在ReviewOverall、applicability-selection、configuration-evidence既有controller/service复用DialogueBrowserScope（GET runRead、POST runNativeWrite）和request-local native actor，保留NeedLogin/production guard、owner/action/source/version及CAS；41325870一次完整build与编译装配通过，不代表线上消费者已更换。",
       "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。 普通CHAT显式appendReviewTextTurn(CHAT/AUTOMATIC)，Host提供当前owner/OAuth/executor能力；短轮询读回并暂停隐藏panel，CHAT不触发工作刷新。",
       "recoveryOwner": "原页面读取epoch/session隔离及草稿scope继续有效；未知CHAT保留原requestId/body/会话和业务范围，读回核对或显式原样重试。同会话STALE_CONTEXT仍须Host当前能力；CLOSED/空/换会话由用户显式归档结果未知记录，不复制或自动重发。新问题/会话另需显式操作，草稿和未知记录仅页面内存；session变化清除。未知SAVE仍走原Host恢复。",
       "authority": {
@@ -1843,14 +1863,23 @@
         "test/unit/jobaid-current-execution.spec.ts",
         "test/unit/jobaid-problem-reading-ui.spec.ts",
         "test/unit/work-item-runtime-diagnostic.spec.ts",
-        "test/node/core-p1-host-postgres.test.mjs"
+        "test/node/core-p1-host-postgres.test.mjs",
+        "test/unit/review-overall-projection.spec.ts",
+        "test/unit/review-overall-projection.controller.spec.ts",
+        "test/unit/review-overall-projection-browser.spec.ts",
+        "test/node/review-overall-projection-service-postgres.test.mjs",
+        "test/unit/canonical-host-applicability-controlled-selection.spec.ts",
+        "test/unit/canonical-host-applicability-selection-review.controller.spec.ts",
+        "test/unit/configuration-evidence/configuration-evidence.service.spec.ts",
+        "test/unit/native-applicability-configuration-browser.spec.ts",
+        "test/node/native-assessment-panels-postgres.test.mjs"
       ],
       "gaps": [
         {
           "id": "document.assessment-reading.runtime",
           "kind": "runtime",
-          "reason": "787有限UI链确认准确原文/保存引用、work1四问题、Overall消费同work及同DVI正文；同时eligibility实际401 REVIEW_OVERALL_LOGIN_REQUIRED，页面原生飞书身份成立但专用服务仍只认Host OAuth。客户端误显刷新重试；顶部工作修订5应为事项修订5，保存workRevision1正确。统一身份与标签修复进行中，未提交/部署；外部Source OAuth另列。历史PDF500、后一次200/11页及旧Aily30秒ready timeout保留原范围。",
-          "nextAction": "接收并审查统一读取/更新/结果核对身份的候选及事项修订标签，按准确版本验证后再登记实际技术发布/用户读回；不把再次授权或刷新当修复。继续保留全屏、动态权限/版本转换和旧Aily未决事实。"
+          "reason": "787有限UI链确认准确原文/保存引用、work1四问题、Overall同work及同DVI正文；实际eligibility401 REVIEW_OVERALL_LOGIN_REQUIRED与事项修订标签错误仍未获发布后读回。f2be→7455统一原生身份及标签已正常提交/接受、原28 Jest/13 PG和分次55 Jest/8 PG及准确413一次完整build通过，但尚未发布；不以候选通过关闭runtime。外部Source授权、历史PDF/Aily及全屏/动态转换缺口仍按原范围保留。",
+          "nextAction": "按正式交付流程完成准确413后继技术发布及双端指纹读回，再在原已登录用户页面核对本地评估读取/更新/结果、适用性/构型owner范围和身份切换；不要求第二次OAuth当修复，不增加模型/SAVE/LCM业务验收。保留历史PDF、全屏/动态权限/版本及旧Aily未决事实。"
         },
         {
           "id": "document.assessment-reading.openclaw-chat-ui",
@@ -1992,7 +2021,7 @@
       "V53",
       "V15"
     ],
-    "reason": "记录更新于2026-10-24 Asia/Shanghai，事件保留2026-10-23 UTC：787已正常发布，online三policy、原c235安装141文件/1852项测试及C136一次恢复成立；有限UI链确认既有原文/work1/Overall/同DVI阅读，实际eligibility401与标签缺陷的统一接线修复尚未提交/部署。原211证据逐值保留，原选择的节点/关系/场景数组不变；11节点/6关系/10binding仅是映射范围。CHAT已发布未真实对话验收，新Aily继续planned/null；原测试/构建保留实际身份，不为记录重跑。"
+    "reason": "记录更新于2026-10-24 Asia/Shanghai，事件保留2026-10-23 UTC：线上仍787，原c235安装/1852测试、三policy及C136一次恢复保留。局部原生身份/事项修订label的f2be→7455已正常提交、原测试通过并合并413一次标准完整build，待发布及原用户页面读回，实际401未关闭。原225 evidence逐值保留，新增8条不增加业务场景通过；三组原选择数组不变，11节点/6关系/10binding仅映射范围。CHAT已发布未真实对话验收，新Ailyplanned/null；原测试保留实际源码/时间，413仅执行完整build。"
   },
   "evidence": [
     {
@@ -6384,6 +6413,212 @@
       ],
       "summary": "当前方案状态：新Aily承担无需预选对象的跨文档/事项QA；Host可信最终用户授权检索、准确版本expand、保存work与引用深链适配尚未接通。sourceRevision/consumer/owner/readEntry继续null；787既有CHAT发布不代表新Aily接入。没有新增配置、身份、查询、执行或模型/业务SAVE，四层保持not_run，observedAt为null。",
       "plannedOnly": true
+    },
+    {
+      "id": "native-assessment.review-overall.source",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "f2be52eb7d721b041651c1e6b4f0ee684385b697",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "已接受首批两server接入既有DialogueBrowserScope/native actor并保留NeedLogin/guard、逐对象action/source/version/CAS；事项修订标签只改名称。正常hook提交于2026-10-23T16:28:33Z（Git提交时间，不冒充审查观察时间）；没有独立review时刻，observedAt为null。未部署，不能关闭原401/标签runtime。",
+      "committedAt": "2026-10-23T16:28:33Z",
+      "inputRefs": [
+        "server/modules/canonical-host/canonical-host-review-overall-projection.controller.ts",
+        "server/modules/canonical-host/canonical-host-review-overall-projection.service.ts",
+        "client/src/pages/DocumentParsingPage/DocumentAssessmentWorkspace.tsx"
+      ],
+      "reviewScope": "已接受f2be局部消费者源码和正常提交；不是新身份层、额外OAuth入口或SAVE/LCM业务通过。"
+    },
+    {
+      "id": "native-assessment.review-overall.jest28",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "f2be52eb7d721b041651c1e6b4f0ee684385b697",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": "2026-10-23T16:19:33.680Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "三套28项通过。原Jest report startTime为16:19:23.957Z，observedAt只取最后suite endTime，非命令完成时间；无独立invocation。实际a909工作区加首批文件，最终f2be保持接受字节，不称clean f2be或413重跑。真实SDK/guard/scope使用合成gateway及有界SQL fixture，不证明线上注入/数据库。",
+      "testLevel": "integration",
+      "executionSourceRevision": "a9095ecd256af36268370aea92b8005847aba8a7",
+      "runStartedAt": "2026-10-23T16:19:23.957Z",
+      "timeBasis": "original Jest report startTime / last suite endTime; no separate invocation",
+      "inputRefs": [
+        "test/unit/review-overall-projection.spec.ts",
+        "test/unit/review-overall-projection.controller.spec.ts",
+        "test/unit/review-overall-projection-browser.spec.ts"
+      ]
+    },
+    {
+      "id": "native-assessment.review-overall.pg13",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "f2be52eb7d721b041651c1e6b4f0ee684385b697",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": "2026-10-23T16:24:09.081767Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "原invocation 16:24:04.008647Z—16:24:09.081767Z，隔离PG13/13、exit0且无跳过；在a909+首批文件执行，最终f2be映射，不是413重跑。受限本机actor核native/可选session、mapping/source/version/CAS/rollback；不证明线上policy部署或所有后置失败零artifact。",
+      "testLevel": "integration",
+      "executionSourceRevision": "a9095ecd256af36268370aea92b8005847aba8a7",
+      "runStartedAt": "2026-10-23T16:24:04.008647Z",
+      "timeBasis": "original run.json invocation",
+      "inputRefs": [
+        "test/node/review-overall-projection-service-postgres.test.mjs"
+      ]
+    },
+    {
+      "id": "native-assessment.panels.source",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "7455e34a4668878976049821efdebe55bffc04b9",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "已接受适用性/构型四server复用native actor、GET runRead/POST runNativeWrite并显式保留原OWNER范围；NeedLogin/guard、action/grant/source/version/CAS/显式确认不变。正常hook提交于2026-10-23T16:53:05Z（Git提交时刻，不冒充审查时间），无独立review观察时间。来源未配置仍NOT_CONNECTED/UNKNOWN；未部署、不扩整条LCM。",
+      "committedAt": "2026-10-23T16:53:05Z",
+      "inputRefs": [
+        "server/modules/canonical-host/canonical-host-applicability-selection.controller.ts",
+        "server/modules/canonical-host/canonical-host-applicability-selection.service.ts",
+        "server/modules/canonical-host/configuration-evidence/configuration-evidence.controller.ts",
+        "server/modules/canonical-host/configuration-evidence/configuration-evidence.service.ts"
+      ],
+      "reviewScope": "后继7455四server局部身份消费者；不新增身份映射/policy/外部连接。"
+    },
+    {
+      "id": "native-assessment.panels.jest55-separated",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "7455e34a4668878976049821efdebe55bffc04b9",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": "2026-10-23T16:48:47Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "分次55有效通过：run01 16:47:37Z—16:47:48Z整次exit1（新增HTTP suite TS2322），原三套36通过；run02 16:48:03Z—16:48:09Z为17通过/2 Fleet夹具失败；仅修夹具后HTTP run03 16:48:41Z—16:48:47Z 19/19 exit0。不称单次55或把run02重复相加。实际f2be工作区加后继文件，最终7455映射，未在413执行。HTTP合成gateway/SQL-context不能证明线上认证/RLS。",
+      "testLevel": "integration",
+      "executionSourceRevision": "f2be52eb7d721b041651c1e6b4f0ee684385b697",
+      "timeBasis": "separate original invocation records",
+      "runs": [
+        {
+          "name": "combined-run01",
+          "startedAt": "2026-10-23T16:47:37Z",
+          "endedAt": "2026-10-23T16:47:48Z",
+          "exitCode": 1,
+          "effectivePassed": 36
+        },
+        {
+          "name": "http-run02",
+          "startedAt": "2026-10-23T16:48:03Z",
+          "endedAt": "2026-10-23T16:48:09Z",
+          "exitCode": 1,
+          "passed": 17,
+          "failed": 2,
+          "counted": false
+        },
+        {
+          "name": "http-run03",
+          "startedAt": "2026-10-23T16:48:41Z",
+          "endedAt": "2026-10-23T16:48:47Z",
+          "exitCode": 0,
+          "effectivePassed": 19
+        }
+      ],
+      "inputRefs": [
+        "test/unit/canonical-host-applicability-controlled-selection.spec.ts",
+        "test/unit/canonical-host-applicability-selection-review.controller.spec.ts",
+        "test/unit/configuration-evidence/configuration-evidence.service.spec.ts",
+        "test/unit/native-applicability-configuration-browser.spec.ts"
+      ]
+    },
+    {
+      "id": "native-assessment.panels.pg8",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "7455e34a4668878976049821efdebe55bffc04b9",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": "2026-10-23T16:44:21.717376Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "原PG run03 invocation 16:44:18.984703Z—16:44:21.717376Z，8/8 exit0/无跳过；执行于f2be+后继文件、最终7455映射，不是413重跑。本机受限角色/所选迁移和代表性policy核query/adopt/read/replay、selection/CAS、mapping/RLS/source-head撤回；外部I/O为fixture。run02 6/8因Drizzle cause.code断言失败，run01端口准备失败原样保留，不称全部历史全绿。",
+      "testLevel": "integration",
+      "executionSourceRevision": "f2be52eb7d721b041651c1e6b4f0ee684385b697",
+      "runStartedAt": "2026-10-23T16:44:18.984703Z",
+      "timeBasis": "original run03 run.json invocation",
+      "inputRefs": [
+        "test/node/native-assessment-panels-postgres.test.mjs"
+      ]
+    },
+    {
+      "id": "native-assessment.41325870.full-build",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "41325870f27236f839ba9d8fc20ca68eefd6939a",
+      "environmentId": "local:host-native-assessment-delivery-20261024",
+      "observedAt": "2026-10-23T17:01:30.780167Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "准确clean413一次标准npm run build，only_frontend_change未设置；17:00:44.822824Z—17:01:30.780167Z exit0、45.959秒，原流水线完整、四子日志fresh，479依赖复制/0失败、前后clean。双端编译指纹413，前端17:00:52.690Z/后端17:01:02.100Z，176 API/37页面及13局部端点/三controller编译装配静态核对。原warning保留；没有重跑上述suite、启动应用或执行页面，更不代表发布/线上401已消除。",
+      "testLevel": "integration",
+      "runStartedAt": "2026-10-23T17:00:44.822824Z",
+      "timeBasis": "actual full-build invocation/result; fingerprints from generated artifacts",
+      "inputRefs": [
+        "scripts/build.sh"
+      ],
+      "outputRefs": [
+        "dist/server/runtime-assets/host-build/build-fingerprint.json",
+        "dist/client/assets/runtime-build-DXhsSHhy.js",
+        "dist/api-routes.json",
+        "dist/page-routes.json"
+      ]
+    },
+    {
+      "id": "native-assessment.preflight.online-baseline",
+      "kind": "deployment",
+      "status": "inconclusive",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T16:52:01.113928Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-原生身份修复候选与一次完整构建",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "官方原用户身份只读一次最近release-list（16:50:57.600126Z），缺commit故只读该最新ID详情（16:52:01.113928Z）：7699857234712661230 finished/787/error_logs空；完整未过滤db-env-diff（16:50:59.689224Z）changes空，CLI语义dev→online、原target main。仅该时点结构差异与线上基线，不证明业务行一致或新413已部署；无SQL/迁移/同步/发布/安装/调度/认证写。",
+      "timeBasis": "original official CLI invocation/result end times",
+      "deploymentRef": "7699857234712661230"
     }
   ]
 }
