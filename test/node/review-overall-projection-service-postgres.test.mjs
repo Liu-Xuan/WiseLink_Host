@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import http from 'node:http';
+import https from 'node:https';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import postgres from 'postgres';
@@ -13,6 +15,7 @@ const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
 const { drizzle } = require('drizzle-orm/postgres-js');
+const { sql } = require('drizzle-orm');
 const { getTableConfig } = require('drizzle-orm/pg-core');
 const { SqlExecutionContextMiddleware } = require('@lark-apaas/fullstack-nestjs-core');
 const { identitySession } = require('../../server/database/schema.ts');
@@ -28,7 +31,11 @@ const { ReviewConversationRepository } = require('../../server/modules/review-pe
 const { CanonicalJobAidProblemService } = require('../../server/modules/canonical-host/canonical-jobaid-problem.service.ts');
 const { JobAidWorkRepository } = require('../../server/modules/canonical-host/jobaid-work.repository.ts');
 const { CanonicalHostReviewOverallProjectionService } = require('../../server/modules/canonical-host/canonical-host-review-overall-projection.service.ts');
+const { CanonicalHostReviewOverallProjectionController } = require('../../server/modules/canonical-host/canonical-host-review-overall-projection.controller.ts');
 const { CanonicalHostReviewOverallProjectionRepository } = require('../../server/modules/canonical-host/canonical-host-review-overall-projection.repository.ts');
+const { DialogueBrowserScope } = require('../../server/modules/canonical-host/dialogue-browser-scope.service.ts');
+const { CANONICAL_MIAODA_APP_ID } = require('../../server/modules/canonical-host/canonical-host.constants.ts');
+const { ProductionMiaodaBrowserObjectIngressGuard } = require('../../server/modules/work-item/production-miaoda-browser-ingress.ts');
 const { canonicalJson, sealTaskEnvelope } = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
 const { resetQ1Database, initialProjection } = await import('./helpers/q1-review-postgres.fixture.mjs');
 
@@ -46,11 +53,38 @@ const input = {
 };
 
 // Only fixture data and artifact I/O are substitutes. The service, session,
-// object grant, registrar, exact Review/source readers and SDK patch are real.
+// controller/scope, object grant, exact Review/source readers and SDK patch are
+// real. Hosted provenance is fixture-owned, not a claim about a live gateway.
 async function fixture(t, afterArtifacts) {
   const url = new URL(databaseUrl);
   assert.ok(['localhost', '127.0.0.1'].includes(url.hostname));
   assert.match(url.pathname, /^\/wiselink_jobaid_test_q1_[a-z0-9_]+$/u);
+  const previousSandbox = process.env.SANDBOX_ID;
+  const previousLocal = process.env.MIAODA_LOCAL_DEV;
+  process.env.SANDBOX_ID = 'isolated-review-overall-native-pg-test';
+  delete process.env.MIAODA_LOCAL_DEV;
+  let externalCalls = 0;
+  const forbidExternal = () => {
+    externalCalls += 1;
+    throw new Error('UNEXPECTED_EXTERNAL_HTTP_OR_TOKEN_CALL');
+  };
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = forbidExternal;
+  const transports = [http, https].map(transport => {
+    const previous = { request: transport.request, get: transport.get };
+    transport.request = forbidExternal;
+    transport.get = forbidExternal;
+    return { transport, previous };
+  });
+  t.after(() => {
+    if (previousSandbox === undefined) delete process.env.SANDBOX_ID;
+    else process.env.SANDBOX_ID = previousSandbox;
+    if (previousLocal === undefined) delete process.env.MIAODA_LOCAL_DEV;
+    else process.env.MIAODA_LOCAL_DEV = previousLocal;
+    globalThis.fetch = previousFetch;
+    for (const { transport, previous } of transports) Object.assign(transport, previous);
+    assert.equal(externalCalls, 0);
+  });
   const admin = postgres(databaseUrl, { max: 2, onnotice() {} });
   const queries = [];
   const applicationName = `review_overall_service_${randomUUID()}`;
@@ -174,21 +208,41 @@ async function fixture(t, afterArtifacts) {
   const db = drizzle(browserSql, { logger: { logQuery(query) { queries.push(query); } } });
   const context = new SqlExecutionContextMiddleware({ roleSchema: 'wiselink_jobaid_test' });
   const sessions = new SessionResolver(new SessionStore(new IdentityRepository(db)), {
-    applicationScopeId: 'app_17bzc551rsg', sessionEnvironment: 'runtime',
+    applicationScopeId: CANONICAL_MIAODA_APP_ID, sessionEnvironment: 'runtime',
   }, context);
+  const native = new DialogueBrowserScope(sessions);
+  const sqlObservations = [];
+  async function assertNativeSql(database = db) {
+    const [observed] = await database.execute(sql`SELECT current_user AS role,
+      current_setting('app.user_id',true) AS actor,
+      role.rolsuper AS superuser, role.rolbypassrls AS bypass_rls,
+      pg_has_role(current_user,'service_role','member') AS service_member,
+      (SELECT bool_and(tableowner <> current_user) FROM pg_tables
+        WHERE schemaname='public' AND tablename IN
+          ('work_item','action_attempt','assessment_work_revision')) AS not_owner
+      FROM pg_roles AS role WHERE role.rolname=current_user`);
+    assert.deepEqual(observed, { role: 'authenticated_wiselink_jobaid_test',
+      actor: 'actor-job', superuser: false, bypass_rls: false,
+      service_member: false, not_owner: true });
+    sqlObservations.push(observed);
+  }
   const workItems = new MiaodaWorkItemRepository(db);
   const registrar = new MiaodaCanonicalWorkItemRegistrarAdapter(workItems);
   const access = new CanonicalObjectAccessRouter(new MiaodaHostedCanonicalObjectAccessAdapter(workItems),
     new unavailable.UnavailableAilyObjectAccessAdapter(),
     new unavailable.UnavailableServiceObjectAccessAdapter(),
     new unavailable.UnavailableSessionObjectAccessAdapter());
+  let externalDependencyCalls = 0;
   const unused = new Proxy({}, { get(_target, name) {
+    externalDependencyCalls += 1;
     throw new Error(`UNEXPECTED_EXTERNAL_DEPENDENCY:${String(name)}`);
   } });
+  t.after(() => assert.equal(externalDependencyCalls, 0));
   const work = new JobAidWorkRepository(db, unused, unused);
   const reviews = new ReviewConversationRepository(db);
   let artifactWrites = 0;
   const artifacts = { persistAndReadback: async bytes => {
+    await assertNativeSql();
     artifactWrites += 1;
     if (artifactWrites === 2 && afterArtifacts) await afterArtifacts(admin);
     return { artifact: { ref: `artifact://isolated/${artifactWrites}`,
@@ -199,24 +253,33 @@ async function fixture(t, afterArtifacts) {
     unused, unused, unused, workItems, reviews, unused, work,
     undefined, undefined, undefined, db);
   const executions = new CanonicalHostReviewOverallProjectionRepository(db);
+  const insertExecution = executions.insert.bind(executions);
+  executions.insert = async args => {
+    await assertNativeSql(args.database);
+    return insertExecution(args);
+  };
   const service = new CanonicalHostReviewOverallProjectionService(sessions, access,
     registrar, workItems, work, jobAid, executions, artifacts);
-  const request = { headers: { cookie: `wl_session=${token}` }, userContext: {
-    userId: 'actor-job', tenantId: 'tenant-job', isSystemAccount: false, roles: [],
+  const controller = new CanonicalHostReviewOverallProjectionController(service, native);
+  const ingress = new ProductionMiaodaBrowserObjectIngressGuard();
+  const request = { headers: {}, userContext: {
+    userId: 'actor-job', tenantId: 'tenant-job', appId: CANONICAL_MIAODA_APP_ID,
+    env: 'runtime', isSystemAccount: false, roles: [],
   } };
-  async function browser(callback, actorId = 'actor-job', cacheSession = false) {
+  function useOAuthCookie() { request.headers.cookie = `wl_session=${token}`; }
+  async function browser(callback, actorId = 'actor-job') {
     const original = request.userContext.userId;
     request.userContext.userId = actorId;
     try {
+      assert.equal(ingress.canActivate({ switchToHttp: () => ({ getRequest: () => request }) }), true);
       return await new Promise((resolve, reject) => context.use(request, {}, () =>
-        Promise.resolve().then(() => cacheSession
-          ? sessions.withRequestSession(request, callback) : callback()).then(resolve, reject)));
+        Promise.resolve().then(callback).then(resolve, reject)));
     } finally { request.userContext.userId = original; }
   }
-  async function bounded(callback, cacheSession = false) {
+  async function bounded(callback) {
     let timer;
     try {
-      return await Promise.race([browser(callback, 'actor-job', cacheSession), new Promise((_, reject) => {
+      return await Promise.race([browser(callback), new Promise((_, reject) => {
         timer = setTimeout(() => {
           t.diagnostic(`lastSQL=${queries.at(-1)}`);
           reject(new Error('MAX_ONE_TRANSACTION_REENTRANT_TIMEOUT'));
@@ -225,19 +288,33 @@ async function fixture(t, afterArtifacts) {
     } finally { clearTimeout(timer); }
   }
   async function unchanged() {
-    const [row] = await admin`SELECT revision FROM work_item WHERE work_item_id='WI-job'`;
+    const [row] = await admin`SELECT revision,projection_json FROM work_item WHERE work_item_id='WI-job'`;
     assert.equal(row.revision, 7);
+    assert.deepEqual(JSON.parse(row.projection_json), current);
     const [attempt] = await admin`SELECT count(*)::int AS n FROM action_attempt
       WHERE action_type='HOST_REVIEW_OVERALL_PROJECTION'`;
     assert.equal(attempt.n, 0);
   }
-  return { admin, database: db, service, sessions, executions, request, browser, bounded, unchanged,
-    publishOriginal, artifactWrites: () => artifactWrites, applicationName };
+  async function oneReceipt() {
+    const [row] = await admin`SELECT revision FROM work_item WHERE work_item_id='WI-job'`;
+    assert.equal(row.revision, 8);
+    const [attempt] = await admin`SELECT count(*)::int AS n FROM action_attempt
+      WHERE action_type='HOST_REVIEW_OVERALL_PROJECTION'`;
+    assert.equal(attempt.n, 1);
+  }
+  return { admin, database: db, controller, native, sessions, executions, request,
+    browser, bounded, unchanged, oneReceipt, useOAuthCookie, publishOriginal,
+    artifactWrites: () => artifactWrites, applicationName, sqlObservations,
+    externalCalls: () => externalCalls + externalDependencyCalls };
 }
 
-test('Review Overall real service with max=1 commits and replays the same request', options, async t => {
+test('Review Overall native browser without wl_session checks eligibility, commits, reads status and replays', options, async t => {
   const f = await fixture(t);
-  const receipt = await f.bounded(() => f.service.project('WI-job', input, f.request));
+  assert.equal(f.request.headers.cookie, undefined);
+  const eligibility = await f.bounded(() => f.controller.eligibility('WI-job', f.request));
+  const { requestId: _requestId, ...binding } = input;
+  assert.deepEqual(eligibility, { eligible: true, binding });
+  const receipt = await f.bounded(() => f.controller.project('WI-job', input, f.request));
   assert.equal(receipt.status, 'SUCCEEDED');
   assert.equal(receipt.modelRequests, 0);
   assert.equal(receipt.workItemRevision, 8);
@@ -246,42 +323,80 @@ test('Review Overall real service with max=1 commits and replays the same reques
   assert.equal(row.revision, 8);
   assert.equal(projection.integratedAssessment.baseRules.workRevisionRef, input.workRevisionRef);
   assert.equal(projection.integratedAssessment.overallSynthesis.basedOnJobAidWorkRevisionRef, input.workRevisionRef);
-  const replay = await f.bounded(() => f.service.project('WI-job', input, f.request));
+  const status = await f.bounded(() => f.controller.status('WI-job', input.requestId, f.request));
+  assert.equal(status.executionAttemptId, receipt.executionAttemptId);
+  const replay = await f.bounded(() => f.controller.project('WI-job', input, f.request));
   assert.equal(replay.replayed, true);
   assert.equal(replay.executionAttemptId, receipt.executionAttemptId);
-  const status = await f.bounded(() => f.service.status('WI-job', input.requestId, f.request));
-  assert.equal(status.executionAttemptId, receipt.executionAttemptId);
   assert.equal(f.artifactWrites(), 2);
-  const [count] = await f.admin`SELECT count(*)::int AS n FROM action_attempt
-    WHERE action_type='HOST_REVIEW_OVERALL_PROJECTION'`;
-  assert.equal(count.n, 1);
-  await assert.rejects(f.bounded(() => f.service.project('WI-job', {
+  await f.oneReceipt();
+  assert.equal(f.sqlObservations.length, 3);
+  assert.equal(f.externalCalls(), 0);
+  t.diagnostic(JSON.stringify({ nativeCookie: false, modelRequests: receipt.modelRequests,
+    externalCalls: f.externalCalls(), sqlRole: f.sqlObservations[0].role,
+    sqlActor: f.sqlObservations[0].actor, receipts: 1 }));
+  await assert.rejects(f.bounded(() => f.controller.project('WI-job', {
     ...input, reviewTurnId: 'RT-different',
   }, f.request)), /REVIEW_OVERALL_IDEMPOTENCY_CONFLICT/u);
 });
 
-for (const [name, mutate, expected] of [
-  ['revoked session', sql => sql`UPDATE identity_session SET revoked_at=now()`,
-    /REVIEW_OVERALL_LOGIN_REQUIRED/u],
-  ['expired session', sql => sql`UPDATE identity_session SET expires_at=now()-interval '1 second'`,
-    /REVIEW_OVERALL_LOGIN_REQUIRED/u],
-  // Mapping revocation already hides the latest work under RLS before the callback.
-  ['revoked actor mapping', sql => sql`UPDATE identity_subject_mapping SET status='REVOKED'`,
-    /JOBAID_OVERALL_EXACT_WORK_CHANGED/u],
+test('Review Overall native browser keeps a matching optional OAuth session compatible', options, async t => {
+  const f = await fixture(t);
+  f.useOAuthCookie();
+  await f.bounded(() => f.native.runRead(f.request, async () => {
+    assert.equal(f.sessions.nativeBrowserIdentity(f.request).oauthSession.session.id,
+      '22222222-2222-4222-8222-222222222222');
+  }));
+  assert.equal((await f.bounded(() => f.controller.eligibility('WI-job', f.request))).eligible, true);
+  const receipt = await f.bounded(() => f.controller.project('WI-job', input, f.request));
+  const status = await f.bounded(() => f.controller.status('WI-job', input.requestId, f.request));
+  const replay = await f.bounded(() => f.controller.project('WI-job', input, f.request));
+  assert.equal(status.executionAttemptId, receipt.executionAttemptId);
+  assert.equal(replay.executionAttemptId, receipt.executionAttemptId);
+  assert.equal(replay.replayed, true);
+  assert.equal(receipt.modelRequests, 0);
+  assert.equal(f.externalCalls(), 0);
+  await f.oneReceipt();
+});
+
+for (const [name, mutate] of [
+  ['revoked session', sql => sql`UPDATE identity_session SET revoked_at=now()`],
+  ['expired session', sql => sql`UPDATE identity_session SET expires_at=now()-interval '1 second'`],
 ]) {
-  test(`Review Overall max=1 fresh validation rejects ${name} even with request session cache`, options, async t => {
+  test(`Review Overall native max=1 commits despite optional ${name} changing after artifacts`, options, async t => {
     const f = await fixture(t, mutate);
-    await assert.rejects(f.bounded(() => f.service.project('WI-job', input, f.request), true), expected);
-    await f.unchanged();
+    f.useOAuthCookie();
+    const receipt = await f.bounded(() => f.controller.project('WI-job', input, f.request));
+    assert.equal(receipt.status, 'SUCCEEDED');
+    assert.equal(receipt.modelRequests, 0);
+    const resolved = await f.bounded(() => f.database.transaction(database =>
+      f.sessions.resolve(f.request, database)));
+    assert.equal(resolved, null, 'the independent OAuth resolver still rejects the changed session');
+    const status = await f.bounded(() => f.controller.status('WI-job', input.requestId, f.request));
+    assert.equal(status.executionAttemptId, receipt.executionAttemptId);
+    assert.equal(f.externalCalls(), 0);
+    await f.oneReceipt();
   });
 }
 
+// Mapping revocation is a real actor/tenant RLS fact, independent of OAuth.
+test('Review Overall native max=1 rejects revoked actor mapping before its commit', options, async t => {
+  const f = await fixture(t, sql => sql`UPDATE identity_subject_mapping SET status='REVOKED'`);
+  f.useOAuthCookie();
+  await assert.rejects(f.bounded(() => f.controller.project('WI-job', input, f.request)),
+    /JOBAID_OVERALL_EXACT_WORK_CHANGED/u);
+  assert.equal(f.artifactWrites(), 2);
+  await f.unchanged();
+});
+
 test('Review Overall session resolver rechecks a revoked mapping in the supplied transaction', options, async t => {
   const f = await fixture(t);
-  const resolved = await f.bounded(async () => {
+  f.useOAuthCookie();
+  const resolved = await f.bounded(() => f.native.runRead(f.request, async () => {
+    assert.ok(f.sessions.nativeBrowserIdentity(f.request).oauthSession);
     await f.admin`UPDATE identity_subject_mapping SET status='REVOKED'`;
     return f.database.transaction(database => f.sessions.resolve(f.request, database));
-  }, true);
+  }));
   assert.equal(resolved, null);
   await f.unchanged();
 });
@@ -305,7 +420,7 @@ for (const [name, mutate, expected] of [
 ]) {
   test(`Review Overall max=1 commit rejects ${name}`, options, async t => {
     const f = await fixture(t, mutate);
-    await assert.rejects(f.bounded(() => f.service.project('WI-job', input, f.request)), expected);
+    await assert.rejects(f.bounded(() => f.controller.project('WI-job', input, f.request)), expected);
     const [attempt] = await f.admin`SELECT count(*)::int AS n FROM action_attempt
       WHERE action_type='HOST_REVIEW_OVERALL_PROJECTION'`;
     assert.equal(attempt.n, 0);
@@ -314,11 +429,15 @@ for (const [name, mutate, expected] of [
 
 test('Review Overall max=1 rejects cross actor and tenant before artifact writes', options, async t => {
   const f = await fixture(t);
-  await assert.rejects(f.browser(() => f.service.project('WI-job', input, f.request), 'actor-other'),
-    /REVIEW_OVERALL_LOGIN_REQUIRED/u);
-  await f.admin`UPDATE identity_subject_mapping SET miaoda_tenant_id='tenant-other'`;
-  await assert.rejects(f.bounded(() => f.service.project('WI-job', input, f.request)),
+  await assert.rejects(f.browser(() => f.controller.project('WI-job', input, f.request), 'actor-other'),
     /CANONICAL_WORK_ITEM_NOT_FOUND/u);
+  f.request.userContext.tenantId = 'tenant-other';
+  await assert.rejects(f.bounded(() => f.controller.project('WI-job', input, f.request)),
+    /CANONICAL_WORK_ITEM_NOT_FOUND/u);
+  f.request.userContext.tenantId = 'tenant-job';
+  await f.admin`UPDATE identity_subject_mapping SET miaoda_tenant_id='tenant-other'`;
+  await assert.rejects(f.bounded(() => f.controller.project('WI-job', input, f.request)),
+    /JOBAID_OVERALL_EXACT_WORK_REQUIRED/u);
   assert.equal(f.artifactWrites(), 0);
   await f.unchanged();
 });
@@ -326,7 +445,7 @@ test('Review Overall max=1 rejects cross actor and tenant before artifact writes
 test('Review Overall max=1 rechecks the exact original parse in the commit transaction', options, async t => {
   let f;
   f = await fixture(t, () => f.publishOriginal('PARSE-2', 2));
-  await assert.rejects(f.bounded(() => f.service.project('WI-job', input, f.request)),
+  await assert.rejects(f.bounded(() => f.controller.project('WI-job', input, f.request)),
     /JOBAID_OVERALL_ORIGINAL_PARSE_CHANGED/u);
   await f.unchanged();
 });
@@ -338,11 +457,11 @@ test('Review Overall max=1 rolls back the execution row when final projection co
     await insert(args);
     throw new Error('AFTER_EXECUTION_INSERT');
   };
-  await assert.rejects(f.bounded(() => f.service.project('WI-job', input, f.request)),
+  await assert.rejects(f.bounded(() => f.controller.project('WI-job', input, f.request)),
     /AFTER_EXECUTION_INSERT/u);
   await f.unchanged();
   f.executions.insert = insert;
-  const recovered = await f.bounded(() => f.service.project('WI-job', input, f.request));
+  const recovered = await f.bounded(() => f.controller.project('WI-job', input, f.request));
   assert.equal(recovered.workItemRevision, 8);
   assert.equal(recovered.replayed, false);
 });

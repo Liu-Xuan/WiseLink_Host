@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 import type {
@@ -8,6 +8,8 @@ import type {
 } from '@shared/api.interface';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import { CanonicalHostReviewOverallProjectionService } from './canonical-host-review-overall-projection.service';
+import { DialogueBrowserScope } from './dialogue-browser-scope.service';
+import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
 
 function badRequest(code: string): Error {
   return Object.assign(new Error(code), { code, statusCode: 400 });
@@ -66,28 +68,37 @@ function body(value: unknown): RequestCanonicalReviewOverallProjectionRequest {
 }
 
 @NeedLogin()
+@UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
 @Controller(
   'api/canonical-host/work-items/:workItemId/integrated-assessment/review-overall-projections',
 )
 export class CanonicalHostReviewOverallProjectionController {
-  constructor(private readonly service: CanonicalHostReviewOverallProjectionService) {}
+  constructor(
+    private readonly service: CanonicalHostReviewOverallProjectionService,
+    private readonly browser: DialogueBrowserScope,
+  ) {}
 
   @Get('eligibility')
   eligibility(@Param('workItemId') workItemId: string, @Req() request: Request):
     Promise<CanonicalReviewOverallProjectionEligibility> {
-    return this.service.eligibility(id(workItemId), request);
+    const workItem: string = id(workItemId);
+    return this.browser.runRead(request, () => this.service.eligibility(workItem, request));
   }
 
   @Post()
   project(@Param('workItemId') workItemId: string, @Body() input: unknown,
     @Req() request: Request): Promise<CanonicalReviewOverallProjectionReceipt> {
-    return this.service.project(id(workItemId), body(input), request);
+    const workItem: string = id(workItemId);
+    const command: RequestCanonicalReviewOverallProjectionRequest = body(input);
+    return this.browser.runNativeWrite(request, () => this.service.project(workItem, command, request));
   }
 
   @Get(':requestId')
   status(@Param('workItemId') workItemId: string,
     @Param('requestId') requestId: string, @Req() request: Request):
     Promise<CanonicalReviewOverallProjectionReceipt> {
-    return this.service.status(id(workItemId), id(requestId), request);
+    const workItem: string = id(workItemId);
+    const projectionRequest: string = id(requestId);
+    return this.browser.runRead(request, () => this.service.status(workItem, projectionRequest, request));
   }
 }
