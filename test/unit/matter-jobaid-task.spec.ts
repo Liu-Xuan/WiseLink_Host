@@ -15,6 +15,25 @@ import {
 import type { EngineeringMatterWorkingRevisionReadModel } from '../../shared/matter-working.interface';
 
 describe('Matter JobAid task protocol', () => {
+  it('actually delivers the new severity definitions without changing a retained risk snapshot', () => {
+    const risk = JOBAID_METHOD_EVIDENCE.find((item: AssessmentEvidence) => item.evidenceRef === 'method:risk')!;
+    const definitions = JOBAID_METHOD_EVIDENCE.find(
+      (item: AssessmentEvidence) => item.evidenceRef === 'method:severity-definitions',
+    )!;
+    const previous = previousWithWork({ evidence: [structuredClone(risk)], readSourceRefs: [risk.evidenceRef] });
+    const before = structuredClone(previous);
+    const task = buildMatterJobAidTask({ matterId: 'MAT-test', matterRevisionId: 'MR-1',
+      actorUserId: 'actor-1', title: 'Continue with generic severity definitions', inputs: [], previous,
+      trigger: { kind: 'USER_REQUEST', requestId: 'REQ-severity', instruction: '核对后果与定义' } });
+    expect(task.initiallyDeliveredRefs).toContain(definitions.evidenceRef);
+    expect(task.sourceCatalog.find((item: AssessmentEvidence) => item.evidenceRef === definitions.evidenceRef))
+      .toEqual(definitions);
+    expect(task.modelInput.deliveredEvidence.find((item) => item.evidenceRef === definitions.evidenceRef))
+      .toMatchObject({ classificationDefinitions: definitions.kind === 'METHOD_CLAUSE' ? definitions.classificationDefinitions : [] });
+    expect(task.sourceCatalog.find((item: AssessmentEvidence) => item.evidenceRef === risk.evidenceRef)).toEqual(risk);
+    expect(previous).toEqual(before);
+  });
+
   it('delivers the current source change and exact semantic binding independently of historical work', () => {
     const binding = { inputId: 'WI-new', workItemId: 'WI-new', workItemRevision: 3,
       documentVersionId: 'DV-new', resultRef: null, resultRevision: null,

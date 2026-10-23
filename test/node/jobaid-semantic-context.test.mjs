@@ -1,6 +1,35 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { projectBoundedInitialJobAidInput } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/run-jobaid-problem-assessment.mjs';
+import { projectBoundedInitialJobAidInput, projectJobAidModelInput } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/run-jobaid-problem-assessment.mjs';
+
+test('existing Native projections retain a newly delivered method ref, all definitions and saved matches', () => {
+  const evidenceRef = 'method:severity-definitions';
+  const classificationDefinitions = ['轻微', '重要', '严重', '灾难'].map(label => ({
+    dimension: 'SEVERITY', label, definitionQuote: `Synthetic ${label} definition with its complete conditions.`,
+  }));
+  const method = { evidenceRef, kind: 'METHOD_CLAUSE', classificationDefinitions,
+    excerpt: classificationDefinitions.map(item => item.definitionQuote).join(' '),
+    title: 'Synthetic generic severity definitions', versionLabel: 'unconfirmed' };
+  const definitionMatch = { methodRef: evidenceRef, definitionQuote: classificationDefinitions[2].definitionQuote };
+  const requirementHandling = [{ methodRef: evidenceRef, treatment: 'ADDRESSED', bodyQuote: 'synthetic consequence',
+    basisRefs: ['synthetic:business'], explanation: 'Synthetic business consequence corresponds to the definition.' }];
+  const input = { contentValidationVersion: 'jobaid-semantic.v1',
+    availableSources: [{ ref: evidenceRef, kind: 'METHOD_CLAUSE' }], deliveredEvidence: [method],
+    contextPackage: { sourceOrigins: [{ evidenceRef, origin: 'Host method clause', contentNature: 'METHOD_MATERIAL' }] },
+    previousWork: { workRevisionRef: 'synthetic-generic-r1', content: { issues: [{ issueKey: 'synthetic',
+      body: 'synthetic consequence', riskScenarios: [{ severity: { label: '严重', definitionMatch,
+        basisRefs: ['synthetic:business'], reason: 'Synthetic consequence matches the generic definition.' },
+        importantEvent: null }], requirementHandling }] } } };
+  const before = structuredClone(input);
+  for (const project of [projectJobAidModelInput, projectBoundedInitialJobAidInput]) {
+    const output = project(input);
+    assert.deepEqual(output.deliveredEvidence, [method]);
+    assert.deepEqual(output.previousWork.content.issues[0].riskScenarios[0].severity.definitionMatch, definitionMatch);
+    assert.deepEqual(output.previousWork.content.issues[0].requirementHandling, requirementHandling);
+    assert.equal(output.previousWork.content.issues[0].riskScenarios[0].importantEvent, null);
+  }
+  assert.deepEqual(input, before);
+});
 
 test('versioned bounded continuation preserves risk, measure status and precise unknowns', () => {
   const issue = {issueKey:'synthetic',question:'持续条件与后果',body:'短正文',

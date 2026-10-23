@@ -30,7 +30,7 @@ export function assertJobAidSemanticContent(
         usedMethods.add(match.methodRef);
         if (!proposal.basisRefs.some(ref => registry.has(ref) && registry.get(ref)?.kind !== 'METHOD_CLAUSE'))
           fail(`${dimension}_BUSINESS_BASIS_REQUIRED`);
-        // The supplied pack's sole severity definition is conditional on a six-event scenario.
+        // The original risk clause's severity definition is conditional on a six-event scenario.
         if (dimension === 'SEVERITY' && method?.kind === 'METHOD_CLAUSE' &&
             method.methodRef === 'method:risk' && !risk.importantEvent)
           fail('IMPORTANT_EVENT_SCENARIO_REQUIRED');

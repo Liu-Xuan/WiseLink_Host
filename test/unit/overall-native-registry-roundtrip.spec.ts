@@ -110,10 +110,10 @@ describe('synthetic Overall native registry actual consumer', () => {
 });
 
 type MethodEvidence = Extract<AssessmentEvidence, { kind: 'METHOD_CLAUSE' }>;
-function methodFixture() {
+function methodFixture(methodRef = 'method:risk') {
   const f = fixture();
   const method = structuredClone(JOBAID_METHOD_EVIDENCE.find(
-    (item): item is MethodEvidence => item.kind === 'METHOD_CLAUSE' && item.evidenceRef === 'method:risk',
+    (item): item is MethodEvidence => item.kind === 'METHOD_CLAUSE' && item.evidenceRef === methodRef,
   )!);
   const evidence = [f.evidence, method];
   f.input.evidenceRegistry = overallModelEvidenceRegistry(evidence, 'SOURCE_CONTEXT_V1');
@@ -127,9 +127,9 @@ function methodFixture() {
   return { ...f, output: JSON.stringify(output), method, evidence, summary: output.engineeringSummary };
 }
 
-describe('Overall method definitions actual consumer', () => {
+describe.each(['method:risk', 'method:severity-definitions'])('%s Overall method definitions actual consumer', methodRef => {
   it('accepts independently sealed input and carrier with exact definition content', () => {
-    const f = methodFixture();
+    const f = methodFixture(methodRef);
     const input = JSON.parse(canonicalJson(reverseKeys(f.input)));
     const evidence = JSON.parse(JSON.stringify(f.evidence));
     expect(input.evidenceRegistry[1].classificationDefinitions).not.toBe(f.method.classificationDefinitions);
@@ -140,7 +140,7 @@ describe('Overall method definitions actual consumer', () => {
   });
 
   const changes: Array<[string, (definitions: NonNullable<MethodEvidence['classificationDefinitions']>) => void]> = [
-    ['dimension', definitions => { definitions[0].dimension = 'SEVERITY'; }],
+    ['dimension', definitions => { definitions[0].dimension = definitions[0].dimension === 'SEVERITY' ? 'LIKELIHOOD' : 'SEVERITY'; }],
     ['label', definitions => { definitions[0].label = 'altered label'; }],
     ['definitionQuote', definitions => { definitions[0].definitionQuote = 'altered definition'; }],
     ['order', definitions => { definitions.reverse(); }],
@@ -148,14 +148,14 @@ describe('Overall method definitions actual consumer', () => {
     ['extra entry', definitions => { definitions.push({ ...definitions[0] }); }],
   ];
   it.each(changes)('rejects %s drift from the exact Host method carrier', (_name, change) => {
-    const f = methodFixture();
+    const f = methodFixture(methodRef);
     change(f.input.evidenceRegistry![1].classificationDefinitions!);
     expect(() => consumeOpenClawOverallSynthesisOutput(f.input, f.output, f.evidence))
       .toThrow('OVERALL_READING_EVIDENCE_INPUT_MISMATCH');
   });
 
   it('keeps absent legacy definitions absent and rejects one-sided omission', () => {
-    const f = methodFixture();
+    const f = methodFixture(methodRef);
     delete f.input.evidenceRegistry![1].classificationDefinitions;
     expect(() => consumeOpenClawOverallSynthesisOutput(f.input, f.output, f.evidence))
       .toThrow('OVERALL_READING_EVIDENCE_INPUT_SHAPE_INVALID');

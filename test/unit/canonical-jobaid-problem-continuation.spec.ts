@@ -346,6 +346,44 @@ describe('JobAid continuation requests', () => {
     expect(assertJobAidProblemTaskBinding(task)).toBe(task);
   });
   it.each(['INITIAL_PROBLEM_ASSESSMENT', 'OVERALL_CONSISTENCY', 'PROBLEM_REVIEW'] as const)(
+    'delivers the independent generic severity clause to a new %s task', purpose => {
+      const workItem = projection();
+      const common = projectCommonAssessmentContext(workItem, {
+        context: { status: 'AVAILABLE' }, documentReadingStatus: 'AVAILABLE',
+        items: [], sections: [], resourceRefs: [],
+      }, []);
+      const definitions = JOBAID_METHOD_EVIDENCE.find(item => item.evidenceRef === 'method:severity-definitions')!;
+      if (definitions.kind !== 'METHOD_CLAUSE') throw new Error('METHOD_FIXTURE_INVALID');
+      const task = buildJobAidProblemTask({ workItem, actorUserId: OWNER,
+        permissionSnapshotVersion: 'permission', purpose, sourceBindings: [], common,
+        sourceCatalog: [], previousWork: null, expectedWorkRevision: 0, priorAssessmentRefs: [] });
+      expect(task.initiallyDeliveredRefs).toContain(definitions.evidenceRef);
+      expect(task.sourceCatalog.find(item => item.evidenceRef === definitions.evidenceRef)).toEqual(definitions);
+      expect(task.modelInput.deliveredEvidence.find(item => item.evidenceRef === definitions.evidenceRef))
+        .toMatchObject({ classificationDefinitions: definitions.classificationDefinitions, excerpt: definitions.excerpt });
+      expect(assertJobAidProblemTaskBinding(task)).toBe(task);
+    });
+
+  it('recovers a sealed task without injecting a newly added core method clause', async () => {
+    const h = harness();
+    await h.enqueue(REQUEST_1);
+    const begun = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT', REQUEST_1);
+    const legacy = structuredClone(parseJobAidProblemTask(begun.task));
+    const newRef = 'method:severity-definitions';
+    legacy.sourceCatalog = legacy.sourceCatalog.filter(item => item.evidenceRef !== newRef);
+    legacy.initiallyDeliveredRefs = legacy.initiallyDeliveredRefs.filter(ref => ref !== newRef);
+    legacy.modelInput.availableSources = legacy.modelInput.availableSources.filter(item => item.ref !== newRef);
+    legacy.modelInput.deliveredEvidence = legacy.modelInput.deliveredEvidence.filter(item => item.evidenceRef !== newRef);
+    if (legacy.modelInput.contextPackage) legacy.modelInput.contextPackage.sourceOrigins =
+      legacy.modelInput.contextPackage.sourceOrigins.filter(item => item.evidenceRef !== newRef);
+    const sealed = sealTaskEnvelope({ ...begun.task, modelInput: legacy });
+    const before = JSON.stringify(sealed);
+    expect(parseJobAidProblemTask(sealed)).toEqual(legacy);
+    expect(parseJobAidProblemTask(sealed).initiallyDeliveredRefs).not.toContain(newRef);
+    expect(JSON.stringify(sealed)).toBe(before);
+  });
+
+  it.each(['INITIAL_PROBLEM_ASSESSMENT', 'OVERALL_CONSISTENCY', 'PROBLEM_REVIEW'] as const)(
     'prepares %s from a real legacy method snapshot without rewriting the saved work', purpose => {
       const workItem = projection();
       const common = projectCommonAssessmentContext(workItem, {
