@@ -10,7 +10,7 @@ import type {
   TdmsRuntimeTaskBinding,
 } from './tdms-runtime-reader.port';
 import {
-  authenticateTdmsRuntimeDelegation,
+  authenticateTdmsPrincipal,
   assertTdmsRuntimeReadContext,
   type TdmsSourceActor,
 } from './tdms-runtime-delegation';
@@ -137,7 +137,7 @@ export class TdmsRuntimeSession {
     const authority: TdmsRuntimeAuthority = {
       authenticate: async (principal, binding) => {
         this.assertInvocation(principal, binding);
-        return authenticateTdmsRuntimeDelegation({
+        return authenticateTdmsPrincipal({
           database,
           authorization,
           principal,
@@ -147,7 +147,7 @@ export class TdmsRuntimeSession {
       },
       resolveSelections: async (principal, binding) => {
         this.assertInvocation(principal, binding);
-        const actor = await authenticateTdmsRuntimeDelegation({
+        const actor = await authenticateTdmsPrincipal({
           database,
           authorization,
           principal,
@@ -232,7 +232,7 @@ export class TdmsRuntimeSession {
             );
             if (canonical(fresh) !== canonical(context))
               throw tdmsError('TDMS_RUNTIME_CONTEXT_CHANGED', 409);
-            const actor = await authenticateTdmsRuntimeDelegation({
+            const actor = await authenticateTdmsPrincipal({
               database,
               authorization,
               principal,
@@ -291,7 +291,7 @@ export class TdmsRuntimeSession {
           }
           // The last awaited operation checks expiry and actual caller while all
           // selection/grant locks are still held by this handed transaction.
-          const actor = await authenticateTdmsRuntimeDelegation({
+          const actor = await authenticateTdmsPrincipal({
             database,
             authorization,
             principal,
@@ -319,7 +319,7 @@ export class TdmsRuntimeSession {
             actor.canonicalSubject.id !== this.invocation.actorUserId
           )
             throw tdmsError('TDMS_RUNTIME_DOCUMENT_ACCESS_UNAVAILABLE', 403);
-          await authenticateTdmsRuntimeDelegation({
+          await authenticateTdmsPrincipal({
             database,
             authorization,
             principal,
@@ -335,6 +335,7 @@ export class TdmsRuntimeSession {
     binding: TdmsRuntimeTaskBinding,
   ) {
     if (
+      principal.reviewCaller !== this.principal.reviewCaller ||
       canonical(principal) !== canonical(this.principal) ||
       binding.tenantId !== this.invocation.tenantId ||
       binding.workItemId !== this.invocation.workItemId ||

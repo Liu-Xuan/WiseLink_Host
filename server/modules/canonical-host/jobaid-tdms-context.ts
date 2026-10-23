@@ -74,3 +74,26 @@ export function tdmsReadObservation(input: {nativeEvidence?: AssessmentTdmsNativ
   }
   return {nativeEvidence:fresh.filter(item=>!prior.has(item.evidenceRef)),nativeReadReceipts:fresh.map(item=>item.nativeReadReceipt)};
 }
+
+/** Every independent immutable receipt remains a verification obligation even
+ * when materialization keeps the first carrier for an equal native ref. */
+export function resolvedTdmsReadCarriers(activityJson:string|null|undefined):AssessmentTdmsNativeEvidence[] {
+  const bodies=resolvedTdmsReadEvidence(activityJson);
+  if(!activityJson) return [];
+  const output=new Map(bodies.map(item=>[item.nativeReadReceipt.receiptRef,item]));
+  for(const entry of JSON.parse(activityJson)) {
+    if(entry?.kind!=='ASSESSMENT_SOURCES_READ'||entry.nativeReadReceipts===undefined) continue;
+    if(!Array.isArray(entry.nativeReadReceipts)) throw new Error('JOBAID_TDMS_READ_OBSERVATION_INVALID');
+    for(const receipt of entry.nativeReadReceipts) {
+      const matches=bodies.filter(item=>item.nativeSource.sourceRevisionRef===receipt?.sourceRevisionRef &&
+        canonicalJson(item.nativeReadReceipt.fieldPaths)===canonicalJson(receipt?.fieldPaths));
+      if(matches.length!==1||!Array.isArray(entry.sourceRefs)||!entry.sourceRefs.includes(matches[0]!.evidenceRef))
+        throw new Error('JOBAID_TDMS_READ_OBSERVATION_INVALID');
+      const carrier=parseAssessmentTdmsEvidence({...matches[0]!,nativeReadReceipt:receipt});
+      const prior=output.get(receipt.receiptRef);
+      if(prior&&canonicalJson(prior)!==canonicalJson(carrier)) throw new Error('JOBAID_TDMS_READ_BINDING_INVALID');
+      output.set(receipt.receiptRef,carrier);
+    }
+  }
+  return [...output.values()];
+}

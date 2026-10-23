@@ -33,6 +33,7 @@ import {
   ACTION_ATTEMPT_REQUEST_ORIGIN,
   type ActionAttemptFence,
   type ActionAttemptRow,
+  type ActionAttemptControlRow,
   type ActionAttemptTerminalProjection,
   type NewActionAttemptIdentity,
   type PreparedActionAttemptCommit,
@@ -346,7 +347,7 @@ export class ActionAttemptLifecycleService {
       reviewProgress?: Omit<ReviewRuntimeActivity, 'observedAt'>;
     },
   ): Promise<{ leaseExpiresAt: string }> {
-    const row = await this.requiredScoped(input.attemptRef, input);
+    const row = await this.readControlScoped(input);
     if (row.leaseOwner !== input.principalId) {
       throw leaseConflict('ACTION_ATTEMPT_LEASE_OWNER_MISMATCH');
     }
@@ -405,6 +406,7 @@ export class ActionAttemptLifecycleService {
       principalId: string;
       result: unknown;
       failClosedWithoutRejectionMutation?: boolean;
+      expectedReviewActivityJson?: string | null;
     },
   ): Promise<PreparedActionAttemptCommit> {
     let row = await this.requiredScoped(input.attemptRef, input);
@@ -537,6 +539,7 @@ export class ActionAttemptLifecycleService {
     }
     const committing = await this.repository.markCommitting({
       attemptId: row.attemptId,
+      ...(input.expectedReviewActivityJson===undefined?{}:{expectedReviewActivityJson:input.expectedReviewActivityJson}),
       automaticLeaseRequired: input.automaticLeaseRequired,
       leaseToken: input.leaseToken,
       leaseGeneration: input.leaseGeneration,
@@ -709,7 +712,7 @@ export class ActionAttemptLifecycleService {
     reason: string;
     automaticLeaseRequired?: boolean;
   }): Promise<ActionAttemptTerminalProjection> {
-    const row = await this.requiredScoped(input.attemptRef, input);
+    const row = await this.readControlScoped(input);
     if (row.status === 'CANCELLED' && row.cancelReason === input.reason.slice(0, 4000))
       return terminalProjection(row);
     const result = await this.repository.requestCancel({
@@ -720,9 +723,29 @@ export class ActionAttemptLifecycleService {
     });
     if (result === 'TOO_LATE') throw conflict('ACTION_ATTEMPT_CANCEL_TOO_LATE');
     if (result === 'NOT_ACTIVE') throw conflict('ACTION_ATTEMPT_NOT_ACTIVE');
-    return terminalProjection(
-      requiredRow(await this.repository.readByAttemptId(row.attemptId)),
-    );
+    const terminal=await this.repository.readControlByAttemptId(row.attemptId);
+    if(!terminal) throw actionAttemptNotFound();
+    return terminalProjection(terminal);
+  }
+
+  async readControlScoped(input:{attemptRef:string;tenantId:string;workItemId:string}):Promise<ActionAttemptControlRow> {
+    const row=await this.repository.readControlByOperationRef(input.attemptRef);
+    if(!row || row.requestOrigin!==ACTION_ATTEMPT_REQUEST_ORIGIN || row.tenantId!==input.tenantId ||
+      row.workItemId!==input.workItemId) throw actionAttemptNotFound();
+    return row;
+  }
+
+  /** Finite routing identity only, before a consumer opens task/result bodies. */
+  async readRequestIdentity(input:Parameters<ActionAttemptRepository['readRequestIdentity']>[0]) {
+    return this.repository.readRequestIdentity(input);
+  }
+
+  /** Finite routing identity only, before a consumer opens task/result bodies. */
+  async readScopeMetadata(input: {attemptRef:string;tenantId:string;workItemId:string}) {
+    const row=await this.repository.readReviewScopeMetadata(input.attemptRef);
+    if(!row || row.tenantId!==input.tenantId || row.workItemId!==input.workItemId ||
+      row.requestOrigin!==ACTION_ATTEMPT_REQUEST_ORIGIN) throw actionAttemptNotFound();
+    return row;
   }
 
   async readScoped(input: {
@@ -1188,7 +1211,7 @@ function assertCommittingCancelBoundary(row: ActionAttemptRow): void {
   // A cancellation recorded after COMMITTING is beyond the durable cutoff.
 }
 
-function assertFence(row: ActionAttemptRow, input: ActionAttemptFence): void {
+function assertFence(row: Pick<ActionAttemptRow,'leaseToken'|'leaseGeneration'>, input: ActionAttemptFence): void {
   if (
     row.leaseToken !== input.leaseToken ||
     row.leaseGeneration !== input.leaseGeneration
@@ -1284,7 +1307,7 @@ function requiredRow(row: ActionAttemptRow | null): ActionAttemptRow {
 }
 
 function terminalProjection(
-  row: ActionAttemptRow,
+  row: Pick<ActionAttemptRow,'operationRef'|'attemptId'|'status'|'projectionApplied'|'terminalReason'>,
 ): ActionAttemptTerminalProjection {
   return {
     attemptRef: row.operationRef ?? row.attemptId,

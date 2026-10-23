@@ -6,6 +6,7 @@ c19 在单轮 driver 外增加薄消费者，不建立第二个队列或常驻�
 - `get_pending_review_turn({workItemId})` 先走现有 exact WorkItem service scope，再按 owner、官方身份映射和 ACTIVE 会话查询，先进先出。
 - 原生 OpenClaw command cron 每次运行一次消费者；空闲或正在执行时直接退出，不消耗模型轮次。
 - 消费者复用 `run-hosted-review-turn.mjs` 的配置读取、官方 Gateway、候选提交和私有 checkpoint。
+- 新 TDMS runtime addon 通过同一 connection.hasTool 透传可选能力给 driver，在首次模型前核对独立 native READ capability；不以 READ 探测。旧 c5/v1 与 COMMITTING 恢复不增加要求，也不因此修改任何已安装包、cron 或启用状态。原始 packet 与模型副本边界见 [Review TDMS 有界读取](tdms-review-native-read.md)。
 - 单轮所需来源超过 MCP 每批 100 项时按既有 API 上限分批读取，保持完整来源集合，不因总数超过单批上限而拒绝讨论。
 - 上下文准备前先持久化 ActionAttempt。准备失败由 Host 写成 FAILED；模型／本地处理失败且尚未触发 commit 时，消费者通过既有 cancel 工具停止该 exact attempt，页面可见原因。commit 结果不确定时不取消、不盲重提。
 - 成功只保存候选；正式采用依然由工程师进入原有确认入口。
@@ -152,7 +153,21 @@ c36 的交互 Review 对明确的 HTTP 429/502/503/504，或连接建立前的�
 c19 本次仅新增自动领取；后续 c20 兼容共同背景，c21 在同一原生 session 内接通按需 SourceRef client-function 循环。
 c22 在 Host 提供 `nativeSessionKey` 时承接相同授权范围的跨轮模型讨论，消费者不增加会话注册表或更改 cron。
 旧 Host 无该字段时报告逐轮隔离，不能宣称已经承接原生历史。原生运行中 steering、知识空间 RAG 与秒级唤醒仍未接通。
-现有 driver 遇到不确定提交仍保留既有只读恢复规则，并明确报告需继续处理；不把“恢复待处理”显示为候选成功。
+旧 Review 与 `SAVED_EVIDENCE_ONLY` 遇到不确定提交仍保留既有只读恢复规则，并明确报告需继续处理；
+不把“恢复待处理”显示为候选成功。
+
+c235 的 c5 `UPDATE_ASSESSMENT` + `BOUNDED_NATIVE_READ` 可在正常 pending 消费中恢复 Host 已封存的
+COMMITTING 候选。原 requestId、ReviewTurn 与 checkpoint 目录不变；旧 begin/status/commit/run-result
+文件仅定位、对照并保留原样。仅 unfinished commit、原 COMMITTING begin 或 readonly-attention 启动私有恢复
+协调器，本次重新向 Host begin/status 核准同一 task/input/attempt/WI/base/DVI、原 token/generation 与完整结果。
+原 `commit.started` 摘要仍按 driver 原参数形状核对，不能拿消费者传输追加的 workItemId 替换。
+
+每次正常触发保存独立的 `bounded-sealed-recovery-<id>-begin/status-before/commit/status-after` 检查点，
+最多提交一次原 canonical payload，前后 status 不共用缓存。提交响应丢失后本次只读取 fresh status；仍 COMMITTING
+保留 attention，后续正常触发可以重新核准同一结果后再完成一次提交。新的 commit.started 只约束本次触发，
+不成为该任务永久不能恢复的闸。原模型、READ、heartbeat 和业务身份都不重建；坏绑定、旧版本或 UNKNOWN 停止，
+不自动 cancel。成功单独保存恢复结果，后续返回原成果。真实回执与 status-only 的证明边界见
+[Host MCP 恢复规则](host-mcp-orchestration.md)。
 
 JobAid v2 复核在驱动提供逐请求 Host 续租回调时，使用与初始问题分析一致的 30 分钟总模型预算，单响应最多 15 分钟；显式更短预算仍生效，续租失败停止后续请求。未绑定续租的直接调用和其他复核沿用原预算。Host 的 30 分钟 lease、60 分钟 deadline 及原生全局/provider 超时均不因此改变。网关以 HTTP 200 返回已确认的公开 idle-timeout 提示时，报告 `REVIEW_GATEWAY_MODEL_IDLE_TIMEOUT` 并停止，不把它当候选或自动重试指令。
 
@@ -160,7 +175,7 @@ JobAid v2 的模型 candidate 只生成答复、引用、问题与工作更新�
 
 JobAid 复核的答复字段直接位于函数参数根部，不再包裹 `candidate`；工作字段仅放入 `jobAidWorkingDelta`，问题字段仅放入其 `issues`。旧包装、错位字段、额外字段和缺少必填字段均拒绝，不合并或丢弃模型数据。初始分析和复核的函数参数使用标准 JSON Schema `anyOf` 声明可空值，避免原生校验将内部 `nullable` 标注下的合法 `null` 误判为空字符串；空字符串、错误类型和无效枚举仍被拒绝。
 
-明确的 Host MCP 提交拒绝不会被当作成功：只有同一 attempt 的只读结果确认 RUNNING、commitStartedAt/resultContentHash 均为空、projectionApplied/recoveryAvailable 均为 false 时，消费者才调用现有原子取消接口，保存失败原因并结束本候选。网络结果不明、状态读回失败、身份不符或已进入提交阶段均不取消、不重放；Host 的 COMMITTING 截止点继续防止竞争取消。
+明确的 Host MCP 提交拒绝不会被当作成功：只有同一 attempt 的只读结果确认 RUNNING、commitStartedAt/resultContentHash 均为空、projectionApplied/recoveryAvailable 均为 false 时，消费者才调用现有原子取消接口，保存失败原因并结束本候选。网络结果不明、状态读回失败、身份不符或已进入提交阶段均不取消；除了上述严格有界封存恢复外不重放，Host 的 COMMITTING 截止点继续防止竞争取消。
 
 进程重启后，如已存在明确 Host 拒绝的 commit.error，先核对其与原 commit.started 的调用摘要，以及原 begin.result 与当前请求的绑定，再实时读取同一 attempt。只有当前仍明确未进入提交阶段时才结束失败候选；保留原始检查点，追加本次状态读回，不用新 Skill 版本重新生成旧 ResultEnvelope，也不重放模型或提交。旧状态快照不能授权取消。
 

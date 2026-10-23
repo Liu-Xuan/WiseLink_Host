@@ -232,6 +232,13 @@ export interface JobAidWorkingReadModel {
   schemaVersion: 'wiselink.jobaid-working-read.v2';
   enabled: boolean;
   workItemId: string;
+  /** Validated outer automatic-processing ACK, independent of later JobAid attempts. */
+  autoProcessingAcknowledgement?: {
+    workItemId: string;
+    requestId: string;
+    documentVersionId: string;
+    acknowledgedAt: string;
+  } | null;
   current: JobAidWorkRevision | null;
   /** Latest exact WorkItem evaluation request, independent of saved work. */
   latestAttempt: {

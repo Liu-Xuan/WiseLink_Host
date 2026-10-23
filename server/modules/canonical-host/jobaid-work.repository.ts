@@ -1,6 +1,7 @@
 import { assertAutomaticWorkItemAttemptLease } from '../action-attempt/automatic-work-item-attempt-lease';
 import type { AssessmentTdmsNativeEvidence } from '@shared/assessment-tdms-evidence';
 import { tdmsReadObservation } from './jobaid-tdms-context';
+import { assertTdmsSealedResultFence, tdmsReviewBinding, type TdmsReviewCaller } from '../tdms-source/tdms-review-delegation';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
 import { JOBAID_ACTIVITY_WINDOW, type JobAidExecutionObservation, type JobAidSavedActivityObservation } from './jobaid-activity';
@@ -49,6 +50,7 @@ interface JobAidSaveScope {
   actorUserId: string;
   fence: JobAidWorkFence;
   sourceBindings: JobAidSourceBinding[];
+  reviewCaller?:TdmsReviewCaller;
 }
 
 export function assertJobAidWorkFence(
@@ -486,6 +488,7 @@ export class JobAidWorkRepository {
       command: unknown;
       content: JobAidProblemWorkContent;
       assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>;
+      reviewCaller?:TdmsReviewCaller;
     },
     executor?: PostgresJsDatabase,
   ): Promise<{ revision: JobAidWorkRevision; replayed: boolean }> {
@@ -529,7 +532,15 @@ export class JobAidWorkRepository {
         attempt.actionType !== 'OPENCLAW_INTERACTIVE_REVIEW'
       )
         throw new Error('JOBAID_REVIEW_SAVE_BINDING_INVALID');
-      assertJobAidWorkFence(attempt, input.fence);
+      if(input.reviewCaller && tdmsReviewBinding(input.reviewCaller).attempt?.phase==='SEALED_RECOVERY') {
+        if(!executor || !input.assertNativeAuthorized) throw new Error('TDMS_SEALED_RECOVERY_TRANSACTION_REQUIRED');
+        const sealed=assertTdmsSealedResultFence(input.reviewCaller,attempt,input.fence,'REVIEW');
+        const candidate=JSON.parse(sealed.modelOutput),binding=tdmsReviewBinding(input.reviewCaller);
+        if(!candidate.jobAidWorkingDelta || input.requestId!==`review-turn:${binding.reviewTurnRef}` ||
+          input.expectedWorkRevision!==binding.workRevision ||
+          commandJson!==canonicalJson({expectedWorkRevision:binding.workRevision,work:candidate.jobAidWorkingDelta}))
+          throw new Error('TDMS_SEALED_RECOVERY_PAYLOAD_CHANGED');
+      } else assertJobAidWorkFence(attempt, input.fence);
       if (primary.revision !== attempt.baseRevision)
         throw new Error('JOBAID_SAVE_WORK_ITEM_CHANGED');
       const current = await this.latest(
@@ -589,7 +600,12 @@ export class JobAidWorkRepository {
           attempt.inputRevision !== input.row.inputRevision || attempt.inputRevision !== attempt.baseRevision ||
           attempt.requestOrigin !== ACTION_ATTEMPT_REQUEST_ORIGIN || attempt.requestOrigin !== input.row.requestOrigin)
         throw new Error('JOBAID_REVIEW_SAVE_BINDING_INVALID');
-      assertJobAidWorkFence(attempt, { ...input.fence, allowCommittingReview: true });
+      if(input.reviewCaller && tdmsReviewBinding(input.reviewCaller).attempt?.phase==='SEALED_RECOVERY') {
+        const sealed=assertTdmsSealedResultFence(input.reviewCaller,attempt,input.fence,'REVIEW');
+        const binding=tdmsReviewBinding(input.reviewCaller);
+        if(JSON.parse(sealed.modelOutput).jobAidWorkingDelta!==null || input.expectedWorkRevisionRef!==binding.workRevisionRef ||
+          input.expectedWorkRevision!==binding.workRevision) throw new Error('TDMS_SEALED_RECOVERY_PAYLOAD_CHANGED');
+      } else assertJobAidWorkFence(attempt, { ...input.fence, allowCommittingReview: true });
       if (primary.documentVersionId !== attempt.documentVersionId)
         throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
       if (primary.revision !== attempt.baseRevision) throw new Error('JOBAID_SAVE_WORK_ITEM_CHANGED');

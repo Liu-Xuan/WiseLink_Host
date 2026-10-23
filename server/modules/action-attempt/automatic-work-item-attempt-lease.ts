@@ -37,6 +37,15 @@ export async function assertAutomaticWorkItemAttemptLease(
   required = false,
 ): Promise<void> {
   const bound = taskAutomaticWorkItemLease(row);
+  return assertAutomaticWorkItemAttemptLeaseBinding(database,row,principalId,required,bound);
+}
+
+/** Same grant predicate, with only the finite persisted lease JSON subfield. */
+export async function assertAutomaticWorkItemAttemptLeaseBinding(
+  database:PostgresJsDatabase,
+  row:Pick<ActionAttemptRow,'tenantId'|'workItemId'|'documentVersionId'>,
+  principalId:string,required:boolean,bound:AutomaticWorkItemTaskLease|undefined,
+):Promise<void> {
   if (!bound) {
     if (required) throw new Error('AUTO_WORK_ITEM_TASK_LEASE_BINDING_REQUIRED');
     return;

@@ -33,6 +33,7 @@ import {
 import { overallModelEvidenceRegistry, OVERALL_EVIDENCE_SOURCE_CONTEXT_VERSION,
   OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION, type OverallEvidenceProjectionVersion } from './overall-assessment-reading';
 import { buildJobAidContextPackage } from './jobaid-context-package';
+import { assertTdmsReviewContext, assertTdmsReviewBasis, tdmsReviewSavedRefs, type TdmsReviewContext } from './tdms-review-saved-context';
 
 export interface JobAidSourceBinding {
   kind?: 'SOURCE_FILE';
@@ -75,6 +76,7 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
   contentValidationVersion?: 'jobaid-semantic.v1';
   /** Metadata only. A directory and approval provenance are not a body READ. */
   tdmsContext?: Pick<TdmsRuntimeTaskContext, 'schemaVersion' | 'projection'>;
+  tdmsReviewContext?: TdmsReviewContext;
   schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA | typeof JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;
   /** Absent on sealed historical tasks: retain their original exact projection. */
   evidenceProjectionVersion?: OverallEvidenceProjectionVersion;
@@ -166,6 +168,7 @@ export interface JobAidProblemTaskInput extends Record<string, unknown> {
   };
   /** Optional only on newly sealed tasks; never backfilled into old checkpoints. */
   tdmsContext?: TdmsRuntimeTaskContext;
+  tdmsReviewContext?: TdmsReviewContext;
   schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA | typeof JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;
   knowledgeBinding?: import("./initial-assessment-knowledge.service").InitialKnowledgeBinding;
   actorUserId: string;
@@ -197,6 +200,11 @@ export function parseJobAidProblemTask(
   if (input.tdmsContext && (input.tdmsContext.binding.taskContextRef !== task.operationRef ||
       input.tdmsContext.binding.tenantId !== task.tenantId || input.tdmsContext.binding.workItemId !== task.workItemId ||
       input.tdmsContext.binding.documentVersionId !== task.documentVersionId)) throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
+  if(input.tdmsReviewContext?.mode==='BOUNDED_NATIVE_READ') {
+    const binding=input.tdmsReviewContext.runtimeContext.binding;
+    if(binding.taskContextRef!==task.operationRef||binding.tenantId!==task.tenantId||binding.workItemId!==task.workItemId||
+      binding.documentVersionId!==task.documentVersionId) throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
+  }
   return input;
 }
 
@@ -231,15 +239,25 @@ export function assertJobAidProblemTaskBinding(
       recovery.sourceActionAttemptId !== input.previousWork.actionAttemptId))
     throw new Error('JOBAID_SAVED_WORK_RECONCILIATION_INVALID');
   const nativeContext = input.tdmsContext === undefined ? undefined : assertTdmsRuntimeTaskContext(input.tdmsContext);
+  const savedNative = input.tdmsReviewContext === undefined ? undefined : assertTdmsReviewContext(input.tdmsReviewContext);
+  if (savedNative) {
+    if (nativeContext || canonicalJson(savedNative) !== canonicalJson(input.modelInput.tdmsReviewContext))
+      throw new Error('JOBAID_TDMS_REVIEW_SAVED_CONTEXT_INVALID');
+    assertTdmsReviewBasis({context:savedNative,purpose:input.modelInput.purpose,previousWork:input.previousWork,
+      sourceCatalog:input.sourceCatalog,initiallyDeliveredRefs:input.initiallyDeliveredRefs});
+    if(savedNative.mode==='BOUNDED_NATIVE_READ' && (savedNative.runtimeContext.binding.actorUserId!==input.actorUserId||
+      savedNative.runtimeContext.binding.documentVersionId!==input.modelInput.documentOverview.documentVersionRef))
+      throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
+  } else if (input.modelInput.tdmsReviewContext !== undefined) throw new Error('JOBAID_TDMS_REVIEW_SAVED_CONTEXT_INVALID');
   if (nativeContext && (nativeContext.binding.actorUserId !== input.actorUserId ||
       nativeContext.binding.documentVersionId !== input.modelInput.documentOverview.documentVersionRef ||
       input.modelInput.purpose === 'PROBLEM_REVIEW')) throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
   if (canonicalJson(input.modelInput.tdmsContext ?? null) !== canonicalJson(nativeContext ?
       {schemaVersion:nativeContext.schemaVersion,projection:nativeContext.projection} : null))
     throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
-  if (!nativeContext && input.sourceCatalog.some(e => e.kind === 'TDMS_NATIVE_RECORD'))
+  if (!nativeContext && !savedNative && input.sourceCatalog.some(e => e.kind === 'TDMS_NATIVE_RECORD'))
     throw new Error('JOBAID_TDMS_TASK_BINDING_REQUIRED');
-  if (input.initiallyDeliveredRefs.some(ref => input.sourceCatalog.some(e => e.kind === 'TDMS_NATIVE_RECORD' && e.evidenceRef === ref)))
+  if (!savedNative && input.initiallyDeliveredRefs.some(ref => input.sourceCatalog.some(e => e.kind === 'TDMS_NATIVE_RECORD' && e.evidenceRef === ref)))
     throw new Error('JOBAID_TDMS_DIRECTORY_ONLY_REQUIRED');
   const projections = input.sourceActivityProjections ?? [];
   const v3 = input.schemaVersion === JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;
@@ -271,7 +289,7 @@ export function assertJobAidProblemTaskBinding(
   const identityDirectory = Array.isArray(input.modelInput.availableSources) &&
     input.modelInput.availableSources.some(item => ['documentVersionId','sourceRefId','parseRunId','carrierRangeRef']
       .some(key => Object.hasOwn(item,key)));
-  const expectedSources = [...input.sourceCatalog.filter(item => item.kind !== 'TDMS_NATIVE_RECORD').map((item) => ({
+  const expectedSources = [...input.sourceCatalog.filter(item => savedNative?.mode==='SAVED_EVIDENCE_ONLY' || item.kind !== 'TDMS_NATIVE_RECORD').map((item) => ({
     ref: item.evidenceRef,
     kind: item.kind,
     title: item.title,
@@ -279,7 +297,7 @@ export function assertJobAidProblemTaskBinding(
     locator: 'locator' in item ? item.locator : null,
     ...(identityDirectory ? jobAidSourceDirectoryIdentity(item) : {}),
     ...sourceStatementDirectory(item, projections),
-  })), ...tdmsJobAidDirectory(nativeContext, input.sourceCatalog)];
+  })), ...tdmsJobAidDirectory(nativeContext ?? (savedNative?.mode==='BOUNDED_NATIVE_READ' ? savedNative.runtimeContext : undefined), input.sourceCatalog)];
   if (
     refs.size !== input.sourceCatalog.length ||
     input.initiallyDeliveredRefs.some((ref) => !refs.has(ref)) ||
@@ -317,14 +335,18 @@ export function buildJobAidProblemTask(input: {
   sourceActivityProjections?: DocumentActivityAssessmentProjection[];
   sourceStatementAvailability?: JobAidProblemModelInput['sourceStatementAvailability'];
   tdmsContext?: TdmsRuntimeTaskContext;
+  tdmsReviewContext?: TdmsReviewContext;
   automaticWorkItemLease?: AutomaticWorkItemTaskLease;
 }): JobAidProblemTaskInput {
   const nativeContext = input.tdmsContext === undefined ? undefined : assertTdmsRuntimeTaskContext(input.tdmsContext);
+  const savedNative = input.tdmsReviewContext === undefined ? undefined : assertTdmsReviewContext(input.tdmsReviewContext);
+  if (savedNative && (nativeContext || input.purpose !== 'PROBLEM_REVIEW'))
+    throw new Error('JOBAID_TDMS_REVIEW_SAVED_CONTEXT_INVALID');
   if (nativeContext && (nativeContext.binding.actorUserId !== input.actorUserId ||
       nativeContext.binding.workItemId !== input.workItem.workItemId ||
       nativeContext.binding.documentVersionId !== input.workItem.source.documentVersionId ||
       input.purpose === 'PROBLEM_REVIEW')) throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
-  if (!nativeContext && [...input.sourceCatalog, ...(input.previousWork?.content.evidence ?? [])].some(e => e.kind === 'TDMS_NATIVE_RECORD'))
+  if (!nativeContext && !savedNative && [...input.sourceCatalog, ...(input.previousWork?.content.evidence ?? [])].some(e => e.kind === 'TDMS_NATIVE_RECORD'))
     throw new Error('JOBAID_TDMS_TASK_BINDING_REQUIRED');
   // Interactive review still uses its existing legacy source-resource contract.
   const statementContract = input.sourceActivityProjections !== undefined;
@@ -374,7 +396,11 @@ export function buildJobAidProblemTask(input: {
         ) ? [item.evidenceRef] : [],
       ),
     ]),
-  ].filter(ref=>(mixedReview||!sourceStatementRefs.has(ref)) && !catalog.some(e=>e.kind==='TDMS_NATIVE_RECORD'&&e.evidenceRef===ref));
+  ].filter(ref=>(mixedReview||!sourceStatementRefs.has(ref)) && (savedNative || !catalog.some(e=>e.kind==='TDMS_NATIVE_RECORD'&&e.evidenceRef===ref)));
+  if (savedNative) {
+    for (const ref of tdmsReviewSavedRefs(savedNative)) if (!initiallyDeliveredRefs.includes(ref)) initiallyDeliveredRefs.push(ref);
+    assertTdmsReviewBasis({context:savedNative,purpose:input.purpose,previousWork,sourceCatalog:catalog,initiallyDeliveredRefs});
+  }
   const capabilities: JobAidProblemWorkContent['capabilities'] = [
     {
       capability: 'registered_source_reading',
@@ -440,6 +466,7 @@ export function buildJobAidProblemTask(input: {
     ...(input.automaticWorkItemLease ? { automaticWorkItemLease: automaticWorkItemTaskLease(input.automaticWorkItemLease) } : {}),
     sourceCatalog: catalog,
     ...(nativeContext ? {tdmsContext:structuredClone(nativeContext)} : {}),
+    ...(savedNative ? {tdmsReviewContext:structuredClone(savedNative)} : {}),
     ...(statementContract ? {sourceActivityProjections:structuredClone(projections)} : {}),
     sourceBindings: structuredClone(input.sourceBindings),
     initiallyDeliveredRefs,
@@ -448,6 +475,7 @@ export function buildJobAidProblemTask(input: {
       schemaVersion,
       contentValidationVersion: 'jobaid-semantic.v1',
       ...(nativeContext ? {tdmsContext:{schemaVersion:nativeContext.schemaVersion,projection:structuredClone(nativeContext.projection)}} : {}),
+      ...(savedNative ? {tdmsReviewContext:structuredClone(savedNative)} : {}),
       ...(projectionVersion ? { evidenceProjectionVersion: projectionVersion } : {}),
       purpose: input.purpose,
       methodBinding: structuredClone(JOBAID_METHOD_BINDING),
@@ -473,7 +501,7 @@ export function buildJobAidProblemTask(input: {
         : null,
       ...(mixedReview ? {sourceStatements:structuredClone(projections.flatMap(p=>p.records)),activityContexts:structuredClone(projections.flatMap(p=>p.activityContexts))} : {}),
       ...(v3 || mixedReview ? {sourceStatementAvailability: structuredClone(input.sourceStatementAvailability ?? {status:'AVAILABLE',semanticFieldsAvailability:'LEGACY_PARTIAL',limitations:[]})} : {}),
-      availableSources: [...catalog.filter(item=>item.kind!=='TDMS_NATIVE_RECORD').map((item) => ({
+      availableSources: [...catalog.filter(item=>savedNative?.mode==='SAVED_EVIDENCE_ONLY' || item.kind!=='TDMS_NATIVE_RECORD').map((item) => ({
         ref: item.evidenceRef,
         kind: item.kind,
         title: item.title,
@@ -481,7 +509,7 @@ export function buildJobAidProblemTask(input: {
         locator: 'locator' in item ? item.locator : null,
         ...jobAidSourceDirectoryIdentity(item),
         ...sourceStatementDirectory(item, projections),
-      })), ...tdmsJobAidDirectory(nativeContext, catalog)],
+      })), ...tdmsJobAidDirectory(nativeContext ?? (savedNative?.mode==='BOUNDED_NATIVE_READ' ? savedNative.runtimeContext : undefined), catalog)],
       deliveredEvidence: overallModelEvidenceRegistry(
         catalog.filter((item) =>
           initiallyDeliveredRefs.includes(item.evidenceRef),
@@ -503,7 +531,8 @@ export function buildJobAidProblemTask(input: {
         catalog,
         initiallyDeliveredRefs,
         previousWorkRevision: previousWork?.workRevision ?? null,
-        ...(nativeContext ? {nativeEvidenceRefs:tdmsJobAidDirectory(nativeContext,catalog).map(item=>item.ref)} : {}),
+        ...(nativeContext || savedNative?.mode==='BOUNDED_NATIVE_READ' ? {nativeEvidenceRefs:tdmsJobAidDirectory(
+          nativeContext ?? (savedNative?.mode==='BOUNDED_NATIVE_READ' ? savedNative.runtimeContext : undefined),catalog).map(item=>item.ref)} : {}),
       }),
       capabilities,
       historyReview,

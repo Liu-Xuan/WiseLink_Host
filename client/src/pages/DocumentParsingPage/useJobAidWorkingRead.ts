@@ -14,6 +14,8 @@ export function preserveJobAidRead(
 ): JobAidWorkingReadModel {
   return previous?.workItemId === next.workItemId &&
     previous.enabled === next.enabled &&
+    JSON.stringify(previous.autoProcessingAcknowledgement ?? null) ===
+      JSON.stringify(next.autoProcessingAcknowledgement ?? null) &&
     previous.current?.workRevisionRef === next.current?.workRevisionRef &&
     JSON.stringify(previous.latestAttempt) === JSON.stringify(next.latestAttempt) &&
     previous.executionStatus === next.executionStatus &&

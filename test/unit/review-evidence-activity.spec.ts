@@ -15,6 +15,20 @@ const receipt = {
 };
 
 describe('Host-observed Review evidence activity', () => {
+  it('projects actual native READ metadata without body/receipt fields and never counts it as an ordinary resolution',()=>{
+    const observed={kind:'ASSESSMENT_SOURCES_READ',observedAt:receipt.observedAt,purpose:'Review exact selected field',
+      sourceRefs:['native:approved'],evidence:[{excerpt:'private-body'}],nativeReadReceipts:[{receiptRef:'private-receipt'}]};
+    const stored=JSON.stringify([observed,receipt]);
+    expect(projectReviewEvidenceActivity(stored)).toEqual({items:[{
+      kind:'ASSESSMENT_SOURCES_READ',observedAt:receipt.observedAt,sourceRefIds:['native:approved'],sourceCatalogCount:1},receipt],
+      omittedEarlierCount:0,error:null});
+    expect([...resolvedReviewSourceRefs(stored)]).toEqual(['SRC-1']);
+    const output=JSON.stringify(projectReviewEvidenceActivity(stored));
+    expect(output).not.toContain('private-body');expect(output).not.toContain('private-receipt');
+    for(const sourceRefs of [[],['same','same'],Array(97).fill('ref')])
+      expect(projectReviewEvidenceActivity(JSON.stringify([{...observed,sourceRefs}]))?.error?.code)
+        .toBe('REVIEW_ACTIVITY_UNREADABLE');
+  });
   it('projects retries separately and never treats runtime metadata as source evidence', () => {
     const retry = {
       kind: 'MODEL_RETRY',
@@ -80,6 +94,7 @@ describe('Host-observed Review evidence activity', () => {
       actorUserId: 'ACTOR-1',
       requestOrigin: 'OPENCLAW_MCP_V1',
       leaseGeneration: 2,
+      leaseOwner:'service:review',leaseToken:'current-token',
     } as ActionAttemptRow;
     await repository.appendReviewActivity(row, receipt);
     const dialect = new PgDialect();
@@ -92,7 +107,11 @@ describe('Host-observed Review evidence activity', () => {
       'OPENCLAW_INTERACTIVE_REVIEW',
       'OPENCLAW_MCP_V1',
       2,
+      'service:review','current-token',
     ]);
+    expect(condition.sql).toContain('BOUNDED_NATIVE_READ');
+    expect(condition.sql).toContain('clock_timestamp()');
+    expect(condition.sql).toContain('cancel_requested_at');
     const update = dialect.sqlToQuery(
       (set.mock.calls[0][0] as { reviewActivityJson: never })
         .reviewActivityJson,

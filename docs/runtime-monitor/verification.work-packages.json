@@ -22,7 +22,7 @@
         "V26",
         "V28"
       ],
-      "nextAction": "本批Host UI已由准确De1d/release7699717588535888913正式发布，原/恢复官方finished和双端实际D指纹成立。完成本批records收口；沿用9d正常hook/完整build与原测试，不重发布或附带ACK/Review/Native、DDL、模型/SAVE。"
+      "nextAction": "UI已发布De1d/release7699717588535888913，原实际证据及E2/D2记录同步保持；本地16b精确恢复ACK/Review/Native源码、正常hook/一次build/publisher完成。交根审核本轮九records与准确E/D，不重复已通过UI或产品测试。"
     },
     {
       "id": "P1",
@@ -70,7 +70,7 @@
         "V44",
         "V53"
       ],
-      "nextAction": "用户确认的自身Estimated批准映射已随D部署，官方finished和双端D指纹成立；原19PG/244unit及非作者审查仍归原版本。实际Source/grant/processing set、在线状态刷新、未结构化撤销/取代、V44和独立Review/Native能力没有因此被验证；后续Review仍本地候选。"
+      "nextAction": "Estimated已在De1d上线；本地Review SAVED/BOUNDED、current Source/own-approval、正常consumer与sealed恢复最终PG029完成，原失败/fixture置过期范围保留。三lock-only policies仍待独立DDL批准；真实Source/grant/set/在线刷新、撤销取代/V44和内容验收仍缺，准备准确E/D与c235切换。"
     },
     {
       "id": "P4",
@@ -113,7 +113,7 @@
         "V08",
         "V10"
       ],
-      "nextAction": "当前UI De1d继续既有Estimated能力，未纳入后续ACK浏览器读模型、Review或新Native候选；原Native c234及恢复证据保留实际范围。M3客户端观察时间不推生产ACK/首次可读；本批只读无新模型/SAVE/租约或正式采用。"
+      "nextAction": "本地16b ACK独立读模型、正常Native c235封存恢复及新build/ZIP已准备；线上仍UI De1d，Native最后已证实c234。当前安装/cron/inflight需明确授权只读预检后再给具体无损切换；不据coding idle推runtime idle、不清checkpoint/工作、不重复SAVE，生产ACK/首次可读历史缺项保留。"
     }
   ]
 }

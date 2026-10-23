@@ -42,7 +42,10 @@ function setup() {
     workItemId: saved.workItemId, revision: saved.basedOnWorkItemRevision,
     source: { documentVersionId: saved.documentVersionId }, integratedAssessment: null,
   }) };
-  const sources = { loadAuthorizationBinding: jest.fn().mockResolvedValue({ documentVersionId: saved.documentVersionId }) };
+  const sources = {
+    loadAuthorizationBinding: jest.fn().mockResolvedValue({ documentVersionId: saved.documentVersionId }),
+    readReadableAutoProcessingCompletion: jest.fn().mockResolvedValue(null),
+  };
   const mapping = { hasActiveOfficialActorMapping: jest.fn().mockResolvedValue(true) };
   const latest = jest.fn().mockResolvedValue(saved);
   const work = { readByRef: jest.fn().mockResolvedValue(saved), latest,

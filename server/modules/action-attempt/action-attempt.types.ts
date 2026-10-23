@@ -145,6 +145,13 @@ export interface ActionAttemptRow {
   updatedAt: Date;
 }
 
+/** Heartbeat/cancel never need a model task, result or evidence journal. */
+export type ActionAttemptControlRow = Pick<ActionAttemptRow,
+  'attemptId'|'operationRef'|'tenantId'|'workItemId'|'actionType'|'requestOrigin'|
+  'documentVersionId'|'leaseOwner'|'leaseToken'|'leaseGeneration'|'leaseExpiresAt'|
+  'deadlineAt'|'status'|'cancelRequestedAt'|'cancelReason'|'commitStartedAt'|
+  'projectionApplied'|'terminalReason'>;
+
 /** A validated view of a real Matter row in the shared ActionAttempt queue. */
 export interface MatterActionAttemptRow extends Omit<
   ActionAttemptRow,

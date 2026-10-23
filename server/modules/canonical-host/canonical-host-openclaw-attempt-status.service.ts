@@ -1,4 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { TDMS_NATIVE_EVIDENCE_VERIFIER, type TdmsNativeEvidenceVerifier } from './tdms-native-evidence-verifier.port';
 
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
 import type {
@@ -60,6 +61,8 @@ export class CanonicalHostOpenClawAttemptStatusService {
     private readonly attempts: ActionAttemptLifecycleService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
+    @Optional() @Inject(TDMS_NATIVE_EVIDENCE_VERIFIER)
+    private readonly nativeVerifier?: TdmsNativeEvidenceVerifier,
   ) {}
 
   async status(
@@ -72,6 +75,25 @@ export class CanonicalHostOpenClawAttemptStatusService {
       workItemId,
     });
     assertAttemptScope(scope, attemptRef);
+    const metadata=await this.attempts.readScopeMetadata({attemptRef,
+      tenantId:scope.tenantId,workItemId:scope.workItemId});
+    if(metadata.actionType==='OPENCLAW_INTERACTIVE_REVIEW' && metadata.hasTdmsReviewContext) {
+      if(!this.nativeVerifier?.admitReview || !(await this.nativeVerifier.admitReview({scope,attemptRef})))
+        throw new Error('TDMS_REVIEW_ADMISSION_NOT_CONNECTED');
+    } else if(metadata.actionType==='OPENCLAW_OVERALL_SYNTHESIS' &&
+      (metadata.successorReviewTurnRef || metadata.hasSuccessorBinding)) {
+      const delegation=scope.successorReviewDelegation;
+      if(!delegation || delegation.reviewTurnRef!==metadata.successorReviewTurnRef)
+        throw statusNotFound();
+      // A connected provider returns null for a genuine ordinary acquisition.
+      // Persisted native context/carriers must never use that opt-out, including
+      // when the optional provider is absent in an older composition.
+      const caller=await this.nativeVerifier?.admitReview?.({scope,attemptRef,
+        reviewConversationRef:delegation.reviewConversationRef,requestId:delegation.requestId,
+        successorOverall:{reviewTurnRef:delegation.reviewTurnRef}});
+      if(!caller && metadata.hasTdmsSuccessorObligation)
+        throw new Error('TDMS_REVIEW_ADMISSION_NOT_CONNECTED');
+    }
     const row = await this.attempts.readScoped({
       attemptRef,
       tenantId: scope.tenantId,

@@ -21,9 +21,10 @@ function reading(): JobAidWorkingReadState {
   return { data: jobAidReadingFixture(), error: null, isRefreshing: false, temporaryError: false, baseFallbackAllowed: true,
     observedAt: '2026-10-22T12:00:00Z', refresh };
 }
-async function render(read: JobAidWorkingReadState) {
+async function render(read: JobAidWorkingReadState, scope: { workItemId?: string; sessionGeneration?: number } = {}) {
   await act(async () => root.render(createElement(Diagnostic, {
     read, workItemId: jobAidReadingFixture().workItemId, sessionGeneration: 1,
+    ...scope,
     onRefresh: refresh, onOpenPanel: navigate,
   })));
 }
@@ -80,5 +81,45 @@ it('keeps four native event timestamps distinct and does not turn creation into 
   await act(async () => (shadow().querySelector('[data-request="timed-attempt"]') as HTMLButtonElement).click());
   for (const label of ['请求记录', '执行开始', '首次有效保存', '执行终态']) expect(shadow().textContent).toContain(label);
   for (const time of [latest.createdAt, latest.startedAt, latest.firstSavedAt, latest.completedAt]) expect(shadow().textContent).toContain(time);
-  expect(host.textContent).toContain('就绪、首次可读与 ACK 时间尚未提供');
+  expect(host.textContent).toContain('就绪与首次可读时间尚未提供');
+  expect(host.textContent).toContain('外层自动处理 ACK 时间尚未提供');
+});
+
+it.each(['RUNNING', 'COMMITTING'])('renders an older outer ACK independently from the newer %s attempt and its times', async status => {
+  const read = reading();
+  const acknowledgedAt = '2026-10-21T10:00:00Z';
+  read.data = { ...read.data!, autoProcessingAcknowledgement: {
+    workItemId: read.data!.workItemId, requestId: 'original-outer-request', documentVersionId: 'DV-test', acknowledgedAt,
+  }, latestAttempt: { attemptId: 'new-inner-attempt', status, inputRevision: 2,
+    createdAt: '2026-10-22T11:00:00Z', startedAt: '2026-10-22T11:01:00Z', completedAt: null } };
+  await render(read);
+  const acknowledgement = host.querySelector('[aria-label="外层自动处理 ACK"]');
+  expect(acknowledgement?.textContent).toContain('原请求 original-outer-request');
+  expect(acknowledgement?.querySelector('time')?.dateTime).toBe(acknowledgedAt);
+  await act(async () => (shadow().querySelector('[data-request="new-inner-attempt"]') as HTMLButtonElement).click());
+  expect(shadow().textContent).toContain(status);
+  expect(shadow().textContent).toContain('2026-10-22T11:00:00Z');
+  expect(shadow().textContent).toContain('2026-10-22T11:01:00Z');
+  expect(shadow().textContent).not.toContain(acknowledgedAt);
+  expect(host.textContent).toContain('就绪与首次可读时间尚未提供');
+  expect(host.textContent).not.toContain('外层自动处理 ACK 时间尚未提供');
+});
+
+it('preserves the acknowledged observation during refresh/error and clears it on null, revoked data or object change', async () => {
+  const read = reading();
+  read.data = { ...read.data!, autoProcessingAcknowledgement: {
+    workItemId: read.data!.workItemId, requestId: 'retained-outer-request',
+    documentVersionId: 'DV-test', acknowledgedAt: '2026-10-21T10:00:00Z',
+  } };
+  await render({ ...read, isRefreshing: true });
+  expect(host.textContent).toContain('retained-outer-request');
+  await render({ ...read, error: 'network', temporaryError: true });
+  expect(host.textContent).toContain('retained-outer-request');
+  expect(host.textContent).toContain('保留上次获权观察');
+  await render({ ...read, data: { ...read.data, autoProcessingAcknowledgement: null } });
+  expect(host.textContent).not.toContain('retained-outer-request');
+  await render(read, { workItemId: 'another-authorized-object' });
+  expect(host.textContent).not.toContain('retained-outer-request');
+  await render({ ...read, data: null, error: 'denied' }, { sessionGeneration: 2 });
+  expect(host.textContent).not.toContain('retained-outer-request');
 });

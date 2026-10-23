@@ -367,8 +367,10 @@ function successorFixture() {
       .fn()
       .mockResolvedValue([binding]),
   };
+  const loadTurn = jest.fn().mockResolvedValue(turnBinding);
   const conversations = {
-    loadOpenClawTurnBinding: jest.fn().mockResolvedValue(turnBinding),
+    loadOpenClawTurnBinding: loadTurn,
+    loadOpenClawTurnAuthorizationMetadata: loadTurn,
     loadPendingOpenClawTurn: jest.fn().mockResolvedValue({
       reviewConversationId: 'RC-new',
       requestId: 'REQ-review',
@@ -379,6 +381,7 @@ function successorFixture() {
   };
   const attempts = {
     readByOperationRef: jest.fn(),
+    readReviewScopeMetadata: jest.fn().mockImplementation(async () => attempts.readByOperationRef()),
     readLatestByExactIdempotency: jest.fn(),
   };
   const adapter = new MiaodaAutomaticWorkItemLeaseAuthorizationAdapter(
@@ -558,6 +561,7 @@ describe('successor Review exact delegation', () => {
     const state = successorFixture();
     const row = {
       actionType: 'OPENCLAW_INTERACTIVE_REVIEW',
+      conversation:'RC-new',turn:'RT-new',requestId:'REQ-review',taskInputHash:'a'.repeat(64),inputHash:'a'.repeat(64),matterScope:null,
       tenantId: TENANT_ID,
       workItemId: WORK_ITEM_ID,
       actorUserId: ACTOR_ID,
@@ -565,22 +569,16 @@ describe('successor Review exact delegation', () => {
       documentVersionId: DOCUMENT_VERSION_ID,
       leaseOwner: PRINCIPAL_ID,
     };
-    state.attempts.readByOperationRef.mockResolvedValue(row);
-    jest
-      .spyOn(runtimePolicy, 'parseCanonicalHostOpenClawAttemptTask')
-      .mockReturnValue({ modelInput: {} } as never);
-    jest.spyOn(reviewContract, 'parseReviewTurnTaskContract').mockReturnValue({
-      reviewConversationRef: 'RC-new',
-      reviewTurnRef: 'RT-new',
-      requestId: 'REQ-review',
-    } as never);
+    state.attempts.readReviewScopeMetadata.mockResolvedValue(row);
+    state.attempts.readByOperationRef.mockRejectedValue(new Error('NO_FULL_REVIEW_BODY_DURING_AUTHORIZATION'));
     await expect(
       state.adapter.authorizeReviewAttempt({
         ...successorInput,
         attemptRef: 'OP-review',
       }),
     ).resolves.toMatchObject({ reviewTurnRef: 'RT-new' });
-    state.attempts.readByOperationRef.mockResolvedValue({
+    expect(state.attempts.readByOperationRef).not.toHaveBeenCalled();
+    state.attempts.readReviewScopeMetadata.mockResolvedValue({
       ...row,
       actorUserId: 'other',
     });
@@ -590,7 +588,7 @@ describe('successor Review exact delegation', () => {
         attemptRef: 'OP-review',
       }),
     ).rejects.toMatchObject({ statusCode: 404 });
-    state.attempts.readByOperationRef.mockResolvedValue({
+    state.attempts.readReviewScopeMetadata.mockResolvedValue({
       ...row,
       actionType: 'OPENCLAW_DYNAMIC_EVALUATION',
     });

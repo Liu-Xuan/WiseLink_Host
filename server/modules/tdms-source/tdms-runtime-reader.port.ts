@@ -1,6 +1,8 @@
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { isTdmsApprovedOpinionReference } from '@shared/tdms-approved-opinion-reference';
 import type { AssessmentTdmsNativeEvidence } from '@shared/assessment-tdms-evidence';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import type { TdmsReviewCaller } from './tdms-review-delegation';
 import type { CanonicalVerifiedServiceScope } from '../canonical-host/canonical-service-scope.authorization';
 import type { TdmsProcessingCohortContext } from '../canonical-host/tdms-approved-opinion-context';
 import { tdmsApprovedOpinionRef } from '../canonical-host/tdms-approved-opinion-context';
@@ -18,6 +20,8 @@ export const TDMS_RUNTIME_READER = Symbol('TDMS_RUNTIME_READER');
 export interface TdmsRuntimePrincipal {
   scope: CanonicalVerifiedServiceScope;
   actorUserId: string;
+  /** Opaque identity; only the provider can authenticate this separate route. */
+  reviewCaller?: TdmsReviewCaller;
 }
 export interface TdmsRuntimeTaskBinding {
   tenantId: string;
@@ -71,6 +75,13 @@ export interface TdmsRuntimeReaderPort {
     evidence: TdmsRuntimeNativeEvidence[];
     receipts: TdmsRuntimeNativeReadReceipt[];
   }>;
+  /** The sole pre-journal exception is a closure bound to this real READ result.
+   * It accepts a handed TX, never a caller-selected evidence set or bypass flag. */
+  readReviewAndJournal?(
+    principal: TdmsRuntimePrincipal, request: TdmsRuntimeReadRequest,
+    journal: (result: {evidence:TdmsRuntimeNativeEvidence[];receipts:TdmsRuntimeNativeReadReceipt[]},
+      assertReadAuthorized: (database:PostgresJsDatabase)=>Promise<void>)=>Promise<void>,
+  ): Promise<{evidence:TdmsRuntimeNativeEvidence[];receipts:TdmsRuntimeNativeReadReceipt[]}>;
   /** Reauthorize and match saved bodies to exact retained records; never creates another READ. */
   verifyEvidence(
     principal: TdmsRuntimePrincipal,

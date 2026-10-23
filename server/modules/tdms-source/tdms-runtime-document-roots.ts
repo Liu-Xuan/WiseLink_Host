@@ -1,5 +1,5 @@
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import {
   dmDocumentVersion,
   dmPublicationFamily,
@@ -17,18 +17,50 @@ import { sameScope } from './tdms-source.authorization';
 import { tdmsError } from './tdms-source.types';
 import { SqlTdmsProcessingSetTransaction } from './tdms-processing-set.repository';
 
+/** Finite opt-in check independent of the joins that subsequently prove lineage.
+ * A retained marker with missing family/preflight proof cannot become ordinary.
+ */
+export async function tdmsRuntimeDocumentHasMarker(
+  database: PostgresJsDatabase,
+  binding: Pick<TdmsRuntimeTaskBinding, 'tenantId' | 'documentVersionId'>,
+): Promise<boolean> {
+  const [row] = await database.execute<{ marker: boolean }>(sql`SELECT EXISTS (
+    SELECT 1 FROM ${dmDocumentVersion} JOIN ${dmAcquisition}
+      ON (${dmAcquisition.documentVersionId}=${dmDocumentVersion.documentVersionId}
+        OR ${dmAcquisition.acquisitionId}=${dmDocumentVersion.acquisitionId})
+    WHERE ${dmDocumentVersion.documentVersionId}=${binding.documentVersionId}
+      AND ${dmAcquisition.sourceDescriptorJson}::jsonb ? 'tdmsRegistration') AS marker`);
+  return row?.marker === true;
+}
+
 /** Accurate DVI/acquisition lineage is the opt-in. An ordinary upload stays ordinary. */
 export async function tdmsRuntimeDocumentBindings(
   database: PostgresJsDatabase,
-  binding: TdmsRuntimeTaskBinding,
+  binding: Pick<TdmsRuntimeTaskBinding,'tenantId'|'documentVersionId'>,
 ) {
   const rows = await database
     .select({
-      version: dmDocumentVersion,
-      family: dmPublicationFamily,
-      artifact: dmSourceArtifact,
-      acquisition: dmAcquisition,
-      preflight: dmIngressPreflight,
+      version: {documentVersionId:dmDocumentVersion.documentVersionId,familyId:dmDocumentVersion.familyId,
+        sourceArtifactId:dmDocumentVersion.sourceArtifactId,pdfSha256:dmDocumentVersion.pdfSha256,
+        byteLength:dmDocumentVersion.byteLength,acquisitionId:dmDocumentVersion.acquisitionId,
+        businessRevision:dmDocumentVersion.businessRevision,revisionDate:dmDocumentVersion.revisionDate,
+        sourceGeneratedDate:dmDocumentVersion.sourceGeneratedDate},
+      family:{familyId:dmPublicationFamily.familyId,canonicalIdentityKey:dmPublicationFamily.canonicalIdentityKey,
+        canonicalDocumentNumber:dmPublicationFamily.canonicalDocumentNumber,documentFamily:dmPublicationFamily.documentFamily,
+        issuerAuthority:dmPublicationFamily.issuerAuthority},
+      artifact:{sourceArtifactId:dmSourceArtifact.sourceArtifactId,readbackVerified:dmSourceArtifact.readbackVerified,
+        mediaType:dmSourceArtifact.mediaType,sha256:dmSourceArtifact.sha256,byteLength:dmSourceArtifact.byteLength,
+        bucketId:dmSourceArtifact.bucketId,filePath:dmSourceArtifact.filePath},
+      acquisition:{acquisitionId:dmAcquisition.acquisitionId,status:dmAcquisition.status,
+        sourceArtifactId:dmAcquisition.sourceArtifactId,documentVersionId:dmAcquisition.documentVersionId,
+        acquiredBy:dmAcquisition.acquiredBy,selectionBucketId:dmAcquisition.selectionBucketId,selectionFilePath:dmAcquisition.selectionFilePath,
+        providerObjectId:dmAcquisition.providerObjectId,providerVersionId:dmAcquisition.providerVersionId,
+        sourceDescriptorJson:descriptorMetadata(sql`${dmAcquisition.sourceDescriptorJson}`,true)},
+      preflight:{status:dmIngressPreflight.status,committedAt:dmIngressPreflight.committedAt,documentVersionId:dmIngressPreflight.documentVersionId,
+        acquisitionId:dmIngressPreflight.acquisitionId,commitIdempotencyKey:dmIngressPreflight.commitIdempotencyKey,
+        decision:dmIngressPreflight.decision,normalizedDescriptorJson:descriptorMetadata(sql`${dmIngressPreflight.normalizedDescriptorJson}`,false)},
+      publicationIdentityEvidenceConsistent:sql<boolean>`(${dmAcquisition.sourceDescriptorJson}::jsonb->'publicationIdentityEvidence') IS NOT DISTINCT FROM
+        (${dmIngressPreflight.normalizedDescriptorJson}::jsonb->'publicationIdentityEvidence')`,
     })
     .from(dmDocumentVersion)
     .innerJoin(
@@ -100,7 +132,45 @@ export async function tdmsRuntimeDocumentBindings(
     result.push(structuredClone(source));
   }
   if (new Set(result.map(canonical)).size !== result.length) invalid();
+  if (!result.length && await tdmsRuntimeDocumentHasMarker(database, binding)) invalid();
   return result;
+}
+
+/** Only fields consumed by verifiedDocumentReadLineage and formal attachment
+ * registration leave SQL. No full descriptor, document body or native opinion. */
+function descriptorMetadata(column:SQL,registration:boolean):SQL<string> {
+  const fields=['identityAuthority','pageCount','sha256','sizeBytes','sourceStorageKey','documentCode',
+    'canonicalDocumentFamily','documentFamily','documentFamilyAdapterId','issuer','businessRevision','revisionDate','sourceGeneratedDate'];
+  const registrationFields=['schemaVersion','requestId','bindingId','payloadDigest','scope','receiverId','receiverRevision','grantRevision',
+    'permissionRevision','applicationScopeId','actorSubjectId','ownerSnapshotId','sourceRecordId','number','sourceVersion','businessVersion',
+    'sourceAttachmentId','sourceAttachmentVersion','filename','mediaType','sha256','byteLength','selection'];
+  // Only hard-coded internal field names form these JSON paths. Values remain bound parameters.
+  const pick=(path:readonly string[],keys:readonly string[])=>sql`jsonb_build_object(${sql.join(keys.flatMap(
+    key=>[sql`${key}::text`,sql`${column}::jsonb#>${sql.raw("'{"+[...path,key].join(',')+"}'")}`]),sql`, `)})`;
+  const registrationValue=(key:string):SQL=> key==='scope' ? pick(['tdmsRegistration','scope'],
+    ['tenantId','sourceKey','sourceInstanceId','scopeId']) : key==='selection' ? pick(['tdmsRegistration','selection'],
+    ['bucketId','filePath','expectedProviderObjectId']) : ['sourceVersion','businessVersion'].includes(key)
+    ? sql`CASE WHEN ${column}::jsonb#>${sql.raw("'{tdmsRegistration,"+key+"}'")} IS NULL OR
+        ${column}::jsonb#>${sql.raw("'{tdmsRegistration,"+key+"}'")}='null'::jsonb THEN 'null'::jsonb
+      ELSE ${pick(['tdmsRegistration',key],['rawRevision','rawIteration','confirmation'])} END`
+    : sql`${column}::jsonb#>'{tdmsRegistration}'->${key}::text`;
+  const evidence=sql`jsonb_build_object(
+    'schemaVersion',${column}::jsonb#>'{publicationIdentityEvidence,schemaVersion}',
+    'adapterId',${column}::jsonb#>'{publicationIdentityEvidence,adapterId}',
+    'sourceSha256',${column}::jsonb#>'{publicationIdentityEvidence,sourceSha256}',
+    'sourceByteLength',${column}::jsonb#>'{publicationIdentityEvidence,sourceByteLength}',
+    'documentCode',${column}::jsonb#>'{publicationIdentityEvidence,documentCode}',
+    'issueDate',${column}::jsonb#>'{publicationIdentityEvidence,issueDate}',
+    'primaryHeaderLocator',${pick(['publicationIdentityEvidence','primaryHeaderLocator'],['kind','pageIndex'])},
+    'publisher',jsonb_build_object('page',${column}::jsonb#>'{publicationIdentityEvidence,publisher,page}',
+      'source',${column}::jsonb#>'{publicationIdentityEvidence,publisher,source}',
+      'sourceLocator',${pick(['publicationIdentityEvidence','publisher','sourceLocator'],['kind','pageIndex'])},
+      'text',${column}::jsonb#>'{publicationIdentityEvidence,publisher,text}'))`;
+  return sql`(jsonb_build_object(${sql.join(fields.flatMap(key=>[sql`${key}::text`,sql`${column}::jsonb->${key}::text`]),sql`, `)},
+    'adapterRelease',jsonb_build_object('adapterId',${column}::jsonb#>'{adapterRelease,adapterId}'),
+    'publicationIdentityEvidence',${evidence}) ${registration ? sql`|| CASE WHEN ${column}::jsonb ? 'tdmsRegistration'
+      THEN jsonb_build_object('tdmsRegistration',jsonb_build_object(${sql.join(registrationFields.flatMap(
+        key=>[sql`${key}::text`,registrationValue(key)]),sql`, `)})) ELSE '{}'::jsonb END` : sql``})::text`;
 }
 
 /** Read only finite retained mappings and record metadata, after current source

@@ -1,4 +1,4 @@
-import { assertAutomaticWorkItemAttemptLease } from './automatic-work-item-attempt-lease';
+import { assertAutomaticWorkItemAttemptLeaseBinding, automaticWorkItemTaskLease } from './automatic-work-item-attempt-lease';
 import { assertCancelledInitialContinuation, type CancelledInitialContinuationGuard } from './cancelled-initial-continuation';
 import { randomUUID } from 'node:crypto';
 
@@ -9,6 +9,7 @@ import {
 } from '@lark-apaas/fullstack-nestjs-core';
 import {
   and,
+  getTableColumns,
   desc,
   eq,
   gt,
@@ -30,12 +31,15 @@ import { canonicalJson } from './action-attempt-envelope';
 import { INITIAL_ANALYSIS_REQUEST_SCHEMA } from './initial-analysis-request';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import type {
+  OpenClawActionTaskType,
   OpenClawResultEnvelope,
   AnyOpenClawResultEnvelope,
   OpenClawTaskEnvelope,
 } from './action-attempt-envelope.types';
+import { ACTION_ATTEMPT_REQUEST_ORIGIN } from './action-attempt.types';
 import type {
   ActionAttemptRow,
+  ActionAttemptControlRow,
   MatterActionAttemptRow,
   ActionAttemptWorkItemBinding,
   ReserveActionAttemptInput,
@@ -130,6 +134,87 @@ export class ActionAttemptRepository {
     return (row as ActionAttemptRow | undefined) ?? null;
   }
 
+  async readControlByOperationRef(operationRef:string):Promise<ActionAttemptControlRow|null> {
+    const [row]=await this.db.select(attemptControlColumns()).from(actionAttempt)
+      .where(eq(actionAttempt.operationRef,operationRef)).limit(1);
+    return row??null;
+  }
+  async readControlByAttemptId(attemptId:string):Promise<ActionAttemptControlRow|null> {
+    const [row]=await this.db.select(attemptControlColumns()).from(actionAttempt)
+      .where(eq(actionAttempt.attemptId,attemptId)).limit(1);
+    return row??null;
+  }
+
+  /** Locate the exact existing execution before Source admission opens bodies. */
+  async readRequestIdentity(input:{tenantId:string;workItemId:string;taskType:OpenClawActionTaskType;
+    documentVersionId:string;idempotencyKey:string}) {
+    const [row]=await this.db.select({operationRef:actionAttempt.operationRef,status:actionAttempt.status})
+      .from(actionAttempt).where(and(eq(actionAttempt.tenantId,input.tenantId),eq(actionAttempt.workItemId,input.workItemId),
+        eq(actionAttempt.actionType,input.taskType),eq(actionAttempt.documentVersionId,input.documentVersionId),
+        eq(actionAttempt.requestOrigin,ACTION_ATTEMPT_REQUEST_ORIGIN),eq(actionAttempt.idempotencyKey,input.idempotencyKey)))
+      .orderBy(desc(actionAttempt.createdAt)).limit(1);
+    return row??null;
+  }
+
+  /** Review authorization must not decode a model task or a result journal
+   * before the current native Source/own-approval metadata gate. */
+  async readReviewScopeMetadata(operationRef: string) {
+    const [row] = await this.db.select({
+      attemptId: actionAttempt.attemptId, operationRef: actionAttempt.operationRef,
+      tenantId: actionAttempt.tenantId, workItemId: actionAttempt.workItemId,
+      actionType: actionAttempt.actionType, actorUserId: actionAttempt.actorUserId,
+      status: actionAttempt.status, baseRevision: actionAttempt.baseRevision,
+      requestOrigin: actionAttempt.requestOrigin,
+      documentVersionId: actionAttempt.documentVersionId, inputRevision: actionAttempt.inputRevision,
+      leaseOwner: actionAttempt.leaseOwner, taskInputHash: actionAttempt.taskInputHash,
+      inputHash: sql<string>`${actionAttempt.taskEnvelopeJson}::jsonb->>'inputHash'`,
+      taskType: sql<string>`${actionAttempt.taskEnvelopeJson}::jsonb->>'taskType'`,
+      taskOperationRef: sql<string>`${actionAttempt.taskEnvelopeJson}::jsonb->>'operationRef'`,
+      taskWorkItemId: sql<string>`${actionAttempt.taskEnvelopeJson}::jsonb->>'workItemId'`,
+      conversation: sql<string>`${actionAttempt.taskEnvelopeJson}::jsonb#>>'{modelInput,reviewConversationRef}'`,
+      turn: sql<string>`${actionAttempt.taskEnvelopeJson}::jsonb#>>'{modelInput,reviewTurnRef}'`,
+      requestId: sql<string>`${actionAttempt.taskEnvelopeJson}::jsonb#>>'{modelInput,requestId}'`,
+      hasTdmsReviewContext: sql<boolean>`${actionAttempt.taskEnvelopeJson}::jsonb#>'{modelInput,jobAidContext,tdmsReviewContext}' IS NOT NULL`,
+      hasTdmsSuccessorObligation: sql<boolean>`
+        ${actionAttempt.taskEnvelopeJson}::jsonb#>'{modelInput,tdmsContext}' IS NOT NULL OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(
+            ${actionAttempt.taskEnvelopeJson}::jsonb#>'{modelInput,previousWork,content,evidence}')='array'
+            THEN ${actionAttempt.taskEnvelopeJson}::jsonb#>'{modelInput,previousWork,content,evidence}'
+            ELSE '[]'::jsonb END) AS evidence WHERE evidence->>'kind'='TDMS_NATIVE_RECORD')`,
+      successorReviewTurnRef: sql<string | null>`${actionAttempt.taskEnvelopeJson}::jsonb#>>'{modelInput,successorReviewTurnRef}'`,
+      hasSuccessorBinding: sql<boolean>`${actionAttempt.taskEnvelopeJson}::jsonb#>'{modelInput,successorOverallBinding}' IS NOT NULL`,
+      successorBinding: sql<unknown>`jsonb_build_object(
+        'reviewConversationRef',${actionAttempt.taskEnvelopeJson}::jsonb#>'{modelInput,successorOverallBinding,reviewConversationRef}',
+        'requestId',${actionAttempt.taskEnvelopeJson}::jsonb#>'{modelInput,successorOverallBinding,requestId}',
+        'inputRevision',${actionAttempt.taskEnvelopeJson}::jsonb#>'{modelInput,successorOverallBinding,inputRevision}',
+        'workRevisionRef',${actionAttempt.taskEnvelopeJson}::jsonb#>'{modelInput,successorOverallBinding,workRevisionRef}')`,
+      sealedSuccess: sql<boolean>`${actionAttempt.resultContentHash} IS NOT NULL AND
+        ${actionAttempt.resultEnvelopeJson}::jsonb->>'contentHash'=${actionAttempt.resultContentHash} AND
+        ${actionAttempt.resultEnvelopeJson}::jsonb->>'status'='SUCCEEDED'`,
+      matterScope: sql<unknown>`${actionAttempt.taskEnvelopeJson}::jsonb#>'{modelInput,matterContext,scope}'`,
+    }).from(actionAttempt).where(eq(actionAttempt.operationRef, operationRef)).limit(1);
+    return row ?? null;
+  }
+
+  /** Exact existing successor identity; no task, result or native journal body. */
+  async readSuccessorRecoveryMetadata(input:{tenantId:string;workItemId:string;idempotencyKey:string}) {
+    const [row]=await this.db.select({operationRef:actionAttempt.operationRef,
+      projectionMatches:sql<boolean>`
+        ${workItem.revision}=${actionAttempt.inputRevision}+1 AND
+        ${workItem.projectionJson}::jsonb->>'revision'=${workItem.revision}::text AND
+        ${workItem.projectionJson}::jsonb#>>'{integratedAssessment,overallSynthesis,actionAttemptId}'=${actionAttempt.attemptId} AND
+        ${workItem.projectionJson}::jsonb#>>'{integratedAssessment,overallSynthesis,basedOnJobAidWorkRevisionRef}'=
+          ${actionAttempt.taskEnvelopeJson}::jsonb#>>'{modelInput,successorOverallBinding,workRevisionRef}'`,
+      currentRevision:workItem.revision,owner:workItem.requestedByUserId,
+    }).from(actionAttempt).innerJoin(workItem,and(eq(workItem.tenantId,actionAttempt.tenantId),
+      eq(workItem.workItemId,actionAttempt.workItemId))).where(and(eq(actionAttempt.tenantId,input.tenantId),
+      eq(actionAttempt.workItemId,input.workItemId),eq(actionAttempt.idempotencyKey,input.idempotencyKey),
+      eq(actionAttempt.actionType,'OPENCLAW_OVERALL_SYNTHESIS'))).orderBy(desc(actionAttempt.createdAt)).limit(1);
+    if(!row?.operationRef) return null;
+    const attempt=await this.readReviewScopeMetadata(row.operationRef);
+    return attempt?{...row,attempt}:null;
+  }
+
   async readMatterByOperationRef(
     operationRef: string,
   ): Promise<MatterActionAttemptRow | null> {
@@ -166,9 +251,12 @@ export class ActionAttemptRepository {
   async readLatestByExactIdempotency(input: {
     tenantId: string;
     idempotencyKey: string;
-  }): Promise<ActionAttemptRow | null> {
+  }, metadataOnly=false): Promise<ActionAttemptRow | null> {
     const [row] = await this.db
-      .select()
+      .select(metadataOnly ? {...getTableColumns(actionAttempt),
+        taskEnvelopeJson:sql<string|null>`NULL`,resultEnvelopeJson:sql<string|null>`NULL`,
+        reviewActivityJson:reviewActivityMetadata(),
+      } : getTableColumns(actionAttempt))
       .from(actionAttempt)
       .where(
         and(
@@ -468,6 +556,13 @@ export class ActionAttemptRepository {
           eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
           eq(actionAttempt.requestOrigin, row.requestOrigin),
           eq(actionAttempt.leaseGeneration, row.leaseGeneration),
+          // The new bounded Review seals every decision activity at COMMITTING,
+          // including ordinary refs resolved in parallel with a native READ.
+          sql`((${actionAttempt.taskEnvelopeJson}::jsonb#>>'{modelInput,jobAidContext,tdmsReviewContext,mode}')
+            IS DISTINCT FROM 'BOUNDED_NATIVE_READ' OR (
+              ${actionAttempt.status}='RUNNING' AND ${actionAttempt.leaseOwner}=${row.leaseOwner}
+              AND ${actionAttempt.leaseToken}=${row.leaseToken} AND ${actionAttempt.leaseExpiresAt}>clock_timestamp()
+              AND ${actionAttempt.deadlineAt}>clock_timestamp() AND ${actionAttempt.cancelRequestedAt} IS NULL))`,
         ),
       )
       .returning({ attemptId: actionAttempt.attemptId });
@@ -538,9 +633,10 @@ export class ActionAttemptRepository {
   async readActiveReviewForWorkItem(input: {
     tenantId: string;
     workItemId: string;
-  }): Promise<ActionAttemptRow | null> {
+  }): Promise<Pick<ActionAttemptRow,'status'|'idempotencyKey'|'deadlineAt'|'leaseExpiresAt'> | null> {
     const [row] = await this.db
-      .select()
+      .select({status:actionAttempt.status,idempotencyKey:actionAttempt.idempotencyKey,
+        deadlineAt:actionAttempt.deadlineAt,leaseExpiresAt:actionAttempt.leaseExpiresAt})
       .from(actionAttempt)
       .where(
         and(
@@ -551,7 +647,7 @@ export class ActionAttemptRepository {
         ),
       )
       .limit(1);
-    return (row as ActionAttemptRow | undefined) ?? null;
+    return row ?? null;
   }
 
   async failReviewPreparation(
@@ -791,6 +887,7 @@ export class ActionAttemptRepository {
     result: AnyOpenClawResultEnvelope;
     now: Date;
     recoveryLeaseMs: number;
+    expectedReviewActivityJson?: string | null;
   }): Promise<ActionAttemptRow | null> {
     return this.withAutomaticAttemptLease(input.attemptId, input.automaticLeaseRequired, async (database) => {
     const [updated] = await database
@@ -800,13 +897,20 @@ export class ActionAttemptRepository {
         resultEnvelopeJson: canonicalJson(input.result),
         resultContentHash: input.result.contentHash,
         commitStartedAt: input.now,
-        leaseExpiresAt: new Date(input.now.getTime() + input.recoveryLeaseMs),
+        // This persisted, Host-validated bounded Review already owns a live
+        // lease. Preserve its remaining authority; never renew it at cutoff.
+        leaseExpiresAt: sql`CASE WHEN ${actionAttempt.actionType}='OPENCLAW_INTERACTIVE_REVIEW' AND
+          ${actionAttempt.taskEnvelopeJson}::jsonb#>>'{modelInput,jobAidContext,tdmsReviewContext,mode}'='BOUNDED_NATIVE_READ'
+          THEN LEAST(${actionAttempt.leaseExpiresAt},${actionAttempt.deadlineAt})
+          ELSE ${new Date(input.now.getTime()+input.recoveryLeaseMs).toISOString()}::timestamptz END`,
         updatedAt: input.now,
       })
       .where(
         and(
           eq(actionAttempt.attemptId, input.attemptId),
           eq(actionAttempt.status, 'RUNNING'),
+          ...(input.expectedReviewActivityJson===undefined?[]:[sql`COALESCE(${actionAttempt.reviewActivityJson}::jsonb,'[]'::jsonb)
+            = COALESCE(${input.expectedReviewActivityJson}::jsonb,'[]'::jsonb)`]),
           eq(actionAttempt.leaseToken, input.leaseToken),
           eq(actionAttempt.leaseGeneration, input.leaseGeneration),
           gt(actionAttempt.leaseExpiresAt, input.now),
@@ -985,7 +1089,7 @@ export class ActionAttemptRepository {
       )
       .returning({ attemptId: actionAttempt.attemptId });
     if (updated.length === 1) return 'CANCELLED';
-    const row = await new ActionAttemptRepository(database).readByAttemptId(input.attemptId);
+    const row = await new ActionAttemptRepository(database).readControlByAttemptId(input.attemptId);
     if (row?.status === 'COMMITTING' || row?.commitStartedAt) return 'TOO_LATE';
     return 'NOT_ACTIVE';
     });
@@ -1019,12 +1123,26 @@ export class ActionAttemptRepository {
     apply: (database: PostgresJsDatabase) => Promise<T>,
   ): Promise<T> {
     return this.db.transaction(async (database) => {
-      const row = await new ActionAttemptRepository(database).readByAttemptId(attemptId);
-      if (row) await assertAutomaticWorkItemAttemptLease(database, row, row.leaseOwner ?? '', required);
+      const [row]=await database.select({...attemptControlColumns(),
+        automaticLease:sql<string|null>`(${actionAttempt.taskEnvelopeJson}::jsonb#>'{modelInput,automaticWorkItemLease}')::text`,
+      }).from(actionAttempt).where(eq(actionAttempt.attemptId,attemptId)).limit(1);
+      if(row) await assertAutomaticWorkItemAttemptLeaseBinding(database,row,row.leaseOwner??'',required??false,
+        automaticWorkItemTaskLease(row.automaticLease===null?undefined:JSON.parse(row.automaticLease)));
       return apply(database);
     });
   }
 
+}
+
+function attemptControlColumns() {
+  return {attemptId:actionAttempt.attemptId,operationRef:actionAttempt.operationRef,
+    tenantId:actionAttempt.tenantId,workItemId:actionAttempt.workItemId,actionType:actionAttempt.actionType,
+    requestOrigin:actionAttempt.requestOrigin,documentVersionId:actionAttempt.documentVersionId,
+    leaseOwner:actionAttempt.leaseOwner,leaseToken:actionAttempt.leaseToken,leaseGeneration:actionAttempt.leaseGeneration,
+    leaseExpiresAt:actionAttempt.leaseExpiresAt,deadlineAt:actionAttempt.deadlineAt,status:actionAttempt.status,
+    cancelRequestedAt:actionAttempt.cancelRequestedAt,cancelReason:actionAttempt.cancelReason,
+    commitStartedAt:actionAttempt.commitStartedAt,projectionApplied:actionAttempt.projectionApplied,
+    terminalReason:actionAttempt.terminalReason};
 }
 
 function unclaimedInitialRequest(row: ActionAttemptRow) {
@@ -1078,4 +1196,25 @@ function activeAttemptConflict(): Error & { code: string; statusCode: number } {
   );
 
 
+}
+
+/** A status/model-selection consumer never loads the new native journal bodies.
+ * Old tasks retain their pre-existing optional-activity error projection. The
+ * bounded journal is written through JSONB append, and unknown kinds stay visible
+ * as unreadable metadata rather than disappearing. */
+function reviewActivityMetadata() {
+  return sql<string|null>`CASE WHEN ${actionAttempt.taskEnvelopeJson}::jsonb#>>
+    '{modelInput,jobAidContext,tdmsReviewContext,mode}'='BOUNDED_NATIVE_READ' THEN
+    (SELECT coalesce(jsonb_agg(CASE WHEN entry->>'kind' IN ('CONTEXT_PREPARED','SOURCE_REFS_RESOLVED') THEN
+      jsonb_build_object('kind',entry->'kind','observedAt',entry->'observedAt',
+        'sourceRefIds',entry->'sourceRefIds','sourceCatalogCount',entry->'sourceCatalogCount')
+      WHEN entry->>'kind'='ASSESSMENT_SOURCES_READ' THEN
+      jsonb_build_object('kind',entry->'kind','observedAt',entry->'observedAt',
+        'sourceRefs',entry->'sourceRefs','purpose',entry->'purpose')
+      WHEN entry->>'kind' IN ('MODEL_REQUEST','MODEL_RETRY') THEN
+      jsonb_build_object('kind',entry->'kind','observedAt',entry->'observedAt',
+        'requestNo',entry->'requestNo','retryNo',entry->'retryNo','delayMs',entry->'delayMs','errorCode',entry->'errorCode')
+      ELSE jsonb_build_object('kind','UNKNOWN_ACTIVITY') END),'[]'::jsonb)::text
+      FROM jsonb_array_elements(coalesce(${actionAttempt.reviewActivityJson}::jsonb,'[]'::jsonb)) AS entry)
+    ELSE ${actionAttempt.reviewActivityJson} END`;
 }

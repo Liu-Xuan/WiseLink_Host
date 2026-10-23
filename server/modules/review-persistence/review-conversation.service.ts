@@ -539,7 +539,7 @@ export class ReviewConversationService {
         reviewConversationId: conversation.reviewConversationId,
         reviewTurnId: turn.reviewTurnId,
         inputRevision: turn.inputRevision,
-      });
+      },true);
       const previous = readStoredExecutionModel(execution?.executionModelJson);
       if (previous) return previous;
     }

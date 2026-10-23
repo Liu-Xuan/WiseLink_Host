@@ -43,7 +43,7 @@ type ProjectionFacts = Omit<
  * and creates no processing family, cohort, roster, relation or approval authority. */
 export class TdmsRetainedRuntimeFacts {
   async resolveSelections(input: {
-    binding: TdmsRuntimeTaskBinding;
+    binding: Pick<TdmsRuntimeTaskBinding,'tenantId'|'documentVersionId'>;
     scope: TdmsSourceScope;
     /** Exact native revision pins resolved from the task's verified DM acquisition. */
     rootSourceRevisionRefs: readonly string[];

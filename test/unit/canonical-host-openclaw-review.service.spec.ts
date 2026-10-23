@@ -76,6 +76,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
       assertJobAidProblemTaskBinding(prepared);
       Object.assign(harness.service, { jobAid: {
         enabledForNewTasks: () => true,
+        admitReviewSources: jest.fn(async () => undefined),
         prepareReview: jest.fn(async () => structuredClone(prepared)),
         assertReviewSources: jest.fn(async (input, tenantId, workItemId) => {
           expect([tenantId, workItemId, input.actorUserId]).toEqual(['tenant-1', 'WI-1', 'actor-1']);
@@ -114,6 +115,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
     Reflect.set(prepared.modelInput, 'evidenceProjectionVersion', 'UNKNOWN_VERSION');
     Object.assign(harness.service, { jobAid: {
       enabledForNewTasks: () => true,
+      admitReviewSources: jest.fn(async () => undefined),
       prepareReview: jest.fn(async () => structuredClone(prepared)),
     } });
     await expect(harness.service.begin('RC-1', 'request-1'))
@@ -1379,6 +1381,7 @@ function reviewHarness(
   let task: OpenClawTaskEnvelope | null = null;
   let row: ActionAttemptRow | null = null;
   const conversations = {
+    loadOpenClawWorkItemOwner: jest.fn(async()=>({actorId:conversation.actorId})),
     loadPreviousOpenClawTask: jest.fn<
       Promise<{
         status: string | null;
@@ -2240,6 +2243,8 @@ async function c309ReviewHarness() {
   );
   const jobAid = {
     enabledForNewTasks: () => true,
+    admitReviewSources: jest.fn(async () => undefined),
+    assertReviewNativeInTransaction: jest.fn(async () => undefined),
     prepareReview: jest.fn(async (input: { evidence: AssessmentEvidence[] }) =>
       buildJobAidProblemTask({
         workItem: item,

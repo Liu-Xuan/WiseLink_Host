@@ -14,6 +14,7 @@ import { canonical } from './tdms-source.validation';
 import { assertAutomaticWorkItemAttemptLease } from '../action-attempt/automatic-work-item-attempt-lease';
 import { assertTdmsSummarySourceActor, type TdmsSummaryDelegatedActor } from './tdms-summary-delegation';
 import { assertTdmsRecoverySourceActor, type TdmsRecoveryDelegatedActor } from './tdms-recovery-delegation';
+import { authenticateTdmsReviewDelegation, tdmsReviewBinding, assertTdmsReviewSourceActor, type TdmsReviewDelegatedActor } from './tdms-review-delegation';
 
 /** A delegated owner is never a browser FINAL_USER or a browser session. */
 export interface TdmsRuntimeDelegatedActor {
@@ -30,13 +31,14 @@ export interface TdmsRuntimeDelegatedActor {
   readonly workItemId: string;
   readonly authorityExpiresAt: number;
 }
-export type TdmsSourceActor = TdmsPublicActor | TdmsRuntimeDelegatedActor | TdmsSummaryDelegatedActor | TdmsRecoveryDelegatedActor;
+export type TdmsSourceActor = TdmsPublicActor | TdmsRuntimeDelegatedActor | TdmsSummaryDelegatedActor | TdmsRecoveryDelegatedActor | TdmsReviewDelegatedActor;
 const minted = new WeakSet<object>();
 
 export function assertTdmsSourceActor(actor: TdmsSourceActor): void {
   if (actor?.principalKind === 'FINAL_USER') return assertPublicActor(actor);
   if (actor?.principalKind === 'SUMMARY_SERVICE_DELEGATE') return assertTdmsSummarySourceActor(actor);
   if (actor?.principalKind === 'RECOVERY_SERVICE_DELEGATE') return assertTdmsRecoverySourceActor(actor);
+  if (actor?.principalKind === 'REVIEW_SERVICE_DELEGATE') return assertTdmsReviewSourceActor(actor);
   if (!actor || !minted.has(actor))
     throw tdmsError('TDMS_VERIFIED_SERVICE_DELEGATION_REQUIRED', 401);
 }
@@ -215,14 +217,28 @@ export async function authenticateTdmsRuntimeDelegation(input: {
   return actor;
 }
 
+/** The ordinary transport/actor algorithm above remains unchanged. Review
+ * authority comes only from the private handle and current handed-TX binding. */
+export async function authenticateTdmsPrincipal(input: Parameters<typeof authenticateTdmsRuntimeDelegation>[0]) {
+  const caller=input.principal.reviewCaller;
+  if(!caller) return authenticateTdmsRuntimeDelegation(input);
+  const bound=tdmsReviewBinding(caller), {binding,principal}=input;
+  if(canonical(principal.scope)!==canonical(bound.scope)||principal.actorUserId!==bound.actorUserId ||
+      binding.tenantId!==bound.tenantId||binding.workItemId!==bound.workItemId||
+      binding.documentVersionId!==bound.documentVersionId||binding.actorUserId!==bound.actorUserId ||
+      (input.stage==='EXECUTION'&&(bound.attempt?.phase!=='EXECUTION'||bound.attempt.status!=='RUNNING'))) deny();
+  return (await authenticateTdmsReviewDelegation({database:input.database,authorization:input.authorization,
+    caller,actor:{tenantId:binding.tenantId,actorUserId:binding.actorUserId}})).actor;
+}
+
 export function assertTdmsRuntimeReadContext(
   actor: TdmsSourceActor,
   context: unknown,
 ): void {
   assertTdmsSourceActor(actor);
   if (
-    actor.principalKind !== 'SERVICE_DELEGATE' ||
-    canonical(context) !== canonical({ workItemId: actor.workItemId })
+    !['SERVICE_DELEGATE','REVIEW_SERVICE_DELEGATE'].includes(actor.principalKind) ||
+    canonical(context) !== canonical({ workItemId: 'workItemId' in actor ? actor.workItemId : null })
   )
     throw tdmsError('TDMS_RUNTIME_READ_CONTEXT_MISMATCH', 403);
 }

@@ -151,7 +151,7 @@ export async function consumeHostedWorkItem(options, dependencies) {
     // The Host still validates the queued turn's scope and prerequisites.
     const review = await (dependencies.consumeReview ?? consumePendingReviewTurn)(
       { ...options, checkpointRoot: join(options.checkpointRoot, 'review') },
-      { callTool: dependencies.callTool, invokeModel: dependencies.invokeReviewModel },
+      { callTool: dependencies.callTool, hasTool: dependencies.hasTool, invokeModel: dependencies.invokeReviewModel },
     );
     if (initialComplete(initial)) return review;
     if (review.status !== 'IDLE') {
@@ -2475,6 +2475,7 @@ async function main(argv, env) {
   try {
     const consumerDependencies = {
       callTool: connection.callTool,
+      hasTool: connection.hasTool,
       documentTranslationCheckpoint,
       activityCheckpoint,
       readingCheckpoint,
@@ -2561,6 +2562,7 @@ async function main(argv, env) {
           return consumePendingReviewTurn({ workItemId: reviewWorkItemId,
             checkpointRoot: join(checkpointRoot, 'review') }, {
             callTool: connection.callTool,
+            hasTool: connection.hasTool,
             invokeModel: (input, hooks) => invokeHostedReviewModel(input, { ...runtime, ...hooks }),
           });
         },

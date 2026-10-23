@@ -36,6 +36,7 @@ export async function consumePendingReviewTurn(options, dependencies) {
         ),
       },
       {
+        hasTool: dependencies.hasTool,
         callTool: async (name, args) => {
           if (name === 'commit_review_turn_candidate') commitStarted = true;
           const scopedArgs=['get_review_turn_context','read_source_refs','query_review_aily',
@@ -66,6 +67,7 @@ export async function consumePendingReviewTurn(options, dependencies) {
       result,
     };
   } catch (error) {
+    if (error?.sealedReviewRecovery === true) throw error;
     const recovery = error?.rejectedCommit;
     if (error?.code === 'REVIEW_COMMIT_REJECTED_BEFORE_PREPARE' &&
       recovery?.workItemId === options.workItemId && recovery?.reviewTurnRef === next.reviewTurnRef &&
@@ -151,6 +153,7 @@ async function main(argv, env) {
       },
       {
         callTool: connection.callTool,
+        hasTool: connection.hasTool,
         invokeModel: (input, hooks = {}) =>
           invokeHostedReviewModel(input, { ...runtime, ...hooks }),
       },

@@ -16,6 +16,7 @@ import {
   type AssessmentTdmsNativeEvidence,
 } from '@shared/assessment-tdms-evidence';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import type { TdmsReviewCaller, TdmsReviewIngress } from '../tdms-source/tdms-review-delegation';
 
 export const TDMS_NATIVE_EVIDENCE_VERIFIER = Symbol(
   'TDMS_NATIVE_EVIDENCE_VERIFIER',
@@ -46,6 +47,8 @@ export type TdmsNativeSummaryCaller =
   | { kind: 'BROWSER'; actor: CanonicalHostActor };
 export interface TdmsNativeTransactionInput {
   actor: TdmsNativeEvidenceActor;
+  /** Opaque process-local identity minted by the real Review admission. */
+  reviewCaller?: TdmsReviewCaller;
   runtime?: {
     principal: TdmsRuntimePrincipal;
     context: TdmsRuntimeTaskContext;
@@ -86,6 +89,11 @@ export interface TdmsNativeEvidenceAuthorization {
  * rights, immutable set/member and original READ provenance; missing proof denies.
  * Concrete provider registration belongs to the Host composition root. */
 export interface TdmsNativeEvidenceVerifier {
+  /** Finite Review metadata/Source gate, before saved bodies or task journals. */
+  admitReview?(ingress: TdmsReviewIngress): Promise<TdmsReviewCaller | null>;
+  /** Re-enter the same genuine gate at an owned CAS boundary. No pool lookup,
+   * transaction, owner synthesis or mutable caller binding is allowed here. */
+  admitReviewInTransaction?(input:{ingress:TdmsReviewIngress;database:PostgresJsDatabase}):Promise<TdmsReviewCaller|null>;
   /** Mandatory when native proof is checked while a transaction is held. This
    * capability must use ONLY the handed transaction, verify the genuine caller,
    * current invocation/lease (including metadata-only context), exact saved READ
@@ -185,7 +193,7 @@ export async function assertTdmsNativeInTransaction(
   const native = input.evidence.filter(
     (item) => item.kind === 'TDMS_NATIVE_RECORD',
   );
-  if (!native.length && input.runtime === undefined) return;
+  if (!native.length && input.runtime === undefined && input.reviewCaller === undefined) return;
   if (
     !input.database ||
     !verifier ||
@@ -193,6 +201,9 @@ export async function assertTdmsNativeInTransaction(
   )
     throw new Error('TDMS_NATIVE_TRANSACTION_AUTHORIZATION_NOT_CONNECTED');
   const selected = selectedNativeEvidence(native, input.actor);
+  if ([input.runtime, input.reviewCaller, input.summaryCaller, input.recoveryCaller,
+    input.browserCaller].filter((value) => value !== undefined).length > 1)
+    throw new Error('TDMS_NATIVE_EVIDENCE_ACTOR_INVALID');
   if (input.runtime) {
     const context = assertTdmsRuntimeTaskContext(input.runtime.context);
     const principal = input.runtime.principal,
@@ -353,6 +364,9 @@ export async function assertTdmsNativeInTransaction(
     ...(browser === undefined
       ? {}
       : { browserCaller: structuredClone(browser) }),
+    // Only this opaque handle preserves identity. All payloads retain their
+    // defensive copies; a JSON/clone/spread handle has no provider authority.
+    ...(input.reviewCaller === undefined ? {} : { reviewCaller: input.reviewCaller }),
   });
 }
 

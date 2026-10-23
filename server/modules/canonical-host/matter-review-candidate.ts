@@ -16,7 +16,7 @@ import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { materializeJobAidWork } from './jobaid-problem-work';
 import { isJobAidMethodBinding } from './jobaid-method-pack';
 import type { JobAidMethodBinding } from '@shared/jobaid-problem-assessment.interface';
-import { isReviewRuntimeActivity } from '../action-attempt/review-evidence-activity';
+import { isReviewAssessmentReadActivity, isReviewRuntimeActivity } from '../action-attempt/review-evidence-activity';
 import {
   parsePersistedMatterReviewScope,
   type PersistedMatterReviewScope,
@@ -464,7 +464,9 @@ export function resolvedReviewSourceRefs(
     const item = object(valueItem);
     // Runtime observations share the append-only activity log but can never
     // satisfy a citation, even if they contain an unexpected sourceRefIds key.
-    if (isReviewRuntimeActivity(item)) continue;
+    // Native READs have their own receipt/body verifier and decision-read union.
+    // Never reinterpret them as a frozen artifact resolution.
+    if (isReviewRuntimeActivity(item)||isReviewAssessmentReadActivity(item)) continue;
     if (
       item.kind !== 'CONTEXT_PREPARED' &&
       item.kind !== 'SOURCE_REFS_RESOLVED'

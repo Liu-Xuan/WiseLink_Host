@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 普通 Hosted 分析的官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c234       # 仅普通 Hosted 分析的实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c235       # 仅普通 Hosted 分析的实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -418,6 +418,12 @@ Host 在相同 ReviewConversation、revision 和 fresh 授权来源目录下延�
 MCP 入参、认证和候选提交语义不变。
 
 ## INTERACTIVE_REVIEW candidate
+
+新 c5 TDMS runtime addon 的十键 sealed context、metadata-only 目录、原始 READ packet 与模型 receipt 展示副本
+见 [Review TDMS 有界读取](tdms-review-native-read.md)。它与原九键 saved-only addon 可辨识且互斥；
+普通 tdmsContext 仍不能用于 PROBLEM_REVIEW。模型只见 `{schemaVersion,mode,projection}`，不见 binding、
+turn/request/work 控制身份；fresh receipt 仅在模型副本省略当前 taskContextRef，原 Host receipt 不变。
+合法 fresh native 引用只扩本次 delta catalog，原 sealed task、previousWork 与 artifact/attachment 语义不变。
 
 模型输出 schema：`wiselink.3_1.review_turn_candidate.v1.c3`。
 

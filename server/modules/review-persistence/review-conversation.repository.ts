@@ -12,10 +12,12 @@ import {
   eq,
   inArray,
   isNull,
+  isNotNull,
   like,
   lt,
   notExists,
   sql,
+  type SQL,
 } from 'drizzle-orm';
 
 import type {
@@ -107,6 +109,20 @@ export interface PersistedReviewTurn {
   assistantCandidate: ReviewTurnAssistantCandidate | null;
   createdAt: Date;
 }
+
+export type ReviewTurnAuthorizationMetadata = Pick<PersistedReviewTurn,
+  'reviewTurnId' | 'reviewConversationId' | 'requestId' | 'inputRevision' |
+  'reviewScope' | 'purpose' | 'expectedInputRevision' | 'executionRequested' |
+  'overallRequested' | 'selectedEvaluationItemId' | 'targetIssueKeys'> & {
+    jobAidWorkingUpdate: {status:string;workRevisionRef:string} | null;
+  };
+
+type ActorBoundTurnInput = {
+  reviewConversationId: string;
+  tenantId: string;
+  actorId: string;
+  workItemId: string;
+} & ({requestId: string} | {reviewTurnId: string});
 
 export interface PersistedReviewConversationAggregate {
   conversation: PersistedReviewConversation;
@@ -203,6 +219,13 @@ export class ReviewConversationRepository {
       executor,
     );
     return { conversation, turns };
+  }
+
+  /** Pointer discovery needs only the already-authorized WorkItem's owner. */
+  async loadOpenClawWorkItemOwner(input:{tenantId:string;workItemId:string}) {
+    const [row]=await this.db.select({actorId:workItem.requestedByUserId}).from(workItem).where(and(
+      eq(workItem.tenantId,input.tenantId),eq(workItem.workItemId,input.workItemId),isNotNull(workItem.projectionJson))).limit(1);
+    return row??null;
   }
 
   /** Only explicit automatic requests are eligible; old unanswered turns stay untouched. */
@@ -400,6 +423,29 @@ export class ReviewConversationRepository {
     });
   }
 
+  /** Existing bound-role/RLS checks, but never return turn text, attachments or
+   * assistant results while establishing the current Review authorization. */
+  async loadOpenClawTurnAuthorizationMetadata(input: {
+    reviewConversationId: string; requestId: string; tenantId: string;
+    actorId: string; workItemId: string;
+  }): Promise<{
+    conversation: PersistedReviewConversation;
+    turn: ReviewTurnAuthorizationMetadata;
+  } | null> {
+    return this.loadActorBoundOpenClawTurn(input, this.db, true);
+  }
+
+  async loadSuccessorOverallAuthorizationMetadata(input: {
+    reviewTurnRef:string;tenantId:string;actorId:string;workItemId:string;
+  }) {
+    const [pointer]=await this.db.select({reviewConversationId:reviewTurn.reviewConversationId})
+      .from(reviewTurn).where(and(eq(reviewTurn.reviewTurnId,input.reviewTurnRef),
+        eq(reviewTurn.tenantId,input.tenantId),eq(reviewTurn.actorId,input.actorId),eq(reviewTurn.workItemId,input.workItemId))).limit(1);
+    if(!pointer) return null;
+    return this.loadActorBoundOpenClawTurn({...input,reviewConversationId:pointer.reviewConversationId,
+      reviewTurnId:input.reviewTurnRef},this.db,true);
+  }
+
   /** The immediately preceding turn, including failures; never skip back to an older session. */
   async loadPreviousOpenClawTask(input: {
     reviewConversationId: string;
@@ -558,16 +604,22 @@ export class ReviewConversationRepository {
   }
 
   private async loadActorBoundOpenClawTurn(
-    input: {
-      reviewConversationId: string;
-      tenantId: string;
-      actorId: string;
-      workItemId: string;
-    } & ({ requestId: string } | { reviewTurnId: string }),
+    input: ActorBoundTurnInput,
+    executor?: DatabaseExecutor,
+    metadataOnly?: false,
+  ): Promise<{conversation: PersistedReviewConversation; turn: PersistedReviewTurn} | null>;
+  private async loadActorBoundOpenClawTurn(
+    input: ActorBoundTurnInput,
+    executor: DatabaseExecutor,
+    metadataOnly: true,
+  ): Promise<{conversation: PersistedReviewConversation; turn: ReviewTurnAuthorizationMetadata} | null>;
+  private async loadActorBoundOpenClawTurn(
+    input: ActorBoundTurnInput,
     executor: DatabaseExecutor = this.db,
+    metadataOnly = false,
   ): Promise<{
     conversation: PersistedReviewConversation;
-    turn: PersistedReviewTurn;
+    turn: PersistedReviewTurn | ReviewTurnAuthorizationMetadata;
   } | null> {
     assertOpenClawActorContext(input.actorId);
     // The hosted APaaS adapter may route a raw execute and a subsequent ORM
@@ -615,23 +667,25 @@ export class ReviewConversationRepository {
         bound_turn.turn_no AS "turnNo",
         bound_turn.request_id AS "requestId",
         bound_turn.input_revision AS "inputRevision",
-        bound_turn.user_message AS "userMessage",
+        ${metadataOnly ? reviewAuthorizationInput(sql`bound_turn.user_message`) : sql`bound_turn.user_message`} AS "userMessage",
         bound_turn.review_scope_json AS "reviewScopeJson",
         bound_turn.supplied_input_type AS "inputType",
         bound_turn.supplied_adoption_status AS "adoptionStatus",
-        bound_turn.supplied_candidate_text AS "candidateText",
-        bound_turn.response_type AS "responseType",
-        bound_turn.assistant_response AS "assistantResponse",
-        bound_turn.source_refs_json AS "sourceRefsJson",
-        bound_turn.missing_inputs_json AS "missingInputsJson",
-        bound_turn.candidate_evidence_refs_json AS "candidateEvidenceRefsJson",
-        bound_turn.review_action_draft_json AS "reviewActionDraftJson",
-        bound_turn.affected_item_ids_json AS "affectedItemIdsJson",
-        bound_turn.warnings_json AS "warningsJson",
-        bound_turn.result_provenance_json AS "resultProvenanceJson",
-        bound_turn.result_content_hash AS "resultContentHash",
-        bound_turn.action_attempt_id AS "actionAttemptId",
-        bound_turn.assistant_completed_at AS "assistantCompletedAt",
+        ${metadataOnly ? reviewAuthorizationInput(sql`bound_turn.supplied_candidate_text`) : sql`bound_turn.supplied_candidate_text`} AS "candidateText",
+        ${metadataOnly ? sql`NULL` : sql`bound_turn.response_type`} AS "responseType",
+        ${metadataOnly ? sql`NULL` : sql`bound_turn.assistant_response`} AS "assistantResponse",
+        ${metadataOnly ? sql`NULL` : sql`bound_turn.source_refs_json`} AS "sourceRefsJson",
+        ${metadataOnly ? sql`NULL` : sql`bound_turn.missing_inputs_json`} AS "missingInputsJson",
+        ${metadataOnly ? sql`NULL` : sql`bound_turn.candidate_evidence_refs_json`} AS "candidateEvidenceRefsJson",
+        ${metadataOnly ? sql`NULL` : sql`bound_turn.review_action_draft_json`} AS "reviewActionDraftJson",
+        ${metadataOnly ? sql`NULL` : sql`bound_turn.affected_item_ids_json`} AS "affectedItemIdsJson",
+        ${metadataOnly ? sql`NULL` : sql`bound_turn.warnings_json`} AS "warningsJson",
+        ${metadataOnly ? sql`jsonb_build_object('status',bound_turn.result_provenance_json::jsonb#>'{jobAidWorkingUpdate,status}',
+          'workRevisionRef',bound_turn.result_provenance_json::jsonb#>'{jobAidWorkingUpdate,workRevisionRef}')::text`
+          : sql`bound_turn.result_provenance_json`} AS "resultProvenanceJson",
+        ${metadataOnly ? sql`NULL` : sql`bound_turn.result_content_hash`} AS "resultContentHash",
+        ${metadataOnly ? sql`NULL` : sql`bound_turn.action_attempt_id`} AS "actionAttemptId",
+        ${metadataOnly ? sql`NULL` : sql`bound_turn.assistant_completed_at`} AS "assistantCompletedAt",
         bound_turn.created_at AS "turnCreatedAt"
       FROM actor_context
       CROSS JOIN LATERAL (
@@ -902,7 +956,9 @@ export class ReviewConversationRepository {
       );
       return null;
     }
-    return { conversation, turn: persistedTurn(actorBoundTurn(row)) };
+    return {conversation, turn: metadataOnly
+      ? actorBoundTurnAuthorizationMetadata(row)
+      : persistedTurn(actorBoundTurn(row))};
   }
 
   async loadTurnById(
@@ -1842,6 +1898,37 @@ function actorBoundConversation(
   };
 }
 
+function actorBoundTurnAuthorizationMetadata(
+  row: ActorBoundReviewTurnRow,
+): ReviewTurnAuthorizationMetadata {
+  if (!row.reviewTurnId || !row.turnReviewConversationId || !row.requestId ||
+      row.inputRevision === null || !row.userMessage || !row.candidateText) {
+    throw new Error('REVIEW_OPENCLAW_TURN_BINDING_PARTIAL');
+  }
+  const turnInput = decodeEngineerInput(row.userMessage);
+  const suppliedInput = decodeEngineerInput(row.candidateText);
+  if (canonicalJson(turnInput) !== canonicalJson(suppliedInput)) {
+    throw new Error('REVIEW_ENGINEER_INPUT_BINDING_DRIFT');
+  }
+  const update=row.resultProvenanceJson?parseJsonRecord(row.resultProvenanceJson):null;
+  return {
+    reviewTurnId: row.reviewTurnId,
+    reviewConversationId: row.turnReviewConversationId,
+    requestId: row.requestId,
+    inputRevision: row.inputRevision,
+    reviewScope: parsePersistedMatterReviewScope(row.reviewScopeJson),
+    purpose: turnInput.purpose,
+    expectedInputRevision: turnInput.expectedInputRevision,
+    executionRequested: turnInput.executionRequested === true,
+    overallRequested: turnInput.overallRequested,
+    selectedEvaluationItemId: turnInput.selectedEvaluationItemId ?? null,
+    targetIssueKeys: turnInput.targetIssueKeys,
+    jobAidWorkingUpdate:update && typeof update.status==='string' &&
+      typeof update.workRevisionRef==='string' && update.workRevisionRef.trim()
+      ?{status:update.status,workRevisionRef:update.workRevisionRef}:null,
+  };
+}
+
 function actorBoundTurn(row: ActorBoundReviewTurnRow): SelectedReviewTurn {
   if (
     !row.reviewTurnId ||
@@ -1935,6 +2022,22 @@ function actorPersistedTurn(
           ),
     createdAt: persistedTimestamp(row.createdAt, 'reviewTurn.createdAt'),
   };
+}
+
+/** Compare both persisted input bindings without releasing their prose or
+ * attachments. The full turn is loaded only after the native admission gate. */
+function reviewAuthorizationInput(column: SQL): SQL {
+  return sql`CASE WHEN left(${column},5)='WLR7:' THEN 'WLR7:' ||
+    jsonb_strip_nulls(jsonb_build_object(
+      'schemaVersion','wiselink.3_1.review_engineer_input.v1.c7',
+      'userMessage','Review authorization metadata','attachments','[]'::jsonb,
+      'purpose',substring(${column} from 6)::jsonb->'purpose',
+      'executionRequested',substring(${column} from 6)::jsonb->'executionRequested',
+      'expectedInputRevision',substring(${column} from 6)::jsonb->'expectedInputRevision',
+      'overallRequested',substring(${column} from 6)::jsonb->'overallRequested',
+      'targetIssueKeys',substring(${column} from 6)::jsonb->'targetIssueKeys',
+      'selectedEvaluationItemId',substring(${column} from 6)::jsonb->'selectedEvaluationItemId'))::text
+    ELSE '' END`;
 }
 
 function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {

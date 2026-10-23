@@ -438,3 +438,41 @@ fresh origin main于 `2026-10-23T03:51:56.859360+00:00` 实际读回 `2bc6ac71b2
 新定向只读诊断不重做已通过链路。05:56:50.939Z同一批准AD正常GET original，实际200/application/pdf、208087字节、%PDF-1.5，05:58:05.541Z受控PDF reader11页/第1页canvas截图可读；历史500原因未获，不归因OAuth。Aily保持ENV_UNVERIFIED；05:58:31.820Z挂载1355×661.75 iframe并GET，05:59:01.822Z确切console报SDK非阻断Iframe ready timeout，05:59:11.521Z读回该警告，原生AX/截图仍灰白。后续同次请求CDP在06:00:14.923Z遭Browser Use paused-document-response工具guard，未获iframe终态，不能归因网络/CSP/权限或排除工具混杂。SDK0.0.12的resolve不是ready，沿用既有SDK/授权，不造新协议或自动登录。06:03:03.838Z工具提示用户改变Chrome状态后停止操作；未追加加载、聊天、模型、SAVE或正式采用。
 
 此后仅更新8个协调/验证记录及由既有生成器导出的同一M2 HTML/snapshot。原9d正常hook/完整build、70/19/3/25测试保持原source/contract/执行时间，没有重跑产品测试/build；原144条证据逐值保留，新增本批发布、历史观察、恢复与定向诊断，失败/inconclusive独立。M1稳定ID与旧接线不变，M3继续父读模型投影。私有业务对象、原响应、trace和像素仅在恢复证据目录，不进入公有记录。当前UI正式发布与这些records后继的Git同步分别记账。
+
+### 2026-10-23 ACK、Review、Native 源码恢复与新制品准备
+
+当前正常新源码 `16b727a3a440d9c164cbbc6c29a97836229709dc` 的父提交为持久 Source126 `1261762d45f41b148d21d20775427fb70f3c3a6a`，tree `93c76d13637de125f9ea128e5a8f5da287ef8123`，107个产品/测试/迁移变更文件。正常pre-commit按原配置执行lint/类型/stylelint，未旁路。本记录以已接受UI E2/D2最新八文件及其M1基线串接；已发布De1d的正式release、四签/M3/Wiki、原文定位与后续PDF、Aily失败范围不变，155条原evidence逐值保留。E2/D2只记录Git同步，实际线上仍De1d/release7699717588535888913。
+
+恢复逐条使用原成功FileChange、可证明纯文件文本写入和原binary diff，未执行旧shell/DB/网络/测试来冒充原运行。ACK e9全树相等；SAVED ab5a在原Native02d投影后全树相等；BOUNDED 47文件原diff SHA256 `6e6998582a070aac5b9286bfff7728f3793df305dbe142588c991d999405000e`、status三文件 `c11ce5ca4eecd615df0a706d388e9736e0e3a82521e050095e782327a70f478e`、最终ae025两文件 `154819376538ac772c6aa57f8a734fb0f3dcda32a00f8ceda7d0b717a9f79a05` 均与原输出逐字节相等。Native141文件精确子树 `f9bece5ba22765af5f24bd5f6798607355a94bf4`；UI21和M2两文件等于已接受blob，并保留e9的两个客户端/一个shared ACK变化。Root独立复核107物理文件hash/bytes/blob/mode。旧53d整树及其九记录没有伪造恢复，当前是准确源码上的新提交映射。
+
+|范围|实际消费者与验证边界|
+|---|---|
+|ACK e9|可信receipt一次读、授权projection准确tuple/hash/bytes；四字段独立原请求ACK，父hook出现/替换/null；旧ACK可与较新inner状态并列，无历史首次可读回填。|
+|SAVED Review ab5a|真实UPDATE_ASSESSMENT、正文前Source/own-approval、opaque caller/handed TX；原保存carrier复用，工作与Review receipt原子APPLIED/UNCHANGED，browser/summary同版工作。|
+|BOUNDED Review 2e4d及status0d13|真实operationRef冻结十键context；READ审计receipt/准确journal先于packet，后继Overall自己的attempt/lease与准确Review work；COMMITTING拒普通迟到活动。|
+|Native b972/c235与最终ae025|正常consumePendingReviewTurn/driver封存恢复，无替代runTurn；ae025仅使新Host READ响应保留strict raw carrier，通用registry及Native guard不改。|
+
+|原验证|原实际结果与范围|
+|---|---|
+|unit005/006/007/008|分别3suite/39pass、13pass/78显式skip、3suite/60pass、1pass/61显式skip；范围重叠，不累计为互异案例。status修正另19pass，非重复PG。|
+|PG021|17子场景加外层18pass；BOUNDED READ/journal/APPLIED/UNCHANGED/browser/summary/admission/status/control/current-source/cutoff/max=1，早于sealed-expiry扩展。|
+|PG024/025|各5pass/3fail；各自已接受的UNCHANGED及SAVE/丢响应恢复子场景保留，旧失败不删，fixture问题后续修正。|
+|PG026|6子场景加外层7pass；真实进程内注册handler/受限角色/handed max=1，自有隔离PG，合成Gateway；原receipt跨permissionRevision拒绝、后继CAS前后构造过期、准确fence/journal且无续租。|
+|PG027→028→ae025|027未到过期恢复便REQUIRES_ATTENTION；028真实READ已成功，原Native guard拒raw/display形状额外locator:null，不能称恢复通过；ae025是该新endpoint的窄修复。失败日志SHA分别60e6537a1f3d0c85260934560e2fde61122ba4a06429144c8284490ab3dd9594、9cb5a36907c5e1688ea770c4644d6ede77c2f72579d8df32f838c6eee9b2f136。|
+|最终PG029|5子例加外层6pass/0fail，日志SHA a0f790a06dd9a951ad0155b042299799445b99ae7fa8a7541d3c1a32fc5a6742。真实正常consumer和handler、自有受限隔离PG与合成模型边界；原回滚→同checkpoint后续trigger一次准确封存SAVE落地/终态响应丢失→再一trigger同payload对账SUCCEEDED→IDLE。|
+
+PG029初次模型wrapper1、合成Gateway2、Native READ1；commit共3次，分别原调用和两个后续独立获权trigger各至多一次，不在单trigger内重复。三个resultJson逐字节一致并匹配封存hash；原回滚不留新工作/Review receipt，最终只一份新工作。恢复不再模型/READ/context-body/heartbeat/cancel，receipt/journal不增长。原17个checkpoint准确字节曾由实际P2核对；现共37个原文件本体丢失，仅保留原manifest与校验输出，不建同名假原件。较早handoff的“normal consume pending”只代表较早时点。
+
+PG024/025/026/029的expired由隔离fixture管理员UPDATE既有lease_expires_at/deadline_at到过去构造，未等待生产30/60分钟自然TTL。55.662/85.902/54.666秒和PG029 82.848216958秒是整用例耗时。lease/token/generation/deadline/journal/hash不变断言从fixture UPDATE以后算；原终态清理可以清token/lease expiry。原Source撤权后重授权改变permissionRevision，旧receipt保持拒绝。原测试不重跑、不移植执行SHA/时刻/契约到16b；未知原执行时间或精确执行commit在新索引保持null，以已审源字节及独立适用说明连接。
+
+丢失旧dist/ZIP后，在clean16b一次正常 `npm run build`，开始2026-10-23T06:30:37.019266+00:00，结束06:31:26.761553+00:00，exit0；wrapper49.744秒，脚本打印46.142秒。真实完整node_modules只从既有依赖复制，没有install/重新解析；缓存沿原npm配置。四固定子日志均本轮新mtime，依赖裁剪477required/477copied/0failed，是包数。后端immutable sourceCommit16b/buildTime06:30:58.379Z；前端编译AST确认不可变配置常量及getter绑定16b/buildTime06:30:47.383Z，没有执行浏览器模块冒充真实运行。22条非致命tsconfig-paths诊断都指向候选外历史工作区，连同MODULE_TYPELESS、chunk/annotation/import提示保留，未压警告、改配置或重build。
+
+同一clean16b正常 `node scripts/package-wiselink-openclaw-skill.mjs`，06:34:49.538706–06:35:04.086048Z，exit0，含publisher自身必需skill检查；不凭无输出推算测试条数。新 `wiselink-research-and-synthesize@r09.c235` 包1,050,216bytes、141文件、SHA256 `992f83b0bdf3338ee0db27dfc99a1c8bbfa69b3db06d8fdb71f079b09ef538d9`，manifest/source/git subtree相符，Root独立逐项bytes/SHA及CRC通过。ZIP本身未编码Unix mode，Git/物理source mode另由恢复证明；首次额外核验误要求ZIP属性mode而失败的检查保留，没有改包。旧53d包94e924c4…仅留历史核验，不能把新包冒称旧原件。本轮不重复产品全套测试。
+
+三policy原SQL `migrations/candidates/tdms_review_saved_context_locks.hosted.sql` 仍未实施：review_conversation、identity_subject_mapping、assessment_work_revision的UPDATE USING复用actor/tenant/active mapping，WITH CHECK(false)，无新增GRANT/ALL/definer。一次正式CLI只读catalog06:32:26–06:32:29Z成功，四个目标角色/表组合存在、三表RLS=true/FORCE=false、目标policy全缺、对应可组合permissive UPDATE/ALL=0；没有读取业务行、加锁或执行DDL。SQL自身保留相同前提检查，实际DDL须独立授权。
+
+Native最后已证实安装c234；当前安装/cron/inflight尚未完整获准预检，开发会话streaming=false/queue0不等于runtime空闲。交付前需正常取得这些当前读回，再明确收尾在途和一次跨端切换，保留真实工作、原件与检查点，不改别的job或直接写业务JSON。新Host后端推送/发布、Native安装、调度写、DDL、真实模型/READ/SAVE未获本批授权；准备及本地检查不算实际动作。P1 SEM工程事实、P3真实Source/grant/set/在线刷新和未结构化撤销取代/V44、P4真实反馈、P5真实变化与内容验收仍按既有缺口继续。正式采用/Review确认始终由Host决定。
+
+恢复与新制品证据仅位于项目忽略目录 `private:tmp/recovery-20261023/host/`：FINAL_RECOVERY_HANDOFF、原阶段diff/manifest、原日志抽取索引、正常source hook、new-artifacts-16b727以及preflight-17b。新时间只表示本轮恢复/记录/构建/打包或真实只读查询；旧观察原时间/source/状态不变。M1附录E.7只补实际链路职责，M2继续九binding/四列和原155证据，M3不把客户端观察时刻当队列ACK或首次可读事件。
+
+本轮仅针对记录变更验证：既有snapshot QA 39/39；实际生成HTML在JSDOM载入177条证据/9条接线，P3＋company＋V53＋deployment、P0＋save.finish＋V08＋runtime交叉筛选及节点/关系到准确binding下钻均通过，diagnostics空。接线显示源码范围匹配；旧测试缺执行版本/契约和新build的执行时契约差异可见，适用说明不计当前覆盖；部署/真实运行仍分别尚未部署/尚未核对。筛选不改selection，13/47/54/10目录及155旧证据逐值不变。正常生成时间是本轮时间，不替换原观察。产品套件与build没有为该记录变化重跑。具体回执在private:tmp/recovery-20261023/host/records-preparation/，当前九文件差异先交Root审阅，尚未提交或同步。

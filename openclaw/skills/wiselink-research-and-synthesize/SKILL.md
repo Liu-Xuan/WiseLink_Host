@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c234`
+- Skill：`wiselink-research-and-synthesize@r09.c235`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -477,7 +477,7 @@ Host 已记录的业务失败或 exact attempt 已确认取消，返回 REQUIRES
 避免旧业务失败触发 cron 的一小时退避并阻断新交互。未确认的取消或消费器故障仍明确报错。
 先发布支持此可选进度输入与回读的 Host，再安装 c36；完整部署步骤见自动领取参考。
 
-当前 Review 驱动使用以下六个工具；Aily 只在 Host 声明本轮用户授权可用的 CHAT 中提供：
+普通 Review 驱动使用以下六个工具；Aily 只在 Host 声明本轮用户授权可用的 CHAT 中提供：
 
 ```text
 begin_review_turn
@@ -487,6 +487,13 @@ query_review_aily
 get_action_attempt_status
 commit_review_turn_candidate
 ```
+
+带严格 `BOUNDED_NATIVE_READ` addon 的新 c5 任务还要求可选 `read_review_native_sources` capability。
+模型仍只请求现有 `read_wiselink_review_sources`，driver 先完整核对 refs，再把普通来源与 native 来源分流；
+整体最多 100 refs，native 子集最多 96，超限在任何 Host READ 前拒绝。目录不等于正文或 READ。
+原 packet、receipt 和封存 task 保持；模型只得到按指定路径去控制字段的展示副本，每次 READ 回包及缓存/replay
+均执行原控制值 guard。旧 saved-only 九键 addon 不授予新 READ，旧 c5 与 COMMITTING 恢复保持原路径。
+这项源码能力须配套 Host 和新安装包，不表示已安装 c234 支持；准确协议见 [Review TDMS 有界读取](references/tdms-review-native-read.md)。
 
 这些 Host 工具只能由 `scripts/run-hosted-review-turn.mjs` 的确定性外部驱动调用，不得由对话模型直接调用。
 
@@ -537,7 +544,7 @@ begin_review_turn({reviewConversationRef, requestId})
 → get_review_turn_context({attemptRef})
 → 驱动把最小上下文与可用资料目录交给托管 profile 当前选定模型
 → 模型请求 read_wiselink_review_sources({sourceRefIds})
-→ 驱动执行 read_source_refs({attemptRef, sourceRefIds}) 并返回实际片段 [按需重复]
+→ 驱动执行 read_source_refs；新runtime addon的native refs另走read_review_native_sources [按需重复]
 → 模型调用 return_wiselink_review_candidate 返回最终候选
 → 驱动绑定 review_turn_candidate.v1.c3
 → validator + full ResultEnvelope
@@ -631,7 +638,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - 普通模型结果的 `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断；上述 Host saved-work reconciliation 分支诚实记录 `modelVersion=null`
-- `skillVersion=wiselink-research-and-synthesize@r09.c234`
+- `skillVersion=wiselink-research-and-synthesize@r09.c235`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

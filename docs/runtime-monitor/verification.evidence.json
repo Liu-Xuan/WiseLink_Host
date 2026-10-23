@@ -2765,6 +2765,590 @@
       "deploymentRef": "7699717588535888913",
       "summary": "公有E从公开GitHub指定分支独立恢复，未复用私有对象、无alternates，私有D及main对象不存在；私有D从origin单分支depth2恢复，E/D完整tree准确相同且恢复时clean。原失败HTTP/2 clone终止后仅命令局部HTTP/1.1重试成功。原工具事件逐字节恢复，文本/图像副本与丢失原文件明确分层。",
       "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/private-repository-restoration.private.json"
+    },
+    {
+      "id": "review-native.recovered.source",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:review-native-recovery",
+      "observedAt": "2026-10-23T06:52:10.833850+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "原ACK全树/SAVED投影全树、47+3+2文件原diff、UI/M2目标blob及Native141文件子树精确；Root逐项复核107物理文件hash/bytes/blob/mode，新正常源码16b，非原53d整树。",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "wiki.saved-reading",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V30",
+        "V53"
+      ],
+      "originalReportRef": "private:tmp/recovery-20261023/host/FINAL_RECOVERY_HANDOFF.json",
+      "newSourceTree": "93c76d13637de125f9ea128e5a8f5da287ef8123"
+    },
+    {
+      "id": "review-native.recovered.ack",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:review-native-recovery",
+      "observedAt": "2026-10-23T06:52:10.833850+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "可信receipt单次读与准确projection tuple/hash/bytes；四字段原请求ACK独立于inner状态，父hook出现/替换/null，旧ACK可与后继RUNNING/COMMITTING并列；没有回填历史Ready或首次可读。",
+      "bindingIds": [
+        "save.finish",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10"
+      ],
+      "originReviewedRevision": "e9cd5e6a35da11549200087f0f1f8a1c768ee0b2"
+    },
+    {
+      "id": "review-native.recovered.review",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:review-native-recovery",
+      "observedAt": "2026-10-23T06:52:10.833850+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "真实UPDATE_ASSESSMENT、Source/own-approval-before-body、opaque caller/handed TX；SAVED与BOUNDED、receipt/journal-before-packet、原子APPLIED/UNCHANGED和准确Overall工作/独立lease；sealed恢复只复用原封存，不新READ/model/续租。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "research.overall",
+        "wiki.saved-reading"
+      ],
+      "scenarioIds": [
+        "V12",
+        "V24",
+        "V53"
+      ],
+      "originReviewedRevision": "ae02525147a01e7934a3901d51d05571b93f7dc9"
+    },
+    {
+      "id": "review-native.recovered.native-source",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:review-native-recovery",
+      "observedAt": "2026-10-23T06:52:10.833850+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "正常consumer/driver和封存检查点恢复，raw-carrier endpoint窄修复且通用registry/Native guard保持；Native141文件精确f9be子树，新c235尚未安装。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "nativeSourceTree": "f9bece5ba22765af5f24bd5f6798607355a94bf4",
+      "originReviewedRevision": "b972d6f8f0137deb9ef24eaa139da6d20f972dd9"
+    },
+    {
+      "id": "review-native.recovered.unit-005",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "runtime addon/own-approval + activity/status；原结果39pass；各run范围重叠，不累计为互异案例。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "testLevel": "unit",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/unit-005.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.unit-006",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "successor authorization targeted selection；原结果13pass / 78显式skip；各run范围重叠，不累计为互异案例。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "testLevel": "unit",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/unit-006.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.unit-007",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "lifecycle finite controls + runtime addon + status；原结果60pass；各run范围重叠，不累计为互异案例。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "testLevel": "unit",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/unit-007.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.unit-008",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "pending/busy affected selection；原结果1pass / 61显式skip；各run范围重叠，不累计为互异案例。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "testLevel": "unit",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/unit-008-pending.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.unit-status-fix",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "原有限successor status修正单套19pass，PG未为这次有限status修正重跑。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10"
+      ],
+      "testLevel": "unit",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/unit-009-successor-status.log",
+      "logSha256": "91202d55d3926aeb27c0638a9491136d177dae51ee65b3def9836be605f9d328",
+      "reviewedProductRevision": "0d13a2c4afc46af93cb70978d1ee91ffa499ae52"
+    },
+    {
+      "id": "review-native.recovered.pg-021",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "原18pass/0fail；complete bounded READ/journal/APPLIED/UNCHANGED/browser/summary/admission/status/control/current-source/cutoff/max=1 chain before sealed-expiry extension 自有隔离PG/合成边界；旧失败保持。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-021.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.pg-024",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "原5pass/3fail；expired COMMITTING UNCHANGED exact sealed snapshot without another work version, 55.662s; all failures retained； expired由隔离fixture UPDATE既有lease/deadline到过去构造，耗时不是自然TTL等待；不变断言从fixture置过期后算。 自有隔离PG/合成边界；旧失败保持。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-024-expired.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.pg-025",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "原5pass/3fail；expired COMMITTING Review rollback -> normal pending/begin/status -> SAVE -> lost terminal response -> same payload reconciliation, 85.902s; failures are fixture issues corrected in pg026； expired由隔离fixture UPDATE既有lease/deadline到过去构造，耗时不是自然TTL等待；不变断言从fixture置过期后算。 自有隔离PG/合成边界；旧失败保持。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-025-expired-save.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.pg-026",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "原7pass/0fail；actual Native two-round Gateway -> real registered Host MCP READ/SAVE; old receipt grant-generation rejection; successor expired before CAS and after own CAS, same fence/receipt/journal/no renewed lease； expired由隔离fixture UPDATE既有lease/deadline到过去构造，耗时不是自然TTL等待；不变断言从fixture置过期后算。 自有隔离PG/合成边界；旧失败保持。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-026-grant-and-successor.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.pg-027",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "正常consumer未到过期恢复即REQUIRES_ATTENTION且无结果；不计恢复成功，后续PG028/ae025/PG029按各自来源记录。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-027-normal-native-consume.log",
+      "logSha256": "60e6537a1f3d0c85260934560e2fde61122ba4a06429144c8284490ab3dd9594"
+    },
+    {
+      "id": "review-native.recovered.pg-028",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "实际READ成功，原Native guard正确拒raw/display正文差异locator:null；没有完成封存恢复。最终ae025只改新Host endpoint为strict raw carrier，原guard未放宽。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-028-native-consume-diagnostic.log",
+      "logSha256": "9cb5a36907c5e1688ea770c4644d6ede77c2f72579d8df32f838c6eee9b2f136",
+      "diagnosticSha256": "822963fd8bb64b7f259fad36ba9268444a52883c07e718fd076d6b66ab04c412"
+    },
+    {
+      "id": "review-native.recovered.pg-029",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "最终5子例+外层6pass/0fail；正常Native consumer/真实进程内注册MCP/受限角色RLS/handed max=1与合成模型边界。模型wrapper1/Gateway2/READ1，三次同payload commit为原调用和两个后续独立trigger各至多一次；回滚无工作，最终仅一份新工作，后续IDLE。恢复不新model/READ/context-body/heartbeat/cancel。82.848216958秒为整用例。 expired由隔离fixture UPDATE既有lease/deadline到过去构造，耗时不是自然TTL等待；不变断言从fixture置过期后算。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-029-native-raw-carrier.log",
+      "logSha256": "a0f790a06dd9a951ad0155b042299799445b99ae7fa8a7541d3c1a32fc5a6742",
+      "reviewedProductRevision": "ae02525147a01e7934a3901d51d05571b93f7dc9",
+      "reviewedNativeRevision": "b972d6f8f0137deb9ef24eaa139da6d20f972dd9"
+    },
+    {
+      "id": "review-native.recovered.build-16b",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:recovered-source-normal-build",
+      "observedAt": "2026-10-23T06:31:26.761553+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "clean16b一次正常完整build成功，四子日志新鲜；双端immutable sourceCommit精确16b，477/477为依赖复制数。候选外历史工作区22条非致命tsconfig-paths及其余提示保留，不重构/重build。",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "wiki.saved-reading",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V30"
+      ],
+      "testLevel": "integration",
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "执行时M1契约哈希保持Source126；本轮仅追加记录/接线说明，稳定catalog和产品/build输入不变，不重写成新契约执行。",
+      "originalReportRef": "private:tmp/recovery-20261023/host/new-artifacts-16b727/build/verification.json"
+    },
+    {
+      "id": "review-native.recovered.publisher-16b",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:native-c235-publisher",
+      "observedAt": "2026-10-23T06:35:04.086048+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "正常c235 publisher及其必需内建检查一次成功；141文件/1050216bytes，新包SHA256 992f83b0bdf3338ee0db27dfc99a1c8bbfa69b3db06d8fdb71f079b09ef538d9，Root独立CRC/逐条bytes/SHA与manifest/source一致；ZIP未编码Unix mode，source mode另核。未安装，不推算检查用例总数。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V30"
+      ],
+      "testLevel": "integration",
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "源码与Native子树准确；publisher运行时原契约哈希保留，新M1只有追加记录。",
+      "originalReportRef": "private:tmp/recovery-20261023/host/new-artifacts-16b727/root-archive-verification.json"
+    },
+    {
+      "id": "review-native.recovered.lock-policy-catalog",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T06:32:29.496757+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "一次正式只读catalog成功：目标四角色/表组合存在、三表RLS=true/FORCE=false、三policy均缺、可组合permissive UPDATE/ALL=0。三条lock-only SQL仅候选，尚未DDL/新增授权；目录查询不证明真实Source/grant/set或业务运行。",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [
+        "V53"
+      ],
+      "originalReportRef": "private:tmp/recovery-20261023/host/preflight-17b/catalog-result.private.json"
+    },
+    {
+      "id": "review-native.recovered.host-release",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "线上仍为已发布UI De1d/release7699717588535888913，E2/D2仅records同步。本批ACK/Review新后端尚未push/release；新16b本地构建不是线上指纹。",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "wiki.saved-reading",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V30",
+        "V53"
+      ]
+    },
+    {
+      "id": "review-native.recovered.native-install",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "native:app_17c3zn24kv2",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "Native最后已证实安装c234；当前安装/cron/inflight尚未完整获准预检，17c开发会话空闲不等于runtime空闲；不得另路代发预检。c235仅新本地包，无安装/调度写。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V30",
+        "V53"
+      ]
+    },
+    {
+      "id": "review-native.recovered.business-runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "没有为本批新增真实模型/TDMS READ/SAVE或正式采用；真实Source/grant/set/状态刷新、原文V44、未结构化撤销取代、SEM事实和内容级验收仍开放。已发布UI的155条旧观察按原source/time/status原样保留。",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "wiki.saved-reading",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V44",
+        "V53"
+      ]
     }
   ]
 }

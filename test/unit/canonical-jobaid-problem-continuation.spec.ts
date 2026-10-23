@@ -1214,6 +1214,10 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
             task(row.operationRef!).idempotencyKey === input.idempotencyKey,
         ) ?? null,
     ),
+    readRequestIdentity:jest.fn(async(input:{idempotencyKey:string})=>{
+      const row=[...rows.values()].find(value=>task(value.operationRef!).idempotencyKey===input.idempotencyKey);
+      return row?{operationRef:row.operationRef,status:row.status}:null;
+    }),
     reserve: jest.fn(async (input: ReserveActionAttemptInput) => {
       const operationRef = `AQ-CONTINUATION-${rows.size + 1}`;
       const actionAttemptId = `ATT-CONTINUATION-${rows.size + 1}`;
@@ -1351,6 +1355,9 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
 
 function successorHarness() {
   const h=harness();
+  // These ordinary-source unit fixtures contain no TDMS marker or carriers.
+  // The real Source/role/lease admission is exercised in the owned PG chain.
+  Object.assign(h.service,{nativeVerifier:{admitReview:async()=>null}});
   const exact=savedWork();
   h.work.listForRuntime.mockResolvedValue([exact]);
   h.current().integratedAssessment={status:'OVERALL_CANDIDATE_STALE',baseRules:{

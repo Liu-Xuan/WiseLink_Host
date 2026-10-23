@@ -92,6 +92,9 @@ export default function WorkItemRuntimeDiagnostic({
   read, workItemId, sessionGeneration, onRefresh, onOpenPanel, observationMode = 'live', environment,
 }: Props) {
   const scopeKey = `${sessionGeneration}:${workItemId}`;
+  const acknowledgement = read.data?.workItemId === workItemId &&
+    read.data.autoProcessingAcknowledgement?.workItemId === workItemId
+    ? read.data.autoProcessingAcknowledgement : null;
   const [selected, setSelected] = useState<{ scopeKey: string; ref: string } | null>(null);
   const work = read.data?.enabled && read.data.workItemId === workItemId ? read.data.current : null;
   const native = useMemo(() => savedNativeObservations(work), [work]);
@@ -112,7 +115,12 @@ export default function WorkItemRuntimeDiagnostic({
   ), [read.data, read.observedAt, read.error, read.isRefreshing, scopeKey, workItemId, observationMode, environment]);
   return (
     <section aria-label="当前事项运行诊断">
-      <p>显示本事项已保存的 TDMS 来源读取、JobAid 调查与综合消费关系；当前读回时间不代表 TDMS 实时有效或最新。就绪、首次可读与 ACK 时间尚未提供；已列事件时间不替代这些时间。</p>
+      <p>显示本事项已保存的 TDMS 来源读取、JobAid 调查与综合消费关系；当前读回时间不代表 TDMS 实时有效或最新。就绪与首次可读时间尚未提供；已列事件时间不替代这些时间。</p>
+      {acknowledgement ? <p className="mt-2 break-words text-sm" aria-label="外层自动处理 ACK">
+        外层自动处理 ACK（原请求 {acknowledgement.requestId}）：
+        <time dateTime={acknowledgement.acknowledgedAt}>{acknowledgement.acknowledgedAt}</time>。
+        此回执不表示后续调查或综合尝试已完成。
+      </p> : <p>外层自动处理 ACK 时间尚未提供。</p>}
       {read.error ? <p role="alert">诊断读取失败：{read.error}{runtime ? '。保留上次获权观察，尚未确认更新。' : ''}</p> : null}
       <WiseLinkRuntimeMonitor
         key={scopeKey}

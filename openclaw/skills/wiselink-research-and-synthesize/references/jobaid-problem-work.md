@@ -34,7 +34,7 @@ JA-AC 的严重性是 3/5/7/10，可能性是 10/7/5/3；Host 计算其乘积及
 
 ## 连续 Review 与消费者
 
-Review c5 沿用已有五个 Review 工具。文档和附件只经注册 SourceRef 阅读；方法条款单独提供，不能伪造为 Artifact/SourceRef。模型以 `jobAidWorkingDelta` 给出完整局部修订，普通回答可用 null。Host 在同一 actor 事务里追加工作并持久化回答，失败时一并回滚。它不执行 ReviewAction、正式采用、签署或发布。
+普通 Review c5 沿用已有 Review 工具。文档和附件只经注册 SourceRef 阅读；方法条款单独提供，不能伪造为 Artifact/SourceRef。新的有界 TDMS 任务使用严格十键 addon 与独立 `read_review_native_sources`，模型仍使用原 read function，由 driver 在原预算内分流；目录不等于 READ。保存依据复用仍使用原九键 saved-only addon。原 receipt、封存 task 和 Host 授权不改，精确规则见 [Review TDMS 有界读取](tdms-review-native-read.md)。模型以 `jobAidWorkingDelta` 给出完整局部修订，普通回答可用 null。Host 在同一 actor 事务里追加工作并持久化回答，失败时一并回滚。它不执行 ReviewAction、正式采用、签署或发布。
 
 页面、列表和 quicklook 读取最新保存工作；旧 Overall 明确标为基于更早版本。已封存的旧 Dynamic/Overall 页面继续读取原 artifact。AEO 的旧准则行投影在首版明确不支持新问题结果，返回 `JOBAID_PROBLEM_AEO_PROJECTION_UNSUPPORTED`，不能生成假 N/N 表格。
 

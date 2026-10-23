@@ -10,48 +10,31 @@ import {
 import type { TdmsSourceActor } from './tdms-runtime-delegation';
 import { canonical, identifier } from './tdms-source.validation';
 import { tdmsError } from './tdms-source.types';
+import { tdmsReviewBinding, type TdmsReviewNativeMetadata } from './tdms-review-delegation';
+import { storedTdmsRuntimeContext } from './tdms-stored-runtime-context';
 
 /** Original READ ownership is resolved from its saved task, not the current
  * browser reader. Shared readers keep their own current Source/object grants. */
 export async function tdmsSavedNativeContext(input: {
   database: PostgresJsDatabase;
-  evidence: AssessmentTdmsNativeEvidence;
+  evidence: AssessmentTdmsNativeEvidence | TdmsReviewNativeMetadata;
   actor: TdmsSourceActor;
   caller: Pick<
     TdmsNativeTransactionInput,
-    'browserCaller' | 'summaryCaller' | 'recoveryCaller'
+    'browserCaller' | 'summaryCaller' | 'recoveryCaller' | 'reviewCaller'
   >;
   objectAccess: CanonicalObjectAccessPort;
 }): Promise<TdmsRuntimeTaskContext> {
   const { database, evidence, actor, caller, objectAccess } = input;
-  interface TaskRow extends Record<string, unknown> {
-    taskContext: unknown;
-    workItemId: string | null;
-    documentVersionId: string | null;
-    actorUserId: string;
-    ownerUserId: string | null;
-  }
-  const query = sql`SELECT task_envelope_json::jsonb#>'{modelInput,tdmsContext}' AS "taskContext",
-    task_envelope_json::jsonb#>>'{modelInput,actorUserId}' AS "ownerUserId",
-    work_item_id AS "workItemId",document_version_id AS "documentVersionId",actor_user_id AS "actorUserId"
-    FROM action_attempt WHERE tenant_id=${actor.tenantId}
-      AND operation_ref=${evidence.nativeReadReceipt.taskContextRef}`;
-  const rows = await database.execute<TaskRow>(query);
-  if (rows.length !== 1) invalid();
-  const row = rows[0]!;
-  const context = assertTdmsRuntimeTaskContext(
-    typeof row.taskContext === 'string'
-      ? JSON.parse(row.taskContext)
-      : row.taskContext,
-  );
+  const readTask=()=>storedTdmsRuntimeContext(database,{tenantId:actor.tenantId,
+    taskContextRef:evidence.nativeReadReceipt.taskContextRef});
+  const row=await readTask();
+  const context=assertTdmsRuntimeTaskContext(row.context);
   const binding = context.binding;
   if (
     binding.tenantId !== actor.tenantId ||
     binding.taskContextRef !== evidence.nativeReadReceipt.taskContextRef ||
-    binding.workItemId !== row.workItemId ||
-    binding.documentVersionId !== row.documentVersionId ||
-    row.actorUserId !== 'service:openclaw-main' ||
-    binding.actorUserId !== row.ownerUserId
+    binding.actorUserId !== row.owner
   )
     invalid();
   const work = await database.execute<{
@@ -69,9 +52,18 @@ export async function tdmsSavedNativeContext(input: {
     invalid();
   // Keep the existing WorkItem -> attempt lock order. Only finite metadata is
   // looked up before the WorkItem lock, then checked again under the task lock.
-  const locked = await database.execute<TaskRow>(sql`${query} FOR SHARE`);
-  if (locked.length !== 1 || canonical(locked[0]) !== canonical(row)) invalid();
+  await database.execute(sql`SELECT 1 FROM action_attempt WHERE tenant_id=${actor.tenantId}
+    AND operation_ref=${binding.taskContextRef} FOR SHARE`);
+  const locked=await readTask();
+  if (canonical(locked) !== canonical(row)) invalid();
   const browser = caller.browserCaller;
+  const review = caller.reviewCaller && tdmsReviewBinding(caller.reviewCaller);
+  if (review && (review.workItemId !== binding.workItemId ||
+    review.documentVersionId !== binding.documentVersionId ||
+    review.actorUserId !== binding.actorUserId || review.workItemRevision !== work[0]!.revision ||
+    !review.nativeMetadata.some((item) => item.evidenceRef === evidence.evidenceRef &&
+      item.nativeReadReceipt.receiptRef === evidence.nativeReadReceipt.receiptRef &&
+      canonical(item.nativeScope.processingSetBinding) === canonical(evidence.nativeScope.processingSetBinding)))) invalid();
   if (
     browser &&
     (browser.workItemId !== binding.workItemId ||
@@ -104,17 +96,18 @@ export async function tdmsSavedNativeContext(input: {
     )
       denied();
   } else if (
-    !['SUMMARY_SERVICE_DELEGATE', 'RECOVERY_SERVICE_DELEGATE'].includes(
+    !['SUMMARY_SERVICE_DELEGATE', 'RECOVERY_SERVICE_DELEGATE', 'REVIEW_SERVICE_DELEGATE'].includes(
       actor.principalKind,
     ) ||
-    (actor.principalKind === 'RECOVERY_SERVICE_DELEGATE' &&
+    (['RECOVERY_SERVICE_DELEGATE', 'REVIEW_SERVICE_DELEGATE'].includes(actor.principalKind) &&
+      'workItemId' in actor &&
       actor.workItemId !== binding.workItemId) ||
     work[0]!.owner !== actor.canonicalSubject.id
   )
     denied();
   const savedRefs = browser
     ? (browser.workRevisionRefs ?? [browser.workRevisionRef])
-    : undefined;
+    : review ? [review.workRevisionRef] : undefined;
   if (browser) {
     if (
       !savedRefs?.length ||
@@ -149,7 +142,12 @@ export async function tdmsSavedNativeContext(input: {
       }
       AND EXISTS (SELECT 1 FROM jsonb_array_elements(CASE
         WHEN jsonb_typeof(r.content_json::jsonb->'evidence')='array' THEN r.content_json::jsonb->'evidence'
-        ELSE '[]'::jsonb END) AS item WHERE item=${canonical(evidence)}::jsonb)
+        ELSE '[]'::jsonb END) AS item WHERE ${'nativeSource' in evidence
+          ? sql`item=${canonical(evidence)}::jsonb`
+          : sql`item->>'kind'='TDMS_NATIVE_RECORD' AND item->>'evidenceRef'=${evidence.evidenceRef}
+            AND item#>>'{nativeReadReceipt,taskContextRef}'=${evidence.nativeReadReceipt.taskContextRef}
+            AND item#>>'{nativeReadReceipt,receiptRef}'=${evidence.nativeReadReceipt.receiptRef}
+            AND item#>'{nativeScope,processingSetBinding}'=${canonical(evidence.nativeScope.processingSetBinding)}::jsonb`})
   ) AS retained`);
   if (saved.length !== 1 || saved[0]!.retained !== true) invalid();
   return context;

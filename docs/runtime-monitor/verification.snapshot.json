@@ -2,15 +2,15 @@
   "formatVersion": 1,
   "snapshot": {
     "dataMode": "snapshot",
-    "generatedAt": "2026-10-23T06:10:49.488124+00:00",
+    "generatedAt": "2026-10-23T06:59:56.150895+00:00",
     "contract": {
       "version": "1.6 复核修订稿",
       "source": "WISELINK_MAINLINE_GRAPH_CONTRACT.md",
-      "sourceRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
       "sourceRevisionType": "sha256"
     },
     "target": {
-      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
       "environmentId": "host:app_17bzc551rsg:online"
     },
     "workPackages": [
@@ -36,7 +36,7 @@
           "V26",
           "V28"
         ],
-        "nextAction": "本批Host UI已由准确De1d/release7699717588535888913正式发布，原/恢复官方finished和双端实际D指纹成立。完成本批records收口；沿用9d正常hook/完整build与原测试，不重发布或附带ACK/Review/Native、DDL、模型/SAVE。"
+        "nextAction": "UI已发布De1d/release7699717588535888913，原实际证据及E2/D2记录同步保持；本地16b精确恢复ACK/Review/Native源码、正常hook/一次build/publisher完成。交根审核本轮九records与准确E/D，不重复已通过UI或产品测试。"
       },
       {
         "id": "P1",
@@ -84,7 +84,7 @@
           "V44",
           "V53"
         ],
-        "nextAction": "用户确认的自身Estimated批准映射已随D部署，官方finished和双端D指纹成立；原19PG/244unit及非作者审查仍归原版本。实际Source/grant/processing set、在线状态刷新、未结构化撤销/取代、V44和独立Review/Native能力没有因此被验证；后续Review仍本地候选。"
+        "nextAction": "Estimated已在De1d上线；本地Review SAVED/BOUNDED、current Source/own-approval、正常consumer与sealed恢复最终PG029完成，原失败/fixture置过期范围保留。三lock-only policies仍待独立DDL批准；真实Source/grant/set/在线刷新、撤销取代/V44和内容验收仍缺，准备准确E/D与c235切换。"
       },
       {
         "id": "P4",
@@ -127,7 +127,7 @@
           "V08",
           "V10"
         ],
-        "nextAction": "当前UI De1d继续既有Estimated能力，未纳入后续ACK浏览器读模型、Review或新Native候选；原Native c234及恢复证据保留实际范围。M3客户端观察时间不推生产ACK/首次可读；本批只读无新模型/SAVE/租约或正式采用。"
+        "nextAction": "本地16b ACK独立读模型、正常Native c235封存恢复及新build/ZIP已准备；线上仍UI De1d，Native最后已证实c234。当前安装/cron/inflight需明确授权只读预检后再给具体无损切换；不据coding idle推runtime idle、不清checkpoint/工作、不重复SAVE，生产ACK/首次可读历史缺项保留。"
       }
     ]
   },
@@ -1136,9 +1136,9 @@
         "P0",
         "P1"
       ],
-      "sourceRevision": "5f753f3f06a63ffa9a669474d2ccee344c82bbbc",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
       "originReviewedRevision": "1ec900f05ed28e1a0164a084fb3ee7b0f618d9f0",
-      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。",
+      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。 后继Overall使用新实际attempt/lease及准确保存的Review work，普通迟到SAVE不因新Review恢复获权；PG026隔离fixture证明不替代真实SEM/生产运行。",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
       "producer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.saveWork",
       "consumer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.buildInput; #commitOverall",
@@ -1184,7 +1184,8 @@
           "reason": "D已实际核对同一旧事项的3节点、工作1 SUCCEEDED、同版Overall消费、原保存正文及准确版本PDF；页面显示“当前查询未返回这条依据”，当前渲染units未命中原ref，后台响应未取得，单次显式刷新后未证实新时间推进。Overall尝试集合未提供，不能声称完整执行历史或新内容验收。",
           "nextAction": "保留本次D限定只读结果和PARTIAL引用诊断；仅按当前D代码分析该原ref定位，不清定位/扩大查询或把PDF可读当精确定位通过。真实内容/新运行按其具体授权继续。"
         }
-      ]
+      ],
+      "previousReviewedRevision": "5f753f3f06a63ffa9a669474d2ccee344c82bbbc"
     },
     {
       "id": "translation.reading",
@@ -1270,25 +1271,25 @@
         "P1",
         "P6"
       ],
-      "sourceRevision": "5f753f3f06a63ffa9a669474d2ccee344c82bbbc",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
       "originReviewedRevision": "1ec900f05ed28e1a0164a084fb3ee7b0f618d9f0",
-      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。；已真实复现ACK与WorkItem写者、迟到配置入口的40P01并统一锁序；4项真实隔离PG保留并发拒绝和准确重放。",
+      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。；已真实复现ACK与WorkItem写者、迟到配置入口的40P01并统一锁序；4项真实隔离PG保留并发拒绝和准确重放。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
       "producer": "server/modules/canonical-host/jobaid-work.repository.ts#JobAidWorkRepository.save",
-      "consumer": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#ActionAttemptLifecycleService.finishProjectionSuccess; openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#acknowledgeAndClearAutoClaim",
+      "consumer": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#ActionAttemptLifecycleService.finishProjectionSuccess; openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#acknowledgeAndClearAutoClaim; CanonicalJobAidProblemService.readBrowser.autoProcessingAcknowledgement → useJobAidWorkingRead → WorkItemRuntimeDiagnostic",
       "executionOwner": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#consumeAutomaticWorkItemQueueTick：单一active-claim owner执行；Host分别维护action_attempt和auto_work_item_authorization，不能以清本地记录代替释放。",
       "recoveryOwner": "server/modules/work-item/miaoda-work-item.repository.ts#claimAutoProcessingCandidate：核对原owner/generation/封存结果hash；投影已写则校正终态，否则延续COMMITTING。外层消费者仅以准确token/generation调用ACK。；含Native证据时复核真实队列调用者、过期COMMITTING及精确已保存结果，后续未消费READ不污染原结果恢复。",
       "authority": {
         "requestRecord": "action_attempt.task_envelope_json/result_envelope_json/result_content_hash及auto_work_item_authorization；server/modules/work-item/miaoda-work-item.repository.ts#claimAutoProcessingCandidate",
         "artifactRecord": "assessment_work_revision、work_item.projection_json、action_attempt.projection_applied；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit",
-        "consumedInputField": "封存result.modelOutput.workRevisionRef、task.baseRevision、原attemptId/leaseGeneration；auto_work_item_authorization的requestId/token/generation；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit; server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease",
+        "consumedInputField": "封存result.modelOutput.workRevisionRef、task.baseRevision、原attemptId/leaseGeneration；auto_work_item_authorization的requestId/token/generation；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit; server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease；新浏览器四字段ACK保持原workItemId/requestId/documentVersionId/acknowledgedAt，不从当前inner attempt重造。",
         "ready": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts#AutomaticWorkItemDispatchService.acknowledgeWorkItem：重新授权准确租约并由readCurrentInitialAnalysis检查Host成功判据；不是worker退出即成功。",
         "saved": "server/modules/canonical-host/jobaid-work.repository.ts#save及server/modules/canonical-host/canonical-jobaid-problem.service.ts#readAttemptWork：幂等SAVE与独立读回在执行终态前即可成立。",
-        "current": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#finishProjectionSuccess：准确投影完成；server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease：确认当前授权完成；本地active-claim仅在有效ACK后清理。"
+        "current": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#finishProjectionSuccess：准确投影完成；server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease：确认当前授权完成；本地active-claim仅在有效ACK后清理。；已完成原请求ACK可与后继inner RUNNING/COMMITTING共存，父hook消费ACK出现/替换/null。"
       },
       "decisionEntry": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#prepareCommit; server/modules/canonical-host/automatic-work-item-dispatch.service.ts#acknowledgeWorkItem",
       "projectionEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commitOverall; server/modules/action-attempt/action-attempt-lifecycle.service.ts#finishProjectionSuccess",
-      "readEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#readAttemptWork; server/modules/work-item/miaoda-work-item.repository.ts#readCompletedAutoProcessingLeaseReceipt",
+      "readEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#readAttemptWork; server/modules/work-item/miaoda-work-item.repository.ts#readCompletedAutoProcessingLeaseReceipt; MiaodaWorkItemRepository.readReadableAutoProcessingCompletion：一次可信receipt读；readBrowser精确projection tuple/hash/bytes绑定",
       "actionEntries": [
         "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit：封存后的恢复只接受原准确结果",
         "server/modules/canonical-host/automatic-work-item-dispatch.service.ts#nextWorkItem：受权恢复领取",
@@ -1300,7 +1301,9 @@
         "test/node/core-p1-host-postgres.test.mjs",
         "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
         "test/node/automatic-work-item-ack-postgres.test.mjs",
-        "test/node/tdms-browser-native-postgres.test.mjs"
+        "test/node/tdms-browser-native-postgres.test.mjs",
+        "test/unit/work-item-runtime-diagnostic.spec.ts",
+        "test/unit/jobaid-read-lifecycle.spec.ts"
       ],
       "authorRevision": "357292e26174b69504ee315898609f6ed6beef14",
       "gaps": [
@@ -1315,8 +1318,15 @@
           "kind": "runtime",
           "reason": "真实单事项时间和同窗官方聚合已取得，但Ready/首次可读/生产ACK、未知调用/提交积压以及容量上限仍未知；不能把长等待归因于资源饱和。",
           "nextAction": "发布并在既有准确记录上观察恢复行为；只取得实际请求范围的新增时间，不补造历史时间、不先扩worker或替换队列。"
+        },
+        {
+          "id": "save.finish.c235-switch",
+          "kind": "deployment",
+          "reason": "ACK/Review/c235组合仅在本地16b源码、构建和新包成立；线上De1d不含这批ACK字段。Native最后已证实c234，当前运行/cron/在途尚未知。",
+          "nextAction": "取得准确E/D及用户技术发布/DDL/安装授权后，按当前运行端预检结果正常收尾和一次切换；不清检查点、工作或借开发会话空闲推断运行空闲。"
         }
-      ]
+      ],
+      "previousReviewedRevision": "5f753f3f06a63ffa9a669474d2ccee344c82bbbc"
     },
     {
       "id": "feedback.reading",
@@ -1402,8 +1412,8 @@
       "workPackageIds": [
         "P5"
       ],
-      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
-      "reviewScope": "ATA2准确直接成员与既有ATA4/子层共同消费；目录诊断只投影获权覆盖和活跃请求。三类业务变化的全部触发策略不在本增量通过范围。；本批已接WORK_ITEM_WORK内Native证据的真实Summary委托与原文IO前后核对，完整隔离消费链通过；生产当前批准证据仍缺。 本轮补齐已明确授权且无waiting行的Matter到期复核；只扩大既有delegation内候选遍历，原SQL身份/确认归属/来源与持久化occurrence幂等不变。",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "reviewScope": "ATA2准确直接成员与既有ATA4/子层共同消费；目录诊断只投影获权覆盖和活跃请求。三类业务变化的全部触发策略不在本增量通过范围。；本批已接WORK_ITEM_WORK内Native证据的真实Summary委托与原文IO前后核对，完整隔离消费链通过；生产当前批准证据仍缺。 本轮补齐已明确授权且无waiting行的Matter到期复核；只扩大既有delegation内候选遍历，原SQL身份/确认归属/来源与持久化occurrence幂等不变。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。 本地Review APPLIED/UNCHANGED之后的Summary仍消费准确保存work/evidence，不把讨论或元数据当已READ正文；线上真实变化缺项保持。",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
       "producer": "server/modules/canonical-host/hierarchical-wiki-inventory.ts#readWikiInventory/#wikiClassifications；已确认归属的文档和已保存工作按真实ATA2/ATA4层级进入，成员kind为DOCUMENT_READING、WORK_ITEM_WORK、MATTER_WORK或DERIVED_SUMMARY。",
       "consumer": "server/modules/canonical-host/hierarchical-wiki-generation.ts#assertWikiLayerMembers/#wikiDirectVersions；openclaw/skills/wiselink-research-and-synthesize/scripts/hierarchical-wiki-model-view.mjs和derived-summary-shape.mjs消费准确成员。",
@@ -1447,7 +1457,8 @@
           "reason": "ATA2 成员与显式授权 Matter 到期条件漏唤醒已修复。Estimated 批准语义与本地映射已确定，三类生产变化全流程仍需实际 Source/版本/状态刷新和原生撤销取代关系。",
           "nextAction": "在实际获权来源成立后按三类变化核对最小调用范围；本轮不以到期条件PG用例替代全部业务变化验证。"
         }
-      ]
+      ],
+      "previousReviewedRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603"
     },
     {
       "id": "configuration.reading",
@@ -1529,24 +1540,24 @@
         "P3",
         "P5"
       ],
-      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "用户已确认评估单自身 Estimated 就是批准/当前有效状态。真实 retained provider 已复用原策略接入 ACTIVE + 准确 sourceRevisionRef，独立 Astra 接受 ff0，761 与其完整 Git tree 相同。既有 reader/verifier、集合、owner/version/actor、before/after、正文及保存/CAS 门槛保留；实际线上刷新、Source/grant/processing set、原文 V44 与未结构化撤销/取代解码仍未验证。 当前构建81baa5a7相对761仅9个协调/验证记录文件变化，产品与测试blob未变；正常完整构建通过，双端immutable sourceCommit准确。",
-      "producer": "server/modules/tdms-source/tdms-retained-runtime-facts.ts#readProjectionFacts/#projectionFacts：在既有授权事务重读准确 record.state；自身 ENGINEER_ASSESSMENT 符合 isEstimatedState 时产生 ACTIVE，依据为真实 sourceRevisionRef，否则 UNKNOWN/null。tdms-production-runtime-reader.ts#discover/#read → tdms-runtime-session.ts → 原 tdms_read_receipt；不另造关系或有效性证书。",
-      "consumer": "CanonicalJobAidProblemService的buildInput/readSources/saveWork/commit及browser read；DerivedSummaryMembersService.read的WORK_ITEM_WORK和DerivedSummaryRuntimeService的claim/save/finish/readSaved，供现有Wiki成员消费。",
+      "reviewScope": "用户已确认评估单自身 Estimated 就是批准/当前有效状态。真实 retained provider 已复用原策略接入 ACTIVE + 准确 sourceRevisionRef，独立 Astra 接受 ff0，761 与其完整 Git tree 相同。既有 reader/verifier、集合、owner/version/actor、before/after、正文及保存/CAS 门槛保留；实际线上刷新、Source/grant/processing set、原文 V44 与未结构化撤销/取代解码仍未验证。 此前Estimated批次构建81baa5a7相对761仅9个协调/验证记录文件变化，产品与测试blob未变；正常完整构建通过，双端immutable sourceCommit准确。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。",
+      "producer": "server/modules/tdms-source/tdms-retained-runtime-facts.ts#readProjectionFacts/#projectionFacts：在既有授权事务重读准确 record.state；自身 ENGINEER_ASSESSMENT 符合 isEstimatedState 时产生 ACTIVE，依据为真实 sourceRevisionRef，否则 UNKNOWN/null。tdms-production-runtime-reader.ts#discover/#read → tdms-runtime-session.ts → 原 tdms_read_receipt；不另造关系或有效性证书。；readReviewNativeSources返回strict parseAssessmentTdmsEvidence验证的raw carrier，审计receipt与准确decision journal先于packet；通用registry与Native guard未改。",
+      "consumer": "CanonicalJobAidProblemService的buildInput/readSources/saveWork/commit及browser read；DerivedSummaryMembersService.read的WORK_ITEM_WORK和DerivedSummaryRuntimeService的claim/save/finish/readSaved，供现有Wiki成员消费。；CanonicalHostOpenclawReviewService实际UPDATE_ASSESSMENT admission/begin/read/commit/status；准确Review工作供后继Overall/browser/summary消费。",
       "executionOwner": "现有Host服务执行者：真实service SQL role、Host transport授权、WorkItem owner与DVI、自动授权精确source tuple、活跃attempt lease；Summary使用自己实际summary/request/attempt，不借用WorkItem租约。",
-      "recoveryOwner": "tdms-recovery-delegation.ts + CanonicalJobAidProblemService.assertAutomaticCommittingRecoveryAuthorized：原队列同事务锁WorkItem→grant→attempt，双方lease已过期、原generation及封存hash一致，仅核对准确已存结果；不新增READ/模型/租约。",
+      "recoveryOwner": "tdms-recovery-delegation.ts + CanonicalJobAidProblemService.assertAutomaticCommittingRecoveryAuthorized：原队列同事务锁WorkItem→grant→attempt，双方lease已过期、原generation及封存hash一致，仅核对准确已存结果；不新增READ/模型/租约。；tdms-review-delegation/tdms-successor-delegation的private SEALED_RECOVERY仅复用原COMMITTING封存task/result/fence；正常Native consumePendingReviewTurn驱动检查点恢复，不新model/READ/context-body/heartbeat/cancel或续租。",
       "authority": {
-        "requestRecord": "action_attempt.task_envelope_json.modelInput.tdmsContext、实际executor与modelInput.actorUserId；原tdms_read_receipt的scope/actor/receipt/sourceRevision/context及reviewActivityJson中的真实READ。",
+        "requestRecord": "action_attempt.task_envelope_json.modelInput.tdmsContext、实际executor与modelInput.actorUserId；原tdms_read_receipt的scope/actor/receipt/sourceRevision/context及reviewActivityJson中的真实READ。；真实Review operationRef、BOUNDED_NATIVE_READ十键context及READ decision journal；opaque frozen caller绑定handed事务。",
         "artifactRecord": "tdms_record_revision、tdms_processing_revision_set/tdms_processing_set_head、assessment_work_revision.content.evidence、derived_summary_revision；工程原文须独立DM acquisition/nativeRetention及准确artifact/parse绑定。",
         "consumedInputField": "TDMS_NATIVE_RECORD的nativeSource、nativeScope.processingSetBinding/approval/fieldSelectors和nativeReadReceipt；保存工作准确evidence与Overall.basedOnJobAidWorkRevisionRef、Summary准确member workRef逐项比较。",
         "ready": "真实 Source/对象授权、准确 processing set/成员与版本、评估单自身 Estimated、before/after 和正文 provenance 分别满足；缺状态/Estimating/冲突 rawCode 不成立，父单/同ATA/标题/稳定版本不推导批准。不再要求 Estimated 之外的第三方批准证明。",
-        "saved": "真实READ先留下不可变receipt；SAVE事务重新比较原回执、journal、准确内容、集合和当前权限，随后按既有token/generation/CAS保存。没有READ不能以关联元数据填充证据。",
+        "saved": "真实READ先留下不可变receipt；SAVE事务重新比较原回执、journal、准确内容、集合和当前权限，随后按既有token/generation/CAS保存。没有READ不能以关联元数据填充证据。；SAVED_EVIDENCE_ONLY复用保存carrier；BOUNDED逐项比较receipt/journal/封存hash，APPLIED/UNCHANGED工作与Review receipt原子提交，Overall使用自身新attempt/lease与准确workRef。",
         "current": "依据准确留存的本评估单 Estimated 状态，明确撤销/取代规则仍保留；线上状态刷新及原生未结构化关系解码尚未验证/实现。原 receipt 证明准确历史 READ，后续消费继续重核当前授权/版本/集合；M3仍只投影已有父响应。"
       },
-      "decisionEntry": "TdmsProductionRuntimeReader.assertInTransaction → TdmsRuntimeSession；TdmsBrowserNativeVerifier → tdms-native-saved-work.ts，分别核验真正browser/summary/recovery caller；OAuth Native及Review/successor仍拒绝。",
+      "decisionEntry": "TdmsProductionRuntimeReader.assertInTransaction → TdmsRuntimeSession；TdmsBrowserNativeVerifier → tdms-native-saved-work.ts，分别核验真实browser/summary/recovery caller；未经绑定或未获授权的Native/Review/successor调用仍拒绝，已绑定Review/successor经真实current Source/own-approval/opaque caller/handed TX路径核权；CanonicalHostOpenclawReviewService执行实际准入与正文前gate。",
       "projectionEntry": "client/src/pages/DocumentParsingPage/runtime-monitor/adapt-jobaid-working-read.ts#savedNativeObservations/#adaptJobAidWorkingRead：business.company_records→assessment.research使用v1.6 company.research；历史READ时间与父观察时间分别显示。",
-      "readEntry": "父GET /api/canonical-host/work-items/:id/assessment-work → WorkItemRuntimeDiagnostic；来源详情使用父响应已有准确evidence/sourceRevision/receipt/work tuple，不新增fetch。",
+      "readEntry": "父GET /api/canonical-host/work-items/:id/assessment-work → WorkItemRuntimeDiagnostic；来源详情使用父响应已有准确evidence/sourceRevision/receipt/work tuple，不新增fetch。; CanonicalHostOpenclawReviewService.readNativeSources → CanonicalJobAidProblemService.readReviewNativeSources",
       "actionEntries": [
         "获权READ不创建正式采用/批准/发布/实施；Summary仅原有已授权请求运行。",
         "关联工程文件正文需单独获权READ、准确原件和来源回执；不依据标题、链接或关系猜取正文。"
@@ -1562,7 +1573,9 @@
         "test/unit/tdms-approved-opinion-context.spec.ts",
         "test/unit/tdms-source/tdms-runtime-reader.spec.ts",
         "test/unit/tdms-source/tdms-approved-opinion.spec.ts",
-        "test/unit/tdms-p1-host/assessment-body-policy.spec.ts"
+        "test/unit/tdms-p1-host/assessment-body-policy.spec.ts",
+        "test/node/tdms-review-runtime-postgres.test.mjs",
+        "test/unit/canonical-host-openclaw-attempt-status.service.spec.ts"
       ],
       "gaps": [
         {
@@ -1579,17 +1592,24 @@
         },
         {
           "id": "company.approved-opinion.caller-scope",
-          "kind": "source_review",
-          "reason": "普通WorkItem、Gateway浏览器、真实Summary及既有COMMITTING恢复已接入。原应用device/offline已获授权，单次OAuth后登录验证成功；这不代替Review独立调用者及其他Native生命周期入口的装配与核验。",
-          "nextAction": "按准确Review/Native入口补齐所需调用者和生命周期范围；保留typed deny，不借无关活跃租约，不再索取本次已完成的device/offline授权。"
+          "kind": "deployment",
+          "reason": "Review真实调用者、有限Native生命周期、正常consumer和SEALED_RECOVERY已在本地原PG029完成；原PG027/028失败和最终raw-carrier修复均保留。这不表示新后端/Native已上线，原device/offline授权不需重索。",
+          "nextAction": "准备准确E/D与三条lock-only SQL及c235新包，先补获准的运行端当前安装/cron/在途预检，再由用户批准技术动作；保持Source/grant与业务内容验收独立。"
         },
         {
           "id": "company.approved-opinion.native-lifecycle",
           "kind": "runtime",
           "reason": "显式撤销与 SOURCE_EXPLICIT 取代的既有规则及测试保留；本次未实现原生未结构化撤销/取代关系解码，也未验证线上变更刷新。",
           "nextAction": "取得准确原生关系及作用版本后接入既有规则，保留多专业意见和新草稿与旧批准并存，不按时间或标题推断取代。"
+        },
+        {
+          "id": "company.approved-opinion.lock-policies",
+          "kind": "deployment",
+          "reason": "三条lock-only UPDATE policy仅在本地SQL，fresh正式catalog显示目标角色/RLS存在、policy均缺且可组合UPDATE/ALL为0；尚无DDL授权或实施。",
+          "nextAction": "审批时列出三表三policy原SQL及同一catalog前提；获准后用正式入口执行并读回，不新增GRANT/ALL/definer。"
         }
-      ]
+      ],
+      "previousReviewedRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e"
     },
     {
       "id": "matter.saved-reading",
@@ -1677,10 +1697,10 @@
         "P0",
         "P2"
       ],
-      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
       "authorRevision": "3e790ffffd42c9af0c781557ae516164ba70fbd1",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。 本批正常hook与完整build在准确9d源码成立；经批准的公开E4dec与私有De1d完整tree相同，准确D已正式发布。恢复与原/新只读观察分别记录，未重跑原产品测试或本地build。",
+      "reviewScope": "历史UI-only批次：公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw在该历史UI-only批次未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。 该历史UI-only批次正常hook与完整build在准确9d源码成立；经批准的公开E4dec与私有De1d完整tree相同，准确D已正式发布。该UI记录恢复与原/新只读观察分别记录，未重跑该历史产品测试或本地build；本轮16b新构建另按实际来源和时间登记。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。",
       "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。",
       "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。",
       "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。",
@@ -1694,7 +1714,7 @@
         "current": "Overall自身CANDIDATE_ONLY且staleReason null、working CURRENT与准确workRef共同判断；同DVI新解析/保存成果更新不重建稳定草稿实例。"
       },
       "decisionEntry": "useDocumentReadingLinks.ts#resolveDocumentReadingAssociation；useDocumentAssessmentPage.ts；DocumentAssessmentOverview.tsx；documentAssessmentAeoEligible。",
-      "projectionEntry": "DocumentAssessmentWorkspace.tsx读取同一workingRead；WorkItemRuntimeDiagnostic仅复用c8已有投影，不包含后续ACK字段；受限returnAssessmentQuery不充当授权。",
+      "projectionEntry": "DocumentAssessmentWorkspace.tsx读取同一workingRead；本地16b的WorkItemRuntimeDiagnostic消费可信原请求autoProcessingAcknowledgement，父hook处理出现/替换/null；已发布De1d历史UI仍只用其原投影。受限returnAssessmentQuery不充当授权。",
       "readEntry": "/document-versions/:DVI?panel=assessment；assessmentTab=overall/investigation/review/process及条件aeo。精确引用经exactDocumentSourceRoute回历史parseRunId+完整ref。",
       "actionEntries": [
         "打开/切签/focus/刷新/依据导航只读；坏locator toast拒绝且页面URL/原evidence保持。",
@@ -1714,7 +1734,8 @@
           "reason": "真实四签/M3/Wiki、准确结构化原文第8页与受限返回已有原证据；原件历史HTTP500独立保留，恢复后一次正常GET200/11页PDF可读。Aily当前ENV_UNVERIFIED/30s ready timeout/灰白未通过，iframe终态受工具paused-document-response边界未获；局部OAuth/保存核对、全屏与动态权限/版本转换仍未验证。",
           "nextAction": "沿用已发布E/D和现有SDK；保留Aily未完成及历史500未知根因，按独立分析结论选择下一最小修法，不制造ready协议、登录扩scope、重复已通过链路或业务写入。"
         }
-      ]
+      ],
+      "previousReviewedRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5"
     }
   ],
   "selection": {
@@ -1759,7 +1780,7 @@
       "V53",
       "V15"
     ],
-    "reason": "本批UI已随准确De1d/release7699717588535888913正式发布；原四签/M3/Wiki/结构化原文第8页及受限返回为限定真实只读证据。原PDF500与Aily空白分别保留；恢复后一次PDF200/11页可读，AilyENV_UNVERIFIED/30s ready timeout及paused-document工具混杂仍未完成。准确9d本地build及70/19/3/25原source/时间不变，不补新测试覆盖；无ACK/Review/Native新代码、DDL、模型/SAVE或正式采用。"
+    "reason": "当前M2目标为本地准确源码16b的ACK/Review/Native交付准备；原UI De1d正式发布及155条既有证据保持原身份。原PG027/028失败→ae025窄修复→最终PG029隔离正常consumer成功，fixture置过期不称自然TTL。新build/publisher记录实际16b和执行时契约，适用说明不补新契约覆盖。三lock-only SQL未实施、Native当前运行预检待明确授权；无新后端发布/安装/DDL/真实模型/READ/SAVE。"
   },
   "evidence": [
     {
@@ -4527,6 +4548,590 @@
       "deploymentRef": "7699717588535888913",
       "summary": "公有E从公开GitHub指定分支独立恢复，未复用私有对象、无alternates，私有D及main对象不存在；私有D从origin单分支depth2恢复，E/D完整tree准确相同且恢复时clean。原失败HTTP/2 clone终止后仅命令局部HTTP/1.1重试成功。原工具事件逐字节恢复，文本/图像副本与丢失原文件明确分层。",
       "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/private-repository-restoration.private.json"
+    },
+    {
+      "id": "review-native.recovered.source",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:review-native-recovery",
+      "observedAt": "2026-10-23T06:52:10.833850+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "原ACK全树/SAVED投影全树、47+3+2文件原diff、UI/M2目标blob及Native141文件子树精确；Root逐项复核107物理文件hash/bytes/blob/mode，新正常源码16b，非原53d整树。",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "wiki.saved-reading",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V30",
+        "V53"
+      ],
+      "originalReportRef": "private:tmp/recovery-20261023/host/FINAL_RECOVERY_HANDOFF.json",
+      "newSourceTree": "93c76d13637de125f9ea128e5a8f5da287ef8123"
+    },
+    {
+      "id": "review-native.recovered.ack",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:review-native-recovery",
+      "observedAt": "2026-10-23T06:52:10.833850+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "可信receipt单次读与准确projection tuple/hash/bytes；四字段原请求ACK独立于inner状态，父hook出现/替换/null，旧ACK可与后继RUNNING/COMMITTING并列；没有回填历史Ready或首次可读。",
+      "bindingIds": [
+        "save.finish",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10"
+      ],
+      "originReviewedRevision": "e9cd5e6a35da11549200087f0f1f8a1c768ee0b2"
+    },
+    {
+      "id": "review-native.recovered.review",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:review-native-recovery",
+      "observedAt": "2026-10-23T06:52:10.833850+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "真实UPDATE_ASSESSMENT、Source/own-approval-before-body、opaque caller/handed TX；SAVED与BOUNDED、receipt/journal-before-packet、原子APPLIED/UNCHANGED和准确Overall工作/独立lease；sealed恢复只复用原封存，不新READ/model/续租。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "research.overall",
+        "wiki.saved-reading"
+      ],
+      "scenarioIds": [
+        "V12",
+        "V24",
+        "V53"
+      ],
+      "originReviewedRevision": "ae02525147a01e7934a3901d51d05571b93f7dc9"
+    },
+    {
+      "id": "review-native.recovered.native-source",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:review-native-recovery",
+      "observedAt": "2026-10-23T06:52:10.833850+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "正常consumer/driver和封存检查点恢复，raw-carrier endpoint窄修复且通用registry/Native guard保持；Native141文件精确f9be子树，新c235尚未安装。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "nativeSourceTree": "f9bece5ba22765af5f24bd5f6798607355a94bf4",
+      "originReviewedRevision": "b972d6f8f0137deb9ef24eaa139da6d20f972dd9"
+    },
+    {
+      "id": "review-native.recovered.unit-005",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "runtime addon/own-approval + activity/status；原结果39pass；各run范围重叠，不累计为互异案例。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "testLevel": "unit",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/unit-005.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.unit-006",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "successor authorization targeted selection；原结果13pass / 78显式skip；各run范围重叠，不累计为互异案例。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "testLevel": "unit",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/unit-006.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.unit-007",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "lifecycle finite controls + runtime addon + status；原结果60pass；各run范围重叠，不累计为互异案例。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "testLevel": "unit",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/unit-007.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.unit-008",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "pending/busy affected selection；原结果1pass / 61显式skip；各run范围重叠，不累计为互异案例。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "testLevel": "unit",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/unit-008-pending.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.unit-status-fix",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "原有限successor status修正单套19pass，PG未为这次有限status修正重跑。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10"
+      ],
+      "testLevel": "unit",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/unit-009-successor-status.log",
+      "logSha256": "91202d55d3926aeb27c0638a9491136d177dae51ee65b3def9836be605f9d328",
+      "reviewedProductRevision": "0d13a2c4afc46af93cb70978d1ee91ffa499ae52"
+    },
+    {
+      "id": "review-native.recovered.pg-021",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "原18pass/0fail；complete bounded READ/journal/APPLIED/UNCHANGED/browser/summary/admission/status/control/current-source/cutoff/max=1 chain before sealed-expiry extension 自有隔离PG/合成边界；旧失败保持。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-021.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.pg-024",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "原5pass/3fail；expired COMMITTING UNCHANGED exact sealed snapshot without another work version, 55.662s; all failures retained； expired由隔离fixture UPDATE既有lease/deadline到过去构造，耗时不是自然TTL等待；不变断言从fixture置过期后算。 自有隔离PG/合成边界；旧失败保持。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-024-expired.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.pg-025",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "原5pass/3fail；expired COMMITTING Review rollback -> normal pending/begin/status -> SAVE -> lost terminal response -> same payload reconciliation, 85.902s; failures are fixture issues corrected in pg026； expired由隔离fixture UPDATE既有lease/deadline到过去构造，耗时不是自然TTL等待；不变断言从fixture置过期后算。 自有隔离PG/合成边界；旧失败保持。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-025-expired-save.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.pg-026",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "原7pass/0fail；actual Native two-round Gateway -> real registered Host MCP READ/SAVE; old receipt grant-generation rejection; successor expired before CAS and after own CAS, same fence/receipt/journal/no renewed lease； expired由隔离fixture UPDATE既有lease/deadline到过去构造，耗时不是自然TTL等待；不变断言从fixture置过期后算。 自有隔离PG/合成边界；旧失败保持。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-026-grant-and-successor.log",
+      "reviewedProductRevision": "2e4d1c200261eb9d501e91577fb294296066b954"
+    },
+    {
+      "id": "review-native.recovered.pg-027",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "正常consumer未到过期恢复即REQUIRES_ATTENTION且无结果；不计恢复成功，后续PG028/ae025/PG029按各自来源记录。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-027-normal-native-consume.log",
+      "logSha256": "60e6537a1f3d0c85260934560e2fde61122ba4a06429144c8284490ab3dd9594"
+    },
+    {
+      "id": "review-native.recovered.pg-028",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "实际READ成功，原Native guard正确拒raw/display正文差异locator:null；没有完成封存恢复。最终ae025只改新Host endpoint为strict raw carrier，原guard未放宽。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-028-native-consume-diagnostic.log",
+      "logSha256": "9cb5a36907c5e1688ea770c4644d6ede77c2f72579d8df32f838c6eee9b2f136",
+      "diagnosticSha256": "822963fd8bb64b7f259fad36ba9268444a52883c07e718fd076d6b66ab04c412"
+    },
+    {
+      "id": "review-native.recovered.pg-029",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:review-native-recovery",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "最终5子例+外层6pass/0fail；正常Native consumer/真实进程内注册MCP/受限角色RLS/handed max=1与合成模型边界。模型wrapper1/Gateway2/READ1，三次同payload commit为原调用和两个后续独立trigger各至多一次；回滚无工作，最终仅一份新工作，后续IDLE。恢复不新model/READ/context-body/heartbeat/cancel。82.848216958秒为整用例。 expired由隔离fixture UPDATE既有lease/deadline到过去构造，耗时不是自然TTL等待；不变断言从fixture置过期后算。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V53"
+      ],
+      "testLevel": "integration",
+      "historicalExecution": true,
+      "executionTimeAvailable": false,
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "按已接受原源码/差异和原工具回执复用；原精确执行commit/契约/时刻未获时保持null，不充16b新测试覆盖。",
+      "archivedAt": "2026-10-23T06:52:10.833850+00:00",
+      "originalReportRef": "private:tmp/review-native-read-evidence/pg-029-native-raw-carrier.log",
+      "logSha256": "a0f790a06dd9a951ad0155b042299799445b99ae7fa8a7541d3c1a32fc5a6742",
+      "reviewedProductRevision": "ae02525147a01e7934a3901d51d05571b93f7dc9",
+      "reviewedNativeRevision": "b972d6f8f0137deb9ef24eaa139da6d20f972dd9"
+    },
+    {
+      "id": "review-native.recovered.build-16b",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:recovered-source-normal-build",
+      "observedAt": "2026-10-23T06:31:26.761553+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "clean16b一次正常完整build成功，四子日志新鲜；双端immutable sourceCommit精确16b，477/477为依赖复制数。候选外历史工作区22条非致命tsconfig-paths及其余提示保留，不重构/重build。",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "wiki.saved-reading",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V30"
+      ],
+      "testLevel": "integration",
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "执行时M1契约哈希保持Source126；本轮仅追加记录/接线说明，稳定catalog和产品/build输入不变，不重写成新契约执行。",
+      "originalReportRef": "private:tmp/recovery-20261023/host/new-artifacts-16b727/build/verification.json"
+    },
+    {
+      "id": "review-native.recovered.publisher-16b",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d3e9b30bfc05f168745261b6b8bfbc384bbb2283fff6704c67018b501c813377",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "local:native-c235-publisher",
+      "observedAt": "2026-10-23T06:35:04.086048+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "正常c235 publisher及其必需内建检查一次成功；141文件/1050216bytes，新包SHA256 992f83b0bdf3338ee0db27dfc99a1c8bbfa69b3db06d8fdb71f079b09ef538d9，Root独立CRC/逐条bytes/SHA与manifest/source一致；ZIP未编码Unix mode，source mode另核。未安装，不推算检查用例总数。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V30"
+      ],
+      "testLevel": "integration",
+      "applicableProductRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "applicabilityNote": "源码与Native子树准确；publisher运行时原契约哈希保留，新M1只有追加记录。",
+      "originalReportRef": "private:tmp/recovery-20261023/host/new-artifacts-16b727/root-archive-verification.json"
+    },
+    {
+      "id": "review-native.recovered.lock-policy-catalog",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T06:32:29.496757+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "一次正式只读catalog成功：目标四角色/表组合存在、三表RLS=true/FORCE=false、三policy均缺、可组合permissive UPDATE/ALL=0。三条lock-only SQL仅候选，尚未DDL/新增授权；目录查询不证明真实Source/grant/set或业务运行。",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [
+        "V53"
+      ],
+      "originalReportRef": "private:tmp/recovery-20261023/host/preflight-17b/catalog-result.private.json"
+    },
+    {
+      "id": "review-native.recovered.host-release",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "线上仍为已发布UI De1d/release7699717588535888913，E2/D2仅records同步。本批ACK/Review新后端尚未push/release；新16b本地构建不是线上指纹。",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "wiki.saved-reading",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V30",
+        "V53"
+      ]
+    },
+    {
+      "id": "review-native.recovered.native-install",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "native:app_17c3zn24kv2",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "Native最后已证实安装c234；当前安装/cron/inflight尚未完整获准预检，17c开发会话空闲不等于runtime空闲；不得另路代发预检。c235仅新本地包，无安装/调度写。",
+      "bindingIds": [
+        "company.approved-opinion",
+        "save.finish"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V30",
+        "V53"
+      ]
+    },
+    {
+      "id": "review-native.recovered.business-runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "25508e6d3610fc832ae67f88e181fce6f9f4f8e8d0291d399b9f109daa805dbf",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "summary": "没有为本批新增真实模型/TDMS READ/SAVE或正式采用；真实Source/grant/set/状态刷新、原文V44、未结构化撤销取代、SEM事实和内容级验收仍开放。已发布UI的155条旧观察按原source/time/status原样保留。",
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "company.approved-opinion",
+        "wiki.saved-reading",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [
+        "V08",
+        "V10",
+        "V12",
+        "V24",
+        "V44",
+        "V53"
+      ]
     }
   ]
 }

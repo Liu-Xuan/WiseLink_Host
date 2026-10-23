@@ -6,8 +6,6 @@ import {
 import { committedSuccessorRevision } from './successor-overall-recovery-authorization';
 import { ReviewConversationRepository } from '../review-persistence/review-conversation.repository';
 import { ActionAttemptRepository } from '../action-attempt/action-attempt.repository';
-import { parseCanonicalHostOpenClawAttemptTask } from './canonical-host-openclaw-runtime-policy';
-import { parseReviewTurnTaskContract } from './canonical-host-openclaw-review.contract';
 import type { AuthorizedSuccessorReviewDelegation } from './automatic-work-item-lease-authorization.port';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 
@@ -111,7 +109,7 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
       !row.packageId
     )
       throw workItemNotFound();
-    const bindingTurn = await this.conversations.loadOpenClawTurnBinding({
+    const bindingTurn = await this.conversations.loadOpenClawTurnAuthorizationMetadata({
       tenantId: input.tenantId,
       actorId: grant.actorUserId,
       workItemId: input.workItemId,
@@ -127,7 +125,6 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
           { ...input, actorUserId: grant.actorUserId },
           turn,
           row.revision,
-          this.workItems,
           this.attempts,
         )));
     // Historical payloads lack overallRequested. Never turn them into new delegation.
@@ -229,21 +226,20 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
         limit: 1,
       });
     if (!subject || !this.conversations) throw workItemNotFound();
-    const [binding] = await this.conversations.listSuccessorOverallTurnBindings(
+    const binding = await this.conversations.loadSuccessorOverallAuthorizationMetadata(
       {
         tenantId: input.tenantId,
         actorId: subject.authorization.actorUserId,
         workItemId: input.workItemId,
         reviewTurnRef: input.reviewTurnRef,
-        allowCommittedRevision: true,
-        limit: 1,
       },
     );
     if (
       !binding ||
       binding.turn.reviewTurnId !== input.reviewTurnRef ||
       binding.turn.overallRequested !== true ||
-      !binding.turn.assistantCandidate?.jobAidWorkingUpdate?.workRevisionRef
+      !binding.turn.jobAidWorkingUpdate?.workRevisionRef ||
+      binding.turn.jobAidWorkingUpdate.status!=='APPLIED'
     )
       throw workItemNotFound();
     return this.authorizeReviewDelegation(
@@ -263,7 +259,7 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
     attemptRef: string;
   }): Promise<AuthorizedSuccessorReviewDelegation | null> {
     if (!this.attempts) throw workItemNotFound();
-    const row = await this.attempts.readByOperationRef(input.attemptRef);
+    const row = await this.attempts.readReviewScopeMetadata(input.attemptRef);
     if (
       !row ||
       row.tenantId !== input.tenantId ||
@@ -273,16 +269,17 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
     // A non-Review attempt may use its own existing initial lease path. A rejected
     // Review must never fall back to that lease, including generic heartbeat/read.
     if (row.actionType === 'OPENCLAW_OVERALL_SYNTHESIS') {
-      const task = parseCanonicalHostOpenClawAttemptTask(row);
-      const pointer = task.modelInput.successorReviewTurnRef;
-      if (pointer === undefined) return null;
+      const pointer = row.successorReviewTurnRef;
+      if (pointer == null && !row.hasSuccessorBinding) return null;
       if (typeof pointer !== 'string' || !pointer.trim())
         throw workItemNotFound();
+      if(!row.taskInputHash || row.inputHash!==row.taskInputHash || row.taskType!==row.actionType ||
+        row.taskOperationRef!==input.attemptRef || row.taskWorkItemId!==input.workItemId) throw workItemNotFound();
       const delegation = await this.authorizeSuccessorOverall({
         ...input,
         reviewTurnRef: pointer,
       });
-      const successor = task.modelInput.successorOverallBinding;
+      const successor = row.successorBinding;
       if (
         !successor ||
         typeof successor !== 'object' ||
@@ -307,19 +304,18 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
       return delegation;
     }
     if (row.actionType !== 'OPENCLAW_INTERACTIVE_REVIEW') return null;
-    const task = parseCanonicalHostOpenClawAttemptTask(row);
-    const contract = parseReviewTurnTaskContract(task.modelInput);
+    if (!row.conversation || !row.turn || !row.requestId ||
+        !row.taskInputHash || row.inputHash !== row.taskInputHash || row.matterScope) throw workItemNotFound();
     const delegation = await this.authorizeReviewDelegation({
       ...input,
-      reviewConversationRef: contract.reviewConversationRef,
-      requestId: contract.requestId,
+      reviewConversationRef: row.conversation,
+      requestId: row.requestId,
     });
     if (
-      delegation.reviewTurnRef !== contract.reviewTurnRef ||
+      delegation.reviewTurnRef !== row.turn ||
       row.actorUserId !== delegation.actorUserId ||
       row.inputRevision !== delegation.inputRevision ||
       row.documentVersionId !== delegation.documentVersionId ||
-      contract.matterContext ||
       (row.leaseOwner !== null && row.leaseOwner !== input.principalId)
     )
       throw workItemNotFound();

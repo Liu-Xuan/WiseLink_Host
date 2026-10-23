@@ -40,7 +40,12 @@ Attempt 控制面：
 19. `heartbeat_action_attempt({attemptRef, leaseToken, leaseGeneration})`
 20. `cancel_action_attempt({attemptRef, reason})`
 
-本 Skill 的 INTERACTIVE_REVIEW runtime path 精确只使用 14–18。Heartbeat/cancel 不是 review model 工具，
+普通 INTERACTIVE_REVIEW runtime path 使用 14–18。新严格 runtime addon 另要求可选
+`read_review_native_sources({attemptRef,workItemId?,leaseToken,leaseGeneration,sourceRefs,purpose,context:'EXACT'})`，
+只由 driver 分流，native 子集最多 96，不修改普通 READ 或顶层 artifact 引用语义。
+新工具 metadata 必须严格识别；旧 c5/v1 不增加必需工具，COMMITTING 先恢复封存结果。
+原始 receipts/journal 与模型展示副本的不同边界见 [Review TDMS 有界读取](tdms-review-native-read.md)。
+Heartbeat/cancel 不是 review model 工具，
 不用于替代五工具会话合同。
 
 ## Matter 当前工作只读预检 read_matter_current_work
@@ -223,7 +228,8 @@ RUNNING 正常路径由 `scripts/run-hosted-review-turn.mjs` 外部驱动执行�
    conversation/turn/revision/allowedOperations/executionPolicy 与 Task 完全一致，并精确核对 context 返回的
    resource metadata；跨 resource、重复或未知附件引用在模型前停止。
 2. 仅对本轮明确需要且属于 Task allowlist 的 IDs 调
-   `read_source_refs({attemptRef, sourceRefIds})`；每批 1–100，去重。Host 授权的 current-turn attachment ref 也只走
+   `read_source_refs({attemptRef, sourceRefIds})`；每批 1–100，去重。新 runtime addon 的 native refs 通过上述独立工具，
+   完整请求先验证再分流；未使用的 native 目录不强制 READ。Host 授权的 current-turn attachment ref 也只走
    这条路径，返回 Host 已从 actual bytes 绑定并解析的 `ENGINEER_ATTACHMENT` value，不直接读取附件 locator/bytes。
 3. 模型只能看到移除 workItemId、conversation、turn、request、attempt、lease 与 executionPolicy 后的最小
    context、用户消息、允许的 operation/item/input/source IDs；附件只额外暴露 opaque `attachmentRefs` 与按需
@@ -252,7 +258,7 @@ started-without-result 一律停止且不重试。commit started-without-result 
 该 key 只进入 Gateway header，不成为模型可写字段。每个新 Turn 仍重新同步当前 Host 输入并独立提交候选，
 引用来源仍须本轮读取。旧 Host 无 key 时明确报告旧逐轮隔离路径；失败或权限变化不携带未获授权的旧记忆。
 
-COMMITTING：
+旧 Review（无有界 runtime addon，或 `SAVED_EVIDENCE_ONLY`）的 COMMITTING：
 
 ```text
 begin/status = COMMITTING
@@ -263,6 +269,18 @@ begin/status = COMMITTING
 
 不调用模型、不重放 commit。commit 响应未知时同样只读 status 一次；terminal status 也必须精确匹配本次
 sealed ResultEnvelope 的 `contentHash` 才能返回恢复。
+
+c235 的 `UPDATE_ASSESSMENT` 仅在 c5 TaskEnvelope 与 `BOUNDED_NATIVE_READ` runtime 绑定均有效，且本次
+Host begin/status 都返回同一完整 canonical sealed result 时，允许使用原 token/generation 和原 payload
+完成 `commit_review_turn_candidate`。不重新 seal、绑定、读取来源、调用模型或续租；Host 仍决定当前来源授权、
+版本、事务与 CAS 是否允许恢复。目录只限定引用集合，不能成为正文 carrier 或 READ 证明。
+
+恢复复用完整候选规则；实际 commit 回执必须携带唯一且合法的 `readSourceRefs`，证明所有实际使用来源与
+UNCHANGED 的当前 ALL_PENDING 对话贡献都已在 Host 原 journal 读取。APPLIED 核对新 workRef/expected+1，
+UNCHANGED 核对原 workRef/revision 与空 affectedIssueKeys；正式动作、current 与 WorkItem revision 权限不变。
+收到回执后另读 fresh status，只有同 hash、Review 专属 SUCCEEDED terminal semantics 才返回
+`COMMITTING_REPLAYED`。响应丢失在本次触发中只 fresh status 对账，仍 COMMITTING 就报告 attention；同 hash
+SUCCEEDED 可只读确认持久化，但不补造 receipt、READ 或 stale 证明。已收到的坏回执不能被后续 status 洗成成功。
 
 ## 当前未授权 review operations
 

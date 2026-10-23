@@ -1,3 +1,4 @@
+import type { TdmsReviewCaller } from '../tdms-source/tdms-review-delegation';
 import {
   DialogueAssessmentRepository,
   type DialogueAssessmentSnapshot,
@@ -173,14 +174,11 @@ export class CanonicalHostOpenClawReviewService {
       workItemId,
     });
     assertWorkItemScope(scope, workItemId);
-    const loaded = await this.workItems.loadTenantScopedProjection(
-      workItemId,
-      scope.tenantId,
-    );
-    if (!loaded?.projection) throw reviewNotFound();
+    const owner=await this.conversations.loadOpenClawWorkItemOwner({workItemId,tenantId:scope.tenantId});
+    if(!owner) throw reviewNotFound();
     const turn = await this.conversations.loadPendingOpenClawTurn({
       tenantId: scope.tenantId,
-      actorId: loaded.row.requestedByUserId,
+      actorId: owner.actorId,
       workItemId,
       ...(scope.successorReviewDelegation ? { requireSuccessorDelegation: true } : {}),
     });
@@ -193,7 +191,7 @@ export class CanonicalHostOpenClawReviewService {
     const busy = await this.dispatch.isBusy({
       ...turn,
       tenantId: scope.tenantId,
-      actorId: loaded.row.requestedByUserId,
+      actorId: owner.actorId,
       workItemId,
     });
     return {
@@ -223,6 +221,7 @@ export class CanonicalHostOpenClawReviewService {
       requestId,
     });
     assertWorkItemScope(scope, scope.workItemId);
+    const reviewCaller = await this.jobAid?.admitReviewSources({scope,reviewConversationRef,requestId});
     const scopedWorkItem = await this.workItems.loadTenantScopedProjection(
       scope.workItemId,
       scope.tenantId,
@@ -237,9 +236,11 @@ export class CanonicalHostOpenClawReviewService {
       scope,
       scopedWorkItem.row.requestedByUserId,
     );
-    const buildInput = async () => {
+    const buildInput = async (identity?: {attemptId:string;operationRef:string;createdAt:Date}) => {
+      const preparationCaller = identity && reviewCaller ? await this.jobAid!.admitReviewSources({
+        scope,reviewConversationRef,requestId,preparation:identity}) : reviewCaller;
       const workItem = await this.requiredCurrentWorkItem(binding, scope);
-      const taskContract = await this.buildTaskContract(binding, workItem);
+      const taskContract = await this.buildTaskContract(binding, workItem, preparationCaller);
       return {
         modelInput: structuredClone(taskContract) as unknown as Record<
           string,
@@ -403,6 +404,14 @@ export class CanonicalHostOpenClawReviewService {
     };
   }
 
+  async readNativeSources(input:{attemptRef:string;workItemId?:string;leaseToken:string;leaseGeneration:number;
+    sourceRefs:string[];purpose:string;context:'EXACT'}) {
+    const attempt=await this.requiredReviewAttempt(input.attemptRef,'READ_REVIEW_SOURCE_REFS',true,input.workItemId);
+    if(!this.jobAid||!attempt.contract.jobAidContext) throw reviewConflict('REVIEW_NATIVE_CONTEXT_REQUIRED');
+    return this.jobAid.readReviewNativeSources({...input,row:attempt.row,task:attempt.contract.jobAidContext,
+      scope:attempt.scope,reviewCaller:attempt.reviewCaller});
+  }
+
   async queryAily(
     attemptRef: string,
     input: { requestKey: string; query: string } | { queryRef: string },
@@ -462,9 +471,10 @@ export class CanonicalHostOpenClawReviewService {
     )
       throw reviewConflict('REVIEW_CHAT_ASSESSMENT_MUTATION_FORBIDDEN');
     const matterContext = authorized.contract.matterContext;
-    const readRefs = resolvedReviewSourceRefs(
-      authorized.row.reviewActivityJson,
-    );
+    const readRefs = resolvedReviewSourceRefs(authorized.row.reviewActivityJson);
+    const decision=authorized.contract.jobAidContext ? this.jobAid!.reviewDecision(
+      authorized.contract.jobAidContext,authorized.row.reviewActivityJson) : undefined;
+    for(const ref of decision?.sourceRefs??[]) readRefs.add(ref);
     if (
       (matterContext ||
         authorized.contract.jobAidContext ||
@@ -506,6 +516,7 @@ export class CanonicalHostOpenClawReviewService {
         candidate.jobAidWorkingDelta,
         readRefs,
         reviewJobAidTargetIssueKeys(authorized.contract),
+        decision?.catalog,
       );
     assertReviewCommitFence({
       row: authorized.row,
@@ -527,6 +538,8 @@ export class CanonicalHostOpenClawReviewService {
       leaseGeneration,
       result,
       failClosedWithoutRejectionMutation: true,
+      ...(authorized.contract.jobAidContext?.tdmsReviewContext?.mode==='BOUNDED_NATIVE_READ'
+        ? {expectedReviewActivityJson:authorized.row.reviewActivityJson} : {}),
     });
     if (
       prepared.row.status !== 'COMMITTING' &&
@@ -539,6 +552,10 @@ export class CanonicalHostOpenClawReviewService {
       authorized.contract.reviewConversationRef,
       authorized.contract.requestId,
     );
+    // prepareCommit changes the durable phase/result hash. Re-enter the real
+    // finite admission, outside the save transaction; do not mutate a handle.
+    const reviewCaller = authorized.reviewCaller
+      ? await this.jobAid!.admitReviewSources({scope:authorized.scope,attemptRef}) : undefined;
     const persistenceInput = {
       conversation: authorized.conversation,
       turn: authorized.turn,
@@ -548,7 +565,7 @@ export class CanonicalHostOpenClawReviewService {
     };
     const persisted = authorized.contract.jobAidContext
       ? await this.persistJobAidCandidate(
-          { ...authorized, row: prepared.row },
+          { ...authorized, row: prepared.row, reviewCaller },
           candidate,
           persistenceInput,
           {
@@ -557,7 +574,7 @@ export class CanonicalHostOpenClawReviewService {
             leaseGeneration,
           },
           decisionReadRefs,
-          !prepared.recovery,
+          !prepared.recovery || authorized.contract.jobAidContext.tdmsReviewContext?.mode==='BOUNDED_NATIVE_READ',
         )
       : authorized.contract.matterContext
         ? await this.persistMatterCandidate(
@@ -603,6 +620,10 @@ export class CanonicalHostOpenClawReviewService {
     if (!this.jobAid || !this.matterWorkingRepository)
       throw reviewConflict('REVIEW_JOBAID_RUNTIME_UNAVAILABLE');
     const task = authorized.contract.jobAidContext!;
+    const decision=this.jobAid.reviewDecision(task,authorized.row.reviewActivityJson);
+    if(task.tdmsReviewContext?.mode==='BOUNDED_NATIVE_READ') {
+      readRefs=new Set([...resolvedReviewSourceRefs(authorized.row.reviewActivityJson),...decision.sourceRefs]);
+    }
     const cited = new Set([
       ...candidate.sourceRefs,
       ...candidate.candidateEvidenceRefs,
@@ -622,6 +643,8 @@ export class CanonicalHostOpenClawReviewService {
     return this.matterWorkingRepository.withActorTransaction(
       authorized.conversation.actorId,
       async ({ database }) => {
+        await this.jobAid!.assertReviewNativeInTransaction(task,authorized.reviewCaller,
+          authorized.row.tenantId,database,decision.evidence);
         let savedReviewWork: JobAidWorkRevision | null = null;
         const unchangedUpdate = authorized.turn.purpose === 'UPDATE_ASSESSMENT' &&
           candidate.jobAidWorkingDelta === null;
@@ -653,6 +676,7 @@ export class CanonicalHostOpenClawReviewService {
               proposal: candidate.jobAidWorkingDelta,
               actualReadRefs: readRefs,
               targetIssueKeys: reviewJobAidTargetIssueKeys(authorized.contract),
+              reviewCaller: authorized.reviewCaller,
             },
             database,
           );
@@ -672,7 +696,7 @@ export class CanonicalHostOpenClawReviewService {
           };
         } else {
           const previous = unchangedUpdate
-            ? await this.jobAid!.assertReviewWorkUnchanged({ row: authorized.row, task, fence }, database)
+            ? await this.jobAid!.assertReviewWorkUnchanged({ row: authorized.row, task, fence, reviewCaller:authorized.reviewCaller }, database)
             : task.previousWork;
           input.candidate.jobAidWorkingUpdate = {
             status: 'UNCHANGED',
@@ -691,6 +715,10 @@ export class CanonicalHostOpenClawReviewService {
               authorized.row, savedReviewWork, authorized.conversation.actorId, database,
             )
           : false;
+        const finalCaller=authorized.reviewCaller
+          ? await this.jobAid!.reviewCallerAfterPersistence(authorized.reviewCaller,database) : undefined;
+        await this.jobAid!.assertReviewNativeInTransaction(task,finalCaller,
+          authorized.row.tenantId,database,decision.evidence);
         return { ...persisted, staleMarked };
       },
     );
@@ -933,6 +961,7 @@ export class CanonicalHostOpenClawReviewService {
       workItemId,
     });
     assertAttemptScope(scope, attemptRef);
+    const reviewCaller = await this.jobAid?.admitReviewSources({scope,attemptRef});
     const row = await this.attempts.readScoped({
       attemptRef,
       tenantId: scope.tenantId,
@@ -981,6 +1010,7 @@ export class CanonicalHostOpenClawReviewService {
         contract.jobAidContext,
         row.tenantId,
         row.workItemId,
+        reviewCaller,
       );
     }
     if (requireCurrent) {
@@ -992,6 +1022,7 @@ export class CanonicalHostOpenClawReviewService {
       row,
       task,
       contract,
+      reviewCaller,
       conversation: binding.conversation,
       turn: binding.turn,
     };
@@ -1210,6 +1241,7 @@ export class CanonicalHostOpenClawReviewService {
   private async buildTaskContract(
     binding: ReviewBinding,
     workItem: CanonicalWorkItemProjection,
+    reviewCaller?: TdmsReviewCaller,
   ): Promise<ReviewTurnTaskContract> {
     if (binding.turn.targetIssueKeys &&
       (binding.turn.purpose !== 'UPDATE_ASSESSMENT' || binding.turn.reviewScope))
@@ -1223,7 +1255,7 @@ export class CanonicalHostOpenClawReviewService {
       (!workItem.integratedAssessment?.baseRules &&
         this.jobAid?.enabledForNewTasks())
     )
-      return this.buildJobAidTaskContract(binding, workItem);
+      return this.buildJobAidTaskContract(binding, workItem, reviewCaller);
     if (binding.turn.targetIssueKeys)
       throw reviewConflict('REVIEW_TARGET_ISSUES_JOBAID_REQUIRED');
     if (binding.turn.requestId.startsWith('dialogue-')) {
@@ -1423,6 +1455,7 @@ export class CanonicalHostOpenClawReviewService {
   private async buildJobAidTaskContract(
     binding: ReviewBinding,
     workItem: CanonicalWorkItemProjection,
+    reviewCaller?: TdmsReviewCaller,
   ): Promise<ReviewTurnTaskContract> {
     if (!this.jobAid) throw reviewConflict('REVIEW_JOBAID_RUNTIME_UNAVAILABLE');
     if (binding.turn.selectedEvaluationItemId)
@@ -1553,6 +1586,7 @@ export class CanonicalHostOpenClawReviewService {
     }
     const jobAidContext = await this.jobAid.prepareReview({
       workItem,
+      reviewCaller,
       tenantId: binding.conversation.tenantId,
       actorUserId: binding.conversation.actorId,
       asOf: binding.turn.createdAt.toISOString(),
@@ -1979,6 +2013,7 @@ interface ReviewBinding {
 }
 
 interface AuthorizedReviewAttempt extends ReviewBinding {
+  reviewCaller?: TdmsReviewCaller;
   scope: CanonicalVerifiedOpenClawAttemptScope;
   row: ActionAttemptRow;
   task: OpenClawTaskEnvelope;

@@ -5,7 +5,6 @@ import {
   parseAssessmentTdmsEvidence,
   type AssessmentTdmsNativeEvidence,
 } from '@shared/assessment-tdms-evidence';
-import type { TdmsRecordSummary } from '@shared/tdms-source.interface';
 import type { CanonicalObjectAccessPort } from '../work-item/canonical-object-access.port';
 import { isHostedCanonicalFinalUserActor } from '../work-item/miaoda-hosted-canonical-object-access.adapter';
 import type { CanonicalServiceScopeAuthorizationPort } from '../canonical-host/canonical-service-scope.authorization';
@@ -29,6 +28,7 @@ import { assertPublicActor, sameScope } from './tdms-source.authorization';
 import type { TdmsSourceActor } from './tdms-runtime-delegation';
 import { authenticateTdmsSummaryDelegation } from './tdms-summary-delegation';
 import { authenticateTdmsRecoveryDelegation } from './tdms-recovery-delegation';
+import { authenticateTdmsReviewDelegation, tdmsReviewBinding } from './tdms-review-delegation';
 import { TdmsRetainedRuntimeFacts } from './tdms-retained-runtime-facts';
 import { tdmsSavedNativeContext } from './tdms-native-saved-work';
 import {
@@ -39,10 +39,11 @@ import { SqlTdmsProcessingSetTransaction } from './tdms-processing-set.repositor
 import { processingSet } from './tdms-processing-set.validation';
 import { processingSetFacts } from './tdms-processing-set.references';
 import type { TdmsRuntimeRecordMetadata } from './tdms-runtime-reader.adapter';
-import type { TdmsStoredRevisionMetadata } from './tdms-processing-set.types';
 import type { TdmsRuntimeTaskBinding } from './tdms-runtime-reader.port';
 import { canonical, identifier, object } from './tdms-source.validation';
 import { tdmsError, type TdmsSourceScope } from './tdms-source.types';
+import { tdmsRuntimeMetadataRecord } from './tdms-runtime-record-metadata';
+import { assertTdmsReviewDocumentMetadata } from './tdms-review-document-metadata';
 
 type Input = Omit<TdmsNativeTransactionInput, 'evidence'> & {
   evidence: AssessmentTdmsNativeEvidence[];
@@ -69,17 +70,38 @@ export class TdmsBrowserNativeVerifier {
   ) {}
 
   async assertInTransaction(input: Input): Promise<void> {
+    return this.verify(input, !!input.reviewCaller && !input.evidence.length);
+  }
+
+  /** Uses only saved finite carrier metadata. No saved content/journal/body is
+   * returned until current Source, selected head and own approval all pass. */
+  async assertReviewMetadata(input: Input): Promise<void> {
+    if (!input.reviewCaller) fail('TDMS_NATIVE_AUTHENTIC_CALLER_REQUIRED', 403);
+    if (tdmsReviewBinding(input.reviewCaller).nativeMetadata.length)
+      return this.verify(input, true);
+    const invocation = await this.authenticate(input);
+    await assertTdmsReviewDocumentMetadata({
+      database: input.database,
+      binding: tdmsReviewBinding(input.reviewCaller),
+      actor: invocation.actor,
+      validUntil: invocation.validUntil,
+      identityProfile: this.identityProfile,
+      reauthenticate: () => this.authenticate(input),
+    });
+  }
+
+  private async verify(input: Input, metadataOnly: boolean): Promise<void> {
     if (
       !input.database ||
       input.runtime ||
       Number(!!input.browserCaller) +
         Number(!!input.summaryCaller) +
-        Number(!!input.recoveryCaller) !==
+        Number(!!input.recoveryCaller) + Number(!!input.reviewCaller) !==
         1
     )
       fail('TDMS_NATIVE_AUTHENTIC_CALLER_REQUIRED', 403);
     const evidence = input.evidence.map(parseAssessmentTdmsEvidence);
-    if (!evidence.length) return;
+    if (!evidence.length && !input.reviewCaller) return;
     const database = input.database;
     const invocation = await this.authenticate(input);
     let expiresAt = invocation.validUntil;
@@ -112,7 +134,11 @@ export class TdmsBrowserNativeVerifier {
       return value;
     };
     const tx = new SqlTdmsProcessingSetTransaction(database);
-    for (const item of evidence) {
+    const selected = metadataOnly
+      ? tdmsReviewBinding(input.reviewCaller!).nativeMetadata
+      : evidence;
+    if (metadataOnly && !selected.length) fail('TDMS_NATIVE_SAVED_WORK_BINDING_MISMATCH');
+    for (const item of selected) {
       const pin = item.nativeScope.processingSetBinding,
         sourceAuthority = await current(pin.scope);
       const context = await tdmsSavedNativeContext({
@@ -192,7 +218,7 @@ export class TdmsBrowserNativeVerifier {
         },
         sourceAuthority.decision.permittedMembers,
       );
-      const records = retained.revisions.map(metadata);
+      const records = retained.revisions.map(tdmsRuntimeMetadataRecord);
       if (
         records.some((value) =>
           value.record.relatedDocumentVersionIds.some(
@@ -246,10 +272,12 @@ export class TdmsBrowserNativeVerifier {
         record.record,
       );
       const index = opinionIndex(locator, record);
+      if (metadataOnly) continue;
+      const carrier = parseAssessmentTdmsEvidence(item);
       // Only after exact own approval/current membership can journal or source
       // body bytes cross the driver boundary. No new receipt is saved here.
       await current(pin.scope);
-      await receipts.assertReceipt(context.binding, item, true);
+      await receipts.assertReceipt(context.binding, carrier, true);
       const rows = await database.execute<{ opinion: unknown }>(sql`SELECT
         jsonb_extract_path(data,'record','content','opinions',${String(index)}) AS opinion
         FROM tdms_record_revision WHERE tenant_id=${pin.scope.tenantId} AND source_key=${pin.scope.sourceKey}
@@ -293,8 +321,8 @@ export class TdmsBrowserNativeVerifier {
           processingSetBinding: pin,
           approval,
         },
-        nativeReadReceipt: item.nativeReadReceipt,
-        ...(item.dialogueSource ? { dialogueSource: item.dialogueSource } : {}),
+        nativeReadReceipt: carrier.nativeReadReceipt,
+        ...(carrier.dialogueSource ? { dialogueSource: carrier.dialogueSource } : {}),
       });
       if (canonical(reconstructed) !== canonical(item))
         fail('TDMS_RUNTIME_BODY_SUBSTITUTED');
@@ -317,7 +345,12 @@ export class TdmsBrowserNativeVerifier {
     identifier(input.actor.actorUserId);
     identifier(input.actor.tenantId);
     let result: { actor: TdmsSourceActor; validUntil: number };
-    if (input.recoveryCaller)
+    if (input.reviewCaller)
+      result = await authenticateTdmsReviewDelegation({
+        database: input.database, authorization: this.authorization,
+        caller: input.reviewCaller, actor: input.actor,
+      });
+    else if (input.recoveryCaller)
       result = await authenticateTdmsRecoveryDelegation({
         database: input.database,
         authorization: this.authorization,
@@ -442,45 +475,7 @@ function opinionIndex(
     fail('TDMS_RUNTIME_FIELD_PROVENANCE_MISMATCH');
   return index;
 }
-function metadata(
-  value: TdmsStoredRevisionMetadata,
-): TdmsRuntimeRecordMetadata {
-  const r = value.record;
-  const record: TdmsRecordSummary = {
-    recordRef: r.recordRef,
-    sourceRevisionRef: r.sourceRevisionRef,
-    recordKind: r.recordKind,
-    sourceRecordId: r.sourceRecordId,
-    sourceKey: r.sourceKey,
-    sourceInstanceId: r.sourceInstanceId,
-    title: r.title,
-    fileType: r.fileType,
-    sourceVersion: r.sourceVersion,
-    ...(r.businessVersion === undefined
-      ? {}
-      : { businessVersion: r.businessVersion }),
-    state: r.state,
-    authors: r.authors,
-    observedAt: r.observedAt,
-    capturedAt: r.capturedAt,
-    coverage: r.coverage,
-    relatedDocumentVersionIds: r.relatedDocumentVersionIds,
-    fieldSelectors: r.fieldSelectors,
-    sourceVerification: r.sourceVerification,
-    currentness: r.currentness,
-  };
-  return structuredClone({
-    scope: value.scope,
-    record,
-    captureRef: r.captureRef,
-    sourceModifiedAt: r.sourceModifiedAt,
-    ...(typeof r.rawFields.sourceModifiedRaw === 'string'
-      ? { sourceModifiedRaw: r.rawFields.sourceModifiedRaw }
-      : {}),
-    opinionCollection: r.rawFields.opinionCollection ?? null,
-    fieldProvenance: r.fieldProvenance,
-  });
-}
+
 function fail(code: string, status = 409): never {
   throw tdmsError(code, status);
 }

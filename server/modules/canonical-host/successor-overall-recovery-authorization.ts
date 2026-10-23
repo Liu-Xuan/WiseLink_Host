@@ -1,77 +1,26 @@
-import type { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import type { ActionAttemptRepository } from '../action-attempt/action-attempt.repository';
-import {
-  parseCanonicalHostOpenClawAttemptTask,
-  parseCanonicalHostOpenClawStoredResult,
-} from './canonical-host-openclaw-runtime-policy';
+import type { ReviewTurnAuthorizationMetadata } from '../review-persistence/review-conversation.repository';
 
-/** A projection written before the final ack may recover only its exact +1 revision. */
+/** Finite proof only. Full task/result parsing follows current Source admission. */
 export async function committedSuccessorRevision(
-  input: {
-    tenantId: string;
-    principalId: string;
-    workItemId: string;
-    actorUserId: string;
-  },
-  turn: import('../review-persistence/review-conversation.repository').PersistedReviewTurn,
-  currentRevision: number,
-  workItems: MiaodaWorkItemRepository,
-  attempts?: ActionAttemptRepository,
-): Promise<boolean> {
-  const receipt = turn.assistantCandidate?.jobAidWorkingUpdate;
-  if (
-    !attempts ||
-    !receipt?.workRevisionRef ||
-    receipt.status !== 'APPLIED' ||
-    turn.overallRequested !== true ||
-    currentRevision !== turn.inputRevision + 1
-  )
-    return false;
-  const row = await attempts.readLatestByExactIdempotency({
-    tenantId: input.tenantId,
-    idempotencyKey: `openclaw-successor-overall:${input.workItemId}:${turn.reviewTurnId}`,
-  });
-  if (
-    !row ||
-    row.tenantId !== input.tenantId ||
-    row.workItemId !== input.workItemId ||
-    row.actionType !== 'OPENCLAW_OVERALL_SYNTHESIS' ||
-    row.actorUserId !== 'service:openclaw-main' ||
-    !['COMMITTING', 'SUCCEEDED'].includes(row.status) ||
-    row.baseRevision !== turn.inputRevision ||
-    row.inputRevision !== turn.inputRevision ||
-    (row.leaseOwner !== null && row.leaseOwner !== input.principalId)
-  )
-    return false;
-  const task = parseCanonicalHostOpenClawAttemptTask(row);
-  const binding = task.modelInput.successorOverallBinding;
-  if (
-    task.modelInput.successorReviewTurnRef !== turn.reviewTurnId ||
-    !binding ||
-    typeof binding !== 'object' ||
-    Array.isArray(binding) ||
-    !('reviewConversationRef' in binding) ||
-    binding.reviewConversationRef !== turn.reviewConversationId ||
-    !('requestId' in binding) ||
-    binding.requestId !== turn.requestId ||
-    !('inputRevision' in binding) ||
-    binding.inputRevision !== turn.inputRevision ||
-    !('workRevisionRef' in binding) ||
-    binding.workRevisionRef !== receipt.workRevisionRef
-  )
-    return false;
-  parseCanonicalHostOpenClawStoredResult({ row, task });
-  const current = await workItems.loadTenantScopedProjection(
-    input.workItemId,
-    input.tenantId,
-  );
-  const overall = current?.projection?.integratedAssessment?.overallSynthesis;
-  return Boolean(
-    current &&
-    current.row.revision === currentRevision &&
-    current.row.requestedByUserId === input.actorUserId &&
-    current.projection?.revision === currentRevision &&
-    overall?.actionAttemptId === row.attemptId &&
-    overall.basedOnJobAidWorkRevisionRef === receipt.workRevisionRef,
-  );
+  input:{tenantId:string;principalId:string;workItemId:string;actorUserId:string},
+  turn:ReviewTurnAuthorizationMetadata,currentRevision:number,attempts?:ActionAttemptRepository,
+):Promise<boolean> {
+  const receipt=turn.jobAidWorkingUpdate;
+  if(!attempts || receipt?.status!=='APPLIED' || !receipt.workRevisionRef ||
+    turn.overallRequested!==true || currentRevision!==turn.inputRevision+1) return false;
+  const proof=await attempts.readSuccessorRecoveryMetadata({tenantId:input.tenantId,workItemId:input.workItemId,
+    idempotencyKey:`openclaw-successor-overall:${input.workItemId}:${turn.reviewTurnId}`});
+  if(!proof || proof.owner!==input.actorUserId || proof.currentRevision!==currentRevision || !proof.projectionMatches) return false;
+  const row=proof.attempt,binding=row.successorBinding;
+  return Boolean(row.tenantId===input.tenantId && row.workItemId===input.workItemId &&
+    row.actionType==='OPENCLAW_OVERALL_SYNTHESIS' && row.actorUserId==='service:openclaw-main' &&
+    ['COMMITTING','SUCCEEDED'].includes(row.status) && row.baseRevision===turn.inputRevision &&
+    row.inputRevision===turn.inputRevision && (row.leaseOwner===null || row.leaseOwner===input.principalId) &&
+    row.taskInputHash && row.inputHash===row.taskInputHash && row.taskType===row.actionType &&
+    row.taskOperationRef===row.operationRef && row.taskWorkItemId===row.workItemId && row.sealedSuccess &&
+    row.successorReviewTurnRef===turn.reviewTurnId && binding && typeof binding==='object' &&
+    !Array.isArray(binding) && 'reviewConversationRef' in binding && binding.reviewConversationRef===turn.reviewConversationId &&
+    'requestId' in binding && binding.requestId===turn.requestId && 'inputRevision' in binding && binding.inputRevision===turn.inputRevision &&
+    'workRevisionRef' in binding && binding.workRevisionRef===receipt.workRevisionRef);
 }

@@ -12,8 +12,15 @@ export function assertTdmsNativeInput(input) {
   exact(context, ['schemaVersion','projection']);
   if (context.schemaVersion !== 'wiselink.tdms-runtime-context.v1' || input.purpose === 'PROBLEM_REVIEW') fail('VERSION_INVALID');
   const projection = context.projection;
+  if (delivered.length) fail('DIRECTORY_ONLY_REQUIRED');
+  assertTdmsNativeProjection(projection, native);
+}
+
+/** Pure directory validation shared with the separately bound Review addon.
+ * This grants no READ or current caller/source authority. */
+export function assertTdmsNativeProjection(projection, native) {
   exact(projection,['opinions','contradictions','selectedSetApprovedRefs','historicalCohortApprovedRefs','cohorts','readPerformed','interpretation']);
-  if (projection.readPerformed !== false || projection.interpretation !== 'APPROVED_PROFESSIONAL_JUDGMENT_NOT_INFALLIBLE' || delivered.length) fail('DIRECTORY_ONLY_REQUIRED');
+  if (projection.readPerformed !== false || projection.interpretation !== 'APPROVED_PROFESSIONAL_JUDGMENT_NOT_INFALLIBLE') fail('DIRECTORY_ONLY_REQUIRED');
   for (const name of ['opinions','contradictions','selectedSetApprovedRefs','historicalCohortApprovedRefs','cohorts']) if (!Array.isArray(projection[name])) fail('METADATA_INVALID');
   const refs = new Set();
   for (const opinion of projection.opinions) {

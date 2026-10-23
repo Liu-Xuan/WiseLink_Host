@@ -243,3 +243,24 @@ it('keeps the same observation while refresh is pending and advances it only on 
   await act(async () => resolve(page('SUCCEEDED')));
   expect(current.isRefreshing).toBe(false);
 });
+
+it('applies ACK-only appearance, replacement and null removal through the existing refresh hook', async () => {
+  const original = page('SUCCEEDED');
+  const acknowledged = { ...original, autoProcessingAcknowledgement: {
+    workItemId: original.workItemId, requestId: 'outer-request', documentVersionId: 'DV-one',
+    acknowledgedAt: '2026-10-21T10:00:00Z',
+  } };
+  const replaced = { ...acknowledged, autoProcessingAcknowledgement: {
+    ...acknowledged.autoProcessingAcknowledgement, acknowledgedAt: '2026-10-21T10:01:00Z',
+  } };
+  const removed = { ...original, autoProcessingAcknowledgement: null };
+  mockRead.mockResolvedValueOnce(original).mockResolvedValueOnce(acknowledged)
+    .mockResolvedValueOnce(replaced).mockResolvedValueOnce(removed);
+  await render();
+  expect(current.data).toBe(original);
+  for (const next of [acknowledged, replaced, removed]) {
+    await act(async () => current.refresh());
+    expect(current.data).toBe(next);
+    expect(current.data?.autoProcessingAcknowledgement).toEqual(next.autoProcessingAcknowledgement);
+  }
+});

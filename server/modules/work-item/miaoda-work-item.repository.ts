@@ -22,6 +22,7 @@ import {
 } from 'drizzle-orm';
 
 import type {
+  CanonicalAutoProcessingCompletionReceipt,
   CanonicalParseAuthorizationProjection,
   CanonicalPdfVerticalRunRequest,
   CanonicalWorkItemProjection,
@@ -721,13 +722,23 @@ export class MiaodaWorkItemRepository {
     workItemId: string;
     revision: number;
   }): Promise<boolean> {
+    return Boolean(await this.readReadableAutoProcessingCompletion(input));
+  }
+
+  /** Returns the receipt validated by this single tenant-scoped WorkItem read. */
+  async readReadableAutoProcessingCompletion(input: {
+    tenantId: string;
+    actorUserId: string;
+    workItemId: string;
+    revision: number;
+  }): Promise<CanonicalAutoProcessingCompletionReceipt | null> {
     const loaded = await this.loadTenantScopedProjection(
       input.workItemId,
       input.tenantId,
     );
     const receipt = loaded?.projection?.autoProcessingCompletionReceipt;
     const row = loaded?.row;
-    return Boolean(
+    return (
       receipt &&
       row &&
       row.tenantId === input.tenantId &&
@@ -749,8 +760,8 @@ export class MiaodaWorkItemRepository {
       receipt.sourceByteLength === Number(row.sourceByteLength) &&
       /^[0-9a-f]{64}$/u.test(receipt.sourceFileSha256) &&
       receipt.sourceByteLength > 0 &&
-      Number.isFinite(Date.parse(receipt.completedAt)),
-    );
+      Number.isFinite(Date.parse(receipt.completedAt))
+    ) ? receipt : null;
   }
 
   /** Discovery only: completion is not a successor execution delegation. */
@@ -761,7 +772,40 @@ export class MiaodaWorkItemRepository {
     limit?: number;
   }): Promise<AutoWorkItemLeaseBinding[]> {
     return this.db
-      .select({ authorization: autoWorkItemAuthorization, workItem })
+      .select({
+        authorization: {
+          tenantId: autoWorkItemAuthorization.tenantId,
+          workItemId: autoWorkItemAuthorization.workItemId,
+          requestId: autoWorkItemAuthorization.requestId,
+          actorUserId: autoWorkItemAuthorization.actorUserId,
+          documentId: autoWorkItemAuthorization.documentId,
+          documentVersionId: autoWorkItemAuthorization.documentVersionId,
+          sourceArtifactId: autoWorkItemAuthorization.sourceArtifactId,
+          sourceFileSha256: autoWorkItemAuthorization.sourceFileSha256,
+          sourceByteLength: autoWorkItemAuthorization.sourceByteLength,
+          grantKind: autoWorkItemAuthorization.grantKind,
+          status: autoWorkItemAuthorization.status,
+          leaseOwner: autoWorkItemAuthorization.leaseOwner,
+          leaseToken: autoWorkItemAuthorization.leaseToken,
+          leaseGeneration: autoWorkItemAuthorization.leaseGeneration,
+          leaseExpiresAt: autoWorkItemAuthorization.leaseExpiresAt
+        },
+        workItem: {
+          tenantId: workItem.tenantId,
+          workItemId: workItem.workItemId,
+          requestId: workItem.requestId,
+          requestedByUserId: workItem.requestedByUserId,
+          documentId: workItem.documentId,
+          documentVersionId: workItem.documentVersionId,
+          sourceArtifactId: workItem.sourceArtifactId,
+          sourceFileSha256: workItem.sourceFileSha256,
+          sourceByteLength: workItem.sourceByteLength,
+          actionType: workItem.actionType,
+          status: workItem.status,
+          revision: workItem.revision,
+          packageId: workItem.packageId
+        }
+      })
       .from(autoWorkItemAuthorization)
       .innerJoin(
         workItem,

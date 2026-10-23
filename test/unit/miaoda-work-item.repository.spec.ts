@@ -923,6 +923,70 @@ describe('browser readable completion eligibility', () => {
     status: 'CANDIDATE_READBACK_VERIFIED',
     packageId: 'PKG-A',
   };
+  const input = {
+    tenantId: 'tenant-A', workItemId: 'WI-A', actorUserId: 'actor-A', revision: 7,
+  };
+  interface Mutation {
+    row?: Partial<typeof row>;
+    receipt?: Partial<typeof receipt> | null;
+    projectionRevision?: number;
+  }
+  function reader(mutation: Mutation = {}) {
+    const target = new MiaodaWorkItemRepository({} as never);
+    const load = jest.spyOn(target, 'loadTenantScopedProjection').mockResolvedValue({
+      row: { ...row, ...mutation.row },
+      projection: {
+        revision: mutation.projectionRevision ?? 7,
+        autoProcessingCompletionReceipt: mutation.receipt === null
+          ? undefined : { ...receipt, ...mutation.receipt },
+      },
+    } as never);
+    return { target, load };
+  }
+  it('returns the same validated receipt from one WorkItem read; boolean eligibility uses that same entry', async () => {
+    const { target, load } = reader();
+    await expect(target.readReadableAutoProcessingCompletion(input)).resolves.toEqual(receipt);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledWith('WI-A', 'tenant-A');
+    load.mockClear();
+    await expect(target.hasReadableAutoProcessingCompletion(input)).resolves.toBe(true);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+  const invalid: Array<[string, Mutation]> = [
+    ['receipt missing', { receipt: null }],
+    ['tenant', { receipt: { tenantId: 'other' } }],
+    ['work item', { receipt: { workItemId: 'other' } }],
+    ['actor', { receipt: { actorUserId: 'other' } }],
+    ['request', { receipt: { requestId: 'other' } }],
+    ['document', { receipt: { documentId: 'other' } }],
+    ['document version', { receipt: { documentVersionId: 'other' } }],
+    ['source artifact', { receipt: { sourceArtifactId: 'other' } }],
+    ['source hash', { receipt: { sourceFileSha256: 'b'.repeat(64) } }],
+    ['invalid matching source hash', { row: { sourceFileSha256: 'invalid' }, receipt: { sourceFileSha256: 'invalid' } }],
+    ['source bytes', { receipt: { sourceByteLength: 99 } }],
+    ['invalid matching source bytes', { row: { sourceByteLength: 0 }, receipt: { sourceByteLength: 0 } }],
+    ['invalid time', { receipt: { completedAt: 'not-a-time' } }],
+    ['empty time', { receipt: { completedAt: '' } }],
+    ['row revision advanced', { row: { revision: 8 } }],
+    ['projection revision advanced', { projectionRevision: 8 }],
+    ['non-parse row', { row: { actionType: 'OTHER' } }],
+    ['unverified row', { row: { status: 'PARSING' } }],
+    ['missing package', { row: { packageId: '' } }],
+  ];
+  it.each(invalid)('returns null and false for %s without exposing the raw receipt', async (_name, mutation) => {
+    const { target, load } = reader(mutation);
+    await expect(target.readReadableAutoProcessingCompletion(input)).resolves.toBeNull();
+    expect(load).toHaveBeenCalledTimes(1);
+    load.mockClear();
+    await expect(target.hasReadableAutoProcessingCompletion(input)).resolves.toBe(false);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+  it('does not translate a storage or read-policy error into a missing receipt', async () => {
+    const { target, load } = reader();
+    load.mockRejectedValue(new Error('WORK_ITEM_READ_DENIED_OR_UNAVAILABLE'));
+    await expect(target.readReadableAutoProcessingCompletion(input)).rejects.toThrow('WORK_ITEM_READ_DENIED_OR_UNAVAILABLE');
+    await expect(target.hasReadableAutoProcessingCompletion(input)).rejects.toThrow('WORK_ITEM_READ_DENIED_OR_UNAVAILABLE');
+  });
   it('accepts only matching owner and source receipt without reading the service-only enrollment table', async () => {
     const target = new MiaodaWorkItemRepository({} as never);
     const load = jest

@@ -252,6 +252,10 @@ export class CanonicalHostOpenClawOverallService {
       workItemId,
     });
     assertAttemptScope(scope, attemptReference);
+    if(scope.successorReviewDelegation) {
+      if(!this.problemAssessment) throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      await this.problemAssessment.admitSuccessorSources(scope,scope.successorReviewDelegation.reviewTurnRef,attemptReference);
+    }
     const row = await this.attempts.readScoped({
       attemptRef: attemptReference,
       tenantId: scope.tenantId,
@@ -315,6 +319,10 @@ export class CanonicalHostOpenClawOverallService {
       workItemId,
     });
     assertAttemptScope(scope, attemptRef);
+    if(scope.successorReviewDelegation) {
+      if(!this.problemAssessment) throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      await this.problemAssessment.admitSuccessorSources(scope,scope.successorReviewDelegation.reviewTurnRef,attemptRef);
+    }
     const preflightRow = await this.attempts.readScoped({
       attemptRef,
       tenantId: scope.tenantId,

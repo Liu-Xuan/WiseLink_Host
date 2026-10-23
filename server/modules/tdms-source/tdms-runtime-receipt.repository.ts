@@ -1,5 +1,5 @@
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { actionAttempt } from '../../database/schema';
 import type {
   TdmsRuntimeNativeEvidence,
@@ -10,6 +10,7 @@ import { assertTdmsRuntimeTaskContext } from './tdms-runtime-reader.port';
 import { canonical, object } from './tdms-source.validation';
 import { tdmsError } from './tdms-source.types';
 import { parseAssessmentTdmsEvidence } from '@shared/assessment-tdms-evidence';
+import { storedTdmsRuntimeContext } from './tdms-stored-runtime-context';
 
 /** The genuine READ is committed before JobAid journals it in its own transaction.
  * Receipts are immutable audit facts, never a new current permission or a lease. */
@@ -117,25 +118,7 @@ export class TdmsRuntimeReceiptRepository {
     taskContextRef: string,
     expected: Omit<TdmsRuntimeTaskBinding, 'taskContextRef'>,
   ) {
-    const [row] = await this.database
-      .select({
-        id: actionAttempt.id,
-        context: sql<unknown>`${actionAttempt.taskEnvelopeJson}::jsonb#>'{modelInput,tdmsContext}'`,
-        owner: sql<string>`${actionAttempt.taskEnvelopeJson}::jsonb#>>'{modelInput,actorUserId}'`,
-      })
-      .from(actionAttempt)
-      .where(
-        and(
-          eq(actionAttempt.tenantId, expected.tenantId),
-          eq(actionAttempt.operationRef, taskContextRef),
-          eq(actionAttempt.workItemId, expected.workItemId),
-          eq(actionAttempt.documentVersionId, expected.documentVersionId),
-          eq(actionAttempt.actorUserId, 'service:openclaw-main'),
-        ),
-      )
-      .limit(1);
-    if (!row || row.owner !== expected.actorUserId) invalid();
-    return row;
+    return storedTdmsRuntimeContext(this.database,{...expected,taskContextRef});
   }
 }
 function invalid(): never {

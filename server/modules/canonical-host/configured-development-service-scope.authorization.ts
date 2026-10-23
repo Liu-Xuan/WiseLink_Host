@@ -268,6 +268,26 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
           {...scope.automaticWorkItemLease,workItemId:scope.workItemId})) throw scopeNotFound();
   }
 
+  async assertOpenClawReviewTransport(scope: CanonicalVerifiedServiceScope): Promise<void> {
+    if (scope.automaticWorkItemLease) throw scopeNotFound();
+    const delegation = scope.successorReviewDelegation;
+    if (delegation) {
+      const expected = successorReviewScope(delegation);
+      if (scope.principalId !== expected.principalId || scope.appId !== expected.appId ||
+          scope.tenantId !== expected.tenantId || scope.workItemId !== expected.workItemId ||
+          scope.authorizationFingerprint !== expected.authorizationFingerprint) throw scopeNotFound();
+      return;
+    }
+    const configured = configuredStaticWorkItemScope();
+    if (!configured) throw scopeNotFound();
+    if (scope.workItemId !== configured.workItemId &&
+        scope.workItemId !== additionalReviewConversation(configured)?.workItemId) throw scopeNotFound();
+    const expected = exactWorkItemScope(configured, scope.workItemId);
+    if (scope.principalId !== expected.principalId || scope.appId !== expected.appId ||
+        scope.tenantId !== expected.tenantId ||
+        scope.authorizationFingerprint !== expected.authorizationFingerprint) throw scopeNotFound();
+  }
+
   async authorizeOpenClawWorkItem(input: {
     operation:
       | 'BEGIN_DYNAMIC'

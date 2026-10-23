@@ -55,11 +55,12 @@ export class ReviewAttemptDispatchService {
 
   async readExecution(
     input: ReviewExecutionBinding,
+    metadataOnly=false,
   ): Promise<ActionAttemptRow | null> {
     const row = await this.repository.readLatestByExactIdempotency({
       tenantId: input.tenantId,
       idempotencyKey: reviewTurnIdempotencyKey(input),
-    });
+    },metadataOnly);
     if (
       row &&
       (row.tenantId !== input.tenantId ||
@@ -99,7 +100,7 @@ export class ReviewAttemptDispatchService {
       createdAt: Date;
     },
   ): Promise<ReviewTurnExecutionReadModel | null> {
-    const row = await this.readExecution(input);
+    const row = await this.readExecution(input,true);
     if (!row && !input.executionRequested) return null;
     return {
       status: row ? executionStatus(row.status) : 'REQUESTED',
@@ -156,7 +157,7 @@ export class ReviewAttemptDispatchService {
       documentVersionId: string;
       executionModel?: CanonicalExecutionModelSelection;
       leaseOwner: string;
-      buildInput(): Promise<{
+      buildInput(identity: {attemptId: string; operationRef: string; createdAt: Date}): Promise<{
         modelInput: Record<string, unknown>;
         allowedConnectors?: string[];
         sourceRefs: ActionEnvelopeArtifactRef[];
@@ -216,7 +217,8 @@ export class ReviewAttemptDispatchService {
     if (!row.taskEnvelopeJson) {
       try {
         const executionModel = readStoredExecutionModel(row.executionModelJson);
-        const prepared = await input.buildInput();
+        if (!row.operationRef) throw dispatchConflict('REVIEW_EXECUTION_OPERATION_REF_MISSING');
+        const prepared = await input.buildInput({attemptId:row.attemptId,operationRef:row.operationRef,createdAt:row.createdAt});
         const task = sealTaskEnvelope({
           schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
           actionAttemptId: row.attemptId,

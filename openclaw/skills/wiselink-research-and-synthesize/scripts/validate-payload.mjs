@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import { validateActivitySourceContext } from './merge-document-activity-source-context.mjs';
+import { assertTdmsReviewSavedContext, tdmsReviewSavedEvidenceFields } from './tdms-review-saved-context.mjs';
+import { reviewNativeDirectoryRefs, tdmsReviewDecisionCatalog } from './tdms-review-runtime-context.mjs';
 
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c234';
+  'wiselink-research-and-synthesize@r09.c235';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -3304,10 +3306,10 @@ export function sealResultEnvelope({
   return sealed;
 }
 
-export function reviewCandidateArtifactRefs(task, candidate) {
+export function reviewCandidateArtifactRefs(task, candidate, observations = []) {
   validateTaskEnvelope(task);
   const reviewTask = validateReviewTask(task.modelInput);
-  validateReviewCandidate(reviewTask, candidate);
+  validateReviewCandidate(reviewTask, candidate, observations);
   const usedSourceRefIds = new Set(reviewCandidateSourceRefIds(reviewTask, candidate));
   const artifacts = new Map();
   for (const resource of reviewTask.resourceRefs) {
@@ -4319,6 +4321,7 @@ export function validateReviewTask(value) {
     }
   }
   if (isJobAid) validateFrozenJobAidReviewContext(value);
+  else assertTdmsReviewSavedContext(value);
   exactKeys(
     value.executionPolicy,
     [
@@ -4359,8 +4362,28 @@ export function validateReviewTask(value) {
   return value;
 }
 
-export function validateReviewCandidate(task, candidate) {
+export function validateReviewCandidate(task, candidate, observations = []) {
   validateReviewTask(task);
+  const decisionCatalog = tdmsReviewDecisionCatalog(task, observations);
+  return validateReviewCandidateCore(task, candidate,
+    new Set(decisionCatalog.map((item) => item.evidenceRef)));
+}
+
+/** Only after fresh Host begin/status prove the same sealed bounded result.
+ * Directory refs establish a frozen citation range, never a carrier or READ. */
+export function validateSealedBoundedReviewCandidate(task, candidate) {
+  validateReviewTask(task);
+  if (task.schemaVersion !== REVIEW_JOBAID_TASK_SCHEMA ||
+      task.context.purpose !== 'UPDATE_ASSESSMENT' ||
+      task.jobAidContext.tdmsReviewContext?.mode !== 'BOUNDED_NATIVE_READ')
+    fail('REVIEW_SEALED_BOUNDED_TASK_REQUIRED');
+  return validateReviewCandidateCore(task, candidate, new Set([
+    ...task.jobAidContext.sourceCatalog.map((item) => item.evidenceRef),
+    ...reviewNativeDirectoryRefs(task),
+  ]));
+}
+
+function validateReviewCandidateCore(task, candidate, allowedEvidenceRefs) {
   const isMatter = task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA;
   const isJobAid = task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA;
   exactKeys(
@@ -4439,7 +4462,7 @@ export function validateReviewCandidate(task, candidate) {
   }
   if (isJobAid) {
     if (candidate.reviewActionDraft !== null || candidate.affectedItemIds.length > 0) fail('REVIEW_JOBAID_FORMAL_ACTION_FORBIDDEN');
-    validateJobAidReviewDelta(task, candidate.jobAidWorkingDelta);
+    validateJobAidReviewDelta(task, candidate.jobAidWorkingDelta, allowedEvidenceRefs);
   }
   const allowedSources = new Set(valueIds(task.resourceRefs, 'sourceRefId'));
   const allowedItems = new Set(task.allowedEvaluationItemIds);
@@ -4866,7 +4889,8 @@ function validateMatterWorkingDelta(task, value) {
   }
   if (value.problemWork !== undefined) {
     if (value.claimDelta !== null || value.readingPresentation !== null) fail('REVIEW_MATTER_PROBLEM_DUPLICATE_READING');
-    validateJobAidWorkDelta(value.problemWork, current?.problemWork ?? null, [...matterReviewEvidence(context).values()]);
+    validateJobAidWorkDelta(value.problemWork, current?.problemWork ?? null,
+      new Set(matterReviewEvidence(context).keys()));
     const issues = new Map((current?.problemWork?.issues ?? []).map((issue) => [issue.issueKey, issue]));
     for (const retired of value.problemWork.retiredIssues ?? []) issues.delete(retired.issueKey);
     for (const issue of value.problemWork.issues) issues.set(issue.issueKey, issue);
@@ -5113,6 +5137,7 @@ function validateFrozenJobAidReviewContext(task) {
   uniqueTextArray(refs, 'REVIEW_JOBAID_SOURCE_CATALOG_INVALID');
   uniqueTextArray(jobAid.initiallyDeliveredRefs, 'REVIEW_JOBAID_DELIVERED_REFS_INVALID');
   assertSubsetOf(jobAid.initiallyDeliveredRefs, new Set(refs), 'REVIEW_JOBAID_DELIVERED_REF_NOT_REGISTERED');
+  assertTdmsReviewSavedContext(task);
   const statementMode=jobAid.modelInput.evidenceProjectionVersion==='SOURCE_CONTEXT_V2';
   if(statementMode) {
     array(jobAid.sourceActivityProjections,'REVIEW_SOURCE_STATEMENT_SNAPSHOTS_REQUIRED');
@@ -5135,9 +5160,12 @@ function validateFrozenJobAidReviewContext(task) {
       equal(record.scopeBasis,record.sourceSchemaVersion==='wiselink.document.activity-candidate.v2'?'ACTUAL_DELIVERED_RUN_SCOPE':'LEGACY_RUN_SCOPE','REVIEW_SOURCE_STATEMENT_BINDING_INVALID');
     }
   }
-  const delivered = jobAid.sourceCatalog.filter((item) => jobAid.initiallyDeliveredRefs.includes(item.evidenceRef)).map((item) => statementMode ? projectStatementReviewEvidence(item) : ({
+  const delivered = jobAid.sourceCatalog.filter((item) => jobAid.initiallyDeliveredRefs.includes(item.evidenceRef)).map((item) => ({
+    ...(statementMode ? projectStatementReviewEvidence(item) : {
     evidenceRef: item.evidenceRef, kind: item.kind, title: item.title, versionLabel: item.versionLabel, excerpt: item.excerpt, locator: item.locator ?? null,
     ...(item.kind === 'METHOD_CLAUSE' && item.classificationDefinitions ? {classificationDefinitions: structuredClone(item.classificationDefinitions)} : {}),
+    }),
+    ...tdmsReviewSavedEvidenceFields(item),
   }));
   equal(canonicalJson(delivered), canonicalJson(jobAid.modelInput.deliveredEvidence), 'REVIEW_JOBAID_DELIVERED_EVIDENCE_DRIFT');
   for (const resource of task.resourceRefs) {
@@ -5165,17 +5193,17 @@ function isQualifiedJobAidUnchanged(task, candidate) {
     model.expectedWorkRevision === previous.workRevision;
 }
 
-function validateJobAidReviewDelta(task, delta) {
+function validateJobAidReviewDelta(task, delta, allowedEvidenceRefs) {
   if (delta === null) return;
   if (task.context.purpose === 'UPDATE_ASSESSMENT' && Array.isArray(delta?.issues) &&
       delta.issues.length === 0 && (delta.retiredIssues ?? []).length === 0 &&
       ['overview', 'headline', 'listBrief', 'reviewConditionDelta', 'inputDispositions']
         .every((field) => !Object.hasOwn(delta, field)))
     fail('REVIEW_JOBAID_SUBSTANTIVE_DELTA_REQUIRED');
-  return validateJobAidWorkDelta(delta, task.jobAidContext.previousWork?.content ?? null, task.jobAidContext.sourceCatalog);
+  return validateJobAidWorkDelta(delta, task.jobAidContext.previousWork?.content ?? null, allowedEvidenceRefs);
 }
 
-function validateJobAidWorkDelta(delta, previousContent, sourceCatalog) {
+function validateJobAidWorkDelta(delta, previousContent, allowedEvidenceRefs) {
   assertObject(delta, 'REVIEW_JOBAID_DELTA_INVALID');
   equal(delta.schemaVersion, 'wiselink.jobaid-problem-work.v3', 'REVIEW_JOBAID_WORK_SCHEMA_INVALID');
   // Match materializeJobAidWork: a saved reading summary is one pair. A
@@ -5225,8 +5253,7 @@ function validateJobAidWorkDelta(delta, previousContent, sourceCatalog) {
     for (const requirement of issue.requirementHandling ?? [])
       basisRefs(requirement.basisRefs, 'REQUIREMENT', true);
   }
-  const allowed = new Set(sourceCatalog.map((item) => item.evidenceRef));
-  const invalid = jobAidDeltaEvidenceEntries(delta).filter((entry) => !allowed.has(entry.evidenceRef));
+  const invalid = jobAidDeltaEvidenceEntries(delta).filter((entry) => !allowedEvidenceRefs.has(entry.evidenceRef));
   if (invalid.length) {
     const error = new Error('REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED');
     // Exact failing locations help the model correct copied identifiers. Never
@@ -5266,7 +5293,9 @@ export function reviewCandidateSourceRefIds(task, candidate) {
   if (task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA && candidate.jobAidWorkingDelta) {
     const provided = new Set(task.jobAidContext.initiallyDeliveredRefs);
     const resources = new Set(task.resourceRefs.map((item) => item.sourceRefId));
-    refs.push(...jobAidDeltaEvidenceRefs(candidate.jobAidWorkingDelta).filter((ref) => resources.has(ref) && !provided.has(ref)));
+    const native = new Set(reviewNativeDirectoryRefs(task));
+    refs.push(...jobAidDeltaEvidenceRefs(candidate.jobAidWorkingDelta)
+      .filter((ref) => (resources.has(ref) || native.has(ref)) && !provided.has(ref)));
   }
   return [...new Set(refs)];
 }

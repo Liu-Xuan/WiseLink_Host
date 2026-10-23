@@ -17,9 +17,9 @@
         "P0",
         "P1"
       ],
-      "sourceRevision": "5f753f3f06a63ffa9a669474d2ccee344c82bbbc",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
       "originReviewedRevision": "1ec900f05ed28e1a0164a084fb3ee7b0f618d9f0",
-      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。",
+      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。 后继Overall使用新实际attempt/lease及准确保存的Review work，普通迟到SAVE不因新Review恢复获权；PG026隔离fixture证明不替代真实SEM/生产运行。",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
       "producer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.saveWork",
       "consumer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.buildInput; #commitOverall",
@@ -65,7 +65,8 @@
           "reason": "D已实际核对同一旧事项的3节点、工作1 SUCCEEDED、同版Overall消费、原保存正文及准确版本PDF；页面显示“当前查询未返回这条依据”，当前渲染units未命中原ref，后台响应未取得，单次显式刷新后未证实新时间推进。Overall尝试集合未提供，不能声称完整执行历史或新内容验收。",
           "nextAction": "保留本次D限定只读结果和PARTIAL引用诊断；仅按当前D代码分析该原ref定位，不清定位/扩大查询或把PDF可读当精确定位通过。真实内容/新运行按其具体授权继续。"
         }
-      ]
+      ],
+      "previousReviewedRevision": "5f753f3f06a63ffa9a669474d2ccee344c82bbbc"
     },
     {
       "id": "translation.reading",
@@ -151,25 +152,25 @@
         "P1",
         "P6"
       ],
-      "sourceRevision": "5f753f3f06a63ffa9a669474d2ccee344c82bbbc",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
       "originReviewedRevision": "1ec900f05ed28e1a0164a084fb3ee7b0f618d9f0",
-      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。；已真实复现ACK与WorkItem写者、迟到配置入口的40P01并统一锁序；4项真实隔离PG保留并发拒绝和准确重放。",
+      "reviewScope": "本批已按实际代码核对授权、准确版本、保存/恢复与读取消费者；作者提交与选择性合入SHA在协调记录映射。历史测试和生产记录保留原执行源码，不升格为本候选已运行。；已真实复现ACK与WorkItem写者、迟到配置入口的40P01并统一锁序；4项真实隔离PG保留并发拒绝和准确重放。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
       "producer": "server/modules/canonical-host/jobaid-work.repository.ts#JobAidWorkRepository.save",
-      "consumer": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#ActionAttemptLifecycleService.finishProjectionSuccess; openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#acknowledgeAndClearAutoClaim",
+      "consumer": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#ActionAttemptLifecycleService.finishProjectionSuccess; openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#acknowledgeAndClearAutoClaim; CanonicalJobAidProblemService.readBrowser.autoProcessingAcknowledgement → useJobAidWorkingRead → WorkItemRuntimeDiagnostic",
       "executionOwner": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#consumeAutomaticWorkItemQueueTick：单一active-claim owner执行；Host分别维护action_attempt和auto_work_item_authorization，不能以清本地记录代替释放。",
       "recoveryOwner": "server/modules/work-item/miaoda-work-item.repository.ts#claimAutoProcessingCandidate：核对原owner/generation/封存结果hash；投影已写则校正终态，否则延续COMMITTING。外层消费者仅以准确token/generation调用ACK。；含Native证据时复核真实队列调用者、过期COMMITTING及精确已保存结果，后续未消费READ不污染原结果恢复。",
       "authority": {
         "requestRecord": "action_attempt.task_envelope_json/result_envelope_json/result_content_hash及auto_work_item_authorization；server/modules/work-item/miaoda-work-item.repository.ts#claimAutoProcessingCandidate",
         "artifactRecord": "assessment_work_revision、work_item.projection_json、action_attempt.projection_applied；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit",
-        "consumedInputField": "封存result.modelOutput.workRevisionRef、task.baseRevision、原attemptId/leaseGeneration；auto_work_item_authorization的requestId/token/generation；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit; server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease",
+        "consumedInputField": "封存result.modelOutput.workRevisionRef、task.baseRevision、原attemptId/leaseGeneration；auto_work_item_authorization的requestId/token/generation；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit; server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease；新浏览器四字段ACK保持原workItemId/requestId/documentVersionId/acknowledgedAt，不从当前inner attempt重造。",
         "ready": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts#AutomaticWorkItemDispatchService.acknowledgeWorkItem：重新授权准确租约并由readCurrentInitialAnalysis检查Host成功判据；不是worker退出即成功。",
         "saved": "server/modules/canonical-host/jobaid-work.repository.ts#save及server/modules/canonical-host/canonical-jobaid-problem.service.ts#readAttemptWork：幂等SAVE与独立读回在执行终态前即可成立。",
-        "current": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#finishProjectionSuccess：准确投影完成；server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease：确认当前授权完成；本地active-claim仅在有效ACK后清理。"
+        "current": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#finishProjectionSuccess：准确投影完成；server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease：确认当前授权完成；本地active-claim仅在有效ACK后清理。；已完成原请求ACK可与后继inner RUNNING/COMMITTING共存，父hook消费ACK出现/替换/null。"
       },
       "decisionEntry": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#prepareCommit; server/modules/canonical-host/automatic-work-item-dispatch.service.ts#acknowledgeWorkItem",
       "projectionEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commitOverall; server/modules/action-attempt/action-attempt-lifecycle.service.ts#finishProjectionSuccess",
-      "readEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#readAttemptWork; server/modules/work-item/miaoda-work-item.repository.ts#readCompletedAutoProcessingLeaseReceipt",
+      "readEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#readAttemptWork; server/modules/work-item/miaoda-work-item.repository.ts#readCompletedAutoProcessingLeaseReceipt; MiaodaWorkItemRepository.readReadableAutoProcessingCompletion：一次可信receipt读；readBrowser精确projection tuple/hash/bytes绑定",
       "actionEntries": [
         "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit：封存后的恢复只接受原准确结果",
         "server/modules/canonical-host/automatic-work-item-dispatch.service.ts#nextWorkItem：受权恢复领取",
@@ -181,7 +182,9 @@
         "test/node/core-p1-host-postgres.test.mjs",
         "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
         "test/node/automatic-work-item-ack-postgres.test.mjs",
-        "test/node/tdms-browser-native-postgres.test.mjs"
+        "test/node/tdms-browser-native-postgres.test.mjs",
+        "test/unit/work-item-runtime-diagnostic.spec.ts",
+        "test/unit/jobaid-read-lifecycle.spec.ts"
       ],
       "authorRevision": "357292e26174b69504ee315898609f6ed6beef14",
       "gaps": [
@@ -196,8 +199,15 @@
           "kind": "runtime",
           "reason": "真实单事项时间和同窗官方聚合已取得，但Ready/首次可读/生产ACK、未知调用/提交积压以及容量上限仍未知；不能把长等待归因于资源饱和。",
           "nextAction": "发布并在既有准确记录上观察恢复行为；只取得实际请求范围的新增时间，不补造历史时间、不先扩worker或替换队列。"
+        },
+        {
+          "id": "save.finish.c235-switch",
+          "kind": "deployment",
+          "reason": "ACK/Review/c235组合仅在本地16b源码、构建和新包成立；线上De1d不含这批ACK字段。Native最后已证实c234，当前运行/cron/在途尚未知。",
+          "nextAction": "取得准确E/D及用户技术发布/DDL/安装授权后，按当前运行端预检结果正常收尾和一次切换；不清检查点、工作或借开发会话空闲推断运行空闲。"
         }
-      ]
+      ],
+      "previousReviewedRevision": "5f753f3f06a63ffa9a669474d2ccee344c82bbbc"
     },
     {
       "id": "feedback.reading",
@@ -283,8 +293,8 @@
       "workPackageIds": [
         "P5"
       ],
-      "sourceRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603",
-      "reviewScope": "ATA2准确直接成员与既有ATA4/子层共同消费；目录诊断只投影获权覆盖和活跃请求。三类业务变化的全部触发策略不在本增量通过范围。；本批已接WORK_ITEM_WORK内Native证据的真实Summary委托与原文IO前后核对，完整隔离消费链通过；生产当前批准证据仍缺。 本轮补齐已明确授权且无waiting行的Matter到期复核；只扩大既有delegation内候选遍历，原SQL身份/确认归属/来源与持久化occurrence幂等不变。",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "reviewScope": "ATA2准确直接成员与既有ATA4/子层共同消费；目录诊断只投影获权覆盖和活跃请求。三类业务变化的全部触发策略不在本增量通过范围。；本批已接WORK_ITEM_WORK内Native证据的真实Summary委托与原文IO前后核对，完整隔离消费链通过；生产当前批准证据仍缺。 本轮补齐已明确授权且无waiting行的Matter到期复核；只扩大既有delegation内候选遍历，原SQL身份/确认归属/来源与持久化occurrence幂等不变。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。 本地Review APPLIED/UNCHANGED之后的Summary仍消费准确保存work/evidence，不把讨论或元数据当已READ正文；线上真实变化缺项保持。",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
       "producer": "server/modules/canonical-host/hierarchical-wiki-inventory.ts#readWikiInventory/#wikiClassifications；已确认归属的文档和已保存工作按真实ATA2/ATA4层级进入，成员kind为DOCUMENT_READING、WORK_ITEM_WORK、MATTER_WORK或DERIVED_SUMMARY。",
       "consumer": "server/modules/canonical-host/hierarchical-wiki-generation.ts#assertWikiLayerMembers/#wikiDirectVersions；openclaw/skills/wiselink-research-and-synthesize/scripts/hierarchical-wiki-model-view.mjs和derived-summary-shape.mjs消费准确成员。",
@@ -328,7 +338,8 @@
           "reason": "ATA2 成员与显式授权 Matter 到期条件漏唤醒已修复。Estimated 批准语义与本地映射已确定，三类生产变化全流程仍需实际 Source/版本/状态刷新和原生撤销取代关系。",
           "nextAction": "在实际获权来源成立后按三类变化核对最小调用范围；本轮不以到期条件PG用例替代全部业务变化验证。"
         }
-      ]
+      ],
+      "previousReviewedRevision": "66e70d1d9fe3ec76407ce6a12f72b84906c88603"
     },
     {
       "id": "configuration.reading",
@@ -410,24 +421,24 @@
         "P3",
         "P5"
       ],
-      "sourceRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "用户已确认评估单自身 Estimated 就是批准/当前有效状态。真实 retained provider 已复用原策略接入 ACTIVE + 准确 sourceRevisionRef，独立 Astra 接受 ff0，761 与其完整 Git tree 相同。既有 reader/verifier、集合、owner/version/actor、before/after、正文及保存/CAS 门槛保留；实际线上刷新、Source/grant/processing set、原文 V44 与未结构化撤销/取代解码仍未验证。 当前构建81baa5a7相对761仅9个协调/验证记录文件变化，产品与测试blob未变；正常完整构建通过，双端immutable sourceCommit准确。",
-      "producer": "server/modules/tdms-source/tdms-retained-runtime-facts.ts#readProjectionFacts/#projectionFacts：在既有授权事务重读准确 record.state；自身 ENGINEER_ASSESSMENT 符合 isEstimatedState 时产生 ACTIVE，依据为真实 sourceRevisionRef，否则 UNKNOWN/null。tdms-production-runtime-reader.ts#discover/#read → tdms-runtime-session.ts → 原 tdms_read_receipt；不另造关系或有效性证书。",
-      "consumer": "CanonicalJobAidProblemService的buildInput/readSources/saveWork/commit及browser read；DerivedSummaryMembersService.read的WORK_ITEM_WORK和DerivedSummaryRuntimeService的claim/save/finish/readSaved，供现有Wiki成员消费。",
+      "reviewScope": "用户已确认评估单自身 Estimated 就是批准/当前有效状态。真实 retained provider 已复用原策略接入 ACTIVE + 准确 sourceRevisionRef，独立 Astra 接受 ff0，761 与其完整 Git tree 相同。既有 reader/verifier、集合、owner/version/actor、before/after、正文及保存/CAS 门槛保留；实际线上刷新、Source/grant/processing set、原文 V44 与未结构化撤销/取代解码仍未验证。 此前Estimated批次构建81baa5a7相对761仅9个协调/验证记录文件变化，产品与测试blob未变；正常完整构建通过，双端immutable sourceCommit准确。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。",
+      "producer": "server/modules/tdms-source/tdms-retained-runtime-facts.ts#readProjectionFacts/#projectionFacts：在既有授权事务重读准确 record.state；自身 ENGINEER_ASSESSMENT 符合 isEstimatedState 时产生 ACTIVE，依据为真实 sourceRevisionRef，否则 UNKNOWN/null。tdms-production-runtime-reader.ts#discover/#read → tdms-runtime-session.ts → 原 tdms_read_receipt；不另造关系或有效性证书。；readReviewNativeSources返回strict parseAssessmentTdmsEvidence验证的raw carrier，审计receipt与准确decision journal先于packet；通用registry与Native guard未改。",
+      "consumer": "CanonicalJobAidProblemService的buildInput/readSources/saveWork/commit及browser read；DerivedSummaryMembersService.read的WORK_ITEM_WORK和DerivedSummaryRuntimeService的claim/save/finish/readSaved，供现有Wiki成员消费。；CanonicalHostOpenclawReviewService实际UPDATE_ASSESSMENT admission/begin/read/commit/status；准确Review工作供后继Overall/browser/summary消费。",
       "executionOwner": "现有Host服务执行者：真实service SQL role、Host transport授权、WorkItem owner与DVI、自动授权精确source tuple、活跃attempt lease；Summary使用自己实际summary/request/attempt，不借用WorkItem租约。",
-      "recoveryOwner": "tdms-recovery-delegation.ts + CanonicalJobAidProblemService.assertAutomaticCommittingRecoveryAuthorized：原队列同事务锁WorkItem→grant→attempt，双方lease已过期、原generation及封存hash一致，仅核对准确已存结果；不新增READ/模型/租约。",
+      "recoveryOwner": "tdms-recovery-delegation.ts + CanonicalJobAidProblemService.assertAutomaticCommittingRecoveryAuthorized：原队列同事务锁WorkItem→grant→attempt，双方lease已过期、原generation及封存hash一致，仅核对准确已存结果；不新增READ/模型/租约。；tdms-review-delegation/tdms-successor-delegation的private SEALED_RECOVERY仅复用原COMMITTING封存task/result/fence；正常Native consumePendingReviewTurn驱动检查点恢复，不新model/READ/context-body/heartbeat/cancel或续租。",
       "authority": {
-        "requestRecord": "action_attempt.task_envelope_json.modelInput.tdmsContext、实际executor与modelInput.actorUserId；原tdms_read_receipt的scope/actor/receipt/sourceRevision/context及reviewActivityJson中的真实READ。",
+        "requestRecord": "action_attempt.task_envelope_json.modelInput.tdmsContext、实际executor与modelInput.actorUserId；原tdms_read_receipt的scope/actor/receipt/sourceRevision/context及reviewActivityJson中的真实READ。；真实Review operationRef、BOUNDED_NATIVE_READ十键context及READ decision journal；opaque frozen caller绑定handed事务。",
         "artifactRecord": "tdms_record_revision、tdms_processing_revision_set/tdms_processing_set_head、assessment_work_revision.content.evidence、derived_summary_revision；工程原文须独立DM acquisition/nativeRetention及准确artifact/parse绑定。",
         "consumedInputField": "TDMS_NATIVE_RECORD的nativeSource、nativeScope.processingSetBinding/approval/fieldSelectors和nativeReadReceipt；保存工作准确evidence与Overall.basedOnJobAidWorkRevisionRef、Summary准确member workRef逐项比较。",
         "ready": "真实 Source/对象授权、准确 processing set/成员与版本、评估单自身 Estimated、before/after 和正文 provenance 分别满足；缺状态/Estimating/冲突 rawCode 不成立，父单/同ATA/标题/稳定版本不推导批准。不再要求 Estimated 之外的第三方批准证明。",
-        "saved": "真实READ先留下不可变receipt；SAVE事务重新比较原回执、journal、准确内容、集合和当前权限，随后按既有token/generation/CAS保存。没有READ不能以关联元数据填充证据。",
+        "saved": "真实READ先留下不可变receipt；SAVE事务重新比较原回执、journal、准确内容、集合和当前权限，随后按既有token/generation/CAS保存。没有READ不能以关联元数据填充证据。；SAVED_EVIDENCE_ONLY复用保存carrier；BOUNDED逐项比较receipt/journal/封存hash，APPLIED/UNCHANGED工作与Review receipt原子提交，Overall使用自身新attempt/lease与准确workRef。",
         "current": "依据准确留存的本评估单 Estimated 状态，明确撤销/取代规则仍保留；线上状态刷新及原生未结构化关系解码尚未验证/实现。原 receipt 证明准确历史 READ，后续消费继续重核当前授权/版本/集合；M3仍只投影已有父响应。"
       },
-      "decisionEntry": "TdmsProductionRuntimeReader.assertInTransaction → TdmsRuntimeSession；TdmsBrowserNativeVerifier → tdms-native-saved-work.ts，分别核验真正browser/summary/recovery caller；OAuth Native及Review/successor仍拒绝。",
+      "decisionEntry": "TdmsProductionRuntimeReader.assertInTransaction → TdmsRuntimeSession；TdmsBrowserNativeVerifier → tdms-native-saved-work.ts，分别核验真实browser/summary/recovery caller；未经绑定或未获授权的Native/Review/successor调用仍拒绝，已绑定Review/successor经真实current Source/own-approval/opaque caller/handed TX路径核权；CanonicalHostOpenclawReviewService执行实际准入与正文前gate。",
       "projectionEntry": "client/src/pages/DocumentParsingPage/runtime-monitor/adapt-jobaid-working-read.ts#savedNativeObservations/#adaptJobAidWorkingRead：business.company_records→assessment.research使用v1.6 company.research；历史READ时间与父观察时间分别显示。",
-      "readEntry": "父GET /api/canonical-host/work-items/:id/assessment-work → WorkItemRuntimeDiagnostic；来源详情使用父响应已有准确evidence/sourceRevision/receipt/work tuple，不新增fetch。",
+      "readEntry": "父GET /api/canonical-host/work-items/:id/assessment-work → WorkItemRuntimeDiagnostic；来源详情使用父响应已有准确evidence/sourceRevision/receipt/work tuple，不新增fetch。; CanonicalHostOpenclawReviewService.readNativeSources → CanonicalJobAidProblemService.readReviewNativeSources",
       "actionEntries": [
         "获权READ不创建正式采用/批准/发布/实施；Summary仅原有已授权请求运行。",
         "关联工程文件正文需单独获权READ、准确原件和来源回执；不依据标题、链接或关系猜取正文。"
@@ -443,7 +454,9 @@
         "test/unit/tdms-approved-opinion-context.spec.ts",
         "test/unit/tdms-source/tdms-runtime-reader.spec.ts",
         "test/unit/tdms-source/tdms-approved-opinion.spec.ts",
-        "test/unit/tdms-p1-host/assessment-body-policy.spec.ts"
+        "test/unit/tdms-p1-host/assessment-body-policy.spec.ts",
+        "test/node/tdms-review-runtime-postgres.test.mjs",
+        "test/unit/canonical-host-openclaw-attempt-status.service.spec.ts"
       ],
       "gaps": [
         {
@@ -460,17 +473,24 @@
         },
         {
           "id": "company.approved-opinion.caller-scope",
-          "kind": "source_review",
-          "reason": "普通WorkItem、Gateway浏览器、真实Summary及既有COMMITTING恢复已接入。原应用device/offline已获授权，单次OAuth后登录验证成功；这不代替Review独立调用者及其他Native生命周期入口的装配与核验。",
-          "nextAction": "按准确Review/Native入口补齐所需调用者和生命周期范围；保留typed deny，不借无关活跃租约，不再索取本次已完成的device/offline授权。"
+          "kind": "deployment",
+          "reason": "Review真实调用者、有限Native生命周期、正常consumer和SEALED_RECOVERY已在本地原PG029完成；原PG027/028失败和最终raw-carrier修复均保留。这不表示新后端/Native已上线，原device/offline授权不需重索。",
+          "nextAction": "准备准确E/D与三条lock-only SQL及c235新包，先补获准的运行端当前安装/cron/在途预检，再由用户批准技术动作；保持Source/grant与业务内容验收独立。"
         },
         {
           "id": "company.approved-opinion.native-lifecycle",
           "kind": "runtime",
           "reason": "显式撤销与 SOURCE_EXPLICIT 取代的既有规则及测试保留；本次未实现原生未结构化撤销/取代关系解码，也未验证线上变更刷新。",
           "nextAction": "取得准确原生关系及作用版本后接入既有规则，保留多专业意见和新草稿与旧批准并存，不按时间或标题推断取代。"
+        },
+        {
+          "id": "company.approved-opinion.lock-policies",
+          "kind": "deployment",
+          "reason": "三条lock-only UPDATE policy仅在本地SQL，fresh正式catalog显示目标角色/RLS存在、policy均缺且可组合UPDATE/ALL为0；尚无DDL授权或实施。",
+          "nextAction": "审批时列出三表三policy原SQL及同一catalog前提；获准后用正式入口执行并读回，不新增GRANT/ALL/definer。"
         }
-      ]
+      ],
+      "previousReviewedRevision": "81baa5a7f843e9fe232d6c45f195c1ab579ce05e"
     },
     {
       "id": "matter.saved-reading",
@@ -558,10 +578,10 @@
         "P0",
         "P2"
       ],
-      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "sourceRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
       "authorRevision": "3e790ffffd42c9af0c781557ae516164ba70fbd1",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。 本批正常hook与完整build在准确9d源码成立；经批准的公开E4dec与私有De1d完整tree相同，准确D已正式发布。恢复与原/新只读观察分别记录，未重跑原产品测试或本地build。",
+      "reviewScope": "历史UI-only批次：公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw在该历史UI-only批次未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。 该历史UI-only批次正常hook与完整build在准确9d源码成立；经批准的公开E4dec与私有De1d完整tree相同，准确D已正式发布。该UI记录恢复与原/新只读观察分别记录，未重跑该历史产品测试或本地build；本轮16b新构建另按实际来源和时间登记。 本轮16b为准确恢复的本地ACK/Review/Native组合；产品字节证明、原测试适用范围和新构建/包分开记录，尚未发布这批后端能力。",
       "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。",
       "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。",
       "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。",
@@ -575,7 +595,7 @@
         "current": "Overall自身CANDIDATE_ONLY且staleReason null、working CURRENT与准确workRef共同判断；同DVI新解析/保存成果更新不重建稳定草稿实例。"
       },
       "decisionEntry": "useDocumentReadingLinks.ts#resolveDocumentReadingAssociation；useDocumentAssessmentPage.ts；DocumentAssessmentOverview.tsx；documentAssessmentAeoEligible。",
-      "projectionEntry": "DocumentAssessmentWorkspace.tsx读取同一workingRead；WorkItemRuntimeDiagnostic仅复用c8已有投影，不包含后续ACK字段；受限returnAssessmentQuery不充当授权。",
+      "projectionEntry": "DocumentAssessmentWorkspace.tsx读取同一workingRead；本地16b的WorkItemRuntimeDiagnostic消费可信原请求autoProcessingAcknowledgement，父hook处理出现/替换/null；已发布De1d历史UI仍只用其原投影。受限returnAssessmentQuery不充当授权。",
       "readEntry": "/document-versions/:DVI?panel=assessment；assessmentTab=overall/investigation/review/process及条件aeo。精确引用经exactDocumentSourceRoute回历史parseRunId+完整ref。",
       "actionEntries": [
         "打开/切签/focus/刷新/依据导航只读；坏locator toast拒绝且页面URL/原evidence保持。",
@@ -595,7 +615,8 @@
           "reason": "真实四签/M3/Wiki、准确结构化原文第8页与受限返回已有原证据；原件历史HTTP500独立保留，恢复后一次正常GET200/11页PDF可读。Aily当前ENV_UNVERIFIED/30s ready timeout/灰白未通过，iframe终态受工具paused-document-response边界未获；局部OAuth/保存核对、全屏与动态权限/版本转换仍未验证。",
           "nextAction": "沿用已发布E/D和现有SDK；保留Aily未完成及历史500未知根因，按独立分析结论选择下一最小修法，不制造ready协议、登录扩scope、重复已通过链路或业务写入。"
         }
-      ]
+      ],
+      "previousReviewedRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5"
     }
   ]
 }

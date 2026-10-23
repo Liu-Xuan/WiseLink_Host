@@ -1,5 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { runSemanticTranslation } from './run-semantic-translation.mjs';
+import { projectTdmsReviewSavedModelContext } from './tdms-review-saved-context.mjs';
+import {
+  assertTdmsReviewRuntimeBinding, assertTdmsReviewReadObservation,
+  projectTdmsReviewReadSources, reviewNativeDirectoryRefs, reviewNativeRuntime,
+  tdmsReviewDecisionCatalog, REVIEW_NATIVE_READ_TOOL,
+} from './tdms-review-runtime-context.mjs';
 
 import {
   WISELINK_HOST_MCP_NAME,
@@ -25,6 +31,7 @@ import {
   validateApplicabilityAstCandidate,
   validateResultEnvelope,
   validateReviewCandidate,
+  validateSealedBoundedReviewCandidate,
   validateReviewTask,
   validateRuntimeProvenance,
   validateTaskEnvelope,
@@ -1018,6 +1025,7 @@ export async function runInteractiveReviewTurn({
   reviewConversationRef,
   requestId,
   callTool,
+  hasTool,
   respond,
   isolatedCandidate = false,
 }) {
@@ -1036,6 +1044,7 @@ export async function runInteractiveReviewTurn({
   });
   assertBegin(begin, 'OPENCLAW_INTERACTIVE_REVIEW');
   const task = validateReviewTask(begin.task.modelInput);
+  assertTdmsReviewRuntimeBinding(task, begin.task);
   if (task.reviewConversationRef !== reviewConversationRef ||
     task.requestId !== requestId ||
     (workItemId && begin.task.workItemId !== workItemId)) {
@@ -1045,13 +1054,41 @@ export async function runInteractiveReviewTurn({
     if (isolatedCandidate) throw new Error('REVIEW_ISOLATED_COMMITTING_FORBIDDEN');
     return recoverReviewCommitting(begin, callTool);
   }
+  if (reviewNativeRuntime(task) &&
+      (typeof hasTool !== 'function' || hasTool(REVIEW_NATIVE_READ_TOOL) !== true))
+    throw new Error('REVIEW_NATIVE_READ_CAPABILITY_UNAVAILABLE');
   const contextResult = await callTool('get_review_turn_context', {
     attemptRef: begin.attemptRef,
   });
   assertReviewContext(contextResult, begin, task);
   const readSourceRefIds = new Set();
+  const nativeObservations = [];
   const readSourceRefs = async (sourceRefIds) => {
     const requested = validateReviewSourceRefRequest(sourceRefIds, task, begin.task.workItemId);
+    const nativeDirectory = new Set(reviewNativeDirectoryRefs(task));
+    const nativeRefs = requested.filter(ref => nativeDirectory.has(ref));
+    const ordinaryRefs = requested.filter(ref => !nativeDirectory.has(ref));
+    // Validate the whole mixed batch before either Host call. Do not split an
+    // oversized native request to evade the per-request bound.
+    if (nativeRefs.length > 96) throw new Error('HOST_MCP_REVIEW_NATIVE_SOURCE_REQUEST_INVALID');
+    const values = [];
+    if (ordinaryRefs.length) values.push(...await readOrdinarySourceRefs(ordinaryRefs));
+    if (nativeRefs.length) {
+      const packet = await callTool(REVIEW_NATIVE_READ_TOOL, {
+        attemptRef: begin.attemptRef, workItemId: begin.task.workItemId,
+        leaseToken: begin.leaseToken, leaseGeneration: begin.leaseGeneration,
+        sourceRefs: nativeRefs, context: 'EXACT', purpose: 'Review exact TDMS professional opinions',
+      });
+      const observation = { requestedRefs: [...nativeRefs], packet: structuredClone(packet) };
+      assertTdmsReviewReadObservation(task, observation);
+      tdmsReviewDecisionCatalog(task, [...nativeObservations, observation]);
+      nativeObservations.push(observation);
+      values.push(...sanitizeReviewModelSources(projectTdmsReviewReadSources(task, observation)));
+    }
+    requested.forEach(ref => readSourceRefIds.add(ref));
+    return requested.map(ref => values.find(value => value.sourceRefId === ref));
+  };
+  const readOrdinarySourceRefs = async (requested) => {
     const response = await callTool('read_source_refs', {
       attemptRef: begin.attemptRef,
       sourceRefIds: requested,
@@ -1076,12 +1113,11 @@ export async function runInteractiveReviewTurn({
       const evidence = task.jobAidContext.sourceCatalog.find((item) => item.evidenceRef === source.sourceRefId);
       if (!evidence || source.evidenceRef !== evidence.evidenceRef || source.excerpt !== evidence.excerpt || source.kind !== evidence.kind) throw new Error('HOST_MCP_REVIEW_JOBAID_SOURCE_BINDING_INVALID');
     }
-    requested.forEach((sourceRefId) => readSourceRefIds.add(sourceRefId));
     return sanitized;
   };
   const safeModelInput = buildReviewModelInput(task, contextResult, begin.task.workItemId);
   const validateCandidate = (value) => {
-    const candidate = validateReviewCandidate(task, value);
+    const candidate = validateReviewCandidate(task, value, nativeObservations);
     assertReviewSourcesWereRead(candidate, readSourceRefIds, task, safeModelInput.context.matterWorking, begin.task.workItemId);
     return candidate;
   };
@@ -1095,6 +1131,7 @@ export async function runInteractiveReviewTurn({
     }),
   );
   const candidate = validateCandidate(execution.output);
+  const decisionCatalog = tdmsReviewDecisionCatalog(task, nativeObservations);
   if (isolatedCandidate) {
     return {
       ok: false, mode: 'INTERACTIVE_REVIEW', operation: 'REVIEW_TURN',
@@ -1106,7 +1143,7 @@ export async function runInteractiveReviewTurn({
     task: begin.task,
     modelOutput: candidate,
     provenance: execution.provenance,
-    sourceRefs: reviewCandidateArtifactRefs(begin.task, candidate),
+    sourceRefs: reviewCandidateArtifactRefs(begin.task, candidate, nativeObservations),
     factsConsidered: [REVIEW_MATTER_TASK_SCHEMA, REVIEW_JOBAID_TASK_SCHEMA].includes(task.schemaVersion)
       ? reviewCandidateSourceRefIds(task, candidate) : [...candidate.sourceRefs],
     warnings: [...candidate.warnings],
@@ -1128,7 +1165,8 @@ export async function runInteractiveReviewTurn({
       cause: error,
     });
   }
-  assertReviewCommit(committed, begin.attemptRef, task, candidate, result);
+  assertReviewCommit(committed, begin.attemptRef, task, candidate, result,
+    new Set(decisionCatalog.map((item) => item.evidenceRef)));
   return completedResult({
     mode: 'INTERACTIVE_REVIEW',
     operation: 'REVIEW_TURN',
@@ -1141,13 +1179,123 @@ export async function runInteractiveReviewTurn({
 }
 
 async function recoverReviewCommitting(begin, callTool) {
-  return recoverCommitting({
-    mode: 'INTERACTIVE_REVIEW',
-    operation: 'REVIEW_TURN',
-    before: null,
-    begin,
-    callTool,
-  });
+  const bounded = boundedReviewRecoveryTask(begin.task);
+  let observed, beforeStatus;
+  try {
+    observed = await recoverCommitting({
+      mode: 'INTERACTIVE_REVIEW', operation: 'REVIEW_TURN', before: null, begin,
+      callTool: bounded ? async (name, args) => {
+        const value = await callTool(name, args);
+        if (name === 'get_action_attempt_status') beforeStatus = value;
+        return value;
+      } : callTool,
+    });
+  } catch (error) {
+    // Another authorized commit may finish after this COMMITTING begin. The
+    // same exact bounded reconciliation proves terminal persistence only.
+    if (!bounded || beforeStatus?.status !== 'SUCCEEDED') throw error;
+    return reconcileBoundedReviewSealedStatus(begin, beforeStatus);
+  }
+  if (!bounded) return observed;
+  const evidence = boundedReviewSealedEvidence(begin, observed.status);
+  let committed;
+  try {
+    committed = await callTool('commit_review_turn_candidate',
+      reviewCommitArgs(begin, evidence.result));
+  } catch (error) {
+    const recovered = await recoverCommitResponseLoss({
+      mode: 'INTERACTIVE_REVIEW', operation: 'REVIEW_TURN', before: null,
+      begin, result: evidence.result, callTool, cause: error,
+    });
+    // A missing receipt cannot prove a READ journal or stale mutation. Only
+    // the exact current terminal status may reconcile candidate persistence.
+    return reconcileBoundedReviewSealedStatus(begin, recovered.status);
+  }
+  assertBoundedReviewCommit(committed, begin, evidence);
+  const after = await callTool('get_action_attempt_status', { attemptRef: begin.attemptRef });
+  return reconcileBoundedReviewSealedStatus(begin, after, committed);
+}
+
+/** The private checkpoint coordinator uses this only to recognize the exact
+ * c5 runtime addon. No task/version migration or historical provenance option. */
+export function boundedReviewRecoveryTask(envelope) {
+  validateTaskEnvelope(envelope);
+  const task = validateReviewTask(envelope.modelInput);
+  assertTdmsReviewRuntimeBinding(task, envelope);
+  return task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA &&
+    task.context.purpose === 'UPDATE_ASSESSMENT' &&
+    task.jobAidContext.tdmsReviewContext?.mode === 'BOUNDED_NATIVE_READ' &&
+    reviewNativeRuntime(task) ? task : null;
+}
+
+function boundedReviewSealedEvidence(begin, status) {
+  assertBegin(begin, 'OPENCLAW_INTERACTIVE_REVIEW');
+  const task = boundedReviewRecoveryTask(begin.task);
+  if (!task || begin.status !== 'COMMITTING')
+    throw new Error('HOST_MCP_REVIEW_SEALED_BOUNDED_BEGIN_REQUIRED');
+  const result = validateResultForBegin(begin, begin.recoveryResult);
+  if (result.status !== 'SUCCEEDED' || result.businessOutcome !== 'CANDIDATE_READY' ||
+      (begin.recoveryResultContentHash !== undefined &&
+        begin.recoveryResultContentHash !== result.contentHash))
+    throw new Error('HOST_MCP_REVIEW_SEALED_RESULT_INVALID');
+  assertGenericAttemptStatus(status, begin);
+  if (status.resultContentHash !== result.contentHash)
+    throw new Error('HOST_MCP_COMMITTING_RESULT_HASH_MISMATCH');
+  if (status.status === 'COMMITTING') {
+    if (status.recoveryAvailable !== true || !status.recoveryResult)
+      throw new Error('HOST_MCP_COMMITTING_RECOVERY_UNAVAILABLE');
+    validateResultForBegin(begin, status.recoveryResult);
+    if (canonicalJson(status.recoveryResult) !== canonicalJson(result))
+      throw new Error('HOST_MCP_COMMITTING_RESULT_HASH_MISMATCH');
+  } else if (status.status !== 'SUCCEEDED' || status.projectionApplied !== false ||
+      !['REVIEW_TURN_CANDIDATE_PERSISTED', 'REVIEW_TURN_CANDIDATE_RECONCILED'].includes(status.terminalReason)) {
+    throw new Error('HOST_MCP_REVIEW_RECOVERY_STATUS_INVALID');
+  }
+  let candidate;
+  try { candidate = JSON.parse(result.modelOutput); }
+  catch { throw new Error('HOST_MCP_REVIEW_SEALED_CANDIDATE_INVALID'); }
+  validateSealedBoundedReviewCandidate(task, candidate);
+  return { task, result, candidate, allowedReadRefs: new Set([
+    ...task.jobAidContext.sourceCatalog.map((item) => item.evidenceRef),
+    ...reviewNativeDirectoryRefs(task),
+  ]) };
+}
+
+function assertBoundedReviewCommit(committed, begin, evidence) {
+  const { task, result, candidate, allowedReadRefs } = evidence;
+  assertReviewCommit(committed, begin.attemptRef, task, candidate, result, allowedReadRefs);
+  const saved = committed.assistantCandidate, update = saved?.jobAidWorkingUpdate;
+  const unchanged = candidate.jobAidWorkingDelta === null;
+  const expected = task.jobAidContext.modelInput.expectedWorkRevision;
+  if (saved?.actionAttemptRef !== begin.attemptRef ||
+      saved?.provenance?.resultContentHash !== result.contentHash ||
+      !isRecord(update) || !Array.isArray(update.readSourceRefs) ||
+      !Array.isArray(update.affectedIssueKeys) ||
+      update.affectedIssueKeys.some((key) => typeof key !== 'string' || !key.trim()) ||
+      new Set(update.affectedIssueKeys).size !== update.affectedIssueKeys.length ||
+      (!unchanged && (update.status !== 'APPLIED' ||
+        !Number.isSafeInteger(expected) || update.workRevision !== expected + 1 ||
+        typeof update.workRevisionRef !== 'string' || !update.workRevisionRef.trim() ||
+        update.workRevisionRef === task.jobAidContext.previousWork?.workRevisionRef)))
+    throw new Error('HOST_MCP_REVIEW_COMMIT_RESULT_INVALID');
+  assertReviewSourcesWereRead(candidate, new Set(update.readSourceRefs), task, null,
+    begin.task.workItemId);
+}
+
+/** Fresh status-only reconciliation never manufactures a receipt, READ proof
+ * or stale observation. A retained real receipt is validated again, not hidden. */
+export function reconcileBoundedReviewSealedStatus(begin, status, committed) {
+  const evidence = boundedReviewSealedEvidence(begin, status);
+  if (committed !== undefined) assertBoundedReviewCommit(committed, begin, evidence);
+  const succeeded = status.status === 'SUCCEEDED';
+  return {
+    ok: succeeded, mode: 'INTERACTIVE_REVIEW', operation: 'REVIEW_TURN',
+    outcome: !succeeded ? 'COMMITTING_RECOVERY_READ_ONLY' : committed
+      ? 'COMMITTING_REPLAYED' : 'COMMIT_RESPONSE_LOSS_RECOVERED_READ_ONLY',
+    attemptRef: begin.attemptRef, before: null, status,
+    ...(succeeded && committed ? { committed } : {}),
+    provenance: resultProvenance(evidence.result),
+  };
 }
 
 async function recoverInitialCommitting({ stage, before, begin, callTool }) {
@@ -2041,7 +2189,7 @@ function assertReviewContext(value, begin, task) {
 }
 
 function buildReviewModelInput(task, contextResult, workItemId) {
-  const context = sanitizeForModel(contextResult.context);
+  const context = sanitizeForModel(projectTdmsReviewSavedModelContext(task, contextResult.context));
   return {
     schemaVersion: task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA ? 'wiselink.3_1.review_model_input.v1.c5' : task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA
       ? 'wiselink.3_1.review_model_input.v1.c4' : 'wiselink.3_1.review_model_input.v1.c3',
@@ -2133,6 +2281,12 @@ function sanitizeReviewGapControl(value, modelPath) {
 function reviewReadableSourceRefIds(task, workItemId) {
   const refs = task.resourceRefs.map(({ sourceRefId }) => sourceRefId);
   if (task.schemaVersion !== REVIEW_JOBAID_TASK_SCHEMA) return refs;
+  return [...new Set([...refs, ...reviewDialogueSourceRefIds(task, workItemId), ...reviewNativeDirectoryRefs(task)])];
+}
+
+function reviewDialogueSourceRefIds(task, workItemId) {
+  if (task.schemaVersion !== REVIEW_JOBAID_TASK_SCHEMA) return [];
+  const refs = [];
   for (const item of task.jobAidContext.sourceCatalog) {
     const source = item.dialogueSource;
     if (item.kind !== 'ENGINEER_STATEMENT' || item.origin !== 'REVIEW_CONVERSATION' ||
@@ -2192,20 +2346,21 @@ function sanitizeSourceRefReadback(value, attemptRef, requested) {
       throw new Error('HOST_MCP_REVIEW_SOURCE_REF_BINDING_INVALID');
     }
   });
-  return value.sourceRefs.map((sourceRef, index) =>
-    sanitizeForModel(sourceRef, `$.sourceRefs[${index}]`),
-  );
+  return sanitizeReviewModelSources(value.sourceRefs);
+}
+
+export function sanitizeReviewModelSources(values) {
+  if (!Array.isArray(values)) throw new Error('HOST_MCP_REVIEW_SOURCE_REF_READBACK_INVALID');
+  return values.map((sourceRef, index) => sanitizeForModel(sourceRef, `$.sourceRefs[${index}]`));
 }
 
 function assertReviewSourcesWereRead(candidate, readSourceRefIds, task, matterWorking, workItemId) {
   const used = reviewCandidateSourceRefIds(task, candidate);
   if (task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA &&
     task.context.purpose === 'UPDATE_ASSESSMENT' && candidate.jobAidWorkingDelta === null) {
-    const resources = new Set(task.resourceRefs.map((item) => item.sourceRefId));
     // ALL_PENDING contributions are not initially delivered. A completed
     // comparison must read each exact current-request frozen contribution.
-    used.push(...reviewReadableSourceRefIds(task, workItemId)
-      .filter((ref) => !resources.has(ref)));
+    used.push(...reviewDialogueSourceRefIds(task, workItemId));
   }
   if (used.some((sourceRefId) => !readSourceRefIds.has(sourceRefId))) {
     throw new Error('REVIEW_CANDIDATE_SOURCE_REF_NOT_READ_THIS_TURN');
@@ -2268,7 +2423,7 @@ function assertExactKeys(value, required, optional, code) {
   }
 }
 
-function assertReviewCommit(value, attemptRef, task, candidate, result) {
+function assertReviewCommit(value, attemptRef, task, candidate, result, allowedReadRefs) {
   const saved = value?.assistantCandidate;
   const update = saved?.jobAidWorkingUpdate;
   const expected = task?.jobAidContext?.modelInput?.expectedWorkRevision;
@@ -2284,7 +2439,7 @@ function assertReviewCommit(value, attemptRef, task, candidate, result) {
   const readProofValid = !isRecord(update) || !Object.hasOwn(update, 'readSourceRefs') ||
     (Array.isArray(update.readSourceRefs) &&
       update.readSourceRefs.every((ref) => typeof ref === 'string' && ref.trim() !== '' &&
-        task.jobAidContext?.sourceCatalog.some((item) => item.evidenceRef === ref)) &&
+        allowedReadRefs.has(ref)) &&
       new Set(update.readSourceRefs).size === update.readSourceRefs.length);
   // A saved JobAid correction may invalidate its derived Overall. This is
   // permitted only by the Host's exact APPLIED receipt for this sealed result;

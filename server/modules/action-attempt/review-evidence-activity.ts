@@ -17,7 +17,9 @@ export function projectReviewEvidenceActivity(
   }
   if (!Array.isArray(raw) || !raw.every(isReviewActivity))
     return unreadableActivity();
-  const evidence = raw.filter(isActivity);
+  const evidence:ReviewEvidenceActivity[] = raw.flatMap(item=>isActivity(item)?[item]:
+    isReviewAssessmentReadActivity(item)?[{kind:'ASSESSMENT_SOURCES_READ' as const,observedAt:item.observedAt,
+      sourceRefIds:[...item.sourceRefs],sourceCatalogCount:item.sourceRefs.length}]:[]);
   return {
     items: evidence.slice(-100).map((item) => ({
       kind: item.kind,
@@ -85,8 +87,8 @@ export function isReviewRuntimeActivity(
 
 function isReviewActivity(
   value: unknown,
-): value is ReviewEvidenceActivity | ReviewRuntimeActivity {
-  return isActivity(value) || isReviewRuntimeActivity(value);
+): value is ReviewEvidenceActivity | ReviewRuntimeActivity | ReviewAssessmentReadActivity {
+  return isActivity(value) || isReviewRuntimeActivity(value) || isReviewAssessmentReadActivity(value);
 }
 
 function unreadableRuntimeActivity(): NonNullable<
@@ -132,4 +134,18 @@ function unreadableActivity(): NonNullable<
       message: '取证记录暂不可读；执行状态与候选独立显示。',
     },
   };
+}
+
+interface ReviewAssessmentReadActivity {
+  kind:'ASSESSMENT_SOURCES_READ';observedAt:string;sourceRefs:string[];purpose:string;
+}
+/** This recognizes finite Host journal metadata, not a native receipt or permission. */
+export function isReviewAssessmentReadActivity(value:unknown):value is ReviewAssessmentReadActivity {
+  if(!value||typeof value!=='object')return false;
+  const item=value as Record<string,unknown>;
+  return item.kind==='ASSESSMENT_SOURCES_READ'&&typeof item.observedAt==='string'&&
+    Number.isFinite(Date.parse(item.observedAt))&&typeof item.purpose==='string'&&
+    !!item.purpose.trim()&&item.purpose.length<=2000&&Array.isArray(item.sourceRefs)&&
+    item.sourceRefs.length>0&&item.sourceRefs.length<=96&&new Set(item.sourceRefs).size===item.sourceRefs.length&&
+    item.sourceRefs.every(ref=>typeof ref==='string'&&ref.trim()===ref&&ref.length>0);
 }

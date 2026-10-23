@@ -385,7 +385,7 @@ function scopeCopy(scope: Scope): TdmsSourceScope {
     scopeId: scope.scopeId,
   };
 }
-function approvalMode(
+export function tdmsOpinionOwnApprovalMode(
   a: TdmsOpinionAssessmentFact,
 ): 'EXACT_VERSION' | 'OBJECT_OBSERVATION' | null {
   const p = a.approval;
@@ -491,7 +491,7 @@ export function projectTdmsApprovedOpinionContext(
   input: TdmsApprovedOpinionContextInput,
 ): TdmsApprovedOpinionContext {
   const assessments = new Map<string, TdmsOpinionAssessmentFact>();
-  const modes = new Map<string, ReturnType<typeof approvalMode>>();
+  const modes = new Map<string, ReturnType<typeof tdmsOpinionOwnApprovalMode>>();
   const opinionRefs = new Map<string, string[]>();
   const opinions = new Map<string, TdmsApprovedOpinionReference>();
   const sourceKeys = new Set<string>();
@@ -520,7 +520,7 @@ export function projectTdmsApprovedOpinionContext(
     if (assessments.has(key))
       throw tdmsError('TDMS_OPINION_DUPLICATE_ASSESSMENT');
     assessments.set(key, a);
-    modes.set(key, approvalMode(a));
+    modes.set(key, tdmsOpinionOwnApprovalMode(a));
   }
   const result: TdmsApprovedOpinionContext = {
     opinions: [],
@@ -1135,7 +1135,7 @@ export function projectTdmsProcessingCohortContext(
         gaps.push('MEMBER_OBSERVATION_NOT_ACQUIRED');
         continue;
       }
-      const mode = approvalMode(assessment);
+      const mode = tdmsOpinionOwnApprovalMode(assessment);
       if (!mode) {
         projected.status =
           assessment.approval?.mode === 'METADATA_ONLY' &&

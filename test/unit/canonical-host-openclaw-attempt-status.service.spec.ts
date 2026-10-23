@@ -5,6 +5,7 @@ import {
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 import type {
   OpenClawActionTaskType,
+  OpenClawModelResultEnvelope,
   OpenClawResultEnvelope,
   OpenClawTaskEnvelope,
 } from '../../server/modules/action-attempt/action-attempt-envelope.types';
@@ -35,6 +36,68 @@ const PUBLIC_STATUS_KEYS = [
 ];
 
 describe('CanonicalHostOpenClawAttemptStatusService', () => {
+  it('denies bounded Review before task/result lookup when its provider is missing or current Source rejects', async () => {
+    const task=taskEnvelope('OPENCLAW_INTERACTIVE_REVIEW');
+    const missing=statusHarness(actionAttemptRow(task,'RUNNING'));
+    missing.attempts.readScopeMetadata.mockResolvedValueOnce({actionType:task.taskType,hasTdmsReviewContext:true} as never);
+    await expect(missing.service.status(task.operationRef)).rejects.toThrow('TDMS_REVIEW_ADMISSION_NOT_CONNECTED');
+    expect(missing.attempts.readScoped).not.toHaveBeenCalled();
+    const admitReview=jest.fn(async()=>{throw new Error('TDMS_RECEIVER_ACTION_DENIED');});
+    const denied=statusHarness(actionAttemptRow(task,'RUNNING'),{admitReview});
+    denied.attempts.readScopeMetadata.mockResolvedValueOnce({actionType:task.taskType,hasTdmsReviewContext:true} as never);
+    await expect(denied.service.status(task.operationRef)).rejects.toThrow('TDMS_RECEIVER_ACTION_DENIED');
+    expect(denied.attempts.readScoped).not.toHaveBeenCalled();
+  });
+
+  it('routes finite successor identity to its own admission before returning the original sealed recovery result', async()=>{
+    const task=taskEnvelope('OPENCLAW_OVERALL_SYNTHESIS'),row=actionAttemptRow(task,'COMMITTING',resultEnvelope(task));
+    const admitReview=jest.fn(async()=>({}));
+    const h=statusHarness(row,{admitReview});
+    const delegation={reviewTurnRef:'TURN',reviewConversationRef:'CONVERSATION',requestId:'REQUEST'};
+    h.scope.authorizeOpenClawAttempt.mockResolvedValueOnce({...await h.scope.authorizeOpenClawAttempt({attemptRef:task.operationRef}),
+      successorReviewDelegation:delegation} as never);
+    h.attempts.readScopeMetadata.mockResolvedValueOnce({actionType:task.taskType,hasSuccessorBinding:true,
+      successorReviewTurnRef:'TURN',hasTdmsSuccessorObligation:true} as never);
+    await expect(h.service.status(task.operationRef)).resolves.toMatchObject({status:'COMMITTING',recoveryAvailable:true,
+      recoveryResult:JSON.parse(row.resultEnvelopeJson!)});
+    expect(admitReview).toHaveBeenCalledWith(expect.objectContaining({attemptRef:task.operationRef,
+      reviewConversationRef:'CONVERSATION',requestId:'REQUEST',successorOverall:{reviewTurnRef:'TURN'}}));
+    expect(admitReview.mock.invocationCallOrder[0]).toBeLessThan(h.attempts.readScoped.mock.invocationCallOrder[0]);
+    h.attempts.readScopeMetadata.mockResolvedValueOnce({actionType:task.taskType,hasSuccessorBinding:true,successorReviewTurnRef:'TURN'} as never);
+    h.attempts.readScoped.mockClear();
+    await expect(h.service.status(task.operationRef)).rejects.toMatchObject({statusCode:404});
+    expect(h.attempts.readScoped).not.toHaveBeenCalled();
+  });
+
+  it('keeps ordinary successor status readable when native admission is genuinely not applicable',async()=>{
+    const task=taskEnvelope('OPENCLAW_OVERALL_SYNTHESIS'),row=actionAttemptRow(task,'COMMITTING',resultEnvelope(task));
+    for(const verifier of [{admitReview:jest.fn(async()=>null)},undefined]) {
+      const h=statusHarness(row,verifier);
+      const delegation={reviewTurnRef:'TURN',reviewConversationRef:'CONVERSATION',requestId:'REQUEST'};
+      h.scope.authorizeOpenClawAttempt.mockResolvedValueOnce({...await h.scope.authorizeOpenClawAttempt({attemptRef:task.operationRef}),
+        successorReviewDelegation:delegation} as never);
+      h.attempts.readScopeMetadata.mockResolvedValueOnce({actionType:task.taskType,hasSuccessorBinding:true,
+        successorReviewTurnRef:'TURN',hasTdmsSuccessorObligation:false} as never);
+      await expect(h.service.status(task.operationRef)).resolves.toMatchObject({status:'COMMITTING',recoveryAvailable:true,
+        recoveryResult:JSON.parse(row.resultEnvelopeJson!)});
+      expect(h.attempts.readScoped).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('does not opt a native successor out when its context or saved carrier still requires admission',async()=>{
+    const task=taskEnvelope('OPENCLAW_OVERALL_SYNTHESIS'),row=actionAttemptRow(task,'COMMITTING',resultEnvelope(task));
+    for(const verifier of [{admitReview:jest.fn(async()=>null)},undefined]) {
+      const h=statusHarness(row,verifier);
+      const delegation={reviewTurnRef:'TURN',reviewConversationRef:'CONVERSATION',requestId:'REQUEST'};
+      h.scope.authorizeOpenClawAttempt.mockResolvedValueOnce({...await h.scope.authorizeOpenClawAttempt({attemptRef:task.operationRef}),
+        successorReviewDelegation:delegation} as never);
+      h.attempts.readScopeMetadata.mockResolvedValueOnce({actionType:task.taskType,hasSuccessorBinding:true,
+        successorReviewTurnRef:'TURN',hasTdmsSuccessorObligation:true} as never);
+      await expect(h.service.status(task.operationRef)).rejects.toThrow('TDMS_REVIEW_ADMISSION_NOT_CONNECTED');
+      expect(h.attempts.readScoped).not.toHaveBeenCalled();
+    }
+  });
+
   it('passes an explicit WorkItem selector through authorization and scoped attempt lookup', async () => {
     const task = taskEnvelope('OPENCLAW_DYNAMIC_EVALUATION');
     const harness = statusHarness(actionAttemptRow(task, 'RUNNING'));
@@ -266,9 +329,11 @@ describe('CanonicalHostOpenClawAttemptStatusService', () => {
   });
 });
 
-function statusHarness(initialRow: ActionAttemptRow) {
+function statusHarness(initialRow: ActionAttemptRow, nativeVerifier?: unknown) {
   let row = initialRow;
   const attempts = {
+    readScopeMetadata:jest.fn(async()=>({actionType:row.actionType,hasTdmsReviewContext:false,
+      hasSuccessorBinding:false,successorReviewTurnRef:null})),
     readScoped: jest.fn(async (_input: {
       attemptRef: string; tenantId: string; workItemId: string;
     }) => structuredClone(row)),
@@ -289,6 +354,7 @@ function statusHarness(initialRow: ActionAttemptRow) {
     service: new CanonicalHostOpenClawAttemptStatusService(
       attempts as never,
       scope as never,
+      nativeVerifier as never,
     ),
     setRow(next: ActionAttemptRow) {
       row = next;
@@ -317,7 +383,7 @@ function taskEnvelope(taskType: OpenClawActionTaskType): OpenClawTaskEnvelope {
   });
 }
 
-function resultEnvelope(task: OpenClawTaskEnvelope): OpenClawResultEnvelope {
+function resultEnvelope(task: OpenClawTaskEnvelope): OpenClawModelResultEnvelope {
   const policy = CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY;
   return sealResultEnvelope({
     schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',

@@ -695,6 +695,24 @@ UI 作者 65 个受影响用例及 5 个最小修正用例、locator 19 个按�
 
 这些是本地未发布 UI 候选的接线和验证；本轮不纳入 ACK 读模型、Review Host/Native 协议或 c235，不改 server/shared/Native、DDL、模型、SAVE 或正式采用。生产仍为 E.5 的 D062 / release7699657613396610040，原真实引用定位 PARTIAL 和刷新时间未证实保持。候选构建及后续发布范围由 FIRST_BATCH 末节和 M_INTEGRATION 当前段准确登记，不从合成浏览器推断已上线。
 
+
+### E.7 ACK、Review 与 Native c235 的本地源码和恢复（2026-10-23）
+
+本节接续 E.5 的真实 Estimated 发布和 E.6 的资料库评估消费者；不改 v1.6 的 13 节点、47 关系、54 场景、10 规则。当前新源码是 `16b727a3a440d9c164cbbc6c29a97836229709dc`，基于 Source126 独立恢复107个产品/测试/迁移变更文件。ACK e9 全树、SAVED Review ab5a 对应原 Native02d 投影全树、BOUNDED 47文件与后两次修正的原 binary diff、21个UI和2个M2目标blob均准确相等；Native141文件子树为 `f9bece5ba22765af5f24bd5f6798607355a94bf4`。旧53d的九个记录/生成文件未完整还原，不声称新整树或新提交等于53d。
+
+- `save.finish`：`MiaodaWorkItemRepository.readReadableAutoProcessingCompletion` 单次取得可信 receipt；`CanonicalJobAidProblemService.readBrowser` 将授权 projection 的准确 request/revision/source/hash/bytes 与它比较。四字段原请求 ACK 独立于当前 inner attempt；父 `useJobAidWorkingRead` 接收出现、替换和 null，`WorkItemRuntimeDiagnostic` 可并列旧 ACK 与较新 RUNNING/COMMITTING。没有回填历史 Ready/首次可读时间，也不修改原写事务/锁序。
+- `company.approved-opinion`：真实 UPDATE_ASSESSMENT 准入在正文前复核当前 Source、receiver/member/选定版本及 own-approval。SAVED_EVIDENCE_ONLY 只复用准确保存 carrier；BOUNDED_NATIVE_READ 将真实 Review operationRef 和十键上下文冻结，实际 MCP READ 的不可变审计 receipt 与准确 journal 成功后才释放 packet。opaque caller 与 handed transaction 保持，APPLIED/UNCHANGED、browser/summary 消费同一保存工作；后继 Overall 取得自己的新 attempt/lease，准确消费该 Review work。
+- 同一链路的 SEALED_RECOVERY 仅接收原 COMMITTING 封存 task/result/fence；不续租、不重新 discovery/READ/journal/model，不授权任意新 SAVE。普通迟到活动仍被拒；当前 Source permissionRevision 严格。最终 ae025 仅让新 READ endpoint 返回 strict parser 验证的 raw carrier，通用 display registry 与 Native 正文比较器不改。
+- `research.overall`、`wiki.saved-reading`、`document.assessment-reading` 接续已保存工作与准确引用；Review 候选仍不自动确认、正式采用或放行。已发布 UI 的原文第8页/返回、后续一次PDF200/11页、历史500与 Aily 未完成各按原记录保留。
+
+原 PG027 未到过期恢复；PG028 的真实本地 READ 成功，原 Native guard 拒绝 raw/display 正文的额外 locator:null；ae025 修正后 PG029 用正常 consumer、真实进程内注册 Host MCP handler、自有隔离PG的受限角色/RLS/handed max=1，通过5子例加外层6项。模型与 Gateway 是合成边界，不是真实远端MCP或产品模型。初次模型wrapper1、合成Gateway2、Native READ1；三次commit为原调用与两个后续独立trigger各至多一次同payload调用。回滚无工作/Review receipt，最终仅一份新工作，下一consume为IDLE。旧失败保留，早期“normal consume pending”不能覆盖此最终结果。
+
+PG024/025/026/029 的 expired 均由隔离fixture管理员把既有 lease_expires_at/deadline_at UPDATE到过去构造；55.662/85.902/54.666秒及PG029的82.848216958秒是整用例耗时，未实测生产30/60分钟自然TTL。lease/token/generation等不变断言从该fixture UPDATE之后算，终态原有清理可清token/lease expiry。37个旧checkpoint文件本体未恢复，原manifest和原P2实际校验输出保留，不制造同名原件或用新运行冒充。
+
+三条 lock-only UPDATE policy 仍仅为本地SQL候选 `migrations/candidates/tdms_review_saved_context_locks.hosted.sql`：沿原 actor/tenant/active mapping USING，WITH CHECK(false)，无新增GRANT/ALL/definer。06:32:29Z 的一次正式只读 catalog 确认四个角色/表组合存在、三表RLS启用、目标policy均缺失且可组合 permissive UPDATE/ALL=0；这不是DDL实施或业务授权。
+
+新16b源码正常hook、一次完整构建和正常c235 publisher已成功；新包哈希与旧丢失包不同，准确时间/哈希见FIRST_BATCH。线上Host仍为已发布De1d/release7699717588535888913；Native最后已证实安装为c234，当前安装、cron和在途尚未完整核对。17c开发会话空闲不能证明运行端空闲，后续切换预检待明确授权。本批未新增后端发布、Native安装、DDL、真实模型/READ/SAVE或正式采用。
+
 ## 附录 F. 后续来源规划
 
 可靠性、故障与手册资料分别接入，先提供准确阅读，再验证一个具体问题的实际消费，随后按需要增加趋势观察与策略。当前 13 节点可承载这些入口；具体消费者明确前不增加通用平台或固定模型流水线。

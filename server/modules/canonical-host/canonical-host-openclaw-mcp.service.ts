@@ -27,7 +27,7 @@ import {
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
 import { CanonicalHostOpenClawAttemptStatusService } from './canonical-host-openclaw-attempt-status.service';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
-import { assertCurrentReviewAttemptScope } from './canonical-host-openclaw-review-scope';
+import { assertCurrentReviewAttemptMetadataScope } from './canonical-host-openclaw-review-scope';
 import {
   CanonicalHostOpenClawTranslationService,
   TRANSLATION_RESULT_PART_MAX_BYTES,
@@ -823,6 +823,17 @@ export class CanonicalHostOpenClawMcpService {
         ),
     );
 
+    server.registerTool('read_review_native_sources', {
+      title: '读取本次评审准确原生来源',
+      description: '仅当前已授权UPDATE_ASSESSMENT的RUNNING attempt可读取冻结native目录；EXACT、有效租约和原Source/对象权限必需，真实READ回执及有界journal完成后才交付正文。',
+      inputSchema: z.object({
+        attemptRef,workItemId:mcpWorkItemId.optional(),leaseToken,leaseGeneration,
+        sourceRefs:z.array(tdmsNativeReferenceMcpSchema(z.string().min(1).max(512))).min(1).max(96),
+        purpose:z.string().trim().min(1).max(2000),context:z.literal('EXACT'),
+      }).strict(),
+      annotations:resumeAnnotations,
+    },async input=>textResult(await this.review.readNativeSources(input)));
+
     server.registerTool(
       'query_review_aily',
       {
@@ -927,22 +938,14 @@ export class CanonicalHostOpenClawMcpService {
           attemptRef: selectedAttemptRef,
           workItemId,
         });
-        if (workItemId !== undefined) {
-          const row = await this.attempts.readScoped({
-            attemptRef: selectedAttemptRef,
-            tenantId: scope.tenantId,
-            workItemId: scope.workItemId,
-          });
-          if (row.actionType === 'OPENCLAW_INTERACTIVE_REVIEW')
-            await assertCurrentReviewAttemptScope({
-              row, scope, serviceScope: this.serviceScope,
-            });
-          else if (!['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS',
-            'OPENCLAW_APPLICABILITY_EVALUATION'].includes(row.actionType))
-            throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
-              code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
-            });
-        }
+        const row = await this.attempts.readScopeMetadata({
+          attemptRef: selectedAttemptRef,tenantId:scope.tenantId,workItemId:scope.workItemId,
+        });
+        if(row.actionType==='OPENCLAW_INTERACTIVE_REVIEW')
+          await assertCurrentReviewAttemptMetadataScope({row,scope,serviceScope:this.serviceScope});
+        else if(workItemId!==undefined && !['OPENCLAW_DYNAMIC_EVALUATION','OPENCLAW_OVERALL_SYNTHESIS',
+          'OPENCLAW_APPLICABILITY_EVALUATION'].includes(row.actionType))
+          throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'),{code:'ACTION_ATTEMPT_NOT_FOUND',statusCode:404});
         return textResult(
           await this.attempts.heartbeat({
             attemptRef: selectedAttemptRef,
@@ -986,22 +989,14 @@ export class CanonicalHostOpenClawMcpService {
           attemptRef: selectedAttemptRef,
           workItemId,
         });
-        if (workItemId !== undefined) {
-          const row = await this.attempts.readScoped({
-            attemptRef: selectedAttemptRef,
-            tenantId: scope.tenantId,
-            workItemId: scope.workItemId,
-          });
-          if (row.actionType === 'OPENCLAW_INTERACTIVE_REVIEW')
-            await assertCurrentReviewAttemptScope({
-              row, scope, serviceScope: this.serviceScope,
-            });
-          else if (!['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS',
-            'OPENCLAW_APPLICABILITY_EVALUATION'].includes(row.actionType))
-            throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'), {
-              code: 'ACTION_ATTEMPT_NOT_FOUND', statusCode: 404,
-            });
-        }
+        const row = await this.attempts.readScopeMetadata({
+          attemptRef: selectedAttemptRef,tenantId:scope.tenantId,workItemId:scope.workItemId,
+        });
+        if(row.actionType==='OPENCLAW_INTERACTIVE_REVIEW')
+          await assertCurrentReviewAttemptMetadataScope({row,scope,serviceScope:this.serviceScope});
+        else if(workItemId!==undefined && !['OPENCLAW_DYNAMIC_EVALUATION','OPENCLAW_OVERALL_SYNTHESIS',
+          'OPENCLAW_APPLICABILITY_EVALUATION'].includes(row.actionType))
+          throw Object.assign(new Error('ACTION_ATTEMPT_NOT_FOUND'),{code:'ACTION_ATTEMPT_NOT_FOUND',statusCode:404});
         return textResult(
           await this.attempts.requestCancel({
             attemptRef: selectedAttemptRef,

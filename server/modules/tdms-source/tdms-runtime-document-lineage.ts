@@ -21,11 +21,17 @@ function recordJson(value: string) {
 }
 
 type DocumentReadLineage = {
-  version: typeof dmDocumentVersion.$inferSelect;
-  family: typeof dmPublicationFamily.$inferSelect;
-  artifact: typeof dmSourceArtifact.$inferSelect;
-  acquisition: typeof dmAcquisition.$inferSelect;
-  preflight: typeof dmIngressPreflight.$inferSelect | null;
+  version: Pick<typeof dmDocumentVersion.$inferSelect,'documentVersionId'|'familyId'|'sourceArtifactId'|
+    'pdfSha256'|'byteLength'|'acquisitionId'|'businessRevision'|'revisionDate'|'sourceGeneratedDate'>;
+  family: Pick<typeof dmPublicationFamily.$inferSelect,'familyId'|'canonicalIdentityKey'|'canonicalDocumentNumber'|'documentFamily'|'issuerAuthority'>;
+  artifact: Pick<typeof dmSourceArtifact.$inferSelect,'sourceArtifactId'|'readbackVerified'|'mediaType'|'sha256'|'byteLength'|'bucketId'|'filePath'>;
+  acquisition: Pick<typeof dmAcquisition.$inferSelect,'acquisitionId'|'status'|'sourceArtifactId'|'documentVersionId'|
+    'acquiredBy'|'selectionBucketId'|'selectionFilePath'|'providerObjectId'|'providerVersionId'|'sourceDescriptorJson'>;
+  preflight: Pick<typeof dmIngressPreflight.$inferSelect,'status'|'committedAt'|'documentVersionId'|'acquisitionId'|
+    'commitIdempotencyKey'|'decision'|'normalizedDescriptorJson'> | null;
+  /** Finite SQL projection retains the original full equality without returning
+   * unrelated descriptor/evidence fields to the caller. */
+  publicationIdentityEvidenceConsistent?: boolean | null;
 };
 
 export function verifiedDocumentReadLineage(
@@ -75,8 +81,9 @@ export function verifiedDocumentReadLineage(
   const footer =
     isAirbusTfuFooterDescriptor(normalized) &&
     isAirbusTfuFooterDescriptor(descriptor) &&
-    stableJson(normalized.publicationIdentityEvidence) ===
-      stableJson(descriptor.publicationIdentityEvidence);
+    (row.publicationIdentityEvidenceConsistent !== undefined
+      ? row.publicationIdentityEvidenceConsistent === true
+      : stableJson(normalized.publicationIdentityEvidence) === stableJson(descriptor.publicationIdentityEvidence));
   return (
     (VERIFIED_DM_IDENTITY_AUTHORITIES.has(authority) || footer) &&
     descriptor.identityAuthority === normalized.identityAuthority &&

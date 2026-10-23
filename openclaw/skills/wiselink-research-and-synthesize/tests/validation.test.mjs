@@ -1439,7 +1439,7 @@ test('requires 41 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c234',
+    'wiselink-research-and-synthesize@r09.c235',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -9967,6 +9967,37 @@ const buildHostToolSurface = () => {
     ])),
   } : {} }));
 };
+
+test('optional bounded Review native capability preserves old Host tools and enforces its exact metadata', () => {
+  const tools = buildHostToolSurface();
+  assert.doesNotThrow(() => validateHostToolMetadata({tools}));
+  const ordinary = {attemptRef: {type: 'string', minLength: 1, maxLength: 200},
+    workItemId: {type: 'string', minLength: 1, maxLength: 200},
+    leaseToken: {type: 'string', format: 'uuid'}, leaseGeneration: {type: 'integer', exclusiveMinimum: 0},
+    sourceRefs: {type: 'array', minItems: 1, maxItems: 96, items: {anyOf: [
+      {type: 'string', minLength: 1, maxLength: 512, pattern: 'ordinary-reference'},
+      {type: 'string', minLength: 1, maxLength: 65536, pattern: 'native-reference'}]}},
+    purpose: {type: 'string', minLength: 1, maxLength: 2000}, context: {type: 'string', enum: ['EXACT', 'PAGE'], default: 'PAGE'}};
+  tools.find(tool => tool.name === 'read_assessment_sources').inputSchema = {
+    type: 'object', additionalProperties: false, properties: ordinary,
+    required: ['attemptRef', 'leaseToken', 'leaseGeneration', 'sourceRefs', 'purpose']};
+  const native = {name: 'read_review_native_sources', inputSchema: {type: 'object', additionalProperties: false,
+    properties: {...structuredClone(ordinary), context: {type: 'string', const: 'EXACT'}},
+    required: ['attemptRef', 'leaseToken', 'leaseGeneration', 'sourceRefs', 'purpose', 'context']},
+  annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false}};
+  const complete = [...tools, native];
+  assert.doesNotThrow(() => validateHostToolMetadata({tools: complete}));
+  for (const mutate of [tool => { tool.inputSchema.additionalProperties = true; },
+    tool => { tool.inputSchema.required.pop(); }, tool => { tool.inputSchema.properties.caller = {}; },
+    tool => { tool.inputSchema.properties.context = {type: 'string', enum: ['EXACT', 'PAGE']}; },
+    tool => { tool.inputSchema.properties.sourceRefs.maxItems = 100; },
+    tool => { tool.inputSchema.properties.sourceRefs.items.anyOf.pop(); },
+    tool => { tool.annotations.readOnlyHint = false; }, tool => { tool.annotations.openWorldHint = true; }]) {
+    const changed = structuredClone(complete); mutate(changed.at(-1));
+    assert.throws(() => validateHostToolMetadata({tools: changed}), /REVIEW_NATIVE_READ_CAPABILITY_SCHEMA_INVALID/u);
+  }
+  assert.throws(() => validateHostToolMetadata({tools: [...complete, native]}), /REVIEW_NATIVE_READ_CAPABILITY_SCHEMA_INVALID/u);
+});
 
 test('accepts the published Host optional workItemId commit schema and rejects contract drift', () => {
   const tools = buildHostToolSurface();

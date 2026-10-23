@@ -1,3 +1,5 @@
+import { assertTdmsSealedResultFence, tdmsReviewBinding, type TdmsReviewCaller, type TdmsReviewIngress } from '../tdms-source/tdms-review-delegation';
+import type { TdmsReviewSavedContext, TdmsReviewContext } from './tdms-review-saved-context';
 import { assertJobAidSemanticContent } from './jobaid-semantic-content';
 import {
   buildJobAidPreparationView, preparationAfterSavedWork, unavailableJobAidPreparationFacts,
@@ -9,7 +11,7 @@ import { TDMS_RUNTIME_READER, type TdmsRuntimeReaderPort, type TdmsRuntimeTaskCo
 import { TDMS_NATIVE_EVIDENCE_VERIFIER, verifyTdmsNativeEvidence, assertTdmsNativeInTransaction, type TdmsNativeEvidenceVerifier,
   type TdmsNativeTransactionInput } from './tdms-native-evidence-verifier.port';
 import { parseAssessmentTdmsEvidence } from '@shared/assessment-tdms-evidence';
-import { mergeTdmsReadEvidence, resolvedTdmsReadEvidence, tdmsJobAidDirectory } from './jobaid-tdms-context';
+import { mergeTdmsReadEvidence, resolvedTdmsReadEvidence, resolvedTdmsReadCarriers, tdmsJobAidDirectory } from './jobaid-tdms-context';
 import { DocumentActivityRunRepository } from './document-activity-run.repository';
 import { projectSavedDocumentActivityForAssessment, type DocumentActivityAssessmentProjection } from './document-activity-assessment-projection';
 import { sourceStatementEvidence } from './document-activity-assessment-consumer';
@@ -163,6 +165,9 @@ export interface BeginJobAidProblemResult {
 /** Problem analysis uses the existing ActionAttempt, source authorization and candidate CAS. */
 @Injectable()
 export class CanonicalJobAidProblemService {
+  // Request-local routing only. The provider rechecks the private immutable
+  // binding; storing a scope or a JSON lookalike never grants authority.
+  private readonly successorCallers=new WeakMap<CanonicalVerifiedServiceScope,TdmsReviewCaller>();
   constructor(
     @Inject(CANONICAL_WORK_ITEM_REGISTRAR)
     private readonly registrar: CanonicalWorkItemRegistrarPort,
@@ -336,6 +341,15 @@ export class CanonicalJobAidProblemService {
       delegated.principalId !== scope.principalId ||
       delegated.reviewTurnRef !== successorReviewTurnRef || !delegated.overallRequested)
       throw new Error('JOBAID_SUCCESSOR_OVERALL_DELEGATION_REQUIRED');
+    const idempotencyKey = `openclaw-successor-overall:${workItemId}:${successorReviewTurnRef}`;
+    const identity=await this.attempts.readRequestIdentity({tenantId:scope.tenantId,workItemId,
+      taskType:'OPENCLAW_OVERALL_SYNTHESIS',documentVersionId:delegated.documentVersionId,idempotencyKey});
+    // After this execution's own projection CAS the WorkItem can be base+1.
+    // Its genuine persisted attempt supplies that narrow recovery proof before
+    // any completed turn/work/task body is loaded. No former lease is inferred.
+    await this.admitSuccessorSources(scope,successorReviewTurnRef,
+      identity?.operationRef && ['RUNNING','COMMITTING','SUCCEEDED'].includes(identity.status)
+        ? identity.operationRef : undefined);
     const binding = await this.conversations.loadOpenClawTurnByIdBinding({
       tenantId: scope.tenantId, actorId: delegated.actorUserId, workItemId,
       reviewConversationId: delegated.reviewConversationRef,
@@ -363,7 +377,6 @@ export class CanonicalJobAidProblemService {
       exact.documentVersionId !== delegated.documentVersionId ||
       exact.content.roundCompletion === 'IN_PROGRESS')
       throw new Error('JOBAID_SUCCESSOR_OVERALL_WORK_CHANGED');
-    const idempotencyKey = `openclaw-successor-overall:${workItemId}:${successorReviewTurnRef}`;
     const existing = await this.attempts.readRequest({tenantId: scope.tenantId,workItemId,
       taskType: 'OPENCLAW_OVERALL_SYNTHESIS',documentVersionId: delegated.documentVersionId,idempotencyKey});
     if (existing && !['QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING'].includes(existing.status))
@@ -371,6 +384,7 @@ export class CanonicalJobAidProblemService {
     // Projection CAS can succeed before the terminal acknowledgement. Return the
     // same sealed result and execution fence, without reserving against the new revision.
     if (existing?.status === 'COMMITTING') {
+      await this.admitSuccessorSources(scope,successorReviewTurnRef,existing.operationRef!);
       if (existing.leaseOwner !== scope.principalId || !existing.leaseToken || !existing.leaseExpiresAt)
         throw new Error('JOBAID_SUCCESSOR_OVERALL_RECOVERY_FENCE_INVALID');
       const recoveryTask = parseCanonicalHostOpenClawAttemptTask(existing);
@@ -394,7 +408,9 @@ export class CanonicalJobAidProblemService {
       documentVersionId: delegated.documentVersionId,
       inputRevision: workItem.revision, baseRevision: workItem.revision, idempotencyKey,
       sourceRefs: [jobAidSourceFileReference(workItem)], allowedConnectors: [],
-      buildModelInput: async identity => ({
+      buildModelInput: async identity => {
+        await this.admitSuccessorSources(scope,successorReviewTurnRef,undefined,identity);
+        return ({
         ...await this.buildInput(workItem, scope.tenantId, delegated.actorUserId,
           scope.authorizationFingerprint, 'OVERALL_CONSISTENCY', identity.createdAt.toISOString(),
           [], undefined, undefined, exact, false, {scope,taskContextRef:identity.operationRef}),
@@ -404,8 +420,10 @@ export class CanonicalJobAidProblemService {
           inputRevision: delegated.inputRevision, workRevisionRef: exact.workRevisionRef,
           workRevision: exact.workRevision, workItemRevision: workItem.revision,
         },
-      }),
+      });
+      },
     });
+    await this.admitSuccessorSources(scope,successorReviewTurnRef,claim.attemptRef);
     const task = parseJobAidProblemTask(claim.task);
     if (task.successorReviewTurnRef !== successorReviewTurnRef ||
       task.previousWork?.workRevisionRef !== exact.workRevisionRef)
@@ -766,6 +784,7 @@ export class CanonicalJobAidProblemService {
     successorWork?: JobAidWorkRevision,
     requestContext = false,
     nativeAdmission?: {scope:CanonicalVerifiedServiceScope;taskContextRef:string},
+    reviewCaller?: TdmsReviewCaller,
   ): Promise<JobAidProblemTaskInput> {
     const readScope = new UnifiedArtifactReadScope(this.artifactStore);
     if (!this.originalReader) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
@@ -776,6 +795,7 @@ export class CanonicalJobAidProblemService {
       tenantId,
       actorUserId,
       requestContext,
+      reviewCaller ? {reviewCaller} : undefined,
     );
     const originalScope = {
       tenantId,
@@ -864,7 +884,7 @@ export class CanonicalJobAidProblemService {
     const base = workItem.integratedAssessment?.baseRules;
     if (purpose === 'OVERALL_CONSISTENCY' && !isJobAidProblemProjection(base))
       throw new Error('JOBAID_OVERALL_EXACT_WORK_REQUIRED');
-    const previousWorkRef = successorWork?.workRevisionRef ?? (
+    const previousWorkRef = (reviewCaller && tdmsReviewBinding(reviewCaller).workRevisionRef) || successorWork?.workRevisionRef || (
       purpose === 'OVERALL_CONSISTENCY' && isJobAidProblemProjection(base)
         ? base.workRevisionRef
         : history[0]?.workRevisionRef);
@@ -965,11 +985,16 @@ export class CanonicalJobAidProblemService {
       sourceCatalog.push(...sourceActivityProjections.flatMap(p=>p.records.map(sourceStatementEvidence)));
     }
     let tdmsContext: TdmsRuntimeTaskContext | undefined;
-    if (nativeAdmission && this.tdmsReader && purpose !== 'PROBLEM_REVIEW') {
-      tdmsContext = (await this.tdmsReader.discover({scope:nativeAdmission.scope,actorUserId},
+    const reviewPreparation=reviewCaller && tdmsReviewBinding(reviewCaller).attempt?.phase==='PREPARATION'
+      ? tdmsReviewBinding(reviewCaller) : undefined;
+    const runtimePrincipal = reviewPreparation ? {scope:reviewPreparation.scope,actorUserId,reviewCaller} :
+      nativeAdmission ? this.runtimePrincipal(nativeAdmission.scope,actorUserId) : undefined;
+    const taskContextRef=reviewPreparation?.attempt?.attemptRef ?? nativeAdmission?.taskContextRef;
+    if (runtimePrincipal && taskContextRef && this.tdmsReader) {
+      tdmsContext = (await this.tdmsReader.discover(runtimePrincipal,
         {tenantId,workItemId:workItem.workItemId,documentVersionId:workItem.source.documentVersionId,
-          actorUserId,taskContextRef:nativeAdmission.taskContextRef})) ?? undefined;
-      if (tdmsContext) await this.tdmsReader.assertAuthorized({scope:nativeAdmission.scope,actorUserId},tdmsContext);
+          actorUserId,taskContextRef})) ?? undefined;
+      if (tdmsContext) await this.tdmsReader.assertAuthorized(runtimePrincipal,tdmsContext);
     }
     // Authorize the complete new input inside buildModelInput, before the
     // lifecycle persists or claims an attempt. begin also rechecks replays.
@@ -979,7 +1004,8 @@ export class CanonicalJobAidProblemService {
       tenantId,
       actorUserId,
       requestContext,
-      tdmsContext && nativeAdmission ? {runtime:{principal:{scope:nativeAdmission.scope,actorUserId},context:tdmsContext,phase:'ADMISSION'}} : undefined,
+      reviewCaller ? {reviewCaller} : tdmsContext && nativeAdmission ? this.nativeTransactionCaller(
+        nativeAdmission.scope,actorUserId,tdmsContext,'ADMISSION') : undefined,
     );
     const taskInput = buildJobAidProblemTask({
       workItem: assessmentWorkItem,
@@ -991,7 +1017,8 @@ export class CanonicalJobAidProblemService {
         leaseGeneration: nativeAdmission.scope.automaticWorkItemLease.leaseGeneration,
       }} : {}),
       sourceCatalog,
-      ...(tdmsContext ? {tdmsContext} : {}),
+      ...(tdmsContext && !reviewCaller ? {tdmsContext} : {}),
+      ...(reviewCaller ? {tdmsReviewContext:this.reviewSavedContext(reviewCaller,tdmsContext)} : {}),
       ...(sourceActivityProjections ? {sourceActivityProjections,sourceStatementAvailability} : {}),
       originalParseRunId: original.original.binding.parseRunId,
       sourceBindings,
@@ -1068,7 +1095,7 @@ export class CanonicalJobAidProblemService {
           sourceActionAttemptId:previousWork.actionAttemptId};
       }
     }
-    if (tdmsContext && nativeAdmission) await this.assertNativeTaskAuthorized(taskInput,nativeAdmission.scope);
+    if (tdmsContext && runtimePrincipal) await this.tdmsReader!.assertAuthorized(runtimePrincipal,tdmsContext);
     return taskInput;
   }
 
@@ -1170,12 +1197,125 @@ export class CanonicalJobAidProblemService {
     return { revision, current: latest?.workRevisionRef === revision.workRevisionRef };
   }
 
+  async admitReviewSources(ingress: TdmsReviewIngress): Promise<TdmsReviewCaller | undefined> {
+    if (!this.nativeVerifier?.admitReview) {
+      if (!this.database) throw new Error('TDMS_REVIEW_ADMISSION_NOT_CONNECTED');
+      const [saved] = await this.database.execute<{native:boolean;marker:boolean}>(sql`SELECT EXISTS (
+        SELECT 1 FROM assessment_work_revision WHERE tenant_id=${ingress.scope.tenantId}
+          AND work_item_id=${ingress.scope.workItemId} AND content_json::jsonb->'evidence' @>
+            '[{"kind":"TDMS_NATIVE_RECORD"}]'::jsonb) AS native, EXISTS (
+        SELECT 1 FROM work_item w JOIN dm_document_version v ON v.document_version_id=w.document_version_id
+        JOIN dm_acquisition a ON a.document_version_id=v.document_version_id OR a.acquisition_id=v.acquisition_id
+        WHERE w.tenant_id=${ingress.scope.tenantId} AND w.work_item_id=${ingress.scope.workItemId}
+          AND a.source_descriptor_json::jsonb ? 'tdmsRegistration') AS marker`);
+      if (saved?.native||saved?.marker) throw new Error('TDMS_REVIEW_ADMISSION_NOT_CONNECTED');
+      return undefined;
+    }
+    return (await this.nativeVerifier.admitReview(ingress)) ?? undefined;
+  }
+
+  private reviewSavedContext(caller: TdmsReviewCaller, runtimeContext?: TdmsRuntimeTaskContext): TdmsReviewContext {
+    const value = tdmsReviewBinding(caller);
+    const base={reviewConversationRef:value.reviewConversationRef,reviewTurnRef:value.reviewTurnRef,
+      requestId:value.requestId,inputRevision:value.inputRevision,workRevisionRef:value.workRevisionRef,
+      workRevision:value.workRevision};
+    if(runtimeContext) {
+      if(!value.attempt || canonicalJson(runtimeContext.binding)!==canonicalJson({tenantId:value.tenantId,
+        actorUserId:value.actorUserId,workItemId:value.workItemId,documentVersionId:value.documentVersionId,
+        taskContextRef:value.attempt.attemptRef})) throw new Error('TDMS_REVIEW_CALLER_BINDING_MISMATCH');
+      return {schemaVersion:'wiselink.tdms-review-runtime-context.v1',mode:'BOUNDED_NATIVE_READ',...base,
+        savedEvidenceRefs:value.nativeMetadata.map(item=>item.evidenceRef),runtimeContext};
+    }
+    if(!value.nativeMetadata.length) throw new Error('TDMS_REVIEW_PREPARATION_NOT_CONNECTED');
+    return {schemaVersion:'wiselink.tdms-review-saved-context.v1',mode:'SAVED_EVIDENCE_ONLY',
+      reviewConversationRef:value.reviewConversationRef,reviewTurnRef:value.reviewTurnRef,
+      requestId:value.requestId,inputRevision:value.inputRevision,workRevisionRef:value.workRevisionRef,
+      workRevision:value.workRevision,evidenceRefs:value.nativeMetadata.map(item=>item.evidenceRef)};
+  }
+
+  private assertReviewCaller(task: JobAidProblemTaskInput, caller?: TdmsReviewCaller): void {
+    if (task.tdmsReviewContext) {
+      if (!caller || canonicalJson(task.tdmsReviewContext)!==canonicalJson(this.reviewSavedContext(caller,
+          task.tdmsReviewContext.mode==='BOUNDED_NATIVE_READ' ? task.tdmsReviewContext.runtimeContext : undefined)) ||
+        task.actorUserId!==tdmsReviewBinding(caller).actorUserId) throw new Error('TDMS_REVIEW_CALLER_BINDING_MISMATCH');
+    } else if (caller || task.sourceCatalog.some(item=>item.kind==='TDMS_NATIVE_RECORD'))
+      throw new Error('TDMS_REVIEW_CALLER_BINDING_MISMATCH');
+  }
+
+  async assertReviewNativeInTransaction(task: JobAidProblemTaskInput, caller: TdmsReviewCaller | undefined,
+    tenantId: string, database: PostgresJsDatabase, evidence:AssessmentEvidence[]=task.sourceCatalog): Promise<void> {
+    this.assertReviewCaller(task,caller);
+    if (caller) await assertTdmsNativeInTransaction({actor:{tenantId,actorUserId:task.actorUserId},
+      reviewCaller:caller,evidence,database},this.nativeVerifier);
+  }
+
+  /** The original receipt changes recovery into saved verification. Re-mint
+   * on the held connection; never mutate or normalize the old capability. */
+  async reviewCallerAfterPersistence(caller:TdmsReviewCaller|undefined,database:PostgresJsDatabase):Promise<TdmsReviewCaller|undefined> {
+    if(!caller) return caller;
+    const before=tdmsReviewBinding(caller);
+    if(before.attempt?.phase!=='SEALED_RECOVERY') return caller;
+    if(before.kind!=='REVIEW'||!this.nativeVerifier?.admitReviewInTransaction)
+      throw new Error('TDMS_REVIEW_ADMISSION_NOT_CONNECTED');
+    const fresh=await this.nativeVerifier.admitReviewInTransaction({database,ingress:{scope:before.scope,
+      reviewConversationRef:before.reviewConversationRef,requestId:before.requestId,attemptRef:before.attempt.attemptRef}});
+    if(!fresh) throw new Error('TDMS_REVIEW_ADMISSION_NOT_CONNECTED');
+    const after=tdmsReviewBinding(fresh);
+    if(after.attempt?.phase!=='SAVED_VERIFICATION' || canonicalJson({...after,
+      attempt:{...after.attempt,phase:'SEALED_RECOVERY'}})!==canonicalJson(before))
+      throw new Error('TDMS_REVIEW_CALLER_BINDING_MISMATCH');
+    return fresh;
+  }
+
+  async readReviewNativeSources(input: {row:ActionAttemptRow;task:JobAidProblemTaskInput;
+    scope:CanonicalVerifiedServiceScope;reviewCaller?:TdmsReviewCaller;leaseToken:string;leaseGeneration:number;
+    sourceRefs:string[];purpose:string;context:'EXACT'}) {
+    const {row,task,scope,reviewCaller}=input;
+    this.assertReviewCaller(task,reviewCaller);
+    if(!reviewCaller||task.tdmsReviewContext?.mode!=='BOUNDED_NATIVE_READ'||!this.tdmsReader?.readReviewAndJournal ||
+        row.status!=='RUNNING'||input.context!=='EXACT'||typeof input.purpose!=='string'||
+        !input.purpose.trim()||input.purpose.length>2000||!Array.isArray(input.sourceRefs)||
+        !input.sourceRefs.length||input.sourceRefs.length>96||new Set(input.sourceRefs).size!==input.sourceRefs.length)
+      throw new Error('REVIEW_NATIVE_READ_INVALID');
+    const context=task.tdmsReviewContext.runtimeContext;
+    const directory=new Set(tdmsJobAidDirectory(context,task.sourceCatalog).map(item=>item.ref));
+    if(input.sourceRefs.some(ref=>!directory.has(ref))) throw new Error('REVIEW_NATIVE_SOURCE_REF_NOT_ALLOWED');
+    const fence={principalId:scope.principalId,leaseToken:input.leaseToken,leaseGeneration:input.leaseGeneration,
+      automaticLeaseRequired:false};
+    assertJobAidWorkFence(row,fence);
+    const principal={scope,actorUserId:task.actorUserId,reviewCaller};
+    const read=await this.tdmsReader.readReviewAndJournal(principal,{context,evidenceRefs:input.sourceRefs,
+      purpose:'JOB_AID_NATIVE_RECORD',taskContextRef:row.operationRef},async(result,assertReadAuthorized)=>{
+      const actual=result.evidence.map(parseAssessmentTdmsEvidence);
+      if(actual.length!==input.sourceRefs.length||new Set(actual.map(item=>item.evidenceRef)).size!==actual.length||
+          input.sourceRefs.some(ref=>!actual.some(item=>item.evidenceRef===ref))||
+          actual.some(item=>item.nativeReadReceipt.taskContextRef!==row.operationRef)||
+          canonicalJson(actual.map(item=>item.nativeReadReceipt))!==canonicalJson(result.receipts))
+        throw new Error('JOBAID_TDMS_READ_BINDING_INVALID');
+      await this.work.recordSourceRead({row,actorUserId:task.actorUserId,fence,sourceBindings:task.sourceBindings,
+        sourceRefs:input.sourceRefs,purpose:input.purpose,nativeEvidence:actual,assertNativeAuthorized:assertReadAuthorized});
+    });
+    await this.assertReviewSources(task,row.tenantId,row.workItemId,reviewCaller);
+    return {schemaVersion:task.sourceActivityProjections?'wiselink.jobaid-source-read.v3':'wiselink.jobaid-source-read.v2',
+      ...(task.sourceActivityProjections?{sourceStatements:[],activityContexts:[]}:{}),status:'AVAILABLE',
+      sourceRefs:read.evidence.map(item=>item.evidenceRef),
+      evidence:read.evidence.map(item=>structuredClone(parseAssessmentTdmsEvidence(item))),
+      nativeReadReceipts:read.receipts,scope:'EXACT',completeRequestedScope:true};
+  }
+
+  reviewDecision(task:JobAidProblemTaskInput,activity:string|null|undefined) {
+    const reads=resolvedTdmsReadEvidence(activity),carriers=resolvedTdmsReadCarriers(activity);
+    return {catalog:mergeTdmsReadEvidence(task.sourceCatalog,reads),
+      evidence:[...task.sourceCatalog,...carriers],sourceRefs:resolvedAssessmentSources(activity)};
+  }
+
   async prepareReview(input: {
     workItem: CanonicalWorkItemProjection;
     tenantId: string;
     actorUserId: string;
     asOf: string;
     evidence: AssessmentEvidence[];
+    reviewCaller?: TdmsReviewCaller;
     reviewSelection?: {
       reviewConversationId: string;
       beforeTurnNo: number;
@@ -1191,6 +1331,7 @@ export class CanonicalJobAidProblemService {
       input.asOf,
       input.evidence,
       input.reviewSelection,
+      undefined, undefined, false, undefined, input.reviewCaller,
     );
   }
 
@@ -1198,12 +1339,15 @@ export class CanonicalJobAidProblemService {
     input: JobAidProblemTaskInput,
     tenantId: string,
     workItemId: string,
+    reviewCaller?: TdmsReviewCaller,
   ): Promise<void> {
+    this.assertReviewCaller(input, reviewCaller);
     await this.assertSourcesAuthorized(
       input.sourceCatalog,
       input,
       tenantId,
       workItemId,
+      undefined, reviewCaller,
     );
   }
 
@@ -1213,13 +1357,14 @@ export class CanonicalJobAidProblemService {
     proposal: unknown,
     actualReadRefs: Set<string>,
     targetIssueKeys?: string[],
+    decisionCatalog:AssessmentEvidence[]=task.sourceCatalog,
   ) {
     const content = materializeJobAidWork(proposal, {
       contentValidationVersion: task.contentValidationVersion,
       methodBinding: task.modelInput.methodBinding,
       workItemId,
       previous: task.previousWork?.content ?? null,
-      evidence: task.sourceCatalog,
+      evidence: decisionCatalog,
       readSourceRefs: [
         ...new Set([...task.initiallyDeliveredRefs, ...actualReadRefs]),
       ],
@@ -1242,16 +1387,25 @@ export class CanonicalJobAidProblemService {
       proposal: unknown;
       actualReadRefs: Set<string>;
       targetIssueKeys?: string[];
+      reviewCaller?: TdmsReviewCaller;
     },
     database: PostgresJsDatabase,
   ) {
-    await this.assertEvidenceOwned(input.task.sourceCatalog,input.row.tenantId,input.task.actorUserId,input.row.workItemId,database);
-    await this.assertSourceStatementReferences(input.task.sourceCatalog,{tenantId:input.row.tenantId,actorUserId:input.task.actorUserId},database);
+    this.assertReviewCaller(input.task,input.reviewCaller);
+    const decision=this.reviewDecision(input.task,input.row.reviewActivityJson);
+    const assertNativeAuthorized = input.reviewCaller ? (evidence: AssessmentEvidence[]) =>
+      assertTdmsNativeInTransaction({actor:{tenantId:input.row.tenantId,actorUserId:input.task.actorUserId},
+        reviewCaller:input.reviewCaller,evidence:[...evidence,...decision.evidence],database},this.nativeVerifier) : undefined;
+    await this.assertEvidenceOwned(decision.catalog,input.row.tenantId,input.task.actorUserId,input.row.workItemId,database,assertNativeAuthorized);
+    await this.assertSourceStatementReferences(decision.catalog,{tenantId:input.row.tenantId,actorUserId:input.task.actorUserId},database);
     return this.work.save(
       {
         row: input.row,
         actorUserId: input.task.actorUserId,
+        assertNativeAuthorized: input.reviewCaller ? (connection) => this.assertReviewNativeInTransaction(
+          input.task,input.reviewCaller,input.row.tenantId,connection,decision.evidence) : undefined,
         fence: { ...input.fence, allowCommittingReview: true },
+        reviewCaller:input.reviewCaller,
         sourceBindings: input.task.sourceBindings,
         requestId: input.requestId,
         expectedWorkRevision: input.task.modelInput.expectedWorkRevision,
@@ -1265,6 +1419,7 @@ export class CanonicalJobAidProblemService {
           input.proposal,
           input.actualReadRefs,
           input.targetIssueKeys,
+          decision.catalog,
         ),
       },
       database,
@@ -1274,9 +1429,14 @@ export class CanonicalJobAidProblemService {
   /** The Review caller keeps this check and its unchanged receipt in the same
    * actor transaction. Return stored work, never the task's frozen copy. */
   async assertReviewWorkUnchanged(
-    input: { row: ActionAttemptRow; task: JobAidProblemTaskInput; fence: JobAidWorkFence },
+    input: { row: ActionAttemptRow; task: JobAidProblemTaskInput; fence: JobAidWorkFence; reviewCaller?: TdmsReviewCaller },
     database: PostgresJsDatabase,
   ): Promise<JobAidWorkRevision> {
+    this.assertReviewCaller(input.task,input.reviewCaller);
+    const decision=this.reviewDecision(input.task,input.row.reviewActivityJson);
+    const assertNativeAuthorized = input.reviewCaller ? (evidence: AssessmentEvidence[]) =>
+      assertTdmsNativeInTransaction({actor:{tenantId:input.row.tenantId,actorUserId:input.task.actorUserId},
+        reviewCaller:input.reviewCaller,evidence:[...evidence,...decision.evidence],database},this.nativeVerifier) : undefined;
     const previous = input.task.previousWork;
     if (!previous || input.task.modelInput.purpose !== 'PROBLEM_REVIEW' ||
         input.task.actorUserId !== input.row.actorUserId ||
@@ -1284,17 +1444,19 @@ export class CanonicalJobAidProblemService {
         previous.documentVersionId !== input.row.documentVersionId ||
         previous.workRevision !== input.task.modelInput.expectedWorkRevision)
       throw new Error('JOBAID_REVIEW_UNCHANGED_BASIS_INVALID');
-    await this.assertEvidenceOwned(input.task.sourceCatalog, input.row.tenantId,
-      input.task.actorUserId, input.row.workItemId, database);
-    await this.assertSourceStatementReferences(input.task.sourceCatalog,
+    await this.assertEvidenceOwned(decision.catalog, input.row.tenantId,
+      input.task.actorUserId, input.row.workItemId, database, assertNativeAuthorized);
+    await this.assertSourceStatementReferences(decision.catalog,
       { tenantId: input.row.tenantId, actorUserId: input.task.actorUserId }, database);
     const current = await this.work.assertReviewUnchanged({
       row: input.row, actorUserId: input.task.actorUserId,
       fence: { ...input.fence, allowCommittingReview: true },
+      reviewCaller:input.reviewCaller,
       sourceBindings: input.task.sourceBindings,
       expectedWorkRevisionRef: previous.workRevisionRef,
       expectedWorkRevision: input.task.modelInput.expectedWorkRevision,
     }, database);
+    if (assertNativeAuthorized) await assertNativeAuthorized(current.content.evidence);
     if (current.basedOnWorkItemRevision !== previous.basedOnWorkItemRevision)
       throw new Error('JOBAID_REVIEW_UNCHANGED_BASIS_INVALID');
     return current;
@@ -1841,8 +2003,25 @@ export class CanonicalJobAidProblemService {
       scope,
     );
     if (taskInput.tdmsContext) assertJobAidWorkFence(row, {...input,principalId:scope.principalId});
-    const nativeRead = nativeRefs.length ? await this.tdmsReader!.read({scope,actorUserId:taskInput.actorUserId},
-      {context:taskInput.tdmsContext!,evidenceRefs:nativeRefs,purpose:'JOB_AID_NATIVE_RECORD',taskContextRef:row.operationRef}) : null;
+    let journaled=false;
+    const principal=this.runtimePrincipal(scope,taskInput.actorUserId);
+    const readRequest={context:taskInput.tdmsContext!,evidenceRefs:nativeRefs,
+      purpose:'JOB_AID_NATIVE_RECORD' as const,taskContextRef:row.operationRef};
+    const nativeRead = nativeRefs.length ? principal.reviewCaller
+      ? await this.tdmsReader!.readReviewAndJournal!(principal,readRequest,async(result,assertReadAuthorized)=>{
+          const actual=result.evidence.map(parseAssessmentTdmsEvidence);
+          if(actual.length!==nativeRefs.length||new Set(actual.map(item=>item.evidenceRef)).size!==actual.length||
+              nativeRefs.some(ref=>!actual.some(item=>item.evidenceRef===ref))||
+              actual.some(item=>item.nativeReadReceipt.taskContextRef!==row.operationRef)||
+              canonicalJson(actual.map(item=>item.nativeReadReceipt))!==canonicalJson(result.receipts))
+            throw new Error('JOBAID_TDMS_READ_BINDING_INVALID');
+          await this.work.recordSourceRead({row,actorUserId:taskInput.actorUserId,
+            fence:{...input,principalId:scope.principalId,automaticLeaseRequired:false},sourceBindings:taskInput.sourceBindings,
+            sourceRefs:[...selected,...actual].map(item=>item.evidenceRef),nativeEvidence:actual,
+            assertNativeAuthorized:assertReadAuthorized,purpose:input.purpose});
+          journaled=true;
+        })
+      : await this.tdmsReader!.read(principal,readRequest) : null;
     if (nativeRead) {
       const actual = nativeRead.evidence.map(parseAssessmentTdmsEvidence);
       if (actual.length !== nativeRefs.length || new Set(actual.map(item=>item.evidenceRef)).size !== nativeRefs.length ||
@@ -1852,7 +2031,7 @@ export class CanonicalJobAidProblemService {
       selected = [...selected,...actual];
     }
     await this.assertNativeTaskAuthorized(taskInput, scope);
-    await this.work.recordSourceRead({
+    if(!journaled) await this.work.recordSourceRead({
       row,
       actorUserId: taskInput.actorUserId,
       fence: { ...input, principalId: scope.principalId, automaticLeaseRequired: !!scope.automaticWorkItemLease },
@@ -1861,13 +2040,13 @@ export class CanonicalJobAidProblemService {
       ...(nativeRead ? {nativeEvidence:nativeRead.evidence.map(parseAssessmentTdmsEvidence)} : {}),
       ...(taskInput.tdmsContext ? {assertNativeAuthorized:async(database:PostgresJsDatabase)=>{
         await assertTdmsNativeInTransaction({actor:{tenantId:scope.tenantId,actorUserId:taskInput.actorUserId},
-          runtime:{principal:{scope,actorUserId:taskInput.actorUserId},context:taskInput.tdmsContext!},
+          ...this.nativeTransactionCaller(scope,taskInput.actorUserId,taskInput.tdmsContext!),
           evidence:nativeRead?.evidence ?? [],database},this.nativeVerifier);
       }} : {}),
       purpose: input.purpose,
     });
     await this.assertNativeTaskAuthorized(taskInput, scope);
-    if (nativeRead) await this.tdmsReader!.verifyEvidence({scope,actorUserId:taskInput.actorUserId},nativeRead.evidence);
+    if (nativeRead) await this.tdmsReader!.verifyEvidence(this.runtimePrincipal(scope,taskInput.actorUserId),nativeRead.evidence);
     return {
       ...(nativeRead ? {nativeReadReceipts:nativeRead.receipts} : {}),
       schemaVersion: taskInput.sourceActivityProjections ? 'wiselink.jobaid-source-read.v3' : 'wiselink.jobaid-source-read.v2',
@@ -2076,7 +2255,7 @@ export class CanonicalJobAidProblemService {
       content,
       ...(taskInput.tdmsContext ? {assertNativeAuthorized:async(database:PostgresJsDatabase)=>{
         await assertTdmsNativeInTransaction({actor:{tenantId:scope.tenantId,actorUserId:taskInput.actorUserId},
-          runtime:{principal:{scope,actorUserId:taskInput.actorUserId},context:taskInput.tdmsContext!},
+          ...this.nativeTransactionCaller(scope,taskInput.actorUserId,taskInput.tdmsContext!),
           evidence:content.evidence,database},this.nativeVerifier);
       }} : {}),
     });
@@ -2149,6 +2328,8 @@ export class CanonicalJobAidProblemService {
       }
     | ActionAttemptTerminalProjection
   > {
+    if(input.scope.successorReviewDelegation) await this.admitSuccessorSources(input.scope,
+      input.scope.successorReviewDelegation.reviewTurnRef,input.scope.attemptRef);
     const preflight = preflightCanonicalHostOpenClawResult({
       row: input.row,
       result: input.result,
@@ -2470,6 +2651,7 @@ export class CanonicalJobAidProblemService {
     scope: CanonicalVerifiedOpenClawAttemptScope,
     database?: PostgresJsDatabase,
   ): Promise<void> {
+    if(!database) await this.assertNativeTaskAuthorized(task,scope);
     const reading = 'readingResult' in projection ? projection.readingResult : undefined;
     const evidence = reading?.evidence ?? [];
     if (!task.tdmsContext && !evidence.some(item=>item.kind==='TDMS_NATIVE_RECORD')) return;
@@ -2490,13 +2672,13 @@ export class CanonicalJobAidProblemService {
     if (database) {
       // No ordinary adapter/root-pool IO while CAS holds its connection and locks.
       await assertTdmsNativeInTransaction({actor:{tenantId:scope.tenantId,actorUserId:task.actorUserId},
-        runtime:{principal:{scope,actorUserId:task.actorUserId},context:task.tdmsContext},evidence,database},this.nativeVerifier);
+        ...this.nativeTransactionCaller(scope,task.actorUserId,task.tdmsContext),evidence,database},this.nativeVerifier);
       return;
     }
     await this.assertNativeTaskAuthorized(task,scope);
-    await verifyTdmsNativeEvidence(evidence,{tenantId:scope.tenantId,actorUserId:task.actorUserId},this.nativeVerifier,database);
+    if(!scope.successorReviewDelegation) await verifyTdmsNativeEvidence(evidence,{tenantId:scope.tenantId,actorUserId:task.actorUserId},this.nativeVerifier,database);
     const native=evidence.filter((item):item is Extract<AssessmentEvidence,{kind:'TDMS_NATIVE_RECORD'}>=>item.kind==='TDMS_NATIVE_RECORD');
-    if (native.length) await this.tdmsReader!.verifyEvidence({scope,actorUserId:task.actorUserId},native);
+    if (native.length) await this.tdmsReader!.verifyEvidence(this.runtimePrincipal(scope,task.actorUserId),native);
   }
 
   async readBrowserRevision(
@@ -2605,6 +2787,30 @@ export class CanonicalJobAidProblemService {
       action: 'READ_DOCUMENT_PARSING',
       workItemId,
     });
+    const receipt = await this.workItems.readReadableAutoProcessingCompletion({
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      workItemId,
+      revision: workItem.revision,
+    });
+    // The authorized projection may precede this read. Never attach an ACK
+    // belonging to a different request/source or concurrent WorkItem revision.
+    const autoProcessingAcknowledgement: JobAidWorkingReadModel['autoProcessingAcknowledgement'] =
+      receipt &&
+      receipt.workItemId === workItem.workItemId &&
+      receipt.requestId === workItem.requestId &&
+      receipt.documentId === workItem.source.documentId &&
+      receipt.documentVersionId === workItem.source.documentVersionId &&
+      receipt.sourceArtifactId === workItem.source.sourceArtifactId &&
+      receipt.sourceFileSha256 === canonicalHostBareSha256(workItem.source.sourceFileSha256) &&
+      receipt.sourceByteLength === workItem.source.sourceByteLength
+        ? {
+          workItemId: receipt.workItemId,
+          requestId: receipt.requestId,
+          documentVersionId: receipt.documentVersionId,
+          acknowledgedAt: receipt.completedAt,
+        }
+        : null;
     // A new attempt may legitimately retain the previous saved body, but all
     // three observations must come from the same database snapshot.
     const { execution, current, savedActivity, latestAttempt } = await this.work.readBrowserSnapshot({
@@ -2627,6 +2833,7 @@ export class CanonicalJobAidProblemService {
     return {
       schemaVersion: 'wiselink.jobaid-working-read.v2',
       workItemId,
+      autoProcessingAcknowledgement,
       current,
       latestAttempt,
       enabled:
@@ -2687,7 +2894,7 @@ export class CanonicalJobAidProblemService {
     tenantId: string,
     actorUserId: string,
     requestContext = false,
-    nativeContext?: Pick<TdmsNativeTransactionInput,'runtime'|'browserCaller'>,
+    nativeContext?: Pick<TdmsNativeTransactionInput,'runtime'|'browserCaller'|'reviewCaller'>,
   ): Promise<JobAidSourceBinding[]> {
     const ids = new Set([
       primary.workItemId,
@@ -2745,8 +2952,10 @@ export class CanonicalJobAidProblemService {
     tenantId: string,
     workItemId: string,
     runtimeScope?: CanonicalVerifiedServiceScope,
+    reviewCaller?: TdmsReviewCaller,
   ): Promise<void> {
     await this.assertNativeTaskAuthorized(input, runtimeScope);
+    const nativeCaller=reviewCaller ?? (runtimeScope?this.successorCallers.get(runtimeScope):undefined);
     await this.work.withActorTransaction(
       input.actorUserId,
       async (database) => {
@@ -2756,7 +2965,7 @@ export class CanonicalJobAidProblemService {
           input.actorUserId,
           workItemId,
           database,
-          input.tdmsContext && runtimeScope ? evidence => assertTdmsNativeInTransaction({actor:{tenantId,actorUserId:input.actorUserId},
+          nativeCaller ? evidence => assertTdmsNativeInTransaction({actor:{tenantId,actorUserId:input.actorUserId},reviewCaller:nativeCaller,evidence,database},this.nativeVerifier) : input.tdmsContext && runtimeScope ? evidence => assertTdmsNativeInTransaction({actor:{tenantId,actorUserId:input.actorUserId},
             runtime:{principal:{scope:runtimeScope,actorUserId:input.actorUserId},context:input.tdmsContext!,
               ...('attemptRef' in runtimeScope?{}:{phase:'ADMISSION' as const})},evidence,database},this.nativeVerifier) : undefined,
         );
@@ -2816,16 +3025,18 @@ export class CanonicalJobAidProblemService {
       }
     });
     await this.assertNativeTaskAuthorized(input, runtimeScope);
-    await verifyTdmsNativeEvidence(evidence, {tenantId,actorUserId:input.actorUserId}, this.nativeVerifier);
+    if (!nativeCaller) await verifyTdmsNativeEvidence(evidence, {tenantId,actorUserId:input.actorUserId}, this.nativeVerifier);
     const native = evidence.filter((item): item is Extract<AssessmentEvidence,{kind:'TDMS_NATIVE_RECORD'}>=>item.kind==='TDMS_NATIVE_RECORD');
     if (input.tdmsContext && runtimeScope && native.length)
-      await this.tdmsReader!.verifyEvidence({scope:runtimeScope,actorUserId:input.actorUserId},native);
+      await this.tdmsReader!.verifyEvidence(this.runtimePrincipal(runtimeScope,input.actorUserId),native);
   }
 
   private async assertNativeTaskAuthorized(input: JobAidProblemTaskInput, scope?: CanonicalVerifiedServiceScope): Promise<void> {
     if (!input.tdmsContext) return;
     if (!scope || !this.tdmsReader) throw new Error('TDMS_RUNTIME_CALLER_AUTHORIZATION_NOT_CONNECTED');
-    await this.tdmsReader.assertAuthorized({scope,actorUserId:input.actorUserId},input.tdmsContext);
+    if(input.successorReviewTurnRef && scope.successorReviewDelegation && 'attemptRef' in scope)
+      await this.admitSuccessorSources(scope,String(input.successorReviewTurnRef),String(scope.attemptRef));
+    await this.tdmsReader.assertAuthorized(this.runtimePrincipal(scope,input.actorUserId),input.tdmsContext);
   }
 
   /** Exact SAVED lineage checked on the caller's actor-bound transaction. */
@@ -3079,6 +3290,17 @@ export class CanonicalJobAidProblemService {
   private async assertProjectionWriteFence(database: PostgresJsDatabase,
     prepared: PreparedActionAttemptCommit, input: JobAidProblemTaskInput,
     scope: CanonicalVerifiedOpenClawAttemptScope): Promise<void> {
+    if(scope.successorReviewDelegation && input.tdmsContext) {
+      const delegation=scope.successorReviewDelegation;
+      if(!this.nativeVerifier?.admitReviewInTransaction) throw new Error('TDMS_REVIEW_ADMISSION_NOT_CONNECTED');
+      // The WorkItem is already locked by CAS. Re-mint in normal conversation ->
+      // turn -> attempt order, both before and after this exact own projection.
+      const caller=await this.nativeVerifier.admitReviewInTransaction({database,ingress:{scope,attemptRef:scope.attemptRef,
+        reviewConversationRef:delegation.reviewConversationRef,requestId:delegation.requestId,
+        successorOverall:{reviewTurnRef:delegation.reviewTurnRef}}});
+      if(!caller) throw new Error('TDMS_REVIEW_ADMISSION_NOT_CONNECTED');
+      this.successorCallers.set(scope,caller);
+    }
     await assertAutomaticWorkItemAttemptLease(database,prepared.row,scope.principalId,!!scope.automaticWorkItemLease);
     const [current] = await database.select().from(actionAttempt).where(and(
       eq(actionAttempt.attemptId,prepared.row.attemptId),eq(actionAttempt.tenantId,scope.tenantId),
@@ -3086,11 +3308,17 @@ export class CanonicalJobAidProblemService {
     if (!current || current.status !== 'COMMITTING' || current.taskInputHash !== prepared.row.taskInputHash ||
         current.resultContentHash !== prepared.result.contentHash || current.leaseOwner !== scope.principalId ||
         current.leaseToken !== prepared.row.leaseToken || current.leaseGeneration !== prepared.row.leaseGeneration ||
-        current.cancelRequestedAt || !current.leaseExpiresAt || current.leaseExpiresAt <= new Date())
+        current.cancelRequestedAt)
       throw new Error('JOBAID_PROJECTION_LEASE_FENCE_REJECTED');
+    const caller=this.successorCallers.get(scope);
+    if(caller && tdmsReviewBinding(caller).attempt?.phase==='SEALED_RECOVERY')
+      assertTdmsSealedResultFence(caller,current,{principalId:scope.principalId,
+        leaseToken:prepared.row.leaseToken!,leaseGeneration:prepared.row.leaseGeneration},'SUCCESSOR_OVERALL');
+    else if(!current.leaseExpiresAt || current.leaseExpiresAt<=new Date() ||
+      !current.deadlineAt || current.deadlineAt<=new Date()) throw new Error('JOBAID_PROJECTION_LEASE_FENCE_REJECTED');
     await this.assertEvidenceOwned(input.sourceCatalog,scope.tenantId,input.actorUserId,scope.workItemId,database,
       input.tdmsContext ? evidence=>assertTdmsNativeInTransaction({actor:{tenantId:scope.tenantId,actorUserId:input.actorUserId},
-        runtime:{principal:{scope,actorUserId:input.actorUserId},context:input.tdmsContext!},evidence,database},this.nativeVerifier) : undefined);
+        ...this.nativeTransactionCaller(scope,input.actorUserId,input.tdmsContext!),evidence,database},this.nativeVerifier) : undefined);
     const original = input.modelInput.documentOverview.original?.binding;
     if (original) {
       const published = await this.work.publishedOriginalBindingInTransaction({tenantId:scope.tenantId,
@@ -3115,6 +3343,26 @@ export class CanonicalJobAidProblemService {
     }
   }
 
+  async admitSuccessorSources(scope:CanonicalVerifiedServiceScope,reviewTurnRef:string,
+    attemptRef?:string,preparation?:{attemptId:string;operationRef:string;createdAt:Date}):Promise<TdmsReviewCaller|undefined> {
+    const d=scope.successorReviewDelegation;
+    if(!d||d.reviewTurnRef!==reviewTurnRef) throw new Error('JOBAID_SUCCESSOR_OVERALL_DELEGATION_REQUIRED');
+    const caller=await this.admitReviewSources({scope,reviewConversationRef:d.reviewConversationRef,requestId:d.requestId,
+      ...(attemptRef?{attemptRef}:{}),successorOverall:{reviewTurnRef,...(preparation?{preparation}:{})}});
+    if(caller) this.successorCallers.set(scope,caller);
+    else this.successorCallers.delete(scope);
+    return caller;
+  }
+  private runtimePrincipal(scope:CanonicalVerifiedServiceScope,actorUserId:string) {
+    const reviewCaller=scope.successorReviewDelegation?this.successorCallers.get(scope):undefined;
+    return {scope,actorUserId,...(reviewCaller?{reviewCaller}:{})};
+  }
+  private nativeTransactionCaller(scope:CanonicalVerifiedServiceScope,actorUserId:string,
+    context:TdmsRuntimeTaskContext,phase?:'ADMISSION'|'EXECUTION'):Pick<TdmsNativeTransactionInput,'runtime'|'reviewCaller'> {
+    const principal=this.runtimePrincipal(scope,actorUserId);
+    return principal.reviewCaller?{reviewCaller:principal.reviewCaller}:{runtime:{principal,context,...(phase?{phase}:{})}};
+  }
+
   private async authorizedAttempt(
     attemptRef: string,
     operation:
@@ -3128,6 +3376,8 @@ export class CanonicalJobAidProblemService {
       operation,
       workItemId,
     });
+    if(scope.successorReviewDelegation) await this.admitSuccessorSources(scope,
+      scope.successorReviewDelegation.reviewTurnRef,attemptRef);
     const row = await this.attempts.readScoped({
       attemptRef,
       tenantId: scope.tenantId,

@@ -214,7 +214,7 @@ export interface ReviewMatterWorkingUpdateReceipt {
 
 /** Host observations, not model reasoning, delivery acknowledgements or adoption. */
 export interface ReviewEvidenceActivity {
-  kind: 'CONTEXT_PREPARED' | 'SOURCE_REFS_RESOLVED';
+  kind: 'CONTEXT_PREPARED' | 'SOURCE_REFS_RESOLVED' | 'ASSESSMENT_SOURCES_READ';
   observedAt: string;
   sourceRefIds: string[];
   sourceCatalogCount: number;

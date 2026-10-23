@@ -1150,6 +1150,14 @@ class MemoryActionAttemptRepository {
     return this.row;
   }
 
+  async readControlByOperationRef(operationRef:string) {
+    return this.row?.operationRef===operationRef ? this.row : null;
+  }
+
+  async readControlByAttemptId(attemptId:string) {
+    return this.row?.attemptId===attemptId ? this.row : null;
+  }
+
   async heartbeat() {
     return true;
   }
