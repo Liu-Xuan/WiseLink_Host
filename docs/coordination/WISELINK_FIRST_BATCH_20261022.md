@@ -1,6 +1,6 @@
 # 第一批实施与隔离验证 — 2026-10-22
 
-当前状态（2026-10-24，Asia/Shanghai）：公开94已双远端同步，准确Host后继a7仅origin同步并经单次release7699919694665632785 finished，双端a7。原正常用户页面的事项修订标签、已存评估核对及额外OAuth提示已有限读回修复；官方4GET明确200/409 NOT_CONFIGURED/200/200，既有FTD事项5/保存工作1调查及综合可读。reader仍VERIFICATION_PENDING，原文8页可读但本轮新模型/SAVE/Overall尚未运行；初次分析/准确BLOCKED失败后继修复仅独立候选且未发布。无新DDL/Native/调度，不新增完整业务场景通过；详细当前事实见末节，历史记录仍保留其原时点。
+当前状态（2026-10-24，Asia/Shanghai）：公开306已双远端同步，准确Host5d仅origin并经唯一release7699934157774441777 finished/error_logs=[]；原用户双端5d、runtime PASS，reader仍VERIFICATION_PENDING。一次正常AD接续POST最终Host HTTP500，客户端与服务端耗时分别为300675/469819.62ms；500后一次准确范围对账新ATT为空、SAVE0、grant仍BLOCKED且无lease，前后字段未变。新模型/SAVE/Overall闭环未完成；不从已记录SQL缺口断言死锁或根因。当前主线优先完成来源授权事务executor透传修复及验证；修复独立收口、未发布；其余工作包维持各自缺口可并行。原241条证据保留，新增6条有限记录；详细事实见末节，历史记录保留其原时点。
 
 ## 实施结果
 
@@ -592,3 +592,13 @@ HTTP使用真实应用SDK/middleware/AuthNPaasGuard/production guard与scope，�
 原文8页现可读，但本轮新模型、SAVE、Overall及重读的最小真实循环尚未运行。原生初次分析及准确BLOCKED失败后继的独立产品37ae0f8becc476ffe65e0d91729f797c0f125723（父94c24efa）已正常提交、尚未发布；产品测试与发布准备另单登记，本记录不扩写其计数。旧失败和原结果保持。reader、SEM、CHAT、新 Aily 与其他内容/正式业务验收继续分列，未新增完整场景通过或Native/调度动作。
 
 M2同一 evidence 仅追加8条有限记录，原233条逐值原样保留；当前241条。只更新document.assessment-reading的当前阅读/运行缺口、P0/P2/P6摘要和selection.reason；13/47/54/10目录、10条binding ID、所有场景和三组选择数组不变。现有 generator 沿用户已接受五组图样式生成snapshot/HTML，仅做最小数据一致性验证，不重跑44项原样式QA或旧产品build。私有原件按正常发布、页面、短窗HTTP与原始失败分别归档，公开记录不包含实际actor、私有样本标识或业务正文。
+
+## 2026-10-24 续跑技术发布与单次接续失败
+
+公开交付 `306f7e4e73e3d35e06f08e0e8d375685dee7ffdb` 已分别正常同步 origin/github 同名开发分支；准确 Host `5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69` 仅同步 origin。原 Host 唯一 release `7699934157774441777` 于 `2026-10-23T18:43:42.697545Z` 官方读回 finished、准确5d、error_logs=[]；发布前完整结构差异仍为空，无 DDL、新 Native 安装或调度变更。原用户连接状态于 `2026-10-23T18:44:39.953Z` 读回浏览器与 Host 均为完整5d，browserBuildTime `2026-10-23T18:42:04.631Z`，runtime PASS；reader仍 VERIFICATION_PENDING，UI releaseId/API合同未知。技术发布和版本确认已经完成。
+
+本人已有AD原页面仅点击一次继续问题分析，保留原请求未确认状态，没有再次点击或刷新。官方准确trace详情证明该POST进入Host，最终HTTP500：app_server从 `18:45:47.867Z` 至 `18:53:37.686535Z`，耗时469819.62ms；app_web根span为300675ms，不能将客户端等待终点当成Host结果。最后已记录数据库span在 `18:45:49.312666Z` 完成，此后到500没有更多已记录data span；这不足以认定死锁、池耗尽或具体等待根因。早前空查询保留当时时窗，后续路径日志EOF及已知gateway log未找到也不改写为0条或成功。
+
+Host500后的最终单次准确范围只读对账于 `2026-10-23T18:58:39.497272Z` 观察：点击后动态/综合新ATT为空、SAVE0，grant仍BLOCKED、generation3、无lease且未完成；blocked时间、事项修订/状态/模型、两条历史TIMEOUT和已有服务引用与前次逐值一致。该结果只覆盖查询的准确事项/版本范围，不能冒称全表审计。原文8页及a7时期既有工作正文可读仍保留原时点，本轮新模型、SAVE、Overall及重读闭环未完成。
+
+当前主线优先完成来源授权读取的事务executor透传修复及针对性验证，再完成准确候选交付并核对保留的原接续请求，随后继续各自业务缺口。其余工作包维持各自缺口，可并行推进。修复在独立候选收口、尚未发布；不从HTTP500或缺失span先行认定根因。本记录只追加6条有限证据，原241条逐值保留，现247条；目录13/47/54/10、10条binding ID、场景和选择数组不变，沿用户既定五组样式生成。无新业务通过、DDL、Native、调度或正式采用。

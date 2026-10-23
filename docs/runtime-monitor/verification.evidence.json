@@ -4731,6 +4731,108 @@
       "summary": "主控后续官方只读预检再次取得最新release及该ID详情：准确a7/finished/error_logs=[]；完整db-env-diff仍changes=[]。最初沙箱DNS失败原件保留，只恢复相同读取，没有借此执行发布、DDL或业务写。",
       "timeBasis": "original readonly preflight invocation end times; latest exact release-get completion",
       "deploymentRef": "7699919694665632785"
+    },
+    {
+      "id": "native-continuation.5d.same-name-refs.deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T18:40:54.481336Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-续跑技术发布与单次接续失败",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "公开306f7e4e73e3d35e06f08e0e8d375685dee7ffdb已正常单ref同名同步origin/github；私有Host后继5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69仅origin。三ref分别读回准确SHA，正常pre-push，无force或hook绕过；两个候选同tree且干净。",
+      "timeBasis": "original three ref-readback completion timestamps; latest completion",
+      "deploymentRef": "7699934157774441777"
+    },
+    {
+      "id": "native-continuation.5d.host-finished.deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T18:43:42.697545Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-续跑技术发布与单次接续失败",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "原Host唯一release 7699934157774441777已finished，commit_id准确5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69、error_logs=[]；发布前官方完整结构差异changes=[]。没有DDL、新Native安装或调度变更。",
+      "timeBasis": "original exact release-get completion timestamp",
+      "deploymentRef": "7699934157774441777"
+    },
+    {
+      "id": "native-continuation.5d.native-user-fingerprint.runtime",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T18:44:39.953Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-续跑技术发布与单次接续失败",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "原已登录用户连接状态读回浏览器与Host完整源码均为5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69，browserBuildTime=2026-10-23T18:42:04.631Z，runtime PASS；reader仍VERIFICATION_PENDING，UI releaseId/API合同未知。只证明技术版本与该运行探针。",
+      "timeBasis": "root original runtime-probe observation timestamp",
+      "deploymentRef": "7699934157774441777"
+    },
+    {
+      "id": "native-continuation.5d.single-continue-http500.runtime",
+      "kind": "runtime",
+      "status": "failed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T18:53:37.686535Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-续跑技术发布与单次接续失败",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "本人已有AD正常页面仅点击一次继续问题分析，未重复提交或刷新。对应官方trace明示Host POST最终HTTP500，服务端469819.62ms；客户端app_web根span为300675ms，二者分开。最后已记录数据库span在18:45:49.312666Z结束，此后没有更多已记录data span；不据此认定死锁或其他根因。页面保留上次请求未确认状态。",
+      "timeBasis": "exact known trace app_server end timestamp; not client timeout inferred as Host result",
+      "deploymentRef": "7699934157774441777"
+    },
+    {
+      "id": "native-continuation.5d.post500-stage-readback.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T18:58:39.497272Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-续跑技术发布与单次接续失败",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "Host500结束后的单次准确事项/版本只读对账：点击窗口内动态/综合新ATT为空，新增SAVE为0，grant仍BLOCKED、generation3、无lease且未完成；原blocked时间、事项修订/状态/模型、两条历史TIMEOUT及已有服务引用与前次逐值一致。仅此查询范围未观察到新尝试或部分授权变化，不冒称全表审计或业务通过。",
+      "timeBasis": "final exact WI/DVI SELECT observed_at, after Host500 completion",
+      "deploymentRef": "7699934157774441777"
+    },
+    {
+      "id": "native-continuation.5d.source-authorization-executor-pending.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-续跑技术发布与单次接续失败",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "当前主线优先完成来源授权读取的事务executor透传修复及针对性验证，之后按准确候选交付并核对保留的接续请求。其余工作包维持各自缺口，可并行推进。该修复方向尚未发布，不将HTTP500先归因为死锁；本轮新模型、SAVE、Overall及重读闭环仍未完成，reader仍待验收。",
+      "timeBasis": "current handoff scope; fix direction and business closure remain pending",
+      "deploymentRef": "7699934157774441777"
     }
   ]
 }
