@@ -13,6 +13,7 @@ import {
   Inject,
   Injectable,
   Optional,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   SessionResolver,
@@ -118,28 +119,6 @@ export class CanonicalInitialAnalysisContinuationService {
             : 'EVALUATE_JOB_AID',
         workItemId,
       });
-    const cancelled =
-      input.operation === 'EVALUATE_JOBAID' &&
-      this.initial.cancelledContinuationBinding
-        ? await this.initial.cancelledContinuationBinding({
-            tenantId: actor.tenantId,
-            actorUserId: actor.userId,
-            workItem,
-          })
-        : null;
-    if (
-      !cancelled &&
-      !isOpenClawAutomaticReviewConfigured({
-        tenantId: actor.tenantId,
-        workItemId,
-      }) &&
-      !(await this.initial.hasExactAutoProcessingGrant({
-        tenantId: actor.tenantId,
-        actorUserId: actor.userId,
-        workItem,
-      }))
-    )
-      throw continuationConflict('AUTOMATIC_SCOPE_UNAVAILABLE');
     const binding = bindings[input.operation];
     const existing = await this.attempts.readRequest({
       tenantId: actor.tenantId,
@@ -170,11 +149,34 @@ export class CanonicalInitialAnalysisContinuationService {
         candidateOnly: true,
       };
     }
+    const cancelled =
+      input.operation === 'EVALUATE_JOBAID' &&
+      this.initial.cancelledContinuationBinding
+        ? await this.initial.cancelledContinuationBinding({
+            tenantId: actor.tenantId,
+            actorUserId: actor.userId,
+            workItem,
+          })
+        : null;
+    if (
+      !cancelled &&
+      !isOpenClawAutomaticReviewConfigured({
+        tenantId: actor.tenantId,
+        workItemId,
+      }) &&
+      !(await this.initial.hasExactAutoProcessingGrant({
+        tenantId: actor.tenantId,
+        actorUserId: actor.userId,
+        workItem,
+      }))
+    )
+      throw continuationConflict('AUTOMATIC_SCOPE_UNAVAILABLE');
     if (workItem.revision !== input.expectedRevision)
       throw continuationConflict('WORK_ITEM_CHANGED');
     const status = await this.initial.project({
       workItem,
       tenantId: actor.tenantId,
+      browserActorUserId: actor.userId,
     });
     if (
       status.status === 'NOT_READY' ||
@@ -237,10 +239,7 @@ export class CanonicalInitialAnalysisContinuationService {
             authorize: async (database: PostgresJsDatabase) => {
               if (!this.sessions || !httpRequest || !this.sourceAuthorization)
                 throw cancelledContinuationConflict();
-              const current = await this.sessions.resolve(
-                httpRequest,
-                database,
-              );
+              const current = this.sessions.nativeBrowserIdentity(httpRequest);
               if (
                 !current ||
                 current.actor.canonicalSubject.id !== actor.userId ||
@@ -324,7 +323,7 @@ export class CanonicalInitialAnalysisContinuationService {
               authorizedKnowledgeSession,
             );
     const reserved = cancelled
-      ? await this.sessions!.withVerifiedServiceSql(reserve, actor.userId)
+      ? await this.sessions!.withVerifiedReviewServiceSql(reserve, actor.userId)
       : await reserve();
     return {
       requestId: input.requestId,
@@ -353,13 +352,19 @@ export class CanonicalInitialAnalysisContinuationService {
       actorId: actor.userId,
       tenantId: actor.tenantId,
     };
-    const access = await this.sessions.withVerifiedServiceSql(
-      () => this.aily!.availability(binding),
-      actor.userId,
-    );
-    // Optional retrieval must not block source analysis when native consent
-    // is unavailable. The prepared task reports its actual knowledge access.
-    return access.available ? binding : undefined;
+    try {
+      const access = await this.sessions.withVerifiedServiceSql(
+        () => this.aily!.availability(binding),
+        actor.userId,
+      );
+      return access.available ? binding : undefined;
+    } catch (error) {
+      // Expired optional OAuth never revokes the native local operation.
+      // External knowledge still requires its own current session and grant.
+      if (error instanceof UnauthorizedException &&
+          error.message === 'OFFICIAL_OAUTH_SESSION_REQUIRED') return undefined;
+      throw error;
+    }
   }
 }
 

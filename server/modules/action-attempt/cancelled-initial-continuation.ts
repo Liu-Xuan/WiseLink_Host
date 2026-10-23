@@ -6,7 +6,7 @@ import type {
 } from '@shared/api.interface';
 import { actionAttempt, workItem } from '../../database/schema';
 import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
-import { canonicalJson } from './action-attempt-envelope';
+import { canonicalJson, parseTaskEnvelope } from './action-attempt-envelope';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { matchesCancelledAttempt } from '../work-item/cancelled-auto-processing-lease';
 import { parseAutomaticWorkItemCancellation } from '../canonical-host/automatic-work-item-cancellation';
@@ -14,11 +14,18 @@ import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-documen
 
 export const CANCELLED_INITIAL_QUEUE_CODE =
   'AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED';
+export const FAILED_INITIAL_QUEUE_CODE = 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED';
 export interface CancelledInitialContinuationBinding {
   actorUserId: string;
   tenantId: string;
   workItem: CanonicalWorkItemProjection;
   cancelledAttemptId: string;
+  terminalStatus: 'CANCELLED' | 'FAILED' | 'TIMED_OUT';
+  blockedCode: string;
+  blockedAt: string;
+  leaseGeneration: number;
+  terminalInputHash: string;
+  terminalRequestId: string;
   executionModel: CanonicalExecutionModelSelection;
 }
 export interface CancelledInitialContinuationGuard {
@@ -47,7 +54,13 @@ export async function readCancelledInitialContinuation(
     )
     .limit(1);
   const [owner] = await (lock ? ownerQuery.for('update') : ownerQuery);
-  if (!owner || !matchesOwner(owner, input)) return null;
+  if (
+    !owner ||
+    !input.workItem.package ||
+    input.workItem.configurationEvidenceReevaluation ||
+    !matchesInitialContinuationOwner(owner, input)
+  )
+    return null;
   const grantQuery = database
     .select()
     .from(autoWorkItemAuthorization)
@@ -64,7 +77,9 @@ export async function readCancelledInitialContinuation(
     grant.tenantId !== input.tenantId ||
     grant.workItemId !== owner.workItemId ||
     grant.status !== 'BLOCKED' ||
-    grant.blockedCode !== CANCELLED_INITIAL_QUEUE_CODE ||
+    ![CANCELLED_INITIAL_QUEUE_CODE, FAILED_INITIAL_QUEUE_CODE].includes(
+      grant.blockedCode ?? '',
+    ) ||
     !grant.blockedAt ||
     !/^[a-f0-9]{64}$/u.test(grant.blockedLeaseTokenHash ?? '') ||
     grant.blockedLeaseGeneration !== grant.leaseGeneration ||
@@ -98,11 +113,15 @@ export async function readCancelledInitialContinuation(
       b.createdAt.getTime() - a.createdAt.getTime() ||
       b.attemptNo - a.attemptNo,
   )[0];
-  const model = readStoredExecutionModel(owner.analysisModelJson);
+  const model = grant.blockedCode === CANCELLED_INITIAL_QUEUE_CODE
+    ? readStoredExecutionModel(owner.analysisModelJson)
+    : effectiveFailedContinuationModel(owner.analysisModelJson, rows);
   if (
     !target ||
     !model ||
-    !matchesCancellation(target, owner, model) ||
+    !(grant.blockedCode === CANCELLED_INITIAL_QUEUE_CODE
+      ? matchesCancellation(target, owner, model)
+      : matchesFailedAttempt(target, owner, grant.blockedAt)) ||
     rows.some(
       (row) =>
         row.attemptId !== target.attemptId &&
@@ -124,6 +143,12 @@ export async function readCancelledInitialContinuation(
     binding: {
       ...input,
       cancelledAttemptId: target.attemptId,
+      terminalStatus: target.status as 'CANCELLED' | 'FAILED' | 'TIMED_OUT',
+      blockedCode: grant.blockedCode,
+      blockedAt: grant.blockedAt.toISOString(),
+      leaseGeneration: grant.leaseGeneration,
+      terminalInputHash: target.taskInputHash!,
+      terminalRequestId: target.triggerRequestId!,
       executionModel: model,
     },
   };
@@ -141,6 +166,12 @@ export async function assertCancelledInitialContinuation(
   if (
     !value ||
     value.target.attemptId !== guard.binding.cancelledAttemptId ||
+    value.binding.terminalStatus !== guard.binding.terminalStatus ||
+    value.binding.blockedCode !== guard.binding.blockedCode ||
+    value.binding.blockedAt !== guard.binding.blockedAt ||
+    value.binding.leaseGeneration !== guard.binding.leaseGeneration ||
+    value.binding.terminalInputHash !== guard.binding.terminalInputHash ||
+    value.binding.terminalRequestId !== guard.binding.terminalRequestId ||
     canonicalJson(value.binding.executionModel) !==
       canonicalJson(guard.binding.executionModel)
   )
@@ -165,22 +196,31 @@ export async function assertCancelledInitialContinuation(
       .set({
         status: 'WAITING',
         updatedAt: sql`clock_timestamp()`,
-        // Preserve the cancellation receipt and original grant; the next normal claim clears blockedCode.
+        // Preserve the terminal receipt and original grant; the next normal claim clears blockedCode.
       })
       .where(
         and(
           eq(autoWorkItemAuthorization.tenantId, guard.binding.tenantId),
           eq(autoWorkItemAuthorization.workItemId, value.owner.workItemId),
+          eq(autoWorkItemAuthorization.actorUserId, value.owner.requestedByUserId),
+          eq(autoWorkItemAuthorization.requestId, value.owner.requestId),
+          eq(autoWorkItemAuthorization.documentId, value.owner.documentId),
+          eq(autoWorkItemAuthorization.documentVersionId, value.owner.documentVersionId),
+          eq(autoWorkItemAuthorization.sourceArtifactId, value.owner.sourceArtifactId),
+          eq(autoWorkItemAuthorization.sourceFileSha256, value.owner.sourceFileSha256),
+          eq(autoWorkItemAuthorization.sourceByteLength, value.owner.sourceByteLength),
           eq(autoWorkItemAuthorization.status, 'BLOCKED'),
           eq(
             autoWorkItemAuthorization.blockedCode,
-            CANCELLED_INITIAL_QUEUE_CODE,
+            guard.binding.blockedCode,
           ),
           eq(
             autoWorkItemAuthorization.leaseGeneration,
             value.grant.leaseGeneration,
           ),
           eq(autoWorkItemAuthorization.blockedAt, value.grant.blockedAt!),
+          eq(autoWorkItemAuthorization.blockedLeaseGeneration, value.grant.blockedLeaseGeneration!),
+          eq(autoWorkItemAuthorization.blockedLeaseTokenHash, value.grant.blockedLeaseTokenHash!),
         ),
       )
       .returning({ id: autoWorkItemAuthorization.workItemId });
@@ -188,7 +228,8 @@ export async function assertCancelledInitialContinuation(
   };
 }
 
-function matchesOwner(
+/** Fresh browser ownership check, including its exact persisted projection. */
+export function matchesInitialContinuationOwner(
   owner: typeof workItem.$inferSelect,
   input: {
     actorUserId: string;
@@ -208,11 +249,9 @@ function matchesOwner(
       owner.actionType === 'PARSE_PDF' &&
       owner.status === 'CANDIDATE_READBACK_VERIFIED' &&
       expected.phase === 'CANDIDATE_READBACK_VERIFIED' &&
-      !expected.configurationEvidenceReevaluation &&
-      !!expected.package &&
-      owner.packageId === expected.package.packageId &&
-      owner.packageArtifactRef === expected.package.artifact.ref &&
-      owner.packageArtifactSha256 === expected.package.artifact.sha256 &&
+      (owner.packageId ?? null) === (expected.package?.packageId ?? null) &&
+      (owner.packageArtifactRef ?? null) === (expected.package?.artifact.ref ?? null) &&
+      (owner.packageArtifactSha256 ?? null) === (expected.package?.artifact.sha256 ?? null) &&
       owner.documentId === expected.source.documentId &&
       owner.documentVersionId === expected.source.documentVersionId &&
       owner.sourceArtifactId === expected.source.sourceArtifactId &&
@@ -225,6 +264,71 @@ function matchesOwner(
   } catch {
     return false;
   }
+}
+function matchesFailedAttempt(
+  target: typeof actionAttempt.$inferSelect,
+  owner: typeof workItem.$inferSelect,
+  blockedAt: Date,
+): boolean {
+  if (
+    target.tenantId !== owner.tenantId ||
+    target.workItemId !== owner.workItemId ||
+    target.subjectKind !== 'WORK_ITEM' ||
+    target.requestOrigin !== 'OPENCLAW_MCP_V1' ||
+    (target.actorUserId !== owner.requestedByUserId &&
+      target.actorUserId !== 'service:openclaw-main') ||
+    target.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
+    target.documentVersionId !== owner.documentVersionId ||
+    target.inputRevision !== owner.revision ||
+    target.baseRevision !== owner.revision ||
+    !target.triggerRequestId?.trim() ||
+    !['FAILED', 'TIMED_OUT'].includes(target.status) ||
+    !target.completedAt ||
+    blockedAt.getTime() < target.completedAt.getTime() ||
+    target.commitStartedAt !== null ||
+    target.projectionApplied ||
+    target.resultEnvelopeJson !== null ||
+    target.resultContentHash !== null ||
+    target.leaseOwner !== null ||
+    target.leaseToken !== null ||
+    target.leaseExpiresAt !== null
+  )
+    return false;
+  try {
+    const task = parseTaskEnvelope(String(target.taskEnvelopeJson));
+    const targetModel = readStoredExecutionModel(target.executionModelJson);
+    return (
+      !!targetModel &&
+      task.actionAttemptId === target.attemptId &&
+      task.operationRef === target.operationRef &&
+      task.taskType === target.actionType &&
+      task.workItemId === owner.workItemId &&
+      task.tenantId === owner.tenantId &&
+      task.documentVersionId === owner.documentVersionId &&
+      task.inputRevision === target.inputRevision &&
+      task.baseRevision === target.baseRevision &&
+      task.idempotencyKey === target.idempotencyKey &&
+      task.inputHash === target.taskInputHash &&
+      canonicalJson(task.executionModel) === canonicalJson(targetModel)
+    );
+  } catch {
+    return false;
+  }
+}
+function effectiveFailedContinuationModel(
+  ownerModel: string | null,
+  rows: readonly (typeof actionAttempt.$inferSelect)[],
+): CanonicalExecutionModelSelection | null {
+  if (ownerModel !== null) return readStoredExecutionModel(ownerModel);
+  // Match readWorkItemModel: legacy objects inherit their first real initial
+  // model, never the current global preference or a later Review override.
+  const first = [...rows].filter((row) =>
+    ['OPENCLAW_TRANSLATE', 'OPENCLAW_APPLICABILITY_EVALUATION',
+      'OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS'].includes(row.actionType) &&
+    row.executionModelJson !== null,
+  ).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() ||
+    a.attemptId.localeCompare(b.attemptId))[0];
+  return readStoredExecutionModel(first?.executionModelJson);
 }
 function matchesCancellation(
   target: typeof actionAttempt.$inferSelect,

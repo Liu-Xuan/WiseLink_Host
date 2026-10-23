@@ -486,7 +486,7 @@ export class ActionAttemptRepository {
         const release = cancelled
           ? await assertCancelledInitialContinuation(transaction as PostgresJsDatabase, cancelled) : undefined;
         const reservation = await this.insertReservation(attempt, transaction);
-        if (release) await release();
+        if (release && reservation.created) await release();
         return reservation;
       });
     }

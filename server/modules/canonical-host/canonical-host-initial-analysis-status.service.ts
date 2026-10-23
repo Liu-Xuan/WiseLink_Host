@@ -1,4 +1,7 @@
-import { readCancelledInitialContinuation } from '../action-attempt/cancelled-initial-continuation';
+import {
+  matchesInitialContinuationOwner,
+  readCancelledInitialContinuation,
+} from '../action-attempt/cancelled-initial-continuation';
 import { CanonicalHostApplicabilityInputProducer } from './canonical-host-applicability-input.producer';
 import { originalApplicabilityInputMatches } from './original-applicability-currentness';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
@@ -340,13 +343,20 @@ export class CanonicalHostInitialAnalysisStatusService {
       tenantId: input.tenantId,
       documentVersionId: input.workItem.source.documentVersionId,
     });
-    // Discovery rechecks service-only queue leases and ordinary Source access.
-    // A native browser identity alone cannot enter that privileged SQL scope.
+    // Discovery retains the verified browser actor and rechecks exact ownership
+    // before reading service-only queue facts and ordinary Source access.
     if (input.browserActorUserId === undefined) return read();
     try {
       if (!this.sessions)
         throw new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED');
-      return await this.sessions.withVerifiedServiceSql(read, input.browserActorUserId);
+      return await this.sessions.withVerifiedReviewServiceSql(async () => {
+        if (!(await this.readCurrentBrowserOwner({
+          ...input,
+          actorUserId: input.browserActorUserId!,
+        })))
+          return { contextRef: null, reason: 'APPLICABILITY_CONTEXT_NOT_AUTHORIZED' };
+        return read();
+      }, input.browserActorUserId);
     } catch (error) {
       if (error instanceof UnauthorizedException &&
           error.message === 'OFFICIAL_OAUTH_SESSION_REQUIRED')
@@ -363,9 +373,39 @@ export class CanonicalHostInitialAnalysisStatusService {
   }): Promise<boolean> {
     if (!this.sessions) return false;
     try {
-      return await this.sessions.withVerifiedServiceSql(
-        () => this.readExactAutoProcessingGrant(input),
+      return await this.sessions.withVerifiedReviewServiceSql(
+        async () => (await this.readCurrentBrowserOwner(input)) &&
+          this.readExactAutoProcessingGrant(input),
         input.actorUserId,
+      );
+    } catch (error) {
+      if (error instanceof UnauthorizedException || error instanceof ForbiddenException)
+        return false;
+      throw error;
+    }
+  }
+
+  private async readCurrentBrowserOwner(input: {
+    tenantId: string;
+    actorUserId: string;
+    workItem: CanonicalWorkItemProjection;
+  }): Promise<boolean> {
+    const [owner] = await this.db.select().from(workItem).where(and(
+      eq(workItem.tenantId, input.tenantId),
+      eq(workItem.workItemId, input.workItem.workItemId),
+    )).limit(1);
+    return !!owner && matchesInitialContinuationOwner(owner, input);
+  }
+
+  private async browserOwnsCurrentWorkItem(input: {
+    tenantId: string;
+    actorUserId: string;
+    workItem: CanonicalWorkItemProjection;
+  }): Promise<boolean> {
+    if (!this.sessions) return false;
+    try {
+      return await this.sessions.withVerifiedReviewServiceSql(
+        () => this.readCurrentBrowserOwner(input), input.actorUserId,
       );
     } catch (error) {
       if (error instanceof UnauthorizedException || error instanceof ForbiddenException)
@@ -418,7 +458,7 @@ export class CanonicalHostInitialAnalysisStatusService {
 
   async cancelledContinuationBinding(input: {tenantId:string;actorUserId:string;workItem:CanonicalWorkItemProjection}) {
     if (!this.sessions) return null;
-    return this.sessions.withVerifiedServiceSql(async () =>
+    return this.sessions.withVerifiedReviewServiceSql(async () =>
       (await readCancelledInitialContinuation(this.db, input))?.binding ?? null, input.actorUserId);
   }
 
@@ -457,14 +497,15 @@ export class CanonicalHostInitialAnalysisStatusService {
     );
     let cancelled: Awaited<ReturnType<typeof this.cancelledContinuationBinding>> = null;
     let continuationDiagnosticCode: CanonicalInitialAnalysisReadModel['continuationDiagnosticCode'];
-    if (!active && status.stages.jobAid.attemptStatus === 'CANCELLED') {
+    if (!active && ['CANCELLED', 'FAILED', 'TIMED_OUT'].includes(
+      status.stages.jobAid.attemptStatus ?? '',
+    )) {
       try {
         cancelled = await this.cancelledContinuationBinding(input);
       } catch (error) {
         if (!(error instanceof UnauthorizedException &&
           error.message === 'OFFICIAL_OAUTH_SESSION_REQUIRED')) throw error;
-        // A readable native page does not establish privileged continuation identity.
-        // Keep the actual terminal state, without advertising an unverified operation.
+        // Keep the terminal state when no verified request identity is available.
         continuationDiagnosticCode = 'OFFICIAL_OAUTH_SESSION_REQUIRED';
       }
     }
@@ -472,6 +513,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       !continuationDiagnosticCode &&
       status.status !== 'NOT_READY' &&
       !active &&
+      (await this.browserOwnsCurrentWorkItem(input)) &&
       (isOpenClawAutomaticReviewConfigured({
         tenantId: input.tenantId,
         workItemId: input.workItem.workItemId,

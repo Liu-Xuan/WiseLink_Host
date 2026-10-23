@@ -3,6 +3,8 @@ import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { SessionResolver } from '../../server/modules/identity/session-resolver.service';
 import * as cancelledContinuation from '../../server/modules/action-attempt/cancelled-initial-continuation';
 import postgres from 'postgres';
+import { workItem as workItemTable } from '../../server/database/schema';
+import { canonicalJson } from '../../server/modules/action-attempt/action-attempt-envelope';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import type {
   CanonicalApplicabilityCandidateProjection,
@@ -51,23 +53,24 @@ describe('CanonicalHost initial-analysis status projection', () => {
       const chain = { where: () => chain, orderBy: () => chain,
         limit: async () => [{ id: 'published-original' }] };
       const db = { execute: async () => [{ service: false }],
-        select: () => ({ from: () => chain }),
+        select: () => ({ from: (table: unknown) => table === workItemTable
+          ? { where: () => ({ limit: async () => [ownerRow(workItem)] }) } : chain }),
         selectDistinctOn: () => ({ from: () => ({ where: () => ({ orderBy: async () => [] }) }) }) };
       const readOriginalAdmissionContext = jest.fn(async () => ({ contextRef: null,
         reason: 'APPLICABILITY_CONTEXT_NOT_CONFIGURED' }));
-      const withVerifiedServiceSql = jest.fn(async (operation: () => Promise<unknown>) => {
+      const withVerifiedReviewServiceSql = jest.fn(async (operation: () => Promise<unknown>) => {
         if (error) throw error;
         return operation();
       });
       const service = new CanonicalHostInitialAnalysisStatusService(db as never, {} as never,
         undefined, undefined, { readOriginalAdmissionContext } as never,
-        { withVerifiedServiceSql } as never);
-      return { service, workItem, readOriginalAdmissionContext, withVerifiedServiceSql };
+        { withVerifiedReviewServiceSql } as never);
+      return { service, workItem, readOriginalAdmissionContext, withVerifiedReviewServiceSql };
     }
     it('uses the existing verified scope only for browser admission and preserves the honest missing-context result', async () => {
       const h = harness();
       const status = await h.service.project({ workItem: h.workItem, tenantId: 'tenant-1', browserActorUserId: 'owner-test' });
-      expect(h.withVerifiedServiceSql).toHaveBeenCalledWith(expect.any(Function), 'owner-test');
+      expect(h.withVerifiedReviewServiceSql).toHaveBeenCalledWith(expect.any(Function), 'owner-test');
       expect(status).toMatchObject({ applicabilityContextRef: null, stages: { applicability: {
         status: 'WAITING_INPUT', terminalCode: 'APPLICABILITY_CONTEXT_NOT_CONFIGURED' } } });
       expect(h.readOriginalAdmissionContext).toHaveBeenCalledTimes(1);
@@ -75,7 +78,7 @@ describe('CanonicalHost initial-analysis status projection', () => {
     it('leaves service-side admission in its existing scope', async () => {
       const h = harness();
       await h.service.project({ workItem: h.workItem, tenantId: 'tenant-1' });
-      expect(h.withVerifiedServiceSql).not.toHaveBeenCalled();
+      expect(h.withVerifiedReviewServiceSql).not.toHaveBeenCalled();
       expect(h.readOriginalAdmissionContext).toHaveBeenCalledTimes(1);
     });
     it('reports the exact missing opaque session without querying privileged admission', async () => {
@@ -141,7 +144,8 @@ describe('CanonicalHost initial-analysis status projection', () => {
       const sessions = new SessionResolver(store as never, {
         applicationScopeId: options.app ?? request.userContext.appId, sessionEnvironment: 'runtime',
       } as never, middleware as never);
-      const db = { select: jest.fn(() => ({ from: () => ({ where: () => ({ limit: async () => [{ model: null }] }) }) })) };
+      const owner = ownerRow(workItem);
+      const db = { select: jest.fn(() => ({ from: () => ({ where: () => ({ limit: async () => [{ ...owner, model: null }] }) }) })) };
       const service = new CanonicalHostInitialAnalysisStatusService(db as never, {} as never,
         undefined, undefined, undefined, sessions);
       const status = projectCanonicalHostInitialAnalysisStatus(workItem, [{
@@ -152,22 +156,27 @@ describe('CanonicalHost initial-analysis status projection', () => {
       const automatic = jest.spyOn(automaticScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(false);
       const readBinding = jest.spyOn(cancelledContinuation, 'readCancelledInitialContinuation')
         .mockResolvedValue({ binding: { workItem, actorUserId: input.actorUserId, tenantId: input.tenantId } } as never);
-      const read = () => sessions.withRequestSession(request as never, () => service.projectForBrowser(input));
-      return { service, sessions, store, middleware, db, input, request, status, grant, automatic, readBinding, read };
+      const read = () => sessions.withNativeBrowserIdentity(request as never, () => service.projectForBrowser(input));
+      return { service, sessions, store, middleware, db, owner, input, request, status, grant, automatic, readBinding, read };
     }
 
-    it.each([false, true])('preserves native-only failure and grants no operation even with configured scope (%s)', async (configured) => {
-      const h = harness(); h.automatic.mockReturnValue(configured);
+    it.each(['CANCELLED', 'FAILED', 'TIMED_OUT'])('offers an exact native owner successor without OAuth: %s', async terminal => {
+      const h = harness();
+      h.status.stages.jobAid.attemptStatus = terminal;
       const value = await h.read();
-      expect(value).toMatchObject({ status: h.status.status, nextOperation: h.status.nextOperation,
-        stages: { jobAid: { status: 'FAILED', terminalCode: 'INITIAL_GATEWAY_HTTP_502' } },
-        continuationDiagnosticCode: 'OFFICIAL_OAUTH_SESSION_REQUIRED', continuationOperations: [],
-        canRequestBlockTranslation: false });
-      expect(h.readBinding).not.toHaveBeenCalled();
-      expect(h.middleware.use).not.toHaveBeenCalled();
-      expect(h.grant).not.toHaveBeenCalled();
-      expect(h.automatic).not.toHaveBeenCalled();
+      expect(value.continuationOperations).toContain('EVALUATE_JOBAID');
+      expect(value).not.toHaveProperty('continuationDiagnosticCode');
+      expect(h.readBinding).toHaveBeenCalledWith(h.db, h.input);
+      expect(h.middleware.use).toHaveBeenCalledWith(expect.objectContaining({userContext:
+        expect.objectContaining({ userId: h.input.actorUserId, tenantId: h.input.tenantId,
+          appId: h.request.userContext.appId, isSystemAccount: true })}), {}, expect.any(Function));
       await expect(h.service.cancelledContinuationBinding(h.input)).rejects.toThrow('OFFICIAL_OAUTH_SESSION_REQUIRED');
+    });
+
+    it('keeps a same-tenant reader status without configured continuation ability', async () => {
+      const h = harness(); h.owner.requestedByUserId = 'another-owner';
+      h.automatic.mockReturnValue(true); h.readBinding.mockResolvedValue(null);
+      expect(await h.read()).toMatchObject({ status: h.status.status, continuationOperations: [], canRequestBlockTranslation: false });
     });
 
     it('uses a valid same-person session and the unchanged exact binding lookup', async () => {
@@ -178,7 +187,8 @@ describe('CanonicalHost initial-analysis status projection', () => {
       expect(h.readBinding).toHaveBeenCalledWith(h.db, h.input);
       expect(h.store.validate).toHaveBeenCalledTimes(1);
       expect(h.middleware.use).toHaveBeenCalledWith(expect.objectContaining({ userContext: {
-        userId: h.input.actorUserId, isSystemAccount: true, roles: [],
+        userId: h.input.actorUserId, tenantId: h.input.tenantId,
+        appId: h.request.userContext.appId, env: 'runtime', isSystemAccount: true, roles: [],
       } }), {}, expect.any(Function));
     });
 
@@ -191,11 +201,10 @@ describe('CanonicalHost initial-analysis status projection', () => {
       },
     );
 
-    it('never gives an expired session continuation capability or enters privileged SQL', async () => {
+    it('keeps native local capability when optional OAuth has expired', async () => {
       const h = harness({ cookie: true, expires: true });
-      expect(await h.read()).toMatchObject({ continuationDiagnosticCode: 'OFFICIAL_OAUTH_SESSION_REQUIRED', continuationOperations: [] });
-      expect(h.readBinding).not.toHaveBeenCalled();
-      expect(h.middleware.use).not.toHaveBeenCalled();
+      expect(await h.read()).toMatchObject({ continuationOperations: ['EVALUATE_JOBAID'] });
+      expect(h.readBinding).toHaveBeenCalled();
     });
 
     it.each([
@@ -226,21 +235,22 @@ describe('CanonicalHost initial-analysis status projection', () => {
   });
 
   it('checks enrolled continuation only under the verified owner service SQL context', async () => {
-    const limit = jest.fn().mockResolvedValue([{ workItemId: 'WI-enrolled' }]);
+    const limit = jest.fn().mockResolvedValueOnce([ownerRow(parsedWorkItem())])
+      .mockResolvedValue([{ workItemId: 'WI-enrolled' }]);
     const chain = { innerJoin: jest.fn(), where: jest.fn(), limit };
     chain.innerJoin.mockReturnValue(chain);
     chain.where.mockReturnValue(chain);
     const db = { select: jest.fn(() => ({ from: () => chain })) };
-    const sessions = { withVerifiedServiceSql: jest.fn(async (operation: () => Promise<boolean>) => operation()) };
+    const sessions = { withVerifiedReviewServiceSql: jest.fn(async (operation: () => Promise<boolean>) => operation()) };
     const service = new CanonicalHostInitialAnalysisStatusService(
       db as never, {} as never, undefined, undefined, undefined, sessions as never,
     );
     const input = { tenantId: 'tenant-1', actorUserId: 'owner-test', workItem: parsedWorkItem() };
     await expect(service.hasExactAutoProcessingGrant(input)).resolves.toBe(true);
-    expect(sessions.withVerifiedServiceSql).toHaveBeenCalledWith(expect.any(Function), 'owner-test');
-    sessions.withVerifiedServiceSql.mockRejectedValueOnce(new UnauthorizedException());
+    expect(sessions.withVerifiedReviewServiceSql).toHaveBeenCalledWith(expect.any(Function), 'owner-test');
+    sessions.withVerifiedReviewServiceSql.mockRejectedValueOnce(new UnauthorizedException());
     await expect(service.hasExactAutoProcessingGrant(input)).resolves.toBe(false);
-    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(db.select).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -777,11 +787,11 @@ describe('CanonicalHost initial-analysis status projection', () => {
   });
 
   it('keeps browser progress free of attempt and applicability control references', async () => {
-    const limit = jest.fn().mockResolvedValue([{ model: null }]);
+    const workItem = parsedWorkItem();
+    const limit = jest.fn().mockResolvedValue([{ ...ownerRow(workItem), model: null }]);
     const service = new CanonicalHostInitialAnalysisStatusService({
       select: () => ({ from: () => ({ where: () => ({ limit }) }) }),
     } as never, {} as never);
-    const workItem = parsedWorkItem();
     jest
       .spyOn(service, 'project')
       .mockResolvedValue(
@@ -1070,10 +1080,12 @@ async function browserStatus(
   process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '1';
   process.env.WL_TRANSLATION_V2_ENABLED = '0';
   try {
-    const limit = jest.fn().mockResolvedValue([{ model: null }]);
+    const limit = jest.fn().mockResolvedValue([{ ...ownerRow(workItem), model: null }]);
     const service = new CanonicalHostInitialAnalysisStatusService({
       select: () => ({ from: () => ({ where: () => ({ limit }) }) }),
-    } as never, {} as never);
+    } as never, {} as never, undefined, undefined, undefined, {
+      withVerifiedReviewServiceSql: async (operation: () => Promise<unknown>) => operation(),
+    } as never);
     jest.spyOn(service, 'project').mockResolvedValue(
       projectCanonicalHostInitialAnalysisStatus(workItem, observations, {
         englishAssessmentEnabled: true,
@@ -1445,3 +1457,19 @@ function artifact(name: string): UnifiedPackageArtifactDescriptor {
     });
   },
 );
+
+function ownerRow(projection: CanonicalWorkItemProjection) {
+  return {
+    tenantId: 'tenant-1', workItemId: projection.workItemId,
+    requestedByUserId: 'owner-test', requestId: projection.requestId,
+    revision: projection.revision, actionType: 'PARSE_PDF', status: projection.phase,
+    documentId: projection.source.documentId, documentVersionId: projection.source.documentVersionId,
+    sourceArtifactId: projection.source.sourceArtifactId,
+    sourceFileSha256: projection.source.sourceFileSha256.replace(/^sha256:/u, ''),
+    sourceByteLength: projection.source.sourceByteLength,
+    packageId: projection.package?.packageId ?? null,
+    packageArtifactRef: projection.package?.artifact.ref ?? null,
+    packageArtifactSha256: projection.package?.artifact.sha256 ?? null,
+    projectionJson: canonicalJson(projection),
+  };
+}

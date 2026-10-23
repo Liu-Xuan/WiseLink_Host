@@ -92,7 +92,7 @@ function target(sessions?: SessionResolver) {
 }
 
 describe('CanonicalHostController assessment actions', () => {
-  describe('document parsing optional request session', () => {
+  describe('document parsing native request identity', () => {
     function pageHarness(sessions?: SessionResolver) {
       const h = target(sessions);
       const page = jest.spyOn(h.controller as unknown as {
@@ -101,18 +101,22 @@ describe('CanonicalHostController assessment actions', () => {
       return { ...h, page };
     }
 
-    it('runs the page projection inside the same optional session scope as initial analysis', async () => {
+    it('runs both GET projections inside native identity and native SQL', async () => {
       let inScope = false;
-      const sessions = { withRequestSession: jest.fn(async (_request, operation) => {
+      const sessions = { withNativeBrowserIdentity: jest.fn(async (_request, operation) => {
         inScope = true;
         try { return await operation(null); } finally { inScope = false; }
+      }), withVerifiedNativeBrowserSql: jest.fn(async operation => {
+        expect(inScope).toBe(true); return operation();
       }) };
       const h = pageHarness(sessions as never);
       h.page.mockImplementation(async () => { expect(inScope).toBe(true); return { status: 'FAILED' }; });
       await expect(h.controller.page('WI-progress', 'query', 'source-ref', HOST_REQUEST as never))
         .resolves.toEqual({ status: 'FAILED' });
-      expect(sessions.withRequestSession).toHaveBeenCalledWith(HOST_REQUEST, expect.any(Function));
-      expect(sessions.withRequestSession).toHaveBeenCalledTimes(1);
+      await h.controller.initialAnalysis('WI-progress', HOST_REQUEST as never);
+      expect(sessions.withNativeBrowserIdentity).toHaveBeenCalledWith(HOST_REQUEST, expect.any(Function));
+      expect(sessions.withNativeBrowserIdentity).toHaveBeenCalledTimes(2);
+      expect(sessions.withVerifiedNativeBrowserSql).toHaveBeenCalledTimes(2);
       expect(h.page).toHaveBeenCalledWith({ workItemId: 'WI-progress', query: 'query', sourceRef: 'source-ref' },
         expect.objectContaining({ userId: 'engineer-1001', tenantId: 'tenant-2001' }));
     });
@@ -129,7 +133,7 @@ describe('CanonicalHostController assessment actions', () => {
       new Error('SESSION_DATABASE_FAILURE'),
       new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED'),
     ])('never softens an optional session resolver failure: %s', async (error) => {
-      const sessions = { withRequestSession: jest.fn().mockRejectedValue(error) };
+      const sessions = { withNativeBrowserIdentity: jest.fn().mockRejectedValue(error) };
       const h = pageHarness(sessions as never);
       await expect(h.controller.page('WI-progress', undefined, undefined, HOST_REQUEST as never))
         .rejects.toBe(error);

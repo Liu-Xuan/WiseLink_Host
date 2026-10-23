@@ -233,7 +233,9 @@ export class CanonicalHostController {
       hostActor(httpRequest),
     );
     return this.sessions
-      ? this.sessions.withRequestSession(httpRequest, operation)
+      ? this.sessions.withNativeBrowserIdentity(httpRequest, () =>
+          this.sessions!.withVerifiedNativeBrowserSql(operation),
+        )
       : operation();
   }
 
@@ -320,7 +322,9 @@ export class CanonicalHostController {
       hostActor(httpRequest),
     );
     return this.sessions
-      ? this.sessions.withRequestSession(httpRequest, operation)
+      ? this.sessions.withNativeBrowserIdentity(httpRequest, () =>
+          this.sessions!.withVerifiedNativeBrowserSql(operation),
+        )
       : operation();
   }
 
