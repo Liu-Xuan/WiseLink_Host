@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 
@@ -10,14 +10,18 @@ import type {
   PreviewCanonicalApplicabilitySelectionRequest,
 } from '@shared/api.interface';
 import { CanonicalHostApplicabilitySelectionService } from './canonical-host-applicability-selection.service';
+import { DialogueBrowserScope } from './dialogue-browser-scope.service';
+import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
 
 const MAX_WORK_ITEM_ID_LENGTH = 96;
 
 @NeedLogin()
+@UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
 @Controller('api/work-items')
 export class CanonicalHostApplicabilitySelectionController {
   constructor(
     private readonly selections: CanonicalHostApplicabilitySelectionService,
+    private readonly browser: DialogueBrowserScope,
   ) {}
 
   @Get(':workItemId/applicability-selection')
@@ -25,7 +29,8 @@ export class CanonicalHostApplicabilitySelectionController {
     @Param('workItemId') workItemIdValue: string,
     @Req() request: Request,
   ): Promise<CanonicalApplicabilitySelectionReadModel> {
-    return this.selections.read(requiredWorkItemId(workItemIdValue), request);
+    const workItemId: string = requiredWorkItemId(workItemIdValue);
+    return this.browser.runRead(request, () => this.selections.read(workItemId, request));
   }
 
   @Get(':workItemId/applicability-selection/review-action')
@@ -33,7 +38,8 @@ export class CanonicalHostApplicabilitySelectionController {
     @Param('workItemId') workItemIdValue: string,
     @Req() request: Request,
   ): Promise<CanonicalApplicabilitySelectionReviewAvailability> {
-    return this.selections.reviewAvailability(requiredWorkItemId(workItemIdValue), request);
+    const workItemId: string = requiredWorkItemId(workItemIdValue);
+    return this.browser.runRead(request, () => this.selections.reviewAvailability(workItemId, request));
   }
 
   @Post(':workItemId/applicability-selection/review-action/preview')
@@ -42,9 +48,10 @@ export class CanonicalHostApplicabilitySelectionController {
     @Body() body: unknown,
     @Req() request: Request,
   ): Promise<CanonicalApplicabilitySelectionReviewDraft> {
-    return this.selections.previewReviewAction(
-      requiredWorkItemId(workItemIdValue), previewBody(body), request,
-    );
+    const workItemId: string = requiredWorkItemId(workItemIdValue);
+    const input: PreviewCanonicalApplicabilitySelectionRequest = previewBody(body);
+    return this.browser.runNativeWrite(request, () =>
+      this.selections.previewReviewAction(workItemId, input, request));
   }
 
   @Post(':workItemId/applicability-selection/review-action/confirm')
@@ -53,9 +60,10 @@ export class CanonicalHostApplicabilitySelectionController {
     @Body() body: unknown,
     @Req() request: Request,
   ): Promise<CanonicalApplicabilitySelectionReadModel> {
-    return this.selections.confirmReviewAction(
-      requiredWorkItemId(workItemIdValue), confirmBody(body), request,
-    );
+    const workItemId: string = requiredWorkItemId(workItemIdValue);
+    const input: ConfirmCanonicalApplicabilitySelectionRequest = confirmBody(body);
+    return this.browser.runNativeWrite(request, () =>
+      this.selections.confirmReviewAction(workItemId, input, request));
   }
 }
 
