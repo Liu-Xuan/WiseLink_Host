@@ -22,7 +22,7 @@
         "V26",
         "V28"
       ],
-      "nextAction": "生产D062/release7699657613396610040实际证据保持；本批UI-only与M2显示修复已接受并本地组装，最终正常构建/记录待收口。候选未推送/发布，不含ACK/Review/Native或DDL/model/SAVE。"
+      "nextAction": "生产仍D062/release7699657613396610040。UI-only公开组合准确9d正常hook与一次完整build通过，双端immutable sourceCommit为9d；纯记录后继沿用，不含ACK/Review/Native。E/D包装待审，未推送/发布，真正部署/线上只读验收待做。"
     },
     {
       "id": "P1",
@@ -54,7 +54,7 @@
         "V28",
         "V30"
       ],
-      "nextAction": "资料库评估已挂实际四业务签/条件AEO及准确历史解析来源、受限返回；70 UI、19 locator、3旧reader和synthetic浏览器按原SHA复用。新组合不重复产品用例；原D062定位PARTIAL保留，部署后只读真实验收待做，全屏仍环境未验。"
+      "nextAction": "本地资料库四签/条件AEO、准确历史解析来源与受限返回已接；70 UI/19 locator/3旧reader/M225保留原source并复用，合成浏览器受影响布局已过。准确9d完整build通过；生产D062引用PARTIAL保持，后续新部署后只读核对，全屏环境未验。"
     },
     {
       "id": "P3",

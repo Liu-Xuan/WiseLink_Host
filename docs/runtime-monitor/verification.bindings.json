@@ -558,10 +558,10 @@
         "P0",
         "P2"
       ],
-      "sourceRevision": "bd6e5b3cb110d19635c7d537672f7d8f346db14e",
+      "sourceRevision": "9d82629277a7f131ad42984119d6709b02fee060",
       "authorRevision": "3e790ffffd42c9af0c781557ae516164ba70fbd1",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。",
+      "reviewScope": "公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。 本批正常hook与完整build已在准确9d源码成立；原逻辑已接受，最终E/D包装仍待非作者审查。",
       "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。",
       "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。",
       "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。",

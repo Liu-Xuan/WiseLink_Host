@@ -413,3 +413,15 @@ TDMS 节点当前 UNKNOWN、最新性/完整覆盖未提供，0 条可核对保�
 M1保持v1.6稳定目录，在E.6及既有bindings增加准确 `document.assessment-reading` 消费记录；M2继续同一生成器、四列、工作包/接线/场景/缺口筛选与下钻，旧133条证据字段/source/time逐值保留。M3只挂现有父读取投影；生产Ready/首次可读/ACK缺项不回填。本轮新public组合只需正常hook、一次完整最终build及实际生成页筛选/下钻；旧受影响测试不无因重跑，原SHA/契约/环境与适用说明独立展示。
 
 fresh origin main于 `2026-10-23T03:51:56.859360+00:00` 实际读回 `2bc6ac71b29720d622da4a6fcc11e14a027ff170`（准确时间见私有原回执）；其parents为旧02f和已批准D062，tree与D062/E800同为de51001b，无额外产品修改。首次只读ls-remote仅因sandbox拒绝既有凭据helper锁文件而未到远端；正常require_escalated续用同一已登录helper后成功，没有新增OAuth/身份/角色或远端写。最终私有D只增加该准确main祖先并保留公开完整tree。当前未构造最终D、未推送/发布；完整构建和收口回执将在后续纯记录提交补齐。需要发布的具体技术范围仅Host/UI＋M2显示，无Native、DDL、模型/SAVE/正式采用。
+
+
+本批准确构建与记录收口：公开组合的首个9记录提交 `9d82629277a7f131ad42984119d6709b02fee060`，父 `bd6e5b3cb110d19635c7d537672f7d8f346db14e`，normal hook exit0 / 20.096s；配置内 ESLint、client/server类型和stylelint均按原机制执行，未跳过。实际公开目录 `/private/tmp/wiselink-document-assessment-public-20261023` 使用树内真实完整 node_modules，复制既有依赖、不重新install或解析；缓存 `/private/tmp/wiselink-public-build-npm-cache-20261023`，沿用 `/usr/bin/python3`。一次正常 `npm run build` 开始 `2026-10-23T04:01:25.170583+00:00`，结束 `2026-10-23T04:02:12.382451+00:00`，exit0，约47.212s。四固定子日志均本轮新mtime，分别原样归档到本批私有 evidence，无并发build混写。
+
+双端 immutable sourceCommit 精确为 `9d82629277a7f131ad42984119d6709b02fee060`：后端 JSON buildTime `2026-10-23T04:01:49.898Z`，前端编译 AST 中不可变配置常量与 sourceCommit getter 绑定、buildTime `2026-10-23T04:01:39.790Z`；没有用Node执行浏览器模块或把静态产物当线上运行。依赖裁剪477/477成功、失败0，是依赖包数；构建后工作树干净。Vite既有MODULE_TYPELESS、大chunk及静态/动态混合import提示按原日志保留，无编译错误。原始 `11-build.log`、四子日志、`11-build-result.json` 与 `12-build-verification.json` 位于私有 `/private/tmp/wiselink-document-assessment-release-evidence-20261023/`。
+
+本回执后只修改记录/快照/生成HTML，沿用该准确9d构建，不重复产品测试或build。M2目标为本地构建输入9d，目标Host环境用于未来部署；当前候选 deployment/runtime明确not_run，旧D062的真实证据保持原source/time/状态。新增原source测试的适用说明由已接受M2显示修复转义展示，不计入新SHA覆盖；构建只支持V30，所选多场景仍为部分覆盖。M1稳定目录及旧133条evidence逐值不变。本批仍没有推送、release、线上SQL/DBpreview、Native包/安装、模型/SAVE或正式采用。
+
+
+本批记录校验实际通过：现有快照 QA 39/39；实际生成 HTML 的 JSDOM 载入原组件，9条接线，P2＋document.assessment-reading＋V03＋runtime、P0＋同接线＋V30＋deployment 联合筛选及节点→准确binding下钻通过，diagnostics空。当前接线为准确源码范围匹配，测试仍所选场景部分覆盖，部署尚未执行、真实运行尚未核对。准确9d本地build的环境与Host目标不同仍按新M2规则正确匹配；原139c UI证据保持其他提交/契约说明，applicability只显示不补覆盖，筛选不缩小7场景分母。13节点/47关系/54场景/10规则、原8条bindings及133条evidence逐值不变，新增document接线与11条本批限定证据。原始日志 `14-final-records-2.log`、`15-generated-m2-check.log` 及结构化检查回执保存在同一本批私有evidence目录。
+
+公开后继仅记录上述实际结果；未执行新的Chrome/业务浏览器动作，直接复用独立最终42交接。公开E与私有D完整SHA/parent/tree/文件清单和同树、公私历史、敏感检查在最终私有handoff给出；公开历史不包含2ed6或private main对象。审批准备仅指这份准确Host-only代码及必要正式发布前读回，不代表已经得到本批推送/发布授权。上一批D062正式CLI回执作为历史参照保留，不能代替新批次的dev→main预览或实际运行。

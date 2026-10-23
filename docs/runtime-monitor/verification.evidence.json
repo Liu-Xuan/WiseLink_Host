@@ -2377,7 +2377,7 @@
         "document.assessment-reading"
       ],
       "summary": "65不同受影响用例=19关联读取+20真实新组件/API流+26原reader/Wiki壳层与受限返回；按各原日志复用，未重跑。不是65条端到端链。",
-      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。 本批准确9d记录提交只改9份记录，产品blob不变；新本地build单独记录。",
       "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
       "testLevel": "integration",
       "scenarioIds": [
@@ -2402,7 +2402,7 @@
         "document.assessment-reading"
       ],
       "summary": "5个新增真实组件用例：Overall自身STALE/non-null staleReason，原文pending→ready、保存revision3→4保留真实草稿实例，合法Wiki guide来源返回；原20项本次未选中。",
-      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。 本批准确9d记录提交只改9份记录，产品blob不变；新本地build单独记录。",
       "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
       "testLevel": "integration",
       "scenarioIds": [
@@ -2426,7 +2426,7 @@
         "document.assessment-reading"
       ],
       "summary": "19个真实已保存正文按钮/callback用例通过：same-WI、cross-WI、准确DVI/旧run/fullref/受限返回、legacy与坏locator零导航。React单实例测试环境首次失败保留，最终正确环境通过；未改产品依赖。",
-      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。 本批准确9d记录提交只改9份记录，产品blob不变；新本地build单独记录。",
       "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
       "testLevel": "integration",
       "scenarioIds": [
@@ -2450,7 +2450,7 @@
         "document.assessment-reading"
       ],
       "summary": "原reader固定run、unknown-ref、foreign-run实际3例通过；旧401/403/404三例因未变mock缺prepareDocumentTranslationContinuation未到权限断言，不计PASS。消费者未改，此轮不为旧mock扩大回归。",
-      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。 本批准确9d记录提交只改9份记录，产品blob不变；新本地build单独记录。",
       "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
       "testLevel": "integration",
       "scenarioIds": [
@@ -2472,7 +2472,7 @@
         "document.assessment-reading"
       ],
       "summary": "M2显示修复25/25：测试实际环境独立于部署目标、不同SHA/契约缺失不补覆盖、旧适用说明只显示、部署/runtime仍精确匹配。原15失败/10通过复现与正常hook环境路径修复保留；本批未重复25项。",
-      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。 本批准确9d记录提交只改9份记录，产品blob不变；新本地build单独记录。",
       "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
       "testLevel": "unit",
       "scenarioIds": [
@@ -2493,7 +2493,7 @@
         "document.assessment-reading"
       ],
       "summary": "真实页面+合成API/外部Aily与PDF隔离：桌面四业务签/只读条件AEO/M3、实际工程师说明草稿经原文/Wiki/刷新保留、历史PR-HISTORIC/fullref命中与受限返回、390px窄屏通过。不是线上；浏览器未驱动pending→ready/revision3→4，未执行生成/确认/SAVE。",
-      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。 本批准确9d记录提交只改9份记录，产品blob不变；新本地build单独记录。",
       "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
       "testLevel": "e2e",
       "scenarioIds": [
@@ -2516,7 +2516,7 @@
         "document.assessment-reading"
       ],
       "summary": "CSS-only后实际33..40补验：桌面正文831.45px/目录248px，长正文1079.5px跨签保留；390px正文/目录各323px，目录上置max180px，1212px滚动保留。原11的196px正文真实失败保留；IAB全屏缺API、一次独立Chrome not granted均未验。",
-      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。",
+      "applicableProductRevision": "适用于本批产品bd6e5b3cb110d19635c7d537672f7d8f346db14e的相同受影响blob；公开c8组合仅排除可选ACK字段，无需改测试或重跑。仅适用说明，不改原执行源码/契约，不计入新SHA覆盖。 本批准确9d记录提交只改9份记录，产品blob不变；新本地build单独记录。",
       "evidenceObservation": "本次为既有准确日志/交接的复核时间；未记录执行时刻时不回填。",
       "testLevel": "e2e",
       "scenarioIds": [
@@ -2524,6 +2524,70 @@
         "V28"
       ],
       "originalReportRef": "private:/private/tmp/wiselink-document-assessment-integration-evidence-20261023/browser-review/42-final-browser-handoff.json"
+    },
+    {
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "9d82629277a7f131ad42984119d6709b02fee060",
+      "observedAt": "2026-10-23T04:04:32.478885+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "id": "document-assessment.source.public-combination",
+      "kind": "source_review",
+      "status": "passed",
+      "environmentId": "local:public-ui-combination",
+      "summary": "四个UI与一个M2显示delta正常cherry在c8；21 UI blob逐字节等于已审3e790、M2两文件等于be986；既有API/props齐备、仅可选ACK差异被排除，server/shared/Native不变。准确9d只增加9个记录文件，接线表已对实际入口；原逻辑非作者接受，最终E/D交付包装待审。",
+      "originalReportRef": "private:/private/tmp/wiselink-document-assessment-release-evidence-20261023/05-dependency-product-applicability.json"
+    },
+    {
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "9d82629277a7f131ad42984119d6709b02fee060",
+      "observedAt": "2026-10-23T04:02:12.382451+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "id": "document-assessment.test.final-build",
+      "kind": "test",
+      "status": "passed",
+      "testLevel": "integration",
+      "environmentId": "local:isolated-production-build",
+      "scenarioIds": [
+        "V30"
+      ],
+      "summary": "准确clean 9d82629277a7f131ad42984119d6709b02fee060一次正常npm run build，2026-10-23T04:01:25.170583+00:00→2026-10-23T04:02:12.382451+00:00，exit0，约47.212s；server/client immutable sourceCommit均为9d。AST检查前端配置常量→getter绑定，未执行浏览器应用；477/477为依赖复制数、失败0，不是测试数。完整正常hook已通过；没有重跑原70/19/3/25产品用例。",
+      "originalReportRef": "private:/private/tmp/wiselink-document-assessment-release-evidence-20261023/11-build-result.json",
+      "readbackRef": "private:/private/tmp/wiselink-document-assessment-release-evidence-20261023/12-build-verification.json",
+      "applicableProductRevision": "本回执后的E为仅记录后继，私有D完整tree等于E；沿用准确9d本地构建，不声称D已构建/部署。"
+    },
+    {
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "9d82629277a7f131ad42984119d6709b02fee060",
+      "observedAt": "2026-10-23T04:04:32.478885+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "id": "document-assessment.deployment.not-run",
+      "kind": "deployment",
+      "status": "not_run",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "summary": "UI-only候选仅本地准备；公开和私有refs均未推送，没有创建release。生产仍D062/release7699657613396610040；本轮未查dev→main发布预览，原D空预览不能冒充当前预检。"
+    },
+    {
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "9d82629277a7f131ad42984119d6709b02fee060",
+      "observedAt": "2026-10-23T04:04:32.478885+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "id": "document-assessment.runtime.not-run",
+      "kind": "runtime",
+      "status": "not_run",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "summary": "新UI真实线上入口/历史定位尚未验，原D定位PARTIAL保留。合成四签/M3/草稿/来源返回和CSS结果仅为本地test证据，不是线上runtime；无Native/DDL/模型/SAVE或正式采用。"
     }
   ]
 }

@@ -40,5 +40,5 @@
     "V53",
     "V15"
   ],
-  "reason": "本批UI-only资料库评估融合+精确保存依据导航+已接受M2测试显示修复；生产仍D062/release7699657613396610040，原实际事实保留。候选未推送/发布，server/shared/Native/ACK/Review不纳入；原测试SHA与合成浏览器边界独立，最终构建另补准确回执。"
+  "reason": "本批UI-only+M2测试显示修复：准确9d正常hook/完整build与双端immutable指纹已本地通过；只验证V30构建层，原70/19/3/25与synthetic浏览器保持原执行SHA/契约，不自动继承覆盖。生产仍D062/release7699657613396610040，引用PARTIAL保持；候选未推送/发布，无ACK/Review/Native/DDL/模型/SAVE。"
 }
