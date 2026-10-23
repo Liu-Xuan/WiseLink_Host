@@ -558,10 +558,10 @@
         "P0",
         "P2"
       ],
-      "sourceRevision": "9d82629277a7f131ad42984119d6709b02fee060",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
       "authorRevision": "3e790ffffd42c9af0c781557ae516164ba70fbd1",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。 本批正常hook与完整build已在准确9d源码成立；原逻辑已接受，最终E/D包装仍待非作者审查。",
+      "reviewScope": "公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。 本批正常hook与完整build在准确9d源码成立；经批准的公开E4dec与私有De1d完整tree相同，准确D已正式发布。恢复与原/新只读观察分别记录，未重跑原产品测试或本地build。",
       "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。",
       "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。",
       "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。",
@@ -590,16 +590,10 @@
       ],
       "gaps": [
         {
-          "id": "document.assessment-reading.deployment",
-          "kind": "deployment",
-          "reason": "本批仅本地可审准备，公开/私有候选未推送、未发布；生产仍D062。",
-          "nextAction": "审核准确E/D、构建和Host-only范围后由唯一operator按另行确认执行，不附Native/DDL/模型/SAVE。"
-        },
-        {
           "id": "document.assessment-reading.runtime",
           "kind": "runtime",
-          "reason": "实际线上新入口尚未验；原D062引用定位PARTIAL保持。合成浏览器全屏环境拒绝、无动态撤权/真实PDF/Aily或新业务写入，范围不能扩为真实业务验收。",
-          "nextAction": "后续准确部署后按原获权对象只读验收新入口、历史定位与受限返回；新业务动作另按其授权。"
+          "reason": "真实四签/M3/Wiki、准确结构化原文第8页与受限返回已有原证据；原件历史HTTP500独立保留，恢复后一次正常GET200/11页PDF可读。Aily当前ENV_UNVERIFIED/30s ready timeout/灰白未通过，iframe终态受工具paused-document-response边界未获；局部OAuth/保存核对、全屏与动态权限/版本转换仍未验证。",
+          "nextAction": "沿用已发布E/D和现有SDK；保留Aily未完成及历史500未知根因，按独立分析结论选择下一最小修法，不制造ready协议、登录扩scope、重复已通过链路或业务写入。"
         }
       ]
     }

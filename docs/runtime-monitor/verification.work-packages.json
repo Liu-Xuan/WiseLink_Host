@@ -22,7 +22,7 @@
         "V26",
         "V28"
       ],
-      "nextAction": "生产仍D062/release7699657613396610040。UI-only公开组合准确9d正常hook与一次完整build通过，双端immutable sourceCommit为9d；纯记录后继沿用，不含ACK/Review/Native。E/D包装待审，未推送/发布，真正部署/线上只读验收待做。"
+      "nextAction": "本批Host UI已由准确De1d/release7699717588535888913正式发布，原/恢复官方finished和双端实际D指纹成立。完成本批records收口；沿用9d正常hook/完整build与原测试，不重发布或附带ACK/Review/Native、DDL、模型/SAVE。"
     },
     {
       "id": "P1",
@@ -54,7 +54,7 @@
         "V28",
         "V30"
       ],
-      "nextAction": "本地资料库四签/条件AEO、准确历史解析来源与受限返回已接；70 UI/19 locator/3旧reader/M225保留原source并复用，合成浏览器受影响布局已过。准确9d完整build通过；生产D062引用PARTIAL保持，后续新部署后只读核对，全屏环境未验。"
+      "nextAction": "真实AD四签/M3/独立Wiki与准确历史来源第8页/受限返回已有原证据；恢复后同一入口一次PDF200且11页实际可读，原500历史保留。Aily30s ready timeout/灰白及工具响应暂停混杂仍未完成，局部OAuth与全屏等限制分开记录。"
     },
     {
       "id": "P3",
@@ -113,7 +113,7 @@
         "V08",
         "V10"
       ],
-      "nextAction": "本批D只更新既有Estimated技术交付，不包含后续ACK浏览器读模型或Review候选；原Native c234及恢复证据保持，未操作/重查调度。M3客户端读回时间不推生产ACK/首次可读，容量与全局积压未知，不追加READ/模型/租约。"
+      "nextAction": "当前UI De1d继续既有Estimated能力，未纳入后续ACK浏览器读模型、Review或新Native候选；原Native c234及恢复证据保留实际范围。M3客户端观察时间不推生产ACK/首次可读；本批只读无新模型/SAVE/租约或正式采用。"
     }
   ]
 }

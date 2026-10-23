@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "snapshot": {
     "dataMode": "snapshot",
-    "generatedAt": "2026-10-23T04:04:59.612104+00:00",
+    "generatedAt": "2026-10-23T06:10:49.488124+00:00",
     "contract": {
       "version": "1.6 复核修订稿",
       "source": "WISELINK_MAINLINE_GRAPH_CONTRACT.md",
@@ -10,7 +10,7 @@
       "sourceRevisionType": "sha256"
     },
     "target": {
-      "sourceRevision": "9d82629277a7f131ad42984119d6709b02fee060",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
       "environmentId": "host:app_17bzc551rsg:online"
     },
     "workPackages": [
@@ -36,7 +36,7 @@
           "V26",
           "V28"
         ],
-        "nextAction": "生产仍D062/release7699657613396610040。UI-only公开组合准确9d正常hook与一次完整build通过，双端immutable sourceCommit为9d；纯记录后继沿用，不含ACK/Review/Native。E/D包装待审，未推送/发布，真正部署/线上只读验收待做。"
+        "nextAction": "本批Host UI已由准确De1d/release7699717588535888913正式发布，原/恢复官方finished和双端实际D指纹成立。完成本批records收口；沿用9d正常hook/完整build与原测试，不重发布或附带ACK/Review/Native、DDL、模型/SAVE。"
       },
       {
         "id": "P1",
@@ -68,7 +68,7 @@
           "V28",
           "V30"
         ],
-        "nextAction": "本地资料库四签/条件AEO、准确历史解析来源与受限返回已接；70 UI/19 locator/3旧reader/M225保留原source并复用，合成浏览器受影响布局已过。准确9d完整build通过；生产D062引用PARTIAL保持，后续新部署后只读核对，全屏环境未验。"
+        "nextAction": "真实AD四签/M3/独立Wiki与准确历史来源第8页/受限返回已有原证据；恢复后同一入口一次PDF200且11页实际可读，原500历史保留。Aily30s ready timeout/灰白及工具响应暂停混杂仍未完成，局部OAuth与全屏等限制分开记录。"
       },
       {
         "id": "P3",
@@ -127,7 +127,7 @@
           "V08",
           "V10"
         ],
-        "nextAction": "本批D只更新既有Estimated技术交付，不包含后续ACK浏览器读模型或Review候选；原Native c234及恢复证据保持，未操作/重查调度。M3客户端读回时间不推生产ACK/首次可读，容量与全局积压未知，不追加READ/模型/租约。"
+        "nextAction": "当前UI De1d继续既有Estimated能力，未纳入后续ACK浏览器读模型、Review或新Native候选；原Native c234及恢复证据保留实际范围。M3客户端观察时间不推生产ACK/首次可读；本批只读无新模型/SAVE/租约或正式采用。"
       }
     ]
   },
@@ -1677,10 +1677,10 @@
         "P0",
         "P2"
       ],
-      "sourceRevision": "9d82629277a7f131ad42984119d6709b02fee060",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
       "authorRevision": "3e790ffffd42c9af0c781557ae516164ba70fbd1",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。 本批正常hook与完整build已在准确9d源码成立；原逻辑已接受，最终E/D包装仍待非作者审查。",
+      "reviewScope": "公开 c8 与作者父基线的 client/shared 差异只有未纳入的3个可选ACK消费者/接口；新UI不要求ACK字段。21个UI变更blob与3e790一致，M2两文件与be986一致，server/shared/openclaw未改。旧测试仅附适用说明，不改执行SHA或计入新SHA覆盖。 本批正常hook与完整build在准确9d源码成立；经批准的公开E4dec与私有De1d完整tree相同，准确D已正式发布。恢复与原/新只读观察分别记录，未重跑原产品测试或本地build。",
       "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。",
       "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。",
       "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。",
@@ -1709,16 +1709,10 @@
       ],
       "gaps": [
         {
-          "id": "document.assessment-reading.deployment",
-          "kind": "deployment",
-          "reason": "本批仅本地可审准备，公开/私有候选未推送、未发布；生产仍D062。",
-          "nextAction": "审核准确E/D、构建和Host-only范围后由唯一operator按另行确认执行，不附Native/DDL/模型/SAVE。"
-        },
-        {
           "id": "document.assessment-reading.runtime",
           "kind": "runtime",
-          "reason": "实际线上新入口尚未验；原D062引用定位PARTIAL保持。合成浏览器全屏环境拒绝、无动态撤权/真实PDF/Aily或新业务写入，范围不能扩为真实业务验收。",
-          "nextAction": "后续准确部署后按原获权对象只读验收新入口、历史定位与受限返回；新业务动作另按其授权。"
+          "reason": "真实四签/M3/Wiki、准确结构化原文第8页与受限返回已有原证据；原件历史HTTP500独立保留，恢复后一次正常GET200/11页PDF可读。Aily当前ENV_UNVERIFIED/30s ready timeout/灰白未通过，iframe终态受工具paused-document-response边界未获；局部OAuth/保存核对、全屏与动态权限/版本转换仍未验证。",
+          "nextAction": "沿用已发布E/D和现有SDK；保留Aily未完成及历史500未知根因，按独立分析结论选择下一最小修法，不制造ready协议、登录扩scope、重复已通过链路或业务写入。"
         }
       ]
     }
@@ -1765,7 +1759,7 @@
       "V53",
       "V15"
     ],
-    "reason": "本批UI-only+M2测试显示修复：准确9d正常hook/完整build与双端immutable指纹已本地通过；只验证V30构建层，原70/19/3/25与synthetic浏览器保持原执行SHA/契约，不自动继承覆盖。生产仍D062/release7699657613396610040，引用PARTIAL保持；候选未推送/发布，无ACK/Review/Native/DDL/模型/SAVE。"
+    "reason": "本批UI已随准确De1d/release7699717588535888913正式发布；原四签/M3/Wiki/结构化原文第8页及受限返回为限定真实只读证据。原PDF500与Aily空白分别保留；恢复后一次PDF200/11页可读，AilyENV_UNVERIFIED/30s ready timeout及paused-document工具混杂仍未完成。准确9d本地build及70/19/3/25原source/时间不变，不补新测试覆盖；无ACK/Review/Native新代码、DDL、模型/SAVE或正式采用。"
   },
   "evidence": [
     {
@@ -4356,6 +4350,183 @@
       "status": "not_run",
       "environmentId": "host:app_17bzc551rsg:online",
       "summary": "新UI真实线上入口/历史定位尚未验，原D定位PARTIAL保留。合成四签/M3/草稿/来源返回和CSS结果仅为本地test证据，不是线上runtime；无Native/DDL/模型/SAVE或正式采用。"
+    },
+    {
+      "id": "document-assessment.deployment.approved-ui",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T04:41:03.899610+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "本批批准后的公有E已分别同步origin/github同名codex分支，私有D仅origin；完整tree相同。官方原release-get在准确D返回finished/error_logs=[]。这是原发布观察，恢复副本有独立来源索引，未新建发布。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/terminal-content-copies/05-release-get-002.terminal-content.json"
+    },
+    {
+      "id": "document-assessment.runtime.deployed-fingerprints",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T04:47:30.066Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "原真实浏览器执行前端D/build04:39:09.945Z；原生Network实际XHR200的后端Response为D/build04:39:31.016Z、SERVER_BUILD_ARTIFACT。候选reader仍VERIFICATION_PENDING/7 blockers，展示releaseId/API contract未提供。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/terminal-content-copies/backend-runtime.actual.terminal-content.json",
+      "readbackRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/terminal-content-copies/frontend-runtime.actual.terminal-content.json"
+    },
+    {
+      "id": "document-assessment.runtime.assessment-entry-history",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T04:53:43.333Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "原获权AD入口可读四业务签、3个调查问题及独立Wiki。M3仅显示真实JobAid/Overall/TDMS三节点：保存工作1/SUCCEEDED、Overall消费同一工作，TDMS当前有效性UNKNOWN/0条可核对已保存原生证据不表示从未读取。输入修订5与保存工作1分开；适用性/config局部OFFICIAL_OAUTH_SESSION_REQUIRED及暂无法核对已保存评估仍限制。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/recovery-provenance.private.json"
+    },
+    {
+      "id": "document-assessment.runtime.historical-source-return",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T04:53:43.333Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "原10→11→12实际点击保存依据，保持准确历史parseRun和完整SourceRef到结构化原文第8页，并返回原investigation、assessmentScroll686及受限任务快览query。仅该来源导航/返回范围通过；原件PDF与Aily分别记失败。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/recovery-provenance.private.json"
+    },
+    {
+      "id": "document-assessment.runtime.pdf-historical-error",
+      "kind": "runtime",
+      "status": "failed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T04:53:42.805Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "原11截图右栏明确显示HTTP500，属于原件读取失败；原请求Response/trace未保留，不能从旁边OAuth错误推断原因。截图PNG丢失，根会话原工具JPEG显示副本已恢复；不将结构化原文定位通过扩大为原件通过。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/recovery-provenance.private.json"
+    },
+    {
+      "id": "document-assessment.runtime.aily-historical-blank",
+      "kind": "runtime",
+      "status": "failed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T04:53:58.544Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "原13复核页Aily框灰白/无可读聊天内容，未完成加载验收；原PNG丢失但原工具JPEG显示副本已恢复。它与PDF原件失败独立，不因页面壳层/四签通过而计PASS。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/recovery-provenance.private.json"
+    },
+    {
+      "id": "document-assessment.deployment.recovery-current-check",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T05:45:06.526161+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "恢复时仅对原同一release ID做一次官方只读release-get，仍finished、准确D、error_logs=[]；原始stdout/stderr与执行观察已持久保存，未执行新release或在线写入。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/release-get-current.stdout.json"
+    },
+    {
+      "id": "document-assessment.runtime.pdf-current-read",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T05:58:05.541Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "恢复后同一批准AD入口的一次正常原文读取：GET original在05:56:50.939Z发出，实际200/application/pdf并完成，文件208087字节/%PDF-1.5；受控reader显示11页，第1页实际canvas与截图可读。独立记录当前读取成功，原历史500及其未知根因保留；未重做已通过的四签/M3/引用往返。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/current-readonly-diagnostics/provenance.private.json"
+    },
+    {
+      "id": "document-assessment.runtime.aily-current-timeout",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T05:59:11.521Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "ENV_UNVERIFIED / Iframe ready timeout。同次正常复核入口挂载1355×661.75的Aily iframe；05:58:31.820Z GET发出，05:59:01.822Z Console精确出现SDK non-blocking Iframe ready timeout。原生AX/截图仍灰白；SDK0.0.12的Promise resolve不能证明ready，当前catch没有出现错误提示。未发送聊天或重新初始化。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/current-readonly-diagnostics/provenance.private.json"
+    },
+    {
+      "id": "document-assessment.runtime.aily-root-cause-unresolved",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T06:00:14.923Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "同一次iframe请求后续CDP被Browser Use resolving a paused document response工具guard拒绝；未手动resume、改拦截或安全策略。未取得iframe请求终态，不能归因网络/CSP/OAuth，也不能排除工具混杂。原生Console仅确认同一timeout；用户改变Chrome状态后停止操作，未追加请求。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/current-readonly-diagnostics/provenance.private.json"
+    },
+    {
+      "id": "document-assessment.source.independent-restoration",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "local:independent-git-restoration",
+      "observedAt": "2026-10-23T05:59:57.982320+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "公有E从公开GitHub指定分支独立恢复，未复用私有对象、无alternates，私有D及main对象不存在；私有D从origin单分支depth2恢复，E/D完整tree准确相同且恢复时clean。原失败HTTP/2 clone终止后仅命令局部HTTP/1.1重试成功。原工具事件逐字节恢复，文本/图像副本与丢失原文件明确分层。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/private-repository-restoration.private.json"
     }
   ]
 }

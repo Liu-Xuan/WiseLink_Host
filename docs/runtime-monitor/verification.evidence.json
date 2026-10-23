@@ -2588,6 +2588,183 @@
       "status": "not_run",
       "environmentId": "host:app_17bzc551rsg:online",
       "summary": "新UI真实线上入口/历史定位尚未验，原D定位PARTIAL保留。合成四签/M3/草稿/来源返回和CSS结果仅为本地test证据，不是线上runtime；无Native/DDL/模型/SAVE或正式采用。"
+    },
+    {
+      "id": "document-assessment.deployment.approved-ui",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T04:41:03.899610+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "本批批准后的公有E已分别同步origin/github同名codex分支，私有D仅origin；完整tree相同。官方原release-get在准确D返回finished/error_logs=[]。这是原发布观察，恢复副本有独立来源索引，未新建发布。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/terminal-content-copies/05-release-get-002.terminal-content.json"
+    },
+    {
+      "id": "document-assessment.runtime.deployed-fingerprints",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T04:47:30.066Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "原真实浏览器执行前端D/build04:39:09.945Z；原生Network实际XHR200的后端Response为D/build04:39:31.016Z、SERVER_BUILD_ARTIFACT。候选reader仍VERIFICATION_PENDING/7 blockers，展示releaseId/API contract未提供。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/terminal-content-copies/backend-runtime.actual.terminal-content.json",
+      "readbackRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/terminal-content-copies/frontend-runtime.actual.terminal-content.json"
+    },
+    {
+      "id": "document-assessment.runtime.assessment-entry-history",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T04:53:43.333Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "原获权AD入口可读四业务签、3个调查问题及独立Wiki。M3仅显示真实JobAid/Overall/TDMS三节点：保存工作1/SUCCEEDED、Overall消费同一工作，TDMS当前有效性UNKNOWN/0条可核对已保存原生证据不表示从未读取。输入修订5与保存工作1分开；适用性/config局部OFFICIAL_OAUTH_SESSION_REQUIRED及暂无法核对已保存评估仍限制。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/recovery-provenance.private.json"
+    },
+    {
+      "id": "document-assessment.runtime.historical-source-return",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T04:53:43.333Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "原10→11→12实际点击保存依据，保持准确历史parseRun和完整SourceRef到结构化原文第8页，并返回原investigation、assessmentScroll686及受限任务快览query。仅该来源导航/返回范围通过；原件PDF与Aily分别记失败。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/recovery-provenance.private.json"
+    },
+    {
+      "id": "document-assessment.runtime.pdf-historical-error",
+      "kind": "runtime",
+      "status": "failed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T04:53:42.805Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "原11截图右栏明确显示HTTP500，属于原件读取失败；原请求Response/trace未保留，不能从旁边OAuth错误推断原因。截图PNG丢失，根会话原工具JPEG显示副本已恢复；不将结构化原文定位通过扩大为原件通过。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/recovery-provenance.private.json"
+    },
+    {
+      "id": "document-assessment.runtime.aily-historical-blank",
+      "kind": "runtime",
+      "status": "failed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T04:53:58.544Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "原13复核页Aily框灰白/无可读聊天内容，未完成加载验收；原PNG丢失但原工具JPEG显示副本已恢复。它与PDF原件失败独立，不因页面壳层/四签通过而计PASS。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/recovery-provenance.private.json"
+    },
+    {
+      "id": "document-assessment.deployment.recovery-current-check",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T05:45:06.526161+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "恢复时仅对原同一release ID做一次官方只读release-get，仍finished、准确D、error_logs=[]；原始stdout/stderr与执行观察已持久保存，未执行新release或在线写入。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/release-get-current.stdout.json"
+    },
+    {
+      "id": "document-assessment.runtime.pdf-current-read",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T05:58:05.541Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "恢复后同一批准AD入口的一次正常原文读取：GET original在05:56:50.939Z发出，实际200/application/pdf并完成，文件208087字节/%PDF-1.5；受控reader显示11页，第1页实际canvas与截图可读。独立记录当前读取成功，原历史500及其未知根因保留；未重做已通过的四签/M3/引用往返。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/current-readonly-diagnostics/provenance.private.json"
+    },
+    {
+      "id": "document-assessment.runtime.aily-current-timeout",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T05:59:11.521Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "ENV_UNVERIFIED / Iframe ready timeout。同次正常复核入口挂载1355×661.75的Aily iframe；05:58:31.820Z GET发出，05:59:01.822Z Console精确出现SDK non-blocking Iframe ready timeout。原生AX/截图仍灰白；SDK0.0.12的Promise resolve不能证明ready，当前catch没有出现错误提示。未发送聊天或重新初始化。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/current-readonly-diagnostics/provenance.private.json"
+    },
+    {
+      "id": "document-assessment.runtime.aily-root-cause-unresolved",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T06:00:14.923Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "同一次iframe请求后续CDP被Browser Use resolving a paused document response工具guard拒绝；未手动resume、改拦截或安全策略。未取得iframe请求终态，不能归因网络/CSP/OAuth，也不能排除工具混杂。原生Console仅确认同一timeout；用户改变Chrome状态后停止操作，未追加请求。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/current-readonly-diagnostics/provenance.private.json"
+    },
+    {
+      "id": "document-assessment.source.independent-restoration",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "1c4078eb6b1f6d4724a189faa7fae22ef8e287113fcd15098f37518ba9cb8a85",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "local:independent-git-restoration",
+      "observedAt": "2026-10-23T05:59:57.982320+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "deploymentRef": "7699717588535888913",
+      "summary": "公有E从公开GitHub指定分支独立恢复，未复用私有对象、无alternates，私有D及main对象不存在；私有D从origin单分支depth2恢复，E/D完整tree准确相同且恢复时clean。原失败HTTP/2 clone终止后仅命令局部HTTP/1.1重试成功。原工具事件逐字节恢复，文本/图像副本与丢失原文件明确分层。",
+      "originalReportRef": "private:tmp/wl-ui-delivery-restore-20261023/evidence/private-repository-restoration.private.json"
     }
   ]
 }

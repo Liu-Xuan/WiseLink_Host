@@ -425,3 +425,16 @@ fresh origin main于 `2026-10-23T03:51:56.859360+00:00` 实际读回 `2bc6ac71b2
 本批记录校验实际通过：现有快照 QA 39/39；实际生成 HTML 的 JSDOM 载入原组件，9条接线，P2＋document.assessment-reading＋V03＋runtime、P0＋同接线＋V30＋deployment 联合筛选及节点→准确binding下钻通过，diagnostics空。当前接线为准确源码范围匹配，测试仍所选场景部分覆盖，部署尚未执行、真实运行尚未核对。准确9d本地build的环境与Host目标不同仍按新M2规则正确匹配；原139c UI证据保持其他提交/契约说明，applicability只显示不补覆盖，筛选不缩小7场景分母。13节点/47关系/54场景/10规则、原8条bindings及133条evidence逐值不变，新增document接线与11条本批限定证据。原始日志 `14-final-records-2.log`、`15-generated-m2-check.log` 及结构化检查回执保存在同一本批私有evidence目录。
 
 公开后继仅记录上述实际结果；未执行新的Chrome/业务浏览器动作，直接复用独立最终42交接。公开E与私有D完整SHA/parent/tree/文件清单和同树、公私历史、敏感检查在最终私有handoff给出；公开历史不包含2ed6或private main对象。审批准备仅指这份准确Host-only代码及必要正式发布前读回，不代表已经得到本批推送/发布授权。上一批D062正式CLI回执作为历史参照保留，不能代替新批次的dev→main预览或实际运行。
+
+
+### 2026-10-23 UI技术发布、持久恢复与定向只读诊断
+
+用户04:32:44Z批准本批UI技术交付后，准确公开E `4dec7c64f4b91013615244049a38458e98507c37` 分别同步origin/github同名 `codex/document-assessment-public-20261023`；私有D `e1d2d92a2e58fe752ed3f70f472619f4373ef8d5` 仅同步origin同名 `codex/host-document-assessment-release-20261023`。两者完整tree相同。官方release `7699717588535888913` 的原get在04:41:03.899610Z确认finished/D/error_logs空；恢复时05:45:06.526161Z仅查同ID一次，仍相同。原真实前端D build04:39:09.945Z，原生Network实际XHR200的后端Response为D/build04:39:31.016Z、SERVER_BUILD_ARTIFACT。未重复发布。
+
+原真实只读观察04:49–04:54Z：四业务签、3个调查问题和独立Wiki可读；M3显示真实JobAid/Overall/TDMS三节点、保存工作1/SUCCEEDED与Overall同work消费。输入修订5不冒称保存工作5，TDMS UNKNOWN/0条可核对已保存原生证据不等于从未读。10→11→12保持准确历史parseRun/full SourceRef，到结构化原文第8页再回investigation/assessmentScroll686与受限任务快览query。原11右栏HTTP500和13 Aily灰白是独立未通过项；结构化原文定位/返回成功不将它们点绿。适用性/config局部OFFICIAL_OAUTH_SESSION_REQUIRED及暂无法核对已保存评估继续保留。
+
+恢复时原系统tmp目录不见，按项目持久目录 `tmp/wl-ui-delivery-restore-20261023/` 重建独立检出。公有E只从公开GitHub单分支取对象，未复用私有对象/alternates；私有D由origin单分支depth2恢复，准确parent/tree核对。D首轮HTTP/2流断连exit128原回执保留，确认失败后仅命令局部HTTP/1.1重试成功。原Codex持久日志逐行复制128条UI/根工具事件、134个文本块和6个图像块（含重复13）；6份JSON仅恢复原终端显示的内容，不能声称丢失原文件字节已还原。原PNG/DOM/AX仍缺失，工具JPEG显示副本与来源行号/哈希已独立记入私有索引，不用摘要冒充原件。
+
+新定向只读诊断不重做已通过链路。05:56:50.939Z同一批准AD正常GET original，实际200/application/pdf、208087字节、%PDF-1.5，05:58:05.541Z受控PDF reader11页/第1页canvas截图可读；历史500原因未获，不归因OAuth。Aily保持ENV_UNVERIFIED；05:58:31.820Z挂载1355×661.75 iframe并GET，05:59:01.822Z确切console报SDK非阻断Iframe ready timeout，05:59:11.521Z读回该警告，原生AX/截图仍灰白。后续同次请求CDP在06:00:14.923Z遭Browser Use paused-document-response工具guard，未获iframe终态，不能归因网络/CSP/权限或排除工具混杂。SDK0.0.12的resolve不是ready，沿用既有SDK/授权，不造新协议或自动登录。06:03:03.838Z工具提示用户改变Chrome状态后停止操作；未追加加载、聊天、模型、SAVE或正式采用。
+
+此后仅更新8个协调/验证记录及由既有生成器导出的同一M2 HTML/snapshot。原9d正常hook/完整build、70/19/3/25测试保持原source/contract/执行时间，没有重跑产品测试/build；原144条证据逐值保留，新增本批发布、历史观察、恢复与定向诊断，失败/inconclusive独立。M1稳定ID与旧接线不变，M3继续父读模型投影。私有业务对象、原响应、trace和像素仅在恢复证据目录，不进入公有记录。当前UI正式发布与这些records后继的Git同步分别记账。

@@ -1,6 +1,16 @@
 # Integration source record
 
-## 2026-10-23 local document-assessment UI candidate
+## 2026-10-23 current UI technical delivery and recovered evidence
+
+The approved UI public E `4dec7c64f4b91013615244049a38458e98507c37` was synchronized to the exact same-name origin/github codex branch; private D `e1d2d92a2e58fe752ed3f70f472619f4373ef8d5` went only to its origin release branch. E/D have the same complete tree. Official release `7699717588535888913` was observed finished at D with no errors at 04:41:03.899610Z; one recovery-time read of that same ID at 05:45:06.526161Z confirmed the same result. The original real frontend D build time is 04:39:09.945Z and the actual backend XHR200 Response identifies D, SERVER_BUILD_ARTIFACT and build time 04:39:31.016Z.
+
+The original authorized read covered four assessment tabs, three investigation questions, independent Wiki, and the real three-node JobAid/Overall/TDMS projection. Saved work 1/SUCCEEDED and the Overall consumed-work relation remain distinct from input revision 5. TDMS UNKNOWN/zero checkable saved native evidence does not prove no earlier read. One saved reference opened the exact historical structured source on page 8 and returned to the investigation position and restricted task query.
+
+The historical PDF pane displayed HTTP500 and the Aily review iframe was blank; both remain separately recorded failures. The later single directed PDF read at 05:56–05:58Z returned a 208087-byte PDF with HTTP200 and rendered an 11-page controlled reader. This establishes that current read, without explaining or erasing the historical 500. Aily remains ENV_UNVERIFIED: it was blank and logged a 30-second SDK Iframe ready timeout. Subsequent raw CDP inspection met the Browser Use paused-document-response guard; the iframe terminal response and the network/platform root cause remain unknown. No ready protocol, SDK or authentication change follows from this evidence. Local OFFICIAL_OAUTH_SESSION_REQUIRED and saved-assessment verification limits remain.
+
+After the former system temporary files disappeared, exact independent E/D checkouts and raw transcript evidence were recovered under the project's ignored `tmp/wl-ui-delivery-restore-20261023/`. The source indexes distinguish original tool event bytes, original tool-rendered JPEG pixels, textual terminal copies and the missing original PNG/DOM/AX files. Historical observations retain their times; the new release check and directed diagnosis have separate times. The pre-release clean 9d build and accepted tests keep their original identity and were not repeated. This follow-up changes records only. Private business IDs, locators, responses and pixels remain outside this public projection.
+
+## Earlier 2026-10-23 local document-assessment UI preparation
 
 This Host-only UI candidate starts from the public-safe c8 source and selects the accepted exact-source locator, document-version assessment workspace, currentness/return fixes, scoped investigation CSS and M2 test-display fix. Existing API/props are present on c8; the three optional ACK differences from the authors' baseline are excluded. Server, shared contracts and Native bytes remain unchanged. It includes no subsequent ACK/Review/Native protocol or c235 identity.
 
@@ -10,7 +20,7 @@ The accepted 70 UI cases, locator19, existing-reader3 and M2-display25 keep thei
 
 The final normal build on clean `9d82629277a7f131ad42984119d6709b02fee060` passed once (exit 0, 47.212s). Server and client immutable sourceCommit both equal that exact build input. The four fixed child logs are fresh for this run; 477/477 is the dependency-copy count, not a test count. The normal commit hook passed without bypass. This record-only successor and the same-tree private Host candidate reuse that local build; neither is represented as having executed or deployed it. The generated M2 page and snapshot validation are recorded in FIRST_BATCH. No push, release, online SQL, Native packaging/install or model/SAVE/adoption was performed in this preparation. Production remains D062/release7699657613396610040 and its source-locator PARTIAL result below is unchanged. Current origin main was read as the platform merge of that existing D; no unrelated product changes were found. Public history excludes private ancestors; a later origin-only Host candidate must retain exactly this public tree.
 
-## 2026-10-23 current Estimated technical delivery
+## Earlier 2026-10-23 Estimated technical delivery
 
 The approved public E `800af5fc41b0d1d05048937fa8a0c79acd2a8c16` was fast-forwarded independently to the original same-name origin and github codex branch. Private D `062e3ab3d10b29a88add508929625e9a76e4064f` was pushed only to origin; its complete tree equals E. Official Host release `7699657613396610040` is finished at the exact D commit with no errors, and latest lists the same release.
 
