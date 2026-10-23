@@ -4595,6 +4595,142 @@
       "summary": "官方原用户身份只读一次最近release-list（16:50:57.600126Z），缺commit故只读该最新ID详情（16:52:01.113928Z）：7699857234712661230 finished/787/error_logs空；完整未过滤db-env-diff（16:50:59.689224Z）changes空，CLI语义dev→online、原target main。仅该时点结构差异与线上基线，不证明业务行一致或新413已部署；无SQL/迁移/同步/发布/安装/调度/认证写。",
       "timeBasis": "original official CLI invocation/result end times",
       "deploymentRef": "7699857234712661230"
+    },
+    {
+      "id": "native-assessment.a7.same-name-refs.deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "a7fb08e9b9b89e24d933479d5823a92624f90994",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T17:45:48.421643Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-准确发布与原用户页面读回",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "公开94c24efa746984a7edbf8b76719e1ffcfa549bed的同名开发分支分别普通同步至origin/github；私有Host后继a7fb08e9b9b89e24d933479d5823a92624f90994仅同步origin同名分支。三处实际SHA分别读回，保持单ref、非强制和正常安全hook；公开记录候选没有取得私有历史对象。",
+      "timeBasis": "latest exact remote-ref readback completion; source SHA names are delivery metadata, not private history import",
+      "deploymentRef": "7699919694665632785"
+    },
+    {
+      "id": "native-assessment.a7.host-finished.deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "a7fb08e9b9b89e24d933479d5823a92624f90994",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T17:49:21.428079Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-准确发布与原用户页面读回",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "原Host单次release7699919694665632785返回finished，准确提交a7fb08e9b9b89e24d933479d5823a92624f90994，error_logs=[]；发布前完整dev→online结构差异changes=[]，本次无DDL、新Native安装或调度操作。413的本机标准构建保留原身份，没有为纯记录后继重跑或改写指纹。",
+      "timeBasis": "same release final official readback observation; intermediate publishing旧787字段保留原件且不作终态依据",
+      "deploymentRef": "7699919694665632785"
+    },
+    {
+      "id": "native-assessment.a7.native-user-fingerprint.runtime",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "a7fb08e9b9b89e24d933479d5823a92624f90994",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T17:51:35.010Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-准确发布与原用户页面读回",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "正常已登录用户页面实际读回浏览器源码和Host部署均为完整a7fb08e9，浏览器buildTime2026-10-23T17:47:27.346Z，运行环境PASS；UI releaseId/API合同仍未知，reader仍VERIFICATION_PENDING。事项修订标签正确，旧保存评估核对警告与额外OAuth连接提示消失；只证明本次页面身份及阅读观察。",
+      "timeBasis": "root original logged-user page observation; browser build time is not first-readable or response timing",
+      "deploymentRef": "7699919694665632785"
+    },
+    {
+      "id": "native-assessment.a7.three-get-http200.runtime",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "a7fb08e9b9b89e24d933479d5823a92624f90994",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T17:50:39.193439Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-准确发布与原用户页面读回",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "原正常页面17:49–17:52 UTC短窗的官方gateway/app_web日志明确记录Review Overall eligibility、applicability-selection/review-action、configuration-evidence/status三个GET均为200；准确原页面对象与路由相符，没有借无error推断成功。构型来源未接通仍是实际业务缺项，未新取外部来源。",
+      "timeBasis": "explicit app_web/gateway HTTP status timestamps from the same bounded UI navigation",
+      "deploymentRef": "7699919694665632785"
+    },
+    {
+      "id": "native-assessment.a7.controlled-selection-http409.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "a7fb08e9b9b89e24d933479d5823a92624f90994",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T17:50:39.153439Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-准确发布与原用户页面读回",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "同窗applicability-selection GET实际409，code=APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED；不是额外OAuth错误，也不能记为200或受控选择已配置/已可用。本次没有开启配置、确认、采用或改变自动范围；正常页面展示与该准确响应分别保留。",
+      "timeBasis": "explicit app_web/gateway response status and code; no additional UI request or wider observation window",
+      "deploymentRef": "7699919694665632785"
+    },
+    {
+      "id": "native-assessment.a7.existing-work-readable.runtime",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "a7fb08e9b9b89e24d933479d5823a92624f90994",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-准确发布与原用户页面读回",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "另一个既有FTD页面只读显示事项修订5、保存工作修订1，调查和综合正文可读；本批未重跑或改写该事项，不由当前投影倒推旧模型实际输入，不把此读取记作新的模型/SAVE/Overall闭环。",
+      "timeBasis": "root original saved-page screenshots/text; no independent UTC observation timestamp retained, no file-mtime substitution",
+      "deploymentRef": "7699919694665632785"
+    },
+    {
+      "id": "native-assessment.a7.new-cycle-pending.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "a7fb08e9b9b89e24d933479d5823a92624f90994",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-准确发布与原用户页面读回",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "原文8页现可读，但本轮新模型、SAVE及Overall尚未运行。原生初次分析及准确BLOCKED失败后继的独立产品37ae0f8becc476ffe65e0d91729f797c0f125723（父94c24efa）已正常提交、尚未发布；产品测试与发布准备另单登记，本记录不扩写其计数。旧失败与原结果保持，不新增完整业务场景通过、Native或调度。",
+      "timeBasis": "current handoff scope; no new business run was performed",
+      "deploymentRef": "7699919694665632785"
+    },
+    {
+      "id": "native-assessment.a7.readonly-deployment-recheck.deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "d57e9bdf36d1a9afc02b0372f688a99cdb8938e3be902c89eb5ffde68e423fa2",
+      "sourceRevision": "a7fb08e9b9b89e24d933479d5823a92624f90994",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T18:12:49.452677Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-准确发布与原用户页面读回",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "主控后续官方只读预检再次取得最新release及该ID详情：准确a7/finished/error_logs=[]；完整db-env-diff仍changes=[]。最初沙箱DNS失败原件保留，只恢复相同读取，没有借此执行发布、DDL或业务写。",
+      "timeBasis": "original readonly preflight invocation end times; latest exact release-get completion",
+      "deploymentRef": "7699919694665632785"
     }
   ]
 }

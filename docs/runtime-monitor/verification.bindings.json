@@ -585,12 +585,12 @@
         "P0",
         "P2"
       ],
-      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "sourceRevision": "a7fb08e9b9b89e24d933479d5823a92624f90994",
       "authorRevision": "0fd28f3d5514a9187fa67c39cd1e19e4d0854492",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "当前787已正常发布，公开安全a909同tree、非docs受控输入与4255相同；准确原测试/构建身份保留，未为切换重跑。本次追加实际发布、online policy、原c235安装/测试、一次调度恢复与有限读回，不把技术交付当业务整体完成。 已接受CHAT251941f4及M3选中观察均在787；本次正常用户准确原文→保存work1四问题→Overall同work→同DVI阅读有限核对成立。线上787的401与修订标签失败保留；统一原生身份及标签的f2be→7455已正常提交、接受并合并为41325870，原测试与一次完整build通过，尚未发布/真实页面核对；原Aily iframe历史失败不代表新渠道。",
+      "reviewScope": "原787有限原文→保存工作→Overall同work→同DVI阅读与历史401/标签失败原样保留。公开94双远端与私有a7仅origin同步完成，原Host单次release7699919694665632785 finished/准确a7；双端a7与正常原页面已只读核对。四GET明确200/409 NOT_CONFIGURED/200/200，旧额外OAuth和核对警告消失；既有FTD事项5/保存工作1调查及综合可读。reader仍VERIFICATION_PENDING，本轮新模型/SAVE/Overall未运行，初次分析及准确BLOCKED失败后继修复在独立候选、未发布；不增加完整业务场景通过。",
       "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。 普通CHAT由Host既有Review turn保存问题与候选回复，不产生评估工作或正式采用。",
-      "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。 当前CHAT实际链为DocumentAssessmentReview → ContinuousReviewPanel → ReviewChatComposer；既有WorkItem/Matter复用同一获权Review面板。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。 ReviewOverall核对由client/src/features/workitem/useReviewOverallProjection.ts调用专用eligibility/request/status；787的CanonicalHostReviewOverallProjectionService.authorized仅经SessionResolver认Host OAuth，与页面原生飞书身份路径不一致，统一接线修复尚未部署。候选f2be→7455在ReviewOverall、applicability-selection、configuration-evidence既有controller/service复用DialogueBrowserScope（GET runRead、POST runNativeWrite）和request-local native actor，保留NeedLogin/production guard、owner/action/source/version及CAS；41325870一次完整build与编译装配通过，不代表线上消费者已更换。",
+      "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。 当前CHAT实际链为DocumentAssessmentReview → ContinuousReviewPanel → ReviewChatComposer；既有WorkItem/Matter复用同一获权Review面板。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。 ReviewOverall、applicability-selection、configuration-evidence现有controller/service的原生身份接线已随准确a7发布，继续复用DialogueBrowserScope（GET runRead、POST runNativeWrite）及request-local native actor，保留NeedLogin/production guard、owner/action/source/version及CAS。原正常用户页面与官方短窗日志只读核对200/409 NOT_CONFIGURED/200/200；不把未配置Source/受控选择或新的初次分析后继当作已运行。",
       "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。 普通CHAT显式appendReviewTextTurn(CHAT/AUTOMATIC)，Host提供当前owner/OAuth/executor能力；短轮询读回并暂停隐藏panel，CHAT不触发工作刷新。",
       "recoveryOwner": "原页面读取epoch/session隔离及草稿scope继续有效；未知CHAT保留原requestId/body/会话和业务范围，读回核对或显式原样重试。同会话STALE_CONTEXT仍须Host当前能力；CLOSED/空/换会话由用户显式归档结果未知记录，不复制或自动重发。新问题/会话另需显式操作，草稿和未知记录仅页面内存；session变化清除。未知SAVE仍走原Host恢复。",
       "authority": {
@@ -640,8 +640,8 @@
         {
           "id": "document.assessment-reading.runtime",
           "kind": "runtime",
-          "reason": "787有限UI链确认准确原文/保存引用、work1四问题、Overall同work及同DVI正文；实际eligibility401 REVIEW_OVERALL_LOGIN_REQUIRED与事项修订标签错误仍未获发布后读回。f2be→7455统一原生身份及标签已正常提交/接受、原28 Jest/13 PG和分次55 Jest/8 PG及准确413一次完整build通过，但尚未发布；不以候选通过关闭runtime。外部Source授权、历史PDF/Aily及全屏/动态转换缺口仍按原范围保留。",
-          "nextAction": "按正式交付流程完成准确413后继技术发布及双端指纹读回，再在原已登录用户页面核对本地评估读取/更新/结果、适用性/构型owner范围和身份切换；不要求第二次OAuth当修复，不增加模型/SAVE/LCM业务验收。保留历史PDF、全屏/动态权限/版本及旧Aily未决事实。"
+          "reason": "准确a7已正常发布且双端指纹相符；原正常用户页面的事项修订标签、保存评估核对和额外OAuth提示已完成有限读回。官方四GET明确200/409 APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED/200/200；受控选择和构型外部来源未配置/未接通仍保留。既有FTD事项修订5/保存工作1调查及综合可读；reader仍VERIFICATION_PENDING，原文8页可读不证明本轮新模型/SAVE/Overall使用。独立产品37ae0f8（父94c24efa）已提交，原生初次分析/准确BLOCKED后继修复尚未发布；本记录不扩写产品验证。",
+          "nextAction": "先收口并按独立准确候选完成原生初次分析/失败后继修复的正常验证和交付，再由本人通过现有UI显式发起新的准确请求；分别核真实模型输入、SAVE、Overall及重读。不重放旧失败，不以安装/发布/有限阅读关闭reader、SEM、完整业务、CHAT或新Aily验收；本记录不启动模型、Native或调度。"
         },
         {
           "id": "document.assessment-reading.openclaw-chat-ui",
