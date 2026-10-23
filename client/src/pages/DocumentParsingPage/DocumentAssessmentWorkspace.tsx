@@ -88,7 +88,7 @@ export default function DocumentAssessmentWorkspace({ association, documentVersi
   return <section className="document-assessment-workspace" aria-label="文档版本评估工作区"
     data-assessment-scope={JSON.stringify([sessionGeneration, documentVersionId, workItemId])}>
     <header className="document-assessment-heading"><div><span>本版本关联评估</span><h2>判断、调查与复核</h2>
-      <p>{association.document.documentCode} · 工作修订 {page?.workItem.revision ?? '正在核对'}</p></div>
+      <p>{association.document.documentCode} · 事项修订 {page?.workItem.revision ?? '正在核对'}</p></div>
       <Button size="sm" variant="outline" onClick={() => void refresh()} disabled={full.refreshing}>刷新评估</Button></header>
     {selection.error ? <p role="alert">{selection.error}</p> : null}
     {full.error ? <p role="alert">{full.error}{page ? '。保留上次读回内容，重新核定前操作不可用。' : '。请重新核对本版本评估工作。'}</p> : null}

@@ -56,12 +56,9 @@ export class CanonicalHostReviewOverallProjectionService {
     request: Request,
     database?: PostgresJsDatabase,
   ) {
-    const session = await this.sessions.resolve(request, database);
-    if (!session)
-      throw Object.assign(new Error('REVIEW_OVERALL_LOGIN_REQUIRED'),
-        { code: 'REVIEW_OVERALL_LOGIN_REQUIRED', statusCode: 401 });
+    const actor = this.sessions.nativeBrowserIdentity(request).actor;
     const grant = await this.access.freshRead({
-      actor: session.actor,
+      actor,
       action: 'REQUEST_OVERALL_REGENERATION',
       accessRoot: { kind: 'WORK_ITEM', id: workItemId },
     }, database);
@@ -73,8 +70,8 @@ export class CanonicalHostReviewOverallProjectionService {
     }, database);
     if (grant.action !== 'REQUEST_OVERALL_REGENERATION' ||
       grant.workItemId !== workItemId ||
-      grant.tenantId !== session.actor.tenantId ||
-      grant.actorUserId !== session.actor.canonicalSubject.id ||
+      grant.tenantId !== actor.tenantId ||
+      grant.actorUserId !== actor.canonicalSubject.id ||
       grant.workItemRevision !== item.revision ||
       grant.requestId !== item.requestId ||
       grant.documentVersionId !== item.source.documentVersionId)

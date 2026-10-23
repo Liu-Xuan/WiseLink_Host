@@ -230,7 +230,7 @@ describe('deterministic saved Review Overall', () => {
         .mockResolvedValueOnce({ artifact: { ...artifact, ref: 'artifact://base' } }),
     };
     const service = new CanonicalHostReviewOverallProjectionService(
-      { resolve: jest.fn().mockResolvedValue(session) } as never,
+      { nativeBrowserIdentity: jest.fn().mockReturnValue(session) } as never,
       { freshRead: jest.fn().mockResolvedValue(grant) } as never,
       { getTenantScopedByWorkItemId: jest.fn().mockResolvedValue(workItem) } as never,
       workItems as never,

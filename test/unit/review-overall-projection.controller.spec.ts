@@ -33,7 +33,8 @@ const body = {
 describe('Review Overall browser command boundary', () => {
   it('accepts only the exact source and Review pointer fields', async () => {
     const service = { project: jest.fn(), eligibility: jest.fn(), status: jest.fn() };
-    const controller = new CanonicalHostReviewOverallProjectionController(service as never);
+    const browser = { runNativeWrite: jest.fn(async (_request: unknown, operation: () => Promise<unknown>) => operation()) };
+    const controller = new CanonicalHostReviewOverallProjectionController(service as never, browser as never);
     const request = {} as never;
     await controller.project('WI-1', body, request);
     expect(service.project).toHaveBeenCalledWith('WI-1', {
@@ -44,6 +45,7 @@ describe('Review Overall browser command boundary', () => {
         packageArtifactSha256: 'b'.repeat(64),
       },
     }, request);
+    expect(browser.runNativeWrite).toHaveBeenCalledWith(request, expect.any(Function));
     expect(() => controller.project('WI-1', { ...body, actorUserId: 'attacker' },
       request)).toThrow('REVIEW_OVERALL_UNKNOWN_FIELD');
     expect(() => controller.project('WI-1', {
