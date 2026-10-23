@@ -33,7 +33,7 @@ export function diagnosticNavigationPanel(
     if (!refs.some((item) => item.ref === detail.ref)) return null;
   }
   // A revision reference alone is not a source locator. Read the exact refs in assessment.
-  return detail.kind === 'request' ? 'review' : 'assessment';
+  return detail.kind === 'request' && node.id === 'assessment.research' ? 'review' : 'assessment';
 }
 
 function SavedNativeDetail({ observation, work, onClose }: {
@@ -115,7 +115,7 @@ export default function WorkItemRuntimeDiagnostic({
   ), [read.data, read.observedAt, read.error, read.isRefreshing, scopeKey, workItemId, observationMode, environment]);
   return (
     <section aria-label="当前事项运行诊断">
-      <p>显示本事项已保存的 TDMS 来源读取、JobAid 调查与综合消费关系；当前读回时间不代表 TDMS 实时有效或最新。就绪与首次可读时间尚未提供；已列事件时间不替代这些时间。</p>
+      <p>显示本事项已保存的 TDMS 来源读取、调查与综合的执行观察及消费关系；当前读回时间不代表 TDMS 实时有效或最新。就绪与首次可读时间尚未提供；已列事件时间不替代这些时间。</p>
       {acknowledgement ? <p className="mt-2 break-words text-sm" aria-label="外层自动处理 ACK">
         外层自动处理 ACK（原请求 {acknowledgement.requestId}）：
         <time dateTime={acknowledgement.acknowledgedAt}>{acknowledgement.acknowledgedAt}</time>。

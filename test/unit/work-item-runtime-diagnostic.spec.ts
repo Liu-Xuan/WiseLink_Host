@@ -123,3 +123,55 @@ it('preserves the acknowledged observation during refresh/error and clears it on
   await render({ ...read, data: null, error: 'denied' }, { sessionGeneration: 2 });
   expect(host.textContent).not.toContain('retained-outer-request');
 });
+
+
+it.each(['RUNNING', 'COMMITTING', 'SUCCEEDED'])('shows the selected Overall %s times alongside independent research and ACK, with bounded navigation', async status => {
+  const read = reading();
+  read.data = { ...read.data!, autoProcessingAcknowledgement: {
+    workItemId: read.data!.workItemId, requestId: 'outer-ack', documentVersionId: 'DV-test',
+    acknowledgedAt: '2026-10-21T10:00:00Z',
+  }, latestAttempt: { attemptId: 'dynamic-done', status: 'SUCCEEDED', inputRevision: 2 },
+  selectedExecution: { actionType: 'OPENCLAW_OVERALL_SYNTHESIS', attemptId: 'overall-selected',
+    attemptRef: 'actual-overall-operation', status, createdAt: '2026-10-23T01:00:00Z',
+    startedAt: '2026-10-23T01:01:00Z', completedAt: status === 'SUCCEEDED' ? '2026-10-23T01:03:00Z' : null } };
+  await render(read);
+  expect(host.textContent).toContain('outer-ack');
+  expect(shadow().textContent).toContain('有限观察');
+  expect(shadow().querySelector('[data-request="dynamic-done"]')).not.toBeNull();
+  await act(async () => (shadow().querySelector('[data-request="overall-selected"]') as HTMLButtonElement).click());
+  for (const time of ['2026-10-23T01:00:00Z', '2026-10-23T01:01:00Z']) expect(shadow().textContent).toContain(time);
+  expect(shadow().textContent).toContain('查看综合面板');
+  expect(shadow().textContent).toContain('不定位单条尝试');
+  const detail = { kind: 'request', nodeId: 'assessment.overall', scopeKey: `1:${read.data.workItemId}`,
+    subjectRef: read.data.workItemId, recordKind: 'attempt', ref: 'overall-selected', attemptId: 'overall-selected' };
+  for (const wrong of [{ ...detail, nodeId: 'assessment.research' }, { ...detail, attemptId: 'wrong' },
+    { ...detail, requestId: 'overall-selected' }]) {
+    await act(async () => element().dispatchEvent(new CustomEvent('wiselink-navigate', { detail: wrong })));
+  }
+  expect(navigate).not.toHaveBeenCalled();
+  await act(async () => element().dispatchEvent(new CustomEvent('wiselink-navigate', { detail })));
+  expect(navigate).toHaveBeenCalledWith('assessment');
+});
+
+it('replaces a same-status selected identity in the current view and clears it on object/session/revocation', async () => {
+  const read = reading();
+  read.data = { ...read.data!, selectedExecution: { actionType: 'OPENCLAW_OVERALL_SYNTHESIS',
+    attemptId: 'overall-old', attemptRef: 'old-operation', status: 'RUNNING',
+    createdAt: '2026-10-23T01:00:00Z', startedAt: null, completedAt: null } };
+  await render(read);
+  const next = { ...read, data: { ...read.data, selectedExecution: {
+    ...read.data.selectedExecution!, attemptId: 'overall-new', attemptRef: 'new-operation',
+  } } };
+  await render(next);
+  expect(shadow().querySelector('[data-request="overall-old"]')).toBeNull();
+  expect(shadow().querySelector('[data-request="overall-new"]')).not.toBeNull();
+  await act(async () => element().dispatchEvent(new CustomEvent('wiselink-navigate', { detail: {
+    kind: 'request', nodeId: 'assessment.overall', scopeKey: `1:${read.data!.workItemId}`,
+    recordKind: 'attempt', ref: 'overall-old', attemptId: 'overall-old',
+  } })));
+  expect(navigate).not.toHaveBeenCalled();
+  await render(next, { workItemId: 'other-object' });
+  expect(shadow().querySelector('[data-request="overall-new"]')).toBeNull();
+  await render({ ...next, data: null, error: 'denied', observedAt: null }, { sessionGeneration: 2 });
+  expect(shadow().textContent).not.toContain('overall-new');
+});

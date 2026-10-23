@@ -1042,3 +1042,90 @@ test('semantic upgrade: legacy saved and sealed COMMITTING recover, new Overall 
     assert.deepEqual(after.work,before.work);
   } finally {await f.close();}
 });
+
+
+test('M3 selected execution: one scoped row through Overall and bounded dynamic observations', async () => {
+  const f = await startCoreP1HostFixture({ matter: true, browser: true });
+  try {
+    const { queue, claim } = await opened(f);
+    const saved = await f.callTool('save_assessment_work', saveArgs(f, claim));
+    await f.callTool('commit_dynamic_evaluation_candidate', commitArgs(f, claim, saved.workRevisionRef));
+    const overall = await f.callTool('begin_overall_synthesis', { workItemId: claim.task.workItemId });
+    const read = () => f.withBrowser(() => f.problem.readBrowser(claim.task.workItemId, f.actor));
+    async function exactSelected(status) {
+      const snapshot = await f.snapshot();
+      const row = snapshot.attempts.find(item => item.attempt_id === overall.task.actionAttemptId);
+      assert.equal(row.status, status);
+      const observed = await read();
+      assert.deepEqual(observed.selectedExecution, {
+        actionType: row.action_type, attemptId: row.attempt_id, attemptRef: row.operation_ref, status: row.status,
+        createdAt: new Date(row.created_at).toISOString(),
+        startedAt: row.started_at ? new Date(row.started_at).toISOString() : null,
+        completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null,
+      });
+      assert.equal(observed.selectedExecution.attemptRef, overall.attemptRef);
+      assert.equal(observed.latestAttempt.attemptId, claim.task.actionAttemptId);
+      assert.equal(observed.latestAttempt.status, 'SUCCEEDED');
+      assert.equal(observed.current.workRevisionRef, saved.workRevisionRef);
+      assert.equal(Object.hasOwn(observed.selectedExecution, 'activityJson'), false);
+      assert.equal(Object.hasOwn(observed.selectedExecution, 'requestId'), false);
+      return observed;
+    }
+    await exactSelected('RUNNING');
+    // A fixture terminal-write fault leaves the genuine sealed Overall row COMMITTING.
+    await f.sql.unsafe(`CREATE FUNCTION m3_selected_terminal_fault() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF OLD.action_type='OPENCLAW_OVERALL_SYNTHESIS' AND OLD.status='COMMITTING' AND NEW.status='SUCCEEDED'
+      THEN RAISE EXCEPTION 'M3_SELECTED_TERMINAL_FAULT'; END IF; RETURN NEW; END; $$;
+      CREATE TRIGGER m3_selected_terminal_fault BEFORE UPDATE ON action_attempt
+      FOR EACH ROW EXECUTE FUNCTION m3_selected_terminal_fault()`);
+    const args = commitArgs(f, overall, saved.workRevisionRef, 'Synthetic selected-execution observation only.');
+    await assert.rejects(f.callTool('commit_overall_candidate', args), error => /M3_SELECTED_TERMINAL_FAULT/u.test(errorText(error)));
+    await exactSelected('COMMITTING');
+    await f.sql.unsafe('DROP TRIGGER m3_selected_terminal_fault ON action_attempt; DROP FUNCTION m3_selected_terminal_fault()');
+    await f.callTool('commit_overall_candidate', args);
+    await exactSelected('SUCCEEDED');
+    await f.acknowledgeWorkItem({ workItemId: claim.task.workItemId,
+      leaseToken: queue.leaseToken, leaseGeneration: queue.leaseGeneration });
+    const acknowledged = await read();
+    assert.ok(acknowledged.autoProcessingAcknowledgement);
+    await f.seed('WI-m3-foreign');
+    // Constructed scheduling rows test scope exclusion and active-first selection,
+    // not an additional real execution, SAVE, model or complete request history.
+    const rows = [
+      { id: 'm3-foreign-wi', wi: 'WI-m3-foreign', dv: f.original.binding.documentVersionId,
+        type: 'OPENCLAW_OVERALL_SYNTHESIS', status: 'RUNNING', no: 90, time: '2099-01-01T00:00:00Z' },
+      { id: 'm3-foreign-dvi', wi: claim.task.workItemId, dv: 'DV-m3-unrelated',
+        type: 'OPENCLAW_OVERALL_SYNTHESIS', status: 'SUCCEEDED', no: 91, time: '2099-01-02T00:00:00Z' },
+    ];
+    async function insertObservation(row) {
+      await f.sql`INSERT INTO action_attempt (attempt_id,work_item_id,subject_kind,action_type,attempt_no,
+        trigger_request_id,request_origin,status,actor_user_id,tenant_id,document_version_id,operation_ref,
+        created_at,started_at,completed_at)
+        SELECT ${row.id},${row.wi},subject_kind,${row.type},${row.no},${'trigger-' + row.id},request_origin,
+          ${row.status},actor_user_id,tenant_id,${row.dv},${'operation-' + row.id},${row.time}::timestamptz,
+          ${row.time}::timestamptz,CASE WHEN ${row.status}='SUCCEEDED' THEN ${row.time}::timestamptz ELSE NULL END
+        FROM action_attempt WHERE attempt_id=${overall.task.actionAttemptId}`;
+    }
+    for (const row of rows) await insertObservation(row);
+    await exactSelected('SUCCEEDED');
+    await insertObservation({ id: 'm3-older-active', wi: claim.task.workItemId, dv: f.original.binding.documentVersionId,
+      type: 'OPENCLAW_DYNAMIC_EVALUATION', status: 'RUNNING', no: 100, time: '2026-10-21T01:00:00Z' });
+    await insertObservation({ id: 'm3-newer-terminal', wi: claim.task.workItemId, dv: f.original.binding.documentVersionId,
+      type: 'OPENCLAW_DYNAMIC_EVALUATION', status: 'SUCCEEDED', no: 101, time: '2026-10-22T01:00:00Z' });
+    const bounded = await read();
+    assert.equal(bounded.selectedExecution.attemptId, 'm3-older-active');
+    assert.equal(bounded.selectedExecution.attemptRef, 'operation-m3-older-active');
+    assert.equal(bounded.selectedExecution.createdAt, '2026-10-21T01:00:00.000Z');
+    assert.equal(bounded.selectedExecution.completedAt, null);
+    assert.equal(bounded.latestAttempt.attemptId, 'm3-newer-terminal');
+    assert.equal(bounded.latestAttempt.firstSavedAt, null);
+    assert.equal(bounded.current.workRevisionRef, saved.workRevisionRef);
+    assert.deepEqual(bounded.autoProcessingAcknowledgement, acknowledged.autoProcessingAcknowledgement);
+    const role = (await f.roleEvidence())[0];
+    assert.equal(role.bypassrls, false);
+    assert.equal(role.superuser, false);
+    console.log(JSON.stringify({ scenario: 'm3-selected-execution', modelCalls: 0, productionCalls: 0,
+      selectedActionTypes: ['OPENCLAW_OVERALL_SYNTHESIS', 'OPENCLAW_DYNAMIC_EVALUATION'],
+      actualOverallStatuses: ['RUNNING', 'COMMITTING', 'SUCCEEDED'], constructedSchedulingRows: 4 }));
+  } finally { await f.close(); }
+});

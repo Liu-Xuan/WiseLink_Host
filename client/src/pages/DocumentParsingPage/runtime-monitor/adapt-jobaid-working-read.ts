@@ -1,4 +1,4 @@
-import type { JobAidProblemWorkContent } from '@shared/jobaid-problem-assessment.interface';
+import type { JobAidProblemWorkContent, JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import { parseAssessmentTdmsEvidence, type AssessmentTdmsNativeEvidence } from '@shared/assessment-tdms-evidence';
 import { tdmsSourceVersionLabel } from '@/features/tdms-source/tdms-source-presentation';
 import type { ReadState, RuntimeEdge, RuntimeProjection, RuntimeNode } from './monitor-types';
@@ -20,6 +20,7 @@ export interface JobAidWorkingObservation {
     content?: Pick<JobAidProblemWorkContent, 'evidence'>;
   } | null;
   latestAttempt: { attemptId: string; status: string; inputRevision: number | null; createdAt?: string; startedAt?: string | null; firstSavedAt?: string | null; completedAt?: string | null } | null;
+  selectedExecution?: JobAidWorkingReadModel['selectedExecution'];
   executionStatus: string | null;
   currentInputChanged: boolean;
   overallStatus: 'NOT_AVAILABLE' | 'CURRENT' | 'STALE';
@@ -74,7 +75,7 @@ export function savedNativeObservations(work: JobAidWorkingObservation['current'
   return { observations, gaps };
 }
 
-/** Pure WorkItem adapter. executionStatus lacks actionType and is not assigned to a node. */
+/** The parent read supplies typed execution observations; legacy status alone stays unassigned. */
 export function adaptJobAidWorkingRead(
   read: JobAidWorkingObservation | null,
   context: ProjectionContext,
@@ -89,28 +90,38 @@ export function adaptJobAidWorkingRead(
   const work = read.current;
   const native = savedNativeObservations(work);
   const latest = read.latestAttempt;
+  const selected = read.selectedExecution;
+  const dynamic = selected?.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' ? selected : null;
+  const overallExecution = selected?.actionType === 'OPENCLAW_OVERALL_SYNTHESIS' ? selected : null;
+  const researchAttempts: Array<NonNullable<JobAidWorkingObservation['latestAttempt']> |
+    NonNullable<JobAidWorkingObservation['selectedExecution']>> = latest ? [latest] : [];
+  if (dynamic) {
+    if (latest?.attemptId === dynamic.attemptId) researchAttempts[0] = { ...latest, ...dynamic };
+    else researchAttempts.unshift(dynamic);
+  }
+  const researchExecution = dynamic ?? latest;
   const basedOn = read.overallBasedOnWorkRevisionRef;
   const differentWork = !!work && !!basedOn && work.workRevisionRef !== basedOn;
   const research: RuntimeNode = {
     id: 'assessment.research', label: 'JobAid 调查', group: '工程工作', kind: 'task',
-    execution: latest ? {label: latest.status, status: latest.status} : '未取得对应尝试',
+    execution: researchExecution ? {label: researchExecution.status, status: researchExecution.status} : '未取得对应尝试',
     artifact: work ? {label: `工作 ${work.workRevision} 已保存`, tone: 'good'} : '尚无已保存工作',
     coverage: read.currentInputChanged ? {label:'Host 标记输入已有变化',tone:'wait'} : 'Host 未标记输入变化',
     coverageScope: '仅当前 JobAid 工作输入；本读模型不提供全部业务来源覆盖',
     business: '工程工作；正式意见另行读取',
     summary: work ? `已保存工作 ${work.workRevision}（请求 ${work.requestId}，尝试 ${work.actionAttemptId}），执行观察另列` : '尚未取得已保存工作',
-    requestCoverage: '仅最新调查尝试，非完整请求集合',
-    requestCompleteness: 'latest_only',
-    requests: latest ? [{
-      id: latest.attemptId, recordKind:'attempt', status:{label:latest.status,status:latest.status},
-      artifact: work?.actionAttemptId === latest.attemptId ? `工作 ${work.workRevision} 已保存` : '未取得此尝试对应的保存结果',
-      next: `查看复核面板；本次尝试 ${latest.attemptId}。该入口不定位单条尝试，也不自动重试`,
+    requestCoverage: dynamic ? '本次读取返回的调查尝试，有限观察' : '仅最新调查尝试，非完整请求集合',
+    requestCompleteness: dynamic ? 'partial' : 'latest_only',
+    requests: researchAttempts.map(attempt => ({
+      id: attempt.attemptId, recordKind:'attempt', status:{label:attempt.status,status:attempt.status},
+      artifact: work?.actionAttemptId === attempt.attemptId ? `工作 ${work.workRevision} 已保存` : '未取得此尝试对应的保存结果',
+      next: `查看复核面板；本次尝试 ${attempt.attemptId}。该入口不定位单条尝试，也不自动重试`,
       navigationLabel: '查看复核面板',
-      createdAt: latest.createdAt,
-      startedAt: latest.startedAt ?? undefined,
-      firstSavedAt: latest.firstSavedAt ?? undefined,
-      completedAt: latest.completedAt ?? undefined,
-    }] : [],
+      createdAt: attempt.createdAt,
+      startedAt: attempt.startedAt ?? undefined,
+      firstSavedAt: latest?.attemptId === attempt.attemptId ? latest.firstSavedAt ?? undefined : undefined,
+      completedAt: attempt.completedAt ?? undefined,
+    })),
     outputs: work ? [{label:`工作 ${work.workRevision}`,ref:work.workRevisionRef}] : [],
     inputRefs: work ? [{label:'该工作使用的资料版本',ref:work.documentVersionId}, ...native.observations.map(({ navigationRef, evidence }) => ({
       label: `已保存 TDMS 来源 · ${evidence.title} · 回执 ${evidence.nativeReadReceipt.receiptRef}`, ref: navigationRef,
@@ -118,16 +129,22 @@ export function adaptJobAidWorkingRead(
   };
   const overall: RuntimeNode = {
     id:'assessment.overall',label:'综合建议',group:'工程工作',kind:'task',
-    execution:'未取得对应尝试',
+    execution:overallExecution ? {label:overallExecution.status,status:overallExecution.status} : '未取得对应尝试',
     artifact:read.overallStatus === 'NOT_AVAILABLE' ? '尚无综合关系记录' : '已取得综合关系；正文由原入口读取',
     coverage:read.overallStatus === 'CURRENT' ? {label:'Host 判定采用当前工作',tone:'good'}
       : read.overallStatus === 'STALE' ? {label:'Host 判定综合关系需核对',tone:'wait'} : '尚无可比关系',
     business:'本视图未读取正式业务状态',
     coverageScope:'仅工作修订与综合消费关系；不代表全部业务事实已纳入',
     summary:differentWork ? '综合采用另一工作修订；下一步在评估入口核对差额及可用更新操作' : read.overallStatus === 'CURRENT' ? '综合与当前工作修订一致' : '综合关系按 Host 观察显示',
-    requestCoverage:'此读模型不提供 Overall 尝试集合',
-    requestCompleteness:'not_provided',
-    requests:[],outputs:[],inputRefs:basedOn ? [{label:'综合实际采用的工作',ref:basedOn}] : [],
+    requestCoverage:overallExecution ? '本次读取返回的综合尝试，有限观察' : '本次读取未提供综合尝试',
+    requestCompleteness:overallExecution ? 'partial' : 'not_provided',
+    requests:overallExecution ? [{
+      id:overallExecution.attemptId,recordKind:'attempt',status:{label:overallExecution.status,status:overallExecution.status},
+      artifact:'成果与采用关系另列',
+      next:'查看综合面板；该入口不定位单条尝试，也不自动重试',navigationLabel:'查看综合面板',
+      createdAt:overallExecution.createdAt,startedAt:overallExecution.startedAt ?? undefined,
+      completedAt:overallExecution.completedAt ?? undefined,
+    }] : [],outputs:[],inputRefs:basedOn ? [{label:'综合实际采用的工作',ref:basedOn}] : [],
   };
   const companyRecords: RuntimeNode = {
     id: 'business.company_records', label: 'TDMS 公司记录', group: '公司与机队事实', kind: 'fact',

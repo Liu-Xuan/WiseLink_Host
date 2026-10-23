@@ -37,6 +37,9 @@ type StoredJobAidWork = Pick<typeof assessmentWorkRevision.$inferSelect,
   'assessmentWorkRevisionId' | 'workItemId' | 'workRevision' | 'previousWorkRevisionId' |
   'requestId' | 'actionAttemptId' | 'basedOnWorkItemRevision' | 'documentVersionId' | 'createdAt' | 'contentJson'>;
 
+type BrowserJobAidExecutionObservation = JobAidExecutionObservation &
+  NonNullable<JobAidWorkingReadModel['selectedExecution']>;
+
 export interface JobAidWorkFence {
   principalId: string;
   leaseToken: string;
@@ -360,14 +363,16 @@ export class JobAidWorkRepository {
     documentVersionId: string;
   }) {
     const rows = await this.db.execute<{
-      execution: JobAidExecutionObservation | null;
+      execution: BrowserJobAidExecutionObservation | null;
       latestAttempt: JobAidWorkingReadModel['latestAttempt'];
       current: (Omit<StoredJobAidWork, 'createdAt'> & { createdAt: string }) | null;
       savedActivity: Array<Omit<JobAidSavedActivityObservation, 'createdAt'> & { createdAt: string }>;
     }>(sql`
       WITH selected_execution AS (
         SELECT ${actionAttempt.status} AS "status", ${actionAttempt.attemptId} AS "attemptId",
-          ${actionAttempt.operationRef} AS "attemptRef", ${actionAttempt.reviewActivityJson} AS "activityJson"
+          ${actionAttempt.operationRef} AS "attemptRef", ${actionAttempt.reviewActivityJson} AS "activityJson",
+          ${actionAttempt.actionType} AS "actionType", ${actionAttempt.createdAt} AS "createdAt",
+          ${actionAttempt.startedAt} AS "startedAt", ${actionAttempt.completedAt} AS "completedAt"
         FROM ${actionAttempt}
         WHERE ${actionAttempt.tenantId} = ${input.tenantId}
           AND ${actionAttempt.workItemId} = ${input.workItemId}
@@ -425,7 +430,12 @@ export class JobAidWorkRepository {
     `);
     const row = rows[0];
     if (!row) throw new Error('JOBAID_SNAPSHOT_READBACK_MISSING');
-    return { execution: row.execution, latestAttempt: row.latestAttempt ? {
+    return { execution: row.execution ? {
+      ...row.execution,
+      createdAt: new Date(row.execution.createdAt).toISOString(),
+      startedAt: row.execution.startedAt ? new Date(row.execution.startedAt).toISOString() : null,
+      completedAt: row.execution.completedAt ? new Date(row.execution.completedAt).toISOString() : null,
+    } : null, latestAttempt: row.latestAttempt ? {
       ...row.latestAttempt,
       createdAt: new Date(row.latestAttempt.createdAt!).toISOString(),
       startedAt: row.latestAttempt.startedAt ? new Date(row.latestAttempt.startedAt).toISOString() : null,

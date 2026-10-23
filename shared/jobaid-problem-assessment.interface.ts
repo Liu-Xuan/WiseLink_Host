@@ -252,6 +252,17 @@ export interface JobAidWorkingReadModel {
     /** Earliest saved revision belonging to this exact attempt; not first read. */
     firstSavedAt?: string | null;
   } | null;
+  /** One selected execution from this read; not the complete attempt history. */
+  selectedExecution?: {
+    actionType: 'OPENCLAW_DYNAMIC_EVALUATION' | 'OPENCLAW_OVERALL_SYNTHESIS';
+    attemptId: string;
+    /** Exact persisted operation reference, independent of request identity. */
+    attemptRef: string | null;
+    status: string;
+    createdAt: string;
+    startedAt: string | null;
+    completedAt: string | null;
+  } | null;
   executionStatus: string | null;
   /** Optional for compatibility with Host versions before activity projection. */
   activity?: JobAidActivityRead | null;

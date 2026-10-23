@@ -35,6 +35,24 @@ import MatterProblemWork from '../../client/src/features/matter/MatterProblemWor
 import { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
 
 describe('problem-oriented JobAid reading', () => {
+  it('refreshes a same-work observation when selected attempt identity, status or exact times change', () => {
+    const data = jobAidReadingFixture();
+    data.selectedExecution = { actionType: 'OPENCLAW_OVERALL_SYNTHESIS', attemptId: 'overall-one',
+      attemptRef: 'operation-one', status: 'RUNNING', createdAt: '2026-10-23T00:00:00Z',
+      startedAt: null, completedAt: null };
+    expect(preserveJobAidRead(data, structuredClone(data))).toBe(data);
+    for (const change of [{ attemptId: 'overall-two' }, { attemptRef: 'operation-two' },
+      { status: 'COMMITTING' }, { startedAt: '2026-10-23T00:01:00Z' },
+      { completedAt: '2026-10-23T00:02:00Z' }, { actionType: 'OPENCLAW_DYNAMIC_EVALUATION' as const }]) {
+      const next = { ...data, selectedExecution: { ...data.selectedExecution, ...change } };
+      expect(preserveJobAidRead(data, next)).toBe(next);
+    }
+    const removed = { ...data, selectedExecution: null };
+    expect(preserveJobAidRead(data, removed)).toBe(removed);
+    const legacy = jobAidReadingFixture();
+    expect(preserveJobAidRead(legacy, { ...legacy, selectedExecution: null })).toBe(legacy);
+  });
+
   it('shows the active attempt before any work is saved', () => {
     const data = jobAidReadingFixture();
     data.current = null;

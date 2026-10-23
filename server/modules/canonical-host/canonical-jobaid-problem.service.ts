@@ -2836,6 +2836,15 @@ export class CanonicalJobAidProblemService {
       autoProcessingAcknowledgement,
       current,
       latestAttempt,
+      selectedExecution: execution ? {
+        actionType: execution.actionType,
+        attemptId: execution.attemptId,
+        attemptRef: execution.attemptRef,
+        status: execution.status,
+        createdAt: execution.createdAt,
+        startedAt: execution.startedAt,
+        completedAt: execution.completedAt,
+      } : null,
       enabled:
         !!current ||
         isJobAidProblemProjection(base) ||

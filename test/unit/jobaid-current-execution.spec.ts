@@ -6,7 +6,9 @@ import { ACTION_ATTEMPT_REQUEST_ORIGIN } from '../../server/modules/action-attem
 import { MiaodaWorkItemRepository } from '../../server/modules/work-item/miaoda-work-item.repository';
 import type { CanonicalAutoProcessingCompletionReceipt } from '@shared/api.interface';
 
-const execution = { status: 'RUNNING', attemptId: 'attempt', attemptRef: 'ref', activityJson: null };
+const execution = { actionType: 'OPENCLAW_DYNAMIC_EVALUATION' as const, status: 'RUNNING',
+  attemptId: 'attempt', attemptRef: 'ref', activityJson: null,
+  createdAt: '2026-09-23T08:00:00+08:00', startedAt: null, completedAt: null };
 const saved = { workRevisionRef: 'saved', workRevision: 2, createdAt: '2026-09-23T00:00:00Z' };
 const rawWork = { assessmentWorkRevisionId: 'saved', workItemId: 'WI', workRevision: 2,
   previousWorkRevisionId: 'previous', requestId: 'request', actionAttemptId: 'attempt',
@@ -20,7 +22,7 @@ it('reads execution/body/bounded receipts in one parameterized statement without
   const result = await repository.readBrowserSnapshot({ tenantId: 'tenant', workItemId: 'WI', documentVersionId: 'DV' });
   expect(execute).toHaveBeenCalledTimes(1);
   expect(transaction).not.toHaveBeenCalled();
-  expect(result.execution).toEqual(execution);
+  expect(result.execution).toEqual({ ...execution, createdAt: '2026-09-23T00:00:00.000Z' });
   expect(result.latestAttempt).toEqual({ attemptId: 'attempt', status: 'RUNNING', inputRevision: 3, createdAt: '2026-09-23T00:00:00.000Z', startedAt: null, completedAt: null, firstSavedAt: '2026-09-23T00:00:00.000Z' });
   expect(result.current).toMatchObject({ workRevisionRef: 'saved', actionAttemptId: 'attempt', documentVersionId: 'DV' });
   expect(result.savedActivity).toEqual([{ ...saved, createdAt: new Date(saved.createdAt) }]);
@@ -81,7 +83,8 @@ it('reports the authorized current attempt before a first save', async () => {
 it('keeps the latest dynamic evaluation distinct from a selected overall run', async () => {
   const f = harness();
   f.work.readBrowserSnapshot.mockResolvedValue({
-    execution: { ...execution, attemptId: 'overall-attempt', status: 'RUNNING' },
+    execution: { ...execution, actionType: 'OPENCLAW_OVERALL_SYNTHESIS', attemptId: 'overall-attempt',
+      attemptRef: 'exact-persisted-overall-ref', status: 'RUNNING', activityJson: '[]' },
     latestAttempt: { attemptId: 'dynamic-attempt', status: 'SUCCEEDED', inputRevision: 2 },
     current: null,
     savedActivity: [],
@@ -89,6 +92,10 @@ it('keeps the latest dynamic evaluation distinct from a selected overall run', a
   const result = await f.service.readBrowser('WI', f.actor);
   expect(result.executionStatus).toBe('RUNNING');
   expect(result.latestAttempt).toEqual({ attemptId: 'dynamic-attempt', status: 'SUCCEEDED', inputRevision: 2 });
+  expect(result.selectedExecution).toEqual({ actionType: 'OPENCLAW_OVERALL_SYNTHESIS', attemptId: 'overall-attempt',
+    attemptRef: 'exact-persisted-overall-ref', status: 'RUNNING', createdAt: execution.createdAt, startedAt: null, completedAt: null });
+  expect(result.selectedExecution).not.toHaveProperty('activityJson');
+  expect(result.selectedExecution).not.toHaveProperty('requestId');
 });
 
 it.each(['permission', 'snapshot'])('does not read the database on %s denial', async mode => {

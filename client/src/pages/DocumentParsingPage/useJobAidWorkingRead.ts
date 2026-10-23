@@ -18,6 +18,8 @@ export function preserveJobAidRead(
       JSON.stringify(next.autoProcessingAcknowledgement ?? null) &&
     previous.current?.workRevisionRef === next.current?.workRevisionRef &&
     JSON.stringify(previous.latestAttempt) === JSON.stringify(next.latestAttempt) &&
+    JSON.stringify(previous.selectedExecution ?? null) ===
+      JSON.stringify(next.selectedExecution ?? null) &&
     previous.executionStatus === next.executionStatus &&
     JSON.stringify(previous.activity) === JSON.stringify(next.activity) &&
     previous.currentInputChanged === next.currentInputChanged &&
