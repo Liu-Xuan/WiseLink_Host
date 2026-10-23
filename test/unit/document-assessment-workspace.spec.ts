@@ -4,7 +4,10 @@ import type { Root } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import DocumentVersionReadingPage from '../../client/src/pages/DocumentParsingPage/DocumentVersionReadingPage';
 import { assessmentAssociationFixture, assessmentFixtureRead, assessmentOriginalFixture, assessmentPageFixture,
-  assessmentRunningConversationFixture, assessmentStatusFixture, assessmentWorkingFixture } from './fixtures/document-assessment-workspace';
+  assessmentRunningConversationFixture, assessmentStatusFixture, assessmentWorkingFixture, assessmentWikiFixture } from './fixtures/document-assessment-workspace';
+import { documentAssessmentReturnTarget } from '../../client/src/pages/DocumentParsingPage/document-workbench-panel';
+import { readingReturnTarget } from '../../client/src/features/matter/reading-return';
+import { wikiGuideReturnRoute } from '../../client/src/lib/wiki-guide-route';
 import { readReviewDraft } from '../../client/src/features/review/review-draft-store';
 
 const mockApi = jest.fn();
@@ -273,4 +276,76 @@ it('requires a successful explicit confirmation readback before the real AEO gen
   await mount('panel=assessment&assessmentTab=aeo'); expect(calls('generateAeoCandidate')).toHaveLength(0);
   await click('确认当前整体综合用于 AEO 候选'); expect(calls('generateAeoCandidate')).toHaveLength(0);
   await click('生成 AEO 候选'); expect(calls('generateAeoCandidate')).toEqual([['generateAeoCandidate', 'WI-OLD']]);
+});
+
+
+it.each(['STALE', 'STALE_REASON'] as const)('keeps Overall historical when its own %s disagrees with matching CURRENT working read', async stale => {
+  const page = assessmentPageFixture(); const overall = page.workItem.integratedAssessment!.overallSynthesis!;
+  if (stale === 'STALE') overall.status = 'STALE'; else overall.staleReason = 'ENGINEER_REVIEW_CHANGED';
+  mockApi.mockImplementation(async (name: string, ...args: unknown[]) => name === 'getDocumentParsingPage' ? page : assessmentFixtureRead(name, ...args));
+  await mount('panel=assessment&parseRunId=PR1');
+  expect(calls('readJobAidAssessmentWork')).toHaveLength(1);
+  const opinion = container.querySelector('[aria-label="综合评估意见"]')!;
+  expect(opinion.textContent).toContain('此前保存的综合意见 · 当前基础版本尚未匹配');
+  expect(opinion.textContent).not.toContain('与本工作版本一致的综合意见');
+  expect(opinion.textContent).toContain(overall.readingResult!.content.headline);
+});
+
+it('keeps the actual review instance and draft when a pending original body becomes ready', async () => {
+  let finish!: (value: ReturnType<typeof assessmentOriginalFixture>) => void;
+  mockApi.mockImplementation(async (name: string, ...args: unknown[]) => name === 'readParsedDocument'
+    ? new Promise(resolve => { finish = resolve; }) : assessmentFixtureRead(name, ...args));
+  await mount();
+  const workspace = container.querySelector('.document-assessment-workspace'); const editor = draft();
+  expect(workspace).not.toBeNull(); expect(container.querySelector('.source-reader-workspace')).toBeNull();
+  await input(editor, '原文晚到仍保留的合成复核草稿'); editor.setSelectionRange(2, 6);
+  const scroller = editor.closest<HTMLElement>('.document-assessment-content > .wl-retained-panel')!; scroller.scrollTop = 213;
+  await act(async () => finish(assessmentOriginalFixture()));
+  expect(container.querySelector('.source-reader-workspace')).not.toBeNull();
+  expect(container.querySelector('.document-assessment-workspace')).toBe(workspace);
+  expect(draft()).toBe(editor); expect(editor.value).toBe('原文晚到仍保留的合成复核草稿');
+  expect(editor.selectionStart).toBe(2); expect(editor.selectionEnd).toBe(6); expect(scroller.scrollTop).toBe(213);
+  expect(mockApi.mock.calls.filter(call => writes.test(call[0]))).toEqual([]);
+});
+
+it('keeps the actual review instance and draft when a fresh saved result revision replaces Quicklook and Wiki', async () => {
+  await mount(); const workspace = container.querySelector('.document-assessment-workspace'); const editor = draft();
+  await input(editor, '成果更新仍保留的合成复核草稿'); editor.setSelectionRange(1, 5);
+  const scroller = editor.closest<HTMLElement>('.document-assessment-content > .wl-retained-panel')!; scroller.scrollTop = 287;
+  const next = assessmentAssociationFixture(); const wiki = assessmentWikiFixture();
+  next.result = { ...next.result!, sourceResultId: 'work-next-test', revision: 4,
+    readingResult: { ...next.result!.readingResult!, resultRef: 'work-next-test', resultRevision: 4 } };
+  wiki.entry = { ...wiki.entry, workRef: 'work-next-test', workRevision: 4 };
+  wiki.reading = { ...wiki.reading!, resultRef: 'work-next-test', resultRevision: 4 };
+  mockApi.mockImplementation(async (name: string, ...args: unknown[]) => name === 'getCanonicalLibraryQuicklook' ? next
+    : name === 'readEngineeringKnowledgeWork' ? wiki : assessmentFixtureRead(name, ...args));
+  await act(async () => window.dispatchEvent(new dom.window.Event('focus')));
+  expect(calls('getCanonicalLibraryQuicklook')).toHaveLength(2);
+  await panel('Wiki'); expect(container.querySelector('[data-work-ref="work-next-test"][data-work-revision="4"]')).not.toBeNull();
+  await panel('评估'); await click('复核意见');
+  expect(container.querySelector('.document-assessment-workspace')).toBe(workspace); expect(draft()).toBe(editor);
+  expect(editor.value).toBe('成果更新仍保留的合成复核草稿'); expect(editor.selectionStart).toBe(1); expect(editor.selectionEnd).toBe(5);
+  expect(scroller.scrollTop).toBe(287); expect(mockApi.mock.calls.filter(call => writes.test(call[0]))).toEqual([]);
+});
+
+it('preserves a legitimate Wiki guide return through assessment and the actual exact-source button', async () => {
+  const guide = new URLSearchParams({ wikiQuery: 'synthetic configuration', wikiY: '248' }).toString();
+  const origin = new URLSearchParams({ panel: 'assessment', assessmentTab: 'investigation', assessmentIssue: 'issue-test',
+    parseRunId: 'PR1', returnDocumentVersionId: 'DV-FAM-1', returnWikiGuideQuery: guide });
+  // The existing reader admits this precise object/path; the new return wrapper must agree.
+  expect(readingReturnTarget(origin, 'DV-FAM-1', 'PR1')).toBeNull();
+  expect(readingReturnTarget(origin, 'DV-FAM-1', 'PR1', undefined, undefined, '/document-versions/DV-FAM-1')?.route).toBe(wikiGuideReturnRoute(guide));
+  await mount(origin.toString()); await click('前往这份文档的原文');
+  const params = new URLSearchParams(router.state.location.search);
+  expect(params.get('parseRunId')).toBe('PR-HISTORIC'); expect(params.get('sourceRef')).toBe('source-ref-test');
+  const target = documentAssessmentReturnTarget(params, 'DV-FAM-1'); expect(target).not.toBeNull();
+  expect(documentAssessmentReturnTarget(params, 'OTHER-DVI')).toBeNull();
+  const back = [...container.querySelectorAll<HTMLAnchorElement>('a')].find(node => node.textContent?.trim() === '返回文档评估')!;
+  expect(back.getAttribute('href')).toBe(target!.route);
+  await act(async () => back.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })));
+  const restored = new URLSearchParams(router.state.location.search);
+  expect(restored.get('returnWikiGuideQuery')).toBe(guide); expect(restored.get('assessmentIssue')).toBe('issue-test');
+  expect(restored.get('assessmentTab')).toBe('investigation'); expect(restored.get('parseRunId')).toBe('PR1');
+  expect([...container.querySelectorAll<HTMLAnchorElement>('a')].find(node => node.textContent?.trim() === '返回 Wiki 导览')?.getAttribute('href')).toBe(wikiGuideReturnRoute(guide));
+  expect(mockApi.mock.calls.filter(call => writes.test(call[0]))).toEqual([]);
 });

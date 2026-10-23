@@ -52,7 +52,8 @@ export function documentAssessmentReturnParams(documentVersionId: string, origin
   const returns: string[] = [...origin.keys()].filter(key => key.startsWith('return'));
   if (returns.length) {
     if (returns.some(key => key.startsWith('returnAssessment')) ||
-      !readingReturnTarget(origin, documentVersionId, origin.get('parseRunId')))
+      !readingReturnTarget(origin, documentVersionId, origin.get('parseRunId'), undefined, undefined,
+        `/document-versions/${encodeURIComponent(documentVersionId)}`))
       throw new Error('当前来源返回上下文未核定，请重新从资料库打开。');
     for (const key of returns) {
       if (origin.getAll(key).length !== 1) throw new Error('来源返回参数有重复。');
@@ -85,7 +86,8 @@ export function documentAssessmentReturnTarget(params: URLSearchParams, document
     if (nested.has(key) && !readingToken(nested.get(key))) return null;
   if (nested.has('assessmentScroll') && !/^\d{1,7}$/u.test(nested.get('assessmentScroll')!)) return null;
   if ([...nested.keys()].some(key => key.startsWith('return')) &&
-    !readingReturnTarget(nested, origin, nested.get('parseRunId'))) return null;
+    !readingReturnTarget(nested, origin, nested.get('parseRunId'), undefined, undefined,
+      `/document-versions/${encodeURIComponent(origin)}`)) return null;
   nested.delete('documentVersionId');
   return { route: `/document-versions/${encodeURIComponent(origin)}?${nested}`, label: '返回文档评估' };
 }

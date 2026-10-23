@@ -18,9 +18,10 @@ export default function DocumentAssessmentOverview({ page, working, refreshing, 
   const overall = page.workItem.integratedAssessment?.overallSynthesis;
   const currentWork = working?.current;
   const currentOverall: boolean = Boolean(overall?.readingResult &&
+    overall.status === 'CANDIDATE_ONLY' && overall.staleReason === null &&
     (working?.enabled ? currentWork && overall.basedOnJobAidWorkRevisionRef === currentWork.workRevisionRef &&
       working.overallStatus === 'CURRENT' && working.overallBasedOnWorkRevisionRef === currentWork.workRevisionRef
-      : working?.enabled === false && overall.status !== 'STALE' && !overall.staleReason));
+      : working?.enabled === false));
   return <div className="document-assessment-overview">
     <section aria-label="综合评估意见">
       <header><h2>综合评估</h2><p>按准确保存工作核对的候选认识，正式采用仍由工程师决定。</p></header>
