@@ -115,7 +115,7 @@
         "V08",
         "V10"
       ],
-      "nextAction": "本地16b ACK独立读模型、正常Native c235封存恢复及新build/ZIP已准备；线上仍UI De1d，Native最后已证实c234。当前安装/cron/inflight需明确授权只读预检后再给具体无损切换；不据coding idle推runtime idle、不清checkpoint/工作、不重复SAVE，生产ACK/首次可读历史缺项保留。"
+      "nextAction": "本地16b ACK独立读模型、Native c235封存恢复及原构建/ZIP已准备；用户已批准的一次17c只读预检已完成并消费，最后证实安装c234，当时16项cron仅原C136启用；消费者与在途仅有限快照，不能推导全局idle。下一步待准原D8f/c235受控切换，并在实际窗口核对当时受影响请求，由原执行者正常收尾或准确对账；本批未安装或发布，不清checkpoint/工作、不重复SAVE，生产ACK/首次可读历史缺项保留。"
     }
   ]
 }

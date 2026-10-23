@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "snapshot": {
     "dataMode": "snapshot",
-    "generatedAt": "2026-10-23T11:28:21.242010+00:00",
+    "generatedAt": "2026-10-23T12:33:58.382792+00:00",
     "contract": {
       "version": "1.6 复核修订稿",
       "source": "WISELINK_MAINLINE_GRAPH_CONTRACT.md",
@@ -129,7 +129,7 @@
           "V08",
           "V10"
         ],
-        "nextAction": "本地16b ACK独立读模型、正常Native c235封存恢复及新build/ZIP已准备；线上仍UI De1d，Native最后已证实c234。当前安装/cron/inflight需明确授权只读预检后再给具体无损切换；不据coding idle推runtime idle、不清checkpoint/工作、不重复SAVE，生产ACK/首次可读历史缺项保留。"
+        "nextAction": "本地16b ACK独立读模型、Native c235封存恢复及原构建/ZIP已准备；用户已批准的一次17c只读预检已完成并消费，最后证实安装c234，当时16项cron仅原C136启用；消费者与在途仅有限快照，不能推导全局idle。下一步待准原D8f/c235受控切换，并在实际窗口核对当时受影响请求，由原执行者正常收尾或准确对账；本批未安装或发布，不清checkpoint/工作、不重复SAVE，生产ACK/首次可读历史缺项保留。"
       }
     ]
   },
@@ -5980,6 +5980,23 @@
       "testLevel": "integration",
       "executionState": "记录原执行的9c4工作区加本批变更；不倒填后继SHA或契约。",
       "summary": "仅browser模式缺native_app_shared_read_allowed，未通过首个browser证据授权检查；采用既有matter+browser真实helper后同窄例通过，无stub或生产授权修改。 原失败保留，修复后实际通过另列；此条不是生产或业务验收。"
+    },
+    {
+      "id": "p6.current-reading.de1d.bounded-observation",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "60f77e4c4b0c30fcf40613728a5bd71a1ab88d46ed0b729f71096c3972ef90f3",
+      "sourceRevision": "e1d2d92a2e58fe752ed3f70f472619f4373ef8d5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-23T11:57:10.059Z",
+      "reportRef": "docs/coordination/M_INTEGRATION.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "deploymentRef": null,
+      "summary": "一次已获权对象的正常浏览器只读观察：前端与Host可见指纹同旧De1d，当前release ID/API contract在UI未知。初次导航16.5s仍加载、25.585s内工具见有用正文；唯一显式刷新使客户端读回时间由11:55:55.964Z变为11:56:22.775Z，同一准确工作/修订1保留，10.884s内工具见刷新结束；一次热切换2.629s内见同一修订正文，同时显示“暂时无法核对已保存评估，请刷新后重试。”，新鲜保存评估核对未成功。仅有限阅读/刷新/正文可见；官方online/user日志与trace对同一准确eligibility路由的11:56:50—11:57:30Z窗口查询均成功但结果为空；该窗不含初次导航，未观察到HTTP status、未确证原因，警告保持UNRESOLVED，不能称无错误或全流程通过。上述单次操作至工具观察上界含缓存、工具往返与观察间隔，不是HTTP耗时、ready、firstReadable、ACK或P95；不赋save.finish/V08/V10运行覆盖，不适用于未部署4255/5808，未触发模型/Native READ/SAVE/采用。",
+      "originalReportRef": "private:tmp/p6-current-read-observation-20261023/result.private.json"
     }
   ]
 }
