@@ -213,6 +213,17 @@ def validate(data):
             raise ValueError(f"work package {package['id']}: nonempty label required")
         if "nextAction" in package and (not isinstance(package["nextAction"], str) or not package["nextAction"].strip()):
             raise ValueError(f"work package {package['id']}: nonempty nextAction required")
+        if "progress" in package:
+            progress = package["progress"]
+            if not isinstance(progress, dict):
+                raise ValueError(f"work package {package['id']}: progress must be an object")
+            for field in ("delivered", "remaining", "owner", "acceptance"):
+                if not isinstance(progress.get(field), str) or not progress[field].strip():
+                    raise ValueError(f"work package {package['id']}: progress.{field} required")
+            if not isinstance(package.get("nextAction"), str) or not package["nextAction"].strip():
+                raise ValueError(f"work package {package['id']}: progress requires nextAction")
+            if not isinstance(progress.get("evidenceIds"), list) or not progress["evidenceIds"]:
+                raise ValueError(f"work package {package['id']}: progress requires evidenceIds")
     for binding in data["bindings"]:
         gaps = binding.get("gaps", [])
         unique(gaps, f"binding {binding['id']} gaps")
@@ -222,7 +233,7 @@ def validate(data):
             for field in ("reason", "nextAction"):
                 if not isinstance(gap.get(field), str) or not gap[field].strip():
                     raise ValueError(f"gap {gap['id']}: nonempty {field} required")
-    unique(data["evidence"], "evidence")
+    indexes["evidence"] = unique(data["evidence"], "evidence")
     selection = data.get("selection")
     if (not isinstance(selection, dict)
             or set(selection) != {"changedNodeIds", "changedEdgeIds", "scenarioIds", "reason"}
@@ -230,6 +241,7 @@ def validate(data):
         raise ValueError("selection: explicit changedNodeIds/changedEdgeIds/scenarioIds arrays and reason required")
     relation_fields = {"nodeIds": "nodes", "changedNodeIds": "nodes", "edgeIds": "edges", "changedEdgeIds": "edges", "scenarioIds": "scenarios", "consistencyScenarioIds": "scenarios", "ruleIds": "rules", "bindingIds": "bindings"}
     relation_fields["workPackageIds"] = "workPackages"
+    relation_fields["evidenceIds"] = "evidence"
 
     def visit(value, location):
         if isinstance(value, dict):

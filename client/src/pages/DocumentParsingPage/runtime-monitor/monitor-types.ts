@@ -127,6 +127,14 @@ export interface VerificationWorkPackage {
   bindingIds?: string[];
   scenarioIds?: string[];
   nextAction?: string;
+  /** Bounded delivery summary; never contributes to exact-version evidence coverage. */
+  progress?: {
+    delivered: string;
+    remaining: string;
+    owner: string;
+    acceptance: string;
+    evidenceIds: string[];
+  };
 }
 
 export interface VerificationBinding extends CatalogRecord {
@@ -193,4 +201,6 @@ export interface WiseLinkMonitorElement extends HTMLElement {
   allowVerification: boolean;
   /** Apply a group of parent props with one render. */
   updateInputs(inputs: MonitorInputs): void;
+  /** Select an existing item for read-only audit; does not change evidence or test selection. */
+  focusVerification(category: 'binding' | 'node' | 'edge' | 'scenario', id: string): void;
 }

@@ -86,6 +86,24 @@ with tempfile.TemporaryDirectory(prefix="wiselink-snapshot-qa-") as folder:
     run_case("缺口不合法时不生成无法导入的快照", bindings=[{"id": "research.overall", "gaps": [{"id": "gap1", "kind": "unknown", "reason": "", "nextAction": ""}]}], expected_error="invalid kind")
     run_case("缺口缺少下一动作被拒绝", bindings=[{"id": "research.overall", "gaps": [{"id": "gap1", "kind": "test", "reason": "缺证据", "nextAction": ""}]}], expected_error="nonempty nextAction")
 
+    progress_package = {**packages[0], "nextAction": "核对准确请求", "progress": {
+        "delivered": "本地接线已实现", "remaining": "生产读回待核对",
+        "owner": "Host", "acceptance": "请求与结果准确对应", "evidenceIds": ["qa-source-review"]}}
+    progress_evidence = [{"id": "qa-source-review", "kind": "source_review", "status": "passed", "bindingIds": ["research.overall"]}]
+    progress_snapshot = run_case("进展摘要不改变原证据或测试范围", work_packages=[progress_package], evidence=progress_evidence)
+    assert progress_snapshot["evidence"] == progress_evidence and progress_snapshot["selection"] == selected
+    broken_progress = copy.deepcopy(progress_package)
+    broken_progress["progress"]["evidenceIds"] = ["missing"]
+    run_case("进展摘要拒绝悬空依据", work_packages=[broken_progress], evidence=progress_evidence, expected_error="dangling reference")
+    broken_progress["progress"]["evidenceIds"] = []
+    run_case("进展摘要必须附有依据", work_packages=[broken_progress], expected_error="progress requires evidenceIds")
+    broken_progress = copy.deepcopy(progress_package)
+    del broken_progress["progress"]["acceptance"]
+    run_case("进展摘要必须写明完成条件", work_packages=[broken_progress], evidence=progress_evidence, expected_error="progress.acceptance required")
+    broken_progress = copy.deepcopy(progress_package)
+    del broken_progress["nextAction"]
+    run_case("进展摘要必须给出下一步", work_packages=[broken_progress], evidence=progress_evidence, expected_error="progress requires nextAction")
+
     from build_previews import build as build_preview
     injection = copy.deepcopy(base)
     injection["evidence"] = [{"id": "qa-marker", "kind": "test", "status": "inconclusive", "summary": "SETUP PAYLOAD </script><script>neverRun()</script>"}]

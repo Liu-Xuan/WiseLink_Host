@@ -14,6 +14,7 @@ const isoTime=v=>{
   return year>=1&&month>=1&&month<=12&&day>=1&&day<=days[month-1]&&hour<24&&minute<60&&second<60;
 };
 const style=`
+.progress-table{font-size:13px;table-layout:fixed}.progress-table th:first-child{width:15%}.progress-table th:nth-child(2){width:25%}.progress-table th:nth-child(3){width:23%}.progress-table th:last-child{width:37%}.progress-table td{padding:16px 12px;overflow-wrap:anywhere}.progress-table details{margin-top:10px}.progress-table summary{cursor:pointer;color:var(--m-muted)}.progress-table article{border-top:1px solid var(--m-border);margin-top:12px;padding-top:8px}
 :host{display:block;min-width:0;color:var(--wl-ink,#242424);font:14px/1.6 var(--wl-font-sans,-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif);--m-surface:var(--wl-sheet,#fff);--m-soft:var(--wl-sheet-muted,#f7f7f7);--m-border:var(--wl-border,rgba(0,0,0,.1));--m-muted:var(--wl-muted,#666)}*{box-sizing:border-box}button,input,select{font:inherit;color:inherit}button,select{background:var(--m-surface);border:1px solid var(--m-border);border-radius:8px;padding:7px 11px;cursor:pointer}button:hover{background:var(--wl-selected,#e8e8e8)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--wl-accent,#242424);outline-offset:3px}button[aria-pressed=true]{background:var(--wl-accent,#242424);color:var(--wl-sheet,#fff)}header{display:flex;gap:16px;justify-content:space-between;align-items:flex-start;margin-bottom:18px}h2{font-size:23px;line-height:1.35;margin:0 0 5px;font-weight:650}h3{font-size:15px;margin:0 0 10px}p{margin:5px 0}small,.muted{color:var(--m-muted);font-size:12px}.tools,.tabs,.chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.tabs{border-bottom:1px solid var(--m-border);padding-bottom:12px;margin-bottom:18px}.badge{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--m-border);border-radius:6px;padding:2px 7px;font-size:12px;background:var(--m-soft)}.layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px;align-items:start}.main{min-width:0}.panel{background:var(--m-surface);border:1px solid var(--m-border);border-radius:14px;padding:18px;min-width:0}.detail{position:sticky;top:12px;overflow-wrap:anywhere}.detail section{border-top:1px solid var(--m-border);margin-top:16px;padding-top:14px}.detail button{margin:5px 4px 0 0;text-align:left}.axes{display:grid;grid-template-columns:74px minmax(0,1fr);gap:7px;font-size:12px;margin:14px 0}.axes dt{color:var(--m-muted)}.axes dd{margin:0}.graph{position:relative;display:grid;gap:24px;padding:22px 18px;isolation:isolate}.group{position:relative;z-index:1}.group-label{font-size:12px;color:var(--m-muted);margin-bottom:9px}.nodes{display:flex;gap:12px;flex-wrap:wrap}.node{flex:1 1 145px;max-width:260px;min-width:0;text-align:left;padding:12px;background:var(--m-surface);border-radius:11px;border:1px solid var(--m-border);box-shadow:0 3px 9px #00000004}.node.selected{outline:2px solid var(--wl-accent,#242424);outline-offset:2px}.node strong{display:block;font-size:13px;margin-bottom:6px}.node .muted{display:block}.node .badge{margin-top:7px}.dot{width:7px;height:7px;border-radius:50%;display:inline-block;background:var(--wl-faint,#8a8a8a);flex-shrink:0}.dot.good{background:var(--wl-green,#25b86b)}.dot.wait{background:var(--wl-amber,#f2a23a)}.dot.error{background:var(--wl-red,#e85a62)}svg.links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;overflow:visible}.legend{display:flex;gap:15px;flex-wrap:wrap;font-size:12px;color:var(--m-muted);margin-bottom:10px}.legend i{display:inline-block;width:22px;border-top:1px solid var(--m-muted);margin-right:5px;vertical-align:middle}.legend .dash{border-top-style:dashed}.edge-list{display:grid;gap:8px;margin-top:15px}.edge{padding:9px 11px;border-left:2px solid var(--m-border);background:var(--m-soft);font-size:12px;overflow-wrap:anywhere}.edge.active{border-left-color:var(--wl-amber,#f2a23a)}.empty{padding:40px 22px;text-align:center;background:var(--m-soft);border:1px dashed var(--m-border);border-radius:14px}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px;text-align:left}th{font-weight:500;color:var(--m-muted);white-space:nowrap}th,td{padding:12px 9px;border-bottom:1px solid var(--m-border);vertical-align:top}td button{padding:3px 6px;text-align:left}tr.selected td{background:var(--m-soft)}.filter{width:100%;padding:9px 12px;background:var(--m-surface);border:1px solid var(--m-border);border-radius:9px;margin-bottom:12px}.resources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.metric strong{font-size:25px;display:block;margin:10px 0}.metric p{font-size:12px;color:var(--m-muted)}.error-message{color:var(--wl-red,#e85a62);font-size:12px}.file{font-size:12px;max-width:250px}.mono{font-family:var(--wl-mono,monospace);font-size:11px;overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;background:var(--m-soft);padding:10px;border-radius:8px;max-height:350px;overflow:auto}.hint{margin:12px 0;color:var(--m-muted);font-size:12px}@media(max-width:900px){.layout{grid-template-columns:minmax(0,1fr)}.detail{position:static}.node{max-width:none}}@media(max-width:560px){.tablewrap table{min-width:620px}header{flex-direction:column}.graph{padding:16px 12px}.nodes{flex-direction:column}.node{flex:auto;width:100%}.resources{grid-template-columns:1fr}.panel{padding:14px}.tabs button{padding:7px 8px}h2{font-size:21px}svg.links{opacity:.4}}
 `;
 class WiseLinkMonitor extends HTMLElement {
@@ -29,6 +30,7 @@ class WiseLinkMonitor extends HTMLElement {
     this._request = null;
     this._binding = null;
     this._category = 'binding';
+    this._auditOpen = false;
     this._filter = '';
     this._verificationFilter = '';
     this._workPackage = ''; this._chain = ''; this._scenario = ''; this._gap = '';
@@ -97,6 +99,18 @@ class WiseLinkMonitor extends HTMLElement {
     if (Object.hasOwn(inputs,'allowVerification')) this._allowVerification = !!inputs.allowVerification;
     if (Object.hasOwn(inputs,'allowRefresh')) this._allowRefresh = !!inputs.allowRefresh;
     this.render();
+    if (Object.hasOwn(inputs,'verification')) {
+      this.emit('wiselink-verification-change', {verification:this._verification,error:this._error});
+    }
+  }
+  focusVerification(category, id) {
+    if (!this._allowVerification || !this._verification
+      || !['binding','node','edge','scenario'].includes(category)
+      || !this.items(this._verification,category).some(item => item.id === id)) return;
+    this._view = 'verification'; this._category = category; this._binding = `${category}:${id}`;
+    this._workPackage = ''; this._chain = ''; this._scenario = ''; this._gap = ''; this._verificationFilter = '';
+    this._auditOpen = true; this.render();
+    this.shadowRoot.querySelector('#verification-audit')?.scrollIntoView?.({block:'start'});
   }
   emit(name, detail) { this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true })); }
 
@@ -187,6 +201,14 @@ class WiseLinkMonitor extends HTMLElement {
     });
     this.bindFilter('#filter', '_filter');
     this.bindFilter('#verification-filter', '_verificationFilter');
+    const audit = root.querySelector('#verification-audit');
+    if (audit) audit.ontoggle = () => { this._auditOpen = audit.open; };
+    root.querySelectorAll('[data-package-audit]').forEach(button => button.onclick = () => {
+      this._category = 'binding'; this._workPackage = button.dataset.packageAudit;
+      this._binding = null; this._chain = ''; this._scenario = ''; this._gap = ''; this._verificationFilter = '';
+      this._auditOpen = true; this.render();
+      this.shadowRoot.querySelector('#verification-audit')?.scrollIntoView?.({block:'start'});
+    });
     for (const [id,field] of [['work-package-filter','_workPackage'],['chain-filter','_chain'],['scenario-filter','_scenario'],['gap-filter','_gap']]) {
       const select = root.querySelector(`#${id}`);
       if (select) select.onchange = () => { this[field] = select.value; this._binding = null; this.render(); };
@@ -347,14 +369,22 @@ class WiseLinkMonitor extends HTMLElement {
       if (!selection.length) return '未选定相关场景';
       records = records.filter(record => (record.scenarioIds ?? []).some(id => selection.includes(id)));
     }
-    if (!records.length) return column === 'tests' ? '未验证' : '未记录';
+    if (!records.length) {
+      const ids = new Set(this.relatedBindings(data,item).map(binding => binding.id));
+      const linked = (data.evidence ?? []).filter(record => record.kind === kind && (record.bindingIds ?? []).some(id => ids.has(id)));
+      if (item.itemKind !== 'binding' && linked.length) return `无直接验证 · 关联 ${linked.length} 条接线记录`;
+      return column === 'tests' ? '未验证' : '未记录';
+    }
+    if (column === 'wiring' && item.itemKind === 'binding' && !nonempty(item.sourceRevision) && !nonempty(item.consumer)
+      && records.every(record => record.status === 'not_run')) return '方案待接入';
     const current = records.filter(record => this.matches(data,record));
     if (!current.length && column === 'tests') return [...new Set(records.map(record => this.testScopeMismatch(data,record)))].join(' / ');
     if (!nonempty(data.snapshot.target?.sourceRevision)) return '源码目标未定 · 有历史证据';
     if (!current.length) {
       if (records.some(record => !nonempty(record.contractRevision))) return '适用契约未核定';
       if (!nonempty(data.snapshot.target?.environmentId) && records.every(record => this.requiresEnvironment(record))) return '环境目标未定 · 有历史证据';
-      return '历史 / 示例证据';
+      return records.every(record => this.isDemo(record)) || this.isDemo(data.snapshot)
+        ? '示例证据' : '已有范围记录 · 待本版核对';
     }
     if (current.every(record => record.status === 'not_run')) return {deployment:'尚未部署',runtime:'尚未核对真实运行'}[column] ?? '尚未执行';
     if (current.some(record => record.status === 'failed')) return current.some(record => record.status === 'passed') ? '失败 / 通过并存' : '存在失败';
@@ -417,7 +447,7 @@ class WiseLinkMonitor extends HTMLElement {
     const packages = this.itemWorkPackages(data,{...binding,itemKind:'binding'});
     return `<section><h3>实际接线 · ${esc(binding.title ?? binding.label ?? binding.id)}</h3>
       <dl class="axes">${labels.map(([field,label]) => `<dt>${label}</dt><dd class="mono">${esc(binding[field] || '未记录')}</dd>`).join('')}</dl>
-      <h3>未完成原因与下一动作</h3>${(binding.gaps ?? []).length ? binding.gaps.map(gap => `<div class="edge"><strong>${esc(gap.kind)} · ${esc(gap.id)}</strong><p>${esc(gap.reason)}</p><p>下一动作：${esc(gap.nextAction)}</p></div>`).join('') : '<p class="muted">未记录缺口说明；不能据此判断完成。</p>'}
+      <h3>接线记录中的缺口</h3>${packages.some(pkg => pkg.progress) ? '<p class="muted">以下保留各批次说明；当前开发动作见工作包摘要。</p>' : ''}${(binding.gaps ?? []).length ? binding.gaps.map(gap => `<div class="edge"><strong>${esc(gap.kind)} · ${esc(gap.id)}</strong><p>${esc(gap.reason)}</p><p>当时下一动作：${esc(gap.nextAction)}</p></div>`).join('') : '<p class="muted">未记录缺口说明；不能据此判断完成。</p>'}
       ${packages.map(pkg => `<p>工作包 ${esc(pkg.label)} · 下一动作：${esc(pkg.nextAction || '未记录')}</p>`).join('')}
       </section>`;
   }
@@ -429,7 +459,20 @@ class WiseLinkMonitor extends HTMLElement {
     const bindings = selected ? this.relatedBindings(data,selected) : [];
     const title = item => item.title ?? item.label ?? item.scenario ?? item.scope ?? item.id;
     const select = (id,label,value,options) => `<label>${label} <select id="${id}" aria-label="${label}"><option value="">全部</option>${options.map(([key,name]) => `<option value="${esc(key)}" ${value === key ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select></label>`;
-    return `<div class="layout"><div class="panel main"><p class="hint">${esc(data.snapshot.contract.version)} · ${catalog.nodes.length} 节点 / ${catalog.edges.length} 关系 / ${catalog.scenarios.length} 场景<br>目标代码：<span class="mono">${esc(data.snapshot.target?.sourceRevision ?? '未指定')}</span><br>目标环境：${esc(data.snapshot.target?.environmentId ?? '未指定')}<br>快照生成时间：${esc(data.snapshot.generatedAt)}（不代替各证据观察时间） · 所选测试：${data.selection?.scenarioIds?.length ?? 0} 项</p>
+    const packages = data.snapshot.workPackages ?? [];
+    const progress = packages.some(pkg => pkg.progress) ? `<section class="panel progress-overview" style="margin-bottom:18px">
+      <h2>主线实施进展</h2><p>先看已交付、剩余缺口和下一步。各项成果保留原版本与范围，不折算成总完成率。</p>
+      <p class="hint">本页是静态交付记录，生成时间：${esc(data.snapshot.generatedAt)}；不会自动取得其后的安装、发布或业务回执。工作包可以并行推进，具体前置条件见下一步。</p>
+      <div class="tablewrap"><table class="progress-table"><thead><tr><th>工作包</th><th>已经完成</th><th>还需收口</th><th>下一步 / 完成条件</th></tr></thead><tbody>${packages.map(pkg => `<tr>
+      <td><strong>${esc(pkg.label)}</strong><p><button data-package-audit="${esc(pkg.id)}">查看接线与依据</button></p></td>
+      <td>${esc(pkg.progress?.delivered ?? '尚未整理交付摘要，请查看接线与证据。')}</td>
+      <td>${esc(pkg.progress?.remaining ?? '尚未整理，不能据此判断已完成。')}</td>
+      <td><p>${esc(pkg.nextAction ?? '下一步尚未记录')}</p>${pkg.progress ? `<p><strong>完成条件：</strong>${esc(pkg.progress.acceptance)}</p><p class="muted">负责范围：${esc(pkg.progress.owner)}</p>
+      <details><summary>已有成果依据 · ${pkg.progress.evidenceIds.length} 条</summary>${this.verificationEvidenceDetail(data,data.evidence.filter(record => pkg.progress.evidenceIds.includes(record.id)))}</details>` : ''}</td></tr>`).join('')}</tbody></table></div>
+      </section>` : '';
+    return `${progress}<details id="verification-audit" ${this._auditOpen || !progress ? 'open' : ''}><summary style="cursor:pointer;margin-bottom:12px">严格版本核对 · 接线、测试、部署与运行证据</summary>
+      <p class="hint">下表只统计目标代码、契约和适用环境匹配的直接证据；其他版本成果仍保留。节点或关系的关联记录不等同于整体验证。契约文档修订导致指纹变化时，需要说明适用范围，不自动作废已交付成果，也不自动视为本版通过。</p>
+      <div class="layout"><div class="panel main"><p class="hint">${esc(data.snapshot.contract.version)} · ${catalog.nodes.length} 节点 / ${catalog.edges.length} 关系 / ${catalog.scenarios.length} 场景<br>目标代码：<span class="mono">${esc(data.snapshot.target?.sourceRevision ?? '未指定')}</span><br>目标环境：${esc(data.snapshot.target?.environmentId ?? '未指定')}<br>快照生成时间：${esc(data.snapshot.generatedAt)}（不代替各证据观察时间） · 所选测试：${data.selection?.scenarioIds?.length ?? 0} 项</p>
       <div class="tabs">${[['binding','关键接线'],['node','能力节点'],['edge','关系模板'],['scenario','验收场景']].map(([category,label]) => `<button data-category="${category}" aria-pressed="${this._category === category}">${label} ${this.items(data,category).length}</button>`).join('')}</div>
       <div class="tools">
       ${select('work-package-filter','工作包',this._workPackage,(data.snapshot.workPackages ?? []).map(pkg => [pkg.id,pkg.label]))}
@@ -442,7 +485,7 @@ class WiseLinkMonitor extends HTMLElement {
       <aside class="panel detail"><h3>${selected ? esc(title(selected)) : '选择契约项目'}</h3>${selected ? `
       ${selected.itemKind === 'binding' ? this.verificationBindingDetail(data,selected) : `<section><h3>关联实际接线 · ${bindings.length} 项</h3>${bindings.length ? bindings.map(binding => `<button data-binding-detail="${esc(binding.id)}">查看接线 · ${esc(title(binding))}<br><span class="mono">${esc(binding.id)}</span></button>`).join('') : '<p class="muted">未记录精确 binding 关联，不推断接通。</p>'}</section>`}
       <section><h3>直接关联证据 · ${evidence.length} 项</h3>${this.verificationEvidenceDetail(data,evidence)}</section>
-      <details><summary>契约 / 接线完整定义</summary><pre>${esc(JSON.stringify(selected,null,2))}</pre></details>` : ''}</aside></div>`;
+      <details><summary>契约 / 接线完整定义</summary><pre>${esc(JSON.stringify(selected,null,2))}</pre></details>` : ''}</aside></div></details>`;
   }
   validateRuntime(data) {
     if (!object(data) || data.schemaVersion !== 1 || !object(data.meta) || !object(data.scope)) throw Error('运行投影格式不匹配');
@@ -530,6 +573,9 @@ class WiseLinkMonitor extends HTMLElement {
       if (!object(pkg) || !nonempty(pkg.id) || !nonempty(pkg.label) || indexes.workPackages.has(pkg.id)) throw Error('工作包缺少唯一 ID 或名称');
       indexes.workPackages.add(pkg.id);
       if (pkg.nextAction !== undefined && !nonempty(pkg.nextAction)) throw Error(`工作包 ${pkg.id} 的下一动作无效`);
+      if (pkg.progress !== undefined && (!object(pkg.progress)
+        || ![pkg.progress.delivered,pkg.progress.remaining,pkg.progress.owner,pkg.progress.acceptance,pkg.nextAction].every(nonempty)
+        || !Array.isArray(pkg.progress.evidenceIds) || !pkg.progress.evidenceIds.length)) throw Error(`工作包 ${pkg.id} 的进展摘要无效`);
     });
     data.bindings.forEach(binding => {
       if (binding.gaps === undefined) return;
@@ -541,7 +587,7 @@ class WiseLinkMonitor extends HTMLElement {
         ids.add(gap.id);
       });
     });
-    const fields = {workPackageIds:'workPackages',nodeIds:'nodes',changedNodeIds:'nodes',edgeIds:'edges',changedEdgeIds:'edges',scenarioIds:'scenarios',consistencyScenarioIds:'scenarios',ruleIds:'rules',bindingIds:'bindings'};
+    const fields = {evidenceIds:'evidence',workPackageIds:'workPackages',nodeIds:'nodes',changedNodeIds:'nodes',edgeIds:'edges',changedEdgeIds:'edges',scenarioIds:'scenarios',consistencyScenarioIds:'scenarios',ruleIds:'rules',bindingIds:'bindings'};
     const visit = value => {
       if (Array.isArray(value)) { value.forEach(visit); return; }
       if (!object(value)) return;

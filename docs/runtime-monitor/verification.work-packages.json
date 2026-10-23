@@ -23,7 +23,21 @@
         "V26",
         "V28"
       ],
-      "nextAction": "主线M1/M2/M3继续按同一准确来源/保存/消费含义收口；787/原c235技术切换、online三policy及C136一次恢复已完成。有限UI只读链成立，401为页面原生飞书身份与ReviewOverall只认Host OAuth不一致，统一身份/事项修订标签候选未提交部署。先查实际消费者补关键接线；11节点/6关系/10binding是映射数，不重做47关系或凑完成率。CHAT真实对话及新Aily仍按各自范围待验。"
+      "nextAction": "主线M1/M2/M3继续按同一准确来源/保存/消费含义收口；787/原c235技术切换、online三policy及C136一次恢复已完成。有限UI只读链成立，401为页面原生飞书身份与ReviewOverall只认Host OAuth不一致，统一身份/事项修订标签候选未提交部署。先查实际消费者补关键接线；11节点/6关系/10binding是映射数，不重做47关系或凑完成率。CHAT真实对话及新Aily仍按各自范围待验。",
+      "progress": {
+        "delivered": "主线契约13节点/47关系/54场景/10规则及现有10条binding已登记；映射覆盖11节点/6关系。准确Host787已正常发布、双端读回一致，online三条policy与dev一致，原Native c235安装141文件/1852测试通过、原C136一次恢复。225条证据保留准确来源。",
+        "remaining": "技术切换已经完成，业务整体仍未验收。有限既有工作阅读不关闭SEM、真实来源与变化缺口；ReviewOverall原生身份统一接线及事项修订标签修复进行中，尚未部署。CHAT真实对话和新Aily接入分别待验。",
+        "owner": "主控集成及各既有消费者负责范围",
+        "acceptance": "图、接线、工作包与严格证据引用同一份当前记录；准确版本/来源/失败可追溯，技术交付和真实业务验收分别成立，映射数不换算为完成率。",
+        "evidenceIds": [
+          "controlled-switch.787.existing-consumers.source-review",
+          "controlled-switch.787.host.deployment",
+          "controlled-switch.787.online-lock-policies.deployment",
+          "controlled-switch.c235.installed.deployment",
+          "controlled-switch.c136.restored.runtime",
+          "controlled-switch.787.core-reading.bounded-runtime"
+        ]
+      }
     },
     {
       "id": "P1",
@@ -34,7 +48,20 @@
       "scenarioIds": [
         "V12"
       ],
-      "nextAction": "JA-AC§3.1四级一般严重性定义及原保存/Overall消费者已随787交付；原170项Jest/2项Node按真实源码和时间保留。受控Host版次仍待核，真实后果/暴露/控制事实及SEM实际模型→SAVE→Overall正文使用未验收；有限work1/同work阅读不关闭这些内容缺口，不要求为记录新生成。"
+      "nextAction": "JA-AC§3.1四级一般严重性定义及原保存/Overall消费者已随787交付；原170项Jest/2项Node按真实源码和时间保留。受控Host版次仍待核，真实后果/暴露/控制事实及SEM实际模型→SAVE→Overall正文使用未验收；有限work1/同work阅读不关闭这些内容缺口，不要求为记录新生成。",
+      "progress": {
+        "delivered": "JA-AC§3.1四级一般严重性定义已作为独立方法材料接入并随787交付，旧risk六事件规则、保存及Overall消费者保持。原170项Jest、2项Node与构建沿真实源码/时间保留；有限UI读到既有work1四问题及同work综合。",
+        "remaining": "受控方法Host版次仍未确认，真实后果、暴露/控制事实和SEM正文使用未验收。同ref和合成用例不证明当次模型实际使用特定原文语义。",
+        "owner": "原文/方法、保存及Overall实际消费者；工程内容验收",
+        "acceptance": "准确原文、实际delivered/READ及模型输入、保存问题正文、Overall previousWork/finish/artifact的语义使用能够对应；方法和业务依据可追溯，缺失事实仍为未知。",
+        "evidenceIds": [
+          "sem.severity-definitions.source-review",
+          "sem.severity-definitions.targeted.test",
+          "sem.severity-definitions.normal-build.test",
+          "sem.severity-definitions.runtime",
+          "controlled-switch.787.core-reading.bounded-runtime"
+        ]
+      }
     },
     {
       "id": "P2",
@@ -56,7 +83,23 @@
         "V28",
         "V30"
       ],
-      "nextAction": "787有限UI核对准确原文/保存引用、work1四问题、Overall同work及同DVI正文成立；正常浏览器翻译接续及原有阅读消费者已继承部署，但没有新增翻译/真实Native读取验收。先统一已登录飞书页面与ReviewOverall读取/更新/核对身份，标签应为事项修订5；候选未提交部署。CHAT已部署待真实对话/未知发送恢复，独立文档随后；新Aily可信最终用户、只读适配、准确展开/work/引用深链未接通。旧PDF/Aily失败保留原范围。"
+      "nextAction": "787有限UI核对准确原文/保存引用、work1四问题、Overall同work及同DVI正文成立；正常浏览器翻译接续及原有阅读消费者已继承部署，但没有新增翻译/真实Native读取验收。先统一已登录飞书页面与ReviewOverall读取/更新/核对身份，标签应为事项修订5；候选未提交部署。CHAT已部署待真实对话/未知发送恢复，独立文档随后；新Aily可信最终用户、只读适配、准确展开/work/引用深链未接通。旧PDF/Aily失败保留原范围。",
+      "progress": {
+        "delivered": "原文、翻译接续、事项与已存评估阅读消费者已在787继承交付。当前有限UI确认准确原文/保存引用、work1四问题、Overall消费同work及同DVI正文相符。获权WorkItem/Matter CHAT251941f4及M3选中观察已随787技术发布。",
+        "remaining": "页面原生飞书身份成立，但ReviewOverall仍只认Host OAuth，eligibility实际401；统一读取/更新/结果核对身份与事项修订5标签修复进行中，未部署。真实CHAT/未知发送恢复未验收，独立文档入口随后；新Aily可信用户/Host只读适配仍未接通。",
+        "owner": "既有阅读前端、ReviewOverall身份、OpenClaw交互及Aily只读适配范围",
+        "acceptance": "同一原生用户身份下保存工作读取、更新及结果核对一致；CHAT换对象/身份及未知发送不串上下文、不重复发送。新Aily经Host逐对象核权完成跨对象检索、准确版本展开、work与引用导航；外部Source授权另按真实范围核验。",
+        "evidenceIds": [
+          "reading-followup.source",
+          "openclaw-chat.integrated.source-review",
+          "controlled-switch.787.host.deployment",
+          "controlled-switch.787.core-reading.bounded-runtime",
+          "controlled-switch.787.eligibility-authentication.runtime",
+          "controlled-switch.787.revision-label.runtime",
+          "controlled-switch.787.openclaw-chat.runtime",
+          "controlled-switch.787.aily-planned.source_review"
+        ]
+      }
     },
     {
       "id": "P3",
@@ -72,7 +115,21 @@
         "V44",
         "V53"
       ],
-      "nextAction": "Estimated、Review SAVED/BOUNDED及sealed恢复已随787/原c235交付，online三条lock-only policy实际定义与dev一致，不再列待DDL批准；原PG029及先前失败保留原身份。下一步沿真实Source/grant/processing set/准确版本核对线上刷新、撤销取代/V44和正文，未结构化关系解码与内容验收仍缺，不借本地测试或技术切换证明真实业务完成。"
+      "nextAction": "Estimated、Review SAVED/BOUNDED及sealed恢复已随787/原c235交付，online三条lock-only policy实际定义与dev一致，不再列待DDL批准；原PG029及先前失败保留原身份。下一步沿真实Source/grant/processing set/准确版本核对线上刷新、撤销取代/V44和正文，未结构化关系解码与内容验收仍缺，不借本地测试或技术切换证明真实业务完成。",
+      "progress": {
+        "delivered": "Estimated映射、Review SAVED/BOUNDED、真实caller/有限Native及封存恢复已随787/原c235交付；原PG029与先前失败保留。online三条lock-only policy定义、角色、USING/CHECK和RLS与dev一致，DDL技术动作已完成。",
+        "remaining": "真实Source/grant/processing set、线上刷新、批准意见及V44原文的内容消费未闭环；原生未结构化撤销/取代关系解码和实际影响仍缺，不由技术切换或本地PG通过替代。",
+        "owner": "TDMS来源授权、Review及综合消费者",
+        "acceptance": "准确来源/原文/版本与实际授权可读回；失效或被取代的意见按真实关系停止消费，新输入进入保存及综合覆盖；缺来源具体说明，不扩大本期结构化AEO正文范围。",
+        "evidenceIds": [
+          "estimated-d.delivery.deployment-finished",
+          "review-native.recovered.review",
+          "review-native.recovered.pg-029",
+          "controlled-switch.787.host.deployment",
+          "controlled-switch.787.online-lock-policies.deployment",
+          "controlled-switch.c235.installed.deployment"
+        ]
+      }
     },
     {
       "id": "P4",
@@ -89,7 +146,20 @@
         "V38",
         "V41"
       ],
-      "nextAction": "反馈页适用编号、有界来源授权及原单机/LCM消费者已在787继承交付，技术版本已确认；本次无新增真实反馈单/Native READ验收。按已有获权准确反馈单来源核对飞机号、原状态行、版本与定位；空值/截断/未获权原文保持未知，结构化AEO文件仍为后续能力。"
+      "nextAction": "反馈页适用编号、有界来源授权及原单机/LCM消费者已在787继承交付，技术版本已确认；本次无新增真实反馈单/Native READ验收。按已有获权准确反馈单来源核对飞机号、原状态行、版本与定位；空值/截断/未获权原文保持未知，结构化AEO文件仍为后续能力。",
+      "progress": {
+        "delivered": "反馈页适用编号、状态行、有界来源授权和原单机/LCM消费者已在787继承交付，既有隔离验证保留。LCM可读取获权有限快照。",
+        "remaining": "本批没有新增真实反馈单/Native READ或LCM相关案例内容验收。空值、截断、重复或冲突仍为待核范围，不能推为全机队落实。",
+        "owner": "反馈来源读取、适用性及LCM现有消费者",
+        "acceptance": "页面与实际评估使用同一准确适用范围、状态、来源版本和位置；未知保留，重复/冲突有依据，只有案例相关时读取LCM，不凭空补机队总数或落实率。",
+        "evidenceIds": [
+          "native-wiring.source.feedback.reading",
+          "native-wiring.source.configuration.reading",
+          "native-wiring.test.host-consumers",
+          "controlled-switch.787.host.deployment",
+          "native-wiring.runtime.feedback"
+        ]
+      }
     },
     {
       "id": "P5",
@@ -103,7 +173,19 @@
         "V20",
         "V16"
       ],
-      "nextAction": "显式delegation到期唤醒、Estimated及原Wiki有限增量消费者均在787技术交付；本次未新增生产Wiki生成或三类变化内容验收。以真实Source/准确版本/状态与工程师更正核对最小影响、保存工作及下游实际覆盖，保留历史正文修订和未知，不为缺源或图登记重复生成。"
+      "nextAction": "显式delegation到期唤醒、Estimated及原Wiki有限增量消费者均在787技术交付；本次未新增生产Wiki生成或三类变化内容验收。以真实Source/准确版本/状态与工程师更正核对最小影响、保存工作及下游实际覆盖，保留历史正文修订和未知，不为缺源或图登记重复生成。",
+      "progress": {
+        "delivered": "已存Wiki成员关系与阅读、显式委托到期漏唤醒修复、Estimated及有限增量消费者已在787技术交付；原相关代码/局部测试与历史运行证据保留。",
+        "remaining": "本批未新增生产Wiki生成或三类变化验收；普通反馈、审批变化和技术来源变化的准确影响、正文修订及下游覆盖仍需逐类实际核对。",
+        "owner": "既有Wiki成员及有限增量消费者",
+        "acceptance": "每类变化有准确前后版本、来源、影响对象及保存/综合覆盖读回；到期可重检，未受影响成果保留，普通反馈不无故重复模型调用，缺源先补具体来源。",
+        "evidenceIds": [
+          "reading-followup.source",
+          "reading-followup.test.wiki-revisit",
+          "controlled-switch.787.host.deployment",
+          "reading-followup.runtime.wiki.saved-reading"
+        ]
+      }
     },
     {
       "id": "P6",
@@ -115,7 +197,22 @@
         "V08",
         "V10"
       ],
-      "nextAction": "受控技术切换已结束：准确787 finished/双端一致，原c235实际141文件匹配及1852测试通过，online三policy一致，原C136一次恢复enabled而其他15disabled。保留原c234备份、原包/失败和正常在途对账边界；本次未手工触发新模型/READ/SAVE，不增加V08/V10。下一步仅沿受影响真实请求核对SAVE/封存恢复/终态/外层ACK及实际新增时间，Ready/首次可读/完整请求历史和全队列空仍未证明，不重复切换或清checkpoint。"
+      "nextAction": "受控技术切换已结束：准确787 finished/双端一致，原c235实际141文件匹配及1852测试通过，online三policy一致，原C136一次恢复enabled而其他15disabled。保留原c234备份、原包/失败和正常在途对账边界；本次未手工触发新模型/READ/SAVE，不增加V08/V10。下一步仅沿受影响真实请求核对SAVE/封存恢复/终态/外层ACK及实际新增时间，Ready/首次可读/完整请求历史和全队列空仍未证明，不重复切换或清checkpoint。",
+      "progress": {
+        "delivered": "ACK独立读模型及封存恢复代码已在787交付；原c235实际141文件匹配、安装目录1852项测试通过，原C136一次恢复enabled、其他15项disabled。技术切换已结束；保存核对警告已由实际日志定位为401身份路径不一致。",
+        "remaining": "本批未手工新增业务模型/READ/SAVE或生产ACK/恢复验收，Ready/首次可读及完整请求历史缺失，未证明全队列空。统一原生身份及标签修复未部署，不能把诊断完成当作警告已消除。",
+        "owner": "执行恢复、Host读模型及保存阅读前端",
+        "acceptance": "准确业务请求、封存、保存成果、执行终态、外层ACK与页面可对应；恢复复用原结果且无重复业务写。身份修复有准确技术版本和真实读回；只登记实际取得的Ready/首次可读事件，不补造历史时间。",
+        "evidenceIds": [
+          "review-native.recovered.ack",
+          "review-native.recovered.native-source",
+          "review-native.recovered.pg-029",
+          "controlled-switch.787.host.deployment",
+          "controlled-switch.c235.installed.deployment",
+          "controlled-switch.c136.restored.runtime",
+          "controlled-switch.787.eligibility-authentication.runtime"
+        ]
+      }
     }
   ]
 }
