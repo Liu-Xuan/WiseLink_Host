@@ -585,10 +585,10 @@
         "P0",
         "P2"
       ],
-      "sourceRevision": "a7fb08e9b9b89e24d933479d5823a92624f90994",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
       "authorRevision": "0fd28f3d5514a9187fa67c39cd1e19e4d0854492",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "原787有限原文→保存工作→Overall同work→同DVI阅读与历史401/标签失败原样保留。公开94双远端与私有a7仅origin同步完成，原Host单次release7699919694665632785 finished/准确a7；双端a7与正常原页面已只读核对。四GET明确200/409 NOT_CONFIGURED/200/200，旧额外OAuth和核对警告消失；既有FTD事项5/保存工作1调查及综合可读。reader仍VERIFICATION_PENDING，本轮新模型/SAVE/Overall未运行，初次分析及准确BLOCKED失败后继修复在独立候选、未发布；不增加完整业务场景通过。",
+      "reviewScope": "原787/a7有限阅读与历史401、标签失败和四GET读回保留原时点。公开306已双远端同步，准确Host5d仅origin并经唯一release7699934157774441777 finished/error_logs=[]；原用户双端5d、runtime PASS，reader仍VERIFICATION_PENDING。一次正常AD接续POST最终Host HTTP500，客户端与服务端耗时分别为300675/469819.62ms；500后一次准确范围对账新ATT为空、SAVE0、grant仍BLOCKED且无lease，前后字段未变。新模型/SAVE/Overall闭环未完成；不从已记录SQL缺口断言死锁或根因。技术发布及故障对账不增加完整业务场景通过。",
       "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。 普通CHAT由Host既有Review turn保存问题与候选回复，不产生评估工作或正式采用。",
       "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。 当前CHAT实际链为DocumentAssessmentReview → ContinuousReviewPanel → ReviewChatComposer；既有WorkItem/Matter复用同一获权Review面板。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。 ReviewOverall、applicability-selection、configuration-evidence现有controller/service的原生身份接线已随准确a7发布，继续复用DialogueBrowserScope（GET runRead、POST runNativeWrite）及request-local native actor，保留NeedLogin/production guard、owner/action/source/version及CAS。原正常用户页面与官方短窗日志只读核对200/409 NOT_CONFIGURED/200/200；不把未配置Source/受控选择或新的初次分析后继当作已运行。",
       "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。 普通CHAT显式appendReviewTextTurn(CHAT/AUTOMATIC)，Host提供当前owner/OAuth/executor能力；短轮询读回并暂停隐藏panel，CHAT不触发工作刷新。",
@@ -640,8 +640,8 @@
         {
           "id": "document.assessment-reading.runtime",
           "kind": "runtime",
-          "reason": "准确a7已正常发布且双端指纹相符；原正常用户页面的事项修订标签、保存评估核对和额外OAuth提示已完成有限读回。官方四GET明确200/409 APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED/200/200；受控选择和构型外部来源未配置/未接通仍保留。既有FTD事项修订5/保存工作1调查及综合可读；reader仍VERIFICATION_PENDING，原文8页可读不证明本轮新模型/SAVE/Overall使用。独立产品37ae0f8（父94c24efa）已提交，原生初次分析/准确BLOCKED后继修复尚未发布；本记录不扩写产品验证。",
-          "nextAction": "先收口并按独立准确候选完成原生初次分析/失败后继修复的正常验证和交付，再由本人通过现有UI显式发起新的准确请求；分别核真实模型输入、SAVE、Overall及重读。不重放旧失败，不以安装/发布/有限阅读关闭reader、SEM、完整业务、CHAT或新Aily验收；本记录不启动模型、Native或调度。"
+          "reason": "公开306已双远端同步，准确Host5d仅origin并经唯一release7699934157774441777 finished/error_logs=[]；原用户双端5d、runtime PASS，reader仍VERIFICATION_PENDING。一次正常AD接续POST最终Host HTTP500，客户端与服务端耗时分别为300675/469819.62ms；500后一次准确范围对账新ATT为空、SAVE0、grant仍BLOCKED且无lease，前后字段未变。新模型/SAVE/Overall闭环未完成；不从已记录SQL缺口断言死锁或根因。旧受控选择未配置、构型来源未接通及SEM/CHAT/Aily等内容缺口仍分列。",
+          "nextAction": "当前先完成来源授权读取的事务executor透传修复及针对性验证，再完成准确候选交付并核对保留的原接续请求；不在根因未明时重复提交。随后分别核真实原文/模型输入、准确SAVE、Overall消费和同版重读；保留旧失败、未知及原请求，不以发布、有限阅读或无新ATT关闭reader或完整业务验收。"
         },
         {
           "id": "document.assessment-reading.openclaw-chat-ui",
