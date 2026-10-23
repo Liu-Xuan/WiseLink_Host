@@ -476,3 +476,16 @@ Native最后已证实安装c234；当前安装/cron/inflight尚未完整获准�
 恢复与新制品证据仅位于项目忽略目录 `private:tmp/recovery-20261023/host/`：FINAL_RECOVERY_HANDOFF、原阶段diff/manifest、原日志抽取索引、正常source hook、new-artifacts-16b727以及preflight-17b。新时间只表示本轮恢复/记录/构建/打包或真实只读查询；旧观察原时间/source/状态不变。M1附录E.7只补实际链路职责，M2继续九binding/四列和原155证据，M3不把客户端观察时刻当队列ACK或首次可读事件。
 
 本轮仅针对记录变更验证：既有snapshot QA 39/39；实际生成HTML在JSDOM载入177条证据/9条接线，P3＋company＋V53＋deployment、P0＋save.finish＋V08＋runtime交叉筛选及节点/关系到准确binding下钻均通过，diagnostics空。接线显示源码范围匹配；旧测试缺执行版本/契约和新build的执行时契约差异可见，适用说明不计当前覆盖；部署/真实运行仍分别尚未部署/尚未核对。筛选不改selection，13/47/54/10目录及155旧证据逐值不变。正常生成时间是本轮时间，不替换原观察。产品套件与build没有为该记录变化重跑。具体回执在private:tmp/recovery-20261023/host/records-preparation/，当前九文件差异先交Root审阅，尚未提交或同步。
+
+
+### 2026-10-23 已获权 OpenClaw CHAT 的主线集成与构建
+
+产品提交 `251941f4fda4d515909208efd842610246661adc`，父 `8d0ff7f5f5bacc86ecbe1aae3e802312b207a833`，tree `142c2636f555d5c0a1b8d31675954820657f285d`，正常 hook 通过且构建输入干净。已接受作者 `0fd28f3d5514a9187fa67c39cd1e19e4d0854492` 的 6 个 Review 前端文件和 4 个测试用完整 binary diff 选择性移植；git apply --check、最终十文件 blob 逐字节一致。client/server/shared/test/scripts 及构建配置与作者原基线对象一致，实际消费者无需接口适配；作者私有提交对象没有进入公开检出。
+
+资料库 `DocumentAssessmentReview` 与既有获权 WorkItem/Matter 进入同一 `ContinuousReviewPanel/ReviewChatComposer`，普通 CHAT/AUTOMATIC 和更新评估分开，保留 HTTP 短轮询、准确来源和历史。未知发送仅按原 requestId、正文、会话和范围对账；同会话 STALE_CONTEXT 仍需 Host 当前 owner/OAuth/executor 能力。CLOSED/空/换会话通过显式操作保留结果未知记录，不复制、自动重发或自动创建新会话；草稿仍仅页面内存，身份/对象切换隔离迟到响应。
+
+初版 fdf 的原 59 个不同定向用例按原三次日志解释保留，原首轮措辞断言失败及后续修正不删；后继 0fd 的 31/31、3 套件于 07:43:03.541821–07:43:13.999794Z 通过。两批范围重叠、非相加，未重跑或移植执行时间/未知执行 SHA、契约。原报告以最终作者提交映射受测文件；本次只在全部接受 blob 和未变消费者一致的范围附适用说明，不计为新提交测试覆盖。
+
+本次正常 `npm run build` 最终于 2026-10-23T08:38:50.595713+00:00–2026-10-23T08:39:33.655043+00:00 exit 0，wrapper 43.066 秒；四子日志均 fresh，477 required/477 copied/0 failed 是包数。server immutable sourceCommit 为产品提交，buildTime 2026-10-23T08:39:08.049Z；client 编译 AST 的不可变常量及 getter 同 SHA，buildTime 2026-10-23T08:38:57.777Z。22 条候选外历史 tsconfig 诊断连同其余非致命提示原样留日志，不压警告。首次沙箱 DNS 在 init 失败；获准联网后第二次在 NFT 检查拒绝树外依赖 symlink；将原已备依赖 APFS 复制成检出内真实目录后，第三次正常全量完成。两次失败分别保留，未改 pipeline 或削弱检查。
+
+只更新 M1 E.8/E.9、本记录、M_INTEGRATION 顶段和六份既有 runtime-monitor 输入/生成文件；原 184 个 evidence 对象逐值保留，新增八条限定的源码、两批原测试适用、本次技术构建、未部署和未运行记录；当前目标下新Aily的源码适配/测试仍显式not_run。M1 目录仍 13/47/54/10，新 Aily binding 仍 planned/null；历史 Aily 失败保留原时间范围。另按本次只读观察，在现有对话方案补充官方连接器、工作身份 HTTP 与 MCP 渠道的能力/限制一段，实际能力仍未连接。生成 HTML 初次核对发现目标源码/契约更新后旧 Aily not_run 显示为历史范围，失败回执保留；补两条当前范围 not_run 并关联当前未部署/未运行记录后，仅重生成改变的输入，同一 JSDOM 筛选与节点/关系下钻检查通过、diagnostics 空，不称浏览器视觉验证。192 条是证据目录条数，不是完成度。M3 继续实际父级投影，不由记录或本地构建造业务状态。旧 16b build/c235 包保持原来源，没有重打包、推送、发布、远端安装/DDL 或真实模型/READ/SAVE。

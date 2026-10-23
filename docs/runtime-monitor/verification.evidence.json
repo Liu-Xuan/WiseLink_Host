@@ -3523,6 +3523,198 @@
         "V53"
       ],
       "summary": "本次仅准确本地候选的主线文档后继，没有新后端发布/安装/DDL或真实模型READSAVE；原UI实际De1d发布与原177条观察保持原身份。当前not_run不代表重新查询线上，也不关闭独立fdf CHAT或新Aily接入缺项。"
+    },
+    {
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "id": "openclaw-chat.integrated.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "05111ed107d0deba9f46ebaa391bf29bcd0d93e304955553997ec013fcd01a35",
+      "sourceRevision": "251941f4fda4d515909208efd842610246661adc",
+      "environmentId": "local:public-source-integration",
+      "observedAt": "2026-10-23T08:46:57.232987+00:00",
+      "summary": "已接受0fd的6个Review前端文件及4个测试原样移植到本地主线；apply check、十文件blob及原消费者/共享接口/构建配置对象一致。实际DocumentAssessmentReview/获权WorkItem/Matter消费同一CHAT面板，未知发送恢复范围见M1 E.9。仅源码集成，不是产品测试、发布或真实业务通过。",
+      "authorRevision": "0fd28f3d5514a9187fa67c39cd1e19e4d0854492",
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V15",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ]
+    },
+    {
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "id": "openclaw-chat.original-tests.original",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:isolated-react-jsdom",
+      "observedAt": "2026-10-23T07:13:39.817526+00:00",
+      "acceptedSourceRevision": "fdf07b60476c6f03a37257f9258b61f534ea1ade",
+      "testLevel": "integration",
+      "reportedCases": 59,
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "summary": "原初版59个不同定向用例按三次日志及后续修正解释保留；原首轮措辞断言失败不删。 两组重叠、非相加；本次没有重跑。原日志未记录准确执行HEAD/契约，保持null，最终作者提交仅映射受测文件。",
+      "applicableProductRevision": "适用于本次产品251941f4fda4d515909208efd842610246661adc中接受的相同受影响blob与未变消费者；仅附适用说明，原执行身份/时间保持，不计入本次新SHA测试覆盖。"
+    },
+    {
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "id": "openclaw-chat.original-tests.recovery",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": "local:isolated-react-jsdom",
+      "observedAt": "2026-10-23T07:43:13.999794+00:00",
+      "acceptedSourceRevision": "0fd28f3d5514a9187fa67c39cd1e19e4d0854492",
+      "testLevel": "integration",
+      "reportedCases": 31,
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "summary": "后继恢复修正31/31、3套件通过，覆盖改变的恢复/草稿/来源交互文件。 两组重叠、非相加；本次没有重跑。原日志未记录准确执行HEAD/契约，保持null，最终作者提交仅映射受测文件。",
+      "applicableProductRevision": "适用于本次产品251941f4fda4d515909208efd842610246661adc中接受的相同受影响blob与未变消费者；仅附适用说明，原执行身份/时间保持，不计入本次新SHA测试覆盖。"
+    },
+    {
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "id": "openclaw-chat.integrated.local-build",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "f567153a12fdc69d6aacd1d77d3eb1eccdf8472df40273fef0b94e9faf23baea",
+      "sourceRevision": "251941f4fda4d515909208efd842610246661adc",
+      "environmentId": "local:normal-full-build",
+      "observedAt": "2026-10-23T08:39:33.655043+00:00",
+      "testLevel": "integration",
+      "scenarioIds": [],
+      "summary": "准确clean产品提交正常npm run build最终exit0/43.066s；前后端immutable指纹同源，四子日志fresh，477/477/0是依赖包数。先前沙箱DNS和NFT树外symlink失败各保留，已有依赖真实目录复制后通过；22条候选外tsconfig诊断未压制。仅技术构建，不代表场景/业务测试通过。",
+      "frontendBuildTime": "2026-10-23T08:38:57.777Z",
+      "serverBuildTime": "2026-10-23T08:39:08.049Z",
+      "frontendFingerprintSha256": "0e0f41c4c336b4fafe7d8842a24fdb0d878a2df81643c6ad82e2fabfd27382ca",
+      "serverFingerprintSha256": "6a65bc03f05d847db91fbe12c0d6ce3671af2b8bffdc84b11952268ea8060e0e",
+      "normalBuildAttempts": 3,
+      "completedNormalBuilds": 1,
+      "applicableProductRevision": "本记录后继只更新文档/监控输入与生成输出，产品blob不变；构建保持准确产品提交和执行时契约，不倒填为新文档SHA或新契约上的执行。"
+    },
+    {
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading",
+        "dialogue.cross-object-reading"
+      ],
+      "id": "openclaw-chat.integrated.deployment",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "05111ed107d0deba9f46ebaa391bf29bcd0d93e304955553997ec013fcd01a35",
+      "sourceRevision": "251941f4fda4d515909208efd842610246661adc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V15",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "summary": "本次CHAT源码仅本地集成和技术构建，没有新部署或真实模型/READ/SAVE/业务验收；旧De1d发布及原Aily失败按原时间/source/status保留。本条不是一次新线上查询。 新Aily仍为计划：未连接最终用户/Host只读工具或部署、运行；沿当前目标显式记录not_run，不更改旧证据。"
+    },
+    {
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
+      "bindingIds": [
+        "document.assessment-reading",
+        "dialogue.cross-object-reading"
+      ],
+      "id": "openclaw-chat.integrated.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "05111ed107d0deba9f46ebaa391bf29bcd0d93e304955553997ec013fcd01a35",
+      "sourceRevision": "251941f4fda4d515909208efd842610246661adc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V15",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "summary": "本次CHAT源码仅本地集成和技术构建，没有新部署或真实模型/READ/SAVE/业务验收；旧De1d发布及原Aily失败按原时间/source/status保留。本条不是一次新线上查询。 新Aily仍为计划：未连接最终用户/Host只读工具或部署、运行；沿当前目标显式记录not_run，不更改旧证据。"
+    },
+    {
+      "id": "openclaw-chat.integrated.aily-planned.source_review",
+      "kind": "source_review",
+      "status": "not_run",
+      "contractRevision": "05111ed107d0deba9f46ebaa391bf29bcd0d93e304955553997ec013fcd01a35",
+      "sourceRevision": "251941f4fda4d515909208efd842610246661adc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "plannedOnly": true,
+      "summary": "本次记录目标已变为新的本地CHAT产品与M1契约；新Aily适配、可信最终用户和准确Host只读工具仍未连接或验收，binding的source/consumer/执行/读取入口保持null。仅沿当前目标保留not_run，不代表新线上查询、源码适配或测试执行。"
+    },
+    {
+      "id": "openclaw-chat.integrated.aily-planned.test",
+      "kind": "test",
+      "status": "not_run",
+      "contractRevision": "05111ed107d0deba9f46ebaa391bf29bcd0d93e304955553997ec013fcd01a35",
+      "sourceRevision": "251941f4fda4d515909208efd842610246661adc",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md",
+      "bindingIds": [
+        "dialogue.cross-object-reading"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V12",
+        "V24",
+        "V26",
+        "V28",
+        "V30"
+      ],
+      "plannedOnly": true,
+      "summary": "本次记录目标已变为新的本地CHAT产品与M1契约；新Aily适配、可信最终用户和准确Host只读工具仍未连接或验收，binding的source/consumer/执行/读取入口保持null。仅沿当前目标保留not_run，不代表新线上查询、源码适配或测试执行。",
+      "testLevel": "e2e"
     }
   ]
 }

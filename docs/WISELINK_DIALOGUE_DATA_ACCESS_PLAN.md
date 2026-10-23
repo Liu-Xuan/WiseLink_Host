@@ -31,6 +31,8 @@ flowchart LR
 
 新智能体页面已设置技术资料助手角色，要求基于厂家原文与 WiseLink 数据、保留资料不足说明并由用户确认建议。本次所显示的连接器是语音合成、图片生成、飞书任务、飞书妙记；未见 WiseLink 连接器。工作上下文显示“立即开启”。这只证明观察到的配置，不能证明已接入 WiseLink，也不能排除平台内置的其他飞书能力。
 
+后续同一 TEAM 实例的市场中可见官方妙搭连接器，所列工具以数据库枚举、结构查询和 `execute_sql` 为主；身份/RLS 的说明尚无实际 Host Source/grant 或准确版本读回，不能替代窄范围 Host 工具。[官方工作身份文档](https://aily.feishu.cn/hc/1u7kleqg_gnrssu2a)明确提供三方系统“对话用户授权”的 OAuth2Code 自定义 HTTP 方式；[通用自定义 MCP 文档](https://aily.feishu.cn/hc/1u7kleqg_fiogabrc)认证示例列请求头/参数配置，未保证签名最终用户身份。当前 TEAM 详情未见工作身份、API 或 channelToken 入口；账号进入开发后台 `/ai/projects` 可见 MCP 市场，但尚未证明可绑定该 TEAM。实际能力仍未连接，具体可用渠道和身份传递仍待核实；本次没有新增配置、数据授权或源码工具。
+
 | 现有代码/平台基础 | 可复用部分 | 尚需接通或验证 |
 | --- | --- | --- |
 | `EngineeringIssueSearchController` / `EngineeringIssueSearchService.search/read/catalogue/readKnowledge` | 已有浏览器权限下的跨 WorkItem/EngineeringMatter 问题搜索、准确工作展开和知识目录 | 新 Aily 调用适配与最终用户身份；可见集合仍受现有 owner/权限规则限制，不等于全企业数据 |

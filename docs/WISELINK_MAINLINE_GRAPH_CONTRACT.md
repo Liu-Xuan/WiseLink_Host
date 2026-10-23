@@ -721,9 +721,19 @@ PG024/025/026/029 的 expired 均由隔离fixture管理员把既有 lease_expire
 
 M1 规定含义与接线责任，M2 记录实现/测试/部署/运行四层证据，M3 只投影业务父响应。E.7 的 ACK/Review/c235 本地成果不能覆盖 E.5/E.6 历史生产观察。真实 SEM、TDMS 运行授权和刷新、三类变化及下游内容覆盖仍按实际缺口推进。
 
-OpenClaw 首批交互沿已有获权 Review 的 CHAT/AUTOMATIC 及短轮询；前端独立候选与验证在集成记录登记，尚不等于发布。新 Aily 是跨文档、跨事项问答入口，检索不要求预选对象，展开仍要准确授权和版本。已有 Host 浏览器搜索/阅读服务可复用，但不等于新 Aily 已能调用；旧 Aily 入口常量、只读 MCP 与最终用户身份接入必须逐项核对，不以替换 agentId 或授予后台自动任务能力代替。
+OpenClaw 首批交互沿已有获权 Review 的 CHAT/AUTOMATIC 及短轮询；已接受前端候选已原样集成本地主线产品提交 `251941f4fda4d515909208efd842610246661adc`，实际消费者和恢复边界见 E.9。完整本地构建通过，尚未发布或开展本次真实业务验收。新 Aily 是跨文档、跨事项问答入口，检索不要求预选对象，展开仍要准确授权和版本。已有 Host 浏览器搜索/阅读服务可复用，但不等于新 Aily 已能调用；旧 Aily 入口常量、只读 MCP 与最终用户身份接入必须逐项核对，不以替换 agentId 或授予后台自动任务能力代替。
 
 问答数据方案和验收范围见[对话数据接入方案](WISELINK_DIALOGUE_DATA_ACCESS_PLAN.md)。本次未修改 Aily 远端配置、共享会话、授予新数据范围或触发模型/业务保存；“已写职责”与“已接数据”分开记录。
+
+### E.9 已获权事项 OpenClaw CHAT 的本地集成（2026-10-23）
+
+本地主线产品提交 `251941f4fda4d515909208efd842610246661adc`，父提交 `8d0ff7f5f5bacc86ecbe1aae3e802312b207a833`，将已接受 `0fd28f3d5514a9187fa67c39cd1e19e4d0854492` 的 6 个 Review 前端文件和 4 个测试原样选择性集成；消费者代码、共享接口及构建配置与作者基线一致。采用文件差异而非作者历史，未新增节点、关系、场景或规则。
+
+资料库入口为 `DocumentVersionReadingPage → DocumentAssessmentWorkspace → DocumentAssessmentReview → ContinuousReviewPanel → ReviewChatComposer`；既有 WorkItem/Matter 入口复用同一面板和 Host Review 会话。普通问题只提交显式 CHAT/AUTOMATIC，按原 HTTP 短轮询读回；更新评估保持独立显式动作，CHAT 不触发工作刷新或正式采用。历史与准确来源导航复用已有 turn renderer 和 SourceRef。
+
+未知发送在页面内存草稿作用域保留原 requestId、原消息正文和原会话/业务范围；读回按原请求核对，不复制或自动重发。同一会话 STALE_CONTEXT 仅允许已有未知意图在 Host 当前 owner/OAuth/executor 能力仍成立时原样重试。CLOSED、空或替换会话允许用户显式保留结果未知记录；新会话和新问题另需显式操作。切对象或身份隔离迟到响应；内存记录不承诺完整页面重载后存续，Host 仍是业务来源。
+
+原作者 59 个不同定向用例与后继恢复修正 31 个用例按各自原日志和执行时间复用，两组重叠，不相加，也未转记为本次重跑。准确 clean 产品提交上的正常完整构建最终 exit 0，前后端不可变指纹均为该提交；先前 DNS 和依赖目录边界失败分别保留，修复依赖布局后通过。旧 16b 构建及 c235 包保持原来源；本次未重打 Native 包、部署、模型调用或业务 SAVE。M3 继续消费同一实际父级投影，本地源码与构建不生成线上业务完成状态。
 
 ## 附录 F. 后续来源规划
 
