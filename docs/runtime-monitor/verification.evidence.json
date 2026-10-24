@@ -6810,6 +6810,129 @@
       "status": "passed",
       "summary": "准确clean联合4a唯一标准完整npm run build于2026-10-24T18:06:17.566570+00:00至2026-10-24T18:07:00.534395+00:00执行exit0，原单调42.967489667秒；前后HEAD均准确4a且干净，server/client与四子日志均比基线新。未以仅前端开关或手工安装替代标准流程。此构建适用于cc22十三文件与163a三文件合并后的准确产品，不把继承PG/Node验证写成本轮重跑，不抹去TS6379及原baseline失败。仍仅本地技术准备，当前线上target为b8/c238；未同步/发布，不增加业务runtime、线上M3准确ref导航或完整P5/M3通过。",
       "timeBasis": "wiki-reading-delivery/build-run01原invocation/result UTC与原单调elapsedSeconds；observedAt为本次准确构建结束回执，不使用文档生成时点倒填。"
+    },
+    {
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-p1p2独立host候选与现有消费者",
+      "readbackRef": "private:p1-p2-host-isolation-20261025/p1",
+      "scenarioIds": [],
+      "sourceRevision": "eb53474ef4a5229420ae38560ca279df67ae0403",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": null,
+      "id": "p1.host-isolated.eb53.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "environmentId": null,
+      "summary": "独立P1 Host产品eb53474e（父8f54，treef86764888429e662b646df18052928d6942ddd1b）仅ReviewConversationService、服务spec与原生UPDATE PG回归三个文件。fresh RECORD/owner/准确主体修订/官方ACTIVE mapping成立后沿现有authenticated append/readback及原请求幂等路径；READ不授UPDATE，既有来源/当前修订及RLS策略保持。不移入Document CHAT、Native表格投影或0082/83，不扩大附件、Matter/Overall、正式采用或放行。Astra终审接受，正常hook提交且干净；真实SEM、AD SAVE/Overall及Native可信上下文缺口未关闭。",
+      "timeBasis": "准确提交/父/tree和Astra终审由implementation-result原件核定；准确审查UTC未知，起止/observedAt保持null，不以提交或归档倒填。"
+    },
+    {
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-p1p2独立host候选与现有消费者",
+      "readbackRef": "private:p1-p2-host-isolation-20261025/p1",
+      "scenarioIds": [],
+      "sourceRevision": "eb53474ef4a5229420ae38560ca279df67ae0403",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": null,
+      "id": "p1.host-isolated.eb53.service33.test",
+      "kind": "test",
+      "testLevel": "unit",
+      "status": "passed",
+      "environmentId": null,
+      "summary": "最终UPDATE-only三个文件提交前服务单套Jest33/33、server tsc与定向ESLint exit0，对应随后准确eb53的最终服务/spec文件；不是clean提交后重跑。旧完整C5链继承且未重跑，不以服务回归关闭实际SEM、原AD SAVE0或Native可信上下文。",
+      "timeBasis": "service-jest-run01等原件未提供准确执行UTC，起止/observedAt保持null，不借联合构建时钟倒填。"
+    },
+    {
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-p1p2独立host候选与现有消费者",
+      "readbackRef": "private:p1-p2-host-isolation-20261025/p1",
+      "scenarioIds": [],
+      "sourceRevision": "eb53474ef4a5229420ae38560ca279df67ae0403",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": null,
+      "id": "p1.host-isolated.eb53.pg3.test",
+      "kind": "test",
+      "testLevel": "integration",
+      "status": "passed",
+      "environmentId": "local:isolated-postgresql",
+      "summary": "收窄PG run02三项含父3/3、0skip、原单调8.653588792秒；不装0082/83，实际authenticated append/readback、原请求重放幂等与mapping/scope/current revision拒绝成立。实际角色均NOSUPERUSER/NOBYPASSRLS且非tableowner，既有RLS策略未变，无额外policy/grant，新attempt0、新SAVE0。源材料、已完成intake receipt/grant及较后Host修订/配置是合成前置，不是重跑初评/ACK。首次PG run01仅两个负例混入UPDATE不允许字段而先合法报REVIEW_UPDATE_FIELDS_UNEXPECTED，原日志保留；run02只修fixture请求形状，产品不变，Astra窄审接受。旧完整C5链继承未重跑；不将本次0SAVE写成新合成SAVE或真实SEM闭环通过。",
+      "timeBasis": "restricted-pg-run02日志仅给单调duration_ms8653.588792，未给权威UTC起止；startedAt/finishedAt/observedAt保持null。"
+    },
+    {
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-p1p2独立host候选与现有消费者",
+      "readbackRef": "private:p1-p2-host-isolation-20261025/p2",
+      "scenarioIds": [],
+      "sourceRevision": "43d417d7085bce01d8833e8958b027be59de2d9f",
+      "environmentId": null,
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "id": "p2.host-isolated.43d.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "summary": "独立P2 Host产品43d417d7（父8f54，treeeed6ba1fa7bd5271155ebe44dccce83b155ceda1）精确提取已接受9e5相对父3cccae的四文件增量：两个Host质量/复用文件与两个原回归spec，目标基线四文件原字节均等于9e父，应用后全部逐字节等于9e最终文件且full-index差异完全一致。独立no触发语义检查、checker2.3，准确已知2.2文本仍可复用但requiresRecheck后走原LOCAL_CHECK/CHECK/CHECK_BATCH及既有阅读消费者；不依赖Native表格投影、b907 Document CHAT版本pin、c237或0082/83。主控已接受实际diff和43项验证，正常hook提交且干净；候选未同步/发布。未自动改写、取消选用或重检既有保存文本，Reference/CMCF/OPS真实内容验收和旧数据处置保持待授权。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": null,
+      "timeBasis": "准确源码/提交与原件已核，未取得统一权威源码审查UTC；保留null，不用提交或归档时钟倒填审查。"
+    },
+    {
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-p1p2独立host候选与现有消费者",
+      "readbackRef": "private:p1-p2-host-isolation-20261025/p2",
+      "scenarioIds": [],
+      "sourceRevision": "43d417d7085bce01d8833e8958b027be59de2d9f",
+      "environmentId": null,
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "id": "p2.host-isolated.43d.quality-reuse43.test",
+      "kind": "test",
+      "testLevel": "unit",
+      "status": "passed",
+      "summary": "从准确8f54本地独立克隆、仅9e四文件最终未提交增量上运行原质量/reuse两suite一次，43/43通过；git diff --check通过。对应随后准确43d文件，不冒称clean43d重跑。依赖是源扁平node_modules的独立APFS cp -cR副本，未安装或改lock，源8f54保持干净；未跑全库/PG/fullbuild、模型、SAVE、浏览器或远端。补丁文本初始比较仅因Git index缩写由八位变七位不同，full-index比较后完全一致，无代码差异或测试重跑。本地回归不关闭真实保存质量、Reference/CMCF/OPS或P2完整验收。",
+      "startedAt": "2026-10-24T18:31:34.706347+00:00",
+      "finishedAt": "2026-10-24T18:31:44.682888+00:00",
+      "observedAt": "2026-10-24T18:31:44.682888+00:00",
+      "timeBasis": "targeted-tests原invocation/result UTC与原单调elapsedSeconds；仅本地两suite一次的实际执行时钟，不替代生产或内容观察。"
+    },
+    {
+      "id": "p1-p2.host-isolated.799.standard-full-build.test",
+      "kind": "test",
+      "testLevel": "integration",
+      "status": "passed",
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "sourceRevision": "799defbe3c3573e76f5fbc0316636bc51a538b71",
+      "environmentId": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-p1p2独立host候选与现有消费者",
+      "readbackRef": "private:p1-p2-host-isolation-20261025/integration",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "translation.reading"
+      ],
+      "scenarioIds": [],
+      "summary": "准确联合799（父43d、tree2f57acd9d9e26c3f3fcdae8f63c88a0726163a56）七文件与P1 eb53/P2 43d接受来源逐blob相等、无交集，正常hook提交且干净。标准npm run build run01在step0官方npx CLI遇沙箱DNS ENOTFOUND registry.npmmirror.com退出1，未进入编译、四子日志全部不fresh，原件保留且产品未改；以所需网络权限正常执行同一原命令run02，于2026-10-24T18:57:32.322224+00:00至2026-10-24T18:58:17.000579+00:00 exit0，原单调44.680512秒，前后准确799/clean、四子日志全部fresh，无跳钩/构建脚本改写/手工安装或仅前端开关。本条只证明合成后本地完整构建，不重记P1服务33/PG3/P2质量43为本轮重跑，不增加技术发布、真实SEM/Reference/CMCF/OPS质量、原AD SAVE/Overall或Native可信上下文通过。",
+      "startedAt": "2026-10-24T18:57:32.322224+00:00",
+      "finishedAt": "2026-10-24T18:58:17.000579+00:00",
+      "observedAt": "2026-10-24T18:58:17.000579+00:00",
+      "timeBasis": "起止/observedAt来自准确799 build-run02原invocation/result UTC，elapsedSeconds为原单调计时；run01失败独立归档，不用四个旧日志冒作新构建证据，不以记录生成时点替代。"
     }
   ]
 }

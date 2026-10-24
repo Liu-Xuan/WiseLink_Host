@@ -1,5 +1,21 @@
 # Integration source record
 
+## 2026-10-25 P1/P2独立Host候选与现有消费者
+
+P1准确产品`eb53474ef4a5229420ae38560ca279df67ae0403`（父`8f54fde16535566261f47b8c014fe14053195b8e`，tree`f86764888429e662b646df18052928d6942ddd1b`）仅ReviewConversationService、服务spec与原生UPDATE PG回归三文件。UPDATE-only在fresh RECORD、owner、准确主体修订及官方ACTIVE mapping成立后复用原authenticated append/readback、原请求幂等与既有RLS策略；READ不授UPDATE，不引入Document CHAT、Native表格投影、0082/83或新policy/grant。Astra终审接受，正常hook提交且干净；旧625源码/验证保留原身份，不改记本轮运行。
+
+P1最终服务/spec在提交前单套Jest33/33、server tsc和定向ESLint通过；收窄PG run02三项含父3/3、0skip，原单调8.653588792秒。不装0082/83，实际authenticated append/readback及重放幂等、撤销/错客户端/跨租户mapping与owner/current revision/successor completion拒绝成立；NOSUPERUSER/NOBYPASSRLS、非tableowner、既有RLS策略不变，无额外policy/grant，新attempt0、新SAVE0。首次PG run01两负例混入UPDATE不允许字段，先合法得到REVIEW_UPDATE_FIELDS_UNEXPECTED，原日志保留；run02只修fixture请求形状，保留精确拒绝断言，产品不变且Astra窄审接受。source material、既有completed intake receipt/grant及后续Host修订/配置为合成前置；旧完整C5链继承未重跑，不把旧SAVE或真实SEM计成本轮结果。局部P1执行UTC未取得，不以归档/构建时间倒填。
+
+P2准确产品`43d417d7085bce01d8833e8958b027be59de2d9f`（父同8f54，tree`eed6ba1fa7bd5271155ebe44dccce83b155ceda1`）精确提取9e5相对父3cccae的四文件：两个Host质量/reuse文件及两个原spec。目标基线四文件原字节等于9e父，应用后最终字节等于9e；完整Git index diff相同。独立no触发语义检查，checker2.3，准确已知2.2文本仍可复用但requiresRecheck后走原LOCAL_CHECK/CHECK/CHECK_BATCH和阅读消费者。原两suite仅一次43/43、diff检查通过，正常hook提交且干净；执行UTC见私有targeted-tests原件。依赖为独立APFS副本，未安装/改lock，源待批Wiki8f54/Host4008候选保持原样。原9e历史验证不改成本轮重跑。
+
+根在同一隔离克隆的新分支`codex/host-identity-quality-20261025`串行组合，准确当前联合产品`799defbe3c3573e76f5fbc0316636bc51a538b71`（父43d，tree`2f57acd9d9e26c3f3fcdae8f63c88a0726163a56`）正常hook提交且干净，P1三文件/P2四文件无交集，七文件与各自接受来源逐blob相等，独立P2分支及提交保留。准确799的标准完整构建run01先在step0官方npx CLI遇沙箱DNS ENOTFOUND registry.npmmirror.com退出1，未进入编译、四子日志全部不fresh，产品/clean保持，原失败独立归档。以所需网络权限正常执行同一原命令run02，于2026-10-24T18:57:32.322224+00:00至2026-10-24T18:58:17.000579+00:00 exit0、原单调44.680512秒，前后准确799/clean、四子日志全部fresh；未改构建脚本、手工安装或用仅前端开关，旧日志不冒充新结果。
+
+图只补现有消费者：ReviewConversationService原WorkItem UPDATE admission/append/readback之后仍走任务/delivered/READ、保存问题正文和Overall；quality/reuse的checker/LOCAL_CHECK/CHECK/CHECK_BATCH仍由现有selected阅读投影消费。不增节点/边；source bindings指当前联合799并保留上次review与历史证据，只表示本地源码范围，不写整链或线上通过。Host独立交付不把Native表格投影、Document CHAT版本pin、c237或0082/83当其前置；这些较大批次仍守各自范围。
+
+当前线上仍b8/c238，reader待验；原AD ATT5 TIMED_OUT/外层BLOCK、该attempt SAVE0、Overall空与Native可信上下文缺口保持。真实SEM/Reference/CMCF/OPS质量、受控方法版次和后果/暴露/控制资料仍未验收，既有保存文本未更正、取消选用、重检或清理，旧数据处置及真实内容验收仍待原授权。本批无模型、SAVE、真实业务请求或新部署/runtime；本地合成PG与源码/测试/构建分列，不替代内容完成。
+
+原348条evidence完整对象/顺序保留，新增P1三条与P2两条源码/局部验证及第六条准确联合完整build，scenarioIds均空。只更新现有research.overall、document.assessment-reading、translation.reading消费者及P1/P2工作包，其他工作包、13/47/54/10目录、12binding、选择数组和HTML数据外字节保持。M1见[E.32](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e32-p1p2独立host候选与现有消费者2026-10-25)，私有原件见`private:p1-p2-host-isolation-20261025`。本次记录生成未重复产品检查；本记录为本地提交，未同步或发布。
+
 ## 2026-10-25 Wiki保存头导航与成员预览的联合候选
 
 准确联合产品`4a7559a8d54d35177fb602029d7c917036dcd391`（父`163a11a52b0b7f4572ace01d764ab6e90f4fa9c1`，tree`729563cfdefd636a10ec9b902b8f377627eb84fa`，分支`codex/wiki-reading-delivery-20261025`）完整选择性集成cc22保存头/目录导航的13文件（7产品、6测试），最终逐项字节等于准确cc22；与b7/163a无路径交集，原163a两组件及Node测试三文件保持。Astra范围/接口分析接受，Sol经原正常hook提交且干净。不带cc22文档后继，不改Native、DDL、API配置、依赖、模型或SAVE，原正文与存储版本结构不变，无迁移/清理。

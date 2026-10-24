@@ -135,10 +135,10 @@
       "scenarioIds": [
         "V12"
       ],
-      "nextAction": "先按准确625原生WorkItem UPDATE窄修复完成技术交付并核对原请求，再沿实际任务/delivered/READ、保存问题正文、Overall previousWork/finish/artifact及同版重读核对SEM语义。原一般严重性定义与保存消费者不重做；受控方法版次及具体后果/暴露/控制事实仍缺。空讨论0turn和本地合成SAVE不能关闭内容验收；当前已核线上b8/c238，625仍未技术交付，SEM真实内容缺口及AD优先保持。",
+      "nextAction": "准确UPDATE-only Host适配eb53已与P2 43d组成联合799本地候选，独立交付不以0082/83、Native表格补丁或Document CHAT版本pin为前置；原625留其历史身份，当前线上仍b8/c238，候选未发布。后续按准确候选范围交付并核对原请求，真实SEM继续沿实际任务/delivered/READ、保存问题正文、Overall previousWork/finish/artifact与同版重读核对；一般严重性定义/旧保存消费者不重做，受控方法版次和具体后果/暴露/控制事实缺口保持。空讨论、0attempt/0SAVE的合成PG或构建均不关闭真实内容验收，原AD终态与Native可信上下文缺口保持。",
       "progress": {
-        "delivered": "JA-AC§3.1四级一般严重性定义已作为独立方法材料接入并随787交付，旧risk六事件规则、保存及Overall消费者保持。原170项Jest、2项Node与构建沿真实源码/时间保留；有限UI读到既有work1四问题及同work综合。 本轮625补原生WorkItem UPDATE admission，服务33/33、受限PG3/3及一次准确完整构建本地通过；原284证据与12binding对象保持，未发布。",
-        "remaining": "受控方法Host版次仍未确认，真实后果、暴露/控制事实和SEM正文使用未验收。同ref和合成用例不证明当次模型实际使用特定原文语义。 原页面只创建空讨论，0turn/模型/评估SAVE，原SEM文字仍在；新入口候选本地通过不等于线上已修复或真实内容已更新，AD优先及准确原请求保持。",
+        "delivered": "JA-AC§3.1四级一般严重性定义已作为独立方法材料接入并随787交付，旧risk六事件规则、保存及Overall消费者保持。原170项Jest、2项Node与构建沿真实源码/时间保留；有限UI读到既有work1四问题及同work综合。 本轮625补原生WorkItem UPDATE admission，服务33/33、受限PG3/3及一次准确完整构建本地通过；原284证据与12binding对象保持，未发布。 本轮P1 eb53（父8f54）UPDATE-only三文件已适配当前Host；服务33/33、server tsc/定向ESLint及收窄真实受限PG run02三项含父3/3通过，不装0082/83、新attempt0/SAVE0、既有RLS策略不变。Astra终审/正常hook提交接受，现已按七文件无交集/来源字节一致组合入准确联合799本地产品。 准确联合799的标准完整build run02 exit0、44.680512秒、前后HEAD/clean及四fresh子日志成立；run01官方CLI的沙箱DNS失败保留，未进入编译，不计通过。",
+        "remaining": "受控方法Host版次仍未确认，真实后果、暴露/控制事实和SEM正文使用未验收。同ref和合成用例不证明当次模型实际使用特定原文语义。 原页面只创建空讨论，0turn/模型/评估SAVE，原SEM文字仍在；新入口候选本地通过不等于线上已修复或真实内容已更新，AD优先及准确原请求保持。 联合799未同步/发布，本地UPDATE admission/PG不证明当次模型、真实SEM或旧文本更正；旧完整C5链仅继承未重跑，原数据未重检/清理。",
         "owner": "原文/方法、保存及Overall实际消费者；工程内容验收",
         "acceptance": "准确原文、实际delivered/READ及模型输入、保存问题正文、Overall previousWork/finish/artifact的语义使用能够对应；方法和业务依据可追溯，缺失事实仍为未知。",
         "evidenceIds": [
@@ -151,7 +151,11 @@
           "sem.native-update.625.admission.source-review",
           "sem.native-update.625.jest33.test",
           "sem.native-update.625.pg3.test",
-          "sem.native-update.625.full-build.test"
+          "sem.native-update.625.full-build.test",
+          "p1.host-isolated.eb53.source-review",
+          "p1.host-isolated.eb53.service33.test",
+          "p1.host-isolated.eb53.pg3.test",
+          "p1-p2.host-isolated.799.standard-full-build.test"
         ]
       }
     },
@@ -176,10 +180,10 @@
         "V28",
         "V30"
       ],
-      "nextAction": "原ATT5已期限终态且Host外层BLOCK，有限PAGE局部读取结论保留，不等待继续产出，不另起/重试或切执行器。保留完整catalog/脚注全集/模型实收理解与真实保存阅读的差额，以及存量更正/重检、Reference与SEM内容缺口；停止新增自制loop/续接恢复及相关发布准备，先核原生可信上下文复用边界。",
+      "nextAction": "纯Host质量/reuse独立43d已与P1 eb53组成准确联合799本地候选：独立no/checker2.3与已知2.2文本复用后强制新检查不依赖df17 Native表格投影、b907 Document CHAT版本pin、c237或0082/83，可按准确Host范围独立交付。原ATT5已期限终态/外层BLOCK，不等继续产出，不另起/重试或切执行器；有限PAGE读取结论保持。实际Reference/CMCF/OPS、表格/否定/术语、SEM和准确SAVE/Overall仍按原授权核对，旧保存文本没有自动更正、取消选用、重检或清理；完整catalog/脚注全集/模型实收理解及Native可信上下文差额不关闭，不新增自制loop/续接恢复。",
       "progress": {
-        "delivered": "历史原文/局部中英对照、保存质量问题及原候选/检查/selected保持，PAGE b7验证/build与b8技术交付保留。原ATT5前5轮20 PAGE seeds有限真实扩展、两条除外条件及第1—4轮Native/Host引用等值仍成立，不宣称全页/脚注全集。原先9 READ/121 refs观察保留其时点，40/41另证原ATT5 TIMED_OUT/Host外层BLOCK、该attempt SAVE0和Overall空，不再等其继续产出。有限M3及可信上下文入口纠偏均不关闭存量质量、SEM或完整业务验收。",
-        "remaining": "有限PAGE读取已证，完整未过滤catalog、脚注全集、模型完整实收/理解及真实保存/Overall仍缺；原ATT5已终态不再等待，原checkpoint/副作用保留。两块已选措施、Reference准确修订/新检查/selected/阅读及表格/否定/术语、SEM真实依据仍按原范围验收，purpose自述不作SAVE错误。Native进程/检查点与UNKNOWN未由Host终态证明已清，停止新增自制loop/续接恢复及相关发布准备，先核可信原生接入。大包、0082/83和旧数据处置各守独立范围，未决先对账。",
+        "delivered": "历史原文/局部中英对照、保存质量问题及原候选/检查/selected保持，PAGE b7验证/build与b8技术交付保留。原ATT5前5轮20 PAGE seeds有限真实扩展、两条除外条件及第1—4轮Native/Host引用等值仍成立，不宣称全页/脚注全集。原先9 READ/121 refs观察保留其时点，40/41另证原ATT5 TIMED_OUT/Host外层BLOCK、该attempt SAVE0和Overall空，不再等其继续产出。有限M3及可信上下文入口纠偏均不关闭存量质量、SEM或完整业务验收。 本轮P2独立43d（父8f54）精确提取9e相对3cccae的两个Host质量/reuse文件和两个原spec，四个最终文件与9e逐字节一致；两suite一次43/43及diff检查通过，正常hook提交且干净。独立APFS依赖副本无安装/lock修改，未带Native/schema/Document CHAT。现与P1无交集组成联合799，保留LOCAL_CHECK/CHECK/CHECK_BATCH与原阅读消费者。 准确联合799的标准完整build run02 exit0、44.680512秒、前后HEAD/clean及四fresh子日志成立；run01官方CLI的沙箱DNS失败保留，未进入编译，不计通过。",
+        "remaining": "有限PAGE读取已证，完整未过滤catalog、脚注全集、模型完整实收/理解及真实保存/Overall仍缺；原ATT5已终态不再等待，原checkpoint/副作用保留。两块已选措施、Reference准确修订/新检查/selected/阅读及表格/否定/术语、SEM真实依据仍按原范围验收，purpose自述不作SAVE错误。Native进程/检查点与UNKNOWN未由Host终态证明已清，停止新增自制loop/续接恢复及相关发布准备，先核可信原生接入。大包、0082/83和旧数据处置各守独立范围，未决先对账。 联合799仅本地未发布；43项Host回归不构成Reference/CMCF/OPS或表格/术语真实内容验收，不自动重写、取消选用或重检旧保存文本，旧数据更正/重检/清理仍待授权。",
         "owner": "既有阅读前端、ReviewOverall身份、OpenClaw交互及Aily只读适配范围",
         "acceptance": "§6.5所需准确源版/存量修订进入真实新检查，已选范围的更正、检查、选用和阅读一致；否定/表格/术语及SEM方法、后果/暴露依据在真实正文中正确处理，缺资料仍未知。撤权、错版、普通继续跳过已选块等反例不被通过状态掩盖；保留原候选和历史检查，不增加逐块人工确认前置。",
         "evidenceIds": [
@@ -271,7 +275,10 @@
           "native-loop.boundary-correction.source-review",
           "ad-page.b8.real-page-read-bounded.runtime",
           "m3.b8.current-object-three-view-bounded.runtime",
-          "ad-page.b8.att5-deadline-host-block.runtime"
+          "ad-page.b8.att5-deadline-host-block.runtime",
+          "p2.host-isolated.43d.source-review",
+          "p2.host-isolated.43d.quality-reuse43.test",
+          "p1-p2.host-isolated.799.standard-full-build.test"
         ]
       }
     },
