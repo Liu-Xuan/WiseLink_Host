@@ -1207,7 +1207,7 @@ export class CanonicalJobAidProblemService {
         SELECT 1 FROM work_item w JOIN dm_document_version v ON v.document_version_id=w.document_version_id
         JOIN dm_acquisition a ON a.document_version_id=v.document_version_id OR a.acquisition_id=v.acquisition_id
         WHERE w.tenant_id=${ingress.scope.tenantId} AND w.work_item_id=${ingress.scope.workItemId}
-          AND a.source_descriptor_json::jsonb ? 'tdmsRegistration') AS marker`);
+          AND jsonb_exists(a.source_descriptor_json::jsonb, 'tdmsRegistration')) AS marker`);
       if (saved?.native||saved?.marker) throw new Error('TDMS_REVIEW_ADMISSION_NOT_CONNECTED');
       return undefined;
     }

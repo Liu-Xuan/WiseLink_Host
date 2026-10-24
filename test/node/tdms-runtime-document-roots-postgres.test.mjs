@@ -22,6 +22,9 @@ const {
   tdmsRuntimeDocumentBindings,
   tdmsRuntimeDocumentHasMarker,
 } = require('../../server/modules/tdms-source/tdms-runtime-document-roots.ts');
+const { CanonicalJobAidProblemService } = require(
+  '../../server/modules/canonical-host/canonical-jobaid-problem.service.ts',
+);
 
 const binding = {
   tenantId: 'tenant-document-roots',
@@ -100,6 +103,8 @@ test(
         schema.dmSourceArtifact,
         schema.dmAcquisition,
         schema.dmIngressPreflight,
+        schema.workItem,
+        schema.assessmentWorkRevision,
       ]) {
         const config = getTableConfig(table);
         await admin.unsafe(`CREATE TABLE ${config.name}
@@ -139,7 +144,7 @@ test(
         statements.length = 0;
         rawRows.length = 0;
       };
-      const checkStatements = () => {
+      const checkStatements = (scopeRef = binding.documentVersionId) => {
         for (const statement of statements) {
           // This finite compatibility assertion complements actual PG execution.
           // Hosted question-mark parsing is remote; no local parser is imitated.
@@ -148,8 +153,8 @@ test(
             [...statement.sql.matchAll(/\$(\d+)/gu)].map((match) => Number(match[1])),
             statement.params.map((_, index) => index + 1),
           );
-          assert.ok(statement.params.includes(binding.documentVersionId));
-          assert.equal(statement.sql.includes(binding.documentVersionId), false);
+          assert.ok(statement.params.includes(scopeRef));
+          assert.equal(statement.sql.includes(scopeRef), false);
         }
       };
       await t.test('a tenant-matching joined ordinary row projects JSON and stays ordinary', async () => {
@@ -189,7 +194,35 @@ test(
         assert.equal(JSON.stringify(rawRows).includes(canary), false);
         checkStatements();
       });
+      const workItemId = 'WI-document-roots';
+      // This entry only uses the optional database and missing native verifier.
+      // Execute its real SQL through the same restricted PG connection.
+      const review = new CanonicalJobAidProblemService(
+        ...Array(13).fill(undefined), database,
+      );
+      const ingress = { scope: { tenantId: binding.tenantId, workItemId } };
+      await t.test('Review missing-verifier probe accepts ordinary sources but rejects any native marker', async () => {
+        await descriptor(ordinaryDescriptor);
+        assert.equal(await review.admitReviewSources(ingress), undefined);
+        checkStatements(workItemId);
+        for (const marker of [null, source]) {
+          await descriptor({ ...ordinaryDescriptor, tdmsRegistration: marker });
+          await assert.rejects(review.admitReviewSources(ingress),
+            /TDMS_REVIEW_ADMISSION_NOT_CONNECTED/u);
+          checkStatements(workItemId);
+        }
+      });
+      await t.test('Review missing-verifier probe also rejects saved native evidence without a marker', async () => {
+        await descriptor(ordinaryDescriptor);
+        await admin`INSERT INTO assessment_work_revision(tenant_id,work_item_id,content_json)
+          VALUES(${binding.tenantId},${workItemId},'{"evidence":[{"kind":"TDMS_NATIVE_RECORD"}]}')`;
+        await assert.rejects(review.admitReviewSources(ingress),
+          /TDMS_REVIEW_ADMISSION_NOT_CONNECTED/u);
+        checkStatements(workItemId);
+        await admin`DELETE FROM assessment_work_revision`;
+      });
       await t.test('a retained marker fails closed when an inner lineage join is missing', async () => {
+        await descriptor({ ...ordinaryDescriptor, tdmsRegistration: source });
         await admin`DELETE FROM dm_source_artifact`;
         assert.equal(await tdmsRuntimeDocumentHasMarker(database, binding), true);
         await assert.rejects(tdmsRuntimeDocumentBindings(database, binding), {
@@ -209,6 +242,12 @@ test(
 );
 
 async function seed(database) {
+  await database.insert(schema.workItem).values({
+    id: randomUUID(),
+    tenantId: binding.tenantId,
+    workItemId: 'WI-document-roots',
+    documentVersionId: binding.documentVersionId,
+  });
   await database.insert(schema.dmPublicationFamily).values({
     id: randomUUID(),
     familyId: 'family-document-roots',
