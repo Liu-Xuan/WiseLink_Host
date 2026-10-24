@@ -573,6 +573,31 @@ export function stableJobAidEvidence(
   };
 }
 
+function jobAidSourcePageKey(
+  item: Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }>,
+): string | null {
+  let original: AssessmentEvidence;
+  try { original = stableJobAidEvidence(item); }
+  catch { return null; }
+  let locator: unknown;
+  try { locator = JSON.parse(item.locator); }
+  catch {
+    const text = item.locator.trim();
+    if (!text || text.startsWith('{') || text.startsWith('[') || text.startsWith('"')) return null;
+    const revision = original.evidenceRef.startsWith('DOCUMENT_ORIGINAL:')
+      ? original.evidenceRef.slice(0, -(item.sourceRefId.length + 1)) : 'legacy';
+    return JSON.stringify([item.documentVersionId, revision, item.locator]);
+  }
+  const identity = jobAidSourceDirectoryIdentity(original);
+  if (!locator || typeof locator !== 'object' || Array.isArray(locator) || !identity.parseRunId ||
+      !('parseRunId' in locator) || locator.parseRunId !== identity.parseRunId ||
+      !('sourceRefId' in locator) || locator.sourceRefId !== item.sourceRefId ||
+      !('pageStart' in locator) || typeof locator.pageStart !== 'number' ||
+      !Number.isSafeInteger(locator.pageStart) || locator.pageStart < 0)
+    return null;
+  return JSON.stringify([item.documentVersionId, identity.parseRunId, locator.pageStart]);
+}
+
 export function expandJobAidSourceSelection(
   catalog: AssessmentEvidence[],
   requested: string[],
@@ -591,16 +616,14 @@ export function expandJobAidSourceSelection(
     return item;
   });
   if (context === 'EXACT') return structuredClone(selected);
-  const pageKey = (item: Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }>) => {
-    const original = stableJobAidEvidence(item);
-    const revision = original.evidenceRef.startsWith('DOCUMENT_ORIGINAL:')
-      ? original.evidenceRef.slice(0, -(item.sourceRefId.length + 1)) : 'legacy';
-    return `${item.documentVersionId}\0${revision}\0${item.locator}`;
-  };
   const pageKeys = new Set(
     selected
       .filter((item) => item.kind === 'DOCUMENT_PASSAGE')
-      .map(pageKey),
+      .map((item) => {
+        const key = jobAidSourcePageKey(item);
+        if (key === null) throw new Error('JOBAID_SOURCE_PAGE_LOCATOR_INVALID');
+        return key;
+      }),
   );
   const refs = new Set(requested);
   return structuredClone(
@@ -608,7 +631,7 @@ export function expandJobAidSourceSelection(
       (item) =>
         refs.has(item.evidenceRef) ||
         (item.kind === 'DOCUMENT_PASSAGE' &&
-          pageKeys.has(pageKey(item))),
+          pageKeys.has(jobAidSourcePageKey(item) ?? '')),
     ),
   );
 }
