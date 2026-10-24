@@ -4,6 +4,7 @@ import type {
   TranslationBlockRevisionV2,
   TranslationGenerationRequestV2,
   TranslationSourcePlanV2,
+  TranslationWorkspaceReadingV2,
   TranslationWorkspaceV2,
 } from '@shared/canonical-translation-v2.interface';
 import { buildTranslationSourcePlan } from '../../server/modules/canonical-host/canonical-translation-source-plan';
@@ -574,6 +575,91 @@ describe('translation v2 quality and actual reading coverage', () => {
         }),
       ]),
     );
+  });
+  it('requires semantic checking for standalone no before a saved date statement becomes readable', () => {
+    const sourcePlan: TranslationSourcePlanV2 = plan([
+      'The sample desk has no planned service date.',
+    ]);
+    const value: TranslationBlockCandidateV2 = candidate(
+      sourcePlan,
+      '该合成服务台没有计划服务日期。',
+    );
+    const record: TranslationBlockRevisionV2 = revision(sourcePlan, value);
+    const state: TranslationWorkspaceV2 = workspace(sourcePlan);
+    record.check = checkTranslationBlockV2({ plan: sourcePlan, candidate: value });
+    expect(record.check.issues).toEqual([]);
+    expect(record.check.semanticCheck).toBe('PENDING');
+
+    const pending: TranslationWorkspaceReadingV2 = buildTranslationWorkspaceReadingV2(state, [record]);
+    expect(pending.blocks[0].readingStatus).toBe('PENDING_CHECK');
+    expect(pending.coverage.readableSourceCharacters).toBe(0);
+    expect(nextTranslationWorkV2(state, [record], pending)).toMatchObject({
+      kind: 'CHECK', blockIds: [value.blockId],
+    });
+    record.selectedForReading = true;
+    expect(() => buildTranslationWorkspaceReadingV2(state, [record]))
+      .toThrow('TRANSLATION_SELECTED_REVISION_NOT_READABLE');
+
+    record.selectedForReading = false;
+    record.check = checkTranslationBlockV2({
+      plan: sourcePlan,
+      candidate: value,
+      semanticReview: { result: { blockId: value.blockId, issues: [] }, provenance },
+    });
+    expect(record.check.semanticCheck).toBe('COMPLETED');
+    record.selectedForReading = true;
+    expect(buildTranslationWorkspaceReadingV2(state, [record]).blocks[0].readingStatus)
+      .toBe('READABLE');
+  });
+  it.each([
+    ['The sample desk describes the schedule.', '该合成服务台介绍计划。'],
+    ['The sample desk describes normal operation.', '该合成服务台介绍正常运行。'],
+  ])('ordinary prose remains readable without standalone no: %s', (text: string, translated: string) => {
+    const sourcePlan: TranslationSourcePlanV2 = plan([text]);
+    const value: TranslationBlockCandidateV2 = candidate(sourcePlan, translated);
+    const record: TranslationBlockRevisionV2 = revision(sourcePlan, value);
+    record.check = checkTranslationBlockV2({ plan: sourcePlan, candidate: value });
+    expect(record.check.issues).toEqual([]);
+    expect(record.check.semanticCheck).toBe('NOT_REQUIRED');
+    record.selectedForReading = true;
+    expect(buildTranslationWorkspaceReadingV2(workspace(sourcePlan), [record]).blocks[0].readingStatus)
+      .toBe('READABLE');
+  });
+  it('locally rechecks an unfinished old check before applying the standalone no rule', () => {
+    const sourcePlan: TranslationSourcePlanV2 = plan([
+      'The sample desk has no planned service date.',
+    ]);
+    const value: TranslationBlockCandidateV2 = candidate(sourcePlan, '该合成服务台没有计划服务日期。');
+    const record: TranslationBlockRevisionV2 = revision(sourcePlan, value);
+    const state: TranslationWorkspaceV2 = workspace(sourcePlan);
+    record.check = {
+      ...checkTranslationBlockV2({ plan: sourcePlan, candidate: value }),
+      checkVersion: 'semantic-block-check@2.2', semanticCheck: 'NOT_REQUIRED',
+    };
+    expect(nextTranslationWorkV2(state, [record], buildTranslationWorkspaceReadingV2(state, [record])))
+      .toEqual({ kind: 'LOCAL_CHECK', revision: record });
+    record.check = checkTranslationBlockV2({ plan: sourcePlan, candidate: value });
+    expect(record.check).toMatchObject({ checkVersion: 'semantic-block-check@2.3', semanticCheck: 'PENDING' });
+    expect(nextTranslationWorkV2(state, [record], buildTranslationWorkspaceReadingV2(state, [record])))
+      .toMatchObject({ kind: 'CHECK' });
+  });
+  it('does not automatically recheck or change a selected historical block after the check version changes', () => {
+    const sourcePlan: TranslationSourcePlanV2 = plan([
+      'The sample desk has no planned service date.',
+    ]);
+    const value: TranslationBlockCandidateV2 = candidate(sourcePlan, '该合成服务台没有计划服务日期。');
+    const record: TranslationBlockRevisionV2 = revision(sourcePlan, value);
+    const state: TranslationWorkspaceV2 = workspace(sourcePlan);
+    record.check = {
+      ...checkTranslationBlockV2({ plan: sourcePlan, candidate: value }),
+      checkVersion: 'semantic-block-check@2.2', semanticCheck: 'NOT_REQUIRED',
+    };
+    record.selectedForReading = true;
+    const before: string = JSON.stringify(record);
+    const reading: TranslationWorkspaceReadingV2 = buildTranslationWorkspaceReadingV2(state, [record]);
+    expect(reading.blocks[0].readingStatus).toBe('READABLE');
+    expect(nextTranslationWorkV2(state, [record], reading)).toEqual({ kind: 'DONE' });
+    expect(JSON.stringify(record)).toBe(before);
   });
   it('reuses readable blocks and checks saved candidates before generating missing ranges', () => {
     const sourcePlan = plan(['A description.', 'Another description.', 'A final description.'], true);

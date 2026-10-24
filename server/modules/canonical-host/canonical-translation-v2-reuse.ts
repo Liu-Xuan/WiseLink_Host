@@ -55,7 +55,7 @@ export function planOriginalTranslationReuse(previous: TranslationWorkspaceV2, n
   if (canonicalJson(context(previous, true)) !== canonicalJson(context(next, false))) return [];
   const selected = revisions.filter(revision => revision.selectedForReading && revision.check && !revision.check.issues.length &&
     revision.check.semanticCheck !== 'PENDING' &&
-    [TRANSLATION_V2_CHECK_VERSION, 'semantic-block-check@2.0'].includes(revision.check.checkVersion) && revision.planRevision === previous.plan.planRevision &&
+    [TRANSLATION_V2_CHECK_VERSION, 'semantic-block-check@2.0', 'semantic-block-check@2.2'].includes(revision.check.checkVersion) && revision.planRevision === previous.plan.planRevision &&
     revision.dependencies.contextRevision === previous.plan.documentContext.revision && revision.dependencies.methodVersion === previous.methodVersion);
   return selected.flatMap(revision => {
     const oldBlock = previous.plan.blocks.find(block => block.blockId === revision.blockId);
