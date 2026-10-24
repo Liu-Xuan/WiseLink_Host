@@ -3,7 +3,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { canonicalJson, canonicalSha256, sealResultEnvelope, WISELINK_SKILL_VERSION,
-  WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from '../scripts/validate-payload.mjs';
+  WISELINK_SKILL_COMPATIBILITY_REF, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from '../scripts/validate-payload.mjs';
 import { reconcileBoundedReviewSealedStatus } from '../scripts/orchestrate-host-mcp.mjs';
 import { sealedReviewPipeline } from './fixtures/sealed-review-recovery.fixture.mjs';
 import { reviewOutput, reviewRuntimeFixture, syncReview } from './fixtures/tdms-review-runtime.fixture.mjs';
@@ -144,7 +144,8 @@ for (const [name, mutate] of [
 
 test('sealed bounded c234 envelope and changed original commit shape cannot enter replay', async t => {
   const older = await sealed(t);
-  older.state.result.skillVersion = older.state.result.skillVersion.replace(/c235$/u, 'c234');
+  older.state.result.skillVersion = `${WISELINK_SKILL_COMPATIBILITY_REF}.c${234}`;
+  assert.notEqual(older.state.result.skillVersion, WISELINK_SKILL_VERSION);
   rehash(older.state.result);
   await assert.rejects(older.run(), /SKILL_VERSION/u);
   assert.equal(older.state.commits, 1);
