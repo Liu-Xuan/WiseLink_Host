@@ -40,5 +40,5 @@
     "V53",
     "V15"
   ],
-  "reason": "2026-10-24 Asia/Shanghai记录更新，原事件保留2026-10-23 UTC：公开306已双远端同步，准确Host5d仅origin并经唯一release7699934157774441777 finished/error_logs=[]；原用户双端5d、runtime PASS，reader仍VERIFICATION_PENDING。一次正常AD接续POST最终Host HTTP500，客户端与服务端耗时分别为300675/469819.62ms；500后一次准确范围对账新ATT为空、SAVE0、grant仍BLOCKED且无lease，前后字段未变。新模型/SAVE/Overall闭环未完成；不从已记录SQL缺口断言死锁或根因。当前主线优先来源授权事务executor透传修复验证、准确交付及保留原请求的核对，再推进原文/模型/SAVE/Overall/重读。其余工作包维持各自缺口可并行。原241证据逐值保留，仅追加6条有限技术/失败/对账记录，不增加完整业务场景通过；目录、绑定、场景与三组选择数组及五组样式保持。无新DDL/Native/调度。"
+  "reason": "2026-10-25 Asia/Shanghai记录更新：当前已证前后端准确b8、环境PASS、reader仍VERIFICATION_PENDING，Native为c238；来源授权8d/31已技术发布，旧5d/待批阶段仅保留在历史证据。原AD ATT5已TIMED_OUT，Host外层BLOCK/lease空，该attempt SAVE0、Overall两当前指针空；这不证明Native进程/检查点或UNKNOWN已清，不另起模型或重放。当前Wiki准确联合候选4a已组合cc22保存头/目录诊断/artifact准确ref导航及163a成员预览fallback，本地源码/定向验证和准确clean4a唯一标准完整build通过，尚未同步/发布、待批准准确交付；不把本地M3组件导航当线上运行，不重复旧root/child读链。三类真实变化、历史切换/撤权及完整P5/M3仍待验；原生config核查仍待授权，本批不执行读取或配置写。其他工作包保持自身未验范围，P1仅纠正当前b8/c238、625未交付与SEM真实内容缺口；无新业务runtime/部署、模型/SAVE、DDL/Native操作，三组选择数组及13/47/54/10目录、12binding与图样式保持。"
 }

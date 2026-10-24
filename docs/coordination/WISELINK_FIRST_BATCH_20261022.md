@@ -602,3 +602,108 @@ M2同一 evidence 仅追加8条有限记录，原233条逐值原样保留；当�
 Host500后的最终单次准确范围只读对账于 `2026-10-23T18:58:39.497272Z` 观察：点击后动态/综合新ATT为空、SAVE0，grant仍BLOCKED、generation3、无lease且未完成；blocked时间、事项修订/状态/模型、两条历史TIMEOUT和已有服务引用与前次逐值一致。该结果只覆盖查询的准确事项/版本范围，不能冒称全表审计。原文8页及a7时期既有工作正文可读仍保留原时点，本轮新模型、SAVE、Overall及重读闭环未完成。
 
 当前主线优先完成来源授权读取的事务executor透传修复及针对性验证，再完成准确候选交付并核对保留的原接续请求，随后继续各自业务缺口。其余工作包维持各自缺口，可并行推进。修复在独立候选收口、尚未发布；不从HTTP500或缺失span先行认定根因。本记录只追加6条有限证据，原241条逐值保留，现247条；目录13/47/54/10、10条binding ID、场景和选择数组不变，沿用户既定五组样式生成。无新业务通过、DDL、Native、调度或正式采用。
+
+
+## 2026-10-24 Wiki 目录准确保存修订的本地交付
+
+准确产品 `cc22ad52b419f7fa43623a3e3fdbf36dfee070a2`，父 `8d5bc3f05be6afd4bb72ba87b90650af825d05a9`，tree `57955951cd68c2a80eb7bc611a156736edb11adc`，正常提交于 `2026-10-24T08:15:12+08:00`；7 产品与 6 测试文件。本批记录后继只改文档/图数据，产品字节不变。
+
+实际链路为 `HierarchicalWikiService.readList/listRows → wikiRows(database,reader,true)`：原一条 query 内按准确 summary/tenant/actor 联接 derived_summary 保存头，保留原 RLS/readScope 与来源闭包、waiting、active attempt 重核；denied 时 savedRevision=null，不读取正文或逐条新增 head 请求。目录标题、诊断显式正文链接、两个 artifact 节点共用准确 `?summaryRef=` 导航。旧响应无 ref 保留未知；保存修订与目标/完成 generation 分开，active request 仍导航原 attemptRef。原 exact reader 再核保存正文及权限，M3 阅读边保持 unknown，不声明正文已实际读取或综合消费。
+
+| 实际验证 | 结果、适用范围与原件 |
+| --- | --- |
+| 四套局部 Jest | 19/19，29.803 秒；server 目录、adapter、真实目录/diagnostic React mount 的准确 ref、旧响应、替换/撤权与导航。提交前工作树执行，最终行为字节对应 cc22；不是提交后重跑。私有 `content-review/wiki-saved-revision-jest-run01.log`。 |
+| 真实隔离 PG | 三个子场景与父 test 通过（Node 共报 4 pass），5.879 秒；自有 loopback、合成目录/head、真实受限 NOBYPASSRLS 角色，仅核查询三键/RLS/头变化；不证明生产策略或真实 Source。私有 `content-review/wiki-saved-revision-pg-run03.log`。 |
+| 原失败与夹具修正 | PG run01 为沙箱 listen EPERM；run02 为新增夹具直接 drizzle(postgres tx) 缺 options，改为既有 Drizzle transaction 后 run03 通过。原输出均保留。旧 unclaimed 初次 12 failed/10 passed 中的 JOIN 误解析仅修 sink WHERE 识别；生产 JOIN 保持三键 AND。 |
+| 额外旧套件的准确基线 | 8d 原 service/persistence 字节与原测试为 7 failed/15 passed；最终候选同为 7 failed/15 passed、七个失败名称相同，原模拟 client 缺 begin。保留 `content-review/wiki-saved-revision-unclaimed-baseline-8d.log` 与 `wiki-saved-revision-reconcile-run02.log`，不记整套通过，不扩修 ACK。 |
+| 正常提交钩子 | 原 `.githooks/pre-commit → npm run precommit → npm run lint` exit0，ESLint、server/client typecheck、stylelint 完成；成功子输出按原 hook 捕获，不补造单项日志。私有 `content-review/wiki-saved-revision-commit-run01.log`。 |
+| 一次标准完整 build | 主控独立 clean cc22：`2026-10-24T00:19:22.126127Z`—`00:20:04.506086Z`，exit0、42.378 秒、前后 clean，四子日志 fresh；前后端指纹 cc22。既有私有 `wiki-saved-revision-build/{full-build.invocation.private.json,full-build.result.private.json,BUILD_FINGERPRINTS.private.json,full-build.log}`，不重跑。 |
+
+上表相对私有路径均位于 `tmp/minimal-real-cycle-20261024/`；不是公开复制原始日志或业务正文。原产品与测试的 SHA256/bytes 和命令/工具退出回执在既有私有 `content-review/independent-increment-selection.private.md`；本批记录检查另归档 `content-review/wiki-saved-revision-records-handoff.private.md`。
+
+仅 wiki.saved-reading/P5 的消费者和局部源码/测试记录更新；原 247 条 evidence 逐值保留，新增六条 source/test，scenarioIds 均为空，不增加完整业务场景、runtime 或 deployment 通过。13 节点/47 关系/54 场景/10 规则、10 条 binding ID、原三组选择数组及五组图样式不变，snapshot/HTML 只由原生成器刷新数据。比较目标保持原线上 5d，准确本地 cc22 明确未同步/未发布、未真实阅读；待批 public 8d5bc3f0/Host 31b9514f 与原 AD 断点不因本地交付关闭。P5 三类变化和真实正文/下游内容验收仍按原范围推进。
+
+## 2026-10-24 普通来源原生 CHAT 本地接线
+
+UI准确产品 `335ccdf99d2d225c637d479ff410398aaef6cc35`，父 `8d5bc3f05be6afd4bb72ba87b90650af825d05a9`，5文件；后端准确产品 `0bbf47cdb2a69ff06c19da820eb632b465184189`，父335，tree `1a989075f50b964aaa33c95363ba91108ee4f4ab`，18文件，于 `2026-10-24T00:50:22Z` 正常hook提交，提交后clean、独立终审接受。主控与既有Wiki/记录提交5a无冲突普通合并为 `edcea1059b9146b5795da4aade691807c38d7d1a`，parents `5a37233b42f7e9429718a5d50a86a49e086b76ea` / `0bbf47cdb2a69ff06c19da820eb632b465184189`，tree `b351cd4b8dc5afeec1b9135b8951254b1a68216e`；shared接口只叠加互不重叠字段，未整边覆盖Wiki。记录后继不是原测试/构建来源。
+
+UI仅在新字段缺失/undefined时兼容旧Host能力；显式false不回退，CHAT/更新/Overall控件分别按真实条件。原生后端使用SessionResolver已验证用户和当前owner/tenant/app/action，通过不可变CHAT turn及engineer input在原actor连接重核来源与attempt。SQL新增 `review_native_chat_source_owned` / `review_native_chat_allowed` / `review_native_chat_readable` 三个boolean、13条受限service policy：10 SELECT、2 UPDATE USING/WITH CHECK false用于FOR SHARE、1个精确sealed CHAT候选UPDATE。固定search_path及schema、原RLS/Source/OAuth路径保持；这不是全局收窄旧mapping权限。0082只在owned PG执行，未远端DDL。
+
+| 原验证及真实身份 | 实际结果与范围 |
+| --- | --- |
+| UI335对应工作区：`review-submission`、`openclaw-review-chat` | 2套/48通过；CHAT/更新能力组合、旧字段兼容、显式false、原STALE请求、WorkItem/Matter未知发送及对象/身份隔离。client类型、定向ESLint、diff与正常hook通过；未浏览器验收。 |
+| 后端提交前335加最终18文件，对应0bb：`review-conversation.service/controller`、`canonical-host-openclaw-review.service`、`native-browser-review-scope`、`review-conversation-openclaw-actor-context` | 5套/122通过，总时长12.657秒；不改记为clean0bb或合并edcea重跑。 |
+| 同一后端候选：`test/node/native-chat-review-postgres.test.mjs` | 4/4通过，0失败/0跳过，总时长15962.835208ms。真实NOSUPERUSER/NOBYPASSRLS migration owner及authenticated/service受限角色、SDK SQL context、RLS、trigger、repository、SessionResolver、source resolver/authorization和actor事务；不是mock true权限。 |
+| 后端扩大scope检查及准确父335对照 | 候选6套共2失败/161通过；`configured-development-service-scope.authorization` 的2个状态码断言在父335独立复现2失败/39通过（404/503方向不符）。保留候选及基线原日志，不称该套件通过。 |
+| UI turn准确父335对照 | `review-conversation-turn` 4例文案断言失败在父335独立复现；本批未改该组件/测试，不称UI全套通过。 |
+| 正常提交钩子 | UI335及后端0bb正常pre-commit执行，后端完整ESLint、server/client TypeScript检查exit0；原日志和提交回执保留，无hook绕过。 |
+| 准确clean合并产品edcea的唯一标准完整 `npm run build` | `2026-10-24T00:53:07.340670Z`—`00:53:52.441227Z`，45.101秒、exit0，前后clean、四固定子日志fresh；不是将原UI/后端/Wiki单测改记为合并后重跑。 |
+
+原测试日志未给完整UTC绝对起止，执行起止记未知；总时长来自原测试输出，记录观察时间及文件复制时间不充作执行时点。早期迭代失败保留原件，不把最终通过回写到原失败。原始私有报告为 `content-review/native-chat-ui-handoff.private.md`、`content-review/native-chat-backend-handoff.private.md`，最终日志/manifest在 `content-review/native-chat-backend-evidence/`；公开记录不包含实际actor、私有样本、会话或业务正文。
+
+标准build原invocation/result、完整日志和 `BUILD_FINGERPRINTS.private.json` 位于 `native-chat-reading-build/`。server不可变JSON的sourceCommit为完整edcea，buildTime `2026-10-24T00:53:25.239Z`；client编译指纹资产 `dist/client/assets/runtime-build-DC7EVEh-.js` 含完整同一提交。仅静态读取产物，未执行浏览器应用，client绝对buildTime未另行取得，不补造。docs-only记录后继不会再次执行产品构建。
+
+PG正例贯穿普通WorkItem的controller/create/append/replay、pending/begin/context、current package/savedUnderstanding、精确SOURCE_REFS、原回答候选commit/读回、completed successor及既有两成员固定Matter。两个Matter成员使用同一pinned synthetic DVI，未单独验证不同DVI。反例覆盖伪admission/actor/skipMapping、跨owner/tenant/app、非CHAT/Overall/附件、相同requestId异body、未READ引用、非service委托、锁定可用但实际更新conversation/assessment拒绝、来源preflight/lifecycle/creator/acquiredBy/readback撤回、成员owner撤回、closed/stale、替代COMMITTING结果，以及late TDMS registration无carrier；已存在旧mapping也不能绕过原生predicate，拒绝时package字节读取为0。未知HTTP结果后WI revision改变仍返回同turn原回执与STALE_CONTEXT，sealed原结果重放幂等。工程工作保存数、WI revision及ReviewAction均不增加；没有产品模型调用。
+
+TDMS完整目标仍未完成：注册来源（包括无saved carrier）或保存的 `TDMS_NATIVE_RECORD` evidence 在原生CHAT能力/admission与执行重入明确拒绝；真正TDMS消费者仍须现有唯一ACTIVE mapping及Source grant/selected-head/own approval，旧权限不扩展。Matter的独立DOCUMENT_VERSION material不是实际WI成员，不能借material前缀读取；无WorkItem独立文档随后接入。没有技术发布、安装、远端DDL、真实CHAT模型或正式采用验收；线上仍5d，待批8d/31与原AD断点保持，新Aily尚无可信实例渠道。
+
+M2新增 `dialogue.bound-object-chat` 仅映射已有来源/保存工作读取和回答消费；原10条binding完整对象、原253条evidence完整对象及顺序、13/47/54/10目录和三组选择数组保留。追加10条局部记录至263条，scenarioIds均为空，不增加完整场景通过；只更新P0/P6及对话说明，其余package与线上5d比较目标不变。M3本批无新增CHAT运行数据，继续读取真实父响应；五组图沿用原生成器，仅刷新内嵌数据。
+
+## 2026-10-24 TDMS processing-set 现有消费者与生产缺口
+
+本轮为准确 `b71cd03fd9f020fa7cf39b58701092672a0bf896`（parents edcea/103ec，tree `46284e091f97abb4ca69a0ef0d6b48adc8aecb6f`）的只读源码与已有官方元数据清点，不新增processing-set实现。较早“reader/verifier未装配”及缺表记录保留其原观察时间；当前实际runtime消费者已装配，不能用历史阶段概括当前源码。
+
+| 层次 | 已有事实及真实缺口 |
+| --- | --- |
+| 接口与持久化 | 已有ref-only集合/head/receipt接口、严格validation、Sql repository与 `TdmsProcessingSetService.save`；RETAIN核权、同事务事实/引用校验、幂等、head generation CAS、后继比较、撤权回滚均已有实现。不能重建一套集合存储。 |
+| 实际READ消费者 | `CanonicalHostModule` 已绑定 `TdmsProductionRuntimeReader` 为runtime reader/native verifier；session使用原事务的Sql set repository，selected/frozen及browser/Review verifier读取已接线。缺表转明确503；runtime RETAIN/compare仍拒绝，不能把只读边界改成生产写授权。 |
+| 目标存储 | 原Host当前query schema/search_path解析不到两表。INACTIVE draft仅供owned PG，没有生产policy/GRANT或准备器；现有repo读head用FOR UPDATE，部署设计必须处理精确读取/行锁，不能搬fixture FOR ALL。旧三条lock-only policy已完成的事实保持。 |
+| 生产来源输入 | 当前没有已装配且获权的processing-set RETAIN producer/authority；浏览器Source import明确未配置，daily metadata-only不创建集合，普通adapter关系为CANDIDATE_ONLY/UNRESOLVED。需真实保留的准确record/relation/approval及完整family/cohort/roster/currentness/后继证据；相邻边、R00、同名文件或caller自填refs不证明完整关联。 |
+
+原官方元数据 `observed_at=2026-10-24T08:56:17.928718+08:00`：`tdms_processing_revision_set` 与 `tdms_processing_set_head` 均 `exists=false`，owner/schema/RLS/ACL为null，policy/index/trigger均为空。原查询按 `to_regclass(table_name)` 解析该连接当时的search_path，只查目录元数据；不证明其他schema不存在，也没有查询或推断业务行/授权数据。原快照没有应用构建指纹或明确环境ID，不补写为线上5d的执行结果；M2线上5d比较目标单独保持。
+
+原件位于 `content-review/tdms-processing-inventory.private.md`、`native-chat-tdms-policy-readonly/02-processing-set-metadata.sql` 与 `native-chat-tdms-policy-readonly/PROCESSING_SET_METADATA.private.json`。本批只读取这些已有文件，没有再次执行SQL或远端查询；inventory列出的旧unit/PG资产未重跑，也不把fixture authority/admin seed算成生产RETAIN。尚未实现的设计不作为本轮事实依据。
+
+下一步按实际来源和授权复用现有save/CAS及runtime，分别准备可审目标存储/精确权限和可信RETAIN producer，再用真实保留的完整关联输入核对selected集合及下游读取。未知或不完整材料保持UNKNOWN/UNRESOLVED；两表存在、一次save或fixture可读均不单独证明生产闭环。无mapping原生CHAT仍拒绝TDMS，独立文档及新Aily边界不变。
+
+本批只更新company.approved-opinion既有当前缺口及P3 delivered/remaining/nextAction；新增源码清点和原元数据两条局部记录至265条，scenarioIds为空，不新增测试/完整场景通过。原263条evidence完整对象及顺序、11条binding ID、13/47/54/10目录、完整selection、其他工作包及线上5d/待批8d31保持。M3与生成器/图样式代码不改，只按原generator刷新snapshot/HTML数据。没有新产品build、旧业务测试、浏览器、远端DDL、模型、发布、安装或正式采用。
+
+## 2026-10-24 独立文档原生 CHAT 本地接线
+
+三方产品已独立审查接受，正常hook无冲突合并为 `541acba133f51e67eb9071f74ae2fbfe2deabf00`（parents107528f/7000/185f，tree `5bb70a8e42e251056d2ab20ea668e2eab3906c42`），53个变更Git blob与各接受输入逐一一致，clean。准确541acba唯一标准完整build已通过；Native621窄修复后最终正常合并产品为647e16d、标准c236包本地就绪，Host/client构建指纹仍541。以下原测试按真实执行源码保留，不冒称541/647重跑，未发布/安装或调用真实模型。
+
+| 产物 | 准确身份 | 实际范围 |
+| --- | --- | --- |
+| Host | `107528f73d2ffb8ec4805d6bccf2983633845b47`，父 `6c7f277f9c13327456b730d03bc3811e5f2b4743`，tree `06a9a54a373652a8a2f3e207c927e788f8363d44`，22文件。 | 原生PRIVATE thread/message与固定DVI/PUBLISHED parse；实际authorizer/catalog/原文Reader；message-bound ActionAttempt、原key/fence、实际READ引用及sealed原结果恢复。 |
+| UI | `7000de3b02df4abe33dd7ae017fec26b27041497`，父5ca，tree `65b3b0a25c51a2e295efad339745a3e898cb1643`，16文件。 | 真实DVI页讨论、固定parse、原requestId/body未知核对、确定FAILED解锁/CAS退草稿、切身份/对象/撤权清退、准确sourceRef与M3同父消费。 |
+| Native | `185f206c1ff93734dd10133e5b42feed4342d42e`，父 `c15aa9507cd154ec34148197ccf26284b138edd4`，tree `2845a1ff31623a6db68369c909ebdf039a01af16`；c15共15文件，本增量4文件。 | 实际tick在既有owner lock中执行DOC_CHAT；原claimRequestId预持久、完整分页/READ→ANSWER、UNKNOWN不重发、sealed优先恢复；无attempt严格终态回执先审计再清活动槽，0模型/0READ/不造attempt。 |
+
+Host实际链为 `DocumentDialogueController → DialogueBrowserScope/Service/Repository → DocumentDialogueSourceService → OrdinaryDocumentManagementAuthorizer/MiaodaHostedDocumentCatalog/DocumentParsingHostedService/UnifiedReader/DocumentOriginalStore`。来源IO前后重核同一冻结manifest/字节/parse绑定，不跨模型等待持事务。无WI、无mapping、非上传者合法TENANT读者可用；linked TDMS marker在bytes前拒绝，旧全局Source权限不改。`DocumentChatRuntimeService` 沿验证principal及原message/attempt执行；模型只选择READ/ANSWER，引用只来自实际READ。COMMITTING先封存原candidate/hash，撤权暂缺保留原结果；准确来源恢复后只恢复原结果，不新attempt或重调模型。无attempt已拒绝消息只返回原thread/message与持久SOURCE_UNAVAILABLE/CANCELLED的严格FAILED回执，不制造伪attempt。
+
+| 验证 | 准确结果 | 原件与限制 |
+| --- | --- | --- |
+| Host受限PG | 5/5，owned loopback PG，authenticated/service均NOSUPERUSER/NOBYPASSRLS。 | `content-review/independent-document-chat-backend-evidence/pg-final.log`：无WI/mapping非上传者TENANT完整原文→答案引用，actor/tenant/对象隔离、原key幂等/fence、无attempt终态、sealed撤权恢复、linked TDMS拒绝、UNKNOWN不重领。仅来源bytes和模型输出为合成替身，实际authorizer/catalog/Reader/受限角色参与。 |
+| PG fixture边界 | 9表、83policy、20直接依赖fn、54index、12trigger及CHECK/ACL。 | 来源为已有官方catalog元数据，非完整线上DB clone，FK/NOTNULL未全重建；其他业务表/嵌套函数沿原fixture。五表restrictive guard防旧permissive叠加来自SQL审查，不列额外mapped专项实测。 |
+| Host相关Jest | 三个成功suite44/44。 | `jest-initial.log`原命令含private第四套，因隔离clone依赖resolver未加载；不把整条命令记成全绿。 |
+| Host额外旧回归 | scope/private合计20 passed/1 failed。 | `jest-regression.log`；未改private-dialogue.spec.ts:279期望“完成情况未确认”，实际“回答内容已保存，完成状态未确认”。client label/spec相对5ca未变，没有为过测改文案或抹去失败；不声称父提交曾独立重跑。 |
+| UI定向 | 三套新增25/25，真实页面仅本批新增5/5；旧页面56项skipped。 | `content-review/independent-document-chat-ui-validation.private/`；提交前最终UI内容对应7000，检查用6c7+获准observedAt临时类型。Host1075已正式补齐字段，不能改称clean7000无依赖或541重跑。 |
+| Native185定向 | 32/32，含无attempt终态新增3项。 | `content-review/document-chat-native-logs/15-unclaimed-terminal-final-focused.log`；transport/model为确定性fixture，不证明Host PG/RLS或真实模型。 |
+| Native既有受影响回归 | 301/301及262/262沿c15原执行证据复用，185/621后继未重跑原两套。 | `03-affected-regression.log`、`07-validator-with-local-listen.log`；初次5项listen EPERM及c235版本引用漂移失败分别保留06/04日志。32含原29，不重复累加。Mac本地未实跑Linux util-linux flock，生产锁实现未改。 |
+| 类型与正常hook | Host双端typecheck、定向eslint、正常precommit；UI/Native各正常hook通过。 | backend的`typecheck.log`/`target-eslint.log`/`normal-commit.log`，UI的`normal-commit.log`，Native的12/17日志。不是产品完整build或真实业务。 |
+| 合并保真 | 541准确53个blob与三输入逐项一致，正常hook、clean。 | `content-review/independent-document-chat-integration-source-check.private.json`；只证明集成字节，不改写测试执行身份。 |
+
+UI正常commit起止 `2026-10-24T02:06:32.185928Z`—`02:06:49.716178Z` 有原始命令记录。UI页面所选5项及Host/Native日志无权威UTC起止时明确unknown；持续时间、commit time、复制时间都不倒推执行时点。完整来源见三个私有handoff：`independent-document-chat-backend-handoff.private.md`、`independent-document-chat-ui-handoff.private.md`、当前621的`independent-document-chat-native-handoff.private.md`、原185的`independent-document-chat-native-185f206c-handoff.private.md`及原c15 handoff，均位于content-review。早期失败及后续修订保留，不从最终通过抹除。
+
+M3在7000真实挂载于讨论panel，读同一hook的current/thread，刷新也复用该hook。仅COMPLETED且answer非空形成已回答成果，来源只来自这些消息；nextMessageCursor限定当前thread的partial/complete，不代表全篇或环境任务集合。Host observedAt标授权读回，receivedAt只标提问保存，不补造模型完成时间。撤权read=null清图；旧scope/thread/revision/观察时间/ref点选拒绝，正常请求点选只定位既有消息，不resume或重新执行。M3没有新增真实业务运行数据。
+
+M2仅新增 `dialogue.document-version-chat`，映射既有 `source.original` / `surface.reading` 与 `artifact.reading`，scenarioIds为空；不新建顶层对话业务节点或评估生成/保存边。原265条evidence逐对象、逐序保留，原11条binding完整保留。只更新P0/P2/P6当前进度：事务修复 `8d5bc3f05be6afd4bb72ba87b90650af825d05a9` / 私有Host `31b9514f6e99a3b12b0a4221a61df67b30a092a9` 已准备待发布授权；本批c236依赖Host/0083，不能与旧Host/待批8d31混装。普通已绑定对象CHAT、独立DVI CHAT和新Aily分别陈述；Aily登录成功但新Team可信最终用户/Host工具渠道仍未证，跨文档入口仍null。
+
+主控在准确clean合并产品541acba仅执行一次标准完整 `npm run build`：`2026-10-24T02:35:54.728888Z`—`02:36:38.361035Z`，原单调计时43.630898秒、exit0，前后clean，四子日志fresh。server不可变指纹为完整541acba/buildTime `02:36:12.713Z`，client `runtime-build-DZmbQagH.js` 含同一完整提交；5条document dialogues路由齐全，整体181 API/37页面。原件位于 `independent-document-chat-build/{full-build.invocation.private.json,full-build.result.private.json,full-build.log,child-logs,BUILD_FINGERPRINTS.private.json}`；只静态核产物，不执行浏览器应用。docs-only后继复用该产品字节，不重复build，不据构建推导发布或真实业务。
+
+0083未远端DDL、c236未安装，本批未发布或真实模型运行；原AD失败、reader、SEM与TDMS来源业务缺口保持。原13节点/47边/54场景/10规则、完整selection/线上5d目标、P1/P3/P4/P5及用户五分组HTML数据外字节保持；本记录writer未重跑产品测试/fullbuild或操作浏览器、远端、DDL、安装、发布、模型。
+
+标准打包曾在准确541acba强制Skill全suite得到1873 passed/2 failed，原`package.log`与`package-captured.log`保留：一项是consumeAutomaticQueueTurn预读损坏active-claim抢在旧quarantine之前的真实回归，另一项是/c235$/在c236下成为no-op的失效版本反例。Native后继 `621a99370335ab35d1138e47bad210ad90a52eac`（父185f，tree `0df1ce6e8b2716150f187f1fde041fab0d845ae3`）只改5个Native/test文件，复用原窄quarantine、保护已有活动CHAT与未知IO；负例明确构造并先验证c234后再检SKILL_VERSION拒绝，不放宽生产validator。两原失败2/2及相关86/86、正常hook通过，2项已包含于86，Astra接受。
+
+主控正常hook合并后继为 `647e16d619da34b71f6324ef90f0f6f3ddfb044a`（parents541acba/621a9937，tree `28ad9019d2d571b29cb4facb92e60765b26032aa`），clean；相对541仅上述5文件，Host/client、build脚本与依赖Git输入完全相同。原541完整build仅按Host/client字节适用，不改写为647重新构建，指纹继续准确541。原标准packager在647退出0，必需全Skill suite通过、versionClaimsAligned=true；成功脚本不吐子测试计数，不推造最终数量。c236 ZIP本地就绪：148文件、1076577bytes、SHA256 `6899501cb8042f0d5120416f12b064d6a8aea1b164cc596e4945405c4833de0a`、Skill tree `97eece5c83cd972a0496d14c0a3e58f66739b3f7`，bytes/CRC/文件数已核；未安装或外传。原失败保留，不因后继通过删除。
+
+修复原件为 `content-review/document-chat-native-logs/{19-packager-original.failure.log,20-packager-two-failures-reproduced.log,21-packager-two-failures-fixed.log,22-packager-repair-focused.log,23-packager-repair-normal-hook.log,24-packager-repair-git-identity.log}`。最终标准包原件为 `independent-document-chat-delivery/native/{package-final.log,wiselink-research-and-synthesize-r09.c236.zip.manifest.json,PACKAGE_RECEIPT.private.json}`；541→647的仅Native后继适用范围由 `independent-document-chat-build/NATIVE_ONLY_SUCCESSOR_BUILD_SCOPE.private.json`及只读Git差异核对给出。包只证明本地必需suite、版本声明和制品完整性，不是安装/技术发布或真实模型运行。

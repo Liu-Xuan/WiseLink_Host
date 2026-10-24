@@ -4833,6 +4833,1983 @@
       "summary": "当前主线优先完成来源授权读取的事务executor透传修复及针对性验证，之后按准确候选交付并核对保留的接续请求。其余工作包维持各自缺口，可并行推进。该修复方向尚未发布，不将HTTP500先归因为死锁；本轮新模型、SAVE、Overall及重读闭环仍未完成，reader仍待验收。",
       "timeBasis": "current handoff scope; fix direction and business closure remain pending",
       "deploymentRef": "7699934157774441777"
+    },
+    {
+      "id": "wiki-saved-revision.cc22.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "e7343dfc16dee3296d1b950e85f3ea4a62d1100c2e76eb09079ff6629c0582b1",
+      "sourceRevision": "cc22ad52b419f7fa43623a3e3fdbf36dfee070a2",
+      "environmentId": "local:unpublished-wiki-saved-revision-candidate",
+      "observedAt": "2026-10-24T00:23:17.729241+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-wiki-目录准确保存修订的本地交付",
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "准确 cc22 七个产品文件经独立审查接受：同授权 query 的准确三键保存头、denied null、三处 summaryRef 导航、原 exact reader 再核权、active attempt 独立及 M3 unknown；没有发布或真实正文消费证明。",
+      "timeBasis": "本批记录复核观察时间，非产品执行时间",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/independent-increment-selection.private.md"
+    },
+    {
+      "id": "wiki-saved-revision.cc22.jest19.test",
+      "kind": "test",
+      "status": "passed",
+      "testLevel": "unit",
+      "contractRevision": "e7343dfc16dee3296d1b950e85f3ea4a62d1100c2e76eb09079ff6629c0582b1",
+      "sourceRevision": "cc22ad52b419f7fa43623a3e3fdbf36dfee070a2",
+      "environmentId": "local:unpublished-wiki-saved-revision-candidate",
+      "observedAt": "2026-10-24T00:23:17.729241+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-wiki-目录准确保存修订的本地交付",
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "四套局部 Jest 19/19，29.803 秒，覆盖同查询保存头、真实目录/diagnostic mount、准确 ref、旧响应、刷新替换与撤权。提交前工作树执行，最终行为字节对应 cc22；不是在提交后重跑，不扩大 V16/V18/V20 或整条 P5 通过。",
+      "executedAt": null,
+      "timeBasis": "observedAt 为登记复核时间；原测试执行时刻未单独核定，原命令/exit 在私有回执",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/wiki-saved-revision-jest-run01.log"
+    },
+    {
+      "id": "wiki-saved-revision.cc22.pg3.test",
+      "kind": "test",
+      "status": "passed",
+      "testLevel": "integration",
+      "contractRevision": "e7343dfc16dee3296d1b950e85f3ea4a62d1100c2e76eb09079ff6629c0582b1",
+      "sourceRevision": "cc22ad52b419f7fa43623a3e3fdbf36dfee070a2",
+      "environmentId": "local:unpublished-wiki-saved-revision-candidate",
+      "observedAt": "2026-10-24T00:23:17.729241+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-wiki-目录准确保存修订的本地交付",
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "最终真实隔离 loopback PG 三个子场景和父 test 通过（Node 共报4 pass），5.879 秒；合成目录/head、NOBYPASSRLS 角色验证 owner/tenant 三键、头变化与隐藏 ref。未读取真实正文或证明生产策略。PG run01 为沙箱 listen EPERM，run02 为新增夹具 Drizzle 装配错误；仅修夹具后 run03 通过，原失败保留。",
+      "executedAt": null,
+      "timeBasis": "observedAt 为登记复核时间；原运行时刻未单独核定",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/wiki-saved-revision-pg-run03.log",
+      "priorFailureRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/wiki-saved-revision-pg-run01.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/wiki-saved-revision-pg-run02.log"
+      ]
+    },
+    {
+      "id": "wiki-saved-revision.cc22.legacy-baseline.test",
+      "kind": "test",
+      "status": "failed",
+      "testLevel": "unit",
+      "contractRevision": "e7343dfc16dee3296d1b950e85f3ea4a62d1100c2e76eb09079ff6629c0582b1",
+      "sourceRevision": "cc22ad52b419f7fa43623a3e3fdbf36dfee070a2",
+      "environmentId": "local:unpublished-wiki-saved-revision-candidate",
+      "observedAt": "2026-10-24T00:23:17.729241+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-wiki-目录准确保存修订的本地交付",
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "额外旧 unclaimed 套件：准确 8d 原 service/persistence 与未变测试为7 failed/15 passed，最终候选同7 failed/15 passed、七失败名称逐值一致。旧模拟 client 缺 begin 未扩修；只修 sink 的 WHERE actor 条件识别兼容新 JOIN。该套件保留失败，不记整套通过或新增产品恢复通过。",
+      "executedAt": null,
+      "timeBasis": "observedAt 为本批基线比较记录时间",
+      "comparisonBaselineRevision": "8d5bc3f05be6afd4bb72ba87b90650af825d05a9",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/wiki-saved-revision-reconcile-run02.log",
+      "baselineReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/wiki-saved-revision-unclaimed-baseline-8d.log"
+    },
+    {
+      "id": "wiki-saved-revision.cc22.normal-hooks.test",
+      "kind": "test",
+      "status": "passed",
+      "testLevel": "contract",
+      "contractRevision": "e7343dfc16dee3296d1b950e85f3ea4a62d1100c2e76eb09079ff6629c0582b1",
+      "sourceRevision": "cc22ad52b419f7fa43623a3e3fdbf36dfee070a2",
+      "environmentId": "local:unpublished-wiki-saved-revision-candidate",
+      "observedAt": "2026-10-24T00:23:17.729241+00:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-wiki-目录准确保存修订的本地交付",
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "准确产品正常 pre-commit → npm run precommit → npm run lint exit0，既有脚本执行 ESLint、server/client typecheck 和 stylelint。原 hook 捕获成功子输出，未补造单项日志；不代表业务或部署。",
+      "executedAt": null,
+      "timeBasis": "observedAt 为登记复核时间；实际提交时间2026-10-24T08:15:12+08:00另见原Git记录",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/wiki-saved-revision-commit-run01.log"
+    },
+    {
+      "id": "wiki-saved-revision.cc22.full-build.test",
+      "kind": "test",
+      "status": "passed",
+      "testLevel": "integration",
+      "contractRevision": "e7343dfc16dee3296d1b950e85f3ea4a62d1100c2e76eb09079ff6629c0582b1",
+      "sourceRevision": "cc22ad52b419f7fa43623a3e3fdbf36dfee070a2",
+      "environmentId": "local:isolated-build-candidate",
+      "observedAt": "2026-10-24T00:20:04.506086Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-wiki-目录准确保存修订的本地交付",
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "主控在准确 clean cc22 一次标准完整 npm run build exit0，42.378 秒，前后 clean、四子日志 fresh，前后端指纹 cc22。仅构建证据，尚未同步/发布或真实阅读，不重跑。",
+      "executedAt": "2026-10-24T00:19:22.126127Z",
+      "finishedAt": "2026-10-24T00:20:04.506086Z",
+      "timeBasis": "既有原 invocation/result 的UTC起止时间",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/wiki-saved-revision-build/full-build.result.private.json",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/wiki-saved-revision-build/full-build.invocation.private.json",
+        "private:tmp/minimal-real-cycle-20261024/wiki-saved-revision-build/BUILD_FINGERPRINTS.private.json",
+        "private:tmp/minimal-real-cycle-20261024/wiki-saved-revision-build/full-build.log"
+      ]
+    },
+    {
+      "id": "native-chat.0bb.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "8f66f9052317ad6d1ad934852a1300706c72a0566c8bd0d718848b0fd4e2de36",
+      "sourceRevision": "0bbf47cdb2a69ff06c19da820eb632b465184189",
+      "environmentId": null,
+      "observedAt": "2026-10-24T00:57:55.230295Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-普通来源原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.bound-object-chat"
+      ],
+      "scenarioIds": [],
+      "summary": "UI335五文件拆分CHAT/更新能力，后端0bb父335/tree1a989075、18文件正常提交并独立终审接受；可信原生用户、精确来源/版本与attempt重核，3boolean/13受限service policy仅本地候选。与既有Wiki/记录5a无冲突合并edcea，原十条binding不变；非新Aily跨对象接入。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-backend-handoff.private.md",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-ui-handoff.private.md",
+        "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-backend-evidence/manifest.private.json"
+      ],
+      "relatedSourceRevisions": [
+        "335ccdf99d2d225c637d479ff410398aaef6cc35",
+        "edcea1059b9146b5795da4aade691807c38d7d1a"
+      ]
+    },
+    {
+      "id": "native-chat.335.ui-jest48.test",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "8f66f9052317ad6d1ad934852a1300706c72a0566c8bd0d718848b0fd4e2de36",
+      "sourceRevision": "335ccdf99d2d225c637d479ff410398aaef6cc35",
+      "environmentId": "local:isolated-native-chat-ui",
+      "observedAt": "2026-10-24T00:57:55.230295Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-普通来源原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.bound-object-chat"
+      ],
+      "scenarioIds": [],
+      "summary": "原UI候选2套48项通过；新CHAT字段与更新/Overall能力分开，缺字段/undefined兼容、显式false不回退，原STALE请求、对象/身份隔离与未知发送机制保留。原执行报告无绝对起止，不转记合并提交重跑。",
+      "testLevel": "unit",
+      "timeBasis": "原执行日志/报告未给完整UTC绝对起止；observedAt仅本次读取观察时间，未使用复制时间倒填。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-ui-handoff.private.md"
+    },
+    {
+      "id": "native-chat.0bb.jest122.test",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "8f66f9052317ad6d1ad934852a1300706c72a0566c8bd0d718848b0fd4e2de36",
+      "sourceRevision": "0bbf47cdb2a69ff06c19da820eb632b465184189",
+      "environmentId": "local:isolated-native-chat-candidate",
+      "observedAt": "2026-10-24T00:57:55.230295Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-普通来源原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.bound-object-chat"
+      ],
+      "scenarioIds": [],
+      "summary": "后端最终候选5套122/122通过，原输出12.657秒；Review service/controller、OpenClaw Review、native browser scope和actor context。作用于335加最终受测文件，对应0bb，不冒称全套或合并edcea重新执行。",
+      "testLevel": "unit",
+      "timeBasis": "原执行日志/报告未给完整UTC绝对起止；observedAt仅本次读取观察时间，未使用复制时间倒填。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-backend-evidence/native-chat-jest-positive.log",
+      "executionSourceRevision": "335ccdf99d2d225c637d479ff410398aaef6cc35",
+      "executionSourceDescription": "提交前准确335工作区加最终后端18文件；受测文件对应后来正常提交0bb，未在clean0bb或edcea重跑。"
+    },
+    {
+      "id": "native-chat.0bb.pg4.test",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "8f66f9052317ad6d1ad934852a1300706c72a0566c8bd0d718848b0fd4e2de36",
+      "sourceRevision": "0bbf47cdb2a69ff06c19da820eb632b465184189",
+      "environmentId": "local:owned-restricted-postgres",
+      "observedAt": "2026-10-24T00:57:55.230295Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-普通来源原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.bound-object-chat"
+      ],
+      "scenarioIds": [],
+      "summary": "真实受限PG4/4、0skip，15962.835208ms；普通WorkItem与同一pinned synthetic DVI的两成员固定Matter贯穿admission/执行/保存工作与SOURCE_REFS/候选commit读回、原回执及sealed恢复。真实RLS/trigger/SessionResolver与actor事务；合成字节/回答，无产品模型。TDMS注册无carrier、来源撤回、伪身份及越权拒绝，CHAT不增加工程修订或ReviewAction。",
+      "testLevel": "integration",
+      "timeBasis": "原执行日志/报告未给完整UTC绝对起止；observedAt仅本次读取观察时间，未使用复制时间倒填。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-backend-evidence/native-chat-pg-final.log",
+      "executionSourceRevision": "335ccdf99d2d225c637d479ff410398aaef6cc35",
+      "executionSourceDescription": "提交前准确335工作区加最终后端18文件；受测文件对应后来正常提交0bb，未在clean0bb或edcea重跑。"
+    },
+    {
+      "id": "native-chat.0bb.normal-hooks.test",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "8f66f9052317ad6d1ad934852a1300706c72a0566c8bd0d718848b0fd4e2de36",
+      "sourceRevision": "0bbf47cdb2a69ff06c19da820eb632b465184189",
+      "environmentId": "local:isolated-native-chat-candidate",
+      "observedAt": "2026-10-24T00:57:55.230295Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-普通来源原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.bound-object-chat"
+      ],
+      "scenarioIds": [],
+      "summary": "UI335及后端0bb正常pre-commit通过；后端全仓ESLint、server/client类型检查exit0，无hook绕过。准确0bb提交时间2026-10-24T00:50:22Z是Git提交时间，不作为测试执行起止。",
+      "testLevel": "contract",
+      "timeBasis": "原执行日志/报告未给完整UTC绝对起止；observedAt仅本次读取观察时间，未使用复制时间倒填。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-backend-evidence/native-chat-normal-commit.log",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-ui-handoff.private.md"
+      ]
+    },
+    {
+      "id": "native-chat.0bb.scope-baseline-failures.test",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": "8f66f9052317ad6d1ad934852a1300706c72a0566c8bd0d718848b0fd4e2de36",
+      "sourceRevision": "0bbf47cdb2a69ff06c19da820eb632b465184189",
+      "environmentId": "local:isolated-native-chat-candidate",
+      "observedAt": "2026-10-24T00:57:55.230295Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-普通来源原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.bound-object-chat"
+      ],
+      "scenarioIds": [],
+      "summary": "扩大scope检查6套为2失败/161通过；configured-development-service-scope两例404/503状态码断言在准确父335独立复现2失败/39通过。保留候选与基线失败，不将正向122项或完整build解释为全绿。",
+      "testLevel": "unit",
+      "timeBasis": "原执行日志/报告未给完整UTC绝对起止；observedAt仅本次读取观察时间，未使用复制时间倒填。",
+      "baselineSourceRevision": "335ccdf99d2d225c637d479ff410398aaef6cc35",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-backend-evidence/native-chat-jest-final.log",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-backend-evidence/native-chat-scope-baseline-jest.log"
+      ],
+      "executionSourceRevision": "335ccdf99d2d225c637d479ff410398aaef6cc35",
+      "executionSourceDescription": "提交前准确335工作区加最终后端18文件；受测文件对应后来正常提交0bb，未在clean0bb或edcea重跑。"
+    },
+    {
+      "id": "native-chat.335.turn-baseline-failures.test",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": "8f66f9052317ad6d1ad934852a1300706c72a0566c8bd0d718848b0fd4e2de36",
+      "sourceRevision": "335ccdf99d2d225c637d479ff410398aaef6cc35",
+      "environmentId": "local:isolated-native-chat-baseline-335",
+      "observedAt": "2026-10-24T00:57:55.230295Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-普通来源原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.bound-object-chat"
+      ],
+      "scenarioIds": [],
+      "summary": "review-conversation-turn四例文案断言在准确父335独立复现4失败/0通过；本批未修改该组件或对应测试，不记UI全套通过。原失败保留。",
+      "testLevel": "unit",
+      "timeBasis": "原执行日志/报告未给完整UTC绝对起止；observedAt仅本次读取观察时间，未使用复制时间倒填。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-backend-evidence/native-chat-ui-baseline-jest.log"
+    },
+    {
+      "id": "native-chat.edcea.full-build.test",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "8f66f9052317ad6d1ad934852a1300706c72a0566c8bd0d718848b0fd4e2de36",
+      "sourceRevision": "edcea1059b9146b5795da4aade691807c38d7d1a",
+      "environmentId": "local:isolated-build-candidate",
+      "observedAt": "2026-10-24T00:57:55.230295Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-普通来源原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.bound-object-chat"
+      ],
+      "scenarioIds": [],
+      "summary": "主控在准确clean合并产品edcea一次标准完整npm run build exit0，45.101秒，前后clean、四固定子日志fresh。server不可变JSON为edcea/buildTime00:53:25.239Z；client runtime-build-DC7EVEh-.js含完整同提交，仅静态读产物。UI335、后端0bb、Wiki cc22的原测试身份保留；未发布/远端DDL或真实CHAT。",
+      "testLevel": "integration",
+      "executedAt": "2026-10-24T00:53:07.340670Z",
+      "finishedAt": "2026-10-24T00:53:52.441227Z",
+      "timeBasis": "既有标准build invocation/result原始UTC起止；docs-only记录后继不重跑。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/native-chat-reading-build/full-build.result.private.json",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/native-chat-reading-build/full-build.invocation.private.json",
+        "private:tmp/minimal-real-cycle-20261024/native-chat-reading-build/full-build.log",
+        "private:tmp/minimal-real-cycle-20261024/native-chat-reading-build/BUILD_FINGERPRINTS.private.json"
+      ]
+    },
+    {
+      "id": "native-chat.edcea.deployment",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "8f66f9052317ad6d1ad934852a1300706c72a0566c8bd0d718848b0fd4e2de36",
+      "sourceRevision": "edcea1059b9146b5795da4aade691807c38d7d1a",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-24T00:57:55.230295Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-普通来源原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.bound-object-chat"
+      ],
+      "scenarioIds": [],
+      "summary": "本批未技术发布、安装或远端执行0082；线上比较目标仍准确5d，待批8d/31及原AD断点保持。本地构建不充作部署。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-backend-handoff.private.md"
+    },
+    {
+      "id": "native-chat.edcea.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": "8f66f9052317ad6d1ad934852a1300706c72a0566c8bd0d718848b0fd4e2de36",
+      "sourceRevision": "edcea1059b9146b5795da4aade691807c38d7d1a",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-24T00:57:55.230295Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-普通来源原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.bound-object-chat"
+      ],
+      "scenarioIds": [],
+      "summary": "没有真实产品模型、浏览器CHAT、线上回答/未知发送恢复或正式采用验收；PG只证明合成fixture的受限本地链。TDMS完整来源、独立文档与新Aily可信实例渠道未接入，M3仅保持实际父投影。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/native-chat-backend-handoff.private.md"
+    },
+    {
+      "id": "tdms-processing.b71.existing-consumers.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "32cfa634e6a28cc2287bf619c29d3888bf3d712e059bd3aa74c0d12e153252bd",
+      "sourceRevision": "b71cd03fd9f020fa7cf39b58701092672a0bf896",
+      "environmentId": null,
+      "observedAt": "2026-10-24T01:19:55.081528Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-tdms-processing-set-现有消费者与生产缺口",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [],
+      "summary": "只读核清b71现有processing-set接口、validation、repository、save/CAS和实际runtime READ/native verifier消费者；生产RETAIN authority/producer未装配，runtime只读拒绝RETAIN边界保持，daily关系仍为候选未解析。此记录是当前源码定位，不是新开发、测试通过或生产闭环。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/tdms-processing-inventory.private.md",
+      "timeBasis": "本次读取准确b71源码与既有清点报告的观察时间；未运行旧unit/PG或build。"
+    },
+    {
+      "id": "tdms-processing.original-host.storage-metadata",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": "32cfa634e6a28cc2287bf619c29d3888bf3d712e059bd3aa74c0d12e153252bd",
+      "sourceRevision": null,
+      "environmentId": null,
+      "observedAt": "2026-10-24T08:56:17.928718+08:00",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-tdms-processing-set-现有消费者与生产缺口",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [],
+      "summary": "原Host已有官方目录元数据：当前query schema/search_path的to_regclass解析中set/head两表均exists=false；owner/schema/RLS/ACL为null，policy/index/trigger为空。仅原查询范围，不推断其他schema或业务行；原件无应用指纹/明确环境ID，不补成线上5d执行结果。本批未执行部署、DDL或新远端查询。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/native-chat-tdms-policy-readonly/PROCESSING_SET_METADATA.private.json",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/native-chat-tdms-policy-readonly/02-processing-set-metadata.sql"
+      ],
+      "timeBasis": "沿用原官方结果observed_at；本次读取/复制时间不替代原观察。",
+      "deploymentObservationScope": "仅原Host当时连接按search_path解析的两表目录元数据；not_run表示本批未执行技术部署。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "sourceRevision": "7000de3b02df4abe33dd7ae017fec26b27041497",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.7000.ui-source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "summary": "准确UI7000已按前端范围接受：真实无WorkItem DVI讨论入口、parse固定、native scope与撤权清退、原请求未知核对和准确sourceRef导航；M3实际挂载并复用同一父读响应，局部消息/执行节点不入主线业务catalog。Host/Native完整实现与真实模型不由此证明。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-ui-handoff.private.md",
+      "timeBasis": "主控已接受的准确UI源码和原交付报告；本记录未取得独立审查绝对起止，保持observedAt=null。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "sourceRevision": "7000de3b02df4abe33dd7ae017fec26b27041497",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.7000.ui-jest30.test",
+      "kind": "test",
+      "status": "passed",
+      "testLevel": "unit",
+      "summary": "三个新增Jest suite 25/25与真实阅读页仅本批新增5/5分次通过；原页面56项明确skipped。覆盖原请求恢复、确定FAILED/CAS、scope/session/parse与撤权隔离、准确来源、同父M3刷新/清图/旧图导航拒绝。axios/DOM/合成回答fixture不证明实际Host或模型；执行为提交前最终UI内容及6c7+获准observedAt临时shared，对应7000文件，不冒称clean7000或未来集成SHA重跑。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-ui-validation.private/ui-unit-component.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-ui-validation.private/ui-unit-component.result.private.json",
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-ui-validation.private/ui-unit-component.invocation.private.json",
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-ui-validation.private/ui-page-selected.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-ui-validation.private/ui-page-selected.result.private.json"
+      ],
+      "timeBasis": "三个新增suite起止沿原invocation；页面所选5项UTC起止未捕获明确unknown，不以复制时间倒填。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "sourceRevision": "7000de3b02df4abe33dd7ae017fec26b27041497",
+      "environmentId": null,
+      "observedAt": "2026-10-24T02:06:49.716178Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.7000.ui-normal-hook.test",
+      "kind": "test",
+      "status": "passed",
+      "testLevel": "unit",
+      "summary": "7000正常.githooks precommit exit0，执行现有lint和server/client typecheck；只stage16个client/test文件。共享类型临时副本与node_modules链接均未提交，随后已恢复/清理并核clone clean；不是完整产品build。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-ui-validation.private/normal-commit.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-ui-validation.private/normal-commit.result.private.json",
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-ui-validation.private/product-commit.private.json"
+      ],
+      "startedAt": "2026-10-24T02:06:32.185928Z",
+      "endedAt": "2026-10-24T02:06:49.716178Z",
+      "timeBasis": "正常git commit原命令记录的UTC起止；检查依赖6c7+两个获准observedAt临时共享字段，已排除UI提交。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "sourceRevision": "647e16d619da34b71f6324ef90f0f6f3ddfb044a",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.local.deployment",
+      "kind": "deployment",
+      "status": "not_run",
+      "summary": "当前最终647含Native621五文件修复，Host/client沿541完整build字节适用、指纹仍541；647原标准packager必需全suite及版本声明通过，c236 ZIP仅本地就绪未安装/外传。0083未远端部署、本批未技术发布，线上5d与待批8d/31保持；匹配Host+0083必须先于c236，不能混装旧Host或单独8d/31。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "sourceRevision": "647e16d619da34b71f6324ef90f0f6f3ddfb044a",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.local.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "summary": "本批未取得真实产品模型/浏览器独立DVI CHAT运行；M3仅完成实际同父消费接线，没有新增真实业务运行数据。普通已绑定对象CHAT、TDMS、新Aily与独立DVI范围分别保留。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.host-native.accepted.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "sourceRevision": "107528f73d2ffb8ec4805d6bccf2983633845b47",
+      "nativeSourceRevision": "185f206c1ff93734dd10133e5b42feed4342d42e",
+      "summary": "Host1075与Native185f经Astra接受：真实原生PRIVATE DVI thread/message、固定PUBLISHED原文、无WI/mapping合法TENANT读者、实际authorizer/catalog/Reader、原key/fence、只READ引用及sealed原结果恢复；无attempt权威终态与UNKNOWN均不重模型。五表restrictive guard防旧permissive叠加是SQL审查，不计额外mapped专项实测。",
+      "originalReportRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-backend-handoff.private.md",
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-native-handoff.private.md",
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-design.private.md"
+      ],
+      "timeBasis": "准确提交与独立终审原件；无权威UTC起止则保持unknown，不用commit time/复制时间倒推。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.1075.pg5.test",
+      "kind": "test",
+      "status": "passed",
+      "sourceRevision": "107528f73d2ffb8ec4805d6bccf2983633845b47",
+      "testLevel": "integration",
+      "summary": "owned loopback受限PG5/5：非上传者TENANT无WI/mapping完整原文到答案引用，actor/tenant/DVI/parse隔离、原key幂等/fence、无attempt终态、sealed撤权后恢复、linked TDMS bytes前拒绝和UNKNOWN不重领。使用合成来源/模型输出与真实authorizer/catalog/Reader/NOSUPERUSER NOBYPASSRLS角色。fixture含9表83policy20fn54index12trigger及CHECK/ACL，非完整线上DB clone，FK/NOTNULL未全重建；restrictive guard为独立SQL审查范围。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-backend-evidence/pg-final.log"
+      ],
+      "timeBasis": "原日志只有持续时间14731.721542ms，未取得权威UTC起止，明确unknown。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.1075.jest44.test",
+      "kind": "test",
+      "status": "passed",
+      "sourceRevision": "107528f73d2ffb8ec4805d6bccf2983633845b47",
+      "testLevel": "unit",
+      "summary": "document-chat-contract、dialogue-service-interaction、document-original-execute三个成功suite共44/44；原命令还含private第四套，因隔离clone依赖resolver未加载，不能把整条命令记全绿。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-backend-evidence/jest-initial.log"
+      ],
+      "timeBasis": "原Jest日志持续时间19.65s，无权威UTC起止。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.1075.legacy-private-failure.test",
+      "kind": "test",
+      "status": "failed",
+      "sourceRevision": "107528f73d2ffb8ec4805d6bccf2983633845b47",
+      "testLevel": "unit",
+      "summary": "额外scope/private旧回归20 passed/1 failed；private-dialogue.spec.ts:279未改旧文案期望“完成情况未确认”，实际“回答内容已保存，完成状态未确认”。相关client label/spec相对5ca未变，未为过测改动或抹除失败；不声称父提交曾独立重跑。初次该套依赖resolver未加载亦保留。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-backend-evidence/jest-regression.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-backend-evidence/jest-initial.log"
+      ],
+      "timeBasis": "原回归持续时间13.239s，无权威UTC起止。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.1075.types-hooks.test",
+      "kind": "test",
+      "status": "passed",
+      "sourceRevision": "107528f73d2ffb8ec4805d6bccf2983633845b47",
+      "testLevel": "unit",
+      "summary": "Host1075双端typecheck、定向ESLint及正常precommit通过，22文件准确提交后clean，未绕过hook；0083仅本地受限PG，无远端DDL或真实业务。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-backend-evidence/typecheck.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-backend-evidence/target-eslint.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-backend-evidence/normal-commit.log"
+      ],
+      "timeBasis": "原日志无权威UTC执行起止；提交时间不是测试执行时点。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.185f.native32.test",
+      "kind": "test",
+      "status": "passed",
+      "sourceRevision": "185f206c1ff93734dd10133e5b42feed4342d42e",
+      "testLevel": "unit",
+      "summary": "最终定向32/32包含原29及无attempt终态新增3项：严格原pointer/claimRequestId回执先审计再清槽、0模型/0READ/不造attempt，错误pointer/缺字段/泛化null不清槽，真实tick随后可消费下一scope。UNKNOWN不重发、sealed优先恢复、完整目录/READ引用/fence保持。全部transport/model为确定性fixture，不证明Host PG/RLS或真实模型。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/15-unclaimed-terminal-final-focused.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/16-unclaimed-terminal-protocol-alignment.log"
+      ],
+      "timeBasis": "原日志只有duration_ms，无权威UTC起止；32已包含29，不重复累加。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.c15.native-regressions301-262.test",
+      "kind": "test",
+      "status": "passed",
+      "sourceRevision": "c15aa9507cd154ec34148197ccf26284b138edd4",
+      "applicableSourceRevision": "185f206c1ff93734dd10133e5b42feed4342d42e",
+      "testLevel": "unit",
+      "summary": "受影响既有队列/WorkItem/Document/Reading301/301及c236 validator/版本262/262均沿c15准确原执行证据；185窄终态增量未重跑，依据受影响文件与定向32项验收复用。原validator首次5项listen EPERM及版本引用漂移失败保留；Mac未实跑Linux util-linux flock，生产锁实现不改。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/03-affected-regression.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/07-validator-with-local-listen.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/06-validator-version-regression.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/04-source-inspect.failure.log"
+      ],
+      "timeBasis": "保持c15原执行身份，日志无权威绝对起止；不改写185或541重跑。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.185f.native-normal-hook.test",
+      "kind": "test",
+      "status": "passed",
+      "sourceRevision": "185f206c1ff93734dd10133e5b42feed4342d42e",
+      "testLevel": "unit",
+      "summary": "Native185f窄增量4文件正常.githooks precommit通过、diff check/协议只读核对成立，提交后clean并清理依赖链接；c15原正常hook另保留，不是安装或模型运行。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/17-unclaimed-terminal-normal-hook.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/18-unclaimed-terminal-git-identity.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/12-normal-hook-commit.log"
+      ],
+      "timeBasis": "原日志未给权威UTC执行起止，保持unknown。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.541.integration.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "sourceRevision": "541acba133f51e67eb9071f74ae2fbfe2deabf00",
+      "summary": "准确541acba正常hook无冲突合并Host1075/UI7000/Native185f，tree5bb70a8e42e251056d2ab20ea668e2eab3906c42；53个变更Git blob与各接受输入逐一一致、clean。只证明集成源码保真，不把原PG/Jest/Native测试改成541重跑。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-integration-source-check.private.json"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": "2026-10-24T02:36:38.361035Z",
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.541.full-build.test",
+      "kind": "test",
+      "status": "passed",
+      "sourceRevision": "541acba133f51e67eb9071f74ae2fbfe2deabf00",
+      "testLevel": "integration",
+      "startedAt": "2026-10-24T02:35:54.728888Z",
+      "endedAt": "2026-10-24T02:36:38.361035Z",
+      "summary": "准确clean541acba唯一标准npm run build exit0，单调计时43.630898s、前后clean、四子日志fresh；server/client不可变指纹均完整541acba，server buildTime02:36:12.713Z，client runtime-build-DZmbQagH.js；5条DVI dialogue路由齐全、整体181 API/37页面。只静态核产物，未发布/安装0083/c236或真实模型；docs-only记录不重跑build。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/independent-document-chat-build/full-build.invocation.private.json",
+        "private:tmp/minimal-real-cycle-20261024/independent-document-chat-build/full-build.result.private.json",
+        "private:tmp/minimal-real-cycle-20261024/independent-document-chat-build/full-build.log",
+        "private:tmp/minimal-real-cycle-20261024/independent-document-chat-build/BUILD_FINGERPRINTS.private.json",
+        "private:tmp/minimal-real-cycle-20261024/independent-document-chat-build/NATIVE_ONLY_SUCCESSOR_BUILD_SCOPE.private.json"
+      ],
+      "timeBasis": "原标准完整构建invocation/result与指纹JSON，UTC起止和单调耗时各取原字段。",
+      "applicableHostClientSourceRevision": "647e16d619da34b71f6324ef90f0f6f3ddfb044a",
+      "applicability": "541→647只改5 Native/test文件，Host/client/build脚本/依赖Git输入完全相同；仅按Host/client构建字节适用，不改写647已fullbuild或fingerprint为647。"
+    },
+    {
+      "id": "document-chat.c236.package-initial-failure.test",
+      "kind": "test",
+      "status": "failed",
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "sourceRevision": "541acba133f51e67eb9071f74ae2fbfe2deabf00",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "testLevel": "unit",
+      "summary": "准确541acba的package强制Skill全suite1873 passed/2 failed：core-p1-consumer:87新增consumeAutomaticQueueTurn预读损坏active-claim JSON抢在旧quarantine之前，为真实Native回归；sealed-tdms-review-recovery:145反例硬编码replace(/c235$/,c234)，在c236下未改变值，为反例失效，须修复后确证拒绝。Native writer/Astra正处理，未称安装包就绪；原32/301/262与541 Host/client构建按原身份保留。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/independent-document-chat-delivery/native/package.log",
+      "timeBasis": "原执行源码已确认为541acba；无权威UTC起止保持unknown。初次外层仅错误command、后续同打包API捕获stdout/stderr独立保留，不用文件时间倒填。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/independent-document-chat-delivery/native/package.log",
+        "private:tmp/minimal-real-cycle-20261024/independent-document-chat-delivery/native/package-captured.log"
+      ],
+      "resolvedBySourceRevision": "621a99370335ab35d1138e47bad210ad90a52eac",
+      "resolutionScope": "原失败状态与541身份保留；621对两个原失败2/2、相关86/86通过，647标准packager最终通过，后继证据单独追加。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.621.native-repair86.test",
+      "kind": "test",
+      "status": "passed",
+      "sourceRevision": "621a99370335ab35d1138e47bad210ad90a52eac",
+      "testLevel": "unit",
+      "summary": "Native621仅5文件修复标准packager两项：原active-claim预读复用既有窄quarantine且保护活动CHAT/未知IO，失效版本反例明确构造c234并证明SKILL_VERSION拒绝，不放宽生产validator。两个原失败2/2及四相关文件86/86通过，2已包含于86；正常precommit通过、clean。未重跑原301/262或Host/client完整build。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/20-packager-two-failures-reproduced.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/21-packager-two-failures-fixed.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/22-packager-repair-focused.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/23-packager-repair-normal-hook.log",
+        "private:tmp/minimal-real-cycle-20261024/content-review/document-chat-native-logs/24-packager-repair-git-identity.log"
+      ],
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-native-handoff.private.md",
+      "timeBasis": "沿原有限复现/通过/正常hook日志，无权威UTC起止则unknown；不以commit或文件时间倒填。"
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.647.native-repair.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "sourceRevision": "647e16d619da34b71f6324ef90f0f6f3ddfb044a",
+      "nativeSourceRevision": "621a99370335ab35d1138e47bad210ad90a52eac",
+      "summary": "621经Astra接受，root正常hook合并为647（parents541/621，tree28ad9019d2d571b29cb4facb92e60765b26032aa）、clean。只读Git差异精确5 Native/test文件，Host/client/build脚本/依赖输入均与541相同；沿用准确541 Host/client构建字节，不称647重新fullbuild或改写fingerprint。",
+      "originalReportRef": "private:tmp/minimal-real-cycle-20261024/content-review/independent-document-chat-records-validation.private/native-repair-byte-equivalence.private.json",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/independent-document-chat-build/NATIVE_ONLY_SUCCESSOR_BUILD_SCOPE.private.json"
+      ]
+    },
+    {
+      "contractRevision": "cea76eb4b0acbcdd20bdca254e735a710f8dbe3e95740fe7be03a5b7ffe0aba6",
+      "environmentId": null,
+      "observedAt": null,
+      "reportRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md#2026-10-24-独立文档原生-chat-本地接线",
+      "bindingIds": [
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "id": "document-chat.647.c236-package.test",
+      "kind": "test",
+      "status": "passed",
+      "sourceRevision": "647e16d619da34b71f6324ef90f0f6f3ddfb044a",
+      "testLevel": "unit",
+      "summary": "原标准packager在准确647 exit0，manifest.validation.passed=true、versionClaimsAligned=true，必需全Skill suite通过；成功不吐子测试数量，不臆造最终计数。c236 ZIP148文件/1076577bytes，SHA2566899501cb8042f0d5120416f12b064d6a8aea1b164cc596e4945405c4833de0a，Skilltree97eece5c83cd972a0496d14c0a3e58f66739b3f7；bytes/CRC/148文件已核，仅本地未安装/外传。原541的1873/2失败单独保留，不改成通过。",
+      "logRefs": [
+        "private:tmp/minimal-real-cycle-20261024/independent-document-chat-delivery/native/package-final.log",
+        "private:tmp/minimal-real-cycle-20261024/independent-document-chat-delivery/native/wiselink-research-and-synthesize-r09.c236.zip.manifest.json",
+        "private:tmp/minimal-real-cycle-20261024/independent-document-chat-delivery/native/PACKAGE_RECEIPT.private.json"
+      ],
+      "timeBasis": "原packager/manifest/receipt给出准确source与制品，不含权威UTC执行起止或最终测试数量，明确unknown，不以gitCommitUnixSeconds或文件时间倒填。"
+    },
+    {
+      "contractRevision": "6dc1a47f09dce2620552b9a6e4fa192341e16574e37ccb5925e974dfa97f96b1",
+      "observedAt": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-原生-workitem-更新评估入口本地修复",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "id": "sem.native-update.current.bounded-runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "summary": "正常原页面可读既有工作/综合，原SEM文字未变；本轮只创建一个ACTIVE空讨论，POST201，0turn/0模型/0评估SAVE。准确owner、官方客户端ACTIVE mapping及当前修订completion成立，更新入口仍有额外OAuth session条件；元数据session候选不代表当前cookie。未发起更新，不计真实SEM或完整场景通过。",
+      "timeBasis": "沿原有限UI、trace与元数据观察登记；本公开记录不含业务主键、真实原文或私有日志路径，未提供统一权威执行起止，observedAt保持unknown。"
+    },
+    {
+      "contractRevision": "6dc1a47f09dce2620552b9a6e4fa192341e16574e37ccb5925e974dfa97f96b1",
+      "observedAt": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-原生-workitem-更新评估入口本地修复",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "id": "sem.native-update.625.admission.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "sourceRevision": "62597471c65a5f25884d154f419d89b931a66ff4",
+      "environmentId": "local:reviewed-candidate",
+      "summary": "625父624/tree9e3c7b443dec4e5fcfda1de4788a2e0a3f1892db，正常hook、clean，3文件已独立接受。仅原ReviewConversationService新增明确WorkItem AUTOMATIC UPDATE入口；fresh RECORD/owner/精确主体修订/官方ACTIVE mapping后以既有verified browser SQL执行append和读回。READ不授UPDATE；原请求重放顺序与runtime/Source/fence/CAS保持；不借session、不新policy/grant/CHAT marker，不扩大Matter/Overall/附件或正式采用。"
+    },
+    {
+      "contractRevision": "6dc1a47f09dce2620552b9a6e4fa192341e16574e37ccb5925e974dfa97f96b1",
+      "observedAt": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-原生-workitem-更新评估入口本地修复",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "id": "sem.native-update.625.jest33.test",
+      "kind": "test",
+      "status": "passed",
+      "sourceRevision": null,
+      "implementationRevision": "62597471c65a5f25884d154f419d89b931a66ff4",
+      "environmentId": "local:targeted-tests",
+      "testLevel": "unit",
+      "executedAt": null,
+      "summary": "最终ReviewConversationService单套Jest33/33，server typecheck与三文件定向ESLint exit0；root随后正常hook提交625。覆盖无cookie精确UPDATE、READ允许但RECORD拒绝、mapping/owner/scope/revision及排除请求。前序服务单测不替代最终受验证browser SQL加入后的33项重验；不相加旧suite或宣称全仓全绿。",
+      "executionBasis": "实际执行为624加最终三文件的未提交工作树；文件字节与随后625完全相同，不是在clean625重跑。无权威UTC起止，executedAt/observedAt保持unknown。"
+    },
+    {
+      "contractRevision": "6dc1a47f09dce2620552b9a6e4fa192341e16574e37ccb5925e974dfa97f96b1",
+      "observedAt": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-原生-workitem-更新评估入口本地修复",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "id": "sem.native-update.625.pg3.test",
+      "kind": "test",
+      "status": "passed",
+      "sourceRevision": null,
+      "implementationRevision": "62597471c65a5f25884d154f419d89b931a66ff4",
+      "environmentId": "local:isolated-postgresql",
+      "testLevel": "integration",
+      "executedAt": null,
+      "summary": "真实受限PG3/3（1主链+2子场景，0skip）：authenticated浏览器写入，非owner/非BYPASSRLS runtime且work RLS开启；实际claim、allowlisted Source READ、1次合成工作SAVE、准确读回、原sealed重复commit和版本/配置变化后的原request/body恢复。重放0新增turn/attempt/SAVE；0模型/远端。撤销mapping WARN为预期拒绝。初轮sandbox listen EPERM、随后C1 trigger真实SQL身份失败及legacy输入错误原件保留；最终用原verified browser SQL窄修，不改RLS。不是完整生产DB复刻或真实SEM质量证明。",
+      "executionBasis": "最终未提交624加三文件工作树，与随后625逐字节一致；构造source bytes、此前保存工作和completed receipt/grant作为前置，没有重跑初评/ACK或制造线上网络故障。无权威UTC起止。"
+    },
+    {
+      "contractRevision": "6dc1a47f09dce2620552b9a6e4fa192341e16574e37ccb5925e974dfa97f96b1",
+      "observedAt": "2026-10-24T04:35:44.725430+00:00",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-原生-workitem-更新评估入口本地修复",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "id": "sem.native-update.625.full-build.test",
+      "kind": "test",
+      "status": "passed",
+      "sourceRevision": "62597471c65a5f25884d154f419d89b931a66ff4",
+      "environmentId": "local:standard-build",
+      "testLevel": "integration",
+      "startedAt": "2026-10-24T04:34:58.485584+00:00",
+      "finishedAt": "2026-10-24T04:35:44.725430+00:00",
+      "summary": "主控在准确clean625仅一次标准npm run build完整Host/client，exit0，原单调计时46.239031秒，前后clean，四份子日志本次fresh。未手动安装依赖；本批Native/DDL不变，复用旧c236包不重打。本地构建不证明push/发布、线上模型或SEM正文闭环。"
+    },
+    {
+      "contractRevision": "98eba79dd40ff61b1b3e0a0e5fbdc0676e8ab8b2081cfbe26dbcb29d34a92bc4",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-p2-实际阅读原件恢复与翻译质量",
+      "scenarioIds": [],
+      "kind": "runtime",
+      "id": "p2.current-reading.exact-original.runtime",
+      "status": "passed",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "observedAt": null,
+      "summary": "正常用户已实际读取准确文档版本/解析范围的结构化原文。仅登记本次局部读取，不证明评估、实际模型输入、SAVE、Overall或完整P2/reader已完成；业务主键及原文留在私有原件。",
+      "timeBasis": "UI实际读取观察没有统一权威capture时刻，observedAt保持unknown，不用文件mtime补造。"
+    },
+    {
+      "contractRevision": "98eba79dd40ff61b1b3e0a0e5fbdc0676e8ab8b2081cfbe26dbcb29d34a92bc4",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-p2-实际阅读原件恢复与翻译质量",
+      "scenarioIds": [],
+      "kind": "runtime",
+      "id": "p2.current-reading.pdf-transport-failure.runtime",
+      "status": "failed",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "observedAt": "2026-10-24T05:01:53.619426Z",
+      "summary": "首次PDF原件GET返回HTTP500，FileService.getFileMetadata发生ETIMEDOUT/ENETUNREACH；前置数据库查询已结束，失败在下载与其后授权终检之前，未执行的终检不计通过。平台瞬时transport失败与原AD接续500/待批8d31事务修复分开，不登记后继候选已修复此链。",
+      "timeBasis": "observedAt来自原app_server HTTP响应结束时间，非页面渲染完成时间；失败原件保留。"
+    },
+    {
+      "contractRevision": "98eba79dd40ff61b1b3e0a0e5fbdc0676e8ab8b2081cfbe26dbcb29d34a92bc4",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-p2-实际阅读原件恢复与翻译质量",
+      "scenarioIds": [],
+      "kind": "runtime",
+      "id": "p2.current-reading.pdf-ui-recovery.runtime",
+      "status": "passed",
+      "bindingIds": [
+        "document.assessment-reading"
+      ],
+      "observedAt": "2026-10-24T05:07:40.635498Z",
+      "summary": "同一文档版本仅一次普通UI重试读取原件后，实际HTTP200、metadata/download完成；页面显示共2页及两页canvas。只证明本次既有人工恢复有效，无新增PDF代码/自动重试，不推为后续永无网络失败，也不关闭AD或P2整体。",
+      "timeBasis": "observedAt来自恢复GET的app_server响应结束时间；两页canvas另由实际UI观察确认，没有补造canvas完成时刻。"
+    },
+    {
+      "contractRevision": "98eba79dd40ff61b1b3e0a0e5fbdc0676e8ab8b2081cfbe26dbcb29d34a92bc4",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-p2-实际阅读原件恢复与翻译质量",
+      "scenarioIds": [],
+      "kind": "runtime",
+      "id": "p2.current-reading.translation-quality.runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "observedAt": null,
+      "summary": "中英对照已有译文真实局部可读，页面98.1%为按已登记原文字符计的可读中文覆盖率，非准确率/质量评分。仍有1表格中文暂不可用（按页面状态映射为BLOCK）；缩写一致性质量提示及术语保留问题审查中，本轮未读取具体check JSON或确定缩写提示severity，质量未通过，不称全篇完成/内容采用或新翻译运行。保留对应原文入口，不默认新建请求或重译。",
+      "timeBasis": "质量/部分可读为真实UI观察；没有统一权威capture时刻，保持unknown。"
+    },
+    {
+      "id": "p2.table-projection.b907.local.test",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "98eba79dd40ff61b1b3e0a0e5fbdc0676e8ab8b2081cfbe26dbcb29d34a92bc4",
+      "sourceRevision": "b9076d9b27db4c7f9b4c55485e1a3943d0f8f188",
+      "environmentId": "local:targeted-tests",
+      "observedAt": null,
+      "executedAt": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-p2-实际阅读原件恢复与翻译质量",
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "scenarioIds": [],
+      "testLevel": "unit",
+      "summary": "df17的12文件稀疏表自然投影及保存/可读文案局部修复：新4回归在原生产代码4fail，最终Node22/22、UI8/8、c237 check-only与显式正常hook检查通过；初轮reference版本声明检查失败保留。后继b907父df17/tree5bcb2663c272cd078a589da11087833904dbc3f5仅2文件将Host精确版本对齐c237，真实parser4/4且正确hash的c236/r09/c999仍拒绝，正常hook及源码审查接受。Native tree不变；最低兼容/DDL/模型权限及默认质量/选用不变。局部修复不证明历史表格BLOCK因果，不改变历史译文或启动重译。",
+      "executionBasis": "Node22/UI8/check-only执行于df17提交前最终12文件，Host parser4执行于b907提交前最终2文件；各文件SHA与随后准确提交一致，不是在clean b907重跑全部。没有权威UTC起止，保持unknown。",
+      "nodeUiImplementationRevision": "df17b985ba93f69b7b1a501b4d0506c3765ccac2",
+      "hostParserImplementationRevision": "b9076d9b27db4c7f9b4c55485e1a3943d0f8f188"
+    },
+    {
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "98eba79dd40ff61b1b3e0a0e5fbdc0676e8ab8b2081cfbe26dbcb29d34a92bc4",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-p2-实际阅读原件恢复与翻译质量",
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "scenarioIds": [],
+      "id": "p2.table-projection.c237.standard-package.test",
+      "sourceRevision": "df17b985ba93f69b7b1a501b4d0506c3765ccac2",
+      "hostVersionContractRevision": "b9076d9b27db4c7f9b4c55485e1a3943d0f8f188",
+      "nativeSourceTree": "24c47e5ae03114f49513e5ed8b195b785cd84a92",
+      "environmentId": "local:standard-package",
+      "observedAt": null,
+      "testLevel": "unit",
+      "summary": "原标准buildPublishLitePackage对准确df17 Native subtree24c47e5ae03114f49513e5ed8b195b785cd84a92通过必需全suite与versionClaimsAligned；与b907 Native字节相同。c237 ZIP148文件/1078586bytes，SHA2565c00ad4ca18b16d47e979c5763c8a5a86b36bd3ed947d0d936ca0387d34f9267，实际字节已核，仅本地未安装/外传。成功API不吐测试总数，不推造数量。旧沙箱packager exit1的子stdout丢失，原因unknown；后续本地测试权限获准后同Native tree通过，不能反推旧失败已证EPERM。",
+      "timeBasis": "包receipt明确source/Native tree/制品字节与本地状态；未提供权威执行UTC起止，保持unknown，不用gitCommitUnixSeconds或文件mtime补造。"
+    },
+    {
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "98eba79dd40ff61b1b3e0a0e5fbdc0676e8ab8b2081cfbe26dbcb29d34a92bc4",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-p2-实际阅读原件恢复与翻译质量",
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "scenarioIds": [],
+      "id": "p2.table-projection.b907.full-build.test",
+      "sourceRevision": "b9076d9b27db4c7f9b4c55485e1a3943d0f8f188",
+      "environmentId": "local:standard-build",
+      "observedAt": "2026-10-24T05:29:27.991487+00:00",
+      "startedAt": "2026-10-24T05:28:42.713321+00:00",
+      "finishedAt": "2026-10-24T05:29:27.991487+00:00",
+      "testLevel": "integration",
+      "summary": "主控在准确clean b907标准npm run build完整Host/client exit0，原单调45.278220417秒，前后clean、四份子日志全部本次fresh。df17前序build在插件安装阶段DNS ENOTFOUND失败且四子日志均旧，不计通过；本记录为准确后继的新执行。无新DDL/模型/发布/安装，不以构建通过证明历史译文或P2质量通过。"
+    },
+    {
+      "contractRevision": "d8c6c9efc408ef4ed8d6affc1ab7f832e0655e8daa98a0e59888373552cc9ba0",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-p2-已保存译文质量核对与否定检查本地修补",
+      "scenarioIds": [],
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "observedAt": null,
+      "timeBasis": "官方有界只读回执；未取得统一权威执行UTC，保持unknown，不以文件或生成时间替代。",
+      "id": "p2.saved-quality.reference-check.runtime",
+      "summary": "官方有界只读确认Reference两行各5个显式单元，含明确空值格；所涉非空表头已有非空译文和原anchor绑定，最新保存检查仍报TABLE_CELL_MISSING/BLOCK。两修订均未选用，最新semanticCheck COMPLETED不消除BLOCK。保存检查误报已见，历史机制尚未归因；不是c237的稀疏0/2列合成复现，未重写/重检/选用存量候选，质量未通过。"
+    },
+    {
+      "contractRevision": "d8c6c9efc408ef4ed8d6affc1ab7f832e0655e8daa98a0e59888373552cc9ba0",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-p2-已保存译文质量核对与否定检查本地修补",
+      "scenarioIds": [],
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "observedAt": null,
+      "timeBasis": "官方有界只读回执；未取得统一权威执行UTC，保持unknown，不以文件或生成时间替代。",
+      "id": "p2.saved-quality.terms-negation.runtime",
+      "summary": "官方有界只读确认CMCF字面变为CMC，旧TRANSLATION REVIEW仍被选用可读；另一段OPS在候选中缺失，含独立no的否定句仍为NOT_REQUIRED且无翻译issues。可读、REVIEW和NOT_REQUIRED不证明质量通过；本记录为存量事实，不把本地no修补当作这些保存内容已经更新。"
+    },
+    {
+      "contractRevision": "d8c6c9efc408ef4ed8d6affc1ab7f832e0655e8daa98a0e59888373552cc9ba0",
+      "sourceRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-p2-已保存译文质量核对与否定检查本地修补",
+      "scenarioIds": [],
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "observedAt": null,
+      "timeBasis": "官方有界只读回执；未取得统一权威执行UTC，保持unknown，不以文件或生成时间替代。",
+      "id": "p2.saved-quality.glossary-provenance.runtime",
+      "summary": "所涉6个生成/检查/更正请求无持久glossary快照，不能推断当时无静态/默认规则。4条保存检查的实际版次均为semantic-block-check@2.0；当前源码2.2或本地新2.3不能替代历史生成/检查身份。没有查询全租户术语或重新计算旧检查，质量结论保持未通过。"
+    },
+    {
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d8c6c9efc408ef4ed8d6affc1ab7f832e0655e8daa98a0e59888373552cc9ba0",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-p2-已保存译文质量核对与否定检查本地修补",
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "scenarioIds": [],
+      "id": "p2.negation.9e5.local-validation.test",
+      "sourceRevision": "9e5a16372afee04aa12ba9953c8880eb24126f63",
+      "environmentId": "local:unit-tsc-eslint",
+      "observedAt": "2026-10-24T05:57:31.574328+00:00",
+      "startedAt": "2026-10-24T05:57:23.478208+00:00",
+      "finishedAt": "2026-10-24T05:57:31.574328+00:00",
+      "testLevel": "unit",
+      "summary": "9e5四文件窄修补为独立no增加语义检查前提、检查版次2.3，并保留准确2.2可复用正文后重新检查。新增合成case在原代码1fail/2control pass；最终quality/reuse两suite43/43、server tsc与定向ESLint exit0，正常hook及独立源码审查接受。检查在随后提交为9e5的最终工作树执行，不称clean9e5重跑；时间为两suite原执行窗口。存量候选/检查/选用未改，0模型/翻译SAVE/发布/安装。"
+    },
+    {
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "d8c6c9efc408ef4ed8d6affc1ab7f832e0655e8daa98a0e59888373552cc9ba0",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-p2-已保存译文质量核对与否定检查本地修补",
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "scenarioIds": [],
+      "id": "p2.negation.9e5.full-build.test",
+      "sourceRevision": "9e5a16372afee04aa12ba9953c8880eb24126f63",
+      "environmentId": "local:standard-build",
+      "observedAt": "2026-10-24T06:00:49.830873+00:00",
+      "startedAt": "2026-10-24T06:00:07.219142+00:00",
+      "finishedAt": "2026-10-24T06:00:49.830873+00:00",
+      "testLevel": "integration",
+      "summary": "主控对准确clean9e5只执行一次标准npm run build，完整Host/client exit0，原单调42.61307654099801秒，前后clean、四份子日志fresh。Native subtree未改，复用已有准确c237包，不新增package pass。仅本地构建，不证明存量译文已修或P2质量/真实模型/SAVE/技术发布通过。"
+    },
+    {
+      "id": "document-chat.dev82-83.installed.deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "576e8ed0269916b6e69ac61f9405a53d645de397e7924441c38ec56fed6d60ce",
+      "sourceRevision": "624641ca90725c3133e4922ff6c909a643649e52",
+      "environmentId": "host:app_17bzc551rsg:dev",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-开发库-chat-迁移安装与正式计划覆盖待证",
+      "bindingIds": [
+        "dialogue.bound-object-chat",
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "startedAt": "2026-10-24T06:05:57.367084+00:00",
+      "finishedAt": "2026-10-24T06:08:57.655195+00:00",
+      "observedAt": "2026-10-24T14:09:21.172509+08:00",
+      "summary": "用户批准dev-only准确0082→0083。主控串行官方单语句DO均ok，中间0082的3函数/13policy独立审读accepted；最终dev回读6列/8constraint/5index/21function/47policy/4trigger全部存在，0083的18函数body与准确wrapper逐字一致，动态约束/策略保留dev-before原表达式，0082及无关两policy/两FK未变。仅开发库技术安装及所选目录审读，不计online、真实CHAT/模型/业务完成。",
+      "timeBasis": "startedAt/finishedAt为两次官方DDL命令UTC窗口；observedAt为最终dev catalog服务端观测时刻，二者不混作业务时间。"
+    },
+    {
+      "id": "document-chat.dev82-83.official-plan-unproven.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "576e8ed0269916b6e69ac61f9405a53d645de397e7924441c38ec56fed6d60ce",
+      "sourceRevision": "624641ca90725c3133e4922ff6c909a643649e52",
+      "environmentId": "host:app_17bzc551rsg:dev",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-开发库-chat-迁移安装与正式计划覆盖待证",
+      "bindingIds": [
+        "dialogue.bound-object-chat",
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "startedAt": "2026-10-24T06:09:19.670603+00:00",
+      "finishedAt": "2026-10-24T06:12:22.750117+00:00",
+      "observedAt": "2026-10-24T06:12:22.750117+00:00",
+      "summary": "dev实际0082/0083对象已安装，但08官方shortcut预览仍changes[]（完整API data另见后续11记录）、同段dev DDL history为items[]/has_more false。最后online只读所选结构段与安装前一致，新增对象未进入online；空返回不证明正式迁移计划覆盖本批具体列/CHECK/FK/index/function/policy/trigger，也不证明全库结构一致。下一步取得官方正式计划覆盖或受支持精确迁移路径，不重复相同DDL/无变化探测。online DDL/发布/Native安装/调度/模型/SAVE均未执行，8d31独立待批。",
+      "timeBasis": "UTC窗口取官方diff至最后online只读命令原回执；无业务完成或正式迁移执行时间。"
+    },
+    {
+      "id": "document-chat.dev82-83.delivery-followup.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "4f10ac3041f9292e74453c3cd985ab9179912281f25ffdf72ed8c223daa1f869",
+      "sourceRevision": "624641ca90725c3133e4922ff6c909a643649e52",
+      "environmentId": "host:app_17bzc551rsg:dev",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-开发库-chat-迁移安装与正式计划覆盖待证",
+      "bindingIds": [
+        "dialogue.bound-object-chat",
+        "dialogue.document-version-chat"
+      ],
+      "scenarioIds": [],
+      "startedAt": "2026-10-24T06:32:08.624625+00:00",
+      "finishedAt": "2026-10-24T06:32:13.819088+00:00",
+      "observedAt": "2026-10-24T06:32:13.819088+00:00",
+      "summary": "安装后11直接官方API dry_run:true的整个CLI data为changes[]/from:dev/to:main；08为shortcut，旧完整01为安装前。12/13表详情显示dialogue_thread的dev有3个文档绑定新列、新唯一索引及FK，online无；仅证明存在性，FK列序以catalog为准。历史真实顶层ALTER也有预览遗漏，正常发布曾未补齐遗漏；DO唯一归因及changelog依赖均未证明。所见管理界面未识别独立正式计划，不排除其他入口；本批正式覆盖/顺序仍待证，无新增写入或发布。",
+      "timeBasis": "时间仅取11/12/13官方只读调用窗口，未覆盖历史实验或未标时UI观察；08/09原发生时间不变。"
+    },
+    {
+      "id": "p2.saved-quality.followthrough.source-review",
+      "kind": "source_review",
+      "status": "inconclusive",
+      "contractRevision": "4f10ac3041f9292e74453c3cd985ab9179912281f25ffdf72ed8c223daa1f869",
+      "sourceRevision": "d1dfb7d96a07bb6c3a079015f6aadf12c62ea9eb",
+      "environmentId": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-开发库-chat-迁移安装与正式计划覆盖待证",
+      "bindingIds": [
+        "translation.reading"
+      ],
+      "scenarioIds": [],
+      "observedAt": null,
+      "summary": "本地当前消费者审查：默认Hosted链已提供完整目标结构/上下文/术语，未找到值得另开主线代码批次的未修窄缺陷；旧兼容STEP输入缺口不证明此次历史误报根因。Reference须对准确保存修订重新检查，两块已选可读措施须明确进入受控更正/重译范围，普通继续会跳过；既有独立no修补不保证实际词义检查。候选/检查/selected未变，无新模型或SAVE，存量质量未通过。",
+      "timeBasis": "本地源码/已有证据审查未保留独立权威起止，不用文件或生成时间替代模型执行/业务观察时间。"
+    },
+    {
+      "id": "ad-source-auth.31.delivery.deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "aec1d2c29cf8f4c35420650f10f5ca51d7468087946964d8b13bab81d22a7977",
+      "sourceRevision": "31b9514f6e99a3b12b0a4221a61df67b30a092a9",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-8d31技术发布与ad准备失败后续",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "scenarioIds": [],
+      "summary": "用户批准准确8d/31，公开origin/github及私有origin三条单次同名ref更新各自读回完整SHA；唯一release7700199770447350805最终finished/准确31/error_logs空。中途publishing仍旧5d保留，不充作另一发布。两次直接官方API完整data均changes[]，不据空计划推dev/online全等；0082/83、Native安装及大候选均未纳入。",
+      "startedAt": "2026-10-24T11:50:18.240373+00:00",
+      "finishedAt": "2026-10-24T11:55:05.327167+00:00",
+      "observedAt": "2026-10-24T11:55:05.327167+00:00",
+      "timeBasis": "三条push至最终release读回UTC窗口；服务端release更新时间11:53:22Z另属原响应，不当作本地观察。"
+    },
+    {
+      "id": "ad-source-auth.31.browser-host.runtime",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "aec1d2c29cf8f4c35420650f10f5ca51d7468087946964d8b13bab81d22a7977",
+      "sourceRevision": "31b9514f6e99a3b12b0a4221a61df67b30a092a9",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-8d31技术发布与ad准备失败后续",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "scenarioIds": [],
+      "summary": "原用户runtime-probe实际前端源码及Host部署提交均31；buildTime2026-10-24T11:51:49.230Z，环境PASS、reader仍VERIFICATION_PENDING，UI的release/API合同字段仍未知。只证明双端版本及该有限探针，不证明AD模型/SAVE/Overall或全文阅读完成。",
+      "observedAt": null,
+      "timeBasis": "AX未附独立权威观察UTC；buildTime不代替观察时间。"
+    },
+    {
+      "id": "ad-initial.31.queued-preparation-failure.runtime",
+      "kind": "runtime",
+      "status": "failed",
+      "contractRevision": "aec1d2c29cf8f4c35420650f10f5ca51d7468087946964d8b13bab81d22a7977",
+      "sourceRevision": "31b9514f6e99a3b12b0a4221a61df67b30a092a9",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-8d31技术发布与ad准备失败后续",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "scenarioIds": [],
+      "summary": "旧tab关闭、pending useRef丢失后先新鲜核原500范围无新ATT/SAVE，再正常UI继续一次产生新UUID，未声称沿用旧UUID。app_web1592ms且入队；新增第3次ATT随后输入准备FAILED/claim0，无started/heartbeat/commit/result，评估SAVE0，旧WI/成果保持。准备有普通artifact/locator写入，SAVE0非全流程零写；截图实际FAILED不是排队。34仍LEASED gen4、expires12:57:12.555Z，不推永久锁死。",
+      "startedAt": "2026-10-24T11:56:55.847Z",
+      "finishedAt": "2026-10-24T11:57:17.056Z",
+      "observedAt": "2026-10-24T12:09:57.778358+00:00",
+      "timeBasis": "startedAt为正常UI点击；finishedAt为ATT服务端终止；observedAt取34服务端租约时钟，不混作模型耗时。"
+    },
+    {
+      "id": "ad-initial.31.source-json-compatibility.runtime",
+      "kind": "runtime",
+      "status": "failed",
+      "contractRevision": "aec1d2c29cf8f4c35420650f10f5ca51d7468087946964d8b13bab81d22a7977",
+      "sourceRevision": "31b9514f6e99a3b12b0a4221a61df67b30a092a9",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-8d31技术发布与ad准备失败后续",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "scenarioIds": [],
+      "summary": "准确失败span的Database INFO错误分支日志被10KiB截断，未直接取得原运行SQLSTATE。官方相同SQL/数据仅将一个JSON ?存在性表达式换为jsonb_exists后，原版42601变成功返回且普通来源marker=false；确认Hosted兼容缺陷，与本次失败查询精确重合，不能冒称从原MCP错误栈直接读到42601。普通上传不需补TDMS注册，内部代理改写机制未知。",
+      "startedAt": "2026-10-24T12:05:22.922101+00:00",
+      "finishedAt": "2026-10-24T12:07:39.629789+00:00",
+      "observedAt": "2026-10-24T12:07:39.629789+00:00",
+      "timeBasis": "29/32两次官方只读A/B调用窗口；运行时错误span另保留11:57原身份，未当作模型重跑。"
+    },
+    {
+      "id": "ad-initial.native-readonly-diagnostic.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "aec1d2c29cf8f4c35420650f10f5ca51d7468087946964d8b13bab81d22a7977",
+      "sourceRevision": null,
+      "environmentId": "native:app_17c3zn24kv2:runtime",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-8d31技术发布与ad准备失败后续",
+      "bindingIds": [
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [],
+      "summary": "一次获批只读诊断已完成有限回报：浏览器请求及一次auto-retry的两次begin只有started无result，4份consumer-failure，后两次UNKNOWN，此后无新request；active-claim保留gen4。所查tick无在途，原调度enabled/15min错误退避，无finish/park，也无原始SQLSTATE。重试已形成并消费，不称恢复实现全无或永久锁死；精确比较c237不适用，最小Native新修待设计实现；没有执行新恢复/模型/SAVE。",
+      "observedAt": "2026-10-24T12:19:18.586Z",
+      "timeBasis": "诊断原工具UTC观察截止；只指本次有界运行/精确checkpoint，不代表全环境或以后tick状态。"
+    },
+    {
+      "id": "ad-json-compat.ac5.local-validation.test",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "aec1d2c29cf8f4c35420650f10f5ca51d7468087946964d8b13bab81d22a7977",
+      "sourceRevision": "ac5f8f4630550577f7bfdc239f66122f75218a83",
+      "environmentId": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-8d31技术发布与ad准备失败后续",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "两处JSON存在性写法等价换为jsonb_exists，marker/lineage/tenant/Source/fail-closed边界保持。8d加最终两文件工作树的新owned PG6、ordinary1、server tsc/lint通过，后经正常hook提交ac5；私有Host afd2同tree，仅本地准备。Review首轮19pass/2fail含parent的缺tmp目录在8d复现，单child启动EPERM历史保留；只补本地目录后必要前置4child+parent定向5pass，不称原组全绿。未发布或真实AD重跑。",
+      "testLevel": "integration",
+      "observedAt": null,
+      "timeBasis": "既有本地验证回执未提供统一权威UTC；不把本记录生成时间当执行时间。"
+    },
+    {
+      "id": "ad-json-compat.ac5.full-build.test",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "aec1d2c29cf8f4c35420650f10f5ca51d7468087946964d8b13bab81d22a7977",
+      "sourceRevision": "ac5f8f4630550577f7bfdc239f66122f75218a83",
+      "environmentId": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-8d31技术发布与ad准备失败后续",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "testLevel": "integration",
+      "startedAt": "2026-10-24T12:24:12.220276+00:00",
+      "finishedAt": "2026-10-24T12:24:58.087555+00:00",
+      "observedAt": "2026-10-24T12:24:58.087555+00:00",
+      "summary": "准确clean ac5第二次标准完整npm run build exit0、单调45.869356375秒、前后clean、4子日志fresh。首轮同ac5双端编译通过后因树外node_modules symlink裁剪失败32.283秒，原失败保留；仅换树内已有依赖副本后重跑，没有产品输入修改或手工npm install。公开ac5/私有afd2同tree但此build执行身份仅ac5，不冒称afd2重跑、已发布或AD业务成功。",
+      "timeBasis": "第二次完整build原invocation/result UTC；单调耗时取原result，首次失败保留其原执行身份与时间。"
+    },
+    {
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "9285b8b4682498ef7e020e649a8bd755650e18d3a77f15d205519e9f626df0b5",
+      "sourceRevision": "95f8f6e7c19786630b234784de025539915ac713",
+      "environmentId": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-8d31技术发布与ad准备失败后续",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [],
+      "testLevel": "integration",
+      "id": "ad-json-compat.95f.systemic-validation.test",
+      "summary": "在ac5后有限审计605份runtime TS、768个sql模板及3个静态raw，另将CanonicalJobAidProblemService.admitReviewSources缺verifier探针的JSON ?等价改jsonb_exists。普通来源允许、null/object注册标记及saved Native证据仍拒绝；真实受限PG8/8、tsc/lint通过，随后普通Git提交95f（父ac5）并独立审查接受。初次不存在tsconfig.server.json的命令执行前退出保留。剩4query的问号仅在引号内正则/JSONPath；动态SQL/DB函数/DDL、新入口Hosted未验。补充纠正：ac5/95普通Git提交未skip/no-verify，但未证执行仓库自定义hook；原ac5记录保留其当时口径，当前不能据其称hook通过。未同步/发布或真实业务重跑。",
+      "observedAt": null,
+      "timeBasis": "本地验证未提供统一权威UTC，不以提交、扫描或记录生成时间倒填；普通提交不等于自定义hook执行。"
+    },
+    {
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "9285b8b4682498ef7e020e649a8bd755650e18d3a77f15d205519e9f626df0b5",
+      "sourceRevision": "95f8f6e7c19786630b234784de025539915ac713",
+      "environmentId": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-8d31技术发布与ad准备失败后续",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [],
+      "testLevel": "integration",
+      "id": "ad-json-compat.95f.full-build.test",
+      "summary": "准确clean95f标准完整npm run build-run03 exit0、单调44.882602125秒，前后HEAD与clean一致，4子日志fresh。95f包含第三处missing-verifier探针同类修复；这是本地Host/client构建结果，未同步/发布，不证明Hosted新入口兼容、Native交付、原UNKNOWN收尾或AD业务通过。ac5/afd2及build-run01/02保留各自原身份，不改写为95f执行。",
+      "startedAt": "2026-10-24T12:39:12.011920+00:00",
+      "finishedAt": "2026-10-24T12:39:56.892273+00:00",
+      "observedAt": "2026-10-24T12:39:56.892273+00:00",
+      "timeBasis": "准确95f build-run03原invocation/result UTC与原单调计时；不以生成时间冒充运行时间。"
+    },
+    {
+      "id": "ad-initial.c238.d8.standard-package.test",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "19059ad9ff1ad5889f151849e9fa1cea9de9885db1de4148f679acb2c8a9f3cb",
+      "sourceRevision": "d8f0bf6fe201610781d7b28d27d349e3c4b424e7",
+      "environmentId": null,
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-8d31技术发布与ad准备失败后续",
+      "bindingIds": [
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [],
+      "testLevel": "integration",
+      "summary": "c238准确d8（父369、369父95）本地审查接受，两次已配置.githooks的实际precommit通过。首轮标准包1890pass/1fail的旧/c235$/版本构造no-op保留；仅改sealed测试为显式c234并先assertNotEqual，33/33通过，不放宽validator，独立runner argv误触CLI另已纠正。标准API native-package-run02 exit0、前后准确d8/最终clean，必需全Skill suite及versionClaims通过；成功API未给最终测试数量，不造计数。Native tree d26f4aa0e015910310be792f04e20cbfaeebbc62；ZIP141文件、1054964bytes、SHA256 f03e9b33fc0ebfca337b60e10e327c90c04bc1ee62cd2cf47d306c60d018781f，本地字节已核。未push/install/release、未操作真实checkpoint/BLOCK或调用模型/SAVE；ac5/95旧普通提交hook事实与95Host build身份保持。",
+      "startedAt": "2026-10-24T12:52:52.683713+00:00",
+      "finishedAt": "2026-10-24T12:53:07.625571+00:00",
+      "observedAt": "2026-10-24T12:53:07.625571+00:00",
+      "timeBasis": "准确d8标准API第二次打包原invocation/result UTC；33项、实际hook与首次失败分别保留原执行身份，不将包时间倒填局部测试。"
+    },
+    {
+      "status": "passed",
+      "contractRevision": "98293113121205e4289cff911c7506cc9a4a72daab293db4f03303ebe7ad1954",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-host70-与-c238-技术切换",
+      "scenarioIds": [],
+      "id": "ad-systemic.70.host-cutover.deployment",
+      "kind": "deployment",
+      "sourceRevision": "70d82f1e291686cc0dc830fb186b3f5719a63ade",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "summary": "准确公开d8/私有70获批后三条单次同名ref更新各自读回；18直接官方API完整data changes[]，不据此推dev/online全等。本批唯一release7700222260640369685最终finished/准确70/error_logs空，原用户浏览器与Host均70、环境PASS、reader仍VERIFICATION_PENDING，UI release/API合同字段未知。只证明技术部署及有限版本探针，0082/83、大CHAT/质量包未纳入，原AD收尾与新模型/SAVE/Overall/阅读未证。",
+      "startedAt": "2026-10-24T13:10:25.411898+00:00",
+      "finishedAt": "2026-10-24T13:19:47.830082+00:00",
+      "observedAt": "2026-10-24T13:19:47.830082+00:00",
+      "timeBasis": "12三ref同步起至22最终release本地观察UTC；23 AX无独立观察UTC，13:18:21.221Z只属buildTime，不倒填浏览器观察。"
+    },
+    {
+      "status": "passed",
+      "contractRevision": "98293113121205e4289cff911c7506cc9a4a72daab293db4f03303ebe7ad1954",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-host70-与-c238-技术切换",
+      "scenarioIds": [],
+      "id": "ad-systemic.c238.installed.deployment",
+      "kind": "deployment",
+      "sourceRevision": "d8f0bf6fe201610781d7b28d27d349e3c4b424e7",
+      "environmentId": "native:app_17c3zn24kv2:runtime",
+      "bindingIds": [
+        "save.finish",
+        "research.overall"
+      ],
+      "summary": "准确c238官方同名安装一次，真实subprocess exit0，141包文件bytes/hash/mode匹配、仅额外source-origin单列且准确指向本批extract，Node语法exit0/Skill ready。同22 checkpoint集合及字节未改，两处begin UNKNOWN保持，安装结束时C136仍paused；36会话completed。下载ZIP/manifest精确bytes/hash另证，但curl子退出码UNKNOWN，不反推0。安装前误读manifest键及mode字符串处理两次校验脚本错误已纠正，非产品失败；实际独立安装exit0成立，无业务模型/READ/SAVE/BLOCK。",
+      "startedAt": "2026-10-24T13:24:50.044335+00:00",
+      "finishedAt": "2026-10-24T13:24:57.973820+00:00",
+      "observedAt": "2026-10-24T13:25:17.878937+00:00",
+      "timeBasis": "34真实安装subprocess起止及141文件验证UTC；35 checkpoint after随后工具已证，不把外层会话抓取时间冒作安装时间。"
+    },
+    {
+      "status": "passed",
+      "contractRevision": "98293113121205e4289cff911c7506cc9a4a72daab293db4f03303ebe7ad1954",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-host70-与-c238-技术切换",
+      "scenarioIds": [],
+      "id": "ad-systemic.c136.restored.runtime",
+      "kind": "runtime",
+      "sourceRevision": null,
+      "environmentId": "native:app_17c3zn24kv2:runtime",
+      "bindingIds": [
+        "save.finish",
+        "research.overall"
+      ],
+      "summary": "安装GO与恢复GO分阶段。39实际官方cron enable仅一次exit0，读回enabled=true、runningAtMs=null、nextRun13:29:03.256Z；恢复前静态配置与phase1原快照一致、diffKeys空。它证明原C136恢复调度，未证明新tick成功、原AD失败对账/BLOCK/归档或新模型/SAVE/Overall完成，不将nextRun当已运行。",
+      "startedAt": "2026-10-24T13:28:15.278687+00:00",
+      "finishedAt": "2026-10-24T13:28:18.478344+00:00",
+      "observedAt": "2026-10-24T13:28:18.478344+00:00",
+      "timeBasis": "39内层官方enable真实subprocess窗口及同次读回；静态快照比较13:28:05.966970Z为恢复前观察，未冒充业务执行。"
+    },
+    {
+      "kind": "runtime",
+      "contractRevision": "73c3b67d0a5a60b88f568f64f878023d319a1b4c01c06cbca777bf7ca04bacd4",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-host70-与-c238-技术切换",
+      "scenarioIds": [],
+      "bindingIds": [
+        "save.finish",
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "id": "ad-systemic.c238.explicit-preparation-failure-settled.runtime",
+      "status": "passed",
+      "sourceRevision": "d8f0bf6fe201610781d7b28d27d349e3c4b424e7",
+      "environmentId": "native:app_17c3zn24kv2:runtime",
+      "summary": "首个恢复后的自然tick实际BLOCKED_CLAIM_FINALIZED原范围；41 Host原grant BLOCKED/gen5/lease空、旧ATT3仍FAILED claim0/评估SAVE0。44 outer归档精确原UUID/AQ/rev3，activeclaim为null，两处begin UNKNOWN hashes与before相同，WI树无新增。47次tick IDLE/ok，C136 lastRunStatus ok/错误计数0。具体明确准备失败占用正常reclaim/BLOCK/归档断点已闭合，没有改写begin result或重放业务；不表示工程SAVE/Overall成功或通用UNKNOWN全覆盖。47后段私有汇总脚本/路径错误保留，属记录操作，不解释为第二次业务收尾。",
+      "startedAt": "2026-10-24T13:29:03.260+00:00",
+      "finishedAt": "2026-10-24T13:29:07.838+00:00",
+      "observedAt": "2026-10-24T13:30:40.540731+00:00",
+      "timeBasis": "42内层自然tick起止为实际失败占用收尾窗口；observedAt为44精确归档/不变性抓取结束UTC，次tick另为13:30:03.262Z—13:30:17.595Z。41服务端观察时钟不替代tick耗时。"
+    },
+    {
+      "kind": "runtime",
+      "contractRevision": "73c3b67d0a5a60b88f568f64f878023d319a1b4c01c06cbca777bf7ca04bacd4",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-host70-与-c238-技术切换",
+      "scenarioIds": [],
+      "bindingIds": [
+        "save.finish",
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "id": "ad-systemic.70.normal-successor-queued.runtime",
+      "status": "inconclusive",
+      "sourceRevision": "70d82f1e291686cc0dc830fb186b3f5719a63ade",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "summary": "原失败占用实测收尾后，45正常UI只单击继续问题分析一次；46准确范围只新增ATT4/明确新UUID QUEUED、claim0、无started/result/commit，grant WAITING/lease空。保留旧ATT3与原UNKNOWN关联，不冒称沿用旧UUID或重放旧begin；这是正常新后继排队，不证明Hosted准备、模型/SAVE/Overall/阅读或业务成功。",
+      "startedAt": "2026-10-24T13:31:11.018Z",
+      "finishedAt": "2026-10-24T13:31:15.349Z",
+      "observedAt": "2026-10-24T13:31:28.051630Z",
+      "timeBasis": "45单次UI意图为起点，46 ATT4服务端创建为排队结果，observedAt为同次数据库观察；不把队列等待计为模型执行。"
+    },
+    {
+      "id": "ad-systemic.70.successor-running-source-model.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "b10a00c28ec34c5f9900655e83cf49dcdd1b860a91411bad852ddd1eab5a49f2",
+      "sourceRevision": "d8f0bf6fe201610781d7b28d27d349e3c4b424e7",
+      "environmentId": "native:app_17c3zn24kv2:runtime",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-host70-与-c238-技术切换",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "scenarioIds": [],
+      "summary": "48准确新ATT4已RUNNING/claim1，Task v3及input/base rev3，prepared actor/文档/parse/envelope绑定匹配；Task输入登记8页覆盖并保留解析限制，不等于模型全部阅读完成。54—56 Native已有round1—8成功chat completion回执，READ_SOURCES按1/6/7/3等页段实际推进，非仅配置或claim。Task选定M3 Probe Large/modelRef m3probe/minimax-m3，与响应别名openclaw/wiselink-engineering分别记录，不把alias当底层供应方独立证明。当前无SAVE/Overall及成果阅读完成证据，不升级完整业务场景或SEM真实语义通过。",
+      "startedAt": "2026-10-24T13:32:09.924Z",
+      "finishedAt": null,
+      "observedAt": "2026-10-24T13:36:59.290587+00:00",
+      "timeBasis": "startedAt为48服务端ATT4实际开始；48数据库观察13:32:31.815672Z与54—56模型/READ原件保持各自窗口，observedAt为56抓取结束，不把局部模型响应当链路终态。"
+    },
+    {
+      "contractRevision": "c79ecb4dcfe78891b42f418b4fedf1c300f0d05527473708cebd49503eb914e5",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-ad异常正常收尾与page修复交付",
+      "scenarioIds": [],
+      "id": "ad-systemic.c238.round14-gateway-attention.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "sourceRevision": "d8f0bf6fe201610781d7b28d27d349e3c4b424e7",
+      "environmentId": "native:app_17c3zn24kv2:runtime",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "summary": "73/77完整CLI JSON的实际工具输出确认round1—13均READ_SOURCES，第14轮13:47:51.200Z—13:55:23.073Z明确返回HTTP400 invalid_request_error/incomplete_result。Native保存REQUIRES_ATTENTION/attemptStatus UNKNOWN，gatewayFailure INCOMPLETE_TERMINAL_RESPONSE、upstreamOutcome UNKNOWN、retryAuthorized=false、transportRetries0；无SAVE/FINISH，原UUID与原回执保留。inconclusive指完整业务和上游结果未决，不掩盖本轮HTTP失败；不当作Host FAILED或重放许可。",
+      "startedAt": "2026-10-24T13:47:51.200Z",
+      "finishedAt": "2026-10-24T13:55:23.073Z",
+      "observedAt": "2026-10-24T13:57:13.266Z",
+      "timeBasis": "startedAt/finishedAt为73实际round14 started/result时间；observedAt为73工具输出UTC_OBS。HTTP窗口不等于整个ATT终态，77同一round动作核对是后续只读观察。"
+    },
+    {
+      "contractRevision": "c79ecb4dcfe78891b42f418b4fedf1c300f0d05527473708cebd49503eb914e5",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-ad异常正常收尾与page修复交付",
+      "scenarioIds": [],
+      "id": "ad-systemic.70.post-gateway-host-state.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "sourceRevision": "70d82f1e291686cc0dc830fb186b3f5719a63ade",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "summary": "75准确同范围Host读回新ATT4仍RUNNING/claim1/retry0、input/base rev3，结果与commit为空；grant为LEASED/gen6，lease仍present。post-click SAVE计数0，JobAid/Overall当前指针均空，旧ATT3仍准备FAILED/claim0。它是14:03:24.436994Z的权威服务端观察，不将只读GET保持RUNNING、本地旧claim到期或无保存推断永久BUSY/允许换UUID；原请求后续正常期限和终态另核。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": "2026-10-24T14:03:24.436994Z",
+      "timeBasis": "observedAt来自75数据库observed_at（服务端时钟）；CLI抓取窗口另保留，不用本机完成时间覆盖服务端时间，也不推最终终态。"
+    },
+    {
+      "contractRevision": "c79ecb4dcfe78891b42f418b4fedf1c300f0d05527473708cebd49503eb914e5",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-ad异常正常收尾与page修复交付",
+      "scenarioIds": [],
+      "id": "ad-systemic.c238.gateway-reasoning-only-diagnostic.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "sourceRevision": "d8f0bf6fe201610781d7b28d27d349e3c4b424e7",
+      "environmentId": "native:app_17c3zn24kv2:runtime",
+      "bindingIds": [
+        "research.overall",
+        "save.finish"
+      ],
+      "summary": "77完整消息页的实际日志13:55:23.039Z显示reasoning-only retries exhausted、attempts2/2；后续decision为format/incomplete_result、requestedModelMatched=true、fallbackConfigured=false。它支持所选m3probe/minimax-m3路径发生不完整终端响应，但原始上游finish_reason/stop_reason/usage未暴露，不能确认也不能排除长度截断，具体终止原因UNKNOWN；不复制远端汇总的排除结论或旧本地lease过期推论。只读诊断未产生新模型、重试、SAVE或调度/检查点写。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": "2026-10-24T14:07:08.284268+00:00",
+      "timeBasis": "日志事件时间为13:55:23Z；observedAt仅是77完整CLI抓取完成UTC，不冒作上游运行终止或业务完成时间。"
+    },
+    {
+      "contractRevision": "c79ecb4dcfe78891b42f418b4fedf1c300f0d05527473708cebd49503eb914e5",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-ad异常正常收尾与page修复交付",
+      "scenarioIds": [],
+      "id": "ad-page.b7.local-validation.test",
+      "kind": "test",
+      "status": "passed",
+      "testLevel": "unit",
+      "sourceRevision": "b7b6598c08ecc1b6c2f7abeee668fbf2d7e3eac1",
+      "environmentId": null,
+      "bindingIds": [
+        "document.assessment-reading",
+        "research.overall"
+      ],
+      "summary": "最终被审工作树随后正常提交b7（父d8、tree4177cd8），仅原PAGE helper及两份单测3文件。以已核DVI/parseRun/真实pageStart合并同页条件/脚注，坏结构化locator拒绝PAGE，EXACT、来源/撤权/lease fence、返回与journal完整集合及96所选引用预算保持。最终两suite70/70、server tsc与定向lint通过，独立审查接受；不冒称在clean b7重跑局部测试。原d8新增回归13fail/1pass和17skip、初轮测试字段/fixture锚点错误及首次64/64后scalar/blank审查修订均保留。离线真实reader/服务与unit持久double，不是PG/RLS、Hosted或真实SAVE验收；未发布，不宣称修复Gateway。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": null,
+      "timeBasis": "局部验证未给统一权威UTC；保留各命令原duration及提交前最终工作树身份，不以提交、mtime或记录生成时间倒填。"
+    },
+    {
+      "contractRevision": "c79ecb4dcfe78891b42f418b4fedf1c300f0d05527473708cebd49503eb914e5",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-ad异常正常收尾与page修复交付",
+      "scenarioIds": [],
+      "id": "ad-page.b7.standard-build-preparation-failures.test",
+      "kind": "test",
+      "status": "failed",
+      "testLevel": "integration",
+      "sourceRevision": "b7b6598c08ecc1b6c2f7abeee668fbf2d7e3eac1",
+      "environmentId": null,
+      "bindingIds": [
+        "document.assessment-reading",
+        "research.overall"
+      ],
+      "summary": "准确b7的标准完整build01 exit1：sandbox DNS ENOTFOUND发生在插件安装前，四子日志非本次fresh；build02 exit1：前后端已编译并有fresh子日志，但依赖剪裁拒绝树外node_modules软链。两次失败及各自窗口原件保留，不能当作成功完整构建或源码/线上业务失败；未改构建脚本、skip或绕过剪裁，后续将既有依赖复制入候选树再正常build03。",
+      "startedAt": "2026-10-24T14:07:02.505462+00:00",
+      "finishedAt": "2026-10-24T14:15:23.323613+00:00",
+      "observedAt": "2026-10-24T14:15:23.323613+00:00",
+      "timeBasis": "两次离散失败分别是build01 14:07:02.505462Z—14:08:18.692623Z/76.189898s及build02 14:14:50.074718Z—14:15:23.323613Z/33.248145s；本记录首尾不是连续构建耗时。"
+    },
+    {
+      "contractRevision": "c79ecb4dcfe78891b42f418b4fedf1c300f0d05527473708cebd49503eb914e5",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-ad异常正常收尾与page修复交付",
+      "scenarioIds": [],
+      "id": "ad-page.b7.standard-full-build.test",
+      "kind": "test",
+      "status": "passed",
+      "testLevel": "integration",
+      "sourceRevision": "b7b6598c08ecc1b6c2f7abeee668fbf2d7e3eac1",
+      "environmentId": null,
+      "bindingIds": [
+        "document.assessment-reading",
+        "research.overall"
+      ],
+      "summary": "在准确clean b7将既有依赖复制到候选树内后，标准完整npm run build03 exit0，原单调49.458028125秒；前后HEAD均完整b7且clean，server/client及四本次fresh子日志成立。未改构建脚本或skip，build01 DNS及build02树外依赖剪裁失败保留各自身份。本地完整构建不等于同步/发布、真实PAGE READ、Gateway恢复、JobAid SAVE/Overall或阅读通过。",
+      "startedAt": "2026-10-24T14:17:20.772688+00:00",
+      "finishedAt": "2026-10-24T14:18:10.231010+00:00",
+      "observedAt": "2026-10-24T14:18:10.231010+00:00",
+      "timeBasis": "build03原invocation/result UTC与单调计时；不以生成时间冒作运行时间。"
+    },
+    {
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-ad异常正常收尾与page修复交付",
+      "scenarioIds": [],
+      "id": "ad-systemic.70.native-attention-ui-gap.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "sourceRevision": "70d82f1e291686cc0dc830fb186b3f5719a63ade",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "bindingIds": [
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "summary": "79在原AD页只读AX见当前运行及最近一次请求仍正在执行，本轮读取13条/保存0；Native第14轮13:55已REQUIRES_ATTENTION停止。它证明同一请求的可用性投影缺口，不把页面或只读GET当作永久BUSY/写终态入口。后续应并列Native停止待核、Host权威状态/期限与成果，避免要求用户重复登录/重复运行；该窄修尚未实现，不在PAGE b7/b8发布内容。此次观察无刷新/继续/写入。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": "2026-10-24T14:31:58.248Z",
+      "timeBasis": "79原UI记录的准确只读观察UTC；不用更早约14:19近似或后续发布/截点覆盖。",
+      "contractRevision": "c79ecb4dcfe78891b42f418b4fedf1c300f0d05527473708cebd49503eb914e5"
+    },
+    {
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-ad异常正常收尾与page修复交付",
+      "scenarioIds": [],
+      "id": "ad-systemic.70.deadline-terminal-block.runtime",
+      "kind": "runtime",
+      "status": "passed",
+      "sourceRevision": "70d82f1e291686cc0dc830fb186b3f5719a63ade",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "summary": "82正式Host读回ATT4于14:33:04.825Z按原deadline路径TIMED_OUT/ACTION_ATTEMPT_DEADLINE_EXCEEDED，claim1/retry0、无commit/result；grant14:33:07.455Z gen7 BLOCKED/lease空。SAVE0、JobAid/Overall当前指针空且该次无ATT5，旧ATT3准备FAILED保持。passed仅关闭这一准确请求的正常期限/占用终态，不宣布Gateway原结果已知、业务成功或所有UNKNOWN恢复通过；不将此前14:31只读GET仍RUNNING误称永久BUSY。",
+      "startedAt": "2026-10-24T14:33:04.825Z",
+      "finishedAt": "2026-10-24T14:33:07.455Z",
+      "observedAt": "2026-10-24T14:34:07.243044Z",
+      "timeBasis": "82服务端completed_at、blocked_at及observed_at由+08正确转UTC；首尾仅为该Host终态与grant转换，不是整个模型执行耗时。",
+      "contractRevision": "c79ecb4dcfe78891b42f418b4fedf1c300f0d05527473708cebd49503eb914e5"
+    },
+    {
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-ad异常正常收尾与page修复交付",
+      "scenarioIds": [],
+      "id": "ad-systemic.c238.normal-terminal-archive.runtime",
+      "kind": "runtime",
+      "status": "passed",
+      "sourceRevision": "d8f0bf6fe201610781d7b28d27d349e3c4b424e7",
+      "environmentId": "native:app_17c3zn24kv2:runtime",
+      "bindingIds": [
+        "research.overall",
+        "save.finish"
+      ],
+      "summary": "84工具完整14:33自然tick summary为BLOCKED_CLAIM_FINALIZED/gen7，runAt14:33:03.480Z、duration4361ms，14:34 tick IDLE/ok，原C136 enabled/config保持。91完整纠正页has_more=false，准确g7归档存在并对应原请求/操作/rev3，active-claim文件存在且为JSON null，第14轮UNKNOWN原件保持；归档receipt.replayed=true按原字段保留，不推为模型重放。84/85先前多写编码斜线路径造成的归档/claim消失推论已由errata作废；14:32 get_parse_status:CANONICAL_WORK_ITEM_NOT_FOUND原tick错误保留、原因未证，不推为deadline导致。此passed只证明准确外层正常收尾/归档，不表示JobAid/Overall成功。",
+      "startedAt": "2026-10-24T14:33:03.480Z",
+      "finishedAt": null,
+      "observedAt": "2026-10-24T14:45:39.582581+00:00",
+      "timeBasis": "startedAt/duration来自84实际自然tick；Host终态另由82证明。observedAt是91完整纠正消息抓取完成UTC，纠正工具观察UTC14:43:38.509933Z；未提供独立tick finishedAt，不由抓取/目录mtime倒填。",
+      "contractRevision": "c79ecb4dcfe78891b42f418b4fedf1c300f0d05527473708cebd49503eb914e5"
+    },
+    {
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-ad异常正常收尾与page修复交付",
+      "scenarioIds": [],
+      "id": "ad-page.b8.exact-host-delivery.deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "bindingIds": [
+        "document.assessment-reading",
+        "research.overall",
+        "save.finish"
+      ],
+      "summary": "原AD正常收尾后，PAGE批公开origin/github准确b7及私有origin准确b8三条单次同名ref均正常push exit0并各自读回；唯一release7700242044740520960 finished、commit完整b8、error_logs空。Native c238及原C136配置未改。此passed仅是准确技术交付，不证明Gateway修复、真实PAGE READ/JobAid SAVE/Overall或业务语义通过；独立CHAT/质量大包及0082/83不顺带纳入。",
+      "startedAt": "2026-10-24T14:34:52.629780+00:00",
+      "finishedAt": "2026-10-24T14:39:12.143770+00:00",
+      "observedAt": "2026-10-24T14:39:12.143770+00:00",
+      "timeBasis": "PAGE批05/07/09实际单次push与06/08/10读回、14完整release状态；首尾为执行/抓取窗口，不当作发布引擎精确耗时。",
+      "contractRevision": "c79ecb4dcfe78891b42f418b4fedf1c300f0d05527473708cebd49503eb914e5"
+    },
+    {
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-ad异常正常收尾与page修复交付",
+      "scenarioIds": [],
+      "id": "ad-page.b8.native-user-fingerprint.runtime",
+      "kind": "runtime",
+      "status": "passed",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "bindingIds": [
+        "document.assessment-reading",
+        "research.overall",
+        "save.finish"
+      ],
+      "summary": "PAGE批15原用户运行页浏览器与Host均完整b8，环境PASS；reader仍VERIFICATION_PENDING，UI release及API合同仍UNKNOWN。首次浏览器ERR_TIMED_OUT与正常retry恢复保持；不以页面指纹/环境PASS替代业务读取或内容验收，无新Native安装或调度变更。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": "2026-10-24T14:44:12.601Z",
+      "timeBasis": "15原runtime-version元数据的只读观察UTC；前端buildTime、release API抓取时间及当前生成时间不代替本次页面观察。",
+      "contractRevision": "c79ecb4dcfe78891b42f418b4fedf1c300f0d05527473708cebd49503eb914e5"
+    },
+    {
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-ad异常正常收尾与page修复交付",
+      "scenarioIds": [],
+      "id": "ad-page.b8.explicit-successor-att5-running.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "summary": "PAGE批16于14:46:29.746Z原AD页正常继续仅一次；17正式DB在本截点读回明确新ATT5 RUNNING/claim1/retry0、Task v3及input/base rev3，grant gen8 LEASED，新SAVE0，JobAid/Overall当前指针空。旧ATT4 TIMED_OUT与第14轮原UNKNOWN保持，新请求不是重放旧UUID。当前只证新后继正常准入/运行，不证明本轮真实PAGE READ、模型结果、SAVE/Overall、阅读或SEM语义完成；后续各按真实原件另增。",
+      "startedAt": "2026-10-24T14:47:12.553Z",
+      "finishedAt": null,
+      "observedAt": "2026-10-24T14:47:33.485551Z",
+      "timeBasis": "16准确UI单次意图14:46:29.746Z、17服务端创建14:46:33.962Z及实际开始14:47:12.553Z分别保留；observedAt为17 DB observed_at由+08转UTC，不把排队计入模型耗时。",
+      "contractRevision": "c79ecb4dcfe78891b42f418b4fedf1c300f0d05527473708cebd49503eb914e5"
+    },
+    {
+      "contractRevision": "a37ffecfb94f71292988e52fcce62d6e5d0d5769ef352afb18d2e193b43239a8",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-att5只读推进与原生loop边界",
+      "scenarioIds": [],
+      "id": "ad-page.b8.att5-observe-only-save-state.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "summary": "PAGE批26正式只读在15:15:01.951842Z读回Host记录精确ATT5仍RUNNING、exact-attempt保存修订0，JobAid当前投影及Overall当前指针空，当前WorkItem revision3。此处SAVE0仅该attempt及本观察范围，不扩大为所有工作无成果；不是新业务执行、重试/强停或切执行器授权。按用户新方向只观察原状态与已存副作用并保留，后续SAVE/Overall另按实际回执记录。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": "2026-10-24T15:15:01.951842Z",
+      "timeBasis": "26原数据库observed_at由23:15:01.951842+08正确转UTC；不以更新记录、后续READ或生成时间推进SAVE观察时间。"
+    },
+    {
+      "contractRevision": "a37ffecfb94f71292988e52fcce62d6e5d0d5769ef352afb18d2e193b43239a8",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-att5只读推进与原生loop边界",
+      "scenarioIds": [],
+      "id": "ad-page.b8.att5-live-read-journal.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "summary": "PAGE批27正式Host在15:19:43.067739Z读回同一ATT5的Host记录RUNNING/claim1、input/base rev3、Task v3，terminal_reason/completed_at空；真实READ journal共9事件、121 distinct refs，两项omitted字段均0，初始delivered refs另列。lastHeartbeat15:07:36.453Z只记字段，不推断当前进程活跃、失联或租约失效。journal purpose为模型自述，其中sourceRef被拒绝没有对应真实SAVE失败回执，现有材料不足确认或否定是否发生，不登记Host保存错误。此回执未重查SAVE计数，不能把26的SAVE0倒填到本时点；读取存在不证明保存/Overall、全文语义或内容验收，当前只观察并保留原请求。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": "2026-10-24T15:19:43.067739Z",
+      "timeBasis": "27数据库observed_at及last_heartbeat_at由+08转UTC；9个journal原观察各有自身时间，不能将本次查询时间当作9次执行耗时。"
+    },
+    {
+      "contractRevision": "a37ffecfb94f71292988e52fcce62d6e5d0d5769ef352afb18d2e193b43239a8",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-att5只读推进与原生loop边界",
+      "scenarioIds": [],
+      "id": "native-loop.boundary-correction.source-review",
+      "kind": "source_review",
+      "status": "inconclusive",
+      "sourceRevision": "b7b6598c08ecc1b6c2f7abeee668fbf2d7e3eac1",
+      "environmentId": null,
+      "bindingIds": [
+        "research.overall",
+        "save.finish",
+        "document.assessment-reading"
+      ],
+      "summary": "准确b7/c238只读边界复核撤回凭URL/64轮认定绕过原生或必缺插件的过度推断：原Gateway agent run有原始日志，官方形状客户端tools/tool_calls、部分tool_call_id续传，以及应用意图/成功读取后换段编排并存。历史安装代码支持客户端tools进入原生agent路径；今日同版本help不证明核心字节/当前工具注册与权限或最新文档全部能力。当前原生profile实际可用/调用工具仍UNKNOWN；Host身份、来源/版本、journal、双fence、取消/截止、SAVE幂等/CAS、原key读回、准确workRef/Overall及正式采用保持。用户已转向停止新增自制业务loop、续接/恢复框架及补丁发布准备，先核原生可行性；不保证替换loop能修复M3 UNKNOWN，不变更当前ATT5。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": null,
+      "timeBasis": "本地私有边界复核未提供统一权威UTC，保留准确被审代码与历史安装/运行来源；不以报告或生成时间倒填现场能力观察。"
+    },
+    {
+      "id": "ad-page.b8.real-page-read-bounded.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "bindingIds": [
+        "document.assessment-reading",
+        "research.overall"
+      ],
+      "scenarioIds": [],
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-att5只读推进与原生loop边界",
+      "summary": "既有21/22/23/27的有限PAGE读取局部事实已验证：前5轮模型各4 PAGE seeds，Host返回32/18/13/11/13；20 seeds全部包含、共87不同原文/额外67，所有可见返回在对应DVI/parse/真实locator页并集内，轮1本来含页0/1。Native cache第1—4轮与Host逐ref集合相等，第5轮仅数量/状态，不能称5轮完整双边核对；两条未单选Except/unless条件实际扩入。23为7 READ/120 refs=115原文+5方法；27为9/121=同115原文+6方法，旧120 basis保持，第9次是既有页2的11 refs重读。缺完整未过滤catalog，不证明全页/全PDF零遗漏或脚注全集；封存excerpt不替代完整模型实收/理解，非独立RLS重审。23/27无SAVE计数，purpose自述不作错误回执，不推新保存、完成或停止，当前ATT5只观察保留。 本条inconclusive针对所关联的广义接线整链：尚无SAVE/Overall闭环；前述局部读取验证保持成立。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": "2026-10-24T15:19:43.067739Z",
+      "timeBasis": "有限报告离线解析既有原件；23 DB observedAt14:58:56.185489Z、27为本observedAt，Native每轮起止/UTC_NOW、Host journal时间、CLI抓取和artifact mtime分开，不以报告生成时间倒填或跨时钟相减算延迟。",
+      "contractRevision": "a37ffecfb94f71292988e52fcce62d6e5d0d5769ef352afb18d2e193b43239a8"
+    },
+    {
+      "id": "m3.b8.current-object-three-view-bounded.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "bindingIds": [
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "scenarioIds": [],
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-24-att5只读推进与原生loop边界",
+      "summary": "32仅证明当前有限对象M3入口/状态投影：从原AD评估→分析过程实际点开任务/流程/资源三标签。任务显示Host记录同ATT5 RUNNING、未取得对应保存结果及有效进展时间；流程显示JobAid RUNNING、Overall无记录关系、TDMS来源UNKNOWN且不能推从未读取。资源刷新中保留上次读回并明确未取得资源观察，不能当零资源或监控完成。AX stale/无匹配/误点等定位失败后按已观察坐标恢复，原失败保留，不称首次全过；只读导航无新业务动作。前述入口/投影局部事实已验证；本条inconclusive针对所关联的广义接线整链，尚无SAVE/Overall闭环。请求全集、资源监控及完整M3仍未证，也不由页面RUNNING断言当前进程活跃。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": "2026-10-24T15:29:54.648Z",
+      "timeBasis": "32元数据观察归档UTC为15:29:54.648Z；任务/流程/资源实际视图观察分别15:28:05.004Z、15:29:40.927Z、15:29:47.755Z，刷新中上次读回不冒作新资源测量。",
+      "contractRevision": "a37ffecfb94f71292988e52fcce62d6e5d0d5769ef352afb18d2e193b43239a8"
+    },
+    {
+      "contractRevision": "f9756db7b94469b553212458217c2a6c030fb7e9d2a23b5c06c6afdafdf39a8a",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-p4有限读取与att5期限终态",
+      "scenarioIds": [],
+      "id": "p4.b8.controlled-lcm-reading-bounded.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "configuration.reading"
+      ],
+      "readbackRef": "private:p4-current-reading-20261024",
+      "summary": "受控样本的既有LCM矩阵→单机→准确构型项/件号→源单元格局部读取已成立：来源矩阵原值1，按原矩阵定义显示允装/实装“是”，原生空值对照原样保留，不补成卸载/完成。状态日2026-10-08、Host接收2026-10-17T00:55:41.686Z与未知源截止/观察/时区、位置/软件版本、生效/执行时间及工程文件关系分开；这不是实时安装/实施证明。M3同父15快照/15矩阵读取集→当前单机阅读及原导航定位本页单机表已核，前后端均准确b8、环境PASS、reader待验。样本/源文件/业务ID仅由私有证据ref保留。本条inconclusive针对configuration.reading广义整链：尚未证明实际评估/Overall或AEO/反馈消费者、实时全机队、完整P4/M3；V38只有限正例，V31四值未全、V37缺项/V41撤权反例未做，场景不登记通过。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": "2026-10-24T15:51:15.121Z",
+      "timeBasis": "observedAt是原客户端成功读取UTC（北京时间10-24 23:51:15.121）；私有元数据记录/指纹归档15:55:30.995Z另保留，不当作新业务读取时间。原状态日、Host接收与源观察/生效均分别处理，不跨时钟推耗时或实时性。"
+    },
+    {
+      "contractRevision": "f9756db7b94469b553212458217c2a6c030fb7e9d2a23b5c06c6afdafdf39a8a",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-p4有限读取与att5期限终态",
+      "scenarioIds": [],
+      "id": "ad-page.b8.att5-deadline-host-block.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "save.finish"
+      ],
+      "summary": "40正式Host在15:57:41.720386Z读回原ATT5 TIMED_OUT/ACTION_ATTEMPT_DEADLINE_EXCEEDED，完成15:48:04.804Z、deadline15:46:33.962Z、claim1、attempt lease expiry空、该attempt SAVE0、心跳15:07:36.453Z。41在16:00:20.708486Z另证原grant BLOCKED，lease/blocked generation均9、blockedAt15:48:06.467Z、code AUTO_WORK_ITEM_STAGE_JOBAID_FAILED，owner/token/expiry空；同ATT5 TIMED_OUT、同动作后续尝试数0、Overall两当前指针空、grant completedAt空。根仅SELECT，没有主动强停/收尾/恢复/重跑或新模型，既有gen8及RUNNING观察保留原时点。此inconclusive针对无SAVE/Overall的整链；只确认Host原attempt正常期限终态与外层BLOCK/清租约，不能推Native进程/检查点/调度回执或UNKNOWN已清。不再等原ATT5继续产出，保留checkpoint/既有副作用，不另起请求或切执行器。",
+      "startedAt": "2026-10-24T15:48:04.804Z",
+      "finishedAt": "2026-10-24T15:48:06.467Z",
+      "observedAt": "2026-10-24T16:00:20.708486Z",
+      "timeBasis": "40观察原为10-24 23:57:41.720386+08；41观察为10-25 00:00:20.708486+08，各自转UTC保留。start/finish只指Host attempt期限终态与外层BLOCK转换，不是整个模型执行时长、Native结束或根主动操作窗口。"
+    },
+    {
+      "id": "p4.b8.only-allowed-blank-ui-bounded.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-p4有限原值语义对照",
+      "readbackRef": "private:p4-values-reading-20261025",
+      "bindingIds": [
+        "configuration.reading"
+      ],
+      "scenarioIds": [],
+      "summary": "同一既有获权受控样本的有限原表中，原值2按来源矩阵定义显示允装是/实装否，准确空白原字段留空、界面显示无；仅允装与空白的局部实际对照成立，空白不是NO_RECORD或当前未装。既有原值1正例保持，元数据展开重核同准确快照/同父readset，原状态日/接收/未知来源与生效时钟未变。当前授权为整来源/快照，飞机列筛选只是视图操作，不是逐机grant或撤权测试；折叠摘要须展开准确条目/详情判读。未知非空原值在该有限表未见，不能推其他来源不存在；既有未知/NO_RECORD/撤权fixture只复用原证据，不记新runtime或V31全通过。此inconclusive针对configuration.reading整链：实际评估/Overall或AEO消费者、实时构型及完整P4仍未证，V31/V37/V41未全；不为补第四值盲搜。样本身份、原位置和分布仅留私有证据ref，无新业务写/模型/导入。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": "2026-10-24T16:20:48.276Z",
+      "timeBasis": "observedAt为本次私有浏览器UI捕获/归档UTC（北京时间10-25 00:20:48.276），不是新source observation或server读取；紧随元数据展开只重核既有准确快照/readset，不借上轮15:51 M3诊断时钟作为本次server读取或计算时延。"
+    },
+    {
+      "id": "p5.b8.exact-root-child-reading.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-p5既有保存wiki的有限两层阅读",
+      "readbackRef": "private:p5-current-reading-20261025",
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "原用户从/situation Wiki导览的root准确summaryRef读到保存正文与修订1，经一处下层引用弹层进入child准确summaryRef，读到child保存正文、修订1及来源状态，再返回原root/chapter范围；既有两层确切保存版本的有限读链成立。保存依据未变化同时保留生命周期变化未纳入、发布方现行有效状态未核，不作现行有效或适用性判断。当前前后端均准确b8、环境PASS，reader仍VERIFICATION_PENDING。嵌套引用预览的依据无法读回来自局部引用解析/缺label提示，完整child有下层引用按钮；不证明源无权、后端读失败或更深来源已读。cc22保存头候选未选择性进入b8、尚未发布，实际为既有WikiGuideHomePage读取链。未触发新模型、SAVE或业务写，未做数据库前后比较，不扩大为零全局副作用。样本身份、原正文、机型、业务ID及具体保存时点仅留私有ref。三类变化影响/更新/下游覆盖、历史切换、撤权、全目录覆盖与完整P5/M3仍未验。",
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": "2026-10-24T17:17:36.663Z",
+      "timeBasis": "observedAt为本次有限浏览器UI序列结束后的私有记录归档UTC（北京时间2026-10-25 01:17:36.663），不是源观察、HTTP/server读回或具体保存时间；准确执行起止未知，startedAt/finishedAt保持null。"
+    },
+    {
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-wiki引用预览显示修复的本地交付",
+      "readbackRef": "private:wiki-preview-citation-fix-20261025",
+      "scenarioIds": [],
+      "sourceRevision": "163a11a52b0b7f4572ace01d764ab6e90f4fa9c1",
+      "environmentId": null,
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": null,
+      "id": "wiki-preview-citation.163a.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "summary": "独立产品候选163a（父b7、tree69b0e8ed11bfc4f2dca62abce1c8293550b11591）仅两组件和既有Node测试。仅DERIVED_SUMMARY成员预览缺本地citationLabel时明确显示本预览未展开此依据，并复用summaryMemberRoute与summaryReadingRoute固定该成员summaryRef和Wiki返回范围；不猜更深ref、不自动请求。全文缺ref/格式异常、其他member和直接evidence保持原行为。Astra定向代码审查接受，正常hook提交后干净；这是独立本地候选，不与cc22组合交付，不改当前线上b8/c238，不增加运行或完整P5/M3通过。旧正文与存储版本结构未改，无迁移/清理。",
+      "timeBasis": "被审产品及准确提交/父提交/tree已核；未取得统一权威审查UTC，startedAt/finishedAt/observedAt保持null，不用归档或生成时点倒填。"
+    },
+    {
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-wiki引用预览显示修复的本地交付",
+      "readbackRef": "private:wiki-preview-citation-fix-20261025",
+      "scenarioIds": [],
+      "sourceRevision": "163a11a52b0b7f4572ace01d764ab6e90f4fa9c1",
+      "environmentId": null,
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": null,
+      "id": "wiki-preview-citation.163a.component-validation.test",
+      "kind": "test",
+      "testLevel": "unit",
+      "status": "passed",
+      "summary": "最终候选文件提交前执行普通node --test test/node/wiki-reading-markdown.test.mjs，原及扩展真实组件预览回归16/16通过；两组件定向ESLint、client tsc与diff检查exit0。前两次Node均1通过/15失败，Invalid hook call/useId null由共享依赖中嵌套node_modules软链造成双React，失败原件保留；独立APFS依赖副本仅移除副本的嵌套软链后，普通命令成功一次即止。未改源依赖、安装或lockfile，产品/测试字节未变；验证对应随后准确163a文件，不写为clean163a重跑。不代表线上、本次准确来源读取、完整P5/M3或新业务验收。",
+      "timeBasis": "validation.json仅给出命令结果与成功Node单调durationMs1382.969583，未提供准确执行UTC；起止及observedAt保持null，不借完整构建时钟替代。"
+    },
+    {
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-wiki引用预览显示修复的本地交付",
+      "readbackRef": "private:wiki-preview-citation-fix-20261025",
+      "scenarioIds": [],
+      "sourceRevision": "163a11a52b0b7f4572ace01d764ab6e90f4fa9c1",
+      "environmentId": null,
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "startedAt": "2026-10-24T17:50:53.973648+00:00",
+      "finishedAt": "2026-10-24T17:51:44.515020+00:00",
+      "observedAt": "2026-10-24T17:51:44.515020+00:00",
+      "id": "wiki-preview-citation.163a.standard-full-build.test",
+      "kind": "test",
+      "testLevel": "integration",
+      "status": "passed",
+      "summary": "准确clean163a唯一标准完整npm run build于2026-10-24T17:50:53.973648+00:00至17:51:44.515020+00:00执行exit0，原单调50.541768秒；前后HEAD均准确163a且干净，server/client与四子日志均比基线新。未用仅前端开关或手工安装，原两次Node依赖环境失败保留各自证据。此次为独立候选的本地完整构建，不代表与cc22组合交付、同步/发布、线上引用预览改善、新业务runtime或完整P5/M3。",
+      "timeBasis": "build-run01原invocation/result UTC和原单调elapsedSeconds；observedAt为准确构建结束回执，不用文档生成时点替代运行时钟。"
+    },
+    {
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-wiki保存头导航与成员预览的联合候选",
+      "readbackRef": "private:wiki-reading-integration-20261025",
+      "scenarioIds": [],
+      "sourceRevision": "4a7559a8d54d35177fb602029d7c917036dcd391",
+      "environmentId": null,
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": null,
+      "id": "wiki-reading-delivery.4a.source-review",
+      "kind": "source_review",
+      "status": "passed",
+      "summary": "准确联合产品4a（父163a，tree729563cfdefd636a10ec9b902b8f377627eb84fa）将cc22保存头/目录导航13文件完整选择性集成：7产品6测试最终字节逐项等于cc22，原163a两组件及Node测试三文件逐项保持，无路径交集。Astra范围/接口分析接受，正常hook提交且干净，不带cc22文档后继，不改Native/DDL/API配置/依赖/模型/SAVE。准确本地消费者为目录/diagnostic/artifact导航→同一savedRevision ref→原exact reader→DERIVED_SUMMARY成员预览缺本地label的fallback；不猜更深ref、不自动请求，Host核权/来源/修订边界保持。旧正文和存储版本结构不改，无迁移/清理；当前线上仍b8/c238，未同步/发布、无新增业务runtime或完整P5/M3通过。",
+      "timeBasis": "integration-result原件核对准确提交/父/tree/13文件与原三文件字节及clean；未给出统一权威审查UTC，起止/observedAt保持null，不以归档/生成倒填。"
+    },
+    {
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-wiki保存头导航与成员预览的联合候选",
+      "readbackRef": "private:wiki-reading-integration-20261025",
+      "scenarioIds": [],
+      "sourceRevision": "4a7559a8d54d35177fb602029d7c917036dcd391",
+      "environmentId": null,
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "startedAt": null,
+      "finishedAt": null,
+      "observedAt": null,
+      "id": "wiki-reading-delivery.4a.combined-validation.test",
+      "kind": "test",
+      "testLevel": "unit",
+      "status": "passed",
+      "summary": "联合候选最终文件提交前定向四套Jest19/19、client tsc及项目原生npm run type:check:server通过，随后正常hook（ESLint/client/server/stylelint）提交准确4a且干净；对应4a文件，不写成clean4a重跑。server首次额外--incremental false因既有composite约束报TS6379退出2，原件保留，原生脚本一次成功且未改配置；既有dist/package.json的非失败Jest haste告警保留。原cc22实际隔离PG三个子场景/含父4项及原163a Node16/16按未变字节继承、未重跑；旧unclaimed七失败/十五通过沿准确8d基线记录，不计通过。M3同savedRevision ref导航有本地组件证据，不登记线上运行或完整P5/M3/三类变化通过。",
+      "timeBasis": "integration-result仅给命令结果及Jest单调28.717秒，未取得准确执行UTC；startedAt/finishedAt/observedAt保持null，不借随后完整构建时钟替代。"
+    },
+    {
+      "contractRevision": "e421c531e849929b88197ee77b10563d1d424683ffc72f51dd9cdbd0836b45fb",
+      "reportRef": "docs/coordination/M_INTEGRATION.md#2026-10-25-wiki保存头导航与成员预览的联合候选",
+      "readbackRef": "private:wiki-reading-delivery/build-run01",
+      "scenarioIds": [],
+      "sourceRevision": "4a7559a8d54d35177fb602029d7c917036dcd391",
+      "environmentId": null,
+      "bindingIds": [
+        "wiki.saved-reading"
+      ],
+      "startedAt": "2026-10-24T18:06:17.566570+00:00",
+      "finishedAt": "2026-10-24T18:07:00.534395+00:00",
+      "observedAt": "2026-10-24T18:07:00.534395+00:00",
+      "id": "wiki-reading-delivery.4a.standard-full-build.test",
+      "kind": "test",
+      "testLevel": "integration",
+      "status": "passed",
+      "summary": "准确clean联合4a唯一标准完整npm run build于2026-10-24T18:06:17.566570+00:00至2026-10-24T18:07:00.534395+00:00执行exit0，原单调42.967489667秒；前后HEAD均准确4a且干净，server/client与四子日志均比基线新。未以仅前端开关或手工安装替代标准流程。此构建适用于cc22十三文件与163a三文件合并后的准确产品，不把继承PG/Node验证写成本轮重跑，不抹去TS6379及原baseline失败。仍仅本地技术准备，当前线上target为b8/c238；未同步/发布，不增加业务runtime、线上M3准确ref导航或完整P5/M3通过。",
+      "timeBasis": "wiki-reading-delivery/build-run01原invocation/result UTC与原单调elapsedSeconds；observedAt为本次准确构建结束回执，不使用文档生成时点倒填。"
     }
   ]
 }
