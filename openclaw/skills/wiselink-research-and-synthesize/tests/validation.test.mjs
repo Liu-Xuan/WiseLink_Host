@@ -1439,7 +1439,7 @@ test('requires 41 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c235',
+    'wiselink-research-and-synthesize@r09.c238',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3244,6 +3244,9 @@ test('a successor Overall tick finishes its sealed COMMITTING attempt without an
 });
 
 test('historical skill provenance is allowed only for a sealed compatible recovery', () => {
+  const previousInstalled = provenance({ skillVersion: `${WISELINK_SKILL_COMPATIBILITY_REF}.c${235}` });
+  assert.notEqual(previousInstalled.skillVersion, WISELINK_SKILL_VERSION);
+  assert.throws(() => validateRuntimeProvenance(previousInstalled), /RUNTIME_SKILL_VERSION_POLICY_MISMATCH/);
   const old = provenance({ skillVersion: `${WISELINK_SKILL_COMPATIBILITY_REF}.c${153}` });
   assert.throws(() => validateRuntimeProvenance(old), /RUNTIME_SKILL_VERSION_POLICY_MISMATCH/);
   assert.doesNotThrow(() => validateRuntimeProvenance(old, { allowHistoricalSkillVersion: true }));

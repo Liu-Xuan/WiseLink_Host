@@ -45,6 +45,7 @@ import {
   WISELINK_HOST_MCP_NAME,
   WISELINK_HOST_MCP_VERSION,
   WISELINK_SKILL_VERSION,
+  canonicalSha256,
   validateResultEnvelope,
 } from './validate-payload.mjs';
 
@@ -609,6 +610,16 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
       return acknowledgeAndClearAutoClaim(claim, checkpoint, dependencies, report);
     }
   }
+  let confirmedPreparation = null;
+  if (!options.repairStoppedClaim && !queueCommitRecovery &&
+      ['FAILED', 'CONFLICT'].includes(statusValue.status) &&
+      ['jobAid', 'overall'].some(stage => explicitInitialPreparationStage(statusValue.stages?.[stage]))) {
+    try {
+      confirmedPreparation = await confirmExplicitInitialPreparationFailure(options, claim, statusValue, dependencies);
+    } catch (error) {
+      return automaticWorkItemAttention(claim, safeAutomaticAttentionCode(errorCode(error)), statusValue);
+    }
+  }
   const retry = options.repairStoppedClaim ? null
     : await automaticRetryPlan(statusValue, claim.workItemId,
       dependencies.readSavedWork);
@@ -619,7 +630,7 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
     : null;
   const repairAttentionCode = repair ? claim.attentionCode : null;
   const terminal = !options.repairStoppedClaim && !retry && !queueCommitRecovery
-    ? terminalAutomaticClaim(claim, statusValue) : null;
+    ? terminalAutomaticClaim(claim, statusValue, confirmedPreparation) : null;
   if (terminal) {
     if (typeof dependencies.blockWorkItem !== 'function' || typeof checkpoint.writeOnceOrEqual !== 'function')
       return automaticWorkItemAttention(claim, 'AUTO_WORK_ITEM_BLOCK_FINALIZATION_UNAVAILABLE', statusValue);
@@ -806,7 +817,7 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
   };
 }
 
-function terminalAutomaticClaim(claim, initial) {
+function terminalAutomaticClaim(claim, initial, confirmedPreparation = null) {
   if (claim.completionReady || initial.workItemId !== claim.workItemId || initial.documentVersionId !== claim.documentVersionId ||
       initial.workItemRevision !== claim.workItemRevision || !['FAILED', 'CONFLICT'].includes(initial.status) ||
       initial.nextOperation !== null || !isRecord(initial.stages) ||
@@ -814,12 +825,105 @@ function terminalAutomaticClaim(claim, initial) {
     return null;
   for (const [operation, stage] of Object.entries(STAGE_BY_OPERATION)) {
     const observed = initial.stages[stage];
+    if (confirmedPreparation && operation !== confirmedPreparation.operation) continue;
+    if (['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation) && explicitInitialPreparationStage(observed) &&
+        !isDeepStrictEqual(initialStageRequestBinding(claim, initial, operation, observed.requestId), confirmedPreparation)) continue;
     if (!['FAILED', 'CONFLICT'].includes(observed?.status) ||
         !['FAILED', 'CONFLICT', 'TIMED_OUT', 'OBSOLETE'].includes(observed.attemptStatus)) continue;
     const stoppedStageRequest = initialStageRequestBinding(claim, initial, operation, observed.requestId);
     if (stoppedStageRequest) return { blockReady: { stage, status: observed.status }, stoppedStageRequest };
   }
   return null;
+}
+
+function explicitInitialRequestId(value) {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+}
+
+function explicitInitialPreparationStage(stage) {
+  return stage?.status === 'FAILED' && stage.attemptStatus === 'FAILED' &&
+    stage.terminalCode === 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED' && explicitInitialRequestId(stage.requestId);
+}
+
+function explicitInitialPreparationBinding(claim, initial) {
+  if (claim.completionReady || initial.candidateOnly !== true || initial.status !== 'FAILED' || initial.nextOperation !== null ||
+      !isRecord(initial.stages) || Object.values(initial.stages).some(stage => stage?.status === 'BUSY' ||
+        ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(stage?.attemptStatus))) return null;
+  const candidates = ['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].flatMap(operation => {
+    const stage = initial.stages[STAGE_BY_OPERATION[operation]];
+    if (!explicitInitialPreparationStage(stage)) return [];
+    const binding = initialStageRequestBinding(claim, initial, operation, stage.requestId);
+    return binding ? [binding] : [];
+  });
+  const binding = candidates.length === 1 ? candidates[0] : null;
+  return binding && (claim.stoppedStageRequest == null || isDeepStrictEqual(claim.stoppedStageRequest, binding)) &&
+    (claim.stoppedWorkItemRevision === undefined || claim.stoppedWorkItemRevision === binding.workItemRevision) ? binding : null;
+}
+
+async function confirmExplicitInitialPreparationFailure(options, claim, initial, dependencies) {
+  const binding = explicitInitialPreparationBinding(claim, initial);
+  if (!binding || typeof dependencies.callTool !== 'function') throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_UNCONFIRMED');
+  const observed = await dependencies.callTool('get_action_attempt_status', {
+    attemptRef: binding.attemptRef, workItemId: binding.workItemId,
+  });
+  if (observed?.attemptRef !== binding.attemptRef || observed.taskType !==
+      (binding.operation === 'EVALUATE_JOBAID' ? 'OPENCLAW_DYNAMIC_EVALUATION' : 'OPENCLAW_OVERALL_SYNTHESIS') ||
+      observed.status !== 'FAILED' || observed.terminalReason !== 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED' ||
+      observed.recoveryAvailable !== false || observed.commitStartedAt !== null || observed.resultContentHash !== null ||
+      observed.projectionApplied !== false || Object.hasOwn(observed, 'recoveryResult'))
+    throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_UNCONFIRMED');
+  // The attempt status intentionally has no DVI. Fresh initial status on both
+  // sides supplies that exact binding, including the Host-owned UUID and AQ.
+  const fresh = await dependencies.readInitialStatus(claim.workItemId);
+  if (!isDeepStrictEqual(explicitInitialPreparationBinding(claim, fresh), binding))
+    throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHANGED');
+  for (const requestId of [binding.requestId, initialPreparationRetryRequestId(binding.workItemId,
+    binding.documentVersionId, STAGE_BY_OPERATION[binding.operation], binding.attemptRef)]) {
+    await assertUnexecutedInitialPreparationCheckpoint(options, { ...binding, requestId });
+  }
+  return binding;
+}
+
+async function assertUnexecutedInitialPreparationCheckpoint(options, binding) {
+  if (!isAbsolute(options.checkpointRoot ?? '')) throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+  const directory = initialStageCheckpointPath({ ...options, workItemId: binding.workItemId }, binding.operation, binding.requestId);
+  // Do not open a mutable store: its mkdir/chmod/quarantine would alter the old
+  // UNKNOWN evidence. Inspect only these two exact namespaces, never old roots.
+  let current = options.checkpointRoot;
+  for (const part of ['', encodeURIComponent(binding.workItemId), 'initial', binding.operation, 'requests', binding.requestId]) {
+    if (part) current = join(current, part);
+    let info;
+    try { info = await lstat(current); }
+    catch (error) { if (error?.code === 'ENOENT' && current !== options.checkpointRoot) return; throw error; }
+    if (!info.isDirectory() || info.isSymbolicLink() || current === directory && info.mode & 0o077)
+      throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+  }
+  const begin = `${INITIAL_ASSESSMENT_OPERATIONS[binding.operation].begin}-1`;
+  const allowed = ['binding.json', 'get_parse_status-1.started.json', 'get_parse_status-1.result.json', `${begin}.started.json`];
+  const entries = await readdir(directory);
+  if (entries.some(name => !allowed.includes(name))) throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+  const expectedBinding = { workItemId: binding.workItemId, documentVersionId: binding.documentVersionId,
+    operation: binding.operation, requestId: binding.requestId };
+  const values = new Map();
+  for (const name of entries) {
+    const path = join(directory, name), info = await lstat(path);
+    if (!info.isFile() || info.isSymbolicLink() || info.mode & 0o077)
+      throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+    values.set(name, JSON.parse(await readFile(path, 'utf8')));
+  }
+  if (entries.length && !isDeepStrictEqual(values.get('binding.json'), expectedBinding))
+    throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+  for (const [name, value] of values) {
+    if (name === 'binding.json') continue;
+    const step = name.replace(/\.(?:started|result)\.json$/u, '');
+    const args = { workItemId: binding.workItemId, ...(step === begin
+      ? { ...(binding.operation === 'SYNTHESIZE_OVERALL' ? { providers: [] } : {}), requestId: binding.requestId } : {}) };
+    if (value?.schemaVersion !== 'wiselink.3_1.hosted_review_driver.v1' || value.step !== step || value.argsHash !== canonicalSha256(args))
+      throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+    if (name === 'get_parse_status-1.result.json' &&
+        readInitialStatus(value.value, binding.workItemId).documentVersionId !== binding.documentVersionId)
+      throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+  }
 }
 
 function terminalBlockedReceipt(value, claim, expectedReceipt) {
@@ -1294,14 +1398,17 @@ async function automaticRetryPlan(initial, workItemId) {
     // Cancelled/timed-out provider state does not prove generation stopped.
     // Only the Host's before-execution preparation failure may use this old
     // bounded retry. Partial progress never authorizes an automatic new model run.
-    if (typeof observation.requestId === 'string' && observation.requestId.startsWith('auto-')) continue;
-    const identity = [workItemId, initial.documentVersionId, stage,
-      observation.attemptRef].join(':');
-    const requestId = `auto-retry-${createHash('sha256').update(identity)
-      .digest('hex').slice(0, 32)}`;
+    if (explicitInitialRequestId(observation.requestId) ||
+        typeof observation.requestId === 'string' && observation.requestId.startsWith('auto-')) continue;
+    const requestId = initialPreparationRetryRequestId(workItemId, initial.documentVersionId, stage, observation.attemptRef);
     return { operation, attemptRef: observation.attemptRef, requestId };
   }
   return null;
+}
+
+function initialPreparationRetryRequestId(workItemId, documentVersionId, stage, attemptRef) {
+  return `auto-retry-${createHash('sha256').update([workItemId, documentVersionId, stage, attemptRef].join(':'))
+    .digest('hex').slice(0, 32)}`;
 }
 
 // A repaired consumer may make one operator-triggered successor after the
