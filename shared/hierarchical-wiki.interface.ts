@@ -31,6 +31,9 @@ export interface HierarchicalWikiStatus {
   firstDirtyAt: string | null;
   dueAt: string | null;
   coveredMembers: DerivedSummaryMember[];
+  /** Exact persisted head at this directory observation. Opening it still
+   * reauthorizes the saved body; absent on older directory responses. */
+  savedRevision?: { summaryRef: string; revision: number } | null;
   waiting: Array<{
     kind: 'DOCUMENT' | 'MATTER' | 'SUMMARY';
     subjectId: string;
