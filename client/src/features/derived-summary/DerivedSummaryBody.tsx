@@ -65,6 +65,10 @@ export default function DerivedSummaryBody({ revision, wikiCatalog = false, cond
         {citation?.kind === 'MEMBER' ? <>
           <SummaryMarkdown body={citation.member.body} citationLabel={(reference: string) =>
             citation.member.evidence.some(item => item.evidenceRef === reference) ? '来源依据' : undefined}
+            renderUnresolvedCitation={citation.member.member.kind === 'DERIVED_SUMMARY' ? () =>
+              <span className="text-muted-foreground">［本预览未展开此依据，<Link className="underline"
+                to={summaryReadingRoute(summaryMemberRoute(citation.member.member), params)}>前往确切成员版本</Link>］</span>
+              : undefined}
             onCitation={(reference: string) => {
               const evidence = citation.member.evidence.find(item => item.evidenceRef === reference);
               if (evidence) setCitation({ kind: 'EVIDENCE', evidence });

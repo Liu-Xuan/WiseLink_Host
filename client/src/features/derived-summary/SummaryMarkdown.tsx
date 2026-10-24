@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { defaultRehypePlugins, defaultRemarkPlugins } from 'streamdown';
 import { Streamdown } from '@client/src/components/ui/streamdown';
 import './summary-reading.css';
@@ -106,10 +106,11 @@ export interface SummaryMarkdownProps {
   foldSupportingSections?: boolean;
   citationLabel: (reference: string) => string | undefined;
   onCitation: (reference: string) => void;
+  renderUnresolvedCitation?: (reference: string) => ReactNode;
 }
 
 export default function SummaryMarkdown({ body, citationBody = body, foldSupportingSections = false,
-  citationLabel, onCitation }: SummaryMarkdownProps) {
+  citationLabel, onCitation, renderUnresolvedCitation }: SummaryMarkdownProps) {
   const numbers = useMemo(() => new Map<string, number>([...new Set(
     Array.from(citationBody.matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu), (match: RegExpMatchArray) => match[1]),
   )].map((reference: string, index: number) => [reference, index + 1])), [citationBody]);
@@ -130,7 +131,8 @@ export default function SummaryMarkdown({ body, citationBody = body, foldSupport
         return label ? <button type="button" className="summary-citation"
           aria-label={`依据 ${numbers.get(reference) ?? ''}：${label}`} onClick={() => onCitation(reference)}>
           [{numbers.get(reference) ?? '依据'}]
-        </button> : <span role="alert">［依据无法读回］</span>;
+        </button> : renderUnresolvedCitation
+          ? renderUnresolvedCitation(reference) : <span role="alert">［依据无法读回］</span>;
       },
       // Saved prose must not initiate third-party image requests or executable diagrams.
       img: ({ alt }) => <span className="text-muted-foreground">［图片：{alt || '未提供说明'}，请在来源中查看］</span>,

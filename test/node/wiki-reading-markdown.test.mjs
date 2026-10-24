@@ -361,7 +361,7 @@ test('unlabelled legacy paragraphs, bold labels and engineering negations stay v
   dom.window.close();
 });
 
-test('actual summary body opens the selected saved member and retains its exact route; unmount removes the preview', async () => {
+test('actual summary body scopes nested preview references to exact saved members and preserves citation errors', async () => {
   const dom = new JSDOM('<!doctype html><div id="root"></div>', {
     url: 'https://synthetic.invalid/', pretendToBeVisual: true,
   });
@@ -373,7 +373,8 @@ test('actual summary body opens the selected saved member and retains its exact 
     NodeFilter: dom.window.NodeFilter, MutationObserver: dom.window.MutationObserver,
     getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
     requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window),
-    cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window), IS_REACT_ACT_ENVIRONMENT: true })) {
+    cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
+    fetch: () => { throw new Error('UNEXPECTED_PREVIEW_IO'); }, IS_REACT_ACT_ENVIRONMENT: true })) {
     originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   }
@@ -394,27 +395,56 @@ test('actual summary body opens the selected saved member and retains its exact 
         },
       }] });
     const Body = (await import(pathToFileURL(output).href)).default;
+    const evidence = { kind: 'DOCUMENT_PASSAGE', evidenceRef: 'SOURCE-A', title: 'Exact registered source',
+      versionLabel: 'Synthetic document revision 2', excerpt: 'Direct source excerpt; version 1.3 remains unverified.',
+      workItemId: null, documentVersionId: 'DV-direct', sourceRefId: 'SR-direct', locator: 'p.4' };
     const revision = { content: { headline: 'Synthetic parent', listBrief: '**Main impact** [[MEMBER-A]]',
-      body: '**Parent condition** [[MEMBER-A]]' }, evidence: [], members: [{
+      body: '**Parent condition** [[MEMBER-A]] Missing saved citation [[MISSING-PARENT]].' }, evidence: [], members: [{
       member: { kind: 'DERIVED_SUMMARY', summaryId: 'DS-child', summaryRef: 'DSR-child-r4', summaryRevision: 4 },
-      evidenceRef: 'MEMBER-A', headline: 'Synthetic saved child', body: '**Exact child**: version 1.2 is unverified.', evidence: [],
+      evidenceRef: 'MEMBER-A', headline: 'Synthetic saved child', body: '**Exact child**: version 1.2 is unverified. '
+        + 'Nested member [[NESTED-MEMBER]]; direct source [[SOURCE-A]].\n\n'
+        + '[Malformed reference](#wiselink-summary-reference:%E0%A4%A)', evidence: [evidence],
     }] };
     const before = JSON.stringify(revision);
+    const guide = new URLSearchParams({ wikiRoot: 'DS-11111111-1111-4111-8111-111111111111',
+      wikiChapter: 'DS-22222222-2222-4222-8222-222222222222', wikiQuery: 'SB TBD', wikiY: '120' }).toString();
+    const memberRoute = '/summaries/DS-child?' + new URLSearchParams({
+      summaryRef: 'DSR-child-r4', returnWikiGuideQuery: guide,
+    });
     root = createRoot(container);
     await act(async () => root.render(createElement(MemoryRouter, {
-      initialEntries: ['/summaries/DS-parent?summaryRef=DSR-parent-r2'],
+      initialEntries: ['/summaries/DS-parent?' + new URLSearchParams({
+        summaryRef: 'DSR-parent-r2', returnWikiGuideQuery: guide,
+      })],
       future: { v7_startTransition: true, v7_relativeSplatPath: true },
     }, createElement(Body, { revision }))));
     assert.equal(container.querySelector('.summary-reading-brief strong')?.textContent, 'Main impact');
     assert.deepEqual([...container.querySelectorAll('.summary-citation')].map(value => value.textContent), ['[1]', '[1]']);
+    assert.equal(container.querySelector('[role="alert"]')?.textContent, '［依据无法读回］');
+    assert.doesNotMatch(container.textContent, /本预览未展开此依据/);
     assert.ok(container.textContent.indexOf('Main impact') < container.textContent.indexOf('Parent condition'));
     await act(async () => container.querySelector('.summary-citation')
       .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
     const dialog = dom.window.document.querySelector('[role="dialog"]');
     assert.ok(dialog);
     assert.equal(dialog.querySelector('strong')?.textContent, 'Exact child');
+    const preview = dialog.querySelector('.summary-markdown');
+    assert.match(preview.textContent, /本预览未展开此依据/);
+    const unresolved = preview.querySelector('a');
+    assert.equal(unresolved?.textContent, '前往确切成员版本');
+    assert.equal(unresolved?.getAttribute('href'), memberRoute);
+    assert.doesNotMatch(unresolved?.getAttribute('href') ?? '', /NESTED-MEMBER/);
+    assert.deepEqual([...preview.querySelectorAll('[role="alert"]')].map(value => value.textContent), ['［依据无法读回］']);
+    assert.equal(preview.querySelector('.summary-citation')?.textContent, '[2]');
     const link = [...dialog.querySelectorAll('a')].find(value => value.textContent === '阅读确切成员版本');
-    assert.equal(link?.getAttribute('href'), '/summaries/DS-child?summaryRef=DSR-child-r4');
+    assert.equal(link?.getAttribute('href'), memberRoute);
+    await act(async () => preview.querySelector('.summary-citation')
+      .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    const sourceDialog = dom.window.document.querySelector('[role="dialog"]');
+    assert.match(sourceDialog?.textContent ?? '', /Exact registered source/);
+    assert.match(sourceDialog?.querySelector('blockquote')?.textContent ?? '', /Direct source excerpt; version 1\.3 remains unverified/);
+    assert.ok([...sourceDialog.querySelectorAll('button')].some(value => value.textContent === '前往这份文档的原文'));
+    assert.doesNotMatch(sourceDialog?.textContent ?? '', /本预览未展开此依据|依据无法读回/);
     assert.equal(JSON.stringify(revision), before);
     await act(async () => root.render(createElement(MemoryRouter, {
       future: { v7_startTransition: true, v7_relativeSplatPath: true },
@@ -434,6 +464,26 @@ test('actual summary body opens the selected saved member and retains its exact 
       .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
     assert.match(dom.window.document.querySelector('[role="dialog"]')?.textContent ?? '', /Exact child/);
     assert.match(dom.window.document.querySelector('[role="dialog"] a')?.getAttribute('href') ?? '', /summaryRef=DSR-child-r4/);
+    assert.equal(JSON.stringify(revision), before);
+    for (const member of [
+      { kind: 'DOCUMENT_READING', documentVersionId: 'DV-1', parseRunId: 'PARSE-1', semanticRevision: 2,
+        readingRunRef: 'DRR-1', readingRevision: 1 },
+      { kind: 'WORK_ITEM_WORK', workItemId: 'WI-1', documentVersionId: 'DV-1', workRef: 'JAWR-1',
+        workRevision: 1, issueKeys: ['ISSUE-1'] },
+      { kind: 'MATTER_WORK', matterId: 'MAT-1', workRef: 'MWR-1', workRevision: 1, issueKeys: ['ISSUE-1'] },
+    ]) {
+      await act(async () => root.render(createElement(MemoryRouter, {
+        future: { v7_startTransition: true, v7_relativeSplatPath: true },
+      }, createElement(Body, { key: member.kind, revision: { ...revision, members: [{ ...revision.members[0],
+        member, body: '**Other saved member** [[MISSING-MEMBER]]', evidence: [],
+      }] } }))));
+      await act(async () => container.querySelector('.summary-citation')
+        .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+      const otherPreview = dom.window.document.querySelector('[role="dialog"] .summary-markdown');
+      assert.equal(otherPreview?.querySelector('[role="alert"]')?.textContent, '［依据无法读回］', member.kind);
+      assert.doesNotMatch(otherPreview?.textContent ?? '', /本预览未展开此依据/, member.kind);
+      assert.equal(otherPreview?.querySelector('a'), null, member.kind);
+    }
     assert.equal(JSON.stringify(revision), before);
     await act(async () => root.render(null));
     assert.equal(dom.window.document.querySelector('[role="dialog"]'), null);
