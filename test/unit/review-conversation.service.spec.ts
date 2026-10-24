@@ -151,6 +151,107 @@ describe('ReviewConversationService session and ACL boundary', () => {
     );
   });
 
+  it('projects and admits an explicit native WorkItem update without borrowing an OAuth session', async () => {
+    jest.spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(true);
+    const setup = makeService();
+    setup.sessions.nativeBrowserIdentity.mockReturnValue({ actor, oauthSession: null });
+    setup.objectAccess.freshRead.mockImplementation(async ({ action }) => ({ ...grant, action }));
+    setup.conversations.loadCurrent.mockResolvedValue({ conversation, turns: [] });
+    setup.conversations.loadById.mockResolvedValue({ conversation, turns: [] });
+    setup.conversations.appendTextTurn.mockResolvedValue({ turn, replayed: false });
+
+    const current = await setup.service.current('WI-1', {} as never);
+    expect(current.conversation?.automaticExecutionAvailable).toBe(true);
+    expect(current.conversation?.overallExecutionAvailable).toBe(false);
+    expect(setup.objectAccess.freshRead).toHaveBeenCalledWith({
+      actor, action: 'RECORD_ENGINEER_REVIEW', accessRoot: { kind: 'WORK_ITEM', id: 'WI-1' },
+    });
+    await setup.service.appendTextTurn('WI-1', 'RC-1', {
+      requestId: 'native-update', userMessage: '修订保存的评估',
+      purpose: 'UPDATE_ASSESSMENT', executionMode: 'AUTOMATIC',
+      expectedInputRevision: 7, includedDiscussionTurnIds: [],
+    }, {} as never);
+    expect(setup.conversations.hasActiveOfficialActorMapping).toHaveBeenCalledWith({
+      tenantId: 'tenant-1', actorId: 'actor-1',
+    });
+    expect(setup.sessions.withVerifiedReviewBrowserSql).toHaveBeenCalled();
+    expect(setup.conversations.appendTextTurn).toHaveBeenCalledWith(expect.objectContaining({
+      ailySessionId: undefined, purpose: 'UPDATE_ASSESSMENT', executionRequested: true,
+    }));
+  });
+
+  it('does not derive native update capability from a READ grant when RECORD is denied', async () => {
+    jest.spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(true);
+    const setup = makeService();
+    setup.sessions.nativeBrowserIdentity.mockReturnValue({ actor, oauthSession: null });
+    setup.objectAccess.freshRead.mockImplementation(async ({ action }) => action === 'READ_WORK_ITEM'
+      ? { ...grant, action }
+      : { allowed: false, code: 'RECORD_DENIED', statusCode: 403 });
+    setup.conversations.loadCurrent.mockResolvedValue({ conversation, turns: [] });
+    expect((await setup.service.current('WI-1', {} as never)).conversation
+      ?.automaticExecutionAvailable).toBe(false);
+    await expect(setup.service.appendTextTurn('WI-1', 'RC-1', {
+      requestId: 'denied-update', userMessage: '修订', purpose: 'UPDATE_ASSESSMENT',
+      executionMode: 'AUTOMATIC', expectedInputRevision: 7,
+    }, {} as never)).rejects.toMatchObject({ code: 'RECORD_DENIED' });
+    expect(setup.conversations.hasActiveOfficialActorMapping).not.toHaveBeenCalled();
+    expect(setup.conversations.appendTextTurn).not.toHaveBeenCalled();
+  });
+
+  it('fails closed without the current official mapping and excludes other no-OAuth purposes and scopes', async () => {
+    jest.spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(true);
+    const setup = makeService();
+    setup.sessions.nativeBrowserIdentity.mockReturnValue({ actor, oauthSession: null });
+    setup.objectAccess.freshRead.mockImplementation(async ({ action }) => ({ ...grant, action }));
+    setup.conversations.loadCurrent.mockResolvedValue({ conversation, turns: [] });
+    setup.conversations.loadById.mockResolvedValue({ conversation, turns: [] });
+    setup.conversations.hasActiveOfficialActorMapping.mockResolvedValue(false);
+    expect((await setup.service.current('WI-1', {} as never)).conversation
+      ?.automaticExecutionAvailable).toBe(false);
+    const update = {
+      requestId: 'native-boundary', userMessage: '修订', purpose: 'UPDATE_ASSESSMENT' as const,
+      executionMode: 'AUTOMATIC' as const, expectedInputRevision: 7,
+    };
+    await expect(setup.service.appendTextTurn('WI-1', 'RC-1', update, {} as never))
+      .rejects.toMatchObject({ code: 'REVIEW_EXTERNAL_DELEGATION_REQUIRED' });
+    setup.conversations.hasActiveOfficialActorMapping.mockResolvedValue(true);
+    for (const input of [
+      { ...update, purpose: undefined },
+      { ...update, purpose: 'CHAT' as const },
+      { ...update, overallRequested: true },
+      { ...update, reviewScope: { kind: 'ENGINEERING_MATTER' as const,
+        matterId: 'MAT-1', expectedWorkingRevision: 1 } },
+      { ...update, attachmentSelection: { bucketId: 'private', filePath: 'source.pdf' } },
+    ])
+      await expect(setup.service.appendTextTurn('WI-1', 'RC-1', input, {} as never))
+        .rejects.toMatchObject({ code: 'REVIEW_EXTERNAL_DELEGATION_REQUIRED' });
+    expect(setup.conversations.appendTextTurn).not.toHaveBeenCalled();
+    expect(setup.attachments.ingest).not.toHaveBeenCalled();
+  });
+
+  it('retains successor completion and revision checks for each new native update', async () => {
+    jest.spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(false);
+    jest.spyOn(executorScope, 'isOpenClawSuccessorReviewConfigured').mockReturnValue(true);
+    const setup = makeService();
+    setup.sessions.nativeBrowserIdentity.mockReturnValue({ actor, oauthSession: null });
+    setup.objectAccess.freshRead.mockImplementation(async ({ action }) => ({ ...grant, action }));
+    setup.conversations.loadCurrent.mockResolvedValue({ conversation, turns: [] });
+    setup.conversations.loadById.mockResolvedValue({ conversation, turns: [] });
+    expect((await setup.service.current('WI-1', {} as never)).conversation
+      ?.automaticExecutionAvailable).toBe(false);
+    setup.workItems.hasReadableAutoProcessingCompletion.mockResolvedValue(true);
+    expect((await setup.service.current('WI-1', {} as never)).conversation
+      ?.automaticExecutionAvailable).toBe(true);
+    await expect(setup.service.appendTextTurn('WI-1', 'RC-1', {
+      requestId: 'stale-native-update', userMessage: '修订', purpose: 'UPDATE_ASSESSMENT',
+      executionMode: 'AUTOMATIC', expectedInputRevision: 6,
+    }, {} as never)).rejects.toMatchObject({ code: 'REVIEW_UPDATE_REVISION_STALE' });
+    expect(setup.workItems.hasReadableAutoProcessingCompletion).toHaveBeenLastCalledWith({
+      tenantId: 'tenant-1', actorUserId: 'actor-1', workItemId: 'WI-1', revision: 7,
+    });
+    expect(setup.conversations.appendTextTurn).not.toHaveBeenCalled();
+  });
+
   it('rejects an outdated explicit update and foreign or unanswered discussion before writing', async () => {
     jest
       .spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured')
@@ -844,9 +945,13 @@ describe('ReviewConversationService session and ACL boundary', () => {
 });
 
 function makeService() {
-  const sessions = { nativeBrowserIdentity: jest.fn().mockReturnValue(session) };
+  const sessions = {
+    nativeBrowserIdentity: jest.fn().mockReturnValue(session),
+    withVerifiedReviewBrowserSql: jest.fn((operation: () => Promise<unknown>) => operation()),
+  };
   const objectAccess = { freshRead: jest.fn().mockResolvedValue(grant) };
   const conversations = {
+    hasActiveOfficialActorMapping: jest.fn().mockResolvedValue(true),
     createOrResume: jest.fn(),
     loadCurrent: jest.fn(),
     loadById: jest.fn(),
