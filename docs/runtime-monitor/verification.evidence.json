@@ -6933,6 +6933,62 @@
       "finishedAt": "2026-10-24T18:58:17.000579+00:00",
       "observedAt": "2026-10-24T18:58:17.000579+00:00",
       "timeBasis": "起止/observedAt来自准确799 build-run02原invocation/result UTC，elapsedSeconds为原单调计时；run01失败独立归档，不用四个旧日志冒作新构建证据，不以记录生成时点替代。"
+    },
+    {
+      "id": "p3.storage-metadata.20261025.online.technical-metadata",
+      "kind": "deployment",
+      "status": "inconclusive",
+      "contractRevision": "fbf6be53872768488148979c09489ca0a2e652b97e99b3323c87a4e4ba146fbb",
+      "sourceRevision": null,
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e33-p3存储元数据与准确迁移依赖2026-10-25",
+      "readbackRef": "private:p3-storage-metadata-20261025/READONLY_OBSERVATION.private.json",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [],
+      "startedAt": "2026-10-24T19:07:15.051595+00:00",
+      "finishedAt": "2026-10-24T19:08:04.983207+00:00",
+      "observedAt": "2026-10-24T19:08:04.983207+00:00",
+      "timeBasis": "起止/observedAt来自01与02原CLI invocation，包含两次独立调用间隔；不是统一事务快照或来源业务时钟。未观察应用源码指纹，sourceRevision保持null。",
+      "inputRefs": [
+        "private:p3-storage-metadata-20261025/execution/01-online-parent-table.invocation.private.json",
+        "private:p3-storage-metadata-20261025/execution/02-online-extended-catalog.invocation.private.json",
+        "private:p3-storage-metadata-20261025/REVIEW.private.md"
+      ],
+      "outputRefs": [
+        "private:p3-storage-metadata-20261025/execution/01-online-parent-table.stdout.private.txt",
+        "private:p3-storage-metadata-20261025/execution/02-online-extended-catalog.stdout.private.txt"
+      ],
+      "summary": "官方普通表结构01与固定目录02成功，02返回10个独立SELECT结果：online所选范围Source父对象存在，11列中所需列型/NOT NULL匹配，非延迟唯一约束和valid/ready/immediate非partial唯一索引成立，RLS/FORCE开启；processing-set两表、三个候选索引、指定immutable函数和目标触发器均无。默认ACL存在不等于运行角色或Source/grant/RETAIN可用。本条仅技术元数据/迁移准备缺口，未读取业务行、执行DDL或验证业务runtime/测试，Astra窄审接受；不从estimated行数推实际来源数量。"
+    },
+    {
+      "id": "p3.storage-metadata.20261025.dev.technical-metadata",
+      "kind": "deployment",
+      "status": "inconclusive",
+      "contractRevision": "fbf6be53872768488148979c09489ca0a2e652b97e99b3323c87a4e4ba146fbb",
+      "sourceRevision": null,
+      "environmentId": "host:app_17bzc551rsg:dev",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e33-p3存储元数据与准确迁移依赖2026-10-25",
+      "readbackRef": "private:p3-storage-metadata-20261025/READONLY_OBSERVATION.private.json",
+      "bindingIds": [
+        "company.approved-opinion"
+      ],
+      "scenarioIds": [],
+      "startedAt": "2026-10-24T19:08:50.672232+00:00",
+      "finishedAt": "2026-10-24T19:09:39.881907+00:00",
+      "observedAt": "2026-10-24T19:09:39.881907+00:00",
+      "timeBasis": "起止/observedAt来自03与04原CLI invocation，包含两次独立调用间隔；不是统一事务快照或来源业务时钟。未观察应用源码指纹，sourceRevision保持null。",
+      "inputRefs": [
+        "private:p3-storage-metadata-20261025/execution/03-dev-parent-table.invocation.private.json",
+        "private:p3-storage-metadata-20261025/execution/04-dev-extended-catalog.invocation.private.json",
+        "private:p3-storage-metadata-20261025/REVIEW.private.md"
+      ],
+      "outputRefs": [
+        "private:p3-storage-metadata-20261025/execution/03-dev-parent-table.stderr.private.txt",
+        "private:p3-storage-metadata-20261025/execution/04-dev-extended-catalog.stdout.private.txt"
+      ],
+      "summary": "dev普通结构03返回not_found/exit1且stdout空；随后固定目录04成功返回10个独立SELECT结果，确认所选schema存在而Source父对象、processing-set两表及三个候选索引、指定immutable函数/目标触发器均无。默认ACL不替代RLS/来源授权。原两表回滚演练依赖缺失父对象，不能直接在dev执行；需先取得官方机制对online已有/dev缺失父对象的对象级覆盖及准确依赖依据，不按通用hint创建环境、重放九表或建空表。仅技术元数据，未读业务行/DDL/测试通过/业务runtime，真实producer/grant/完整关系输入仍缺，Astra窄审接受。"
     }
   ]
 }

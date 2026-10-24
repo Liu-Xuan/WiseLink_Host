@@ -1,5 +1,15 @@
 # Integration source record
 
+## 2026-10-25 P3存储元数据与准确迁移依赖
+
+官方有限元数据已确认online的Source父对象具备草案所需列型/NOT NULL、非延迟唯一约束及有效唯一索引，RLS/FORCE开启；dev普通结构查询not_found后，固定目录进一步确认所选schema存在而该父对象缺失。processing-set两表、三个候选索引、指定immutable函数及目标触发器两端皆无。默认ACL存在仅为权限元数据，不证明运行角色、真实Source/grant、runtime READ或RETAIN可用；本次没有读取业务行，估计行数不作实际来源计数。
+
+Astra已窄审接受四份官方原件。01/02均成功，03的not_found/exit1保留，02/04各10条独立SELECT成功；实际CLI起止UTC分列于private:p3-storage-metadata-20261025/READONLY_OBSERVATION.private.json及execution原件，不作为统一数据库事务或来源业务时钟。公开仅概括准确范围，实际schema、role/tenant、ACL及原件留在私有ref。
+
+下一步先取得官方机制对“仅online已有、dev缺失的准确Source父对象”的对象级迁移覆盖与依赖依据，明确两表增量如何引用既有父对象；如必须先补dev父对象，应先解决其必要结构及准确依赖范围。本次回执未给出这样的计划，原两表回滚演练不能直接在dev执行，不重放九表、不绕到online建空表或新造coordinator。真实producer/RETAIN authority、Source/grant及完整record/relation/approval、family/cohort/roster/currentness输入仍需取得，既有save/CAS/runtime READ保持；仅建表不关闭P3。
+
+M1见[E.33](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e33-p3存储元数据与准确迁移依赖2026-10-25)。原354证据对象/顺序保留，只追加两条技术元数据（deployment/inconclusive、scenarioIds空），仅P3 remaining/nextAction及其证据引用改变；source bindings/产品revision、其他六包、选择数组、13/47/54/10目录、12binding与图样式保持。无DDL/策略/角色变更、业务行、模型/SAVE、Native指令或产品测试/build；未增加业务runtime/测试通过或新发布。
+
 ## 2026-10-25 P1/P2独立Host候选与现有消费者
 
 P1准确产品`eb53474ef4a5229420ae38560ca279df67ae0403`（父`8f54fde16535566261f47b8c014fe14053195b8e`，tree`f86764888429e662b646df18052928d6942ddd1b`）仅ReviewConversationService、服务spec与原生UPDATE PG回归三文件。UPDATE-only在fresh RECORD、owner、准确主体修订及官方ACTIVE mapping成立后复用原authenticated append/readback、原请求幂等与既有RLS策略；READ不授UPDATE，不引入Document CHAT、Native表格投影、0082/83或新policy/grant。Astra终审接受，正常hook提交且干净；旧625源码/验证保留原身份，不改记本轮运行。

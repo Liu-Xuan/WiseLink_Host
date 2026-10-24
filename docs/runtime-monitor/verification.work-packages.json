@@ -296,10 +296,10 @@
         "V44",
         "V53"
       ],
-      "nextAction": "既有Estimated、Review SAVED/BOUNDED、sealed恢复及三条online lock-only policy交付保持。复用已存在的processing-set service/save/CAS/repository/runtime READ，按真实Source授权分别准备目标两表及精确读取/行锁权限、可信RETAIN producer/authority和完整record/relation/approval、family/cohort/roster/后继输入，再核对selected集合、线上刷新、撤销取代/V44正文；仅建表或fixture可读不算生产闭环，不重复开发现有存储/读取链。",
+      "nextAction": "先取得官方环境/迁移机制处理“仅online已有、dev缺失的准确Source父对象”的对象级计划和依赖覆盖，明确两表增量能否引用既有父对象；若必须先使dev具备父对象，先核对其必要结构如何进入dev及准确依赖范围，不重放九表或直接绕到online建空表。并分别取得真实Source/grant、可信RETAIN producer/authority和完整成员/关系/批准、family/cohort/roster/currentness输入，沿既有save/CAS/repository/runtime READ核对真实selected set/head与后续消费者；默认ACL、回滚演练或建表均不算生产闭环。",
       "progress": {
         "delivered": "Estimated映射、Review SAVED/BOUNDED、真实caller/有限Native及封存恢复已随787/原c235交付；原PG029与先前失败保留。online三条lock-only policy定义、角色、USING/CHECK和RLS与dev一致，DDL技术动作已完成。 本轮b71只读清点确认processing-set ref-only接口、严格校验、repository、save/幂等/CAS与实际runtime READ/native verifier消费者已存在；runtime拒绝RETAIN边界保持，缺表明确503。这是现有代码定位，不是新产品实现或测试通过。",
-        "remaining": "原Host2026-10-24 08:56:17+08元数据在当前query schema/search_path解析不到set/head两表；目标存储/精确权限、生产RETAIN authority/producer及可信完整来源关联输入仍缺。daily adapter的CANDIDATE_ONLY/UNRESOLVED边不能证明完整family/cohort/roster/后继；真实Source/grant、线上刷新、批准意见及V44正文与下游消费未闭环。旧三条lock-only policy已完成与两表缺口分开，建表本身不关闭P3；不据元数据推断其他schema或业务行。",
+        "remaining": "本轮官方有限元数据确认online的Source父对象结构前提局部成立，dev固定schema存在但父对象缺失；processing-set两表及三个候选索引、指定immutable函数/目标触发器两端皆无。原两表回滚演练不能直接在dev执行，官方机制对仅online已有父对象的对象级迁移覆盖及依赖仍待明确。默认ACL不替代RLS、实际运行角色或Source/grant核权；真实RETAIN authority/producer及完整record/relation/approval、family/cohort/roster/currentness输入、线上刷新、批准意见与V44正文及下游消费仍未闭环。此为固定对象元数据，不推断其他schema或业务行，建空表不关闭P3。",
         "owner": "TDMS来源授权、Review及综合消费者",
         "acceptance": "准确来源/原文/版本与实际授权可读回；失效或被取代的意见按真实关系停止消费，新输入进入保存及综合覆盖；缺来源具体说明，不扩大本期结构化AEO正文范围。",
         "evidenceIds": [
@@ -308,7 +308,9 @@
           "review-native.recovered.pg-029",
           "controlled-switch.787.host.deployment",
           "controlled-switch.787.online-lock-policies.deployment",
-          "controlled-switch.c235.installed.deployment"
+          "controlled-switch.c235.installed.deployment",
+          "p3.storage-metadata.20261025.online.technical-metadata",
+          "p3.storage-metadata.20261025.dev.technical-metadata"
         ]
       }
     },

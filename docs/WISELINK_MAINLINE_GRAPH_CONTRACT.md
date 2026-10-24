@@ -1072,3 +1072,13 @@ P2 43d417d7085bce01d8833e8958b027be59de2d9f（父8f54，treeeed6ba1fa7bd5271155e
 根已在同一隔离克隆的新integration分支正常提交联合799defbe3c3573e76f5fbc0316636bc51a538b71（父43d，tree2f57acd9d9e26c3f3fcdae8f63c88a0726163a56），P1三文件与P2四文件无交集且七文件逐blob等于接受来源，clean并保留P2原分支。准确799的标准完整构建run01先在step0官方npx CLI遇沙箱DNS ENOTFOUND registry.npmmirror.com退出1，未进入编译、四子日志全部不fresh，产品/clean保持，原失败独立归档。以所需网络权限正常执行同一原命令run02，于2026-10-24T18:57:32.322224+00:00至2026-10-24T18:58:17.000579+00:00 exit0、原单调44.680512秒，前后准确799/clean、四子日志全部fresh；未改构建脚本、手工安装或用仅前端开关，旧日志不冒充新结果。M2 source bindings指联合当前799，只补现有review admission→原任务/保存/Overall及quality/reuse→原检查/selected阅读消费者，不新增节点/边，不冒称线上整链通过。
 
 线上仍b8/c238，原AD ATT5终态/外层BLOCK/SAVE0/Overall空、Native可信上下文及SEM方法/事实/正文缺口保持；本地PG0SAVE不替代真实内容。原精确Wiki8f54/Host4008待批候选、独立较大批次及Native配置不改，未同步/发布，无新业务runtime。旧数据尚未更正/重检/清理，真实SEM/Reference/CMCF/OPS验收未完成；只读核对沿已有授权继续，新增模型/保存及批量处置按各自具体授权执行。保留原348证据对象/顺序，P1三条/P2两条及准确联合build共六条分列、scenarioIds空；仅P1/P2工作包及三个现有binding更新，其他包、13/47/54/10目录、12binding、选择数组及HTML数据外字节保持。具体见[本批集成记录](coordination/M_INTEGRATION.md#2026-10-25-p1p2独立host候选与现有消费者)。
+
+### E.33 P3存储元数据与准确迁移依赖（2026-10-25）
+
+本轮官方普通表结构与固定系统目录确认：online的Source父对象存在，11列中草案所需列型/NOT NULL、准确非延迟唯一约束及对应valid/ready/immediate非partial唯一索引成立，RLS/FORCE开启；dev普通结构查询返回not_found，后续固定目录确认所选schema存在而该父对象确实缺失。两端的processing-set两表、三个候选索引、指定immutable函数和目标触发器均未存在。默认ACL虽存在，不替代RLS、实际运行角色或Source/grant核权，也不证明runtime可读或可RETAIN。结论仅覆盖固定对象范围，未读取业务行，官方估计行数不作实际来源计数。
+
+Astra已窄审四份实际原件及固定SELECT范围。01/02的online调用均成功；03的dev not_found/exit1原件保留，04的10条独立SELECT成功补足所选schema存在、父对象缺失的事实，02同样返回10个结果。四份invocation的准确UTC窗口分列保留于私有原件；CLI窗口不是数据库统一事务快照或来源业务观察时间。实际schema、role/tenant、ACL全文及来源正文不进入公开记录。
+
+首先需取得官方机制对“仅online已有、dev缺失的准确Source父对象”的对象级迁移覆盖及依赖依据；本次回执未提供这样的准确计划。原两表回滚演练依赖该父对象，不能直接在dev执行，ROLLBACK不消除这一前置。若官方路径要求dev先具备父对象，应先明确必要结构如何进入dev及准确依赖范围，不重放九表或直接绕到online建空表。真实Source/grant、可信RETAIN producer/authority和完整record/relation/approval、family/cohort/roster/currentness输入仍独立缺失，继续复用既有save/CAS/repository/runtime READ；默认ACL与建表不能代替生产链。
+
+本批仅追加两条技术元数据（deployment/inconclusive、scenarioIds空），保留原354条证据完整对象/顺序；仅P3 remaining/nextAction及其证据引用更新，source bindings、产品revision、其他六包、所有选择数组、13/47/54/10目录、12binding和HTML数据外字节保持。无业务行读取、DDL/策略/角色变更、模型/SAVE、Native指令或产品测试/build，不登记业务runtime或测试通过。原件见private:p3-storage-metadata-20261025/READONLY_OBSERVATION.private.json及REVIEW.private.md，当前记录见[本批集成条目](coordination/M_INTEGRATION.md#2026-10-25-p3存储元数据与准确迁移依赖)。
