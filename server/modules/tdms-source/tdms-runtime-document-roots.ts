@@ -29,7 +29,7 @@ export async function tdmsRuntimeDocumentHasMarker(
       ON (${dmAcquisition.documentVersionId}=${dmDocumentVersion.documentVersionId}
         OR ${dmAcquisition.acquisitionId}=${dmDocumentVersion.acquisitionId})
     WHERE ${dmDocumentVersion.documentVersionId}=${binding.documentVersionId}
-      AND ${dmAcquisition.sourceDescriptorJson}::jsonb ? 'tdmsRegistration') AS marker`);
+      AND jsonb_exists(${dmAcquisition.sourceDescriptorJson}::jsonb, 'tdmsRegistration')) AS marker`);
   return row?.marker === true;
 }
 
@@ -168,7 +168,7 @@ function descriptorMetadata(column:SQL,registration:boolean):SQL<string> {
       'text',${column}::jsonb#>'{publicationIdentityEvidence,publisher,text}'))`;
   return sql`(jsonb_build_object(${sql.join(fields.flatMap(key=>[sql`${key}::text`,sql`${column}::jsonb->${key}::text`]),sql`, `)},
     'adapterRelease',jsonb_build_object('adapterId',${column}::jsonb#>'{adapterRelease,adapterId}'),
-    'publicationIdentityEvidence',${evidence}) ${registration ? sql`|| CASE WHEN ${column}::jsonb ? 'tdmsRegistration'
+    'publicationIdentityEvidence',${evidence}) ${registration ? sql`|| CASE WHEN jsonb_exists(${column}::jsonb, 'tdmsRegistration')
       THEN jsonb_build_object('tdmsRegistration',jsonb_build_object(${sql.join(registrationFields.flatMap(
         key=>[sql`${key}::text`,registrationValue(key)]),sql`, `)})) ELSE '{}'::jsonb END` : sql``})::text`;
 }
