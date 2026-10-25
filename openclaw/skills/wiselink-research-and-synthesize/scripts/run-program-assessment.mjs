@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { prepareProgramAssessmentMaterials, PROGRAM_ASSESSMENT_MODE } from './program-assessment-materials.mjs';
 import { parseJobAidWorkJson, validateJobAidProblemInput } from './run-jobaid-problem-assessment.mjs';
@@ -47,7 +48,10 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
   const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,
     executionModel: options.executionModel ?? null,
     ...(usesCodex ? { modelExecutor: 'CODEX', assessmentBinding: hostBinding } : {}) };
+  const retainedParentResult = usesCodex && options.reconcileProgramModelRequest
+    ? await checkpoint.readOptional('assessment-round-1.result') : null;
   let enabled = await checkpoint.readOptional('assessment-enabled');
+  if (retainedParentResult && !enabled) throw new Error('PROGRAM_ASSESSMENT_RESPONSE_BINDING_MISMATCH');
   if (enabled && (!isDeepStrictEqual(enabled.binding, binding) || !isDeepStrictEqual(enabled.generationPolicy, POLICY)))
     throw new Error('PROGRAM_ASSESSMENT_CHECKPOINT_BINDING_MISMATCH');
   if (!enabled) {
@@ -60,6 +64,7 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
   const previousExecution = await checkpoint.readOptional('program-execution');
   if (previousExecution) return previousExecution;
   let materials = await checkpoint.readOptional('program-materials');
+  if (retainedParentResult && !materials) throw new Error('PROGRAM_ASSESSMENT_MATERIALS_BINDING_MISMATCH');
   if (!materials) {
     materials = await prepareProgramAssessmentMaterials(modelInput, options);
     await checkpoint.writeOnce('program-materials', materials);
@@ -83,6 +88,8 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
         properties: { workJson: { type: 'string', minLength: 2 } } } } }],
     tool_choice: 'auto', parallel_tool_calls: false, n: 1, stream: false };
   const body = canonicalJson(request);
+  if (retainedParentResult && !await checkpoint.readOptional('program-model-input'))
+    throw new Error('PROGRAM_ASSESSMENT_MODEL_INPUT_MISSING');
   await checkpoint.writeOnceOrEqual('program-model-input', { version: 1, body,
     executionModel: options.executionModel ?? null, materialCheckpoint: 'program-materials' });
   const modelRequest = await checkpoint.readOptional('program-model-input');
@@ -91,12 +98,20 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
   // Authentication stays in the transient gateway headers, outside this snapshot.
   await recordProgress('MATERIALS_READY', 'program-materials', JSON.stringify({ materials, modelRequest }));
   const argsHash = canonicalSha256({ body, executionModel: options.executionModel ?? null });
-  const originalRunRecorder = async () => {
+  const readOriginalRun = async () => {
     const key = 'assessment-round-1.codex-run';
     const original = await checkpoint.readOptional(key);
     if (original?.version !== 1 || original.requestId !== codexRecoveryRequestId ||
-        original.argsHash !== argsHash)
+        original.argsHash !== argsHash || !isAbsolute(original.runRoot ?? '') ||
+        !isAbsolute(original.runDirectory ?? '') || dirname(original.runDirectory) !== original.runRoot ||
+        ![original.gatewayBindingSha256, original.promptSha256].every(value =>
+          typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value)))
       throw new Error('PROGRAM_ASSESSMENT_ORIGINAL_RUN_BINDING_REQUIRED');
+    return original;
+  };
+  const originalRunRecorder = async () => {
+    const key = 'assessment-round-1.codex-run';
+    const original = await readOriginalRun();
     const record = codexParentRunRecorder(checkpoint, 'assessment-round-1',
       { requestId: codexRecoveryRequestId, argsHash });
     return async prepared => {
@@ -105,7 +120,7 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
       await record(prepared);
     };
   };
-  let responseRecord = await checkpoint.readOptional('assessment-round-1.result');
+  let responseRecord = retainedParentResult ?? await checkpoint.readOptional('assessment-round-1.result');
   if (responseRecord && responseRecord.argsHash !== argsHash) throw new Error('PROGRAM_ASSESSMENT_RESPONSE_BINDING_MISMATCH');
   if (!responseRecord) {
     const started = await checkpoint.readOptional('assessment-round-1.started');
@@ -160,7 +175,8 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
     if (heartbeatFailure) throw heartbeatFailure;
   }
   const { raw, status, ok } = responseRecord.value;
-  if (usesCodex && (responseRecord.value.codexReceipt?.requestId !== codexRecoveryRequestId ||
+  if (usesCodex && (typeof raw !== 'string' ||
+      responseRecord.value.codexReceipt?.requestId !== codexRecoveryRequestId ||
       responseRecord.value.codexReceipt.responseSha256 !== createHash('sha256').update(raw).digest('hex')))
     throw new Error('PROGRAM_ASSESSMENT_CODEX_RECEIPT_MISMATCH');
   if (usesCodex && options.reconcileProgramModelRequest) {
@@ -168,22 +184,15 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
       const started = await checkpoint.readOptional('assessment-round-1.started');
       if (started?.argsHash !== argsHash || started.codexRecoveryRequestId !== codexRecoveryRequestId)
         throw new Error('PROGRAM_ASSESSMENT_RESPONSE_BINDING_MISMATCH');
-      // A cached parent result alone cannot resolve a pending model outcome.
-      // Re-read the original child receipt in recover-only mode, including its
-      // existing parent link, prompt, request and complete response validation.
-      const onRunPrepared = await originalRunRecorder();
-      const response = await requestModelGateway(options, modelGatewayEndpoint(options), {
-        method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json',
-          ...modelGatewayHeaders(options), ...modelHeaders }, body,
-        signal: AbortSignal.timeout(Math.min(options.timeoutMs ?? 30_000, 30_000)),
-        codexRecovery: { requestId: codexRecoveryRequestId, recoverOnly: true, onRunPrepared },
-      }, dependencies);
-      const recoveredRaw = await response.text();
+      // The private parent result already retains the complete adapter response.
+      // Reconcile that known request from its original parent binding; child
+      // files are needed only above when no durable parent result exists yet.
+      const original = await readOriginalRun();
       const receipt = responseRecord.value.codexReceipt;
-      if (recoveredRaw !== raw || response.status !== status || response.ok !== ok ||
-          !response.codexReceipt ||
-          ['requestId', 'runDirectory', 'responseSha256', 'transportSummaryRef'].some(key =>
-            response.codexReceipt[key] !== receipt[key]))
+      if (!Number.isInteger(status) || status < 100 || status > 599 ||
+          typeof ok !== 'boolean' || ok !== (status >= 200 && status < 300) ||
+          receipt.runDirectory !== original.runDirectory ||
+          receipt.transportSummaryRef !== resolve(original.runDirectory, 'transport-summary.json'))
         throw new Error('PROGRAM_ASSESSMENT_CODEX_RECEIPT_MISMATCH');
     });
   }

@@ -130,7 +130,7 @@ test('pending budget model receipt recovers after process death or an exception 
       const completed = await run(root);
       assert.equal(completed.code, 0, JSON.stringify(completed));
       assertSavedAndRead(completed.result);
-      assert.ok(completed.result.state.modelRecoveryRequests >= 1);
+      assert.equal(completed.result.state.modelRecoveryRequests, 1);
       assert.deepEqual(await json(root, 'synthetic-model', 'response.json'), response);
       assert.deepEqual(await checkpoint.readOptional('jobaid-run-budget-modelRequests-1'),
         { kind: 'modelRequests', ordinal: 1 });
@@ -149,7 +149,7 @@ test('receipt recovery may die after writing round.result and the next process c
   const completed = await run(root);
   assert.equal(completed.code, 0, JSON.stringify(completed));
   assertSavedAndRead(completed.result);
-  assert.equal(completed.result.state.modelRecoveryRequests, before.modelRecoveryRequests + 1);
+  assert.equal(completed.result.state.modelRecoveryRequests, before.modelRecoveryRequests);
   assert.equal(completed.result.budget.counts.modelRequests, originalBudget.counts.modelRequests);
   assert.deepEqual(await checkpoint.readOptional('assessment-round-1.result'), cached);
 });
@@ -200,41 +200,66 @@ test('missing or changed original receipt, request and parent link retain UNKNOW
   }
 });
 
-test('cached round.result cannot replace the original started marker, parent binding or full gateway receipt', async t => {
+test('a complete parent result survives missing or damaged child files without another gateway call', async t => {
   const cases = [
-    ['missing original receipt', async ({ root }) => rm(resolve(root, 'synthetic-model', 'response.json'))],
-    ['malformed original receipt', async ({ root }) => writeFile(
+    ['missing child directory', async ({ root }) => rm(resolve(root, 'synthetic-model'), { recursive: true })],
+    ['malformed child receipt', async ({ root }) => writeFile(
       resolve(root, 'synthetic-model', 'response.json'), '{')],
-    ['changed original raw', async ({ root }) => {
+    ['changed child raw and request', async ({ root }) => {
       const store = await createCheckpointStore(resolve(root, 'synthetic-model'));
       const response = await store.readOptional('response');
-      await store.write('response', { ...response, raw: `${response.raw} ` });
+      await store.write('response', { ...response, raw: 'damaged child response',
+        requestId: 'program:foreign:round-1', requestBody: 'changed child request' });
     }],
-    ['wrong original request ID', async ({ root }) => {
-      const store = await createCheckpointStore(resolve(root, 'synthetic-model'));
-      await store.write('response', { ...await store.readOptional('response'), requestId: 'program:foreign:round-1' });
+  ];
+  for (const [name, mutate] of cases) {
+    await t.test(name, async t => {
+      const context = await seedPendingModel(t, { cachedResult: true });
+      const cached = await context.checkpoint.readOptional('assessment-round-1.result');
+      const before = await json(context.root, 'synthetic-host', 'state.json');
+      await mutate(context);
+      const completed = await run(context.root);
+      assert.equal(completed.code, 0, JSON.stringify(completed));
+      assertSavedAndRead(completed.result);
+      assert.equal(completed.result.state.modelRecoveryRequests, before.modelRecoveryRequests);
+      assert.deepEqual(await context.checkpoint.readOptional('assessment-round-1.result'), cached);
+    });
+  }
+});
+
+test('parent result recovery still requires the original parent input, started marker, link and intact response', async t => {
+  const cases = [
+    ...['assessment-enabled', 'program-materials', 'program-model-input',
+      'assessment-round-1.started', 'assessment-round-1.codex-run'].map(key =>
+      [`missing ${key}`, async ({ root }) => rm(resolve(checkpointPath(root), `${key}.json`)), key]),
+    ['wrong original request body', async ({ checkpoint }) => {
+      const request = await checkpoint.readOptional('program-model-input');
+      await checkpoint.write('program-model-input', { ...request, body: `${request.body} ` });
     }],
-    ['wrong original request body', async ({ root }) => {
-      const store = await createCheckpointStore(resolve(root, 'synthetic-model'));
-      const response = await store.readOptional('response');
-      await store.write('response', { ...response, requestBody: `${response.requestBody} ` });
-    }],
-    ['missing started marker', async ({ root }) => rm(
-      resolve(checkpointPath(root), 'assessment-round-1.started.json'))],
     ['wrong started request', async ({ checkpoint }) => {
       const started = await checkpoint.readOptional('assessment-round-1.started');
       await checkpoint.write('assessment-round-1.started', { ...started, codexRecoveryRequestId: 'foreign' });
     }],
-    ['missing parent link', async ({ root }) => rm(
-      resolve(checkpointPath(root), 'assessment-round-1.codex-run.json'))],
-    ['raw with a recomputed cached hash', async ({ checkpoint }) => {
+    ['wrong parent binding', async ({ checkpoint }) => {
+      const parent = await checkpoint.readOptional('assessment-round-1.codex-run');
+      await checkpoint.write('assessment-round-1.codex-run', { ...parent, argsHash: 'f'.repeat(64) });
+    }],
+    ['invalid parent location', async ({ checkpoint }) => {
+      const parent = await checkpoint.readOptional('assessment-round-1.codex-run');
+      await checkpoint.write('assessment-round-1.codex-run', { ...parent, runRoot: '/fixture/foreign-root' });
+    }],
+    ['changed raw with its original fixed hash', async ({ checkpoint }) => {
       const cached = await checkpoint.readOptional('assessment-round-1.result');
       cached.value.raw += ' ';
-      cached.value.codexReceipt.responseSha256 = sha256(cached.value.raw);
+      await checkpoint.write('assessment-round-1.result', cached);
+    }],
+    ['missing raw', async ({ checkpoint }) => {
+      const cached = await checkpoint.readOptional('assessment-round-1.result');
+      delete cached.value.raw;
       await checkpoint.write('assessment-round-1.result', cached);
     }],
     ...[
-      ['status', 201], ['ok', false],
+      ['status', 99], ['ok', false],
       ['requestId', 'program:foreign:round-1'], ['runDirectory', '/fixture/foreign-run'],
       ['transportSummaryRef', '/fixture/foreign-summary.json'],
     ].map(([key, value]) => [`wrong cached ${key}`, async ({ checkpoint }) => {
@@ -244,13 +269,41 @@ test('cached round.result cannot replace the original started marker, parent bin
       await checkpoint.write('assessment-round-1.result', cached);
     }]),
   ];
-  for (const [name, mutate] of cases) {
+  for (const [name, mutate, missingKey] of cases) {
     await t.test(name, async t => {
       const context = await seedPendingModel(t, { cachedResult: true });
       await mutate(context);
-      await assertUnknownWithoutDispatch(context.root, context.originalBudget);
-      if (name === 'missing parent link')
-        assert.equal(await context.checkpoint.readOptional('assessment-round-1.codex-run'), null);
+      const before = await json(context.root, 'synthetic-host', 'state.json');
+      const result = await assertUnknownWithoutDispatch(context.root, context.originalBudget);
+      assert.equal(result.state.modelRecoveryRequests, before.modelRecoveryRequests);
+      if (missingKey) assert.equal(await context.checkpoint.readOptional(missingKey), null);
+    });
+  }
+});
+
+test('a complete non-success or invalid-JSON response settles the known model request before its existing error path', async t => {
+  for (const nonSuccess of [true, false]) {
+    await t.test(nonSuccess ? 'received HTTP error' : 'received invalid JSON', async t => {
+      const { root, checkpoint } = await seedPendingModel(t, { cachedResult: true });
+      const cached = await checkpoint.readOptional('assessment-round-1.result');
+      if (nonSuccess) {
+        cached.value.status = 503;
+        cached.value.ok = false;
+      } else {
+        cached.value.raw = 'complete non-JSON model response';
+        cached.value.codexReceipt.responseSha256 = sha256(cached.value.raw);
+      }
+      await checkpoint.write('assessment-round-1.result', cached);
+      await rm(resolve(root, 'synthetic-model'), { recursive: true });
+      const completed = await run(root);
+      assert.equal(completed.code, 0, JSON.stringify(completed));
+      assert.equal(completed.result.report.errorCode, nonSuccess
+        ? 'PROGRAM_ASSESSMENT_GATEWAY_HTTP_503' : 'PROGRAM_ASSESSMENT_GATEWAY_INVALID_JSON_HTTP_200');
+      assert.equal(completed.result.budget.active, null);
+      assert.deepEqual(completed.result.budget.counts, { modelRequests: 1, saves: 0, finishes: 0 });
+      assert.equal(completed.result.state.modelRequests, 1);
+      assert.equal(completed.result.state.modelRecoveryRequests, 1);
+      assert.equal(completed.result.state.saveCalls, 0);
     });
   }
 });
