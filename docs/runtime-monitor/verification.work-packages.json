@@ -30,7 +30,7 @@
         "delivered": "以下为c239旧后继历史窗口：原ATT5首次SAVE被SOURCE_NOT_DELIVERED拒绝、round14 UNKNOWN、旧generation9归档，以及准确c239安装和C136原状态恢复均保持原证据。本次唯一正常新AD请求/AQ/ATT绑定同一WI、inputRevision=3，03:41:59.909Z round6遇Gateway HTTP400 incomplete_result；04:25 Host readback随后显示ATT TIMED_OUT、initialAnalysis/JobAid FAILED、Overall PENDING，保存0。generation10到期后由generation11正常收尾并归档，activeClaim=null；本地Native run-result仍UNKNOWN。Global GLM5.3 revision1与本WorkItem冻结M3 revision0分开；该请求继承M3，不代表运行时回退或GLM实测。 当前a65/c240技术切换、C136原状态恢复及新GLM程序请求受理及随后材料核验断点见P7；技术事实不改写前述旧请求结果。 新方向范围记录：准确0b33为13新增文件的可选Codex+GLM执行器，既有验证Host为内存模拟、真实Host未调用/未配置且业务未ready，持久重启恢复未接；未替换当前线上a65/c240。",
         "remaining": "首个新真实事项仍需新执行器合法Host身份/任务权限、准确材料、生成、Host SAVE、独立READ、确定性同版Overall、正常页面/图与结束的真实证据。0b33真实Codex+GLM的内存Host fixture不补生产授权/持久成果或阅读验收。c241整包安装、旧UNKNOWN救回及旧链复演不前置；旧技术版本、历史模型绑定、材料失败与UNKNOWN/active claim原件保持。",
         "owner": "主控集成及各既有消费者负责范围",
-        "acceptance": "按§6.5各行只关闭已证明范围：同Hosted实际来源查询通过，UI/Host/Native原请求及来源绑定可核，必要版本/对象已准确交付；获准真实SAVE、Overall workRef与同版阅读及有关变化语义对应。撤权/错身份/旧fence等反例拒绝且旧成果保留；PG、入队、BLOCK或release finished各不替代业务完成。 每次结构/语义升级的旧数据有明确迁移/新版重生成/清理处置，旧引用、当前指针、索引/缓存及下游已处理并读回；不强制所有历史永久兼容。",
+        "acceptance": "首批按P7关闭一条新真实事项：合法Host身份和来源授权、准确材料、生成、Host SAVE、独立READ、同版Overall、正常页面/图及正常结束均有对应证据。撤权、错身份、旧租约和版本冲突须被拒绝；技术发布或内存fixture不能替代业务完成。旧UNKNOWN保持历史事实；旧数据再生或清理单列准确范围，不要求救回旧请求、永久兼容或完成清理后才验收新链。",
         "evidenceIds": [
           "controlled-switch.787.existing-consumers.source-review",
           "controlled-switch.787.host.deployment",
@@ -540,7 +540,7 @@
       "progress": {
         "delivered": "本地ae9实现及7b状态补修、独立审查/定向验证和标准build证据保持。准确公开f821/Hosta65三ref已同步，唯一Host release7700499229508799768 finished且普通用户前后端a65/环境PASS；Native c240源ae9单次安装145文件与四入口匹配、旧21项未变，新旧Host握手及新两record工具通过。C136单次恢复原enabled=true/staticDiff[]。唯一新程序请求HTTP201受理且封存PROGRAM_CONTROLLED_V1+GLM5.3/BUILT_IN，随后Host已启动；材料核验报错与consumerStopped/UNKNOWN已真实显示，外层Host仍RUNNING，见独立断点证据。 后续固定只读取证确认115条原文已交付、目录身份齐全，正文投影缺顶层documentVersionId/sourceRefId令primaryCount0；准确HTTP started/result均无，实际模型派发0/响应0/SAVE0，完整封存模型与Host一致。原UNKNOWN和generation12 stopped active claim保留。 新方向范围记录：准确0b33为13新增文件的可选Codex+GLM执行器，既有验证Host为内存模拟、真实Host未调用/未配置且业务未ready，持久重启恢复未接；未替换当前线上a65/c240。",
         "remaining": "0b33尚未接正式Host，realHostCalled=false/hostMcpConfigured=false/readyForBusinessExecution=false，进程重启持久恢复未接。首个新真实事项仍缺真实Host接口与准确材料、生成、Host SAVE→独立READ→确定性同版Overall→页面/图→正常结束；模拟Host fixture不记业务通过。旧a65/c240单次请求的模型0/SAVE0及UNKNOWN/active claim保留，旧c241部署/旧链救回不前置；不将V55—V58升级为通过。",
-        "owner": "主控集成；program_host_projection / program_native_executor / program_reading_ui 分别拥有Host、Native、正常阅读；主控维护图与证据",
+        "owner": "本地主控负责Host接口、材料、SAVE/READ、同版Overall、阅读与图；新执行器会话负责Codex/妙搭执行内核、程序入口和响应持久化。",
         "acceptance": "一条新真实事项在合法Host身份与任务权限下消费准确材料，由新执行器生成有用工程工作，经Host SAVE及同请求/准确修订独立READ，Host完成确定性同版Overall，正常用户页面/图读取同一workRevisionRef并正常结束。生成、保存、回读、投影与外层终态分列；内存fixture和旧链复演不替代本验收，不新建状态体系。",
         "evidenceIds": [
           "program-initial.first-batch.source_review",
