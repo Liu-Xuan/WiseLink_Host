@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { validateExecutionModelSelection } from './validate-payload.mjs';
 import { WISELINK_SKILL_VERSION } from './validate-payload.mjs';
 import { canonicalSha256 } from './validate-payload.mjs';
+import { codexParentRunRecorder } from './model-executor.mjs';
 const HOST_READING_LEASE_MS = 120_000;
 const CHECKPOINT_SCHEMA = 'wiselink.document.reading-checkpoint.v1';
 const id = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,96}$/u.test(value);
@@ -247,7 +248,10 @@ export async function consumeHostedDocumentReading(options, dependencies) {
       model = await lease.guard(() => dependencies.invokeModel(source, { signal: lease.signal,
         ...(executionModel ? { executionModel } : {}),
         ...(codexRequestId ? { codexRecovery: { requestId: codexRequestId,
-          ...(modelStarted ? { recoverOnly: true } : {}) } } : {}) }));
+          ...(modelStarted ? { recoverOnly: true } : {}),
+          onRunPrepared: codexParentRunRecorder(checkpoint,'model',
+            {requestId:codexRequestId,argsHash:canonicalSha256({identity,
+              sourceBinding:source.sourceBinding,sourceHash:canonicalSha256(source),executionModel})}) } } : {}) }));
       if (!nonempty(model?.modelVersion) || model?.proposal?.schemaVersion !== 'wiselink.document.reading.v1')
         throw new Error('READING_MODEL_RESULT_INVALID');
       await lease.guard(() => write('model.result', model));

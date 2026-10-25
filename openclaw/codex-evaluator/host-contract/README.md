@@ -39,16 +39,36 @@ to compare all 42 inventoried input shapes with a versioned local
 Host `tools/list` packet. Without a packet, the comparison report is
 explicitly `PENDING_LOCAL_PACKET`. The packet's exact version or commit
 is required before claiming local interface alignment. The seven schemas
-completed in this change have `completedInThisChange: true`.
+completed in 925deb2d retain `completedInThisChange: true` as their original
+export classification; the other 35 mechanical schemas retain their limits.
 
 Accepted packet layouts are `{tools:[{name,inputSchema}]}`,
 `{result:{tools:[...]}}`, and `{serverSource:{tools:{name:{inputSchema}}}}`.
 Include a full `hostCommit`/`commit` or an exact `hostVersion`/`version`.
 `schemaVersion` describes the packet format and is not sufficient by itself.
 The report records the packet SHA-256, missing tools, and per-field differences;
-duplicate tool names are rejected. A supplied packet with differences or no
-revision exits with code 2 after writing its report. Shapes cannot establish
+duplicate tool names are rejected. A supplied packet with constraint/semantic
+differences or no revision exits with code 2 after writing its report. Proven
+annotation or set/union ordering equivalence is reported separately as
+`EXPRESSION_EQUIVALENT`; it does not erase Zod refinements, defaults, dialect,
+strict objects, numeric bounds or action branches. Differences are classified
+as `EXPRESSION_EQUIVALENCE`, `REAL_INPUT_RESTRICTION` or
+`ZOD_HOST_BUSINESS_SEMANTICS`. Extra tools are listed without extending the
+existing 42-tool authorization scope. Every comparison retains a pending
+runtime/authorization conclusion, even when shapes match. Shapes cannot establish
 runtime refinements, service identity, authorization, or business acceptance.
+
+Expression rewrites apply only to reference-free schemas. With `$ref`, `$id`
+or anchors, keep the full shape apart from object-key order: a positional JSON
+Pointer can make union order or an otherwise descriptive value semantically
+significant. The utility includes a rejecting regression for that exact case.
+
+The current unpublished local Host is user-reported 974bedfa8edb03ba94c4991a2c6a3c63a1145eb4
+(76 files, 45 tools). No actual packet has been received. The committed report
+therefore stays `PENDING_LOCAL_PACKET`; synthetic comparator fixtures are only
+tests of the utility. The source export now derives all four Codex client queue
+paths using the real queue factory with a recording transport, while keeping
+the pinned legacy Host `serverSource` unchanged.
 
 From a checkout of this Codex branch with the Host's locked dependencies:
 

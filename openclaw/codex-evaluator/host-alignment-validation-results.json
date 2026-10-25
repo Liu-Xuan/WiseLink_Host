@@ -1,0 +1,983 @@
+{
+  "schemaVersion": "wiselink.codex-host-alignment-final-offline-validation.v1",
+  "startedAt": "2026-10-25T10:50:01Z",
+  "completedAt": "2026-10-25T10:50:24Z",
+  "recordedAt": "2026-10-25T10:50:24Z",
+  "workspaceRoot": "/workspace/scratch/b5a75900fbaa/wiselink-codex-host-alignment",
+  "parent925": "925deb2d148a9eb8ed508300d7132fce55bc665c",
+  "priorResultsPath": "/workspace/scratch/b5a75900fbaa/wiselink-codex-host-alignment/openclaw/codex-evaluator/consumer-recovery-validation-results.json",
+  "priorCommandCount": 17,
+  "provisionalRunArtifact": {
+    "sha256": "2ac1ee8af1c6246ab4df96efa501ecc61d27a1033a9aae1583650016516df102",
+    "retainedSummary": "provisionalRunSummary",
+    "status": "SUPERSEDED_BY_FROZEN_FINAL_VERIFICATION"
+  },
+  "provisionalRunSummary": {
+    "commands": 19,
+    "commandsPassed": 18,
+    "testsParsed": 187,
+    "failedCommands": [
+      "codex_generation_recovery"
+    ],
+    "failedCommandDetails": [
+      {
+        "name": "codex_generation_recovery",
+        "exitCode": 1,
+        "output": "file:///workspace/scratch/b5a75900fbaa/wiselink-codex-host-alignment/openclaw/codex-evaluator/codex-generation-recovery.test.mjs:7\nimport { createCodexGateway, codexRecoveryRunDirectory } from './codex-generation.mjs';\n                             ^^^^^^^^^^^^^^^^^^^^^^^^^\nSyntaxError: The requested module './codex-generation.mjs' does not provide an export named 'codexRecoveryRunDirectory'\n    at #asyncInstantiate (node:internal/modules/esm/module_job:455:21)\n    at async ModuleJob.run (node:internal/modules/esm/module_job:553:5)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n"
+      }
+    ],
+    "sourceHashChangedDuringRun": [
+      "openclaw/codex-evaluator/codex-generation.mjs"
+    ]
+  },
+  "commandCount": 20,
+  "commandsPassed": 20,
+  "totalTestsParsedFromChildOutput": 200,
+  "passedTestsParsed": 200,
+  "failedTestsParsed": 0,
+  "failedCommands": [],
+  "timeoutSecondsPerCommand": 60,
+  "executionOrder": "sequential",
+  "completeOutputCapturedInProcessPipes": true,
+  "realModelCalls": 0,
+  "realHostCalls": 0,
+  "sourceHashAlgorithm": "SHA-256",
+  "sourceHashScopeCount": 104,
+  "sourceHashScope": [
+    "openclaw/codex-evaluator/assessment-session.mjs",
+    "openclaw/codex-evaluator/assessment-session.test.mjs",
+    "openclaw/codex-evaluator/check-host-contract.mjs",
+    "openclaw/codex-evaluator/codex-applicability-leaf.test.mjs",
+    "openclaw/codex-evaluator/codex-assessment.mjs",
+    "openclaw/codex-evaluator/codex-client-identity.test.mjs",
+    "openclaw/codex-evaluator/codex-generation-recovery.test.mjs",
+    "openclaw/codex-evaluator/codex-generation.mjs",
+    "openclaw/codex-evaluator/codex-generation.test.mjs",
+    "openclaw/codex-evaluator/codex-parent-run-link-test-helper.mjs",
+    "openclaw/codex-evaluator/codex-zero-model-identity.test.mjs",
+    "openclaw/codex-evaluator/compare-host-interface-packet.mjs",
+    "openclaw/codex-evaluator/contracts/host-input-examples.json",
+    "openclaw/codex-evaluator/contracts/host-packet-comparison.json",
+    "openclaw/codex-evaluator/contracts/host-source-interface.json",
+    "openclaw/codex-evaluator/contracts/host-zod-validation-cases.json",
+    "openclaw/codex-evaluator/contracts/program-recovery-example.json",
+    "openclaw/codex-evaluator/contracts/runtime-configuration-status.json",
+    "openclaw/codex-evaluator/export-host-contract.mjs",
+    "openclaw/codex-evaluator/export-program-recovery-example.mjs",
+    "openclaw/codex-evaluator/host-contract-artifact.test.mjs",
+    "openclaw/codex-evaluator/host-packet-comparison.test.mjs",
+    "openclaw/codex-evaluator/mcp_stdio.py",
+    "openclaw/codex-evaluator/miaoda_responses_bridge.py",
+    "openclaw/codex-evaluator/preflight.mjs",
+    "openclaw/codex-evaluator/preflight.test.mjs",
+    "openclaw/codex-evaluator/probe-host-mcp.mjs",
+    "openclaw/codex-evaluator/program-finish-recovery.test.mjs",
+    "openclaw/codex-evaluator/program-recovery-fixture.mjs",
+    "openclaw/codex-evaluator/program-recovery.test.mjs",
+    "openclaw/codex-evaluator/review-wiki-recovery-fixture.mjs",
+    "openclaw/codex-evaluator/review-wiki-recovery.test.mjs",
+    "openclaw/codex-evaluator/run-consumer-fixture.mjs",
+    "openclaw/codex-evaluator/run-fixture.mjs",
+    "openclaw/codex-evaluator/run-wiki-fixture.mjs",
+    "openclaw/codex-evaluator/run_codex.py",
+    "openclaw/codex-evaluator/run_codex_generation.py",
+    "openclaw/codex-evaluator/test_miaoda_responses_bridge.py",
+    "openclaw/codex-evaluator/test_run_codex_generation_recovery.py",
+    "openclaw/codex-evaluator/translation-reading-document-fixture.mjs",
+    "openclaw/codex-evaluator/translation-reading-recovery-fixture.mjs",
+    "openclaw/codex-evaluator/translation-reading-recovery.test.mjs",
+    "openclaw/codex-evaluator/translation-reading-workitem-fixture.mjs",
+    "openclaw/codex-evaluator/wiki-matter-recovery-fixture.mjs",
+    "openclaw/codex-evaluator/wiki-matter-recovery.test.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/activity-model-evidence-view.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/cancelled-claim-parking.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hierarchical-wiki-queue.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-derived-summary.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-document-activity.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-document-reading.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-matter.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-review-turn.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-cache-prefix.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.test.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-incremental-revision.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-native-evidence.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-native-gateway.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-read-projection.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-revision-context.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-shape.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/document-activity-failure-diagnostic.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/document-activity-model-contract.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/hierarchical-wiki-model-view.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-derived-summary-model.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-document-activity-model.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-document-reading-model.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-initial-model.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-translation-block.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/jobaid-continuation-context.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/jobaid-problem-guidance.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/jobaid-work-shape.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/merge-document-activity-source-context.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor-consumers.test.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/native-temporary-review-gateway.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/one-shot-outbound-adapter.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/orchestrate-host-mcp.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/program-assessment-materials.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/read-matter-recovery-candidate.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/reading-model-context-view.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/recover-native-document-activity-result.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/recover-native-matter-response.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/recover-sealed-review-checkpoint.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/request-hosted-gateway.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/resolve-document-activity-quote-selection.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-document-semantic-translation.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-jobaid-problem-assessment.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-semantic-translation.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/tdms-native-context.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/tdms-review-runtime-context.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/tdms-review-saved-context.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/translation-model-view.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/translation-natural-projection.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-review-turn.test.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/sealed-review-recovery.fixture.mjs",
+    "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/tdms-review-runtime.fixture.mjs",
+    "scripts/run-openclaw-action-attempt-worker.mjs"
+  ],
+  "sourceHashesBefore": {
+    "openclaw/codex-evaluator/assessment-session.mjs": "a2704ddbfed8122fda7c7a8431eb2043b28f8f7c3674bdb6453ffcb4541c4215",
+    "openclaw/codex-evaluator/assessment-session.test.mjs": "dcc8c93274a8f90d7fb2a94187ae025f2441b16ec94a291631720aa79931396a",
+    "openclaw/codex-evaluator/check-host-contract.mjs": "5255cc783751537911a3f28090bb9dbcb9d986cd17bf048329a6fd81e9a0b3d9",
+    "openclaw/codex-evaluator/codex-applicability-leaf.test.mjs": "1e79dcbc3dbfdc7ac38f4283ea13ad4cf79da2bacf501c55ebf3f6185663285c",
+    "openclaw/codex-evaluator/codex-assessment.mjs": "923073267edc1b8c9b78cd62462e368f7ab4d21cfdcf517fbb470d5c0265bb0b",
+    "openclaw/codex-evaluator/codex-client-identity.test.mjs": "ff3b1f13e79ccfd574f6845efdada582ddfe426725143537e8afff6589617387",
+    "openclaw/codex-evaluator/codex-generation-recovery.test.mjs": "2f81e6537e33ada90471b2721d84772bcff5a92e5530ccd75ecf9e44e0ca25e6",
+    "openclaw/codex-evaluator/codex-generation.mjs": "fd0d77f118d312292db8580a7f1f153be712029a98e5c0774c7ca8e0bebb31fe",
+    "openclaw/codex-evaluator/codex-generation.test.mjs": "94bb32c0accc7ea4192403f4afae9f892ca36d3920e03a3f05ec48d8a074d95c",
+    "openclaw/codex-evaluator/codex-parent-run-link-test-helper.mjs": "f8f8616bad44be76253408e12feb5ed1946cdd57cbe81ff54d9b944b73a16dfa",
+    "openclaw/codex-evaluator/codex-zero-model-identity.test.mjs": "91978fd2740358cf3915fe75f5c01cda902ab82c33cd699f0eac7f97c3e1bc0a",
+    "openclaw/codex-evaluator/compare-host-interface-packet.mjs": "3442747f5152f286d79aa6f3f48b9b33b68dba76d817dba7d5c6b893f4afe509",
+    "openclaw/codex-evaluator/contracts/host-input-examples.json": "c92372de83645ded13e5dece2c4f3bbf17dd602f743ba57f16b2b9c5cd08de2f",
+    "openclaw/codex-evaluator/contracts/host-packet-comparison.json": "26678739f6948c62717589fe43747bbb0bc2d7ffce971991c9c7c5d19b03365d",
+    "openclaw/codex-evaluator/contracts/host-source-interface.json": "45dfe91e77f3bca36855e68f1949a72bcd5cace32618690c91e62dfde3809e2c",
+    "openclaw/codex-evaluator/contracts/host-zod-validation-cases.json": "72b06a7a57d951ff89184741d676927695adfa3cfc165ccab522fe8626d7d658",
+    "openclaw/codex-evaluator/contracts/program-recovery-example.json": "fd1834390f8e44b51e3cc0d4e9db434f607731b82a4a336249c59b9d345745e2",
+    "openclaw/codex-evaluator/contracts/runtime-configuration-status.json": "3c83244365b882c61b4f31a9c3b6346a85eea8519e2b3282949301fc6cbd1e7e",
+    "openclaw/codex-evaluator/export-host-contract.mjs": "8d21445ff2229058a6d5f400ea2d090193bf5ff63471cfdce3ecd30ed06f4fbe",
+    "openclaw/codex-evaluator/export-program-recovery-example.mjs": "baa6595c624104de59b671cebf1def43804f1493993733d30565f70f1423c555",
+    "openclaw/codex-evaluator/host-contract-artifact.test.mjs": "27e22fe049dc48d058aaa4188fd35430344172fdb32284f6c6d12b193ac83acc",
+    "openclaw/codex-evaluator/host-packet-comparison.test.mjs": "22e5fae140cf24f1bfdc887c82b987461705f4cb3c1b4655f16b77c45235116d",
+    "openclaw/codex-evaluator/mcp_stdio.py": "6db5990addeb3ccb08ec8238c6fcfd1d9ca6af0b5699d9223071e9032489fa32",
+    "openclaw/codex-evaluator/miaoda_responses_bridge.py": "52e9b093ba293bab7479a3b1105d4db750605b49143054ec5a5133111ba3a632",
+    "openclaw/codex-evaluator/preflight.mjs": "99a314f85113592a7ea513239a1779906b8e8cadda4d6437d01861f4748ad7d5",
+    "openclaw/codex-evaluator/preflight.test.mjs": "4ae94f6d4103d019ca1cd04cce504b5efb9b543d20ae2c0681896a0903726cdf",
+    "openclaw/codex-evaluator/probe-host-mcp.mjs": "863a4d9a946223fc0d69d4183fedc6277bd8c7eba62d364b0526ac945da19371",
+    "openclaw/codex-evaluator/program-finish-recovery.test.mjs": "cfb3704b97682ab96e9c1f24f87dd5a0814b79c805d724b72b50f92ec8c652d3",
+    "openclaw/codex-evaluator/program-recovery-fixture.mjs": "2bc11e4c2dc6a43b78550b385cc0d093de86aaf3e02b87f30c21a2b0deb09697",
+    "openclaw/codex-evaluator/program-recovery.test.mjs": "1e331b15b2a747257da89376fdb230526c15b45df4e370b1aaa54f1c3fd47823",
+    "openclaw/codex-evaluator/review-wiki-recovery-fixture.mjs": "66de7101f85b2998d2723d4b2dc33b799951861d99919a352589ef7d253eaaf3",
+    "openclaw/codex-evaluator/review-wiki-recovery.test.mjs": "e35f6ddb4f8b39959858f84461be8c3c31f34ac5848af273f49620e9f2829fa4",
+    "openclaw/codex-evaluator/run-consumer-fixture.mjs": "606bb04caf3bfd843fe313e2f873ca4354bffe3d28ae5ac2934e8c1297611166",
+    "openclaw/codex-evaluator/run-fixture.mjs": "65a828f984b3199f53f533c898d2eb516453a2492f927a724fee3e52009d4538",
+    "openclaw/codex-evaluator/run-wiki-fixture.mjs": "ab9e686e6ef875c56c23e1d677e67ced4e424ef9f29af6ede45fc09fe65fc3a9",
+    "openclaw/codex-evaluator/run_codex.py": "45d79f50f95dd778d79aa5f9a8bf3f429300b30fd25b3f95adc6153268df0686",
+    "openclaw/codex-evaluator/run_codex_generation.py": "4596a24630cfbdf96006aed8f06aa26d2c534111313b0890e3b00c3a912682ef",
+    "openclaw/codex-evaluator/test_miaoda_responses_bridge.py": "bbb7d18c4b16f9fe57fe0817edf5082573341e165caee152d66516e64570b04a",
+    "openclaw/codex-evaluator/test_run_codex_generation_recovery.py": "039923fb934b8109000671224d52e5b0b264c7b529ff152590f5044d0f1888b2",
+    "openclaw/codex-evaluator/translation-reading-document-fixture.mjs": "0308fe08b1b1819af0fdf504b84821d91a43df2e3c8b7b9ec9c551fe4c667d15",
+    "openclaw/codex-evaluator/translation-reading-recovery-fixture.mjs": "9eaa87e9e04c010798edcd704f2ee6c05291444266f854f71ddf8cdcf92e516d",
+    "openclaw/codex-evaluator/translation-reading-recovery.test.mjs": "f7c6998c5e8c13ca4b4c634e7d7c472fb58dee02176f753717abd84bc9f81fe2",
+    "openclaw/codex-evaluator/translation-reading-workitem-fixture.mjs": "d8ad9cc6f9c61ea7881f363c1347cb9188729a9db7f3368694982e8d9e3a4349",
+    "openclaw/codex-evaluator/wiki-matter-recovery-fixture.mjs": "691172c11fc6154cc93fcbd46ac3b1c19a2911d848bac882c7e692fb79997b14",
+    "openclaw/codex-evaluator/wiki-matter-recovery.test.mjs": "2b12695ee81333f80ba892aae6c8e2a458fda500938de70750a741fb396bd417",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/activity-model-evidence-view.mjs": "8cd43a2552c4d854e086fdc364a637c47f8ee70a749b5831a4d4acd81c88597c",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/cancelled-claim-parking.mjs": "1fd000d487a77cf062d04100a87590b5a693d486fdec0889b363e227a748b31c",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hierarchical-wiki-queue.mjs": "0a1896895ad5023df8e0eacbaaa2938f660138da77177ebf8002c7c937c89fef",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-derived-summary.mjs": "8e41fb80f590b97849c945858361e0da9ea81f4629246e7d64f7b49612d9c027",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-document-activity.mjs": "5c1cef5ccc6125f793bd16a3b4f972dba5505fdb8e4d20bb3e87c5328535b5c8",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-document-reading.mjs": "a7449daeb9d342526d48c62bb7360d4c34769a8c10f9a030a2475b377fd6a235",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-matter.mjs": "8bc56b83e4ec2acb77ef0895e136b3b2b4a5068e75b9c024456896ff4bfbada3",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-review-turn.mjs": "4547ba507bda6514d163bd57f079bbac22463d4afd0a1dcd8d756941f95c977c",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs": "8d7e282a53d6a904e21fdfaf7d45f87942740ebe7d77e3444704da1714f692ad",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-cache-prefix.mjs": "a151e63653adb7a38c093310ad3be7c167e6170a30776366affd7024990d794b",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.mjs": "42b94cb0d4339d5db4a338e2f62dfad18de7b51abfb5797894115d14f07efd59",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.test.mjs": "d4e125bba3c4c5333a0bea984fc599e780bccb8aa0b4c8ae7d35a4d7c388b473",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-incremental-revision.mjs": "868dd57de9c7ee9510de7b98fd0f98dfdc14eaf5bf70bd7021f77e9fbfaa7066",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-native-evidence.mjs": "8a3dda35f272c1808e7d8512ce1518e75c68502e7d6e5aded15c7421681c4d17",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-native-gateway.mjs": "5915af6fa1c1805663ae2a93391caca5e1c94b3088f3901cdfcba20a64d195e6",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-read-projection.mjs": "4ca97a51c0ebdffc38f86132361a374aa6ca43c61736d686bce6b45dd296c157",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-revision-context.mjs": "9268caaa4aa1a0e1da87e69b139fce49f3a2de67f24a4c6627d566e84ed262ea",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-shape.mjs": "4a8f8de8c4b2236d9d7d3d3694e09b93efb6305f0cece097fbed76d00fc4643b",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/document-activity-failure-diagnostic.mjs": "6112cd3b9829725c290a45ea510fda4bc790775a23e18524e6527c32dd9b0039",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/document-activity-model-contract.mjs": "18f75dca75350dd1649526d2cda69f52bfdee60be1b1c7dc294ee2f18bbcfec7",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/hierarchical-wiki-model-view.mjs": "f4f288853ad3774153b08d3f86f0cc5201d6ffbd45570b395af7c5a838aec825",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs": "9b2f3a53735a56faaa6aa7c266c43e05daabec8178d21f5809df27d6754d778e",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-derived-summary-model.mjs": "af8ad62bdc3e4b9ee6e052c7a94f4768851afcb0e8d28f19c0ec6a42170e9cbb",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-document-activity-model.mjs": "22723067026ee9cf41a1a5ec2e1d698ee92a7c00bcceeeab2f83b19fa7c99de0",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-document-reading-model.mjs": "9d4b3690e5774d18c9829950818196d267f0051ff90e603608def768197a7f32",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-initial-model.mjs": "91d0a02a38a2acc4db69f4c5397e448380bd3378c0474c74134e8c796e6c485e",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-translation-block.mjs": "12a1340155662dbfc6d42fe6e3a9b6f5163e6f36eff4c298b3a16752f76dee7f",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/jobaid-continuation-context.mjs": "842fb0442aa90d9341e869b2f193d683045fa440cf934c6818fcb32d438d582b",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/jobaid-problem-guidance.mjs": "7e45e9a2616c688f2a5393fee048a43c1e7ad27d210db201b83fc40223d1622b",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/jobaid-work-shape.mjs": "3d9fe271a0bed51ca63fe5568061e48053b41b39d37506cbb649591dee9163a9",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/merge-document-activity-source-context.mjs": "f4d87fa418dff3325599c9e15b4d3894a258840989974af2eaf421dfd32e2d36",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor-consumers.test.mjs": "eb43b95fd7bea807325970d685e8b7b03f8e39c7eee67a34d809d97c06916484",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs": "02d4f44236f5b8e659edaa9d88cf1688d7008e5acebe52d0bd3e54b94c34865c",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/native-temporary-review-gateway.mjs": "aaa50ca414ed9ef158051eb3665f479b8ca49fc8c769847dad8e9d8df5d4be88",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/one-shot-outbound-adapter.mjs": "c25151aa2472068b6547e9a36731ae8fdaaaf9d27891dd11fc3bd964f654c630",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/orchestrate-host-mcp.mjs": "fc80ead4e2f5affc5e39f0718e9cfac5da7a70d7643bbb873d2999cbc8b788d7",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/program-assessment-materials.mjs": "2027a8f3dd9e75f4746b9712f5d8b1d720143ed72e8f7e7decf959e6d2078e8d",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/read-matter-recovery-candidate.mjs": "58c154f97074b0da9a66b09e5152400693308acb05676a12d82c6c73794671dc",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/reading-model-context-view.mjs": "6878a09c8ab9c55db8159be7c0f73886cd2bedd7f746fc25f83b57e65ee3f536",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/recover-native-document-activity-result.mjs": "47cdf1d158a28e2a22b5b5e2b51d53a7b7d0a2c4c6882d666839ef9276a52a2e",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/recover-native-matter-response.mjs": "254cae2400726a8cff82e094e0725b10709b60de6836c050190c9cae0e126991",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/recover-sealed-review-checkpoint.mjs": "d61f30f68731ccaff7d8a7e084473ff4dae81f84e7f35561eb2298a17d8615fb",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/request-hosted-gateway.mjs": "63acdf96203bf83e3a0a54f4b4d4a09f1735a0cdd3f52588e0a3eacb3dde7066",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/resolve-document-activity-quote-selection.mjs": "defe1c39cc3b17d603356e3ca26d594433e5a553704e41d1178e64b4ce514f37",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-document-semantic-translation.mjs": "98b38a450624df612e52ae130987da5062050c1d03f614f3581ace36193fb397",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs": "644329c74c8332a906e5830d5f7a0d6c3b39ea8307c8547c4050d0ef3ca114fd",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-jobaid-problem-assessment.mjs": "5dca4a3c251ae78b819ca13665ed48e78dd6263b2b75e6e63043336cfecd46fa",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs": "1b729324e759099e4070f49b5faa2edca326a96f1db6e7b67bbadbee92772cc9",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-semantic-translation.mjs": "64b4afa3db3cb7d9260e452a45c0e0cdab4736f080dd11696d8854c66bf260b3",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/tdms-native-context.mjs": "bdabe9dfe5aae561b7f8a7e240d2fd178570f2d983d5d7f44ca28844b6e28ae2",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/tdms-review-runtime-context.mjs": "4a8b9a8ffc2382edb800edc56bdedf3242813a3c8516a907a6e4c0113976710a",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/tdms-review-saved-context.mjs": "e6d0cb624ef7d949660d3d2a07f2ab42b63fa6992bb9e6241338313facdb8d0f",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/translation-model-view.mjs": "de7ce4a92fd0c306dbffa1cca4ec905931303975c643cb3b7cc128b0666d04c0",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/translation-natural-projection.mjs": "a720649cffd1aec90c03995e76cdfdffd5b264ae73ec749b2c83c208a7eb47fb",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs": "904e96c542f9661c337e91cba0524677ef70a3bc06cf34a41019c3b474749379",
+    "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-review-turn.test.mjs": "be49c887401de46873098b922f16062cd1fe2b13d49ec56c9c77ba484a6e1684",
+    "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/sealed-review-recovery.fixture.mjs": "2f2323f9aed5513062e6e9459949f7373f7a2084cbd47e6cc8de2d0c483b07ba",
+    "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/tdms-review-runtime.fixture.mjs": "e8b592c8aa3cdcc4a9a9ff3231523a9cb9d4ddad3a1c1e73a1d633ab6802d53e",
+    "scripts/run-openclaw-action-attempt-worker.mjs": "957c31fd2eb95bb0a400a364a59cdbbd9913827e13b3d7265aee0027664a2ba4"
+  },
+  "sourceHashesAfter": {
+    "openclaw/codex-evaluator/assessment-session.mjs": "a2704ddbfed8122fda7c7a8431eb2043b28f8f7c3674bdb6453ffcb4541c4215",
+    "openclaw/codex-evaluator/assessment-session.test.mjs": "dcc8c93274a8f90d7fb2a94187ae025f2441b16ec94a291631720aa79931396a",
+    "openclaw/codex-evaluator/check-host-contract.mjs": "5255cc783751537911a3f28090bb9dbcb9d986cd17bf048329a6fd81e9a0b3d9",
+    "openclaw/codex-evaluator/codex-applicability-leaf.test.mjs": "1e79dcbc3dbfdc7ac38f4283ea13ad4cf79da2bacf501c55ebf3f6185663285c",
+    "openclaw/codex-evaluator/codex-assessment.mjs": "923073267edc1b8c9b78cd62462e368f7ab4d21cfdcf517fbb470d5c0265bb0b",
+    "openclaw/codex-evaluator/codex-client-identity.test.mjs": "ff3b1f13e79ccfd574f6845efdada582ddfe426725143537e8afff6589617387",
+    "openclaw/codex-evaluator/codex-generation-recovery.test.mjs": "2f81e6537e33ada90471b2721d84772bcff5a92e5530ccd75ecf9e44e0ca25e6",
+    "openclaw/codex-evaluator/codex-generation.mjs": "fd0d77f118d312292db8580a7f1f153be712029a98e5c0774c7ca8e0bebb31fe",
+    "openclaw/codex-evaluator/codex-generation.test.mjs": "94bb32c0accc7ea4192403f4afae9f892ca36d3920e03a3f05ec48d8a074d95c",
+    "openclaw/codex-evaluator/codex-parent-run-link-test-helper.mjs": "f8f8616bad44be76253408e12feb5ed1946cdd57cbe81ff54d9b944b73a16dfa",
+    "openclaw/codex-evaluator/codex-zero-model-identity.test.mjs": "91978fd2740358cf3915fe75f5c01cda902ab82c33cd699f0eac7f97c3e1bc0a",
+    "openclaw/codex-evaluator/compare-host-interface-packet.mjs": "3442747f5152f286d79aa6f3f48b9b33b68dba76d817dba7d5c6b893f4afe509",
+    "openclaw/codex-evaluator/contracts/host-input-examples.json": "c92372de83645ded13e5dece2c4f3bbf17dd602f743ba57f16b2b9c5cd08de2f",
+    "openclaw/codex-evaluator/contracts/host-packet-comparison.json": "26678739f6948c62717589fe43747bbb0bc2d7ffce971991c9c7c5d19b03365d",
+    "openclaw/codex-evaluator/contracts/host-source-interface.json": "45dfe91e77f3bca36855e68f1949a72bcd5cace32618690c91e62dfde3809e2c",
+    "openclaw/codex-evaluator/contracts/host-zod-validation-cases.json": "72b06a7a57d951ff89184741d676927695adfa3cfc165ccab522fe8626d7d658",
+    "openclaw/codex-evaluator/contracts/program-recovery-example.json": "fd1834390f8e44b51e3cc0d4e9db434f607731b82a4a336249c59b9d345745e2",
+    "openclaw/codex-evaluator/contracts/runtime-configuration-status.json": "3c83244365b882c61b4f31a9c3b6346a85eea8519e2b3282949301fc6cbd1e7e",
+    "openclaw/codex-evaluator/export-host-contract.mjs": "8d21445ff2229058a6d5f400ea2d090193bf5ff63471cfdce3ecd30ed06f4fbe",
+    "openclaw/codex-evaluator/export-program-recovery-example.mjs": "baa6595c624104de59b671cebf1def43804f1493993733d30565f70f1423c555",
+    "openclaw/codex-evaluator/host-contract-artifact.test.mjs": "27e22fe049dc48d058aaa4188fd35430344172fdb32284f6c6d12b193ac83acc",
+    "openclaw/codex-evaluator/host-packet-comparison.test.mjs": "22e5fae140cf24f1bfdc887c82b987461705f4cb3c1b4655f16b77c45235116d",
+    "openclaw/codex-evaluator/mcp_stdio.py": "6db5990addeb3ccb08ec8238c6fcfd1d9ca6af0b5699d9223071e9032489fa32",
+    "openclaw/codex-evaluator/miaoda_responses_bridge.py": "52e9b093ba293bab7479a3b1105d4db750605b49143054ec5a5133111ba3a632",
+    "openclaw/codex-evaluator/preflight.mjs": "99a314f85113592a7ea513239a1779906b8e8cadda4d6437d01861f4748ad7d5",
+    "openclaw/codex-evaluator/preflight.test.mjs": "4ae94f6d4103d019ca1cd04cce504b5efb9b543d20ae2c0681896a0903726cdf",
+    "openclaw/codex-evaluator/probe-host-mcp.mjs": "863a4d9a946223fc0d69d4183fedc6277bd8c7eba62d364b0526ac945da19371",
+    "openclaw/codex-evaluator/program-finish-recovery.test.mjs": "cfb3704b97682ab96e9c1f24f87dd5a0814b79c805d724b72b50f92ec8c652d3",
+    "openclaw/codex-evaluator/program-recovery-fixture.mjs": "2bc11e4c2dc6a43b78550b385cc0d093de86aaf3e02b87f30c21a2b0deb09697",
+    "openclaw/codex-evaluator/program-recovery.test.mjs": "1e331b15b2a747257da89376fdb230526c15b45df4e370b1aaa54f1c3fd47823",
+    "openclaw/codex-evaluator/review-wiki-recovery-fixture.mjs": "66de7101f85b2998d2723d4b2dc33b799951861d99919a352589ef7d253eaaf3",
+    "openclaw/codex-evaluator/review-wiki-recovery.test.mjs": "e35f6ddb4f8b39959858f84461be8c3c31f34ac5848af273f49620e9f2829fa4",
+    "openclaw/codex-evaluator/run-consumer-fixture.mjs": "606bb04caf3bfd843fe313e2f873ca4354bffe3d28ae5ac2934e8c1297611166",
+    "openclaw/codex-evaluator/run-fixture.mjs": "65a828f984b3199f53f533c898d2eb516453a2492f927a724fee3e52009d4538",
+    "openclaw/codex-evaluator/run-wiki-fixture.mjs": "ab9e686e6ef875c56c23e1d677e67ced4e424ef9f29af6ede45fc09fe65fc3a9",
+    "openclaw/codex-evaluator/run_codex.py": "45d79f50f95dd778d79aa5f9a8bf3f429300b30fd25b3f95adc6153268df0686",
+    "openclaw/codex-evaluator/run_codex_generation.py": "4596a24630cfbdf96006aed8f06aa26d2c534111313b0890e3b00c3a912682ef",
+    "openclaw/codex-evaluator/test_miaoda_responses_bridge.py": "bbb7d18c4b16f9fe57fe0817edf5082573341e165caee152d66516e64570b04a",
+    "openclaw/codex-evaluator/test_run_codex_generation_recovery.py": "039923fb934b8109000671224d52e5b0b264c7b529ff152590f5044d0f1888b2",
+    "openclaw/codex-evaluator/translation-reading-document-fixture.mjs": "0308fe08b1b1819af0fdf504b84821d91a43df2e3c8b7b9ec9c551fe4c667d15",
+    "openclaw/codex-evaluator/translation-reading-recovery-fixture.mjs": "9eaa87e9e04c010798edcd704f2ee6c05291444266f854f71ddf8cdcf92e516d",
+    "openclaw/codex-evaluator/translation-reading-recovery.test.mjs": "f7c6998c5e8c13ca4b4c634e7d7c472fb58dee02176f753717abd84bc9f81fe2",
+    "openclaw/codex-evaluator/translation-reading-workitem-fixture.mjs": "d8ad9cc6f9c61ea7881f363c1347cb9188729a9db7f3368694982e8d9e3a4349",
+    "openclaw/codex-evaluator/wiki-matter-recovery-fixture.mjs": "691172c11fc6154cc93fcbd46ac3b1c19a2911d848bac882c7e692fb79997b14",
+    "openclaw/codex-evaluator/wiki-matter-recovery.test.mjs": "2b12695ee81333f80ba892aae6c8e2a458fda500938de70750a741fb396bd417",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/activity-model-evidence-view.mjs": "8cd43a2552c4d854e086fdc364a637c47f8ee70a749b5831a4d4acd81c88597c",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/cancelled-claim-parking.mjs": "1fd000d487a77cf062d04100a87590b5a693d486fdec0889b363e227a748b31c",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hierarchical-wiki-queue.mjs": "0a1896895ad5023df8e0eacbaaa2938f660138da77177ebf8002c7c937c89fef",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-derived-summary.mjs": "8e41fb80f590b97849c945858361e0da9ea81f4629246e7d64f7b49612d9c027",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-document-activity.mjs": "5c1cef5ccc6125f793bd16a3b4f972dba5505fdb8e4d20bb3e87c5328535b5c8",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-document-reading.mjs": "a7449daeb9d342526d48c62bb7360d4c34769a8c10f9a030a2475b377fd6a235",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-matter.mjs": "8bc56b83e4ec2acb77ef0895e136b3b2b4a5068e75b9c024456896ff4bfbada3",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-review-turn.mjs": "4547ba507bda6514d163bd57f079bbac22463d4afd0a1dcd8d756941f95c977c",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs": "8d7e282a53d6a904e21fdfaf7d45f87942740ebe7d77e3444704da1714f692ad",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-cache-prefix.mjs": "a151e63653adb7a38c093310ad3be7c167e6170a30776366affd7024990d794b",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.mjs": "42b94cb0d4339d5db4a338e2f62dfad18de7b51abfb5797894115d14f07efd59",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.test.mjs": "d4e125bba3c4c5333a0bea984fc599e780bccb8aa0b4c8ae7d35a4d7c388b473",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-incremental-revision.mjs": "868dd57de9c7ee9510de7b98fd0f98dfdc14eaf5bf70bd7021f77e9fbfaa7066",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-native-evidence.mjs": "8a3dda35f272c1808e7d8512ce1518e75c68502e7d6e5aded15c7421681c4d17",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-native-gateway.mjs": "5915af6fa1c1805663ae2a93391caca5e1c94b3088f3901cdfcba20a64d195e6",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-read-projection.mjs": "4ca97a51c0ebdffc38f86132361a374aa6ca43c61736d686bce6b45dd296c157",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-revision-context.mjs": "9268caaa4aa1a0e1da87e69b139fce49f3a2de67f24a4c6627d566e84ed262ea",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-shape.mjs": "4a8f8de8c4b2236d9d7d3d3694e09b93efb6305f0cece097fbed76d00fc4643b",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/document-activity-failure-diagnostic.mjs": "6112cd3b9829725c290a45ea510fda4bc790775a23e18524e6527c32dd9b0039",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/document-activity-model-contract.mjs": "18f75dca75350dd1649526d2cda69f52bfdee60be1b1c7dc294ee2f18bbcfec7",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/hierarchical-wiki-model-view.mjs": "f4f288853ad3774153b08d3f86f0cc5201d6ffbd45570b395af7c5a838aec825",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs": "9b2f3a53735a56faaa6aa7c266c43e05daabec8178d21f5809df27d6754d778e",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-derived-summary-model.mjs": "af8ad62bdc3e4b9ee6e052c7a94f4768851afcb0e8d28f19c0ec6a42170e9cbb",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-document-activity-model.mjs": "22723067026ee9cf41a1a5ec2e1d698ee92a7c00bcceeeab2f83b19fa7c99de0",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-document-reading-model.mjs": "9d4b3690e5774d18c9829950818196d267f0051ff90e603608def768197a7f32",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-initial-model.mjs": "91d0a02a38a2acc4db69f4c5397e448380bd3378c0474c74134e8c796e6c485e",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-translation-block.mjs": "12a1340155662dbfc6d42fe6e3a9b6f5163e6f36eff4c298b3a16752f76dee7f",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/jobaid-continuation-context.mjs": "842fb0442aa90d9341e869b2f193d683045fa440cf934c6818fcb32d438d582b",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/jobaid-problem-guidance.mjs": "7e45e9a2616c688f2a5393fee048a43c1e7ad27d210db201b83fc40223d1622b",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/jobaid-work-shape.mjs": "3d9fe271a0bed51ca63fe5568061e48053b41b39d37506cbb649591dee9163a9",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/merge-document-activity-source-context.mjs": "f4d87fa418dff3325599c9e15b4d3894a258840989974af2eaf421dfd32e2d36",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor-consumers.test.mjs": "eb43b95fd7bea807325970d685e8b7b03f8e39c7eee67a34d809d97c06916484",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs": "02d4f44236f5b8e659edaa9d88cf1688d7008e5acebe52d0bd3e54b94c34865c",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/native-temporary-review-gateway.mjs": "aaa50ca414ed9ef158051eb3665f479b8ca49fc8c769847dad8e9d8df5d4be88",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/one-shot-outbound-adapter.mjs": "c25151aa2472068b6547e9a36731ae8fdaaaf9d27891dd11fc3bd964f654c630",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/orchestrate-host-mcp.mjs": "fc80ead4e2f5affc5e39f0718e9cfac5da7a70d7643bbb873d2999cbc8b788d7",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/program-assessment-materials.mjs": "2027a8f3dd9e75f4746b9712f5d8b1d720143ed72e8f7e7decf959e6d2078e8d",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/read-matter-recovery-candidate.mjs": "58c154f97074b0da9a66b09e5152400693308acb05676a12d82c6c73794671dc",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/reading-model-context-view.mjs": "6878a09c8ab9c55db8159be7c0f73886cd2bedd7f746fc25f83b57e65ee3f536",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/recover-native-document-activity-result.mjs": "47cdf1d158a28e2a22b5b5e2b51d53a7b7d0a2c4c6882d666839ef9276a52a2e",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/recover-native-matter-response.mjs": "254cae2400726a8cff82e094e0725b10709b60de6836c050190c9cae0e126991",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/recover-sealed-review-checkpoint.mjs": "d61f30f68731ccaff7d8a7e084473ff4dae81f84e7f35561eb2298a17d8615fb",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/request-hosted-gateway.mjs": "63acdf96203bf83e3a0a54f4b4d4a09f1735a0cdd3f52588e0a3eacb3dde7066",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/resolve-document-activity-quote-selection.mjs": "defe1c39cc3b17d603356e3ca26d594433e5a553704e41d1178e64b4ce514f37",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-document-semantic-translation.mjs": "98b38a450624df612e52ae130987da5062050c1d03f614f3581ace36193fb397",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs": "644329c74c8332a906e5830d5f7a0d6c3b39ea8307c8547c4050d0ef3ca114fd",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-jobaid-problem-assessment.mjs": "5dca4a3c251ae78b819ca13665ed48e78dd6263b2b75e6e63043336cfecd46fa",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs": "1b729324e759099e4070f49b5faa2edca326a96f1db6e7b67bbadbee92772cc9",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/run-semantic-translation.mjs": "64b4afa3db3cb7d9260e452a45c0e0cdab4736f080dd11696d8854c66bf260b3",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/tdms-native-context.mjs": "bdabe9dfe5aae561b7f8a7e240d2fd178570f2d983d5d7f44ca28844b6e28ae2",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/tdms-review-runtime-context.mjs": "4a8b9a8ffc2382edb800edc56bdedf3242813a3c8516a907a6e4c0113976710a",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/tdms-review-saved-context.mjs": "e6d0cb624ef7d949660d3d2a07f2ab42b63fa6992bb9e6241338313facdb8d0f",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/translation-model-view.mjs": "de7ce4a92fd0c306dbffa1cca4ec905931303975c643cb3b7cc128b0666d04c0",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/translation-natural-projection.mjs": "a720649cffd1aec90c03995e76cdfdffd5b264ae73ec749b2c83c208a7eb47fb",
+    "openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs": "904e96c542f9661c337e91cba0524677ef70a3bc06cf34a41019c3b474749379",
+    "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-review-turn.test.mjs": "be49c887401de46873098b922f16062cd1fe2b13d49ec56c9c77ba484a6e1684",
+    "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/sealed-review-recovery.fixture.mjs": "2f2323f9aed5513062e6e9459949f7373f7a2084cbd47e6cc8de2d0c483b07ba",
+    "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/tdms-review-runtime.fixture.mjs": "e8b592c8aa3cdcc4a9a9ff3231523a9cb9d4ddad3a1c1e73a1d633ab6802d53e",
+    "scripts/run-openclaw-action-attempt-worker.mjs": "957c31fd2eb95bb0a400a364a59cdbbd9913827e13b3d7265aee0027664a2ba4"
+  },
+  "sourceHashesStableDuringRun": true,
+  "changedSourcesDuringRun": [],
+  "evidenceDocsExcludedFromSourceHashScope": [
+    "/workspace/scratch/b5a75900fbaa/wiselink-codex-host-alignment/openclaw/codex-evaluator/consumer-recovery-validation-results.json"
+  ],
+  "tests": [
+    {
+      "index": 1,
+      "name": "codex_generation",
+      "command": "node openclaw/codex-evaluator/codex-generation.test.mjs",
+      "exitCode": 0,
+      "testCount": 2,
+      "passedTests": 2,
+      "failedTests": 0,
+      "durationSeconds": 0.216,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ gateway converts one structured final candidate and never forwards headers (106.746635ms)\n✔ gateway rejects noncontract route and request shape before dispatch (56.832264ms)\nℹ tests 2\nℹ suites 0\nℹ pass 2\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 168.056843\n",
+      "stderr": "",
+      "output": "✔ gateway converts one structured final candidate and never forwards headers (102.780129ms)\n✔ gateway rejects noncontract route and request shape before dispatch (58.513474ms)\nℹ tests 2\nℹ suites 0\nℹ pass 2\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 165.849204\n"
+    },
+    {
+      "index": 2,
+      "name": "codex_generation_recovery",
+      "command": "node openclaw/codex-evaluator/codex-generation-recovery.test.mjs",
+      "exitCode": 0,
+      "testCount": 11,
+      "passedTests": 11,
+      "failedTests": 0,
+      "durationSeconds": 1.357,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ restart after runner receipt and before caller checkpoint returns exact stable response once (132.451122ms)\n✔ prelaunch parent checkpoint can name the private prompt directory without dispatch (10.009603ms)\n✔ failed parent checkpoint publication blocks runner launch (7.146197ms)\n✔ creates nested runRoot parent chain before making its exclusive recovery claim (41.335158ms)\n✔ an existing live runner is joined without a second dispatch (249.578323ms)\n✔ killed parent with a live runner resumes its completed receipt without redispatch (295.65037ms)\n✔ aborting a recovery wait leaves the active runner available for a later retry (160.492641ms)\n✔ missing claim, dead runner and mismatched or malformed receipts never dispatch (102.960936ms)\n✔ a changed original upstream response fails the recovery receipt hash (97.820096ms)\n✔ a changed final upstream request fails the recovery receipt hash (107.432806ms)\n✔ changed or exposed private prompt is rejected before parent linkage and never redispatched (106.138169ms)\nℹ tests 11\nℹ suites 0\nℹ pass 11\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 1317.154493\n",
+      "stderr": "",
+      "output": "✔ restart after runner receipt and before caller checkpoint returns exact stable response once (140.637286ms)\n✔ prelaunch parent checkpoint can name the private prompt directory without dispatch (12.589856ms)\n✔ failed parent checkpoint publication blocks runner launch (8.874126ms)\n✔ creates nested runRoot parent chain before making its exclusive recovery claim (45.132268ms)\n✔ an existing live runner is joined without a second dispatch (248.03309ms)\n✔ killed parent with a live runner resumes its completed receipt without redispatch (293.966828ms)\n✔ aborting a recovery wait leaves the active runner available for a later retry (160.529934ms)\n✔ missing claim, dead runner and mismatched or malformed receipts never dispatch (98.187452ms)\n✔ a changed original upstream response fails the recovery receipt hash (102.230183ms)\n✔ a changed final upstream request fails the recovery receipt hash (98.599972ms)\n✔ changed or exposed private prompt is rejected before parent linkage and never redispatched (94.924385ms)\nℹ tests 11\nℹ suites 0\nℹ pass 11\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 1310.226758\n"
+    },
+    {
+      "index": 3,
+      "name": "program_recovery",
+      "command": "node openclaw/codex-evaluator/program-recovery.test.mjs",
+      "exitCode": 0,
+      "testCount": 10,
+      "passedTests": 10,
+      "failedTests": 0,
+      "durationSeconds": 2.911,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ complete model response survives parent death before SAVE and a new process saves without generation (709.886984ms)\n✔ lost SAVE ACK across process death queries the original request and never sends a duplicate SAVE (237.743209ms)\n✔ an in-process lost SAVE ACK is resolved by independent READ using the unchanged key (139.83502ms)\n✔ restart after independent READ retains the original observation and tolerates refreshed packet metadata (238.191447ms)\n✔ a dispatch marker without a durable model receipt never causes fresh inference on restart (190.28115ms)\n✔ Program assessment durably links its real prepared Codex run before launch and rejects a changed parent link (317.93677ms)\n✔ query failure, foreign identity, changed authored body and changed save payload cannot finish (924.220095ms)\n✔ checkpoint publication survives orphan temporaries, preserves no-clobber and private permissions (8.03898ms)\n✔ only the new Codex program marker enters receipt-only recovery and a fresh Host lease remains required (1.228258ms)\n✔ CODEX endpoint/config selection rejects the old binding before loading SDK or using credentials (0.927655ms)\nℹ tests 10\nℹ suites 0\nℹ pass 10\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 2774.05603\n",
+      "stderr": "",
+      "output": "✔ complete model response survives parent death before SAVE and a new process saves without generation (696.035645ms)\n✔ lost SAVE ACK across process death queries the original request and never sends a duplicate SAVE (244.967927ms)\n✔ an in-process lost SAVE ACK is resolved by independent READ using the unchanged key (135.222792ms)\n✔ restart after independent READ retains the original observation and tolerates refreshed packet metadata (251.094722ms)\n✔ a dispatch marker without a durable model receipt never causes fresh inference on restart (210.766679ms)\n✔ Program assessment durably links its real prepared Codex run before launch and rejects a changed parent link (316.769026ms)\n✔ query failure, foreign identity, changed authored body and changed save payload cannot finish (948.667388ms)\n✔ checkpoint publication survives orphan temporaries, preserves no-clobber and private permissions (8.459844ms)\n✔ only the new Codex program marker enters receipt-only recovery and a fresh Host lease remains required (1.252123ms)\n✔ CODEX endpoint/config selection rejects the old binding before loading SDK or using credentials (1.014246ms)\nℹ tests 10\nℹ suites 0\nℹ pass 10\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 2821.04514\n"
+    },
+    {
+      "index": 4,
+      "name": "program_finish_recovery",
+      "command": "node openclaw/codex-evaluator/program-finish-recovery.test.mjs",
+      "exitCode": 0,
+      "testCount": 16,
+      "passedTests": 16,
+      "failedTests": 0,
+      "durationSeconds": 0.126,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ normal program commit requires matching nested Overall status readback (5.229865ms)\n✔ lost commit ACK reads same-hash SUCCEEDED and nested Overall without model or commit replay (0.892412ms)\n✔ lost ACK with absent Overall fails rather than treating SUCCEEDED as projection (0.886464ms)\n✔ lost ACK with wrong Overall work revision fails (0.474484ms)\n✔ malformed received ACK is not masked by later attempt status (0.563678ms)\n✔ received commit ACK with unrelated SAVE request ID fails despite same work revision (0.45183ms)\n✔ lost ACK with wrong result content hash is outcome unknown and does not read Overall (0.596246ms)\n✔ status readback rejects wrong entry identity even with matching nested Overall (0.17283ms)\n✔ status validator rejects an unrelated SAVE request ID from the same revision (0.503377ms)\n✔ precommit latest-work read rejects a revision from another attempt before committing (0.328945ms)\n✔ precommit latest-work read rejects a different work revision before committing (0.388814ms)\n✔ COMMITTING replay binds saved request and revision, then verifies nested projection without model or SAVE (1.056258ms)\n✔ COMMITTING refuses a keyed READ that changes the SAVE identity or full revision (2.136232ms)\n✔ COMMITTING refuses a latest work revision from another attempt before exact READ (0.484999ms)\n✔ COMMITTING refuses a RUNNING work readback before exact READ or replay (0.566442ms)\n✔ COMMITTING replay refuses projection from an unrelated SAVE request (0.552461ms)\nℹ tests 16\nℹ suites 0\nℹ pass 16\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 21.539793\n",
+      "stderr": "",
+      "output": "✔ normal program commit requires matching nested Overall status readback (5.378279ms)\n✔ lost commit ACK reads same-hash SUCCEEDED and nested Overall without model or commit replay (1.427517ms)\n✔ lost ACK with absent Overall fails rather than treating SUCCEEDED as projection (0.911571ms)\n✔ lost ACK with wrong Overall work revision fails (0.555265ms)\n✔ malformed received ACK is not masked by later attempt status (0.464949ms)\n✔ received commit ACK with unrelated SAVE request ID fails despite same work revision (0.987415ms)\n✔ lost ACK with wrong result content hash is outcome unknown and does not read Overall (1.151131ms)\n✔ status readback rejects wrong entry identity even with matching nested Overall (0.208223ms)\n✔ status validator rejects an unrelated SAVE request ID from the same revision (0.519521ms)\n✔ precommit latest-work read rejects a revision from another attempt before committing (0.401133ms)\n✔ precommit latest-work read rejects a different work revision before committing (0.702797ms)\n✔ COMMITTING replay binds saved request and revision, then verifies nested projection without model or SAVE (1.268468ms)\n✔ COMMITTING refuses a keyed READ that changes the SAVE identity or full revision (3.32521ms)\n✔ COMMITTING refuses a latest work revision from another attempt before exact READ (0.837119ms)\n✔ COMMITTING refuses a RUNNING work readback before exact READ or replay (0.542496ms)\n✔ COMMITTING replay refuses projection from an unrelated SAVE request (1.699216ms)\nℹ tests 16\nℹ suites 0\nℹ pass 16\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 31.202658\n"
+    },
+    {
+      "index": 5,
+      "name": "preflight",
+      "command": "node openclaw/codex-evaluator/preflight.test.mjs",
+      "exitCode": 0,
+      "testCount": 5,
+      "passedTests": 5,
+      "failedTests": 0,
+      "durationSeconds": 0.112,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ old Host key is reported as legacy only and cannot make Codex ready (5.97163ms)\n✔ named Codex config with legacy or unsafe endpoint stays locally invalid (7.770837ms)\n✔ valid Codex config inventories full client tool list and never reveals headers or secret paths (2.238026ms)\n✔ Codex app selection requires the exact configured runtime app (3.637781ms)\n✔ incomplete named Codex tool filter reports the missing full metadata surface (1.355438ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 25.991428\n",
+      "stderr": "",
+      "output": "✔ old Host key is reported as legacy only and cannot make Codex ready (5.496537ms)\n✔ named Codex config with legacy or unsafe endpoint stays locally invalid (7.330716ms)\n✔ valid Codex config inventories full client tool list and never reveals headers or secret paths (2.194911ms)\n✔ Codex app selection requires the exact configured runtime app (3.221966ms)\n✔ incomplete named Codex tool filter reports the missing full metadata surface (1.436611ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 24.761841\n"
+    },
+    {
+      "index": 6,
+      "name": "assessment_session",
+      "command": "node openclaw/codex-evaluator/assessment-session.test.mjs",
+      "exitCode": 0,
+      "testCount": 10,
+      "passedTests": 10,
+      "failedTests": 0,
+      "durationSeconds": 0.056,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ one tool exposes detailed workJson guidance without Host control fields (1.599906ms)\n✔ exact source reads preserve full Host receipt and invalid refs never reach Host (0.566342ms)\n✔ save uses Host materialization, independent exact-request read, and blocks premature finish (1.378554ms)\n✔ uncertain save only reads the same key until it is visible; no second save (0.424008ms)\n✔ known Host validation rejection permits corrected work without claiming a save (0.51189ms)\n✔ an in-progress materialized revision cannot finish (0.233341ms)\n✔ wrong readback binding cannot complete save (3.605563ms)\n✔ Overall requires exact prior completed revision, CURRENT overview and consistency check (0.339941ms)\n✔ conflicting overview fields never satisfy Overall CURRENT (0.390998ms)\n✔ READ_WORK is pinned and returns only selected full Host issue (0.626062ms)\nℹ tests 10\nℹ suites 0\nℹ pass 10\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 16.236628\n",
+      "stderr": "",
+      "output": "✔ one tool exposes detailed workJson guidance without Host control fields (1.747819ms)\n✔ exact source reads preserve full Host receipt and invalid refs never reach Host (0.603468ms)\n✔ save uses Host materialization, independent exact-request read, and blocks premature finish (1.319214ms)\n✔ uncertain save only reads the same key until it is visible; no second save (0.434955ms)\n✔ known Host validation rejection permits corrected work without claiming a save (0.543888ms)\n✔ an in-progress materialized revision cannot finish (0.234853ms)\n✔ wrong readback binding cannot complete save (0.402996ms)\n✔ Overall requires exact prior completed revision, CURRENT overview and consistency check (0.3125ms)\n✔ conflicting overview fields never satisfy Overall CURRENT (0.3125ms)\n✔ READ_WORK is pinned and returns only selected full Host issue (0.630368ms)\nℹ tests 10\nℹ suites 0\nℹ pass 10\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 13.906865\n"
+    },
+    {
+      "index": 7,
+      "name": "model_executor_consumers",
+      "command": "node openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor-consumers.test.mjs",
+      "exitCode": 0,
+      "testCount": 4,
+      "passedTests": 4,
+      "failedTests": 0,
+      "durationSeconds": 0.102,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ reading driver uses explicit Codex request without Hosted URL or credential (3.76376ms)\n✔ Codex runtime requires an explicit executable, config and run root (3.277789ms)\n✔ reading refuses a selected non-GLM route before any model request (0.488685ms)\n✔ Codex Review refuses a legacy sealed COMMITTING checkpoint before any Host call (8.808617ms)\nℹ tests 4\nℹ suites 0\nℹ pass 4\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 20.151286\n",
+      "stderr": "",
+      "output": "✔ reading driver uses explicit Codex request without Hosted URL or credential (3.699634ms)\n✔ Codex runtime requires an explicit executable, config and run root (3.491011ms)\n✔ reading refuses a selected non-GLM route before any model request (0.396446ms)\n✔ Codex Review refuses a legacy sealed COMMITTING checkpoint before any Host call (10.084567ms)\nℹ tests 4\nℹ suites 0\nℹ pass 4\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 21.769651\n"
+    },
+    {
+      "index": 8,
+      "name": "derived_summary_codex_gateway",
+      "command": "node openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.test.mjs",
+      "exitCode": 0,
+      "testCount": 10,
+      "passedTests": 10,
+      "failedTests": 0,
+      "durationSeconds": 0.118,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ Codex summary session records each actual completed process and no native receipt (2.682895ms)\n✔ an unknown Codex producer outcome cannot become a closed receipt (0.608145ms)\n✔ a completed process with an unexpected upstream model remains pinned (0.344458ms)\n✔ summary model retains Host read and SAVE_SUMMARY program with fake Codex steps (6.269589ms)\n✔ Wiki releases exact matter pointer only after completed Codex receipt (1.471112ms)\n✔ Wiki pins exact matter pointer when Codex callback is missing (1.311081ms)\n✔ Wiki rejects executor switch on an unresolved Codex pointer (0.506502ms)\n✔ Wiki rejects Codex takeover of a legacy markerless Hosted pointer (0.177928ms)\n✔ Wiki Matter Codex binding rejects an existing Hosted COMMITTING checkpoint before recovery (0.9576ms)\n✔ native receipt still uses its original closure contract (0.499301ms)\nℹ tests 10\nℹ suites 0\nℹ pass 10\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 20.641783\n",
+      "stderr": "",
+      "output": "✔ Codex summary session records each actual completed process and no native receipt (2.829926ms)\n✔ an unknown Codex producer outcome cannot become a closed receipt (0.628545ms)\n✔ a completed process with an unexpected upstream model remains pinned (0.347963ms)\n✔ summary model retains Host read and SAVE_SUMMARY program with fake Codex steps (6.472614ms)\n✔ Wiki releases exact matter pointer only after completed Codex receipt (1.548759ms)\n✔ Wiki pins exact matter pointer when Codex callback is missing (1.095467ms)\n✔ Wiki rejects executor switch on an unresolved Codex pointer (0.551009ms)\n✔ Wiki rejects Codex takeover of a legacy markerless Hosted pointer (0.176775ms)\n✔ Wiki Matter Codex binding rejects an existing Hosted COMMITTING checkpoint before recovery (1.081938ms)\n✔ native receipt still uses its original closure contract (0.44487ms)\nℹ tests 10\nℹ suites 0\nℹ pass 10\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 21.240626\n"
+    },
+    {
+      "index": 9,
+      "name": "python_recovery",
+      "command": "python3 -m unittest discover -s openclaw/codex-evaluator -p 'test_*recovery.py'",
+      "exitCode": 0,
+      "testCount": 3,
+      "passedTests": 3,
+      "failedTests": 0,
+      "durationSeconds": 0.316,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "",
+      "stderr": "...\n----------------------------------------------------------------------\nRan 3 tests in 0.202s\n\nOK\n",
+      "output": "...\n----------------------------------------------------------------------\nRan 3 tests in 0.226s\n\nOK\n"
+    },
+    {
+      "index": 10,
+      "name": "miaoda_responses_bridge",
+      "command": "python3 -m unittest discover -s openclaw/codex-evaluator -p 'test_miaoda_responses_bridge.py'",
+      "exitCode": 0,
+      "testCount": 9,
+      "passedTests": 9,
+      "failedTests": 0,
+      "durationSeconds": 0.112,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "",
+      "stderr": ".........\n----------------------------------------------------------------------\nRan 9 tests in 0.010s\n\nOK\n",
+      "output": ".........\n----------------------------------------------------------------------\nRan 9 tests in 0.010s\n\nOK\n"
+    },
+    {
+      "index": 11,
+      "name": "translation_reading_recovery",
+      "command": "node openclaw/codex-evaluator/translation-reading-recovery.test.mjs",
+      "exitCode": 0,
+      "testCount": 31,
+      "passedTests": 31,
+      "failedTests": 0,
+      "durationSeconds": 8.871,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ reading recovers after-gateway-receipt without another model or business save (327.749772ms)\n✔ reading recovers after-model-result without another model or business save (319.516671ms)\n✔ reading recovers after-host-save without another model or business save (349.524378ms)\n✔ reading with an uncertain unsent SAVE queries Host and remains pending without a duplicate (238.595924ms)\n✔ reading refuses a changed version binding before any new model or save (227.809208ms)\n✔ reading started without a completion receipt stays UNKNOWN after restart (208.065031ms)\n✔ document translation synthetic-authorized-same-fence recovers after-gateway-receipt locally (290.429734ms)\n✔ document translation synthetic-authorized-same-fence recovers after-model-result locally (254.724343ms)\n✔ document translation synthetic-authorized-same-fence recovers after-host-save locally (254.739461ms)\n✔ document translation with uncertain unsent write reads Host and keeps exact generation pending (248.173658ms)\n✔ document translation synthetic-authorized-same-fence without receipt stays UNKNOWN (201.201644ms)\n✔ document translation synthetic-authorized-same-fence rejects a different generation binding (234.763365ms)\n✔ document translation renewed lease cannot rebind the registered generation (219.534914ms)\n✔ document translation default Host CLAIM blocks registered generation after a new process (212.708068ms)\n✔ document translation Codex receipt survives reordered equivalent Host JSON (260.704868ms)\n✔ WorkItem translation reclaims the same Host lease and recovers one model receipt (360.024468ms)\n✔ WorkItem translation renewed Host lease refuses old generation before inference or save (293.187316ms)\n✔ WorkItem translation lost SAVE ACK after process exit queries the original generation (336.78515ms)\n✔ WorkItem translation uncertain unsent SAVE remains pending on original registered generation (331.271493ms)\n✔ WorkItem translation resumes its second batch without replaying the first (424.269667ms)\n✔ WorkItem commit-started crash reuses the exact sealed Result after Host RUNNING readback (380.503679ms)\n✔ WorkItem lost commit ACK confirms original sealed Result without a second commit (243.743736ms)\n✔ WorkItem refuses exact commit replay without complete unprepared proof: unsafe-commit-started (369.529266ms)\n✔ WorkItem refuses exact commit replay without complete unprepared proof: unsafe-commit-projected (368.554496ms)\n✔ WorkItem refuses exact commit replay without complete unprepared proof: unsafe-commit-recoverable (377.658346ms)\n✔ WorkItem refuses exact commit replay without complete unprepared proof: unsafe-commit-missing (375.641978ms)\n✔ WorkItem SAVE ACK readback refuses lose-save-ack-failed as success (211.95476ms)\n✔ WorkItem SAVE ACK readback refuses lose-save-ack-superseded as success (214.749677ms)\n✔ reading parent checkpoint links its exact prepared private run before launch and stays UNKNOWN on restart (201.111562ms)\n✔ WorkItem translation parent link stays scoped to its exact generation request before launch (289.901077ms)\n✔ document translation parent link survives prelaunch interruption under its synthetic same fence (224.980353ms)\nℹ tests 31\nℹ suites 0\nℹ pass 31\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 8864.745999\n",
+      "stderr": "",
+      "output": "✔ reading recovers after-gateway-receipt without another model or business save (334.23268ms)\n✔ reading recovers after-model-result without another model or business save (309.549337ms)\n✔ reading recovers after-host-save without another model or business save (326.328152ms)\n✔ reading with an uncertain unsent SAVE queries Host and remains pending without a duplicate (234.53749ms)\n✔ reading refuses a changed version binding before any new model or save (233.145877ms)\n✔ reading started without a completion receipt stays UNKNOWN after restart (206.216611ms)\n✔ document translation synthetic-authorized-same-fence recovers after-gateway-receipt locally (283.275876ms)\n✔ document translation synthetic-authorized-same-fence recovers after-model-result locally (257.767989ms)\n✔ document translation synthetic-authorized-same-fence recovers after-host-save locally (267.070024ms)\n✔ document translation with uncertain unsent write reads Host and keeps exact generation pending (252.3599ms)\n✔ document translation synthetic-authorized-same-fence without receipt stays UNKNOWN (202.280773ms)\n✔ document translation synthetic-authorized-same-fence rejects a different generation binding (238.984553ms)\n✔ document translation renewed lease cannot rebind the registered generation (242.509547ms)\n✔ document translation default Host CLAIM blocks registered generation after a new process (223.119253ms)\n✔ document translation Codex receipt survives reordered equivalent Host JSON (283.818533ms)\n✔ WorkItem translation reclaims the same Host lease and recovers one model receipt (362.444533ms)\n✔ WorkItem translation renewed Host lease refuses old generation before inference or save (293.981939ms)\n✔ WorkItem translation lost SAVE ACK after process exit queries the original generation (341.885153ms)\n✔ WorkItem translation uncertain unsent SAVE remains pending on original registered generation (317.702003ms)\n✔ WorkItem translation resumes its second batch without replaying the first (426.068301ms)\n✔ WorkItem commit-started crash reuses the exact sealed Result after Host RUNNING readback (378.376826ms)\n✔ WorkItem lost commit ACK confirms original sealed Result without a second commit (227.826573ms)\n✔ WorkItem refuses exact commit replay without complete unprepared proof: unsafe-commit-started (360.621752ms)\n✔ WorkItem refuses exact commit replay without complete unprepared proof: unsafe-commit-projected (351.407374ms)\n✔ WorkItem refuses exact commit replay without complete unprepared proof: unsafe-commit-recoverable (359.120834ms)\n✔ WorkItem refuses exact commit replay without complete unprepared proof: unsafe-commit-missing (364.770522ms)\n✔ WorkItem SAVE ACK readback refuses lose-save-ack-failed as success (217.933314ms)\n✔ WorkItem SAVE ACK readback refuses lose-save-ack-superseded as success (202.526362ms)\n✔ reading parent checkpoint links its exact prepared private run before launch and stays UNKNOWN on restart (216.230017ms)\n✔ WorkItem translation parent link stays scoped to its exact generation request before launch (284.763163ms)\n✔ document translation parent link survives prelaunch interruption under its synthetic same fence (209.036088ms)\nℹ tests 31\nℹ suites 0\nℹ pass 31\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 8820.955391\n"
+    },
+    {
+      "index": 12,
+      "name": "review_wiki_recovery",
+      "command": "node openclaw/codex-evaluator/review-wiki-recovery.test.mjs",
+      "exitCode": 0,
+      "testCount": 20,
+      "passedTests": 20,
+      "failedTests": 0,
+      "durationSeconds": 3.633,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ Wiki round joins one real durable process after response but before caller checkpoint (185.390408ms)\n✔ Wiki recovery refuses changed subject, round payload and missing child receipt (164.50331ms)\n✔ ordinary Review preserves the exact Codex attempt on model UNKNOWN (4.31041ms)\n✔ ordinary Review reacquires and validates a fresh Host lease before model recovery (11.532929ms)\n✔ ordinary Review reuses one real Codex process after durable response and lost caller checkpoint (147.827975ms)\n✔ ordinary Review recovers a completed runner before its HTTP response checkpoint (147.294042ms)\n✔ Wiki queue keeps the original pointer after a completed Codex model and lost SAVE acknowledgement (10.764173ms)\n✔ Wiki summary consumer reuses original model and saved revision after lost SAVE acknowledgement (80.474098ms)\n✔ Wiki summary consumer resumes frozen candidate after process stops before SAVE (177.28434ms)\n✔ ordinary Review refuses changed attempt and payload without dispatching a second model (43.581753ms)\n✔ full ordinary Review consumer resumes one Codex process with a new Host lease and one commit (362.372858ms)\n✔ full ordinary Review reads back a lost commit ACK without another model or business write (74.734047ms)\n✔ full ordinary Review renews lease after model.result and before its first commit (386.460983ms)\n✔ ordinary Review still cancels a proven unprepared Host rejection after Codex completion (3.939523ms)\n✔ full ordinary Review preserves source read and second model round across lease recovery (411.621432ms)\n✔ Wiki summary resumes source read and second fixed Codex round without recounting process (208.401407ms)\n✔ ordinary Review refuses changed source body on fresh lease without a new model or commit (453.122503ms)\n✔ ordinary Review refuses a changed Host task and input hash on recovery (346.585662ms)\n✔ Review consumer durably links round one before launch and does not regenerate when UNKNOWN (320.725216ms)\n✔ Wiki SUMMARY consumer durably links its exact run before launch and does not regenerate on restart (124.611756ms)\nℹ tests 20\nℹ suites 0\nℹ pass 20\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 3674.111323\n",
+      "stderr": "",
+      "output": "✔ Wiki round joins one real durable process after response but before caller checkpoint (181.87271ms)\n✔ Wiki recovery refuses changed subject, round payload and missing child receipt (153.329502ms)\n✔ ordinary Review preserves the exact Codex attempt on model UNKNOWN (4.617494ms)\n✔ ordinary Review reacquires and validates a fresh Host lease before model recovery (13.312823ms)\n✔ ordinary Review reuses one real Codex process after durable response and lost caller checkpoint (153.840215ms)\n✔ ordinary Review recovers a completed runner before its HTTP response checkpoint (140.128879ms)\n✔ Wiki queue keeps the original pointer after a completed Codex model and lost SAVE acknowledgement (11.088317ms)\n✔ Wiki summary consumer reuses original model and saved revision after lost SAVE acknowledgement (79.900447ms)\n✔ Wiki summary consumer resumes frozen candidate after process stops before SAVE (172.370549ms)\n✔ ordinary Review refuses changed attempt and payload without dispatching a second model (41.236157ms)\n✔ full ordinary Review consumer resumes one Codex process with a new Host lease and one commit (355.036372ms)\n✔ full ordinary Review reads back a lost commit ACK without another model or business write (75.713491ms)\n✔ full ordinary Review renews lease after model.result and before its first commit (375.477185ms)\n✔ ordinary Review still cancels a proven unprepared Host rejection after Codex completion (3.679704ms)\n✔ full ordinary Review preserves source read and second model round across lease recovery (410.116298ms)\n✔ Wiki summary resumes source read and second fixed Codex round without recounting process (203.204123ms)\n✔ ordinary Review refuses changed source body on fresh lease without a new model or commit (384.699797ms)\n✔ ordinary Review refuses a changed Host task and input hash on recovery (346.95138ms)\n✔ Review consumer durably links round one before launch and does not regenerate when UNKNOWN (304.042858ms)\n✔ Wiki SUMMARY consumer durably links its exact run before launch and does not regenerate on restart (121.389316ms)\nℹ tests 20\nℹ suites 0\nℹ pass 20\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 3540.292857\n"
+    },
+    {
+      "index": 13,
+      "name": "wiki_matter_recovery",
+      "command": "node openclaw/codex-evaluator/wiki-matter-recovery.test.mjs",
+      "exitCode": 0,
+      "testCount": 10,
+      "passedTests": 10,
+      "failedTests": 0,
+      "durationSeconds": 3.711,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ Wiki MATTER after-model-receipt resumes exact model rounds and one Host save (437.783593ms)\n✔ Wiki MATTER after-round-result resumes exact model rounds and one Host save (399.843917ms)\n✔ Wiki MATTER after-final-model-receipt resumes exact model rounds and one Host save (398.974764ms)\n✔ Wiki MATTER after-final-round-result resumes exact model rounds and one Host save (390.589104ms)\n✔ Wiki MATTER after-save resumes exact model rounds and one Host save (439.965888ms)\n✔ Wiki MATTER refuses a changed task and a changed round binding before inference (333.258328ms)\n✔ Wiki MATTER keeps legacy markerless started rounds UNKNOWN (243.113384ms)\n✔ Wiki MATTER consumer reacquires a fresh Host lease before receipt-only recovery (331.800506ms)\n✔ Wiki MATTER consumer queries the original SAVE request after lost Host ACK (402.20707ms)\n✔ Wiki MATTER consumer checkpoints its exact prepared round before Codex launch and remains UNKNOWN on restart (231.247911ms)\nℹ tests 10\nℹ suites 0\nℹ pass 10\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 3615.196398\n",
+      "stderr": "",
+      "output": "✔ Wiki MATTER after-model-receipt resumes exact model rounds and one Host save (410.823236ms)\n✔ Wiki MATTER after-round-result resumes exact model rounds and one Host save (410.173137ms)\n✔ Wiki MATTER after-final-model-receipt resumes exact model rounds and one Host save (391.505271ms)\n✔ Wiki MATTER after-final-round-result resumes exact model rounds and one Host save (407.618224ms)\n✔ Wiki MATTER after-save resumes exact model rounds and one Host save (407.500773ms)\n✔ Wiki MATTER refuses a changed task and a changed round binding before inference (348.961632ms)\n✔ Wiki MATTER keeps legacy markerless started rounds UNKNOWN (280.894818ms)\n✔ Wiki MATTER consumer reacquires a fresh Host lease before receipt-only recovery (402.236991ms)\n✔ Wiki MATTER consumer queries the original SAVE request after lost Host ACK (325.172069ms)\n✔ Wiki MATTER consumer checkpoints its exact prepared round before Codex launch and remains UNKNOWN on restart (225.648037ms)\nℹ tests 10\nℹ suites 0\nℹ pass 10\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 3616.768063\n"
+    },
+    {
+      "index": 14,
+      "name": "host_packet_comparison",
+      "command": "node openclaw/codex-evaluator/host-packet-comparison.test.mjs",
+      "exitCode": 0,
+      "testCount": 14,
+      "passedTests": 13,
+      "failedTests": 0,
+      "durationSeconds": 1.069,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ versioned synthetic packet compares all 42 tools and identifies the 7 completed schemas (75.84667ms)\n✔ removing a required field is a per-tool schema difference (78.206804ms)\n✔ missing tools are reported without replacing their schema with a permissive one (68.829994ms)\n✔ a schema-format version alone is not a Host packet revision (79.338501ms)\n✔ duplicate tool names cannot silently overwrite a schema (38.684965ms)\n✔ annotation and set/union order changes are expression equivalence, never runtime acceptance (75.033507ms)\n✔ safe integer maximum change remains a real input restriction difference (72.205765ms)\n✔ UUID pattern and format changes require real input and Zod acceptance review (72.053476ms)\n✔ strict object and action discriminator changes cannot normalize to compatible (68.541434ms)\n✔ refinement extensions and default transformations are retained for runtime review (72.704154ms)\n✔ instance values named description inside enum are never removed as annotations (83.676285ms)\n✔ three extra packet tools are recorded without extending the 42-tool client scope (71.623529ms)\n✔ a missing local packet keeps all 42 tools pending and preserves mechanical limits (39.76553ms)\nℹ tests 13\nℹ suites 0\nℹ pass 13\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 907.495374\n",
+      "stderr": "",
+      "output": "✔ versioned synthetic packet compares all 42 tools and identifies the 7 completed schemas (73.915657ms)\n✔ removing a required field is a per-tool schema difference (77.047698ms)\n✔ missing tools are reported without replacing their schema with a permissive one (80.987682ms)\n✔ a schema-format version alone is not a Host packet revision (75.913721ms)\n✔ duplicate tool names cannot silently overwrite a schema (40.179358ms)\n✔ annotation and set/union order changes are expression equivalence, never runtime acceptance (77.153327ms)\n✔ safe integer maximum change remains a real input restriction difference (80.503935ms)\n✔ UUID pattern and format changes require real input and Zod acceptance review (75.158205ms)\n✔ strict object and action discriminator changes cannot normalize to compatible (82.820189ms)\n✔ refinement extensions and default transformations are retained for runtime review (75.67342ms)\n✔ instance values named description inside enum are never removed as annotations (85.653159ms)\n✔ three extra packet tools are recorded without extending the 42-tool client scope (74.527076ms)\n✔ a positional schema reference prevents false union-order equivalence (78.838531ms)\n✔ a missing local packet keeps all 42 tools pending and preserves mechanical limits (39.645505ms)\nℹ tests 14\nℹ suites 0\nℹ pass 14\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 1025.50113\n"
+    },
+    {
+      "index": 15,
+      "name": "host_contract_artifact",
+      "command": "node openclaw/codex-evaluator/host-contract-artifact.test.mjs",
+      "exitCode": 0,
+      "testCount": 4,
+      "passedTests": 4,
+      "failedTests": 0,
+      "durationSeconds": 0.428,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ exported real-Zod schema and validation evidence remain linked (106.087327ms)\n✔ a permissive replacement schema is rejected even with unchanged passing-case counts (92.589343ms)\n✔ weakening a nested bound is rejected against the real-Zod export evidence (88.237169ms)\n✔ editing a negative case while retaining its count invalidates validation evidence (91.710912ms)\nℹ tests 4\nℹ suites 0\nℹ pass 4\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 383.635595\n",
+      "stderr": "",
+      "output": "✔ exported real-Zod schema and validation evidence remain linked (104.59014ms)\n✔ a permissive replacement schema is rejected even with unchanged passing-case counts (92.035348ms)\n✔ weakening a nested bound is rejected against the real-Zod export evidence (94.061686ms)\n✔ editing a negative case while retaining its count invalidates validation evidence (95.018325ms)\nℹ tests 4\nℹ suites 0\nℹ pass 4\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 390.624477\n"
+    },
+    {
+      "index": 16,
+      "name": "consume_hosted_review_turn",
+      "command": "node openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-review-turn.test.mjs",
+      "exitCode": 0,
+      "testCount": 32,
+      "passedTests": 32,
+      "failedTests": 0,
+      "durationSeconds": 0.322,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ idle and busy ticks make no driver/model calls (1.634558ms)\n✔ one tick dispatches exactly the persisted next turn with its own checkpoint (0.437418ms)\n✔ dynamic Review BEGIN carries the exact WorkItem outside the model (0.966784ms)\n✔ pre-commit failure stops the exact attempt; an uncertain commit is never cancelled (0.637499ms)\n✔ unconfirmed or wrong-attempt cancellation remains a consumer error (0.33884ms)\n✔ a definite Host validation rejection and exact unprepared readback end only the failed attempt (0.480142ms)\n✔ one Review turn binds attempt-scoped calls to the selected WorkItem (0.324338ms)\n✔ uncertain, mismatched, prepared and terminal commit outcomes never authorize cancellation (1.033213ms)\n✔ a race across the Host commit cutoff remains an error without replay (0.341013ms)\n✔ scoped-0744 advertises only exact current frozen contribution metadata without initial body delivery (7.083482ms)\n✔ scoped-0744 exact read returns selected text and source context through the ordinary Host port (1.845946ms)\n✔ scoped-0744 reads ordinary documents and attachments without changing their bindings (1.130571ms)\n✔ scoped-0744 rejects unknown, late and old-revision handles before a Host read (2.149522ms)\n✔ scoped-0744 excludes frozen catalog entries outside the exact request, conversation, turn or WorkItem (7.775413ms)\n✔ scoped-0744 rejects a sealed BEGIN for another requested work, conversation or request before context delivery (2.299628ms)\n✔ scoped-0744 preserves current Host denial without cached source fallback (2.708203ms)\n✔ scoped-0744 preserves exact attempt, source, kind and frozen excerpt readback checks (3.513744ms)\n✔ scoped-0744 a normal read feeds a nonempty inline-cited delta with unchanged top-level source constraints (4.975543ms)\n✔ scoped-0744 existing Review driver deduplicates read dispatch and delivers one selected body per exchange (11.29095ms)\n✔ scoped-0828 qualified explicit null validates without changing saved work or unknowns (0.842077ms)\n✔ scoped-0828 null cannot turn ordinary answers, missing inputs or an unbound prior work into completion (6.113463ms)\n✔ scoped-0828 all frozen current contributions must actually be read before unchanged completion (2.035181ms)\n✔ scoped-0828 exact source read and explicit null accept only the original UNCHANGED receipt (2.22099ms)\n✔ scoped-0828 unchanged rejects wrong read handles and forged or invalidating Host receipts (16.084438ms)\n✔ scoped-0828 adapter distinguishes omitted from qualified explicit RESYNTHESIS null (7.001919ms)\n✔ scoped-0828 adapter distinguishes answer from qualified explicit RESYNTHESIS null (4.873789ms)\n✔ scoped-0828 adapter distinguishes default-answer from qualified explicit RESYNTHESIS null (4.943854ms)\n✔ scoped-0828 driver preserves APPLIED Host receipt with proof=false on exact checkpoint replay (28.133528ms)\n✔ scoped-0828 driver preserves APPLIED Host receipt with proof=true on exact checkpoint replay (21.128663ms)\n✔ scoped-0828 driver preserves UNCHANGED Host receipt with proof=false on exact checkpoint replay (25.822172ms)\n✔ scoped-0828 driver preserves UNCHANGED Host receipt with proof=true on exact checkpoint replay (20.869304ms)\n✔ scoped-0828 a sealed COMMITTING result without a Host receipt remains attention with no proof reconstruction or replay (33.579689ms)\nℹ tests 32\nℹ suites 0\nℹ pass 32\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 231.79552\n",
+      "stderr": "",
+      "output": "✔ idle and busy ticks make no driver/model calls (1.670833ms)\n✔ one tick dispatches exactly the persisted next turn with its own checkpoint (0.256826ms)\n✔ dynamic Review BEGIN carries the exact WorkItem outside the model (0.705732ms)\n✔ pre-commit failure stops the exact attempt; an uncertain commit is never cancelled (0.529416ms)\n✔ unconfirmed or wrong-attempt cancellation remains a consumer error (0.36552ms)\n✔ a definite Host validation rejection and exact unprepared readback end only the failed attempt (0.652731ms)\n✔ one Review turn binds attempt-scoped calls to the selected WorkItem (0.343998ms)\n✔ uncertain, mismatched, prepared and terminal commit outcomes never authorize cancellation (1.19676ms)\n✔ a race across the Host commit cutoff remains an error without replay (0.390888ms)\n✔ scoped-0744 advertises only exact current frozen contribution metadata without initial body delivery (7.224486ms)\n✔ scoped-0744 exact read returns selected text and source context through the ordinary Host port (1.802411ms)\n✔ scoped-0744 reads ordinary documents and attachments without changing their bindings (1.15702ms)\n✔ scoped-0744 rejects unknown, late and old-revision handles before a Host read (1.892897ms)\n✔ scoped-0744 excludes frozen catalog entries outside the exact request, conversation, turn or WorkItem (7.459809ms)\n✔ scoped-0744 rejects a sealed BEGIN for another requested work, conversation or request before context delivery (2.531908ms)\n✔ scoped-0744 preserves current Host denial without cached source fallback (2.597797ms)\n✔ scoped-0744 preserves exact attempt, source, kind and frozen excerpt readback checks (3.338661ms)\n✔ scoped-0744 a normal read feeds a nonempty inline-cited delta with unchanged top-level source constraints (4.795732ms)\n✔ scoped-0744 existing Review driver deduplicates read dispatch and delivers one selected body per exchange (20.790714ms)\n✔ scoped-0828 qualified explicit null validates without changing saved work or unknowns (1.056049ms)\n✔ scoped-0828 null cannot turn ordinary answers, missing inputs or an unbound prior work into completion (6.57596ms)\n✔ scoped-0828 all frozen current contributions must actually be read before unchanged completion (1.798495ms)\n✔ scoped-0828 exact source read and explicit null accept only the original UNCHANGED receipt (2.214941ms)\n✔ scoped-0828 unchanged rejects wrong read handles and forged or invalidating Host receipts (17.012676ms)\n✔ scoped-0828 adapter distinguishes omitted from qualified explicit RESYNTHESIS null (6.277771ms)\n✔ scoped-0828 adapter distinguishes answer from qualified explicit RESYNTHESIS null (5.138368ms)\n✔ scoped-0828 adapter distinguishes default-answer from qualified explicit RESYNTHESIS null (5.193971ms)\n✔ scoped-0828 driver preserves APPLIED Host receipt with proof=false on exact checkpoint replay (33.578241ms)\n✔ scoped-0828 driver preserves APPLIED Host receipt with proof=true on exact checkpoint replay (20.733191ms)\n✔ scoped-0828 driver preserves UNCHANGED Host receipt with proof=false on exact checkpoint replay (24.466797ms)\n✔ scoped-0828 driver preserves UNCHANGED Host receipt with proof=true on exact checkpoint replay (20.362074ms)\n✔ scoped-0828 a sealed COMMITTING result without a Host receipt remains attention with no proof reconstruction or replay (28.015485ms)\nℹ tests 32\nℹ suites 0\nℹ pass 32\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 239.601578\n"
+    },
+    {
+      "index": 17,
+      "name": "check_host_contract",
+      "command": "node openclaw/codex-evaluator/check-host-contract.mjs",
+      "exitCode": 0,
+      "testCount": 0,
+      "passedTests": null,
+      "failedTests": 0,
+      "durationSeconds": 0.088,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "{\"status\":\"OFFLINE_CONTRACT_CHECKED\",\"convertedSchemas\":35,\"pinnedZodSchemas\":7,\"convertedExamples\":35,\"pinnedZodValidation\":{\"read_assessment_sources\":{\"branches\":1,\"accepted\":2,\"rejected\":6},\"commit_translation_candidate\":{\"branches\":3,\"accepted\":3,\"rejected\":12},\"translation_workspace\":{\"branches\":8,\"accepted\":8,\"rejected\":27},\"document_work\":{\"branches\":11,\"accepted\":11,\"rejected\":36},\"document_reading\":{\"branches\":9,\"accepted\":9,\"rejected\":30},\"document_translation\":{\"branches\":12,\"accepted\":12,\"rejected\":38},\"derived_summary_attempt\":{\"branches\":10,\"accepted\":11,\"rejected\":35}},\"sourceOnlySchemas\":0,\"excludedSourceExpressions\":0,\"liveVerified\":false}\n",
+      "stderr": "",
+      "output": "{\"status\":\"OFFLINE_CONTRACT_CHECKED\",\"convertedSchemas\":35,\"pinnedZodSchemas\":7,\"convertedExamples\":35,\"pinnedZodValidation\":{\"read_assessment_sources\":{\"branches\":1,\"accepted\":2,\"rejected\":6},\"commit_translation_candidate\":{\"branches\":3,\"accepted\":3,\"rejected\":12},\"translation_workspace\":{\"branches\":8,\"accepted\":8,\"rejected\":27},\"document_work\":{\"branches\":11,\"accepted\":11,\"rejected\":36},\"document_reading\":{\"branches\":9,\"accepted\":9,\"rejected\":30},\"document_translation\":{\"branches\":12,\"accepted\":12,\"rejected\":38},\"derived_summary_attempt\":{\"branches\":10,\"accepted\":11,\"rejected\":35}},\"sourceOnlySchemas\":0,\"excludedSourceExpressions\":0,\"liveVerified\":false}\n"
+    },
+    {
+      "index": 18,
+      "name": "codex_client_identity",
+      "command": "node openclaw/codex-evaluator/codex-client-identity.test.mjs",
+      "exitCode": 0,
+      "testCount": 6,
+      "passedTests": 6,
+      "failedTests": 0,
+      "durationSeconds": 0.098,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ Codex queue client posts all four prefixed control paths through the actual factory (2.473009ms)\n✔ Hosted queue paths retain their legacy route names (0.355805ms)\n✔ MCP transport is constructed at Codex endpoint and pins initialize identity (1.007165ms)\n✔ Codex task app and result provenance bind strictly without renaming wire fields (0.35242ms)\n✔ Codex factories reject absent or legacy runtime app before any transport (0.277828ms)\n✔ explicit CODEX validators reject an old-app task even when it is correctly re-sealed (2.346018ms)\nℹ tests 6\nℹ suites 0\nℹ pass 6\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 13.016024\n",
+      "stderr": "",
+      "output": "✔ Codex queue client posts all four prefixed control paths through the actual factory (2.406058ms)\n✔ Hosted queue paths retain their legacy route names (0.324918ms)\n✔ MCP transport is constructed at Codex endpoint and pins initialize identity (1.03061ms)\n✔ Codex task app and result provenance bind strictly without renaming wire fields (0.363436ms)\n✔ Codex factories reject absent or legacy runtime app before any transport (0.397088ms)\n✔ explicit CODEX validators reject an old-app task even when it is correctly re-sealed (2.090073ms)\nℹ tests 6\nℹ suites 0\nℹ pass 6\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 12.142071\n"
+    },
+    {
+      "index": 19,
+      "name": "codex_zero_model_identity",
+      "command": "node openclaw/codex-evaluator/codex-zero-model-identity.test.mjs",
+      "exitCode": 0,
+      "testCount": 2,
+      "passedTests": 2,
+      "failedTests": 0,
+      "durationSeconds": 0.088,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ fresh Codex translation ASSEMBLE with no generation seals existing version key plus executor (4.57495ms)\n✔ fresh Codex saved-work reconciliation reaches commit without generation and retains exact SAVE key (2.027248ms)\nℹ tests 2\nℹ suites 0\nℹ pass 2\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 11.582789\n",
+      "stderr": "",
+      "output": "✔ fresh Codex translation ASSEMBLE with no generation seals existing version key plus executor (4.298665ms)\n✔ fresh Codex saved-work reconciliation reaches commit without generation and retains exact SAVE key (1.979177ms)\nℹ tests 2\nℹ suites 0\nℹ pass 2\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 11.141686\n"
+    },
+    {
+      "index": 20,
+      "name": "codex_applicability_leaf",
+      "command": "node openclaw/codex-evaluator/codex-applicability-leaf.test.mjs",
+      "exitCode": 0,
+      "testCount": 1,
+      "passedTests": 1,
+      "failedTests": 0,
+      "durationSeconds": 0.09,
+      "timedOut": false,
+      "outputTruncated": false,
+      "stdout": "✔ actual initial model leaf accepts Codex-app applicability and rejects old app before dispatch (5.440692ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 11.594847\n",
+      "stderr": "",
+      "output": "✔ actual initial model leaf accepts Codex-app applicability and rejects old app before dispatch (4.561961ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 9.266827\n"
+    }
+  ],
+  "parentCommit": "925deb2d148a9eb8ed508300d7132fce55bc665c",
+  "historicalParentCommitFromPriorValidation": "94c54de74a0d7a0c0d66778a04a161e2017fce28",
+  "noExternalNetworkOrRealCredentials": true,
+  "loopbackHTTPUsedByBridgeUnitTest": true,
+  "productionCLIInvoked": false,
+  "offlineFixtureChildProcesses": true,
+  "realCodexCLIInvoked": false,
+  "scope": "Final exact client-side offline validation on parent925; synthetic Host/provider/fake Codex child processes, with loopback bridge unit HTTP only",
+  "testCommandCount": 20,
+  "totalTests": 200,
+  "passed": 200,
+  "failed": 0,
+  "userFacingTimezone": "Asia/Shanghai",
+  "targetHostReportedByUser": {
+    "commit": "974bedfa8edb03ba94c4991a2c6a3c63a1145eb4",
+    "graphContract": "1.8",
+    "build": "PASSED_REPORTED_BY_USER",
+    "fetched": false,
+    "pushed": false,
+    "deployed": false,
+    "interfacePacket": {
+      "received": false,
+      "reportedFiles": 76,
+      "reportedTools": 45,
+      "comparisonStatus": "PENDING_LOCAL_PACKET",
+      "clientToolScope": 42,
+      "extraToolsAuthorized": false
+    }
+  },
+  "verificationLimits": {
+    "hostAuthenticationVerified": false,
+    "realSaveVerified": false,
+    "productReaderVerified": false,
+    "hostIntegrationWorktreeModified": false,
+    "productionConfigurationModified": false,
+    "parallelWorkersEnabled": false,
+    "documentTranslationCrossLeaseRecoveryVerified": false,
+    "syntheticSameFenceIsRealRecovery": false,
+    "rawSseTransportBytesCaptured": false,
+    "parsedSseEventsRetained": true,
+    "oldTasksMigrated": false,
+    "oldUnknownRescued": false,
+    "powerLossOrVolumeLossTested": false
+  },
+  "schemaValidation": {
+    "sourceHostCommit": "fc1322919b1b52433c33086c8db4aeb957f0e982",
+    "serverSourceUnchangedFrom925": true,
+    "sevenZodCasesByteIdenticalFrom925": true,
+    "engine": "zod/v4@4.6.5",
+    "zodLockIntegrity": "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==",
+    "pinnedInputGitBlobs": 15,
+    "branches": 54,
+    "accepted": 56,
+    "rejected": 184,
+    "mechanicalSchemas": 35,
+    "mechanicalExamples": 35,
+    "sourceOnlySchemas": 0,
+    "realExportExecutedThisDelivery": true,
+    "exportCommand": "WISELINK_ZOD_MODULE=/tmp/wiselink-host-schema-zod-4.6.5/node_modules/zod/v4/index.js node openclaw/codex-evaluator/export-host-contract.mjs /tmp/wl-contract-canonical-host-openclaw-mcp.service.ts /tmp/wl-contract-canonical-host-readonly-mcp-tools.ts /tmp/wl-contract-canonical-host-openclaw-mcp.openapi.controller.ts /tmp/wl-contract-api.interface.ts /tmp/wl-contract-derived-summary-attempt-mcp-tools.ts /tmp/wl-contract-matter-attempt-mcp-tools.ts openclaw/codex-evaluator/contracts/host-source-interface.json",
+    "exportExitCode": 0,
+    "includedInMainTestCount": false
+  },
+  "checkpointPersistenceReuse": {
+    "scope": "createCheckpointStore and original persistence/read/lock helpers up to before bindHostedReviewCandidate",
+    "unchanged": true,
+    "characters": 11265,
+    "sha256": "c29ac13e9ef8b66ddcf4f237896cecdec199845ab82582aac93b627d36f92ac6"
+  },
+  "preservedHistoricalEvidence": [
+    {
+      "path": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md",
+      "sha256": "c19b7dc2d1b18616b9bd497748ab11df40b45ec3fa6936f81067e7cd7e707967",
+      "unchangedFrom925": true
+    },
+    {
+      "path": "openclaw/codex-evaluator/consumer-recovery-validation-results.json",
+      "sha256": "0394772128a33a6ebb47e7d00dc5a853f6665d0367cf9b42ca1f7e8a74aaa425",
+      "unchangedFrom925": true
+    },
+    {
+      "path": "openclaw/codex-evaluator/offline-validation-results.json",
+      "sha256": "3c1e6555786a3dea6f9a89573281bd8cffcfb0fe36e0e64ee18a09bcf67e8f2d",
+      "unchangedFrom925": true
+    }
+  ],
+  "fileBoundary": {
+    "allowedPrefixes": [
+      "openclaw/codex-evaluator/",
+      "openclaw/skills/wiselink-research-and-synthesize/scripts/",
+      "docs/coordination/"
+    ],
+    "hostServerOrSharedModified": false,
+    "deletedFiles": 0,
+    "changedFiles": [
+      {
+        "path": "docs/coordination/WISELINK_CODEX_BOUNDED_WORKERS_20261025.md",
+        "change": "ADDED"
+      },
+      {
+        "path": "docs/coordination/WISELINK_CODEX_GRAPH_DELTA_20261025.md",
+        "change": "ADDED"
+      },
+      {
+        "path": "docs/coordination/WISELINK_CODEX_HOST_INTERFACE_20261025.md",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/CODEX_HOST_ALIGNMENT_VALIDATION.md",
+        "change": "ADDED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/CONSUMER_RECOVERY_VALIDATION.md",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/README.md",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/check-host-contract.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/codex-applicability-leaf.test.mjs",
+        "change": "ADDED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/codex-client-identity.test.mjs",
+        "change": "ADDED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/codex-generation-recovery.test.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/codex-generation.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/codex-parent-run-link-test-helper.mjs",
+        "change": "ADDED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/codex-zero-model-identity.test.mjs",
+        "change": "ADDED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/compare-host-interface-packet.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/contracts/host-packet-comparison.json",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/contracts/host-source-interface.json",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/contracts/program-recovery-example.json",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/contracts/runtime-configuration-status.json",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/export-host-contract.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/export-program-recovery-example.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/host-alignment-validation-results.json",
+        "change": "ADDED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/host-contract/README.md",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/host-packet-comparison.test.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/miaoda_responses_bridge.py",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/preflight.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/preflight.test.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/program-finish-recovery.test.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/program-recovery-fixture.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/program-recovery.test.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/review-wiki-recovery-fixture.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/review-wiki-recovery.test.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/run_codex_generation.py",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/test_miaoda_responses_bridge.py",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/test_run_codex_generation_recovery.py",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/translation-reading-document-fixture.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/translation-reading-recovery-fixture.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/translation-reading-recovery.test.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/translation-reading-workitem-fixture.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/wiki-matter-recovery-fixture.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/codex-evaluator/wiki-matter-recovery.test.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-document-reading.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-initial-model.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor-consumers.test.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/orchestrate-host-mcp.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-document-semantic-translation.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-semantic-translation.mjs",
+        "change": "MODIFIED"
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs",
+        "change": "MODIFIED"
+      }
+    ]
+  },
+  "additionalResolvedReviewFinding": {
+    "description": "Reference-bearing JSON Schema cannot be declared expression-equivalent by reordering union arrays; comparator now preserves full referenced shapes",
+    "verification": "14 comparator tests including positional reference regression; all 20 commands rerun on final frozen source"
+  }
+}

@@ -1,5 +1,7 @@
 # Codex 逐消费者持久恢复与接口闭合
 
+**历史交付范围：** 本文件保留 `925deb2d148a9eb8ed508300d7132fce55bc665c` 的逐消费者恢复与 166 项离线证据，不作为后续增量的重新验收记录。新路径/身份、COMMITTING 精确 key READ、私有输入与启动前 run 关联见 [本轮交付](CODEX_HOST_ALIGNMENT_VALIDATION.md)，对应结果单独留存；94c54de 的恢复框架继续复用。
+
 日期：2026-10-25。实现父基线为 `94c54de74a0d7a0c0d66778a04a161e2017fce28`；其程序初评恢复、完整模型响应持久化和确定性 Overall 继续使用。此前实现 `1155c386`、接线记录 `fc132291` 仅作为已继承历史。本次没有从旧原型重新实现，也没有修改本地主控的 Host 集成工作树。
 
 本报告区分消费者代码接入、实际消费者的离线中断测试，以及真实 Host 尚未提供的能力。测试使用真实 Node 消费者、模型适配器和 94c54de 的 `createCodexGateway`，由合成 Python runner 和合成 Host 提供外部响应。没有新增真实妙搭模型调用、真实 Host 保存或页面阅读；既有六次 GLM 实跑仍是合成 Host 证据。
@@ -100,3 +102,4 @@ SIGKILL 测试覆盖同一文件系统上进程终止与重启。没有模拟机
 2. **新服务身份与配置状态。** 核对 `/openapi/wiselink/codex-mcp` 与 `wiselink-codex-engineering-assessment@1.2.0`，以及 principal、tenant/actor、runtime/provenance 的准确授权。旧 openclaw-mcp 和旧服务身份不能通过新客户端绑定。只需回报字段和是否已配置，不提供凭据值。
 3. **翻译原生成请求恢复。** 明确新 lease 对原 generation 的授权及已保存请求的精确查询方式，补实际 Host 测试。当前客户端已经保留原 NEXT、块和模型回执，但不能替 Host 改变 fence 约束。
 4. **运行与验收。** 确认单一执行器入口、两个持久目录、准确新任务范围，再进行正式凭据配置、切换、真实 SAVE/独立 READ/页面阅读和 Overall 对照。本轮未执行这些动作。
+

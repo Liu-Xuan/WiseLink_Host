@@ -14,9 +14,48 @@ export const WISELINK_SKILL_COMPATIBILITY_REF =
 export const WISELINK_HOST_MCP_NAME =
   'wiselink-openclaw-engineering-assessment';
 export const WISELINK_HOST_MCP_VERSION = '1.2.0';
+export const WISELINK_CODEX_MCP_NAME = 'wiselink-codex-engineering-assessment';
+export const WL_CODEX_RUNTIME_APP_ID = 'app_17gr74pbere';
 export const WISELINK_MODEL_POLICY_REF = 'official-hosted-profile-config';
 export const WISELINK_RUNTIME_APP_ID = 'app_17c3zn24kv2';
 export const WISELINK_PROFILE_REF = 'wiselink-engineering';
+
+function runtimeAppIdForExecutor(executor = 'HOSTED') {
+  if (executor === 'HOSTED') return WISELINK_RUNTIME_APP_ID;
+  if (executor === 'CODEX') return WL_CODEX_RUNTIME_APP_ID;
+  fail('RUNTIME_EXECUTOR_UNSUPPORTED');
+}
+
+/** The transport selects the identity before accepting a Host task or seal. */
+export function assertRuntimeTaskIdentity(task, executor) {
+  const codex = executor === 'CODEX';
+  if (!codex && executor !== 'HOSTED') fail('RUNTIME_EXECUTOR_UNSUPPORTED');
+  const appId = codex ? WL_CODEX_RUNTIME_APP_ID : WISELINK_RUNTIME_APP_ID;
+  if (task?.taskType === 'OPENCLAW_APPLICABILITY_EVALUATION') {
+    const policy = task.modelInput?.runtimePolicy;
+    if (policy?.runtimeAppId !== appId || policy?.mcpServerName !== WISELINK_HOST_MCP_NAME ||
+        policy?.mcpServerVersion !== WISELINK_HOST_MCP_VERSION)
+      fail('RUNTIME_TASK_IDENTITY_MISMATCH');
+  }
+  if (task?.taskType === 'OPENCLAW_INTERACTIVE_REVIEW') {
+    const policy = task.modelInput?.executionPolicy;
+    if (policy?.runtimeAppId !== appId || typeof policy?.toolPolicyRef !== 'string' ||
+        !policy.toolPolicyRef.startsWith(`${WISELINK_HOST_MCP_NAME}@${WISELINK_HOST_MCP_VERSION}#`))
+      fail('RUNTIME_TASK_IDENTITY_MISMATCH');
+  }
+  return task;
+}
+
+export function assertRuntimeResultIdentity(result, executor) {
+  const codex = executor === 'CODEX';
+  if (!codex && executor !== 'HOSTED') fail('RUNTIME_EXECUTOR_UNSUPPORTED');
+  if (result?.toolVersions?.[WISELINK_HOST_MCP_NAME] !== WISELINK_HOST_MCP_VERSION ||
+      Object.hasOwn(result.toolVersions, WISELINK_CODEX_MCP_NAME) ||
+      (codex && result.toolVersions['model-executor'] !== 'CODEX') ||
+      (!codex && Object.hasOwn(result.toolVersions, 'model-executor')))
+    fail('RUNTIME_RESULT_IDENTITY_MISMATCH');
+  return result;
+}
 export const WISELINK_APPLICABILITY_PROMPT_VERSION =
   'wiselink-applicability-extraction@r09.c4';
 
@@ -174,15 +213,15 @@ const FORBIDDEN_INPUT_KEYS = new Set([
   'fullfleet',
 ]);
 
-export function validatePayload(kind, value) {
+export function validatePayload(kind, value, options = {}) {
   assertObject(value, 'payload');
   switch (kind) {
     case 'task-envelope':
-      validateTaskEnvelope(value);
+      validateTaskEnvelope(value, options);
       break;
     case 'result-envelope':
       exactKeys(value, ['task', 'result'], [], 'result envelope pair');
-      validateResultEnvelope(value.task, value.result);
+      validateResultEnvelope(value.task, value.result, options);
       break;
     case 'runtime-provenance':
       validateRuntimeProvenance(value);
@@ -195,22 +234,22 @@ export function validatePayload(kind, value) {
       validateTranslationPair(value.input, value.output);
       break;
     case 'applicability-input':
-      validateApplicabilityModelInput(value);
+      validateApplicabilityModelInput(value, options);
       break;
     case 'applicability-ast-candidate':
       validateApplicabilityAstCandidate(value);
       break;
     case 'applicability-pair':
       exactKeys(value, ['input', 'output'], [], 'applicability pair');
-      validateApplicabilityModelInput(value.input);
+      validateApplicabilityModelInput(value.input, options);
       validateApplicabilityAstCandidate(value.output, value.input);
       break;
     case 'review-task':
-      validateReviewTask(value);
+      validateReviewTask(value, options);
       break;
     case 'review-candidate':
       exactKeys(value, ['task', 'candidate'], [], 'review candidate pair');
-      validateReviewCandidate(value.task, value.candidate);
+      validateReviewCandidate(value.task, value.candidate, [], options);
       break;
     case 'discovery-input':
       rejectAuthorityInput(value);
@@ -2383,7 +2422,7 @@ function validateDiscoveryProviderSummaries(value) {
   }
 }
 
-export function validateApplicabilityModelInput(input) {
+export function validateApplicabilityModelInput(input, options = {}) {
   const originalInput = input?.schemaVersion === 'wiselink.3_1.applicability_task.v3';
   const englishInput = originalInput || input?.schemaVersion === 'wiselink.3_1.applicability_task.v2';
   exactKeys(
@@ -2455,7 +2494,7 @@ export function validateApplicabilityModelInput(input) {
     const covered = new Set(input.sourceContext.flatMap((unit) => unit.sourceRefIds));
     assertSubsetOf(input.sourceExpressions.flatMap((expression) => expression.sourceRefIds), covered, 'APPLICABILITY_ENGLISH_SOURCE_COVERAGE_REQUIRED');
   } else validateApplicabilityBilingualUnits(input.bilingualSourceUnits);
-  validateApplicabilityRuntimePolicy(input.runtimePolicy);
+  validateApplicabilityRuntimePolicy(input.runtimePolicy, options);
   if ('configurationEvidenceReevaluation' in input) {
     validateApplicabilityConfigurationEvidenceReevaluation(
       input.configurationEvidenceReevaluation,
@@ -2697,8 +2736,8 @@ export function validateApplicabilityAstCandidate(output, input) {
   return output;
 }
 
-export function buildApplicabilityCandidate(input, astCandidate) {
-  validateApplicabilityModelInput(input);
+export function buildApplicabilityCandidate(input, astCandidate, options = {}) {
+  validateApplicabilityModelInput(input, options);
   validateApplicabilityAstCandidate(astCandidate, input);
   return {
     schemaVersion: input.schemaVersion === 'wiselink.3_1.applicability_task.v3' ? 'wiselink.3_1.applicability_candidate.v2' : APPLICABILITY_CANDIDATE_SCHEMA,
@@ -2943,7 +2982,7 @@ function validateApplicabilityBilingualUnits(values) {
   });
 }
 
-function validateApplicabilityRuntimePolicy(value) {
+function validateApplicabilityRuntimePolicy(value, options = {}) {
   exactKeys(
     value,
     [
@@ -2958,11 +2997,8 @@ function validateApplicabilityRuntimePolicy(value) {
     [],
     'applicability runtime policy',
   );
-  equal(
-    value.runtimeAppId,
-    WISELINK_RUNTIME_APP_ID,
-    'APPLICABILITY_RUNTIME_APP_MISMATCH',
-  );
+  equal(value.runtimeAppId, runtimeAppIdForExecutor(options.modelExecutor),
+    'APPLICABILITY_RUNTIME_APP_MISMATCH');
   equal(
     value.profileRef,
     WISELINK_PROFILE_REF,
@@ -3306,10 +3342,10 @@ export function sealResultEnvelope({
   return sealed;
 }
 
-export function reviewCandidateArtifactRefs(task, candidate, observations = []) {
+export function reviewCandidateArtifactRefs(task, candidate, observations = [], options = {}) {
   validateTaskEnvelope(task);
-  const reviewTask = validateReviewTask(task.modelInput);
-  validateReviewCandidate(reviewTask, candidate, observations);
+  const reviewTask = validateReviewTask(task.modelInput, options);
+  validateReviewCandidate(reviewTask, candidate, observations, options);
   const usedSourceRefIds = new Set(reviewCandidateSourceRefIds(reviewTask, candidate));
   const artifacts = new Map();
   for (const resource of reviewTask.resourceRefs) {
@@ -3412,7 +3448,7 @@ export function sealWaitingInputResultEnvelope({ task, provenance }) {
   return sealed;
 }
 
-export function validateTaskEnvelope(value) {
+export function validateTaskEnvelope(value, options = {}) {
   exactKeys(
     value,
     [
@@ -3478,6 +3514,7 @@ export function validateTaskEnvelope(value) {
     canonicalSha256(unsealed),
     'TASK_ENVELOPE_INPUT_HASH_MISMATCH',
   );
+  if (options.modelExecutor) assertRuntimeTaskIdentity(value, options.modelExecutor);
   return value;
 }
 
@@ -3493,7 +3530,8 @@ export function validateExecutionModelSelection(value) {
 }
 
 export function validateResultEnvelope(task, result, options = {}) {
-  validateTaskEnvelope(task);
+  validateTaskEnvelope(task, options);
+  if (options.modelExecutor) assertRuntimeResultIdentity(result, options.modelExecutor);
   validateResultEnvelopeBinding(task, result, options);
   assertEnvelopeSourceSubset(task.sourceRefs, result.sourceRefs);
   const requiredMissing = new Set(
@@ -3825,11 +3863,8 @@ function validateProvenanceFields(value, options = {}) {
     nonEmpty(name, 'RUNTIME_TOOL_NAME_INVALID');
     nonEmpty(version, 'RUNTIME_TOOL_VERSION_INVALID');
   }
-  equal(
-    value.toolVersions[WISELINK_HOST_MCP_NAME],
-    WISELINK_HOST_MCP_VERSION,
-    'RUNTIME_HOST_MCP_VERSION_POLICY_MISMATCH',
-  );
+  equal(value.toolVersions[WISELINK_HOST_MCP_NAME], WISELINK_HOST_MCP_VERSION,
+    'RUNTIME_HOST_MCP_VERSION_POLICY_MISMATCH');
   exactKeys(
     value.runMetrics,
     ['durationMs', 'inputUnits', 'outputUnits'],
@@ -4211,7 +4246,7 @@ function numberMultiset(tokens) {
   return counts;
 }
 
-export function validateReviewTask(value) {
+export function validateReviewTask(value, options = {}) {
   const isMatter = value?.schemaVersion === REVIEW_MATTER_TASK_SCHEMA;
   const isJobAid = value?.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA;
   exactKeys(
@@ -4334,11 +4369,8 @@ export function validateReviewTask(value) {
     [],
     'review execution policy',
   );
-  equal(
-    value.executionPolicy.runtimeAppId,
-    WISELINK_RUNTIME_APP_ID,
-    'REVIEW_TASK_RUNTIME_POLICY_INVALID',
-  );
+  equal(value.executionPolicy.runtimeAppId, runtimeAppIdForExecutor(options.modelExecutor),
+    'REVIEW_TASK_RUNTIME_POLICY_INVALID');
   equal(
     value.executionPolicy.profileRef,
     WISELINK_PROFILE_REF,
@@ -4362,8 +4394,8 @@ export function validateReviewTask(value) {
   return value;
 }
 
-export function validateReviewCandidate(task, candidate, observations = []) {
-  validateReviewTask(task);
+export function validateReviewCandidate(task, candidate, observations = [], options = {}) {
+  validateReviewTask(task, options);
   const decisionCatalog = tdmsReviewDecisionCatalog(task, observations);
   return validateReviewCandidateCore(task, candidate,
     new Set(decisionCatalog.map((item) => item.evidenceRef)));
@@ -4371,8 +4403,8 @@ export function validateReviewCandidate(task, candidate, observations = []) {
 
 /** Only after fresh Host begin/status prove the same sealed bounded result.
  * Directory refs establish a frozen citation range, never a carrier or READ. */
-export function validateSealedBoundedReviewCandidate(task, candidate) {
-  validateReviewTask(task);
+export function validateSealedBoundedReviewCandidate(task, candidate, options = {}) {
+  validateReviewTask(task, options);
   if (task.schemaVersion !== REVIEW_JOBAID_TASK_SCHEMA ||
       task.context.purpose !== 'UPDATE_ASSESSMENT' ||
       task.jobAidContext.tdmsReviewContext?.mode !== 'BOUNDED_NATIVE_READ')
@@ -4687,7 +4719,7 @@ function validateReviewCandidateCore(task, candidate, allowedEvidenceRefs) {
   );
   equal(
     candidate.runtime.runtimeAppId,
-    WISELINK_RUNTIME_APP_ID,
+    task.executionPolicy.runtimeAppId,
     'REVIEW_CANDIDATE_RUNTIME_INVALID',
   );
   equal(

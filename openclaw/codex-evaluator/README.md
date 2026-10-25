@@ -1,6 +1,27 @@
 # Codex executor for the existing WiseLink assessment contract
 
-## Current Host alignment and durable recovery delivery
+## Current client alignment delivery
+
+Continue from `925deb2d148a9eb8ed508300d7132fce55bc665c`, retaining its per-consumer
+recovery, seven pinned Zod schemas, and the 94c54de program recovery framework.
+The latest delivery fixes the four `codex-*` queue control routes, requires
+`WL_CODEX_RUNTIME_APP_ID=app_17gr74pbere`, preserves legitimate OPENCLAW wire types
+and provenance version keys, checks COMMITTING work by its original SAVE key,
+and retains private complete inputs plus a durable parent/run link before spawn.
+
+- [Current implementation, exact interface gaps and validation](CODEX_HOST_ALIGNMENT_VALIDATION.md)
+- [Current offline evidence: 20 commands, 200 passing tests](host-alignment-validation-results.json)
+- [Bounded worker plan; not enabled](../../docs/coordination/WISELINK_CODEX_BOUNDED_WORKERS_20261025.md)
+- [Graph delta for the main controller's v1.8](../../docs/coordination/WISELINK_CODEX_GRAPH_DELTA_20261025.md)
+
+The user-reported local Host `974bedfa8edb03ba94c4991a2c6a3c63a1145eb4` is not
+assumed to be available on GitHub. Its actual 76-file/45-tool interface packet
+has not been received; all 42 client comparisons remain `PENDING_LOCAL_PACKET`.
+Document translation cross-lease recovery and real Host SAVE/page reading are
+still pending. No credentials, production configuration, deployment, real model
+run or parallel worker activation is part of this delivery.
+
+## Historical Host alignment and program recovery delivery
 
 The baseline for this delivery is implementation `1155c386fff03eeb1753a6af3aab6f337a4413b6`
 plus wiring record `fc1322919b1b52433c33086c8db4aeb957f0e982`. The earlier autonomous
@@ -25,7 +46,7 @@ Run the offline fixtures and tests listed in `RECOVERY_VALIDATION.md`. They need
 no model or Host credentials. The six GLM runs below remain evidence from the
 previous delivery with a synthetic Host; no new real run is implied here.
 
-## 2026-10-25 consumer migration
+## Historical 2026-10-25 consumer migration
 
 The current graph contract is v1.7. Its first production path remains
 `PROGRAM_CONTROLLED_V1`: the program prepares material, makes one model request,

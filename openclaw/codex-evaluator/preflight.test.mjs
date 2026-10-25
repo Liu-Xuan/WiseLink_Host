@@ -12,12 +12,12 @@ const model = {models:{providers:{miaoda:{
   api:'openai-completions',apiKey:{source:'file',path:'/private/model-key',value:sentinel},
   headers:{'x-api-key':{source:'file',path:'/private/header-key',value:sentinel}},
 }}}};
-async function inspect(t,servers) {
+async function inspect(t,servers,env={WL_CODEX_RUNTIME_APP_ID:'app_17gr74pbere'}) {
   const dir=await mkdtemp(join(tmpdir(),'codex-preflight-'));
   t.after(()=>rm(dir,{recursive:true,force:true}));
   const file=join(dir,'openclaw.json');
   await writeFile(file,JSON.stringify({...model,mcp:{servers}}));
-  return inspectConfiguration(file,process.execPath);
+  return inspectConfiguration(file,process.execPath,env);
 }
 const codex = url => ({url,headers:{authorization:`Bearer ${sentinel}`},
   toolFilter:{include:[...HOST_MCP_TOOLS,'record_assessment_program_progress']}});
@@ -58,6 +58,7 @@ test('valid Codex config inventories full client tool list and never reveals hea
     codex('https://host.example/openapi/wiselink/codex-mcp')});
   assert.equal(result.codexHostMcpConfigPresent,true);
   assert.equal(result.codexHostMcpEndpointValid,true);
+  assert.equal(result.codexRuntimeAppIdConfigured,true);
   assert.equal(result.expectedHostMcpServerName,'wiselink-codex-engineering-assessment');
   assert.equal(result.expectedHostMcpServerVersion,'1.2.0');
   assert.equal(result.requiredHostToolScope,'CLIENT_EXACT_METADATA_PLUS_PROGRAM_PROGRESS');
@@ -68,6 +69,16 @@ test('valid Codex config inventories full client tool list and never reveals hea
   assert.equal(result.readyForBusinessExecution,false);
   const printed=JSON.stringify(result);
   assert.doesNotMatch(printed,/SYNTHETIC_SECRET|Bearer|\/private\/|authorization|host\.example/iu);
+});
+
+test('Codex app selection requires the exact configured runtime app',async t=>{
+  const servers={'wiselink-codex-engineering-assessment':
+    codex('https://host.example/openapi/wiselink/codex-mcp')};
+  for (const env of [{}, {WL_CODEX_RUNTIME_APP_ID:'app_17c3zn24kv2'}]) {
+    const result=await inspect(t,servers,env);
+    assert.equal(result.codexRuntimeAppIdConfigured,false);
+    assert.ok(result.remaining.includes('CODEX_RUNTIME_APP_ID_CONFIG_INVALID'));
+  }
 });
 
 test('incomplete named Codex tool filter reports the missing full metadata surface',async t=>{

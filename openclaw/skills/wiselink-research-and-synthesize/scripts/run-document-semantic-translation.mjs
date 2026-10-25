@@ -1,6 +1,7 @@
 import { validateExecutionModelSelection } from './validate-payload.mjs';
 import { collectBatch } from './run-semantic-translation.mjs';
 import { canonicalSha256 } from './validate-payload.mjs';
+import { codexParentRunRecorder } from './model-executor.mjs';
 
 /** One Host-owned document attempt, bounded leased semantic batches per queue tick. */
 export async function runDocumentSemanticTranslationStep(summary, { callTool, translate, observeModelOutput, checkpoint, modelExecutor }) {
@@ -118,7 +119,9 @@ export async function runDocumentSemanticTranslationStep(summary, { callTool, tr
         execution = savedModel ?? await translate(batch, { executionModel: claimed.executionModel,
           configuredModelVersion: claimed.executionModel.modelRef, heartbeat: assertLease,
           sessionDiscriminator: batch.generationRequestRef,
-          ...(codex ? { codexRecovery: { requestId, ...(started ? { recoverOnly: true } : {}) } } : {}),
+          ...(codex ? { codexRecovery: { requestId, ...(started ? { recoverOnly: true } : {}),
+            onRunPrepared: codexParentRunRecorder(checkpoint,receiptKey,
+              {requestId,argsHash:canonicalSha256(modelBinding)}) } } : {}),
           observeModelOutput: (shape, round = 1) => observeModelOutput?.({
             attemptRef: identity.attemptRef, generationRequestRef: batch.generationRequestRef,
             shape, round }),

@@ -159,11 +159,18 @@ class BridgeTests(unittest.TestCase):
         class FakeUpstream:
             made = 0
             payloads = []
+            request_path = None
             def __init__(self, *args, **kwargs):
                 FakeUpstream.made += 1
                 self.sock = Socket()
             def request(self, method, path, body, headers):
+                self.assert_request_persisted(body, headers)
                 FakeUpstream.payloads.append(json.loads(body))
+            def assert_request_persisted(self, body, headers):
+                artifact = FakeUpstream.request_path
+                assert artifact.read_bytes() == body
+                assert artifact.stat().st_mode & 0o077 == 0
+                assert b'test-only' not in artifact.read_bytes()
             def getresponse(self):
                 response = self
                 self.status = 200
@@ -198,11 +205,13 @@ class BridgeTests(unittest.TestCase):
             config = pathlib.Path(tmp, "config.json")
             audit = pathlib.Path(tmp, "audit.jsonl")
             upstream_response = pathlib.Path(tmp, "upstream-response.json")
+            upstream_request = pathlib.Path(tmp, "upstream-request.json")
+            FakeUpstream.request_path = upstream_request
             config.write_text(json.dumps({"models": {"providers": {"miaoda": {"baseUrl": bridge.BASE, "apiKey": {}, "headers": {"x-api-key": {}}}}}}))
             with mock.patch.object(bridge, "resolve", return_value="test-only"), mock.patch.object(bridge.http.client, "HTTPSConnection", FakeUpstream), mock.patch.object(bridge, "ThreadingHTTPServer", FakeServer):
                 with self.assertRaisesRegex(bridge.Rejected, "invalid_glm_reasoning_effort"):
                     bridge.start_server(str(config), bridge.MODEL, str(audit), tmp, allowed_tools=ALLOWED, reasoning_effort="medium")
-                server, thread, port, token = bridge.start_server(str(config), bridge.MODEL, str(audit), tmp, allowed_tools=ALLOWED, max_requests=3, max_tokens=16384, reasoning_effort="low", upstream_response_path=upstream_response)
+                server, thread, port, token = bridge.start_server(str(config), bridge.MODEL, str(audit), tmp, allowed_tools=ALLOWED, max_requests=4, max_tokens=16384, reasoning_effort="low", upstream_response_path=upstream_response, upstream_request_path=upstream_request)
                 def post(data):
                     payload = json.dumps(data).encode()
                     handler = object.__new__(server.handler)
@@ -233,6 +242,13 @@ class BridgeTests(unittest.TestCase):
                     truncated = post(namespaced_body(history))
                     self.assertEqual(truncated[0], 200)
                     self.assertIn("response.failed", truncated[1])
+                    history[-1]["content"] = "interrupted before upstream dispatch"
+                    with mock.patch.object(bridge.http.client, "HTTPSConnection", side_effect=InterruptedError("offline interruption")):
+                        interrupted = post(namespaced_body(history))
+                    self.assertEqual(interrupted[0], 400)
+                    self.assertEqual(json.loads(upstream_request.read_bytes())["messages"][-1]["content"],
+                                     "interrupted before upstream dispatch")
+                    self.assertFalse(json.loads(audit.read_text().splitlines()[-1])["upstream_attempted"])
                     self.assertEqual(post(namespaced_body(history))[0], 429)
                     self.assertEqual(FakeUpstream.made, 3)
                 finally:
@@ -240,8 +256,8 @@ class BridgeTests(unittest.TestCase):
                     server.server_close()
                     thread.join(timeout=3)
             records = [json.loads(line) for line in audit.read_text().splitlines()]
-            self.assertEqual([r["tool_results"] for r in records], [0, 1, 0, 0])
-            self.assertEqual([r["status"] for r in records], [200, 200, 502, 429])
+            self.assertEqual([r["tool_results"] for r in records], [0, 1, 0, 0, 0])
+            self.assertEqual([r["status"] for r in records], [200, 200, 502, 400, 429])
             self.assertEqual(records[2]["finish_reason"], "length")
             self.assertEqual(records[2]["error_code"], "upstream_output_length")
             self.assertEqual(FakeUpstream.payloads[0]["reasoning_effort"], "low")

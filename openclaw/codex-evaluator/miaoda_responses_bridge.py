@@ -1,5 +1,5 @@
 """Opt-in, loopback-only Responses bridge for the configured Miaoda model."""
-import hmac, http.client, json, os, secrets, threading, time
+import hmac, http.client, json, os, secrets, threading, time, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -17,6 +17,22 @@ def require(condition, code):
 def read_json(path):
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+def atomic_bytes(path, value):
+    """Publish private request bytes durably before the first network write."""
+    path = os.fspath(path)
+    temporary = path + "." + uuid.uuid4().hex + ".tmp"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as file:
+        file.write(value)
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(temporary, path)
+    directory = os.open(os.path.dirname(path), os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 def provider(config):
     value = config["models"]["providers"]["miaoda"]
@@ -269,7 +285,7 @@ class Emitter:
         self.response.update(status="completed", usage=self.usage)
         self.send("response.completed", response=self.response)
 
-def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max_requests=24, max_tokens=8192, timeout=90, reasoning_effort=None, upstream_response_path=None):
+def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max_requests=24, max_tokens=8192, timeout=90, reasoning_effort=None, upstream_response_path=None, upstream_request_path=None):
     """Return (loopback server, serving thread, ephemeral port, ephemeral bearer token)."""
     require(model == MODEL, "model_not_allowed"); provider(read_json(config_path))
     # An empty allowlist is used by the bounded generation runner. Codex may
@@ -331,10 +347,15 @@ def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max
                     if count[0] >= max_requests:
                         record["status"] = 429; raise Rejected("request_budget_exhausted")
                     count[0] += 1
-                record.update(upstream_attempted=True, status=502)
+                # These are the exact JSON UTF-8 bytes passed to HTTPSConnection.
+                # Headers, bearer credentials, and the connection are never saved.
+                upstream_body = json.dumps(payload).encode()
+                if upstream_request_path is not None:
+                    atomic_bytes(upstream_request_path, upstream_body)
                 target = urlsplit(BASE); deadline = time.monotonic() + timeout
                 connection = http.client.HTTPSConnection(target.hostname, timeout=timeout)
-                connection.request("POST", target.path + "/chat/completions", json.dumps(payload).encode(), headers)
+                record.update(upstream_attempted=True, status=502)
+                connection.request("POST", target.path + "/chat/completions", upstream_body, headers)
                 upstream = connection.getresponse()
                 require(upstream.status == 200, "upstream_http_" + str(upstream.status))
                 self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.send_header("Cache-Control", "no-cache"); self.send_header("Connection", "close"); self.end_headers(); self.close_connection = True

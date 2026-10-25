@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createCheckpointStore } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 import { runWikiFixture, runReviewFixture, runSummaryConsumerFixture, runReviewConsumerFixture } from './review-wiki-recovery-fixture.mjs';
+import { assertCodexParentRunLink, assertDistinctCodexParentRunLinks } from './codex-parent-run-link-test-helper.mjs';
 
 async function fixture() {
   const root = await mkdtemp(resolve(tmpdir(), 'wiki-codex-recovery-'));
@@ -28,10 +29,12 @@ if 'return_wiselink_review_candidate' in r['allowed_tool_names']:
   candidate={'tool_name':'read_wiselink_review_sources','arguments':{'sourceRefIds':['SR-1']}}
  else:
   candidate={'tool_name':'return_wiselink_review_candidate','arguments':{'responseType':'ANSWER','answer':'No current status is established.','sourceRefs':['SR-1'] if two else [],'missingInputs':[],'candidateEvidenceRefs':[],'reviewActionDraft':None,'affectedItemIds':[],'warnings':[]}}
-summary={'codex_exit_code':0,'terminal_events':['turn.completed'],'transport_passed':True,'upstream_models':['glm-5.3'],'input_tokens':10,'output_tokens':5,'model_requests':1,'closure':'completed','process_group_closed':True,'upstream_response_present':True,'structured_final_to_contract':True,'source_config_unchanged':True}
+summary={'codex_exit_code':0,'terminal_events':['turn.completed'],'transport_passed':True,'upstream_models':['glm-5.3'],'input_tokens':10,'output_tokens':5,'model_requests':1,'closure':'completed','process_group_closed':True,'upstream_response_present':True,'upstream_request_present':True,'structured_final_to_contract':True,'source_config_unchanged':True}
+save('upstream-request.json',{'model':'glm-5.3','messages':[{'role':'user','content':'offline review fixture'}]})
+summary['upstream_request_sha256']=hashlib.sha256((p/'upstream-request.json').read_bytes()).hexdigest()
 save('upstream-response.json',{'format':'chat-completions-sse-events-v1','events':[{'model':'glm-5.3','choices':[{'index':0,'finish_reason':'stop'}]}]})
 save('contract-candidate.json',candidate); save('transport-summary.json',summary)
-save('generation-receipt.json',{'version':1,'binding_sha256':r['binding_sha256'],'run_directory':str(p),'transport':summary,'candidate':candidate,'upstream_response_sha256':hashlib.sha256((p/'upstream-response.json').read_bytes()).hexdigest()})
+save('generation-receipt.json',{'version':1,'binding_sha256':r['binding_sha256'],'run_directory':str(p),'transport':summary,'candidate':candidate,'upstream_request_sha256':summary['upstream_request_sha256'],'upstream_response_sha256':hashlib.sha256((p/'upstream-response.json').read_bytes()).hexdigest()})
 print(json.dumps(summary))
 `);
   const wrapper = resolve(root, 'python-wrapper');
@@ -322,6 +325,12 @@ test('full ordinary Review preserves source read and second model round across l
   assert.equal(completed.result.status, 'CANDIDATE_SAVED');
   assert.equal(completed.state.committedWrites, 1);
   assert.equal((await readFile(resolve(root, 'runner', 'dispatch-count'), 'utf8')).trim().split('\n').length, 2);
+  const links = await Promise.all([1, 2].map(round => assertCodexParentRunLink({
+    checkpointRoot: resolve(root, 'review-consumer', 'RT-review-recovery'),
+    step: `review-codex-round-${round}`, requestId: `review:AQ-review-recovery:round-${round}`,
+    runRoot: resolve(root, 'runner'),
+  })));
+  assertDistinctCodexParentRunLinks(links);
 });
 
 test('Wiki summary resumes source read and second fixed Codex round without recounting process', async () => {
@@ -336,6 +345,12 @@ test('Wiki summary resumes source read and second fixed Codex round without reco
   assert.equal(receipt.runs.length, 2);
   assert.equal(receipt.closed, true);
   assert.equal((await readFile(resolve(root, 'runner', 'dispatch-count'), 'utf8')).trim().split('\n').length, 2);
+  const links = await Promise.all([0, 1].map(round => assertCodexParentRunLink({
+    checkpointRoot: resolve(root, 'checkpoint'), step: `summary-codex.round-${round}`,
+    requestId: `summary:DS-wiki-recovery:AQ-wiki-recovery:round-${round + 1}`,
+    runRoot: resolve(root, 'runner'),
+  })));
+  assertDistinctCodexParentRunLinks(links);
 });
 
 test('ordinary Review refuses changed source body on fresh lease without a new model or commit', async () => {
@@ -359,4 +374,36 @@ test('ordinary Review refuses a changed Host task and input hash on recovery', a
   const host = await createCheckpointStore(resolve(root, 'review-host'));
   assert.equal((await host.readOptional('state')).committedWrites, 0);
   assert.equal((await readFile(resolve(root, 'runner', 'dispatch-count'), 'utf8')).trim(), '1');
+});
+
+test('Review consumer durably links round one before launch and does not regenerate when UNKNOWN', async () => {
+  const root = await fixture();
+  const first = await child(root, 'before-codex-launch', 'review-consumer');
+  assert.equal(first.signal, 'SIGKILL', first.stderr);
+  const checkpointRoot = resolve(root, 'review-consumer', 'RT-review-recovery');
+  await assertCodexParentRunLink({ checkpointRoot, step: 'review-codex-round-1',
+    requestId: 'review:AQ-review-recovery:round-1', runRoot: resolve(root, 'runner') });
+  await assert.rejects(readFile(resolve(root, 'runner', 'dispatch-count')), { code: 'ENOENT' });
+
+  await new Promise(resolveDelay => setTimeout(resolveDelay, 180));
+  await assert.rejects(runReviewConsumerFixture(root), /CODEX_GENERATION_OUTCOME_UNKNOWN/u);
+  const state = await createCheckpointStore(resolve(root, 'review-host')).then(store => store.readOptional('state'));
+  assert.equal(state.committedWrites, 0);
+  await assert.rejects(readFile(resolve(root, 'runner', 'dispatch-count')), { code: 'ENOENT' });
+});
+
+test('Wiki SUMMARY consumer durably links its exact run before launch and does not regenerate on restart', async () => {
+  const root = await fixture();
+  const first = await child(root, 'before-codex-launch', 'consumer');
+  assert.equal(first.signal, 'SIGKILL', first.stderr);
+  const checkpointRoot = resolve(root, 'derived-summary', 'synthetic-host', 'DS-wiki-recovery', 'AQ-wiki-recovery');
+  await assertCodexParentRunLink({ checkpointRoot, step: 'summary-codex.round-0',
+    requestId: 'summary:DS-wiki-recovery:AQ-wiki-recovery:round-1', runRoot: resolve(root, 'runner') });
+  await assert.rejects(readFile(resolve(root, 'runner', 'dispatch-count')), { code: 'ENOENT' });
+
+  await assert.rejects(runSummaryConsumerFixture(root), /CODEX_GENERATION_OUTCOME_UNKNOWN/u);
+  const state = await createCheckpointStore(resolve(root, 'host')).then(store => store.readOptional('state'));
+  assert.equal(state?.committedWrites ?? 0, 0);
+  assert.equal(state?.saveCalls ?? 0, 0);
+  await assert.rejects(readFile(resolve(root, 'runner', 'dispatch-count')), { code: 'ENOENT' });
 });

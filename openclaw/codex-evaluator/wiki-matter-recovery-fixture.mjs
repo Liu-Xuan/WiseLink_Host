@@ -32,7 +32,8 @@ export async function runMatterFixture(root, mode = 'normal') {
     runBudget: { timeoutMs: 300_000, maxCompletionTokens: 1000,
       maxModelRequests: 3, reasoningEffort: 'low' },
     codexOptions: { codexBinary: '/synthetic/codex', configPath: '/synthetic/config',
-      runRoot: resolve(root, 'runner'), pythonBinary: resolve(root, 'python-wrapper') } });
+      runRoot: resolve(root, 'runner'), pythonBinary: resolve(root, 'python-wrapper'),
+      onRunPrepared: async () => { if (mode === 'before-codex-launch') process.kill(process.pid, 'SIGKILL'); } } });
   const options = { modelExecutor: 'CODEX', codexOptions: { codexBinary: '/synthetic/codex',
       configPath: '/synthetic/config', runRoot: resolve(root, 'runner') },
     executionModel, assessmentCheckpoint: checkpoint,
@@ -128,7 +129,8 @@ export async function runMatterConsumerFixture(root, mode = 'normal') {
         runBudget: { timeoutMs: 300_000, maxCompletionTokens: 1000,
           maxModelRequests: 3, reasoningEffort: 'low' },
         codexOptions: { codexBinary: '/synthetic/codex', configPath: '/synthetic/config',
-          runRoot: resolve(root, 'runner'), pythonBinary: resolve(root, 'python-wrapper') } });
+          runRoot: resolve(root, 'runner'), pythonBinary: resolve(root, 'python-wrapper'),
+          onRunPrepared: async () => { if (mode === 'before-codex-launch') process.kill(process.pid, 'SIGKILL'); } } });
       try {
         return await invokeHostedJobAidProblemModel(input, { ...hooks, modelExecutor: 'CODEX',
           codexOptions: { codexBinary: '/synthetic/codex', configPath: '/synthetic/config',

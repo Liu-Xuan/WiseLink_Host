@@ -48,302 +48,538 @@
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "begin_dynamic_evaluation",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "begin_matter_assessment",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "begin_overall_synthesis",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "begin_review_turn",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "begin_translation",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "cancel_action_attempt",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "commit_applicability_candidate",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "commit_dynamic_evaluation_candidate",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "commit_overall_candidate",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "commit_review_turn_candidate",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "commit_translation_candidate",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": true,
       "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema.",
+        "The source Zod expressions were executed with locked Zod 4.6.5; JSON Schema omits custom runtime refinements.",
+        "Exact native reference and nonblank-text refinements require the original runtime validator; this is not a live tools/list response."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "derived_summary_attempt",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": true,
       "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema.",
+        "The source Zod expressions were executed with locked Zod 4.6.5; JSON Schema omits custom runtime refinements.",
+        "Exact native reference and nonblank-text refinements require the original runtime validator; this is not a live tools/list response."
+      ],
       "sourceRuntimeRefinements": [
         "isTdmsApprovedOpinionReference"
-      ]
+      ],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "document_reading",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": true,
       "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema.",
+        "The source Zod expressions were executed with locked Zod 4.6.5; JSON Schema omits custom runtime refinements.",
+        "Exact native reference and nonblank-text refinements require the original runtime validator; this is not a live tools/list response."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "document_translation",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": true,
       "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema.",
+        "The source Zod expressions were executed with locked Zod 4.6.5; JSON Schema omits custom runtime refinements.",
+        "Exact native reference and nonblank-text refinements require the original runtime validator; this is not a live tools/list response."
+      ],
       "sourceRuntimeRefinements": [
         "trimmedNonempty"
-      ]
+      ],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "document_work",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": true,
       "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema.",
+        "The source Zod expressions were executed with locked Zod 4.6.5; JSON Schema omits custom runtime refinements.",
+        "Exact native reference and nonblank-text refinements require the original runtime validator; this is not a live tools/list response."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "get_action_attempt_status",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "get_deep_link",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "get_parse_status",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "get_review_turn_context",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "heartbeat_action_attempt",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "hierarchical_wiki_cleanup",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "hierarchical_wiki_matter_action_attempt",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "hierarchical_wiki_next_matter_assessment",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "hierarchical_wiki_read_matter_current_work",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "matter_action_attempt",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "next_hierarchical_wiki",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "next_matter_assessment",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "next_original_assessment",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "query_assessment_knowledge",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "query_parsed_package",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "query_review_aily",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "read_assessment_sources",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": true,
       "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Zod default insertion is not represented by JSON Schema validation.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema.",
+        "The source Zod expressions were executed with locked Zod 4.6.5; JSON Schema omits custom runtime refinements.",
+        "Exact native reference and nonblank-text refinements require the original runtime validator; this is not a live tools/list response."
+      ],
       "sourceRuntimeRefinements": [
         "isTdmsApprovedOpinionReference"
-      ]
+      ],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "read_assessment_work",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "read_document_original",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "read_matter_current_work",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "read_source_refs",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "record_assessment_program_progress",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "record_oem_discovery_run",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "resume_overall_synthesis",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "save_assessment_work",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": false,
       "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
-      "sourceRuntimeRefinements": []
+      "sourceSemanticLimitations": [
+        "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+      ],
+      "sourceRuntimeRefinements": [],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     },
     {
       "name": "translation_workspace",
       "status": "PENDING_LOCAL_PACKET",
       "completedInThisChange": true,
       "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
+      "sourceSemanticLimitations": [
+        "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema.",
+        "The source Zod expressions were executed with locked Zod 4.6.5; JSON Schema omits custom runtime refinements.",
+        "Exact native reference and nonblank-text refinements require the original runtime validator; this is not a live tools/list response."
+      ],
       "sourceRuntimeRefinements": [
         "trimmedNonempty"
-      ]
+      ],
+      "runtimeSemanticsStatus": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE"
     }
-  ]
+  ],
+  "conclusions": {
+    "toolNameScope": "42_EXISTING_CLIENT_TOOLS_ONLY",
+    "localPacketReceived": false,
+    "liveServiceIdentityVerified": false,
+    "shapeComparisonIsAuthorization": false,
+    "mechanicalSchemas": 35,
+    "pinnedZodSchemas": 7,
+    "runtimeSemantics": "PENDING_LOCAL_ZOD_AND_HOST_BUSINESS_EVIDENCE",
+    "requiredRuntimeChecks": [
+      "safe-integer maximum and minimum including overflow",
+      "UUID acceptance set including version, variant, NIL, MAX, case and whitespace",
+      "strict objects and every action/phase union branch",
+      "trim/default/refine and authorization/version/fence checks"
+    ]
+  }
 }

@@ -1,5 +1,7 @@
 # Codex ↔ Host 接口契约（源码可证范围）
 
+**后续增量入口：** 本文中的 `fc132291` 服务端源码和旧本地主控进度均为固定历史记录。以 `925deb2d` 为父基线的新客户端对齐见 [`CODEX_HOST_ALIGNMENT_VALIDATION.md`](../../openclaw/codex-evaluator/CODEX_HOST_ALIGNMENT_VALIDATION.md) 与 `runtime-configuration-status.json`。用户已告知本地 Host 为未推送/未部署的 `974bedfa8edb03ba94c4991a2c6a3c63a1145eb4`、图 v1.8；76 文件／45 工具的实际包尚未收到，不将旧源码导出冒充该包。
+
 日期：2026-10-25。本次继续实现的基线为 `94c54de74a0d7a0c0d66778a04a161e2017fce28`，保留其程序初评恢复成果；此前消费者实现和接线记录分别为 `1155c386`、`fc132291`。此文区分客户端预期、固定 Host 源码事实和未验证项。机器文件为 `openclaw/codex-evaluator/contracts/host-source-interface.json`；`export-host-contract.mjs` 从六份固定入口源文件与九份固定依赖重新导出，不连接业务 Host。原 35 项受限转换样例继续保留，另 7 项使用 Host 锁文件对应的真实 Zod 4.6.5 执行，覆盖 54 个顶层动作分支、56 个接受和 184 个拒绝用例。离线检查证明源码、输入结构及明确列出的精化条件，不能证明 Host 授权或业务运行成功。示例均为合成数据。
 
 完整、可重新生成的程序请求响应样例为 [`program-recovery-example.json`](../../openclaw/codex-evaluator/contracts/program-recovery-example.json)，包含实际离线消费者产生的材料、完整生成响应、SAVE 和独立 READ，以及合成的 claim、begin、冻结 result、Overall 与 ACK。配置状态见 [`runtime-configuration-status.json`](../../openclaw/codex-evaluator/contracts/runtime-configuration-status.json)。94c54de 的程序恢复语义与三类回执保留在 [`RECOVERY_VALIDATION.md`](../../openclaw/codex-evaluator/RECOVERY_VALIDATION.md)；本轮逐消费者恢复及 Host 翻译租约缺口见 [`CONSUMER_RECOVERY_VALIDATION.md`](../../openclaw/codex-evaluator/CONSUMER_RECOVERY_VALIDATION.md)。本批没有真实模型调用或真实 Host 调用。

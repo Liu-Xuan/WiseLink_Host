@@ -9,7 +9,9 @@ import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { HOST_MCP_TOOLS } from '../skills/wiselink-research-and-synthesize/scripts/orchestrate-host-mcp.mjs';
-import { WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION, canonicalSha256 } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
+import { WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION, WISELINK_CODEX_MCP_NAME,
+  WL_CODEX_RUNTIME_APP_ID, canonicalSha256 } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
+import { createHostAutoWorkItemQueueClient } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 
 const [serviceFile, readonlyFile, controllerFile, apiFile, derivedFile, matterFile, outputFile] = process.argv.slice(2);
 if (!serviceFile || !readonlyFile || !controllerFile || !apiFile || !derivedFile || !matterFile || !outputFile) throw new Error('USAGE: service.ts readonly.ts controller.ts api.interface.ts derived-tools.ts matter-tools.ts output.json');
@@ -36,10 +38,20 @@ const dependencySources = Object.fromEntries(await Promise.all(dependencyPaths.m
 const dep = suffix => dependencySources[dependencyPaths.find(path => path.endsWith(suffix))];
 const clientFile = fileURLToPath(new URL('../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs', import.meta.url));
 const clientSource = await readFile(clientFile, 'utf8');
-const codexIdentity = clientSource.match(/\? '(wiselink-codex-engineering-assessment)' : WISELINK_HOST_MCP_NAME/u)?.[1];
+const codexIdentity = clientSource.includes('WISELINK_CODEX_MCP_NAME') ? WISELINK_CODEX_MCP_NAME : null;
 const codexPath = clientSource.match(/\? '(\/openapi\/wiselink\/codex-mcp)' : '\/openapi\/wiselink\/openclaw-mcp'/u)?.[1]
   ?? (clientSource.includes("'/openapi/wiselink/codex-mcp'") ? '/openapi/wiselink/codex-mcp' : null);
 if (!codexIdentity || !codexPath) throw new Error('CODEX_CLIENT_EXPECTATION_NOT_FOUND');
+// Execute the actual queue URL builder against a recording transport. These
+// are client expectations; this does not contact or verify a Host controller.
+const codexQueueRestPaths=[];
+const queueClient=createHostAutoWorkItemQueueClient({modelExecutor:'CODEX',runtimeAppId:WL_CODEX_RUNTIME_APP_ID,
+  hostMcpUrl:`https://fixture.invalid${codexPath}`},async url=>{
+  codexQueueRestPaths.push(new URL(url).pathname);
+  return {ok:true,status:200,headers:new Headers({'content-type':'application/json'}),json:async()=>({})};
+});
+for(const method of ['nextWorkItem','acknowledgeWorkItem','blockWorkItem','applyPendingModelConfiguration'])
+  await queueClient[method]({});
 const serverIdentity = service.match(/new McpServer\(\{\s*name: '([^']+)',\s*version: '([^']+)'/u);
 if (!serverIdentity) throw new Error('SERVER_IDENTITY_NOT_FOUND');
 const controllerRoot = controller.match(/@Controller\('([^']+)'\)/u)?.[1];
@@ -491,7 +503,7 @@ for (const name of ['next_matter_assessment','read_matter_current_work','begin_m
 const output = {
   schemaVersion:'wiselink.codex-host-source-contract.v1',
   evidence:{hostCommit:'fc1322919b1b52433c33086c8db4aeb957f0e982',hostSource:{path:'server/modules/canonical-host/canonical-host-openclaw-mcp.service.ts',gitBlobSha:blobSha(service),sha256:sha256(service)},readonlySource:{path:'server/modules/canonical-host/canonical-host-readonly-mcp-tools.ts',gitBlobSha:blobSha(readonly),sha256:sha256(readonly)},controllerSource:{path:'server/modules/canonical-host/canonical-host-openclaw-mcp.openapi.controller.ts',gitBlobSha:blobSha(controller),sha256:sha256(controller)},apiSource:{path:'shared/api.interface.ts',gitBlobSha:blobSha(apiSource),sha256:sha256(apiSource)},derivedSource:{path:'server/modules/canonical-host/derived-summary-attempt-mcp-tools.ts',gitBlobSha:blobSha(derived),sha256:sha256(derived)},matterSource:{path:'server/modules/canonical-host/matter-attempt-mcp-tools.ts',gitBlobSha:blobSha(matter),sha256:sha256(matter)},dependencySources:Object.fromEntries(dependencyPaths.map(path=>[path,{gitBlobSha:blobSha(dependencySources[path]),sha256:sha256(dependencySources[path])}])),zodVersion:'4.6.5',zodLockIntegrity:'sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==',offlineZodValidation:branchEvidence,liveToolsListVerified:false,proposedCodexHostBranchVerified:false},
-  client:{sourcePath:'openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs',sourceSha256:sha256(clientSource),legacyServerName:WISELINK_HOST_MCP_NAME,expectedServerVersion:WISELINK_HOST_MCP_VERSION,expectedCodexServerName:codexIdentity,expectedCodexMcpPath:codexPath,legacyMcpPath:'/openapi/wiselink/openclaw-mcp',requiredLegacyToolNames:HOST_MCP_TOOLS},
+  client:{sourcePath:'openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs',sourceSha256:sha256(clientSource),legacyServerName:WISELINK_HOST_MCP_NAME,expectedServerVersion:WISELINK_HOST_MCP_VERSION,expectedCodexServerName:codexIdentity,expectedCodexMcpPath:codexPath,expectedCodexQueueRestPaths:codexQueueRestPaths,expectedRuntimeAppEnvironment:'WL_CODEX_RUNTIME_APP_ID',expectedRuntimeAppId:WL_CODEX_RUNTIME_APP_ID,wireProvenanceVersionKey:WISELINK_HOST_MCP_NAME,legacyMcpPath:'/openapi/wiselink/openclaw-mcp',requiredLegacyToolNames:HOST_MCP_TOOLS},
   serverSource:{serverName:serverIdentity[1],serverVersion:serverIdentity[2],mcpPath:`/${controllerRoot}/${mcpPost}`,identityStatus:'PINNED_LEGACY_SOURCE_ONLY',queueRestPaths:['next-work-item','ack-work-item','block-work-item'].map(route=>{if(!controller.includes(`@Post('${route}')`)) throw new Error(`QUEUE_ROUTE_NOT_FOUND:${route}`);return `/${controllerRoot}/${route}`}),queueTypeScriptDeclarations:queueTypes+blockResponse,tools,excludedToolSchemas,otherUnexportedClientToolNames:HOST_MCP_TOOLS.filter(name=>!(name in tools)&&!(name in excludedToolSchemas))},
   limitations:['Seven dependency-resolved input schemas were exported by executing pinned Zod 4.6.5; the other 35 remain constrained mechanical input shapes. Neither is a live MCP tools/list response.','Zod trim transformation and runtime authorization are outside standard JSON Schema validation; see each schema semanticLimitations and exact zodExpression.','The TDMS native-reference branch and translated-text fields require runtime refinements beyond standard JSON Schema; the pinned Zod offline cases execute them.','The selected inventory is not a complete Host tool export; all omitted legacy client tool names are inventoried.','Server response JSON shapes are described by client validators and examples, not inferred from input schemas.','Comparison with the latest local Host interface packet remains pending until its exact versioned artifact is available.'],
 };

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { modelExecutorProvenance } from './model-executor.mjs';
 import { runSemanticTranslation } from './run-semantic-translation.mjs';
 import { projectTdmsReviewSavedModelContext } from './tdms-review-saved-context.mjs';
 import {
@@ -495,7 +496,7 @@ function stoppedConfigurationEvidenceReevaluation(input) {
   };
 }
 
-export async function runTranslation({ workItemId, callTool, translate, requestId }) {
+export async function runTranslation({ workItemId, callTool, translate, requestId, runtimeProvenance }) {
   assertCallbacks(workItemId, callTool, translate);
   const before = await callTool('get_parse_status', { workItemId });
   const begin = await collectTranslationDelivery(workItemId, callTool, requestId);
@@ -509,7 +510,8 @@ export async function runTranslation({ workItemId, callTool, translate, requestI
     });
   }
   if (begin.task?.modelInput?.schemaVersion === 'wiselink.3_1.translation_task.v2') {
-    const execution = await runSemanticTranslation({ begin, callTool, translate, requestId });
+    const modelExecutor = runtimeProvenance?.toolVersions?.['model-executor'] === 'CODEX' ? 'CODEX' : 'HOSTED';
+    const execution = await runSemanticTranslation({ begin, callTool, translate, requestId, modelExecutor });
     let committed;
     try {
       committed = await callTool('commit_translation_candidate', commitArgs(begin, execution.result));
@@ -673,6 +675,7 @@ export async function runApplicabilityEvaluation({
   extractApplicability,
   runtimeProvenance,
 }) {
+  const modelExecutor = runtimeProvenance?.toolVersions?.['model-executor'] === 'CODEX' ? 'CODEX' : 'HOSTED';
   requiredText(
     applicabilityContextRef,
     'HOST_MCP_APPLICABILITY_CONTEXT_REF_REQUIRED',
@@ -692,7 +695,7 @@ export async function runApplicabilityEvaluation({
   ) {
     throw new Error('HOST_MCP_APPLICABILITY_WORKITEM_BINDING_MISMATCH');
   }
-  validatePayload('applicability-input', begin.modelInput);
+  validatePayload('applicability-input', begin.modelInput, { modelExecutor });
   const workItemId = begin.task.workItemId;
   const before = await callTool('get_parse_status', { workItemId });
   if (begin.status === 'COMMITTING') {
@@ -730,6 +733,7 @@ export async function runApplicabilityEvaluation({
     const candidate = buildApplicabilityCandidate(
       begin.modelInput,
       astCandidate,
+      { modelExecutor },
     );
     result = sealResultEnvelope({
       task: begin.task,
@@ -778,6 +782,7 @@ export async function runApplicabilityEvaluation({
 
 export async function runDynamicEvaluation(input) {
   const { workItemId, query, callTool, evaluateDynamicRules } = input;
+  const modelExecutor = input.runtimeProvenance?.toolVersions?.['model-executor'] === 'CODEX' ? 'CODEX' : 'HOSTED';
   const continuationRequestId = optionalContinuationRequest(input);
   assertCallbacks(workItemId, callTool, evaluateDynamicRules);
   const before = await callTool('get_parse_status', { workItemId });
@@ -801,7 +806,7 @@ export async function runDynamicEvaluation(input) {
     throw new Error('HOST_MCP_PROGRAM_ASSESSMENT_MODE_BINDING_MISMATCH');
   if (!problemV2) validatePayload('dynamic-rules-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
-  const reconciled = problemV2 ? await reconcileSavedInitialAssessment(begin, callTool) : null;
+  const reconciled = problemV2 ? await reconcileSavedInitialAssessment(begin, callTool, modelExecutor) : null;
   const execution = reconciled ?? await recoverAssessmentExecution(begin, problemV2, input.recoverAssessmentExecution) ?? await executeInitialAssessment(begin, problemV2, () =>
     evaluateDynamicRules(structuredClone(begin.modelInput), problemV2 ? problemAssessmentHooks(begin, callTool) : undefined));
   await heartbeatAttempt(begin, callTool);
@@ -1049,6 +1054,7 @@ export async function runInteractiveReviewTurn({
   hasTool,
   respond,
   isolatedCandidate = false,
+  modelExecutor = 'HOSTED',
 }) {
   if (mode !== 'INTERACTIVE_REVIEW') {
     throw new Error('INTERACTIVE_REVIEW_MODE_REQUIRED');
@@ -1064,7 +1070,7 @@ export async function runInteractiveReviewTurn({
     ...(workItemId ? { workItemId } : {}),
   });
   assertBegin(begin, 'OPENCLAW_INTERACTIVE_REVIEW');
-  const task = validateReviewTask(begin.task.modelInput);
+  const task = validateReviewTask(begin.task.modelInput, { modelExecutor });
   assertTdmsReviewRuntimeBinding(task, begin.task);
   if (task.reviewConversationRef !== reviewConversationRef ||
     task.requestId !== requestId ||
@@ -1073,7 +1079,7 @@ export async function runInteractiveReviewTurn({
   }
   if (begin.status === 'COMMITTING') {
     if (isolatedCandidate) throw new Error('REVIEW_ISOLATED_COMMITTING_FORBIDDEN');
-    return recoverReviewCommitting(begin, callTool);
+    return recoverReviewCommitting(begin, callTool, modelExecutor);
   }
   if (reviewNativeRuntime(task) &&
       (typeof hasTool !== 'function' || hasTool(REVIEW_NATIVE_READ_TOOL) !== true))
@@ -1138,7 +1144,7 @@ export async function runInteractiveReviewTurn({
   };
   const safeModelInput = buildReviewModelInput(task, contextResult, begin.task.workItemId);
   const validateCandidate = (value) => {
-    const candidate = validateReviewCandidate(task, value, nativeObservations);
+    const candidate = validateReviewCandidate(task, value, nativeObservations, { modelExecutor });
     assertReviewSourcesWereRead(candidate, readSourceRefIds, task, safeModelInput.context.matterWorking, begin.task.workItemId);
     return candidate;
   };
@@ -1164,7 +1170,7 @@ export async function runInteractiveReviewTurn({
     task: begin.task,
     modelOutput: candidate,
     provenance: execution.provenance,
-    sourceRefs: reviewCandidateArtifactRefs(begin.task, candidate, nativeObservations),
+    sourceRefs: reviewCandidateArtifactRefs(begin.task, candidate, nativeObservations, { modelExecutor }),
     factsConsidered: [REVIEW_MATTER_TASK_SCHEMA, REVIEW_JOBAID_TASK_SCHEMA].includes(task.schemaVersion)
       ? reviewCandidateSourceRefIds(task, candidate) : [...candidate.sourceRefs],
     warnings: [...candidate.warnings],
@@ -1199,8 +1205,8 @@ export async function runInteractiveReviewTurn({
   });
 }
 
-async function recoverReviewCommitting(begin, callTool) {
-  const bounded = boundedReviewRecoveryTask(begin.task);
+async function recoverReviewCommitting(begin, callTool, modelExecutor = 'HOSTED') {
+  const bounded = boundedReviewRecoveryTask(begin.task, modelExecutor);
   let observed, beforeStatus;
   try {
     observed = await recoverCommitting({
@@ -1215,10 +1221,10 @@ async function recoverReviewCommitting(begin, callTool) {
     // Another authorized commit may finish after this COMMITTING begin. The
     // same exact bounded reconciliation proves terminal persistence only.
     if (!bounded || beforeStatus?.status !== 'SUCCEEDED') throw error;
-    return reconcileBoundedReviewSealedStatus(begin, beforeStatus);
+    return reconcileBoundedReviewSealedStatus(begin, beforeStatus, undefined, modelExecutor);
   }
   if (!bounded) return observed;
-  const evidence = boundedReviewSealedEvidence(begin, observed.status);
+  const evidence = boundedReviewSealedEvidence(begin, observed.status, modelExecutor);
   let committed;
   try {
     committed = await callTool('commit_review_turn_candidate',
@@ -1230,18 +1236,18 @@ async function recoverReviewCommitting(begin, callTool) {
     });
     // A missing receipt cannot prove a READ journal or stale mutation. Only
     // the exact current terminal status may reconcile candidate persistence.
-    return reconcileBoundedReviewSealedStatus(begin, recovered.status);
+    return reconcileBoundedReviewSealedStatus(begin, recovered.status, undefined, modelExecutor);
   }
   assertBoundedReviewCommit(committed, begin, evidence);
   const after = await callTool('get_action_attempt_status', { attemptRef: begin.attemptRef });
-  return reconcileBoundedReviewSealedStatus(begin, after, committed);
+  return reconcileBoundedReviewSealedStatus(begin, after, committed, modelExecutor);
 }
 
 /** The private checkpoint coordinator uses this only to recognize the exact
  * c5 runtime addon. No task/version migration or historical provenance option. */
-export function boundedReviewRecoveryTask(envelope) {
+export function boundedReviewRecoveryTask(envelope, modelExecutor = 'HOSTED') {
   validateTaskEnvelope(envelope);
-  const task = validateReviewTask(envelope.modelInput);
+  const task = validateReviewTask(envelope.modelInput, { modelExecutor });
   assertTdmsReviewRuntimeBinding(task, envelope);
   return task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA &&
     task.context.purpose === 'UPDATE_ASSESSMENT' &&
@@ -1249,9 +1255,9 @@ export function boundedReviewRecoveryTask(envelope) {
     reviewNativeRuntime(task) ? task : null;
 }
 
-function boundedReviewSealedEvidence(begin, status) {
+function boundedReviewSealedEvidence(begin, status, modelExecutor = 'HOSTED') {
   assertBegin(begin, 'OPENCLAW_INTERACTIVE_REVIEW');
-  const task = boundedReviewRecoveryTask(begin.task);
+  const task = boundedReviewRecoveryTask(begin.task, modelExecutor);
   if (!task || begin.status !== 'COMMITTING')
     throw new Error('HOST_MCP_REVIEW_SEALED_BOUNDED_BEGIN_REQUIRED');
   const result = validateResultForBegin(begin, begin.recoveryResult);
@@ -1275,7 +1281,7 @@ function boundedReviewSealedEvidence(begin, status) {
   let candidate;
   try { candidate = JSON.parse(result.modelOutput); }
   catch { throw new Error('HOST_MCP_REVIEW_SEALED_CANDIDATE_INVALID'); }
-  validateSealedBoundedReviewCandidate(task, candidate);
+  validateSealedBoundedReviewCandidate(task, candidate, { modelExecutor });
   return { task, result, candidate, allowedReadRefs: new Set([
     ...task.jobAidContext.sourceCatalog.map((item) => item.evidenceRef),
     ...reviewNativeDirectoryRefs(task),
@@ -1305,8 +1311,8 @@ function assertBoundedReviewCommit(committed, begin, evidence) {
 
 /** Fresh status-only reconciliation never manufactures a receipt, READ proof
  * or stale observation. A retained real receipt is validated again, not hidden. */
-export function reconcileBoundedReviewSealedStatus(begin, status, committed) {
-  const evidence = boundedReviewSealedEvidence(begin, status);
+export function reconcileBoundedReviewSealedStatus(begin, status, committed, modelExecutor = 'HOSTED') {
+  const evidence = boundedReviewSealedEvidence(begin, status, modelExecutor);
   if (committed !== undefined) assertBoundedReviewCommit(committed, begin, evidence);
   const succeeded = status.status === 'SUCCEEDED';
   return {
@@ -1336,10 +1342,20 @@ async function recoverInitialCommitting({ stage, before, begin, callTool }) {
   const program = stage === 'EVALUATE_JOBAID' && begin.task.modelInput?.executionMode === 'PROGRAM_CONTROLLED_V1'
     ? programAssessmentCommitBinding(begin, JSON.parse(observed.status.recoveryResult.modelOutput)) : null;
   if (program) {
-    const readback = await callTool('read_assessment_work', {
+    // Locate the SAVE key through this attempt and WorkItem, then ask Host for
+    // that exact revision. A latest-work observation alone is not the original
+    // SAVE receipt and cannot authorize replay of the frozen ResultEnvelope.
+    const latest = await callTool('read_assessment_work', {
       attemptRef: begin.attemptRef, workItemId: begin.task.workItemId,
     });
-    assertProgramAssessmentSavedReadback(readback, begin, program, 'COMMITTING');
+    assertProgramAssessmentSavedReadback(latest, begin, program, 'COMMITTING');
+    const original = await callTool('read_assessment_work', {
+      attemptRef: begin.attemptRef, workItemId: begin.task.workItemId,
+      requestId: latest.revision.requestId,
+    });
+    assertProgramAssessmentSavedReadback(original, begin, program, 'COMMITTING');
+    if (canonicalJson(original.revision) !== canonicalJson(latest.revision))
+      throw new Error('HOST_MCP_PROGRAM_ASSESSMENT_SAVED_READBACK_INVALID');
   }
   const committed = await callTool(tool, commitArgs(begin, observed.status.recoveryResult));
   if (stage === 'EVALUATE_JOBAID') assertDynamicCommit(committed, begin.task.workItemId,
@@ -1511,7 +1527,7 @@ function optionalContinuationRequest(input) {
   return requestId;
 }
 
-async function reconcileSavedInitialAssessment(begin, callTool) {
+async function reconcileSavedInitialAssessment(begin, callTool, modelExecutor = 'HOSTED') {
   const taskInput = begin.task.modelInput;
   if (!Object.hasOwn(taskInput, 'savedWorkReconciliation')) return null;
   const startedAt = Date.now();
@@ -1549,6 +1565,7 @@ async function reconcileSavedInitialAssessment(begin, callTool) {
     promptVersion: `wiselink-jobaid-problem@v${protocol}`,
     skillVersion: WISELINK_SKILL_VERSION,
     toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+      ...modelExecutorProvenance({ modelExecutor }),
       'jobaid-problem-protocol': protocol, 'host-saved-work-reconciliation': '1',
       ...(taskInput.tdmsContext ? { 'tdms-native-context': '1' } : {}) },
     runMetrics: { durationMs: Date.now() - startedAt, inputUnits: 0, outputUnits: 0 },

@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createCheckpointStore, createHostMcpConnection, findMcpConfig } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 import { inspectInitialAssessmentRecovery, assertFreshInitialAssessmentClaim } from '../skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs';
+import { assertCodexParentRunLink } from './codex-parent-run-link-test-helper.mjs';
 
 const worker = fileURLToPath(new URL('./program-recovery-fixture.mjs', import.meta.url));
 async function fixture(t) {
@@ -94,6 +95,33 @@ test('a dispatch marker without a durable model receipt never causes fresh infer
   const state = await json(root, 'synthetic-host', 'state.json');
   assert.equal(state.modelRequests, 0);
   assert.equal(state.saveCalls, 0);
+});
+
+test('Program assessment durably links its real prepared Codex run before launch and rejects a changed parent link', async t => {
+  const root = await fixture(t);
+  assert.equal((await run(root, 'before-codex-launch')).signal, 'SIGKILL');
+  const checkpoint = await createCheckpointStore(resolve(root, 'checkpoint'));
+  const started = await checkpoint.readOptional('assessment-round-1.started');
+  assert.equal(started.codexRecoveryRequestId, 'program:AQ-fixture-program-recovery:round-1');
+  const link = await assertCodexParentRunLink({ checkpointRoot: resolve(root, 'checkpoint'),
+    step: 'assessment-round-1', requestId: started.codexRecoveryRequestId,
+    argsHash: started.argsHash, runRoot: resolve(root, 'synthetic-model') });
+  assert.equal(link.requestId, started.codexRecoveryRequestId);
+  await assert.rejects(readFile(resolve(root, 'synthetic-model', 'dispatch-count')), { code: 'ENOENT' });
+
+  const resumed = await run(root);
+  assert.equal(resumed.code, 1, JSON.stringify(resumed));
+  assert.equal(resumed.result.errorCode, 'CODEX_GENERATION_OUTCOME_UNKNOWN');
+  const state = await json(root, 'synthetic-host', 'state.json');
+  assert.equal(state.modelRequests, 0);
+  assert.equal(state.saveCalls, 0);
+  await assert.rejects(readFile(resolve(root, 'synthetic-model', 'dispatch-count')), { code: 'ENOENT' });
+
+  await checkpoint.write('assessment-round-1.codex-run', { ...link, argsHash: 'f'.repeat(64) });
+  const mismatch = await run(root);
+  assert.equal(mismatch.result.errorCode, 'REVIEW_CHECKPOINT_VALUE_CHANGED:assessment-round-1.codex-run');
+  assert.equal((await json(root, 'synthetic-host', 'state.json')).modelRequests, 0);
+  await assert.rejects(readFile(resolve(root, 'synthetic-model', 'dispatch-count')), { code: 'ENOENT' });
 });
 
 test('query failure, foreign identity, changed authored body and changed save payload cannot finish', async t => {

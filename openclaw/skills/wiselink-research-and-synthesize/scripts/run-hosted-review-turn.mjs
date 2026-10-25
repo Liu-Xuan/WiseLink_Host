@@ -27,7 +27,7 @@ import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { classifyHostedGatewayFailure, createHostedReviewRequester, requestHostedGateway } from './request-hosted-gateway.mjs';
 import { assertModelExecutorReady, modelExecutor, modelExecutorProvenance,
-  modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway } from './model-executor.mjs';
+  modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway, codexParentRunRecorder } from './model-executor.mjs';
 
 import {
   HOST_MCP_TOOLS,
@@ -40,6 +40,8 @@ import { recoverBoundedReviewCheckpoint } from './recover-sealed-review-checkpoi
 import {
   WISELINK_HOST_MCP_NAME,
   WISELINK_HOST_MCP_VERSION,
+  WISELINK_CODEX_MCP_NAME,
+  WL_CODEX_RUNTIME_APP_ID,
   WISELINK_PROFILE_REF,
   WISELINK_RUNTIME_APP_ID,
   WISELINK_SKILL_VERSION,
@@ -47,6 +49,8 @@ import {
   REVIEW_MATTER_CANDIDATE_SCHEMA,
   canonicalJson,
   canonicalSha256,
+  assertRuntimeTaskIdentity,
+  assertRuntimeResultIdentity,
   validateExecutionModelSelection,
   validateTaskEnvelope,
   validateReviewTask,
@@ -213,7 +217,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
     }
   }
   if (!normalized.isolatedCandidate)
-    await reconcileRejectedReviewCheckpoint(checkpoint, normalized, remoteCall);
+    await reconcileRejectedReviewCheckpoint(checkpoint, normalized, remoteCall, selectedExecutor);
 
   const callCounts = new Map();
   const codexFreshBegin = selectedExecutor === 'CODEX' &&
@@ -245,6 +249,8 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
     const scopedArgs = normalized.isolatedCandidate && [
       'get_review_turn_context', 'read_source_refs',
     ].includes(name) ? { ...args, workItemId: normalized.workItemId } : args;
+    if (name === 'commit_review_turn_candidate' && selectedExecutor === 'CODEX')
+      assertRuntimeResultIdentity(JSON.parse(scopedArgs.resultJson), selectedExecutor);
     const recoveryBegin = name === 'begin_review_turn' && codexFreshBegin;
     const recoveryCommit = name === 'commit_review_turn_candidate' && codexFreshBegin &&
       await checkpoint.readOptional('commit.started') !== null &&
@@ -325,6 +331,8 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
     });
     if (normalized.isolatedCandidate) isolatedRemainingMs(effectiveDeadlineAt);
     if (name === 'begin_review_turn') {
+      assertRuntimeTaskIdentity(value?.task, selectedExecutor);
+      if (value?.recoveryResult) assertRuntimeResultIdentity(value.recoveryResult, selectedExecutor);
       if (normalized.isolatedCandidate &&
         value?.task?.workItemId !== normalized.workItemId)
         throw new Error('REVIEW_ISOLATED_WORK_ITEM_BINDING_MISMATCH');
@@ -339,7 +347,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
       // Only that exact route needs distinct fresh before/after status reads;
       // ordinary and legacy steps keep their existing replay restrictions.
       if (!normalized.isolatedCandidate && value?.status === 'COMMITTING' &&
-          boundedReviewRecoveryTask(value.task))
+          boundedReviewRecoveryTask(value.task, selectedExecutor))
         boundedCommittingStatusPrefix = `bounded-sealed-recovery-${randomUUID()}`;
     }
     return value;
@@ -347,6 +355,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
 
   const result = await runInteractiveReviewTurn({
     mode: 'INTERACTIVE_REVIEW',
+    modelExecutor: selectedExecutor,
     isolatedCandidate: normalized.isolatedCandidate,
     workItemId: normalized.workItemId,
     reviewConversationRef: normalized.reviewConversationRef,
@@ -977,7 +986,7 @@ async function runIsolatedReviewCandidate({ input, directoryInput, task, begin, 
 // A prior process may have exited after a definite Host rejection, before the
 // consumer could end its attempt. Reconcile that exact request without rebuilding
 // a ResultEnvelope under the newly installed Skill or replaying any model/commit.
-async function reconcileRejectedReviewCheckpoint(checkpoint, options, callTool) {
+async function reconcileRejectedReviewCheckpoint(checkpoint, options, callTool, selectedExecutor) {
   const rejection = await checkpoint.readOptional('commit.error');
   const code = safeHostErrorCode(rejection?.hostErrorCode);
   if (rejection?.receivedHostToolError !== true || !code) return;
@@ -991,8 +1000,9 @@ async function reconcileRejectedReviewCheckpoint(checkpoint, options, callTool) 
     ...(options.workItemId ? { workItemId: options.workItemId } : {}),
   }), 'begin');
   const begin = receipt.value;
+  assertRuntimeTaskIdentity(begin?.task, selectedExecutor);
   validateTaskEnvelope(begin?.task);
-  const task = validateReviewTask(begin.task.modelInput);
+  const task = validateReviewTask(begin.task.modelInput, { modelExecutor: selectedExecutor });
   if (begin.status !== 'RUNNING' || begin.task.taskType !== 'OPENCLAW_INTERACTIVE_REVIEW' ||
     begin.attemptRef !== begin.task.operationRef ||
     task.reviewConversationRef !== options.reviewConversationRef || task.requestId !== options.requestId) {
@@ -1150,7 +1160,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         startedAt: new Date().toISOString() });
       const response = await requestModelGateway({ ...options,
         codexOptions: { ...options.codexOptions, timeoutSeconds } }, selectedEndpoint,
-        { ...init, codexRecovery: { requestId, recoverOnly: Boolean(started) } }, dependencies);
+        { ...init, codexRecovery: { requestId, recoverOnly: Boolean(started),
+          onRunPrepared: codexParentRunRecorder(codexCheckpoint,step,{requestId,argsHash}) } }, dependencies);
       const raw = await response.text();
       if (response.codexReceipt?.requestId !== requestId ||
           response.codexReceipt.responseSha256 !== sha256(raw))
@@ -2049,7 +2060,7 @@ export async function prepareKnownModelNonDispatchRecovery(options) {
   return { prepared: true, replayed: false };
 }
 
-export async function createHostMcpConnection(options) {
+export async function createHostMcpConnection(options, loadSdk = loadMcpSdk) {
   const endpoint = new URL(
     requiredUrl(options.hostMcpUrl, 'REVIEW_HOST_MCP_URL_REQUIRED'),
   );
@@ -2059,8 +2070,10 @@ export async function createHostMcpConnection(options) {
       !endpoint.pathname.endsWith('/openapi/wiselink/codex-mcp'))) {
     throw new Error('CODEX_HOST_MCP_ENDPOINT_INVALID');
   }
+  if (selectedExecutor === 'CODEX' && options.runtimeAppId !== WL_CODEX_RUNTIME_APP_ID)
+    throw new Error('CODEX_RUNTIME_APP_ID_CONFIG_INVALID');
   const headers = isRecord(options.headers) ? options.headers : {};
-  const { Client, StreamableHTTPClientTransport, toolCallOptionsPosition } = await loadMcpSdk();
+  const { Client, StreamableHTTPClientTransport, toolCallOptionsPosition } = await loadSdk();
   const client = new Client({
     name: selectedExecutor === 'CODEX' ? 'wiselink-codex-assessment-driver' : 'wiselink-hosted-review-driver',
     version: '1.0.0',
@@ -2071,7 +2084,7 @@ export async function createHostMcpConnection(options) {
   await client.connect(transport);
   const serverVersion = client.getServerVersion?.();
   const expectedServerName = selectedExecutor === 'CODEX'
-    ? 'wiselink-codex-engineering-assessment' : WISELINK_HOST_MCP_NAME;
+    ? WISELINK_CODEX_MCP_NAME : WISELINK_HOST_MCP_NAME;
   if (serverVersion?.name !== expectedServerName ||
       serverVersion?.version !== WISELINK_HOST_MCP_VERSION) {
     try { await client.close(); } catch { /* Preserve the identity failure. */ }
@@ -2081,7 +2094,17 @@ export async function createHostMcpConnection(options) {
   const tools = await client.listTools();
   validateHostToolMetadata(tools);
   return {
-    callTool: async (name, args, requestOptions) => callJsonTool(client, name, args, requestOptions, toolCallOptionsPosition),
+    callTool: async (name, args, requestOptions) => {
+      if (name.startsWith('commit_')) {
+        const sealed = args?.result ?? (typeof args?.resultJson === 'string'
+          ? JSON.parse(args.resultJson) : null);
+        if (sealed) assertRuntimeResultIdentity(sealed, selectedExecutor);
+      }
+      const value = await callJsonTool(client, name, args, requestOptions, toolCallOptionsPosition);
+      if (value?.task) assertRuntimeTaskIdentity(value.task, selectedExecutor);
+      if (value?.recoveryResult) assertRuntimeResultIdentity(value.recoveryResult, selectedExecutor);
+      return value;
+    },
     hasTool: (name) => tools.tools.some((tool) => tool.name === name),
     close: async () => client.close(),
   };
@@ -2092,12 +2115,16 @@ export function createHostAutoWorkItemQueueClient(options, fetchImpl = globalThi
   const mcpEndpoint = new URL(
     requiredUrl(options.hostMcpUrl, 'REVIEW_HOST_MCP_URL_REQUIRED'),
   );
+  const selectedExecutor = modelExecutor(options);
   if (mcpEndpoint.username || mcpEndpoint.password || mcpEndpoint.search ||
-      mcpEndpoint.hash || !['http:', 'https:'].includes(mcpEndpoint.protocol) ||
-      !mcpEndpoint.pathname.endsWith(options.modelExecutor === 'CODEX'
+      mcpEndpoint.hash || (selectedExecutor === 'CODEX' ? mcpEndpoint.protocol !== 'https:' :
+      !['http:', 'https:'].includes(mcpEndpoint.protocol)) ||
+      !mcpEndpoint.pathname.endsWith(selectedExecutor === 'CODEX'
         ? '/openapi/wiselink/codex-mcp' : '/openapi/wiselink/openclaw-mcp')) {
     throw new Error('AUTO_WORK_ITEM_QUEUE_ENDPOINT_INVALID');
   }
+  if (selectedExecutor === 'CODEX' && options.runtimeAppId !== WL_CODEX_RUNTIME_APP_ID)
+    throw new Error('CODEX_RUNTIME_APP_ID_CONFIG_INVALID');
   if (typeof fetchImpl !== 'function') {
     throw new Error('AUTO_WORK_ITEM_QUEUE_TRANSPORT_UNAVAILABLE');
   }
@@ -2105,7 +2132,7 @@ export function createHostAutoWorkItemQueueClient(options, fetchImpl = globalThi
     const endpoint = new URL(mcpEndpoint);
     endpoint.pathname = endpoint.pathname.replace(
       /\/(?:openclaw|codex)-mcp$/u,
-      `/${route}`,
+      `/${selectedExecutor === 'CODEX' ? `codex-${route}` : route}`,
     );
     return endpoint;
   };
@@ -2156,6 +2183,7 @@ export function createHostAutoWorkItemQueueClient(options, fetchImpl = globalThi
     nextWorkItem: input => post('next-work-item', input),
     acknowledgeWorkItem: input => post('ack-work-item', input),
     blockWorkItem: input => post('block-work-item', input),
+    applyPendingModelConfiguration: input => post('apply-pending-model-configuration', input),
   };
 }
 
@@ -2680,7 +2708,8 @@ function bindHostedReviewCandidate(begin, output, isMatter, isJobAid = false) {
     ...Object.fromEntries(MODEL_OUTPUT_KEYS.map((key) => [key, output[key]])),
     ...(isMatter ? { matterWorkingDelta: output.matterWorkingDelta } : {}),
     ...(isJobAid ? { jobAidWorkingDelta: output.jobAidWorkingDelta } : {}),
-    runtime: { runtimeAppId: WISELINK_RUNTIME_APP_ID, profileRef: WISELINK_PROFILE_REF },
+    runtime: { runtimeAppId: begin.task.modelInput.executionPolicy.runtimeAppId,
+      profileRef: WISELINK_PROFILE_REF },
   };
 }
 
@@ -3590,6 +3619,8 @@ async function loadMcpSdk() {
 export async function resolveRuntimeConfig(argv, env) {
   const selectedExecutor = option(argv, '--model-executor') ?? env.WL_MODEL_EXECUTOR ?? 'HOSTED';
   if (!['HOSTED', 'CODEX'].includes(selectedExecutor)) throw new Error('MODEL_EXECUTOR_UNSUPPORTED');
+  if (selectedExecutor === 'CODEX' && env.WL_CODEX_RUNTIME_APP_ID !== WL_CODEX_RUNTIME_APP_ID)
+    throw new Error('CODEX_RUNTIME_APP_ID_CONFIG_INVALID');
   const codexOptions = selectedExecutor === 'CODEX' ? {
     codexBinary: option(argv, '--codex-binary') ?? env.WL_CODEX_BINARY,
     configPath: option(argv, '--codex-config') ?? env.WL_CODEX_CONFIG_PATH,
@@ -3655,6 +3686,7 @@ export async function resolveRuntimeConfig(argv, env) {
   const agentId = option(argv, '--agent') || WISELINK_PROFILE_REF;
   return {
     modelExecutor: selectedExecutor,
+    runtimeAppId: selectedExecutor === 'CODEX' ? WL_CODEX_RUNTIME_APP_ID : WISELINK_RUNTIME_APP_ID,
     ...(codexOptions ? { codexOptions } : {}),
     sourceConfigPath: selected.configPath,
     hostMcpUrl,
@@ -3696,7 +3728,7 @@ export function openClawConfigCandidates(
 
 export function findMcpConfig(root, selectedExecutor = 'HOSTED') {
   const expectedName = selectedExecutor === 'CODEX'
-    ? 'wiselink-codex-engineering-assessment' : WISELINK_HOST_MCP_NAME;
+    ? WISELINK_CODEX_MCP_NAME : WISELINK_HOST_MCP_NAME;
   const keys = selectedExecutor === 'CODEX' ? new Set([expectedName]) : WISELINK_HOST_MCP_CONFIG_KEYS;
   const matches = [];
   const visit = (value, path = []) => {

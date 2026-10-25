@@ -42,7 +42,7 @@ const attemptStatus = hash => ({attemptRef,taskType:task.taskType,status:'SUCCEE
   resultContentHash:hash});
 
 function fixture({lostAck=false,receivedAck=commitAck(),readStatus=statusRead(),statusHash='same',
-  saved=savedRead(),beginReturn=begin,attemptReturn=null}={}) {
+  saved=savedRead(),exactSaved=saved,beginReturn=begin,attemptReturn=null}={}) {
   const calls=[];
   let modelCalls=0;
   let resultHash;
@@ -54,6 +54,10 @@ function fixture({lostAck=false,receivedAck=commitAck(),readStatus=statusRead(),
       case 'begin_dynamic_evaluation': return structuredClone(beginReturn);
       case 'heartbeat_action_attempt': return {leaseExpiresAt:'2099-01-01T00:00:00.000Z'};
       case 'read_assessment_work':
+        if (Object.hasOwn(args,'requestId')) {
+          assert.deepEqual(args,{attemptRef,workItemId,requestId:saved.revision.requestId});
+          return structuredClone(exactSaved);
+        }
         assert.deepEqual(args,{attemptRef,workItemId});
         return structuredClone(saved);
       case 'commit_dynamic_evaluation_candidate':
@@ -170,7 +174,59 @@ test('COMMITTING replay binds saved request and revision, then verifies nested p
   assert.equal(result.after.integratedAssessmentSummary.overallSynthesis.sourceAssessment.saveRequestId,saveRequestId);
   assert.equal(f.modelCalls(),0);
   assert.deepEqual(names(f.calls),['get_parse_status','begin_dynamic_evaluation','get_action_attempt_status',
-    'read_assessment_work','commit_dynamic_evaluation_candidate','get_parse_status']);
+    'read_assessment_work','read_assessment_work','commit_dynamic_evaluation_candidate','get_parse_status']);
+  assert.deepEqual(f.calls.filter(call=>call.name==='read_assessment_work').map(call=>call.args),
+    [{attemptRef,workItemId},{attemptRef,workItemId,requestId:saveRequestId}]);
+});
+
+test('COMMITTING refuses a keyed READ that changes the SAVE identity or full revision',async()=>{
+  const recoveryResult=sealResultEnvelope({task,modelOutput:{workRevisionRef},provenance,
+    factsConsidered:[workRevisionRef]});
+  const beginReturn={...begin,status:'COMMITTING',recoveryResult};
+  const attemptReturn={...attemptStatus(recoveryResult.contentHash),status:'COMMITTING',
+    projectionApplied:false,recoveryAvailable:true,recoveryResult};
+  for (const change of [
+    exact=>{exact.attemptId='ATT-OTHER';},
+    exact=>{exact.revision.workItemId='WI-OTHER';},
+    exact=>{exact.revision.requestId='SAVE-OTHER';},
+    exact=>{exact.revision.workRevision=2;},
+    exact=>{exact.revision.content.understanding='different persisted work';},
+  ]) {
+    const saved=savedRead(); saved.executionStatus='COMMITTING';
+    const exactSaved=structuredClone(saved); change(exactSaved);
+    const f=fixture({beginReturn,attemptReturn,saved,exactSaved});
+    await assert.rejects(f.run(),/HOST_MCP_PROGRAM_ASSESSMENT_SAVED_READBACK_INVALID/);
+    assert.equal(f.modelCalls(),0);
+    assert.equal(names(f.calls).filter(name=>name==='read_assessment_work').length,2);
+    assert.equal(names(f.calls).includes('commit_dynamic_evaluation_candidate'),false);
+    assert.equal(names(f.calls).includes('save_assessment_work'),false);
+  }
+});
+
+test('COMMITTING refuses a latest work revision from another attempt before exact READ',async()=>{
+  const recoveryResult=sealResultEnvelope({task,modelOutput:{workRevisionRef},provenance,
+    factsConsidered:[workRevisionRef]});
+  const saved=savedRead(); saved.executionStatus='COMMITTING';
+  saved.revision.actionAttemptId='ATT-OTHER';
+  const f=fixture({beginReturn:{...begin,status:'COMMITTING',recoveryResult},
+    attemptReturn:{...attemptStatus(recoveryResult.contentHash),status:'COMMITTING',
+      projectionApplied:false,recoveryAvailable:true,recoveryResult},saved});
+  await assert.rejects(f.run(),/HOST_MCP_PROGRAM_ASSESSMENT_SAVED_READBACK_INVALID/);
+  assert.equal(f.modelCalls(),0);
+  assert.equal(names(f.calls).filter(name=>name==='read_assessment_work').length,1);
+  assert.equal(names(f.calls).includes('commit_dynamic_evaluation_candidate'),false);
+});
+
+test('COMMITTING refuses a RUNNING work readback before exact READ or replay',async()=>{
+  const recoveryResult=sealResultEnvelope({task,modelOutput:{workRevisionRef},provenance,
+    factsConsidered:[workRevisionRef]});
+  const f=fixture({beginReturn:{...begin,status:'COMMITTING',recoveryResult},
+    attemptReturn:{...attemptStatus(recoveryResult.contentHash),status:'COMMITTING',
+      projectionApplied:false,recoveryAvailable:true,recoveryResult}});
+  await assert.rejects(f.run(),/HOST_MCP_PROGRAM_ASSESSMENT_SAVED_READBACK_INVALID/);
+  assert.equal(f.modelCalls(),0);
+  assert.equal(names(f.calls).filter(name=>name==='read_assessment_work').length,1);
+  assert.equal(names(f.calls).includes('commit_dynamic_evaluation_candidate'),false);
 });
 
 test('COMMITTING replay refuses projection from an unrelated SAVE request',async()=>{

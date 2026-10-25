@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 import { HOST_MCP_TOOLS } from '../skills/wiselink-research-and-synthesize/scripts/orchestrate-host-mcp.mjs';
-import { canonicalSha256 } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
+import { canonicalSha256, WL_CODEX_RUNTIME_APP_ID, WISELINK_HOST_MCP_NAME } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
+import { createHostAutoWorkItemQueueClient } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 
 const base = new URL('./contracts/',import.meta.url);
 // Optional paths allow artifact-corruption regression tests without modifying
@@ -75,6 +76,19 @@ expect(contract.client.expectedCodexMcpPath!==contract.serverSource.mcpPath,'pat
 expect(JSON.stringify(HOST_MCP_TOOLS)===JSON.stringify(contract.client.requiredLegacyToolNames),'client-tool-inventory');
 const clientSource = await readFile(new URL('../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs',import.meta.url),'utf8');
 expect(createHash('sha256').update(clientSource).digest('hex')===contract.client.sourceSha256,'client-source-stale');
+expect(contract.client.expectedRuntimeAppEnvironment==='WL_CODEX_RUNTIME_APP_ID'&&
+  contract.client.expectedRuntimeAppId===WL_CODEX_RUNTIME_APP_ID,'runtime-app-expectation');
+expect(contract.client.wireProvenanceVersionKey===WISELINK_HOST_MCP_NAME,'wire-provenance-key');
+const actualQueuePaths=[];
+const queue=createHostAutoWorkItemQueueClient({modelExecutor:'CODEX',runtimeAppId:WL_CODEX_RUNTIME_APP_ID,
+  hostMcpUrl:`https://fixture.invalid${contract.client.expectedCodexMcpPath}`},async url=>{
+  actualQueuePaths.push(new URL(url).pathname);
+  return {ok:true,headers:new Headers({'content-type':'application/json'}),json:async()=>({})};
+});
+for(const name of ['nextWorkItem','acknowledgeWorkItem','blockWorkItem','applyPendingModelConfiguration'])
+  await queue[name]({});
+expect(JSON.stringify(actualQueuePaths)===JSON.stringify(contract.client.expectedCodexQueueRestPaths),
+  'client-queue-paths-stale');
 for(const [name,args] of Object.entries(examples.convertedSchemaExamples)) {
   const item=contract.serverSource.tools[name];
   expect(item?.schemaStatus==='MECHANICAL_ZOD_INPUT_SHAPE'&&item.inputSchema&&item.zodExpression&&

@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertCodexParentRunLink, assertDistinctCodexParentRunLinks } from './codex-parent-run-link-test-helper.mjs';
 
 const worker = fileURLToPath(new URL('./translation-reading-recovery-fixture.mjs', import.meta.url));
 const documentWorker = fileURLToPath(new URL('./translation-reading-document-fixture.mjs', import.meta.url));
@@ -23,10 +24,12 @@ s={'text':'一般无需批准，但安装属于例外。','quotes':[a]}
 candidate={'tool_name':'return_wiselink_document_reading','arguments':{'schemaVersion':'wiselink.document.reading.v1','headline':'安装批准条件','brief':s,'explanation':[s],'criticalConditions':[s],'limitations':[]}}
 if ${JSON.stringify(kind)} == 'translation':
  candidate={'tool_name':'return_wiselink_translation_block','arguments':{'candidate':{'markdown':'<!-- WL-SECTION:1 -->\\n打开防护罩前断开电源。'}}}
-summary={'transport_passed':True,'upstream_models':['glm-5.3'],'input_tokens':10,'output_tokens':5,'model_requests':1,'closure':'completed','process_group_closed':True,'upstream_response_present':True}
+summary={'transport_passed':True,'upstream_models':['glm-5.3'],'input_tokens':10,'output_tokens':5,'model_requests':1,'closure':'completed','process_group_closed':True,'upstream_response_present':True,'upstream_request_present':True}
+save('upstream-request.json',{'model':'glm-5.3','messages':[{'role':'user','content':'offline reading fixture'}]})
+summary['upstream_request_sha256']=hashlib.sha256((p/'upstream-request.json').read_bytes()).hexdigest()
 save('upstream-response.json',{'format':'chat-completions-sse-events-v1','events':[{'model':'glm-5.3','choices':[{'index':0,'finish_reason':'stop'}]}]})
 save('contract-candidate.json',candidate); save('transport-summary.json',summary)
-save('generation-receipt.json',{'version':1,'binding_sha256':r['binding_sha256'],'run_directory':str(p),'transport':summary,'candidate':candidate,'upstream_response_sha256':hashlib.sha256((p/'upstream-response.json').read_bytes()).hexdigest()})
+save('generation-receipt.json',{'version':1,'binding_sha256':r['binding_sha256'],'run_directory':str(p),'transport':summary,'candidate':candidate,'upstream_request_sha256':summary['upstream_request_sha256'],'upstream_response_sha256':hashlib.sha256((p/'upstream-response.json').read_bytes()).hexdigest()})
 print(json.dumps(summary))
 `);
   const wrapper = resolve(root, 'python-wrapper');
@@ -250,6 +253,15 @@ test('WorkItem translation resumes its second batch without replaying the first'
   assert.equal(resumed.outcome.status, 'INITIAL_STAGE_SAVED', JSON.stringify(resumed));
   assert.notEqual(after.committedProvenance.modelVersion, 'host-assembly/no-model-call');
   assert.equal((await readFile(resolve(root, 'codex-runs', 'dispatch-count'), 'utf8')).trim().split('\n').length, 2);
+  const checkpointRoot = resolve(root, 'checkpoint', 'WI-fixture-translation', 'initial', 'TRANSLATE',
+    'requests', 'fixture_translation_request');
+  const links = await Promise.all((await readdir(checkpointRoot)).filter(name => name.endsWith('.codex-run.json'))
+    .map(async name => {
+      const step = name.slice(0, -'.codex-run.json'.length);
+      return assertCodexParentRunLink({ checkpointRoot, step, requestId: step,
+        runRoot: resolve(root, 'codex-runs') });
+    }));
+  assertDistinctCodexParentRunLinks(links);
 });
 
 test('WorkItem commit-started crash reuses the exact sealed Result after Host RUNNING readback', async t => {
@@ -313,3 +325,59 @@ for (const mode of ['lose-save-ack-failed', 'lose-save-ack-superseded']) {
     assert.equal((await readFile(resolve(root, 'codex-runs', 'dispatch-count'), 'utf8')).trim(), '1');
   });
 }
+
+test('reading parent checkpoint links its exact prepared private run before launch and stays UNKNOWN on restart', async t => {
+  const root = await fixture(t);
+  assert.equal((await run(root, 'before-codex-launch')).signal, 'SIGKILL');
+  const started = await json(root, 'checkpoint', 'model.started.json');
+  const link = await assertCodexParentRunLink({ checkpointRoot: resolve(root, 'checkpoint'),
+    step: 'model', requestId: started.value.codexRequestId, runRoot: resolve(root, 'codex-runs') });
+  assert.equal(link.requestId, started.value.codexRequestId);
+  await assert.rejects(readFile(resolve(root, 'codex-runs', 'dispatch-count')), { code: 'ENOENT' });
+
+  const resumed = await run(root);
+  assert.equal(resumed.outcome.status, 'PENDING_MODEL_CONFIRMATION');
+  assert.equal((await json(root, 'host', 'state.json')).saves, 0);
+  await assert.rejects(readFile(resolve(root, 'codex-runs', 'dispatch-count')), { code: 'ENOENT' });
+});
+
+test('WorkItem translation parent link stays scoped to its exact generation request before launch', async t => {
+  const root = await fixture(t, 'translation');
+  assert.equal((await run(root, 'before-codex-launch', workItemWorker)).signal, 'SIGKILL');
+  const checkpointRoot = resolve(root, 'checkpoint', 'WI-fixture-translation', 'initial', 'TRANSLATE',
+    'requests', 'fixture_translation_request');
+  const files = (await readdir(checkpointRoot)).filter(name => name.endsWith('.codex-run.json'));
+  assert.equal(files.length, 1);
+  const step = files[0].slice(0, -'.codex-run.json'.length);
+  const link = await assertCodexParentRunLink({ checkpointRoot, step, requestId: step,
+    runRoot: resolve(root, 'codex-runs') });
+  assert.match(link.requestId, /^codex-translation-[0-9a-f]{64}$/u);
+  await assert.rejects(readFile(resolve(root, 'codex-runs', 'dispatch-count')), { code: 'ENOENT' });
+
+  const resumed = await run(root, 'normal', workItemWorker);
+  assert.equal(resumed.outcome.status, 'REQUIRES_ATTENTION', JSON.stringify(resumed));
+  assert.equal(resumed.outcome.attemptStatus, 'UNKNOWN');
+  const state = await json(root, 'host', 'state.json');
+  assert.equal(state.modelCalls, 0);
+  assert.equal(state.saves, 0);
+  await assert.rejects(readFile(resolve(root, 'codex-runs', 'dispatch-count')), { code: 'ENOENT' });
+});
+
+test('document translation parent link survives prelaunch interruption under its synthetic same fence', async t => {
+  const root = await fixture(t, 'translation');
+  assert.equal((await run(root, 'before-codex-launch', documentWorker)).signal, 'SIGKILL');
+  const checkpointRoot = resolve(root, 'checkpoint');
+  const files = (await readdir(checkpointRoot)).filter(name => name.endsWith('.codex-run.json'));
+  assert.equal(files.length, 1);
+  const step = files[0].slice(0, -'.codex-run.json'.length);
+  assert.match(step, /^codex-translation-[0-9a-f]{64}$/u);
+  const link = await assertCodexParentRunLink({ checkpointRoot, step,
+    requestId: step.replace(/^codex-/u, ''), runRoot: resolve(root, 'codex-runs') });
+  assert.match(link.requestId, /^translation-[0-9a-f]{64}$/u);
+  await assert.rejects(readFile(resolve(root, 'codex-runs', 'dispatch-count')), { code: 'ENOENT' });
+
+  const resumed = await run(root, 'synthetic-authorized-same-fence', documentWorker);
+  assert.equal(resumed.outcome.errorCode, 'CODEX_GENERATION_OUTCOME_UNKNOWN', JSON.stringify(resumed));
+  assert.equal((await json(root, 'host', 'state.json')).saves, 0);
+  await assert.rejects(readFile(resolve(root, 'codex-runs', 'dispatch-count')), { code: 'ENOENT' });
+});

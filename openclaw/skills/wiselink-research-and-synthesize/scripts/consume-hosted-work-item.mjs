@@ -15,7 +15,7 @@ import { invokeHostedDerivedSummaryModel } from './invoke-hosted-derived-summary
 import { validateSummaryRunBudget } from './derived-summary-native-gateway.mjs';
 import { createNativeReviewGatewayPreparer } from './native-temporary-review-gateway.mjs';
 import { hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
-import { modelExecutorProvenance } from './model-executor.mjs';
+import { modelExecutorProvenance, codexParentRunRecorder } from './model-executor.mjs';
 import {
   parkCancelledAutomaticClaim, readCancelledClaimExpectation, parseCancelledClaimExpectation,
   matchesCancelledClaim, validateCancelledBlockReceipt, assertCancelledParkIntent,
@@ -1863,7 +1863,8 @@ export async function runHostedInitialStage(options, dependencies) {
       assertCommittingInitialClaim(options.assessmentRecovery.previousClaim ??
         { attemptRef: options.assessmentRecovery.attemptRef }, value);
     if (name.startsWith('begin_') && options.queueCommitRecovery) {
-      validateResultEnvelope(value.task, value.recoveryResult, { allowHistoricalSkillVersion: true });
+      validateResultEnvelope(value.task, value.recoveryResult, {
+        allowHistoricalSkillVersion: true, modelExecutor: options.modelExecutor });
       if (value.task.workItemId !== options.workItemId || value.task.documentVersionId !== initial.documentVersionId ||
           value.task.inputRevision !== initial.workItemRevision ||
           value.recoveryResult.contentHash !== options.queueCommitRecovery.resultContentHash)
@@ -1945,7 +1946,9 @@ export async function runHostedInitialStage(options, dependencies) {
           throw new Error('TRANSLATION_CODEX_LEGACY_OUTCOME_UNKNOWN');
         await checkpoint.writeOnce(`${key}.started`, binding);
       }
-      const output = await perform({ requestId: key, ...(existing ? { recoverOnly: true } : {}) });
+      const output = await perform({ requestId: key, ...(existing ? { recoverOnly: true } : {}),
+        onRunPrepared: codexParentRunRecorder(checkpoint,key,
+          {requestId:key,argsHash:canonicalSha256(binding)}) });
       await checkpoint.writeOnce(`${key}.result`, output);
       await publishCompleted(output);
       return output;
@@ -1977,7 +1980,7 @@ export async function runHostedInitialStage(options, dependencies) {
           saved.attemptRef !== startedAttempt ||
           saved.result?.contentHash !== canonicalSha256((({ contentHash: _hash, ...body }) => body)(saved.result)))
         throw new Error('TRANSLATION_SEALED_RESULT_BINDING_MISMATCH');
-      validateResultEnvelope(task, saved.result);
+      validateResultEnvelope(task, saved.result, { modelExecutor: options.modelExecutor });
       return saved.result;
     };
     invoke.persistSealedTranslationResult = async (task, assembled, result) => {
@@ -1996,7 +1999,8 @@ export async function runHostedInitialStage(options, dependencies) {
       ...(options.configurationEvidenceReevaluation ? { configurationEvidenceReevaluation: options.configurationEvidenceReevaluation } : {}),
       providers: [], callTool,
       ...(options.assessmentRecovery?.closeOnly ? { recoverAssessmentExecution: begin =>
-        finishInitialAssessmentPolicyFailure({ checkpoint, recovery: options.assessmentRecovery, begin, callTool }) } : {}),
+        finishInitialAssessmentPolicyFailure({ checkpoint, recovery: options.assessmentRecovery,
+          begin, callTool, modelExecutor: options.modelExecutor }) } : {}),
       translate: invoke, extractApplicability: invoke,
       evaluateDynamicRules: invoke, synthesizeOverall: invoke,
       runtimeProvenance: dependencies.runtimeProvenance,

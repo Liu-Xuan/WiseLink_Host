@@ -19,7 +19,7 @@
   "claim": {
     "request": {
       "method": "POST",
-      "path": "/openapi/wiselink/next-work-item",
+      "path": "/openapi/wiselink/codex-next-work-item",
       "body": {}
     },
     "response": {
@@ -836,7 +836,7 @@
   "queueAck": {
     "request": {
       "method": "POST",
-      "path": "/openapi/wiselink/ack-work-item",
+      "path": "/openapi/wiselink/codex-ack-work-item",
       "body": {
         "workItemId": "WI-fixture-program-recovery",
         "leaseToken": "00000000-0000-4000-8000-000000000002",

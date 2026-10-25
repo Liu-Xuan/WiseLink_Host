@@ -8,7 +8,7 @@ import { createCheckpointStore, invokeHostedReviewModel } from '../skills/wiseli
 import { invokeHostedDerivedSummaryModel } from '../skills/wiselink-research-and-synthesize/scripts/invoke-hosted-derived-summary-model.mjs';
 import { consumeHostedDerivedSummary } from '../skills/wiselink-research-and-synthesize/scripts/consume-hosted-derived-summary.mjs';
 import { consumePendingReviewTurn } from '../skills/wiselink-research-and-synthesize/scripts/consume-hosted-review-turn.mjs';
-import { canonicalSha256, REVIEW_ALLOWED_OPERATIONS, WISELINK_RUNTIME_APP_ID, WISELINK_PROFILE_REF,
+import { canonicalSha256, REVIEW_ALLOWED_OPERATIONS, WL_CODEX_RUNTIME_APP_ID, WISELINK_PROFILE_REF,
   WISELINK_MODEL_POLICY_REF, WISELINK_SKILL_COMPATIBILITY_REF, WISELINK_HOST_MCP_NAME,
   WISELINK_HOST_MCP_VERSION } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
 
@@ -33,7 +33,8 @@ export async function runWikiFixture(root, mode = 'normal') {
   const result = await invokeHostedDerivedSummaryModel(modelInput, {
     modelExecutor: 'CODEX', codexOptions: { codexBinary: '/synthetic/codex',
       configPath: '/synthetic/config', runRoot: resolve(root, 'runner'),
-      pythonBinary: resolve(root, 'python-wrapper') },
+      pythonBinary: resolve(root, 'python-wrapper'),
+      onRunPrepared: async () => { if (mode === 'before-codex-launch') process.kill(process.pid, 'SIGKILL'); } },
     executionModel: { modelRef: 'miaoda/glm-5.3' }, checkpoint,
     sessionDiscriminator: 'AQ-wiki-recovery:1', summaryId: 'DS-wiki-recovery',
     attemptRef: 'AQ-wiki-recovery', deadlineAt: '2099-01-01T00:00:00.000Z',
@@ -117,7 +118,8 @@ export async function runSummaryConsumerFixture(root, mode = 'normal') {
   };
   const result = await consumeHostedDerivedSummary({ ...target, modelExecutor: 'CODEX',
     codexOptions: { codexBinary: '/synthetic/codex', configPath: '/synthetic/config',
-      runRoot: resolve(root, 'runner'), pythonBinary: resolve(root, 'python-wrapper') },
+      runRoot: resolve(root, 'runner'), pythonBinary: resolve(root, 'python-wrapper'),
+      onRunPrepared: async () => { if (mode === 'before-codex-launch') process.kill(process.pid, 'SIGKILL'); } },
     runBudget: { timeoutMs: 300_000, maxCompletionTokens: 1000,
       maxModelRequests: 2, reasoningEffort: 'low' }, checkpointRoot: root,
     endpointKey: 'synthetic-host' }, {
@@ -142,7 +144,7 @@ export async function runReviewConsumerFixture(root, mode = 'normal') {
     }] : [],
     allowedEvaluationItemIds: [], allowedAdoptedInputRefs: [], attachmentRefs: [],
     context: { purpose: 'CHAT' }, executionPolicy: {
-      runtimeAppId: WISELINK_RUNTIME_APP_ID, profileRef: WISELINK_PROFILE_REF,
+      runtimeAppId: WL_CODEX_RUNTIME_APP_ID, profileRef: WISELINK_PROFILE_REF,
       modelPolicyRef: WISELINK_MODEL_POLICY_REF,
       skillPolicyRef: WISELINK_SKILL_COMPATIBILITY_REF,
       toolPolicyRef: `${WISELINK_HOST_MCP_NAME}@${WISELINK_HOST_MCP_VERSION}#interactive-review-c3`,
@@ -162,6 +164,7 @@ export async function runReviewConsumerFixture(root, mode = 'normal') {
   const runtime = { modelExecutor: 'CODEX', codexOptions: { codexBinary: '/synthetic/codex',
     configPath: '/synthetic/config', runRoot: resolve(root, 'runner'),
     pythonBinary: resolve(root, 'python-wrapper'),
+    onRunPrepared: async () => { if (mode === 'before-codex-launch') process.kill(process.pid, 'SIGKILL'); },
     ...(mode === 'after-runner-receipt' ? { onRunCompleted: () => process.kill(process.pid, 'SIGKILL') }
       : mode === 'after-second-runner-receipt' ? { onRunCompleted: async () => {
         const count = (await readFile(resolve(root, 'runner', 'dispatch-count'), 'utf8')).trim().split('\n').length;
@@ -256,6 +259,7 @@ export async function runReviewFixture(root, mode = 'normal', userMessage = 'Wha
     modelExecutor: 'CODEX', codexOptions: { codexBinary: '/synthetic/codex',
       configPath: '/synthetic/config', runRoot: resolve(root, 'runner'),
       pythonBinary: resolve(root, 'python-wrapper'),
+      onRunPrepared: async () => { if (mode === 'before-codex-launch') process.kill(process.pid, 'SIGKILL'); },
       ...(mode === 'after-runner-receipt' ? { onRunCompleted: () => process.kill(process.pid, 'SIGKILL') }
       : mode === 'after-second-runner-receipt' ? { onRunCompleted: async () => {
         const count = (await readFile(resolve(root, 'runner', 'dispatch-count'), 'utf8')).trim().split('\n').length;

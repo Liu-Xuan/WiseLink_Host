@@ -164,13 +164,15 @@ try {
       ...hooks, modelExecutor: 'CODEX', agentId: 'wiselink-engineering', executionModel,
       codexOptions: { codexBinary: '/fixture/no-real-codex', configPath: '/fixture/no-credentials',
         runRoot: resolve(root, 'codex-runs'), pythonBinary: resolve(root, 'python-wrapper'), timeoutSeconds: 20,
+        onRunPrepared: async () => { if (mode === 'before-codex-launch') process.kill(process.pid, 'SIGKILL'); },
         onRunCompleted: async () => {
           if (mode === 'after-gateway-receipt') process.kill(process.pid, 'SIGKILL');
           if (mode === 'second-receipt' && (await readFile(resolve(root, 'codex-runs', 'dispatch-count'), 'utf8')).trim().split('\n').length === 2)
             process.kill(process.pid, 'SIGKILL');
         } },
     }), runtimeProvenance: { modelVersion: 'fixture', promptVersion: 'fixture', skillVersion: 'fixture',
-      toolVersions: {}, runMetrics: { durationMs: 0, inputUnits: 0, outputUnits: 0 } } });
+      toolVersions: { 'model-executor': 'CODEX' },
+      runMetrics: { durationMs: 0, inputUnits: 0, outputUnits: 0 } } });
   await host.write('fixture-outcome', result);
 } catch (error) {
   await host.write('fixture-outcome', { errorCode: error.message, cause: error.cause?.message, stack: error.stack });

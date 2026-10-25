@@ -114,11 +114,20 @@
   },
   "client": {
     "sourcePath": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs",
-    "sourceSha256": "f4e5b90672a9ace8040f44dfb8d32a6bab65741f8120b6ef5124166b6ccdf878",
+    "sourceSha256": "644329c74c8332a906e5830d5f7a0d6c3b39ea8307c8547c4050d0ef3ca114fd",
     "legacyServerName": "wiselink-openclaw-engineering-assessment",
     "expectedServerVersion": "1.2.0",
     "expectedCodexServerName": "wiselink-codex-engineering-assessment",
     "expectedCodexMcpPath": "/openapi/wiselink/codex-mcp",
+    "expectedCodexQueueRestPaths": [
+      "/openapi/wiselink/codex-next-work-item",
+      "/openapi/wiselink/codex-ack-work-item",
+      "/openapi/wiselink/codex-block-work-item",
+      "/openapi/wiselink/codex-apply-pending-model-configuration"
+    ],
+    "expectedRuntimeAppEnvironment": "WL_CODEX_RUNTIME_APP_ID",
+    "expectedRuntimeAppId": "app_17gr74pbere",
+    "wireProvenanceVersionKey": "wiselink-openclaw-engineering-assessment",
     "legacyMcpPath": "/openapi/wiselink/openclaw-mcp",
     "requiredLegacyToolNames": [
       "document_reading",

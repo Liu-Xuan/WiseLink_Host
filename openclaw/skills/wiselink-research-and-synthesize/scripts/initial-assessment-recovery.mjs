@@ -5,6 +5,7 @@ import { createCheckpointStore, readCheckpointCandidate, actualModelVersion, par
 import { canonicalSha256, WISELINK_SKILL_VERSION, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from './validate-payload.mjs';
 import { decodeJobAidStep } from './jobaid-work-shape.mjs';
 import { classifyHostedAssessmentProtocol } from './request-hosted-gateway.mjs';
+import { modelExecutorProvenance } from './model-executor.mjs';
 
 export const INITIAL_ASSESSMENT_OPERATIONS = {
   EXTRACT_APPLICABILITY: { stage: 'applicability', begin: 'begin_applicability_evaluation', commit: 'commit_applicability_candidate' },
@@ -383,11 +384,14 @@ async function inspectPolicyFailureClosure(checkpoint, operation, saved) {
     } };
 }
 
-export async function finishInitialAssessmentPolicyFailure({ checkpoint, recovery, begin, callTool }) {
+export async function finishInitialAssessmentPolicyFailure({ checkpoint, recovery, begin, callTool, modelExecutor = 'HOSTED' }) {
   assertFreshInitialAssessmentClaim(recovery.previousClaim, begin);
   const saved = await readExactSavedWork(callTool, begin.attemptRef, begin.task.workItemId, begin.task.documentVersionId);
   const closure = await inspectPolicyFailureClosure(checkpoint, recovery.operation, saved);
   if (!closure || !isDeepStrictEqual(closure.claim, begin) || !isDeepStrictEqual(closure.proof, recovery.closeOnly))
     throw new Error('INITIAL_ASSESSMENT_POLICY_CLOSURE_UNCONFIRMED');
-  return { failureCode: 'JOBAID_CHECKPOINT_POLICY_CHANGED', provenance: closure.provenance };
+  return { failureCode: 'JOBAID_CHECKPOINT_POLICY_CHANGED', provenance: {
+    ...closure.provenance, toolVersions: { ...closure.provenance.toolVersions,
+      ...modelExecutorProvenance({ modelExecutor }) },
+  } };
 }

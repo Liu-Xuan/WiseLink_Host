@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findMcpConfig } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 import { HOST_MCP_TOOLS } from '../skills/wiselink-research-and-synthesize/scripts/orchestrate-host-mcp.mjs';
-import { WISELINK_HOST_MCP_VERSION } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
+import { WISELINK_HOST_MCP_VERSION, WL_CODEX_RUNTIME_APP_ID } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
 
 const expectedServerName = 'wiselink-codex-engineering-assessment';
 const expectedEndpointPath = '/openapi/wiselink/codex-mcp';
@@ -22,7 +22,7 @@ function validCodexEndpoint(value) {
   } catch { return false; }
 }
 
-export async function inspectConfiguration(configPath, codexBinary) {
+export async function inspectConfiguration(configPath, codexBinary, env = process.env) {
   const config = JSON.parse(await readFile(configPath, 'utf8'));
   const provider = config.models?.providers?.miaoda;
   const legacyHost = findMcpConfig(config, 'HOSTED');
@@ -30,6 +30,7 @@ export async function inspectConfiguration(configPath, codexBinary) {
   const codexHostMcpConfigPresent = Boolean(codexHost);
   const codexHostMcpConfigured = codexHostMcpConfigPresent && codexHost.enabled !== false;
   const codexHostMcpEndpointValid = codexHostMcpConfigured && validCodexEndpoint(codexHost.url);
+  const codexRuntimeAppIdConfigured = env.WL_CODEX_RUNTIME_APP_ID === WL_CODEX_RUNTIME_APP_ID;
   const allowed = codexHost?.toolFilter?.include;
   const hostToolFilterPresent = Array.isArray(allowed);
   const missingTools = hostToolFilterPresent ? requiredTools.filter(tool => !allowed.includes(tool)) : null;
@@ -48,6 +49,7 @@ export async function inspectConfiguration(configPath, codexBinary) {
     codexHostMcpConfigPresent, codexHostMcpConfigured,
     hostMcpConfigured: codexHostMcpConfigured,
     codexHostMcpEndpointValid, expectedHostMcpPath: expectedEndpointPath,
+    codexRuntimeAppIdConfigured,
     expectedHostMcpServerName: expectedServerName, expectedHostMcpServerVersion: WISELINK_HOST_MCP_VERSION,
     requiredHostToolScope: 'CLIENT_EXACT_METADATA_PLUS_PROGRAM_PROGRESS',
     requiredHostToolCount: requiredTools.length, hostToolFilterPresent,
@@ -58,6 +60,7 @@ export async function inspectConfiguration(configPath, codexBinary) {
     remaining: [
       ...(!codexHostMcpConfigured ? ['CODEX_HOST_MCP_NOT_CONFIGURED'] : []),
       ...(codexHostMcpConfigured && !codexHostMcpEndpointValid ? ['CODEX_HOST_MCP_ENDPOINT_INVALID'] : []),
+      ...(!codexRuntimeAppIdConfigured ? ['CODEX_RUNTIME_APP_ID_CONFIG_INVALID'] : []),
       ...(missingTools?.length ? ['HOST_TOOL_BINDING_INCOMPLETE'] : []),
       ...(!hostToolFilterPresent ? ['VERIFY_CODEX_HOST_TOOL_DISCOVERY'] : []),
       'VERIFY_HOST_AUTHENTICATION_AND_CURRENT_RUNTIME_REGISTRATION',

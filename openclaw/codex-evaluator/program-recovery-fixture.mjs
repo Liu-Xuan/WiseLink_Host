@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCheckpointStore } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 import { invokeHostedProgramAssessment } from '../skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs';
+import { createCodexGateway } from './codex-generation.mjs';
 
 export function programRecoveryData() {
   const documentVersionId = 'fixture-document-recovery', parseRunId = 'fixture-parse-1';
@@ -78,9 +79,11 @@ export async function runProgramRecoveryFixture(root, mode = 'normal') {
     state.actions.push({ tool: 'read_assessment_work', request: args, response: structuredClone(packet) });
     return packet;
   });
+  const codexOptions = { codexBinary: '/fixture/no-real-codex', configPath: '/fixture/no-credentials',
+    runRoot: resolve(root, 'synthetic-model'), pythonBinary: '/fixture/runner-must-not-launch', timeoutSeconds: 1,
+    onRunPrepared: async () => { if (mode === 'before-codex-launch') crash(); } };
   const options = {
-    modelExecutor: 'CODEX', codexOptions: { codexBinary: '/fixture/no-real-codex',
-      configPath: '/fixture/no-credentials', runRoot: resolve(root, 'synthetic-model') },
+    modelExecutor: 'CODEX', codexOptions,
     executionModel: { modelRef: 'miaoda/glm-5.3', displayName: 'synthetic', providerKind: 'BUILT_IN',
       settingsRevision: 1, selectedAt: '2026-10-25T00:00:00.000Z' },
     assessmentCheckpoint: checkpoint, assessmentBinding,
@@ -121,7 +124,10 @@ export async function runProgramRecoveryFixture(root, mode = 'normal') {
       return receipt;
     },
   };
+  const actualGateway = createCodexGateway(codexOptions);
   const gateway = async (_endpoint, init) => {
+    if (mode === 'before-codex-launch' || await disk.readOptional('assessment-round-1.codex-run'))
+      return actualGateway(_endpoint, init);
     let record = await model.readOptional('response');
     if (!record) {
       if (init.codexRecovery?.recoverOnly) throw new Error('CODEX_GENERATION_OUTCOME_UNKNOWN');

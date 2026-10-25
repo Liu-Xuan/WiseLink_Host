@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createCodexGateway } from '../../../codex-evaluator/codex-generation.mjs';
 import { canonicalJson } from './validate-payload.mjs';
 import { validateSummaryRunBudget } from './derived-summary-native-gateway.mjs';
+import { codexParentRunRecorder } from './model-executor.mjs';
 
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -165,7 +166,9 @@ export function createSummaryCodexGatewaySession(options) {
             Math.ceil(remainingMs / 1000))) });
         const response = await request(null, { ...init, signal,
           ...(roundStarted ? { codexRecovery: { requestId: roundStarted.requestId,
-            recoverOnly: recoverRound } } : {}) }, { onRunCompleted });
+            recoverOnly: recoverRound,
+            onRunPrepared: codexParentRunRecorder(checkpoint,`summary-codex.round-${durableRound}`,
+              {requestId:roundStarted.requestId,argsHash:roundStarted.bodySha256}) } } : {}) }, { onRunCompleted });
         if (!observed || !runClosed(runs.at(-1))) {
           unknown = true;
           throw new Error('DERIVED_SUMMARY_CODEX_PROCESS_UNVERIFIED');

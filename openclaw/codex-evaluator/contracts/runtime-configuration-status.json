@@ -1,12 +1,21 @@
 {
-  "scope": "Client implementation inventory and prior fixture evidence; no current live Host configuration inspection",
-  "baselineImplementation": "1155c386fff03eeb1753a6af3aab6f337a4413b6",
+  "scope": "Client implementation inventory against 925deb2d and user-reported local Host contract; no current live configuration inspection and no local interface packet received",
+  "baselineImplementation": "925deb2d148a9eb8ed508300d7132fce55bc665c",
   "baselineWiringRecord": "fc1322919b1b52433c33086c8db4aeb957f0e982",
   "hostIntegrationReportedByUser": {
     "branch": "codex/executor-transition-host-20261025",
-    "commitPrefix": "1eb9bcc8",
-    "productCodeIntegrated": false,
-    "independentlyFetched": false
+    "commit": "974bedfa8edb03ba94c4991a2c6a3c63a1145eb4",
+    "graphContractVersion": "1.8",
+    "standardBuild": "PASSED_REPORTED_BY_USER",
+    "pushed": false,
+    "deployed": false,
+    "independentlyFetched": false,
+    "interfacePacket": {
+      "reportedFileCount": 76,
+      "reportedToolCount": 45,
+      "received": false,
+      "status": "PENDING_LOCAL_PACKET"
+    }
   },
   "configuration": [
     {
@@ -14,6 +23,12 @@
       "expected": "CODEX",
       "implementation": "AVAILABLE",
       "liveBusinessConfiguration": "PENDING_EXACT_SINGLE_EXECUTOR_ENTRYPOINT"
+    },
+    {
+      "field": "WL_CODEX_RUNTIME_APP_ID",
+      "expected": "app_17gr74pbere",
+      "implementation": "EXPLICIT_CODEX_RUNTIME_CONFIGURATION_AND_TASK_BINDING",
+      "liveBusinessConfiguration": "PRESENCE_AND_EXACT_VALUE_NOT_INSPECTED_NO_CONFIG_CHANGE"
     },
     {
       "field": "codexOptions.codexBinary / --codex-binary / WL_CODEX_BINARY",
@@ -32,7 +47,7 @@
     {
       "field": "codexOptions.runRoot / --codex-run-root / WL_CODEX_RUN_ROOT",
       "expected": "Private durable absolute path retained across consumer restarts",
-      "implementation": "DURABLE_DIRECTORY_AND_RESPONSE_JOURNAL_IMPLEMENTED",
+      "implementation": "EXISTING_DURABLE_RECEIPTS_PLUS_PRIVATE_PROMPT_UPSTREAM_BODY_AND_PRELAUNCH_PARENT_LINK",
       "liveBusinessConfiguration": "DURABLE_VOLUME_AND_RETENTION_TO_CONFIRM"
     },
     {
@@ -63,22 +78,42 @@
     },
     {
       "field": "MCP initialize.serverInfo",
-      "expected": {"name": "wiselink-codex-engineering-assessment", "version": "1.2.0"},
+      "expected": {
+        "name": "wiselink-codex-engineering-assessment",
+        "version": "1.2.0"
+      },
       "implementation": "EXACT_CLIENT_CHECK_IMPLEMENTED",
       "liveBusinessConfiguration": "NOT_VERIFIED"
     },
     {
       "field": "MCP tools/list and runtime provenance policy",
       "expected": "Actual server tool list, JSON Schemas, runtime app/profile/skill policy aligned with current client validators",
-      "implementation": "PINNED_LEGACY_SOURCE_INVENTORY_EXPORTED",
-      "liveBusinessConfiguration": "HOST_SERVER_PRODUCT_IMPLEMENTATION_AND_DISCOVERY_TO_CONFIRM",
-      "note": "Legacy Task/Result envelope names, runtime app constant and provenance tool key remain in shared validators. They are not evidence that the new Codex app is registered."
+      "implementation": "42_PINNED_SOURCE_TOOLS_35_LIMITED_MECHANICAL_PLUS_7_REAL_ZOD_SCHEMAS",
+      "liveBusinessConfiguration": "PENDING_LOCAL_PACKET_AND_LIVE_RUNTIME_AUTHORIZATION",
+      "note": "OPENCLAW Task/Result types and wiselink-openclaw-engineering-assessment version key remain exact wire contracts; MCP service identity is separate. Task policy mcpServerName/toolPolicyRef still require actual packet comparison; no acceptance of both app identities."
     },
     {
       "field": "Single business executor enrollment",
       "expected": "One active authorized queue consumer; exact task scope and service principal agreed before switching",
       "implementation": "EXISTING_QUEUE_CLAIM_AND_LEASE_PROTOCOL_REUSED",
       "liveBusinessConfiguration": "PENDING_MAIN_CONTROLLER_CONFIRMATION"
+    },
+    {
+      "field": "Trusted queue control REST routes",
+      "expected": [
+        "/openapi/wiselink/codex-next-work-item",
+        "/openapi/wiselink/codex-ack-work-item",
+        "/openapi/wiselink/codex-block-work-item",
+        "/openapi/wiselink/codex-apply-pending-model-configuration"
+      ],
+      "implementation": "ACTUAL_CODEX_QUEUE_CLIENT_PREFIX_AND_CALL_TESTS",
+      "liveBusinessConfiguration": "LOCAL_CONTRACT_REPORTED_BY_USER_NOT_CALLED"
+    },
+    {
+      "field": "Independent business worker count / group limit",
+      "expected": "Keep current activation unchanged; plan 1 then 2 then 4 only after exact scope authorization",
+      "implementation": "EXISTING_BATCH_4_IS_SEQUENTIAL_ENDPOINT_OWNER_LOCK_RETAINED",
+      "liveBusinessConfiguration": "NOT_ENABLED_NO_NEW_PARALLEL_RUN"
     }
   ],
   "currentVerification": {
@@ -90,6 +125,11 @@
     "businessHostBound": false,
     "realSaveVerified": false,
     "productReaderVerified": false,
-    "newCodeDeployedToMiaoda": false
-  }
+    "newCodeDeployedToMiaoda": false,
+    "localInterfacePacketReceived": false,
+    "localHostCommitFetched": false,
+    "productionConfigurationModified": false,
+    "parallelWorkersEnabled": false
+  },
+  "preservedProgramRecovery": "94c54de74a0d7a0c0d66778a04a161e2017fce28"
 }

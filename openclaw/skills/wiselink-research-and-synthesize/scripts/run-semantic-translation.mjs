@@ -1,8 +1,10 @@
 import { canonicalJson, canonicalSha256, sealResultEnvelope, validateTaskEnvelope, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION, WISELINK_SKILL_VERSION } from './validate-payload.mjs';
 import { TRANSLATION_BLOCK_PROMPT_VERSION, validateTranslationSemanticBatch } from './invoke-hosted-translation-block.mjs';
+import { modelExecutorProvenance } from './model-executor.mjs';
 
 /** Host persists and chooses versions; this coordinator never assembles text. */
-export async function runSemanticTranslation({ begin, callTool, translate, requestId }) {
+export async function runSemanticTranslation({ begin, callTool, translate, requestId, modelExecutor = 'HOSTED' }) {
+  if (!['HOSTED', 'CODEX'].includes(modelExecutor)) throw new Error('MODEL_EXECUTOR_UNSUPPORTED');
   validateTaskEnvelope(begin.task);
   if (begin.task.modelInput.schemaVersion !== 'wiselink.3_1.translation_task.v2' || typeof requestId !== 'string' || !requestId.trim())
     throw new Error('TRANSLATION_V2_BEGIN_INVALID');
@@ -114,7 +116,8 @@ export async function runSemanticTranslation({ begin, callTool, translate, reque
   const provenance = {
     modelVersion: completedExecutions.length ? [...new Set(completedExecutions.map((execution) => execution.modelVersion))].join(';') : 'host-assembly/no-model-call',
     skillVersion: WISELINK_SKILL_VERSION, promptVersion: TRANSLATION_BLOCK_PROMPT_VERSION,
-    toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION },
+    toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+      ...modelExecutorProvenance({ modelExecutor }) },
     runMetrics: { durationMs: Date.now() - startedAt, inputUnits: completedExecutions.reduce((sum, execution) => sum + execution.runMetrics.inputUnits, 0),
       outputUnits: completedExecutions.reduce((sum, execution) => sum + execution.runMetrics.outputUnits, 0) },
   };

@@ -105,6 +105,7 @@ try {
       ...hooks, modelExecutor: 'CODEX', agentId: 'wiselink-engineering', executionModel,
       codexOptions: { codexBinary: '/fixture/no-real-codex', configPath: '/fixture/no-credentials',
         runRoot: resolve(root, 'codex-runs'), pythonBinary: resolve(root, 'python-wrapper'), timeoutSeconds: 20,
+        onRunPrepared: async () => { if (mode === 'before-codex-launch') process.kill(process.pid, 'SIGKILL'); },
         onRunCompleted: async () => { if (mode === 'after-gateway-receipt') process.kill(process.pid, 'SIGKILL'); } },
     }).catch(async error => { await host.write('model-error', { message: error.message,
       cause: error.cause?.message, nested: error.cause?.cause?.message }); throw error; }) });
