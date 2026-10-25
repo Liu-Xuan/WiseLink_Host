@@ -1093,8 +1093,8 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "空队列，或一个成功领取的精确 WorkItem 和短时租约",
+          "201": {
+            "description": "空队列，或一个成功领取的精确 WorkItem 和短时租约 当前Nest POST控制器未设置HttpCode，正常返回201。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1234,8 +1234,8 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Host 已完成队列项；重试时 replayed=true",
+          "201": {
+            "description": "Host 已完成队列项；重试时 replayed=true 当前Nest POST控制器未设置HttpCode，正常返回201。",
             "content": {
               "application/json": {
                 "schema": {
@@ -1468,8 +1468,8 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "事项已阻止后续自动领取；replayed 表示相同租约的幂等重试",
+          "201": {
+            "description": "事项已阻止后续自动领取；replayed 表示相同租约的幂等重试 当前Nest POST控制器未设置HttpCode，正常返回201。",
             "content": {
               "application/json": {
                 "schema": {

@@ -71,3 +71,5 @@ CODEX文档交付还要求 `deliveryRef='work-item:<配置WI>'`，并经该WI的
 `result.toolVersions` 仍沿既有 wire 合同保存服务协议版本、JobAid 协议/方法版本与执行器标记。新生成器的 `model-executor: 'CODEX'` 是实际执行路线；历史键 `wiselink-openclaw-engineering-assessment: '1.2.0'` 当前仍被候选 validator 使用，它表示复用的旧 wire 协议检查，不能被解释为模型由旧 OpenClaw 运行。Task/Result 的 `openclaw_*_envelope.v1`、`OPENCLAW_DYNAMIC_EVALUATION` 也仍是持久 wire 名称；不可按名字擅改旧请求。
 
 程序初评来源字段还包括 `program-controlled-assessment: '1'`、`jobaid-problem-protocol: '2'|'3'` 和有 TDMS 时的 `tdms-native-context: '1'`。准确值从封存 task 及当前实现取得，不能为了通过 policy 伪造旧 skill/model provenance。独立服务发现版本与这些来源字段不互相替代。
+
+新Codex队列REST四条均由未覆盖HttpCode的Nest POST方法返回，正常状态为201；MCP为SDK自行写出的200/202。已用项目实际安装的RouterResponseController核对POST默认值。原Hosted三条队列OpenAPI历史仍标200，与该默认值存在文档差异；包保留原登记并明确此限制，消费者按成功2xx处理，不用旧文档状态推断实际网关回执。

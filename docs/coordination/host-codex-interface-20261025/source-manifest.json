@@ -1,5 +1,5 @@
 {
-  "sourceHead": "1eb9bcc8bd5a57798cb91f9674dfccdf9d44eb92",
+  "sourceHead": "03abb48b82ab6185b8422744cac5e8f7d634865f",
   "scope": "local-working-source-including-uncommitted-executor-transition",
   "exportMethod": "TypeScript transpile in memory; actual production createServer; official SDK InMemoryTransport initialize and tools/list",
   "networkAccessed": false,
@@ -11,7 +11,7 @@
   "files": [
     {
       "path": "docs/openapi.json",
-      "sha256": "38a363d1819600bfd00c7e09edd508a541b8f8bd93c73360740d889d73c1b64e"
+      "sha256": "520ccf8c27122311936eddd17fa7cbc81dd3bcc1bdf896424b11a97c33c28e9b"
     },
     {
       "path": "openclaw/codex-evaluator/codex-generation.mjs",
