@@ -2,16 +2,16 @@
   "formatVersion": 1,
   "snapshot": {
     "dataMode": "snapshot",
-    "generatedAt": "2026-10-25T06:29:52.547158+00:00",
+    "generatedAt": "2026-10-25T08:29:37.691593+00:00",
     "contract": {
       "version": "1.7 程序控制评估修订稿",
       "source": "WISELINK_MAINLINE_GRAPH_CONTRACT.md",
-      "sourceRevision": "768a4c4525dc75630c8caee357925b9c9278efccf7bcc2b8138906643a3665ac",
+      "sourceRevision": "77c43bc56f507b4c77ec0a927081b59c9663c96dc4bcf82197c963ac8217617a",
       "sourceRevisionType": "sha256"
     },
     "target": {
-      "sourceRevision": null,
-      "environmentId": null
+      "sourceRevision": "a65a80925073e4b88aba6d84413a77aa3c814ff6",
+      "environmentId": "host:app_17bzc551rsg:online"
     },
     "workPackages": [
       {
@@ -39,10 +39,10 @@
           "V26",
           "V28"
         ],
-        "nextAction": "当前最高优先级按2026-10-25新方案交付程序控制评估：准确连续材料、完整响应、SAVE、独立READ、合法初评Overall、同版阅读和收尾；新请求明确GLM绑定。原ATT5 UNKNOWN与已结束的旧后继保持，旧技术及业务回执分别保留。",
+        "nextAction": "优先新执行器的一条新真实事项：合法Host接口与准确材料→生成→Host SAVE→独立READ→确定性同版Overall→正常页面/图→正常结束。c241整包安装、旧UNKNOWN救回和旧链复演不再前置；当前线上实现保持，先补真实接线与验收缺口。",
         "progress": {
-          "delivered": "原ATT5首次SAVE被SOURCE_NOT_DELIVERED拒绝、round14 UNKNOWN、旧generation9归档，以及准确c239安装和C136原状态恢复均保持原证据。本次唯一正常新AD请求/AQ/ATT绑定同一WI、inputRevision=3，03:41:59.909Z round6遇Gateway HTTP400 incomplete_result；04:25 Host readback随后显示ATT TIMED_OUT、initialAnalysis/JobAid FAILED、Overall PENDING，保存0。generation10到期后由generation11正常收尾并归档，activeClaim=null；本地Native run-result仍UNKNOWN。Global GLM5.3 revision1与本WorkItem冻结M3 revision0分开；该请求继承M3，不代表运行时回退或GLM实测。",
-          "remaining": "业务链未通过：Host attempt已到期TIMED_OUT，但Native run-result仍REQUIRES_ATTENTION/UNKNOWN；assessment-work current为空、Overall NOT_AVAILABLE，document-parsing Overall阶段PENDING，未保存成果。先前Gateway HTTP400 incomplete_result与后续Host期限收尾分别记录，不能称Gateway timeout或推断provider终止。SAVE修复尚未真实证成；独立READ、Overall准确workRef/正文、正常成功结束与同版阅读均未验收。attention修复仅在本地候选审查，不写已发布或完成。原ATT5及新UNKNOWN不重放；需明确GLM新绑定后才能称GLM运行测试。",
+          "delivered": "以下为c239旧后继历史窗口：原ATT5首次SAVE被SOURCE_NOT_DELIVERED拒绝、round14 UNKNOWN、旧generation9归档，以及准确c239安装和C136原状态恢复均保持原证据。本次唯一正常新AD请求/AQ/ATT绑定同一WI、inputRevision=3，03:41:59.909Z round6遇Gateway HTTP400 incomplete_result；04:25 Host readback随后显示ATT TIMED_OUT、initialAnalysis/JobAid FAILED、Overall PENDING，保存0。generation10到期后由generation11正常收尾并归档，activeClaim=null；本地Native run-result仍UNKNOWN。Global GLM5.3 revision1与本WorkItem冻结M3 revision0分开；该请求继承M3，不代表运行时回退或GLM实测。 当前a65/c240技术切换、C136原状态恢复及新GLM程序请求受理及随后材料核验断点见P7；技术事实不改写前述旧请求结果。 新方向范围记录：准确0b33为13新增文件的可选Codex+GLM执行器，既有验证Host为内存模拟、真实Host未调用/未配置且业务未ready，持久重启恢复未接；未替换当前线上a65/c240。",
+          "remaining": "首个新真实事项仍需新执行器合法Host身份/任务权限、准确材料、生成、Host SAVE、独立READ、确定性同版Overall、正常页面/图与结束的真实证据。0b33真实Codex+GLM的内存Host fixture不补生产授权/持久成果或阅读验收。c241整包安装、旧UNKNOWN救回及旧链复演不前置；旧技术版本、历史模型绑定、材料失败与UNKNOWN/active claim原件保持。",
           "owner": "主控集成及各既有消费者负责范围",
           "acceptance": "按§6.5各行只关闭已证明范围：同Hosted实际来源查询通过，UI/Host/Native原请求及来源绑定可核，必要版本/对象已准确交付；获准真实SAVE、Overall workRef与同版阅读及有关变化语义对应。撤权/错身份/旧fence等反例拒绝且旧成果保留；PG、入队、BLOCK或release finished各不替代业务完成。 每次结构/语义升级的旧数据有明确迁移/新版重生成/清理处置，旧引用、当前指针、索引/缓存及下游已处理并读回；不强制所有历史永久兼容。",
           "evidenceIds": [
@@ -151,7 +151,11 @@
             "ad-att5.c239.new-ad-successor.host-deadline-terminal.runtime",
             "ad-att5.c239.new-ad-successor.g11-normal-queue-close.runtime",
             "ad-att5.c239.new-ad-successor.inherited-m3-model.runtime",
-            "ad-att5.c239.original-fixed-set.unchanged-after-successor.runtime"
+            "ad-att5.c239.original-fixed-set.unchanged-after-successor.runtime",
+            "program-initial.a65.exact-host-deployment",
+            "program-initial.a65.glm-request-accepted",
+            "program-initial.a65.material-validation-stopped-host-running",
+            "executor-transition.0b33.validation-scope-and-priority"
           ]
         }
       },
@@ -536,7 +540,7 @@
       },
       {
         "id": "P7",
-        "label": "P7 · 当前第一批：程序控制评估完整交付",
+        "label": "P7 · 当前第一批：新执行器接入与真实评估交付",
         "bindingIds": [
           "program.initial-assessment"
         ],
@@ -546,17 +550,26 @@
           "V57",
           "V58"
         ],
-        "nextAction": "审批准确联合技术包；获准后按正常新GLM请求验SAVE→独立READ→Overall→同版阅读与收尾，保留原UNKNOWN。",
+        "nextAction": "优先新执行器的一条新真实事项：合法Host接口与准确材料→生成→Host SAVE→独立READ→确定性同版Overall→正常页面/图→正常结束。c241整包安装、旧UNKNOWN救回和旧链复演不再前置；当前线上实现保持，先补真实接线与验收缺口。",
         "progress": {
-          "delivered": "本地程序执行/Host/阅读/图已集成至7b；四项独审缺口关闭，定向回归及标准完整build通过；c240标准包145文件核验通过。",
-          "remaining": "本批准确安装/发布及前后端读回，一条新GLM真实业务链与正文质量验收；实现/测试通过不替代真实运行。",
+          "delivered": "本地ae9实现及7b状态补修、独立审查/定向验证和标准build证据保持。准确公开f821/Hosta65三ref已同步，唯一Host release7700499229508799768 finished且普通用户前后端a65/环境PASS；Native c240源ae9单次安装145文件与四入口匹配、旧21项未变，新旧Host握手及新两record工具通过。C136单次恢复原enabled=true/staticDiff[]。唯一新程序请求HTTP201受理且封存PROGRAM_CONTROLLED_V1+GLM5.3/BUILT_IN，随后Host已启动；材料核验报错与consumerStopped/UNKNOWN已真实显示，外层Host仍RUNNING，见独立断点证据。 后续固定只读取证确认115条原文已交付、目录身份齐全，正文投影缺顶层documentVersionId/sourceRefId令primaryCount0；准确HTTP started/result均无，实际模型派发0/响应0/SAVE0，完整封存模型与Host一致。原UNKNOWN和generation12 stopped active claim保留。 新方向范围记录：准确0b33为13新增文件的可选Codex+GLM执行器，既有验证Host为内存模拟、真实Host未调用/未配置且业务未ready，持久重启恢复未接；未替换当前线上a65/c240。",
+          "remaining": "0b33尚未接正式Host，realHostCalled=false/hostMcpConfigured=false/readyForBusinessExecution=false，进程重启持久恢复未接。首个新真实事项仍缺真实Host接口与准确材料、生成、Host SAVE→独立READ→确定性同版Overall→页面/图→正常结束；模拟Host fixture不记业务通过。旧a65/c240单次请求的模型0/SAVE0及UNKNOWN/active claim保留，旧c241部署/旧链救回不前置；不将V55—V58升级为通过。",
           "owner": "主控集成；program_host_projection / program_native_executor / program_reading_ui 分别拥有Host、Native、正常阅读；主控维护图与证据",
-          "acceptance": "一个真实事项在正常用户页面可读有用工程工作及准确依据，Overall实际读取同版工作，任务正常收尾；恢复不重生成、不重放UNKNOWN，图反映同一请求。",
+          "acceptance": "一条新真实事项在合法Host身份与任务权限下消费准确材料，由新执行器生成有用工程工作，经Host SAVE及同请求/准确修订独立READ，Host完成确定性同版Overall，正常用户页面/图读取同一workRevisionRef并正常结束。生成、保存、回读、投影与外层终态分列；内存fixture和旧链复演不替代本验收，不新建状态体系。",
           "evidenceIds": [
             "program-initial.first-batch.source_review",
             "program-initial.first-batch.test",
             "program-initial.first-batch.deployment",
-            "program-initial.first-batch.runtime"
+            "program-initial.first-batch.runtime",
+            "program-initial.a65.exact-host-deployment",
+            "program-initial.a65.normal-user-version",
+            "program-initial.c240.exact-native-install",
+            "program-initial.a65.c240-new-host-handshake",
+            "program-initial.c136.original-state-restored",
+            "program-initial.a65.glm-request-accepted",
+            "program-initial.a65.material-validation-stopped-host-running",
+            "program-initial.a65.original-evidence-identity-readonly",
+            "executor-transition.0b33.validation-scope-and-priority"
           ]
         }
       }
@@ -2508,8 +2521,8 @@
         "P7"
       ],
       "consumer": "正常程序评估入口→准确mode/model任务→完整材料与文件快照→现有SAVE/独立READ→合法初评确定性Overall→正常阅读/准确workRef下钻；进度与各终态分列",
-      "sourceRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
-      "environmentId": "local:program-controlled-assessment",
+      "sourceRevision": "a65a80925073e4b88aba6d84413a77aa3c814ff6",
+      "environmentId": "host:app_17bzc551rsg:online",
       "sourceRefs": [
         "server/modules/canonical-host/canonical-initial-analysis-continuation.service.ts",
         "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
@@ -2529,22 +2542,18 @@
         "test/unit/program-assessment-materials.spec.ts",
         "test/unit/program-assessment-materials-ui.spec.ts",
         "test/unit/tdms-source/tdms-program-material-membership.spec.ts",
-        "test/unit/canonical-jobaid-problem-continuation.spec.ts"
+        "test/unit/canonical-jobaid-problem-continuation.spec.ts",
+        "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25"
       ],
       "gaps": [
         {
-          "id": "program.initial-deployment",
-          "kind": "deployment",
-          "reason": "准确本地联合代码和Native包准备完成，尚未获本批安装/发布执行批准",
-          "nextAction": "按准确执行包批准后先安装兼容c240、再发布新Host并读回，随后沿正常新请求验业务"
-        },
-        {
           "id": "program.initial-live",
           "kind": "runtime",
-          "reason": "尚无新程序流程的真实SAVE与同版阅读回执",
-          "nextAction": "准确技术交付后，在获准范围完成一条真实业务链"
+          "reason": "此binding的consumer/sourceRevision/sourceRefs仍标识当前已核实a65/c240实现；旧单次请求材料身份缺字段、模型0/SAVE0与UNKNOWN/active claim保持。目标已改为新执行器接既有Host能力；0b33可选实现仅有真实Codex+GLM/内存Host fixture，realHostCalled=false、hostMcpConfigured=false、readyForBusinessExecution=false，重启持久恢复未接，不能视作已替换线上执行器或业务通过。",
+          "nextAction": "优先新执行器的一条新真实事项：合法Host接口与准确材料→生成→Host SAVE→独立READ→确定性同版Overall→正常页面/图→正常结束。c241整包安装、旧UNKNOWN救回和旧链复演不再前置；当前线上实现保持，先补真实接线与验收缺口。 按执行器切换说明接入当前Host身份/权限、材料与保存/读取/投影消费者；旧UNKNOWN不改写，不为恢复旧请求阻塞新真实事项。"
         }
-      ]
+      ],
+      "previousReviewedRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554"
     }
   ],
   "selection": {
@@ -2595,7 +2604,7 @@
       "V57",
       "V58"
     ],
-    "reason": "2026-10-25 新第一批为程序控制评估完整链，本地实施进行中。最新已核线上Host fa14、Native c239；c239唯一新AD后继已正常超时/BLOCK归档且SAVE0，原ATT5 UNKNOWN保留。当前默认GLM、旧事项M3分开，新程序请求将明确绑定模型。a009停止观察仅本地；新契约、代码、测试、部署、业务分层记录。保留原选择及历史证据，新增本批原文接线和V55—V58；图样式与节点不重做。"
+    "reason": "最新实施优先级转向新执行器的首条新真实事项：合法Host接口和准确材料→生成→Host SAVE→独立READ→确定性同版Overall→正常页面/图→结束。c241整包安装、旧UNKNOWN救回与旧链复演不再前置。准确0b33仅新增13文件可选执行器，真实Codex+GLM验证使用内存Host/虚构材料，realHostCalled=false、hostMcpConfigured=false、readyForBusinessExecution=false，重启持久恢复未接；fixture不记生产业务通过，未声称已切换执行器。既有a65/c240发布安装握手/C136恢复及一次受理、115原文已交付而projection缺身份导致模型0/SAVE0等事实与原UNKNOWN/active claim保持。P0/P7与current缺口更新目标，其余目录/选择数组/旧386证据对象顺序及用户样式保持；真实链未闭合。"
   },
   "evidence": [
     {
@@ -10150,6 +10159,177 @@
       ],
       "reportRef": "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
       "summary": "新程序流程尚无真实GLM/SAVE→独立READ→Overall→同版阅读/收尾回执。原ATT5 UNKNOWN及c239失败后继保持；等待准确技术范围批准，不列为代码缺陷。"
+    },
+    {
+      "contractRevision": "0c012106c689bc2f101794109b2fd1b190ef74c6f50f055ba80ecc7c24a11903",
+      "sourceRevision": "a65a80925073e4b88aba6d84413a77aa3c814ff6",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25",
+      "scenarioIds": [],
+      "id": "program-initial.a65.exact-host-deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "publicSourceRevision": "f821bfe3447367e4d4bc9e140723c92230fc82ed",
+      "deploymentRef": "7700499229508799768",
+      "observedAt": "2026-10-25T07:14:17.161961+00:00",
+      "startedAt": "2026-10-25T07:11:14.208087+00:00",
+      "finishedAt": "2026-10-25T07:11:16.098519+00:00",
+      "readbackRef": "private:program-assessment-20261025:exact-host-deployment",
+      "timeBasis": "startedAt/finishedAt为唯一release-create工具调用窗口；observedAt为独立release-get完成时点，非业务完成时钟。三ref汇总观察2026-10-25T06:42:49.538836Z。",
+      "summary": "公开origin/github两同名ref准确f821、私有Host同名ref准确a65均读回；唯一release7700499229508799768创建一次并独立读回finished/完整a65/error_logs空。临发布完整差异为空、无在途仅作预检，不证明P3迁移、业务模型、SAVE或Overall成功。"
+    },
+    {
+      "contractRevision": "0c012106c689bc2f101794109b2fd1b190ef74c6f50f055ba80ecc7c24a11903",
+      "sourceRevision": "a65a80925073e4b88aba6d84413a77aa3c814ff6",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25",
+      "scenarioIds": [],
+      "id": "program-initial.a65.normal-user-version",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "observedAt": null,
+      "archiveRecordedAt": "2026-10-25T07:18:04.486255+00:00",
+      "buildTime": "2026-10-25T07:11:49.994Z",
+      "readbackRef": "private:program-assessment-20261025:normal-user-version",
+      "timeBasis": "archiveRecordedAt为当时汇总记录时间，不倒填浏览器执行UTC；buildTime是前端构建字段，不是模型/业务开始时间。",
+      "summary": "普通用户已有会话前后端均读回完整a65，环境PASS；界面Release ID仍unknown，官方CLI的唯一release身份单列。仅版本/环境有限读回，不能验收Reader、GLM、材料、SAVE、同版Overall或工程正文。"
+    },
+    {
+      "contractRevision": "0c012106c689bc2f101794109b2fd1b190ef74c6f50f055ba80ecc7c24a11903",
+      "sourceRevision": "ae9ea7b30fceeec49ce878ccbb127af60a79bbaa",
+      "environmentId": "native:app_17c3zn24kv2:installed",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25",
+      "scenarioIds": [],
+      "id": "program-initial.c240.exact-native-install",
+      "kind": "deployment",
+      "status": "passed",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "nativeVersion": "wiselink-research-and-synthesize@r09.c240",
+      "startedAt": "2026-10-25T07:04:27.267921+00:00",
+      "finishedAt": "2026-10-25T07:04:47.322322+00:00",
+      "observedAt": "2026-10-25T07:10:42.720371+00:00",
+      "readbackRef": "private:program-assessment-20261025:exact-native-install",
+      "timeBasis": "安装调用起止与随后固定读回分列，不将C136启停或安装时间当业务时延。",
+      "summary": "准确c240源ae9单次官方install rc0；145文件与manifest逐项匹配，consume/reviewTurn/JobAid/program四入口匹配，旧安装备份完成；旧21项changed=[]。与旧fa14 Host握手成功，两可选record工具false，官方SDK目录43工具校验通过。观察时C136仍disabled/staticDiff[]、consumer0、准确锁无占用、activeClaimNULL；不解除旧UNKNOWN、不表示新业务已运行。"
+    },
+    {
+      "contractRevision": "0c012106c689bc2f101794109b2fd1b190ef74c6f50f055ba80ecc7c24a11903",
+      "sourceRevision": "a65a80925073e4b88aba6d84413a77aa3c814ff6",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25",
+      "scenarioIds": [],
+      "id": "program-initial.a65.c240-new-host-handshake",
+      "kind": "deployment",
+      "status": "passed",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "nativeSourceRevision": "ae9ea7b30fceeec49ce878ccbb127af60a79bbaa",
+      "startedAt": "2026-10-25T07:17:23.539Z",
+      "finishedAt": "2026-10-25T07:17:28.755Z",
+      "observedAt": "2026-10-25T07:17:28.755Z",
+      "readbackRef": "private:program-assessment-20261025:new-host-handshake",
+      "timeBasis": "同一实际连接的工具记录起止；未调用业务工具。",
+      "summary": "实际安装c240与新a65 Host连接成功，身份wiselink-openclaw-engineering-assessment@1.2.0、tools list和metadata通过；record_assessment_consumer_stopped和record_assessment_program_progress均true，连接关闭。businessToolCalls=0；只证明准确兼容与工具合同，不代表材料取得、模型、SAVE或业务通过。"
+    },
+    {
+      "contractRevision": "0c012106c689bc2f101794109b2fd1b190ef74c6f50f055ba80ecc7c24a11903",
+      "sourceRevision": "ae9ea7b30fceeec49ce878ccbb127af60a79bbaa",
+      "environmentId": "native:app_17c3zn24kv2:installed",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25",
+      "scenarioIds": [],
+      "id": "program-initial.c136.original-state-restored",
+      "kind": "runtime",
+      "status": "passed",
+      "bindingIds": [],
+      "startedAt": "2026-10-25T07:22:02.407484+00:00",
+      "finishedAt": "2026-10-25T07:22:14.715640+00:00",
+      "observedAt": "2026-10-25T07:22:28.839605+00:00",
+      "readbackRef": "private:program-assessment-20261025:c136-restored",
+      "timeBasis": "单次enable调用起止与恢复后汇总观察分列；原lastRun/nextRun不是本批新业务回执。",
+      "summary": "C136原enabled=true按原状态恢复：只执行一次enable，rc0，afterEnabled=true、afterStaticDiff=[]、restoredOk=true。本阶段manualTicks/modelRequests/businessRequests均0。恢复调度不是新请求已消费或业务完成，旧UNKNOWN及旧后继保持。"
+    },
+    {
+      "contractRevision": "0c012106c689bc2f101794109b2fd1b190ef74c6f50f055ba80ecc7c24a11903",
+      "sourceRevision": "a65a80925073e4b88aba6d84413a77aa3c814ff6",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25",
+      "scenarioIds": [],
+      "id": "program-initial.a65.glm-request-accepted",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "observedAt": null,
+      "eventAt": "2026-10-25T07:24:11.498Z",
+      "readbackRef": "private:program-assessment-20261025:glm-request-accepted",
+      "timeBasis": "eventAt为Host最新attempt.createdAt及模型selectedAt；未单独取得浏览器受理/GET采集UTC，不用文件mtime补齐。",
+      "summary": "唯一正常页面新程序请求HTTP201受理、replayed=false、QUEUED；Host封存PROGRAM_CONTROLLED_V1与miaoda/glm-5.3/BUILT_IN、inputRevision3。真实请求/attempt/operation仅在受限原件关联。此时startedAt/firstSavedAt/completedAt空，current空、materials不可用、progress空、Overall NOT_AVAILABLE。只证明新入口及mode/model绑定，不证明模型运行、材料、保存或成功收尾。"
+    },
+    {
+      "contractRevision": "0c012106c689bc2f101794109b2fd1b190ef74c6f50f055ba80ecc7c24a11903",
+      "sourceRevision": "a65a80925073e4b88aba6d84413a77aa3c814ff6",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25",
+      "scenarioIds": [],
+      "id": "program-initial.a65.material-validation-stopped-host-running",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "nativeSourceRevision": "ae9ea7b30fceeec49ce878ccbb127af60a79bbaa",
+      "startedAt": "2026-10-25T07:25:15.504Z",
+      "observedAt": "2026-10-25T07:25:20.055Z",
+      "readbackRef": "private:program-assessment-20261025:material-validation-stopped-host-running",
+      "timeBasis": "startedAt为Host attempt启动时间；observedAt为consumerStopped持久记录时间，不是两次正常GET的采集时钟。未单独取得GET采集UTC，不用文件mtime补齐。",
+      "summary": "同一准确新程序请求已启动；consumerStopped报PROGRAM_ASSESSMENT_MATERIALS_ORIGINAL_EVIDENCE_MISMATCH、upstreamOutcome=UNKNOWN。两次读取外层Host仍RUNNING，completedAt/firstSavedAt空，sourceReads/savedRevisions空，materials不可用/progress空/current空/Overall NOT_AVAILABLE。材料核验断点真实存在，业务未交付；GLM封存和modelRound1不证明模型已调用，不能推断provider终止。Native期待Host未提供顶层证据身份字段目前只是待独审和运行取证的疑因，尚未修复/新安装，已发布a65/c240不变；不重放UNKNOWN。inconclusive仅指业务终态及上游结果未决，不掩盖材料核验错误。"
+    },
+    {
+      "contractRevision": "831639738093391f9a05af47646e76909f04b64e400bd9dd2c93920658813c28",
+      "sourceRevision": "a65a80925073e4b88aba6d84413a77aa3c814ff6",
+      "environmentId": "native:app_17c3zn24kv2:installed",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25",
+      "scenarioIds": [],
+      "id": "program-initial.a65.original-evidence-identity-readonly",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "nativeSourceRevision": "ae9ea7b30fceeec49ce878ccbb127af60a79bbaa",
+      "startedAt": "2026-10-25T07:31:55.316508Z",
+      "finishedAt": "2026-10-25T07:32:12.516031Z",
+      "observedAt": "2026-10-25T07:32:12.516031Z",
+      "readbackRef": "private:program-assessment-20261025:original-evidence-identity-readonly",
+      "timeBasis": "startedAt/finishedAt为同一固定检查点只读快照的实际工具窗口，observedAt为快照结束；不是provider执行、材料准备开始或工程保存时间。随后同范围字段键集核对单列，不以归档或文件mtime补执行时刻。",
+      "summary": "同一新程序请求的115条原文已在封存deliveredEvidence交付，availableSources目录对应身份齐全，正文投影缺顶层documentVersionId/sourceRefId；versionLabel与原解析绑定一致，115条全被Native顶层身份筛选排除，primaryCount0。missingRefsCount0表示无需新增来源READ，不等于原文未交付；完整程序材料快照尚未生成。准确provider/HTTP started/result、program-model-input、完整响应、SAVE、独立READ及提交均absent，准确已安装调用顺序支持实际模型派发0/响应0/SAVE0；外层model.started/modelRound/modelCallCount不是provider派发证据，GLM实际路由未验。完整模型封存与Host相等，观察脚本扁平键false已另记纠正。Native UNKNOWN/REQUIRES_ATTENTION和generation12 stopped/completionReadyfalse的active claim保留，先前Host RUNNING观察不改写；无重放、改checkpoint或第二请求。此为具体字段差异与未派发边界的后续只读取证，不是业务通过；两端本地修复进入联合审查，尚未新发布/安装，旧385条历史对象/顺序及原疑因时点保持。"
+    },
+    {
+      "id": "executor-transition.0b33.validation-scope-and-priority",
+      "kind": "source_review",
+      "status": "inconclusive",
+      "contractRevision": "77c43bc56f507b4c77ec0a927081b59c9663c96dc4bcf82197c963ac8217617a",
+      "sourceRevision": "0b33e8bf814d6b6eefebae70c956f556a4db3246",
+      "environmentId": "local:codex-executor:fixture-scope-review",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "scenarioIds": [],
+      "observedAt": null,
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e36-执行器切换优先级与首个新真实事项2026-10-25",
+      "readbackRef": "private:executor-transition-20261025:0b33-validation-boundary",
+      "timeBasis": "只读准确提交中的README/VALIDATION/机器证据；原报告日期为2026-10-25 UTC，本次未执行fixture或模型，未取得新的业务执行时钟。",
+      "summary": "准确0b33提交（父94c24）仅新增openclaw/codex-evaluator/13文件，为可选评估回调执行器，不改既有默认路线。原报告与机器证据说明真实Codex+GLM使用虚构材料和内存Host，realHostCalled=false、hostMcpConfigured=false、readyForBusinessExecution=false；重启持久恢复未接。只支持有界执行器/协议范围，不证明正式Host授权、持久SAVE/独立READ、确定性同版Overall、真实工程成果或页面业务通过。本次未重跑fixture/模型。最新优先新真实事项Host接口/准确材料→生成→Host SAVE→独立READ→确定性同版Overall→页面/图→正常结束；c241整包安装、旧UNKNOWN救回和旧链复演不再前置，线上a65/c240和旧binding实现事实保留，未声称已换执行器。"
     }
   ]
 }

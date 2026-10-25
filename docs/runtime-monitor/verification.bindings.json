@@ -926,8 +926,8 @@
         "P7"
       ],
       "consumer": "正常程序评估入口→准确mode/model任务→完整材料与文件快照→现有SAVE/独立READ→合法初评确定性Overall→正常阅读/准确workRef下钻；进度与各终态分列",
-      "sourceRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
-      "environmentId": "local:program-controlled-assessment",
+      "sourceRevision": "a65a80925073e4b88aba6d84413a77aa3c814ff6",
+      "environmentId": "host:app_17bzc551rsg:online",
       "sourceRefs": [
         "server/modules/canonical-host/canonical-initial-analysis-continuation.service.ts",
         "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
@@ -947,22 +947,18 @@
         "test/unit/program-assessment-materials.spec.ts",
         "test/unit/program-assessment-materials-ui.spec.ts",
         "test/unit/tdms-source/tdms-program-material-membership.spec.ts",
-        "test/unit/canonical-jobaid-problem-continuation.spec.ts"
+        "test/unit/canonical-jobaid-problem-continuation.spec.ts",
+        "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25"
       ],
       "gaps": [
         {
-          "id": "program.initial-deployment",
-          "kind": "deployment",
-          "reason": "准确本地联合代码和Native包准备完成，尚未获本批安装/发布执行批准",
-          "nextAction": "按准确执行包批准后先安装兼容c240、再发布新Host并读回，随后沿正常新请求验业务"
-        },
-        {
           "id": "program.initial-live",
           "kind": "runtime",
-          "reason": "尚无新程序流程的真实SAVE与同版阅读回执",
-          "nextAction": "准确技术交付后，在获准范围完成一条真实业务链"
+          "reason": "此binding的consumer/sourceRevision/sourceRefs仍标识当前已核实a65/c240实现；旧单次请求材料身份缺字段、模型0/SAVE0与UNKNOWN/active claim保持。目标已改为新执行器接既有Host能力；0b33可选实现仅有真实Codex+GLM/内存Host fixture，realHostCalled=false、hostMcpConfigured=false、readyForBusinessExecution=false，重启持久恢复未接，不能视作已替换线上执行器或业务通过。",
+          "nextAction": "优先新执行器的一条新真实事项：合法Host接口与准确材料→生成→Host SAVE→独立READ→确定性同版Overall→正常页面/图→正常结束。c241整包安装、旧UNKNOWN救回和旧链复演不再前置；当前线上实现保持，先补真实接线与验收缺口。 按执行器切换说明接入当前Host身份/权限、材料与保存/读取/投影消费者；旧UNKNOWN不改写，不为恢复旧请求阻塞新真实事项。"
         }
-      ]
+      ],
+      "previousReviewedRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554"
     }
   ]
 }

@@ -1,5 +1,55 @@
 # Integration source record
 
+## 2026-10-25 执行器切换优先级与首个新真实事项
+
+最新目标是新执行器消费既有Host接口与准确材料，沿生成→Host SAVE→独立READ→确定性同版Overall→页面/图→正常结束闭合首条新真实事项。c241整包安装、旧UNKNOWN救回或旧链复演不再是交付前置；下方E.35的技术切换、材料断点和当时下一步作为历史保留，本条更新当前方向，旧UNKNOWN/active claim不删除或重放。
+
+已在本机读取准确0b33e8bf814d6b6eefebae70c956f556a4db3246（父94c24efa746984a7edbf8b76719e1ffcfa549bed）的README、VALIDATION和机器证据，范围仅为openclaw/codex-evaluator/新增13文件的可选执行器；现有默认执行路线未变。原验证有真实Codex+GLM，使用虚构材料及内存Host，明确realHostCalled=false、hostMcpConfigured=false、readyForBusinessExecution=false，重启后的持久恢复未接。它是有界执行器/协议验证，不是正式Host授权、持久保存、真实工程成果或页面业务验收；本次未重跑fixture/模型。
+
+当前线上a65/c240和原binding实现名/源码引用保持事实身份，未假装已换执行器。P0/P7下一步转为真实运行身份与Host权限接线、准确任务/材料、生成和Host保存回读、同版确定性Overall、页面/图与结束；复用已有材料/SAVE/READ/Overall/消费者中仍有用的部分，不新建状态体系。新fixture不填生产缺口，旧链救回不前置。准确代码去留与首条新事项验收见主控负责的[执行器切换说明](WISELINK_EXECUTOR_TRANSITION_20261025.md)；M1见[E.36](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e36-执行器切换优先级与首个新真实事项2026-10-25)。旧386证据完整对象/顺序保持，只追加一条source_review/inconclusive、scenarioIds空的范围记录；此docs后继未commit/push，也没有外部操作。
+
+## 2026-10-25 程序控制评估技术切换与受理观察
+
+准确公开开发对象 `f821bfe3447367e4d4bc9e140723c92230fc82ed` 已在 origin/github 两条获准同名分支分别读回，私有 Host 开发分支读回 `a65a80925073e4b88aba6d84413a77aa3c814ff6`，三 ref 汇总观察为2026-10-25T06:42:49.538836Z。临发布完整差异为空、无其他在途只作预检；唯一 release `7700499229508799768` 于07:11:14.208087Z—07:11:16.098519Z的官方 CLI 调用中创建一次，07:14:15.859716Z—07:14:17.161961Z的独立读取确认 finished、完整 a65、error_logs 空。上述为工具窗口和读回时钟，不相减当作业务耗时，也不据空差异确认未包含的迁移或对象。
+
+普通用户已有会话前端与后端均读回完整 a65，前端 buildTime 为2026-10-25T07:11:49.994Z，环境检查 PASS；界面 Release ID 仍 unknown，准确 release 身份来自官方 CLI，两者不相互补填。该记录只关闭版本与环境的有限读回；浏览器具体执行 UTC 未单独取得，不使用构建时间或汇总归档时间代替。它不证明 Reader、GLM、材料、SAVE、Overall、工程正文或业务整链已验收。
+
+Native 准确安装对象为 `wiselink-research-and-synthesize@r09.c240`，源码 `ae9ea7b30fceeec49ce878ccbb127af60a79bbaa`。唯一官方安装在07:04:27.267921Z—07:04:47.322322Z完成、rc0；145文件逐项与准确 manifest 匹配，实际消费入口和 reviewTurn、JobAid runner、program runner 四入口指纹一致，旧安装已备份。固定21项 after 与 before 比较 changed=[]；该限定比较不解除原 ATT5 UNKNOWN，不重放原请求或已结束的 c239 后继。07:10:42.720371Z的安装后观察仍为 C136 disabled、staticDiff=[]、consumer0、准确锁无占用、activeClaim=NULL，只限该时点。
+
+新 Native 与旧 fa14 Host 的真实连接/身份/metadata 握手成功，两个可选 record 工具均 false，符合旧 Host 实际能力；官方 SDK 目录43工具的读回单列，不把目录数当业务运行。a65发布后07:17:23.539Z—07:17:28.755Z的新连接再核身份、tools list及metadata通过，`record_assessment_consumer_stopped` 与 `record_assessment_program_progress` 均 true，连接正常关闭，本阶段 businessToolCalls=0。新旧兼容和程序工具可用分别有回执，不把握手当作模型或保存链成功。
+
+C136按原 enabled=true 只执行一次正常 enable；调用07:22:02.407484Z—07:22:14.715640Z结束、rc0，后续07:22:28.839605Z记录 afterEnabled=true、afterStaticDiff=[]、restoredOk=true。本阶段没有手动 tick、模型或业务请求。原调度字段和旧 lastRun 数据保持原含义；恢复 enabled 不表示已经消费新请求。
+
+随后唯一新程序评估在正常用户页面获 HTTP201 受理，Host createdAt为07:24:11.498Z，replayed=false、QUEUED，封存 `PROGRAM_CONTROLLED_V1` 与 `miaoda/glm-5.3` / `BUILT_IN`，inputRevision=3。准确请求/attempt/operation身份仅在受限原件中关联，公开不展开。该读回 startedAt、firstSavedAt、completedAt均空，current为空，programMaterialsAvailable=false、programProgress=null、Overall NOT_AVAILABLE；因此只证明正常入口与新模式/模型绑定成立，不能写成模型已运行、材料已经取得或保存成功。后续结果须沿同一准确请求的真实读回追加，不改写此受理时点；旧UNKNOWN、旧后继和旧模型记录保持。
+
+同一请求随后于2026-10-25T07:25:15.504Z进入 Host RUNNING；07:25:20.055Z的 consumerStopped 记录明确报 `PROGRAM_ASSESSMENT_MATERIALS_ORIGINAL_EVIDENCE_MISMATCH`、upstreamOutcome=UNKNOWN。两次正常读取均仍为外层 Host RUNNING、completedAt/firstSavedAt空、sourceReads与savedRevisions空、programMaterialsAvailable=false、programProgress=null、current空及Overall NOT_AVAILABLE。该断点发生在程序材料核验，本请求业务未交付；封存GLM只证明选定模型，modelRound=1不证明GLM已调用。消费者已停止与Host尚未终态分别记录，不能把两者合并成成功、FAILED或provider终止。当前仅定位到Native期待Host证据投影未提供顶层身份字段的疑因，独立审查与运行取证仍在进行，尚未修复或重新安装，准确已发布对象不变；后续沿同一请求取证，不重放UNKNOWN。
+
+本条与恢复的 E.34 是不同历史窗口。既有378条证据的完整对象和顺序保留，新追加7条限定证据，scenarioIds均空；P7和对应接线更新技术交付及剩余业务范围，P0只澄清当前批次与旧失败后继的关系。契约版本仍1.7，目录/选择数组和用户样式不变；digest、snapshot、HTML通过既有生成器从同源记录生成，不手填节点完成状态。准确公开/Host/Native源码身份、实现/测试、技术切换和真实业务分别保留，当前材料核验断点尚未修复；新材料/全文工程质量、独立READ、同版Overall、正常收尾仍待同一请求结果。原件以受限逻辑引用 `private:program-assessment-20261025` 关联，本后继文档不触发产品变更、远端同步、发布或新业务动作。
+
+M1见[E.35](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25)。下方E.34同名历史条目按原文补回，只恢复历史入口，不把本批状态倒填旧回执。
+
+**本批后续只读取证与当前本地修复。** 2026-10-25T07:31:55.316508Z—07:32:12.516031Z的同请求固定快照确认：封存任务已交付115条原文证据，对应目录身份齐全；deliveredEvidence正文投影缺顶层documentVersionId/sourceRefId，Native筛选primaryCount=0，故在材料准备阶段停止。versionLabel/原解析绑定正确，missingRefsCount=0表示不需新增来源READ，不能再把材料快照未ready写成原文未交付。完整封存模型对象与Host一致，观察脚本扁平键比较false已单独纠正，不是模型选择不一致。
+
+真正provider started/result、program-model-input、完整响应、SAVE/独立READ/提交均无检查点；准确调用顺序支持本请求实际模型派发0、响应0、SAVE0。外层model.started/modelRound/modelCallCount不作HTTP派发证明。Native UNKNOWN/REQUIRES_ATTENTION与generation12 stopped、completionReady=false的active claim完整保留，先前Host RUNNING只保留其观察时点；无重放、checkpoint改写或第二请求。旧385证据对象/顺序及原疑因时点不变，只追加一条runtime/inconclusive、scenarioIds空的取证事实。
+
+当前两端本地修复进入联合审查，尚未新发布、安装或恢复执行；原线上a65/c240和C136已恢复状态保持。P7/current绑定/selection下一步更新，V55—V58与真实工程正文→SAVE→独立READ→同版Overall→正常收尾链仍未闭合。本次仅本地docs生成及不变式核对，无产品build/test或远端动作。准确取证见 `private:program-assessment-20261025:original-evidence-identity-readonly`，公开不展开UUID、WI、请求/租约身份或token；M1追加说明见[E.35](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25)。
+
+## 2026-10-25 Host联合发布与普通用户有限读回
+
+本段补回2026-10-25当时的联合发布与有限读回记录；“当前”“尚未同步/发布”“另待授权”等均指该原历史时点，不描述后续程序批次，不替代或改变当前批准对象、执行授权与版本状态。
+
+用户已明确批准准确公开319e4a7d9567a76242d0e1c8ec28cdbe300ad8c7与私有Host fa14e1c2238f55821b196fe340084ce68a76d3e8升级发布，原Wiki8f54/4008待批范围已由本次准确联合对象取代，仅保留历史身份。公开origin/github及私有origin三条同名ref分别读回319/319/fa14；唯一release7700380662566505464由回执24记录一次创建，回执25—27仍publishing且commit仍为旧b8，回执28才确认finished/完整fa14/error_logs空。预检及临发布完整差异为空、无其他在途；不以空差异证明P3对象或0082/83已部署。准确33路径含12产品、11测试、10 docs，非docs输入仍与已构建799相同，本轮没有重跑本地产品测试/build。
+
+既有普通用户会话前后端均读回完整fa14，构建时间2026-10-24T23:37:21.898Z，environment PASS。Reader仍VERIFICATION_PENDING，界面七项blocker未展开；UI Release及API合同标签仍未知，不从CLI release或Git版本补成已知。此为版本/环境有限读回，不是阅读器或业务整链验收。
+
+受测Wiki目录固定root/child保存引用；实际root与成员修订1正文、预览“本预览未展开此依据，前往确切成员版本”、child保存记录/来源状态和返回同root+chapter均读回。root诊断显式link及成果button实际跳到同一保存ref并读回正文；目录未读正文/关系未知、未提供活跃执行、时间/ACK/资源未提供的界限保持。普通knowledge目录和通用parent hierarchy链接仍不带summaryRef，另一既有目录项引用读取状态保留，不称所有导航准确化。既有FTD评估入口和原SEM已存在讨论只读可见，受测页面未出现重复登录；SEM页面/讨论版本均5，更新评估enabled但未点击，Overall跟随仍disabled。只记录该入口和有界导航成功，不外推所有用户、权限或业务执行。
+
+P1 UPDATE-only、P2 checker2.3及已知2.2文本强制新检查、原Wiki保存头导航/成员预览现已技术交付。真实SEM/Reference/CMCF/OPS质量、受控方法/后果/暴露/控制资料、旧保存文本更正/重检/选用、Wiki三类变化/撤权/历史全文及完整P5/M3仍未验收。P3准确父对象迁移覆盖、producer/grant和完整关系输入继续缺失；0082/83及较大批次保持独立，Native配置读取仍另待授权，可信上下文未知、原AD终态/该attempt SAVE0/Overall空不升级。未创建讨论、发送聊天、切换模型、模型/SAVE、AD重试、DDL/Native/调度或旧数据处置；未作数据库前后零副作用证明。
+
+原356条证据完整对象/顺序保留，追加技术deployment、普通用户版本/环境和有限Wiki/评估入口三条，scenarioIds空；P1/P2/P5当前交付与缺口及直接证据引用更新，P0/P3/P4/P6、12bindings/source mappings、选择保持，13/47/54/10和HTML数据外字节保持。比较目标更新为已实际读回的fa14/online。实际运行对象仍为已完成发布的fa14；本条仅为本地docs后继，尚未另行同步或发布。
+
+M1见[E.34](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e34-host联合发布与普通用户有限读回2026-10-25)。07—28发布原件与22份AX及最终观察包见private:host-identity-quality-delivery；本地生成/提交回执见private:host-identity-quality-release-records-20261025。
+
 ## 2026-10-25 P3存储元数据与准确迁移依赖
 
 官方有限元数据已确认online的Source父对象具备草案所需列型/NOT NULL、非延迟唯一约束及有效唯一索引，RLS/FORCE开启；dev普通结构查询not_found后，固定目录进一步确认所选schema存在而该父对象缺失。processing-set两表、三个候选索引、指定immutable函数及目标触发器两端皆无。默认ACL存在仅为权限元数据，不证明运行角色、真实Source/grant、runtime READ或RETAIN可用；本次没有读取业务行，估计行数不作实际来源计数。
