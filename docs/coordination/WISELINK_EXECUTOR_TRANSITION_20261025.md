@@ -2,7 +2,15 @@
 
 状态：本地任务已重排，准确代码及调用点已盘点。没有部署新载荷、清库、停生产调度、改 Goal 或运行新模型。已完成的技术事实与旧 UNKNOWN 保留；它们不再是新执行器上线必须逐个救回的对象。
 
-## 2026-10-25 接续实现：1155 / fc132291
+## 当前接续：94c54 程序恢复与图契约 v1.8
+
+先更新[图契约2.3/3.6](../WISELINK_MAINLINE_GRAPH_CONTRACT.md)，再在4e8a39b1上吸收准确94c54de（父fc132）27文件增量。程序恢复已具原runner闭合回执、完整解析后SSE事件、codexReceipt与原SAVE/READ绑定；不再把这些列为全部缺失。仍需执行器owner补实际prompt、最终bridge payload及父检查点启动前预定run定位，不把hash或转换后的response冒充完整上游字节。
+
+本地保留固定codex-*队列路由，修复COMMITTING消费者许可表漏READ的真实阻断，并在定位后按原SAVE key核对完整修订。首批CODEX显式拒绝仍封存旧运行app身份的Applicability/Review及关联入口；新app/principal/准确scope与旧合法wire名分开。完整42↔45工具、路由、Task/Result和配置差异只维护在[现有接口包](host-codex-interface-20261025/CLIENT_DELTA.md)。
+
+官方dev/online只读catalog确认三活动partial index与四槽CHECK正确，schema.ts缺WHERE是声明漂移，本轮没有DDL。新消费者实际持续唤起、异常重启、checkpointRoot/runRoot持久卷及跨重启读回仍未证；配置与切换方案不得冒充现场已设置。旧目录图保留，当前[实施树图](../runtime-monitor/WiseLink_Wiring_Verification.html)及[阅读指向说明](../runtime-monitor/README.md)已更新。新增代码测试、源码导出和实际业务验收继续分开。
+
+## 历史接续记录：1155 / fc132291
 
 本节替代下文以0b33原型判断“程序入口尚未实现”的当前安排；下文保留此前盘点来源。已从准确f821基线选择性吸收1155c386实现及fc132291文档的41文件增量，未整树覆盖。主要消费者显式CODEX路径、程序初评、响应检查点、SAVE/独立READ及确定性Overall已有实现；默认HOSTED没有切换。六次GLM运行仍是合成Host验证，不记真实业务完成。
 

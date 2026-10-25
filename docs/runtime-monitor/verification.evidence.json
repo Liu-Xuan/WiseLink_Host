@@ -7739,6 +7739,38 @@
       "reportRef": "docs/coordination/host-codex-interface-20261025/VALIDATION.md",
       "readbackRef": "private:executor-transition-20261025:cross-boundary",
       "summary": "已吸收1155/fc132291，实际Host材料和CODEX程序离线8项、Node53项、Python9项通过；完整工具Schema从官方SDK真实注册导出。模型与存储均受限合成替身，不证明生产网关/身份配置/commit/CAS/finish/页面业务。CODEX单一入口及exact新事项接线为本地实现，真实配置仍缺；旧UNKNOWN不重放。"
+    },
+    {
+      "id": "executor-recovery.94.local-contract-integration",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "1012620631d366ece4807060bd3e74d841fae873751dc60aaac801f103a471c4",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T09:57:27.486260+00:00",
+      "sourceRevision": "local:4e8a39b1+94c54de+reviewed-integration",
+      "environmentId": "local:host-codex:synthetic-boundary",
+      "reportRef": "docs/coordination/host-codex-interface-20261025/VALIDATION.md",
+      "readbackRef": "private:executor-transition-20261025:recovery-integration",
+      "summary": "图v1.8先约束Host/宿主/Codex职责及三requestId两lease。94恢复增量选择性集成；20项提交/真实消费者wrapper定向Node与8项Host服务边界通过，3新scope/runtime用例、3Discovery、3队列路由通过。无真实模型/DBcommit/ACK/页面证明；prompt/payload/启动前run关联和宿主持久性明确待验。"
+    },
+    {
+      "id": "executor-recovery.94.official-queue-index-readback",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "1012620631d366ece4807060bd3e74d841fae873751dc60aaac801f103a471c4",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T09:57:27.486260+00:00",
+      "sourceRevision": "4e8a39b14994edeca7f26f17fb7d399aa229b745",
+      "environmentId": "host:app_17bzc551rsg:dev-and-online:catalog-only",
+      "reportRef": "docs/coordination/host-codex-interface-20261025/README.md",
+      "readbackRef": "private:executor-transition-20261025:queue-runtime-evidence",
+      "summary": "官方只读pg catalog确认dev/online三partial unique index都有活动WHERE且valid/ready，slot CHECK 0..3已验证；schema.ts缺WHERE为声明漂移而非本次现库故障。四槽按tenant/request_origin，默认4项串行及15分钟项间预算另属消费者边界。未DDL、未读取业务表行。"
     }
   ]
 }

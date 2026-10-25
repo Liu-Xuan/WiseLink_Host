@@ -34,6 +34,8 @@ MCP 服务名是协议发现身份，不是租户或工程师身份。网关验�
 
 `WL_CODEX_RUNTIME_APP_ID` 是必填的新运行端身份，缺失/格式无效报 `CANONICAL_CODEX_RUNTIME_CONFIG_REQUIRED`。基础 scope 还要求明确启用、`API_KEY` 模式、`DEV|UAT`、合法 `service:` principal 和非空 tenant。自动队列还要求独立启用，静态 WorkItem、文档、Matter、附加目标和后继 Review 各有范围；只配基础字段不自动放开所有工具。
 
+本批独立运行目标为`CODEX / app_17gr74pbere`，应用值由配置读取且拒绝旧运行应用；目标已定不等于配置已认证。首批只承接程序初评，Applicability/Review/待办Review及后继Review Overall和相关attempt入口显式返回`CANONICAL_CODEX_OPERATION_NOT_SUPPORTED`（403）。相应工具仍保留通用schema，不能用metadata存在绕过scope。
+
 首批 Codex 接线进一步固定一个准确 `WL_CODEX_SERVICE_WORK_ITEM_ID` 和原 intake `WL_CODEX_SERVICE_REQUEST_ID`，并强制该请求的活动队列租约。队列只查询该 WI，不扫描租户、文档或 Review；即使旧消费者租约已经过期，也不能接管旧 owner 的租约。附加 scope 名称的同形映射不代表本批验证了所有文档/翻译/Wiki/Review 入口。
 
 CODEX文档交付还要求 `deliveryRef='work-item:<配置WI>'`，并经该WI的活动lease、intake、DV、intent request/actor、artifact/hash/bytes精确核对；无deliveryRef、`acquisition:`或其他WI均拒绝。工具通用schema保留这些历史形状，不代表当前CODEX scope接受它们。
@@ -71,5 +73,7 @@ CODEX文档交付还要求 `deliveryRef='work-item:<配置WI>'`，并经该WI的
 `result.toolVersions` 仍沿既有 wire 合同保存服务协议版本、JobAid 协议/方法版本与执行器标记。新生成器的 `model-executor: 'CODEX'` 是实际执行路线；历史键 `wiselink-openclaw-engineering-assessment: '1.2.0'` 当前仍被候选 validator 使用，它表示复用的旧 wire 协议检查，不能被解释为模型由旧 OpenClaw 运行。Task/Result 的 `openclaw_*_envelope.v1`、`OPENCLAW_DYNAMIC_EVALUATION` 也仍是持久 wire 名称；不可按名字擅改旧请求。
 
 程序初评来源字段还包括 `program-controlled-assessment: '1'`、`jobaid-problem-protocol: '2'|'3'` 和有 TDMS 时的 `tdms-native-context: '1'`。准确值从封存 task 及当前实现取得，不能为了通过 policy 伪造旧 skill/model provenance。独立服务发现版本与这些来源字段不互相替代。
+
+当前Host还核对Result的`model-executor`标记与服务端活动执行路线；不以shared旧app literal或wire命名代替真实运行身份。完整非秘密绑定见 [runtime-identity.json](configuration/runtime-identity.json)。上游94的legacy-source盘点与当前SDK完整45项的差异见 [CLIENT_DELTA.md](CLIENT_DELTA.md)。
 
 新Codex队列REST四条均由未覆盖HttpCode的Nest POST方法返回，正常状态为201；MCP为SDK自行写出的200/202。已用项目实际安装的RouterResponseController核对POST默认值。原Hosted三条队列OpenAPI历史仍标200，与该默认值存在文档差异；包保留原登记并明确此限制，消费者按成功2xx处理，不用旧文档状态推断实际网关回执。

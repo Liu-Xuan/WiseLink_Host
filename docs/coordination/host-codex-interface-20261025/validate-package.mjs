@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const root = resolve(directory, '../../..');
@@ -47,6 +47,20 @@ assert.equal(manifest.networkAccessed, false);
 assert.equal(manifest.environmentOrCredentialValuesExported, false);
 for (const source of manifest.files)
   assert.equal(hash(await readFile(join(root, source.path))), source.sha256, `SOURCE_CHANGED:${source.path}`);
+const comparison = await readJson('mcp/client-94c54de-comparison.json');
+assert.equal(comparison.upstreamInventoriedNames, 42);
+assert.equal(comparison.upstreamMechanicalInputSchemas, 35);
+assert.equal(comparison.upstreamSourceOnlyNames.length, 7);
+assert.equal(comparison.additionalCurrentTools.length, 3);
+for (const entry of comparison.tools) {
+  assert.equal(entry.currentMetadataFile, `tools/${entry.name}.json`);
+  assert.equal(entry.currentDependencyStatus, 'COMPLETE_SDK_INPUT_SCHEMA_AVAILABLE');
+  assert.deepEqual(await readJson(`mcp/${entry.currentMetadataFile}`), codex.tools.find(tool => tool.name === entry.name));
+}
+const {checkCurrentInterface} = await import(pathToFileURL(join(root,
+  'openclaw/codex-evaluator/check-host-contract.mjs')).href);
+const currentInterface = await checkCurrentInterface();
+assert.equal(currentInterface.completeCurrentSchemas, 42);
 
 const samples = await readJson('examples/mcp-calls.synthetic.json');
 assert.equal(samples.synthetic, true);
@@ -188,6 +202,11 @@ const result = { status: 'PASSED', sourceSnapshotMatches: true, tools: codex.too
   hostBusinessCallsInMetadataExport: 0, networkCallsInMetadataExport: 0,
   exampleModel: 'OFFLINE_SUBPROCESS_STUB', realHostCycleVerified: false,
   pureOverallAssociationChecked: true, examples: 'SANITIZED_EXAMPLE', privateMethodBodiesIncluded: false,
+  currentClientNamesChecked:currentInterface.clientNames,
+  currentClientCompleteSchemas:currentInterface.completeCurrentSchemas,
+  currentClientConvertedExamples:currentInterface.convertedExamples,
+  currentClientSourceOnlyExamples:currentInterface.sourceOnlyExamples,
+  currentClientFormatsValidated:currentInterface.formatsValidated,
   perToolVersionInvented: false, credentialValuesIncluded: false, userAbsolutePathsIncluded: false };
 if (process.argv.includes('--write-result'))
   await writeFile(join(directory, 'validation-result.json'), `${JSON.stringify(result, null, 2)}\n`);

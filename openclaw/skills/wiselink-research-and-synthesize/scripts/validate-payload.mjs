@@ -1254,7 +1254,10 @@ function validateDiscoveryOutput(output) {
     ['runtimeAppId'],
     'discovery output',
   );
-  equal(output.runtime, 'FEISHU_HOSTED_OPENCLAW', 'DISCOVERY_RUNTIME_INVALID');
+  // Host stamps the actual executor. This is result metadata, not authority to
+  // select a runtime or to replace the sealed Applicability/Review identity.
+  if (!['FEISHU_HOSTED_OPENCLAW', 'CODEX'].includes(output.runtime))
+    fail('DISCOVERY_RUNTIME_INVALID');
   provider(output.provider);
   nonEmpty(output.query, 'DISCOVERY_QUERY_INVALID');
   if (!DISCOVERY_STATUSES.has(output.resultStatus)) {

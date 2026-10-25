@@ -1,6 +1,6 @@
 # WiseLink 主线流程图契约
 
-版本：1.7 程序控制评估修订稿 · 日期：2026-10-25 · 业务时区：Asia/Shanghai
+版本：1.8 持久任务与执行器恢复约束 · 日期：2026-10-25 · 业务时区：Asia/Shanghai
 
 ## 设计结论
 
@@ -8,7 +8,7 @@
 
 本契约保留当前 13 个能力节点及既有业务对象，收敛共同规则和实际接线。Host 管理业务真值；每类请求使用一套明确的执行与恢复协议，同一请求在任一时刻只有一个有效执行者；任务图从这些记录生成。验证阶段可直接调整不合理的串行和重复执行机制，以一条可保存、可读回、可接续的真实链路证明设计。节点、关系和场景数量是当前目录，不是禁止合理增删的业务约束。
 
-v1.6 已修正证据匹配、接入范围、实施顺序与资源含义，并补清正常恢复、在途交接及工程内容验收。本版新增程序控制评估、准确材料阅读和保存后独立阅读的交付约束。配套交付物是 M2 离线验证阅读器和 M3 业务页面诊断投影；这里 M2/M3 是交付阶段编号，不是产品运行模型。各消费者的本地实现、发布与真实运行按准确证据分别登记，不代表全系统运行监控已经完成。固定提交 b37 的源码核对保留为历史；后续实际接线及 2026-10-23 对话分工见附录 E，当前实施和业务状态以集成记录及 M2 为准。
+v1.6 已修正证据匹配、接入范围、实施顺序与资源含义；v1.7 补入程序控制评估、准确材料阅读和保存后独立阅读。本版先约束持久任务、消费者宿主和 Codex 进程的责任、启动前关联及逐步真实完成条件，再据此审查恢复接线。配套交付物是 M2 离线验证阅读器和 M3 业务页面诊断投影；这里 M2/M3 是交付阶段编号，不是产品运行模型。各消费者的本地实现、发布与真实运行按准确证据分别登记，不代表全系统运行监控已经完成。固定提交 b37 的源码核对保留为历史；后续实际接线及 2026-10-23 对话分工见附录 E，当前实施和业务状态以集成记录及 M2 为准。
 
 ### 阅读顺序
 
@@ -51,7 +51,7 @@ flowchart TD
 
 **已发布程序控制批次的执行方式（a65/c240现状）。** 程序通过既有授权路径准备准确连续材料、安排明确步骤，模型完成工程分析，程序负责完整响应留存、正常 SAVE、独立 READ、合法初评 Overall 投影及执行收尾。自主调查继续完善，显式程序评估不启用开放式工具循环；旧封存请求和 UNKNOWN 不由新路径接管。图中的材料准备、生成、保存和投影是既有节点的内部步骤，不新增同级业务模块。完整范围与联合验收见[第一批实施计划](coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md)。
 
-**当前第一批优先级：执行器切换与首个新真实事项。** 新执行器接入既有Host能力，按准确授权任务与材料→生成→Host SAVE→独立READ→确定性同版Overall→页面/图→正常结束推进。先让一条新真实事项闭合这条链；c241整包安装、旧UNKNOWN救回和旧链复演不再作为前置。a65/c240仍是已核实线上实现，旧封存请求、UNKNOWN与active claim保留，不据此说明已经更换执行器；0b33可选执行器的真实模型/模拟Host验证范围与未接能力见E.36和[执行器切换实施说明](coordination/WISELINK_EXECUTOR_TRANSITION_20261025.md)。材料、生成、保存及投影仍使用既有业务节点与状态，不新建状态体系。
+**当前第一批优先级：执行器切换与首个新真实事项。** 新执行器接入既有Host能力，按准确授权任务与材料→生成→Host SAVE→独立READ→确定性同版Overall→页面/图→正常结束推进。先让一条新真实事项闭合这条链；c241整包安装、旧UNKNOWN救回和旧链复演不再作为前置。a65/c240仍是已核实线上实现，旧封存请求、UNKNOWN与active claim保留，不据此说明已经更换执行器；最新94c54恢复增量及本地接线范围见E.38，0b33旧验证保留在E.36。[执行器切换实施说明](coordination/WISELINK_EXECUTOR_TRANSITION_20261025.md)与现有接口包分清本地候选、宿主未验和真实业务缺口。材料、生成、保存及投影仍使用既有业务节点与状态，不新建状态体系。
 
 一份工作保存问题分析与综合正文；Overall 是准确保存工作经实际读回后的确定性阅读投影，过程是实际执行记录的投影。工作阅读不等待 Overall。公司事实、原文、解读和翻译仍可分别交付。图示与契约的改变表示接受了实施方向，不表示代码、部署或真实业务已经完成。
 
@@ -97,6 +97,24 @@ flowchart TD
 | 页面与运行图 | 读取真实成果、条件和进展，调用已有动作入口；显示责任清楚的下一步 |
 
 来源授权表示允许处理什么；执行租约表示哪个消费者暂时占用哪次执行。两者各自有生命周期。已有双层机制若保留，必须写明各层职责和一次性释放顺序；验证证明可由一个执行组件承担时直接收敛，历史请求保留可核对记录。
+
+### 2.3 首批 CODEX 接线的执行责任
+
+本节先约束实现和验收，再登记实现证据。当前集成源码的活动执行器由 Host 配置选择；部署、配置及真实新事项运行分别核验。新执行器进程不是业务队列，模型完成也不是任务完成。
+
+| 责任层 | 现成对象与职责 | 不可代替的事实 |
+| --- | --- | --- |
+| Host 持久任务与队列 | WorkItem 自动处理授权及其 intake 请求、ActionAttempt 的封存 task、状态、租约、CAS、幂等成果、Overall 和最终 ACK 准入 | 检查点文件、进程退出或消费者自报不能改变 Host 真值 |
+| 消费者宿主与可信程序 | 唤起并监督实际消费者；使用固定 CODEX 路由领取一个新事项；保持两层 fence、持久检查点与 child run 关联；安排生成、SAVE、独立 READ、commit、收尾和 ACK | 宿主重启与目录持久性必须有实际配置或运行证据；脚本存在不证明常驻、调度或卷已成立 |
+| Codex 子进程与模型 | 在程序交付的准确输入和已固定执行模型下完成候选；回传准确 run、transport 闭合及完整响应定位 | 子进程不能自定业务 requestId、租约、来源范围、正式采用或结束队列 |
+
+每次业务尝试只有一个有效执行/恢复 owner。Host 新旧入口按固定活动执行器互斥，CODEX 使用独立运行 app、principal 和精确路径授权；新服务名称本身不授予权限。协议中仍合法的 `OPENCLAW` 类型或工具版本键，与实际运行端身份分别解释，不全局改名也不借旧凭据放行。
+
+三种 requestId 分别是：外层 **intake requestId** 绑定原获权事项及本次受理；**stage/action requestId** 绑定封存动作 task 与 attempt；**SAVE requestId** 固定一次准确正文/CAS 命令的幂等身份。三者不得混用，attemptId 也不是 requestId。两层 lease 分别是外层事项授权领取的 owner/token/generation/期限，以及内层 ActionAttempt 的 token/generation/期限；按实际操作校验有效绑定，模型不得写入或覆盖它们。
+
+启动子进程前，可信程序必须持久关联 intake、stage、attempt、执行器、选定模型、准确输入/argsHash、检查点及预定 child run。已有绑定只恢复原 runner/run；已启动但完整响应未知时保持 UNKNOWN，不改 key、不新启模型、不清检查点。完整原响应应与 adapter 请求、实际 prompt、bridge payload 和 child run 对应；仅最终文本或 metadata audit 不等于完整上游响应。现有存储中完成即可，不另建通用调度或日志平台。
+
+消费者默认每次最多 4 项串行、15 分钟是本次循环的任务数/边界预算，不能推导为 4 并发或运行中的强杀截止；ActionAttempt 四槽的实际隔离维度是 tenant/request_origin，不能写成全系统 4 并发。索引活动谓词以准确现库定义核验；migration 与生成 schema 的差异本身不是线上故障证据。
 
 ## 3. 一次请求的最小可执行契约
 
@@ -164,6 +182,36 @@ Host 的既有请求准备或领域服务，按本次操作确定三类条件：
 公司新批准意见、工作新修订或目标变化取得后可以立即显示。当前综合仍显示它实际使用的输入，例如“综合采用工作 3；工作 4 的构型条件尚待纳入”。
 
 Host 以准确基线、覆盖及并发规则选择当前成果。新结果保存后再切换可读指针；较晚到达的旧基线结果可以按原协议保留为历史，不能仅凭保存时间更晚覆盖较新有效判断。某项变化经核对无影响时保存该结论，原综合仍保留原来的实际消费引用。
+
+### 3.6 首个新事项的真实闭环及反例
+
+```mermaid
+flowchart LR
+    Q[Host 持久 intake 与队列] --> A[领取并核对两层租约]
+    A --> P[启动前持久关联原请求与 child run]
+    P --> G[一次生成并留存完整响应]
+    G --> S[原 SAVE key 与准确 CAS 保存]
+    S --> R[独立 READ 原 key 得到准确修订]
+    R --> O[同版确定性 Overall 与真实提交]
+    O --> F[Host attempt 完成]
+    F --> K[原外层租约 queue ACK]
+    R --> V[原页面读取同版成果与状态]
+    O --> V
+    G -.结果未知保留原绑定.-> U[核对原 run，不重新生成]
+    O -.COMMITTING恢复原结果.-> O
+```
+
+| 边界 | 准确完成证据 | 必须拒绝或保持未验的反例 |
+| --- | --- | --- |
+| 输入与一次生成 | 正文/准确版本、adapter 输入、实际 prompt/payload、同 request/attempt 的 child run 和完整响应持久关联 | 只有目录、最终文本、模型名或退出码；已 started/UNKNOWN 后换 run 重新生成 |
+| SAVE | 原稳定 SAVE requestId、正文与 expected revision 通过 Host 实际事务，返回准确 workRevisionRef | 换 key 重试、借旧 owner、缺实际来源授权、只有模型工具调用意图 |
+| 独立 READ | 按原 SAVE key 和有效 fence 独立读取同 attempt 的准确完整修订，保存 READ observation | SAVE 响应当 READ、读 latest/旧基线、混用 intake 与 SAVE key |
+| 确定性 Overall | 消费这次 READ 的准确工作，实际 commit/CAS 与 sourceAssessment 绑定成立，不再生成模型 | 仅纯函数投影或合成回执；COMMITTING 后改 payload/重新生成 |
+| attempt 结束 | Host 实际终态及投影完成回执；UNKNOWN 与明确失败分开 | 消费者退出、进度条或文件归档当成功 |
+| queue ACK | 同一外层 owner/token/generation 的 ACK 获 Host 确认，且规定业务阶段已完整完成 | attempt 成功直接推为 ACK 成功；迟到旧租约写入/ACK、强行 BLOCK UNKNOWN |
+| 原阅读面 | 原用户权限内读取同版 work/Overall/来源与实际执行状态 | 本地 HTML 或接口 fixture 当生产页面、正式采用或工程内容验收 |
+
+这些步骤映射到既有 `assessment.research`、`assessment.overall`、阅读节点及 `research.overall`、`save.finish` 接线，不新增业务节点或状态枚举。开发变更必须同时指出对应规则、实际代码消费者、正反例和证据级别；未取得真实网关/数据库/页面回执的步骤继续未验。接口差异、路径和配置记录集中于[现有 Host↔Codex 接口包](coordination/host-codex-interface-20261025/README.md)，不把另一端源码导出或离线 schema 数量当成线上合同冲突。
 
 ## 4. 更新、并行与恢复
 
@@ -1163,3 +1211,19 @@ P0/P7当前nextAction按上述新链重排，旧源码中仍有用的材料、�
 官方只读确认最近Host仍a65、release finished；dev/online没有WL_CODEX_*或WL_MODEL_EXECUTOR配置名称，现有key未授权Codex路径。所报云端IDE旧HEAD/dirty不是本地唯一集成树，也不证明线上回退，未覆盖它。本轮无新凭据、配置/调度变更、发布、安装、模型或清库。尚需执行器owner补Codex子进程回执与本请求结果的持久关联、明确原始上游响应留存，再按准确范围安排真实绑定和一条新事项闭环。
 
 完整非秘密工具、类型、错误、配置状态和真实形状合成示例见[Host↔Codex机器接口包](coordination/host-codex-interface-20261025/README.md)。本条只更新当前下一步与本地证据，保留所有历史对象/顺序和用户页面样式，不将静态档案数解释为开发完成率。
+
+### E.38 以 v1.8 约束审查程序恢复与实际队列（2026-10-25）
+
+本轮在基线4e8a39b1上先写2.3/3.6，再选择性吸收准确94c54de（父fc132）的27文件程序恢复增量；旧材料目录修复和CODEX专用队列路由均保留。新源码在原runner/run重新取得完整解析后SSE事件与闭合receipt，父检查点保留codexReceipt及原SAVE key；started无回执仍不重派模型。实际prompt、最终bridge payload全文及父检查点启动前明确runRoot/预定run定位尚缺，不能把已保存的adapter输入或prompt摘要当作这些原文；该缺口交执行器owner窄补，不另造恢复平台。
+
+| 契约要求 | 实际消费者/代码 | 本轮正反例与证据范围 |
+| --- | --- | --- |
+| 单一执行者及真实身份 | `canonical-host-executor-policy.ts`、`configured-development-service-scope.authorization.ts`、`validate-payload.mjs` | CODEX独立scope/runtime；尚封存旧app的Applicability/Review及关联入口明确拒绝；HOSTED原准入和协议名保持；Discovery合法CODEX与未知runtime拒绝。3项定向Host测试（含新app不得复用旧app）和3项Node通过。 |
+| 固定队列路由 | `run-hosted-review-turn.mjs#createHostAutoWorkItemQueueClient`及Host五个CODEX入口 | 统一`codex-next/ack/block-work-item`与`codex-apply-pending-model-configuration`，无旧路由fallback；3项实际请求fixture通过。 |
+| 恢复原保存结果后提交 | `consume-hosted-work-item.mjs#runHostedInitialStage`、`orchestrate-host-mcp.mjs#readExactProgramAssessmentWork` | 修复真实queue COMMITTING许可表挡住新READ；只许同attempt/WI定位并按其原SAVE key再读，RUNNING带fence、COMMITTING不新增RUNNING日志，完整revision比较；20项定向消费者/提交测试通过，不冒充数据库commit或queueACK。 |
+| 真正producer到保存读回 | `codex-host-program-boundary.spec.ts`与实际Host JobAid服务/新程序 | 8项跨端fixture适配严格assessmentBinding和durable receipt后通过；数据库与模型为替身，UNKNOWN零新派发、完整回执可恢复保存。原53/9及上游70项保留原执行身份，不改记本轮重跑。 |
+| 队列资源按现库定义 | `0003_action_attempt_openclaw_v1.sql`、`schema.ts`、ActionAttempt repository/lifecycle | 官方dev/online只读catalog确认三partial index均有效且谓词正确、slot CHECK已验证；schema.ts缺WHERE属声明漂移，本轮不DDL。四槽按tenant/request_origin，默认4项串行/15分钟是项间预算。 |
+
+当前实施页为本集成树 `docs/runtime-monitor/WiseLink_Wiring_Verification.html`，从同一契约、bindings/evidence/work-packages生成；其运行图与详情共用这一快照。阅读指向见[当前图与历史目录说明](runtime-monitor/README.md)。用户原指定`tmp/wiring-progress-revision-20261023/docs/runtime-monitor/`以及其他旧候选目录保留历史HTML，不覆写、不暗设跳转；交付时明确打开和链接当前实施页。唯一业务状态仍来自Host，历史证据数量不作完成率。
+
+本批尚未推送或部署；实际CODEX消费者持续唤起、异常退出重启、两个私有root的卷/保留期/跨重启读回未验。切换按现有宿主与精确入口操作，停止旧入口领取和拒迟到旧fence写入分别核验；不创建新全局调度/槽位平台。首条真实新事项的网关、存储事务、Overall提交、attempt结束、queueACK与原页面同版读取继续分别待验，原ATT5 UNKNOWN不重放。

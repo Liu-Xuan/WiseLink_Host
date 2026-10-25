@@ -56,15 +56,19 @@ function programFixture() {
       versionLabel: parseRunId, sourceRefId, excerpt: sourceText }],
   };
   const store = checkpoint(), actions = [];
+  const actionAttemptId = `fixture-attempt-${id}`, workItemId = `fixture-wi-${id}`;
   let saved = null;
   const options = {
-    assessmentCheckpoint: store, assessmentBinding: { documentVersionId },
+    assessmentCheckpoint: store, assessmentBinding: { documentVersionId, workItemId,
+      attemptRef: `fixture-attempt-ref-${id}`, actionAttemptId, baseRevision: 1, inputRevision: 1 },
     sessionDiscriminator: `fixture-${id}`, taskDeadline: new Date(Date.now() + 30 * 60_000).toISOString(),
     heartbeat: async () => ({ status: 'RUNNING' }),
     readAssessmentSources: async () => { throw new Error('FIXTURE_UNREGISTERED_SOURCE_READ'); },
     readAssessmentWork: async ({ requestId }) => {
       actions.push({ action: 'READ_WORK', requestId });
-      return { revision: saved?.requestId === requestId ? clone(saved) : null };
+      return { schemaVersion: 'wiselink.jobaid-work-read.v2', attemptId: actionAttemptId,
+        inputWorkRevision: 0, executionStatus: 'RUNNING',
+        revision: saved?.requestId === requestId ? clone(saved) : null };
     },
     saveAssessmentWork: async request => {
       if (saved) throw new Error('FIXTURE_DUPLICATE_SAVE');
@@ -72,6 +76,7 @@ function programFixture() {
       if (!work.issues?.length || !work.issues.some(issue => issue.body?.includes(`[[${evidenceRef}]]`)))
         throw new Error('FIXTURE_SOURCE_CITATION_REQUIRED');
       saved = { requestId: request.requestId, workRevisionRef: `fixture-work-${id}-1`,
+        actionAttemptId, workItemId, documentVersionId, basedOnWorkItemRevision: 1,
         workRevision: 1, content: { ...work, understanding: work.overview, overviewStatus: 'CURRENT' } };
       actions.push({ action: 'SAVE_WORK', workRevisionRef: saved.workRevisionRef });
       return { workRevisionRef: saved.workRevisionRef, workRevision: 1 };

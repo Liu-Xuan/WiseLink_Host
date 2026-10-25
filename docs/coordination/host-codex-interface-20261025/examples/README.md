@@ -2,6 +2,8 @@
 
 `producer-cycle.synthetic.json` 来源于独立 `codex-host-program-boundary.spec.ts` 测试，再经明确脱敏。测试用合成身份、合成原文、离线 persistence/authorization dependencies 与离线模型子进程替身，实际调用 Host `begin`、`readSources`、`recordProgramProgress`（包含真实材料 parser）、`saveWork`（真实 materializer）、`readAttemptWork`。没有调用线上 Host、真实模型或读取业务数据。
 
+本组公开捕获在94恢复增量集成前产生，用于说明未变化的Host字段/引用形状；其中不包含当前新增codexReceipt/program-receipt-links，不能据此否认新恢复已实现或宣称它已覆盖真实业务。当前恢复对象直接见 [实际源对象表达式](../types/consumer-recovery-source.json)。主控已另将实际Host边界fixture适配严格receipt并通过8项测试，公开旧例不被包装成新运行回执。
+
 包内所有例子标记 `SANITIZED_EXAMPLE`。保留完整字段、结构与合成引用关联；可能私有的方法正文、定义、方法标题/定位及原系统提示词已替换。Task inputHash、请求 argsHash、派生 artifact 摘要和字节数按脱敏数据重算，不能当作原始运行回执或原hash证明。原始未脱敏测试证据由主控私有保留，不附本机路径。此后只验证示例schema/关联，不声称脱敏后的内容重新通过真实方法/正文准入。
 
 `overall.status` 和 `attemptCompletion.status` 明确为 `NOT_EXERCISED`。保存 repository、RLS、数据库事务/租约和最终 CAS 尚未因此得到真实数据库证明。fixture 时间和 UUID 为合成数据，不是可使用的活动租约。

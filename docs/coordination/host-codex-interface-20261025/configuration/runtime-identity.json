@@ -1,0 +1,37 @@
+{
+  "source": "Host executor policy, service-scope authorization and existing Task/Result validators; rollout target supplied by the coordinator",
+  "activeSelector": "WL_MODEL_EXECUTOR",
+  "codexSelectorValue": "CODEX",
+  "mcpServerInfo": {
+    "name": "wiselink-codex-engineering-assessment",
+    "version": "1.2.0"
+  },
+  "runtimeKind": "CODEX",
+  "runtimeAppSetting": "WL_CODEX_RUNTIME_APP_ID",
+  "approvedTargetRuntimeAppId": "app_17gr74pbere",
+  "runtimeAppConfigurationValueVerified": false,
+  "legacyRuntimeAppIdRejectedForCodex": true,
+  "independentPrincipalRequired": true,
+  "exactNewWorkItemAndIntakeRequired": true,
+  "firstRolloutBusiness": "PROGRAM_CONTROLLED_V1_INITIAL_ASSESSMENT",
+  "unsupportedCodexBusiness": [
+    "APPLICABILITY",
+    "REVIEW",
+    "PENDING_REVIEW_DISCOVERY",
+    "SUCCESSOR_REVIEW_OVERALL"
+  ],
+  "unsupportedError": {
+    "code": "CANONICAL_CODEX_OPERATION_NOT_SUPPORTED",
+    "statusCode": 403
+  },
+  "retainedWireNames": [
+    "wiselink.3_1.openclaw_task_envelope.v1",
+    "wiselink.3_1.openclaw_result_envelope.v1",
+    "OPENCLAW_DYNAMIC_EVALUATION",
+    "wiselink-openclaw-engineering-assessment"
+  ],
+  "retainedWireServiceVersion": "1.2.0",
+  "retainedSharedAppLiteralMeaning": "Historical sealed wire/provenance field; not the new runtime registration identity.",
+  "discovery": "CODEX source is accepted; missing historical runtimeAppId is not populated from current configuration.",
+  "deployedOrAuthenticated": false
+}

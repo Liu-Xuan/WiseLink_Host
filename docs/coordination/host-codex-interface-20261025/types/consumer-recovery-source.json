@@ -1,0 +1,30 @@
+{
+  "format": "actual-source-object-expressions",
+  "note": "Current consumer-local receipt objects, not a new Host API/schema or proof of real execution. Runtime paths and secret values are not included.",
+  "fragments": [
+    {
+      "name": "generationBinding",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 263,
+      "expression": "recovery ? {\n      version: 1, requestId: recovery.requestId, requestBodySha256: sha256(init.body),\n      selectedModel: 'miaoda/glm-5.3', codexBinary: options.codexBinary,\n      configPath: options.configPath, promptSha256: sha256(prompt),\n      timeoutSeconds, maxOutputTokens: request.max_output_tokens,\n      reasoningEffort: request.reasoning_effort,\n    } : null"
+    },
+    {
+      "name": "codexReceipt",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 370,
+      "expression": "{ requestId: recovery.requestId, runDirectory,\n        responseSha256: sha256(raw), transportSummaryRef: resolve(runDirectory, 'transport-summary.json'),\n        recovered }"
+    },
+    {
+      "name": "codexReceipt",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 122,
+      "expression": "response.codexReceipt"
+    },
+    {
+      "name": "programReceiptLinks",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 274,
+      "expression": "{\n    assessmentBinding: hostBinding, modelRequestId: codexRecoveryRequestId, modelArgsHash: argsHash,\n    modelResponseSha256: responseRecord.value.codexReceipt.responseSha256,\n    runDirectory: responseRecord.value.codexReceipt.runDirectory,\n    transportSummaryRef: responseRecord.value.codexReceipt.transportSummaryRef,\n    saveRequestId: saveRequest.requestId, workRevisionRef: revision.workRevisionRef,\n    workRevision: revision.workRevision, independentReadCheckpoint: 'program-work-readback',\n  }"
+    }
+  ]
+}

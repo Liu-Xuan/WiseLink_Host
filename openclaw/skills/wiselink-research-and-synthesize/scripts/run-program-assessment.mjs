@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { prepareProgramAssessmentMaterials, PROGRAM_ASSESSMENT_MODE } from './program-assessment-materials.mjs';
 import { parseJobAidWorkJson, validateJobAidProblemInput } from './run-jobaid-problem-assessment.mjs';
@@ -35,10 +35,18 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
       typeof options.readAssessmentWork !== 'function' || typeof options.saveAssessmentWork !== 'function' ||
       typeof options.recordAssessmentProgramProgress !== 'function') throw new Error('PROGRAM_ASSESSMENT_CAPABILITY_REQUIRED');
   assertHostedModelGatewayReady(options);
+  const usesCodex = modelExecutor(options) === 'CODEX';
+  const hostBinding = options.assessmentBinding;
+  if (usesCodex && (!hostBinding ||
+      ['attemptRef', 'actionAttemptId', 'workItemId', 'documentVersionId'].some(key =>
+        typeof hostBinding[key] !== 'string' || !hostBinding[key].trim()) ||
+      !Number.isSafeInteger(hostBinding.baseRevision) || hostBinding.baseRevision < 0))
+    throw new Error('PROGRAM_ASSESSMENT_HOST_BINDING_REQUIRED');
+  const codexRecoveryRequestId = usesCodex ? `program:${hostBinding.attemptRef}:round-1` : null;
   const modelHeaders = executionModelHeaders(options);
   const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,
     executionModel: options.executionModel ?? null,
-    ...(modelExecutor(options) === 'CODEX' ? { modelExecutor: 'CODEX' } : {}) };
+    ...(usesCodex ? { modelExecutor: 'CODEX', assessmentBinding: hostBinding } : {}) };
   let enabled = await checkpoint.readOptional('assessment-enabled');
   if (enabled && (!isDeepStrictEqual(enabled.binding, binding) || !isDeepStrictEqual(enabled.generationPolicy, POLICY)))
     throw new Error('PROGRAM_ASSESSMENT_CHECKPOINT_BINDING_MISMATCH');
@@ -87,27 +95,38 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
   if (responseRecord && responseRecord.argsHash !== argsHash) throw new Error('PROGRAM_ASSESSMENT_RESPONSE_BINDING_MISMATCH');
   if (!responseRecord) {
     const started = await checkpoint.readOptional('assessment-round-1.started');
-    if (started) throw new Error('PROGRAM_ASSESSMENT_MODEL_OUTCOME_UNKNOWN');
+    if (started && (!usesCodex || started.argsHash !== argsHash ||
+        started.codexRecoveryRequestId !== codexRecoveryRequestId))
+      throw new Error('PROGRAM_ASSESSMENT_MODEL_OUTCOME_UNKNOWN');
     await options.heartbeat?.();
     const deadline = Date.parse(options.taskDeadline);
-    const timeout = Math.min(options.timeoutMs ?? 15 * 60_000, deadline - Date.now());
+    // Local receipt recovery does not spend another model request. The Host
+    // still grants the current lease and authorizes every later SAVE/READ.
+    const timeout = started ? Math.min(options.timeoutMs ?? 30_000, 30_000)
+      : Math.min(options.timeoutMs ?? 15 * 60_000, deadline - Date.now());
     if (!Number.isFinite(timeout) || timeout <= 0) throw new Error('PROGRAM_ASSESSMENT_DEADLINE_EXPIRED');
     const perform = async () => {
       // A local budget refusal before perform is not an upstream UNKNOWN.
-      await checkpoint.writeOnce('assessment-round-1.started', { argsHash, startedAt: new Date().toISOString() });
+      if (!started) await checkpoint.writeOnce('assessment-round-1.started', {
+        argsHash, startedAt: new Date().toISOString(),
+        ...(usesCodex ? { codexRecoveryRequestId } : {}),
+      });
       const response = await requestModelGateway(options,
         modelGatewayEndpoint(options), { method: 'POST',
           headers: { accept: 'application/json', 'content-type': 'application/json',
             ...modelGatewayHeaders(options), ...modelHeaders }, body,
-          signal: AbortSignal.timeout(timeout) }, dependencies);
-      return { raw: await response.text(), status: response.status, ok: response.ok };
+          signal: AbortSignal.timeout(timeout),
+          ...(usesCodex ? { codexRecovery: { requestId: codexRecoveryRequestId,
+            recoverOnly: Boolean(started) } } : {}) }, dependencies);
+      return { raw: await response.text(), status: response.status, ok: response.ok,
+        ...(usesCodex ? { codexReceipt: response.codexReceipt } : {}) };
     };
     let value, heartbeatPending = null, heartbeatFailure = null;
     const timer = (dependencies.setInterval ?? setInterval)(() => {
       if (!heartbeatPending && !heartbeatFailure) heartbeatPending = Promise.resolve().then(() => options.heartbeat?.())
         .catch(error => { heartbeatFailure = error; }).finally(() => { heartbeatPending = null; });
     }, 10_000);
-    try { value = options.runModelRequest ? await options.runModelRequest(perform) : await perform(); }
+    try { value = !started && options.runModelRequest ? await options.runModelRequest(perform) : await perform(); }
     catch (error) {
       await checkpoint.write('program-transport-observation', { outcome: 'UNKNOWN',
         observedAt: new Date().toISOString(), diagnostic: hostedGatewayTransportFailureDiagnostic(error) });
@@ -123,6 +142,9 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
     if (heartbeatFailure) throw heartbeatFailure;
   }
   const { raw, status, ok } = responseRecord.value;
+  if (usesCodex && (responseRecord.value.codexReceipt?.requestId !== codexRecoveryRequestId ||
+      responseRecord.value.codexReceipt.responseSha256 !== createHash('sha256').update(raw).digest('hex')))
+    throw new Error('PROGRAM_ASSESSMENT_CODEX_RECEIPT_MISMATCH');
   let payload;
   try { payload = JSON.parse(raw); }
   catch { throw new Error(`PROGRAM_ASSESSMENT_GATEWAY_INVALID_JSON_HTTP_${status}`); }
@@ -177,7 +199,7 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
     throw terminal('JOBAID_WORK_VALIDATION_FAILED', code);
   }
   await checkpoint.writeOnceOrEqual('program-work-candidate', work);
-  await recordProgress('MODEL_RESPONSE_SAVED', 'program-work-candidate');
+  await recordProgress('MODEL_RESPONSE_SAVED', 'assessment-round-1.result');
   let saveRequest = await checkpoint.readOptional('program-save-request');
   if (!saveRequest) {
     saveRequest = { requestId: randomUUID(), expectedWorkRevision: modelInput.expectedWorkRevision,
@@ -187,12 +209,30 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
   if (saveRequest.expectedWorkRevision !== modelInput.expectedWorkRevision || saveRequest.workJson !== JSON.stringify(work))
     throw new Error('PROGRAM_ASSESSMENT_SAVE_BINDING_MISMATCH');
   let readback = await options.readAssessmentWork({ requestId: saveRequest.requestId });
+  const validateReadIdentity = packet => {
+    if (!usesCodex) return;
+    const revision = packet?.revision;
+    if (packet?.schemaVersion !== 'wiselink.jobaid-work-read.v2' ||
+        packet.attemptId !== hostBinding.actionAttemptId || packet.executionStatus !== 'RUNNING' ||
+        packet.inputWorkRevision !== modelInput.expectedWorkRevision ||
+        (revision && (revision.actionAttemptId !== hostBinding.actionAttemptId ||
+          revision.workItemId !== hostBinding.workItemId ||
+          revision.documentVersionId !== hostBinding.documentVersionId ||
+          revision.basedOnWorkItemRevision !== hostBinding.baseRevision)))
+      throw new Error('PROGRAM_ASSESSMENT_READ_IDENTITY_MISMATCH');
+  };
+  validateReadIdentity(readback);
   if (!readback?.revision) {
+    if (await checkpoint.readOptional('program-save-receipt'))
+      throw new Error('PROGRAM_ASSESSMENT_ACK_READBACK_MISSING');
     try {
+      await checkpoint.writeOnceOrEqual('program-save-started', { request: saveRequest,
+        ...(usesCodex ? { assessmentBinding: hostBinding } : {}) });
       const receipt = await options.saveAssessmentWork(saveRequest);
       await checkpoint.writeOnceOrEqual('program-save-receipt', receipt);
     } catch (error) {
       readback = await options.readAssessmentWork({ requestId: saveRequest.requestId });
+      validateReadIdentity(readback);
       if (!readback?.revision) {
         // Lease, CAS, authorization and technical SAVE errors share the JOBAID
         // prefix with content errors. Preserve the response and original error;
@@ -203,13 +243,42 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
     // Always perform an independent exact READ, including after a SAVE ACK.
     if (!readback?.revision) readback = await options.readAssessmentWork({ requestId: saveRequest.requestId });
   }
+  validateReadIdentity(readback);
   const revision = readback?.revision;
   if (!revision?.workRevisionRef || revision.requestId !== saveRequest.requestId ||
       revision.workRevision !== modelInput.expectedWorkRevision + 1 ||
       !revision.content || revision.content.roundCompletion !== work.roundCompletion ||
-      revision.content.understanding !== work.overview || revision.content.overviewStatus !== 'CURRENT')
+      revision.content.understanding !== work.overview.trim() || revision.content.overviewStatus !== 'CURRENT')
     throw new Error('PROGRAM_ASSESSMENT_SAVED_WORK_READBACK_INVALID');
-  await checkpoint.writeOnceOrEqual('program-work-readback', readback);
+  if (usesCodex) {
+    // Host materializes and enriches risk/source metadata and trims text.
+    // Compare the authored substance and exact active issue set, not the raw
+    // command against the enriched saved representation.
+    const expectedIssues = new Map(previousIssues.map(issue => [issue.issueKey, issue]));
+    for (const issue of work.retiredIssues ?? []) expectedIssues.delete(issue.issueKey);
+    for (const issue of work.issues) expectedIssues.set(issue.issueKey, issue);
+    const actualIssues = revision.content.issues;
+    if (!Array.isArray(actualIssues) || actualIssues.length !== expectedIssues.size ||
+        new Set(actualIssues.map(issue => issue.issueKey)).size !== actualIssues.length ||
+        actualIssues.some(issue => {
+          const expected = expectedIssues.get(issue.issueKey);
+          return !expected || issue.question !== expected.question.trim() || issue.body !== expected.body.trim();
+        })) throw new Error('PROGRAM_ASSESSMENT_SAVED_ISSUES_MISMATCH');
+  }
+  const previousReadback = await checkpoint.readOptional('program-work-readback');
+  if (previousReadback) {
+    validateReadIdentity(previousReadback);
+    if (!isDeepStrictEqual(previousReadback.revision, revision))
+      throw new Error('PROGRAM_ASSESSMENT_SAVED_WORK_READBACK_CHANGED');
+  } else await checkpoint.writeOnce('program-work-readback', readback);
+  if (usesCodex) await checkpoint.writeOnceOrEqual('program-receipt-links', {
+    assessmentBinding: hostBinding, modelRequestId: codexRecoveryRequestId, modelArgsHash: argsHash,
+    modelResponseSha256: responseRecord.value.codexReceipt.responseSha256,
+    runDirectory: responseRecord.value.codexReceipt.runDirectory,
+    transportSummaryRef: responseRecord.value.codexReceipt.transportSummaryRef,
+    saveRequestId: saveRequest.requestId, workRevisionRef: revision.workRevisionRef,
+    workRevision: revision.workRevision, independentReadCheckpoint: 'program-work-readback',
+  });
   const execution = { output: { workRevisionRef: revision.workRevisionRef }, provenance };
   await checkpoint.writeOnce('program-execution', execution);
   return execution;

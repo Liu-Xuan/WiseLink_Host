@@ -25,7 +25,7 @@ export function canonicalExecutorRuntime(executor = canonicalHostExecutor()): {
   if (executor === 'HOSTED')
     return { runtime: 'FEISHU_HOSTED_OPENCLAW', runtimeAppId: 'app_17c3zn24kv2' };
   const runtimeAppId = process.env.WL_CODEX_RUNTIME_APP_ID;
-  if (!runtimeAppId || !/^app_[a-z0-9]+$/u.test(runtimeAppId))
+  if (!runtimeAppId || runtimeAppId === 'app_17c3zn24kv2' || !/^app_[a-z0-9]+$/u.test(runtimeAppId))
     throw executorError('CANONICAL_CODEX_RUNTIME_CONFIG_REQUIRED', 503);
   return { runtime: 'CODEX', runtimeAppId };
 }

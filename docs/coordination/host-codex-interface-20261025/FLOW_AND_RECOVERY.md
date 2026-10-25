@@ -18,7 +18,7 @@
 
 ## 2. 一次生成与完整响应
 
-可信程序先保存 `program-model-input` 和 `assessment-round-1.started`，再调用一次选定执行器。`assessment-round-1.result` 必须持久保存完整 `{raw,status,ok}` 及传入适配器请求的 `argsHash` 后才允许 SAVE。该hash绑定已有程序请求，并不单独证明实际Codex prompt、bridge payload或上游原字节相同。Codex 输出由实际适配器转换成原函数候选合同；转换本身不执行业务函数。
+可信程序先保存 `program-model-input` 和 `assessment-round-1.started`，再调用一次选定执行器。CODEX使用固定`program:<attemptRef>:round-1`身份及已有generation receipt恢复；原runner还在时等待同一回执，已留回执时恢复同一响应，不能另开一次推理。`assessment-round-1.result`必须持久保存完整`{raw,status,ok,codexReceipt}`及传入适配器请求的`argsHash`，并核对receipt请求身份/响应摘要后才允许SAVE。该hash绑定已有程序请求，并不单独证明实际Codex prompt、bridge payload或上游原字节相同。Codex输出由实际适配器转换成原函数候选合同；转换本身不执行业务函数。
 
 成功候选只来自唯一 `return_wiselink_program_assessment({workJson})`，经过原正文类型/语义校验。完整旧问题键必须在 changed issues、`unchangedIssueKeys` 或 `retiredIssues` 中明确交代；允许 `COMPLETE_WITH_OPEN_QUESTIONS`，但 `IN_PROGRESS` 不能结束初评。`MODEL_RESPONSE_SAVED` 只记录消费者已保存完整响应的进度观察；不是 Host 持有原始响应或已正式采用的证明。
 
@@ -30,13 +30,16 @@
 | 2 | 先 `read_assessment_work({requestId})` 查询该原 key | 已保存则不重复生成；匹配同 attempt |
 | 3 | 若不存在，`save_assessment_work` 发送原 key/CAS/正文与 attempt fence | SAVE 由原 service materializer 和 repository 保存；返回 `workRevisionRef/revision/replayed` |
 | 4 | 无论 SAVE ACK 是否正常，独立 `read_assessment_work({requestId,leaseToken,leaseGeneration})` | 完整准确修订，ref、revision、save key、同 attempt/DV/baseRevision；不是 SAVE 响应 |
-| 5 | 消费者验证 revision=`expectedWorkRevision+1`、正文 roundCompletion/understanding、`overviewStatus='CURRENT'` | `program-work-readback` 保存实际读回；Host 写 `ASSESSMENT_WORK_READ` |
-| 6 | `commit_dynamic_evaluation_candidate`，ResultEnvelope `modelOutput` 仅为 `{"workRevisionRef":"准确已保存ref"}` | task/result 字段、contentHash、实际 model provenance 和 fence 精确绑定 |
-| 7 | Host 封存结果为 COMMITTING，读取同一 saved work 和独立 READ，确定性投影 | 初评 Overall `executionKind='DETERMINISTIC_PROJECTION'`、`modelRequests=0`、`semanticReanalysisPerformed=false` |
-| 8 | 同一 WorkItem CAS 写 baseRules 与 Overall，然后 `finishProjectionSuccess` | Overall `sourceAssessment` 精确含 attemptId、workRef/revision、saveRequestId、readObservedAt |
-| 9 | 原阅读面读回准确工作/Overall/状态；自动队列仅在 Host 完整状态满足后 ACK | 队列 owner/token/generation 与 attempt 成功分开核对 |
+| 5 | 消费者验证同attempt/WI/DV/baseRevision、revision=`expectedWorkRevision+1`、Host材料化后的正文/问题集合、`overviewStatus='CURRENT'` | `program-work-readback`保存实际读回；Host写`ASSESSMENT_WORK_READ`。Host会trim和补充来源/风险字段，不能要求保存体与原候选JSON逐字相同 |
+| 6 | commit前再用授权latest READ定位原SAVE key，随后按该key精确READ，并要求两次完整revision一致 | RUNNING带有效fence记录真实读取；COMMITTING无fence只检查原结果。latest本身不能证明准确保存，也不能代替原key独立READ |
+| 7 | `commit_dynamic_evaluation_candidate`，ResultEnvelope `modelOutput`仅为`{"workRevisionRef":"准确已保存ref"}` | task/result字段、contentHash、实际model provenance和fence精确绑定 |
+| 8 | Host封存结果为COMMITTING，读取同一saved work和独立READ，确定性投影 | 初评Overall `executionKind='DETERMINISTIC_PROJECTION'`、`modelRequests=0`、`semanticReanalysisPerformed=false` |
+| 9 | 同一WorkItem CAS写baseRules与Overall，然后`finishProjectionSuccess` | Overall `sourceAssessment`精确含attemptId、workRef/revision、saveRequestId、readObservedAt |
+| 10 | 原阅读面读回准确工作/Overall/状态；自动队列仅在Host完整状态满足后ACK | 队列owner/token/generation与attempt成功分开核对 |
 
 保存并不正式采用、不独立完成 WorkItem。初评 Overall 为 `candidate_only`、`adopted=false`；不制造 Review、审批或放行。准确已保存成果的阅读不调用模型。
+
+`get_parse_status`是`{entry,...,integratedAssessmentSummary,initialAnalysis?}`包装；同版baseRules/overallSynthesis位于`integratedAssessmentSummary`。`entry`没有workItemRevision，不能把状态wrapper冒充commit ACK或补造revision。收到但非法的commit ACK直接失败；只有ACK未取得时才按原ResultEnvelope hash、attempt状态及嵌套同版Overall恢复。COMMITTING consumer wrapper先绑定原attempt/WI和已保存key，随后仅允许该key READ，不允许SAVE或模型请求。
 
 ## 4. 错误和恢复
 
@@ -47,10 +50,11 @@
 | 模式/运行端/授权未配置 | `CANONICAL_EXECUTOR_ENDPOINT_INACTIVE`、`CANONICAL_CODEX_RUNTIME_CONFIG_REQUIRED`、`CANONICAL_SERVICE_SCOPE_UNAVAILABLE` | 配齐获准身份/路径/scope后重做 metadata 和准确任务检查；不借旧配置放行 |
 | begin 已终态或 busy | `ACTION_ATTEMPT_ALREADY_<status>`、既有 active request | 读取原请求状态；不重复创建/更换模型 |
 | 原件、来源或 actor 变化 | `JOBAID_SOURCE_AUTHORIZATION_CHANGED`、`JOBAID_ORIGINAL_REQUEST_CHANGED` | 保留原任务，取得正确授权/版本后按 Host 合同处理；不改引用过关 |
-| 已开始但没有完整响应记录 | `PROGRAM_ASSESSMENT_MODEL_OUTCOME_UNKNOWN` | 保留检查点和 UNKNOWN；不能再调一次模型或报告零派发 |
+| 已开始但父程序尚无完整响应记录 | 原固定CODEX request/runner receipt；无有效回执时`CODEX_GENERATION_OUTCOME_UNKNOWN` | 先等待/恢复原runner回执；没有闭合证据则保留UNKNOWN，不能再调一次模型或报告零派发 |
 | SAVE ACK 丢失/技术失败 | 原 SAVE key 查询 | 先按原 key READ；存在则核对准确 revision；不存在也不证明模型没执行，不换 key/正文 |
 | fence/CAS 漂移 | lease 或工作 revision 冲突 | 保留完整响应、原 key 和错误；由 Host 原租约/版本恢复，不把 JOBAID 前缀当正文错误丢弃结果 |
 | 独立读回缺失或不匹配 | `JOBAID_PROGRAM_INDEPENDENT_READ_REQUIRED`、`JOBAID_PROGRAM_READ_BINDING_INVALID` | 用同 attempt/原 SAVE key/有效 fence 完成准确 READ，不用 latest 或旧基线 READ 替代 |
+| 定位和原key读回漂移 | `HOST_MCP_PROGRAM_ASSESSMENT_EXACT_READBACK_MISMATCH` | 停止收尾并保留两次读回；不改原SAVE key或用其他最新版本替代 |
 | Overall artifact/CAS 后中断 | `COMMITTING` + 原 `recoveryResult` | 只重放原 commit；Host 恢复投影或 finish，不再次生成 |
 | 消费者已停止但上游未知 | `record_assessment_consumer_stopped` + `upstreamOutcome='UNKNOWN'` | 只追加安全元数据；不改 provider终态、attempt终态、租约、保存工作或队列 |
 | 队列任务尚未完整完成 | `AUTO_WORK_ITEM_INITIAL_ANALYSIS_NOT_COMPLETE` | 先核对 Host 状态，不强行 ACK |

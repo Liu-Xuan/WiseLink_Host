@@ -1,8 +1,10 @@
 {
-  "hostBaseline": "1eb9bcc8bd5a57798cb91f9674dfccdf9d44eb92",
-  "importedExecutorUpstream": "fc132291",
-  "upstreamReferenceBasis": "Exact upstream reference supplied by the coordinator; imported working files are identified individually in source-manifest.json.",
-  "workingChanges": "LOCAL_UNCOMMITTED_HOST_CODEX_TRANSITION",
+  "hostBaseline": "4e8a39b14994edeca7f26f17fb7d399aa229b745",
+  "previousHostTransitionBaseline": "1eb9bcc8bd5a57798cb91f9674dfccdf9d44eb92",
+  "importedExecutorUpstream": "94c54de74a0d7a0c0d66778a04a161e2017fce28",
+  "importedExecutorParent": "fc1322919b1b52433c33086c8db4aeb957f0e982",
+  "upstreamReferenceBasis": "Exact upstream Git object fetched and read locally; selective integration preserves current Codex queue routes. Working files are identified individually in source-manifest.json.",
+  "workingChanges": "LOCAL_REVIEWED_HOST_AND_94_RECOVERY_INTEGRATION_AT_EXPORT",
   "finalIntegrationCommit": "RECORDED_OUTSIDE_THIS_BUNDLE_BY_COORDINATOR",
   "purpose": "Reviewable source snapshot; no runtime freeze, deployment gate, or self-referencing final commit hash."
 }

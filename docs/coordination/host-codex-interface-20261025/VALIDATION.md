@@ -13,8 +13,12 @@
 
 `validate-package.mjs` 进一步检查JSON可解析、源文件摘要一致、每个tool schema可编译、索引和单文件内容等于tools/list、脱敏合成MCP参数符合真实schema、原key SAVE/准确READ关系、材料绑定、同版纯函数Overall关联、敏感值/用户路径缺失和相对链接可解析。它默认只检查；显式 `--write-result` 才刷新无时间戳的稳定摘要。
 
+本轮新增`check-host-contract.mjs --current-interface`固定引用同一SDK包：上游42名称均可读取完整schema，35机械示例和1原表达式示例通过；其余6项无正例，formats/trim/refinement和运行授权边界明确报告。新增7项定向正反例通过，未重写上游legacy合同或另存tools-list。
+
 原始合成服务trace来源于独立跨边界Jest测试，8个用例通过（由负责测试的协作者执行并报告，导出器没有重复运行模型）；该测试不执行真实上游推理，数据库、身份、persistence依赖为离线替身。它验证真实producer投影→程序材料parser→完整适配器响应检查点→真实service SAVE/materialize→独立READ、CODEX scope与真实MCP handler，以及准确读回修订的实际纯函数Overall投影；不证明线上身份、网关、真实数据库/RLS、最终commit/CAS/attempt/queue或页面业务成功。
 
 公开例子经过明确脱敏，方法正文/定义/原系统提示词不包含在包内。原始Jest测试证明和脱敏示例schema/关联校验是两份不同证据；重算的inputHash/argsHash/artifact摘要不能冒充原始执行回执，不声称脱敏文本通过实际正文方法准入。
+
+本地94集成后的主控定向结果另行分层记录：20项Node（14项program-finish、6项真实consumer wrapper）、scope 3项（含拒旧runtime app）、Discovery 3项、queue 3项、按严格receipt fixture适配的实际Host服务边界8项通过；服务端类型检查通过。上游原70项离线报告仅是其交付时的证据，本轮未重跑旧53/9/70，不将这些数字相加成完成率。官方只读catalog约束验证与宿主/卷尚未验证的区别见 [ROLLOUT_AND_ISOLATION.md](ROLLOUT_AND_ISOLATION.md)。
 
 最终可复制结果以 `validation-result.json` 为准；测试和检查通过不改变 `README` 的未部署、未配置与未真实验收状态。

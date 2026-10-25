@@ -4,9 +4,9 @@
 
 | 责任端 | 当前已有 | 下一项具体动作 | 完成证据 |
 | --- | --- | --- | --- |
-| 新执行器 owner | 程序入口、完整适配器响应检查点、argsHash、一次生成、候选→正常SAVE/READ | 窄补实际 child run/transport receipt 随既有result落盘；在原run保存实际Codex prompt、bridge payload、完整上游原响应及引用，连回原adapter请求argsHash | 同一task/attempt可机器核对adapter request、prompt、实际上游payload、childrun、原响应、候选及原SAVE key；不借旧runtime名或成功标记 |
-| Host owner / 主控 | 独立CODEX固定endpoint/身份、独立scope、单新intake与现有lease、原保存读取投影服务 | 接受并技术部署准确源码；配置新运行端/独立principal/精确path凭据和单新WI/intake，不移交旧owner任务 | 官方配置名称/授权scope/部署回执 + 新端点实际metadata；秘密值保留原受控位置 |
-| 可信消费者 owner | 独立CODEX discovery、严格tools metadata、Codex四条队列路径、stage执行编排 | 用新授权配置启动首条新事项；保持intake、stage、SAVE三种key和两层租约分别绑定 | 原SAVE key查询、唯一完整响应、正常SAVE、独立准确READ、同版Overall与attempt/queue收尾 |
+| 新执行器 owner | 固定请求/runner回执、解析后上游事件、adapted response、codexReceipt/program links、原key恢复、commit双读 | 沿同一回执链补实际Codex prompt、bridge payload与原HTTP/SSE字节/引用；保持已实现恢复 | 同一task/attempt可核对adapter请求、prompt、上游payload、childrun、原响应和原SAVE key，不把解析后JSON称为原字节 |
+| Host owner / 主控 | 独立CODEX endpoint/身份、单新intake/lease、拒旧runtime和未支持业务、原保存读取投影 | 技术部署准确源码，配置新运行端/独立principal/精确path与新事项，停止旧入口新增领取 | 官方配置/授权/部署与实际metadata，旧owner不被接管；秘密值保留原受控位置 |
+| 可信消费者 owner | 独立discovery、完整SDK schema引用、Codex四条队列路径、准确双读与封存结果恢复 | 确定实际唯一宿主和两个持久目录/卷，再用新授权运行首条新事项 | 原SAVE key、唯一原请求响应、独立READ、同版Overall与原队列结束；宿主/卷验证独立记载 |
 | 前端 / 读者 owner | 已有工作、材料、初评状态/图与知识阅读服务 | 从原页面读取新事项准确workRef/revision和Overall来源；读取不调用模型 | 当前工作、同版sourceAssessment、真实状态和完整正文；不把材料/进度标签当作结果 |
 | 主控 | 当前源码包、名字级平台观察与合成服务测试 | 组织首条真实新事项的完整链，再分别登记技术部署与业务验收 | 准确模型响应/执行回执、SAVE/READ、确定性Overall、原阅读面和正常结束分别有证据 |
 

@@ -46,6 +46,43 @@ function controller() {
 }
 
 describe('single active Host executor', () => {
+  it('rejects reusing the original runtime app as CODEX and accepts the separately configured app', () => {
+    Object.assign(process.env, config, { WL_CODEX_RUNTIME_APP_ID: 'app_17c3zn24kv2' });
+    expect(() => canonicalExecutorRuntime()).toThrow('CANONICAL_CODEX_RUNTIME_CONFIG_REQUIRED');
+    process.env.WL_CODEX_RUNTIME_APP_ID = 'app_17gr74pbere';
+    expect(canonicalExecutorRuntime()).toEqual({ runtime: 'CODEX', runtimeAppId: 'app_17gr74pbere' });
+  });
+
+  it('rejects CODEX legacy-runtime domains before any delegation or attempt lookup', async () => {
+    Object.assign(process.env, config);
+    const authority = { authorizeReviewDelegation: jest.fn(), authorizeReviewAttempt: jest.fn(),
+      authorizePendingReview: jest.fn(), authorizeSuccessorOverall: jest.fn(), authorizeActiveLease: jest.fn() };
+    const scope = new ConfiguredDevelopmentCanonicalServiceScopeAuthorization(authority as never);
+    const operations = [
+      () => scope.authorizeOpenClawReview({ operation: 'BEGIN_REVIEW', workItemId: 'WI-new',
+        reviewConversationRef: 'review-new', requestId: 'review-request' }),
+      () => scope.authorizeOpenClawApplicabilityContext({ operation: 'BEGIN_APPLICABILITY',
+        applicabilityContextRef: 'applicability-new', requestId: 'applicability-request' }),
+      () => scope.authorizeOpenClawWorkItem({ operation: 'GET_PENDING_REVIEW_TURN', workItemId: 'WI-new' }),
+      () => scope.authorizeOpenClawWorkItem({ operation: 'BEGIN_OVERALL', workItemId: 'WI-new',
+        successorReviewTurnRef: 'review-new' }),
+      ...(['COMMIT_APPLICABILITY', 'GET_REVIEW_CONTEXT', 'READ_REVIEW_SOURCE_REFS', 'COMMIT_REVIEW'] as const)
+        .map(operation => () => scope.authorizeOpenClawAttempt({ operation, attemptRef: 'AQ-new', workItemId: 'WI-new' })),
+    ];
+    for (const operation of operations) await expect(operation()).rejects.toMatchObject({
+      code: 'CANONICAL_CODEX_OPERATION_NOT_SUPPORTED', statusCode: 403 });
+    for (const method of Object.values(authority)) expect(method).not.toHaveBeenCalled();
+  });
+
+  it('keeps HOSTED domain authorization in its existing configured-scope path', async () => {
+    const scope = new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
+    for (const operation of [
+      () => scope.authorizeOpenClawReview({ operation: 'BEGIN_REVIEW', reviewConversationRef: 'review', requestId: 'request' }),
+      () => scope.authorizeOpenClawApplicabilityContext({ operation: 'BEGIN_APPLICABILITY',
+        applicabilityContextRef: 'applicability', requestId: 'request' }),
+    ]) await expect(operation()).rejects.toMatchObject({ code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE' });
+  });
+
   it('keeps HOSTED by default and rejects unsupported configuration', () => {
     expect(canonicalHostExecutor()).toBe('HOSTED');
     expect(canonicalExecutorMcpIdentity('HOSTED')).toEqual({ name: 'wiselink-openclaw-engineering-assessment', version: '1.2.0' });

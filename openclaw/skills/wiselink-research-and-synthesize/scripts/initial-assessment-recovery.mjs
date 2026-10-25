@@ -83,6 +83,17 @@ export async function inspectInitialAssessmentRecovery({ checkpoint, initial, wo
   if (!Number.isFinite(expires) || !Number.isFinite(deadline) || expires > now || deadline <= now) return null;
   const started = await read(`assessment-round-${state.round}.started`);
   const result = await read(`assessment-round-${state.round}.result`);
+  // Only this new Codex program request has an independent durable child
+  // receipt. The gateway below is called in recover-only mode: this candidate
+  // permits lease reacquisition, never a replacement model dispatch.
+  if (started && !result && binding.modelExecutor === 'CODEX' &&
+      enabled.binding?.modelExecutor === 'CODEX' &&
+      enabled.generationPolicy?.loopPolicyVersion === 'program-controlled-v1' && state.round === 1 &&
+      enabled.binding.assessmentBinding?.attemptRef === claim.attemptRef &&
+      started.codexRecoveryRequestId === `program:${claim.attemptRef}:round-1` &&
+      (await read('program-model-input'))?.body)
+    return { status: 'RECOVERY_CANDIDATE', operation, previousClaim: claim,
+      modelRecovery: 'CODEX_DURABLE_RECEIPT_ONLY' };
   if (started && !result) return { status: 'REQUIRES_ATTENTION', operation,
     attemptRef: claim.attemptRef, errorCode: 'INITIAL_ASSESSMENT_MODEL_OUTCOME_UNKNOWN', candidateOnly: true };
   return { status: 'RECOVERY_CANDIDATE', operation, previousClaim: claim };

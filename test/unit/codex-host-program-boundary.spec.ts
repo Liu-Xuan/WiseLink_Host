@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { McpServer } from '@modelcontextprotocol/server';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { CanonicalWorkItemProjection, UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
@@ -38,7 +38,10 @@ interface ChildResult {
   error?: string;
   execution?: {output: {workRevisionRef: string}; provenance: {toolVersions: Record<string, string>}};
   material?: {modelInput: {continuousOriginal: {content: string; spans: {evidenceRefs: string[]}[]}}};
-  response?: {value: {raw: string}};
+  response?: {value: {raw: string; codexReceipt: {requestId: string; runDirectory: string; recovered: boolean}}};
+  receiptLinks?: {assessmentBinding: {attemptRef: string; actionAttemptId: string; workItemId: string;
+    documentVersionId: string; inputRevision: number; baseRevision: number}; modelRequestId: string;
+    saveRequestId: string; workRevisionRef: string};
   saveRequest?: {requestId: string; workJson: string};
   modelStarted?: unknown;
 }
@@ -195,7 +198,30 @@ async function hostCycle(protocol: 'v2' | 'v3', count: number, useActualCodexSco
   await writeFile(candidatePath, JSON.stringify(candidate));
   const wrapper = join(root, 'offline-python');
   const fake = join(root, 'offline-runner.py');
-  await writeFile(fake, `import json,pathlib,sys\nr=json.load(sys.stdin)\np=pathlib.Path(r['run_directory'])\np.mkdir(mode=0o700)\n(p/'request.synthetic.json').write_text(json.dumps(r))\nwork=json.loads(pathlib.Path(${JSON.stringify(candidatePath)}).read_text())\n(p/'contract-candidate.json').write_text(json.dumps({'tool_name':'return_wiselink_program_assessment','arguments':{'workJson':json.dumps(work,ensure_ascii=False)}}))\nprint(json.dumps({'transport_passed':True,'upstream_models':['glm-5.3'],'input_tokens':10,'output_tokens':5,'model_requests':1,'closure':'completed'}))\n`.replace(/\\n/gu, '\n'));
+  // This offline subprocess produces the same durable receipt fields as the
+  // real runner. It never launches Codex or calls an upstream model.
+  const dispatchMarker = `import os,pathlib\nwith open(${JSON.stringify(join(root, 'runner-dispatches'))},'a') as f: f.write('1\\n'); f.flush(); os.fsync(f.fileno())\n`;
+  await writeFile(fake, `${dispatchMarker}import hashlib,json,sys
+r=json.load(sys.stdin)
+p=pathlib.Path(r['run_directory'])
+p.mkdir(mode=0o700,exist_ok=True)
+def save(name,value):
+ q=p/(name+'.tmp')
+ with open(q,'x') as f: os.fchmod(f.fileno(),0o600); json.dump(value,f); f.flush(); os.fsync(f.fileno())
+ os.replace(q,p/name)
+ fd=os.open(p,os.O_RDONLY)
+ try: os.fsync(fd)
+ finally: os.close(fd)
+save('request.synthetic.json',r)
+work=json.loads(pathlib.Path(${JSON.stringify(candidatePath)}).read_text())
+candidate={'tool_name':'return_wiselink_program_assessment','arguments':{'workJson':json.dumps(work,ensure_ascii=False)}}
+summary={'transport_passed':True,'upstream_models':['glm-5.3'],'input_tokens':10,'output_tokens':5,'model_requests':1,'closure':'completed','process_group_closed':True,'upstream_response_present':True}
+save('upstream-response.json',{'format':'chat-completions-sse-events-v1','events':[{'model':'glm-5.3','choices':[{'index':0,'delta':{'content':json.dumps(candidate)},'finish_reason':'stop'}]}]})
+save('contract-candidate.json',candidate)
+save('transport-summary.json',summary)
+save('generation-receipt.json',{'version':1,'binding_sha256':r['binding_sha256'],'run_directory':str(p),'transport':summary,'candidate':candidate,'upstream_response_sha256':hashlib.sha256((p/'upstream-response.json').read_bytes()).hexdigest()})
+print(json.dumps(summary))
+`);
   await writeFile(wrapper, `#!/bin/sh\nexec python3 '${fake}'\n`.replace(/\\n/gu, '\n'), {mode: 0o700});
   const childSource = `
     import {pathToFileURL} from 'node:url';
@@ -212,7 +238,10 @@ async function hostCycle(protocol: 'v2' | 'v3', count: number, useActualCodexSco
     const options={modelExecutor:'CODEX',codexOptions:{codexBinary:'/synthetic/no-model',configPath:'/synthetic/no-credentials',
       runRoot:input.root,pythonBinary:input.wrapper},executionModel:input.started.task.executionModel,
       registeredModelRefs:['miaoda/glm-5.3'],sessionDiscriminator:'synthetic-codex-program',taskDeadline:'2099-01-01T00:00:00Z',
-      assessmentCheckpoint:checkpoint,assessmentBinding:{documentVersionId:input.started.task.documentVersionId},
+      assessmentCheckpoint:checkpoint,assessmentBinding:{attemptRef:input.started.attemptRef,
+        actionAttemptId:input.started.task.actionAttemptId,workItemId:input.started.task.workItemId,
+        documentVersionId:input.started.task.documentVersionId,inputRevision:input.started.task.inputRevision,
+        baseRevision:input.started.task.baseRevision},
       readAssessmentSources:request=>rpc('sources',request),readAssessmentWork:request=>rpc('work',request),
       saveAssessmentWork:request=>rpc('save',request),recordAssessmentProgramProgress:request=>rpc('progress',request),heartbeat:async()=>{}};
     if(input.scenario==='response-write-fail'){const write=checkpoint.writeOnce;checkpoint.writeOnce=async(key,value)=>{
@@ -221,6 +250,7 @@ async function hostCycle(protocol: 'v2' | 'v3', count: number, useActualCodexSco
     catch(error){result.ok=false;result.error=error.message;}
     result.material=await checkpoint.readOptional('program-materials');result.response=await checkpoint.readOptional('assessment-round-1.result');
     result.saveRequest=await checkpoint.readOptional('program-save-request');result.modelStarted=await checkpoint.readOptional('assessment-round-1.started');
+    result.receiptLinks=await checkpoint.readOptional('program-receipt-links');
     process.stdout.write(JSON.stringify(result));process.disconnect();
   `;
   const run = async (scenario = 'normal'): Promise<ChildResult> => new Promise((accept, reject) => {
@@ -242,7 +272,8 @@ async function hostCycle(protocol: 'v2' | 'v3', count: number, useActualCodexSco
   });
   return {...h, root, started, history, events, artifactBytes, candidate, run, authority, callMcp, fence,
     failNextSave: () => {failSaveBeforeCommit = true;}, loseNextSaveAck: () => {loseSaveAck = true;},
-    breakRunner: () => writeFile(fake, 'raise SystemExit(17)\n'),
+    breakRunner: () => writeFile(fake, `${dispatchMarker}raise SystemExit(17)\n`),
+    runnerDispatches: async () => (await readFile(join(root, 'runner-dispatches'), 'utf8')).trim().split('\n').length,
     close: async () => {
       if (useActualCodexScope) for (const [key, value] of Object.entries(savedEnvironment)) {
         if (value === undefined) delete process.env[key]; else process.env[key] = value;
@@ -294,9 +325,15 @@ describe('actual Host producer to CODEX program boundary (offline synthetic mode
         expect(h.work.recordWorkRead).toHaveBeenCalledTimes(1);
         expect(h.artifactBytes.size).toBe(1);
         expect(result.response!.value.raw).toContain('codex-structured-final-to-function-contract-v1');
+        expect(result.receiptLinks).toMatchObject({assessmentBinding: {attemptRef: h.started.attemptRef,
+          actionAttemptId: h.started.task.actionAttemptId, workItemId: h.started.task.workItemId,
+          documentVersionId: h.started.task.documentVersionId, inputRevision: h.started.task.inputRevision,
+          baseRevision: h.started.task.baseRevision}, modelRequestId: `program:${h.started.attemptRef}:round-1`,
+          saveRequestId: result.saveRequest!.requestId, workRevisionRef: h.history[0].workRevisionRef});
         const generations = (await readdir(h.root)).filter((entry) => entry.startsWith('generation-'));
         expect(generations).toHaveLength(1);
-        await h.run();
+        expect((await h.run()).ok).toBe(true);
+        expect(await h.runnerDispatches()).toBe(1);
         expect((await readdir(h.root)).filter((entry) => entry.startsWith('generation-'))).toHaveLength(1);
         expect(h.events.filter((event) => event.method === 'save')).toHaveLength(1);
         const saved = h.history[0];
@@ -367,18 +404,28 @@ describe('actual Host producer to CODEX program boundary (offline synthetic mode
         if (scenario === 'lost-save-ack') expect(first.ok).toBe(true);
         else expect(first.ok).toBe(false);
         const next = await h.run();
-        if (scenario === 'unknown-model' || scenario === 'response-write-fail') {
-          expect(next.error).toBe('PROGRAM_ASSESSMENT_MODEL_OUTCOME_UNKNOWN');
+        if (scenario === 'unknown-model') {
+          expect(next.error).toBe('CODEX_GENERATION_OUTCOME_UNKNOWN');
           expect(h.events.filter((event) => event.method === 'save')).toHaveLength(0);
           expect(h.history).toHaveLength(0);
         } else {
           expect(next.ok).toBe(true);
           expect(h.history).toHaveLength(1);
-          expect(first.response).toEqual(next.response);
-          expect(first.saveRequest).toEqual(next.saveRequest);
+          if (scenario === 'response-write-fail') {
+            expect(first.error).toBe('SYNTHETIC_RESPONSE_DISK_UNAVAILABLE');
+            expect(first.response).toBeNull();
+            expect(first.saveRequest).toBeNull();
+            expect(next.response!.value.codexReceipt.recovered).toBe(true);
+          } else {
+            expect(first.response).toEqual(next.response);
+            expect(first.saveRequest).toEqual(next.saveRequest);
+          }
           expect(h.events.filter((event) => event.method === 'save')).toHaveLength(scenario === 'save-unavailable' ? 2 : 1);
         }
-        expect((await readdir(h.root)).filter((entry) => entry.startsWith('generation-'))).toHaveLength(scenario === 'unknown-model' ? 0 : 1);
+        expect(await h.runnerDispatches()).toBe(1);
+        // The recovery directory is claimed before dispatch, including UNKNOWN;
+        // its presence alone does not prove a completed model response.
+        expect((await readdir(h.root)).filter((entry) => entry.startsWith('generation-'))).toHaveLength(1);
       } finally {await h.close();}
     }, 30_000);
 });

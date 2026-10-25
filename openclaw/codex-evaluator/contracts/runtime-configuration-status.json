@@ -1,0 +1,95 @@
+{
+  "scope": "Client implementation inventory and prior fixture evidence; no current live Host configuration inspection",
+  "baselineImplementation": "1155c386fff03eeb1753a6af3aab6f337a4413b6",
+  "baselineWiringRecord": "fc1322919b1b52433c33086c8db4aeb957f0e982",
+  "hostIntegrationReportedByUser": {
+    "branch": "codex/executor-transition-host-20261025",
+    "commitPrefix": "1eb9bcc8",
+    "productCodeIntegrated": false,
+    "independentlyFetched": false
+  },
+  "configuration": [
+    {
+      "field": "modelExecutor / --model-executor / WL_MODEL_EXECUTOR",
+      "expected": "CODEX",
+      "implementation": "AVAILABLE",
+      "liveBusinessConfiguration": "PENDING_EXACT_SINGLE_EXECUTOR_ENTRYPOINT"
+    },
+    {
+      "field": "codexOptions.codexBinary / --codex-binary / WL_CODEX_BINARY",
+      "expected": "Absolute executable path; validated runner requires codex-cli 0.164.0",
+      "implementation": "AVAILABLE",
+      "priorEvidence": "Six previous synthetic-Host GLM calls used this Codex version",
+      "liveBusinessConfiguration": "TARGET_INSTALL_PATH_TO_CONFIRM"
+    },
+    {
+      "field": "codexOptions.configPath / --codex-config / WL_CODEX_CONFIG_PATH",
+      "expected": "Absolute path to existing Miaoda provider configuration with file SecretRefs",
+      "implementation": "AVAILABLE",
+      "priorEvidence": "Miaoda GLM 5.3 route worked in the previous fixture; no OpenAI account/API key required",
+      "liveBusinessConfiguration": "AUTHORIZED_TARGET_CONFIG_TO_CONFIRM_WITHOUT_DISCLOSING_VALUES"
+    },
+    {
+      "field": "codexOptions.runRoot / --codex-run-root / WL_CODEX_RUN_ROOT",
+      "expected": "Private durable absolute path retained across consumer restarts",
+      "implementation": "DURABLE_DIRECTORY_AND_RESPONSE_JOURNAL_IMPLEMENTED",
+      "liveBusinessConfiguration": "DURABLE_VOLUME_AND_RETENTION_TO_CONFIRM"
+    },
+    {
+      "field": "checkpointRoot / --checkpoint-root",
+      "expected": "Explicit private durable absolute path for this single Codex executor",
+      "implementation": "ATOMIC_FILE_AND_DIRECTORY_FSYNC_IMPLEMENTED",
+      "liveBusinessConfiguration": "DURABLE_VOLUME_AND_EXPLICIT_PATH_TO_CONFIRM",
+      "note": "Existing CLI default retains its historical .openclaw path; integration must pass the agreed explicit path. No old checkpoint migration is requested."
+    },
+    {
+      "field": "Host config key/name",
+      "expected": "wiselink-codex-engineering-assessment",
+      "implementation": "CODEX_CONFIG_SELECTION_HAS_NO_LEGACY_KEY_FALLBACK",
+      "liveBusinessConfiguration": "NOT_VERIFIED"
+    },
+    {
+      "field": "hostMcpUrl / WL_REVIEW_HOST_MCP_URL",
+      "expected": "HTTPS URL ending in /openapi/wiselink/codex-mcp; no URL credentials/query/hash",
+      "implementation": "CHECKED_BEFORE_SDK_OR_NETWORK",
+      "liveBusinessConfiguration": "CODEX_SERVER_ENDPOINT_TO_CONFIRM"
+    },
+    {
+      "field": "Host headers / WL_REVIEW_HOST_MCP_HEADERS_JSON",
+      "expected": "Existing private authenticated transport configuration for the new approved service identity",
+      "implementation": "EXISTING_PRIVATE_HEADER_INPUT_SUPPORTED",
+      "liveBusinessConfiguration": "EXACT_PRINCIPAL_SCOPE_AND_CONFIGURATION_PRESENCE_TO_CONFIRM",
+      "containsCredentialValue": false
+    },
+    {
+      "field": "MCP initialize.serverInfo",
+      "expected": {"name": "wiselink-codex-engineering-assessment", "version": "1.2.0"},
+      "implementation": "EXACT_CLIENT_CHECK_IMPLEMENTED",
+      "liveBusinessConfiguration": "NOT_VERIFIED"
+    },
+    {
+      "field": "MCP tools/list and runtime provenance policy",
+      "expected": "Actual server tool list, JSON Schemas, runtime app/profile/skill policy aligned with current client validators",
+      "implementation": "PINNED_LEGACY_SOURCE_INVENTORY_EXPORTED",
+      "liveBusinessConfiguration": "HOST_SERVER_PRODUCT_IMPLEMENTATION_AND_DISCOVERY_TO_CONFIRM",
+      "note": "Legacy Task/Result envelope names, runtime app constant and provenance tool key remain in shared validators. They are not evidence that the new Codex app is registered."
+    },
+    {
+      "field": "Single business executor enrollment",
+      "expected": "One active authorized queue consumer; exact task scope and service principal agreed before switching",
+      "implementation": "EXISTING_QUEUE_CLAIM_AND_LEASE_PROTOCOL_REUSED",
+      "liveBusinessConfiguration": "PENDING_MAIN_CONTROLLER_CONFIRMATION"
+    }
+  ],
+  "currentVerification": {
+    "credentialsChanged": false,
+    "realModelCallsThisDelivery": 0,
+    "realHostCallsThisDelivery": 0,
+    "hostAuthenticationVerified": false,
+    "hostRuntimeRegistrationVerified": false,
+    "businessHostBound": false,
+    "realSaveVerified": false,
+    "productReaderVerified": false,
+    "newCodeDeployedToMiaoda": false
+  }
+}

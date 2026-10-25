@@ -805,6 +805,15 @@ export async function runDynamicEvaluation(input) {
   const execution = reconciled ?? await recoverAssessmentExecution(begin, problemV2, input.recoverAssessmentExecution) ?? await executeInitialAssessment(begin, problemV2, () =>
     evaluateDynamicRules(structuredClone(begin.modelInput), problemV2 ? problemAssessmentHooks(begin, callTool) : undefined));
   await heartbeatAttempt(begin, callTool);
+  // The program executor has already saved and independently read its exact
+  // request. Read the current authorized revision once more before commit so
+  // the projection can be checked against the actual Host SAVE identity.
+  // Host permits workRevisionRef selection only for the previous-work baseline;
+  // latest only locates the original SAVE key; the next read pins that key.
+  const program = execution.failureCode ? null : programAssessmentCommitBinding(begin, execution.output);
+  if (program) {
+    await readExactProgramAssessmentWork(begin, program, callTool, 'RUNNING');
+  }
   const serializedOutput = execution.failureCode ? null : problemV2 ? execution.output : serializeDynamicRulesCommitOutput(
     begin.modelInput,
     execution.output,
@@ -823,8 +832,6 @@ export async function runDynamicEvaluation(input) {
       'commit_dynamic_evaluation_candidate',
       commitArgs(begin, result),
     );
-    if (execution.failureCode) assertFailedAssessmentCommit(committed, begin, result);
-    else assertDynamicCommit(committed, workItemId, programAssessmentCommitBinding(begin, execution.output));
   } catch (error) {
     return recoverCommitResponseLoss({
       mode: 'INITIAL_ANALYSIS',
@@ -834,9 +841,15 @@ export async function runDynamicEvaluation(input) {
       result,
       callTool,
       cause: error,
+      program,
     });
   }
+  // A received but invalid ACK is a protocol failure, not a lost ACK that a
+  // generic SUCCEEDED status may silently repair.
+  if (execution.failureCode) assertFailedAssessmentCommit(committed, begin, result);
+  else assertDynamicCommit(committed, workItemId, program);
   after ??= await callTool('get_parse_status', { workItemId });
+  if (program) assertProgramAssessmentStatusReadback(after, workItemId, program);
   const parsed =
     query === undefined
       ? null
@@ -1317,12 +1330,19 @@ async function recoverInitialCommitting({ stage, before, begin, callTool }) {
   // call or a new business result. The Host rejects a changed result or owner.
   const tool = stage === 'EVALUATE_JOBAID'
     ? 'commit_dynamic_evaluation_candidate' : 'commit_overall_candidate';
+  const program = stage === 'EVALUATE_JOBAID' && begin.task.modelInput?.executionMode === 'PROGRAM_CONTROLLED_V1'
+    ? programAssessmentCommitBinding(begin, JSON.parse(observed.status.recoveryResult.modelOutput)) : null;
+  if (program) {
+    await readExactProgramAssessmentWork(begin, program, callTool, 'COMMITTING');
+  }
   const committed = await callTool(tool, commitArgs(begin, observed.status.recoveryResult));
   if (stage === 'EVALUATE_JOBAID') assertDynamicCommit(committed, begin.task.workItemId,
-    begin.task.modelInput?.executionMode === 'PROGRAM_CONTROLLED_V1'
-      ? programAssessmentCommitBinding(begin, JSON.parse(observed.status.recoveryResult.modelOutput)) : null);
+    program);
   else assertOverallCommit(committed, begin.task.workItemId);
-  return { ...observed, outcome: 'COMMITTING_REPLAYED', committed };
+  const after = program ? await callTool('get_parse_status', { workItemId: begin.task.workItemId }) : null;
+  if (program) assertProgramAssessmentStatusReadback(after, begin.task.workItemId, program);
+  return { ...observed, outcome: 'COMMITTING_REPLAYED', committed,
+    ...(after ? { after } : {}) };
 }
 
 async function recoverCommitting({ mode, operation, before, begin, callTool }) {
@@ -1374,6 +1394,7 @@ async function recoverCommitResponseLoss({
   result,
   callTool,
   cause,
+  program = null,
 }) {
   let status;
   try {
@@ -1401,6 +1422,12 @@ async function recoverCommitResponseLoss({
       throw outcomeUnknown('HOST_MCP_COMMIT_OUTCOME_UNKNOWN', cause, status);
     }
   }
+  let after;
+  if (status.status === 'SUCCEEDED' && program) {
+    try { after = await callTool('get_parse_status', { workItemId: begin.task.workItemId }); }
+    catch { throw outcomeUnknown('HOST_MCP_PROGRAM_PROJECTION_READBACK_FAILED', cause, status); }
+    assertProgramAssessmentStatusReadback(after, begin.task.workItemId, program);
+  }
   return {
     ok: status.status === 'SUCCEEDED',
     mode,
@@ -1409,6 +1436,7 @@ async function recoverCommitResponseLoss({
     attemptRef: begin.attemptRef,
     before,
     status,
+    ...(after ? { after } : {}),
     provenance: resultProvenance(result),
   };
 }
@@ -1575,7 +1603,9 @@ function problemAssessmentHooks(begin, callTool) {
   const control = { attemptRef: begin.attemptRef, leaseToken: begin.leaseToken, leaseGeneration: begin.leaseGeneration };
   const programControlled = begin.modelInput.executionMode === 'PROGRAM_CONTROLLED_V1';
   return {
-    assessmentBinding: { documentVersionId: begin.task.documentVersionId, inputRevision: begin.task.inputRevision },
+    assessmentBinding: { attemptRef: begin.attemptRef, actionAttemptId: begin.task.actionAttemptId,
+      workItemId: begin.task.workItemId, documentVersionId: begin.task.documentVersionId,
+      inputRevision: begin.task.inputRevision, baseRevision: begin.task.baseRevision },
     heartbeat: () => heartbeatAttempt(begin, callTool),
     queryAssessmentKnowledge: (intent) => callTool('query_assessment_knowledge', { ...intent, ...control }),
     readAssessmentSources: (intent) => callTool('read_assessment_sources', { ...intent, ...control }),
@@ -2114,17 +2144,46 @@ function programAssessmentCommitBinding(begin, output) {
     ? { actionAttemptId: begin.task.actionAttemptId, workRevisionRef: output?.workRevisionRef } : null;
 }
 
+async function readExactProgramAssessmentWork(begin, program, callTool, executionStatus) {
+  const scope = { attemptRef: begin.attemptRef, workItemId: begin.task.workItemId };
+  const located = await callTool('read_assessment_work', scope);
+  assertProgramAssessmentSavedReadback(located, begin, program, executionStatus);
+  const exact = await callTool('read_assessment_work', { ...scope, requestId: program.saveRequestId,
+    // COMMITTING is an inspection of the sealed result, not a new RUNNING read
+    // observation. The Host still authorizes this original attempt and key.
+    ...(executionStatus === 'RUNNING'
+      ? { leaseToken: begin.leaseToken, leaseGeneration: begin.leaseGeneration } : {}) });
+  if (canonicalJson(exact?.revision ?? null) !== canonicalJson(located.revision))
+    throw new Error('HOST_MCP_PROGRAM_ASSESSMENT_EXACT_READBACK_MISMATCH');
+  assertProgramAssessmentSavedReadback(exact, begin, program, executionStatus);
+}
+
+function assertProgramAssessmentSavedReadback(packet, begin, program, expectedExecutionStatus) {
+  const revision = packet?.revision;
+  if (packet?.schemaVersion !== 'wiselink.jobaid-work-read.v2' ||
+      packet.attemptId !== begin.task.actionAttemptId ||
+      packet.inputWorkRevision !== begin.modelInput.expectedWorkRevision ||
+      packet.executionStatus !== expectedExecutionStatus ||
+      revision?.workRevisionRef !== program.workRevisionRef ||
+      revision.actionAttemptId !== begin.task.actionAttemptId ||
+      revision.workItemId !== begin.task.workItemId ||
+      revision.documentVersionId !== begin.task.documentVersionId ||
+      revision.basedOnWorkItemRevision !== begin.task.baseRevision ||
+      revision.workRevision !== begin.modelInput.expectedWorkRevision + 1 ||
+      typeof revision.requestId !== 'string' || !revision.requestId ||
+      !['COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS'].includes(revision.content?.roundCompletion) ||
+      revision.content.overviewStatus !== 'CURRENT' ||
+      typeof revision.content.understanding !== 'string' || !revision.content.understanding.trim())
+    throw new Error('HOST_MCP_PROGRAM_ASSESSMENT_SAVED_READBACK_INVALID');
+  program.saveRequestId = revision.requestId;
+  program.workRevision = revision.workRevision;
+}
+
 function assertDynamicCommit(value, workItemId, program = null) {
   if (program) {
-    const overall = value?.overallSynthesis, source = overall?.sourceAssessment;
-    if (!program.workRevisionRef || value?.workItemId !== workItemId || !Number.isSafeInteger(value.workItemRevision) ||
-        value.status !== 'OVERALL_CANDIDATE_READY' || value.baseRules?.workRevisionRef !== program.workRevisionRef ||
-        overall?.status !== 'CANDIDATE_ONLY' || overall.executionKind !== 'DETERMINISTIC_PROJECTION' ||
-        overall.modelRequests !== 0 || overall.basedOnJobAidWorkRevisionRef !== program.workRevisionRef ||
-        source?.actionAttemptId !== program.actionAttemptId || source.workRevisionRef !== program.workRevisionRef ||
-        !Number.isSafeInteger(source.workRevision) || source.workRevision < 1 ||
-        typeof source.saveRequestId !== 'string' || !source.saveRequestId || !Number.isFinite(Date.parse(source.readObservedAt)))
+    if (value?.workItemId !== workItemId || !Number.isSafeInteger(value.workItemRevision))
       throw new Error('HOST_MCP_PROGRAM_ASSESSMENT_COMMIT_RESULT_INVALID');
+    assertProgramAssessmentProjection(value, program);
     return;
   }
   if (
@@ -2137,6 +2196,27 @@ function assertDynamicCommit(value, workItemId, program = null) {
   ) {
     throw new Error('HOST_MCP_DYNAMIC_COMMIT_RESULT_INVALID');
   }
+}
+
+function assertProgramAssessmentProjection(value, program) {
+  const overall = value?.overallSynthesis, source = overall?.sourceAssessment;
+  if (!program.workRevisionRef || value?.status !== 'OVERALL_CANDIDATE_READY' ||
+      value.baseRules?.workRevisionRef !== program.workRevisionRef ||
+      overall?.status !== 'CANDIDATE_ONLY' || overall.executionKind !== 'DETERMINISTIC_PROJECTION' ||
+      overall.modelRequests !== 0 || overall.basedOnJobAidWorkRevisionRef !== program.workRevisionRef ||
+      source?.actionAttemptId !== program.actionAttemptId || source.workRevisionRef !== program.workRevisionRef ||
+      source.workRevision !== program.workRevision ||
+      source.saveRequestId !== program.saveRequestId || !Number.isFinite(Date.parse(source.readObservedAt)))
+    throw new Error('HOST_MCP_PROGRAM_ASSESSMENT_COMMIT_RESULT_INVALID');
+}
+
+// get_parse_status wraps this existing projection; its entry does not expose
+// workItemRevision. Do not manufacture a commit ACK from this read response.
+export function assertProgramAssessmentStatusReadback(value, workItemId, program) {
+  if (value?.entry?.workItemId !== workItemId)
+    throw new Error('HOST_MCP_PROGRAM_PROJECTION_IDENTITY_MISMATCH');
+  assertProgramAssessmentProjection(value.integratedAssessmentSummary, program);
+  return value;
 }
 
 function assertOverallCommit(value, workItemId) {

@@ -1,8 +1,8 @@
 # Host ↔ Codex 非秘密机器接口包
 
-本包用于转交 ChatGPT 审阅当前实际接线，日期为 2026-10-25。它来自本地 Host 工作源码及已导入的新执行器客户端；准确 HEAD、源文件及内容摘要见 [source-manifest.json](source-manifest.json)。它不是新协议，也不是线上运行证明。
+本包用于转交ChatGPT审阅当前实际接线，日期为2026-10-25。本轮在Host `4e8a39b1`基础上选择性导入新执行器`94c54de`（父`fc132291`），保留本地Codex路由和安全边界。准确来源见 [source-version.json](source-version.json) 与 [source-manifest.json](source-manifest.json)。它不是新协议，也不是线上运行证明。
 
-**状态：本地源码已实现独立 Codex MCP 身份和路由；未部署本批接线，未执行真实业务或模型。** 官方名称级只读观察显示开发、线上环境均尚无 `WL_MODEL_EXECUTOR`、`WL_CODEX_*`，也没有 Codex 精确路由的 API Key 授权。未查询或导出配置值；运行端凭据、目标租户/actor、来源授权和新事项均不在此包。观察时间和限制见 [configuration/observed-status.json](configuration/observed-status.json)。
+**状态：本地已实现独立Codex MCP/路由、单新事项程序初评scope、原请求恢复与准确双读收尾；本轮未部署、未执行真实业务或模型。** 目标运行应用从`WL_CODEX_RUNTIME_APP_ID`读取并拒绝旧应用身份；首批Applicability/Review等CODEX业务入口显式拒绝。官方名称级历史观察当时尚无`WL_MODEL_EXECUTOR`、`WL_CODEX_*`及新路径Key授权，不等于实时配置检查；未查询或导出其值。实际宿主/调度、两个持久目录所在卷与新事项授权仍待现场核对。观察时间见 [configuration/observed-status.json](configuration/observed-status.json)。
 
 建议按以下顺序阅读：
 
@@ -12,6 +12,7 @@
 4. [mcp/codex.initialize.response.json](mcp/codex.initialize.response.json)、[mcp/codex.tools-list.json](mcp/codex.tools-list.json)：官方 SDK 实际离线握手与完整工具 metadata/JSONSchema；[mcp/tool-index.json](mcp/tool-index.json) 提供逐工具索引。
 5. [rest/openapi.paths.json](rest/openapi.paths.json)、[types/source-declarations.json](types/source-declarations.json)、[errors/source-catalog.json](errors/source-catalog.json)：当前源码的 HTTP 合同、完整原始类型声明和错误定位。
 6. [examples/README.md](examples/README.md)：合成业务数据经过真实 Host 服务后脱敏的字段/关联示例，以及纯函数 Overall 投影；不含线上业务内容或可能私有的方法正文。
+7. [CLIENT_DELTA.md](CLIENT_DELTA.md)：上游42项（35机械/7原表达式）到本地45项的完整对照；当前schema直接引用同一个SDK包。宿主配置与切换隔离见 [ROLLOUT_AND_ISOLATION.md](ROLLOUT_AND_ISOLATION.md)。
 
 `1.2.0` 是 MCP **服务版本**。当前 45 个工具没有各自独立的版本声明，也没有声明 `outputSchema`；索引中逐工具 `toolVersion: null` 如实表示未声明。输入 JSONSchema 是完整 `tools/list` 原样输出，不能把 `1.2.0` 填成每个工具的 schema 版本。Task/Result/工作正文各自的 `schemaVersion`，以及 `result.toolVersions` 中的协议/执行器来源字段，是另外的维度。
 
@@ -24,6 +25,7 @@
 ```sh
 node scripts/export-host-codex-contract.mjs
 node scripts/export-host-codex-contract.mjs --check
+node openclaw/codex-evaluator/check-host-contract.mjs --current-interface
 node docs/coordination/host-codex-interface-20261025/validate-package.mjs
 ```
 

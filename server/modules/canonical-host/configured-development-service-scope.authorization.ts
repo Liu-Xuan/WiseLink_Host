@@ -1,4 +1,4 @@
-import { assertCanonicalHostExecutor, canonicalExecutorSetting, canonicalExecutorRuntime, canonicalCodexWorkItemScope, assertCanonicalCodexWorkItem } from './canonical-host-executor-policy';
+import { assertCanonicalHostExecutor, canonicalHostExecutor, canonicalExecutorSetting, canonicalExecutorRuntime, canonicalCodexWorkItemScope, assertCanonicalCodexWorkItem } from './canonical-host-executor-policy';
 import { createHash } from 'node:crypto';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import { MiaodaHostedDocumentCatalog } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
@@ -22,6 +22,14 @@ import {
 } from './automatic-work-item-lease-authorization.port';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
+
+// Applicability and Review still seal the original runtime identity. The first
+// CODEX rollout must not mint or consume those legacy contracts as a new app.
+function assertInitialCodexOperation(): void {
+  if (canonicalHostExecutor() === 'CODEX') throw Object.assign(
+    new Error('CANONICAL_CODEX_OPERATION_NOT_SUPPORTED'),
+    { code: 'CANONICAL_CODEX_OPERATION_NOT_SUPPORTED', statusCode: 403 });
+}
 
 /**
  * Explicitly opt-in DEV/UAT service scope for one isolated WorkItem.
@@ -319,6 +327,8 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     workItemId: string;
     successorReviewTurnRef?: string;
   }): Promise<CanonicalVerifiedServiceScope> {
+    if (input.operation === 'GET_PENDING_REVIEW_TURN' || input.successorReviewTurnRef)
+      assertInitialCodexOperation();
     if (input.operation === 'BEGIN_OVERALL' && input.successorReviewTurnRef) {
       const config = requiredSuccessorReviewConfig();
       if (!this.automaticLeaseAuthorization?.authorizeSuccessorOverall)
@@ -366,6 +376,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     reviewConversationRef: string;
     requestId: string;
   }): Promise<CanonicalVerifiedServiceScope> {
+    assertInitialCodexOperation();
     if (!input.reviewConversationRef.trim() || !input.requestId.trim()) {
       throw scopeNotFound();
     }
@@ -408,6 +419,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     applicabilityContextRef: string;
     requestId: string;
   }): Promise<CanonicalVerifiedApplicabilityContextScope> {
+    assertInitialCodexOperation();
     const config = requiredConfig();
     const expectedRef = canonicalExecutorSetting('APPLICABILITY_CONTEXT_REF');
     if (!input.requestId.trim()) throw scopeNotFound();
@@ -478,6 +490,8 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     attemptRef: string;
     workItemId?: string;
   }): Promise<CanonicalVerifiedOpenClawAttemptScope> {
+    if (['COMMIT_APPLICABILITY', 'GET_REVIEW_CONTEXT', 'READ_REVIEW_SOURCE_REFS', 'COMMIT_REVIEW']
+      .includes(input.operation)) assertInitialCodexOperation();
     if (!input.attemptRef.trim()) throw scopeNotFound();
     const config = configuredStaticWorkItemScope();
     if (config) {

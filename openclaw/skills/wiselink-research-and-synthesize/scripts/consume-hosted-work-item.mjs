@@ -1694,11 +1694,22 @@ export async function runHostedInitialStage(options, dependencies) {
   let modelCallCount = 0;
   let problemAssessment = false;
   let taskDeadline;
+  let sealedRecoveryTask = null;
+  let sealedSaveRequestId = null;
   const callTool = async (name, args) => {
     if (!INITIAL_TOOLS.has(name)) throw new Error('INITIAL_TOOL_NOT_ALLOWED');
+    const sealedWorkInspection = name === 'read_assessment_work' && operation === 'EVALUATE_JOBAID';
     if (options.queueCommitRecovery && !['get_parse_status', 'get_action_attempt_status',
-      INITIAL_ASSESSMENT_OPERATIONS[operation].begin, INITIAL_ASSESSMENT_OPERATIONS[operation].commit].includes(name))
+      INITIAL_ASSESSMENT_OPERATIONS[operation].begin, INITIAL_ASSESSMENT_OPERATIONS[operation].commit].includes(name) &&
+        !sealedWorkInspection)
       throw new Error('AUTO_WORK_ITEM_COMMITTING_RECOVERY_TOOL_REJECTED');
+    if (options.queueCommitRecovery && sealedWorkInspection &&
+        (args.attemptRef !== options.queueCommitRecovery.attemptRef ||
+         args.workItemId !== options.workItemId ||
+         Object.keys(args).some(key => !['attemptRef', 'workItemId', 'requestId'].includes(key)) ||
+         (Object.hasOwn(args, 'requestId') &&
+           (!sealedSaveRequestId || args.requestId !== sealedSaveRequestId))))
+      throw new Error('AUTO_WORK_ITEM_COMMITTING_RECOVERY_CHANGED');
     if (options.queueCommitRecovery && name.startsWith('commit_') &&
         (args.attemptRef !== options.queueCommitRecovery.attemptRef ||
          args.result?.contentHash !== options.queueCommitRecovery.resultContentHash))
@@ -1756,6 +1767,12 @@ export async function runHostedInitialStage(options, dependencies) {
         throw new Error('AUTO_WORK_ITEM_EXPLICIT_STAGE_CHANGED');
     }
     await jobAidBudget?.reconcile(name, value);
+    if (options.queueCommitRecovery && sealedWorkInspection && !Object.hasOwn(args, 'requestId') &&
+        value?.attemptId === sealedRecoveryTask?.actionAttemptId &&
+        value.revision?.actionAttemptId === sealedRecoveryTask?.actionAttemptId &&
+        value.revision?.workItemId === options.workItemId &&
+        typeof value.revision?.requestId === 'string' && value.revision.requestId)
+      sealedSaveRequestId = value.revision.requestId;
     if (name.startsWith('begin_') && options.assessmentRecovery?.status === 'RECOVERY_COMMITTING')
       assertCommittingInitialClaim(options.assessmentRecovery.previousClaim ??
         { attemptRef: options.assessmentRecovery.attemptRef }, value);
@@ -1765,6 +1782,7 @@ export async function runHostedInitialStage(options, dependencies) {
           value.task.inputRevision !== initial.workItemRevision ||
           value.recoveryResult.contentHash !== options.queueCommitRecovery.resultContentHash)
         throw new Error('AUTO_WORK_ITEM_COMMITTING_RECOVERY_CHANGED');
+      sealedRecoveryTask = value.task;
     }
     if (name === 'begin_applicability_evaluation' && recoveryBegin &&
       value.attemptRef !== options.assessmentRecovery.previousAttemptRef)

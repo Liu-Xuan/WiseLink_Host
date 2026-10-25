@@ -948,17 +948,23 @@
         "test/unit/program-assessment-materials-ui.spec.ts",
         "test/unit/tdms-source/tdms-program-material-membership.spec.ts",
         "test/unit/canonical-jobaid-problem-continuation.spec.ts",
-        "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25"
+        "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25",
+        "test/unit/codex-host-program-boundary.spec.ts",
+        "test/unit/canonical-host-codex-executor.spec.ts",
+        "openclaw/skills/wiselink-research-and-synthesize/tests/codex-queue-commit-recovery.test.mjs",
+        "openclaw/codex-evaluator/program-finish-recovery.test.mjs",
+        "docs/coordination/host-codex-interface-20261025/README.md"
       ],
       "gaps": [
         {
           "id": "program.initial-live",
           "kind": "runtime",
-          "reason": "此binding的consumer/sourceRevision/sourceRefs仍标识当前已核实a65/c240实现；旧单次请求材料身份缺字段、模型0/SAVE0与UNKNOWN/active claim保持。目标已改为新执行器接既有Host能力；0b33可选实现仅有真实Codex+GLM/内存Host fixture，realHostCalled=false、hostMcpConfigured=false、readyForBusinessExecution=false，重启持久恢复未接，不能视作已替换线上执行器或业务通过。",
-          "nextAction": "优先新执行器的一条新真实事项：合法Host接口与准确材料→生成→Host SAVE→独立READ→确定性同版Overall→正常页面/图→正常结束。c241整包安装、旧UNKNOWN救回和旧链复演不再前置；当前线上实现保持，先补真实接线与验收缺口。 按执行器切换说明接入当前Host身份/权限、材料与保存/读取/投影消费者；旧UNKNOWN不改写，不为恢复旧请求阻塞新真实事项。"
+          "reason": "线上仍a65/c240；本地已审查导入94c54程序恢复并完成独立CODEX固定路由/单一入口、严格新intake范围及COMMITTING原结果恢复修订。离线测试不证明真实SAVE/Overall提交/ACK。实际prompt/bridge payload/启动前预定run关联、新宿主持久目录及持续唤起、真实身份配置和业务验收尚未闭合。旧UNKNOWN保持历史事实。",
+          "nextAction": "按图契约2.3/3.6逐步取证：先补本次原输入与run关联、宿主/目录持久性和获准独立配置，再验新事项原SAVE key独立READ、真实Overall提交、attempt终态、queueACK及同版原页面。现库活动索引已核正确，不为schema.ts声明漂移执行DDL。"
         }
       ],
-      "previousReviewedRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554"
+      "previousReviewedRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
+      "reviewScope": "线上映射仍为准确a65/c240；本地94c54恢复与4e8 Host接线的后继修订以图契约v1.8 2.3/3.6/E.38及接口包登记，未部署、不升级原业务场景。"
     }
   ]
 }

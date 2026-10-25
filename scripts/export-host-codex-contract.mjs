@@ -32,6 +32,7 @@ const sourceFiles = new Set([
   'server/modules/canonical-host/canonical-host-executor-policy.ts',
   'server/modules/canonical-host/configured-development-service-scope.authorization.ts',
   'server/modules/canonical-host/canonical-host-openclaw-runtime-policy.ts',
+  'server/modules/canonical-host/canonical-host-openclaw-discovery.service.ts',
   'server/modules/canonical-host/canonical-jobaid-problem.service.ts',
   'server/modules/canonical-host/program-controlled-assessment.ts',
   'server/modules/canonical-host/jobaid-overall-projection.ts',
@@ -42,9 +43,19 @@ const sourceFiles = new Set([
   'openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs',
   'openclaw/skills/wiselink-research-and-synthesize/scripts/program-assessment-materials.mjs',
   'openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs',
   'openclaw/codex-evaluator/codex-generation.mjs',
   'openclaw/codex-evaluator/run_codex_generation.py',
+  'openclaw/codex-evaluator/miaoda_responses_bridge.py',
+  'openclaw/codex-evaluator/preflight.mjs',
+  'openclaw/codex-evaluator/check-host-contract.mjs',
+  'openclaw/codex-evaluator/current-interface.test.mjs',
+  'openclaw/codex-evaluator/contracts/host-source-interface.json',
+  'openclaw/codex-evaluator/contracts/host-input-examples.json',
+  'openclaw/codex-evaluator/contracts/runtime-configuration-status.json',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs',
   'test/unit/codex-host-program-boundary.spec.ts',
+  'scripts/export-host-codex-contract.mjs',
   'docs/openapi.json',
 ]);
 
@@ -164,6 +175,55 @@ function errorLiterals(paths) {
   return records;
 }
 
+function normalizeSchema(value, annotationsRemoved = false, key = '') {
+  if (Array.isArray(value)) {
+    const items = value.map(item => normalizeSchema(item, annotationsRemoved));
+    return ['required', 'enum', 'type', 'allOf', 'anyOf', 'oneOf'].includes(key)
+      ? items.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))) : items;
+  }
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.keys(value).sort()
+    .filter(name => !annotationsRemoved || !['$schema', '$comment', 'title', 'description', 'examples'].includes(name))
+    .map(name => [name, normalizeSchema(value[name], annotationsRemoved, name)]));
+}
+
+function schemaDifferences(current, pinned, pointer = '') {
+  if (JSON.stringify(current) === JSON.stringify(pinned)) return [];
+  if (Array.isArray(current) && Array.isArray(pinned)) {
+    const changes = [];
+    for (let index = 0; index < Math.max(current.length, pinned.length); index += 1)
+      changes.push(...schemaDifferences(current[index], pinned[index], `${pointer}/${index}`));
+    return changes;
+  }
+  if (current && pinned && typeof current === 'object' && typeof pinned === 'object' &&
+      !Array.isArray(current) && !Array.isArray(pinned))
+    return [...new Set([...Object.keys(current), ...Object.keys(pinned)])].sort().flatMap(key =>
+      schemaDifferences(current[key], pinned[key], `${pointer}/${key.replace(/~/gu, '~0').replace(/\//gu, '~1')}`));
+  return [{ pointer: pointer || '/', current: current ?? { absent: true }, pinned: pinned ?? { absent: true } }];
+}
+
+function recoverySourceExpressions() {
+  const fragments = [];
+  for (const path of ['openclaw/codex-evaluator/codex-generation.mjs',
+    'openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs']) {
+    const source = ts.createSourceFile(path, sourceText(path), ts.ScriptTarget.Latest, true);
+    const append = (name, node) => fragments.push({name, source:path,
+      line:source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+      expression:node.getText(source)});
+    function visit(node) {
+      if (ts.isPropertyAssignment(node) && node.name.getText(source) === 'codexReceipt')
+        append('codexReceipt',node.initializer);
+      if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'binding' &&
+          path.endsWith('codex-generation.mjs')) append('generationBinding',node.initializer);
+      if (ts.isCallExpression(node) && node.arguments.length > 1 && ts.isStringLiteral(node.arguments[0]) &&
+          node.arguments[0].text === 'program-receipt-links') append('programReceiptLinks',node.arguments[1]);
+      ts.forEachChild(node,visit);
+    }
+    visit(source);
+  }
+  return fragments;
+}
+
 try {
   const hosted = await listing('HOSTED');
   const codex = await listing('CODEX');
@@ -186,6 +246,45 @@ try {
       toolVersion: tool.version ?? tool._meta?.version ?? null,
       outputSchemaDeclared: tool.outputSchema !== undefined,
       schemaDialect: tool.inputSchema?.$schema ?? null })),
+  });
+
+  const pinnedClient = JSON.parse(sourceText('openclaw/codex-evaluator/contracts/host-source-interface.json'));
+  const pinnedRecords = {...pinnedClient.serverSource.tools, ...pinnedClient.serverSource.excludedToolSchemas};
+  const clientComparison = Object.entries(pinnedRecords).map(([name, record]) => {
+    const current = codex.tools.tools.find(tool => tool.name === name);
+    assert.ok(current?.inputSchema, `CURRENT_SDK_SCHEMA_MISSING:${name}`);
+    return { name, currentMetadataFile: `tools/${name}.json`, currentIndividualToolVersion: null,
+      upstreamSchemaStatus: record.schemaStatus,
+      upstreamUnresolvedDependencies: record.unresolvedDependencies ?? [],
+      currentDependencyStatus: 'COMPLETE_SDK_INPUT_SCHEMA_AVAILABLE',
+      completeUpstreamSchemaCompared: record.inputSchema !== undefined,
+      ...(record.inputSchema ? {
+        fullSchemaDifferences: schemaDifferences(normalizeSchema(current.inputSchema), normalizeSchema(record.inputSchema)),
+        validationKeywordDifferences: schemaDifferences(normalizeSchema(current.inputSchema, true), normalizeSchema(record.inputSchema, true)),
+      } : {}),
+      semanticBoundary: 'Published JSONSchema is a complete SDK input-shape export; runtime Zod transformations/refinements and Host business authorization remain authoritative.',
+    };
+  });
+  assert.equal(clientComparison.length, 42);
+  add('mcp/client-94c54de-comparison.json', {
+    upstreamCommit: '94c54de74a0d7a0c0d66778a04a161e2017fce28',
+    upstreamParent: 'fc1322919b1b52433c33086c8db4aeb957f0e982',
+    upstreamArtifactPath: 'openclaw/codex-evaluator/contracts/host-source-interface.json',
+    upstreamArtifactBoundary: pinnedClient.serverSource.identityStatus,
+    currentSdkTools: codex.tools.tools.length, upstreamInventoriedNames: clientComparison.length,
+    upstreamMechanicalInputSchemas: clientComparison.filter(item => item.completeUpstreamSchemaCompared).length,
+    upstreamSourceOnlyNames: clientComparison.filter(item => !item.completeUpstreamSchemaCompared).map(item => item.name),
+    additionalCurrentTools: codex.tools.tools.filter(tool => !Object.hasOwn(pinnedRecords,tool.name))
+      .map(tool => ({name:tool.name, currentMetadataFile:`tools/${tool.name}.json`})),
+    summary: {
+      validationKeywordEqualNames: clientComparison.filter(item => item.completeUpstreamSchemaCompared &&
+        item.validationKeywordDifferences.length === 0).map(item => item.name),
+      validationKeywordDifferenceNames: clientComparison.filter(item => item.completeUpstreamSchemaCompared &&
+        item.validationKeywordDifferences.length > 0).map(item => item.name),
+    },
+    currentVerifier: 'node openclaw/codex-evaluator/check-host-contract.mjs --current-interface',
+    comparisonNote: 'Annotation/dialect fields are omitted only in validationKeywordDifferences; required/enum/union order is normalized. Differences are reported, not silently declared acceptance-equivalent. No tool-list copy or new runtime contract is created.',
+    tools: clientComparison,
   });
 
   const api = JSON.parse(sourceText('docs/openapi.json'));
@@ -215,6 +314,11 @@ try {
   add('types/source-declarations.json', { format: 'unmodified-typescript-type-declarations',
     note: 'These are exact source declarations, not generated JSONSchema or a new wire protocol. Imported type references retain their original names.',
     declarations: typeRecords });
+  add('types/consumer-recovery-source.json', {
+    format:'actual-source-object-expressions',
+    note:'Current consumer-local receipt objects, not a new Host API/schema or proof of real execution. Runtime paths and secret values are not included.',
+    fragments:recoverySourceExpressions(),
+  });
 
   add('errors/source-catalog.json', { format: 'source-error-codes-and-templates',
     note: 'Exact throw/helper error literals from the listed sources. Not all errors have a dedicated HTTP status or reach every endpoint; no business call was made to synthesize a failure.',
@@ -262,6 +366,26 @@ try {
       'codexOptions.configPath', 'codexOptions.runRoot', 'codexOptions.pythonBinary',
       'codexOptions.reasoningEffort', 'codexOptions.maxOutputTokens', 'codexOptions.timeoutSeconds'],
     note: 'A listed optional scope name is not a request to enable that scope. Presence never proves value correctness or current authorization.',
+  });
+  add('configuration/runtime-identity.json', {
+    source: 'Host executor policy, service-scope authorization and existing Task/Result validators; rollout target supplied by the coordinator',
+    activeSelector: 'WL_MODEL_EXECUTOR', codexSelectorValue: 'CODEX',
+    mcpServerInfo: codex.initialize.result.serverInfo,
+    runtimeKind: 'CODEX', runtimeAppSetting: 'WL_CODEX_RUNTIME_APP_ID',
+    approvedTargetRuntimeAppId: 'app_17gr74pbere',
+    runtimeAppConfigurationValueVerified: false,
+    legacyRuntimeAppIdRejectedForCodex: true,
+    independentPrincipalRequired: true, exactNewWorkItemAndIntakeRequired: true,
+    firstRolloutBusiness: 'PROGRAM_CONTROLLED_V1_INITIAL_ASSESSMENT',
+    unsupportedCodexBusiness: ['APPLICABILITY', 'REVIEW', 'PENDING_REVIEW_DISCOVERY', 'SUCCESSOR_REVIEW_OVERALL'],
+    unsupportedError: {code:'CANONICAL_CODEX_OPERATION_NOT_SUPPORTED', statusCode:403},
+    retainedWireNames: ['wiselink.3_1.openclaw_task_envelope.v1',
+      'wiselink.3_1.openclaw_result_envelope.v1', 'OPENCLAW_DYNAMIC_EVALUATION',
+      'wiselink-openclaw-engineering-assessment'],
+    retainedWireServiceVersion: '1.2.0',
+    retainedSharedAppLiteralMeaning: 'Historical sealed wire/provenance field; not the new runtime registration identity.',
+    discovery: 'CODEX source is accepted; missing historical runtimeAppId is not populated from current configuration.',
+    deployedOrAuthenticated: false,
   });
 
   for (const path of loaded) sourceFiles.add(path);
