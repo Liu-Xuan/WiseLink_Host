@@ -1,0 +1,1726 @@
+{
+  "reviewDate": "2026-10-25",
+  "timeZone": "Asia/Shanghai",
+  "conclusion": "ACCEPTED_WITHIN_TWO_FILE_OFFLINE_REVIEW_SCOPE",
+  "blockers": [],
+  "closedBlocker": "W2 complete trusted parent response no longer requires child artifacts to reconcile its matching model pending",
+  "reviewBaseAuditCommit": "c0b1831eae412a7d6a263fd10d01e9c3e30ef382",
+  "packageVerification": {
+    "zip": {
+      "path": "/workspace/scratch/b5a75900fbaa/upload/WiseLink_Codex_Client_Source_b400821e(1).zip",
+      "bytes": 1418707,
+      "sha256": "e733c864f615e626028ac3d592c44a00f23e179876c63a9eb02d8e1aa34f9cf0",
+      "entries": 219,
+      "expandedBytes": 5559376
+    },
+    "receiptSha256": "308356728f43763a78d31706cfc01fa1ef4ccbfd9baabbe377202ca15e2d6051",
+    "receipt": {
+      "sourceCommit": "b400821ef943feb9c3520a54f8c89c3a43b768ee",
+      "sourceParent": "1aef22db6f1c15378e63206f02b4fd6a81278b5f",
+      "sourceTree": "a805691bf687557e67f239c51bfa538845bd96e8",
+      "hostCompatibleCommit": "58d9569bff0df79d39c6a21925de652411c1258b",
+      "hostPublicationRequired": false,
+      "hostSameTreeSuccessor": false,
+      "purpose": "Native-only trusted-parent-result recovery; exact installation awaits delta approval",
+      "fileCount": 218,
+      "changedFiles": [
+        "openclaw/codex-evaluator/program-budget-recovery.test.mjs",
+        "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs"
+      ],
+      "validation": {
+        "targetedRecoveryTests": 63,
+        "passed": 63,
+        "failed": 0,
+        "skipped": 0,
+        "independentReview": "NO_BLOCKING_FINDING",
+        "originalLinux12PassedOn17gr": true,
+        "originalLinux12FilesUnchanged": true,
+        "originalLinux12Rerun": false,
+        "newNativeRecoveryTestsOn17gr": false,
+        "hostBuildRerun": false
+      },
+      "installed": false,
+      "businessRun": false,
+      "files": [
+        {
+          "path": "openclaw/codex-evaluator/.gitignore",
+          "sha256": "670eb88f324c3030e46eb13d450d910c0292ad5f05db40c4de6c28a78050693b",
+          "bytes": 25,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/CONSUMER_RECOVERY_VALIDATION.md",
+          "sha256": "50860cbf5ceb485dfc76bff68670383d4a997a366bcc08b725e5b50605f42399",
+          "bytes": 14535,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/README.md",
+          "sha256": "c12572fb3a00399578c1bc08ce7c2e69f0972e6b55ede92dee65a8d9dfd9b0c8",
+          "bytes": 14733,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/RECOVERY_VALIDATION.md",
+          "sha256": "9777ec49f138c3716f1ca76f06ea243630ae805f66163724667d8864c8697425",
+          "bytes": 11314,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/VALIDATION.md",
+          "sha256": "22f59347369c8b807df521dfe2242a77cb11deaee423448d5693f9ec2ef3dbd9",
+          "bytes": 8457,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/assessment-session.mjs",
+          "sha256": "a2704ddbfed8122fda7c7a8431eb2043b28f8f7c3674bdb6453ffcb4541c4215",
+          "bytes": 20396,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/assessment-session.test.mjs",
+          "sha256": "dcc8c93274a8f90d7fb2a94187ae025f2441b16ec94a291631720aa79931396a",
+          "bytes": 10510,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/check-host-contract.mjs",
+          "sha256": "23480f898e77a205ad2e8f6932fd1a0ceebf895fc5f3927877be6cb23517ea29",
+          "bytes": 18742,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/codex-applicability-leaf.test.mjs",
+          "sha256": "dc7fac85c69f8e2c13e1bb2c39cb3cb8b24375620905d6ed4ae2e7a2905f1408",
+          "bytes": 4688,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/codex-assessment.mjs",
+          "sha256": "923073267edc1b8c9b78cd62462e368f7ab4d21cfdcf517fbb470d5c0265bb0b",
+          "bytes": 10811,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/codex-client-identity.test.mjs",
+          "sha256": "b2d5bc83cf9d3b40cf662eea6f1fd2695556e0356807db9a706aad56cf1ead88",
+          "bytes": 6496,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/codex-generation-recovery.test.mjs",
+          "sha256": "98559703a2dd31048a3a4315a5e6f83dd460db0b3692362597be03ffaa2c1235",
+          "bytes": 19100,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/codex-generation.mjs",
+          "sha256": "fd0d77f118d312292db8580a7f1f153be712029a98e5c0774c7ca8e0bebb31fe",
+          "bytes": 23110,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/codex-generation.test.mjs",
+          "sha256": "94bb32c0accc7ea4192403f4afae9f892ca36d3920e03a3f05ec48d8a074d95c",
+          "bytes": 5301,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/codex-parent-run-link-test-helper.mjs",
+          "sha256": "010b618dab44971cf4ae9dd1d2411ec6bfe74585e84c9143732ca267291708ed",
+          "bytes": 2082,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/codex-zero-model-identity.test.mjs",
+          "sha256": "ad5c51774fe7c03c30dfbcaf7b7ff0bec50e4a9295000fd4645b1eb1a9ce9d24",
+          "bytes": 3747,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/compare-host-interface-packet.mjs",
+          "sha256": "c565300a22e12750b518fbfe8f95a7e00e3bbe2363ba31249c68750e27ea471e",
+          "bytes": 11808,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/consumer-recovery-validation-results.json",
+          "sha256": "0394772128a33a6ebb47e7d00dc5a853f6665d0367cf9b42ca1f7e8a74aaa425",
+          "bytes": 50276,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/consumer-validation-evidence.json",
+          "sha256": "4792c13352d42b6064d3fcf973211c40acd50905304fad8ef5e47df1825f956b",
+          "bytes": 9371,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/contracts/host-input-examples.json",
+          "sha256": "c92372de83645ded13e5dece2c4f3bbf17dd602f743ba57f16b2b9c5cd08de2f",
+          "bytes": 4183,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/contracts/host-packet-comparison.json",
+          "sha256": "32ff817206e8b662f65af9e97561f21f89c805f3c63a6a6b692b63f8693cfab8",
+          "bytes": 12012,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/contracts/host-source-interface.json",
+          "sha256": "57248c90ddc3417d993fa5457c4c7b003f47d45a8a05b9663b4d03bfd853e53d",
+          "bytes": 254805,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/contracts/host-zod-validation-cases.json",
+          "sha256": "72b06a7a57d951ff89184741d676927695adfa3cfc165ccab522fe8626d7d658",
+          "bytes": 102412,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/contracts/program-recovery-example.json",
+          "sha256": "7ff8f72a6b908fba008e18950da6b64844dcd261302eb962a082bc35353dc819",
+          "bytes": 44948,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/contracts/runtime-configuration-status.json",
+          "sha256": "66716cab06f2d51ebbfa32f4245c0dfc74d0e66801ea3e7df79f509a3c4353ea",
+          "bytes": 4780,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/current-interface.test.mjs",
+          "sha256": "055937badee04c2d27af3d4371304ee91c9f42df312b0ceb9cc4f476517b2256",
+          "bytes": 5890,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/export-host-contract.mjs",
+          "sha256": "5f2f726e2ed6c99b94c4dcf76de0d5f612ecd438d24e9cebe3bbb50a50afc4ab",
+          "bytes": 36964,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/export-program-recovery-example.mjs",
+          "sha256": "d5e21a950480d2c742ebd029badbba3ad6bea65480c17da0917832bafd51469a",
+          "bytes": 8542,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/host-contract-artifact.test.mjs",
+          "sha256": "27e22fe049dc48d058aaa4188fd35430344172fdb32284f6c6d12b193ac83acc",
+          "bytes": 2513,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/host-contract/README.md",
+          "sha256": "c81d50c37670fc8ad14e352d08897733ad617a8ddb7692dc0d977aa3c68d54c4",
+          "bytes": 4628,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/host-contract/source/server/modules/canonical-host/canonical-host-openclaw-translation.service.ts",
+          "sha256": "858ea8e34ef28ace64a181ce9b46a8d764f84ef7b69ecdaa3b9856d6e875404f",
+          "bytes": 43627,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/host-contract/source/server/modules/canonical-host/canonical-translation-v2.contract.ts",
+          "sha256": "c1059e78d3db5fed3d142a8a532b7a8b5c3a977f6ba917d8f1414f2bb1709781",
+          "bytes": 12836,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/host-contract/source/server/modules/canonical-host/canonical-translation-v2.service.ts",
+          "sha256": "4ca97eca887a886fb7d8834cda138a2df0842056ca905dfafd347568b0f3f9fb",
+          "bytes": 32095,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/host-contract/source/server/modules/canonical-host/document-activity-runtime.service.ts",
+          "sha256": "5a9232d67cde807ad22fdd56878d1bc216ba5726ecbdb0a5efe377b240df2f16",
+          "bytes": 19241,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/host-contract/source/server/modules/canonical-host/document-reading-runtime.service.ts",
+          "sha256": "1aa8ffa42682a355d34f5151f901de91747cc4e4e7567b37bc9908bd2b0719d3",
+          "bytes": 16593,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/host-contract/source/server/modules/canonical-host/tdms-native-reference-mcp.schema.ts",
+          "sha256": "b9e713df45cf27d392514fcd68d9946284f37994a4fa668d815f4c71c3d844e1",
+          "bytes": 841,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/host-contract/source/shared/document-activity-quote-selection.ts",
+          "sha256": "13affba6f919775cc3e16fa290bf08f9d9d69545f577d1716c8523d16414a7f8",
+          "bytes": 5168,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/host-contract/source/shared/document-activity.interface.ts",
+          "sha256": "97e7207fc9db84f062ab023e57a0d84cbeae46f208537d5ea2fc130b13caf1e4",
+          "bytes": 10472,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/host-contract/source/shared/tdms-approved-opinion-reference.ts",
+          "sha256": "14e5069aee19d3b69179e33ac843e9da17829a307674e7e7eed6f18415ebfebb",
+          "bytes": 2143,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/host-packet-comparison.test.mjs",
+          "sha256": "1bf64dcd19266ade1f4f06b43e7fadfa852353c70246650f8e84919e6cde60bd",
+          "bytes": 7305,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/mcp_stdio.py",
+          "sha256": "6db5990addeb3ccb08ec8238c6fcfd1d9ca6af0b5699d9223071e9032489fa32",
+          "bytes": 2805,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/miaoda_responses_bridge.py",
+          "sha256": "52e9b093ba293bab7479a3b1105d4db750605b49143054ec5a5133111ba3a632",
+          "bytes": 27572,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/offline-validation-results.json",
+          "sha256": "3c1e6555786a3dea6f9a89573281bd8cffcfb0fe36e0e64ee18a09bcf67e8f2d",
+          "bytes": 13166,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/preflight.mjs",
+          "sha256": "372ae8a960b6edac99eeb2ff5992c7b5a98d8eb36c1266b5f7d9061f6f8883e5",
+          "bytes": 4791,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/preflight.test.mjs",
+          "sha256": "ff8fbb0b5e877377bb4603d557c1c5029472fd54a25b634252c841b5b33fd9c6",
+          "bytes": 5096,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/probe-host-mcp.mjs",
+          "sha256": "863a4d9a946223fc0d69d4183fedc6277bd8c7eba62d364b0526ac945da19371",
+          "bytes": 2570,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/program-budget-recovery.test.mjs",
+          "sha256": "8945653a1564081fe6c8a2a9a1308777956c76a86fe03ca91906fd8294970906",
+          "bytes": 22065,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/program-finish-recovery.test.mjs",
+          "sha256": "fb92b4ca66e3939b73f715957e83ff6eea53adff91b8e71a52906b35c070e2ca",
+          "bytes": 14744,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/program-recovery-fixture.mjs",
+          "sha256": "3f642f07117a2b0e5c6ec775cc0e510849d47e9b70c8e283acbd4032241db5a0",
+          "bytes": 16205,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/program-recovery.test.mjs",
+          "sha256": "1e331b15b2a747257da89376fdb230526c15b45df4e370b1aaa54f1c3fd47823",
+          "bytes": 12072,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/review-wiki-recovery-fixture.mjs",
+          "sha256": "cdcfb6d231fde277fc0f7d1824e57ffb6c2c574b64f70405bbcc9398207cf8b7",
+          "bytes": 17928,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/review-wiki-recovery.test.mjs",
+          "sha256": "dc32c770bc9c0bd552a77ae0f4a22c2bfe016822cf441f6beb7a6be76f85841b",
+          "bytes": 22899,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/run-consumer-fixture.mjs",
+          "sha256": "606bb04caf3bfd843fe313e2f873ca4354bffe3d28ae5ac2934e8c1297611166",
+          "bytes": 11346,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/run-fixture.mjs",
+          "sha256": "65a828f984b3199f53f533c898d2eb516453a2492f927a724fee3e52009d4538",
+          "bytes": 9770,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/run-wiki-fixture.mjs",
+          "sha256": "ab9e686e6ef875c56c23e1d677e67ced4e424ef9f29af6ede45fc09fe65fc3a9",
+          "bytes": 8584,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/run_codex.py",
+          "sha256": "45d79f50f95dd778d79aa5f9a8bf3f429300b30fd25b3f95adc6153268df0686",
+          "bytes": 11712,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/run_codex_generation.py",
+          "sha256": "4596a24630cfbdf96006aed8f06aa26d2c534111313b0890e3b00c3a912682ef",
+          "bytes": 16363,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/test_miaoda_responses_bridge.py",
+          "sha256": "281a96acb74e870c5402cfe184f18155ba43faf09ae361ac79d9fa0e167b3859",
+          "bytes": 16171,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/test_run_codex_generation_recovery.py",
+          "sha256": "25cd7948a033e807c39f0a16a60dfcfdba07270ee7e8908b59aa8436b6322989",
+          "bytes": 8503,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/translation-reading-document-fixture.mjs",
+          "sha256": "cfe44726baa7344e07933667c3beb1d57cb230df5ec0c52f5c8a11116ad359e4",
+          "bytes": 7965,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/translation-reading-recovery-fixture.mjs",
+          "sha256": "e46a603a28ffd0a88d53a2d19cacef1ccdb9eb8aa3fa70dec0b1683a2ece1813",
+          "bytes": 4940,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/translation-reading-recovery.test.mjs",
+          "sha256": "bfcbad86e66aeb77d48e09a3995315bd1513eb8783d28332ec3f0ad79da257c3",
+          "bytes": 18681,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/translation-reading-workitem-fixture.mjs",
+          "sha256": "c813b096d3658c0139ff09d15223bd5e3839ceff146406d71f009db822822829",
+          "bytes": 12163,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/validation-evidence.json",
+          "sha256": "ac03682a1e3ede4bc53ccf507937ab800734a87ae0dd1c7a4a6cec5ac847ff1a",
+          "bytes": 8683,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/wiki-matter-recovery-fixture.mjs",
+          "sha256": "07f0d5658fabe7d23a6d36ce5af488a77ec00afa182f2140eab8bab2c3c63a28",
+          "bytes": 9330,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/codex-evaluator/wiki-matter-recovery.test.mjs",
+          "sha256": "d28d24d8078626b142b8e06d719876e653f81f35ff3f4ffe21998e167ff93452",
+          "bytes": 7433,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/SKILL.md",
+          "sha256": "3f9eb0371e7863cb09123c429b79521d1a8a2a67d9e87eda35b07689af33a7ca",
+          "bytes": 83202,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/agents/openai.yaml",
+          "sha256": "6e264ccd4558a2ef301a68fc2e3df7cfa05295584a0cb0d2e524cb77d0214120",
+          "bytes": 12167,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/assessment-owner-integration-audit.md",
+          "sha256": "260478897a2627e334f1dda83c757a7879678cd42ecf99fc17d61727fb7a68a4",
+          "bytes": 5295,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/derived-summary-work.md",
+          "sha256": "eac01df8a357af2f83d91c763623e19be579ee4133e31656f4cae096e14b05a9",
+          "bytes": 10373,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/discovery-access-denied.example.json",
+          "sha256": "27e287dc599a09f88667582577afe93a879c402695c8978461568a4b1eb4af18",
+          "bytes": 521,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/document-activity-model-evidence-view.md",
+          "sha256": "c0a9ceeb9ffee59272e2ea0cd68bf606e57cde99cb45953cc07a20be265ddfc2",
+          "bytes": 2025,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/document-activity-work.md",
+          "sha256": "ccc7b884f49101565a53dbfaeb1decac42ec233ee14e74a6332a652d5f4a7a9d",
+          "bytes": 6784,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/document-reading-work.md",
+          "sha256": "4e1b85eece52f636d51b45767b4ecc8bb14196f018a25ecd9ce4ac14eb380a53",
+          "bytes": 6122,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/hierarchical-wiki-work.md",
+          "sha256": "eff8b37cf219bbebef7ced7022aadb367ef29c6faf94950e6924e4b6ead87033",
+          "bytes": 5552,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/host-mcp-orchestration.md",
+          "sha256": "ff94112be004e050dbd50b75b3d52c8386f2840b00ad61c8a0a5764cf5023b90",
+          "bytes": 19367,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/hosted-review-consumer.md",
+          "sha256": "2c80a358676d9449bdfca986e93b4b2612aebd9b714f2fa17456b69a41b85852",
+          "bytes": 28168,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/hosted-uat-runbook.md",
+          "sha256": "ddbff7b60f71c44e8e49902412fac678f088461c0f20c6b307237d1e180aab3b",
+          "bytes": 29026,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/input-output.md",
+          "sha256": "b84f88dea73d9f7c4d1d3f7fa9a71fc2377b724c0c57b236807dc4f280beff5f",
+          "bytes": 35377,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/jobaid-problem-work.md",
+          "sha256": "897887be043b41570b9400d332c8272720543a00166110685f6b7962f321aea9",
+          "bytes": 6422,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/native-temporary-review-gateway.md",
+          "sha256": "db7297d7dd62a1129b25be82ebd753a8321355497f927c84f0d3e4dc6164ff98",
+          "bytes": 4610,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/semantic-translation-work.md",
+          "sha256": "1706175542886ba180d119f47e74d866e4e4c3bef8e326e753088fdbab0dd8f5",
+          "bytes": 8098,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/synthesis-output.example.json",
+          "sha256": "f757967b8c40aa75e94771f95ac14ae053867defc5a318073d3337ded2e802e4",
+          "bytes": 4797,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/references/tdms-review-native-read.md",
+          "sha256": "7fc0937987a59ce710e331cbf3c71c86a1561efc9d868f41046f3e8cad0047e6",
+          "bytes": 5510,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/activity-model-evidence-view.mjs",
+          "sha256": "8cd43a2552c4d854e086fdc364a637c47f8ee70a749b5831a4d4acd81c88597c",
+          "bytes": 13800,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/cancelled-claim-parking.mjs",
+          "sha256": "1fd000d487a77cf062d04100a87590b5a693d486fdec0889b363e227a748b31c",
+          "bytes": 7734,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hierarchical-wiki-queue.mjs",
+          "sha256": "0a1896895ad5023df8e0eacbaaa2938f660138da77177ebf8002c7c937c89fef",
+          "bytes": 15357,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-derived-summary.mjs",
+          "sha256": "8e41fb80f590b97849c945858361e0da9ea81f4629246e7d64f7b49612d9c027",
+          "bytes": 18610,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-document-activity.mjs",
+          "sha256": "5c1cef5ccc6125f793bd16a3b4f972dba5505fdb8e4d20bb3e87c5328535b5c8",
+          "bytes": 75644,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-document-reading.mjs",
+          "sha256": "f88829d07f25b15d8489119ab54714380ea5e202d2ff6d904626137b55106d25",
+          "bytes": 17962,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-matter.mjs",
+          "sha256": "8bc56b83e4ec2acb77ef0895e136b3b2b4a5068e75b9c024456896ff4bfbada3",
+          "bytes": 30033,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-review-turn.mjs",
+          "sha256": "4547ba507bda6514d163bd57f079bbac22463d4afd0a1dcd8d756941f95c977c",
+          "bytes": 7604,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs",
+          "sha256": "c11af226d868efec64171ee3a6d5c8efbd1b3445e7dc31bd482a32cebaea3cb7",
+          "bytes": 181706,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-cache-prefix.mjs",
+          "sha256": "a151e63653adb7a38c093310ad3be7c167e6170a30776366affd7024990d794b",
+          "bytes": 2143,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.mjs",
+          "sha256": "ec97e723460c32eb6cf56287d2ddbb210fd8047e4250940be25bb9f5cbc7b9e9",
+          "bytes": 12036,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.test.mjs",
+          "sha256": "d4e125bba3c4c5333a0bea984fc599e780bccb8aa0b4c8ae7d35a4d7c388b473",
+          "bytes": 13543,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-incremental-revision.mjs",
+          "sha256": "868dd57de9c7ee9510de7b98fd0f98dfdc14eaf5bf70bd7021f77e9fbfaa7066",
+          "bytes": 7409,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-native-evidence.mjs",
+          "sha256": "8a3dda35f272c1808e7d8512ce1518e75c68502e7d6e5aded15c7421681c4d17",
+          "bytes": 9608,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-native-gateway.mjs",
+          "sha256": "5915af6fa1c1805663ae2a93391caca5e1c94b3088f3901cdfcba20a64d195e6",
+          "bytes": 9403,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-read-projection.mjs",
+          "sha256": "4ca97a51c0ebdffc38f86132361a374aa6ca43c61736d686bce6b45dd296c157",
+          "bytes": 15805,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-revision-context.mjs",
+          "sha256": "9268caaa4aa1a0e1da87e69b139fce49f3a2de67f24a4c6627d566e84ed262ea",
+          "bytes": 8812,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-shape.mjs",
+          "sha256": "4a8f8de8c4b2236d9d7d3d3694e09b93efb6305f0cece097fbed76d00fc4643b",
+          "bytes": 18266,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/document-activity-failure-diagnostic.mjs",
+          "sha256": "6112cd3b9829725c290a45ea510fda4bc790775a23e18524e6527c32dd9b0039",
+          "bytes": 3921,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/document-activity-model-contract.mjs",
+          "sha256": "18f75dca75350dd1649526d2cda69f52bfdee60be1b1c7dc294ee2f18bbcfec7",
+          "bytes": 23229,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/hierarchical-wiki-model-view.mjs",
+          "sha256": "f4f288853ad3774153b08d3f86f0cc5201d6ffbd45570b395af7c5a838aec825",
+          "bytes": 4427,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs",
+          "sha256": "9b2f3a53735a56faaa6aa7c266c43e05daabec8178d21f5809df27d6754d778e",
+          "bytes": 27771,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-derived-summary-model.mjs",
+          "sha256": "af8ad62bdc3e4b9ee6e052c7a94f4768851afcb0e8d28f19c0ec6a42170e9cbb",
+          "bytes": 39078,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-document-activity-model.mjs",
+          "sha256": "22723067026ee9cf41a1a5ec2e1d698ee92a7c00bcceeeab2f83b19fa7c99de0",
+          "bytes": 22830,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-document-reading-model.mjs",
+          "sha256": "9d4b3690e5774d18c9829950818196d267f0051ff90e603608def768197a7f32",
+          "bytes": 15977,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-initial-model.mjs",
+          "sha256": "4291632f0e45f2929014781c6127be7e6e8c0a0a3599ebebb50fb976e9e7dbf3",
+          "bytes": 52509,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-translation-block.mjs",
+          "sha256": "12a1340155662dbfc6d42fe6e3a9b6f5163e6f36eff4c298b3a16752f76dee7f",
+          "bytes": 28651,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/jobaid-continuation-context.mjs",
+          "sha256": "842fb0442aa90d9341e869b2f193d683045fa440cf934c6818fcb32d438d582b",
+          "bytes": 10438,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/jobaid-problem-guidance.mjs",
+          "sha256": "7e45e9a2616c688f2a5393fee048a43c1e7ad27d210db201b83fc40223d1622b",
+          "bytes": 23317,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/jobaid-work-shape.mjs",
+          "sha256": "3d9fe271a0bed51ca63fe5568061e48053b41b39d37506cbb649591dee9163a9",
+          "bytes": 8696,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/merge-document-activity-source-context.mjs",
+          "sha256": "f4d87fa418dff3325599c9e15b4d3894a258840989974af2eaf421dfd32e2d36",
+          "bytes": 8609,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor-consumers.test.mjs",
+          "sha256": "7888c0b1704535ffae2eae424d7e411ccba90685fb41342b2d3c5c4b039a5288",
+          "bytes": 5243,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
+          "sha256": "02d4f44236f5b8e659edaa9d88cf1688d7008e5acebe52d0bd3e54b94c34865c",
+          "bytes": 3898,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/native-temporary-review-gateway.mjs",
+          "sha256": "aaa50ca414ed9ef158051eb3665f479b8ca49fc8c769847dad8e9d8df5d4be88",
+          "bytes": 21374,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/one-shot-outbound-adapter.mjs",
+          "sha256": "c25151aa2472068b6547e9a36731ae8fdaaaf9d27891dd11fc3bd964f654c630",
+          "bytes": 29627,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/orchestrate-host-mcp.mjs",
+          "sha256": "a65c867859d8ee5878789b131ca5537444d6617c1d0a18f4958888bfc408fa76",
+          "bytes": 100507,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/program-assessment-materials.mjs",
+          "sha256": "d988f58936abedd8afe3d58a6e978d3655374febd22febfd46a1c33ad1a044ad",
+          "bytes": 9016,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/read-matter-recovery-candidate.mjs",
+          "sha256": "58c154f97074b0da9a66b09e5152400693308acb05676a12d82c6c73794671dc",
+          "bytes": 3536,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/reading-model-context-view.mjs",
+          "sha256": "6878a09c8ab9c55db8159be7c0f73886cd2bedd7f746fc25f83b57e65ee3f536",
+          "bytes": 4888,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/recover-native-document-activity-result.mjs",
+          "sha256": "47cdf1d158a28e2a22b5b5e2b51d53a7b7d0a2c4c6882d666839ef9276a52a2e",
+          "bytes": 10849,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/recover-native-matter-response.mjs",
+          "sha256": "254cae2400726a8cff82e094e0725b10709b60de6836c050190c9cae0e126991",
+          "bytes": 5117,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/recover-sealed-review-checkpoint.mjs",
+          "sha256": "d61f30f68731ccaff7d8a7e084473ff4dae81f84e7f35561eb2298a17d8615fb",
+          "bytes": 8079,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/request-hosted-gateway.mjs",
+          "sha256": "63acdf96203bf83e3a0a54f4b4d4a09f1735a0cdd3f52588e0a3eacb3dde7066",
+          "bytes": 13167,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/resolve-document-activity-quote-selection.mjs",
+          "sha256": "defe1c39cc3b17d603356e3ca26d594433e5a553704e41d1178e64b4ce514f37",
+          "bytes": 4108,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-document-semantic-translation.mjs",
+          "sha256": "10b26a1f48c83a6ea25bf22625c7e12fd12b0b6d430dcf5473c19e9388c0bef0",
+          "bytes": 11547,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs",
+          "sha256": "8f61f03565943fbdbba21f7e3c76255c43675cf7b04a0f807269b54380406431",
+          "bytes": 223403,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-jobaid-problem-assessment.mjs",
+          "sha256": "5dca4a3c251ae78b819ca13665ed48e78dd6263b2b75e6e63043336cfecd46fa",
+          "bytes": 87707,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+          "sha256": "7811dcebe8f3318f987565579d49a8e9cf2224091c7efb35bb63b8414958de16",
+          "bytes": 25230,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-semantic-translation.mjs",
+          "sha256": "d16d43bc7c047f138ab4b553c73131dbb8cdf375df67d6db4ca0d7206deb813c",
+          "bytes": 11839,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/tdms-native-context.mjs",
+          "sha256": "bdabe9dfe5aae561b7f8a7e240d2fd178570f2d983d5d7f44ca28844b6e28ae2",
+          "bytes": 8164,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/tdms-review-runtime-context.mjs",
+          "sha256": "4a8b9a8ffc2382edb800edc56bdedf3242813a3c8516a907a6e4c0113976710a",
+          "bytes": 14986,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/tdms-review-saved-context.mjs",
+          "sha256": "e6d0cb624ef7d949660d3d2a07f2ab42b63fa6992bb9e6241338313facdb8d0f",
+          "bytes": 6806,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/translation-model-view.mjs",
+          "sha256": "de7ce4a92fd0c306dbffa1cca4ec905931303975c643cb3b7cc128b0666d04c0",
+          "bytes": 10034,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/translation-natural-projection.mjs",
+          "sha256": "a720649cffd1aec90c03995e76cdfdffd5b264ae73ec749b2c83c208a7eb47fb",
+          "bytes": 23823,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs",
+          "sha256": "9c9f8fe0028e365b5ec36e75c8d2f67958adf9a187e27e4b2f7b4b5ac3ca3012",
+          "bytes": 222981,
+          "gitMode": "100755"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/activity-model-evidence-view.test.mjs",
+          "sha256": "b7ea85b0f1de349ae1bf43bc1b9e49a161075cdffa260de32d2b03094eee4860",
+          "bytes": 11580,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/automatic-work-item-capacity.test.mjs",
+          "sha256": "a17fbe7f93791079a3fbbf7d70b5762457768d9b3e9f07d4a855f8fa86658929",
+          "bytes": 10244,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/automatic-work-item-explicit-request.test.mjs",
+          "sha256": "07f56a59a829deb357a91b889117507b9749053fffde98df263650408d16ebb5",
+          "bytes": 34446,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/automatic-work-item-finalization.test.mjs",
+          "sha256": "0b47bd80cf0437000c1fed5000192e631522ec7ec6091e6005729f2207dd38fd",
+          "bytes": 17564,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/automatic-work-item-queue.test.mjs",
+          "sha256": "7af96f7e9915a564a9e836eb9f10c31cbaf575fcf68da36a66901c7a7e9e056a",
+          "bytes": 108512,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/cancelled-claim-parking.test.mjs",
+          "sha256": "3c45d3066d20d5c4eda233e6b94469fa7a5d2f18d16b28bfc7ac59f905e45399",
+          "bytes": 17155,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/codex-discovery-identity.test.mjs",
+          "sha256": "f389580d0750c7de80ae1fe3cc9b0b740e814f92bd1caa608167ddac902c1ffb",
+          "bytes": 1306,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/codex-queue-commit-recovery.test.mjs",
+          "sha256": "f8644709c996e0c1d2d222874bc967323ca607af366ec549fb4e57646ce81635",
+          "bytes": 6863,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/codex-queue-transport.test.mjs",
+          "sha256": "38d5a55824cc538aec4b8e38a570ff9e659d1cc115943028c6b2c0e3e22d64dc",
+          "bytes": 2160,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hierarchical-wiki-queue.test.mjs",
+          "sha256": "bff020e93ad2ffd7898f8393b1ff260ca9f4d6400899f96bdcad70fe7572be19",
+          "bytes": 6533,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-derived-summary.test.mjs",
+          "sha256": "99ce94e769c48cbe9aed8d75af1ad80445ff222ddf14dee83c318dfe989823b4",
+          "bytes": 184816,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-document-activity.test.mjs",
+          "sha256": "3ba43e1808ec0da5770e92efa46ab3752928591d82193d54caabba448a1981b3",
+          "bytes": 69317,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-document-reading.test.mjs",
+          "sha256": "a0ccfba4bf7c85e0958d9cc59103987bf6ae5f312e72e7b0eeeb90ed6058ba2a",
+          "bytes": 25726,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-document.test.mjs",
+          "sha256": "eeba43ad707ca96a3eca17106149c5d710f10a22ee011939d701a36927896d91",
+          "bytes": 31485,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-matter-correction.test.mjs",
+          "sha256": "2dbfb2114806ef46c149d01cab3d061cf1443fb0340dbf62c70353732aafec09",
+          "bytes": 10152,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-matter.test.mjs",
+          "sha256": "1adc98b3d73e81cffee363eb68dc4577dc110a2a5e67bd4f685c2d41d061985c",
+          "bytes": 43718,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-review-turn.test.mjs",
+          "sha256": "be49c887401de46873098b922f16062cd1fe2b13d49ec56c9c77ba484a6e1684",
+          "bytes": 45456,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/consume-hosted-work-item.test.mjs",
+          "sha256": "91f7244123633e851d2216c6b3a39b47cc0a9a076c18940de54908bbc22eef80",
+          "bytes": 61201,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/consumer-stopped-observation.test.mjs",
+          "sha256": "c68765d46554e6508c80bd42f2a3ca9c0862a68bcf0f181d691bcb3ffe164c99",
+          "bytes": 7746,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/core-p1-consumer.test.mjs",
+          "sha256": "229c643db0fc8cd47d742115ba26d4f68ad88be600598e80e826d5c5a573e979",
+          "bytes": 57084,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/derived-summary-cache-prefix.test.mjs",
+          "sha256": "c1e7630f4cf95955d9a866b7764f0af10c4e8c1e8691ac87eb575c02f66c7be2",
+          "bytes": 13244,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/derived-summary-document-carriers.test.mjs",
+          "sha256": "b11549ecea474e3d9b4c9dd86ef8d7fd60c54795aaeb25a1593e5b504d6df62e",
+          "bytes": 15891,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/derived-summary-incremental-revision.test.mjs",
+          "sha256": "e79fdff5fcd00441f706f273d7c040f20d81cfffb9ca93f018d4ef48af8e8623",
+          "bytes": 7341,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/derived-summary-native-receipts.test.mjs",
+          "sha256": "41d8f9f7b64b37011f75000448c5df6991b117b9736b0d45aa2c378821535700",
+          "bytes": 29438,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/derived-summary-read-projection.test.mjs",
+          "sha256": "51a6e9d709ac1271601fdbb7a108fbaf6a245de30110762bf3ee28ede2921042",
+          "bytes": 15249,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/derived-summary-revision-context.test.mjs",
+          "sha256": "95aea1c7d83830b2d8371d43637062c1909e32144d120c316b9303e84dfa89c0",
+          "bytes": 8710,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/document-activity-failure-diagnostic.test.mjs",
+          "sha256": "d7f60476639e596e8d7bd240323468d342eb91f0399a715e1b2e247a6f87b947",
+          "bytes": 9360,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/document-activity-quote-selection-rebuild.test.mjs",
+          "sha256": "a2391a30097d070c473d3e5767624faba37de7b751bc47c49c61949e63662412",
+          "bytes": 5474,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/document-activity-v2-consumer.test.mjs",
+          "sha256": "08d3f982f339433b67d0046a3778991ed740e47446921dca1f514b74d0c731c4",
+          "bytes": 42223,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/activity-model-evidence-input.mjs",
+          "sha256": "85b872c1f93ff31e753355a956bb9eb07fc5e3c312d02a18e1ddb442322354e7",
+          "bytes": 3440,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/applicability-ast-candidate.c4.json",
+          "sha256": "4a8dead6d762e3ba60f7ed819c10d7f05699bcbbfd0af742e99757672210efb7",
+          "bytes": 464,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/applicability-task.c4.json",
+          "sha256": "ebd64189a138714c4738e741b9f27598d4187981adc83eca053ec58ac47b177d",
+          "bytes": 7796,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/configuration-evidence-reevaluation-status.p0b.json",
+          "sha256": "a3fb7759528909acdecfcad852b56e2b46560d45f2c88ee6ef640aeee76cdff2",
+          "bytes": 564,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/derived-summary-r1-sealed.json",
+          "sha256": "9c87b5fc2e9b743a794a4b1439c4dae94c7babff8e2c5d07803430d02d48be2c",
+          "bytes": 130124,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/derived-summary-tool-metadata.json",
+          "sha256": "4f3ce1c3646a4877703dc066bf1d1ad418cbefb1d3e7ccf0dd9d60f8e4994efb",
+          "bytes": 11490,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/document-activity-v2-recovered-model-contract.json",
+          "sha256": "f02aaf864a48700c165fe3930f20408fb1df12b1dd2398ceeaccdac5d511ca3f",
+          "bytes": 17417,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/dynamic-rules-evaluation-737.input.json",
+          "sha256": "50e945c459edbc64795c39212dc9390583601b14b9cdb7a2ba2c062bdc390f52",
+          "bytes": 66002,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/hosted-737-acceptance.minimal.json",
+          "sha256": "2518bf1b16d1a9ab8216843cdee9725460d2d04499ac28bf532d1b316ffd7985",
+          "bytes": 17582,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/review-turn-candidate.c3.json",
+          "sha256": "db592da8148f9f495ce97ddcb54526abea223d7b9c5a55692b9c777f6bf7de2f",
+          "bytes": 698,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/review-turn-task-attachment.c2.json",
+          "sha256": "c53c9a85e2b86154e311a583e4eca65dd38123f6e8fc5b664b3d02aeecff92ef",
+          "bytes": 3356,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/review-turn-task.c2.json",
+          "sha256": "569f7abbb9e01f0e49e3ad35e0ca43863ae4dacad80e1b961bd919724ef2d94b",
+          "bytes": 2430,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/sealed-review-recovery.fixture.mjs",
+          "sha256": "2f2323f9aed5513062e6e9459949f7373f7a2084cbd47e6cc8de2d0c483b07ba",
+          "bytes": 6916,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/source-statement-v2-wire.fixture.mjs",
+          "sha256": "1a8395b26cc89605e186853ef22a26f85eea4c05254acb874bbf3fb35499f67c",
+          "bytes": 4017,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/tdms-review-runtime.fixture.mjs",
+          "sha256": "e8b592c8aa3cdcc4a9a9ff3231523a9cb9d4ddad3a1c1e73a1d633ab6802d53e",
+          "bytes": 11222,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/translation-fidelity-cases.json",
+          "sha256": "6a8414b7850b081ed889380324169940e41a61631ef0dfe512561f6646f0df1e",
+          "bytes": 2336,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/host-mcp-error-codes.test.mjs",
+          "sha256": "215f169ba22836d654395a578c2365e077d53e55a515f288456af97e54106db6",
+          "bytes": 8250,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/hosted-gateway-diagnostics.test.mjs",
+          "sha256": "ec40dccfe43bdc829c1661ebe034a9b71869f829708d24c03e26a5858cc479a2",
+          "bytes": 10795,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/initial-assessment-recovery.test.mjs",
+          "sha256": "d469aa13bb797e55e7f8be28508b9b268be3efb2be24a4613e6d313954849e0c",
+          "bytes": 51085,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/initial-observer-recovery.test.mjs",
+          "sha256": "1e5451060d155448ac72485ddb35a670cc157a801930c4e0d475b0dc173e073c",
+          "bytes": 12678,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/invoke-hosted-document-activity-model.test.mjs",
+          "sha256": "1c60023a28e76faad6458d0273dde4a6c8380b38eb30e12fcc960d8dee36b38f",
+          "bytes": 24223,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/invoke-hosted-document-reading-model.test.mjs",
+          "sha256": "1c8f332db1706563625a9bbe70eec8efc74f5d74e3b0e2135653e385a32584e9",
+          "bytes": 14676,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/jobaid-continuation-context.test.mjs",
+          "sha256": "228a44b67d462e8ec37f63bc8bd51de6b59aa99eb49119d85eb9236a62721993",
+          "bytes": 36157,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/jobaid-problem-protocol.test.mjs",
+          "sha256": "db813464e7115ef7a97987ef8420cfb732d7153d4d6cffd86dfc1a0f04907c2f",
+          "bytes": 29861,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/jobaid-problem-runtime.test.mjs",
+          "sha256": "ac1e279061eb1fdfbf0c540e261c999d651c22a8499e65b560e10d0593375ba9",
+          "bytes": 111247,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/jobaid-run-limits.test.mjs",
+          "sha256": "01f2113e783cf09a1b7aa472d3af65323208b8fa6861ab9a284d5a8c072c9155",
+          "bytes": 45367,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/matter-successor-recovery.test.mjs",
+          "sha256": "8ef8c4877a9e9c0693ae94078b72083e0ace46eb900c2c7ad98b58915a978bf8",
+          "bytes": 10649,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/native-temporary-review-gateway.test.mjs",
+          "sha256": "7e903c9e75f14778e48a1d252ae991bef2cb4c57de2d202f61f24c24bb89b95f",
+          "bytes": 29124,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/one-shot-outbound-adapter.test.mjs",
+          "sha256": "e15d317eaa1cb2bf558b7f17a0e2e6eecddb71deb4da2369749fa84a0b5c269e",
+          "bytes": 20821,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/overall-source-context.test.mjs",
+          "sha256": "c8a65f6a9eafc0f774c51dff513111091be2fdb19774e0ba9681b2dd6cfe4a98",
+          "bytes": 8847,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/program-assessment.test.mjs",
+          "sha256": "64bf52bcaebda37d5eb7b606259922fe013b12cb655f87976c387ed4ccc30df9",
+          "bytes": 41502,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/recover-native-document-activity-result.test.mjs",
+          "sha256": "e9168e8ab6be51460740a5817006a32ba080041a509f7c0158c3373607134399",
+          "bytes": 12755,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/recover-native-matter-response.test.mjs",
+          "sha256": "ec997548474f635486903f33993d81db65cd8e95edecb410815f320f5dc6b5d8",
+          "bytes": 4055,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/review-current-turn-context.test.mjs",
+          "sha256": "90793f755454051e20be648e68195647823603da643cc26cb1ad0a44e933c94d",
+          "bytes": 11912,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/review-isolated-candidate.test.mjs",
+          "sha256": "4abc06dc0019ebeb588b1848d75782ed3701f24bf0eded1d9a72c628182e3a5b",
+          "bytes": 49681,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/review-request-budget.test.mjs",
+          "sha256": "f72294d922056cf9916d2c2571532370e9e6114cac6f0004381e1976d9b82959",
+          "bytes": 23678,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/run-document-semantic-translation.test.mjs",
+          "sha256": "942a17c0390c9f60fa7b2a42167b1bca2ad57c9a9104e93d6f73b8c60a47c8f9",
+          "bytes": 8243,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/sealed-tdms-review-recovery.test.mjs",
+          "sha256": "c9ecfdd66421e619cec450bad459981e00479ab2d3afcefdb380e87ed161535f",
+          "bytes": 19556,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/semantic-translation.test.mjs",
+          "sha256": "a5d189b0ff76ed226a5bdabe94610cec90847d0772275670f806ef8ddb6bab7d",
+          "bytes": 34140,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/source-statement-batches.test.mjs",
+          "sha256": "c605b836577661903b2ede5a4852d1e2c9e04d95dba256a09fee9b8023cf81d1",
+          "bytes": 4853,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/source-statement-intake.test.mjs",
+          "sha256": "51c2f922ebeb7d39be776e024831f163b6dde6d5d8bf4ff98c459c489b6bbbfa",
+          "bytes": 34067,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/source-statement-review-v2.test.mjs",
+          "sha256": "0c7fbf0383e600b3c0a27b167aa0da25b985e3e28eb4cdd3b9c1c58d5b1d9915",
+          "bytes": 5870,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/source-statement-review.test.mjs",
+          "sha256": "1184269f6f28f620478dddc6b9179bf08d8cd9e720687fcc8929f823f54068cf",
+          "bytes": 10494,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/source-statement-v2-intake.test.mjs",
+          "sha256": "d75cd37163581ac4617c8fb1839bfe5e7a25ed80c5c41bafc8f013b39644e725",
+          "bytes": 3276,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/source-statement-v2-wire.test.mjs",
+          "sha256": "7b90b01fa08e18302e0f074d4a74b752c7aa8a80fc7ba1ebf0c47d55fb3e7665",
+          "bytes": 2148,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/tdms-native-context.test.mjs",
+          "sha256": "abbe3b73f2b3c438b8c24d30831da1c7fd8624a7d37b12d2229fa962d68bfd77",
+          "bytes": 6924,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/tdms-review-runtime-context.test.mjs",
+          "sha256": "2e023c57a558819f1d1567128494af97640484840b83942d9534f16fdd8e0f28",
+          "bytes": 27652,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/tdms-review-saved-context.test.mjs",
+          "sha256": "2497b34d48f252d102327f67efdb62725a482687ba17f1d87d9a3b9a32dc4f6d",
+          "bytes": 30481,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/translation-model-view.test.mjs",
+          "sha256": "9998815c4548d3023724554792e19443caa80d647f3794214bd372a4e56e69a2",
+          "bytes": 30413,
+          "gitMode": "100644"
+        },
+        {
+          "path": "openclaw/skills/wiselink-research-and-synthesize/tests/validation.test.mjs",
+          "sha256": "dd6a3cb169f91d19deda8cb23d5de8b63c59cff1daca13163bd282f8b3f45cdc",
+          "bytes": 478556,
+          "gitMode": "100644"
+        }
+      ]
+    },
+    "verifiedSourceFiles": 218,
+    "baselineVerifiedSourceFiles": 218,
+    "changes": [
+      {
+        "path": "openclaw/codex-evaluator/program-budget-recovery.test.mjs",
+        "status": "modified",
+        "oldSha256": "aad632e0c647ae9583805805aec030a6c7c1d695187efc03d3a48b1653128066",
+        "newSha256": "8945653a1564081fe6c8a2a9a1308777956c76a86fe03ca91906fd8294970906",
+        "oldBytes": 19150,
+        "newBytes": 22065
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+        "status": "modified",
+        "oldSha256": "d8c821ad4e08b61f66ece80feb5022aa082ab89d64e4d61129156675503a75c3",
+        "newSha256": "7811dcebe8f3318f987565579d49a8e9cf2224091c7efb35bb63b8414958de16",
+        "oldBytes": 24626,
+        "newBytes": 25230
+      }
+    ],
+    "safeExtraction": true,
+    "extraFiles": [],
+    "missingFiles": [],
+    "mismatches": []
+  },
+  "diff": {
+    "fromSourceCommit": "1aef22db6f1c15378e63206f02b4fd6a81278b5f",
+    "toSourceCommit": "b400821ef943feb9c3520a54f8c89c3a43b768ee",
+    "fileCount": 2,
+    "sha256": "58b522b294fc40d8a129f45da3cf4eee2d1a612e22674b7fc4c8bba92e618882",
+    "text": "--- 1aef22db/openclaw/codex-evaluator/program-budget-recovery.test.mjs\n+++ b400821e/openclaw/codex-evaluator/program-budget-recovery.test.mjs\n@@ -130,7 +130,7 @@\n       const completed = await run(root);\n       assert.equal(completed.code, 0, JSON.stringify(completed));\n       assertSavedAndRead(completed.result);\n-      assert.ok(completed.result.state.modelRecoveryRequests >= 1);\n+      assert.equal(completed.result.state.modelRecoveryRequests, 1);\n       assert.deepEqual(await json(root, 'synthetic-model', 'response.json'), response);\n       assert.deepEqual(await checkpoint.readOptional('jobaid-run-budget-modelRequests-1'),\n         { kind: 'modelRequests', ordinal: 1 });\n@@ -149,7 +149,7 @@\n   const completed = await run(root);\n   assert.equal(completed.code, 0, JSON.stringify(completed));\n   assertSavedAndRead(completed.result);\n-  assert.equal(completed.result.state.modelRecoveryRequests, before.modelRecoveryRequests + 1);\n+  assert.equal(completed.result.state.modelRecoveryRequests, before.modelRecoveryRequests);\n   assert.equal(completed.result.budget.counts.modelRequests, originalBudget.counts.modelRequests);\n   assert.deepEqual(await checkpoint.readOptional('assessment-round-1.result'), cached);\n });\n@@ -200,41 +200,66 @@\n   }\n });\n \n-test('cached round.result cannot replace the original started marker, parent binding or full gateway receipt', async t => {\n+test('a complete parent result survives missing or damaged child files without another gateway call', async t => {\n   const cases = [\n-    ['missing original receipt', async ({ root }) => rm(resolve(root, 'synthetic-model', 'response.json'))],\n-    ['malformed original receipt', async ({ root }) => writeFile(\n+    ['missing child directory', async ({ root }) => rm(resolve(root, 'synthetic-model'), { recursive: true })],\n+    ['malformed child receipt', async ({ root }) => writeFile(\n       resolve(root, 'synthetic-model', 'response.json'), '{')],\n-    ['changed original raw', async ({ root }) => {\n+    ['changed child raw and request', async ({ root }) => {\n       const store = await createCheckpointStore(resolve(root, 'synthetic-model'));\n       const response = await store.readOptional('response');\n-      await store.write('response', { ...response, raw: `${response.raw} ` });\n-    }],\n-    ['wrong original request ID', async ({ root }) => {\n-      const store = await createCheckpointStore(resolve(root, 'synthetic-model'));\n-      await store.write('response', { ...await store.readOptional('response'), requestId: 'program:foreign:round-1' });\n-    }],\n-    ['wrong original request body', async ({ root }) => {\n-      const store = await createCheckpointStore(resolve(root, 'synthetic-model'));\n-      const response = await store.readOptional('response');\n-      await store.write('response', { ...response, requestBody: `${response.requestBody} ` });\n-    }],\n-    ['missing started marker', async ({ root }) => rm(\n-      resolve(checkpointPath(root), 'assessment-round-1.started.json'))],\n+      await store.write('response', { ...response, raw: 'damaged child response',\n+        requestId: 'program:foreign:round-1', requestBody: 'changed child request' });\n+    }],\n+  ];\n+  for (const [name, mutate] of cases) {\n+    await t.test(name, async t => {\n+      const context = await seedPendingModel(t, { cachedResult: true });\n+      const cached = await context.checkpoint.readOptional('assessment-round-1.result');\n+      const before = await json(context.root, 'synthetic-host', 'state.json');\n+      await mutate(context);\n+      const completed = await run(context.root);\n+      assert.equal(completed.code, 0, JSON.stringify(completed));\n+      assertSavedAndRead(completed.result);\n+      assert.equal(completed.result.state.modelRecoveryRequests, before.modelRecoveryRequests);\n+      assert.deepEqual(await context.checkpoint.readOptional('assessment-round-1.result'), cached);\n+    });\n+  }\n+});\n+\n+test('parent result recovery still requires the original parent input, started marker, link and intact response', async t => {\n+  const cases = [\n+    ...['assessment-enabled', 'program-materials', 'program-model-input',\n+      'assessment-round-1.started', 'assessment-round-1.codex-run'].map(key =>\n+      [`missing ${key}`, async ({ root }) => rm(resolve(checkpointPath(root), `${key}.json`)), key]),\n+    ['wrong original request body', async ({ checkpoint }) => {\n+      const request = await checkpoint.readOptional('program-model-input');\n+      await checkpoint.write('program-model-input', { ...request, body: `${request.body} ` });\n+    }],\n     ['wrong started request', async ({ checkpoint }) => {\n       const started = await checkpoint.readOptional('assessment-round-1.started');\n       await checkpoint.write('assessment-round-1.started', { ...started, codexRecoveryRequestId: 'foreign' });\n     }],\n-    ['missing parent link', async ({ root }) => rm(\n-      resolve(checkpointPath(root), 'assessment-round-1.codex-run.json'))],\n-    ['raw with a recomputed cached hash', async ({ checkpoint }) => {\n+    ['wrong parent binding', async ({ checkpoint }) => {\n+      const parent = await checkpoint.readOptional('assessment-round-1.codex-run');\n+      await checkpoint.write('assessment-round-1.codex-run', { ...parent, argsHash: 'f'.repeat(64) });\n+    }],\n+    ['invalid parent location', async ({ checkpoint }) => {\n+      const parent = await checkpoint.readOptional('assessment-round-1.codex-run');\n+      await checkpoint.write('assessment-round-1.codex-run', { ...parent, runRoot: '/fixture/foreign-root' });\n+    }],\n+    ['changed raw with its original fixed hash', async ({ checkpoint }) => {\n       const cached = await checkpoint.readOptional('assessment-round-1.result');\n       cached.value.raw += ' ';\n-      cached.value.codexReceipt.responseSha256 = sha256(cached.value.raw);\n       await checkpoint.write('assessment-round-1.result', cached);\n     }],\n+    ['missing raw', async ({ checkpoint }) => {\n+      const cached = await checkpoint.readOptional('assessment-round-1.result');\n+      delete cached.value.raw;\n+      await checkpoint.write('assessment-round-1.result', cached);\n+    }],\n     ...[\n-      ['status', 201], ['ok', false],\n+      ['status', 99], ['ok', false],\n       ['requestId', 'program:foreign:round-1'], ['runDirectory', '/fixture/foreign-run'],\n       ['transportSummaryRef', '/fixture/foreign-summary.json'],\n     ].map(([key, value]) => [`wrong cached ${key}`, async ({ checkpoint }) => {\n@@ -244,13 +269,41 @@\n       await checkpoint.write('assessment-round-1.result', cached);\n     }]),\n   ];\n-  for (const [name, mutate] of cases) {\n+  for (const [name, mutate, missingKey] of cases) {\n     await t.test(name, async t => {\n       const context = await seedPendingModel(t, { cachedResult: true });\n       await mutate(context);\n-      await assertUnknownWithoutDispatch(context.root, context.originalBudget);\n-      if (name === 'missing parent link')\n-        assert.equal(await context.checkpoint.readOptional('assessment-round-1.codex-run'), null);\n+      const before = await json(context.root, 'synthetic-host', 'state.json');\n+      const result = await assertUnknownWithoutDispatch(context.root, context.originalBudget);\n+      assert.equal(result.state.modelRecoveryRequests, before.modelRecoveryRequests);\n+      if (missingKey) assert.equal(await context.checkpoint.readOptional(missingKey), null);\n+    });\n+  }\n+});\n+\n+test('a complete non-success or invalid-JSON response settles the known model request before its existing error path', async t => {\n+  for (const nonSuccess of [true, false]) {\n+    await t.test(nonSuccess ? 'received HTTP error' : 'received invalid JSON', async t => {\n+      const { root, checkpoint } = await seedPendingModel(t, { cachedResult: true });\n+      const cached = await checkpoint.readOptional('assessment-round-1.result');\n+      if (nonSuccess) {\n+        cached.value.status = 503;\n+        cached.value.ok = false;\n+      } else {\n+        cached.value.raw = 'complete non-JSON model response';\n+        cached.value.codexReceipt.responseSha256 = sha256(cached.value.raw);\n+      }\n+      await checkpoint.write('assessment-round-1.result', cached);\n+      await rm(resolve(root, 'synthetic-model'), { recursive: true });\n+      const completed = await run(root);\n+      assert.equal(completed.code, 0, JSON.stringify(completed));\n+      assert.equal(completed.result.report.errorCode, nonSuccess\n+        ? 'PROGRAM_ASSESSMENT_GATEWAY_HTTP_503' : 'PROGRAM_ASSESSMENT_GATEWAY_INVALID_JSON_HTTP_200');\n+      assert.equal(completed.result.budget.active, null);\n+      assert.deepEqual(completed.result.budget.counts, { modelRequests: 1, saves: 0, finishes: 0 });\n+      assert.equal(completed.result.state.modelRequests, 1);\n+      assert.equal(completed.result.state.modelRecoveryRequests, 1);\n+      assert.equal(completed.result.state.saveCalls, 0);\n     });\n   }\n });\n--- 1aef22db/openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs\n+++ b400821e/openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs\n@@ -1,4 +1,5 @@\n import { createHash, randomUUID } from 'node:crypto';\n+import { dirname, isAbsolute, resolve } from 'node:path';\n import { isDeepStrictEqual } from 'node:util';\n import { prepareProgramAssessmentMaterials, PROGRAM_ASSESSMENT_MODE } from './program-assessment-materials.mjs';\n import { parseJobAidWorkJson, validateJobAidProblemInput } from './run-jobaid-problem-assessment.mjs';\n@@ -47,7 +48,10 @@\n   const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,\n     executionModel: options.executionModel ?? null,\n     ...(usesCodex ? { modelExecutor: 'CODEX', assessmentBinding: hostBinding } : {}) };\n+  const retainedParentResult = usesCodex && options.reconcileProgramModelRequest\n+    ? await checkpoint.readOptional('assessment-round-1.result') : null;\n   let enabled = await checkpoint.readOptional('assessment-enabled');\n+  if (retainedParentResult && !enabled) throw new Error('PROGRAM_ASSESSMENT_RESPONSE_BINDING_MISMATCH');\n   if (enabled && (!isDeepStrictEqual(enabled.binding, binding) || !isDeepStrictEqual(enabled.generationPolicy, POLICY)))\n     throw new Error('PROGRAM_ASSESSMENT_CHECKPOINT_BINDING_MISMATCH');\n   if (!enabled) {\n@@ -60,6 +64,7 @@\n   const previousExecution = await checkpoint.readOptional('program-execution');\n   if (previousExecution) return previousExecution;\n   let materials = await checkpoint.readOptional('program-materials');\n+  if (retainedParentResult && !materials) throw new Error('PROGRAM_ASSESSMENT_MATERIALS_BINDING_MISMATCH');\n   if (!materials) {\n     materials = await prepareProgramAssessmentMaterials(modelInput, options);\n     await checkpoint.writeOnce('program-materials', materials);\n@@ -83,6 +88,8 @@\n         properties: { workJson: { type: 'string', minLength: 2 } } } } }],\n     tool_choice: 'auto', parallel_tool_calls: false, n: 1, stream: false };\n   const body = canonicalJson(request);\n+  if (retainedParentResult && !await checkpoint.readOptional('program-model-input'))\n+    throw new Error('PROGRAM_ASSESSMENT_MODEL_INPUT_MISSING');\n   await checkpoint.writeOnceOrEqual('program-model-input', { version: 1, body,\n     executionModel: options.executionModel ?? null, materialCheckpoint: 'program-materials' });\n   const modelRequest = await checkpoint.readOptional('program-model-input');\n@@ -91,12 +98,20 @@\n   // Authentication stays in the transient gateway headers, outside this snapshot.\n   await recordProgress('MATERIALS_READY', 'program-materials', JSON.stringify({ materials, modelRequest }));\n   const argsHash = canonicalSha256({ body, executionModel: options.executionModel ?? null });\n-  const originalRunRecorder = async () => {\n+  const readOriginalRun = async () => {\n     const key = 'assessment-round-1.codex-run';\n     const original = await checkpoint.readOptional(key);\n     if (original?.version !== 1 || original.requestId !== codexRecoveryRequestId ||\n-        original.argsHash !== argsHash)\n+        original.argsHash !== argsHash || !isAbsolute(original.runRoot ?? '') ||\n+        !isAbsolute(original.runDirectory ?? '') || dirname(original.runDirectory) !== original.runRoot ||\n+        ![original.gatewayBindingSha256, original.promptSha256].every(value =>\n+          typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value)))\n       throw new Error('PROGRAM_ASSESSMENT_ORIGINAL_RUN_BINDING_REQUIRED');\n+    return original;\n+  };\n+  const originalRunRecorder = async () => {\n+    const key = 'assessment-round-1.codex-run';\n+    const original = await readOriginalRun();\n     const record = codexParentRunRecorder(checkpoint, 'assessment-round-1',\n       { requestId: codexRecoveryRequestId, argsHash });\n     return async prepared => {\n@@ -105,7 +120,7 @@\n       await record(prepared);\n     };\n   };\n-  let responseRecord = await checkpoint.readOptional('assessment-round-1.result');\n+  let responseRecord = retainedParentResult ?? await checkpoint.readOptional('assessment-round-1.result');\n   if (responseRecord && responseRecord.argsHash !== argsHash) throw new Error('PROGRAM_ASSESSMENT_RESPONSE_BINDING_MISMATCH');\n   if (!responseRecord) {\n     const started = await checkpoint.readOptional('assessment-round-1.started');\n@@ -160,7 +175,8 @@\n     if (heartbeatFailure) throw heartbeatFailure;\n   }\n   const { raw, status, ok } = responseRecord.value;\n-  if (usesCodex && (responseRecord.value.codexReceipt?.requestId !== codexRecoveryRequestId ||\n+  if (usesCodex && (typeof raw !== 'string' ||\n+      responseRecord.value.codexReceipt?.requestId !== codexRecoveryRequestId ||\n       responseRecord.value.codexReceipt.responseSha256 !== createHash('sha256').update(raw).digest('hex')))\n     throw new Error('PROGRAM_ASSESSMENT_CODEX_RECEIPT_MISMATCH');\n   if (usesCodex && options.reconcileProgramModelRequest) {\n@@ -168,22 +184,15 @@\n       const started = await checkpoint.readOptional('assessment-round-1.started');\n       if (started?.argsHash !== argsHash || started.codexRecoveryRequestId !== codexRecoveryRequestId)\n         throw new Error('PROGRAM_ASSESSMENT_RESPONSE_BINDING_MISMATCH');\n-      // A cached parent result alone cannot resolve a pending model outcome.\n-      // Re-read the original child receipt in recover-only mode, including its\n-      // existing parent link, prompt, request and complete response validation.\n-      const onRunPrepared = await originalRunRecorder();\n-      const response = await requestModelGateway(options, modelGatewayEndpoint(options), {\n-        method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json',\n-          ...modelGatewayHeaders(options), ...modelHeaders }, body,\n-        signal: AbortSignal.timeout(Math.min(options.timeoutMs ?? 30_000, 30_000)),\n-        codexRecovery: { requestId: codexRecoveryRequestId, recoverOnly: true, onRunPrepared },\n-      }, dependencies);\n-      const recoveredRaw = await response.text();\n+      // The private parent result already retains the complete adapter response.\n+      // Reconcile that known request from its original parent binding; child\n+      // files are needed only above when no durable parent result exists yet.\n+      const original = await readOriginalRun();\n       const receipt = responseRecord.value.codexReceipt;\n-      if (recoveredRaw !== raw || response.status !== status || response.ok !== ok ||\n-          !response.codexReceipt ||\n-          ['requestId', 'runDirectory', 'responseSha256', 'transportSummaryRef'].some(key =>\n-            response.codexReceipt[key] !== receipt[key]))\n+      if (!Number.isInteger(status) || status < 100 || status > 599 ||\n+          typeof ok !== 'boolean' || ok !== (status >= 200 && status < 300) ||\n+          receipt.runDirectory !== original.runDirectory ||\n+          receipt.transportSummaryRef !== resolve(original.runDirectory, 'transport-summary.json'))\n         throw new Error('PROGRAM_ASSESSMENT_CODEX_RECEIPT_MISMATCH');\n     });\n   }\n"
+  },
+  "boundaryVerification": {
+    "unchangedBoundaryFiles": [
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs",
+        "sha256": "c11af226d868efec64171ee3a6d5c8efbd1b3445e7dc31bd482a32cebaea3cb7",
+        "unchangedFrom1aef22db": true,
+        "unchangedFrom0b": false
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs",
+        "sha256": "9b2f3a53735a56faaa6aa7c266c43e05daabec8178d21f5809df27d6754d778e",
+        "unchangedFrom1aef22db": true,
+        "unchangedFrom0b": true
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/orchestrate-host-mcp.mjs",
+        "sha256": "a65c867859d8ee5878789b131ca5537444d6617c1d0a18f4958888bfc408fa76",
+        "unchangedFrom1aef22db": true,
+        "unchangedFrom0b": true
+      },
+      {
+        "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
+        "sha256": "02d4f44236f5b8e659edaa9d88cf1688d7008e5acebe52d0bd3e54b94c34865c",
+        "unchangedFrom1aef22db": true,
+        "unchangedFrom0b": true
+      },
+      {
+        "path": "openclaw/codex-evaluator/program-recovery-fixture.mjs",
+        "sha256": "3f642f07117a2b0e5c6ec775cc0e510849d47e9b70c8e283acbd4032241db5a0",
+        "unchangedFrom1aef22db": true,
+        "unchangedFrom0b": false
+      },
+      {
+        "path": "openclaw/codex-evaluator/codex-generation-recovery.test.mjs",
+        "sha256": "98559703a2dd31048a3a4315a5e6f83dd460db0b3692362597be03ffaa2c1235",
+        "unchangedFrom1aef22db": true,
+        "unchangedFrom0b": true
+      },
+      {
+        "path": "openclaw/codex-evaluator/test_run_codex_generation_recovery.py",
+        "sha256": "25cd7948a033e807c39f0a16a60dfcfdba07270ee7e8908b59aa8436b6322989",
+        "unchangedFrom1aef22db": true,
+        "unchangedFrom0b": true
+      },
+      {
+        "path": "openclaw/codex-evaluator/codex-generation.mjs",
+        "sha256": "fd0d77f118d312292db8580a7f1f153be712029a98e5c0774c7ca8e0bebb31fe",
+        "unchangedFrom1aef22db": true,
+        "unchangedFrom0b": true
+      },
+      {
+        "path": "openclaw/codex-evaluator/run_codex_generation.py",
+        "sha256": "4596a24630cfbdf96006aed8f06aa26d2c534111313b0890e3b00c3a912682ef",
+        "unchangedFrom1aef22db": true,
+        "unchangedFrom0b": true
+      },
+      {
+        "path": "openclaw/codex-evaluator/miaoda_responses_bridge.py",
+        "sha256": "52e9b093ba293bab7479a3b1105d4db750605b49143054ec5a5133111ba3a632",
+        "unchangedFrom1aef22db": true,
+        "unchangedFrom0b": true
+      }
+    ],
+    "unchangedAfterAnchor": {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "anchor": "let payload;",
+      "byteIdentical": true,
+      "sha256": "05bf87bbbf2e5eab6dddc923fa5fda38f0cd2180577d092f4f4d082a1324665c"
+    }
+  },
+  "postExecutionIntegrity": {
+    "sourceFileCount": 218,
+    "allManifestBytesUnchanged": true,
+    "addedFiles": [],
+    "missingFiles": [],
+    "historicalEvidence": [
+      {
+        "name": "c48_original_repro",
+        "path": "/workspace/scratch/b5a75900fbaa/wiselink-codex-0b-review/docs/coordination/wiselink-codex-0b-repro-20261025/repro.mjs",
+        "bytes": 9540,
+        "sha256": "35e75132cac76fed4b7a4a240098a7e32d4bcbbbc7d0a5a69c18f89ce870c355",
+        "unchanged": true
+      },
+      {
+        "name": "f8_criteria",
+        "path": "/workspace/scratch/b5a75900fbaa/wiselink-codex-0b-review/docs/coordination/WISELINK_CODEX_MINIMAL_FIX_REVIEW_CRITERIA_20261025.md",
+        "bytes": 14298,
+        "sha256": "bbb2b786dffe01a8091cb8591db6221eec657e2c47844828c7069fa5f4eccabf",
+        "unchanged": true
+      },
+      {
+        "name": "prior_stage_diagnostic",
+        "path": "/workspace/scratch/b5a75900fbaa/wiselink-1aef22db-review/stage-finish-evidence/repro-stage.mjs",
+        "bytes": 10020,
+        "sha256": "a5a5b66bd12dd617b2cd0b3b1557b7f7991d353a7e47f5cc1eae23b993f84b4d",
+        "unchanged": true
+      }
+    ]
+  },
+  "currentTestExecution": {
+    "testFile": "openclaw/codex-evaluator/program-budget-recovery.test.mjs",
+    "executions": 1,
+    "exitCode": 0,
+    "stats": {
+      "tests": 53,
+      "pass": 53,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "durationMs": 18564.906747,
+    "topLevelTests": 11,
+    "subtests": 42,
+    "onlySyntheticHostAndGateway": true,
+    "newRealHostCalls": 0,
+    "newRealModelCalls": 0,
+    "fixtureEndsAt": "SYNTHETIC_SAVE_READ_ONLY",
+    "stageFinishExecutedInThisRun": false,
+    "raw": {
+      "command.txt": {
+        "sha256": "a7066931cdc07476b7ab2685d157ebd00d7415219f7e223d87383efbbb1f5508",
+        "bytes": 871,
+        "content": "# Executed by the isolated shell; direct Node invocation with output capture.\nset +e\nenv -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/workspace/scratch/b5a75900fbaa/wiselink-b400821e-review/targeted-test-evidence/home TMPDIR=/workspace/scratch/b5a75900fbaa/wiselink-b400821e-review/targeted-test-evidence/tmp PYTHONDONTWRITEBYTECODE=1 /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node /workspace/scratch/b5a75900fbaa/wiselink-b400821e-review/input/wiselink-codex-client/openclaw/codex-evaluator/program-budget-recovery.test.mjs > /workspace/scratch/b5a75900fbaa/wiselink-b400821e-review/targeted-test-evidence/stdout.txt 2> /workspace/scratch/b5a75900fbaa/wiselink-b400821e-review/targeted-test-evidence/stderr.txt\ntest_rc=$?\nprintf '%s\\n' \"$test_rc\" > /workspace/scratch/b5a75900fbaa/wiselink-b400821e-review/targeted-test-evidence/exit-code.txt\nexit 0\n"
+      },
+      "environment.txt": {
+        "sha256": "11425742c4c1c6e36bef721a422d37e3d0831de3006caabbbfd32959c047568e",
+        "bytes": 1011,
+        "content": "target_root=/workspace/scratch/b5a75900fbaa/wiselink-b400821e-review/input/wiselink-codex-client\ntest_file=/workspace/scratch/b5a75900fbaa/wiselink-b400821e-review/input/wiselink-codex-client/openclaw/codex-evaluator/program-budget-recovery.test.mjs\nnode_bin=/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node\nnode_version=v24.22.1\npython3_bin=/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3\npython3_version=Python 3.12.14\nprovided_python_path=/usr/local/bin/python3 (not present in this runtime; Python is not invoked by this test)\nuname=Linux e08789af3c70 6.18.55 #1 SMP Wed Oct 14 19:45:18 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux\ntest_home=/workspace/scratch/b5a75900fbaa/wiselink-b400821e-review/targeted-test-evidence/home\ntest_tmpdir=/workspace/scratch/b5a75900fbaa/wiselink-b400821e-review/targeted-test-evidence/tmp\nenvironment=clean env -i; only PATH, HOME, TMPDIR, PYTHONDONTWRITEBYTECODE allowed\nPATH=/usr/local/bin:/usr/bin:/bin\nPYTHONDONTWRITEBYTECODE=1\n"
+      },
+      "exit-code.txt": {
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "bytes": 2,
+        "content": "0\n"
+      },
+      "stdout.txt": {
+        "sha256": "e1964212ae533e63a44b20d8185693ea3b9311a3ccd46d95e3ccebc463280aa8",
+        "bytes": 4089,
+        "content": "▶ pending budget model receipt recovers after process death or an exception with one charged dispatch\n  ✔ after-model-receipt (447.858513ms)\n  ✔ throw-after-model-receipt (443.534281ms)\n✔ pending budget model receipt recovers after process death or an exception with one charged dispatch (894.124643ms)\n✔ receipt recovery may die after writing round.result and the next process closes only the pending model reservation (501.024104ms)\n▶ missing or changed original receipt, request and parent link retain UNKNOWN without SAVE or another dispatch\n  ✔ missing receipt (362.710724ms)\n  ✔ malformed receipt (393.283965ms)\n  ✔ changed raw with its original fixed hash (364.860902ms)\n  ✔ wrong request ID (331.516799ms)\n  ✔ wrong request body (337.356751ms)\n  ✔ missing transport receipt (370.454443ms)\n  ✔ incomplete transport receipt (329.426391ms)\n  ✔ missing parent link (322.172953ms)\n  ✔ malformed parent link (346.073447ms)\n  ✔ wrong parent requestId (348.708033ms)\n  ✔ wrong parent argsHash (334.41432ms)\n  ✔ wrong parent gatewayBindingSha256 (331.609421ms)\n  ✔ wrong parent promptSha256 (327.048141ms)\n  ✔ wrong parent runRoot (324.625278ms)\n  ✔ wrong parent runDirectory (320.567736ms)\n✔ missing or changed original receipt, request and parent link retain UNKNOWN without SAVE or another dispatch (5150.435466ms)\n▶ a complete parent result survives missing or damaged child files without another gateway call\n  ✔ missing child directory (503.156064ms)\n  ✔ malformed child receipt (511.128097ms)\n  ✔ changed child raw and request (510.785212ms)\n✔ a complete parent result survives missing or damaged child files without another gateway call (1526.28462ms)\n▶ parent result recovery still requires the original parent input, started marker, link and intact response\n  ✔ missing assessment-enabled (457.278343ms)\n  ✔ missing program-materials (523.772467ms)\n  ✔ missing program-model-input (468.684656ms)\n  ✔ missing assessment-round-1.started (442.953736ms)\n  ✔ missing assessment-round-1.codex-run (458.745162ms)\n  ✔ wrong original request body (445.859462ms)\n  ✔ wrong started request (447.839433ms)\n  ✔ wrong parent binding (462.179498ms)\n  ✔ invalid parent location (484.526735ms)\n  ✔ changed raw with its original fixed hash (484.389043ms)\n  ✔ missing raw (500.820668ms)\n  ✔ wrong cached status (439.658111ms)\n  ✔ wrong cached ok (441.105637ms)\n  ✔ wrong cached requestId (449.930103ms)\n  ✔ wrong cached runDirectory (453.526947ms)\n  ✔ wrong cached transportSummaryRef (425.522443ms)\n✔ parent result recovery still requires the original parent input, started marker, link and intact response (7391.37217ms)\n▶ a complete non-success or invalid-JSON response settles the known model request before its existing error path\n  ✔ received HTTP error (419.6254ms)\n  ✔ received invalid JSON (431.246656ms)\n✔ a complete non-success or invalid-JSON response settles the known model request before its existing error path (851.55933ms)\n▶ pending model reservation requires the original first ordinal without clearing or refunding its count\n  ✔ missing ordinal (448.416227ms)\n  ✔ changed ordinal (487.125283ms)\n✔ pending model reservation requires the original first ordinal without clearing or refunding its count (936.157755ms)\n✔ a pending SAVE reservation stays pending and causes no gateway verification or duplicate SAVE (357.646405ms)\n▶ a known completed model reservation needs no additional gateway verification before SAVE and READ\n  ✔ uninterrupted (190.30248ms)\n  ✔ restart after normal result publication (293.451392ms)\n✔ a known completed model reservation needs no additional gateway verification before SAVE and READ (484.455588ms)\n✔ an unrelated pending FINISH reservation is not cleared by the cached program response (298.670071ms)\n✔ the initial no-budget program path keeps its existing SAVE and independent READ behavior (167.392378ms)\nℹ tests 53\nℹ suites 0\nℹ pass 53\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 18564.906747\n"
+      },
+      "stderr.txt": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "content": ""
+      }
+    }
+  },
+  "reportedLocalCount": {
+    "source": "DELIVERY_RECEIPT.json validation, supplied local report",
+    "tests": 63,
+    "passed": 63,
+    "failed": 0,
+    "skipped": 0,
+    "independentlyReproducedAsSameAggregate": false,
+    "commandAndCompositionIncludedInReceipt": false,
+    "interpretation": "Do not substitute 53 with 63 or assume the additional 10; no extra tests needed to reach the reported count."
+  },
+  "reusedEvidence": {
+    "auditCommit": "c0b1831eae412a7d6a263fd10d01e9c3e30ef382",
+    "path": "docs/coordination/WISELINK_CODEX_1AEF22DB_NARROW_REVIEW_20261025.evidence.json",
+    "sha256": "0c1e2522ce8aa577ffa68005f1e8434843c326ba73937ed3742ba3afd1c2445b",
+    "bytes": 120024,
+    "priorStageObservations": {
+      "normal": {
+        "status": "INITIAL_STAGE_SAVED",
+        "counts": {
+          "modelRequests": 1,
+          "saves": 1,
+          "finishes": 1
+        },
+        "active": null
+      },
+      "interrupt": {
+        "exitCode": 137,
+        "counts": {
+          "begins": 1,
+          "generations": 1,
+          "recoveries": 0,
+          "saves": 0,
+          "commits": 0
+        },
+        "budget": {
+          "active": {
+            "kind": "modelRequests"
+          },
+          "counts": {
+            "finishes": 0,
+            "modelRequests": 1,
+            "saves": 0
+          },
+          "explicitOnly": true,
+          "limits": {
+            "finishes": 1,
+            "modelRequests": 1,
+            "saves": 1
+          },
+          "selection": {
+            "documentVersionId": "fixture-document-recovery",
+            "operation": "EVALUATE_JOBAID",
+            "requestId": null,
+            "workItemId": "WI-fixture-program-recovery"
+          }
+        },
+        "receiptRequestId": "program:AQ-fixture-program-recovery:round-1",
+        "receiptRawSha256": "9bd760ebb59d967f75e1c6893b6785914a63fef849caee9d883e5a06ff5cd103"
+      },
+      "recovery": {
+        "status": "INITIAL_STAGE_SAVED",
+        "counts": {
+          "begins": 2,
+          "generations": 1,
+          "recoveries": 2,
+          "saves": 1,
+          "commits": 1
+        },
+        "budget": {
+          "active": null,
+          "counts": {
+            "finishes": 1,
+            "modelRequests": 1,
+            "saves": 1
+          },
+          "explicitOnly": true,
+          "limits": {
+            "finishes": 1,
+            "modelRequests": 1,
+            "saves": 1
+          },
+          "selection": {
+            "documentVersionId": "fixture-document-recovery",
+            "operation": "EVALUATE_JOBAID",
+            "requestId": null,
+            "workItemId": "WI-fixture-program-recovery"
+          }
+        },
+        "sameOriginalTask": true,
+        "sameAttempt": true,
+        "newLeaseGeneration": true,
+        "newFence": true,
+        "sameRequestId": true,
+        "sameModelBody": true,
+        "sameOriginalRaw": true,
+        "sameReceiptAfterRecovery": true,
+        "parentPromptHashMatches": true,
+        "saveRequestIdMatchesSaved": true
+      },
+      "reentry": {
+        "errorCode": "INITIAL_EXPECTED_OPERATION_MISMATCH",
+        "countsBefore": {
+          "begins": 2,
+          "generations": 1,
+          "recoveries": 2,
+          "saves": 1,
+          "commits": 1
+        },
+        "countsAfter": {
+          "begins": 2,
+          "generations": 1,
+          "recoveries": 2,
+          "saves": 1,
+          "commits": 1
+        },
+        "budgetBytesUnchanged": true,
+        "receiptUnchanged": true,
+        "savedUnchanged": true
+      }
+    },
+    "stageEvidenceRerun": false,
+    "applicability": "Previous public-consumer stage commit and completed-task reentry evidence retained at its original synthetic scope; budget/consumer/fence/COMMITTING files and program tail are byte-identical. Current W2 executed only SAVE/READ fixture."
+  },
+  "sourceSnippets": [
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "sourceCommit": "b400821ef943feb9c3520a54f8c89c3a43b768ee",
+      "startLine": 26,
+      "endLine": 198,
+      "text": "26: export async function invokeHostedProgramAssessment({ operation, modelInput }, options, dependencies = {}) {\n27:   modelInput = structuredClone(modelInput);\n28:   options = { ...options, executionModel: options.executionModel === undefined\n29:     ? undefined : structuredClone(options.executionModel),\n30:     registeredModelRefs: options.registeredModelRefs ? [...options.registeredModelRefs] : undefined };\n31:   validateJobAidProblemInput(modelInput);\n32:   const checkpoint = options.assessmentCheckpoint;\n33:   if (operation !== 'EVALUATE_JOBAID' || modelInput.executionMode !== PROGRAM_ASSESSMENT_MODE ||\n34:       modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || !checkpoint ||\n35:       !options.sessionDiscriminator || typeof options.readAssessmentSources !== 'function' ||\n36:       typeof options.readAssessmentWork !== 'function' || typeof options.saveAssessmentWork !== 'function' ||\n37:       typeof options.recordAssessmentProgramProgress !== 'function') throw new Error('PROGRAM_ASSESSMENT_CAPABILITY_REQUIRED');\n38:   assertHostedModelGatewayReady(options);\n39:   const usesCodex = modelExecutor(options) === 'CODEX';\n40:   const hostBinding = options.assessmentBinding;\n41:   if (usesCodex && (!hostBinding ||\n42:       ['attemptRef', 'actionAttemptId', 'workItemId', 'documentVersionId'].some(key =>\n43:         typeof hostBinding[key] !== 'string' || !hostBinding[key].trim()) ||\n44:       !Number.isSafeInteger(hostBinding.baseRevision) || hostBinding.baseRevision < 0))\n45:     throw new Error('PROGRAM_ASSESSMENT_HOST_BINDING_REQUIRED');\n46:   const codexRecoveryRequestId = usesCodex ? `program:${hostBinding.attemptRef}:round-1` : null;\n47:   const modelHeaders = executionModelHeaders(options);\n48:   const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,\n49:     executionModel: options.executionModel ?? null,\n50:     ...(usesCodex ? { modelExecutor: 'CODEX', assessmentBinding: hostBinding } : {}) };\n51:   const retainedParentResult = usesCodex && options.reconcileProgramModelRequest\n52:     ? await checkpoint.readOptional('assessment-round-1.result') : null;\n53:   let enabled = await checkpoint.readOptional('assessment-enabled');\n54:   if (retainedParentResult && !enabled) throw new Error('PROGRAM_ASSESSMENT_RESPONSE_BINDING_MISMATCH');\n55:   if (enabled && (!isDeepStrictEqual(enabled.binding, binding) || !isDeepStrictEqual(enabled.generationPolicy, POLICY)))\n56:     throw new Error('PROGRAM_ASSESSMENT_CHECKPOINT_BINDING_MISMATCH');\n57:   if (!enabled) {\n58:     enabled = { version: 2, binding, startedAt: Date.now(), generationPolicy: POLICY };\n59:     await checkpoint.writeOnce('assessment-enabled', enabled);\n60:   }\n61:   if (!await checkpoint.readOptional('assessment-state')) await checkpoint.writeOnce('assessment-state', {\n62:     round: 1, protocolRepairs: 0, noProgressRepairs: 0, executionMode: PROGRAM_ASSESSMENT_MODE,\n63:   });\n64:   const previousExecution = await checkpoint.readOptional('program-execution');\n65:   if (previousExecution) return previousExecution;\n66:   let materials = await checkpoint.readOptional('program-materials');\n67:   if (retainedParentResult && !materials) throw new Error('PROGRAM_ASSESSMENT_MATERIALS_BINDING_MISMATCH');\n68:   if (!materials) {\n69:     materials = await prepareProgramAssessmentMaterials(modelInput, options);\n70:     await checkpoint.writeOnce('program-materials', materials);\n71:     materials = await checkpoint.readOptional('program-materials');\n72:   }\n73:   if (!materials || !isDeepStrictEqual(materials.originalInput, modelInput))\n74:     throw new Error('PROGRAM_ASSESSMENT_MATERIALS_BINDING_MISMATCH');\n75:   const recordProgress = async (phase, key, materialSnapshotJson) => {\n76:     if (!await checkpoint.readOptional(`program-progress-${phase}`)) {\n77:       const receipt = await options.recordAssessmentProgramProgress({ phase,\n78:         checkpointRef: `initial:${options.sessionDiscriminator}:${key}`,\n79:         ...(materialSnapshotJson === undefined ? {} : { materialSnapshotJson }) });\n80:       await checkpoint.writeOnce(`program-progress-${phase}`, receipt);\n81:     }\n82:   };\n83:   const request = { model: `openclaw/${WISELINK_PROFILE_REF}`, user: `initial:${options.sessionDiscriminator}`,\n84:     messages: [{ role: 'system', content: GUIDE }, { role: 'user', content: canonicalJson(materials.modelInput) }],\n85:     tools: [{ type: 'function', function: { name: OUTPUT_FUNCTION,\n86:       description: 'Serialize one complete engineering work only. No READ, SAVE or workflow action.',\n87:       parameters: { type: 'object', additionalProperties: false, required: ['workJson'],\n88:         properties: { workJson: { type: 'string', minLength: 2 } } } } }],\n89:     tool_choice: 'auto', parallel_tool_calls: false, n: 1, stream: false };\n90:   const body = canonicalJson(request);\n91:   if (retainedParentResult && !await checkpoint.readOptional('program-model-input'))\n92:     throw new Error('PROGRAM_ASSESSMENT_MODEL_INPUT_MISSING');\n93:   await checkpoint.writeOnceOrEqual('program-model-input', { version: 1, body,\n94:     executionModel: options.executionModel ?? null, materialCheckpoint: 'program-materials' });\n95:   const modelRequest = await checkpoint.readOptional('program-model-input');\n96:   if (!modelRequest) throw new Error('PROGRAM_ASSESSMENT_MODEL_INPUT_MISSING');\n97:   // Register the durable material and exact request before any model dispatch.\n98:   // Authentication stays in the transient gateway headers, outside this snapshot.\n99:   await recordProgress('MATERIALS_READY', 'program-materials', JSON.stringify({ materials, modelRequest }));\n100:   const argsHash = canonicalSha256({ body, executionModel: options.executionModel ?? null });\n101:   const readOriginalRun = async () => {\n102:     const key = 'assessment-round-1.codex-run';\n103:     const original = await checkpoint.readOptional(key);\n104:     if (original?.version !== 1 || original.requestId !== codexRecoveryRequestId ||\n105:         original.argsHash !== argsHash || !isAbsolute(original.runRoot ?? '') ||\n106:         !isAbsolute(original.runDirectory ?? '') || dirname(original.runDirectory) !== original.runRoot ||\n107:         ![original.gatewayBindingSha256, original.promptSha256].every(value =>\n108:           typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value)))\n109:       throw new Error('PROGRAM_ASSESSMENT_ORIGINAL_RUN_BINDING_REQUIRED');\n110:     return original;\n111:   };\n112:   const originalRunRecorder = async () => {\n113:     const key = 'assessment-round-1.codex-run';\n114:     const original = await readOriginalRun();\n115:     const record = codexParentRunRecorder(checkpoint, 'assessment-round-1',\n116:       { requestId: codexRecoveryRequestId, argsHash });\n117:     return async prepared => {\n118:       if (!isDeepStrictEqual(await checkpoint.readOptional(key), original))\n119:         throw new Error('PROGRAM_ASSESSMENT_ORIGINAL_RUN_BINDING_CHANGED');\n120:       await record(prepared);\n121:     };\n122:   };\n123:   let responseRecord = retainedParentResult ?? await checkpoint.readOptional('assessment-round-1.result');\n124:   if (responseRecord && responseRecord.argsHash !== argsHash) throw new Error('PROGRAM_ASSESSMENT_RESPONSE_BINDING_MISMATCH');\n125:   if (!responseRecord) {\n126:     const started = await checkpoint.readOptional('assessment-round-1.started');\n127:     if (started && (!usesCodex || started.argsHash !== argsHash ||\n128:         started.codexRecoveryRequestId !== codexRecoveryRequestId))\n129:       throw new Error('PROGRAM_ASSESSMENT_MODEL_OUTCOME_UNKNOWN');\n130:     await options.heartbeat?.();\n131:     const deadline = Date.parse(options.taskDeadline);\n132:     // Local receipt recovery does not spend another model request. The Host\n133:     // still grants the current lease and authorizes every later SAVE/READ.\n134:     const timeout = started ? Math.min(options.timeoutMs ?? 30_000, 30_000)\n135:       : Math.min(options.timeoutMs ?? 15 * 60_000, deadline - Date.now());\n136:     if (!Number.isFinite(timeout) || timeout <= 0) throw new Error('PROGRAM_ASSESSMENT_DEADLINE_EXPIRED');\n137:     const perform = async () => {\n138:       // A local budget refusal before perform is not an upstream UNKNOWN.\n139:       if (!started) await checkpoint.writeOnce('assessment-round-1.started', {\n140:         argsHash, startedAt: new Date().toISOString(),\n141:         ...(usesCodex ? { codexRecoveryRequestId } : {}),\n142:       });\n143:       const onRunPrepared = usesCodex && started && options.reconcileProgramModelRequest\n144:         ? await originalRunRecorder() : usesCodex ? codexParentRunRecorder(checkpoint, 'assessment-round-1',\n145:           { requestId: codexRecoveryRequestId, argsHash }) : undefined;\n146:       const response = await requestModelGateway(options,\n147:         modelGatewayEndpoint(options), { method: 'POST',\n148:           headers: { accept: 'application/json', 'content-type': 'application/json',\n149:             ...modelGatewayHeaders(options), ...modelHeaders }, body,\n150:           signal: AbortSignal.timeout(timeout),\n151:           ...(usesCodex ? { codexRecovery: { requestId: codexRecoveryRequestId,\n152:             recoverOnly: Boolean(started),\n153:             onRunPrepared } } : {}) }, dependencies);\n154:       return { raw: await response.text(), status: response.status, ok: response.ok,\n155:         ...(usesCodex ? { codexReceipt: response.codexReceipt } : {}) };\n156:     };\n157:     let value, heartbeatPending = null, heartbeatFailure = null;\n158:     const timer = (dependencies.setInterval ?? setInterval)(() => {\n159:       if (!heartbeatPending && !heartbeatFailure) heartbeatPending = Promise.resolve().then(() => options.heartbeat?.())\n160:         .catch(error => { heartbeatFailure = error; }).finally(() => { heartbeatPending = null; });\n161:     }, 10_000);\n162:     try { value = !started && options.runModelRequest ? await options.runModelRequest(perform) : await perform(); }\n163:     catch (error) {\n164:       await checkpoint.write('program-transport-observation', { outcome: 'UNKNOWN',\n165:         observedAt: new Date().toISOString(), diagnostic: hostedGatewayTransportFailureDiagnostic(error) });\n166:       throw error;\n167:     } finally {\n168:       (dependencies.clearInterval ?? clearInterval)(timer);\n169:       if (heartbeatPending) await heartbeatPending;\n170:     }\n171:     responseRecord = { argsHash, finishedAt: new Date().toISOString(), value };\n172:     // This write is required, not an auxiliary diagnostic: never SAVE unless\n173:     // the complete original HTTP response has been durably retained.\n174:     await checkpoint.writeOnce('assessment-round-1.result', responseRecord);\n175:     if (heartbeatFailure) throw heartbeatFailure;\n176:   }\n177:   const { raw, status, ok } = responseRecord.value;\n178:   if (usesCodex && (typeof raw !== 'string' ||\n179:       responseRecord.value.codexReceipt?.requestId !== codexRecoveryRequestId ||\n180:       responseRecord.value.codexReceipt.responseSha256 !== createHash('sha256').update(raw).digest('hex')))\n181:     throw new Error('PROGRAM_ASSESSMENT_CODEX_RECEIPT_MISMATCH');\n182:   if (usesCodex && options.reconcileProgramModelRequest) {\n183:     await options.reconcileProgramModelRequest(async () => {\n184:       const started = await checkpoint.readOptional('assessment-round-1.started');\n185:       if (started?.argsHash !== argsHash || started.codexRecoveryRequestId !== codexRecoveryRequestId)\n186:         throw new Error('PROGRAM_ASSESSMENT_RESPONSE_BINDING_MISMATCH');\n187:       // The private parent result already retains the complete adapter response.\n188:       // Reconcile that known request from its original parent binding; child\n189:       // files are needed only above when no durable parent result exists yet.\n190:       const original = await readOriginalRun();\n191:       const receipt = responseRecord.value.codexReceipt;\n192:       if (!Number.isInteger(status) || status < 100 || status > 599 ||\n193:           typeof ok !== 'boolean' || ok !== (status >= 200 && status < 300) ||\n194:           receipt.runDirectory !== original.runDirectory ||\n195:           receipt.transportSummaryRef !== resolve(original.runDirectory, 'transport-summary.json'))\n196:         throw new Error('PROGRAM_ASSESSMENT_CODEX_RECEIPT_MISMATCH');\n197:     });\n198:   }"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "sourceCommit": "b400821ef943feb9c3520a54f8c89c3a43b768ee",
+      "startLine": 245,
+      "endLine": 336,
+      "text": "245:     ...(work.unchangedIssueKeys ?? []), ...(work.retiredIssues ?? []).map(issue => issue.issueKey)]);\n246:   const missingIssueKeys = previousIssues.map(issue => issue.issueKey).filter(key => !acknowledged.has(key));\n247:   if (missingIssueKeys.length) {\n248:     const code = 'JOBAID_PROGRAM_PREVIOUS_ISSUE_COVERAGE_REQUIRED';\n249:     await checkpoint.write('program-work-rejection', { code, missingIssueKeys });\n250:     throw terminal('JOBAID_WORK_VALIDATION_FAILED', code);\n251:   }\n252:   await checkpoint.writeOnceOrEqual('program-work-candidate', work);\n253:   await recordProgress('MODEL_RESPONSE_SAVED', 'assessment-round-1.result');\n254:   let saveRequest = await checkpoint.readOptional('program-save-request');\n255:   if (!saveRequest) {\n256:     saveRequest = { requestId: randomUUID(), expectedWorkRevision: modelInput.expectedWorkRevision,\n257:       workJson: JSON.stringify(work) };\n258:     await checkpoint.writeOnce('program-save-request', saveRequest);\n259:   }\n260:   if (saveRequest.expectedWorkRevision !== modelInput.expectedWorkRevision || saveRequest.workJson !== JSON.stringify(work))\n261:     throw new Error('PROGRAM_ASSESSMENT_SAVE_BINDING_MISMATCH');\n262:   let readback = await options.readAssessmentWork({ requestId: saveRequest.requestId });\n263:   const validateReadIdentity = packet => {\n264:     if (!usesCodex) return;\n265:     const revision = packet?.revision;\n266:     if (packet?.schemaVersion !== 'wiselink.jobaid-work-read.v2' ||\n267:         packet.attemptId !== hostBinding.actionAttemptId || packet.executionStatus !== 'RUNNING' ||\n268:         packet.inputWorkRevision !== modelInput.expectedWorkRevision ||\n269:         (revision && (revision.actionAttemptId !== hostBinding.actionAttemptId ||\n270:           revision.workItemId !== hostBinding.workItemId ||\n271:           revision.documentVersionId !== hostBinding.documentVersionId ||\n272:           revision.basedOnWorkItemRevision !== hostBinding.baseRevision)))\n273:       throw new Error('PROGRAM_ASSESSMENT_READ_IDENTITY_MISMATCH');\n274:   };\n275:   validateReadIdentity(readback);\n276:   if (!readback?.revision) {\n277:     if (await checkpoint.readOptional('program-save-receipt'))\n278:       throw new Error('PROGRAM_ASSESSMENT_ACK_READBACK_MISSING');\n279:     try {\n280:       await checkpoint.writeOnceOrEqual('program-save-started', { request: saveRequest,\n281:         ...(usesCodex ? { assessmentBinding: hostBinding } : {}) });\n282:       const receipt = await options.saveAssessmentWork(saveRequest);\n283:       await checkpoint.writeOnceOrEqual('program-save-receipt', receipt);\n284:     } catch (error) {\n285:       readback = await options.readAssessmentWork({ requestId: saveRequest.requestId });\n286:       validateReadIdentity(readback);\n287:       if (!readback?.revision) {\n288:         // Lease, CAS, authorization and technical SAVE errors share the JOBAID\n289:         // prefix with content errors. Preserve the response and original error;\n290:         // a prefix is never authority to discard this recoverable generation.\n291:         throw error;\n292:       }\n293:     }\n294:     // Always perform an independent exact READ, including after a SAVE ACK.\n295:     if (!readback?.revision) readback = await options.readAssessmentWork({ requestId: saveRequest.requestId });\n296:   }\n297:   validateReadIdentity(readback);\n298:   const revision = readback?.revision;\n299:   if (!revision?.workRevisionRef || revision.requestId !== saveRequest.requestId ||\n300:       revision.workRevision !== modelInput.expectedWorkRevision + 1 ||\n301:       !revision.content || revision.content.roundCompletion !== work.roundCompletion ||\n302:       revision.content.understanding !== work.overview.trim() || revision.content.overviewStatus !== 'CURRENT')\n303:     throw new Error('PROGRAM_ASSESSMENT_SAVED_WORK_READBACK_INVALID');\n304:   if (usesCodex) {\n305:     // Host materializes and enriches risk/source metadata and trims text.\n306:     // Compare the authored substance and exact active issue set, not the raw\n307:     // command against the enriched saved representation.\n308:     const expectedIssues = new Map(previousIssues.map(issue => [issue.issueKey, issue]));\n309:     for (const issue of work.retiredIssues ?? []) expectedIssues.delete(issue.issueKey);\n310:     for (const issue of work.issues) expectedIssues.set(issue.issueKey, issue);\n311:     const actualIssues = revision.content.issues;\n312:     if (!Array.isArray(actualIssues) || actualIssues.length !== expectedIssues.size ||\n313:         new Set(actualIssues.map(issue => issue.issueKey)).size !== actualIssues.length ||\n314:         actualIssues.some(issue => {\n315:           const expected = expectedIssues.get(issue.issueKey);\n316:           return !expected || issue.question !== expected.question.trim() || issue.body !== expected.body.trim();\n317:         })) throw new Error('PROGRAM_ASSESSMENT_SAVED_ISSUES_MISMATCH');\n318:   }\n319:   const previousReadback = await checkpoint.readOptional('program-work-readback');\n320:   if (previousReadback) {\n321:     validateReadIdentity(previousReadback);\n322:     if (!isDeepStrictEqual(previousReadback.revision, revision))\n323:       throw new Error('PROGRAM_ASSESSMENT_SAVED_WORK_READBACK_CHANGED');\n324:   } else await checkpoint.writeOnce('program-work-readback', readback);\n325:   if (usesCodex) await checkpoint.writeOnceOrEqual('program-receipt-links', {\n326:     assessmentBinding: hostBinding, modelRequestId: codexRecoveryRequestId, modelArgsHash: argsHash,\n327:     modelResponseSha256: responseRecord.value.codexReceipt.responseSha256,\n328:     runDirectory: responseRecord.value.codexReceipt.runDirectory,\n329:     transportSummaryRef: responseRecord.value.codexReceipt.transportSummaryRef,\n330:     saveRequestId: saveRequest.requestId, workRevisionRef: revision.workRevisionRef,\n331:     workRevision: revision.workRevision, independentReadCheckpoint: 'program-work-readback',\n332:   });\n333:   const execution = { output: { workRevisionRef: revision.workRevisionRef }, provenance };\n334:   await checkpoint.writeOnce('program-execution', execution);\n335:   return execution;\n336: }"
+    },
+    {
+      "path": "openclaw/codex-evaluator/program-budget-recovery.test.mjs",
+      "sourceCommit": "b400821ef943feb9c3520a54f8c89c3a43b768ee",
+      "startLine": 13,
+      "endLine": 155,
+      "text": "13: // The real program consumer and budget run in new processes. Only its model\n14: // gateway and Host are synthetic; this suite stops after one SAVE and READ.\n15: const worker = fileURLToPath(new URL('./program-recovery-fixture.mjs', import.meta.url));\n16: const { assessmentBinding } = programRecoveryData();\n17: const sha256 = value => createHash('sha256').update(value).digest('hex');\n18: const json = async (root, ...path) => JSON.parse(await readFile(resolve(root, ...path), 'utf8'));\n19: const checkpointPath = root => initialStageCheckpointPath({ checkpointRoot: root,\n20:   workItemId: assessmentBinding.workItemId }, 'EVALUATE_JOBAID');\n21: \n22: async function fixture(t) {\n23:   const root = await mkdtemp(resolve(tmpdir(), 'program-budget-recovery-'));\n24:   t.after(() => rm(root, { recursive: true, force: true }));\n25:   return root;\n26: }\n27: \n28: async function run(root, mode = 'budget:normal') {\n29:   const outcome = resolve(root, 'fixture-outcome.json');\n30:   await rm(outcome, { force: true });\n31:   const child = spawn(process.execPath, [worker, root, mode], { stdio: ['ignore', 'pipe', 'pipe'] });\n32:   let stderr = '';\n33:   child.stdout.resume();\n34:   child.stderr.on('data', value => { stderr += value; });\n35:   return new Promise((accept, reject) => {\n36:     child.once('error', reject);\n37:     child.once('close', async (code, signal) => {\n38:       try {\n39:         const result = signal ? null : JSON.parse(await readFile(outcome, 'utf8'));\n40:         accept({ code, signal, stderr, result });\n41:       } catch (error) { reject(error); }\n42:     });\n43:   });\n44: }\n45: \n46: async function seedPendingModel(t, { cachedResult = false } = {}) {\n47:   const root = await fixture(t);\n48:   assert.equal((await run(root, 'budget:after-model-receipt')).signal, 'SIGKILL');\n49:   const checkpoint = await createCheckpointStore(checkpointPath(root));\n50:   const originalBudget = await checkpoint.readOptional('jobaid-run-budget');\n51:   assert.deepEqual(originalBudget.counts, { modelRequests: 1, saves: 0, finishes: 0 });\n52:   assert.deepEqual(originalBudget.active, { kind: 'modelRequests' });\n53:   if (cachedResult) {\n54:     assert.equal((await run(root, 'budget:after-response')).signal, 'SIGKILL');\n55:     assert.deepEqual(await checkpoint.readOptional('jobaid-run-budget'), originalBudget);\n56:     assert.ok(await checkpoint.readOptional('assessment-round-1.result'));\n57:   }\n58:   return { root, checkpoint, originalBudget };\n59: }\n60: \n61: async function assertUnknownWithoutDispatch(root, originalBudget, expectedCode) {\n62:   const resumed = await run(root);\n63:   assert.equal(resumed.code, 0, JSON.stringify(resumed));\n64:   assert.equal(resumed.result.report.status, 'REQUIRES_ATTENTION');\n65:   assert.equal(resumed.result.report.attemptStatus, 'UNKNOWN');\n66:   if (expectedCode) assert.match(resumed.result.report.errorCode, expectedCode);\n67:   assert.deepEqual(resumed.result.budget, originalBudget);\n68:   assert.equal(resumed.result.state.modelRequests, 1);\n69:   assert.equal(resumed.result.state.saveCalls, 0);\n70:   assert.equal(resumed.result.state.committedWrites, 0);\n71:   assert.equal(resumed.result.state.saved, null);\n72:   assert.equal(resumed.result.receiptLinks, null);\n73:   assert.equal(resumed.result.state.realHostCalled, false);\n74:   assert.equal(resumed.result.state.realModelCalled, false);\n75:   const reservations = (await readdir(checkpointPath(root)))\n76:     .filter(name => /^jobaid-run-budget-(?:modelRequests|saves|finishes)-/u.test(name));\n77:   assert.ok(!reservations.some(name => /(?:saves|finishes)-/u.test(name)));\n78:   return resumed.result;\n79: }\n80: \n81: function assertSavedAndRead(result) {\n82:   assert.equal(result.report.outcome, 'SYNTHETIC_SAVE_READ_ONLY');\n83:   assert.equal(result.report.attemptStatus, undefined);\n84:   assert.equal(result.report.errorCode, undefined);\n85:   assert.equal(result.budget.active, null);\n86:   assert.deepEqual(result.budget.counts, { modelRequests: 1, saves: 1, finishes: 0 });\n87:   assert.deepEqual(result.budget.limits, { modelRequests: 1, saves: 1, finishes: 1 });\n88:   assert.deepEqual(result.report.jobAidRunBudget.dispatchReservations, result.budget.counts);\n89:   assert.equal(result.report.jobAidRunBudget.pendingOutcome, null);\n90:   assert.equal(result.state.modelRequests, 1);\n91:   assert.equal(result.state.saveCalls, 1);\n92:   assert.equal(result.state.committedWrites, 1);\n93:   assert.equal(result.state.realHostCalled, false);\n94:   assert.equal(result.state.realModelCalled, false);\n95:   assert.equal(result.receiptLinks.saveRequestId, result.state.saved.requestId);\n96:   assert.equal(result.receiptLinks.workRevisionRef, result.execution.output.workRevisionRef);\n97:   const saveIndex = result.state.actions.findIndex(action => action.tool === 'save_assessment_work');\n98:   assert.ok(saveIndex >= 0);\n99:   const independentRead = result.state.actions[saveIndex + 1];\n100:   assert.equal(independentRead.tool, 'read_assessment_work');\n101:   assert.equal(independentRead.request.requestId, result.state.saved.requestId);\n102:   assert.deepEqual(independentRead.response.revision, result.state.saved);\n103:   assert.equal(result.state.actions.at(-1).tool, 'read_assessment_work');\n104: }\n105: \n106: test('pending budget model receipt recovers after process death or an exception with one charged dispatch', async t => {\n107:   for (const mode of ['after-model-receipt', 'throw-after-model-receipt']) {\n108:     await t.test(mode, async t => {\n109:       const root = await fixture(t);\n110:       const interrupted = await run(root, `budget:${mode}`);\n111:       if (mode === 'after-model-receipt') assert.equal(interrupted.signal, 'SIGKILL');\n112:       else {\n113:         assert.equal(interrupted.result.report.attemptStatus, 'UNKNOWN');\n114:         assert.equal(interrupted.result.report.errorCode, 'FIXTURE_RESPONSE_ACK_LOST');\n115:       }\n116:       const checkpoint = await createCheckpointStore(checkpointPath(root));\n117:       const pending = await checkpoint.readOptional('jobaid-run-budget');\n118:       const response = await json(root, 'synthetic-model', 'response.json');\n119:       const started = await checkpoint.readOptional('assessment-round-1.started');\n120:       const parent = await checkpoint.readOptional('assessment-round-1.codex-run');\n121:       assert.deepEqual(pending.active, { kind: 'modelRequests' });\n122:       assert.deepEqual(pending.counts, { modelRequests: 1, saves: 0, finishes: 0 });\n123:       assert.equal(parent.requestId, started.codexRecoveryRequestId);\n124:       assert.equal(parent.argsHash, started.argsHash);\n125:       assert.equal(parent.runRoot, root);\n126:       assert.equal(parent.runDirectory, resolve(root, 'synthetic-model'));\n127:       assert.match(parent.gatewayBindingSha256, /^[0-9a-f]{64}$/u);\n128:       assert.equal(parent.promptSha256, sha256(response.requestBody));\n129:       assert.equal(response.responseSha256, sha256(response.raw));\n130:       const completed = await run(root);\n131:       assert.equal(completed.code, 0, JSON.stringify(completed));\n132:       assertSavedAndRead(completed.result);\n133:       assert.equal(completed.result.state.modelRecoveryRequests, 1);\n134:       assert.deepEqual(await json(root, 'synthetic-model', 'response.json'), response);\n135:       assert.deepEqual(await checkpoint.readOptional('jobaid-run-budget-modelRequests-1'),\n136:         { kind: 'modelRequests', ordinal: 1 });\n137:       assert.deepEqual(await checkpoint.readOptional('assessment-round-1.codex-run'), parent);\n138:     });\n139:   }\n140: });\n141: \n142: test('receipt recovery may die after writing round.result and the next process closes only the pending model reservation', async t => {\n143:   const { root, checkpoint, originalBudget } = await seedPendingModel(t, { cachedResult: true });\n144:   const cached = await checkpoint.readOptional('assessment-round-1.result');\n145:   const before = await json(root, 'synthetic-host', 'state.json');\n146:   assert.equal(before.modelRequests, 1);\n147:   assert.equal(before.saveCalls, 0);\n148:   assert.equal(before.modelRecoveryRequests, 1);\n149:   const completed = await run(root);\n150:   assert.equal(completed.code, 0, JSON.stringify(completed));\n151:   assertSavedAndRead(completed.result);\n152:   assert.equal(completed.result.state.modelRecoveryRequests, before.modelRecoveryRequests);\n153:   assert.equal(completed.result.budget.counts.modelRequests, originalBudget.counts.modelRequests);\n154:   assert.deepEqual(await checkpoint.readOptional('assessment-round-1.result'), cached);\n155: });"
+    },
+    {
+      "path": "openclaw/codex-evaluator/program-budget-recovery.test.mjs",
+      "sourceCommit": "b400821ef943feb9c3520a54f8c89c3a43b768ee",
+      "startLine": 157,
+      "endLine": 379,
+      "text": "157: test('missing or changed original receipt, request and parent link retain UNKNOWN without SAVE or another dispatch', async t => {\n158:   const cases = [\n159:     ['missing receipt', async ({ root }) => rm(resolve(root, 'synthetic-model', 'response.json'))],\n160:     ['malformed receipt', async ({ root }) => writeFile(resolve(root, 'synthetic-model', 'response.json'), '{')],\n161:     ['changed raw with its original fixed hash', async ({ root }) => {\n162:       const store = await createCheckpointStore(resolve(root, 'synthetic-model'));\n163:       const response = await store.readOptional('response');\n164:       await store.write('response', { ...response, raw: `${response.raw} ` });\n165:     }],\n166:     ['wrong request ID', async ({ root }) => {\n167:       const store = await createCheckpointStore(resolve(root, 'synthetic-model'));\n168:       await store.write('response', { ...await store.readOptional('response'), requestId: 'program:foreign:round-1' });\n169:     }],\n170:     ['wrong request body', async ({ root }) => {\n171:       const store = await createCheckpointStore(resolve(root, 'synthetic-model'));\n172:       const response = await store.readOptional('response');\n173:       await store.write('response', { ...response, requestBody: `${response.requestBody} ` });\n174:     }],\n175:     ['missing transport receipt', async ({ root }) => rm(resolve(root, 'synthetic-model', 'transport-summary.json'))],\n176:     ['incomplete transport receipt', async ({ root }) => {\n177:       const store = await createCheckpointStore(resolve(root, 'synthetic-model'));\n178:       await store.write('transport-summary', { synthetic: true, model_requests: 1, closure: 'unknown' });\n179:     }],\n180:     ['missing parent link', async ({ root }) => rm(resolve(checkpointPath(root), 'assessment-round-1.codex-run.json'))],\n181:     ['malformed parent link', async ({ root }) => writeFile(\n182:       resolve(checkpointPath(root), 'assessment-round-1.codex-run.json'), '{')],\n183:     ...[\n184:       ['requestId', 'program:foreign:round-1'], ['argsHash', 'f'.repeat(64)],\n185:       ['gatewayBindingSha256', 'f'.repeat(64)], ['promptSha256', 'f'.repeat(64)],\n186:       ['runRoot', '/fixture/foreign-root'], ['runDirectory', '/fixture/foreign-run'],\n187:     ].map(([key, value]) => [`wrong parent ${key}`, async ({ checkpoint }) => {\n188:       const parent = await checkpoint.readOptional('assessment-round-1.codex-run');\n189:       await checkpoint.write('assessment-round-1.codex-run', { ...parent, [key]: value });\n190:     }]),\n191:   ];\n192:   for (const [name, mutate] of cases) {\n193:     await t.test(name, async t => {\n194:       const context = await seedPendingModel(t);\n195:       await mutate(context);\n196:       await assertUnknownWithoutDispatch(context.root, context.originalBudget);\n197:       if (name === 'missing parent link')\n198:         assert.equal(await context.checkpoint.readOptional('assessment-round-1.codex-run'), null);\n199:     });\n200:   }\n201: });\n202: \n203: test('a complete parent result survives missing or damaged child files without another gateway call', async t => {\n204:   const cases = [\n205:     ['missing child directory', async ({ root }) => rm(resolve(root, 'synthetic-model'), { recursive: true })],\n206:     ['malformed child receipt', async ({ root }) => writeFile(\n207:       resolve(root, 'synthetic-model', 'response.json'), '{')],\n208:     ['changed child raw and request', async ({ root }) => {\n209:       const store = await createCheckpointStore(resolve(root, 'synthetic-model'));\n210:       const response = await store.readOptional('response');\n211:       await store.write('response', { ...response, raw: 'damaged child response',\n212:         requestId: 'program:foreign:round-1', requestBody: 'changed child request' });\n213:     }],\n214:   ];\n215:   for (const [name, mutate] of cases) {\n216:     await t.test(name, async t => {\n217:       const context = await seedPendingModel(t, { cachedResult: true });\n218:       const cached = await context.checkpoint.readOptional('assessment-round-1.result');\n219:       const before = await json(context.root, 'synthetic-host', 'state.json');\n220:       await mutate(context);\n221:       const completed = await run(context.root);\n222:       assert.equal(completed.code, 0, JSON.stringify(completed));\n223:       assertSavedAndRead(completed.result);\n224:       assert.equal(completed.result.state.modelRecoveryRequests, before.modelRecoveryRequests);\n225:       assert.deepEqual(await context.checkpoint.readOptional('assessment-round-1.result'), cached);\n226:     });\n227:   }\n228: });\n229: \n230: test('parent result recovery still requires the original parent input, started marker, link and intact response', async t => {\n231:   const cases = [\n232:     ...['assessment-enabled', 'program-materials', 'program-model-input',\n233:       'assessment-round-1.started', 'assessment-round-1.codex-run'].map(key =>\n234:       [`missing ${key}`, async ({ root }) => rm(resolve(checkpointPath(root), `${key}.json`)), key]),\n235:     ['wrong original request body', async ({ checkpoint }) => {\n236:       const request = await checkpoint.readOptional('program-model-input');\n237:       await checkpoint.write('program-model-input', { ...request, body: `${request.body} ` });\n238:     }],\n239:     ['wrong started request', async ({ checkpoint }) => {\n240:       const started = await checkpoint.readOptional('assessment-round-1.started');\n241:       await checkpoint.write('assessment-round-1.started', { ...started, codexRecoveryRequestId: 'foreign' });\n242:     }],\n243:     ['wrong parent binding', async ({ checkpoint }) => {\n244:       const parent = await checkpoint.readOptional('assessment-round-1.codex-run');\n245:       await checkpoint.write('assessment-round-1.codex-run', { ...parent, argsHash: 'f'.repeat(64) });\n246:     }],\n247:     ['invalid parent location', async ({ checkpoint }) => {\n248:       const parent = await checkpoint.readOptional('assessment-round-1.codex-run');\n249:       await checkpoint.write('assessment-round-1.codex-run', { ...parent, runRoot: '/fixture/foreign-root' });\n250:     }],\n251:     ['changed raw with its original fixed hash', async ({ checkpoint }) => {\n252:       const cached = await checkpoint.readOptional('assessment-round-1.result');\n253:       cached.value.raw += ' ';\n254:       await checkpoint.write('assessment-round-1.result', cached);\n255:     }],\n256:     ['missing raw', async ({ checkpoint }) => {\n257:       const cached = await checkpoint.readOptional('assessment-round-1.result');\n258:       delete cached.value.raw;\n259:       await checkpoint.write('assessment-round-1.result', cached);\n260:     }],\n261:     ...[\n262:       ['status', 99], ['ok', false],\n263:       ['requestId', 'program:foreign:round-1'], ['runDirectory', '/fixture/foreign-run'],\n264:       ['transportSummaryRef', '/fixture/foreign-summary.json'],\n265:     ].map(([key, value]) => [`wrong cached ${key}`, async ({ checkpoint }) => {\n266:       const cached = await checkpoint.readOptional('assessment-round-1.result');\n267:       if (key === 'status' || key === 'ok') cached.value[key] = value;\n268:       else cached.value.codexReceipt[key] = value;\n269:       await checkpoint.write('assessment-round-1.result', cached);\n270:     }]),\n271:   ];\n272:   for (const [name, mutate, missingKey] of cases) {\n273:     await t.test(name, async t => {\n274:       const context = await seedPendingModel(t, { cachedResult: true });\n275:       await mutate(context);\n276:       const before = await json(context.root, 'synthetic-host', 'state.json');\n277:       const result = await assertUnknownWithoutDispatch(context.root, context.originalBudget);\n278:       assert.equal(result.state.modelRecoveryRequests, before.modelRecoveryRequests);\n279:       if (missingKey) assert.equal(await context.checkpoint.readOptional(missingKey), null);\n280:     });\n281:   }\n282: });\n283: \n284: test('a complete non-success or invalid-JSON response settles the known model request before its existing error path', async t => {\n285:   for (const nonSuccess of [true, false]) {\n286:     await t.test(nonSuccess ? 'received HTTP error' : 'received invalid JSON', async t => {\n287:       const { root, checkpoint } = await seedPendingModel(t, { cachedResult: true });\n288:       const cached = await checkpoint.readOptional('assessment-round-1.result');\n289:       if (nonSuccess) {\n290:         cached.value.status = 503;\n291:         cached.value.ok = false;\n292:       } else {\n293:         cached.value.raw = 'complete non-JSON model response';\n294:         cached.value.codexReceipt.responseSha256 = sha256(cached.value.raw);\n295:       }\n296:       await checkpoint.write('assessment-round-1.result', cached);\n297:       await rm(resolve(root, 'synthetic-model'), { recursive: true });\n298:       const completed = await run(root);\n299:       assert.equal(completed.code, 0, JSON.stringify(completed));\n300:       assert.equal(completed.result.report.errorCode, nonSuccess\n301:         ? 'PROGRAM_ASSESSMENT_GATEWAY_HTTP_503' : 'PROGRAM_ASSESSMENT_GATEWAY_INVALID_JSON_HTTP_200');\n302:       assert.equal(completed.result.budget.active, null);\n303:       assert.deepEqual(completed.result.budget.counts, { modelRequests: 1, saves: 0, finishes: 0 });\n304:       assert.equal(completed.result.state.modelRequests, 1);\n305:       assert.equal(completed.result.state.modelRecoveryRequests, 1);\n306:       assert.equal(completed.result.state.saveCalls, 0);\n307:     });\n308:   }\n309: });\n310: \n311: test('pending model reservation requires the original first ordinal without clearing or refunding its count', async t => {\n312:   for (const missing of [true, false]) {\n313:     await t.test(missing ? 'missing ordinal' : 'changed ordinal', async t => {\n314:       const context = await seedPendingModel(t, { cachedResult: true });\n315:       if (missing) await rm(resolve(checkpointPath(context.root), 'jobaid-run-budget-modelRequests-1.json'));\n316:       else await context.checkpoint.write('jobaid-run-budget-modelRequests-1', { kind: 'modelRequests', ordinal: 2 });\n317:       const before = await json(context.root, 'synthetic-host', 'state.json');\n318:       const result = await assertUnknownWithoutDispatch(context.root, context.originalBudget,\n319:         /^JOBAID_PROGRAM_MODEL_BUDGET_RECOVERY_INVALID$/u);\n320:       assert.equal(result.state.modelRecoveryRequests, before.modelRecoveryRequests);\n321:     });\n322:   }\n323: });\n324: \n325: test('a pending SAVE reservation stays pending and causes no gateway verification or duplicate SAVE', async t => {\n326:   const root = await fixture(t);\n327:   assert.equal((await run(root, 'budget:before-save')).signal, 'SIGKILL');\n328:   const checkpoint = await createCheckpointStore(checkpointPath(root));\n329:   const pending = await checkpoint.readOptional('jobaid-run-budget');\n330:   assert.equal(pending.active.kind, 'saves');\n331:   assert.deepEqual(pending.counts, { modelRequests: 1, saves: 1, finishes: 0 });\n332:   const before = await json(root, 'synthetic-host', 'state.json');\n333:   assert.equal(before.modelRecoveryRequests, 0);\n334:   const resumed = await run(root);\n335:   assert.equal(resumed.result.report.errorCode, 'JOBAID_RUN_OUTCOME_UNKNOWN');\n336:   assert.equal(resumed.result.report.attemptStatus, 'UNKNOWN');\n337:   assert.deepEqual(resumed.result.budget, pending);\n338:   assert.equal(resumed.result.state.modelRequests, 1);\n339:   assert.equal(resumed.result.state.modelRecoveryRequests, 0);\n340:   assert.equal(resumed.result.state.saveCalls, 0);\n341:   assert.equal(resumed.result.state.committedWrites, 0);\n342: });\n343: \n344: test('a known completed model reservation needs no additional gateway verification before SAVE and READ', async t => {\n345:   for (const interrupt of [false, true]) {\n346:     await t.test(interrupt ? 'restart after normal result publication' : 'uninterrupted', async t => {\n347:       const root = await fixture(t);\n348:       if (interrupt) {\n349:         assert.equal((await run(root, 'budget:after-response')).signal, 'SIGKILL');\n350:         assert.equal((await json(checkpointPath(root), 'jobaid-run-budget.json')).active, null);\n351:       }\n352:       const completed = await run(root);\n353:       assert.equal(completed.code, 0, JSON.stringify(completed));\n354:       assertSavedAndRead(completed.result);\n355:       assert.equal(completed.result.state.modelRecoveryRequests, 0);\n356:     });\n357:   }\n358: });\n359: \n360: test('an unrelated pending FINISH reservation is not cleared by the cached program response', async t => {\n361:   const root = await fixture(t);\n362:   assert.equal((await run(root, 'budget:after-response')).signal, 'SIGKILL');\n363:   const checkpoint = await createCheckpointStore(checkpointPath(root));\n364:   const budget = await checkpoint.readOptional('jobaid-run-budget');\n365:   // The SAVE/READ-only fixture never sends FINISH. This negative checkpoint\n366:   // asserts that model reconciliation cannot consume another operation's slot.\n367:   const pending = { ...budget, counts: { ...budget.counts, finishes: 1 },\n368:     active: { kind: 'finishes', attemptRef: assessmentBinding.attemptRef, contentHash: 'e'.repeat(64) } };\n369:   await checkpoint.write('jobaid-run-budget', pending);\n370:   await checkpoint.writeOnce('jobaid-run-budget-finishes-1', { kind: 'finishes', ordinal: 1 });\n371:   const resumed = await run(root);\n372:   assert.equal(resumed.result.report.errorCode, 'JOBAID_RUN_OUTCOME_UNKNOWN');\n373:   assert.equal(resumed.result.report.attemptStatus, 'UNKNOWN');\n374:   assert.deepEqual(resumed.result.budget, pending);\n375:   assert.equal(resumed.result.state.modelRequests, 1);\n376:   assert.equal(resumed.result.state.modelRecoveryRequests, 0);\n377:   assert.equal(resumed.result.state.saveCalls, 0);\n378:   assert.equal(resumed.result.state.committedWrites, 0);\n379: });"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs",
+      "sourceCommit": "b400821ef943feb9c3520a54f8c89c3a43b768ee",
+      "startLine": 1920,
+      "endLine": 1935,
+      "text": "1920:         sessionDiscriminator: runtimeHooks.sessionDiscriminator ?? runBinding.requestId ?? startedAttempt,\n1921:         ...(codexRecovery ? { codexRecovery } : {}),\n1922:         readAssessmentSources: runtimeHooks.readAssessmentSources,\n1923:         queryAssessmentKnowledge: runtimeHooks.queryAssessmentKnowledge,\n1924:         saveAssessmentWork: runtimeHooks.saveAssessmentWork,\n1925:         readAssessmentWork: runtimeHooks.readAssessmentWork,\n1926:         recordAssessmentProgramProgress: runtimeHooks.recordAssessmentProgramProgress,\n1927:         ...(jobAidBudget ? { runModelRequest: perform => jobAidBudget.dispatch('modelRequests', perform) } : {}),\n1928:         ...(jobAidBudget && operation === 'EVALUATE_JOBAID' && options.modelExecutor === 'CODEX' &&\n1929:           modelInput.executionMode === 'PROGRAM_CONTROLLED_V1'\n1930:           ? { reconcileProgramModelRequest: verify => jobAidBudget.reconcileProgramModelRequest(verify) } : {}),\n1931:         assessmentBinding: runtimeHooks.assessmentBinding,\n1932:         observeModelOutput: (shape, round = 1) => checkpoint.observeAuxiliary(\n1933:           `${runtimeHooks.checkpointKey ?? 'model'}.output-shape${round === 1 ? '' : '-' + round}`, shape,\n1934:         ),\n1935:         observeTranslationFidelity: (report, round) => checkpoint.observeAuxiliary("
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs",
+      "sourceCommit": "b400821ef943feb9c3520a54f8c89c3a43b768ee",
+      "startLine": 2214,
+      "endLine": 2291,
+      "text": "2214: async function createJobAidRunBudget(checkpoint, limits, hasBinding, selection) {\n2215:   const step = 'jobaid-run-budget';\n2216:   let state = await checkpoint.readOptional(step);\n2217:   if (!limits && !state) return null;\n2218:   if (!limits) throw new Error('JOBAID_RUN_LIMIT_REQUIRED');\n2219:   limits = { ...limits };\n2220:   if (!state) {\n2221:     if (hasBinding) throw new Error('JOBAID_RUN_LIMIT_LEGACY_CHECKPOINT');\n2222:     state = { limits, counts: { modelRequests: 0, saves: 0, finishes: 0 }, active: null,\n2223:       ...(selection ? { explicitOnly: true, selection } : {}) };\n2224:     await checkpoint.writeOnce(step, state);\n2225:   } else if (!isDeepStrictEqual(state.limits, limits) ||\n2226:       Object.keys(limits).some(key => !Number.isSafeInteger(state.counts?.[key]) ||\n2227:         state.counts[key] < 0 || state.counts[key] > limits[key]) ||\n2228:       (state.active !== null && !Object.hasOwn(limits, state.active?.kind))) {\n2229:     throw new Error('JOBAID_RUN_LIMIT_CHECKPOINT_CHANGED');\n2230:   }\n2231:   if (selection && !isDeepStrictEqual(state.selection, selection))\n2232:     throw new Error('JOBAID_RUN_LIMIT_SELECTION_CHANGED');\n2233:   const complete = async () => {\n2234:     const completed = { ...state, active: null };\n2235:     await checkpoint.write(step, completed);\n2236:     state = completed;\n2237:   };\n2238:   return {\n2239:     snapshot: () => ({ limits: { ...state.limits }, dispatchReservations: { ...state.counts },\n2240:       pendingOutcome: state.active?.kind ?? null, upstreamDispatchCount: null }),\n2241:     dispatch: async (kind, perform, args = {}) => {\n2242:       if (state.active) throw new Error('JOBAID_RUN_OUTCOME_UNKNOWN');\n2243:       if (state.counts[kind] >= limits[kind]) {\n2244:         const label = kind === 'modelRequests' ? 'MODEL_HTTP' : kind === 'saves' ? 'SAVE' : 'FINISH';\n2245:         throw new Error(`JOBAID_${label}_BUDGET_EXHAUSTED`);\n2246:       }\n2247:       // Exclusive existing checkpoint writes also stop competing consumers\n2248:       // from reserving the same ordinal before either dispatches.\n2249:       await checkpoint.writeOnce(`${step}-${kind}-${state.counts[kind] + 1}`, {\n2250:         kind, ordinal: state.counts[kind] + 1,\n2251:       });\n2252:       state = { ...state, counts: { ...state.counts, [kind]: state.counts[kind] + 1 },\n2253:         active: { kind, ...(kind === 'saves' ? { requestId: args.requestId } : {}),\n2254:           ...(kind === 'finishes' ? { attemptRef: args.attemptRef, contentHash: args.result?.contentHash } : {}) } };\n2255:       await checkpoint.write(step, state);\n2256:       let value;\n2257:       try { value = await perform(); }\n2258:       catch (error) {\n2259:         // Host materializes requirementHandling before work.save. This exact\n2260:         // received validation rejection is a known non-write, still charged\n2261:         // against the SAVE cap. Other Host errors may follow a committed write.\n2262:         if (kind === 'saves' && error?.receivedHostToolError === true &&\n2263:             error.hostToolName === 'save_assessment_work' &&\n2264:             error.hostErrorCode === 'JOBAID_REQUIREMENTS_INVALID') await complete();\n2265:         throw error;\n2266:       }\n2267:       await complete();\n2268:       return value;\n2269:     },\n2270:     reconcile: async (name, value) => {\n2271:       const active = state.active;\n2272:       if ((name === 'read_assessment_work' && active?.kind === 'saves' &&\n2273:           typeof active.requestId === 'string' && value?.revision?.requestId === active.requestId) ||\n2274:           (name === 'get_action_attempt_status' && active?.kind === 'finishes' &&\n2275:           typeof active.contentHash === 'string' && value?.attemptRef === active.attemptRef &&\n2276:           value?.resultContentHash === active.contentHash && ['SUCCEEDED', 'WAITING_INPUT', 'FAILED'].includes(value?.status)))\n2277:         await complete();\n2278:     },\n2279:     reconcileProgramModelRequest: async verifyOriginalResponse => {\n2280:       if (state.active?.kind !== 'modelRequests') return;\n2281:       if (state.counts.modelRequests !== 1 ||\n2282:           !isDeepStrictEqual(state.active, { kind: 'modelRequests' }) ||\n2283:           !isDeepStrictEqual(await checkpoint.readOptional(`${step}-modelRequests-1`),\n2284:             { kind: 'modelRequests', ordinal: 1 }))\n2285:         throw new Error('JOBAID_PROGRAM_MODEL_BUDGET_RECOVERY_INVALID');\n2286:       // This trusted program callback verifies the original local Codex run.\n2287:       // No new dispatch, reservation, refund or Host authority is created.\n2288:       await verifyOriginalResponse();\n2289:       await complete();\n2290:     },\n2291:   };"
+    }
+  ],
+  "scope": {
+    "productModified": false,
+    "originalEvidenceModified": false,
+    "newProductPatch": false,
+    "linux12Rerun": false,
+    "schemaSweep": false,
+    "hostBuild": false,
+    "deployment": false,
+    "credentialsAccessed": false,
+    "realModelOrHostCalls": false,
+    "newQueueOrRecoveryFramework": false
+  },
+  "fieldProgress": {
+    "source": "latest user relay, not independently inspected in this review",
+    "reportedTargetOriginalLinux12Passed": true,
+    "reportedHost58dPublished": true,
+    "reportedOldC136Stopped": true,
+    "reportedNewCredentialsConfigured": true,
+    "nativePatchInstallationReceiptNotSupplied": true
+  },
+  "authorizationBoundary": {
+    "originalBC": "remains under previously granted scope; not re-requested",
+    "nativeDelta": "latest user message says exact Native delta confirmation is pending at local controller",
+    "reviewDoesNotApproveOrExecuteInstallation": true
+  }
+}
