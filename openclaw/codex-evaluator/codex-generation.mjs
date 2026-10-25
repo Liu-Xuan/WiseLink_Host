@@ -349,9 +349,10 @@ export function createCodexGateway(options) {
       candidate = receipt.candidate;
       const diskTransport = await jsonAt(resolve(runDirectory, 'transport-summary.json'));
       const diskCandidate = await jsonAt(resolve(runDirectory, 'contract-candidate.json'));
-      if (!diskTransport || !diskCandidate ||
+      if (!diskTransport || typeof transport.transport_passed !== 'boolean' ||
           sha256(JSON.stringify(diskTransport)) !== sha256(JSON.stringify(transport)) ||
-          sha256(JSON.stringify(diskCandidate)) !== sha256(JSON.stringify(candidate)))
+          (diskCandidate ? sha256(JSON.stringify(diskCandidate)) !== sha256(JSON.stringify(candidate))
+            : transport.transport_passed || Object.keys(candidate).length !== 0))
         fail('CODEX_GENERATION_RECEIPT_INVALID');
       if (transport.transport_passed && (transport.closure !== 'completed' ||
           transport.process_group_closed !== true || transport.model_requests !== 1 ||

@@ -163,6 +163,8 @@ class BridgeTests(unittest.TestCase):
             def __init__(self, *args, **kwargs):
                 FakeUpstream.made += 1
                 self.sock = Socket()
+            def connect(self):
+                pass
             def request(self, method, path, body, headers):
                 self.assert_request_persisted(body, headers)
                 FakeUpstream.payloads.append(json.loads(body))
@@ -271,6 +273,170 @@ class BridgeTests(unittest.TestCase):
             self.assertTrue(all(r["requested_reasoning_effort"] == "low" for r in records))
             self.assertEqual(records[0]["provided_namespaces"][0]["name"], "mcp__assessment")
             self.assertEqual(records[0]["provided_namespaces"][0]["tools"][0], {"name": "read_current", "type": "function"})
+
+    def test_generation_deadline_and_stage_timeouts_without_network_or_waiting(self):
+        class Socket:
+            def __init__(self):
+                self.timeouts = []
+            def settimeout(self, value):
+                self.timeouts.append(value)
+
+        class FakeServer:
+            server_port = 12345
+            def __init__(self, address, handler):
+                self.handler = handler
+            def serve_forever(self):
+                pass
+            def shutdown(self):
+                pass
+            def server_close(self):
+                pass
+
+        for mode in ("complete", "headers_socket_none", "body_timeout", "connect_timeout", "request_timeout",
+                     "headers_timeout", "headers_error", "headers_unexpected", "response_timeout",
+                     "stream_timeout", "stream_deadline", "expired_before_dispatch"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = pathlib.Path(tmp)
+                config, audit = root / "config.json", root / "audit.jsonl"
+                response_path, request_path = root / "response.json", root / "request.json"
+                config.write_text(json.dumps({"models": {"providers": {"miaoda": {
+                    "baseUrl": bridge.BASE, "apiKey": {}, "headers": {"x-api-key": {}}}}}}))
+                clock, created, posted = [100.0], [], []
+                secret = "offline-secret-must-not-reach-audit"
+
+                class FakeUpstream:
+                    status = 200
+                    def __init__(self, *args, **options):
+                        self.stream_socket = self.sock = Socket()
+                        self.fp = mock.Mock(raw=mock.Mock(_sock=self.stream_socket))
+                        self.initial_timeout = options["timeout"]
+                        self.lines = iter([
+                            ("data: " + json.dumps({"model": "glm-5.3", "choices": [
+                                {"delta": {"reasoning_content": "private reasoning"}}]}) + "\n").encode(), b"\n",
+                            ("data: " + json.dumps({"model": "glm-5.3", "choices": [
+                                {"delta": {"content": "Done"}, "finish_reason": "stop"}]}) + "\n").encode(),
+                            b"\n", b"data: [DONE]\n", b"\n"])
+                        self.read_count = 0
+                        created.append(self)
+                    def connect(self):
+                        if mode == "connect_timeout":
+                            raise TimeoutError(secret)
+                        clock[0] += 2
+                    def request(self, method, path, value, headers):
+                        posted.append(value)
+                        self.assert_persisted(value)
+                        if mode == "request_timeout":
+                            raise TimeoutError(secret)
+                        clock[0] += 4
+                        if mode == "headers_socket_none":
+                            self.sock = None
+                    def assert_persisted(self, value):
+                        assert request_path.read_bytes() == value
+                    def getresponse(self):
+                        if mode == "headers_timeout":
+                            raise TimeoutError(secret)
+                        if mode == "headers_error":
+                            raise ConnectionResetError(secret)
+                        if mode == "headers_unexpected":
+                            raise type(secret, (Exception,), {})(secret)
+                        clock[0] += 5
+                        return self
+                    def readline(self, _size):
+                        self.read_count += 1
+                        if mode == "stream_timeout" and self.read_count == 3:
+                            raise TimeoutError(secret)
+                        # Reasoning-only chunks pass both old 90/100-second
+                        # boundaries on a virtual clock, inside the sealed 600.
+                        clock[0] += (601 if mode == "stream_deadline" else 110) if self.read_count == 2 else 1
+                        return next(self.lines)
+                    def close(self):
+                        pass
+
+                payload = json.dumps(body()).encode()
+                class RequestInput(io.BytesIO):
+                    def read(self, size):
+                        if mode == "body_timeout":
+                            raise TimeoutError(secret)
+                        clock[0] += 601 if mode == "expired_before_dispatch" else 3
+                        return super().read(size)
+
+                class ResponseOutput(io.BytesIO):
+                    def write(self, value):
+                        if mode == "response_timeout":
+                            raise TimeoutError(secret)
+                        return super().write(value)
+
+                with mock.patch.object(bridge, "resolve", return_value=secret), \
+                     mock.patch.object(bridge.http.client, "HTTPSConnection", FakeUpstream), \
+                     mock.patch.object(bridge, "ThreadingHTTPServer", FakeServer), \
+                     mock.patch.object(bridge.time, "monotonic", side_effect=lambda: clock[0]):
+                    server, thread, _, token = bridge.start_server(str(config), bridge.MODEL, str(audit), tmp,
+                        allowed_tools=frozenset(), max_requests=1, timeout=600, deadline=700,
+                        upstream_response_path=response_path, upstream_request_path=request_path)
+                    handler = object.__new__(server.handler)
+                    handler.path = "/v1/responses"
+                    handler.headers = {"Authorization": "Bearer " + token, "Content-Length": str(len(payload))}
+                    handler.connection = Socket()
+                    handler.rfile, handler.wfile = RequestInput(payload), ResponseOutput()
+                    statuses = []
+                    handler.send_response, handler.send_header, handler.end_headers = statuses.append, lambda *args: None, lambda: None
+                    try:
+                        handler.do_POST()
+                        first_output = handler.wfile.getvalue().decode()
+                        if mode not in ("body_timeout", "expired_before_dispatch", "stream_deadline"):
+                            # A failed, already attempted request consumes the
+                            # same one-request budget as a completed request.
+                            handler.rfile, handler.wfile = RequestInput(payload), io.BytesIO()
+                            handler.do_POST()
+                            self.assertEqual(statuses[-1], 429)
+                            self.assertIn("request_budget_exhausted", handler.wfile.getvalue().decode())
+                    finally:
+                        server.shutdown(); server.server_close(); thread.join(timeout=1)
+                records = [json.loads(line) for line in audit.read_text().splitlines()]
+                self.assertEqual(len(records), 1 if mode in
+                    ("body_timeout", "expired_before_dispatch", "stream_deadline") else 2)
+                record = records[0]
+                output = first_output
+                self.assertNotIn(secret, audit.read_text() + output)
+                self.assertNotIn("private reasoning", output)
+                if mode in ("body_timeout", "expired_before_dispatch"):
+                    self.assertFalse(record["upstream_attempted"])
+                    self.assertEqual(created, [])
+                    self.assertEqual(posted, [])
+                    self.assertEqual(record["error_code"],
+                        "bridge_request_timeout" if mode == "body_timeout" else "upstream_timeout")
+                    self.assertEqual(record["error_type"], "TimeoutError")
+                    continue
+                self.assertEqual(len(created), 1)
+                self.assertEqual(len(posted), 0 if mode == "connect_timeout" else 1)
+                self.assertEqual(created[0].initial_timeout, 597)
+                self.assertTrue(record["upstream_attempted"])
+                self.assertTrue(all(0 < value <= 600 for value in
+                    handler.connection.timeouts + created[0].stream_socket.timeouts))
+                if mode in ("complete", "headers_socket_none"):
+                    self.assertEqual(record["status"], 200)
+                    self.assertIsNone(record["error_code"])
+                    self.assertIsNone(record.get("error_type"))
+                    self.assertIn("response.completed", output)
+                    self.assertTrue(response_path.is_file())
+                    self.assertGreater(clock[0], 200)
+                    self.assertLess(clock[0], 700)
+                else:
+                    self.assertEqual(record["error_code"],
+                        "bridge_response_timeout" if mode == "response_timeout" else
+                        "bridge_internal_error" if mode in ("headers_error", "headers_unexpected") else "upstream_timeout")
+                    self.assertEqual(record["error_phase"],
+                        "upstream_stream" if mode == "stream_deadline" else
+                        "response_write" if mode == "response_timeout" else
+                        "upstream_headers" if mode in ("headers_error", "headers_unexpected") else
+                        "upstream_" + mode.removesuffix("_timeout"))
+                    self.assertEqual(record["error_type"],
+                        "Rejected" if mode == "stream_deadline" else
+                        "ConnectionResetError" if mode == "headers_error" else
+                        "UnexpectedError" if mode == "headers_unexpected" else "TimeoutError")
+                    self.assertEqual(record["status"], 502)
+                    self.assertFalse(response_path.exists())
+                    self.assertIsNone(record["usage"])
 
 
 if __name__ == "__main__":

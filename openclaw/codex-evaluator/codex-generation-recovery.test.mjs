@@ -250,7 +250,7 @@ linuxTest('changed or exposed private prompt is rejected before parent linkage a
 // Portable receipt validation exercises the actual gateway but publishes an
 // explicitly synthetic, closed receipt without launching any runner. Linux
 // process-liveness cases above remain separate and are skipped on other OSes.
-async function publishedSyntheticReceipt(requestId) {
+async function publishedSyntheticReceipt(requestId, { failed = false } = {}) {
   const { root, wrapper } = await fixture();
   let prepared;
   const gateway = createCodexGateway({ ...gatewayOptions(root, wrapper),
@@ -262,15 +262,17 @@ async function publishedSyntheticReceipt(requestId) {
   const request = Buffer.from(JSON.stringify({ model: 'glm-5.3', messages: [{ role: 'user', content: 'synthetic' }] }));
   const response = Buffer.from(JSON.stringify({ format: 'chat-completions-sse-events-v1',
     events: [{ model: 'glm-5.3', choices: [{ index: 0, finish_reason: 'stop' }] }] }));
-  const candidate = { tool_name: 'return_result', arguments: { workJson: '{}' } };
-  const transport = { transport_passed: true, upstream_models: ['glm-5.3'], input_tokens: 1,
-    output_tokens: 1, model_requests: 1, closure: 'completed', process_group_closed: true,
-    upstream_response_present: true, upstream_request_present: true, upstream_request_sha256: digest(request) };
-  for (const [name, bytes] of [['upstream-request.json', request], ['upstream-response.json', response],
-    ['transport-summary.json', JSON.stringify(transport)], ['contract-candidate.json', JSON.stringify(candidate)],
+  const candidate = failed ? {} : { tool_name: 'return_result', arguments: { workJson: '{}' } };
+  const transport = { transport_passed: !failed, upstream_models: ['glm-5.3'], input_tokens: 0,
+    output_tokens: 0, model_requests: 1, closure: failed ? 'incomplete' : 'completed',
+    process_group_closed: true, bridge_errors: failed ? ['upstream_timeout'] : [],
+    upstream_response_present: !failed, upstream_request_present: true, upstream_request_sha256: digest(request) };
+  for (const [name, bytes] of [['upstream-request.json', request],
+    ...(!failed ? [['upstream-response.json', response], ['contract-candidate.json', JSON.stringify(candidate)]] : []),
+    ['transport-summary.json', JSON.stringify(transport)],
     ['generation-receipt.json', JSON.stringify({ version: 1, binding_sha256: prepared.bindingSha256,
       run_directory: prepared.runDirectory, candidate, transport,
-      upstream_request_sha256: digest(request), upstream_response_sha256: digest(response) })]])
+      upstream_request_sha256: digest(request), upstream_response_sha256: failed ? null : digest(response) })]])
     await writeFile(resolve(prepared.runDirectory, name), bytes, { mode: 0o600 });
   return { root, directory: prepared.runDirectory,
     recover: () => createCodexGateway(gatewayOptions(root, wrapper))(null, input(requestId, true)) };
@@ -300,4 +302,72 @@ test('portable recovery rejects changed prompt or public prompt permissions with
   await chmod(path, 0o644);
   await assert.rejects(f.recover(), /CODEX_GENERATION_RECOVERY_MISMATCH/u);
   await assert.rejects(readFile(resolve(f.root, 'dispatch-count')), { code: 'ENOENT' });
+});
+
+test('a bound failed receipt without a final candidate stays incomplete with zero redispatch', async () => {
+  const f = await publishedSyntheticReceipt('portable:upstream-timeout', { failed: true });
+  const originals = new Map(await Promise.all(['generation-binding.json', 'generation-receipt.json',
+    'transport-summary.json', 'codex-prompt.txt'].map(async name =>
+    [name, await readFile(resolve(f.directory, name))])));
+  await assert.rejects(f.recover(), /CODEX_GENERATION_INCOMPLETE/u);
+  await assert.rejects(f.recover(), /CODEX_GENERATION_INCOMPLETE/u);
+  for (const [name, original] of originals)
+    assert.deepEqual(await readFile(resolve(f.directory, name)), original);
+  assert.equal(JSON.parse(originals.get('transport-summary.json')).model_requests, 1);
+  for (const name of ['contract-candidate.json', 'upstream-response.json', 'adapted-response.json'])
+    await assert.rejects(readFile(resolve(f.directory, name)), { code: 'ENOENT' });
+  await assert.rejects(readFile(resolve(f.root, 'dispatch-count')), { code: 'ENOENT' });
+});
+
+test('failed receipt binding and durable transport remain mandatory; success still needs a candidate', async () => {
+  const f = await publishedSyntheticReceipt('portable:invalid-failure', { failed: true });
+  const receiptPath = resolve(f.directory, 'generation-receipt.json');
+  const receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
+  await writeFile(receiptPath, JSON.stringify({ ...receipt, binding_sha256: 'wrong' }));
+  await assert.rejects(f.recover(), /CODEX_GENERATION_RECEIPT_INVALID/u);
+  await writeFile(receiptPath, JSON.stringify(receipt));
+  await writeFile(resolve(f.directory, 'transport-summary.json'), JSON.stringify({ ...receipt.transport, model_requests: 0 }));
+  await assert.rejects(f.recover(), /CODEX_GENERATION_RECEIPT_INVALID/u);
+  await assert.rejects(readFile(resolve(f.root, 'dispatch-count')), { code: 'ENOENT' });
+  const success = await publishedSyntheticReceipt('portable:missing-success-candidate');
+  await unlink(resolve(success.directory, 'contract-candidate.json'));
+  await assert.rejects(success.recover(), /CODEX_GENERATION_RECEIPT_INVALID/u);
+  await assert.rejects(readFile(resolve(success.root, 'dispatch-count')), { code: 'ENOENT' });
+});
+
+test('an earlier caller abort stops one local runner and its failed receipt never redispatches', async () => {
+  const { root, wrapper } = await fixture();
+  await writeFile(resolve(root, 'fake-runner.py'), `import json,pathlib,signal,sys,time
+r=json.load(sys.stdin); p=pathlib.Path(r['run_directory'])
+with open(p.parent/'dispatch-count','a') as f: f.write('1\\n')
+def save(name,value):
+ q=p/(name+'.tmp'); q.write_text(json.dumps(value)); q.replace(p/name)
+def interrupted(*args):
+ transport={'transport_passed':False,'model_requests':0,'closure':'incomplete','process_group_closed':True,'failure':'generation_interrupted'}
+ save('transport-summary.json',transport)
+ save('generation-receipt.json',{'version':1,'binding_sha256':r['binding_sha256'],'run_directory':str(p),'transport':transport,'candidate':{}})
+ sys.exit(1)
+signal.signal(signal.SIGTERM,interrupted)
+(p/'started.marker').write_text('offline local runner')
+while True: time.sleep(.01)
+`);
+  const requestId = 'portable:caller-abort';
+  const directory = await codexRecoveryRunDirectory(root, requestId);
+  const gateway = createCodexGateway(gatewayOptions(root, wrapper));
+  const controller = new AbortController();
+  const reason = new Error('CALLER_CANCELLED_EARLIER');
+  const rejected = assert.rejects(gateway(null, { ...input(requestId), signal: controller.signal }),
+    error => error === reason);
+  let started = false;
+  for (let index = 0; index < 250; index++) {
+    try { await readFile(resolve(directory, 'started.marker')); started = true; break; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    await new Promise(accept => setTimeout(accept, 20));
+  }
+  controller.abort(reason);
+  await rejected;
+  assert.equal(started, true);
+  await assert.rejects(gateway(null, input(requestId, true)), /CODEX_GENERATION_INCOMPLETE/u);
+  assert.equal((await readFile(resolve(root, 'dispatch-count'), 'utf8')).trim(), '1');
+  await assert.rejects(readFile(resolve(directory, 'adapted-response.json')), { code: 'ENOENT' });
 });

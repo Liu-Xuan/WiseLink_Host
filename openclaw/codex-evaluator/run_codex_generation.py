@@ -112,7 +112,14 @@ def close_process_group(process):
     return False, True
 
 
-def configure(run, port):
+def remaining_seconds(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("generation_deadline_exceeded")
+    return remaining
+
+
+def configure(run, port, timeout):
     catalog = {"models": [{
         "slug": MODEL, "display_name": "Miaoda bounded generation",
         "description": "One request, structured final text, no business tools",
@@ -148,7 +155,7 @@ env_key = "WISELINK_CODEX_BRIDGE_TOKEN"
 supports_websockets = false
 request_max_retries = 0
 stream_max_retries = 0
-stream_idle_timeout_ms = 100000
+stream_idle_timeout_ms = {int(timeout * 1000)}
 
 [model_providers.miaoda-generation.capabilities]
 external_web_access = false
@@ -216,11 +223,12 @@ def main():
     config_path = request["config_path"]
     before = hashlib.sha256(Path(config_path).read_bytes()).hexdigest()
     started = time.monotonic()
+    deadline = started + timeout
     server = thread = process = None
     token = ""
     stdout = stderr = ""
     summary = {"run_directory": str(run), "model": MODEL, "codex_version": None,
-               "codex_exit_code": None, "timed_out": False, "failure": None,
+               "codex_exit_code": None, "timed_out": False, "failure": None, "failure_phase": None,
                "provider_requires_openai_auth": False,
                "openai_credentials_in_child_environment": False,
                "source_config_sha256_before": before, "source_config_sha256_after": None,
@@ -230,37 +238,50 @@ def main():
                "structured_final_to_contract": False, "bridge_errors": [],
                "transport_passed": False}
     handlers = {sig: signal.signal(sig, interrupted) for sig in (signal.SIGTERM, signal.SIGINT)}
+    phase = "bridge_start"
     try:
         server, thread, port, token = start_server(config_path, MODEL, run / "bridge.audit.jsonl",
             run / "work", allowed_tools=frozenset(), max_requests=1,
+            timeout=timeout, deadline=deadline,
             max_tokens=request["max_output_tokens"], reasoning_effort=request.get("reasoning_effort"),
             upstream_response_path=run / "upstream-response.json" if binding_sha256 is not None else None,
             upstream_request_path=run / "upstream-request.json")
-        configure(run, port)
+        configure(run, port, timeout)
         env = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
                "HOME": str(run / "user-home"), "CODEX_HOME": str(run / "codex-home"),
                "TMPDIR": str(run / "tmp"), "LANG": "C.UTF-8", "TERM": "dumb",
                "WISELINK_CODEX_BRIDGE_TOKEN": token}
+        phase = "codex_version"
         version = subprocess.run([request["codex_binary"], "--version"], env=env,
-            capture_output=True, text=True, timeout=15, check=True).stdout.strip()
+            capture_output=True, text=True, timeout=min(15, remaining_seconds(deadline)), check=True).stdout.strip()
         if version != "codex-cli 0.164.0":
             raise ValueError("unvalidated_codex_version")
         summary["codex_version"] = version
         command = [request["codex_binary"], "exec", "--sandbox", "read-only",
                    "--ephemeral", "--json", "--output-last-message", str(run / "final.txt"),
                    "--skip-git-repo-check", "--cd", str(run / "work"), "-"]
+        phase = "codex_generation"
+        remaining_seconds(deadline)
         process = subprocess.Popen(command, cwd=run / "work", env=env, stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
             errors="replace", start_new_session=True)
         try:
-            stdout, stderr = process.communicate(request["prompt"], timeout=timeout)
+            stdout, stderr = process.communicate(request["prompt"], timeout=remaining_seconds(deadline))
         except subprocess.TimeoutExpired:
             summary["timed_out"] = True
+            summary.update(failure="generation_deadline_exceeded", failure_phase=phase)
             stop(process)
             stdout, stderr = process.communicate(timeout=5)
         summary["codex_exit_code"] = process.returncode
+    except subprocess.TimeoutExpired:
+        summary.update(timed_out=True, failure=summary["failure"] or (
+            "codex_version_timeout" if phase == "codex_version" else "generation_deadline_exceeded"),
+            failure_phase=phase)
+    except TimeoutError:
+        summary.update(timed_out=True, failure="generation_deadline_exceeded", failure_phase=phase)
     except Exception as error:
         summary["failure"] = str(error) if isinstance(error, (ValueError, InterruptedError)) else type(error).__name__
+        summary["failure_phase"] = phase
     finally:
         for sig in handlers:
             signal.signal(sig, signal.SIG_IGN)

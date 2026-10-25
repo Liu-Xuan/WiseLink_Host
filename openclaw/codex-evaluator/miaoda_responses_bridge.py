@@ -10,9 +10,28 @@ MAX_BODY = 1048576
 class Rejected(Exception):
     pass
 
+AUDIT_ERROR_TYPES = frozenset((
+    Rejected, TimeoutError, OSError, InterruptedError, FileNotFoundError, PermissionError,
+    ConnectionError, ConnectionResetError, ConnectionAbortedError, BrokenPipeError,
+    ValueError, TypeError, KeyError, AttributeError, json.JSONDecodeError, UnicodeDecodeError,
+    http.client.HTTPException, http.client.RemoteDisconnected, http.client.IncompleteRead,
+    http.client.BadStatusLine,
+))
+
 def require(condition, code):
     if not condition:
         raise Rejected(code)
+
+def remaining_timeout(deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("deadline_exceeded")
+    return remaining
+
+def set_upstream_timeout(connection, deadline):
+    connection.timeout = remaining_timeout(deadline)
+    if connection.sock is not None:
+        connection.sock.settimeout(connection.timeout)
 
 def read_json(path):
     with open(path, encoding="utf-8") as f:
@@ -217,15 +236,21 @@ def chat_events(response, connection, deadline):
             yield json.loads(value)
 
 class Emitter:
-    def __init__(self, handler, allowed_tools, tool_map=None):
+    def __init__(self, handler, allowed_tools, tool_map=None, deadline=None):
         self.handler, self.sequence, self.items, self.calls, self.message, self.usage = handler, 0, [], {}, None, None
+        self.deadline = deadline
         self.allowed_tools = allowed_tools
         self.tool_map = tool_map or {}
         self.response = {"id": "resp_" + secrets.token_hex(12), "object": "response", "created_at": int(time.time()), "status": "in_progress", "model": MODEL, "output": self.items, "usage": None, "error": None}
     def send(self, kind, **fields):
         value = {"type": kind, "sequence_number": self.sequence, **fields}; self.sequence += 1
-        self.handler.wfile.write(("event: " + kind + "\ndata: " + json.dumps(value, ensure_ascii=False) + "\n\n").encode())
-        self.handler.wfile.flush()
+        try:
+            if self.deadline is not None:
+                self.handler.connection.settimeout(remaining_timeout(self.deadline))
+            self.handler.wfile.write(("event: " + kind + "\ndata: " + json.dumps(value, ensure_ascii=False) + "\n\n").encode())
+            self.handler.wfile.flush()
+        except TimeoutError as error:
+            raise Rejected("bridge_response_timeout") from error
     def added(self, item):
         index = len(self.items); self.items.append(item)
         self.send("response.output_item.added", output_index=index, item=item)
@@ -285,14 +310,16 @@ class Emitter:
         self.response.update(status="completed", usage=self.usage)
         self.send("response.completed", response=self.response)
 
-def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max_requests=24, max_tokens=8192, timeout=90, reasoning_effort=None, upstream_response_path=None, upstream_request_path=None):
+def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max_requests=24, max_tokens=8192, timeout=90, deadline=None, reasoning_effort=None, upstream_response_path=None, upstream_request_path=None):
     """Return (loopback server, serving thread, ephemeral port, ephemeral bearer token)."""
     require(model == MODEL, "model_not_allowed"); provider(read_json(config_path))
     # An empty allowlist is used by the bounded generation runner. Codex may
     # advertise its built-ins, but none is forwarded to Miaoda or emitted back.
     require(isinstance(allowed_tools, (set, frozenset)) and all(isinstance(n, str) and n and n.startswith("mcp__") for n in allowed_tools), "invalid_allowed_tools")
     allowed_tools = frozenset(allowed_tools)
-    require(all(type(n) is int and n > 0 for n in (max_requests, max_tokens, timeout)), "invalid_budget")
+    require(all(type(n) is int and n > 0 for n in (max_requests, max_tokens)) and
+            type(timeout) in (int, float) and 0 < timeout < float("inf"), "invalid_budget")
+    require(deadline is None or (type(deadline) in (int, float) and 0 < deadline < float("inf")), "invalid_deadline")
     require(reasoning_effort in (None, "low", "high", "max"), "invalid_glm_reasoning_effort")
     require(os.path.isdir(work_dir), "invalid_work_dir")
     token, lock, count, issued_ids, returned_ids = secrets.token_urlsafe(32), threading.Lock(), [0], set(), set()
@@ -313,10 +340,12 @@ def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max
                 self.error(401, "unauthorized"); return
             record = {"route": "/v1/responses", "model": MODEL, "status": 400, "tools": 0, "tool_calls": 0, "tool_results": 0, "call_ids": [], "returned_ids": [], "usage": None, "upstream_attempted": False, "error_code": None, "upstream_models": [], "finish_reason": None}
             emitter, connection = None, None
+            request_deadline = deadline if deadline is not None else time.monotonic() + timeout
+            phase = "request_body"
             try:
                 require(self.path in ("/responses", "/v1/responses"), "route_not_allowed")
                 size = int(self.headers.get("Content-Length", "0")); require(0 < size <= MAX_BODY and not self.headers.get("Transfer-Encoding"), "invalid_body_length")
-                self.connection.settimeout(timeout)
+                self.connection.settimeout(remaining_timeout(request_deadline))
                 body = json.loads(self.rfile.read(size))
                 if isinstance(body, dict):
                     record["request_fields"] = sorted(body)
@@ -352,17 +381,26 @@ def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max
                 upstream_body = json.dumps(payload).encode()
                 if upstream_request_path is not None:
                     atomic_bytes(upstream_request_path, upstream_body)
-                target = urlsplit(BASE); deadline = time.monotonic() + timeout
-                connection = http.client.HTTPSConnection(target.hostname, timeout=timeout)
+                target = urlsplit(BASE)
+                phase = "upstream_connect"
+                connection = http.client.HTTPSConnection(target.hostname, timeout=remaining_timeout(request_deadline))
                 record.update(upstream_attempted=True, status=502)
+                connection.connect()
+                phase = "upstream_request"
+                set_upstream_timeout(connection, request_deadline)
                 connection.request("POST", target.path + "/chat/completions", upstream_body, headers)
+                phase = "upstream_headers"
+                set_upstream_timeout(connection, request_deadline)
                 upstream = connection.getresponse()
                 require(upstream.status == 200, "upstream_http_" + str(upstream.status))
+                phase = "response_headers"
+                self.connection.settimeout(remaining_timeout(request_deadline))
                 self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.send_header("Cache-Control", "no-cache"); self.send_header("Connection", "close"); self.end_headers(); self.close_connection = True
-                emitter = Emitter(self, allowed_tools, tool_map); emitter.send("response.created", response=emitter.response); emitter.send("response.in_progress", response=emitter.response)
+                emitter = Emitter(self, allowed_tools, tool_map, request_deadline); emitter.send("response.created", response=emitter.response); emitter.send("response.in_progress", response=emitter.response)
                 finish = None
                 upstream_events = [] if upstream_response_path is not None else None
-                for event in chat_events(upstream, connection, deadline):
+                phase = "upstream_stream"
+                for event in chat_events(upstream, connection, request_deadline):
                     require(isinstance(event, dict) and not event.get("error"), "upstream_stream_error")
                     if upstream_events is not None:
                         upstream_events.append(event)
@@ -380,6 +418,7 @@ def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max
                 require(finish != "length", "upstream_output_length")
                 require(finish in ("stop", "tool_calls") and (emitter.items or emitter.calls), "upstream_incomplete_output")
                 require((finish == "tool_calls") == bool(emitter.calls), "upstream_finish_mismatch")
+                remaining_timeout(request_deadline)
                 if upstream_events is not None:
                     path = os.fspath(upstream_response_path)
                     temporary = path + ".tmp"
@@ -397,8 +436,15 @@ def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max
                     returned_ids.update(new_returned)
                 record.update(status=200, finish_reason=finish)
             except Exception as exc:
-                code = str(exc) if isinstance(exc, Rejected) else "bridge_internal_error"
+                code = str(exc) if isinstance(exc, Rejected) else (
+                    "upstream_timeout" if isinstance(exc, TimeoutError) and phase.startswith("upstream_") else
+                    "bridge_request_timeout" if isinstance(exc, TimeoutError) and phase == "request_body" else
+                    "bridge_response_timeout" if isinstance(exc, TimeoutError) else "bridge_internal_error")
                 record["error_code"] = code
+                record["error_phase"] = "response_write" if code == "bridge_response_timeout" else phase
+                cause = exc.__cause__ if type(exc) is Rejected and type(exc.__cause__) is TimeoutError else exc
+                error_type = type(cause)
+                record["error_type"] = error_type.__name__ if error_type in AUDIT_ERROR_TYPES else "UnexpectedError"
                 if emitter is None:
                     try: self.error(record["status"], code)
                     except Exception: pass

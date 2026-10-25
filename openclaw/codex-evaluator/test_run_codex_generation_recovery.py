@@ -165,5 +165,116 @@ class PreDispatchPersistenceTests(unittest.TestCase):
                 cli_spawn.assert_not_called()
 
 
+class GenerationDeadlineTests(unittest.TestCase):
+    def execute(self, *, version_elapsed=13, bridge_elapsed=0, version_timeout=False,
+                cli_timeout=False, cleanup_timeout=False):
+        # The clock and CLI are synthetic. Exercise main's real deadline,
+        # configuration and durable summaries without claiming /proc coverage.
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        config = root / "config.json"
+        config.write_text('{"source":"offline-no-credentials"}')
+        run = root / "run"
+        request = {"run_directory": str(run), "config_path": str(config),
+                   "codex_binary": "/offline/codex", "prompt": "Return candidate",
+                   "allowed_tool_names": ["return_result"], "timeout_seconds": 600,
+                   "max_output_tokens": 128}
+        clock = [100.0]
+        observed = {}
+        process = mock.Mock(returncode=0)
+        process.poll.return_value = 0
+
+        def bridge_stub(*args, **options):
+            observed["bridge"] = options
+            clock[0] += bridge_elapsed
+            return ClosedServer(), ClosedThread(), 12345, "ephemeral-test-token"
+
+        def version(*args, **options):
+            observed["version_timeout"] = options["timeout"]
+            if version_timeout:
+                raise runner.subprocess.TimeoutExpired(args[0], options["timeout"])
+            clock[0] += version_elapsed
+            return mock.Mock(stdout="codex-cli 0.164.0\n")
+
+        def communicate(prompt=None, *, timeout):
+            if prompt is None:
+                observed["cleanup_timeout"] = timeout
+                if cleanup_timeout:
+                    raise runner.subprocess.TimeoutExpired("offline-codex-cleanup", timeout)
+                return '{"type":"turn.failed"}\n', ""
+            observed["cli_timeout"] = timeout
+            self.assertEqual(prompt, request["prompt"])
+            if cli_timeout:
+                (run / "bridge.audit.jsonl").write_text(json.dumps({"upstream_attempted": True,
+                    "status": 502, "upstream_models": ["glm-5.3"], "error_code": "upstream_timeout"}) + "\n")
+                raise runner.subprocess.TimeoutExpired("offline-codex-generation", timeout)
+            (run / "final.txt").write_text(json.dumps({"tool_name": "return_result",
+                "arguments": {"workJson": "{}"}}))
+            (run / "bridge.audit.jsonl").write_text(json.dumps({"upstream_attempted": True,
+                "status": 200, "upstream_models": ["glm-5.3"], "finish_reason": "stop"}) + "\n")
+            (run / "upstream-request.json").write_text('{"model":"glm-5.3"}')
+            return '{"type":"turn.completed"}\n', ""
+
+        process.communicate.side_effect = communicate
+        output = io.StringIO()
+        with mock.patch.object(runner, "runner_identity", return_value={"synthetic": True}), \
+             mock.patch.object(runner.time, "monotonic", side_effect=lambda: clock[0]), \
+             mock.patch.object(runner, "start_server", side_effect=bridge_stub), \
+             mock.patch.object(runner.subprocess, "run", side_effect=version) as version_call, \
+             mock.patch.object(runner.subprocess, "Popen", return_value=process) as spawn, \
+             mock.patch.object(runner, "close_process_group", return_value=(True, False)), \
+             mock.patch.object(sys, "stdin", io.StringIO(json.dumps(request))), \
+             contextlib.redirect_stdout(output):
+            code = runner.main()
+        return code, json.loads(output.getvalue()), observed, run, version_call, spawn
+
+    def test_one_deadline_reaches_bridge_version_cli_and_codex_idle_limit(self):
+        code, summary, observed, run, _, spawn = self.execute()
+        self.assertEqual(code, 0, summary)
+        self.assertEqual(observed["bridge"]["timeout"], 600)
+        self.assertEqual(observed["bridge"]["deadline"], 700)
+        self.assertEqual(observed["bridge"]["max_requests"], 1)
+        self.assertEqual(observed["version_timeout"], 15)
+        self.assertEqual(observed["cli_timeout"], 587)
+        spawn.assert_called_once()
+        config = (run / "codex-home" / "config.toml").read_text()
+        self.assertIn("stream_idle_timeout_ms = 600000", config)
+        self.assertIn("request_max_retries = 0", config)
+        self.assertIn("stream_max_retries = 0", config)
+        self.assertEqual(summary["model_requests"], 1)
+
+    def test_expired_setup_cannot_start_version_probe_or_cli(self):
+        code, summary, _, _, version, spawn = self.execute(bridge_elapsed=601)
+        self.assertEqual(code, 1)
+        self.assertTrue(summary["timed_out"])
+        self.assertEqual(summary["failure"], "generation_deadline_exceeded")
+        self.assertEqual(summary["failure_phase"], "codex_version")
+        self.assertEqual(summary["model_requests"], 0)
+        version.assert_not_called()
+        spawn.assert_not_called()
+
+    def test_version_and_generation_cleanup_timeouts_keep_the_original_phase(self):
+        code, summary, _, _, _, spawn = self.execute(version_timeout=True)
+        self.assertEqual(code, 1)
+        self.assertTrue(summary["timed_out"])
+        self.assertEqual(summary["failure"], "codex_version_timeout")
+        self.assertEqual(summary["failure_phase"], "codex_version")
+        self.assertEqual(summary["model_requests"], 0)
+        spawn.assert_not_called()
+        for cleanup_timeout in (False, True):
+            with self.subTest(cleanup_timeout=cleanup_timeout):
+                code, summary, observed, _, _, spawn = self.execute(
+                    cli_timeout=True, cleanup_timeout=cleanup_timeout)
+                self.assertEqual(code, 1)
+                self.assertTrue(summary["timed_out"])
+                self.assertEqual(summary["failure"], "generation_deadline_exceeded")
+                self.assertEqual(summary["failure_phase"], "codex_generation")
+                self.assertEqual(observed["cli_timeout"], 587)
+                self.assertEqual(observed["cleanup_timeout"], 5)
+                self.assertEqual(summary["model_requests"], 1)
+                spawn.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
