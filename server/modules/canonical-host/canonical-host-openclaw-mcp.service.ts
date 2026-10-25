@@ -602,7 +602,7 @@ export class CanonicalHostOpenClawMcpService {
           errorCode: z.string().regex(/^[A-Z][A-Z0-9_:.-]{0,199}$/u),
           upstreamOutcome: z.literal('UNKNOWN'),
         }).strict(),
-        annotations: commitAnnotations,
+        annotations: beginAnnotations,
       },
       async input => textResult(await this.problemAssessment.recordConsumerStopped({
         ...input, requestId: input.requestId ?? null,

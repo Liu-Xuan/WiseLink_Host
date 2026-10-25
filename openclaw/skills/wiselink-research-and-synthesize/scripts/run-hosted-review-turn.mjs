@@ -1996,14 +1996,18 @@ export function createHostAutoWorkItemQueueClient(options, fetchImpl = globalThi
 
 export function validateHostToolMetadata(value) {
   const tools = Array.isArray(value?.tools) ? value.tools : [];
-  // The pending-work query is an additive control-plane capability. It does
-  // not change the established C3 model/commit contract or the required tools.
+  // Optional control capabilities do not join the established required surface.
+  const stoppedControl = 'record_assessment_consumer_stopped';
   const names = tools.map(({ name }) => name)
-    .filter((name) => name !== 'get_pending_review_turn' && name !== REVIEW_NATIVE_READ_TOOL).sort();
+    .filter((name) => name !== 'get_pending_review_turn' && name !== REVIEW_NATIVE_READ_TOOL &&
+      name !== stoppedControl).sort();
   const expected = [...HOST_MCP_TOOLS].sort();
   if (canonicalJson(names) !== canonicalJson(expected)) {
     throw new Error('REVIEW_HOST_MCP_EXACT20_MISMATCH');
   }
+  const stopped = tools.filter(({ name }) => name === stoppedControl);
+  if (stopped.length > 1) throw new Error('JOBAID_CONSUMER_STOPPED_CAPABILITY_SCHEMA_INVALID');
+  if (stopped.length) validateConsumerStoppedToolMetadata(stopped[0]);
   const native = tools.filter(({ name }) => name === REVIEW_NATIVE_READ_TOOL);
   if (native.length > 1) throw new Error('REVIEW_NATIVE_READ_CAPABILITY_SCHEMA_INVALID');
   if (native.length) validateReviewNativeToolMetadata(native[0], tools);
@@ -2052,6 +2056,22 @@ export function validateHostToolMetadata(value) {
   ) {
     throw new Error('REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH');
   }
+}
+
+function validateConsumerStoppedToolMetadata(tool) {
+  const schema = tool.inputSchema;
+  const expected = ['attemptRef', 'workItemId', 'leaseToken', 'leaseGeneration', 'requestId',
+    'documentVersionId', 'inputRevision', 'modelRound', 'errorCode', 'upstreamOutcome'].sort();
+  const request = schema?.properties?.requestId;
+  const requestTypes = Array.isArray(request?.type) ? [...request.type].sort()
+    : Array.isArray(request?.anyOf) ? request.anyOf.map(item => item?.type).sort() : [];
+  if (schema?.type !== 'object' || schema.additionalProperties !== false ||
+      canonicalJson(Object.keys(schema.properties ?? {}).sort()) !== canonicalJson(expected) ||
+      canonicalJson([...(schema.required ?? [])].sort()) !== canonicalJson(expected) ||
+      canonicalJson(requestTypes) !== canonicalJson(['null', 'string']) ||
+      tool.annotations?.readOnlyHint !== false || tool.annotations?.destructiveHint !== false ||
+      tool.annotations?.idempotentHint !== true || tool.annotations?.openWorldHint !== false)
+    throw new Error('JOBAID_CONSUMER_STOPPED_CAPABILITY_SCHEMA_INVALID');
 }
 
 function validateReviewNativeToolMetadata(tool, tools) {
