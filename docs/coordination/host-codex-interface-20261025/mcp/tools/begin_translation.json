@@ -1,0 +1,35 @@
+{
+  "name": "begin_translation",
+  "title": "开始来源绑定的中英文候选翻译",
+  "description": "Host 为同一 WorkItem 创建或恢复 TRANSLATE ActionAttempt。新 v2 使用 requestId 与完整结构来源工作区，返回任务指针；通过 translation_workspace 领取完整语义批次、保存并检查后由 Host 组装。历史 v1 仍返回有界 SourceUnit 传输分片，COMMITTING 仅恢复相同提交。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "deliveryPart": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10000
+      },
+      "requestId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+      }
+    },
+    "required": [
+      "workItemId"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

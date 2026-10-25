@@ -4,7 +4,7 @@ import {
   summarizeHostedReviewModelOutputShape,
 } from './run-hosted-review-turn.mjs';
 import { WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION, WISELINK_PROFILE_REF, WISELINK_SKILL_VERSION } from './validate-payload.mjs';
-import { requestHostedGateway } from './request-hosted-gateway.mjs';
+import { modelExecutor, modelExecutorProvenance, modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway } from './model-executor.mjs';
 import { buildTranslationModelView } from './translation-model-view.mjs';
 
 export const TRANSLATION_BLOCK_PROMPT_VERSION = 'wiselink-translation-block@r09.c207';
@@ -55,7 +55,8 @@ export async function invokeHostedTranslationBlock(modelInput, options, dependen
   validateTranslationSemanticBatch(modelInput);
   assertHostedModelGatewayReady(options);
   if (options.agentId !== undefined && options.agentId !== WISELINK_PROFILE_REF) throw new Error('TRANSLATION_PROFILE_MISMATCH');
-  if (!options.executionModel || typeof options.gatewayToken !== 'string' || !options.gatewayToken.trim()) throw new Error('TRANSLATION_RUNTIME_BINDING_REQUIRED');
+  if (!options.executionModel || (modelExecutor(options) !== 'CODEX' &&
+    (typeof options.gatewayToken !== 'string' || !options.gatewayToken.trim()))) throw new Error('TRANSLATION_RUNTIME_BINDING_REQUIRED');
   const maxCompletionTokens = options.executionModel.modelRef === 'miaoda/minimax-m3' ? M3_MAX_COMPLETION_TOKENS
     : options.executionModel.modelRef === 'm3probe/minimax-m3' ? 32_768 : undefined;
   const semanticCheck = ['CHECK', 'CHECK_BATCH'].includes(modelInput.purpose);
@@ -87,8 +88,8 @@ export async function invokeHostedTranslationBlock(modelInput, options, dependen
   let response;
   let raw;
   try {
-    response = await (dependencies.requestGateway ?? requestHostedGateway)(new URL('/v1/chat/completions', options.gatewayUrl), {
-      method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${options.gatewayToken}`, ...executionModelHeaders(options) },
+    response = await ((endpoint, init) => requestModelGateway(options, endpoint, init, dependencies))(modelGatewayEndpoint(options), {
+      method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json', ...modelGatewayHeaders(options), ...executionModelHeaders(options) },
       body: JSON.stringify({ model: `openclaw/${WISELINK_PROFILE_REF}`,
         // One registered generation, including a correction or semantic check,
         // gets a fresh short native session. No previous document-wide chat.
@@ -159,7 +160,7 @@ export async function invokeHostedTranslationBlock(modelInput, options, dependen
         providerRequestId: typeof payload.request_id === 'string' && payload.request_id.trim() ? payload.request_id : null,
         generatedAt: null, usage: { inputTokens: count(payload?.usage?.prompt_tokens), outputTokens: count(payload?.usage?.completion_tokens) } },
       provenance: { modelVersion, skillVersion: WISELINK_SKILL_VERSION, promptVersion: TRANSLATION_BLOCK_PROMPT_VERSION,
-        toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION },
+        toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, ...modelExecutorProvenance(options) },
         runMetrics: { durationMs: Date.now() - started, inputUnits: Buffer.byteLength(JSON.stringify(messages)), outputUnits: Buffer.byteLength(call.function.arguments) } },
     };
   } catch (cause) {

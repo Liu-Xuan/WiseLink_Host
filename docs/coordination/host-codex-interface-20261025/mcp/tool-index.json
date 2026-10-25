@@ -1,0 +1,326 @@
+{
+  "source": "actual-source-registration-and-official-sdk-in-memory-tools-list",
+  "toolCount": 45,
+  "serverInfo": {
+    "name": "wiselink-codex-engineering-assessment",
+    "version": "1.2.0"
+  },
+  "toolVersionPolicy": "No independent per-tool version is declared by these registrations. null is not the server version.",
+  "tools": [
+    {
+      "name": "get_parse_status",
+      "metadataFile": "tools/get_parse_status.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "query_parsed_package",
+      "metadataFile": "tools/query_parsed_package.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "get_deep_link",
+      "metadataFile": "tools/get_deep_link.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "next_matter_assessment",
+      "metadataFile": "tools/next_matter_assessment.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "read_matter_current_work",
+      "metadataFile": "tools/read_matter_current_work.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "begin_matter_assessment",
+      "metadataFile": "tools/begin_matter_assessment.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "matter_action_attempt",
+      "metadataFile": "tools/matter_action_attempt.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "derived_summary_attempt",
+      "metadataFile": "tools/derived_summary_attempt.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "next_hierarchical_wiki",
+      "metadataFile": "tools/next_hierarchical_wiki.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "hierarchical_wiki_next_matter_assessment",
+      "metadataFile": "tools/hierarchical_wiki_next_matter_assessment.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "hierarchical_wiki_read_matter_current_work",
+      "metadataFile": "tools/hierarchical_wiki_read_matter_current_work.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "hierarchical_wiki_matter_action_attempt",
+      "metadataFile": "tools/hierarchical_wiki_matter_action_attempt.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "hierarchical_wiki_cleanup",
+      "metadataFile": "tools/hierarchical_wiki_cleanup.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "document_work",
+      "metadataFile": "tools/document_work.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "document_reading",
+      "metadataFile": "tools/document_reading.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "read_document_original",
+      "metadataFile": "tools/read_document_original.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "document_translation",
+      "metadataFile": "tools/document_translation.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "begin_translation",
+      "metadataFile": "tools/begin_translation.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "translation_workspace",
+      "metadataFile": "tools/translation_workspace.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "commit_translation_candidate",
+      "metadataFile": "tools/commit_translation_candidate.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "begin_applicability_evaluation",
+      "metadataFile": "tools/begin_applicability_evaluation.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "commit_applicability_candidate",
+      "metadataFile": "tools/commit_applicability_candidate.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "next_original_assessment",
+      "metadataFile": "tools/next_original_assessment.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "begin_dynamic_evaluation",
+      "metadataFile": "tools/begin_dynamic_evaluation.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "read_assessment_sources",
+      "metadataFile": "tools/read_assessment_sources.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "query_assessment_knowledge",
+      "metadataFile": "tools/query_assessment_knowledge.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "record_assessment_consumer_stopped",
+      "metadataFile": "tools/record_assessment_consumer_stopped.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "record_assessment_program_progress",
+      "metadataFile": "tools/record_assessment_program_progress.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "save_assessment_work",
+      "metadataFile": "tools/save_assessment_work.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "read_assessment_work",
+      "metadataFile": "tools/read_assessment_work.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "commit_dynamic_evaluation_candidate",
+      "metadataFile": "tools/commit_dynamic_evaluation_candidate.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "record_oem_discovery_run",
+      "metadataFile": "tools/record_oem_discovery_run.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "begin_overall_synthesis",
+      "metadataFile": "tools/begin_overall_synthesis.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "resume_overall_synthesis",
+      "metadataFile": "tools/resume_overall_synthesis.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "commit_overall_candidate",
+      "metadataFile": "tools/commit_overall_candidate.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "get_pending_review_turn",
+      "metadataFile": "tools/get_pending_review_turn.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "begin_review_turn",
+      "metadataFile": "tools/begin_review_turn.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "get_review_turn_context",
+      "metadataFile": "tools/get_review_turn_context.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "read_source_refs",
+      "metadataFile": "tools/read_source_refs.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "read_review_native_sources",
+      "metadataFile": "tools/read_review_native_sources.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "query_review_aily",
+      "metadataFile": "tools/query_review_aily.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "get_action_attempt_status",
+      "metadataFile": "tools/get_action_attempt_status.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "commit_review_turn_candidate",
+      "metadataFile": "tools/commit_review_turn_candidate.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "heartbeat_action_attempt",
+      "metadataFile": "tools/heartbeat_action_attempt.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    },
+    {
+      "name": "cancel_action_attempt",
+      "metadataFile": "tools/cancel_action_attempt.json",
+      "toolVersion": null,
+      "outputSchemaDeclared": false,
+      "schemaDialect": "https://json-schema.org/draft/2020-12/schema"
+    }
+  ]
+}

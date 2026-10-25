@@ -1,0 +1,27 @@
+{
+  "name": "hierarchical_wiki_read_matter_current_work",
+  "title": "读取事项当前工作",
+  "description": "读取已授权事项的最新版本标识、完整当前工作/Overview、准确输入绑定与已登记来源目录，以及活动任务摘要。纯读取：不创建/认领/保存/完成任何任务，不写工作、事件或来源回执；后续 BEGIN 仍需重新授权与 CAS。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "matterId": {
+        "type": "string",
+        "maxLength": 96,
+        "format": "starts_with",
+        "pattern": "^MAT-.*"
+      }
+    },
+    "required": [
+      "matterId"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

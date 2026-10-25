@@ -2,7 +2,7 @@
 // This adapter has no Host write or parsing/translation capability; the durable
 // reading consumer owns dispatch checkpoints, leases and SAVE confirmation.
 import { actualModelVersion, executionModelHeaders, parseStrictJsonObject } from './run-hosted-review-turn.mjs';
-import { requestHostedGateway } from './request-hosted-gateway.mjs';
+import { modelExecutor, modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway } from './model-executor.mjs';
 import { WISELINK_PROFILE_REF, canonicalJson, canonicalSha256 } from './validate-payload.mjs';
 import { readingModelContextView, READING_MODEL_VIEW_VERSION } from './reading-model-context-view.mjs';
 
@@ -104,8 +104,8 @@ export async function invokeHostedDocumentReadingModel(input, options = {}, depe
   const messages = readingModelMessages(input);
   const modelViewHash = canonicalSha256(JSON.parse(messages[1].content));
   const modelHeaders = executionModelHeaders(options);
-  const gatewayUrl = requiredOption(options.gatewayUrl, 'READING_GATEWAY_URL_REQUIRED');
-  const gatewayToken = requiredOption(options.gatewayToken, 'READING_GATEWAY_TOKEN_REQUIRED');
+  const gatewayUrl = modelExecutor(options) === 'CODEX' ? null : requiredOption(options.gatewayUrl, 'READING_GATEWAY_URL_REQUIRED');
+  const gatewayToken = modelExecutor(options) === 'CODEX' ? null : requiredOption(options.gatewayToken, 'READING_GATEWAY_TOKEN_REQUIRED');
   const agentId = requiredOption(options.agentId ?? WISELINK_PROFILE_REF, 'READING_AGENT_REQUIRED');
   const configuredModelVersion = requiredOption(
     options.executionModel ? `configured-route:${options.executionModel.modelRef}` : options.configuredModelVersion, 'READING_MODEL_CONFIG_UNREADABLE');
@@ -119,7 +119,7 @@ export async function invokeHostedDocumentReadingModel(input, options = {}, depe
   let endpoint;
   let metadata = null;
   try {
-    endpoint = new URL('/v1/chat/completions', gatewayUrl);
+    endpoint = modelExecutor(options) === 'CODEX' ? modelGatewayEndpoint(options) : new URL('/v1/chat/completions', gatewayUrl);
   } catch {
     throw new Error('READING_GATEWAY_URL_INVALID');
   }
@@ -127,11 +127,11 @@ export async function invokeHostedDocumentReadingModel(input, options = {}, depe
   let response;
   let text;
   try {
-    response = await (dependencies.requestGateway ?? requestHostedGateway)(endpoint, {
+    response = await ((endpoint, init) => requestModelGateway(options, endpoint, init, dependencies))(endpoint, {
       method: 'POST',
       headers: {
         accept: 'application/json',
-        authorization: `Bearer ${gatewayToken}`,
+        ...modelGatewayHeaders(options),
         'content-type': 'application/json',
         ...modelHeaders,
       },

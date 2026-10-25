@@ -1,3 +1,4 @@
+import { canonicalHostExecutor } from './canonical-host-executor-policy';
 import {
   parseResultEnvelope,
   parseStoredResultEnvelope,
@@ -34,6 +35,9 @@ export function preflightCanonicalHostOpenClawResult(input: {
   const task = parseCanonicalHostOpenClawAttemptTask(input.row);
   const result = parseResultEnvelope({ value: input.result, task });
   assertCanonicalHostOpenClawRuntimePolicy(result, task);
+  if (!isSavedWorkReconciliationResult(result) &&
+      (result.toolVersions['model-executor'] ?? 'HOSTED') !== canonicalHostExecutor())
+    throw policyError('CANONICAL_RESULT_EXECUTOR_MISMATCH');
   return { task, result };
 }
 

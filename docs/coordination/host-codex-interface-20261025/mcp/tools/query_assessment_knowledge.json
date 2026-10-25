@@ -1,0 +1,58 @@
+{
+  "name": "query_assessment_knowledge",
+  "title": "按需检索初始评估补充知识",
+  "description": "仅使用新任务绑定的当前用户授权和官方智能体。提交一次requestKey/query，再按queryRef读取；提交响应不确定时仅传原requestKey读取，不重新发起。结果是未核实补充材料，失败/不确定必须保留。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "attemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "leaseToken": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      },
+      "leaseGeneration": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      },
+      "requestKey": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4000
+      },
+      "queryRef": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      }
+    },
+    "required": [
+      "attemptRef",
+      "leaseToken",
+      "leaseGeneration"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

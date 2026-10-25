@@ -17,7 +17,7 @@ import {
   validateApplicabilityAstCandidate,
   validatePayload,
 } from './validate-payload.mjs';
-import { requestHostedGateway } from './request-hosted-gateway.mjs';
+import { modelExecutor, modelExecutorProvenance, modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway } from './model-executor.mjs';
 import { invokeHostedTranslationBlock } from './invoke-hosted-translation-block.mjs';
 import { invokeHostedJobAidProblemModel, isJobAidProblemInputSchema } from './run-jobaid-problem-assessment.mjs';
 import { SOURCE_CONTENT_SYNTHESIS_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION } from './jobaid-problem-guidance.mjs';
@@ -99,8 +99,7 @@ export async function invokeHostedInitialModel(
     throw new Error('INITIAL_PROFILE_MISMATCH');
   }
   for (const key of [
-    'gatewayUrl',
-    'gatewayToken',
+    ...(modelExecutor(options) === 'CODEX' ? [] : ['gatewayUrl', 'gatewayToken']),
     'configuredModelVersion',
     'sessionDiscriminator',
   ]) {
@@ -185,14 +184,14 @@ export async function invokeHostedInitialModel(
     let response;
     let raw;
     try {
-      response = await (dependencies.requestGateway ?? requestHostedGateway)(
-        new URL('/v1/chat/completions', options.gatewayUrl),
+      response = await requestModelGateway(options,
+        modelGatewayEndpoint(options),
         {
           method: 'POST',
           headers: {
             accept: 'application/json',
             'content-type': 'application/json',
-            authorization: `Bearer ${options.gatewayToken}`,
+            ...modelGatewayHeaders(options),
             ...modelHeaders,
           },
           body: JSON.stringify({
@@ -228,7 +227,7 @@ export async function invokeHostedInitialModel(
             }),
           }),
           signal,
-        },
+        }, dependencies,
       );
       raw = await response.text();
     } catch (error) {
@@ -514,7 +513,7 @@ export async function invokeHostedInitialModel(
         ),
         promptVersion,
         skillVersion: WISELINK_SKILL_VERSION,
-        toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION },
+        toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, ...modelExecutorProvenance(options) },
         runMetrics: {
           durationMs: Date.now() - startedAt,
           inputUnits,

@@ -8,6 +8,9 @@ import {
   parseStrictJsonObject,
 } from './run-hosted-review-turn.mjs';
 import { createSummaryGatewaySession } from './derived-summary-native-gateway.mjs';
+import { createSummaryCodexGatewaySession } from './derived-summary-codex-gateway.mjs';
+import { assertModelExecutorReady, modelExecutor, modelExecutorProvenance,
+  modelGatewayEndpoint, modelGatewayHeaders } from './model-executor.mjs';
 import { requestHostedGateway, createHostedReviewRequester } from './request-hosted-gateway.mjs';
 import { canonicalJson, WISELINK_PROFILE_REF, WISELINK_SKILL_VERSION,
   WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from './validate-payload.mjs';
@@ -283,18 +286,30 @@ function parseResponse(response) {
  * repeats only the exact read intent; an unknown model outcome stays fenced. */
 export async function invokeHostedDerivedSummaryModel(modelInput, options, dependencies = {}) {
   validateDerivedSummaryModelInput(modelInput);
-  assertHostedModelGatewayReady(options);
-  executionModelHeaders(options);
+  assertModelExecutorReady(options);
+  if (modelExecutor(options) === 'HOSTED') assertHostedModelGatewayReady(options);
+  else if (options.executionModel?.modelRef !== 'miaoda/glm-5.3')
+    throw new Error('DERIVED_SUMMARY_CODEX_MODEL_ROUTE_INVALID');
   if (!options.checkpoint || typeof options.heartbeat !== 'function' || typeof options.readMembers !== 'function' ||
       typeof options.readSources !== 'function' || typeof options.sessionDiscriminator !== 'string' || !options.sessionDiscriminator ||
       !Number.isFinite(Date.parse(options.deadlineAt))) throw new Error('DERIVED_SUMMARY_MODEL_CAPABILITY_REQUIRED');
   const checkpoint = options.checkpoint;
   const registry = derivedSummaryRegistry(modelInput);
   let state = await checkpoint.readOptional('summary-model-state');
+  const executorBinding = await checkpoint.readOptional('summary-model-executor');
+  if (executorBinding && executorBinding.executor !== modelExecutor(options))
+    throw new Error('DERIVED_SUMMARY_MODEL_EXECUTOR_BINDING_INVALID');
+  if (modelExecutor(options) === 'CODEX' && !executorBinding) {
+    if (state || await checkpoint.hasEntries('summary-round-') ||
+        await checkpoint.hasEntries('summary-gateway.'))
+      throw new Error('DERIVED_SUMMARY_MODEL_EXECUTOR_BINDING_INVALID');
+    await checkpoint.writeOnce('summary-model-executor', { executor: 'CODEX' });
+  }
   if (!state) {
     if (typeof checkpoint.hasEntries !== 'function')
       throw new Error('DERIVED_SUMMARY_CHECKPOINT_INVENTORY_REQUIRED');
-    if (await checkpoint.hasEntries('summary-round-') || await checkpoint.hasEntries('summary-gateway.'))
+    if (await checkpoint.hasEntries('summary-round-') || await checkpoint.hasEntries('summary-gateway.') ||
+        await checkpoint.hasEntries('summary-codex.'))
       throw new Error('DERIVED_SUMMARY_MODEL_PROMPT_BINDING_INVALID');
     const baseVersion = isHierarchicalWikiParent(modelInput) ? HIERARCHICAL_WIKI_PARENT_PROMPT_VERSION : modelInput.purpose === 'REVISE_SAVED_SUMMARY'
       ? DERIVED_SUMMARY_SPARSE_REVISION_PROMPT_VERSION : DERIVED_SUMMARY_CACHE_PREFIX_PROMPT_VERSION;
@@ -310,8 +325,10 @@ export async function invokeHostedDerivedSummaryModel(modelInput, options, depen
   const sparse = sparseDeliveryPrompt(promptVersion);
   const projectRead = sparse ? projectDerivedSummarySparseReadReceipt : projectDerivedSummaryReadReceipt;
   const priorReusableRefs = sparse ? hostBoundPriorDerivedSummaryRefs(modelInput) : null;
-  const gateway = createSummaryGatewaySession({ ...options,
-    requestGateway: dependencies.requestGateway ?? requestHostedGateway });
+  const gateway = modelExecutor(options) === 'CODEX'
+    ? createSummaryCodexGatewaySession({ ...options, requestGateway: dependencies.requestGateway })
+    : createSummaryGatewaySession({ ...options,
+      requestGateway: dependencies.requestGateway ?? requestHostedGateway });
   const requester = createHostedReviewRequester({ requestGateway: (_endpoint, init) => gateway.request(init),
     maxModelRequests: options.runBudget.maxModelRequests,
     observeProgress: async progress => { await options.heartbeat(); await options.observeProgress?.(progress); },
@@ -327,9 +344,10 @@ export async function invokeHostedDerivedSummaryModel(modelInput, options, depen
       perform: async () => {
         const timeoutSignal = AbortSignal.timeout(Math.min(remainingMs, 2_147_483_647));
         const signal = options.signal instanceof AbortSignal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
-        const response = await requester(new URL('/v1/chat/completions', options.gatewayUrl), {
+        const response = await requester(modelGatewayEndpoint(options), {
           method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json',
-            authorization: `Bearer ${options.gatewayToken}`, ...executionModelHeaders(options) },
+            ...modelGatewayHeaders(options),
+            ...(modelExecutor(options) === 'HOSTED' ? executionModelHeaders(options) : {}) },
           body: JSON.stringify({ model: `openclaw/${WISELINK_PROFILE_REF}`, user: `summary:${options.sessionDiscriminator}`,
             messages: state.messages, tools: [derivedSummaryStepTool()],
             tool_choice: { type: 'function', function: { name: DERIVED_SUMMARY_FUNCTION } },
@@ -348,7 +366,8 @@ export async function invokeHostedDerivedSummaryModel(modelInput, options, depen
         : validateDerivedSummaryContent(step.content, modelInput);
       return { content, provenance: { configuredModelRef: options.executionModel.modelRef,
         actualModel: parsed.actualModel, promptVersion,
-        skillVersion: WISELINK_SKILL_VERSION, toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION },
+        skillVersion: WISELINK_SKILL_VERSION, toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+          ...modelExecutorProvenance(options) },
         }, diagnostics: { usage: parsed.usage, ...(sparse ? derivedSummarySparseDiagnostics(content, delivered, priorReusableRefs) : {}) } };
     }
     if (!['READ_MEMBER_WORK', 'READ_SOURCES'].includes(step?.action)) throw new Error('DERIVED_SUMMARY_MODEL_STEP_INVALID');
@@ -406,7 +425,8 @@ export async function validateDerivedSummarySparseCandidateReplay(modelInput, op
   const actual = normalizeDerivedSummaryContent(candidate.content, modelInput);
   const provenance = { configuredModelRef: options.executionModel.modelRef, actualModel: parsed.actualModel,
     promptVersion, skillVersion: WISELINK_SKILL_VERSION,
-    toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION } };
+    toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+      ...modelExecutorProvenance(options) } };
   if (canonicalJson(expected) !== canonicalJson(actual) || canonicalJson(provenance) !== canonicalJson(candidate.provenance)) invalid();
   return { content: actual, provenance, diagnostics: derivedSummarySparseDiagnostics(content, delivered, priorReusableRefs) };
 }

@@ -133,6 +133,7 @@ async function main(argv, env) {
     process.stdout.write(
       'Usage: node consume-hosted-review-turn.mjs --work-item-id WI-... [--checkpoint-root PATH] [--openclaw-config PATH]\nRuns one pending candidate-only review, or exits without a model call when idle.\n',
     );
+    process.stdout.write('Explicit Codex generation: --model-executor CODEX --codex-binary ABSOLUTE_PATH --codex-config ABSOLUTE_PATH --codex-run-root ABSOLUTE_PATH.\n');
     return;
   }
   const workItemId =
@@ -154,6 +155,7 @@ async function main(argv, env) {
       {
         callTool: connection.callTool,
         hasTool: connection.hasTool,
+        modelRuntime: runtime,
         invokeModel: (input, hooks = {}) =>
           invokeHostedReviewModel(input, { ...runtime, ...hooks }),
       },

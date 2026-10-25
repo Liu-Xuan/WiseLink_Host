@@ -1,3 +1,4 @@
+import { assertCanonicalHostExecutor, canonicalExecutorSetting, canonicalExecutorRuntime, canonicalCodexWorkItemScope, assertCanonicalCodexWorkItem } from './canonical-host-executor-policy';
 import { createHash } from 'node:crypto';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import { MiaodaHostedDocumentCatalog } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
@@ -49,6 +50,15 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
 
   async authorizeDocumentWork(input: { documentVersionId: string; deliveryRef?: string;
     purpose?: 'SOURCE' | 'READING' | 'TRANSLATION' | 'ACTIVITY' | 'REVISION' | 'CANCEL' }) {
+    const codexWorkItem = canonicalCodexWorkItemScope();
+    let codexDocumentScope: CanonicalVerifiedServiceScope | undefined;
+    if (codexWorkItem) {
+      if (input.deliveryRef !== `work-item:${codexWorkItem.workItemId}`)
+        throw scopeNotFound();
+      codexDocumentScope = await this.authorizeAutomaticQueueWorkItem(codexWorkItem.workItemId, false);
+      if (codexDocumentScope.automaticWorkItemLease?.documentVersionId !== input.documentVersionId)
+        throw scopeNotFound();
+    }
     if (!input.deliveryRef) {
       try {
         const config = requiredDocumentConfig();
@@ -59,7 +69,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
         }
       } catch (error) {
         if (!isServiceScopeUnavailable(error) ||
-            process.env.WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED === '1') throw error;
+            canonicalExecutorSetting('DOCUMENT_SCOPE_ENABLED') === '1') throw error;
       }
     }
     if (!this.documentIntakeWorkItems || !this.documentIntakeCatalog ||
@@ -76,6 +86,15 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       this.documentIntakeCatalog.readDocumentUploadDeliveryIntents({
         tenantId: config.tenantId, documentVersionId: input.documentVersionId }),
     ]);
+    const codexLease = codexDocumentScope?.automaticWorkItemLease;
+    if (codexLease) {
+      const bound = workItems.find((intent) => intent.workItemId === codexWorkItem!.workItemId);
+      if (!bound || bound.requestId !== codexLease.requestId ||
+          bound.actorUserId !== codexLease.actorUserId || bound.documentVersionId !== codexLease.documentVersionId ||
+          bound.sourceArtifactId !== codexLease.sourceArtifactId || bound.sourceFileSha256 !== codexLease.sourceFileSha256 ||
+          bound.sourceByteLength !== codexLease.sourceByteLength)
+        throw scopeNotFound();
+    }
     const activeActors = new Set([...workItems, ...uploads]
       .filter((intent) => intent.delivery.reading || intent.delivery.translation === 'ZH_FULL')
       .map((intent) => intent.actorUserId));
@@ -200,18 +219,20 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
   }
 
   async assertTransport(input: {
-    transport: 'READONLY_MCP' | 'OPENCLAW_MCP';
+    transport: 'READONLY_MCP' | 'OPENCLAW_MCP' | 'CODEX_MCP';
   }): Promise<void> {
+    if (input.transport !== 'READONLY_MCP')
+      assertCanonicalHostExecutor(input.transport === 'CODEX_MCP' ? 'CODEX' : 'HOSTED');
     if (
-      input.transport === 'OPENCLAW_MCP' &&
-      !process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID
+      input.transport !== 'READONLY_MCP' &&
+      !canonicalExecutorSetting('SERVICE_WORK_ITEM_ID')
     ) {
       if (
-        process.env.WL_OPENCLAW_SERVICE_MATTER_ID ||
-        process.env.WL_OPENCLAW_SERVICE_MATTER_IDS !== undefined
+        canonicalExecutorSetting('SERVICE_MATTER_ID') ||
+        canonicalExecutorSetting('SERVICE_MATTER_IDS') !== undefined
       )
         requiredMatterConfig();
-      else if (process.env.WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED === '1')
+      else if (canonicalExecutorSetting('SERVICE_AUTO_QUEUE_ENABLED') === '1')
         requiredAutoWorkItemQueueConfig();
       else requiredDocumentConfig();
     } else requiredConfig();
@@ -368,6 +389,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
         }),
       );
     }
+    if (canonicalCodexWorkItemScope()) throw scopeNotFound();
     const config = requiredConfig();
     const additional = additionalReviewConversation(config);
     const scope = exactWorkItemScope(
@@ -387,7 +409,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     requestId: string;
   }): Promise<CanonicalVerifiedApplicabilityContextScope> {
     const config = requiredConfig();
-    const expectedRef = process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF;
+    const expectedRef = canonicalExecutorSetting('APPLICABILITY_CONTEXT_REF');
     if (!input.requestId.trim()) throw scopeNotFound();
     if (expectedRef?.trim() && input.applicabilityContextRef === expectedRef)
       return {
@@ -417,7 +439,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     if (config && input.tenantId === config.tenantId) {
       if (input.workItemId === config.workItemId)
         return (
-          process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF?.trim() || null
+          canonicalExecutorSetting('APPLICABILITY_CONTEXT_REF')?.trim() || null
         );
       if (additionalWorkItemIds(config.workItemId).includes(input.workItemId)) {
         const additional = additionalApplicabilityContext(config);
@@ -551,6 +573,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     workItemId: string,
     staticScopeConfigured: boolean,
   ): Promise<CanonicalVerifiedServiceScope> {
+    assertCanonicalCodexWorkItem(workItemId);
     let config: AutoWorkItemQueueScopeConfig;
     try {
       config = requiredAutoWorkItemQueueConfig();
@@ -568,6 +591,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       principalId: config.principalId,
       workItemId,
     });
+    assertCanonicalCodexWorkItem(workItemId, lease.requestId);
     if (
       lease.principalId !== config.principalId ||
       lease.tenantId !== config.tenantId ||
@@ -609,6 +633,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
 }
 
 function configuredStaticWorkItemScope(): DevelopmentServiceScopeConfig | null {
+  if (canonicalCodexWorkItemScope()) return null;
   try {
     return requiredConfig();
   } catch (error) {
@@ -694,12 +719,14 @@ function requiredBaseConfig(): Omit<
   DevelopmentCreateScopeConfig,
   'documentVersionId' | 'developmentRunToken'
 > {
-  const environment = process.env.WL_OPENCLAW_SERVICE_SCOPE_ENV;
-  const principalId = process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID;
-  const tenantId = process.env.WL_OPENCLAW_SERVICE_TENANT_ID;
+  canonicalExecutorRuntime();
+  canonicalCodexWorkItemScope();
+  const environment = canonicalExecutorSetting('SERVICE_SCOPE_ENV');
+  const principalId = canonicalExecutorSetting('SERVICE_PRINCIPAL_ID');
+  const tenantId = canonicalExecutorSetting('SERVICE_TENANT_ID');
   if (
-    process.env.WL_OPENCLAW_SERVICE_SCOPE_ENABLED !== '1' ||
-    process.env.WL_OPENCLAW_GATEWAY_AUTH_MODE !== 'API_KEY' ||
+    canonicalExecutorSetting('SERVICE_SCOPE_ENABLED') !== '1' ||
+    canonicalExecutorSetting('GATEWAY_AUTH_MODE') !== 'API_KEY' ||
     !['DEV', 'UAT'].includes(environment ?? '') ||
     !principalId?.startsWith('service:') ||
     !tenantId?.trim()
@@ -715,7 +742,7 @@ function requiredBaseConfig(): Omit<
 
 function requiredAutoWorkItemQueueConfig(): AutoWorkItemQueueScopeConfig {
   const base = requiredBaseConfig();
-  if (process.env.WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED !== '1') {
+  if (canonicalExecutorSetting('SERVICE_AUTO_QUEUE_ENABLED') !== '1') {
     throw canonicalServiceScopeUnavailable();
   }
   return base;
@@ -723,7 +750,7 @@ function requiredAutoWorkItemQueueConfig(): AutoWorkItemQueueScopeConfig {
 
 function requiredConfig(): DevelopmentServiceScopeConfig {
   const base = requiredBaseConfig();
-  const workItemId = process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID;
+  const workItemId = canonicalExecutorSetting('SERVICE_WORK_ITEM_ID');
   if (!workItemId?.startsWith('WI-')) {
     throw canonicalServiceScopeUnavailable();
   }
@@ -734,7 +761,7 @@ function requiredConfig(): DevelopmentServiceScopeConfig {
 }
 
 function additionalWorkItemIds(legacyWorkItemId: string): string[] {
-  const raw = process.env.WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS;
+  const raw = canonicalExecutorSetting('SERVICE_ADDITIONAL_WORK_ITEM_IDS');
   if (raw === undefined) return [];
   let parsed: unknown;
   try {
@@ -762,7 +789,7 @@ function additionalApplicabilityContext(
   workItemId: string;
   applicabilityContextRef: string;
 } | null {
-  const raw = process.env.WL_OPENCLAW_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING;
+  const raw = canonicalExecutorSetting('APPLICABILITY_ADDITIONAL_CONTEXT_BINDING');
   if (raw === undefined) return null;
   let parsed: unknown;
   try {
@@ -783,7 +810,7 @@ function additionalApplicabilityContext(
     typeof parsed.applicabilityContextRef !== 'string' ||
     !/^APCTX-[A-Za-z0-9_-]{1,154}$/u.test(parsed.applicabilityContextRef) ||
     parsed.applicabilityContextRef ===
-      process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF
+      canonicalExecutorSetting('APPLICABILITY_CONTEXT_REF')
   )
     throw canonicalServiceScopeUnavailable();
   return {
@@ -796,7 +823,7 @@ function additionalReviewConversation(config: DevelopmentServiceScopeConfig): {
   workItemId: string;
   reviewConversationRef: string;
 } | null {
-  const raw = process.env.WL_OPENCLAW_REVIEW_ADDITIONAL_CONVERSATION_BINDING;
+  const raw = canonicalExecutorSetting('REVIEW_ADDITIONAL_CONVERSATION_BINDING');
   if (raw === undefined) return null;
   let parsed: unknown;
   try {
@@ -826,15 +853,15 @@ function additionalReviewConversation(config: DevelopmentServiceScopeConfig): {
 
 function requiredDocumentConfig() {
   const base = requiredBaseConfig();
-  const documentVersionId = process.env.WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID;
-  const actorUserId = process.env.WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID;
+  const documentVersionId = canonicalExecutorSetting('SERVICE_DOCUMENT_VERSION_ID');
+  const actorUserId = canonicalExecutorSetting('SERVICE_DOCUMENT_ACTOR_ID');
   if (
-    process.env.WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED !== '1' ||
+    canonicalExecutorSetting('DOCUMENT_SCOPE_ENABLED') !== '1' ||
     !actorUserId?.trim()
   )
     throw canonicalServiceScopeUnavailable();
   const configuredVersions =
-    process.env.WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS;
+    canonicalExecutorSetting('SERVICE_DOCUMENT_VERSION_IDS');
   if (configuredVersions === undefined) {
     if (!documentVersionId?.trim()) throw canonicalServiceScopeUnavailable();
     return { ...base, documentVersionIds: [documentVersionId], actorUserId };
@@ -864,14 +891,14 @@ function requiredDocumentConfig() {
 
 function requiredMatterConfig() {
   const base = requiredBaseConfig();
-  const matterId = process.env.WL_OPENCLAW_SERVICE_MATTER_ID;
-  const actorUserId = process.env.WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID;
+  const matterId = canonicalExecutorSetting('SERVICE_MATTER_ID');
+  const actorUserId = canonicalExecutorSetting('SERVICE_MATTER_ACTOR_ID');
   if (
-    process.env.WL_OPENCLAW_MATTER_SCOPE_ENABLED !== '1' ||
+    canonicalExecutorSetting('MATTER_SCOPE_ENABLED') !== '1' ||
     !actorUserId?.trim()
   )
     throw canonicalServiceScopeUnavailable();
-  const configuredMatters = process.env.WL_OPENCLAW_SERVICE_MATTER_IDS;
+  const configuredMatters = canonicalExecutorSetting('SERVICE_MATTER_IDS');
   if (configuredMatters === undefined) {
     if (!matterId?.startsWith('MAT-')) throw canonicalServiceScopeUnavailable();
     return { ...base, matterIds: [matterId], actorUserId };
@@ -902,10 +929,10 @@ function requiredMatterConfig() {
 function requiredDevelopmentCreateConfig(): DevelopmentCreateScopeConfig {
   const base = requiredBaseConfig();
   const documentVersionId =
-    process.env.WL_OPENCLAW_DEVELOPMENT_DOCUMENT_VERSION_ID;
-  const developmentRunToken = process.env.WL_OPENCLAW_DEVELOPMENT_RUN_TOKEN;
+    canonicalExecutorSetting('DEVELOPMENT_DOCUMENT_VERSION_ID');
+  const developmentRunToken = canonicalExecutorSetting('DEVELOPMENT_RUN_TOKEN');
   if (
-    process.env.WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED !== '1' ||
+    canonicalExecutorSetting('DEVELOPMENT_CREATE_ENABLED') !== '1' ||
     !documentVersionId?.trim() ||
     !developmentRunToken ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
@@ -970,7 +997,7 @@ export function isOpenClawSuccessorReviewConfigured(
 }
 function requiredSuccessorReviewConfig(): AutoWorkItemQueueScopeConfig {
   const config = requiredAutoWorkItemQueueConfig();
-  if (process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED !== '1')
+  if (canonicalExecutorSetting('SERVICE_SUCCESSOR_REVIEW_ENABLED') !== '1')
     throw canonicalServiceScopeUnavailable();
   return config;
 }

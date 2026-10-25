@@ -1,0 +1,42 @@
+{
+  "name": "read_source_refs",
+  "title": "读取评审 attempt 冻结的 exact SourceRefs",
+  "description": "仅按 sourceRefId 读取该 review TaskEnvelope 内冻结的 exact SourceRef allowlist；不提供 search/query，也不读取其他 WorkItem 或未授权 artifact。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "attemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "sourceRefIds": {
+        "minItems": 1,
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "required": [
+      "attemptRef",
+      "sourceRefIds"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

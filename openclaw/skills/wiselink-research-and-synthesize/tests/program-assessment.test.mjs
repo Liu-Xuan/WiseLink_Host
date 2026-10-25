@@ -27,10 +27,13 @@ function inputFixture(count = 3, relatedCount = 1) {
     excerpt: 'Unknown lifetime frequency remains unknown; do not invent a score.', classificationDefinitions: [] };
   const directory = [...evidence, ...fact, method,
     { evidenceRef: 'method:unrelated-full-library', kind: 'METHOD_CLAUSE', title: '本轮不需要的完整方法库' }];
+  // Production evidence omits top-level identities; the sealed directory owns them.
+  const projectedEvidence = evidence.map(({ documentVersionId: _documentVersionId, sourceRefId: _sourceRefId, ...item }) => item);
   return { input: { schemaVersion: 'wiselink.jobaid-problem-task.v2', executionMode: 'PROGRAM_CONTROLLED_V1',
     purpose: 'INITIAL_PROBLEM_ASSESSMENT', methodBinding: { packRef: 'method-pack' },
-    availableSources: directory.map(({ evidenceRef, excerpt: _excerpt, ...item }) => ({ ref: evidenceRef, ...item })),
-    deliveredEvidence: [...evidence, method], expectedWorkRevision: 0, previousWork: null,
+    availableSources: directory.map(({ evidenceRef, excerpt: _excerpt, ...item }) => ({ ref: evidenceRef, ...item,
+      ...(item.kind === 'DOCUMENT_PASSAGE' ? { parseRunId: binding.parseRunId, carrierRangeRef: evidenceRef } : {}) })),
+    deliveredEvidence: [...projectedEvidence, method], expectedWorkRevision: 0, previousWork: null,
     documentOverview: { title: 'Conditional equipment installation', original: { binding } },
     programOriginal: { binding, units: evidence.map((item, index) => ({ unitId: `u-${index}`, kind: 'PARAGRAPH',
       moduleId: 'body', order: index, continuityKey: 'installation', sourceRefIds: [item.sourceRefId],
@@ -42,7 +45,7 @@ function inputFixture(count = 3, relatedCount = 1) {
     contextPackage: { primaryDocument: { documentVersionId: 'DV-primary' }, supplementaryMaterials: { status: 'AVAILABLE', items: [] },
       sourceOrigins: directory.map(item => ({ evidenceRef: item.evidenceRef, origin: item.kind })),
       knowledgeRetrieval: { status: 'NOT_CONNECTED', fragments: [] } }, discussion: { currentCorrection: 'Preserve the explicit exception.' } },
-    evidence: [...evidence, ...fact, method], fact };
+    evidence: [...projectedEvidence, ...fact, method], fact };
 }
 function candidate(input) {
   const ref = input.deliveredEvidence[0].evidenceRef;
@@ -228,6 +231,36 @@ test('130 original units retain a page 3→4 sentence, structured table/units an
   assert.equal(view.sourceLocators[0].pageStart, 2);
   assert.equal(view.sourceLocators[0].pageEnd, 3);
   assert.deepEqual(f.input.programOriginal, original);
+});
+
+test('originals read in multiple Host batches bind projected bodies through the sealed identity directory', async t => {
+  const f = await fixture(t, 130, 0);
+  f.input.deliveredEvidence = f.input.deliveredEvidence.filter(item => item.kind === 'METHOD_CLAUSE');
+  const material = await prepareProgramAssessmentMaterials(f.input, f.options);
+  assert.deepEqual(f.sourceReads.map(read => read.sourceRefs.length), [96, 34]);
+  assert.equal(material.modelInput.continuousOriginal.evidence.length, 130);
+  assert.equal(material.modelInput.continuousOriginal.spans.every(span => span.evidenceRefs.length === 1), true);
+  assert.equal(material.sourceReads.every(packet => packet.evidence.every(item => !Object.hasOwn(item, 'documentVersionId'))), true);
+  assert.equal(f.calls.length, 0);
+});
+
+test('conflicting directory, carrier or delivered identities cannot dispatch a program model', async t => {
+  for (const mutate of [
+    f => { f.input.availableSources[0].documentVersionId = 'DV-other'; },
+    f => { f.input.availableSources[0].parseRunId = 'PR-other'; },
+    f => { f.input.availableSources[0].sourceRefId = 'SR-other'; },
+    f => { f.input.availableSources[0].carrierRangeRef = 'DOCUMENT_ORIGINAL:DV-other:PR-current:SR-0'; },
+    f => { f.input.deliveredEvidence[0].versionLabel = 'PR-other'; },
+    f => { f.input.deliveredEvidence[0].sourceRefId = 'SR-other'; },
+    f => { f.input.deliveredEvidence[0].locator = JSON.stringify({ parseRunId: 'PR-other', sourceRefId: 'SR-0' }); },
+  ]) {
+    const f = await fixture(t);
+    mutate(f);
+    await assert.rejects(f.run(), /PROGRAM_ASSESSMENT_MATERIALS_ORIGINAL_EVIDENCE_MISMATCH/u);
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.saves.length, 0);
+    assert.equal(await f.checkpoint.readOptional('assessment-round-1.started'), null);
+  }
 });
 
 test('bounded source API batches 97 acquired facts without truncation and journals complete packets', async t => {

@@ -1,0 +1,21 @@
+{
+  "status": "PASSED",
+  "sourceSnapshotMatches": true,
+  "tools": 45,
+  "completeToolSchemasCompiled": 45,
+  "schemaFormatValidation": false,
+  "schemaFormatValidationNote": "Schema structure and constraints compile; external format plugins are not used.",
+  "mcpSyntheticInputsValidated": 7,
+  "jsonFilesParsed": 61,
+  "relativeLinksChecked": 27,
+  "hostBusinessCallsInMetadataExport": 0,
+  "networkCallsInMetadataExport": 0,
+  "exampleModel": "OFFLINE_SUBPROCESS_STUB",
+  "realHostCycleVerified": false,
+  "pureOverallAssociationChecked": true,
+  "examples": "SANITIZED_EXAMPLE",
+  "privateMethodBodiesIncluded": false,
+  "perToolVersionInvented": false,
+  "credentialValuesIncluded": false,
+  "userAbsolutePathsIncluded": false
+}

@@ -19,7 +19,7 @@ export function normalizeHostedOpenClawDiscoveryResult(
       throw new Error(`EXTERNAL_DISCOVERY_FORBIDDEN_FIELD:${forbidden}`);
     }
   }
-  if (input.runtime !== 'FEISHU_HOSTED_OPENCLAW') {
+  if (!['FEISHU_HOSTED_OPENCLAW', 'CODEX'].includes(input.runtime)) {
     throw new Error('EXTERNAL_DISCOVERY_RUNTIME_UNSUPPORTED');
   }
   if (!['BOEING', 'AIRBUS', 'COMAC'].includes(input.provider)) {

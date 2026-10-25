@@ -1,0 +1,42 @@
+{
+  "synthetic": true,
+  "exampleStatus": "SANITIZED_EXAMPLE",
+  "serviceExecuted": false,
+  "sourceType": "AutomaticWorkItemClaimResult and AcknowledgeAutomaticWorkItemRequest/Response",
+  "keyDistinctions": {
+    "intakeRequestId": "REQ-SYNTHETIC-INTAKE-001",
+    "stageBeginRequestId": "00000000-0000-4000-8000-000000000101",
+    "saveRequestId": "62f7c130-02ed-4997-8ac1-fb39422f3857"
+  },
+  "claim": {
+    "method": "POST",
+    "path": "/openapi/wiselink/codex-next-work-item",
+    "request": {},
+    "response": {
+      "status": "CLAIMED",
+      "workItemId": "WI-CODEX-SYNTHETIC",
+      "requestId": "REQ-SYNTHETIC-INTAKE-001",
+      "documentVersionId": "DV-SYNTHETIC",
+      "workItemRevision": 5,
+      "leaseToken": "00000000-0000-4000-8000-000000000201",
+      "leaseGeneration": 1,
+      "leaseExpiresAt": "2099-01-01T00:00:00.000Z"
+    }
+  },
+  "acknowledgement": {
+    "precondition": "Host confirms exact JobAid/Overall success and all prerequisites; NOT_EXERCISED.",
+    "method": "POST",
+    "path": "/openapi/wiselink/codex-ack-work-item",
+    "request": {
+      "workItemId": "WI-CODEX-SYNTHETIC",
+      "leaseToken": "00000000-0000-4000-8000-000000000201",
+      "leaseGeneration": 1
+    },
+    "response": {
+      "status": "ACKNOWLEDGED",
+      "workItemId": "WI-CODEX-SYNTHETIC",
+      "replayed": false,
+      "acknowledgedAt": "2099-01-01T00:00:00.000Z"
+    }
+  }
+}

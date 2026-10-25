@@ -1,0 +1,46 @@
+{
+  "name": "query_review_aily",
+  "title": "以本轮工程师身份检索 Aily",
+  "description": "仅限已授权的自由对话 attempt；发起只读检索或读取同一 attempt 已登记的检索结果。令牌不进入工具参数或结果。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "attemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "requestKey": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4000
+      },
+      "queryRef": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      }
+    },
+    "required": [
+      "attemptRef"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

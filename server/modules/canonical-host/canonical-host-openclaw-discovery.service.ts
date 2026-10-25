@@ -1,3 +1,4 @@
+import { canonicalExecutorRuntime } from './canonical-host-executor-policy';
 import { randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -24,7 +25,6 @@ import {
 } from './canonical-service-scope.authorization';
 
 const OPENCLAW_SERVICE_USER_ID = 'service:openclaw-main';
-const HOSTED_OPENCLAW_APP_ID = 'app_17c3zn24kv2';
 
 export type PublicHostedDiscoveryResult = Omit<
   HostedOpenClawDiscoveryResult,
@@ -101,10 +101,10 @@ export class CanonicalHostOpenClawDiscoveryService {
       throw new Error('OPENCLAW_DISCOVERY_PERMISSION_SNAPSHOT_CHANGED');
     }
     const observedAt = this.clock.nowIso();
+    const runtime = canonicalExecutorRuntime();
     const normalized = normalizeHostedOpenClawDiscoveryResult({
       ...structuredClone(publicResult),
-      runtime: 'FEISHU_HOSTED_OPENCLAW',
-      runtimeAppId: HOSTED_OPENCLAW_APP_ID,
+      ...runtime,
       observedAt,
     });
     const searchRunRef = `search:${normalized.provider.toLowerCase()}:${randomUUID()}`;
@@ -112,7 +112,7 @@ export class CanonicalHostOpenClawDiscoveryService {
       providerResult: toDmProviderResult(normalized),
       searchRunRef,
       observedAt,
-      sourceSystem: 'FEISHU_HOSTED_OPENCLAW',
+      sourceSystem: runtime.runtime,
     });
     const stored = (await this.discovery.recordSearchRun(mapped, {
       actorUserId: actor.userId,
@@ -120,6 +120,7 @@ export class CanonicalHostOpenClawDiscoveryService {
       roles: [],
     })) as { disposition?: string };
     return {
+      ...runtime,
       searchRunRef,
       observedAt,
       provider: normalized.provider,

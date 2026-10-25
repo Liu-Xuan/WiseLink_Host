@@ -1,0 +1,51 @@
+{
+  "name": "commit_overall_candidate",
+  "title": "提交整体 candidate_only 候选",
+  "description": "仅按服务端 opaque attempt、lease fencing token 与完整 ResultEnvelope 验证 overall 输出，保存原始实际字节并 CAS 写回同一 WorkItem；不形成人工确认或工程结论。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "attemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "leaseToken": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      },
+      "leaseGeneration": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      },
+      "result": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "required": [
+      "attemptRef",
+      "leaseToken",
+      "leaseGeneration",
+      "result"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+  }
+}

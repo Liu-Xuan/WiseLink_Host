@@ -1,0 +1,31 @@
+{
+  "name": "get_deep_link",
+  "title": "打开工程文件工作项",
+  "description": "读取由 WiseLink 服务端派生的同一 WorkItem 妙搭页面地址。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "successorReviewTurnRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 96
+      }
+    },
+    "required": [
+      "workItemId"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

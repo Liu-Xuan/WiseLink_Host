@@ -1,0 +1,27 @@
+{
+  "name": "next_matter_assessment",
+  "title": "读取事项待执行评估",
+  "description": "由现有消费者观察来源变化并登记所需的持续评估；已存在的任务直接读回，不重复创建失败请求。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "matterId": {
+        "type": "string",
+        "maxLength": 96,
+        "format": "starts_with",
+        "pattern": "^MAT-.*"
+      }
+    },
+    "required": [
+      "matterId"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

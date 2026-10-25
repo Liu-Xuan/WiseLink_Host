@@ -17,6 +17,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  ne,
   or,
   sql,
 } from 'drizzle-orm';
@@ -967,6 +968,7 @@ export class MiaodaWorkItemRepository {
     leaseToken: string;
     now: Date;
     leaseExpiresAt: Date;
+    preserveExecutorOwnership?: boolean;
     assertCommittingRecoveryAuthorized?: (row: import('../action-attempt/action-attempt.types').ActionAttemptRow, database: PostgresJsDatabase) => Promise<void>;
   }): Promise<AutoWorkItemLease | null> {
     return this.db.transaction(async (database) => {
@@ -981,6 +983,30 @@ export class MiaodaWorkItemRepository {
         .limit(1).for('update');
       if (!grant || (grant.status !== 'WAITING' &&
           !(grant.status === 'LEASED' && grant.leaseExpiresAt && grant.leaseExpiresAt <= input.now))) return null;
+      if (input.preserveExecutorOwnership && !(
+        (grant.status === 'WAITING' && grant.leaseOwner === null && grant.leaseGeneration === 0) ||
+        (grant.status === 'LEASED' && grant.leaseOwner === input.leaseOwner)
+      )) {
+        // Reject legacy adoption while both rows are locked, before any attempt
+        // can be terminalized or an expired lease can be transferred.
+        throw canonicalModelError('CANONICAL_CODEX_LEGACY_WORK_NOT_ADOPTABLE', 409);
+      }
+      if (input.preserveExecutorOwnership && grant.status === 'WAITING') {
+        // An untouched queue grant may still have work from the former static
+        // scope. Inspect history under the same locks before any takeover can
+        // terminalize an expired attempt. Parsing belongs to a different flow.
+        const [priorExecution] = await database.select({ attemptId: actionAttempt.attemptId })
+          .from(actionAttempt).where(and(
+            eq(actionAttempt.tenantId, input.tenantId),
+            eq(actionAttempt.workItemId, input.workItemId),
+            inArray(actionAttempt.actionType, ['OPENCLAW_TRANSLATE', 'OPENCLAW_APPLICABILITY_EVALUATION',
+              'OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS']),
+            or(gt(actionAttempt.claimCount, 0), gt(actionAttempt.leaseGeneration, 0),
+              ne(actionAttempt.status, 'QUEUED')),
+          )).limit(1).for('update');
+        if (priorExecution)
+          throw canonicalModelError('CANONICAL_CODEX_LEGACY_WORK_NOT_ADOPTABLE', 409);
+      }
       const attempts = new ActionAttemptRepository(database);
       for (const actionType of ['OPENCLAW_TRANSLATE', 'OPENCLAW_APPLICABILITY_EVALUATION',
         'OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS']) {

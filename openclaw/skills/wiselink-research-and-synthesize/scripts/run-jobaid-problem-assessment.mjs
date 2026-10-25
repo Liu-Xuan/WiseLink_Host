@@ -20,8 +20,9 @@ import {
   WISELINK_PROFILE_REF,
   WISELINK_SKILL_VERSION,
 } from './validate-payload.mjs';
-import { classifyHostedAssessmentProtocol, classifyHostedGatewayFailure, hostedGatewayTransportFailureDiagnostic,
-  requestHostedGateway } from './request-hosted-gateway.mjs';
+import { classifyHostedAssessmentProtocol, classifyHostedGatewayFailure,
+  hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
+import { modelExecutor, modelExecutorProvenance, modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway } from './model-executor.mjs';
 
 export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
 export const JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v3';
@@ -558,6 +559,7 @@ export async function invokeHostedJobAidProblemModel(
   });
   if (checkpoint) {
     const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,
+      ...(modelExecutor(options) === 'CODEX' ? { modelExecutor: 'CODEX' } : {}),
       executionModel: options.executionModel ?? null };
     const existing = await checkpoint.readOptional('assessment-enabled');
     if (existing && !isDeepStrictEqual(existing.binding, binding)) throw new Error('JOBAID_CHECKPOINT_BINDING_MISMATCH');
@@ -647,7 +649,7 @@ export async function invokeHostedJobAidProblemModel(
       modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
       promptVersion,
       skillVersion: WISELINK_SKILL_VERSION,
-      toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+      toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, ...modelExecutorProvenance(options),
         'jobaid-problem-protocol': modelInput.schemaVersion === JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA ? '3' : '2',
         ...(modelInput.tdmsContext ? { 'tdms-native-context': '1' } : {}) },
       runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
@@ -793,13 +795,13 @@ export async function invokeHostedJobAidProblemModel(
     const requestModel = async () => {
       let response;
       try { response = await (
-        dependencies.requestGateway ?? requestHostedGateway
-      )(new URL('/v1/chat/completions', options.gatewayUrl), {
+        (endpoint, init) => requestModelGateway(options, endpoint, init, dependencies)
+      )(modelGatewayEndpoint(options), {
         method: 'POST',
         headers: {
           accept: 'application/json',
           'content-type': 'application/json',
-          authorization: `Bearer ${options.gatewayToken}`,
+          ...modelGatewayHeaders(options),
           ...executionModelHeaders(options),
         },
         body: requestBody,
@@ -909,7 +911,7 @@ export async function invokeHostedJobAidProblemModel(
           provenance: {
             modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
             promptVersion, skillVersion: WISELINK_SKILL_VERSION,
-            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
+            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, ...modelExecutorProvenance(options), 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
             runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
           },
         };
@@ -1102,7 +1104,7 @@ export async function invokeHostedJobAidProblemModel(
               promptVersion,
               skillVersion: WISELINK_SKILL_VERSION,
               toolVersions: {
-                [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+                [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, ...modelExecutorProvenance(options),
                 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}),
               },
               runMetrics: {
@@ -1147,7 +1149,7 @@ export async function invokeHostedJobAidProblemModel(
           : invalidWorkJson ? 'JOBAID_WORK_JSON_INVALID' : 'JOBAID_WORK_VALIDATION_FAILED', provenance: {
           modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
           promptVersion, skillVersion: WISELINK_SKILL_VERSION,
-          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
+          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, ...modelExecutorProvenance(options), 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
           runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
         } };
       }

@@ -1,0 +1,161 @@
+{
+  "source": "literal canonicalExecutorSetting suffixes in the current production sources",
+  "selector": {
+    "name": "WL_MODEL_EXECUTOR",
+    "accepted": [
+      "HOSTED",
+      "CODEX"
+    ],
+    "defaultWhenAbsent": "HOSTED"
+  },
+  "codexRuntimeIdentity": {
+    "name": "WL_CODEX_RUNTIME_APP_ID",
+    "required": true,
+    "valuePattern": "^app_[a-z0-9]+$",
+    "valuesExported": false
+  },
+  "scopeSettings": [
+    {
+      "suffix": "APPLICABILITY_ADDITIONAL_CONTEXT_BINDING",
+      "codexName": "WL_CODEX_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING",
+      "hostedName": "WL_OPENCLAW_APPLICABILITY_ADDITIONAL_CONTEXT_BINDING"
+    },
+    {
+      "suffix": "APPLICABILITY_CONTEXT_REF",
+      "codexName": "WL_CODEX_APPLICABILITY_CONTEXT_REF",
+      "hostedName": "WL_OPENCLAW_APPLICABILITY_CONTEXT_REF"
+    },
+    {
+      "suffix": "DEVELOPMENT_CREATE_ENABLED",
+      "codexName": "WL_CODEX_DEVELOPMENT_CREATE_ENABLED",
+      "hostedName": "WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED"
+    },
+    {
+      "suffix": "DEVELOPMENT_DOCUMENT_VERSION_ID",
+      "codexName": "WL_CODEX_DEVELOPMENT_DOCUMENT_VERSION_ID",
+      "hostedName": "WL_OPENCLAW_DEVELOPMENT_DOCUMENT_VERSION_ID"
+    },
+    {
+      "suffix": "DEVELOPMENT_RUN_TOKEN",
+      "codexName": "WL_CODEX_DEVELOPMENT_RUN_TOKEN",
+      "hostedName": "WL_OPENCLAW_DEVELOPMENT_RUN_TOKEN"
+    },
+    {
+      "suffix": "DOCUMENT_SCOPE_ENABLED",
+      "codexName": "WL_CODEX_DOCUMENT_SCOPE_ENABLED",
+      "hostedName": "WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED"
+    },
+    {
+      "suffix": "GATEWAY_AUTH_MODE",
+      "codexName": "WL_CODEX_GATEWAY_AUTH_MODE",
+      "hostedName": "WL_OPENCLAW_GATEWAY_AUTH_MODE"
+    },
+    {
+      "suffix": "MATTER_SCOPE_ENABLED",
+      "codexName": "WL_CODEX_MATTER_SCOPE_ENABLED",
+      "hostedName": "WL_OPENCLAW_MATTER_SCOPE_ENABLED"
+    },
+    {
+      "suffix": "REVIEW_ADDITIONAL_CONVERSATION_BINDING",
+      "codexName": "WL_CODEX_REVIEW_ADDITIONAL_CONVERSATION_BINDING",
+      "hostedName": "WL_OPENCLAW_REVIEW_ADDITIONAL_CONVERSATION_BINDING"
+    },
+    {
+      "suffix": "SERVICE_ADDITIONAL_WORK_ITEM_IDS",
+      "codexName": "WL_CODEX_SERVICE_ADDITIONAL_WORK_ITEM_IDS",
+      "hostedName": "WL_OPENCLAW_SERVICE_ADDITIONAL_WORK_ITEM_IDS"
+    },
+    {
+      "suffix": "SERVICE_AUTO_QUEUE_ENABLED",
+      "codexName": "WL_CODEX_SERVICE_AUTO_QUEUE_ENABLED",
+      "hostedName": "WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED"
+    },
+    {
+      "suffix": "SERVICE_DOCUMENT_ACTOR_ID",
+      "codexName": "WL_CODEX_SERVICE_DOCUMENT_ACTOR_ID",
+      "hostedName": "WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID"
+    },
+    {
+      "suffix": "SERVICE_DOCUMENT_VERSION_ID",
+      "codexName": "WL_CODEX_SERVICE_DOCUMENT_VERSION_ID",
+      "hostedName": "WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID"
+    },
+    {
+      "suffix": "SERVICE_DOCUMENT_VERSION_IDS",
+      "codexName": "WL_CODEX_SERVICE_DOCUMENT_VERSION_IDS",
+      "hostedName": "WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS"
+    },
+    {
+      "suffix": "SERVICE_MATTER_ACTOR_ID",
+      "codexName": "WL_CODEX_SERVICE_MATTER_ACTOR_ID",
+      "hostedName": "WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID"
+    },
+    {
+      "suffix": "SERVICE_MATTER_ID",
+      "codexName": "WL_CODEX_SERVICE_MATTER_ID",
+      "hostedName": "WL_OPENCLAW_SERVICE_MATTER_ID"
+    },
+    {
+      "suffix": "SERVICE_MATTER_IDS",
+      "codexName": "WL_CODEX_SERVICE_MATTER_IDS",
+      "hostedName": "WL_OPENCLAW_SERVICE_MATTER_IDS"
+    },
+    {
+      "suffix": "SERVICE_PRINCIPAL_ID",
+      "codexName": "WL_CODEX_SERVICE_PRINCIPAL_ID",
+      "hostedName": "WL_OPENCLAW_SERVICE_PRINCIPAL_ID"
+    },
+    {
+      "suffix": "SERVICE_SCOPE_ENABLED",
+      "codexName": "WL_CODEX_SERVICE_SCOPE_ENABLED",
+      "hostedName": "WL_OPENCLAW_SERVICE_SCOPE_ENABLED"
+    },
+    {
+      "suffix": "SERVICE_SCOPE_ENV",
+      "codexName": "WL_CODEX_SERVICE_SCOPE_ENV",
+      "hostedName": "WL_OPENCLAW_SERVICE_SCOPE_ENV"
+    },
+    {
+      "suffix": "SERVICE_SUCCESSOR_REVIEW_ENABLED",
+      "codexName": "WL_CODEX_SERVICE_SUCCESSOR_REVIEW_ENABLED",
+      "hostedName": "WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED"
+    },
+    {
+      "suffix": "SERVICE_TENANT_ID",
+      "codexName": "WL_CODEX_SERVICE_TENANT_ID",
+      "hostedName": "WL_OPENCLAW_SERVICE_TENANT_ID"
+    },
+    {
+      "suffix": "SERVICE_WORK_ITEM_ID",
+      "codexName": "WL_CODEX_SERVICE_WORK_ITEM_ID",
+      "hostedName": "WL_OPENCLAW_SERVICE_WORK_ITEM_ID"
+    }
+  ],
+  "directEnvironmentNames": [
+    "WL_CODEX_RUNTIME_APP_ID",
+    "WL_CODEX_SERVICE_AUTO_QUEUE_ENABLED",
+    "WL_CODEX_SERVICE_PRINCIPAL_ID",
+    "WL_CODEX_SERVICE_REQUEST_ID",
+    "WL_CODEX_SERVICE_WORK_ITEM_ID",
+    "WL_MODEL_EXECUTOR",
+    "WL_OPENCLAW_SERVICE_PRINCIPAL_ID"
+  ],
+  "relatedFeatureFlagNames": [
+    "WL_JOBAID_PROBLEM_V2_ENABLED",
+    "WL_TRANSLATION_V2_ENABLED"
+  ],
+  "prefixFallback": false,
+  "runtimeConsumerOptions": [
+    "modelExecutor",
+    "hostMcpUrl",
+    "headers",
+    "codexOptions.codexBinary",
+    "codexOptions.configPath",
+    "codexOptions.runRoot",
+    "codexOptions.pythonBinary",
+    "codexOptions.reasoningEffort",
+    "codexOptions.maxOutputTokens",
+    "codexOptions.timeoutSeconds"
+  ],
+  "note": "A listed optional scope name is not a request to enable that scope. Presence never proves value correctness or current authorization."
+}

@@ -1,0 +1,32 @@
+{
+  "name": "query_parsed_package",
+  "title": "查询工程文件解析内容",
+  "description": "在同一 WorkItem 已验证的 frozen.2 解析包中查询带来源引用的内容单元。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "workItemId",
+      "query"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

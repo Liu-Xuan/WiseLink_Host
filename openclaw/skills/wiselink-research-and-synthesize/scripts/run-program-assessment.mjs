@@ -8,7 +8,8 @@ import { actualModelVersion, assertHostedModelGatewayReady, executionModelHeader
   isFunctionResponseContentSupported, summarizeHostedReviewModelOutputShape } from './run-hosted-review-turn.mjs';
 import { canonicalJson, canonicalSha256, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION,
   WISELINK_PROFILE_REF, WISELINK_SKILL_VERSION } from './validate-payload.mjs';
-import { requestHostedGateway, hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
+import { hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
+import { modelExecutor, modelExecutorProvenance, modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway } from './model-executor.mjs';
 
 const OUTPUT_FUNCTION = 'return_wiselink_program_assessment';
 const POLICY = { version: 1, loopPolicyVersion: 'program-controlled-v1', maxModelRequests: 1 };
@@ -36,7 +37,8 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
   assertHostedModelGatewayReady(options);
   const modelHeaders = executionModelHeaders(options);
   const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,
-    executionModel: options.executionModel ?? null };
+    executionModel: options.executionModel ?? null,
+    ...(modelExecutor(options) === 'CODEX' ? { modelExecutor: 'CODEX' } : {}) };
   let enabled = await checkpoint.readOptional('assessment-enabled');
   if (enabled && (!isDeepStrictEqual(enabled.binding, binding) || !isDeepStrictEqual(enabled.generationPolicy, POLICY)))
     throw new Error('PROGRAM_ASSESSMENT_CHECKPOINT_BINDING_MISMATCH');
@@ -93,11 +95,11 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
     const perform = async () => {
       // A local budget refusal before perform is not an upstream UNKNOWN.
       await checkpoint.writeOnce('assessment-round-1.started', { argsHash, startedAt: new Date().toISOString() });
-      const response = await (dependencies.requestGateway ?? requestHostedGateway)(
-        new URL('/v1/chat/completions', options.gatewayUrl), { method: 'POST',
+      const response = await requestModelGateway(options,
+        modelGatewayEndpoint(options), { method: 'POST',
           headers: { accept: 'application/json', 'content-type': 'application/json',
-            authorization: `Bearer ${options.gatewayToken}`, ...modelHeaders }, body,
-          signal: AbortSignal.timeout(timeout) });
+            ...modelGatewayHeaders(options), ...modelHeaders }, body,
+          signal: AbortSignal.timeout(timeout) }, dependencies);
       return { raw: await response.text(), status: response.status, ok: response.ok };
     };
     let value, heartbeatPending = null, heartbeatFailure = null;
@@ -129,7 +131,7 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
     options.executionModel ? `configured-route:${options.executionModel.modelRef}` : options.configuredModelVersion),
     promptVersion: `wiselink-jobaid-problem@v${modelInput.schemaVersion.endsWith('.v3') ? '3' : '2'}`,
     skillVersion: WISELINK_SKILL_VERSION,
-    toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+    toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, ...modelExecutorProvenance(options),
       'jobaid-problem-protocol': modelInput.schemaVersion.endsWith('.v3') ? '3' : '2',
       'program-controlled-assessment': '1', ...(modelInput.tdmsContext ? { 'tdms-native-context': '1' } : {}) },
     runMetrics: { durationMs: Date.now() - enabled.startedAt,

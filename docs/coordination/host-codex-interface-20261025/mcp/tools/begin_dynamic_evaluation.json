@@ -1,0 +1,30 @@
+{
+  "name": "begin_dynamic_evaluation",
+  "title": "开始 JobAid 候选评估",
+  "description": "Host 按任务已绑定的 schema 返回旧逐项或新问题分析输入。新任务可按已登记来源调查并保存完整工作；同一身份精确重放。COMMITTING 返回已存 recoveryResult，不重新生成。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "requestId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+      }
+    },
+    "required": [
+      "workItemId"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

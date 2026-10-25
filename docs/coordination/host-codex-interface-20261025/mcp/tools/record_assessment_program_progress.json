@@ -1,0 +1,61 @@
+{
+  "name": "record_assessment_program_progress",
+  "title": "记录程序评估的实际进展",
+  "description": "仅显式程序初评在现有检查点写入后报告材料就绪或完整响应已留存；不改变模型结果或执行终态。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "attemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "leaseToken": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      },
+      "leaseGeneration": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      },
+      "phase": {
+        "type": "string",
+        "enum": [
+          "MATERIALS_READY",
+          "MODEL_RESPONSE_SAVED"
+        ]
+      },
+      "checkpointRef": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9:._-]{1,512}$"
+      },
+      "materialSnapshotJson": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required": [
+      "attemptRef",
+      "workItemId",
+      "leaseToken",
+      "leaseGeneration",
+      "phase",
+      "checkpointRef"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

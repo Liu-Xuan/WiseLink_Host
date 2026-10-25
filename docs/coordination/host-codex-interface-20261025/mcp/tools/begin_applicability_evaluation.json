@@ -1,0 +1,32 @@
+{
+  "name": "begin_applicability_evaluation",
+  "title": "开始飞机号适用性条件提取与候选评估",
+  "description": "输入仅含 Host opaque applicabilityContextRef 与幂等 requestId。Host 派生 tenant/WorkItem/ACL 并冻结当前文档、飞机号/asOf、窄受控机队事实及来源条件。v2 使用已验证英文，v1 保留完整译文绑定；不发送原始 PDF、FileService locator 或完整 Fleet。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "applicabilityContextRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160
+      },
+      "requestId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 96
+      }
+    },
+    "required": [
+      "applicabilityContextRef",
+      "requestId"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

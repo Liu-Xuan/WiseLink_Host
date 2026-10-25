@@ -1,0 +1,37 @@
+{
+  "name": "begin_review_turn",
+  "title": "开始已持久评审轮次",
+  "description": "输入为 reviewConversationRef、requestId；动态后继须同时提供 workItemId 指针。Host 从持久会话、官方 OAuth subject 映射、WorkItem owner/current revision 派生 tenant、actor、WorkItem、turn 与 opaque actorContextRef，并在既有 durable ActionAttempt 上领取租约；客户端不能覆盖 actor、tenant 或 sessionKey；WorkItem 指针须经持久委托重新核验。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "reviewConversationRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 96
+      },
+      "requestId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 96
+      },
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "reviewConversationRef",
+      "requestId"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

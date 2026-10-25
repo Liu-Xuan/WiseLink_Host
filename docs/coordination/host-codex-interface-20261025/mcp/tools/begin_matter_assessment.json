@@ -1,0 +1,175 @@
+{
+  "name": "begin_matter_assessment",
+  "title": "申请事项持续评估",
+  "description": "按精确事项和工作版本登记一个评估请求；Host 组装来源与前次完整工作，同一请求可重复读回。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "matterId": {
+        "type": "string",
+        "maxLength": 96,
+        "format": "starts_with",
+        "pattern": "^MAT-.*"
+      },
+      "expectedMatterRevisionId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 96
+      },
+      "expectedMatterRevision": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      },
+      "expectedWorkingRevision": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "requestId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 96
+      },
+      "instruction": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4000
+      },
+      "recoveryAttemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "referenceWorks": {
+        "minItems": 1,
+        "maxItems": 8,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "maxLength": 96,
+              "format": "starts_with",
+              "pattern": "^MAT-.*"
+            },
+            "workRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "issueKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "purpose": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "matterId",
+            "workRef",
+            "issueKey",
+            "purpose"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "correction": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "ENGINEERING_ISSUE_CORRECTION"
+          },
+          "expectedWorkRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "issueKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "correctionReason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidenceRefs": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "expectedWorkRef",
+          "issueKey",
+          "correctionReason",
+          "evidenceRefs"
+        ],
+        "additionalProperties": false
+      },
+      "overviewCorrection": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "ENGINEERING_OVERVIEW_CORRECTION"
+          },
+          "expectedWorkRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "correctionReason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "evidenceRefs": {
+            "minItems": 1,
+            "maxItems": 96,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "expectedWorkRef",
+          "correctionReason",
+          "evidenceRefs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "matterId",
+      "expectedMatterRevisionId",
+      "expectedMatterRevision",
+      "expectedWorkingRevision",
+      "requestId",
+      "instruction"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

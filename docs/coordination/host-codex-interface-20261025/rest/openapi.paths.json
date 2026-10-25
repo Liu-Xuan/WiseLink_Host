@@ -1,0 +1,1891 @@
+{
+  "paths": {
+    "/openapi/wiselink/apply-pending-model-configuration": {
+      "post": {
+        "operationId": "applyPendingModelConfiguration",
+        "summary": "为尚未执行的确切队列任务应用已保存模型设置",
+        "description": "仅可信OpenClaw自动队列服务调用。Host复核配置的服务主体、租户、原actor、当前文档、来源ACL与字节绑定，并在事务中锁定任务和授权登记。首次应用只允许WAITING、leaseGeneration=0且无租约，原文候选已读回且没有已冻结或已开始的工程分析、文件解读、翻译。客户端提交准确预期快照及设置修订，不能指定新的目标模型、租户或actor；Host读取已保存系统设置并保存应用回执。相同configurationRequestId及完整绑定可幂等重放；不领取任务、不调用模型、不ACK/BLOCK、不改变原件或任务修订。平台Key需仅增加此精确POST权限，Host现有授权链保持不变。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "configurationRequestId",
+                  "workItemId",
+                  "requestId",
+                  "documentVersionId",
+                  "sourceArtifactId",
+                  "sourceFileSha256",
+                  "sourceByteLength",
+                  "expectedWorkItemRevision",
+                  "expectedExecutionModel",
+                  "expectedSettingsRevision"
+                ],
+                "properties": {
+                  "configurationRequestId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "本次配置应用的稳定UUID；未知结果先读回，同一请求重放不另造ID。"
+                  },
+                  "workItemId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                    "description": "已受理任务ID。"
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                    "description": "该任务原受理请求ID。"
+                  },
+                  "documentVersionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                    "description": "该任务绑定的确切DocumentVersion。"
+                  },
+                  "sourceArtifactId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                    "description": "该任务绑定的确切原件artifact。"
+                  },
+                  "sourceFileSha256": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64,
+                    "pattern": "^[a-f0-9]{64}$",
+                    "description": "原件SHA-256，必须逐字匹配任务与授权登记。"
+                  },
+                  "sourceByteLength": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "description": "原件实际字节长度，须匹配任务与授权登记。"
+                  },
+                  "expectedWorkItemRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "当前任务修订；应用设置不会推进此修订。"
+                  },
+                  "expectedExecutionModel": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "modelRef",
+                      "displayName",
+                      "providerKind",
+                      "settingsRevision",
+                      "selectedAt"
+                    ],
+                    "properties": {
+                      "modelRef": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9][a-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9/._:-]*$",
+                        "description": "原任务中完整保存的模型引用；不是本次自由选择的目标模型。"
+                      },
+                      "displayName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "\\S",
+                        "description": "保存的显示名称，trim 后不得为空。"
+                      },
+                      "providerKind": {
+                        "type": "string",
+                        "enum": [
+                          "BUILT_IN",
+                          "CUSTOM"
+                        ]
+                      },
+                      "settingsRevision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "保存此模型快照时的设置修订；0可表示已有显式任务选择。"
+                      },
+                      "selectedAt": {
+                        "type": "string",
+                        "description": "保存的选择时间；Host要求Date.parse结果有限，不强制请求值为RFC3339。"
+                      }
+                    },
+                    "nullable": true,
+                    "description": "完整原执行模型快照或null；与现有快照逐字段CAS比较。"
+                  },
+                  "expectedSettingsRevision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "description": "已保存系统模型设置的准确正修订；目标模型只能由Host从该修订读取。"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Host已应用已保存设置；相同完整请求重放时replayed=true。当前控制器为未覆盖HttpCode的Nest POST，返回201。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status",
+                    "replayed",
+                    "application"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "MODEL_CONFIGURATION_APPLIED"
+                      ]
+                    },
+                    "replayed": {
+                      "type": "boolean"
+                    },
+                    "application": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "configurationRequestId",
+                        "appliedAt",
+                        "executorPrincipalId",
+                        "actorUserId",
+                        "workItemId",
+                        "requestId",
+                        "documentVersionId",
+                        "sourceArtifactId",
+                        "sourceFileSha256",
+                        "sourceByteLength",
+                        "workItemRevision",
+                        "previousModel",
+                        "executionModel"
+                      ],
+                      "properties": {
+                        "configurationRequestId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "本次配置应用的稳定UUID；未知结果先读回，同一请求重放不另造ID。"
+                        },
+                        "appliedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Host首次应用时间。"
+                        },
+                        "executorPrincipalId": {
+                          "type": "string",
+                          "description": "Host配置并核验的执行服务主体。"
+                        },
+                        "actorUserId": {
+                          "type": "string",
+                          "description": "由任务授权登记解析的原actor，不接受客户端指定。"
+                        },
+                        "workItemId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 96,
+                          "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                          "description": "已受理任务ID。"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 96,
+                          "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                          "description": "该任务原受理请求ID。"
+                        },
+                        "documentVersionId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 96,
+                          "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                          "description": "该任务绑定的确切DocumentVersion。"
+                        },
+                        "sourceArtifactId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 96,
+                          "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                          "description": "该任务绑定的确切原件artifact。"
+                        },
+                        "sourceFileSha256": {
+                          "type": "string",
+                          "minLength": 64,
+                          "maxLength": 64,
+                          "pattern": "^[a-f0-9]{64}$",
+                          "description": "原件SHA-256，必须逐字匹配任务与授权登记。"
+                        },
+                        "sourceByteLength": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "description": "原件实际字节长度，须匹配任务与授权登记。"
+                        },
+                        "workItemRevision": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "本次CAS核验且保持的任务修订。"
+                        },
+                        "previousModel": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "modelRef",
+                            "displayName",
+                            "providerKind",
+                            "settingsRevision",
+                            "selectedAt"
+                          ],
+                          "properties": {
+                            "modelRef": {
+                              "type": "string",
+                              "maxLength": 255,
+                              "pattern": "^[a-z0-9][a-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9/._:-]*$",
+                              "description": "原任务中完整保存的模型引用；不是本次自由选择的目标模型。"
+                            },
+                            "displayName": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "pattern": "\\S",
+                              "description": "保存的显示名称，trim 后不得为空。"
+                            },
+                            "providerKind": {
+                              "type": "string",
+                              "enum": [
+                                "BUILT_IN",
+                                "CUSTOM"
+                              ]
+                            },
+                            "settingsRevision": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "保存此模型快照时的设置修订；0可表示已有显式任务选择。"
+                            },
+                            "selectedAt": {
+                              "type": "string",
+                              "description": "保存的选择时间；Host要求Date.parse结果有限，不强制请求值为RFC3339。"
+                            }
+                          },
+                          "nullable": true
+                        },
+                        "executionModel": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "modelRef",
+                            "displayName",
+                            "providerKind",
+                            "settingsRevision",
+                            "selectedAt"
+                          ],
+                          "properties": {
+                            "modelRef": {
+                              "type": "string",
+                              "maxLength": 255,
+                              "pattern": "^[a-z0-9][a-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9/._:-]*$",
+                              "description": "Host从已保存设置读取的目标模型引用。"
+                            },
+                            "displayName": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "pattern": "\\S",
+                              "description": "保存的显示名称，trim 后不得为空。"
+                            },
+                            "providerKind": {
+                              "type": "string",
+                              "enum": [
+                                "BUILT_IN",
+                                "CUSTOM"
+                              ]
+                            },
+                            "settingsRevision": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "保存此模型快照时的设置修订；0可表示已有显式任务选择。"
+                            },
+                            "selectedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "Host实际应用设置的时间。"
+                            }
+                          },
+                          "description": "Host从已保存设置读取并应用的完整执行模型快照，settingsRevision等于expectedSettingsRevision。"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "PENDING_MODEL_CONFIGURATION_INPUT_INVALID：缺失、额外或格式错误字段，包括无效完整模型快照；保存的模型配置无效也会被Host拒绝。"
+          },
+          "403": {
+            "description": "平台未授权此精确POST，或Host重新核验actor/来源ACL/currentness/候选绑定失败；不进行配置应用。"
+          },
+          "409": {
+            "description": "PENDING_MODEL_TASK_NOT_AVAILABLE、PENDING_MODEL_SOURCE_BINDING_CHANGED、PENDING_MODEL_CONFIGURATION_REPLAY_CONFLICT、PENDING_MODEL_ALREADY_CLAIMED、PENDING_MODEL_SNAPSHOT_CHANGED、PENDING_MODEL_EXECUTION_STARTED或MODEL_SETTINGS_REVISION_CONFLICT；保留原任务和应用历史，不静默切换模型。"
+          },
+          "503": {
+            "description": "自动队列service scope未显式配置/不匹配，或当前来源ACL等Host依赖不可用。"
+          }
+        }
+      }
+    },
+    "/openapi/wiselink/next-work-item": {
+      "post": {
+        "operationId": "nextWorkItem",
+        "summary": "领取一个已登记且可执行的工程 WorkItem",
+        "description": "只发现 Host 在正常受理时持久登记的新请求；旧 WorkItem 不自动纳管。固定 service:openclaw-main 队列身份与 DEV/UAT 租户必须显式启用。Host 每项重验租户、原提交人、DocumentVersion、来源权限、当前原件及候选解析投影；坏对象隔离后继续查找。无任务返回 IDLE，不触发模型或制造 WorkItem。成功返回的 leaseToken/leaseGeneration 仅交可信消费者编排层，勿写入模型输入或日志。",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "resumeWorkItemId": {
+                    "type": "string",
+                    "description": "仅在过期续跑时重领该 exact WorkItem；队列不会退而领取其他事项",
+                    "example": "WI-3d41f7"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "空队列，或一个成功领取的精确 WorkItem 和短时租约",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "status"
+                      ],
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "IDLE"
+                          ],
+                          "description": "当前没有符合条件的已登记任务",
+                          "example": "IDLE"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "status",
+                        "workItemId",
+                        "requestId",
+                        "documentVersionId",
+                        "workItemRevision",
+                        "leaseToken",
+                        "leaseGeneration",
+                        "leaseExpiresAt"
+                      ],
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "CLAIMED"
+                          ],
+                          "description": "已由 Host 原子领取",
+                          "example": "CLAIMED"
+                        },
+                        "workItemId": {
+                          "type": "string",
+                          "description": "租约唯一绑定的 WorkItem",
+                          "example": "WI-3d41f7"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "description": "受理请求 ID",
+                          "example": "REQ-d72c1b"
+                        },
+                        "documentVersionId": {
+                          "type": "string",
+                          "description": "已授权且当前的原件版本",
+                          "example": "DV-7a12ce"
+                        },
+                        "workItemRevision": {
+                          "type": "integer",
+                          "description": "领取时已核对的 WorkItem 修订",
+                          "example": 1
+                        },
+                        "leaseToken": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "消费者 ack 使用的租约凭证；敏感值",
+                          "example": "0f8fad5b-d9cb-469f-a165-70867728950e"
+                        },
+                        "leaseGeneration": {
+                          "type": "integer",
+                          "description": "防止旧租约回写的递增代次",
+                          "example": 1
+                        },
+                        "leaseExpiresAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "租约过期时间",
+                          "example": "2026-09-25T09:00:00.000Z"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "固定自动队列 service scope 未显式配置或 Host 依赖不可用"
+          }
+        }
+      }
+    },
+    "/openapi/wiselink/ack-work-item": {
+      "post": {
+        "operationId": "acknowledgeWorkItem",
+        "summary": "确认可信消费者已完成一个租约任务",
+        "description": "仅由可信消费者编排层在候选处理成功后调用，不注册为模型 MCP 工具。Host 重新验证原 active lease、固定租约 owner、租户、WorkItem、原 actor、DocumentVersion、当前来源权限与原件，并按最新 WorkItem 修订读取 Host 初始分析状态；只有 applicability 为 SUCCEEDED/WAITING_INPUT，JobAid 与 Overall 均为 SUCCEEDED 且无 nextOperation 时才原子完成。重复提交同一已完成租约幂等成功。过期、代次不匹配、未完成或来源权限失效均拒绝。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workItemId",
+                  "leaseToken",
+                  "leaseGeneration"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "workItemId": {
+                    "type": "string",
+                    "description": "本次领取的唯一 WorkItem",
+                    "example": "WI-3d41f7"
+                  },
+                  "leaseToken": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "next-work-item 返回的租约凭证",
+                    "example": "0f8fad5b-d9cb-469f-a165-70867728950e"
+                  },
+                  "leaseGeneration": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "next-work-item 返回的租约代次",
+                    "example": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Host 已完成队列项；重试时 replayed=true",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "workItemId",
+                    "replayed",
+                    "acknowledgedAt"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ACKNOWLEDGED"
+                      ],
+                      "description": "确认状态",
+                      "example": "ACKNOWLEDGED"
+                    },
+                    "workItemId": {
+                      "type": "string",
+                      "description": "完成的 WorkItem",
+                      "example": "WI-3d41f7"
+                    },
+                    "replayed": {
+                      "type": "boolean",
+                      "description": "是否为相同租约的幂等重试",
+                      "example": false
+                    },
+                    "acknowledgedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Host 首次确认时间",
+                      "example": "2026-09-25T08:42:17.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "WorkItem 或租约字段格式无效"
+          },
+          "404": {
+            "description": "租约、登记授权、来源或 owner binding 不匹配"
+          },
+          "409": {
+            "description": "初始分析未完成，或租约/WorkItem 修订在校验后漂移"
+          },
+          "503": {
+            "description": "自动队列 service scope 未显式配置或 Host 依赖不可用"
+          }
+        }
+      }
+    },
+    "/openapi/wiselink/block-work-item": {
+      "post": {
+        "operationId": "blockWorkItem",
+        "summary": "将 Host 已确认的失败队列事项转入需处理状态",
+        "description": "仅由可信消费者编排层调用，不注册为模型 MCP 工具。普通请求仍只接受当前初始分析明确 FAILED/CONFLICT 且没有 nextOperation。显式 expectedCancellation 仅用于 operator PARK：Host fresh-read 原 actor 来源权限/原件，并在共享 WorkItem 行锁后锁定授权和全部 attempt，保护精确最新 CANCELLED JobAid 的身份、No、请求、input/model/source/revision，无更晚任意 attempt、无在途 attempt，最后按未过期 lease token/generation CAS 转 BLOCKED，固定码 AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED。replayOnly=true 必须附相同 expectedCancellation，只能返回既有精确取消 BLOCK，绝不新建 BLOCK；重放同样复核当前来源权限和原件。消费者不能自报失败、取消或 provider 终态来授权 PARK；本操作不改变 attempt、JobAid 或异步 provider UNKNOWN。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workItemId",
+                  "leaseToken",
+                  "leaseGeneration"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "workItemId": {
+                    "type": "string",
+                    "example": "WI-3d41f7"
+                  },
+                  "leaseToken": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "0f8fad5b-d9cb-469f-a165-70867728950e"
+                  },
+                  "leaseGeneration": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "expectedCancellation": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "requestId",
+                      "workItemRevision",
+                      "documentId",
+                      "documentVersionId",
+                      "sourceArtifactId",
+                      "sourceFileSha256",
+                      "sourceByteLength",
+                      "attemptId",
+                      "attemptRef",
+                      "attemptNo",
+                      "attemptRequestId",
+                      "actionType",
+                      "inputRevision",
+                      "baseRevision",
+                      "inputHash",
+                      "executionModel"
+                    ],
+                    "properties": {
+                      "requestId": {
+                        "type": "string",
+                        "pattern": "^REQ-[A-Za-z0-9_-]{1,92}$",
+                        "description": "原 WorkItem 登记请求"
+                      },
+                      "workItemRevision": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "documentId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$"
+                      },
+                      "documentVersionId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$"
+                      },
+                      "sourceArtifactId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$"
+                      },
+                      "sourceFileSha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "sourceByteLength": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "attemptId": {
+                        "type": "string",
+                        "pattern": "^ATT-[A-Za-z0-9_-]{1,92}$"
+                      },
+                      "attemptRef": {
+                        "type": "string",
+                        "pattern": "^AQ-[A-Za-z0-9_-]{1,93}$"
+                      },
+                      "attemptNo": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "attemptRequestId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$",
+                        "description": "原 attempt.triggerRequestId，不能替换为新 UI 请求"
+                      },
+                      "actionType": {
+                        "type": "string",
+                        "enum": [
+                          "OPENCLAW_DYNAMIC_EVALUATION"
+                        ]
+                      },
+                      "inputRevision": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "baseRevision": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "inputHash": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "executionModel": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "modelRef",
+                          "displayName",
+                          "providerKind",
+                          "settingsRevision",
+                          "selectedAt"
+                        ],
+                        "properties": {
+                          "modelRef": {
+                            "type": "string",
+                            "maxLength": 255
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "providerKind": {
+                            "type": "string",
+                            "enum": [
+                              "BUILT_IN",
+                              "CUSTOM"
+                            ]
+                          },
+                          "settingsRevision": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "selectedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "replayOnly": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ],
+                    "description": "必须附 expectedCancellation；只读验证既有 BLOCK，不重试未知 PARK"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "事项已阻止后续自动领取；replayed 表示相同租约的幂等重试",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "workItemId",
+                    "blockedCode",
+                    "replayed",
+                    "blockedAt"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "BLOCKED"
+                      ]
+                    },
+                    "workItemId": {
+                      "type": "string"
+                    },
+                    "blockedCode": {
+                      "type": "string",
+                      "example": "AUTO_WORK_ITEM_STAGE_JOBAID_FAILED"
+                    },
+                    "replayed": {
+                      "type": "boolean"
+                    },
+                    "blockedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "WorkItem、租约或精确取消期望格式无效；replayOnly 缺少 expectedCancellation"
+          },
+          "404": {
+            "description": "活动租约或精确授权绑定不存在"
+          },
+          "409": {
+            "description": "Host 当前状态未确认终态失败，或租约/修订发生漂移"
+          },
+          "503": {
+            "description": "自动队列 service scope 或状态读取依赖不可用"
+          }
+        }
+      }
+    },
+    "/openapi/wiselink/openclaw-mcp": {
+      "post": {
+        "operationId": "handleOpenClawMcp",
+        "summary": "OpenClaw 专用 ActionAttempt 队列与候选评估 MCP 入口",
+        "x-wiselink-automatic-work-item-queue": {
+          "discover": "POST /openapi/wiselink/next-work-item",
+          "resumeExpiredLease": "POST /openapi/wiselink/next-work-item {resumeWorkItemId}",
+          "acknowledge": "POST /openapi/wiselink/ack-work-item",
+          "blockTerminalFailure": "POST /openapi/wiselink/block-work-item",
+          "behavior": "每次下游 WorkItem-bound MCP 操作重新核验固定 service owner 的有效租约、持久 grant、租户、原 actor、DocumentVersion、来源读取权限与当前原件。Host 根据当前初始分析状态限制 ack，并仅允许对终态 FAILED/CONFLICT 的事项执行 lease-fenced block；两者都不暴露给模型。已配置的静态 exact WorkItem scope 仍按旧路径工作。"
+        },
+        "x-wiselink-document-work": {
+          "tool": "document_work",
+          "actions": [
+            "STATUS",
+            "STEP",
+            "CANCEL",
+            "INDEX"
+          ],
+          "indexing": "INDEX每次最多20个原文单元，正常来源授权后同事务保存索引与进度，索引完成同事务确认pending；事项消费者按持久已发布原文修订与已保存coverage比较变化并幂等登记后继任务",
+          "originalReader": "read_document_original：确切parseRun的完整原文单元分页，附真实manifest ref/hash、定位和覆盖限制，正常来源授权每次重验",
+          "scope": "独立精确 documentVersionId/tenant/actor 配置授权；不继承 WorkItem/Matter 范围",
+          "execution": "Host 持久领取现有 parseRun，租约不进入模型；有界插件步骤在事务外执行，保存和发布事务内检查租约；状态读取不触发运行"
+        },
+        "x-wiselink-document-translation": {
+          "tool": "document_translation",
+          "actions": [
+            "START",
+            "STATUS",
+            "STEP",
+            "CANCEL"
+          ],
+          "subject": "真实DocumentVersion与parseRun；不创建WorkItem",
+          "execution": "复用Translation V2和ActionAttempt，官方插件每次一个持久步骤，原生文档consumer按STATUS推进；失败保留恢复状态"
+        },
+        "x-wiselink-common-context": {
+          "location": "JobAid / Overall modelInput.commonContext；Review modelInput.context.commonContext",
+          "behavior": "评估前复用主文件章节、当前身份可见的关联背景片段与普通讨论，存入现有 Task 输入。关联资料仍是 BACKGROUND_ONLY；施工引用默认只入目录。最近 12 个历史回合按顺序传入并报告省略数，旧 revision 的工作回答单独标记，不冒充正式采用。RAG 尚未连接时明确 NOT_CONNECTED。",
+          "compatibility": "可选背景扩展由 Skill r09.c20 识别；旧任务无字段时保持原输入。MCP 工具参数、TaskEnvelope、候选结果和正式采用入口不变。"
+        },
+        "x-wiselink-review-execution": {
+          "pendingTool": "get_pending_review_turn",
+          "input": {
+            "workItemId": "Host 已授权的 exact WorkItem"
+          },
+          "behavior": "只读按保存顺序查询 ACTIVE 会话中显式 AUTOMATIC 的 Turn；未领取返回 next 引用，当前租约有效返回 busy，不自动重放历史普通保存或已完成的 Turn。begin_review_turn 在准备上下文前持久化既有 ActionAttempt，使准备失败可从页面回读。候选回写不确认 ReviewAction，不修改 WorkItem revision/current/STALE。",
+          "browserReadback": "ReviewTurn.execution 返回 REQUESTED、QUEUED、RUNNING、COMMITTING 及实际终态、时间和错误；没有执行记录时为 null，不推断模型运行状态。ReviewConversation.automaticExecutionAvailable 按既有 executor 的 tenant/WorkItem 配置范围返回；不是实时健康状态。前端只在 true 时为新提交附 AUTOMATIC，其他范围保留普通保存；范围外的显式 AUTOMATIC 请求返回 503 REVIEW_AUTOMATIC_EXECUTION_UNAVAILABLE。"
+        },
+        "x-wiselink-review-native-session": {
+          "location": "begin_review_turn result.nativeSessionKey（可选控制面字段，不进入模型或浏览器 DTO）",
+          "behavior": "Host 根据已有上一条 Turn 的成功 ActionAttempt 和本轮 fresh 授权 SourceRef 目录决定是否延续会话；相同会话、revision、来源 ID 及 artifact 版本才复用已保存的 actorContextRef。首次、旧版本任务、上一轮失败或资料范围变化时使用当前 Turn 主键派生新引用，不新增表或 hash。",
+          "compatibility": "Skill r09.c22 将该值仅作为匹配 wiselink-engineering 的 Gateway session header；旧 Host 无字段时明确报告 TURN_ISOLATED_LEGACY_HOST。原 Task/Result/MCP 参数、实际读取和单次候选提交规则不变。"
+        },
+        "x-wiselink-execution-model": {
+          "location": "TaskEnvelope.executionModel；翻译分批交付时为 taskBinding.executionModel",
+          "schema": {
+            "type": "object",
+            "required": [
+              "modelRef",
+              "displayName",
+              "providerKind",
+              "settingsRevision",
+              "selectedAt"
+            ],
+            "properties": {
+              "modelRef": {
+                "type": "string",
+                "example": "dli/gpt-5.6-sol"
+              },
+              "displayName": {
+                "type": "string",
+                "example": "GPT 5.6 Sol"
+              },
+              "providerKind": {
+                "type": "string",
+                "enum": [
+                  "BUILT_IN",
+                  "CUSTOM"
+                ],
+                "example": "CUSTOM"
+              },
+              "settingsRevision": {
+                "type": "integer",
+                "example": 1
+              },
+              "selectedAt": {
+                "type": "string",
+                "format": "date-time",
+                "example": "2026-09-06T09:00:00.000Z"
+              }
+            }
+          },
+          "behavior": "Host 在新 ActionAttempt 排队时保存租户全局选择，再纳入已有 TaskEnvelope inputHash；上下文准备、续租、恢复与重试不重新读取默认值。Skill c24 只把受控 modelRef 放进 x-openclaw-model，保持工程 profile、原会话与 MCP 授权；不把路由元数据放进模型业务输入，不传凭据或 URL。历史无字段任务保持原路由。",
+          "provenance": "executionModel 表示启动时选择；ResultEnvelope.modelVersion 优先记录 Gateway 报告值，协议未报告时明确记录 configured-route:模型标识，不冒充上游实际版本。没有跨模型失败 fallback。",
+          "browserReadback": "初始分析 stages.executionModel 与 ReviewTurn.execution.executionModel 提供同一非秘密启动模型元数据；普通 /api 模型设置不通过此 MCP 修改。"
+        },
+        "description": "承载 translation、applicability、dynamic-N 与 overall 的 PostgreSQL QUEUED→lease claim→RUNNING→完整 ResultEnvelope→COMMITTING→Host CAS 链路，并提供 heartbeat/cancel。普通单项流程保持既有 current 行为；配置证据采纳触发的 P0B 全量重算只把 Applicability 与 Dynamic 候选写入 Host staged bundle，由 Overall 基于 shadow 复核后一次 CAS 同时提升全部 serving current，任一中间失败都保留旧 serving current。TaskEnvelope 由 Host 密封；translation begin 通过同一工具按实际序列化 UTF-8 bytes 返回完整 MCP tool result 不超过 14,000 bytes 的可读 SourceUnit 批次，避免托管工具输出截断且不重复返回 modelInput，不暴露 tenant 或 FileService locator。RUNNING 默认使用 30 分钟 lease/60 分钟 deadline，Skill 在模型前后受控 heartbeat，模型生成期间不依赖短周期回调。重复 begin 遇到 COMMITTING 时返回 DB 中重新校验 hash/binding 的 recovery ResultEnvelope，executor 只重放 Host commit、不二次调用模型。损坏、缺字段或 hash/binding 不一致的 ResultEnvelope 不会被替换为 {}。仅当 API Key transport、service principal、tenant 与 exact WorkItem/ActionAttempt allowlist 全部可验证时处理业务 I/O；未配置时 fail closed。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "由 MCP SDK 生成并校验的无状态 JSON-RPC 消息",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "MCP JSON 响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "MCP 通知已接受"
+          },
+          "400": {
+            "description": "无效 MCP 消息、未知工具或严格参数校验失败"
+          },
+          "409": {
+            "description": "lease fencing、取消截止、ResultEnvelope 绑定或 WorkItem CAS 冲突"
+          },
+          "503": {
+            "description": "未配置可验证的 OpenClaw service/object scope、专用 executor 不可用，或同 tenant 的四个执行槽均被占用"
+          }
+        }
+      }
+    },
+    "/openapi/wiselink/codex-mcp": {
+      "post": {
+        "operationId": "handleCodexMcp",
+        "summary": "Codex 专用 ActionAttempt 队列与候选评估 MCP 入口",
+        "x-wiselink-automatic-work-item-queue": {
+          "discover": "POST /openapi/wiselink/codex-next-work-item",
+          "resumeExpiredLease": "POST /openapi/wiselink/codex-next-work-item {resumeWorkItemId}",
+          "acknowledge": "POST /openapi/wiselink/codex-ack-work-item",
+          "blockTerminalFailure": "POST /openapi/wiselink/codex-block-work-item",
+          "behavior": "每次下游 WorkItem-bound MCP 操作重新核验固定 service owner 的有效租约、持久 grant、租户、原 actor、DocumentVersion、来源读取权限与当前原件。Host 根据当前初始分析状态限制 ack，并仅允许对终态 FAILED/CONFLICT 的事项执行 lease-fenced block；两者都不暴露给模型。已配置的静态 exact WorkItem scope 仍按旧路径工作。"
+        },
+        "x-wiselink-document-work": {
+          "tool": "document_work",
+          "actions": [
+            "STATUS",
+            "STEP",
+            "CANCEL",
+            "INDEX"
+          ],
+          "indexing": "INDEX每次最多20个原文单元，正常来源授权后同事务保存索引与进度，索引完成同事务确认pending；事项消费者按持久已发布原文修订与已保存coverage比较变化并幂等登记后继任务",
+          "originalReader": "read_document_original：确切parseRun的完整原文单元分页，附真实manifest ref/hash、定位和覆盖限制，正常来源授权每次重验",
+          "scope": "独立精确 documentVersionId/tenant/actor 配置授权；不继承 WorkItem/Matter 范围",
+          "execution": "Host 持久领取现有 parseRun，租约不进入模型；有界插件步骤在事务外执行，保存和发布事务内检查租约；状态读取不触发运行"
+        },
+        "x-wiselink-document-translation": {
+          "tool": "document_translation",
+          "actions": [
+            "START",
+            "STATUS",
+            "STEP",
+            "CANCEL"
+          ],
+          "subject": "真实DocumentVersion与parseRun；不创建WorkItem",
+          "execution": "复用Translation V2和ActionAttempt，官方插件每次一个持久步骤，原生文档consumer按STATUS推进；失败保留恢复状态"
+        },
+        "x-wiselink-common-context": {
+          "location": "JobAid / Overall modelInput.commonContext；Review modelInput.context.commonContext",
+          "behavior": "评估前复用主文件章节、当前身份可见的关联背景片段与普通讨论，存入现有 Task 输入。关联资料仍是 BACKGROUND_ONLY；施工引用默认只入目录。最近 12 个历史回合按顺序传入并报告省略数，旧 revision 的工作回答单独标记，不冒充正式采用。RAG 尚未连接时明确 NOT_CONNECTED。",
+          "compatibility": "可选背景扩展由 Skill r09.c20 识别；旧任务无字段时保持原输入。MCP 工具参数、TaskEnvelope、候选结果和正式采用入口不变。"
+        },
+        "x-wiselink-review-execution": {
+          "pendingTool": "get_pending_review_turn",
+          "input": {
+            "workItemId": "Host 已授权的 exact WorkItem"
+          },
+          "behavior": "只读按保存顺序查询 ACTIVE 会话中显式 AUTOMATIC 的 Turn；未领取返回 next 引用，当前租约有效返回 busy，不自动重放历史普通保存或已完成的 Turn。begin_review_turn 在准备上下文前持久化既有 ActionAttempt，使准备失败可从页面回读。候选回写不确认 ReviewAction，不修改 WorkItem revision/current/STALE。",
+          "browserReadback": "ReviewTurn.execution 返回 REQUESTED、QUEUED、RUNNING、COMMITTING 及实际终态、时间和错误；没有执行记录时为 null，不推断模型运行状态。ReviewConversation.automaticExecutionAvailable 按既有 executor 的 tenant/WorkItem 配置范围返回；不是实时健康状态。前端只在 true 时为新提交附 AUTOMATIC，其他范围保留普通保存；范围外的显式 AUTOMATIC 请求返回 503 REVIEW_AUTOMATIC_EXECUTION_UNAVAILABLE。"
+        },
+        "x-wiselink-execution-model": {
+          "location": "TaskEnvelope.executionModel；翻译分批交付时为 taskBinding.executionModel",
+          "schema": {
+            "type": "object",
+            "required": [
+              "modelRef",
+              "displayName",
+              "providerKind",
+              "settingsRevision",
+              "selectedAt"
+            ],
+            "properties": {
+              "modelRef": {
+                "type": "string",
+                "example": "miaoda/glm-5.3"
+              },
+              "displayName": {
+                "type": "string",
+                "example": "GLM-5.3"
+              },
+              "providerKind": {
+                "type": "string",
+                "enum": [
+                  "BUILT_IN",
+                  "CUSTOM"
+                ],
+                "example": "BUILT_IN"
+              },
+              "settingsRevision": {
+                "type": "integer",
+                "example": 1
+              },
+              "selectedAt": {
+                "type": "string",
+                "format": "date-time",
+                "example": "2026-09-06T09:00:00.000Z"
+              }
+            }
+          },
+          "behavior": "Host封存executionModel并纳入任务inputHash。CODEX消费者严格使用封存模型与实际返回模型；当前执行器只支持miaoda/glm-5.3，其他模型明确拒绝，不回退。恢复不重新读取默认设置。",
+          "provenance": "实际模型回执、CODEX进程回执及Host保存/读回回执分别关联原request/attempt；toolVersions中的旧MCP协议名称保持现有wire版本，另有model-executor:CODEX标识。",
+          "browserReadback": "初始分析 stages.executionModel 与 ReviewTurn.execution.executionModel 提供同一非秘密启动模型元数据；普通 /api 模型设置不通过此 MCP 修改。"
+        },
+        "description": "仅当Host活动执行器为CODEX且独立WL_CODEX_*服务授权完整配置时开放；HOSTED模式或缺配置拒绝。平台API Key必须仅授权准确Codex路径，不能复用旧执行器凭证。业务工具、任务封存及版本/CAS合同保持；协议内OPENCLAW枚举或旧toolVersions名称是既有wire标识，不代表真实执行服务身份。承载 translation、applicability、dynamic-N 与 overall 的 PostgreSQL QUEUED→lease claim→RUNNING→完整 ResultEnvelope→COMMITTING→Host CAS 链路，并提供 heartbeat/cancel。普通单项流程保持既有 current 行为；配置证据采纳触发的 P0B 全量重算只把 Applicability 与 Dynamic 候选写入 Host staged bundle，由 Overall 基于 shadow 复核后一次 CAS 同时提升全部 serving current，任一中间失败都保留旧 serving current。TaskEnvelope 由 Host 密封；translation begin 通过同一工具按实际序列化 UTF-8 bytes 返回完整 MCP tool result 不超过 14,000 bytes 的可读 SourceUnit 批次，避免托管工具输出截断且不重复返回 modelInput，不暴露 tenant 或 FileService locator。RUNNING 默认使用 30 分钟 lease/60 分钟 deadline，Skill 在模型前后受控 heartbeat，模型生成期间不依赖短周期回调。重复 begin 遇到 COMMITTING 时返回 DB 中重新校验 hash/binding 的 recovery ResultEnvelope，executor 只重放 Host commit、不二次调用模型。损坏、缺字段或 hash/binding 不一致的 ResultEnvelope 不会被替换为 {}。仅当 API Key transport、service principal、tenant 与 exact WorkItem/ActionAttempt allowlist 全部可验证时处理业务 I/O；未配置时 fail closed。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "由 MCP SDK 生成并校验的无状态 JSON-RPC 消息",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "MCP JSON 响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "MCP 通知已接受"
+          },
+          "400": {
+            "description": "无效 MCP 消息、未知工具或严格参数校验失败"
+          },
+          "409": {
+            "description": "lease fencing、取消截止、ResultEnvelope 绑定或 WorkItem CAS 冲突"
+          },
+          "503": {
+            "description": "活动执行器不匹配、独立Codex服务/对象授权未完整配置，或原业务依赖不可用。"
+          }
+        },
+        "x-wiselink-active-executor": {
+          "mode": "CODEX",
+          "configuration": "WL_MODEL_EXECUTOR",
+          "missingConfiguration": "reject",
+          "identitySource": "Host-controlled WL_CODEX_* scope; caller headers never select executor identity",
+          "deploymentStatus": "LOCAL_IMPLEMENTATION_NOT_DEPLOYED"
+        },
+        "x-wiselink-mcp-server": {
+          "name": "wiselink-codex-engineering-assessment",
+          "version": "1.2.0",
+          "versionMeaning": "MCP server implementation version; tool JSON Schema is obtained from tools/list"
+        }
+      }
+    },
+    "/openapi/wiselink/codex-next-work-item": {
+      "post": {
+        "operationId": "nextCodexWorkItem",
+        "summary": "领取一个已登记且可执行的工程 WorkItem",
+        "description": "仅当Host活动执行器为CODEX且独立WL_CODEX_*服务授权完整配置时开放；HOSTED模式或缺配置拒绝。平台API Key必须仅授权准确Codex路径，不能复用旧执行器凭证。业务工具、任务封存及版本/CAS合同保持；协议内OPENCLAW枚举或旧toolVersions名称是既有wire标识，不代表真实执行服务身份。只发现 Host 在正常受理时持久登记的新请求；旧 WorkItem 不自动纳管。固定 service:openclaw-main 队列身份与 DEV/UAT 租户必须显式启用。Host 每项重验租户、原提交人、DocumentVersion、来源权限、当前原件及候选解析投影；坏对象隔离后继续查找。无任务返回 IDLE，不触发模型或制造 WorkItem。成功返回的 leaseToken/leaseGeneration 仅交可信消费者编排层，勿写入模型输入或日志。",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "resumeWorkItemId": {
+                    "type": "string",
+                    "description": "仅在过期续跑时重领该 exact WorkItem；队列不会退而领取其他事项",
+                    "example": "WI-3d41f7"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "空队列，或一个成功领取的精确 WorkItem 和短时租约",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "status"
+                      ],
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "IDLE"
+                          ],
+                          "description": "当前没有符合条件的已登记任务",
+                          "example": "IDLE"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "status",
+                        "workItemId",
+                        "requestId",
+                        "documentVersionId",
+                        "workItemRevision",
+                        "leaseToken",
+                        "leaseGeneration",
+                        "leaseExpiresAt"
+                      ],
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "CLAIMED"
+                          ],
+                          "description": "已由 Host 原子领取",
+                          "example": "CLAIMED"
+                        },
+                        "workItemId": {
+                          "type": "string",
+                          "description": "租约唯一绑定的 WorkItem",
+                          "example": "WI-3d41f7"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "description": "受理请求 ID",
+                          "example": "REQ-d72c1b"
+                        },
+                        "documentVersionId": {
+                          "type": "string",
+                          "description": "已授权且当前的原件版本",
+                          "example": "DV-7a12ce"
+                        },
+                        "workItemRevision": {
+                          "type": "integer",
+                          "description": "领取时已核对的 WorkItem 修订",
+                          "example": 1
+                        },
+                        "leaseToken": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "消费者 ack 使用的租约凭证；敏感值",
+                          "example": "0f8fad5b-d9cb-469f-a165-70867728950e"
+                        },
+                        "leaseGeneration": {
+                          "type": "integer",
+                          "description": "防止旧租约回写的递增代次",
+                          "example": 1
+                        },
+                        "leaseExpiresAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "租约过期时间",
+                          "example": "2026-09-25T09:00:00.000Z"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "活动执行器不匹配、独立Codex服务/对象授权未完整配置，或原业务依赖不可用。"
+          }
+        },
+        "x-wiselink-active-executor": {
+          "mode": "CODEX",
+          "configuration": "WL_MODEL_EXECUTOR",
+          "missingConfiguration": "reject",
+          "identitySource": "Host-controlled WL_CODEX_* scope; caller headers never select executor identity",
+          "deploymentStatus": "LOCAL_IMPLEMENTATION_NOT_DEPLOYED"
+        }
+      }
+    },
+    "/openapi/wiselink/codex-ack-work-item": {
+      "post": {
+        "operationId": "acknowledgeCodexWorkItem",
+        "summary": "确认可信消费者已完成一个租约任务",
+        "description": "仅当Host活动执行器为CODEX且独立WL_CODEX_*服务授权完整配置时开放；HOSTED模式或缺配置拒绝。平台API Key必须仅授权准确Codex路径，不能复用旧执行器凭证。业务工具、任务封存及版本/CAS合同保持；协议内OPENCLAW枚举或旧toolVersions名称是既有wire标识，不代表真实执行服务身份。仅由可信消费者编排层在候选处理成功后调用，不注册为模型 MCP 工具。Host 重新验证原 active lease、固定租约 owner、租户、WorkItem、原 actor、DocumentVersion、当前来源权限与原件，并按最新 WorkItem 修订读取 Host 初始分析状态；只有 applicability 为 SUCCEEDED/WAITING_INPUT，JobAid 与 Overall 均为 SUCCEEDED 且无 nextOperation 时才原子完成。重复提交同一已完成租约幂等成功。过期、代次不匹配、未完成或来源权限失效均拒绝。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workItemId",
+                  "leaseToken",
+                  "leaseGeneration"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "workItemId": {
+                    "type": "string",
+                    "description": "本次领取的唯一 WorkItem",
+                    "example": "WI-3d41f7"
+                  },
+                  "leaseToken": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "next-work-item 返回的租约凭证",
+                    "example": "0f8fad5b-d9cb-469f-a165-70867728950e"
+                  },
+                  "leaseGeneration": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "next-work-item 返回的租约代次",
+                    "example": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Host 已完成队列项；重试时 replayed=true",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "workItemId",
+                    "replayed",
+                    "acknowledgedAt"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ACKNOWLEDGED"
+                      ],
+                      "description": "确认状态",
+                      "example": "ACKNOWLEDGED"
+                    },
+                    "workItemId": {
+                      "type": "string",
+                      "description": "完成的 WorkItem",
+                      "example": "WI-3d41f7"
+                    },
+                    "replayed": {
+                      "type": "boolean",
+                      "description": "是否为相同租约的幂等重试",
+                      "example": false
+                    },
+                    "acknowledgedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "Host 首次确认时间",
+                      "example": "2026-09-25T08:42:17.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "WorkItem 或租约字段格式无效"
+          },
+          "404": {
+            "description": "租约、登记授权、来源或 owner binding 不匹配"
+          },
+          "409": {
+            "description": "初始分析未完成，或租约/WorkItem 修订在校验后漂移"
+          },
+          "503": {
+            "description": "活动执行器不匹配、独立Codex服务/对象授权未完整配置，或原业务依赖不可用。"
+          }
+        },
+        "x-wiselink-active-executor": {
+          "mode": "CODEX",
+          "configuration": "WL_MODEL_EXECUTOR",
+          "missingConfiguration": "reject",
+          "identitySource": "Host-controlled WL_CODEX_* scope; caller headers never select executor identity",
+          "deploymentStatus": "LOCAL_IMPLEMENTATION_NOT_DEPLOYED"
+        }
+      }
+    },
+    "/openapi/wiselink/codex-block-work-item": {
+      "post": {
+        "operationId": "blockCodexWorkItem",
+        "summary": "将 Host 已确认的失败队列事项转入需处理状态",
+        "description": "仅当Host活动执行器为CODEX且独立WL_CODEX_*服务授权完整配置时开放；HOSTED模式或缺配置拒绝。平台API Key必须仅授权准确Codex路径，不能复用旧执行器凭证。业务工具、任务封存及版本/CAS合同保持；协议内OPENCLAW枚举或旧toolVersions名称是既有wire标识，不代表真实执行服务身份。仅由可信消费者编排层调用，不注册为模型 MCP 工具。普通请求仍只接受当前初始分析明确 FAILED/CONFLICT 且没有 nextOperation。显式 expectedCancellation 仅用于 operator PARK：Host fresh-read 原 actor 来源权限/原件，并在共享 WorkItem 行锁后锁定授权和全部 attempt，保护精确最新 CANCELLED JobAid 的身份、No、请求、input/model/source/revision，无更晚任意 attempt、无在途 attempt，最后按未过期 lease token/generation CAS 转 BLOCKED，固定码 AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED。replayOnly=true 必须附相同 expectedCancellation，只能返回既有精确取消 BLOCK，绝不新建 BLOCK；重放同样复核当前来源权限和原件。消费者不能自报失败、取消或 provider 终态来授权 PARK；本操作不改变 attempt、JobAid 或异步 provider UNKNOWN。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workItemId",
+                  "leaseToken",
+                  "leaseGeneration"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "workItemId": {
+                    "type": "string",
+                    "example": "WI-3d41f7"
+                  },
+                  "leaseToken": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "0f8fad5b-d9cb-469f-a165-70867728950e"
+                  },
+                  "leaseGeneration": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "expectedCancellation": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "requestId",
+                      "workItemRevision",
+                      "documentId",
+                      "documentVersionId",
+                      "sourceArtifactId",
+                      "sourceFileSha256",
+                      "sourceByteLength",
+                      "attemptId",
+                      "attemptRef",
+                      "attemptNo",
+                      "attemptRequestId",
+                      "actionType",
+                      "inputRevision",
+                      "baseRevision",
+                      "inputHash",
+                      "executionModel"
+                    ],
+                    "properties": {
+                      "requestId": {
+                        "type": "string",
+                        "pattern": "^REQ-[A-Za-z0-9_-]{1,92}$",
+                        "description": "原 WorkItem 登记请求"
+                      },
+                      "workItemRevision": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "documentId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$"
+                      },
+                      "documentVersionId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$"
+                      },
+                      "sourceArtifactId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$"
+                      },
+                      "sourceFileSha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "sourceByteLength": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "attemptId": {
+                        "type": "string",
+                        "pattern": "^ATT-[A-Za-z0-9_-]{1,92}$"
+                      },
+                      "attemptRef": {
+                        "type": "string",
+                        "pattern": "^AQ-[A-Za-z0-9_-]{1,93}$"
+                      },
+                      "attemptNo": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "attemptRequestId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$",
+                        "description": "原 attempt.triggerRequestId，不能替换为新 UI 请求"
+                      },
+                      "actionType": {
+                        "type": "string",
+                        "enum": [
+                          "OPENCLAW_DYNAMIC_EVALUATION"
+                        ]
+                      },
+                      "inputRevision": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "baseRevision": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "inputHash": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "executionModel": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "modelRef",
+                          "displayName",
+                          "providerKind",
+                          "settingsRevision",
+                          "selectedAt"
+                        ],
+                        "properties": {
+                          "modelRef": {
+                            "type": "string",
+                            "maxLength": 255
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "providerKind": {
+                            "type": "string",
+                            "enum": [
+                              "BUILT_IN",
+                              "CUSTOM"
+                            ]
+                          },
+                          "settingsRevision": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "selectedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "replayOnly": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ],
+                    "description": "必须附 expectedCancellation；只读验证既有 BLOCK，不重试未知 PARK"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "事项已阻止后续自动领取；replayed 表示相同租约的幂等重试",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "workItemId",
+                    "blockedCode",
+                    "replayed",
+                    "blockedAt"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "BLOCKED"
+                      ]
+                    },
+                    "workItemId": {
+                      "type": "string"
+                    },
+                    "blockedCode": {
+                      "type": "string",
+                      "example": "AUTO_WORK_ITEM_STAGE_JOBAID_FAILED"
+                    },
+                    "replayed": {
+                      "type": "boolean"
+                    },
+                    "blockedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "WorkItem、租约或精确取消期望格式无效；replayOnly 缺少 expectedCancellation"
+          },
+          "404": {
+            "description": "活动租约或精确授权绑定不存在"
+          },
+          "409": {
+            "description": "Host 当前状态未确认终态失败，或租约/修订发生漂移"
+          },
+          "503": {
+            "description": "活动执行器不匹配、独立Codex服务/对象授权未完整配置，或原业务依赖不可用。"
+          }
+        },
+        "x-wiselink-active-executor": {
+          "mode": "CODEX",
+          "configuration": "WL_MODEL_EXECUTOR",
+          "missingConfiguration": "reject",
+          "identitySource": "Host-controlled WL_CODEX_* scope; caller headers never select executor identity",
+          "deploymentStatus": "LOCAL_IMPLEMENTATION_NOT_DEPLOYED"
+        }
+      }
+    },
+    "/openapi/wiselink/codex-apply-pending-model-configuration": {
+      "post": {
+        "operationId": "applyPendingCodexModelConfiguration",
+        "summary": "为尚未执行的确切队列任务应用已保存模型设置",
+        "description": "仅当Host活动执行器为CODEX且独立WL_CODEX_*服务授权完整配置时开放；HOSTED模式或缺配置拒绝。平台API Key必须仅授权准确Codex路径，不能复用旧执行器凭证。业务工具、任务封存及版本/CAS合同保持；协议内OPENCLAW枚举或旧toolVersions名称是既有wire标识，不代表真实执行服务身份。仅可信Codex自动队列服务调用。Host复核配置的服务主体、租户、原actor、当前文档、来源ACL与字节绑定，并在事务中锁定任务和授权登记。首次应用只允许WAITING、leaseGeneration=0且无租约，原文候选已读回且没有已冻结或已开始的工程分析、文件解读、翻译。客户端提交准确预期快照及设置修订，不能指定新的目标模型、租户或actor；Host读取已保存系统设置并保存应用回执。相同configurationRequestId及完整绑定可幂等重放；不领取任务、不调用模型、不ACK/BLOCK、不改变原件或任务修订。平台Key需仅增加此精确POST权限，Host现有授权链保持不变。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "configurationRequestId",
+                  "workItemId",
+                  "requestId",
+                  "documentVersionId",
+                  "sourceArtifactId",
+                  "sourceFileSha256",
+                  "sourceByteLength",
+                  "expectedWorkItemRevision",
+                  "expectedExecutionModel",
+                  "expectedSettingsRevision"
+                ],
+                "properties": {
+                  "configurationRequestId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "本次配置应用的稳定UUID；未知结果先读回，同一请求重放不另造ID。"
+                  },
+                  "workItemId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                    "description": "已受理任务ID。"
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                    "description": "该任务原受理请求ID。"
+                  },
+                  "documentVersionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                    "description": "该任务绑定的确切DocumentVersion。"
+                  },
+                  "sourceArtifactId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                    "description": "该任务绑定的确切原件artifact。"
+                  },
+                  "sourceFileSha256": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64,
+                    "pattern": "^[a-f0-9]{64}$",
+                    "description": "原件SHA-256，必须逐字匹配任务与授权登记。"
+                  },
+                  "sourceByteLength": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "description": "原件实际字节长度，须匹配任务与授权登记。"
+                  },
+                  "expectedWorkItemRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "当前任务修订；应用设置不会推进此修订。"
+                  },
+                  "expectedExecutionModel": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "modelRef",
+                      "displayName",
+                      "providerKind",
+                      "settingsRevision",
+                      "selectedAt"
+                    ],
+                    "properties": {
+                      "modelRef": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "pattern": "^[a-z0-9][a-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9/._:-]*$",
+                        "description": "原任务中完整保存的模型引用；不是本次自由选择的目标模型。"
+                      },
+                      "displayName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "\\S",
+                        "description": "保存的显示名称，trim 后不得为空。"
+                      },
+                      "providerKind": {
+                        "type": "string",
+                        "enum": [
+                          "BUILT_IN",
+                          "CUSTOM"
+                        ]
+                      },
+                      "settingsRevision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991,
+                        "description": "保存此模型快照时的设置修订；0可表示已有显式任务选择。"
+                      },
+                      "selectedAt": {
+                        "type": "string",
+                        "description": "保存的选择时间；Host要求Date.parse结果有限，不强制请求值为RFC3339。"
+                      }
+                    },
+                    "nullable": true,
+                    "description": "完整原执行模型快照或null；与现有快照逐字段CAS比较。"
+                  },
+                  "expectedSettingsRevision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "description": "已保存系统模型设置的准确正修订；目标模型只能由Host从该修订读取。"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Host已应用已保存设置；相同完整请求重放时replayed=true。当前控制器为未覆盖HttpCode的Nest POST，返回201。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status",
+                    "replayed",
+                    "application"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "MODEL_CONFIGURATION_APPLIED"
+                      ]
+                    },
+                    "replayed": {
+                      "type": "boolean"
+                    },
+                    "application": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "configurationRequestId",
+                        "appliedAt",
+                        "executorPrincipalId",
+                        "actorUserId",
+                        "workItemId",
+                        "requestId",
+                        "documentVersionId",
+                        "sourceArtifactId",
+                        "sourceFileSha256",
+                        "sourceByteLength",
+                        "workItemRevision",
+                        "previousModel",
+                        "executionModel"
+                      ],
+                      "properties": {
+                        "configurationRequestId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "本次配置应用的稳定UUID；未知结果先读回，同一请求重放不另造ID。"
+                        },
+                        "appliedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Host首次应用时间。"
+                        },
+                        "executorPrincipalId": {
+                          "type": "string",
+                          "description": "Host配置并核验的执行服务主体。"
+                        },
+                        "actorUserId": {
+                          "type": "string",
+                          "description": "由任务授权登记解析的原actor，不接受客户端指定。"
+                        },
+                        "workItemId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 96,
+                          "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                          "description": "已受理任务ID。"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 96,
+                          "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                          "description": "该任务原受理请求ID。"
+                        },
+                        "documentVersionId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 96,
+                          "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                          "description": "该任务绑定的确切DocumentVersion。"
+                        },
+                        "sourceArtifactId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 96,
+                          "pattern": "^[A-Za-z0-9_-]{1,96}$",
+                          "description": "该任务绑定的确切原件artifact。"
+                        },
+                        "sourceFileSha256": {
+                          "type": "string",
+                          "minLength": 64,
+                          "maxLength": 64,
+                          "pattern": "^[a-f0-9]{64}$",
+                          "description": "原件SHA-256，必须逐字匹配任务与授权登记。"
+                        },
+                        "sourceByteLength": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991,
+                          "description": "原件实际字节长度，须匹配任务与授权登记。"
+                        },
+                        "workItemRevision": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "本次CAS核验且保持的任务修订。"
+                        },
+                        "previousModel": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "modelRef",
+                            "displayName",
+                            "providerKind",
+                            "settingsRevision",
+                            "selectedAt"
+                          ],
+                          "properties": {
+                            "modelRef": {
+                              "type": "string",
+                              "maxLength": 255,
+                              "pattern": "^[a-z0-9][a-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9/._:-]*$",
+                              "description": "原任务中完整保存的模型引用；不是本次自由选择的目标模型。"
+                            },
+                            "displayName": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "pattern": "\\S",
+                              "description": "保存的显示名称，trim 后不得为空。"
+                            },
+                            "providerKind": {
+                              "type": "string",
+                              "enum": [
+                                "BUILT_IN",
+                                "CUSTOM"
+                              ]
+                            },
+                            "settingsRevision": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "保存此模型快照时的设置修订；0可表示已有显式任务选择。"
+                            },
+                            "selectedAt": {
+                              "type": "string",
+                              "description": "保存的选择时间；Host要求Date.parse结果有限，不强制请求值为RFC3339。"
+                            }
+                          },
+                          "nullable": true
+                        },
+                        "executionModel": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "modelRef",
+                            "displayName",
+                            "providerKind",
+                            "settingsRevision",
+                            "selectedAt"
+                          ],
+                          "properties": {
+                            "modelRef": {
+                              "type": "string",
+                              "maxLength": 255,
+                              "pattern": "^[a-z0-9][a-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9/._:-]*$",
+                              "description": "Host从已保存设置读取的目标模型引用。"
+                            },
+                            "displayName": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "pattern": "\\S",
+                              "description": "保存的显示名称，trim 后不得为空。"
+                            },
+                            "providerKind": {
+                              "type": "string",
+                              "enum": [
+                                "BUILT_IN",
+                                "CUSTOM"
+                              ]
+                            },
+                            "settingsRevision": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "保存此模型快照时的设置修订；0可表示已有显式任务选择。"
+                            },
+                            "selectedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "Host实际应用设置的时间。"
+                            }
+                          },
+                          "description": "Host从已保存设置读取并应用的完整执行模型快照，settingsRevision等于expectedSettingsRevision。"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "PENDING_MODEL_CONFIGURATION_INPUT_INVALID：缺失、额外或格式错误字段，包括无效完整模型快照；保存的模型配置无效也会被Host拒绝。"
+          },
+          "403": {
+            "description": "平台未授权此精确POST，或Host重新核验actor/来源ACL/currentness/候选绑定失败；不进行配置应用。"
+          },
+          "409": {
+            "description": "PENDING_MODEL_TASK_NOT_AVAILABLE、PENDING_MODEL_SOURCE_BINDING_CHANGED、PENDING_MODEL_CONFIGURATION_REPLAY_CONFLICT、PENDING_MODEL_ALREADY_CLAIMED、PENDING_MODEL_SNAPSHOT_CHANGED、PENDING_MODEL_EXECUTION_STARTED或MODEL_SETTINGS_REVISION_CONFLICT；保留原任务和应用历史，不静默切换模型。"
+          },
+          "503": {
+            "description": "活动执行器不匹配、独立Codex服务/对象授权未完整配置，或原业务依赖不可用。"
+          }
+        },
+        "x-wiselink-active-executor": {
+          "mode": "CODEX",
+          "configuration": "WL_MODEL_EXECUTOR",
+          "missingConfiguration": "reject",
+          "identitySource": "Host-controlled WL_CODEX_* scope; caller headers never select executor identity",
+          "deploymentStatus": "LOCAL_IMPLEMENTATION_NOT_DEPLOYED"
+        }
+      }
+    }
+  }
+}

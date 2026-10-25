@@ -1,0 +1,37 @@
+{
+  "name": "cancel_action_attempt",
+  "title": "取消尚未进入 COMMITTING 的 ActionAttempt",
+  "description": "对 exact WorkItem scope 下的 QUEUED/RUNNING/RETRY_SCHEDULED attempt 执行原子取消；一旦跨过 COMMITTING 截止点返回冲突。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "attemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4000
+      }
+    },
+    "required": [
+      "attemptRef",
+      "reason"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+  }
+}

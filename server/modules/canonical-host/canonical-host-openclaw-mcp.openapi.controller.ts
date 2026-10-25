@@ -1,3 +1,4 @@
+import { assertCanonicalHostExecutor } from './canonical-host-executor-policy';
 import { Body, Controller, Inject, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type {
@@ -31,13 +32,17 @@ export class CanonicalHostOpenClawMcpOpenApiController {
     @Res() response: Response,
     @Body() body: unknown,
   ): Promise<void> {
+    assertCanonicalHostExecutor('HOSTED');
     await this.serviceScope.assertTransport({ transport: 'OPENCLAW_MCP' });
+    assertCanonicalHostExecutor('HOSTED');
     await this.mcp.handle(request, response, body);
   }
 
   @Post('apply-pending-model-configuration')
   async applyPendingModelConfiguration(@Body() body: unknown) {
+    assertCanonicalHostExecutor('HOSTED');
     await this.serviceScope.assertAutoWorkItemQueueTransport();
+    assertCanonicalHostExecutor('HOSTED');
     return this.autoWorkItems.applyPendingModelConfiguration(body);
   }
 
@@ -45,7 +50,9 @@ export class CanonicalHostOpenClawMcpOpenApiController {
   async nextWorkItem(
     @Body() body?: NextAutomaticWorkItemRequest,
   ): Promise<AutomaticWorkItemClaimResult> {
+    assertCanonicalHostExecutor('HOSTED');
     await this.serviceScope.assertAutoWorkItemQueueTransport();
+    assertCanonicalHostExecutor('HOSTED');
     return this.autoWorkItems.nextWorkItem(body);
   }
 
@@ -53,7 +60,9 @@ export class CanonicalHostOpenClawMcpOpenApiController {
   async acknowledgeWorkItem(
     @Body() body: AcknowledgeAutomaticWorkItemRequest,
   ): Promise<AcknowledgeAutomaticWorkItemResponse> {
+    assertCanonicalHostExecutor('HOSTED');
     await this.serviceScope.assertAutoWorkItemQueueTransport();
+    assertCanonicalHostExecutor('HOSTED');
     return this.autoWorkItems.acknowledgeWorkItem(body);
   }
 
@@ -61,7 +70,60 @@ export class CanonicalHostOpenClawMcpOpenApiController {
   async blockWorkItem(
     @Body() body: BlockAutomaticWorkItemRequest,
   ): Promise<BlockAutomaticWorkItemResponse> {
+    assertCanonicalHostExecutor('HOSTED');
     await this.serviceScope.assertAutoWorkItemQueueTransport();
+    assertCanonicalHostExecutor('HOSTED');
     return this.autoWorkItems.blockWorkItem(body);
   }
+
+  @Post('codex-mcp')
+  async handleCodexMcp(
+    @Req() request: Request,
+    @Res() response: Response,
+    @Body() body: unknown,
+  ): Promise<void> {
+    assertCanonicalHostExecutor('CODEX');
+    await this.serviceScope.assertTransport({ transport: 'CODEX_MCP' });
+    assertCanonicalHostExecutor('CODEX');
+    await this.mcp.handle(request, response, body, 'CODEX');
+  }
+
+  @Post('codex-apply-pending-model-configuration')
+  async applyPendingCodexModelConfiguration(@Body() body: unknown) {
+    assertCanonicalHostExecutor('CODEX');
+    await this.serviceScope.assertAutoWorkItemQueueTransport();
+    assertCanonicalHostExecutor('CODEX');
+    return this.autoWorkItems.applyPendingModelConfiguration(body);
+  }
+
+  @Post('codex-next-work-item')
+  async nextCodexWorkItem(
+    @Body() body?: NextAutomaticWorkItemRequest,
+  ): Promise<AutomaticWorkItemClaimResult> {
+    assertCanonicalHostExecutor('CODEX');
+    await this.serviceScope.assertAutoWorkItemQueueTransport();
+    assertCanonicalHostExecutor('CODEX');
+    return this.autoWorkItems.nextWorkItem(body);
+  }
+
+  @Post('codex-ack-work-item')
+  async acknowledgeCodexWorkItem(
+    @Body() body: AcknowledgeAutomaticWorkItemRequest,
+  ): Promise<AcknowledgeAutomaticWorkItemResponse> {
+    assertCanonicalHostExecutor('CODEX');
+    await this.serviceScope.assertAutoWorkItemQueueTransport();
+    assertCanonicalHostExecutor('CODEX');
+    return this.autoWorkItems.acknowledgeWorkItem(body);
+  }
+
+  @Post('codex-block-work-item')
+  async blockCodexWorkItem(
+    @Body() body: BlockAutomaticWorkItemRequest,
+  ): Promise<BlockAutomaticWorkItemResponse> {
+    assertCanonicalHostExecutor('CODEX');
+    await this.serviceScope.assertAutoWorkItemQueueTransport();
+    assertCanonicalHostExecutor('CODEX');
+    return this.autoWorkItems.blockWorkItem(body);
+  }
+
 }

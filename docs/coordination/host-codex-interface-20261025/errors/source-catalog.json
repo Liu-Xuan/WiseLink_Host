@@ -1,0 +1,2121 @@
+{
+  "format": "source-error-codes-and-templates",
+  "note": "Exact throw/helper error literals from the listed sources. Not all errors have a dedicated HTTP status or reach every endpoint; no business call was made to synthesize a failure.",
+  "errors": [
+    {
+      "code": "CANONICAL_EXECUTOR_CONFIG_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-executor-policy.ts",
+      "line": 7
+    },
+    {
+      "code": "CANONICAL_EXECUTOR_ENDPOINT_INACTIVE",
+      "source": "server/modules/canonical-host/canonical-host-executor-policy.ts",
+      "line": 13
+    },
+    {
+      "code": "CANONICAL_CODEX_RUNTIME_CONFIG_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-host-executor-policy.ts",
+      "line": 29
+    },
+    {
+      "code": "CANONICAL_CODEX_EXACT_SCOPE_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-host-executor-policy.ts",
+      "line": 44
+    },
+    {
+      "code": "CANONICAL_CODEX_REQUEST_SCOPE_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-host-executor-policy.ts",
+      "line": 52
+    },
+    {
+      "code": "DOCUMENT_DELIVERY_MULTI_ACTOR_UNSUPPORTED",
+      "source": "server/modules/canonical-host/configured-development-service-scope.authorization.ts",
+      "line": 102
+    },
+    {
+      "code": "ACTION_ATTEMPT_NOT_FOUND",
+      "source": "server/modules/canonical-host/configured-development-service-scope.authorization.ts",
+      "line": 246
+    },
+    {
+      "code": "ACTION_ATTEMPT_NOT_FOUND",
+      "source": "server/modules/canonical-host/configured-development-service-scope.authorization.ts",
+      "line": 258
+    },
+    {
+      "code": "CANONICAL_WORK_ITEM_NOT_FOUND",
+      "source": "server/modules/canonical-host/configured-development-service-scope.authorization.ts",
+      "line": 981
+    },
+    {
+      "code": "JOBAID_ORIGINAL_CONTINUATION_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 128
+    },
+    {
+      "code": "DOCUMENT_AUTOMATIC_PREPARATION_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 131
+    },
+    {
+      "code": "JOBAID_WORK_ITEM_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 159
+    },
+    {
+      "code": "JOBAID_PROBLEM_RUNTIME_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 181
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_REQUIRES_CONFIRMED_SB",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 219
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_PARSED_PACKAGE_NOT_READY",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 221
+    },
+    {
+      "code": "ACTION_ATTEMPT_NOT_FOUND",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 318
+    },
+    {
+      "code": "JOBAID_PROBLEM_RUNTIME_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 328
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_SUCCEEDED_PROJECTION_MISSING",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 380
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_COMMITTING_RESULT_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 395
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_SERVICE_ACTOR_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 399
+    },
+    {
+      "code": "WORK_ITEM_CAS_CONFLICT",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 416
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_TASK_MODEL_INPUT_DRIFT",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 439
+    },
+    {
+      "code": "CONFIGURATION_REEVALUATION_APPLICABILITY_STAGE_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 658
+    },
+    {
+      "code": "CONFIGURATION_REEVALUATION_DYNAMIC_ALREADY_SUCCEEDED",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 662
+    },
+    {
+      "code": "CONFIGURATION_REEVALUATION_DYNAMIC_STAGE_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 696
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_PARSED_PACKAGE_NOT_READY",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 835
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_REQUIRES_CONFIRMED_SB",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 842
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_REQUIRES_CONFIRMED_SB",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 853
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_SB_SOURCE_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 875
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_REQUIRES_CONFIRMED_SB",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 895
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_SB_CONFIRMATION_READBACK_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 912
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_SB_CONFIRMATION_READBACK_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 924
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_TENANT_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 932
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_ACTION_TYPE_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 1016
+    },
+    {
+      "code": "CONFIGURATION_REEVALUATION_ATTEMPT_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 1040
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_REEVALUATION_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 1137
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_REEVALUATION_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 1147
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_RULE_SET_BINDING_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 1161
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_RULE_SET_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 1179
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_TASK_TYPE_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 1188
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_RULE_SET_BINDING_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 1219
+    },
+    {
+      "code": "DYNAMIC_EVALUATION_MODEL_OUTPUT_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 1241
+    },
+    {
+      "code": "CANONICAL_WORK_ITEM_NOT_FOUND",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 1247
+    },
+    {
+      "code": "JOBAID_WORK_ITEM_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 242
+    },
+    {
+      "code": "CANONICAL_CODEX_LEGACY_WORK_NOT_ADOPTABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 262
+    },
+    {
+      "codeTemplate": "`ACTION_ATTEMPT_ALREADY_${existing.status}`",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 274
+    },
+    {
+      "code": "JOBAID_PROBLEM_V2_NEW_REQUEST_DISABLED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 276
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 324
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_DELEGATION_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 359
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_TURN_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 379
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_NO_WORK",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 381
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_SOURCE_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 387
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_WORK_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 395
+    },
+    {
+      "codeTemplate": "`ACTION_ATTEMPT_ALREADY_${existing.status}`",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 399
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_RECOVERY_FENCE_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 405
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_ATTEMPT_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 410
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_ALREADY_CURRENT",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 420
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_ATTEMPT_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 446
+    },
+    {
+      "code": "JOBAID_WORK_ITEM_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 458
+    },
+    {
+      "code": "JOBAID_TASK_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 467
+    },
+    {
+      "code": "JOBAID_ACTOR_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 469
+    },
+    {
+      "code": "TDMS_COMMIT_RECOVERY_CALLER_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 484
+    },
+    {
+      "code": "JOBAID_SOURCE_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 493
+    },
+    {
+      "code": "JOBAID_ORIGINAL_REQUEST_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 499
+    },
+    {
+      "code": "AUTO_WORK_ITEM_LEASE_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 508
+    },
+    {
+      "code": "JOBAID_DATABASE_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 513
+    },
+    {
+      "code": "JOBAID_WORK_ITEM_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 545
+    },
+    {
+      "code": "JOBAID_ORIGINAL_REQUEST_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 551
+    },
+    {
+      "code": "JOBAID_ORIGINAL_REVISION_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 553
+    },
+    {
+      "code": "JOBAID_PROGRAM_SCOPE_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 581
+    },
+    {
+      "code": "JOBAID_PERMISSION_SNAPSHOT_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 583
+    },
+    {
+      "code": "JOBAID_REQUEST_SCOPE_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 600
+    },
+    {
+      "code": "JOBAID_PROBLEM_V2_NEW_REQUEST_DISABLED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 604
+    },
+    {
+      "code": "JOBAID_WORK_ITEM_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 619
+    },
+    {
+      "code": "JOBAID_ORIGINAL_REQUEST_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 625
+    },
+    {
+      "code": "JOBAID_WORK_ITEM_BINDING_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 676
+    },
+    {
+      "code": "CONFIGURATION_REEVALUATION_APPLICABILITY_STAGE_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 685
+    },
+    {
+      "code": "CONFIGURATION_REEVALUATION_DYNAMIC_ALREADY_SUCCEEDED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 691
+    },
+    {
+      "code": "CONFIGURATION_REEVALUATION_OVERALL_STAGE_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 697
+    },
+    {
+      "code": "JOBAID_WORK_ITEM_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 732
+    },
+    {
+      "code": "DOCUMENT_ORIGINAL_READER_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 818
+    },
+    {
+      "code": "DOCUMENT_SEMANTIC_READER_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 819
+    },
+    {
+      "code": "JOBAID_ORIGINAL_FILE_BINDING_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 862
+    },
+    {
+      "code": "DOCUMENT_ORIGINAL_NO_READABLE_EVIDENCE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 870
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 914
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 941
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 948
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_WORK_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 951
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 987
+    },
+    {
+      "code": "JOBAID_PROGRAM_SCOPE_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1061
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1149
+    },
+    {
+      "code": "JOBAID_WORK_NOT_FOUND",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1225
+    },
+    {
+      "code": "JOBAID_SOURCE_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1232
+    },
+    {
+      "code": "JOBAID_SOURCE_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1235
+    },
+    {
+      "code": "TDMS_REVIEW_ADMISSION_NOT_CONNECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1242
+    },
+    {
+      "code": "TDMS_REVIEW_ADMISSION_NOT_CONNECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1251
+    },
+    {
+      "code": "TDMS_REVIEW_CALLER_BINDING_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1265
+    },
+    {
+      "code": "TDMS_REVIEW_PREPARATION_NOT_CONNECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1269
+    },
+    {
+      "code": "TDMS_REVIEW_CALLER_BINDING_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1280
+    },
+    {
+      "code": "TDMS_REVIEW_CALLER_BINDING_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1282
+    },
+    {
+      "code": "TDMS_REVIEW_ADMISSION_NOT_CONNECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1299
+    },
+    {
+      "code": "TDMS_REVIEW_ADMISSION_NOT_CONNECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1302
+    },
+    {
+      "code": "TDMS_REVIEW_CALLER_BINDING_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1306
+    },
+    {
+      "code": "REVIEW_NATIVE_READ_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1319
+    },
+    {
+      "code": "REVIEW_NATIVE_SOURCE_REF_NOT_ALLOWED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1322
+    },
+    {
+      "code": "JOBAID_TDMS_READ_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1334
+    },
+    {
+      "code": "JOBAID_REVIEW_UNCHANGED_BASIS_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1486
+    },
+    {
+      "code": "JOBAID_REVIEW_UNCHANGED_BASIS_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1501
+    },
+    {
+      "code": "JOBAID_SOURCE_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1530
+    },
+    {
+      "code": "JOBAID_REVIEW_PROJECTION_CONFLICT",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1581
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1600
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1626
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1646
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1657
+    },
+    {
+      "code": "JOBAID_REQUEST_DATABASE_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1678
+    },
+    {
+      "code": "JOBAID_REQUEST_ACTOR_CONTEXT_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1685
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1733
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1751
+    },
+    {
+      "code": "JOBAID_OVERALL_COMPLETE_REVIEW_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1957
+    },
+    {
+      "code": "JOBAID_OVERALL_EXACT_WORK_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1962
+    },
+    {
+      "code": "JOBAID_OVERALL_REVIEW_SOURCE_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1982
+    },
+    {
+      "code": "JOBAID_OVERALL_ORIGINAL_PARSE_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 1996
+    },
+    {
+      "code": "JOBAID_SOURCE_PURPOSE_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2014
+    },
+    {
+      "code": "JOBAID_SOURCE_SELECTION_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2016
+    },
+    {
+      "code": "JOBAID_SOURCE_STATEMENT_RECORD_REQUIRES_V3",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2024
+    },
+    {
+      "code": "JOBAID_SOURCE_STATEMENT_ROOT_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2035
+    },
+    {
+      "code": "JOBAID_TDMS_READ_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2057
+    },
+    {
+      "code": "JOBAID_TDMS_READ_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2070
+    },
+    {
+      "code": "JOBAID_PROGRAM_MODE_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2109
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2115
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_READBACK_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2120
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_PHASE_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2122
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2141
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2147
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2157
+    },
+    {
+      "code": "JOBAID_CONSUMER_STOPPED_REPORT_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2173
+    },
+    {
+      "code": "JOBAID_CONSUMER_STOPPED_BINDING_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2184
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_EXACT_WORK_READ_ONLY",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2324
+    },
+    {
+      "code": "JOBAID_TDMS_READ_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2354
+    },
+    {
+      "code": "JOBAID_PROGRAM_BASELINE_READ_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2425
+    },
+    {
+      "code": "JOBAID_PROGRAM_BASELINE_READ_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2445
+    },
+    {
+      "code": "JOBAID_PROGRAM_READ_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2448
+    },
+    {
+      "code": "AUTO_WORK_ITEM_TASK_LEASE_BINDING_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2491
+    },
+    {
+      "code": "JOBAID_RUNTIME_CAPABILITY_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2496
+    },
+    {
+      "code": "JOBAID_TDMS_RUNTIME_CAPABILITY_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2497
+    },
+    {
+      "code": "JOBAID_OVERALL_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2511
+    },
+    {
+      "code": "JOBAID_PROGRAM_OVERALL_PROJECTION_MISSING",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2543
+    },
+    {
+      "code": "JOBAID_SUCCESS_PROJECTION_MISSING",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2561
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_WORK_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2579
+    },
+    {
+      "code": "JOBAID_SAVED_WORK_RECONCILIATION_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2591
+    },
+    {
+      "code": "JOBAID_COMPLETED_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2600
+    },
+    {
+      "code": "JOBAID_PROGRAM_CONFIGURATION_REEVALUATION_UNSUPPORTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2630
+    },
+    {
+      "code": "JOBAID_OVERALL_CONSISTENCY_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2728
+    },
+    {
+      "code": "JOBAID_OVERALL_BASE_VERSION_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2734
+    },
+    {
+      "code": "TDMS_NATIVE_PROJECTION_EVIDENCE_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2847
+    },
+    {
+      "code": "TDMS_NATIVE_PROJECTION_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2850
+    },
+    {
+      "code": "TDMS_NATIVE_TRANSACTION_AUTHORIZATION_NOT_CONNECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2852
+    },
+    {
+      "code": "TDMS_NATIVE_PROJECTION_WORK_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2860
+    },
+    {
+      "code": "JOBAID_OVERALL_SOURCE_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 2934
+    },
+    {
+      "code": "JOBAID_COMPLETED_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3072
+    },
+    {
+      "code": "JOBAID_SOURCE_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3127
+    },
+    {
+      "code": "TDMS_RUNTIME_CALLER_AUTHORIZATION_NOT_CONNECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3141
+    },
+    {
+      "code": "TDMS_RUNTIME_CALLER_AUTHORIZATION_NOT_CONNECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3145
+    },
+    {
+      "code": "TDMS_RUNTIME_CALLER_AUTHORIZATION_NOT_CONNECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3149
+    },
+    {
+      "code": "JOBAID_SOURCE_VERSION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3191
+    },
+    {
+      "code": "DOCUMENT_ORIGINAL_READER_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3198
+    },
+    {
+      "code": "JOBAID_ORIGINAL_SOURCE_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3208
+    },
+    {
+      "code": "JOBAID_ORIGINAL_SOURCE_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3218
+    },
+    {
+      "code": "JOBAID_SOURCE_STATEMENT_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3228
+    },
+    {
+      "code": "TDMS_RUNTIME_CALLER_AUTHORIZATION_NOT_CONNECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3240
+    },
+    {
+      "code": "JOBAID_SOURCE_STATEMENT_READER_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3250
+    },
+    {
+      "code": "JOBAID_SOURCE_STATEMENT_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3254
+    },
+    {
+      "code": "JOBAID_SOURCE_STATEMENT_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3257
+    },
+    {
+      "code": "JOBAID_SOURCE_STATEMENT_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3259
+    },
+    {
+      "code": "JOBAID_SOURCE_STATEMENT_READER_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3267
+    },
+    {
+      "code": "JOBAID_SOURCE_STATEMENT_SEMANTIC_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3276
+    },
+    {
+      "code": "JOBAID_SOURCE_STATEMENT_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3278
+    },
+    {
+      "code": "JOBAID_SOURCE_STATEMENT_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3287
+    },
+    {
+      "code": "JOBAID_REQUEST_DATABASE_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3304
+    },
+    {
+      "code": "TDMS_NATIVE_PROJECTION_WORK_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3343
+    },
+    {
+      "code": "JOBAID_SOURCE_AUTHORIZATION_UNAVAILABLE",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3356
+    },
+    {
+      "code": "JOBAID_SOURCE_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3370
+    },
+    {
+      "code": "JOBAID_QUERY_RECEIPT_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3378
+    },
+    {
+      "code": "JOBAID_SOURCE_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3385
+    },
+    {
+      "code": "JOBAID_ATTACHMENT_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3390
+    },
+    {
+      "code": "JOBAID_ATTACHMENT_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3397
+    },
+    {
+      "code": "JOBAID_ACTOR_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3419
+    },
+    {
+      "code": "JOBAID_QUERY_RECEIPT_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3440
+    },
+    {
+      "code": "JOBAID_ATTACHMENT_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3472
+    },
+    {
+      "code": "JOBAID_SOURCE_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3489
+    },
+    {
+      "code": "TDMS_REVIEW_ADMISSION_NOT_CONNECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3500
+    },
+    {
+      "code": "TDMS_REVIEW_ADMISSION_NOT_CONNECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3506
+    },
+    {
+      "code": "JOBAID_PROJECTION_LEASE_FENCE_REJECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3517
+    },
+    {
+      "code": "JOBAID_PROJECTION_LEASE_FENCE_REJECTED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3523
+    },
+    {
+      "code": "JOBAID_ORIGINAL_REQUEST_CHANGED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3531
+    },
+    {
+      "code": "JOBAID_SAVED_WORK_RECONCILIATION_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3543
+    },
+    {
+      "code": "JOBAID_SAVED_WORK_RECONCILIATION_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3547
+    },
+    {
+      "code": "JOBAID_SUCCESSOR_OVERALL_DELEGATION_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3554
+    },
+    {
+      "code": "JOBAID_ATTEMPT_NOT_FOUND",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3599
+    },
+    {
+      "code": "JOBAID_ATTEMPT_NOT_FOUND",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3607
+    },
+    {
+      "code": "JOBAID_TDMS_TASK_BINDING_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3610
+    },
+    {
+      "code": "AUTO_WORK_ITEM_TASK_LEASE_BINDING_REQUIRED",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3612
+    },
+    {
+      "code": "JOBAID_FINAL_OUTPUT_MISSING",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3630
+    },
+    {
+      "code": "JOBAID_FINAL_OUTPUT_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3639
+    },
+    {
+      "code": "CANONICAL_WORK_ITEM_NOT_FOUND",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3664
+    },
+    {
+      "code": "JOBAID_REQUEST_ID_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3677
+    },
+    {
+      "code": "JOBAID_CONTINUATION_PURPOSE_INVALID",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3682
+    },
+    {
+      "code": "JOBAID_CONTINUATION_PURPOSE_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 3717
+    },
+    {
+      "code": "JOBAID_WORK_LEASE_FENCE_REJECTED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 90
+    },
+    {
+      "code": "JOBAID_SOURCE_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 128
+    },
+    {
+      "code": "DOCUMENT_ORIGINAL_NOT_PUBLISHED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 132
+    },
+    {
+      "code": "JOBAID_SNAPSHOT_READBACK_MISSING",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 440
+    },
+    {
+      "code": "JOBAID_SAVE_IDENTITY_INVALID",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 518
+    },
+    {
+      "code": "TDMS_NATIVE_EVIDENCE_VERIFIER_UNAVAILABLE",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 520
+    },
+    {
+      "code": "JOBAID_SAVE_REQUEST_REUSE",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 542
+    },
+    {
+      "code": "JOBAID_REVIEW_SAVE_BINDING_INVALID",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 552
+    },
+    {
+      "code": "TDMS_SEALED_RECOVERY_TRANSACTION_REQUIRED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 554
+    },
+    {
+      "code": "TDMS_SEALED_RECOVERY_PAYLOAD_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 560
+    },
+    {
+      "code": "JOBAID_SAVE_WORK_ITEM_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 563
+    },
+    {
+      "code": "JOBAID_WORK_REVISION_CONFLICT",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 569
+    },
+    {
+      "code": "JOBAID_WORK_SAVE_READBACK_MISSING",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 588
+    },
+    {
+      "code": "JOBAID_REVIEW_UNCHANGED_BASIS_INVALID",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 613
+    },
+    {
+      "code": "JOBAID_REVIEW_SAVE_BINDING_INVALID",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 620
+    },
+    {
+      "code": "TDMS_SEALED_RECOVERY_PAYLOAD_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 625
+    },
+    {
+      "code": "JOBAID_SOURCE_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 628
+    },
+    {
+      "code": "JOBAID_SAVE_WORK_ITEM_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 629
+    },
+    {
+      "code": "JOBAID_WORK_REVISION_CONFLICT",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 633
+    },
+    {
+      "code": "JOBAID_REVIEW_UNCHANGED_BASIS_INVALID",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 640
+    },
+    {
+      "code": "JOBAID_SAVE_ATTEMPT_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 656
+    },
+    {
+      "code": "JOBAID_CONSUMER_STOPPED_REPORT_INVALID",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 715
+    },
+    {
+      "code": "JOBAID_CONSUMER_STOPPED_BINDING_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 731
+    },
+    {
+      "code": "JOBAID_CONSUMER_STOPPED_BINDING_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 736
+    },
+    {
+      "code": "JOBAID_ACTIVITY_RECORDS_INVALID",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 739
+    },
+    {
+      "code": "JOBAID_CONSUMER_STOPPED_CONFLICT",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 742
+    },
+    {
+      "code": "JOBAID_CONSUMER_STOPPED_CONFLICT",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 751
+    },
+    {
+      "code": "JOBAID_CONSUMER_STOPPED_BINDING_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 766
+    },
+    {
+      "code": "TDMS_NATIVE_EVIDENCE_VERIFIER_UNAVAILABLE",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 788
+    },
+    {
+      "code": "JOBAID_TDMS_READ_BINDING_INVALID",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 790
+    },
+    {
+      "code": "JOBAID_SOURCE_READ_BINDING_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 816
+    },
+    {
+      "code": "JOBAID_PROGRAM_READ_BINDING_INVALID",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 822
+    },
+    {
+      "code": "JOBAID_ACTIVITY_RECORDS_INVALID",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 827
+    },
+    {
+      "code": "JOBAID_PROGRAM_PROGRESS_CONFLICT",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 832
+    },
+    {
+      "code": "JOBAID_ACTOR_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 870
+    },
+    {
+      "code": "JOBAID_PRIMARY_SOURCE_BINDING_MISSING",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 875
+    },
+    {
+      "code": "JOBAID_SOURCE_AUTHORIZATION_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 894
+    },
+    {
+      "code": "JOBAID_SOURCE_VERSION_CHANGED",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 903
+    },
+    {
+      "code": "JOBAID_PRIMARY_SOURCE_NOT_FOUND",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 906
+    },
+    {
+      "code": "JOBAID_STORED_WORK_INVALID",
+      "source": "server/modules/canonical-host/jobaid-work.repository.ts",
+      "line": 919
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_INVALID",
+      "source": "server/modules/canonical-host/program-assessment-materials.ts",
+      "line": 11
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_BINDING_INVALID",
+      "source": "server/modules/canonical-host/program-assessment-materials.ts",
+      "line": 24
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_SOURCES_INVALID",
+      "source": "server/modules/canonical-host/program-assessment-materials.ts",
+      "line": 31
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_SOURCE_MISMATCH",
+      "source": "server/modules/canonical-host/program-assessment-materials.ts",
+      "line": 36
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_SOURCES_INVALID",
+      "source": "server/modules/canonical-host/program-assessment-materials.ts",
+      "line": 39
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_SOURCE_MISMATCH",
+      "source": "server/modules/canonical-host/program-assessment-materials.ts",
+      "line": 42
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_REQUEST_MISMATCH",
+      "source": "server/modules/canonical-host/program-assessment-materials.ts",
+      "line": 47
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_PREVIOUS_WORK_MISMATCH",
+      "source": "server/modules/canonical-host/program-assessment-materials.ts",
+      "line": 50
+    },
+    {
+      "code": "JOBAID_ACTIVITY_RECORDS_INVALID",
+      "source": "server/modules/canonical-host/program-assessment-materials.ts",
+      "line": 58
+    },
+    {
+      "code": "JOBAID_PROGRAM_MATERIALS_RECORD_INVALID",
+      "source": "server/modules/canonical-host/program-assessment-materials.ts",
+      "line": 66
+    },
+    {
+      "code": "JOBAID_PROGRAM_PREVIOUS_ISSUE_COVERAGE_REQUIRED",
+      "source": "server/modules/canonical-host/program-assessment-materials.ts",
+      "line": 81
+    },
+    {
+      "code": "JOBAID_ACTIVITY_RECORDS_INVALID",
+      "source": "server/modules/canonical-host/program-controlled-assessment.ts",
+      "line": 7
+    },
+    {
+      "code": "JOBAID_PROGRAM_READ_BINDING_INVALID",
+      "source": "server/modules/canonical-host/program-controlled-assessment.ts",
+      "line": 19
+    },
+    {
+      "code": "JOBAID_PROGRAM_INDEPENDENT_READ_REQUIRED",
+      "source": "server/modules/canonical-host/program-controlled-assessment.ts",
+      "line": 24
+    },
+    {
+      "code": "PENDING_MODEL_TASK_NOT_AVAILABLE",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 104
+    },
+    {
+      "code": "CANONICAL_CODEX_EXACT_SCOPE_REQUIRED",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 117
+    },
+    {
+      "code": "AUTO_WORK_ITEM_RECLAIM_SCOPE_MISMATCH",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 137
+    },
+    {
+      "code": "AUTO_WORK_ITEM_REVIEW_DISCOVERY_UNAVAILABLE",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 200
+    },
+    {
+      "code": "AUTO_WORK_ITEM_REVIEW_SCOPE_MISMATCH",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 225
+    },
+    {
+      "code": "AUTO_WORK_ITEM_REVIEW_DISCOVERY_UNAVAILABLE",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 247
+    },
+    {
+      "code": "AUTO_WORK_ITEM_OVERALL_SCOPE_MISMATCH",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 265
+    },
+    {
+      "code": "AUTO_DOCUMENT_SCOPE_UNAVAILABLE",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 287
+    },
+    {
+      "code": "AUTO_DOCUMENT_INTENT_MISMATCH",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 296
+    },
+    {
+      "code": "AUTO_DOCUMENT_SCOPE_MISMATCH",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 311
+    },
+    {
+      "code": "AUTO_DOCUMENT_WORK_RUNTIME_UNAVAILABLE",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 313
+    },
+    {
+      "code": "AUTO_DOCUMENT_SCOPE_UNAVAILABLE",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 333
+    },
+    {
+      "code": "AUTO_DOCUMENT_SCOPE_MISMATCH",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 343
+    },
+    {
+      "code": "AUTO_DOCUMENT_UPLOAD_RUNTIME_UNAVAILABLE",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 345
+    },
+    {
+      "code": "AUTO_WORK_ITEM_INITIAL_ANALYSIS_NOT_COMPLETE",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 429
+    },
+    {
+      "code": "INITIAL_ANALYSIS_STATUS_UNCONFIGURED",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 623
+    },
+    {
+      "code": "CANONICAL_SERVICE_SCOPE_UNAVAILABLE",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 821
+    },
+    {
+      "code": "AUTO_WORK_ITEM_ACK_INPUT_INVALID",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 881
+    },
+    {
+      "code": "AUTO_WORK_ITEM_CANCELLATION_INPUT_INVALID",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 894
+    },
+    {
+      "code": "AUTO_WORK_ITEM_NEXT_INPUT_INVALID",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 929
+    },
+    {
+      "code": "AUTO_WORK_ITEM_LEASE_LOST",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 1009
+    },
+    {
+      "code": "AUTO_WORK_ITEM_FAILURE_NOT_CONFIRMED",
+      "source": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts",
+      "line": 1020
+    },
+    {
+      "code": "CANONICAL_RESULT_EXECUTOR_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-runtime-policy.ts",
+      "line": 40
+    },
+    {
+      "code": "OPENCLAW_RESULT_ENVELOPE_MISSING",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-runtime-policy.ts",
+      "line": 49
+    },
+    {
+      "code": "OPENCLAW_RESULT_CONTENT_HASH_BINDING_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-runtime-policy.ts",
+      "line": 57
+    },
+    {
+      "code": "OPENCLAW_TASK_ENVELOPE_MISSING",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-runtime-policy.ts",
+      "line": 66
+    },
+    {
+      "code": "OPENCLAW_TASK_ENVELOPE_ROW_BINDING_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-runtime-policy.ts",
+      "line": 81
+    },
+    {
+      "code": "JOBAID_SAVED_WORK_RECONCILIATION_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-runtime-policy.ts",
+      "line": 102
+    },
+    {
+      "code": "JOBAID_SAVED_WORK_RECONCILIATION_INVALID",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-runtime-policy.ts",
+      "line": 104
+    },
+    {
+      "code": "OPENCLAW_RESULT_RUNTIME_POLICY_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-runtime-policy.ts",
+      "line": 112
+    },
+    {
+      "code": "OPENCLAW_APPLICABILITY_PROMPT_POLICY_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-runtime-policy.ts",
+      "line": 119
+    },
+    {
+      "code": "OPENCLAW_TRANSLATION_V2_RUNTIME_POLICY_MISMATCH",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-runtime-policy.ts",
+      "line": 138
+    },
+    {
+      "code": "TASK_ENVELOPE_SCHEMA_UNSUPPORTED",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 91
+    },
+    {
+      "code": "TASK_ENVELOPE_SCHEMA_UNSUPPORTED",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 127
+    },
+    {
+      "code": "TASK_ENVELOPE_TASK_TYPE_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 138
+    },
+    {
+      "code": "TASK_ENVELOPE_TASK_TYPE_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 146
+    },
+    {
+      "code": "TASK_ENVELOPE_PRIORITY_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 156
+    },
+    {
+      "code": "TASK_ENVELOPE_MODEL_INPUT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 179
+    },
+    {
+      "code": "TASK_ENVELOPE_DEADLINE_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 187
+    },
+    {
+      "code": "TASK_ENVELOPE_INPUT_HASH_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 197
+    },
+    {
+      "code": "RESULT_ENVELOPE_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 205
+    },
+    {
+      "code": "RESULT_ENVELOPE_SCHEMA_UNSUPPORTED",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 240
+    },
+    {
+      "code": "RESULT_ENVELOPE_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 250
+    },
+    {
+      "code": "RESULT_ENVELOPE_SCHEMA_UNSUPPORTED",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 284
+    },
+    {
+      "code": "RESULT_ENVELOPE_ATTEMPT_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 295
+    },
+    {
+      "code": "RESULT_ENVELOPE_OPERATION_REF_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 298
+    },
+    {
+      "code": "RESULT_ENVELOPE_TASK_TYPE_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 301
+    },
+    {
+      "code": "RESULT_ENVELOPE_WORK_ITEM_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 308
+    },
+    {
+      "code": "RESULT_ENVELOPE_SUBJECT_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 315
+    },
+    {
+      "code": "RESULT_ENVELOPE_BASE_REVISION_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 318
+    },
+    {
+      "code": "RESULT_ENVELOPE_STATUS_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 321
+    },
+    {
+      "code": "RESULT_ENVELOPE_BUSINESS_OUTCOME_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 328
+    },
+    {
+      "code": "RESULT_ENVELOPE_CANDIDATE_STATUS_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 334
+    },
+    {
+      "code": "RESULT_ENVELOPE_MODEL_OUTPUT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 337
+    },
+    {
+      "code": "RESULT_SAVED_WORK_RECONCILIATION_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 362
+    },
+    {
+      "code": "RESULT_SAVED_WORK_RECONCILIATION_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 367
+    },
+    {
+      "code": "RESULT_OFFICIAL_PLUGIN_PRODUCER_REQUIRED",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 370
+    },
+    {
+      "code": "RESULT_OFFICIAL_PLUGIN_PRODUCER_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 378
+    },
+    {
+      "code": "RESULT_EXECUTION_PURPOSE_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 380
+    },
+    {
+      "code": "RESULT_ENVELOPE_CONTENT_HASH_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 402
+    },
+    {
+      "code": "ACTION_ENVELOPE_SUBJECT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 415
+    },
+    {
+      "code": "ACTION_ENVELOPE_SUBJECT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 422
+    },
+    {
+      "code": "RESULT_ENVELOPE_SUCCESS_SEMANTICS_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 559
+    },
+    {
+      "code": "RESULT_ENVELOPE_WAITING_INPUT_SEMANTICS_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 571
+    },
+    {
+      "code": "RESULT_ENVELOPE_FAILURE_SEMANTICS_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 579
+    },
+    {
+      "code": "RESULT_ENVELOPE_HOST_MISSING_INPUT_MUST_WAIT",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 586
+    },
+    {
+      "code": "RESULT_ENVELOPE_HOST_MISSING_INPUT_DROPPED",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 591
+    },
+    {
+      "code": "RESULT_ENVELOPE_SOURCE_REF_UNAUTHORIZED",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 605
+    },
+    {
+      "code": "ACTION_ENVELOPE_REF_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 637
+    },
+    {
+      "code": "ACTION_ENVELOPE_REF_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 645
+    },
+    {
+      "code": "ACTION_ENVELOPE_MISSING_INPUT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 650
+    },
+    {
+      "code": "ACTION_ENVELOPE_MISSING_INPUT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 662
+    },
+    {
+      "code": "RESULT_ENVELOPE_RUN_METRICS_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 684
+    },
+    {
+      "code": "RESULT_ENVELOPE_RUN_METRICS_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-envelope.ts",
+      "line": 693
+    },
+    {
+      "code": "ACTION_ATTEMPT_PROGRAM_REQUEST_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 69
+    },
+    {
+      "code": "ACTION_ATTEMPT_RESERVATION_INPUT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 191
+    },
+    {
+      "code": "ACTION_ATTEMPT_INITIAL_REQUEST_ALREADY_CLAIMED",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 222
+    },
+    {
+      "code": "ACTION_ATTEMPT_INITIAL_PREPARATION_CAS_REJECTED",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 258
+    },
+    {
+      "code": "ACTION_ATTEMPT_INITIAL_PREPARATION_FAILURE_UNRECORDED",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 270
+    },
+    {
+      "code": "ACTION_ATTEMPT_READ_INPUT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 295
+    },
+    {
+      "code": "ACTION_ATTEMPT_IDEMPOTENCY_BINDING_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 310
+    },
+    {
+      "code": "ACTION_ATTEMPT_READ_INPUT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 331
+    },
+    {
+      "code": "ACTION_ATTEMPT_IDEMPOTENCY_BINDING_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 342
+    },
+    {
+      "code": "REVIEW_RUNTIME_PROGRESS_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 371
+    },
+    {
+      "code": "ACTION_ATTEMPT_TIMED_OUT",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 386
+    },
+    {
+      "codeTemplate": "`ACTION_ATTEMPT_ALREADY_${row.status}`",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 431
+    },
+    {
+      "code": "ACTION_ATTEMPT_TIMED_OUT",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 446
+    },
+    {
+      "code": "ACTION_ATTEMPT_TIMED_OUT",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 460
+    },
+    {
+      "code": "ACTION_ATTEMPT_CANCELLED",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 473
+    },
+    {
+      "code": "ACTION_ATTEMPT_CANCELLED",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 485
+    },
+    {
+      "code": "ACTION_ATTEMPT_DOCUMENT_VERSION_CHANGED",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 515
+    },
+    {
+      "code": "ACTION_ATTEMPT_DOCUMENT_VERSION_CHANGED",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 518
+    },
+    {
+      "code": "WORK_ITEM_REVISION_REGRESSED",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 522
+    },
+    {
+      "code": "WORK_ITEM_REVISION_REGRESSED",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 525
+    },
+    {
+      "code": "ACTION_ATTEMPT_NOT_COMMITTING",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 566
+    },
+    {
+      "code": "ACTION_ATTEMPT_TERMINALIZATION_LOST",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 582
+    },
+    {
+      "code": "ACTION_ATTEMPT_NOT_COMMITTING",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 603
+    },
+    {
+      "code": "ACTION_ATTEMPT_WAITING_INPUT_RESULT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 606
+    },
+    {
+      "code": "ACTION_ATTEMPT_TERMINALIZATION_LOST",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 621
+    },
+    {
+      "code": "ACTION_ATTEMPT_NOT_COMMITTING",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 636
+    },
+    {
+      "code": "ACTION_ATTEMPT_TERMINALIZATION_LOST",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 651
+    },
+    {
+      "code": "ACTION_ATTEMPT_TERMINALIZATION_LOST",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 704
+    },
+    {
+      "code": "ACTION_ATTEMPT_CANCEL_TOO_LATE",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 728
+    },
+    {
+      "code": "ACTION_ATTEMPT_NOT_ACTIVE",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 729
+    },
+    {
+      "code": "ACTION_ATTEMPT_NOT_TERMINAL",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 801
+    },
+    {
+      "code": "ACTION_ATTEMPT_TIMED_OUT",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 835
+    },
+    {
+      "codeTemplate": "`ACTION_ATTEMPT_ALREADY_${row.status}`",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 861
+    },
+    {
+      "code": "ACTION_ATTEMPT_NOT_CLAIMABLE",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 864
+    },
+    {
+      "code": "ACTION_ATTEMPT_INITIAL_REQUEST_NOT_PREPARED",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 868
+    },
+    {
+      "codeTemplate": "`ACTION_ATTEMPT_${status}`",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 893
+    },
+    {
+      "code": "ACTION_ATTEMPT_TERMINALIZATION_LOST",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1026
+    },
+    {
+      "code": "ACTION_ATTEMPT_RESERVATION_INPUT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1060
+    },
+    {
+      "code": "ACTION_ATTEMPT_RESERVATION_INPUT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1071
+    },
+    {
+      "code": "ACTION_ATTEMPT_RESERVATION_INPUT_INVALID",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1086
+    },
+    {
+      "code": "ACTION_ATTEMPT_IDEMPOTENCY_PAYLOAD_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1098
+    },
+    {
+      "code": "ACTION_ATTEMPT_IDEMPOTENCY_PAYLOAD_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1121
+    },
+    {
+      "code": "TASK_ENVELOPE_MISSING",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1175
+    },
+    {
+      "code": "TASK_ENVELOPE_ROW_BINDING_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1191
+    },
+    {
+      "code": "RESULT_ENVELOPE_MISSING",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1201
+    },
+    {
+      "code": "RESULT_ENVELOPE_REPLAY_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1210
+    },
+    {
+      "code": "ACTION_ATTEMPT_COMMITTING_CANCEL_INVARIANT_VIOLATION",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1217
+    },
+    {
+      "code": "RESULT_ENVELOPE_ROW_HASH_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1262
+    },
+    {
+      "code": "ACTION_ATTEMPT_EXECUTOR_SESSION_BINDING_MISMATCH",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1281
+    },
+    {
+      "code": "ACTION_ATTEMPT_OPERATION_REF_MISSING",
+      "source": "server/modules/action-attempt/action-attempt-lifecycle.service.ts",
+      "line": 1292
+    },
+    {
+      "code": "PROGRAM_ASSESSMENT_CAPABILITY_REQUIRED",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 36
+    },
+    {
+      "code": "PROGRAM_ASSESSMENT_CHECKPOINT_BINDING_MISMATCH",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 44
+    },
+    {
+      "code": "PROGRAM_ASSESSMENT_MATERIALS_BINDING_MISMATCH",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 61
+    },
+    {
+      "code": "PROGRAM_ASSESSMENT_MODEL_INPUT_MISSING",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 81
+    },
+    {
+      "code": "PROGRAM_ASSESSMENT_RESPONSE_BINDING_MISMATCH",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 87
+    },
+    {
+      "code": "PROGRAM_ASSESSMENT_MODEL_OUTCOME_UNKNOWN",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 90
+    },
+    {
+      "code": "PROGRAM_ASSESSMENT_DEADLINE_EXPIRED",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 94
+    },
+    {
+      "codeTemplate": "`PROGRAM_ASSESSMENT_GATEWAY_INVALID_JSON_HTTP_${status}`",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 128
+    },
+    {
+      "codeTemplate": "`PROGRAM_ASSESSMENT_GATEWAY_HTTP_${status}`",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 149
+    },
+    {
+      "code": "PROGRAM_WORK_SHAPE",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 158
+    },
+    {
+      "code": "PROGRAM_WORK_SHAPE",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 165
+    },
+    {
+      "code": "PROGRAM_ASSESSMENT_SAVE_BINDING_MISMATCH",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 188
+    },
+    {
+      "code": "PROGRAM_ASSESSMENT_SAVED_WORK_READBACK_INVALID",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "line": 211
+    },
+    {
+      "code": "MODEL_EXECUTOR_UNSUPPORTED",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
+      "line": 10
+    },
+    {
+      "code": "CODEX_EXECUTION_MODEL_ROUTE_UNSUPPORTED",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
+      "line": 18
+    },
+    {
+      "code": "CODEX_RUNTIME_CONFIG_REQUIRED",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
+      "line": 23
+    },
+    {
+      "code": "CODEX_GENERATION_ROUTE_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 15
+    },
+    {
+      "code": "CODEX_GENERATION_REQUEST_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 17
+    },
+    {
+      "code": "CODEX_GENERATION_BODY_TOO_LARGE",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 18
+    },
+    {
+      "code": "CODEX_GENERATION_REQUEST_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 20
+    },
+    {
+      "code": "CODEX_GENERATION_REQUEST_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 25
+    },
+    {
+      "code": "CODEX_GENERATION_TOKEN_BUDGET_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 28
+    },
+    {
+      "code": "CODEX_GENERATION_MESSAGES_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 40
+    },
+    {
+      "code": "CODEX_GENERATION_TOOLS_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 46
+    },
+    {
+      "code": "CODEX_GENERATION_TOOL_CHOICE_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 54
+    },
+    {
+      "code": "CODEX_GENERATION_TOOL_CHOICE_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 55
+    },
+    {
+      "code": "CODEX_GENERATION_SELECTED_MODEL_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 59
+    },
+    {
+      "code": "CODEX_GENERATION_OPTIONS_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 157
+    },
+    {
+      "code": "CODEX_GENERATION_REASONING_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 159
+    },
+    {
+      "code": "CODEX_GENERATION_TOKEN_BUDGET_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 162
+    },
+    {
+      "code": "CODEX_GENERATION_ABORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 165
+    },
+    {
+      "code": "CODEX_GENERATION_PROMPT_TOO_LARGE",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 177
+    },
+    {
+      "code": "CODEX_GENERATION_SUMMARY_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 187
+    },
+    {
+      "code": "CODEX_GENERATION_ABORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 189
+    },
+    {
+      "code": "CODEX_GENERATION_INCOMPLETE",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 192
+    },
+    {
+      "code": "CODEX_GENERATION_CANDIDATE_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 195
+    },
+    {
+      "code": "CODEX_GENERATION_CANDIDATE_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 199
+    }
+  ]
+}

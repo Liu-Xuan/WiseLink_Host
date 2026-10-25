@@ -1,0 +1,89 @@
+{
+  "name": "heartbeat_action_attempt",
+  "title": "续期当前 ActionAttempt lease",
+  "description": "使用当前 attempt 的 fencing token 与 generation 续期 RUNNING lease；旧 worker、过期 token 或跨 WorkItem scope 一律拒绝。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "attemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "leaseToken": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      },
+      "leaseGeneration": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      },
+      "reviewProgress": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "MODEL_REQUEST",
+              "MODEL_RETRY"
+            ]
+          },
+          "requestNo": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "retryNo": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "delayMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 30000
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]{0,119}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "requestNo",
+          "retryNo",
+          "delayMs",
+          "errorCode"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "attemptRef",
+      "leaseToken",
+      "leaseGeneration"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+  }
+}

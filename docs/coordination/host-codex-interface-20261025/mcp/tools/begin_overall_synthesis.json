@@ -1,0 +1,46 @@
+{
+  "name": "begin_overall_synthesis",
+  "title": "开始整体候选综合",
+  "description": "Host 按已绑定 schema 使用当前 JobAid 工作与核实来源；新问题评估只检查最新工作的一致性，历史逐项结果仍兼容。显式 requestId 领取同一新请求；受托的后继 Review 可用 successorReviewTurnRef 对确切已保存工作执行 Overall。COMMITTING 只恢复已存结果。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "requestId": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+      },
+      "providers": {
+        "maxItems": 3,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "AIRBUS",
+            "BOEING",
+            "COMAC"
+          ]
+        }
+      },
+      "successorReviewTurnRef": {
+        "type": "string",
+        "pattern": "^RT-[A-Za-z0-9_-]{1,93}$"
+      }
+    },
+    "required": [
+      "workItemId"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

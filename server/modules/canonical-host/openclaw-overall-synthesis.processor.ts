@@ -979,7 +979,7 @@ function overallModelItem(
   };
 }
 
-function toHostedDiscovery(
+export function toHostedDiscovery(
   run: FeishuNativeOemSearchRun,
 ): Record<string, unknown> {
   const provider = providerFromRun(run);
@@ -991,8 +991,9 @@ function toHostedDiscovery(
     TRUNCATED: 'TRUNCATED',
   }[run.resultStatus];
   return {
-    runtime: 'FEISHU_HOSTED_OPENCLAW',
-    runtimeAppId: 'app_17c3zn24kv2',
+    runtime: run.sourceSystem === 'CODEX' ? 'CODEX' : 'FEISHU_HOSTED_OPENCLAW',
+    // SearchRun stores its producer system, but no runtime app identity.
+    // Never relabel historical results with the current executor configuration.
     provider,
     query: run.query,
     resultStatus,
@@ -1025,7 +1026,7 @@ function toHostedDiscovery(
 function providerFromRun(
   run: FeishuNativeOemSearchRun,
 ): 'AIRBUS' | 'BOEING' | 'COMAC' {
-  if (run.sourceSystem !== 'FEISHU_HOSTED_OPENCLAW') {
+  if (!['FEISHU_HOSTED_OPENCLAW', 'CODEX'].includes(run.sourceSystem)) {
     throw new Error('OPENCLAW_DISCOVERY_SOURCE_SYSTEM_INVALID');
   }
   const match = /^search:(airbus|boeing|comac):/u.exec(run.searchRunRef);

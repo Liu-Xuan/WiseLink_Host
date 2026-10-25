@@ -1,3 +1,4 @@
+import { assertCanonicalHostExecutor, canonicalExecutorMcpIdentity, type CanonicalHostExecutor } from './canonical-host-executor-policy';
 import { tdmsNativeReferenceMcpSchema } from './tdms-native-reference-mcp.schema';
 import { DocumentWorkRuntimeService } from './document-work-runtime.service';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
@@ -197,7 +198,7 @@ const commitAnnotations = {
 @Injectable()
 export class CanonicalHostOpenClawMcpService {
   private readonly logger = new Logger(CanonicalHostOpenClawMcpService.name);
-  private readonly nodeHandler: NodeMcpRequestHandler;
+  private readonly nodeHandlers: Record<CanonicalHostExecutor, NodeMcpRequestHandler>;
 
   constructor(
     private readonly vertical: CanonicalHostVerticalService,
@@ -222,29 +223,31 @@ export class CanonicalHostOpenClawMcpService {
     @Optional() private readonly derivedSummary?: DerivedSummaryRuntimeService,
     @Optional() private readonly hierarchicalWiki?: HierarchicalWikiService,
   ) {
-    const handler = createMcpHandler(() => this.createServer(), {
-      legacy: 'stateless',
-      responseMode: 'json',
-      onerror: (error) => this.logger.error(error.stack ?? error.message),
-    });
-    this.nodeHandler = toNodeHandler(handler, {
-      onerror: (error) => this.logger.error(error.stack ?? error.message),
-    });
+    const createHandler = (executor: CanonicalHostExecutor): NodeMcpRequestHandler => {
+      const handler = createMcpHandler(() => this.createServer(executor), {
+        legacy: 'stateless',
+        responseMode: 'json',
+        onerror: (error) => this.logger.error(error.stack ?? error.message),
+      });
+      return toNodeHandler(handler, {
+        onerror: (error) => this.logger.error(error.stack ?? error.message),
+      });
+    };
+    this.nodeHandlers = { HOSTED: createHandler('HOSTED'), CODEX: createHandler('CODEX') };
   }
 
   async handle(
     request: Parameters<NodeMcpRequestHandler>[0],
     response: Parameters<NodeMcpRequestHandler>[1],
     body: unknown,
+    executor: CanonicalHostExecutor = 'HOSTED',
   ): Promise<void> {
-    await this.nodeHandler(request, response, body);
+    assertCanonicalHostExecutor(executor);
+    await this.nodeHandlers[executor](request, response, body);
   }
 
-  private createServer(): McpServer {
-    const server = new McpServer({
-      name: 'wiselink-openclaw-engineering-assessment',
-      version: '1.2.0',
-    });
+  private createServer(executor: CanonicalHostExecutor = 'HOSTED'): McpServer {
+    const server = new McpServer(canonicalExecutorMcpIdentity(executor));
 
     registerCanonicalHostReadonlyMcpTools(
       server,

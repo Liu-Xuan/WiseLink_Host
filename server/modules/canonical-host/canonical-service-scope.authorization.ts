@@ -126,7 +126,7 @@ export interface CanonicalServiceScopeAuthorizationPort {
     developmentRunToken: string;
   }): Promise<CanonicalVerifiedDevelopmentCreateScope>;
   assertTransport(input: {
-    transport: 'READONLY_MCP' | 'OPENCLAW_MCP';
+    transport: 'READONLY_MCP' | 'OPENCLAW_MCP' | 'CODEX_MCP';
   }): Promise<void>;
   authorizeOpenClawWorkItem(input: {
     operation:

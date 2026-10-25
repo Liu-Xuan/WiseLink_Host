@@ -1,0 +1,48 @@
+{
+  "name": "hierarchical_wiki_cleanup",
+  "title": "读取或取消确切自动Wiki任务",
+  "description": "仅对持久化本人委托的确切自动请求读取队列状态或取消；不读取来源、正文或任务内容，取消不代表模型已停止。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "kind": {
+        "type": "string",
+        "enum": [
+          "SUMMARY",
+          "MATTER"
+        ]
+      },
+      "subjectId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 96
+      },
+      "attemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "operation": {
+        "type": "string",
+        "enum": [
+          "STATUS",
+          "CANCEL"
+        ]
+      }
+    },
+    "required": [
+      "kind",
+      "subjectId",
+      "attemptRef",
+      "operation"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

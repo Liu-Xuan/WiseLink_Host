@@ -1,0 +1,26 @@
+{
+  "name": "next_original_assessment",
+  "title": "准备原文或受理原文变化续评",
+  "description": "Host 对已有逐任务租约且缺少原文的任务幂等预约或分步准备确切原文；已有原文时检查保存评估并按确切解析版本受理后继。保留在途、失败历史和正式采用边界。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "workItemId"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

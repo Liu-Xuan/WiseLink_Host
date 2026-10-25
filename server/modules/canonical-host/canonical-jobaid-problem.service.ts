@@ -1,3 +1,4 @@
+import { canonicalHostExecutor, assertCanonicalCodexWorkItem } from './canonical-host-executor-policy';
 import { assertProgramCompleteIssueCoverage, parseProgramMaterialSnapshot, programMaterialsObservation } from './program-assessment-materials';
 import { exactProgramWorkRead, latestProgramProgress } from './program-controlled-assessment';
 import { assertTdmsSealedResultFence, tdmsReviewBinding, type TdmsReviewCaller, type TdmsReviewIngress } from '../tdms-source/tdms-review-delegation';
@@ -229,6 +230,7 @@ export class CanonicalJobAidProblemService {
     purpose: JobAidProblemModelInput['purpose'],
     requestId?: string,
   ): Promise<BeginJobAidProblemResult> {
+    assertCanonicalCodexWorkItem(workItem.workItemId, workItem.requestId);
     const loaded = await this.workItems.loadTenantScopedProjection(
       workItem.workItemId,
       scope.tenantId,
@@ -246,7 +248,7 @@ export class CanonicalJobAidProblemService {
     const idempotencyKey = problemIdempotencyKey(workItem, purpose, requestId);
     let originalParseRunId: string | undefined;
     let programControlled: { modelRef: string } | undefined;
-    if (requestId !== undefined) {
+    if (requestId !== undefined || canonicalHostExecutor() === 'CODEX') {
       const existing = await this.attempts.readRequest({
         tenantId: scope.tenantId,
         workItemId: workItem.workItemId,
@@ -255,6 +257,9 @@ export class CanonicalJobAidProblemService {
         idempotencyKey,
       });
       if (existing) {
+        if (canonicalHostExecutor() === 'CODEX' && existing.leaseOwner !== scope.principalId &&
+            !(existing.status === 'QUEUED' && existing.claimCount === 0 && existing.leaseGeneration === 0))
+          throw new Error('CANONICAL_CODEX_LEGACY_WORK_NOT_ADOPTABLE');
         continuationReceipt(existing, purpose);
         const sealedTask = parseTaskEnvelope(existing.taskEnvelopeJson);
         const sealedRequest = readInitialAnalysisRequestInput(sealedTask);

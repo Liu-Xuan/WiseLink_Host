@@ -7723,6 +7723,22 @@
       "readbackRef": "private:executor-transition-20261025:0b33-validation-boundary",
       "timeBasis": "只读准确提交中的README/VALIDATION/机器证据；原报告日期为2026-10-25 UTC，本次未执行fixture或模型，未取得新的业务执行时钟。",
       "summary": "准确0b33提交（父94c24）仅新增openclaw/codex-evaluator/13文件，为可选评估回调执行器，不改既有默认路线。原报告与机器证据说明真实Codex+GLM使用虚构材料和内存Host，realHostCalled=false、hostMcpConfigured=false、readyForBusinessExecution=false；重启持久恢复未接。只支持有界执行器/协议范围，不证明正式Host授权、持久SAVE/独立READ、确定性同版Overall、真实工程成果或页面业务通过。本次未重跑fixture/模型。最新优先新真实事项Host接口/准确材料→生成→Host SAVE→独立READ→确定性同版Overall→页面/图→正常结束；c241整包安装、旧UNKNOWN救回和旧链复演不再前置，线上a65/c240和旧binding实现事实保留，未声称已换执行器。"
+    },
+    {
+      "id": "executor-transition.fc132291.host-local-interface",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "aec900c3e880574435c42784e6c214e141998122cc1b55509d9d12d6664bcd0c",
+      "sourceRevision": "fc1322919b1b52433c33086c8db4aeb957f0e982",
+      "environmentId": "local:host-codex:synthetic-boundary",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T09:22:21.253309+00:00",
+      "reportRef": "docs/coordination/host-codex-interface-20261025/VALIDATION.md",
+      "readbackRef": "private:executor-transition-20261025:cross-boundary",
+      "summary": "已吸收1155/fc132291，实际Host材料和CODEX程序离线8项、Node53项、Python9项通过；完整工具Schema从官方SDK真实注册导出。模型与存储均受限合成替身，不证明生产网关/身份配置/commit/CAS/finish/页面业务。CODEX单一入口及exact新事项接线为本地实现，真实配置仍缺；旧UNKNOWN不重放。"
     }
   ]
 }

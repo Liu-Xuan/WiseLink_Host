@@ -63,10 +63,27 @@ export async function prepareProgramAssessmentMaterials(input, options) {
     sourceReads.push(packet);
   }
   const allEvidence = [...evidence.values()];
-  const primary = allEvidence.filter(item => item.kind === 'DOCUMENT_PASSAGE' &&
-    item.documentVersionId === binding.documentVersionId && item.versionLabel === binding.parseRunId);
-  if (!primary.length || primary.some(item => item.evidenceRef !==
-      `DOCUMENT_ORIGINAL:${binding.documentVersionId}:${binding.parseRunId}:${item.sourceRefId}`)) fail('ORIGINAL_EVIDENCE_MISMATCH');
+  // The Host's model evidence projection deliberately omits top-level source
+  // identities. Join the delivered body to the sealed identity directory;
+  // never infer document membership from an excerpt or a model-created field.
+  const primaryPrefix = `DOCUMENT_ORIGINAL:${binding.documentVersionId}:${binding.parseRunId}:`;
+  const primary = input.availableSources.filter(item => item.kind === 'DOCUMENT_PASSAGE' &&
+    (item.ref.startsWith(primaryPrefix) || (item.documentVersionId === binding.documentVersionId &&
+      item.parseRunId === binding.parseRunId))).map(source => {
+    const item = evidence.get(source.ref);
+    let locator;
+    try { locator = JSON.parse(source.locator); } catch { fail('ORIGINAL_EVIDENCE_MISMATCH'); }
+    if (source.documentVersionId !== binding.documentVersionId || source.parseRunId !== binding.parseRunId ||
+        typeof source.sourceRefId !== 'string' || !source.sourceRefId ||
+        source.ref !== `${primaryPrefix}${source.sourceRefId}` || source.carrierRangeRef !== source.ref ||
+        source.versionLabel !== binding.parseRunId || item?.kind !== 'DOCUMENT_PASSAGE' ||
+        item.evidenceRef !== source.ref || item.versionLabel !== source.versionLabel || item.locator !== source.locator ||
+        locator?.parseRunId !== binding.parseRunId || locator?.sourceRefId !== source.sourceRefId ||
+        (Object.hasOwn(item, 'documentVersionId') && item.documentVersionId !== source.documentVersionId) ||
+        (Object.hasOwn(item, 'sourceRefId') && item.sourceRefId !== source.sourceRefId)) fail('ORIGINAL_EVIDENCE_MISMATCH');
+    return { ...item, documentVersionId: source.documentVersionId, sourceRefId: source.sourceRefId };
+  });
+  if (!primary.length) fail('ORIGINAL_EVIDENCE_MISMATCH');
   const primaryBySource = new Map(primary.map(item => [item.sourceRefId, item]));
   const primaryRefs = new Set(primary.map(item => item.evidenceRef));
   const locatorByRef = new Map();
@@ -74,6 +91,7 @@ export async function prepareProgramAssessmentMaterials(input, options) {
     if (typeof locator?.sourceRefId !== 'string' || locatorByRef.has(locator.sourceRefId)) fail('LOCATOR_INVALID');
     locatorByRef.set(locator.sourceRefId, locator);
   }
+  if (primary.some(item => !locatorByRef.has(item.sourceRefId))) fail('ORIGINAL_EVIDENCE_MISMATCH');
   const spans = [], contents = [], unitIds = new Set();
   let position = 0;
   for (const unit of original.units) {

@@ -1,0 +1,79 @@
+{
+  "name": "read_assessment_sources",
+  "title": "读取 JobAid 授权来源和方法",
+  "description": "按原任务的来源目录、actor/版本及有效 lease 读取正文，EXACT 或 PAGE 展开条件与脚注；保存实际读取回执后才加入可引用集合。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "attemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "leaseToken": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      },
+      "leaseGeneration": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      },
+      "sourceRefs": {
+        "minItems": 1,
+        "maxItems": 96,
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^(?!TDMS_APPROVED_OPINION:)"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 11518,
+              "pattern": "^TDMS_APPROVED_OPINION:(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-F]{2})+(?::(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-F]{2})+){4}:(?:0|[1-9]\\d{0,15})$"
+            }
+          ]
+        }
+      },
+      "purpose": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      },
+      "context": {
+        "default": "PAGE",
+        "type": "string",
+        "enum": [
+          "EXACT",
+          "PAGE"
+        ]
+      }
+    },
+    "required": [
+      "attemptRef",
+      "leaseToken",
+      "leaseGeneration",
+      "sourceRefs",
+      "purpose"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

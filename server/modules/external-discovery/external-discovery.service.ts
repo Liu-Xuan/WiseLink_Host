@@ -75,7 +75,7 @@ export class ExternalDiscoveryService {
         .map(({ searchRun }) => searchRun)
         .filter(
           (run) =>
-            run.sourceSystem === 'FEISHU_HOSTED_OPENCLAW' &&
+            ['FEISHU_HOSTED_OPENCLAW', 'CODEX'].includes(run.sourceSystem) &&
             run.searchRunRef.startsWith(`search:${provider.toLowerCase()}:`) &&
             run.candidates.every((candidate) => candidate.publisher === provider) &&
             !Number.isNaN(Date.parse(run.observedAt)) &&

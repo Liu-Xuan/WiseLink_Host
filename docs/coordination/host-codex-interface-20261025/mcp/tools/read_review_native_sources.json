@@ -1,0 +1,76 @@
+{
+  "name": "read_review_native_sources",
+  "title": "读取本次评审准确原生来源",
+  "description": "仅当前已授权UPDATE_ASSESSMENT的RUNNING attempt可读取冻结native目录；EXACT、有效租约和原Source/对象权限必需，真实READ回执及有界journal完成后才交付正文。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "attemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "leaseToken": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      },
+      "leaseGeneration": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      },
+      "sourceRefs": {
+        "minItems": 1,
+        "maxItems": 96,
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^(?!TDMS_APPROVED_OPINION:)"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 11518,
+              "pattern": "^TDMS_APPROVED_OPINION:(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-F]{2})+(?::(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-F]{2})+){4}:(?:0|[1-9]\\d{0,15})$"
+            }
+          ]
+        }
+      },
+      "purpose": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      },
+      "context": {
+        "type": "string",
+        "const": "EXACT"
+      }
+    },
+    "required": [
+      "attemptRef",
+      "leaseToken",
+      "leaseGeneration",
+      "sourceRefs",
+      "purpose",
+      "context"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

@@ -1,0 +1,1673 @@
+{
+  "synthetic": true,
+  "exampleStatus": "SANITIZED_EXAMPLE",
+  "wireCaptured": false,
+  "source": "producer-cycle.synthetic.json",
+  "sanitization": {
+    "status": "SANITIZED_EXAMPLE",
+    "sourceEvidence": "private-offline-synthetic-host-service-test-output-not-included",
+    "methodBodiesIncluded": false,
+    "methodDefinitionQuotesIncluded": false,
+    "originalProgramSystemPromptIncluded": false,
+    "fieldsAndReferenceRelationshipsPreserved": true,
+    "derivedHashesAndByteCountsRecomputed": true,
+    "sourceArtifactHashesRemainSyntheticFixtureValues": true,
+    "meaning": "Post-sanitization shape/association example. Not original run bytes, provenance, a deployed Host receipt, or a content-validation pass of the sanitized text."
+  },
+  "calls": [
+    {
+      "name": "begin_dynamic_evaluation",
+      "arguments": {
+        "workItemId": "WI-CODEX-SYNTHETIC",
+        "requestId": "00000000-0000-4000-8000-000000000101"
+      },
+      "serviceOutput": {
+        "attemptRef": "AQ-CONTINUATION-1",
+        "status": "RUNNING",
+        "leaseToken": "00000000-0000-4000-8000-000000000102",
+        "leaseGeneration": 1,
+        "leaseExpiresAt": "2099-01-01T00:00:00.000Z",
+        "task": {
+          "actionAttemptId": "ATT-CONTINUATION-1",
+          "allowedConnectors": [],
+          "baseRevision": 5,
+          "deadline": "2099-01-01T00:00:00.000Z",
+          "documentVersionId": "DV-SYNTHETIC",
+          "executionModel": {
+            "displayName": "GLM 5.3",
+            "modelRef": "miaoda/glm-5.3",
+            "providerKind": "BUILT_IN",
+            "selectedAt": "2026-10-25T09:21:02.877Z",
+            "settingsRevision": 0
+          },
+          "hostResolvedMissingInputs": [],
+          "idempotencyKey": "openclaw-v2:dynamic:WI-CODEX-SYNTHETIC:DV-SYNTHETIC:00000000-0000-4000-8000-000000000101",
+          "inputRevision": 5,
+          "modelInput": {
+            "schemaVersion": "wiselink.jobaid-problem-task.v3",
+            "contentValidationVersion": "jobaid-semantic.v1",
+            "actorUserId": "owner-codex-synthetic",
+            "permissionSnapshotVersion": "synthetic-permission",
+            "sourceCatalog": [
+              {
+                "evidenceRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0",
+                "kind": "DOCUMENT_PASSAGE",
+                "workItemId": "WI-CODEX-SYNTHETIC",
+                "documentVersionId": "DV-SYNTHETIC",
+                "sourceRefId": "PRUN:synthetic:source:0",
+                "title": "原文 · 解析修订 2",
+                "versionLabel": "PR-TEST-2",
+                "excerpt": "Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.",
+                "locator": "{\"normalizedPath\":null,\"pageStart\":0,\"parseRunId\":\"PR-TEST-2\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"xpath\":null}"
+              },
+              {
+                "evidenceRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0",
+                "kind": "DOCUMENT_PASSAGE",
+                "workItemId": "WI-CODEX-SYNTHETIC",
+                "documentVersionId": "DV-SYNTHETIC",
+                "sourceRefId": "PRUN:synthetic:source:0",
+                "title": "原文 · 解析修订 2",
+                "versionLabel": "PR-RELATED-SYNTHETIC",
+                "excerpt": "Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.",
+                "locator": "{\"normalizedPath\":null,\"pageStart\":0,\"parseRunId\":\"PR-RELATED-SYNTHETIC\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"xpath\":null}"
+              },
+              {
+                "evidenceRef": "method:scope",
+                "kind": "METHOD_CLAUSE",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "methodRef": "method:scope",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED"
+              },
+              {
+                "evidenceRef": "method:applicability",
+                "kind": "METHOD_CLAUSE",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "methodRef": "method:applicability",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED"
+              },
+              {
+                "evidenceRef": "method:risk",
+                "kind": "METHOD_CLAUSE",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "methodRef": "method:risk",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED",
+                "classificationDefinitions": [
+                  {
+                    "dimension": "LIKELIHOOD",
+                    "label": "可能",
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                  },
+                  {
+                    "dimension": "LIKELIHOOD",
+                    "label": "不大可能",
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                  },
+                  {
+                    "dimension": "LIKELIHOOD",
+                    "label": "不可能（极少）",
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                  },
+                  {
+                    "dimension": "LIKELIHOOD",
+                    "label": "极不可能（极端少）",
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                  },
+                  {
+                    "dimension": "SEVERITY",
+                    "label": "严重",
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                  }
+                ]
+              },
+              {
+                "evidenceRef": "method:severity-definitions",
+                "kind": "METHOD_CLAUSE",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "methodRef": "method:severity-definitions",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED",
+                "classificationDefinitions": [
+                  {
+                    "dimension": "SEVERITY",
+                    "label": "轻微",
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                  },
+                  {
+                    "dimension": "SEVERITY",
+                    "label": "重要",
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                  },
+                  {
+                    "dimension": "SEVERITY",
+                    "label": "严重",
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                  },
+                  {
+                    "dimension": "SEVERITY",
+                    "label": "灾难",
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                  }
+                ]
+              },
+              {
+                "evidenceRef": "method:controls",
+                "kind": "METHOD_CLAUSE",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "methodRef": "method:controls",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED"
+              },
+              {
+                "evidenceRef": "method:revision",
+                "kind": "METHOD_CLAUSE",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "methodRef": "method:revision",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED"
+              },
+              {
+                "evidenceRef": "method:delivery",
+                "kind": "METHOD_CLAUSE",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "methodRef": "method:delivery",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED"
+              },
+              {
+                "evidenceRef": "method:attachment5",
+                "kind": "METHOD_CLAUSE",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "methodRef": "method:attachment5",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R00 配套待核；设计资料转述",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED"
+              },
+              {
+                "evidenceRef": "method:examples",
+                "kind": "METHOD_CLAUSE",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "methodRef": "method:examples",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED"
+              }
+            ],
+            "sourceActivityProjections": [],
+            "sourceBindings": [
+              {
+                "kind": "SOURCE_FILE",
+                "workItemId": "WI-CODEX-SYNTHETIC",
+                "documentVersionId": "DV-SYNTHETIC",
+                "artifactRef": "ART-TEST",
+                "artifactSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "initiallyDeliveredRefs": [
+              "method:scope",
+              "method:applicability",
+              "method:risk",
+              "method:severity-definitions",
+              "method:revision",
+              "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0"
+            ],
+            "previousWork": null,
+            "modelInput": {
+              "schemaVersion": "wiselink.jobaid-problem-task.v3",
+              "contentValidationVersion": "jobaid-semantic.v1",
+              "evidenceProjectionVersion": "SOURCE_CONTEXT_V2",
+              "purpose": "INITIAL_PROBLEM_ASSESSMENT",
+              "methodBinding": {
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "version": "1.0",
+                "sources": [
+                  {
+                    "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                    "versionLabel": "R01",
+                    "documentVersionId": null,
+                    "status": "VERSION_UNCONFIRMED"
+                  },
+                  {
+                    "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                    "versionLabel": "R01",
+                    "documentVersionId": null,
+                    "status": "VERSION_UNCONFIRMED"
+                  },
+                  {
+                    "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                    "versionLabel": "R00",
+                    "documentVersionId": null,
+                    "status": "VERSION_UNCONFIRMED"
+                  }
+                ],
+                "attachment5": "R00_CONTENT_REPORTED_R01_LINK_UNCONFIRMED"
+              },
+              "documentOverview": {
+                "documentVersionRef": "DV-SYNTHETIC",
+                "documentCode": null,
+                "businessRevision": null,
+                "title": "Synthetic English source",
+                "sections": [],
+                "original": {
+                  "binding": {
+                    "documentVersionId": "DV-SYNTHETIC",
+                    "parseRunId": "PR-TEST-2",
+                    "parseRevision": 2,
+                    "sourceArtifactId": "ART-TEST",
+                    "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "sourceByteLength": 1234
+                  },
+                  "semanticMap": null,
+                  "coverage": {
+                    "knownPageCount": 1,
+                    "readPageIndexes": [
+                      0
+                    ],
+                    "unresolvedRanges": []
+                  },
+                  "findings": []
+                }
+              },
+              "hostApplicability": null,
+              "sourceStatementAvailability": {
+                "status": "NOT_INDEXED",
+                "semanticFieldsAvailability": "LEGACY_PARTIAL",
+                "limitations": [
+                  "该准确来源未选取已保存声明；可继续读取原文。"
+                ]
+              },
+              "availableSources": [
+                {
+                  "ref": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0",
+                  "kind": "DOCUMENT_PASSAGE",
+                  "title": "原文 · 解析修订 2",
+                  "versionLabel": "PR-TEST-2",
+                  "locator": "{\"normalizedPath\":null,\"pageStart\":0,\"parseRunId\":\"PR-TEST-2\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"xpath\":null}",
+                  "documentVersionId": "DV-SYNTHETIC",
+                  "sourceRefId": "PRUN:synthetic:source:0",
+                  "parseRunId": "PR-TEST-2",
+                  "carrierRangeRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0"
+                },
+                {
+                  "ref": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0",
+                  "kind": "DOCUMENT_PASSAGE",
+                  "title": "原文 · 解析修订 2",
+                  "versionLabel": "PR-RELATED-SYNTHETIC",
+                  "locator": "{\"normalizedPath\":null,\"pageStart\":0,\"parseRunId\":\"PR-RELATED-SYNTHETIC\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"xpath\":null}",
+                  "documentVersionId": "DV-SYNTHETIC",
+                  "sourceRefId": "PRUN:synthetic:source:0",
+                  "parseRunId": "PR-RELATED-SYNTHETIC",
+                  "carrierRangeRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0"
+                },
+                {
+                  "ref": "method:scope",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "locator": "SYNTHETIC_METHOD_SECTION"
+                },
+                {
+                  "ref": "method:applicability",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "locator": "SYNTHETIC_METHOD_SECTION"
+                },
+                {
+                  "ref": "method:risk",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "locator": "SYNTHETIC_METHOD_SECTION"
+                },
+                {
+                  "ref": "method:severity-definitions",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "locator": "SYNTHETIC_METHOD_SECTION"
+                },
+                {
+                  "ref": "method:controls",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "locator": "SYNTHETIC_METHOD_SECTION"
+                },
+                {
+                  "ref": "method:revision",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "locator": "SYNTHETIC_METHOD_SECTION"
+                },
+                {
+                  "ref": "method:delivery",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "locator": "SYNTHETIC_METHOD_SECTION"
+                },
+                {
+                  "ref": "method:attachment5",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R00 配套待核；设计资料转述",
+                  "locator": "SYNTHETIC_METHOD_SECTION"
+                },
+                {
+                  "ref": "method:examples",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "locator": "SYNTHETIC_METHOD_SECTION"
+                }
+              ],
+              "deliveredEvidence": [
+                {
+                  "evidenceRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0",
+                  "kind": "DOCUMENT_PASSAGE",
+                  "title": "原文 · 解析修订 2",
+                  "versionLabel": "PR-TEST-2",
+                  "excerpt": "Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.",
+                  "locator": "{\"normalizedPath\":null,\"pageStart\":0,\"parseRunId\":\"PR-TEST-2\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"xpath\":null}"
+                },
+                {
+                  "evidenceRef": "method:scope",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                  "locator": "SYNTHETIC_METHOD_SECTION"
+                },
+                {
+                  "evidenceRef": "method:applicability",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                  "locator": "SYNTHETIC_METHOD_SECTION"
+                },
+                {
+                  "evidenceRef": "method:risk",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                  "locator": "SYNTHETIC_METHOD_SECTION",
+                  "classificationDefinitions": [
+                    {
+                      "dimension": "LIKELIHOOD",
+                      "label": "可能",
+                      "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                    },
+                    {
+                      "dimension": "LIKELIHOOD",
+                      "label": "不大可能",
+                      "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                    },
+                    {
+                      "dimension": "LIKELIHOOD",
+                      "label": "不可能（极少）",
+                      "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                    },
+                    {
+                      "dimension": "LIKELIHOOD",
+                      "label": "极不可能（极端少）",
+                      "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                    },
+                    {
+                      "dimension": "SEVERITY",
+                      "label": "严重",
+                      "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                    }
+                  ]
+                },
+                {
+                  "evidenceRef": "method:severity-definitions",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                  "locator": "SYNTHETIC_METHOD_SECTION",
+                  "classificationDefinitions": [
+                    {
+                      "dimension": "SEVERITY",
+                      "label": "轻微",
+                      "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                    },
+                    {
+                      "dimension": "SEVERITY",
+                      "label": "重要",
+                      "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                    },
+                    {
+                      "dimension": "SEVERITY",
+                      "label": "严重",
+                      "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                    },
+                    {
+                      "dimension": "SEVERITY",
+                      "label": "灾难",
+                      "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                    }
+                  ]
+                },
+                {
+                  "evidenceRef": "method:revision",
+                  "kind": "METHOD_CLAUSE",
+                  "title": "SYNTHETIC_METHOD_TITLE",
+                  "versionLabel": "R01；受控版本身份待确认",
+                  "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                  "locator": "SYNTHETIC_METHOD_SECTION"
+                }
+              ],
+              "previousWork": null,
+              "expectedWorkRevision": 0,
+              "contextPackage": {
+                "basedOnWorkItemRevision": 5,
+                "basedOnWorkingRevision": null,
+                "primaryDocument": {
+                  "documentVersionRef": "DV-SYNTHETIC",
+                  "documentCode": null,
+                  "businessRevision": null,
+                  "title": "Synthetic English source",
+                  "readingStatus": "AVAILABLE"
+                },
+                "supplementaryMaterials": {
+                  "status": "UNAVAILABLE",
+                  "reason": "CONSTRUCTED_TEST",
+                  "items": []
+                },
+                "sourceOrigins": [
+                  {
+                    "evidenceRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0",
+                    "origin": "PRIMARY_DOCUMENT",
+                    "contentNature": "SOURCE_DOCUMENT_CONTENT"
+                  },
+                  {
+                    "evidenceRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0",
+                    "origin": "PRIMARY_DOCUMENT",
+                    "contentNature": "SOURCE_DOCUMENT_CONTENT"
+                  },
+                  {
+                    "evidenceRef": "method:scope",
+                    "origin": "JA-DS093 / JA-AC",
+                    "contentNature": "METHOD_MATERIAL"
+                  },
+                  {
+                    "evidenceRef": "method:applicability",
+                    "origin": "JA-DS093",
+                    "contentNature": "METHOD_MATERIAL"
+                  },
+                  {
+                    "evidenceRef": "method:risk",
+                    "origin": "JA-AC",
+                    "contentNature": "METHOD_MATERIAL"
+                  },
+                  {
+                    "evidenceRef": "method:severity-definitions",
+                    "origin": "JA-AC",
+                    "contentNature": "METHOD_MATERIAL"
+                  },
+                  {
+                    "evidenceRef": "method:controls",
+                    "origin": "JA-AC",
+                    "contentNature": "METHOD_MATERIAL"
+                  },
+                  {
+                    "evidenceRef": "method:revision",
+                    "origin": "JA-DS093",
+                    "contentNature": "METHOD_MATERIAL"
+                  },
+                  {
+                    "evidenceRef": "method:delivery",
+                    "origin": "JA-DS093",
+                    "contentNature": "METHOD_MATERIAL"
+                  },
+                  {
+                    "evidenceRef": "method:attachment5",
+                    "origin": "JA-DS093 Attachment 5",
+                    "contentNature": "METHOD_MATERIAL"
+                  },
+                  {
+                    "evidenceRef": "method:examples",
+                    "origin": "JA-AC",
+                    "contentNature": "METHOD_MATERIAL"
+                  }
+                ],
+                "knowledgeRetrieval": {
+                  "status": "UNAVAILABLE",
+                  "reason": "NOT_CONFIGURED",
+                  "fragments": []
+                }
+              },
+              "capabilities": [
+                {
+                  "capability": "registered_source_reading",
+                  "status": "AVAILABLE",
+                  "impact": "可读取目录内精确版本正文，并展开同页条件与脚注。"
+                },
+                {
+                  "capability": "fleet_configuration",
+                  "status": "NOT_CONNECTED",
+                  "impact": "不能由此证明当前对象装机、执行或构型；受控 Host 匹配单独保留。"
+                },
+                {
+                  "capability": "reliability_history",
+                  "status": "NOT_CONNECTED",
+                  "impact": "没有取得可靠性查询结果；不能据此填发生率或零事件。"
+                },
+                {
+                  "capability": "knowledge_retrieval",
+                  "status": "NOT_CONNECTED",
+                  "impact": "本轮未接通知识检索；可继续分析已授权正文，未取得资料保持线索。"
+                }
+              ],
+              "historyReview": {
+                "required": false,
+                "priorAssessmentRefs": [],
+                "engineeringDocumentRefs": [],
+                "coverage": "NOT_REQUIRED",
+                "limitation": null
+              },
+              "discussion": {
+                "status": "NO_PRIOR_DISCUSSION",
+                "totalPriorTurns": 0,
+                "omittedEarlierTurns": 0,
+                "turns": [],
+                "usage": "DISCUSSION_NOT_ADOPTION"
+              },
+              "executionMode": "PROGRAM_CONTROLLED_V1",
+              "programOriginal": {
+                "binding": {
+                  "documentVersionId": "DV-SYNTHETIC",
+                  "parseRunId": "PR-TEST-2",
+                  "parseRevision": 2,
+                  "sourceArtifactId": "ART-TEST",
+                  "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sourceByteLength": 1234
+                },
+                "coverage": {
+                  "knownPageCount": 1,
+                  "readPageIndexes": [
+                    0
+                  ],
+                  "unresolvedRanges": []
+                },
+                "units": [
+                  {
+                    "unitId": "u-0",
+                    "kind": "paragraph",
+                    "moduleId": "body",
+                    "parentUnitId": null,
+                    "order": 0,
+                    "depth": 0,
+                    "continuityKey": "body",
+                    "sourceRefIds": [
+                      "PRUN:synthetic:source:0"
+                    ],
+                    "sourceSegmentIds": [
+                      "s1"
+                    ],
+                    "mapping": {},
+                    "payload": {
+                      "text": "Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition."
+                    }
+                  }
+                ],
+                "sourceLocators": [
+                  {
+                    "sourceRefId": "PRUN:synthetic:source:0",
+                    "kind": "PDF_PAGE",
+                    "artifactId": "ART-TEST",
+                    "pageStart": 0,
+                    "pageEnd": 0,
+                    "charStart": null,
+                    "charEnd": null,
+                    "charOffsetUnit": null,
+                    "normalizedPath": null,
+                    "xpath": null,
+                    "elementId": null,
+                    "quote": null,
+                    "bbox": null
+                  }
+                ],
+                "findings": []
+              },
+              "preparation": {
+                "schemaVersion": "wiselink.jobaid-preparation.v1",
+                "taskPurpose": "INITIAL_PROBLEM_ASSESSMENT",
+                "goal": "分析当前文档的问题、条件和证据，保存候选问题工作并保留未决事项。",
+                "targetIssueKeys": [],
+                "taskInputRevision": 5,
+                "currentInputRevision": 5,
+                "currentInputChanged": false,
+                "documentVersionId": "DV-SYNTHETIC",
+                "originalBinding": {
+                  "documentVersionId": "DV-SYNTHETIC",
+                  "parseRunId": "PR-TEST-2",
+                  "parseRevision": 2,
+                  "sourceArtifactId": "ART-TEST",
+                  "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "sourceByteLength": 1234
+                },
+                "lastSaved": null,
+                "currentIssues": [],
+                "unfinishedItems": [
+                  {
+                    "issueKey": null,
+                    "kind": "NO_SAVED_WORK",
+                    "description": "尚无已保存的问题工作。"
+                  }
+                ],
+                "pendingEngineerInputs": [],
+                "savedUpdates": [],
+                "humanConfirmedDecisions": [],
+                "humanConfirmationStatus": "UNAVAILABLE",
+                "limitations": [
+                  "ENGINEER_PREPARATION_READER_UNAVAILABLE"
+                ]
+              },
+              "knowledgeAccess": {
+                "available": false,
+                "reason": "NOT_CONFIGURED"
+              }
+            },
+            "executionMode": "PROGRAM_CONTROLLED_V1",
+            "requestedModelRef": "miaoda/glm-5.3"
+          },
+          "operationRef": "AQ-CONTINUATION-1",
+          "priority": 100,
+          "schemaVersion": "wiselink.3_1.openclaw_task_envelope.v1",
+          "sourceRefs": [
+            {
+              "ref": "ART-TEST",
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "taskType": "OPENCLAW_DYNAMIC_EVALUATION",
+          "tenantId": "tenant-codex-synthetic",
+          "workItemId": "WI-CODEX-SYNTHETIC",
+          "inputHash": "3c704256dd4ad120b669c176062a55884738b63f12cf98eca78352318c4b77d2"
+        },
+        "modelInput": {
+          "schemaVersion": "wiselink.jobaid-problem-task.v3",
+          "contentValidationVersion": "jobaid-semantic.v1",
+          "evidenceProjectionVersion": "SOURCE_CONTEXT_V2",
+          "purpose": "INITIAL_PROBLEM_ASSESSMENT",
+          "methodBinding": {
+            "packRef": "JA-PROBLEM-METHOD-20260909",
+            "version": "1.0",
+            "sources": [
+              {
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "versionLabel": "R01",
+                "documentVersionId": null,
+                "status": "VERSION_UNCONFIRMED"
+              },
+              {
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "versionLabel": "R01",
+                "documentVersionId": null,
+                "status": "VERSION_UNCONFIRMED"
+              },
+              {
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "versionLabel": "R00",
+                "documentVersionId": null,
+                "status": "VERSION_UNCONFIRMED"
+              }
+            ],
+            "attachment5": "R00_CONTENT_REPORTED_R01_LINK_UNCONFIRMED"
+          },
+          "documentOverview": {
+            "documentVersionRef": "DV-SYNTHETIC",
+            "documentCode": null,
+            "businessRevision": null,
+            "title": "Synthetic English source",
+            "sections": [],
+            "original": {
+              "binding": {
+                "documentVersionId": "DV-SYNTHETIC",
+                "parseRunId": "PR-TEST-2",
+                "parseRevision": 2,
+                "sourceArtifactId": "ART-TEST",
+                "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "sourceByteLength": 1234
+              },
+              "semanticMap": null,
+              "coverage": {
+                "knownPageCount": 1,
+                "readPageIndexes": [
+                  0
+                ],
+                "unresolvedRanges": []
+              },
+              "findings": []
+            }
+          },
+          "hostApplicability": null,
+          "sourceStatementAvailability": {
+            "status": "NOT_INDEXED",
+            "semanticFieldsAvailability": "LEGACY_PARTIAL",
+            "limitations": [
+              "该准确来源未选取已保存声明；可继续读取原文。"
+            ]
+          },
+          "availableSources": [
+            {
+              "ref": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0",
+              "kind": "DOCUMENT_PASSAGE",
+              "title": "原文 · 解析修订 2",
+              "versionLabel": "PR-TEST-2",
+              "locator": "{\"normalizedPath\":null,\"pageStart\":0,\"parseRunId\":\"PR-TEST-2\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"xpath\":null}",
+              "documentVersionId": "DV-SYNTHETIC",
+              "sourceRefId": "PRUN:synthetic:source:0",
+              "parseRunId": "PR-TEST-2",
+              "carrierRangeRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0"
+            },
+            {
+              "ref": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0",
+              "kind": "DOCUMENT_PASSAGE",
+              "title": "原文 · 解析修订 2",
+              "versionLabel": "PR-RELATED-SYNTHETIC",
+              "locator": "{\"normalizedPath\":null,\"pageStart\":0,\"parseRunId\":\"PR-RELATED-SYNTHETIC\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"xpath\":null}",
+              "documentVersionId": "DV-SYNTHETIC",
+              "sourceRefId": "PRUN:synthetic:source:0",
+              "parseRunId": "PR-RELATED-SYNTHETIC",
+              "carrierRangeRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0"
+            },
+            {
+              "ref": "method:scope",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "locator": "SYNTHETIC_METHOD_SECTION"
+            },
+            {
+              "ref": "method:applicability",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "locator": "SYNTHETIC_METHOD_SECTION"
+            },
+            {
+              "ref": "method:risk",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "locator": "SYNTHETIC_METHOD_SECTION"
+            },
+            {
+              "ref": "method:severity-definitions",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "locator": "SYNTHETIC_METHOD_SECTION"
+            },
+            {
+              "ref": "method:controls",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "locator": "SYNTHETIC_METHOD_SECTION"
+            },
+            {
+              "ref": "method:revision",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "locator": "SYNTHETIC_METHOD_SECTION"
+            },
+            {
+              "ref": "method:delivery",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "locator": "SYNTHETIC_METHOD_SECTION"
+            },
+            {
+              "ref": "method:attachment5",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R00 配套待核；设计资料转述",
+              "locator": "SYNTHETIC_METHOD_SECTION"
+            },
+            {
+              "ref": "method:examples",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "locator": "SYNTHETIC_METHOD_SECTION"
+            }
+          ],
+          "deliveredEvidence": [
+            {
+              "evidenceRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0",
+              "kind": "DOCUMENT_PASSAGE",
+              "title": "原文 · 解析修订 2",
+              "versionLabel": "PR-TEST-2",
+              "excerpt": "Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.",
+              "locator": "{\"normalizedPath\":null,\"pageStart\":0,\"parseRunId\":\"PR-TEST-2\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"xpath\":null}"
+            },
+            {
+              "evidenceRef": "method:scope",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+              "locator": "SYNTHETIC_METHOD_SECTION"
+            },
+            {
+              "evidenceRef": "method:applicability",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+              "locator": "SYNTHETIC_METHOD_SECTION"
+            },
+            {
+              "evidenceRef": "method:risk",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+              "locator": "SYNTHETIC_METHOD_SECTION",
+              "classificationDefinitions": [
+                {
+                  "dimension": "LIKELIHOOD",
+                  "label": "可能",
+                  "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                },
+                {
+                  "dimension": "LIKELIHOOD",
+                  "label": "不大可能",
+                  "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                },
+                {
+                  "dimension": "LIKELIHOOD",
+                  "label": "不可能（极少）",
+                  "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                },
+                {
+                  "dimension": "LIKELIHOOD",
+                  "label": "极不可能（极端少）",
+                  "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                },
+                {
+                  "dimension": "SEVERITY",
+                  "label": "严重",
+                  "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                }
+              ]
+            },
+            {
+              "evidenceRef": "method:severity-definitions",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+              "locator": "SYNTHETIC_METHOD_SECTION",
+              "classificationDefinitions": [
+                {
+                  "dimension": "SEVERITY",
+                  "label": "轻微",
+                  "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                },
+                {
+                  "dimension": "SEVERITY",
+                  "label": "重要",
+                  "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                },
+                {
+                  "dimension": "SEVERITY",
+                  "label": "严重",
+                  "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                },
+                {
+                  "dimension": "SEVERITY",
+                  "label": "灾难",
+                  "definitionQuote": "SYNTHETIC_METHOD_DEFINITION"
+                }
+              ]
+            },
+            {
+              "evidenceRef": "method:revision",
+              "kind": "METHOD_CLAUSE",
+              "title": "SYNTHETIC_METHOD_TITLE",
+              "versionLabel": "R01；受控版本身份待确认",
+              "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+              "locator": "SYNTHETIC_METHOD_SECTION"
+            }
+          ],
+          "previousWork": null,
+          "expectedWorkRevision": 0,
+          "contextPackage": {
+            "basedOnWorkItemRevision": 5,
+            "basedOnWorkingRevision": null,
+            "primaryDocument": {
+              "documentVersionRef": "DV-SYNTHETIC",
+              "documentCode": null,
+              "businessRevision": null,
+              "title": "Synthetic English source",
+              "readingStatus": "AVAILABLE"
+            },
+            "supplementaryMaterials": {
+              "status": "UNAVAILABLE",
+              "reason": "CONSTRUCTED_TEST",
+              "items": []
+            },
+            "sourceOrigins": [
+              {
+                "evidenceRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0",
+                "origin": "PRIMARY_DOCUMENT",
+                "contentNature": "SOURCE_DOCUMENT_CONTENT"
+              },
+              {
+                "evidenceRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0",
+                "origin": "PRIMARY_DOCUMENT",
+                "contentNature": "SOURCE_DOCUMENT_CONTENT"
+              },
+              {
+                "evidenceRef": "method:scope",
+                "origin": "JA-DS093 / JA-AC",
+                "contentNature": "METHOD_MATERIAL"
+              },
+              {
+                "evidenceRef": "method:applicability",
+                "origin": "JA-DS093",
+                "contentNature": "METHOD_MATERIAL"
+              },
+              {
+                "evidenceRef": "method:risk",
+                "origin": "JA-AC",
+                "contentNature": "METHOD_MATERIAL"
+              },
+              {
+                "evidenceRef": "method:severity-definitions",
+                "origin": "JA-AC",
+                "contentNature": "METHOD_MATERIAL"
+              },
+              {
+                "evidenceRef": "method:controls",
+                "origin": "JA-AC",
+                "contentNature": "METHOD_MATERIAL"
+              },
+              {
+                "evidenceRef": "method:revision",
+                "origin": "JA-DS093",
+                "contentNature": "METHOD_MATERIAL"
+              },
+              {
+                "evidenceRef": "method:delivery",
+                "origin": "JA-DS093",
+                "contentNature": "METHOD_MATERIAL"
+              },
+              {
+                "evidenceRef": "method:attachment5",
+                "origin": "JA-DS093 Attachment 5",
+                "contentNature": "METHOD_MATERIAL"
+              },
+              {
+                "evidenceRef": "method:examples",
+                "origin": "JA-AC",
+                "contentNature": "METHOD_MATERIAL"
+              }
+            ],
+            "knowledgeRetrieval": {
+              "status": "UNAVAILABLE",
+              "reason": "NOT_CONFIGURED",
+              "fragments": []
+            }
+          },
+          "capabilities": [
+            {
+              "capability": "registered_source_reading",
+              "status": "AVAILABLE",
+              "impact": "可读取目录内精确版本正文，并展开同页条件与脚注。"
+            },
+            {
+              "capability": "fleet_configuration",
+              "status": "NOT_CONNECTED",
+              "impact": "不能由此证明当前对象装机、执行或构型；受控 Host 匹配单独保留。"
+            },
+            {
+              "capability": "reliability_history",
+              "status": "NOT_CONNECTED",
+              "impact": "没有取得可靠性查询结果；不能据此填发生率或零事件。"
+            },
+            {
+              "capability": "knowledge_retrieval",
+              "status": "NOT_CONNECTED",
+              "impact": "本轮未接通知识检索；可继续分析已授权正文，未取得资料保持线索。"
+            }
+          ],
+          "historyReview": {
+            "required": false,
+            "priorAssessmentRefs": [],
+            "engineeringDocumentRefs": [],
+            "coverage": "NOT_REQUIRED",
+            "limitation": null
+          },
+          "discussion": {
+            "status": "NO_PRIOR_DISCUSSION",
+            "totalPriorTurns": 0,
+            "omittedEarlierTurns": 0,
+            "turns": [],
+            "usage": "DISCUSSION_NOT_ADOPTION"
+          },
+          "executionMode": "PROGRAM_CONTROLLED_V1",
+          "programOriginal": {
+            "binding": {
+              "documentVersionId": "DV-SYNTHETIC",
+              "parseRunId": "PR-TEST-2",
+              "parseRevision": 2,
+              "sourceArtifactId": "ART-TEST",
+              "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourceByteLength": 1234
+            },
+            "coverage": {
+              "knownPageCount": 1,
+              "readPageIndexes": [
+                0
+              ],
+              "unresolvedRanges": []
+            },
+            "units": [
+              {
+                "unitId": "u-0",
+                "kind": "paragraph",
+                "moduleId": "body",
+                "parentUnitId": null,
+                "order": 0,
+                "depth": 0,
+                "continuityKey": "body",
+                "sourceRefIds": [
+                  "PRUN:synthetic:source:0"
+                ],
+                "sourceSegmentIds": [
+                  "s1"
+                ],
+                "mapping": {},
+                "payload": {
+                  "text": "Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition."
+                }
+              }
+            ],
+            "sourceLocators": [
+              {
+                "sourceRefId": "PRUN:synthetic:source:0",
+                "kind": "PDF_PAGE",
+                "artifactId": "ART-TEST",
+                "pageStart": 0,
+                "pageEnd": 0,
+                "charStart": null,
+                "charEnd": null,
+                "charOffsetUnit": null,
+                "normalizedPath": null,
+                "xpath": null,
+                "elementId": null,
+                "quote": null,
+                "bbox": null
+              }
+            ],
+            "findings": []
+          },
+          "preparation": {
+            "schemaVersion": "wiselink.jobaid-preparation.v1",
+            "taskPurpose": "INITIAL_PROBLEM_ASSESSMENT",
+            "goal": "分析当前文档的问题、条件和证据，保存候选问题工作并保留未决事项。",
+            "targetIssueKeys": [],
+            "taskInputRevision": 5,
+            "currentInputRevision": 5,
+            "currentInputChanged": false,
+            "documentVersionId": "DV-SYNTHETIC",
+            "originalBinding": {
+              "documentVersionId": "DV-SYNTHETIC",
+              "parseRunId": "PR-TEST-2",
+              "parseRevision": 2,
+              "sourceArtifactId": "ART-TEST",
+              "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourceByteLength": 1234
+            },
+            "lastSaved": null,
+            "currentIssues": [],
+            "unfinishedItems": [
+              {
+                "issueKey": null,
+                "kind": "NO_SAVED_WORK",
+                "description": "尚无已保存的问题工作。"
+              }
+            ],
+            "pendingEngineerInputs": [],
+            "savedUpdates": [],
+            "humanConfirmedDecisions": [],
+            "humanConfirmationStatus": "UNAVAILABLE",
+            "limitations": [
+              "ENGINEER_PREPARATION_READER_UNAVAILABLE"
+            ]
+          },
+          "knowledgeAccess": {
+            "available": false,
+            "reason": "NOT_CONFIGURED"
+          }
+        },
+        "selectedDiscoveryRefs": []
+      }
+    },
+    {
+      "name": "read_assessment_sources",
+      "arguments": {
+        "attemptRef": "AQ-CONTINUATION-1",
+        "workItemId": "WI-CODEX-SYNTHETIC",
+        "leaseToken": "00000000-0000-4000-8000-000000000102",
+        "leaseGeneration": 1,
+        "sourceRefs": [
+          "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0"
+        ],
+        "context": "EXACT",
+        "purpose": "Prepare the complete Host-selected source scope for the program-controlled engineering assessment."
+      },
+      "serviceOutput": {
+        "schemaVersion": "wiselink.jobaid-source-read.v3",
+        "sourceStatements": [],
+        "activityContexts": [],
+        "status": "AVAILABLE",
+        "sourceRefs": [
+          "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0"
+        ],
+        "evidence": [
+          {
+            "evidenceRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0",
+            "kind": "DOCUMENT_PASSAGE",
+            "title": "原文 · 解析修订 2",
+            "versionLabel": "PR-RELATED-SYNTHETIC",
+            "excerpt": "Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.",
+            "locator": "{\"normalizedPath\":null,\"pageStart\":0,\"parseRunId\":\"PR-RELATED-SYNTHETIC\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"xpath\":null}"
+          }
+        ],
+        "scope": "EXACT",
+        "completeRequestedScope": true
+      }
+    },
+    {
+      "name": "record_assessment_program_progress",
+      "arguments": {
+        "attemptRef": "AQ-CONTINUATION-1",
+        "workItemId": "WI-CODEX-SYNTHETIC",
+        "leaseToken": "00000000-0000-4000-8000-000000000102",
+        "leaseGeneration": 1,
+        "phase": "MATERIALS_READY",
+        "checkpointRef": "initial:synthetic-codex-program:program-materials",
+        "materialSnapshotJson": "{\"materials\":{\"deliveredEvidenceRefs\":[\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0\",\"method:scope\",\"method:applicability\",\"method:risk\",\"method:severity-definitions\",\"method:revision\",\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0\"],\"modelInput\":{\"continuousOriginal\":{\"binding\":{\"documentVersionId\":\"DV-SYNTHETIC\",\"parseRevision\":2,\"parseRunId\":\"PR-TEST-2\",\"sourceArtifactId\":\"ART-TEST\",\"sourceByteLength\":1234,\"sourceSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"content\":\"Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.\",\"coverage\":{\"knownPageCount\":1,\"readPageIndexes\":[0],\"unresolvedRanges\":[]},\"evidence\":[{\"documentVersionId\":\"DV-SYNTHETIC\",\"evidenceRef\":\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0\",\"kind\":\"DOCUMENT_PASSAGE\",\"locator\":\"{\\\"normalizedPath\\\":null,\\\"pageStart\\\":0,\\\"parseRunId\\\":\\\"PR-TEST-2\\\",\\\"sourceRefId\\\":\\\"PRUN:synthetic:source:0\\\",\\\"xpath\\\":null}\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"title\":\"原文 · 解析修订 2\",\"versionLabel\":\"PR-TEST-2\"}],\"findings\":[],\"sourceLocators\":[{\"artifactId\":\"ART-TEST\",\"bbox\":null,\"charEnd\":null,\"charOffsetUnit\":null,\"charStart\":null,\"elementId\":null,\"kind\":\"PDF_PAGE\",\"normalizedPath\":null,\"pageEnd\":0,\"pageStart\":0,\"quote\":null,\"sourceRefId\":\"PRUN:synthetic:source:0\",\"xpath\":null}],\"spans\":[{\"continuityKey\":\"body\",\"depth\":0,\"encoding\":\"TEXT\",\"end\":299,\"evidenceRefs\":[\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0\"],\"kind\":\"paragraph\",\"mapping\":{},\"moduleId\":\"body\",\"order\":0,\"parentUnitId\":null,\"sourceRefIds\":[\"PRUN:synthetic:source:0\"],\"sourceSegmentIds\":[\"s1\"],\"start\":0,\"uncitableSourceRefIds\":[],\"unitId\":\"u-0\"}]},\"objectAndCompanyFacts\":{\"evidence\":[{\"evidenceRef\":\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0\",\"excerpt\":\"Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.\",\"kind\":\"DOCUMENT_PASSAGE\",\"locator\":\"{\\\"normalizedPath\\\":null,\\\"pageStart\\\":0,\\\"parseRunId\\\":\\\"PR-RELATED-SYNTHETIC\\\",\\\"sourceRefId\\\":\\\"PRUN:synthetic:source:0\\\",\\\"xpath\\\":null}\",\"title\":\"原文 · 解析修订 2\",\"versionLabel\":\"PR-RELATED-SYNTHETIC\"}],\"readContext\":[{\"activityContexts\":[],\"completeRequestedScope\":true,\"schemaVersion\":\"wiselink.jobaid-source-read.v3\",\"scope\":\"EXACT\",\"sourceRefs\":[\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0\"],\"sourceStatements\":[],\"status\":\"AVAILABLE\"}],\"sourceOrigins\":[{\"contentNature\":\"SOURCE_DOCUMENT_CONTENT\",\"evidenceRef\":\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0\",\"origin\":\"PRIMARY_DOCUMENT\"},{\"contentNature\":\"SOURCE_DOCUMENT_CONTENT\",\"evidenceRef\":\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0\",\"origin\":\"PRIMARY_DOCUMENT\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:scope\",\"origin\":\"JA-DS093 / JA-AC\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:applicability\",\"origin\":\"JA-DS093\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:risk\",\"origin\":\"JA-AC\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:severity-definitions\",\"origin\":\"JA-AC\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:controls\",\"origin\":\"JA-AC\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:revision\",\"origin\":\"JA-DS093\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:delivery\",\"origin\":\"JA-DS093\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:attachment5\",\"origin\":\"JA-DS093 Attachment 5\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:examples\",\"origin\":\"JA-AC\"}]},\"previousUnderstandingAndChanges\":{\"discussion\":{\"omittedEarlierTurns\":0,\"status\":\"NO_PRIOR_DISCUSSION\",\"totalPriorTurns\":0,\"turns\":[],\"usage\":\"DISCUSSION_NOT_ADOPTION\"},\"previousWork\":null},\"relevantMethods\":{\"evidence\":[{\"evidenceRef\":\"method:scope\",\"excerpt\":\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\",\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"evidenceRef\":\"method:applicability\",\"excerpt\":\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\",\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"classificationDefinitions\":[{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"LIKELIHOOD\",\"label\":\"可能\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"LIKELIHOOD\",\"label\":\"不大可能\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"LIKELIHOOD\",\"label\":\"不可能（极少）\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"LIKELIHOOD\",\"label\":\"极不可能（极端少）\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"SEVERITY\",\"label\":\"严重\"}],\"evidenceRef\":\"method:risk\",\"excerpt\":\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\",\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"classificationDefinitions\":[{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"SEVERITY\",\"label\":\"轻微\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"SEVERITY\",\"label\":\"重要\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"SEVERITY\",\"label\":\"严重\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"SEVERITY\",\"label\":\"灾难\"}],\"evidenceRef\":\"method:severity-definitions\",\"excerpt\":\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\",\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"evidenceRef\":\"method:revision\",\"excerpt\":\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\",\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"}],\"methodBinding\":{\"attachment5\":\"R00_CONTENT_REPORTED_R01_LINK_UNCONFIRMED\",\"packRef\":\"JA-PROBLEM-METHOD-20260909\",\"sources\":[{\"documentVersionId\":null,\"sourceIdentity\":\"SYNTHETIC_METHOD_DOCUMENT\",\"status\":\"VERSION_UNCONFIRMED\",\"versionLabel\":\"R01\"},{\"documentVersionId\":null,\"sourceIdentity\":\"SYNTHETIC_METHOD_DOCUMENT\",\"status\":\"VERSION_UNCONFIRMED\",\"versionLabel\":\"R01\"},{\"documentVersionId\":null,\"sourceIdentity\":\"SYNTHETIC_METHOD_DOCUMENT\",\"status\":\"VERSION_UNCONFIRMED\",\"versionLabel\":\"R00\"}],\"version\":\"1.0\"}},\"taskAndScope\":{\"capabilities\":[{\"capability\":\"registered_source_reading\",\"impact\":\"可读取目录内精确版本正文，并展开同页条件与脚注。\",\"status\":\"AVAILABLE\"},{\"capability\":\"fleet_configuration\",\"impact\":\"不能由此证明当前对象装机、执行或构型；受控 Host 匹配单独保留。\",\"status\":\"NOT_CONNECTED\"},{\"capability\":\"reliability_history\",\"impact\":\"没有取得可靠性查询结果；不能据此填发生率或零事件。\",\"status\":\"NOT_CONNECTED\"},{\"capability\":\"knowledge_retrieval\",\"impact\":\"本轮未接通知识检索；可继续分析已授权正文，未取得资料保持线索。\",\"status\":\"NOT_CONNECTED\"}],\"contentValidationVersion\":\"jobaid-semantic.v1\",\"contextPackage\":{\"basedOnWorkItemRevision\":5,\"basedOnWorkingRevision\":null,\"knowledgeRetrieval\":{\"fragments\":[],\"reason\":\"NOT_CONFIGURED\",\"status\":\"UNAVAILABLE\"},\"primaryDocument\":{\"businessRevision\":null,\"documentCode\":null,\"documentVersionRef\":\"DV-SYNTHETIC\",\"readingStatus\":\"AVAILABLE\",\"title\":\"Synthetic English source\"},\"supplementaryMaterials\":{\"items\":[],\"reason\":\"CONSTRUCTED_TEST\",\"status\":\"UNAVAILABLE\"}},\"documentOverview\":{\"businessRevision\":null,\"documentCode\":null,\"documentVersionRef\":\"DV-SYNTHETIC\",\"original\":{\"binding\":{\"documentVersionId\":\"DV-SYNTHETIC\",\"parseRevision\":2,\"parseRunId\":\"PR-TEST-2\",\"sourceArtifactId\":\"ART-TEST\",\"sourceByteLength\":1234,\"sourceSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"coverage\":{\"knownPageCount\":1,\"readPageIndexes\":[0],\"unresolvedRanges\":[]},\"findings\":[],\"semanticMap\":null},\"sections\":[],\"title\":\"Synthetic English source\"},\"evidenceProjectionVersion\":\"SOURCE_CONTEXT_V2\",\"executionMode\":\"PROGRAM_CONTROLLED_V1\",\"expectedWorkRevision\":0,\"historyReview\":{\"coverage\":\"NOT_REQUIRED\",\"engineeringDocumentRefs\":[],\"limitation\":null,\"priorAssessmentRefs\":[],\"required\":false},\"hostApplicability\":null,\"knowledgeAccess\":{\"available\":false,\"reason\":\"NOT_CONFIGURED\"},\"preparation\":{\"currentInputChanged\":false,\"currentInputRevision\":5,\"currentIssues\":[],\"documentVersionId\":\"DV-SYNTHETIC\",\"goal\":\"分析当前文档的问题、条件和证据，保存候选问题工作并保留未决事项。\",\"humanConfirmationStatus\":\"UNAVAILABLE\",\"humanConfirmedDecisions\":[],\"lastSaved\":null,\"limitations\":[\"ENGINEER_PREPARATION_READER_UNAVAILABLE\"],\"originalBinding\":{\"documentVersionId\":\"DV-SYNTHETIC\",\"parseRevision\":2,\"parseRunId\":\"PR-TEST-2\",\"sourceArtifactId\":\"ART-TEST\",\"sourceByteLength\":1234,\"sourceSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"pendingEngineerInputs\":[],\"savedUpdates\":[],\"schemaVersion\":\"wiselink.jobaid-preparation.v1\",\"targetIssueKeys\":[],\"taskInputRevision\":5,\"taskPurpose\":\"INITIAL_PROBLEM_ASSESSMENT\",\"unfinishedItems\":[{\"description\":\"尚无已保存的问题工作。\",\"issueKey\":null,\"kind\":\"NO_SAVED_WORK\"}]},\"purpose\":\"INITIAL_PROBLEM_ASSESSMENT\",\"schemaVersion\":\"wiselink.jobaid-problem-task.v3\",\"sourceStatementAvailability\":{\"limitations\":[\"该准确来源未选取已保存声明；可继续读取原文。\"],\"semanticFieldsAvailability\":\"LEGACY_PARTIAL\",\"status\":\"NOT_INDEXED\"}}},\"originalInput\":{\"availableSources\":[{\"carrierRangeRef\":\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0\",\"documentVersionId\":\"DV-SYNTHETIC\",\"kind\":\"DOCUMENT_PASSAGE\",\"locator\":\"{\\\"normalizedPath\\\":null,\\\"pageStart\\\":0,\\\"parseRunId\\\":\\\"PR-TEST-2\\\",\\\"sourceRefId\\\":\\\"PRUN:synthetic:source:0\\\",\\\"xpath\\\":null}\",\"parseRunId\":\"PR-TEST-2\",\"ref\":\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"title\":\"原文 · 解析修订 2\",\"versionLabel\":\"PR-TEST-2\"},{\"carrierRangeRef\":\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0\",\"documentVersionId\":\"DV-SYNTHETIC\",\"kind\":\"DOCUMENT_PASSAGE\",\"locator\":\"{\\\"normalizedPath\\\":null,\\\"pageStart\\\":0,\\\"parseRunId\\\":\\\"PR-RELATED-SYNTHETIC\\\",\\\"sourceRefId\\\":\\\"PRUN:synthetic:source:0\\\",\\\"xpath\\\":null}\",\"parseRunId\":\"PR-RELATED-SYNTHETIC\",\"ref\":\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"title\":\"原文 · 解析修订 2\",\"versionLabel\":\"PR-RELATED-SYNTHETIC\"},{\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"ref\":\"method:scope\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"ref\":\"method:applicability\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"ref\":\"method:risk\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"ref\":\"method:severity-definitions\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"ref\":\"method:controls\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"ref\":\"method:revision\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"ref\":\"method:delivery\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"ref\":\"method:attachment5\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R00 配套待核；设计资料转述\"},{\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"ref\":\"method:examples\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"}],\"capabilities\":[{\"capability\":\"registered_source_reading\",\"impact\":\"可读取目录内精确版本正文，并展开同页条件与脚注。\",\"status\":\"AVAILABLE\"},{\"capability\":\"fleet_configuration\",\"impact\":\"不能由此证明当前对象装机、执行或构型；受控 Host 匹配单独保留。\",\"status\":\"NOT_CONNECTED\"},{\"capability\":\"reliability_history\",\"impact\":\"没有取得可靠性查询结果；不能据此填发生率或零事件。\",\"status\":\"NOT_CONNECTED\"},{\"capability\":\"knowledge_retrieval\",\"impact\":\"本轮未接通知识检索；可继续分析已授权正文，未取得资料保持线索。\",\"status\":\"NOT_CONNECTED\"}],\"contentValidationVersion\":\"jobaid-semantic.v1\",\"contextPackage\":{\"basedOnWorkItemRevision\":5,\"basedOnWorkingRevision\":null,\"knowledgeRetrieval\":{\"fragments\":[],\"reason\":\"NOT_CONFIGURED\",\"status\":\"UNAVAILABLE\"},\"primaryDocument\":{\"businessRevision\":null,\"documentCode\":null,\"documentVersionRef\":\"DV-SYNTHETIC\",\"readingStatus\":\"AVAILABLE\",\"title\":\"Synthetic English source\"},\"sourceOrigins\":[{\"contentNature\":\"SOURCE_DOCUMENT_CONTENT\",\"evidenceRef\":\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0\",\"origin\":\"PRIMARY_DOCUMENT\"},{\"contentNature\":\"SOURCE_DOCUMENT_CONTENT\",\"evidenceRef\":\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0\",\"origin\":\"PRIMARY_DOCUMENT\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:scope\",\"origin\":\"JA-DS093 / JA-AC\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:applicability\",\"origin\":\"JA-DS093\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:risk\",\"origin\":\"JA-AC\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:severity-definitions\",\"origin\":\"JA-AC\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:controls\",\"origin\":\"JA-AC\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:revision\",\"origin\":\"JA-DS093\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:delivery\",\"origin\":\"JA-DS093\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:attachment5\",\"origin\":\"JA-DS093 Attachment 5\"},{\"contentNature\":\"METHOD_MATERIAL\",\"evidenceRef\":\"method:examples\",\"origin\":\"JA-AC\"}],\"supplementaryMaterials\":{\"items\":[],\"reason\":\"CONSTRUCTED_TEST\",\"status\":\"UNAVAILABLE\"}},\"deliveredEvidence\":[{\"evidenceRef\":\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0\",\"excerpt\":\"Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.\",\"kind\":\"DOCUMENT_PASSAGE\",\"locator\":\"{\\\"normalizedPath\\\":null,\\\"pageStart\\\":0,\\\"parseRunId\\\":\\\"PR-TEST-2\\\",\\\"sourceRefId\\\":\\\"PRUN:synthetic:source:0\\\",\\\"xpath\\\":null}\",\"title\":\"原文 · 解析修订 2\",\"versionLabel\":\"PR-TEST-2\"},{\"evidenceRef\":\"method:scope\",\"excerpt\":\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\",\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"evidenceRef\":\"method:applicability\",\"excerpt\":\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\",\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"classificationDefinitions\":[{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"LIKELIHOOD\",\"label\":\"可能\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"LIKELIHOOD\",\"label\":\"不大可能\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"LIKELIHOOD\",\"label\":\"不可能（极少）\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"LIKELIHOOD\",\"label\":\"极不可能（极端少）\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"SEVERITY\",\"label\":\"严重\"}],\"evidenceRef\":\"method:risk\",\"excerpt\":\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\",\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"classificationDefinitions\":[{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"SEVERITY\",\"label\":\"轻微\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"SEVERITY\",\"label\":\"重要\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"SEVERITY\",\"label\":\"严重\"},{\"definitionQuote\":\"SYNTHETIC_METHOD_DEFINITION\",\"dimension\":\"SEVERITY\",\"label\":\"灾难\"}],\"evidenceRef\":\"method:severity-definitions\",\"excerpt\":\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\",\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"},{\"evidenceRef\":\"method:revision\",\"excerpt\":\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\",\"kind\":\"METHOD_CLAUSE\",\"locator\":\"SYNTHETIC_METHOD_SECTION\",\"title\":\"SYNTHETIC_METHOD_TITLE\",\"versionLabel\":\"R01；受控版本身份待确认\"}],\"discussion\":{\"omittedEarlierTurns\":0,\"status\":\"NO_PRIOR_DISCUSSION\",\"totalPriorTurns\":0,\"turns\":[],\"usage\":\"DISCUSSION_NOT_ADOPTION\"},\"documentOverview\":{\"businessRevision\":null,\"documentCode\":null,\"documentVersionRef\":\"DV-SYNTHETIC\",\"original\":{\"binding\":{\"documentVersionId\":\"DV-SYNTHETIC\",\"parseRevision\":2,\"parseRunId\":\"PR-TEST-2\",\"sourceArtifactId\":\"ART-TEST\",\"sourceByteLength\":1234,\"sourceSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"coverage\":{\"knownPageCount\":1,\"readPageIndexes\":[0],\"unresolvedRanges\":[]},\"findings\":[],\"semanticMap\":null},\"sections\":[],\"title\":\"Synthetic English source\"},\"evidenceProjectionVersion\":\"SOURCE_CONTEXT_V2\",\"executionMode\":\"PROGRAM_CONTROLLED_V1\",\"expectedWorkRevision\":0,\"historyReview\":{\"coverage\":\"NOT_REQUIRED\",\"engineeringDocumentRefs\":[],\"limitation\":null,\"priorAssessmentRefs\":[],\"required\":false},\"hostApplicability\":null,\"knowledgeAccess\":{\"available\":false,\"reason\":\"NOT_CONFIGURED\"},\"methodBinding\":{\"attachment5\":\"R00_CONTENT_REPORTED_R01_LINK_UNCONFIRMED\",\"packRef\":\"JA-PROBLEM-METHOD-20260909\",\"sources\":[{\"documentVersionId\":null,\"sourceIdentity\":\"SYNTHETIC_METHOD_DOCUMENT\",\"status\":\"VERSION_UNCONFIRMED\",\"versionLabel\":\"R01\"},{\"documentVersionId\":null,\"sourceIdentity\":\"SYNTHETIC_METHOD_DOCUMENT\",\"status\":\"VERSION_UNCONFIRMED\",\"versionLabel\":\"R01\"},{\"documentVersionId\":null,\"sourceIdentity\":\"SYNTHETIC_METHOD_DOCUMENT\",\"status\":\"VERSION_UNCONFIRMED\",\"versionLabel\":\"R00\"}],\"version\":\"1.0\"},\"preparation\":{\"currentInputChanged\":false,\"currentInputRevision\":5,\"currentIssues\":[],\"documentVersionId\":\"DV-SYNTHETIC\",\"goal\":\"分析当前文档的问题、条件和证据，保存候选问题工作并保留未决事项。\",\"humanConfirmationStatus\":\"UNAVAILABLE\",\"humanConfirmedDecisions\":[],\"lastSaved\":null,\"limitations\":[\"ENGINEER_PREPARATION_READER_UNAVAILABLE\"],\"originalBinding\":{\"documentVersionId\":\"DV-SYNTHETIC\",\"parseRevision\":2,\"parseRunId\":\"PR-TEST-2\",\"sourceArtifactId\":\"ART-TEST\",\"sourceByteLength\":1234,\"sourceSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"pendingEngineerInputs\":[],\"savedUpdates\":[],\"schemaVersion\":\"wiselink.jobaid-preparation.v1\",\"targetIssueKeys\":[],\"taskInputRevision\":5,\"taskPurpose\":\"INITIAL_PROBLEM_ASSESSMENT\",\"unfinishedItems\":[{\"description\":\"尚无已保存的问题工作。\",\"issueKey\":null,\"kind\":\"NO_SAVED_WORK\"}]},\"previousWork\":null,\"programOriginal\":{\"binding\":{\"documentVersionId\":\"DV-SYNTHETIC\",\"parseRevision\":2,\"parseRunId\":\"PR-TEST-2\",\"sourceArtifactId\":\"ART-TEST\",\"sourceByteLength\":1234,\"sourceSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"coverage\":{\"knownPageCount\":1,\"readPageIndexes\":[0],\"unresolvedRanges\":[]},\"findings\":[],\"sourceLocators\":[{\"artifactId\":\"ART-TEST\",\"bbox\":null,\"charEnd\":null,\"charOffsetUnit\":null,\"charStart\":null,\"elementId\":null,\"kind\":\"PDF_PAGE\",\"normalizedPath\":null,\"pageEnd\":0,\"pageStart\":0,\"quote\":null,\"sourceRefId\":\"PRUN:synthetic:source:0\",\"xpath\":null}],\"units\":[{\"continuityKey\":\"body\",\"depth\":0,\"kind\":\"paragraph\",\"mapping\":{},\"moduleId\":\"body\",\"order\":0,\"parentUnitId\":null,\"payload\":{\"text\":\"Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.\"},\"sourceRefIds\":[\"PRUN:synthetic:source:0\"],\"sourceSegmentIds\":[\"s1\"],\"unitId\":\"u-0\"}]},\"purpose\":\"INITIAL_PROBLEM_ASSESSMENT\",\"schemaVersion\":\"wiselink.jobaid-problem-task.v3\",\"sourceStatementAvailability\":{\"limitations\":[\"该准确来源未选取已保存声明；可继续读取原文。\"],\"semanticFieldsAvailability\":\"LEGACY_PARTIAL\",\"status\":\"NOT_INDEXED\"}},\"previousWorkRead\":null,\"sourceReads\":[{\"activityContexts\":[],\"completeRequestedScope\":true,\"evidence\":[{\"evidenceRef\":\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0\",\"excerpt\":\"Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.\",\"kind\":\"DOCUMENT_PASSAGE\",\"locator\":\"{\\\"normalizedPath\\\":null,\\\"pageStart\\\":0,\\\"parseRunId\\\":\\\"PR-RELATED-SYNTHETIC\\\",\\\"sourceRefId\\\":\\\"PRUN:synthetic:source:0\\\",\\\"xpath\\\":null}\",\"title\":\"原文 · 解析修订 2\",\"versionLabel\":\"PR-RELATED-SYNTHETIC\"}],\"schemaVersion\":\"wiselink.jobaid-source-read.v3\",\"scope\":\"EXACT\",\"sourceRefs\":[\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0\"],\"sourceStatements\":[],\"status\":\"AVAILABLE\"}],\"version\":1},\"modelRequest\":{\"body\":\"{\\\"messages\\\":[{\\\"content\\\":\\\"SYNTHETIC_PROGRAM_INSTRUCTION: return one complete synthetic work candidate. The original private program instruction is omitted.\\\",\\\"role\\\":\\\"system\\\"},{\\\"content\\\":\\\"{\\\\\\\"continuousOriginal\\\\\\\":{\\\\\\\"binding\\\\\\\":{\\\\\\\"documentVersionId\\\\\\\":\\\\\\\"DV-SYNTHETIC\\\\\\\",\\\\\\\"parseRevision\\\\\\\":2,\\\\\\\"parseRunId\\\\\\\":\\\\\\\"PR-TEST-2\\\\\\\",\\\\\\\"sourceArtifactId\\\\\\\":\\\\\\\"ART-TEST\\\\\\\",\\\\\\\"sourceByteLength\\\\\\\":1234,\\\\\\\"sourceSha256\\\\\\\":\\\\\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\\\\\"},\\\\\\\"content\\\\\\\":\\\\\\\"Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.\\\\\\\",\\\\\\\"coverage\\\\\\\":{\\\\\\\"knownPageCount\\\\\\\":1,\\\\\\\"readPageIndexes\\\\\\\":[0],\\\\\\\"unresolvedRanges\\\\\\\":[]},\\\\\\\"evidence\\\\\\\":[{\\\\\\\"documentVersionId\\\\\\\":\\\\\\\"DV-SYNTHETIC\\\\\\\",\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0\\\\\\\",\\\\\\\"kind\\\\\\\":\\\\\\\"DOCUMENT_PASSAGE\\\\\\\",\\\\\\\"locator\\\\\\\":\\\\\\\"{\\\\\\\\\\\\\\\"normalizedPath\\\\\\\\\\\\\\\":null,\\\\\\\\\\\\\\\"pageStart\\\\\\\\\\\\\\\":0,\\\\\\\\\\\\\\\"parseRunId\\\\\\\\\\\\\\\":\\\\\\\\\\\\\\\"PR-TEST-2\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"sourceRefId\\\\\\\\\\\\\\\":\\\\\\\\\\\\\\\"PRUN:synthetic:source:0\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"xpath\\\\\\\\\\\\\\\":null}\\\\\\\",\\\\\\\"sourceRefId\\\\\\\":\\\\\\\"PRUN:synthetic:source:0\\\\\\\",\\\\\\\"title\\\\\\\":\\\\\\\"原文 · 解析修订 2\\\\\\\",\\\\\\\"versionLabel\\\\\\\":\\\\\\\"PR-TEST-2\\\\\\\"}],\\\\\\\"findings\\\\\\\":[],\\\\\\\"sourceLocators\\\\\\\":[{\\\\\\\"artifactId\\\\\\\":\\\\\\\"ART-TEST\\\\\\\",\\\\\\\"bbox\\\\\\\":null,\\\\\\\"charEnd\\\\\\\":null,\\\\\\\"charOffsetUnit\\\\\\\":null,\\\\\\\"charStart\\\\\\\":null,\\\\\\\"elementId\\\\\\\":null,\\\\\\\"kind\\\\\\\":\\\\\\\"PDF_PAGE\\\\\\\",\\\\\\\"normalizedPath\\\\\\\":null,\\\\\\\"pageEnd\\\\\\\":0,\\\\\\\"pageStart\\\\\\\":0,\\\\\\\"quote\\\\\\\":null,\\\\\\\"sourceRefId\\\\\\\":\\\\\\\"PRUN:synthetic:source:0\\\\\\\",\\\\\\\"xpath\\\\\\\":null}],\\\\\\\"spans\\\\\\\":[{\\\\\\\"continuityKey\\\\\\\":\\\\\\\"body\\\\\\\",\\\\\\\"depth\\\\\\\":0,\\\\\\\"encoding\\\\\\\":\\\\\\\"TEXT\\\\\\\",\\\\\\\"end\\\\\\\":299,\\\\\\\"evidenceRefs\\\\\\\":[\\\\\\\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0\\\\\\\"],\\\\\\\"kind\\\\\\\":\\\\\\\"paragraph\\\\\\\",\\\\\\\"mapping\\\\\\\":{},\\\\\\\"moduleId\\\\\\\":\\\\\\\"body\\\\\\\",\\\\\\\"order\\\\\\\":0,\\\\\\\"parentUnitId\\\\\\\":null,\\\\\\\"sourceRefIds\\\\\\\":[\\\\\\\"PRUN:synthetic:source:0\\\\\\\"],\\\\\\\"sourceSegmentIds\\\\\\\":[\\\\\\\"s1\\\\\\\"],\\\\\\\"start\\\\\\\":0,\\\\\\\"uncitableSourceRefIds\\\\\\\":[],\\\\\\\"unitId\\\\\\\":\\\\\\\"u-0\\\\\\\"}]},\\\\\\\"objectAndCompanyFacts\\\\\\\":{\\\\\\\"evidence\\\\\\\":[{\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0\\\\\\\",\\\\\\\"excerpt\\\\\\\":\\\\\\\"Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.\\\\\\\",\\\\\\\"kind\\\\\\\":\\\\\\\"DOCUMENT_PASSAGE\\\\\\\",\\\\\\\"locator\\\\\\\":\\\\\\\"{\\\\\\\\\\\\\\\"normalizedPath\\\\\\\\\\\\\\\":null,\\\\\\\\\\\\\\\"pageStart\\\\\\\\\\\\\\\":0,\\\\\\\\\\\\\\\"parseRunId\\\\\\\\\\\\\\\":\\\\\\\\\\\\\\\"PR-RELATED-SYNTHETIC\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"sourceRefId\\\\\\\\\\\\\\\":\\\\\\\\\\\\\\\"PRUN:synthetic:source:0\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"xpath\\\\\\\\\\\\\\\":null}\\\\\\\",\\\\\\\"title\\\\\\\":\\\\\\\"原文 · 解析修订 2\\\\\\\",\\\\\\\"versionLabel\\\\\\\":\\\\\\\"PR-RELATED-SYNTHETIC\\\\\\\"}],\\\\\\\"readContext\\\\\\\":[{\\\\\\\"activityContexts\\\\\\\":[],\\\\\\\"completeRequestedScope\\\\\\\":true,\\\\\\\"schemaVersion\\\\\\\":\\\\\\\"wiselink.jobaid-source-read.v3\\\\\\\",\\\\\\\"scope\\\\\\\":\\\\\\\"EXACT\\\\\\\",\\\\\\\"sourceRefs\\\\\\\":[\\\\\\\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0\\\\\\\"],\\\\\\\"sourceStatements\\\\\\\":[],\\\\\\\"status\\\\\\\":\\\\\\\"AVAILABLE\\\\\\\"}],\\\\\\\"sourceOrigins\\\\\\\":[{\\\\\\\"contentNature\\\\\\\":\\\\\\\"SOURCE_DOCUMENT_CONTENT\\\\\\\",\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0\\\\\\\",\\\\\\\"origin\\\\\\\":\\\\\\\"PRIMARY_DOCUMENT\\\\\\\"},{\\\\\\\"contentNature\\\\\\\":\\\\\\\"SOURCE_DOCUMENT_CONTENT\\\\\\\",\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-RELATED-SYNTHETIC:PRUN:synthetic:source:0\\\\\\\",\\\\\\\"origin\\\\\\\":\\\\\\\"PRIMARY_DOCUMENT\\\\\\\"},{\\\\\\\"contentNature\\\\\\\":\\\\\\\"METHOD_MATERIAL\\\\\\\",\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:scope\\\\\\\",\\\\\\\"origin\\\\\\\":\\\\\\\"JA-DS093 / JA-AC\\\\\\\"},{\\\\\\\"contentNature\\\\\\\":\\\\\\\"METHOD_MATERIAL\\\\\\\",\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:applicability\\\\\\\",\\\\\\\"origin\\\\\\\":\\\\\\\"JA-DS093\\\\\\\"},{\\\\\\\"contentNature\\\\\\\":\\\\\\\"METHOD_MATERIAL\\\\\\\",\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:risk\\\\\\\",\\\\\\\"origin\\\\\\\":\\\\\\\"JA-AC\\\\\\\"},{\\\\\\\"contentNature\\\\\\\":\\\\\\\"METHOD_MATERIAL\\\\\\\",\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:severity-definitions\\\\\\\",\\\\\\\"origin\\\\\\\":\\\\\\\"JA-AC\\\\\\\"},{\\\\\\\"contentNature\\\\\\\":\\\\\\\"METHOD_MATERIAL\\\\\\\",\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:controls\\\\\\\",\\\\\\\"origin\\\\\\\":\\\\\\\"JA-AC\\\\\\\"},{\\\\\\\"contentNature\\\\\\\":\\\\\\\"METHOD_MATERIAL\\\\\\\",\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:revision\\\\\\\",\\\\\\\"origin\\\\\\\":\\\\\\\"JA-DS093\\\\\\\"},{\\\\\\\"contentNature\\\\\\\":\\\\\\\"METHOD_MATERIAL\\\\\\\",\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:delivery\\\\\\\",\\\\\\\"origin\\\\\\\":\\\\\\\"JA-DS093\\\\\\\"},{\\\\\\\"contentNature\\\\\\\":\\\\\\\"METHOD_MATERIAL\\\\\\\",\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:attachment5\\\\\\\",\\\\\\\"origin\\\\\\\":\\\\\\\"JA-DS093 Attachment 5\\\\\\\"},{\\\\\\\"contentNature\\\\\\\":\\\\\\\"METHOD_MATERIAL\\\\\\\",\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:examples\\\\\\\",\\\\\\\"origin\\\\\\\":\\\\\\\"JA-AC\\\\\\\"}]},\\\\\\\"previousUnderstandingAndChanges\\\\\\\":{\\\\\\\"discussion\\\\\\\":{\\\\\\\"omittedEarlierTurns\\\\\\\":0,\\\\\\\"status\\\\\\\":\\\\\\\"NO_PRIOR_DISCUSSION\\\\\\\",\\\\\\\"totalPriorTurns\\\\\\\":0,\\\\\\\"turns\\\\\\\":[],\\\\\\\"usage\\\\\\\":\\\\\\\"DISCUSSION_NOT_ADOPTION\\\\\\\"},\\\\\\\"previousWork\\\\\\\":null},\\\\\\\"relevantMethods\\\\\\\":{\\\\\\\"evidence\\\\\\\":[{\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:scope\\\\\\\",\\\\\\\"excerpt\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\\\\\\\",\\\\\\\"kind\\\\\\\":\\\\\\\"METHOD_CLAUSE\\\\\\\",\\\\\\\"locator\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_SECTION\\\\\\\",\\\\\\\"title\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_TITLE\\\\\\\",\\\\\\\"versionLabel\\\\\\\":\\\\\\\"R01；受控版本身份待确认\\\\\\\"},{\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:applicability\\\\\\\",\\\\\\\"excerpt\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\\\\\\\",\\\\\\\"kind\\\\\\\":\\\\\\\"METHOD_CLAUSE\\\\\\\",\\\\\\\"locator\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_SECTION\\\\\\\",\\\\\\\"title\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_TITLE\\\\\\\",\\\\\\\"versionLabel\\\\\\\":\\\\\\\"R01；受控版本身份待确认\\\\\\\"},{\\\\\\\"classificationDefinitions\\\\\\\":[{\\\\\\\"definitionQuote\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_DEFINITION\\\\\\\",\\\\\\\"dimension\\\\\\\":\\\\\\\"LIKELIHOOD\\\\\\\",\\\\\\\"label\\\\\\\":\\\\\\\"可能\\\\\\\"},{\\\\\\\"definitionQuote\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_DEFINITION\\\\\\\",\\\\\\\"dimension\\\\\\\":\\\\\\\"LIKELIHOOD\\\\\\\",\\\\\\\"label\\\\\\\":\\\\\\\"不大可能\\\\\\\"},{\\\\\\\"definitionQuote\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_DEFINITION\\\\\\\",\\\\\\\"dimension\\\\\\\":\\\\\\\"LIKELIHOOD\\\\\\\",\\\\\\\"label\\\\\\\":\\\\\\\"不可能（极少）\\\\\\\"},{\\\\\\\"definitionQuote\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_DEFINITION\\\\\\\",\\\\\\\"dimension\\\\\\\":\\\\\\\"LIKELIHOOD\\\\\\\",\\\\\\\"label\\\\\\\":\\\\\\\"极不可能（极端少）\\\\\\\"},{\\\\\\\"definitionQuote\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_DEFINITION\\\\\\\",\\\\\\\"dimension\\\\\\\":\\\\\\\"SEVERITY\\\\\\\",\\\\\\\"label\\\\\\\":\\\\\\\"严重\\\\\\\"}],\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:risk\\\\\\\",\\\\\\\"excerpt\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\\\\\\\",\\\\\\\"kind\\\\\\\":\\\\\\\"METHOD_CLAUSE\\\\\\\",\\\\\\\"locator\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_SECTION\\\\\\\",\\\\\\\"title\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_TITLE\\\\\\\",\\\\\\\"versionLabel\\\\\\\":\\\\\\\"R01；受控版本身份待确认\\\\\\\"},{\\\\\\\"classificationDefinitions\\\\\\\":[{\\\\\\\"definitionQuote\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_DEFINITION\\\\\\\",\\\\\\\"dimension\\\\\\\":\\\\\\\"SEVERITY\\\\\\\",\\\\\\\"label\\\\\\\":\\\\\\\"轻微\\\\\\\"},{\\\\\\\"definitionQuote\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_DEFINITION\\\\\\\",\\\\\\\"dimension\\\\\\\":\\\\\\\"SEVERITY\\\\\\\",\\\\\\\"label\\\\\\\":\\\\\\\"重要\\\\\\\"},{\\\\\\\"definitionQuote\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_DEFINITION\\\\\\\",\\\\\\\"dimension\\\\\\\":\\\\\\\"SEVERITY\\\\\\\",\\\\\\\"label\\\\\\\":\\\\\\\"严重\\\\\\\"},{\\\\\\\"definitionQuote\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_DEFINITION\\\\\\\",\\\\\\\"dimension\\\\\\\":\\\\\\\"SEVERITY\\\\\\\",\\\\\\\"label\\\\\\\":\\\\\\\"灾难\\\\\\\"}],\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:severity-definitions\\\\\\\",\\\\\\\"excerpt\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\\\\\\\",\\\\\\\"kind\\\\\\\":\\\\\\\"METHOD_CLAUSE\\\\\\\",\\\\\\\"locator\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_SECTION\\\\\\\",\\\\\\\"title\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_TITLE\\\\\\\",\\\\\\\"versionLabel\\\\\\\":\\\\\\\"R01；受控版本身份待确认\\\\\\\"},{\\\\\\\"evidenceRef\\\\\\\":\\\\\\\"method:revision\\\\\\\",\\\\\\\"excerpt\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.\\\\\\\",\\\\\\\"kind\\\\\\\":\\\\\\\"METHOD_CLAUSE\\\\\\\",\\\\\\\"locator\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_SECTION\\\\\\\",\\\\\\\"title\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_TITLE\\\\\\\",\\\\\\\"versionLabel\\\\\\\":\\\\\\\"R01；受控版本身份待确认\\\\\\\"}],\\\\\\\"methodBinding\\\\\\\":{\\\\\\\"attachment5\\\\\\\":\\\\\\\"R00_CONTENT_REPORTED_R01_LINK_UNCONFIRMED\\\\\\\",\\\\\\\"packRef\\\\\\\":\\\\\\\"JA-PROBLEM-METHOD-20260909\\\\\\\",\\\\\\\"sources\\\\\\\":[{\\\\\\\"documentVersionId\\\\\\\":null,\\\\\\\"sourceIdentity\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_DOCUMENT\\\\\\\",\\\\\\\"status\\\\\\\":\\\\\\\"VERSION_UNCONFIRMED\\\\\\\",\\\\\\\"versionLabel\\\\\\\":\\\\\\\"R01\\\\\\\"},{\\\\\\\"documentVersionId\\\\\\\":null,\\\\\\\"sourceIdentity\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_DOCUMENT\\\\\\\",\\\\\\\"status\\\\\\\":\\\\\\\"VERSION_UNCONFIRMED\\\\\\\",\\\\\\\"versionLabel\\\\\\\":\\\\\\\"R01\\\\\\\"},{\\\\\\\"documentVersionId\\\\\\\":null,\\\\\\\"sourceIdentity\\\\\\\":\\\\\\\"SYNTHETIC_METHOD_DOCUMENT\\\\\\\",\\\\\\\"status\\\\\\\":\\\\\\\"VERSION_UNCONFIRMED\\\\\\\",\\\\\\\"versionLabel\\\\\\\":\\\\\\\"R00\\\\\\\"}],\\\\\\\"version\\\\\\\":\\\\\\\"1.0\\\\\\\"}},\\\\\\\"taskAndScope\\\\\\\":{\\\\\\\"capabilities\\\\\\\":[{\\\\\\\"capability\\\\\\\":\\\\\\\"registered_source_reading\\\\\\\",\\\\\\\"impact\\\\\\\":\\\\\\\"可读取目录内精确版本正文，并展开同页条件与脚注。\\\\\\\",\\\\\\\"status\\\\\\\":\\\\\\\"AVAILABLE\\\\\\\"},{\\\\\\\"capability\\\\\\\":\\\\\\\"fleet_configuration\\\\\\\",\\\\\\\"impact\\\\\\\":\\\\\\\"不能由此证明当前对象装机、执行或构型；受控 Host 匹配单独保留。\\\\\\\",\\\\\\\"status\\\\\\\":\\\\\\\"NOT_CONNECTED\\\\\\\"},{\\\\\\\"capability\\\\\\\":\\\\\\\"reliability_history\\\\\\\",\\\\\\\"impact\\\\\\\":\\\\\\\"没有取得可靠性查询结果；不能据此填发生率或零事件。\\\\\\\",\\\\\\\"status\\\\\\\":\\\\\\\"NOT_CONNECTED\\\\\\\"},{\\\\\\\"capability\\\\\\\":\\\\\\\"knowledge_retrieval\\\\\\\",\\\\\\\"impact\\\\\\\":\\\\\\\"本轮未接通知识检索；可继续分析已授权正文，未取得资料保持线索。\\\\\\\",\\\\\\\"status\\\\\\\":\\\\\\\"NOT_CONNECTED\\\\\\\"}],\\\\\\\"contentValidationVersion\\\\\\\":\\\\\\\"jobaid-semantic.v1\\\\\\\",\\\\\\\"contextPackage\\\\\\\":{\\\\\\\"basedOnWorkItemRevision\\\\\\\":5,\\\\\\\"basedOnWorkingRevision\\\\\\\":null,\\\\\\\"knowledgeRetrieval\\\\\\\":{\\\\\\\"fragments\\\\\\\":[],\\\\\\\"reason\\\\\\\":\\\\\\\"NOT_CONFIGURED\\\\\\\",\\\\\\\"status\\\\\\\":\\\\\\\"UNAVAILABLE\\\\\\\"},\\\\\\\"primaryDocument\\\\\\\":{\\\\\\\"businessRevision\\\\\\\":null,\\\\\\\"documentCode\\\\\\\":null,\\\\\\\"documentVersionRef\\\\\\\":\\\\\\\"DV-SYNTHETIC\\\\\\\",\\\\\\\"readingStatus\\\\\\\":\\\\\\\"AVAILABLE\\\\\\\",\\\\\\\"title\\\\\\\":\\\\\\\"Synthetic English source\\\\\\\"},\\\\\\\"supplementaryMaterials\\\\\\\":{\\\\\\\"items\\\\\\\":[],\\\\\\\"reason\\\\\\\":\\\\\\\"CONSTRUCTED_TEST\\\\\\\",\\\\\\\"status\\\\\\\":\\\\\\\"UNAVAILABLE\\\\\\\"}},\\\\\\\"documentOverview\\\\\\\":{\\\\\\\"businessRevision\\\\\\\":null,\\\\\\\"documentCode\\\\\\\":null,\\\\\\\"documentVersionRef\\\\\\\":\\\\\\\"DV-SYNTHETIC\\\\\\\",\\\\\\\"original\\\\\\\":{\\\\\\\"binding\\\\\\\":{\\\\\\\"documentVersionId\\\\\\\":\\\\\\\"DV-SYNTHETIC\\\\\\\",\\\\\\\"parseRevision\\\\\\\":2,\\\\\\\"parseRunId\\\\\\\":\\\\\\\"PR-TEST-2\\\\\\\",\\\\\\\"sourceArtifactId\\\\\\\":\\\\\\\"ART-TEST\\\\\\\",\\\\\\\"sourceByteLength\\\\\\\":1234,\\\\\\\"sourceSha256\\\\\\\":\\\\\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\\\\\"},\\\\\\\"coverage\\\\\\\":{\\\\\\\"knownPageCount\\\\\\\":1,\\\\\\\"readPageIndexes\\\\\\\":[0],\\\\\\\"unresolvedRanges\\\\\\\":[]},\\\\\\\"findings\\\\\\\":[],\\\\\\\"semanticMap\\\\\\\":null},\\\\\\\"sections\\\\\\\":[],\\\\\\\"title\\\\\\\":\\\\\\\"Synthetic English source\\\\\\\"},\\\\\\\"evidenceProjectionVersion\\\\\\\":\\\\\\\"SOURCE_CONTEXT_V2\\\\\\\",\\\\\\\"executionMode\\\\\\\":\\\\\\\"PROGRAM_CONTROLLED_V1\\\\\\\",\\\\\\\"expectedWorkRevision\\\\\\\":0,\\\\\\\"historyReview\\\\\\\":{\\\\\\\"coverage\\\\\\\":\\\\\\\"NOT_REQUIRED\\\\\\\",\\\\\\\"engineeringDocumentRefs\\\\\\\":[],\\\\\\\"limitation\\\\\\\":null,\\\\\\\"priorAssessmentRefs\\\\\\\":[],\\\\\\\"required\\\\\\\":false},\\\\\\\"hostApplicability\\\\\\\":null,\\\\\\\"knowledgeAccess\\\\\\\":{\\\\\\\"available\\\\\\\":false,\\\\\\\"reason\\\\\\\":\\\\\\\"NOT_CONFIGURED\\\\\\\"},\\\\\\\"preparation\\\\\\\":{\\\\\\\"currentInputChanged\\\\\\\":false,\\\\\\\"currentInputRevision\\\\\\\":5,\\\\\\\"currentIssues\\\\\\\":[],\\\\\\\"documentVersionId\\\\\\\":\\\\\\\"DV-SYNTHETIC\\\\\\\",\\\\\\\"goal\\\\\\\":\\\\\\\"分析当前文档的问题、条件和证据，保存候选问题工作并保留未决事项。\\\\\\\",\\\\\\\"humanConfirmationStatus\\\\\\\":\\\\\\\"UNAVAILABLE\\\\\\\",\\\\\\\"humanConfirmedDecisions\\\\\\\":[],\\\\\\\"lastSaved\\\\\\\":null,\\\\\\\"limitations\\\\\\\":[\\\\\\\"ENGINEER_PREPARATION_READER_UNAVAILABLE\\\\\\\"],\\\\\\\"originalBinding\\\\\\\":{\\\\\\\"documentVersionId\\\\\\\":\\\\\\\"DV-SYNTHETIC\\\\\\\",\\\\\\\"parseRevision\\\\\\\":2,\\\\\\\"parseRunId\\\\\\\":\\\\\\\"PR-TEST-2\\\\\\\",\\\\\\\"sourceArtifactId\\\\\\\":\\\\\\\"ART-TEST\\\\\\\",\\\\\\\"sourceByteLength\\\\\\\":1234,\\\\\\\"sourceSha256\\\\\\\":\\\\\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\\\\\"},\\\\\\\"pendingEngineerInputs\\\\\\\":[],\\\\\\\"savedUpdates\\\\\\\":[],\\\\\\\"schemaVersion\\\\\\\":\\\\\\\"wiselink.jobaid-preparation.v1\\\\\\\",\\\\\\\"targetIssueKeys\\\\\\\":[],\\\\\\\"taskInputRevision\\\\\\\":5,\\\\\\\"taskPurpose\\\\\\\":\\\\\\\"INITIAL_PROBLEM_ASSESSMENT\\\\\\\",\\\\\\\"unfinishedItems\\\\\\\":[{\\\\\\\"description\\\\\\\":\\\\\\\"尚无已保存的问题工作。\\\\\\\",\\\\\\\"issueKey\\\\\\\":null,\\\\\\\"kind\\\\\\\":\\\\\\\"NO_SAVED_WORK\\\\\\\"}]},\\\\\\\"purpose\\\\\\\":\\\\\\\"INITIAL_PROBLEM_ASSESSMENT\\\\\\\",\\\\\\\"schemaVersion\\\\\\\":\\\\\\\"wiselink.jobaid-problem-task.v3\\\\\\\",\\\\\\\"sourceStatementAvailability\\\\\\\":{\\\\\\\"limitations\\\\\\\":[\\\\\\\"该准确来源未选取已保存声明；可继续读取原文。\\\\\\\"],\\\\\\\"semanticFieldsAvailability\\\\\\\":\\\\\\\"LEGACY_PARTIAL\\\\\\\",\\\\\\\"status\\\\\\\":\\\\\\\"NOT_INDEXED\\\\\\\"}}}\\\",\\\"role\\\":\\\"user\\\"}],\\\"model\\\":\\\"openclaw/wiselink-engineering\\\",\\\"n\\\":1,\\\"parallel_tool_calls\\\":false,\\\"stream\\\":false,\\\"tool_choice\\\":\\\"auto\\\",\\\"tools\\\":[{\\\"function\\\":{\\\"description\\\":\\\"Serialize one complete engineering work only. No READ, SAVE or workflow action.\\\",\\\"name\\\":\\\"return_wiselink_program_assessment\\\",\\\"parameters\\\":{\\\"additionalProperties\\\":false,\\\"properties\\\":{\\\"workJson\\\":{\\\"minLength\\\":2,\\\"type\\\":\\\"string\\\"}},\\\"required\\\":[\\\"workJson\\\"],\\\"type\\\":\\\"object\\\"}},\\\"type\\\":\\\"function\\\"}],\\\"user\\\":\\\"initial:synthetic-codex-program\\\"}\",\"executionModel\":{\"displayName\":\"GLM 5.3\",\"modelRef\":\"miaoda/glm-5.3\",\"providerKind\":\"BUILT_IN\",\"selectedAt\":\"2026-10-25T09:21:02.877Z\",\"settingsRevision\":0},\"materialCheckpoint\":\"program-materials\",\"version\":1}}"
+      },
+      "serviceOutput": {
+        "status": "RECORDED",
+        "phase": "MATERIALS_READY",
+        "checkpointRef": "initial:synthetic-codex-program:program-materials"
+      }
+    },
+    {
+      "name": "record_assessment_program_progress",
+      "arguments": {
+        "attemptRef": "AQ-CONTINUATION-1",
+        "workItemId": "WI-CODEX-SYNTHETIC",
+        "leaseToken": "00000000-0000-4000-8000-000000000102",
+        "leaseGeneration": 1,
+        "phase": "MODEL_RESPONSE_SAVED",
+        "checkpointRef": "initial:synthetic-codex-program:program-work-candidate"
+      },
+      "serviceOutput": {
+        "status": "RECORDED",
+        "phase": "MODEL_RESPONSE_SAVED",
+        "checkpointRef": "initial:synthetic-codex-program:program-work-candidate"
+      }
+    },
+    {
+      "name": "read_assessment_work",
+      "arguments": {
+        "attemptRef": "AQ-CONTINUATION-1",
+        "workItemId": "WI-CODEX-SYNTHETIC",
+        "leaseToken": "00000000-0000-4000-8000-000000000102",
+        "leaseGeneration": 1,
+        "requestId": "62f7c130-02ed-4997-8ac1-fb39422f3857"
+      },
+      "serviceOutput": {
+        "schemaVersion": "wiselink.jobaid-work-read.v2",
+        "attemptId": "ATT-CONTINUATION-1",
+        "inputWorkRevision": 0,
+        "revision": null,
+        "executionStatus": "RUNNING",
+        "preparation": {
+          "schemaVersion": "wiselink.jobaid-preparation.v1",
+          "taskPurpose": "INITIAL_PROBLEM_ASSESSMENT",
+          "goal": "分析当前文档的问题、条件和证据，保存候选问题工作并保留未决事项。",
+          "targetIssueKeys": [],
+          "taskInputRevision": 5,
+          "currentInputRevision": 5,
+          "currentInputChanged": false,
+          "documentVersionId": "DV-SYNTHETIC",
+          "originalBinding": {
+            "documentVersionId": "DV-SYNTHETIC",
+            "parseRevision": 2,
+            "parseRunId": "PR-TEST-2",
+            "sourceArtifactId": "ART-TEST",
+            "sourceByteLength": 1234,
+            "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "lastSaved": null,
+          "currentIssues": [],
+          "unfinishedItems": [
+            {
+              "issueKey": null,
+              "kind": "NO_SAVED_WORK",
+              "description": "尚无已保存的问题工作。"
+            }
+          ],
+          "pendingEngineerInputs": [],
+          "savedUpdates": [],
+          "humanConfirmedDecisions": [],
+          "humanConfirmationStatus": "UNAVAILABLE",
+          "limitations": [
+            "ENGINEER_PREPARATION_READER_UNAVAILABLE"
+          ]
+        }
+      }
+    },
+    {
+      "name": "save_assessment_work",
+      "arguments": {
+        "attemptRef": "AQ-CONTINUATION-1",
+        "workItemId": "WI-CODEX-SYNTHETIC",
+        "leaseToken": "00000000-0000-4000-8000-000000000102",
+        "leaseGeneration": 1,
+        "requestId": "62f7c130-02ed-4997-8ac1-fb39422f3857",
+        "expectedWorkRevision": 0,
+        "workJson": "{\"changeSummary\":\"完整保留条件和未知，形成合成工作。\",\"completionReason\":\"合成原文分析已完成，实际构型尚未取得。\",\"headline\":\"持续指示条件尚待核对\",\"issues\":[{\"body\":\"原文规定，指示持续超过五秒才可更换；单次正常检查仍不能排除间歇故障。[[DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0]]\",\"issueKey\":\"condition\",\"measures\":[],\"openQuestions\":[{\"affects\":\"更换条件\",\"nextEvidence\":\"合成运行记录\",\"question\":\"当前指示是否持续超过五秒？\",\"reason\":\"本轮未取得\"}],\"otherClassifications\":[],\"question\":\"何时可更换？\",\"requirementHandling\":[],\"riskScenarios\":[]}],\"listBrief\":\"单次正常检查不能排除间歇故障，须先确认五秒条件。\",\"overview\":\"本合成案例保留五秒条件及间歇故障限制；当前状态仍待核。[[DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0]]\",\"roundCompletion\":\"COMPLETE_WITH_OPEN_QUESTIONS\",\"schemaVersion\":\"wiselink.jobaid-problem-work.v3\"}"
+      },
+      "serviceOutput": {
+        "schemaVersion": "wiselink.jobaid-work-saved.v2",
+        "workRevisionRef": "JAWR-SYNTHETIC-1",
+        "workRevision": 1,
+        "replayed": false,
+        "roundCompletion": "COMPLETE_WITH_OPEN_QUESTIONS",
+        "issueKeys": [
+          "condition"
+        ],
+        "currentUnderstanding": "本合成案例保留五秒条件及间歇故障限制；当前状态仍待核。[[DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0]]",
+        "preparation": {
+          "schemaVersion": "wiselink.jobaid-preparation.v1",
+          "taskPurpose": "INITIAL_PROBLEM_ASSESSMENT",
+          "goal": "分析当前文档的问题、条件和证据，保存候选问题工作并保留未决事项。",
+          "targetIssueKeys": [],
+          "taskInputRevision": 5,
+          "currentInputRevision": 5,
+          "currentInputChanged": false,
+          "documentVersionId": "DV-SYNTHETIC",
+          "originalBinding": {
+            "documentVersionId": "DV-SYNTHETIC",
+            "parseRevision": 2,
+            "parseRunId": "PR-TEST-2",
+            "sourceArtifactId": "ART-TEST",
+            "sourceByteLength": 1234,
+            "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "lastSaved": {
+            "workRevisionRef": "JAWR-SYNTHETIC-1",
+            "workRevision": 1,
+            "basedOnInputRevision": 5
+          },
+          "currentIssues": [
+            {
+              "issueKey": "condition",
+              "question": "何时可更换？"
+            }
+          ],
+          "unfinishedItems": [
+            {
+              "issueKey": "condition",
+              "kind": "OPEN_QUESTION",
+              "description": "当前指示是否持续超过五秒？"
+            }
+          ],
+          "pendingEngineerInputs": [],
+          "savedUpdates": [],
+          "humanConfirmedDecisions": [],
+          "humanConfirmationStatus": "UNAVAILABLE",
+          "limitations": [
+            "ENGINEER_PREPARATION_READER_UNAVAILABLE"
+          ]
+        }
+      }
+    },
+    {
+      "name": "read_assessment_work",
+      "arguments": {
+        "attemptRef": "AQ-CONTINUATION-1",
+        "workItemId": "WI-CODEX-SYNTHETIC",
+        "leaseToken": "00000000-0000-4000-8000-000000000102",
+        "leaseGeneration": 1,
+        "requestId": "62f7c130-02ed-4997-8ac1-fb39422f3857"
+      },
+      "serviceOutput": {
+        "schemaVersion": "wiselink.jobaid-work-read.v2",
+        "attemptId": "ATT-CONTINUATION-1",
+        "inputWorkRevision": 0,
+        "revision": {
+          "workRevisionRef": "JAWR-SYNTHETIC-1",
+          "workItemId": "WI-CODEX-SYNTHETIC",
+          "workRevision": 1,
+          "previousWorkRevisionRef": null,
+          "requestId": "62f7c130-02ed-4997-8ac1-fb39422f3857",
+          "actionAttemptId": "ATT-CONTINUATION-1",
+          "basedOnWorkItemRevision": 5,
+          "documentVersionId": "DV-SYNTHETIC",
+          "createdAt": "2026-10-25T00:00:00Z",
+          "content": {
+            "schemaVersion": "wiselink.jobaid-problem-work.v3",
+            "headline": "持续指示条件尚待核对",
+            "listBrief": "单次正常检查不能排除间歇故障，须先确认五秒条件。",
+            "understanding": "本合成案例保留五秒条件及间歇故障限制；当前状态仍待核。[[DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0]]",
+            "decisiveIssueKeys": [
+              "condition"
+            ],
+            "overviewStatus": "CURRENT",
+            "issues": [
+              {
+                "issueKey": "condition",
+                "issueRef": "WI-CODEX-SYNTHETIC:issue:condition",
+                "question": "何时可更换？",
+                "body": "原文规定，指示持续超过五秒才可更换；单次正常检查仍不能排除间歇故障。[[DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0]]",
+                "riskScenarios": [],
+                "measures": [],
+                "otherClassifications": [],
+                "openQuestions": [
+                  {
+                    "question": "当前指示是否持续超过五秒？",
+                    "affects": "更换条件",
+                    "nextEvidence": "合成运行记录",
+                    "reason": "本轮未取得"
+                  }
+                ],
+                "requirementHandling": [],
+                "sourceDependencies": [
+                  "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0"
+                ],
+                "premiseRefs": []
+              }
+            ],
+            "roundCompletion": "COMPLETE_WITH_OPEN_QUESTIONS",
+            "completionReason": "合成原文分析已完成，实际构型尚未取得。",
+            "changeSummary": "完整保留条件和未知，形成合成工作。",
+            "unchangedExplanation": "未提交的问题和总体字段按既有工作保留；保留不代表本批重新验证。",
+            "methodBinding": {
+              "attachment5": "R00_CONTENT_REPORTED_R01_LINK_UNCONFIRMED",
+              "packRef": "JA-PROBLEM-METHOD-20260909",
+              "sources": [
+                {
+                  "documentVersionId": null,
+                  "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                  "status": "VERSION_UNCONFIRMED",
+                  "versionLabel": "R01"
+                },
+                {
+                  "documentVersionId": null,
+                  "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                  "status": "VERSION_UNCONFIRMED",
+                  "versionLabel": "R01"
+                },
+                {
+                  "documentVersionId": null,
+                  "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                  "status": "VERSION_UNCONFIRMED",
+                  "versionLabel": "R00"
+                }
+              ],
+              "version": "1.0"
+            },
+            "evidence": [
+              {
+                "documentVersionId": "DV-SYNTHETIC",
+                "evidenceRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0",
+                "excerpt": "Paragraph 0: Synthetic source: Do not replace unless the indication persists after 5 seconds. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. A normal inspection does not exclude intermittent failure. Retain this final condition.",
+                "kind": "DOCUMENT_PASSAGE",
+                "locator": "{\"normalizedPath\":null,\"pageStart\":0,\"parseRunId\":\"PR-TEST-2\",\"sourceRefId\":\"PRUN:synthetic:source:0\",\"xpath\":null}",
+                "sourceRefId": "PRUN:synthetic:source:0",
+                "title": "原文 · 解析修订 2",
+                "versionLabel": "PR-TEST-2",
+                "workItemId": "WI-CODEX-SYNTHETIC"
+              },
+              {
+                "evidenceRef": "method:scope",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "kind": "METHOD_CLAUSE",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "methodRef": "method:scope",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认"
+              },
+              {
+                "evidenceRef": "method:applicability",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "kind": "METHOD_CLAUSE",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "methodRef": "method:applicability",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认"
+              },
+              {
+                "classificationDefinitions": [
+                  {
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION",
+                    "dimension": "LIKELIHOOD",
+                    "label": "可能"
+                  },
+                  {
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION",
+                    "dimension": "LIKELIHOOD",
+                    "label": "不大可能"
+                  },
+                  {
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION",
+                    "dimension": "LIKELIHOOD",
+                    "label": "不可能（极少）"
+                  },
+                  {
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION",
+                    "dimension": "LIKELIHOOD",
+                    "label": "极不可能（极端少）"
+                  },
+                  {
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION",
+                    "dimension": "SEVERITY",
+                    "label": "严重"
+                  }
+                ],
+                "evidenceRef": "method:risk",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "kind": "METHOD_CLAUSE",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "methodRef": "method:risk",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认"
+              },
+              {
+                "classificationDefinitions": [
+                  {
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION",
+                    "dimension": "SEVERITY",
+                    "label": "轻微"
+                  },
+                  {
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION",
+                    "dimension": "SEVERITY",
+                    "label": "重要"
+                  },
+                  {
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION",
+                    "dimension": "SEVERITY",
+                    "label": "严重"
+                  },
+                  {
+                    "definitionQuote": "SYNTHETIC_METHOD_DEFINITION",
+                    "dimension": "SEVERITY",
+                    "label": "灾难"
+                  }
+                ],
+                "evidenceRef": "method:severity-definitions",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "kind": "METHOD_CLAUSE",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "methodRef": "method:severity-definitions",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认"
+              },
+              {
+                "evidenceRef": "method:revision",
+                "excerpt": "SYNTHETIC_METHOD_BODY: retain actual conditions and record a specific missing fact.",
+                "kind": "METHOD_CLAUSE",
+                "locator": "SYNTHETIC_METHOD_SECTION",
+                "methodRef": "method:revision",
+                "packRef": "JA-PROBLEM-METHOD-20260909",
+                "sourceIdentity": "SYNTHETIC_METHOD_DOCUMENT",
+                "sourceVersionStatus": "VERSION_UNCONFIRMED",
+                "title": "SYNTHETIC_METHOD_TITLE",
+                "versionLabel": "R01；受控版本身份待确认"
+              }
+            ],
+            "readSourceRefs": [
+              "method:scope",
+              "method:applicability",
+              "method:risk",
+              "method:severity-definitions",
+              "method:revision",
+              "DOCUMENT_ORIGINAL:DV-SYNTHETIC:PR-TEST-2:PRUN:synthetic:source:0"
+            ],
+            "capabilities": [
+              {
+                "capability": "registered_source_reading",
+                "impact": "可读取目录内精确版本正文，并展开同页条件与脚注。",
+                "status": "AVAILABLE"
+              },
+              {
+                "capability": "fleet_configuration",
+                "impact": "不能由此证明当前对象装机、执行或构型；受控 Host 匹配单独保留。",
+                "status": "NOT_CONNECTED"
+              },
+              {
+                "capability": "reliability_history",
+                "impact": "没有取得可靠性查询结果；不能据此填发生率或零事件。",
+                "status": "NOT_CONNECTED"
+              },
+              {
+                "capability": "knowledge_retrieval",
+                "impact": "本轮未接通知识检索；可继续分析已授权正文，未取得资料保持线索。",
+                "status": "NOT_CONNECTED"
+              }
+            ],
+            "historyReview": {
+              "coverage": "NOT_REQUIRED",
+              "engineeringDocumentRefs": [],
+              "limitation": null,
+              "priorAssessmentRefs": [],
+              "required": false
+            }
+          }
+        },
+        "executionStatus": "RUNNING",
+        "preparation": {
+          "schemaVersion": "wiselink.jobaid-preparation.v1",
+          "taskPurpose": "INITIAL_PROBLEM_ASSESSMENT",
+          "goal": "分析当前文档的问题、条件和证据，保存候选问题工作并保留未决事项。",
+          "targetIssueKeys": [],
+          "taskInputRevision": 5,
+          "currentInputRevision": 5,
+          "currentInputChanged": false,
+          "documentVersionId": "DV-SYNTHETIC",
+          "originalBinding": {
+            "documentVersionId": "DV-SYNTHETIC",
+            "parseRevision": 2,
+            "parseRunId": "PR-TEST-2",
+            "sourceArtifactId": "ART-TEST",
+            "sourceByteLength": 1234,
+            "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "lastSaved": {
+            "workRevisionRef": "JAWR-SYNTHETIC-1",
+            "workRevision": 1,
+            "basedOnInputRevision": 5
+          },
+          "currentIssues": [
+            {
+              "issueKey": "condition",
+              "question": "何时可更换？"
+            }
+          ],
+          "unfinishedItems": [
+            {
+              "issueKey": "condition",
+              "kind": "OPEN_QUESTION",
+              "description": "当前指示是否持续超过五秒？"
+            }
+          ],
+          "pendingEngineerInputs": [],
+          "savedUpdates": [],
+          "humanConfirmedDecisions": [],
+          "humanConfirmationStatus": "UNAVAILABLE",
+          "limitations": [
+            "ENGINEER_PREPARATION_READER_UNAVAILABLE"
+          ]
+        }
+      }
+    }
+  ]
+}

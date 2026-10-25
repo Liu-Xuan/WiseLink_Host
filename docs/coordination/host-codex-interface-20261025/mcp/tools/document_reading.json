@@ -1,0 +1,406 @@
+{
+  "name": "document_reading",
+  "title": "读取与保存文件自身解读",
+  "description": "READING_BEGIN显式受理确切文件版本解读；READ按已发布原文分页交付并记录真实范围，SAVE同次保存短主题、简明认识、完整解释及关键条件。READING_RETRACT仅对已保存的最新修订追加经授权且具CAS的撤回记录，保留原结果供审计。只保存候选，不确认机队适用或正式采用；不解析或翻译原件。读取活动声明与事项工作使用各自独立入口。",
+  "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "oneOf": [
+      {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "READING_BEGIN"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "parseRunId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "deliveryRef": {
+            "type": "string",
+            "pattern": "^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$"
+          },
+          "semanticRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "requestId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9:_-]{1,160}$"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "action",
+          "documentVersionId",
+          "parseRunId",
+          "semanticRevision",
+          "requestId",
+          "expectedRevision"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "READING_STATUS"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "runRef": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "deliveryRef": {
+            "type": "string",
+            "pattern": "^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$"
+          }
+        },
+        "required": [
+          "action",
+          "documentVersionId",
+          "runRef"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "READING_CANCEL"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "runRef": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "deliveryRef": {
+            "type": "string",
+            "pattern": "^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$"
+          }
+        },
+        "required": [
+          "action",
+          "documentVersionId",
+          "runRef"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "READING_RETRACT"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "runRef": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "deliveryRef": {
+            "type": "string",
+            "pattern": "^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$"
+          },
+          "expectedReadingRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "requestId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9:_-]{1,160}$"
+          },
+          "reasonCode": {
+            "type": "string",
+            "pattern": "^[A-Z0-9_:-]{1,160}$"
+          },
+          "reviewReference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "action",
+          "documentVersionId",
+          "runRef",
+          "expectedReadingRevision",
+          "requestId",
+          "reasonCode",
+          "reviewReference"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "READING_CLAIM"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "runRef": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "deliveryRef": {
+            "type": "string",
+            "pattern": "^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$"
+          },
+          "leaseOwner": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9:_-]{1,160}$"
+          }
+        },
+        "required": [
+          "action",
+          "documentVersionId",
+          "runRef",
+          "leaseOwner"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "READING_HEARTBEAT"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "runRef": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "deliveryRef": {
+            "type": "string",
+            "pattern": "^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$"
+          },
+          "leaseOwner": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9:_-]{1,160}$"
+          },
+          "leaseToken": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "leaseGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "action",
+          "documentVersionId",
+          "runRef",
+          "leaseOwner",
+          "leaseToken",
+          "leaseGeneration"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "READING_READ"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "runRef": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "deliveryRef": {
+            "type": "string",
+            "pattern": "^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$"
+          },
+          "leaseOwner": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9:_-]{1,160}$"
+          },
+          "leaseToken": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "leaseGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "action",
+          "documentVersionId",
+          "runRef",
+          "leaseOwner",
+          "leaseToken",
+          "leaseGeneration",
+          "offset",
+          "limit"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "READING_SAVE"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "runRef": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "deliveryRef": {
+            "type": "string",
+            "pattern": "^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$"
+          },
+          "leaseOwner": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9:_-]{1,160}$"
+          },
+          "leaseToken": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "leaseGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "candidate": {},
+          "producer": {
+            "type": "object",
+            "properties": {
+              "skillVersion": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "modelVersion": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            },
+            "required": [
+              "skillVersion",
+              "modelVersion"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "action",
+          "documentVersionId",
+          "runRef",
+          "leaseOwner",
+          "leaseToken",
+          "leaseGeneration",
+          "candidate",
+          "producer"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "const": "READING_FAIL"
+          },
+          "documentVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "runRef": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,96}$"
+          },
+          "deliveryRef": {
+            "type": "string",
+            "pattern": "^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$"
+          },
+          "leaseOwner": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9:_-]{1,160}$"
+          },
+          "leaseToken": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "leaseGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "errorCode": {
+            "type": "string",
+            "pattern": "^[A-Z0-9_:-]{1,160}$"
+          }
+        },
+        "required": [
+          "action",
+          "documentVersionId",
+          "runRef",
+          "leaseOwner",
+          "leaseToken",
+          "leaseGeneration",
+          "errorCode"
+        ],
+        "additionalProperties": false
+      }
+    ]
+  }
+}

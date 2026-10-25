@@ -1,0 +1,31 @@
+{
+  "name": "get_review_turn_context",
+  "title": "读取评审轮次最小上下文",
+  "description": "只读返回该 durable attempt 冻结的 WorkItem、evaluation、bilingual、applicability、adopted inputs 最小投影与执行 policy；不返回 tenant、actor、OAuth credential 或 server-owned sessionKey。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "attemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "attemptRef"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

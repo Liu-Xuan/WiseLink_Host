@@ -1,0 +1,51 @@
+{
+  "name": "commit_applicability_candidate",
+  "title": "提交飞机号适用性提取候选",
+  "description": "仅接受由官方 Skill runApplicabilityEvaluation 按 Host modelInput.astVocabulary 组装的专属 CANDIDATE 与 fenced ResultEnvelope；factsConsidered 必须精确等于 Host controlledFacts[].factId。业务校验拒绝后不得重提 commit。Host 校验 exact DV/revision/SourceRef/aircraft/asOf/fact versions/actual runtime provenance，再调用唯一 FleetMasterData+Kleene evaluator，实际字节 readback 后 CAS 写回；FALSE 永远是 NOT_APPLICABLE/pass=false，只有 Host 缺失受控事实可形成 UNKNOWN/WAITING_INPUT。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "attemptRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "workItemId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "leaseToken": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      },
+      "leaseGeneration": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      },
+      "result": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "required": [
+      "attemptRef",
+      "leaseToken",
+      "leaseGeneration",
+      "result"
+    ],
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+  }
+}

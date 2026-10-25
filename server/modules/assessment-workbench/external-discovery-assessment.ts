@@ -29,7 +29,7 @@ export interface HostedOpenClawDiscoveryCandidate {
  * OpenClaw deliberately does not receive a WorkItem ID or a WiseLink API key.
  */
 export interface HostedOpenClawDiscoveryResult {
-  runtime: 'FEISHU_HOSTED_OPENCLAW';
+  runtime: 'FEISHU_HOSTED_OPENCLAW' | 'CODEX';
   runtimeAppId?: string;
   provider: ExternalEngineeringProvider;
   query: string;

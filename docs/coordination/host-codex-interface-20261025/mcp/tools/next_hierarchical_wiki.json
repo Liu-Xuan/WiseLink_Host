@@ -1,0 +1,17 @@
+{
+  "name": "next_hierarchical_wiki",
+  "title": "预约到期的分层Wiki更新",
+  "description": "只使用已保存的本人Wiki委托和实时来源授权，合并底层变化，返回至多一个精确DerivedSummary任务；没有变化时IDLE，不调用模型。",
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+  }
+}

@@ -1,0 +1,178 @@
+{
+  "name": "commit_translation_candidate",
+  "title": "提交来源绑定的中英文候选翻译",
+  "description": "大结果先按 UPLOAD_PART（每 part 原始字节最多 6144，Base64）写入同一 Host FileService attempt-owned staging；相同 part 可按 lease fence 精确重放且 chunk 阶段不改变 WorkItem/current。全部 receipt 就绪后以 FINALIZE 一次组装完整 ResultEnvelope，进入既有 TranslationRuleSet ResultGate、FileService 实际字节 readback 与 WorkItem CAS。保留小结果直接 result 兼容形态；OpenClaw 不能直接写 current。",
+  "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "anyOf": [
+      {
+        "type": "object",
+        "properties": {
+          "attemptRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "leaseToken": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "leaseGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "result": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "attemptRef",
+          "leaseToken",
+          "leaseGeneration",
+          "result"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "attemptRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "leaseToken": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "leaseGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "phase": {
+            "type": "string",
+            "const": "UPLOAD_PART"
+          },
+          "resultContentHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "partIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63
+          },
+          "partCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "payloadBase64": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 8192
+          }
+        },
+        "required": [
+          "attemptRef",
+          "leaseToken",
+          "leaseGeneration",
+          "phase",
+          "resultContentHash",
+          "partIndex",
+          "partCount",
+          "payloadBase64"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "attemptRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "leaseToken": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "leaseGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "phase": {
+            "type": "string",
+            "const": "FINALIZE"
+          },
+          "resultContentHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "partCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "parts": {
+            "minItems": 1,
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "partIndex": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 63
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "byteLength": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 6144
+                }
+              },
+              "required": [
+                "partIndex",
+                "sha256",
+                "byteLength"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "attemptRef",
+          "leaseToken",
+          "leaseGeneration",
+          "phase",
+          "resultContentHash",
+          "partCount",
+          "parts"
+        ],
+        "additionalProperties": false
+      }
+    ]
+  },
+  "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+  }
+}

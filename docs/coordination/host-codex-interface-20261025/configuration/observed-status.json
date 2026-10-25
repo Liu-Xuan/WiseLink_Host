@@ -1,0 +1,94 @@
+{
+  "observations": {
+    "development": {
+      "observedAtUtc": "2026-10-25T09:07:09.418696+00:00",
+      "observation": "OFFICIAL_CLI_ENVIRONMENT_VARIABLE_NAMES_ONLY",
+      "selectorNamePresent": false,
+      "codexPrefixNamesPresent": [],
+      "legacyScopeNamesPresent": [
+        "WL_OPENCLAW_APPLICABILITY_CONTEXT_REF",
+        "WL_OPENCLAW_APPLICABILITY_TARGET_AIRCRAFT_ID",
+        "WL_OPENCLAW_APPLICABILITY_TARGET_AS_OF",
+        "WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED",
+        "WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED",
+        "WL_OPENCLAW_GATEWAY_AUTH_MODE",
+        "WL_OPENCLAW_MATTER_SCOPE_ENABLED",
+        "WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED",
+        "WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID",
+        "WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID",
+        "WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS",
+        "WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID",
+        "WL_OPENCLAW_SERVICE_MATTER_ID",
+        "WL_OPENCLAW_SERVICE_MATTER_IDS",
+        "WL_OPENCLAW_SERVICE_PRINCIPAL_ID",
+        "WL_OPENCLAW_SERVICE_SCOPE_ENABLED",
+        "WL_OPENCLAW_SERVICE_SCOPE_ENV",
+        "WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED",
+        "WL_OPENCLAW_SERVICE_TENANT_ID",
+        "WL_OPENCLAW_SERVICE_WORK_ITEM_ID"
+      ],
+      "valuesRead": false,
+      "relevantFeatureFlagNamesPresent": [
+        "WL_JOBAID_PROBLEM_V2_ENABLED",
+        "WL_TRANSLATION_V2_ENABLED"
+      ]
+    },
+    "online": {
+      "observedAtUtc": "2026-10-25T09:07:09.396202+00:00",
+      "observation": "OFFICIAL_CLI_ENVIRONMENT_VARIABLE_NAMES_ONLY",
+      "selectorNamePresent": false,
+      "codexPrefixNamesPresent": [],
+      "legacyScopeNamesPresent": [
+        "WL_OPENCLAW_APPLICABILITY_CONTEXT_REF",
+        "WL_OPENCLAW_APPLICABILITY_TARGET_AIRCRAFT_ID",
+        "WL_OPENCLAW_APPLICABILITY_TARGET_AS_OF",
+        "WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED",
+        "WL_OPENCLAW_DOCUMENT_SCOPE_ENABLED",
+        "WL_OPENCLAW_GATEWAY_AUTH_MODE",
+        "WL_OPENCLAW_MATTER_SCOPE_ENABLED",
+        "WL_OPENCLAW_SERVICE_AUTO_QUEUE_ENABLED",
+        "WL_OPENCLAW_SERVICE_DOCUMENT_ACTOR_ID",
+        "WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_ID",
+        "WL_OPENCLAW_SERVICE_DOCUMENT_VERSION_IDS",
+        "WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID",
+        "WL_OPENCLAW_SERVICE_MATTER_ID",
+        "WL_OPENCLAW_SERVICE_MATTER_IDS",
+        "WL_OPENCLAW_SERVICE_PRINCIPAL_ID",
+        "WL_OPENCLAW_SERVICE_SCOPE_ENABLED",
+        "WL_OPENCLAW_SERVICE_SCOPE_ENV",
+        "WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED",
+        "WL_OPENCLAW_SERVICE_TENANT_ID",
+        "WL_OPENCLAW_SERVICE_WORK_ITEM_ID"
+      ],
+      "valuesRead": false,
+      "relevantFeatureFlagNamesPresent": [
+        "WL_JOBAID_PROBLEM_V2_ENABLED",
+        "WL_TRANSLATION_V2_ENABLED"
+      ]
+    }
+  },
+  "configurationValuesIncluded": false,
+  "credentialValuesIncluded": false,
+  "credentialIdsIncluded": false,
+  "codexApiKeyExactPathAuthorization": {
+    "status": "NOT_CONFIGURED_AT_OBSERVATION",
+    "basis": "Coordinator official read-only API-key path metadata inspection; only the absence is reported here.",
+    "paths": [
+      "/openapi/wiselink/codex-mcp",
+      "/openapi/wiselink/codex-next-work-item",
+      "/openapi/wiselink/codex-ack-work-item",
+      "/openapi/wiselink/codex-block-work-item",
+      "/openapi/wiselink/codex-apply-pending-model-configuration"
+    ]
+  },
+  "deployment": {
+    "thisLocalCodexBatch": "NOT_DEPLOYED",
+    "newRuntimeConsumerConfiguration": "NOT_VERIFIED",
+    "realBusinessCycle": "NOT_RUN"
+  },
+  "limitations": [
+    "Name presence does not verify its value, scope correctness, or health.",
+    "No environment values, credential identifiers, people metadata, tokens, business IDs, or user filesystem paths are included.",
+    "These observations are historical read-only evidence, not a current live check."
+  ]
+}

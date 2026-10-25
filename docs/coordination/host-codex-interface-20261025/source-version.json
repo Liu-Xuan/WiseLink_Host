@@ -1,0 +1,8 @@
+{
+  "hostBaseline": "1eb9bcc8bd5a57798cb91f9674dfccdf9d44eb92",
+  "importedExecutorUpstream": "fc132291",
+  "upstreamReferenceBasis": "Exact upstream reference supplied by the coordinator; imported working files are identified individually in source-manifest.json.",
+  "workingChanges": "LOCAL_UNCOMMITTED_HOST_CODEX_TRANSITION",
+  "finalIntegrationCommit": "RECORDED_OUTSIDE_THIS_BUNDLE_BY_COORDINATOR",
+  "purpose": "Reviewable source snapshot; no runtime freeze, deployment gate, or self-referencing final commit hash."
+}

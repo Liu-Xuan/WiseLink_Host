@@ -1,0 +1,426 @@
+{
+  "format": "unmodified-typescript-type-declarations",
+  "note": "These are exact source declarations, not generated JSONSchema or a new wire protocol. Imported type references retain their original names.",
+  "declarations": [
+    {
+      "name": "OpenClawActionTaskType",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 4,
+      "declaration": "export type OpenClawActionTaskType =\n  | 'OPENCLAW_APPLICABILITY_EVALUATION'\n  | 'OPENCLAW_DYNAMIC_EVALUATION'\n  | 'OPENCLAW_INTERACTIVE_REVIEW'\n  | 'OPENCLAW_OVERALL_SYNTHESIS'\n  | 'OPENCLAW_TRANSLATE';"
+    },
+    {
+      "name": "ActionAttemptStatus",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 11,
+      "declaration": "export type ActionAttemptStatus =\n  | 'QUEUED'\n  | 'RUNNING'\n  | 'RETRY_SCHEDULED'\n  | 'COMMITTING'\n  | 'SUCCEEDED'\n  | 'WAITING_INPUT'\n  | 'FAILED'\n  | 'TIMED_OUT'\n  | 'CANCELLED'\n  | 'CONFLICT'\n  | 'OBSOLETE';"
+    },
+    {
+      "name": "ActionEnvelopeArtifactRef",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 24,
+      "declaration": "export interface ActionEnvelopeArtifactRef {\n  ref: string;\n  sha256: string;\n}"
+    },
+    {
+      "name": "ActionEnvelopeMissingInput",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 29,
+      "declaration": "export interface ActionEnvelopeMissingInput {\n  code: string;\n  message: string;\n}"
+    },
+    {
+      "name": "OpenClawDynamicRuleSetBinding",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 40,
+      "declaration": "/**\n * Exact Host-owned RuleSet snapshot used to build one dynamic task. The\n * binding lives inside modelInput, so the existing TaskEnvelope inputHash and\n * durable ActionAttempt row seal it without introducing another envelope or\n * current-pointer mechanism.\n */\nexport interface OpenClawDynamicRuleSetBinding {\n  schemaVersion: 'wiselink.3_1.dynamic_rule_set_binding.v1';\n  snapshotId: string;\n  criterionSetId: string;\n  criterionSetHash: string;\n  memberIdentityHash: string;\n  criteriaCount: number;\n  rulePackVersion: string;\n  artifactRef: string;\n  artifactDigest: string;\n  artifactVersion: string;\n  activationRevision: number;\n}"
+    },
+    {
+      "name": "OpenClawTaskEnvelope",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 58,
+      "declaration": "/**\n * Immutable Host-created input delivered to OpenClaw after a successful\n * ActionAttempt lease claim.\n */\nexport interface OpenClawTaskEnvelope {\n  schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1';\n  actionAttemptId: string;\n  operationRef: string;\n  taskType: OpenClawActionTaskType;\n  priority: number;\n  tenantId: string;\n  workItemId: string;\n  inputRevision: number;\n  baseRevision: number;\n  documentVersionId: string;\n  sourceRefs: ActionEnvelopeArtifactRef[];\n  allowedConnectors: string[];\n  hostResolvedMissingInputs: ActionEnvelopeMissingInput[];\n  modelInput: Record<string, unknown>;\n  /** Host routing only; never forwarded as part of modelInput. Absent on historical tasks. */\n  executionModel?: CanonicalExecutionModelSelection;\n  deadline: string;\n  idempotencyKey: string;\n  inputHash: string;\n}"
+    },
+    {
+      "name": "OpenClawDynamicTaskModelInput",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 80,
+      "declaration": "export interface OpenClawDynamicTaskModelInput extends Record<string, unknown> {\n  ruleSetBinding: OpenClawDynamicRuleSetBinding;\n}"
+    },
+    {
+      "name": "OpenClawDynamicTaskEnvelope",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 84,
+      "declaration": "export interface OpenClawDynamicTaskEnvelope extends OpenClawTaskEnvelope {\n  taskType: 'OPENCLAW_DYNAMIC_EVALUATION';\n  modelInput: OpenClawDynamicTaskModelInput;\n}"
+    },
+    {
+      "name": "EngineeringMatterAttemptSubject",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 90,
+      "declaration": "/** New Matter requests never include a member WorkItem execution identity. */\nexport interface EngineeringMatterAttemptSubject {\n  kind: 'ENGINEERING_MATTER';\n  matterId: string;\n  matterRevisionId: string;\n}"
+    },
+    {
+      "name": "EngineeringMatterAttemptTrigger",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 96,
+      "declaration": "export type EngineeringMatterAttemptTrigger =\n  | { kind: 'SOURCE_CHANGE'; inputIds: string[] }\n  | { kind: 'COMPOSITION_CHANGE'; previousMatterRevisionId: string | null }\n  | { kind: 'REVISIT'; workRef: string; conditionIds: string[] }\n  | { kind: 'USER_REQUEST'; requestId: string; instruction: string };"
+    },
+    {
+      "name": "OpenClawMatterTaskEnvelope",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 102,
+      "declaration": "export interface OpenClawMatterTaskEnvelope extends Omit<\n  OpenClawTaskEnvelope,\n  'schemaVersion' | 'taskType' | 'workItemId' | 'documentVersionId'\n> {\n  schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v2';\n  taskType: 'OPENCLAW_MATTER_ASSESSMENT';\n  subject: EngineeringMatterAttemptSubject;\n  trigger: EngineeringMatterAttemptTrigger;\n  /** Host-captured execution basis; never supplied by the model. */\n  workingBasis: {\n    inputs: EngineeringMatterWorkingInputBinding[];\n    priorWorkRef: string | null;\n  };\n}"
+    },
+    {
+      "name": "AnyOpenClawTaskEnvelope",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 117,
+      "declaration": "export type AnyOpenClawTaskEnvelope =\n  | OpenClawTaskEnvelope\n  | OpenClawMatterTaskEnvelope;"
+    },
+    {
+      "name": "OpenClawResultBusinessOutcome",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 121,
+      "declaration": "export type OpenClawResultBusinessOutcome =\n  | 'CANDIDATE_READY'\n  | 'UNKNOWN'\n  | 'WAITING_INPUT'\n  | 'NOT_PRODUCED';"
+    },
+    {
+      "name": "OpenClawModelResultEnvelope",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 131,
+      "declaration": "/**\n * Complete executor result. The model output is data inside the envelope; it\n * is never accepted as a free-standing string or silently replaced with {}.\n */\nexport interface OpenClawModelResultEnvelope {\n  executionKind?: never;\n  modelRequests?: never;\n  sourceWork?: never;\n  schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1';\n  actionAttemptId: string;\n  operationRef: string;\n  taskType: OpenClawActionTaskType;\n  workItemId: string;\n  baseRevision: number;\n  status: 'SUCCEEDED' | 'WAITING_INPUT' | 'FAILED';\n  businessOutcome: OpenClawResultBusinessOutcome;\n  candidateStatus: 'UNKNOWN' | 'WAITING_INPUT' | null;\n  modelOutput: string | null;\n  outputArtifactRefs: ActionEnvelopeArtifactRef[];\n  sourceRefs: ActionEnvelopeArtifactRef[];\n  factsConsidered: string[];\n  missingInputs: ActionEnvelopeMissingInput[];\n  conflicts: string[];\n  warnings: string[];\n  modelVersion: string;\n  promptVersion: string;\n  skillVersion: string;\n  toolVersions: Record<string, string>;\n  runMetrics: {\n    durationMs: number;\n    inputUnits: number;\n    outputUnits: number;\n  };\n  contentHash: string;\n  errorCode: string | null;\n  errorDetail: string | null;\n}"
+    },
+    {
+      "name": "OpenClawSavedWorkReconciliationResultEnvelope",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 166,
+      "declaration": "/** A Host-authorized finish of an existing COMPLETE JAWR, without a model request. */\nexport interface OpenClawSavedWorkReconciliationResultEnvelope extends Omit<\n  OpenClawModelResultEnvelope, 'modelVersion' | 'executionKind' | 'modelRequests' | 'sourceWork'\n> {\n  executionKind: 'HOST_SAVED_WORK_RECONCILIATION';\n  status: 'SUCCEEDED';\n  businessOutcome: 'CANDIDATE_READY';\n  candidateStatus: null;\n  modelRequests: 0;\n  modelVersion: null;\n  sourceWork: { workRevisionRef: string; sourceActionAttemptId: string };\n}"
+    },
+    {
+      "name": "OpenClawResultEnvelope",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 178,
+      "declaration": "export type OpenClawResultEnvelope = OpenClawModelResultEnvelope | OpenClawSavedWorkReconciliationResultEnvelope;"
+    },
+    {
+      "name": "OpenClawMatterResultEnvelope",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 180,
+      "declaration": "export interface OpenClawMatterResultEnvelope extends Omit<\n  OpenClawResultEnvelope,\n  'schemaVersion' | 'taskType' | 'workItemId' | 'modelVersion' | 'skillVersion' | 'runMetrics' | 'executionKind' | 'modelRequests' | 'sourceWork'\n> {\n  schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v2';\n  taskType: 'OPENCLAW_MATTER_ASSESSMENT';\n  subject: EngineeringMatterAttemptSubject;\n  modelVersion: string | null;\n  skillVersion: string | null;\n  runMetrics: { durationMs: number; inputUnits: number | null; outputUnits: number | null };\n  producer?: { kind: 'OFFICIAL_PLUGIN'; instanceId: string; pluginVersion: string;\n    actionKey: 'textToJson'; concreteModel: null };\n}"
+    },
+    {
+      "name": "AnyOpenClawResultEnvelope",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 194,
+      "declaration": "export type AnyOpenClawResultEnvelope =\n  | OpenClawResultEnvelope\n  | OpenClawMatterResultEnvelope;"
+    },
+    {
+      "name": "OpenClawClaimBase",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 198,
+      "declaration": "interface OpenClawClaimBase {\n  attemptRef: string;\n  leaseToken: string;\n  leaseGeneration: number;\n  leaseExpiresAt: string;\n  task: OpenClawTaskEnvelope;\n}"
+    },
+    {
+      "name": "OpenClawRunningLeaseClaim",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 206,
+      "declaration": "export interface OpenClawRunningLeaseClaim extends OpenClawClaimBase {\n  status: 'RUNNING';\n}"
+    },
+    {
+      "name": "OpenClawCommittingRecoveryClaim",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 210,
+      "declaration": "export interface OpenClawCommittingRecoveryClaim extends OpenClawClaimBase {\n  status: 'COMMITTING';\n  recoveryResult: OpenClawResultEnvelope;\n}"
+    },
+    {
+      "name": "OpenClawLeaseClaim",
+      "source": "server/modules/action-attempt/action-attempt-envelope.types.ts",
+      "line": 215,
+      "declaration": "export type OpenClawLeaseClaim =\n  | OpenClawRunningLeaseClaim\n  | OpenClawCommittingRecoveryClaim;"
+    },
+    {
+      "name": "BeginDynamicEvaluationResult",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 77,
+      "declaration": "export interface BeginDynamicEvaluationResult {\n  attemptRef: string;\n  status: 'RUNNING' | 'COMMITTING';\n  leaseToken: string;\n  leaseGeneration: number;\n  leaseExpiresAt: string;\n  task: OpenClawDynamicTaskEnvelope;\n  recoveryResult?: OpenClawResultEnvelope;\n  modelInput: Record<string, unknown>;\n}"
+    },
+    {
+      "name": "CommitDynamicEvaluationResult",
+      "source": "server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts",
+      "line": 88,
+      "declaration": "export interface CommitDynamicEvaluationResult {\n  workItemId: string;\n  workItemRevision: number;\n  status: CanonicalIntegratedAssessmentProjection['status'];\n  baseRules: CanonicalBaseRuleCandidateProjection;\n}"
+    },
+    {
+      "name": "BeginJobAidProblemResult",
+      "source": "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+      "line": 158,
+      "declaration": "export interface BeginJobAidProblemResult {\n  attemptRef: string;\n  status: 'RUNNING' | 'COMMITTING';\n  leaseToken: string;\n  leaseGeneration: number;\n  leaseExpiresAt: string;\n  task: OpenClawTaskEnvelope;\n  recoveryResult?: OpenClawResultEnvelope;\n  modelInput: JobAidProblemModelInput;\n  selectedDiscoveryRefs: string[];\n}"
+    },
+    {
+      "name": "JobAidSourceBinding",
+      "source": "server/modules/canonical-host/jobaid-problem-task.ts",
+      "line": 38,
+      "declaration": "export interface JobAidSourceBinding {\n  kind?: 'SOURCE_FILE';\n  workItemId: string;\n  documentVersionId: string;\n  artifactSha256: string;\n  artifactRef: string;\n}"
+    },
+    {
+      "name": "JobAidProblemModelInput",
+      "source": "server/modules/canonical-host/jobaid-problem-task.ts",
+      "line": 75,
+      "declaration": "export interface JobAidProblemModelInput extends Record<string, unknown> {\n  executionMode?: 'PROGRAM_CONTROLLED_V1';\n  programOriginal?: {\n    binding: import('@shared/document-original.interface').DocumentOriginalBinding;\n    coverage: import('@shared/document-original.interface').DocumentOriginalCoverage;\n    units: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['units'];\n    sourceLocators: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['sourceLocators'];\n    findings: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['findings'];\n  };\n  contentValidationVersion?: 'jobaid-semantic.v1';\n  /** Metadata only. A directory and approval provenance are not a body READ. */\n  tdmsContext?: Pick<TdmsRuntimeTaskContext, 'schemaVersion' | 'projection'>;\n  tdmsReviewContext?: TdmsReviewContext;\n  schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA | typeof JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;\n  /** Absent on sealed historical tasks: retain their original exact projection. */\n  evidenceProjectionVersion?: OverallEvidenceProjectionVersion;\n  purpose:\n    | 'INITIAL_PROBLEM_ASSESSMENT'\n    | 'OVERALL_CONSISTENCY'\n    | 'PROBLEM_REVIEW';\n  preparation?: JobAidPreparationView;\n  methodBinding: typeof JOBAID_METHOD_BINDING;\n  documentOverview: CanonicalCommonAssessmentContext['primaryDocument'] & {\n    sections: Array<{ title: string; sourceRefs: string[] }>;\n    original?: { binding: import('@shared/document-original.interface').DocumentOriginalBinding;\n      semanticMap?: import('@shared/document-semantic-map.interface').DocumentSemanticMap | null;\n      coverage: import('@shared/document-original.interface').DocumentOriginalCoverage;\n      findings: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['findings'] };\n  };\n  hostApplicability: Pick<\n    NonNullable<CanonicalWorkItemProjection['applicability']>,\n    | 'decision'\n    | 'currentness'\n    | 'aircraftNumber'\n    | 'assessmentAsOf'\n    | 'blockingUnknownCount'\n    | 'sourceExpressionCount'\n    | 'pass'\n  > | null;\n  availableSources: Array<{\n    ref: string;\n    kind: AssessmentEvidence['kind'];\n    title: string;\n    versionLabel: string | null;\n    locator: string | null;\n    documentVersionId?: string;\n    sourceRefId?: string;\n    parseRunId?: string;\n    carrierRangeRef?: string;\n    sourceStatement?: Pick<DocumentActivityAssessmentProjection['entries'][number], 'reference'|'label'|'semanticFieldsAvailability'|'scopeBasis'|'sourceSchemaVersion'>;\n  }>;\n  /** New mixed Review alone inlines exact records once; initial/Overall read on demand. */\n  sourceStatements?: DocumentActivityAssessmentProjection['records'];\n  activityContexts?: DocumentActivityAssessmentProjection['activityContexts'];\n  sourceStatementAvailability?: {status:'AVAILABLE'|'NOT_SAVED'|'NOT_INDEXED'; semanticFieldsAvailability:'LEGACY_PARTIAL'|'CAPTURED_FIELDS_ONLY'; limitations:string[]};\n  deliveredEvidence: ReturnType<typeof overallModelEvidenceRegistry>;\n  previousWork: {\n    workRevisionRef: string;\n    workRevision: number;\n    overviewStatus?: JobAidProblemWorkContent['overviewStatus'];\n    content: JobAidProblemModelWorkContent;\n  } | null;\n  expectedWorkRevision: number;\n  capabilities: JobAidProblemWorkContent['capabilities'];\n  historyReview: JobAidProblemWorkContent['historyReview'];\n  /** Actual earlier user wording remains discussion, never controlled facts. */\n  discussion: CanonicalCommonAssessmentContext['discussion'];\n  /** Absent only on tasks persisted before source provenance was projected. */\n  contextPackage?: JobAidAssessmentContextPackage;\n  knowledgeAccess?: import(\"@shared/jobaid-problem-assessment.interface\").JobAidKnowledgeAccess;\n}"
+    },
+    {
+      "name": "JobAidProblemModelWorkContent",
+      "source": "server/modules/canonical-host/jobaid-problem-task.ts",
+      "line": 147,
+      "declaration": "export type JobAidProblemModelWorkContent = Pick<JobAidProblemWorkContent,\n  'schemaVersion' | 'headline' | 'listBrief' | 'roundCompletion' | 'completionReason' | 'changeSummary' | 'unchangedExplanation'> & {\n  overview: string;\n  issues: Array<Omit<JobAidProblemIssue, 'issueRef' | 'sourceDependencies' | 'premiseRefs' | 'legacyCriterionRefs' | 'riskScenarios'> & { riskScenarios: Array<Omit<JobAidProblemIssue['riskScenarios'][number], 'gradeMeaning'>> }>;\n};"
+    },
+    {
+      "name": "JobAidProblemTaskInput",
+      "source": "server/modules/canonical-host/jobaid-problem-task.ts",
+      "line": 163,
+      "declaration": "export interface JobAidProblemTaskInput extends Record<string, unknown> {\n  executionMode?: 'PROGRAM_CONTROLLED_V1';\n  requestedModelRef?: string;\n  contentValidationVersion?: 'jobaid-semantic.v1';\n  /** Exact existing Review input selection, retained only in the trusted wrapper. */\n  preparationScope?: JobAidPreparationScope;\n  /** Sealed by Host for new automatic work only; absent on manual/historical tasks. */\n  automaticWorkItemLease?: AutomaticWorkItemTaskLease;\n  /** Exact saved candidate recovery; never a new model analysis. */\n  savedWorkReconciliation?: {\n    executionKind: 'HOST_SAVED_WORK_RECONCILIATION';\n    modelRequests: 0;\n    workRevisionRef: string;\n    workRevision: number;\n    sourceActionAttemptId: string;\n  };\n  /** Optional only on newly sealed tasks; never backfilled into old checkpoints. */\n  tdmsContext?: TdmsRuntimeTaskContext;\n  tdmsReviewContext?: TdmsReviewContext;\n  schemaVersion: typeof JOBAID_PROBLEM_TASK_SCHEMA | typeof JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA;\n  knowledgeBinding?: import(\"./initial-assessment-knowledge.service\").InitialKnowledgeBinding;\n  actorUserId: string;\n  permissionSnapshotVersion: string;\n  sourceBindings: JobAidSourceBinding[];\n  sourceCatalog: AssessmentEvidence[];\n  /** Host-only exact snapshots, never an extra model directory or input body. */\n  sourceActivityProjections?: DocumentActivityAssessmentProjection[];\n  initiallyDeliveredRefs: string[];\n  previousWork: JobAidWorkRevision | null;\n  modelInput: JobAidProblemModelInput;\n}"
+    },
+    {
+      "name": "CanonicalExecutionModelSelection",
+      "source": "shared/api.interface.ts",
+      "line": 2901,
+      "declaration": "/** Routing metadata, never provider credentials or a browser-supplied endpoint. */\nexport interface CanonicalExecutionModelSelection {\n  modelRef: string;\n  displayName: string;\n  providerKind: 'BUILT_IN' | 'CUSTOM';\n  settingsRevision: number;\n  selectedAt: string;\n}"
+    },
+    {
+      "name": "AutomaticWorkItemClaimResult",
+      "source": "shared/api.interface.ts",
+      "line": 3441,
+      "declaration": "export type AutomaticWorkItemClaimResult =\n  | { status: 'IDLE'; reviewAfterWorkItemId?: string; documentAfterRef?: string }\n  | { status: 'DOCUMENT_PENDING'; documentVersionId: string; deliveryRef: string;\n      documentAfterRef?: string }\n  | {\n      status: 'REVIEW_PENDING';\n      workItemId: string;\n      reviewTurnRef: string;\n      reviewAfterWorkItemId: string;\n    }\n  | {\n      status: 'OVERALL_PENDING';\n      workItemId: string;\n      reviewTurnRef: string;\n      workRevisionRef: string;\n      reviewAfterWorkItemId: string;\n    }\n  | {\n      status: 'CLAIMED';\n      workItemId: string;\n      requestId: string;\n      documentVersionId: string;\n      workItemRevision: number;\n      leaseToken: string;\n      leaseGeneration: number;\n      leaseExpiresAt: string;\n    };"
+    },
+    {
+      "name": "NextAutomaticWorkItemRequest",
+      "source": "shared/api.interface.ts",
+      "line": 3469,
+      "declaration": "export interface NextAutomaticWorkItemRequest {\n  resumeWorkItemId?: string;\n  reviewAfterWorkItemId?: string;\n  documentAfterRef?: string;\n}"
+    },
+    {
+      "name": "AcknowledgeAutomaticWorkItemRequest",
+      "source": "shared/api.interface.ts",
+      "line": 3475,
+      "declaration": "export interface AcknowledgeAutomaticWorkItemRequest {\n  workItemId: string;\n  leaseToken: string;\n  leaseGeneration: number;\n}"
+    },
+    {
+      "name": "AcknowledgeAutomaticWorkItemResponse",
+      "source": "shared/api.interface.ts",
+      "line": 3481,
+      "declaration": "export interface AcknowledgeAutomaticWorkItemResponse {\n  status: 'ACKNOWLEDGED';\n  workItemId: string;\n  replayed: boolean;\n  acknowledgedAt: string;\n}"
+    },
+    {
+      "name": "BlockAutomaticWorkItemRequest",
+      "source": "shared/api.interface.ts",
+      "line": 3488,
+      "declaration": "export interface BlockAutomaticWorkItemRequest {\n  workItemId: string;\n  leaseToken: string;\n  leaseGeneration: number;\n  /** Explicit operator parking; normal terminal-failure BLOCK is unchanged. */\n  expectedCancellation?: AutomaticWorkItemCancellationBinding;\n  /** Cancellation receipt replay only: never creates a new BLOCK. */\n  replayOnly?: true;\n}"
+    },
+    {
+      "name": "AutomaticWorkItemCancellationBinding",
+      "source": "shared/api.interface.ts",
+      "line": 3499,
+      "declaration": "/** Expected control binding, never an assertion about provider termination. */\nexport interface AutomaticWorkItemCancellationBinding {\n  requestId: string;\n  workItemRevision: number;\n  documentId: string;\n  documentVersionId: string;\n  sourceArtifactId: string;\n  sourceFileSha256: string;\n  sourceByteLength: number;\n  attemptId: string;\n  attemptRef: string;\n  attemptNo: number;\n  attemptRequestId: string;\n  actionType: 'OPENCLAW_DYNAMIC_EVALUATION';\n  inputRevision: number;\n  baseRevision: number;\n  inputHash: string;\n  executionModel: CanonicalExecutionModelSelection;\n}"
+    },
+    {
+      "name": "BlockAutomaticWorkItemResponse",
+      "source": "shared/api.interface.ts",
+      "line": 3518,
+      "declaration": "export interface BlockAutomaticWorkItemResponse {\n  status: 'BLOCKED';\n  workItemId: string;\n  blockedCode: string;\n  replayed: boolean;\n  blockedAt: string;\n}"
+    },
+    {
+      "name": "JobAidAssessmentContextPackage",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 21,
+      "declaration": "/** Model-facing context saved in the existing versioned assessment task input. */\nexport interface JobAidAssessmentContextPackage {\n  basedOnWorkItemRevision: number;\n  basedOnWorkingRevision: number | null;\n  primaryDocument: CanonicalCommonAssessmentContext['primaryDocument'] & {\n    readingStatus: CanonicalCommonAssessmentContext['documentReading']['status'];\n  };\n  supplementaryMaterials: {\n    status: CanonicalCommonAssessmentContext['relatedMaterials']['status'];\n    reason: string | null;\n    items: Array<\n      Omit<\n        CanonicalCommonAssessmentContext['relatedMaterials']['items'][number],\n        'availableSourceRefIds' | 'readFragments'\n      > & {\n        availableEvidenceRefs: string[];\n        deliveredEvidenceRefs: string[];\n      }\n    >;\n  };\n  sourceOrigins: Array<{\n    evidenceRef: string;\n    origin: string;\n    contentNature:\n      | 'SOURCE_DOCUMENT_CONTENT'\n      | 'SOURCE_DECLARED_PROFESSIONAL_OPINION'\n      | 'UNVERIFIED_ENGINEER_STATEMENT'\n      | 'UNVERIFIED_QUERY_RESPONSE'\n      | 'PRIOR_CANDIDATE'\n      | 'CONTROLLED_HOST_FACT'\n      | 'METHOD_MATERIAL';\n  }>;\n  knowledgeRetrieval: {\n    status: 'NOT_CONNECTED' | 'NOT_REQUESTED' | 'UNAVAILABLE';\n    reason?: string;\n    fragments: [];\n  };\n}"
+    },
+    {
+      "name": "JobAidKnowledgeAccess",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 59,
+      "declaration": "export interface JobAidKnowledgeAccess {\n  available: boolean;\n  reason?: string;\n}"
+    },
+    {
+      "name": "JobAidKnowledgeQueryReceipt",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 64,
+      "declaration": "export interface JobAidKnowledgeQueryReceipt {\n  queryRef: string | null;\n  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'UNKNOWN' | 'UNAVAILABLE';\n  error: string | null;\n  evidence: AssessmentEvidence[];\n  candidateOnly: true;\n  originalDocumentsVerified: false;\n}"
+    },
+    {
+      "name": "JobAidMethodBinding",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 73,
+      "declaration": "export interface JobAidMethodBinding {\n  packRef: string;\n  version: string;\n  sources: Array<{\n    sourceIdentity: string;\n    versionLabel: string;\n    documentVersionId: string | null;\n    status: 'CONFIRMED' | 'VERSION_UNCONFIRMED';\n  }>;\n  attachment5: 'R00_CONTENT_REPORTED_R01_LINK_UNCONFIRMED';\n}"
+    },
+    {
+      "name": "JobAidClassificationProposal",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 85,
+      "declaration": "export interface JobAidClassificationProposal {\n  /** Exact delivered method definition; optional only for historical work. */\n  definitionMatch?: { methodRef: string; definitionQuote: string };\n  label: string;\n  reason: string;\n  basisRefs: string[];\n}"
+    },
+    {
+      "name": "JobAidRiskScenario",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 93,
+      "declaration": "export interface JobAidRiskScenario {\n  scenario: string;\n  conditions: string[];\n  method: 'JA_AC_R01';\n  severity: JobAidClassificationProposal | null;\n  likelihood: JobAidClassificationProposal | null;\n  /** Host calculation. Unknown never has score zero or an inferred low grade. */\n  score: number | null;\n  riskGrade: 1 | 2 | 3 | 4 | 5 | null;\n  gradeMeaning: string | null;\n  importantEvent: { event: string; basisRefs: string[]; reason: string } | null;\n  limitations: string[];\n  controlComparison: string;\n}"
+    },
+    {
+      "name": "JobAidRequirementHandling",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 108,
+      "declaration": "export interface JobAidRequirementHandling {\n  methodRef: string;\n  requirement: string;\n  conditions: string[];\n  treatment:\n    | 'ADDRESSED'\n    | 'CONDITIONS_UNCONFIRMED'\n    | 'NOT_APPLICABLE_WITH_BASIS'\n    | 'LATER_BUSINESS_STAGE'\n    | 'NOT_YET_ADDRESSED'\n    | 'CONFLICT';\n  /** A traceable passage in the issue body; whitespace is normalized when matching. */\n  bodyQuote?: string;\n  basisRefs: string[];\n  explanation: string;\n}"
+    },
+    {
+      "name": "JobAidProblemIssue",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 125,
+      "declaration": "export interface JobAidProblemIssue {\n  issueKey: string;\n  issueRef: string;\n  question: string;\n  /** Complete candidate explanation with exact [[evidenceRef]] citations. */\n  body: string;\n  riskScenarios: JobAidRiskScenario[];\n  measures: Array<{\n    text: string;\n    addresses: string;\n    limitations: string[];\n    status: 'PROPOSED' | 'REPORTED_IMPLEMENTED' | 'VERIFIED_EFFECTIVE';\n    basisRefs: string[];\n  }>;\n  /** Separate method identities; no conversion to JA-AC grades. */\n  otherClassifications: Array<{\n    method:\n      | 'SAE_EVENT_CATEGORY'\n      | 'SOURCE_DOCUMENT_CLASSIFICATION'\n      | 'EO_ATTRIBUTE';\n    value: string;\n    reason: string;\n    basisRefs: string[];\n  }>;\n  openQuestions: Array<{\n    question: string;\n    affects: string;\n    nextEvidence: string;\n    reason: string;\n  }>;\n  requirementHandling: JobAidRequirementHandling[];\n  sourceDependencies: string[];\n  premiseRefs: string[];\n  legacyCriterionRefs?: string[];\n}"
+    },
+    {
+      "name": "JobAidProblemWorkContent",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 161,
+      "declaration": "export interface JobAidProblemWorkContent {\n  /** Historical read projection only; never a model-writable field. */\n  historicalSourceSchema?: 'wiselink.jobaid-problem-work.v2';\n  schemaVersion: typeof JOBAID_PROBLEM_WORK_SCHEMA;\n  headline: string;\n  listBrief: string;\n  understanding: string;\n  decisiveIssueKeys: string[];\n  overviewStatus: 'NOT_AVAILABLE' | 'CURRENT' | 'STALE';\n  issues: JobAidProblemIssue[];\n  roundCompletion: 'IN_PROGRESS' | 'COMPLETE' | 'COMPLETE_WITH_OPEN_QUESTIONS';\n  completionReason: string;\n  changeSummary: string;\n  unchangedExplanation: string;\n  methodBinding: JobAidMethodBinding;\n  /** All actual inputs, including important premises not eventually cited. */\n  evidence: AssessmentEvidence[];\n  readSourceRefs: string[];\n  capabilities: Array<{\n    capability: string;\n    status:\n      | 'AVAILABLE'\n      | 'NOT_CONNECTED'\n      | 'ACCESS_DENIED'\n      | 'NOT_FOUND'\n      | 'PARTIAL'\n      | 'READ_FAILED';\n    impact: string;\n  }>;\n  historyReview: {\n    required: boolean;\n    priorAssessmentRefs: string[];\n    engineeringDocumentRefs: string[];\n    coverage: 'AVAILABLE_HISTORY_REVIEWED' | 'PARTIAL' | 'NOT_REQUIRED';\n    limitation: string | null;\n  };\n}"
+    },
+    {
+      "name": "JobAidWorkRevision",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 199,
+      "declaration": "export interface JobAidWorkRevision {\n  workRevisionRef: string;\n  workItemId: string;\n  workRevision: number;\n  previousWorkRevisionRef: string | null;\n  requestId: string;\n  actionAttemptId: string;\n  basedOnWorkItemRevision: number;\n  documentVersionId: string;\n  createdAt: string;\n  content: JobAidProblemWorkContent;\n}"
+    },
+    {
+      "name": "CanonicalJobAidProblemCandidateProjection",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 212,
+      "declaration": "export interface CanonicalJobAidProblemCandidateProjection {\n  schemaVersion: typeof JOBAID_PROBLEM_RESULT_SCHEMA;\n  status: 'CANDIDATE_ONLY';\n  revision: number;\n  sourceResultId: string;\n  workRevisionRef: string;\n  workRevision: number;\n  issueCount: number;\n  openQuestionCount: number;\n  roundCompletion: 'COMPLETE' | 'COMPLETE_WITH_OPEN_QUESTIONS';\n  methodBinding: JobAidMethodBinding;\n  headline: string;\n  listBrief: string;\n  artifact: UnifiedPackageArtifactDescriptor;\n  actionAttemptId: string;\n  /** Saved once, shared by the default brief and detailed issue view. */\n  readingResult: AssessmentReadingResult;\n}"
+    },
+    {
+      "name": "JobAidProgramMaterialsRead",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 232,
+      "declaration": "/** Exact Native-prepared payload; preparation alone is not evidence of a provider send. */\nexport interface JobAidProgramMaterialsRead {\n  schemaVersion: 'wiselink.program-assessment-materials-read.v1';\n  workItemId: string;\n  attemptId: string;\n  attemptRef: string;\n  executionMode: 'PROGRAM_CONTROLLED_V1';\n  executionModel: import('./api.interface').CanonicalExecutionModelSelection;\n  preparedAt: string;\n  submissionEvidence: 'PREPARED_NOT_CONFIRMED_SENT' | 'RESPONSE_RECEIVED';\n  snapshot: { materials: Record<string, unknown>; modelRequest: Record<string, unknown> };\n}"
+    },
+    {
+      "name": "JobAidWorkingReadModel",
+      "source": "shared/jobaid-problem-assessment.interface.ts",
+      "line": 244,
+      "declaration": "export interface JobAidWorkingReadModel {\n  schemaVersion: 'wiselink.jobaid-working-read.v2';\n  enabled: boolean;\n  workItemId: string;\n  /** Validated outer automatic-processing ACK, independent of later JobAid attempts. */\n  autoProcessingAcknowledgement?: {\n    workItemId: string;\n    requestId: string;\n    documentVersionId: string;\n    acknowledgedAt: string;\n  } | null;\n  current: JobAidWorkRevision | null;\n  /** Latest exact WorkItem evaluation request, independent of saved work. */\n  latestAttempt: {\n    attemptId: string;\n    status: string;\n    inputRevision: number | null;\n    /** Exact dynamic-attempt record times, not Overall or queue ACK times. */\n    createdAt?: string;\n    startedAt?: string | null;\n    completedAt?: string | null;\n    /** Earliest saved revision belonging to this exact attempt; not first read. */\n    firstSavedAt?: string | null;\n  } | null;\n  /** One selected execution from this read; not the complete attempt history. */\n  selectedExecution?: {\n    actionType: 'OPENCLAW_DYNAMIC_EVALUATION' | 'OPENCLAW_OVERALL_SYNTHESIS';\n    executionMode?: import('./api.interface').CanonicalAssessmentExecutionMode | null;\n    executionModel?: import('./api.interface').CanonicalExecutionModelSelection | null;\n    /** Consumer observation, not an authoritative provider or attempt terminal state. */\n    programProgress?: { phase: 'MATERIALS_READY' | 'MODEL_RESPONSE_SAVED'; checkpointRef: string; observedAt: string } | null;\n    /** Metadata only; content requires the exact attempt's authorized lazy read. */\n    programMaterialsAvailable?: boolean;\n    attemptId: string;\n    /** Exact persisted operation reference, independent of request identity. */\n    attemptRef: string | null;\n    status: string;\n    createdAt: string;\n    startedAt: string | null;\n    completedAt: string | null;\n  } | null;\n  executionStatus: string | null;\n  /** Optional for compatibility with Host versions before activity projection. */\n  activity?: JobAidActivityRead | null;\n  currentInputChanged: boolean;\n  overallStatus: 'NOT_AVAILABLE' | 'CURRENT' | 'STALE';\n  overallBasedOnWorkRevisionRef: string | null;\n}"
+    },
+    {
+      "name": "DocumentOriginalBinding",
+      "source": "shared/document-original.interface.ts",
+      "line": 4,
+      "declaration": "/** Exact Host identities; extraction and translation cannot manufacture these. */\nexport interface DocumentOriginalBinding {\n  documentVersionId: string;\n  parseRunId: string;\n  parseRevision: number;\n  sourceArtifactId: string;\n  sourceSha256: string;\n  sourceByteLength: number;\n}"
+    },
+    {
+      "name": "DocumentOriginalCoverage",
+      "source": "shared/document-original.interface.ts",
+      "line": 13,
+      "declaration": "export interface DocumentOriginalCoverage {\n  knownPageCount: number | null;\n  /** Zero-based physical PDF pages. A read text layer does not imply understood figures. */\n  readPageIndexes: number[];\n  unresolvedRanges: Array<{\n    pageIndexes: number[];\n    unitIds: string[];\n    reason: 'UNREAD' | 'TEXT_CONFLICT' | 'STRUCTURE_UNCERTAIN' | 'FIGURE_UNINTERPRETED';\n    message: string;\n    /** Reading consequence, separate from retained extraction diagnostics. */\n    readingImpact?: 'DIAGNOSTIC' | 'LIMITATION';\n  }>;\n}"
+    },
+    {
+      "name": "DocumentOriginalResult",
+      "source": "shared/document-original.interface.ts",
+      "line": 27,
+      "declaration": "export interface DocumentOriginalResult {\n  schemaVersion: 'wiselink.document.original.v1';\n  binding: DocumentOriginalBinding;\n  producer: {\n    kind: 'OFFICIAL_PLUGIN_HYBRID' | 'MINERU_LOCAL' | 'MINERU_LOCAL_PDFJS';\n    instanceId: string;\n    /** Legacy version slot; MINERU_LOCAL records its actual engine version here. */\n    pluginVersion: string;\n    supplementaryExtraction?: 'PDFJS_TEXT_LAYER';\n    engine?: { name: 'MinerU'; version: string; backend: string };\n    actionKey: string;\n    concreteModel: string | null;\n    extractedAt: string | null;\n  };\n  /** Reuses the V2 source vocabulary, including native selectors and full grid cells. */\n  source: TranslationStructuredSource;\n  locations: Array<{\n    sourceRefId: string;\n    precision: 'TEXT_ITEM' | 'PAGE' | 'NATIVE_SELECTOR' | 'UNRESOLVED';\n    coordinateSpace: 'PDF_VIEWPORT_TOP_LEFT' | null;\n    pageIndex: number | null;\n    viewportWidth: number | null;\n    viewportHeight: number | null;\n    boxes: Array<[number, number, number, number]>;\n  }>;\n  coverage: DocumentOriginalCoverage;\n  markdown: string;\n}"
+    },
+    {
+      "name": "DocumentOriginalStepInput",
+      "source": "shared/document-original.interface.ts",
+      "line": 57,
+      "declaration": "/** Invoked only after M has claimed and authorized the existing durable parse run. */\nexport interface DocumentOriginalStepInput {\n  binding: DocumentOriginalBinding;\n  expectedPublishedRevision: number;\n  parseRunId: string;\n}"
+    },
+    {
+      "name": "DocumentOriginalStepResult",
+      "source": "shared/document-original.interface.ts",
+      "line": 62,
+      "declaration": "export interface DocumentOriginalStepResult {\n  parseRunId: string;\n  parseRevision: number;\n  status: 'STAGING' | 'PUBLISHED';\n  coverage: DocumentOriginalCoverage;\n  changedUnitIds: string[];\n  changedSourceRefIds?: string[];\n  previousParseRunId?: string | null;\n  changeKind: 'INITIAL' | 'LOCATOR_ONLY' | 'SOURCE_CONTENT' | 'IMPACT_UNRESOLVED';\n}"
+    },
+    {
+      "name": "DocumentOriginalArtifact",
+      "source": "shared/document-original.interface.ts",
+      "line": 74,
+      "declaration": "/** Generic file descriptor; roles reused by parseRun JSONB without MinerU payloads. */\nexport interface DocumentOriginalArtifact {\n  role: 'RAW_MARKDOWN' | 'MANIFEST';\n  relativePath: string;\n  bucketId: string;\n  filePath: string;\n  providerObjectId: string;\n  mediaType: string;\n  byteLength: number;\n  sha256: string;\n  readback: 'UPLOADED' | 'VERIFIED';\n}"
+    },
+    {
+      "name": "AssessmentReadingContent",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 5,
+      "declaration": "/** Saved candidate reading content. Its reading depths are never generated by GET. */\nexport interface AssessmentReadingContent {\n  schemaVersion: 'wiselink.3_1.assessment_reading.v1';\n  headline: string;\n  listBrief: string;\n  lead: string;\n  claims: AssessmentReadingClaim[];\n  /** Direct saved problem bodies; these are not fabricated atomic claims. */\n  issueArticles?: Array<{ issueKey: string; issueRef: string; question: string; body: string }>;\n  /** Claims whose conditions, negations or conflicts must remain visible. */\n  decisiveClaimIds: string[];\n}"
+    },
+    {
+      "name": "AssessmentReadingClaim",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 17,
+      "declaration": "export interface AssessmentReadingClaim {\n  claimId: string;\n  text: string;\n  /** Model classification: SOURCE_FACT reports a source statement, not Host verification. */\n  basis: 'SOURCE_FACT' | 'CONDITIONAL_INFERENCE';\n  premises: AssessmentClaimPremise[];\n}"
+    },
+    {
+      "name": "AssessmentClaimPremise",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 25,
+      "declaration": "export interface AssessmentClaimPremise {\n  evidenceRef: string;\n  role: 'SUPPORTS' | 'LIMITS' | 'CONTEXT' | 'CONFLICTS';\n  explanation: string;\n  limitation: string | null;\n}"
+    },
+    {
+      "name": "DialogueEvidenceSource",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 32,
+      "declaration": "export interface DialogueEvidenceSource {\n  requestRef: string;\n  contributionRef: string;\n  revision: number;\n  contextWorkItemIds: string[];\n}"
+    },
+    {
+      "name": "AssessmentSourceWork",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 40,
+      "declaration": "/** Exact saved analysis identity; this is not a document or an adoption decision. */\nexport interface AssessmentSourceWork {\n  subjectKind: 'ENGINEERING_MATTER';\n  subjectId: string;\n  workRef: string;\n  issueKey: string;\n}"
+    },
+    {
+      "name": "AssessmentTdmsProcessingSetBinding",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 48,
+      "declaration": "/** Immutable selected cohort/member identity, not a claim of current source authority. */\nexport interface AssessmentTdmsProcessingSetBinding {\n  scope: TdmsProcessingSetScope;\n  setRevisionRef: string;\n  generation: number;\n  processingFamilyRef: string;\n  cohortRef: string;\n  processingObservationRef: string;\n  memberRef: string;\n  assessmentObservationRef: string;\n}"
+    },
+    {
+      "name": "AssessmentTdmsApprovalObservation",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 59,
+      "declaration": "export interface AssessmentTdmsApprovalObservation {\n  sourceRecordId: string;\n  recordKind: 'ENGINEER_ASSESSMENT';\n  sourceVersion: TdmsSourceVersion;\n  state: TdmsRawCode;\n  sourceModifiedAt: string | null;\n  observedAt: string;\n  identitySelector: string;\n  stateSelector: string;\n  versionSelector: string;\n  objectBinding: 'EXACT_CURRENT_DETAIL';\n}"
+    },
+    {
+      "name": "AssessmentTdmsApprovalProvenance",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 71,
+      "declaration": "export interface AssessmentTdmsApprovalProvenance {\n  captureRef: string;\n  evidencePath: 'rawFields.opinionCollection';\n  mode: 'EXACT_VERSION';\n  before: AssessmentTdmsApprovalObservation;\n  after: AssessmentTdmsApprovalObservation;\n  approvalSubject: { sourceRecordId: string; sourceVersion: TdmsSourceVersion };\n}"
+    },
+    {
+      "name": "AssessmentTdmsNativeScope",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 81,
+      "declaration": "/** A bounded, exact native field scope. Grouping describes reading only, not a source relation. */\nexport interface AssessmentTdmsNativeScope {\n  /** Required by new native runtime consumers; absent historical DTOs are not upgraded. */\n  processingSetBinding?: AssessmentTdmsProcessingSetBinding;\n  approval?: AssessmentTdmsApprovalProvenance;\n  /** Exact sourced participant/discipline provenance; absent remains unknown. */\n  opinionContribution?: {\n    opinionRef: string;\n    contributorRefs: string[];\n    responsibilityRefs: string[];\n    ataScopes: string[];\n    assertionRefs: string[];\n  };\n  sourceRevisionRef: string;\n  fieldSelectors: Array<{fieldPath:string;selector:string}>;\n  grouping: 'SOURCE_DECLARED_BLOCK' | 'TRANSPARENT_FIELDS';\n  limitations: string[];\n}"
+    },
+    {
+      "name": "AssessmentEvidence",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 100,
+      "declaration": "/** Host-issued premises keep their original carrier identity and version. */\nexport type AssessmentEvidence = {\n  evidenceRef: string;\n  title: string;\n  versionLabel: string | null;\n  excerpt: string;\n  dialogueSource?: DialogueEvidenceSource;\n} & (\n  | {\n      /** External historical/source-declared record; never a current review or Host fact. */\n      kind: 'TDMS_NATIVE_RECORD';\n      nativeSource: TdmsRecordSummary;\n      nativeScope?: AssessmentTdmsNativeScope;\n      nativeReadReceipt: TdmsReadReceipt & { purpose: 'JOB_AID_NATIVE_RECORD'; taskContextRef: string; fieldPaths: string[] };\n    }\n  | {\n      kind: 'DOCUMENT_PASSAGE';\n      /** Direct document material has no WorkItem execution identity. */\n      workItemId: string | null;\n      documentVersionId: string;\n      sourceRefId: string;\n      locator: string;\n    }\n  | {\n      kind: 'ENGINEER_STATEMENT';\n      origin: 'REVIEW_CONVERSATION';\n      reviewConversationId: string;\n      reviewTurnId: string;\n      engineerSuppliedInputId: string;\n      recordedAt: string;\n    }\n  | {\n      kind: 'ENGINEER_STATEMENT';\n      origin: 'ENGINEER_REVIEW_LEDGER';\n      workItemId: string;\n      reviewRevision: number;\n      sequence: number;\n      sourceRefId: string;\n      locator: string;\n      recordedAt: string;\n    }\n  | {\n      kind: 'HOST_FACT';\n      workItemId: string;\n      workItemRevision: number;\n      factRef: string;\n      recordedAt: string;\n    }\n  | {\n      kind: 'QUERY_RECEIPT';\n      receiptRef: string;\n      checkedScope: string;\n      queriedAt: string;\n      coverage: 'COMPLETE' | 'PARTIAL';\n      /** A retrieval response is supplemental material, not verified source text. */\n      queryProvenance?: {\n        origin: 'AILY_RETRIEVAL';\n        queryText: string;\n        status: 'COMPLETED' | 'FAILED' | 'UNKNOWN';\n        originalDocumentsVerified: false;\n      };\n    }\n  | {\n      kind: 'PRIOR_RESULT';\n      resultRef: string;\n      resultRevision: number;\n      /** A previous candidate is context, not a new independent source fact. */\n      originalEvidenceRefs: string[];\n      sourceWork?: AssessmentSourceWork;\n      /** Exact saved source explanation. Mutually exclusive with sourceWork. */\n      sourceStatement?: {\n        reference: DocumentActivityStatementReference;\n        sourceBinding: DocumentActivitySourceBinding;\n      };\n    }\n  | {\n      kind: 'ENGINEER_ATTACHMENT';\n      workItemId: string;\n      reviewConversationId: string;\n      reviewTurnId: string;\n      attachmentRef: string;\n      documentVersionId: string;\n      artifactRef: string;\n      artifactSha256: string;\n      locator: string;\n    }\n  | {\n      kind: 'METHOD_CLAUSE';\n      classificationDefinitions?: Array<{ dimension: 'SEVERITY' | 'LIKELIHOOD'; label: string; definitionQuote: string }>;\n      packRef: string;\n      methodRef: string;\n      sourceIdentity: string;\n      locator: string;\n      sourceVersionStatus: 'CONFIRMED' | 'VERSION_UNCONFIRMED';\n    }\n);"
+    },
+    {
+      "name": "AssessmentReadingResult",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 196,
+      "declaration": "export interface AssessmentReadingResult {\n  resultRef: string;\n  resultRevision: number;\n  scope:\n    | { kind: 'WORK_ITEM'; workItemId: string; documentVersionId: string }\n    | { kind: 'ENGINEERING_MATTER'; matterId: string };\n  content: AssessmentReadingContent;\n  evidence: AssessmentEvidence[];\n  candidateOnly: true;\n}"
+    },
+    {
+      "name": "AssessmentClaimEvidenceReadModel",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 207,
+      "declaration": "export interface AssessmentClaimEvidenceReadModel {\n  resultRef: string;\n  resultRevision: number;\n  claim: AssessmentReadingClaim;\n  evidence: AssessmentEvidence[];\n}"
+    },
+    {
+      "name": "AssessmentReadingSummary",
+      "source": "shared/assessment-reading.interface.ts",
+      "line": 215,
+      "declaration": "/** A saved result projected for a directory row, without shortening its claims. */\nexport interface AssessmentReadingSummary {\n  roundCompletion?: 'IN_PROGRESS' | 'COMPLETE' | 'COMPLETE_WITH_OPEN_QUESTIONS';\n  resultRef: string;\n  resultRevision: number;\n  headline: string;\n  listBrief: string;\n  decisiveClaims: Array<{ claimId: string; text: string }>;\n}"
+    },
+    {
+      "name": "CanonicalHostExecutor",
+      "source": "server/modules/canonical-host/canonical-host-executor-policy.ts",
+      "line": 2,
+      "declaration": "/** One server-owned execution route. Caller headers and app IDs never select it. */\nexport type CanonicalHostExecutor = 'HOSTED' | 'CODEX';"
+    }
+  ]
+}

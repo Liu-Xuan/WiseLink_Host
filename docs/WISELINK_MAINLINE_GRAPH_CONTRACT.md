@@ -1152,3 +1152,14 @@ C136按原 enabled=true 只执行一次正常 enable；调用07:22:02.407484Z—
 当前缺口是把实际执行实例按既有Host身份、权限及provenance边界接入，取得一条新真实事项的准确任务与完整材料，接通Host保存和同请求/同修订独立READ，再由Host基于同一准确workRevisionRef完成确定性Overall，正常用户页面与图读取同版成果并正常结束。生成、SAVE ACK、独立READ、Overall和外层结束分列；没有证据的步骤保持未验，不另造业务状态或验收分母。0b33的模拟Host提交和回读不填这些生产缺口。准确线上a65/c240、原binding实现名/源码引用与C136已恢复事实保持现状标识；目标和未接缺口另列，不声称已经替换执行器。
 
 P0/P7当前nextAction按上述新链重排，旧源码中仍有用的材料、保存、读取、投影和页面消费者按实际新接线选择性复用。两端本地修复可以作为可复用候选审查，不再为旧c241部署或旧请求救回阻塞新目标；首条新真实事项的授权、运行接线、准确交付对象与验收安排由主控按[执行器切换实施说明](coordination/WISELINK_EXECUTOR_TRANSITION_20261025.md)统一审查。此条仅追加一条source_review/inconclusive、scenarioIds为空的范围记录；不把新fixture或代码引入记为真实业务通过。没有执行新安装、发布、调度、模型、远端同步或业务动作，旧UNKNOWN与active claim不修改。
+### E.37 新Codex增量、Host本地接线与接口交接（2026-10-25）
+
+当前已吸收准确1155c386实现与fc132291迁移记录相对f821的增量。程序控制初评、主要消费者CODEX路径、响应检查点、SAVE/独立READ与确定性初评Overall已有实现；E.36以0b33判断的程序入口缺口已过时。原六次GLM运行使用合成Host，未由本轮重复调用，仍不证明真实Host业务完成。
+
+本地新增固定Codex MCP服务身份和五条专用入口，复用官方SDK及原Host业务服务。服务端单一活动执行器控制新旧入口，CODEX独立scope缺配置拒绝；首批只绑定一个新WorkItem及其原intake请求，不扫旧租户队列。旧owner/已回收旧租约在锁内、任何过期attempt处理前拒绝接管，旧UNKNOWN不重放。现有14条OpenAPI登记保留，新增5条本地登记尚未部署；工具包从真实注册离线导出45个完整工具输入Schema，服务版本1.2.0不冒充各工具版本。
+
+材料身份目录窄修已接入实际新程序路径，使用真实Host服务的合成业务输出测试，不补假顶层身份。8项跨端离线检查通过，包含v2/v3材料、96+4读取、实际CODEX scope/MCP工具处理、SAVE丢ACK后的原key查询、独立READ、响应已保存后继续保存，以及UNKNOWN禁止重派。Node53项、Python9项通过；模型子进程使用明确合成替身。该范围不含真实HTTP网关/API Key、真实数据库commit/CAS/finish、生产工程正文或页面验收；旧全链场景不因此升级为通过。
+
+官方只读确认最近Host仍a65、release finished；dev/online没有WL_CODEX_*或WL_MODEL_EXECUTOR配置名称，现有key未授权Codex路径。所报云端IDE旧HEAD/dirty不是本地唯一集成树，也不证明线上回退，未覆盖它。本轮无新凭据、配置/调度变更、发布、安装、模型或清库。尚需执行器owner补Codex子进程回执与本请求结果的持久关联、明确原始上游响应留存，再按准确范围安排真实绑定和一条新事项闭环。
+
+完整非秘密工具、类型、错误、配置状态和真实形状合成示例见[Host↔Codex机器接口包](coordination/host-codex-interface-20261025/README.md)。本条只更新当前下一步与本地证据，保留所有历史对象/顺序和用户页面样式，不将静态档案数解释为开发完成率。

@@ -1,3 +1,4 @@
+import { canonicalExecutorSetting, canonicalCodexWorkItemScope, assertCanonicalCodexWorkItem } from './canonical-host-executor-policy';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import { randomUUID } from 'node:crypto';
 import type { ApplyPendingModelConfigurationResponse } from '@shared/pending-model-configuration.interface';
@@ -92,6 +93,7 @@ export class AutomaticWorkItemDispatchService {
   /** Explicit application of the saved setting; never discovery or model work. */
   async applyPendingModelConfiguration(raw: unknown): Promise<ApplyPendingModelConfigurationResponse> {
     const input = parsePendingModelConfigurationRequest(raw);
+    assertCanonicalCodexWorkItem(input.workItemId);
     const scope = await this.serviceScope.authorizeOpenClawAutoWorkItemQueue();
     assertQueueScope(scope);
     const candidates = await this.workItems.listAutoProcessingCandidates({
@@ -110,6 +112,10 @@ export class AutomaticWorkItemDispatchService {
     input?: NextAutomaticWorkItemRequest,
   ): Promise<NextAutoWorkItemResult> {
     assertNextWorkItemInput(input);
+    const codexScope = canonicalCodexWorkItemScope();
+    if (codexScope && (input?.reviewAfterWorkItemId || input?.documentAfterRef))
+      throw new Error('CANONICAL_CODEX_EXACT_SCOPE_REQUIRED');
+    if (input?.resumeWorkItemId) assertCanonicalCodexWorkItem(input.resumeWorkItemId);
     const scope = await this.serviceScope.authorizeOpenClawAutoWorkItemQueue();
     assertQueueScope(scope);
     const now = new Date();
@@ -117,12 +123,12 @@ export class AutomaticWorkItemDispatchService {
       tenantId: scope.tenantId,
       now,
       limit: 100,
-      ...(input?.resumeWorkItemId
-        ? { workItemId: input.resumeWorkItemId }
-        : {}),
+      ...(codexScope ? { workItemId: codexScope.workItemId } : input?.resumeWorkItemId
+        ? { workItemId: input.resumeWorkItemId } : {}),
     });
 
     for (const candidate of candidates) {
+      assertCanonicalCodexWorkItem(candidate.authorization.workItemId, candidate.authorization.requestId);
       if (
         input?.resumeWorkItemId &&
         candidate.authorization.workItemId !== input.resumeWorkItemId
@@ -165,6 +171,7 @@ export class AutomaticWorkItemDispatchService {
         sourceByteLength: Number(authorization.sourceByteLength),
         ...(this.problemAssessment ? {assertCommittingRecoveryAuthorized:(row,database)=>
           this.problemAssessment!.assertAutomaticCommittingRecoveryAuthorized(row,authorization.actorUserId,database,scope)} : {}),
+        ...(codexScope ? { preserveExecutorOwnership: true } : {}),
         expectedWorkItemRevision: candidate.workItem.revision,
         leaseOwner: scope.principalId,
         leaseToken,
@@ -186,8 +193,8 @@ export class AutomaticWorkItemDispatchService {
       };
     }
 
-    if (input?.resumeWorkItemId) return { status: 'IDLE' };
-    if (process.env.WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED !== '1')
+    if (codexScope || input?.resumeWorkItemId) return { status: 'IDLE' };
+    if (canonicalExecutorSetting('SERVICE_SUCCESSOR_REVIEW_ENABLED') !== '1')
       return this.nextDocumentDelivery(scope, input?.documentAfterRef);
     if (!this.reviewConversations || !this.jobAidWork)
       throw new Error('AUTO_WORK_ITEM_REVIEW_DISCOVERY_UNAVAILABLE');
@@ -386,6 +393,7 @@ export class AutomaticWorkItemDispatchService {
     const scope = await this.serviceScope.authorizeOpenClawAutoWorkItemQueue();
     assertQueueScope(scope);
     assertAcknowledgementInput(input);
+    assertCanonicalCodexWorkItem(input.workItemId);
     if (!this.leaseAuthorization) throw sourceAuthorizationUnavailable();
 
     const leaseIdentity = {
@@ -415,6 +423,7 @@ export class AutomaticWorkItemDispatchService {
       throw error;
     }
 
+    assertCanonicalCodexWorkItem(input.workItemId, lease.requestId);
     const current = await this.readCurrentInitialAnalysis(scope, lease);
     if (!isHostInitialAnalysisComplete(current.status)) {
       throw Object.assign(new Error('AUTO_WORK_ITEM_INITIAL_ANALYSIS_NOT_COMPLETE'), {
@@ -441,6 +450,7 @@ export class AutomaticWorkItemDispatchService {
     const scope = await this.serviceScope.authorizeOpenClawAutoWorkItemQueue();
     assertQueueScope(scope);
     assertBlockInput(input);
+    assertCanonicalCodexWorkItem(input.workItemId);
     if (!this.leaseAuthorization) throw sourceAuthorizationUnavailable();
     if (input.expectedCancellation) return this.parkCancelledWorkItem(input, scope);
     const leaseIdentity = {
@@ -464,6 +474,7 @@ export class AutomaticWorkItemDispatchService {
       throw error;
     }
 
+    assertCanonicalCodexWorkItem(input.workItemId, lease.requestId);
     const current = await this.readCurrentInitialAnalysis(scope, lease);
     const failedStage = terminalFailedInitialStage(current.status);
     if (!failedStage) throw automaticWorkItemFailureNotConfirmed();
@@ -607,6 +618,7 @@ export class AutomaticWorkItemDispatchService {
     scope: CanonicalVerifiedAutoWorkItemQueueScope,
     lease: AutomaticSourceBinding,
   ): Promise<{ status: AilyInitialAnalysisStatus; revision: number }> {
+    assertCanonicalCodexWorkItem(lease.workItemId, lease.requestId);
     if (!this.initialAnalysisStatus) {
       throw Object.assign(new Error('INITIAL_ANALYSIS_STATUS_UNCONFIGURED'), {
         code: 'INITIAL_ANALYSIS_STATUS_UNCONFIGURED',
@@ -653,6 +665,7 @@ export class AutomaticWorkItemDispatchService {
     scope: CanonicalVerifiedAutoWorkItemQueueScope,
   ): Promise<string | null> {
     const { authorization, workItem: row } = candidate;
+    assertCanonicalCodexWorkItem(authorization.workItemId, authorization.requestId);
     const rowMismatch = automaticAuthorizationBindingMismatch(
       authorization,
       row,
@@ -800,7 +813,7 @@ function assertQueueScope(
   scope: CanonicalVerifiedAutoWorkItemQueueScope,
 ): void {
   if (
-    scope.principalId !== process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID ||
+    scope.principalId !== canonicalExecutorSetting('SERVICE_PRINCIPAL_ID') ||
     scope.appId !== CANONICAL_APP_ID ||
     !scope.tenantId.trim() ||
     !/^sha256:[0-9a-f]{64}$/u.test(scope.authorizationFingerprint)
