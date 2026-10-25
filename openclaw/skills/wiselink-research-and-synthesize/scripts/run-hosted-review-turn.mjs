@@ -40,6 +40,8 @@ import { recoverBoundedReviewCheckpoint } from './recover-sealed-review-checkpoi
 import {
   WISELINK_HOST_MCP_NAME,
   WISELINK_HOST_MCP_VERSION,
+  WISELINK_CODEX_MCP_NAME,
+  requireCodexRuntimeAppId,
   WISELINK_PROFILE_REF,
   WISELINK_RUNTIME_APP_ID,
   WISELINK_SKILL_VERSION,
@@ -47,6 +49,8 @@ import {
   REVIEW_MATTER_CANDIDATE_SCHEMA,
   canonicalJson,
   canonicalSha256,
+  assertRuntimeTaskIdentity,
+  assertRuntimeResultIdentity,
   validateExecutionModelSelection,
   validateTaskEnvelope,
   validateReviewTask,
@@ -2053,7 +2057,7 @@ export async function prepareKnownModelNonDispatchRecovery(options) {
   return { prepared: true, replayed: false };
 }
 
-export async function createHostMcpConnection(options) {
+export async function createHostMcpConnection(options, loadSdk = loadMcpSdk) {
   const endpoint = new URL(
     requiredUrl(options.hostMcpUrl, 'REVIEW_HOST_MCP_URL_REQUIRED'),
   );
@@ -2063,8 +2067,9 @@ export async function createHostMcpConnection(options) {
       !endpoint.pathname.endsWith('/openapi/wiselink/codex-mcp'))) {
     throw new Error('CODEX_HOST_MCP_ENDPOINT_INVALID');
   }
+  if (selectedExecutor === 'CODEX') requireCodexRuntimeAppId(options.runtimeAppId);
   const headers = isRecord(options.headers) ? options.headers : {};
-  const { Client, StreamableHTTPClientTransport, toolCallOptionsPosition } = await loadMcpSdk();
+  const { Client, StreamableHTTPClientTransport, toolCallOptionsPosition } = await loadSdk();
   const client = new Client({
     name: selectedExecutor === 'CODEX' ? 'wiselink-codex-assessment-driver' : 'wiselink-hosted-review-driver',
     version: '1.0.0',
@@ -2075,7 +2080,7 @@ export async function createHostMcpConnection(options) {
   await client.connect(transport);
   const serverVersion = client.getServerVersion?.();
   const expectedServerName = selectedExecutor === 'CODEX'
-    ? 'wiselink-codex-engineering-assessment' : WISELINK_HOST_MCP_NAME;
+    ? WISELINK_CODEX_MCP_NAME : WISELINK_HOST_MCP_NAME;
   if (serverVersion?.name !== expectedServerName ||
       serverVersion?.version !== WISELINK_HOST_MCP_VERSION) {
     try { await client.close(); } catch { /* Preserve the identity failure. */ }
@@ -2085,7 +2090,19 @@ export async function createHostMcpConnection(options) {
   const tools = await client.listTools();
   validateHostToolMetadata(tools);
   return {
-    callTool: async (name, args, requestOptions) => callJsonTool(client, name, args, requestOptions, toolCallOptionsPosition),
+    callTool: async (name, args, requestOptions) => {
+      if (selectedExecutor === 'CODEX' && ['begin_review_turn', 'commit_review_turn_candidate'].includes(name))
+        throw new Error('CODEX_REVIEW_NOT_IN_INITIAL_SCOPE');
+      if (name.startsWith('commit_')) {
+        const sealed = args?.result ?? (typeof args?.resultJson === 'string'
+          ? JSON.parse(args.resultJson) : null);
+        if (sealed) assertRuntimeResultIdentity(sealed, selectedExecutor);
+      }
+      const value = await callJsonTool(client, name, args, requestOptions, toolCallOptionsPosition);
+      if (value?.task) assertRuntimeTaskIdentity(value.task, selectedExecutor, options.runtimeAppId);
+      if (value?.recoveryResult) assertRuntimeResultIdentity(value.recoveryResult, selectedExecutor);
+      return value;
+    },
     hasTool: (name) => tools.tools.some((tool) => tool.name === name),
     close: async () => client.close(),
   };
@@ -2093,19 +2110,18 @@ export async function createHostMcpConnection(options) {
 
 /** Trusted-consumer control calls stay on REST because queue controls are not model MCP tools. */
 export function createHostAutoWorkItemQueueClient(options, fetchImpl = globalThis.fetch) {
-  const modelExecutor = options.modelExecutor ?? 'HOSTED';
-  if (!['HOSTED', 'CODEX'].includes(modelExecutor)) {
-    throw new Error('MODEL_EXECUTOR_UNSUPPORTED');
-  }
   const mcpEndpoint = new URL(
     requiredUrl(options.hostMcpUrl, 'REVIEW_HOST_MCP_URL_REQUIRED'),
   );
+  const selectedExecutor = modelExecutor(options);
   if (mcpEndpoint.username || mcpEndpoint.password || mcpEndpoint.search ||
-      mcpEndpoint.hash || !['http:', 'https:'].includes(mcpEndpoint.protocol) ||
-      !mcpEndpoint.pathname.endsWith(modelExecutor === 'CODEX'
+      mcpEndpoint.hash || (selectedExecutor === 'CODEX' ? mcpEndpoint.protocol !== 'https:' :
+      !['http:', 'https:'].includes(mcpEndpoint.protocol)) ||
+      !mcpEndpoint.pathname.endsWith(selectedExecutor === 'CODEX'
         ? '/openapi/wiselink/codex-mcp' : '/openapi/wiselink/openclaw-mcp')) {
     throw new Error('AUTO_WORK_ITEM_QUEUE_ENDPOINT_INVALID');
   }
+  if (selectedExecutor === 'CODEX') requireCodexRuntimeAppId(options.runtimeAppId);
   if (typeof fetchImpl !== 'function') {
     throw new Error('AUTO_WORK_ITEM_QUEUE_TRANSPORT_UNAVAILABLE');
   }
@@ -2113,7 +2129,7 @@ export function createHostAutoWorkItemQueueClient(options, fetchImpl = globalThi
     const endpoint = new URL(mcpEndpoint);
     endpoint.pathname = endpoint.pathname.replace(
       /\/(?:openclaw|codex)-mcp$/u,
-      `/${modelExecutor === 'CODEX' ? 'codex-' : ''}${route}`,
+      `/${selectedExecutor === 'CODEX' ? `codex-${route}` : route}`,
     );
     return endpoint;
   };
@@ -3598,6 +3614,8 @@ async function loadMcpSdk() {
 export async function resolveRuntimeConfig(argv, env) {
   const selectedExecutor = option(argv, '--model-executor') ?? env.WL_MODEL_EXECUTOR ?? 'HOSTED';
   if (!['HOSTED', 'CODEX'].includes(selectedExecutor)) throw new Error('MODEL_EXECUTOR_UNSUPPORTED');
+  const runtimeAppId = selectedExecutor === 'CODEX'
+    ? requireCodexRuntimeAppId(env.WL_CODEX_RUNTIME_APP_ID) : WISELINK_RUNTIME_APP_ID;
   const codexOptions = selectedExecutor === 'CODEX' ? {
     codexBinary: option(argv, '--codex-binary') ?? env.WL_CODEX_BINARY,
     configPath: option(argv, '--codex-config') ?? env.WL_CODEX_CONFIG_PATH,
@@ -3663,6 +3681,7 @@ export async function resolveRuntimeConfig(argv, env) {
   const agentId = option(argv, '--agent') || WISELINK_PROFILE_REF;
   return {
     modelExecutor: selectedExecutor,
+    runtimeAppId,
     ...(codexOptions ? { codexOptions } : {}),
     sourceConfigPath: selected.configPath,
     hostMcpUrl,
@@ -3704,7 +3723,7 @@ export function openClawConfigCandidates(
 
 export function findMcpConfig(root, selectedExecutor = 'HOSTED') {
   const expectedName = selectedExecutor === 'CODEX'
-    ? 'wiselink-codex-engineering-assessment' : WISELINK_HOST_MCP_NAME;
+    ? WISELINK_CODEX_MCP_NAME : WISELINK_HOST_MCP_NAME;
   const keys = selectedExecutor === 'CODEX' ? new Set([expectedName]) : WISELINK_HOST_MCP_CONFIG_KEYS;
   const matches = [];
   const visit = (value, path = []) => {

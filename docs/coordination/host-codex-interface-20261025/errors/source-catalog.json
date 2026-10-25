@@ -1980,202 +1980,202 @@
     {
       "code": "PROGRAM_ASSESSMENT_CODEX_RECEIPT_MISMATCH",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
-      "line": 147
+      "line": 149
     },
     {
       "codeTemplate": "`PROGRAM_ASSESSMENT_GATEWAY_INVALID_JSON_HTTP_${status}`",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
-      "line": 150
+      "line": 152
     },
     {
       "codeTemplate": "`PROGRAM_ASSESSMENT_GATEWAY_HTTP_${status}`",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
-      "line": 171
+      "line": 173
     },
     {
       "code": "PROGRAM_WORK_SHAPE",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
-      "line": 180
+      "line": 182
     },
     {
       "code": "PROGRAM_WORK_SHAPE",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
-      "line": 187
+      "line": 189
     },
     {
       "code": "PROGRAM_ASSESSMENT_SAVE_BINDING_MISMATCH",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
-      "line": 210
+      "line": 212
     },
     {
       "code": "PROGRAM_ASSESSMENT_READ_IDENTITY_MISMATCH",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
-      "line": 222
+      "line": 224
     },
     {
       "code": "PROGRAM_ASSESSMENT_ACK_READBACK_MISSING",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
-      "line": 227
+      "line": 229
     },
     {
       "code": "PROGRAM_ASSESSMENT_SAVED_WORK_READBACK_INVALID",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
-      "line": 252
+      "line": 254
     },
     {
       "code": "PROGRAM_ASSESSMENT_SAVED_ISSUES_MISMATCH",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
-      "line": 266
+      "line": 268
     },
     {
       "code": "PROGRAM_ASSESSMENT_SAVED_WORK_READBACK_CHANGED",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
-      "line": 272
+      "line": 274
     },
     {
       "code": "MODEL_EXECUTOR_UNSUPPORTED",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
-      "line": 10
+      "line": 11
     },
     {
       "code": "CODEX_EXECUTION_MODEL_ROUTE_UNSUPPORTED",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
-      "line": 18
+      "line": 19
     },
     {
       "code": "CODEX_RUNTIME_CONFIG_REQUIRED",
       "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
-      "line": 23
+      "line": 24
+    },
+    {
+      "code": "CODEX_PARENT_RUN_BINDING_INVALID",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
+      "line": 61
+    },
+    {
+      "code": "CODEX_PARENT_RUN_BINDING_INVALID",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
+      "line": 67
+    },
+    {
+      "code": "CODEX_PARENT_RUN_BINDING_MISMATCH",
+      "source": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
+      "line": 77
     },
     {
       "code": "CODEX_GENERATION_RUN_ROOT_INVALID",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 27
+      "line": 37
     },
     {
       "code": "CODEX_GENERATION_RUN_ROOT_INVALID",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 40
+      "line": 50
     },
     {
       "code": "CODEX_GENERATION_ABORTED",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 68
+      "line": 78
     },
     {
       "code": "CODEX_GENERATION_OUTCOME_UNKNOWN",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 71
+      "line": 81
     },
     {
       "code": "CODEX_GENERATION_OUTCOME_UNKNOWN",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 72
-    },
-    {
-      "code": "CODEX_GENERATION_ROUTE_UNSUPPORTED",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 85
-    },
-    {
-      "code": "CODEX_GENERATION_REQUEST_INVALID",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 87
-    },
-    {
-      "code": "CODEX_GENERATION_BODY_TOO_LARGE",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 88
-    },
-    {
-      "code": "CODEX_GENERATION_REQUEST_INVALID",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 90
-    },
-    {
-      "code": "CODEX_GENERATION_REQUEST_UNSUPPORTED",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 95
-    },
-    {
-      "code": "CODEX_GENERATION_TOKEN_BUDGET_INVALID",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 98
-    },
-    {
-      "code": "CODEX_GENERATION_MESSAGES_UNSUPPORTED",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 110
-    },
-    {
-      "code": "CODEX_GENERATION_TOOLS_UNSUPPORTED",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 116
-    },
-    {
-      "code": "CODEX_GENERATION_TOOL_CHOICE_UNSUPPORTED",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 124
-    },
-    {
-      "code": "CODEX_GENERATION_TOOL_CHOICE_UNSUPPORTED",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 125
-    },
-    {
-      "code": "CODEX_GENERATION_SELECTED_MODEL_UNSUPPORTED",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 129
-    },
-    {
-      "code": "CODEX_GENERATION_OPTIONS_INVALID",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 227
-    },
-    {
-      "code": "CODEX_GENERATION_REASONING_UNSUPPORTED",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 229
-    },
-    {
-      "code": "CODEX_GENERATION_TOKEN_BUDGET_INVALID",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 232
-    },
-    {
-      "code": "CODEX_GENERATION_ABORTED",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 235
+      "line": 82
     },
     {
       "code": "CODEX_GENERATION_RECOVERY_INVALID",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 242
+      "line": 98
     },
     {
-      "code": "CODEX_GENERATION_PROMPT_TOO_LARGE",
+      "code": "CODEX_GENERATION_ROUTE_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 104
+    },
+    {
+      "code": "CODEX_GENERATION_REQUEST_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 106
+    },
+    {
+      "code": "CODEX_GENERATION_BODY_TOO_LARGE",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 107
+    },
+    {
+      "code": "CODEX_GENERATION_REQUEST_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 109
+    },
+    {
+      "code": "CODEX_GENERATION_REQUEST_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 114
+    },
+    {
+      "code": "CODEX_GENERATION_TOKEN_BUDGET_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 117
+    },
+    {
+      "code": "CODEX_GENERATION_MESSAGES_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 129
+    },
+    {
+      "code": "CODEX_GENERATION_TOOLS_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 135
+    },
+    {
+      "code": "CODEX_GENERATION_TOOL_CHOICE_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 143
+    },
+    {
+      "code": "CODEX_GENERATION_TOOL_CHOICE_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 144
+    },
+    {
+      "code": "CODEX_GENERATION_SELECTED_MODEL_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 148
+    },
+    {
+      "code": "CODEX_GENERATION_OPTIONS_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 246
+    },
+    {
+      "code": "CODEX_GENERATION_REASONING_UNSUPPORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 248
+    },
+    {
+      "code": "CODEX_GENERATION_TOKEN_BUDGET_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 251
+    },
+    {
+      "code": "CODEX_GENERATION_ABORTED",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
       "line": 254
     },
     {
-      "code": "CODEX_GENERATION_OUTCOME_UNKNOWN",
+      "code": "CODEX_GENERATION_RECOVERY_INVALID",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 276
+      "line": 260
     },
     {
-      "code": "CODEX_GENERATION_OUTCOME_UNKNOWN",
+      "code": "CODEX_GENERATION_PROMPT_TOO_LARGE",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 288
-    },
-    {
-      "code": "CODEX_GENERATION_OUTCOME_UNKNOWN",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 291
-    },
-    {
-      "code": "CODEX_GENERATION_RECOVERY_MISMATCH",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 293
+      "line": 274
     },
     {
       "code": "CODEX_GENERATION_OUTCOME_UNKNOWN",
@@ -2185,72 +2185,112 @@
     {
       "code": "CODEX_GENERATION_OUTCOME_UNKNOWN",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 305
+      "line": 309
     },
     {
-      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "code": "CODEX_GENERATION_OUTCOME_UNKNOWN",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 308
+      "line": 312
     },
     {
-      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "code": "CODEX_GENERATION_RECOVERY_MISMATCH",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 316
+      "line": 314
     },
     {
-      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "code": "CODEX_GENERATION_RECOVERY_MISMATCH",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 320
+      "line": 322
     },
     {
-      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "code": "CODEX_GENERATION_RECOVERY_MISMATCH",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 324
+      "line": 328
     },
     {
-      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "code": "CODEX_GENERATION_OUTCOME_UNKNOWN",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 326
+      "line": 331
     },
     {
-      "code": "CODEX_GENERATION_RECEIPT_INVALID",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 329
-    },
-    {
-      "code": "CODEX_GENERATION_RECEIPT_INVALID",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 332
-    },
-    {
-      "code": "CODEX_GENERATION_SUMMARY_INVALID",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 335
-    },
-    {
-      "code": "CODEX_GENERATION_ABORTED",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 338
-    },
-    {
-      "code": "CODEX_GENERATION_INCOMPLETE",
-      "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 341
-    },
-    {
-      "code": "CODEX_GENERATION_CANDIDATE_INVALID",
+      "code": "CODEX_GENERATION_OUTCOME_UNKNOWN",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
       "line": 344
     },
     {
-      "code": "CODEX_GENERATION_CANDIDATE_INVALID",
+      "code": "CODEX_GENERATION_RECEIPT_INVALID",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 349
+      "line": 347
     },
     {
       "code": "CODEX_GENERATION_RECEIPT_INVALID",
       "source": "openclaw/codex-evaluator/codex-generation.mjs",
-      "line": 366
+      "line": 355
+    },
+    {
+      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 360
+    },
+    {
+      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 364
+    },
+    {
+      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 367
+    },
+    {
+      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 370
+    },
+    {
+      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 372
+    },
+    {
+      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 375
+    },
+    {
+      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 378
+    },
+    {
+      "code": "CODEX_GENERATION_SUMMARY_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 381
+    },
+    {
+      "code": "CODEX_GENERATION_ABORTED",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 384
+    },
+    {
+      "code": "CODEX_GENERATION_INCOMPLETE",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 387
+    },
+    {
+      "code": "CODEX_GENERATION_CANDIDATE_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 390
+    },
+    {
+      "code": "CODEX_GENERATION_CANDIDATE_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 395
+    },
+    {
+      "code": "CODEX_GENERATION_RECEIPT_INVALID",
+      "source": "openclaw/codex-evaluator/codex-generation.mjs",
+      "line": 412
     }
   ]
 }

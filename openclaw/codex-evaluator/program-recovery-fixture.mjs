@@ -7,12 +7,14 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCheckpointStore } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 import { invokeHostedProgramAssessment } from '../skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs';
+import { createCodexGateway } from './codex-generation.mjs';
 
 export function programRecoveryData() {
   const documentVersionId = 'fixture-document-recovery', parseRunId = 'fixture-parse-1';
   const sourceRefId = 'fixture-source-1';
   const evidenceRef = `DOCUMENT_ORIGINAL:${documentVersionId}:${parseRunId}:${sourceRefId}`;
   const originalBinding = { documentVersionId, parseRunId, parseRevision: 1 };
+  const locator = JSON.stringify({ parseRunId, sourceRefId, page: 1 });
   const sourceText = '仅用于离线软件测试：打开虚构测试泵的防护罩前，应断电并确认停转。';
   const modelInput = {
     schemaVersion: 'wiselink.jobaid-problem-task.v2', purpose: 'INITIAL_PROBLEM_ASSESSMENT',
@@ -23,9 +25,9 @@ export function programRecoveryData() {
       units: [{ unitId: 'fixture-unit-1', kind: 'paragraph', payload: { text: sourceText }, sourceRefIds: [sourceRefId] }],
       sourceLocators: [{ sourceRefId, page: 1 }], coverage: { status: 'COMPLETE' }, findings: [] },
     availableSources: [{ ref: evidenceRef, kind: 'DOCUMENT_PASSAGE', documentVersionId,
-      versionLabel: parseRunId, sourceRefId, title: '合成材料' }],
+      versionLabel: parseRunId, sourceRefId, parseRunId, locator, carrierRangeRef: evidenceRef, title: '合成材料' }],
     deliveredEvidence: [{ evidenceRef, kind: 'DOCUMENT_PASSAGE', documentVersionId,
-      versionLabel: parseRunId, sourceRefId, excerpt: sourceText }],
+      versionLabel: parseRunId, sourceRefId, locator, excerpt: sourceText }],
   };
   const work = {
     schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: '测试泵防护罩操作',
@@ -78,9 +80,11 @@ export async function runProgramRecoveryFixture(root, mode = 'normal') {
     state.actions.push({ tool: 'read_assessment_work', request: args, response: structuredClone(packet) });
     return packet;
   });
+  const codexOptions = { codexBinary: '/fixture/no-real-codex', configPath: '/fixture/no-credentials',
+    runRoot: resolve(root, 'synthetic-model'), pythonBinary: '/fixture/runner-must-not-launch', timeoutSeconds: 1,
+    onRunPrepared: async () => { if (mode === 'before-codex-launch') crash(); } };
   const options = {
-    modelExecutor: 'CODEX', codexOptions: { codexBinary: '/fixture/no-real-codex',
-      configPath: '/fixture/no-credentials', runRoot: resolve(root, 'synthetic-model') },
+    modelExecutor: 'CODEX', codexOptions,
     executionModel: { modelRef: 'miaoda/glm-5.3', displayName: 'synthetic', providerKind: 'BUILT_IN',
       settingsRevision: 1, selectedAt: '2026-10-25T00:00:00.000Z' },
     assessmentCheckpoint: checkpoint, assessmentBinding,
@@ -121,7 +125,10 @@ export async function runProgramRecoveryFixture(root, mode = 'normal') {
       return receipt;
     },
   };
+  const actualGateway = createCodexGateway(codexOptions);
   const gateway = async (_endpoint, init) => {
+    if (mode === 'before-codex-launch' || await disk.readOptional('assessment-round-1.codex-run'))
+      return actualGateway(_endpoint, init);
     let record = await model.readOptional('response');
     if (!record) {
       if (init.codexRecovery?.recoverOnly) throw new Error('CODEX_GENERATION_OUTCOME_UNKNOWN');

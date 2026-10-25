@@ -25,7 +25,7 @@ const hosted = await readJson('mcp/hosted.tools-list.json');
 const index = await readJson('mcp/tool-index.json');
 const initialize = await readJson('mcp/codex.initialize.response.json');
 const sourceVersion = await readJson('source-version.json');
-assert.equal(sourceVersion.deliveryScope, 'P0_PROGRAM_INITIAL_925_CORE');
+assert.equal(sourceVersion.deliveryScope, 'P0_PROGRAM_INITIAL_19D_SELECTIVE_CORE');
 assert.equal(sourceVersion.parallelP1DocumentTranslationHostRecoveryIncluded, false);
 for (const phase of sourceVersion.excludedParallelHostPhases)
   assert.equal(JSON.stringify(codex).includes(JSON.stringify(phase)), false, `P1_PHASE_IN_P0_PACKET:${phase}`);

@@ -49,13 +49,16 @@ test('reading driver uses explicit Codex request without Hosted URL or credentia
 });
 
 test('Codex runtime requires an explicit executable, config and run root', async () => {
-  await assert.rejects(resolveRuntimeConfig(['--model-executor', 'CODEX'], {}),
+  await assert.rejects(resolveRuntimeConfig(['--model-executor', 'CODEX'],
+    { WL_CODEX_RUNTIME_APP_ID: 'app_syntheticCodexRuntime' }),
     /CODEX_RUNTIME_CONFIG_REQUIRED/u);
   const runtime = await resolveRuntimeConfig([
     '--model-executor', 'CODEX', '--codex-binary', codexOptions.codexBinary,
     '--codex-config', codexOptions.configPath, '--codex-run-root', codexOptions.runRoot,
-  ], { WL_REVIEW_HOST_MCP_URL: 'https://example.invalid/openapi/wiselink/codex-mcp' });
+  ], { WL_REVIEW_HOST_MCP_URL: 'https://example.invalid/openapi/wiselink/codex-mcp',
+    WL_CODEX_RUNTIME_APP_ID: 'app_syntheticCodexRuntime' });
   assert.equal(runtime.modelExecutor, 'CODEX');
+  assert.equal(runtime.runtimeAppId, 'app_syntheticCodexRuntime');
   assert.equal(runtime.gatewayUrl, undefined);
   assert.equal(runtime.gatewayToken, undefined);
   assert.deepEqual(runtime.registeredModelRefs, ['miaoda/glm-5.3']);

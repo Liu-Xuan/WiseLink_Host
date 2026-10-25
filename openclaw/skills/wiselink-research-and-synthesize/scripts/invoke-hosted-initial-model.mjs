@@ -87,7 +87,7 @@ export async function invokeHostedInitialModel(
     return invokeHostedJobAidProblemModel({ operation, modelInput }, options, dependencies);
   const kind = INPUT_KINDS[operation];
   if (!kind) throw new Error('INITIAL_OPERATION_INVALID');
-  validatePayload(kind, modelInput);
+  validatePayload(kind, modelInput, { modelExecutor: modelExecutor(options), runtimeAppId: options.runtimeAppId });
   assertHostedModelGatewayReady(options);
   const modelHeaders = executionModelHeaders(options);
   const maxCompletionTokens = options.executionModel?.modelRef === 'miaoda/minimax-m3'

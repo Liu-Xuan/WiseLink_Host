@@ -1880,7 +1880,8 @@ export async function runHostedInitialStage(options, dependencies) {
       assertCommittingInitialClaim(options.assessmentRecovery.previousClaim ??
         { attemptRef: options.assessmentRecovery.attemptRef }, value);
     if (name.startsWith('begin_') && options.queueCommitRecovery) {
-      validateResultEnvelope(value.task, value.recoveryResult, { allowHistoricalSkillVersion: true });
+      validateResultEnvelope(value.task, value.recoveryResult, {
+        allowHistoricalSkillVersion: true, modelExecutor: options.modelExecutor, runtimeAppId: options.runtimeAppId });
       if (value.task.workItemId !== options.workItemId || value.task.documentVersionId !== initial.documentVersionId ||
           value.task.inputRevision !== initial.workItemRevision ||
           value.recoveryResult.contentHash !== options.queueCommitRecovery.resultContentHash)
@@ -2015,10 +2016,11 @@ export async function runHostedInitialStage(options, dependencies) {
       ...(options.configurationEvidenceReevaluation ? { configurationEvidenceReevaluation: options.configurationEvidenceReevaluation } : {}),
       providers: [], callTool,
       ...(options.assessmentRecovery?.closeOnly ? { recoverAssessmentExecution: begin =>
-        finishInitialAssessmentPolicyFailure({ checkpoint, recovery: options.assessmentRecovery, begin, callTool }) } : {}),
+        finishInitialAssessmentPolicyFailure({ checkpoint, recovery: options.assessmentRecovery,
+          begin, callTool, modelExecutor: options.modelExecutor }) } : {}),
       translate: invoke, extractApplicability: invoke,
       evaluateDynamicRules: invoke, synthesizeOverall: invoke,
-      runtimeProvenance: dependencies.runtimeProvenance,
+      runtimeProvenance: dependencies.runtimeProvenance, runtimeAppId: options.runtimeAppId,
     });
     const afterResult = await dependencies.callTool('get_parse_status', { workItemId: options.workItemId });
     const after = readInitialStatus(afterResult, options.workItemId);
@@ -2899,7 +2901,8 @@ async function main(argv, env) {
         ),
         consumeWorkItem: async item => {
           assertHostedModelGatewayReady(runtime);
-          return consumeHostedWorkItem({ ...item, modelExecutor: runtime.modelExecutor }, consumerDependencies);
+          return consumeHostedWorkItem({ ...item, modelExecutor: runtime.modelExecutor,
+            runtimeAppId: runtime.runtimeAppId }, consumerDependencies);
         },
         consumeDocument: async (selectedVersionId, deliveryRef) => {
           assertHostedModelGatewayReady(runtime);
@@ -2971,7 +2974,7 @@ async function main(argv, env) {
         ...jobAidLimits,
         applicabilityContextRef: option(argv, '--applicability-context-ref'),
         checkpointRoot,
-        modelExecutor: runtime.modelExecutor,
+        modelExecutor: runtime.modelExecutor, runtimeAppId: runtime.runtimeAppId,
         activityRunRef,
         readingRunRef,
         leaseOwner,

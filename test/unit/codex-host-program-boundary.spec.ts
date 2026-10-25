@@ -44,6 +44,8 @@ interface ChildResult {
     saveRequestId: string; workRevisionRef: string};
   saveRequest?: {requestId: string; workJson: string};
   modelStarted?: unknown;
+  parentRun?: {requestId: string; argsHash: string; runRoot: string; runDirectory: string;
+    gatewayBindingSha256: string; promptSha256: string};
 }
 
 // Every business operation below runs the actual Host service. Only identity,
@@ -215,11 +217,13 @@ def save(name,value):
 save('request.synthetic.json',r)
 work=json.loads(pathlib.Path(${JSON.stringify(candidatePath)}).read_text())
 candidate={'tool_name':'return_wiselink_program_assessment','arguments':{'workJson':json.dumps(work,ensure_ascii=False)}}
-summary={'transport_passed':True,'upstream_models':['glm-5.3'],'input_tokens':10,'output_tokens':5,'model_requests':1,'closure':'completed','process_group_closed':True,'upstream_response_present':True}
+summary={'transport_passed':True,'upstream_models':['glm-5.3'],'input_tokens':10,'output_tokens':5,'model_requests':1,'closure':'completed','process_group_closed':True,'upstream_response_present':True,'upstream_request_present':True}
+save('upstream-request.json',{'model':'glm-5.3','messages':[{'role':'user','content':r['prompt']}]})
+summary['upstream_request_sha256']=hashlib.sha256((p/'upstream-request.json').read_bytes()).hexdigest()
 save('upstream-response.json',{'format':'chat-completions-sse-events-v1','events':[{'model':'glm-5.3','choices':[{'index':0,'delta':{'content':json.dumps(candidate)},'finish_reason':'stop'}]}]})
 save('contract-candidate.json',candidate)
 save('transport-summary.json',summary)
-save('generation-receipt.json',{'version':1,'binding_sha256':r['binding_sha256'],'run_directory':str(p),'transport':summary,'candidate':candidate,'upstream_response_sha256':hashlib.sha256((p/'upstream-response.json').read_bytes()).hexdigest()})
+save('generation-receipt.json',{'version':1,'binding_sha256':r['binding_sha256'],'run_directory':str(p),'transport':summary,'candidate':candidate,'upstream_request_sha256':summary['upstream_request_sha256'],'upstream_response_sha256':hashlib.sha256((p/'upstream-response.json').read_bytes()).hexdigest()})
 print(json.dumps(summary))
 `);
   await writeFile(wrapper, `#!/bin/sh\nexec python3 '${fake}'\n`.replace(/\\n/gu, '\n'), {mode: 0o700});
@@ -251,6 +255,7 @@ print(json.dumps(summary))
     result.material=await checkpoint.readOptional('program-materials');result.response=await checkpoint.readOptional('assessment-round-1.result');
     result.saveRequest=await checkpoint.readOptional('program-save-request');result.modelStarted=await checkpoint.readOptional('assessment-round-1.started');
     result.receiptLinks=await checkpoint.readOptional('program-receipt-links');
+    result.parentRun=await checkpoint.readOptional('assessment-round-1.codex-run');
     process.stdout.write(JSON.stringify(result));process.disconnect();
   `;
   const run = async (scenario = 'normal'): Promise<ChildResult> => new Promise((accept, reject) => {
@@ -325,6 +330,11 @@ describe('actual Host producer to CODEX program boundary (offline synthetic mode
         expect(h.work.recordWorkRead).toHaveBeenCalledTimes(1);
         expect(h.artifactBytes.size).toBe(1);
         expect(result.response!.value.raw).toContain('codex-structured-final-to-function-contract-v1');
+        expect(result.parentRun).toMatchObject({requestId: `program:${h.started.attemptRef}:round-1`,
+          runDirectory: result.response!.value.codexReceipt.runDirectory});
+        expect(result.parentRun!.gatewayBindingSha256).toMatch(/^[0-9a-f]{64}$/u);
+        const actualPrompt = await readFile(join(result.parentRun!.runDirectory, 'codex-prompt.txt'));
+        expect(createHash('sha256').update(actualPrompt).digest('hex')).toBe(result.parentRun!.promptSha256);
         expect(result.receiptLinks).toMatchObject({assessmentBinding: {attemptRef: h.started.attemptRef,
           actionAttemptId: h.started.task.actionAttemptId, workItemId: h.started.task.workItemId,
           documentVersionId: h.started.task.documentVersionId, inputRevision: h.started.task.inputRevision,

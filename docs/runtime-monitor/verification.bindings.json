@@ -954,18 +954,19 @@
         "openclaw/skills/wiselink-research-and-synthesize/tests/codex-queue-commit-recovery.test.mjs",
         "openclaw/codex-evaluator/program-finish-recovery.test.mjs",
         "docs/coordination/host-codex-interface-20261025/README.md",
-        "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md"
+        "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md",
+        "docs/coordination/WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md"
       ],
       "gaps": [
         {
           "id": "program.initial-live",
           "kind": "runtime",
-          "reason": "本地组合已保留原SAVE key独立双读、严格来源/输入/fence及CODEX专用路由；离线测试不证明真实保存和Overall提交。实际prompt/payload/预定run关联、宿主唤起/私有持久目录、可信身份配置及整条业务链尚待实证。旧UNKNOWN仅保留取证，不要求兼容迁移。",
-          "nextAction": "按宿主与分阶段验收说明先完成1 worker闭环，再按实际限额验证2/4独立worker；不变request_origin、不把批次4项或CLI子代理数当并发。文档翻译封存恢复独立推进。"
+          "reason": "输入prompt/上游body/启动前父run关联已由19d必要增量在本地接入；原SAVE key双READ、COMMITTING及授权边界保留。实际宿主/安装/两个私有持久root、API origin、独立身份/路径scope、准确新事项与真实SAVE/READ/Overall/结束/同版阅读仍待。Linux恢复12项本机未验，离线通过不证明现场。",
+          "nextAction": "补齐现成宿主、目录、非秘密配置与一个新事项参数，固定准确Host/客户端组合和一次审批草案；获准后单worker完整闭环。P1翻译、2/4worker及旧数据清理重生独立，不要求旧兼容。"
         }
       ],
       "previousReviewedRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
-      "reviewScope": "线上映射仍为准确a65/c240；当前本地974+925组合及定向修订按图契约v1.8登记，未部署，不提升原业务场景。旧历史批次见原证据，当前单worker完整链优先。"
+      "reviewScope": "线上映射仍为准确a65/c240；本地f57+19d首测必要组合按图契约v1.9登记。源码/离线与现场metadata分别取证，未部署、未配置、不提升业务场景。"
     }
   ]
 }

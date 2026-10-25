@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { modelExecutorProvenance } from './model-executor.mjs';
 import { runSemanticTranslation } from './run-semantic-translation.mjs';
 import { projectTdmsReviewSavedModelContext } from './tdms-review-saved-context.mjs';
 import {
@@ -375,7 +376,7 @@ async function runConfigurationEvidenceStage(input) {
         expectedWorkItemId: input.workItemId,
         callTool: input.callTool,
         extractApplicability: input.extractApplicability,
-        runtimeProvenance: input.runtimeProvenance,
+        runtimeProvenance: input.runtimeProvenance, runtimeAppId: input.runtimeAppId,
       });
     case 'JOB_AID':
       return runDynamicEvaluation({
@@ -671,8 +672,9 @@ export async function runApplicabilityEvaluation({
   expectedWorkItemId,
   callTool,
   extractApplicability,
-  runtimeProvenance,
+  runtimeProvenance, runtimeAppId,
 }) {
+  const modelExecutor = runtimeProvenance?.toolVersions?.['model-executor'] === 'CODEX' ? 'CODEX' : 'HOSTED';
   requiredText(
     applicabilityContextRef,
     'HOST_MCP_APPLICABILITY_CONTEXT_REF_REQUIRED',
@@ -692,7 +694,7 @@ export async function runApplicabilityEvaluation({
   ) {
     throw new Error('HOST_MCP_APPLICABILITY_WORKITEM_BINDING_MISMATCH');
   }
-  validatePayload('applicability-input', begin.modelInput);
+  validatePayload('applicability-input', begin.modelInput, { modelExecutor, runtimeAppId });
   const workItemId = begin.task.workItemId;
   const before = await callTool('get_parse_status', { workItemId });
   if (begin.status === 'COMMITTING') {
@@ -730,6 +732,7 @@ export async function runApplicabilityEvaluation({
     const candidate = buildApplicabilityCandidate(
       begin.modelInput,
       astCandidate,
+      { modelExecutor, runtimeAppId },
     );
     result = sealResultEnvelope({
       task: begin.task,
@@ -778,6 +781,7 @@ export async function runApplicabilityEvaluation({
 
 export async function runDynamicEvaluation(input) {
   const { workItemId, query, callTool, evaluateDynamicRules } = input;
+  const modelExecutor = input.runtimeProvenance?.toolVersions?.['model-executor'] === 'CODEX' ? 'CODEX' : 'HOSTED';
   const continuationRequestId = optionalContinuationRequest(input);
   assertCallbacks(workItemId, callTool, evaluateDynamicRules);
   const before = await callTool('get_parse_status', { workItemId });
@@ -801,7 +805,7 @@ export async function runDynamicEvaluation(input) {
     throw new Error('HOST_MCP_PROGRAM_ASSESSMENT_MODE_BINDING_MISMATCH');
   if (!problemV2) validatePayload('dynamic-rules-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
-  const reconciled = problemV2 ? await reconcileSavedInitialAssessment(begin, callTool) : null;
+  const reconciled = problemV2 ? await reconcileSavedInitialAssessment(begin, callTool, modelExecutor) : null;
   const execution = reconciled ?? await recoverAssessmentExecution(begin, problemV2, input.recoverAssessmentExecution) ?? await executeInitialAssessment(begin, problemV2, () =>
     evaluateDynamicRules(structuredClone(begin.modelInput), problemV2 ? problemAssessmentHooks(begin, callTool) : undefined));
   await heartbeatAttempt(begin, callTool);
@@ -1505,7 +1509,7 @@ function optionalContinuationRequest(input) {
   return requestId;
 }
 
-async function reconcileSavedInitialAssessment(begin, callTool) {
+async function reconcileSavedInitialAssessment(begin, callTool, modelExecutor = 'HOSTED') {
   const taskInput = begin.task.modelInput;
   if (!Object.hasOwn(taskInput, 'savedWorkReconciliation')) return null;
   const startedAt = Date.now();
@@ -1543,6 +1547,7 @@ async function reconcileSavedInitialAssessment(begin, callTool) {
     promptVersion: `wiselink-jobaid-problem@v${protocol}`,
     skillVersion: WISELINK_SKILL_VERSION,
     toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+      ...modelExecutorProvenance({ modelExecutor }),
       'jobaid-problem-protocol': protocol, 'host-saved-work-reconciliation': '1',
       ...(taskInput.tdmsContext ? { 'tdms-native-context': '1' } : {}) },
     runMetrics: { durationMs: Date.now() - startedAt, inputUnits: 0, outputUnits: 0 },

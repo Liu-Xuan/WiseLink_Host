@@ -194,3 +194,53 @@ test('exact SAVE-key read cannot substitute different content after a valid late
   await assert.rejects(f.run(),/HOST_MCP_PROGRAM_ASSESSMENT_EXACT_READBACK_MISMATCH/);
   assert.equal(names(f.calls).includes('commit_dynamic_evaluation_candidate'),false);
 });
+
+test('COMMITTING refuses a keyed READ that changes the SAVE identity or full revision',async()=>{
+  const recoveryResult=sealResultEnvelope({task,modelOutput:{workRevisionRef},provenance,
+    factsConsidered:[workRevisionRef]});
+  const beginReturn={...begin,status:'COMMITTING',recoveryResult};
+  const attemptReturn={...attemptStatus(recoveryResult.contentHash),status:'COMMITTING',
+    projectionApplied:false,recoveryAvailable:true,recoveryResult};
+  for (const change of [
+    exact=>{exact.attemptId='ATT-OTHER';},
+    exact=>{exact.revision.workItemId='WI-OTHER';},
+    exact=>{exact.revision.requestId='SAVE-OTHER';},
+    exact=>{exact.revision.workRevision=2;},
+    exact=>{exact.revision.content.understanding='different persisted work';},
+  ]) {
+    const saved=savedRead(); saved.executionStatus='COMMITTING';
+    const exactSaved=structuredClone(saved); change(exactSaved);
+    const f=fixture({beginReturn,attemptReturn,saved,exactSaved});
+    await assert.rejects(f.run(),/HOST_MCP_PROGRAM_ASSESSMENT_(SAVED_READBACK_INVALID|EXACT_READBACK_MISMATCH)/);
+    assert.equal(f.modelCalls(),0);
+    assert.equal(names(f.calls).filter(name=>name==='read_assessment_work').length,2);
+    assert.equal(names(f.calls).includes('commit_dynamic_evaluation_candidate'),false);
+    assert.equal(names(f.calls).includes('save_assessment_work'),false);
+  }
+});
+
+test('COMMITTING refuses a latest work revision from another attempt before exact READ',async()=>{
+  const recoveryResult=sealResultEnvelope({task,modelOutput:{workRevisionRef},provenance,
+    factsConsidered:[workRevisionRef]});
+  const saved=savedRead(); saved.executionStatus='COMMITTING';
+  saved.revision.actionAttemptId='ATT-OTHER';
+  const f=fixture({beginReturn:{...begin,status:'COMMITTING',recoveryResult},
+    attemptReturn:{...attemptStatus(recoveryResult.contentHash),status:'COMMITTING',
+      projectionApplied:false,recoveryAvailable:true,recoveryResult},saved});
+  await assert.rejects(f.run(),/HOST_MCP_PROGRAM_ASSESSMENT_(SAVED_READBACK_INVALID|EXACT_READBACK_MISMATCH)/);
+  assert.equal(f.modelCalls(),0);
+  assert.equal(names(f.calls).filter(name=>name==='read_assessment_work').length,1);
+  assert.equal(names(f.calls).includes('commit_dynamic_evaluation_candidate'),false);
+});
+
+test('COMMITTING refuses a RUNNING work readback before exact READ or replay',async()=>{
+  const recoveryResult=sealResultEnvelope({task,modelOutput:{workRevisionRef},provenance,
+    factsConsidered:[workRevisionRef]});
+  const f=fixture({beginReturn:{...begin,status:'COMMITTING',recoveryResult},
+    attemptReturn:{...attemptStatus(recoveryResult.contentHash),status:'COMMITTING',
+      projectionApplied:false,recoveryAvailable:true,recoveryResult}});
+  await assert.rejects(f.run(),/HOST_MCP_PROGRAM_ASSESSMENT_(SAVED_READBACK_INVALID|EXACT_READBACK_MISMATCH)/);
+  assert.equal(f.modelCalls(),0);
+  assert.equal(names(f.calls).filter(name=>name==='read_assessment_work').length,1);
+  assert.equal(names(f.calls).includes('commit_dynamic_evaluation_candidate'),false);
+});

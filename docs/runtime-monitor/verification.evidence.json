@@ -7804,6 +7804,54 @@
       "observedAt": "2026-10-25T10:57:09.036797+00:00",
       "sourceRevision": "local:974bedfa+925deb+reviewed-core",
       "environmentId": "local:core-and-parallel-P1:offline-only"
+    },
+    {
+      "id": "executor-recovery.19d.selected-input-persistence",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a0241a868234da1ee6debbb6e07899f38d6b33711a8bbef31c2af23d10e756d8",
+      "sourceRevision": "local:f57d8863+selected-19d58915",
+      "environmentId": "local:codex-initial-core:offline-only",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T11:43:35.766434Z",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e40-首测输入留存与正式现场准备2026-10-25",
+      "readbackRef": "private:executor-transition-20261025:19d-integration",
+      "summary": "选择首测必要19d客户端增量，父checkpoint持久后spawn、真实prompt与最终upstream body同字节先持久后发送；保留f57材料、原key双READ、COMMITTING窄读和UNKNOWN防重派，Review CODEX不扩准入。Node87/Python10/Host服务边界8通过，Linux9+3明确跳过未验；独审无阻塞。无真实模型/Host业务/DBcommit/ACK。"
+    },
+    {
+      "id": "executor-readiness.19d.official-host-metadata",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "a0241a868234da1ee6debbb6e07899f38d6b33711a8bbef31c2af23d10e756d8",
+      "sourceRevision": "a65a80925073e4b88aba6d84413a77aa3c814ff6",
+      "environmentId": "host:app_17bzc551rsg:metadata-only",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T11:31:28.020678+00:00",
+      "reportRef": "docs/coordination/WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md",
+      "readbackRef": "private:executor-transition-20261025:first-live-readiness:host",
+      "summary": "正式release仍a65/finished；dev/online各38配置名，10个所需Codex名缺；7条Key metadata没有5条Codex POST有效授权；完整schema preview changes=[]。未读秘密值、未配置或迁移。只说明metadata事实，不是新代码上线/身份认证或业务通过；API origin仍未核。"
+    },
+    {
+      "id": "executor-readiness.19d.runtime-host-unconfirmed",
+      "kind": "source_review",
+      "status": "inconclusive",
+      "contractRevision": "a0241a868234da1ee6debbb6e07899f38d6b33711a8bbef31c2af23d10e756d8",
+      "sourceRevision": "local:f57d8863+selected-19d58915",
+      "environmentId": "runtime:app_17gr74pbere:metadata-only",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T11:30:22.045747+00:00",
+      "reportRef": "docs/coordination/WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md",
+      "readbackRef": "private:executor-transition-20261025:first-live-readiness:runtime",
+      "summary": "正式可见会话inactive、平台cron为空；Chrome已登录，应用预览/终端仍唤醒中，没有发送命令。实际Codex安装路径/版本、现成supervisor或单次唤起owner、checkpointRoot/runRoot及mount/retention/重启读回未证；不能从平台cron空或页面加载推断原生服务有无或健康。新事项、可信配置与完整业务链未运行。"
     }
   ]
 }

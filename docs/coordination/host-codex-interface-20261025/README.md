@@ -1,6 +1,6 @@
 # Host ↔ Codex 非秘密机器接口包
 
-本包是程序初评首测P0交付，来自独立CORE树：Host `974bedfa`加新执行器`925deb`核心（父`94c54de`），保留本地Codex路由与安全边界。准确来源见 [source-version.json](source-version.json) 和 [source-manifest.json](source-manifest.json)。925消费者恢复已有实现；文档跨lease Host扩展在并行P1另包，本包不含`READ_GENERATION`、`SEAL_CANDIDATE`、`RECOVER_SAVE`，不据消费者代码宣称它们已接通。原974的76文件ZIP保留原字节作历史，本定稿替代其首测交付地位。
+本包是程序初评首测P0交付，来自独立CORE树：以准确f57d8863为基线，选择性吸收925deb→19d589的首测必要客户端增量，保留Host授权、材料、COMMITTING及原SAVE key双READ边界。准确来源见 [source-version.json](source-version.json) 和 [source-manifest.json](source-manifest.json)。父checkpoint启动前关联、完整prompt与实际上游请求已接入；现场目录、安装与真实业务仍待验。文档跨lease Host扩展在并行P1另包，本包不含`READ_GENERATION`、`SEAL_CANDIDATE`、`RECOVER_SAVE`。原f57 ZIP保留原字节作前次交付证据，本定稿另有准确回执。
 
 **状态：本地已实现独立Codex MCP/路由、单新事项程序初评scope、原请求恢复与准确双读收尾；本轮未部署、未执行真实业务或模型。** 目标运行应用从`WL_CODEX_RUNTIME_APP_ID`读取并拒绝旧应用身份；首批Applicability/Review等CODEX业务入口显式拒绝。官方名称级历史观察当时尚无`WL_MODEL_EXECUTOR`、`WL_CODEX_*`及新路径Key授权，不等于实时配置检查；未查询或导出其值。实际宿主/调度、两个持久目录所在卷与新事项授权仍待现场核对。观察时间见 [configuration/observed-status.json](configuration/observed-status.json)。
 

@@ -38,6 +38,7 @@ class ClosedThread:
         return False
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux /proc identity and process groups; not validated here")
 class RunnerRecoveryTests(unittest.TestCase):
     def fixture(self, root, mode):
         run = root / "run"
@@ -57,6 +58,9 @@ sys.stdin.read()
 output.write_text(json.dumps({'tool_name':'return_result','arguments':{'workJson':'{}'}}))
 audit={'upstream_attempted':True,'upstream_models':['glm-5.3'],'usage':{'input_tokens':10,'output_tokens':5},'status':200,'finish_reason':'stop','tool_calls':0}
 (run/'bridge.audit.jsonl').write_text(json.dumps(audit)+'\\n')
+upstream_request={'model':'glm-5.3','messages':[{'role':'user','content':'offline'}]}
+temporary=run/'upstream-request.json.tmp'; temporary.write_text(json.dumps(upstream_request))
+os.replace(temporary,run/'upstream-request.json')
 upstream={'format':'chat-completions-sse-events-v1','events':[{'model':'glm-5.3','choices':[{'index':0,'finish_reason':'stop'}]}]}
 temporary=run/'upstream-response.json.tmp'; temporary.write_text(json.dumps(upstream))
 os.replace(temporary,run/'upstream-response.json')
@@ -81,7 +85,13 @@ print(json.dumps({'type':'turn.completed'}))
     def execute(self, request):
         output = io.StringIO()
         def bridge_stub(config_path, model, audit_path, work_dir, **options):
-            self.assertEqual(options["upstream_response_path"], Path(request["run_directory"]) / "upstream-response.json")
+            self.assertEqual(options["upstream_response_path"],
+                Path(request["run_directory"]) / "upstream-response.json"
+                if request.get("binding_sha256") else None)
+            self.assertEqual(options["upstream_request_path"], Path(request["run_directory"]) / "upstream-request.json")
+            prompt = Path(request["run_directory"]) / "codex-prompt.txt"
+            self.assertEqual(prompt.read_bytes(), request["prompt"].encode("utf-8"))
+            self.assertEqual(prompt.stat().st_mode & 0o077, 0)
             return ClosedServer(), ClosedThread(), 12345, "ephemeral-test-token"
         with mock.patch.object(runner, "start_server", bridge_stub), \
              mock.patch.object(sys, "stdin", io.StringIO(json.dumps(request))), \
@@ -97,6 +107,8 @@ print(json.dumps({'type':'turn.completed'}))
             receipt = json.loads((run / "generation-receipt.json").read_text())
             original = (run / "upstream-response.json").read_bytes()
             self.assertEqual(receipt["upstream_response_sha256"], hashlib.sha256(original).hexdigest())
+            self.assertEqual(receipt["upstream_request_sha256"], hashlib.sha256(
+                (run / "upstream-request.json").read_bytes()).hexdigest())
             self.assertEqual(receipt["transport"], summary)
             self.assertEqual(receipt["candidate"], json.loads((run / "contract-candidate.json").read_text()))
             self.assertEqual(summary["closure"], "completed")
@@ -104,7 +116,8 @@ print(json.dumps({'type':'turn.completed'}))
             self.assertTrue(summary["transport_passed"])
             self.assertFalse(any(path.name.endswith('.tmp') for path in run.iterdir()))
             self.assertNotIn("ephemeral-test-token", "".join(path.read_text() for path in
-                (run / "generation-receipt.json", run / "transport-summary.json", run / "upstream-response.json")))
+                (run / "generation-receipt.json", run / "transport-summary.json", run / "upstream-response.json",
+                 run / "upstream-request.json", run / "codex-prompt.txt")))
 
     def test_live_descendant_prevents_successful_transport_even_after_turn_completed(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -115,6 +128,41 @@ print(json.dumps({'type':'turn.completed'}))
             self.assertFalse(summary["transport_passed"])
             receipt = json.loads((run / "generation-receipt.json").read_text())
             self.assertFalse(receipt["transport"]["transport_passed"])
+
+    def test_unindexed_generation_still_captures_complete_private_request_and_prompt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            run, request = self.fixture(Path(temporary), "normal")
+            del request["binding_sha256"]
+            (run / "generation-binding.json").unlink()
+            run.rmdir()
+            code, summary = self.execute(request)
+            self.assertEqual(code, 0, summary)
+            self.assertTrue(summary["upstream_request_present"])
+            payload = (run / "upstream-request.json").read_bytes()
+            self.assertEqual(summary["upstream_request_sha256"], hashlib.sha256(payload).hexdigest())
+            self.assertEqual((run / "codex-prompt.txt").read_bytes(), request["prompt"].encode("utf-8"))
+            self.assertEqual((run / "upstream-request.json").stat().st_mode & 0o077, 0)
+            self.assertFalse((run / "generation-receipt.json").exists())
+
+
+
+class PreDispatchPersistenceTests(unittest.TestCase):
+    def test_prompt_publish_failure_blocks_bridge_and_cli_spawn(self):
+        # Only identity lookup is synthetic: exercise real main() ordering on
+        # every OS without pretending Linux process lifecycle was validated.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = {"run_directory": str(root / "run"), "prompt": "完整中文输入",
+                       "timeout_seconds": 1, "max_output_tokens": 128}
+            with mock.patch.object(runner, "runner_identity", return_value={"synthetic": True}), \
+                 mock.patch.object(runner, "atomic_bytes", side_effect=OSError("offline prompt fsync failed")), \
+                 mock.patch.object(runner, "start_server") as bridge_start, \
+                 mock.patch.object(runner.subprocess, "Popen") as cli_spawn, \
+                 mock.patch.object(sys, "stdin", io.StringIO(json.dumps(request))):
+                with self.assertRaisesRegex(OSError, "offline prompt fsync failed"):
+                    runner.main()
+                bridge_start.assert_not_called()
+                cli_spawn.assert_not_called()
 
 
 if __name__ == "__main__":

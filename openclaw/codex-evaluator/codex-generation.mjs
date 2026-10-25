@@ -19,6 +19,16 @@ async function atomicJson(path, value) {
   try { await directory.sync(); } finally { await directory.close(); }
 }
 
+async function atomicBytes(path, value) {
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  const handle = await open(temporary, 'wx', 0o600);
+  try { await handle.writeFile(value); await handle.sync(); }
+  finally { await handle.close(); }
+  await rename(temporary, path);
+  const directory = await open(dirname(path), 'r');
+  try { await directory.sync(); } finally { await directory.close(); }
+}
+
 async function durableDirectory(path) {
   const missing = [];
   let current = path;
@@ -80,6 +90,15 @@ async function awaitReceipt(runDirectory, timeoutSeconds, signal) {
 
 function fail(code) { throw new Error(code); }
 function record(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
+
+/** Derive the existing deterministic recovery location without launching work. */
+export async function codexRecoveryRunDirectory(runRoot, requestId) {
+  if (typeof runRoot !== 'string' || !isAbsolute(runRoot) ||
+      typeof requestId !== 'string' || !requestId || requestId.length > 512)
+    fail('CODEX_GENERATION_RECOVERY_INVALID');
+  await durableDirectory(runRoot);
+  return resolve(await realpath(runRoot), `generation-recovery-${sha256(requestId)}`);
+}
 
 function validateRequest(endpoint, init) {
   if (endpoint != null && new URL(endpoint).pathname !== '/v1/chat/completions') fail('CODEX_GENERATION_ROUTE_UNSUPPORTED');
@@ -233,13 +252,14 @@ export function createCodexGateway(options) {
   return async function requestGateway(endpoint, init) {
     const { body, names, namedChoice } = validateRequest(endpoint, init);
     if (init.signal?.aborted) throw init.signal.reason ?? new Error('CODEX_GENERATION_ABORTED');
-    await durableDirectory(options.runRoot);
-    const runRoot = await realpath(options.runRoot);
     const recovery = init.codexRecovery;
     if (recovery !== undefined && (!record(recovery) || typeof recovery.requestId !== 'string' ||
         !recovery.requestId || recovery.requestId.length > 512 ||
-        (recovery.recoverOnly !== undefined && typeof recovery.recoverOnly !== 'boolean')))
+        (recovery.recoverOnly !== undefined && typeof recovery.recoverOnly !== 'boolean') ||
+        (recovery.onRunPrepared !== undefined && typeof recovery.onRunPrepared !== 'function')))
       fail('CODEX_GENERATION_RECOVERY_INVALID');
+    await durableDirectory(options.runRoot);
+    const runRoot = await realpath(options.runRoot);
     const runDirectory = resolve(runRoot, recovery
       ? `generation-recovery-${sha256(recovery.requestId)}` : `generation-${randomUUID()}`);
     const prompt = [
@@ -281,6 +301,7 @@ export function createCodexGateway(options) {
         const parentDirectory = await open(runRoot, 'r');
         try { await parentDirectory.sync(); } finally { await parentDirectory.close(); }
         await atomicJson(resolve(runDirectory, 'generation-binding.json'), binding);
+        await atomicBytes(resolve(runDirectory, 'codex-prompt.txt'), Buffer.from(prompt, 'utf8'));
       } catch (error) {
         if (error?.code !== 'EEXIST') throw error;
         recovered = true;
@@ -291,9 +312,27 @@ export function createCodexGateway(options) {
         if (!previous) fail('CODEX_GENERATION_OUTCOME_UNKNOWN');
         if (sha256(JSON.stringify(previous)) !== bindingSha256)
           fail('CODEX_GENERATION_RECOVERY_MISMATCH');
+        const promptPath = resolve(runDirectory, 'codex-prompt.txt');
+        let persistedPrompt, promptMode;
+        try {
+          [persistedPrompt, promptMode] = await Promise.all([
+            readFile(promptPath), stat(promptPath),
+          ]);
+        } catch (error) {
+          if (error?.code === 'ENOENT') fail('CODEX_GENERATION_RECOVERY_MISMATCH');
+          throw error;
+        }
+        if (sha256(persistedPrompt) !== binding.promptSha256 ||
+            (promptMode.mode & 0o077) !== 0 ||
+            ((await stat(runDirectory)).mode & 0o077) !== 0)
+          fail('CODEX_GENERATION_RECOVERY_MISMATCH');
       }
       request.binding_sha256 = bindingSha256;
     } else if (recovery?.recoverOnly) fail('CODEX_GENERATION_OUTCOME_UNKNOWN');
+    await recovery?.onRunPrepared?.({ runRoot, runDirectory, requestId: recovery.requestId,
+      bindingSha256, promptSha256: binding.promptSha256 });
+    await options.onRunPrepared?.({ runRoot, runDirectory,
+      requestId: recovery?.requestId ?? null, recovered });
     let child;
     if (!recovered) child = await runChild(request, init.signal, options.pythonBinary ?? 'python3');
     let transport;
@@ -316,9 +355,16 @@ export function createCodexGateway(options) {
         fail('CODEX_GENERATION_RECEIPT_INVALID');
       if (transport.transport_passed && (transport.closure !== 'completed' ||
           transport.process_group_closed !== true || transport.model_requests !== 1 ||
-          transport.upstream_response_present !== true))
+          transport.upstream_response_present !== true ||
+          transport.upstream_request_present !== true))
         fail('CODEX_GENERATION_RECEIPT_INVALID');
       if (transport.transport_passed) {
+        let requestRaw;
+        try { requestRaw = await readFile(resolve(runDirectory, 'upstream-request.json')); }
+        catch { fail('CODEX_GENERATION_RECEIPT_INVALID'); }
+        if (receipt.upstream_request_sha256 !== sha256(requestRaw) ||
+            transport.upstream_request_sha256 !== sha256(requestRaw))
+          fail('CODEX_GENERATION_RECEIPT_INVALID');
         let upstreamRaw;
         try { upstreamRaw = await readFile(resolve(runDirectory, 'upstream-response.json')); }
         catch { fail('CODEX_GENERATION_RECEIPT_INVALID'); }

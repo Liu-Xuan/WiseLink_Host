@@ -1,6 +1,8 @@
-# 新客户端 925deb 与当前 Host 的组合对照
+# 首测19d增量与当前 Host 的组合对照
 
-新执行器上游`925deb2d148a9eb8ed508300d7132fce55bc665c`的父提交为`94c54de74a0d7a0c0d66778a04a161e2017fce28`。其`contracts/host-source-interface.json`固定于旧Host `fc132291`，明确标记`PINNED_LEGACY_SOURCE_ONLY`。唯一当前接口是本目录实际生产注册函数经官方SDK导出的initialize/tools-list及同源文件；旧源码材料只用于来源和差异审查，不承担新版兼容承诺。
+本次准确新增来源为`19d58915982c740690080b8db3e355828810ff38`，直接父`925deb2d148a9eb8ed508300d7132fce55bc665c`。按f57三方选择首测必要输入留存、父run关联、runtime identity及原结果恢复；本地已有更严格队列/COMMITTING/原key双READ保留，Review CODEX准入拓展和翻译/Wiki消费扩展未纳入。当前完整schema与比较器没有因此放宽；以下925固定盘点继续作为历史来源与schema对照，不冒称已直接读取外部会话附件。
+
+既有执行器上游`925deb2d148a9eb8ed508300d7132fce55bc665c`的父提交为`94c54de74a0d7a0c0d66778a04a161e2017fce28`。其`contracts/host-source-interface.json`固定于旧Host `fc132291`，明确标记`PINNED_LEGACY_SOURCE_ONLY`。唯一当前接口是本目录实际生产注册函数经官方SDK导出的initialize/tools-list及同源文件；旧源码材料只用于来源和差异审查，不承担新版兼容承诺。
 
 ## 1. 42 项与 45 项
 

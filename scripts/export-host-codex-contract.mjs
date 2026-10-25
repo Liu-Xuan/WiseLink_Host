@@ -73,6 +73,7 @@ const sourceFiles = new Set([
   'openclaw/codex-evaluator/contracts/runtime-configuration-status.json',
   'openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs',
   'docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md',
+  'docs/coordination/WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md',
   'test/unit/codex-host-program-boundary.spec.ts',
   'scripts/export-host-codex-contract.mjs',
   'docs/openapi.json',

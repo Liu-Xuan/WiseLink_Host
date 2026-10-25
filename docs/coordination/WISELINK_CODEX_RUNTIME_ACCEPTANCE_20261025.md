@@ -1,15 +1,15 @@
 # CODEX 消费者宿主与分阶段验收
 
-这是本地实施与切换准备说明，不更改 R10 主计划，也不代表配置、发布或业务运行批准。首测树为 `program-initial-925-core-candidate`，分支 `codex/initial-assessment-925-core-20261025`。基线为本地 974bedfa，选择性集成 925deb（父94c54de）；接口以[当前完整包](host-codex-interface-20261025/README.md)为准，约束以[图契约 v1.8](../WISELINK_MAINLINE_GRAPH_CONTRACT.md)为准。
+这是本地实施与切换准备说明，不更改 R10 主计划，也不代表配置、发布或业务运行批准。首测树为 `program-initial-925-core-candidate`，分支 `codex/initial-assessment-925-core-20261025`。先前f57核心由974bedfa选择性集成925deb；本次在f57上选择925→19d589首测必要增量，准确最终组合以新交付回执为准；接口以[当前完整包](host-codex-interface-20261025/README.md)为准，约束以[图契约 v1.9](../WISELINK_MAINLINE_GRAPH_CONTRACT.md)为准。
 
 ## 已知事实和缺口
 
 | 对象 | 已有事实 | 仍需实际证据 |
 | --- | --- | --- |
 | Host 入口 | 固定五个 CODEX 入口、独立 principal/runtime、明确新事项与 intake scope；旧入口按活动执行器互斥 | 新线上准确代码、非秘密配置读回、可信身份与 scope；当前本地代码不代表线上 |
-| 任务和消费者 | `consumeAutomaticWorkItemQueueBatch` 使用现成 Host 队列，逐项 await，默认最多4项；单批15分钟只在项间判断 | 新宿主真实 service/cron 注册、启动命令、owner、重启策略与连续回执 |
+| 任务和消费者 | `consumeAutomaticWorkItemQueueBatch` 使用现成 Host 队列，逐项 await，默认最多4项；单批15分钟只在项间判断 | 现成宿主的单次唤起或service/cron、启动命令、owner和恢复方式；一次首测不要求先建常驻框架 |
 | 检查点 | 显式 `--checkpoint-root`；默认 home 下目录不是持久卷证明。endpoint namespace 有本地 flock | 实际绝对路径、私有权限、持久卷挂载/生命周期、重启后同绑定读回 |
-| 子进程结果 | 显式绝对 `--codex-run-root`/`WL_CODEX_RUN_ROOT`；generation recovery 保留完整解析响应及原进程闭合记录 | 实际私有持久 root、与父检查点同一恢复生命周期、实际 prompt/bridge payload/启动前预定run关联 |
+| 子进程结果 | 显式绝对 `--codex-run-root`/`WL_CODEX_RUN_ROOT`；generation recovery 保留完整解析响应及原进程闭合记录 | 实际私有持久 root、与父检查点同一恢复生命周期及真实重启读回；本次19d增量的prompt/bridge payload/启动前run关联代码与离线范围另记 |
 | 数据库槽位 | 官方dev/online只读catalog已证：同tenant/request_origin非空槽位RUNNING/COMMITTING最多4个，三partial unique index有效；源码声明缺WHERE另列漂移 | 首批真实新业务是否完整遵守该范围、提交恢复占用及实际worker释放；不改DDL |
 | 模型与运行资源 | 既有6次GLM合成Host调用只证该fixture；Codex子代理数量独立于业务worker | Hosted profile 的真实并发、RPM/TPM、超时和进程/内存/DB连接容量，均未取得 |
 
@@ -24,7 +24,7 @@
 5. 两个root必须留在同一任务可恢复的私有持久存储上；保存准确run/receipt定位，实际重启后按原绑定读回。未取得持久性证据前不启动首个正式新事项。
 6. 保留期覆盖未终态、UNKNOWN、COMMITTING及所依赖完整回执；不按TTL删除这些目录。已完成任务在Host成果、独立READ和队列ACK核对后才进入归档候选，具体保留期与清理机制待明确，不默认无限存储或自动删除。
 
-实际 prompt、最终上游 bridge payload 与预定run/root启动前关联由执行端 owner 补充；本地主控不重复实现另一路记录。文件fsync和本机SIGKILL恢复不足以代替真实宿主重启验收。
+实际prompt、最终上游bridge payload与启动前预定run关联已由19d必要客户端增量接入现有检查点，按本地准确组合另列验证；不另造记录平台。文件fsync和本机SIGKILL恢复不足以代替真实宿主重启验收。现场只读事实、缺口和owner见[首次真实运行准备](WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md)。
 
 ## 业务并发按1→2→4推进
 
@@ -63,7 +63,7 @@
 
 ## 分开交付与运行前置
 
-- 首测核心交付检查：准确组合/当前接口与图定稿、标准构建，结果以准确交接回执为准。运行剩余项：实际宿主唤起、两个私有持久root、可信身份/单事项范围和上游输入/run持久关联；之后仅在明确批准下做一次新事项完整链。
+- 首测核心交付检查：准确组合/当前接口与图定稿、标准构建，结果以准确交接回执为准。运行剩余项：实际宿主唤起、两个私有持久root、可信身份/单事项范围和新输入/run持久关联的现场证明；之后仅在明确批准下做一次新事项完整链。
 - 翻译并行：独立Host封存恢复候选和接口交接，云端客户端接入；技术切换与真实恢复单列。首测包不含新增 READ_GENERATION / SEAL_CANDIDATE / RECOVER_SAVE，当前P1代码不会成为本次首测交付依赖。
 
-已核验的974接口ZIP可以立即支撑当前路径、身份、COMMITTING及schema对照；该包未部署，也不包含并行翻译扩展。本地文件路径不是已经完成的跨会话附件传递。
+先前f57接口ZIP已定稿，974保留为历史；本次准确接口包由新组合导出。所有包均不以本地存在冒充部署，也不包含并行翻译扩展。本地文件路径不是已经完成的跨会话附件传递。

@@ -7,7 +7,7 @@ for (const modelExecutor of ['HOSTED', 'CODEX']) {
     const requests = [];
     const name = modelExecutor === 'CODEX' ? 'codex' : 'openclaw';
     const client = createHostAutoWorkItemQueueClient({
-      modelExecutor,
+      modelExecutor, runtimeAppId: 'app_syntheticCodexRuntime',
       hostMcpUrl: `https://host.example/app/test/openapi/wiselink/${name}-mcp`,
       headers: { 'X-Api-Key': 'synthetic-test-key' },
     }, async (url, init) => {

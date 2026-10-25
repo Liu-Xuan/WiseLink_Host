@@ -65,6 +65,21 @@ def atomic_json(path, value):
         os.close(directory)
 
 
+def atomic_bytes(path, value):
+    temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as file:
+        file.write(value)
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(temporary, path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
 def runner_identity():
     stat = Path("/proc/self/stat").read_text()
     # /proc can be mounted from the host while the runner has a private PID
@@ -189,6 +204,15 @@ def main():
         raise ValueError("invalid_timeout")
     if type(request.get("max_output_tokens")) is not int or not 1 <= request["max_output_tokens"] <= 32768:
         raise ValueError("invalid_token_budget")
+    if not isinstance(request.get("prompt"), str):
+        raise ValueError("invalid_prompt")
+    prompt_bytes = request["prompt"].encode("utf-8")
+    prompt_path = run / "codex-prompt.txt"
+    if prompt_path.exists():
+        if prompt_path.read_bytes() != prompt_bytes:
+            raise ValueError("recovery_prompt_mismatch")
+    else:
+        atomic_bytes(prompt_path, prompt_bytes)
     config_path = request["config_path"]
     before = hashlib.sha256(Path(config_path).read_bytes()).hexdigest()
     started = time.monotonic()
@@ -210,7 +234,8 @@ def main():
         server, thread, port, token = start_server(config_path, MODEL, run / "bridge.audit.jsonl",
             run / "work", allowed_tools=frozenset(), max_requests=1,
             max_tokens=request["max_output_tokens"], reasoning_effort=request.get("reasoning_effort"),
-            upstream_response_path=run / "upstream-response.json" if binding_sha256 is not None else None)
+            upstream_response_path=run / "upstream-response.json" if binding_sha256 is not None else None,
+            upstream_request_path=run / "upstream-request.json")
         configure(run, port)
         env = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
                "HOME": str(run / "user-home"), "CODEX_HOME": str(run / "codex-home"),
@@ -279,6 +304,9 @@ def main():
         summary["upstream_response_present"] = (run / "upstream-response.json").is_file() if binding_sha256 is not None else None
         summary["upstream_response_sha256"] = (hashlib.sha256((run / "upstream-response.json").read_bytes()).hexdigest()
             if summary["upstream_response_present"] else None)
+        summary["upstream_request_present"] = (run / "upstream-request.json").is_file()
+        summary["upstream_request_sha256"] = (hashlib.sha256((run / "upstream-request.json").read_bytes()).hexdigest()
+            if summary["upstream_request_present"] else None)
         try:
             final = json.loads(final_path.read_text(), object_pairs_hook=unique_object,
                 parse_constant=reject_constant)
@@ -302,6 +330,7 @@ def main():
             and summary["structured_final_to_contract"] and summary["source_config_unchanged"]
             and not summary["auth_json_present"] and thread is not None and not thread.is_alive()
             and summary["process_group_closed"] and not summary["process_group_had_members"]
+            and summary["upstream_request_present"]
             and (binding_sha256 is None or summary["upstream_response_present"]))
         atomic_json(run / "transport-summary.json", summary)
         if binding_sha256 is not None:
@@ -310,6 +339,7 @@ def main():
             atomic_json(run / "generation-receipt.json", {"version": 1,
                 "binding_sha256": binding_sha256, "run_directory": str(run),
                 "transport": summary, "candidate": candidate,
+                "upstream_request_sha256": summary["upstream_request_sha256"],
                 "upstream_response_sha256": summary["upstream_response_sha256"]})
         for sig, handler in handlers.items():
             signal.signal(sig, handler)

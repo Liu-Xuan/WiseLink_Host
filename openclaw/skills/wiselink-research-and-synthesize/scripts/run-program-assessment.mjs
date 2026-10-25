@@ -9,7 +9,7 @@ import { actualModelVersion, assertHostedModelGatewayReady, executionModelHeader
 import { canonicalJson, canonicalSha256, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION,
   WISELINK_PROFILE_REF, WISELINK_SKILL_VERSION } from './validate-payload.mjs';
 import { hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
-import { modelExecutor, modelExecutorProvenance, modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway } from './model-executor.mjs';
+import { modelExecutor, modelExecutorProvenance, modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway, codexParentRunRecorder } from './model-executor.mjs';
 
 const OUTPUT_FUNCTION = 'return_wiselink_program_assessment';
 const POLICY = { version: 1, loopPolicyVersion: 'program-controlled-v1', maxModelRequests: 1 };
@@ -117,7 +117,9 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
             ...modelGatewayHeaders(options), ...modelHeaders }, body,
           signal: AbortSignal.timeout(timeout),
           ...(usesCodex ? { codexRecovery: { requestId: codexRecoveryRequestId,
-            recoverOnly: Boolean(started) } } : {}) }, dependencies);
+            recoverOnly: Boolean(started),
+            onRunPrepared: codexParentRunRecorder(checkpoint,'assessment-round-1',
+              {requestId:codexRecoveryRequestId,argsHash}) } } : {}) }, dependencies);
       return { raw: await response.text(), status: response.status, ok: response.ok,
         ...(usesCodex ? { codexReceipt: response.codexReceipt } : {}) };
     };

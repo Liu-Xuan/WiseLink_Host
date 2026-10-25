@@ -15,9 +15,9 @@
   "localPacket": {
     "path": "mcp/codex.tools-list.json",
     "version": null,
-    "commit": "974bedfa8edb03ba94c4991a2c6a3c63a1145eb4",
+    "commit": "f57d886352d32f93dbdd10df6b362edbf82d4aeb",
     "schemaVersion": null,
-    "sha256": "ad658973dc15725e904ac82d5a54d8faaddf508aac890ae7509d462a42566e35"
+    "sha256": "ae2496a87660881e6d491917c2f3f1da388f1764e123f04559795c989ccbdf7f"
   },
   "extraPacketTools": [
     "get_pending_review_turn",

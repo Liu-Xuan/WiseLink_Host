@@ -1,19 +1,24 @@
 {
-  "hostBaseline": "974bedfa8edb03ba94c4991a2c6a3c63a1145eb4",
+  "hostBaseline": "f57d886352d32f93dbdd10df6b362edbf82d4aeb",
   "previousHostTransitionBaseline": "1eb9bcc8bd5a57798cb91f9674dfccdf9d44eb92",
-  "importedExecutorUpstream": "925deb2d148a9eb8ed508300d7132fce55bc665c",
-  "importedExecutorParent": "94c54de74a0d7a0c0d66778a04a161e2017fce28",
+  "importedExecutorUpstream": "19d58915982c740690080b8db3e355828810ff38",
+  "importedExecutorParent": "925deb2d148a9eb8ed508300d7132fce55bc665c",
   "upstreamReferenceBasis": "Exact upstream Git object fetched and read locally; selective integration preserves current Codex queue routes. Working files are identified individually in source-manifest.json.",
-  "workingChanges": "LOCAL_REVIEWED_HOST_AND_925_RECOVERY_INTEGRATION_AT_EXPORT",
-  "deliveryScope": "P0_PROGRAM_INITIAL_925_CORE",
+  "workingChanges": "LOCAL_REVIEWED_HOST_AND_19D_INITIAL_ASSESSMENT_INTEGRATION_AT_EXPORT",
+  "deliveryScope": "P0_PROGRAM_INITIAL_19D_SELECTIVE_CORE",
   "parallelP1DocumentTranslationHostRecoveryIncluded": false,
-  "excludedParallelHostPhases": ["READ_GENERATION", "SEAL_CANDIDATE", "RECOVER_SAVE"],
+  "excludedParallelHostPhases": [
+    "READ_GENERATION",
+    "SEAL_CANDIDATE",
+    "RECOVER_SAVE"
+  ],
   "previousInterfaceDelivery": {
-    "label": "974bedfa",
-    "fileCount": 76,
-    "sha256": "eb88eb330b84e9a2d8e57b2649be9612044597c0d8011b8f1d9f2df624668b33",
+    "label": "f57d8863",
+    "fileCount": 77,
+    "archiveEntryCount": 78,
+    "sha256": "c67a519d46341499e95cb320725b5b759ba5631e71b42ad01e5306cd594f67d3",
     "readOnlyVerification": "EXACT_BYTES_AND_SANITIZED_CONTENT_VERIFIED",
-    "disposition": "SUPERSEDED_PRIVATE_HISTORY"
+    "disposition": "PRESERVED_PREVIOUS_CORE_DELIVERY"
   },
   "finalIntegrationCommit": "RECORDED_IN_PRIVATE_DELIVERY_RECEIPT_AFTER_NORMAL_COMMIT_AND_BUILD",
   "purpose": "Reviewable source snapshot; no runtime freeze, deployment gate, or self-referencing final commit hash."

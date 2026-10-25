@@ -20,11 +20,11 @@ runner除原events/final/candidate/audit外，新增实际`runner-identity.json`
 
 仍需区分三种实际内容：
 
-1. `program-model-input`是传入适配器的请求，不是实际Codex prompt或bridge上游payload；目前binding保存prompt摘要，完整prompt和实际上游payload尚未独立留存并连回同一原请求。
+1. `program-model-input`是传入适配器的请求。19d必要增量另保存实际`codex-prompt.txt`，父`assessment-round-1.codex-run`在spawn前持久绑定runRoot/runDirectory/requestId/argsHash及gateway/prompt摘要；bridge先fsync准确`upstream-request.json`字节，再将同一bytes交给HTTPSConnection。恢复核这些文件与原绑定；不把摘要当原文。
 2. `upstream-response.json`格式为`chat-completions-sse-events-v1`，保存解析后的完整JSON事件序列及摘要。它已补齐原先缺失的上游事件内容，但没有保存原HTTP头、SSE分隔/编码/原始字节；不能称为原字节封存。
 3. `result.value.raw`仍是确定性重建的`chat.completion`，是程序实际收到的完整适配器响应，不能替代前两者。
 
-剩余改动应沿这条已有回执链补实际prompt、bridge payload与原响应字节/引用，不再造执行内核或第三套协议。Host的材料artifact与进度观察仍不充当通用原始响应上传仓。
+本次沿已有回执链接入prompt、bridge请求和启动前父run关联；仍不保存HTTP头/认证信息或逐字节SSE framing。完整解析后上游事件与程序收到的完整响应已分别定位；真实运行、目录持久性与恢复效果仍需现场证明，Host材料artifact不充当原始响应上传仓。
 
 Host 的 `record_assessment_program_progress(MODEL_RESPONSE_SAVED)` 当前只接受 phase/checkpointRef，作用是记录消费者观察。Host 不是通用原始响应上传仓。`readBrowserProgramMaterials` 可读取实际材料 artifact 和观察状态，不能从进度标签重建丢失响应。
 
@@ -32,7 +32,7 @@ Host 的 `record_assessment_program_progress(MODEL_RESPONSE_SAVED)` 当前只接
 | --- | --- | --- |
 | intake → queue lease | Host 原受理 requestId、准确 WI、源/actor 与 owner | 与 stage begin requestId 不同 |
 | stage → task/attempt | Host sealed task、operationRef、actionAttemptId、inputHash、mode/model | wire 名仍含 OpenClaw；不改变运行身份 |
-| 传入适配器请求 → 程序收到的响应 | checkpoint binding/argsHash、固定modelRequestId、完整adapted raw及codexReceipt | 完整prompt/实际bridge payload与原HTTP/SSE字节尚未独立留存；不能把摘要当作原字节 |
+| 传入适配器请求 → 程序收到的响应 | checkpoint binding/argsHash、固定modelRequestId、完整adapted raw及codexReceipt | 实际prompt与bridge body已独立留存并核摘要；原HTTP头/SSE framing未封存，不能扩大为原传输字节证明 |
 | 子进程 → 上游内容 → 业务保存 | generation receipt/transport/解析后事件摘要、program-receipt-links | 已有机器关联；真实持久卷/调度宿主未验证，不做跨远端exactly-once承诺 |
 | 响应 → SAVE | 候选检查点 + 原 program-save-request | 不能因SAVE异常换key/丢弃完整响应 |
 | SAVE → 独立 READ | 同 attempt、saveRequestId、workRef/revision、有效 fence | SAVE ACK 或 latest 读取不能替代 |
@@ -72,6 +72,6 @@ Host 的 `record_assessment_program_progress(MODEL_RESPONSE_SAVED)` 当前只接
 
 首批队列只扫描该准确新 WI。旧 owner 租约、旧已领取 WAITING 项不因过期或换名而转交 Codex。附加文档/Matter/Review 配置名在源码里可映射，不表示本批已经迁移或获准执行这些入口。API Key 的授权必须覆盖精确 Codex MCP及所需四条控制路径，不能沿用仅有旧路径的 key 冒充新接线。
 
-首批scope显式拒绝CODEX Applicability、Review、待办Review发现、后继Review Overall与相关attempt入口，错误为`CANONICAL_CODEX_OPERATION_NOT_SUPPORTED`（403）。实际runtime是CODEX，shared历史app literal、Task/Result和旧MCP provenance key仍按原封存合同保留；Host另校验结果执行器标记与活动执行路线，不以旧wire名冒充新运行身份。Discovery接受CODEX来源，历史缺失appId不从当前配置回填。
+客户端接收Host task时要求显式配置的非旧runtime app与封存runtimePolicy精确匹配；任意app格式匹配不授予权限，也不把本批目标ID写成通用信任。首批scope显式拒绝CODEX Applicability、Review、待办Review发现、后继Review Overall与相关attempt入口，错误为`CANONICAL_CODEX_OPERATION_NOT_SUPPORTED`（403）。实际runtime是CODEX，shared历史app literal、Task/Result和旧MCP provenance key仍按原封存合同保留；Host另校验结果执行器标记与活动执行路线，不以旧wire名冒充新运行身份。Discovery接受CODEX来源，历史缺失appId不从当前配置回填。
 
 宿主配置、旧入口停止新增领取和迟到写隔离的操作顺序及未验证项集中在 [ROLLOUT_AND_ISOLATION.md](ROLLOUT_AND_ISOLATION.md)。

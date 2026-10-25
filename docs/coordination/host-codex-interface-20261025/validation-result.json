@@ -2,7 +2,7 @@
   "status": "PASSED",
   "sourceSnapshotMatches": true,
   "tools": 45,
-  "deliveryScope": "P0_PROGRAM_INITIAL_925_CORE",
+  "deliveryScope": "P0_PROGRAM_INITIAL_19D_SELECTIVE_CORE",
   "parallelP1DocumentTranslationHostRecoveryIncluded": false,
   "completeToolSchemasCompiled": 45,
   "schemaFormatValidation": false,

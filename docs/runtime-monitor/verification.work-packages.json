@@ -25,10 +25,10 @@
         "V26",
         "V28"
       ],
-      "nextAction": "按准确组合与接口交接回执核实单worker宿主配置与持久目录；按原授权边界准备一次新事项整链，实际运行另按准确批准执行。通过后才规划同tenant/request_origin下2→4个独立worker；旧内容列清理/重生成/保留取证，不以兼容或救旧UNKNOWN阻塞新主线。",
+      "nextAction": "按首次真实运行准备补齐宿主、路径、独立身份与新事项，固定准确Host/客户端/配置及一次审批草案；只在具体范围获准后运行单worker。旧内容按清理、重生、保留取证处置，原UNKNOWN不重放。",
       "progress": {
-        "delivered": "当前线上仍为已核实的a65/c240，旧批次事实保留在历史证据与图契约附录。当前实施树以974bedfa为基线选择性集成925deb：程序初评恢复、CODEX专用队列、原SAVE key独立双读及材料身份保留；新增消费者恢复和七项真实Zod导出已接入。独审补旧Review UNKNOWN禁止重派与翻译最终CODEX来源保留。当前本地通过初评/队列23项、翻译/阅读28项、Review/Wiki19项及翻译Host preflight12项；均不等于真实业务闭环。",
-        "remaining": "候选尚未部署。实际prompt/最终bridge payload/启动前预定run关联由执行端owner补齐；新宿主持续唤起、私有checkpointRoot/runRoot及跨重启持久性未证，模型并发/RPM/TPM与宿主容量未知。文档翻译Host封存恢复已独立完成24项离线验证和窄审，但不含于本首测核心；客户端接线及部署另行推进，不阻塞初评交接。真实SAVE→独立READ→同版Overall实际commit→attempt终态→queueACK→原页面同版仍待获准新事项验收。",
+        "delivered": "线上仍是已核a65/c240。首测CORE在f57上选择19d必要增量：实际prompt/上游body留存、spawn前父run关联、准确runtime与零模型来源；本地材料、COMMITTING和原SAVE key双READ保留。Node87、Python10、Host服务边界8通过，独审无阻塞；Linux12项明确未验。正式平台配置/权限/schema metadata已读回，准确新组合构建见交付回执。",
+        "remaining": "未部署/配置/实测。Host缺10个Codex配置名及5路径授权，API origin未核；新应用页面可登录但实际安装/唤起方式与私有checkpointRoot/runRoot未证。仍需一个准确新事项的完整响应→SAVE→独立READ→同版Overall实际commit→attempt终态→queueACK→原页面/图同版。P1、2/4worker、旧兼容和旧数据清理不前置。",
         "owner": "主控集成及各既有消费者负责范围",
         "acceptance": "首批按P7关闭一条新真实事项：合法Host身份和来源授权、准确材料、生成、Host SAVE、独立READ、同版Overall、正常页面/图及正常结束均有对应证据。撤权、错身份、旧租约和版本冲突须被拒绝；技术发布或内存fixture不能替代业务完成。旧UNKNOWN保持历史事实；旧数据再生或清理单列准确范围，不要求救回旧请求、永久兼容或完成清理后才验收新链。",
         "evidenceIds": [
@@ -146,7 +146,10 @@
           "executor-recovery.94.local-contract-integration",
           "executor-recovery.94.official-queue-index-readback",
           "executor-recovery.925.core-integration",
-          "executor-recovery.925.split-host-translation"
+          "executor-recovery.925.split-host-translation",
+          "executor-recovery.19d.selected-input-persistence",
+          "executor-readiness.19d.official-host-metadata",
+          "executor-readiness.19d.runtime-host-unconfirmed"
         ]
       }
     },
@@ -543,10 +546,10 @@
         "V57",
         "V58"
       ],
-      "nextAction": "按准确组合与接口交接回执核实单worker宿主配置与持久目录；按原授权边界准备一次新事项整链，实际运行另按准确批准执行。通过后才规划同tenant/request_origin下2→4个独立worker；旧内容列清理/重生成/保留取证，不以兼容或救旧UNKNOWN阻塞新主线。",
+      "nextAction": "按首次真实运行准备补齐宿主、路径、独立身份与新事项，固定准确Host/客户端/配置及一次审批草案；只在具体范围获准后运行单worker。旧内容按清理、重生、保留取证处置，原UNKNOWN不重放。",
       "progress": {
-        "delivered": "当前线上仍为已核实的a65/c240，旧批次事实保留在历史证据与图契约附录。当前实施树以974bedfa为基线选择性集成925deb：程序初评恢复、CODEX专用队列、原SAVE key独立双读及材料身份保留；新增消费者恢复和七项真实Zod导出已接入。独审补旧Review UNKNOWN禁止重派与翻译最终CODEX来源保留。当前本地通过初评/队列23项、翻译/阅读28项、Review/Wiki19项及翻译Host preflight12项；均不等于真实业务闭环。",
-        "remaining": "候选尚未部署。实际prompt/最终bridge payload/启动前预定run关联由执行端owner补齐；新宿主持续唤起、私有checkpointRoot/runRoot及跨重启持久性未证，模型并发/RPM/TPM与宿主容量未知。文档翻译Host封存恢复已独立完成24项离线验证和窄审，但不含于本首测核心；客户端接线及部署另行推进，不阻塞初评交接。真实SAVE→独立READ→同版Overall实际commit→attempt终态→queueACK→原页面同版仍待获准新事项验收。",
+        "delivered": "线上仍是已核a65/c240。首测CORE在f57上选择19d必要增量：实际prompt/上游body留存、spawn前父run关联、准确runtime与零模型来源；本地材料、COMMITTING和原SAVE key双READ保留。Node87、Python10、Host服务边界8通过，独审无阻塞；Linux12项明确未验。正式平台配置/权限/schema metadata已读回，准确新组合构建见交付回执。",
+        "remaining": "未部署/配置/实测。Host缺10个Codex配置名及5路径授权，API origin未核；新应用页面可登录但实际安装/唤起方式与私有checkpointRoot/runRoot未证。仍需一个准确新事项的完整响应→SAVE→独立READ→同版Overall实际commit→attempt终态→queueACK→原页面/图同版。P1、2/4worker、旧兼容和旧数据清理不前置。",
         "owner": "本地主控负责Host接口、材料、SAVE/READ、同版Overall、阅读与图；新执行器会话负责Codex/妙搭执行内核、程序入口和响应持久化。",
         "acceptance": "一条新真实事项在合法Host身份与任务权限下消费准确材料，由新执行器生成有用工程工作，经Host SAVE及同请求/准确修订独立READ，Host完成确定性同版Overall，正常用户页面/图读取同一workRevisionRef并正常结束。生成、保存、回读、投影与外层终态分列；内存fixture和旧链复演不替代本验收，不新建状态体系。",
         "evidenceIds": [
@@ -567,7 +570,10 @@
           "executor-recovery.94.local-contract-integration",
           "executor-recovery.94.official-queue-index-readback",
           "executor-recovery.925.core-integration",
-          "executor-recovery.925.split-host-translation"
+          "executor-recovery.925.split-host-translation",
+          "executor-recovery.19d.selected-input-persistence",
+          "executor-readiness.19d.official-host-metadata",
+          "executor-readiness.19d.runtime-host-unconfirmed"
         ]
       }
     }

@@ -1,5 +1,5 @@
 {
-  "sourceHead": "974bedfa8edb03ba94c4991a2c6a3c63a1145eb4",
+  "sourceHead": "f57d886352d32f93dbdd10df6b362edbf82d4aeb",
   "scope": "local-working-source-including-uncommitted-executor-transition",
   "exportMethod": "TypeScript transpile in memory; actual production createServer; official SDK InMemoryTransport initialize and tools/list",
   "networkAccessed": false,
@@ -10,8 +10,12 @@
   "perToolVersionInvented": false,
   "files": [
     {
+      "path": "docs/coordination/WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md",
+      "sha256": "02a527ec370954b438681618c70de73f174043d2965727efa345465069ec204a"
+    },
+    {
       "path": "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md",
-      "sha256": "2b1dea05010934132f3c8ea1f1681833a60d749331402192bb82ddac56cac1cf"
+      "sha256": "33934618918340c03b50c6fc4236a97ac8bc383d6f3283aff7720e69013f2eb3"
     },
     {
       "path": "docs/openapi.json",
@@ -23,7 +27,7 @@
     },
     {
       "path": "openclaw/codex-evaluator/codex-generation.mjs",
-      "sha256": "7ac4a57c00feb5f3387ca03e4d7369927192407afea698c606217db1f9e92616"
+      "sha256": "fd0d77f118d312292db8580a7f1f153be712029a98e5c0774c7ca8e0bebb31fe"
     },
     {
       "path": "openclaw/codex-evaluator/compare-host-interface-packet.mjs",
@@ -95,15 +99,15 @@
     },
     {
       "path": "openclaw/codex-evaluator/miaoda_responses_bridge.py",
-      "sha256": "e77c026f2d8dd9771fcfaf8f2b2e0fa64f5776aaaec537131b8f10e255165a25"
+      "sha256": "52e9b093ba293bab7479a3b1105d4db750605b49143054ec5a5133111ba3a632"
     },
     {
       "path": "openclaw/codex-evaluator/preflight.mjs",
-      "sha256": "7aefe25dca6610996c474748645da3db0bd4137c77f4b55b9d9ec94982333d42"
+      "sha256": "372ae8a960b6edac99eeb2ff5992c7b5a98d8eb36c1266b5f7d9061f6f8883e5"
     },
     {
       "path": "openclaw/codex-evaluator/run_codex_generation.py",
-      "sha256": "9d13e1611873d93d2825526572ad9724fc4e754346680e88875a540c0448919d"
+      "sha256": "4596a24630cfbdf96006aed8f06aa26d2c534111313b0890e3b00c3a912682ef"
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hierarchical-wiki-queue.mjs",
@@ -123,7 +127,7 @@
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs",
-      "sha256": "0fd9c42ad98d7a6d9f2b2d070da56728ba6f514c206042ee162da8de1f57b832"
+      "sha256": "89d47eb64f817b7be35863dc298587ee763398d99f7f3875d0da71e6bf835432"
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.mjs",
@@ -131,7 +135,7 @@
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs",
-      "sha256": "ef2edb38d73f52fbaacd4b5fa5eec632d1650d06a873c45c1a1c9dcf9776c1cc"
+      "sha256": "9b2f3a53735a56faaa6aa7c266c43e05daabec8178d21f5809df27d6754d778e"
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-derived-summary-model.mjs",
@@ -147,7 +151,7 @@
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
-      "sha256": "8e53b4184c176bb44da1c006741818f42587634fd4966115a6cb87ebfa568281"
+      "sha256": "02d4f44236f5b8e659edaa9d88cf1688d7008e5acebe52d0bd3e54b94c34865c"
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/program-assessment-materials.mjs",
@@ -159,7 +163,7 @@
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs",
-      "sha256": "99ae71260a24db817b6fd4c70f6c1208f112c5185d225ed5b8bf9c52896293b4"
+      "sha256": "8f61f03565943fbdbba21f7e3c76255c43675cf7b04a0f807269b54380406431"
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-jobaid-problem-assessment.mjs",
@@ -167,7 +171,7 @@
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
-      "sha256": "944899a6ea428ef86199bf0048fca4797845a6cd5dc3d429b96ebcd7600dfb8f"
+      "sha256": "1b729324e759099e4070f49b5faa2edca326a96f1db6e7b67bbadbee92772cc9"
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-semantic-translation.mjs",
@@ -175,11 +179,11 @@
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs",
-      "sha256": "84e52b44ca3ef315bab2518d19dfc829e1499359e9d1605dfcdfcb16faf5f401"
+      "sha256": "9c9f8fe0028e365b5ec36e75c8d2f67958adf9a187e27e4b2f7b4b5ac3ca3012"
     },
     {
       "path": "scripts/export-host-codex-contract.mjs",
-      "sha256": "a7196d36de2b82cf1c96ab6a6a899d548ad0f135aa4031f831c12273b16f6746"
+      "sha256": "0f3f9d08aa5d2d1267413574d48a8c41785b673111f6868ed9c1c18e9c842f4c"
     },
     {
       "path": "server/database/auto-work-item-authorization.schema.ts",
@@ -611,7 +615,7 @@
     },
     {
       "path": "test/unit/codex-host-program-boundary.spec.ts",
-      "sha256": "a635f87b1bc9eb1e1cf8e3edc878553654051554c0f8556d69762638cd349f3a"
+      "sha256": "402cbc8137bdbaeca684cd8462304406a79bff382b04f7a15096df735d449063"
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "observations": {
     "development": {
-      "observedAtUtc": "2026-10-25T09:07:09.418696+00:00",
+      "observedAtUtc": "2026-10-25T11:25:07.349085+00:00",
       "observation": "OFFICIAL_CLI_ENVIRONMENT_VARIABLE_NAMES_ONLY",
       "selectorNamePresent": false,
       "codexPrefixNamesPresent": [],
@@ -31,10 +31,12 @@
       "relevantFeatureFlagNamesPresent": [
         "WL_JOBAID_PROBLEM_V2_ENABLED",
         "WL_TRANSLATION_V2_ENABLED"
-      ]
+      ],
+      "registeredNameCount": 38,
+      "completeList": true
     },
     "online": {
-      "observedAtUtc": "2026-10-25T09:07:09.396202+00:00",
+      "observedAtUtc": "2026-10-25T11:25:08.774075+00:00",
       "observation": "OFFICIAL_CLI_ENVIRONMENT_VARIABLE_NAMES_ONLY",
       "selectorNamePresent": false,
       "codexPrefixNamesPresent": [],
@@ -64,7 +66,9 @@
       "relevantFeatureFlagNamesPresent": [
         "WL_JOBAID_PROBLEM_V2_ENABLED",
         "WL_TRANSLATION_V2_ENABLED"
-      ]
+      ],
+      "registeredNameCount": 38,
+      "completeList": true
     }
   },
   "configurationValuesIncluded": false,
@@ -72,7 +76,7 @@
   "credentialIdsIncluded": false,
   "codexApiKeyExactPathAuthorization": {
     "status": "NOT_CONFIGURED_AT_OBSERVATION",
-    "basis": "Coordinator official read-only API-key path metadata inspection; only the absence is reported here.",
+    "basis": "Official read-only projected metadata at 2026-10-25T11:25:08.777990+00:00: 7 records, 3 enabled, no enabled matching POST route; no key IDs or values retained.",
     "paths": [
       "/openapi/wiselink/codex-mcp",
       "/openapi/wiselink/codex-next-work-item",
@@ -89,6 +93,23 @@
   "limitations": [
     "Name presence does not verify its value, scope correctness, or health.",
     "No environment values, credential identifiers, people metadata, tokens, business IDs, or user filesystem paths are included.",
-    "These observations are historical read-only evidence, not a current live check."
-  ]
+    "These are time-stamped official metadata observations; verify actual state before executing the accepted batch."
+  ],
+  "officialSchemaDiff": {
+    "observed": "2026-10-25",
+    "from": "dev",
+    "to": "main",
+    "changes": [],
+    "semantics": "Official complete pending dev-to-online schema preview; no migration performed"
+  },
+  "newRuntimeMetadata": {
+    "officialSessionActive": false,
+    "platformCronItems": 0,
+    "pageLoginRequired": false,
+    "pagePreview": "WAKING_EMPTY_IFRAME",
+    "actualCodexInstallationVerified": false,
+    "persistentRootsVerified": false,
+    "note": "Platform cron absence does not prove native scheduling absence; page loading is not runtime proof."
+  },
+  "hostApiOriginVerified": false
 }

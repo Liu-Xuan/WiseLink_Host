@@ -539,7 +539,8 @@ function hostFixture(f) {
     modelInput: { executionMode: 'PROGRAM_CONTROLLED_V1', modelInput: f.input },
     executionModel: f.options.executionModel, deadline: f.options.taskDeadline, idempotencyKey: 'program-explicit-new-request' };
   const task = { ...unsealed, inputHash: canonicalSha256(unsealed) };
-  const initial = () => ({ entry: { workItemId: 'WI-program' }, initialAnalysis: {
+  const initial = () => ({ entry: { workItemId: 'WI-program' },
+    ...(done && !failed ? { integratedAssessmentSummary: projection() } : {}), initialAnalysis: {
     workItemRevision: done && !failed ? 4 : 3, documentVersionId: binding.documentVersionId, candidateOnly: true,
     status: failed ? 'FAILED' : done ? 'SUCCEEDED' : 'REQUIRED', nextOperation: done ? null : 'EVALUATE_JOBAID',
     stages: { translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
@@ -561,11 +562,31 @@ function hostFixture(f) {
     if (name === 'get_deep_link') return { workItemId: task.workItemId };
     if (name === 'begin_dynamic_evaluation') return claim();
     if (name === 'heartbeat_action_attempt') return { leaseExpiresAt: f.options.taskDeadline };
-    if (['read_assessment_sources', 'read_assessment_work', 'save_assessment_work', 'record_assessment_program_progress'].includes(name)) {
+    if (name === 'read_assessment_work') {
+      if (Object.hasOwn(args, 'workRevisionRef')) {
+        assert.equal(args.leaseToken, claim().leaseToken);
+        return f.options.readAssessmentWork(args);
+      }
+      if (Object.hasOwn(args, 'requestId') && !committing) {
+        assert.equal(args.leaseToken, claim().leaseToken);
+        assert.equal(args.leaseGeneration, 1);
+      } else {
+        assert.equal(args.leaseToken, undefined);
+        assert.equal(args.leaseGeneration, undefined);
+      }
+      f.reads.push(args);
+      const requestId = args.requestId ?? f.saves.at(-1)?.requestId;
+      const saved = f.store.get(requestId);
+      return { schemaVersion: 'wiselink.jobaid-work-read.v2', attemptId: task.actionAttemptId,
+        inputWorkRevision: f.input.expectedWorkRevision, executionStatus: committing ? 'COMMITTING' : 'RUNNING',
+        revision: saved ? { ...structuredClone(saved), actionAttemptId: task.actionAttemptId,
+          workItemId: task.workItemId, documentVersionId: task.documentVersionId,
+          basedOnWorkItemRevision: task.baseRevision } : null };
+    }
+    if (['read_assessment_sources', 'save_assessment_work', 'record_assessment_program_progress'].includes(name)) {
       assert.equal(args.leaseToken, claim().leaseToken);
       assert.equal(args.leaseGeneration, 1);
       if (name === 'read_assessment_sources') return f.options.readAssessmentSources(args);
-      if (name === 'read_assessment_work') return f.options.readAssessmentWork(args);
       if (name === 'save_assessment_work') return f.options.saveAssessmentWork(args);
       return f.options.recordAssessmentProgramProgress(args);
     }
@@ -654,5 +675,5 @@ test('COMMITTING Overall failure resumes only deterministic projection with the 
   assert.equal(result.committed.overallSynthesis.sourceAssessment.workRevisionRef, 'JAWR-program');
   assert.equal(f.calls.length, 1);
   assert.equal(f.saves.length, 1);
-  assert.equal(f.reads.length, 2, 'the existing exact work read is reused for projection recovery');
+  assert.equal(f.reads.length, 6, 'two original SAVE reads plus normal and COMMITTING latest/exact inspections');
 });

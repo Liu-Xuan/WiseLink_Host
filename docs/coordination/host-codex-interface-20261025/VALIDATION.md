@@ -26,3 +26,5 @@
 925核心集成由主控报告Review19项、translation28项、queue23项、Host preflight12项通过。这些消费者结果不证明文档跨lease Host扩展：本首测CORE明确排除`READ_GENERATION`、`SEAL_CANDIDATE`、`RECOVER_SAVE`及其P1测试。宿主唤起、两处私有持久root、实际认证与首个新事项闭环仍未验收。
 
 最终可复制结果以 `validation-result.json` 为准；测试和检查通过不改变 `README` 的未部署、未配置与未真实验收状态。
+
+本次f57上19d必要增量：独立源码审查无阻塞；Node87通过/9项Linux跳过，Python10通过/3项Linux跳过，实际Host服务跨端8项通过。父checkpoint失败零spawn、prompt落盘失败零bridge/Popen、upstream body落盘失败零HTTPSConnection已离线验证。Linux `/proc` 与进程终止恢复部分本机未验，不能把skip算通过。首轮旧fixture/平台失败日志保留；没有放宽生产守卫。根server/shared/client未因本增量改变，最终构建另据准确组合回执。

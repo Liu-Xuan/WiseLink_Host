@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "snapshot": {
     "dataMode": "snapshot",
-    "generatedAt": "2026-10-25T11:00:41.433697+00:00",
+    "generatedAt": "2026-10-25T11:45:02.531457+00:00",
     "contract": {
-      "version": "1.8 持久任务与执行器恢复约束",
+      "version": "1.9 首测输入留存与现场准备",
       "source": "WISELINK_MAINLINE_GRAPH_CONTRACT.md",
-      "sourceRevision": "0fa7efb2a53a6e90f0f55e96fa1ea78f510bb322fbe03c08c995c81311b9fc76",
+      "sourceRevision": "a0241a868234da1ee6debbb6e07899f38d6b33711a8bbef31c2af23d10e756d8",
       "sourceRevisionType": "sha256"
     },
     "target": {
@@ -39,10 +39,10 @@
           "V26",
           "V28"
         ],
-        "nextAction": "按准确组合与接口交接回执核实单worker宿主配置与持久目录；按原授权边界准备一次新事项整链，实际运行另按准确批准执行。通过后才规划同tenant/request_origin下2→4个独立worker；旧内容列清理/重生成/保留取证，不以兼容或救旧UNKNOWN阻塞新主线。",
+        "nextAction": "按首次真实运行准备补齐宿主、路径、独立身份与新事项，固定准确Host/客户端/配置及一次审批草案；只在具体范围获准后运行单worker。旧内容按清理、重生、保留取证处置，原UNKNOWN不重放。",
         "progress": {
-          "delivered": "当前线上仍为已核实的a65/c240，旧批次事实保留在历史证据与图契约附录。当前实施树以974bedfa为基线选择性集成925deb：程序初评恢复、CODEX专用队列、原SAVE key独立双读及材料身份保留；新增消费者恢复和七项真实Zod导出已接入。独审补旧Review UNKNOWN禁止重派与翻译最终CODEX来源保留。当前本地通过初评/队列23项、翻译/阅读28项、Review/Wiki19项及翻译Host preflight12项；均不等于真实业务闭环。",
-          "remaining": "候选尚未部署。实际prompt/最终bridge payload/启动前预定run关联由执行端owner补齐；新宿主持续唤起、私有checkpointRoot/runRoot及跨重启持久性未证，模型并发/RPM/TPM与宿主容量未知。文档翻译Host封存恢复已独立完成24项离线验证和窄审，但不含于本首测核心；客户端接线及部署另行推进，不阻塞初评交接。真实SAVE→独立READ→同版Overall实际commit→attempt终态→queueACK→原页面同版仍待获准新事项验收。",
+          "delivered": "线上仍是已核a65/c240。首测CORE在f57上选择19d必要增量：实际prompt/上游body留存、spawn前父run关联、准确runtime与零模型来源；本地材料、COMMITTING和原SAVE key双READ保留。Node87、Python10、Host服务边界8通过，独审无阻塞；Linux12项明确未验。正式平台配置/权限/schema metadata已读回，准确新组合构建见交付回执。",
+          "remaining": "未部署/配置/实测。Host缺10个Codex配置名及5路径授权，API origin未核；新应用页面可登录但实际安装/唤起方式与私有checkpointRoot/runRoot未证。仍需一个准确新事项的完整响应→SAVE→独立READ→同版Overall实际commit→attempt终态→queueACK→原页面/图同版。P1、2/4worker、旧兼容和旧数据清理不前置。",
           "owner": "主控集成及各既有消费者负责范围",
           "acceptance": "首批按P7关闭一条新真实事项：合法Host身份和来源授权、准确材料、生成、Host SAVE、独立READ、同版Overall、正常页面/图及正常结束均有对应证据。撤权、错身份、旧租约和版本冲突须被拒绝；技术发布或内存fixture不能替代业务完成。旧UNKNOWN保持历史事实；旧数据再生或清理单列准确范围，不要求救回旧请求、永久兼容或完成清理后才验收新链。",
           "evidenceIds": [
@@ -160,7 +160,10 @@
             "executor-recovery.94.local-contract-integration",
             "executor-recovery.94.official-queue-index-readback",
             "executor-recovery.925.core-integration",
-            "executor-recovery.925.split-host-translation"
+            "executor-recovery.925.split-host-translation",
+            "executor-recovery.19d.selected-input-persistence",
+            "executor-readiness.19d.official-host-metadata",
+            "executor-readiness.19d.runtime-host-unconfirmed"
           ]
         }
       },
@@ -557,10 +560,10 @@
           "V57",
           "V58"
         ],
-        "nextAction": "按准确组合与接口交接回执核实单worker宿主配置与持久目录；按原授权边界准备一次新事项整链，实际运行另按准确批准执行。通过后才规划同tenant/request_origin下2→4个独立worker；旧内容列清理/重生成/保留取证，不以兼容或救旧UNKNOWN阻塞新主线。",
+        "nextAction": "按首次真实运行准备补齐宿主、路径、独立身份与新事项，固定准确Host/客户端/配置及一次审批草案；只在具体范围获准后运行单worker。旧内容按清理、重生、保留取证处置，原UNKNOWN不重放。",
         "progress": {
-          "delivered": "当前线上仍为已核实的a65/c240，旧批次事实保留在历史证据与图契约附录。当前实施树以974bedfa为基线选择性集成925deb：程序初评恢复、CODEX专用队列、原SAVE key独立双读及材料身份保留；新增消费者恢复和七项真实Zod导出已接入。独审补旧Review UNKNOWN禁止重派与翻译最终CODEX来源保留。当前本地通过初评/队列23项、翻译/阅读28项、Review/Wiki19项及翻译Host preflight12项；均不等于真实业务闭环。",
-          "remaining": "候选尚未部署。实际prompt/最终bridge payload/启动前预定run关联由执行端owner补齐；新宿主持续唤起、私有checkpointRoot/runRoot及跨重启持久性未证，模型并发/RPM/TPM与宿主容量未知。文档翻译Host封存恢复已独立完成24项离线验证和窄审，但不含于本首测核心；客户端接线及部署另行推进，不阻塞初评交接。真实SAVE→独立READ→同版Overall实际commit→attempt终态→queueACK→原页面同版仍待获准新事项验收。",
+          "delivered": "线上仍是已核a65/c240。首测CORE在f57上选择19d必要增量：实际prompt/上游body留存、spawn前父run关联、准确runtime与零模型来源；本地材料、COMMITTING和原SAVE key双READ保留。Node87、Python10、Host服务边界8通过，独审无阻塞；Linux12项明确未验。正式平台配置/权限/schema metadata已读回，准确新组合构建见交付回执。",
+          "remaining": "未部署/配置/实测。Host缺10个Codex配置名及5路径授权，API origin未核；新应用页面可登录但实际安装/唤起方式与私有checkpointRoot/runRoot未证。仍需一个准确新事项的完整响应→SAVE→独立READ→同版Overall实际commit→attempt终态→queueACK→原页面/图同版。P1、2/4worker、旧兼容和旧数据清理不前置。",
           "owner": "本地主控负责Host接口、材料、SAVE/READ、同版Overall、阅读与图；新执行器会话负责Codex/妙搭执行内核、程序入口和响应持久化。",
           "acceptance": "一条新真实事项在合法Host身份与任务权限下消费准确材料，由新执行器生成有用工程工作，经Host SAVE及同请求/准确修订独立READ，Host完成确定性同版Overall，正常用户页面/图读取同一workRevisionRef并正常结束。生成、保存、回读、投影与外层终态分列；内存fixture和旧链复演不替代本验收，不新建状态体系。",
           "evidenceIds": [
@@ -581,7 +584,10 @@
             "executor-recovery.94.local-contract-integration",
             "executor-recovery.94.official-queue-index-readback",
             "executor-recovery.925.core-integration",
-            "executor-recovery.925.split-host-translation"
+            "executor-recovery.925.split-host-translation",
+            "executor-recovery.19d.selected-input-persistence",
+            "executor-readiness.19d.official-host-metadata",
+            "executor-readiness.19d.runtime-host-unconfirmed"
           ]
         }
       }
@@ -2561,18 +2567,19 @@
         "openclaw/skills/wiselink-research-and-synthesize/tests/codex-queue-commit-recovery.test.mjs",
         "openclaw/codex-evaluator/program-finish-recovery.test.mjs",
         "docs/coordination/host-codex-interface-20261025/README.md",
-        "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md"
+        "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md",
+        "docs/coordination/WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md"
       ],
       "gaps": [
         {
           "id": "program.initial-live",
           "kind": "runtime",
-          "reason": "本地组合已保留原SAVE key独立双读、严格来源/输入/fence及CODEX专用路由；离线测试不证明真实保存和Overall提交。实际prompt/payload/预定run关联、宿主唤起/私有持久目录、可信身份配置及整条业务链尚待实证。旧UNKNOWN仅保留取证，不要求兼容迁移。",
-          "nextAction": "按宿主与分阶段验收说明先完成1 worker闭环，再按实际限额验证2/4独立worker；不变request_origin、不把批次4项或CLI子代理数当并发。文档翻译封存恢复独立推进。"
+          "reason": "输入prompt/上游body/启动前父run关联已由19d必要增量在本地接入；原SAVE key双READ、COMMITTING及授权边界保留。实际宿主/安装/两个私有持久root、API origin、独立身份/路径scope、准确新事项与真实SAVE/READ/Overall/结束/同版阅读仍待。Linux恢复12项本机未验，离线通过不证明现场。",
+          "nextAction": "补齐现成宿主、目录、非秘密配置与一个新事项参数，固定准确Host/客户端组合和一次审批草案；获准后单worker完整闭环。P1翻译、2/4worker及旧数据清理重生独立，不要求旧兼容。"
         }
       ],
       "previousReviewedRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
-      "reviewScope": "线上映射仍为准确a65/c240；当前本地974+925组合及定向修订按图契约v1.8登记，未部署，不提升原业务场景。旧历史批次见原证据，当前单worker完整链优先。"
+      "reviewScope": "线上映射仍为准确a65/c240；本地f57+19d首测必要组合按图契约v1.9登记。源码/离线与现场metadata分别取证，未部署、未配置、不提升业务场景。"
     }
   ],
   "selection": {
@@ -2623,7 +2630,7 @@
       "V57",
       "V58"
     ],
-    "reason": "最新实施优先级转向新执行器的首条新真实事项：合法Host接口和准确材料→生成→Host SAVE→独立READ→确定性同版Overall→正常页面/图→结束。c241整包安装、旧UNKNOWN救回与旧链复演不再前置。准确0b33仅新增13文件可选执行器，真实Codex+GLM验证使用内存Host/虚构材料，realHostCalled=false、hostMcpConfigured=false、readyForBusinessExecution=false，重启持久恢复未接；fixture不记生产业务通过，未声称已切换执行器。既有a65/c240发布安装握手/C136恢复及一次受理、115原文已交付而projection缺身份导致模型0/SAVE0等事实与原UNKNOWN/active claim保持。P0/P7与current缺口更新目标，其余目录/选择数组/旧386证据对象顺序及用户样式保持；真实链未闭合。"
+    "reason": "当前首测以f57+19d必要客户端组合补完整prompt/最终upstream body/启动前父run关联，保留原key双READ和COMMITTING/UNKNOWN边界。正式Host仍a65，配置与路径权限缺项、API origin及新宿主持久目录待证；metadata/本地验证不升级真实业务状态。先一新事项一worker；P1翻译、2/4worker和旧内容清理重生分别跟踪。原选择数组、历史证据对象/顺序及页面样式保持。"
   },
   "evidence": [
     {
@@ -10430,6 +10437,54 @@
       "observedAt": "2026-10-25T10:57:09.036797+00:00",
       "sourceRevision": "local:974bedfa+925deb+reviewed-core",
       "environmentId": "local:core-and-parallel-P1:offline-only"
+    },
+    {
+      "id": "executor-recovery.19d.selected-input-persistence",
+      "kind": "test",
+      "status": "passed",
+      "contractRevision": "a0241a868234da1ee6debbb6e07899f38d6b33711a8bbef31c2af23d10e756d8",
+      "sourceRevision": "local:f57d8863+selected-19d58915",
+      "environmentId": "local:codex-initial-core:offline-only",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T11:43:35.766434Z",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e40-首测输入留存与正式现场准备2026-10-25",
+      "readbackRef": "private:executor-transition-20261025:19d-integration",
+      "summary": "选择首测必要19d客户端增量，父checkpoint持久后spawn、真实prompt与最终upstream body同字节先持久后发送；保留f57材料、原key双READ、COMMITTING窄读和UNKNOWN防重派，Review CODEX不扩准入。Node87/Python10/Host服务边界8通过，Linux9+3明确跳过未验；独审无阻塞。无真实模型/Host业务/DBcommit/ACK。"
+    },
+    {
+      "id": "executor-readiness.19d.official-host-metadata",
+      "kind": "source_review",
+      "status": "passed",
+      "contractRevision": "a0241a868234da1ee6debbb6e07899f38d6b33711a8bbef31c2af23d10e756d8",
+      "sourceRevision": "a65a80925073e4b88aba6d84413a77aa3c814ff6",
+      "environmentId": "host:app_17bzc551rsg:metadata-only",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T11:31:28.020678+00:00",
+      "reportRef": "docs/coordination/WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md",
+      "readbackRef": "private:executor-transition-20261025:first-live-readiness:host",
+      "summary": "正式release仍a65/finished；dev/online各38配置名，10个所需Codex名缺；7条Key metadata没有5条Codex POST有效授权；完整schema preview changes=[]。未读秘密值、未配置或迁移。只说明metadata事实，不是新代码上线/身份认证或业务通过；API origin仍未核。"
+    },
+    {
+      "id": "executor-readiness.19d.runtime-host-unconfirmed",
+      "kind": "source_review",
+      "status": "inconclusive",
+      "contractRevision": "a0241a868234da1ee6debbb6e07899f38d6b33711a8bbef31c2af23d10e756d8",
+      "sourceRevision": "local:f57d8863+selected-19d58915",
+      "environmentId": "runtime:app_17gr74pbere:metadata-only",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T11:30:22.045747+00:00",
+      "reportRef": "docs/coordination/WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md",
+      "readbackRef": "private:executor-transition-20261025:first-live-readiness:runtime",
+      "summary": "正式可见会话inactive、平台cron为空；Chrome已登录，应用预览/终端仍唤醒中，没有发送命令。实际Codex安装路径/版本、现成supervisor或单次唤起owner、checkpointRoot/runRoot及mount/retention/重启读回未证；不能从平台cron空或页面加载推断原生服务有无或健康。新事项、可信配置与完整业务链未运行。"
     }
   ]
 }
