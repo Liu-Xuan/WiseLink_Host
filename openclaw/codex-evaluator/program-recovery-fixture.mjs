@@ -3,7 +3,7 @@
  * in child processes; Host and model are explicitly synthetic, backed by files.
  * No network, credential, production task, or real model is used. */
 import { createHash } from 'node:crypto';
-import { realpath } from 'node:fs/promises';
+import { realpath, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCheckpointStore } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
@@ -92,7 +92,11 @@ export async function runProgramRecoveryFixture(root, mode = 'normal') {
     state.actions.push({ tool: 'read_assessment_work', request: args, response: structuredClone(packet) });
     return packet;
   });
-  const codexOptions = { codexBinary: '/fixture/no-real-codex', configPath: '/fixture/no-credentials',
+  const configPath = resolve(root, 'offline-model-config.json');
+  await writeFile(configPath, JSON.stringify({ models: { providers: {
+    miaoda: { models: [{ id: 'glm-5.3', maxTokens: 64000 }] },
+  } } }), { mode: 0o600 });
+  const codexOptions = { codexBinary: '/fixture/no-real-codex', configPath,
     runRoot: resolve(root, 'synthetic-model'), pythonBinary: '/fixture/runner-must-not-launch', timeoutSeconds: 1,
     onRunPrepared: async () => { if (mode === 'before-codex-launch') crash(); } };
   const options = {

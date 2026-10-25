@@ -1600,7 +1600,8 @@ function workItemJobAidProvenance(modelInput, provenance) {
 
 function assertFailedAssessmentCommit(value, begin, result) {
   if (value?.status !== 'FAILED' || value.attemptRef !== begin.attemptRef ||
-      value.errorCode !== result.errorCode)
+      (value.terminalReason ?? value.errorCode) !== result.errorCode ||
+      (value.terminalReason !== undefined && value.errorCode !== undefined && value.terminalReason !== value.errorCode))
     throw new Error('HOST_MCP_FAILED_ASSESSMENT_COMMIT_INVALID');
 }
 

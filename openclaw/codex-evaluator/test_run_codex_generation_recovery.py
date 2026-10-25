@@ -22,6 +22,10 @@ runner = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runner)
 
 
+def model_config():
+    return {"models": {"providers": {"miaoda": {"models": [{"id": "glm-5.3", "maxTokens": 64000}]}}}}
+
+
 class ClosedServer:
     def shutdown(self):
         pass
@@ -46,7 +50,7 @@ class RunnerRecoveryTests(unittest.TestCase):
         binding = b'{"version":1,"requestId":"offline-runner"}'
         (run / "generation-binding.json").write_bytes(binding + b"\n")
         config = root / "config.json"
-        config.write_text('{"source":"offline-no-credentials"}')
+        config.write_text(json.dumps(model_config()))
         codex = root / "fake-codex"
         codex.write_text('''#!/usr/bin/env python3
 import json,os,pathlib,sys,time
@@ -165,6 +169,46 @@ class PreDispatchPersistenceTests(unittest.TestCase):
                 cli_spawn.assert_not_called()
 
 
+class RunnerTokenBudgetTests(unittest.TestCase):
+    def test_only_unique_matching_model_positive_safe_integer_metadata_is_accepted(self):
+        config = model_config()
+        config["models"]["providers"]["miaoda"]["models"].insert(0, {"id": "other", "maxTokens": 1})
+        self.assertEqual(runner.configured_output_tokens(json.dumps(config).encode()), 64000)
+        for value in (None, True, "64000", 0, -1, 1.5, 2 ** 53):
+            with self.subTest(value=value):
+                invalid = model_config()
+                invalid["models"]["providers"]["miaoda"]["models"][0]["maxTokens"] = value
+                with self.assertRaisesRegex(ValueError, "model_metadata_invalid"):
+                    runner.configured_output_tokens(json.dumps(invalid).encode())
+        for models, code in (([], "model_metadata_missing"),
+                             ([{"id": "glm-5.3", "maxTokens": 64000}] * 2, "model_metadata_ambiguous")):
+            config = model_config()
+            config["models"]["providers"]["miaoda"]["models"] = models
+            with self.assertRaisesRegex(ValueError, code):
+                runner.configured_output_tokens(json.dumps(config).encode())
+        for raw in (b'{invalid', b'{"models":{},"models":{}}'):
+            with self.assertRaisesRegex(ValueError, "model_config_invalid"):
+                runner.configured_output_tokens(raw)
+
+    def test_runner_rejects_above_configured_limit_before_bridge_and_cli(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = root / "config.json"
+            config.write_text(json.dumps(model_config()))
+            request = {"run_directory": str(root / "run"), "config_path": str(config),
+                       "prompt": "Offline request", "timeout_seconds": 1, "max_output_tokens": 64001}
+            with mock.patch.object(runner, "runner_identity", return_value={"synthetic": True}), \
+                 mock.patch.object(runner, "start_server") as bridge_start, \
+                 mock.patch.object(runner.subprocess, "Popen") as cli_spawn, \
+                 mock.patch.object(runner.subprocess, "run") as version_probe, \
+                 mock.patch.object(sys, "stdin", io.StringIO(json.dumps(request))):
+                with self.assertRaisesRegex(ValueError, "invalid_token_budget"):
+                    runner.main()
+                bridge_start.assert_not_called()
+                cli_spawn.assert_not_called()
+                version_probe.assert_not_called()
+
+
 class GenerationDeadlineTests(unittest.TestCase):
     def execute(self, *, version_elapsed=13, bridge_elapsed=0, version_timeout=False,
                 cli_timeout=False, cleanup_timeout=False):
@@ -174,7 +218,7 @@ class GenerationDeadlineTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
         config = root / "config.json"
-        config.write_text('{"source":"offline-no-credentials"}')
+        config.write_text(json.dumps(model_config()))
         run = root / "run"
         request = {"run_directory": str(run), "config_path": str(config),
                    "codex_binary": "/offline/codex", "prompt": "Return candidate",

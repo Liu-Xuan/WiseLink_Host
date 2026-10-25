@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, chmod, readdir, unlink, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createCodexGateway, codexRecoveryRunDirectory } from './codex-generation.mjs';
 
@@ -20,11 +20,15 @@ const body = JSON.stringify({ model: 'openclaw/wiselink-engineering',
 const input = (requestId, recoverOnly = false) => ({ method: 'POST', body,
   headers: { authorization: 'Bearer secret-never-persist' },
   codexRecovery: { requestId, recoverOnly } });
-const gatewayOptions = (root, wrapper) => ({ codexBinary: '/fake/codex', configPath: '/fake/config',
+const gatewayOptions = (root, wrapper) => ({ codexBinary: '/fake/codex', configPath: resolve(dirname(wrapper), 'config.json'),
   runRoot: root, pythonBinary: wrapper, timeoutSeconds: 25 });
 
 async function fixture() {
   const root = await mkdtemp(resolve(tmpdir(), 'generation-recovery-'));
+  const configPath = resolve(root, 'config.json');
+  await writeFile(configPath, JSON.stringify({ models: { providers: {
+    miaoda: { models: [{ id: 'glm-5.3', maxTokens: 64000 }] },
+  } } }));
   const fake = resolve(root, 'fake-runner.py');
   await writeFile(fake, `import hashlib,json,os,pathlib,sys,time
 r=json.load(sys.stdin); p=pathlib.Path(r['run_directory']); p.mkdir(exist_ok=True)
@@ -56,7 +60,7 @@ print(json.dumps(summary))
   const parent = resolve(root, 'parent.mjs');
   await writeFile(parent, `import { createCodexGateway } from ${JSON.stringify(new URL('./codex-generation.mjs', import.meta.url).href)};
 const body=${JSON.stringify(body)};
-const gateway=createCodexGateway({codexBinary:'/fake/codex',configPath:'/fake/config',runRoot:${JSON.stringify(root)},pythonBinary:${JSON.stringify(wrapper)},timeoutSeconds:25,onRunCompleted:()=>{if(process.argv[3]==='exit')process.exit(91)}});
+const gateway=createCodexGateway({codexBinary:'/fake/codex',configPath:${JSON.stringify(configPath)},runRoot:${JSON.stringify(root)},pythonBinary:${JSON.stringify(wrapper)},timeoutSeconds:25,onRunCompleted:()=>{if(process.argv[3]==='exit')process.exit(91)}});
 await gateway(null,{method:'POST',body,codexRecovery:{requestId:process.argv[2]}});
 `);
   return { root, wrapper, parent };

@@ -3,6 +3,7 @@ import { mkdir, readFile, open, rename, stat, realpath } from 'node:fs/promises'
 import { spawn } from 'node:child_process';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { outputLengthFailure } from './codex-generation-terminal.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MAX_BODY = 1024 * 1024;
@@ -90,6 +91,22 @@ async function awaitReceipt(runDirectory, timeoutSeconds, signal) {
 
 function fail(code) { throw new Error(code); }
 function record(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
+
+async function configuredOutputTokens(configPath) {
+  let raw, config;
+  try { raw = await readFile(configPath, 'utf8'); }
+  catch { fail('CODEX_GENERATION_MODEL_CONFIG_UNAVAILABLE'); }
+  try { config = JSON.parse(raw); }
+  catch { fail('CODEX_GENERATION_MODEL_CONFIG_INVALID'); }
+  const models = config?.models?.providers?.miaoda?.models;
+  if (!Array.isArray(models)) fail('CODEX_GENERATION_MODEL_METADATA_INVALID');
+  const matches = models.filter(model => record(model) && model.id === 'glm-5.3');
+  if (!matches.length) fail('CODEX_GENERATION_MODEL_METADATA_MISSING');
+  if (matches.length !== 1) fail('CODEX_GENERATION_MODEL_METADATA_AMBIGUOUS');
+  if (!Number.isSafeInteger(matches[0].maxTokens) || matches[0].maxTokens < 1)
+    fail('CODEX_GENERATION_MODEL_METADATA_INVALID');
+  return matches[0].maxTokens;
+}
 
 /** Derive the existing deterministic recovery location without launching work. */
 export async function codexRecoveryRunDirectory(runRoot, requestId) {
@@ -246,8 +263,8 @@ export function createCodexGateway(options) {
     fail('CODEX_GENERATION_OPTIONS_INVALID');
   if (options.reasoningEffort != null && !['low', 'high', 'max'].includes(options.reasoningEffort))
     fail('CODEX_GENERATION_REASONING_UNSUPPORTED');
-  const maxOutputTokens = options.maxOutputTokens ?? 16384;
-  if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 32768)
+  if (options.maxOutputTokens != null &&
+      (!Number.isSafeInteger(options.maxOutputTokens) || options.maxOutputTokens < 1))
     fail('CODEX_GENERATION_TOKEN_BUDGET_INVALID');
   return async function requestGateway(endpoint, init) {
     const { body, names, namedChoice } = validateRequest(endpoint, init);
@@ -272,45 +289,62 @@ export function createCodexGateway(options) {
       JSON.stringify({ messages: body.messages, result_functions: body.tools.map(tool => tool.function) }),
     ].join('\n\n');
     if (Buffer.byteLength(prompt) > MAX_BODY - 16_384) fail('CODEX_GENERATION_PROMPT_TOO_LARGE');
-    const requestedTokens = Math.min(body.max_tokens ?? maxOutputTokens,
-      body.max_completion_tokens ?? maxOutputTokens);
     const timeoutSeconds = Math.max(1, Math.min(3600, options.timeoutSeconds ?? 600));
     const request = { run_directory: runDirectory, config_path: options.configPath,
       codex_binary: options.codexBinary, prompt, allowed_tool_names: [...names],
       timeout_seconds: timeoutSeconds,
-      max_output_tokens: Math.min(maxOutputTokens, requestedTokens),
       reasoning_effort: options.reasoningEffort ?? null };
-    const binding = recovery ? {
+    const boundedTokens = ceiling => Math.min(options.maxOutputTokens ?? ceiling,
+      body.max_tokens ?? ceiling, body.max_completion_tokens ?? ceiling, ceiling);
+    const makeBinding = maxOutputTokens => ({
       version: 1, requestId: recovery.requestId, requestBodySha256: sha256(init.body),
       selectedModel: 'miaoda/glm-5.3', codexBinary: options.codexBinary,
       configPath: options.configPath, promptSha256: sha256(prompt),
-      timeoutSeconds, maxOutputTokens: request.max_output_tokens,
+      timeoutSeconds, maxOutputTokens,
       reasoningEffort: request.reasoning_effort,
-    } : null;
-    const bindingSha256 = binding && sha256(JSON.stringify(binding));
+    });
+    let binding = null, bindingSha256 = null;
     let recovered = false;
-    let claimed = false;
     if (recovery) {
-      if (recovery.recoverOnly) {
-        try { await stat(runDirectory); }
-        catch (error) { if (error?.code === 'ENOENT') fail('CODEX_GENERATION_OUTCOME_UNKNOWN'); throw error; }
+      try { await stat(runDirectory); recovered = true; }
+      catch (error) { if (error?.code !== 'ENOENT') throw error; }
+      if (!recovered && recovery.recoverOnly) fail('CODEX_GENERATION_OUTCOME_UNKNOWN');
+    }
+    if (!recovered) {
+      request.max_output_tokens = boundedTokens(await configuredOutputTokens(options.configPath));
+      if (recovery) {
+        binding = makeBinding(request.max_output_tokens);
+        try {
+          await mkdir(runDirectory, { mode: 0o700 });
+          const parentDirectory = await open(runRoot, 'r');
+          try { await parentDirectory.sync(); } finally { await parentDirectory.close(); }
+          await atomicJson(resolve(runDirectory, 'generation-binding.json'), binding);
+          await atomicBytes(resolve(runDirectory, 'codex-prompt.txt'), Buffer.from(prompt, 'utf8'));
+        } catch (error) {
+          if (error?.code !== 'EEXIST') throw error;
+          recovered = true;
+        }
       }
-      try {
-        await mkdir(runDirectory, { mode: 0o700 });
-        claimed = true;
-        const parentDirectory = await open(runRoot, 'r');
-        try { await parentDirectory.sync(); } finally { await parentDirectory.close(); }
-        await atomicJson(resolve(runDirectory, 'generation-binding.json'), binding);
-        await atomicBytes(resolve(runDirectory, 'codex-prompt.txt'), Buffer.from(prompt, 'utf8'));
-      } catch (error) {
-        if (error?.code !== 'EEXIST') throw error;
-        recovered = true;
-      }
-      if (claimed && recovery.recoverOnly) fail('CODEX_GENERATION_OUTCOME_UNKNOWN');
+    }
+    if (recovery) {
       if (recovered) {
         const previous = await jsonAt(resolve(runDirectory, 'generation-binding.json'));
         if (!previous) fail('CODEX_GENERATION_OUTCOME_UNKNOWN');
-        if (sha256(JSON.stringify(previous)) !== bindingSha256)
+        if (!record(previous) || !Number.isSafeInteger(previous.maxOutputTokens) ||
+            previous.maxOutputTokens < 1) fail('CODEX_GENERATION_RECOVERY_MISMATCH');
+        // Recovery uses the original request budget. A newer configured default
+        // must not change a durable binding or permit a second dispatch.
+        const recoveryCeiling = options.maxOutputTokens ?? previous.maxOutputTokens;
+        let recoveryTokens = Math.min(recoveryCeiling,
+          body.max_tokens ?? recoveryCeiling, body.max_completion_tokens ?? recoveryCeiling);
+        if (recoveryTokens > previous.maxOutputTokens) {
+          // A caller limit above the profile was capped on the first dispatch;
+          // apply that same cap before comparing its existing durable binding.
+          try { recoveryTokens = Math.min(recoveryTokens, await configuredOutputTokens(options.configPath)); }
+          catch (cause) { throw new Error('CODEX_GENERATION_RECOVERY_MISMATCH', { cause }); }
+        }
+        binding = makeBinding(recoveryTokens);
+        if (sha256(JSON.stringify(previous)) !== sha256(JSON.stringify(binding)))
           fail('CODEX_GENERATION_RECOVERY_MISMATCH');
         const promptPath = resolve(runDirectory, 'codex-prompt.txt');
         let persistedPrompt, promptMode;
@@ -327,8 +361,9 @@ export function createCodexGateway(options) {
             ((await stat(runDirectory)).mode & 0o077) !== 0)
           fail('CODEX_GENERATION_RECOVERY_MISMATCH');
       }
+      bindingSha256 = sha256(JSON.stringify(binding));
       request.binding_sha256 = bindingSha256;
-    } else if (recovery?.recoverOnly) fail('CODEX_GENERATION_OUTCOME_UNKNOWN');
+    }
     await recovery?.onRunPrepared?.({ runRoot, runDirectory, requestId: recovery.requestId,
       bindingSha256, promptSha256: binding.promptSha256 });
     await options.onRunPrepared?.({ runRoot, runDirectory,
@@ -338,6 +373,7 @@ export function createCodexGateway(options) {
     let transport;
     let candidate;
     let receipt;
+    let terminalFailure;
     if (recovery) {
       receipt = await jsonAt(resolve(runDirectory, 'generation-receipt.json'));
       if (!receipt && recovered) receipt = await awaitReceipt(runDirectory, timeoutSeconds, init.signal);
@@ -378,14 +414,19 @@ export function createCodexGateway(options) {
             !Array.isArray(upstream.events) || !upstream.events.length)
           fail('CODEX_GENERATION_RECEIPT_INVALID');
       }
+      if (!transport.transport_passed)
+        terminalFailure = await outputLengthFailure({ runDirectory, binding, receipt, transport, candidate });
     } else {
       try { transport = JSON.parse(child.stdout.trim()); } catch { fail('CODEX_GENERATION_SUMMARY_INVALID'); }
     }
     await options.onRunCompleted?.({ runDirectory, transport });
     if (child?.aborted) throw init.signal?.reason ?? new Error('CODEX_GENERATION_ABORTED');
     if ((!recovery && child.code !== 0) || !transport.transport_passed ||
-        transport.upstream_models?.length !== 1 || transport.upstream_models[0] !== 'glm-5.3')
-      fail('CODEX_GENERATION_INCOMPLETE');
+        transport.upstream_models?.length !== 1 || transport.upstream_models[0] !== 'glm-5.3') {
+      const error = new Error('CODEX_GENERATION_INCOMPLETE');
+      if (terminalFailure) error.codexTerminalFailure = terminalFailure;
+      throw error;
+    }
     if (!recovery) {
       try { candidate = JSON.parse(await readFile(resolve(runDirectory, 'contract-candidate.json'), 'utf8')); }
       catch { fail('CODEX_GENERATION_CANDIDATE_INVALID'); }

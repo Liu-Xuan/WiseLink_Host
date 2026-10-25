@@ -339,6 +339,73 @@ test('UNKNOWN transport keeps the exact started request fenced and cannot replay
   assert.equal((await f.checkpoint.readOptional('program-transport-observation')).outcome, 'UNKNOWN');
 });
 
+function codexLengthFixture(f, mutate = () => {}) {
+  const runRoot = join(tmpdir(), 'synthetic-program-codex-runs');
+  Object.assign(f.options, { modelExecutor: 'CODEX',
+    codexOptions: { codexBinary: '/offline/codex', configPath: '/offline/config', runRoot },
+    assessmentBinding: { attemptRef: 'AQ-program', actionAttemptId: 'ATT-program', workItemId: 'WI-program',
+      documentVersionId: binding.documentVersionId, inputRevision: 3, baseRevision: 3 } });
+  let dispatches = 0;
+  f.dependencies.requestGateway = async (_endpoint, request) => {
+    f.calls.push(request);
+    if (!request.codexRecovery.recoverOnly) dispatches++;
+    const runDirectory = join(runRoot, 'generation-original-request');
+    await request.codexRecovery.onRunPrepared({ runRoot, runDirectory,
+      requestId: request.codexRecovery.requestId, bindingSha256: 'c'.repeat(64), promptSha256: 'd'.repeat(64) });
+    // The gateway's own tests validate the durable receipt/audit. This fixture
+    // supplies that narrow typed boundary to the actual program consumer.
+    const failure = { code: 'JOBAID_MODEL_OUTPUT_LENGTH', requestId: request.codexRecovery.requestId,
+      runDirectory, transportSummaryRef: join(runDirectory, 'transport-summary.json'),
+      modelVersion: 'glm-5.3', inputTokens: 120, outputTokens: 16384, durationMs: 95000 };
+    const error = Object.assign(new Error('CODEX_GENERATION_INCOMPLETE'), { codexTerminalFailure: failure });
+    await mutate(error, request);
+    throw error;
+  };
+  return { dispatches: () => dispatches };
+}
+
+test('verified Codex length failure reaches the existing terminal failure without response, SAVE or regeneration', async t => {
+  const f = await fixture(t), codex = codexLengthFixture(f);
+  for (let repeat = 0; repeat < 2; repeat++) await assert.rejects(f.run(), error => {
+    assert.equal(error.terminalAssessmentFailure?.errorCode, 'JOBAID_MODEL_OUTPUT_LENGTH');
+    assert.equal(error.terminalAssessmentFailure.provenance.modelVersion, 'glm-5.3');
+    assert.deepEqual(error.terminalAssessmentFailure.provenance.runMetrics,
+      { durationMs: 95000, inputUnits: 120, outputUnits: 16384 });
+    return true;
+  });
+  assert.equal(codex.dispatches(), 1);
+  assert.equal(f.calls[1].codexRecovery.recoverOnly, true);
+  assert.equal(f.saves.length, 0);
+  assert.equal(f.reads.length, 0);
+  assert.equal(await f.checkpoint.readOptional('assessment-round-1.result'), null);
+  assert.deepEqual(f.progress.map(item => item.phase), ['MATERIALS_READY']);
+});
+
+test('unverified or incorrectly bound Codex incomplete errors remain UNKNOWN and cannot settle a pending budget', async t => {
+  for (const mutate of [
+    error => { delete error.codexTerminalFailure; },
+    error => { error.codexTerminalFailure.requestId = 'program:AQ-foreign:round-1'; },
+    error => { error.codexTerminalFailure.runDirectory += '-foreign'; },
+    error => { error.codexTerminalFailure.transportSummaryRef += '-foreign'; },
+    error => { error.codexTerminalFailure.modelVersion = 'configured-route:glm-5.3'; },
+    error => { error.codexTerminalFailure.outputTokens = -1; },
+  ]) {
+    const f = await fixture(t), codex = codexLengthFixture(f, mutate);
+    let settled = 0;
+    f.options.reconcileProgramModelRequest = async verify => { await verify(); settled++; };
+    await assert.rejects(f.run(), error => {
+      assert.equal(error.message, 'CODEX_GENERATION_INCOMPLETE');
+      assert.equal(error.terminalAssessmentFailure, undefined);
+      return true;
+    });
+    assert.equal(settled, 0);
+    assert.equal(codex.dispatches(), 1);
+    assert.equal(f.saves.length, 0);
+    assert.equal((await f.checkpoint.readOptional('program-transport-observation')).outcome, 'UNKNOWN');
+    assert.equal(await f.checkpoint.readOptional('assessment-round-1.result'), null);
+  }
+});
+
 test('raw-response persistence is required before any SAVE and a write failure cannot permit redispatch', async t => {
   const f = await fixture(t);
   const write = f.checkpoint.writeOnce;
@@ -596,7 +663,8 @@ function hostFixture(f) {
       if (args.result.status === 'FAILED') {
         failed = true;
         done = true;
-        return { status: 'FAILED', attemptRef: task.operationRef, errorCode: args.result.errorCode };
+        return { status: 'FAILED', attemptRef: task.operationRef,
+          terminalReason: args.result.errorCode, projectionApplied: false };
       }
       if (failProjection) { committing = true; throw new Error('PROJECTION_INTERRUPTED'); }
       done = true; return projection();
@@ -628,6 +696,77 @@ test('actual consumer→orchestrator→program runner reaches deterministic Over
   assert.equal(JSON.parse(materials.args.materialSnapshotJson).modelRequest.body, f.calls[0].body);
   assert.equal(host.tools.filter(item => item.name === 'commit_dynamic_evaluation_candidate').length, 1);
   assert.equal(host.tools.some(item => item.name === 'begin_overall_synthesis'), false);
+});
+
+test('actual bounded consumer commits verified Codex length as FAILED with count one and no SAVE or work READ', async t => {
+  const f = await fixture(t), codex = codexLengthFixture(f), host = hostFixture(f);
+  const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-program-known-length-'));
+  t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
+  const result = await runHostedInitialStage({ workItemId: host.task.workItemId, modelExecutor: 'CODEX',
+    checkpointRoot, operation: 'EVALUATE_JOBAID', initial: host.initial().initialAnalysis,
+    initialStageOnly: true, maxInitialStages: 1, expectedInitialOperation: 'EVALUATE_JOBAID',
+    jobAidRunLimits: { modelRequests: 1, saves: 1, finishes: 1 } }, {
+    callTool: host.callTool,
+    invokeInitialModel: (input, hooks) => invokeHostedInitialModel(input, { ...f.options, ...hooks }, f.dependencies),
+  });
+  assert.equal(result.stageStatus, 'FAILED');
+  assert.equal(result.errorCode, 'JOBAID_MODEL_OUTPUT_LENGTH');
+  assert.equal(codex.dispatches(), 1);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.saves.length, 0);
+  assert.equal(f.reads.length, 0);
+  assert.deepEqual(result.jobAidRunBudget.dispatchReservations, { modelRequests: 1, saves: 0, finishes: 1 });
+  assert.equal(result.jobAidRunBudget.pendingOutcome, null);
+  const commits = host.tools.filter(item => item.name === 'commit_dynamic_evaluation_candidate');
+  assert.equal(commits.length, 1);
+  assert.equal(commits[0].args.result.status, 'FAILED');
+  assert.equal(commits[0].args.result.businessOutcome, 'NOT_PRODUCED');
+  assert.equal(commits[0].args.result.modelOutput, null);
+  assert.equal(commits[0].args.result.errorCode, 'JOBAID_MODEL_OUTPUT_LENGTH');
+  assert.deepEqual(commits[0].args.result.factsConsidered, []);
+  assert.equal(host.tools.some(item => ['save_assessment_work', 'read_assessment_work', 'begin_overall_synthesis'].includes(item.name)), false);
+});
+
+test('verified length cannot settle a model budget whose original reservation ordinal changed', async t => {
+  const f = await fixture(t);
+  const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-program-length-budget-fence-'));
+  t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
+  const budget = await createCheckpointStore(join(checkpointRoot, 'WI-program/initial/EVALUATE_JOBAID'));
+  const codex = codexLengthFixture(f, async () => {
+    await budget.write('jobaid-run-budget-modelRequests-1', { kind: 'modelRequests', ordinal: 2 });
+  });
+  const host = hostFixture(f);
+  const result = await runHostedInitialStage({ workItemId: host.task.workItemId, modelExecutor: 'CODEX',
+    checkpointRoot, operation: 'EVALUATE_JOBAID', initial: host.initial().initialAnalysis,
+    initialStageOnly: true, maxInitialStages: 1, expectedInitialOperation: 'EVALUATE_JOBAID',
+    jobAidRunLimits: { modelRequests: 1, saves: 1, finishes: 1 } }, {
+    callTool: host.callTool,
+    invokeInitialModel: (input, hooks) => invokeHostedInitialModel(input, { ...f.options, ...hooks }, f.dependencies),
+  });
+  assert.equal(result.attemptStatus, 'UNKNOWN');
+  assert.equal(result.errorCode, 'JOBAID_PROGRAM_MODEL_BUDGET_RECOVERY_INVALID');
+  assert.equal(result.jobAidRunBudget.pendingOutcome, 'modelRequests');
+  assert.deepEqual(result.jobAidRunBudget.dispatchReservations, { modelRequests: 1, saves: 0, finishes: 0 });
+  assert.equal(codex.dispatches(), 1);
+  assert.equal(host.tools.some(item => item.name === 'commit_dynamic_evaluation_candidate'), false);
+  assert.equal(f.saves.length, 0);
+});
+
+test('a received FAILED commit must name the exact terminal reason and never causes another commit', async t => {
+  const f = await fixture(t);
+  codexLengthFixture(f);
+  const host = hostFixture(f);
+  await assert.rejects(runDynamicEvaluation({ workItemId: host.task.workItemId,
+    callTool: async (name, args) => {
+      const value = await host.callTool(name, args);
+      return name === 'commit_dynamic_evaluation_candidate'
+        ? { ...value, terminalReason: 'DIFFERENT_FAILURE', errorCode: args.result.errorCode } : value;
+    }, evaluateDynamicRules: (modelInput, hooks) => invokeHostedInitialModel(
+      { operation: 'EVALUATE_JOBAID', modelInput }, { ...f.options, ...hooks }, f.dependencies),
+  }), /HOST_MCP_FAILED_ASSESSMENT_COMMIT_INVALID/u);
+  assert.equal(host.tools.filter(item => item.name === 'commit_dynamic_evaluation_candidate').length, 1);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.saves.length, 0);
 });
 
 test('actual orchestrator commits missing old-issue coverage as a known work-validation failure', async t => {

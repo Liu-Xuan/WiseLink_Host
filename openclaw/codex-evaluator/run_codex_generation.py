@@ -31,6 +31,28 @@ def reject_constant(value):
     raise ValueError("invalid_json_constant")
 
 
+def configured_output_tokens(config_bytes):
+    try:
+        config = json.loads(config_bytes, object_pairs_hook=unique_object, parse_constant=reject_constant)
+    except (ValueError, UnicodeDecodeError) as error:
+        raise ValueError("model_config_invalid") from error
+    models = (config.get("models", {}).get("providers", {}).get("miaoda", {}).get("models")
+              if isinstance(config, dict) and isinstance(config.get("models"), dict)
+              and isinstance(config["models"].get("providers"), dict)
+              and isinstance(config["models"]["providers"].get("miaoda"), dict) else None)
+    if not isinstance(models, list):
+        raise ValueError("model_metadata_invalid")
+    matches = [model for model in models if isinstance(model, dict) and model.get("id") == MODEL]
+    if not matches:
+        raise ValueError("model_metadata_missing")
+    if len(matches) != 1:
+        raise ValueError("model_metadata_ambiguous")
+    maximum = matches[0].get("maxTokens")
+    if type(maximum) is not int or not 1 <= maximum <= 2 ** 53 - 1:
+        raise ValueError("model_metadata_invalid")
+    return maximum
+
+
 def stop(process):
     if process is None or process.poll() is not None:
         return
@@ -209,7 +231,7 @@ def main():
     timeout = request.get("timeout_seconds", 600)
     if type(timeout) not in (int, float) or not 1 <= timeout <= 3600:
         raise ValueError("invalid_timeout")
-    if type(request.get("max_output_tokens")) is not int or not 1 <= request["max_output_tokens"] <= 32768:
+    if type(request.get("max_output_tokens")) is not int or not 1 <= request["max_output_tokens"] <= 2 ** 53 - 1:
         raise ValueError("invalid_token_budget")
     if not isinstance(request.get("prompt"), str):
         raise ValueError("invalid_prompt")
@@ -221,7 +243,13 @@ def main():
     else:
         atomic_bytes(prompt_path, prompt_bytes)
     config_path = request["config_path"]
-    before = hashlib.sha256(Path(config_path).read_bytes()).hexdigest()
+    try:
+        config_bytes = Path(config_path).read_bytes()
+    except OSError as error:
+        raise ValueError("model_config_unavailable") from error
+    if request["max_output_tokens"] > configured_output_tokens(config_bytes):
+        raise ValueError("invalid_token_budget")
+    before = hashlib.sha256(config_bytes).hexdigest()
     started = time.monotonic()
     deadline = started + timeout
     server = thread = process = None
@@ -371,6 +399,9 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
+    except ValueError as error:
+        print(json.dumps({"transport_passed": False, "failure": str(error)}))
+        sys.exit(1)
     except Exception:
         print('{"transport_passed":false,"failure":"runner_failed"}')
         sys.exit(1)
