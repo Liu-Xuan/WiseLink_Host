@@ -1,6 +1,9 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-jest.mock('../../client/src/api/canonical-host', () => ({ getInitialAnalysisStatus: jest.fn() }));
+jest.mock('../../client/src/api/canonical-host', () => ({ getInitialAnalysisStatus: jest.fn(), getCanonicalHostClientSessionGeneration: () => 1 }));
+jest.mock('../../client/src/features/review/TaskModelPicker', () => ({ __esModule: true,
+  default: () => null, useTaskModelOptions: () => ({ data: null, ready: false, loading: false, error: '', refresh: jest.fn() }),
+}));
 jest.mock('../../client/src/features/review/review-loop.css', () => ({}));
 jest.mock('../../client/src/components/ui/button', () => ({
   Button: ({ variant: _variant, size: _size, ...props }: Record<string, unknown>) => createElement('button', props),

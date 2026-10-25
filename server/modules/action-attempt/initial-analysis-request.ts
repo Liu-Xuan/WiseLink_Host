@@ -13,6 +13,8 @@ const requestSchema = z.strictObject({
   ]),
   requestId: z.union([z.string().uuid(), z.string().regex(/^original-[1-9][0-9]{0,15}$/), z.string().regex(/^[a-f0-9]{64}$/u)]),
   originalParseRunId: z.string().min(1).max(200).optional(),
+  executionMode: z.literal('PROGRAM_CONTROLLED_V1').optional(),
+  modelRef: z.string().min(1).max(160).optional(),
   /** Browser queues exact intent; genuine runtime admission resolves native metadata. */
   nativeOverallAdmission: z.strictObject({
     workRevisionRef: z.string().regex(/^JAWR-[A-Za-z0-9-]{1,91}$/u),
@@ -36,6 +38,10 @@ export function buildInitialAnalysisRequestInput(
     ...input,
     schemaVersion: INITIAL_ANALYSIS_REQUEST_SCHEMA,
   });
+  if ((request.executionMode !== undefined || request.modelRef !== undefined) &&
+      (request.executionMode !== 'PROGRAM_CONTROLLED_V1' || !request.modelRef ||
+        request.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION'))
+    throw new Error('ACTION_ATTEMPT_PROGRAM_REQUEST_INVALID');
   if (request.nativeOverallAdmission &&
       (request.taskType !== 'OPENCLAW_OVERALL_SYNTHESIS' || !request.originalParseRunId))
     throw new Error('JOBAID_TDMS_OVERALL_REQUEST_INVALID');
@@ -61,6 +67,8 @@ export function readInitialAnalysisRequestInput(
   const request = buildInitialAnalysisRequestInput(
     requestSchema.parse(task.modelInput),
   );
+  if (request.executionMode && task.executionModel?.modelRef !== request.modelRef)
+    throw new Error('ACTION_ATTEMPT_PROGRAM_MODEL_BINDING_INVALID');
   const operation = {
     OPENCLAW_TRANSLATE: 'translate',
     OPENCLAW_DYNAMIC_EVALUATION: 'dynamic',
@@ -107,6 +115,8 @@ export function assertPreparedInitialAnalysisInput(
         JSON.stringify(request.retranslateBlockIds ?? []))
   )
     throw new Error('ACTION_ATTEMPT_INITIAL_REQUEST_PREPARED_SCOPE_INVALID');
+  if (modelInput.executionMode !== request.executionMode || modelInput.requestedModelRef !== request.modelRef)
+    throw new Error('ACTION_ATTEMPT_PROGRAM_REQUEST_BINDING_CHANGED');
   if (request.originalParseRunId) {
     const binding = z.object({ modelInput: z.object({ documentOverview: z.object({
       original: z.object({ binding: z.object({ parseRunId: z.literal(request.originalParseRunId) }) }),

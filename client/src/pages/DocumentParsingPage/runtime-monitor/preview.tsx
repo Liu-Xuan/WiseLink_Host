@@ -32,6 +32,7 @@ function Preview() {
       read={{ data, observedAt, error: null, isRefreshing: false, temporaryError: false, baseFallbackAllowed: true, refresh: () => undefined }}
       onRefresh={() => setMessage('回放刷新不会联网；请重新选择更新后的本地 JSON。')}
       onOpenPanel={(panel) => setMessage(`真实入口将打开 ${panel} 面板；本地回放保留当前页面，不冒充已定位具体尝试。`)}
+      onOpenWorkRevision={(ref) => setMessage(`真实入口将读取准确工作 ${ref}；本地回放未访问 Host，不替换为当前工作。`)}
     /> : null}
   </main>;
 }

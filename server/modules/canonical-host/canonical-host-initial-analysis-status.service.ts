@@ -4,7 +4,10 @@ import {
 } from '../action-attempt/cancelled-initial-continuation';
 import { CanonicalHostApplicabilityInputProducer } from './canonical-host-applicability-input.producer';
 import { originalApplicabilityInputMatches } from './original-applicability-currentness';
-import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { exactProgramWorkRead } from './program-controlled-assessment';
+import { parseJobAidProblemTask } from './jobaid-problem-task';
+import { jobAidReadingResult } from './jobaid-problem-work';
+import { canonicalJson, parseTaskEnvelope } from '../action-attempt/action-attempt-envelope';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import { ForbiddenException, Inject, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { SessionResolver } from '../identity/session-resolver.service';
@@ -172,13 +175,45 @@ export class CanonicalHostInitialAnalysisStatusService {
     const savedIds = [...Object.values(savedAttempts), sourceReviewAttemptId]
       .filter((id): id is string => !!id);
     let invalidDeterministicOverall = Boolean(deterministicOverall &&
-      (!sourceReviewAttemptId ||
-        deterministicOverall.sourceReview?.workRevisionRef !==
+      ((!sourceReviewAttemptId && !deterministicOverall.sourceAssessment) ||
+        (deterministicOverall.sourceReview ?? deterministicOverall.sourceAssessment)?.workRevisionRef !==
           deterministicOverall.basedOnJobAidWorkRevisionRef ||
         !isJobAidProblemProjection(execution.integratedAssessment?.baseRules) ||
         execution.integratedAssessment.baseRules.workRevisionRef !==
           deterministicOverall.basedOnJobAidWorkRevisionRef));
-    if (deterministicOverall) {
+    if (deterministicOverall?.sourceAssessment) {
+      const [record] = await this.db.select().from(actionAttempt).where(and(
+        eq(actionAttempt.tenantId, input.tenantId), eq(actionAttempt.workItemId, input.workItem.workItemId),
+        eq(actionAttempt.attemptId, deterministicOverall.actionAttemptId))).limit(1);
+      try {
+        if (!record || !record.taskEnvelopeJson || !this.originalWork) throw new Error('PROGRAM_RECORD_MISSING');
+        const task = parseTaskEnvelope(record.taskEnvelopeJson);
+        const prepared = parseJobAidProblemTask(task);
+        const savedIdentity = {tenantId: input.tenantId, workItemId: input.workItem.workItemId,
+          workRevisionRef: deterministicOverall.basedOnJobAidWorkRevisionRef!};
+        // A later SAVE may make this projection stale; it does not invalidate
+        // the real historical READ and exact work from which it was projected.
+        const savedWork = hostedServiceSql
+          ? await this.originalWork.readByRefForRuntime({...savedIdentity, actorUserId: prepared.actorUserId})
+          : await this.originalWork.readByRef(savedIdentity);
+        invalidDeterministicOverall ||= !savedWork || !!deterministicOverall.sourceReview ||
+          record.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION' || record.requestOrigin !== ACTION_ATTEMPT_REQUEST_ORIGIN ||
+          !['COMMITTING', 'SUCCEEDED'].includes(record.status) ||
+          (record.status === 'SUCCEEDED' && !record.projectionApplied) ||
+          record.documentVersionId !== input.workItem.source.documentVersionId ||
+          prepared.executionMode !== 'PROGRAM_CONTROLLED_V1' || task.actionAttemptId !== record.attemptId ||
+          task.inputHash !== record.taskInputHash || task.tenantId !== input.tenantId ||
+          task.workItemId !== input.workItem.workItemId ||
+          savedWork.workRevisionRef !== deterministicOverall.basedOnJobAidWorkRevisionRef ||
+          canonicalJson(exactProgramWorkRead(record, savedWork)) !== canonicalJson(deterministicOverall.sourceAssessment) ||
+          canonicalJson(jobAidReadingResult(savedWork)) !== canonicalJson(deterministicOverall.readingResult);
+      } catch (error) {
+        // Storage and authorization failures remain visible; only malformed sealed
+        // bindings become an invalid projection observation.
+        if (!(error instanceof Error) || !/^(PROGRAM_RECORD_MISSING|TASK_|JOBAID_PROGRAM_|JOBAID_TASK_|JOBAID_CONTENT_VALIDATION_)/u.test(error.message)) throw error;
+        invalidDeterministicOverall = true;
+      }
+    } else if (deterministicOverall) {
       const [record] = await this.db.select({
         actionType: actionAttempt.actionType,
         status: actionAttempt.status,
@@ -647,8 +682,18 @@ export function projectCanonicalHostInitialAnalysisStatus(
     : workItem;
   // A Host projection has its own successful execution record. A historical
   // OpenClaw Overall attempt is not its continuation or terminal result.
-  const overallAttempt = execution.integratedAssessment?.overallSynthesis?.executionKind ===
-    'DETERMINISTIC_PROJECTION' ? undefined : attemptByAction.OPENCLAW_OVERALL_SYNTHESIS;
+  const deterministic = execution.integratedAssessment?.overallSynthesis?.executionKind ===
+    'DETERMINISTIC_PROJECTION' ? execution.integratedAssessment.overallSynthesis : null;
+  const sourceInitial = deterministic?.sourceAssessment
+    ? attempts.find(attempt => attempt.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' &&
+      attempt.attemptId === deterministic.sourceAssessment!.actionAttemptId) : undefined;
+  const independentOverall = attemptByAction.OPENCLAW_OVERALL_SYNTHESIS;
+  const newerOverall = independentOverall && (
+    (execution.overallRegenerationRequest?.requestId && independentOverall.requestId === execution.overallRegenerationRequest.requestId) ||
+    (independentOverall.baseRevision != null && (independentOverall.baseRevision >= execution.revision ||
+      (sourceInitial?.baseRevision != null && independentOverall.baseRevision > sourceInitial.baseRevision))));
+  const overallAttempt = !deterministic || newerOverall ? independentOverall : sourceInitial;
+
   const stages = parsedPackageReady
     ? {
         translation: projectStage(
@@ -707,7 +752,8 @@ export function projectCanonicalHostInitialAnalysisStatus(
   }
   if (options.invalidDeterministicOverall && stages.overall.status === 'SUCCEEDED')
     stages.overall = { ...stages.overall, status: 'CONFLICT',
-      terminalCode: 'REVIEW_OVERALL_PROJECTION_RECORD_INVALID' };
+      terminalCode: execution.integratedAssessment?.overallSynthesis?.sourceAssessment
+        ? 'INITIAL_OVERALL_PROJECTION_RECORD_INVALID' : 'REVIEW_OVERALL_PROJECTION_RECORD_INVALID' };
   if (options.originalPublished && !workItem.package && !originalApplicabilityInputMatches(execution) && !options.originalAdmission?.contextRef && stages.applicability.status === 'PENDING')
     stages.applicability={...stages.applicability,status:'WAITING_INPUT',terminalCode:options.originalAdmission?.reason ?? 'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
   const progression = parsedPackageReady

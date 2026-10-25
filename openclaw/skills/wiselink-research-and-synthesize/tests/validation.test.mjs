@@ -1439,7 +1439,7 @@ test('requires 41 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c239',
+    'wiselink-research-and-synthesize@r09.c240',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -10207,4 +10207,40 @@ test('scoped-0828 Matter assessment update still requires a non-null work delta'
   assert.throws(() => validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, null)),
     /REVIEW_UPDATE_WORKING_DELTA_REQUIRED/u);
   assert.doesNotThrow(() => validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, delta)));
+});
+
+function programProgressToolMetadata() {
+  const keys = ['attemptRef', 'workItemId', 'leaseToken', 'leaseGeneration', 'phase', 'checkpointRef'];
+  return { name: 'record_assessment_program_progress',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: { type: 'object', additionalProperties: false, required: keys, properties: {
+      attemptRef: { type: 'string', minLength: 1, maxLength: 200 },
+      workItemId: { type: 'string', minLength: 1, maxLength: 200 }, leaseToken: { type: 'string', format: 'uuid' },
+      leaseGeneration: { type: 'integer', exclusiveMinimum: 0 },
+      phase: { type: 'string', enum: ['MATERIALS_READY', 'MODEL_RESPONSE_SAVED'] },
+      checkpointRef: { type: 'string', pattern: '^[A-Za-z0-9:._-]{1,512}$' },
+      materialSnapshotJson: { type: 'string', minLength: 1 },
+    } } };
+}
+
+test('program progress remains optional for old tasks while new capability is strict and fenced', () => {
+  const oldTools = buildHostToolSurface(), tool = programProgressToolMetadata();
+  assert.doesNotThrow(() => validateHostToolMetadata({ tools: oldTools }));
+  assert.doesNotThrow(() => validateHostToolMetadata({ tools: [...oldTools, tool] }));
+  assert.equal(HOST_MCP_TOOLS.includes(tool.name), false);
+  assert.throws(() => validateHostToolMetadata({ tools: [...oldTools, tool, tool] }), /PROGRAM_ASSESSMENT_CAPABILITY_SCHEMA_INVALID/u);
+  for (const mutate of [
+    item => { item.inputSchema.required = item.inputSchema.required.filter(key => key !== 'leaseToken'); },
+    item => { item.inputSchema.properties.checkpointRef = { type: 'string' }; },
+    item => { delete item.inputSchema.properties.materialSnapshotJson; },
+    item => { item.inputSchema.properties.materialSnapshotJson = { type: 'string' }; },
+    item => { item.inputSchema.required.push('materialSnapshotJson'); },
+    item => { item.inputSchema.properties.phase.enum.push('SAVED'); },
+    item => { item.inputSchema.properties.leaseGeneration = { type: 'integer' }; },
+    item => { item.annotations.readOnlyHint = true; },
+    item => { item.inputSchema.additionalProperties = true; },
+  ]) {
+    const changed = structuredClone(tool); mutate(changed);
+    assert.throws(() => validateHostToolMetadata({ tools: [...oldTools, changed] }), /PROGRAM_ASSESSMENT_CAPABILITY_SCHEMA_INVALID/u);
+  }
 });

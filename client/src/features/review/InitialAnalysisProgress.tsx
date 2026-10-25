@@ -5,6 +5,7 @@ import type {
   CanonicalInitialAnalysisReadModel,
   CanonicalTimelineProjection,
 } from '@shared/api.interface';
+import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import {
   getInitialAnalysisStatus,
   type CanonicalHostClientError,
@@ -17,6 +18,7 @@ interface Props {
   workItemId: string;
   sessionGeneration: number;
   initial?: CanonicalInitialAnalysisReadModel;
+  working?: JobAidWorkingReadModel | null;
   timeline: CanonicalTimelineProjection;
   onRevisionChanged: () => void;
   onAccessLost: () => void;
@@ -53,6 +55,24 @@ export default function InitialAnalysisProgress(props: Props) {
     readback.generation === props.sessionGeneration;
   const value = sameScope ? readback.value : props.initial;
   const error = sameScope ? readback.error : '';
+  const selected = props.working?.selectedExecution;
+  const resultPending: boolean =
+    Boolean(
+      props.working?.activity?.consumerStopped &&
+      props.working.activity.attemptRef === selected?.attemptRef &&
+      selected?.status !== 'SUCCEEDED',
+    ) ||
+    value?.stages.jobAid.terminalCode?.includes('UNKNOWN') === true ||
+    props.working?.executionStatus === 'UNKNOWN';
+  const assessmentBusy: boolean = props.working?.executionStatus
+    ? [
+        'REQUESTED',
+        'QUEUED',
+        'RUNNING',
+        'RETRY_SCHEDULED',
+        'COMMITTING',
+      ].includes(props.working.executionStatus)
+    : value?.stages.jobAid.status === 'BUSY';
 
   useEffect(() => {
     readEpoch.current += 1;
@@ -135,33 +155,53 @@ export default function InitialAnalysisProgress(props: Props) {
       <span className="parse-task-strip-label">分析进度</span>
       {value?.analysisModel ? (
         <span className="text-xs">
-          事项模型：{value.analysisModel.displayName}
+          事项绑定模型：{value.analysisModel.displayName}
         </span>
       ) : null}
-      {value?.continuationOperations?.map((operation) => (
-        <InitialAnalysisContinueButton
-          key={operation}
-          workItemId={props.workItemId}
-          expectedRevision={value.workItemRevision}
-          operation={operation}
-          label={
-            operation === 'TRANSLATE'
-              ? value.stages.translation.status === 'SUCCEEDED'
-                ? '重新翻译中文'
-                : '继续中文翻译'
-              : operation === 'EVALUATE_JOBAID'
-                ? '继续问题评估'
-                : '继续综合评估'
-          }
-          onQueued={() => {
-            void refresh();
-            props.onRevisionChanged();
-          }}
-          onAccessLost={props.onAccessLost}
-        />
-      ))}
+      {value?.continuationOperations
+        ?.filter(
+          (operation) => operation !== 'EVALUATE_JOBAID' || !assessmentBusy,
+        )
+        .map((operation) => (
+          <InitialAnalysisContinueButton
+            key={operation}
+            workItemId={props.workItemId}
+            expectedRevision={value.workItemRevision}
+            operation={operation}
+            executionMode={
+              operation === 'EVALUATE_JOBAID'
+                ? 'PROGRAM_CONTROLLED_V1'
+                : undefined
+            }
+            analysisModelName={value.analysisModel?.displayName}
+            label={
+              operation === 'TRANSLATE'
+                ? value.stages.translation.status === 'SUCCEEDED'
+                  ? '重新翻译中文'
+                  : '继续中文翻译'
+                : operation === 'EVALUATE_JOBAID'
+                  ? '开始程序评估'
+                  : '继续综合评估'
+            }
+            onQueued={() => {
+              void refresh();
+              props.onRevisionChanged();
+            }}
+            onAccessLost={props.onAccessLost}
+          />
+        ))}
+      {resultPending ? (
+        <p className="wl-initial-analysis-note" role="status">
+          原请求结果待核。
+          {value?.continuationOperations?.includes('EVALUATE_JOBAID') &&
+          !assessmentBusy
+            ? '本次程序评估会另建请求，保留原请求记录。'
+            : '当前没有可发起的新评估范围。'}
+        </p>
+      ) : null}
       <TaskPills timeline={props.timeline} initialAnalysis={value} />
-      {value?.continuationDiagnosticCode === 'OFFICIAL_OAUTH_SESSION_REQUIRED' ? (
+      {value?.continuationDiagnosticCode ===
+      'OFFICIAL_OAUTH_SESSION_REQUIRED' ? (
         <p className="wl-initial-analysis-note" role="status">
           续办身份尚未验证，请先完成工作台身份验证。
         </p>

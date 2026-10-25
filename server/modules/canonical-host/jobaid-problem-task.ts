@@ -73,6 +73,14 @@ export function jobAidSourceFileReference(item: CanonicalWorkItemProjection) {
 }
 
 export interface JobAidProblemModelInput extends Record<string, unknown> {
+  executionMode?: 'PROGRAM_CONTROLLED_V1';
+  programOriginal?: {
+    binding: import('@shared/document-original.interface').DocumentOriginalBinding;
+    coverage: import('@shared/document-original.interface').DocumentOriginalCoverage;
+    units: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['units'];
+    sourceLocators: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['sourceLocators'];
+    findings: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['findings'];
+  };
   contentValidationVersion?: 'jobaid-semantic.v1';
   /** Metadata only. A directory and approval provenance are not a body READ. */
   tdmsContext?: Pick<TdmsRuntimeTaskContext, 'schemaVersion' | 'projection'>;
@@ -153,6 +161,8 @@ export function jobAidProblemModelWorkContent(content: JobAidProblemWorkContent)
 }
 
 export interface JobAidProblemTaskInput extends Record<string, unknown> {
+  executionMode?: 'PROGRAM_CONTROLLED_V1';
+  requestedModelRef?: string;
   contentValidationVersion?: 'jobaid-semantic.v1';
   /** Exact existing Review input selection, retained only in the trusted wrapper. */
   preparationScope?: JobAidPreparationScope;
@@ -197,6 +207,9 @@ export function parseJobAidProblemTask(
   task: OpenClawTaskEnvelope,
 ): JobAidProblemTaskInput {
   const input = assertJobAidProblemTaskBinding(task.modelInput);
+  if (input.executionMode && (task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
+      task.executionModel?.modelRef !== input.requestedModelRef))
+    throw new Error('JOBAID_PROGRAM_MODEL_BINDING_INVALID');
   if (input.tdmsContext && (input.tdmsContext.binding.taskContextRef !== task.operationRef ||
       input.tdmsContext.binding.tenantId !== task.tenantId || input.tdmsContext.binding.workItemId !== task.workItemId ||
       input.tdmsContext.binding.documentVersionId !== task.documentVersionId)) throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
@@ -223,6 +236,12 @@ export function assertJobAidProblemTaskBinding(
     !isJobAidMethodBinding(input.modelInput.methodBinding)
   )
     throw new Error('JOBAID_TASK_BINDING_INVALID');
+  if (input.executionMode !== input.modelInput.executionMode ||
+      (input.executionMode !== undefined && (input.executionMode !== 'PROGRAM_CONTROLLED_V1' ||
+        input.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || !input.requestedModelRef ||
+        !input.modelInput.programOriginal || canonicalJson(input.modelInput.programOriginal.binding) !==
+          canonicalJson(input.modelInput.documentOverview.original?.binding))))
+    throw new Error('JOBAID_PROGRAM_TASK_BINDING_INVALID');
   if (input.contentValidationVersion !== input.modelInput.contentValidationVersion ||
       (input.contentValidationVersion !== undefined && input.contentValidationVersion !== 'jobaid-semantic.v1'))
     throw new Error('JOBAID_CONTENT_VALIDATION_VERSION_INVALID');

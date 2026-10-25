@@ -53,6 +53,8 @@ const command = z.strictObject({
   requestId: z.string().uuid(),
   expectedRevision: z.number().int().positive(),
   operation: z.enum(['TRANSLATE', 'EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL']),
+  executionMode: z.literal('PROGRAM_CONTROLLED_V1').optional(),
+  modelRef: z.string().min(1).max(160).optional(),
   retranslateBlockIds: z
     .array(z.string().min(1).max(200))
     .min(1)
@@ -105,6 +107,9 @@ export class CanonicalInitialAnalysisContinuationService {
     httpRequest?: Request,
   ): Promise<CanonicalInitialAnalysisContinuationReceipt> {
     const input = command.parse(raw);
+    if ((input.executionMode !== undefined || input.modelRef !== undefined) &&
+        (input.operation !== 'EVALUATE_JOBAID' || input.executionMode !== 'PROGRAM_CONTROLLED_V1' || !input.modelRef))
+      throw continuationConflict('PROGRAM_SCOPE_INVALID');
     if (input.operation !== 'TRANSLATE' && input.retranslateBlockIds)
       throw continuationConflict('BLOCK_SCOPE_REQUIRES_TRANSLATION');
     const { workItem, permissionSnapshotVersion } =
@@ -135,6 +140,9 @@ export class CanonicalInitialAnalysisContinuationService {
     });
     if (existing) {
       const task = parseTaskEnvelope(existing.taskEnvelopeJson);
+      if (task.modelInput.executionMode !== input.executionMode ||
+          (input.modelRef !== undefined && task.executionModel?.modelRef !== input.modelRef))
+        throw continuationConflict('REQUEST_SCOPE_CHANGED');
       if (
         input.retranslateBlockIds &&
         JSON.stringify(task.modelInput.retranslateBlockIds ?? []) !==
@@ -311,6 +319,7 @@ export class CanonicalInitialAnalysisContinuationService {
               authorizedKnowledgeSession,
               undefined,
               cancelledGuard,
+              input.executionMode ? {modelRef: input.modelRef!} : undefined,
             )
           : this.jobAid.enqueueContinuation(
               workItem,
@@ -321,6 +330,7 @@ export class CanonicalInitialAnalysisContinuationService {
                 ? 'INITIAL_PROBLEM_ASSESSMENT'
                 : 'OVERALL_CONSISTENCY',
               authorizedKnowledgeSession,
+              undefined, undefined, input.executionMode ? {modelRef: input.modelRef!} : undefined,
             );
     const reserved = cancelled
       ? await this.sessions!.withVerifiedReviewServiceSql(reserve, actor.userId)

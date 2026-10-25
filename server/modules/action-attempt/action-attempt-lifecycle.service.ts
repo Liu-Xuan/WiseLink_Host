@@ -1,3 +1,4 @@
+import { taskModelSelection } from '../model-settings/canonical-model-catalog';
 import { randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
@@ -64,6 +65,9 @@ export class ActionAttemptLifecycleService {
     now: Date,
   ): Promise<ReserveActionAttemptResult> {
     assertReservationInput(input);
+    if (input.programControlled && input.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION')
+      throw conflict('ACTION_ATTEMPT_PROGRAM_REQUEST_INVALID');
+    const programModel = input.programControlled ? taskModelSelection(input.programControlled.modelRef, now) : undefined;
     const binding = await this.repository.readWorkItemBinding({
       workItemId: input.workItemId,
       tenantId: input.tenantId,
@@ -112,7 +116,7 @@ export class ActionAttemptLifecycleService {
       input.deadlineAt ??
       new Date(now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS);
     const priority = input.priority ?? DEFAULT_PRIORITY;
-    const executionModel = await this.modelSettings.captureForWorkItem(
+    const executionModel = programModel ?? await this.modelSettings.captureForWorkItem(
       input.tenantId,
       input.workItemId,
       now,
@@ -1088,6 +1092,10 @@ function assertReplay(
   input: ReserveActionAttemptInput,
 ): void {
   const task = validatedTask(row);
+  if ((task.modelInput.executionMode === 'PROGRAM_CONTROLLED_V1') !== !!input.programControlled ||
+      (input.programControlled && (task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
+        task.executionModel?.modelRef !== input.programControlled.modelRef)))
+    throw conflict('ACTION_ATTEMPT_IDEMPOTENCY_PAYLOAD_MISMATCH');
   if (
     row.actionType !== input.taskType ||
     row.workItemId !== input.workItemId ||

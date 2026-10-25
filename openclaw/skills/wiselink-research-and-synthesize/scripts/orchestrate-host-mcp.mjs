@@ -794,6 +794,11 @@ export async function runDynamicEvaluation(input) {
     });
   }
   const problemV2 = ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(begin.modelInput?.schemaVersion);
+  if ((begin.modelInput?.executionMode !== undefined || begin.task.modelInput?.executionMode !== undefined) &&
+      (begin.modelInput?.executionMode !== 'PROGRAM_CONTROLLED_V1' ||
+        begin.task.modelInput?.executionMode !== begin.modelInput.executionMode ||
+        canonicalJson(begin.modelInput) !== canonicalJson(begin.task.modelInput.modelInput)))
+    throw new Error('HOST_MCP_PROGRAM_ASSESSMENT_MODE_BINDING_MISMATCH');
   if (!problemV2) validatePayload('dynamic-rules-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
   const reconciled = problemV2 ? await reconcileSavedInitialAssessment(begin, callTool) : null;
@@ -819,7 +824,7 @@ export async function runDynamicEvaluation(input) {
       commitArgs(begin, result),
     );
     if (execution.failureCode) assertFailedAssessmentCommit(committed, begin, result);
-    else assertDynamicCommit(committed, workItemId);
+    else assertDynamicCommit(committed, workItemId, programAssessmentCommitBinding(begin, execution.output));
   } catch (error) {
     return recoverCommitResponseLoss({
       mode: 'INITIAL_ANALYSIS',
@@ -1313,7 +1318,9 @@ async function recoverInitialCommitting({ stage, before, begin, callTool }) {
   const tool = stage === 'EVALUATE_JOBAID'
     ? 'commit_dynamic_evaluation_candidate' : 'commit_overall_candidate';
   const committed = await callTool(tool, commitArgs(begin, observed.status.recoveryResult));
-  if (stage === 'EVALUATE_JOBAID') assertDynamicCommit(committed, begin.task.workItemId);
+  if (stage === 'EVALUATE_JOBAID') assertDynamicCommit(committed, begin.task.workItemId,
+    begin.task.modelInput?.executionMode === 'PROGRAM_CONTROLLED_V1'
+      ? programAssessmentCommitBinding(begin, JSON.parse(observed.status.recoveryResult.modelOutput)) : null);
   else assertOverallCommit(committed, begin.task.workItemId);
   return { ...observed, outcome: 'COMMITTING_REPLAYED', committed };
 }
@@ -1566,13 +1573,17 @@ function assertFailedAssessmentCommit(value, begin, result) {
 
 function problemAssessmentHooks(begin, callTool) {
   const control = { attemptRef: begin.attemptRef, leaseToken: begin.leaseToken, leaseGeneration: begin.leaseGeneration };
+  const programControlled = begin.modelInput.executionMode === 'PROGRAM_CONTROLLED_V1';
   return {
     assessmentBinding: { documentVersionId: begin.task.documentVersionId, inputRevision: begin.task.inputRevision },
     heartbeat: () => heartbeatAttempt(begin, callTool),
     queryAssessmentKnowledge: (intent) => callTool('query_assessment_knowledge', { ...intent, ...control }),
     readAssessmentSources: (intent) => callTool('read_assessment_sources', { ...intent, ...control }),
     saveAssessmentWork: (intent) => callTool('save_assessment_work', { ...intent, ...control }),
-    readAssessmentWork: (intent) => callTool('read_assessment_work', { ...intent, attemptRef: begin.attemptRef }),
+    readAssessmentWork: (intent) => callTool('read_assessment_work', { ...intent,
+      ...(programControlled ? control : { attemptRef: begin.attemptRef }) }),
+    ...(programControlled ? { recordAssessmentProgramProgress: (intent) =>
+      callTool('record_assessment_program_progress', { ...intent, ...control }) } : {}),
   };
 }
 
@@ -2098,7 +2109,24 @@ function assertApplicabilityCommit(value, begin, result) {
   }
 }
 
-function assertDynamicCommit(value, workItemId) {
+function programAssessmentCommitBinding(begin, output) {
+  return begin.task.modelInput?.executionMode === 'PROGRAM_CONTROLLED_V1'
+    ? { actionAttemptId: begin.task.actionAttemptId, workRevisionRef: output?.workRevisionRef } : null;
+}
+
+function assertDynamicCommit(value, workItemId, program = null) {
+  if (program) {
+    const overall = value?.overallSynthesis, source = overall?.sourceAssessment;
+    if (!program.workRevisionRef || value?.workItemId !== workItemId || !Number.isSafeInteger(value.workItemRevision) ||
+        value.status !== 'OVERALL_CANDIDATE_READY' || value.baseRules?.workRevisionRef !== program.workRevisionRef ||
+        overall?.status !== 'CANDIDATE_ONLY' || overall.executionKind !== 'DETERMINISTIC_PROJECTION' ||
+        overall.modelRequests !== 0 || overall.basedOnJobAidWorkRevisionRef !== program.workRevisionRef ||
+        source?.actionAttemptId !== program.actionAttemptId || source.workRevisionRef !== program.workRevisionRef ||
+        !Number.isSafeInteger(source.workRevision) || source.workRevision < 1 ||
+        typeof source.saveRequestId !== 'string' || !source.saveRequestId || !Number.isFinite(Date.parse(source.readObservedAt)))
+      throw new Error('HOST_MCP_PROGRAM_ASSESSMENT_COMMIT_RESULT_INVALID');
+    return;
+  }
   if (
     !value ||
     typeof value !== 'object' ||

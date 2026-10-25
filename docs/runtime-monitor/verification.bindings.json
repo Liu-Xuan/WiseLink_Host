@@ -902,6 +902,59 @@
         "builtHostClient": "541acba133f51e67eb9071f74ae2fbfe2deabf00",
         "nativeProtocolBase": "185f206c1ff93734dd10133e5b42feed4342d42e"
       }
+    },
+    {
+      "id": "program.initial-assessment",
+      "nodeIds": [
+        "source.original",
+        "assessment.research",
+        "assessment.overall",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "original.research",
+        "research.overall",
+        "artifact.reading"
+      ],
+      "scenarioIds": [
+        "V55",
+        "V56",
+        "V57",
+        "V58"
+      ],
+      "workPackageIds": [
+        "P7"
+      ],
+      "consumer": "新显式程序初评：Host请求封存/材料授权与SAVE/READ/投影，Native固定步骤，父级读模型与运行图",
+      "sourceRevision": null,
+      "environmentId": null,
+      "sourceRefs": [
+        "server/modules/canonical-host/canonical-initial-analysis-continuation.service.ts",
+        "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
+        "server/modules/canonical-host/program-controlled-assessment.ts",
+        "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+        "openclaw/skills/wiselink-research-and-synthesize/scripts/program-assessment-materials.mjs",
+        "client/src/features/review/InitialAnalysisContinueButton.tsx",
+        "client/src/pages/DocumentParsingPage/runtime-monitor/adapt-jobaid-working-read.ts"
+      ],
+      "validationRefs": [
+        "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
+        "test/unit/program-assessment-runtime-monitor.spec.ts"
+      ],
+      "gaps": [
+        {
+          "id": "program.initial-review",
+          "kind": "source_review",
+          "reason": "本地实施尚在集成",
+          "nextAction": "核对完整请求、实际入口、恢复和准确工作投影"
+        },
+        {
+          "id": "program.initial-live",
+          "kind": "runtime",
+          "reason": "尚无新程序流程的真实SAVE与同版阅读回执",
+          "nextAction": "准确技术交付后，在获准范围完成一条真实业务链"
+        }
+      ]
     }
   ]
 }

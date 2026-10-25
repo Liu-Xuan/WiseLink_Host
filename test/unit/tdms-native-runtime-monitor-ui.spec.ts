@@ -28,7 +28,7 @@ function reading(): JobAidWorkingReadState {
 }
 async function render(read: JobAidWorkingReadState, generation = 1, workItemId = 'work-item-test') {
   await act(async () => root.render(createElement(Diagnostic, { read, workItemId, sessionGeneration: generation,
-    onRefresh: refresh, onOpenPanel: navigate })));
+    onRefresh: refresh, onOpenPanel: navigate, onOpenWorkRevision: navigate })));
 }
 function element() { return host.querySelector('wiselink-monitor')!; }
 function shadow() { return element().shadowRoot!; }
@@ -71,7 +71,7 @@ it('opens the exact saved source from the real monitor and shows versions, recei
   expect(navigate).not.toHaveBeenCalled();
   await click('[data-node="business.company_records"]');
   await click('[data-nav="artifact"]');
-  expect(navigate).toHaveBeenCalledWith('assessment');
+  expect(navigate).toHaveBeenCalledWith(reading().data!.current!.workRevisionRef);
   await click('#refresh');
   expect(refresh).toHaveBeenCalledTimes(1);
 });

@@ -377,7 +377,10 @@ export class JobAidWorkRepository {
         SELECT ${actionAttempt.status} AS "status", ${actionAttempt.attemptId} AS "attemptId",
           ${actionAttempt.operationRef} AS "attemptRef", ${actionAttempt.reviewActivityJson} AS "activityJson",
           ${actionAttempt.actionType} AS "actionType", ${actionAttempt.createdAt} AS "createdAt",
-          ${actionAttempt.startedAt} AS "startedAt", ${actionAttempt.completedAt} AS "completedAt"
+          ${actionAttempt.startedAt} AS "startedAt", ${actionAttempt.completedAt} AS "completedAt",
+          CASE WHEN ${actionAttempt.taskEnvelopeJson}::jsonb->'modelInput'->>'executionMode' = 'PROGRAM_CONTROLLED_V1'
+            THEN 'PROGRAM_CONTROLLED_V1' ELSE NULL END AS "executionMode",
+          ${actionAttempt.executionModelJson}::jsonb AS "executionModel"
         FROM ${actionAttempt}
         WHERE ${actionAttempt.tenantId} = ${input.tenantId}
           AND ${actionAttempt.workItemId} = ${input.workItemId}
@@ -672,6 +675,23 @@ export class JobAidWorkRepository {
     });
   }
 
+  async recordWorkRead(input: JobAidSaveScope & {revision: JobAidWorkRevision;
+    assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>}): Promise<void> {
+    return this.recordReadObservation(input, {kind: 'ASSESSMENT_WORK_READ',
+      workRevisionRef: input.revision.workRevisionRef, workRevision: input.revision.workRevision,
+      saveRequestId: input.revision.requestId}, input.revision);
+  }
+
+  async recordProgramProgress(input: JobAidSaveScope & {
+    phase: 'MATERIALS_READY' | 'MODEL_RESPONSE_SAVED'; checkpointRef: string;
+    materialsArtifact?: import('@shared/api.interface').UnifiedPackageArtifactDescriptor;
+    assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>;
+  }): Promise<void> {
+    return this.recordReadObservation(input, {kind: 'ASSESSMENT_PROGRAM_PROGRESS',
+      phase: input.phase, checkpointRef: input.checkpointRef,
+      ...(input.materialsArtifact ? {materialsArtifact: input.materialsArtifact} : {})});
+  }
+
   async recordKnowledgeObservation(input: {
     row: ActionAttemptRow;
     actorUserId: string;
@@ -756,7 +776,11 @@ export class JobAidWorkRepository {
     sourceBindings: JobAidSourceBinding[];
     assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>;
   }, observation: { kind: 'ASSESSMENT_SOURCES_READ'; sourceRefs: string[]; purpose: string; nativeEvidence?: AssessmentTdmsNativeEvidence[] }
-    | { kind: 'ASSESSMENT_KNOWLEDGE_OBSERVED'; status: JobAidKnowledgeObservationStatus }): Promise<void> {
+    | { kind: 'ASSESSMENT_KNOWLEDGE_OBSERVED'; status: JobAidKnowledgeObservationStatus }
+    | { kind: 'ASSESSMENT_WORK_READ'; workRevisionRef: string; workRevision: number; saveRequestId: string }
+    | { kind: 'ASSESSMENT_PROGRAM_PROGRESS'; phase: 'MATERIALS_READY' | 'MODEL_RESPONSE_SAVED'; checkpointRef: string;
+      materialsArtifact?: import('@shared/api.interface').UnifiedPackageArtifactDescriptor },
+    exactRead?: JobAidWorkRevision): Promise<void> {
     await this.actorTransactions.withActorTransaction(
       input.actorUserId,
       async ({ database }) => {
@@ -791,7 +815,24 @@ export class JobAidWorkRepository {
         )
           throw new Error('JOBAID_SOURCE_READ_BINDING_CHANGED');
         assertJobAidWorkFence(attempt, input.fence);
+        if (observation.kind === 'ASSESSMENT_WORK_READ') {
+          const saved = await this.readByRef({tenantId: attempt.tenantId, workItemId: attempt.workItemId,
+            workRevisionRef: observation.workRevisionRef}, database);
+          if (!saved || saved.actionAttemptId !== attempt.attemptId || canonicalJson(saved) !== canonicalJson(exactRead))
+            throw new Error('JOBAID_PROGRAM_READ_BINDING_INVALID');
+        }
         await input.assertNativeAuthorized?.(database);
+        if (observation.kind === 'ASSESSMENT_PROGRAM_PROGRESS') {
+          const prior: unknown = JSON.parse(attempt.reviewActivityJson ?? '[]');
+          if (!Array.isArray(prior)) throw new Error('JOBAID_ACTIVITY_RECORDS_INVALID');
+          const existing = prior.find(item => item?.kind === observation.kind && item.phase === observation.phase);
+          if (existing) {
+            if (existing.checkpointRef !== observation.checkpointRef ||
+                canonicalJson(existing.materialsArtifact ?? null) !== canonicalJson(observation.materialsArtifact ?? null))
+              throw new Error('JOBAID_PROGRAM_PROGRESS_CONFLICT');
+            return;
+          }
+        }
         const activity = {
           ...observation,
           ...(observation.kind === 'ASSESSMENT_SOURCES_READ' ? tdmsReadObservation(observation,attempt.reviewActivityJson,attempt.operationRef) : {}),

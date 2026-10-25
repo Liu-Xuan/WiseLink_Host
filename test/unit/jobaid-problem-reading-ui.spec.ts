@@ -34,8 +34,19 @@ import { jobAidReadingFixture } from './semantic-reading-ui.fixtures';
 import MatterProblemWork from '../../client/src/features/matter/MatterProblemWork';
 import { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
 import { projectJobAidActivity } from '../../server/modules/canonical-host/jobaid-activity';
+import { assessmentPageFixture } from './fixtures/document-assessment-workspace';
 
 describe('problem-oriented JobAid reading', () => {
+  it.each(['STALE', 'STALE_REASON'] as const)('keeps saved work readable when Overall has its own %s', stale => {
+    const data = jobAidReadingFixture(); data.overallStatus = 'CURRENT';
+    data.overallBasedOnWorkRevisionRef = data.current!.workRevisionRef;
+    const overall = assessmentPageFixture().workItem.integratedAssessment!.overallSynthesis!;
+    if (stale === 'STALE') overall.status = 'STALE'; else overall.staleReason = 'ENGINEER_REVIEW_CHANGED';
+    const html = renderToStaticMarkup(createElement(JobAidProblemReading, { data, overall, onLocateDocument: jest.fn() }));
+    expect(html).toContain('工作已保存，综合待更新');
+    expect(html).toContain('data-work-revision-ref="work-current-test"');
+  });
+
   it.each([false, true])('shows stopped/UNKNOWN attention with authority only in details; saved=%s', saved => {
     const data = jobAidReadingFixture();
     if (!saved) data.current = null;
@@ -52,7 +63,8 @@ describe('problem-oriented JobAid reading', () => {
         observedAt: '2026-10-25T00:00:00Z',
       }]) }, []);
     const html = renderToStaticMarkup(createElement(JobAidProblemReading, { data, onLocateDocument: jest.fn() }));
-    expect(html).toContain('执行已停止，模型结果待核；任务正在等待系统收尾');
+    expect(html).toContain('执行已停止，原请求结果待核；任务正在等待系统收尾');
+    expect(html).not.toContain('正在核对');
     expect(html).toContain('<summary>任务状态记录</summary>');
     expect(html).toContain('Host状态字段：RUNNING');
     expect(html).not.toContain('当前运行：');

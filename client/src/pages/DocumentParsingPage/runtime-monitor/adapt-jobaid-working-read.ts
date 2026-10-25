@@ -21,6 +21,7 @@ export interface JobAidWorkingObservation {
   } | null;
   latestAttempt: { attemptId: string; status: string; inputRevision: number | null; createdAt?: string; startedAt?: string | null; firstSavedAt?: string | null; completedAt?: string | null } | null;
   selectedExecution?: JobAidWorkingReadModel['selectedExecution'];
+  activity?: JobAidWorkingReadModel['activity'];
   executionStatus: string | null;
   currentInputChanged: boolean;
   overallStatus: 'NOT_AVAILABLE' | 'CURRENT' | 'STALE';
@@ -100,6 +101,27 @@ export function adaptJobAidWorkingRead(
     else researchAttempts.unshift(dynamic);
   }
   const researchExecution = dynamic ?? latest;
+  const program = dynamic?.executionMode === 'PROGRAM_CONTROLLED_V1';
+  const ownWork = work?.actionAttemptId === dynamic?.attemptId ? work : null;
+  const stopped = dynamic?.status !== 'SUCCEEDED' && read.activity?.attemptRef === dynamic?.attemptRef
+    ? read.activity?.consumerStopped : null;
+  const programProgress = program ? dynamic.programProgress : null;
+  const programLastProgressAt = program
+    ? [programProgress?.observedAt, ownWork?.createdAt, stopped?.observedAt, dynamic.completedAt]
+      .filter((value): value is string => typeof value === 'string' && Number.isFinite(Date.parse(value)))
+      .sort((left, right) => Date.parse(right) - Date.parse(left))[0]
+    : undefined;
+  const programState = !program ? null : stopped ? '原请求结果待核'
+    : ownWork && read.overallStatus === 'CURRENT' &&
+      read.overallBasedOnWorkRevisionRef === ownWork.workRevisionRef
+      ? ['RUNNING', 'COMMITTING'].includes(dynamic.status)
+        ? '成果已可读，执行仍在收尾' : '工作与综合同版可读'
+      : ownWork ? '工作已保存，综合待更新'
+        : programProgress?.phase === 'MODEL_RESPONSE_SAVED' ? '已生成，尚未保存'
+          : programProgress?.phase === 'MATERIALS_READY' && dynamic.status === 'RUNNING'
+            ? '材料已准备，正在综合分析'
+            : dynamic.status === 'RUNNING' ? '正在准备本轮材料'
+              : '按本次执行记录查看进展';
   const basedOn = read.overallBasedOnWorkRevisionRef;
   const differentWork = !!work && !!basedOn && work.workRevisionRef !== basedOn;
   const research: RuntimeNode = {
@@ -109,18 +131,24 @@ export function adaptJobAidWorkingRead(
     coverage: read.currentInputChanged ? {label:'Host 标记输入已有变化',tone:'wait'} : 'Host 未标记输入变化',
     coverageScope: '仅当前 JobAid 工作输入；本读模型不提供全部业务来源覆盖',
     business: '工程工作；正式意见另行读取',
-    summary: work ? `已保存工作 ${work.workRevision}（请求 ${work.requestId}，尝试 ${work.actionAttemptId}），执行观察另列` : '尚未取得已保存工作',
+    summary: [program ? `程序控制评估；本次未启用自主调查。${programState}` : '',
+      work ? `已保存工作 ${work.workRevision}（请求 ${work.requestId}，尝试 ${work.actionAttemptId}），执行观察另列` : '尚未取得已保存工作'].filter(Boolean).join('。'),
     requestCoverage: dynamic ? '本次读取返回的调查尝试，有限观察' : '仅最新调查尝试，非完整请求集合',
     requestCompleteness: dynamic ? 'partial' : 'latest_only',
     requests: researchAttempts.map(attempt => ({
       id: attempt.attemptId, recordKind:'attempt', status:{label:attempt.status,status:attempt.status},
       artifact: work?.actionAttemptId === attempt.attemptId ? `工作 ${work.workRevision} 已保存` : '未取得此尝试对应的保存结果',
-      next: `查看复核面板；本次尝试 ${attempt.attemptId}。该入口不定位单条尝试，也不自动重试`,
-      navigationLabel: '查看复核面板',
+      next: program && attempt.attemptId === dynamic.attemptId
+        ? `${programState}；查看本次评估及准确保存工作，该入口不重新生成`
+        : `查看复核面板；本次尝试 ${attempt.attemptId}。该入口不定位单条尝试，也不自动重试`,
+      navigationLabel: program && attempt.attemptId === dynamic.attemptId ? '查看评估工作' : '查看复核面板',
+      ...(program && attempt.attemptId === dynamic.attemptId ? { executionMode: dynamic.executionMode } : {}),
       createdAt: attempt.createdAt,
       startedAt: attempt.startedAt ?? undefined,
       firstSavedAt: latest?.attemptId === attempt.attemptId ? latest.firstSavedAt ?? undefined : undefined,
       completedAt: attempt.completedAt ?? undefined,
+      ...(program && attempt.attemptId === dynamic.attemptId && programLastProgressAt
+        ? { lastProgressAt: programLastProgressAt } : {}),
     })),
     outputs: work ? [{label:`工作 ${work.workRevision}`,ref:work.workRevisionRef}] : [],
     inputRefs: work ? [{label:'该工作使用的资料版本',ref:work.documentVersionId}, ...native.observations.map(({ navigationRef, evidence }) => ({
@@ -165,6 +193,18 @@ export function adaptJobAidWorkingRead(
       ref: navigationRef,
     })),
   };
+  const reading: RuntimeNode = {
+    id: 'surface.reading', label: '工作阅读', group: '知识积累', kind: 'view',
+    execution: '使用父页面同一次获权读回',
+    artifact: work ? { label: `工作 ${work.workRevision} 正文可读`, tone: 'good' } : '尚无已保存评估',
+    coverage: work ? `准确工作修订 ${work.workRevisionRef}` : '尚未取得工作修订',
+    business: '工程评估阅读；批准与执行事实分别显示',
+    summary: work ? '已保存工作独立可读，不等待综合更新或执行收尾。刷新和下钻只读。'
+      : '尚未取得已保存评估，不能据此认定没有工程问题。',
+    requestCoverage: '成果读取，不新建评估请求', requestCompleteness: 'not_provided',
+    requests: [], outputs: work ? [{ label: `阅读工作 ${work.workRevision}`, ref: work.workRevisionRef }] : [],
+    inputRefs: work ? [{ label: '实际读回的工作修订', ref: work.workRevisionRef }] : [],
+  };
   const edges: RuntimeEdge[] = native.observations.map(({ navigationRef, evidence }) => ({
     id: navigationRef, templateId: 'company.research',
     from: companyRecords.id, to: research.id, status: 'consumed',
@@ -180,11 +220,16 @@ export function adaptJobAidWorkingRead(
     id:`${read.workItemId}:overall:pending:${work.workRevisionRef}`,templateId:'change.work',
     from:research.id,to:overall.id,status:'pending',label:'当前工作尚未纳入该综合',refs:[work.workRevisionRef],
   });
+  if (work) edges.push({
+    id: `${read.workItemId}:reading:${work.workRevisionRef}`, templateId: 'artifact.reading',
+    from: research.id, to: reading.id, status: 'consumed',
+    label: '已保存工作经本次获权读回可读', refs: [work.workRevisionRef],
+  });
   return {
     schemaVersion:1,
     meta:{mode:context.mode,observedAt:context.observedAt,environment:context.environment,scopeKey:context.scopeKey,
       readState:context.readState,readError:context.readError},
     scope:{id:read.workItemId,label:context.label,model:'WorkItem · 已保存工作与综合关系',kind:'work_item'},
-    nodes:[companyRecords,research,overall],edges,
+    nodes:[companyRecords,research,overall,reading],edges,
   };
 }

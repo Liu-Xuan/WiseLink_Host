@@ -609,6 +609,16 @@ export class CanonicalHostOpenClawMcpService {
       })),
     );
 
+    server.registerTool('record_assessment_program_progress', {
+      title: '记录程序评估的实际进展',
+      description: '仅显式程序初评在现有检查点写入后报告材料就绪或完整响应已留存；不改变模型结果或执行终态。',
+      inputSchema: z.object({attemptRef, workItemId: mcpWorkItemId, leaseToken, leaseGeneration,
+        phase: z.enum(['MATERIALS_READY', 'MODEL_RESPONSE_SAVED']),
+        checkpointRef: z.string().regex(/^[A-Za-z0-9:._-]{1,512}$/u),
+        materialSnapshotJson: z.string().min(1).optional()}).strict(),
+      annotations: beginAnnotations,
+    }, async input => textResult(await this.problemAssessment.recordProgramProgress(input)));
+
     server.registerTool(
       'save_assessment_work',
       {
@@ -638,13 +648,16 @@ export class CanonicalHostOpenClawMcpService {
         description:
           '在当前授权下读回原 request 的完整正文或最新工作，供保存响应丢失、退出及取消后的恢复核对；不发起模型或提升结果。',
         inputSchema: z
-          .object({ attemptRef, workItemId: mcpWorkItemId.optional(), requestId: z.string().max(96).optional() })
+          .object({ attemptRef, workItemId: mcpWorkItemId.optional(), requestId: z.string().max(96).optional(),
+            leaseToken: leaseToken.optional(), leaseGeneration: leaseGeneration.optional(),
+            workRevisionRef: z.string().regex(/^JAWR-[A-Za-z0-9-]{1,91}$/u).optional() })
           .strict(),
         annotations: resumeAnnotations,
       },
-      async ({ attemptRef: ref, requestId, workItemId }) =>
+      async ({ attemptRef: ref, requestId, workItemId, leaseToken: token, leaseGeneration: generation, workRevisionRef }) =>
         textResult(
-          await this.problemAssessment.readAttemptWork(ref, requestId, workItemId),
+          await this.problemAssessment.readAttemptWork(ref, requestId, workItemId,
+            token !== undefined && generation !== undefined ? {leaseToken: token, leaseGeneration: generation} : undefined, workRevisionRef),
         ),
     );
 

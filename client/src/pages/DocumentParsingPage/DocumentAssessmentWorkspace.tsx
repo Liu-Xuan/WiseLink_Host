@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@client/src/components/ui/button';
 import RetainedWorkbenchPanel, { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
@@ -36,6 +36,7 @@ export default function DocumentAssessmentWorkspace({ association, documentVersi
 }) {
   const active: boolean = useWorkbenchPanelActive();
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const selection = readDocumentAssessmentTab(params);
   const contentRef = useRef<HTMLFieldSetElement>(null);
   const scrollRestored = useRef(false);
@@ -128,9 +129,12 @@ export default function DocumentAssessmentWorkspace({ association, documentVersi
         <RetainedWorkbenchPanel active={active && tab === 'process'}>
           <AssessmentProcessDetails data={page} working={workingRead.data} />
           <WorkItemRuntimeDiagnostic read={workingRead} workItemId={workItemId} sessionGeneration={sessionGeneration}
+            onOpenWorkRevision={workRef => navigate(`/knowledge?${new URLSearchParams({
+              kind: 'works', subjectKind: 'WORK_ITEM', subjectId: workItemId, workRef,
+            })}`)}
             onRefresh={() => void refresh()} onOpenPanel={panel => panel === 'reader' ? onOpenReader()
               : choose(panel === 'review' ? 'review' : 'overall')} />
-          <details><summary>可解释过程与版本记录</summary><EngineeringReasoningTrail data={page} />
+          <details><summary>可解释过程与版本记录</summary><EngineeringReasoningTrail data={page} working={workingRead.data} />
             <RevisionTimeline timeline={page.timeline} /></details>
         </RetainedWorkbenchPanel>
         <RetainedWorkbenchPanel active={active && tab === 'aeo'}>

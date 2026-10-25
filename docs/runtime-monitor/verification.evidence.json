@@ -6989,6 +6989,569 @@
         "private:p3-storage-metadata-20261025/execution/04-dev-extended-catalog.stdout.private.txt"
       ],
       "summary": "dev普通结构03返回not_found/exit1且stdout空；随后固定目录04成功返回10个独立SELECT结果，确认所选schema存在而Source父对象、processing-set两表及三个候选索引、指定immutable函数/目标触发器均无。默认ACL不替代RLS/来源授权。原两表回滚演练依赖缺失父对象，不能直接在dev执行；需先取得官方机制对online已有/dev缺失父对象的对象级覆盖及准确依赖依据，不按通用hint创建环境、重放九表或建空表。仅技术元数据，未读业务行/DDL/测试通过/业务runtime，真实producer/grant/完整关系输入仍缺，Astra窄审接受。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "fa14e1c2238f55821b196fe340084ce68a76d3e8",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e34-host联合发布与普通用户有限读回2026-10-25",
+      "scenarioIds": [],
+      "id": "host-identity-quality.fa14.exact-deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "translation.reading",
+        "wiki.saved-reading"
+      ],
+      "deploymentRef": "7700380662566505464",
+      "readbackRef": "private:host-identity-quality-delivery/execution-20261025/28-release-status.stdout.private.txt",
+      "startedAt": "2026-10-24T23:35:34.778821+00:00",
+      "finishedAt": "2026-10-24T23:38:53.125063+00:00",
+      "observedAt": "2026-10-24T23:38:53.125063+00:00",
+      "timeBasis": "首次push到首条finished回执的CLI操作窗口，不是服务端发布耗时或业务完成时间。25—27 publishing/旧b8保留，28才核准fa14。",
+      "inputRefs": [
+        "private:host-identity-quality-delivery/execution-20261025/07-authorization-local-preflight.private.json",
+        "private:host-identity-quality-delivery/RELEASE_PREPARATION.private.md"
+      ],
+      "outputRefs": [
+        "private:host-identity-quality-delivery/execution-20261025/17-readback-public-origin.stdout.private.txt",
+        "private:host-identity-quality-delivery/execution-20261025/19-readback-public-github.stdout.private.txt",
+        "private:host-identity-quality-delivery/execution-20261025/21-readback-private-origin.stdout.private.txt",
+        "private:host-identity-quality-delivery/execution-20261025/24-create-release.stdout.private.txt",
+        "private:host-identity-quality-delivery/execution-20261025/28-release-status.stdout.private.txt"
+      ],
+      "summary": "用户已明确批准准确公开319e4a7d9567a76242d0e1c8ec28cdbe300ad8c7与私有Host fa14e1c2238f55821b196fe340084ce68a76d3e8升级发布，原Wiki8f54/4008待批范围已由本次准确联合对象取代，仅保留历史身份。公开origin/github及私有origin三条同名ref分别读回319/319/fa14；唯一release7700380662566505464由回执24记录一次创建，回执25—27仍publishing且commit仍为旧b8，回执28才确认finished/完整fa14/error_logs空。预检及临发布完整差异为空、无其他在途；不以空差异证明P3对象或0082/83已部署。准确33路径含12产品、11测试、10 docs，非docs输入仍与已构建799相同，本轮没有重跑本地产品测试/build。仅技术同步/发布，不证明UI、reader、P3存储依赖、业务内容或模型/SAVE。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "fa14e1c2238f55821b196fe340084ce68a76d3e8",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e34-host联合发布与普通用户有限读回2026-10-25",
+      "scenarioIds": [],
+      "id": "host-identity-quality.fa14.native-user-fingerprint",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "research.overall",
+        "document.assessment-reading",
+        "translation.reading",
+        "wiki.saved-reading"
+      ],
+      "readbackRef": "private:host-identity-quality-delivery/ui-readback-20261025/01-runtime-version.ax.private.txt",
+      "observedAt": null,
+      "archiveRecordedAt": "2026-10-24T23:49:10.671648+00:00",
+      "buildTime": "2026-10-24T23:37:21.898Z",
+      "timeBasis": "UI包时间仅为顺序浏览结束后的归档时点，不倒填浏览器执行UTC；版本面板构建时间单列，不冒充来源观察时间。",
+      "inputRefs": [
+        "private:host-identity-quality-delivery/ui-readback-20261025/READONLY_OBSERVATION.private.json"
+      ],
+      "summary": "既有普通用户会话前后端均读回完整fa14，构建时间2026-10-24T23:37:21.898Z，environment PASS。Reader仍VERIFICATION_PENDING，界面七项blocker未展开；UI Release及API合同标签仍未知，不从CLI release或Git版本补成已知。此为版本/环境有限读回，不是阅读器或业务整链验收。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "fa14e1c2238f55821b196fe340084ce68a76d3e8",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e34-host联合发布与普通用户有限读回2026-10-25",
+      "scenarioIds": [],
+      "id": "host-identity-quality.fa14.bounded-reading",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "wiki.saved-reading",
+        "document.assessment-reading",
+        "research.overall"
+      ],
+      "readbackRef": "private:host-identity-quality-delivery/ui-readback-20261025/READONLY_OBSERVATION.private.json",
+      "observedAt": null,
+      "archiveRecordedAt": "2026-10-24T23:49:10.671648+00:00",
+      "directoryReadAt": "2026-10-24T23:43:39.848Z",
+      "sourceObservedAt": "2026-10-24T23:38:33.470Z",
+      "timeBasis": "归档时点不作浏览器执行UTC；目录面板的读取时钟与其来源观察时钟分别原样保存，不作业务完成时间。",
+      "outputRefs": [
+        "private:host-identity-quality-delivery/ui-readback-20261025/02-wiki-guide.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/03-root-saved-body.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/04-root-navigation-record.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/05-root-save-record.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/06-child-preview.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/07-child-exact-navigation.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/08-child-saved-body.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/09-child-actual-links.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/10-child-save-source-record.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/11-return-guide.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/12-saved-work-directory.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/13-wiki-saved-directory.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/14-root-runtime-diagnostic.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/15-diagnostic-artifact-navigation.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/16-diagnostic-root-readback.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/17-assessment-saved-work-navigation.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/18-legacy-work-route-return.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/19-assessment-entry.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/20-existing-ftd-review-readonly.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/21-sem-assessment-entry.ax.private.txt",
+        "private:host-identity-quality-delivery/ui-readback-20261025/22-sem-review-admission.ax.private.txt"
+      ],
+      "summary": "受测Wiki目录固定root/child保存引用；实际root与成员修订1正文、预览“本预览未展开此依据，前往确切成员版本”、child保存记录/来源状态和返回同root+chapter均读回。root诊断显式link及成果button实际跳到同一保存ref并读回正文；目录未读正文/关系未知、未提供活跃执行、时间/ACK/资源未提供的界限保持。普通knowledge目录和通用parent hierarchy链接仍不带summaryRef，另一既有目录项引用读取状态保留，不称所有导航准确化。既有FTD评估入口和原SEM已存在讨论只读可见，受测页面未出现重复登录；SEM页面/讨论版本均5，更新评估enabled但未点击，Overall跟随仍disabled。只记录该入口和有界导航成功，不外推所有用户、权限或业务执行。保存依据未变化、文档生命周期未纳入、发布方现行有效未核的原状态保持。操作仅导航/只读展开，无新讨论/聊天/模型/SAVE/AD重试或零全局副作用证明；P2真实质量及完整P5/M3不关闭。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "scenarioIds": [],
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "save.finish",
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "id": "ad-att5.save-arrived.host-log-boundary",
+      "observedAt": "2026-10-25T00:55:18.871018+00:00",
+      "eventAt": "2026-10-24T15:07:00.802Z",
+      "readbackRef": "private:content-review/att5-first-save-boundary-20261025/ATT5_SAVE_BOUNDARY_FACTS.private.json",
+      "inputRefs": [
+        "private:content-review/att5-first-save-boundary-20261025/01-exact-save-key-logs.stdout.private.txt",
+        "private:content-review/att5-first-save-boundary-20261025/02-exact-save-log.stdout.private.txt",
+        "private:content-review/att5-first-save-boundary-20261025/03-exact-save-trace.stdout.private.txt",
+        "private:content-review/att5-first-save-boundary-20261025/05-exact-trace-logs-network.stdout.private.txt",
+        "private:content-review/att5-first-save-boundary-20261025/07-save-event-index.stdout.private.txt"
+      ],
+      "timeBasis": "eventAt为原SAVE日志时间，observedAt仅本次历史查询完成时间；不当作新业务发生时间。",
+      "summary": "原ATT5至少一次SAVE已到Host；同稳定key前后READ_WORK。HTTP200、31 spans/31日志无写SQL或SQL错误，不等于业务保存成功或未进保存函数。请求10KB截断，MCP业务返回缺失。11条可见完整唯一引用均匹配交付记录，双PRUN可合法，不能据此修引用。最后正式SAVE0/Overall空保持；无新模型或保存。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "scenarioIds": [],
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "save.finish",
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "id": "ad-att5.native-tail.local-coverage-gap",
+      "observedAt": null,
+      "sourceObservedAt": "2026-10-24T14:52:17.138428Z",
+      "readbackRef": "private:content-review/att5-first-save-boundary-20261025/NATIVE_TAIL_LOCAL_INDEX.private.md",
+      "inputRefs": [
+        "private:ad-page-expansion-delivery/execution-20261024/21-ad-page-native-messages-p01.stdout.private.txt",
+        "private:ad-page-expansion-delivery/execution-20261024/22-ad-page-native-messages-p02.stdout.private.txt"
+      ],
+      "summary": "本地Native直接采样只到round6、尚无saved对象；14:53整理时点和后续开发核查轮completed不证明ATT5业务尾部。15:07:35.679 READ9与15:07:36.453最后心跳是Host侧时间。缺15:07后Native请求、run-result、gen8归档/active claim；准确请求目录已核、全局收尾固定文件仅由原配置及封存代码推导，未派发新指令。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "scenarioIds": [],
+      "kind": "runtime",
+      "status": "inconclusive",
+      "bindingIds": [
+        "save.finish",
+        "research.overall"
+      ],
+      "id": "ad-att5.native-targeted-read.result-return-gap",
+      "observedAt": "2026-10-25T01:12:23.248985+00:00",
+      "readbackRef": "private:content-review/att5-first-save-boundary-20261025/NATIVE_READBACK_HANDOFF.private.json",
+      "summary": "历史回传缺口：获批单次定点读取的开发轮completed/queue0，但消息接口及有界重读仅空消息，未据此认定实际读取完成。此后用户登录，固定终端读取取得新原件，见后续Native拒绝及归档证据；原指令未重发。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "scenarioIds": [],
+      "kind": "runtime",
+      "id": "ad-att5.native-round12.source-rejection",
+      "observedAt": "2026-10-25T01:29:38.602363+00:00",
+      "eventAt": "2026-10-24T15:07:00.802Z",
+      "status": "failed",
+      "bindingIds": [
+        "save.finish",
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "readbackRef": "private:content-review/att5-first-save-boundary-20261025/TERMINAL_CHECKPOINT_PROJECTION.private.json",
+      "inputRefs": [
+        "private:content-review/att5-first-save-boundary-20261025/TERMINAL_REFERENCE_ARCHIVE_PROJECTION.private.json",
+        "private:content-review/att5-first-save-boundary-20261025/REF_COMPARISON.private.json"
+      ],
+      "summary": "准确SAVE key对应round12 SAVE_WORK及JOBAID_SOURCE_NOT_DELIVERED拒绝，定位Host materialize来源交付校验、未进work.save。原模型候选本DVI的35个原文refs比对保存前121交付集，1个三PRUN/page-3-block-11不匹配，其合法双PRUN早于SAVE在READ4交付。保留Host校验；非完整materialize重放，未取得原MCP具体拒绝ref。尚无合法SAVE。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "b8ba1fb7be2840b56047c73cc08fb998ce5286a5",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "scenarioIds": [],
+      "kind": "runtime",
+      "id": "ad-att5.native-round14.gen9-archive",
+      "observedAt": "2026-10-25T01:29:38.602363+00:00",
+      "eventAt": "2026-10-24T15:48:06.467Z",
+      "status": "inconclusive",
+      "bindingIds": [
+        "save.finish",
+        "research.overall"
+      ],
+      "readbackRef": "private:content-review/att5-first-save-boundary-20261025/TERMINAL_REFERENCE_ARCHIVE_PROJECTION.private.json",
+      "summary": "round13纠正READ后，round14 HTTP400 incomplete_result/invalid_request_error，run-result REQUIRES_ATTENTION/UNKNOWN，saved null。准确身份gen9档案consumerStopped及BLOCK replay回执、本次active-claim JSON null，闭合业务驱动与队列归档清理；不推断provider终止，不写Native IDLE，不重放UNKNOWN。SAVE0/Overall空及业务未验收保持。"
+    },
+    {
+      "id": "ad-att5.source-alias.b50.local-validation",
+      "kind": "test",
+      "testLevel": "integration",
+      "status": "passed",
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "b50ad31c705dce84acc4562e723d28d5ada602d1",
+      "environmentId": null,
+      "observedAt": "2026-10-25T01:41:51.424903+00:00",
+      "timeBasis": "本次准确本地提交与验证记录整理时间，不是历史ATT5业务事件时间；运行输出保留在私有验证回执。",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "readbackRef": "private:att5-source-reference-repair-delivery/LOCAL_VERIFICATION.private.json",
+      "inputRefs": [
+        "private:content-review/att5-first-save-boundary-20261025/LOCAL_FIX_REVIEW.private.md"
+      ],
+      "bindingIds": [
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [],
+      "summary": "准确b50两文件修复，父319，正常提交clean。第三相同PRUN仅向catalog与本次已交付交集内的唯一准确双段ref纠正；exact/跨版/混合PRUN/错页/四段/缺交付/歧义均保留，旧UPDATE别名沿原规则。真实故障字段结构的runner SAVE路径、原候选/normalization、稳定key及前后READ、retained-work无额外READ均有合成回归。相关148/148、定向5/5、独立审查、语法及c238补丁适配通过；基线141包文件与c238一致。未打包安装/推送发布/模型SAVE，不是原Host完整materialize重放或业务验收，HTTP400 UNKNOWN保持。"
+    },
+    {
+      "id": "ad-att5.c239.exact-native-package.test",
+      "kind": "test",
+      "testLevel": "integration",
+      "status": "passed",
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "c9441561e4363db69f4d9b313a6b824ab6859cb2",
+      "environmentId": null,
+      "observedAt": "2026-10-25T02:45:31.856540+00:00",
+      "timeBasis": "准确本地包与逐项核验记录整理时间；不是安装或业务运行事件时间。",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "readbackRef": "private:att5-native-package-delivery/LOCAL_PACKAGE_VERIFICATION.private.json",
+      "inputRefs": [
+        "private:att5-native-package-delivery/EXACT_NATIVE_CANDIDATE.private.json",
+        "private:att5-native-package-delivery/INSTALL_SEQUENCE_REVIEW.private.md"
+      ],
+      "bindingIds": [
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [],
+      "summary": "c239准确包来自c944、父b50，6处当前版本声明更新，修复runner保持b50指纹；相对c238仅8文件。标准打包首次本机listen EPERM失败已保留，同一标准CLI在允许loopback监听的上下文唯一重跑exit0、mandatory suite passed；141文件逐项与manifest及准确Git一致，新extract按manifest恢复权限后141项复核通过，独立审查接受。安装审批材料已备；尚未上传/安装/同步/发布或创建新业务请求。Host fa14保持，原ATT5 UNKNOWN不重放；SAVE→独立READ→Overall→同版阅读仍待获准新后继实测。"
+    },
+    {
+      "id": "ad-att5.c239.installed.deployment",
+      "kind": "deployment",
+      "status": "passed",
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "c9441561e4363db69f4d9b313a6b824ab6859cb2",
+      "environmentId": "native:app_17c3zn24kv2:installed",
+      "observedAt": null,
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "readbackRef": "private:att5-native-package-delivery/execution-20261025/STAGE2_READBACK.private.json",
+      "bindingIds": [
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [],
+      "summary": "获准准确c239同名安装一次成功，141/141文件bytes/hash/mode匹配，实际入口与runner指纹吻合；skills list/info Ready、check无缺项。原ATT5获批固定20项未变（附带核对的g8仍缺失），安装后active claim空。Host fa14保持，无重复Host发布。平台报告已提交，SHA范围未给，未见push/release；不据此认定额外提交内容。",
+      "timeBasis": "安装汇总回执未给统一事件时间，observedAt留空；不以文件mtime推定安装时刻。"
+    },
+    {
+      "id": "ad-att5.c136.original-state-restored.runtime",
+      "kind": "runtime",
+      "status": "passed",
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "c9441561e4363db69f4d9b313a6b824ab6859cb2",
+      "environmentId": "native:app_17c3zn24kv2:installed",
+      "observedAt": "2026-10-25T03:21:58.320588+00:00",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "readbackRef": "private:att5-native-package-delivery/execution-20261025/STAGE3_READBACK.private.json",
+      "bindingIds": [
+        "save.finish",
+        "research.overall"
+      ],
+      "scenarioIds": [],
+      "summary": "C136按本窗口原enabled=true恢复；排除运行态字段后静态差异0，原schedule/payload等保持。恢复后的既有自然tick完成，runningAt消失、错误/跳过均0；未手动tick、未启动第二consumer或变更模型配置，原ATT5固定档案未变。平台报告已提交，SHA范围未给，未见push/release；本条仅证明调度恢复，不代替业务验收。",
+      "timeBasis": "observedAt为恢复后首个自然tick结束的准确读回时间，不冒充enable调用时刻。"
+    },
+    {
+      "id": "ad-att5.c239.new-ad-successor.accepted-running.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "sourceRevision": "fa14e1c2238f55821b196fe340084ce68a76d3e8",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "observedAt": "2026-10-25T03:27:09.769Z",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "readbackRef": "private:att5-native-package-delivery/execution-20261025/NEW_AD_SUCCESSOR.private.json",
+      "bindingIds": [
+        "save.finish",
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "正常入口一次新AD后继POST201、QUEUED、replayed=false、candidateOnly；后续同新attempt的正常用户GET HTTP200显示RUNNING，startedAt=2026-10-25T03:25:17.745Z。03:27:09.769Z读回current=null、Overall NOT_AVAILABLE，尚无已保存成果；等待SAVE、独立READ、Overall准确修订/正文、正常结束及同版阅读。原ATT5 UNKNOWN与旧key/档案保留，不重放；不是业务通过。",
+      "eventAt": "2026-10-25T03:25:17.745Z",
+      "acceptedObservedAt": "2026-10-25T03:24:34.054Z",
+      "inputRefs": [
+        "private:att5-native-package-delivery/execution-20261025/host-ui/11-new-successor-response.private.json",
+        "private:att5-native-package-delivery/execution-20261025/host-ui/13-new-successor-document-parsing.private.json",
+        "private:att5-native-package-delivery/execution-20261025/host-ui/14-new-successor-assessment-work.private.json",
+        "private:att5-native-package-delivery/execution-20261025/host-ui/monitor-001-assessment-work.private.json"
+      ],
+      "timeBasis": "acceptedObservedAt为POST201回执捕获时间；eventAt为Host返回startedAt，observedAt为随后正常授权GET捕获时间；仅记录这些时点，不推断未观察的后续结果。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "id": "ad-att5.c239.new-ad-successor.round6-stopped-host-running.runtime",
+      "kind": "runtime",
+      "status": "inconclusive",
+      "sourceRevision": "fa14e1c2238f55821b196fe340084ce68a76d3e8",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "nativeSourceRevision": "c9441561e4363db69f4d9b313a6b824ab6859cb2",
+      "observedAt": "2026-10-25T03:51:38.808302+00:00",
+      "eventAt": "2026-10-25T03:41:59.909Z",
+      "hostObservedAt": "2026-10-25T03:50:50.961Z",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "readbackRef": "private:att5-native-package-delivery/execution-20261025/NEW_RUN_STOPPED_READBACK.private.json",
+      "inputRefs": [
+        "private:att5-native-package-delivery/execution-20261025/NEW_RUN_ROUND6_TERMINAL.private.json",
+        "private:att5-native-package-delivery/execution-20261025/NEW_RUN_STOPPED_READBACK.private.json",
+        "private:att5-native-package-delivery/execution-20261025/host-ui/monitor-016-document-parsing.private.json",
+        "private:att5-native-package-delivery/execution-20261025/host-ui/monitor-016-assessment-work.private.json"
+      ],
+      "bindingIds": [
+        "save.finish",
+        "research.overall",
+        "document.assessment-reading"
+      ],
+      "scenarioIds": [],
+      "summary": "本次唯一正常新AD后继round6于03:41:59.909Z返回HTTP400，错误incomplete_result/invalid_request_error，shape TERMINAL_RESPONSE_MISSING，run-result为REQUIRES_ATTENTION/UNKNOWN及JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE。03:51:38.808302Z同新request/AQ队列consumerStopped=true；03:50:50.957—.961Z正常用户GET HTTP200仍为Host BUSY/RUNNING、current=null、Overall NOT_AVAILABLE，0保存成果，Host回显尚未闭合。c239安装仍通过，SAVE引用修复未获真实保存证成；业务验收未通过。inconclusive指业务终态及上游结果未决，不掩盖本轮HTTP失败；不推断provider终止或SAVE从未派发，不重放新旧UNKNOWN，原ATT5保留。",
+      "timeBasis": "eventAt为Native round6结果finishedAt；observedAt为固定队列与安全错误字段读回时间，hostObservedAt为Host保存视图GET捕获时间（初始分析GET为03:50:50.957Z）。这些为不同观察时点，不推断其后的Host终态或队列归档。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "id": "ad-att5.c239.new-ad-successor.host-deadline-terminal.runtime",
+      "kind": "runtime",
+      "status": "failed",
+      "sourceRevision": "fa14e1c2238f55821b196fe340084ce68a76d3e8",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "nativeSourceRevision": "c9441561e4363db69f4d9b313a6b824ab6859cb2",
+      "observedAt": "2026-10-25T04:25:46.719Z",
+      "eventAt": "2026-10-25T04:25:10.420Z",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "readbackRef": "private:att5-native-package-delivery/execution-20261025/host-ui/monitor-018-assessment-work.private.json",
+      "inputRefs": [
+        "private:att5-native-package-delivery/execution-20261025/NEW_RUN_G11_NORMAL_CLOSE.private.json",
+        "private:att5-native-package-delivery/execution-20261025/host-ui/monitor-018-assessment-work.private.json",
+        "private:att5-native-package-delivery/execution-20261025/host-ui/monitor-018-document-parsing.private.json"
+      ],
+      "bindingIds": [
+        "research.overall",
+        "save.finish"
+      ],
+      "scenarioIds": [],
+      "summary": "同一新请求6538a059-2038-47b3-ac65-5f38a4ada16c / AQ-eb39bc28147e4ab6a31267e89166ced7 / ATT-6c8f46e2-7317-4bf8-bd42-0d788ee08f99（WI同一，inputRevision=3）Host attempt于04:25:10.420Z终结TIMED_OUT；04:25:46.715/719Z两项正常用户GET分别显示initialAnalysis=FAILED、JobAid=FAILED/ACTION_ATTEMPT_DEADLINE_EXCEEDED、Overall阶段PENDING，以及selectedExecution=TIMED_OUT、sourceReads=5、firstSavedAt=null、current=null、assessment-work Overall=NOT_AVAILABLE。业务链失败，保存数0。此Host deadline收尾与03:41:59.909Z先前Gateway HTTP400 incomplete_result是两个事件；Native run-result仍REQUIRES_ATTENTION/UNKNOWN，不把Host期限写成Gateway timeout，也不推断上游结果。",
+      "timeBasis": "eventAt为Host attempt.completedAt；observedAt为04:25:46.719Z assessment-work只读GET，document-parsing GET在04:25:46.715Z。两投影字段不同，assessment-work Overall NOT_AVAILABLE与initialAnalysis Overall PENDING分别如实记录。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "id": "ad-att5.c239.new-ad-successor.g11-normal-queue-close.runtime",
+      "kind": "runtime",
+      "status": "passed",
+      "sourceRevision": "fa14e1c2238f55821b196fe340084ce68a76d3e8",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "nativeSourceRevision": "c9441561e4363db69f4d9b313a6b824ab6859cb2",
+      "observedAt": "2026-10-25T04:26:47.295483+00:00",
+      "eventAt": "2026-10-25T04:25:13.185Z",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "readbackRef": "private:att5-native-package-delivery/execution-20261025/NEW_RUN_G11_NORMAL_CLOSE.private.json",
+      "inputRefs": [
+        "private:att5-native-package-delivery/execution-20261025/NEW_RUN_G11_NORMAL_CLOSE.private.json",
+        "private:att5-native-package-delivery/execution-20261025/NEW_RUN_ROUND6_TERMINAL.private.json",
+        "private:att5-native-package-delivery/execution-20261025/NEW_RUN_STOPPED_READBACK.private.json"
+      ],
+      "bindingIds": [
+        "save.finish"
+      ],
+      "scenarioIds": [],
+      "summary": "新attempt的自动队列在generation 10正常到期后续领generation 11，并于04:25:13.185Z正常形成BLOCKED归档；04:26:47.295483Z固定读回activeClaim=null，archive generation=11、consumerStopped=true、attentionCode=JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE。同期run-result仍REQUIRES_ATTENTION/UNKNOWN、attemptStatus=UNKNOWN，归档不是业务成功，也不代表Gateway已成功终态；旧ATT5/g9保持原样。",
+      "timeBasis": "eventAt为generation 11 archive.blockedAt；observedAt为随后固定只读回执采集时点。generation 10正常到期后续领generation 11；未手工改写代次、未重放请求。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "id": "ad-att5.c239.new-ad-successor.inherited-m3-model.runtime",
+      "kind": "runtime",
+      "status": "passed",
+      "sourceRevision": "fa14e1c2238f55821b196fe340084ce68a76d3e8",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "nativeSourceRevision": "c9441561e4363db69f4d9b313a6b824ab6859cb2",
+      "observedAt": "2026-10-25T04:25:46.715Z",
+      "eventAt": "2026-10-25T03:24:13.515Z",
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "readbackRef": "private:att5-native-package-delivery/execution-20261025/MODEL_SELECTION_FINDING.private.md",
+      "inputRefs": [
+        "private:att5-native-package-delivery/execution-20261025/MODEL_SELECTION_FINDING.private.md",
+        "private:att5-native-package-delivery/execution-20261025/host-ui/monitor-018-document-parsing.private.json",
+        "private:att5-native-package-delivery/execution-20261025/host-ui/20-current-model-settings.ax.private.txt"
+      ],
+      "bindingIds": [],
+      "scenarioIds": [],
+      "summary": "本次新请求对应的既有WorkItem阶段模型为M3 Probe Large（m3probe/minimax-m3，settingsRevision=0，selectedAt=2026-10-10T10:16:16.438Z）；当前全局已保存默认是GLM 5.3 revision 1。新请求继承冻结的WorkItem模型，不是Native c239在运行时把GLM回退到M3。本轮M3 HTTP400/Host deadline不能记为GLM失败，也不是GLM 5.3运行测试。此记录只界定模型来源，不判断模型质量或业务成功。",
+      "timeBasis": "eventAt为新后继POST入队时间；observedAt为本轮Host document-parsing模型绑定读回时间。当前全局默认修订来自独立MODEL_SELECTION_FINDING及其正常设置页面AX，不用文件mtime推定保存时间。"
+    },
+    {
+      "contractRevision": "415bd2b80a70961456ed4d171be91f0898ea2014eefb1e38f1e4464c6f9ed619",
+      "id": "ad-att5.c239.original-fixed-set.unchanged-after-successor.runtime",
+      "kind": "runtime",
+      "status": "passed",
+      "sourceRevision": "fa14e1c2238f55821b196fe340084ce68a76d3e8",
+      "environmentId": "host:app_17bzc551rsg:online",
+      "nativeSourceRevision": "c9441561e4363db69f4d9b313a6b824ab6859cb2",
+      "observedAt": "2026-10-25T04:29:38.311168+00:00",
+      "eventAt": null,
+      "reportRef": "docs/coordination/ATT5_SAVE_BOUNDARY_20261025.md",
+      "readbackRef": "private:att5-native-package-delivery/execution-20261025/ORIGINAL_ATT5_FINAL_METADATA.private.json",
+      "inputRefs": [
+        "private:att5-native-package-delivery/execution-20261025/ORIGINAL_ATT5_FINAL_METADATA.private.json"
+      ],
+      "bindingIds": [],
+      "scenarioIds": [],
+      "summary": "本轮新请求Host期限收尾及generation 11归档后，对原ATT5固定20项逐项bytes/hash复核：checkedEntries=20、changed=[]、errors=[]、allUnchanged=true；覆盖原request/UNKNOWN/g9归档信息，当前active-claim读回为null。该只读比较确认旧ATT5检查点未被本批修改，不解除其UNKNOWN、不表示业务成功。",
+      "timeBasis": "observedAt为2026-10-25T04:29:38.311168Z元数据比对记录时点；不以文件mtime替代。"
+    },
+    {
+      "id": "program-initial.first-batch.source_review",
+      "kind": "source_review",
+      "status": "not_run",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": null,
+      "testLevel": null,
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "nodeIds": [
+        "source.original",
+        "assessment.research",
+        "assessment.overall",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "original.research",
+        "research.overall",
+        "artifact.reading"
+      ],
+      "scenarioIds": [
+        "V55",
+        "V56",
+        "V57",
+        "V58"
+      ],
+      "reportRef": "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
+      "summary": "程序控制第一批已进入本地实施，完整独立审查待完成；不代表已部署。"
+    },
+    {
+      "id": "program-initial.first-batch.test",
+      "kind": "test",
+      "status": "not_run",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": null,
+      "testLevel": null,
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "nodeIds": [
+        "source.original",
+        "assessment.research",
+        "assessment.overall",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "original.research",
+        "research.overall",
+        "artifact.reading"
+      ],
+      "scenarioIds": [
+        "V55",
+        "V56",
+        "V57",
+        "V58"
+      ],
+      "reportRef": "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
+      "summary": "定向测试随各实际消费者实施；完整组合结果待登记，不用测试数替代真实交付。"
+    },
+    {
+      "id": "program-initial.first-batch.deployment",
+      "kind": "deployment",
+      "status": "not_run",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": null,
+      "testLevel": null,
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "nodeIds": [
+        "source.original",
+        "assessment.research",
+        "assessment.overall",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "original.research",
+        "research.overall",
+        "artifact.reading"
+      ],
+      "scenarioIds": [
+        "V55",
+        "V56",
+        "V57",
+        "V58"
+      ],
+      "reportRef": "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
+      "summary": "本候选未同步、未发布、未安装。线上fa14/c239的历史回执另列。"
+    },
+    {
+      "id": "program-initial.first-batch.runtime",
+      "kind": "runtime",
+      "status": "not_run",
+      "contractRevision": null,
+      "sourceRevision": null,
+      "environmentId": null,
+      "testLevel": null,
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "nodeIds": [
+        "source.original",
+        "assessment.research",
+        "assessment.overall",
+        "surface.reading"
+      ],
+      "edgeIds": [
+        "original.research",
+        "research.overall",
+        "artifact.reading"
+      ],
+      "scenarioIds": [
+        "V55",
+        "V56",
+        "V57",
+        "V58"
+      ],
+      "reportRef": "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
+      "summary": "新程序流程尚未运行真实模型/SAVE；原ATT5 UNKNOWN和c239失败后继保留，不把旧回执改称新流程通过。"
     }
   ]
 }

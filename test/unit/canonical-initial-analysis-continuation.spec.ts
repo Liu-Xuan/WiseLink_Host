@@ -73,6 +73,7 @@ describe('owner-requested initial continuation', () => {
               tenantId: actor.tenantId,
             }
           : undefined,
+        undefined, undefined, undefined,
       );
       session.actor.tenantId = 'other-tenant';
       await expect(
@@ -300,11 +301,21 @@ describe('owner-requested initial continuation', () => {
       'permission-1',
       request.requestId,
       'INITIAL_PROBLEM_ASSESSMENT',
-      undefined,
+      undefined, undefined, undefined, undefined,
     );
   });
 
-  it('rejects invalid or injected commands before authorization', async () => {
+  it('queues explicit program/model intent only for a new initial assessment', async () => {
+    const h = harness();
+    const command = {...request, operation: 'EVALUATE_JOBAID', executionMode: 'PROGRAM_CONTROLLED_V1', modelRef: 'miaoda/glm-5.3'};
+    await h.send(command);
+    expect(h.jobAid.enqueueContinuation).toHaveBeenCalledWith(h.workItem, actor.tenantId, 'permission-1',
+      request.requestId, 'INITIAL_PROBLEM_ASSESSMENT', undefined, undefined, undefined, {modelRef: 'miaoda/glm-5.3'});
+    await expect(h.send({...command, operation: 'SYNTHESIZE_OVERALL'})).rejects.toThrow('PROGRAM_SCOPE_INVALID');
+    await expect(h.send({...command, modelRef: undefined})).rejects.toThrow('PROGRAM_SCOPE_INVALID');
+  });
+
+  it('rejects invalid or injected commands before authorization' , async () => {
     const h = harness();
     for (const body of [
       { ...request, actorUserId: 'other' },

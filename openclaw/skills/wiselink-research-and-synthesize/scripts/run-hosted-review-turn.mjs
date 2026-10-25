@@ -1998,9 +1998,10 @@ export function validateHostToolMetadata(value) {
   const tools = Array.isArray(value?.tools) ? value.tools : [];
   // Optional control capabilities do not join the established required surface.
   const stoppedControl = 'record_assessment_consumer_stopped';
+  const programControl = 'record_assessment_program_progress';
   const names = tools.map(({ name }) => name)
     .filter((name) => name !== 'get_pending_review_turn' && name !== REVIEW_NATIVE_READ_TOOL &&
-      name !== stoppedControl).sort();
+      name !== stoppedControl && name !== programControl).sort();
   const expected = [...HOST_MCP_TOOLS].sort();
   if (canonicalJson(names) !== canonicalJson(expected)) {
     throw new Error('REVIEW_HOST_MCP_EXACT20_MISMATCH');
@@ -2008,6 +2009,9 @@ export function validateHostToolMetadata(value) {
   const stopped = tools.filter(({ name }) => name === stoppedControl);
   if (stopped.length > 1) throw new Error('JOBAID_CONSUMER_STOPPED_CAPABILITY_SCHEMA_INVALID');
   if (stopped.length) validateConsumerStoppedToolMetadata(stopped[0]);
+  const program = tools.filter(({ name }) => name === programControl);
+  if (program.length > 1) throw new Error('PROGRAM_ASSESSMENT_CAPABILITY_SCHEMA_INVALID');
+  if (program.length) validateProgramProgressToolMetadata(program[0]);
   const native = tools.filter(({ name }) => name === REVIEW_NATIVE_READ_TOOL);
   if (native.length > 1) throw new Error('REVIEW_NATIVE_READ_CAPABILITY_SCHEMA_INVALID');
   if (native.length) validateReviewNativeToolMetadata(native[0], tools);
@@ -2056,6 +2060,28 @@ export function validateHostToolMetadata(value) {
   ) {
     throw new Error('REVIEW_HOST_MCP_PRECHECK_SCHEMA_MISMATCH');
   }
+}
+
+function validateProgramProgressToolMetadata(tool) {
+  const schema = tool.inputSchema;
+  const required = ['attemptRef', 'workItemId', 'leaseToken', 'leaseGeneration', 'phase', 'checkpointRef'].sort();
+  const expected = [...required, 'materialSnapshotJson'].sort();
+  const props = schema?.properties;
+  if (schema?.type !== 'object' || schema.additionalProperties !== false ||
+      canonicalJson(Object.keys(props ?? {}).sort()) !== canonicalJson(expected) ||
+      canonicalJson([...(schema.required ?? [])].sort()) !== canonicalJson(required) ||
+      props.attemptRef?.type !== 'string' || props.attemptRef.minLength !== 1 ||
+      props.workItemId?.type !== 'string' || props.workItemId.minLength !== 1 ||
+      props.leaseToken?.type !== 'string' || props.leaseToken.format !== 'uuid' ||
+      props.leaseGeneration?.type !== 'integer' ||
+      !(props.leaseGeneration.minimum >= 1 || props.leaseGeneration.exclusiveMinimum >= 0) ||
+      props.phase?.type !== 'string' ||
+      canonicalJson([...(props.phase.enum ?? [])].sort()) !== canonicalJson(['MATERIALS_READY', 'MODEL_RESPONSE_SAVED']) ||
+      props.checkpointRef?.type !== 'string' || props.checkpointRef.pattern !== '^[A-Za-z0-9:._-]{1,512}$' ||
+      props.materialSnapshotJson?.type !== 'string' || props.materialSnapshotJson.minLength !== 1 ||
+      tool.annotations?.readOnlyHint !== false || tool.annotations?.destructiveHint !== false ||
+      tool.annotations?.idempotentHint !== true || tool.annotations?.openWorldHint !== false)
+    throw new Error('PROGRAM_ASSESSMENT_CAPABILITY_SCHEMA_INVALID');
 }
 
 function validateConsumerStoppedToolMetadata(tool) {

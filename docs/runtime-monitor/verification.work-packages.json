@@ -25,10 +25,10 @@
         "V26",
         "V28"
       ],
-      "nextAction": "原ATT5已正常期限TIMED_OUT且Host外层BLOCK/清租约，不再等待其继续产出；保留checkpoint和既有副作用，不强停、另起/重试或切执行器。停止新增自制业务loop/续接恢复框架及相关发布准备，先核原生桥能否复用现存可信attempt/lease、固定对象及稳定saveKey/revision职责；静态工具名单不等于可信注入，Host边界保持。",
+      "nextAction": "当前最高优先级按2026-10-25新方案交付程序控制评估：准确连续材料、完整响应、SAVE、独立READ、合法初评Overall、同版阅读和收尾；新请求明确GLM绑定。原ATT5 UNKNOWN与已结束的旧后继保持，旧技术及业务回执分别保留。",
       "progress": {
-        "delivered": "准确b7/b8三ref、finished发布/双端b8指纹及c238/原C136保持的技术交付事实保留，旧ATT3/ATT4失败与Gateway UNKNOWN原件不改。原ATT5有限PAGE读取和M3入口实证保持；最新40/41正式Host已读回正常期限TIMED_OUT、gen9 BLOCKED/清租约、该attempt SAVE0、Overall指针空及无同动作后继，根仅SELECT。该Host收尾不证明Native进程/检查点或UNKNOWN已清，不再等待原ATT5继续产出。原生agent run/客户端工具/应用换段并存的纠偏及现存可信上下文入口保留，实际桥注入与目标加载未证。",
-        "remaining": "保留原ATT5 checkpoint/副作用与准确终态，Native进程/检查点、调度回执与UNKNOWN清理未由本轮Host SELECT证明，不新起模型或切执行器。先核原生桥复用现存可信上下文的实际能力，停止新增loop/续接恢复及相关补丁发布准备，不预设新context API/插件/框架或保证治愈M3 UNKNOWN。真实SAVE/Overall及完整阅读/语义仍无闭环，有限PAGE/M3和本例P4读取各不替代实际工程消费者。存量质量/SEM、0082/83、大包与旧数据处置各守准确范围，未决先对账。",
+        "delivered": "原ATT5首次SAVE被SOURCE_NOT_DELIVERED拒绝、round14 UNKNOWN、旧generation9归档，以及准确c239安装和C136原状态恢复均保持原证据。本次唯一正常新AD请求/AQ/ATT绑定同一WI、inputRevision=3，03:41:59.909Z round6遇Gateway HTTP400 incomplete_result；04:25 Host readback随后显示ATT TIMED_OUT、initialAnalysis/JobAid FAILED、Overall PENDING，保存0。generation10到期后由generation11正常收尾并归档，activeClaim=null；本地Native run-result仍UNKNOWN。Global GLM5.3 revision1与本WorkItem冻结M3 revision0分开；该请求继承M3，不代表运行时回退或GLM实测。",
+        "remaining": "业务链未通过：Host attempt已到期TIMED_OUT，但Native run-result仍REQUIRES_ATTENTION/UNKNOWN；assessment-work current为空、Overall NOT_AVAILABLE，document-parsing Overall阶段PENDING，未保存成果。先前Gateway HTTP400 incomplete_result与后续Host期限收尾分别记录，不能称Gateway timeout或推断provider终止。SAVE修复尚未真实证成；独立READ、Overall准确workRef/正文、正常成功结束与同版阅读均未验收。attention修复仅在本地候选审查，不写已发布或完成。原ATT5及新UNKNOWN不重放；需明确GLM新绑定后才能称GLM运行测试。",
         "owner": "主控集成及各既有消费者负责范围",
         "acceptance": "按§6.5各行只关闭已证明范围：同Hosted实际来源查询通过，UI/Host/Native原请求及来源绑定可核，必要版本/对象已准确交付；获准真实SAVE、Overall workRef与同版阅读及有关变化语义对应。撤权/错身份/旧fence等反例拒绝且旧成果保留；PG、入队、BLOCK或release finished各不替代业务完成。 每次结构/语义升级的旧数据有明确迁移/新版重生成/清理处置，旧引用、当前指针、索引/缓存及下游已处理并读回；不强制所有历史永久兼容。",
         "evidenceIds": [
@@ -122,7 +122,22 @@
           "native-loop.boundary-correction.source-review",
           "ad-page.b8.real-page-read-bounded.runtime",
           "m3.b8.current-object-three-view-bounded.runtime",
-          "ad-page.b8.att5-deadline-host-block.runtime"
+          "ad-page.b8.att5-deadline-host-block.runtime",
+          "ad-att5.save-arrived.host-log-boundary",
+          "ad-att5.native-tail.local-coverage-gap",
+          "ad-att5.native-targeted-read.result-return-gap",
+          "ad-att5.native-round12.source-rejection",
+          "ad-att5.native-round14.gen9-archive",
+          "ad-att5.source-alias.b50.local-validation",
+          "ad-att5.c239.exact-native-package.test",
+          "ad-att5.c239.installed.deployment",
+          "ad-att5.c136.original-state-restored.runtime",
+          "ad-att5.c239.new-ad-successor.accepted-running.runtime",
+          "ad-att5.c239.new-ad-successor.round6-stopped-host-running.runtime",
+          "ad-att5.c239.new-ad-successor.host-deadline-terminal.runtime",
+          "ad-att5.c239.new-ad-successor.g11-normal-queue-close.runtime",
+          "ad-att5.c239.new-ad-successor.inherited-m3-model.runtime",
+          "ad-att5.c239.original-fixed-set.unchanged-after-successor.runtime"
         ]
       }
     },
@@ -135,10 +150,10 @@
       "scenarioIds": [
         "V12"
       ],
-      "nextAction": "准确UPDATE-only Host适配eb53已与P2 43d组成联合799本地候选，独立交付不以0082/83、Native表格补丁或Document CHAT版本pin为前置；原625留其历史身份，当前线上仍b8/c238，候选未发布。后续按准确候选范围交付并核对原请求，真实SEM继续沿实际任务/delivered/READ、保存问题正文、Overall previousWork/finish/artifact与同版重读核对；一般严重性定义/旧保存消费者不重做，受控方法版次和具体后果/暴露/控制事实缺口保持。空讨论、0attempt/0SAVE的合成PG或构建均不关闭真实内容验收，原AD终态与Native可信上下文缺口保持。",
+      "nextAction": "以已发布fa14为技术基线，沿真实任务/delivered/READ、保存问题正文和Overall previousWork/finish/artifact及同版重读核对真实SEM和方法/事实。仅沿已有只读授权继续；新增模型/SAVE和旧数据处置守各自准确授权，不再把旧Wiki待批对象或本地799列为当前发布前置。",
       "progress": {
-        "delivered": "JA-AC§3.1四级一般严重性定义已作为独立方法材料接入并随787交付，旧risk六事件规则、保存及Overall消费者保持。原170项Jest、2项Node与构建沿真实源码/时间保留；有限UI读到既有work1四问题及同work综合。 本轮625补原生WorkItem UPDATE admission，服务33/33、受限PG3/3及一次准确完整构建本地通过；原284证据与12binding对象保持，未发布。 本轮P1 eb53（父8f54）UPDATE-only三文件已适配当前Host；服务33/33、server tsc/定向ESLint及收窄真实受限PG run02三项含父3/3通过，不装0082/83、新attempt0/SAVE0、既有RLS策略不变。Astra终审/正常hook提交接受，现已按七文件无交集/来源字节一致组合入准确联合799本地产品。 准确联合799的标准完整build run02 exit0、44.680512秒、前后HEAD/clean及四fresh子日志成立；run01官方CLI的沙箱DNS失败保留，未进入编译，不计通过。",
-        "remaining": "受控方法Host版次仍未确认，真实后果、暴露/控制事实和SEM正文使用未验收。同ref和合成用例不证明当次模型实际使用特定原文语义。 原页面只创建空讨论，0turn/模型/评估SAVE，原SEM文字仍在；新入口候选本地通过不等于线上已修复或真实内容已更新，AD优先及准确原请求保持。 联合799未同步/发布，本地UPDATE admission/PG不证明当次模型、真实SEM或旧文本更正；旧完整C5链仅继承未重跑，原数据未重检/清理。",
+        "delivered": "JA-AC§3.1一般严重性定义、原risk规则和保存/Overall既有消费者保持。独立P1 eb53的UPDATE-only准入随799产品输入经准确319/fa14联合技术发布；普通用户版本读回一致。受测原SEM页及已存在讨论均为版本5，更新评估按钮enabled未点，Overall跟随disabled。原服务33/33、未装0082/83的受限PG3/3及799本地build保留原身份，不计本轮新运行；旧625仅为历史对象。",
+        "remaining": "技术上线与有限入口显示已读回，真实UPDATE执行、Source/READ、模型/SAVE和Overall仍未由本轮验收。受控方法Host版次、真实后果/暴露/控制资料及SEM正文语义使用仍缺；旧文本未更正/重检/清理。原AD终态和Native可信上下文未知保持，enabled按钮不代替执行证明。",
         "owner": "原文/方法、保存及Overall实际消费者；工程内容验收",
         "acceptance": "准确原文、实际delivered/READ及模型输入、保存问题正文、Overall previousWork/finish/artifact的语义使用能够对应；方法和业务依据可追溯，缺失事实仍为未知。",
         "evidenceIds": [
@@ -155,7 +170,10 @@
           "p1.host-isolated.eb53.source-review",
           "p1.host-isolated.eb53.service33.test",
           "p1.host-isolated.eb53.pg3.test",
-          "p1-p2.host-isolated.799.standard-full-build.test"
+          "p1-p2.host-isolated.799.standard-full-build.test",
+          "host-identity-quality.fa14.exact-deployment",
+          "host-identity-quality.fa14.native-user-fingerprint",
+          "host-identity-quality.fa14.bounded-reading"
         ]
       }
     },
@@ -180,10 +198,10 @@
         "V28",
         "V30"
       ],
-      "nextAction": "纯Host质量/reuse独立43d已与P1 eb53组成准确联合799本地候选：独立no/checker2.3与已知2.2文本复用后强制新检查不依赖df17 Native表格投影、b907 Document CHAT版本pin、c237或0082/83，可按准确Host范围独立交付。原ATT5已期限终态/外层BLOCK，不等继续产出，不另起/重试或切执行器；有限PAGE读取结论保持。实际Reference/CMCF/OPS、表格/否定/术语、SEM和准确SAVE/Overall仍按原授权核对，旧保存文本没有自动更正、取消选用、重检或清理；完整catalog/脚注全集/模型实收理解及Native可信上下文差额不关闭，不新增自制loop/续接恢复。",
+      "nextAction": "以fa14已交付的Host质量/reuse为技术基线，按原授权核对真实已选范围的新更正/检查/选用/阅读及准确源版；保留当前内容缺口与原ATT5终态，不另起/重试、切执行器或新增自制loop。较大Native批次、0082/83、旧数据更正/重检/清理仍分别处理，不因技术发布升级验收。",
       "progress": {
-        "delivered": "历史原文/局部中英对照、保存质量问题及原候选/检查/selected保持，PAGE b7验证/build与b8技术交付保留。原ATT5前5轮20 PAGE seeds有限真实扩展、两条除外条件及第1—4轮Native/Host引用等值仍成立，不宣称全页/脚注全集。原先9 READ/121 refs观察保留其时点，40/41另证原ATT5 TIMED_OUT/Host外层BLOCK、该attempt SAVE0和Overall空，不再等其继续产出。有限M3及可信上下文入口纠偏均不关闭存量质量、SEM或完整业务验收。 本轮P2独立43d（父8f54）精确提取9e相对3cccae的两个Host质量/reuse文件和两个原spec，四个最终文件与9e逐字节一致；两suite一次43/43及diff检查通过，正常hook提交且干净。独立APFS依赖副本无安装/lock修改，未带Native/schema/Document CHAT。现与P1无交集组成联合799，保留LOCAL_CHECK/CHECK/CHECK_BATCH与原阅读消费者。 准确联合799的标准完整build run02 exit0、44.680512秒、前后HEAD/clean及四fresh子日志成立；run01官方CLI的沙箱DNS失败保留，未进入编译，不计通过。",
-        "remaining": "有限PAGE读取已证，完整未过滤catalog、脚注全集、模型完整实收/理解及真实保存/Overall仍缺；原ATT5已终态不再等待，原checkpoint/副作用保留。两块已选措施、Reference准确修订/新检查/selected/阅读及表格/否定/术语、SEM真实依据仍按原范围验收，purpose自述不作SAVE错误。Native进程/检查点与UNKNOWN未由Host终态证明已清，停止新增自制loop/续接恢复及相关发布准备，先核可信原生接入。大包、0082/83和旧数据处置各守独立范围，未决先对账。 联合799仅本地未发布；43项Host回归不构成Reference/CMCF/OPS或表格/术语真实内容验收，不自动重写、取消选用或重检旧保存文本，旧数据更正/重检/清理仍待授权。",
+        "delivered": "历史PAGE b7/b8有限读取、已保存候选与检查证据保持。纯Host独立43d四文件的独立no/checker2.3、准确已知2.2文本复用后强制新检查及原LOCAL_CHECK/CHECK/CHECK_BATCH/selected阅读消费者已随准确319/fa14技术发布，前后端版本一致。原两suite43/43与799标准build按原源码和时钟保留，未在本轮重跑；没有带入Native表格投影、Document CHAT pin或0082/83。",
+        "remaining": "发布与版本通过不等于Reference/CMCF/OPS、表格/否定/术语或SEM真实质量验收；旧保存文本没有自动更正、取消选用、重检或清理。完整catalog/脚注全集、模型实收理解、真实保存/Overall和Native可信上下文仍未证明。原ATT5已TIMED_OUT/外层BLOCK，该attempt SAVE0及Overall空保持，旧检查点/副作用未知不清除。Reader仍VERIFICATION_PENDING。",
         "owner": "既有阅读前端、ReviewOverall身份、OpenClaw交互及Aily只读适配范围",
         "acceptance": "§6.5所需准确源版/存量修订进入真实新检查，已选范围的更正、检查、选用和阅读一致；否定/表格/术语及SEM方法、后果/暴露依据在真实正文中正确处理，缺资料仍未知。撤权、错版、普通继续跳过已选块等反例不被通过状态掩盖；保留原候选和历史检查，不增加逐块人工确认前置。",
         "evidenceIds": [
@@ -278,7 +296,9 @@
           "ad-page.b8.att5-deadline-host-block.runtime",
           "p2.host-isolated.43d.source-review",
           "p2.host-isolated.43d.quality-reuse43.test",
-          "p1-p2.host-isolated.799.standard-full-build.test"
+          "p1-p2.host-isolated.799.standard-full-build.test",
+          "host-identity-quality.fa14.exact-deployment",
+          "host-identity-quality.fa14.native-user-fingerprint"
         ]
       }
     },
@@ -358,10 +378,10 @@
         "V20",
         "V16"
       ],
-      "nextAction": "当前线上准确b8/c238，原/situation root/child确切保存正文/修订/来源状态与返回范围的有限读取不重复。准确Wiki联合候选4a（父163a）已完整组合cc22保存头导航13文件与163a预览三文件，定向Jest19/19、typecheck、正常hook及准确clean4a一次标准完整build通过；尚未同步/发布，按已审准确范围待批准发布及交付读回。以真实Source/版本/状态逐类核对普通反馈、审批/措施和技术来源变化的最小影响、正文修订及下游覆盖，并补历史切换/撤权和必要消费者；保留历史正文/未知，不为缺源或图登记重复生成。",
+      "nextAction": "以fa14技术交付和本次有界读回为基线，避免重复同一root/child导航证明；沿真实Source/版本/状态补三类变化的准确影响、正文修订与下游覆盖、历史切换/撤权及必要消费者。保留旧正文/未知和原存储结构，不为缺源或图登记重复生成；本地docs后继另未同步/发布。",
       "progress": {
-        "delivered": "已存Wiki成员关系与阅读、显式委托到期漏唤醒修复、Estimated及有限增量消费者已在787技术交付，原代码/局部测试和历史运行证据保留。线上准确b8原用户/situation root/child确切保存正文/修订1、来源状态及原root/chapter返回的有限两层读取保持，环境PASS、reader仍VERIFICATION_PENDING。当前本地准确联合4a（父163a）完整选择性集成cc22十三文件，保存头目录/诊断/artifact准确ref导航与163a成员预览fallback已在同一候选；原三预览文件字节保持，Astra范围/接口分析接受，联合四套Jest19/19、client tsc/server原生脚本及正常hook通过。准确clean联合4a唯一标准完整build exit0，42.967489667秒，前后准确HEAD/clean及四fresh子日志成立；仍仅本地候选。",
-        "remaining": "准确联合4a尚未同步/发布；本地M3同savedRevision ref导航与预览证据不能当线上运行，线上b8原限制不据候选测试记为已修复。普通反馈、审批/措施和技术来源变化的准确影响、正文修订/下游覆盖，以及历史切换、撤权、全目录/成员覆盖、语义正确性和完整P5/M3仍未验。保存依据未变化不证明现行有效/适用，下层按钮不证明更深来源已读。cc22原PG三个子场景与163a Node16/16仅按未变字节继承，未重跑；旧unclaimed七失败/十五通过沿准确8d基线保留且不计通过。原正文/存储版本结构未改，无迁移/清理。",
+        "delivered": "原Wiki保存头目录/诊断/成果准确ref导航和成员预览fallback已随准确319/fa14技术发布。普通用户实际读回一个既有root和成员各修订1正文，预览未展开提示/确切成员入口、child保存记录/来源状态及同root+chapter返回成立；受测目录root/child固定保存引用、诊断link及成果button实际跳同ref并读回正文。原4a联合验证/完整build、cc22 PG与163a Node继承证据保留原身份，未重跑。",
+        "remaining": "有限导航/预览成功不关闭普通反馈、审批/措施、技术来源三类变化、下游覆盖、历史切换/撤权、全目录/全文语义和完整P5/M3。目录仍声明未读取正文/关系未知，未提供活跃执行、时间/ACK/资源；通用knowledge/parent hierarchy链接仍未固定summaryRef，另一既有引用读取状态未清除。保存依据未变化不证明发布方现行有效/适用，文档生命周期变化未纳入该核对；Reader仍VERIFICATION_PENDING。",
         "owner": "既有Wiki成员及有限增量消费者",
         "acceptance": "每类变化有准确前后版本、来源、影响对象及保存/综合覆盖读回；到期可重检，未受影响成果保留，普通反馈不无故重复模型调用，缺源先补具体来源。",
         "evidenceIds": [
@@ -381,7 +401,10 @@
           "wiki-preview-citation.163a.standard-full-build.test",
           "wiki-reading-delivery.4a.source-review",
           "wiki-reading-delivery.4a.combined-validation.test",
-          "wiki-reading-delivery.4a.standard-full-build.test"
+          "wiki-reading-delivery.4a.standard-full-build.test",
+          "host-identity-quality.fa14.exact-deployment",
+          "host-identity-quality.fa14.native-user-fingerprint",
+          "host-identity-quality.fa14.bounded-reading"
         ]
       }
     },
@@ -397,10 +420,10 @@
         "V08",
         "V10"
       ],
-      "nextAction": "保留原ATT5正常期限终态与Host外层gen9 BLOCK/清租约回执，不再等其继续产出；保留checkpoint/副作用，不主动强停、清档、另起/重试或切执行器。Host查询不证明Native进程/检查点、调度回执或UNKNOWN已清；停止新增自制loop/续接恢复及相关发布准备，先核原生桥可信上下文复用边界，不预设新插件/框架。",
+      "nextAction": "c239技术安装与C136原状态恢复通过。唯一新后继的M3绑定执行已由Host deadline以TIMED_OUT收尾；generation10到期后generation11正常BLOCK归档，activeClaim=null，Native run-result仍UNKNOWN。此为自动队列正常关闭，不是业务完成或Gateway timeout。保留ATT5与新UNKNOWN，不重放；attention修复仍待本地候选审查，未发布或完成。",
       "progress": {
-        "delivered": "原ATT3/ATT4各自正常期限/BLOCK/归档、错误路径纠正与原UNKNOWN保持，不合并为业务成功。40/41已正式读回原ATT5期限TIMED_OUT、Host外层gen9 BLOCKED且清租约、该attempt SAVE0/Overall空及无同动作后继，根本批只SELECT。已有有限PAGE和M3读取事实保持；当前不再等待原ATT5产出，不将Host收尾扩为Native进程/检查点或UNKNOWN清理证明。现存可信attempt/lease、固定对象、稳定保存身份/读回入口已定位，原生桥消费这些上下文的实际能力仍未证。",
-        "remaining": "Host原attempt与外层终态已核，Native checkpoint/进程及调度运行回执仍未新证，原UNKNOWN不因清租约而补成已知。保留原件和既有副作用，不强停、清档、重跑、新起模型或切执行器；先核原生桥能否复用现有可信上下文，停止扩loop/续接恢复框架及相关发布准备。真实SAVE/Overall、内容质量与必要页面/旧数据处置仍各按准确范围，不把本例P4局部读取扩成全链完成。",
+        "delivered": "旧ATT3/ATT4及ATT5的历史UNKNOWN/BLOCK/归档各按原身份保留。c239已准确安装，C136按原enabled恢复。新WI的单次正常后继绑定AQ-eb39bc28147e4ab6a31267e89166ced7/ATT-6c8f46e2-7317-4bf8-bd42-0d788ee08f99、revision3：round6 Gateway HTTP400 incomplete_result后Native run-result维持REQUIRES_ATTENTION/UNKNOWN。Host于04:25:10.420Z记录ATT TIMED_OUT、initialAnalysis/JobAid FAILED deadline exceeded、Overall PENDING、保存0；正常队列从g10到期续领g11并归档，activeClaim=null。新请求沿用WorkItem冻结M3 rev0而非全局GLM5.3 rev1；不将此轮计作GLM测试。",
+        "remaining": "新后继业务链已失败收尾但Native上游结果仍UNKNOWN：保存0、独立READ/Overall实际成果/同版阅读未完成。03:41:59 Gateway incomplete_result与04:25 Host deadline不是同一错误；consumerStopped/归档不证明provider终止。原ATT5和新request均不重放，不创建额外请求。attention修复仍在本地候选审查，未发布或完成；GLM需准确新绑定后再实测。",
         "owner": "执行恢复、Host读模型及保存阅读前端",
         "acceptance": "定向验证§4.4组合：同request/actor/WI/DVI/operation、输入及fence一致，错绑定、claim>0、result/COMMITTING和真模型UNKNOWN不得走新路径，其他UUID终态不误拦截。保留begin两namespace原记录，权威失败对账、BLOCK intent/回执、正常reclaim/外层占用转换与归档对应，无重复调用/保存，旧SAVE不丢。BLOCK只关闭失败占用，业务另按§6.5保存链实测；V08/V10/V47不覆盖SAVE0。 每次结构/语义升级的旧数据有明确迁移/新版重生成/清理处置，旧引用、当前指针、索引/缓存及下游已处理并读回；不强制所有历史永久兼容。",
         "evidenceIds": [
@@ -482,7 +505,44 @@
           "native-loop.boundary-correction.source-review",
           "ad-page.b8.real-page-read-bounded.runtime",
           "m3.b8.current-object-three-view-bounded.runtime",
-          "ad-page.b8.att5-deadline-host-block.runtime"
+          "ad-page.b8.att5-deadline-host-block.runtime",
+          "ad-att5.native-round12.source-rejection",
+          "ad-att5.native-round14.gen9-archive",
+          "ad-att5.c239.exact-native-package.test",
+          "ad-att5.c239.installed.deployment",
+          "ad-att5.c136.original-state-restored.runtime",
+          "ad-att5.c239.new-ad-successor.accepted-running.runtime",
+          "ad-att5.c239.new-ad-successor.round6-stopped-host-running.runtime",
+          "ad-att5.c239.new-ad-successor.host-deadline-terminal.runtime",
+          "ad-att5.c239.new-ad-successor.g11-normal-queue-close.runtime",
+          "ad-att5.c239.new-ad-successor.inherited-m3-model.runtime",
+          "ad-att5.c239.original-fixed-set.unchanged-after-successor.runtime"
+        ]
+      }
+    },
+    {
+      "id": "P7",
+      "label": "P7 · 当前第一批：程序控制评估完整交付",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "scenarioIds": [
+        "V55",
+        "V56",
+        "V57",
+        "V58"
+      ],
+      "nextAction": "并行完成Host初评投影、Native程序步骤、阅读与图，选择性集成和审查后准备准确技术执行包，再验一条真实事项链。",
+      "progress": {
+        "delivered": "已核对可复用保存、独立读回和综合正文；新隔离候选进入实现，v1.7契约与验收定义同步修订。",
+        "remaining": "组合实现/审查/测试、准确部署与安装材料、真实GLM评估SAVE→READ→Overall→同版阅读及正常收尾；本地实现不等于业务通过。",
+        "owner": "主控集成；program_host_projection / program_native_executor / program_reading_ui 分别拥有Host、Native、正常阅读；主控维护图与证据",
+        "acceptance": "一个真实事项在正常用户页面可读有用工程工作及准确依据，Overall实际读取同版工作，任务正常收尾；恢复不重生成、不重放UNKNOWN，图反映同一请求。",
+        "evidenceIds": [
+          "program-initial.first-batch.source_review",
+          "program-initial.first-batch.test",
+          "program-initial.first-batch.deployment",
+          "program-initial.first-batch.runtime"
         ]
       }
     }

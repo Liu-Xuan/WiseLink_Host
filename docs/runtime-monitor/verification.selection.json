@@ -7,7 +7,8 @@
     "assessment.research",
     "assessment.overall",
     "assessment.applicability",
-    "surface.reading"
+    "surface.reading",
+    "source.original"
   ],
   "changedEdgeIds": [
     "reading.wiki",
@@ -15,7 +16,8 @@
     "wiki.parent",
     "company.research",
     "research.overall",
-    "artifact.reading"
+    "artifact.reading",
+    "original.research"
   ],
   "scenarioIds": [
     "V04",
@@ -38,7 +40,11 @@
     "V03",
     "V16",
     "V53",
-    "V15"
+    "V15",
+    "V55",
+    "V56",
+    "V57",
+    "V58"
   ],
-  "reason": "2026-10-25 Asia/Shanghai记录更新：当前已证前后端准确b8、环境PASS、reader仍VERIFICATION_PENDING，Native为c238；来源授权8d/31已技术发布，旧5d/待批阶段仅保留在历史证据。原AD ATT5已TIMED_OUT，Host外层BLOCK/lease空，该attempt SAVE0、Overall两当前指针空；这不证明Native进程/检查点或UNKNOWN已清，不另起模型或重放。当前Wiki准确联合候选4a已组合cc22保存头/目录诊断/artifact准确ref导航及163a成员预览fallback，本地源码/定向验证和准确clean4a唯一标准完整build通过，尚未同步/发布、待批准准确交付；不把本地M3组件导航当线上运行，不重复旧root/child读链。三类真实变化、历史切换/撤权及完整P5/M3仍待验；原生config核查仍待授权，本批不执行读取或配置写。其他工作包保持自身未验范围，P1仅纠正当前b8/c238、625未交付与SEM真实内容缺口；无新业务runtime/部署、模型/SAVE、DDL/Native操作，三组选择数组及13/47/54/10目录、12binding与图样式保持。"
+  "reason": "2026-10-25 新第一批为程序控制评估完整链，本地实施进行中。最新已核线上Host fa14、Native c239；c239唯一新AD后继已正常超时/BLOCK归档且SAVE0，原ATT5 UNKNOWN保留。当前默认GLM、旧事项M3分开，新程序请求将明确绑定模型。a009停止观察仅本地；新契约、代码、测试、部署、业务分层记录。保留原选择及历史证据，新增本批原文接线和V55—V58；图样式与节点不重做。"
 }

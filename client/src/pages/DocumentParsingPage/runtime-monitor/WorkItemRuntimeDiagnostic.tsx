@@ -13,6 +13,7 @@ interface Props {
   environment?: string;
   onRefresh: () => void;
   onOpenPanel: (panel: 'assessment' | 'review' | 'reader') => void;
+  onOpenWorkRevision: (workRevisionRef: string) => void;
 }
 
 /** Navigation is bounded to the currently authorized observation, not arbitrary refs. */
@@ -28,12 +29,23 @@ export function diagnosticNavigationPanel(
     const record = node.requests.find((item) => item.id === detail.ref);
     if (!record || record.recordKind !== detail.recordKind) return null;
     if (record.recordKind === 'attempt' ? detail.attemptId !== record.id || Boolean(detail.requestId) : detail.requestId !== record.id || Boolean(detail.attemptId)) return null;
+    if (record.executionMode === 'PROGRAM_CONTROLLED_V1') return 'assessment';
   } else {
     const refs = detail.kind === 'artifact' ? node.outputs : detail.kind === 'source' ? node.inputRefs : [];
     if (!refs.some((item) => item.ref === detail.ref)) return null;
   }
-  // A revision reference alone is not a source locator. Read the exact refs in assessment.
+  // Work revision navigation is handled separately; other refs retain their panel.
   return detail.kind === 'request' && node.id === 'assessment.research' ? 'review' : 'assessment';
+}
+
+/** These observed edges carry saved work identities, never a document/source locator. */
+export function diagnosticNavigationWorkRef(
+  detail: NavigationRequest, runtime: RuntimeProjection, workItemId: string,
+): string | null {
+  if (!diagnosticNavigationPanel(detail, runtime, workItemId)) return null;
+  if (detail.kind === 'artifact' && ['assessment.research', 'business.company_records', 'surface.reading'].includes(detail.nodeId)) return detail.ref;
+  if (detail.kind === 'source' && ['assessment.overall', 'surface.reading'].includes(detail.nodeId)) return detail.ref;
+  return null;
 }
 
 function SavedNativeDetail({ observation, work, onClose }: {
@@ -89,7 +101,7 @@ function SavedNativeDetail({ observation, work, onClose }: {
 }
 
 export default function WorkItemRuntimeDiagnostic({
-  read, workItemId, sessionGeneration, onRefresh, onOpenPanel, observationMode = 'live', environment,
+  read, workItemId, sessionGeneration, onRefresh, onOpenPanel, onOpenWorkRevision, observationMode = 'live', environment,
 }: Props) {
   const scopeKey = `${sessionGeneration}:${workItemId}`;
   const acknowledgement = read.data?.workItemId === workItemId &&
@@ -133,7 +145,11 @@ export default function WorkItemRuntimeDiagnostic({
           if (!panel) return;
           const source = detail.kind === 'source' && native.observations.find(item => item.navigationRef === detail.ref);
           if (source) setSelected({ scopeKey, ref: source.navigationRef });
-          else onOpenPanel(panel);
+          else {
+            const workRef = diagnosticNavigationWorkRef(detail, runtime, workItemId);
+            if (workRef) onOpenWorkRevision(workRef);
+            else onOpenPanel(panel);
+          }
         }}
       />
       {work && selectedSource ? <SavedNativeDetail observation={selectedSource} work={work} onClose={() => setSelected(null)} /> : null}

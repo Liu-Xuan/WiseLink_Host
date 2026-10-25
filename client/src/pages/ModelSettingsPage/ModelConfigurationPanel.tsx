@@ -67,7 +67,8 @@ function ModelConfigurationEditor({
     (option) => option.available && option.modelRef === modelRef,
   );
   async function save() {
-    if (!saved || disabled || !dirty || !available || saveInFlight.current) return;
+    if (!saved || disabled || !dirty || !available || saveInFlight.current)
+      return;
     saveInFlight.current = true;
     const current = ++epoch.current;
     setPending(true);
@@ -80,7 +81,9 @@ function ModelConfigurationEditor({
       });
       if (epoch.current === current) {
         apply(value);
-        setNotice('模型设置已保存，尚未冻结的新任务将使用此选择。');
+        setNotice(
+          '模型设置已保存；尚未绑定的新事项和新程序评估的默认选项将使用此选择。已提交任务保留原模型。',
+        );
       }
     } catch (reason) {
       if (epoch.current === current) setError(settingsMessage(reason));
@@ -96,7 +99,9 @@ function ModelConfigurationEditor({
     <section aria-labelledby="configured-model-title">
       <h2 id="configured-model-title">统一模型配置</h2>
       <p>
-        初始评估、原文解读与翻译在首次模型执行前读取此配置并冻结；明确选择的单任务模型优先。已冻结或已执行的任务沿用其原模型，历史结果不改变。
+        此默认用于尚未绑定的新事项，也作为新程序评估的默认选项。已有事项的普通接续沿用事项模型；新程序评估和
+        Review
+        新轮可明确另选。每次提交按当时选择固定模型，已提交任务和历史结果保留原模型。
       </p>
       {saved ? (
         <>

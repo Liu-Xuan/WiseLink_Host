@@ -21,6 +21,8 @@ import { requestHostedGateway } from './request-hosted-gateway.mjs';
 import { invokeHostedTranslationBlock } from './invoke-hosted-translation-block.mjs';
 import { invokeHostedJobAidProblemModel, isJobAidProblemInputSchema } from './run-jobaid-problem-assessment.mjs';
 import { SOURCE_CONTENT_SYNTHESIS_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION } from './jobaid-problem-guidance.mjs';
+import { invokeHostedProgramAssessment } from './run-program-assessment.mjs';
+import { PROGRAM_ASSESSMENT_MODE } from './program-assessment-materials.mjs';
 
 const OUTPUT_FUNCTION = 'return_wiselink_initial_candidate';
 const MAX_JOBAID_CANDIDATE_CORRECTIONS = 2;
@@ -74,6 +76,11 @@ export async function invokeHostedInitialModel(
   options,
   dependencies = {},
 ) {
+  if (modelInput?.executionMode !== undefined) {
+    if (modelInput.executionMode !== PROGRAM_ASSESSMENT_MODE)
+      throw new Error('INITIAL_EXECUTION_MODE_UNSUPPORTED');
+    return invokeHostedProgramAssessment({ operation, modelInput }, options, dependencies);
+  }
   if (operation === 'TRANSLATE' && modelInput?.schemaVersion === 'wiselink.3_1.translation_semantic_batch.v2')
     return invokeHostedTranslationBlock(modelInput, options, dependencies);
   if (isJobAidProblemInputSchema(modelInput?.schemaVersion))

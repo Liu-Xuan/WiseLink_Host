@@ -64,6 +64,7 @@ const INITIAL_TOOLS = new Set([
   'begin_dynamic_evaluation', 'commit_dynamic_evaluation_candidate',
   'query_assessment_knowledge', 'read_assessment_sources', 'save_assessment_work', 'read_assessment_work',
   'record_assessment_consumer_stopped',
+  'record_assessment_program_progress',
   'begin_overall_synthesis', 'commit_overall_candidate',
 ]);
 
@@ -1791,6 +1792,7 @@ export async function runHostedInitialStage(options, dependencies) {
         queryAssessmentKnowledge: runtimeHooks.queryAssessmentKnowledge,
         saveAssessmentWork: runtimeHooks.saveAssessmentWork,
         readAssessmentWork: runtimeHooks.readAssessmentWork,
+        recordAssessmentProgramProgress: runtimeHooks.recordAssessmentProgramProgress,
         ...(jobAidBudget ? { runModelRequest: perform => jobAidBudget.dispatch('modelRequests', perform) } : {}),
         assessmentBinding: runtimeHooks.assessmentBinding,
         observeModelOutput: (shape, round = 1) => checkpoint.observeAuxiliary(

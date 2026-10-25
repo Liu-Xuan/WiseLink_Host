@@ -87,6 +87,20 @@ export function projectJobAidActivity(
         status: status as JobAidKnowledgeObservationStatus });
       continue;
     }
+    if (record.kind === 'ASSESSMENT_PROGRAM_PROGRESS' || record.kind === 'ASSESSMENT_WORK_READ') {
+      const value = record as Record<string, unknown>;
+      const valid = typeof value.observedAt === 'string' && Number.isFinite(Date.parse(value.observedAt)) &&
+        (record.kind === 'ASSESSMENT_PROGRAM_PROGRESS'
+          ? ['MATERIALS_READY', 'MODEL_RESPONSE_SAVED'].includes(String(value.phase)) &&
+            typeof value.checkpointRef === 'string' && /^[A-Za-z0-9:._-]{1,512}$/u.test(value.checkpointRef)
+          : typeof value.workRevisionRef === 'string' && /^JAWR-[A-Za-z0-9-]{1,91}$/u.test(value.workRevisionRef) &&
+            Number.isSafeInteger(value.workRevision) && Number(value.workRevision) > 0 &&
+            typeof value.saveRequestId === 'string' && /^[A-Za-z0-9:_-]{1,96}$/u.test(value.saveRequestId));
+      if (!valid) result.malformedRecordCount++;
+      // Execution exposes only the safe latest phase; saved-work proof remains
+      // server-owned and is never expanded into restricted source metadata here.
+      continue;
+    }
     if (record.kind !== 'ASSESSMENT_SOURCES_READ') {
       result.unknownRecordCount++;
       continue;

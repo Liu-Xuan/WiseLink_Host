@@ -1,3 +1,6 @@
+import * as authorizedWork from '../../server/modules/canonical-host/canonical-authorized-work-item-reader';
+import { CanonicalHostInitialAnalysisStatusService } from '../../server/modules/canonical-host/canonical-host-initial-analysis-status.service';
+import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
 import * as runtimePolicy from '../../server/modules/canonical-host/canonical-host-openclaw-runtime-policy';
 import * as sourcePlanning from '../../server/modules/canonical-host/canonical-translation-source-plan';
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
@@ -45,6 +48,181 @@ const scope = {
 };
 
 describe('JobAid continuation requests', () => {
+  it('registers exact program material bytes without putting plaintext in the progress journal', async () => {
+    const h = harness();
+    await h.service.enqueueContinuation(h.current(), TENANT, 'permission', REQUEST_1,
+      'INITIAL_PROBLEM_ASSESSMENT', undefined, undefined, undefined, {modelRef:'miaoda/glm-5.3'});
+    const started = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT', REQUEST_1);
+    Object.assign(h.rows.get(started.attemptRef)!, {attemptId:started.task.actionAttemptId,
+      taskInputHash:started.task.inputHash,leaseOwner:scope.principalId,leaseToken:started.leaseToken,
+      leaseGeneration:started.leaseGeneration,leaseExpiresAt:new Date('2099-01-01'),deadlineAt:new Date('2099-01-01')});
+    const materials = {version:1,originalInput:started.modelInput,previousWorkRead:null,sourceReads:[],
+      deliveredEvidenceRefs:[],modelInput:{continuousOriginal:{content:'exact materials'}}};
+    const modelRequest = {version:1,executionModel:started.task.executionModel,materialCheckpoint:'program-materials',
+      body:canonicalJson({messages:[{role:'system',content:'analyze'},{role:'user',content:canonicalJson(materials.modelInput)}]})};
+    const artifact = {ref:'artifact://materials',sha256:'a'.repeat(64),byteLength:123,mediaType:'application/json',storeRole:'UnifiedArtifactStoreCandidate'};
+    (h.artifactStore.persistAndReadback as jest.Mock).mockImplementationOnce(async (bytes:Uint8Array) => ({artifact,bytes}));
+    const result = await h.service.recordProgramProgress({attemptRef:started.attemptRef,workItemId:scope.workItemId,
+      leaseToken:started.leaseToken,leaseGeneration:started.leaseGeneration,phase:'MATERIALS_READY',checkpointRef:'program-materials',
+      materialSnapshotJson:JSON.stringify({materials,modelRequest})});
+    expect(result.status).toBe('RECORDED');
+    expect(h.work.recordProgramProgress).toHaveBeenCalledWith(expect.objectContaining({materialsArtifact:artifact}));
+    expect(h.work.recordProgramProgress.mock.calls[0][0]).not.toHaveProperty('materialSnapshotJson');
+    expect(h.work.recordProgramProgress.mock.calls[0][0]).not.toHaveProperty('snapshot');
+  });
+
+  it('reads the exact historical program input only after all current source grants pass', async () => {
+    const h = harness();
+    await h.service.enqueueContinuation(h.current(), TENANT, 'permission', REQUEST_1,
+      'INITIAL_PROBLEM_ASSESSMENT', undefined, undefined, undefined, {modelRef:'miaoda/glm-5.3'});
+    const started = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT', REQUEST_1);
+    const row = h.rows.get(started.attemptRef)!;
+    Object.assign(row,{attemptId:started.task.actionAttemptId,taskInputHash:started.task.inputHash});
+    const materials = {version:1,originalInput:started.modelInput,previousWorkRead:null,sourceReads:[],
+      deliveredEvidenceRefs:[],modelInput:{continuousOriginal:{content:'exact historical materials'}}};
+    const snapshot = {materials,modelRequest:{version:1,executionModel:started.task.executionModel,
+      materialCheckpoint:'program-materials',body:canonicalJson({messages:[{role:'system'},
+        {role:'user',content:canonicalJson(materials.modelInput)}]})}};
+    const artifact = {ref:'artifact://historical',sha256:'a'.repeat(64),byteLength:123,mediaType:'application/json',storeRole:'UnifiedArtifactStoreCandidate'};
+    row.reviewActivityJson=JSON.stringify([{kind:'ASSESSMENT_PROGRAM_PROGRESS',phase:'MATERIALS_READY',
+      checkpointRef:'program-materials',materialsArtifact:artifact,observedAt:'2026-10-25T00:00:00Z'}]);
+    h.artifactStore.readActualBytes.mockResolvedValue(new TextEncoder().encode(canonicalJson({workItemId:scope.workItemId,
+      attemptId:row.attemptId,attemptRef:row.operationRef,taskInputHash:row.taskInputHash,snapshot})));
+    const authorization = jest.spyOn(authorizedWork,'authorizeAndLoadCanonicalWorkItem')
+      .mockResolvedValue({workItem:h.current(),permissionSnapshotVersion:'fresh'});
+    const sourceCheck = jest.spyOn(h.service as unknown as {assertBrowserEvidenceOwned: (...args:unknown[])=>Promise<void>},
+      'assertBrowserEvidenceOwned').mockResolvedValue();
+    const actor={tenantId:TENANT,userId:OWNER,appId:'app_17bzc551rsg',roles:[],env:'runtime' as const};
+    try {
+      const result=await h.service.readBrowserProgramMaterials(scope.workItemId,row.attemptId,actor);
+      expect(result).toMatchObject({snapshot,submissionEvidence:'PREPARED_NOT_CONFIRMED_SENT',attemptId:row.attemptId});
+      expect(sourceCheck.mock.calls[0][0]).toEqual(parseJobAidProblemTask(started.task).sourceCatalog);
+      expect(h.artifactStore.readActualBytes).toHaveBeenLastCalledWith(artifact);
+      h.artifactStore.readActualBytes.mockClear();
+      sourceCheck.mockRejectedValueOnce(new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED'));
+      await expect(h.service.readBrowserProgramMaterials(scope.workItemId,row.attemptId,actor))
+        .rejects.toThrow('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+      expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
+      const records=JSON.parse(row.reviewActivityJson!);records.push({kind:'ASSESSMENT_PROGRAM_PROGRESS',phase:'MODEL_RESPONSE_SAVED',
+        checkpointRef:'program-response',observedAt:'2026-10-25T00:01:00Z'});row.reviewActivityJson=JSON.stringify(records);
+      expect(await h.service.readBrowserProgramMaterials(scope.workItemId,row.attemptId,actor)).toMatchObject({submissionEvidence:'RESPONSE_RECEIVED'});
+    } finally { authorization.mockRestore(); sourceCheck.mockRestore(); }
+  });
+
+  it('reads only the sealed previous work baseline without treating it as this attempt saved-work proof', async () => {
+    const h = harness();
+    const previous = savedWork();
+    h.work.listForRuntime.mockResolvedValue([previous]);
+    await h.service.enqueueContinuation(h.current(), TENANT, 'permission', REQUEST_1,
+      'INITIAL_PROBLEM_ASSESSMENT', undefined, undefined, undefined, {modelRef: 'miaoda/glm-5.3'});
+    const started = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT', REQUEST_1);
+    const newer = {...previous, workRevisionRef: 'JAWR-NEWER', workRevision: 4};
+    h.work.listForRuntime.mockResolvedValue([newer, previous]);
+    const fence = {leaseToken: started.leaseToken, leaseGeneration: started.leaseGeneration};
+    expect((await h.service.readAttemptWork(started.attemptRef, undefined, scope.workItemId, fence, previous.workRevisionRef)).revision)
+      .toEqual(previous);
+    expect(h.work.recordWorkRead).not.toHaveBeenCalled();
+    await expect(h.service.readAttemptWork(started.attemptRef, undefined, scope.workItemId, fence, newer.workRevisionRef))
+      .rejects.toThrow('JOBAID_PROGRAM_BASELINE_READ_INVALID');
+    await expect(h.service.readAttemptWork(started.attemptRef, previous.requestId, scope.workItemId, fence, previous.workRevisionRef))
+      .rejects.toThrow('JOBAID_PROGRAM_BASELINE_READ_INVALID');
+    await expect(h.service.enqueueContinuation(h.current(), TENANT, 'permission', REQUEST_1, 'INITIAL_PROBLEM_ASSESSMENT'))
+      .rejects.toThrow('JOBAID_REQUEST_SCOPE_CHANGED');
+  });
+
+  it.each(['success', 'read-missing', 'read-other-revision', 'overview-stale', 'artifact-failure', 'ack-lost'] as const)(
+    'program initial projects only independently read saved work and recovers without another analysis: %s', async scenario => {
+      const h = harness();
+      await h.service.enqueueContinuation(h.current(), TENANT, 'permission', REQUEST_1,
+        'INITIAL_PROBLEM_ASSESSMENT', undefined, undefined, undefined, {modelRef: 'miaoda/glm-5.3'});
+      const started = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT', REQUEST_1);
+      expect(started.modelInput.executionMode).toBe('PROGRAM_CONTROLLED_V1');
+      const preparedTask = parseJobAidProblemTask(started.task);
+      expect(started.task.executionModel?.modelRef).toBe('miaoda/glm-5.3');
+      expect(preparedTask.modelInput.programOriginal?.binding).toEqual(preparedTask.modelInput.documentOverview.original?.binding);
+      expect(preparedTask.modelInput.programOriginal?.units.length).toBeGreaterThan(0);
+      expect(preparedTask.savedWorkReconciliation).toBeUndefined();
+      const revision = {...savedWork(), actionAttemptId: started.task.actionAttemptId};
+      if (scenario === 'overview-stale') revision.content.overviewStatus = 'STALE';
+      h.work.listForRuntime.mockResolvedValue([revision]);
+      if (scenario !== 'read-missing') {
+        await h.service.readAttemptWork(started.attemptRef, revision.requestId, scope.workItemId,
+          {leaseToken: started.leaseToken, leaseGeneration: started.leaseGeneration});
+        expect(h.work.recordWorkRead).toHaveBeenCalledTimes(1);
+      }
+      if (scenario === 'read-other-revision') h.rows.get(started.attemptRef)!.reviewActivityJson =
+        h.rows.get(started.attemptRef)!.reviewActivityJson!.replace(revision.workRevisionRef, 'JAWR-OTHER');
+      const prepared = {task: started.task, row: {...h.rows.get(started.attemptRef),
+        attemptId: started.task.actionAttemptId, tenantId: TENANT, workItemId: scope.workItemId,
+        documentVersionId: started.task.documentVersionId, baseRevision: started.task.baseRevision,
+        status: 'COMMITTING', triggerRequestId: 'TRIGGER-PROGRAM'}, result: {
+        toolVersions: {'jobaid-problem-protocol': '2'}, promptVersion: 'wiselink-jobaid-problem@v2',
+        modelOutput: JSON.stringify({workRevisionRef: revision.workRevisionRef})}};
+      h.attempts.prepareCommit.mockResolvedValue(prepared);
+      const preflight = jest.spyOn(runtimePolicy, 'preflightCanonicalHostOpenClawResult')
+        .mockReturnValue({task: prepared.task, result: prepared.result} as never);
+      const input = {row: prepared.row, scope: {...scope, attemptRef: started.attemptRef},
+        leaseToken: started.leaseToken, leaseGeneration: started.leaseGeneration, result: prepared.result};
+      if (scenario === 'artifact-failure') h.artifactStore.persistAndReadback.mockRejectedValueOnce(new Error('ARTIFACT_UNAVAILABLE'));
+      if (scenario === 'ack-lost') h.attempts.finishProjectionSuccess.mockRejectedValueOnce(new Error('ACK_LOST'));
+      try {
+        if (['read-missing', 'read-other-revision', 'overview-stale', 'artifact-failure'].includes(scenario)) {
+          await expect(h.service.commit(input as never)).rejects.toThrow();
+          expect(h.registrar.compareAndSet).not.toHaveBeenCalled();
+          expect(h.attempts.finishResultGateFailure).not.toHaveBeenCalled();
+          expect(h.work.listForRuntime.mock.results.length).toBeGreaterThan(0);
+          if (scenario !== 'artifact-failure') return;
+        }
+        await h.service.commit(input as never);
+        const overall = h.current().integratedAssessment?.overallSynthesis;
+        expect(overall).toMatchObject({executionKind: 'DETERMINISTIC_PROJECTION', modelRequests: 0,
+          overallCandidate: revision.content.understanding,
+          basedOnJobAidWorkRevisionRef: revision.workRevisionRef,
+          sourceAssessment: {actionAttemptId: revision.actionAttemptId, workRevisionRef: revision.workRevisionRef,
+            workRevision: revision.workRevision, saveRequestId: revision.requestId}});
+        expect(overall).not.toHaveProperty('sourceReview');
+        expect(h.current().integratedAssessment?.baseRules).toMatchObject({readingResult: overall?.readingResult});
+        await h.service.commit(input as never);
+        expect(h.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+        expect(h.attempts.reserve).toHaveBeenCalledTimes(1);
+        expect(h.attempts.finishResultGateFailure).not.toHaveBeenCalled();
+        if (scenario === 'success') {
+          Object.assign(h.current().package!, {contractId: 'techpub.parsed-package.v1', contractRevision: 'frozen.2'});
+          const stored = {...prepared.row, actionType: started.task.taskType, requestOrigin: 'OPENCLAW_MCP_V1',
+            status: 'SUCCEEDED', projectionApplied: true, taskEnvelopeJson: canonicalJson(started.task),
+            taskInputHash: started.task.inputHash, executionModelJson: canonicalJson(started.task.executionModel)};
+          const database = {
+            selectDistinctOn: () => ({from: () => ({where: () => ({orderBy: async () => [stored]})})}),
+            select: () => ({from: () => ({where: () => ({limit: async () => [stored]})})}),
+          };
+          const savedStore = {
+            readByRef: jest.fn(async (identity: {workRevisionRef: string}) =>
+              identity.workRevisionRef === revision.workRevisionRef ? revision : null),
+            latest: jest.fn(async () => ({...revision, workRevision: revision.workRevision + 1, workRevisionRef: 'JAWR-SAVED-LATER'})),
+          };
+          const statusService = new CanonicalHostInitialAnalysisStatusService(database as never, h.attempts as never,
+            savedStore as never);
+          const mode = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+          process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '0';
+          try {
+            const status = await statusService.project({workItem: h.current(), tenantId: TENANT, browserActorUserId: OWNER});
+            expect(status.stages.overall.status).toBe('SUCCEEDED');
+            // Work 2 already exists; Overall 1 remains a valid historical result.
+            // The working reader separately reports its relation to work 2 as STALE.
+            expect(savedStore.latest).not.toHaveBeenCalled();
+            expect(savedStore.readByRef).toHaveBeenCalledWith({tenantId: TENANT, workItemId: scope.workItemId,
+              workRevisionRef: revision.workRevisionRef});
+            h.current().integratedAssessment!.overallSynthesis!.sourceAssessment!.workRevisionRef = 'JAWR-WRONG';
+            const invalid = await statusService.project({workItem: h.current(), tenantId: TENANT, browserActorUserId: OWNER});
+            expect(invalid.stages.overall).toMatchObject({status: 'CONFLICT', terminalCode: 'INITIAL_OVERALL_PROJECTION_RECORD_INVALID'});
+          } finally {
+            if (mode === undefined) delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+            else process.env.WL_JOBAID_PROBLEM_V2_ENABLED = mode;
+          }
+        }
+      } finally { preflight.mockRestore(); }
+    });
+
   it('derives successor Overall from the persisted receipt, keeps the prior projection, and replays one attempt', async () => {
     const h = successorHarness();
     const before = structuredClone(h.current());
@@ -1191,6 +1369,13 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
   };
   const actorExecutor = { kind: 'host-owner-transaction' };
   const work = {
+    recordProgramProgress: jest.fn(async (_input: unknown) => undefined),
+    recordWorkRead: jest.fn(async (input: {row: ActionAttemptRow; revision: JobAidWorkRevision}) => {
+      const persisted = rows.get(input.row.operationRef!)!;
+      persisted.reviewActivityJson = canonicalJson([{kind: 'ASSESSMENT_WORK_READ',
+        workRevisionRef: input.revision.workRevisionRef, workRevision: input.revision.workRevision,
+        saveRequestId: input.revision.requestId, observedAt: '2026-10-25T01:00:00.000Z'}]);
+    }),
     publishedOriginalBinding: jest.fn(async () => ({parseRunId:'PR-TEST-2'})),
     publishedOriginalBindingForRequest: jest.fn(async () => ({parseRunId:'PR-TEST-2'})),
     withActorScope: jest.fn(async (_actor: string, operation: () => Promise<unknown>) => operation()),
@@ -1273,6 +1458,7 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
         sourceRefs: input.sourceRefs!,
         allowedConnectors: input.allowedConnectors ?? [],
         hostResolvedMissingInputs: [],
+        ...(input.programControlled ? {executionModel: taskModelSelection(input.programControlled.modelRef)} : {}),
         modelInput: await input.buildModelInput({
           attemptId: actionAttemptId,
           operationRef,

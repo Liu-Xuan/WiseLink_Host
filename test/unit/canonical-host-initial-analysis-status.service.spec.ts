@@ -312,6 +312,23 @@ describe('CanonicalHost initial-analysis status projection', () => {
     expect(value.stages.overall).toMatchObject({status:'CONFLICT',terminalCode:'DOCUMENT_ORIGINAL_IMPACT_REVIEW_REQUIRED'});
   });
 
+  it.each(['QUEUED', 'RUNNING', 'COMMITTING'])('keeps a new independent Overall %s visible after a program projection', status => {
+    const source = {...parsedWorkItem(), integratedAssessment: integratedAssessment()};
+    const initial = {...attempt('OPENCLAW_DYNAMIC_EVALUATION', 'SUCCEEDED'), baseRevision: 3};
+    source.integratedAssessment.overallSynthesis = {...source.integratedAssessment.overallSynthesis!,
+      executionKind: 'DETERMINISTIC_PROJECTION', actionAttemptId: initial.attemptId,
+      sourceAssessment: {actionAttemptId: initial.attemptId, workRevisionRef:'work-1',workRevision:1,
+        saveRequestId:'save-1',readObservedAt:'2026-10-25T00:00:00Z'}};
+    const overall = {...attempt('OPENCLAW_OVERALL_SYNTHESIS', status),requestId:'new-overall',baseRevision:4};
+    const value = projectCanonicalHostInitialAnalysisStatus(source,[initial,overall],{originalPublished:true});
+    expect(value.stages.overall).toMatchObject({status: status === 'QUEUED' ? 'PENDING' : 'BUSY',
+      attemptRef: overall.attemptRef,attemptStatus:status});
+    // The latest-per-action status query may no longer contain the old source attempt.
+    source.revision = 4;
+    expect(projectCanonicalHostInitialAnalysisStatus(source,[{...initial,attemptId:'later-dynamic'},overall],
+      {originalPublished:true}).stages.overall).toMatchObject({status:status==='QUEUED'?'PENDING':'BUSY',attemptRef:overall.attemptRef});
+  });
+
   it('does not report a deterministic Overall success when its Host execution record is invalid', () => {
     const source = { ...parsedWorkItem(), integratedAssessment: integratedAssessment() };
     const value = projectCanonicalHostInitialAnalysisStatus(source, [], {
