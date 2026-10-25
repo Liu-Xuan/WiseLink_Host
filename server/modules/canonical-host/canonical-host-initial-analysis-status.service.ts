@@ -181,6 +181,7 @@ export class CanonicalHostInitialAnalysisStatusService {
         !isJobAidProblemProjection(execution.integratedAssessment?.baseRules) ||
         execution.integratedAssessment.baseRules.workRevisionRef !==
           deterministicOverall.basedOnJobAidWorkRevisionRef));
+    let sourceAssessmentAttempt: CanonicalInitialAnalysisAttemptObservation | undefined;
     if (deterministicOverall?.sourceAssessment) {
       const [record] = await this.db.select().from(actionAttempt).where(and(
         eq(actionAttempt.tenantId, input.tenantId), eq(actionAttempt.workItemId, input.workItem.workItemId),
@@ -196,7 +197,7 @@ export class CanonicalHostInitialAnalysisStatusService {
         const savedWork = hostedServiceSql
           ? await this.originalWork.readByRefForRuntime({...savedIdentity, actorUserId: prepared.actorUserId})
           : await this.originalWork.readByRef(savedIdentity);
-        invalidDeterministicOverall ||= !savedWork || !!deterministicOverall.sourceReview ||
+        const invalidSourceAssessment = !savedWork || !!deterministicOverall.sourceReview ||
           record.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION' || record.requestOrigin !== ACTION_ATTEMPT_REQUEST_ORIGIN ||
           !['COMMITTING', 'SUCCEEDED'].includes(record.status) ||
           (record.status === 'SUCCEEDED' && !record.projectionApplied) ||
@@ -207,6 +208,12 @@ export class CanonicalHostInitialAnalysisStatusService {
           savedWork.workRevisionRef !== deterministicOverall.basedOnJobAidWorkRevisionRef ||
           canonicalJson(exactProgramWorkRead(record, savedWork)) !== canonicalJson(deterministicOverall.sourceAssessment) ||
           canonicalJson(jobAidReadingResult(savedWork)) !== canonicalJson(deterministicOverall.readingResult);
+        invalidDeterministicOverall ||= invalidSourceAssessment;
+        if (!invalidSourceAssessment) sourceAssessmentAttempt = {
+          attemptId: record.attemptId, actionType: 'OPENCLAW_DYNAMIC_EVALUATION', attemptRef: record.operationRef,
+          status: record.status, baseRevision: record.baseRevision, terminalCode: initialAnalysisTerminalCode(record),
+          executionModel: readStoredExecutionModel(record.executionModelJson),
+        };
       } catch (error) {
         // Storage and authorization failures remain visible; only malformed sealed
         // bindings become an invalid projection observation.
@@ -361,6 +368,7 @@ export class CanonicalHostInitialAnalysisStatusService {
         originalPublished,
         originalImpactStages,
         invalidDeterministicOverall,
+        sourceAssessmentAttempt,
         originalAdmission,
         englishAssessmentEnabled:
           process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1',
@@ -670,7 +678,7 @@ export function initialAnalysisTerminalCode(row: {
 export function projectCanonicalHostInitialAnalysisStatus(
   workItem: CanonicalWorkItemProjection,
   attempts: readonly CanonicalInitialAnalysisAttemptObservation[],
-  options: { originalAdmission?: {contextRef:string|null;reason:string|null}; englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean; originalImpactStages?: Partial<Record<OriginalEngineeringStage, boolean>>; invalidDeterministicOverall?: boolean } = {},
+  options: { originalAdmission?: {contextRef:string|null;reason:string|null}; englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean; originalImpactStages?: Partial<Record<OriginalEngineeringStage, boolean>>; invalidDeterministicOverall?: boolean; sourceAssessmentAttempt?: CanonicalInitialAnalysisAttemptObservation } = {},
 ): AilyInitialAnalysisStatus {
   const attemptByAction = latestAttemptsByAction(attempts);
   const parsedPackageReady = options.originalPublished ?? isParsedPackageReady(workItem);
@@ -685,7 +693,8 @@ export function projectCanonicalHostInitialAnalysisStatus(
   const deterministic = execution.integratedAssessment?.overallSynthesis?.executionKind ===
     'DETERMINISTIC_PROJECTION' ? execution.integratedAssessment.overallSynthesis : null;
   const sourceInitial = deterministic?.sourceAssessment
-    ? attempts.find(attempt => attempt.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' &&
+    ? [options.sourceAssessmentAttempt, ...attempts].find(attempt =>
+      attempt?.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' &&
       attempt.attemptId === deterministic.sourceAssessment!.actionAttemptId) : undefined;
   const independentOverall = attemptByAction.OPENCLAW_OVERALL_SYNTHESIS;
   const newerOverall = independentOverall && (
@@ -732,6 +741,7 @@ export function projectCanonicalHostInitialAnalysisStatus(
           : projectStage(
               overallProjectionObservation(workItem),
               overallAttempt,
+              !!newerOverall,
             ),
       }
     : pendingStages();
@@ -957,11 +967,12 @@ function overallProjectionObservation(
 function projectStage(
   projection: StageProjectionObservation,
   attempt: CanonicalInitialAnalysisAttemptObservation | undefined,
+  independentSuccessor = false,
 ): AilyInitialAnalysisStageStatus {
   // A separately requested run is visible beside the retained earlier result.
   // QUEUED means the consumer may claim it; it is not an already running call.
   if (
-    attempt?.requestId &&
+    attempt && (attempt.requestId || independentSuccessor) &&
     (attempt.attemptId !== projection.actionAttemptId ||
       ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
         attempt.status,

@@ -1,3 +1,4 @@
+import { overallUserRegenerationIdempotencyKey } from '../../server/modules/canonical-host/canonical-host-openclaw-overall.service';
 import * as authorizedWork from '../../server/modules/canonical-host/canonical-authorized-work-item-reader';
 import { CanonicalHostInitialAnalysisStatusService } from '../../server/modules/canonical-host/canonical-host-initial-analysis-status.service';
 import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
@@ -191,8 +192,9 @@ describe('JobAid continuation requests', () => {
           const stored = {...prepared.row, actionType: started.task.taskType, requestOrigin: 'OPENCLAW_MCP_V1',
             status: 'SUCCEEDED', projectionApplied: true, taskEnvelopeJson: canonicalJson(started.task),
             taskInputHash: started.task.inputHash, executionModelJson: canonicalJson(started.task.executionModel)};
+          let latestRows: unknown[] = [stored];
           const database = {
-            selectDistinctOn: () => ({from: () => ({where: () => ({orderBy: async () => [stored]})})}),
+            selectDistinctOn: () => ({from: () => ({where: () => ({orderBy: async () => latestRows})})}),
             select: () => ({from: () => ({where: () => ({limit: async () => [stored]})})}),
           };
           const savedStore = {
@@ -212,6 +214,31 @@ describe('JobAid continuation requests', () => {
             expect(savedStore.latest).not.toHaveBeenCalled();
             expect(savedStore.readByRef).toHaveBeenCalledWith({tenantId: TENANT, workItemId: scope.workItemId,
               workRevisionRef: revision.workRevisionRef});
+            // The real latest-per-action query has evicted this program source attempt.
+            // A later v1 regeneration still belongs after it even when current WI advanced again.
+            h.advanceRevision(); h.advanceRevision();
+            const current = h.current(), retainedOverall = current.integratedAssessment!.overallSynthesis!;
+            retainedOverall.status = 'STALE'; retainedOverall.staleReason = 'BASE_RULE_RESULT_CHANGED';
+            const laterDynamic = {...stored, attemptId:'ATT-LATER-DYNAMIC', attemptRef:'AQ-LATER-DYNAMIC',
+              baseRevision:stored.baseRevision!+2,status:'RUNNING',
+              idempotencyKey:`openclaw-v2:dynamic:${current.workItemId}:${current.source.documentVersionId}:later-dynamic`};
+            for (const state of ['QUEUED','RUNNING','COMMITTING','FAILED']) {
+              const laterOverall = {...stored, attemptId:'ATT-V1-OVERALL', attemptRef:'AQ-V1-OVERALL',
+                actionType:'OPENCLAW_OVERALL_SYNTHESIS',baseRevision:stored.baseRevision!+1,status:state,
+                idempotencyKey:overallUserRegenerationIdempotencyKey(current.workItemId,stored.baseRevision!+1,'new-overall')};
+              latestRows=[laterDynamic,laterOverall];
+              const newer = await statusService.project({workItem:current,tenantId:TENANT,browserActorUserId:OWNER});
+              expect(newer.stages.jobAid).toMatchObject({status:'BUSY',attemptRef:'AQ-LATER-DYNAMIC'});
+              expect(newer.stages.overall).toMatchObject({status:state==='QUEUED'?'PENDING':state==='FAILED'?'FAILED':'BUSY',
+                attemptRef:'AQ-V1-OVERALL',attemptStatus:state});
+              expect(newer.stages.overall.requestId).toBeUndefined();
+            }
+            // A historical v1 attempt preceding the program source must stay historical.
+            latestRows=[laterDynamic,{...stored,attemptId:'ATT-OLD-OVERALL',attemptRef:'AQ-OLD-OVERALL',
+              actionType:'OPENCLAW_OVERALL_SYNTHESIS',baseRevision:stored.baseRevision!-1,status:'RUNNING'}];
+            expect((await statusService.project({workItem:current,tenantId:TENANT,browserActorUserId:OWNER})).stages.overall)
+              .toMatchObject({status:'CONFLICT',terminalCode:'OVERALL_PROJECTION_NOT_CURRENT'});
+            latestRows=[stored];retainedOverall.status='CANDIDATE_ONLY';retainedOverall.staleReason=null;
             h.current().integratedAssessment!.overallSynthesis!.sourceAssessment!.workRevisionRef = 'JAWR-WRONG';
             const invalid = await statusService.project({workItem: h.current(), tenantId: TENANT, browserActorUserId: OWNER});
             expect(invalid.stages.overall).toMatchObject({status: 'CONFLICT', terminalCode: 'INITIAL_OVERALL_PROJECTION_RECORD_INVALID'});
