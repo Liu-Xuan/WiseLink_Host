@@ -28,12 +28,15 @@ const { ActionAttemptRepository } = require('../../server/modules/action-attempt
 const { ActionAttemptLifecycleService } = require('../../server/modules/action-attempt/action-attempt-lifecycle.service.ts');
 const { CanonicalModelSettingsRepository } = require('../../server/modules/model-settings/canonical-model-settings.repository.ts');
 const { CanonicalModelSettingsService } = require('../../server/modules/model-settings/canonical-model-settings.service.ts');
-const { canonicalJson, sealTaskEnvelope } = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
+const { canonicalJson, sealTaskEnvelope, sealResultEnvelope } = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
+const { assertAutomaticWorkItemAttemptLease } = require('../../server/modules/action-attempt/automatic-work-item-attempt-lease.ts');
 const { buildInitialAnalysisRequestInput } = require('../../server/modules/action-attempt/initial-analysis-request.ts');
 const { MiaodaWorkItemRepository } = require('../../server/modules/work-item/miaoda-work-item.repository.ts');
 const { OrdinaryDocumentManagementAuthorizer } = require('../../server/modules/document-management-runtime/ordinary-document-management-authorizer.ts');
 const { MiaodaHostedDocumentCatalog, tenantFamilyIdentityPrefix } = require('../../server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog.ts');
 const { MiaodaAutomaticWorkItemSourceAuthorizationAdapter } = require('../../server/modules/canonical-host/miaoda-automatic-work-item-source-authorization.adapter.ts');
+const { AutomaticWorkItemDispatchService } = require('../../server/modules/canonical-host/automatic-work-item-dispatch.service.ts');
+const { ConfiguredDevelopmentCanonicalServiceScopeAuthorization } = require('../../server/modules/canonical-host/configured-development-service-scope.authorization.ts');
 
 const TENANT = 'tenant-native-initial', OWNER = 'owner-native-initial', READER = 'reader-native-initial';
 const APP = 'app_17bzc551rsg', WI = 'WI-native-initial', PERMISSION = 'permission-native-initial';
@@ -89,6 +92,9 @@ test('native owner requests one exact terminal successor atomically under real r
           ADD FOREIGN KEY(tenant_id,work_item_id) REFERENCES work_item(tenant_id,work_item_id);
         ALTER TABLE action_attempt ALTER COLUMN subject_kind SET DEFAULT 'WORK_ITEM';
         ALTER TABLE action_attempt ALTER COLUMN projection_applied SET DEFAULT false;
+        ALTER TABLE action_attempt ALTER COLUMN claim_count SET DEFAULT 0;
+        ALTER TABLE action_attempt ALTER COLUMN retry_count SET DEFAULT 0;
+        ALTER TABLE action_attempt ALTER COLUMN lease_generation SET DEFAULT 0;
         GRANT SELECT,INSERT,UPDATE ON work_item,action_attempt TO ${nativeRole},${serviceRole};
         CREATE POLICY fixture_native_work ON work_item FOR SELECT TO ${nativeRole}
           USING(tenant_id='${TENANT}' AND current_setting('app.user_id',true) IN ('${OWNER}','${READER}'));
@@ -168,7 +174,9 @@ test('native owner requests one exact terminal successor atomically under real r
         assert.deepEqual(options, { requireCurrent: true, expectedCreatorUserId: OWNER });
         assert.equal((await observe(this.db)).role, serviceRole);
         return { version: { ...SOURCE, sourceArtifactId: sourceCurrent ? SOURCE.sourceArtifactId : 'ART-changed',
-          pdfSha256: SOURCE.sourceFileSha256, byteLength: SOURCE.sourceByteLength } };
+          pdfSha256: SOURCE.sourceFileSha256, byteLength: SOURCE.sourceByteLength },
+          artifact: { sourceArtifactId: SOURCE.sourceArtifactId, sha256: SOURCE.sourceFileSha256,
+            byteLength: SOURCE.sourceByteLength } };
       };
       const authorization = { authorize: async ({ actor, action, workItemId }, database = db) => {
         const [owner] = await database.select().from(workItem).where(and(eq(workItem.tenantId, actor.tenantId), eq(workItem.workItemId, workItemId)));
@@ -187,7 +195,7 @@ test('native owner requests one exact terminal successor atomically under real r
           attemptRef: row.operationRef, status: row.status, terminalCode: row.terminalReason })),
         { originalPublished: true, englishAssessmentEnabled: true });
       };
-      const jobAid = { enqueueContinuation: async (item, tenantId, _permission, requestId, _purpose, knowledge, _original, guard) => {
+      const jobAid = { enqueueContinuation: async (item, tenantId, _permission, requestId, _purpose, knowledge, _original, guard, programControlled) => {
         if (beforeReserve) await beforeReserve();
         const reserved = await lifecycle.reserve({ workItemId: item.workItemId, tenantId,
           taskType: 'OPENCLAW_DYNAMIC_EVALUATION', actorUserId: 'service:openclaw-main',
@@ -195,8 +203,10 @@ test('native owner requests one exact terminal successor atomically under real r
           idempotencyKey: `openclaw-v2:dynamic:${WI}:${SOURCE.documentVersionId}:${requestId}`,
           sourceRefs: [{ ref: SOURCE.sourceArtifactId, sha256: SOURCE.sourceFileSha256 }],
           initialKnowledgeSession: { expectedSessionId: null, ...(knowledge ? { replacement: knowledge } : {}) },
-          cancelledInitialContinuation: guard, buildModelInput: async () => buildInitialAnalysisRequestInput({
-            taskType: 'OPENCLAW_DYNAMIC_EVALUATION', requestId, originalParseRunId: 'PR-native-initial' }) });
+          cancelledInitialContinuation: guard, ...(programControlled ? {programControlled} : {}),
+          buildModelInput: async () => buildInitialAnalysisRequestInput({
+            taskType: 'OPENCLAW_DYNAMIC_EVALUATION', requestId, originalParseRunId: 'PR-native-initial',
+            ...(programControlled ? {executionMode:'PROGRAM_CONTROLLED_V1',modelRef:programControlled.modelRef} : {}) }) });
         return { status: reserved.row.status, created: reserved.created };
       } };
       const continuation = new CanonicalInitialAnalysisContinuationController(new CanonicalInitialAnalysisContinuationService(
@@ -214,22 +224,23 @@ test('native owner requests one exact terminal successor atomically under real r
       const post = (id = randomUUID(), req = request(), expectedRevision = 3) => browser(req,
         () => continuation.request(WI, { requestId: id, expectedRevision, operation: 'EVALUATE_JOBAID' }, req));
       let oldRows;
-      async function seed(status = 'TIMED_OUT') {
+      async function seed(status = 'TIMED_OUT', generation = 3, oldQueueBinding = false) {
         sourceAllowed = true; sourceCurrent = true; permissionCurrent = true; beforeReserve = undefined;
         realSourceMode = null; sourceExecutors.length = 0;
         await admin.unsafe('TRUNCATE action_attempt,auto_work_item_authorization,work_item,fixture_grant_release_count CASCADE');
         await admin`INSERT INTO work_item(tenant_id,work_item_id,request_id,requested_by_user_id,revision,action_type,status,
           document_id,document_version_id,source_artifact_id,source_file_sha256,source_byte_length,
-          package_id,package_artifact_ref,package_artifact_sha256,projection_json,analysis_model_json)
+          package_id,package_artifact_ref,package_artifact_sha256,projection_json,analysis_model_json,run_key)
           VALUES(${TENANT},${WI},${projection.requestId},${OWNER},3,'PARSE_PDF','CANDIDATE_READBACK_VERIFIED',
           ${SOURCE.documentId},${SOURCE.documentVersionId},${SOURCE.sourceArtifactId},${SOURCE.sourceFileSha256},1024,
-          ${projection.package.packageId},${projection.package.artifact.ref},${projection.package.artifact.sha256},${canonicalJson(projection)},${canonicalJson(MODEL)})`;
+          ${projection.package.packageId},${projection.package.artifact.ref},${projection.package.artifact.sha256},${canonicalJson(projection)},${canonicalJson(MODEL)},'canonical')`;
         for (const number of [1, 2]) {
           const task = sealTaskEnvelope({ schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1', actionAttemptId: `ATT-old-${number}`,
             operationRef: `AQ-old-${number}`, taskType: 'OPENCLAW_DYNAMIC_EVALUATION', priority: 100, tenantId: TENANT,
             workItemId: WI, inputRevision: 3, baseRevision: 3, documentVersionId: SOURCE.documentVersionId,
             sourceRefs: [{ ref: SOURCE.sourceArtifactId, sha256: SOURCE.sourceFileSha256 }], allowedConnectors: [], hostResolvedMissingInputs: [],
-            modelInput: { schemaVersion: 'legacy-prepared-fixture', source: 'synthetic' }, executionModel: MODEL,
+            modelInput: { schemaVersion: 'legacy-prepared-fixture', source: 'synthetic',
+              ...(oldQueueBinding ? {automaticWorkItemLease:{requestId:projection.requestId,leaseGeneration:generation}} : {}) }, executionModel: MODEL,
             deadline: '2026-10-10T02:00:00.000Z', idempotencyKey: `legacy-initial-${number}` });
           await admin`INSERT INTO action_attempt(attempt_id,operation_ref,tenant_id,work_item_id,subject_kind,actor_user_id,
             request_origin,action_type,status,attempt_no,trigger_request_id,input_revision,base_revision,document_version_id,
@@ -243,14 +254,153 @@ test('native owner requests one exact terminal successor atomically under real r
           document_version_id,source_artifact_id,source_file_sha256,source_byte_length,grant_kind,status,lease_generation,
           blocked_code,blocked_lease_token_hash,blocked_lease_generation,blocked_at)
           VALUES(${TENANT},${WI},${projection.requestId},${OWNER},${SOURCE.documentId},${SOURCE.documentVersionId},${SOURCE.sourceArtifactId},
-          ${SOURCE.sourceFileSha256},1024,'MIAODA_CANONICAL_PARSE_REQUEST','BLOCKED',3,
-          ${status === 'CANCELLED' ? 'AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED' : 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED'},${'f'.repeat(64)},3,'2026-10-10T03:00:00.000Z')`;
+          ${SOURCE.sourceFileSha256},1024,'MIAODA_CANONICAL_PARSE_REQUEST','BLOCKED',${generation},
+          ${status === 'CANCELLED' ? 'AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED' : 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED'},${'f'.repeat(64)},${generation},'2026-10-10T03:00:00.000Z')`;
         oldRows = await admin`SELECT * FROM action_attempt ORDER BY attempt_no`;
       }
       async function assertUnchanged() {
         assert.deepEqual(await admin`SELECT * FROM action_attempt ORDER BY attempt_no`, oldRows);
         assert.equal((await admin`SELECT status FROM auto_work_item_authorization`)[0].status, 'BLOCKED');
       }
+      const asService = operation => sessions.withNativeBrowserIdentity(request(), () =>
+        sessions.withVerifiedReviewServiceSql(operation, OWNER));
+      const snapshot = async () => ({
+        attempts: await admin`SELECT * FROM action_attempt ORDER BY attempt_no,attempt_id`,
+        grant: await admin`SELECT * FROM auto_work_item_authorization`,
+        owner: await admin`SELECT * FROM work_item`,
+      });
+      const codexConfiguration = {
+        WL_MODEL_EXECUTOR:'CODEX',WL_CODEX_RUNTIME_APP_ID:'app_syntheticcodexcontinuation',
+        WL_CODEX_SERVICE_SCOPE_ENABLED:'1',WL_CODEX_GATEWAY_AUTH_MODE:'API_KEY',
+        WL_CODEX_SERVICE_SCOPE_ENV:'UAT',WL_CODEX_SERVICE_PRINCIPAL_ID:'service:codex-continuation',
+        WL_CODEX_SERVICE_TENANT_ID:TENANT,WL_CODEX_SERVICE_WORK_ITEM_ID:WI,
+        WL_CODEX_SERVICE_REQUEST_ID:projection.requestId,WL_CODEX_SERVICE_AUTO_QUEUE_ENABLED:'1',
+      };
+      async function withCodex(operation) {
+        const previous = Object.fromEntries(Object.keys(codexConfiguration).map(key => [key,process.env[key]]));
+        Object.assign(process.env,codexConfiguration);
+        try { return await operation(); }
+        finally { for (const [key,value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key]; else process.env[key]=value;
+        } }
+      }
+      async function browserSuccessor() {
+        await seed('TIMED_OUT',2,true);
+        const oldToken=randomUUID(), now=new Date();
+        await admin`UPDATE auto_work_item_authorization SET status='LEASED',lease_owner='service:original-fixture',
+          lease_token=${oldToken},lease_generation=2,lease_expires_at=${new Date(now.getTime()+60000)},
+          blocked_code=null,blocked_lease_token_hash=null,blocked_lease_generation=null,blocked_at=null`;
+        const blockInput={tenantId:TENANT,workItemId:WI,requestId:projection.requestId,actorUserId:OWNER,...SOURCE,
+          expectedWorkItemRevision:3,leaseOwner:'service:original-fixture',leaseToken:oldToken,leaseGeneration:2,
+          blockedCode:'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED',now};
+        const blocked=await asService(() => realSourceRepository.blockAutoProcessingLease(blockInput));
+        assert.equal(blocked.replayed,false);
+        const id=randomUUID(), req=request();
+        const send=() => browser(req,() => continuation.request(WI,{requestId:id,expectedRevision:3,
+          operation:'EVALUATE_JOBAID',executionMode:'PROGRAM_CONTROLLED_V1',modelRef:MODEL.modelRef},req));
+        assert.equal((await send()).replayed,false);
+        return {id,send,oldToken,blockInput};
+      }
+      const dispatch = new AutomaticWorkItemDispatchService(realSourceRepository,
+        new MiaodaDocumentVersionSourceResolver(db),new ConfiguredDevelopmentCanonicalServiceScopeAuthorization(),
+        {authorizeSourceRead:boundedSourceRead});
+      const claimCodexDirect = () => withCodex(() => asService(() => realSourceRepository.claimAutoProcessingCandidate({
+        tenantId:TENANT,workItemId:WI,requestId:projection.requestId,actorUserId:OWNER,...SOURCE,
+        expectedWorkItemRevision:3,leaseOwner:codexConfiguration.WL_CODEX_SERVICE_PRINCIPAL_ID,
+        leaseToken:randomUUID(),now:new Date(),leaseExpiresAt:new Date(Date.now()+60000),preserveExecutorOwnership:true,
+      })));
+      await additionTest('CODEX normal BLOCK gen2 -> real browser UUID -> NEXT gen3 preserves predecessor and original intake', async () => {
+        const queued=await browserSuccessor();
+        const before=await snapshot();
+        assert.equal(before.grant[0].status,'WAITING');
+        assert.equal(before.grant[0].lease_generation,2);
+        assert.equal((await queued.send()).replayed,true);
+        assert.deepEqual(await snapshot(),before);
+        const claimed=await withCodex(() => asService(() => dispatch.nextWorkItem()));
+        assert.equal(claimed.status,'CLAIMED');assert.equal(claimed.leaseGeneration,3);
+        assert.equal(claimed.requestId,projection.requestId);
+        assert.notEqual(claimed.requestId,queued.id);
+        assert.deepEqual(await admin`SELECT * FROM action_attempt WHERE attempt_no<=2 ORDER BY attempt_no`,oldRows);
+        assert.equal((await admin`SELECT count(*)::integer AS n FROM action_attempt`)[0].n,3);
+        const [grant]=await admin`SELECT * FROM auto_work_item_authorization`;
+        assert.equal(grant.lease_generation,3);assert.equal(grant.status,'LEASED');
+        assert.equal(grant.lease_owner,codexConfiguration.WL_CODEX_SERVICE_PRINCIPAL_ID);
+        const after=await snapshot();
+        assert.equal((await queued.send()).replayed,true);
+        assert.deepEqual(await snapshot(),after);
+        assert.equal(await asService(() => realSourceRepository.acknowledgeAutoProcessingLease({
+          tenantId:TENANT,workItemId:WI,leaseOwner:queued.blockInput.leaseOwner,leaseToken:queued.oldToken,
+          leaseGeneration:2,expectedWorkItemRevision:3,now:new Date()})),null);
+        const oldBlock=await asService(() => realSourceRepository.blockAutoProcessingLease({...queued.blockInput,now:new Date()}));
+        assert.ok(oldBlock === null || oldBlock.replayed === true);
+        const oldRow=await asService(() => repo.readByOperationRef('AQ-old-2'));
+        await assert.rejects(asService(() => db.transaction(transaction => assertAutomaticWorkItemAttemptLease(
+          transaction,oldRow,codexConfiguration.WL_CODEX_SERVICE_PRINCIPAL_ID,true))),
+        /AUTO_WORK_ITEM_ATTEMPT_LEASE_REJECTED/u);
+        const oldTask=JSON.parse(oldRow.taskEnvelopeJson);
+        const lateResult=sealResultEnvelope({schemaVersion:'wiselink.3_1.openclaw_result_envelope.v1',
+          actionAttemptId:oldTask.actionAttemptId,operationRef:oldTask.operationRef,taskType:oldTask.taskType,
+          workItemId:WI,baseRevision:3,status:'FAILED',businessOutcome:'NOT_PRODUCED',candidateStatus:null,
+          modelOutput:null,outputArtifactRefs:[],sourceRefs:oldTask.sourceRefs,factsConsidered:[],missingInputs:[],
+          conflicts:[],warnings:[],modelVersion:MODEL.modelRef,promptVersion:'synthetic-late-result',
+          skillVersion:'wiselink-research-and-synthesize@r09.c10',toolVersions:{},
+          runMetrics:{durationMs:1,inputUnits:0,outputUnits:0},errorCode:'SYNTHETIC_LATE_RESULT',errorDetail:null});
+        await assert.rejects(asService(() => lifecycle.prepareCommit({tenantId:TENANT,workItemId:WI,
+          principalId:queued.blockInput.leaseOwner,attemptRef:oldRow.operationRef,leaseToken:queued.oldToken,
+          leaseGeneration:1,result:lateResult})),/ACTION_ATTEMPT_ALREADY_TIMED_OUT/u);
+        assert.deepEqual(await snapshot(),after);
+      });
+      for (const failure of ['missing-block-receipt','wrong-block-generation','wrong-source-hash',
+        'wrong-version','wrong-task-hash','automatic-hash-request','already-executed','concurrent-active','expired-new-request'])
+        await additionTest('CODEX rejects new-intent proof without side effects: '+failure,async () => {
+          await browserSuccessor();
+          const [row]=await admin`SELECT * FROM action_attempt WHERE attempt_no=3`;
+          const task=JSON.parse(row.task_envelope_json);
+          let reseal=false;
+          if (failure === 'missing-block-receipt')
+            await admin`UPDATE auto_work_item_authorization SET blocked_lease_token_hash=null,blocked_lease_generation=null,blocked_at=null`;
+          if (failure === 'wrong-block-generation')
+            await admin`UPDATE auto_work_item_authorization SET blocked_lease_generation=1`;
+          if (failure === 'wrong-source-hash') {task.sourceRefs[0].sha256='b'.repeat(64);reseal=true;}
+          if (failure === 'wrong-version') {
+            task.documentVersionId='DV-other';
+            task.idempotencyKey=`openclaw-v2:dynamic:${WI}:DV-other:${task.modelInput.requestId}`;
+            await admin`UPDATE action_attempt SET document_version_id='DV-other' WHERE attempt_id=${row.attempt_id}`;
+            reseal=true;
+          }
+          if (failure === 'wrong-task-hash')
+            await admin`UPDATE action_attempt SET task_input_hash=${'b'.repeat(64)} WHERE attempt_id=${row.attempt_id}`;
+          if (failure === 'automatic-hash-request') {
+            task.modelInput=buildInitialAnalysisRequestInput({...task.modelInput,requestId:'f'.repeat(64)});
+            task.idempotencyKey=`openclaw-v2:dynamic:${WI}:${SOURCE.documentVersionId}:${task.modelInput.requestId}`;
+            reseal=true;
+          }
+          if (failure === 'already-executed')
+            await admin`UPDATE action_attempt SET claim_count=1,lease_generation=1 WHERE attempt_id=${row.attempt_id}`;
+          if (failure === 'concurrent-active')
+            await admin`INSERT INTO action_attempt(attempt_id,tenant_id,work_item_id,action_type,status,attempt_no,created_at)
+              VALUES('ATT-concurrent-active',${TENANT},${WI},'OPENCLAW_OVERALL_SYNTHESIS','RUNNING',1,now())`;
+          if (failure === 'expired-new-request') {
+            task.deadline=new Date(Date.now()-1000).toISOString();reseal=true;
+            await admin`UPDATE action_attempt SET deadline_at=${new Date(task.deadline)} WHERE attempt_id=${row.attempt_id}`;
+          }
+          if (reseal) {
+            const {inputHash:_old,...body}=task;
+            const changed=sealTaskEnvelope(body);
+            await admin`UPDATE action_attempt SET task_envelope_json=${canonicalJson(changed)},task_input_hash=${changed.inputHash},
+              idempotency_key=${changed.idempotencyKey} WHERE attempt_id=${row.attempt_id}`;
+          }
+          const before=await snapshot();
+          await assert.rejects(claimCodexDirect(),error => error.code === 'CANONICAL_CODEX_LEGACY_WORK_NOT_ADOPTABLE');
+          assert.deepEqual(await snapshot(),before);
+        });
+      await additionTest('CODEX keeps ordinary WAITING gen2 with historical work rejected',async () => {
+        await seed();
+        await admin`UPDATE auto_work_item_authorization SET status='WAITING',lease_generation=2,blocked_lease_generation=2`;
+        const before=await snapshot();
+        await assert.rejects(claimCodexDirect(),error => error.code === 'CANONICAL_CODEX_LEGACY_WORK_NOT_ADOPTABLE');
+        assert.deepEqual(await snapshot(),before);
+      });
       await baseTest('native owner without cookie and matching/expired optional OAuth read the same two GET capabilities', async () => {
         await seed();
         for (const cookie of [null, OWNER, 'expired']) {

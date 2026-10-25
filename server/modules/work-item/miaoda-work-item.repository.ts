@@ -1,4 +1,5 @@
 import { taskAutomaticWorkItemLease } from '../action-attempt/automatic-work-item-attempt-lease';
+import { readBrowserInitialContinuationClaim } from '../action-attempt/cancelled-initial-continuation';
 import { ACTION_ATTEMPT_COMMIT_RECOVERY_MS } from '../action-attempt/action-attempt.types';
 import { ActionAttemptRepository } from '../action-attempt/action-attempt.repository';
 import { createHash, randomUUID } from 'node:crypto';
@@ -973,7 +974,7 @@ export class MiaodaWorkItemRepository {
   }): Promise<AutoWorkItemLease | null> {
     return this.db.transaction(async (database) => {
       // SAVE/CAS and queue takeover share WorkItem -> grant -> attempt order.
-      const [owner] = await database.select({ revision: workItem.revision, projectionJson:workItem.projectionJson }).from(workItem)
+      const [owner] = await database.select().from(workItem)
         .where(and(eq(workItem.tenantId, input.tenantId), eq(workItem.workItemId, input.workItemId)))
         .limit(1).for('update');
       if (!owner || owner.revision !== input.expectedWorkItemRevision) return null;
@@ -983,7 +984,9 @@ export class MiaodaWorkItemRepository {
         .limit(1).for('update');
       if (!grant || (grant.status !== 'WAITING' &&
           !(grant.status === 'LEASED' && grant.leaseExpiresAt && grant.leaseExpiresAt <= input.now))) return null;
-      if (input.preserveExecutorOwnership && !(
+      const browserContinuation = input.preserveExecutorOwnership && grant.status === 'WAITING' && grant.leaseGeneration > 0
+        ? await readBrowserInitialContinuationClaim(database,owner,grant,input) : null;
+      if (input.preserveExecutorOwnership && !browserContinuation && !(
         (grant.status === 'WAITING' && grant.leaseOwner === null && grant.leaseGeneration === 0) ||
         (grant.status === 'LEASED' && grant.leaseOwner === input.leaseOwner)
       )) {
@@ -991,7 +994,7 @@ export class MiaodaWorkItemRepository {
         // can be terminalized or an expired lease can be transferred.
         throw canonicalModelError('CANONICAL_CODEX_LEGACY_WORK_NOT_ADOPTABLE', 409);
       }
-      if (input.preserveExecutorOwnership && grant.status === 'WAITING') {
+      if (input.preserveExecutorOwnership && grant.status === 'WAITING' && !browserContinuation) {
         // An untouched queue grant may still have work from the former static
         // scope. Inspect history under the same locks before any takeover can
         // terminalize an expired attempt. Parsing belongs to a different flow.

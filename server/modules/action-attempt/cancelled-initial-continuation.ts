@@ -11,6 +11,8 @@ import { readStoredExecutionModel } from '../model-settings/canonical-execution-
 import { matchesCancelledAttempt } from '../work-item/cancelled-auto-processing-lease';
 import { parseAutomaticWorkItemCancellation } from '../canonical-host/automatic-work-item-cancellation';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
+import { readInitialAnalysisRequestInput } from './initial-analysis-request';
+import { jobAidSourceFileReference } from '../canonical-host/jobaid-problem-task';
 
 export const CANCELLED_INITIAL_QUEUE_CODE =
   'AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED';
@@ -31,6 +33,86 @@ export interface CancelledInitialContinuationBinding {
 export interface CancelledInitialContinuationGuard {
   binding: CancelledInitialContinuationBinding;
   authorize(database: PostgresJsDatabase): Promise<void>;
+}
+
+/** Caller already holds WI then grant locks. This proves a new browser intent,
+ * not the executor identity of any earlier request. No history is rewritten. */
+export async function readBrowserInitialContinuationClaim(
+  database: PostgresJsDatabase,
+  owner: typeof workItem.$inferSelect,
+  grant: typeof autoWorkItemAuthorization.$inferSelect,
+  input: {
+    tenantId: string; workItemId: string; requestId: string; actorUserId: string;
+    documentId: string; documentVersionId: string; sourceArtifactId: string;
+    sourceFileSha256: string; sourceByteLength: number;
+    expectedWorkItemRevision: number; now: Date;
+  },
+): Promise<{ attemptId: string; requestId: string } | null> {
+  let projection: CanonicalWorkItemProjection;
+  try { projection = JSON.parse(owner.projectionJson ?? 'null') as CanonicalWorkItemProjection; }
+  catch { return null; }
+  if (!projection || !projection.package || projection.configurationEvidenceReevaluation ||
+      !matchesInitialContinuationOwner(owner, {tenantId:input.tenantId,
+        actorUserId:input.actorUserId,workItem:projection}) ||
+      owner.workItemId !== input.workItemId || owner.requestId !== input.requestId ||
+      owner.revision !== input.expectedWorkItemRevision ||
+      grant.status !== 'WAITING' || grant.grantKind !== 'MIAODA_CANONICAL_PARSE_REQUEST' ||
+      !Number.isSafeInteger(grant.leaseGeneration) || grant.leaseGeneration < 1 ||
+      grant.leaseOwner !== null || grant.leaseToken !== null || grant.leaseExpiresAt !== null ||
+      grant.completedAt !== null || grant.completedLeaseGeneration !== null || grant.completedLeaseTokenHash !== null ||
+      grant.blockedCode !== FAILED_INITIAL_QUEUE_CODE || !grant.blockedAt ||
+      !/^[a-f0-9]{64}$/u.test(grant.blockedLeaseTokenHash ?? '') ||
+      grant.blockedLeaseGeneration !== grant.leaseGeneration ||
+      grant.tenantId !== input.tenantId || grant.workItemId !== owner.workItemId ||
+      grant.actorUserId !== owner.requestedByUserId || grant.requestId !== owner.requestId ||
+      grant.documentId !== owner.documentId || grant.documentId !== input.documentId ||
+      grant.documentVersionId !== owner.documentVersionId || grant.documentVersionId !== input.documentVersionId ||
+      grant.sourceArtifactId !== owner.sourceArtifactId || grant.sourceArtifactId !== input.sourceArtifactId ||
+      grant.sourceFileSha256 !== owner.sourceFileSha256 || grant.sourceFileSha256 !== input.sourceFileSha256 ||
+      Number(grant.sourceByteLength) !== Number(owner.sourceByteLength) ||
+      Number(grant.sourceByteLength) !== input.sourceByteLength) return null;
+
+  const rows = await database.select().from(actionAttempt).where(and(
+    eq(actionAttempt.tenantId,input.tenantId),eq(actionAttempt.workItemId,owner.workItemId),
+  )).for('update');
+  const queued = rows.filter(row => row.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' && row.status === 'QUEUED');
+  if (queued.length !== 1) return null;
+  const next = queued[0];
+  const history = rows.filter(row => row.attemptId !== next.attemptId);
+  const previous = [...history].sort((a,b) => b.createdAt.getTime()-a.createdAt.getTime() || b.attemptNo-a.attemptNo)[0];
+  if (!previous || !matchesFailedAttempt(previous,owner,grant.blockedAt) ||
+      !effectiveFailedContinuationModel(owner.analysisModelJson,history) ||
+      history.some(row => ['QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING'].includes(row.status) ||
+        row.createdAt >= next.createdAt ||
+        (row.actionType === next.actionType && row.attemptNo >= next.attemptNo)) ||
+      next.createdAt < grant.blockedAt || !grant.updatedAt || grant.updatedAt < next.createdAt ||
+      next.subjectKind !== 'WORK_ITEM' || next.requestOrigin !== 'OPENCLAW_MCP_V1' ||
+      (next.actorUserId !== owner.requestedByUserId && next.actorUserId !== 'service:openclaw-main') ||
+      next.documentVersionId !== owner.documentVersionId ||
+      next.inputRevision !== owner.revision || next.baseRevision !== owner.revision ||
+      next.claimCount !== 0 || next.retryCount !== 0 || next.leaseGeneration !== 0 ||
+      next.leaseOwner !== null || next.leaseToken !== null || next.leaseExpiresAt !== null ||
+      next.leaseSlot !== null || next.startedAt !== null || next.lastHeartbeatAt !== null ||
+      next.completedAt !== null || next.commitStartedAt !== null || next.projectionApplied ||
+      next.resultEnvelopeJson !== null || next.resultContentHash !== null ||
+      next.cancelRequestedAt !== null || next.cancelReason !== null || next.executorSessionKey !== null ||
+      !next.triggerRequestId?.trim() || !next.deadlineAt || next.deadlineAt <= input.now) return null;
+  try {
+    const task = parseTaskEnvelope(String(next.taskEnvelopeJson));
+    const request = readInitialAnalysisRequestInput(task);
+    const model = readStoredExecutionModel(next.executionModelJson);
+    if (!request || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(request.requestId) ||
+        !request.originalParseRunId || !model ||
+        task.actionAttemptId !== next.attemptId || task.operationRef !== next.operationRef ||
+        task.taskType !== next.actionType || task.tenantId !== owner.tenantId || task.workItemId !== owner.workItemId ||
+        task.documentVersionId !== owner.documentVersionId ||
+        task.inputRevision !== owner.revision || task.baseRevision !== owner.revision ||
+        task.priority !== next.priority || task.deadline !== next.deadlineAt.toISOString() ||
+        task.idempotencyKey !== next.idempotencyKey || task.inputHash !== next.taskInputHash ||
+        canonicalJson(task.executionModel) !== canonicalJson(model) ||
+        canonicalJson(task.sourceRefs[0]) !== canonicalJson(jobAidSourceFileReference(projection))) return null;
+    return {attemptId:next.attemptId,requestId:request.requestId};
+  } catch { return null; }
 }
 
 /** Read-only UI eligibility is only a hint; reservation repeats these checks under locks. */
