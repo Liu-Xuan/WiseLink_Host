@@ -4,7 +4,7 @@ import { Test } from '@nestjs/testing';
 import { configureApp } from '@lark-apaas/fullstack-nestjs-core';
 import { AppLogger } from '@lark-apaas/nestjs-logger';
 import type { Request, Response } from 'express';
-import { request } from 'node:http';
+import { request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { GlobalExceptionFilter } from '../../server/common/filters/exception.filter';
 import { CanonicalHostOpenClawMcpOpenApiController } from '../../server/modules/canonical-host/canonical-host-openclaw-mcp.openapi.controller';
@@ -14,7 +14,6 @@ import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION } from '../../server/modules/cano
 import { ConfiguredDevelopmentCanonicalServiceScopeAuthorization } from '../../server/modules/canonical-host/configured-development-service-scope.authorization';
 import { createTdmsDailyHttpParser } from '../../server/modules/tdms-source/tdms-daily-http-parser';
 import {
-  CODEX_MCP_REQUEST_MAX_BYTES,
   createCanonicalCodexMcpHttpParser,
 } from '../../server/modules/canonical-host/canonical-codex-mcp-http-parser';
 
@@ -108,8 +107,9 @@ function send(app: NestExpressApplication, path: string, body: string,
   });
 }
 
-describe('bounded CODEX MCP JSON parser with the installed SDK HTTP stack', () => {
+describe('CODEX MCP JSON parser without a fixed application body cap', () => {
   const fixture: string = progressBodyAtLeast(Math.floor(1.4 * 1024 * 1024));
+  const largeFixture: string = progressBodyAtLeast(5 * 1024 * 1024);
   const route: string = '/openapi/wiselink/codex-mcp';
   const scopeEnv: Record<string, string> = {
     CLIENT_BASE_PATH: '', SANDBOX_ID: 'synthetic-codex-parser-http',
@@ -177,7 +177,6 @@ describe('bounded CODEX MCP JSON parser with the installed SDK HTTP stack', () =
 
   it(`round-trips ${Buffer.byteLength(fixture)} UTF-8 bytes of Chinese/escaped MATERIALS_READY`, async () => {
     expect(Buffer.byteLength(fixture)).toBeGreaterThan(1024 * 1024);
-    expect(Buffer.byteLength(fixture)).toBeLessThan(CODEX_MCP_REQUEST_MAX_BYTES);
     expect((await send(app, route, fixture)).status).toBe(200);
     expect(handle).toHaveBeenCalledTimes(1);
     expect(handle.mock.calls[0][2]).toEqual(JSON.parse(fixture));
@@ -201,21 +200,45 @@ describe('bounded CODEX MCP JSON parser with the installed SDK HTTP stack', () =
     expect(handle.mock.calls[0][2]).toEqual(JSON.parse(fixture));
   });
 
-  it.each([false, true])('accepts chunked=%s below the bounded maximum', async chunked => {
+  it.each([false, true])('accepts the original materials with chunked=%s', async chunked => {
     expect((await send(app, route, fixture, { chunked })).status).toBe(200);
     expect(handle.mock.calls[0][2]).toEqual(JSON.parse(fixture));
   });
 
-  it.each([false, true])('returns a stable 413 for oversized chunked=%s', async chunked => {
-    const oversized: string = JSON.stringify({ payload: 'x'.repeat(CODEX_MCP_REQUEST_MAX_BYTES) });
-    const result: HttpResult = await send(app, route, oversized, { chunked });
-    expect(result.status).toBe(413);
-    expect(result.body).toMatchObject({ error: { code: 'CANONICAL_CODEX_MCP_BODY_TOO_LARGE' } });
-    expect(handle).not.toHaveBeenCalled();
+  it.each([false, true])(`round-trips ${Buffer.byteLength(largeFixture)} bytes above the former 4 MiB cap with chunked=%s`, async chunked => {
+    expect(Buffer.byteLength(largeFixture)).toBeGreaterThan(4 * 1024 * 1024);
+    expect((await send(app, route, largeFixture, { chunked })).status).toBe(200);
+    expect(handle).toHaveBeenCalledTimes(1);
+    expect(handle.mock.calls[0][2]).toEqual(JSON.parse(largeFixture));
+  });
+
+  it('keeps two concurrent large requests independent', async () => {
+    const results: HttpResult[] = await Promise.all([
+      send(app, route, largeFixture), send(app, route, largeFixture, { chunked: true }),
+    ]);
+    expect(results.map((result: HttpResult) => result.status)).toEqual([200, 200]);
+    expect(handle).toHaveBeenCalledTimes(2);
+    for (const call of handle.mock.calls) expect(call[2]).toEqual(JSON.parse(largeFixture));
+  });
+
+  it('retains the installed server request and header timeouts', async () => {
+    const baseline: NestExpressApplication = await start('', false);
+    const original: Server = baseline.getHttpServer();
+    const current: Server = app.getHttpServer();
+    expect(current.requestTimeout).toBe(original.requestTimeout);
+    expect(current.headersTimeout).toBe(original.headersTimeout);
+    expect(current.timeout).toBe(original.timeout);
+    expect(current.requestTimeout).toBeGreaterThan(0);
+    expect(current.headersTimeout).toBeGreaterThan(0);
   });
 
   it('does not swallow malformed JSON', async () => {
     expect((await send(app, route, '{')).status).toBe(400);
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  it('still rejects malformed JSON above the former 4 MiB cap', async () => {
+    expect((await send(app, route, largeFixture.slice(0, -1))).status).toBe(400);
     expect(handle).not.toHaveBeenCalled();
   });
 
@@ -233,7 +256,7 @@ describe('bounded CODEX MCP JSON parser with the installed SDK HTTP stack', () =
     ['WL_CODEX_SERVICE_SCOPE_ENABLED', '0'], ['WL_CODEX_GATEWAY_AUTH_MODE', 'OAUTH'],
   ])('retains the real controller transport rejection for %s=%s', async (key, value) => {
     process.env[key] = value;
-    const result: HttpResult = await send(app, route, fixture);
+    const result: HttpResult = await send(app, route, largeFixture);
     expect(result.status).toBe(503);
     expect(result.body).toMatchObject({ error: { code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE' } });
     expect(handle).not.toHaveBeenCalled();
