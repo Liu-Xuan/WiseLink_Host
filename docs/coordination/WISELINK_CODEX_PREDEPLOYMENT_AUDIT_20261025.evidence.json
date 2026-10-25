@@ -1,0 +1,463 @@
+{
+  "schemaVersion": "wiselink.codex.predeployment-audit-evidence.v1",
+  "generatedAtUtc": "2026-10-25 13:33:34 UTC",
+  "scope": {
+    "productCodeChanged": false,
+    "productionConfigurationChanged": false,
+    "realModelCalls": 0,
+    "realHostCalls": 0,
+    "credentialsAccessed": false,
+    "linuxTargetTwelveExecuted": false,
+    "fullSchemaComparisonRepeated": false,
+    "translationOrWorkersExpanded": false
+  },
+  "baseline": {
+    "repository": "Liu-Xuan/WiseLink_Host",
+    "branch": "codex/miaoda-codex-evaluation-loop-20261025",
+    "reviewSourceCommit": "53a42d98d20e0616c5a58b19ac80ce8a38b82e78",
+    "reviewSourceTree": "5fad81ea68727c537d79f5553bde70ec00c93b26",
+    "productSourceCommit": "19d58915982c740690080b8db3e355828810ff38",
+    "sourceFilesVerifiedAgainstGitTree": 156,
+    "sourceBlobMismatches": 0,
+    "fullTreeEntries": 5034,
+    "treeTruncated": false,
+    "localFinalRefs": [
+      {
+        "ref": "0b48366",
+        "status": "PENDING_EXACT_FINAL_BYTES",
+        "githubLookupStatus": 422
+      },
+      {
+        "ref": "542edca3",
+        "status": "PENDING_EXACT_FINAL_BYTES",
+        "githubLookupStatus": 422
+      }
+    ],
+    "finalGraphVersionRequested": "v1.9.1",
+    "finalGraphBytesReceived": false,
+    "approvalABCBytesReceived": false,
+    "latestAvailableAttachment": "WiseLink_Host_Codex_Interface_f57d8863.zip",
+    "latestAvailableAttachmentSha256": "c67a519d46341499e95cb320725b5b759ba5631e71b42ad01e5306cd594f67d3",
+    "attachmentUsedAsFinal": false
+  },
+  "environment": {
+    "scope": "ChatGPT cloud Linux only; not Miaoda actual host",
+    "os": "Linux",
+    "kernel": "6.18.55",
+    "architecture": "x86_64",
+    "node": "v24.22.1",
+    "python": "3.12.14",
+    "flock": "util-linux 2.39.3",
+    "tempRoot": "/tmp",
+    "requiredCodexBinary": "codex-cli 0.164.0",
+    "requiredBinaryAvailableHere": false,
+    "codexExecuted": false
+  },
+  "linuxPreparation": {
+    "status": "PENDING_EXACT_12_TEST_SELECTION",
+    "requestedCount": 12,
+    "knownCandidateOwnerInstances": 32,
+    "selectedAsRequestedTwelve": false,
+    "executed": false,
+    "candidateGroups": [
+      {
+        "source": "L1",
+        "lines": "81-100",
+        "count": 1,
+        "purpose": "精确BLOCK回执和claim归档后释放"
+      },
+      {
+        "source": "L1",
+        "lines": "102-112",
+        "count": 6,
+        "purpose": "准确claim字段变化拒绝"
+      },
+      {
+        "source": "L1",
+        "lines": "114-125",
+        "count": 7,
+        "purpose": "无效BLOCK回执拒绝"
+      },
+      {
+        "source": "L1",
+        "lines": "127-134",
+        "count": 1,
+        "purpose": "BLOCK传输未知不重发"
+      },
+      {
+        "source": "L1",
+        "lines": "136-141",
+        "count": 1,
+        "purpose": "归档写失败保留claim"
+      },
+      {
+        "source": "L1",
+        "lines": "143-154",
+        "count": 1,
+        "purpose": "归档成功、clear失败后的重入"
+      },
+      {
+        "source": "L1",
+        "lines": "156-168",
+        "count": 3,
+        "purpose": "重复结束不覆盖新generation、新事项或空claim"
+      },
+      {
+        "source": "L1",
+        "lines": "170-175",
+        "count": 1,
+        "purpose": "归档缺失或篡改拒绝"
+      },
+      {
+        "source": "L1",
+        "lines": "177-186",
+        "count": 1,
+        "purpose": "竞争finish拒绝"
+      },
+      {
+        "source": "L1",
+        "lines": "188-199",
+        "count": 1,
+        "purpose": "等待替身期间持锁防止ABA"
+      },
+      {
+        "source": "L1",
+        "lines": "201-230",
+        "count": 2,
+        "purpose": "迟到ACK或attention仍受owner保护"
+      },
+      {
+        "source": "L1",
+        "lines": "232-261",
+        "count": 1,
+        "purpose": "异常及子进程死亡释放内核锁"
+      },
+      {
+        "source": "L1",
+        "lines": "263-271",
+        "count": 1,
+        "purpose": "flock缺失时拒绝执行"
+      },
+      {
+        "source": "L2",
+        "lines": "1824-1853",
+        "count": 3,
+        "purpose": "迟到失败不覆盖新generation、新事项或空claim"
+      },
+      {
+        "source": "L2",
+        "lines": "1855-1875",
+        "count": 1,
+        "purpose": "同租约竞争消费者拒绝"
+      },
+      {
+        "source": "L2",
+        "lines": "1877-1902",
+        "count": 1,
+        "purpose": "两次失败保留独立回执"
+      }
+    ],
+    "nonLinuxBehavior": "These owner tests execute a rejection-contract branch rather than prove Linux locking.",
+    "minimalPrerequisites": [
+      "exact final source and original twelve selection",
+      "Linux and util-linux flock on PATH",
+      "private independent TMPDIR",
+      "local writable filesystem supporting required file/lock operations",
+      "original fixtures/imports"
+    ],
+    "writes": [
+      "temporary test checkpoints",
+      "active-claim.owner.lock",
+      "synthetic archive and failure receipts",
+      "one test-owned subprocess"
+    ],
+    "productionModulesImportCheck": {
+      "status": "PASSED",
+      "clientFactoryInvoked": false,
+      "consumerInvoked": false,
+      "networkCalls": 0
+    },
+    "scopeWarning": "Do not run production --finish-blocked-claim or --auto-queue as an offline test."
+  },
+  "requestAudit": {
+    "status": "SOURCE_AUDITED_AND_EXISTING_OFFLINE_TESTS_PASSED",
+    "finalLocalCombinationVerified": false,
+    "applicationPolicyMaxModelRequests": 1,
+    "bridgeMaxRequests": 1,
+    "bridgeBudgetChargedBeforeDispatch": true,
+    "bridgeBudgetReturnedAfterFailure": false,
+    "requestMaxRetriesConfigured": 0,
+    "streamMaxRetriesConfigured": 0,
+    "actualCli164AllRetryBranchesVerified": false,
+    "modelRequestCountDefinition": "Count of persisted bridge audit rows marked upstream_attempted=true immediately before HTTPSConnection.request",
+    "successRequiresExactlyOneAuditRow": true,
+    "allLoopbackHttpRequestsCounted": false,
+    "miaodaInternalProviderDispatchCountKnown": false,
+    "providerBillingCountKnown": false,
+    "receiptLossZeroMeansNotDispatched": false,
+    "modelRecoveryKey": "program:${attemptRef}:round-1",
+    "providerStatusQueryImplemented": false,
+    "hostSaveKeyQueryImplemented": true,
+    "retainedRunRecoveryRedispatches": false,
+    "originalSseRetention": "parsed SSE JSON events on complete validated response, not raw transfer bytes"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "kind": "VERIFIED_BOUNDARY",
+      "title": "One retained generation run has a bridge limit of one upstream dispatch attempt",
+      "sources": [
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P5"
+      ]
+    },
+    {
+      "id": "F2",
+      "kind": "STATIC_RECOVERY_COMPOSITION_GAP",
+      "title": "A retained modelRequests budget reservation can block SAVE after receipt-only recovery",
+      "condition": "jobAidRunLimits enabled; initial dispatch did not finish budget.complete; same run receipt later recovers",
+      "effect": "JOBAID_RUN_OUTCOME_UNKNOWN before SAVE; no second model dispatch",
+      "sources": [
+        {
+          "id": "P6",
+          "lines": "1776-1778,1909,2213-2256"
+        },
+        {
+          "id": "P1",
+          "lines": "97-143"
+        }
+      ],
+      "fullCombinedFailureReproduced": false,
+      "finalLocalPresence": "PENDING_EXACT_FINAL_BYTES",
+      "productFixMade": false
+    },
+    {
+      "id": "F3",
+      "kind": "COUNTING_LIMITATION",
+      "title": "model_requests is not all HTTP traffic, provider receipt, internal inference or billing count",
+      "sources": [
+        "P4",
+        "P5"
+      ]
+    },
+    {
+      "id": "F4",
+      "kind": "MISSING_SELECTION",
+      "title": "Original Linux twelve designation is missing; known cloud candidates are 32",
+      "sources": [
+        "L1",
+        "L2"
+      ]
+    },
+    {
+      "id": "F5",
+      "kind": "PENDING_FINAL_REVIEW",
+      "title": "Local final bytes, graph v1.9.1 and ABC approval documents have not been received",
+      "finalVerified": false
+    }
+  ],
+  "validations": [
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test_miaoda_responses_bridge test_run_codex_generation_recovery",
+      "cwdRelativeToSourceRoot": "openclaw/codex-evaluator",
+      "exitCode": 0,
+      "result": "12 Python unittest cases OK",
+      "durationSeconds": 0.258,
+      "reportedBy": "single_request_program_audit",
+      "scope": "fake server/HTTPSConnection and fake Codex CLI",
+      "isUserLinuxTwelve": false,
+      "realCodexCli": false
+    },
+    {
+      "command": "node --test openclaw/codex-evaluator/program-recovery.test.mjs openclaw/codex-evaluator/codex-generation-recovery.test.mjs",
+      "cwdRelativeToSourceRoot": ".",
+      "exitCode": 0,
+      "result": "2 test files passed; 0 failed in emitted runner summary",
+      "durationSeconds": 3.383,
+      "reportedBy": "single_request_program_audit",
+      "scope": "synthetic model/Host recovery and local process interruption",
+      "subtestCountClaimed": null,
+      "includesBudgetPlusProgramRecovery": false
+    },
+    {
+      "command": "node --input-type=module -e \"await import('./openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs'); await import('./openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs');\"",
+      "exitCode": 0,
+      "result": "production module imports resolved without invoking factory or consumer",
+      "reportedBy": "root",
+      "isBusinessTest": false
+    }
+  ],
+  "missing": [
+    {
+      "id": "M1",
+      "requiredFor": "exact twelve Linux minimal verification package",
+      "items": [
+        "original command and exact twelve names or selectors",
+        "original skipped/not-run log",
+        "corresponding frozen test bytes and hashes"
+      ]
+    },
+    {
+      "id": "M2",
+      "requiredFor": "final 0b48366/542edca3 narrow review",
+      "items": [
+        "full commit and tree identities",
+        "exact scoped diff or files relative to reviewed cloud increment",
+        "three local narrow-fix implementation files",
+        "final budget and program recovery integration files",
+        "changed Host authorization and request/SAVE/READ handlers, or byte equality proof"
+      ]
+    },
+    {
+      "id": "M3",
+      "requiredFor": "graph and approval alignment",
+      "items": [
+        "v1.9.1 graph exact bytes and SHA256",
+        "A/B/C proposed approval exact text, version and SHA256"
+      ]
+    },
+    {
+      "id": "M4",
+      "requiredFor": "claim of actual CLI loopback retry behavior",
+      "items": [
+        "actual deployment Codex entry, version and executable/package identity",
+        "generated provider configuration without secret values"
+      ],
+      "note": "No new CLI fault injection is commissioned or performed in this audit."
+    }
+  ],
+  "sources": [
+    {
+      "id": "P1",
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "bytes": 22168,
+      "sha256": "1b729324e759099e4070f49b5faa2edca326a96f1db6e7b67bbadbee92772cc9",
+      "gitBlob": "30ee08c390bdecd89da4dba34d04f4f6efc4e487"
+    },
+    {
+      "id": "P2",
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
+      "bytes": 3898,
+      "sha256": "02d4f44236f5b8e659edaa9d88cf1688d7008e5acebe52d0bd3e54b94c34865c",
+      "gitBlob": "7ceefff7bf246454599c5226e2417b66be2f4c2d"
+    },
+    {
+      "id": "P3",
+      "path": "openclaw/codex-evaluator/codex-generation.mjs",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/codex-evaluator/codex-generation.mjs",
+      "bytes": 23110,
+      "sha256": "fd0d77f118d312292db8580a7f1f153be712029a98e5c0774c7ca8e0bebb31fe",
+      "gitBlob": "1b72de7061eaed30aed81fc9fa1d4197145d9e80"
+    },
+    {
+      "id": "P4",
+      "path": "openclaw/codex-evaluator/run_codex_generation.py",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/codex-evaluator/run_codex_generation.py",
+      "bytes": 16363,
+      "sha256": "4596a24630cfbdf96006aed8f06aa26d2c534111313b0890e3b00c3a912682ef",
+      "gitBlob": "b36070fe582a09561d3ab2bf0905d4ab9d7ac5d3"
+    },
+    {
+      "id": "P5",
+      "path": "openclaw/codex-evaluator/miaoda_responses_bridge.py",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/codex-evaluator/miaoda_responses_bridge.py",
+      "bytes": 27572,
+      "sha256": "52e9b093ba293bab7479a3b1105d4db750605b49143054ec5a5133111ba3a632",
+      "gitBlob": "b8af92a3ef709a1c9449fdf0b84b7794e7a1f253"
+    },
+    {
+      "id": "P6",
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs",
+      "bytes": 179488,
+      "sha256": "8d7e282a53d6a904e21fdfaf7d45f87942740ebe7d77e3444704da1714f692ad",
+      "gitBlob": "39b15256ffb77cf51cd8fa4269f1bc3ace92f153"
+    },
+    {
+      "id": "P7",
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs",
+      "bytes": 27771,
+      "sha256": "9b2f3a53735a56faaa6aa7c266c43e05daabec8178d21f5809df27d6754d778e",
+      "gitBlob": "ad196a57e5a15a50b4db4ede6f7066b53666100c"
+    },
+    {
+      "id": "L1",
+      "path": "openclaw/skills/wiselink-research-and-synthesize/tests/automatic-work-item-finalization.test.mjs",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/skills/wiselink-research-and-synthesize/tests/automatic-work-item-finalization.test.mjs",
+      "bytes": 17564,
+      "sha256": "0b47bd80cf0437000c1fed5000192e631522ec7ec6091e6005729f2207dd38fd",
+      "gitBlob": "8b4f0c0d2c4593f2fad031c3d4433b230438af6e"
+    },
+    {
+      "id": "L2",
+      "path": "openclaw/skills/wiselink-research-and-synthesize/tests/automatic-work-item-queue.test.mjs",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/skills/wiselink-research-and-synthesize/tests/automatic-work-item-queue.test.mjs",
+      "bytes": 108512,
+      "sha256": "7af96f7e9915a564a9e836eb9f10c31cbaf575fcf68da36a66901c7a7e9e056a",
+      "gitBlob": "2a62a1258eee627a1753506a1fd1dea13544084a"
+    },
+    {
+      "id": "L3",
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs",
+      "bytes": 223870,
+      "sha256": "644329c74c8332a906e5830d5f7a0d6c3b39ea8307c8547c4050d0ef3ca114fd",
+      "gitBlob": "17099de26844062cff94f22def921bfe01b2f378"
+    },
+    {
+      "id": "T1",
+      "path": "openclaw/codex-evaluator/test_miaoda_responses_bridge.py",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/codex-evaluator/test_miaoda_responses_bridge.py",
+      "bytes": 15634,
+      "sha256": "bbb7d18c4b16f9fe57fe0817edf5082573341e165caee152d66516e64570b04a",
+      "gitBlob": "c57372d4aa571db970ad1a1e55aed84d9abe39af"
+    },
+    {
+      "id": "T2",
+      "path": "openclaw/codex-evaluator/test_run_codex_generation_recovery.py",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/codex-evaluator/test_run_codex_generation_recovery.py",
+      "bytes": 7171,
+      "sha256": "039923fb934b8109000671224d52e5b0b264c7b529ff152590f5044d0f1888b2",
+      "gitBlob": "dd8679b1540f2783702054cf544f2b38ee022006"
+    },
+    {
+      "id": "T3",
+      "path": "openclaw/codex-evaluator/program-recovery.test.mjs",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/codex-evaluator/program-recovery.test.mjs",
+      "bytes": 12072,
+      "sha256": "1e331b15b2a747257da89376fdb230526c15b45df4e370b1aaa54f1c3fd47823",
+      "gitBlob": "ca2a96b8197068360d006bb61f33fa0c4602109d"
+    },
+    {
+      "id": "T4",
+      "path": "openclaw/codex-evaluator/codex-generation-recovery.test.mjs",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/codex-evaluator/codex-generation-recovery.test.mjs",
+      "bytes": 15100,
+      "sha256": "2f81e6537e33ada90471b2721d84772bcff5a92e5530ccd75ecf9e44e0ca25e6",
+      "gitBlob": "3ae70d3e5f8a19405fe2e29132e14485bbd33aaa"
+    },
+    {
+      "id": "T5",
+      "path": "openclaw/skills/wiselink-research-and-synthesize/tests/jobaid-run-limits.test.mjs",
+      "url": "https://github.com/Liu-Xuan/WiseLink_Host/blob/53a42d98d20e0616c5a58b19ac80ce8a38b82e78/openclaw/skills/wiselink-research-and-synthesize/tests/jobaid-run-limits.test.mjs",
+      "bytes": 45367,
+      "sha256": "01f2113e783cf09a1b7aa472d3af65323208b8fa6861ab9a284d5a8c072c9155",
+      "gitBlob": "c52d9aa07b3512f52fca74e8ec3d13a61cc04c14"
+    }
+  ],
+  "officialDocumentation": {
+    "url": "https://developers.openai.com/codex/config-reference/",
+    "resolvedUrl": "https://learn.chatgpt.com/docs/config-file/config-reference",
+    "scope": "current documentation only; not a version-bound 0.164.0 proof",
+    "fields": [
+      "model_providers.<id>.request_max_retries",
+      "model_providers.<id>.stream_max_retries"
+    ]
+  }
+}
