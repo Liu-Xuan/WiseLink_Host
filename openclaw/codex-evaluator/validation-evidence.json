@@ -1,0 +1,278 @@
+{
+  "mode": "REAL_MIAODA_MODEL_SYNTHETIC_HOST",
+  "realHostCalled": false,
+  "passed": true,
+  "runs": [
+    {
+      "model": "glm-5.3",
+      "codex_version": "codex-cli 0.164.0",
+      "codex_exit_code": 0,
+      "timed_out": false,
+      "failure": null,
+      "provider_requires_openai_auth": false,
+      "openai_credentials_in_child_environment": false,
+      "source_config_sha256_before": "bc20a38e5bb4b2cdf3f19a10a5168fc879caf142d560583267dc442a784c2193",
+      "cleanup_errors": [],
+      "host_mode": "synthetic-fixture",
+      "egress_audit": "not_performed",
+      "model_requests": 7,
+      "http_200": 7,
+      "upstream_models": [
+        "glm-5.3"
+      ],
+      "unique_tool_calls": 6,
+      "unique_tool_results": 6,
+      "matched_tool_roundtrips": 6,
+      "unmatched_tool_results": 0,
+      "tool_calls_without_return": 0,
+      "input_tokens": 107165,
+      "output_tokens": 2244,
+      "bridge_errors": [],
+      "terminal_events": [
+        "turn.completed"
+      ],
+      "successful_mcp_calls": 5,
+      "failed_mcp_calls": 1,
+      "source_config_sha256_after": "bc20a38e5bb4b2cdf3f19a10a5168fc879caf142d560583267dc442a784c2193",
+      "source_config_unchanged": true,
+      "auth_json_present": false,
+      "duration_ms": 40046,
+      "transport_passed": true,
+      "finished": true
+    },
+    {
+      "model": "glm-5.3",
+      "codex_version": "codex-cli 0.164.0",
+      "codex_exit_code": 0,
+      "timed_out": false,
+      "failure": null,
+      "provider_requires_openai_auth": false,
+      "openai_credentials_in_child_environment": false,
+      "source_config_sha256_before": "bc20a38e5bb4b2cdf3f19a10a5168fc879caf142d560583267dc442a784c2193",
+      "cleanup_errors": [],
+      "host_mode": "synthetic-fixture",
+      "egress_audit": "not_performed",
+      "model_requests": 2,
+      "http_200": 2,
+      "upstream_models": [
+        "glm-5.3"
+      ],
+      "unique_tool_calls": 1,
+      "unique_tool_results": 1,
+      "matched_tool_roundtrips": 1,
+      "unmatched_tool_results": 0,
+      "tool_calls_without_return": 0,
+      "input_tokens": 28149,
+      "output_tokens": 499,
+      "bridge_errors": [],
+      "terminal_events": [
+        "turn.completed"
+      ],
+      "successful_mcp_calls": 1,
+      "failed_mcp_calls": 0,
+      "source_config_sha256_after": "bc20a38e5bb4b2cdf3f19a10a5168fc879caf142d560583267dc442a784c2193",
+      "source_config_unchanged": true,
+      "auth_json_present": false,
+      "duration_ms": 11713,
+      "transport_passed": true,
+      "finished": true
+    }
+  ],
+  "error": null,
+  "initialWorkRevisionRef": "fixture-work-revision-2-c4b366e8-ea77-4481-aa15-7364dd7375cb",
+  "finalWorkRevisionRef": "fixture-work-revision-2-c4b366e8-ea77-4481-aa15-7364dd7375cb",
+  "overallCommit": {
+    "synthetic": true,
+    "status": "OVERALL_CANDIDATE_READY",
+    "basedOnJobAidWorkRevisionRef": "fixture-work-revision-2-c4b366e8-ea77-4481-aa15-7364dd7375cb"
+  },
+  "savedRevisions": 2,
+  "independentReadbacks": 3,
+  "actions": [
+    {
+      "sequence": 1,
+      "action": "READ_SOURCES"
+    },
+    {
+      "sequence": 2,
+      "action": "SAVE_WORK",
+      "requestId": "JA-save-8a8defde-5926-4a7f-bc0c-49ce64c69253",
+      "workRevision": 1,
+      "workRevisionRef": "fixture-work-revision-1-95b2cc4f-2a38-4672-9a47-b50008e796d3"
+    },
+    {
+      "sequence": 3,
+      "action": "READ_WORK",
+      "requestId": "JA-save-8a8defde-5926-4a7f-bc0c-49ce64c69253",
+      "workRevisionRef": "fixture-work-revision-1-95b2cc4f-2a38-4672-9a47-b50008e796d3"
+    },
+    {
+      "sequence": 4,
+      "action": "READ_WORK",
+      "requestId": "JA-save-8a8defde-5926-4a7f-bc0c-49ce64c69253",
+      "workRevisionRef": "fixture-work-revision-1-95b2cc4f-2a38-4672-9a47-b50008e796d3"
+    },
+    {
+      "sequence": 5,
+      "action": "SAVE_WORK",
+      "requestId": "JA-save-da697c52-1bfd-4738-8098-5903fb326631",
+      "workRevision": 2,
+      "workRevisionRef": "fixture-work-revision-2-c4b366e8-ea77-4481-aa15-7364dd7375cb"
+    },
+    {
+      "sequence": 6,
+      "action": "READ_WORK",
+      "requestId": "JA-save-da697c52-1bfd-4738-8098-5903fb326631",
+      "workRevisionRef": "fixture-work-revision-2-c4b366e8-ea77-4481-aa15-7364dd7375cb"
+    },
+    {
+      "sequence": 7,
+      "action": "READ_WORK",
+      "requestId": null,
+      "workRevisionRef": "fixture-work-revision-2-c4b366e8-ea77-4481-aa15-7364dd7375cb"
+    },
+    {
+      "sequence": 8,
+      "action": "COMMIT_OVERALL",
+      "workRevisionRef": "fixture-work-revision-2-c4b366e8-ea77-4481-aa15-7364dd7375cb"
+    }
+  ],
+  "evidence_date_utc": "2026-10-25",
+  "source_commit": "94c24efa746984a7edbf8b76719e1ffcfa549bed",
+  "requested_reasoning_effort": "low",
+  "requested_max_output_tokens": 16384,
+  "assessment_stages": [
+    {
+      "operation": "evaluate_jobaid",
+      "assessment": {
+        "completed": true,
+        "expectedWorkRevision": 2,
+        "saved": {
+          "workRevisionRef": "fixture-work-revision-2-c4b366e8-ea77-4481-aa15-7364dd7375cb",
+          "workRevision": 2,
+          "roundCompletion": "COMPLETE_WITH_OPEN_QUESTIONS"
+        },
+        "pendingSave": false,
+        "pendingQuery": false,
+        "sourceReadCount": 1,
+        "knowledgeReadCount": 0,
+        "workReadRefs": [
+          "fixture-work-revision-1-95b2cc4f-2a38-4672-9a47-b50008e796d3"
+        ],
+        "actionAudit": [
+          {
+            "action": "READ_SOURCES",
+            "status": "AVAILABLE",
+            "sourceCount": 1
+          },
+          {
+            "action": "SAVE_WORK",
+            "status": "VERIFIED",
+            "workRevisionRef": "fixture-work-revision-1-95b2cc4f-2a38-4672-9a47-b50008e796d3",
+            "workRevision": 1
+          },
+          {
+            "action": "READ_WORK",
+            "status": "VERIFIED",
+            "workRevisionRef": "fixture-work-revision-1-95b2cc4f-2a38-4672-9a47-b50008e796d3"
+          },
+          {
+            "action": "SAVE_WORK",
+            "status": "VERIFIED",
+            "workRevisionRef": "fixture-work-revision-2-c4b366e8-ea77-4481-aa15-7364dd7375cb",
+            "workRevision": 2
+          },
+          {
+            "action": "FINISH",
+            "status": "COMPLETED",
+            "workRevisionRef": "fixture-work-revision-2-c4b366e8-ea77-4481-aa15-7364dd7375cb"
+          }
+        ]
+      },
+      "tool_outcomes": [
+        {
+          "action": "READ_SOURCES",
+          "eventStatus": "completed",
+          "status": "AVAILABLE"
+        },
+        {
+          "action": "SAVE_WORK",
+          "eventStatus": "completed",
+          "status": "SAVED"
+        },
+        {
+          "action": "SAVE_WORK",
+          "eventStatus": "failed",
+          "status": "ERROR",
+          "code": "WORK_BASELINE_READ_REQUIRED"
+        },
+        {
+          "action": "READ_WORK",
+          "eventStatus": "completed",
+          "status": "AVAILABLE"
+        },
+        {
+          "action": "SAVE_WORK",
+          "eventStatus": "completed",
+          "status": "SAVED"
+        },
+        {
+          "action": "FINISH",
+          "eventStatus": "completed",
+          "status": "FINISHED"
+        }
+      ]
+    },
+    {
+      "operation": "synthesize_overall",
+      "assessment": {
+        "completed": true,
+        "expectedWorkRevision": 2,
+        "saved": null,
+        "pendingSave": false,
+        "pendingQuery": false,
+        "sourceReadCount": 0,
+        "knowledgeReadCount": 0,
+        "workReadRefs": [],
+        "actionAudit": [
+          {
+            "action": "FINISH",
+            "status": "COMPLETED",
+            "workRevisionRef": "fixture-work-revision-2-c4b366e8-ea77-4481-aa15-7364dd7375cb"
+          }
+        ]
+      },
+      "tool_outcomes": [
+        {
+          "action": "FINISH",
+          "eventStatus": "completed",
+          "status": "FINISHED"
+        }
+      ]
+    }
+  ],
+  "final_work_state": {
+    "overviewStatus": "CURRENT",
+    "roundCompletion": "COMPLETE_WITH_OPEN_QUESTIONS",
+    "workRevision": 2,
+    "issueCount": 2
+  },
+  "preflight": {
+    "model": "miaoda/glm-5.3",
+    "modelRouteConfigured": true,
+    "codexBinaryAvailable": true,
+    "platformSecretRefsConfigured": true,
+    "hostMcpConfigured": false,
+    "missingHostTools": [],
+    "hostAuthenticationVerified": false,
+    "hostRuntimeRegistrationVerified": false,
+    "readyForModelFixture": true,
+    "readyForBusinessExecution": false,
+    "remaining": [
+      "HOST_MCP_NOT_CONFIGURED",
+      "VERIFY_HOST_AUTHENTICATION_AND_CURRENT_RUNTIME_REGISTRATION",
+      "SELECT_AUTHORIZED_BUSINESS_TASK_AND_VERIFY_EXACT_VERSION_READERS"
+    ]
+  },
+  "scope": "Real Codex and Miaoda model; synthetic in-memory Host; no canonical Host persistence or product-reader acceptance."
+}
