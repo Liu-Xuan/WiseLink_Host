@@ -532,10 +532,10 @@
         "V57",
         "V58"
       ],
-      "nextAction": "并行完成Host初评投影、Native程序步骤、阅读与图，选择性集成和审查后准备准确技术执行包，再验一条真实事项链。",
+      "nextAction": "审批准确联合技术包；获准后按正常新GLM请求验SAVE→独立READ→Overall→同版阅读与收尾，保留原UNKNOWN。",
       "progress": {
-        "delivered": "已核对可复用保存、独立读回和综合正文；新隔离候选进入实现，v1.7契约与验收定义同步修订。",
-        "remaining": "组合实现/审查/测试、准确部署与安装材料、真实GLM评估SAVE→READ→Overall→同版阅读及正常收尾；本地实现不等于业务通过。",
+        "delivered": "本地程序执行/Host/阅读/图已集成至7b；四项独审缺口关闭，定向回归及标准完整build通过；c240标准包145文件核验通过。",
+        "remaining": "本批准确安装/发布及前后端读回，一条新GLM真实业务链与正文质量验收；实现/测试通过不替代真实运行。",
         "owner": "主控集成；program_host_projection / program_native_executor / program_reading_ui 分别拥有Host、Native、正常阅读；主控维护图与证据",
         "acceptance": "一个真实事项在正常用户页面可读有用工程工作及准确依据，Overall实际读取同版工作，任务正常收尾；恢复不重生成、不重放UNKNOWN，图反映同一请求。",
         "evidenceIds": [

@@ -925,9 +925,9 @@
       "workPackageIds": [
         "P7"
       ],
-      "consumer": "新显式程序初评：Host请求封存/材料授权与SAVE/READ/投影，Native固定步骤，父级读模型与运行图",
-      "sourceRevision": null,
-      "environmentId": null,
+      "consumer": "正常程序评估入口→准确mode/model任务→完整材料与文件快照→现有SAVE/独立READ→合法初评确定性Overall→正常阅读/准确workRef下钻；进度与各终态分列",
+      "sourceRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
+      "environmentId": "local:program-controlled-assessment",
       "sourceRefs": [
         "server/modules/canonical-host/canonical-initial-analysis-continuation.service.ts",
         "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
@@ -935,18 +935,26 @@
         "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
         "openclaw/skills/wiselink-research-and-synthesize/scripts/program-assessment-materials.mjs",
         "client/src/features/review/InitialAnalysisContinueButton.tsx",
-        "client/src/pages/DocumentParsingPage/runtime-monitor/adapt-jobaid-working-read.ts"
+        "client/src/pages/DocumentParsingPage/runtime-monitor/adapt-jobaid-working-read.ts",
+        "server/modules/canonical-host/program-assessment-materials.ts",
+        "client/src/pages/DocumentParsingPage/ProgramAssessmentMaterials.tsx",
+        "client/src/pages/DocumentParsingPage/runtime-monitor/WorkItemRuntimeDiagnostic.tsx"
       ],
       "validationRefs": [
         "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
-        "test/unit/program-assessment-runtime-monitor.spec.ts"
+        "test/unit/program-assessment-runtime-monitor.spec.ts",
+        "openclaw/skills/wiselink-research-and-synthesize/tests/program-assessment.test.mjs",
+        "test/unit/program-assessment-materials.spec.ts",
+        "test/unit/program-assessment-materials-ui.spec.ts",
+        "test/unit/tdms-source/tdms-program-material-membership.spec.ts",
+        "test/unit/canonical-jobaid-problem-continuation.spec.ts"
       ],
       "gaps": [
         {
-          "id": "program.initial-review",
-          "kind": "source_review",
-          "reason": "本地实施尚在集成",
-          "nextAction": "核对完整请求、实际入口、恢复和准确工作投影"
+          "id": "program.initial-deployment",
+          "kind": "deployment",
+          "reason": "准确本地联合代码和Native包准备完成，尚未获本批安装/发布执行批准",
+          "nextAction": "按准确执行包批准后先安装兼容c240、再发布新Host并读回，随后沿正常新请求验业务"
         },
         {
           "id": "program.initial-live",

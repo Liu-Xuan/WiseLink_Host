@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "snapshot": {
     "dataMode": "snapshot",
-    "generatedAt": "2026-10-25T06:15:14.935159+00:00",
+    "generatedAt": "2026-10-25T06:29:52.547158+00:00",
     "contract": {
       "version": "1.7 程序控制评估修订稿",
       "source": "WISELINK_MAINLINE_GRAPH_CONTRACT.md",
@@ -546,10 +546,10 @@
           "V57",
           "V58"
         ],
-        "nextAction": "并行完成Host初评投影、Native程序步骤、阅读与图，选择性集成和审查后准备准确技术执行包，再验一条真实事项链。",
+        "nextAction": "审批准确联合技术包；获准后按正常新GLM请求验SAVE→独立READ→Overall→同版阅读与收尾，保留原UNKNOWN。",
         "progress": {
-          "delivered": "已核对可复用保存、独立读回和综合正文；新隔离候选进入实现，v1.7契约与验收定义同步修订。",
-          "remaining": "组合实现/审查/测试、准确部署与安装材料、真实GLM评估SAVE→READ→Overall→同版阅读及正常收尾；本地实现不等于业务通过。",
+          "delivered": "本地程序执行/Host/阅读/图已集成至7b；四项独审缺口关闭，定向回归及标准完整build通过；c240标准包145文件核验通过。",
+          "remaining": "本批准确安装/发布及前后端读回，一条新GLM真实业务链与正文质量验收；实现/测试通过不替代真实运行。",
           "owner": "主控集成；program_host_projection / program_native_executor / program_reading_ui 分别拥有Host、Native、正常阅读；主控维护图与证据",
           "acceptance": "一个真实事项在正常用户页面可读有用工程工作及准确依据，Overall实际读取同版工作，任务正常收尾；恢复不重生成、不重放UNKNOWN，图反映同一请求。",
           "evidenceIds": [
@@ -2507,9 +2507,9 @@
       "workPackageIds": [
         "P7"
       ],
-      "consumer": "新显式程序初评：Host请求封存/材料授权与SAVE/READ/投影，Native固定步骤，父级读模型与运行图",
-      "sourceRevision": null,
-      "environmentId": null,
+      "consumer": "正常程序评估入口→准确mode/model任务→完整材料与文件快照→现有SAVE/独立READ→合法初评确定性Overall→正常阅读/准确workRef下钻；进度与各终态分列",
+      "sourceRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
+      "environmentId": "local:program-controlled-assessment",
       "sourceRefs": [
         "server/modules/canonical-host/canonical-initial-analysis-continuation.service.ts",
         "server/modules/canonical-host/canonical-jobaid-problem.service.ts",
@@ -2517,18 +2517,26 @@
         "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
         "openclaw/skills/wiselink-research-and-synthesize/scripts/program-assessment-materials.mjs",
         "client/src/features/review/InitialAnalysisContinueButton.tsx",
-        "client/src/pages/DocumentParsingPage/runtime-monitor/adapt-jobaid-working-read.ts"
+        "client/src/pages/DocumentParsingPage/runtime-monitor/adapt-jobaid-working-read.ts",
+        "server/modules/canonical-host/program-assessment-materials.ts",
+        "client/src/pages/DocumentParsingPage/ProgramAssessmentMaterials.tsx",
+        "client/src/pages/DocumentParsingPage/runtime-monitor/WorkItemRuntimeDiagnostic.tsx"
       ],
       "validationRefs": [
         "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
-        "test/unit/program-assessment-runtime-monitor.spec.ts"
+        "test/unit/program-assessment-runtime-monitor.spec.ts",
+        "openclaw/skills/wiselink-research-and-synthesize/tests/program-assessment.test.mjs",
+        "test/unit/program-assessment-materials.spec.ts",
+        "test/unit/program-assessment-materials-ui.spec.ts",
+        "test/unit/tdms-source/tdms-program-material-membership.spec.ts",
+        "test/unit/canonical-jobaid-problem-continuation.spec.ts"
       ],
       "gaps": [
         {
-          "id": "program.initial-review",
-          "kind": "source_review",
-          "reason": "本地实施尚在集成",
-          "nextAction": "核对完整请求、实际入口、恢复和准确工作投影"
+          "id": "program.initial-deployment",
+          "kind": "deployment",
+          "reason": "准确本地联合代码和Native包准备完成，尚未获本批安装/发布执行批准",
+          "nextAction": "按准确执行包批准后先安装兼容c240、再发布新Host并读回，随后沿正常新请求验业务"
         },
         {
           "id": "program.initial-live",
@@ -10022,10 +10030,10 @@
     {
       "id": "program-initial.first-batch.source_review",
       "kind": "source_review",
-      "status": "not_run",
-      "contractRevision": null,
-      "sourceRevision": null,
-      "environmentId": null,
+      "status": "passed",
+      "contractRevision": "768a4c4525dc75630c8caee357925b9c9278efccf7bcc2b8138906643a3665ac",
+      "sourceRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
+      "environmentId": "local:program-controlled-assessment",
       "testLevel": null,
       "bindingIds": [
         "program.initial-assessment"
@@ -10048,16 +10056,16 @@
         "V58"
       ],
       "reportRef": "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
-      "summary": "程序控制第一批已进入本地实施，完整独立审查待完成；不代表已部署。"
+      "summary": "准确ae9实现+7b状态补修通过独立审查：材料可读、精确版本下钻、显式旧问题覆盖、后发独立Overall状态四项发现均关闭。仅本地源码，不是上线或真实业务验收。"
     },
     {
       "id": "program-initial.first-batch.test",
       "kind": "test",
-      "status": "not_run",
-      "contractRevision": null,
-      "sourceRevision": null,
-      "environmentId": null,
-      "testLevel": null,
+      "status": "passed",
+      "contractRevision": "768a4c4525dc75630c8caee357925b9c9278efccf7bcc2b8138906643a3665ac",
+      "sourceRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
+      "environmentId": "local:program-controlled-assessment",
+      "testLevel": "integration",
       "bindingIds": [
         "program.initial-assessment"
       ],
@@ -10079,14 +10087,14 @@
         "V58"
       ],
       "reportRef": "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
-      "summary": "定向测试随各实际消费者实施；完整组合结果待登记，不用测试数替代真实交付。"
+      "summary": "实际Host/Native消费者与UI定向回归通过；最后状态67通过/8既有跳过，材料UI/API20通过；c240标准Native全suite通过，145文件核验；准确clean7b标准完整build通过。原a009原生提交测试存在已复现的旧fixture失败，不冒称全仓全绿；无真实PG/RLS或业务模型验收。"
     },
     {
       "id": "program-initial.first-batch.deployment",
       "kind": "deployment",
       "status": "not_run",
-      "contractRevision": null,
-      "sourceRevision": null,
+      "contractRevision": "768a4c4525dc75630c8caee357925b9c9278efccf7bcc2b8138906643a3665ac",
+      "sourceRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
       "environmentId": null,
       "testLevel": null,
       "bindingIds": [
@@ -10110,14 +10118,14 @@
         "V58"
       ],
       "reportRef": "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
-      "summary": "本候选未同步、未发布、未安装。线上fa14/c239的历史回执另列。"
+      "summary": "本批未同步、未发布、未安装；准确c240包已本地准备。只读新鲜确认原Host仍fa14、无publishing、官方完整dev→main差异为空，不能据此称本候选已部署。"
     },
     {
       "id": "program-initial.first-batch.runtime",
       "kind": "runtime",
       "status": "not_run",
-      "contractRevision": null,
-      "sourceRevision": null,
+      "contractRevision": "768a4c4525dc75630c8caee357925b9c9278efccf7bcc2b8138906643a3665ac",
+      "sourceRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
       "environmentId": null,
       "testLevel": null,
       "bindingIds": [
@@ -10141,7 +10149,7 @@
         "V58"
       ],
       "reportRef": "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
-      "summary": "新程序流程尚未运行真实模型/SAVE；原ATT5 UNKNOWN和c239失败后继保留，不把旧回执改称新流程通过。"
+      "summary": "新程序流程尚无真实GLM/SAVE→独立READ→Overall→同版阅读/收尾回执。原ATT5 UNKNOWN及c239失败后继保持；等待准确技术范围批准，不列为代码缺陷。"
     }
   ]
 }
