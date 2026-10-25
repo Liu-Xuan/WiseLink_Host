@@ -1925,6 +1925,9 @@ export async function runHostedInitialStage(options, dependencies) {
         readAssessmentWork: runtimeHooks.readAssessmentWork,
         recordAssessmentProgramProgress: runtimeHooks.recordAssessmentProgramProgress,
         ...(jobAidBudget ? { runModelRequest: perform => jobAidBudget.dispatch('modelRequests', perform) } : {}),
+        ...(jobAidBudget && operation === 'EVALUATE_JOBAID' && options.modelExecutor === 'CODEX' &&
+          modelInput.executionMode === 'PROGRAM_CONTROLLED_V1'
+          ? { reconcileProgramModelRequest: verify => jobAidBudget.reconcileProgramModelRequest(verify) } : {}),
         assessmentBinding: runtimeHooks.assessmentBinding,
         observeModelOutput: (shape, round = 1) => checkpoint.observeAuxiliary(
           `${runtimeHooks.checkpointKey ?? 'model'}.output-shape${round === 1 ? '' : '-' + round}`, shape,
@@ -2228,8 +2231,9 @@ async function createJobAidRunBudget(checkpoint, limits, hasBinding, selection) 
   if (selection && !isDeepStrictEqual(state.selection, selection))
     throw new Error('JOBAID_RUN_LIMIT_SELECTION_CHANGED');
   const complete = async () => {
-    state = { ...state, active: null };
-    await checkpoint.write(step, state);
+    const completed = { ...state, active: null };
+    await checkpoint.write(step, completed);
+    state = completed;
   };
   return {
     snapshot: () => ({ limits: { ...state.limits }, dispatchReservations: { ...state.counts },
@@ -2271,6 +2275,18 @@ async function createJobAidRunBudget(checkpoint, limits, hasBinding, selection) 
           typeof active.contentHash === 'string' && value?.attemptRef === active.attemptRef &&
           value?.resultContentHash === active.contentHash && ['SUCCEEDED', 'WAITING_INPUT', 'FAILED'].includes(value?.status)))
         await complete();
+    },
+    reconcileProgramModelRequest: async verifyOriginalResponse => {
+      if (state.active?.kind !== 'modelRequests') return;
+      if (state.counts.modelRequests !== 1 ||
+          !isDeepStrictEqual(state.active, { kind: 'modelRequests' }) ||
+          !isDeepStrictEqual(await checkpoint.readOptional(`${step}-modelRequests-1`),
+            { kind: 'modelRequests', ordinal: 1 }))
+        throw new Error('JOBAID_PROGRAM_MODEL_BUDGET_RECOVERY_INVALID');
+      // This trusted program callback verifies the original local Codex run.
+      // No new dispatch, reservation, refund or Host authority is created.
+      await verifyOriginalResponse();
+      await complete();
     },
   };
 }

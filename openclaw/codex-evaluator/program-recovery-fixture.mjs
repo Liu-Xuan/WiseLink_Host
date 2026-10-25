@@ -3,11 +3,14 @@
  * in child processes; Host and model are explicitly synthetic, backed by files.
  * No network, credential, production task, or real model is used. */
 import { createHash } from 'node:crypto';
+import { realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCheckpointStore } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 import { invokeHostedProgramAssessment } from '../skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs';
 import { createCodexGateway } from './codex-generation.mjs';
+import { runHostedInitialStage } from '../skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs';
+import { initialStageCheckpointPath } from '../skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs';
 
 export function programRecoveryData() {
   const documentVersionId = 'fixture-document-recovery', parseRunId = 'fixture-parse-1';
@@ -46,15 +49,24 @@ export function programRecoveryData() {
 }
 
 const freshState = () => ({ realHostCalled: false, realModelCalled: false,
-  modelRequests: 0, saveCalls: 0, committedWrites: 0, reads: 0, actions: [], saved: null });
+  modelRequests: 0, modelRecoveryRequests: 0,
+  saveCalls: 0, committedWrites: 0, reads: 0, actions: [], saved: null });
+const sha256 = value => createHash('sha256').update(value).digest('hex');
 function crash() { process.kill(process.pid, 'SIGKILL'); }
 
 export async function runProgramRecoveryFixture(root, mode = 'normal') {
   root = resolve(root);
   const { modelInput, work, assessmentBinding } = programRecoveryData();
+  const budgeted = mode.startsWith('budget:');
+  if (budgeted) mode = mode.slice('budget:'.length);
+  const stageOptions = { checkpointRoot: root, workItemId: assessmentBinding.workItemId,
+    operation: 'EVALUATE_JOBAID', expectedInitialOperation: 'EVALUATE_JOBAID',
+    initialStageOnly: true, maxInitialStages: 1, modelExecutor: 'CODEX',
+    jobAidRunLimits: { modelRequests: 1, saves: 1, finishes: 1 } };
   const host = await createCheckpointStore(resolve(root, 'synthetic-host'));
   const model = await createCheckpointStore(resolve(root, 'synthetic-model'));
-  const disk = await createCheckpointStore(resolve(root, 'checkpoint'));
+  const disk = await createCheckpointStore(budgeted
+    ? initialStageCheckpointPath(stageOptions, 'EVALUATE_JOBAID') : resolve(root, 'checkpoint'));
   const checkpoint = { ...disk, writeOnce: async (key, value) => {
     await disk.writeOnce(key, value);
     if ((mode === 'after-started' && key === 'assessment-round-1.started') ||
@@ -127,33 +139,91 @@ export async function runProgramRecoveryFixture(root, mode = 'normal') {
   };
   const actualGateway = createCodexGateway(codexOptions);
   const gateway = async (_endpoint, init) => {
-    if (mode === 'before-codex-launch' || await disk.readOptional('assessment-round-1.codex-run'))
+    const parent = await disk.readOptional('assessment-round-1.codex-run');
+    if (mode === 'before-codex-launch' || parent?.runRoot === await realpath(codexOptions.runRoot))
       return actualGateway(_endpoint, init);
+    if (init.codexRecovery?.recoverOnly)
+      await update(state => { state.modelRecoveryRequests += 1; });
     let record = await model.readOptional('response');
+    const prepared = { runRoot: root, runDirectory: resolve(root, 'synthetic-model'),
+      requestId: init.codexRecovery.requestId,
+      bindingSha256: sha256(JSON.stringify({ synthetic: true,
+        requestId: init.codexRecovery.requestId, requestBody: init.body })),
+      promptSha256: sha256(init.body) };
     if (!record) {
       if (init.codexRecovery?.recoverOnly) throw new Error('CODEX_GENERATION_OUTCOME_UNKNOWN');
+      await init.codexRecovery.onRunPrepared?.(prepared);
       await update(state => { state.modelRequests += 1; });
       const raw = JSON.stringify({ id: 'fixture-model-response-1', object: 'chat.completion', model: 'glm-5.3',
         choices: [{ index: 0, finish_reason: 'tool_calls', message: { role: 'assistant', content: null,
           tool_calls: [{ id: 'fixture-result-call-1', type: 'function', function: {
             name: 'return_wiselink_program_assessment', arguments: JSON.stringify({ workJson: JSON.stringify(work) }) } }] } }],
         usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } });
-      record = { raw, requestBody: init.body, requestId: init.codexRecovery.requestId };
+      record = { raw, responseSha256: sha256(raw), status: 200, ok: true,
+        requestBody: init.body, requestId: init.codexRecovery.requestId };
       await model.writeOnce('response', record);
       await model.writeOnce('transport-summary', { synthetic: true, model_requests: 1, closure: 'completed' });
       if (mode === 'after-model-receipt') crash();
-    }
+      if (mode === 'throw-after-model-receipt') throw new Error('FIXTURE_RESPONSE_ACK_LOST');
+    } else await init.codexRecovery.onRunPrepared?.(prepared);
     if (record.requestBody !== init.body || record.requestId !== init.codexRecovery.requestId)
       throw new Error('FIXTURE_MODEL_BINDING_CHANGED');
-    return { status: 200, ok: true, text: async () => record.raw,
+    if (typeof record.raw !== 'string' || record.responseSha256 !== sha256(record.raw) ||
+        record.status !== 200 || record.ok !== true)
+      throw new Error('CODEX_GENERATION_RECOVERY_MISMATCH');
+    const summary = await model.readOptional('transport-summary');
+    if (!summary) throw new Error('CODEX_GENERATION_OUTCOME_UNKNOWN');
+    if (summary.synthetic !== true || summary.model_requests !== 1 || summary.closure !== 'completed')
+      throw new Error('CODEX_GENERATION_RECOVERY_MISMATCH');
+    return { status: record.status, ok: record.ok, text: async () => record.raw,
       codexReceipt: { requestId: record.requestId, runDirectory: resolve(root, 'synthetic-model'),
-        responseSha256: createHash('sha256').update(record.raw).digest('hex'),
+        responseSha256: record.responseSha256,
         transportSummaryRef: resolve(root, 'synthetic-model', 'transport-summary.json'),
         recovered: Boolean(init.codexRecovery.recoverOnly) } };
   };
-  const execution = await invokeHostedProgramAssessment({ operation: 'EVALUATE_JOBAID', modelInput }, options,
+  let execution, report;
+  if (budgeted) {
+    // Exercise the real consumer's budget closure. Only orchestration and Host
+    // transport are synthetic; model/SAVE reservation handling is production code.
+    const initial = { workItemId: assessmentBinding.workItemId,
+      documentVersionId: assessmentBinding.documentVersionId, workItemRevision: 7,
+      status: 'REQUIRED', nextOperation: 'EVALUATE_JOBAID', candidateOnly: true,
+      stages: { translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+        jobAid: { status: 'PENDING' }, overall: { status: 'PENDING' } } };
+    const previousClaim = await disk.readOptional('assessment-current-claim');
+    const task = { ...assessmentBinding, operationRef: assessmentBinding.attemptRef,
+      taskType: 'OPENCLAW_DYNAMIC_EVALUATION', deadline: options.taskDeadline,
+      executionModel: options.executionModel, idempotencyKey: 'fixture-budget-original-request' };
+    const claim = { status: 'RUNNING', attemptRef: assessmentBinding.attemptRef, task, modelInput,
+      leaseGeneration: (previousClaim?.leaseGeneration ?? 0) + 1,
+      leaseToken: 'fixture-budget-current-fence', leaseExpiresAt: options.taskDeadline };
+    report = await runHostedInitialStage({ ...stageOptions, initial,
+      ...(previousClaim ? { assessmentRecovery: { status: 'RECOVERY_CANDIDATE', previousClaim } } : {}) }, {
+      callTool: async (name, args) => {
+        if (name === 'begin_dynamic_evaluation') return claim;
+        if (name === 'get_parse_status') return { entry: { workItemId: assessmentBinding.workItemId }, initialAnalysis: initial };
+        if (name === 'read_assessment_work') return options.readAssessmentWork(args);
+        if (name === 'save_assessment_work') return options.saveAssessmentWork(args);
+        if (name === 'record_assessment_program_progress') return options.recordAssessmentProgramProgress(args);
+        throw new Error(`FIXTURE_UNEXPECTED_BUDGET_TOOL:${name}`);
+      },
+      invokeInitialModel: (input, hooks) => invokeHostedProgramAssessment(input,
+        { ...options, ...hooks, assessmentCheckpoint: checkpoint }, { requestGateway: gateway }),
+      runInitial: async ({ callTool, evaluateDynamicRules }) => {
+        await callTool('begin_dynamic_evaluation', { workItemId: assessmentBinding.workItemId });
+        execution = await evaluateDynamicRules(modelInput, { assessmentBinding,
+          heartbeat: options.heartbeat, sessionDiscriminator: assessmentBinding.attemptRef,
+          readAssessmentSources: options.readAssessmentSources,
+          readAssessmentWork: args => callTool('read_assessment_work', args),
+          saveAssessmentWork: args => callTool('save_assessment_work', args),
+          recordAssessmentProgramProgress: args => callTool('record_assessment_program_progress', args) });
+        return { outcome: 'SYNTHETIC_SAVE_READ_ONLY', provenance: execution.provenance };
+      },
+    });
+  } else execution = await invokeHostedProgramAssessment({ operation: 'EVALUATE_JOBAID', modelInput }, options,
     { requestGateway: gateway });
-  return { execution, state: await host.readOptional('state'),
+  return { execution, ...(budgeted ? { report, budget: await disk.readOptional('jobaid-run-budget') } : {}),
+    state: await host.readOptional('state'),
     receiptLinks: await disk.readOptional('program-receipt-links') };
 }
 
