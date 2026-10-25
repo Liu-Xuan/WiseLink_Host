@@ -241,13 +241,16 @@ export async function consumeHierarchicalWikiIdle(options, dependencies) {
                 ...binding,
                 runBudget,
                 checkpoint: store,
-                ...(codex ? { codexOptions: options.codexOptions, onStarted: onCodexStarted,
-                  requestGateway: dependencies.requestGateway } : { prepareGateway,
+                ...(codex ? { codexOptions: options.codexOptions, durableRounds: true,
+                  onStarted: onCodexStarted, requestGateway: dependencies.requestGateway } : { prepareGateway,
                   requestGateway: dependencies.requestGateway ?? requestHostedGateway }),
               });
               try {
                 return await dependencies.invokeMatterModel(input, hooks, {
-                  requestGateway: (_url, init) => gateway.request(init),
+                  requestGateway: (_url, init) => {
+                    if (codex) gateway.setRound(init.codexRound, init.codexRecoverOnly);
+                    return gateway.request(init);
+                  },
                 });
               } finally {
                 await gateway.close();
@@ -293,6 +296,16 @@ export async function consumeHierarchicalWikiIdle(options, dependencies) {
       result,
     };
   } catch (error) {
+    // A completed Codex process is only a model receipt. A failed or lost
+    // SAVE/READ/FINISH acknowledgement must keep this exact queue pointer so
+    // the same Host request can be read back and completed on the next tick.
+    if (codex && await store.readOptional('summary-codex.started')) {
+      return { status: 'WIKI_ATTENTION', ...target,
+        errorCode: error?.message === 'DERIVED_SUMMARY_CODEX_PROCESS_UNVERIFIED'
+          ? 'WIKI_PROVIDER_TERMINAL_UNKNOWN'
+          : typeof error?.message === 'string' && /^[A-Z][A-Z0-9_]+$/u.test(error.message)
+            ? error.message : 'WIKI_CODEX_RECOVERY_REQUIRES_ATTENTION' };
+    }
     const started = await store.readOptional('summary-gateway.started') ||
       await store.readOptional('summary-codex.started');
     let closed = false;

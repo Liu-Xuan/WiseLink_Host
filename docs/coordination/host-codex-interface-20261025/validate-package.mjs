@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -24,6 +24,11 @@ const codex = await readJson('mcp/codex.tools-list.json');
 const hosted = await readJson('mcp/hosted.tools-list.json');
 const index = await readJson('mcp/tool-index.json');
 const initialize = await readJson('mcp/codex.initialize.response.json');
+const sourceVersion = await readJson('source-version.json');
+assert.equal(sourceVersion.deliveryScope, 'P0_PROGRAM_INITIAL_925_CORE');
+assert.equal(sourceVersion.parallelP1DocumentTranslationHostRecoveryIncluded, false);
+for (const phase of sourceVersion.excludedParallelHostPhases)
+  assert.equal(JSON.stringify(codex).includes(JSON.stringify(phase)), false, `P1_PHASE_IN_P0_PACKET:${phase}`);
 assert.deepEqual(codex, hosted);
 assert.equal(initialize.result.serverInfo.name, 'wiselink-codex-engineering-assessment');
 assert.equal(initialize.result.serverInfo.version, '1.2.0');
@@ -47,14 +52,17 @@ assert.equal(manifest.networkAccessed, false);
 assert.equal(manifest.environmentOrCredentialValuesExported, false);
 for (const source of manifest.files)
   assert.equal(hash(await readFile(join(root, source.path))), source.sha256, `SOURCE_CHANGED:${source.path}`);
-const comparison = await readJson('mcp/client-94c54de-comparison.json');
+const comparison = await readJson('mcp/client-source-comparison.json');
 assert.equal(comparison.upstreamInventoriedNames, 42);
 assert.equal(comparison.upstreamMechanicalInputSchemas, 35);
-assert.equal(comparison.upstreamSourceOnlyNames.length, 7);
-assert.equal(comparison.additionalCurrentTools.length, 3);
+assert.equal(comparison.upstreamRealZodInputSchemas, 7);
+assert.equal(comparison.upstreamSourceOnlyNames.length, 0);
+assert.equal(comparison.extraPacketTools.length, 3);
+assert.equal(comparison.mechanicalSchemaComparison.shapeMatchNames.length, 15);
+assert.equal(comparison.mechanicalSchemaComparison.shapeDifferenceNames.length, 20);
 for (const entry of comparison.tools) {
   assert.equal(entry.currentMetadataFile, `tools/${entry.name}.json`);
-  assert.equal(entry.currentDependencyStatus, 'COMPLETE_SDK_INPUT_SCHEMA_AVAILABLE');
+  assert.ok(['SHAPE_MATCH','SHAPE_DIFFERENCE'].includes(entry.status));
   assert.deepEqual(await readJson(`mcp/${entry.currentMetadataFile}`), codex.tools.find(tool => tool.name === entry.name));
 }
 const {checkCurrentInterface} = await import(pathToFileURL(join(root,
@@ -189,13 +197,16 @@ for (const file of files) {
     for (const match of text.matchAll(/\[[^\]]*\]\(([^)]+)\)/gu)) {
       const target = match[1].split('#')[0];
       if (!target || /^[A-Za-z][A-Za-z0-9+.-]*:/u.test(target)) continue;
-      assert.equal((await stat(resolve(dirname(file), target))).isFile(), true, `MISSING_LOCAL_LINK:${target}`);
+      const destination = resolve(dirname(file), target);
+      assert.ok(destination.startsWith(`${directory}${sep}`), `LINK_OUTSIDE_ARCHIVE:${target}`);
+      assert.equal((await stat(destination)).isFile(), true, `MISSING_LOCAL_LINK:${target}`);
       localLinks += 1;
     }
   }
 }
 
 const result = { status: 'PASSED', sourceSnapshotMatches: true, tools: codex.tools.length,
+  deliveryScope: sourceVersion.deliveryScope, parallelP1DocumentTranslationHostRecoveryIncluded: false,
   completeToolSchemasCompiled: validators.size, schemaFormatValidation: false,
   schemaFormatValidationNote: 'Schema structure and constraints compile; external format plugins are not used.',
   mcpSyntheticInputsValidated: samples.calls.length, jsonFilesParsed: jsonFiles, relativeLinksChecked: localLinks,
@@ -207,6 +218,9 @@ const result = { status: 'PASSED', sourceSnapshotMatches: true, tools: codex.too
   currentClientConvertedExamples:currentInterface.convertedExamples,
   currentClientSourceOnlyExamples:currentInterface.sourceOnlyExamples,
   currentClientFormatsValidated:currentInterface.formatsValidated,
+  actualCurrentZodSchemas:currentInterface.currentZodCases.schemas,
+  actualCurrentZodAccepted:currentInterface.currentZodCases.accepted,
+  actualCurrentZodRejected:currentInterface.currentZodCases.rejected,
   perToolVersionInvented: false, credentialValuesIncluded: false, userAbsolutePathsIncluded: false };
 if (process.argv.includes('--write-result'))
   await writeFile(join(directory, 'validation-result.json'), `${JSON.stringify(result, null, 2)}\n`);

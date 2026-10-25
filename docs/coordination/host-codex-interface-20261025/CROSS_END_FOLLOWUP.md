@@ -11,3 +11,5 @@
 | 主控 | 当前源码包、名字级平台观察与合成服务测试 | 组织首条真实新事项的完整链，再分别登记技术部署与业务验收 | 准确模型响应/执行回执、SAVE/READ、确定性Overall、原阅读面和正常结束分别有证据 |
 
 首批不把所有翻译、Wiki、Review、适用性、TDMS或公司事实能力设为前置；工具schema保留完整45项不等于这些入口都完成迁移。未知上游或保存结果只按原绑定恢复，不能清检查点、换key、接管旧lease或补造成功。
+
+925消费者的恢复准备已在CORE，但文档跨lease Host封存/恢复是并行P1，本包schema不含`READ_GENERATION`、`SEAL_CANDIDATE`、`RECOVER_SAVE`。文档缺少原Host seal或原结果不明时保留pending，不能因首测包交付就替换候选或再次生成。

@@ -1,10 +1,10 @@
 # Codex ↔ Host 接口契约（源码可证范围）
 
-本文保留上游 `94c54de` 交付时的 legacy 固定源码观察，`PINNED_LEGACY_SOURCE_ONLY` 机器材料不代表当前Host接线。唯一当前接口包为 [host-codex-interface-20261025/README.md](host-codex-interface-20261025/README.md)，含真实SDK完整45工具schema、当前路由/身份、42项对照及恢复边界。当前集成检查使用 `node openclaw/codex-evaluator/check-host-contract.mjs --current-interface`；不把下文旧来源hash改写成当前运行证明。
+本文保留上游`925deb`（父`94c54de`）交付时对`fc132291`固定legacy Host的历史观察，`PINNED_LEGACY_SOURCE_ONLY`不代表当前Host接线。唯一当前接口包为 [host-codex-interface-20261025/README.md](host-codex-interface-20261025/README.md)，含实际SDK完整45工具schema、当前路由/身份、42项组合差异及恢复边界。当前集成检查使用`node openclaw/codex-evaluator/check-host-contract.mjs --current-interface`；下文的旧来源hash和“未取得主控包”等状态只属于当时证据，不覆盖当前包。
 
-日期：2026-10-25。此文给接线者一份可核对的客户端预期、固定 Host 源码事实和未验证项。实现基线为 `1155c386`，接线记录基线为 `fc132291`。机器文件为 `openclaw/codex-evaluator/contracts/host-source-interface.json`；`export-host-contract.mjs` 从 MCP service、readonly tools、controller、derived tools、matter tools 和 `shared/api.interface.ts` 六份固定源文件重新导出，不连接业务 Host。`host-input-examples.json` 的 35 个转换 schema 入参可执行 `node openclaw/codex-evaluator/check-host-contract.mjs` 离线核对；它只证明输入形状和本地文件新鲜度，不证明 Host 授权、业务正文有效或运行成功。示例是合成身份与字段投影，不能当成真实 SAVE/READ 回执。
+日期：2026-10-25。本次继续实现的基线为 `94c54de74a0d7a0c0d66778a04a161e2017fce28`，保留其程序初评恢复成果；此前消费者实现和接线记录分别为 `1155c386`、`fc132291`。此文区分客户端预期、固定 Host 源码事实和未验证项。机器文件为 `openclaw/codex-evaluator/contracts/host-source-interface.json`；`export-host-contract.mjs` 从六份固定入口源文件与九份固定依赖重新导出，不连接业务 Host。原 35 项受限转换样例继续保留，另 7 项使用 Host 锁文件对应的真实 Zod 4.6.5 执行，覆盖 54 个顶层动作分支、56 个接受和 184 个拒绝用例。离线检查证明源码、输入结构及明确列出的精化条件，不能证明 Host 授权或业务运行成功。示例均为合成数据。
 
-完整、可重新生成的请求响应样例为 [`program-recovery-example.json`](../../openclaw/codex-evaluator/contracts/program-recovery-example.json)，包含实际离线消费者产生的材料、完整生成响应、SAVE 和独立 READ，以及合成的 claim、begin、冻结 result、Overall 与 ACK。配置状态见 [`runtime-configuration-status.json`](../../openclaw/codex-evaluator/contracts/runtime-configuration-status.json)；恢复语义、三类回执与测试结果见 [`RECOVERY_VALIDATION.md`](../../openclaw/codex-evaluator/RECOVERY_VALIDATION.md)。本批没有真实模型调用或真实 Host 调用。
+完整、可重新生成的程序请求响应样例为 [`program-recovery-example.json`](../../openclaw/codex-evaluator/contracts/program-recovery-example.json)，包含实际离线消费者产生的材料、完整生成响应、SAVE 和独立 READ，以及合成的 claim、begin、冻结 result、Overall 与 ACK。配置状态见 [`runtime-configuration-status.json`](../../openclaw/codex-evaluator/contracts/runtime-configuration-status.json)。94c54de 的程序恢复语义与三类回执保留在 [`RECOVERY_VALIDATION.md`](../../openclaw/codex-evaluator/RECOVERY_VALIDATION.md)；本轮逐消费者恢复及 Host 翻译租约缺口见 [`CONSUMER_RECOVERY_VALIDATION.md`](../../openclaw/codex-evaluator/CONSUMER_RECOVERY_VALIDATION.md)。本批没有真实模型调用或真实 Host 调用。
 
 ## 证据与状态
 
@@ -14,10 +14,11 @@
 | `server/modules/canonical-host/canonical-host-readonly-mcp-tools.ts` | 同提交 / `34c4806ce1cb838cace32f917cd7f9678cff8f30` | `get_parse_status`、`get_deep_link` 输入 |
 | `server/modules/canonical-host/canonical-host-openclaw-mcp.openapi.controller.ts` | 同提交 / `d10d756a4a37199710656c1fad7b5edf8bb1715e` | legacy MCP 与队列 REST 路径 |
 | `shared/api.interface.ts` | 同提交 / `0cf94ee8bf309808add2d4fe31b1a73dfb12a110` | 队列请求与回执 TypeScript 类型 |
-| `server/modules/canonical-host/derived-summary-attempt-mcp-tools.ts`、`matter-attempt-mcp-tools.ts` | 同提交 / `9b223ec11be5b4f95110b8837b4dfe52ca7bd340`、`2d0bf252c26418cdb4d0b202a63aab2aa1b1f69a` | Wiki/事项消费者的独立 Zod 定义，本地可解析 union 已转换，外部依赖保留原表达式 |
+| `server/modules/canonical-host/derived-summary-attempt-mcp-tools.ts`、`matter-attempt-mcp-tools.ts` | 同提交 / `9b223ec11be5b4f95110b8837b4dfe52ca7bd340`、`2d0bf252c26418cdb4d0b202a63aab2aa1b1f69a` | Wiki/事项消费者的独立 Zod 定义；本次补齐 derived summary 的外部依赖 |
+| `openclaw/codex-evaluator/host-contract/source/` 中九份依赖快照 | 均逐项匹配同一 `fc132291` 提交的 Git blob；完整 SHA 见机器契约 `evidence.dependencySources` | 翻译、文档活动、阅读及 TDMS 输入定义；导出器拒绝源码或 Zod 版本漂移 |
 | `server/modules/canonical-host/canonical-host-vertical.service.ts` | 同提交 / `7d8886fb37b4863683896c5848d24b9a26b111e4` | `get_parse_status` 实际返回 wrapper |
 | `server/modules/canonical-host/canonical-jobaid-problem.service.ts`、`jobaid-problem-work.ts` | 同提交 / `0b80b1c043f705b961d13ff69259619041eb0c15`、`7b7aa6b1089cdb17e8adea0117e714a2431d8cb2` | SAVE、独立 READ 和工作材料化变换 |
-| 本工作区 `run-hosted-review-turn.mjs`、`orchestrate-host-mcp.mjs`、`run-program-assessment.mjs`、`validate-payload.mjs`、`consume-hosted-work-item.mjs` | 修改前 94 文件逐一匹配 `fc132291…`；本批变更的准确源码哈希见离线验证记录，client 哈希也在机器契约中 | 消费端路径、绑定、保存/读回、程序综合、正常收尾 |
+| 本工作区 `run-hosted-review-turn.mjs`、`orchestrate-host-mcp.mjs`、`run-program-assessment.mjs`、`validate-payload.mjs`、`consume-hosted-work-item.mjs` | 本轮开始时工作快照的 110 文件逐一匹配 `94c54de…`；最终受测源码哈希见新离线记录，client 哈希也在机器契约中 | 消费端路径、绑定、保存/读回、程序综合、正常收尾 |
 
 Host 的 `codex/executor-transition-host-20261025` / `1eb9bcc8` 是用户报告的 Host 接线分支；当前无法从公开 GitHub 取到并核对（ref/commit 返回 404/422）。本文件不把 legacy 源码冒充该分支实现，不声称线上 `initialize`、`tools/list`、认证或业务调用成功。`host-source-interface.json` 的 `serverSource` 是固定 legacy 源码事实，`client` 是 Codex 消费端要求。
 
@@ -33,9 +34,23 @@ Host 的 `codex/executor-transition-host-20261025` / `1eb9bcc8` 是用户报告�
 
 ## 工具与模式
 
-机器文件列全客户端要求的 41 个工具，并补充 `record_assessment_program_progress`，共 42 项。其中 35 项 `inputSchema` 已由固定 Zod 源码机械转换为 JSON Schema，包括本地可解析的 `matter_action_attempt` discriminated union 与层级 Wiki 别名；每项标记 `MECHANICAL_ZOD_INPUT_SHAPE` 和语义限制。JSON Schema 表达输入结构，不声称包含 Zod trim 变换、完整业务验证或授权规则。
+机器文件列全客户端要求的 41 个工具，并补充 `record_assessment_program_progress`，共 42 项。35 项继续标记 `MECHANICAL_ZOD_INPUT_SHAPE`；本次完成的 7 项标记 `PINNED_ZOD_V4_INPUT_SCHEMA`，已无 `SOURCE_EXPRESSION_ONLY`。`otherUnexportedClientToolNames` 为空。
 
-以下 7 项保留准确 Zod 表达式和未解析依赖，不提供放宽后的近似 schema：`read_assessment_sources`、`commit_translation_candidate`、`translation_workspace`、`document_work`、`document_reading`、`document_translation`、`derived_summary_attempt`。`otherUnexportedClientToolNames` 已为空。因此本文件**不是所有消费者均已具完整 JSON Schema 的兼容性证明**；实际上线清单仍需经 Codex endpoint `initialize`/`tools/list` 取得并比对。`query_assessment_knowledge` 是**补充知识检索**，不是查询原 SAVE/request 终态的控制工具；固定源码没有独立的 `query_save_status` 工具。保存响应不确定时，以原 `requestId` 调 `read_assessment_work` 作幂等核对，不新造请求。
+| 本次补齐工具 | 顶层分支 | 接受／拒绝用例 | 保留的关键约束 |
+| --- | ---: | ---: | --- |
+| `read_assessment_sources` | 1 | 2／6 | 既有普通引用限制，以及 TDMS 原生引用的规范编码、原子长度和安全整数判定 |
+| `commit_translation_candidate` | 3 | 3／12 | 上传分片序号、数量、载荷和完成分支 |
+| `translation_workspace` | 8 | 8／27 | 原 workspace 命令、批次、非空译文精化及 CHECK_BATCH 数量 |
+| `document_work` | 11 | 11／36 | 原活动动作、版本常量、strict 对象与段落数量 |
+| `document_reading` | 9 | 9／30 | 原阅读动作、delivery 格式与读取上限 |
+| `document_translation` | 12 | 12／38 | 原文档翻译动作及嵌套 workspace 命令 |
+| `derived_summary_attempt` | 10 | 11／35 | 原 summary 动作、正文上限与 TDMS 原生引用精化 |
+
+导出器执行固定源码中的 Zod 表达式、TDMS schema 工厂和实际判定函数，不将无法表达的类型默认为 `any`。JSON Schema 无法完整表示 `.trim()` 转换和自定义精化，因此这些语义继续由原 Zod validator 执行，并在 `host-zod-validation-cases.json` 保存离线用例。严格对象、必填、枚举、长度和数量限制没有为了兼容而放宽。这里也不把其余 35 项受限转换冒充真实 Zod 的完整语义。
+
+`compare-host-interface-packet.mjs` 对完整 42 项逐工具比较，报告缺失工具、缺失 schema 及准确差异路径，并标记此次补齐的 7 项。输入须带准确 Host commit 或包版本；仅有 JSON 文件格式的 `schemaVersion` 不算 Host 版本。当前尚未取得本地主控可核对的定稿接口包，已提交报告保持 `PENDING_LOCAL_PACKET`。自构包只用于测试对照器，不能证明真实 Host 对齐。实际上线还须取得 Codex endpoint 的 `initialize`/`tools/list` 原始返回。
+
+`query_assessment_knowledge` 是**补充知识检索**，不是查询原 SAVE/request 终态的控制工具；固定源码没有独立的 `query_save_status` 工具。保存响应不确定时，以原 `requestId` 调 `read_assessment_work` 作幂等核对，不新造请求。
 
 普通新任务顺序为：队列准确 claim → `get_parse_status` → `begin_dynamic_evaluation`（准确 workItemId；可带当前初评阶段的 continuation requestId，此值来自准确 stage 状态，不能拿队列 claim.requestId 代替）→ 绑定 attempt/lease → 材料读 → 一次程序生成及完整响应先行持久化 → 原 SAVE requestId 的保存 → 独立 READ → `commit_dynamic_evaluation_candidate` → 状态/深链只读核验 → `ack-work-item`。只有已确认终止且符合原控制绑定时才走 `block-work-item`。程序模式 `PROGRAM_CONTROLLED_V1` 的确定性 Overall 投影由 dynamic commit 在 Host 内完成，回执须同一 `workRevisionRef`、`sourceAssessment.saveRequestId`、`sourceAssessment.readObservedAt`、`executionKind=DETERMINISTIC_PROJECTION`、`modelRequests=0`；**不**为该初评另发 `begin_overall_synthesis` 或第二篇模型报告。后续独立 Overall 才按自身请求走 `begin_overall_synthesis` / `commit_overall_candidate`。
 
@@ -59,7 +74,7 @@ Host 将 `workJson` 解析后经 `materializeJobAidWork` 保存：它对正文�
 | `--checkpoint-root` | 原 SAVE、独立 READ 与恢复状态持久记录 | 待明确新执行器专用绝对路径；不复用旧 UNKNOWN |
 | 命名 MCP 项或 `WL_REVIEW_HOST_MCP_URL` | 只接受 Codex 命名配置和准确新路径 | 新 Host endpoint/name 未验证 |
 | 私有 headers 或 `WL_REVIEW_HOST_MCP_HEADERS_JSON` | 现有 header 输入通道可用，回执不记录凭据值 | principal/tenant/actor/runtime 注册与配置存在状态待主控核对 |
-| serverInfo、tools/list | 精确身份与工具元数据检查已实现 | 实际返回和 7 项外部依赖 schema 待提供 |
+| serverInfo、tools/list | 精确身份检查及 42 项逐工具对照已实现，7 项源依赖已闭合 | 实际返回和带准确版本的本地接口包待提供 |
 
 `preflight.mjs` 会分开返回 `legacyHostMcpConfigPresent`、`codexHostMcpConfigPresent`、`codexHostMcpEndpointValid`；没有配置 toolFilter 时 `missingHostTools=null`，必须通过真实发现核对，不能写成零缺失。`hostAuthenticationVerified`、`hostRuntimeRegistrationVerified`、`readyForBusinessExecution` 均保持 false。
 

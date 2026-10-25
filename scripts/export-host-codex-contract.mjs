@@ -14,13 +14,16 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(join(root, 'package.json'));
 const ts = require('typescript');
 const { Client } = require('@modelcontextprotocol/client');
-const { InMemoryTransport } = require('@modelcontextprotocol/server');
+const { InMemoryTransport, McpServer } = require('@modelcontextprotocol/server');
 const checkOnly = process.argv.includes('--check');
 const outputIndex = process.argv.indexOf('--output');
 const out = outputIndex < 0
   ? join(root, 'docs/coordination/host-codex-interface-20261025')
   : resolve(process.argv[outputIndex + 1] ?? '');
 assert.ok(isAbsolute(out) && out.startsWith(`${root}${sep}`), 'OUTPUT_MUST_BE_INSIDE_REPOSITORY');
+const currentHead = execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
+const recordedHead = checkOnly
+  ? JSON.parse(await readFile(join(out,'source-manifest.json'),'utf8')).sourceHead : currentHead;
 
 const loaded = new Set();
 const sourceText = path => readFileSync(join(root, path), 'utf8');
@@ -44,16 +47,32 @@ const sourceFiles = new Set([
   'openclaw/skills/wiselink-research-and-synthesize/scripts/program-assessment-materials.mjs',
   'openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs',
   'openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hierarchical-wiki-queue.mjs',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-derived-summary.mjs',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-document-reading.mjs',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-review-turn.mjs',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.mjs',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-derived-summary-model.mjs',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-document-reading-model.mjs',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-translation-block.mjs',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/run-document-semantic-translation.mjs',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/run-jobaid-problem-assessment.mjs',
+  'openclaw/skills/wiselink-research-and-synthesize/scripts/run-semantic-translation.mjs',
   'openclaw/codex-evaluator/codex-generation.mjs',
   'openclaw/codex-evaluator/run_codex_generation.py',
   'openclaw/codex-evaluator/miaoda_responses_bridge.py',
   'openclaw/codex-evaluator/preflight.mjs',
   'openclaw/codex-evaluator/check-host-contract.mjs',
   'openclaw/codex-evaluator/current-interface.test.mjs',
+  'openclaw/codex-evaluator/compare-host-interface-packet.mjs',
+  'openclaw/codex-evaluator/host-packet-comparison.test.mjs',
+  'openclaw/codex-evaluator/host-contract-artifact.test.mjs',
   'openclaw/codex-evaluator/contracts/host-source-interface.json',
   'openclaw/codex-evaluator/contracts/host-input-examples.json',
+  'openclaw/codex-evaluator/contracts/host-zod-validation-cases.json',
   'openclaw/codex-evaluator/contracts/runtime-configuration-status.json',
   'openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs',
+  'docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md',
   'test/unit/codex-host-program-boundary.spec.ts',
   'scripts/export-host-codex-contract.mjs',
   'docs/openapi.json',
@@ -113,7 +132,15 @@ async function listing(executor) {
   // All optional modules are present in the source module composition. Supplying
   // guarded providers includes their actual schemas, but cannot execute them.
   const service = new CanonicalHostOpenClawMcpService(...Array(20).fill(blockedProvider));
-  const server = service.createServer(executor);
+  const zodSchemas = new Map();
+  const register = McpServer.prototype.registerTool;
+  let server;
+  McpServer.prototype.registerTool = function (name, definition, ...remaining) {
+    zodSchemas.set(name, definition.inputSchema);
+    return register.call(this, name, definition, ...remaining);
+  };
+  try { server = service.createServer(executor); }
+  finally { McpServer.prototype.registerTool = register; }
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   let initialize;
   const send = serverTransport.send.bind(serverTransport);
@@ -130,7 +157,7 @@ async function listing(executor) {
     assert.equal(initialize.result.serverInfo.name,
       executor === 'CODEX' ? 'wiselink-codex-engineering-assessment' : 'wiselink-openclaw-engineering-assessment');
     assert.equal(initialize.result.serverInfo.version, '1.2.0');
-    return { initialize, tools };
+    return { initialize, tools, zodSchemas };
   } finally { await client.close(); await server.close(); }
 }
 
@@ -175,31 +202,23 @@ function errorLiterals(paths) {
   return records;
 }
 
-function normalizeSchema(value, annotationsRemoved = false, key = '') {
-  if (Array.isArray(value)) {
-    const items = value.map(item => normalizeSchema(item, annotationsRemoved));
-    return ['required', 'enum', 'type', 'allOf', 'anyOf', 'oneOf'].includes(key)
-      ? items.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))) : items;
-  }
-  if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(Object.keys(value).sort()
-    .filter(name => !annotationsRemoved || !['$schema', '$comment', 'title', 'description', 'examples'].includes(name))
-    .map(name => [name, normalizeSchema(value[name], annotationsRemoved, name)]));
-}
-
-function schemaDifferences(current, pinned, pointer = '') {
-  if (JSON.stringify(current) === JSON.stringify(pinned)) return [];
-  if (Array.isArray(current) && Array.isArray(pinned)) {
-    const changes = [];
-    for (let index = 0; index < Math.max(current.length, pinned.length); index += 1)
-      changes.push(...schemaDifferences(current[index], pinned[index], `${pointer}/${index}`));
-    return changes;
-  }
-  if (current && pinned && typeof current === 'object' && typeof pinned === 'object' &&
-      !Array.isArray(current) && !Array.isArray(pinned))
-    return [...new Set([...Object.keys(current), ...Object.keys(pinned)])].sort().flatMap(key =>
-      schemaDifferences(current[key], pinned[key], `${pointer}/${key.replace(/~/gu, '~0').replace(/\//gu, '~1')}`));
-  return [{ pointer: pointer || '/', current: current ?? { absent: true }, pinned: pinned ?? { absent: true } }];
+function currentZodCases(cases, schemas) {
+  return Object.entries(cases.tools).map(([name, groups]) => {
+    const schema = schemas.get(name);
+    assert.equal(typeof schema?.safeParse, 'function', `CURRENT_ZOD_SCHEMA_MISSING:${name}`);
+    const results = ['accepted', 'rejected'].flatMap(group => groups[group].map((item,index) => {
+      const result = schema.safeParse(structuredClone(item.input));
+      return {case:item.case, pinnedGroup:group,pinnedCaseIndex:index,
+        pinnedExpectedAccepted:group === 'accepted', currentAccepted:result.success,
+        expectationMatched:result.success === (group === 'accepted'),
+        ...(result.success ? {} : {issues:result.error.issues.map(issue => ({code:issue.code,path:issue.path}))})};
+    }));
+    return {name, currentMetadataFile:`tools/${name}.json`,
+      pinnedAccepted:groups.accepted.length, pinnedRejected:groups.rejected.length,
+      currentAccepted:results.filter(item => item.currentAccepted).length,
+      currentRejected:results.filter(item => !item.currentAccepted).length,
+      expectationMismatches:results.filter(item => !item.expectationMatched), cases:results};
+  });
 }
 
 function recoverySourceExpressions() {
@@ -249,42 +268,40 @@ try {
   });
 
   const pinnedClient = JSON.parse(sourceText('openclaw/codex-evaluator/contracts/host-source-interface.json'));
-  const pinnedRecords = {...pinnedClient.serverSource.tools, ...pinnedClient.serverSource.excludedToolSchemas};
-  const clientComparison = Object.entries(pinnedRecords).map(([name, record]) => {
-    const current = codex.tools.tools.find(tool => tool.name === name);
-    assert.ok(current?.inputSchema, `CURRENT_SDK_SCHEMA_MISSING:${name}`);
-    return { name, currentMetadataFile: `tools/${name}.json`, currentIndividualToolVersion: null,
-      upstreamSchemaStatus: record.schemaStatus,
-      upstreamUnresolvedDependencies: record.unresolvedDependencies ?? [],
-      currentDependencyStatus: 'COMPLETE_SDK_INPUT_SCHEMA_AVAILABLE',
-      completeUpstreamSchemaCompared: record.inputSchema !== undefined,
-      ...(record.inputSchema ? {
-        fullSchemaDifferences: schemaDifferences(normalizeSchema(current.inputSchema), normalizeSchema(record.inputSchema)),
-        validationKeywordDifferences: schemaDifferences(normalizeSchema(current.inputSchema, true), normalizeSchema(record.inputSchema, true)),
-      } : {}),
-      semanticBoundary: 'Published JSONSchema is a complete SDK input-shape export; runtime Zod transformations/refinements and Host business authorization remain authoritative.',
-    };
-  });
-  assert.equal(clientComparison.length, 42);
-  add('mcp/client-94c54de-comparison.json', {
-    upstreamCommit: '94c54de74a0d7a0c0d66778a04a161e2017fce28',
-    upstreamParent: 'fc1322919b1b52433c33086c8db4aeb957f0e982',
+  for (const path of Object.keys(pinnedClient.evidence.dependencySources ?? {}))
+    sourceFiles.add(`openclaw/codex-evaluator/host-contract/source/${path}`);
+  const {compareHostInterfacePacket} = await import(pathToFileURL(join(root,
+    'openclaw/codex-evaluator/compare-host-interface-packet.mjs')).href);
+  const comparison = compareHostInterfacePacket(pinnedClient, {...codex.tools,hostCommit:recordedHead},
+  {packetLabel:'mcp/codex.tools-list.json'});
+  assert.equal(comparison.tools.length,42);
+  for (const tool of comparison.tools) tool.currentMetadataFile = `tools/${tool.name}.json`;
+  add('mcp/client-source-comparison.json', {
+    upstreamCommit: '925deb2d148a9eb8ed508300d7132fce55bc665c',
+    upstreamParent: '94c54de74a0d7a0c0d66778a04a161e2017fce28',
     upstreamArtifactPath: 'openclaw/codex-evaluator/contracts/host-source-interface.json',
     upstreamArtifactBoundary: pinnedClient.serverSource.identityStatus,
-    currentSdkTools: codex.tools.tools.length, upstreamInventoriedNames: clientComparison.length,
-    upstreamMechanicalInputSchemas: clientComparison.filter(item => item.completeUpstreamSchemaCompared).length,
-    upstreamSourceOnlyNames: clientComparison.filter(item => !item.completeUpstreamSchemaCompared).map(item => item.name),
-    additionalCurrentTools: codex.tools.tools.filter(tool => !Object.hasOwn(pinnedRecords,tool.name))
-      .map(tool => ({name:tool.name, currentMetadataFile:`tools/${tool.name}.json`})),
-    summary: {
-      validationKeywordEqualNames: clientComparison.filter(item => item.completeUpstreamSchemaCompared &&
-        item.validationKeywordDifferences.length === 0).map(item => item.name),
-      validationKeywordDifferenceNames: clientComparison.filter(item => item.completeUpstreamSchemaCompared &&
-        item.validationKeywordDifferences.length > 0).map(item => item.name),
-    },
+    currentSdkTools:codex.tools.tools.length, upstreamInventoriedNames:comparison.tools.length,
+    upstreamMechanicalInputSchemas:comparison.tools.filter(tool => tool.sourceSchemaStatus === 'MECHANICAL_ZOD_INPUT_SHAPE').length,
+    upstreamRealZodInputSchemas:comparison.tools.filter(tool => tool.sourceSchemaStatus === 'PINNED_ZOD_V4_INPUT_SCHEMA').length,
+    upstreamSourceOnlyNames:[],
     currentVerifier: 'node openclaw/codex-evaluator/check-host-contract.mjs --current-interface',
-    comparisonNote: 'Annotation/dialect fields are omitted only in validationKeywordDifferences; required/enum/union order is normalized. Differences are reported, not silently declared acceptance-equivalent. No tool-list copy or new runtime contract is created.',
-    tools: clientComparison,
+    ...comparison,
+  });
+  const zodCases = JSON.parse(sourceText('openclaw/codex-evaluator/contracts/host-zod-validation-cases.json'));
+  const currentCases = currentZodCases(zodCases,codex.zodSchemas);
+  add('mcp/pinned-zod-cases-on-current-host.json', {
+    method:'safeParse on the actual current production tool registration schemas; no business handler is invoked',
+    pinnedSourceHostCommit:zodCases.sourceHostCommit, pinnedZodVersion:zodCases.zodVersion,
+    currentZodVersion:require('zod/v4').core.version,
+    coverageNote:'These are the pinned 925 cases. Newly added current Host actions require their own current tests; no authorization or business persistence is exercised here.',
+    pinnedCaseFile:'openclaw/codex-evaluator/contracts/host-zod-validation-cases.json',
+    pinnedCaseFileSha256:sha256(sourceText('openclaw/codex-evaluator/contracts/host-zod-validation-cases.json')),
+    tools:currentCases,
+    accepted:currentCases.reduce((sum,tool) => sum+tool.currentAccepted,0),
+    rejected:currentCases.reduce((sum,tool) => sum+tool.currentRejected,0),
+    expectationMismatches:currentCases.reduce((sum,tool) => sum+tool.expectationMismatches.length,0),
+    runtimeAuthorizationVerified:false, liveHostVerified:false,
   });
 
   const api = JSON.parse(sourceText('docs/openapi.json'));
@@ -392,9 +409,6 @@ try {
   const recordedSources = [...sourceFiles].filter(path => existsSync(join(root, path))).sort()
     .map(path => ({ path, sha256: sha256(readFileSync(join(root, path))) }));
   assert.equal(businessHandlerCalls, 0, 'BUSINESS_HANDLER_EXECUTED');
-  const currentHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-  const recordedHead = checkOnly
-    ? JSON.parse(await readFile(join(out, 'source-manifest.json'), 'utf8')).sourceHead : currentHead;
   // This documents the export's ancestry. The actual source-file bytes are the
   // comparison below; committing the package must not create a self-hash loop.
   if (checkOnly) execFileSync('git', ['merge-base', '--is-ancestor', recordedHead, currentHead], { cwd: root });

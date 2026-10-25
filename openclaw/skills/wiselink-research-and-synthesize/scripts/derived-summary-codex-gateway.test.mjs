@@ -144,7 +144,8 @@ async function queueWithMatter(transport) {
         taskDeadline: new Date(Date.now() + 30_000).toISOString() });
     },
     invokeMatterModel: async (_input, _hooks, deps) => {
-      await deps.requestGateway(null, { signal: new AbortController().signal });
+      await deps.requestGateway(null, { signal: new AbortController().signal, body: '{}',
+        codexRound: 0, codexRecoverOnly: false });
       return { status: 'MATTER_WORK_SAVED' };
     },
     requestGateway: async (_endpoint, _init, { onRunCompleted }) => {

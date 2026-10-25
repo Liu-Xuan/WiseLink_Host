@@ -1,0 +1,3363 @@
+{
+  "upstreamCommit": "925deb2d148a9eb8ed508300d7132fce55bc665c",
+  "upstreamParent": "94c54de74a0d7a0c0d66778a04a161e2017fce28",
+  "upstreamArtifactPath": "openclaw/codex-evaluator/contracts/host-source-interface.json",
+  "upstreamArtifactBoundary": "PINNED_LEGACY_SOURCE_ONLY",
+  "currentSdkTools": 45,
+  "upstreamInventoriedNames": 42,
+  "upstreamMechanicalInputSchemas": 35,
+  "upstreamRealZodInputSchemas": 7,
+  "upstreamSourceOnlyNames": [],
+  "currentVerifier": "node openclaw/codex-evaluator/check-host-contract.mjs --current-interface",
+  "status": "COMPARED_SOURCE_SHAPES_WITH_PACKET",
+  "sourceHostCommit": "fc1322919b1b52433c33086c8db4aeb957f0e982",
+  "liveHostVerified": false,
+  "localPacket": {
+    "path": "mcp/codex.tools-list.json",
+    "version": null,
+    "commit": "974bedfa8edb03ba94c4991a2c6a3c63a1145eb4",
+    "schemaVersion": null,
+    "sha256": "ad658973dc15725e904ac82d5a54d8faaddf508aac890ae7509d462a42566e35"
+  },
+  "extraPacketTools": [
+    "get_pending_review_turn",
+    "read_review_native_sources",
+    "record_assessment_consumer_stopped"
+  ],
+  "caveat": "Shape comparison preserves constraint differences. Classified equivalent expressions are still reported; runtime Zod refinement and authorization are separate.",
+  "tools": [
+    {
+      "name": "begin_applicability_evaluation",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.applicabilityContextRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.requestId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/begin_applicability_evaluation.json"
+    },
+    {
+      "name": "begin_dynamic_evaluation",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/begin_dynamic_evaluation.json"
+    },
+    {
+      "name": "begin_matter_assessment",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.correction.properties.kind.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.expectedMatterRevision.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.expectedMatterRevision.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.expectedMatterRevision.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.expectedWorkingRevision.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.overviewCorrection.properties.kind.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.referenceWorks.items.properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.referenceWorks.items.properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.expectedMatterRevisionId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.requestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.instruction.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.recoveryAttemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.referenceWorks.items.properties.workRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.referenceWorks.items.properties.issueKey.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.referenceWorks.items.properties.purpose.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.correction.properties.expectedWorkRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.correction.properties.issueKey.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.correction.properties.correctionReason.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.correction.properties.evidenceRefs.items.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.overviewCorrection.properties.expectedWorkRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.overviewCorrection.properties.correctionReason.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.overviewCorrection.properties.evidenceRefs.items.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/begin_matter_assessment.json"
+    },
+    {
+      "name": "begin_overall_synthesis",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/begin_overall_synthesis.json"
+    },
+    {
+      "name": "begin_review_turn",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.reviewConversationRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.requestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/begin_review_turn.json"
+    },
+    {
+      "name": "begin_translation",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/begin_translation.json"
+    },
+    {
+      "name": "cancel_action_attempt",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.reason.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/cancel_action_attempt.json"
+    },
+    {
+      "name": "commit_applicability_candidate",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.properties.result.propertyNames",
+          "expected": {
+            "absent": true
+          },
+          "actual": {
+            "type": "string"
+          },
+          "category": "EQUIVALENT_JSON_PROPERTY_NAME_TYPE",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/commit_applicability_candidate.json"
+    },
+    {
+      "name": "commit_dynamic_evaluation_candidate",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.properties.result.propertyNames",
+          "expected": {
+            "absent": true
+          },
+          "actual": {
+            "type": "string"
+          },
+          "category": "EQUIVALENT_JSON_PROPERTY_NAME_TYPE",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/commit_dynamic_evaluation_candidate.json"
+    },
+    {
+      "name": "commit_overall_candidate",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.properties.result.propertyNames",
+          "expected": {
+            "absent": true
+          },
+          "actual": {
+            "type": "string"
+          },
+          "category": "EQUIVALENT_JSON_PROPERTY_NAME_TYPE",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/commit_overall_candidate.json"
+    },
+    {
+      "name": "commit_review_turn_candidate",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.resultJson.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/commit_review_turn_candidate.json"
+    },
+    {
+      "name": "commit_translation_candidate",
+      "completedInThisChange": true,
+      "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "object",
+          "category": "VALIDATION_CONSTRAINT_DIFFERENCE",
+          "effect": "NOT_DECLARED_EQUIVALENT"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/commit_translation_candidate.json"
+    },
+    {
+      "name": "derived_summary_attempt",
+      "completedInThisChange": true,
+      "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
+      "sourceRuntimeRefinements": [
+        "isTdmsApprovedOpinionReference"
+      ],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "object",
+          "category": "VALIDATION_CONSTRAINT_DIFFERENCE",
+          "effect": "NOT_DECLARED_EQUIVALENT"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/derived_summary_attempt.json"
+    },
+    {
+      "name": "document_reading",
+      "completedInThisChange": true,
+      "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "object",
+          "category": "VALIDATION_CONSTRAINT_DIFFERENCE",
+          "effect": "NOT_DECLARED_EQUIVALENT"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/document_reading.json"
+    },
+    {
+      "name": "document_translation",
+      "completedInThisChange": true,
+      "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
+      "sourceRuntimeRefinements": [
+        "trimmedNonempty"
+      ],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "object",
+          "category": "VALIDATION_CONSTRAINT_DIFFERENCE",
+          "effect": "NOT_DECLARED_EQUIVALENT"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/document_translation.json"
+    },
+    {
+      "name": "document_work",
+      "completedInThisChange": true,
+      "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "object",
+          "category": "VALIDATION_CONSTRAINT_DIFFERENCE",
+          "effect": "NOT_DECLARED_EQUIVALENT"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/document_work.json"
+    },
+    {
+      "name": "get_action_attempt_status",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/get_action_attempt_status.json"
+    },
+    {
+      "name": "get_deep_link",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.successorReviewTurnRef.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/get_deep_link.json"
+    },
+    {
+      "name": "get_parse_status",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.successorReviewTurnRef.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/get_parse_status.json"
+    },
+    {
+      "name": "get_review_turn_context",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/get_review_turn_context.json"
+    },
+    {
+      "name": "heartbeat_action_attempt",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.properties.reviewProgress.properties.requestNo.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.reviewProgress.properties.requestNo.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.reviewProgress.properties.requestNo.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/heartbeat_action_attempt.json"
+    },
+    {
+      "name": "hierarchical_wiki_cleanup",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/hierarchical_wiki_cleanup.json"
+    },
+    {
+      "name": "hierarchical_wiki_matter_action_attempt",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.oneOf[0].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[0].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[0].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[1].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[1].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[1].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[2].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[2].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[2].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[2].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[2].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[2].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[2].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[3].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[3].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[3].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[3].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[3].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[3].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[3].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[3].properties.result.propertyNames",
+          "expected": {
+            "absent": true
+          },
+          "actual": {
+            "type": "string"
+          },
+          "category": "EQUIVALENT_JSON_PROPERTY_NAME_TYPE",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[4].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[4].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[4].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[4].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[4].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[4].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[4].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[5].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[5].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[5].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[5].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[5].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[5].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[5].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[6].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[6].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[6].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[6].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[6].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[6].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[6].properties.offset.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[6].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[7].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[7].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[7].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[7].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[7].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[7].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[7].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[8].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[8].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[8].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[9].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[9].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[9].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.pageEnd.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.pageEnd.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[9].properties.pageEnd.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.pageStart.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.pageStart.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[9].properties.pageStart.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[10].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[10].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[10].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[10].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[10].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[10].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[10].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[11].properties.expectedWorkRevision.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[11].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[11].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[11].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[11].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[11].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[11].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[11].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[12].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[12].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[12].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "object",
+          "category": "VALIDATION_CONSTRAINT_DIFFERENCE",
+          "effect": "NOT_DECLARED_EQUIVALENT"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.oneOf[0].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[1].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[2].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[3].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[3].properties.reason.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[4].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[4].properties.requestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[5].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[5].properties.requestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[6].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[7].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[7].properties.requestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[8].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[8].properties.requestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[8].properties.generationRequestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[9].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[9].properties.requestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[10].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[10].properties.purpose.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[11].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[11].properties.documentVersionId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[11].properties.purpose.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[12].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[12].properties.purpose.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/hierarchical_wiki_matter_action_attempt.json"
+    },
+    {
+      "name": "hierarchical_wiki_next_matter_assessment",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/hierarchical_wiki_next_matter_assessment.json"
+    },
+    {
+      "name": "hierarchical_wiki_read_matter_current_work",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/hierarchical_wiki_read_matter_current_work.json"
+    },
+    {
+      "name": "matter_action_attempt",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.oneOf[0].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[0].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[0].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[1].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[1].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[1].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[2].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[2].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[2].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[2].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[2].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[2].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[2].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[3].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[3].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[3].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[3].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[3].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[3].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[3].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[3].properties.result.propertyNames",
+          "expected": {
+            "absent": true
+          },
+          "actual": {
+            "type": "string"
+          },
+          "category": "EQUIVALENT_JSON_PROPERTY_NAME_TYPE",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[4].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[4].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[4].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[4].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[4].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[4].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[4].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[5].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[5].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[5].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[5].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[5].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[5].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[5].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[6].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[6].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[6].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[6].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[6].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[6].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[6].properties.offset.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[6].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[7].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[7].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[7].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[7].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[7].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[7].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[7].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[8].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[8].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[8].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[9].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[9].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[9].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.pageEnd.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.pageEnd.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[9].properties.pageEnd.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.pageStart.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[9].properties.pageStart.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[9].properties.pageStart.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[10].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[10].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[10].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[10].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[10].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[10].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[10].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[11].properties.expectedWorkRevision.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[11].properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[11].properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[11].properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[11].properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.oneOf[11].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[11].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[11].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[12].properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.oneOf[12].properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.oneOf[12].properties.operation.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "string",
+          "category": "EQUIVALENT_CONST_TYPE_OMISSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "object",
+          "category": "VALIDATION_CONSTRAINT_DIFFERENCE",
+          "effect": "NOT_DECLARED_EQUIVALENT"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.oneOf[0].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[1].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[2].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[3].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[3].properties.reason.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[4].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[4].properties.requestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[5].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[5].properties.requestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[6].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[7].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[7].properties.requestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[8].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[8].properties.requestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[8].properties.generationRequestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[9].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[9].properties.requestId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[10].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[10].properties.purpose.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[11].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[11].properties.documentVersionId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[11].properties.purpose.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[12].properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.oneOf[12].properties.purpose.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/matter_action_attempt.json"
+    },
+    {
+      "name": "next_hierarchical_wiki",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.required",
+          "expected": [],
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_EMPTY_REQUIRED",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/next_hierarchical_wiki.json"
+    },
+    {
+      "name": "next_matter_assessment",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/next_matter_assessment.json"
+    },
+    {
+      "name": "next_original_assessment",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/next_original_assessment.json"
+    },
+    {
+      "name": "query_assessment_knowledge",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        },
+        {
+          "path": "$.properties.queryRef.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.query.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/query_assessment_knowledge.json"
+    },
+    {
+      "name": "query_parsed_package",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.query.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/query_parsed_package.json"
+    },
+    {
+      "name": "query_review_aily",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.queryRef.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/query_review_aily.json"
+    },
+    {
+      "name": "read_assessment_sources",
+      "completedInThisChange": true,
+      "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
+      "sourceRuntimeRefinements": [
+        "isTdmsApprovedOpinionReference"
+      ],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/read_assessment_sources.json"
+    },
+    {
+      "name": "read_assessment_work",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/read_assessment_work.json"
+    },
+    {
+      "name": "read_document_original",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.compareWith.properties.semanticRevision.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.offset.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.semanticRevision.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.documentVersionId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.parseRunId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/read_document_original.json"
+    },
+    {
+      "name": "read_matter_current_work",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.matterId.format",
+          "expected": {
+            "absent": true
+          },
+          "actual": "starts_with",
+          "category": "SDK_PREFIX_FORMAT_ANNOTATION",
+          "effect": "DECLARED_FORMAT_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.matterId.pattern",
+          "expected": "^MAT-",
+          "actual": "^MAT-.*",
+          "category": "EQUIVALENT_PREFIX_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/read_matter_current_work.json"
+    },
+    {
+      "name": "read_source_refs",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.sourceRefIds.items.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/read_source_refs.json"
+    },
+    {
+      "name": "record_assessment_program_progress",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/record_assessment_program_progress.json"
+    },
+    {
+      "name": "record_oem_discovery_run",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.result.properties.excludedNonOemCandidateCount.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.result.properties.query.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.result.properties.candidates.items.properties.title.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.result.properties.candidates.items.properties.documentNumber.anyOf[0].x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.result.properties.candidates.items.properties.revisionLabel.anyOf[0].x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.result.properties.candidates.items.properties.snippet.anyOf[0].x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.result.properties.candidates.items.properties.relationshipReason.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.result.properties.error.anyOf[0].properties.code.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.result.properties.error.anyOf[0].properties.message.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/record_oem_discovery_run.json"
+    },
+    {
+      "name": "resume_overall_synthesis",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_MATCH",
+      "differences": [],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/resume_overall_synthesis.json"
+    },
+    {
+      "name": "save_assessment_work",
+      "completedInThisChange": false,
+      "sourceSchemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+      "sourceRuntimeRefinements": [],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.properties.expectedWorkRevision.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.leaseGeneration.exclusiveMinimum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 0,
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseGeneration.maximum",
+          "expected": {
+            "absent": true
+          },
+          "actual": 9007199254740991,
+          "category": "SAFE_INTEGER_BOUND_DIFFERENCE",
+          "effect": "REAL_BOUNDARY_DIFFERENCE"
+        },
+        {
+          "path": "$.properties.leaseGeneration.minimum",
+          "expected": 1,
+          "actual": {
+            "absent": true
+          },
+          "category": "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION",
+          "effect": "KNOWN_EQUIVALENT_EXPRESSION"
+        },
+        {
+          "path": "$.properties.leaseToken.pattern",
+          "expected": {
+            "absent": true
+          },
+          "actual": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "category": "UUID_PATTERN_OR_FORMAT_DIFFERENCE",
+          "effect": "FORMAT_OR_PATTERN_SEMANTICS_REQUIRE_REVIEW"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [
+          {
+            "path": "$.properties.attemptRef.x-zodTrim",
+            "value": true
+          },
+          {
+            "path": "$.properties.workItemId.x-zodTrim",
+            "value": true
+          }
+        ],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/save_assessment_work.json"
+    },
+    {
+      "name": "translation_workspace",
+      "completedInThisChange": true,
+      "sourceSchemaStatus": "PINNED_ZOD_V4_INPUT_SCHEMA",
+      "sourceRuntimeRefinements": [
+        "trimmedNonempty"
+      ],
+      "status": "SHAPE_DIFFERENCE",
+      "differences": [
+        {
+          "path": "$.type",
+          "expected": {
+            "absent": true
+          },
+          "actual": "object",
+          "category": "VALIDATION_CONSTRAINT_DIFFERENCE",
+          "effect": "NOT_DECLARED_EQUIVALENT"
+        }
+      ],
+      "runtimeMetadataComparison": {
+        "source": [],
+        "packet": []
+      },
+      "runtimeRefinementVerified": false,
+      "currentMetadataFile": "tools/translation_workspace.json"
+    }
+  ],
+  "classificationCounts": {
+    "EQUIVALENT_CONST_TYPE_OMISSION": 28,
+    "EQUIVALENT_INTEGER_POSITIVITY_EXPRESSION": 66,
+    "SAFE_INTEGER_BOUND_DIFFERENCE": 43,
+    "SDK_PREFIX_FORMAT_ANNOTATION": 32,
+    "EQUIVALENT_PREFIX_EXPRESSION": 32,
+    "UUID_PATTERN_OR_FORMAT_DIFFERENCE": 29,
+    "EQUIVALENT_JSON_PROPERTY_NAME_TYPE": 5,
+    "VALIDATION_CONSTRAINT_DIFFERENCE": 8,
+    "EQUIVALENT_EMPTY_REQUIRED": 1
+  },
+  "mechanicalSchemaComparison": {
+    "shapeMatchNames": [
+      "begin_applicability_evaluation",
+      "begin_dynamic_evaluation",
+      "begin_overall_synthesis",
+      "begin_review_turn",
+      "begin_translation",
+      "cancel_action_attempt",
+      "get_action_attempt_status",
+      "get_deep_link",
+      "get_parse_status",
+      "get_review_turn_context",
+      "hierarchical_wiki_cleanup",
+      "next_original_assessment",
+      "query_parsed_package",
+      "read_source_refs",
+      "resume_overall_synthesis"
+    ],
+    "shapeDifferenceNames": [
+      "begin_matter_assessment",
+      "commit_applicability_candidate",
+      "commit_dynamic_evaluation_candidate",
+      "commit_overall_candidate",
+      "commit_review_turn_candidate",
+      "heartbeat_action_attempt",
+      "hierarchical_wiki_matter_action_attempt",
+      "hierarchical_wiki_next_matter_assessment",
+      "hierarchical_wiki_read_matter_current_work",
+      "matter_action_attempt",
+      "next_hierarchical_wiki",
+      "next_matter_assessment",
+      "query_assessment_knowledge",
+      "query_review_aily",
+      "read_assessment_work",
+      "read_document_original",
+      "read_matter_current_work",
+      "record_assessment_program_progress",
+      "record_oem_discovery_run",
+      "save_assessment_work"
+    ]
+  }
+}

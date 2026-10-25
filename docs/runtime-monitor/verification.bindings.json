@@ -953,18 +953,19 @@
         "test/unit/canonical-host-codex-executor.spec.ts",
         "openclaw/skills/wiselink-research-and-synthesize/tests/codex-queue-commit-recovery.test.mjs",
         "openclaw/codex-evaluator/program-finish-recovery.test.mjs",
-        "docs/coordination/host-codex-interface-20261025/README.md"
+        "docs/coordination/host-codex-interface-20261025/README.md",
+        "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md"
       ],
       "gaps": [
         {
           "id": "program.initial-live",
           "kind": "runtime",
-          "reason": "线上仍a65/c240；本地已审查导入94c54程序恢复并完成独立CODEX固定路由/单一入口、严格新intake范围及COMMITTING原结果恢复修订。离线测试不证明真实SAVE/Overall提交/ACK。实际prompt/bridge payload/启动前预定run关联、新宿主持久目录及持续唤起、真实身份配置和业务验收尚未闭合。旧UNKNOWN保持历史事实。",
-          "nextAction": "按图契约2.3/3.6逐步取证：先补本次原输入与run关联、宿主/目录持久性和获准独立配置，再验新事项原SAVE key独立READ、真实Overall提交、attempt终态、queueACK及同版原页面。现库活动索引已核正确，不为schema.ts声明漂移执行DDL。"
+          "reason": "本地组合已保留原SAVE key独立双读、严格来源/输入/fence及CODEX专用路由；离线测试不证明真实保存和Overall提交。实际prompt/payload/预定run关联、宿主唤起/私有持久目录、可信身份配置及整条业务链尚待实证。旧UNKNOWN仅保留取证，不要求兼容迁移。",
+          "nextAction": "按宿主与分阶段验收说明先完成1 worker闭环，再按实际限额验证2/4独立worker；不变request_origin、不把批次4项或CLI子代理数当并发。文档翻译封存恢复独立推进。"
         }
       ],
       "previousReviewedRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
-      "reviewScope": "线上映射仍为准确a65/c240；本地94c54恢复与4e8 Host接线的后继修订以图契约v1.8 2.3/3.6/E.38及接口包登记，未部署、不升级原业务场景。"
+      "reviewScope": "线上映射仍为准确a65/c240；当前本地974+925组合及定向修订按图契约v1.8登记，未部署，不提升原业务场景。旧历史批次见原证据，当前单worker完整链优先。"
     }
   ]
 }

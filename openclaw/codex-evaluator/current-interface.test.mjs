@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
-import { CURRENT_INTERFACE_PATH, checkCurrentInterfaceSnapshot } from './check-host-contract.mjs';
+import { CURRENT_INTERFACE_PATH, checkCurrentInterfaceSnapshot, checkCurrentZodEvidence } from './check-host-contract.mjs';
 
 const repository = new URL('../../', import.meta.url);
 const current = new URL(CURRENT_INTERFACE_PATH, repository);
@@ -74,4 +75,35 @@ test('the result states input example and format coverage instead of claiming ru
   assert.ok(result.formatKeywordsObserved.includes('uri'));
   assert.ok(result.clientNamesWithoutPositiveInputExample.includes('document_reading'));
   assert.ok(result.limitations.some(text => text.includes('Zod trim/default/refinement')));
+});
+
+const zodCaseText = await readFile(new URL('contracts/host-zod-validation-cases.json', import.meta.url), 'utf8');
+const zodCases = JSON.parse(zodCaseText);
+const zodReport = await readJson('mcp/pinned-zod-cases-on-current-host.json', current);
+const zodCaseHash = createHash('sha256').update(zodCaseText).digest('hex');
+
+test('the current production Zod evidence retains all 56 accepted and 184 rejected pinned cases', () => {
+  const result = checkCurrentZodEvidence(structuredClone(zodReport), zodCases, zodCaseHash);
+  assert.deepEqual({schemas:result.schemas, accepted:result.accepted, rejected:result.rejected},
+    {schemas:7, accepted:56, rejected:184});
+  assert.equal(result.runtimeAuthorizationVerified, false);
+});
+
+test('a stale pinned case file cannot validate current Zod evidence', () => {
+  assert.throws(() => checkCurrentZodEvidence(zodReport, zodCases, '0'.repeat(64)),
+    /current:zod-case-file-stale/u);
+});
+
+test('a current report cannot silently accept a pinned negative input', () => {
+  const report = structuredClone(zodReport);
+  report.tools[0].cases.find(item => item.pinnedGroup === 'rejected').currentAccepted = true;
+  assert.throws(() => checkCurrentZodEvidence(report, zodCases, zodCaseHash),
+    /current:zod-acceptance-difference/u);
+});
+
+test('duplicate case identities cannot replace unverified current Zod cases', () => {
+  const report = structuredClone(zodReport);
+  report.tools[0].cases[1] = structuredClone(report.tools[0].cases[0]);
+  assert.throws(() => checkCurrentZodEvidence(report, zodCases, zodCaseHash),
+    /current:zod-case-identity/u);
 });

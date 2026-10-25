@@ -1,5 +1,5 @@
 {
-  "sourceHead": "4e8a39b14994edeca7f26f17fb7d399aa229b745",
+  "sourceHead": "974bedfa8edb03ba94c4991a2c6a3c63a1145eb4",
   "scope": "local-working-source-including-uncommitted-executor-transition",
   "exportMethod": "TypeScript transpile in memory; actual production createServer; official SDK InMemoryTransport initialize and tools/list",
   "networkAccessed": false,
@@ -10,16 +10,24 @@
   "perToolVersionInvented": false,
   "files": [
     {
+      "path": "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md",
+      "sha256": "2b1dea05010934132f3c8ea1f1681833a60d749331402192bb82ddac56cac1cf"
+    },
+    {
       "path": "docs/openapi.json",
       "sha256": "520ccf8c27122311936eddd17fa7cbc81dd3bcc1bdf896424b11a97c33c28e9b"
     },
     {
       "path": "openclaw/codex-evaluator/check-host-contract.mjs",
-      "sha256": "f53927e94dc63f363d8db0b4efc6a42e24783ae8eecfb2367d26f0ffc8c13db9"
+      "sha256": "23480f898e77a205ad2e8f6932fd1a0ceebf895fc5f3927877be6cb23517ea29"
     },
     {
       "path": "openclaw/codex-evaluator/codex-generation.mjs",
       "sha256": "7ac4a57c00feb5f3387ca03e4d7369927192407afea698c606217db1f9e92616"
+    },
+    {
+      "path": "openclaw/codex-evaluator/compare-host-interface-packet.mjs",
+      "sha256": "c565300a22e12750b518fbfe8f95a7e00e3bbe2363ba31249c68750e27ea471e"
     },
     {
       "path": "openclaw/codex-evaluator/contracts/host-input-examples.json",
@@ -27,7 +35,11 @@
     },
     {
       "path": "openclaw/codex-evaluator/contracts/host-source-interface.json",
-      "sha256": "aa00ce8e07144c2317cb30a9940293bed641494c19c3a98908a99729463cbdf8"
+      "sha256": "57248c90ddc3417d993fa5457c4c7b003f47d45a8a05b9663b4d03bfd853e53d"
+    },
+    {
+      "path": "openclaw/codex-evaluator/contracts/host-zod-validation-cases.json",
+      "sha256": "72b06a7a57d951ff89184741d676927695adfa3cfc165ccab522fe8626d7d658"
     },
     {
       "path": "openclaw/codex-evaluator/contracts/runtime-configuration-status.json",
@@ -35,7 +47,51 @@
     },
     {
       "path": "openclaw/codex-evaluator/current-interface.test.mjs",
-      "sha256": "34484bbdd54f829ec7b4e9312cfdc28a9bb2d1a8cb170801a7bf0609832d95b8"
+      "sha256": "055937badee04c2d27af3d4371304ee91c9f42df312b0ceb9cc4f476517b2256"
+    },
+    {
+      "path": "openclaw/codex-evaluator/host-contract-artifact.test.mjs",
+      "sha256": "27e22fe049dc48d058aaa4188fd35430344172fdb32284f6c6d12b193ac83acc"
+    },
+    {
+      "path": "openclaw/codex-evaluator/host-contract/source/server/modules/canonical-host/canonical-host-openclaw-translation.service.ts",
+      "sha256": "858ea8e34ef28ace64a181ce9b46a8d764f84ef7b69ecdaa3b9856d6e875404f"
+    },
+    {
+      "path": "openclaw/codex-evaluator/host-contract/source/server/modules/canonical-host/canonical-translation-v2.contract.ts",
+      "sha256": "c1059e78d3db5fed3d142a8a532b7a8b5c3a977f6ba917d8f1414f2bb1709781"
+    },
+    {
+      "path": "openclaw/codex-evaluator/host-contract/source/server/modules/canonical-host/canonical-translation-v2.service.ts",
+      "sha256": "4ca97eca887a886fb7d8834cda138a2df0842056ca905dfafd347568b0f3f9fb"
+    },
+    {
+      "path": "openclaw/codex-evaluator/host-contract/source/server/modules/canonical-host/document-activity-runtime.service.ts",
+      "sha256": "5a9232d67cde807ad22fdd56878d1bc216ba5726ecbdb0a5efe377b240df2f16"
+    },
+    {
+      "path": "openclaw/codex-evaluator/host-contract/source/server/modules/canonical-host/document-reading-runtime.service.ts",
+      "sha256": "1aa8ffa42682a355d34f5151f901de91747cc4e4e7567b37bc9908bd2b0719d3"
+    },
+    {
+      "path": "openclaw/codex-evaluator/host-contract/source/server/modules/canonical-host/tdms-native-reference-mcp.schema.ts",
+      "sha256": "b9e713df45cf27d392514fcd68d9946284f37994a4fa668d815f4c71c3d844e1"
+    },
+    {
+      "path": "openclaw/codex-evaluator/host-contract/source/shared/document-activity-quote-selection.ts",
+      "sha256": "13affba6f919775cc3e16fa290bf08f9d9d69545f577d1716c8523d16414a7f8"
+    },
+    {
+      "path": "openclaw/codex-evaluator/host-contract/source/shared/document-activity.interface.ts",
+      "sha256": "97e7207fc9db84f062ab023e57a0d84cbeae46f208537d5ea2fc130b13caf1e4"
+    },
+    {
+      "path": "openclaw/codex-evaluator/host-contract/source/shared/tdms-approved-opinion-reference.ts",
+      "sha256": "14e5069aee19d3b69179e33ac843e9da17829a307674e7e7eed6f18415ebfebb"
+    },
+    {
+      "path": "openclaw/codex-evaluator/host-packet-comparison.test.mjs",
+      "sha256": "1bf64dcd19266ade1f4f06b43e7fadfa852353c70246650f8e84919e6cde60bd"
     },
     {
       "path": "openclaw/codex-evaluator/miaoda_responses_bridge.py",
@@ -50,12 +106,44 @@
       "sha256": "9d13e1611873d93d2825526572ad9724fc4e754346680e88875a540c0448919d"
     },
     {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hierarchical-wiki-queue.mjs",
+      "sha256": "0a1896895ad5023df8e0eacbaaa2938f660138da77177ebf8002c7c937c89fef"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-derived-summary.mjs",
+      "sha256": "8e41fb80f590b97849c945858361e0da9ea81f4629246e7d64f7b49612d9c027"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-document-reading.mjs",
+      "sha256": "f88829d07f25b15d8489119ab54714380ea5e202d2ff6d904626137b55106d25"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-review-turn.mjs",
+      "sha256": "4547ba507bda6514d163bd57f079bbac22463d4afd0a1dcd8d756941f95c977c"
+    },
+    {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs",
-      "sha256": "803956c26879c93bd1fd4b813c67ef3ed46be94c5b0448c0ff18874e3d8bfbf3"
+      "sha256": "0fd9c42ad98d7a6d9f2b2d070da56728ba6f514c206042ee162da8de1f57b832"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.mjs",
+      "sha256": "ec97e723460c32eb6cf56287d2ddbb210fd8047e4250940be25bb9f5cbc7b9e9"
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs",
       "sha256": "ef2edb38d73f52fbaacd4b5fa5eec632d1650d06a873c45c1a1c9dcf9776c1cc"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-derived-summary-model.mjs",
+      "sha256": "af8ad62bdc3e4b9ee6e052c7a94f4768851afcb0e8d28f19c0ec6a42170e9cbb"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-document-reading-model.mjs",
+      "sha256": "9d4b3690e5774d18c9829950818196d267f0051ff90e603608def768197a7f32"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/invoke-hosted-translation-block.mjs",
+      "sha256": "12a1340155662dbfc6d42fe6e3a9b6f5163e6f36eff4c298b3a16752f76dee7f"
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor.mjs",
@@ -66,12 +154,24 @@
       "sha256": "d988f58936abedd8afe3d58a6e978d3655374febd22febfd46a1c33ad1a044ad"
     },
     {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-document-semantic-translation.mjs",
+      "sha256": "10b26a1f48c83a6ea25bf22625c7e12fd12b0b6d430dcf5473c19e9388c0bef0"
+    },
+    {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs",
-      "sha256": "0dd509198ca0f1b42df6c30969a10b99460c6740bf176924e4a8dfb55e5a8a8d"
+      "sha256": "99ae71260a24db817b6fd4c70f6c1208f112c5185d225ed5b8bf9c52896293b4"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-jobaid-problem-assessment.mjs",
+      "sha256": "5dca4a3c251ae78b819ca13665ed48e78dd6263b2b75e6e63043336cfecd46fa"
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
       "sha256": "944899a6ea428ef86199bf0048fca4797845a6cd5dc3d429b96ebcd7600dfb8f"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-semantic-translation.mjs",
+      "sha256": "d16d43bc7c047f138ab4b553c73131dbb8cdf375df67d6db4ca0d7206deb813c"
     },
     {
       "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs",
@@ -79,7 +179,7 @@
     },
     {
       "path": "scripts/export-host-codex-contract.mjs",
-      "sha256": "f7f411be2ba4e8729675d23472a0d37d8d8fb1c892b6c6abc2d1112d6031cddd"
+      "sha256": "a7196d36de2b82cf1c96ab6a6a899d548ad0f135aa4031f831c12273b16f6746"
     },
     {
       "path": "server/database/auto-work-item-authorization.schema.ts",

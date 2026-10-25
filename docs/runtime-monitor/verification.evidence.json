@@ -7771,6 +7771,39 @@
       "reportRef": "docs/coordination/host-codex-interface-20261025/README.md",
       "readbackRef": "private:executor-transition-20261025:queue-runtime-evidence",
       "summary": "官方只读pg catalog确认dev/online三partial unique index都有活动WHERE且valid/ready，slot CHECK 0..3已验证；schema.ts缺WHERE为声明漂移而非本次现库故障。四槽按tenant/request_origin，默认4项串行及15分钟项间预算另属消费者边界。未DDL、未读取业务表行。"
+    },
+    {
+      "id": "executor-recovery.925.core-integration",
+      "kind": "test",
+      "status": "passed",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "reportRef": "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md",
+      "readbackRef": "private:executor-transition-20261025:925-integration-offline-results",
+      "summary": "974上三方导入925核心，保留CODEX队列路由/COMMITTING窄读/原SAVE key双读和材料绑定。定向初评队列23、翻译阅读28、ReviewWiki19及真实Host preflight12通过；首轮Review合成150ms租约竞态已修，原失败日志保留。无真实模型/Host业务/DB提交/ACK。",
+      "contractRevision": "0fa7efb2a53a6e90f0f55e96fa1ea78f510bb322fbe03c08c995c81311b9fc76",
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T10:57:09.036797+00:00",
+      "sourceRevision": "local:974bedfa+925deb+reviewed-core",
+      "environmentId": "local:core-and-parallel-P1:offline-only"
+    },
+    {
+      "id": "executor-recovery.925.split-host-translation",
+      "kind": "source_review",
+      "status": "inconclusive",
+      "bindingIds": [
+        "program.initial-assessment",
+        "translation.reading"
+      ],
+      "reportRef": "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md",
+      "readbackRef": "private:executor-transition-20261025:document-translation-generation-recovery",
+      "summary": "首测CORE与翻译P1拆开，CORE不含新增3动作。P1独立4产品文件+1测试24项离线通过和窄审，原SAVE回执持久不可变、UTF-8 seal/journal各1,000,000上限；客户端/部署/实际恢复未验。宿主唤起/root/容量证据仍待，先1再2/4，旧内容清理重生单列。",
+      "contractRevision": "0fa7efb2a53a6e90f0f55e96fa1ea78f510bb322fbe03c08c995c81311b9fc76",
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T10:57:09.036797+00:00",
+      "sourceRevision": "local:974bedfa+925deb+reviewed-core",
+      "environmentId": "local:core-and-parallel-P1:offline-only"
     }
   ]
 }

@@ -145,6 +145,7 @@ export async function invokeHostedDocumentReadingModel(input, options = {}, depe
         n: 1,
         stream: false,
       }),
+      ...(modelExecutor(options) === 'CODEX' && options.codexRecovery ? { codexRecovery: options.codexRecovery } : {}),
       signal,
     });
     text = await response.text();

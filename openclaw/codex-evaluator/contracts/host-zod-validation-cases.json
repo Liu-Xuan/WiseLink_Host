@@ -1,0 +1,3253 @@
+{
+  "sourceHostCommit": "fc1322919b1b52433c33086c8db4aeb957f0e982",
+  "zodVersion": "4.6.5",
+  "scope": "Synthetic offline input validator cases only; no Host call or business-valid work is claimed.",
+  "schemaEvidence": {
+    "read_assessment_sources": {
+      "inputSchemaSha256": "f50daeb60a75fc5e8fea5e1fe68ee5c52ec63d36fcc3929f825dd74ef9b26e38",
+      "validationCasesSha256": "da5cc93106b5ee42bb55ef092ad5551635fac6cd03eadaa4fad255050dbc091c"
+    },
+    "commit_translation_candidate": {
+      "inputSchemaSha256": "0f5b92d9f1fcb553bc54bbb62f23d6cf8fbcbe043b9b1389645c363b91a0e887",
+      "validationCasesSha256": "a1e56d09fcf30531a51d8d29c85cc9b5df503e37ac62b306c735be319b6b038b"
+    },
+    "translation_workspace": {
+      "inputSchemaSha256": "203582b68c2c121fc571254d490f793838feea2e76751633a6cdc577293b4ea7",
+      "validationCasesSha256": "2ed8cb3ba3d2ec034e6625c341abe6e59a3caa2f9d0c9ae881a391458a2318be"
+    },
+    "document_work": {
+      "inputSchemaSha256": "6d8e683088f6ba3f72355ef53ef189c572b598353886edf328d53c74e6ba60af",
+      "validationCasesSha256": "fd11e8585c5beadc38a33fa0373847f4cb16f3abd3ba5a844be5351a06abd2af"
+    },
+    "document_reading": {
+      "inputSchemaSha256": "c264d0a7e85fc743c0969213c2fc971a0b7ff21e4a62bbaea96c3d88f7741e8a",
+      "validationCasesSha256": "876704fb487372933c49615b5926628e63c945d5ccc28ed8e5350c84028abb5f"
+    },
+    "document_translation": {
+      "inputSchemaSha256": "d3677f77e147f6c5d6142180ec74f249ed6851a8d74bb7e40ca40f58278b940d",
+      "validationCasesSha256": "85d2dda5418f9b0efa3a9f39680cd7cb167e2162c7179eef0afa777abf6e25de"
+    },
+    "derived_summary_attempt": {
+      "inputSchemaSha256": "dcac5cbb4153d4b700b57251cc2f0d35eacfd78bdfda4444239bcc8c6618e4f3",
+      "validationCasesSha256": "2427b44539555928969595ce330690443e58ee327ea4830c36ff6955f2ba6127"
+    }
+  },
+  "tools": {
+    "read_assessment_sources": {
+      "accepted": [
+        {
+          "case": "branch-0",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "sourceRefs": [
+              "A"
+            ],
+            "purpose": "A"
+          }
+        },
+        {
+          "case": "valid-native-reference",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "sourceRefs": [
+              "TDMS_APPROVED_OPINION:A:B:C:D:E:0"
+            ],
+            "purpose": "A"
+          }
+        }
+      ],
+      "rejected": [
+        {
+          "case": "branch-0-missing-attemptRef",
+          "input": {
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "sourceRefs": [
+              "A"
+            ],
+            "purpose": "A"
+          }
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "sourceRefs": [
+              "A"
+            ],
+            "purpose": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "string-max-attemptRef",
+          "input": {
+            "attemptRef": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "sourceRefs": [
+              "A"
+            ],
+            "purpose": "A"
+          }
+        },
+        {
+          "case": "invalid-native-reference",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "sourceRefs": [
+              "TDMS_APPROVED_OPINION:%41:B:C:D:E:0"
+            ],
+            "purpose": "A"
+          }
+        },
+        {
+          "case": "invalid-native-reference",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "sourceRefs": [
+              "TDMS_APPROVED_OPINION:A:B:C:D:E:9007199254740992"
+            ],
+            "purpose": "A"
+          }
+        },
+        {
+          "case": "invalid-native-reference",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "sourceRefs": [
+              "TDMS_APPROVED_OPINION:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:B:C:D:E:0"
+            ],
+            "purpose": "A"
+          }
+        }
+      ]
+    },
+    "commit_translation_candidate": {
+      "accepted": [
+        {
+          "case": "branch-0",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "result": {}
+          }
+        },
+        {
+          "case": "branch-1",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "UPLOAD_PART",
+            "resultContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "partIndex": 1,
+            "partCount": 1,
+            "payloadBase64": "DS-A"
+          }
+        },
+        {
+          "case": "branch-2",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "FINALIZE",
+            "resultContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "partCount": 1,
+            "parts": [
+              {
+                "partIndex": 1,
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "byteLength": 1
+              }
+            ]
+          }
+        }
+      ],
+      "rejected": [
+        {
+          "case": "branch-0-missing-attemptRef",
+          "input": {
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "result": {}
+          }
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "result": {},
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-1-missing-attemptRef",
+          "input": {
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "UPLOAD_PART",
+            "resultContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "partIndex": 1,
+            "partCount": 1,
+            "payloadBase64": "DS-A"
+          }
+        },
+        {
+          "case": "branch-1-unexpected-field",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "UPLOAD_PART",
+            "resultContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "partIndex": 1,
+            "partCount": 1,
+            "payloadBase64": "DS-A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-1-invalid-discriminator",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "__INVALID__",
+            "resultContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "partIndex": 1,
+            "partCount": 1,
+            "payloadBase64": "DS-A"
+          }
+        },
+        {
+          "case": "branch-2-missing-attemptRef",
+          "input": {
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "FINALIZE",
+            "resultContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "partCount": 1,
+            "parts": [
+              {
+                "partIndex": 1,
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "byteLength": 1
+              }
+            ]
+          }
+        },
+        {
+          "case": "branch-2-unexpected-field",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "FINALIZE",
+            "resultContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "partCount": 1,
+            "parts": [
+              {
+                "partIndex": 1,
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "byteLength": 1
+              }
+            ],
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-2-invalid-discriminator",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "__INVALID__",
+            "resultContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "partCount": 1,
+            "parts": [
+              {
+                "partIndex": 1,
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "byteLength": 1
+              }
+            ]
+          }
+        },
+        {
+          "case": "string-max-attemptRef",
+          "input": {
+            "attemptRef": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "result": {}
+          }
+        },
+        {
+          "case": "part-index-max",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "UPLOAD_PART",
+            "resultContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "partIndex": 64,
+            "partCount": 1,
+            "payloadBase64": "DS-A"
+          }
+        },
+        {
+          "case": "part-count-max",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "UPLOAD_PART",
+            "resultContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "partIndex": 1,
+            "partCount": 65,
+            "payloadBase64": "DS-A"
+          }
+        },
+        {
+          "case": "payload-max",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "UPLOAD_PART",
+            "resultContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "partIndex": 1,
+            "partCount": 1,
+            "payloadBase64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          }
+        }
+      ]
+    },
+    "translation_workspace": {
+      "accepted": [
+        {
+          "case": "branch-0",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "READ"
+          }
+        },
+        {
+          "case": "branch-1",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "NEXT",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "branch-2",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "READ_BATCH",
+            "generationRequestRef": "A",
+            "partIndex": 1
+          }
+        },
+        {
+          "case": "branch-3",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "SAVE",
+            "generationRequestRef": "A",
+            "candidates": [
+              {
+                "blockId": "A",
+                "elements": [
+                  {
+                    "kind": "paragraph",
+                    "translatedText": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            }
+          }
+        },
+        {
+          "case": "branch-4",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "CHECK",
+            "generationRequestRef": "A",
+            "expectedRowVersion": 1,
+            "semanticReview": {
+              "blockId": "A",
+              "issues": [
+                {
+                  "code": "A",
+                  "severity": "BLOCK",
+                  "message": "A",
+                  "anchorIds": [
+                    "A"
+                  ]
+                }
+              ]
+            },
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            }
+          }
+        },
+        {
+          "case": "branch-5",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "CHECK_BATCH",
+            "generationRequestRef": "A",
+            "semanticReviews": [
+              {
+                "blockId": "A",
+                "issues": [
+                  {
+                    "code": "A",
+                    "severity": "BLOCK",
+                    "message": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              },
+              {
+                "blockId": "A",
+                "issues": [
+                  {
+                    "code": "A",
+                    "severity": "BLOCK",
+                    "message": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            }
+          }
+        },
+        {
+          "case": "branch-6",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "RECORD_FAILURE",
+            "generationRequestRef": "A",
+            "error": {
+              "origin": "TRANSPORT",
+              "code": "A",
+              "outcome": "KNOWN_FAILURE",
+              "retryable": true
+            }
+          }
+        },
+        {
+          "case": "branch-7",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "ASSEMBLE"
+          }
+        }
+      ],
+      "rejected": [
+        {
+          "case": "branch-0-missing-attemptRef",
+          "input": {
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "READ"
+          }
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "READ",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-0-invalid-discriminator",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "__INVALID__"
+          }
+        },
+        {
+          "case": "branch-1-missing-attemptRef",
+          "input": {
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "NEXT",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "branch-1-unexpected-field",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "NEXT",
+            "requestId": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-1-invalid-discriminator",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "__INVALID__",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "branch-2-missing-attemptRef",
+          "input": {
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "READ_BATCH",
+            "generationRequestRef": "A",
+            "partIndex": 1
+          }
+        },
+        {
+          "case": "branch-2-unexpected-field",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "READ_BATCH",
+            "generationRequestRef": "A",
+            "partIndex": 1,
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-2-invalid-discriminator",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "__INVALID__",
+            "generationRequestRef": "A",
+            "partIndex": 1
+          }
+        },
+        {
+          "case": "branch-3-missing-attemptRef",
+          "input": {
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "SAVE",
+            "generationRequestRef": "A",
+            "candidates": [
+              {
+                "blockId": "A",
+                "elements": [
+                  {
+                    "kind": "paragraph",
+                    "translatedText": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            }
+          }
+        },
+        {
+          "case": "branch-3-unexpected-field",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "SAVE",
+            "generationRequestRef": "A",
+            "candidates": [
+              {
+                "blockId": "A",
+                "elements": [
+                  {
+                    "kind": "paragraph",
+                    "translatedText": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            },
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-3-invalid-discriminator",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "__INVALID__",
+            "generationRequestRef": "A",
+            "candidates": [
+              {
+                "blockId": "A",
+                "elements": [
+                  {
+                    "kind": "paragraph",
+                    "translatedText": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            }
+          }
+        },
+        {
+          "case": "branch-4-missing-attemptRef",
+          "input": {
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "CHECK",
+            "generationRequestRef": "A",
+            "expectedRowVersion": 1,
+            "semanticReview": {
+              "blockId": "A",
+              "issues": [
+                {
+                  "code": "A",
+                  "severity": "BLOCK",
+                  "message": "A",
+                  "anchorIds": [
+                    "A"
+                  ]
+                }
+              ]
+            },
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            }
+          }
+        },
+        {
+          "case": "branch-4-unexpected-field",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "CHECK",
+            "generationRequestRef": "A",
+            "expectedRowVersion": 1,
+            "semanticReview": {
+              "blockId": "A",
+              "issues": [
+                {
+                  "code": "A",
+                  "severity": "BLOCK",
+                  "message": "A",
+                  "anchorIds": [
+                    "A"
+                  ]
+                }
+              ]
+            },
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            },
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-4-invalid-discriminator",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "__INVALID__",
+            "generationRequestRef": "A",
+            "expectedRowVersion": 1,
+            "semanticReview": {
+              "blockId": "A",
+              "issues": [
+                {
+                  "code": "A",
+                  "severity": "BLOCK",
+                  "message": "A",
+                  "anchorIds": [
+                    "A"
+                  ]
+                }
+              ]
+            },
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            }
+          }
+        },
+        {
+          "case": "branch-5-missing-attemptRef",
+          "input": {
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "CHECK_BATCH",
+            "generationRequestRef": "A",
+            "semanticReviews": [
+              {
+                "blockId": "A",
+                "issues": [
+                  {
+                    "code": "A",
+                    "severity": "BLOCK",
+                    "message": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              },
+              {
+                "blockId": "A",
+                "issues": [
+                  {
+                    "code": "A",
+                    "severity": "BLOCK",
+                    "message": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            }
+          }
+        },
+        {
+          "case": "branch-5-unexpected-field",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "CHECK_BATCH",
+            "generationRequestRef": "A",
+            "semanticReviews": [
+              {
+                "blockId": "A",
+                "issues": [
+                  {
+                    "code": "A",
+                    "severity": "BLOCK",
+                    "message": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              },
+              {
+                "blockId": "A",
+                "issues": [
+                  {
+                    "code": "A",
+                    "severity": "BLOCK",
+                    "message": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            },
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-5-invalid-discriminator",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "__INVALID__",
+            "generationRequestRef": "A",
+            "semanticReviews": [
+              {
+                "blockId": "A",
+                "issues": [
+                  {
+                    "code": "A",
+                    "severity": "BLOCK",
+                    "message": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              },
+              {
+                "blockId": "A",
+                "issues": [
+                  {
+                    "code": "A",
+                    "severity": "BLOCK",
+                    "message": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            }
+          }
+        },
+        {
+          "case": "branch-6-missing-attemptRef",
+          "input": {
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "RECORD_FAILURE",
+            "generationRequestRef": "A",
+            "error": {
+              "origin": "TRANSPORT",
+              "code": "A",
+              "outcome": "KNOWN_FAILURE",
+              "retryable": true
+            }
+          }
+        },
+        {
+          "case": "branch-6-unexpected-field",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "RECORD_FAILURE",
+            "generationRequestRef": "A",
+            "error": {
+              "origin": "TRANSPORT",
+              "code": "A",
+              "outcome": "KNOWN_FAILURE",
+              "retryable": true
+            },
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-6-invalid-discriminator",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "__INVALID__",
+            "generationRequestRef": "A",
+            "error": {
+              "origin": "TRANSPORT",
+              "code": "A",
+              "outcome": "KNOWN_FAILURE",
+              "retryable": true
+            }
+          }
+        },
+        {
+          "case": "branch-7-missing-attemptRef",
+          "input": {
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "ASSEMBLE"
+          }
+        },
+        {
+          "case": "branch-7-unexpected-field",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "ASSEMBLE",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-7-invalid-discriminator",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "__INVALID__"
+          }
+        },
+        {
+          "case": "string-max-attemptRef",
+          "input": {
+            "attemptRef": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "READ"
+          }
+        },
+        {
+          "case": "translated-text-refinement",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "SAVE",
+            "generationRequestRef": "A",
+            "candidates": [
+              {
+                "blockId": "A",
+                "elements": [
+                  {
+                    "kind": "paragraph",
+                    "translatedText": "   ",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            }
+          }
+        },
+        {
+          "case": "semantic-reviews-min",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "phase": "CHECK_BATCH",
+            "generationRequestRef": "A",
+            "semanticReviews": [
+              {
+                "blockId": "A",
+                "issues": [
+                  {
+                    "code": "A",
+                    "severity": "BLOCK",
+                    "message": "A",
+                    "anchorIds": [
+                      "A"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "actualExecution": {
+              "modelRef": "A",
+              "modelVersion": "A",
+              "skillVersion": "A",
+              "promptVersion": "A",
+              "providerRequestId": "A",
+              "generatedAt": "2026-10-25T00:00:00Z",
+              "usage": {
+                "inputTokens": 1,
+                "outputTokens": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "document_work": {
+      "accepted": [
+        {
+          "case": "branch-0",
+          "input": {
+            "action": "STATUS",
+            "documentVersionId": "A"
+          }
+        },
+        {
+          "case": "branch-1",
+          "input": {
+            "action": "STEP",
+            "documentVersionId": "A",
+            "parseRunId": "A"
+          }
+        },
+        {
+          "case": "branch-2",
+          "input": {
+            "action": "ACTIVITY_BEGIN",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "semanticRevision": 1,
+            "requestId": "A",
+            "expectedRevision": 1,
+            "sectionIds": [
+              "A"
+            ]
+          }
+        },
+        {
+          "case": "branch-3",
+          "input": {
+            "action": "ACTIVITY_STATUS",
+            "documentVersionId": "A",
+            "runRef": "A"
+          }
+        },
+        {
+          "case": "branch-4",
+          "input": {
+            "action": "ACTIVITY_CANCEL",
+            "documentVersionId": "A",
+            "runRef": "A"
+          }
+        },
+        {
+          "case": "branch-5",
+          "input": {
+            "action": "ACTIVITY_CLAIM",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A"
+          }
+        },
+        {
+          "case": "branch-6",
+          "input": {
+            "action": "ACTIVITY_HEARTBEAT",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1
+          }
+        },
+        {
+          "case": "branch-7",
+          "input": {
+            "action": "ACTIVITY_READ",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "sectionId": "A",
+            "offset": 1,
+            "limit": 1
+          }
+        },
+        {
+          "case": "branch-8",
+          "input": {
+            "action": "ACTIVITY_SAVE",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "candidate": {},
+            "producer": {
+              "skillVersion": "A",
+              "modelVersion": "A"
+            }
+          }
+        },
+        {
+          "case": "branch-9",
+          "input": {
+            "action": "ACTIVITY_SAVE_SELECTION",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "candidate": {},
+            "producer": {
+              "skillVersion": "A",
+              "modelVersion": "A"
+            }
+          }
+        },
+        {
+          "case": "branch-10",
+          "input": {
+            "action": "ACTIVITY_FAIL",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "errorCode": "A"
+          }
+        }
+      ],
+      "rejected": [
+        {
+          "case": "branch-0-missing-action",
+          "input": {
+            "documentVersionId": "A"
+          }
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "input": {
+            "action": "STATUS",
+            "documentVersionId": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-0-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A"
+          }
+        },
+        {
+          "case": "branch-1-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A"
+          }
+        },
+        {
+          "case": "branch-1-unexpected-field",
+          "input": {
+            "action": "STEP",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-1-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A"
+          }
+        },
+        {
+          "case": "branch-2-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "semanticRevision": 1,
+            "requestId": "A",
+            "expectedRevision": 1,
+            "sectionIds": [
+              "A"
+            ]
+          }
+        },
+        {
+          "case": "branch-2-unexpected-field",
+          "input": {
+            "action": "ACTIVITY_BEGIN",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "semanticRevision": 1,
+            "requestId": "A",
+            "expectedRevision": 1,
+            "sectionIds": [
+              "A"
+            ],
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-2-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "semanticRevision": 1,
+            "requestId": "A",
+            "expectedRevision": 1,
+            "sectionIds": [
+              "A"
+            ]
+          }
+        },
+        {
+          "case": "branch-3-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A"
+          }
+        },
+        {
+          "case": "branch-3-unexpected-field",
+          "input": {
+            "action": "ACTIVITY_STATUS",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-3-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A"
+          }
+        },
+        {
+          "case": "branch-4-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A"
+          }
+        },
+        {
+          "case": "branch-4-unexpected-field",
+          "input": {
+            "action": "ACTIVITY_CANCEL",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-4-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A"
+          }
+        },
+        {
+          "case": "branch-5-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A"
+          }
+        },
+        {
+          "case": "branch-5-unexpected-field",
+          "input": {
+            "action": "ACTIVITY_CLAIM",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-5-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A"
+          }
+        },
+        {
+          "case": "branch-6-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1
+          }
+        },
+        {
+          "case": "branch-6-unexpected-field",
+          "input": {
+            "action": "ACTIVITY_HEARTBEAT",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-6-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1
+          }
+        },
+        {
+          "case": "branch-7-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "sectionId": "A",
+            "offset": 1,
+            "limit": 1
+          }
+        },
+        {
+          "case": "branch-7-unexpected-field",
+          "input": {
+            "action": "ACTIVITY_READ",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "sectionId": "A",
+            "offset": 1,
+            "limit": 1,
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-7-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "sectionId": "A",
+            "offset": 1,
+            "limit": 1
+          }
+        },
+        {
+          "case": "branch-8-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "candidate": {},
+            "producer": {
+              "skillVersion": "A",
+              "modelVersion": "A"
+            }
+          }
+        },
+        {
+          "case": "branch-8-unexpected-field",
+          "input": {
+            "action": "ACTIVITY_SAVE",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "candidate": {},
+            "producer": {
+              "skillVersion": "A",
+              "modelVersion": "A"
+            },
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-8-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "candidate": {},
+            "producer": {
+              "skillVersion": "A",
+              "modelVersion": "A"
+            }
+          }
+        },
+        {
+          "case": "branch-9-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "candidate": {},
+            "producer": {
+              "skillVersion": "A",
+              "modelVersion": "A"
+            }
+          }
+        },
+        {
+          "case": "branch-9-unexpected-field",
+          "input": {
+            "action": "ACTIVITY_SAVE_SELECTION",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "candidate": {},
+            "producer": {
+              "skillVersion": "A",
+              "modelVersion": "A"
+            },
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-9-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "candidate": {},
+            "producer": {
+              "skillVersion": "A",
+              "modelVersion": "A"
+            }
+          }
+        },
+        {
+          "case": "branch-10-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "errorCode": "A"
+          }
+        },
+        {
+          "case": "branch-10-unexpected-field",
+          "input": {
+            "action": "ACTIVITY_FAIL",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "errorCode": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-10-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "errorCode": "A"
+          }
+        },
+        {
+          "case": "string-max-documentVersionId",
+          "input": {
+            "action": "STATUS",
+            "documentVersionId": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          }
+        },
+        {
+          "case": "section-ids-max",
+          "input": {
+            "action": "ACTIVITY_BEGIN",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "semanticRevision": 1,
+            "requestId": "A",
+            "expectedRevision": 1,
+            "sectionIds": [
+              "S0",
+              "S1",
+              "S2",
+              "S3",
+              "S4",
+              "S5",
+              "S6",
+              "S7",
+              "S8",
+              "S9",
+              "S10",
+              "S11",
+              "S12",
+              "S13",
+              "S14",
+              "S15",
+              "S16",
+              "S17",
+              "S18",
+              "S19",
+              "S20",
+              "S21",
+              "S22",
+              "S23",
+              "S24",
+              "S25",
+              "S26",
+              "S27",
+              "S28",
+              "S29",
+              "S30",
+              "S31",
+              "S32",
+              "S33",
+              "S34",
+              "S35",
+              "S36",
+              "S37",
+              "S38",
+              "S39",
+              "S40",
+              "S41",
+              "S42",
+              "S43",
+              "S44",
+              "S45",
+              "S46",
+              "S47",
+              "S48",
+              "S49",
+              "S50",
+              "S51",
+              "S52",
+              "S53",
+              "S54",
+              "S55",
+              "S56",
+              "S57",
+              "S58",
+              "S59",
+              "S60",
+              "S61",
+              "S62",
+              "S63",
+              "S64",
+              "S65",
+              "S66",
+              "S67",
+              "S68",
+              "S69",
+              "S70",
+              "S71",
+              "S72",
+              "S73",
+              "S74",
+              "S75",
+              "S76",
+              "S77",
+              "S78",
+              "S79",
+              "S80",
+              "S81",
+              "S82",
+              "S83",
+              "S84",
+              "S85",
+              "S86",
+              "S87",
+              "S88",
+              "S89",
+              "S90",
+              "S91",
+              "S92",
+              "S93",
+              "S94",
+              "S95",
+              "S96",
+              "S97",
+              "S98",
+              "S99",
+              "S100"
+            ]
+          }
+        },
+        {
+          "case": "semantic-revision-positive",
+          "input": {
+            "action": "ACTIVITY_BEGIN",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "semanticRevision": 0,
+            "requestId": "A",
+            "expectedRevision": 1,
+            "sectionIds": [
+              "A"
+            ]
+          }
+        }
+      ]
+    },
+    "document_reading": {
+      "accepted": [
+        {
+          "case": "branch-0",
+          "input": {
+            "action": "READING_BEGIN",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "semanticRevision": 1,
+            "requestId": "A",
+            "expectedRevision": 1
+          }
+        },
+        {
+          "case": "branch-1",
+          "input": {
+            "action": "READING_STATUS",
+            "documentVersionId": "A",
+            "runRef": "A"
+          }
+        },
+        {
+          "case": "branch-2",
+          "input": {
+            "action": "READING_CANCEL",
+            "documentVersionId": "A",
+            "runRef": "A"
+          }
+        },
+        {
+          "case": "branch-3",
+          "input": {
+            "action": "READING_RETRACT",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "expectedReadingRevision": 1,
+            "requestId": "A",
+            "reasonCode": "A",
+            "reviewReference": "A"
+          }
+        },
+        {
+          "case": "branch-4",
+          "input": {
+            "action": "READING_CLAIM",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A"
+          }
+        },
+        {
+          "case": "branch-5",
+          "input": {
+            "action": "READING_HEARTBEAT",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1
+          }
+        },
+        {
+          "case": "branch-6",
+          "input": {
+            "action": "READING_READ",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "offset": 1,
+            "limit": 1
+          }
+        },
+        {
+          "case": "branch-7",
+          "input": {
+            "action": "READING_SAVE",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "candidate": {},
+            "producer": {
+              "skillVersion": "A",
+              "modelVersion": "A"
+            }
+          }
+        },
+        {
+          "case": "branch-8",
+          "input": {
+            "action": "READING_FAIL",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "errorCode": "A"
+          }
+        }
+      ],
+      "rejected": [
+        {
+          "case": "branch-0-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "semanticRevision": 1,
+            "requestId": "A",
+            "expectedRevision": 1
+          }
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "input": {
+            "action": "READING_BEGIN",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "semanticRevision": 1,
+            "requestId": "A",
+            "expectedRevision": 1,
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-0-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "semanticRevision": 1,
+            "requestId": "A",
+            "expectedRevision": 1
+          }
+        },
+        {
+          "case": "branch-1-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A"
+          }
+        },
+        {
+          "case": "branch-1-unexpected-field",
+          "input": {
+            "action": "READING_STATUS",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-1-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A"
+          }
+        },
+        {
+          "case": "branch-2-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A"
+          }
+        },
+        {
+          "case": "branch-2-unexpected-field",
+          "input": {
+            "action": "READING_CANCEL",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-2-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A"
+          }
+        },
+        {
+          "case": "branch-3-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A",
+            "expectedReadingRevision": 1,
+            "requestId": "A",
+            "reasonCode": "A",
+            "reviewReference": "A"
+          }
+        },
+        {
+          "case": "branch-3-unexpected-field",
+          "input": {
+            "action": "READING_RETRACT",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "expectedReadingRevision": 1,
+            "requestId": "A",
+            "reasonCode": "A",
+            "reviewReference": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-3-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "expectedReadingRevision": 1,
+            "requestId": "A",
+            "reasonCode": "A",
+            "reviewReference": "A"
+          }
+        },
+        {
+          "case": "branch-4-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A"
+          }
+        },
+        {
+          "case": "branch-4-unexpected-field",
+          "input": {
+            "action": "READING_CLAIM",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-4-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A"
+          }
+        },
+        {
+          "case": "branch-5-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1
+          }
+        },
+        {
+          "case": "branch-5-unexpected-field",
+          "input": {
+            "action": "READING_HEARTBEAT",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-5-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1
+          }
+        },
+        {
+          "case": "branch-6-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "offset": 1,
+            "limit": 1
+          }
+        },
+        {
+          "case": "branch-6-unexpected-field",
+          "input": {
+            "action": "READING_READ",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "offset": 1,
+            "limit": 1,
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-6-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "offset": 1,
+            "limit": 1
+          }
+        },
+        {
+          "case": "branch-7-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "candidate": {},
+            "producer": {
+              "skillVersion": "A",
+              "modelVersion": "A"
+            }
+          }
+        },
+        {
+          "case": "branch-7-unexpected-field",
+          "input": {
+            "action": "READING_SAVE",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "candidate": {},
+            "producer": {
+              "skillVersion": "A",
+              "modelVersion": "A"
+            },
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-7-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "candidate": {},
+            "producer": {
+              "skillVersion": "A",
+              "modelVersion": "A"
+            }
+          }
+        },
+        {
+          "case": "branch-8-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "errorCode": "A"
+          }
+        },
+        {
+          "case": "branch-8-unexpected-field",
+          "input": {
+            "action": "READING_FAIL",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "errorCode": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-8-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "errorCode": "A"
+          }
+        },
+        {
+          "case": "numeric-min-expectedRevision",
+          "input": {
+            "action": "READING_BEGIN",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "semanticRevision": 1,
+            "requestId": "A",
+            "expectedRevision": -1
+          }
+        },
+        {
+          "case": "read-limit-max",
+          "input": {
+            "action": "READING_READ",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "offset": 1,
+            "limit": 51
+          }
+        },
+        {
+          "case": "delivery-ref-pattern",
+          "input": {
+            "action": "READING_READ",
+            "documentVersionId": "A",
+            "runRef": "A",
+            "leaseOwner": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "offset": 1,
+            "limit": 1,
+            "deliveryRef": "wrong-ref"
+          }
+        }
+      ]
+    },
+    "document_translation": {
+      "accepted": [
+        {
+          "case": "branch-0",
+          "input": {
+            "action": "START",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "branch-1",
+          "input": {
+            "action": "STATUS",
+            "documentVersionId": "A",
+            "parseRunId": "A"
+          }
+        },
+        {
+          "case": "branch-2",
+          "input": {
+            "action": "RECOVER",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "requestId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-3",
+          "input": {
+            "action": "RECOVER_EXPIRED",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-4",
+          "input": {
+            "action": "CONTINUE_PARTIAL",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-5",
+          "input": {
+            "action": "RECOVER_PARTIAL_INPUT",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-6",
+          "input": {
+            "action": "RECOVER_KNOWN_FAILURE",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-7",
+          "input": {
+            "action": "RESUME_KNOWN_FAILURE",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-8",
+          "input": {
+            "action": "CLAIM",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A"
+          }
+        },
+        {
+          "case": "branch-9",
+          "input": {
+            "action": "HEARTBEAT",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1
+          }
+        },
+        {
+          "case": "branch-10",
+          "input": {
+            "action": "WORKSPACE",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "workspaceCommand": {
+              "attemptRef": "A",
+              "leaseToken": "00000000-0000-4000-8000-000000000001",
+              "leaseGeneration": 1,
+              "phase": "READ"
+            }
+          }
+        },
+        {
+          "case": "branch-11",
+          "input": {
+            "action": "STEP",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A"
+          }
+        }
+      ],
+      "rejected": [
+        {
+          "case": "branch-0-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "input": {
+            "action": "START",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "requestId": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-0-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "branch-1-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A"
+          }
+        },
+        {
+          "case": "branch-1-unexpected-field",
+          "input": {
+            "action": "STATUS",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-1-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A"
+          }
+        },
+        {
+          "case": "branch-2-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "requestId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-2-unexpected-field",
+          "input": {
+            "action": "RECOVER",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "requestId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-2-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "requestId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-3-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-3-unexpected-field",
+          "input": {
+            "action": "RECOVER_EXPIRED",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-3-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-4-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-4-unexpected-field",
+          "input": {
+            "action": "CONTINUE_PARTIAL",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-4-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-5-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-5-unexpected-field",
+          "input": {
+            "action": "RECOVER_PARTIAL_INPUT",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-5-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-6-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-6-unexpected-field",
+          "input": {
+            "action": "RECOVER_KNOWN_FAILURE",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-6-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-7-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-7-unexpected-field",
+          "input": {
+            "action": "RESUME_KNOWN_FAILURE",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-7-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "deliveryRef": "work-item:WI-DEMO"
+          }
+        },
+        {
+          "case": "branch-8-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A"
+          }
+        },
+        {
+          "case": "branch-8-unexpected-field",
+          "input": {
+            "action": "CLAIM",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-8-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A"
+          }
+        },
+        {
+          "case": "branch-9-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1
+          }
+        },
+        {
+          "case": "branch-9-unexpected-field",
+          "input": {
+            "action": "HEARTBEAT",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-9-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1
+          }
+        },
+        {
+          "case": "branch-10-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "workspaceCommand": {
+              "attemptRef": "A",
+              "leaseToken": "00000000-0000-4000-8000-000000000001",
+              "leaseGeneration": 1,
+              "phase": "READ"
+            }
+          }
+        },
+        {
+          "case": "branch-10-unexpected-field",
+          "input": {
+            "action": "WORKSPACE",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "workspaceCommand": {
+              "attemptRef": "A",
+              "leaseToken": "00000000-0000-4000-8000-000000000001",
+              "leaseGeneration": 1,
+              "phase": "READ"
+            },
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-10-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "workspaceCommand": {
+              "attemptRef": "A",
+              "leaseToken": "00000000-0000-4000-8000-000000000001",
+              "leaseGeneration": 1,
+              "phase": "READ"
+            }
+          }
+        },
+        {
+          "case": "branch-11-missing-action",
+          "input": {
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A"
+          }
+        },
+        {
+          "case": "branch-11-unexpected-field",
+          "input": {
+            "action": "STEP",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-11-invalid-discriminator",
+          "input": {
+            "action": "__INVALID__",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A"
+          }
+        },
+        {
+          "case": "string-max-documentVersionId",
+          "input": {
+            "action": "START",
+            "documentVersionId": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "parseRunId": "A",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "nested-workspace-phase",
+          "input": {
+            "action": "WORKSPACE",
+            "documentVersionId": "A",
+            "parseRunId": "A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "workspaceCommand": {
+              "attemptRef": "A",
+              "leaseToken": "00000000-0000-4000-8000-000000000001",
+              "leaseGeneration": 1,
+              "phase": "INVALID"
+            }
+          }
+        }
+      ]
+    },
+    "derived_summary_attempt": {
+      "accepted": [
+        {
+          "case": "branch-0",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "operation": "CLAIM"
+          }
+        },
+        {
+          "case": "branch-1",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "operation": "STATUS"
+          }
+        },
+        {
+          "case": "branch-2",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "HEARTBEAT"
+          }
+        },
+        {
+          "case": "branch-3",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "operation": "CANCEL",
+            "reason": "A"
+          }
+        },
+        {
+          "case": "branch-4",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "FAIL",
+            "code": "A",
+            "message": "A"
+          }
+        },
+        {
+          "case": "branch-5",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "evidenceRefs": [
+              "A"
+            ],
+            "purpose": "A",
+            "operation": "READ_MEMBER_WORK"
+          }
+        },
+        {
+          "case": "branch-6",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "evidenceRefs": [
+              "A"
+            ],
+            "purpose": "A",
+            "operation": "READ_SOURCES"
+          }
+        },
+        {
+          "case": "branch-7",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "SAVE_SUMMARY",
+            "requestId": "A",
+            "expectedSummaryRevision": 1,
+            "contentJson": "DS-A"
+          }
+        },
+        {
+          "case": "branch-8",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "operation": "READ_SAVED_SUMMARY",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "branch-9",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "FINISH",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "valid-native-reference",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "evidenceRefs": [
+              "TDMS_APPROVED_OPINION:A:B:C:D:E:0"
+            ],
+            "purpose": "A",
+            "operation": "READ_SOURCES"
+          }
+        }
+      ],
+      "rejected": [
+        {
+          "case": "branch-0-missing-summaryId",
+          "input": {
+            "attemptRef": "A",
+            "operation": "CLAIM"
+          }
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "operation": "CLAIM",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-0-invalid-discriminator",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "operation": "__INVALID__"
+          }
+        },
+        {
+          "case": "branch-1-missing-summaryId",
+          "input": {
+            "attemptRef": "A",
+            "operation": "STATUS"
+          }
+        },
+        {
+          "case": "branch-1-unexpected-field",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "operation": "STATUS",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-1-invalid-discriminator",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "operation": "__INVALID__"
+          }
+        },
+        {
+          "case": "branch-2-missing-summaryId",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "HEARTBEAT"
+          }
+        },
+        {
+          "case": "branch-2-unexpected-field",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "HEARTBEAT",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-2-invalid-discriminator",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "__INVALID__"
+          }
+        },
+        {
+          "case": "branch-3-missing-summaryId",
+          "input": {
+            "attemptRef": "A",
+            "operation": "CANCEL",
+            "reason": "A"
+          }
+        },
+        {
+          "case": "branch-3-unexpected-field",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "operation": "CANCEL",
+            "reason": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-3-invalid-discriminator",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "operation": "__INVALID__",
+            "reason": "A"
+          }
+        },
+        {
+          "case": "branch-4-missing-summaryId",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "FAIL",
+            "code": "A",
+            "message": "A"
+          }
+        },
+        {
+          "case": "branch-4-unexpected-field",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "FAIL",
+            "code": "A",
+            "message": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-4-invalid-discriminator",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "__INVALID__",
+            "code": "A",
+            "message": "A"
+          }
+        },
+        {
+          "case": "branch-5-missing-summaryId",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "evidenceRefs": [
+              "A"
+            ],
+            "purpose": "A",
+            "operation": "READ_MEMBER_WORK"
+          }
+        },
+        {
+          "case": "branch-5-unexpected-field",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "evidenceRefs": [
+              "A"
+            ],
+            "purpose": "A",
+            "operation": "READ_MEMBER_WORK",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-5-invalid-discriminator",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "evidenceRefs": [
+              "A"
+            ],
+            "purpose": "A",
+            "operation": "__INVALID__"
+          }
+        },
+        {
+          "case": "branch-6-missing-summaryId",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "evidenceRefs": [
+              "A"
+            ],
+            "purpose": "A",
+            "operation": "READ_SOURCES"
+          }
+        },
+        {
+          "case": "branch-6-unexpected-field",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "evidenceRefs": [
+              "A"
+            ],
+            "purpose": "A",
+            "operation": "READ_SOURCES",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-6-invalid-discriminator",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "evidenceRefs": [
+              "A"
+            ],
+            "purpose": "A",
+            "operation": "__INVALID__"
+          }
+        },
+        {
+          "case": "branch-7-missing-summaryId",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "SAVE_SUMMARY",
+            "requestId": "A",
+            "expectedSummaryRevision": 1,
+            "contentJson": "DS-A"
+          }
+        },
+        {
+          "case": "branch-7-unexpected-field",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "SAVE_SUMMARY",
+            "requestId": "A",
+            "expectedSummaryRevision": 1,
+            "contentJson": "DS-A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-7-invalid-discriminator",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "__INVALID__",
+            "requestId": "A",
+            "expectedSummaryRevision": 1,
+            "contentJson": "DS-A"
+          }
+        },
+        {
+          "case": "branch-8-missing-summaryId",
+          "input": {
+            "attemptRef": "A",
+            "operation": "READ_SAVED_SUMMARY",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "branch-8-unexpected-field",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "operation": "READ_SAVED_SUMMARY",
+            "requestId": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-8-invalid-discriminator",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "operation": "__INVALID__",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "branch-9-missing-summaryId",
+          "input": {
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "FINISH",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "branch-9-unexpected-field",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "FINISH",
+            "requestId": "A",
+            "__unexpected": 1
+          }
+        },
+        {
+          "case": "branch-9-invalid-discriminator",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "operation": "__INVALID__",
+            "requestId": "A"
+          }
+        },
+        {
+          "case": "string-max-summaryId",
+          "input": {
+            "summaryId": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "attemptRef": "A",
+            "operation": "CLAIM"
+          }
+        },
+        {
+          "case": "content-max",
+          "inputSha256": "12fec751bbae724cc64628c55381ff273305b49a3310194c539195b0dffd2c2b",
+          "inputJsonLength": 1000198,
+          "generation": "Regenerate with export-host-contract.mjs from pinned source."
+        },
+        {
+          "case": "invalid-native-reference",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "evidenceRefs": [
+              "TDMS_APPROVED_OPINION:%41:B:C:D:E:0"
+            ],
+            "purpose": "A",
+            "operation": "READ_SOURCES"
+          }
+        },
+        {
+          "case": "invalid-native-reference",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "evidenceRefs": [
+              "TDMS_APPROVED_OPINION:A:B:C:D:E:9007199254740992"
+            ],
+            "purpose": "A",
+            "operation": "READ_SOURCES"
+          }
+        },
+        {
+          "case": "invalid-native-reference",
+          "input": {
+            "summaryId": "DS-A",
+            "attemptRef": "A",
+            "leaseToken": "00000000-0000-4000-8000-000000000001",
+            "leaseGeneration": 1,
+            "evidenceRefs": [
+              "TDMS_APPROVED_OPINION:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:B:C:D:E:0"
+            ],
+            "purpose": "A",
+            "operation": "READ_SOURCES"
+          }
+        }
+      ]
+    }
+  }
+}

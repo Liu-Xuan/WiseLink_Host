@@ -1,0 +1,3386 @@
+{
+  "method": "safeParse on the actual current production tool registration schemas; no business handler is invoked",
+  "pinnedSourceHostCommit": "fc1322919b1b52433c33086c8db4aeb957f0e982",
+  "pinnedZodVersion": "4.6.5",
+  "currentZodVersion": {
+    "major": 4,
+    "minor": 6,
+    "patch": 5
+  },
+  "coverageNote": "These are the pinned 925 cases. Newly added current Host actions require their own current tests; no authorization or business persistence is exercised here.",
+  "pinnedCaseFile": "openclaw/codex-evaluator/contracts/host-zod-validation-cases.json",
+  "pinnedCaseFileSha256": "72b06a7a57d951ff89184741d676927695adfa3cfc165ccab522fe8626d7d658",
+  "tools": [
+    {
+      "name": "read_assessment_sources",
+      "currentMetadataFile": "tools/read_assessment_sources.json",
+      "pinnedAccepted": 2,
+      "pinnedRejected": 6,
+      "currentAccepted": 2,
+      "currentRejected": 6,
+      "expectationMismatches": [],
+      "cases": [
+        {
+          "case": "branch-0",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "valid-native-reference",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-0-missing-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "attemptRef"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "string-max-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_big",
+              "path": [
+                "attemptRef"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "invalid-native-reference",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 3,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "sourceRefs",
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "case": "invalid-native-reference",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 4,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "sourceRefs",
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "case": "invalid-native-reference",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 5,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "sourceRefs",
+                0
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "commit_translation_candidate",
+      "currentMetadataFile": "tools/commit_translation_candidate.json",
+      "pinnedAccepted": 3,
+      "pinnedRejected": 12,
+      "currentAccepted": 3,
+      "currentRejected": 12,
+      "expectationMismatches": [],
+      "cases": [
+        {
+          "case": "branch-0",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-1",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-2",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-0-missing-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-1-missing-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-1-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 3,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-1-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 4,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-2-missing-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 5,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-2-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 6,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-2-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 7,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "string-max-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 8,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_big",
+              "path": [
+                "attemptRef"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "part-index-max",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 9,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_big",
+              "path": [
+                "partIndex"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "part-count-max",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 10,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_big",
+              "path": [
+                "partCount"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "payload-max",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 11,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_big",
+              "path": [
+                "payloadBase64"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "translation_workspace",
+      "currentMetadataFile": "tools/translation_workspace.json",
+      "pinnedAccepted": 8,
+      "pinnedRejected": 27,
+      "currentAccepted": 8,
+      "currentRejected": 27,
+      "expectationMismatches": [],
+      "cases": [
+        {
+          "case": "branch-0",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-1",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-2",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-3",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 3,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-4",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 4,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-5",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 5,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-6",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 6,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-7",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 7,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-0-missing-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "attemptRef"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-0-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "phase"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-1-missing-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 3,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "attemptRef"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-1-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 4,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-1-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 5,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "phase"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-2-missing-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 6,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "attemptRef"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-2-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 7,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-2-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 8,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "phase"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-3-missing-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 9,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "attemptRef"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-3-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 10,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-3-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 11,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "phase"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-4-missing-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 12,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "attemptRef"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-4-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 13,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-4-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 14,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "phase"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-5-missing-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 15,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "attemptRef"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-5-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 16,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-5-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 17,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "phase"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-6-missing-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 18,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "attemptRef"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-6-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 19,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-6-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 20,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "phase"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-7-missing-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 21,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "attemptRef"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-7-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 22,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-7-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 23,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "phase"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "string-max-attemptRef",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 24,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_big",
+              "path": [
+                "attemptRef"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "translated-text-refinement",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 25,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "custom",
+              "path": [
+                "candidates",
+                0,
+                "elements",
+                0,
+                "translatedText"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "semantic-reviews-min",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 26,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_small",
+              "path": [
+                "semanticReviews"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "document_work",
+      "currentMetadataFile": "tools/document_work.json",
+      "pinnedAccepted": 11,
+      "pinnedRejected": 36,
+      "currentAccepted": 11,
+      "currentRejected": 36,
+      "expectationMismatches": [],
+      "cases": [
+        {
+          "case": "branch-0",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-1",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-2",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-3",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 3,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-4",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 4,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-5",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 5,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-6",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 6,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-7",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 7,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-8",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 8,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-9",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 9,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-10",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 10,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-0-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-0-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-1-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 3,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-1-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 4,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-1-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 5,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-2-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 6,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-2-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 7,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-2-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 8,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-3-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 9,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-3-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 10,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-3-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 11,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-4-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 12,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-4-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 13,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-4-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 14,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-5-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 15,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-5-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 16,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-5-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 17,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-6-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 18,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-6-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 19,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-6-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 20,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-7-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 21,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-7-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 22,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-7-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 23,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-8-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 24,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-8-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 25,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-8-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 26,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-9-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 27,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-9-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 28,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-9-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 29,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-10-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 30,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-10-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 31,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-10-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 32,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "string-max-documentVersionId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 33,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_big",
+              "path": [
+                "documentVersionId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "section-ids-max",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 34,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_big",
+              "path": [
+                "sectionIds"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "semantic-revision-positive",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 35,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_small",
+              "path": [
+                "semanticRevision"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "document_reading",
+      "currentMetadataFile": "tools/document_reading.json",
+      "pinnedAccepted": 9,
+      "pinnedRejected": 30,
+      "currentAccepted": 9,
+      "currentRejected": 30,
+      "expectationMismatches": [],
+      "cases": [
+        {
+          "case": "branch-0",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-1",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-2",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-3",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 3,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-4",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 4,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-5",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 5,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-6",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 6,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-7",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 7,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-8",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 8,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-0-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-0-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-1-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 3,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-1-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 4,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-1-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 5,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-2-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 6,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-2-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 7,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-2-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 8,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-3-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 9,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-3-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 10,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-3-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 11,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-4-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 12,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-4-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 13,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-4-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 14,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-5-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 15,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-5-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 16,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-5-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 17,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-6-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 18,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-6-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 19,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-6-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 20,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-7-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 21,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-7-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 22,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-7-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 23,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-8-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 24,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-8-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 25,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-8-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 26,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "numeric-min-expectedRevision",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 27,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_small",
+              "path": [
+                "expectedRevision"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "read-limit-max",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 28,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_big",
+              "path": [
+                "limit"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "delivery-ref-pattern",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 29,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_format",
+              "path": [
+                "deliveryRef"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "document_translation",
+      "currentMetadataFile": "tools/document_translation.json",
+      "pinnedAccepted": 12,
+      "pinnedRejected": 38,
+      "currentAccepted": 12,
+      "currentRejected": 38,
+      "expectationMismatches": [],
+      "cases": [
+        {
+          "case": "branch-0",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-1",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-2",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-3",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 3,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-4",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 4,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-5",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 5,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-6",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 6,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-7",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 7,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-8",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 8,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-9",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 9,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-10",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 10,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-11",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 11,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-0-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-0-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-1-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 3,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-1-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 4,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-1-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 5,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-2-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 6,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-2-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 7,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-2-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 8,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-3-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 9,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-3-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 10,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-3-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 11,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-4-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 12,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-4-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 13,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-4-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 14,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-5-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 15,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-5-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 16,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-5-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 17,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-6-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 18,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-6-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 19,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-6-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 20,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-7-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 21,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-7-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 22,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-7-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 23,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-8-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 24,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-8-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 25,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-8-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 26,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-9-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 27,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-9-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 28,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-9-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 29,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-10-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 30,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-10-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 31,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-10-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 32,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-11-missing-action",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 33,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-11-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 34,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-11-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 35,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "action"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "string-max-documentVersionId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 36,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "too_big",
+              "path": [
+                "documentVersionId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "nested-workspace-phase",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 37,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "workspaceCommand",
+                "phase"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "derived_summary_attempt",
+      "currentMetadataFile": "tools/derived_summary_attempt.json",
+      "pinnedAccepted": 11,
+      "pinnedRejected": 35,
+      "currentAccepted": 11,
+      "currentRejected": 35,
+      "expectationMismatches": [],
+      "cases": [
+        {
+          "case": "branch-0",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-1",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-2",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-3",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 3,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-4",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 4,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-5",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 5,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-6",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 6,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-7",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 7,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-8",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 8,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-9",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 9,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "valid-native-reference",
+          "pinnedGroup": "accepted",
+          "pinnedCaseIndex": 10,
+          "pinnedExpectedAccepted": true,
+          "currentAccepted": true,
+          "expectationMatched": true
+        },
+        {
+          "case": "branch-0-missing-summaryId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 0,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "summaryId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-0-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 1,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-0-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 2,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "operation"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-1-missing-summaryId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 3,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "summaryId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-1-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 4,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-1-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 5,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "operation"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-2-missing-summaryId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 6,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "summaryId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-2-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 7,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-2-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 8,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "operation"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-3-missing-summaryId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 9,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "summaryId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-3-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 10,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-3-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 11,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "operation"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-4-missing-summaryId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 12,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "summaryId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-4-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 13,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-4-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 14,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "operation"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-5-missing-summaryId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 15,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "summaryId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-5-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 16,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-5-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 17,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "operation"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-6-missing-summaryId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 18,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "summaryId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-6-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 19,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-6-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 20,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "operation"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-7-missing-summaryId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 21,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "summaryId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-7-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 22,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-7-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 23,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "operation"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-8-missing-summaryId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 24,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "summaryId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-8-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 25,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-8-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 26,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "operation"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-9-missing-summaryId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 27,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": [
+                "summaryId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "branch-9-unexpected-field",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 28,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "unrecognized_keys",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "branch-9-invalid-discriminator",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 29,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "operation"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "string-max-summaryId",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 30,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_format",
+              "path": [
+                "summaryId"
+              ]
+            },
+            {
+              "code": "too_big",
+              "path": [
+                "summaryId"
+              ]
+            }
+          ]
+        },
+        {
+          "case": "content-max",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 31,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_type",
+              "path": []
+            }
+          ]
+        },
+        {
+          "case": "invalid-native-reference",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 32,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "evidenceRefs",
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "case": "invalid-native-reference",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 33,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "evidenceRefs",
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "case": "invalid-native-reference",
+          "pinnedGroup": "rejected",
+          "pinnedCaseIndex": 34,
+          "pinnedExpectedAccepted": false,
+          "currentAccepted": false,
+          "expectationMatched": true,
+          "issues": [
+            {
+              "code": "invalid_union",
+              "path": [
+                "evidenceRefs",
+                0
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "accepted": 56,
+  "rejected": 184,
+  "expectationMismatches": 0,
+  "runtimeAuthorizationVerified": false,
+  "liveHostVerified": false
+}

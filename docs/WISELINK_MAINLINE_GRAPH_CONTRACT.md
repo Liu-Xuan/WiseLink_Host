@@ -116,6 +116,16 @@ flowchart TD
 
 消费者默认每次最多 4 项串行、15 分钟是本次循环的任务数/边界预算，不能推导为 4 并发或运行中的强杀截止；ActionAttempt 四槽的实际隔离维度是 tenant/request_origin，不能写成全系统 4 并发。索引活动谓词以准确现库定义核验；migration 与生成 schema 的差异本身不是线上故障证据。
 
+### 2.4 翻译恢复与旧内容处置边界
+
+本节的三个新增文档翻译动作属于独立 P1 交付；本首测核心未合入，不出现在本树 SDK 工具输入中，也不是初评交接的前置条件。
+
+文档翻译沿用既有 `document_translation/WORKSPACE` 入口。查询原 generation 与 SAVE 回执属于读取：即使原 lease 已过期，也不能顺带 expire、CLAIM、attach、重写块或触发模型。已经保存只返回准确原 receipt；未知原请求保持待核。`REGISTERED`、TTL 已过或首次 NEXT 存在，均不证明候选已完成或可以再次 SAVE。
+
+未保存的跨 lease 恢复仅消费 Host 在原有效 fence 下持久封存的完整候选。封存绑定 tenant、actor、可信 executor principal、attempt、workspace、task/input、原 source 与目标 block 版本及 generation；恢复不接收替换候选。Host 按一致锁序重新校验权限、输入和版本，CAS 接续一次保存；旧执行者迟到使用原 fence 必须被拒。封存前退出仅有本地模型回执时仍待核，客户端不能把自己的“完成”声明等同于 Host 已封存。实现阶段、客户端接线、离线验证及实际恢复分别登记。
+
+2026-10-25 用户明确：旧内容不必成为新版兼容前提，可以清理或按新版重新生成，但必须安排处置。旧接口导出、演示与历史说明标明适用版本和替代物；当前实施只维护一份契约和图。旧业务成果按“可清理、按新版重生成、保留取证”列出具体对象与依赖；新生成走正常新请求，不迁移原请求身份。原 ATT5 等 UNKNOWN、在途和已提交未确认记录保留取证，不自动重放或清除。此规则不把本地候选当已部署，也不把清理建议当已执行清理。
+
 ## 3. 一次请求的最小可执行契约
 
 ### 3.1 身份与观察范围
@@ -1227,3 +1237,24 @@ P0/P7当前nextAction按上述新链重排，旧源码中仍有用的材料、�
 当前实施页为本集成树 `docs/runtime-monitor/WiseLink_Wiring_Verification.html`，从同一契约、bindings/evidence/work-packages生成；其运行图与详情共用这一快照。阅读指向见[当前图与历史目录说明](runtime-monitor/README.md)。用户原指定`tmp/wiring-progress-revision-20261023/docs/runtime-monitor/`以及其他旧候选目录保留历史HTML，不覆写、不暗设跳转；交付时明确打开和链接当前实施页。唯一业务状态仍来自Host，历史证据数量不作完成率。
 
 本批尚未推送或部署；实际CODEX消费者持续唤起、异常退出重启、两个私有root的卷/保留期/跨重启读回未验。切换按现有宿主与精确入口操作，停止旧入口领取和拒迟到旧fence写入分别核验；不创建新全局调度/槽位平台。首条真实新事项的网关、存储事务、Overall提交、attempt结束、queueACK与原页面同版读取继续分别待验，原ATT5 UNKNOWN不重放。
+
+
+### E.39 当前消费者集成与旧内容处置（2026-10-25）
+
+以本地974bedfa为基线，按共同94c54de三方选择性合入925deb的44文件增量。CODEX队列专用路由、COMMITTING的同attempt/WorkItem窄读许可、原SAVE key定位后独立双读、完整revision比较、坏ACK拒绝和材料目录身份全部保留。程序runner、材料装配、初评恢复和Overall编排相对974未改；不将上游166项历史离线记录改记为本轮重跑。
+
+| 本轮修订 / 契约 | 实际接入点 | 正反例 / 限制 |
+| --- | --- | --- |
+| 原UNKNOWN不迁移重派 | `run-hosted-review-turn.mjs`的模型恢复分支 | 旧outer model.started无逐轮首个marker时拒绝；新的准确轮次仍恢复原receipt。真实消费者19项Review/Wiki离线通过，含零第二次派发负例。 |
+| 翻译执行来源不丢失 | `run-semantic-translation.mjs`的执行记录与最终provenance；可信consumer传递executor | 新生成和恢复的分块来源一致；混合/未知来源拒绝，封存结果原样返回不重标。12项真实coordinator→Host preflight离线正反例；28项翻译/阅读consumer通过。 |
+| 原保存结果准确读回 | 现有初评及CODEX queue wrapper | 23项初评结束/队列恢复/专用路由合并回归通过；不宣称真实DB commit/ACK。 |
+| 宿主与容量责任 | [消费者宿主与分阶段验收](coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md) | queued、inflight、saved、projection、ACK分别有证据；先1再2/4，模型并发/RPM/TPM/资源容量未取得。 |
+
+Review首次本地集成检查3项失败来自合成Host只有150毫秒lease，进程启动竞争导致BUSY窗口错过或心跳过期；测试改成显式使合成lease过期，不改变生产租约或校验，随后19项通过。原失败日志保留，不静默删除。接口实际SDK导出与源码校验、Host翻译封存恢复及最终构建在准确组合交接中另记。
+
+用户本次允许旧内容清理或重生成；P0/P7当前摘要已收敛为最新主线，不再堆列全部旧批次。原历史证据、旧图目录和UNKNOWN记录仍保留，当前图继续同源生成。旧接口/示例不成为新版兼容前提，旧业务数据清理和重生须列对象依赖并按正常入口执行，本次尚未删除业务数据或重放旧请求。首条新事项完整业务链和正式采用均未由上述本地工作成立。
+
+
+本轮按首测核心/P1扩展拆开：首测实施树为 `program-initial-925-core-candidate`，分支 `codex/initial-assessment-925-core-20261025`。它包含974基线、925消费者增量和已审窄修，不含文档翻译三个新动作。并行P1的四个Host产品文件及新测试保留在独立交付范围，封存恢复24项离线测试及原receipt/字节预算独审通过，尚未接云端客户端或部署；准确patch、源码摘要及契约由独立交付材料定位，不能从本首测树源码推定已存在该能力。
+
+首测核心交付检查包括当前接口与准确组合定稿、一次完整构建和图同版核对，结果以准确交接回执为准。运行剩余项为实际宿主/持久目录/可信配置前置，然后按明确批准的新事项验完整链。翻译并行剩余：独立Host候选交付、云端消费新动作、后续准确安装/部署与真实恢复验收；不要求先完成这些事项才允许初评首测准备。此前974完整接口ZIP已核验可用于立即对照，明确不含新翻译动作，不能当已上线或已传到外部会话。

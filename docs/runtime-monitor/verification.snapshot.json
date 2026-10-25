@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "snapshot": {
     "dataMode": "snapshot",
-    "generatedAt": "2026-10-25T10:00:43.615377+00:00",
+    "generatedAt": "2026-10-25T11:00:41.433697+00:00",
     "contract": {
       "version": "1.8 持久任务与执行器恢复约束",
       "source": "WISELINK_MAINLINE_GRAPH_CONTRACT.md",
-      "sourceRevision": "1012620631d366ece4807060bd3e74d841fae873751dc60aaac801f103a471c4",
+      "sourceRevision": "0fa7efb2a53a6e90f0f55e96fa1ea78f510bb322fbe03c08c995c81311b9fc76",
       "sourceRevisionType": "sha256"
     },
     "target": {
@@ -39,10 +39,10 @@
           "V26",
           "V28"
         ],
-        "nextAction": "按图契约v1.8补齐实际prompt/bridge payload和预定run的启动前持久关联；确认现有宿主持续唤起及两个root的卷持久性，在准确批准后完成独立CODEX配置/技术部署，再以新事项验SAVE→原key独立READ→同版Overall实际commit→attempt结束→queueACK及原阅读面。",
+        "nextAction": "按准确组合与接口交接回执核实单worker宿主配置与持久目录；按原授权边界准备一次新事项整链，实际运行另按准确批准执行。通过后才规划同tenant/request_origin下2→4个独立worker；旧内容列清理/重生成/保留取证，不以兼容或救旧UNKNOWN阻塞新主线。",
         "progress": {
-          "delivered": "以下为c239旧后继历史窗口：原ATT5首次SAVE被SOURCE_NOT_DELIVERED拒绝、round14 UNKNOWN、旧generation9归档，以及准确c239安装和C136原状态恢复均保持原证据。本次唯一正常新AD请求/AQ/ATT绑定同一WI、inputRevision=3，03:41:59.909Z round6遇Gateway HTTP400 incomplete_result；04:25 Host readback随后显示ATT TIMED_OUT、initialAnalysis/JobAid FAILED、Overall PENDING，保存0。generation10到期后由generation11正常收尾并归档，activeClaim=null；本地Native run-result仍UNKNOWN。Global GLM5.3 revision1与本WorkItem冻结M3 revision0分开；该请求继承M3，不代表运行时回退或GLM实测。 当前a65/c240技术切换、C136原状态恢复及新GLM程序请求受理及随后材料核验断点见P7；技术事实不改写前述旧请求结果。 新方向范围记录：准确0b33为13新增文件的可选Codex+GLM执行器，既有验证Host为内存模拟、真实Host未调用/未配置且业务未ready，持久重启恢复未接；未替换当前线上a65/c240。 后续本地增量：1155/fc132291主要消费者与程序初评已接入候选；Host固定CODEX身份/独立scope/单一活动入口及exact新事项接线、材料目录绑定窄修落地，8项跨端离线验证通过；45工具完整Schema已导出。均未部署或真实业务运行。 最新本地恢复增量：已审查导入94c54de；保持CODEX专用队列路由，补真实COMMITTING消费者白名单及原SAVE key双读，20项定向Node与8项Host服务离线边界通过；首批旧runtime领域明确拒绝。官方dev/online查明三活动索引及四槽CHECK正确，未执行DDL。图v1.8先定义责任和正反例再指导这些修订。",
-          "remaining": "候选未部署、真实身份与凭据路径未配置。94已补原runner/完整解析SSE事件和回执恢复，但实际prompt、最终bridge payload及父检查点启动前预定run定位仍待执行器owner窄补。新宿主实际调度/异常重启、checkpointRoot与runRoot跨重启持久性未验；真实Overall commit/attempt结束/queueACK与同版页面均未验，离线替身不补生产证据。",
+          "delivered": "当前线上仍为已核实的a65/c240，旧批次事实保留在历史证据与图契约附录。当前实施树以974bedfa为基线选择性集成925deb：程序初评恢复、CODEX专用队列、原SAVE key独立双读及材料身份保留；新增消费者恢复和七项真实Zod导出已接入。独审补旧Review UNKNOWN禁止重派与翻译最终CODEX来源保留。当前本地通过初评/队列23项、翻译/阅读28项、Review/Wiki19项及翻译Host preflight12项；均不等于真实业务闭环。",
+          "remaining": "候选尚未部署。实际prompt/最终bridge payload/启动前预定run关联由执行端owner补齐；新宿主持续唤起、私有checkpointRoot/runRoot及跨重启持久性未证，模型并发/RPM/TPM与宿主容量未知。文档翻译Host封存恢复已独立完成24项离线验证和窄审，但不含于本首测核心；客户端接线及部署另行推进，不阻塞初评交接。真实SAVE→独立READ→同版Overall实际commit→attempt终态→queueACK→原页面同版仍待获准新事项验收。",
           "owner": "主控集成及各既有消费者负责范围",
           "acceptance": "首批按P7关闭一条新真实事项：合法Host身份和来源授权、准确材料、生成、Host SAVE、独立READ、同版Overall、正常页面/图及正常结束均有对应证据。撤权、错身份、旧租约和版本冲突须被拒绝；技术发布或内存fixture不能替代业务完成。旧UNKNOWN保持历史事实；旧数据再生或清理单列准确范围，不要求救回旧请求、永久兼容或完成清理后才验收新链。",
           "evidenceIds": [
@@ -158,7 +158,9 @@
             "executor-transition.0b33.validation-scope-and-priority",
             "executor-transition.fc132291.host-local-interface",
             "executor-recovery.94.local-contract-integration",
-            "executor-recovery.94.official-queue-index-readback"
+            "executor-recovery.94.official-queue-index-readback",
+            "executor-recovery.925.core-integration",
+            "executor-recovery.925.split-host-translation"
           ]
         }
       },
@@ -219,10 +221,10 @@
           "V28",
           "V30"
         ],
-        "nextAction": "以fa14已交付的Host质量/reuse为技术基线，按原授权核对真实已选范围的新更正/检查/选用/阅读及准确源版；保留当前内容缺口与原ATT5终态，不另起/重试、切执行器或新增自制loop。较大Native批次、0082/83、旧数据更正/重检/清理仍分别处理，不因技术发布升级验收。",
+        "nextAction": "并行交付新版文档翻译Host封存恢复及准确契约，再由云端owner接入三个新动作；不作为首测程序初评交付前置。旧成果可按新版新请求重生成或按依赖清理，不增加旧任务兼容工程；未知/在途保留取证。实际翻译内容、检查选用和阅读仍单独验收。",
         "progress": {
-          "delivered": "历史PAGE b7/b8有限读取、已保存候选与检查证据保持。纯Host独立43d四文件的独立no/checker2.3、准确已知2.2文本复用后强制新检查及原LOCAL_CHECK/CHECK/CHECK_BATCH/selected阅读消费者已随准确319/fa14技术发布，前后端版本一致。原两suite43/43与799标准build按原源码和时钟保留，未在本轮重跑；没有带入Native表格投影、Document CHAT pin或0082/83。",
-          "remaining": "发布与版本通过不等于Reference/CMCF/OPS、表格/否定/术语或SEM真实质量验收；旧保存文本没有自动更正、取消选用、重检或清理。完整catalog/脚注全集、模型实收理解、真实保存/Overall和Native可信上下文仍未证明。原ATT5已TIMED_OUT/外层BLOCK，该attempt SAVE0及Overall空保持，旧检查点/副作用未知不清除。Reader仍VERIFICATION_PENDING。",
+          "delivered": "既有Host翻译质量与阅读消费者的已发布事实保留原证据。本轮独立P1候选新增原generation查询、原live fence候选封存和消费封存结果的跨lease SAVE；24项真实repository/运行入口离线正反例及独审通过，首次SAVE receipt不可变、候选与累计journal有UTF-8字节预算。该候选未合入首测CORE树、未接云端客户端、未部署。",
+          "remaining": "独立P1客户端接线、准确技术交付和真实恢复尚待推进。旧文本的Reference/CMCF/OPS、表格/否定/术语及SEM质量不由本地恢复测试证明；可重生/清理的范围需核准确引用依赖。无Host seal或无准确原receipt的旧请求保持待核，不迁为新版安全恢复。",
           "owner": "既有阅读前端、ReviewOverall身份、OpenClaw交互及Aily只读适配范围",
           "acceptance": "§6.5所需准确源版/存量修订进入真实新检查，已选范围的更正、检查、选用和阅读一致；否定/表格/术语及SEM方法、后果/暴露依据在真实正文中正确处理，缺资料仍未知。撤权、错版、普通继续跳过已选块等反例不被通过状态掩盖；保留原候选和历史检查，不增加逐块人工确认前置。",
           "evidenceIds": [
@@ -319,7 +321,9 @@
             "p2.host-isolated.43d.quality-reuse43.test",
             "p1-p2.host-isolated.799.standard-full-build.test",
             "host-identity-quality.fa14.exact-deployment",
-            "host-identity-quality.fa14.native-user-fingerprint"
+            "host-identity-quality.fa14.native-user-fingerprint",
+            "executor-recovery.925.core-integration",
+            "executor-recovery.925.split-host-translation"
           ]
         }
       },
@@ -553,10 +557,10 @@
           "V57",
           "V58"
         ],
-        "nextAction": "按图契约v1.8补齐实际prompt/bridge payload和预定run的启动前持久关联；确认现有宿主持续唤起及两个root的卷持久性，在准确批准后完成独立CODEX配置/技术部署，再以新事项验SAVE→原key独立READ→同版Overall实际commit→attempt结束→queueACK及原阅读面。",
+        "nextAction": "按准确组合与接口交接回执核实单worker宿主配置与持久目录；按原授权边界准备一次新事项整链，实际运行另按准确批准执行。通过后才规划同tenant/request_origin下2→4个独立worker；旧内容列清理/重生成/保留取证，不以兼容或救旧UNKNOWN阻塞新主线。",
         "progress": {
-          "delivered": "本地ae9实现及7b状态补修、独立审查/定向验证和标准build证据保持。准确公开f821/Hosta65三ref已同步，唯一Host release7700499229508799768 finished且普通用户前后端a65/环境PASS；Native c240源ae9单次安装145文件与四入口匹配、旧21项未变，新旧Host握手及新两record工具通过。C136单次恢复原enabled=true/staticDiff[]。唯一新程序请求HTTP201受理且封存PROGRAM_CONTROLLED_V1+GLM5.3/BUILT_IN，随后Host已启动；材料核验报错与consumerStopped/UNKNOWN已真实显示，外层Host仍RUNNING，见独立断点证据。 后续固定只读取证确认115条原文已交付、目录身份齐全，正文投影缺顶层documentVersionId/sourceRefId令primaryCount0；准确HTTP started/result均无，实际模型派发0/响应0/SAVE0，完整封存模型与Host一致。原UNKNOWN和generation12 stopped active claim保留。 新方向范围记录：准确0b33为13新增文件的可选Codex+GLM执行器，既有验证Host为内存模拟、真实Host未调用/未配置且业务未ready，持久重启恢复未接；未替换当前线上a65/c240。 后续本地增量：1155/fc132291主要消费者与程序初评已接入候选；Host固定CODEX身份/独立scope/单一活动入口及exact新事项接线、材料目录绑定窄修落地，8项跨端离线验证通过；45工具完整Schema已导出。均未部署或真实业务运行。 最新本地恢复增量：已审查导入94c54de；保持CODEX专用队列路由，补真实COMMITTING消费者白名单及原SAVE key双读，20项定向Node与8项Host服务离线边界通过；首批旧runtime领域明确拒绝。官方dev/online查明三活动索引及四槽CHECK正确，未执行DDL。图v1.8先定义责任和正反例再指导这些修订。",
-          "remaining": "候选未部署、真实身份与凭据路径未配置。94已补原runner/完整解析SSE事件和回执恢复，但实际prompt、最终bridge payload及父检查点启动前预定run定位仍待执行器owner窄补。新宿主实际调度/异常重启、checkpointRoot与runRoot跨重启持久性未验；真实Overall commit/attempt结束/queueACK与同版页面均未验，离线替身不补生产证据。",
+          "delivered": "当前线上仍为已核实的a65/c240，旧批次事实保留在历史证据与图契约附录。当前实施树以974bedfa为基线选择性集成925deb：程序初评恢复、CODEX专用队列、原SAVE key独立双读及材料身份保留；新增消费者恢复和七项真实Zod导出已接入。独审补旧Review UNKNOWN禁止重派与翻译最终CODEX来源保留。当前本地通过初评/队列23项、翻译/阅读28项、Review/Wiki19项及翻译Host preflight12项；均不等于真实业务闭环。",
+          "remaining": "候选尚未部署。实际prompt/最终bridge payload/启动前预定run关联由执行端owner补齐；新宿主持续唤起、私有checkpointRoot/runRoot及跨重启持久性未证，模型并发/RPM/TPM与宿主容量未知。文档翻译Host封存恢复已独立完成24项离线验证和窄审，但不含于本首测核心；客户端接线及部署另行推进，不阻塞初评交接。真实SAVE→独立READ→同版Overall实际commit→attempt终态→queueACK→原页面同版仍待获准新事项验收。",
           "owner": "本地主控负责Host接口、材料、SAVE/READ、同版Overall、阅读与图；新执行器会话负责Codex/妙搭执行内核、程序入口和响应持久化。",
           "acceptance": "一条新真实事项在合法Host身份与任务权限下消费准确材料，由新执行器生成有用工程工作，经Host SAVE及同请求/准确修订独立READ，Host完成确定性同版Overall，正常用户页面/图读取同一workRevisionRef并正常结束。生成、保存、回读、投影与外层终态分列；内存fixture和旧链复演不替代本验收，不新建状态体系。",
           "evidenceIds": [
@@ -575,7 +579,9 @@
             "executor-transition.0b33.validation-scope-and-priority",
             "executor-transition.fc132291.host-local-interface",
             "executor-recovery.94.local-contract-integration",
-            "executor-recovery.94.official-queue-index-readback"
+            "executor-recovery.94.official-queue-index-readback",
+            "executor-recovery.925.core-integration",
+            "executor-recovery.925.split-host-translation"
           ]
         }
       }
@@ -2554,18 +2560,19 @@
         "test/unit/canonical-host-codex-executor.spec.ts",
         "openclaw/skills/wiselink-research-and-synthesize/tests/codex-queue-commit-recovery.test.mjs",
         "openclaw/codex-evaluator/program-finish-recovery.test.mjs",
-        "docs/coordination/host-codex-interface-20261025/README.md"
+        "docs/coordination/host-codex-interface-20261025/README.md",
+        "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md"
       ],
       "gaps": [
         {
           "id": "program.initial-live",
           "kind": "runtime",
-          "reason": "线上仍a65/c240；本地已审查导入94c54程序恢复并完成独立CODEX固定路由/单一入口、严格新intake范围及COMMITTING原结果恢复修订。离线测试不证明真实SAVE/Overall提交/ACK。实际prompt/bridge payload/启动前预定run关联、新宿主持久目录及持续唤起、真实身份配置和业务验收尚未闭合。旧UNKNOWN保持历史事实。",
-          "nextAction": "按图契约2.3/3.6逐步取证：先补本次原输入与run关联、宿主/目录持久性和获准独立配置，再验新事项原SAVE key独立READ、真实Overall提交、attempt终态、queueACK及同版原页面。现库活动索引已核正确，不为schema.ts声明漂移执行DDL。"
+          "reason": "本地组合已保留原SAVE key独立双读、严格来源/输入/fence及CODEX专用路由；离线测试不证明真实保存和Overall提交。实际prompt/payload/预定run关联、宿主唤起/私有持久目录、可信身份配置及整条业务链尚待实证。旧UNKNOWN仅保留取证，不要求兼容迁移。",
+          "nextAction": "按宿主与分阶段验收说明先完成1 worker闭环，再按实际限额验证2/4独立worker；不变request_origin、不把批次4项或CLI子代理数当并发。文档翻译封存恢复独立推进。"
         }
       ],
       "previousReviewedRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
-      "reviewScope": "线上映射仍为准确a65/c240；本地94c54恢复与4e8 Host接线的后继修订以图契约v1.8 2.3/3.6/E.38及接口包登记，未部署、不升级原业务场景。"
+      "reviewScope": "线上映射仍为准确a65/c240；当前本地974+925组合及定向修订按图契约v1.8登记，未部署，不提升原业务场景。旧历史批次见原证据，当前单worker完整链优先。"
     }
   ],
   "selection": {
@@ -10390,6 +10397,39 @@
       "reportRef": "docs/coordination/host-codex-interface-20261025/README.md",
       "readbackRef": "private:executor-transition-20261025:queue-runtime-evidence",
       "summary": "官方只读pg catalog确认dev/online三partial unique index都有活动WHERE且valid/ready，slot CHECK 0..3已验证；schema.ts缺WHERE为声明漂移而非本次现库故障。四槽按tenant/request_origin，默认4项串行及15分钟项间预算另属消费者边界。未DDL、未读取业务表行。"
+    },
+    {
+      "id": "executor-recovery.925.core-integration",
+      "kind": "test",
+      "status": "passed",
+      "bindingIds": [
+        "program.initial-assessment"
+      ],
+      "reportRef": "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md",
+      "readbackRef": "private:executor-transition-20261025:925-integration-offline-results",
+      "summary": "974上三方导入925核心，保留CODEX队列路由/COMMITTING窄读/原SAVE key双读和材料绑定。定向初评队列23、翻译阅读28、ReviewWiki19及真实Host preflight12通过；首轮Review合成150ms租约竞态已修，原失败日志保留。无真实模型/Host业务/DB提交/ACK。",
+      "contractRevision": "0fa7efb2a53a6e90f0f55e96fa1ea78f510bb322fbe03c08c995c81311b9fc76",
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T10:57:09.036797+00:00",
+      "sourceRevision": "local:974bedfa+925deb+reviewed-core",
+      "environmentId": "local:core-and-parallel-P1:offline-only"
+    },
+    {
+      "id": "executor-recovery.925.split-host-translation",
+      "kind": "source_review",
+      "status": "inconclusive",
+      "bindingIds": [
+        "program.initial-assessment",
+        "translation.reading"
+      ],
+      "reportRef": "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md",
+      "readbackRef": "private:executor-transition-20261025:document-translation-generation-recovery",
+      "summary": "首测CORE与翻译P1拆开，CORE不含新增3动作。P1独立4产品文件+1测试24项离线通过和窄审，原SAVE回执持久不可变、UTF-8 seal/journal各1,000,000上限；客户端/部署/实际恢复未验。宿主唤起/root/容量证据仍待，先1再2/4，旧内容清理重生单列。",
+      "contractRevision": "0fa7efb2a53a6e90f0f55e96fa1ea78f510bb322fbe03c08c995c81311b9fc76",
+      "scenarioIds": [],
+      "observedAt": "2026-10-25T10:57:09.036797+00:00",
+      "sourceRevision": "local:974bedfa+925deb+reviewed-core",
+      "environmentId": "local:core-and-parallel-P1:offline-only"
     }
   ]
 }

@@ -24,6 +24,7 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { classifyHostedGatewayFailure, createHostedReviewRequester, requestHostedGateway } from './request-hosted-gateway.mjs';
 import { assertModelExecutorReady, modelExecutor, modelExecutorProvenance,
   modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway } from './model-executor.mjs';
@@ -215,6 +216,13 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
     await reconcileRejectedReviewCheckpoint(checkpoint, normalized, remoteCall);
 
   const callCounts = new Map();
+  const codexFreshBegin = selectedExecutor === 'CODEX' &&
+    await checkpoint.readOptional('begin.result') !== null &&
+    (await checkpoint.readOptional('model.started') !== null ||
+      await checkpoint.readOptional('commit.started') !== null);
+  const codexModelRecovery = codexFreshBegin &&
+    await checkpoint.readOptional('model.started') !== null &&
+    await checkpoint.readOptional('model.result') === null;
   let beginResult = null;
   let boundedCommittingStatusPrefix = null;
   const isolatedDeadlineAt = isolatedStartedAt + normalized.timeoutMs;
@@ -237,7 +245,70 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
     const scopedArgs = normalized.isolatedCandidate && [
       'get_review_turn_context', 'read_source_refs',
     ].includes(name) ? { ...args, workItemId: normalized.workItemId } : args;
-    const value = await checkpoint.remoteStep({
+    const recoveryBegin = name === 'begin_review_turn' && codexFreshBegin;
+    const recoveryCommit = name === 'commit_review_turn_candidate' && codexFreshBegin &&
+      await checkpoint.readOptional('commit.started') !== null &&
+      await checkpoint.readOptional('commit.result') === null;
+    const value = recoveryCommit ? await (async () => {
+      const original = (await checkpoint.readOptional('begin.result'))?.value;
+      const started = await checkpoint.readOptional('commit.started');
+      if (!original || !started) throw new Error('REVIEW_CODEX_COMMIT_RECOVERY_BINDING_MISSING');
+      assertCheckpointHash(started, canonicalSha256({ ...scopedArgs,
+        leaseToken: original.leaseToken, leaseGeneration: original.leaseGeneration }), 'commit');
+      const status = await remoteCall('get_action_attempt_status', {
+        attemptRef: original.attemptRef,
+        ...(normalized.workItemId ? { workItemId: normalized.workItemId } : {}),
+      });
+      if (!isUnpreparedReviewAttempt(status, original.attemptRef))
+        throw new Error('REVIEW_CODEX_COMMIT_RECOVERY_STATE_UNKNOWN');
+      return checkpoint.remoteStep({ step: `codex-commit-recovery-${beginResult.leaseGeneration}`,
+        args: scopedArgs, ambiguousCommit: true,
+        perform: () => remoteCall(name, structuredClone(scopedArgs)) });
+    })() : recoveryBegin ? await (async () => {
+      const original = (await checkpoint.readOptional('begin.result'))?.value;
+      if (original?.status !== 'RUNNING' || typeof original.attemptRef !== 'string' ||
+          !Number.isSafeInteger(original.leaseGeneration))
+        throw new Error('REVIEW_CODEX_RECOVERY_BEGIN_MISSING');
+      const fresh = await remoteCall(name, structuredClone(scopedArgs));
+      const committing = fresh?.status === 'COMMITTING' &&
+        await checkpoint.readOptional('commit.started') !== null;
+      if (!(fresh?.status === 'RUNNING' || committing) || fresh.attemptRef !== original.attemptRef ||
+          canonicalJson(fresh.task) !== canonicalJson(original.task) ||
+          !Number.isSafeInteger(fresh.leaseGeneration) ||
+          fresh.leaseGeneration < original.leaseGeneration ||
+          typeof fresh.leaseToken !== 'string' || !fresh.leaseToken ||
+          (!committing && (!Number.isFinite(Date.parse(fresh.leaseExpiresAt)) ||
+            Date.parse(fresh.leaseExpiresAt) <= Date.now())))
+        throw new Error('REVIEW_CODEX_RECOVERY_FRESH_BEGIN_INVALID');
+      if (committing) return fresh;
+      const lease = await remoteCall('heartbeat_action_attempt', {
+        attemptRef: fresh.attemptRef, leaseToken: fresh.leaseToken,
+        leaseGeneration: fresh.leaseGeneration,
+        ...(normalized.workItemId ? { workItemId: normalized.workItemId } : {}),
+      });
+      if (!Number.isFinite(Date.parse(lease?.leaseExpiresAt)) ||
+          Date.parse(lease.leaseExpiresAt) <= Date.now())
+        throw new Error('REVIEW_CODEX_RECOVERY_LEASE_INVALID');
+      return fresh;
+    })() : codexFreshBegin && ['get_review_turn_context', 'read_source_refs', REVIEW_NATIVE_READ_TOOL].includes(name)
+      ? await (async () => {
+          const previous = await checkpoint.readOptional(`${step}.result`);
+          const started = await checkpoint.readOptional(`${step}.started`);
+          if (!started) throw new Error('REVIEW_CODEX_READ_CHECKPOINT_MISSING');
+          if (name !== REVIEW_NATIVE_READ_TOOL)
+            assertCheckpointHash(started, canonicalSha256(scopedArgs), step);
+          const fresh = await remoteCall(name, structuredClone(scopedArgs));
+          if (previous) {
+            if (canonicalJson(fresh) !== canonicalJson(previous.value))
+              throw new Error('REVIEW_CODEX_READ_BINDING_MISMATCH');
+          } else if (name !== REVIEW_NATIVE_READ_TOOL) {
+            await checkpoint.writeOnce(`${step}.result`, { schemaVersion: DRIVER_SCHEMA,
+              step, argsHash: canonicalSha256(scopedArgs),
+              finishedAt: new Date().toISOString(), value: fresh });
+          }
+          return fresh;
+        })()
+      : await checkpoint.remoteStep({
       step,
       args: scopedArgs,
       ambiguousCommit: name === 'commit_review_turn_candidate',
@@ -434,11 +505,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
       );
       const modelArgsHash = canonicalSha256(generationInput);
       let modelExecuted = false;
-      const execution = await checkpoint.remoteStep({
-        step: 'model',
-        args: generationInput,
-        ambiguousCommit: false,
-        perform: async () => {
+      const performModel = async () => {
           modelExecuted = true;
           // Preserve observations from a proven non-dispatch attempt on recovery.
           const observationSuffix = await checkpoint.readOptional('model.recovery')
@@ -448,6 +515,8 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
             sessionDiscriminator: sha256(normalized.requestId),
             nativeSessionKey,
             executionModel: beginResult?.task?.executionModel,
+            ...(selectedExecutor === 'CODEX' ? { modelRecoveryCheckpoint: checkpoint,
+              modelRecoveryAttemptRef: beginResult.attemptRef } : {}),
             maxCompletionTokens: normalized.maxCompletionTokens,
             maxModelRequests: normalized.maxModelRequests,
             observeProgress: async (reviewProgress) => {
@@ -467,7 +536,13 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
                 Date.parse(renewed.leaseExpiresAt) <= Date.now()) {
                 throw new Error('REVIEW_PROGRESS_LEASE_NOT_RENEWED');
               }
-              await checkpoint.writeOnce(`runtime-progress-${count}${observationSuffix}`, {
+              const key = `runtime-progress-${count}${observationSuffix}`;
+              const previous = await checkpoint.readOptional(key);
+              if (previous) {
+                const { observedAt: _time, ...saved } = previous;
+                if (selectedExecutor !== 'CODEX' || canonicalJson(saved) !== canonicalJson(reviewProgress))
+                  throw new Error('REVIEW_CODEX_PROGRESS_BINDING_MISMATCH');
+              } else await checkpoint.writeOnce(key, {
                 ...reviewProgress, observedAt: new Date().toISOString(),
               });
             },
@@ -500,25 +575,54 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
             },
             candidateSourceRefIds: (output) => reviewCandidateSourceRefIds(
               beginResult.task.modelInput, bindHostedReviewCandidate(beginResult, output, isMatter, isJobAid)),
-            observeCandidateRejection: (value) => checkpoint.writeOnce(
-              `candidate-rejection-${value.correctionNo}${observationSuffix}`,
-              { schemaVersion: 'wiselink.3_1.review_candidate_validation.v1', argsHash: modelArgsHash,
-                reviewTurnRef: beginResult.task.modelInput.reviewTurnRef,
-                attemptRef: beginResult.attemptRef,
-                observedAt: new Date().toISOString(), ...value },
-            ),
-            observeOutputShape: async (value, round = 1) =>
-              checkpoint.writeOnce(round === 1 ? `model.output-shape${observationSuffix}` : `model.output-shape-${round}${observationSuffix}`, {
-                schemaVersion: DRIVER_SCHEMA,
-                step: 'model',
-                argsHash: modelArgsHash,
-                observedAt: new Date().toISOString(),
-                value: validateModelOutputShape(value),
-              }),
+            observeCandidateRejection: async (value) => {
+              const key = `candidate-rejection-${value.correctionNo}${observationSuffix}`;
+              const previous = await checkpoint.readOptional(key);
+              if (previous) {
+                const { observedAt: _oldTime, ...saved } = previous;
+                const expected = { schemaVersion: 'wiselink.3_1.review_candidate_validation.v1',
+                  argsHash: modelArgsHash, reviewTurnRef: beginResult.task.modelInput.reviewTurnRef,
+                  attemptRef: beginResult.attemptRef, ...value };
+                if (selectedExecutor !== 'CODEX' || canonicalJson(saved) !== canonicalJson(expected))
+                  throw new Error('REVIEW_CODEX_REJECTION_BINDING_MISMATCH');
+                return;
+              }
+              await checkpoint.writeOnce(key, { schemaVersion: 'wiselink.3_1.review_candidate_validation.v1',
+                argsHash: modelArgsHash, reviewTurnRef: beginResult.task.modelInput.reviewTurnRef,
+                attemptRef: beginResult.attemptRef, observedAt: new Date().toISOString(), ...value });
+            },
+            observeOutputShape: async (value, round = 1) => {
+              const key = round === 1 ? `model.output-shape${observationSuffix}` : `model.output-shape-${round}${observationSuffix}`;
+              const observed = await checkpoint.readOptional(key);
+              const shape = validateModelOutputShape(value);
+              if (observed) {
+                if (selectedExecutor !== 'CODEX' || observed.argsHash !== modelArgsHash ||
+                    canonicalJson(observed.value) !== canonicalJson(shape))
+                  throw new Error('REVIEW_CODEX_OUTPUT_SHAPE_BINDING_MISMATCH');
+                return;
+              }
+              await checkpoint.writeOnce(key, { schemaVersion: DRIVER_SCHEMA, step: 'model',
+                argsHash: modelArgsHash, observedAt: new Date().toISOString(), value: shape });
+            },
           });
           return { ...generated, readSourceRefBatches };
-        },
-      });
+        };
+      const startedModel = selectedExecutor === 'CODEX' ? await checkpoint.readOptional('model.started') : null;
+      const completedModel = startedModel ? await checkpoint.readOptional('model.result') : null;
+      if (startedModel) assertCheckpointHash(startedModel, modelArgsHash, 'model');
+      // Legacy outer markers cannot prove a durable per-round request identity.
+      // A missing first-round marker is UNKNOWN, never permission to dispatch.
+      if (codexModelRecovery && await checkpoint.readOptional('review-codex-round-1.started') === null)
+        throw new Error('REVIEW_CODEX_LEGACY_OUTCOME_UNKNOWN');
+      const execution = startedModel && !completedModel
+        ? await (async () => {
+            const value = await performModel();
+            await checkpoint.writeOnce('model.result', { schemaVersion: DRIVER_SCHEMA,
+              step: 'model', argsHash: modelArgsHash, finishedAt: new Date().toISOString(), value });
+            return value;
+          })()
+        : await checkpoint.remoteStep({ step: 'model', args: generationInput,
+          ambiguousCommit: false, perform: performModel });
       // A completed model step skips its callback on restart. Register the same
       // reads from their existing checkpoints before sealing/committing; never
       // rerun the model or accept claimed citations that were not actually read.
@@ -1020,8 +1124,47 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       content: canonicalJson({ ...feedback, currentTurnRequest }) },
   ];
   const sourceCache = new Map();
+  const codexCheckpoint = modelExecutor(options) === 'CODEX' ? options.modelRecoveryCheckpoint : null;
+  if (codexCheckpoint && (typeof options.modelRecoveryAttemptRef !== 'string' ||
+      !options.modelRecoveryAttemptRef)) throw new Error('REVIEW_CODEX_RECOVERY_BINDING_REQUIRED');
   const requestGateway = createHostedReviewRequester({
-    requestGateway: (selectedEndpoint, init) => requestModelGateway(options, selectedEndpoint, init, dependencies),
+    requestGateway: async (selectedEndpoint, init) => {
+      if (!codexCheckpoint) return requestModelGateway(options, selectedEndpoint, init, dependencies);
+      const step = `review-codex-round-${round}`;
+      const argsHash = canonicalSha256({ body: init.body, executionModel: options.executionModel,
+        attemptRef: options.modelRecoveryAttemptRef });
+      const completed = await codexCheckpoint.readOptional(`${step}.result`);
+      const started = await codexCheckpoint.readOptional(`${step}.started`);
+      if (completed && completed.argsHash !== argsHash || started && started.argsHash !== argsHash)
+        throw new Error('REVIEW_CODEX_ROUND_BINDING_MISMATCH');
+      if (completed) {
+        const { raw, status, ok, codexReceipt } = completed.value;
+        if (codexReceipt?.responseSha256 !== sha256(raw))
+          throw new Error('REVIEW_CODEX_RECEIPT_MISMATCH');
+        return { status, ok, text: async () => raw, codexReceipt };
+      }
+      const requestId = `review:${options.modelRecoveryAttemptRef}:round-${round}`;
+      const timeoutSeconds = started?.timeoutSeconds ?? Math.max(1, Math.min(
+        options.codexOptions?.timeoutSeconds ?? 600, Math.ceil((options.timeoutMs ?? 480_000) / 1000)));
+      if (started && (started.requestId !== requestId ||
+          !Number.isSafeInteger(started.timeoutSeconds) || started.timeoutSeconds < 1))
+        throw new Error('REVIEW_CODEX_ROUND_BINDING_MISMATCH');
+      if (!started) await codexCheckpoint.writeOnce(`${step}.started`, {
+        schemaVersion: DRIVER_SCHEMA, step, argsHash, requestId, timeoutSeconds,
+        startedAt: new Date().toISOString() });
+      const response = await requestModelGateway({ ...options,
+        codexOptions: { ...options.codexOptions, timeoutSeconds } }, selectedEndpoint,
+        { ...init, codexRecovery: { requestId, recoverOnly: Boolean(started) } }, dependencies);
+      const raw = await response.text();
+      if (response.codexReceipt?.requestId !== requestId ||
+          response.codexReceipt.responseSha256 !== sha256(raw))
+        throw new Error('REVIEW_CODEX_RECEIPT_MISMATCH');
+      const value = { raw, status: response.status, ok: response.ok, codexReceipt: response.codexReceipt };
+      await codexCheckpoint.writeOnce(`${step}.result`, { schemaVersion: DRIVER_SCHEMA, step,
+        argsHash, finishedAt: new Date().toISOString(), value });
+      return { status: response.status, ok: response.ok, text: async () => raw,
+        codexReceipt: response.codexReceipt };
+    },
     observeProgress: options.observeProgress,
     maxModelRequests,
     wait: dependencies.wait,
@@ -1066,7 +1209,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           ...(nativeSessionKey ? { 'x-openclaw-session-key': nativeSessionKey } : {}),
           ...modelHeaders,
         },
-        body: JSON.stringify({
+        body: (modelExecutor(options) === 'CODEX' ? canonicalJson : JSON.stringify)({
           model: `openclaw/${agentId}`,
           ...(nativeSessionKey ? {} : { user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}` }),
           messages,
@@ -3712,6 +3855,8 @@ export function reviewCliModelOptions(runtime, hooks, argv) {
       ? positiveInteger(Number.parseInt(requestedTimeout, 10), 480_000)
       : undefined,
     observeOutputShape: hooks.observeOutputShape,
+    modelRecoveryCheckpoint: hooks.modelRecoveryCheckpoint,
+    modelRecoveryAttemptRef: hooks.modelRecoveryAttemptRef,
   };
 }
 

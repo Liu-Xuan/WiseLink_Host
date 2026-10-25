@@ -12,7 +12,7 @@ import { createSummaryCodexGatewaySession } from './derived-summary-codex-gatewa
 import { assertModelExecutorReady, modelExecutor, modelExecutorProvenance,
   modelGatewayEndpoint, modelGatewayHeaders } from './model-executor.mjs';
 import { requestHostedGateway, createHostedReviewRequester } from './request-hosted-gateway.mjs';
-import { canonicalJson, WISELINK_PROFILE_REF, WISELINK_SKILL_VERSION,
+import { canonicalJson, canonicalSha256, WISELINK_PROFILE_REF, WISELINK_SKILL_VERSION,
   WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from './validate-payload.mjs';
 import { SOURCE_CONTENT_SYNTHESIS_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION } from './jobaid-problem-guidance.mjs';
 import { assertSummaryExactKeys, completeDerivedSummaryWorkBody, derivedSummaryRegistry, derivedSummaryStepTool,
@@ -326,7 +326,7 @@ export async function invokeHostedDerivedSummaryModel(modelInput, options, depen
   const projectRead = sparse ? projectDerivedSummarySparseReadReceipt : projectDerivedSummaryReadReceipt;
   const priorReusableRefs = sparse ? hostBoundPriorDerivedSummaryRefs(modelInput) : null;
   const gateway = modelExecutor(options) === 'CODEX'
-    ? createSummaryCodexGatewaySession({ ...options, requestGateway: dependencies.requestGateway })
+    ? createSummaryCodexGatewaySession({ ...options, durableRounds: true, requestGateway: dependencies.requestGateway })
     : createSummaryGatewaySession({ ...options,
       requestGateway: dependencies.requestGateway ?? requestHostedGateway });
   const requester = createHostedReviewRequester({ requestGateway: (_endpoint, init) => gateway.request(init),
@@ -338,17 +338,23 @@ export async function invokeHostedDerivedSummaryModel(modelInput, options, depen
     const remainingMs = Date.parse(options.deadlineAt) - Date.now();
     if (remainingMs <= 0) throw new Error('DERIVED_SUMMARY_DEADLINE_EXPIRED');
     const round = state.round;
-    const response = await checkpoint.remoteStep({ step: `summary-round-${round}`, ambiguousCommit: false,
-      args: { messages: state.messages, executionModel: options.executionModel,
-        sessionDiscriminator: options.sessionDiscriminator, promptVersion },
-      perform: async () => {
+    const stepKey = `summary-round-${round}`;
+    const roundArgs = { messages: state.messages, executionModel: options.executionModel,
+      sessionDiscriminator: options.sessionDiscriminator, promptVersion };
+    const started = modelExecutor(options) === 'CODEX'
+      ? await checkpoint.readOptional(`${stepKey}.started`) : null;
+    if (started && started.argsHash !== canonicalSha256(roundArgs))
+      throw new Error('DERIVED_SUMMARY_CODEX_ROUND_BINDING_MISMATCH');
+    const performRound = async () => {
+        if (modelExecutor(options) === 'CODEX') gateway.setRound(round, Boolean(started));
         const timeoutSignal = AbortSignal.timeout(Math.min(remainingMs, 2_147_483_647));
         const signal = options.signal instanceof AbortSignal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
         const response = await requester(modelGatewayEndpoint(options), {
           method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/json',
             ...modelGatewayHeaders(options),
             ...(modelExecutor(options) === 'HOSTED' ? executionModelHeaders(options) : {}) },
-          body: JSON.stringify({ model: `openclaw/${WISELINK_PROFILE_REF}`, user: `summary:${options.sessionDiscriminator}`,
+          body: (modelExecutor(options) === 'CODEX' ? canonicalJson : JSON.stringify)({
+            model: `openclaw/${WISELINK_PROFILE_REF}`, user: `summary:${options.sessionDiscriminator}`,
             messages: state.messages, tools: [derivedSummaryStepTool()],
             tool_choice: { type: 'function', function: { name: DERIVED_SUMMARY_FUNCTION } },
             parallel_tool_calls: false, n: 1, stream: false,
@@ -357,7 +363,19 @@ export async function invokeHostedDerivedSummaryModel(modelInput, options, depen
         const raw = await response.text();
         if (Buffer.byteLength(raw) > 4 * 1024 * 1024) throw new Error('DERIVED_SUMMARY_GATEWAY_RESPONSE_TOO_LARGE');
         return { raw, status: response.status, ok: response.ok, providerReceipt: response.providerReceipt };
-      } });
+      };
+    const response = started && modelExecutor(options) === 'CODEX' &&
+      !await checkpoint.readOptional(`${stepKey}.result`)
+      ? await (async () => {
+          const value = await performRound();
+          await checkpoint.writeOnce(`${stepKey}.result`, {
+            schemaVersion: 'wiselink.3_1.hosted_review_driver.v1', step: stepKey,
+            argsHash: canonicalSha256(roundArgs), finishedAt: new Date().toISOString(), value,
+          });
+          return value;
+        })()
+      : await checkpoint.remoteStep({ step: stepKey, ambiguousCommit: false,
+        args: roundArgs, perform: performRound });
     const parsed = parseResponse(response);
     const { step } = parsed;
     if (step?.action === 'SAVE_SUMMARY') {

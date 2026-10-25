@@ -19,6 +19,8 @@ import {
   WISELINK_HOST_MCP_VERSION,
   WISELINK_PROFILE_REF,
   WISELINK_SKILL_VERSION,
+  canonicalJson,
+  canonicalSha256,
 } from './validate-payload.mjs';
 import { classifyHostedAssessmentProtocol, classifyHostedGatewayFailure,
   hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
@@ -28,6 +30,38 @@ export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
 export const JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v3';
 export const isJobAidProblemInputSchema = schema => [JOBAID_PROBLEM_TASK_SCHEMA, JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA].includes(schema);
 export const MATTER_JOBAID_TASK_SCHEMA = 'wiselink.matter-jobaid-task.v2';
+const MATTER_CODEX_ROUND_RECOVERY_VERSION = 1;
+const DRIVER_CHECKPOINT_SCHEMA = 'wiselink.3_1.hosted_review_driver.v1';
+
+// MATTER Codex has a durable Python generation receipt behind each round.
+// Preserve the old remoteStep UNKNOWN fence for every unmarked started round.
+async function durableMatterCodexRound(checkpoint, step, args, perform) {
+  const argsHash = canonicalSha256(args);
+  const completed = await checkpoint.readOptional(`${step}.result`);
+  if (completed) {
+    if (completed.step !== step || completed.argsHash !== argsHash ||
+        completed.schemaVersion !== DRIVER_CHECKPOINT_SCHEMA)
+      throw new Error(`REVIEW_${step.toUpperCase()}_ARGS_MISMATCH`);
+    return structuredClone(completed.value);
+  }
+  const started = await checkpoint.readOptional(`${step}.started`);
+  if (started && (started.step !== step || started.argsHash !== argsHash ||
+      started.schemaVersion !== DRIVER_CHECKPOINT_SCHEMA))
+    throw new Error(`REVIEW_${step.toUpperCase()}_ARGS_MISMATCH`);
+  if (started && started.codexRecoveryVersion !== MATTER_CODEX_ROUND_RECOVERY_VERSION)
+    throw new Error(`REVIEW_${step.toUpperCase()}_OUTCOME_UNKNOWN`);
+  if (!started) await checkpoint.writeOnce(`${step}.started`, {
+    schemaVersion: DRIVER_CHECKPOINT_SCHEMA, step, argsHash,
+    startedAt: new Date().toISOString(),
+    codexRecoveryVersion: MATTER_CODEX_ROUND_RECOVERY_VERSION,
+  });
+  const value = await perform(Boolean(started));
+  await checkpoint.writeOnce(`${step}.result`, {
+    schemaVersion: DRIVER_CHECKPOINT_SCHEMA, step, argsHash,
+    finishedAt: new Date().toISOString(), value,
+  });
+  return structuredClone(value);
+}
 const FUNCTION = 'return_wiselink_assessment_step';
 const INITIAL_JOBAID_SOURCE_REFS_PER_READ = 4;
 export const JOBAID_GENERATION_POLICY = Object.freeze({
@@ -542,6 +576,8 @@ export async function invokeHostedJobAidProblemModel(
   let inputUnits = 0;
   let outputUnits = 0;
   const checkpoint = options.assessmentCheckpoint;
+  const durableMatterCodex = modelInput.schemaVersion === MATTER_JOBAID_TASK_SCHEMA &&
+    modelExecutor(options) === 'CODEX' && Boolean(checkpoint);
   const baseGenerationPolicy = isJobAidProblemInputSchema(modelInput.schemaVersion) &&
     options.executionModel?.modelRef === 'm3probe/minimax-m3'
     ? M3_PROBE_WORK_ITEM_GENERATION_POLICY : JOBAID_GENERATION_POLICY;
@@ -757,7 +793,7 @@ export async function invokeHostedJobAidProblemModel(
     const requestPayload = {
       model: requestedModel,
       user: `initial:${nativeSessionDiscriminator}`,
-      messages: messages.map(message => message.role !== 'system' ? message : ({ ...message, content: message.content + '\n' + JSON.stringify({
+      messages: messages.map(message => message.role !== 'system' ? message : ({ ...message, content: message.content + '\n' + (durableMatterCodex ? canonicalJson : JSON.stringify)({
         generationPolicy, scopeAdjustment: scopeAdjustments, expectedWorkRevision, savedWork: saved,
         focus,
       }) })),
@@ -783,7 +819,9 @@ export async function invokeHostedJobAidProblemModel(
       ...(requestMaxCompletionTokens
         ? { max_completion_tokens: requestMaxCompletionTokens } : {}),
     };
-    const requestBody = JSON.stringify(requestPayload);
+    // The gateway binds the exact bytes. Checkpoint JSON is canonicalized on
+    // disk, so a resumed Matter round must regenerate those same bytes.
+    const requestBody = durableMatterCodex ? canonicalJson(requestPayload) : JSON.stringify(requestPayload);
     // A persisted assessment-round response skips performRequest on resume.
     // Recompute the same request metrics before replaying its observation.
     const requestMetrics = round === 1 && options.recoveredInitialResponse ? null : {
@@ -792,6 +830,7 @@ export async function invokeHostedJobAidProblemModel(
       systemBytes: Buffer.byteLength(requestPayload.messages[0].content),
       toolsBytes: Buffer.byteLength(JSON.stringify(requestPayload.tools)),
     };
+    let codexRecoverOnly = false;
     const requestModel = async () => {
       let response;
       try { response = await (
@@ -806,6 +845,7 @@ export async function invokeHostedJobAidProblemModel(
         },
         body: requestBody,
         signal: AbortSignal.timeout(Math.min(remainingMs, 15 * 60_000)),
+        ...(durableMatterCodex ? { codexRound: round - 1, codexRecoverOnly } : {}),
       }); } catch (error) {
         await options.observeModelOutput?.({ operation, round,
           localTransportRequestOrdinal: round, upstreamDispatchCount: null,
@@ -827,12 +867,18 @@ export async function invokeHostedJobAidProblemModel(
     };
     // Persist a complete response before executing its read/save intent. A lost
     // response remains unknown; a failed Host read can reuse this exact result.
-    const response = checkpoint ? await checkpoint.remoteStep({
-      step: `assessment-round-${round}`, args: { operation, messages, executionModel: options.executionModel ?? null,
-        sessionDiscriminator: nativeSessionDiscriminator, generationPolicy, scopeAdjustments,
-        ...(boundedWorkContext ? { nativeSessionSegment, requestToolSchema } : {}) },
-      ambiguousCommit: false, perform: performRequest,
-    }) : await performRequest();
+    const roundStep = `assessment-round-${round}`;
+    const roundArgs = { operation, messages, executionModel: options.executionModel ?? null,
+      sessionDiscriminator: nativeSessionDiscriminator, generationPolicy, scopeAdjustments,
+      ...(boundedWorkContext ? { nativeSessionSegment, requestToolSchema } : {}) };
+    const response = durableMatterCodex
+      ? await durableMatterCodexRound(checkpoint, roundStep, roundArgs, recoverOnly => {
+        codexRecoverOnly = recoverOnly;
+        return performRequest();
+      })
+      : checkpoint ? await checkpoint.remoteStep({
+        step: roundStep, args: roundArgs, ambiguousCommit: false, perform: performRequest,
+      }) : await performRequest();
     await accountRound(round);
     const { raw } = response;
     let payload;
