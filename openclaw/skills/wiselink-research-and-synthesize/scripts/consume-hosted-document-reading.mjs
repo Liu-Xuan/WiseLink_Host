@@ -2,6 +2,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { validateExecutionModelSelection } from './validate-payload.mjs';
 import { WISELINK_SKILL_VERSION } from './validate-payload.mjs';
+import { canonicalSha256 } from './validate-payload.mjs';
 const HOST_READING_LEASE_MS = 120_000;
 const CHECKPOINT_SCHEMA = 'wiselink.document.reading-checkpoint.v1';
 const id = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,96}$/u.test(value);
@@ -169,7 +170,8 @@ export async function consumeHostedDocumentReading(options, dependencies) {
     modelResponse: readingModelResponse(failure.modelResponse ? failure : model), modelInvocations: 0 };
   if (saveStarted) return { status: 'PENDING_SAVE_CONFIRMATION', ...target,
     modelResponse: readingModelResponse(model), modelInvocations: 0 };
-  if (modelStarted && !model) return { status: 'PENDING_MODEL_CONFIRMATION', ...target, modelInvocations: 0 };
+  if (modelStarted && !model && !(options.modelExecutor === 'CODEX' && id(modelStarted.codexRequestId)))
+    return { status: 'PENDING_MODEL_CONFIRMATION', ...target, modelInvocations: 0 };
   if (model && (!source || !modelStarted)) throw new Error('READING_CHECKPOINT_INCOMPLETE');
   const claimedAt = Date.now();
   const claimed = summary(await call('READING_CLAIM', { ...target, leaseOwner }), documentVersionId, runRef);
@@ -229,13 +231,23 @@ export async function consumeHostedDocumentReading(options, dependencies) {
     }
     if (source.sourceBinding?.original?.documentVersionId !== documentVersionId || source.sourceBinding.original.parseRunId !== state.parseRunId ||
         source.sourceBinding.semanticRevision !== state.semanticRevision) throw new Error('READING_SOURCE_CHECKPOINT_INVALID');
+    if (modelStarted && !isDeepStrictEqual(modelStarted.sourceBinding, source.sourceBinding))
+      throw new Error('READING_CHECKPOINT_BINDING_MISMATCH');
     if (!model) {
-      await lease.guard(() => write('model.started', { sourceBinding: source.sourceBinding,
-        ...(options.modelExecutor === 'CODEX' ? { modelExecutor: 'CODEX' } : {}),
+      const codexRequestId = options.modelExecutor === 'CODEX'
+        ? `reading-${canonicalSha256({ identity, sourceBinding: source.sourceBinding,
+          sourceHash: canonicalSha256(source), executionModel })}` : null;
+      if (modelStarted && modelStarted.codexRequestId !== codexRequestId)
+        throw new Error('READING_CHECKPOINT_BINDING_MISMATCH');
+      if (!modelStarted) await lease.guard(() => write('model.started', { sourceBinding: source.sourceBinding,
+        ...(options.modelExecutor === 'CODEX' ? { modelExecutor: 'CODEX', codexRequestId } : {}),
         ...(executionModel ? { executionModel } : {}) }));
       modelDispatched = true;
-      modelInvocations++;
-      model = await lease.guard(() => dependencies.invokeModel(source, { signal: lease.signal, ...(executionModel ? { executionModel } : {}) }));
+      if (!modelStarted) modelInvocations++;
+      model = await lease.guard(() => dependencies.invokeModel(source, { signal: lease.signal,
+        ...(executionModel ? { executionModel } : {}),
+        ...(codexRequestId ? { codexRecovery: { requestId: codexRequestId,
+          ...(modelStarted ? { recoverOnly: true } : {}) } } : {}) }));
       if (!nonempty(model?.modelVersion) || model?.proposal?.schemaVersion !== 'wiselink.document.reading.v1')
         throw new Error('READING_MODEL_RESULT_INVALID');
       await lease.guard(() => write('model.result', model));

@@ -171,6 +171,14 @@ export async function consumeHostedWorkItem(options, dependencies) {
     initial = next;
   }
   let assessmentRecovery = await findInitialAssessmentRecovery(options, initial, dependencies);
+  const translationRecovery = await findCodexTranslationRecovery(options, initial);
+  if (translationRecovery) {
+    if (assessmentRecovery || (options.expectedInitialOperation && options.expectedInitialOperation !== 'TRANSLATE'))
+      throw new Error('TRANSLATION_RECOVERY_STAGE_CHANGED');
+    const report = await runHostedInitialStage({ ...options, operation: 'TRANSLATE', initial,
+      translationRecovery }, dependencies);
+    return { ...report, completedStages: report.status === 'INITIAL_STAGE_SAVED' ? ['TRANSLATE'] : [] };
+  }
   if (options.expectedInitialOperation && assessmentRecovery && assessmentRecovery.operation !== options.expectedInitialOperation)
     throw new Error('INITIAL_EXPECTED_OPERATION_MISMATCH');
   if (assessmentRecovery?.status === 'REQUIRES_ATTENTION') return { ...assessmentRecovery, completedStages: [] };
@@ -220,6 +228,40 @@ export async function consumeHostedWorkItem(options, dependencies) {
     statusResult = next;
   }
   return { ...report, completedStages };
+}
+
+async function findCodexTranslationRecovery(options, initial) {
+  if (options.modelExecutor !== 'CODEX' || initial.status !== 'BUSY' ||
+      initial.stages?.translation?.status !== 'BUSY' ||
+      initial.stages.translation.attemptStatus !== 'RUNNING') return null;
+  const stage = initial.stages.translation;
+  if (typeof stage.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/u.test(stage.requestId) ||
+      typeof stage.attemptRef !== 'string' || !stage.attemptRef) return null;
+  const directory = initialStageCheckpointPath(options, 'TRANSLATE', stage.requestId);
+  const checkpoint = await createCheckpointStore(directory);
+  const binding = await readCheckpointCandidate(checkpoint, 'binding');
+  if (binding?.modelExecutor !== 'CODEX' || binding.workItemId !== options.workItemId ||
+      binding.documentVersionId !== initial.documentVersionId || binding.operation !== 'TRANSLATE' ||
+      binding.requestId !== stage.requestId) return null;
+  const previousClaim = (await readCheckpointCandidate(checkpoint, 'begin_translation-1.result'))?.value;
+  if (previousClaim?.status !== 'RUNNING' || previousClaim.attemptRef !== stage.attemptRef ||
+      previousClaim.task?.workItemId !== options.workItemId ||
+      previousClaim.task?.documentVersionId !== initial.documentVersionId ||
+      previousClaim.task?.modelInput?.schemaVersion !== 'wiselink.3_1.translation_task.v2') return null;
+  const markers = (await readdir(directory)).filter(name =>
+    /^codex-translation-[0-9a-f]{64}\.started\.json$/u.test(name));
+  let matched = false;
+  for (const name of markers) {
+    const started = await readCheckpointCandidate(checkpoint, name.slice(0, -5));
+    if (started?.workItemId !== options.workItemId ||
+        started.documentVersionId !== initial.documentVersionId ||
+        started.attemptRef !== stage.attemptRef || started.requestId !== stage.requestId ||
+        started.workspaceId !== previousClaim.task.modelInput.workspaceId ||
+        !isDeepStrictEqual(started.executionModel, previousClaim.task.executionModel))
+      throw new Error('TRANSLATION_CODEX_CHECKPOINT_BINDING_MISMATCH');
+    matched = true;
+  }
+  return matched ? { previousClaim } : null;
 }
 
 async function consumeSuccessorOverallPointer(pointer, checkpoint, consume) {
@@ -1677,7 +1719,7 @@ export async function runHostedInitialStage(options, dependencies) {
   if (!binding) await checkpoint.writeOnce('binding', runBinding);
   // A completed initial stage is not an instruction to rerun it if Host state drifts.
   const priorRun = await readCheckpointCandidate(checkpoint, 'run-result');
-  if (priorRun && !(options.assessmentRecovery && priorRun.attemptStatus === 'UNKNOWN') &&
+  if (priorRun && !((options.assessmentRecovery || options.translationRecovery) && priorRun.attemptStatus === 'UNKNOWN') &&
       !(options.assessmentRecovery?.status === 'RECOVERY_COMMITTING' &&
     priorRun.status === 'REQUIRES_ATTENTION' && priorRun.operation === operation &&
     priorRun.stageStatus === 'BUSY'))
@@ -1688,6 +1730,7 @@ export async function runHostedInitialStage(options, dependencies) {
   }
   const callCounts = new Map();
   let startedAttempt = null;
+  let translationTaskInputHash = null;
   let assessmentClaim = null;
   let executionModel;
   let finalCommitStarted = false;
@@ -1734,16 +1777,76 @@ export async function runHostedInitialStage(options, dependencies) {
         : ['commit_dynamic_evaluation_candidate', 'commit_overall_candidate'].includes(name) ? 'finishes' : null;
       return jobAidBudget && kind ? jobAidBudget.dispatch(kind, perform, args) : perform();
     };
-    const value = freshAssessmentCall || sealedCommitReplay || sealedStatusRead ||
+    const codexTranslationWorkspace = operation === 'TRANSLATE' &&
+      options.modelExecutor === 'CODEX' && name === 'translation_workspace';
+    const workspacePhase = codexTranslationWorkspace ? args.phase : null;
+    if (codexTranslationWorkspace && (!['READ', 'READ_BATCH', 'NEXT', 'SAVE', 'CHECK',
+      'CHECK_BATCH', 'RECORD_FAILURE', 'ASSEMBLE'].includes(workspacePhase) ||
+      (['SAVE', 'CHECK', 'CHECK_BATCH', 'RECORD_FAILURE'].includes(workspacePhase) &&
+        typeof args.generationRequestRef !== 'string')))
+      throw new Error('TRANSLATION_CODEX_WORKSPACE_IDENTITY_INVALID');
+    const codexWorkspaceRead = codexTranslationWorkspace &&
+      ['READ', 'READ_BATCH', 'NEXT'].includes(workspacePhase);
+    const workspaceStep = codexTranslationWorkspace && !codexWorkspaceRead
+      ? `codex-translation-workspace-${canonicalSha256({ attemptRef: args.attemptRef,
+        phase: workspacePhase, generationRequestRef: args.generationRequestRef ?? null })}` : null;
+    const codexTranslationCommit = operation === 'TRANSLATE' && options.modelExecutor === 'CODEX' &&
+      name === 'commit_translation_candidate' && !options.queueCommitRecovery;
+    let value;
+    if (codexTranslationCommit) {
+      const step = `codex-translation-commit-${canonicalSha256(args.attemptRef)}`;
+      const commitBinding = { attemptRef: args.attemptRef, taskInputHash: translationTaskInputHash,
+        resultContentHash: args.result?.contentHash, argsHash: canonicalSha256(args) };
+      if (commitBinding.attemptRef !== startedAttempt ||
+          typeof commitBinding.resultContentHash !== 'string' || !translationTaskInputHash)
+        throw new Error('TRANSLATION_COMMIT_BINDING_INVALID');
+      const started = await checkpoint.readOptional(`${step}.started`);
+      if (started && !isDeepStrictEqual(started, commitBinding))
+        throw new Error('TRANSLATION_COMMIT_BINDING_CHANGED');
+      const saved = await checkpoint.readOptional(`${step}.result`);
+      if (saved && !started) throw new Error('TRANSLATION_COMMIT_CHECKPOINT_INCOMPLETE');
+      if (saved) value = saved;
+      else {
+        if (!started) await checkpoint.writeOnce(`${step}.started`, commitBinding);
+        else {
+          const status = await dependencies.callTool('get_action_attempt_status', {
+            attemptRef: args.attemptRef, workItemId: options.workItemId });
+          if (status?.attemptRef !== args.attemptRef || status.taskType !== 'OPENCLAW_TRANSLATE' ||
+              !['RUNNING', 'COMMITTING', 'SUCCEEDED'].includes(status.status) ||
+              (status.resultContentHash !== null && status.resultContentHash !== commitBinding.resultContentHash))
+            throw new Error('TRANSLATION_COMMIT_HOST_BINDING_CHANGED');
+          if (status.status !== 'RUNNING' || status.resultContentHash !== null)
+            throw new Error('TRANSLATION_COMMIT_ACK_UNKNOWN');
+          if (status.commitStartedAt !== null || status.projectionApplied !== false ||
+              status.recoveryAvailable !== false)
+            throw new Error('TRANSLATION_COMMIT_UNPREPARED_UNCONFIRMED');
+        }
+        value = await dispatch();
+        await checkpoint.writeOnce(`${step}.result`, value);
+      }
+    } else value = (options.translationRecovery && name === 'begin_translation') || freshAssessmentCall || sealedCommitReplay || sealedStatusRead ||
+      codexWorkspaceRead ||
       (options.assessmentRecovery && name.startsWith('begin_') && !recoveryBegin)
       ? await dispatch() : await checkpoint.remoteStep({
       // Keep c114 checkpoint identity stable for an already-started JobAid run.
       // The exact WorkItem is also frozen in the enclosing checkpoint binding.
-      step: `${name}-${count}`, args,
+      step: workspaceStep ?? `${name}-${count}`, args,
       ambiguousCommit: name.startsWith('commit_'),
       allowExactReplay: exactApplicabilityBeginReplay,
       perform: dispatch,
     });
+    if (options.translationRecovery && name === 'begin_translation') {
+      const prior = options.translationRecovery.previousClaim;
+      if (value?.status !== 'RUNNING' || value.attemptRef !== prior.attemptRef ||
+          value.task?.inputHash !== prior.task.inputHash ||
+          value.task?.documentVersionId !== prior.task.documentVersionId ||
+          value.task?.workItemId !== prior.task.workItemId)
+        throw new Error('TRANSLATION_RECOVERY_CLAIM_CHANGED');
+      // The registered generation is owned by the original Host fence. The
+      // current Host contract cannot rebind it to a renewed lease.
+      if (value.leaseGeneration !== prior.leaseGeneration || value.leaseToken !== prior.leaseToken)
+        throw new Error('TRANSLATION_RECOVERY_LEASE_CHANGED');
+    }
     if (requestScopedBudget && name.startsWith('begin_')) {
       const expected = options.explicitStageRequest;
       const task = value.task;
@@ -1779,6 +1882,7 @@ export async function runHostedInitialStage(options, dependencies) {
         taskDeadline = value.task?.deadline;
       }
       startedAttempt = value.attemptRef;
+      if (operation === 'TRANSLATE') translationTaskInputHash = value.task?.inputHash ?? null;
       executionModel = value.task?.executionModel ?? value.taskBinding?.executionModel;
     }
     return value;
@@ -1787,7 +1891,7 @@ export async function runHostedInitialStage(options, dependencies) {
     if (options.queueCommitRecovery) throw new Error('AUTO_WORK_ITEM_COMMITTING_RECOVERY_MODEL_REJECTED');
     const assessment = problemAssessment && ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(modelInput.schemaVersion);
     if (jobAidBudget && !assessment) throw new Error('JOBAID_RUN_LIMIT_PROTOCOL_REQUIRED');
-    const perform = () => {
+    const perform = (codexRecovery) => {
       modelCallCount += 1;
       return dependencies.invokeInitialModel({ operation, modelInput }, {
         executionModel,
@@ -1795,6 +1899,7 @@ export async function runHostedInitialStage(options, dependencies) {
         heartbeat: runtimeHooks.heartbeat,
         timeoutMs: runtimeHooks.timeoutMs,
         sessionDiscriminator: runtimeHooks.sessionDiscriminator ?? runBinding.requestId ?? startedAttempt,
+        ...(codexRecovery ? { codexRecovery } : {}),
         readAssessmentSources: runtimeHooks.readAssessmentSources,
         queryAssessmentKnowledge: runtimeHooks.queryAssessmentKnowledge,
         saveAssessmentWork: runtimeHooks.saveAssessmentWork,
@@ -1817,9 +1922,70 @@ export async function runHostedInitialStage(options, dependencies) {
     // A durable round owns its exact response and save request identities.
     // Legacy outer model.started without this marker remains unknown.
     if (assessment && await checkpoint.readOptional('assessment-enabled')) return perform();
+    if (operation === 'TRANSLATE' && options.modelExecutor === 'CODEX' && runtimeHooks.codexTranslationBinding) {
+      const binding = { ...runtimeHooks.codexTranslationBinding,
+        workItemRevision: initial.workItemRevision,
+        requestId: runBinding.requestId, executionModel };
+      if (binding.workItemId !== options.workItemId || binding.attemptRef !== startedAttempt ||
+          binding.documentVersionId !== runBinding.documentVersionId ||
+          binding.generationRequestRef !== modelInput.generationRequestRef ||
+          binding.batchHash !== canonicalSha256(modelInput))
+        throw new Error('TRANSLATION_CODEX_BINDING_MISMATCH');
+      const key = `codex-translation-${canonicalSha256(binding)}`;
+      const existing = await checkpoint.readOptional(`${key}.started`);
+      const result = await checkpoint.readOptional(`${key}.result`);
+      if ((existing && !isDeepStrictEqual(existing, binding)) || (result && !existing))
+        throw new Error('TRANSLATION_CODEX_CHECKPOINT_BINDING_MISMATCH');
+      const completedKey = `codex-translation-completed-${canonicalSha256(binding.generationRequestRef)}`;
+      const publishCompleted = async output => checkpoint.writeOnceOrEqual(completedKey, {
+        binding: { ...binding, taskInputHash: translationTaskInputHash }, execution: output });
+      if (result) { await publishCompleted(result); return result; }
+      if (!existing) {
+        if (await checkpoint.readOptional(`${runtimeHooks.checkpointKey}.started`))
+          throw new Error('TRANSLATION_CODEX_LEGACY_OUTCOME_UNKNOWN');
+        await checkpoint.writeOnce(`${key}.started`, binding);
+      }
+      const output = await perform({ requestId: key, ...(existing ? { recoverOnly: true } : {}) });
+      await checkpoint.writeOnce(`${key}.result`, output);
+      await publishCompleted(output);
+      return output;
+    }
     return checkpoint.remoteStep({ step: runtimeHooks.checkpointKey ?? 'model', args: modelInput,
       ambiguousCommit: false, perform });
   };
+  if (operation === 'TRANSLATE' && options.modelExecutor === 'CODEX') {
+    invoke.recoverTranslationExecution = async (generationRequestRef, clientRequestId) => {
+      const saved = await checkpoint.readOptional(
+        `codex-translation-completed-${canonicalSha256(generationRequestRef)}`);
+      if (!saved || saved.binding?.workItemId !== options.workItemId ||
+          saved.binding.documentVersionId !== initial.documentVersionId ||
+          saved.binding.attemptRef !== startedAttempt ||
+          saved.binding.requestId !== runBinding.requestId ||
+          saved.binding.clientRequestId !== clientRequestId ||
+          saved.binding.generationRequestRef !== generationRequestRef ||
+          saved.binding.taskInputHash !== translationTaskInputHash ||
+          !isDeepStrictEqual(saved.binding.executionModel, executionModel) ||
+          !saved.execution?.provenance)
+        throw new Error('TRANSLATION_COMPLETED_PROVENANCE_MISSING');
+      return saved.execution;
+    };
+    invoke.readSealedTranslationResult = async (task, assembled) => {
+      const saved = await checkpoint.readOptional('codex-translation-sealed-result');
+      if (!saved) return null;
+      if (saved.taskInputHash !== task.inputHash ||
+          saved.assembledHash !== canonicalSha256(assembled) ||
+          saved.attemptRef !== startedAttempt ||
+          saved.result?.contentHash !== canonicalSha256((({ contentHash: _hash, ...body }) => body)(saved.result)))
+        throw new Error('TRANSLATION_SEALED_RESULT_BINDING_MISMATCH');
+      validateResultEnvelope(task, saved.result);
+      return saved.result;
+    };
+    invoke.persistSealedTranslationResult = async (task, assembled, result) => {
+      await checkpoint.writeOnceOrEqual('codex-translation-sealed-result', {
+        taskInputHash: task.inputHash, assembledHash: canonicalSha256(assembled),
+        attemptRef: startedAttempt, result });
+    };
+  }
   try {
     const result = await (dependencies.runInitial ?? runInitialAnalysis)({
       mode: 'INITIAL_ANALYSIS', operation, workItemId: options.workItemId,
@@ -2381,7 +2547,7 @@ export async function consumeHostedDocument(
         fresh.latestRun?.documentVersionId === documentVersionId &&
         fresh.latestRun.parseRunId === run.parseRunId && fresh.latestRun.status === 'PUBLISHED') {
       return advancePublishedDocument(fresh, fresh.latestRun, documentVersionId,
-        callTool, documentTranslationCheckpoint, deliveryRef, invokeTranslationModel);
+        callTool, documentTranslationCheckpoint, deliveryRef, invokeTranslationModel, modelExecutor);
     }
   }
   return { ...result, documentVersionId };
@@ -2477,7 +2643,7 @@ async function advanceDocumentTranslationWithRecovery(documentVersionId, run, ca
       return checkpoint.writeOnce(`model.output-shape-${key}`, shape);
     } : undefined;
     return await advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart,
-      deliveryRef, invokeTranslationModel, observeModelOutput);
+      deliveryRef, invokeTranslationModel, observeModelOutput, checkpoint, modelExecutor);
   } catch (error) {
     if (error?.receivedHostToolError !== true || error.hostToolName !== 'document_translation' ||
         error.hostErrorCode !== 'DOCUMENT_TRANSLATION_ADMISSION_DENIED' || !checkpoint) throw error;
@@ -2490,7 +2656,7 @@ async function advanceDocumentTranslationWithRecovery(documentVersionId, run, ca
 }
 
 async function advanceDocumentTranslation(documentVersionId, run, callTool, beforeStart,
-  deliveryRef, invokeTranslationModel, observeModelOutput) {
+  deliveryRef, invokeTranslationModel, observeModelOutput, checkpoint, modelExecutor) {
     const binding = { documentVersionId, parseRunId: run.parseRunId };
     const translation = await callTool('document_translation', { action: 'STATUS', ...binding });
     if (translation?.documentVersionId !== documentVersionId) throw new Error('DOCUMENT_TRANSLATION_SCOPE_MISMATCH');
@@ -2549,7 +2715,7 @@ async function advanceDocumentTranslation(documentVersionId, run, callTool, befo
     }
     if (!['QUEUED','RUNNING','RETRY_SCHEDULED'].includes(translation.status)) throw new Error('DOCUMENT_TRANSLATION_STATUS_INVALID');
     const result = await runDocumentSemanticTranslationStep(translation, { callTool,
-      translate: invokeTranslationModel, observeModelOutput });
+      translate: invokeTranslationModel, observeModelOutput, checkpoint, modelExecutor });
     if (result?.documentVersionId !== documentVersionId || result.parseRunId !== run.parseRunId ||
         result.attemptRef !== translation.attemptRef) throw new Error('DOCUMENT_TRANSLATION_STEP_MISMATCH');
     return result;

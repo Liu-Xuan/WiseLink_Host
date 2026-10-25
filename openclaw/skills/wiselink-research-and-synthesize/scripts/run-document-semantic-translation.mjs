@@ -1,8 +1,9 @@
 import { validateExecutionModelSelection } from './validate-payload.mjs';
 import { collectBatch } from './run-semantic-translation.mjs';
+import { canonicalSha256 } from './validate-payload.mjs';
 
 /** One Host-owned document attempt, bounded leased semantic batches per queue tick. */
-export async function runDocumentSemanticTranslationStep(summary, { callTool, translate, observeModelOutput }) {
+export async function runDocumentSemanticTranslationStep(summary, { callTool, translate, observeModelOutput, checkpoint, modelExecutor }) {
   const identity = { documentVersionId: summary.documentVersionId, parseRunId: summary.parseRunId,
     attemptRef: summary.attemptRef };
   const claimed = await callTool('document_translation', { action: 'CLAIM', ...identity });
@@ -56,10 +57,28 @@ export async function runDocumentSemanticTranslationStep(summary, { callTool, tr
       }
       if (progress.retryableFailureCount >= 3)
         return { ...summary, status: 'REQUIRES_ATTENTION', errorCode: 'DOCUMENT_TRANSLATION_RETRY_LIMIT' };
-      const next = await workspace({ phase: 'NEXT',
-        requestId: `document:${identity.attemptRef}:batch-${progress.generationRequestCount}`,
-        batchSemanticChecks: true });
+      const nextBinding = { identity, requestId: `document:${identity.attemptRef}:batch-${progress.generationRequestCount}` };
+      const pendingNext = modelExecutor === 'CODEX' ? await checkpoint?.readOptional('codex-translation-pending-next') : null;
+      if (pendingNext && (canonicalSha256(pendingNext.identity) !== canonicalSha256(identity) ||
+          typeof pendingNext.requestId !== 'string' || !pendingNext.requestId.startsWith(`document:${identity.attemptRef}:batch-`)))
+        throw new Error('DOCUMENT_TRANSLATION_NEXT_BINDING_CHANGED');
+      if (modelExecutor === 'CODEX' && !checkpoint)
+        throw new Error('DOCUMENT_TRANSLATION_CODEX_CHECKPOINT_REQUIRED');
+      const nextRequestId = pendingNext?.requestId ?? nextBinding.requestId;
+      if (modelExecutor === 'CODEX' && !pendingNext)
+        await checkpoint.write('codex-translation-pending-next', { ...nextBinding, requestId: nextRequestId });
+      let next;
+      try {
+        next = await workspace({ phase: 'NEXT', requestId: nextRequestId, batchSemanticChecks: true });
+      } catch (error) {
+        if (modelExecutor === 'CODEX' && pendingNext &&
+            (error?.hostErrorCode ?? error?.message) === 'TRANSLATION_GENERATION_IDEMPOTENCY_CONFLICT')
+          return { ...summary, status: 'REQUIRES_ATTENTION',
+            errorCode: 'DOCUMENT_TRANSLATION_ORIGINAL_GENERATION_LEASE_CHANGED' };
+        throw error;
+      }
       if (next.action === 'DONE') {
+        if (modelExecutor === 'CODEX') await checkpoint.write('codex-translation-pending-next', null);
         await assertLease();
         const result = await callTool('document_translation', { action: 'FINISH', ...binding });
         finished = true;
@@ -68,22 +87,53 @@ export async function runDocumentSemanticTranslationStep(summary, { callTool, tr
       if (next.action === 'UNRESOLVED_GENERATION')
         return { ...summary, status: 'REQUIRES_ATTENTION',
           errorCode: 'DOCUMENT_TRANSLATION_GENERATION_OUTCOME_UNKNOWN' };
-      if (next.action === 'REQUEST_RECONCILED') continue;
+      if (next.action === 'REQUEST_RECONCILED') {
+        if (modelExecutor === 'CODEX') await checkpoint.write('codex-translation-pending-next', null);
+        continue;
+      }
       const batch = await collectBatch(next, workspace);
+      const codex = modelExecutor === 'CODEX';
+      const modelBinding = { identity, workspaceId: batch.workspaceId,
+        generationRequestRef: batch.generationRequestRef, purpose: batch.purpose,
+        blockIds: batch.blocks.map(block => block.blockId), batchHash: canonicalSha256(batch),
+        executionModel: claimed.executionModel };
+      const receiptKey = `codex-translation-${canonicalSha256(modelBinding)}`;
+      const requestId = `translation-${canonicalSha256(modelBinding)}`;
+      const started = codex ? await checkpoint?.readOptional(`${receiptKey}.started`) : null;
+      if (codex && !checkpoint) throw new Error('DOCUMENT_TRANSLATION_CODEX_CHECKPOINT_REQUIRED');
+      if (started && canonicalSha256(started) !== canonicalSha256(modelBinding))
+        throw new Error('DOCUMENT_TRANSLATION_CODEX_BINDING_CHANGED');
+      const savedModel = codex ? await checkpoint.readOptional(`${receiptKey}.result`) : null;
+      const hostWriteStarted = codex ? await checkpoint.readOptional(`${receiptKey}.host-write-started`) : null;
+      if (savedModel && !started) throw new Error('DOCUMENT_TRANSLATION_CODEX_CHECKPOINT_INCOMPLETE');
+      if (hostWriteStarted && (!savedModel || canonicalSha256(hostWriteStarted) !== canonicalSha256(modelBinding)))
+        throw new Error('DOCUMENT_TRANSLATION_CODEX_BINDING_CHANGED');
+      // NEXT is the Host's readback of this exact registered generation. An
+      // uncertain prior write is not retried just because its ACK was lost.
+      if (hostWriteStarted) return { ...summary, status: 'REQUIRES_ATTENTION',
+        errorCode: 'DOCUMENT_TRANSLATION_SAVE_CONFIRMATION_PENDING' };
       let execution;
       try {
-        execution = await translate(batch, { executionModel: claimed.executionModel,
+        if (codex && !started) await checkpoint.writeOnce(`${receiptKey}.started`, modelBinding);
+        execution = savedModel ?? await translate(batch, { executionModel: claimed.executionModel,
           configuredModelVersion: claimed.executionModel.modelRef, heartbeat: assertLease,
           sessionDiscriminator: batch.generationRequestRef,
+          ...(codex ? { codexRecovery: { requestId, ...(started ? { recoverOnly: true } : {}) } } : {}),
           observeModelOutput: (shape, round = 1) => observeModelOutput?.({
             attemptRef: identity.attemptRef, generationRequestRef: batch.generationRequestRef,
             shape, round }),
           timeoutMs: Math.max(1, Math.min(15 * 60_000, Date.parse(claimed.task.deadline) - Date.now())) });
+        if (codex && !savedModel) await checkpoint.writeOnce(`${receiptKey}.result`, execution);
       } catch (error) {
+        if (codex && ['CODEX_GENERATION_OUTCOME_UNKNOWN', 'CODEX_GENERATION_RECOVERY_MISMATCH',
+          'CODEX_GENERATION_RECEIPT_INVALID'].includes(error?.cause?.message ?? error?.message))
+          return { ...summary, status: 'REQUIRES_ATTENTION',
+            errorCode: error.cause?.message ?? error.message };
         const failure = error?.translationFailure ?? { origin: 'TRANSPORT',
           code: 'DOCUMENT_TRANSLATION_GENERATION_OUTCOME_UNKNOWN', outcome: 'GENERATION_UNKNOWN', retryable: false };
         await assertLease();
         await workspace({ phase: 'RECORD_FAILURE', generationRequestRef: batch.generationRequestRef, error: failure });
+        if (codex) await checkpoint.write('codex-translation-pending-next', null);
         if (failure.outcome === 'KNOWN_FAILURE' && !failure.retryable) {
           finished = true;
           const failed = await callTool('document_translation', { action: 'FAIL', ...binding,
@@ -96,6 +146,7 @@ export async function runDocumentSemanticTranslationStep(summary, { callTool, tr
       if (!execution?.output || !execution.actualExecution)
         throw new Error('DOCUMENT_TRANSLATION_EXECUTION_INVALID');
       await assertLease();
+      if (codex) await checkpoint.writeOnce(`${receiptKey}.host-write-started`, modelBinding);
       if (batch.purpose === 'CHECK_BATCH') {
         await workspace({ phase: 'CHECK_BATCH', generationRequestRef: batch.generationRequestRef,
           semanticReviews: execution.output.checks, actualExecution: execution.actualExecution });
@@ -114,6 +165,7 @@ export async function runDocumentSemanticTranslationStep(summary, { callTool, tr
             error: { origin: 'OUTPUT_CONTRACT', code: 'TRANSLATION_BATCH_PREFIX_ONLY',
               outcome: 'KNOWN_FAILURE', retryable: false } });
       }
+      if (codex) await checkpoint.write('codex-translation-pending-next', null);
     }
     return { ...summary, status: 'RUNNING', stepStatus: 'PROGRESSED' };
   } finally {

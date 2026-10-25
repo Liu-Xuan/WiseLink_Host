@@ -6,6 +6,7 @@ import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import {
   assertHostedModelGatewayReady,
+  createCheckpointStore,
   createHostMcpConnection,
   invokeHostedReviewModel,
   isUnpreparedReviewAttempt,
@@ -59,6 +60,7 @@ export async function consumePendingReviewTurn(options, dependencies) {
           return value;
         },
         invokeModel: dependencies.invokeModel,
+        modelRuntime: dependencies.modelRuntime,
       },
     );
     return {
@@ -86,7 +88,16 @@ export async function consumePendingReviewTurn(options, dependencies) {
     // A definite Host rejection plus exact readback proves prepare never ran.
     // Cancellation is atomic on the Host and still rejects a race to COMMITTING.
     // Missing responses/readback remain ambiguous and must never be cancelled.
-    if (startedAttempt && (!commitStarted || rejectedBeforePrepare)) {
+    const codexModelStarted = dependencies.modelRuntime?.modelExecutor === 'CODEX' &&
+      startedAttempt && await (async () => {
+        const checkpoint = await createCheckpointStore(join(options.checkpointRoot,
+          encodeURIComponent(next.reviewTurnRef)));
+        return await checkpoint.readOptional('model.started') !== null ||
+          await checkpoint.hasEntries('review-codex-round-');
+      })();
+    const terminalModelValidation = /^REVIEW_MODEL_(?:OUTPUT_INVALID|OUTPUT_KEYS_INVALID|RESPONSE_TYPE_INVALID|ANSWER_REQUIRED|SOURCE_REF_NOT_READ)$/u.test(code);
+    if (startedAttempt && (!codexModelStarted || rejectedBeforePrepare || terminalModelValidation) &&
+        (!commitStarted || rejectedBeforePrepare)) {
       try {
         const stopped = await dependencies.callTool('cancel_action_attempt', {
           attemptRef: startedAttempt,

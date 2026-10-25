@@ -122,7 +122,8 @@ export async function consumeHostedDerivedSummary(options, dependencies) {
   };
   const reportFailure = async error => {
     const code = error.hostErrorCode ?? error?.message?.match(/^((?:DERIVED_SUMMARY|REVIEW|HOSTED_GATEWAY)_[A-Z0-9_-]+)$/u)?.[1];
-    if (!code) return;
+    if (!code || (options.modelExecutor === 'CODEX' &&
+        code.startsWith('DERIVED_SUMMARY_CODEX_'))) return;
     try {
       const failed = await call('FAIL', { code,
         message: 'Official Hosted summary execution failed before saving. Exact checkpoints preserve the stage and provider outcome.' });
@@ -248,19 +249,25 @@ async function main(argv, env) {
     maxModelRequests: Number(option(argv, '--max-model-requests')),
     reasoningEffort: option(argv, '--reasoning-effort') ?? 'low',
     ...(option(argv, '--provider-timeout-seconds') ? { providerTimeoutSeconds: Number(option(argv, '--provider-timeout-seconds')) } : {}) });
-  const sourceConfigPath = required(option(argv, '--openclaw-config'), 'DERIVED_SUMMARY_CONFIG_PATH_REQUIRED');
-  const launcher = await import(pathToFileURL(option(argv, '--native-gateway-launcher') ??
-    fileURLToPath(new URL('./native-temporary-review-gateway.mjs', import.meta.url))).href);
-  if (typeof launcher.createNativeReviewGatewayPreparer !== 'function') throw new Error('DERIVED_SUMMARY_NATIVE_LAUNCHER_INVALID');
-  const prepareGateway = launcher.createNativeReviewGatewayPreparer({ sourceConfigPath });
   const runtime = await resolveRuntimeConfig(argv, env);
   assertHostedModelGatewayReady(runtime);
+  let prepareGateway;
+  if (runtime.modelExecutor !== 'CODEX') {
+    const sourceConfigPath = required(option(argv, '--openclaw-config'), 'DERIVED_SUMMARY_CONFIG_PATH_REQUIRED');
+    const launcher = await import(pathToFileURL(option(argv, '--native-gateway-launcher') ??
+      fileURLToPath(new URL('./native-temporary-review-gateway.mjs', import.meta.url))).href);
+    if (typeof launcher.createNativeReviewGatewayPreparer !== 'function') throw new Error('DERIVED_SUMMARY_NATIVE_LAUNCHER_INVALID');
+    prepareGateway = launcher.createNativeReviewGatewayPreparer({ sourceConfigPath });
+  } else if (option(argv, '--native-gateway-launcher')) {
+    throw new Error('DERIVED_SUMMARY_CODEX_NATIVE_LAUNCHER_FORBIDDEN');
+  }
   const endpoint = new URL(runtime.hostMcpUrl);
   const connection = await createHostMcpConnection(runtime);
   try {
     const result = await consumeHostedDerivedSummary({ ...target, runBudget,
       checkpointRoot: option(argv, '--checkpoint-root') ?? join(homedir(), '.openclaw', 'wiselink-summary-runs'),
       endpointKey: encodeURIComponent(endpoint.origin + endpoint.pathname),
+      modelExecutor: runtime.modelExecutor, codexOptions: runtime.codexOptions,
     }, { callTool: connection.callTool, prepareGateway,
       invokeModel: (input, hooks) => invokeHostedDerivedSummaryModel(input, { ...runtime, ...hooks }) });
     process.stdout.write(`${JSON.stringify(result)}\n`);
