@@ -3,7 +3,9 @@ import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { SessionResolver } from '../../server/modules/identity/session-resolver.service';
 import * as cancelledContinuation from '../../server/modules/action-attempt/cancelled-initial-continuation';
 import postgres from 'postgres';
-import { workItem as workItemTable } from '../../server/database/schema';
+import { actionAttempt as actionAttemptTable, translationWorkspace, workItem as workItemTable } from '../../server/database/schema';
+import { dmDocumentParseRun } from '../../server/database/document-parsing.schema';
+import { autoWorkItemAuthorization } from '../../server/database/auto-work-item-authorization.schema';
 import { canonicalJson } from '../../server/modules/action-attempt/action-attempt-envelope';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import type {
@@ -95,6 +97,197 @@ describe('CanonicalHost initial-analysis status projection', () => {
         const h = harness(error);
         await expect(h.service.project({ workItem: h.workItem, tenantId: 'tenant-1', browserActorUserId: 'owner-test' })).rejects.toBe(error);
       });
+  });
+
+  describe('fresh program browser entry', () => {
+    let previousJobAid: string | undefined;
+    let previousTranslation: string | undefined;
+
+    beforeEach(() => {
+      previousJobAid = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+      previousTranslation = process.env.WL_TRANSLATION_V2_ENABLED;
+      process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '1';
+      process.env.WL_TRANSLATION_V2_ENABLED = '0';
+    });
+    afterEach(() => {
+      for (const [key, value] of Object.entries({
+        WL_JOBAID_PROBLEM_V2_ENABLED: previousJobAid,
+        WL_TRANSLATION_V2_ENABLED: previousTranslation,
+      })) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      jest.restoreAllMocks();
+    });
+
+    interface EntryOptions {
+      workItem?: CanonicalWorkItemProjection;
+      observations?: CanonicalInitialAnalysisAttemptObservation[];
+      automatic?: boolean;
+      grant?: boolean;
+      published?: boolean;
+      owner?: Partial<ReturnType<typeof ownerRow>>;
+    }
+
+    interface EntryQuery {
+      where(): EntryQuery;
+      orderBy(): EntryQuery;
+      innerJoin(): EntryQuery;
+      limit(): Promise<unknown[]>;
+    }
+
+    function harness(options: EntryOptions = {}) {
+      const workItem: CanonicalWorkItemProjection = options.workItem ?? parsedWorkItem();
+      if (!options.workItem) workItem.classification.normalizedFamily = 'AD';
+      const owner: ReturnType<typeof ownerRow> = {
+        ...ownerRow(workItem), ...options.owner,
+      };
+      const observations: CanonicalInitialAnalysisAttemptObservation[] = options.observations ?? [];
+      const rows = observations.map((observation: CanonicalInitialAnalysisAttemptObservation) => ({
+        ...observation,
+        terminalReason: observation.terminalCode,
+        errorCode: null,
+        cancelReason: null,
+        executionModelJson: null,
+        idempotencyKey: observation.requestId
+          ? `openclaw-v2:dynamic:${workItem.workItemId}:${workItem.source.documentVersionId}:${observation.requestId}`
+          : null,
+      }));
+      function query(values: unknown[]): EntryQuery {
+        return {
+          where: () => query(values),
+          orderBy: () => query(values),
+          innerJoin: () => query(values),
+          limit: async () => values,
+        };
+      }
+      const db = {
+        execute: async () => [{ service: false }],
+        select: () => ({ from: (table: unknown) => {
+          if (table === workItemTable) return query([{ ...owner, model: null }]);
+          if (table === dmDocumentParseRun)
+            return query(options.published === false ? [] : [{ id: 'published-original' }]);
+          if (table === autoWorkItemAuthorization)
+            return query(options.grant ? [{ workItemId: workItem.workItemId }] : []);
+          if (table === actionAttemptTable)
+            return query([{ attemptId: workItem.applicability?.actionAttemptId, parseRunId: 'published-original' }]);
+          if (table === translationWorkspace) return query([]);
+          throw new Error('UNEXPECTED_ENTRY_QUERY');
+        } }),
+        selectDistinctOn: () => ({ from: () => ({ where: () => ({ orderBy: async () => rows }) }) }),
+      };
+      const withVerifiedReviewServiceSql = jest.fn(async (operation: () => Promise<unknown>) => operation());
+      const service: CanonicalHostInitialAnalysisStatusService = new CanonicalHostInitialAnalysisStatusService(
+        db as never, {} as never, undefined, undefined, undefined,
+        { withVerifiedReviewServiceSql } as never,
+      );
+      jest.spyOn(automaticScope, 'isOpenClawAutomaticReviewConfigured')
+        .mockReturnValue(options.automatic ?? true);
+      const read = () => service.projectForBrowser({
+        workItem, tenantId: 'tenant-1', actorUserId: 'owner-test',
+      });
+      return { read, workItem, withVerifiedReviewServiceSql };
+    }
+
+    it.each([false, true])('offers an unattempted JobAid with translation saved=%s and honest missing applicability', async translated => {
+      const h = harness({ workItem: translated ? translatedWorkItem(parsedWorkItem()) : parsedWorkItem() });
+      const before: CanonicalWorkItemProjection = structuredClone(h.workItem);
+      expect(await h.read()).toMatchObject({
+        continuationOperations: ['EVALUATE_JOBAID'],
+        nextOperation: 'EVALUATE_JOBAID',
+        stages: {
+          translation: { status: translated ? 'SUCCEEDED' : 'PENDING' },
+          applicability: { status: 'WAITING_INPUT' },
+          jobAid: { status: 'PENDING' },
+          overall: { status: 'PENDING' },
+        },
+      });
+      expect(h.withVerifiedReviewServiceSql).toHaveBeenCalledWith(expect.any(Function), 'owner-test');
+      expect(h.workItem).toEqual(before);
+    });
+
+    it('offers pending English assessment after a current applicability candidate', async () => {
+      const workItem: CanonicalWorkItemProjection = translatedWorkItem(parsedWorkItem());
+      const input: CanonicalApplicabilityInputProjection = applicabilityInput(workItem);
+      workItem.applicabilityInput = input;
+      workItem.applicability = {
+        ...applicabilityCandidate(workItem, input, 'CANDIDATE_ONLY'),
+        schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v2',
+        sourceReadingMode: 'VERIFIED_ENGLISH',
+        translationActionAttemptId: null,
+      };
+      workItem.translation = null;
+      expect(await harness({ workItem }).read()).toMatchObject({
+        continuationOperations: ['EVALUATE_JOBAID'],
+        stages: { translation: { status: 'PENDING' }, applicability: { status: 'SUCCEEDED' }, jobAid: { status: 'PENDING' } },
+      });
+    });
+
+    it('uses the existing exact intake grant when configured automatic scope is absent', async () => {
+      expect(await harness({ automatic: false, grant: true }).read())
+        .toMatchObject({ continuationOperations: ['EVALUATE_JOBAID'] });
+    });
+
+    it('offers the first program assessment while the existing optional translation entry is enabled', async () => {
+      process.env.WL_TRANSLATION_V2_ENABLED = '1';
+      expect(await harness({ automatic: false, grant: true }).read()).toMatchObject({
+        continuationOperations: ['TRANSLATE', 'EVALUATE_JOBAID'],
+        nextOperation: 'EVALUATE_JOBAID',
+        stages: { translation: { status: 'PENDING' }, jobAid: { status: 'PENDING' } },
+      });
+    });
+
+    it.each(['FAILED', 'CONFLICT'])('preserves the existing %s continuation', async status => {
+      const h = harness({ observations: [attempt('OPENCLAW_DYNAMIC_EVALUATION', status)] });
+      expect(await h.read()).toMatchObject({
+        continuationOperations: ['EVALUATE_JOBAID'], stages: { jobAid: { status } },
+      });
+    });
+
+    it.each(['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'])('keeps an existing %s request in flight', async status => {
+      const h = harness({ observations: [{
+        ...attempt('OPENCLAW_DYNAMIC_EVALUATION', status), requestId: 'existing-program',
+      }] });
+      expect(await h.read()).toMatchObject({
+        continuationOperations: [], stages: { jobAid: { status: status === 'QUEUED' ? 'PENDING' : 'BUSY' } },
+      });
+    });
+
+    it.each(['QUEUED', 'RUNNING'])('does not start assessment beside an active translation %s', async status => {
+      expect(await harness({ observations: [attempt('OPENCLAW_TRANSLATE', status)] }).read())
+        .toMatchObject({ continuationOperations: [] });
+    });
+
+    it.each(['QUEUED', 'FAILED', 'CONFLICT'])('keeps applicability %s blocking a pending assessment', async status => {
+      expect(await harness({ observations: [attempt('OPENCLAW_APPLICABILITY_EVALUATION', status)] }).read())
+        .toMatchObject({ continuationOperations: [], stages: { jobAid: { status: 'PENDING' } } });
+    });
+
+    it.each([
+      { published: false },
+      { automatic: false },
+      { owner: { requestedByUserId: 'another-owner' } },
+      { owner: { sourceArtifactId: 'another-source' } },
+      { owner: { revision: 2 } },
+    ])('preserves existing source, owner and scope admission: %j', async options => {
+      expect(await harness(options).read()).toMatchObject({ continuationOperations: [] });
+    });
+
+    it('keeps unconfirmed SB classification blocking', async () => {
+      const workItem: CanonicalWorkItemProjection = parsedWorkItem();
+      workItem.classification.status = 'CANDIDATE';
+      expect(await harness({ workItem }).read()).toMatchObject({ continuationOperations: [] });
+    });
+
+    it('does not reopen an explicit JobAid waiting-input result', async () => {
+      expect(await harness({ observations: [attempt('OPENCLAW_DYNAMIC_EVALUATION', 'WAITING_INPUT')] }).read())
+        .toMatchObject({ continuationOperations: [], stages: { jobAid: { status: 'WAITING_INPUT' } } });
+    });
+
+    it('keeps the existing assessment feature flag', async () => {
+      process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '0';
+      expect(await harness().read()).toMatchObject({ continuationOperations: [] });
+    });
   });
 
   describe('cancelled browser read session boundary', () => {

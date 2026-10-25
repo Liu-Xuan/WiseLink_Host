@@ -582,7 +582,8 @@ export class CanonicalHostInitialAnalysisStatusService {
         input.workItem.classification.status === 'CONFIRMED')
     ) {
       if (
-        ['FAILED', 'CONFLICT'].includes(status.stages.jobAid.status) &&
+        (['FAILED', 'CONFLICT'].includes(status.stages.jobAid.status) ||
+          (automatic && status.stages.jobAid.status === 'PENDING')) &&
         canContinueInitialStage(
           status.stages,
           'EVALUATE_JOBAID',

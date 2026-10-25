@@ -3612,14 +3612,16 @@ async function loadMcpSdk() {
 }
 
 export async function resolveRuntimeConfig(argv, env) {
-  const selectedExecutor = option(argv, '--model-executor') ?? env.WL_MODEL_EXECUTOR ?? 'HOSTED';
+  // option() returns '' for absent flags; explicit empty values must still fail validation.
+  const explicitOption = name => argv.includes(name) ? option(argv, name) : undefined;
+  const selectedExecutor = explicitOption('--model-executor') ?? env.WL_MODEL_EXECUTOR ?? 'HOSTED';
   if (!['HOSTED', 'CODEX'].includes(selectedExecutor)) throw new Error('MODEL_EXECUTOR_UNSUPPORTED');
   const runtimeAppId = selectedExecutor === 'CODEX'
     ? requireCodexRuntimeAppId(env.WL_CODEX_RUNTIME_APP_ID) : WISELINK_RUNTIME_APP_ID;
   const codexOptions = selectedExecutor === 'CODEX' ? {
-    codexBinary: option(argv, '--codex-binary') ?? env.WL_CODEX_BINARY,
-    configPath: option(argv, '--codex-config') ?? env.WL_CODEX_CONFIG_PATH,
-    runRoot: option(argv, '--codex-run-root') ?? env.WL_CODEX_RUN_ROOT,
+    codexBinary: explicitOption('--codex-binary') ?? env.WL_CODEX_BINARY,
+    configPath: explicitOption('--codex-config') ?? env.WL_CODEX_CONFIG_PATH,
+    runRoot: explicitOption('--codex-run-root') ?? env.WL_CODEX_RUN_ROOT,
   } : undefined;
   if (selectedExecutor === 'CODEX') assertModelExecutorReady({ modelExecutor: selectedExecutor, codexOptions });
   const explicitConfigPath =
