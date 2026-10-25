@@ -272,7 +272,9 @@ class Emitter:
 def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max_requests=24, max_tokens=8192, timeout=90, reasoning_effort=None):
     """Return (loopback server, serving thread, ephemeral port, ephemeral bearer token)."""
     require(model == MODEL, "model_not_allowed"); provider(read_json(config_path))
-    require(isinstance(allowed_tools, (set, frozenset)) and allowed_tools and all(isinstance(n, str) and n and n.startswith("mcp__") for n in allowed_tools), "invalid_allowed_tools")
+    # An empty allowlist is used by the bounded generation runner. Codex may
+    # advertise its built-ins, but none is forwarded to Miaoda or emitted back.
+    require(isinstance(allowed_tools, (set, frozenset)) and all(isinstance(n, str) and n and n.startswith("mcp__") for n in allowed_tools), "invalid_allowed_tools")
     allowed_tools = frozenset(allowed_tools)
     require(all(type(n) is int and n > 0 for n in (max_requests, max_tokens, timeout)), "invalid_budget")
     require(reasoning_effort in (None, "low", "high", "max"), "invalid_glm_reasoning_effort")

@@ -30,6 +30,8 @@ export interface ReserveActionAttemptInput {
   inputRevision: number;
   baseRevision: number;
   idempotencyKey: string;
+  /** Explicit new initial-program request; never changes the WorkItem model pin. */
+  programControlled?: { modelRef: string };
   priority?: number;
   maxAttempts?: number;
   deadlineAt?: Date;

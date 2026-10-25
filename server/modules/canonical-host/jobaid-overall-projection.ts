@@ -28,6 +28,7 @@ export function buildJobAidOverallProjection(input: {
     skillVersion: string;
     toolVersions: Record<string, string>;
   };
+  deterministicAssessmentSource?: CanonicalOpenClawOverallProjection['sourceAssessment'];
   deterministicSource?: {
     reviewConversationId: string;
     reviewTurnId: string;
@@ -69,6 +70,8 @@ export function buildJobAidOverallProjection(input: {
     engineeringReviewRequired: true,
     providers: {},
     ...(input.modelProvenance ?? {}),
+    ...(input.deterministicAssessmentSource ? {executionKind: 'DETERMINISTIC_PROJECTION' as const,
+      modelRequests: 0 as const, sourceAssessment: input.deterministicAssessmentSource} : {}),
     ...(input.deterministicSource ? {
       executionKind: 'DETERMINISTIC_PROJECTION' as const,
       modelRequests: 0 as const,

@@ -1,3 +1,4 @@
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import type { DocumentUploadAuthority } from './document-upload-authority';
 export const DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER = Symbol(
   'DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER',
@@ -43,5 +44,5 @@ export interface DocumentManagementIngestAuthorizer {
     roles: string[];
     action: 'DOCUMENT_READ';
     documentVersionId: string;
-  }): Promise<void>;
+  }, database?: PostgresJsDatabase): Promise<void>;
 }

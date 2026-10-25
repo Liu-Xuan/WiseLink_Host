@@ -66,7 +66,7 @@ function fixture() {
     packageId: 'PKG-fixture',
     packageArtifactRef: 'package.json',
     packageArtifactSha256: 'sha256:' + 'c'.repeat(64),
-    analysisModelJson: canonicalJson(MODEL),
+    analysisModelJson: canonicalJson(MODEL) as string | null,
     projectionJson: canonicalJson({
       workItemId: 'WI-fixture',
       requestId: 'REQ-parse',
@@ -252,6 +252,15 @@ function eligibility(f: Pick<ReturnType<typeof fixture>, 'owner'>) {
     workItem: JSON.parse(f.owner.projectionJson),
   };
 }
+
+function failJobAid<F extends Pick<ReturnType<typeof fixture>, 'target' | 'grant' | 'owner'>>(
+  f: F, status = 'TIMED_OUT',
+): F {
+  f.target.status = status;
+  f.grant.blockedCode = 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED';
+  // The persisted blocking lease may be later than the failed task's lease.
+  return f;
+}
 beforeEach(() =>
   jest
     .spyOn(MiaodaDocumentVersionSourceResolver.prototype, 'resolve')
@@ -265,6 +274,81 @@ beforeEach(() =>
     } as never),
 );
 afterEach(() => jest.restoreAllMocks());
+
+test.each(['FAILED', 'TIMED_OUT'])(
+  'allows only an exact %s successor and inherits the stored initial model without changing history',
+  async (terminalStatus) => {
+    const f = failJobAid(fixture(), terminalStatus);
+    f.owner.analysisModelJson = null;
+    const before = canonicalJson({ owner: f.owner, attempts: f.attempts });
+    const value = await readCancelledInitialContinuation(f.db as never, eligibility(f));
+    expect(value!.binding).toMatchObject({
+      terminalStatus, blockedCode: 'AUTO_WORK_ITEM_STAGE_JOBAID_FAILED',
+      leaseGeneration: 10, executionModel: MODEL,
+    });
+    const release = await assertCancelledInitialContinuation(f.db as never, {
+      binding: value!.binding, authorize: async () => {},
+    });
+    await release();
+    expect(f.grant.status).toBe('WAITING');
+    expect(f.grant.blockedCode).toBe('AUTO_WORK_ITEM_STAGE_JOBAID_FAILED');
+    expect(canonicalJson({ owner: f.owner, attempts: f.attempts })).toBe(before);
+  },
+);
+
+test('keeps the failed task model self-consistent while inheriting the earliest initial selection', async () => {
+  const f = failJobAid(fixture());
+  f.owner.analysisModelJson = null;
+  const inherited = { ...MODEL, selectedAt: '2026-10-11T00:00:00.000Z' };
+  f.attempts.push({ ...f.target, attemptId: 'ATT-earliest',
+    createdAt: new Date(NOW.getTime() - 120000), attemptNo: 5,
+    executionModelJson: canonicalJson(inherited) });
+  const value = await readCancelledInitialContinuation(f.db as never, eligibility(f));
+  expect(value?.binding.executionModel).toEqual(inherited);
+  f.target.executionModelJson = canonicalJson(inherited);
+  expect(await readCancelledInitialContinuation(f.db as never, eligibility(f))).toBeNull();
+});
+
+test.each([
+  { status: 'CONFLICT' }, { status: 'OBSOLETE' }, { status: 'CANCELLED' },
+  { actionType: 'OPENCLAW_OVERALL_SYNTHESIS' }, { documentVersionId: 'DV-other' },
+  { inputRevision: 2 }, { baseRevision: 2 }, { completedAt: null },
+  { commitStartedAt: NOW }, { projectionApplied: true },
+  { resultEnvelopeJson: '{}' }, { resultContentHash: 'b'.repeat(64) },
+  { leaseOwner: 'stale-owner' }, { taskInputHash: 'changed' },
+  { triggerRequestId: '' },
+])('rejects a failed successor outside the exact terminal binding: %j', async change => {
+  const f = failJobAid(fixture());
+  Object.assign(f.target, change);
+  expect(await readCancelledInitialContinuation(f.db as never, eligibility(f))).toBeNull();
+  expect(f.db.update).not.toHaveBeenCalled();
+});
+
+test.each([
+  { blockedCode: 'AUTO_WORK_ITEM_STAGE_OVERALL_FAILED' },
+  { status: 'COMPLETED' }, { blockedAt: null },
+  { blockedAt: new Date(NOW.getTime() - 1) },
+  { blockedLeaseTokenHash: 'invalid' }, { blockedLeaseGeneration: 11 },
+  { leaseToken: TOKEN }, { leaseExpiresAt: NOW }, { completedAt: NOW },
+])('requires the complete current failure receipt: %j', async change => {
+  const f = failJobAid(fixture());
+  Object.assign(f.grant, change);
+  expect(await readCancelledInitialContinuation(f.db as never, eligibility(f))).toBeNull();
+});
+
+test.each(['generation', 'blockedAt'])(
+  'rechecks the original %s under lock instead of accepting a replaced block', async field => {
+    const f = failJobAid(fixture());
+    const value = await readCancelledInitialContinuation(f.db as never, eligibility(f));
+    if (field === 'generation') {
+      f.grant.leaseGeneration += 1; f.grant.blockedLeaseGeneration = f.grant.leaseGeneration;
+    } else f.grant.blockedAt = new Date(NOW.getTime() + 1);
+    await expect(assertCancelledInitialContinuation(f.db as never, {
+      binding: value!.binding, authorize: async () => {},
+    })).rejects.toThrow('BINDING_CHANGED');
+    expect(f.db.update).not.toHaveBeenCalled();
+  },
+);
 
 test('locks WI then original grant then latest cancelled attempts; exact source and fresh ACL precede WAITING without changing history', async () => {
   const f = fixture();
@@ -479,8 +563,9 @@ function reservationFixture() {
   };
   return { ...f, repository, insert, attempt, events, database };
 }
-test('same request concurrent reserve queues one successor atomically; different request is rejected and old JA/attempt/source stay unchanged', async () => {
+test.each(['CANCELLED', 'FAILED', 'TIMED_OUT'])('same request concurrent %s reserve queues one successor atomically; different request is rejected and old JA/attempt/source stay unchanged', async status => {
   const f = reservationFixture();
+  if (status !== 'CANCELLED') failJobAid(f, status);
   const before = canonicalJson(f.target);
   const value = await readCancelledInitialContinuation(
     f.database as never,
@@ -515,8 +600,9 @@ test('same request concurrent reserve queues one successor atomically; different
   ).rejects.toMatchObject({ code: 'ACTION_ATTEMPT_ACTIVE_CONFLICT' });
   expect(f.attempts).toHaveLength(2);
 });
-test('failed grant CAS rolls back the new reservation and does not change the parked grant/history', async () => {
+test.each(['CANCELLED', 'FAILED', 'TIMED_OUT'])('failed grant CAS rolls back the %s reservation and does not change the parked grant/history', async status => {
   const f = reservationFixture();
+  if (status !== 'CANCELLED') failJobAid(f, status);
   const value = await readCancelledInitialContinuation(
     f.database as never,
     eligibility(f),
@@ -530,5 +616,5 @@ test('failed grant CAS rolls back the new reservation and does not change the pa
   ).rejects.toThrow('BINDING_CHANGED');
   expect(f.grant.status).toBe('BLOCKED');
   expect(f.attempts).toHaveLength(1);
-  expect(f.target.status).toBe('CANCELLED');
+  expect(f.target.status).toBe(status);
 });

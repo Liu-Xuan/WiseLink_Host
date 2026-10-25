@@ -1,5 +1,66 @@
 # Codex executor for the existing WiseLink assessment contract
 
+## 2026-10-25 consumer migration
+
+The current graph contract is v1.7. Its first production path remains
+`PROGRAM_CONTROLLED_V1`: the program prepares material, makes one model request,
+preserves the complete response, saves, independently reads back, and projects
+Overall deterministically. The autonomous assessment experiment documented below
+is a separate mode and is not the default program assessment.
+
+`createCodexGateway` in `codex-generation.mjs` supplies bounded structured
+generation to the existing initial/applicability, JobAid/Matter, translation,
+reading, activity, ordinary Review and Wiki consumers. Use explicit
+`modelExecutor: 'CODEX'` plus `codexOptions: {codexBinary, configPath, runRoot}`;
+the existing CLI exposes the matching `--model-executor`, `--codex-binary`,
+`--codex-config` and `--codex-run-root` options. Omitted selection preserves
+Hosted behavior. The Host must present an independent Codex MCP identity before
+these CLIs can claim any business work; the current legacy identity is rejected.
+
+Each bounded generation makes exactly one Miaoda `glm-5.3` request. Codex returns
+a JSON candidate; a local adapter validates it and converts it to the existing
+function response envelope. No business function is executed by that conversion.
+The original domain validators, checkpoints and Host save/read rules remain in
+control. Wiki has its own actual Codex process receipt, not a simulated Native
+OpenClaw receipt. Existing unresolved checkpoints remain pinned to their executor.
+
+The real-model, synthetic-data smoke commands are:
+
+```sh
+node openclaw/codex-evaluator/run-consumer-fixture.mjs \
+  --codex /absolute/path/to/codex --config /absolute/path/to/openclaw.json \
+  --run-root /absolute/private/runs
+node openclaw/codex-evaluator/run-wiki-fixture.mjs \
+  --codex /absolute/path/to/codex --config /absolute/path/to/openclaw.json \
+  --run-root /absolute/private/wiki-runs
+```
+
+Both commands use synthetic Host data. They do not claim a real business save.
+`--dry-run` validates their inputs without calling a model. The bounded adapter
+rejects oversized input before dispatch (approximately 1 MiB) and supports up to
+32,768 output tokens, with a default of 16,384 and lower caller limits honored.
+
+Both commands have now completed against the real `codex-cli 0.164.0` and the
+test application's configured Miaoda `glm-5.3` route. The consumer fixture exited
+0 in 48.474 seconds with four upstream requests: program assessment, translation
+GENERATE, translation CHECK, and document reading. Its synthetic Host recorded a
+work SAVE followed by an independent exact-request READ; the resulting saved
+revision was the input to the deterministic Overall projection. The Wiki fixture
+exited 0 in 18.204 seconds with two upstream requests and produced a candidate
+from two selected synthetic children and their shared root source. The Wiki
+candidate was not saved to Host. All six process receipts closed normally and
+reported the source model configuration unchanged. The complete sanitized
+[consumer validation evidence](consumer-validation-evidence.json) records these
+results; `realHostCalled` is false throughout.
+
+See the [consumer inventory and Host binding record](../../docs/coordination/WISELINK_CODEX_MIGRATION_20261025.md)
+for actual scope, the retained Hosted-only legacy worker and isolated Native
+Review mode, MCP framework choices, and the remaining identity/credential/routing
+work. A metadata-only existing-Host probe is available in `probe-host-mcp.mjs`;
+its successful result explicitly does not claim an independent runtime binding.
+
+## Earlier autonomous assessment fixture
+
 This is an opt-in implementation for a Miaoda test instance. Codex CLI owns model
 continuation and registered MCP calls. Model inference uses the instance's existing
 `miaoda/glm-5.3` provider. No OpenAI account, OpenAI API key, or global configuration

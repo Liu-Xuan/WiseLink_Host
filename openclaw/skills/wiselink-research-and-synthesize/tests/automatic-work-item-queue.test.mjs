@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -1246,7 +1247,7 @@ test('newly saved partial work cannot authorize a successor after Host cancellat
   assert.equal(exhausted.status, 'REQUIRES_ATTENTION');
 });
 
-test('failed preparation receives a stable new request and recovers saved JobAid work', async () => {
+for (const legacyRequestId of [undefined, 'original-1']) test(`legacy failed preparation receives a stable retry (${legacyRequestId ?? 'absent request'})`, async () => {
   const checkpoint = memoryCheckpoint(storedClaim());
   const failed = status({
     overallStatus: 'FAILED', nextOperation: null,
@@ -1255,7 +1256,7 @@ test('failed preparation receives a stable new request and recovers saved JobAid
   });
   failed.stages.overall = {
     status: 'FAILED', attemptStatus: 'FAILED',
-    attemptRef: 'AQ-PREP-FAILED', requestId: 'original-1',
+    attemptRef: 'AQ-PREP-FAILED', ...(legacyRequestId ? { requestId: legacyRequestId } : {}),
     terminalCode: 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED',
   };
   let observed = failed;
@@ -1281,6 +1282,223 @@ test('failed preparation receives a stable new request and recovers saved JobAid
   assert.match(requestId, /^auto-retry-[0-9a-f]{32}$/u);
   assert.equal(result.status, 'ACKNOWLEDGED');
   assert.equal(checkpoint.values.get('active-claim'), null);
+});
+
+const PREPARATION_REQUEST = '00000000-0000-4000-8000-000000000059';
+async function initialPreparationFixture(t, operation = 'EVALUATE_JOBAID', consumerStopped = false) {
+  const directory = await mkdtemp(join(tmpdir(), 'queue-initial-preparation-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const options = { checkpointRoot: directory };
+  const claim = { ...storedClaim(), consumerStopped,
+    attentionCode: consumerStopped ? 'REVIEW_BEGIN_DYNAMIC_EVALUATION_1_OUTCOME_UNKNOWN' : null };
+  const checkpoint = await createCheckpointStore(join(directory, 'queue'));
+  checkpoint.withActiveClaimOwner = perform => perform();
+  await checkpoint.write('active-claim', claim);
+  const stage = operation === 'EVALUATE_JOBAID' ? 'jobAid' : 'overall';
+  const begin = operation === 'EVALUATE_JOBAID' ? 'begin_dynamic_evaluation' : 'begin_overall_synthesis';
+  const failed = { ...status({ overallStatus: 'FAILED', nextOperation: null, translation: 'SUCCEEDED',
+    applicability: 'WAITING_INPUT', jobAid: operation === 'EVALUATE_JOBAID' ? 'FAILED' : 'SUCCEEDED',
+    overall: operation === 'SYNTHESIZE_OVERALL' ? 'FAILED' : 'PENDING' }),
+    candidateOnly: true, workItemId: claim.workItemId, workItemRevision: claim.workItemRevision };
+  failed.stages[stage] = { status: 'FAILED', attemptStatus: 'FAILED', requestId: PREPARATION_REQUEST,
+    attemptRef: 'AQ-initial-preparation', terminalCode: 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED' };
+  const retryId = `auto-retry-${createHash('sha256').update([
+    claim.workItemId, claim.documentVersionId, stage, failed.stages[stage].attemptRef,
+  ].join(':')).digest('hex').slice(0, 32)}`;
+  const paths = [];
+  for (const requestId of [PREPARATION_REQUEST, retryId]) {
+    const path = initialStageCheckpointPath({ ...options, workItemId: claim.workItemId }, operation, requestId);
+    paths.push(path);
+    const store = await createCheckpointStore(path);
+    await store.writeOnce('binding', { workItemId: claim.workItemId, documentVersionId: claim.documentVersionId, operation, requestId });
+    const cached = structuredClone(failed);
+    if (requestId === PREPARATION_REQUEST) {
+      cached.status = 'REQUIRED'; cached.nextOperation = operation;
+      cached.stages[stage] = { ...cached.stages[stage], status: 'PENDING', attemptStatus: 'QUEUED', terminalCode: null };
+    }
+    await store.remoteStep({ step: 'get_parse_status-1', args: { workItemId: claim.workItemId },
+      perform: async () => ({ entry: { workItemId: claim.workItemId }, initialAnalysis: cached }) });
+    await assert.rejects(store.remoteStep({ step: `${begin}-1`, args: { workItemId: claim.workItemId,
+      ...(operation === 'SYNTHESIZE_OVERALL' ? { providers: [] } : {}), requestId },
+      perform: async () => { throw new Error('SIMULATED_INITIAL_PREPARATION_SQL_FAILURE'); } }), /SIMULATED_INITIAL_PREPARATION_SQL_FAILURE/);
+    assert.equal(await store.readOptional(`${begin}-1.result`), null);
+  }
+  // Unrelated historical roots may contain UNKNOWN data. The two exact request
+  // namespaces above never authorize reading or repairing these old records.
+  const legacy = await createCheckpointStore(initialStageCheckpointPath({ ...options, workItemId: claim.workItemId }, operation));
+  await legacy.write('model.started', { unknownLegacyOutcome: true });
+  const snapshot = async () => Promise.all(paths.map(async path => Object.fromEntries(
+    await Promise.all((await readdir(path)).sort().map(async name => [name, (await readFile(join(path, name))).toString('base64')])))));
+  const before = await snapshot();
+  const observed = { attemptRef: failed.stages[stage].attemptRef,
+    taskType: operation === 'EVALUATE_JOBAID' ? 'OPENCLAW_DYNAMIC_EVALUATION' : 'OPENCLAW_OVERALL_SYNTHESIS',
+    status: 'FAILED', terminalReason: 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED', recoveryAvailable: false,
+    commitStartedAt: null, resultContentHash: null, projectionApplied: false };
+  const calls = [], posts = [];
+  const receipt = { status: 'BLOCKED', workItemId: claim.workItemId,
+    blockedCode: `AUTO_WORK_ITEM_STAGE_${stage.toUpperCase()}_FAILED`, blockedAt: '2026-09-25T00:01:00.000Z' };
+  const dependencies = { checkpoint, now: () => new Date(START),
+    nextWorkItem: () => assert.fail('reconciliation must not claim another item'),
+    acknowledgeWorkItem: () => assert.fail('failed preparation cannot ACK success'),
+    consumeWorkItem: () => assert.fail('explicit preparation failure cannot retry BEGIN or invoke a model'),
+    readInitialStatus: async () => { calls.push('initial'); return structuredClone(failed); },
+    callTool: async (name, args) => {
+      calls.push(name);
+      assert.equal(name, 'get_action_attempt_status');
+      assert.deepEqual(args, { attemptRef: 'AQ-initial-preparation', workItemId: claim.workItemId });
+      return structuredClone(observed);
+    },
+    blockWorkItem: async input => {
+      calls.push('BLOCK'); posts.push(input);
+      assert.deepEqual(input, { workItemId: claim.workItemId, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration });
+      return { ...receipt, replayed: posts.length > 1 };
+    },
+  };
+  return { options, claim, checkpoint, failed, stage, begin, paths, snapshot, before, observed, calls, posts, dependencies };
+}
+
+for (const operation of ['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL']) {
+  test(`explicit ${operation} preparation failure reconciles two started-without-result namespaces before exact BLOCK`, async t => {
+    const f = await initialPreparationFixture(t, operation, operation === 'SYNTHESIZE_OVERALL');
+    const result = await consumeAutomaticWorkItemQueueTick(f.options, f.dependencies);
+    assert.equal(result.status, 'BLOCKED_CLAIM_FINALIZED');
+    assert.deepEqual(f.calls, ['initial', 'get_action_attempt_status', 'initial', 'BLOCK', 'BLOCK']);
+    assert.equal(await f.checkpoint.readOptional('active-claim'), null);
+    const archive = await f.checkpoint.readOptional(`blocked-claim-${f.claim.workItemId}-g${f.claim.leaseGeneration}`);
+    assert.equal(archive.claim.attentionCode, f.claim.attentionCode);
+    assert.equal(archive.claim.consumerStopped, true);
+    assert.equal(archive.claim.completionReady, false);
+    assert.equal(archive.claim.stoppedStageRequest.requestId, PREPARATION_REQUEST);
+    assert.equal(JSON.stringify(result).includes(f.claim.leaseToken), false);
+    assert.deepEqual(await f.snapshot(), f.before, 'both original UNKNOWN namespaces remain byte-identical');
+  });
+}
+
+test('expired unclaimed explicit preparation resumes only the original Host grant and BLOCKs with its renewed fence', async t => {
+  const f = await initialPreparationFixture(t);
+  const expired = { ...f.claim, leaseExpiresAt: '2026-09-24T23:59:00.000Z' };
+  await f.checkpoint.write('active-claim', expired);
+  Object.assign(f.claim, { leaseToken: TOKEN_2, leaseGeneration: 2, leaseExpiresAt: '2026-09-25T02:00:00.000Z' });
+  f.dependencies.nextWorkItem = async input => {
+    f.calls.push('resume');
+    assert.deepEqual(input, { resumeWorkItemId: f.claim.workItemId });
+    return { status: 'CLAIMED', workItemId: f.claim.workItemId, requestId: f.claim.requestId,
+      documentVersionId: f.claim.documentVersionId, workItemRevision: f.claim.workItemRevision,
+      leaseToken: f.claim.leaseToken, leaseGeneration: f.claim.leaseGeneration, leaseExpiresAt: f.claim.leaseExpiresAt };
+  };
+  const result = await consumeAutomaticWorkItemQueueTick(f.options, f.dependencies);
+  assert.equal(result.status, 'BLOCKED_CLAIM_FINALIZED');
+  assert.equal(result.leaseGeneration, 2);
+  assert.deepEqual(f.calls, ['resume', 'initial', 'get_action_attempt_status', 'initial', 'BLOCK', 'BLOCK']);
+  assert.equal(f.posts.every(post => post.leaseToken !== expired.leaseToken && post.leaseGeneration === 2), true);
+  assert.equal(await f.checkpoint.readOptional('active-claim'), null);
+  assert.deepEqual(await f.snapshot(), f.before);
+});
+
+for (const operation of ['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL']) {
+  test(`UUID ${operation} non-preparation terminal keeps its existing BLOCK path`, async t => {
+    const f = await initialPreparationFixture(t, operation);
+    f.failed.stages[f.stage].terminalCode = 'MODEL_FAILURE';
+    if (operation === 'SYNTHESIZE_OVERALL') f.failed.stages.jobAid = {
+      status: 'SUCCEEDED', requestId: PREPARATION_REQUEST, attemptStatus: 'SUCCEEDED', attemptRef: 'AQ-saved-jobaid' };
+    f.dependencies.callTool = () => assert.fail('ordinary terminal cleanup does not use preparation reconciliation');
+    const result = await consumeAutomaticWorkItemQueueTick(f.options, f.dependencies);
+    assert.equal(result.status, 'BLOCKED_CLAIM_FINALIZED');
+    assert.deepEqual(f.calls, ['initial', 'BLOCK', 'BLOCK']);
+    assert.deepEqual(await f.snapshot(), f.before);
+  });
+}
+
+for (const change of [
+  { attemptRef: 'AQ-other' }, { taskType: 'OPENCLAW_OVERALL_SYNTHESIS' }, { status: 'RUNNING' },
+  { terminalReason: 'MODEL_FAILURE' }, { recoveryAvailable: true }, { recoveryAvailable: undefined },
+  { commitStartedAt: '2026-09-25T00:00:00.000Z' }, { resultContentHash: 'a'.repeat(64) },
+  { projectionApplied: true }, { recoveryResult: null },
+]) test(`explicit preparation keeps UNKNOWN when Host attempt readback changes ${Object.keys(change)[0]}`, async t => {
+  const f = await initialPreparationFixture(t);
+  Object.assign(f.observed, change);
+  const result = await consumeAutomaticWorkItemQueueTick(f.options, f.dependencies);
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(f.posts.length, 0);
+  assert.deepEqual(await f.checkpoint.readOptional('active-claim'), f.claim);
+  assert.deepEqual(await f.snapshot(), f.before);
+});
+
+for (const kind of ['attempt-read-failure', 'fresh-read-failure', 'work-item', 'source', 'revision', 'request', 'attempt', 'active-stage', 'wrong-terminal']) {
+  test(`explicit preparation keeps UNKNOWN on ${kind} before BLOCK`, async t => {
+    const f = await initialPreparationFixture(t);
+    const original = f.dependencies.readInitialStatus;
+    let reads = 0;
+    f.dependencies.readInitialStatus = async () => {
+      const value = await original();
+      if (++reads === 1) return value;
+      if (kind === 'fresh-read-failure') throw new Error('SIMULATED_FRESH_STATUS_UNAVAILABLE');
+      if (kind === 'work-item') value.workItemId = 'WI-other';
+      if (kind === 'source') value.documentVersionId = 'DV-other';
+      if (kind === 'revision') value.workItemRevision += 1;
+      if (kind === 'request') value.stages.jobAid.requestId = '00000000-0000-4000-8000-000000000060';
+      if (kind === 'attempt') value.stages.jobAid.attemptRef = 'AQ-other';
+      if (kind === 'active-stage') value.stages.overall = { status: 'BUSY', attemptStatus: 'COMMITTING' };
+      if (kind === 'wrong-terminal') value.stages.jobAid.terminalCode = 'MODEL_FAILURE';
+      return value;
+    };
+    if (kind === 'attempt-read-failure') f.dependencies.callTool = async () => { throw new Error('SIMULATED_ATTEMPT_STATUS_UNAVAILABLE'); };
+    const result = await consumeAutomaticWorkItemQueueTick(f.options, f.dependencies);
+    assert.equal(result.status, 'REQUIRES_ATTENTION');
+    assert.equal(f.posts.length, 0);
+    assert.deepEqual(await f.checkpoint.readOptional('active-claim'), f.claim);
+    assert.deepEqual(await f.snapshot(), f.before);
+  });
+}
+
+for (const name of ['begin_dynamic_evaluation-1.result', 'assessment-current-claim', 'model.started',
+  'assessment-round-1.started', 'commit_dynamic_evaluation_candidate-1.started', 'run-result', 'jobaid-run-budget', 'unfinished.tmp']) {
+  test(`either precise preparation namespace with ${name} keeps UNKNOWN`, async t => {
+    for (const namespace of [0, 1]) {
+      const f = await initialPreparationFixture(t);
+      await writeFile(join(f.paths[namespace], `${name}.json`), '{}', { mode: 0o600 });
+      const before = await f.snapshot();
+      const result = await consumeAutomaticWorkItemQueueTick(f.options, f.dependencies);
+      assert.equal(result.status, 'REQUIRES_ATTENTION');
+      assert.equal(f.posts.length, 0);
+      assert.deepEqual(await f.checkpoint.readOptional('active-claim'), f.claim);
+      assert.deepEqual(await f.snapshot(), before);
+    }
+  });
+}
+
+for (const kind of ['corrupt', 'permission', 'directory-permission', 'symlink', 'binding']) {
+  test(`unreadable or changed preparation checkpoint (${kind}) stays UNKNOWN without quarantine`, async t => {
+    const f = await initialPreparationFixture(t);
+    const path = join(f.paths[1], 'binding.json');
+    if (kind === 'corrupt') await writeFile(path, '{', { mode: 0o600 });
+    if (kind === 'permission') await chmod(path, 0o644);
+    if (kind === 'directory-permission') await chmod(f.paths[1], 0o755);
+    if (kind === 'symlink') { await rm(path); await symlink(join(f.paths[0], 'binding.json'), path); }
+    if (kind === 'binding') await writeFile(path, JSON.stringify({ workItemId: 'WI-other' }), { mode: 0o600 });
+    const before = await f.snapshot();
+    const result = await consumeAutomaticWorkItemQueueTick(f.options, f.dependencies);
+    assert.equal(result.status, 'REQUIRES_ATTENTION');
+    assert.equal(f.posts.length, 0);
+    assert.deepEqual(await f.checkpoint.readOptional('active-claim'), f.claim);
+    assert.deepEqual(await f.snapshot(), before);
+  });
+}
+
+test('explicit preparation unknown BLOCK retains its exact intent and replays only the original receipt', async t => {
+  const f = await initialPreparationFixture(t);
+  const block = f.dependencies.blockWorkItem;
+  f.dependencies.blockWorkItem = async input => { await block(input); throw new Error('SIMULATED_BLOCK_RESPONSE_LOST'); };
+  const first = await consumeAutomaticWorkItemQueueTick(f.options, f.dependencies);
+  assert.equal(first.errorCode, 'AUTO_WORK_ITEM_BLOCK_RECEIPT_UNCERTAIN');
+  const intent = await f.checkpoint.readOptional('active-claim');
+  assert.equal(intent.attentionCode, f.claim.attentionCode);
+  assert.equal(intent.stoppedStageRequest.requestId, PREPARATION_REQUEST);
+  f.dependencies.blockWorkItem = block;
+  f.dependencies.readInitialStatus = () => assert.fail('BLOCK unknown resumes only its exact durable intent');
+  f.dependencies.callTool = () => assert.fail('BLOCK unknown does not query or begin another attempt');
+  assert.equal((await consumeAutomaticWorkItemQueueTick(f.options, f.dependencies)).status, 'BLOCKED_CLAIM_FINALIZED');
+  assert.deepEqual(await f.snapshot(), f.before);
 });
 
 test('an old uncertain block intent is kept for review without another mutation', async () => {

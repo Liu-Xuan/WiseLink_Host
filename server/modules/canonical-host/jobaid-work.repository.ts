@@ -4,6 +4,11 @@ import { tdmsReadObservation } from './jobaid-tdms-context';
 import { assertTdmsSealedResultFence, tdmsReviewBinding, type TdmsReviewCaller } from '../tdms-source/tdms-review-delegation';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
+import {
+  isJobAidConsumerStoppedReport,
+  type JobAidConsumerStoppedReport,
+  type JobAidConsumerStoppedReceipt,
+} from '@shared/jobaid-activity.interface';
 import { JOBAID_ACTIVITY_WINDOW, type JobAidExecutionObservation, type JobAidSavedActivityObservation } from './jobaid-activity';
 import { readHistoricalJobAidWork } from './jobaid-historical-reading';
 import { randomUUID } from 'node:crypto';
@@ -372,7 +377,10 @@ export class JobAidWorkRepository {
         SELECT ${actionAttempt.status} AS "status", ${actionAttempt.attemptId} AS "attemptId",
           ${actionAttempt.operationRef} AS "attemptRef", ${actionAttempt.reviewActivityJson} AS "activityJson",
           ${actionAttempt.actionType} AS "actionType", ${actionAttempt.createdAt} AS "createdAt",
-          ${actionAttempt.startedAt} AS "startedAt", ${actionAttempt.completedAt} AS "completedAt"
+          ${actionAttempt.startedAt} AS "startedAt", ${actionAttempt.completedAt} AS "completedAt",
+          CASE WHEN ${actionAttempt.taskEnvelopeJson}::jsonb->'modelInput'->>'executionMode' = 'PROGRAM_CONTROLLED_V1'
+            THEN 'PROGRAM_CONTROLLED_V1' ELSE NULL END AS "executionMode",
+          ${actionAttempt.executionModelJson}::jsonb AS "executionModel"
         FROM ${actionAttempt}
         WHERE ${actionAttempt.tenantId} = ${input.tenantId}
           AND ${actionAttempt.workItemId} = ${input.workItemId}
@@ -667,6 +675,23 @@ export class JobAidWorkRepository {
     });
   }
 
+  async recordWorkRead(input: JobAidSaveScope & {revision: JobAidWorkRevision;
+    assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>}): Promise<void> {
+    return this.recordReadObservation(input, {kind: 'ASSESSMENT_WORK_READ',
+      workRevisionRef: input.revision.workRevisionRef, workRevision: input.revision.workRevision,
+      saveRequestId: input.revision.requestId}, input.revision);
+  }
+
+  async recordProgramProgress(input: JobAidSaveScope & {
+    phase: 'MATERIALS_READY' | 'MODEL_RESPONSE_SAVED'; checkpointRef: string;
+    materialsArtifact?: import('@shared/api.interface').UnifiedPackageArtifactDescriptor;
+    assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>;
+  }): Promise<void> {
+    return this.recordReadObservation(input, {kind: 'ASSESSMENT_PROGRAM_PROGRESS',
+      phase: input.phase, checkpointRef: input.checkpointRef,
+      ...(input.materialsArtifact ? {materialsArtifact: input.materialsArtifact} : {})});
+  }
+
   async recordKnowledgeObservation(input: {
     row: ActionAttemptRow;
     actorUserId: string;
@@ -679,6 +704,71 @@ export class JobAidWorkRepository {
     });
   }
 
+  async recordConsumerStopped(input: {
+    row: ActionAttemptRow;
+    actorUserId: string;
+    fence: JobAidWorkFence;
+    sourceBindings: JobAidSourceBinding[];
+    report: JobAidConsumerStoppedReport;
+  }): Promise<JobAidConsumerStoppedReceipt> {
+    if (!isJobAidConsumerStoppedReport(input.report))
+      throw new Error('JOBAID_CONSUMER_STOPPED_REPORT_INVALID');
+    return this.actorTransactions.withActorTransaction(input.actorUserId, async ({ database }) => {
+      const primary = await this.lockSources(database, input.row, input.actorUserId, input.sourceBindings);
+      await assertAutomaticWorkItemAttemptLease(database, input.row, input.fence.principalId, input.fence.automaticLeaseRequired);
+      const [attempt] = await database.select().from(actionAttempt).where(and(
+        eq(actionAttempt.attemptId, input.row.attemptId),
+        eq(actionAttempt.tenantId, input.row.tenantId),
+        eq(actionAttempt.workItemId, input.row.workItemId),
+      )).for('update');
+      if (!attempt || !attempt.operationRef || attempt.operationRef !== input.row.operationRef ||
+          attempt.documentVersionId !== input.report.documentVersionId ||
+          attempt.inputRevision !== input.report.inputRevision ||
+          attempt.taskInputHash !== input.row.taskInputHash ||
+          attempt.idempotencyKey !== input.row.idempotencyKey ||
+          attempt.baseRevision !== primary.revision ||
+          !['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS'].includes(attempt.actionType))
+        throw new Error('JOBAID_CONSUMER_STOPPED_BINDING_CHANGED');
+      const operation = attempt.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' ? 'dynamic' : 'overall';
+      const prefix = ['openclaw-v2', operation, attempt.workItemId, attempt.documentVersionId, ''].join(':');
+      const requestId = attempt.idempotencyKey?.startsWith(prefix) ? attempt.idempotencyKey.slice(prefix.length) : null;
+      if (requestId !== input.report.requestId)
+        throw new Error('JOBAID_CONSUMER_STOPPED_BINDING_CHANGED');
+      assertJobAidWorkFence(attempt, input.fence);
+      const records: unknown = JSON.parse(attempt.reviewActivityJson ?? '[]');
+      if (!Array.isArray(records)) throw new Error('JOBAID_ACTIVITY_RECORDS_INVALID');
+      const previous = records.filter((item: unknown) => item && typeof item === 'object' &&
+        'kind' in item && item.kind === 'ASSESSMENT_CONSUMER_STOPPED');
+      if (previous.length > 1) throw new Error('JOBAID_CONSUMER_STOPPED_CONFLICT');
+      const existing: unknown = previous[0];
+      if (existing) {
+        if (!isJobAidConsumerStoppedReport(existing) || !('observedAt' in existing) ||
+            typeof existing.observedAt !== 'string' || !Number.isFinite(Date.parse(existing.observedAt)) ||
+            existing.requestId !== input.report.requestId ||
+            existing.documentVersionId !== input.report.documentVersionId ||
+            existing.inputRevision !== input.report.inputRevision ||
+            existing.modelRound !== input.report.modelRound || existing.errorCode !== input.report.errorCode)
+          throw new Error('JOBAID_CONSUMER_STOPPED_CONFLICT');
+        return { status: 'RECORDED', attemptRef: attempt.operationRef,
+          observedAt: existing.observedAt, upstreamOutcome: 'UNKNOWN', replayed: true };
+      }
+      // The row lock makes repeat reports idempotent without another table.
+      // This observation never renews a lease or changes task/result/terminal state.
+      const report = input.report;
+      const observation = { kind: 'ASSESSMENT_CONSUMER_STOPPED',
+        requestId: report.requestId, documentVersionId: report.documentVersionId,
+        inputRevision: report.inputRevision, modelRound: report.modelRound,
+        errorCode: report.errorCode, upstreamOutcome: 'UNKNOWN',
+        observedAt: new Date().toISOString() };
+      const updated = await database.update(actionAttempt).set({
+        reviewActivityJson: JSON.stringify([...records, observation]),
+      }).where(eq(actionAttempt.attemptId, attempt.attemptId)).returning({ attemptId: actionAttempt.attemptId });
+      if (updated.length !== 1) throw new Error('JOBAID_CONSUMER_STOPPED_BINDING_CHANGED');
+      return { status: 'RECORDED', attemptRef: attempt.operationRef,
+        observedAt: observation.observedAt, upstreamOutcome: 'UNKNOWN', replayed: false };
+    });
+  }
+
   private async recordReadObservation(input: {
     row: ActionAttemptRow;
     actorUserId: string;
@@ -686,7 +776,11 @@ export class JobAidWorkRepository {
     sourceBindings: JobAidSourceBinding[];
     assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>;
   }, observation: { kind: 'ASSESSMENT_SOURCES_READ'; sourceRefs: string[]; purpose: string; nativeEvidence?: AssessmentTdmsNativeEvidence[] }
-    | { kind: 'ASSESSMENT_KNOWLEDGE_OBSERVED'; status: JobAidKnowledgeObservationStatus }): Promise<void> {
+    | { kind: 'ASSESSMENT_KNOWLEDGE_OBSERVED'; status: JobAidKnowledgeObservationStatus }
+    | { kind: 'ASSESSMENT_WORK_READ'; workRevisionRef: string; workRevision: number; saveRequestId: string }
+    | { kind: 'ASSESSMENT_PROGRAM_PROGRESS'; phase: 'MATERIALS_READY' | 'MODEL_RESPONSE_SAVED'; checkpointRef: string;
+      materialsArtifact?: import('@shared/api.interface').UnifiedPackageArtifactDescriptor },
+    exactRead?: JobAidWorkRevision): Promise<void> {
     await this.actorTransactions.withActorTransaction(
       input.actorUserId,
       async ({ database }) => {
@@ -721,7 +815,24 @@ export class JobAidWorkRepository {
         )
           throw new Error('JOBAID_SOURCE_READ_BINDING_CHANGED');
         assertJobAidWorkFence(attempt, input.fence);
+        if (observation.kind === 'ASSESSMENT_WORK_READ') {
+          const saved = await this.readByRef({tenantId: attempt.tenantId, workItemId: attempt.workItemId,
+            workRevisionRef: observation.workRevisionRef}, database);
+          if (!saved || saved.actionAttemptId !== attempt.attemptId || canonicalJson(saved) !== canonicalJson(exactRead))
+            throw new Error('JOBAID_PROGRAM_READ_BINDING_INVALID');
+        }
         await input.assertNativeAuthorized?.(database);
+        if (observation.kind === 'ASSESSMENT_PROGRAM_PROGRESS') {
+          const prior: unknown = JSON.parse(attempt.reviewActivityJson ?? '[]');
+          if (!Array.isArray(prior)) throw new Error('JOBAID_ACTIVITY_RECORDS_INVALID');
+          const existing = prior.find(item => item?.kind === observation.kind && item.phase === observation.phase);
+          if (existing) {
+            if (existing.checkpointRef !== observation.checkpointRef ||
+                canonicalJson(existing.materialsArtifact ?? null) !== canonicalJson(observation.materialsArtifact ?? null))
+              throw new Error('JOBAID_PROGRAM_PROGRESS_CONFLICT');
+            return;
+          }
+        }
         const activity = {
           ...observation,
           ...(observation.kind === 'ASSESSMENT_SOURCES_READ' ? tdmsReadObservation(observation,attempt.reviewActivityJson,attempt.operationRef) : {}),

@@ -12,8 +12,12 @@ import { documentOriginalReadingCoverage } from '../../server/modules/document-m
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 
 /** Public constructed fixture only. No gold/holdout, DB, OCR or model. */
-function activityFixture(text = 'Target Q4 2026; completion TBD. should retain TLS and LN 1400-1420. 😀', crossModule = false) {
+function activityFixture(text = 'Target Q4 2026; completion TBD. should retain TLS and LN 1400-1420. 😀', crossModule = false, samePage = false) {
   const original = originalFixture();
+  if (samePage) for (const [index, locator] of original.source.sourceLocators.entries()) {
+    Object.assign(locator, { pageStart: 0, pageEnd: 0, normalizedPath: `body/block-${index}`, xpath: `/body/block[${index + 1}]` });
+    original.locations[index].pageIndex = 0;
+  }
   const seed = original.source.units[0];
   original.source.units.unshift(
     { ...structuredClone(seed), unitId: 'h-parent', kind: 'heading', order: -3, payload: { text: 'Source conditions', level: 1 } },
@@ -158,6 +162,35 @@ function serviceHarness(fixtureOverride?: ReturnType<typeof activityFixture>) {
    const chain={from:()=>chain,where:()=>chain,innerJoin:()=>chain,orderBy:()=>chain,limit:async()=>result,then:(resolve:(r:unknown)=>unknown)=>Promise.resolve(result).then(resolve)};return chain;})};
  return {service,prepare,fence,command,f,work,history,queries,db,summaryDb,originalReader,semantics,conversations,getRow:()=>row,setSaved:(v:typeof saved)=>{saved=v;},revoke:()=>{allowed=false;},deactivate:()=>{active=false;}};
 }
+
+function pageReadHarness() {
+ return serviceHarness(activityFixture(undefined,false,true));
+}
+
+test('actual PAGE read delivers and journals the complete same-page original selection',async()=>{
+ const h=pageReadHarness();const task=await h.prepare();
+ const originals=task.sourceCatalog.filter(e=>e.kind==='DOCUMENT_PASSAGE');
+ expect(originals).toHaveLength(2);
+ const receipt=await h.service.readSources({...h.fence,sourceRefs:[originals[0].evidenceRef],purpose:'Read original page and all conditions',context:'PAGE'});
+ const refs=originals.map(e=>e.evidenceRef);
+ expect(receipt.sourceRefs).toEqual(refs);
+ expect(receipt.evidence.map(e=>e.evidenceRef)).toEqual(refs);
+ expect(receipt.evidence.map(e=>e.excerpt)).toEqual(originals.map(e=>e.excerpt));
+ expect(receipt).toMatchObject({scope:'PAGE',completeRequestedScope:true});
+ expect(h.work.recordSourceRead).toHaveBeenCalledTimes(1);
+ expect(h.work.recordSourceRead).toHaveBeenLastCalledWith(expect.objectContaining({sourceRefs:refs}));
+ expect(JSON.parse(h.getRow().reviewActivityJson!)).toEqual([{kind:'ASSESSMENT_SOURCES_READ',sourceRefs:refs}]);
+});
+
+test.each(['actor','source','lease'] as const)('PAGE read keeps %s rejection ahead of a source-read journal',async(kind)=>{
+ const h=pageReadHarness();const task=await h.prepare();
+ const ref=task.sourceCatalog.find(e=>e.kind==='DOCUMENT_PASSAGE')!.evidenceRef;
+ if(kind==='actor')h.deactivate();else if(kind==='source')h.revoke();else h.getRow().leaseExpiresAt=new Date('2000-01-01T00:00:00Z');
+ await expect(h.service.readSources({...h.fence,sourceRefs:[ref],purpose:'Read complete authorized page',context:'PAGE'}))
+   .rejects.toThrow(kind==='lease'?'JOBAID_WORK_LEASE_FENCE_REJECTED':'AUTHORIZATION_CHANGED');
+ expect(JSON.parse(h.getRow().reviewActivityJson!)).toEqual([]);
+ if(kind!=='lease')expect(h.work.recordSourceRead).not.toHaveBeenCalled();
+});
 
 test('actual build→READ→SAVE→readback→Overall exact re-read closes the dependency chain',async()=>{
  const h=serviceHarness();const task=await h.prepare();expect(task.schemaVersion).toBe('wiselink.jobaid-problem-task.v3');

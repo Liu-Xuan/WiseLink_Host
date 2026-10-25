@@ -136,8 +136,7 @@ describe('ordinary document-management authorization', () => {
     ).toHaveBeenCalledWith({
       tenantId: creatorContext.tenantId,
       documentVersionId: 'DV-1',
-      actorUserId: creatorContext.actorUserId,
-    });
+    }, undefined);
   });
 
   it.each([true, false])(
@@ -172,9 +171,31 @@ describe('ordinary document-management authorization', () => {
         actorUserId: creatorContext.actorUserId,
         tenantId: creatorContext.tenantId,
         documentVersionId: 'DV-1',
-      });
+        readScope: 'TENANT',
+      }, undefined);
     },
   );
+
+  it('uses the same supplied executor for the WorkItem binding and acquisition fallback', async () => {
+    const repository = { loadTenantDocumentAuthorizationBinding: jest.fn().mockResolvedValue(null) };
+    const catalog = { readOwnedAcquisitionVersionBinding: jest.fn().mockResolvedValue(true) };
+    const database = {} as never;
+    const authorizer = new OrdinaryDocumentManagementAuthorizer(
+      repository as never, {} as never, catalog as never,
+    );
+
+    await authorizer.assertCanRead({
+      ...creatorContext, action: 'DOCUMENT_READ', documentVersionId: 'DV-1',
+    }, database);
+
+    expect(repository.loadTenantDocumentAuthorizationBinding).toHaveBeenCalledWith({
+      tenantId: creatorContext.tenantId, documentVersionId: 'DV-1',
+    }, database);
+    expect(catalog.readOwnedAcquisitionVersionBinding).toHaveBeenCalledWith({
+      tenantId: creatorContext.tenantId, documentVersionId: 'DV-1',
+      actorUserId: creatorContext.actorUserId, readScope: 'TENANT',
+    }, database);
+  });
 
   it.each([
     ['same-tenant outsider', { ...creatorContext, actorUserId: 'outsider' }],

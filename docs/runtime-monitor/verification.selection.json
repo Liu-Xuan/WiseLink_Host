@@ -7,7 +7,8 @@
     "assessment.research",
     "assessment.overall",
     "assessment.applicability",
-    "surface.reading"
+    "surface.reading",
+    "source.original"
   ],
   "changedEdgeIds": [
     "reading.wiki",
@@ -15,7 +16,8 @@
     "wiki.parent",
     "company.research",
     "research.overall",
-    "artifact.reading"
+    "artifact.reading",
+    "original.research"
   ],
   "scenarioIds": [
     "V04",
@@ -38,7 +40,11 @@
     "V03",
     "V16",
     "V53",
-    "V15"
+    "V15",
+    "V55",
+    "V56",
+    "V57",
+    "V58"
   ],
-  "reason": "记录更新于2026-10-24 Asia/Shanghai，事件保留2026-10-23 UTC：线上仍787，原c235安装/1852测试、三policy及C136一次恢复保留。局部原生身份/事项修订label的f2be→7455已正常提交、原测试通过并合并413一次标准完整build，待发布及原用户页面读回，实际401未关闭。原225 evidence逐值保留，新增8条不增加业务场景通过；三组原选择数组不变，11节点/6关系/10binding仅映射范围。CHAT已发布未真实对话验收，新Ailyplanned/null；原测试保留实际源码/时间，413仅执行完整build。"
+  "reason": "2026-10-25 新第一批为程序控制评估完整链，本地实施进行中。最新已核线上Host fa14、Native c239；c239唯一新AD后继已正常超时/BLOCK归档且SAVE0，原ATT5 UNKNOWN保留。当前默认GLM、旧事项M3分开，新程序请求将明确绑定模型。a009停止观察仅本地；新契约、代码、测试、部署、业务分层记录。保留原选择及历史证据，新增本批原文接线和V55—V58；图样式与节点不重做。"
 }

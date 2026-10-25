@@ -42,7 +42,21 @@ describe('MiaodaAutomaticWorkItemSourceAuthorizationAdapter', () => {
       roles: [],
       action: 'DOCUMENT_READ',
       documentVersionId: INPUT.documentVersionId,
-    });
+    }, undefined);
+  });
+
+  it('keeps the current transaction executor for the Host read policy', async () => {
+    const authorizer = { assertCanRead: jest.fn().mockResolvedValue(undefined) };
+    const adapter = new MiaodaAutomaticWorkItemSourceAuthorizationAdapter(authorizer as never);
+    const database = {} as never;
+
+    await adapter.authorizeSourceRead(INPUT, database);
+
+    expect(authorizer.assertCanRead).toHaveBeenCalledWith(expect.objectContaining({
+      actorUserId: INPUT.actorUserId,
+      tenantId: INPUT.tenantId,
+      documentVersionId: INPUT.documentVersionId,
+    }), database);
   });
 
   it('exports the configured Host read authorizer through the hosted dynamic module', () => {
@@ -79,6 +93,7 @@ describe('MiaodaAutomaticWorkItemSourceAuthorizationAdapter', () => {
           tenantId: input.tenantId,
           documentVersionId: input.documentVersionId,
         }),
+        undefined,
       );
     },
   );

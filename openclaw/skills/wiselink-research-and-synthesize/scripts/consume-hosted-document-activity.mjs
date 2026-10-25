@@ -779,6 +779,9 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
     saveStarted: await lease.guard(() => checkpoint.readOptional('save.started')),
   } : {};
   checkpointReadComplete = true;
+  if (persisted.modelStarted &&
+      (persisted.modelStarted.modelExecutor === 'CODEX') !== (options.modelExecutor === 'CODEX'))
+    throw new Error('ACTIVITY_MODEL_EXECUTOR_CHECKPOINT_CHANGED');
   modelDispatched = persisted.modelStarted != null || persisted.modelResult != null;
   for (const record of Object.values(persisted)) {
     assertCheckpointBinding(record, documentVersionId, runRef, checkpointSchema, checkpointPins);
@@ -1038,6 +1041,7 @@ export async function consumeHostedDocumentActivity(options, dependencies) {
       // checkpoint may clear the unknown outcome.
       await writeCheckpoint('model.started', {
         schemaVersion: checkpointSchema, step: 'model', ...checkpointPins,
+        ...(options.modelExecutor === 'CODEX' ? { modelExecutor: 'CODEX' } : {}),
         documentVersionId, runRef, inputHash, startedAt: new Date().toISOString() });
       lease.throwIfLost();
       let modelResult;

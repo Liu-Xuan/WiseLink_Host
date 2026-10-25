@@ -19,7 +19,7 @@ import type { DocumentParsingSettingsReadModel, UpdateDocumentParsingSettingsReq
 import type { DocumentRevisionReadingRequest, DocumentRevisionReadingResponse } from '@shared/document-revision-reading.interface';
 import type { DocumentSemanticReadingRequest, DocumentSemanticReadingResponse } from '@shared/document-semantic-map.interface';
 import type { DocumentActivityReadingRequest, DocumentActivityReadingResponse, DocumentActivityVersionedReadingResponse, AnyDocumentActivityReadingResponse } from '@shared/document-activity.interface';
-import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
+import type { JobAidProgramMaterialsRead, JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import type { DocumentTranslationReadingResponse } from '@shared/document-translation-reading.interface';
 import type { EngineeringIssueRead, EngineeringIssueSearchHit, EngineeringIssueSearchResponse,
   EngineeringIssueReferenceRequest, EngineeringIssueReferenceReceipt, EngineeringIssueReferenceStatus } from '@shared/engineering-issue-search.interface';
@@ -1297,6 +1297,29 @@ export function readJobAidAssessmentWork(
     operation: '读取已保存的问题评估',
     signal,
   });
+}
+
+/** Lazy, exact-attempt material read; Host rechecks every source grant. */
+export async function readProgramAssessmentMaterials(
+  workItemId: string,
+  attemptId: string,
+  signal?: AbortSignal,
+): Promise<JobAidProgramMaterialsRead> {
+  const generation: number = clientSessionGeneration;
+  const result: JobAidProgramMaterialsRead = await reviewConversationRequest<JobAidProgramMaterialsRead>({
+    url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/assessment-work/attempts/${encodeURIComponent(attemptId)}/program-materials`,
+    method: 'GET', operation: '读取本次程序评估材料', signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration)
+    throw new Error('PROGRAM_ASSESSMENT_MATERIALS_OBSOLETE');
+  if (result.schemaVersion !== 'wiselink.program-assessment-materials-read.v1' ||
+      result.workItemId !== workItemId || result.attemptId !== attemptId ||
+      result.executionMode !== 'PROGRAM_CONTROLLED_V1' || typeof result.attemptRef !== 'string' || !result.attemptRef ||
+      !result.executionModel || !Number.isFinite(Date.parse(result.preparedAt)) ||
+      !isRecord(result.snapshot) || !isRecord(result.snapshot.materials) || !isRecord(result.snapshot.modelRequest) ||
+      !['PREPARED_NOT_CONFIRMED_SENT', 'RESPONSE_RECEIVED'].includes(result.submissionEvidence))
+    throw new Error('PROGRAM_ASSESSMENT_MATERIALS_BINDING_MISMATCH');
+  return result;
 }
 
 export function searchEngineeringIssues(search: string, scope: 'CURRENT' | 'HISTORY' = 'CURRENT'): Promise<EngineeringIssueSearchResponse> {

@@ -87,3 +87,40 @@ it.each([undefined, null])('leaves unknown execution and empty saves unknown whe
 it('rejects a mismatched directory identity', () => {
   expect(() => adaptHierarchicalWikiStatus(status(), 'other-summary', context)).toThrow('Wiki 观察与当前范围不一致');
 });
+
+it('pins the observed saved revision independently of coverage generation and an active update', () => {
+  const read: HierarchicalWikiStatus = { ...status(), savedRevision: { summaryRef: 'saved-ref1', revision: 7 } };
+  const runtime = adaptHierarchicalWikiStatus(read, read.summaryId, context);
+  expect(runtime.nodes[0].summary).toContain('目标代次 3，完成代次 1');
+  expect(runtime.nodes[0].requests[0].id).toBe('request1');
+  expect(runtime.nodes[1].artifact).toContain('保存修订 7');
+  expect(runtime.nodes[1].artifact).toContain('本目录未读取正文');
+  expect(runtime.edges[0]).toMatchObject({ status: 'unknown', refs: ['saved-ref1'] });
+  for (const nodeId of ['knowledge.wiki', 'surface.reading']) {
+    expect(wikiDiagnosticRoute(event('artifact', 'saved-ref1', { nodeId }), runtime, read))
+      .toBe('/summaries/summary1?summaryRef=saved-ref1');
+  }
+  expect(wikiDiagnosticRoute(event('artifact', 'summary1'), runtime, read)).toBeNull();
+});
+
+it('rejects the old observed artifact after refresh or source denial', () => {
+  const read: HierarchicalWikiStatus = { ...status(), savedRevision: { summaryRef: 'saved-ref1', revision: 7 } };
+  const runtime = adaptHierarchicalWikiStatus(read, read.summaryId, context);
+  const next: HierarchicalWikiStatus = { ...read, savedRevision: { summaryRef: 'saved-ref2', revision: 8 } };
+  const oldEvent = event('artifact', 'saved-ref1');
+  expect(wikiDiagnosticRoute(oldEvent, runtime, next)).toBeNull();
+  expect(wikiDiagnosticRoute(oldEvent, runtime, { ...read, savedRevision: null })).toBeNull();
+  const legacy = status(), legacyRuntime = adaptHierarchicalWikiStatus(legacy, legacy.summaryId, context);
+  expect(wikiDiagnosticRoute(event('artifact', 'summary1'), legacyRuntime, { ...legacy, savedRevision: null })).toBeNull();
+  const nextRuntime = adaptHierarchicalWikiStatus(next, next.summaryId, context);
+  expect(wikiDiagnosticRoute(event('artifact', 'saved-ref2'), nextRuntime, next))
+    .toBe('/summaries/summary1?summaryRef=saved-ref2');
+});
+
+it('does not manufacture an artifact from coverage when the server returned no readable saved head', () => {
+  const read: HierarchicalWikiStatus = { ...status(), savedRevision: null };
+  const runtime = adaptHierarchicalWikiStatus(read, read.summaryId, context);
+  expect(runtime.nodes.flatMap(node => node.outputs)).toEqual([]);
+  expect(runtime.nodes[1].coverage).toBe('当前正文修订未在目录返回');
+  expect(runtime.edges[0].status).toBe('unknown');
+});

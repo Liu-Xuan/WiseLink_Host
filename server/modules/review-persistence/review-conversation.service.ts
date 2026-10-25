@@ -139,8 +139,16 @@ export class ReviewConversationService {
       workItemId,
       'RECORD_ENGINEER_REVIEW',
     );
+    const nativeUpdateRequested: boolean =
+      input.executionMode === 'AUTOMATIC' &&
+      input.purpose === 'UPDATE_ASSESSMENT' &&
+      !input.reviewScope &&
+      input.overallRequested !== true &&
+      !input.attachmentSelection &&
+      !authorized.session.oauthSession;
     if (input.executionMode === 'AUTOMATIC' &&
-        (!authorized.grant.ownerFact.isOwner || !authorized.session.oauthSession))
+        (!authorized.grant.ownerFact.isOwner ||
+          (!authorized.session.oauthSession && !nativeUpdateRequested)))
       throw externalDelegationRequired();
     const existing: PersistedReviewConversationAggregate =
       await this.requiredConversation(reviewConversationId);
@@ -148,6 +156,11 @@ export class ReviewConversationService {
     if (existing.conversation.status !== 'ACTIVE') {
       throw reviewConflict('REVIEW_CONVERSATION_CLOSED');
     }
+    if (nativeUpdateRequested &&
+        !(await this.nativeWorkItemUpdateAuthorized(
+          existing.conversation, authorized, { kind: 'WORK_ITEM' },
+        )))
+      throw externalDelegationRequired();
 
     const replay: PersistedReviewTurn | undefined = existing.turns.find(
       (turn: PersistedReviewTurn) => turn.requestId === input.requestId,
@@ -181,6 +194,7 @@ export class ReviewConversationService {
         attachmentBindings: replay.attachmentBindings,
         requestedModel: replay.requestedModel,
         reviewScope: replay.reviewScope ?? null,
+        nativeUpdateAuthorized: nativeUpdateRequested,
       });
     }
 
@@ -295,6 +309,7 @@ export class ReviewConversationService {
       overallRequested: input.overallRequested,
       attachmentBindings,
       requestedModel,
+      nativeUpdateAuthorized: nativeUpdateRequested,
       reviewScope: input.reviewScope
         ? await this.freezeMatterScope(authorized, input.reviewScope)
         : null,
@@ -316,8 +331,10 @@ export class ReviewConversationService {
     attachmentBindings: ReviewAttachmentBinding[];
     requestedModel?: CanonicalExecutionModelSelection;
     reviewScope?: PersistedMatterReviewScope | null;
+    /** Request-local authorization only; never persisted as a turn marker. */
+    nativeUpdateAuthorized?: boolean;
   }): Promise<AppendReviewTextTurnResponse> {
-    const appended = await this.conversations.appendTextTurn({
+    const append = () => this.conversations.appendTextTurn({
       conversation: input.conversation,
       requestId: input.requestId,
       userMessage: input.userMessage,
@@ -337,8 +354,13 @@ export class ReviewConversationService {
       requestedModel: input.requestedModel,
       reviewScope: input.reviewScope,
     });
+    const appended = input.nativeUpdateAuthorized
+      ? await this.sessions.withVerifiedReviewBrowserSql(append) : await append();
     const aggregate: PersistedReviewConversationAggregate =
-      await this.requiredConversation(input.conversation.reviewConversationId);
+      input.nativeUpdateAuthorized
+        ? await this.sessions.withVerifiedReviewBrowserSql(() =>
+          this.requiredConversation(input.conversation.reviewConversationId))
+        : await this.requiredConversation(input.conversation.reviewConversationId);
     const conversation = await this.projectConversation(
       aggregate,
       input.authorized.grant.workItemRevision,
@@ -406,9 +428,12 @@ export class ReviewConversationService {
     const model = reviewConversationReadModel(aggregate, currentRevision);
     model.reviewScope = selected;
     const conversation = aggregate.conversation;
+    const nativeUpdateAuthorized: boolean = authorized && !authorized.session.oauthSession
+      ? await this.nativeWorkItemUpdateAuthorized(conversation, authorized, selected)
+      : false;
     model.automaticExecutionAvailable =
-      Boolean(authorized?.grant.ownerFact.isOwner &&
-        authorized.session.oauthSession) &&
+      (Boolean(authorized?.grant.ownerFact.isOwner &&
+        authorized.session.oauthSession) || nativeUpdateAuthorized) &&
       conversation.status === 'ACTIVE' &&
       (await this.automaticExecutionAvailable(
         conversation,
@@ -548,6 +573,37 @@ export class ReviewConversationService {
       conversation.workItemId,
       new Date(),
     );
+  }
+
+  private async nativeWorkItemUpdateAuthorized(
+    conversation: PersistedReviewConversation,
+    authorized: AuthorizedReviewAccess,
+    selected: ReviewScopeSelection,
+  ): Promise<boolean> {
+    if (selected.kind !== 'WORK_ITEM' || conversation.status !== 'ACTIVE' ||
+        !authorized.grant.ownerFact.isOwner ||
+        conversation.workItemId !== authorized.grant.workItemId ||
+        conversation.tenantId !== authorized.session.actor.tenantId ||
+        conversation.actorId !== authorized.session.actor.canonicalSubject.id)
+      return false;
+    const access = authorized.grant.action === 'RECORD_ENGINEER_REVIEW'
+      ? authorized.grant
+      : await this.objectAccess.freshRead({
+          actor: authorized.session.actor,
+          action: 'RECORD_ENGINEER_REVIEW',
+          accessRoot: { kind: 'WORK_ITEM', id: conversation.workItemId },
+        });
+    if (!access.allowed || access.action !== 'RECORD_ENGINEER_REVIEW' ||
+        !access.ownerFact.isOwner || access.workItemId !== conversation.workItemId ||
+        access.tenantId !== conversation.tenantId ||
+        access.actorUserId !== conversation.actorId ||
+        access.workItemRevision !== authorized.grant.workItemRevision)
+      return false;
+    return this.sessions.withVerifiedReviewBrowserSql(() =>
+      this.conversations.hasActiveOfficialActorMapping({
+        tenantId: conversation.tenantId,
+        actorId: conversation.actorId,
+      }));
   }
 
   private async automaticExecutionAvailable(

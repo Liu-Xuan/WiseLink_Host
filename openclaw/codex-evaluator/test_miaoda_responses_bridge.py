@@ -53,6 +53,16 @@ def events(handler):
 
 
 class BridgeTests(unittest.TestCase):
+    def test_generation_empty_allowlist_filters_all_builtin_tools_and_rejects_calls(self):
+        offered = body()
+        payload, returned = bridge.convert_request(offered, frozenset(), 512)
+        self.assertNotIn("tools", payload)
+        self.assertEqual(returned, [])
+        emitter = bridge.Emitter(Handler(), frozenset())
+        emitter.delta({"tool_calls": [{"index": 0, "id": "call_builtin", "function": {"name": "exec_command", "arguments": "{}"}}]})
+        with self.assertRaisesRegex(bridge.Rejected, "tool_not_allowed"):
+            emitter.complete()
+
     def test_namespace_only_flattens_exact_allowed_children(self):
         selected = {}
         payload, returned = bridge.convert_request(namespaced_body(), ALLOWED, 8192, selected)

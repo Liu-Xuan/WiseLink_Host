@@ -68,7 +68,8 @@ async function consumeMatterAttempt(options, dependencies, locatorCheckpoint, re
   const fence = { ...target, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration };
   const call = (operation, input = {}, requestOptions) => dependencies.callTool('matter_action_attempt', { ...fence, operation, ...input }, requestOptions);
   const checkpoint = await (dependencies.createCheckpoint ?? createCheckpointStore)(join(options.checkpointRoot, 'matter', encodeURIComponent(target.matterId), encodeURIComponent(target.attemptRef)));
-  const binding = { ...target, inputHash: task.inputHash };
+  const binding = { ...target, inputHash: task.inputHash,
+    ...(options.modelExecutor === 'CODEX' ? { modelExecutor: 'CODEX' } : {}) };
   const savedStatus = task.modelInput.overviewCorrectionProtocol === 'OPENCLAW_SCOPED_V1'
     ? 'MATTER_OVERVIEW_CORRECTION_SAVED' : 'MATTER_WORK_SAVED';
   const storedBinding = await checkpoint.readOptional('binding');

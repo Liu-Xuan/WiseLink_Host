@@ -1110,7 +1110,7 @@ export class HierarchicalWikiService {
     const now: string = new Date().toISOString();
     const snapshot: { reconcile: true } | { reconcile: false; listing: HierarchicalWikiList } =
       await this.repository.readBrowser(actor, async (database, reader) => {
-        const rows: WikiRow[] = await wikiRows(database, reader);
+        const rows: WikiRow[] = await wikiRows(database, reader, true);
         for (const row of rows.filter(
           (item: WikiRow) => item.actorUserId === reader.actorUserId && item.state.active,
         )) {
@@ -1131,7 +1131,7 @@ export class HierarchicalWikiService {
       reconcileWikiReservations(database, this.repository, owner, await wikiRows(database, owner), now),
     );
     return this.repository.readBrowser(actor, async (database, owner) =>
-      this.listRows(await wikiRows(database, owner), owner, database, cursor),
+      this.listRows(await wikiRows(database, owner, true), owner, database, cursor),
     );
   }
 
@@ -1209,6 +1209,9 @@ export class HierarchicalWikiService {
         firstDirtyAt: row.state.firstDirtyAt,
         dueAt: row.state.dueAt,
         coveredMembers: denied ? [] : Object.values(row.state.delivered),
+        savedRevision: !denied && row.currentSummaryRef
+          ? { summaryRef: row.currentSummaryRef, revision: savedWikiRevision(row) }
+          : null,
         waiting: denied ? [] : row.state.waiting,
         activeRequest:
           !denied && row.state.active && attempt &&
@@ -1330,4 +1333,11 @@ export class HierarchicalWikiService {
     )
       throw summaryError('WIKI_SERVICE_SCOPE_UNAVAILABLE', 503);
   }
+}
+
+function savedWikiRevision(row: WikiRow): number {
+  const revision: number | null | undefined = row.currentRevision;
+  if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 1)
+    throw summaryError('WIKI_PERSISTENCE_INVALID');
+  return revision;
 }

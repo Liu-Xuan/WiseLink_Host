@@ -66,10 +66,17 @@ export interface TdmsNativeTransactionInput {
     workItemId: string;
     documentVersionId: string;
     workItemRevision: number;
+  } & ({
     workRevisionRef: string;
     /** Exact saved revisions read and compared by this regeneration guard. */
     workRevisionRefs?: string[];
-  };
+    programAttemptId?: never;
+  } | {
+    /** Exact prepared-input READ journal; does not grant runtime or saved-work authority. */
+    programAttemptId: string;
+    workRevisionRef?: never;
+    workRevisionRefs?: never;
+  });
   evidence: AssessmentEvidence[];
   database: PostgresJsDatabase;
 }
@@ -335,7 +342,10 @@ export async function assertTdmsNativeInTransaction(
       ) ||
       !browser.workItemId?.trim() ||
       !browser.documentVersionId?.trim() ||
-      !browser.workRevisionRef?.trim() ||
+      (browser.programAttemptId !== undefined
+        ? !browser.programAttemptId.trim() || browser.action !== 'READ_WORK_ITEM' ||
+          browser.workRevisionRef !== undefined || browser.workRevisionRefs !== undefined
+        : !browser.workRevisionRef?.trim()) ||
       (browser.workRevisionRefs !== undefined &&
         (!Array.isArray(browser.workRevisionRefs) ||
           !browser.workRevisionRefs.includes(browser.workRevisionRef) ||

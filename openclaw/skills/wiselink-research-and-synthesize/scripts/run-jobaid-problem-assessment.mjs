@@ -20,8 +20,9 @@ import {
   WISELINK_PROFILE_REF,
   WISELINK_SKILL_VERSION,
 } from './validate-payload.mjs';
-import { classifyHostedAssessmentProtocol, classifyHostedGatewayFailure, hostedGatewayTransportFailureDiagnostic,
-  requestHostedGateway } from './request-hosted-gateway.mjs';
+import { classifyHostedAssessmentProtocol, classifyHostedGatewayFailure,
+  hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
+import { modelExecutor, modelExecutorProvenance, modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway } from './model-executor.mjs';
 
 export const JOBAID_PROBLEM_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v2';
 export const JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA = 'wiselink.jobaid-problem-task.v3';
@@ -229,8 +230,10 @@ export function projectBoundedInitialJobAidInput(input) {
   };
 }
 
-/** Repair only two observed citation spellings when the Host catalog has one exact match. */
-export function canonicalizeKnownJobAidSourceAliases(work, availableSources) {
+/** Repair observed spellings only to unique exact Host refs; an extra PRUN also needs actual delivery. */
+export function canonicalizeKnownJobAidSourceAliases(work, availableSources, deliveredEvidence = []) {
+  const catalogRefs = new Set(availableSources.map(source => source.ref));
+  const deliveredRefs = new Set(deliveredEvidence.map(source => source.evidenceRef));
   const aliases = new Map();
   const register = (alias, exact) => {
     if (!alias || alias === exact) return;
@@ -239,15 +242,23 @@ export function canonicalizeKnownJobAidSourceAliases(work, availableSources) {
   };
   for (const { ref } of availableSources) {
     register(`evidenceRef:${ref}`, ref);
-    const original = /^(DOCUMENT_ORIGINAL:[^:]+):(PRUN-[A-Za-z0-9-]+):\2:(u\d+:p\d+)$/u.exec(ref);
+    const original = /^(DOCUMENT_ORIGINAL:[^:]+):(PRUN-[A-Za-z0-9-]+):\2:((?!PRUN-)[^\s]+)$/u.exec(ref);
     if (original) {
-      const short = `${original[1]}:${original[2]}:${original[3]}`;
-      register(short, ref);
-      register(`evidenceRef:${short}`, ref);
+      if (/^u\d+:p\d+$/u.test(original[3])) {
+        const short = `${original[1]}:${original[2]}:${original[3]}`;
+        register(short, ref);
+        register(`evidenceRef:${short}`, ref);
+      }
+      if (deliveredRefs.has(ref)) {
+        const extra = `${original[1]}:${original[2]}:${original[2]}:${original[2]}:${original[3]}`;
+        register(extra, ref);
+        register(`evidenceRef:${extra}`, ref);
+      }
     }
   }
   const repaired = new Map();
   const exact = (ref) => {
+    if (catalogRefs.has(ref)) return ref;
     const replacement = aliases.get(ref);
     if (!replacement) return ref;
     repaired.set(ref, replacement);
@@ -548,6 +559,7 @@ export async function invokeHostedJobAidProblemModel(
   });
   if (checkpoint) {
     const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,
+      ...(modelExecutor(options) === 'CODEX' ? { modelExecutor: 'CODEX' } : {}),
       executionModel: options.executionModel ?? null };
     const existing = await checkpoint.readOptional('assessment-enabled');
     if (existing && !isDeepStrictEqual(existing.binding, binding)) throw new Error('JOBAID_CHECKPOINT_BINDING_MISMATCH');
@@ -637,7 +649,7 @@ export async function invokeHostedJobAidProblemModel(
       modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
       promptVersion,
       skillVersion: WISELINK_SKILL_VERSION,
-      toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+      toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, ...modelExecutorProvenance(options),
         'jobaid-problem-protocol': modelInput.schemaVersion === JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA ? '3' : '2',
         ...(modelInput.tdmsContext ? { 'tdms-native-context': '1' } : {}) },
       runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
@@ -783,13 +795,13 @@ export async function invokeHostedJobAidProblemModel(
     const requestModel = async () => {
       let response;
       try { response = await (
-        dependencies.requestGateway ?? requestHostedGateway
-      )(new URL('/v1/chat/completions', options.gatewayUrl), {
+        (endpoint, init) => requestModelGateway(options, endpoint, init, dependencies)
+      )(modelGatewayEndpoint(options), {
         method: 'POST',
         headers: {
           accept: 'application/json',
           'content-type': 'application/json',
-          authorization: `Bearer ${options.gatewayToken}`,
+          ...modelGatewayHeaders(options),
           ...executionModelHeaders(options),
         },
         body: requestBody,
@@ -899,7 +911,7 @@ export async function invokeHostedJobAidProblemModel(
           provenance: {
             modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
             promptVersion, skillVersion: WISELINK_SKILL_VERSION,
-            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
+            toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, ...modelExecutorProvenance(options), 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
             runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
           },
         };
@@ -1046,6 +1058,7 @@ export async function invokeHostedJobAidProblemModel(
             const normalized = canonicalizeKnownJobAidSourceAliases(
               submittedWork,
               sessionModelInput.availableSources,
+              evidenceCache.evidence,
             );
             submittedWork = normalized.work;
             if (normalized.repairs.length)
@@ -1091,7 +1104,7 @@ export async function invokeHostedJobAidProblemModel(
               promptVersion,
               skillVersion: WISELINK_SKILL_VERSION,
               toolVersions: {
-                [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+                [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, ...modelExecutorProvenance(options),
                 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}),
               },
               runMetrics: {
@@ -1136,7 +1149,7 @@ export async function invokeHostedJobAidProblemModel(
           : invalidWorkJson ? 'JOBAID_WORK_JSON_INVALID' : 'JOBAID_WORK_VALIDATION_FAILED', provenance: {
           modelVersion: `configured-route:${options.executionModel?.modelRef ?? options.configuredModelVersion}`,
           promptVersion, skillVersion: WISELINK_SKILL_VERSION,
-          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
+          toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, ...modelExecutorProvenance(options), 'jobaid-problem-protocol': modelInput.schemaVersion===JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA?'3':'2', ...(modelInput.tdmsContext ? {'tdms-native-context':'1'} : {}) },
           runMetrics: { durationMs: Date.now() - startedAt, inputUnits, outputUnits },
         } };
       }

@@ -191,7 +191,9 @@ function setup(count = 1) {
       let selected: WikiRow[] = rows.filter((row: WikiRow) =>
         params.includes(row.tenantId),
       );
-      if (query.includes('actor_user_id='))
+      // Only the directory WHERE clause narrows the requesting actor; the
+      // saved-head JOIN also compares actor_user_id without adding a parameter.
+      if (query.includes('AND actor_user_id='))
         selected = selected.filter((row: WikiRow) =>
           params.includes(row.actorUserId),
         );

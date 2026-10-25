@@ -233,7 +233,9 @@ export class CanonicalHostController {
       hostActor(httpRequest),
     );
     return this.sessions
-      ? this.sessions.withRequestSession(httpRequest, operation)
+      ? this.sessions.withNativeBrowserIdentity(httpRequest, () =>
+          this.sessions!.withVerifiedNativeBrowserSql(operation),
+        )
       : operation();
   }
 
@@ -244,6 +246,14 @@ export class CanonicalHostController {
   ) {
     if (!this.jobAid) throw new Error('JOBAID_RUNTIME_UNAVAILABLE');
     return this.jobAid.readBrowser(workItemId, hostActor(request));
+  }
+
+  @Get('work-items/:workItemId/assessment-work/attempts/:attemptId/program-materials')
+  programAssessmentMaterials(@Param('workItemId') workItemId: string,
+    @Param('attemptId') attemptId: string, @Req() request: Request) {
+    if (!this.jobAid || !this.sessions) throw new Error('JOBAID_RUNTIME_UNAVAILABLE');
+    return this.sessions.withNativeBrowserIdentity(request, () => this.sessions!.withVerifiedNativeBrowserSql(() =>
+      this.jobAid!.readBrowserProgramMaterials(workItemId, attemptId, hostActor(request))));
   }
 
   @Get('work-items/:workItemId/structured-content')
@@ -320,7 +330,9 @@ export class CanonicalHostController {
       hostActor(httpRequest),
     );
     return this.sessions
-      ? this.sessions.withRequestSession(httpRequest, operation)
+      ? this.sessions.withNativeBrowserIdentity(httpRequest, () =>
+          this.sessions!.withVerifiedNativeBrowserSql(operation),
+        )
       : operation();
   }
 

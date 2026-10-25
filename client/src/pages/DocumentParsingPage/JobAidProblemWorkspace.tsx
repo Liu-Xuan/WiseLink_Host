@@ -54,6 +54,7 @@ const executionLabels: Record<string, string> = {
   CANCELLED: '已取消',
   CONFLICT: '版本冲突',
   OBSOLETE: '执行已过期',
+  UNKNOWN: '原请求结果待核',
 };
 const capabilityLabels = {
   AVAILABLE: '可用',
@@ -159,20 +160,33 @@ export function JobAidProblemReading({
   const nodes = useRef(new Map<string, HTMLElement>());
   const current = data.current;
   const allowed = initialAnalysis?.continuationOperations ?? [];
+  const stoppedResultPending: boolean = !!data.activity?.consumerStopped &&
+    data.activity.attemptRef === data.selectedExecution?.attemptRef &&
+    data.selectedExecution?.status !== 'SUCCEEDED';
+  const needsAttention: boolean = stoppedResultPending &&
+    ['REQUESTED', 'QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(data.executionStatus ?? '');
+  const resultPending: boolean = stoppedResultPending || data.executionStatus === 'UNKNOWN' ||
+    initialAnalysis?.stages.jobAid.terminalCode?.includes('UNKNOWN') === true;
+  const assessmentBusy: boolean = data.executionStatus
+    ? ['REQUESTED', 'QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(data.executionStatus)
+    : initialAnalysis?.stages.jobAid.status === 'BUSY';
   const actions = (
     <div className="wl-jobaid-actions">
       {initialAnalysis
         ? (['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'] as const)
-            .filter((operation) => allowed.includes(operation))
+            .filter((operation) => allowed.includes(operation) &&
+              (operation !== 'EVALUATE_JOBAID' || !assessmentBusy))
             .map((operation) => (
               <InitialAnalysisContinueButton
                 key={operation}
                 workItemId={data.workItemId}
                 expectedRevision={initialAnalysis.workItemRevision}
                 operation={operation}
+                executionMode={operation === 'EVALUATE_JOBAID' ? 'PROGRAM_CONTROLLED_V1' : undefined}
+                analysisModelName={initialAnalysis.analysisModel?.displayName}
                 label={
                   operation === 'EVALUATE_JOBAID'
-                    ? '继续问题分析'
+                    ? '开始程序评估'
                     : '继续形成整体意见'
                 }
                 onQueued={() => onContinue?.()}
@@ -182,12 +196,24 @@ export function JobAidProblemReading({
     </div>
   );
   const execution = data.executionStatus ? (
-    <p role="status">
-      当前运行：{executionLabels[data.executionStatus] ?? data.executionStatus}。
-      {data.executionStatus === 'SUCCEEDED'
-        ? null
-        : '已保存内容独立保留，运行状态不改变其完成范围。'}
-    </p>
+    <>
+      {data.selectedExecution?.executionMode === 'PROGRAM_CONTROLLED_V1' ? <p>
+        本轮程序评估 · 自主调查未启用
+        {data.selectedExecution.executionModel ? ` · 本次模型：${data.selectedExecution.executionModel.displayName}` : ''}
+      </p> : null}
+      <p role="status">
+        {needsAttention
+          ? '执行需处理：执行已停止，原请求结果待核；任务正在等待系统收尾。'
+          : <>当前运行：{executionLabels[data.executionStatus] ?? data.executionStatus}。</>}
+        {data.executionStatus === 'SUCCEEDED'
+          ? null
+          : '已保存内容独立保留，运行状态不改变其完成范围。'}
+      </p>
+      {needsAttention ? <details>
+        <summary>任务状态记录</summary>
+        <p>Host状态字段：{data.executionStatus}</p>
+      </details> : null}
+    </>
   ) : null;
   if (!current)
     return (
@@ -200,8 +226,12 @@ export function JobAidProblemReading({
           尚无已保存的问题分析。原文和工程师输入仍可阅读；形成的工作会在这里接续。
         </p>
         {execution}
+        {resultPending && !needsAttention ? <p role="status">
+          原请求结果待核。{allowed.includes('EVALUATE_JOBAID') && !assessmentBusy
+            ? '本次程序评估会另建请求，保留原请求记录。' : '当前没有可发起的新评估范围。'}
+        </p> : null}
         <JobAidExecutionActivity activity={data.activity} />
-        {data.latestAttempt ? (
+        {!needsAttention && data.latestAttempt ? (
           <p role="status">
             最近一次评估请求：
             {executionLabels[data.latestAttempt.status] ??
@@ -216,6 +246,7 @@ export function JobAidProblemReading({
   const reading = jobAidReadingResult(current);
   const overallMatches: boolean = Boolean(
     overall?.readingResult &&
+    overall.status === 'CANDIDATE_ONLY' && overall.staleReason === null &&
     overall.basedOnJobAidWorkRevisionRef === current.workRevisionRef &&
     data.overallStatus === 'CURRENT' &&
     data.overallBasedOnWorkRevisionRef === current.workRevisionRef,
@@ -289,8 +320,12 @@ export function JobAidProblemReading({
         </div>
         {actions}
         {execution}
+        {resultPending && !needsAttention ? <p role="status">
+          原请求结果待核。{allowed.includes('EVALUATE_JOBAID') && !assessmentBusy
+            ? '本次程序评估会另建请求，保留原请求记录。' : '当前没有可发起的新评估范围。'}
+        </p> : null}
         <JobAidExecutionActivity activity={data.activity} />
-        {data.latestAttempt &&
+        {!needsAttention && data.latestAttempt &&
         data.latestAttempt.attemptId !== current.actionAttemptId ? (
           <p role="status">
             后续评估请求：
@@ -312,7 +347,7 @@ export function JobAidProblemReading({
         </p>
       ) : !overallMatches ? (
         <p className="wl-jobaid-notice">
-          当前展示已保存的问题分析；尚未读到与本工作版本一致的整体意见。
+          工作已保存，综合待更新。当前工作正文可立即阅读；尚未读到与本工作版本一致的整体意见。
         </p>
       ) : null}
       {presentation !== 'investigation' ? <div className="wl-jobaid-tabs" aria-label="问题分析阅读视图">

@@ -7,6 +7,7 @@ import {
   validateSummaryGatewayReceipt,
   validateSummaryRunBudget,
 } from './derived-summary-native-gateway.mjs';
+import { createSummaryCodexGatewaySession, validateSummaryCodexReceipt } from './derived-summary-codex-gateway.mjs';
 import { validateDerivedSummaryTask } from './derived-summary-shape.mjs';
 import { canonicalJson, WISELINK_PROFILE_REF } from './validate-payload.mjs';
 import { requestHostedGateway } from './request-hosted-gateway.mjs';
@@ -14,6 +15,35 @@ import { requestHostedGateway } from './request-hosted-gateway.mjs';
 async function providerClosed(store, active) {
   const started = await store.readOptional('summary-gateway.started');
   const receipt = await store.readOptional('summary-gateway.receipt');
+  const codexStarted = await store.readOptional('summary-codex.started');
+  const codexReceipt = await store.readOptional('summary-codex.receipt');
+  if (started && codexStarted) throw new Error('WIKI_GATEWAY_BINDING_INVALID');
+  if (codexStarted) {
+    if (receipt || started || codexStarted.executor !== 'CODEX' ||
+        codexStarted.attemptRef !== active.attemptRef ||
+        codexStarted.subject?.kind !== (active.kind === 'MATTER' ? 'ENGINEERING_MATTER' : 'DERIVED_SUMMARY') ||
+        (active.kind === 'MATTER' ? codexStarted.subject.matterId !== active.matterId
+          : codexStarted.subject.summaryId !== active.summaryId))
+      throw new Error('WIKI_CODEX_BINDING_INVALID');
+    if (active.kind === 'MATTER') {
+      const binding = await store.readOptional('binding');
+      const gateway = await store.readOptional('wiki-matter.gateway-binding');
+      if (binding?.matterId !== active.matterId || binding.attemptRef !== active.attemptRef ||
+          gateway?.matterId !== active.matterId || gateway.attemptRef !== active.attemptRef ||
+          canonicalJson(codexStarted.executionModel) !== canonicalJson(gateway.executionModel) ||
+          codexStarted.taskDeadlineAt !== gateway.deadlineAt)
+        throw new Error('WIKI_CODEX_BINDING_INVALID');
+    } else {
+      const binding = await store.readOptional('binding');
+      if (binding?.summaryId !== active.summaryId || binding.attemptRef !== active.attemptRef ||
+          canonicalJson(codexStarted.executionModel) !==
+            canonicalJson(validateDerivedSummaryTask(binding.task, active).executionModel) ||
+          codexStarted.taskDeadlineAt !== binding.task.deadlineAt)
+        throw new Error('WIKI_CODEX_BINDING_INVALID');
+    }
+    return !!codexReceipt && validateSummaryCodexReceipt(codexReceipt, codexStarted).closed;
+  }
+  if (codexReceipt) throw new Error('WIKI_CODEX_BINDING_INVALID');
   if (!started) return active.phase === 'NO_GATEWAY' && !receipt;
   if (active.kind === 'MATTER') {
     const binding = await store.readOptional('binding');
@@ -83,6 +113,7 @@ export function summaryProviderSafelyClosed(receipt, binding) {
  * work is IDLE. The pointer precedes provider preparation and survives UNKNOWN. */
 export async function consumeHierarchicalWikiIdle(options, dependencies) {
   if (!options.enabled) return { status: 'IDLE' };
+  const codex = options.modelExecutor === 'CODEX';
   const runBudget = validateSummaryRunBudget(options.runBudget);
   const { checkpoint } = dependencies;
   let active = await checkpoint.readOptional('active-wiki');
@@ -94,9 +125,14 @@ export async function consumeHierarchicalWikiIdle(options, dependencies) {
         ? !/^MAT-[A-Za-z0-9_-]{1,92}$/u.test(active.matterId)
         : !/^DS-[A-Za-z0-9_-]{1,93}$/u.test(active.summaryId)) ||
       !/^AQ-[A-Za-z0-9-]+$/u.test(active.attemptRef) ||
+      ![undefined, 'CODEX'].includes(active.modelExecutor) ||
       !['NO_GATEWAY', 'PREPARING'].includes(active.phase))
   )
     throw new Error('WIKI_ACTIVE_POINTER_INVALID');
+  // Markerless v1 pointers belong to the original Hosted executor. The exact
+  // owner must not resume an unresolved attempt with a different executor.
+  if (active && (active.modelExecutor === 'CODEX') !== codex)
+    throw new Error('WIKI_MODEL_EXECUTOR_BINDING_INVALID');
   if (!active) {
     const next = await dependencies.callTool('next_hierarchical_wiki', {});
     if (next.status === 'IDLE') return next;
@@ -116,6 +152,7 @@ export async function consumeHierarchicalWikiIdle(options, dependencies) {
         ? { kind: 'MATTER', matterId: next.matterId }
         : { kind: 'SUMMARY', summaryId: next.summaryId }),
       attemptRef: next.attemptRef,
+      ...(codex ? { modelExecutor: 'CODEX' } : {}),
       phase: 'NO_GATEWAY',
     };
     await checkpoint.write('active-wiki', active);
@@ -165,15 +202,20 @@ export async function consumeHierarchicalWikiIdle(options, dependencies) {
   try {
     // Each new invocation gets its own one-use preparer. Existing attempt start
     // markers and gateway receipts still prevent rearming an old request.
-    const prepare = dependencies.createGatewayPreparer();
+    const prepare = codex ? null : dependencies.createGatewayPreparer();
     const prepareGateway = async (binding) => {
       active = { ...active, phase: 'PREPARING' };
       await checkpoint.write('active-wiki', active);
       return prepare(binding);
     };
+    const onCodexStarted = async () => {
+      active = { ...active, phase: 'PREPARING' };
+      await checkpoint.write('active-wiki', active);
+    };
     const result = matter
       ? await (dependencies.consumeMatter ?? consumeHostedMatter)(
-          { matterId: target.matterId, checkpointRoot: matterRoot },
+          { matterId: target.matterId, checkpointRoot: matterRoot,
+            ...(codex ? { modelExecutor: 'CODEX' } : {}) },
           {
             callTool: callMatter,
             createCheckpoint: dependencies.createCheckpoint,
@@ -195,13 +237,13 @@ export async function consumeHierarchicalWikiIdle(options, dependencies) {
                 throw new Error('WIKI_GATEWAY_BINDING_INVALID');
               if (!previous)
                 await store.writeOnce('wiki-matter.gateway-binding', binding);
-              const gateway = createSummaryGatewaySession({
+              const gateway = (codex ? createSummaryCodexGatewaySession : createSummaryGatewaySession)({
                 ...binding,
                 runBudget,
                 checkpoint: store,
-                prepareGateway,
-                requestGateway:
-                  dependencies.requestGateway ?? requestHostedGateway,
+                ...(codex ? { codexOptions: options.codexOptions, onStarted: onCodexStarted,
+                  requestGateway: dependencies.requestGateway } : { prepareGateway,
+                  requestGateway: dependencies.requestGateway ?? requestHostedGateway }),
               });
               try {
                 return await dependencies.invokeMatterModel(input, hooks, {
@@ -219,12 +261,15 @@ export async function consumeHierarchicalWikiIdle(options, dependencies) {
             runBudget,
             checkpointRoot: options.checkpointRoot,
             endpointKey: options.endpointKey,
+            modelExecutor: options.modelExecutor,
+            codexOptions: options.codexOptions,
           },
           {
             callTool: dependencies.callTool,
             createCheckpoint: dependencies.createCheckpoint,
             invokeModel: dependencies.invokeModel,
             prepareGateway,
+            onCodexStarted,
           },
         );
     if (!(await providerClosed(store, active)))
@@ -248,7 +293,8 @@ export async function consumeHierarchicalWikiIdle(options, dependencies) {
       result,
     };
   } catch (error) {
-    const started = await store.readOptional('summary-gateway.started');
+    const started = await store.readOptional('summary-gateway.started') ||
+      await store.readOptional('summary-codex.started');
     let closed = false;
     let controlError = null;
     try {

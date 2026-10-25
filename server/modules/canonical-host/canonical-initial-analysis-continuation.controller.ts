@@ -32,8 +32,16 @@ export class CanonicalInitialAnalysisContinuationController {
     @Req() request: Request,
   ) {
     try {
-      return await this.sessions.withRequestSession(request, (session) =>
-        this.service.request(workItemId, body, hostActor(request), session, request),
+      return await this.sessions.withNativeBrowserIdentity(request, (identity) =>
+        this.sessions.withVerifiedNativeBrowserSql(() =>
+          this.service.request(
+            workItemId,
+            body,
+            hostActor(request),
+            identity.oauthSession,
+            request,
+          ),
+        ),
       );
     } catch (error) {
       if (error instanceof z.ZodError)

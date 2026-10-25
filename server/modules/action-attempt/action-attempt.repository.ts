@@ -401,7 +401,14 @@ export class ActionAttemptRepository {
         // captureForWorkItem precedes asynchronous input preparation. A late
         // prepared request must not insert its old model after a pending model
         // selection changed while it was awaiting that preparation.
-        if (hasInitialModel) {
+        const requestTask = JSON.parse(String(attempt.taskEnvelopeJson)) as OpenClawTaskEnvelope;
+        const explicitProgram = requestTask.modelInput?.executionMode === 'PROGRAM_CONTROLLED_V1';
+        if (explicitProgram && (attempt.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
+            requestTask.modelInput.schemaVersion !== 'wiselink.3_1.initial_analysis_request.v1' ||
+            requestTask.executionModel?.modelRef !== requestTask.modelInput.modelRef ||
+            canonicalJson(requestTask.executionModel) !== canonicalJson(readStoredExecutionModel(attempt.executionModelJson))))
+          throw new Error('ACTION_ATTEMPT_PROGRAM_MODEL_BINDING_INVALID');
+        if (hasInitialModel && !explicitProgram) {
           const current = readStoredExecutionModel(owner.analysisModelJson);
           const captured = readStoredExecutionModel(attempt.executionModelJson);
           if (
@@ -486,7 +493,7 @@ export class ActionAttemptRepository {
         const release = cancelled
           ? await assertCancelledInitialContinuation(transaction as PostgresJsDatabase, cancelled) : undefined;
         const reservation = await this.insertReservation(attempt, transaction);
-        if (release) await release();
+        if (release && reservation.created) await release();
         return reservation;
       });
     }

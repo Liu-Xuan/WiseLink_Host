@@ -40,7 +40,7 @@ describe('owner-requested initial continuation', () => {
   ])('keeps the write-side cancelled lookup failure fatal and queues no work: %s', async (error) => {
     const h = harness(); h.initial.cancelledContinuationBinding.mockRejectedValue(error);
     await expect(h.send({ ...request, operation: 'EVALUATE_JOBAID' })).rejects.toBe(error);
-    expect(h.attempts.readRequest).not.toHaveBeenCalled();
+    expect(h.attempts.readRequest).toHaveBeenCalledTimes(1);
     expect(h.jobAid.enqueueContinuation).not.toHaveBeenCalled();
     expect(h.translation.enqueueContinuation).not.toHaveBeenCalled();
   });
@@ -73,6 +73,7 @@ describe('owner-requested initial continuation', () => {
               tenantId: actor.tenantId,
             }
           : undefined,
+        undefined, undefined, undefined,
       );
       session.actor.tenantId = 'other-tenant';
       await expect(
@@ -105,16 +106,22 @@ describe('owner-requested initial continuation', () => {
       return {status:'QUEUED',created:true};
     });
     await expect(h.send({...request,operation:'EVALUATE_JOBAID'})).resolves.toMatchObject({status:'QUEUED',replayed:false});
-    expect(h.sessions.resolve).toHaveBeenCalledWith({},'same-transaction');
+    expect(h.sessions.nativeBrowserIdentity).toHaveBeenCalledWith({});
+    expect(h.sessions.withVerifiedReviewServiceSql).toHaveBeenCalledWith(expect.any(Function), actor.userId);
     expect(h.authorization.authorize).toHaveBeenLastCalledWith({actor,action:'EVALUATE_JOB_AID',workItemId:h.workItem.workItemId},'same-transaction');
     expect(h.sourceAuthorization.authorizeSourceRead).toHaveBeenCalledTimes(1);
+    expect(h.sourceAuthorization.authorizeSourceRead).toHaveBeenCalledWith({
+      tenantId:actor.tenantId,actorUserId:actor.userId,workItemId:h.workItem.workItemId,
+      requestId:h.workItem.requestId,...h.workItem.source,
+      sourceFileSha256:h.workItem.source.sourceFileSha256.replace(/^sha256:/u,''),
+    },'same-transaction');
     for (const invalid of [{action:'DOCUMENT_WRITE'},{authorizationPolicy:'OTHER_POLICY'}]) {
       h.sourceAuthorization.authorizeSourceRead.mockImplementationOnce(async (input:unknown)=>({...input as object,allowed:true,action:'DOCUMENT_READ',authorizationPolicy:'MIAODA_HOST_DOCUMENT_READ',...invalid}) as never);
       await expect(h.send({...request,operation:'EVALUATE_JOBAID'})).rejects.toThrow('BINDING_CHANGED');
     }
     h.sourceAuthorization.authorizeSourceRead.mockResolvedValueOnce({allowed:false} as never);
     await expect(h.send({...request,operation:'EVALUATE_JOBAID'})).rejects.toThrow('BINDING_CHANGED');
-    h.sessions.resolve.mockResolvedValueOnce(null as never);
+    h.sessions.nativeBrowserIdentity.mockReturnValueOnce({ actor: {canonicalSubject:{id:'other-user'}} } as never);
     await expect(h.send({...request,operation:'EVALUATE_JOBAID'})).rejects.toThrow('BINDING_CHANGED');
     h.permissions.freshRead.mockResolvedValueOnce({permissionSnapshotVersion:'permission-1'}).mockResolvedValueOnce({permissionSnapshotVersion:'revoked'});
     await expect(h.send({...request,operation:'EVALUATE_JOBAID'})).rejects.toThrow('BINDING_CHANGED');
@@ -167,7 +174,8 @@ describe('owner-requested initial continuation', () => {
       if (failure === 'different service scope')
         process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID = 'WI-other';
       await expect(h.send(request)).rejects.toThrow();
-      expect(h.attempts.readRequest).not.toHaveBeenCalled();
+      if (failure !== 'different service scope')
+        expect(h.attempts.readRequest).not.toHaveBeenCalled();
       expect(h.translation.enqueueContinuation).not.toHaveBeenCalled();
     },
   );
@@ -195,11 +203,13 @@ describe('owner-requested initial continuation', () => {
       h.workItem.revision = 9;
       h.attempts.readRequest.mockResolvedValue(savedAttempt(status));
       process.env.WL_TRANSLATION_V2_ENABLED = '0';
+      process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID = 'WI-other';
       await expect(h.send(request)).resolves.toMatchObject({
         status,
         replayed: true,
       });
       expect(h.initial.project).not.toHaveBeenCalled();
+      expect(h.initial.hasExactAutoProcessingGrant).not.toHaveBeenCalled();
       expect(h.translation.enqueueContinuation).not.toHaveBeenCalled();
     },
   );
@@ -291,11 +301,21 @@ describe('owner-requested initial continuation', () => {
       'permission-1',
       request.requestId,
       'INITIAL_PROBLEM_ASSESSMENT',
-      undefined,
+      undefined, undefined, undefined, undefined,
     );
   });
 
-  it('rejects invalid or injected commands before authorization', async () => {
+  it('queues explicit program/model intent only for a new initial assessment', async () => {
+    const h = harness();
+    const command = {...request, operation: 'EVALUATE_JOBAID', executionMode: 'PROGRAM_CONTROLLED_V1', modelRef: 'miaoda/glm-5.3'};
+    await h.send(command);
+    expect(h.jobAid.enqueueContinuation).toHaveBeenCalledWith(h.workItem, actor.tenantId, 'permission-1',
+      request.requestId, 'INITIAL_PROBLEM_ASSESSMENT', undefined, undefined, undefined, {modelRef: 'miaoda/glm-5.3'});
+    await expect(h.send({...command, operation: 'SYNTHESIZE_OVERALL'})).rejects.toThrow('PROGRAM_SCOPE_INVALID');
+    await expect(h.send({...command, modelRef: undefined})).rejects.toThrow('PROGRAM_SCOPE_INVALID');
+  });
+
+  it('rejects invalid or injected commands before authorization' , async () => {
     const h = harness();
     for (const body of [
       { ...request, actorUserId: 'other' },
@@ -408,7 +428,8 @@ function harness() {
   };
   const sourceAuthorization = {authorizeSourceRead:jest.fn(async (input:unknown)=>({...input as object,allowed:true,action:'DOCUMENT_READ',authorizationPolicy:'MIAODA_HOST_DOCUMENT_READ'}))};
   const sessions = {
-    resolve: jest.fn(async()=>({actor:{canonicalSubject:{id:actor.userId},tenantId:actor.tenantId,applicationScopeId:actor.appId}})),
+    nativeBrowserIdentity: jest.fn(()=>({actor:{canonicalSubject:{id:actor.userId},tenantId:actor.tenantId,applicationScopeId:actor.appId}})),
+    withVerifiedReviewServiceSql: jest.fn(async (operation: () => Promise<unknown>) => operation()),
     withVerifiedServiceSql: jest.fn(async (operation: () => Promise<unknown>) =>
       operation(),
     ),

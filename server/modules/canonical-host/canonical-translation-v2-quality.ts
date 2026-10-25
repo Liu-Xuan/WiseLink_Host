@@ -14,7 +14,7 @@ import type {
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import type { TranslationGlossarySnapshot } from '@shared/api.interface';
 
-export const TRANSLATION_V2_CHECK_VERSION = 'semantic-block-check@2.2';
+export const TRANSLATION_V2_CHECK_VERSION = 'semantic-block-check@2.3';
 
 export function translationGlossaryForRevision(
   workspace: TranslationWorkspaceV2,
@@ -222,7 +222,7 @@ export function requiresTranslationSemanticReview(
   return (
     ['step', 'advisory', 'table', 'preserved_source'].includes(block.kind) ||
     anchors.some((anchor) =>
-      /\b(?:not|never|unless|except|only|shall|must|if|before|after|within|minimum|maximum|less|greater)\b|\d/iu.test(
+      /\b(?:no|not|never|unless|except|only|shall|must|if|before|after|within|minimum|maximum|less|greater)\b|\d/iu.test(
         anchor.sourceText,
       ),
     )

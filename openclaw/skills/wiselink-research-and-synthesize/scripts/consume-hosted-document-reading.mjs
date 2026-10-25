@@ -158,6 +158,8 @@ export async function consumeHostedDocumentReading(options, dependencies) {
   const write = (name, value) => checkpoint.write(name, { schemaVersion: CHECKPOINT_SCHEMA, identity, value });
   let source = await readCheckpoint('source.result');
   const modelStarted = await readCheckpoint('model.started');
+  if (modelStarted && (modelStarted.modelExecutor === 'CODEX') !== (options.modelExecutor === 'CODEX'))
+    throw new Error('READING_MODEL_EXECUTOR_CHECKPOINT_CHANGED');
   let model = await readCheckpoint('model.result');
   const saveStarted = await readCheckpoint('save.started');
   if (state.status === 'SAVED') return { status: 'READING_SAVED',
@@ -228,7 +230,9 @@ export async function consumeHostedDocumentReading(options, dependencies) {
     if (source.sourceBinding?.original?.documentVersionId !== documentVersionId || source.sourceBinding.original.parseRunId !== state.parseRunId ||
         source.sourceBinding.semanticRevision !== state.semanticRevision) throw new Error('READING_SOURCE_CHECKPOINT_INVALID');
     if (!model) {
-      await lease.guard(() => write('model.started', { sourceBinding: source.sourceBinding, ...(executionModel ? { executionModel } : {}) }));
+      await lease.guard(() => write('model.started', { sourceBinding: source.sourceBinding,
+        ...(options.modelExecutor === 'CODEX' ? { modelExecutor: 'CODEX' } : {}),
+        ...(executionModel ? { executionModel } : {}) }));
       modelDispatched = true;
       modelInvocations++;
       model = await lease.guard(() => dependencies.invokeModel(source, { signal: lease.signal, ...(executionModel ? { executionModel } : {}) }));

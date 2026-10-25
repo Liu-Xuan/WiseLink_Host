@@ -1439,7 +1439,7 @@ test('requires 41 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c235',
+    'wiselink-research-and-synthesize@r09.c240',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3244,6 +3244,9 @@ test('a successor Overall tick finishes its sealed COMMITTING attempt without an
 });
 
 test('historical skill provenance is allowed only for a sealed compatible recovery', () => {
+  const previousInstalled = provenance({ skillVersion: `${WISELINK_SKILL_COMPATIBILITY_REF}.c${235}` });
+  assert.notEqual(previousInstalled.skillVersion, WISELINK_SKILL_VERSION);
+  assert.throws(() => validateRuntimeProvenance(previousInstalled), /RUNTIME_SKILL_VERSION_POLICY_MISMATCH/);
   const old = provenance({ skillVersion: `${WISELINK_SKILL_COMPATIBILITY_REF}.c${153}` });
   assert.throws(() => validateRuntimeProvenance(old), /RUNTIME_SKILL_VERSION_POLICY_MISMATCH/);
   assert.doesNotThrow(() => validateRuntimeProvenance(old, { allowHistoricalSkillVersion: true }));
@@ -9968,6 +9971,62 @@ const buildHostToolSurface = () => {
   } : {} }));
 };
 
+function consumerStoppedToolMetadata() {
+  const keys = ['attemptRef', 'workItemId', 'leaseToken', 'leaseGeneration', 'requestId',
+    'documentVersionId', 'inputRevision', 'modelRound', 'errorCode', 'upstreamOutcome'];
+  return {
+    name: 'record_assessment_consumer_stopped',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: { type: 'object', additionalProperties: false, required: keys,
+      properties: Object.fromEntries(keys.map(key => [key, key === 'requestId'
+        ? { anyOf: [{ type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' }, { type: 'null' }] }
+        : {}])) },
+  };
+}
+
+test('consumer-stopped optional metadata accepts old/new catalogs without changing required tools', () => {
+  const oldTools = buildHostToolSurface();
+  const newTools = [...oldTools, consumerStoppedToolMetadata()];
+  assert.doesNotThrow(() => validateHostToolMetadata({ tools: oldTools }));
+  assert.doesNotThrow(() => validateHostToolMetadata({ tools: newTools }));
+  assert.equal(HOST_MCP_TOOLS.includes('record_assessment_consumer_stopped'), false);
+  // This is the same available-tool lookup returned after the real handshake.
+  assert.equal(oldTools.some(tool => tool.name === 'record_assessment_consumer_stopped'), false);
+  assert.equal(newTools.some(tool => tool.name === 'record_assessment_consumer_stopped'), true);
+});
+
+test('consumer-stopped optional metadata rejects duplicate or weakened control schemas', () => {
+  const oldTools = buildHostToolSurface();
+  const tool = consumerStoppedToolMetadata();
+  assert.throws(() => validateHostToolMetadata({ tools: [...oldTools, tool, tool] }),
+    /JOBAID_CONSUMER_STOPPED_CAPABILITY_SCHEMA_INVALID/u);
+  for (const mutate of [
+    item => { item.inputSchema.additionalProperties = true; },
+    item => { item.inputSchema.required = item.inputSchema.required.filter(name => name !== 'leaseToken'); },
+    item => { item.inputSchema.properties.rawError = {}; },
+    item => { item.inputSchema.properties.requestId = { type: 'string' }; },
+    item => { item.annotations.readOnlyHint = true; },
+    item => { item.annotations.idempotentHint = false; },
+  ]) {
+    const changed = structuredClone(tool); mutate(changed);
+    assert.throws(() => validateHostToolMetadata({ tools: [...oldTools, changed] }),
+      /JOBAID_CONSUMER_STOPPED_CAPABILITY_SCHEMA_INVALID/u);
+  }
+  const nullableTypes = structuredClone(tool);
+  nullableTypes.inputSchema.properties.requestId = { type: ['string', 'null'] };
+  assert.doesNotThrow(() => validateHostToolMetadata({ tools: [...oldTools, nullableTypes] }));
+});
+
+test('consumer-stopped optional metadata cannot replace required tools or admit unknown extras', () => {
+  const tools = [...buildHostToolSurface(), consumerStoppedToolMetadata()];
+  assert.throws(() => validateHostToolMetadata({
+    tools: tools.filter(tool => tool.name !== 'get_parse_status'),
+  }), /REVIEW_HOST_MCP_EXACT20_MISMATCH/u);
+  assert.throws(() => validateHostToolMetadata({
+    tools: [...tools, { name: 'unexpected_write' }],
+  }), /REVIEW_HOST_MCP_EXACT20_MISMATCH/u);
+});
+
 test('optional bounded Review native capability preserves old Host tools and enforces its exact metadata', () => {
   const tools = buildHostToolSurface();
   assert.doesNotThrow(() => validateHostToolMetadata({tools}));
@@ -10148,4 +10207,40 @@ test('scoped-0828 Matter assessment update still requires a non-null work delta'
   assert.throws(() => validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, null)),
     /REVIEW_UPDATE_WORKING_DELTA_REQUIRED/u);
   assert.doesNotThrow(() => validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, delta)));
+});
+
+function programProgressToolMetadata() {
+  const keys = ['attemptRef', 'workItemId', 'leaseToken', 'leaseGeneration', 'phase', 'checkpointRef'];
+  return { name: 'record_assessment_program_progress',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: { type: 'object', additionalProperties: false, required: keys, properties: {
+      attemptRef: { type: 'string', minLength: 1, maxLength: 200 },
+      workItemId: { type: 'string', minLength: 1, maxLength: 200 }, leaseToken: { type: 'string', format: 'uuid' },
+      leaseGeneration: { type: 'integer', exclusiveMinimum: 0 },
+      phase: { type: 'string', enum: ['MATERIALS_READY', 'MODEL_RESPONSE_SAVED'] },
+      checkpointRef: { type: 'string', pattern: '^[A-Za-z0-9:._-]{1,512}$' },
+      materialSnapshotJson: { type: 'string', minLength: 1 },
+    } } };
+}
+
+test('program progress remains optional for old tasks while new capability is strict and fenced', () => {
+  const oldTools = buildHostToolSurface(), tool = programProgressToolMetadata();
+  assert.doesNotThrow(() => validateHostToolMetadata({ tools: oldTools }));
+  assert.doesNotThrow(() => validateHostToolMetadata({ tools: [...oldTools, tool] }));
+  assert.equal(HOST_MCP_TOOLS.includes(tool.name), false);
+  assert.throws(() => validateHostToolMetadata({ tools: [...oldTools, tool, tool] }), /PROGRAM_ASSESSMENT_CAPABILITY_SCHEMA_INVALID/u);
+  for (const mutate of [
+    item => { item.inputSchema.required = item.inputSchema.required.filter(key => key !== 'leaseToken'); },
+    item => { item.inputSchema.properties.checkpointRef = { type: 'string' }; },
+    item => { delete item.inputSchema.properties.materialSnapshotJson; },
+    item => { item.inputSchema.properties.materialSnapshotJson = { type: 'string' }; },
+    item => { item.inputSchema.required.push('materialSnapshotJson'); },
+    item => { item.inputSchema.properties.phase.enum.push('SAVED'); },
+    item => { item.inputSchema.properties.leaseGeneration = { type: 'integer' }; },
+    item => { item.annotations.readOnlyHint = true; },
+    item => { item.inputSchema.additionalProperties = true; },
+  ]) {
+    const changed = structuredClone(tool); mutate(changed);
+    assert.throws(() => validateHostToolMetadata({ tools: [...oldTools, changed] }), /PROGRAM_ASSESSMENT_CAPABILITY_SCHEMA_INVALID/u);
+  }
 });

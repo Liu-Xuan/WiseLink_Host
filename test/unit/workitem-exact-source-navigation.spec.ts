@@ -14,6 +14,7 @@ const mockToast = jest.fn();
 const mockPublish = jest.fn();
 const mockRefresh = jest.fn();
 let mockWorking = jobAidReadingFixture();
+let mockWorkingError: string | null = null;
 
 jest.mock('sonner', () => ({ toast: { error: (...args: unknown[]) => mockToast(...args) } }));
 jest.mock('@client/src/api', () => ({ canonicalHost: {
@@ -36,7 +37,7 @@ jest.mock('@client/src/app/providers/CurrentObjectContextProvider', () => ({
 jest.mock('@client/src/features/navigation/contextual-navigation', () => ({ buildCurrentObjectContext: () => null }));
 jest.mock('@client/src/utils/recent-work-items', () => ({ rememberRecentWorkItem: jest.fn(), forgetRecentWorkItem: jest.fn() }));
 jest.mock('@client/src/pages/DocumentParsingPage/useJobAidWorkingRead', () => ({
-  useJobAidWorkingRead: () => ({ data: mockWorking, error: null, temporaryError: null, refresh: mockRefresh,
+  useJobAidWorkingRead: () => ({ data: mockWorkingError ? null : mockWorking, error: mockWorkingError, temporaryError: false, refresh: mockRefresh,
     refreshing: false, baseFallbackAllowed: false }),
 }));
 jest.mock('@client/src/features/workitem/useOverallRegeneration', () => ({ useOverallRegeneration: () => ({ disabled: true }) }));
@@ -133,7 +134,7 @@ afterAll(() => {
   }
 });
 beforeEach(() => {
-  jest.clearAllMocks(); mockWorking = jobAidReadingFixture();
+  jest.clearAllMocks(); mockWorking = jobAidReadingFixture(); mockWorkingError = null;
   mockPageRead.mockImplementation(async (id: string) => page(id));
   mockOriginalRead.mockImplementation(() => { throw new Error('Unexpected original API call inside navigation test'); });
   mockStartParse.mockImplementation(() => { throw new Error('Unexpected parse start'); });
@@ -164,6 +165,15 @@ async function clickEvidence() {
 }
 
 describe('actual WorkItem saved evidence button -> exact parsed original navigation', () => {
+  it('clears the legacy page after the shared working read explicitly loses permission', async () => {
+    await mount(evidence());
+    mockWorkingError = '当前评估工作已不可读取';
+    await act(async () => router.navigate('/work-items/WI-current/analysis?panel=overall'));
+    expect(container.textContent).not.toContain('必须核对保存版本的条件。');
+    expect(container.textContent).toContain('暂时无法打开当前工程事项');
+    expect(mockStartParse).not.toHaveBeenCalled();
+  });
+
   it.each(['WI-current', 'WI-other', null])('uses saved parse/DVI/full source ref before the %s WorkItem branch', async workItemId => {
     const saved = evidence({ workItemId }); const original = structuredClone(saved);
     await mount(saved); await clickEvidence();

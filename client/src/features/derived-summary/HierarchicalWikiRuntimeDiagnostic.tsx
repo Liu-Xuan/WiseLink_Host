@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import type { HierarchicalWikiStatus } from '@shared/hierarchical-wiki.interface';
 import { WiseLinkRuntimeMonitor } from '@client/src/pages/DocumentParsingPage/runtime-monitor/WiseLinkRuntimeMonitor';
 import { adaptHierarchicalWikiStatus, wikiDiagnosticRoute } from './adapt-hierarchical-wiki-status';
+import { wikiSavedReadingRoute } from './hierarchical-wiki-presentation';
 
 interface Props {
   wiki: HierarchicalWikiStatus;
@@ -26,7 +27,9 @@ export default function HierarchicalWikiRuntimeDiagnostic({ wiki, session, obser
     <summary className="cursor-pointer">查看本范围运行诊断</summary>
     {expanded ? <section className="space-y-3" aria-label={`${wiki.scope.title}运行诊断`}>
     <p className="text-sm">仅显示本范围的更新、等待和已覆盖成员。执行开始、首次保存、就绪及 ACK 时间和资源占用未提供。</p>
-    <Link className="underline" to={`/summaries/${encodeURIComponent(wiki.summaryId)}`}>打开本范围已保存正文</Link>
+    <Link className="underline" to={wikiSavedReadingRoute(wiki)}>
+      {wiki.savedRevision ? `打开保存修订 ${wiki.savedRevision.revision}` : '打开本范围阅读入口'}
+    </Link>
     <WiseLinkRuntimeMonitor key={scopeKey} runtime={runtime} view="flow" allowVerification={false}
       onRefresh={onRefresh} onNavigate={detail => {
         const route = wikiDiagnosticRoute(detail, runtime, wiki);

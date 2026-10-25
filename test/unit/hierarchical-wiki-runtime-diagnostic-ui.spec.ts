@@ -32,15 +32,18 @@ function Location() {
   const location = useLocation();
   return React.createElement('output', { id: 'location' }, `${location.pathname}${location.search}`);
 }
+async function renderWiki(wiki: HierarchicalWikiStatus) {
+  await React.act(async () => root.render(React.createElement(MemoryRouter,
+    { future: { v7_startTransition: true, v7_relativeSplatPath: true } },
+    React.createElement(Diagnostic, { wiki, session: 3, observedAt: '2026-10-22T05:01:00Z', refreshing: false, onRefresh: refresh }),
+    React.createElement(Location))));
+}
 let container: HTMLDivElement, root: ReturnType<typeof createRoot>;
 const refresh = jest.fn();
 beforeEach(async () => {
   refresh.mockClear();
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
-  await React.act(async () => root.render(React.createElement(MemoryRouter,
-    { future: { v7_startTransition: true, v7_relativeSplatPath: true } },
-    React.createElement(Diagnostic, { wiki: read, session: 3, observedAt: '2026-10-22T05:01:00Z', refreshing: false, onRefresh: refresh }),
-    React.createElement(Location))));
+  await renderWiki(read);
 });
 afterEach(async () => { await React.act(async () => root.unmount()); container.remove(); });
 afterAll(() => {
@@ -83,4 +86,24 @@ it('opens the original reader with the actual current attempt and does not creat
   await React.act(async () => monitor.shadowRoot!.querySelector<HTMLButtonElement>('[data-nav="request"]')!.click());
   expect(container.querySelector('#location')!.textContent).toBe('/summaries/summary1?attemptRef=attempt1');
   expect(refresh).not.toHaveBeenCalled();
+});
+
+it('opens the same exact observed revision from the explicit link and both diagnostic artifact nodes', async () => {
+  const saved: HierarchicalWikiStatus = { ...read, savedRevision: { summaryRef: 'saved-ref1', revision: 7 } };
+  await renderWiki(saved);
+  const monitor = await open();
+  const link = container.querySelector<HTMLAnchorElement>('a')!;
+  expect(link.getAttribute('href')).toBe('/summaries/summary1?summaryRef=saved-ref1');
+  expect(link.textContent).toBe('打开保存修订 7');
+  await React.act(async () => link.click());
+  expect(container.querySelector('#location')!.textContent).toBe('/summaries/summary1?summaryRef=saved-ref1');
+  for (const nodeId of ['knowledge.wiki', 'surface.reading']) {
+    await React.act(async () => monitor.shadowRoot!.querySelector<HTMLButtonElement>(`[data-node="${nodeId}"]`)!.click());
+    await React.act(async () => monitor.shadowRoot!.querySelector<HTMLButtonElement>('[data-nav="artifact"][data-ref="saved-ref1"]')!.click());
+    expect(container.querySelector('#location')!.textContent).toBe('/summaries/summary1?summaryRef=saved-ref1');
+  }
+  expect(monitor.runtime?.edges[0].status).toBe('unknown');
+  expect(refresh).not.toHaveBeenCalled();
+  await renderWiki({ ...saved, savedRevision: { summaryRef: 'saved-ref2', revision: 8 } });
+  expect(container.querySelector('a')!.getAttribute('href')).toBe('/summaries/summary1?summaryRef=saved-ref2');
 });

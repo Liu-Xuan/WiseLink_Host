@@ -2,7 +2,22 @@
 
 验证日期：2026-10-25 UTC。
 
-## 交付状态
+## 当前程序消费者与 Wiki 实跑（合成 Host）
+
+本次迁移使用新应用自身已配置的妙搭 `miaoda/glm-5.3`，由 `codex-cli 0.164.0` 执行。隔离运行目录为 `/home/gem/workspace/agent/workspace/wiselink-codex-migration-20261025-0812`；65 个运行文件的传输载荷 SHA-256 为 `684285f290ffe959be3c19e6c4b35955f4eef6de60734e723878e27b1b8d8dfa`。完整脱敏机器回执见 [consumer-validation-evidence.json](consumer-validation-evidence.json)，其 SHA-256 为 `4792c13352d42b6064d3fcf973211c40acd50905304fad8ef5e47df1825f956b`。
+
+| 合成材料运行 | 上游 `glm-5.3` 请求 | 结果 | 用时 |
+| --- | ---: | --- | ---: |
+| 程序消费者：初评、翻译 GENERATE/CHECK、文件解读 | 4（分别为 1、1、1、1） | 退出码 0；初评 SAVE 后以同一 requestId 独立 READ；译文校核完成；文件解读准确复制引文 | 48.474 秒 |
+| 分层 Wiki：选定两子层和共同根来源 | 2 | 退出码 0；生成父层候选，Codex 子进程回执闭合；候选未保存到 Host | 18.204 秒 |
+
+六次请求均有正常完成的 Codex 进程和 `glm-5.3` 上游模型记录，执行前后来源配置哈希相同。这些运行使用虚构材料和内存合成 Host，`realHostCalled: false`；程序的确定性 Overall 输入仅为准确已保存、独立读回的合成工作修订，不是正式 Host Overall 提交。它们不验证真实业务授权、Host 持久化、正式采用或产品阅读入口。
+
+真实 Host IDE 的只读观察显示工作目录 `/home/gem/workspace/code`、分支 `sprint/default`、HEAD `2565662e45c679605aacd318d873d41d73d262c7`，工作区状态有 1,124 项。没有修改 Host 文件；发布版本是否包含本次变更未经核实。当前 Host 仍需独立的 Codex 运行身份、授权和任务分配，才可允许 CODEX 消费者领取真实任务。
+
+以下记录的是**早期自主评估 fixture**：九次模型请求、两次合成工作保存及 Overall 模拟提交。它与当前 `PROGRAM_CONTROLLED_V1` 一次模型生成的默认路线分开，不应合并计数或当成这次六请求消费者实跑。
+
+## 早期自主评估交付状态（历史，非当前默认路线）
 
 已实现可注入现有 Host 编排器的 Codex 评估回调，并在独立妙搭测试实例内完成真实模型的端到端运行。实际模型为实例已有的 `miaoda/glm-5.3`，执行器为官方 `codex-cli 0.164.0`。运行不依赖 OpenAI 账号或 OpenAI API key。
 

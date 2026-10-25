@@ -30,6 +30,8 @@ export interface WikiRow extends Record<string, unknown> {
   lastEventSeq: string;
   lastInventoryAt: string | null;
   inventoryCursor: string | null;
+  currentSummaryRef?: string | null;
+  currentRevision?: number | null;
   upstreamDelegations: Record<
     string,
     { enabled: boolean; authorizedAt: string }
@@ -43,12 +45,19 @@ const columns = sql`wiki_id AS "wikiId",summary_id AS "summaryId",tenant_id AS "
 export async function wikiRows(
   database: PostgresJsDatabase,
   owner: SummaryActor,
+  includeSavedRevision = false,
 ): Promise<WikiRow[]> {
-  const rows =
-    await database.execute<WikiRow>(sql`SELECT ${columns} FROM hierarchical_wiki_scope
+  const query = sql`SELECT ${columns} FROM hierarchical_wiki_scope
     WHERE tenant_id=${owner.tenantId}
       ${owner.readScope === 'TENANT' ? sql`` : sql`AND actor_user_id=${owner.actorUserId}`}
-    ORDER BY wiki_id`);
+    ORDER BY wiki_id`;
+  // Directory metadata shares the same authorized row query and snapshot.
+  // Joining only the exact tenant/owner head reads neither revisions nor bodies.
+  const rows = await database.execute<WikiRow>(includeSavedRevision ? sql`
+    SELECT w.*, s.current_summary_ref AS "currentSummaryRef", s.current_revision AS "currentRevision"
+    FROM (${query}) w LEFT JOIN derived_summary s
+      ON s.summary_id=w."summaryId" AND s.tenant_id=w."tenantId" AND s.actor_user_id=w."actorUserId"
+    ORDER BY w."wikiId"` : query);
   for (const row of rows) {
     if (
       row.state.schemaVersion !== 1 ||

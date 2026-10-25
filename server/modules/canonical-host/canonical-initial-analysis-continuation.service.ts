@@ -13,6 +13,7 @@ import {
   Inject,
   Injectable,
   Optional,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   SessionResolver,
@@ -52,6 +53,8 @@ const command = z.strictObject({
   requestId: z.string().uuid(),
   expectedRevision: z.number().int().positive(),
   operation: z.enum(['TRANSLATE', 'EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL']),
+  executionMode: z.literal('PROGRAM_CONTROLLED_V1').optional(),
+  modelRef: z.string().min(1).max(160).optional(),
   retranslateBlockIds: z
     .array(z.string().min(1).max(200))
     .min(1)
@@ -104,6 +107,9 @@ export class CanonicalInitialAnalysisContinuationService {
     httpRequest?: Request,
   ): Promise<CanonicalInitialAnalysisContinuationReceipt> {
     const input = command.parse(raw);
+    if ((input.executionMode !== undefined || input.modelRef !== undefined) &&
+        (input.operation !== 'EVALUATE_JOBAID' || input.executionMode !== 'PROGRAM_CONTROLLED_V1' || !input.modelRef))
+      throw continuationConflict('PROGRAM_SCOPE_INVALID');
     if (input.operation !== 'TRANSLATE' && input.retranslateBlockIds)
       throw continuationConflict('BLOCK_SCOPE_REQUIRES_TRANSLATION');
     const { workItem, permissionSnapshotVersion } =
@@ -118,6 +124,39 @@ export class CanonicalInitialAnalysisContinuationService {
             : 'EVALUATE_JOB_AID',
         workItemId,
       });
+    const binding = bindings[input.operation];
+    const existing = await this.attempts.readRequest({
+      tenantId: actor.tenantId,
+      workItemId,
+      taskType: binding.task,
+      documentVersionId: workItem.source.documentVersionId,
+      idempotencyKey: [
+        'openclaw-v2',
+        binding.key,
+        workItemId,
+        workItem.source.documentVersionId,
+        input.requestId,
+      ].join(':'),
+    });
+    if (existing) {
+      const task = parseTaskEnvelope(existing.taskEnvelopeJson);
+      if (task.modelInput.executionMode !== input.executionMode ||
+          (input.modelRef !== undefined && task.executionModel?.modelRef !== input.modelRef))
+        throw continuationConflict('REQUEST_SCOPE_CHANGED');
+      if (
+        input.retranslateBlockIds &&
+        JSON.stringify(task.modelInput.retranslateBlockIds ?? []) !==
+          JSON.stringify(input.retranslateBlockIds)
+      )
+        throw continuationConflict('REQUEST_SCOPE_CHANGED');
+      return {
+        requestId: input.requestId,
+        operation: input.operation,
+        status: existing.status,
+        replayed: true,
+        candidateOnly: true,
+      };
+    }
     const cancelled =
       input.operation === 'EVALUATE_JOBAID' &&
       this.initial.cancelledContinuationBinding
@@ -140,41 +179,12 @@ export class CanonicalInitialAnalysisContinuationService {
       }))
     )
       throw continuationConflict('AUTOMATIC_SCOPE_UNAVAILABLE');
-    const binding = bindings[input.operation];
-    const existing = await this.attempts.readRequest({
-      tenantId: actor.tenantId,
-      workItemId,
-      taskType: binding.task,
-      documentVersionId: workItem.source.documentVersionId,
-      idempotencyKey: [
-        'openclaw-v2',
-        binding.key,
-        workItemId,
-        workItem.source.documentVersionId,
-        input.requestId,
-      ].join(':'),
-    });
-    if (existing) {
-      const task = parseTaskEnvelope(existing.taskEnvelopeJson);
-      if (
-        input.retranslateBlockIds &&
-        JSON.stringify(task.modelInput.retranslateBlockIds ?? []) !==
-          JSON.stringify(input.retranslateBlockIds)
-      )
-        throw continuationConflict('REQUEST_SCOPE_CHANGED');
-      return {
-        requestId: input.requestId,
-        operation: input.operation,
-        status: existing.status,
-        replayed: true,
-        candidateOnly: true,
-      };
-    }
     if (workItem.revision !== input.expectedRevision)
       throw continuationConflict('WORK_ITEM_CHANGED');
     const status = await this.initial.project({
       workItem,
       tenantId: actor.tenantId,
+      browserActorUserId: actor.userId,
     });
     if (
       status.status === 'NOT_READY' ||
@@ -237,10 +247,7 @@ export class CanonicalInitialAnalysisContinuationService {
             authorize: async (database: PostgresJsDatabase) => {
               if (!this.sessions || !httpRequest || !this.sourceAuthorization)
                 throw cancelledContinuationConflict();
-              const current = await this.sessions.resolve(
-                httpRequest,
-                database,
-              );
+              const current = this.sessions.nativeBrowserIdentity(httpRequest);
               if (
                 !current ||
                 current.actor.canonicalSubject.id !== actor.userId ||
@@ -278,7 +285,7 @@ export class CanonicalInitialAnalysisContinuationService {
                     '',
                   ),
                   sourceByteLength: source.sourceByteLength,
-                });
+                }, database);
               if (
                 !permission.allowed || permission.action !== 'DOCUMENT_READ' || permission.authorizationPolicy !== 'MIAODA_HOST_DOCUMENT_READ' ||
                 permission.tenantId !== actor.tenantId ||
@@ -312,6 +319,7 @@ export class CanonicalInitialAnalysisContinuationService {
               authorizedKnowledgeSession,
               undefined,
               cancelledGuard,
+              input.executionMode ? {modelRef: input.modelRef!} : undefined,
             )
           : this.jobAid.enqueueContinuation(
               workItem,
@@ -322,9 +330,10 @@ export class CanonicalInitialAnalysisContinuationService {
                 ? 'INITIAL_PROBLEM_ASSESSMENT'
                 : 'OVERALL_CONSISTENCY',
               authorizedKnowledgeSession,
+              undefined, undefined, input.executionMode ? {modelRef: input.modelRef!} : undefined,
             );
     const reserved = cancelled
-      ? await this.sessions!.withVerifiedServiceSql(reserve, actor.userId)
+      ? await this.sessions!.withVerifiedReviewServiceSql(reserve, actor.userId)
       : await reserve();
     return {
       requestId: input.requestId,
@@ -353,13 +362,19 @@ export class CanonicalInitialAnalysisContinuationService {
       actorId: actor.userId,
       tenantId: actor.tenantId,
     };
-    const access = await this.sessions.withVerifiedServiceSql(
-      () => this.aily!.availability(binding),
-      actor.userId,
-    );
-    // Optional retrieval must not block source analysis when native consent
-    // is unavailable. The prepared task reports its actual knowledge access.
-    return access.available ? binding : undefined;
+    try {
+      const access = await this.sessions.withVerifiedServiceSql(
+        () => this.aily!.availability(binding),
+        actor.userId,
+      );
+      return access.available ? binding : undefined;
+    } catch (error) {
+      // Expired optional OAuth never revokes the native local operation.
+      // External knowledge still requires its own current session and grant.
+      if (error instanceof UnauthorizedException &&
+          error.message === 'OFFICIAL_OAUTH_SESSION_REQUIRED') return undefined;
+      throw error;
+    }
   }
 }
 

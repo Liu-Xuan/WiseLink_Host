@@ -17,7 +17,7 @@ import { Input } from '@client/src/components/ui/input';
 import { useSummaryResource } from './useSummaryResource';
 import { useTaskModelOptions } from '@client/src/features/review/TaskModelPicker';
 import SavedWorkSelector from './SavedWorkSelector';
-import { wikiStatusLabels } from './hierarchical-wiki-presentation';
+import { wikiSavedReadingRoute, wikiStatusLabels } from './hierarchical-wiki-presentation';
 import HierarchicalWikiRuntimeDiagnostic from './HierarchicalWikiRuntimeDiagnostic';
 
 export { wikiStatusLabels } from './hierarchical-wiki-presentation';
@@ -382,7 +382,7 @@ export default function HierarchicalWikiDirectory({
           >
             <Link
               className="font-semibold underline"
-              to={`/summaries/${encodeURIComponent(item.summaryId)}`}
+              to={wikiSavedReadingRoute(item)}
             >
               {item.scope.title}
             </Link>
@@ -390,6 +390,9 @@ export default function HierarchicalWikiDirectory({
               {wikiStatusLabels[item.state]} ·{' '}
               {item.enabled ? '自动更新已启用' : '自动更新已暂停'}
             </p>
+            {item.savedRevision ? <p className="text-sm">
+              目录所见保存修订 {item.savedRevision.revision}；打开时重新核对正文与权限。
+            </p> : null}
             {item.waiting.length ? (
               <p className="text-sm">
                 {item.waiting.length}项下层更新待汇总

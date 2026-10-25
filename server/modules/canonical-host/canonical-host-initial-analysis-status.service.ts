@@ -1,7 +1,13 @@
-import { readCancelledInitialContinuation } from '../action-attempt/cancelled-initial-continuation';
+import {
+  matchesInitialContinuationOwner,
+  readCancelledInitialContinuation,
+} from '../action-attempt/cancelled-initial-continuation';
 import { CanonicalHostApplicabilityInputProducer } from './canonical-host-applicability-input.producer';
 import { originalApplicabilityInputMatches } from './original-applicability-currentness';
-import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { exactProgramWorkRead } from './program-controlled-assessment';
+import { parseJobAidProblemTask } from './jobaid-problem-task';
+import { jobAidReadingResult } from './jobaid-problem-work';
+import { canonicalJson, parseTaskEnvelope } from '../action-attempt/action-attempt-envelope';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import { ForbiddenException, Inject, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { SessionResolver } from '../identity/session-resolver.service';
@@ -169,13 +175,52 @@ export class CanonicalHostInitialAnalysisStatusService {
     const savedIds = [...Object.values(savedAttempts), sourceReviewAttemptId]
       .filter((id): id is string => !!id);
     let invalidDeterministicOverall = Boolean(deterministicOverall &&
-      (!sourceReviewAttemptId ||
-        deterministicOverall.sourceReview?.workRevisionRef !==
+      ((!sourceReviewAttemptId && !deterministicOverall.sourceAssessment) ||
+        (deterministicOverall.sourceReview ?? deterministicOverall.sourceAssessment)?.workRevisionRef !==
           deterministicOverall.basedOnJobAidWorkRevisionRef ||
         !isJobAidProblemProjection(execution.integratedAssessment?.baseRules) ||
         execution.integratedAssessment.baseRules.workRevisionRef !==
           deterministicOverall.basedOnJobAidWorkRevisionRef));
-    if (deterministicOverall) {
+    let sourceAssessmentAttempt: CanonicalInitialAnalysisAttemptObservation | undefined;
+    if (deterministicOverall?.sourceAssessment) {
+      const [record] = await this.db.select().from(actionAttempt).where(and(
+        eq(actionAttempt.tenantId, input.tenantId), eq(actionAttempt.workItemId, input.workItem.workItemId),
+        eq(actionAttempt.attemptId, deterministicOverall.actionAttemptId))).limit(1);
+      try {
+        if (!record || !record.taskEnvelopeJson || !this.originalWork) throw new Error('PROGRAM_RECORD_MISSING');
+        const task = parseTaskEnvelope(record.taskEnvelopeJson);
+        const prepared = parseJobAidProblemTask(task);
+        const savedIdentity = {tenantId: input.tenantId, workItemId: input.workItem.workItemId,
+          workRevisionRef: deterministicOverall.basedOnJobAidWorkRevisionRef!};
+        // A later SAVE may make this projection stale; it does not invalidate
+        // the real historical READ and exact work from which it was projected.
+        const savedWork = hostedServiceSql
+          ? await this.originalWork.readByRefForRuntime({...savedIdentity, actorUserId: prepared.actorUserId})
+          : await this.originalWork.readByRef(savedIdentity);
+        const invalidSourceAssessment = !savedWork || !!deterministicOverall.sourceReview ||
+          record.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION' || record.requestOrigin !== ACTION_ATTEMPT_REQUEST_ORIGIN ||
+          !['COMMITTING', 'SUCCEEDED'].includes(record.status) ||
+          (record.status === 'SUCCEEDED' && !record.projectionApplied) ||
+          record.documentVersionId !== input.workItem.source.documentVersionId ||
+          prepared.executionMode !== 'PROGRAM_CONTROLLED_V1' || task.actionAttemptId !== record.attemptId ||
+          task.inputHash !== record.taskInputHash || task.tenantId !== input.tenantId ||
+          task.workItemId !== input.workItem.workItemId ||
+          savedWork.workRevisionRef !== deterministicOverall.basedOnJobAidWorkRevisionRef ||
+          canonicalJson(exactProgramWorkRead(record, savedWork)) !== canonicalJson(deterministicOverall.sourceAssessment) ||
+          canonicalJson(jobAidReadingResult(savedWork)) !== canonicalJson(deterministicOverall.readingResult);
+        invalidDeterministicOverall ||= invalidSourceAssessment;
+        if (!invalidSourceAssessment) sourceAssessmentAttempt = {
+          attemptId: record.attemptId, actionType: 'OPENCLAW_DYNAMIC_EVALUATION', attemptRef: record.operationRef,
+          status: record.status, baseRevision: record.baseRevision, terminalCode: initialAnalysisTerminalCode(record),
+          executionModel: readStoredExecutionModel(record.executionModelJson),
+        };
+      } catch (error) {
+        // Storage and authorization failures remain visible; only malformed sealed
+        // bindings become an invalid projection observation.
+        if (!(error instanceof Error) || !/^(PROGRAM_RECORD_MISSING|TASK_|JOBAID_PROGRAM_|JOBAID_TASK_|JOBAID_CONTENT_VALIDATION_)/u.test(error.message)) throw error;
+        invalidDeterministicOverall = true;
+      }
+    } else if (deterministicOverall) {
       const [record] = await this.db.select({
         actionType: actionAttempt.actionType,
         status: actionAttempt.status,
@@ -323,6 +368,7 @@ export class CanonicalHostInitialAnalysisStatusService {
         originalPublished,
         originalImpactStages,
         invalidDeterministicOverall,
+        sourceAssessmentAttempt,
         originalAdmission,
         englishAssessmentEnabled:
           process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1',
@@ -340,13 +386,20 @@ export class CanonicalHostInitialAnalysisStatusService {
       tenantId: input.tenantId,
       documentVersionId: input.workItem.source.documentVersionId,
     });
-    // Discovery rechecks service-only queue leases and ordinary Source access.
-    // A native browser identity alone cannot enter that privileged SQL scope.
+    // Discovery retains the verified browser actor and rechecks exact ownership
+    // before reading service-only queue facts and ordinary Source access.
     if (input.browserActorUserId === undefined) return read();
     try {
       if (!this.sessions)
         throw new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED');
-      return await this.sessions.withVerifiedServiceSql(read, input.browserActorUserId);
+      return await this.sessions.withVerifiedReviewServiceSql(async () => {
+        if (!(await this.readCurrentBrowserOwner({
+          ...input,
+          actorUserId: input.browserActorUserId!,
+        })))
+          return { contextRef: null, reason: 'APPLICABILITY_CONTEXT_NOT_AUTHORIZED' };
+        return read();
+      }, input.browserActorUserId);
     } catch (error) {
       if (error instanceof UnauthorizedException &&
           error.message === 'OFFICIAL_OAUTH_SESSION_REQUIRED')
@@ -363,9 +416,39 @@ export class CanonicalHostInitialAnalysisStatusService {
   }): Promise<boolean> {
     if (!this.sessions) return false;
     try {
-      return await this.sessions.withVerifiedServiceSql(
-        () => this.readExactAutoProcessingGrant(input),
+      return await this.sessions.withVerifiedReviewServiceSql(
+        async () => (await this.readCurrentBrowserOwner(input)) &&
+          this.readExactAutoProcessingGrant(input),
         input.actorUserId,
+      );
+    } catch (error) {
+      if (error instanceof UnauthorizedException || error instanceof ForbiddenException)
+        return false;
+      throw error;
+    }
+  }
+
+  private async readCurrentBrowserOwner(input: {
+    tenantId: string;
+    actorUserId: string;
+    workItem: CanonicalWorkItemProjection;
+  }): Promise<boolean> {
+    const [owner] = await this.db.select().from(workItem).where(and(
+      eq(workItem.tenantId, input.tenantId),
+      eq(workItem.workItemId, input.workItem.workItemId),
+    )).limit(1);
+    return !!owner && matchesInitialContinuationOwner(owner, input);
+  }
+
+  private async browserOwnsCurrentWorkItem(input: {
+    tenantId: string;
+    actorUserId: string;
+    workItem: CanonicalWorkItemProjection;
+  }): Promise<boolean> {
+    if (!this.sessions) return false;
+    try {
+      return await this.sessions.withVerifiedReviewServiceSql(
+        () => this.readCurrentBrowserOwner(input), input.actorUserId,
       );
     } catch (error) {
       if (error instanceof UnauthorizedException || error instanceof ForbiddenException)
@@ -418,7 +501,7 @@ export class CanonicalHostInitialAnalysisStatusService {
 
   async cancelledContinuationBinding(input: {tenantId:string;actorUserId:string;workItem:CanonicalWorkItemProjection}) {
     if (!this.sessions) return null;
-    return this.sessions.withVerifiedServiceSql(async () =>
+    return this.sessions.withVerifiedReviewServiceSql(async () =>
       (await readCancelledInitialContinuation(this.db, input))?.binding ?? null, input.actorUserId);
   }
 
@@ -457,14 +540,15 @@ export class CanonicalHostInitialAnalysisStatusService {
     );
     let cancelled: Awaited<ReturnType<typeof this.cancelledContinuationBinding>> = null;
     let continuationDiagnosticCode: CanonicalInitialAnalysisReadModel['continuationDiagnosticCode'];
-    if (!active && status.stages.jobAid.attemptStatus === 'CANCELLED') {
+    if (!active && ['CANCELLED', 'FAILED', 'TIMED_OUT'].includes(
+      status.stages.jobAid.attemptStatus ?? '',
+    )) {
       try {
         cancelled = await this.cancelledContinuationBinding(input);
       } catch (error) {
         if (!(error instanceof UnauthorizedException &&
           error.message === 'OFFICIAL_OAUTH_SESSION_REQUIRED')) throw error;
-        // A readable native page does not establish privileged continuation identity.
-        // Keep the actual terminal state, without advertising an unverified operation.
+        // Keep the terminal state when no verified request identity is available.
         continuationDiagnosticCode = 'OFFICIAL_OAUTH_SESSION_REQUIRED';
       }
     }
@@ -472,6 +556,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       !continuationDiagnosticCode &&
       status.status !== 'NOT_READY' &&
       !active &&
+      (await this.browserOwnsCurrentWorkItem(input)) &&
       (isOpenClawAutomaticReviewConfigured({
         tenantId: input.tenantId,
         workItemId: input.workItem.workItemId,
@@ -593,7 +678,7 @@ export function initialAnalysisTerminalCode(row: {
 export function projectCanonicalHostInitialAnalysisStatus(
   workItem: CanonicalWorkItemProjection,
   attempts: readonly CanonicalInitialAnalysisAttemptObservation[],
-  options: { originalAdmission?: {contextRef:string|null;reason:string|null}; englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean; originalImpactStages?: Partial<Record<OriginalEngineeringStage, boolean>>; invalidDeterministicOverall?: boolean } = {},
+  options: { originalAdmission?: {contextRef:string|null;reason:string|null}; englishAssessmentEnabled?: boolean; originalPublished?: boolean; originalImpactPending?: boolean; originalImpactStages?: Partial<Record<OriginalEngineeringStage, boolean>>; invalidDeterministicOverall?: boolean; sourceAssessmentAttempt?: CanonicalInitialAnalysisAttemptObservation } = {},
 ): AilyInitialAnalysisStatus {
   const attemptByAction = latestAttemptsByAction(attempts);
   const parsedPackageReady = options.originalPublished ?? isParsedPackageReady(workItem);
@@ -605,8 +690,19 @@ export function projectCanonicalHostInitialAnalysisStatus(
     : workItem;
   // A Host projection has its own successful execution record. A historical
   // OpenClaw Overall attempt is not its continuation or terminal result.
-  const overallAttempt = execution.integratedAssessment?.overallSynthesis?.executionKind ===
-    'DETERMINISTIC_PROJECTION' ? undefined : attemptByAction.OPENCLAW_OVERALL_SYNTHESIS;
+  const deterministic = execution.integratedAssessment?.overallSynthesis?.executionKind ===
+    'DETERMINISTIC_PROJECTION' ? execution.integratedAssessment.overallSynthesis : null;
+  const sourceInitial = deterministic?.sourceAssessment
+    ? [options.sourceAssessmentAttempt, ...attempts].find(attempt =>
+      attempt?.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' &&
+      attempt.attemptId === deterministic.sourceAssessment!.actionAttemptId) : undefined;
+  const independentOverall = attemptByAction.OPENCLAW_OVERALL_SYNTHESIS;
+  const newerOverall = independentOverall && (
+    (execution.overallRegenerationRequest?.requestId && independentOverall.requestId === execution.overallRegenerationRequest.requestId) ||
+    (independentOverall.baseRevision != null && (independentOverall.baseRevision >= execution.revision ||
+      (sourceInitial?.baseRevision != null && independentOverall.baseRevision > sourceInitial.baseRevision))));
+  const overallAttempt = !deterministic || newerOverall ? independentOverall : sourceInitial;
+
   const stages = parsedPackageReady
     ? {
         translation: projectStage(
@@ -645,6 +741,7 @@ export function projectCanonicalHostInitialAnalysisStatus(
           : projectStage(
               overallProjectionObservation(workItem),
               overallAttempt,
+              !!newerOverall,
             ),
       }
     : pendingStages();
@@ -665,7 +762,8 @@ export function projectCanonicalHostInitialAnalysisStatus(
   }
   if (options.invalidDeterministicOverall && stages.overall.status === 'SUCCEEDED')
     stages.overall = { ...stages.overall, status: 'CONFLICT',
-      terminalCode: 'REVIEW_OVERALL_PROJECTION_RECORD_INVALID' };
+      terminalCode: execution.integratedAssessment?.overallSynthesis?.sourceAssessment
+        ? 'INITIAL_OVERALL_PROJECTION_RECORD_INVALID' : 'REVIEW_OVERALL_PROJECTION_RECORD_INVALID' };
   if (options.originalPublished && !workItem.package && !originalApplicabilityInputMatches(execution) && !options.originalAdmission?.contextRef && stages.applicability.status === 'PENDING')
     stages.applicability={...stages.applicability,status:'WAITING_INPUT',terminalCode:options.originalAdmission?.reason ?? 'ORIGINAL_APPLICABILITY_MAPPING_REQUIRED'};
   const progression = parsedPackageReady
@@ -869,11 +967,12 @@ function overallProjectionObservation(
 function projectStage(
   projection: StageProjectionObservation,
   attempt: CanonicalInitialAnalysisAttemptObservation | undefined,
+  independentSuccessor = false,
 ): AilyInitialAnalysisStageStatus {
   // A separately requested run is visible beside the retained earlier result.
   // QUEUED means the consumer may claim it; it is not an already running call.
   if (
-    attempt?.requestId &&
+    attempt && (attempt.requestId || independentSuccessor) &&
     (attempt.attemptId !== projection.actionAttemptId ||
       ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
         attempt.status,

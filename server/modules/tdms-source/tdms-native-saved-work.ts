@@ -105,6 +105,31 @@ export async function tdmsSavedNativeContext(input: {
     work[0]!.owner !== actor.canonicalSubject.id
   )
     denied();
+  if (browser?.programAttemptId) {
+    identifier(browser.programAttemptId);
+    // Only membership leaves SQL before the existing current Source/receiver/own-approval
+    // checks. An input journal is not a saved work or a newly authenticated runtime caller.
+    const [prepared] = await database.execute<{retained:boolean}>(sql`SELECT EXISTS (
+      SELECT 1 FROM action_attempt a WHERE a.tenant_id=${actor.tenantId}
+        AND a.work_item_id=${binding.workItemId} AND a.document_version_id=${binding.documentVersionId}
+        AND a.attempt_id=${browser.programAttemptId} AND a.actor_user_id='service:openclaw-main'
+        AND a.task_envelope_json::jsonb#>>'{modelInput,actorUserId}'=${binding.actorUserId}
+        AND a.action_type='OPENCLAW_DYNAMIC_EVALUATION'
+        AND a.task_input_hash=a.task_envelope_json::jsonb->>'inputHash'
+        AND a.task_envelope_json::jsonb#>>'{modelInput,executionMode}'='PROGRAM_CONTROLLED_V1'
+        AND a.task_envelope_json::jsonb#>>'{modelInput,modelInput,executionMode}'='PROGRAM_CONTROLLED_V1'
+        AND a.task_envelope_json::jsonb#>>'{modelInput,modelInput,purpose}'='INITIAL_PROBLEM_ASSESSMENT'
+        AND (
+          EXISTS (SELECT 1 FROM jsonb_array_elements(a.task_envelope_json::jsonb#>'{modelInput,sourceCatalog}') e
+            WHERE e=${canonical(evidence)}::jsonb)
+          OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(a.review_activity_json::jsonb,'[]'::jsonb)) o,
+            jsonb_array_elements(CASE WHEN jsonb_typeof(o->'nativeEvidence')='array' THEN o->'nativeEvidence' ELSE '[]'::jsonb END) e
+            WHERE o->>'kind'='ASSESSMENT_SOURCES_READ' AND e=${canonical(evidence)}::jsonb)
+        )
+    ) AS retained`);
+    if (prepared?.retained !== true) invalid();
+    return context;
+  }
   const savedRefs = browser
     ? (browser.workRevisionRefs ?? [browser.workRevisionRef])
     : review ? [review.workRevisionRef] : undefined;

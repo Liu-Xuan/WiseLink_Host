@@ -17,20 +17,22 @@ let root: Root;
 let host: HTMLElement;
 const refresh = jest.fn();
 const navigate = jest.fn();
+const openWork = jest.fn();
 function reading(): JobAidWorkingReadState {
   return { data: jobAidReadingFixture(), error: null, isRefreshing: false, temporaryError: false, baseFallbackAllowed: true,
     observedAt: '2026-10-22T12:00:00Z', refresh };
 }
-async function render(read: JobAidWorkingReadState, scope: { workItemId?: string; sessionGeneration?: number } = {}) {
+async function render(read: JobAidWorkingReadState, scope: { workItemId?: string; sessionGeneration?: number; onOpenWorkRevision?: (ref: string) => void } = {}) {
   await act(async () => root.render(createElement(Diagnostic, {
     read, workItemId: jobAidReadingFixture().workItemId, sessionGeneration: 1,
+    onOpenWorkRevision: openWork,
     ...scope,
     onRefresh: refresh, onOpenPanel: navigate,
   })));
 }
 function element() { return host.querySelector('wiselink-monitor')!; }
 function shadow() { return element().shadowRoot!; }
-beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); refresh.mockReset(); navigate.mockReset(); });
+beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); refresh.mockReset(); navigate.mockReset(); openWork.mockReset(); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 afterAll(() => { for (const [name, value] of prior) { if (value) Object.defineProperty(globalThis, name, value); else Reflect.deleteProperty(globalThis, name); } dom.window.close(); });
 it('renders the actual custom element, refreshes through parent and preserves selection on a same-scope observation', async () => {
@@ -45,6 +47,43 @@ it('renders the actual custom element, refreshes through parent and preserves se
   expect(element()).toBe(original);
   expect((element() as unknown as { view: string }).view).toBe('flow');
 });
+
+it('opens the normal assessment panel for a sealed program execution without a business action', async () => {
+  const read = reading();
+  read.data = { ...read.data!, selectedExecution: {
+    actionType: 'OPENCLAW_DYNAMIC_EVALUATION', executionMode: 'PROGRAM_CONTROLLED_V1',
+    attemptId: 'program-attempt', attemptRef: 'AQ-program', status: 'RUNNING',
+    createdAt: '2026-10-25T05:00:00Z', startedAt: '2026-10-25T05:01:00Z', completedAt: null,
+  } };
+  await render(read);
+  await act(async () => element().dispatchEvent(new CustomEvent('wiselink-navigate', { detail: {
+    kind: 'request', nodeId: 'assessment.research', scopeKey: `1:${read.data!.workItemId}`,
+    subjectRef: read.data!.workItemId, recordKind: 'attempt', ref: 'program-attempt', attemptId: 'program-attempt',
+  } })));
+  expect(navigate).toHaveBeenCalledWith('assessment');
+  expect(refresh).not.toHaveBeenCalled();
+});
+
+it('opens the exact work adopted by an older Overall instead of the current work, and rejects stale or foreign refs', async () => {
+  const read = reading();
+  read.data = { ...read.data!, overallBasedOnWorkRevisionRef: 'work-previous-exact' };
+  await render(read, { onOpenWorkRevision: openWork });
+  const detail = { kind: 'source', nodeId: 'assessment.overall', scopeKey: `1:${read.data!.workItemId}`,
+    subjectRef: read.data!.workItemId, ref: 'work-previous-exact' };
+  await act(async () => element().dispatchEvent(new CustomEvent('wiselink-navigate', { detail })));
+  expect(openWork).toHaveBeenCalledWith('work-previous-exact');
+  expect(navigate).not.toHaveBeenCalled();
+  expect(refresh).not.toHaveBeenCalled();
+  openWork.mockClear();
+  for (const invalid of [{ ...detail, ref: 'unobserved-work' }, { ...detail, scopeKey: 'old-session' },
+    { ...detail, subjectRef: 'other-work-item' }, { ...detail, nodeId: 'assessment.research' }]) {
+    await act(async () => element().dispatchEvent(new CustomEvent('wiselink-navigate', { detail: invalid })));
+  }
+  expect(openWork).not.toHaveBeenCalled();
+  await render({ ...read, data: null, error: 'denied', observedAt: null }, { onOpenWorkRevision: openWork });
+  await act(async () => element().dispatchEvent(new CustomEvent('wiselink-navigate', { detail })));
+  expect(openWork).not.toHaveBeenCalled();
+});
 it('retains the last timestamp on temporary failure, clears revoked content, and rejects stale navigation', async () => {
   const read = reading();
   await render({ ...read, error: 'network', temporaryError: true });
@@ -53,7 +92,8 @@ it('retains the last timestamp on temporary failure, clears revoked content, and
   await act(async () => element().dispatchEvent(new CustomEvent('wiselink-navigate', { detail: { kind: 'artifact', nodeId: 'assessment.research', scopeKey: 'old' } })));
   expect(navigate).not.toHaveBeenCalled();
   await act(async () => element().dispatchEvent(new CustomEvent('wiselink-navigate', { detail: { kind: 'artifact', nodeId: 'assessment.research', scopeKey: `1:${read.data!.workItemId}`, subjectRef: read.data!.workItemId, ref: read.data!.current!.workRevisionRef } })));
-  expect(navigate).toHaveBeenCalledWith('assessment');
+  expect(openWork).toHaveBeenCalledWith(read.data!.current!.workRevisionRef);
+  expect(navigate).not.toHaveBeenCalled();
   await render({ ...read, data: null, observedAt: null, error: 'denied', temporaryError: false });
   expect(shadow().textContent).not.toContain('JobAid 调查');
   expect(shadow().textContent).not.toContain('已保存工作');

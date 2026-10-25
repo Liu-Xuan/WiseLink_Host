@@ -20,6 +20,60 @@ const saved = {
   workRevision: 1,
   createdAt: new Date('2026-09-23T00:00:00Z'),
 };
+const stopped = {
+  kind: 'ASSESSMENT_CONSUMER_STOPPED', requestId: 'fixture-request',
+  documentVersionId: 'DV-fixture', inputRevision: 2, modelRound: 6,
+  errorCode: 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE', upstreamOutcome: 'UNKNOWN',
+  observedAt: '2026-10-25T00:00:00.000Z',
+};
+
+it('recognizes real program progress and independent work READ without leaking receipt metadata', () => {
+  const value = projectJobAidActivity({...attempt, activityJson: JSON.stringify([
+    {kind: 'ASSESSMENT_PROGRAM_PROGRESS', phase: 'MODEL_RESPONSE_SAVED', checkpointRef: 'initial:request:assessment-round-1.result', observedAt: stopped.observedAt},
+    {kind: 'ASSESSMENT_WORK_READ', workRevisionRef: 'JAWR-private', workRevision: 2, saveRequestId: 'SAVE-private', observedAt: stopped.observedAt},
+  ])}, []);
+  expect(value).toMatchObject({unknownRecordCount: 0, malformedRecordCount: 0, error: null});
+  expect(JSON.stringify(value)).not.toMatch(/JAWR-private|SAVE-private|assessment-round/u);
+});
+
+it('projects stopped metadata for the selected attempt without changing authority or exposing control/source fields', () => {
+  const result = projectJobAidActivity({ ...attempt, activityJson: JSON.stringify([
+    { ...stopped, leaseToken: 'private-token', rawError: 'private-body' },
+  ]) }, [saved]);
+  expect(result.consumerStopped).toEqual({ sequence: 1, observedAt: stopped.observedAt,
+    modelRound: 6, errorCode: stopped.errorCode, upstreamOutcome: 'UNKNOWN' });
+  expect(JSON.stringify(result)).not.toMatch(/private|fixture-request|DV-fixture/u);
+  expect(attempt.status).toBe('RUNNING');
+  expect(result.savedRevisions).toHaveLength(1);
+  const html = renderToStaticMarkup(createElement(JobAidExecutionActivity, { activity: result }));
+  expect(html).toContain('已记录本轮执行停止');
+  expect(html).toContain('原请求结果待核');
+  expect(html).not.toContain('正在核对');
+  expect(html).toContain('JAWR-one');
+});
+
+it('rejects malformed stopped metadata and does not attribute an earlier attempt observation to a new one', () => {
+  const malformed = projectJobAidActivity({ ...attempt,
+    activityJson: JSON.stringify([{ ...stopped, upstreamOutcome: 'SUCCEEDED' }]) }, []);
+  expect(malformed.consumerStopped).toBeUndefined();
+  expect(malformed.malformedRecordCount).toBe(1);
+  const next = projectJobAidActivity({ ...attempt, attemptRef: 'AQ-next', activityJson: '[]' }, [saved]);
+  expect(next.consumerStopped).toBeUndefined();
+  expect(next.attemptRef).toBe('AQ-next');
+});
+
+it('a stopped observation refreshes the existing saved-work view while RUNNING remains unchanged', () => {
+  const previous = jobAidReadingFixture();
+  previous.executionStatus = 'RUNNING';
+  previous.activity = projectJobAidActivity(attempt, []);
+  const next = { ...previous, activity: projectJobAidActivity({
+    ...attempt, activityJson: JSON.stringify([stopped]),
+  }, []) };
+  expect(preserveJobAidRead(previous, next)).toBe(next);
+  expect(next.current).toBe(previous.current);
+  expect(next.executionStatus).toBe('RUNNING');
+});
+
 function event() {
   return {
     kind: 'ASSESSMENT_SOURCES_READ',
@@ -122,7 +176,8 @@ it('renders actual reads and exact saved versions even if the reading log is bro
   expect(html).toContain('已登记读取 2 项材料');
   expect(html).toContain('data-work-revision-ref="JAWR-one"');
   expect(html).not.toContain('private');
-  expect(html).toContain('不代表正式采用');
+  expect(html).toContain('准确工作修订：');
+  expect(html).toContain('具体模型输入与判断采用的依据以对应保存工作为准');
   const broken = renderToStaticMarkup(
     createElement(JobAidExecutionActivity, {
       activity: { ...result, error: 'ACTIVITY_RECORDS_INVALID' },
@@ -159,6 +214,8 @@ it('shows knowledge tool observations through the actual view without exposing p
   const html = renderToStaticMarkup(createElement(JobAidExecutionActivity, { activity: result }));
   expect(html).toContain('检索进行中'); expect(html).toContain('检索失败');
   expect(html).toContain('不证明工具当前仍在运行'); expect(html).toContain('不代表原始文档已核实');
+  expect(html).toContain('没有调用关联标识，不能合并为一次调用');
+  expect(html).toContain('原请求结果待核');
   expect(html).not.toContain('private');
   const previous = jobAidReadingFixture(); previous.activity = projectJobAidActivity(attempt, []);
   const next = { ...previous, activity: result };

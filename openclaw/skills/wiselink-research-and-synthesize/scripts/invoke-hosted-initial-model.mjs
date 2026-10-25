@@ -17,10 +17,12 @@ import {
   validateApplicabilityAstCandidate,
   validatePayload,
 } from './validate-payload.mjs';
-import { requestHostedGateway } from './request-hosted-gateway.mjs';
+import { modelExecutor, modelExecutorProvenance, modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway } from './model-executor.mjs';
 import { invokeHostedTranslationBlock } from './invoke-hosted-translation-block.mjs';
 import { invokeHostedJobAidProblemModel, isJobAidProblemInputSchema } from './run-jobaid-problem-assessment.mjs';
 import { SOURCE_CONTENT_SYNTHESIS_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION } from './jobaid-problem-guidance.mjs';
+import { invokeHostedProgramAssessment } from './run-program-assessment.mjs';
+import { PROGRAM_ASSESSMENT_MODE } from './program-assessment-materials.mjs';
 
 const OUTPUT_FUNCTION = 'return_wiselink_initial_candidate';
 const MAX_JOBAID_CANDIDATE_CORRECTIONS = 2;
@@ -74,6 +76,11 @@ export async function invokeHostedInitialModel(
   options,
   dependencies = {},
 ) {
+  if (modelInput?.executionMode !== undefined) {
+    if (modelInput.executionMode !== PROGRAM_ASSESSMENT_MODE)
+      throw new Error('INITIAL_EXECUTION_MODE_UNSUPPORTED');
+    return invokeHostedProgramAssessment({ operation, modelInput }, options, dependencies);
+  }
   if (operation === 'TRANSLATE' && modelInput?.schemaVersion === 'wiselink.3_1.translation_semantic_batch.v2')
     return invokeHostedTranslationBlock(modelInput, options, dependencies);
   if (isJobAidProblemInputSchema(modelInput?.schemaVersion))
@@ -92,8 +99,7 @@ export async function invokeHostedInitialModel(
     throw new Error('INITIAL_PROFILE_MISMATCH');
   }
   for (const key of [
-    'gatewayUrl',
-    'gatewayToken',
+    ...(modelExecutor(options) === 'CODEX' ? [] : ['gatewayUrl', 'gatewayToken']),
     'configuredModelVersion',
     'sessionDiscriminator',
   ]) {
@@ -178,14 +184,14 @@ export async function invokeHostedInitialModel(
     let response;
     let raw;
     try {
-      response = await (dependencies.requestGateway ?? requestHostedGateway)(
-        new URL('/v1/chat/completions', options.gatewayUrl),
+      response = await requestModelGateway(options,
+        modelGatewayEndpoint(options),
         {
           method: 'POST',
           headers: {
             accept: 'application/json',
             'content-type': 'application/json',
-            authorization: `Bearer ${options.gatewayToken}`,
+            ...modelGatewayHeaders(options),
             ...modelHeaders,
           },
           body: JSON.stringify({
@@ -221,7 +227,7 @@ export async function invokeHostedInitialModel(
             }),
           }),
           signal,
-        },
+        }, dependencies,
       );
       raw = await response.text();
     } catch (error) {
@@ -507,7 +513,7 @@ export async function invokeHostedInitialModel(
         ),
         promptVersion,
         skillVersion: WISELINK_SKILL_VERSION,
-        toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION },
+        toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION, ...modelExecutorProvenance(options) },
         runMetrics: {
           durationMs: Date.now() - startedAt,
           inputUnits,

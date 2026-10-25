@@ -33,8 +33,51 @@ import {
 import { jobAidReadingFixture } from './semantic-reading-ui.fixtures';
 import MatterProblemWork from '../../client/src/features/matter/MatterProblemWork';
 import { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
+import { projectJobAidActivity } from '../../server/modules/canonical-host/jobaid-activity';
+import { assessmentPageFixture } from './fixtures/document-assessment-workspace';
 
 describe('problem-oriented JobAid reading', () => {
+  it.each(['STALE', 'STALE_REASON'] as const)('keeps saved work readable when Overall has its own %s', stale => {
+    const data = jobAidReadingFixture(); data.overallStatus = 'CURRENT';
+    data.overallBasedOnWorkRevisionRef = data.current!.workRevisionRef;
+    const overall = assessmentPageFixture().workItem.integratedAssessment!.overallSynthesis!;
+    if (stale === 'STALE') overall.status = 'STALE'; else overall.staleReason = 'ENGINEER_REVIEW_CHANGED';
+    const html = renderToStaticMarkup(createElement(JobAidProblemReading, { data, overall, onLocateDocument: jest.fn() }));
+    expect(html).toContain('工作已保存，综合待更新');
+    expect(html).toContain('data-work-revision-ref="work-current-test"');
+  });
+
+  it.each([false, true])('shows stopped/UNKNOWN attention with authority only in details; saved=%s', saved => {
+    const data = jobAidReadingFixture();
+    if (!saved) data.current = null;
+    data.executionStatus = 'RUNNING';
+    data.latestAttempt = { attemptId: 'ATT-stop', status: 'RUNNING', inputRevision: 2 };
+    data.selectedExecution = { actionType: 'OPENCLAW_DYNAMIC_EVALUATION', attemptId: 'ATT-stop',
+      attemptRef: 'AQ-stop', status: 'RUNNING', createdAt: '2026-10-25T00:00:00Z',
+      startedAt: '2026-10-25T00:00:00Z', completedAt: null };
+    data.activity = projectJobAidActivity({ attemptId: 'ATT-stop', attemptRef: 'AQ-stop',
+      status: 'RUNNING', activityJson: JSON.stringify([{
+        kind: 'ASSESSMENT_CONSUMER_STOPPED', requestId: 'fixture-request',
+        documentVersionId: 'DV-fixture', inputRevision: 2, modelRound: 6,
+        errorCode: 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE', upstreamOutcome: 'UNKNOWN',
+        observedAt: '2026-10-25T00:00:00Z',
+      }]) }, []);
+    const html = renderToStaticMarkup(createElement(JobAidProblemReading, { data, onLocateDocument: jest.fn() }));
+    expect(html).toContain('执行已停止，原请求结果待核；任务正在等待系统收尾');
+    expect(html).not.toContain('正在核对');
+    expect(html).toContain('<summary>任务状态记录</summary>');
+    expect(html).toContain('Host状态字段：RUNNING');
+    expect(html).not.toContain('当前运行：');
+    expect(html).not.toContain('最近一次评估请求：');
+    expect(html).not.toContain('后续评估请求：');
+    expect(html).not.toContain('fixture-request');
+    expect(data.executionStatus).toBe('RUNNING');
+    if (saved) {
+      expect(html).toContain('data-work-revision-ref="work-current-test"');
+      expect(html).toContain('尚未确认构型，不得认定必须实施');
+    }
+  });
+
   it('refreshes a same-work observation when selected attempt identity, status or exact times change', () => {
     const data = jobAidReadingFixture();
     data.selectedExecution = { actionType: 'OPENCLAW_OVERALL_SYNTHESIS', attemptId: 'overall-one',

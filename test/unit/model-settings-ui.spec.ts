@@ -145,6 +145,9 @@ it('keeps the saved model unchanged until a successful exact-revision save', asy
     modelRef: 'miaoda/glm-5.3',
   });
   expect(container.textContent).toContain('已保存：GLM 5.3');
+  expect(container.textContent).toContain('已有事项的普通接续沿用事项模型');
+  expect(container.textContent).toContain('新程序评估和 Review 新轮可明确另选');
+  expect(container.textContent).toContain('已提交任务保留原模型');
 });
 it('does not expose old settings after a session change or accept a late old response', async () => {
   let resolve!: (v: unknown) => void;

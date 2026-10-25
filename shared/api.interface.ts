@@ -1,3 +1,4 @@
+export type { JobAidProgramMaterialsRead } from './jobaid-problem-assessment.interface';
 import type { DocumentOriginalBinding } from './document-original.interface';
 export type { LcmNativeMatrix, LcmNativeMatrixResponse } from './lcm-native-matrix.interface';
 export type {
@@ -1830,6 +1831,14 @@ export interface CanonicalOpenClawOverallProjection {
   /** Absent on historical model-produced candidates. */
   executionKind?: 'DETERMINISTIC_PROJECTION';
   modelRequests?: 0;
+  /** Initial projection consumes a real independent READ of this saved revision. */
+  sourceAssessment?: {
+    actionAttemptId: string;
+    workRevisionRef: string;
+    workRevision: number;
+    saveRequestId: string;
+    readObservedAt: string;
+  };
   sourceReview?: {
     reviewConversationId: string;
     reviewTurnId: string;
@@ -2936,10 +2945,15 @@ export interface CanonicalInitialAnalysisReadModel {
   candidateOnly: true;
 }
 
+export type CanonicalAssessmentExecutionMode = 'PROGRAM_CONTROLLED_V1';
+
 export interface CanonicalInitialAnalysisContinuationRequest {
   requestId: string;
   expectedRevision: number;
   operation: Exclude<AilyInitialAnalysisOperation, 'EXTRACT_APPLICABILITY'>;
+  /** New initial assessment only; absent preserves the sealed historical route. */
+  executionMode?: CanonicalAssessmentExecutionMode;
+  modelRef?: string;
   retranslateBlockIds?: string[];
 }
 

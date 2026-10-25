@@ -19,6 +19,8 @@ export interface RequestObservation {
   subjectRef?: string;
   subjectLabel?: string;
   targetLabel?: string;
+  /** Exact sealed execution mode when the authoritative read provides it. */
+  executionMode?: string;
   status: Axis;
   artifact?: string;
   next?: string;

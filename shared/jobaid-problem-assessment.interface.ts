@@ -228,6 +228,19 @@ export interface CanonicalJobAidProblemCandidateProjection {
   readingResult: AssessmentReadingResult;
 }
 
+/** Exact Native-prepared payload; preparation alone is not evidence of a provider send. */
+export interface JobAidProgramMaterialsRead {
+  schemaVersion: 'wiselink.program-assessment-materials-read.v1';
+  workItemId: string;
+  attemptId: string;
+  attemptRef: string;
+  executionMode: 'PROGRAM_CONTROLLED_V1';
+  executionModel: import('./api.interface').CanonicalExecutionModelSelection;
+  preparedAt: string;
+  submissionEvidence: 'PREPARED_NOT_CONFIRMED_SENT' | 'RESPONSE_RECEIVED';
+  snapshot: { materials: Record<string, unknown>; modelRequest: Record<string, unknown> };
+}
+
 export interface JobAidWorkingReadModel {
   schemaVersion: 'wiselink.jobaid-working-read.v2';
   enabled: boolean;
@@ -255,6 +268,12 @@ export interface JobAidWorkingReadModel {
   /** One selected execution from this read; not the complete attempt history. */
   selectedExecution?: {
     actionType: 'OPENCLAW_DYNAMIC_EVALUATION' | 'OPENCLAW_OVERALL_SYNTHESIS';
+    executionMode?: import('./api.interface').CanonicalAssessmentExecutionMode | null;
+    executionModel?: import('./api.interface').CanonicalExecutionModelSelection | null;
+    /** Consumer observation, not an authoritative provider or attempt terminal state. */
+    programProgress?: { phase: 'MATERIALS_READY' | 'MODEL_RESPONSE_SAVED'; checkpointRef: string; observedAt: string } | null;
+    /** Metadata only; content requires the exact attempt's authorized lazy read. */
+    programMaterialsAvailable?: boolean;
     attemptId: string;
     /** Exact persisted operation reference, independent of request identity. */
     attemptRef: string | null;

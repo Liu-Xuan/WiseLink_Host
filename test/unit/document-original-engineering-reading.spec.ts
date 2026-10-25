@@ -9,6 +9,8 @@ import {
   prepareDocumentOriginalEvidenceFinder,
 } from '../../server/modules/canonical-host/document-original-engineering-reading';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
+import { expandJobAidSourceSelection } from '../../server/modules/canonical-host/jobaid-problem-task';
+import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 
 function fixture() {
   const original = originalFixture();
@@ -19,6 +21,110 @@ function fixture() {
       sha256: 'b'.repeat(64), byteLength: 100, mediaType: 'application/json' },
   } } as Parameters<typeof documentOriginalEngineeringReading>[0];
 }
+
+function pageFixture(pageStart: number) {
+  const loaded = fixture();
+  const source = loaded.structuredSource;
+  source.sourceLocators[0] = { ...source.sourceLocators[0], pageStart, pageEnd: pageStart,
+    normalizedPath: 'body/main', xpath: '/body/p[1]' };
+  source.sourceLocators[1] = { ...source.sourceLocators[1], pageStart: 1 - pageStart, pageEnd: 1 - pageStart };
+  const sourceRefId = 'SR-TEST-FOOTNOTE';
+  source.units.push({ ...source.units[0], unitId: 'footnote', order: 2,
+    sourceRefIds: [sourceRefId], sourceSegmentIds: [sourceRefId],
+    payload: { text: 'Footnote: retain this exception only while condition X holds.' } });
+  source.sourceLocators.push({ ...source.sourceLocators[0], sourceRefId,
+    normalizedPath: 'body/footnote', xpath: '/body/aside[1]' });
+  loaded.original.locations[0].pageIndex = pageStart;
+  loaded.original.locations[1].pageIndex = 1 - pageStart;
+  loaded.original.locations.push({ ...loaded.original.locations[0], sourceRefId });
+  return loaded;
+}
+
+describe('JobAid PAGE selection of engineering original evidence', () => {
+  it.each([0, 1])('expands actual reader locators to distinct blocks and footnotes on page %s', pageStart => {
+    const loaded = pageFixture(pageStart);
+    const catalog = prepareDocumentOriginalEngineeringReader(loaded)(0, 20).evidence;
+    const main = catalog.find(item => item.sourceRefId === 'SR-TEST-P1')!;
+    const note = catalog.find(item => item.sourceRefId === 'SR-TEST-FOOTNOTE')!;
+    expect(JSON.parse(main.locator)).toMatchObject({ pageStart, sourceRefId: main.sourceRefId, xpath: '/body/p[1]' });
+    expect(JSON.parse(note.locator)).toMatchObject({ pageStart, sourceRefId: note.sourceRefId, xpath: '/body/aside[1]' });
+    const before = structuredClone(catalog);
+    const selected = expandJobAidSourceSelection(catalog, [note.evidenceRef, main.evidenceRef], 'PAGE');
+    expect(selected).toEqual([main, note]);
+    expect(new Set(selected.map(item => item.evidenceRef)).size).toBe(selected.length);
+    const oneBlock = expandJobAidSourceSelection(catalog, [main.evidenceRef], 'PAGE');
+    expect(oneBlock).toEqual([main, note]);
+    oneBlock[0].excerpt = 'Caller mutation';
+    expect(catalog).toEqual(before);
+    expect(expandJobAidSourceSelection(catalog, [note.evidenceRef, main.evidenceRef], 'EXACT')).toEqual([note, main]);
+  });
+
+  it('isolates other documents, parses and pages while retaining explicitly selected non-page evidence', () => {
+    const loaded = pageFixture(0);
+    const mainCatalog = prepareDocumentOriginalEngineeringReader(loaded)(0, 20).evidence;
+    const otherDocument = pageFixture(0);
+    otherDocument.run.documentVersionId = otherDocument.original.binding.documentVersionId = 'DV-OTHER';
+    const otherParse = pageFixture(0);
+    otherParse.run.parseRunId = otherParse.original.binding.parseRunId = 'PR-OTHER';
+    const method: AssessmentEvidence = { evidenceRef: 'method:page-selection', kind: 'METHOD_CLAUSE',
+      title: 'Constructed method', versionLabel: null, excerpt: 'Retained explicit method',
+      packRef: 'pack', methodRef: 'method', sourceIdentity: 'constructed-method',
+      locator: 'clause 1', sourceVersionStatus: 'VERSION_UNCONFIRMED' };
+    const catalog = [...mainCatalog, ...prepareDocumentOriginalEngineeringReader(otherDocument)(0, 20).evidence,
+      ...prepareDocumentOriginalEngineeringReader(otherParse)(0, 20).evidence, method];
+    const main = mainCatalog.find(item => item.sourceRefId === 'SR-TEST-P1')!;
+    const note = mainCatalog.find(item => item.sourceRefId === 'SR-TEST-FOOTNOTE')!;
+    expect(expandJobAidSourceSelection(catalog, [method.evidenceRef, main.evidenceRef], 'PAGE')).toEqual([main, note, method]);
+    expect(expandJobAidSourceSelection(catalog, [main.evidenceRef], 'EXACT')).toEqual([main]);
+  });
+
+  it.each([
+    ['malformed', '{"pageStart":'], ['array', '[]'],
+    ['null', 'null'], ['boolean', 'true'], ['number', '0'], ['quoted text', '"bad"'],
+    ['blank', ' \n '], ['malformed quoted text', '"bad'],
+    ['missing page', JSON.stringify({ parseRunId: 'PR-TEST-2', sourceRefId: 'SR-TEST-P1' })],
+    ['negative page', JSON.stringify({ parseRunId: 'PR-TEST-2', sourceRefId: 'SR-TEST-P1', pageStart: -1 })],
+    ['fractional page', JSON.stringify({ parseRunId: 'PR-TEST-2', sourceRefId: 'SR-TEST-P1', pageStart: 0.5 })],
+    ['unsafe page', JSON.stringify({ parseRunId: 'PR-TEST-2', sourceRefId: 'SR-TEST-P1', pageStart: Number.MAX_SAFE_INTEGER + 1 })],
+    ['string page', JSON.stringify({ parseRunId: 'PR-TEST-2', sourceRefId: 'SR-TEST-P1', pageStart: '0' })],
+    ['foreign parse', JSON.stringify({ parseRunId: 'PR-OTHER', sourceRefId: 'SR-TEST-P1', pageStart: 0 })],
+    ['foreign ref', JSON.stringify({ parseRunId: 'PR-TEST-2', sourceRefId: 'SR-OTHER', pageStart: 0 })],
+  ])('rejects a selected %s locator; EXACT remains available', (_label, locator) => {
+    const [main] = prepareDocumentOriginalEngineeringReader(pageFixture(0))(0, 20).evidence;
+    const bad = { ...main, locator };
+    expect(() => expandJobAidSourceSelection([bad], [bad.evidenceRef], 'PAGE')).toThrow('JOBAID_SOURCE_PAGE_LOCATOR_INVALID');
+    expect(expandJobAidSourceSelection([bad], [bad.evidenceRef], 'EXACT')).toEqual([bad]);
+  });
+
+  it('rejects selected version or original binding drift and skips unrelated invalid structured locators', () => {
+    const catalog = prepareDocumentOriginalEngineeringReader(pageFixture(0))(0, 20).evidence;
+    const [main, otherPage, note] = catalog;
+    for (const bad of [{ ...main, versionLabel: 'PR-OTHER' }, { ...main, documentVersionId: 'DV-OTHER' }]) {
+      expect(() => expandJobAidSourceSelection([bad], [bad.evidenceRef], 'PAGE')).toThrow('JOBAID_SOURCE_PAGE_LOCATOR_INVALID');
+    }
+    for (const locator of ['{"pageStart":', 'null', 'true', '0', '"bad"', ' \n ']) {
+      const invalid = { ...otherPage, locator };
+      expect(expandJobAidSourceSelection([main, invalid, note], [main.evidenceRef], 'PAGE')).toEqual([main, note]);
+    }
+  });
+
+  it('keeps legacy text locator revision isolation and the existing selection limits', () => {
+    const [main] = prepareDocumentOriginalEngineeringReader(pageFixture(0))(0, 20).evidence;
+    const legacy = { ...main, locator: 'page 1' };
+    const samePage = { ...legacy, evidenceRef: 'DOCUMENT_ORIGINAL:DV-TEST:PR-TEST-2:SR-SAME', sourceRefId: 'SR-SAME' };
+    const previousParse = { ...samePage, evidenceRef: 'DOCUMENT_ORIGINAL:DV-TEST:PR-OLD:SR-SAME', versionLabel: 'PR-OLD' };
+    const otherDocument = { ...samePage, evidenceRef: 'DOCUMENT_ORIGINAL:DV-OTHER:PR-TEST-2:SR-SAME', documentVersionId: 'DV-OTHER' };
+    const catalog = [legacy, samePage, previousParse, otherDocument];
+    expect(expandJobAidSourceSelection(catalog, [legacy.evidenceRef], 'PAGE')).toEqual([legacy, samePage]);
+    expect(() => expandJobAidSourceSelection(catalog, ['unregistered'], 'PAGE')).toThrow('JOBAID_SOURCE_NOT_REGISTERED');
+    expect(() => expandJobAidSourceSelection(catalog, [], 'PAGE')).toThrow('JOBAID_SOURCE_SELECTION_INVALID');
+    expect(() => expandJobAidSourceSelection(catalog, [legacy.evidenceRef, legacy.evidenceRef], 'PAGE')).toThrow('JOBAID_SOURCE_SELECTION_INVALID');
+    const many = Array.from({ length: 97 }, (_, index) => ({ ...legacy,
+      evidenceRef: `DOCUMENT_ORIGINAL:DV-TEST:PR-TEST-2:SR-${index}`, sourceRefId: `SR-${index}` }));
+    expect(expandJobAidSourceSelection(many, many.slice(0, 96).map(item => item.evidenceRef), 'PAGE')).toHaveLength(97);
+    expect(() => expandJobAidSourceSelection(many, many.map(item => item.evidenceRef), 'PAGE')).toThrow('JOBAID_SOURCE_SELECTION_INVALID');
+  });
+});
 
 describe('engineering original evidence', () => {
   it('retains long original text, table content and honest coverage across pages', () => {

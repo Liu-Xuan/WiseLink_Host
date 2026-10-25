@@ -87,3 +87,26 @@ test.each([
   }, database)).rejects.toThrow('JOBAID_WORK_LEASE_FENCE_REJECTED');
   expect(insert).not.toHaveBeenCalled();
 });
+
+test('program progress ACK retries preserve the first observation and reject a changed artifact', async () => {
+  const current = currentAttempt();
+  const artifact: import('@shared/api.interface').UnifiedPackageArtifactDescriptor = {ref:'artifact://input-a',sha256:'b'.repeat(64),byteLength:123,mediaType:'application/json',storeRole:'UnifiedArtifactStoreCandidate' as const};
+  const observedAt='2026-10-25T00:00:00Z';
+  current.reviewActivityJson=JSON.stringify([{kind:'ASSESSMENT_PROGRAM_PROGRESS',phase:'MATERIALS_READY',
+    checkpointRef:'program-materials',materialsArtifact:artifact,observedAt}]);
+  const original=current.reviewActivityJson;
+  const update=jest.fn();
+  const rows=(table:unknown) => table === identitySubjectMapping ? [{id:'MAP'}] : table === actionAttempt ? [current]
+    : [{workItemId:current.workItemId,documentVersionId:current.documentVersionId,revision:3,
+      projectionJson:JSON.stringify({source:{sourceArtifactId:'ART-LEASE',sourceFileSha256:SOURCE_SHA}})}];
+  const database={select:()=>({from:(table:unknown)=>({where:()=>({limit:async()=>rows(table),for:async()=>rows(table)})})}),update} as unknown as PostgresJsDatabase;
+  const repository=new JobAidWorkRepository(database,{withActorTransaction:async (_actor:string,operation:(input:{database:PostgresJsDatabase})=>Promise<void>)=>operation({database})} as never,{} as never);
+  const input={row:current,actorUserId:current.actorUserId,fence:{principalId:current.leaseOwner!,leaseToken:TOKEN_CURRENT,leaseGeneration:2},
+    sourceBindings:[{kind:'SOURCE_FILE' as const,workItemId:current.workItemId,documentVersionId:current.documentVersionId!,artifactRef:'ART-LEASE',artifactSha256:SOURCE_SHA}],
+    phase:'MATERIALS_READY' as const,checkpointRef:'program-materials',materialsArtifact:artifact};
+  await repository.recordProgramProgress(input);
+  expect(update).not.toHaveBeenCalled();expect(current.reviewActivityJson).toBe(original);
+  await expect(repository.recordProgramProgress({...input,materialsArtifact:{...artifact,sha256:'c'.repeat(64)}}))
+    .rejects.toThrow('JOBAID_PROGRAM_PROGRESS_CONFLICT');
+  expect(update).not.toHaveBeenCalled();
+});

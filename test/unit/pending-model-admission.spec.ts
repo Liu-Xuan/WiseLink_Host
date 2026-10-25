@@ -113,7 +113,24 @@ describe('initial model reservation fences a delayed captured selection', () => 
     expect(state.insert).toHaveBeenCalledTimes(1);
   });
 
-  it('fails closed when a captured attempt has no authoritative WI model', async () => {
+  it.each(['valid', 'model-mismatch', 'wrong-type'] as const)('explicit new program model is scoped to its sealed request: %s', async scenario => {
+    const state = fixture('OPENCLAW_DYNAMIC_EVALUATION', 'openclaw-v2:program-new', JSON.stringify(original));
+    state.attempt.executionModelJson = JSON.stringify(changed);
+    state.attempt.taskEnvelopeJson = JSON.stringify({allowedConnectors: [], executionModel: changed,
+      modelInput: {schemaVersion: 'wiselink.3_1.initial_analysis_request.v1', executionMode: 'PROGRAM_CONTROLLED_V1',
+        modelRef: scenario === 'model-mismatch' ? original.modelRef : changed.modelRef}});
+    if (scenario === 'wrong-type') state.attempt.actionType = 'OPENCLAW_OVERALL_SYNTHESIS';
+    if (scenario === 'valid') {
+      await expect(state.repository.reserve(state.attempt as never)).resolves.toMatchObject({created: true});
+      expect(state.ownerLock).toHaveBeenCalledWith('update');
+      expect(state.insert).toHaveBeenCalledTimes(1);
+    } else {
+      await expect(state.repository.reserve(state.attempt as never)).rejects.toThrow('ACTION_ATTEMPT_PROGRAM_MODEL_BINDING_INVALID');
+      expect(state.insert).not.toHaveBeenCalled();
+    }
+  });
+
+  it('fails closed when a captured attempt has no authoritative WI model' , async () => {
     const state = fixture(
       'OPENCLAW_TRANSLATE',
       'initial-model-missing-owner',

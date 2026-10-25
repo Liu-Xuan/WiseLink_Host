@@ -142,6 +142,24 @@ describe('ActionAttemptLifecycleService', () => {
     expect(renewal).toHaveBeenCalledTimes(1);
   });
 
+  it('seals an explicit new program model without changing or capturing the old WorkItem pin', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const models = fixedModelSettings();
+    const capture = jest.spyOn(models, 'captureForWorkItem');
+    const service = new ActionAttemptLifecycleService(repository as never, models);
+    const input = {...reservationInput(async () => ({executionMode: 'PROGRAM_CONTROLLED_V1',
+      requestedModelRef: 'miaoda/glm-5.3'})), programControlled: {modelRef: 'miaoda/glm-5.3'}};
+    const first = await service.reserve(input);
+    const replay = await service.reserve(input);
+    expect(capture).not.toHaveBeenCalled();
+    expect(first.task.executionModel?.modelRef).toBe('miaoda/glm-5.3');
+    expect(replay.task.executionModel).toEqual(first.task.executionModel);
+    await expect(service.reserve({...input, programControlled: undefined}))
+      .rejects.toThrow('ACTION_ATTEMPT_IDEMPOTENCY_PAYLOAD_MISMATCH');
+    await expect(service.reserve({...input, programControlled: {modelRef: 'miaoda/minimax-m3'}}))
+      .rejects.toThrow('ACTION_ATTEMPT_IDEMPOTENCY_PAYLOAD_MISMATCH');
+  });
+
   it('captures the WorkItem selection once and preserves it through a resumed claim', async () => {
     const repository = new MemoryActionAttemptRepository();
     const models = fixedModelSettings();

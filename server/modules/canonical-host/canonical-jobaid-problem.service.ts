@@ -1,3 +1,5 @@
+import { assertProgramCompleteIssueCoverage, parseProgramMaterialSnapshot, programMaterialsObservation } from './program-assessment-materials';
+import { exactProgramWorkRead, latestProgramProgress } from './program-controlled-assessment';
 import { assertTdmsSealedResultFence, tdmsReviewBinding, type TdmsReviewCaller, type TdmsReviewIngress } from '../tdms-source/tdms-review-delegation';
 import type { TdmsReviewSavedContext, TdmsReviewContext } from './tdms-review-saved-context';
 import { assertJobAidSemanticContent } from './jobaid-semantic-content';
@@ -17,6 +19,7 @@ import { projectSavedDocumentActivityForAssessment, type DocumentActivityAssessm
 import { sourceStatementEvidence } from './document-activity-assessment-consumer';
 import { parseAssessmentSourceStatement } from '@shared/assessment-evidence-roots';
 import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
+import { isJobAidConsumerStoppedReport, type JobAidConsumerStoppedReport } from '@shared/jobaid-activity.interface';
 import { projectJobAidActivity } from './jobaid-activity';
 import { originalApplicabilityResultMatches } from './original-applicability-currentness';
 import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
@@ -54,6 +57,7 @@ import {
   type CanonicalJobAidProblemCandidateProjection,
   type JobAidWorkRevision,
   type JobAidWorkingReadModel,
+  type JobAidProgramMaterialsRead,
 } from '@shared/jobaid-problem-assessment.interface';
 import {
   canonicalJson,
@@ -241,6 +245,7 @@ export class CanonicalJobAidProblemService {
         : 'OPENCLAW_OVERALL_SYNTHESIS';
     const idempotencyKey = problemIdempotencyKey(workItem, purpose, requestId);
     let originalParseRunId: string | undefined;
+    let programControlled: { modelRef: string } | undefined;
     if (requestId !== undefined) {
       const existing = await this.attempts.readRequest({
         tenantId: scope.tenantId,
@@ -251,7 +256,11 @@ export class CanonicalJobAidProblemService {
       });
       if (existing) {
         continuationReceipt(existing, purpose);
-        originalParseRunId = readInitialAnalysisRequestInput(parseTaskEnvelope(existing.taskEnvelopeJson))?.originalParseRunId;
+        const sealedTask = parseTaskEnvelope(existing.taskEnvelopeJson);
+        const sealedRequest = readInitialAnalysisRequestInput(sealedTask);
+        originalParseRunId = sealedRequest?.originalParseRunId;
+        if (sealedTask.modelInput.executionMode === 'PROGRAM_CONTROLLED_V1')
+          programControlled = { modelRef: sealedTask.executionModel!.modelRef };
         if (
           !['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
             existing.status,
@@ -267,6 +276,7 @@ export class CanonicalJobAidProblemService {
     if (purpose === 'OVERALL_CONSISTENCY' && workItem.overallRegenerationRequest)
       await this.reviewOverallRegenerationBinding({workItem,tenantId:scope.tenantId,actorUserId,nativeCaller:{runtimeScope:scope}},false);
     const claim = await this.attempts.reserveAndClaim({
+      ...(programControlled ? {programControlled} : {}),
       workItemId: workItem.workItemId,
       taskType,
       actorUserId: 'service:openclaw-main',
@@ -297,6 +307,7 @@ export class CanonicalJobAidProblemService {
           undefined,
           originalParseRunId,
           undefined, false, {scope,taskContextRef:identity.operationRef},
+          undefined, programControlled,
         ),
     });
     const input = parseJobAidProblemTask(claim.task);
@@ -559,7 +570,10 @@ export class CanonicalJobAidProblemService {
     },
     expectedOriginal?: {parseRunId:string;parseRevision:number},
     cancelledInitialContinuation?: CancelledInitialContinuationGuard,
+    programControlled?: { modelRef: string },
   ) {
+    if (programControlled && (purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || activeConfigurationEvidenceReevaluation(workItem)))
+      throw new Error('JOBAID_PROGRAM_SCOPE_INVALID');
     if (!permissionSnapshotVersion.trim())
       throw new Error('JOBAID_PERMISSION_SNAPSHOT_REQUIRED');
     const idempotencyKey = problemIdempotencyKey(workItem, purpose, requestId);
@@ -574,7 +588,13 @@ export class CanonicalJobAidProblemService {
       documentVersionId: workItem.source.documentVersionId,
       idempotencyKey,
     });
-    if (existing) return continuationReceipt(existing, purpose);
+    if (existing) {
+      const task = parseTaskEnvelope(existing.taskEnvelopeJson);
+      if ((task.modelInput.executionMode === 'PROGRAM_CONTROLLED_V1') !== !!programControlled ||
+          (programControlled && task.executionModel?.modelRef !== programControlled.modelRef))
+        throw new Error('JOBAID_REQUEST_SCOPE_CHANGED');
+      return continuationReceipt(existing, purpose);
+    }
     if (!this.enabledForNewTasks())
       throw new Error('JOBAID_PROBLEM_V2_NEW_REQUEST_DISABLED');
 
@@ -600,6 +620,7 @@ export class CanonicalJobAidProblemService {
       original.parseRevision !== expectedOriginal.parseRevision)) throw new Error('JOBAID_ORIGINAL_REQUEST_CHANGED');
     const reserved = await this.attempts.reserve({
       cancelledInitialContinuation,
+      ...(programControlled ? { programControlled } : {}),
       workItemId: execution.workItemId,
       taskType,
       actorUserId: 'service:openclaw-main',
@@ -622,7 +643,8 @@ export class CanonicalJobAidProblemService {
           : {}),
       },
       buildModelInput: async () =>
-        buildInitialAnalysisRequestInput({ taskType, requestId, originalParseRunId: original.parseRunId }),
+        buildInitialAnalysisRequestInput({ taskType, requestId, originalParseRunId: original.parseRunId,
+          ...(programControlled ? {executionMode: 'PROGRAM_CONTROLLED_V1', modelRef: programControlled.modelRef} : {}) }),
     });
     return {
       attemptRef: reserved.task.operationRef,
@@ -785,6 +807,7 @@ export class CanonicalJobAidProblemService {
     requestContext = false,
     nativeAdmission?: {scope:CanonicalVerifiedServiceScope;taskContextRef:string},
     reviewCaller?: TdmsReviewCaller,
+    programControlled?: { modelRef: string },
   ): Promise<JobAidProblemTaskInput> {
     const readScope = new UnifiedArtifactReadScope(this.artifactStore);
     if (!this.originalReader) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
@@ -1029,6 +1052,18 @@ export class CanonicalJobAidProblemService {
     });
     taskInput.modelInput.documentOverview.original = { binding: original.original.binding, semanticMap,
       coverage: original.original.coverage, findings: original.structuredSource.findings };
+    if (programControlled) {
+      if (purpose !== 'INITIAL_PROBLEM_ASSESSMENT') throw new Error('JOBAID_PROGRAM_SCOPE_INVALID');
+      taskInput.executionMode = 'PROGRAM_CONTROLLED_V1';
+      taskInput.requestedModelRef = programControlled.modelRef;
+      taskInput.modelInput.executionMode = 'PROGRAM_CONTROLLED_V1';
+      taskInput.modelInput.programOriginal = { binding: original.original.binding, coverage: original.original.coverage,
+        units: original.structuredSource.units, sourceLocators: original.structuredSource.sourceLocators,
+        findings: original.structuredSource.findings };
+      taskInput.initiallyDeliveredRefs = [...new Set([...taskInput.initiallyDeliveredRefs, ...primaryByRef.keys()])];
+      taskInput.modelInput.deliveredEvidence = overallModelEvidenceRegistry(taskInput.sourceCatalog.filter(
+        item => taskInput.initiallyDeliveredRefs.includes(item.evidenceRef)), taskInput.modelInput.evidenceProjectionVersion);
+    }
     const preparationScope: JobAidPreparationScope | undefined = purpose === 'PROBLEM_REVIEW'
       ? {...reviewSelection,selectedContributionRefs:extraEvidence.flatMap(item => item.kind === 'ENGINEER_STATEMENT' && item.dialogueSource
           ? [item.dialogueSource.contributionRef] : [])} : undefined;
@@ -1080,7 +1115,7 @@ export class CanonicalJobAidProblemService {
           fragments: [],
         };
     }
-    if (purpose === 'INITIAL_PROBLEM_ASSESSMENT' && previousWork?.content.roundCompletion === 'COMPLETE' &&
+    if (!programControlled && purpose === 'INITIAL_PROBLEM_ASSESSMENT' && previousWork?.content.roundCompletion === 'COMPLETE' &&
         previousWork.basedOnWorkItemRevision === workItem.revision &&
         !isJobAidProblemProjection(workItem.integratedAssessment?.baseRules)) {
       const source = await this.attempts.readScopedById({attemptId:previousWork.actionAttemptId,tenantId,workItemId:workItem.workItemId});
@@ -1207,7 +1242,7 @@ export class CanonicalJobAidProblemService {
         SELECT 1 FROM work_item w JOIN dm_document_version v ON v.document_version_id=w.document_version_id
         JOIN dm_acquisition a ON a.document_version_id=v.document_version_id OR a.acquisition_id=v.acquisition_id
         WHERE w.tenant_id=${ingress.scope.tenantId} AND w.work_item_id=${ingress.scope.workItemId}
-          AND a.source_descriptor_json::jsonb ? 'tdmsRegistration') AS marker`);
+          AND jsonb_exists(a.source_descriptor_json::jsonb, 'tdmsRegistration')) AS marker`);
       if (saved?.native||saved?.marker) throw new Error('TDMS_REVIEW_ADMISSION_NOT_CONNECTED');
       return undefined;
     }
@@ -2062,6 +2097,99 @@ export class CanonicalJobAidProblemService {
     };
   }
 
+  async recordProgramProgress(input: {attemptRef: string; workItemId: string; leaseToken: string;
+    leaseGeneration: number; phase: 'MATERIALS_READY' | 'MODEL_RESPONSE_SAVED'; checkpointRef: string;
+    materialSnapshotJson?: string}) {
+    const {row, task, taskInput, scope} = await this.authorizedAttempt(input.attemptRef, 'READ_ASSESSMENT_SOURCES', input.workItemId);
+    if (taskInput.executionMode !== 'PROGRAM_CONTROLLED_V1') throw new Error('JOBAID_PROGRAM_MODE_REQUIRED');
+    assertJobAidWorkFence(row, {...input, principalId: scope.principalId});
+    const evidence = mergeTdmsReadEvidence(taskInput.sourceCatalog, resolvedTdmsReadEvidence(row.reviewActivityJson));
+    await this.assertSourcesAuthorized(evidence, taskInput, scope.tenantId, scope.workItemId, scope);
+    let materialsArtifact: import('@shared/api.interface').UnifiedPackageArtifactDescriptor | undefined;
+    if (input.phase === 'MATERIALS_READY') {
+      if (!input.materialSnapshotJson) throw new Error('JOBAID_PROGRAM_MATERIALS_REQUIRED');
+      const snapshot = parseProgramMaterialSnapshot(JSON.parse(input.materialSnapshotJson), task, taskInput, evidence);
+      const bytes = new TextEncoder().encode(canonicalJson({workItemId: row.workItemId, attemptId: row.attemptId,
+        attemptRef: row.operationRef, taskInputHash: row.taskInputHash, snapshot}));
+      const persisted = await this.artifactStore.persistAndReadback(bytes);
+      if (!Buffer.from(persisted.bytes).equals(Buffer.from(bytes))) throw new Error('JOBAID_PROGRAM_MATERIALS_READBACK_MISMATCH');
+      materialsArtifact = persisted.artifact;
+    } else if (input.materialSnapshotJson !== undefined) throw new Error('JOBAID_PROGRAM_MATERIALS_PHASE_INVALID');
+    await this.work.recordProgramProgress({row, actorUserId: taskInput.actorUserId,
+      fence: {...input, principalId: scope.principalId, automaticLeaseRequired: !!scope.automaticWorkItemLease},
+      sourceBindings: taskInput.sourceBindings, phase: input.phase, checkpointRef: input.checkpointRef,
+      ...(materialsArtifact ? {materialsArtifact} : {}),
+      ...(taskInput.tdmsContext ? {assertNativeAuthorized: async (database: PostgresJsDatabase) => {
+        await assertTdmsNativeInTransaction({actor: {tenantId: scope.tenantId, actorUserId: taskInput.actorUserId},
+          ...this.nativeTransactionCaller(scope, taskInput.actorUserId, taskInput.tdmsContext!), evidence, database}, this.nativeVerifier);
+      }} : {})});
+    return {status: 'RECORDED', phase: input.phase, checkpointRef: input.checkpointRef};
+  }
+
+  async readBrowserProgramMaterials(workItemId: string, attemptId: string,
+    actor: CanonicalHostActor): Promise<JobAidProgramMaterialsRead> {
+    const {workItem} = await authorizeAndLoadCanonicalWorkItem({authorization: this.authorization,
+      permissionSnapshots: this.permissionSnapshots, registrar: this.registrar, actor,
+      action: 'READ_DOCUMENT_PARSING', workItemId});
+    const row = await this.attempts.readScopedById({tenantId: actor.tenantId, workItemId, attemptId});
+    if (!row?.taskEnvelopeJson || !row.operationRef || row.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION')
+      throw new Error('JOBAID_PROGRAM_MATERIALS_UNAVAILABLE');
+    const task = parseTaskEnvelope(row.taskEnvelopeJson), input = parseJobAidProblemTask(task);
+    const observation = programMaterialsObservation(row.reviewActivityJson);
+    if (input.executionMode !== 'PROGRAM_CONTROLLED_V1' || !observation || !task.executionModel ||
+        task.actionAttemptId !== row.attemptId || task.inputHash !== row.taskInputHash || task.workItemId !== workItemId ||
+        task.tenantId !== actor.tenantId || task.operationRef !== row.operationRef || task.documentVersionId !== row.documentVersionId)
+      throw new Error('JOBAID_PROGRAM_MATERIALS_UNAVAILABLE');
+    const evidence = mergeTdmsReadEvidence(input.sourceCatalog, resolvedTdmsReadEvidence(row.reviewActivityJson));
+    // The artifact contains all inputs, so all source grants are rechecked before its bytes leave Host.
+    await this.assertBrowserEvidenceOwned(evidence, actor.tenantId, actor.userId, workItemId,
+      actor.objectAccessActor?.identityProvenance === 'MIAODA_GATEWAY_USER_CONTEXT',
+      {actor, workItem, workRevisionRefs: [], programAttemptId: row.attemptId});
+    if (input.previousWork) await this.readAuthorizedBrowserRevision(workItemId, input.previousWork.workRevisionRef, actor);
+    const bytes = await this.artifactStore.readActualBytes(observation.artifact);
+    const stored = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
+    if (stored.workItemId !== workItemId || stored.attemptId !== row.attemptId || stored.attemptRef !== row.operationRef ||
+        stored.taskInputHash !== row.taskInputHash) throw new Error('JOBAID_PROGRAM_MATERIALS_BINDING_INVALID');
+    const snapshot = parseProgramMaterialSnapshot(stored.snapshot, task, input, evidence);
+    return {schemaVersion: 'wiselink.program-assessment-materials-read.v1', workItemId,
+      attemptId: row.attemptId, attemptRef: row.operationRef, executionMode: 'PROGRAM_CONTROLLED_V1',
+      executionModel: task.executionModel, preparedAt: observation.observedAt,
+      submissionEvidence: latestProgramProgress(row.reviewActivityJson)?.phase === 'MODEL_RESPONSE_SAVED'
+        ? 'RESPONSE_RECEIVED' : 'PREPARED_NOT_CONFIRMED_SENT', snapshot};
+  }
+
+  async recordConsumerStopped(input: JobAidConsumerStoppedReport & {
+    attemptRef: string;
+    workItemId: string;
+    leaseToken: string;
+    leaseGeneration: number;
+  }) {
+    if (!isJobAidConsumerStoppedReport(input))
+      throw new Error('JOBAID_CONSUMER_STOPPED_REPORT_INVALID');
+    // Reuse the existing attempt-control authority without extending its lease.
+    const { row, task, taskInput, scope } = await this.authorizedAttempt(
+      input.attemptRef, 'HEARTBEAT_ATTEMPT', input.workItemId,
+    );
+    const operation = row.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' ? 'dynamic' : 'overall';
+    const prefix = ['openclaw-v2', operation, task.workItemId, task.documentVersionId, ''].join(':');
+    const requestId = task.idempotencyKey.startsWith(prefix) ? task.idempotencyKey.slice(prefix.length) : null;
+    if (task.actionAttemptId !== row.attemptId || task.operationRef !== row.operationRef ||
+        task.workItemId !== input.workItemId || task.documentVersionId !== input.documentVersionId ||
+        task.inputRevision !== input.inputRevision || requestId !== input.requestId)
+      throw new Error('JOBAID_CONSUMER_STOPPED_BINDING_CHANGED');
+    const fence = { leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration,
+      principalId: scope.principalId, automaticLeaseRequired: !!scope.automaticWorkItemLease };
+    assertJobAidWorkFence(row, fence);
+    await this.assertSourcesAuthorized(taskInput.sourceCatalog, taskInput,
+      scope.tenantId, scope.workItemId, scope);
+    return this.work.recordConsumerStopped({ row, actorUserId: taskInput.actorUserId, fence,
+      sourceBindings: taskInput.sourceBindings, report: {
+        requestId: input.requestId, documentVersionId: input.documentVersionId,
+        inputRevision: input.inputRevision, modelRound: input.modelRound,
+        errorCode: input.errorCode, upstreamOutcome: 'UNKNOWN',
+      } });
+  }
+
   async queryKnowledge(input: {
     attemptRef: string;
     workItemId?: string;
@@ -2203,6 +2331,7 @@ export class CanonicalJobAidProblemService {
     });
     const preparation = await this.currentPreparation(row,taskInput,scope.tenantId,history[0] ?? null);
     const command: unknown = JSON.parse(input.workJson);
+    assertProgramCompleteIssueCoverage(command, taskInput);
     const replay = history.find((item) => item.requestId === input.requestId);
     const previous = replay
       ? (history.find(
@@ -2273,7 +2402,8 @@ export class CanonicalJobAidProblemService {
     };
   }
 
-  async readAttemptWork(attemptRef: string, requestId?: string, workItemId?: string) {
+  async readAttemptWork(attemptRef: string, requestId?: string, workItemId?: string,
+    readFence?: {leaseToken: string; leaseGeneration: number}, workRevisionRef?: string) {
     const { row, taskInput, scope } = await this.authorizedAttempt(
       attemptRef,
       'READ_ASSESSMENT_WORK',
@@ -2285,7 +2415,11 @@ export class CanonicalJobAidProblemService {
       workItemId: scope.workItemId,
       actorUserId: taskInput.actorUserId,
     });
-    const revision = requestId
+    if (workRevisionRef && (requestId || taskInput.executionMode !== 'PROGRAM_CONTROLLED_V1' ||
+        workRevisionRef !== taskInput.previousWork?.workRevisionRef))
+      throw new Error('JOBAID_PROGRAM_BASELINE_READ_INVALID');
+    const revision = workRevisionRef ? history.find(item => item.workRevisionRef === workRevisionRef) ?? null
+      : requestId
       ? (history.find(
           (item) =>
             item.requestId === requestId &&
@@ -2302,6 +2436,19 @@ export class CanonicalJobAidProblemService {
         scope.workItemId,
         scope,
       );
+    if (workRevisionRef && (!revision || canonicalJson(revision) !== canonicalJson(taskInput.previousWork)))
+      throw new Error('JOBAID_PROGRAM_BASELINE_READ_CHANGED');
+    if (!workRevisionRef && revision && taskInput.executionMode === 'PROGRAM_CONTROLLED_V1' && readFence) {
+      if (!requestId || revision.actionAttemptId !== row.attemptId || revision.requestId !== requestId)
+        throw new Error('JOBAID_PROGRAM_READ_BINDING_INVALID');
+      await this.work.recordWorkRead({row, actorUserId: taskInput.actorUserId,
+        fence: {...readFence, principalId: scope.principalId, automaticLeaseRequired: !!scope.automaticWorkItemLease},
+        sourceBindings: taskInput.sourceBindings, revision,
+        ...(taskInput.tdmsContext ? {assertNativeAuthorized: async (database: PostgresJsDatabase) =>
+          assertTdmsNativeInTransaction({actor: {tenantId: scope.tenantId, actorUserId: taskInput.actorUserId},
+            ...this.nativeTransactionCaller(scope, taskInput.actorUserId, taskInput.tdmsContext!),
+            evidence: revision.content.evidence, database}, this.nativeVerifier)} : {})});
+    }
     return {
       schemaVersion: 'wiselink.jobaid-work-read.v2',
       attemptId: row.attemptId,
@@ -2379,11 +2526,16 @@ export class CanonicalJobAidProblemService {
       workItemId: input.scope.workItemId,
     });
     const isOverall = prepared.task.taskType === 'OPENCLAW_OVERALL_SYNTHESIS';
+    const isProgram = taskInput.executionMode === 'PROGRAM_CONTROLLED_V1';
     const committed = isOverall
       ? current.integratedAssessment?.overallSynthesis
       : (activeConfigurationEvidenceReevaluation(current)?.stagedBundle
           .baseRules ?? current.integratedAssessment?.baseRules);
     if (committed?.actionAttemptId === prepared.row.attemptId) {
+      if (isProgram && (current.integratedAssessment?.overallSynthesis?.sourceAssessment?.actionAttemptId !== prepared.row.attemptId ||
+          current.integratedAssessment.overallSynthesis.basedOnJobAidWorkRevisionRef !==
+            (isJobAidProblemProjection(committed) ? committed.workRevisionRef : null)))
+        throw new Error('JOBAID_PROGRAM_OVERALL_PROJECTION_MISSING');
       await this.assertNativeProjectionAuthorized(committed,taskInput,input.scope);
       await this.attempts.finishProjectionSuccess(prepared);
       await this.assertNativeProjectionAuthorized(committed,taskInput,input.scope);
@@ -2396,7 +2548,8 @@ export class CanonicalJobAidProblemService {
           ? {
               overallSynthesis: committed as CanonicalOpenClawOverallProjection,
             }
-          : { baseRules: committed as CanonicalBaseRuleCandidateProjection }),
+          : { baseRules: committed as CanonicalBaseRuleCandidateProjection,
+              ...(isProgram ? {overallSynthesis: current.integratedAssessment!.overallSynthesis!} : {}) }),
       };
     }
     if (prepared.row.status === 'SUCCEEDED')
@@ -2452,22 +2605,24 @@ export class CanonicalJobAidProblemService {
         persisted.artifact,
       );
       const oldOverall = current.integratedAssessment?.overallSynthesis;
+      const programOverall = isProgram ? await this.buildProgramOverall(prepared, current, revision, baseRules) : null;
       const integrated: CanonicalIntegratedAssessmentProjection = {
-        status: oldOverall
+        status: programOverall ? 'OVERALL_CANDIDATE_READY' : oldOverall
           ? 'OVERALL_CANDIDATE_STALE'
           : 'BASE_RULE_CANDIDATE_READY',
         baseRules,
         engineerReviews: current.integratedAssessment?.engineerReviews ?? null,
-        overallSynthesis: oldOverall
+        overallSynthesis: programOverall ?? (oldOverall
           ? {
               ...oldOverall,
               status: 'STALE',
               staleReason: 'BASE_RULE_RESULT_CHANGED',
             }
-          : null,
+          : null),
         overallForAeoConfirmation: null,
       };
       const marker = activeConfigurationEvidenceReevaluation(current);
+      if (isProgram && marker) throw new Error('JOBAID_PROGRAM_CONFIGURATION_REEVALUATION_UNSUPPORTED');
       const next = marker
         ? withStagedBaseRules(current, baseRules, attemptBinding(prepared.row))
         : { ...current, integratedAssessment: integrated, aeo: null };
@@ -2492,6 +2647,7 @@ export class CanonicalJobAidProblemService {
         workItemRevision: saved.revision,
         status: integrated.status,
         baseRules,
+        ...(programOverall ? {overallSynthesis: programOverall} : {}),
         ...(allowedSavedRecovery ? {executionKind:'HOST_SAVED_WORK_RECONCILIATION' as const, modelRequests:0 as const,
           workRevisionRef:revision.workRevisionRef,sourceActionAttemptId:revision.actionAttemptId} : {}),
       };
@@ -2506,7 +2662,8 @@ export class CanonicalJobAidProblemService {
         ? fresh.integratedAssessment?.overallSynthesis
         : (activeConfigurationEvidenceReevaluation(fresh)?.stagedBundle
             .baseRules ?? fresh.integratedAssessment?.baseRules);
-      if (applied?.actionAttemptId === prepared.row.attemptId) {
+      if (applied?.actionAttemptId === prepared.row.attemptId && (!isProgram ||
+          fresh.integratedAssessment?.overallSynthesis?.sourceAssessment?.actionAttemptId === prepared.row.attemptId)) {
         await this.assertNativeProjectionAuthorized(applied,taskInput,input.scope);
         await this.attempts.finishProjectionSuccess(prepared);
         await this.assertNativeProjectionAuthorized(applied,taskInput,input.scope);
@@ -2519,13 +2676,40 @@ export class CanonicalJobAidProblemService {
             ? {
                 overallSynthesis: applied as CanonicalOpenClawOverallProjection,
               }
-            : { baseRules: applied as CanonicalBaseRuleCandidateProjection }),
+            : { baseRules: applied as CanonicalBaseRuleCandidateProjection,
+                ...(isProgram ? {overallSynthesis: fresh.integratedAssessment!.overallSynthesis!} : {}) }),
         };
       }
-      if (error instanceof Error && error.message.startsWith('JOBAID_'))
+      // The complete program result is already sealed. Keep COMMITTING so recovery
+      // retries only this projection, never a replacement model response.
+      if (!isProgram && error instanceof Error && error.message.startsWith('JOBAID_'))
         return this.attempts.finishResultGateFailure(prepared, error);
       throw error;
     }
+  }
+
+  private async buildProgramOverall(prepared: PreparedActionAttemptCommit,
+    current: CanonicalWorkItemProjection, revision: JobAidWorkRevision, baseRules: CanonicalJobAidProblemCandidateProjection) {
+    const sourceAssessment = exactProgramWorkRead(prepared.row, revision);
+    assertJobAidOverallWorkCurrent(revision);
+    const readingResult = jobAidReadingResult(revision);
+    const artifact = await this.artifactStore.persistAndReadback(new TextEncoder().encode(canonicalJson({
+      schemaVersion: 'wiselink.jobaid-initial-overall-projection.v1', sourceAssessment, readingResult,
+      executionKind: 'DETERMINISTIC_PROJECTION', modelRequests: 0, semanticReanalysisPerformed: false,
+      authorityLevel: 'candidate_only', adopted: false,
+    })));
+    const basis: CanonicalWorkItemProjection = {...current, integratedAssessment: {
+      status: 'BASE_RULE_CANDIDATE_READY', baseRules,
+      engineerReviews: current.integratedAssessment?.engineerReviews ?? null,
+      overallSynthesis: current.integratedAssessment?.overallSynthesis ?? null, overallForAeoConfirmation: null,
+    }};
+    const original = parseJobAidProblemTask(prepared.task).modelInput.documentOverview.original?.binding;
+    return buildJobAidOverallProjection({workItem: basis, revision, artifact: artifact.artifact,
+      actionAttemptId: prepared.row.attemptId, sourceResultId: `initial-overall://${prepared.row.triggerRequestId}`,
+      applicabilityStatus: current.applicability?.schemaVersion === 'wiselink.3_1.applicability_candidate_projection.v3'
+        ? original && originalApplicabilityResultMatches(current, original) ? current.applicability.decision : 'UNKNOWN'
+        : current.applicability?.decision ?? 'UNKNOWN',
+      deterministicAssessmentSource: sourceAssessment});
   }
 
   private async commitOverall(
@@ -2838,6 +3022,12 @@ export class CanonicalJobAidProblemService {
       latestAttempt,
       selectedExecution: execution ? {
         actionType: execution.actionType,
+        executionMode: execution.executionMode ?? null,
+        executionModel: execution.executionModel ?? null,
+        programMaterialsAvailable: execution.executionMode === 'PROGRAM_CONTROLLED_V1' &&
+          !!programMaterialsObservation(execution.activityJson),
+        programProgress: execution.executionMode === 'PROGRAM_CONTROLLED_V1'
+          ? latestProgramProgress(execution.activityJson) : null,
         attemptId: execution.attemptId,
         attemptRef: execution.attemptRef,
         status: execution.status,
@@ -3102,7 +3292,7 @@ export class CanonicalJobAidProblemService {
     actorUserId: string,
     workItemId: string,
     sharedRead = false,
-    native?: {actor:CanonicalHostActor;workItem:CanonicalWorkItemProjection;workRevisionRefs:string[]},
+    native?: {actor:CanonicalHostActor;workItem:CanonicalWorkItemProjection;workRevisionRefs:string[];programAttemptId?:string},
   ): Promise<void> {
     try {
       if (evidence.some(item=>item.kind==='TDMS_NATIVE_RECORD') && native) {
@@ -3111,7 +3301,7 @@ export class CanonicalJobAidProblemService {
           const database=tx as PostgresJsDatabase;
           const assertNative=this.browserNativeAssertion(native.actor,{workItemId,
             documentVersionId:native.workItem.source.documentVersionId,workItemRevision:native.workItem.revision},
-            native.workRevisionRefs,database);
+            native.workRevisionRefs,database,native.programAttemptId);
           await (sharedRead ? this.assertEvidenceReadable(evidence,tenantId,actorUserId,workItemId,database,assertNative)
             : this.assertEvidenceOwned(evidence,tenantId,actorUserId,workItemId,database,assertNative));
         });
@@ -3137,7 +3327,7 @@ export class CanonicalJobAidProblemService {
 
   private browserNativeAssertion(actor:CanonicalHostActor,
     binding:{workItemId:string;documentVersionId:string;workItemRevision:number},
-    workRevisionRefs:string[],database:PostgresJsDatabase):(evidence:AssessmentEvidence[])=>Promise<void> {
+    workRevisionRefs:string[],database:PostgresJsDatabase,programAttemptId?:string):(evidence:AssessmentEvidence[])=>Promise<void> {
     return async evidence=>{
       if (!evidence.some(item=>item.kind==='TDMS_NATIVE_RECORD')) return;
       const identity=actor.objectAccessActor;
@@ -3145,9 +3335,10 @@ export class CanonicalJobAidProblemService {
           identity.canonicalSubject.id!==actor.userId || actor.appId!==identity.applicationScopeId)
         throw jobAidBrowserWorkUnavailable();
       const refs=[...new Set(workRevisionRefs)];
-      if (!refs.length) throw new Error('TDMS_NATIVE_PROJECTION_WORK_REQUIRED');
+      if (!refs.length && !programAttemptId) throw new Error('TDMS_NATIVE_PROJECTION_WORK_REQUIRED');
       await assertTdmsNativeInTransaction({actor:{tenantId:actor.tenantId,actorUserId:actor.userId},
-        browserCaller:{actor:identity,action:'READ_WORK_ITEM',...binding,workRevisionRef:refs[0]!,workRevisionRefs:refs},
+        browserCaller:{actor:identity,action:'READ_WORK_ITEM',...binding,
+          ...(programAttemptId ? {programAttemptId} : {workRevisionRef:refs[0]!,workRevisionRefs:refs})},
         evidence,database},this.nativeVerifier);
     };
   }
@@ -3377,7 +3568,8 @@ export class CanonicalJobAidProblemService {
     operation:
       | 'READ_ASSESSMENT_SOURCES'
       | 'SAVE_ASSESSMENT_WORK'
-      | 'READ_ASSESSMENT_WORK',
+      | 'READ_ASSESSMENT_WORK'
+      | 'HEARTBEAT_ATTEMPT',
     workItemId?: string,
   ) {
     const scope = await this.serviceScope.authorizeOpenClawAttempt({

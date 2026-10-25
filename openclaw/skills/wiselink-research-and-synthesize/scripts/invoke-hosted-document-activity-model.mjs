@@ -6,7 +6,7 @@
 // exactly proposal {schemaVersion, statements}; Host binding, anchors,
 // coverage, statementId, candidateRevision and producer are never model
 // fields. The actual modelVersion is read back through the existing
-// provenance reader. The request goes through requestHostedGateway on a real
+// provenance reader. The request goes through the selected model executor on a real
 // AbortSignal, so a lost lease can cancel the in-flight HTTP. The CLI entry
 // reuses the review driver's runtime resolution, MCP connection, gateway
 // readiness check and checkpoint store; it never calls
@@ -27,7 +27,8 @@ import {
   parseStrictJsonObject,
   resolveRuntimeConfig,
 } from './run-hosted-review-turn.mjs';
-import { requestHostedGateway, hostedGatewayHttpFailureDiagnostic } from './request-hosted-gateway.mjs';
+import { hostedGatewayHttpFailureDiagnostic } from './request-hosted-gateway.mjs';
+import { modelExecutor, modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway } from './model-executor.mjs';
 import { WISELINK_PROFILE_REF, canonicalJson, canonicalSha256 } from './validate-payload.mjs';
 
 /** From shared/document-activity.interface.ts via the activity consumer. */
@@ -216,8 +217,8 @@ export async function invokeHostedDocumentActivityModel(input, options = {}, dep
   const contract = modelContractForInput(input);
   if (!options.executionModel) throw new Error('ACTIVITY_EXECUTION_MODEL_REQUIRED');
   const modelHeaders = executionModelHeaders(options);
-  const gatewayUrl = requiredOption(options.gatewayUrl, 'ACTIVITY_GATEWAY_URL_REQUIRED');
-  const gatewayToken = requiredOption(options.gatewayToken, 'ACTIVITY_GATEWAY_TOKEN_REQUIRED');
+  const gatewayUrl = modelExecutor(options) === 'CODEX' ? null : requiredOption(options.gatewayUrl, 'ACTIVITY_GATEWAY_URL_REQUIRED');
+  const gatewayToken = modelExecutor(options) === 'CODEX' ? null : requiredOption(options.gatewayToken, 'ACTIVITY_GATEWAY_TOKEN_REQUIRED');
   const agentId = requiredOption(options.agentId ?? WISELINK_PROFILE_REF, 'ACTIVITY_AGENT_REQUIRED');
   let timeoutMs = options.timeoutMs;
   if (timeoutMs !== undefined &&
@@ -228,7 +229,7 @@ export async function invokeHostedDocumentActivityModel(input, options = {}, dep
     ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
   let endpoint;
   try {
-    endpoint = new URL('/v1/chat/completions', gatewayUrl);
+    endpoint = modelExecutor(options) === 'CODEX' ? modelGatewayEndpoint(options) : new URL('/v1/chat/completions', gatewayUrl);
   } catch {
     throw new Error('ACTIVITY_GATEWAY_URL_INVALID');
   }
@@ -236,11 +237,11 @@ export async function invokeHostedDocumentActivityModel(input, options = {}, dep
   let response;
   let text;
   try {
-    response = await (dependencies.requestGateway ?? requestHostedGateway)(endpoint, {
+    response = await ((endpoint, init) => requestModelGateway(options, endpoint, init, dependencies))(endpoint, {
       method: 'POST',
       headers: {
         accept: 'application/json',
-        authorization: `Bearer ${gatewayToken}`,
+        ...modelGatewayHeaders(options),
         'content-type': 'application/json',
         ...modelHeaders,
       },
@@ -356,7 +357,8 @@ async function main(argv, env) {
   const connection = await createHostMcpConnection(runtime);
   try {
     const result = await consumeHostedDocumentActivity(
-      { documentVersionId, runRef, leaseOwner, candidateSchemaVersion: option(argv, '--candidate-schema-version') ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA,
+      { documentVersionId, runRef, leaseOwner, modelExecutor: runtime.modelExecutor,
+        candidateSchemaVersion: option(argv, '--candidate-schema-version') ?? DOCUMENT_ACTIVITY_CANDIDATE_SCHEMA,
         ...(argv.includes('--exact-quote-selection') ? { quoteSelectionSchemaVersion: DOCUMENT_ACTIVITY_QUOTE_SELECTION_SCHEMA } : {}),
         ...(recovery ? { recoverNativeResult: true } : {}) },
       {

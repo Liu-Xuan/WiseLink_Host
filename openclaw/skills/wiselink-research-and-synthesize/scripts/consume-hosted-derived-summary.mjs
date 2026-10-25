@@ -156,7 +156,10 @@ export async function consumeHostedDerivedSummary(options, dependencies) {
       candidate = await withSummaryHeartbeat(signal => dependencies.invokeModel({ ...task.modelInput, members: exactMembers.members }, {
         checkpoint, sessionDiscriminator: invocation.sessionDiscriminator, executionModel: task.executionModel,
         deadlineAt: task.deadlineAt, signal, summaryId: target.summaryId, attemptRef: target.attemptRef,
-        prepareGateway: dependencies.prepareGateway, runBudget: options.runBudget, heartbeat: () => call('HEARTBEAT'), readMembers: read, readSources: read,
+        prepareGateway: dependencies.prepareGateway, runBudget: options.runBudget,
+        modelExecutor: options.modelExecutor ?? 'HOSTED', codexOptions: options.codexOptions,
+        onStarted: dependencies.onCodexStarted,
+        heartbeat: () => call('HEARTBEAT'), readMembers: read, readSources: read,
       }), () => call('HEARTBEAT'));
       candidate.content = materializeDerivedSummaryContent(candidate.content, task.modelInput);
       } catch (error) {
@@ -168,7 +171,8 @@ export async function consumeHostedDerivedSummary(options, dependencies) {
     validateDerivedSummaryContent(candidate.content, task.modelInput);
     const invocation = await checkpoint.readOptional('summary-invocation');
     await validateDerivedSummarySparseCandidateReplay(task.modelInput, { checkpoint,
-      executionModel: task.executionModel, sessionDiscriminator: invocation?.sessionDiscriminator }, candidate);
+      executionModel: task.executionModel, sessionDiscriminator: invocation?.sessionDiscriminator,
+      modelExecutor: options.modelExecutor ?? 'HOSTED' }, candidate);
     // Same requestId and exact complete bytes are replayable under the Host unique constraint/CAS.
     const input = { requestId, expectedSummaryRevision: task.expectedSummaryRevision,
       contentJson: JSON.stringify(candidate.content),

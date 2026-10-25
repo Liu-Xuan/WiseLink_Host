@@ -262,6 +262,17 @@ export default function DocumentParsingPage() {
       ? pageData
       : null;
   const workingRead = useJobAidWorkingRead(workItemId, data, Boolean(data));
+  const workingRejected: boolean = Boolean(data && workingRead.error &&
+    !workingRead.temporaryError && !workingRead.baseFallbackAllowed);
+  useEffect(() => {
+    if (!workingRejected) return;
+    loadEpochRef.current += 1;
+    setPageData(null);
+    setPageSessionGeneration(null);
+    setUnavailableDocumentScope(null);
+    setLoading(false);
+    setError(workingRead.error);
+  }, [workingRejected, workingRead.error]);
   const actionCriterion: string = resolveAssessmentRuleSelection(
     data?.engineerReviewContext?.items, searchParams.get('criterion')?.trim(),
   ) ?? '';
@@ -581,7 +592,7 @@ export default function DocumentParsingPage() {
       </main>
     );
   }
-  if (error || data === null) {
+  if (error || data === null || workingRejected) {
     if (
       !authenticationRequired &&
       unavailableDocumentScope?.workItemId === workItemId &&
@@ -1009,6 +1020,7 @@ export default function DocumentParsingPage() {
           <details className="parse-progress-detail" open={!overallReadingResult}>
             <summary>查看解析、翻译与评估进度</summary>
             <InitialAnalysisProgress
+              working={workingRead.data}
               key={`${sessionGeneration}:${workItemId}`}
               workItemId={workItemId}
               sessionGeneration={sessionGeneration}
@@ -1792,12 +1804,16 @@ export default function DocumentParsingPage() {
               sessionGeneration={sessionGeneration}
               onRefresh={() => { workingRead.refresh(); void load(activeQuery); }}
               onOpenPanel={(panel) => updateDeepLink({ panel })}
+              onOpenWorkRevision={(workRef) => navigate(`/knowledge?${new URLSearchParams({
+                kind: 'works', subjectKind: 'WORK_ITEM', subjectId: workItemId, workRef,
+              })}`)}
             />
             <WorkItemProcessWorkspace
               data={data}
+              workingRead={workingRead}
               onOpenAssessment={() => updateDeepLink({ panel: 'assessment' })}
               onOpenReview={() => updateDeepLink({ panel: 'review' })}
-              onRefresh={() => { workingRead.refresh(); void load(activeQuery); }}
+              onRefresh={() => { void load(activeQuery); }}
             />
           </>
         ) : null}

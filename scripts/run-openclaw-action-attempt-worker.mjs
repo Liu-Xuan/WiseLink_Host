@@ -47,6 +47,8 @@ const TASK_CONFIG = {
 };
 
 export async function runOpenClawActionAttempt(options, dependencies = {}) {
+  if (options?.modelExecutor === 'CODEX')
+    throw new Error('LEGACY_ACTION_WORKER_CODEX_UNSUPPORTED');
   const client = dependencies.client ?? createClient();
   const executeOpenClaw =
     dependencies.executeOpenClaw ?? runOpenClawGatewayHttp;
@@ -740,6 +742,9 @@ function sortJson(value) {
 
 function parseOptions(argv, env) {
   if (argv.includes('--help')) return { help: true };
+  const modelExecutor = option(argv, '--model-executor') || env.WL_MODEL_EXECUTOR || 'HOSTED';
+  if (modelExecutor === 'CODEX') throw new Error('LEGACY_ACTION_WORKER_CODEX_UNSUPPORTED');
+  if (modelExecutor !== 'HOSTED') throw new Error('MODEL_EXECUTOR_UNSUPPORTED');
   const task = option(argv, '--task') || 'dynamic';
   const hostMcpUrl = option(argv, '--host-mcp-url') || env.WL_OPENCLAW_HOST_MCP_URL;
   const gatewayUrl =
@@ -755,6 +760,7 @@ function parseOptions(argv, env) {
   if (!workItemId?.startsWith('WI-')) throw new Error('WORK_ITEM_ID_REQUIRED');
   return {
     help: false,
+    modelExecutor,
     task,
     hostMcpUrl,
     hostApiKey: env.WL_OPENCLAW_HOST_API_KEY?.trim() || '',
@@ -860,6 +866,7 @@ function usage() {
     '  WL_OPENCLAW_HOST_MCP_URL=https://<host>/app/<app-id>/openapi/wiselink/openclaw-mcp',
     '  WL_OPENCLAW_GATEWAY_URL=http://127.0.0.1:18789',
     '  WL_OPENCLAW_GATEWAY_TOKEN=<dedicated gateway token>',
+    '  This legacy worker supports Hosted only; --model-executor CODEX fails before a Host claim.',
     '',
     'Optional environment:',
     '  WL_OPENCLAW_HOST_API_KEY=<gateway API key> (never pass the key on argv)',

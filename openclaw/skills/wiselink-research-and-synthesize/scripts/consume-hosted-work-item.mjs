@@ -15,6 +15,7 @@ import { invokeHostedDerivedSummaryModel } from './invoke-hosted-derived-summary
 import { validateSummaryRunBudget } from './derived-summary-native-gateway.mjs';
 import { createNativeReviewGatewayPreparer } from './native-temporary-review-gateway.mjs';
 import { hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
+import { modelExecutorProvenance } from './model-executor.mjs';
 import {
   parkCancelledAutomaticClaim, readCancelledClaimExpectation, parseCancelledClaimExpectation,
   matchesCancelledClaim, validateCancelledBlockReceipt, assertCancelledParkIntent,
@@ -45,6 +46,7 @@ import {
   WISELINK_HOST_MCP_NAME,
   WISELINK_HOST_MCP_VERSION,
   WISELINK_SKILL_VERSION,
+  canonicalSha256,
   validateResultEnvelope,
 } from './validate-payload.mjs';
 
@@ -62,6 +64,8 @@ const INITIAL_TOOLS = new Set([
   'begin_applicability_evaluation', 'commit_applicability_candidate',
   'begin_dynamic_evaluation', 'commit_dynamic_evaluation_candidate',
   'query_assessment_knowledge', 'read_assessment_sources', 'save_assessment_work', 'read_assessment_work',
+  'record_assessment_consumer_stopped',
+  'record_assessment_program_progress',
   'begin_overall_synthesis', 'commit_overall_candidate',
 ]);
 
@@ -609,6 +613,16 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
       return acknowledgeAndClearAutoClaim(claim, checkpoint, dependencies, report);
     }
   }
+  let confirmedPreparation = null;
+  if (!options.repairStoppedClaim && !queueCommitRecovery &&
+      ['FAILED', 'CONFLICT'].includes(statusValue.status) &&
+      ['jobAid', 'overall'].some(stage => explicitInitialPreparationStage(statusValue.stages?.[stage]))) {
+    try {
+      confirmedPreparation = await confirmExplicitInitialPreparationFailure(options, claim, statusValue, dependencies);
+    } catch (error) {
+      return automaticWorkItemAttention(claim, safeAutomaticAttentionCode(errorCode(error)), statusValue);
+    }
+  }
   const retry = options.repairStoppedClaim ? null
     : await automaticRetryPlan(statusValue, claim.workItemId,
       dependencies.readSavedWork);
@@ -619,7 +633,7 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
     : null;
   const repairAttentionCode = repair ? claim.attentionCode : null;
   const terminal = !options.repairStoppedClaim && !retry && !queueCommitRecovery
-    ? terminalAutomaticClaim(claim, statusValue) : null;
+    ? terminalAutomaticClaim(claim, statusValue, confirmedPreparation) : null;
   if (terminal) {
     if (typeof dependencies.blockWorkItem !== 'function' || typeof checkpoint.writeOnceOrEqual !== 'function')
       return automaticWorkItemAttention(claim, 'AUTO_WORK_ITEM_BLOCK_FINALIZATION_UNAVAILABLE', statusValue);
@@ -806,7 +820,7 @@ async function consumeAutomaticWorkItemQueueTickOwned(options, dependencies) {
   };
 }
 
-function terminalAutomaticClaim(claim, initial) {
+function terminalAutomaticClaim(claim, initial, confirmedPreparation = null) {
   if (claim.completionReady || initial.workItemId !== claim.workItemId || initial.documentVersionId !== claim.documentVersionId ||
       initial.workItemRevision !== claim.workItemRevision || !['FAILED', 'CONFLICT'].includes(initial.status) ||
       initial.nextOperation !== null || !isRecord(initial.stages) ||
@@ -814,12 +828,105 @@ function terminalAutomaticClaim(claim, initial) {
     return null;
   for (const [operation, stage] of Object.entries(STAGE_BY_OPERATION)) {
     const observed = initial.stages[stage];
+    if (confirmedPreparation && operation !== confirmedPreparation.operation) continue;
+    if (['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].includes(operation) && explicitInitialPreparationStage(observed) &&
+        !isDeepStrictEqual(initialStageRequestBinding(claim, initial, operation, observed.requestId), confirmedPreparation)) continue;
     if (!['FAILED', 'CONFLICT'].includes(observed?.status) ||
         !['FAILED', 'CONFLICT', 'TIMED_OUT', 'OBSOLETE'].includes(observed.attemptStatus)) continue;
     const stoppedStageRequest = initialStageRequestBinding(claim, initial, operation, observed.requestId);
     if (stoppedStageRequest) return { blockReady: { stage, status: observed.status }, stoppedStageRequest };
   }
   return null;
+}
+
+function explicitInitialRequestId(value) {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+}
+
+function explicitInitialPreparationStage(stage) {
+  return stage?.status === 'FAILED' && stage.attemptStatus === 'FAILED' &&
+    stage.terminalCode === 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED' && explicitInitialRequestId(stage.requestId);
+}
+
+function explicitInitialPreparationBinding(claim, initial) {
+  if (claim.completionReady || initial.candidateOnly !== true || initial.status !== 'FAILED' || initial.nextOperation !== null ||
+      !isRecord(initial.stages) || Object.values(initial.stages).some(stage => stage?.status === 'BUSY' ||
+        ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(stage?.attemptStatus))) return null;
+  const candidates = ['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'].flatMap(operation => {
+    const stage = initial.stages[STAGE_BY_OPERATION[operation]];
+    if (!explicitInitialPreparationStage(stage)) return [];
+    const binding = initialStageRequestBinding(claim, initial, operation, stage.requestId);
+    return binding ? [binding] : [];
+  });
+  const binding = candidates.length === 1 ? candidates[0] : null;
+  return binding && (claim.stoppedStageRequest == null || isDeepStrictEqual(claim.stoppedStageRequest, binding)) &&
+    (claim.stoppedWorkItemRevision === undefined || claim.stoppedWorkItemRevision === binding.workItemRevision) ? binding : null;
+}
+
+async function confirmExplicitInitialPreparationFailure(options, claim, initial, dependencies) {
+  const binding = explicitInitialPreparationBinding(claim, initial);
+  if (!binding || typeof dependencies.callTool !== 'function') throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_UNCONFIRMED');
+  const observed = await dependencies.callTool('get_action_attempt_status', {
+    attemptRef: binding.attemptRef, workItemId: binding.workItemId,
+  });
+  if (observed?.attemptRef !== binding.attemptRef || observed.taskType !==
+      (binding.operation === 'EVALUATE_JOBAID' ? 'OPENCLAW_DYNAMIC_EVALUATION' : 'OPENCLAW_OVERALL_SYNTHESIS') ||
+      observed.status !== 'FAILED' || observed.terminalReason !== 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED' ||
+      observed.recoveryAvailable !== false || observed.commitStartedAt !== null || observed.resultContentHash !== null ||
+      observed.projectionApplied !== false || Object.hasOwn(observed, 'recoveryResult'))
+    throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_UNCONFIRMED');
+  // The attempt status intentionally has no DVI. Fresh initial status on both
+  // sides supplies that exact binding, including the Host-owned UUID and AQ.
+  const fresh = await dependencies.readInitialStatus(claim.workItemId);
+  if (!isDeepStrictEqual(explicitInitialPreparationBinding(claim, fresh), binding))
+    throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHANGED');
+  for (const requestId of [binding.requestId, initialPreparationRetryRequestId(binding.workItemId,
+    binding.documentVersionId, STAGE_BY_OPERATION[binding.operation], binding.attemptRef)]) {
+    await assertUnexecutedInitialPreparationCheckpoint(options, { ...binding, requestId });
+  }
+  return binding;
+}
+
+async function assertUnexecutedInitialPreparationCheckpoint(options, binding) {
+  if (!isAbsolute(options.checkpointRoot ?? '')) throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+  const directory = initialStageCheckpointPath({ ...options, workItemId: binding.workItemId }, binding.operation, binding.requestId);
+  // Do not open a mutable store: its mkdir/chmod/quarantine would alter the old
+  // UNKNOWN evidence. Inspect only these two exact namespaces, never old roots.
+  let current = options.checkpointRoot;
+  for (const part of ['', encodeURIComponent(binding.workItemId), 'initial', binding.operation, 'requests', binding.requestId]) {
+    if (part) current = join(current, part);
+    let info;
+    try { info = await lstat(current); }
+    catch (error) { if (error?.code === 'ENOENT' && current !== options.checkpointRoot) return; throw error; }
+    if (!info.isDirectory() || info.isSymbolicLink() || current === directory && info.mode & 0o077)
+      throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+  }
+  const begin = `${INITIAL_ASSESSMENT_OPERATIONS[binding.operation].begin}-1`;
+  const allowed = ['binding.json', 'get_parse_status-1.started.json', 'get_parse_status-1.result.json', `${begin}.started.json`];
+  const entries = await readdir(directory);
+  if (entries.some(name => !allowed.includes(name))) throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+  const expectedBinding = { workItemId: binding.workItemId, documentVersionId: binding.documentVersionId,
+    operation: binding.operation, requestId: binding.requestId };
+  const values = new Map();
+  for (const name of entries) {
+    const path = join(directory, name), info = await lstat(path);
+    if (!info.isFile() || info.isSymbolicLink() || info.mode & 0o077)
+      throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+    values.set(name, JSON.parse(await readFile(path, 'utf8')));
+  }
+  if (entries.length && !isDeepStrictEqual(values.get('binding.json'), expectedBinding))
+    throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+  for (const [name, value] of values) {
+    if (name === 'binding.json') continue;
+    const step = name.replace(/\.(?:started|result)\.json$/u, '');
+    const args = { workItemId: binding.workItemId, ...(step === begin
+      ? { ...(binding.operation === 'SYNTHESIZE_OVERALL' ? { providers: [] } : {}), requestId: binding.requestId } : {}) };
+    if (value?.schemaVersion !== 'wiselink.3_1.hosted_review_driver.v1' || value.step !== step || value.argsHash !== canonicalSha256(args))
+      throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+    if (name === 'get_parse_status-1.result.json' &&
+        readInitialStatus(value.value, binding.workItemId).documentVersionId !== binding.documentVersionId)
+      throw new Error('AUTO_WORK_ITEM_INITIAL_PREPARATION_CHECKPOINT_UNCONFIRMED');
+  }
 }
 
 function terminalBlockedReceipt(value, claim, expectedReceipt) {
@@ -1294,14 +1401,17 @@ async function automaticRetryPlan(initial, workItemId) {
     // Cancelled/timed-out provider state does not prove generation stopped.
     // Only the Host's before-execution preparation failure may use this old
     // bounded retry. Partial progress never authorizes an automatic new model run.
-    if (typeof observation.requestId === 'string' && observation.requestId.startsWith('auto-')) continue;
-    const identity = [workItemId, initial.documentVersionId, stage,
-      observation.attemptRef].join(':');
-    const requestId = `auto-retry-${createHash('sha256').update(identity)
-      .digest('hex').slice(0, 32)}`;
+    if (explicitInitialRequestId(observation.requestId) ||
+        typeof observation.requestId === 'string' && observation.requestId.startsWith('auto-')) continue;
+    const requestId = initialPreparationRetryRequestId(workItemId, initial.documentVersionId, stage, observation.attemptRef);
     return { operation, attemptRef: observation.attemptRef, requestId };
   }
   return null;
+}
+
+function initialPreparationRetryRequestId(workItemId, documentVersionId, stage, attemptRef) {
+  return `auto-retry-${createHash('sha256').update([workItemId, documentVersionId, stage, attemptRef].join(':'))
+    .digest('hex').slice(0, 32)}`;
 }
 
 // A repaired consumer may make one operator-triggered successor after the
@@ -1425,8 +1535,11 @@ export async function runHostedSuccessorOverall(pointer, dependencies) {
   const checkpoint = await createCheckpointStore(join(pointer.checkpointRoot,
     'successor-overall', pointer.workItemId, pointer.reviewTurnRef));
   const binding = { workItemId: pointer.workItemId, reviewTurnRef: pointer.reviewTurnRef,
-    workRevisionRef: pointer.workRevisionRef };
+    workRevisionRef: pointer.workRevisionRef,
+    ...(pointer.modelExecutor === 'CODEX' ? { modelExecutor: 'CODEX' } : {}) };
   const stored = await checkpoint.readOptional('binding');
+  if (stored && (stored.modelExecutor === 'CODEX') !== (pointer.modelExecutor === 'CODEX'))
+    throw new Error('SUCCESSOR_OVERALL_EXECUTOR_CHECKPOINT_CHANGED');
   if (stored && Object.entries(binding).some(([key, value]) => stored[key] !== value))
     throw new Error('HOSTED_SUCCESSOR_OVERALL_CHECKPOINT_BINDING_CHANGED');
   if (!stored) await checkpoint.writeOnce('binding', binding);
@@ -1530,6 +1643,8 @@ export async function runHostedInitialStage(options, dependencies) {
       throw new Error('INITIAL_CHECKPOINT_REQUEST_INVALID');
     return value;
   });
+  if (binding && (binding.modelExecutor === 'CODEX') !== (options.modelExecutor === 'CODEX'))
+    throw new Error('INITIAL_EXECUTOR_CHECKPOINT_CHANGED');
   const exactBinding = {
     workItemId: options.workItemId, documentVersionId: initial.documentVersionId, operation,
   };
@@ -1557,7 +1672,8 @@ export async function runHostedInitialStage(options, dependencies) {
   const jobAidBudget = await createJobAidRunBudget(budgetCheckpoint, options.jobAidRunLimits,
     Boolean(binding), budgetSelection);
   const runBinding = binding ?? { ...exactBinding, requestId: continuationRequestId ??
-    (operation === 'EXTRACT_APPLICABILITY' ? randomUUID() : null) };
+    (operation === 'EXTRACT_APPLICABILITY' ? randomUUID() : null),
+    ...(options.modelExecutor === 'CODEX' ? { modelExecutor: 'CODEX' } : {}) };
   if (!binding) await checkpoint.writeOnce('binding', runBinding);
   // A completed initial stage is not an instruction to rerun it if Host state drifts.
   const priorRun = await readCheckpointCandidate(checkpoint, 'run-result');
@@ -1572,6 +1688,7 @@ export async function runHostedInitialStage(options, dependencies) {
   }
   const callCounts = new Map();
   let startedAttempt = null;
+  let assessmentClaim = null;
   let executionModel;
   let finalCommitStarted = false;
   let modelCallCount = 0;
@@ -1658,6 +1775,7 @@ export async function runHostedInitialStage(options, dependencies) {
       problemAssessment = ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(value.modelInput?.schemaVersion);
       if (problemAssessment) {
         await checkpoint.write('assessment-current-claim', value);
+        assessmentClaim = structuredClone(value);
         taskDeadline = value.task?.deadline;
       }
       startedAttempt = value.attemptRef;
@@ -1681,6 +1799,7 @@ export async function runHostedInitialStage(options, dependencies) {
         queryAssessmentKnowledge: runtimeHooks.queryAssessmentKnowledge,
         saveAssessmentWork: runtimeHooks.saveAssessmentWork,
         readAssessmentWork: runtimeHooks.readAssessmentWork,
+        recordAssessmentProgramProgress: runtimeHooks.recordAssessmentProgramProgress,
         ...(jobAidBudget ? { runModelRequest: perform => jobAidBudget.dispatch('modelRequests', perform) } : {}),
         assessmentBinding: runtimeHooks.assessmentBinding,
         observeModelOutput: (shape, round = 1) => checkpoint.observeAuxiliary(
@@ -1755,10 +1874,61 @@ export async function runHostedInitialStage(options, dependencies) {
         ...(jobAidBudget ? { jobAidRunBudget: jobAidBudget.snapshot() } : {}),
         ...(gatewayTransportFailure ? { gatewayTransportFailure } : {}) };
       await checkpoint.writeAuxiliary('run-result', report);
+      const consumerStoppedObservation = problemAssessment
+        ? await reportStoppedAssessment({ checkpoint, report, runBinding, operation,
+          inputRevision: initial.workItemRevision, assessmentClaim, callTool,
+          hasTool: dependencies.hasTool })
+        : null;
+      const stoppedReport = consumerStoppedObservation ? { ...report, consumerStoppedObservation } : report;
+      if (consumerStoppedObservation) await checkpoint.writeAuxiliary('run-result', stoppedReport);
       return checkpoint.diagnostics.length
-        ? { ...report, localCheckpointWarnings: [...checkpoint.diagnostics] } : report;
+        ? { ...stoppedReport, localCheckpointWarnings: [...checkpoint.diagnostics] } : stoppedReport;
     }
     throw error;
+  }
+}
+
+async function reportStoppedAssessment({ checkpoint, report, runBinding, operation,
+  inputRevision, assessmentClaim, callTool, hasTool }) {
+  try {
+    const persisted = await checkpoint.readOptional('run-result');
+    const binding = await checkpoint.readOptional('binding');
+    const claim = await checkpoint.readOptional('assessment-current-claim');
+    const state = await checkpoint.readOptional('assessment-state');
+    const task = claim?.task;
+    const kind = operation === 'EVALUATE_JOBAID' ? 'dynamic' : 'overall';
+    const prefix = ['openclaw-v2', kind, runBinding.workItemId, runBinding.documentVersionId, ''].join(':');
+    const requestId = typeof task?.idempotencyKey === 'string' && task.idempotencyKey.startsWith(prefix)
+      ? task.idempotencyKey.slice(prefix.length) : null;
+    if (!isDeepStrictEqual(persisted, report) || !isDeepStrictEqual(binding, runBinding) ||
+        !assessmentClaim || !isDeepStrictEqual(claim, assessmentClaim) ||
+        report.status !== 'REQUIRES_ATTENTION' || report.attemptStatus !== 'UNKNOWN' ||
+        claim.status !== 'RUNNING' || claim.attemptRef !== report.attemptRef ||
+        task?.operationRef !== claim.attemptRef || typeof task.actionAttemptId !== 'string' ||
+        task.workItemId !== runBinding.workItemId || task.documentVersionId !== runBinding.documentVersionId ||
+        task.taskType !== (operation === 'EVALUATE_JOBAID' ? 'OPENCLAW_DYNAMIC_EVALUATION' : 'OPENCLAW_OVERALL_SYNTHESIS') ||
+        task.inputRevision !== inputRevision || requestId !== runBinding.requestId ||
+        typeof claim.leaseToken !== 'string' || !Number.isSafeInteger(claim.leaseGeneration) ||
+        !Number.isSafeInteger(state?.round) || state.round < 1 || state.round > 64 ||
+        !/^[A-Z][A-Z0-9_:.-]{0,199}$/u.test(report.errorCode))
+      throw new Error('JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED');
+    if (typeof hasTool !== 'function' || !await hasTool('record_assessment_consumer_stopped'))
+      return { status: 'UNAVAILABLE', errorCode: 'JOBAID_CONSUMER_STOPPED_HOST_TOOL_UNAVAILABLE' };
+    // The local invocation has settled and its exact UNKNOWN result is durable.
+    // Reporting this observation does not replay the model, finish, or release its claim.
+    const receipt = await callTool('record_assessment_consumer_stopped', {
+      attemptRef: claim.attemptRef, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration,
+      requestId: runBinding.requestId, documentVersionId: runBinding.documentVersionId,
+      inputRevision, modelRound: state.round, errorCode: report.errorCode, upstreamOutcome: 'UNKNOWN',
+    });
+    if (receipt?.status !== 'RECORDED' || receipt.attemptRef !== claim.attemptRef ||
+        receipt.upstreamOutcome !== 'UNKNOWN' || typeof receipt.replayed !== 'boolean' ||
+        typeof receipt.observedAt !== 'string' || !Number.isFinite(Date.parse(receipt.observedAt)))
+      throw new Error('JOBAID_CONSUMER_STOPPED_RECEIPT_INVALID');
+    return { status: 'RECORDED', observedAt: receipt.observedAt, replayed: receipt.replayed };
+  } catch (error) {
+    // Keep the original failure visible even if the observation cannot reach Host.
+    return { status: 'UNCONFIRMED', errorCode: errorCode(error) };
   }
 }
 
@@ -2150,7 +2320,7 @@ function assertExpectedInitialOperationStatus(expected, initial) {
 
 export async function consumeHostedDocument(
   { documentVersionId, deliveryRef, activityRunRef, readingRunRef, leaseOwner },
-  { callTool, documentTranslationCheckpoint, activityCheckpoint, invokeActivityModel, readingCheckpoint, invokeReadingModel, invokeTranslationModel }) {
+  { callTool, documentTranslationCheckpoint, activityCheckpoint, invokeActivityModel, readingCheckpoint, invokeReadingModel, invokeTranslationModel, modelExecutor }) {
   const startedAt = Date.now();
   if (deliveryRef && (!/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u.test(deliveryRef)
       || activityRunRef)) throw new Error('DOCUMENT_DELIVERY_REF_INVALID');
@@ -2161,7 +2331,7 @@ export async function consumeHostedDocument(
   callTool = scopedTool;
   if (activityRunRef && readingRunRef) throw new Error('DOCUMENT_CONSUMER_RUN_AMBIGUOUS');
   const consumeReading = runRef => consumeHostedDocumentReading(
-    { documentVersionId, runRef, leaseOwner },
+    { documentVersionId, runRef, leaseOwner, modelExecutor },
     { callTool, invokeModel: invokeReadingModel, checkpointFactory: readingCheckpoint });
   if (readingRunRef) return consumeReading(readingRunRef);
   const state = await callTool('document_work', { action: 'STATUS', documentVersionId });
@@ -2179,7 +2349,7 @@ export async function consumeHostedDocument(
   const runRef = deliveryRef ? null : activityRunRef ?? state.nextActivityRunRef ?? null;
   if (runRef) {
     return consumeHostedDocumentActivity(
-      { documentVersionId, runRef, leaseOwner },
+      { documentVersionId, runRef, leaseOwner, modelExecutor },
       { callTool, invokeModel: invokeActivityModel, checkpointFactory: activityCheckpoint });
   }
   // Discovery consumes only runs already accepted by Host READING_BEGIN.
@@ -2188,7 +2358,7 @@ export async function consumeHostedDocument(
   if (!run) return { status: 'IDLE', documentVersionId };
   if (run.documentVersionId !== documentVersionId || !run.parseRunId) throw new Error('DOCUMENT_CONSUMER_RUN_MISMATCH');
   if (run.status === 'PUBLISHED') return advancePublishedDocument(state, run, documentVersionId,
-    callTool, documentTranslationCheckpoint, deliveryRef, invokeTranslationModel);
+    callTool, documentTranslationCheckpoint, deliveryRef, invokeTranslationModel, modelExecutor);
 
   if (run.errorCode || run.status === 'FAILED' || !state.runtimeAvailable || Date.parse(run.deadlineAt) <= Date.now()) {
     return { status: 'REQUIRES_ATTENTION', documentVersionId, parseRunId: run.parseRunId,
@@ -2217,7 +2387,7 @@ export async function consumeHostedDocument(
   return { ...result, documentVersionId };
 }
 
-async function advancePublishedDocument(state, run, documentVersionId, callTool, documentTranslationCheckpoint, deliveryRef, invokeTranslationModel) {
+async function advancePublishedDocument(state, run, documentVersionId, callTool, documentTranslationCheckpoint, deliveryRef, invokeTranslationModel, modelExecutor) {
     const indexRun = state.nextSourceProjectionRunId ?? run.parseRunId;
     if (typeof indexRun !== 'string' || !/^[A-Za-z0-9_-]{1,96}$/.test(indexRun)) throw new Error('DOCUMENT_SOURCE_PROJECTION_RUN_INVALID');
     const projectionPromise = Promise.resolve().then(() =>
@@ -2253,7 +2423,7 @@ async function advancePublishedDocument(state, run, documentVersionId, callTool,
     const outcomes = await Promise.allSettled([
       projectionPromise,
       advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool,
-        documentTranslationCheckpoint, beforeStart, deliveryRef, invokeTranslationModel),
+        documentTranslationCheckpoint, beforeStart, deliveryRef, invokeTranslationModel, modelExecutor),
     ]);
     const [projection, translation] = outcomes;
     if (translation.status === 'rejected') throw translation.reason;
@@ -2272,8 +2442,22 @@ function assertSourceProjection(indexed, documentVersionId, parseRunId) {
 
 // This checkpoint records an operation stop, not a Host task or a successful
 // translation. A new parse run can still advance through the branch above.
-async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpointFactory, beforeStart, deliveryRef, invokeTranslationModel) {
+async function advanceDocumentTranslationWithRecovery(documentVersionId, run, callTool, checkpointFactory, beforeStart, deliveryRef, invokeTranslationModel, modelExecutor) {
   const checkpoint = await checkpointFactory?.(run.parseRunId);
+  if (checkpoint && (modelExecutor === 'CODEX' || await checkpoint.readOptional('model-executor'))) {
+    const executorBinding = await checkpoint.readOptional('model-executor');
+    if (executorBinding && (executorBinding.modelExecutor !== modelExecutor ||
+        executorBinding.documentVersionId !== documentVersionId || executorBinding.parseRunId !== run.parseRunId))
+      throw new Error('TRANSLATION_EXECUTOR_CHECKPOINT_CHANGED');
+    if (!executorBinding && modelExecutor === 'CODEX') {
+      const status = await callTool('document_translation', { action: 'STATUS', documentVersionId,
+        parseRunId: run.parseRunId });
+      if (status?.status !== 'IDLE' || await checkpoint.hasEntries('model.output-shape-'))
+        throw new Error('TRANSLATION_CODEX_LEGACY_RUN_FORBIDDEN');
+      await checkpoint.writeOnce('model-executor', { modelExecutor: 'CODEX',
+        documentVersionId, parseRunId: run.parseRunId });
+    }
+  }
   const blocked = await checkpoint?.readOptional('admission-blocked');
   if (blocked) {
     if (blocked.documentVersionId !== documentVersionId || blocked.parseRunId !== run.parseRunId || blocked.operation !== 'START' || blocked.errorCode !== 'DOCUMENT_TRANSLATION_ADMISSION_DENIED')
@@ -2402,7 +2586,8 @@ export function matterPreflightMode(argv, matterId) {
 async function main(argv, env) {
   if (argv.includes('--help')) {
     process.stdout.write('Usage: node consume-hosted-work-item.mjs [--auto-queue [--park-cancelled-claim --park-expectation-file ABSOLUTE_0600_JSON] [--document-translation-recovery ID] [--repair-stopped-claim --repair-work-item-id WI-... --repair-attempt-ref AQ-...] [--finish-blocked-claim --finish-work-item-id WI-... --finish-request-id REQ-... --finish-document-version-id DV --finish-lease-generation N --finish-blocked-at UTC [--finish-cancelled-claim --park-expectation-file ABSOLUTE_0600_JSON]]] [--work-item-id WI-...] [--matter-id MAT-...] [--document-version-id DV] [--matter-preflight-only | --matter-expected-snapshot SHA256] [--max-initial-stages 1] [--expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL] [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH] [--native-session-store PATH] [--activity-run-ref ID] [--reading-run-ref ID] [--lease-owner ID]\nOne native job per authorized subject. Choose exactly one WorkItem, Matter or DocumentVersion; independent jobs use native cron concurrency. --auto-queue is one native cron tick for the Host-enrolled automatic WorkItem queue; it accepts no static subject or stage-specific options. After Host admission repair, one document translation recovery ID may be added to the existing cron so the next natural tick checks Host again without clearing the old checkpoint. --repair-stopped-claim with both exact identity flags permits one operator-triggered successor only for a stopped claim with a failed no-work JobAid/Overall auto-retry after a bounded gateway change; it is never a cron option. --finish-blocked-claim is an operator-only exact existing BLOCK replay finalization; it archives the original claim/receipt under the endpoint owner lock, never ACKs a failure, and leaves new dispatch to the next natural tick. It requires Linux util-linux flock; competing owners and unsupported locking fail closed. --park-cancelled-claim is a separate operator-only, single BLOCK POST for the exact latest cancelled JobAid; it always retains the stopped claim and provider UNKNOWN. Only --finish-cancelled-claim with an exact private expectation file extends finalization to an existing cancellation BLOCK replay; it cannot create a fresh BLOCK or retry an unknown POST. Both require the compatible Host and a normal Skill/MCP installation, and are never cron options. --matter-preflight-only reads current Matter work without dispatch; --matter-expected-snapshot checks that read again before dispatch and stops on a changed snapshot. --max-initial-stages 1 is WorkItem-only and consumes at most the current initial stage, without Review or original-impact work. --expected-initial-operation requires that limit and refuses any entry stage other than the named JobAid or Overall stage.\n');
-    process.stdout.write('Wiki idle consumption: add --wiki-idle --wiki-timeout-ms N --wiki-max-completion-tokens N --wiki-max-model-requests N to --auto-queue, with --openclaw-config PATH; optionally --wiki-reasoning-effort low|high|max and --wiki-provider-timeout-seconds N. Uses the existing Hosted GLM5.3 profile, endpoint owner lock and capacity. An unresolved active-wiki checkpoint resumes before new user work; provider UNKNOWN or durable Host COMMITTING keeps it pinned. Platform backstop reserves the same Host queue. Install compatible Host/MCP/schema before enabling these flags.\n');
+    process.stdout.write('Wiki idle consumption: add --wiki-idle --wiki-timeout-ms N --wiki-max-completion-tokens N --wiki-max-model-requests N to --auto-queue, with --openclaw-config PATH; optionally --wiki-reasoning-effort low|high|max and --wiki-provider-timeout-seconds N. By default uses the existing Hosted GLM5.3 profile, endpoint owner lock and capacity. An unresolved active-wiki checkpoint resumes before new user work; provider UNKNOWN or durable Host COMMITTING keeps it pinned. Platform backstop reserves the same Host queue. Install compatible Host/MCP/schema before enabling these flags.\n');
+    process.stdout.write('Explicit Codex generation for model consumers: --model-executor CODEX --codex-binary ABSOLUTE_PATH --codex-config ABSOLUTE_PATH --codex-run-root ABSOLUTE_PATH. The default remains the configured Hosted profile. Existing UNKNOWN or COMMITTING checkpoints retain their original executor.\n');
     process.stdout.write('Explicit problem-assessment run limits: with --work-item-id WI-... --max-initial-stages 1 --expected-initial-operation EVALUATE_JOBAID|SYNTHESIZE_OVERALL, optionally supply all three --jobaid-max-model-requests N --jobaid-max-saves N --jobaid-max-finishes N (positive integers). These cap local Hosted Gateway HTTP attempts, actual save_assessment_work calls and the selected stage commit calls. FINISH with workJson consumes a SAVE too. Each stage retains its own limits and dispatch reservations in its existing checkpoint; a lost outcome or exhausted budget stops without retry, forced save/finish, or advancing to another stage. They do not bound Gateway-internal provider dispatches. Without these flags normal behavior is unchanged.\n');
     process.stdout.write('Controlled queue runs may prepare both existing stage budgets with prepareExplicitJobAidRunBudgets before claiming the exact WI. The budgets bind WI/operation and original request, so another request suffix cannot reset them. Natural automatic consumption retains a protected WI claim in that stage checkpoint and defers it without Host ACK/BLOCK; other queue items may continue. Host NEXT may still claim it again after lease expiry and perform its normal grant/attempt/takeover writes before this local guard sees it. This is not permanent preclaim exclusion.\n');
     process.stdout.write('Automatic queue: --queue-max-items 1..16 (default 4), --queue-tick-budget-ms 1000..900000 (default 900000). Subjects run sequentially under the same endpoint lock; the time budget is checked between subjects and never aborts a running request. With --wiki-idle, completed ordinary work and Wiki alternate at free subject boundaries; empty Wiki probes yield in the same tick. Operator recovery remains one operation.\n');
@@ -2416,7 +2601,8 @@ async function main(argv, env) {
     reasoningEffort: option(argv, '--wiki-reasoning-effort') ?? 'low',
     ...(option(argv, '--wiki-provider-timeout-seconds') ? {
       providerTimeoutSeconds: Number(option(argv, '--wiki-provider-timeout-seconds')) } : {}) }) : undefined;
-  if (wikiIdle && !option(argv, '--openclaw-config')) throw new Error('WIKI_CONFIG_PATH_REQUIRED');
+  if (wikiIdle && (option(argv, '--model-executor') ?? env.WL_MODEL_EXECUTOR ?? 'HOSTED') !== 'CODEX' &&
+      !option(argv, '--openclaw-config')) throw new Error('WIKI_CONFIG_PATH_REQUIRED');
   const repairStoppedClaim = argv.includes('--repair-stopped-claim');
   const repairWorkItemId = repairStoppedClaim ? option(argv, '--repair-work-item-id') : undefined;
   const repairAttemptRef = repairStoppedClaim ? option(argv, '--repair-attempt-ref') : undefined;
@@ -2474,6 +2660,7 @@ async function main(argv, env) {
   const connection = await createHostMcpConnection(runtime);
   try {
     const consumerDependencies = {
+      modelExecutor: runtime.modelExecutor,
       callTool: connection.callTool,
       hasTool: connection.hasTool,
       documentTranslationCheckpoint,
@@ -2493,7 +2680,8 @@ async function main(argv, env) {
         modelVersion: runtime.configuredModelVersion,
         promptVersion: WISELINK_APPLICABILITY_PROMPT_VERSION,
         skillVersion: WISELINK_SKILL_VERSION,
-        toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION },
+        toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+          ...modelExecutorProvenance(runtime) },
         runMetrics: { durationMs: 0, inputUnits: 0, outputUnits: 0 },
       },
     };
@@ -2526,7 +2714,7 @@ async function main(argv, env) {
         ),
         consumeWorkItem: async item => {
           assertHostedModelGatewayReady(runtime);
-          return consumeHostedWorkItem(item, consumerDependencies);
+          return consumeHostedWorkItem({ ...item, modelExecutor: runtime.modelExecutor }, consumerDependencies);
         },
         consumeDocument: async (selectedVersionId, deliveryRef) => {
           assertHostedModelGatewayReady(runtime);
@@ -2563,12 +2751,14 @@ async function main(argv, env) {
             checkpointRoot: join(checkpointRoot, 'review') }, {
             callTool: connection.callTool,
             hasTool: connection.hasTool,
+            modelRuntime: runtime,
             invokeModel: (input, hooks) => invokeHostedReviewModel(input, { ...runtime, ...hooks }),
           });
         },
         consumeSuccessorOverall: async pointer => {
           assertHostedModelGatewayReady(runtime);
-          return runHostedSuccessorOverall({ ...pointer, checkpointRoot }, {
+          return runHostedSuccessorOverall({ ...pointer, checkpointRoot,
+            modelExecutor: runtime.modelExecutor }, {
             callTool: connection.callTool,
             invokeInitialModel: (input, hooks) => invokeHostedInitialModel(input, { ...runtime, ...hooks }),
           });
@@ -2576,10 +2766,11 @@ async function main(argv, env) {
         ...(wikiIdle ? { consumeWikiIdle: async () => {
           assertHostedModelGatewayReady(runtime);
           return consumeHierarchicalWikiIdle({ enabled: true, runBudget: wikiBudget, checkpointRoot,
+            modelExecutor: runtime.modelExecutor, codexOptions: runtime.codexOptions,
             endpointKey: encodeURIComponent(endpoint.origin + endpoint.pathname) }, {
             checkpoint: automaticCheckpoint, callTool: connection.callTool,
-            createGatewayPreparer: () => createNativeReviewGatewayPreparer({
-              sourceConfigPath: option(argv, '--openclaw-config') }),
+            ...(runtime.modelExecutor === 'CODEX' ? {} : { createGatewayPreparer: () => createNativeReviewGatewayPreparer({
+              sourceConfigPath: option(argv, '--openclaw-config') }) }),
             invokeModel: (input, hooks) => invokeHostedDerivedSummaryModel(input, { ...runtime, ...hooks }),
             invokeMatterModel: (input, hooks, deps) => invokeHostedJobAidProblemModel(input, { ...runtime, ...hooks }, deps),
           });
@@ -2595,6 +2786,7 @@ async function main(argv, env) {
         ...jobAidLimits,
         applicabilityContextRef: option(argv, '--applicability-context-ref'),
         checkpointRoot,
+        modelExecutor: runtime.modelExecutor,
         activityRunRef,
         readingRunRef,
         leaseOwner,

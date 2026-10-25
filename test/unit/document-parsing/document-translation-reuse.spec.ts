@@ -63,9 +63,9 @@ test('changed source bytes or generation method reject reuse', () => {
   expect(planOriginalTranslationReuse(old, next, revisions(old))).toEqual([]);
 });
 
-test('a superseded quality checker does not authorize copying its check result', () => {
+test.each(['old-check-version', 'semantic-block-check@2.99'])('an unknown quality checker does not authorize copying its check result: %s', (version: string) => {
   const old = workspace(1), next = workspace(2), saved = revisions(old);
-  saved.forEach(revision => { revision.check!.checkVersion = 'old-check-version'; });
+  saved.forEach(revision => { revision.check!.checkVersion = version; });
   expect(planOriginalTranslationReuse(old, next, saved)).toEqual([]);
 });
 
@@ -83,9 +83,9 @@ test('reordering source regions invalidates full-document dependent translations
   expect(reused).toEqual([]);
 });
 
-test('known 2.0 clean selected candidates require rechecking without relaxing source or issue scope', () => {
+test.each(['semantic-block-check@2.0', 'semantic-block-check@2.2'])('known %s clean selected candidates require rechecking without relaxing source or issue scope', (version: string) => {
   const old = workspace(1), next = workspace(2), saved = revisions(old);
-  saved.forEach(revision => { revision.check!.checkVersion = 'semantic-block-check@2.0'; });
+  saved.forEach(revision => { revision.check!.checkVersion = version; });
   expect(planOriginalTranslationReuse(old, next, saved)).toHaveLength(6);
   expect(planOriginalTranslationReuse(old, next, saved).every(entry => entry.requiresRecheck)).toBe(true);
   expect(planOriginalTranslationReuse(old, next, revisions(old)).every(entry => !entry.requiresRecheck)).toBe(true);
@@ -97,7 +97,7 @@ test('known 2.0 clean selected candidates require rechecking without relaxing so
   expect(planOriginalTranslationReuse(old, next, saved)).toEqual([]);
 });
 
-test.each([TRANSLATION_V2_CHECK_VERSION, 'semantic-block-check@2.0'])('date interpretation is a required reuse context for %s', version => {
+test.each([TRANSLATION_V2_CHECK_VERSION, 'semantic-block-check@2.0', 'semantic-block-check@2.2'])('date interpretation is a required reuse context for %s', version => {
   const old = workspace(1), next = workspace(2), saved = revisions(old);
   saved.forEach(revision => { revision.check!.checkVersion = version; });
   next.plan.documentContext.dateOrder = 'MDY';
@@ -110,7 +110,7 @@ test.each([TRANSLATION_V2_CHECK_VERSION, 'semantic-block-check@2.0'])('date inte
 
 // Exercise the actual repository insertion with a mock fenced transaction. The
 // planner and row decoding stay real; this is not a live database acceptance test.
-test.each([TRANSLATION_V2_CHECK_VERSION, 'semantic-block-check@2.0'])('repository persists the correct check state for %s and old text enters LOCAL_CHECK then CHECK', async version => {
+test.each([TRANSLATION_V2_CHECK_VERSION, 'semantic-block-check@2.0', 'semantic-block-check@2.2'])('repository persists the correct check state for %s and old text enters LOCAL_CHECK then CHECK', async version => {
   const old = workspace(1), next = workspace(2), saved = revisions(old);
   saved.forEach(revision => {
     revision.check!.checkVersion = version;

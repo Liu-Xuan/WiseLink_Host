@@ -73,6 +73,14 @@ export function jobAidSourceFileReference(item: CanonicalWorkItemProjection) {
 }
 
 export interface JobAidProblemModelInput extends Record<string, unknown> {
+  executionMode?: 'PROGRAM_CONTROLLED_V1';
+  programOriginal?: {
+    binding: import('@shared/document-original.interface').DocumentOriginalBinding;
+    coverage: import('@shared/document-original.interface').DocumentOriginalCoverage;
+    units: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['units'];
+    sourceLocators: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['sourceLocators'];
+    findings: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['findings'];
+  };
   contentValidationVersion?: 'jobaid-semantic.v1';
   /** Metadata only. A directory and approval provenance are not a body READ. */
   tdmsContext?: Pick<TdmsRuntimeTaskContext, 'schemaVersion' | 'projection'>;
@@ -153,6 +161,8 @@ export function jobAidProblemModelWorkContent(content: JobAidProblemWorkContent)
 }
 
 export interface JobAidProblemTaskInput extends Record<string, unknown> {
+  executionMode?: 'PROGRAM_CONTROLLED_V1';
+  requestedModelRef?: string;
   contentValidationVersion?: 'jobaid-semantic.v1';
   /** Exact existing Review input selection, retained only in the trusted wrapper. */
   preparationScope?: JobAidPreparationScope;
@@ -197,6 +207,9 @@ export function parseJobAidProblemTask(
   task: OpenClawTaskEnvelope,
 ): JobAidProblemTaskInput {
   const input = assertJobAidProblemTaskBinding(task.modelInput);
+  if (input.executionMode && (task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
+      task.executionModel?.modelRef !== input.requestedModelRef))
+    throw new Error('JOBAID_PROGRAM_MODEL_BINDING_INVALID');
   if (input.tdmsContext && (input.tdmsContext.binding.taskContextRef !== task.operationRef ||
       input.tdmsContext.binding.tenantId !== task.tenantId || input.tdmsContext.binding.workItemId !== task.workItemId ||
       input.tdmsContext.binding.documentVersionId !== task.documentVersionId)) throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
@@ -223,6 +236,12 @@ export function assertJobAidProblemTaskBinding(
     !isJobAidMethodBinding(input.modelInput.methodBinding)
   )
     throw new Error('JOBAID_TASK_BINDING_INVALID');
+  if (input.executionMode !== input.modelInput.executionMode ||
+      (input.executionMode !== undefined && (input.executionMode !== 'PROGRAM_CONTROLLED_V1' ||
+        input.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || !input.requestedModelRef ||
+        !input.modelInput.programOriginal || canonicalJson(input.modelInput.programOriginal.binding) !==
+          canonicalJson(input.modelInput.documentOverview.original?.binding))))
+    throw new Error('JOBAID_PROGRAM_TASK_BINDING_INVALID');
   if (input.contentValidationVersion !== input.modelInput.contentValidationVersion ||
       (input.contentValidationVersion !== undefined && input.contentValidationVersion !== 'jobaid-semantic.v1'))
     throw new Error('JOBAID_CONTENT_VALIDATION_VERSION_INVALID');
@@ -573,6 +592,31 @@ export function stableJobAidEvidence(
   };
 }
 
+function jobAidSourcePageKey(
+  item: Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }>,
+): string | null {
+  let original: AssessmentEvidence;
+  try { original = stableJobAidEvidence(item); }
+  catch { return null; }
+  let locator: unknown;
+  try { locator = JSON.parse(item.locator); }
+  catch {
+    const text = item.locator.trim();
+    if (!text || text.startsWith('{') || text.startsWith('[') || text.startsWith('"')) return null;
+    const revision = original.evidenceRef.startsWith('DOCUMENT_ORIGINAL:')
+      ? original.evidenceRef.slice(0, -(item.sourceRefId.length + 1)) : 'legacy';
+    return JSON.stringify([item.documentVersionId, revision, item.locator]);
+  }
+  const identity = jobAidSourceDirectoryIdentity(original);
+  if (!locator || typeof locator !== 'object' || Array.isArray(locator) || !identity.parseRunId ||
+      !('parseRunId' in locator) || locator.parseRunId !== identity.parseRunId ||
+      !('sourceRefId' in locator) || locator.sourceRefId !== item.sourceRefId ||
+      !('pageStart' in locator) || typeof locator.pageStart !== 'number' ||
+      !Number.isSafeInteger(locator.pageStart) || locator.pageStart < 0)
+    return null;
+  return JSON.stringify([item.documentVersionId, identity.parseRunId, locator.pageStart]);
+}
+
 export function expandJobAidSourceSelection(
   catalog: AssessmentEvidence[],
   requested: string[],
@@ -591,16 +635,14 @@ export function expandJobAidSourceSelection(
     return item;
   });
   if (context === 'EXACT') return structuredClone(selected);
-  const pageKey = (item: Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }>) => {
-    const original = stableJobAidEvidence(item);
-    const revision = original.evidenceRef.startsWith('DOCUMENT_ORIGINAL:')
-      ? original.evidenceRef.slice(0, -(item.sourceRefId.length + 1)) : 'legacy';
-    return `${item.documentVersionId}\0${revision}\0${item.locator}`;
-  };
   const pageKeys = new Set(
     selected
       .filter((item) => item.kind === 'DOCUMENT_PASSAGE')
-      .map(pageKey),
+      .map((item) => {
+        const key = jobAidSourcePageKey(item);
+        if (key === null) throw new Error('JOBAID_SOURCE_PAGE_LOCATOR_INVALID');
+        return key;
+      }),
   );
   const refs = new Set(requested);
   return structuredClone(
@@ -608,7 +650,7 @@ export function expandJobAidSourceSelection(
       (item) =>
         refs.has(item.evidenceRef) ||
         (item.kind === 'DOCUMENT_PASSAGE' &&
-          pageKeys.has(pageKey(item))),
+          pageKeys.has(jobAidSourcePageKey(item) ?? '')),
     ),
   );
 }
