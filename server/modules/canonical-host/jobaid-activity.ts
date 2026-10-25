@@ -1,4 +1,5 @@
 import type { JobAidActivityRead, JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
+import { isJobAidConsumerStoppedReport } from '@shared/jobaid-activity.interface';
 
 export const JOBAID_ACTIVITY_WINDOW = 50;
 export interface JobAidExecutionObservation {
@@ -59,6 +60,17 @@ export function projectJobAidActivity(
       !('kind' in record)
     ) {
       result.malformedRecordCount++;
+      continue;
+    }
+    if (record.kind === 'ASSESSMENT_CONSUMER_STOPPED') {
+      const observedAt = 'observedAt' in record ? record.observedAt : null;
+      if (!isJobAidConsumerStoppedReport(record) || typeof observedAt !== 'string' ||
+          !Number.isFinite(Date.parse(observedAt))) {
+        result.malformedRecordCount++;
+        continue;
+      }
+      result.consumerStopped = { sequence: index + 1, observedAt,
+        modelRound: record.modelRound, errorCode: record.errorCode, upstreamOutcome: 'UNKNOWN' };
       continue;
     }
     if (record.kind === 'ASSESSMENT_KNOWLEDGE_OBSERVED') {

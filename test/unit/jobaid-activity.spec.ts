@@ -20,6 +20,50 @@ const saved = {
   workRevision: 1,
   createdAt: new Date('2026-09-23T00:00:00Z'),
 };
+const stopped = {
+  kind: 'ASSESSMENT_CONSUMER_STOPPED', requestId: 'fixture-request',
+  documentVersionId: 'DV-fixture', inputRevision: 2, modelRound: 6,
+  errorCode: 'JOBAID_GATEWAY_HTTP_400:INCOMPLETE_TERMINAL_RESPONSE', upstreamOutcome: 'UNKNOWN',
+  observedAt: '2026-10-25T00:00:00.000Z',
+};
+
+it('projects stopped metadata for the selected attempt without changing authority or exposing control/source fields', () => {
+  const result = projectJobAidActivity({ ...attempt, activityJson: JSON.stringify([
+    { ...stopped, leaseToken: 'private-token', rawError: 'private-body' },
+  ]) }, [saved]);
+  expect(result.consumerStopped).toEqual({ sequence: 1, observedAt: stopped.observedAt,
+    modelRound: 6, errorCode: stopped.errorCode, upstreamOutcome: 'UNKNOWN' });
+  expect(JSON.stringify(result)).not.toMatch(/private|fixture-request|DV-fixture/u);
+  expect(attempt.status).toBe('RUNNING');
+  expect(result.savedRevisions).toHaveLength(1);
+  const html = renderToStaticMarkup(createElement(JobAidExecutionActivity, { activity: result }));
+  expect(html).toContain('已记录本轮执行停止');
+  expect(html).toContain('模型结果尚未确认');
+  expect(html).toContain('JAWR-one');
+});
+
+it('rejects malformed stopped metadata and does not attribute an earlier attempt observation to a new one', () => {
+  const malformed = projectJobAidActivity({ ...attempt,
+    activityJson: JSON.stringify([{ ...stopped, upstreamOutcome: 'SUCCEEDED' }]) }, []);
+  expect(malformed.consumerStopped).toBeUndefined();
+  expect(malformed.malformedRecordCount).toBe(1);
+  const next = projectJobAidActivity({ ...attempt, attemptRef: 'AQ-next', activityJson: '[]' }, [saved]);
+  expect(next.consumerStopped).toBeUndefined();
+  expect(next.attemptRef).toBe('AQ-next');
+});
+
+it('a stopped observation refreshes the existing saved-work view while RUNNING remains unchanged', () => {
+  const previous = jobAidReadingFixture();
+  previous.executionStatus = 'RUNNING';
+  previous.activity = projectJobAidActivity(attempt, []);
+  const next = { ...previous, activity: projectJobAidActivity({
+    ...attempt, activityJson: JSON.stringify([stopped]),
+  }, []) };
+  expect(preserveJobAidRead(previous, next)).toBe(next);
+  expect(next.current).toBe(previous.current);
+  expect(next.executionStatus).toBe('RUNNING');
+});
+
 function event() {
   return {
     kind: 'ASSESSMENT_SOURCES_READ',

@@ -29,10 +29,17 @@ export default function JobAidExecutionActivity({
       <summary>
         本轮评估过程 · 当前展示读取 {activity.sourceReads.length} 条 · 保存{' '}
         {activity.savedRevisions.length} 次 · 知识工具 {activity.knowledgeObservations?.length ?? 0} 条
+        {activity.consumerStopped ? ' · 已记录执行停止' : null}
         {activity.error || activity.malformedRecordCount > 0
           ? ' · 部分记录不可用'
           : null}
       </summary>
+      {activity.consumerStopped ? (
+        <p role="alert">
+          已记录本轮执行停止，模型结果尚未确认；已保存工作独立保留。{' '}
+          <ActivityTime value={activity.consumerStopped.observedAt} />
+        </p>
+      ) : null}
       {activity.error ? (
         <p role="alert">材料读取记录损坏，暂时无法展示；已保存工作仍可阅读。</p>
       ) : null}

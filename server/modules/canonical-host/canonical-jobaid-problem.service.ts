@@ -17,6 +17,7 @@ import { projectSavedDocumentActivityForAssessment, type DocumentActivityAssessm
 import { sourceStatementEvidence } from './document-activity-assessment-consumer';
 import { parseAssessmentSourceStatement } from '@shared/assessment-evidence-roots';
 import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
+import { isJobAidConsumerStoppedReport, type JobAidConsumerStoppedReport } from '@shared/jobaid-activity.interface';
 import { projectJobAidActivity } from './jobaid-activity';
 import { originalApplicabilityResultMatches } from './original-applicability-currentness';
 import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
@@ -2062,6 +2063,38 @@ export class CanonicalJobAidProblemService {
     };
   }
 
+  async recordConsumerStopped(input: JobAidConsumerStoppedReport & {
+    attemptRef: string;
+    workItemId: string;
+    leaseToken: string;
+    leaseGeneration: number;
+  }) {
+    if (!isJobAidConsumerStoppedReport(input))
+      throw new Error('JOBAID_CONSUMER_STOPPED_REPORT_INVALID');
+    // Reuse the existing attempt-control authority without extending its lease.
+    const { row, task, taskInput, scope } = await this.authorizedAttempt(
+      input.attemptRef, 'HEARTBEAT_ATTEMPT', input.workItemId,
+    );
+    const operation = row.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' ? 'dynamic' : 'overall';
+    const prefix = ['openclaw-v2', operation, task.workItemId, task.documentVersionId, ''].join(':');
+    const requestId = task.idempotencyKey.startsWith(prefix) ? task.idempotencyKey.slice(prefix.length) : null;
+    if (task.actionAttemptId !== row.attemptId || task.operationRef !== row.operationRef ||
+        task.workItemId !== input.workItemId || task.documentVersionId !== input.documentVersionId ||
+        task.inputRevision !== input.inputRevision || requestId !== input.requestId)
+      throw new Error('JOBAID_CONSUMER_STOPPED_BINDING_CHANGED');
+    const fence = { leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration,
+      principalId: scope.principalId, automaticLeaseRequired: !!scope.automaticWorkItemLease };
+    assertJobAidWorkFence(row, fence);
+    await this.assertSourcesAuthorized(taskInput.sourceCatalog, taskInput,
+      scope.tenantId, scope.workItemId, scope);
+    return this.work.recordConsumerStopped({ row, actorUserId: taskInput.actorUserId, fence,
+      sourceBindings: taskInput.sourceBindings, report: {
+        requestId: input.requestId, documentVersionId: input.documentVersionId,
+        inputRevision: input.inputRevision, modelRound: input.modelRound,
+        errorCode: input.errorCode, upstreamOutcome: 'UNKNOWN',
+      } });
+  }
+
   async queryKnowledge(input: {
     attemptRef: string;
     workItemId?: string;
@@ -3377,7 +3410,8 @@ export class CanonicalJobAidProblemService {
     operation:
       | 'READ_ASSESSMENT_SOURCES'
       | 'SAVE_ASSESSMENT_WORK'
-      | 'READ_ASSESSMENT_WORK',
+      | 'READ_ASSESSMENT_WORK'
+      | 'HEARTBEAT_ATTEMPT',
     workItemId?: string,
   ) {
     const scope = await this.serviceScope.authorizeOpenClawAttempt({

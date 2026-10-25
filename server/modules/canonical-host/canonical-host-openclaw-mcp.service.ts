@@ -589,6 +589,27 @@ export class CanonicalHostOpenClawMcpService {
     );
 
     server.registerTool(
+      'record_assessment_consumer_stopped',
+      {
+        title: '记录当前评估执行已停止',
+        description: '仅记录当前fenced执行已停止且上游结果UNKNOWN的安全元数据；精确请求绑定及幂等。不更改attempt终态、期限、租约、保存工作或队列。',
+        inputSchema: z.object({
+          attemptRef, workItemId: mcpWorkItemId, leaseToken, leaseGeneration,
+          requestId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u).nullable(),
+          documentVersionId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u),
+          inputRevision: z.number().int().min(0),
+          modelRound: z.number().int().min(1).max(64),
+          errorCode: z.string().regex(/^[A-Z][A-Z0-9_:.-]{0,199}$/u),
+          upstreamOutcome: z.literal('UNKNOWN'),
+        }).strict(),
+        annotations: commitAnnotations,
+      },
+      async input => textResult(await this.problemAssessment.recordConsumerStopped({
+        ...input, requestId: input.requestId ?? null,
+      })),
+    );
+
+    server.registerTool(
       'save_assessment_work',
       {
         title: '保存 JobAid 问题工作正文',

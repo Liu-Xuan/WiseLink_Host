@@ -63,6 +63,7 @@ const INITIAL_TOOLS = new Set([
   'begin_applicability_evaluation', 'commit_applicability_candidate',
   'begin_dynamic_evaluation', 'commit_dynamic_evaluation_candidate',
   'query_assessment_knowledge', 'read_assessment_sources', 'save_assessment_work', 'read_assessment_work',
+  'record_assessment_consumer_stopped',
   'begin_overall_synthesis', 'commit_overall_candidate',
 ]);
 
@@ -1679,6 +1680,7 @@ export async function runHostedInitialStage(options, dependencies) {
   }
   const callCounts = new Map();
   let startedAttempt = null;
+  let assessmentClaim = null;
   let executionModel;
   let finalCommitStarted = false;
   let modelCallCount = 0;
@@ -1765,6 +1767,7 @@ export async function runHostedInitialStage(options, dependencies) {
       problemAssessment = ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(value.modelInput?.schemaVersion);
       if (problemAssessment) {
         await checkpoint.write('assessment-current-claim', value);
+        assessmentClaim = structuredClone(value);
         taskDeadline = value.task?.deadline;
       }
       startedAttempt = value.attemptRef;
@@ -1862,10 +1865,61 @@ export async function runHostedInitialStage(options, dependencies) {
         ...(jobAidBudget ? { jobAidRunBudget: jobAidBudget.snapshot() } : {}),
         ...(gatewayTransportFailure ? { gatewayTransportFailure } : {}) };
       await checkpoint.writeAuxiliary('run-result', report);
+      const consumerStoppedObservation = problemAssessment
+        ? await reportStoppedAssessment({ checkpoint, report, runBinding, operation,
+          inputRevision: initial.workItemRevision, assessmentClaim, callTool,
+          hasTool: dependencies.hasTool })
+        : null;
+      const stoppedReport = consumerStoppedObservation ? { ...report, consumerStoppedObservation } : report;
+      if (consumerStoppedObservation) await checkpoint.writeAuxiliary('run-result', stoppedReport);
       return checkpoint.diagnostics.length
-        ? { ...report, localCheckpointWarnings: [...checkpoint.diagnostics] } : report;
+        ? { ...stoppedReport, localCheckpointWarnings: [...checkpoint.diagnostics] } : stoppedReport;
     }
     throw error;
+  }
+}
+
+async function reportStoppedAssessment({ checkpoint, report, runBinding, operation,
+  inputRevision, assessmentClaim, callTool, hasTool }) {
+  try {
+    const persisted = await checkpoint.readOptional('run-result');
+    const binding = await checkpoint.readOptional('binding');
+    const claim = await checkpoint.readOptional('assessment-current-claim');
+    const state = await checkpoint.readOptional('assessment-state');
+    const task = claim?.task;
+    const kind = operation === 'EVALUATE_JOBAID' ? 'dynamic' : 'overall';
+    const prefix = ['openclaw-v2', kind, runBinding.workItemId, runBinding.documentVersionId, ''].join(':');
+    const requestId = typeof task?.idempotencyKey === 'string' && task.idempotencyKey.startsWith(prefix)
+      ? task.idempotencyKey.slice(prefix.length) : null;
+    if (!isDeepStrictEqual(persisted, report) || !isDeepStrictEqual(binding, runBinding) ||
+        !assessmentClaim || !isDeepStrictEqual(claim, assessmentClaim) ||
+        report.status !== 'REQUIRES_ATTENTION' || report.attemptStatus !== 'UNKNOWN' ||
+        claim.status !== 'RUNNING' || claim.attemptRef !== report.attemptRef ||
+        task?.operationRef !== claim.attemptRef || typeof task.actionAttemptId !== 'string' ||
+        task.workItemId !== runBinding.workItemId || task.documentVersionId !== runBinding.documentVersionId ||
+        task.taskType !== (operation === 'EVALUATE_JOBAID' ? 'OPENCLAW_DYNAMIC_EVALUATION' : 'OPENCLAW_OVERALL_SYNTHESIS') ||
+        task.inputRevision !== inputRevision || requestId !== runBinding.requestId ||
+        typeof claim.leaseToken !== 'string' || !Number.isSafeInteger(claim.leaseGeneration) ||
+        !Number.isSafeInteger(state?.round) || state.round < 1 || state.round > 64 ||
+        !/^[A-Z][A-Z0-9_:.-]{0,199}$/u.test(report.errorCode))
+      throw new Error('JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED');
+    if (typeof hasTool !== 'function' || !await hasTool('record_assessment_consumer_stopped'))
+      return { status: 'UNAVAILABLE', errorCode: 'JOBAID_CONSUMER_STOPPED_HOST_TOOL_UNAVAILABLE' };
+    // The local invocation has settled and its exact UNKNOWN result is durable.
+    // Reporting this observation does not replay the model, finish, or release its claim.
+    const receipt = await callTool('record_assessment_consumer_stopped', {
+      attemptRef: claim.attemptRef, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration,
+      requestId: runBinding.requestId, documentVersionId: runBinding.documentVersionId,
+      inputRevision, modelRound: state.round, errorCode: report.errorCode, upstreamOutcome: 'UNKNOWN',
+    });
+    if (receipt?.status !== 'RECORDED' || receipt.attemptRef !== claim.attemptRef ||
+        receipt.upstreamOutcome !== 'UNKNOWN' || typeof receipt.replayed !== 'boolean' ||
+        typeof receipt.observedAt !== 'string' || !Number.isFinite(Date.parse(receipt.observedAt)))
+      throw new Error('JOBAID_CONSUMER_STOPPED_RECEIPT_INVALID');
+    return { status: 'RECORDED', observedAt: receipt.observedAt, replayed: receipt.replayed };
+  } catch (error) {
+    // Keep the original failure visible even if the observation cannot reach Host.
+    return { status: 'UNCONFIRMED', errorCode: errorCode(error) };
   }
 }
 

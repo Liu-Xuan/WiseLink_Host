@@ -181,13 +181,24 @@ export function JobAidProblemReading({
         : null}
     </div>
   );
+  const needsAttention = !!data.activity?.consumerStopped &&
+    data.activity.attemptRef === data.selectedExecution?.attemptRef &&
+    ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(data.executionStatus ?? '');
   const execution = data.executionStatus ? (
-    <p role="status">
-      当前运行：{executionLabels[data.executionStatus] ?? data.executionStatus}。
-      {data.executionStatus === 'SUCCEEDED'
-        ? null
-        : '已保存内容独立保留，运行状态不改变其完成范围。'}
-    </p>
+    <>
+      <p role="status">
+        {needsAttention
+          ? '执行需处理：执行已停止，模型结果待核；任务正在等待系统收尾。'
+          : <>当前运行：{executionLabels[data.executionStatus] ?? data.executionStatus}。</>}
+        {data.executionStatus === 'SUCCEEDED'
+          ? null
+          : '已保存内容独立保留，运行状态不改变其完成范围。'}
+      </p>
+      {needsAttention ? <details>
+        <summary>任务状态记录</summary>
+        <p>Host状态字段：{data.executionStatus}</p>
+      </details> : null}
+    </>
   ) : null;
   if (!current)
     return (
@@ -201,7 +212,7 @@ export function JobAidProblemReading({
         </p>
         {execution}
         <JobAidExecutionActivity activity={data.activity} />
-        {data.latestAttempt ? (
+        {!needsAttention && data.latestAttempt ? (
           <p role="status">
             最近一次评估请求：
             {executionLabels[data.latestAttempt.status] ??
@@ -290,7 +301,7 @@ export function JobAidProblemReading({
         {actions}
         {execution}
         <JobAidExecutionActivity activity={data.activity} />
-        {data.latestAttempt &&
+        {!needsAttention && data.latestAttempt &&
         data.latestAttempt.attemptId !== current.actionAttemptId ? (
           <p role="status">
             后续评估请求：

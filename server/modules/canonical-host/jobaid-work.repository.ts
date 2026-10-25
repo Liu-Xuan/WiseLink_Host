@@ -4,6 +4,11 @@ import { tdmsReadObservation } from './jobaid-tdms-context';
 import { assertTdmsSealedResultFence, tdmsReviewBinding, type TdmsReviewCaller } from '../tdms-source/tdms-review-delegation';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import type { JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
+import {
+  isJobAidConsumerStoppedReport,
+  type JobAidConsumerStoppedReport,
+  type JobAidConsumerStoppedReceipt,
+} from '@shared/jobaid-activity.interface';
 import { JOBAID_ACTIVITY_WINDOW, type JobAidExecutionObservation, type JobAidSavedActivityObservation } from './jobaid-activity';
 import { readHistoricalJobAidWork } from './jobaid-historical-reading';
 import { randomUUID } from 'node:crypto';
@@ -676,6 +681,71 @@ export class JobAidWorkRepository {
   }): Promise<void> {
     return this.recordReadObservation(input, {
       kind: 'ASSESSMENT_KNOWLEDGE_OBSERVED', status: input.status,
+    });
+  }
+
+  async recordConsumerStopped(input: {
+    row: ActionAttemptRow;
+    actorUserId: string;
+    fence: JobAidWorkFence;
+    sourceBindings: JobAidSourceBinding[];
+    report: JobAidConsumerStoppedReport;
+  }): Promise<JobAidConsumerStoppedReceipt> {
+    if (!isJobAidConsumerStoppedReport(input.report))
+      throw new Error('JOBAID_CONSUMER_STOPPED_REPORT_INVALID');
+    return this.actorTransactions.withActorTransaction(input.actorUserId, async ({ database }) => {
+      const primary = await this.lockSources(database, input.row, input.actorUserId, input.sourceBindings);
+      await assertAutomaticWorkItemAttemptLease(database, input.row, input.fence.principalId, input.fence.automaticLeaseRequired);
+      const [attempt] = await database.select().from(actionAttempt).where(and(
+        eq(actionAttempt.attemptId, input.row.attemptId),
+        eq(actionAttempt.tenantId, input.row.tenantId),
+        eq(actionAttempt.workItemId, input.row.workItemId),
+      )).for('update');
+      if (!attempt || !attempt.operationRef || attempt.operationRef !== input.row.operationRef ||
+          attempt.documentVersionId !== input.report.documentVersionId ||
+          attempt.inputRevision !== input.report.inputRevision ||
+          attempt.taskInputHash !== input.row.taskInputHash ||
+          attempt.idempotencyKey !== input.row.idempotencyKey ||
+          attempt.baseRevision !== primary.revision ||
+          !['OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS'].includes(attempt.actionType))
+        throw new Error('JOBAID_CONSUMER_STOPPED_BINDING_CHANGED');
+      const operation = attempt.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' ? 'dynamic' : 'overall';
+      const prefix = ['openclaw-v2', operation, attempt.workItemId, attempt.documentVersionId, ''].join(':');
+      const requestId = attempt.idempotencyKey?.startsWith(prefix) ? attempt.idempotencyKey.slice(prefix.length) : null;
+      if (requestId !== input.report.requestId)
+        throw new Error('JOBAID_CONSUMER_STOPPED_BINDING_CHANGED');
+      assertJobAidWorkFence(attempt, input.fence);
+      const records: unknown = JSON.parse(attempt.reviewActivityJson ?? '[]');
+      if (!Array.isArray(records)) throw new Error('JOBAID_ACTIVITY_RECORDS_INVALID');
+      const previous = records.filter((item: unknown) => item && typeof item === 'object' &&
+        'kind' in item && item.kind === 'ASSESSMENT_CONSUMER_STOPPED');
+      if (previous.length > 1) throw new Error('JOBAID_CONSUMER_STOPPED_CONFLICT');
+      const existing: unknown = previous[0];
+      if (existing) {
+        if (!isJobAidConsumerStoppedReport(existing) || !('observedAt' in existing) ||
+            typeof existing.observedAt !== 'string' || !Number.isFinite(Date.parse(existing.observedAt)) ||
+            existing.requestId !== input.report.requestId ||
+            existing.documentVersionId !== input.report.documentVersionId ||
+            existing.inputRevision !== input.report.inputRevision ||
+            existing.modelRound !== input.report.modelRound || existing.errorCode !== input.report.errorCode)
+          throw new Error('JOBAID_CONSUMER_STOPPED_CONFLICT');
+        return { status: 'RECORDED', attemptRef: attempt.operationRef,
+          observedAt: existing.observedAt, upstreamOutcome: 'UNKNOWN', replayed: true };
+      }
+      // The row lock makes repeat reports idempotent without another table.
+      // This observation never renews a lease or changes task/result/terminal state.
+      const report = input.report;
+      const observation = { kind: 'ASSESSMENT_CONSUMER_STOPPED',
+        requestId: report.requestId, documentVersionId: report.documentVersionId,
+        inputRevision: report.inputRevision, modelRound: report.modelRound,
+        errorCode: report.errorCode, upstreamOutcome: 'UNKNOWN',
+        observedAt: new Date().toISOString() };
+      const updated = await database.update(actionAttempt).set({
+        reviewActivityJson: JSON.stringify([...records, observation]),
+      }).where(eq(actionAttempt.attemptId, attempt.attemptId)).returning({ attemptId: actionAttempt.attemptId });
+      if (updated.length !== 1) throw new Error('JOBAID_CONSUMER_STOPPED_BINDING_CHANGED');
+      return { status: 'RECORDED', attemptRef: attempt.operationRef,
+        observedAt: observation.observedAt, upstreamOutcome: 'UNKNOWN', replayed: false };
     });
   }
 
