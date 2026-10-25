@@ -8,7 +8,7 @@ import { invokeHostedJobAidProblemModel, projectJobAidModelInput, projectBounded
 import { JOBAID_PROBLEM_GUIDANCE, LEGACY_JOBAID_PROBLEM_GUIDANCE,
   SOURCE_CONTENT_SYNTHESIS_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION } from '../scripts/jobaid-problem-guidance.mjs';
 
-test('source spelling repair uses only unique exact Host catalog refs and preserves the candidate', () => {
+test('source spelling repair retains legacy aliases for catalog refs already retained by Host work', () => {
   const exact = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:PRUN-example:u32:p1';
   const short = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:u32:p1';
   const unknown = 'DOCUMENT_ORIGINAL:document_version_other:PRUN-example:u32:p1';
@@ -20,6 +20,157 @@ test('source spelling repair uses only unique exact Host catalog refs and preser
   assert.deepEqual(result.repairs, [{ from: short, to: exact }, { from: `evidenceRef:${exact}`, to: exact }]);
   assert.equal(candidate.issues[0].body, `读取 [[${short}]]；未知 [[${unknown}]]。`);
   assert.equal(canonicalizeKnownJobAidSourceAliases(candidate, []).repairs.length, 0);
+});
+
+test('source spelling repair maps a third identical parse-run segment to the exact delivered double', () => {
+  const prefix = 'DOCUMENT_ORIGINAL:document_version_example';
+  const exact = `${prefix}:PRUN-example:PRUN-example:page-3-block-11:source`;
+  const extra = `${prefix}:PRUN-example:PRUN-example:PRUN-example:page-3-block-11:source`;
+  const candidate = { issues: [{ body: `Extra [[${extra}]]; exact [[${exact}]].`,
+    measures: [{ basisRefs: [extra, exact] }], checkedEvidenceRefs: [`evidenceRef:${extra}`] }],
+  unchangedText: extra };
+  const original = structuredClone(candidate);
+  const result = canonicalizeKnownJobAidSourceAliases(candidate, [{ ref: exact }], [{ evidenceRef: exact }]);
+  assert.equal(result.work.issues[0].body, `Extra [[${exact}]]; exact [[${exact}]].`);
+  assert.deepEqual(result.work.issues[0].measures[0].basisRefs, [exact, exact]);
+  assert.deepEqual(result.work.issues[0].checkedEvidenceRefs, [exact]);
+  assert.equal(result.work.unchangedText, extra, 'ordinary text is not a consumed source-reference field');
+  assert.deepEqual(result.repairs, [{ from: extra, to: exact }, { from: `evidenceRef:${extra}`, to: exact }]);
+  assert.deepEqual(candidate, original);
+  assert.deepEqual(canonicalizeKnownJobAidSourceAliases({ body: `[[${exact}]]`, basisRefs: [exact] },
+    [{ ref: exact }], [{ evidenceRef: exact }]), { work: { body: `[[${exact}]]`, basisRefs: [exact] }, repairs: [] });
+});
+
+test('source spelling repair leaves unregistered, undelivered and ambiguous references for Host rejection', () => {
+  const exact = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:PRUN-example:u32:p1';
+  const short = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:u32:p1';
+  const extra = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:PRUN-example:PRUN-example:u32:p1';
+  const work = { body: `[[${extra}]]`, basisRefs: [extra] };
+  for (const [catalog, delivered] of [
+    [[], [{ evidenceRef: exact }]],
+    [[{ ref: exact }], []],
+    [[{ ref: exact }], [{ evidenceRef: exact.replace('PRUN-example', 'PRUN-other') }]],
+  ]) {
+    assert.deepEqual(canonicalizeKnownJobAidSourceAliases(work, catalog, delivered), { work, repairs: [] });
+  }
+  for (const ref of [
+    extra.replace(':PRUN-example:u32', ':PRUN-other:u32'),
+    extra.replace(':u32', ':PRUN-example:u32'),
+    extra.replace(':u32', ':u33'),
+  ]) {
+    const unsupported = { basisRefs: [ref] };
+    assert.deepEqual(canonicalizeKnownJobAidSourceAliases(unsupported,
+      [{ ref: exact }], [{ evidenceRef: exact }]), { work: unsupported, repairs: [] });
+  }
+  const ambiguous = { body: `[[evidenceRef:${short}]]`, basisRefs: [short] };
+  for (const delivered of [[{ evidenceRef: exact }], [{ evidenceRef: exact }, { evidenceRef: short }]])
+    assert.deepEqual(canonicalizeKnownJobAidSourceAliases(ambiguous,
+      [{ ref: exact }, { ref: short }], delivered), { work: ambiguous, repairs: [] },
+    'an undelivered competing catalog ref still prevents choosing another target');
+  const catalogExact = { basisRefs: [extra] };
+  assert.deepEqual(canonicalizeKnownJobAidSourceAliases(catalogExact,
+    [{ ref: exact }, { ref: extra }], [{ evidenceRef: exact }]), { work: catalogExact, repairs: [] },
+  'a real catalog ref is never rewritten as another delivered ref');
+});
+
+test('initial SAVE repairs a delivered measure basisRef before dispatch and retains its exact save key', () => persisted(async checkpoint => {
+  const exact = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:PRUN-example:page-3-block-11:source';
+  const extra = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:PRUN-example:PRUN-example:page-3-block-11:source';
+  const input = initialChunkModelInput();
+  input.availableSources = [{ ref: exact, kind: 'DOCUMENT_PASSAGE', title: 'Synthetic original block' }];
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: 'Conditional measures',
+    listBrief: 'Only the delivered original supports these measures.', overview: 'Further scope remains open.',
+    roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Other evidence remains unavailable.',
+    changeSummary: 'Saved the supported measure candidates.',
+    issues: Array.from({ length: 5 }, (_, issue) => ({ issueKey: `issue-${issue + 1}`,
+      question: `Which condition supports measure group ${issue + 1}?`, body: `Only under condition A [[${exact}]].`,
+      measures: Array.from({ length: 3 }, (_, measure) => ({ text: `Measure ${measure + 1}`,
+        addresses: 'Condition A', limitations: ['Applicability not confirmed'], status: 'PROPOSED', basisRefs: [exact] })) })) };
+  work.issues[4].measures[2].basisRefs[0] = extra;
+  const original = structuredClone(work);
+  const readbackKeys = [];
+  const f = fixture([
+    { action: 'READ_SOURCES', sourceRefs: [exact], purpose: 'read the exact original block', context: 'EXACT' },
+    { action: 'SAVE_WORK', work },
+    { action: 'FINISH' },
+  ], { assessmentCheckpoint: checkpoint });
+  f.options.readAssessmentSources = async request => {
+    f.reads.push(request);
+    return { status: 'AVAILABLE', scope: request.context, completeRequestedScope: true, sourceRefs: [exact],
+      evidence: [{ evidenceRef: exact, kind: 'DOCUMENT_PASSAGE', excerpt: 'Only under condition A.' }] };
+  };
+  const save = f.options.saveAssessmentWork;
+  f.options.saveAssessmentWork = async request => {
+    const submitted = JSON.parse(request.workJson);
+    const expected = structuredClone(original);
+    expected.issues[4].measures[2].basisRefs[0] = exact;
+    assert.deepEqual(submitted, expected, 'only the consumed measure basisRef changes before Host dispatch');
+    const result = await save(request);
+    const revision = f.store.get(request.requestId);
+    revision.content = completeSavedJobAidContent(revision.content, [exact]);
+    return result;
+  };
+  const read = f.options.readAssessmentWork;
+  f.options.readAssessmentWork = async request => {
+    readbackKeys.push(request.requestId);
+    return read(request);
+  };
+  const result = await f.run(input);
+  assert.equal(result.output.workRevisionRef, 'JAWR-1');
+  assert.equal(f.reads.length, 1, 'already delivered evidence requires no corrective re-read');
+  assert.equal(f.saves.length, 1);
+  assert.deepEqual(work, original, 'retain the exact model candidate');
+  const saveKey = await checkpoint.readOptional('assessment-2-save');
+  assert.equal(saveKey.requestId, f.saves[0].requestId);
+  assert.deepEqual(readbackKeys, [saveKey.requestId, saveKey.requestId]);
+  assert.deepEqual(await checkpoint.readOptional('assessment-2-source-ref-normalizations'),
+    { repairs: [{ from: extra, to: exact }] });
+  const response = (await checkpoint.readOptional('assessment-round-2.result')).value;
+  const modelStep = JSON.parse(JSON.parse(response.raw).choices[0].message.tool_calls[0].function.arguments).step;
+  assert.deepEqual(JSON.parse(modelStep.workJson), original, 'raw response remains available beside the repair receipt');
+}));
+
+test('UPDATE keeps legacy aliases for exact retained work evidence without a fresh source read', async () => {
+  const exact = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:PRUN-example:u32:p1';
+  const short = 'DOCUMENT_ORIGINAL:document_version_example:PRUN-example:u32:p1';
+  const input = initialChunkModelInput();
+  input.availableSources = [{ ref: exact, kind: 'DOCUMENT_PASSAGE', title: 'Previously read original' }];
+  input.expectedWorkRevision = 1;
+  const content = { schemaVersion: 'wiselink.jobaid-problem-work.v3', headline: 'Retained conditional finding',
+    listBrief: 'The prior source condition remains.', overview: 'Condition A remains relevant.',
+    roundCompletion: 'COMPLETE_WITH_OPEN_QUESTIONS', completionReason: 'Applicability remains open.',
+    changeSummary: 'Prior saved work.', readSourceRefs: [exact], issues: [{ issueKey: 'condition-a',
+      question: 'When does A apply?', body: `Only under condition A [[${exact}]].`,
+      measures: [{ text: 'Retained measure', addresses: 'Condition A', limitations: ['Applicability unconfirmed'],
+        status: 'PROPOSED', basisRefs: [exact] }] }] };
+  const previous = { workRevisionRef: 'JAWR-prior', workRevision: 1, requestId: 'prior-save', content };
+  input.previousWork = previous;
+  const update = structuredClone(content);
+  delete update.readSourceRefs;
+  update.changeSummary = 'Clarified the retained conditional measure.';
+  update.issues[0].body = `Condition A still governs [[${short}]].`;
+  update.issues[0].measures[0].basisRefs = [`evidenceRef:${exact}`];
+  const f = fixture([
+    { action: 'READ_WORK', workRevisionRef: previous.workRevisionRef, issueKeys: ['condition-a'], includeOverview: true },
+    { action: 'SAVE_WORK', work: update },
+    { action: 'FINISH' },
+  ]);
+  const read = f.options.readAssessmentWork;
+  f.options.readAssessmentWork = async request => request.requestId ? read(request) : { revision: previous };
+  const save = f.options.saveAssessmentWork;
+  f.options.saveAssessmentWork = async request => {
+    const candidate = JSON.parse(request.workJson);
+    assert.equal(candidate.issues[0].body, `Condition A still governs [[${exact}]].`);
+    assert.deepEqual(candidate.issues[0].measures[0].basisRefs, [exact]);
+    const result = await save(request);
+    const revision = f.store.get(request.requestId);
+    revision.content = completeSavedJobAidContent(revision.content, [exact]);
+    return result;
+  };
+  assert.equal((await f.run(input)).output.workRevisionRef, 'JAWR-2');
+  assert.deepEqual(input.deliveredEvidence, [], 'retained Host read refs are not current-attempt delivered bodies');
+  assert.equal(f.reads.length, 0);
+  assert.equal(f.saves.length, 1);
 });
 
 test('bounded initial continuation sends an issue index while Host work and source bindings stay intact', () => {

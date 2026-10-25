@@ -229,8 +229,10 @@ export function projectBoundedInitialJobAidInput(input) {
   };
 }
 
-/** Repair only two observed citation spellings when the Host catalog has one exact match. */
-export function canonicalizeKnownJobAidSourceAliases(work, availableSources) {
+/** Repair observed spellings only to unique exact Host refs; an extra PRUN also needs actual delivery. */
+export function canonicalizeKnownJobAidSourceAliases(work, availableSources, deliveredEvidence = []) {
+  const catalogRefs = new Set(availableSources.map(source => source.ref));
+  const deliveredRefs = new Set(deliveredEvidence.map(source => source.evidenceRef));
   const aliases = new Map();
   const register = (alias, exact) => {
     if (!alias || alias === exact) return;
@@ -239,15 +241,23 @@ export function canonicalizeKnownJobAidSourceAliases(work, availableSources) {
   };
   for (const { ref } of availableSources) {
     register(`evidenceRef:${ref}`, ref);
-    const original = /^(DOCUMENT_ORIGINAL:[^:]+):(PRUN-[A-Za-z0-9-]+):\2:(u\d+:p\d+)$/u.exec(ref);
+    const original = /^(DOCUMENT_ORIGINAL:[^:]+):(PRUN-[A-Za-z0-9-]+):\2:((?!PRUN-)[^\s]+)$/u.exec(ref);
     if (original) {
-      const short = `${original[1]}:${original[2]}:${original[3]}`;
-      register(short, ref);
-      register(`evidenceRef:${short}`, ref);
+      if (/^u\d+:p\d+$/u.test(original[3])) {
+        const short = `${original[1]}:${original[2]}:${original[3]}`;
+        register(short, ref);
+        register(`evidenceRef:${short}`, ref);
+      }
+      if (deliveredRefs.has(ref)) {
+        const extra = `${original[1]}:${original[2]}:${original[2]}:${original[2]}:${original[3]}`;
+        register(extra, ref);
+        register(`evidenceRef:${extra}`, ref);
+      }
     }
   }
   const repaired = new Map();
   const exact = (ref) => {
+    if (catalogRefs.has(ref)) return ref;
     const replacement = aliases.get(ref);
     if (!replacement) return ref;
     repaired.set(ref, replacement);
@@ -1046,6 +1056,7 @@ export async function invokeHostedJobAidProblemModel(
             const normalized = canonicalizeKnownJobAidSourceAliases(
               submittedWork,
               sessionModelInput.availableSources,
+              evidenceCache.evidence,
             );
             submittedWork = normalized.work;
             if (normalized.repairs.length)
