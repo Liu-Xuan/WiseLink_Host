@@ -1,0 +1,43 @@
+{
+  "scope": "Synthetic input-shape examples only; no Host call or business-valid work is claimed.",
+  "convertedSchemaExamples": {
+    "get_parse_status": {"workItemId":"WI-DEMO"},
+    "get_deep_link": {"workItemId":"WI-DEMO"},
+    "begin_dynamic_evaluation": {"workItemId":"WI-DEMO","requestId":"STAGE-DEMO"},
+    "query_assessment_knowledge": {"attemptRef":"ATT-DEMO","leaseToken":"00000000-0000-4000-8000-000000000001","leaseGeneration":1,"requestKey":"QUERY-DEMO","query":"synthetic supplemental question"},
+    "record_assessment_program_progress": {"attemptRef":"ATT-DEMO","workItemId":"WI-DEMO","leaseToken":"00000000-0000-4000-8000-000000000001","leaseGeneration":1,"phase":"MATERIALS_READY","checkpointRef":"initial:DEMO:program-materials","materialSnapshotJson":"{}"},
+    "save_assessment_work": {"attemptRef":"ATT-DEMO","leaseToken":"00000000-0000-4000-8000-000000000001","leaseGeneration":1,"requestId":"SAVE-DEMO","expectedWorkRevision":3,"workJson":"{}"},
+    "read_assessment_work": {"attemptRef":"ATT-DEMO","requestId":"SAVE-DEMO","leaseToken":"00000000-0000-4000-8000-000000000001","leaseGeneration":1},
+    "commit_dynamic_evaluation_candidate": {"attemptRef":"ATT-DEMO","leaseToken":"00000000-0000-4000-8000-000000000001","leaseGeneration":1,"result":{}},
+    "begin_overall_synthesis": {"workItemId":"WI-DEMO","requestId":"OVERALL-DEMO","providers":[]},
+    "commit_overall_candidate": {"attemptRef":"ATT-DEMO","leaseToken":"00000000-0000-4000-8000-000000000001","leaseGeneration":1,"result":{}},
+    "heartbeat_action_attempt": {"attemptRef":"ATT-DEMO","leaseToken":"00000000-0000-4000-8000-000000000001","leaseGeneration":1},
+    "get_action_attempt_status": {"attemptRef":"ATT-DEMO"},
+    "next_hierarchical_wiki": {},
+    "hierarchical_wiki_cleanup": {"kind":"SUMMARY","subjectId":"DEMO","attemptRef":"ATT-DEMO","operation":"STATUS"},
+    "read_document_original": {"documentVersionId":"DVI-DEMO","parseRunId":"PARSE-DEMO"},
+    "next_original_assessment": {"workItemId":"WI-DEMO"},
+    "resume_overall_synthesis": {"attemptRef":"ATT-DEMO"},
+    "begin_review_turn": {"reviewConversationRef":"CONV-DEMO","requestId":"REVIEW-DEMO"},
+    "get_review_turn_context": {"attemptRef":"ATT-DEMO"},
+    "read_source_refs": {"attemptRef":"ATT-DEMO","sourceRefIds":["SOURCE-DEMO"]},
+    "query_review_aily": {"attemptRef":"ATT-DEMO","requestKey":"QUERY-DEMO","query":"synthetic question"},
+    "commit_review_turn_candidate": {"attemptRef":"ATT-DEMO","leaseToken":"00000000-0000-4000-8000-000000000001","leaseGeneration":1,"resultJson":"{}"},
+    "cancel_action_attempt": {"attemptRef":"ATT-DEMO","reason":"synthetic cancellation"},
+    "matter_action_attempt": {"matterId":"MAT-DEMO","attemptRef":"ATT-DEMO","operation":"CLAIM"},
+    "next_matter_assessment": {"matterId":"MAT-DEMO"},
+    "read_matter_current_work": {"matterId":"MAT-DEMO"},
+    "begin_matter_assessment": {"matterId":"MAT-DEMO","expectedMatterRevisionId":"REV-DEMO","expectedMatterRevision":1,"expectedWorkingRevision":0,"requestId":"REQ-DEMO","instruction":"Synthetic assessment"},
+    "hierarchical_wiki_next_matter_assessment": {"matterId":"MAT-DEMO"},
+    "hierarchical_wiki_read_matter_current_work": {"matterId":"MAT-DEMO"},
+    "hierarchical_wiki_matter_action_attempt": {"matterId":"MAT-DEMO","attemptRef":"ATT-DEMO","operation":"CLAIM"},
+    "query_parsed_package": {"workItemId":"WI-DEMO","query":"synthetic query"},
+    "begin_translation": {"workItemId":"WI-DEMO","requestId":"TRANSLATE-DEMO"},
+    "begin_applicability_evaluation": {"applicabilityContextRef":"CTX-DEMO","requestId":"APP-DEMO"},
+    "commit_applicability_candidate": {"attemptRef":"ATT-DEMO","leaseToken":"00000000-0000-4000-8000-000000000001","leaseGeneration":1,"result":{}},
+    "record_oem_discovery_run": {"workItemId":"WI-DEMO","result":{"provider":"BOEING","query":"synthetic identifier","resultStatus":"ZERO_RESULT","candidates":[],"error":null}}
+  },
+  "sourceExpressionOnlyExamples": {
+    "read_assessment_sources": {"attemptRef":"ATT-DEMO","leaseToken":"00000000-0000-4000-8000-000000000001","leaseGeneration":1,"sourceRefs":["SYNTHETIC-EXACT-REF"],"purpose":"synthetic source read","context":"EXACT"}
+  }
+}

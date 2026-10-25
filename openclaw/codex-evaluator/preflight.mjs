@@ -4,18 +4,35 @@ import { access, readFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findMcpConfig } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
+import { HOST_MCP_TOOLS } from '../skills/wiselink-research-and-synthesize/scripts/orchestrate-host-mcp.mjs';
+import { WISELINK_HOST_MCP_VERSION } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
 
-const requiredTools = ['begin_dynamic_evaluation', 'read_assessment_sources',
-  'save_assessment_work', 'read_assessment_work', 'commit_dynamic_evaluation_candidate',
-  'begin_overall_synthesis', 'commit_overall_candidate', 'heartbeat_action_attempt',
-  'get_parse_status', 'get_deep_link'];
+const expectedServerName = 'wiselink-codex-engineering-assessment';
+const expectedEndpointPath = '/openapi/wiselink/codex-mcp';
+// The connection validates the full established list. Program-controlled
+// assessment also needs the optional progress capability when dispatched.
+const requiredTools = [...HOST_MCP_TOOLS, 'record_assessment_program_progress'];
+
+function validCodexEndpoint(value) {
+  try {
+    const endpoint = new URL(value);
+    return endpoint.protocol === 'https:' && !endpoint.username && !endpoint.password &&
+      !endpoint.search && !endpoint.hash && endpoint.pathname.endsWith(expectedEndpointPath);
+  } catch { return false; }
+}
 
 export async function inspectConfiguration(configPath, codexBinary) {
   const config = JSON.parse(await readFile(configPath, 'utf8'));
   const provider = config.models?.providers?.miaoda;
-  const host = config.mcp?.servers?.wiselink_host_controller;
-  const allowed = host?.toolFilter?.include;
-  const missingTools = Array.isArray(allowed) ? requiredTools.filter(tool => !allowed.includes(tool)) : [];
+  const legacyHost = findMcpConfig(config, 'HOSTED');
+  const codexHost = findMcpConfig(config, 'CODEX');
+  const codexHostMcpConfigPresent = Boolean(codexHost);
+  const codexHostMcpConfigured = codexHostMcpConfigPresent && codexHost.enabled !== false;
+  const codexHostMcpEndpointValid = codexHostMcpConfigured && validCodexEndpoint(codexHost.url);
+  const allowed = codexHost?.toolFilter?.include;
+  const hostToolFilterPresent = Array.isArray(allowed);
+  const missingTools = hostToolFilterPresent ? requiredTools.filter(tool => !allowed.includes(tool)) : null;
   let binaryAvailable = false;
   if (codexBinary) {
     try { await access(codexBinary, constants.X_OK); binaryAvailable = true; } catch {}
@@ -27,13 +44,22 @@ export async function inspectConfiguration(configPath, codexBinary) {
   return {
     model: 'miaoda/glm-5.3', modelRouteConfigured, codexBinaryAvailable: binaryAvailable,
     platformSecretRefsConfigured,
-    hostMcpConfigured: Boolean(host && host.enabled !== false), missingHostTools: missingTools,
+    legacyHostMcpConfigPresent: Boolean(legacyHost),
+    codexHostMcpConfigPresent, codexHostMcpConfigured,
+    hostMcpConfigured: codexHostMcpConfigured,
+    codexHostMcpEndpointValid, expectedHostMcpPath: expectedEndpointPath,
+    expectedHostMcpServerName: expectedServerName, expectedHostMcpServerVersion: WISELINK_HOST_MCP_VERSION,
+    requiredHostToolScope: 'CLIENT_EXACT_METADATA_PLUS_PROGRAM_PROGRESS',
+    requiredHostToolCount: requiredTools.length, hostToolFilterPresent,
+    missingHostTools: missingTools,
     hostAuthenticationVerified: false, hostRuntimeRegistrationVerified: false,
     readyForModelFixture: Boolean(modelRouteConfigured && platformSecretRefsConfigured && binaryAvailable),
     readyForBusinessExecution: false,
     remaining: [
-      ...(!host || host.enabled === false ? ['HOST_MCP_NOT_CONFIGURED'] : []),
-      ...(missingTools.length ? ['HOST_TOOL_BINDING_INCOMPLETE'] : []),
+      ...(!codexHostMcpConfigured ? ['CODEX_HOST_MCP_NOT_CONFIGURED'] : []),
+      ...(codexHostMcpConfigured && !codexHostMcpEndpointValid ? ['CODEX_HOST_MCP_ENDPOINT_INVALID'] : []),
+      ...(missingTools?.length ? ['HOST_TOOL_BINDING_INCOMPLETE'] : []),
+      ...(!hostToolFilterPresent ? ['VERIFY_CODEX_HOST_TOOL_DISCOVERY'] : []),
       'VERIFY_HOST_AUTHENTICATION_AND_CURRENT_RUNTIME_REGISTRATION',
       'SELECT_AUTHORIZED_BUSINESS_TASK_AND_VERIFY_EXACT_VERSION_READERS',
     ],

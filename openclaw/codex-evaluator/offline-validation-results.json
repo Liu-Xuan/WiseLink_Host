@@ -1,0 +1,174 @@
+{
+  "schemaVersion": "wiselink.codex-offline-validation.v1",
+  "recordedAt": "2026-10-25 09:24:04 UTC",
+  "baseline": "fc1322919b1b52433c33086c8db4aeb957f0e982",
+  "implementationBase": "1155c386fff03eeb1753a6af3aab6f337a4413b6",
+  "scope": "Offline adapter/client/program recovery tests plus existing regression tests; explicit fake model/Host only",
+  "realModelCalls": 0,
+  "realHostCalls": 0,
+  "hostBusinessSaved": false,
+  "productReaderVerified": false,
+  "newCodeDeployedToMiaoda": false,
+  "totalTests": 70,
+  "passed": 70,
+  "failed": 0,
+  "convertedSchemasChecked": 35,
+  "syntheticSchemaExamplesChecked": 35,
+  "tests": [
+    {
+      "name": "generation_adapter",
+      "command": "node openclaw/codex-evaluator/codex-generation.test.mjs",
+      "exitCode": 0,
+      "testCount": 2,
+      "output": "✔ gateway converts one structured final candidate and never forwards headers (193.194928ms)\n✔ gateway rejects noncontract route and request shape before dispatch (91.460335ms)\nℹ tests 2\nℹ suites 0\nℹ pass 2\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 291.00253\n"
+    },
+    {
+      "name": "generation_recovery",
+      "command": "node openclaw/codex-evaluator/codex-generation-recovery.test.mjs",
+      "exitCode": 0,
+      "testCount": 7,
+      "output": "✔ restart after runner receipt and before caller checkpoint returns exact stable response once (203.218834ms)\n✔ creates nested runRoot parent chain before making its exclusive recovery claim (51.212712ms)\n✔ an existing live runner is joined without a second dispatch (254.824761ms)\n✔ killed parent with a live runner resumes its completed receipt without redispatch (290.749239ms)\n✔ aborting a recovery wait leaves the active runner available for a later retry (164.104954ms)\n✔ missing claim, dead runner and mismatched or malformed receipts never dispatch (93.68781ms)\n✔ a changed original upstream response fails the recovery receipt hash (112.851597ms)\nℹ tests 7\nℹ suites 0\nℹ pass 7\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 1180.717508\n"
+    },
+    {
+      "name": "program_recovery",
+      "command": "node openclaw/codex-evaluator/program-recovery.test.mjs",
+      "exitCode": 0,
+      "testCount": 9,
+      "output": "✔ complete model response survives parent death before SAVE and a new process saves without generation (758.20833ms)\n✔ lost SAVE ACK across process death queries the original request and never sends a duplicate SAVE (241.57258ms)\n✔ an in-process lost SAVE ACK is resolved by independent READ using the unchanged key (151.493778ms)\n✔ restart after independent READ retains the original observation and tolerates refreshed packet metadata (253.922966ms)\n✔ a dispatch marker without a durable model receipt never causes fresh inference on restart (206.34434ms)\n✔ query failure, foreign identity, changed authored body and changed save payload cannot finish (927.528407ms)\n✔ checkpoint publication survives orphan temporaries, preserves no-clobber and private permissions (7.436014ms)\n✔ only the new Codex program marker enters receipt-only recovery and a fresh Host lease remains required (1.281868ms)\n✔ CODEX endpoint/config selection rejects the old binding before loading SDK or using credentials (0.830749ms)\nℹ tests 9\nℹ suites 0\nℹ pass 9\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 2564.717331\n"
+    },
+    {
+      "name": "program_finish_recovery",
+      "command": "node openclaw/codex-evaluator/program-finish-recovery.test.mjs",
+      "exitCode": 0,
+      "testCount": 13,
+      "output": "✔ normal program commit requires matching nested Overall status readback (8.722889ms)\n✔ lost commit ACK reads same-hash SUCCEEDED and nested Overall without model or commit replay (2.739811ms)\n✔ lost ACK with absent Overall fails rather than treating SUCCEEDED as projection (1.5763ms)\n✔ lost ACK with wrong Overall work revision fails (1.138702ms)\n✔ malformed received ACK is not masked by later attempt status (1.697723ms)\n✔ received commit ACK with unrelated SAVE request ID fails despite same work revision (0.665611ms)\n✔ lost ACK with wrong result content hash is outcome unknown and does not read Overall (1.654057ms)\n✔ status readback rejects wrong entry identity even with matching nested Overall (0.232219ms)\n✔ status validator rejects an unrelated SAVE request ID from the same revision (0.95764ms)\n✔ precommit latest-work read rejects a revision from another attempt before committing (0.520082ms)\n✔ precommit latest-work read rejects a different work revision before committing (0.405019ms)\n✔ COMMITTING replay binds saved request and revision, then verifies nested projection without model or SAVE (2.979461ms)\n✔ COMMITTING replay refuses projection from an unrelated SAVE request (0.784991ms)\nℹ tests 13\nℹ suites 0\nℹ pass 13\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 37.887972\n"
+    },
+    {
+      "name": "preflight",
+      "command": "node openclaw/codex-evaluator/preflight.test.mjs",
+      "exitCode": 0,
+      "testCount": 4,
+      "output": "✔ old Host key is reported as legacy only and cannot make Codex ready (15.305909ms)\n✔ named Codex config with legacy or unsafe endpoint stays locally invalid (21.035276ms)\n✔ valid Codex config inventories full client tool list and never reveals headers or secret paths (16.001545ms)\n✔ incomplete named Codex tool filter reports the missing full metadata surface (3.409809ms)\nℹ tests 4\nℹ suites 0\nℹ pass 4\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 63.104615\n"
+    },
+    {
+      "name": "assessment_session",
+      "command": "node openclaw/codex-evaluator/assessment-session.test.mjs",
+      "exitCode": 0,
+      "testCount": 10,
+      "output": "✔ one tool exposes detailed workJson guidance without Host control fields (3.068065ms)\n✔ exact source reads preserve full Host receipt and invalid refs never reach Host (1.065753ms)\n✔ save uses Host materialization, independent exact-request read, and blocks premature finish (2.714283ms)\n✔ uncertain save only reads the same key until it is visible; no second save (0.724199ms)\n✔ known Host validation rejection permits corrected work without claiming a save (0.671941ms)\n✔ an in-progress materialized revision cannot finish (0.335765ms)\n✔ wrong readback binding cannot complete save (0.621986ms)\n✔ Overall requires exact prior completed revision, CURRENT overview and consistency check (0.488234ms)\n✔ conflicting overview fields never satisfy Overall CURRENT (5.116205ms)\n✔ READ_WORK is pinned and returns only selected full Host issue (1.120976ms)\nℹ tests 10\nℹ suites 0\nℹ pass 10\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 40.202722\n"
+    },
+    {
+      "name": "consumer_routing",
+      "command": "node openclaw/skills/wiselink-research-and-synthesize/scripts/model-executor-consumers.test.mjs",
+      "exitCode": 0,
+      "testCount": 4,
+      "output": "✔ reading driver uses explicit Codex request without Hosted URL or credential (5.427032ms)\n✔ Codex runtime requires an explicit executable, config and run root (9.620829ms)\n✔ reading refuses a selected non-GLM route before any model request (0.69814ms)\n✔ Codex Review refuses a legacy sealed COMMITTING checkpoint before any Host call (25.686862ms)\nℹ tests 4\nℹ suites 0\nℹ pass 4\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 47.249541\n"
+    },
+    {
+      "name": "wiki_gateway",
+      "command": "node openclaw/skills/wiselink-research-and-synthesize/scripts/derived-summary-codex-gateway.test.mjs",
+      "exitCode": 0,
+      "testCount": 10,
+      "output": "✔ Codex summary session records each actual completed process and no native receipt (3.872434ms)\n✔ an unknown Codex producer outcome cannot become a closed receipt (1.194136ms)\n✔ a completed process with an unexpected upstream model remains pinned (0.494644ms)\n✔ summary model retains Host read and SAVE_SUMMARY program with fake Codex steps (8.072871ms)\n✔ Wiki releases exact matter pointer only after completed Codex receipt (2.01452ms)\n✔ Wiki pins exact matter pointer when Codex callback is missing (2.274411ms)\n✔ Wiki rejects executor switch on an unresolved Codex pointer (0.712421ms)\n✔ Wiki rejects Codex takeover of a legacy markerless Hosted pointer (0.372039ms)\n✔ Wiki Matter Codex binding rejects an existing Hosted COMMITTING checkpoint before recovery (1.831624ms)\n✔ native receipt still uses its original closure contract (0.592451ms)\nℹ tests 10\nℹ suites 0\nℹ pass 10\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 30.475874\n"
+    },
+    {
+      "name": "python_runner_recovery",
+      "command": "python3 -m unittest discover -s openclaw/codex-evaluator -p 'test_*recovery.py'",
+      "exitCode": 0,
+      "testCount": 2,
+      "output": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.183s\n\nOK\n"
+    },
+    {
+      "name": "python_bridge",
+      "command": "python3 -m unittest discover -s openclaw/codex-evaluator -p 'test_miaoda_responses_bridge.py'",
+      "exitCode": 0,
+      "testCount": 9,
+      "output": ".........\n----------------------------------------------------------------------\nRan 9 tests in 0.008s\n\nOK\n"
+    },
+    {
+      "name": "contract_check",
+      "command": "node openclaw/codex-evaluator/check-host-contract.mjs",
+      "exitCode": 0,
+      "testCount": 0,
+      "output": "{\"status\":\"OFFLINE_CONTRACT_CHECKED\",\"convertedSchemas\":35,\"convertedExamples\":35,\"sourceOnlySchemas\":3,\"excludedSourceExpressions\":4,\"liveVerified\":false}\n"
+    }
+  ],
+  "implementationFileHashes": [
+    {
+      "path": "openclaw/codex-evaluator/check-host-contract.mjs",
+      "sha256": "e7ae1b2601202f0eb5df6df630555084a304bee39f6eb1c02e9d5e0f80b2e350"
+    },
+    {
+      "path": "openclaw/codex-evaluator/codex-generation-recovery.test.mjs",
+      "sha256": "c6d614a4234b229c787f789287125d2363a57f3ab3c0bd27b82ac0c5b5e4745f"
+    },
+    {
+      "path": "openclaw/codex-evaluator/codex-generation.mjs",
+      "sha256": "7ac4a57c00feb5f3387ca03e4d7369927192407afea698c606217db1f9e92616"
+    },
+    {
+      "path": "openclaw/codex-evaluator/export-host-contract.mjs",
+      "sha256": "5b5be016944be484454d47c3efa7e76e330d1b1697b5d8970c0e1151bbdb599c"
+    },
+    {
+      "path": "openclaw/codex-evaluator/export-program-recovery-example.mjs",
+      "sha256": "d5e21a950480d2c742ebd029badbba3ad6bea65480c17da0917832bafd51469a"
+    },
+    {
+      "path": "openclaw/codex-evaluator/miaoda_responses_bridge.py",
+      "sha256": "e77c026f2d8dd9771fcfaf8f2b2e0fa64f5776aaaec537131b8f10e255165a25"
+    },
+    {
+      "path": "openclaw/codex-evaluator/preflight.mjs",
+      "sha256": "7aefe25dca6610996c474748645da3db0bd4137c77f4b55b9d9ec94982333d42"
+    },
+    {
+      "path": "openclaw/codex-evaluator/preflight.test.mjs",
+      "sha256": "0395dde515aa1ba7701f24cc63402631b167bc3af86817ff08fdeb12e7e039e7"
+    },
+    {
+      "path": "openclaw/codex-evaluator/program-finish-recovery.test.mjs",
+      "sha256": "8d02dd9ac2c2b8c427084f059ec13741ace368a2a7a893529052c7b6ddf19b67"
+    },
+    {
+      "path": "openclaw/codex-evaluator/program-recovery-fixture.mjs",
+      "sha256": "b2d6dcbe1eb698f0d9e6ae039c21c82ffd18d2312065b9dc656c0811e053c81a"
+    },
+    {
+      "path": "openclaw/codex-evaluator/program-recovery.test.mjs",
+      "sha256": "e94543e9c36b571a01a19e791bf9be58ac49ed9277fe96ef9acd2aa14e0c35bf"
+    },
+    {
+      "path": "openclaw/codex-evaluator/run-consumer-fixture.mjs",
+      "sha256": "606bb04caf3bfd843fe313e2f873ca4354bffe3d28ae5ac2934e8c1297611166"
+    },
+    {
+      "path": "openclaw/codex-evaluator/run_codex_generation.py",
+      "sha256": "9d13e1611873d93d2825526572ad9724fc4e754346680e88875a540c0448919d"
+    },
+    {
+      "path": "openclaw/codex-evaluator/test_miaoda_responses_bridge.py",
+      "sha256": "bf7a6cc8b5b3ccefcd3aed33e762e04ce985e8cee9287685923e3fa3e2817704"
+    },
+    {
+      "path": "openclaw/codex-evaluator/test_run_codex_generation_recovery.py",
+      "sha256": "8e18a9e22abb0f4249106183eec1fc285a3ea2165432b47edb93b8e410697226"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/initial-assessment-recovery.mjs",
+      "sha256": "ef2edb38d73f52fbaacd4b5fa5eec632d1650d06a873c45c1a1c9dcf9776c1cc"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/orchestrate-host-mcp.mjs",
+      "sha256": "57c11f915adba52a4d6ec0657f3744e36447a9043ca93db3e572573bd5a82579"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs",
+      "sha256": "a2783d50e78b5189a91ddbb8ff915d347f0035debe804e4c9b91113f188c2359"
+    },
+    {
+      "path": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs",
+      "sha256": "944899a6ea428ef86199bf0048fca4797845a6cd5dc3d429b96ebcd7600dfb8f"
+    }
+  ]
+}

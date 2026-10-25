@@ -1914,9 +1914,14 @@ export async function createHostMcpConnection(options) {
   const endpoint = new URL(
     requiredUrl(options.hostMcpUrl, 'REVIEW_HOST_MCP_URL_REQUIRED'),
   );
+  const selectedExecutor = modelExecutor(options);
+  if (selectedExecutor === 'CODEX' && (endpoint.protocol !== 'https:' ||
+      endpoint.username || endpoint.password || endpoint.search || endpoint.hash ||
+      !endpoint.pathname.endsWith('/openapi/wiselink/codex-mcp'))) {
+    throw new Error('CODEX_HOST_MCP_ENDPOINT_INVALID');
+  }
   const headers = isRecord(options.headers) ? options.headers : {};
   const { Client, StreamableHTTPClientTransport, toolCallOptionsPosition } = await loadMcpSdk();
-  const selectedExecutor = modelExecutor(options);
   const client = new Client({
     name: selectedExecutor === 'CODEX' ? 'wiselink-codex-assessment-driver' : 'wiselink-hosted-review-driver',
     version: '1.0.0',
@@ -2239,8 +2244,15 @@ function safeHostErrorCode(value, toolName) {
 
 export async function createCheckpointStore(directory) {
   const root = requiredText(directory, 'REVIEW_CHECKPOINT_DIRECTORY_REQUIRED');
-  await mkdir(root, { recursive: true, mode: 0o700 });
+  const firstCreated = await mkdir(root, { recursive: true, mode: 0o700 });
   await chmod(root, 0o700);
+  if (firstCreated) {
+    const last = dirname(resolve(firstCreated));
+    for (let current = resolve(root); ; current = dirname(current)) {
+      await syncCheckpointDirectory(current);
+      if (current === last) break;
+    }
+  }
   const diagnostics = [];
   const note = (step, code) => diagnostics.push({ step, code });
   const writeAuxiliary = async (step, value) => {
@@ -2446,28 +2458,23 @@ async function withActiveClaimOwner(root, perform) {
 
 async function writeCheckpoint(root, step, value) {
   const path = join(root, `${step}.json`);
-  const temporary = `${path}.${process.pid}.tmp`;
-  await writeFile(temporary, `${canonicalJson(value)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-    flag: 'wx',
-  });
-  await chmod(temporary, 0o600);
-  await rename(temporary, path);
-  await chmod(path, 0o600);
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  await writeSyncedCheckpointFile(temporary, value);
+  try {
+    await rename(temporary, path);
+    await syncCheckpointDirectory(root);
+  } finally {
+    await unlink(temporary).catch(error => { if (error?.code !== 'ENOENT') throw error; });
+  }
 }
 
 async function writeCheckpointOnce(root, step, value) {
   const path = join(root, `${step}.json`);
-  const temporary = `${path}.${process.pid}.once.tmp`;
-  await writeFile(temporary, `${canonicalJson(value)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-    flag: 'wx',
-  });
-  await chmod(temporary, 0o600);
+  const temporary = `${path}.${randomUUID()}.once.tmp`;
+  await writeSyncedCheckpointFile(temporary, value);
   try {
     await link(temporary, path);
+    await syncCheckpointDirectory(root);
   } catch (error) {
     if (error?.code === 'EEXIST') {
       throw new Error(`REVIEW_CHECKPOINT_ALREADY_EXISTS:${step}`);
@@ -2478,7 +2485,22 @@ async function writeCheckpointOnce(root, step, value) {
       if (error?.code !== 'ENOENT') throw error;
     });
   }
-  await chmod(path, 0o600);
+}
+
+// Publication must follow data durability. Unique temporaries also allow a new
+// process to continue after a killed writer left an unpublished temporary.
+async function writeSyncedCheckpointFile(path, value) {
+  const file = await open(path, 'wx', 0o600);
+  try {
+    await file.writeFile(`${canonicalJson(value)}\n`, 'utf8');
+    await file.sync();
+  } finally { await file.close(); }
+}
+
+async function syncCheckpointDirectory(root) {
+  const directory = await open(root, 'r');
+  try { await directory.sync(); }
+  finally { await directory.close(); }
 }
 
 async function writeCheckpointOnceOrEqual(root, step, value) {
@@ -3457,7 +3479,7 @@ export async function resolveRuntimeConfig(argv, env) {
     .map(({ configPath, config }) => ({
       configPath,
       config,
-      mcp: findMcpConfig(config),
+      mcp: findMcpConfig(config, selectedExecutor),
     }))
     .filter(({ mcp }) => mcp !== null);
   if (matched.length > 1) {
@@ -3533,14 +3555,16 @@ export function openClawConfigCandidates(
   return [...new Set(candidates)];
 }
 
-export function findMcpConfig(root) {
+export function findMcpConfig(root, selectedExecutor = 'HOSTED') {
+  const expectedName = selectedExecutor === 'CODEX'
+    ? 'wiselink-codex-engineering-assessment' : WISELINK_HOST_MCP_NAME;
+  const keys = selectedExecutor === 'CODEX' ? new Set([expectedName]) : WISELINK_HOST_MCP_CONFIG_KEYS;
   const matches = [];
   const visit = (value, path = []) => {
     if (!value || typeof value !== 'object') return;
     if (
       typeof value.url === 'string' &&
-      (path.some((segment) => WISELINK_HOST_MCP_CONFIG_KEYS.has(segment)) ||
-        value.name === WISELINK_HOST_MCP_NAME)
+      (path.some((segment) => keys.has(segment)) || value.name === expectedName)
     ) {
       matches.push(value);
     }

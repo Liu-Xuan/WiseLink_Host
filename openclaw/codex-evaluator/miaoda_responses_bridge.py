@@ -269,7 +269,7 @@ class Emitter:
         self.response.update(status="completed", usage=self.usage)
         self.send("response.completed", response=self.response)
 
-def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max_requests=24, max_tokens=8192, timeout=90, reasoning_effort=None):
+def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max_requests=24, max_tokens=8192, timeout=90, reasoning_effort=None, upstream_response_path=None):
     """Return (loopback server, serving thread, ephemeral port, ephemeral bearer token)."""
     require(model == MODEL, "model_not_allowed"); provider(read_json(config_path))
     # An empty allowlist is used by the bounded generation runner. Codex may
@@ -340,8 +340,11 @@ def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max
                 self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.send_header("Cache-Control", "no-cache"); self.send_header("Connection", "close"); self.end_headers(); self.close_connection = True
                 emitter = Emitter(self, allowed_tools, tool_map); emitter.send("response.created", response=emitter.response); emitter.send("response.in_progress", response=emitter.response)
                 finish = None
+                upstream_events = [] if upstream_response_path is not None else None
                 for event in chat_events(upstream, connection, deadline):
                     require(isinstance(event, dict) and not event.get("error"), "upstream_stream_error")
+                    if upstream_events is not None:
+                        upstream_events.append(event)
                     if "model" in event:
                         require(isinstance(event["model"], str) and len(event["model"]) <= 256, "invalid_upstream_model_field")
                         if event["model"] not in record["upstream_models"]:
@@ -356,6 +359,16 @@ def start_server(config_path, model, audit_path, work_dir, *, allowed_tools, max
                 require(finish != "length", "upstream_output_length")
                 require(finish in ("stop", "tool_calls") and (emitter.items or emitter.calls), "upstream_incomplete_output")
                 require((finish == "tool_calls") == bool(emitter.calls), "upstream_finish_mismatch")
+                if upstream_events is not None:
+                    path = os.fspath(upstream_response_path)
+                    temporary = path + ".tmp"
+                    with open(temporary, "x", encoding="utf-8") as file:
+                        json.dump({"format": "chat-completions-sse-events-v1", "events": upstream_events}, file, ensure_ascii=False)
+                        file.write("\n"); file.flush(); os.fsync(file.fileno())
+                    os.replace(temporary, path)
+                    directory = os.open(os.path.dirname(path), os.O_RDONLY)
+                    try: os.fsync(directory)
+                    finally: os.close(directory)
                 with lock:
                     require(not (set(s["id"] for s in emitter.calls.values()) & issued_ids), "duplicate_tool_call_id")
                     emitter.complete()

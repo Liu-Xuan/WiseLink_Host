@@ -13,6 +13,7 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 
 from miaoda_responses_bridge import start_server, MODEL
 
@@ -47,6 +48,53 @@ def stop(process):
 
 def interrupted(_signum, _frame):
     raise InterruptedError("generation_interrupted")
+
+
+def atomic_json(path, value):
+    temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+    with open(temporary, "x", encoding="utf-8") as file:
+        json.dump(value, file, ensure_ascii=False)
+        file.write("\n")
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(temporary, path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def runner_identity():
+    stat = Path("/proc/self/stat").read_text()
+    # /proc can be mounted from the host while the runner has a private PID
+    # namespace; the stat file's first field is the PID usable with this mount.
+    return {"pid": int(stat.split(" ", 1)[0]), "bootId": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+            "startTime": stat[stat.rfind(")") + 2:].split()[19]}
+
+
+def close_process_group(process):
+    if process is None:
+        return True, False
+    try:
+        os.killpg(process.pid, 0)
+    except ProcessLookupError:
+        return True, False
+    # The CLI may have exited while descendants remain. Never mark a response
+    # closed while a process in its private session can still act.
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            return True, True
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                return True, True
+            time.sleep(.05)
+    return False, True
 
 
 def configure(run, port):
@@ -123,7 +171,17 @@ def main():
     os.umask(0o077)
     request = json.load(sys.stdin, object_pairs_hook=unique_object)
     run = Path(request["run_directory"]).resolve()
-    run.mkdir(parents=True, exist_ok=False, mode=0o700)
+    binding_sha256 = request.get("binding_sha256")
+    if binding_sha256 is not None:
+        if not isinstance(binding_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", binding_sha256):
+            raise ValueError("invalid_recovery_binding")
+        binding = (run / "generation-binding.json").read_bytes().strip()
+        if hashlib.sha256(binding).hexdigest() != binding_sha256:
+            raise ValueError("recovery_binding_mismatch")
+        run.mkdir(parents=True, exist_ok=True, mode=0o700)
+    else:
+        run.mkdir(parents=True, exist_ok=False, mode=0o700)
+    atomic_json(run / "runner-identity.json", runner_identity())
     for name in ("codex-home", "user-home", "tmp", "work"):
         (run / name).mkdir(mode=0o700)
     timeout = request.get("timeout_seconds", 600)
@@ -151,7 +209,8 @@ def main():
     try:
         server, thread, port, token = start_server(config_path, MODEL, run / "bridge.audit.jsonl",
             run / "work", allowed_tools=frozenset(), max_requests=1,
-            max_tokens=request["max_output_tokens"], reasoning_effort=request.get("reasoning_effort"))
+            max_tokens=request["max_output_tokens"], reasoning_effort=request.get("reasoning_effort"),
+            upstream_response_path=run / "upstream-response.json" if binding_sha256 is not None else None)
         configure(run, port)
         env = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
                "HOME": str(run / "user-home"), "CODEX_HOME": str(run / "codex-home"),
@@ -181,6 +240,7 @@ def main():
         for sig in handlers:
             signal.signal(sig, signal.SIG_IGN)
         stop(process)
+        summary["process_group_closed"], summary["process_group_had_members"] = close_process_group(process)
         if server:
             server.shutdown(); server.server_close()
         if thread:
@@ -216,6 +276,9 @@ def main():
         summary["source_config_sha256_after"] = hashlib.sha256(Path(config_path).read_bytes()).hexdigest()
         summary["source_config_unchanged"] = before == summary["source_config_sha256_after"]
         summary["auth_json_present"] = any((run / "codex-home").rglob("auth.json"))
+        summary["upstream_response_present"] = (run / "upstream-response.json").is_file() if binding_sha256 is not None else None
+        summary["upstream_response_sha256"] = (hashlib.sha256((run / "upstream-response.json").read_bytes()).hexdigest()
+            if summary["upstream_response_present"] else None)
         try:
             final = json.loads(final_path.read_text(), object_pairs_hook=unique_object,
                 parse_constant=reject_constant)
@@ -224,7 +287,7 @@ def main():
                not isinstance(final["arguments"], dict):
                 raise ValueError("invalid_structured_final")
             # This is a local final-to-contract conversion; no business function ran in Codex.
-            (run / "contract-candidate.json").write_text(json.dumps(final, ensure_ascii=False))
+            atomic_json(run / "contract-candidate.json", final)
             summary["structured_final_to_contract"] = True
         except (ValueError, OSError) as error:
             # A parser exception is diagnostic only; never project model text.
@@ -237,8 +300,17 @@ def main():
             and audit[0].get("finish_reason") == "stop" and not audit[0].get("tool_calls")
             and not summary["tool_items"] and not summary["bridge_errors"]
             and summary["structured_final_to_contract"] and summary["source_config_unchanged"]
-            and not summary["auth_json_present"] and thread is not None and not thread.is_alive())
-        (run / "transport-summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
+            and not summary["auth_json_present"] and thread is not None and not thread.is_alive()
+            and summary["process_group_closed"] and not summary["process_group_had_members"]
+            and (binding_sha256 is None or summary["upstream_response_present"]))
+        atomic_json(run / "transport-summary.json", summary)
+        if binding_sha256 is not None:
+            candidate_path = run / "contract-candidate.json"
+            candidate = json.loads(candidate_path.read_text()) if candidate_path.exists() else {}
+            atomic_json(run / "generation-receipt.json", {"version": 1,
+                "binding_sha256": binding_sha256, "run_directory": str(run),
+                "transport": summary, "candidate": candidate,
+                "upstream_response_sha256": summary["upstream_response_sha256"]})
         for sig, handler in handlers.items():
             signal.signal(sig, handler)
     print(json.dumps(summary, ensure_ascii=False))

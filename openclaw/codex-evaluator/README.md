@@ -1,5 +1,30 @@
 # Codex executor for the existing WiseLink assessment contract
 
+## Current Host alignment and durable recovery delivery
+
+The baseline for this delivery is implementation `1155c386fff03eeb1753a6af3aab6f337a4413b6`
+plus wiring record `fc1322919b1b52433c33086c8db4aeb957f0e982`. The earlier autonomous
+prototype described below is historical; it is not the integration baseline.
+This delivery changes only the Codex adapter/client/consumer side. It does not
+modify the main controller's Host integration worktree or bind a live Host.
+
+- [Source-derived Host interface and remaining alignment](../../docs/coordination/WISELINK_CODEX_HOST_INTERFACE_20261025.md)
+- [Recovery behavior, receipt correlation and offline verification](RECOVERY_VALIDATION.md)
+- [Pinned Host schema inventory](contracts/host-source-interface.json)
+- [Complete synthetic program exchange](contracts/program-recovery-example.json)
+
+The program assessment passes a durable `codexRecovery.requestId` to the shared
+gateway. Existing requests can rejoin the original child process or read its
+complete persisted receipt. They cannot launch a second model call. The full
+response is retained before the consumer saves with its original SAVE request ID.
+This crash/restart integration is implemented for `PROGRAM_CONTROLLED_V1` in this
+delivery; the presence of the shared gateway in other consumers is not a claim
+that every consumer has this same receipt-rejoin path.
+
+Run the offline fixtures and tests listed in `RECOVERY_VALIDATION.md`. They need
+no model or Host credentials. The six GLM runs below remain evidence from the
+previous delivery with a synthetic Host; no new real run is implied here.
+
 ## 2026-10-25 consumer migration
 
 The current graph contract is v1.7. Its first production path remains

@@ -1,0 +1,2730 @@
+{
+  "schemaVersion": "wiselink.codex-host-source-contract.v1",
+  "evidence": {
+    "hostCommit": "fc1322919b1b52433c33086c8db4aeb957f0e982",
+    "hostSource": {
+      "path": "server/modules/canonical-host/canonical-host-openclaw-mcp.service.ts",
+      "gitBlobSha": "7607bcc337b186b598434c8c5e725ab72db2ceb1",
+      "sha256": "3f2ed7a7358e446fc98be3411bb9336b0ef1266be9c70b767ad14182f518da74"
+    },
+    "readonlySource": {
+      "path": "server/modules/canonical-host/canonical-host-readonly-mcp-tools.ts",
+      "gitBlobSha": "34c4806ce1cb838cace32f917cd7f9678cff8f30",
+      "sha256": "3a19588b01152e16d8b89f2d86b6adc441625f0f6daa0f3fb966803bad791815"
+    },
+    "controllerSource": {
+      "path": "server/modules/canonical-host/canonical-host-openclaw-mcp.openapi.controller.ts",
+      "gitBlobSha": "d10d756a4a37199710656c1fad7b5edf8bb1715e",
+      "sha256": "cda169d42762cd62b803e70aa89b7fcb05ea7b7c849093d9e04be3733b503dda"
+    },
+    "apiSource": {
+      "path": "shared/api.interface.ts",
+      "gitBlobSha": "0cf94ee8bf309808add2d4fe31b1a73dfb12a110",
+      "sha256": "9bcd71b5be9a729aac58e5facf38bf420647b48bd5fcc2d51562c7b91206794c"
+    },
+    "derivedSource": {
+      "path": "server/modules/canonical-host/derived-summary-attempt-mcp-tools.ts",
+      "gitBlobSha": "9b223ec11be5b4f95110b8837b4dfe52ca7bd340",
+      "sha256": "6827b530d163b0d1f26ba706db9a2c4c26bcb041572baadd7bfbd549530292e3"
+    },
+    "matterSource": {
+      "path": "server/modules/canonical-host/matter-attempt-mcp-tools.ts",
+      "gitBlobSha": "2d0bf252c26418cdb4d0b202a63aab2aa1b1f69a",
+      "sha256": "542389fae4120ebab82e7c2ed6b2da2f41dd48275f23a8c310edf2d4af235124"
+    },
+    "liveToolsListVerified": false,
+    "proposedCodexHostBranchVerified": false
+  },
+  "client": {
+    "sourcePath": "openclaw/skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs",
+    "sourceSha256": "a2783d50e78b5189a91ddbb8ff915d347f0035debe804e4c9b91113f188c2359",
+    "legacyServerName": "wiselink-openclaw-engineering-assessment",
+    "expectedServerVersion": "1.2.0",
+    "expectedCodexServerName": "wiselink-codex-engineering-assessment",
+    "expectedCodexMcpPath": "/openapi/wiselink/codex-mcp",
+    "legacyMcpPath": "/openapi/wiselink/openclaw-mcp",
+    "requiredLegacyToolNames": [
+      "document_reading",
+      "document_work",
+      "read_document_original",
+      "document_translation",
+      "next_original_assessment",
+      "next_matter_assessment",
+      "begin_matter_assessment",
+      "matter_action_attempt",
+      "derived_summary_attempt",
+      "next_hierarchical_wiki",
+      "hierarchical_wiki_next_matter_assessment",
+      "hierarchical_wiki_read_matter_current_work",
+      "hierarchical_wiki_matter_action_attempt",
+      "hierarchical_wiki_cleanup",
+      "read_matter_current_work",
+      "query_review_aily",
+      "get_parse_status",
+      "query_parsed_package",
+      "get_deep_link",
+      "begin_translation",
+      "commit_translation_candidate",
+      "translation_workspace",
+      "begin_applicability_evaluation",
+      "commit_applicability_candidate",
+      "begin_dynamic_evaluation",
+      "commit_dynamic_evaluation_candidate",
+      "read_assessment_sources",
+      "query_assessment_knowledge",
+      "save_assessment_work",
+      "read_assessment_work",
+      "record_oem_discovery_run",
+      "begin_overall_synthesis",
+      "resume_overall_synthesis",
+      "commit_overall_candidate",
+      "begin_review_turn",
+      "get_review_turn_context",
+      "read_source_refs",
+      "get_action_attempt_status",
+      "commit_review_turn_candidate",
+      "heartbeat_action_attempt",
+      "cancel_action_attempt"
+    ]
+  },
+  "serverSource": {
+    "serverName": "wiselink-openclaw-engineering-assessment",
+    "serverVersion": "1.2.0",
+    "mcpPath": "/openapi/wiselink/openclaw-mcp",
+    "identityStatus": "PINNED_LEGACY_SOURCE_ONLY",
+    "queueRestPaths": [
+      "/openapi/wiselink/next-work-item",
+      "/openapi/wiselink/ack-work-item",
+      "/openapi/wiselink/block-work-item"
+    ],
+    "queueTypeScriptDeclarations": "export type AutomaticWorkItemClaimResult =\n  | { status: 'IDLE'; reviewAfterWorkItemId?: string; documentAfterRef?: string }\n  | { status: 'DOCUMENT_PENDING'; documentVersionId: string; deliveryRef: string;\n      documentAfterRef?: string }\n  | {\n      status: 'REVIEW_PENDING';\n      workItemId: string;\n      reviewTurnRef: string;\n      reviewAfterWorkItemId: string;\n    }\n  | {\n      status: 'OVERALL_PENDING';\n      workItemId: string;\n      reviewTurnRef: string;\n      workRevisionRef: string;\n      reviewAfterWorkItemId: string;\n    }\n  | {\n      status: 'CLAIMED';\n      workItemId: string;\n      requestId: string;\n      documentVersionId: string;\n      workItemRevision: number;\n      leaseToken: string;\n      leaseGeneration: number;\n      leaseExpiresAt: string;\n    };\n\nexport interface NextAutomaticWorkItemRequest {\n  resumeWorkItemId?: string;\n  reviewAfterWorkItemId?: string;\n  documentAfterRef?: string;\n}\n\nexport interface AcknowledgeAutomaticWorkItemRequest {\n  workItemId: string;\n  leaseToken: string;\n  leaseGeneration: number;\n}\n\nexport interface AcknowledgeAutomaticWorkItemResponse {\n  status: 'ACKNOWLEDGED';\n  workItemId: string;\n  replayed: boolean;\n  acknowledgedAt: string;\n}\n\nexport interface BlockAutomaticWorkItemRequest {\n  workItemId: string;\n  leaseToken: string;\n  leaseGeneration: number;\n  /** Explicit operator parking; normal terminal-failure BLOCK is unchanged. */\n  expectedCancellation?: AutomaticWorkItemCancellationBinding;\n  /** Cancellation receipt replay only: never creates a new BLOCK. */\n  replayOnly?: true;\n}\n\n/** Expected control binding, never an assertion about provider termination. */\nexport interface BlockAutomaticWorkItemResponse {\n  status: 'BLOCKED';\n  workItemId: string;\n  blockedCode: string;\n  replayed: boolean;\n  blockedAt: string;\n}",
+    "tools": {
+      "get_parse_status": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "successorReviewTurnRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            }
+          },
+          "required": [
+            "workItemId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n        .object({\n          workItemId: mcpWorkItemId,\n          successorReviewTurnRef: z.string().trim().min(1).max(96).optional(),\n        })\n        .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "get_deep_link": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "successorReviewTurnRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            }
+          },
+          "required": [
+            "workItemId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n        .object({\n          workItemId: mcpWorkItemId,\n          successorReviewTurnRef: z.string().trim().min(1).max(96).optional(),\n        })\n        .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "begin_dynamic_evaluation": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            }
+          },
+          "required": [
+            "workItemId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            workItemId: mcpWorkItemId,\n            requestId: z\n              .string()\n              .regex(/^[A-Za-z0-9_-]{1,64}$/u)\n              .optional(),\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "read_assessment_sources": {
+        "schemaStatus": "SOURCE_EXPRESSION_ONLY",
+        "zodExpression": "z\n          .object({\n            attemptRef,\n            workItemId: mcpWorkItemId.optional(),\n            leaseToken,\n            leaseGeneration,\n            sourceRefs: z.array(tdmsNativeReferenceMcpSchema(z.string().min(1).max(512))).min(1).max(96),\n            purpose: z.string().trim().min(1).max(2000),\n            context: z.enum(['EXACT', 'PAGE']).default('PAGE'),\n          })\n          .strict()",
+        "conversionError": "IMPORTED_TDMS_NATIVE_REFINEMENT_UNSUPPORTED",
+        "unresolvedDependencies": [
+          "tdmsNativeReferenceMcpSchema"
+        ]
+      },
+      "query_assessment_knowledge": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "requestKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "queryRef": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.object({ attemptRef, workItemId: mcpWorkItemId.optional(), leaseToken, leaseGeneration,\n          requestKey: z.string().min(1).max(200).optional(),\n          query: z.string().trim().min(1).max(4000).optional(),\n          queryRef: z.string().uuid().optional(),\n        }).strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "record_assessment_program_progress": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "phase": {
+              "type": "string",
+              "enum": [
+                "MATERIALS_READY",
+                "MODEL_RESPONSE_SAVED"
+              ]
+            },
+            "checkpointRef": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9:._-]{1,512}$"
+            },
+            "materialSnapshotJson": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "attemptRef",
+            "workItemId",
+            "leaseToken",
+            "leaseGeneration",
+            "phase",
+            "checkpointRef"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.object({attemptRef, workItemId: mcpWorkItemId, leaseToken, leaseGeneration,\n        phase: z.enum(['MATERIALS_READY', 'MODEL_RESPONSE_SAVED']),\n        checkpointRef: z.string().regex(/^[A-Za-z0-9:._-]{1,512}$/u),\n        materialSnapshotJson: z.string().min(1).optional()}).strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "save_assessment_work": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9:_-]{1,96}$"
+            },
+            "expectedWorkRevision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "workJson": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 1000000
+            }
+          },
+          "required": [
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "requestId",
+            "expectedWorkRevision",
+            "workJson"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            attemptRef,\n            workItemId: mcpWorkItemId.optional(),\n            leaseToken,\n            leaseGeneration,\n            requestId: z.string().regex(/^[A-Za-z0-9:_-]{1,96}$/u),\n            expectedWorkRevision: z.number().int().min(0),\n            workJson: z.string().min(2).max(1_000_000),\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "read_assessment_work": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "requestId": {
+              "type": "string",
+              "maxLength": 96
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "workRevisionRef": {
+              "type": "string",
+              "pattern": "^JAWR-[A-Za-z0-9-]{1,91}$"
+            }
+          },
+          "required": [
+            "attemptRef"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({ attemptRef, workItemId: mcpWorkItemId.optional(), requestId: z.string().max(96).optional(),\n            leaseToken: leaseToken.optional(), leaseGeneration: leaseGeneration.optional(),\n            workRevisionRef: z.string().regex(/^JAWR-[A-Za-z0-9-]{1,91}$/u).optional() })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "commit_dynamic_evaluation_candidate": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "result": {
+              "type": "object",
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            attemptRef,\n            workItemId: mcpWorkItemId.optional(),\n            leaseToken,\n            leaseGeneration,\n            result: resultEnvelope,\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "begin_overall_synthesis": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            },
+            "providers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "AIRBUS",
+                  "BOEING",
+                  "COMAC"
+                ]
+              },
+              "maxItems": 3
+            },
+            "successorReviewTurnRef": {
+              "type": "string",
+              "pattern": "^RT-[A-Za-z0-9_-]{1,93}$"
+            }
+          },
+          "required": [
+            "workItemId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            workItemId: mcpWorkItemId,\n            requestId: z\n              .string()\n              .regex(/^[A-Za-z0-9_-]{1,64}$/u)\n              .optional(),\n            providers: z\n              .array(z.enum(['AIRBUS', 'BOEING', 'COMAC']))\n              .max(3)\n              .optional(),\n            successorReviewTurnRef: z.string().regex(/^RT-[A-Za-z0-9_-]{1,93}$/u).optional(),\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "commit_overall_candidate": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "result": {
+              "type": "object",
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            attemptRef,\n            workItemId: mcpWorkItemId.optional(),\n            leaseToken,\n            leaseGeneration,\n            result: resultEnvelope,\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "heartbeat_action_attempt": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "reviewProgress": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "MODEL_REQUEST",
+                    "MODEL_RETRY"
+                  ]
+                },
+                "requestNo": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "retryNo": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2
+                },
+                "delayMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 30000
+                },
+                "errorCode": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9_]{0,119}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "requestNo",
+                "retryNo",
+                "delayMs",
+                "errorCode"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            attemptRef,\n            workItemId: mcpWorkItemId.optional(),\n            leaseToken,\n            leaseGeneration,\n            reviewProgress: reviewProgress.optional(),\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "get_action_attempt_status": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "attemptRef"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.object({ attemptRef, workItemId: mcpWorkItemId.optional() }).strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "next_hierarchical_wiki": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.strictObject({})",
+        "semanticLimitations": [
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "hierarchical_wiki_cleanup": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "SUMMARY",
+                "MATTER"
+              ]
+            },
+            "subjectId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            },
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "operation": {
+              "type": "string",
+              "enum": [
+                "STATUS",
+                "CANCEL"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "subjectId",
+            "attemptRef",
+            "operation"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.strictObject({ kind: z.enum(['SUMMARY','MATTER']), subjectId: z.string().min(1).max(96),\n        attemptRef: z.string().min(1).max(200), operation: z.enum(['STATUS','CANCEL']) })",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "read_document_original": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "documentVersionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            },
+            "deliveryRef": {
+              "type": "string",
+              "pattern": "^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$"
+            },
+            "parseRunId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "semanticRevision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sectionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "compareWith": {
+              "type": "object",
+              "properties": {
+                "documentVersionId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,96}$"
+                },
+                "parseRunId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,96}$"
+                },
+                "semanticRevision": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "documentVersionId",
+                "parseRunId",
+                "semanticRevision"
+              ],
+              "additionalProperties": false
+            },
+            "roleKey": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,120}$"
+            }
+          },
+          "required": [
+            "documentVersionId",
+            "parseRunId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.strictObject({ documentVersionId: z.string().trim().min(1).max(96),\n        deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional(),\n        parseRunId: z.string().trim().min(1).max(96), offset: z.number().int().min(0).optional(),\n        limit: z.number().int().min(1).max(50).optional(),\n        semanticRevision: z.number().int().min(1).optional(), sectionId: z.string().min(1).max(160).optional(),\n        compareWith: z.strictObject({ documentVersionId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/),\n          parseRunId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/), semanticRevision: z.number().int().min(1) }).optional(),\n        roleKey: z.string().regex(/^[A-Za-z0-9_.-]{1,120}$/).optional() })",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "next_original_assessment": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "workItemId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.object({workItemId:mcpWorkItemId}).strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "resume_overall_synthesis": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "attemptRef"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.object({ attemptRef, workItemId: mcpWorkItemId.optional() }).strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "begin_review_turn": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "reviewConversationRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "reviewConversationRef",
+            "requestId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({ reviewConversationRef, requestId: reviewRequestId, workItemId: mcpWorkItemId.optional() })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "get_review_turn_context": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "attemptRef"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.object({ attemptRef, workItemId: mcpWorkItemId.optional() }).strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "read_source_refs": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "sourceRefIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "minItems": 1,
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "attemptRef",
+            "sourceRefIds"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            attemptRef,\n            workItemId: mcpWorkItemId.optional(),\n            sourceRefIds: z.array(reviewSourceRefId).min(1).max(100),\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "query_review_aily": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "requestKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "queryRef": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "attemptRef"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            attemptRef,\n            workItemId: mcpWorkItemId.optional(),\n            requestKey: z.string().min(1).max(200).optional(),\n            query: z.string().min(1).max(4000).optional(),\n            queryRef: z.string().uuid().optional(),\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "commit_review_turn_candidate": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "resultJson": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 1000000
+            }
+          },
+          "required": [
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "resultJson"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "reviewCommitInput",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "cancel_action_attempt": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "attemptRef",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            attemptRef,\n            workItemId: mcpWorkItemId.optional(),\n            reason: z.string().trim().min(1).max(4000),\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "query_parsed_package": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "workItemId",
+            "query"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n        .object({ workItemId: mcpWorkItemId, query: mcpQuery })\n        .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "begin_translation": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "deliveryPart": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            }
+          },
+          "required": [
+            "workItemId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            workItemId: mcpWorkItemId,\n            deliveryPart,\n            requestId: z\n              .string()\n              .regex(/^[A-Za-z0-9_-]{1,64}$/u)\n              .optional(),\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "begin_applicability_evaluation": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "applicabilityContextRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            }
+          },
+          "required": [
+            "applicabilityContextRef",
+            "requestId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            applicabilityContextRef,\n            requestId: applicabilityRequestId,\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "commit_applicability_candidate": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "attemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "leaseToken": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "leaseGeneration": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "result": {
+              "type": "object",
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "attemptRef",
+            "leaseToken",
+            "leaseGeneration",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            attemptRef,\n            workItemId: mcpWorkItemId.optional(),\n            leaseToken,\n            leaseGeneration,\n            result: resultEnvelope,\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "record_oem_discovery_run": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "workItemId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "enum": [
+                    "BOEING",
+                    "AIRBUS",
+                    "COMAC"
+                  ]
+                },
+                "query": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "resultStatus": {
+                  "type": "string",
+                  "enum": [
+                    "COMPLETE",
+                    "PARTIAL",
+                    "ACCESS_DENIED",
+                    "ZERO_RESULT",
+                    "ZERO_RESULTS_FOR_TARGET_IDENTIFIER",
+                    "TRUNCATED"
+                  ]
+                },
+                "candidates": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      },
+                      "sourceUrl": {
+                        "type": "string",
+                        "format": "uri",
+                        "maxLength": 4000
+                      },
+                      "documentNumber": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 500
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "revisionLabel": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 500
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "snippet": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "relationshipReason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                      },
+                      "matchLevel": {
+                        "type": "string",
+                        "enum": [
+                          "DIRECT",
+                          "TANGENTIAL"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "sourceUrl",
+                      "documentNumber",
+                      "revisionLabel",
+                      "snippet",
+                      "relationshipReason",
+                      "matchLevel"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 100
+                },
+                "accessRestricted": {
+                  "type": "boolean"
+                },
+                "truncated": {
+                  "type": "boolean"
+                },
+                "partialOnly": {
+                  "type": "boolean"
+                },
+                "excludedNonOemCandidateCount": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "provider",
+                "query",
+                "resultStatus",
+                "candidates",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "workItemId",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z\n          .object({\n            workItemId: mcpWorkItemId,\n            result: publicDiscoveryResult,\n          })\n          .strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ]
+      },
+      "commit_translation_candidate": {
+        "schemaStatus": "SOURCE_EXPRESSION_ONLY",
+        "zodExpression": "translationCommitInput",
+        "reason": "Imported schema or numeric bounds cannot be resolved from pinned fetched source.",
+        "unresolvedDependencies": [
+          "translationCommitInput and imported TRANSLATION_RESULT_PART_MAX_BYTES/COUNT"
+        ],
+        "sourcePath": "server/modules/canonical-host/canonical-host-openclaw-mcp.service.ts"
+      },
+      "translation_workspace": {
+        "schemaStatus": "SOURCE_EXPRESSION_ONLY",
+        "zodExpression": "translationWorkspaceCommandSchemaV2",
+        "reason": "Imported schema or numeric bounds cannot be resolved from pinned fetched source.",
+        "unresolvedDependencies": [
+          "translationWorkspaceCommandSchemaV2"
+        ],
+        "sourcePath": "server/modules/canonical-host/canonical-host-openclaw-mcp.service.ts"
+      },
+      "next_matter_assessment": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "pattern": "^MAT-",
+              "maxLength": 96
+            }
+          },
+          "required": [
+            "matterId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.object({ matterId: target.matterId }).strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ],
+        "sourcePath": "server/modules/canonical-host/matter-attempt-mcp-tools.ts",
+        "registrationNote": "Source registers this schema through a configurable tool-name prefix."
+      },
+      "hierarchical_wiki_next_matter_assessment": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "pattern": "^MAT-",
+              "maxLength": 96
+            }
+          },
+          "required": [
+            "matterId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.object({ matterId: target.matterId }).strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ],
+        "sourcePath": "server/modules/canonical-host/matter-attempt-mcp-tools.ts",
+        "registrationNote": "The hierarchical-wiki registration uses this same source schema with prefix hierarchical_wiki_ and automaticOnly true."
+      },
+      "read_matter_current_work": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "pattern": "^MAT-",
+              "maxLength": 96
+            }
+          },
+          "required": [
+            "matterId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.object({ matterId: target.matterId }).strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ],
+        "sourcePath": "server/modules/canonical-host/matter-attempt-mcp-tools.ts",
+        "registrationNote": "Source registers this schema through a configurable tool-name prefix."
+      },
+      "hierarchical_wiki_read_matter_current_work": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "pattern": "^MAT-",
+              "maxLength": 96
+            }
+          },
+          "required": [
+            "matterId"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.object({ matterId: target.matterId }).strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ],
+        "sourcePath": "server/modules/canonical-host/matter-attempt-mcp-tools.ts",
+        "registrationNote": "The hierarchical-wiki registration uses this same source schema with prefix hierarchical_wiki_ and automaticOnly true."
+      },
+      "begin_matter_assessment": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "matterId": {
+              "type": "string",
+              "pattern": "^MAT-",
+              "maxLength": 96
+            },
+            "expectedMatterRevisionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            },
+            "expectedMatterRevision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "expectedWorkingRevision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96
+            },
+            "instruction": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "recoveryAttemptRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "referenceWorks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "matterId": {
+                    "type": "string",
+                    "pattern": "^MAT-",
+                    "maxLength": 96
+                  },
+                  "workRef": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "issueKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "matterId",
+                  "workRef",
+                  "issueKey",
+                  "purpose"
+                ],
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 8
+            },
+            "correction": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "ENGINEERING_ISSUE_CORRECTION"
+                },
+                "expectedWorkRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "issueKey": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "correctionReason": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "evidenceRefs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "kind",
+                "expectedWorkRef",
+                "issueKey",
+                "correctionReason",
+                "evidenceRefs"
+              ],
+              "additionalProperties": false
+            },
+            "overviewCorrection": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "ENGINEERING_OVERVIEW_CORRECTION"
+                },
+                "expectedWorkRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "correctionReason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "evidenceRefs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "minItems": 1,
+                  "maxItems": 96
+                }
+              },
+              "required": [
+                "kind",
+                "expectedWorkRef",
+                "correctionReason",
+                "evidenceRefs"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "matterId",
+            "expectedMatterRevisionId",
+            "expectedMatterRevision",
+            "expectedWorkingRevision",
+            "requestId",
+            "instruction"
+          ],
+          "additionalProperties": false
+        },
+        "zodExpression": "z.object({ matterId: target.matterId,\n      expectedMatterRevisionId: z.string().trim().min(1).max(96),\n      expectedMatterRevision: z.number().int().positive(),\n      expectedWorkingRevision: z.number().int().nonnegative(),\n      requestId: z.string().trim().min(1).max(96), instruction: z.string().trim().min(1).max(4000),\n      recoveryAttemptRef: target.attemptRef.optional(),\n      referenceWorks: z.array(z.object({ matterId: target.matterId,\n        workRef: z.string().trim().min(1).max(255), issueKey: z.string().trim().min(1).max(255),\n        purpose: z.string().trim().min(1).max(4000),\n      }).strict()).min(1).max(8).optional(),\n      correction: z.object({ kind: z.literal('ENGINEERING_ISSUE_CORRECTION'),\n        expectedWorkRef: z.string().trim().min(1).max(200), issueKey: z.string().trim().min(1).max(255),\n        correctionReason: z.string().trim().min(1), evidenceRefs: z.array(z.string().trim().min(1)).min(1),\n      }).strict().optional(),\n      overviewCorrection: z.object({ kind: z.literal('ENGINEERING_OVERVIEW_CORRECTION'),\n        expectedWorkRef: z.string().trim().min(1).max(200),\n        correctionReason: z.string().trim().min(1).max(4000),\n        evidenceRefs: z.array(z.string().trim().min(1).max(512)).min(1).max(96),\n      }).strict().optional(),\n    }).strict()",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ],
+        "sourcePath": "server/modules/canonical-host/matter-attempt-mcp-tools.ts",
+        "registrationNote": "Source registers this schema through a configurable tool-name prefix."
+      },
+      "matter_action_attempt": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "operation": {
+                  "const": "CLAIM"
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "operation"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "operation": {
+                  "const": "STATUS"
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "operation"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "HEARTBEAT"
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "operation": {
+                  "const": "CANCEL"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "operation",
+                "reason"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "operation": {
+                  "const": "READ_SAVED_WORK"
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "operation",
+                "requestId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "SAVE_WORK"
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "expectedWorkRevision": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "workJson": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 1000000
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "requestId",
+                "expectedWorkRevision",
+                "workJson"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "FINISH"
+                },
+                "result": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "result"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "GENERATE_ISSUE_CORRECTION"
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "requestId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "SAVE_ISSUE_CORRECTION"
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "generationRequestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "requestId",
+                "generationRequestId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "FINISH_ISSUE_CORRECTION"
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "requestId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "READ_REGISTERED"
+                },
+                "sourceRefs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "minItems": 1,
+                  "maxItems": 96
+                },
+                "purpose": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "sourceRefs",
+                "purpose"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "READ_SOURCES"
+                },
+                "documentVersionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "pageStart": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "pageEnd": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "purpose": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "documentVersionId",
+                "pageStart",
+                "purpose"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "READ_ORIGINAL"
+                },
+                "documentVersionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 96
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                },
+                "purpose": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "documentVersionId",
+                "offset",
+                "limit",
+                "purpose"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "zodExpression": "z.discriminatedUnion('operation', [\n      z.object({ ...target, operation: z.literal('CLAIM') }).strict(),\n      z.object({ ...target, operation: z.literal('STATUS') }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('HEARTBEAT') }).strict(),\n      z.object({ ...target, operation: z.literal('CANCEL'), reason: z.string().trim().min(1).max(4000) }).strict(),\n      z.object({ ...target, operation: z.literal('READ_SAVED_WORK'), requestId: z.string().trim().min(1).max(255) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('SAVE_WORK'), requestId: z.string().trim().min(1).max(255),\n        expectedWorkRevision: z.number().int().nonnegative(), workJson: z.string().min(2).max(1_000_000) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('FINISH'), result: z.record(z.string(), z.unknown()) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('GENERATE_ISSUE_CORRECTION'), requestId: z.string().trim().min(1).max(255) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('SAVE_ISSUE_CORRECTION'), requestId: z.string().trim().min(1).max(255),\n        generationRequestId: z.string().trim().min(1).max(255) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('FINISH_ISSUE_CORRECTION'), requestId: z.string().trim().min(1).max(255) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('READ_REGISTERED'), sourceRefs: z.array(z.string().min(1).max(512)).min(1).max(96),\n        purpose: z.string().trim().min(1).max(4000) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('READ_SOURCES'),\n        documentVersionId: z.string().trim().min(1).max(160), pageStart: z.number().int().positive(),\n        pageEnd: z.number().int().positive().optional(), purpose: z.string().trim().min(1).max(4000),\n      }).strict(),\n      z.object({...target,...fence,operation:z.literal('READ_ORIGINAL'),documentVersionId:z.string().min(1).max(96),\n        offset:z.number().int().nonnegative(),limit:z.number().int().min(1).max(20),purpose:z.string().trim().min(1).max(4000)}).strict(),\n    ])",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ],
+        "sourcePath": "server/modules/canonical-host/matter-attempt-mcp-tools.ts",
+        "registrationNote": "Source registers this schema through a configurable tool-name prefix."
+      },
+      "hierarchical_wiki_matter_action_attempt": {
+        "schemaStatus": "MECHANICAL_ZOD_INPUT_SHAPE",
+        "inputSchema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "operation": {
+                  "const": "CLAIM"
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "operation"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "operation": {
+                  "const": "STATUS"
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "operation"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "HEARTBEAT"
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "operation": {
+                  "const": "CANCEL"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "operation",
+                "reason"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "operation": {
+                  "const": "READ_SAVED_WORK"
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "operation",
+                "requestId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "SAVE_WORK"
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "expectedWorkRevision": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "workJson": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 1000000
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "requestId",
+                "expectedWorkRevision",
+                "workJson"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "FINISH"
+                },
+                "result": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "result"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "GENERATE_ISSUE_CORRECTION"
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "requestId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "SAVE_ISSUE_CORRECTION"
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "generationRequestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "requestId",
+                "generationRequestId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "FINISH_ISSUE_CORRECTION"
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "requestId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "READ_REGISTERED"
+                },
+                "sourceRefs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "minItems": 1,
+                  "maxItems": 96
+                },
+                "purpose": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "sourceRefs",
+                "purpose"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "READ_SOURCES"
+                },
+                "documentVersionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "pageStart": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "pageEnd": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "purpose": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "documentVersionId",
+                "pageStart",
+                "purpose"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "matterId": {
+                  "type": "string",
+                  "pattern": "^MAT-",
+                  "maxLength": 96
+                },
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "operation": {
+                  "const": "READ_ORIGINAL"
+                },
+                "documentVersionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 96
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                },
+                "purpose": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                }
+              },
+              "required": [
+                "matterId",
+                "attemptRef",
+                "leaseToken",
+                "leaseGeneration",
+                "operation",
+                "documentVersionId",
+                "offset",
+                "limit",
+                "purpose"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "zodExpression": "z.discriminatedUnion('operation', [\n      z.object({ ...target, operation: z.literal('CLAIM') }).strict(),\n      z.object({ ...target, operation: z.literal('STATUS') }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('HEARTBEAT') }).strict(),\n      z.object({ ...target, operation: z.literal('CANCEL'), reason: z.string().trim().min(1).max(4000) }).strict(),\n      z.object({ ...target, operation: z.literal('READ_SAVED_WORK'), requestId: z.string().trim().min(1).max(255) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('SAVE_WORK'), requestId: z.string().trim().min(1).max(255),\n        expectedWorkRevision: z.number().int().nonnegative(), workJson: z.string().min(2).max(1_000_000) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('FINISH'), result: z.record(z.string(), z.unknown()) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('GENERATE_ISSUE_CORRECTION'), requestId: z.string().trim().min(1).max(255) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('SAVE_ISSUE_CORRECTION'), requestId: z.string().trim().min(1).max(255),\n        generationRequestId: z.string().trim().min(1).max(255) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('FINISH_ISSUE_CORRECTION'), requestId: z.string().trim().min(1).max(255) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('READ_REGISTERED'), sourceRefs: z.array(z.string().min(1).max(512)).min(1).max(96),\n        purpose: z.string().trim().min(1).max(4000) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('READ_SOURCES'),\n        documentVersionId: z.string().trim().min(1).max(160), pageStart: z.number().int().positive(),\n        pageEnd: z.number().int().positive().optional(), purpose: z.string().trim().min(1).max(4000),\n      }).strict(),\n      z.object({...target,...fence,operation:z.literal('READ_ORIGINAL'),documentVersionId:z.string().min(1).max(96),\n        offset:z.number().int().nonnegative(),limit:z.number().int().min(1).max(20),purpose:z.string().trim().min(1).max(4000)}).strict(),\n    ])",
+        "semanticLimitations": [
+          "Zod trim transforms and resulting post-trim length checks are not represented by this JSON Schema input shape.",
+          "Runtime authorization, source-ref refinement, and business validity are not established by an input JSON Schema."
+        ],
+        "sourcePath": "server/modules/canonical-host/matter-attempt-mcp-tools.ts",
+        "registrationNote": "The hierarchical-wiki registration uses this same source schema with prefix hierarchical_wiki_ and automaticOnly true."
+      }
+    },
+    "excludedToolSchemas": {
+      "document_work": {
+        "schemaStatus": "SOURCE_EXPRESSION_ONLY",
+        "zodExpression": "z.discriminatedUnion('action', [\n        z.strictObject({ action: z.literal('STATUS'), documentVersionId: z.string().trim().min(1).max(96),\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),\n        z.strictObject({ action: z.enum(['STEP', 'CANCEL', 'INDEX']), documentVersionId: z.string().trim().min(1).max(96),\n          parseRunId: z.string().trim().min(1).max(96),\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),\n        ...documentActivityActionSchemas,\n      ])",
+        "reason": "Imported action schema or TDMS native-reference refiner is unavailable in pinned fetched source.",
+        "unresolvedDependencies": [
+          "documentActivityActionSchemas"
+        ],
+        "sourcePath": "server/modules/canonical-host/canonical-host-openclaw-mcp.service.ts"
+      },
+      "document_reading": {
+        "schemaStatus": "SOURCE_EXPRESSION_ONLY",
+        "zodExpression": "z.discriminatedUnion('action', documentReadingActionSchemas)",
+        "reason": "Imported action schema or TDMS native-reference refiner is unavailable in pinned fetched source.",
+        "unresolvedDependencies": [
+          "documentReadingActionSchemas"
+        ],
+        "sourcePath": "server/modules/canonical-host/canonical-host-openclaw-mcp.service.ts"
+      },
+      "document_translation": {
+        "schemaStatus": "SOURCE_EXPRESSION_ONLY",
+        "zodExpression": "z.discriminatedUnion('action', [\n        z.strictObject({ action: z.literal('START'), documentVersionId: z.string().min(1).max(96),\n          parseRunId: z.string().min(1).max(96), requestId: z.string().min(1).max(96),\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),\n        z.strictObject({ action: z.literal('STATUS'), documentVersionId: z.string().min(1).max(96), parseRunId: z.string().min(1).max(96),\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),\n        z.strictObject({ action: z.literal('RECOVER'), documentVersionId: z.string().min(1).max(96), parseRunId: z.string().min(1).max(96),\n          requestId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u) }),\n        z.strictObject({ action: z.literal('RECOVER_EXPIRED'), documentVersionId: z.string().min(1).max(96),\n          parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u) }),\n        z.strictObject({ action: z.literal('CONTINUE_PARTIAL'), documentVersionId: z.string().min(1).max(96),\n          parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u) }),\n        z.strictObject({ action: z.literal('RECOVER_PARTIAL_INPUT'), documentVersionId: z.string().min(1).max(96),\n          parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u) }),\n        z.strictObject({ action: z.literal('RECOVER_KNOWN_FAILURE'), documentVersionId: z.string().min(1).max(96),\n          parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u) }),\n        z.strictObject({ action: z.literal('RESUME_KNOWN_FAILURE'), documentVersionId: z.string().min(1).max(96),\n          parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u) }),\n        z.strictObject({ action: z.literal('CLAIM'), documentVersionId: z.string().min(1).max(96), parseRunId: z.string().min(1).max(96),\n          attemptRef: z.string().min(1).max(128), deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),\n        z.strictObject({ action: z.enum(['HEARTBEAT','RELEASE','FINISH','FAIL']), documentVersionId: z.string().min(1).max(96),\n          parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),\n          leaseToken: z.string().uuid(), leaseGeneration: z.number().int().positive(), errorCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,159}$/u).optional(),\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),\n        z.strictObject({ action: z.literal('WORKSPACE'), documentVersionId: z.string().min(1).max(96),\n          parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),\n          leaseToken: z.string().uuid(), leaseGeneration: z.number().int().positive(),\n          workspaceCommand: translationWorkspaceCommandSchemaV2,\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),\n        z.strictObject({ action: z.enum(['STEP','CANCEL']), documentVersionId: z.string().min(1).max(96),\n          parseRunId: z.string().min(1).max(96), attemptRef: z.string().min(1).max(128),\n          deliveryRef: z.string().regex(/^(?:work-item:WI(?:-[A-Za-z0-9_-]{1,93})?|acquisition:[A-Za-z0-9_-]{1,96})$/u).optional() }),\n      ])",
+        "reason": "Imported action schema or TDMS native-reference refiner is unavailable in pinned fetched source.",
+        "unresolvedDependencies": [
+          "translationWorkspaceCommandSchemaV2"
+        ],
+        "sourcePath": "server/modules/canonical-host/canonical-host-openclaw-mcp.service.ts"
+      },
+      "derived_summary_attempt": {
+        "schemaStatus": "SOURCE_EXPRESSION_ONLY",
+        "zodExpression": "z.discriminatedUnion('operation', [\n      z.object({ ...target, operation: z.literal('CLAIM') }).strict(),\n      z.object({ ...target, operation: z.literal('STATUS') }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('HEARTBEAT') }).strict(),\n      z.object({ ...target, operation: z.literal('CANCEL'), reason: z.string().trim().min(1).max(4000) }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('FAIL'), code: z.string().trim().min(1).max(160),\n        message: z.string().trim().min(1).max(4000) }).strict(),\n      z.object({ ...reading, operation: z.literal('READ_MEMBER_WORK') }).strict(),\n      z.object({ ...sourceReading, operation: z.literal('READ_SOURCES') }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('SAVE_SUMMARY'), requestId,\n        expectedSummaryRevision: z.number().int().nonnegative(), contentJson: z.string().min(2).max(1_000_000),\n        provenanceJson: z.string().min(2).max(16000).optional() }).strict(),\n      z.object({ ...target, operation: z.literal('READ_SAVED_SUMMARY'), requestId }).strict(),\n      z.object({ ...target, ...fence, operation: z.literal('FINISH'), requestId }).strict(),\n    ])",
+        "reason": "Imported action schema or TDMS native-reference refiner is unavailable in pinned fetched source.",
+        "unresolvedDependencies": [
+          "tdmsNativeReferenceMcpSchema"
+        ],
+        "sourcePath": "server/modules/canonical-host/derived-summary-attempt-mcp-tools.ts"
+      }
+    },
+    "otherUnexportedClientToolNames": []
+  },
+  "limitations": [
+    "JSON Schemas mechanically describe input shape from selected pinned Zod expressions; they are not a live MCP tools/list response or a claim of exact Zod acceptance equivalence.",
+    "Zod trim transformation and runtime authorization are outside JSON Schema validation; see each converted schema semanticLimitations and exact zodExpression.",
+    "Imported action schemas and TDMS native-reference refinements remain exact source expressions with named unresolved dependencies; no approximate schema is substituted.",
+    "The selected inventory is not a complete Host tool export; all omitted legacy client tool names are inventoried.",
+    "Server response JSON shapes are described by client validators and examples, not inferred from input schemas."
+  ]
+}

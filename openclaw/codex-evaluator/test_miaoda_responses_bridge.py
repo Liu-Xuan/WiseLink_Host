@@ -197,11 +197,12 @@ class BridgeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config = pathlib.Path(tmp, "config.json")
             audit = pathlib.Path(tmp, "audit.jsonl")
+            upstream_response = pathlib.Path(tmp, "upstream-response.json")
             config.write_text(json.dumps({"models": {"providers": {"miaoda": {"baseUrl": bridge.BASE, "apiKey": {}, "headers": {"x-api-key": {}}}}}}))
             with mock.patch.object(bridge, "resolve", return_value="test-only"), mock.patch.object(bridge.http.client, "HTTPSConnection", FakeUpstream), mock.patch.object(bridge, "ThreadingHTTPServer", FakeServer):
                 with self.assertRaisesRegex(bridge.Rejected, "invalid_glm_reasoning_effort"):
                     bridge.start_server(str(config), bridge.MODEL, str(audit), tmp, allowed_tools=ALLOWED, reasoning_effort="medium")
-                server, thread, port, token = bridge.start_server(str(config), bridge.MODEL, str(audit), tmp, allowed_tools=ALLOWED, max_requests=3, max_tokens=16384, reasoning_effort="low")
+                server, thread, port, token = bridge.start_server(str(config), bridge.MODEL, str(audit), tmp, allowed_tools=ALLOWED, max_requests=3, max_tokens=16384, reasoning_effort="low", upstream_response_path=upstream_response)
                 def post(data):
                     payload = json.dumps(data).encode()
                     handler = object.__new__(server.handler)
@@ -219,6 +220,9 @@ class BridgeTests(unittest.TestCase):
                 try:
                     first = post(namespaced_body())
                     self.assertEqual(first[0], 200, first[1])
+                    persisted = json.loads(upstream_response.read_text())
+                    self.assertEqual(persisted["format"], "chat-completions-sse-events-v1")
+                    self.assertTrue(persisted["events"])
                     self.assertIn('"namespace": "mcp__assessment"', first[1])
                     history = [
                         {"type": "function_call", "call_id": "call_unique", "namespace": "mcp__assessment", "name": "read_current", "arguments": "{}"},
