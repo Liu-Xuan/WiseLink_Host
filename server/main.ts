@@ -10,12 +10,14 @@ import { __express as hbsExpressEngine } from 'hbs';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { createTdmsDailyHttpParser } from './modules/tdms-source/tdms-daily-http-parser';
+import { createCanonicalCodexMcpHttpParser } from './modules/canonical-host/canonical-codex-mcp-http-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     abortOnError: process.env.NODE_ENV !== 'development',
   });
   app.use(createTdmsDailyHttpParser());
+  app.use(createCanonicalCodexMcpHttpParser());
   await configureApp(app, {
     disableSwagger: true,
   });
