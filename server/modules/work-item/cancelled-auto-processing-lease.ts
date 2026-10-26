@@ -1,12 +1,16 @@
 import { createHash } from 'node:crypto';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, eq, gt, sql } from 'drizzle-orm';
-import type { AutomaticWorkItemCancellationBinding } from '@shared/api.interface';
+import type { AutomaticWorkItemCancellationBinding, CanonicalExecutionModelSelection } from '@shared/api.interface';
 import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
 import { actionAttempt, workItem } from '../../database/schema';
 import { canonicalJson, parseTaskEnvelope } from '../action-attempt/action-attempt-envelope';
+import type { OpenClawTaskEnvelope } from '../action-attempt/action-attempt-envelope.types';
+import { INITIAL_ANALYSIS_REQUEST_SCHEMA, readInitialAnalysisRequestInput } from '../action-attempt/initial-analysis-request';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { CANCELLED_AUTOMATIC_WORK_ITEM_CODE } from '../canonical-host/automatic-work-item-cancellation';
+import { isJobAidProblemTask, parseJobAidProblemTask } from '../canonical-host/jobaid-problem-task';
+import { isProgramAssessmentMode } from '../canonical-host/program-agent-policy';
 
 export interface CancelledAutoProcessingLeaseInput {
   tenantId: string;
@@ -137,6 +141,57 @@ export function matchesCancelledAttempt(
       task.idempotencyKey === target.idempotencyKey && task.inputHash === expected.inputHash &&
       canonicalJson(task.executionModel) === canonicalJson(expected.executionModel) &&
       canonicalJson(readStoredExecutionModel(target.executionModelJson)) === canonicalJson(expected.executionModel) &&
-      canonicalJson(readStoredExecutionModel(owner.analysisModelJson)) === canonicalJson(expected.executionModel);
+      canonicalJson(cancelledAttemptExecutionModel(task, target, owner)) === canonicalJson(expected.executionModel);
   } catch { return false; }
+}
+
+/** Select a historical snapshot only. Callers still validate the terminal row,
+ * current owner/source authorization, latest attempt and queue receipt/fence. */
+export function readCancelledAttemptExecutionModel(
+  target: typeof actionAttempt.$inferSelect,
+  owner: typeof workItem.$inferSelect,
+): CanonicalExecutionModelSelection | null {
+  try {
+    return cancelledAttemptExecutionModel(parseTaskEnvelope(String(target.taskEnvelopeJson)), target, owner);
+  } catch { return null; }
+}
+
+function cancelledAttemptExecutionModel(
+  task: OpenClawTaskEnvelope,
+  target: typeof actionAttempt.$inferSelect,
+  owner: typeof workItem.$inferSelect,
+): CanonicalExecutionModelSelection | null {
+  const model = readStoredExecutionModel(target.executionModelJson);
+  if (!model || canonicalJson(task.executionModel) !== canonicalJson(model)) return null;
+  const input = task.modelInput;
+  const nested = input.modelInput;
+  // A malformed/unknown program wrapper must never inherit the legacy branch.
+  const declaresProgram = ['executionMode', 'modelRef', 'requestedModelRef', 'agentPolicy']
+    .some(key => Object.hasOwn(input, key)) ||
+    (!!nested && typeof nested === 'object' &&
+      ['executionMode', 'programOriginal'].some(key => Object.hasOwn(nested, key)));
+  let explicitProgram = false;
+  if (input.schemaVersion === INITIAL_ANALYSIS_REQUEST_SCHEMA) {
+    explicitProgram = isProgramAssessmentMode(readInitialAnalysisRequestInput(task)?.executionMode);
+  } else if (isJobAidProblemTask(input)) {
+    const prepared = parseJobAidProblemTask(task);
+    explicitProgram = isProgramAssessmentMode(prepared.executionMode);
+    if (explicitProgram) {
+      const original = prepared.modelInput.programOriginal!.binding;
+      if (prepared.actorUserId !== owner.requestedByUserId ||
+          original.documentVersionId !== owner.documentVersionId ||
+          original.sourceArtifactId !== owner.sourceArtifactId ||
+          original.sourceSha256 !== owner.sourceFileSha256 ||
+          original.sourceByteLength !== Number(owner.sourceByteLength)) return null;
+    }
+  }
+  if (explicitProgram) {
+    if (task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' || task.sourceRefs.length !== 1 ||
+        canonicalJson(task.sourceRefs[0]) !== canonicalJson({ref:owner.sourceArtifactId,sha256:owner.sourceFileSha256})) return null;
+    // Explicit programs were captured independently of the intake model pin.
+    // Preserve every field, including selectedAt, settingsRevision and budget.
+    return model;
+  }
+  if (declaresProgram) return null;
+  return readStoredExecutionModel(owner.analysisModelJson);
 }

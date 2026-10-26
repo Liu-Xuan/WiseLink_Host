@@ -10,7 +10,7 @@ import { actionAttempt, workItem } from '../../database/schema';
 import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
 import { canonicalJson, parseStoredResultEnvelope, parseTaskEnvelope } from './action-attempt-envelope';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
-import { matchesCancelledAttempt } from '../work-item/cancelled-auto-processing-lease';
+import { matchesCancelledAttempt, readCancelledAttemptExecutionModel } from '../work-item/cancelled-auto-processing-lease';
 import { parseAutomaticWorkItemCancellation } from '../canonical-host/automatic-work-item-cancellation';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import { readInitialAnalysisRequestInput } from './initial-analysis-request';
@@ -71,7 +71,7 @@ export async function readBrowserInitialContinuationClaim(
       !Number.isSafeInteger(grant.leaseGeneration) || grant.leaseGeneration < 1 ||
       grant.leaseOwner !== null || grant.leaseToken !== null || grant.leaseExpiresAt !== null ||
       grant.completedAt !== null || grant.completedLeaseGeneration !== null || grant.completedLeaseTokenHash !== null ||
-      grant.blockedCode !== FAILED_INITIAL_QUEUE_CODE || !grant.blockedAt ||
+      ![FAILED_INITIAL_QUEUE_CODE, CANCELLED_INITIAL_QUEUE_CODE].includes(grant.blockedCode ?? '') || !grant.blockedAt ||
       !/^[a-f0-9]{64}$/u.test(grant.blockedLeaseTokenHash ?? '') ||
       grant.blockedLeaseGeneration !== grant.leaseGeneration ||
       grant.tenantId !== input.tenantId || grant.workItemId !== owner.workItemId ||
@@ -91,8 +91,14 @@ export async function readBrowserInitialContinuationClaim(
   const next = queued[0];
   const history = rows.filter(row => row.attemptId !== next.attemptId);
   const previous = [...history].sort((a,b) => b.createdAt.getTime()-a.createdAt.getTime() || b.attemptNo-a.attemptNo)[0];
-  if (!previous || !matchesFailedAttempt(previous,owner,grant.blockedAt) ||
-      !effectiveFailedContinuationModel(owner.analysisModelJson,history) ||
+  const previousModel = previous && (grant.blockedCode === CANCELLED_INITIAL_QUEUE_CODE
+    ? readCancelledAttemptExecutionModel(previous, owner)
+    : effectiveFailedContinuationModel(owner.analysisModelJson, history));
+  const previousMatches = previous && (grant.blockedCode === CANCELLED_INITIAL_QUEUE_CODE
+    ? previousModel && previous.completedAt && grant.blockedAt >= previous.completedAt &&
+      !history.some(row => row.idempotencyKey === next.idempotencyKey) && matchesCancellation(previous, owner, previousModel)
+    : matchesFailedAttempt(previous, owner, grant.blockedAt));
+  if (!previous || !previousModel || !previousMatches ||
       history.some(row => ['QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING'].includes(row.status) ||
         row.createdAt >= next.createdAt ||
         (row.actionType === next.actionType && row.attemptNo >= next.attemptNo)) ||
@@ -112,7 +118,7 @@ export async function readBrowserInitialContinuationClaim(
     const task = parseTaskEnvelope(String(next.taskEnvelopeJson));
     const request = readInitialAnalysisRequestInput(task);
     const model = readStoredExecutionModel(next.executionModelJson);
-    if (!request || (blocked && !isProgramAssessmentMode(request.executionMode)) ||
+    if (!request || ((blocked || grant.blockedCode === CANCELLED_INITIAL_QUEUE_CODE) && !isProgramAssessmentMode(request.executionMode)) ||
         !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(request.requestId) ||
         !request.originalParseRunId || !model ||
         task.actionAttemptId !== next.attemptId || task.operationRef !== next.operationRef ||
@@ -219,13 +225,13 @@ export async function readCancelledInitialContinuation(
       b.attemptNo - a.attemptNo,
   )[0];
   const model = grant.blockedCode === CANCELLED_INITIAL_QUEUE_CODE
-    ? readStoredExecutionModel(owner.analysisModelJson)
+    ? target && readCancelledAttemptExecutionModel(target, owner)
     : effectiveFailedContinuationModel(owner.analysisModelJson, history);
   if (
     !target ||
     !model ||
     !(grant.blockedCode === CANCELLED_INITIAL_QUEUE_CODE
-      ? matchesCancellation(target, owner, model)
+      ? !!target.completedAt && grant.blockedAt >= target.completedAt && matchesCancellation(target, owner, model)
       : matchesFailedAttempt(target, owner, grant.blockedAt)) ||
     history.some(
       (row) =>

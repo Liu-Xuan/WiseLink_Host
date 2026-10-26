@@ -16,6 +16,12 @@ import {
 } from '../../server/modules/action-attempt/cancelled-initial-continuation';
 import { MiaodaDocumentVersionSourceResolver } from '../../server/modules/work-item/miaoda-document-version-source.resolver';
 import { ActionAttemptRepository } from '../../server/modules/action-attempt/action-attempt.repository';
+import { readBrowserInitialContinuationClaim } from '../../server/modules/action-attempt/cancelled-initial-continuation';
+import type { OpenClawTaskEnvelope } from '../../server/modules/action-attempt/action-attempt-envelope.types';
+import { buildInitialAnalysisRequestInput } from '../../server/modules/action-attempt/initial-analysis-request';
+import { buildProgramAgentPolicy } from '../../server/modules/canonical-host/program-agent-policy';
+import { JOBAID_METHOD_BINDING, JOBAID_METHOD_EVIDENCE } from '../../server/modules/canonical-host/jobaid-method-pack';
+import { overallModelEvidenceRegistry, OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION } from '../../server/modules/canonical-host/overall-assessment-reading';
 
 const NOW = new Date('2026-10-12T00:00:00.000Z');
 const TOKEN = 'b1686364-7ee9-4ca1-a3aa-0b62794cb436';
@@ -121,6 +127,9 @@ function fixture() {
     leaseToken: null as string | null,
     leaseGeneration: 10,
     completedAt: null,
+    completedLeaseGeneration: null,
+    completedLeaseTokenHash: null,
+    updatedAt: new Date(NOW.getTime() + 2),
     leaseExpiresAt: null as Date | null,
     blockedAt: NOW as Date | null,
     blockedCode: 'AUTO_WORK_ITEM_STAGE_JOBAID_CANCELLED' as string | null,
@@ -252,6 +261,145 @@ function eligibility(f: Pick<ReturnType<typeof fixture>, 'owner'>) {
     workItem: JSON.parse(f.owner.projectionJson),
   };
 }
+
+const AGENT_MODEL = { ...MODEL, settingsRevision:2,selectedAt:'2026-10-11T23:59:30.000Z',
+  schemaVersion:'wiselink.3_1.execution_model_selection.v2' as const,maxOutputTokens:131072 };
+const OLD_PROGRAM_REQUEST = '11111111-1111-4111-8111-111111111111';
+const NEW_PROGRAM_REQUEST = '22222222-2222-4222-8222-222222222222';
+function resealRow(row: ReturnType<typeof fixture>['target'], change: (task:OpenClawTaskEnvelope) => void) {
+  const task = JSON.parse(row.taskEnvelopeJson) as OpenClawTaskEnvelope;
+  change(task);
+  const {inputHash:_previous,...unsealed} = task;
+  const sealed = sealTaskEnvelope(unsealed);
+  row.taskEnvelopeJson = canonicalJson(sealed); row.taskInputHash = sealed.inputHash;
+}
+function programCancellation(stage:'initial'|'v3' = 'v3') {
+  const f = fixture(), policy = buildProgramAgentPolicy(AGENT_MODEL);
+  const method = JOBAID_METHOD_EVIDENCE.find(item => item.kind === 'METHOD_CLAUSE')!;
+  const original = {binding:{documentVersionId:f.owner.documentVersionId,parseRunId:'PR-original',parseRevision:1,
+    sourceArtifactId:f.owner.sourceArtifactId,sourceSha256:f.owner.sourceFileSha256,sourceByteLength:f.owner.sourceByteLength},
+    coverage:{knownPageCount:1,readPageIndexes:[0],unresolvedRanges:[]},units:[],sourceLocators:[],findings:[]};
+  resealRow(f.target, task => {
+    task.executionModel = AGENT_MODEL;
+    task.sourceRefs = [{ref:f.owner.sourceArtifactId,sha256:f.owner.sourceFileSha256}];
+    task.idempotencyKey = `openclaw-v2:dynamic:${task.workItemId}:${task.documentVersionId}:${OLD_PROGRAM_REQUEST}`;
+    task.modelInput = stage === 'initial'
+      ? buildInitialAnalysisRequestInput({taskType:'OPENCLAW_DYNAMIC_EVALUATION',requestId:OLD_PROGRAM_REQUEST,
+          originalParseRunId:'PR-original',executionMode:'PROGRAM_AGENT_V1',modelRef:AGENT_MODEL.modelRef,agentPolicy:policy})
+      : {schemaVersion:'wiselink.jobaid-problem-task.v3',executionMode:'PROGRAM_AGENT_V1',requestedModelRef:AGENT_MODEL.modelRef,
+          agentPolicy:policy,actorUserId:f.owner.requestedByUserId,permissionSnapshotVersion:'fixture-permission',
+          sourceBindings:[],sourceCatalog:[method],initiallyDeliveredRefs:[method.evidenceRef],sourceActivityProjections:[],previousWork:null,
+          modelInput:{schemaVersion:'wiselink.jobaid-problem-task.v3',executionMode:'PROGRAM_AGENT_V1',programOriginal:original,
+            purpose:'INITIAL_PROBLEM_ASSESSMENT',methodBinding:JOBAID_METHOD_BINDING,documentOverview:{original:structuredClone(original)},
+            availableSources:[{ref:method.evidenceRef,kind:method.kind,title:method.title,versionLabel:method.versionLabel,
+              locator:'locator' in method ? method.locator : null}],
+            deliveredEvidence:overallModelEvidenceRegistry([method],OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION),expectedWorkRevision:0,
+            evidenceProjectionVersion:OVERALL_EVIDENCE_SOURCE_STATEMENT_VERSION,
+            sourceStatementAvailability:{status:'AVAILABLE',semanticFieldsAvailability:'LEGACY_PARTIAL',limitations:[]}}};
+    f.target.idempotencyKey = task.idempotencyKey;
+  });
+  f.target.executionModelJson = canonicalJson(AGENT_MODEL); f.target.actorUserId = 'service:openclaw-main';
+  return f;
+}
+function queueNewProgram(f:ReturnType<typeof fixture>) {
+  const model = {...AGENT_MODEL,settingsRevision:3,selectedAt:new Date(NOW.getTime()+1).toISOString()};
+  const task = sealTaskEnvelope({schemaVersion:'wiselink.3_1.openclaw_task_envelope.v1',
+    actionAttemptId:'ATT-new-intent',operationRef:'AQ-new-intent',taskType:'OPENCLAW_DYNAMIC_EVALUATION',priority:100,
+    tenantId:f.owner.tenantId,workItemId:f.owner.workItemId,inputRevision:f.owner.revision,baseRevision:f.owner.revision,
+    documentVersionId:f.owner.documentVersionId,sourceRefs:[{ref:f.owner.sourceArtifactId,sha256:f.owner.sourceFileSha256}],
+    allowedConnectors:[],hostResolvedMissingInputs:[],executionModel:model,deadline:'2100-01-01T00:00:00.000Z',
+    idempotencyKey:`openclaw-v2:dynamic:${f.owner.workItemId}:${f.owner.documentVersionId}:${NEW_PROGRAM_REQUEST}`,
+    modelInput:buildInitialAnalysisRequestInput({taskType:'OPENCLAW_DYNAMIC_EVALUATION',requestId:NEW_PROGRAM_REQUEST,
+      originalParseRunId:'PR-original',executionMode:'PROGRAM_AGENT_V1',modelRef:model.modelRef,agentPolicy:buildProgramAgentPolicy(model)})});
+  const next = {...f.target,attemptId:task.actionAttemptId,operationRef:task.operationRef,attemptNo:7,status:'QUEUED',
+    triggerRequestId:'REQ-new-intent',createdAt:new Date(NOW.getTime()+1),completedAt:null,priority:100,
+    taskInputHash:task.inputHash,taskEnvelopeJson:canonicalJson(task),idempotencyKey:task.idempotencyKey,executionModelJson:canonicalJson(model),
+    claimCount:0,retryCount:0,leaseGeneration:0,leaseSlot:null,startedAt:null,lastHeartbeatAt:null,
+    cancelRequestedAt:null,cancelReason:null,executorSessionKey:null,deadlineAt:new Date(task.deadline)};
+  f.attempts.push(next as unknown as typeof f.target);
+  return next;
+}
+function claimInput(f:ReturnType<typeof fixture>) {
+  return {...f.owner,actorUserId:f.owner.requestedByUserId,expectedWorkItemRevision:f.owner.revision,
+    now:new Date(NOW.getTime()+60000)};
+}
+
+test.each(['initial','v3'] as const)('carries a sealed %s program model through cancellation release and a distinct new browser claim', async stage => {
+  const f = programCancellation(stage), before = canonicalJson({owner:f.owner,target:f.target});
+  const value = await readCancelledInitialContinuation(f.db as never,eligibility(f));
+  expect(value?.binding.executionModel).toEqual(AGENT_MODEL);
+  const release = await assertCancelledInitialContinuation(f.db as never,{binding:value!.binding,authorize:async()=>{}});
+  const next = queueNewProgram(f);
+  // The reservation and release occur under the same existing transaction/locks.
+  await release();
+  expect(f.grant.status).toBe('WAITING');
+  const claim = await readBrowserInitialContinuationClaim(f.db as never,f.owner as never,f.grant as never,claimInput(f));
+  expect(claim).toMatchObject({attemptId:next.attemptId,requestId:NEW_PROGRAM_REQUEST,
+    executionModel:JSON.parse(next.executionModelJson),executionMode:'PROGRAM_AGENT_V1'});
+  expect(canonicalJson({owner:f.owner,target:f.target})).toBe(before);
+  expect(f.target.status).toBe('CANCELLED');
+});
+test('rechecks a queued new program while the cancellation receipt is still BLOCKED', async () => {
+  const f = programCancellation(); queueNewProgram(f);
+  const value = await readCancelledInitialContinuation(f.db as never,eligibility(f),true,NEW_PROGRAM_REQUEST);
+  expect(value?.binding.executionModel).toEqual(AGENT_MODEL);
+  expect(value?.binding.queuedRequest?.requestId).toBe(NEW_PROGRAM_REQUEST);
+});
+test.each([
+  ['FAILED','program'],['TIMED_OUT','program'],['FAILED','legacy'],['TIMED_OUT','legacy'],
+])('preserves the %s %s new-browser-intent claim path', async (status,mode) => {
+  const f = failJobAid(fixture(),status); const next = queueNewProgram(f); f.grant.status = 'WAITING';
+  if (mode === 'legacy') resealRow(next as unknown as typeof f.target,task => {
+    delete task.modelInput.executionMode; delete task.modelInput.modelRef; delete task.modelInput.agentPolicy;
+  });
+  expect(await readBrowserInitialContinuationClaim(f.db as never,f.owner as never,f.grant as never,claimInput(f)))
+    .toMatchObject({attemptId:next.attemptId,requestId:NEW_PROGRAM_REQUEST});
+});
+test.each(['bad-previous','changed-model','result','committing','actor','source','receipt','early-receipt','many-queued','replay','older-replay'] as const)(
+  'rejects a CANCELLED successor claim with %s', async boundary => {
+    const f = programCancellation(); const next = queueNewProgram(f); f.grant.status = 'WAITING';
+    if (boundary === 'bad-previous') f.target.status = 'FAILED';
+    if (boundary === 'changed-model') f.target.executionModelJson = canonicalJson({...AGENT_MODEL,settingsRevision:3});
+    if (boundary === 'result') f.target.resultEnvelopeJson = '{}' as never;
+    if (boundary === 'committing') f.target.status = 'COMMITTING';
+    if (boundary === 'actor') f.grant.actorUserId = 'other-actor';
+    if (boundary === 'source') f.grant.sourceArtifactId = 'ART-other';
+    if (boundary === 'receipt') f.grant.blockedLeaseGeneration = 9;
+    if (boundary === 'early-receipt') f.grant.blockedAt = new Date(NOW.getTime()-1);
+    if (boundary === 'many-queued') f.attempts.push({...next,attemptId:'ATT-another'} as unknown as typeof f.target);
+    if (boundary === 'replay') {
+      next.idempotencyKey = f.target.idempotencyKey;
+      resealRow(next as unknown as typeof f.target,task => {
+        task.idempotencyKey = f.target.idempotencyKey; task.modelInput.requestId = OLD_PROGRAM_REQUEST;
+      });
+    }
+    if (boundary === 'older-replay') {
+      const earlier = {...f.target,attemptId:'ATT-earlier',operationRef:'AQ-earlier',attemptNo:5,
+        createdAt:new Date(NOW.getTime()-120000),idempotencyKey:next.idempotencyKey};
+      resealRow(earlier,task => {
+        task.actionAttemptId = earlier.attemptId; task.operationRef = earlier.operationRef;
+        task.idempotencyKey = earlier.idempotencyKey;
+      });
+      f.attempts.push(earlier);
+    }
+    expect(await readBrowserInitialContinuationClaim(f.db as never,f.owner as never,f.grant as never,claimInput(f))).toBeNull();
+    expect(f.db.update).not.toHaveBeenCalled();
+  });
+test.each(['schema','mode','legacy-intent','policy','source','identity'] as const)('validates the newly sealed browser intent: %s', async boundary => {
+  const f = programCancellation(); const next = queueNewProgram(f); f.grant.status = 'WAITING';
+  resealRow(next as unknown as typeof f.target,task => {
+    if (boundary === 'schema') task.modelInput.schemaVersion = 'unrecognized-program-schema';
+    if (boundary === 'mode') task.modelInput.executionMode = 'PROGRAM_AGENT_V2';
+    if (boundary === 'legacy-intent') {
+      delete task.modelInput.executionMode; delete task.modelInput.modelRef; delete task.modelInput.agentPolicy;
+    }
+    if (boundary === 'policy') task.modelInput.agentPolicy = {...buildProgramAgentPolicy(AGENT_MODEL),maxOutputTokens:65536};
+    if (boundary === 'source') task.sourceRefs[0].ref = 'ART-other';
+    if (boundary === 'identity') task.operationRef = 'AQ-other';
+  });
+  expect(await readBrowserInitialContinuationClaim(f.db as never,f.owner as never,f.grant as never,claimInput(f))).toBeNull();
+  expect(f.db.update).not.toHaveBeenCalled();
+});
 
 function failJobAid<F extends Pick<ReturnType<typeof fixture>, 'target' | 'grant' | 'owner'>>(
   f: F, status = 'TIMED_OUT',
