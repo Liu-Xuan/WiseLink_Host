@@ -2,7 +2,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { join } from 'node:path';
 import { createCheckpointStore, readCheckpointCandidate, actualModelVersion, parseStrictJsonObject,
   isFunctionResponseContentSupported, summarizeHostedReviewModelOutputShape } from './run-hosted-review-turn.mjs';
-import { canonicalSha256, WISELINK_SKILL_VERSION, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from './validate-payload.mjs';
+import { canonicalSha256, validateTaskEnvelope, WISELINK_SKILL_VERSION, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from './validate-payload.mjs';
+import { PROGRAM_AGENT_MODE, validateProgramAgentPolicy } from './program-assessment-materials.mjs';
 import { decodeJobAidStep } from './jobaid-work-shape.mjs';
 import { classifyHostedAssessmentProtocol } from './request-hosted-gateway.mjs';
 import { modelExecutorProvenance } from './model-executor.mjs';
@@ -66,6 +67,47 @@ export async function inspectInitialAssessmentRecovery({ checkpoint, initial, wo
       return {status:'REQUIRES_ATTENTION',operation,attemptRef:claim.attemptRef,
         errorCode:'INITIAL_APPLICABILITY_MODEL_OUTCOME_UNKNOWN',candidateOnly:true};
     return {status:'RECOVERY_CANDIDATE',operation,previousClaim:claim};
+  }
+  const agent = await read('program-agent-enabled');
+  if (agent && operation === 'EVALUATE_JOBAID') {
+    const claim = await read('assessment-current-claim');
+    if (claim?.status !== 'RUNNING' || claim.attemptRef !== stage.attemptRef ||
+        claim.task?.workItemId !== workItemId || claim.task?.documentVersionId !== initial.documentVersionId ||
+        !Number.isSafeInteger(claim.leaseGeneration) || claim.leaseGeneration < 1) return null;
+    const expires = Date.parse(claim.leaseExpiresAt), deadline = Date.parse(claim.task.deadline);
+    if (!Number.isFinite(expires) || !Number.isFinite(deadline) || expires > now || deadline <= now) return null;
+    const unknown = { status: 'REQUIRES_ATTENTION', operation, attemptRef: claim.attemptRef,
+      errorCode: 'INITIAL_ASSESSMENT_MODEL_OUTCOME_UNKNOWN', candidateOnly: true };
+    try {
+      validateTaskEnvelope(claim.task);
+      validateProgramAgentPolicy(claim.task.modelInput.agentPolicy, claim.task.executionModel);
+    } catch { return unknown; }
+    if (binding.modelExecutor !== 'CODEX' || agent.version !== 2 || agent.sealVersion !== 2 ||
+        claim.task.modelInput.executionMode !== PROGRAM_AGENT_MODE || claim.modelInput?.executionMode !== PROGRAM_AGENT_MODE ||
+        !isDeepStrictEqual(claim.modelInput, claim.task.modelInput.modelInput) ||
+        agent.binding?.operation !== operation || agent.binding.modelExecutor !== 'CODEX' ||
+        !isDeepStrictEqual(agent.binding.modelInput, claim.modelInput) ||
+        !isDeepStrictEqual(agent.binding.executionModel, claim.task.executionModel) ||
+        !isDeepStrictEqual(agent.generationPolicy, claim.task.modelInput.agentPolicy) ||
+        !isDeepStrictEqual(agent.binding.agentPolicy, agent.generationPolicy) ||
+        agent.binding.sessionDiscriminator !== (binding.requestId ?? claim.attemptRef) ||
+        agent.binding.assessmentBinding?.attemptRef !== claim.attemptRef ||
+        agent.binding.assessmentBinding?.actionAttemptId !== claim.task.actionAttemptId ||
+        agent.taskDeadline !== claim.task.deadline || !Number.isSafeInteger(agent.startedAt) || agent.startedAt < 0 ||
+        agent.generationDeadlineAt !== new Date(Math.min(deadline, agent.startedAt + 3600_000)).toISOString()) return unknown;
+    const run = await read('program-agent-run');
+    const started = await read('program-agent-candidate.started');
+    const request = await read('program-agent-model-input');
+    if (!run || !started || run.sealVersion !== 2 || run.requestId !== `program-agent:${claim.attemptRef}:candidate-1` ||
+        started.requestId !== run.requestId || started.argsHash !== run.argsHash ||
+        request?.version !== 2 || typeof request.body !== 'string' ||
+        run.argsHash !== canonicalSha256({ body: request.body, executionModel: claim.task.executionModel,
+          agentPolicy: agent.generationPolicy })) return unknown;
+    // Admission to the existing exact lease-reacquisition path only. The
+    // agent entry must recover the original full receipt; it cannot redispatch
+    // a started/UNKNOWN child or reconstruct a new session.
+    return { status: 'RECOVERY_CANDIDATE', operation, previousClaim: claim,
+      modelRecovery: 'CODEX_AGENT_DURABLE_RECEIPT_ONLY' };
   }
   const enabled = await read('assessment-enabled');
   const state = await read('assessment-state');

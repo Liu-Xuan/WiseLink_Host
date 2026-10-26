@@ -3531,13 +3531,19 @@ export function validateTaskEnvelope(value, options = {}) {
 }
 
 export function validateExecutionModelSelection(value) {
-  exactKeys(value, ['modelRef', 'displayName', 'providerKind', 'settingsRevision', 'selectedAt'], [], 'execution model selection');
+  const budgeted = value !== null && typeof value === 'object' && Object.hasOwn(value, 'schemaVersion');
+  exactKeys(value, ['modelRef', 'displayName', 'providerKind', 'settingsRevision', 'selectedAt',
+    ...(budgeted ? ['schemaVersion', 'maxOutputTokens'] : [])], [], 'execution model selection');
   match(value.modelRef, /^[a-z0-9][a-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9/._:-]*$/u, 'TASK_EXECUTION_MODEL_INVALID');
   if (value.modelRef.length > 255) fail('TASK_EXECUTION_MODEL_INVALID');
   nonEmpty(value.displayName, 'TASK_EXECUTION_MODEL_INVALID');
   if (value.displayName.length > 120 || !['BUILT_IN', 'CUSTOM'].includes(value.providerKind)) fail('TASK_EXECUTION_MODEL_INVALID');
   integerInRange(value.settingsRevision, 0, Number.MAX_SAFE_INTEGER, 'TASK_EXECUTION_MODEL_INVALID');
   isoDate(value.selectedAt, 'TASK_EXECUTION_MODEL_INVALID');
+  if (budgeted) {
+    equal(value.schemaVersion, 'wiselink.3_1.execution_model_selection.v2', 'TASK_EXECUTION_MODEL_INVALID');
+    integerInRange(value.maxOutputTokens, 1, Number.MAX_SAFE_INTEGER, 'TASK_EXECUTION_MODEL_INVALID');
+  }
   return value;
 }
 

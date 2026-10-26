@@ -10,6 +10,7 @@ import { JOBAID_WORK_UPDATE_SHAPE } from '../skills/wiselink-research-and-synthe
 import { JOBAID_SEMANTIC_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_GUIDANCE } from '../skills/wiselink-research-and-synthesize/scripts/jobaid-problem-guidance.mjs';
 import { createCheckpointStore } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 import { canonicalJson } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
+import { PROGRAM_AGENT_MODE, validateProgramAgentPolicy } from '../skills/wiselink-research-and-synthesize/scripts/program-assessment-materials.mjs';
 
 export const PROGRAM_AGENT_SEAL_VERSION = 2;
 
@@ -187,6 +188,8 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
       !Number.isFinite(Date.parse(generationDeadlineAt)) || ![1, PROGRAM_AGENT_SEAL_VERSION].includes(sealVersion) ||
       typeof recoverOnly !== 'boolean' ||
       (signal !== undefined && !(signal instanceof AbortSignal))) fail('PROGRAM_AGENT_GATEWAY_INVALID');
+  if (materials.originalInput?.executionMode === PROGRAM_AGENT_MODE)
+    validateProgramAgentPolicy(policy, executionModel);
   // V1 retains its original ordering and hashes. New V2 seals use exactly the
   // deterministic representation already used by the parent checkpoint store.
   const represent = sealVersion === PROGRAM_AGENT_SEAL_VERSION ? canonicalJson : JSON.stringify;
@@ -267,7 +270,7 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
         completed.generationDeadlineAt !== generationDeadlineAt ||
         completed.responseSha256 !== sha(completed.raw) || completed.status !== 200 || completed.ok !== true ||
         !Number.isSafeInteger(completed.dispatchCount) || completed.dispatchCount < 1 ||
-        completed.dispatchCount > policy.maxModelRequests ||
+        (policy.maxModelRequests !== null && completed.dispatchCount > policy.maxModelRequests) ||
         !Array.isArray(completed.dispatches) || completed.dispatches.length !== completed.dispatchCount ||
         completed.dispatches.some((item, index) => item.ordinal !== index + 1 ||
           item.maxOutputTokens !== policy.maxOutputTokens) ||
@@ -327,7 +330,7 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
         const clientRequestBytes = await bodyOf(request);
         if (!canContinue()) fail('PROGRAM_AGENT_DISPATCH_STOPPED');
         const ordinal = count + 1;
-        if (ordinal > policy.maxModelRequests) fail('PROGRAM_AGENT_MODEL_BUDGET_EXHAUSTED');
+        if (policy.maxModelRequests !== null && ordinal > policy.maxModelRequests) fail('PROGRAM_AGENT_MODEL_BUDGET_EXHAUSTED');
         const clientRequestSha256 = sha(clientRequestBytes);
         let parsed;
         try { parsed = JSON.parse(clientRequestBytes.toString('utf8')); }
@@ -344,6 +347,10 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
         await ledger.writeOnce(`dispatch-${ordinal}.started`, started);
         await durable(resolve(runDirectory, `dispatch-${ordinal}.client.json`), clientRequestBytes);
         await durable(resolve(runDirectory, `dispatch-${ordinal}.effective.json`), effectiveRequestBytes);
+        // The timer and the earlier check do not authorize this dispatch after
+        // body reads/durable writes. Recheck the current fence at the call edge,
+        // then the same frozen deadline; keep the reservation on any failure.
+        await checkHeartbeat();
         if (!canContinue()) fail('PROGRAM_AGENT_DISPATCH_STOPPED');
         let result;
         inFlight++;

@@ -1,0 +1,238 @@
+{
+  "materials": {
+    "version": 2,
+    "originalInput": {
+      "schemaVersion": "wiselink.jobaid-problem-task.v3",
+      "executionMode": "PROGRAM_AGENT_V1",
+      "contentValidationVersion": "jobaid-semantic.v1",
+      "evidenceProjectionVersion": "SOURCE_CONTEXT_V2",
+      "purpose": "INITIAL_PROBLEM_ASSESSMENT",
+      "methodBinding": {
+        "packRef": "SYNTHETIC-METHOD-PACK",
+        "version": "SYNTHETIC-R1",
+        "sources": [
+          {
+            "sourceIdentity": "SYNTHETIC-METHOD",
+            "versionLabel": "SYNTHETIC-R1",
+            "documentVersionId": null,
+            "status": "VERSION_UNCONFIRMED"
+          }
+        ],
+        "attachment5": "R00_CONTENT_REPORTED_R01_LINK_UNCONFIRMED"
+      },
+      "documentOverview": {
+        "documentVersionRef": "DV-SYNTHETIC-OFFLINE",
+        "documentCode": "SYNTHETIC-DOC",
+        "businessRevision": "SYNTHETIC-R1",
+        "title": "SYNTHETIC offline document",
+        "sections": [
+          {
+            "title": "SYNTHETIC section",
+            "sourceRefs": [
+              "DOCUMENT_ORIGINAL:DV-SYNTHETIC-OFFLINE:PR-SYNTHETIC-OFFLINE:SR-SYNTHETIC-1"
+            ]
+          }
+        ],
+        "original": {
+          "binding": {
+            "documentVersionId": "DV-SYNTHETIC-OFFLINE",
+            "parseRunId": "PR-SYNTHETIC-OFFLINE",
+            "parseRevision": 4,
+            "sourceArtifactId": "ART-SYNTHETIC-OFFLINE",
+            "sourceSha256": "6ea859bb5917fbba96f140cdf0f6d2b5bf024a454fcfc50daade886bb877377b",
+            "sourceByteLength": 97
+          },
+          "semanticMap": null,
+          "coverage": {
+            "knownPageCount": 1,
+            "readPageIndexes": [
+              0
+            ],
+            "unresolvedRanges": []
+          },
+          "findings": []
+        }
+      },
+      "programOriginal": {
+        "binding": {
+          "documentVersionId": "DV-SYNTHETIC-OFFLINE",
+          "parseRunId": "PR-SYNTHETIC-OFFLINE",
+          "parseRevision": 4,
+          "sourceArtifactId": "ART-SYNTHETIC-OFFLINE",
+          "sourceSha256": "6ea859bb5917fbba96f140cdf0f6d2b5bf024a454fcfc50daade886bb877377b",
+          "sourceByteLength": 97
+        },
+        "units": [
+          {
+            "unitId": "unit-SYNTHETIC-1",
+            "kind": "paragraph",
+            "sourceRefIds": [
+              "SR-SYNTHETIC-1"
+            ],
+            "payload": {
+              "text": "[SYNTHETIC OFFLINE] Example condition only. This is not a user document or engineering direction."
+            },
+            "moduleId": "module-SYNTHETIC-1",
+            "parentUnitId": null,
+            "order": 0,
+            "depth": 0,
+            "continuityKey": "SYNTHETIC-OFFLINE",
+            "sourceSegmentIds": [],
+            "mapping": {}
+          }
+        ],
+        "sourceLocators": [
+          {
+            "sourceRefId": "SR-SYNTHETIC-1",
+            "kind": "SYNTHETIC-TEXT",
+            "artifactId": "ART-SYNTHETIC-OFFLINE",
+            "pageStart": 0,
+            "pageEnd": 0,
+            "charStart": 0,
+            "charEnd": 97,
+            "charOffsetUnit": "UTF16_CODE_UNIT",
+            "normalizedPath": null,
+            "xpath": null,
+            "elementId": null,
+            "quote": "[SYNTHETIC OFFLINE] Example condition only. This is not a user document or engineering direction.",
+            "bbox": null
+          }
+        ],
+        "coverage": {
+          "knownPageCount": 1,
+          "readPageIndexes": [
+            0
+          ],
+          "unresolvedRanges": []
+        },
+        "findings": []
+      },
+      "hostApplicability": null,
+      "availableSources": [
+        {
+          "ref": "DOCUMENT_ORIGINAL:DV-SYNTHETIC-OFFLINE:PR-SYNTHETIC-OFFLINE:SR-SYNTHETIC-1",
+          "kind": "DOCUMENT_PASSAGE",
+          "title": "SYNTHETIC original",
+          "versionLabel": "PR-SYNTHETIC-OFFLINE",
+          "locator": "SYNTHETIC page 1",
+          "documentVersionId": "DV-SYNTHETIC-OFFLINE",
+          "sourceRefId": "SR-SYNTHETIC-1",
+          "parseRunId": "PR-SYNTHETIC-OFFLINE",
+          "carrierRangeRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC-OFFLINE:PR-SYNTHETIC-OFFLINE:SR-SYNTHETIC-1"
+        },
+        {
+          "ref": "method:SYNTHETIC-OFFLINE",
+          "kind": "METHOD_CLAUSE",
+          "title": "SYNTHETIC method",
+          "versionLabel": "SYNTHETIC-R1",
+          "locator": "SYNTHETIC section 1"
+        }
+      ],
+      "sourceStatementAvailability": {
+        "status": "AVAILABLE",
+        "semanticFieldsAvailability": "LEGACY_PARTIAL",
+        "limitations": []
+      },
+      "deliveredEvidence": [
+        {
+          "evidenceRef": "DOCUMENT_ORIGINAL:DV-SYNTHETIC-OFFLINE:PR-SYNTHETIC-OFFLINE:SR-SYNTHETIC-1",
+          "kind": "DOCUMENT_PASSAGE",
+          "title": "SYNTHETIC original",
+          "versionLabel": "PR-SYNTHETIC-OFFLINE",
+          "excerpt": "[SYNTHETIC OFFLINE] Example condition only. This is not a user document or engineering direction.",
+          "locator": "SYNTHETIC page 1"
+        },
+        {
+          "evidenceRef": "method:SYNTHETIC-OFFLINE",
+          "kind": "METHOD_CLAUSE",
+          "title": "SYNTHETIC method",
+          "versionLabel": "SYNTHETIC-R1",
+          "excerpt": "[SYNTHETIC OFFLINE] An illustrative method carrier; no actual method document content.",
+          "locator": "SYNTHETIC section 1"
+        }
+      ],
+      "previousWork": null,
+      "expectedWorkRevision": 0,
+      "capabilities": [],
+      "historyReview": {
+        "required": false,
+        "priorAssessmentRefs": [],
+        "engineeringDocumentRefs": [],
+        "coverage": "NOT_REQUIRED",
+        "limitation": null
+      },
+      "discussion": {
+        "status": "NO_PRIOR_DISCUSSION",
+        "totalPriorTurns": 0,
+        "omittedEarlierTurns": 0,
+        "turns": [],
+        "usage": "DISCUSSION_NOT_ADOPTION"
+      }
+    },
+    "directory": {
+      "schemaVersion": "wiselink.program-agent-directory.v1",
+      "originalBinding": {
+        "documentVersionId": "DV-SYNTHETIC-OFFLINE",
+        "parseRunId": "PR-SYNTHETIC-OFFLINE",
+        "parseRevision": 4,
+        "sourceArtifactId": "ART-SYNTHETIC-OFFLINE",
+        "sourceSha256": "6ea859bb5917fbba96f140cdf0f6d2b5bf024a454fcfc50daade886bb877377b",
+        "sourceByteLength": 97
+      },
+      "sources": [
+        {
+          "ref": "DOCUMENT_ORIGINAL:DV-SYNTHETIC-OFFLINE:PR-SYNTHETIC-OFFLINE:SR-SYNTHETIC-1",
+          "kind": "DOCUMENT_PASSAGE",
+          "locator": "SYNTHETIC page 1",
+          "versionLabel": "PR-SYNTHETIC-OFFLINE"
+        },
+        {
+          "ref": "method:SYNTHETIC-OFFLINE",
+          "kind": "METHOD_CLAUSE",
+          "locator": "SYNTHETIC section 1",
+          "versionLabel": "SYNTHETIC-R1"
+        }
+      ],
+      "originalUnits": [
+        {
+          "unitId": "unit-SYNTHETIC-1",
+          "sourceRefIds": [
+            "SR-SYNTHETIC-1"
+          ]
+        }
+      ],
+      "previousWorkRevisionRef": null
+    },
+    "previousWorkRead": null,
+    "modelInput": {
+      "previousUnderstandingAndChanges": {
+        "previousWork": null
+      }
+    },
+    "deliveredEvidenceRefs": [
+      "DOCUMENT_ORIGINAL:DV-SYNTHETIC-OFFLINE:PR-SYNTHETIC-OFFLINE:SR-SYNTHETIC-1",
+      "method:SYNTHETIC-OFFLINE"
+    ]
+  },
+  "modelRequest": {
+    "version": 2,
+    "body": "{\"messages\":[{\"content\":\"SYNTHETIC OFFLINE. Tool runner instruction placeholder; not an enabled runtime prompt.\",\"role\":\"system\"},{\"content\":\"{\\\"originalBinding\\\":{\\\"documentVersionId\\\":\\\"DV-SYNTHETIC-OFFLINE\\\",\\\"parseRevision\\\":4,\\\"parseRunId\\\":\\\"PR-SYNTHETIC-OFFLINE\\\",\\\"sourceArtifactId\\\":\\\"ART-SYNTHETIC-OFFLINE\\\",\\\"sourceByteLength\\\":97,\\\"sourceSha256\\\":\\\"6ea859bb5917fbba96f140cdf0f6d2b5bf024a454fcfc50daade886bb877377b\\\"},\\\"originalUnits\\\":[{\\\"sourceRefIds\\\":[\\\"SR-SYNTHETIC-1\\\"],\\\"unitId\\\":\\\"unit-SYNTHETIC-1\\\"}],\\\"previousWorkRevisionRef\\\":null,\\\"schemaVersion\\\":\\\"wiselink.program-agent-directory.v1\\\",\\\"sources\\\":[{\\\"kind\\\":\\\"DOCUMENT_PASSAGE\\\",\\\"locator\\\":\\\"SYNTHETIC page 1\\\",\\\"ref\\\":\\\"DOCUMENT_ORIGINAL:DV-SYNTHETIC-OFFLINE:PR-SYNTHETIC-OFFLINE:SR-SYNTHETIC-1\\\",\\\"versionLabel\\\":\\\"PR-SYNTHETIC-OFFLINE\\\"},{\\\"kind\\\":\\\"METHOD_CLAUSE\\\",\\\"locator\\\":\\\"SYNTHETIC section 1\\\",\\\"ref\\\":\\\"method:SYNTHETIC-OFFLINE\\\",\\\"versionLabel\\\":\\\"SYNTHETIC-R1\\\"}]}\",\"role\":\"user\"}]}",
+    "executionModel": {
+      "modelRef": "miaoda/glm-5.3",
+      "displayName": "GLM 5.3",
+      "providerKind": "BUILT_IN",
+      "settingsRevision": 4,
+      "selectedAt": "2026-10-24T00:00:00Z",
+      "schemaVersion": "wiselink.3_1.execution_model_selection.v2",
+      "maxOutputTokens": 131072
+    },
+    "materialCheckpoint": "program-agent-materials",
+    "agentPolicy": {
+      "schemaVersion": "wiselink.program-agent-policy.v1",
+      "maxModelRequests": null,
+      "maxOutputTokens": 131072,
+      "maxToolCalls": null,
+      "timeoutSeconds": 3600
+    }
+  }
+}

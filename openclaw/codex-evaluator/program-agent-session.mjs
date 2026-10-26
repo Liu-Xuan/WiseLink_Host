@@ -83,6 +83,8 @@ export function validateProgramAgentCandidate(workJson, deliveredRefs, previousI
 
 export function createProgramAgentSession({ materials, readAssessmentSources, readAssessmentWork,
   maxToolCalls, canContinue = () => true, persistToolResult = async () => {} }) {
+  if (maxToolCalls !== null && (!Number.isSafeInteger(maxToolCalls) || maxToolCalls < 1))
+    throw new Error('PROGRAM_AGENT_TOOL_POLICY_INVALID');
   const input = materials.originalInput;
   const sources = new Map(input.availableSources.map(item => [item.ref, item]));
   const units = new Map(input.programOriginal.units.map(item => [item.unitId, item]));
@@ -108,7 +110,7 @@ export function createProgramAgentSession({ materials, readAssessmentSources, re
     };
     const reject = code => complete(error(code));
     if (!canContinue()) return reject('GENERATION_DEADLINE_OR_HEARTBEAT');
-    if (busy || calls >= maxToolCalls) return reject(busy ? 'TOOL_BUSY' : 'TOOL_CALL_LIMIT');
+    if (busy || (maxToolCalls !== null && calls >= maxToolCalls)) return reject(busy ? 'TOOL_BUSY' : 'TOOL_CALL_LIMIT');
     if (!programAgentTools.some(tool => tool.name === name) || !record(args)) return reject('TOOL_NOT_ALLOWED');
     busy = true; calls++;
     try {

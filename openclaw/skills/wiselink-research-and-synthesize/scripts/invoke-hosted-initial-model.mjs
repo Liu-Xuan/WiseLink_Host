@@ -21,8 +21,9 @@ import { modelExecutor, modelExecutorProvenance, modelGatewayEndpoint, modelGate
 import { invokeHostedTranslationBlock } from './invoke-hosted-translation-block.mjs';
 import { invokeHostedJobAidProblemModel, isJobAidProblemInputSchema } from './run-jobaid-problem-assessment.mjs';
 import { SOURCE_CONTENT_SYNTHESIS_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_PROMPT_REVISION } from './jobaid-problem-guidance.mjs';
-import { invokeHostedProgramAssessment } from './run-program-assessment.mjs';
-import { PROGRAM_ASSESSMENT_MODE } from './program-assessment-materials.mjs';
+import { invokeHostedProgramAssessment, invokeHostedProgramAssessmentAgent } from './run-program-assessment.mjs';
+import { PROGRAM_ASSESSMENT_MODE, PROGRAM_AGENT_MODE } from './program-assessment-materials.mjs';
+import { createConfiguredProgramAgentLiteLLMDispatch } from '../../../codex-evaluator/program-agent-litellm-process.mjs';
 
 const OUTPUT_FUNCTION = 'return_wiselink_initial_candidate';
 const MAX_JOBAID_CANDIDATE_CORRECTIONS = 2;
@@ -77,6 +78,11 @@ export async function invokeHostedInitialModel(
   dependencies = {},
 ) {
   if (modelInput?.executionMode !== undefined) {
+    if (modelInput.executionMode === PROGRAM_AGENT_MODE)
+      return invokeHostedProgramAssessmentAgent({ operation, modelInput }, options,
+        typeof dependencies.providerDispatch === 'function' || typeof dependencies.runCodexAgent === 'function'
+          ? dependencies : { ...dependencies,
+            providerDispatch: createConfiguredProgramAgentLiteLLMDispatch(options.codexOptions) });
     if (modelInput.executionMode !== PROGRAM_ASSESSMENT_MODE)
       throw new Error('INITIAL_EXECUTION_MODE_UNSUPPORTED');
     return invokeHostedProgramAssessment({ operation, modelInput }, options, dependencies);

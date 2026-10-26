@@ -1,8 +1,57 @@
 import { isDeepStrictEqual } from 'node:util';
 import { readJobAidSourceBatches } from './run-jobaid-problem-assessment.mjs';
+import { validateExecutionModelSelection } from './validate-payload.mjs';
 
 export const PROGRAM_ASSESSMENT_MODE = 'PROGRAM_CONTROLLED_V1';
+export const PROGRAM_AGENT_MODE = 'PROGRAM_AGENT_V1';
+export const isProgramAssessmentMode = value =>
+  value === PROGRAM_ASSESSMENT_MODE || value === PROGRAM_AGENT_MODE;
 const fail = code => { throw new Error(`PROGRAM_ASSESSMENT_MATERIALS_${code}`); };
+
+/** Exact Host f1a policy. Null removes count caps, never the sealed deadline. */
+export function validateProgramAgentPolicy(value, selection) {
+  const keys = ['schemaVersion', 'maxModelRequests', 'maxOutputTokens', 'maxToolCalls', 'timeoutSeconds'];
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      Object.keys(value).length !== keys.length || keys.some(key => !Object.hasOwn(value, key)) ||
+      value.schemaVersion !== 'wiselink.program-agent-policy.v1' ||
+      value.maxModelRequests !== null || value.maxToolCalls !== null || value.timeoutSeconds !== 3600 ||
+      !Number.isSafeInteger(value.maxOutputTokens) || value.maxOutputTokens < 1)
+    throw new Error('PROGRAM_AGENT_POLICY_INVALID');
+  validateExecutionModelSelection(selection);
+  if (selection.schemaVersion !== 'wiselink.3_1.execution_model_selection.v2' ||
+      selection.modelRef !== 'miaoda/glm-5.3' || selection.settingsRevision < 1 ||
+      selection.maxOutputTokens !== value.maxOutputTokens)
+    throw new Error('PROGRAM_AGENT_MODEL_BINDING_INVALID');
+  return structuredClone(value);
+}
+
+function agentDirectory(input) {
+  return {
+    schemaVersion: input.executionMode === PROGRAM_AGENT_MODE
+      ? 'wiselink.program-agent-directory.v1' : 'wiselink.native.program_agent_directory.proposal.v1',
+    originalBinding: structuredClone(input.programOriginal.binding),
+    sources: input.availableSources.map(source => ({ ref: source.ref, kind: source.kind,
+      ...(typeof source.locator === 'string' ? { locator: source.locator } : {}),
+      ...(typeof source.versionLabel === 'string' ? { versionLabel: source.versionLabel } : {}) })),
+    originalUnits: input.programOriginal.units.map(unit => ({ unitId: unit.unitId,
+      sourceRefIds: [...unit.sourceRefIds] })),
+    previousWorkRevisionRef: input.previousWork?.workRevisionRef ?? null,
+  };
+}
+
+export function assertProgramAgentMaterials(materials, input) {
+  const keys = ['version', 'originalInput', 'directory', 'previousWorkRead', 'modelInput', 'deliveredEvidenceRefs'];
+  const previousRead = materials?.previousWorkRead;
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!materials || Object.keys(materials).length !== keys.length || keys.some(key => !Object.hasOwn(materials, key)) ||
+      materials.version !== 2 || !isDeepStrictEqual(materials.originalInput, input) ||
+      !isDeepStrictEqual(materials.directory, agentDirectory(input)) ||
+      !isDeepStrictEqual(materials.deliveredEvidenceRefs, input.deliveredEvidence.map(item => item.evidenceRef)) ||
+      (previousRead !== null && (!object(previousRead) || !object(previousRead.revision))) ||
+      !isDeepStrictEqual(previousRead === null ? null : previousRead.revision, input.previousWork ?? null) ||
+      !isDeepStrictEqual(materials.modelInput, { previousUnderstandingAndChanges: { previousWork: input.previousWork ?? null } }))
+    throw new Error('PROGRAM_AGENT_MATERIALS_BINDING_MISMATCH');
+}
 
 export function normalizeProgramListBrief(before) {
   if (!Array.isArray(before) || before.length === 0 ||
@@ -11,11 +60,11 @@ export function normalizeProgramListBrief(before) {
   return { before, after };
 }
 
-/** Proposal-only directory. No source read or original payload enters its prompt.
+/** Bound directory. No source read or original payload enters its prompt.
  * The exact Host task stays private for bound, on-demand reads. */
 export async function prepareProgramAgentMaterials(input, options) {
   const original = input.programOriginal;
-  if (input.executionMode !== PROGRAM_ASSESSMENT_MODE || !original?.binding ||
+  if (!isProgramAssessmentMode(input.executionMode) || !original?.binding ||
       !Array.isArray(original.units) || !original.units.length ||
       !Array.isArray(original.sourceLocators) || !original.coverage || !Array.isArray(original.findings)) fail('ORIGINAL_REQUIRED');
   const binding = original.binding;
@@ -30,12 +79,15 @@ export async function prepareProgramAgentMaterials(input, options) {
       (source.documentVersionId === binding.documentVersionId && source.parseRunId === binding.parseRunId)));
   if (!primary.length || primary.some(source => {
     let locator;
-    try { locator = JSON.parse(source.locator); } catch { return true; }
+    try { locator = JSON.parse(source.locator); }
+    catch { if (input.executionMode !== PROGRAM_AGENT_MODE || typeof source.locator !== 'string') return true; }
+    // Host locators are sealed strings, including human-readable synthetic
+    // locators. Structured locator identities, when present, must still agree.
     return source.documentVersionId !== binding.documentVersionId ||
       source.parseRunId !== binding.parseRunId || !source.sourceRefId ||
       source.ref !== `${primaryPrefix}${source.sourceRefId}` ||
       source.carrierRangeRef !== source.ref || source.versionLabel !== binding.parseRunId ||
-      locator.parseRunId !== binding.parseRunId || locator.sourceRefId !== source.sourceRefId ||
+      (locator !== undefined && (locator?.parseRunId !== binding.parseRunId || locator?.sourceRefId !== source.sourceRefId)) ||
       !locators.has(source.sourceRefId);
   })) fail('ORIGINAL_EVIDENCE_MISMATCH');
   if (sourceRefs.size !== input.availableSources.length ||
@@ -54,21 +106,16 @@ export async function prepareProgramAgentMaterials(input, options) {
       if (revision?.workRevisionRef !== input.previousWork.workRevisionRef ||
           revision.workRevision !== input.previousWork.workRevision ||
           !Array.isArray(revision.content?.issues)) fail('PREVIOUS_WORK_READ_MISMATCH');
+      if (input.executionMode === PROGRAM_AGENT_MODE && !isDeepStrictEqual(revision, input.previousWork))
+        fail('PREVIOUS_WORK_READ_MISMATCH');
       await options.assessmentCheckpoint.writeOnce('program-previous-work-read', previousWorkRead);
     }
     if (previousWorkRead.revision?.workRevisionRef !== input.previousWork.workRevisionRef ||
         previousWorkRead.revision.workRevision !== input.previousWork.workRevision) fail('PREVIOUS_WORK_READ_MISMATCH');
+    if (input.executionMode === PROGRAM_AGENT_MODE && !isDeepStrictEqual(previousWorkRead.revision, input.previousWork))
+      fail('PREVIOUS_WORK_READ_MISMATCH');
   }
-  const directory = {
-    schemaVersion: 'wiselink.native.program_agent_directory.proposal.v1',
-    originalBinding: structuredClone(binding),
-    sources: input.availableSources.map(source => ({ ref: source.ref, kind: source.kind,
-      ...(typeof source.locator === 'string' ? { locator: source.locator } : {}),
-      ...(typeof source.versionLabel === 'string' ? { versionLabel: source.versionLabel } : {}) })),
-    originalUnits: original.units.map(unit => ({ unitId: unit.unitId,
-      sourceRefIds: [...unit.sourceRefIds] })),
-    previousWorkRevisionRef: input.previousWork?.workRevisionRef ?? null,
-  };
+  const directory = agentDirectory(input);
   return { version: 2, originalInput: structuredClone(input), directory,
     previousWorkRead, modelInput: { previousUnderstandingAndChanges: {
       previousWork: previousWorkRead?.revision ?? input.previousWork ?? null } },

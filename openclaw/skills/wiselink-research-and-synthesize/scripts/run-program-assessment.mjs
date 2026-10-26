@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { prepareProgramAssessmentMaterials, prepareProgramAgentMaterials, normalizeProgramListBrief, PROGRAM_ASSESSMENT_MODE } from './program-assessment-materials.mjs';
+import { prepareProgramAssessmentMaterials, prepareProgramAgentMaterials, assertProgramAgentMaterials,
+  normalizeProgramListBrief, PROGRAM_ASSESSMENT_MODE, PROGRAM_AGENT_MODE,
+  isProgramAssessmentMode, validateProgramAgentPolicy } from './program-assessment-materials.mjs';
 import { parseJobAidWorkJson, validateJobAidProblemInput } from './run-jobaid-problem-assessment.mjs';
 import { JOBAID_WORK_UPDATE_SHAPE, jobAidWorkTypeErrors } from './jobaid-work-shape.mjs';
 import { JOBAID_SEMANTIC_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_GUIDANCE } from './jobaid-problem-guidance.mjs';
@@ -448,20 +450,22 @@ function assertProgramAgentPolicy(value) {
   return structuredClone(value);
 }
 
-/** Proposal-only entry. No consumer or Host begin task selects this mode.
- * The old public entry and all of its durable request keys stay unchanged. */
+/** Explicit Host agent entry. The prior isolated proposal path is unchanged;
+ * the public consumer selects this entry only for a sealed PROGRAM_AGENT_V1. */
 export async function invokeHostedProgramAssessmentAgent({ operation, modelInput }, options, dependencies = {}) {
   if (options?.modelExecutor !== 'CODEX' || !options?.agentPolicy ||
       (typeof dependencies.providerDispatch !== 'function' && typeof dependencies.runCodexAgent !== 'function'))
     throw new Error('PROGRAM_AGENT_NOT_ENABLED');
-  const policy = assertProgramAgentPolicy(options.agentPolicy);
+  const hostAgent = modelInput?.executionMode === PROGRAM_AGENT_MODE;
+  const policy = hostAgent ? validateProgramAgentPolicy(options.agentPolicy, options.executionModel)
+    : assertProgramAgentPolicy(options.agentPolicy);
   modelInput = structuredClone(modelInput);
   options = { ...options, executionModel: structuredClone(options.executionModel) };
   validateExecutionModelSelection(options.executionModel);
   validateJobAidProblemInput(modelInput);
   const checkpoint = options.assessmentCheckpoint;
   const hostBinding = options.assessmentBinding;
-  if (operation !== 'EVALUATE_JOBAID' || modelInput.executionMode !== PROGRAM_ASSESSMENT_MODE ||
+  if (operation !== 'EVALUATE_JOBAID' || !isProgramAssessmentMode(modelInput.executionMode) ||
       modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || !checkpoint ||
       !options.sessionDiscriminator || options.executionModel?.modelRef !== 'miaoda/glm-5.3' ||
       ['attemptRef', 'actionAttemptId', 'workItemId', 'documentVersionId'].some(key =>
@@ -515,16 +519,39 @@ export async function invokeHostedProgramAssessmentAgent({ operation, modelInput
   }
   if (!isDeepStrictEqual(materials.originalInput, modelInput) || materials.version !== 2)
     throw new Error('PROGRAM_AGENT_MATERIALS_BINDING_MISMATCH');
-  const request = { model: `openclaw/${WISELINK_PROFILE_REF}`,
+  if (hostAgent) assertProgramAgentMaterials(materials, modelInput);
+  let request = { model: `openclaw/${WISELINK_PROFILE_REF}`,
     messages: [{ role: 'system', content: 'Form a candidate using read-only bound material tools. Return no Host action.' },
       { role: 'user', content: canonicalJson(materials.directory) }],
     tools: [{ type: 'function', function: { name: OUTPUT_FUNCTION,
       parameters: { type: 'object', additionalProperties: false, required: ['workJson'],
         properties: { workJson: { type: 'string' } } } } }],
     tool_choice: 'auto', parallel_tool_calls: false, n: 1, stream: false };
-  const body = canonicalJson(request);
-  const modelRequest = { version: 2, body, executionModel: options.executionModel,
+  let body = canonicalJson(request);
+  let modelRequest = { version: 2, body, executionModel: options.executionModel,
     materialCheckpoint: 'program-agent-materials', agentPolicy: policy };
+  const retainedRequest = hostAgent ? await checkpoint.readOptional('program-agent-model-input') : null;
+  if (retainedRequest) {
+    const keys = ['version', 'body', 'executionModel', 'materialCheckpoint', 'agentPolicy'];
+    if (Object.keys(retainedRequest).length !== keys.length || keys.some(key => !Object.hasOwn(retainedRequest, key)) ||
+        retainedRequest.version !== 2 || retainedRequest.materialCheckpoint !== 'program-agent-materials' ||
+        !isDeepStrictEqual(retainedRequest.executionModel, options.executionModel) ||
+        !isDeepStrictEqual(retainedRequest.agentPolicy, policy) || typeof retainedRequest.body !== 'string')
+      throw new Error('PROGRAM_AGENT_MODEL_INPUT_BINDING_MISMATCH');
+    let retainedBody;
+    try { retainedBody = JSON.parse(retainedRequest.body); }
+    catch { throw new Error('PROGRAM_AGENT_MODEL_INPUT_BINDING_MISMATCH'); }
+    if (!Array.isArray(retainedBody?.messages) || retainedBody.messages.length !== 2 ||
+        retainedBody.messages[1]?.role !== 'user' ||
+        retainedBody.messages[1].content !== canonicalJson(materials.directory))
+      throw new Error('PROGRAM_AGENT_MODEL_INPUT_BINDING_MISMATCH');
+    // Resume the original stored request, never substitute a later prompt or
+    // manager setting into the same request/body hash.
+    modelRequest = retainedRequest; request = retainedBody; body = retainedRequest.body;
+  } else if (hostAgent && (await checkpoint.readOptional('program-agent-run') ||
+      await checkpoint.readOptional('program-agent-candidate.started') ||
+      await checkpoint.readOptional('program-agent-candidate.result')))
+    throw new Error('PROGRAM_AGENT_MODEL_INPUT_MISSING');
   await checkpoint.writeOnceOrEqual('program-agent-model-input', modelRequest);
   const argsHash = canonicalSha256({ body, executionModel: options.executionModel, agentPolicy: policy });
   const recordProgress = async (phase, key, snapshot) => {
@@ -535,8 +562,7 @@ export async function invokeHostedProgramAssessmentAgent({ operation, modelInput
       await checkpoint.writeOnce(`program-progress-${phase}`, receipt);
     }
   };
-  // A real fd9 Host rejects this version-2 material snapshot. Only synthetic
-  // hooks may acknowledge it until the Host owner defines a new literal mode.
+  // Host f1a validates and persists the exact v2 snapshot before generation.
   await recordProgress('MATERIALS_READY', 'program-agent-materials', JSON.stringify({ materials, modelRequest }));
   const requestId = `program-agent:${hostBinding.attemptRef}:candidate-1`;
   const candidateBinding = { hostBinding, requestBodySha256: createHash('sha256').update(body).digest('hex'),
@@ -580,7 +606,7 @@ export async function invokeHostedProgramAssessmentAgent({ operation, modelInput
       typeof agentReceipt.raw !== 'string' ||
       agentReceipt.responseSha256 !== createHash('sha256').update(agentReceipt.raw).digest('hex') ||
       !Number.isSafeInteger(agentReceipt.dispatchCount) || agentReceipt.dispatchCount < 1 ||
-      agentReceipt.dispatchCount > policy.maxModelRequests ||
+      (policy.maxModelRequests !== null && agentReceipt.dispatchCount > policy.maxModelRequests) ||
       !Array.isArray(agentReceipt.dispatches) ||
       agentReceipt.dispatches.length !== agentReceipt.dispatchCount ||
       agentReceipt.dispatches.some((item, index) => item.ordinal !== index + 1 ||
@@ -602,7 +628,8 @@ export async function invokeHostedProgramAssessmentAgent({ operation, modelInput
     promptVersion: `wiselink-jobaid-problem@v${modelInput.schemaVersion.endsWith('.v3') ? '3' : '2'}`,
     skillVersion: WISELINK_SKILL_VERSION,
     toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
-      ...modelExecutorProvenance(options), 'program-agent-candidate': 'proposal-v1' }, runMetrics });
+      ...modelExecutorProvenance(options), 'program-agent-candidate': hostAgent ? '1' : 'proposal-v1',
+      ...(hostAgent ? { 'jobaid-problem-protocol': modelInput.schemaVersion.endsWith('.v3') ? '3' : '2' } : {}) }, runMetrics });
   return finishProgramAssessment({ operation, responseRecord, usesCodex: true, options, checkpoint,
     codexRecoveryRequestId: requestId, hostBinding, modelInput, materials, body,
     request, argsHash, enabled, recordProgress, provenanceFor, agentMode: true, agentSession });

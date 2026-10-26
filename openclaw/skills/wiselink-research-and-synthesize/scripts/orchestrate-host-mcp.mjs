@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { modelExecutorProvenance } from './model-executor.mjs';
+import { isProgramAssessmentMode, PROGRAM_AGENT_MODE, validateProgramAgentPolicy } from './program-assessment-materials.mjs';
 import { runSemanticTranslation } from './run-semantic-translation.mjs';
 import { projectTdmsReviewSavedModelContext } from './tdms-review-saved-context.mjs';
 import {
@@ -799,9 +800,15 @@ export async function runDynamicEvaluation(input) {
   }
   const problemV2 = ['wiselink.jobaid-problem-task.v2','wiselink.jobaid-problem-task.v3'].includes(begin.modelInput?.schemaVersion);
   if ((begin.modelInput?.executionMode !== undefined || begin.task.modelInput?.executionMode !== undefined) &&
-      (begin.modelInput?.executionMode !== 'PROGRAM_CONTROLLED_V1' ||
+      (!isProgramAssessmentMode(begin.modelInput?.executionMode) ||
         begin.task.modelInput?.executionMode !== begin.modelInput.executionMode ||
         canonicalJson(begin.modelInput) !== canonicalJson(begin.task.modelInput.modelInput)))
+    throw new Error('HOST_MCP_PROGRAM_ASSESSMENT_MODE_BINDING_MISMATCH');
+  if (begin.modelInput?.executionMode === PROGRAM_AGENT_MODE) {
+    validateProgramAgentPolicy(begin.task.modelInput.agentPolicy, begin.task.executionModel);
+    if (begin.task.modelInput.requestedModelRef !== begin.task.executionModel.modelRef)
+      throw new Error('HOST_MCP_PROGRAM_ASSESSMENT_MODEL_BINDING_MISMATCH');
+  } else if (begin.task.modelInput?.agentPolicy !== undefined)
     throw new Error('HOST_MCP_PROGRAM_ASSESSMENT_MODE_BINDING_MISMATCH');
   if (!problemV2) validatePayload('dynamic-rules-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
@@ -1334,7 +1341,7 @@ async function recoverInitialCommitting({ stage, before, begin, callTool }) {
   // call or a new business result. The Host rejects a changed result or owner.
   const tool = stage === 'EVALUATE_JOBAID'
     ? 'commit_dynamic_evaluation_candidate' : 'commit_overall_candidate';
-  const program = stage === 'EVALUATE_JOBAID' && begin.task.modelInput?.executionMode === 'PROGRAM_CONTROLLED_V1'
+  const program = stage === 'EVALUATE_JOBAID' && isProgramAssessmentMode(begin.task.modelInput?.executionMode)
     ? programAssessmentCommitBinding(begin, JSON.parse(observed.status.recoveryResult.modelOutput)) : null;
   if (program) {
     await readExactProgramAssessmentWork(begin, program, callTool, 'COMMITTING');
@@ -1607,8 +1614,10 @@ function assertFailedAssessmentCommit(value, begin, result) {
 
 function problemAssessmentHooks(begin, callTool) {
   const control = { attemptRef: begin.attemptRef, leaseToken: begin.leaseToken, leaseGeneration: begin.leaseGeneration };
-  const programControlled = begin.modelInput.executionMode === 'PROGRAM_CONTROLLED_V1';
+  const programControlled = isProgramAssessmentMode(begin.modelInput.executionMode);
   return {
+    ...(begin.modelInput.executionMode === PROGRAM_AGENT_MODE
+      ? { agentPolicy: structuredClone(begin.task.modelInput.agentPolicy) } : {}),
     assessmentBinding: { attemptRef: begin.attemptRef, actionAttemptId: begin.task.actionAttemptId,
       workItemId: begin.task.workItemId, documentVersionId: begin.task.documentVersionId,
       inputRevision: begin.task.inputRevision, baseRevision: begin.task.baseRevision },
@@ -2146,7 +2155,7 @@ function assertApplicabilityCommit(value, begin, result) {
 }
 
 function programAssessmentCommitBinding(begin, output) {
-  return begin.task.modelInput?.executionMode === 'PROGRAM_CONTROLLED_V1'
+  return isProgramAssessmentMode(begin.task.modelInput?.executionMode)
     ? { actionAttemptId: begin.task.actionAttemptId, workRevisionRef: output?.workRevisionRef } : null;
 }
 

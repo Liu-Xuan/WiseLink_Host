@@ -23,6 +23,7 @@ import {
 import { recoverNativeMatterResponse } from './recover-native-matter-response.mjs';
 import { invokeHostedJobAidProblemModel } from './run-jobaid-problem-assessment.mjs';
 import { invokeHostedInitialModel } from './invoke-hosted-initial-model.mjs';
+import { PROGRAM_AGENT_MODE } from './program-assessment-materials.mjs';
 import { INITIAL_ASSESSMENT_OPERATIONS, findInitialAssessmentRecovery, initialStageCheckpointPath, initialApplicabilityCheckpointPointerPath,
   assertFreshInitialAssessmentClaim, assertCommittingInitialClaim, optionalInitialStageRequest,
   confirmInitialCommittingRecovery, finishInitialAssessmentPolicyFailure } from './initial-assessment-recovery.mjs';
@@ -1915,6 +1916,8 @@ export async function runHostedInitialStage(options, dependencies) {
       return dependencies.invokeInitialModel({ operation, modelInput }, {
         executionModel,
         ...(assessment ? { assessmentCheckpoint: checkpoint, taskDeadline } : {}),
+        ...(modelInput.executionMode === PROGRAM_AGENT_MODE
+          ? { agentPolicy: structuredClone(assessmentClaim?.task?.modelInput?.agentPolicy) } : {}),
         heartbeat: runtimeHooks.heartbeat,
         timeoutMs: runtimeHooks.timeoutMs,
         sessionDiscriminator: runtimeHooks.sessionDiscriminator ?? runBinding.requestId ?? startedAttempt,
@@ -1943,7 +1946,9 @@ export async function runHostedInitialStage(options, dependencies) {
     };
     // A durable round owns its exact response and save request identities.
     // Legacy outer model.started without this marker remains unknown.
-    if (assessment && await checkpoint.readOptional('assessment-enabled')) return perform();
+    if (assessment && (await checkpoint.readOptional('assessment-enabled') ||
+        (modelInput.executionMode === PROGRAM_AGENT_MODE && await checkpoint.readOptional('program-agent-enabled'))))
+      return perform();
     if (operation === 'TRANSLATE' && options.modelExecutor === 'CODEX' && runtimeHooks.codexTranslationBinding) {
       const binding = { ...runtimeHooks.codexTranslationBinding,
         workItemRevision: initial.workItemRevision,
@@ -2086,6 +2091,27 @@ async function reportStoppedAssessment({ checkpoint, report, runBinding, operati
     const claim = await checkpoint.readOptional('assessment-current-claim');
     const state = await checkpoint.readOptional('assessment-state');
     const task = claim?.task;
+    let modelRound = state?.round;
+    if (task?.modelInput?.executionMode === PROGRAM_AGENT_MODE) {
+      const agent = await checkpoint.readOptional('program-agent-enabled');
+      const expected = { operation, modelInput: claim.modelInput,
+        sessionDiscriminator: runBinding.requestId ?? claim.attemptRef,
+        executionModel: task.executionModel, modelExecutor: 'CODEX',
+        assessmentBinding: { attemptRef: claim.attemptRef, actionAttemptId: task.actionAttemptId,
+          workItemId: task.workItemId, documentVersionId: task.documentVersionId,
+          inputRevision: task.inputRevision, baseRevision: task.baseRevision },
+        agentPolicy: task.modelInput.agentPolicy };
+      if (operation !== 'EVALUATE_JOBAID' || runBinding.modelExecutor !== 'CODEX' ||
+          claim.modelInput?.executionMode !== PROGRAM_AGENT_MODE ||
+          !isDeepStrictEqual(claim.modelInput, task.modelInput.modelInput) ||
+          agent?.version !== 2 || agent.sealVersion !== 2 ||
+          !isDeepStrictEqual(agent.binding, expected) ||
+          !isDeepStrictEqual(agent.generationPolicy, task.modelInput.agentPolicy))
+        throw new Error('JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED');
+      // The existing Host field identifies the outer candidate round. Each
+      // internal provider dispatch remains separately counted in its ledger.
+      modelRound = 1;
+    }
     const kind = operation === 'EVALUATE_JOBAID' ? 'dynamic' : 'overall';
     const prefix = ['openclaw-v2', kind, runBinding.workItemId, runBinding.documentVersionId, ''].join(':');
     const requestId = typeof task?.idempotencyKey === 'string' && task.idempotencyKey.startsWith(prefix)
@@ -2099,7 +2125,7 @@ async function reportStoppedAssessment({ checkpoint, report, runBinding, operati
         task.taskType !== (operation === 'EVALUATE_JOBAID' ? 'OPENCLAW_DYNAMIC_EVALUATION' : 'OPENCLAW_OVERALL_SYNTHESIS') ||
         task.inputRevision !== inputRevision || requestId !== runBinding.requestId ||
         typeof claim.leaseToken !== 'string' || !Number.isSafeInteger(claim.leaseGeneration) ||
-        !Number.isSafeInteger(state?.round) || state.round < 1 || state.round > 64 ||
+        !Number.isSafeInteger(modelRound) || modelRound < 1 || modelRound > 64 ||
         !/^[A-Z][A-Z0-9_:.-]{0,199}$/u.test(report.errorCode))
       throw new Error('JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED');
     if (typeof hasTool !== 'function' || !await hasTool('record_assessment_consumer_stopped'))
@@ -2109,7 +2135,7 @@ async function reportStoppedAssessment({ checkpoint, report, runBinding, operati
     const receipt = await callTool('record_assessment_consumer_stopped', {
       attemptRef: claim.attemptRef, leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration,
       requestId: runBinding.requestId, documentVersionId: runBinding.documentVersionId,
-      inputRevision, modelRound: state.round, errorCode: report.errorCode, upstreamOutcome: 'UNKNOWN',
+      inputRevision, modelRound, errorCode: report.errorCode, upstreamOutcome: 'UNKNOWN',
     });
     if (receipt?.status !== 'RECORDED' || receipt.attemptRef !== claim.attemptRef ||
         receipt.upstreamOutcome !== 'UNKNOWN' || typeof receipt.replayed !== 'boolean' ||

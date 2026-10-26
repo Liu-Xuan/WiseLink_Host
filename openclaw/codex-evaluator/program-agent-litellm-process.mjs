@@ -1,9 +1,10 @@
-// Explicit candidate adapter injection only. No provider registration, routing
-// discovery, credential lookup, HTTP service or Responses/SSE conversion here.
+// Candidate adapter process and lazy existing-route configuration. No provider
+// registration, route discovery, HTTP service or Responses/SSE conversion here.
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { isAbsolute, resolve } from 'node:path';
+import { access, readFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { delimiter, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCheckpointStore } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 import { canonicalJson, canonicalSha256 } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
@@ -13,10 +14,70 @@ const fail = code => { throw new Error(code); };
 const STOP_CODES = new Set(['PROGRAM_AGENT_USER_CANCELLED', 'PROGRAM_AGENT_HEARTBEAT_FAILED',
   'PROGRAM_AGENT_DEADLINE_EXPIRED', 'PROGRAM_AGENT_TOOL_UNKNOWN', 'PROGRAM_AGENT_DISPATCH_UNKNOWN',
   'PROGRAM_AGENT_CLI_EXITED', 'PROGRAM_AGENT_SESSION_CLOSED', 'PROGRAM_AGENT_CLI_OUTPUT_LIMIT']);
+const MIAODA_BASE = 'https://innerapi.aiforce.cloud/innerapi/api/v1/sgw/model/proxy';
+const SECRET_RESOLVER = '/home/gem/.npm-global/lib/node_modules/openclaw/dist/plugin-sdk/runtime-secret-resolution.js';
 
-export function createProgramAgentLiteLLMDispatch({ pythonBinary, apiBase, apiKey }) {
+/** Reuse the selected Codex config and installed official file-SecretRef
+ * resolver. No route registration, credential copying, or catalogue budget. */
+export async function resolveProgramAgentAdapterConfig(codexOptions, { env = process.env, resolveSecretRefValues } = {}) {
+  if (!isAbsolute(codexOptions?.configPath ?? '')) fail('PROGRAM_AGENT_ADAPTER_CONFIGURATION_REQUIRED');
+  let config;
+  try { config = JSON.parse(await readFile(codexOptions.configPath, 'utf8')); }
+  catch { fail('PROGRAM_AGENT_ADAPTER_CONFIGURATION_UNREADABLE'); }
+  const provider = config?.models?.providers?.miaoda;
+  const apiBase = provider?.baseUrl ?? provider?.baseURL;
+  if (typeof apiBase !== 'string' || apiBase.replace(/\/+$/u, '') !== MIAODA_BASE ||
+      !Array.isArray(provider.models) || provider.models.filter(model => model?.id === 'glm-5.3').length !== 1 ||
+      !provider.headers || Object.keys(provider.headers).length !== 1 ||
+      !Object.hasOwn(provider.headers, 'x-api-key')) fail('PROGRAM_AGENT_ADAPTER_PROVIDER_INVALID');
+  let pythonBinary = codexOptions.pythonBinary;
+  if (pythonBinary === undefined) {
+    // Preserve the existing runner's python3/PATH choice, resolving it before
+    // the child's deliberately minimal environment is installed.
+    for (const directory of (env.PATH ?? '').split(delimiter).filter(isAbsolute)) {
+      const candidate = resolve(directory, 'python3');
+      try { await access(candidate, constants.X_OK); pythonBinary = candidate; break; } catch {}
+    }
+  }
+  if (!isAbsolute(pythonBinary ?? '')) fail('PROGRAM_AGENT_ADAPTER_PYTHON_REQUIRED');
+  let resolver = resolveSecretRefValues;
+  if (resolver === undefined) {
+    try { resolver = (await import(SECRET_RESOLVER)).resolveSecretRefValues; }
+    catch { fail('PROGRAM_AGENT_OFFICIAL_SECRET_RESOLVER_UNAVAILABLE'); }
+  }
+  if (typeof resolver !== 'function') fail('PROGRAM_AGENT_OFFICIAL_SECRET_RESOLVER_UNAVAILABLE');
+  const secret = async ref => {
+    if (!ref || ref.source !== 'file' || typeof ref.provider !== 'string' || !ref.provider ||
+        typeof ref.id !== 'string' || !ref.id || config?.secrets?.providers?.[ref.provider]?.source !== 'file')
+      fail('PROGRAM_AGENT_FILE_SECRET_REF_REQUIRED');
+    let values;
+    try { values = await resolver([ref], { config, env }); }
+    catch { fail('PROGRAM_AGENT_SECRET_RESOLUTION_FAILED'); }
+    if (!(values instanceof Map) || values.size !== 1) fail('PROGRAM_AGENT_SECRET_RESOLUTION_FAILED');
+    const [value] = values.values();
+    if (typeof value !== 'string' || !value || /[\r\n]/u.test(value)) fail('PROGRAM_AGENT_SECRET_RESOLUTION_FAILED');
+    return value;
+  };
+  return { pythonBinary, apiBase: MIAODA_BASE, apiKey: await secret(provider.apiKey),
+    headers: { 'x-api-key': await secret(provider.headers['x-api-key']) } };
+}
+
+export function createConfiguredProgramAgentLiteLLMDispatch(codexOptions) {
+  let dispatch;
+  return async request => {
+    // Complete local receipt recovery never enters this closure or resolves a
+    // secret. A fresh send retains the original config route for this session.
+    dispatch ??= resolveProgramAgentAdapterConfig(codexOptions).then(createProgramAgentLiteLLMDispatch);
+    return (await dispatch)(request);
+  };
+}
+
+export function createProgramAgentLiteLLMDispatch({ pythonBinary, apiBase, apiKey, headers = {} }) {
   if (!isAbsolute(pythonBinary ?? '') || typeof apiKey !== 'string' || !apiKey ||
-      typeof apiBase !== 'string' || !/^https?:\/\//u.test(apiBase))
+      typeof apiBase !== 'string' || !/^https?:\/\//u.test(apiBase) ||
+      !headers || typeof headers !== 'object' || Array.isArray(headers) ||
+      Object.entries(headers).some(([key, value]) => key !== 'x-api-key' ||
+        typeof value !== 'string' || !value || /[\r\n]/u.test(value)))
     fail('PROGRAM_AGENT_ADAPTER_CONFIGURATION_REQUIRED');
   return async request => {
     const { runDirectory, ordinal, nativeAdmission, generationDeadlineAt, signal } = request;
@@ -87,7 +148,7 @@ export function createProgramAgentLiteLLMDispatch({ pythonBinary, apiBase, apiKe
         executionModel: request.executionModel, maxOutputTokens: request.maxOutputTokens,
         nativeAdmission, directory, generationDeadlineAt,
         timeoutSeconds: Math.min(remainingMs, Date.parse(generationDeadlineAt) - Date.now()) / 1000,
-        apiBase, apiKey }));
+        apiBase, apiKey, headers }));
       exit = await completion;
     } finally {
       clearTimeout(deadlineTimer); clearTimeout(killTimer);

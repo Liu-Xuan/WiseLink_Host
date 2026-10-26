@@ -111,7 +111,7 @@ class RawChatTerminal:
 async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
         effective_request_bytes: bytes, execution_model: dict, max_output_tokens: int,
         native_admission: dict, directory: Path, api_base: str, api_key: str, timeout_seconds: float,
-        generation_deadline_at: str | None = None):
+        generation_deadline_at: str | None = None, headers: dict | None = None):
     """Return buffered Responses bytes and a private, bound attempt receipt.
 
     A fresh exclusive directory belongs to ONE existing gateway ordinal.
@@ -142,6 +142,23 @@ async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
     total_deadline = asyncio.get_running_loop().time() + remaining
     body = json.loads(effective_request_bytes)
     client_body = json.loads(client_request_bytes)
+    if "schemaVersion" in execution_model:
+        if (set(execution_model) != {"modelRef", "displayName", "providerKind", "settingsRevision",
+                "selectedAt", "schemaVersion", "maxOutputTokens"} or
+                execution_model["schemaVersion"] != "wiselink.3_1.execution_model_selection.v2" or
+                type(execution_model["settingsRevision"]) is not int or
+                not 1 <= execution_model["settingsRevision"] <= 9007199254740991 or
+                type(execution_model["maxOutputTokens"]) is not int or
+                not 1 <= execution_model["maxOutputTokens"] <= 9007199254740991 or
+                execution_model["maxOutputTokens"] != max_output_tokens):
+            raise TerminalRejected("ADAPTER_SELECTION_BINDING_INVALID")
+    elif "maxOutputTokens" in execution_model:
+        raise TerminalRejected("ADAPTER_SELECTION_BINDING_INVALID")
+    headers = {} if headers is None else headers
+    if (not isinstance(headers, dict) or any(name != "x-api-key" or
+            not isinstance(value, str) or not value or "\r" in value or "\n" in value
+            for name, value in headers.items())):
+        raise TerminalRejected("ADAPTER_HEADER_INVALID")
     if (execution_model.get("modelRef") != "miaoda/glm-5.3" or
             type(max_output_tokens) is not int or max_output_tokens < 1 or
             body.get("max_output_tokens") != max_output_tokens or
@@ -221,7 +238,7 @@ async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
 
     http = httpx.AsyncClient(transport=OneAttemptTransport(), trust_env=False,
                             follow_redirects=False, timeout=remaining)
-    client = AsyncOpenAI(api_key=api_key, base_url=api_base, max_retries=0,
+    client = AsyncOpenAI(api_key=api_key, base_url=api_base, default_headers=headers, max_retries=0,
                          timeout=remaining, http_client=http)
     original_create = client.chat.completions.with_raw_response.create
 
@@ -331,7 +348,7 @@ async def _dispatch_stdio():
             effective_request_bytes=base64.b64decode(value["effectiveRequestBytes"], validate=True),
             execution_model=value["executionModel"], max_output_tokens=value["maxOutputTokens"],
             native_admission=value["nativeAdmission"], directory=Path(value["directory"]),
-            api_base=value["apiBase"], api_key=value["apiKey"], timeout_seconds=value["timeoutSeconds"],
+            api_base=value["apiBase"], api_key=value["apiKey"], headers=value.get("headers"), timeout_seconds=value["timeoutSeconds"],
             generation_deadline_at=value["generationDeadlineAt"])
         return 0
     except asyncio.CancelledError:
