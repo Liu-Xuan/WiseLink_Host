@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createProgramAgentSession, validateProgramAgentCandidate } from './program-agent-session.mjs';
@@ -10,6 +10,9 @@ import { prepareProgramAgentMaterials } from '../skills/wiselink-research-and-sy
 import { runProgramAgentGateway } from './program-agent-gateway.mjs';
 import { createCheckpointStore } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
 import { invokeHostedProgramAssessmentAgent } from '../skills/wiselink-research-and-synthesize/scripts/run-program-assessment.mjs';
+import { canonicalJson } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
+import fsPromises from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 
 // User-supplied Host 7d07 synthetic examples; never replay to a real Host.
 const originalPage = JSON.parse(await readFile(new URL('./fixtures/program-agent-v3-original-page.json', import.meta.url)));
@@ -290,7 +293,7 @@ function providerResponse(request) {
       upstreamRequestSha256: sha(upstreamRequestBytes), upstreamResponseSha256: sha(upstreamResponseBytes) } };
 }
 
-async function gatewayFixture(t, includeStatement) {
+async function gatewayFixture(t, includeStatement, dispatch = providerResponse) {
   const root = await scratch(t), data = sourceData(includeStatement);
   const checkpoint = await createCheckpointStore(join(root, 'checkpoint'));
   const selected = [data.modelInput.availableSources[0].ref];
@@ -327,7 +330,7 @@ async function gatewayFixture(t, includeStatement) {
   };
   let originalGatewayInput;
   const invoke = () => invokeHostedProgramAssessmentAgent({ operation: 'EVALUATE_JOBAID', modelInput: data.modelInput }, options,
-    { providerDispatch: async request => { counters.provider++; return providerResponse(request); },
+    { providerDispatch: async request => { counters.provider++; return dispatch(request); },
       runCodexAgent: async input => { originalGatewayInput ??= input; return runProgramAgentGateway(input); } });
   return { ...data, root, checkpoint, counters, options, invoke,
     recoverExact: () => runProgramAgentGateway(originalGatewayInput) };
@@ -340,14 +343,14 @@ for (const code of ['JOBAID_SOURCE_AUTHORIZATION_CHANGED', 'JOBAID_SOURCE_VERSIO
     let failure;
     try { await f.invoke(); } catch (error) { failure = error.message; }
     const link = await f.checkpoint.readOptional('program-agent-run');
-    const child = JSON.parse(await readFile(join(link.runDirectory, 'synthetic-child-observations.json')));
+    const child = await readFile(join(link.runDirectory, 'synthetic-child-observations.json'), 'utf8')
+      .then(JSON.parse).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
     t.diagnostic(JSON.stringify({ failure, providerCalls: f.counters.provider, saveCalls: f.counters.save,
-      readStatus: child.source.status, afterReadPostStatus: child.after?.status }));
+      readStatus: child?.source.status ?? 'CLI_STOPPED', afterReadPostStatus: child?.after?.status ?? 'NOT_DISPATCHED' }));
     assert.equal(f.counters.provider, 1);
     assert.equal(failure, 'PROGRAM_AGENT_OUTCOME_UNKNOWN');
     assert.equal(f.counters.save, 0);
-    assert.equal(child.source.status, 502);
-    assert.equal(child.after.status, 502);
+    if (child) { assert.equal(child.source.status, 502); assert.equal(child.after.status, 502); }
     assert.equal(JSON.stringify(child).includes('SYNTHETIC_PRIVATE_DETAIL'), false);
     const ledgerFile = join(link.runDirectory, 'ledger/dispatch-1.started.json');
     const ledgerBefore = await readFile(ledgerFile);
@@ -356,11 +359,8 @@ for (const code of ['JOBAID_SOURCE_AUTHORIZATION_CHANGED', 'JOBAID_SOURCE_VERSIO
     assert.equal(await f.checkpoint.readOptional('program-agent-candidate.result'), null);
     assert.equal(await f.checkpoint.readOptional('program-save-request'), null);
     await assert.rejects(f.recoverExact(), /PROGRAM_AGENT_OUTCOME_UNKNOWN/u);
-    // Existing parent checkpoint canonicalization changes JSON property order
-    // used by the gateway's frozen material hashes. Preserve this safe refusal,
-    // rather than changing old hashes or claiming parent re-entry succeeds.
-    await assert.rejects(f.invoke(), /PROGRAM_AGENT_BINDING_MISMATCH/u);
-    t.diagnostic('exact frozen recovery: OUTCOME_UNKNOWN; parent re-entry: BINDING_MISMATCH; neither dispatches');
+    await assert.rejects(f.invoke(), /PROGRAM_AGENT_OUTCOME_UNKNOWN/u);
+    t.diagnostic('new seal v2: exact and parent re-entry remain UNKNOWN; neither dispatches');
     assert.deepEqual(await readFile(ledgerFile), ledgerBefore);
     assert.equal(f.counters.provider, 1);
     assert.equal(f.counters.save, 0);
@@ -390,4 +390,129 @@ test('v3 complete closure is persisted and delivered through gateway then accept
   t.diagnostic(JSON.stringify({ providerCalls: f.counters.provider, syntheticSaveCalls: f.counters.save,
     returnedEvidenceRefs: receipt.deliveredRefs.length, modelBudget: receipt.dispatches[0].maxOutputTokens,
     sameSaveKey: true, independentRead: true }));
+});
+
+async function interruptBeforeParentResult(f) {
+  let interrupted = false;
+  f.options.assessmentCheckpoint = { ...f.checkpoint, writeOnce: async (key, value) => {
+    if (key === 'program-agent-candidate.result' && !interrupted) {
+      interrupted = true;
+      throw new Error('SYNTHETIC_PARENT_RESULT_NOT_WRITTEN');
+    }
+    return f.checkpoint.writeOnce(key, value);
+  } };
+  await assert.rejects(f.invoke(), /SYNTHETIC_PARENT_RESULT_NOT_WRITTEN/u);
+  const link = await f.checkpoint.readOptional('program-agent-run');
+  assert.equal(await f.checkpoint.readOptional('program-agent-candidate.result'), null);
+  assert.equal(f.counters.provider, 1); assert.equal(f.counters.save, 0);
+  return link;
+}
+
+test('seal v2 checkpoint roundtrip recovers complete child receipt before parent result without generation', async t => {
+  const f = await gatewayFixture(t, true);
+  const link = await interruptBeforeParentResult(f);
+  const sealedPath = join(link.runDirectory, 'program-agent-binding.json');
+  const sealedBytes = await readFile(sealedPath), sealed = JSON.parse(sealedBytes);
+  const materials = await f.checkpoint.readOptional('program-agent-materials');
+  assert.equal(sealed.version, 2);
+  assert.equal(sealed.schemaVersion, 'wiselink.native.program-agent-seal.v2');
+  assert.equal(sealed.materialsSha256, sha(canonicalJson(materials)));
+  assert.equal(sealed.originalInputSha256, sha(canonicalJson(materials.originalInput)));
+  assert.equal(sealed.directorySha256, sha(canonicalJson(materials.directory)));
+  assert.equal(sealed.promptSha256, sha(await readFile(join(link.runDirectory, 'codex-prompt.txt'))));
+  const childPath = join(link.runDirectory, 'program-agent-final-receipt.json');
+  const childBytes = await readFile(childPath);
+  const reservation = await readFile(join(link.runDirectory, 'ledger/dispatch-1.started.json'));
+  // A trustworthy final child receipt is sufficient; no lower prompt/runner
+  // reconstruction is required to restore the missing parent result.
+  await rm(join(link.runDirectory, 'codex-prompt.txt'));
+  const result = await f.invoke();
+  const savedKey = (await f.checkpoint.readOptional('program-save-request')).requestId;
+  assert.equal((await f.checkpoint.readOptional('program-work-readback')).revision.requestId, savedKey);
+  assert.deepEqual(await f.invoke(), result);
+  assert.equal((await f.checkpoint.readOptional('program-save-request')).requestId, savedKey);
+  assert.deepEqual(await readFile(childPath), childBytes);
+  assert.deepEqual(await readFile(sealedPath), sealedBytes);
+  assert.deepEqual(await readFile(join(link.runDirectory, 'ledger/dispatch-1.started.json')), reservation);
+  assert.equal(f.counters.provider, 1); assert.equal(f.counters.save, 1);
+  t.diagnostic(JSON.stringify({ sealVersion: 2, checkpointRoundtrip: true,
+    recoveredChildReceipt: true, providerCalls: 1, recoveryDispatches: 0,
+    syntheticSaveCalls: 1, sameSaveKey: true, independentRead: true, stageEndProved: false }));
+});
+
+test('seal v2 rejects altered material and corrupt receipt without changing original reservation or generating', async t => {
+  const f = await gatewayFixture(t, true);
+  const link = await interruptBeforeParentResult(f);
+  const reservationPath = join(link.runDirectory, 'ledger/dispatch-1.started.json');
+  const before = await readFile(reservationPath);
+  const originalMaterials = await f.checkpoint.readOptional('program-agent-materials');
+  const changed = structuredClone(originalMaterials); changed.directory.syntheticTamper = true;
+  await f.checkpoint.write('program-agent-materials', changed);
+  await assert.rejects(f.invoke(), /PROGRAM_AGENT_BINDING_MISMATCH|REVIEW_CHECKPOINT/u);
+  await f.checkpoint.write('program-agent-materials', originalMaterials);
+  const receiptPath = join(link.runDirectory, 'program-agent-final-receipt.json');
+  const receipt = JSON.parse(await readFile(receiptPath)); receipt.raw += ' ';
+  await writeFile(receiptPath, JSON.stringify(receipt));
+  await assert.rejects(f.invoke(), /PROGRAM_AGENT_OUTCOME_UNKNOWN/u);
+  assert.equal(f.counters.provider, 1); assert.equal(f.counters.save, 0);
+  assert.deepEqual(await readFile(reservationPath), before);
+});
+
+test('seal v2 refuses a changed task deadline without refreshing generation budget', async t => {
+  const f = await gatewayFixture(t, true);
+  const link = await interruptBeforeParentResult(f);
+  const before = await readFile(join(link.runDirectory, 'program-agent-binding.json'));
+  f.options.taskDeadline = new Date(Date.parse(f.options.taskDeadline) + 60_000).toISOString();
+  await assert.rejects(f.invoke(), /PROGRAM_AGENT_CHECKPOINT_BINDING_MISMATCH/u);
+  assert.deepEqual(await readFile(join(link.runDirectory, 'program-agent-binding.json')), before);
+  assert.equal(f.counters.provider, 1); assert.equal(f.counters.save, 0);
+});
+
+test('seal v2 cancellation during final candidate read cannot publish a complete child receipt', async t => {
+  const f = await gatewayFixture(t, true), controller = new AbortController();
+  f.options.signal = controller.signal;
+  const originalRead = fsPromises.readFile;
+  const mocked = t.mock.method(fsPromises, 'readFile', async (path, ...args) => {
+    const bytes = await originalRead(path, ...args);
+    if (String(path).endsWith('/final.txt')) controller.abort();
+    return bytes;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { mocked.mock.restore(); syncBuiltinESMExports(); });
+  await assert.rejects(f.invoke(), /PROGRAM_AGENT_OUTCOME_UNKNOWN/u);
+  const link = await f.checkpoint.readOptional('program-agent-run');
+  await assert.rejects(readFile(join(link.runDirectory, 'program-agent-final-receipt.json')), { code: 'ENOENT' });
+  assert.equal(await f.checkpoint.readOptional('program-agent-candidate.result'), null);
+  assert.equal(await f.checkpoint.readOptional('program-save-request'), null);
+  assert.equal(f.counters.provider, 1); assert.equal(f.counters.save, 0);
+});
+
+test('seal v2 parent reservation cannot recreate a missing original run directory', async t => {
+  const f = await gatewayFixture(t, true);
+  const link = await interruptBeforeParentResult(f);
+  const original = join(f.root, 'retained-original-child');
+  await rename(link.runDirectory, original);
+  const before = await readFile(join(original, 'ledger/dispatch-1.started.json'));
+  await assert.rejects(f.invoke(), /PROGRAM_AGENT_OUTCOME_UNKNOWN/u);
+  await assert.rejects(readFile(join(link.runDirectory, 'program-agent-binding.json')), { code: 'ENOENT' });
+  assert.deepEqual(await readFile(join(original, 'ledger/dispatch-1.started.json')), before);
+  assert.equal(f.counters.provider, 1); assert.equal(f.counters.save, 0);
+});
+
+test('seal v2 rejects a production-protocol receipt without its exact frozen deadline', async t => {
+  const f = await gatewayFixture(t, true, request => {
+    const result = providerResponse(request);
+    Object.assign(result.receipt, { upstreamProtocol: 'litellm-1.106.4-chat-completions-sse',
+      nativeAdmission: request.nativeAdmission, litellmVersion: '1.106.4', openaiSdkVersion: '2.54.0',
+      transportCleanEnd: true, internalHttpAttemptCount: 1, blockedAdditionalHttpAttempts: 0,
+      cancelled: false, errorCode: null, deadlineBasis: 'SEALED_ABSOLUTE',
+      generationDeadlineAt: new Date(Date.parse(request.generationDeadlineAt) + 60_000).toISOString() });
+    result.receipt.terminal.basis = 'openai-sdk-raw-chat';
+    return result;
+  });
+  await assert.rejects(f.invoke(), /PROGRAM_AGENT_OUTCOME_UNKNOWN/u);
+  const link = await f.checkpoint.readOptional('program-agent-run');
+  await assert.rejects(readFile(join(link.runDirectory, 'ledger/dispatch-1.result.json')), { code: 'ENOENT' });
+  assert.equal(await f.checkpoint.readOptional('program-agent-candidate.result'), null);
+  assert.equal(f.counters.provider, 1); assert.equal(f.counters.save, 0);
 });

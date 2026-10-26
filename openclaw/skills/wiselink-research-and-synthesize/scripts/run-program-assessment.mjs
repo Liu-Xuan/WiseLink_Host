@@ -11,7 +11,7 @@ import { canonicalJson, canonicalSha256, WISELINK_HOST_MCP_NAME, WISELINK_HOST_M
   WISELINK_PROFILE_REF, WISELINK_SKILL_VERSION, validateExecutionModelSelection } from './validate-payload.mjs';
 import { hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
 import { modelExecutor, modelExecutorProvenance, modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway, codexParentRunRecorder } from './model-executor.mjs';
-import { runProgramAgentGateway } from '../../../codex-evaluator/program-agent-gateway.mjs';
+import { runProgramAgentGateway, PROGRAM_AGENT_SEAL_VERSION } from '../../../codex-evaluator/program-agent-gateway.mjs';
 import { validateProgramAgentCandidate } from '../../../codex-evaluator/program-agent-session.mjs';
 
 const OUTPUT_FUNCTION = 'return_wiselink_program_assessment';
@@ -488,19 +488,30 @@ export async function invokeHostedProgramAssessmentAgent({ operation, modelInput
       !isDeepStrictEqual(enabled.generationPolicy, policy)))
     throw new Error('PROGRAM_AGENT_CHECKPOINT_BINDING_MISMATCH');
   if (!enabled) {
-    enabled = { version: 1, binding, generationPolicy: policy, startedAt: Date.now() };
+    const startedAt = Date.now();
+    enabled = { version: 2, sealVersion: PROGRAM_AGENT_SEAL_VERSION,
+      binding, generationPolicy: policy, startedAt, taskDeadline: options.taskDeadline,
+      generationDeadlineAt: new Date(Math.min(hostDeadline, startedAt + policy.timeoutSeconds * 1000)).toISOString() };
     await checkpoint.writeOnce('program-agent-enabled', enabled);
   }
-  if (!Number.isSafeInteger(enabled.startedAt) || enabled.startedAt < 0)
+  if (!Number.isSafeInteger(enabled.startedAt) || enabled.startedAt < 0 ||
+      ![1, 2].includes(enabled.version))
     throw new Error('PROGRAM_AGENT_CHECKPOINT_BINDING_MISMATCH');
-  const generationDeadlineAt = new Date(Math.min(hostDeadline,
+  const expectedDeadline = new Date(Math.min(hostDeadline,
     enabled.startedAt + policy.timeoutSeconds * 1000)).toISOString();
+  const sealVersion = enabled.version === 2 ? PROGRAM_AGENT_SEAL_VERSION : 1;
+  if (enabled.version === 2 && (enabled.sealVersion !== sealVersion ||
+      enabled.taskDeadline !== options.taskDeadline || enabled.generationDeadlineAt !== expectedDeadline))
+    throw new Error('PROGRAM_AGENT_CHECKPOINT_BINDING_MISMATCH');
+  const generationDeadlineAt = enabled.version === 2 ? enabled.generationDeadlineAt : expectedDeadline;
   const priorExecution = await checkpoint.readOptional('program-execution');
   if (priorExecution) return priorExecution;
   let materials = await checkpoint.readOptional('program-agent-materials');
   if (!materials) {
     materials = await prepareProgramAgentMaterials(modelInput, options);
     await checkpoint.writeOnce('program-agent-materials', materials);
+    if (sealVersion === PROGRAM_AGENT_SEAL_VERSION)
+      materials = await checkpoint.readOptional('program-agent-materials');
   }
   if (!isDeepStrictEqual(materials.originalInput, modelInput) || materials.version !== 2)
     throw new Error('PROGRAM_AGENT_MATERIALS_BINDING_MISMATCH');
@@ -529,21 +540,25 @@ export async function invokeHostedProgramAssessmentAgent({ operation, modelInput
   await recordProgress('MATERIALS_READY', 'program-agent-materials', JSON.stringify({ materials, modelRequest }));
   const requestId = `program-agent:${hostBinding.attemptRef}:candidate-1`;
   const candidateBinding = { hostBinding, requestBodySha256: createHash('sha256').update(body).digest('hex'),
-    argsHash, executionModel: options.executionModel, agentPolicy: policy, generationDeadlineAt };
+    argsHash, executionModel: options.executionModel, agentPolicy: policy, generationDeadlineAt,
+    ...(sealVersion === PROGRAM_AGENT_SEAL_VERSION ? { sealVersion } : {}) };
   let responseRecord = await checkpoint.readOptional('program-agent-candidate.result');
   const freshCandidate = !responseRecord;
   if (responseRecord && responseRecord.argsHash !== argsHash)
     throw new Error('PROGRAM_AGENT_CANDIDATE_BINDING_MISMATCH');
   if (!responseRecord) {
+    const recoverOnly = Boolean(await checkpoint.readOptional('program-agent-run') ||
+      await checkpoint.readOptional('program-agent-candidate.started'));
     const onRunPrepared = async prepared => {
       await checkpoint.writeOnceOrEqual('program-agent-run', { requestId,
-        runDirectory: prepared.runDirectory, bindingSha256: prepared.bindingSha256, argsHash });
+        runDirectory: prepared.runDirectory, bindingSha256: prepared.bindingSha256, argsHash,
+        ...(sealVersion === PROGRAM_AGENT_SEAL_VERSION ? { sealVersion } : {}) });
       await checkpoint.writeOnceOrEqual('program-agent-candidate.started', { requestId, argsHash });
     };
     const run = dependencies.runCodexAgent ?? runProgramAgentGateway;
     const value = await run({ requestId, binding: candidateBinding, materials, policy,
       executionModel: options.executionModel, codexOptions: options.codexOptions,
-      generationDeadlineAt, heartbeat: options.heartbeat,
+      generationDeadlineAt, heartbeat: options.heartbeat, sealVersion, signal: options.signal, recoverOnly,
       readAssessmentSources: options.readAssessmentSources,
       readAssessmentWork: options.readAssessmentWork,
       providerDispatch: dependencies.providerDispatch, onRunPrepared });
@@ -556,6 +571,7 @@ export async function invokeHostedProgramAssessmentAgent({ operation, modelInput
     .filter(item => item?.name === 'read_sources' && item.status === 'AVAILABLE')
     .flatMap(item => Array.isArray(item.refs) ? item.refs : []));
   if (!agentReceipt || agentReceipt.version !== 1 || agentReceipt.requestId !== requestId ||
+      (sealVersion === PROGRAM_AGENT_SEAL_VERSION && agentReceipt.sealVersion !== sealVersion) ||
       !isDeepStrictEqual(agentReceipt.binding, candidateBinding) ||
       !isDeepStrictEqual(agentReceipt.executionModel, options.executionModel) ||
       !isDeepStrictEqual(agentReceipt.policy, policy) ||
@@ -574,6 +590,7 @@ export async function invokeHostedProgramAssessmentAgent({ operation, modelInput
       agentReceipt.deliveredRefs.some(ref => !catalogue.has(ref) || !deliveredFromTools.has(ref)) ||
       deliveredFromTools.size !== agentReceipt.deliveredRefs.length ||
       !runLink || runLink.requestId !== requestId || runLink.argsHash !== argsHash ||
+      (sealVersion === PROGRAM_AGENT_SEAL_VERSION && runLink.sealVersion !== sealVersion) ||
       runLink.runDirectory !== agentReceipt.runDirectory ||
       runLink.bindingSha256 !== agentReceipt.bindingSha256)
     throw new Error('PROGRAM_AGENT_RECEIPT_INVALID');

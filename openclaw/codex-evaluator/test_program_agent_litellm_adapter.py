@@ -62,7 +62,8 @@ class FakeUpstream(BaseHTTPRequestHandler):
                 execution_model=data["executionModel"], max_output_tokens=data["maxOutputTokens"],
                 native_admission=data["nativeAdmission"],
                 directory=Path(data["directory"]), api_base=self.server.base,
-                api_key="synthetic-not-a-credential", timeout_seconds=30))
+                api_key="synthetic-not-a-credential", timeout_seconds=data["timeoutSeconds"],
+                generation_deadline_at=data["generationDeadlineAt"]))
             response = json.dumps({key: base64.b64encode(value).decode() if isinstance(value, bytes) else value
                                    for key, value in result.items()}).encode()
             self.send_response(200)
@@ -172,6 +173,12 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
     async def test_cancel_keeps_original_attempt_partial_bytes_and_unknown(self):
         task = asyncio.create_task(self.dispatch("cancel"))
         self.assertTrue(await asyncio.to_thread(self.server.partial_sent.wait, 10))
+        # Server write/flush alone did not prove the client captured a byte.
+        # Synchronize cancellation with the adapter's actual durable first block.
+        async with asyncio.timeout(5):
+            while not (self.root / "adapter/upstream-response.body").exists() or not (
+                    self.root / "adapter/upstream-response.body").stat().st_size:
+                await asyncio.sleep(0.01)
         task.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await task
@@ -180,6 +187,11 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(receipt["cancelled"])
         self.assertEqual(receipt["errorCode"], "ADAPTER_CANCELLED_UNKNOWN")
         self.assertEqual(receipt["internalHttpAttemptCount"], 1)
+        retained = (self.root / "adapter/upstream-response.body").read_bytes()
+        self.assertGreater(len(retained), 0)
+        self.assertEqual(retained, CASES["eof_no_finish"]["wire"].encode())
+        self.assertEqual(receipt["upstreamResponseByteLength"], len(retained))
+        self.assertEqual(receipt["upstreamResponseSha256"], SHA(retained))
         self.assertEqual(len(self.server.posts), 1)
         self.assertEqual((self.root / "adapter/response.sse").read_bytes(), b"")
         with self.assertRaisesRegex(TerminalRejected, "ADAPTER_OUTCOME_UNKNOWN"):

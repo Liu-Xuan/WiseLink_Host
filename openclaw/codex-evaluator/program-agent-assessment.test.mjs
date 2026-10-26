@@ -55,7 +55,8 @@ test('complete parent candidate receipt resumes same SAVE key after lost ACK and
       message: { role: 'assistant', content: null, tool_calls: [{ type: 'function', id: 'fixture-call',
         function: { name: 'return_wiselink_program_assessment',
           arguments: JSON.stringify({ workJson: JSON.stringify(work) }) } }] } }] });
-    return { version: 1, requestId: input.requestId, runDirectory: join(root, 'runs', 'synthetic-completed'),
+    return { version: 1, sealVersion: input.sealVersion,
+      requestId: input.requestId, runDirectory: join(root, 'runs', 'synthetic-completed'),
       bindingSha256: 'a'.repeat(64), binding: input.binding,
       executionModel: input.executionModel, policy: input.policy,
       generationDeadlineAt: input.generationDeadlineAt,

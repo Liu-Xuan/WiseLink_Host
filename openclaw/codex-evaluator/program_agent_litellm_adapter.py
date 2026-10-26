@@ -7,9 +7,15 @@ The caller owns the existing gateway dispatch reservation and private run root.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
+import math
 import os
+import signal
+import sys
+import time
+from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
 
@@ -104,7 +110,8 @@ class RawChatTerminal:
 
 async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
         effective_request_bytes: bytes, execution_model: dict, max_output_tokens: int,
-        native_admission: dict, directory: Path, api_base: str, api_key: str, timeout_seconds: int):
+        native_admission: dict, directory: Path, api_base: str, api_key: str, timeout_seconds: float,
+        generation_deadline_at: str | None = None):
     """Return buffered Responses bytes and a private, bound attempt receipt.
 
     A fresh exclusive directory belongs to ONE existing gateway ordinal.
@@ -117,6 +124,22 @@ async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
     import litellm
     from openai import AsyncOpenAI
 
+    entered_at = time.monotonic()
+    if (isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)) or
+            not math.isfinite(timeout_seconds) or timeout_seconds <= 0):
+        raise TerminalRejected("ADAPTER_DEADLINE_INVALID")
+    remaining = float(timeout_seconds)
+    if generation_deadline_at is not None:
+        try:
+            frozen = datetime.fromisoformat(generation_deadline_at.replace("Z", "+00:00"))
+            if frozen.tzinfo is None:
+                raise ValueError()
+            remaining = min(remaining, frozen.timestamp() - time.time())
+        except (AttributeError, TypeError, ValueError):
+            raise TerminalRejected("ADAPTER_DEADLINE_INVALID") from None
+    if remaining <= 0:
+        raise TerminalRejected("ADAPTER_DEADLINE_EXPIRED")
+    total_deadline = asyncio.get_running_loop().time() + remaining
     body = json.loads(effective_request_bytes)
     client_body = json.loads(client_request_bytes)
     if (execution_model.get("modelRef") != "miaoda/glm-5.3" or
@@ -130,7 +153,9 @@ async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
             native_admission.get("clientRequestSha256") != digest(client_request_bytes) or
             native_admission.get("effectiveRequestSha256") != digest(effective_request_bytes) or
             native_admission.get("executionModel") != execution_model or
-            native_admission.get("maxOutputTokens") != max_output_tokens):
+            native_admission.get("maxOutputTokens") != max_output_tokens or
+            ("generationDeadlineAt" in native_admission and
+             native_admission["generationDeadlineAt"] != generation_deadline_at)):
         raise TerminalRejected("ADAPTER_INPUT_BINDING_INVALID")
     directory = Path(directory)
     try:
@@ -150,6 +175,8 @@ async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
             self.transport = httpx.AsyncHTTPTransport(retries=0)
 
         async def handle_async_request(self, request):
+            if asyncio.get_running_loop().time() >= total_deadline:
+                raise TerminalRejected("ADAPTER_DEADLINE_EXPIRED_UNKNOWN")
             if capture["internalHttpAttemptCount"]:
                 capture["blockedAdditionalHttpAttempts"] += 1
                 raise TerminalRejected("ADAPTER_HTTP_REDISPATCH_BLOCKED")
@@ -175,9 +202,15 @@ async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
             # SDK may stop at DONE without draining an otherwise valid body;
             # that short circuit must not masquerade as a full body capture.
             try:
-                async for part in response.stream:
-                    capture["response"].extend(part)
-                capture["transportCleanEnd"] = True
+                response_fd = os.open(directory / "upstream-response.body",
+                                      os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(response_fd, "wb") as retained:
+                    async for part in response.stream:
+                        capture["response"].extend(part)
+                        retained.write(part)
+                        retained.flush()
+                        os.fsync(retained.fileno())
+                    capture["transportCleanEnd"] = True
             finally:
                 await response.aclose()
             return httpx.Response(response.status_code, headers=response.headers,
@@ -187,9 +220,9 @@ async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
             await self.transport.aclose()
 
     http = httpx.AsyncClient(transport=OneAttemptTransport(), trust_env=False,
-                            follow_redirects=False, timeout=timeout_seconds)
+                            follow_redirects=False, timeout=remaining)
     client = AsyncOpenAI(api_key=api_key, base_url=api_base, max_retries=0,
-                         timeout=timeout_seconds, http_client=http)
+                         timeout=remaining, http_client=http)
     original_create = client.chat.completions.with_raw_response.create
 
     class GuardedResponse:
@@ -207,16 +240,24 @@ async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
     # CustomStreamWrapper/map_finish_reason. No global patch or SSE parser.
     client.chat.completions.with_raw_response.create = guarded_create
     events, error_code, cancelled = [], None, None
-    try:
+    async def generate():
         call = {**body, "model": "custom_openai/glm-5.3", "api_base": api_base,
                 "api_key": api_key, "client": client, "num_retries": 0,
-                "max_retries": 0, "drop_params": False, "timeout": timeout_seconds}
+                "max_retries": 0, "drop_params": False, "timeout": remaining}
         stream = await litellm.aresponses(**call)
         async for event in stream:
             events.append(event.model_dump(exclude_none=True))
         if (not terminal.receipt["sdkStreamExhausted"] or not capture["transportCleanEnd"] or
                 capture["internalHttpAttemptCount"] != 1 or capture["blockedAdditionalHttpAttempts"]):
             raise TerminalRejected("ADAPTER_STREAM_OUTCOME_UNKNOWN")
+    try:
+        # This is the remaining sealed total deadline, not a renewed per-read
+        # timeout. A slow stream cannot extend it by producing another chunk.
+        async with asyncio.timeout_at(total_deadline):
+            await generate()
+    except TimeoutError:
+        capture["cancelled"] = True
+        error_code = "ADAPTER_DEADLINE_EXPIRED_UNKNOWN"
     except asyncio.CancelledError as exc:
         capture["cancelled"] = True
         cancelled, error_code = exc, "ADAPTER_CANCELLED_UNKNOWN"
@@ -244,6 +285,9 @@ async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
         "internalHttpAttemptCount": capture["internalHttpAttemptCount"],
         "blockedAdditionalHttpAttempts": capture["blockedAdditionalHttpAttempts"],
         "cancelled": capture["cancelled"], "errorCode": error_code,
+        "generationDeadlineAt": generation_deadline_at,
+        "deadlineBasis": "SEALED_ABSOLUTE" if generation_deadline_at is not None else "LEGACY_CALL_TIMEOUT",
+        "timeoutSecondsAtEntry": remaining, "durationMs": int((time.monotonic() - entered_at) * 1000),
         "upstreamFinishReason": finish, "reportedModel": None,
         "litellmVersion": version("litellm"), "openaiSdkVersion": version("openai"),
         "maxOutputTokens": max_output_tokens, "executionModel": execution_model,
@@ -251,8 +295,13 @@ async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
         "upstreamRequestSha256": digest(capture["request"]),
         "upstreamResponseSha256": digest(bytes(capture["response"])),
         "responseSha256": digest(response_bytes),
+        "upstreamResponseByteLength": len(capture["response"]),
         "upstreamBodyCapture": "HTTP_ENTITY_BYTES_NOT_TCP_OR_TLS_FRAMES"}
-    durable(directory / "upstream-response.body", bytes(capture["response"]))
+    response_path = directory / "upstream-response.body"
+    if not response_path.exists():
+        durable(response_path, bytes(capture["response"]))
+    elif response_path.read_bytes() != bytes(capture["response"]):
+        raise TerminalRejected("ADAPTER_RESPONSE_PERSISTENCE_UNKNOWN")
     durable_json(directory / "parsed-response-events.json", events)
     durable(directory / "response.sse", response_bytes)
     durable_json(directory / "receipt.json", receipt)
@@ -260,3 +309,44 @@ async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
         raise cancelled
     return {"responseBytes": response_bytes, "upstreamRequestBytes": capture["request"],
             "upstreamResponseBytes": bytes(capture["response"]), "receipt": receipt}
+
+
+async def _dispatch_stdio():
+    """Private one-shot IPC; no HTTP server, provider registry or credentials on disk."""
+    value = json.loads(sys.stdin.buffer.read())
+    task = asyncio.current_task()
+    loop = asyncio.get_running_loop()
+    stopping = False
+
+    def terminate():
+        nonlocal stopping
+        if not stopping:
+            stopping = True
+            task.cancel()
+
+    loop.add_signal_handler(signal.SIGTERM, terminate)
+    try:
+        await dispatch_litellm_candidate(
+            client_request_bytes=base64.b64decode(value["clientRequestBytes"], validate=True),
+            effective_request_bytes=base64.b64decode(value["effectiveRequestBytes"], validate=True),
+            execution_model=value["executionModel"], max_output_tokens=value["maxOutputTokens"],
+            native_admission=value["nativeAdmission"], directory=Path(value["directory"]),
+            api_base=value["apiBase"], api_key=value["apiKey"], timeout_seconds=value["timeoutSeconds"],
+            generation_deadline_at=value["generationDeadlineAt"])
+        return 0
+    except asyncio.CancelledError:
+        return 130
+    finally:
+        loop.remove_signal_handler(signal.SIGTERM)
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] != ["--dispatch-stdio"]:
+        raise SystemExit(2)
+    try:
+        raise SystemExit(asyncio.run(_dispatch_stdio()))
+    except Exception:
+        # Provider errors may contain business text or secrets. Detailed safe
+        # state is in the private receipt; never print the exception or stdin.
+        sys.stderr.write("ADAPTER_PROCESS_OUTCOME_UNKNOWN\n")
+        raise SystemExit(1)

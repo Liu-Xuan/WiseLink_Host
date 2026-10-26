@@ -45,7 +45,8 @@ const options = { requestId: 'synthetic-adapter-budget', binding: { synthetic: t
       body: JSON.stringify({ clientRequestBytes: request.clientRequestBytes.toString('base64'),
         effectiveRequestBytes: request.effectiveRequestBytes.toString('base64'), executionModel: request.executionModel,
         maxOutputTokens: request.maxOutputTokens, nativeAdmission: request.nativeAdmission,
-        directory: join(request.runDirectory, `dispatch-${request.ordinal}.adapter`) }) });
+        generationDeadlineAt: request.generationDeadlineAt, timeoutSeconds: request.timeoutMs / 1000,
+        directory: join(request.runDirectory, `dispatch-${request.ordinal}.adapter`) }), signal: request.signal });
     assert.equal(response.status, 200);
     const result = await response.json();
     for (const field of ['responseBytes', 'upstreamRequestBytes', 'upstreamResponseBytes'])

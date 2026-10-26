@@ -2,12 +2,16 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { mkdir, open, readFile, writeFile } from 'node:fs/promises';
+import { closeSync, fsyncSync, linkSync, openSync, unlinkSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createProgramAgentSession } from './program-agent-session.mjs';
 import { JOBAID_WORK_UPDATE_SHAPE } from '../skills/wiselink-research-and-synthesize/scripts/jobaid-work-shape.mjs';
 import { JOBAID_SEMANTIC_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_GUIDANCE } from '../skills/wiselink-research-and-synthesize/scripts/jobaid-problem-guidance.mjs';
 import { createCheckpointStore } from '../skills/wiselink-research-and-synthesize/scripts/run-hosted-review-turn.mjs';
+import { canonicalJson } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
+
+export const PROGRAM_AGENT_SEAL_VERSION = 2;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -82,6 +86,7 @@ async function bodyOf(request) {
   return Buffer.concat(chunks);
 }
 function send(response, status, bytes, contentType = 'application/json') {
+  if (response.destroyed || response.writableEnded) return;
   response.writeHead(status, { 'content-type': contentType, 'content-length': bytes.length, connection: 'close' });
   response.end(bytes);
 }
@@ -174,48 +179,91 @@ function modelCatalog() {
  * is deliberately no dead-session restart or provider replay. */
 export async function runProgramAgentGateway({ requestId, binding, materials, policy, executionModel,
   codexOptions, readAssessmentSources, readAssessmentWork, providerDispatch, onRunPrepared,
-  generationDeadlineAt, heartbeat }) {
+  generationDeadlineAt, heartbeat, sealVersion = PROGRAM_AGENT_SEAL_VERSION, signal, recoverOnly = false }) {
   if (typeof requestId !== 'string' || !requestId || !record(binding) ||
       !record(materials) || !record(policy) || executionModel?.modelRef !== 'miaoda/glm-5.3' ||
       typeof providerDispatch !== 'function' || !isAbsolute(codexOptions?.codexBinary ?? '') ||
       !isAbsolute(codexOptions?.runRoot ?? '') ||
-      !Number.isFinite(Date.parse(generationDeadlineAt))) fail('PROGRAM_AGENT_GATEWAY_INVALID');
+      !Number.isFinite(Date.parse(generationDeadlineAt)) || ![1, PROGRAM_AGENT_SEAL_VERSION].includes(sealVersion) ||
+      typeof recoverOnly !== 'boolean' ||
+      (signal !== undefined && !(signal instanceof AbortSignal))) fail('PROGRAM_AGENT_GATEWAY_INVALID');
+  // V1 retains its original ordering and hashes. New V2 seals use exactly the
+  // deterministic representation already used by the parent checkpoint store.
+  const represent = sealVersion === PROGRAM_AGENT_SEAL_VERSION ? canonicalJson : JSON.stringify;
+  if (sealVersion === PROGRAM_AGENT_SEAL_VERSION) {
+    materials = JSON.parse(represent(materials));
+    binding = JSON.parse(represent(binding));
+    executionModel = JSON.parse(represent(executionModel));
+    policy = JSON.parse(represent(policy));
+  }
   const root = resolve(codexOptions.runRoot);
-  await mkdir(root, { recursive: true, mode: 0o700 });
+  if (!recoverOnly) await mkdir(root, { recursive: true, mode: 0o700 });
   const runDirectory = resolve(root, `program-agent-${sha(requestId)}`);
   let heartbeatFailure = false, dispatchFailed = false;
-  const canContinue = () => !heartbeatFailure && !dispatchFailed &&
+  let broker, provider, child, heartbeatTimer, deadlineTimer, killTimer;
+  let stopCode = null, childClosed = false, inFlight = 0;
+  const cancellation = new AbortController();
+  const stop = code => {
+    if (!cancellation.signal.aborted) {
+      stopCode = code;
+      cancellation.abort(new Error(code));
+    }
+    if (child && !childClosed) {
+      try { process.kill(-child.pid, 'SIGTERM'); } catch {}
+      killTimer ??= setTimeout(() => {
+        if (!childClosed) try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+      }, 5000);
+      killTimer.unref();
+    }
+  };
+  const externalAbort = () => stop('PROGRAM_AGENT_USER_CANCELLED');
+  const checkHeartbeat = async () => {
+    try { await heartbeat?.(); }
+    catch {
+      heartbeatFailure = true;
+      stop('PROGRAM_AGENT_HEARTBEAT_FAILED');
+      fail('PROGRAM_AGENT_HEARTBEAT_FAILED');
+    }
+  };
+  const canContinue = () => !cancellation.signal.aborted && !signal?.aborted &&
+    !heartbeatFailure && !dispatchFailed &&
     Date.now() < Date.parse(generationDeadlineAt);
   const task = materials.originalInput;
   const prompt = `Produce one complete Chinese engineering work candidate for ${task.purpose}.\n` +
-    `Scope: ${JSON.stringify({ documentTitle: task.documentOverview?.title ?? null,
+    `Scope: ${represent({ documentTitle: task.documentOverview?.title ?? null,
       expectedWorkRevision: task.expectedWorkRevision,
       methodPackRef: task.methodBinding?.packRef ?? null,
       previousWorkRevisionRef: task.previousWork?.workRevisionRef ?? null })}\n` +
     `Read exact source references or private original units on demand; unit IDs and uncitable IDs are not citations.\n` +
     `read_private_units also returns the bound task context, original coverage and findings.\n` +
     `Call validate_candidate for repair feedback. Do not save, finish Host work, use shell/web, or claim approval.\n` +
-    `Required work schema: ${JSON.stringify(JOBAID_WORK_UPDATE_SHAPE)}\n` +
+    `Required work schema: ${represent(JOBAID_WORK_UPDATE_SHAPE)}\n` +
     `${JOBAID_SEMANTIC_GUIDANCE}\n${SOURCE_CONTENT_SYNTHESIS_GUIDANCE}\n` +
     `At the end return only JSON with exactly tool_name=${OUTPUT_FUNCTION} and arguments={workJson:<JSON text>}.\n` +
-    JSON.stringify(materials.directory);
-  const sealed = { version: 1, requestId, binding, executionModel, policy, generationDeadlineAt,
-    materialsSha256: sha(JSON.stringify(materials)),
-    originalInputSha256: sha(JSON.stringify(materials.originalInput)),
-    directorySha256: sha(JSON.stringify(materials.directory)), promptSha256: sha(prompt) };
+    represent(materials.directory);
+  const sealed = JSON.parse(represent({ version: sealVersion,
+    ...(sealVersion === PROGRAM_AGENT_SEAL_VERSION ? { schemaVersion: 'wiselink.native.program-agent-seal.v2' } : {}),
+    requestId, binding, executionModel, policy, generationDeadlineAt,
+    materialsSha256: sha(represent(materials)),
+    originalInputSha256: sha(represent(materials.originalInput)),
+    directorySha256: sha(represent(materials.directory)), promptSha256: sha(prompt) }));
   let fresh = false;
-  try { await mkdir(runDirectory, { mode: 0o700 }); fresh = true; }
-  catch (error) { if (error?.code !== 'EEXIST') throw error; }
+  if (!recoverOnly) {
+    try { await mkdir(runDirectory, { mode: 0o700 }); fresh = true; }
+    catch (error) { if (error?.code !== 'EEXIST') throw error; }
+  }
   const sealedPath = resolve(runDirectory, 'program-agent-binding.json');
   if (!fresh) {
     const prior = await optionalJson(sealedPath);
-    if (JSON.stringify(prior) !== JSON.stringify(sealed)) fail('PROGRAM_AGENT_BINDING_MISMATCH');
+    if (!prior && recoverOnly) fail('PROGRAM_AGENT_OUTCOME_UNKNOWN');
+    if (represent(prior) !== represent(sealed)) fail('PROGRAM_AGENT_BINDING_MISMATCH');
     const completed = await optionalJson(resolve(runDirectory, 'program-agent-final-receipt.json'));
     if (!record(completed) || completed.version !== 1 || completed.requestId !== requestId ||
         completed.runDirectory !== runDirectory || completed.bindingSha256 !== sha(JSON.stringify(sealed)) ||
-        JSON.stringify(completed.binding) !== JSON.stringify(binding) ||
-        JSON.stringify(completed.executionModel) !== JSON.stringify(executionModel) ||
-        JSON.stringify(completed.policy) !== JSON.stringify(policy) ||
+        (sealVersion === PROGRAM_AGENT_SEAL_VERSION && completed.sealVersion !== sealVersion) ||
+        represent(completed.binding) !== represent(binding) ||
+        represent(completed.executionModel) !== represent(executionModel) ||
+        represent(completed.policy) !== represent(policy) ||
         completed.generationDeadlineAt !== generationDeadlineAt ||
         completed.responseSha256 !== sha(completed.raw) || completed.status !== 200 || completed.ok !== true ||
         !Number.isSafeInteger(completed.dispatchCount) || completed.dispatchCount < 1 ||
@@ -237,9 +285,13 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
   const session = createProgramAgentSession({ materials, readAssessmentSources, readAssessmentWork,
     maxToolCalls: policy.maxToolCalls, canContinue,
     persistToolResult: observation => ledger.writeOnce(`tool-${++toolCount}.result`, observation) });
-  let broker, provider, child, heartbeatTimer;
   const report = [];
   let dispatchQueue = Promise.resolve();
+  if (signal?.aborted) externalAbort();
+  else signal?.addEventListener('abort', externalAbort, { once: true });
+  const remainingMs = Date.parse(generationDeadlineAt) - Date.now();
+  if (remainingMs <= 0) stop('PROGRAM_AGENT_DEADLINE_EXPIRED');
+  else deadlineTimer = setTimeout(() => stop('PROGRAM_AGENT_DEADLINE_EXPIRED'), remainingMs);
   try {
     broker = await serverAt(async (request, response) => {
       if (request.method !== 'POST' || request.url !== '/mcp' ||
@@ -252,14 +304,14 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
         if (message.method === 'tools/list') value = { tools: session.tools };
         else if (message.method === 'tools/call') {
           if (!canContinue()) fail('PROGRAM_AGENT_TOOL_STOPPED');
-          try { await heartbeat?.(); }
-          catch { heartbeatFailure = true; fail('PROGRAM_AGENT_HEARTBEAT_FAILED'); }
+          await checkHeartbeat();
           const observation = await session.callTool(message.params?.name, message.params?.arguments);
           value = { content: [{ type: 'text', text: JSON.stringify(observation) }], isError: false };
         }
         send(response, value ? 200 : 400, Buffer.from(JSON.stringify(value ?? { error: 'method_not_allowed' })));
       } catch {
         dispatchFailed = true;
+        stop('PROGRAM_AGENT_TOOL_UNKNOWN');
         send(response, 502, Buffer.from('{"error":"program_agent_tool_unknown"}'));
       }
     });
@@ -269,6 +321,8 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
         send(response, 403, Buffer.from('{"error":"forbidden"}')); return;
       }
       const work = dispatchQueue.then(async () => {
+        if (!canContinue()) fail('PROGRAM_AGENT_DISPATCH_STOPPED');
+        await checkHeartbeat();
         if (!canContinue()) fail('PROGRAM_AGENT_DISPATCH_STOPPED');
         const clientRequestBytes = await bodyOf(request);
         if (!canContinue()) fail('PROGRAM_AGENT_DISPATCH_STOPPED');
@@ -284,21 +338,30 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
         const effectiveRequestBytes = Buffer.from(JSON.stringify({ ...parsed, max_output_tokens: policy.maxOutputTokens }));
         const effectiveRequestSha256 = sha(effectiveRequestBytes);
         const started = { version: 1, ordinal, requestId, clientRequestSha256, effectiveRequestSha256,
-          executionModel, maxOutputTokens: policy.maxOutputTokens, bindingSha256: sha(JSON.stringify(sealed)) };
+          executionModel, maxOutputTokens: policy.maxOutputTokens, bindingSha256: sha(JSON.stringify(sealed)),
+          ...(sealVersion === PROGRAM_AGENT_SEAL_VERSION ? { generationDeadlineAt } : {}) };
         count = ordinal;
         await ledger.writeOnce(`dispatch-${ordinal}.started`, started);
         await durable(resolve(runDirectory, `dispatch-${ordinal}.client.json`), clientRequestBytes);
         await durable(resolve(runDirectory, `dispatch-${ordinal}.effective.json`), effectiveRequestBytes);
         if (!canContinue()) fail('PROGRAM_AGENT_DISPATCH_STOPPED');
-        const result = await providerDispatch({ ordinal, requestId, runDirectory, binding,
-          executionModel, maxOutputTokens: policy.maxOutputTokens, clientRequestBytes,
-          clientRequestSha256, effectiveRequestBytes, effectiveRequestSha256, nativeAdmission: started });
+        let result;
+        inFlight++;
+        try {
+          result = await providerDispatch({ ordinal, requestId, runDirectory, binding,
+            executionModel, maxOutputTokens: policy.maxOutputTokens, clientRequestBytes,
+            clientRequestSha256, effectiveRequestBytes, effectiveRequestSha256, nativeAdmission: started,
+            generationDeadlineAt, timeoutMs: Math.min(policy.timeoutSeconds * 1000,
+              Date.parse(generationDeadlineAt) - Date.now()), signal: cancellation.signal });
+        } finally { inFlight--; }
         const { responseBytes, upstreamRequestBytes, upstreamResponseBytes, receipt } = result ?? {};
         if (!Buffer.isBuffer(responseBytes) || !Buffer.isBuffer(upstreamRequestBytes) ||
             !Buffer.isBuffer(upstreamResponseBytes) || !record(receipt) || receipt.complete !== true ||
             receipt.upstreamHttpStatus !== 200 || !trustedChatTerminal(receipt) ||
             (receipt.upstreamProtocol === 'litellm-1.106.4-chat-completions-sse' &&
-              JSON.stringify(receipt.nativeAdmission) !== JSON.stringify(started)) ||
+              (JSON.stringify(receipt.nativeAdmission) !== JSON.stringify(started) ||
+                (sealVersion === PROGRAM_AGENT_SEAL_VERSION &&
+                  (receipt.generationDeadlineAt !== generationDeadlineAt || receipt.deadlineBasis !== 'SEALED_ABSOLUTE')))) ||
             receipt.maxOutputTokens !== policy.maxOutputTokens ||
             JSON.stringify(receipt.executionModel) !== JSON.stringify(executionModel) ||
             receipt.clientRequestSha256 !== clientRequestSha256 ||
@@ -321,7 +384,10 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
           maxOutputTokens: policy.maxOutputTokens });
         return responseBytes;
       });
-      dispatchQueue = work.catch(() => { dispatchFailed = true; });
+      dispatchQueue = work.catch(() => {
+        dispatchFailed = true;
+        stop('PROGRAM_AGENT_DISPATCH_UNKNOWN');
+      });
       try {
         send(response, 200, await work, 'text/event-stream');
       } catch {
@@ -337,13 +403,9 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
       providerPort: provider.address().port, brokerPort: broker.address().port, brokerToken,
       timeoutSeconds: policy.timeoutSeconds }), { mode: 0o600 });
     if (!canContinue()) fail('PROGRAM_AGENT_DEADLINE_EXPIRED');
-    try { await heartbeat?.(); }
-    catch { heartbeatFailure = true; fail('PROGRAM_AGENT_HEARTBEAT_FAILED'); }
+    await checkHeartbeat();
     heartbeatTimer = setInterval(() => {
-      Promise.resolve().then(() => heartbeat?.()).catch(() => {
-        heartbeatFailure = true;
-        try { if (child) process.kill(-child.pid, 'SIGTERM'); } catch {}
-      });
+      if (canContinue()) checkHeartbeat().catch(() => {});
     }, 10_000);
     const env = { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8', HOME: resolve(runDirectory, 'user-home'),
       CODEX_HOME: resolve(runDirectory, 'codex-home'), TMPDIR: resolve(runDirectory, 'tmp'), TERM: 'dumb',
@@ -355,16 +417,17 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
     const output = await new Promise((accept, reject) => {
       child = spawn(codexOptions.codexBinary, command, { cwd: resolve(runDirectory, 'work'),
         env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
-      let stdout = '', stderr = '', timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        try { process.kill(-child.pid, 'SIGTERM'); } catch {}
-      }, Math.max(1, Date.parse(generationDeadlineAt) - Date.now()));
+      let stdout = '', stderr = '';
+      if (!canContinue()) stop(stopCode ?? 'PROGRAM_AGENT_DEADLINE_EXPIRED');
       child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
-      child.stdout.on('data', part => { stdout += part; if (stdout.length > 2_000_000) child.kill('SIGTERM'); });
-      child.stderr.on('data', part => { stderr += part; if (stderr.length > 2_000_000) child.kill('SIGTERM'); });
-      child.once('error', error => { clearTimeout(timer); reject(error); });
-      child.once('close', code => { clearTimeout(timer); accept({ code, stdout, stderr, timedOut }); });
+      child.stdout.on('data', part => { stdout += part; if (stdout.length > 2_000_000) stop('PROGRAM_AGENT_CLI_OUTPUT_LIMIT'); });
+      child.stderr.on('data', part => { stderr += part; if (stderr.length > 2_000_000) stop('PROGRAM_AGENT_CLI_OUTPUT_LIMIT'); });
+      child.once('error', error => { stop('PROGRAM_AGENT_CLI_FAILED'); reject(error); });
+      child.once('close', code => {
+        childClosed = true;
+        if (inFlight > 0 || code !== 0) stop('PROGRAM_AGENT_CLI_EXITED');
+        accept({ code, stdout, stderr, timedOut: stopCode === 'PROGRAM_AGENT_DEADLINE_EXPIRED' });
+      });
       child.stdin.on('error', () => {});
       child.stdin.end(prompt);
     });
@@ -381,6 +444,7 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
         candidate.tool_name !== OUTPUT_FUNCTION || !record(candidate.arguments) ||
         Object.keys(candidate.arguments).join(',') !== 'workJson' ||
         session.validateFinal(candidate.arguments.workJson).status !== 'VALID') fail('PROGRAM_AGENT_CANDIDATE_INVALID');
+    if (!canContinue()) fail('PROGRAM_AGENT_OUTCOME_UNKNOWN');
     const reportedModel = report.at(-1).reportedModel;
     const raw = JSON.stringify({ id: `program-agent-${sha(requestId).slice(0, 24)}`,
       object: 'chat.completion', ...(reportedModel ? { model: reportedModel } : {}),
@@ -389,16 +453,33 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
           type: 'function', function: { name: OUTPUT_FUNCTION,
             arguments: JSON.stringify(candidate.arguments) } }] } }] });
     const completed = { version: 1, requestId, runDirectory, bindingSha256: sha(JSON.stringify(sealed)),
+      ...(sealVersion === PROGRAM_AGENT_SEAL_VERSION ? { sealVersion } : {}),
       binding, executionModel, policy, generationDeadlineAt,
       responseSha256: sha(raw), raw, status: 200, ok: true, dispatchCount: report.length,
       dispatches: report, toolAudit: session.audit(), deliveredRefs: session.deliveredRefs() };
-    await durableJson(resolve(runDirectory, 'program-agent-final-receipt.json'), completed);
+    const pendingReceipt = resolve(runDirectory, 'program-agent-final-receipt.pending.json');
+    await durableJson(pendingReceipt, completed);
+    // Publication is the success boundary. Stop during candidate read or the
+    // durable write leaves only a private pending file, never a trusted result.
+    // No await may interleave a stop between this check and exclusive publish.
+    if (!canContinue()) fail('PROGRAM_AGENT_OUTCOME_UNKNOWN');
+    linkSync(pendingReceipt, resolve(runDirectory, 'program-agent-final-receipt.json'));
+    const parentFd = openSync(runDirectory, 'r');
+    try { fsyncSync(parentFd); unlinkSync(pendingReceipt); fsyncSync(parentFd); }
+    finally { closeSync(parentFd); }
     return completed;
   } finally {
     clearInterval(heartbeatTimer);
-    if (child && child.exitCode === null) {
-      try { process.kill(-child.pid, 'SIGTERM'); } catch {}
-    }
+    clearTimeout(deadlineTimer);
+    signal?.removeEventListener('abort', externalAbort);
+    if ((child && !childClosed) || inFlight > 0) stop('PROGRAM_AGENT_SESSION_CLOSED');
+    // Await the adapter's cancellation/final receipt; killing only Codex must
+    // not leave a Python HTTP attempt running after the gateway returns.
+    await dispatchQueue;
+    if (stopCode) await ledger.writeOnce('session-stop', { version: 1, requestId,
+      bindingSha256: sha(JSON.stringify(sealed)), generationDeadlineAt,
+      code: stopCode, reservedDispatches: count, inFlightAtReturn: inFlight });
+    clearTimeout(killTimer);
     await closeServer(provider); await closeServer(broker);
   }
 }
