@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { outputLengthFailure } from './codex-generation-terminal.mjs';
+import { recoverFinalRoot } from './codex-generation-final-recovery.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MAX_BODY = 1024 * 1024;
@@ -374,6 +375,12 @@ export function createCodexGateway(options) {
     let candidate;
     let receipt;
     let terminalFailure;
+    let finalRecovery;
+    const validCandidate = value => {
+      const tool = body.tools.find(item => item.function.name === value.tool_name);
+      return Boolean(tool && (!namedChoice || value.tool_name === namedChoice) &&
+        record(value.arguments) && validateArguments(value.arguments, tool.function.parameters));
+    };
     if (recovery) {
       receipt = await jsonAt(resolve(runDirectory, 'generation-receipt.json'));
       if (!receipt && recovered) receipt = await awaitReceipt(runDirectory, timeoutSeconds, init.signal);
@@ -414,14 +421,21 @@ export function createCodexGateway(options) {
             !Array.isArray(upstream.events) || !upstream.events.length)
           fail('CODEX_GENERATION_RECEIPT_INVALID');
       }
-      if (!transport.transport_passed)
+      if (!transport.transport_passed) {
         terminalFailure = await outputLengthFailure({ runDirectory, binding, receipt, transport, candidate });
+        if (!terminalFailure) {
+          finalRecovery = await recoverFinalRoot({ runDirectory, binding, bindingSha256,
+            receipt, transport, candidate, validateCandidate: validCandidate });
+          if (finalRecovery) candidate = finalRecovery.candidate;
+        }
+      }
     } else {
       try { transport = JSON.parse(child.stdout.trim()); } catch { fail('CODEX_GENERATION_SUMMARY_INVALID'); }
     }
-    await options.onRunCompleted?.({ runDirectory, transport });
+    await options.onRunCompleted?.({ runDirectory, transport,
+      ...(finalRecovery ? { finalRecovery: finalRecovery.provenance } : {}) });
     if (child?.aborted) throw init.signal?.reason ?? new Error('CODEX_GENERATION_ABORTED');
-    if ((!recovery && child.code !== 0) || !transport.transport_passed ||
+    if ((!recovery && child.code !== 0) || (!transport.transport_passed && !finalRecovery) ||
         transport.upstream_models?.length !== 1 || transport.upstream_models[0] !== 'glm-5.3') {
       const error = new Error('CODEX_GENERATION_INCOMPLETE');
       if (terminalFailure) error.codexTerminalFailure = terminalFailure;
@@ -431,9 +445,7 @@ export function createCodexGateway(options) {
       try { candidate = JSON.parse(await readFile(resolve(runDirectory, 'contract-candidate.json'), 'utf8')); }
       catch { fail('CODEX_GENERATION_CANDIDATE_INVALID'); }
     }
-    const tool = body.tools.find(item => item.function.name === candidate.tool_name);
-    if (!tool || (namedChoice && candidate.tool_name !== namedChoice) ||
-        !record(candidate.arguments) || !validateArguments(candidate.arguments, tool.function.parameters))
+    if (!validCandidate(candidate))
       fail('CODEX_GENERATION_CANDIDATE_INVALID');
     const model = transport.upstream_models[0];
     const responseId = recovery ? `codex-generation-${sha256(`${recovery.requestId}:response`).slice(0, 32)}`
@@ -446,7 +458,8 @@ export function createCodexGateway(options) {
           function: { name: candidate.tool_name, arguments: JSON.stringify(candidate.arguments) } }] } }],
       usage: { prompt_tokens: transport.input_tokens, completion_tokens: transport.output_tokens,
         total_tokens: transport.input_tokens + transport.output_tokens },
-      conversion: 'codex-structured-final-to-function-contract-v1' };
+      conversion: 'codex-structured-final-to-function-contract-v1',
+      ...(finalRecovery ? { finalRecovery: finalRecovery.provenance } : {}) };
     const raw = JSON.stringify(result);
     if (recovery) {
       const responsePath = resolve(runDirectory, 'adapted-response.json');
@@ -457,6 +470,6 @@ export function createCodexGateway(options) {
     return { status: 200, ok: true, text: async () => raw,
       ...(recovery ? { codexReceipt: { requestId: recovery.requestId, runDirectory,
         responseSha256: sha256(raw), transportSummaryRef: resolve(runDirectory, 'transport-summary.json'),
-        recovered } } : {}) };
+        recovered, ...(finalRecovery ? { finalRecovery: finalRecovery.provenance } : {}) } } : {}) };
   };
 }

@@ -23,7 +23,7 @@ export function generationInput(requestId, { recoverOnly = false, body = {} } = 
 /** Run the real JS gateway, Python runner, and bridge HTTP handler. Only the
  * platform identity, CLI process, listener, and upstream HTTPS connection are
  * synthetic. The saved upstream request is the bridge's exact request bytes. */
-export async function offlineGenerationFixture({ maximum = 64000, finish = 'stop' } = {}) {
+export async function offlineGenerationFixture({ maximum = 64000, finish = 'stop', finalText } = {}) {
   const root = await realpath(await mkdtemp(resolve(tmpdir(), 'generation-budget-offline-')));
   const configPath = resolve(root, 'config.json');
   await writeFile(configPath, JSON.stringify(modelConfig(maximum)), { mode: 0o600 });
@@ -36,7 +36,7 @@ import run_codex_generation as runner
 import miaoda_responses_bridge as bridge
 ROOT=pathlib.Path(${JSON.stringify(root)})
 FINISH=${JSON.stringify(finish)}
-FINAL=json.dumps({'tool_name':'return_result','arguments':{'workJson':'{}'}})
+FINAL=${JSON.stringify(finalText ?? JSON.stringify({ tool_name: 'return_result', arguments: { workJson: '{}' } }))}
 class Socket:
  def settimeout(self,value): pass
 class OfflineServer:
