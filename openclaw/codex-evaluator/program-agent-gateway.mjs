@@ -45,6 +45,21 @@ function completeResponsesSse(bytes) {
     terminal[0].kind === 'response.completed' && terminal[0].value?.response?.status === 'completed';
 }
 
+function trustedChatTerminal(receipt) {
+  const terminal = receipt?.terminal;
+  if (terminal?.schemaVersion !== 'wiselink.chat-terminal-receipt.v1' ||
+      terminal.seenValidTerminal !== true || terminal.sdkStreamExhausted !== true ||
+      terminal.errorCode !== null || terminal.rawFinishReason !== receipt.upstreamFinishReason ||
+      !['stop', 'tool_calls'].includes(terminal.rawFinishReason)) return false;
+  if (receipt.upstreamProtocol === 'fixture-chat-completions-sse-v1')
+    return terminal.basis === 'synthetic-fixture';
+  return receipt.upstreamProtocol === 'litellm-1.106.4-chat-completions-sse' &&
+    terminal.basis === 'openai-sdk-raw-chat' && receipt.litellmVersion === '1.106.4' &&
+    receipt.openaiSdkVersion === '2.54.0' && receipt.transportCleanEnd === true &&
+    receipt.internalHttpAttemptCount === 1 && receipt.blockedAdditionalHttpAttempts === 0 &&
+    receipt.cancelled === false && receipt.errorCode === null;
+}
+
 async function serverAt(handler) {
   const server = createServer(handler);
   await new Promise((accept, reject) => {
@@ -277,13 +292,13 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
         if (!canContinue()) fail('PROGRAM_AGENT_DISPATCH_STOPPED');
         const result = await providerDispatch({ ordinal, requestId, runDirectory, binding,
           executionModel, maxOutputTokens: policy.maxOutputTokens, clientRequestBytes,
-          clientRequestSha256, effectiveRequestBytes, effectiveRequestSha256 });
+          clientRequestSha256, effectiveRequestBytes, effectiveRequestSha256, nativeAdmission: started });
         const { responseBytes, upstreamRequestBytes, upstreamResponseBytes, receipt } = result ?? {};
         if (!Buffer.isBuffer(responseBytes) || !Buffer.isBuffer(upstreamRequestBytes) ||
             !Buffer.isBuffer(upstreamResponseBytes) || !record(receipt) || receipt.complete !== true ||
-            receipt.upstreamProtocol !== 'fixture-chat-completions-sse-v1' ||
-            receipt.upstreamHttpStatus !== 200 || receipt.upstreamDoneSeen !== true ||
-            !['stop', 'tool_calls'].includes(receipt.upstreamFinishReason) ||
+            receipt.upstreamHttpStatus !== 200 || !trustedChatTerminal(receipt) ||
+            (receipt.upstreamProtocol === 'litellm-1.106.4-chat-completions-sse' &&
+              JSON.stringify(receipt.nativeAdmission) !== JSON.stringify(started)) ||
             receipt.maxOutputTokens !== policy.maxOutputTokens ||
             JSON.stringify(receipt.executionModel) !== JSON.stringify(executionModel) ||
             receipt.clientRequestSha256 !== clientRequestSha256 ||
@@ -302,6 +317,7 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
         report.push({ ordinal, clientRequestSha256, effectiveRequestSha256,
           responseSha256: closed.responseSha256, upstreamRequestSha256: receipt.upstreamRequestSha256,
           upstreamResponseSha256: receipt.upstreamResponseSha256, reportedModel: receipt.reportedModel,
+          upstreamFinishReason: receipt.upstreamFinishReason,
           maxOutputTokens: policy.maxOutputTokens });
         return responseBytes;
       });
@@ -355,6 +371,7 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
     await durable(resolve(runDirectory, 'codex.stdout.jsonl'), Buffer.from(output.stdout));
     await durable(resolve(runDirectory, 'codex.stderr.log'), Buffer.from(output.stderr));
     if (dispatchFailed || heartbeatFailure || !canContinue() || output.code !== 0 || output.timedOut || report.length < 1 ||
+        report.at(-1).upstreamFinishReason !== 'stop' ||
         !output.stdout.split('\n').some(line => { try { return JSON.parse(line).type === 'turn.completed'; } catch { return false; } }))
       fail('PROGRAM_AGENT_OUTCOME_UNKNOWN');
     let candidate;

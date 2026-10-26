@@ -282,6 +282,8 @@ function providerResponse(request) {
   return { responseBytes: Buffer.from('event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n'),
     upstreamRequestBytes, upstreamResponseBytes, receipt: { complete: true, upstreamHttpStatus: 200,
       upstreamProtocol: 'fixture-chat-completions-sse-v1', upstreamDoneSeen: true, upstreamFinishReason: 'stop',
+      terminal: { schemaVersion: 'wiselink.chat-terminal-receipt.v1', basis: 'synthetic-fixture',
+        seenValidTerminal: true, sdkStreamExhausted: true, rawFinishReason: 'stop', errorCode: null },
       reportedModel: 'fixture/synthetic-only', maxOutputTokens: request.maxOutputTokens,
       executionModel: request.executionModel, clientRequestSha256: request.clientRequestSha256,
       effectiveRequestSha256: request.effectiveRequestSha256,

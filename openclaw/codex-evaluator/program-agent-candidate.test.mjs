@@ -115,6 +115,8 @@ test('real Codex CLI follows local MCP feedback over four bounded fake-provider 
           upstreamResponseBytes, receipt: { complete: true, upstreamHttpStatus: 200,
           upstreamProtocol: 'fixture-chat-completions-sse-v1', reportedModel: 'fixture/synthetic-glm',
           upstreamDoneSeen: true, upstreamFinishReason: 'stop', maxOutputTokens: request.maxOutputTokens,
+            terminal: { schemaVersion: 'wiselink.chat-terminal-receipt.v1', basis: 'synthetic-fixture',
+              seenValidTerminal: true, sdkStreamExhausted: true, rawFinishReason: 'stop', errorCode: null },
             executionModel: request.executionModel, clientRequestSha256: request.clientRequestSha256,
             effectiveRequestSha256: request.effectiveRequestSha256,
             upstreamRequestSha256: digest(upstreamRequestBytes),
