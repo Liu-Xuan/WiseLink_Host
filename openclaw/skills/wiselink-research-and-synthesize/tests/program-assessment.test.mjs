@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -90,6 +91,19 @@ function returnWork(f, work) {
     return responseWithWork(work);
   };
 }
+function interruptAfterCheckpointWrite(f, key, method) {
+  const write = f.checkpoint[method];
+  let interrupted = false;
+  f.checkpoint[method] = async (step, value) => {
+    const result = await write(step, value);
+    if (step === key && !interrupted) {
+      interrupted = true;
+      throw new Error(`INTERRUPTED_AFTER_CHECKPOINT:${key}`);
+    }
+    return result;
+  };
+  return () => { f.checkpoint[method] = write; return interrupted; };
+}
 async function fixture(t, count, relatedCount) {
   const root = await mkdtemp(join(tmpdir(), 'wiselink-program-'));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -158,23 +172,71 @@ test('the actual initial entry uses one serialization-only model call, full inpu
   assert.equal(result.provenance.modelVersion, 'provider/glm-5.3');
 });
 
-test('a listBrief array still fails unchanged before SAVE instead of becoming compatible text', async t => {
+test('a listBrief array becomes only ordered paragraph text and retains its exact source and checkpoint', async t => {
   const f = await fixture(t), work = candidate(f.input);
-  work.listBrief = ['第一段私有摘要。', '第二段私有摘要。'];
+  const paragraphs = ['  Do NOT install P/N 123-ABC unless condition X holds;  ',
+    'Keep 30 days and quote “as written”.\nSecond source line — unchanged. '];
+  work.listBrief = paragraphs;
   const original = structuredClone(work);
   returnWork(f, work);
-  await assert.rejects(f.run(), error => error.terminalAssessmentFailure?.errorCode === 'JOBAID_WORK_JSON_INVALID');
-  assert.deepEqual(await f.checkpoint.readOptional('program-work-rejection'), {
-    code: 'PROGRAM_WORK_SHAPE', category: 'WORK_SHAPE', violations: [
-      { path: 'work.listBrief', reason: 'FIELD_TYPE_OR_VALUE', expected: 'non-empty string', received: 'array' },
-    ],
-  });
-  const response = JSON.parse((await f.checkpoint.readOptional('assessment-round-1.result')).value.raw);
-  assert.deepEqual(JSON.parse(JSON.parse(response.choices[0].message.tool_calls[0].function.arguments).workJson), original);
-  assert.equal(await f.checkpoint.readOptional('program-work-candidate'), null);
-  assert.equal(f.saves.length, 0);
-  assert.equal(f.reads.length, 0);
+  const result = await f.run();
+  const expected = paragraphs.join('\n\n');
+  assert.equal(result.output.workRevisionRef, 'JAWR-program');
   assert.equal(f.calls.length, 1);
+  assert.equal(f.saves.length, 1);
+  assert.equal(f.saves[0].workJson, JSON.stringify({ ...original, listBrief: expected }));
+  assert.equal(JSON.parse(f.saves[0].workJson).listBrief, expected,
+    'the separator is the only new text; item spacing, line breaks, order, negation, value and quote stay literal');
+  const raw = (await f.checkpoint.readOptional('assessment-round-1.result')).value.raw;
+  const response = JSON.parse(raw);
+  assert.deepEqual(JSON.parse(JSON.parse(response.choices[0].message.tool_calls[0].function.arguments).workJson), original,
+    'the complete original response remains unchanged');
+  const normalization = await f.checkpoint.readOptional('program-work-normalization');
+  assert.deepEqual(normalization, {
+    rule: 'listBrief-ordered-text-paragraphs', version: 1,
+    sourceRawSha256: createHash('sha256').update(raw).digest('hex'),
+    argsHash: canonicalSha256({ body: (await f.checkpoint.readOptional('program-model-input')).body,
+      executionModel: f.options.executionModel }),
+    field: 'work.listBrief', before: paragraphs, after: expected,
+  });
+  assert.deepEqual(await f.checkpoint.readOptional('program-work-candidate'), { ...original, listBrief: expected });
+  assert.deepEqual(await f.checkpoint.readOptional('program-save-request'), f.saves[0]);
+  assert.equal(JSON.parse(f.saves[0].workJson).roundCompletion, original.roundCompletion,
+    'roundCompletion keeps its existing name and value');
+});
+
+test('listBrief array values outside the bounded paragraph rule remain rejected without SAVE or rewrite', async t => {
+  const cases = [
+    ['empty array', []],
+    ['leading whitespace-only item', ['   ', '有效文本']],
+    ['trailing whitespace-only item', ['有效文本', '\n\t']],
+    ['mixed scalar item', ['有效文本', 7]],
+    ['object item', ['有效文本', { text: '对象不是文本段落' }]],
+    ['nested array item', ['有效文本', ['嵌套段落']]],
+    ['null item', ['有效文本', null]],
+    ['top-level object', { text: '对象不是文本段落' }],
+    ['top-level null', null],
+  ];
+  for (const [name, value] of cases) await t.test(name, async subtest => {
+    const f = await fixture(subtest), work = candidate(f.input);
+    work.listBrief = value;
+    const original = structuredClone(work);
+    returnWork(f, work);
+    await assert.rejects(f.run(), error => error.terminalAssessmentFailure?.errorCode === 'JOBAID_WORK_JSON_INVALID');
+    const rejection = await f.checkpoint.readOptional('program-work-rejection');
+    assert.equal(rejection.code, 'PROGRAM_WORK_SHAPE');
+    assert.equal(rejection.category, 'WORK_SHAPE');
+    assert.ok(rejection.violations.some(item => item.path === 'work.listBrief' && item.reason === 'FIELD_TYPE_OR_VALUE'));
+    const raw = (await f.checkpoint.readOptional('assessment-round-1.result')).value.raw;
+    const response = JSON.parse(raw);
+    assert.deepEqual(JSON.parse(JSON.parse(response.choices[0].message.tool_calls[0].function.arguments).workJson), original);
+    assert.equal(await f.checkpoint.readOptional('program-work-normalization'), null);
+    assert.equal(await f.checkpoint.readOptional('program-work-candidate'), null);
+    assert.equal(await f.checkpoint.readOptional('program-save-request'), null);
+    assert.equal(f.saves.length, 0);
+    assert.equal(f.reads.length, 0);
+    assert.equal(f.calls.length, 1);
+  });
 });
 
 test('program response diagnostics describe the actual HTTP result and declared function channel', async t => {
@@ -221,6 +283,8 @@ test('program-specific shape requirements retain rejection and identify the unme
     ['missing overview', work => { delete work.overview; }, 'work.overview', 'REQUIRED_TEXT'],
     ['missing issues', work => { delete work.issues; }, 'work.issues', 'ISSUES_ARRAY'],
     ['empty update', work => { work.issues = []; }, 'work', 'EMPTY_ISSUE_UPDATE'],
+    ['completionStatus is not silently aliased', work => { work.completionStatus = work.roundCompletion; },
+      'work.[undeclared field]', 'UNDECLARED_FIELD'],
     ['undeclared field', work => { work.issues[0].references = ['private source text']; },
       'work.[undeclared field]', 'UNDECLARED_FIELD'],
   ];
@@ -439,6 +503,97 @@ test('a complete response followed by SAVE failure resumes that exact work witho
   assert.equal((await f.checkpoint.readOptional('assessment-round-1.result')).value.raw, raw);
 });
 
+test('durable normalization, candidate and SAVE-request checkpoints resume from one raw response and preserve the exact request', async t => {
+  const checkpoints = [
+    ['normalization', 'program-work-normalization', 'writeOnceOrEqual'],
+    ['candidate', 'program-work-candidate', 'writeOnceOrEqual'],
+    ['SAVE request', 'program-save-request', 'writeOnce'],
+  ];
+  for (const [name, key, method] of checkpoints) await t.test(name, async subtest => {
+    const f = await fixture(subtest), work = candidate(f.input);
+    work.listBrief = ['  Preserve the condition exactly. ', 'Do NOT omit 30 days.'];
+    returnWork(f, work);
+    const restore = interruptAfterCheckpointWrite(f, key, method);
+    await assert.rejects(f.run(), error => error.message === `INTERRUPTED_AFTER_CHECKPOINT:${key}`);
+    assert.equal(restore(), true);
+    const raw = (await f.checkpoint.readOptional('assessment-round-1.result')).value.raw;
+    assert.ok(await f.checkpoint.readOptional(key), `${key} must be durable before the injected interruption`);
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.saves.length, 0);
+
+    assert.equal((await f.run()).output.workRevisionRef, 'JAWR-program');
+    const request = await f.checkpoint.readOptional('program-save-request');
+    assert.deepEqual(f.saves, [request]);
+    assert.equal(request.workJson, JSON.stringify({ ...work, listBrief: work.listBrief.join('\n\n') }));
+    assert.equal(f.calls.length, 1, 'recovery must use the one complete raw response');
+    assert.equal((await f.checkpoint.readOptional('assessment-round-1.result')).value.raw, raw);
+
+    await f.run();
+    assert.equal(f.calls.length, 1);
+    assert.deepEqual(f.saves, [request], 'a repeated completed invocation remains idempotent');
+  });
+});
+
+test('a failed normalization checkpoint write has no downstream effects and recovery still uses one raw response', async t => {
+  const f = await fixture(t), work = candidate(f.input);
+  work.listBrief = ['Keep the negative exactly: do NOT install.', 'Keep the 30-day condition.'];
+  returnWork(f, work);
+  const write = f.checkpoint.writeOnceOrEqual;
+  let failed = false;
+  f.checkpoint.writeOnceOrEqual = async (step, value) => {
+    if (step === 'program-work-normalization' && !failed) {
+      failed = true;
+      throw new Error('NORMALIZATION_CHECKPOINT_UNAVAILABLE');
+    }
+    return write(step, value);
+  };
+  await assert.rejects(f.run(), error => error.message === 'NORMALIZATION_CHECKPOINT_UNAVAILABLE' &&
+    error.terminalAssessmentFailure === undefined);
+  assert.equal(failed, true);
+  assert.ok((await f.checkpoint.readOptional('assessment-round-1.result')).value.raw);
+  assert.equal(await f.checkpoint.readOptional('program-work-normalization'), null);
+  assert.equal(await f.checkpoint.readOptional('program-work-candidate'), null);
+  assert.equal(await f.checkpoint.readOptional('program-save-request'), null);
+  assert.equal(f.saves.length, 0);
+  assert.equal(f.calls.length, 1);
+
+  f.checkpoint.writeOnceOrEqual = write;
+  assert.equal((await f.run()).output.workRevisionRef, 'JAWR-program');
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.saves.length, 1);
+  assert.equal(JSON.parse(f.saves[0].workJson).listBrief, work.listBrief.join('\n\n'));
+});
+
+test('tampered normalization, candidate or SAVE-request checkpoints stop recovery without replacement or SAVE', async t => {
+  const checkpoints = [
+    ['normalization', 'program-work-normalization', 'writeOnceOrEqual', value => ({ ...value, after: `${value.after}TAMPERED` }),
+      'REVIEW_CHECKPOINT_VALUE_CHANGED:program-work-normalization'],
+    ['candidate', 'program-work-candidate', 'writeOnceOrEqual', value => ({ ...value, headline: 'tampered candidate' }),
+      'REVIEW_CHECKPOINT_VALUE_CHANGED:program-work-candidate'],
+    ['SAVE request', 'program-save-request', 'writeOnce', value => ({ ...value, workJson: `${value.workJson} ` }),
+      'PROGRAM_ASSESSMENT_SAVE_BINDING_MISMATCH'],
+  ];
+  for (const [name, key, method, tamper, expectedError] of checkpoints) await t.test(name, async subtest => {
+    const f = await fixture(subtest), work = candidate(f.input);
+    work.listBrief = ['The first literal paragraph.', 'The second literal paragraph.'];
+    returnWork(f, work);
+    const restore = interruptAfterCheckpointWrite(f, key, method);
+    await assert.rejects(f.run(), error => error.message === `INTERRUPTED_AFTER_CHECKPOINT:${key}`);
+    assert.equal(restore(), true);
+    const raw = (await f.checkpoint.readOptional('assessment-round-1.result')).value.raw;
+    const corrupted = tamper(await f.checkpoint.readOptional(key));
+    await f.checkpoint.write(key, corrupted);
+
+    await assert.rejects(f.run(), error => error.message === expectedError);
+    assert.deepEqual(await f.checkpoint.readOptional(key), corrupted,
+      'recovery detects the mismatch and does not rewrite the durable checkpoint');
+    assert.equal((await f.checkpoint.readOptional('assessment-round-1.result')).value.raw, raw);
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.saves.length, 0);
+    assert.equal(f.reads.length, 0);
+  });
+});
+
 test('lost SAVE ACK is recovered by the original request READ without a duplicate SAVE', async t => {
   const f = await fixture(t);
   const save = f.options.saveAssessmentWork;
@@ -449,6 +604,34 @@ test('lost SAVE ACK is recovered by the original request READ without a duplicat
   assert.deepEqual(f.reads.map(read => read.requestId), [f.saves[0].requestId, f.saves[0].requestId]);
   await f.run();
   assert.equal(f.saves.length, 1);
+});
+
+test('a failed independent post-SAVE READ resumes the same request without regenerating or duplicating SAVE', async t => {
+  const f = await fixture(t);
+  const read = f.options.readAssessmentWork, readAttempts = [];
+  let failed = false;
+  f.options.readAssessmentWork = async request => {
+    readAttempts.push(structuredClone(request));
+    if (f.saves.length && !failed) {
+      failed = true;
+      throw new Error('READ_UNAVAILABLE_AFTER_SAVE');
+    }
+    return read(request);
+  };
+  await assert.rejects(f.run(), /READ_UNAVAILABLE_AFTER_SAVE/u);
+  const raw = (await f.checkpoint.readOptional('assessment-round-1.result')).value.raw;
+  const request = await f.checkpoint.readOptional('program-save-request');
+  assert.equal(f.saves.length, 1, 'SAVE completed before the independent READ failed');
+  assert.equal(f.saves[0].requestId, request.requestId);
+  assert.equal(f.saves[0].workJson, request.workJson);
+
+  assert.equal((await f.run()).output.workRevisionRef, 'JAWR-program');
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.saves.length, 1);
+  assert.equal((await f.checkpoint.readOptional('program-save-request')).requestId, request.requestId);
+  assert.ok(readAttempts.length >= 3, 'the retry reads the original SAVE key after the failed READ');
+  assert.equal(readAttempts.every(item => item.requestId === request.requestId), true);
+  assert.equal((await f.checkpoint.readOptional('assessment-round-1.result')).value.raw, raw);
 });
 
 test('a lost generated-progress observation resumes the recorded raw response and never repeats the model', async t => {
@@ -814,12 +997,32 @@ function hostFixture(f) {
   return { task, initial, callTool, tools, fail: value => { failProjection = value; } };
 }
 
-test('actual consumer→orchestrator→program runner reaches deterministic Overall and normal stage completion', async t => {
+test('synthetic Host callbacks: actual consumer→orchestrator→program runner completes with deterministic Overall', async t => {
   const f = await fixture(t), host = hostFixture(f);
+  const paragraphs = ['条件未确认时不得安装该件。', '30天期限与脚注条件继续适用。'];
+  const work = candidate(f.input);
+  work.listBrief = paragraphs;
+  codexLengthFixture(f);
+  const runRoot = f.options.codexOptions.runRoot;
+  const runDirectory = join(runRoot, 'generation-original-request');
+  let dispatches = 0;
+  f.dependencies.requestGateway = async (_url, request) => {
+    f.calls.push(request);
+    assert.ok(request.codexRecovery);
+    if (!request.codexRecovery.recoverOnly) dispatches++;
+    await request.codexRecovery.onRunPrepared({ runRoot, runDirectory,
+      requestId: request.codexRecovery.requestId, bindingSha256: 'c'.repeat(64), promptSha256: 'd'.repeat(64) });
+    const raw = await responseWithWork(work).text();
+    const response = new Response(raw, { status: 200 });
+    response.codexReceipt = { requestId: request.codexRecovery.requestId,
+      responseSha256: createHash('sha256').update(raw).digest('hex'), runDirectory,
+      transportSummaryRef: join(runDirectory, 'transport-summary.json') };
+    return response;
+  };
   const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-program-entry-'));
   t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
   const result = await runHostedInitialStage({ workItemId: host.task.workItemId,
-    checkpointRoot, operation: 'EVALUATE_JOBAID',
+    checkpointRoot, operation: 'EVALUATE_JOBAID', modelExecutor: 'CODEX',
     initial: host.initial().initialAnalysis }, {
     callTool: host.callTool,
     invokeInitialModel: (input, hooks) => invokeHostedInitialModel(input, { ...f.options, ...hooks }, f.dependencies),
@@ -828,7 +1031,11 @@ test('actual consumer→orchestrator→program runner reaches deterministic Over
   assert.equal(result.stageStatus, 'SUCCEEDED');
   assert.equal(result.nextOperation, null);
   assert.equal(f.calls.length, 1);
+  assert.equal(dispatches, 1);
+  assert.equal(f.calls[0].codexRecovery.requestId, 'program:AQ-program:round-1');
+  assert.equal(f.calls[0].codexRecovery.recoverOnly, false);
   assert.equal(f.saves.length, 1);
+  assert.equal(JSON.parse(f.saves[0].workJson).listBrief, paragraphs.join('\n\n'));
   const materials = host.tools.find(item => item.name === 'record_assessment_program_progress' && item.args.phase === 'MATERIALS_READY');
   assert.equal(JSON.parse(materials.args.materialSnapshotJson).modelRequest.body, f.calls[0].body);
   assert.equal(host.tools.filter(item => item.name === 'commit_dynamic_evaluation_candidate').length, 1);

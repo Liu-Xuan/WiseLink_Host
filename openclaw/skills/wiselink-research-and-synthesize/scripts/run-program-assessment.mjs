@@ -14,6 +14,14 @@ import { modelExecutor, modelExecutorProvenance, modelGatewayEndpoint, modelGate
 
 const OUTPUT_FUNCTION = 'return_wiselink_program_assessment';
 const POLICY = { version: 1, loopPolicyVersion: 'program-controlled-v1', maxModelRequests: 1 };
+function normalizeProgramListBrief(before) {
+  if (!Array.isArray(before) || before.length === 0 ||
+      !before.every(item => typeof item === 'string' && item.trim().length > 0)) return null;
+  // This limited rule treats listBrief text items as ordered paragraphs only.
+  // Trim only to test emptiness. Preserve every item verbatim in the output.
+  const after = before.join('\n\n');
+  return { before, after };
+}
 function codexLengthFailure(error) {
   const value = error?.codexTerminalFailure;
   const keys = ['code', 'requestId', 'runDirectory', 'transportSummaryRef', 'modelVersion',
@@ -273,7 +281,7 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
   if (!Array.isArray(calls) || calls.length !== 1 || calls[0].type !== 'function' ||
       calls[0].function?.name !== OUTPUT_FUNCTION || !isFunctionResponseContentSupported(message.content))
     throw terminal('JOBAID_INCOMPLETE_TERMINAL_RESPONSE', 'JOBAID_MODEL_OUTPUT_FUNCTION_INVALID');
-  let work, rejectionDetails;
+  let work, rejectionDetails, normalization;
   let parsingPath = 'arguments';
   try {
     const args = parseJobAidWorkJson(calls[0].function.arguments);
@@ -289,6 +297,8 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
     }
     parsingPath = 'arguments.workJson';
     work = parseJobAidWorkJson(args.workJson);
+    normalization = normalizeProgramListBrief(work.listBrief);
+    if (normalization) work.listBrief = normalization.after;
     const typeErrors = jobAidWorkTypeErrors(work);
     if (typeErrors.length || work.schemaVersion !== 'wiselink.jobaid-problem-work.v3' ||
         !['COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS'].includes(work.roundCompletion) ||
@@ -330,6 +340,11 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
     await checkpoint.write('program-work-rejection', { code, missingIssueKeys });
     throw terminal('JOBAID_WORK_VALIDATION_FAILED', code);
   }
+  if (normalization) await checkpoint.writeOnceOrEqual('program-work-normalization', {
+    rule: 'listBrief-ordered-text-paragraphs', version: 1,
+    sourceRawSha256: createHash('sha256').update(raw).digest('hex'), argsHash,
+    field: 'work.listBrief', before: normalization.before, after: normalization.after,
+  });
   await checkpoint.writeOnceOrEqual('program-work-candidate', work);
   await recordProgress('MODEL_RESPONSE_SAVED', 'assessment-round-1.result');
   let saveRequest = await checkpoint.readOptional('program-save-request');
