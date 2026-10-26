@@ -2895,6 +2895,8 @@ export interface CanonicalModelOption {
 export interface CanonicalTaskModelOptions {
   options: CanonicalModelOption[];
   defaultModelRef: string;
+  /** Current server admission for new Agent requests; model availability is separate. */
+  programAgentModelRef?: string;
 }
 
 /** Routing metadata, never provider credentials or a browser-supplied endpoint. */

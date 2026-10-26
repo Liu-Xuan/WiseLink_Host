@@ -4,6 +4,7 @@ import type {
   CanonicalAssessmentExecutionMode,
   CanonicalExecutionModelSelection,
   CanonicalBudgetedExecutionModelSelection,
+  CanonicalModelOption,
   CanonicalModelSettingsReadModel,
   CanonicalTaskModelOptions,
   UpdateCanonicalModelSettingsRequest,
@@ -38,11 +39,21 @@ export class CanonicalModelSettingsService {
   async taskOptions(
     actor: CanonicalHostActor,
   ): Promise<CanonicalTaskModelOptions> {
-    assertModelSettingsActor(actor);
-    const configured = await this.captureForNewTask(actor.tenantId, new Date());
+    const settings: CanonicalModelSettingsReadModel = await this.read(actor);
+    if (settings.status !== 'CONFIGURED' || !settings.selectedModelRef)
+      throw canonicalModelError('MODEL_SETTINGS_MODEL_UNAVAILABLE', 503);
+    const programAgentAvailable: boolean =
+      process.env[CANONICAL_EXECUTION_MODEL_V2_ENV] === 'true' &&
+      settings.options.some(
+        (option: CanonicalModelOption) =>
+          option.modelRef === 'miaoda/glm-5.3' && option.available,
+      ) &&
+      Number.isSafeInteger(settings.revision) && settings.revision >= 1 &&
+      validOutputTokens(settings.outputBudgets?.['miaoda/glm-5.3']);
     return {
-      options: CANONICAL_REGISTERED_MODELS.map((option) => ({ ...option })),
-      defaultModelRef: configured.modelRef,
+      options: settings.options,
+      defaultModelRef: settings.selectedModelRef,
+      ...(programAgentAvailable ? { programAgentModelRef: 'miaoda/glm-5.3' } : {}),
     };
   }
 

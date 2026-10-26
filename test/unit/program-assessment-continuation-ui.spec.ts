@@ -135,6 +135,22 @@ async function renderProblem(
     ),
   );
 }
+async function renderNewEntry(entry: 'progress' | 'problem'): Promise<void> {
+  if (entry === 'problem') return renderProblem();
+  await act(async () =>
+    root.render(
+      createElement(InitialAnalysisProgress, {
+        workItemId: 'WI-test', sessionGeneration: 1, initial: initial(), working: working(),
+        timeline: {
+          schemaVersion: 'wiselink.3_1.timeline_projection.v0.candidate',
+          workItemId: 'WI-test', events: [],
+          boundary: { onlyServerObservedEvents: true, note: 'fixture' },
+        },
+        onRevisionChanged: jest.fn(), onAccessLost: jest.fn(),
+      }),
+    ),
+  );
+}
 beforeAll(() => {
   dom = new JSDOM('<!doctype html><body></body>');
   for (const [key, value] of Object.entries({
@@ -180,24 +196,7 @@ afterEach(async () => {
 });
 
 it('shows the fixed old WorkItem model alongside the real new program default without submitting during reading', async () => {
-  await act(async () =>
-    root.render(
-      createElement(InitialAnalysisProgress, {
-        workItemId: 'WI-test',
-        sessionGeneration: 1,
-        initial: initial(),
-        working: working(),
-        timeline: {
-          schemaVersion: 'wiselink.3_1.timeline_projection.v0.candidate',
-          workItemId: 'WI-test',
-          events: [],
-          boundary: { onlyServerObservedEvents: true, note: 'fixture' },
-        },
-        onRevisionChanged: jest.fn(),
-        onAccessLost: jest.fn(),
-      }),
-    ),
-  );
+  await renderNewEntry('progress');
   expect(container.textContent).toContain('事项绑定模型：M3 Probe Large');
   expect(container.textContent).toContain('本次将使用：GLM 5.3');
   expect(container.querySelector<HTMLSelectElement>('select')!.value).toBe(
@@ -205,6 +204,27 @@ it('shows the fixed old WorkItem model alongside the real new program default wi
   );
   expect(button('开始程序评估').disabled).toBe(false);
   expect(mockRequest).not.toHaveBeenCalled();
+});
+
+it.each(['progress', 'problem'] as const)('starts the server-declared GLM Agent through the actual %s entry', async entry => {
+  mockCatalog = { ...mockCatalog, data: { ...models, defaultModelRef: 'm3probe/minimax-m3',
+    programAgentModelRef: 'miaoda/glm-5.3' } };
+  await renderNewEntry(entry);
+  expect(button('开始程序评估').disabled).toBe(false);
+  expect(mockRequest).not.toHaveBeenCalled();
+  const select = container.querySelector<HTMLSelectElement>('select')!;
+  await act(async () => {
+    select.value = 'miaoda/glm-5.3';
+    select.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  });
+  expect(container.textContent).toContain('按需读取已授权资料');
+  expect(container.textContent).not.toContain('自主调查未启用');
+  mockRequest.mockResolvedValueOnce({ status: 'QUEUED' });
+  await act(async () => button('开始评估').click());
+  expect(mockRequest).toHaveBeenCalledTimes(1);
+  expect(mockRequest.mock.calls[0][1]).toMatchObject({
+    operation: 'EVALUATE_JOBAID', executionMode: 'PROGRAM_AGENT_V1', modelRef: 'miaoda/glm-5.3',
+  });
 });
 
 it.each(['loading', 'failed', 'unavailable'] as const)(
@@ -239,7 +259,9 @@ it.each(['loading', 'failed', 'unavailable'] as const)(
   },
 );
 
-it('keeps one explicit model, UUID and payload after an uncertain response, a new default and a page revision', async () => {
+it.each(['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1'] as const)('keeps the exact %s model, UUID and payload after uncertainty, catalog changes and a new page revision', async executionMode => {
+  if (executionMode === 'PROGRAM_AGENT_V1')
+    mockCatalog = { ...mockCatalog, data: { ...models, programAgentModelRef: 'miaoda/glm-5.3' } };
   const saved = working();
   let reject!: (error: Error) => void;
   mockRequest.mockImplementationOnce(
@@ -250,7 +272,7 @@ it('keeps one explicit model, UUID and payload after an uncertain response, a ne
   );
   await renderProblem(initial(), saved);
   await act(async () => {
-    const action = button('开始程序评估');
+    const action = button(executionMode === 'PROGRAM_AGENT_V1' ? '开始评估' : '开始程序评估');
     action.click();
     action.click();
   });
@@ -262,7 +284,7 @@ it('keeps one explicit model, UUID and payload after an uncertain response, a ne
       requestId: expect.any(String),
       expectedRevision: 7,
       operation: 'EVALUATE_JOBAID',
-      executionMode: 'PROGRAM_CONTROLLED_V1',
+      executionMode,
       modelRef: 'miaoda/glm-5.3',
     },
   ]);
@@ -292,6 +314,8 @@ it('keeps one explicit model, UUID and payload after an uncertain response, a ne
     true,
   );
   expect(container.textContent).toContain('原请求模型：GLM 5.3');
+  if (executionMode === 'PROGRAM_AGENT_V1')
+    expect(container.textContent).toContain('将按需读取已授权资料');
   await act(async () => button('刷新模型').click());
   expect(mockCatalog.refresh).toHaveBeenCalledTimes(1);
   expect(mockRequest).toHaveBeenCalledTimes(1);
@@ -305,6 +329,7 @@ it('keeps one explicit model, UUID and payload after an uncertain response, a ne
 });
 
 it('submits the explicit selection made in the actual model picker', async () => {
+  mockCatalog = { ...mockCatalog, data: { ...models, programAgentModelRef: 'miaoda/glm-5.3' } };
   await renderProblem();
   const select = container.querySelector<HTMLSelectElement>('select')!;
   await act(async () => {
@@ -318,6 +343,31 @@ it('submits the explicit selection made in the actual model picker', async () =>
     executionMode: 'PROGRAM_CONTROLLED_V1',
     modelRef: 'm3probe/minimax-m3',
   });
+});
+
+it.each([
+  { code: 'PROGRAM_AGENT_NOT_ENABLED', statusCode: 503 },
+  { code: 'MODEL_OUTPUT_BUDGET_NOT_CONFIGURED', statusCode: 503 },
+  { code: 'PROGRAM_AGENT_MODEL_UNSUPPORTED', statusCode: 400 },
+])('keeps an explicitly rejected Agent request unchanged after $code without falling back', async failure => {
+  mockCatalog = { ...mockCatalog, data: { ...models, programAgentModelRef: 'miaoda/glm-5.3' } };
+  mockRequest.mockRejectedValueOnce(Object.assign(new Error(failure.code), failure));
+  await renderProblem();
+  await act(async () => button('开始评估').click());
+  expect(mockRequest).toHaveBeenCalledTimes(1);
+  const original = structuredClone(mockRequest.mock.calls[0]);
+  expect(original[1].executionMode).toBe('PROGRAM_AGENT_V1');
+  expect(container.textContent).toContain('评估暂未受理');
+  mockCatalog = { ...mockCatalog, data: { ...models, defaultModelRef: 'm3probe/minimax-m3' } };
+  await renderProblem({ ...initial(), workItemRevision: 8 });
+  expect(mockRequest).toHaveBeenCalledTimes(1);
+  expect(container.querySelector<HTMLSelectElement>('select')!.value).toBe('miaoda/glm-5.3');
+  expect(container.querySelector<HTMLSelectElement>('select')!.disabled).toBe(true);
+  expect(container.textContent).toContain('将按需读取已授权资料');
+  mockRequest.mockResolvedValueOnce({ status: 'QUEUED', replayed: true });
+  await act(async () => button('核对原请求结果').click());
+  expect(mockRequest.mock.calls[1]).toEqual(original);
+  expect(mockRequest).toHaveBeenCalledTimes(2);
 });
 
 it.each(['RUNNING', 'UNKNOWN'])(
@@ -446,7 +496,9 @@ async function renderQueued(value = queuedInitial(), onQueued = jest.fn()): Prom
 }
 
 it.each(['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1'] as const)('resumes the Host-proven %s queued request with its original UUID and model', async executionMode => {
-  mockCatalog = { ...mockCatalog, data: null, ready: false, error: 'unavailable' };
+  mockCatalog = executionMode === 'PROGRAM_CONTROLLED_V1'
+    ? { ...mockCatalog, data: { ...models, programAgentModelRef: 'miaoda/glm-5.3' } }
+    : { ...mockCatalog, data: null, ready: false, error: 'unavailable' };
   const queued = queuedInitial();
   queued.queuedContinuationRequest!.executionMode = executionMode;
   await renderQueued(queued);

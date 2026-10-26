@@ -2,11 +2,13 @@ import type { CanonicalHostActor } from '../../server/modules/canonical-host/can
 import { CanonicalModelSettingsService } from '../../server/modules/model-settings/canonical-model-settings.service';
 import {
   CANONICAL_MODEL_MANAGER_ROLE_ENV,
+  CANONICAL_REGISTERED_MODELS,
   taskModelSelection,
 } from '../../server/modules/model-settings/canonical-model-catalog';
 import { parseExecutionModel } from '../../server/modules/model-settings/canonical-execution-model';
 import { miaodaHostedFinalUserActor } from '../../server/modules/work-item/production-miaoda-browser-ingress';
 import type { StoredCanonicalModelSetting } from '../../server/modules/model-settings/canonical-model-settings.repository';
+import { CANONICAL_EXECUTION_MODEL_V2_ENV } from '../../server/modules/model-settings/canonical-model-output-budget';
 
 const role = 'role_model_manager_fixture';
 const originalEnv = { ...process.env };
@@ -72,14 +74,69 @@ describe('tenant global model selection', () => {
         },
       ]),
     );
-    expect(repository.read).toHaveBeenCalledWith(
-      'tenant-model-fixture',
-      undefined,
-    );
+    expect(repository.read).toHaveBeenCalledWith('tenant-model-fixture');
+    expect(repository.read).toHaveBeenCalledTimes(1);
+    expect(taskOptions).not.toHaveProperty('programAgentModelRef');
     expect(repository.compareAndSet).not.toHaveBeenCalled();
     await expect(
       service.taskOptions({ ...actor([]), tenantId: 'forged' }),
     ).rejects.toThrow('MODEL_SETTINGS_IDENTITY_REQUIRED');
+  });
+
+  it('declares the current GLM Agent strategy independently from the selected default with one settings read', async () => {
+    process.env[CANONICAL_EXECUTION_MODEL_V2_ENV] = 'true';
+    const { service, repository } = setup({
+      tenantId: 'tenant-model-fixture', modelRef: 'm3probe/minimax-m3',
+      revision: 8, updatedAt: new Date('2026-10-26T00:00:00Z'),
+      outputBudgetsJson: { 'miaoda/glm-5.3': 131072 },
+    });
+    expect(await service.taskOptions(actor([]))).toMatchObject({
+      defaultModelRef: 'm3probe/minimax-m3', programAgentModelRef: 'miaoda/glm-5.3',
+      options: expect.arrayContaining([
+        expect.objectContaining({ modelRef: 'miaoda/glm-5.3', available: true }),
+        expect.objectContaining({ modelRef: 'm3probe/minimax-m3', available: true }),
+      ]),
+    });
+    expect(repository.read).toHaveBeenCalledTimes(1);
+    expect(repository.compareAndSet).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: 'disabled flag', flag: 'false', revision: 8, budgets: { 'miaoda/glm-5.3': 131072 } },
+    { label: 'nonliteral flag', flag: '1', revision: 8, budgets: { 'miaoda/glm-5.3': 131072 } },
+    { label: 'missing GLM budget', flag: 'true', revision: 8, budgets: {} },
+    { label: 'other model budget', flag: 'true', revision: 8, budgets: { 'm3probe/minimax-m3': 131072 } },
+    { label: 'unsaved revision', flag: 'true', revision: 0, budgets: { 'miaoda/glm-5.3': 131072 } },
+    { label: 'fractional revision', flag: 'true', revision: 1.5, budgets: { 'miaoda/glm-5.3': 131072 } },
+    { label: 'unsafe revision', flag: 'true', revision: Number.MAX_SAFE_INTEGER + 1, budgets: { 'miaoda/glm-5.3': 131072 } },
+  ])('keeps GLM model availability separate when Agent has $label', async ({ flag, revision, budgets }) => {
+    process.env[CANONICAL_EXECUTION_MODEL_V2_ENV] = flag;
+    const { service, repository } = setup({
+      tenantId: 'tenant-model-fixture', modelRef: 'm3probe/minimax-m3', revision,
+      updatedAt: new Date('2026-10-26T00:00:00Z'), outputBudgetsJson: budgets,
+    });
+    const options = await service.taskOptions(actor([]));
+    expect(options).not.toHaveProperty('programAgentModelRef');
+    expect(options.options).toContainEqual(expect.objectContaining({ modelRef: 'miaoda/glm-5.3', available: true }));
+    expect(repository.read).toHaveBeenCalledTimes(1);
+    expect(repository.compareAndSet).not.toHaveBeenCalled();
+  });
+
+  it('does not advertise Agent for a catalog-unavailable GLM or hide a corrupt saved budget', async () => {
+    process.env[CANONICAL_EXECUTION_MODEL_V2_ENV] = 'true';
+    const initial: StoredCanonicalModelSetting = {
+      tenantId: 'tenant-model-fixture', modelRef: 'm3probe/minimax-m3',
+      revision: 8, updatedAt: new Date('2026-10-26T00:00:00Z'),
+      outputBudgetsJson: { 'miaoda/glm-5.3': 131072 },
+    };
+    const glm = CANONICAL_REGISTERED_MODELS.find(option => option.modelRef === 'miaoda/glm-5.3')!;
+    const available: boolean = glm.available;
+    try {
+      glm.available = false;
+      expect(await setup(initial).service.taskOptions(actor([]))).not.toHaveProperty('programAgentModelRef');
+    } finally { glm.available = available; }
+    await expect(setup({ ...initial, outputBudgetsJson: { 'miaoda/glm-5.3': 0 } }).service.taskOptions(actor([])))
+      .rejects.toThrow('MODEL_OUTPUT_BUDGET_STORED_INVALID');
   });
 
   it('keeps all stages on the WorkItem snapshot, independent from global settings', async () => {
@@ -131,6 +188,7 @@ describe('tenant global model selection', () => {
   beforeEach(() => {
     process.env.SANDBOX_ID = 'offline-unit-fixture';
     delete process.env.MIAODA_LOCAL_DEV;
+    delete process.env[CANONICAL_EXECUTION_MODEL_V2_ENV];
     process.env[CANONICAL_MODEL_MANAGER_ROLE_ENV] = role;
   });
   afterEach(() => {
@@ -138,6 +196,7 @@ describe('tenant global model selection', () => {
       'SANDBOX_ID',
       'MIAODA_LOCAL_DEV',
       CANONICAL_MODEL_MANAGER_ROLE_ENV,
+      CANONICAL_EXECUTION_MODEL_V2_ENV,
     ]) {
       if (originalEnv[key] === undefined) delete process.env[key];
       else process.env[key] = originalEnv[key];
@@ -294,6 +353,9 @@ describe('tenant global model selection', () => {
     await expect(
       service.captureForNewTask('tenant-model-fixture', new Date()),
     ).rejects.toMatchObject({ code: 'MODEL_SETTINGS_MODEL_UNAVAILABLE' });
+    await expect(service.taskOptions(actor())).rejects.toMatchObject({
+      code: 'MODEL_SETTINGS_MODEL_UNAVAILABLE',
+    });
   });
 
   it('validates routing metadata without accepting header injection or extra fields', () => {

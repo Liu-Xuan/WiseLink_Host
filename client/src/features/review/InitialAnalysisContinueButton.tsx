@@ -31,6 +31,8 @@ interface ProgramModelChoice {
   catalog: ReturnType<typeof useTaskModelOptions>;
   value: string;
   displayName: string | null;
+  /** New-click choice only; pending requests retain their own sealed mode. */
+  executionMode: CanonicalAssessmentExecutionMode;
   onChange(value: string): void;
 }
 
@@ -43,6 +45,7 @@ interface ContinuationState {
   confirmedRevision: number | null;
   modelRef: string | null;
   modelName: string | null;
+  executionMode: CanonicalAssessmentExecutionMode | null;
 }
 
 /** New program requests choose a model; historical continuations keep their binding. */
@@ -72,6 +75,10 @@ function ProgramContinuation(props: Props) {
         catalog,
         value,
         displayName: model?.displayName ?? null,
+        executionMode:
+          catalog.data?.programAgentModelRef === value
+            ? 'PROGRAM_AGENT_V1'
+            : 'PROGRAM_CONTROLLED_V1',
         onChange: setSelected,
       }}
     />
@@ -115,6 +122,7 @@ function ContinuationRequestButton(
     confirmedRevision: null,
     modelRef: null,
     modelName: null,
+    executionMode: null,
   });
   const visible: ContinuationState =
     state.key === key
@@ -128,6 +136,7 @@ function ContinuationRequestButton(
           confirmedRevision: null,
           modelRef: null,
           modelName: null,
+          executionMode: null,
         };
   const unresolved: boolean = pending.current?.key === key;
   const accepted: boolean =
@@ -135,6 +144,13 @@ function ContinuationRequestButton(
   const modelReady: boolean =
     !props.modelChoice ||
     (props.modelChoice.catalog.ready && props.modelChoice.displayName !== null);
+  const executionMode: CanonicalAssessmentExecutionMode | null | undefined =
+    unresolved
+      ? pending.current?.input.executionMode
+      : accepted
+        ? visible.executionMode
+        : props.queuedRequest?.executionMode ?? props.modelChoice?.executionMode;
+  const programAgent: boolean = executionMode === 'PROGRAM_AGENT_V1';
 
   async function send(): Promise<void> {
     if (
@@ -158,7 +174,7 @@ function ContinuationRequestButton(
               }
             : props.modelChoice
             ? {
-                executionMode: props.executionMode ?? 'PROGRAM_CONTROLLED_V1',
+                executionMode: props.modelChoice.executionMode,
                 modelRef: props.modelChoice.value,
               }
             : {}),
@@ -185,6 +201,7 @@ function ContinuationRequestButton(
       confirmedRevision: null,
       modelRef: request.input.modelRef ?? null,
       modelName: request.modelName,
+      executionMode: request.input.executionMode ?? null,
     });
     try {
       const receipt = await requestInitialAnalysisContinuation(
@@ -216,6 +233,7 @@ function ContinuationRequestButton(
         confirmedRevision: active ? props.expectedRevision : null,
         modelRef: request.input.modelRef ?? null,
         modelName: request.modelName,
+        executionMode: request.input.executionMode ?? null,
         message: active
           ? props.queuedRequest
             ? `已恢复原请求的等待流程，本次仍使用 ${request.modelName}。`
@@ -235,20 +253,34 @@ function ContinuationRequestButton(
       const denied: boolean = [401, 403, 404].includes(failure.statusCode ?? 0);
       const rejected: boolean =
         denied || [400, 409].includes(failure.statusCode ?? 0);
-      if (rejected) pending.current = null;
+      const agentRejected: boolean =
+        !denied &&
+        request.input.executionMode === 'PROGRAM_AGENT_V1' &&
+        [
+          'PROGRAM_AGENT_NOT_ENABLED',
+          'PROGRAM_AGENT_MODEL_UNSUPPORTED',
+          'MODEL_OUTPUT_BUDGET_NOT_CONFIGURED',
+          'MODEL_OUTPUT_BUDGET_REVISION_INVALID',
+          'MODEL_OUTPUT_BUDGET_STORED_INVALID',
+        ].includes(failure.code ?? '');
+      const discardPending: boolean = rejected && !agentRejected;
+      if (discardPending) pending.current = null;
       setState({
         key,
         saving: false,
         checking: false,
         failed: true,
         confirmedRevision: null,
-        modelRef: rejected ? null : (request.input.modelRef ?? null),
-        modelName: rejected ? null : request.modelName,
+        modelRef: discardPending ? null : (request.input.modelRef ?? null),
+        modelName: discardPending ? null : request.modelName,
+        executionMode: discardPending ? null : (request.input.executionMode ?? null),
         message: denied
           ? '当前事项已不可操作，请重新核对访问权限。'
-          : rejected
-            ? '当前版本或执行状态已变化，请刷新进度后再继续。'
-            : '原请求结果待核；再次点击只核对同一请求，模型与输入保持不变。',
+          : agentRejected
+            ? '评估暂未受理，请稍后核对原请求；本次选择与请求标识保持不变。'
+            : rejected
+              ? '当前版本或执行状态已变化，请刷新进度后再继续。'
+              : '原请求结果待核；再次点击只核对同一请求，模型与输入保持不变。',
       });
       if (denied) props.onAccessLost?.();
     } finally {
@@ -296,6 +328,11 @@ function ContinuationRequestButton(
           。
         </p>
       )}
+      {programAgent ? (
+        <p className="wl-initial-analysis-note">
+          将按需读取已授权资料，逐步形成可复核的评估候选。
+        </p>
+      ) : null}
       <Button
         type="button"
         variant="outline"
@@ -318,7 +355,9 @@ function ContinuationRequestButton(
             ? '核对原请求结果'
             : accepted
               ? '请求已受理'
-              : props.label}
+              : props.modelChoice && programAgent
+                ? '开始评估'
+                : props.label}
       </Button>
       {visible.message ? (
         <p
