@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { mkdir, open, readFile, writeFile } from 'node:fs/promises';
-import { closeSync, fsyncSync, linkSync, openSync, unlinkSync } from 'node:fs';
+import { closeSync, createReadStream, fsyncSync, linkSync, openSync, unlinkSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createProgramAgentSession } from './program-agent-session.mjs';
@@ -27,6 +27,34 @@ async function durable(path, bytes) {
   try { await directory.sync(); } finally { await directory.close(); }
 }
 const durableJson = (path, value) => durable(path, Buffer.from(JSON.stringify(value) + '\n'));
+async function hasCompletedCliTurn(path) {
+  // The old 2M-character successful stdout fits in at most 6M UTF-8 bytes.
+  // Keep that entire control-record range without retaining the whole log.
+  // Oversized records remain on disk and cannot complete from a partial match.
+  const line = Buffer.alloc(6_000_000);
+  let length = 0, oversized = false;
+  const completed = () => {
+    try { return JSON.parse(line.subarray(0, length).toString('utf8')).type === 'turn.completed'; }
+    catch { return false; }
+  };
+  for await (const chunk of createReadStream(path, { highWaterMark: 64 * 1024 })) {
+    let start = 0;
+    while (start < chunk.length) {
+      const end = chunk.indexOf(10, start);
+      const part = chunk.subarray(start, end < 0 ? chunk.length : end);
+      if (!oversized) {
+        if (length + part.length > line.length) oversized = true;
+        else { part.copy(line, length); length += part.length; }
+      }
+      if (end < 0) break;
+      if (!oversized && completed()) return true;
+      length = 0; oversized = false; start = end + 1;
+    }
+  }
+  // Preserve the original acceptance of a complete last JSON record without LF.
+  return !oversized && completed();
+}
+
 async function optionalJson(path) {
   try { return JSON.parse(await readFile(path, 'utf8')); }
   catch (error) { if (error?.code === 'ENOENT') return null; throw error; }
@@ -431,28 +459,65 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
       WISELINK_ASSESSMENT_TOKEN: brokerToken };
     const command = ['exec', '--sandbox', 'read-only', '--ephemeral', '--json', '--output-last-message',
       resolve(runDirectory, 'final.txt'), '--skip-git-repo-check', '--cd', resolve(runDirectory, 'work'), '-'];
-    const output = await new Promise((accept, reject) => {
-      child = spawn(codexOptions.codexBinary, command, { cwd: resolve(runDirectory, 'work'),
-        env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
-      let stdout = '', stderr = '';
-      if (!canContinue()) stop(stopCode ?? 'PROGRAM_AGENT_DEADLINE_EXPIRED');
-      child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
-      child.stdout.on('data', part => { stdout += part; if (stdout.length > 2_000_000) stop('PROGRAM_AGENT_CLI_OUTPUT_LIMIT'); });
-      child.stderr.on('data', part => { stderr += part; if (stderr.length > 2_000_000) stop('PROGRAM_AGENT_CLI_OUTPUT_LIMIT'); });
-      child.once('error', error => { stop('PROGRAM_AGENT_CLI_FAILED'); reject(error); });
-      child.once('close', code => {
-        childClosed = true;
-        if (inFlight > 0 || code !== 0) stop('PROGRAM_AGENT_CLI_EXITED');
-        accept({ code, stdout, stderr, timedOut: stopCode === 'PROGRAM_AGENT_DEADLINE_EXPIRED' });
+    const stdoutPath = resolve(runDirectory, 'codex.stdout.jsonl');
+    const stderrPath = resolve(runDirectory, 'codex.stderr.log');
+    let stdoutFile, stderrFile, output, captureFailed = false;
+    const captures = [];
+    const captureFailure = () => { captureFailed = true; stop('PROGRAM_AGENT_CLI_OUTPUT_CAPTURE_FAILED'); };
+    const capture = async (stream, file) => {
+      try {
+        // Each pipe waits for its current disk write before reading again.
+        // Neither a whole-stream buffer nor an unbounded write queue is kept.
+        for await (const part of stream) {
+          let offset = 0;
+          while (offset < part.length) {
+            const { bytesWritten } = await file.write(part, offset, part.length - offset, null);
+            if (!Number.isSafeInteger(bytesWritten) || bytesWritten < 1 || bytesWritten > part.length - offset)
+              fail('PROGRAM_AGENT_CLI_OUTPUT_CAPTURE_FAILED');
+            offset += bytesWritten;
+          }
+        }
+      } catch { captureFailure(); }
+      finally {
+        // Even a failed run keeps its successfully written prefix.
+        try { await file.sync(); } catch { captureFailure(); }
+      }
+    };
+    try {
+      try {
+        stdoutFile = await open(stdoutPath, 'wx', 0o600);
+        stderrFile = await open(stderrPath, 'wx', 0o600);
+      } catch (error) { captureFailure(); throw error; }
+      output = await new Promise((accept, reject) => {
+        child = spawn(codexOptions.codexBinary, command, { cwd: resolve(runDirectory, 'work'),
+          env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+        let childError;
+        captures.push(capture(child.stdout, stdoutFile), capture(child.stderr, stderrFile));
+        if (!canContinue()) stop(stopCode ?? 'PROGRAM_AGENT_DEADLINE_EXPIRED');
+        child.once('error', error => { childError = error; stop('PROGRAM_AGENT_CLI_FAILED'); });
+        child.once('close', code => {
+          childClosed = true;
+          if (inFlight > 0 || code !== 0) stop('PROGRAM_AGENT_CLI_EXITED');
+          if (childError) reject(childError);
+          else accept({ code, timedOut: stopCode === 'PROGRAM_AGENT_DEADLINE_EXPIRED' });
+        });
+        child.stdin.on('error', () => {});
+        child.stdin.end(prompt);
       });
-      child.stdin.on('error', () => {});
-      child.stdin.end(prompt);
-    });
-    await durable(resolve(runDirectory, 'codex.stdout.jsonl'), Buffer.from(output.stdout));
-    await durable(resolve(runDirectory, 'codex.stderr.log'), Buffer.from(output.stderr));
-    if (dispatchFailed || heartbeatFailure || !canContinue() || output.code !== 0 || output.timedOut || report.length < 1 ||
+    } finally {
+      await Promise.all(captures);
+      for (const file of [stdoutFile, stderrFile]) {
+        try { await file?.close(); } catch { captureFailure(); }
+      }
+      try {
+        const directory = await open(runDirectory, 'r');
+        try { await directory.sync(); } finally { await directory.close(); }
+      } catch { captureFailure(); }
+    }
+    if (captureFailed || dispatchFailed || heartbeatFailure || !canContinue() ||
+        output.code !== 0 || output.timedOut || report.length < 1 ||
         report.at(-1).upstreamFinishReason !== 'stop' ||
-        !output.stdout.split('\n').some(line => { try { return JSON.parse(line).type === 'turn.completed'; } catch { return false; } }))
+        !await hasCompletedCliTurn(stdoutPath))
       fail('PROGRAM_AGENT_OUTCOME_UNKNOWN');
     let candidate;
     try { candidate = JSON.parse(await readFile(resolve(runDirectory, 'final.txt'), 'utf8')); }

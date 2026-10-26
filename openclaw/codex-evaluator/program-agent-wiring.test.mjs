@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createProgramAgentSession, validateProgramAgentCandidate } from './program-agent-session.mjs';
@@ -13,6 +13,7 @@ import { invokeHostedProgramAssessmentAgent } from '../skills/wiselink-research-
 import { canonicalJson } from '../skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
 import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
+import { setTimeout as delay } from 'node:timers/promises';
 
 // User-supplied Host 7d07 synthetic examples; never replay to a real Host.
 const originalPage = JSON.parse(await readFile(new URL('./fixtures/program-agent-v3-original-page.json', import.meta.url)));
@@ -246,15 +247,39 @@ async function scratch(t) {
 // Small HTTP-driving child, not real Codex or a model. This exercises the
 // existing broker, dispatch ledger and final candidate path without rerunning
 // the previously accepted real CLI/MCP demonstration.
-async function fakeCli(root, work, selected, validate = false) {
+function captureLogRound(ordinal) {
+  return { stdout: Buffer.from(JSON.stringify({ type: 'item.completed', ordinal,
+    text: 'synthetic only 汉字🧪 {"type":"turn.completed"} ' + 'x'.repeat(100_000) }) + '\n'),
+  stderr: Buffer.concat([Buffer.from(`synthetic stderr ${ordinal}:` + 'z'.repeat(100_000)),
+    Buffer.from([0xff, 0x00, 0xc3, 0x28, 0x0a])]) };
+}
+function captureLogTail(stdoutBytes, terminal) {
+  if (terminal === 'missing') return Buffer.alloc(0);
+  if (terminal === 'truncated') return Buffer.from('{"type":"turn.completed"');
+  if (terminal === 'nested') return Buffer.from('{"type":"item.completed","item":{"type":"turn.completed"}}\n');
+  if (terminal === 'invalid-suffix') return Buffer.from('{"type":"turn.completed"} invalid\n');
+  if (terminal === 'large') return Buffer.from(JSON.stringify({ type: 'turn.completed',
+    syntheticExtension: 'x'.repeat(131_072) }));
+  const event = '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}';
+  if (terminal === 'oversized-item') return Buffer.from(JSON.stringify({ type: 'item.completed',
+    text: 'x'.repeat(6_000_001), nested: { type: 'turn.completed' } }) + '\n' + event);
+  if (terminal !== 'split-eof') return Buffer.from(event + '\r\n');
+  // Place the control record across a 64KiB file-read boundary, without final LF.
+  const padding = (65530 - stdoutBytes % 65536 + 65536) % 65536;
+  return Buffer.from((padding ? ' '.repeat(padding - 1) + '\n' : '') + event);
+}
+
+async function fakeCli(root, work, selected, validate = false, cli = null) {
   const path = join(root, 'fake-codex.mjs');
   const code = `#!${process.execPath}
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 for await (const _ of process.stdin) {}
 const config = await readFile(join(process.env.CODEX_HOME, 'config.toml'), 'utf8');
 const base = config.match(/base_url = "([^"]+)"/)[1];
 const post = async (url, token, body) => {
+  if (new URL(url).hostname !== '127.0.0.1') throw new Error('SYNTHETIC_LOOPBACK_ONLY');
   const response = await fetch(url, { method: 'POST', headers: { authorization: 'Bearer ' + token,
     'content-type': 'application/json' }, body: JSON.stringify(body) });
   return { status: response.status, body: await response.text() };
@@ -270,10 +295,41 @@ if (${validate} && source.status === 200) validation = await post(process.env.WI
     arguments: { workJson: ${JSON.stringify(JSON.stringify(work))} } } });
 const sourceAvailable = source.status === 200 && JSON.parse(JSON.parse(source.body).content[0].text).status === 'AVAILABLE';
 const after = sourceAvailable ? null : await model();
+const cli = ${JSON.stringify(cli)};
+let stdoutBytes = 0;
+if (cli) {
+  const logRound = ${captureLogRound.toString()};
+  const write = (stream, bytes) => new Promise((resolve, reject) => stream.write(bytes, error => error ? reject(error) : resolve()));
+  for (let ordinal = 0; ordinal < (cli.rounds ?? 1); ordinal++) {
+    if (ordinal > 0 && (await model()).status !== 200) throw new Error('SYNTHETIC_DISPATCH_FAILED');
+    const part = logRound(ordinal);
+    await write(process.stdout, part.stdout); await write(process.stderr, part.stderr);
+    stdoutBytes += part.stdout.length;
+  }
+  if (cli.pauseBeforeCompletion) {
+    await writeFile(join(dirname(process.env.CODEX_HOME), 'synthetic-log-ready'), 'ready');
+    for (let i = 0; ; i++) {
+      try { await readFile(join(dirname(process.env.CODEX_HOME), 'synthetic-log-continue')); break; }
+      catch (error) { if (error.code !== 'ENOENT' || i > 500) throw error; }
+      await delay(10);
+    }
+  }
+}
 await writeFile(join(dirname(process.env.CODEX_HOME), 'synthetic-child-observations.json'), JSON.stringify({ one, source, after, validation }));
 const finalPath = process.argv[process.argv.indexOf('--output-last-message') + 1];
 await writeFile(finalPath, ${JSON.stringify(JSON.stringify({ tool_name: 'return_wiselink_program_assessment', arguments: { workJson: JSON.stringify(work) } }))});
-console.log(JSON.stringify({ type: 'turn.completed' }));
+if (!cli) console.log(JSON.stringify({ type: 'turn.completed' }));
+else {
+  const tail = (${captureLogTail.toString()})(stdoutBytes, cli.terminal ?? 'normal');
+  const write = bytes => new Promise((resolve, reject) => process.stdout.write(bytes, error => error ? reject(error) : resolve()));
+  const split = Math.max(0, tail.length - 7);
+  await write(tail.subarray(0, split)); await delay(5); await write(tail.subarray(split));
+  if (cli.holdAfterCompletion) {
+    await writeFile(join(dirname(process.env.CODEX_HOME), 'synthetic-log-ready'), 'ready');
+    await delay(20_000);
+  }
+  process.exitCode = cli.exitCode ?? 0;
+}
 `;
   await writeFile(path, code, { mode: 0o700 });
   return path;
@@ -293,7 +349,7 @@ function providerResponse(request) {
       upstreamRequestSha256: sha(upstreamRequestBytes), upstreamResponseSha256: sha(upstreamResponseBytes) } };
 }
 
-async function gatewayFixture(t, includeStatement, dispatch = providerResponse) {
+async function gatewayFixture(t, includeStatement, dispatch = providerResponse, cli = null) {
   const root = await scratch(t), data = sourceData(includeStatement);
   const checkpoint = await createCheckpointStore(join(root, 'checkpoint'));
   const selected = [data.modelInput.availableSources[0].ref];
@@ -306,7 +362,7 @@ async function gatewayFixture(t, includeStatement, dispatch = providerResponse) 
       settingsRevision: 1, selectedAt: '2026-10-26T00:00:00Z' },
     sessionDiscriminator: 'synthetic-wiring', assessmentBinding: data.assessmentBinding,
     assessmentCheckpoint: checkpoint, taskDeadline: new Date(Date.now() + 60_000).toISOString(),
-    codexOptions: { codexBinary: await fakeCli(root, data.work, selected, includeStatement), runRoot: join(root, 'runs') },
+    codexOptions: { codexBinary: await fakeCli(root, data.work, selected, includeStatement, cli), runRoot: join(root, 'runs') },
     readAssessmentSources: async intent => {
       assert.equal(intent.context, 'EXACT');
       return includeStatement ? structuredClone(statementExact) : originalExact(intent.sourceRefs);
@@ -328,6 +384,13 @@ async function gatewayFixture(t, includeStatement, dispatch = providerResponse) 
     },
     recordAssessmentProgramProgress: async ({ phase }) => ({ phase, status: 'SYNTHETIC_ACK' }),
   };
+  if (cli) {
+    data.modelInput.executionMode = 'PROGRAM_AGENT_V1';
+    options.agentPolicy = { schemaVersion: 'wiselink.program-agent-policy.v1',
+      maxModelRequests: null, maxOutputTokens: 131072, maxToolCalls: null, timeoutSeconds: 3600 };
+    Object.assign(options.executionModel, {
+      schemaVersion: 'wiselink.3_1.execution_model_selection.v2', maxOutputTokens: 131072 });
+  }
   let originalGatewayInput;
   const invoke = () => invokeHostedProgramAssessmentAgent({ operation: 'EVALUATE_JOBAID', modelInput: data.modelInput }, options,
     { providerDispatch: async request => { counters.provider++; return dispatch(request); },
@@ -515,4 +578,244 @@ test('seal v2 rejects a production-protocol receipt without its exact frozen dea
   await assert.rejects(readFile(join(link.runDirectory, 'ledger/dispatch-1.result.json')), { code: 'ENOENT' });
   assert.equal(await f.checkpoint.readOptional('program-agent-candidate.result'), null);
   assert.equal(f.counters.provider, 1); assert.equal(f.counters.save, 0);
+});
+
+async function captureFixture(t, cli = {}) {
+  const f = await gatewayFixture(t, true, providerResponse, cli);
+  const controller = new AbortController();
+  f.options.signal = controller.signal;
+  t.after(() => controller.abort());
+  return { ...f, controller };
+}
+async function waitForCapture(f, expectedLengths) {
+  const until = Date.now() + 5000;
+  while (Date.now() < until) {
+    const link = await f.checkpoint.readOptional('program-agent-run');
+    if (link) {
+      try {
+        await readFile(join(link.runDirectory, 'synthetic-log-ready'));
+        if (!expectedLengths || ((await stat(join(link.runDirectory, 'codex.stdout.jsonl'))).size === expectedLengths.stdout &&
+            (await stat(join(link.runDirectory, 'codex.stderr.log'))).size === expectedLengths.stderr)) return link.runDirectory;
+      }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    await delay(10);
+  }
+  throw new Error('SYNTHETIC_CAPTURE_HANDSHAKE_TIMED_OUT');
+}
+function expectedCapture(rounds, terminal = 'normal') {
+  const output = Array.from({ length: rounds }, (_, i) => captureLogRound(i));
+  const stdout = Buffer.concat(output.map(item => item.stdout));
+  return { stdout: Buffer.concat([stdout, captureLogTail(stdout.length, terminal)]),
+    stderr: Buffer.concat(output.map(item => item.stderr)) };
+}
+async function assertCaptureUnknown(f, pending, pattern = /PROGRAM_AGENT_OUTCOME_UNKNOWN/u) {
+  await assert.rejects(pending, pattern);
+  const link = await f.checkpoint.readOptional('program-agent-run');
+  await assert.rejects(readFile(join(link.runDirectory, 'program-agent-final-receipt.json')), { code: 'ENOENT' });
+  assert.equal(await f.checkpoint.readOptional('program-agent-candidate.result'), null);
+  assert.equal(await f.checkpoint.readOptional('program-save-request'), null);
+  assert.equal(f.counters.save, 0);
+  const calls = f.counters.provider;
+  const bindingPath = join(link.runDirectory, 'program-agent-binding.json'), before = await readFile(bindingPath);
+  await assert.rejects(f.recoverExact(), /PROGRAM_AGENT_OUTCOME_UNKNOWN/u);
+  assert.equal(f.counters.provider, calls);
+  assert.deepEqual(await readFile(bindingPath), before);
+  return link.runDirectory;
+}
+function mockCaptureOpen(t, intercept) {
+  const original = fsPromises.open;
+  const mocked = t.mock.method(fsPromises, 'open', (...args) => intercept(original, ...args));
+  syncBuiltinESMExports();
+  t.after(() => { mocked.mock.restore(); syncBuiltinESMExports(); });
+}
+const isCapture = path => /\/codex\.(?:stdout\.jsonl|stderr\.log)$/u.test(String(path));
+
+test('CLI capture: 32 synthetic turns persist both streams above 2M before completion and preserve a split EOF terminal', async t => {
+  const rounds = 32, f = await captureFixture(t, { rounds, terminal: 'split-eof', pauseBeforeCompletion: true });
+  const pending = f.invoke(); pending.catch(() => {});
+  const expected = expectedCapture(rounds, 'split-eof');
+  const prefixBytes = Array.from({ length: rounds }, (_, i) => captureLogRound(i).stdout.length).reduce((a, b) => a + b, 0);
+  const directory = await waitForCapture(f, { stdout: prefixBytes, stderr: expected.stderr.length });
+  // The child is still alive waiting for our marker: these are live captured files.
+  const liveStdout = await readFile(join(directory, 'codex.stdout.jsonl'));
+  const liveStderr = await readFile(join(directory, 'codex.stderr.log'));
+  assert.equal(liveStdout.length, prefixBytes);
+  assert.deepEqual(liveStdout, expected.stdout.subarray(0, prefixBytes));
+  assert.deepEqual(liveStderr, expected.stderr);
+  assert.ok(liveStdout.length > 2_000_000 && liveStderr.length > 2_000_000);
+  for (const name of ['codex.stdout.jsonl', 'codex.stderr.log'])
+    assert.equal((await stat(join(directory, name))).mode & 0o777, 0o600);
+  assert.equal((await stat(directory)).mode & 0o777, 0o700);
+  await assert.rejects(readFile(join(directory, 'program-agent-final-receipt.json')), { code: 'ENOENT' });
+  await writeFile(join(directory, 'synthetic-log-continue'), 'continue', { mode: 0o600 });
+  const result = await pending;
+  assert.ok(result.output.workRevisionRef);
+  assert.deepEqual(await readFile(join(directory, 'codex.stdout.jsonl')), expected.stdout);
+  assert.deepEqual(await readFile(join(directory, 'codex.stderr.log')), expected.stderr);
+  const receipt = JSON.parse(await readFile(join(directory, 'program-agent-final-receipt.json')));
+  assert.equal(receipt.dispatchCount, rounds); assert.equal(f.counters.provider, rounds); assert.equal(f.counters.save, 1);
+  assert.equal(receipt.policy.maxModelRequests, null); assert.equal(receipt.policy.maxToolCalls, null);
+  assert.equal(receipt.policy.maxOutputTokens, 131072);
+  assert.ok(receipt.dispatches.every(item => item.maxOutputTokens === 131072));
+  assert.equal(receipt.generationDeadlineAt, f.options.taskDeadline);
+  assert.deepEqual(await f.invoke(), result);
+  assert.equal(f.counters.provider, rounds); assert.equal(f.counters.save, 1);
+  t.diagnostic(JSON.stringify({ syntheticDispatches: rounds, syntheticSaves: 1,
+    stdoutBytes: expected.stdout.length, stderrBytes: expected.stderr.length,
+    stdoutSha256: sha(expected.stdout), stderrSha256: sha(expected.stderr), liveCaptureBeforeCompletion: true }));
+});
+
+test('CLI capture: a complete terminal above 64KiB remains accepted within the original successful record range', async t => {
+  const f = await captureFixture(t, { terminal: 'large' });
+  await f.invoke();
+  const { runDirectory } = await f.checkpoint.readOptional('program-agent-run');
+  const expected = expectedCapture(1, 'large');
+  assert.ok(captureLogTail(0, 'large').length > 64 * 1024);
+  assert.deepEqual(await readFile(join(runDirectory, 'codex.stdout.jsonl')), expected.stdout);
+  assert.equal(f.counters.provider, 1); assert.equal(f.counters.save, 1);
+});
+
+test('CLI capture: an oversized nonterminal record stays intact and scanning resumes at the next complete record', async t => {
+  const f = await captureFixture(t, { terminal: 'oversized-item' });
+  await f.invoke();
+  const { runDirectory } = await f.checkpoint.readOptional('program-agent-run');
+  const expected = expectedCapture(1, 'oversized-item');
+  assert.ok(expected.stdout.length > 6_000_000);
+  assert.deepEqual(await readFile(join(runDirectory, 'codex.stdout.jsonl')), expected.stdout);
+  assert.deepEqual(await readFile(join(runDirectory, 'codex.stderr.log')), expected.stderr);
+  assert.equal(f.counters.provider, 1); assert.equal(f.counters.save, 1);
+});
+
+test('CLI capture: awaited short writes preserve every raw byte without a queued write backlog', async t => {
+  const f = await captureFixture(t), active = new Map(), maximum = new Map();
+  let shortWrites = 0, largestChunk = 0;
+  mockCaptureOpen(t, async (open, path, ...args) => {
+    const file = await open(path, ...args);
+    if (isCapture(path)) {
+      const write = file.write.bind(file);
+      file.write = async (buffer, offset, length, position) => {
+        const key = String(path); active.set(key, (active.get(key) ?? 0) + 1);
+        maximum.set(key, Math.max(maximum.get(key) ?? 0, active.get(key)));
+        largestChunk = Math.max(largestChunk, buffer.length);
+        try {
+          await new Promise(resolve => setImmediate(resolve));
+          if (length > 4093) shortWrites++;
+          return await write(buffer, offset, Math.min(length, 4093), position);
+        } finally { active.set(key, active.get(key) - 1); }
+      };
+    }
+    return file;
+  });
+  await f.invoke();
+  const { runDirectory } = await f.checkpoint.readOptional('program-agent-run');
+  const expected = expectedCapture(1);
+  assert.deepEqual(await readFile(join(runDirectory, 'codex.stdout.jsonl')), expected.stdout);
+  assert.deepEqual(await readFile(join(runDirectory, 'codex.stderr.log')), expected.stderr);
+  assert.ok(shortWrites > 2); assert.equal(maximum.size, 2);
+  assert.ok([...maximum.values()].every(value => value === 1));
+  assert.ok(largestChunk <= 128 * 1024); assert.equal(f.counters.save, 1);
+  t.diagnostic(JSON.stringify({ shortWrites, maximumConcurrentWritesPerStream: 1, largestChunk }));
+});
+
+for (const terminal of ['missing', 'truncated', 'nested', 'invalid-suffix'])
+  test(`CLI capture: ${terminal} completion cannot publish a final receipt or replay a dispatch`, async t => {
+    const f = await captureFixture(t, { terminal });
+    const directory = await assertCaptureUnknown(f, f.invoke()), expected = expectedCapture(1, terminal);
+    assert.deepEqual(await readFile(join(directory, 'codex.stdout.jsonl')), expected.stdout);
+    assert.deepEqual(await readFile(join(directory, 'codex.stderr.log')), expected.stderr);
+    assert.equal(f.counters.provider, 1);
+  });
+
+test('CLI capture: nonzero exit retains both streams above 2M despite a complete terminal and valid candidate', async t => {
+  const rounds = 25, f = await captureFixture(t, { rounds, exitCode: 17 });
+  const directory = await assertCaptureUnknown(f, f.invoke()), expected = expectedCapture(rounds);
+  assert.ok(expected.stdout.length > 2_000_000 && expected.stderr.length > 2_000_000);
+  assert.deepEqual(await readFile(join(directory, 'codex.stdout.jsonl')), expected.stdout);
+  assert.deepEqual(await readFile(join(directory, 'codex.stderr.log')), expected.stderr);
+  const stop = JSON.parse(await readFile(join(directory, 'ledger/session-stop.json')));
+  assert.equal(stop.code, 'PROGRAM_AGENT_CLI_EXITED'); assert.equal(stop.reservedDispatches, rounds);
+  assert.equal(stop.inFlightAtReturn, 0); assert.equal(f.counters.provider, rounds);
+});
+
+for (const reason of ['user cancellation', 'sealed absolute deadline'])
+  test(`CLI capture: ${reason} after completion still preserves logs and forbids success`, async t => {
+    const f = await captureFixture(t, { holdAfterCompletion: true });
+    if (reason === 'sealed absolute deadline') f.options.taskDeadline = new Date(Date.now() + 1200).toISOString();
+    const pending = f.invoke(); pending.catch(() => {});
+    const directory = await waitForCapture(f), expected = expectedCapture(1);
+    if (reason === 'user cancellation') f.controller.abort(new Error('SYNTHETIC_USER_CANCELLED'));
+    await assertCaptureUnknown(f, pending);
+    assert.deepEqual(await readFile(join(directory, 'codex.stdout.jsonl')), expected.stdout);
+    assert.deepEqual(await readFile(join(directory, 'codex.stderr.log')), expected.stderr);
+    const stop = JSON.parse(await readFile(join(directory, 'ledger/session-stop.json')));
+    assert.equal(stop.code, reason === 'user cancellation' ? 'PROGRAM_AGENT_USER_CANCELLED' : 'PROGRAM_AGENT_DEADLINE_EXPIRED');
+    assert.equal(stop.generationDeadlineAt, f.options.taskDeadline);
+    assert.equal(stop.inFlightAtReturn, 0); assert.equal(f.counters.provider, 1);
+  });
+
+test('CLI capture: second file open failure closes the first private file before any dispatch', async t => {
+  const f = await captureFixture(t); let stdoutClosed = false;
+  mockCaptureOpen(t, async (open, path, ...args) => {
+    if (String(path).endsWith('/codex.stderr.log')) throw new Error('SYNTHETIC_CAPTURE_OPEN_FAILED');
+    const file = await open(path, ...args);
+    if (String(path).endsWith('/codex.stdout.jsonl')) {
+      const close = file.close.bind(file);
+      file.close = async () => { await close(); stdoutClosed = true; };
+    }
+    return file;
+  });
+  const directory = await assertCaptureUnknown(f, f.invoke(), /SYNTHETIC_CAPTURE_OPEN_FAILED/u);
+  assert.equal(stdoutClosed, true); assert.equal(f.counters.provider, 0);
+  assert.equal((await readFile(join(directory, 'codex.stdout.jsonl'))).length, 0);
+  assert.equal((await stat(join(directory, 'codex.stdout.jsonl'))).mode & 0o777, 0o600);
+});
+
+for (const fault of ['partial write failure', 'zero write', 'file sync', 'file close', 'directory sync'])
+  test(`CLI capture: ${fault} fails closed and retains captured files`, async t => {
+    const f = await captureFixture(t); let failed = false, writes = 0, capturesClosed = 0;
+    mockCaptureOpen(t, async (open, path, ...args) => {
+      const file = await open(path, ...args), name = String(path);
+      if (isCapture(path)) {
+        const close = file.close.bind(file);
+        file.close = async () => {
+          await close(); capturesClosed++;
+          if (fault === 'file close' && name.endsWith('/codex.stdout.jsonl')) {
+            failed = true; throw new Error('SYNTHETIC_CAPTURE_CLOSE_FAILED');
+          }
+        };
+      }
+      if (name.endsWith('/codex.stdout.jsonl')) {
+        if (fault === 'partial write failure' || fault === 'zero write') {
+          const write = file.write.bind(file);
+          file.write = async (buffer, offset, length, position) => {
+            writes++;
+            if (fault === 'zero write') { failed = true; return { bytesWritten: 0, buffer }; }
+            if (writes > 1) { failed = true; throw new Error('SYNTHETIC_CAPTURE_WRITE_FAILED'); }
+            return write(buffer, offset, Math.min(length, 4096), position);
+          };
+        }
+        if (fault === 'file sync') file.sync = async () => { failed = true; throw new Error('SYNTHETIC_CAPTURE_SYNC_FAILED'); };
+      }
+      if (fault === 'directory sync' && capturesClosed === 2 && /\/program-agent-[a-f0-9]{64}$/u.test(name))
+        file.sync = async () => { failed = true; throw new Error('SYNTHETIC_CAPTURE_DIRECTORY_SYNC_FAILED'); };
+      return file;
+    });
+    const directory = await assertCaptureUnknown(f, f.invoke());
+    assert.equal(failed, true); assert.equal(capturesClosed, 2);
+    const stdout = await readFile(join(directory, 'codex.stdout.jsonl'));
+    await readFile(join(directory, 'codex.stderr.log'));
+    if (fault === 'partial write failure') assert.deepEqual(stdout, captureLogRound(0).stdout.subarray(0, 4096));
+    else if (fault === 'zero write') { assert.equal(stdout.length, 0); assert.equal(writes, 1); }
+    else assert.deepEqual(stdout, expectedCapture(1).stdout);
+    const stop = JSON.parse(await readFile(join(directory, 'ledger/session-stop.json')));
+    assert.equal(stop.code, 'PROGRAM_AGENT_CLI_OUTPUT_CAPTURE_FAILED'); assert.equal(stop.inFlightAtReturn, 0);
+  });
+
+test('CLI capture: spawn failure drains and closes both already-created private capture files', async t => {
+  const f = await captureFixture(t); f.options.codexOptions.codexBinary = join(f.root, 'synthetic-absent-cli');
+  const directory = await assertCaptureUnknown(f, f.invoke(), /ENOENT/u);
+  for (const name of ['codex.stdout.jsonl', 'codex.stderr.log'])
+    assert.equal((await readFile(join(directory, name))).length, 0);
+  assert.equal(f.counters.provider, 0);
 });

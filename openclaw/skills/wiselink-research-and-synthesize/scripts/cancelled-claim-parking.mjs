@@ -32,11 +32,15 @@ export function parseCancelledClaimExpectation(value) {
       ['sourceByteLength', 'attemptNo'].some(key => !integer(row[key], 1))) invalid();
   const model = row.executionModel;
   const modelKeys = ['modelRef', 'displayName', 'providerKind', 'settingsRevision', 'selectedAt'];
+  const budgeted = model !== null && typeof model === 'object' && Object.hasOwn(model, 'schemaVersion');
+  if (budgeted) modelKeys.push('schemaVersion', 'maxOutputTokens');
   if (!exact(model, modelKeys) || !id(model.modelRef, /^[a-z0-9][a-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9/._:-]*$/u) ||
       model.modelRef.length > 255 || typeof model.displayName !== 'string' || !model.displayName.trim() ||
       model.displayName.length > 120 || !['BUILT_IN', 'CUSTOM'].includes(model.providerKind) ||
       !integer(model.settingsRevision, 0) || typeof model.selectedAt !== 'string' ||
-      !Number.isFinite(Date.parse(model.selectedAt))) invalid();
+      !Number.isFinite(Date.parse(model.selectedAt)) ||
+      (budgeted && (model.schemaVersion !== 'wiselink.3_1.execution_model_selection.v2' ||
+        !integer(model.maxOutputTokens, 1)))) invalid();
   return { workItemId: value.workItemId, leaseGeneration: value.leaseGeneration,
     leaseTokenHash: value.leaseTokenHash, expectedCancellation: Object.fromEntries(keys.map(key =>
       [key, key === 'executionModel' ? Object.fromEntries(modelKeys.map(name => [name, model[name]])) : row[key]])) };
