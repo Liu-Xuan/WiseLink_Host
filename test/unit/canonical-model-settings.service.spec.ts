@@ -88,7 +88,7 @@ describe('tenant global model selection', () => {
     const { service, repository } = setup({
       tenantId: 'tenant-model-fixture', modelRef: 'm3probe/minimax-m3',
       revision: 8, updatedAt: new Date('2026-10-26T00:00:00Z'),
-      outputBudgetsJson: { 'miaoda/glm-5.3': 131072 },
+      outputBudgetsJson: {},
     });
     expect(await service.taskOptions(actor([]))).toMatchObject({
       defaultModelRef: 'm3probe/minimax-m3', programAgentModelRef: 'miaoda/glm-5.3',
@@ -104,8 +104,6 @@ describe('tenant global model selection', () => {
   it.each([
     { label: 'disabled flag', flag: 'false', revision: 8, budgets: { 'miaoda/glm-5.3': 131072 } },
     { label: 'nonliteral flag', flag: '1', revision: 8, budgets: { 'miaoda/glm-5.3': 131072 } },
-    { label: 'missing GLM budget', flag: 'true', revision: 8, budgets: {} },
-    { label: 'other model budget', flag: 'true', revision: 8, budgets: { 'm3probe/minimax-m3': 131072 } },
     { label: 'unsaved revision', flag: 'true', revision: 0, budgets: { 'miaoda/glm-5.3': 131072 } },
     { label: 'fractional revision', flag: 'true', revision: 1.5, budgets: { 'miaoda/glm-5.3': 131072 } },
     { label: 'unsafe revision', flag: 'true', revision: Number.MAX_SAFE_INTEGER + 1, budgets: { 'miaoda/glm-5.3': 131072 } },

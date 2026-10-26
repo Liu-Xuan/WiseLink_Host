@@ -7,6 +7,7 @@ import {
   CANONICAL_EXECUTION_MODEL_V2_SCHEMA,
   CANONICAL_INITIAL_GLM_OUTPUT_TOKENS,
   readModelOutputBudgets,
+  programAgentOutputTokens,
 } from '../../server/modules/model-settings/canonical-model-output-budget';
 import { parsePendingModelConfigurationRequest } from '../../server/modules/canonical-host/pending-model-configuration.request';
 import { miaodaHostedFinalUserActor } from '../../server/modules/work-item/production-miaoda-browser-ingress';
@@ -163,7 +164,7 @@ describe('manager-owned per-model output budgets', () => {
     expect(repository.read).not.toHaveBeenCalled();
   });
 
-  it('captures the exact selected model budget with the real saved settings revision', async () => {
+  it('captures the backend-bound model budget with the real saved settings revision', async () => {
     process.env[CANONICAL_EXECUTION_MODEL_V2_ENV] = 'true';
     const { service } = settings({ [modelRef]: 131072, 'dli/gpt-5.6-sol': 12000 }, 8);
     expect(await service.captureForExplicitProgram('budget-tenant', modelRef, selectedAt, 'PROGRAM_AGENT_V1'))
@@ -181,14 +182,32 @@ describe('manager-owned per-model output budgets', () => {
       .rejects.toThrow('PROGRAM_AGENT_MODEL_UNSUPPORTED');
   });
 
-  it('never borrows a default-model budget for GLM or accepts malformed stored budgets', async () => {
+  it('binds GLM without a tenant budget and never borrows another model limit or accepts malformed budgets', async () => {
     process.env[CANONICAL_EXECUTION_MODEL_V2_ENV] = 'true';
     await expect(settings({ 'miaoda/minimax-m3': 64000 }).service
       .captureForExplicitProgram('budget-tenant', modelRef, selectedAt, 'PROGRAM_AGENT_V1'))
-      .rejects.toThrow('MODEL_OUTPUT_BUDGET_NOT_CONFIGURED');
+      .resolves.toMatchObject({ maxOutputTokens: 131072, settingsRevision: 4 });
     for (const value of ['{broken', [], { [modelRef]: 0 }, { 'invalid model key': 131072 }])
       expect(() => readModelOutputBudgets(value)).toThrow('MODEL_OUTPUT_BUDGET_STORED_INVALID');
   });
+
+  it.each([{}, { [modelRef]: 64000 }, { [modelRef]: 262144 }])(
+    'uses the same backend binding in catalog and sealed selection without any write: %j', async budgets => {
+      process.env[CANONICAL_EXECUTION_MODEL_V2_ENV] = 'true';
+      const { service, repository } = settings(budgets, 8);
+      const catalog = await service.taskOptions(actor([]));
+      expect(catalog.programAgentModelRef).toBe(modelRef);
+      const selection = await service.captureForExplicitProgram('budget-tenant', catalog.programAgentModelRef!, selectedAt, 'PROGRAM_AGENT_V1');
+      expect(selection).toEqual({ ...taskModelSelection(modelRef, selectedAt),
+        schemaVersion: CANONICAL_EXECUTION_MODEL_V2_SCHEMA, settingsRevision: 8, maxOutputTokens: programAgentOutputTokens(modelRef) });
+      expect(Object.keys(selection)).toHaveLength(7);
+      expect(repository.compareAndSet).not.toHaveBeenCalled();
+      expect(programAgentOutputTokens('miaoda/minimax-m3')).toBeUndefined();
+      expect(programAgentOutputTokens('unknown/model')).toBeUndefined();
+      await expect(service.captureForExplicitProgram('', modelRef, selectedAt, 'PROGRAM_AGENT_V1'))
+        .rejects.toThrow('MODEL_SETTINGS_TENANT_REQUIRED');
+    },
+  );
 
   it('rejects unknown runtime modes before reading settings instead of silently using legacy mode', async () => {
     const { service, repository } = settings({ [modelRef]: 131072 });
@@ -197,7 +216,7 @@ describe('manager-owned per-model output budgets', () => {
     expect(repository.read).not.toHaveBeenCalled();
   });
 
-  it('rejects invalid saved revision and captures a later configured budget only for a new selection', async () => {
+  it('preserves saved revisions while tenant budget edits cannot replace the registered Agent limit', async () => {
     process.env[CANONICAL_EXECUTION_MODEL_V2_ENV] = 'true';
     await expect(settings({ [modelRef]: 131072 }, 0).service
       .captureForExplicitProgram('budget-tenant', modelRef, selectedAt, 'PROGRAM_AGENT_V1'))
@@ -207,6 +226,6 @@ describe('manager-owned per-model output budgets', () => {
     await service.update({ expectedRevision: 8, modelRef, maxOutputTokens: 262144 }, actor());
     const successor = await service.captureForExplicitProgram('budget-tenant', modelRef, selectedAt, 'PROGRAM_AGENT_V1');
     expect(original).toMatchObject({ settingsRevision: 8, maxOutputTokens: 131072 });
-    expect(successor).toMatchObject({ settingsRevision: 9, maxOutputTokens: 262144 });
+    expect(successor).toMatchObject({ settingsRevision: 9, maxOutputTokens: 131072 });
   });
 });

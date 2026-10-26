@@ -1,4 +1,4 @@
-import { canonicalModelError } from './canonical-model-catalog';
+import { canonicalModelError, CANONICAL_REGISTERED_MODELS } from './canonical-model-catalog';
 
 /** Local candidate only. The existing Native five-field consumer rejects V2. */
 export const CANONICAL_EXECUTION_MODEL_V2_SCHEMA =
@@ -6,8 +6,16 @@ export const CANONICAL_EXECUTION_MODEL_V2_SCHEMA =
 export const CANONICAL_EXECUTION_MODEL_V2_ENV =
   'WL_CANONICAL_EXECUTION_MODEL_V2_ENABLED';
 
-/** Proposed first manager save; this is not a provider guarantee or an active default. */
+/** Host binding for new GLM Agent requests, not a provider-wide guarantee. */
 export const CANONICAL_INITIAL_GLM_OUTPUT_TOKENS = 131072;
+
+/** Only this registered, available profile has an approved Agent output limit. */
+export function programAgentOutputTokens(modelRef: string): number | undefined {
+  if (modelRef !== 'miaoda/glm-5.3' ||
+      !CANONICAL_REGISTERED_MODELS.some(option => option.modelRef === modelRef && option.available))
+    return undefined;
+  return CANONICAL_INITIAL_GLM_OUTPUT_TOKENS;
+}
 
 export function validOutputTokens(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;

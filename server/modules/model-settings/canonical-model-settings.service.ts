@@ -25,6 +25,7 @@ import {
   CANONICAL_EXECUTION_MODEL_V2_ENV,
   CANONICAL_EXECUTION_MODEL_V2_SCHEMA,
   readModelOutputBudgets,
+  programAgentOutputTokens,
   validOutputTokens,
 } from './canonical-model-output-budget';
 import {
@@ -49,7 +50,7 @@ export class CanonicalModelSettingsService {
           option.modelRef === 'miaoda/glm-5.3' && option.available,
       ) &&
       Number.isSafeInteger(settings.revision) && settings.revision >= 1 &&
-      validOutputTokens(settings.outputBudgets?.['miaoda/glm-5.3']);
+      programAgentOutputTokens('miaoda/glm-5.3') !== undefined;
     return {
       options: settings.options,
       defaultModelRef: settings.selectedModelRef,
@@ -136,15 +137,14 @@ export class CanonicalModelSettingsService {
     if (process.env[CANONICAL_EXECUTION_MODEL_V2_ENV] !== 'true')
       throw canonicalModelError('PROGRAM_AGENT_NOT_ENABLED', 503);
     // The first real Native agent consumer supports this exact Hosted profile.
-    if (modelRef !== 'miaoda/glm-5.3')
+    const maxOutputTokens = programAgentOutputTokens(modelRef);
+    if (maxOutputTokens === undefined)
       throw canonicalModelError('PROGRAM_AGENT_MODEL_UNSUPPORTED', 400);
     if (!tenantId.trim()) throw canonicalModelError('MODEL_SETTINGS_TENANT_REQUIRED', 400);
     const saved = await this.repository.read(tenantId);
-    const maxOutputTokens = readModelOutputBudgets(saved?.outputBudgetsJson)[modelRef];
-    // New strategy admission requires its exact manager-saved budget. Never
-    // downgrade the snapshot or borrow another profile's/default directory cap.
-    if (maxOutputTokens === undefined)
-      throw canonicalModelError('MODEL_OUTPUT_BUDGET_NOT_CONFIGURED', 503);
+    // Keep stored configuration validation, but the new Agent limit belongs to
+    // its registered profile. Old per-tenant values cannot lower or replace it.
+    readModelOutputBudgets(saved?.outputBudgetsJson);
     if (!saved || !Number.isSafeInteger(saved.revision) || saved.revision < 1)
       throw canonicalModelError('MODEL_OUTPUT_BUDGET_REVISION_INVALID', 500);
     const result: CanonicalBudgetedExecutionModelSelection = {
