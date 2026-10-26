@@ -10,6 +10,7 @@ import { invokeHostedInitialModel } from '../scripts/invoke-hosted-initial-model
 import { runDynamicEvaluation } from '../scripts/orchestrate-host-mcp.mjs';
 import { runHostedInitialStage } from '../scripts/consume-hosted-work-item.mjs';
 import { canonicalSha256 } from '../scripts/validate-payload.mjs';
+import { JOBAID_WORK_UPDATE_SHAPE } from '../scripts/jobaid-work-shape.mjs';
 
 const binding = { documentVersionId: 'DV-primary', parseRunId: 'PR-current', parseRevision: 3,
   sourceArtifactId: 'artifact-source', sourceSha256: 'a'.repeat(64), sourceByteLength: 300 };
@@ -136,6 +137,13 @@ test('the actual initial entry uses one serialization-only model call, full inpu
   assert.deepEqual(f.reads.map(read => read.requestId), [f.saves[0].requestId, f.saves[0].requestId]);
   assert.equal(f.calls[0].headers['x-openclaw-model'], 'miaoda/glm-5.3');
   const payload = JSON.parse(f.calls[0].body);
+  const guide = payload.messages[0].content;
+  const deliveredShape = JSON.parse(guide.split('完整字段类型契约：\n')[1].split('\n')[0]);
+  assert.deepEqual(deliveredShape, JOBAID_WORK_UPDATE_SHAPE, 'the outgoing field contract is the existing authoritative shape');
+  for (const key of ['headline', 'listBrief', 'overview', 'completionReason', 'changeSummary'])
+    assert.deepEqual(deliveredShape.properties[key], { type: 'string', minLength: 1 });
+  assert.match(guide, /listBrief是一段供列表阅读的摘要文本，不是条目数组/u);
+  assert.match(guide, /continuousOriginal\.spans是输入原文.*不是work字段，不得回填到work/u);
   assert.deepEqual(payload.tools.map(tool => tool.function.name), ['return_wiselink_program_assessment']);
   assert.equal(payload.tools[0].function.parameters.properties.action, undefined);
   const material = await f.checkpoint.readOptional('program-materials');
@@ -148,6 +156,135 @@ test('the actual initial entry uses one serialization-only model call, full inpu
   assert.equal(f.sourceReads.length, 1);
   assert.deepEqual(f.sourceReads[0].sourceRefs, ['fact:0'], 'full primary is already actually delivered, unrelated methods stay out');
   assert.equal(result.provenance.modelVersion, 'provider/glm-5.3');
+});
+
+test('a listBrief array still fails unchanged before SAVE instead of becoming compatible text', async t => {
+  const f = await fixture(t), work = candidate(f.input);
+  work.listBrief = ['第一段私有摘要。', '第二段私有摘要。'];
+  const original = structuredClone(work);
+  returnWork(f, work);
+  await assert.rejects(f.run(), error => error.terminalAssessmentFailure?.errorCode === 'JOBAID_WORK_JSON_INVALID');
+  assert.deepEqual(await f.checkpoint.readOptional('program-work-rejection'), {
+    code: 'PROGRAM_WORK_SHAPE', category: 'WORK_SHAPE', violations: [
+      { path: 'work.listBrief', reason: 'FIELD_TYPE_OR_VALUE', expected: 'non-empty string', received: 'array' },
+    ],
+  });
+  const response = JSON.parse((await f.checkpoint.readOptional('assessment-round-1.result')).value.raw);
+  assert.deepEqual(JSON.parse(JSON.parse(response.choices[0].message.tool_calls[0].function.arguments).workJson), original);
+  assert.equal(await f.checkpoint.readOptional('program-work-candidate'), null);
+  assert.equal(f.saves.length, 0);
+  assert.equal(f.reads.length, 0);
+  assert.equal(f.calls.length, 1);
+});
+
+test('program response diagnostics describe the actual HTTP result and declared function channel', async t => {
+  const f = await fixture(t), observed = [];
+  f.options.observeModelOutput = async value => observed.push(value);
+  await f.run();
+  assert.equal(observed.length, 1);
+  const shape = observed[0].responseShape;
+  assert.deepEqual(shape.http, { status: 200, ok: true });
+  assert.equal(shape.routing.requestedModel, JSON.parse(f.calls[0].body).model);
+  assert.equal(shape.routing.reportedModel, 'provider/glm-5.3');
+  assert.equal(shape.choiceCount, 1);
+  assert.equal(shape.outputChannel, 'FUNCTION_ARGUMENTS');
+  assert.equal(shape.toolCall.nameMatched, true);
+  assert.equal(shape.toolCall.strictJsonObjectAccepted, true);
+  assert.equal(f.saves.length, 1);
+});
+
+test('work shape rejection identifies nested fields without echoing or changing authored content', async t => {
+  const f = await fixture(t), work = candidate(f.input);
+  const privateText = 'private authored measure that must remain only in the complete response';
+  work.issues[0].measures = [{ text: privateText, addresses: [privateText], limitations: [],
+    status: 'PROPOSED', basisRefs: [] }];
+  returnWork(f, work);
+  const original = structuredClone(work);
+  await assert.rejects(f.run(), error => error.terminalAssessmentFailure?.errorCode === 'JOBAID_WORK_JSON_INVALID');
+  const rejection = await f.checkpoint.readOptional('program-work-rejection');
+  assert.deepEqual(rejection, { code: 'PROGRAM_WORK_SHAPE', category: 'WORK_SHAPE', violations: [
+    { path: 'work.issues[0].measures[0].addresses', reason: 'FIELD_TYPE_OR_VALUE',
+      expected: 'non-empty string', received: 'array' },
+  ] });
+  assert.equal(JSON.stringify(rejection).includes(privateText), false);
+  const response = JSON.parse((await f.checkpoint.readOptional('assessment-round-1.result')).value.raw);
+  assert.deepEqual(JSON.parse(JSON.parse(response.choices[0].message.tool_calls[0].function.arguments).workJson), original);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.saves.length, 0);
+  assert.equal(f.reads.length, 0);
+});
+
+test('program-specific shape requirements retain rejection and identify the unmet path', async t => {
+  const cases = [
+    ['schema', work => { delete work.schemaVersion; }, 'work.schemaVersion', 'SCHEMA_VERSION'],
+    ['incomplete round', work => { work.roundCompletion = 'IN_PROGRESS'; }, 'work.roundCompletion', 'ROUND_COMPLETION'],
+    ['missing overview', work => { delete work.overview; }, 'work.overview', 'REQUIRED_TEXT'],
+    ['missing issues', work => { delete work.issues; }, 'work.issues', 'ISSUES_ARRAY'],
+    ['empty update', work => { work.issues = []; }, 'work', 'EMPTY_ISSUE_UPDATE'],
+    ['undeclared field', work => { work.issues[0].references = ['private source text']; },
+      'work.[undeclared field]', 'UNDECLARED_FIELD'],
+  ];
+  for (const [name, mutate, path, reason] of cases) await t.test(name, async subtest => {
+    const f = await fixture(subtest), work = candidate(f.input);
+    mutate(work);
+    returnWork(f, work);
+    await assert.rejects(f.run(), error => error.terminalAssessmentFailure?.errorCode === 'JOBAID_WORK_JSON_INVALID');
+    const rejection = await f.checkpoint.readOptional('program-work-rejection');
+    assert.equal(rejection.code, 'PROGRAM_WORK_SHAPE');
+    assert.equal(rejection.category, 'WORK_SHAPE');
+    assert.ok(rejection.violations.some(item => item.path === path && item.reason === reason));
+    assert.equal(JSON.stringify(rejection).includes('private source text'), false);
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.saves.length, 0);
+    assert.equal(f.reads.length, 0);
+  });
+});
+
+test('undeclared field diagnostics never retain private text or dots from the authored key', async t => {
+  const f = await fixture(t), work = candidate(f.input);
+  const privateKey = 'private clinical-looking body.with.dotted.key';
+  const privateValue = 'private field value';
+  work.issues[0][privateKey] = privateValue;
+  returnWork(f, work);
+  await assert.rejects(f.run(), error => error.terminalAssessmentFailure?.errorCode === 'JOBAID_WORK_JSON_INVALID');
+  const rejection = await f.checkpoint.readOptional('program-work-rejection');
+  assert.deepEqual(rejection, { code: 'PROGRAM_WORK_SHAPE', category: 'WORK_SHAPE', violations: [
+    { path: 'work.[undeclared field]', reason: 'UNDECLARED_FIELD',
+      expected: 'declared work-update field', received: 'undeclared field' },
+  ] });
+  const diagnostic = JSON.stringify(rejection);
+  assert.equal(diagnostic.includes(privateKey), false);
+  assert.equal(diagnostic.includes('private clinical-looking body'), false);
+  assert.equal(diagnostic.includes(privateValue), false);
+  assert.equal(f.saves.length, 0);
+  assert.equal(f.reads.length, 0);
+});
+
+test('argument shape and JSON parse failures remain distinct without exposing rejected values', async t => {
+  const cases = [
+    ['extra argument', work => JSON.stringify({ workJson: JSON.stringify(work), extra: 'private argument text' }),
+      'PROGRAM_WORK_SHAPE', 'ARGUMENT_SHAPE', 'arguments'],
+    ['object workJson', work => JSON.stringify({ workJson: work }),
+      'PROGRAM_WORK_SHAPE', 'ARGUMENT_SHAPE', 'arguments.workJson'],
+    ['outer parse', () => '{"workJson":', 'JOBAID_WORK_JSON_INVALID', 'JSON_PARSE', 'arguments'],
+    ['inner parse', () => JSON.stringify({ workJson: '{"overview":' }),
+      'JOBAID_WORK_JSON_INVALID', 'JSON_PARSE', 'arguments.workJson'],
+  ];
+  for (const [name, argumentsFor, code, category, path] of cases) await t.test(name, async subtest => {
+    const f = await fixture(subtest);
+    const payload = await responseWithWork(candidate(f.input)).json();
+    payload.choices[0].message.tool_calls[0].function.arguments = argumentsFor(candidate(f.input));
+    f.dependencies.requestGateway = async (_url, request) => { f.calls.push(request); return Response.json(payload); };
+    await assert.rejects(f.run(), error => error.terminalAssessmentFailure?.errorCode === 'JOBAID_WORK_JSON_INVALID');
+    const rejection = await f.checkpoint.readOptional('program-work-rejection');
+    assert.equal(rejection.code, code);
+    assert.equal(rejection.category, category);
+    assert.ok(rejection.path === path || rejection.violations?.some(item => item.path === path));
+    assert.equal(JSON.stringify(rejection).includes('private argument text'), false);
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.saves.length, 0);
+    assert.equal(f.reads.length, 0);
+  });
 });
 
 test('MATERIALS_READY registers both exact durable checkpoints before dispatch without gateway credentials', async t => {
