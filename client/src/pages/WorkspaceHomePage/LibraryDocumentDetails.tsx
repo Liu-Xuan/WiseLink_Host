@@ -21,6 +21,7 @@ import LinkDocumentMatterMaterial from '@client/src/features/matter/LinkDocument
 import { useLibraryPaneScroll } from './useLibraryPaneScroll';
 import { libraryDocumentSelection } from './library-document-selection';
 import { LibraryDocumentSourceDialog } from './LibraryDocumentSourceDialog';
+import { libraryDocumentAssessmentRoute } from '../DocumentParsingPage/document-analysis-route';
 import { LibraryDocumentNumber } from './LibraryDocumentNumber';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@client/src/components/ui/select';
 import {
@@ -77,6 +78,8 @@ export function LibraryDocumentDetails({
   const selectedIdentity = document ? documentIdentityPresentation({ documentCode: document.documentCode,
     extractedMetadata: selectedVersion?.extractedMetadata }) : null;
   const selectedPublication = libraryPublicationPresentation(selectedVersion ?? null);
+  const assessmentDirectory: URLSearchParams = new URLSearchParams(searchParams);
+  if (document) assessmentDirectory.set('familyId', document.familyId);
   const graphReturnOrigin: URLSearchParams = new URLSearchParams();
   if (document && selectedVersion) {
     const directory: URLSearchParams = new URLSearchParams(searchParams);
@@ -194,6 +197,8 @@ export function LibraryDocumentDetails({
           </li>)}
         </ol>
       </details>
+      <Button type="button" variant="outline" size="sm"
+        onClick={() => onViewTasks(document.familyId)}>查看本文档评估任务（{document.workItemCount}）</Button>
       {linkMatterId ? <LinkDocumentMatterMaterial key={`${linkMatterId}:${document.familyId}`}
         matterId={linkMatterId} document={document} /> : null}
     </DialogContent>
@@ -210,10 +215,10 @@ export function LibraryDocumentDetails({
           <DocumentVersionLink compact version={selectedVersion} familyId={document.familyId}
             title="进入精读工作台，查看所选版本原件与解析">精读</DocumentVersionLink>
         </> : null}
-        <Button type="button" variant="ghost" size="sm"
-          title={`查看本文档评估任务（${document.workItemCount}）`}
-          aria-label={`查看本文档评估任务（${document.workItemCount}）`}
-          onClick={() => onViewTasks(document.familyId)}>评估</Button>
+        {selectedVersion?.readerWorkItemId ? <Link title="查看所选版本完整评估与来源"
+          to={libraryDocumentAssessmentRoute(selectedVersion.documentVersionId, selectedVersion.readerWorkItemId,
+            assessmentDirectory)}>评估</Link>
+          : <Button type="button" variant="ghost" size="sm" disabled title="此版本尚未关联评估工作">评估</Button>}
         {selectedVersion ? <Link title="文档关系图谱与时间" aria-label="文档关系图谱与时间"
           to={`/graph?${documentGraphReadingParams(selectedVersion.documentVersionId,
             selectedVersion.readerWorkItemId || undefined, {}, graphReturnOrigin)}`}>图谱</Link> : null}
@@ -296,7 +301,8 @@ export function LibraryDocumentDetails({
                       : matchingAssessment.result?.jobAidRoundCompletion === 'IN_PROGRESS'
                         ? '已保存 · 进行中' : '已保存 · 候选'}</span>
                   <Link title="查看同版本完整评估与来源"
-                    to={`/work-items/${encodeURIComponent(matchingAssessment.document.workItemId)}/analysis?panel=assessment`}>
+                    to={libraryDocumentAssessmentRoute(selectedVersion.documentVersionId, matchingAssessment.document.workItemId,
+                      assessmentDirectory)}>
                     完整评估与来源
                   </Link>
                 </div>

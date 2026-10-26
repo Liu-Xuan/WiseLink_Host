@@ -59,7 +59,11 @@ describe('document library associated assessment', () => {
     const correct = renderQuicklook(response);
     expect(correct).toContain('工程评估');
     expect(correct).toContain(response.result!.readingResult!.content.listBrief);
-    expect(correct).toContain('/work-items/WI-NEW/analysis?panel=assessment');
+    const saved = new JSDOM(correct).window.document.querySelector('.library-assessment-provenance a')!;
+    const destination = new URL(saved.getAttribute('href')!, 'https://example.test');
+    expect(destination.pathname).toBe('/document-versions/DV-787-2');
+    expect(destination.searchParams.get('workItemId')).toBe('WI-NEW');
+    expect(destination.searchParams.get('panel')).toBe('assessment');
     expect(correct).toContain('文档摘要');
     expect(correct).toContain('暂无已保存解读');
     expect(correct).not.toContain('关联评估单独显示');
@@ -68,7 +72,7 @@ describe('document library associated assessment', () => {
       ...response.document, documentVersionId: 'DV-787-1',
     } });
     expect(wrongVersion).not.toContain(response.result!.readingResult!.content.listBrief);
-    expect(wrongVersion).not.toContain('/work-items/WI-NEW/analysis?panel=assessment');
+    expect(new JSDOM(wrongVersion).window.document.querySelector('.library-assessment-provenance a')).toBeNull();
   });
 });
 
@@ -207,14 +211,20 @@ it('keeps source reading, task navigation and historical links available through
   const root = createRoot(dom.window.document.querySelector('#root')!);
   try {
     await act(async () => root.render(createElement(RouterProvider, { router })));
-    await act(async () => dom.window.document.querySelector<HTMLButtonElement>('[aria-label^="查看本文档评估任务"]')!.click());
-    expect(onViewTasks).toHaveBeenCalledWith('787');
+    const assessmentLink = dom.window.document.querySelector<HTMLAnchorElement>('[aria-label="文档操作"] a[title="查看所选版本完整评估与来源"]')!;
+    const assessmentUrl = new URL(assessmentLink.getAttribute('href')!, 'https://example.test');
+    expect(assessmentUrl.pathname).toBe('/document-versions/DV-787-2');
+    expect(assessmentUrl.searchParams.get('workItemId')).toBe(document.versions[0].readerWorkItemId);
+    expect(assessmentUrl.searchParams.get('panel')).toBe('assessment');
     await act(async () => dom.window.document.querySelector<HTMLButtonElement>('[aria-label="直接阅读所选版本 PDF 与 TDMS 来源意见"]')!.click());
     expect(dom.window.document.querySelector('[data-original-version]')?.getAttribute('data-original-version')).toBe('DV-787-2');
     expect(dom.window.document.querySelector('[data-opinion-version]')?.getAttribute('data-opinion-version')).toBe('DV-787-2');
     await act(async () => dom.window.document.querySelector<HTMLButtonElement>('[data-slot="dialog-close"]')!.click());
     await act(async () => dom.window.document.querySelector<HTMLButtonElement>('[aria-label="版本历史、改版比较与更多操作"]')!.click());
     const dialog = dom.window.document.querySelector('[role="dialog"]')!;
+    const tasks = [...dialog.querySelectorAll<HTMLButtonElement>('button')]
+      .find(node => node.textContent?.startsWith('查看本文档评估任务'))!;
+    await act(async () => tasks.click()); expect(onViewTasks).toHaveBeenCalledWith('787');
     expect(dialog.textContent).toContain('改版比较与全部版本（2）');
     const historical = [...dialog.querySelectorAll('a')].find(link => link.getAttribute('href')?.includes('/document-versions/DV-787-1?'))!;
     expect(historical).toBeDefined();

@@ -74,6 +74,8 @@ import { useLibraryViewState } from './useLibraryViewState';
 import { LcmConfigurationLibrary } from './LcmConfigurationLibrary';
 import useReadingLocation from '@client/src/features/matter/useReadingLocation';
 import { libraryReadingScope, libraryTaskDocumentReadingRoute } from '@client/src/features/matter/reading-return';
+import { documentVersionAnalysisRoute, libraryTaskAnalysisRoute } from '../DocumentParsingPage/document-analysis-route';
+import { getWorkbenchNode } from '../DocumentParsingPage/document-parsing-navigation';
 
 export default function WorkspaceHomePage() {
   const [params] = useSearchParams();
@@ -363,8 +365,8 @@ function WorkspaceHomeContent() {
   function openWorkbench(targetNode: string = 'reader'): void {
     if (!projection) return;
     if (targetNode === 'reader') {
-      navigate(libraryTaskDocumentReadingRoute(projection.documentVersionId,
-        projection.workItemId, searchParams));
+      navigate(libraryTaskAnalysisRoute(projection.documentVersionId,
+        projection.workItemId, 'reader', searchParams));
       return;
     }
     if (targetNode === 'document') {
@@ -373,15 +375,17 @@ function WorkspaceHomeContent() {
       return;
     }
     navigate(
-      `/work-items/${encodeURIComponent(projection.workItemId)}/analysis?panel=${targetNode}`,
+      libraryTaskAnalysisRoute(projection.documentVersionId, projection.workItemId,
+        getWorkbenchNode(targetNode), searchParams),
     );
   }
 
   function locateQuicklookEvidence(sourceRefId: string): void {
     if (!projection || !sourceRefId) return;
-    navigate(
-      `/work-items/${encodeURIComponent(projection.workItemId)}/analysis?panel=reader&readerMode=source&sourceRef=${encodeURIComponent(sourceRefId)}`,
-    );
+    const route: string = libraryTaskAnalysisRoute(projection.documentVersionId, projection.workItemId, 'reader', searchParams);
+    const query: URLSearchParams = new URLSearchParams(route.slice(route.indexOf('?') + 1));
+    query.set('sourceRef', sourceRefId);
+    navigate(documentVersionAnalysisRoute(projection.documentVersionId, projection.workItemId, 'reader', query));
   }
 
   function refresh(): void {
@@ -425,7 +429,7 @@ function WorkspaceHomeContent() {
       assertSameWorkItemReparseReadback(readback, expected);
       if (!isCurrent()) return;
       navigate(
-        `/work-items/${encodeURIComponent(expected.workItemId)}/analysis?panel=document`,
+        libraryTaskAnalysisRoute(expected.documentVersionId, expected.workItemId, 'document', searchParams),
         {
           state: {
             documentParsingHandoff: createCanonicalDocumentParsingRouteHandoff(
@@ -756,7 +760,8 @@ function WorkspaceHomeContent() {
                         deepLinkedWorkItemId, searchParams, true));
                       return;
                     }
-                    navigate(`/work-items/${encodeURIComponent(evidence.workItemId)}/analysis?${new URLSearchParams({ panel: 'reader', documentVersionId: evidence.documentVersionId, sourceRef: evidence.sourceRefId, returnLibraryWorkItemId: deepLinkedWorkItemId }).toString()}`);
+                    navigate(documentVersionAnalysisRoute(evidence.documentVersionId, evidence.workItemId, 'reader',
+                      new URLSearchParams({ sourceRef: evidence.sourceRefId, returnLibraryWorkItemId: deepLinkedWorkItemId })));
                   }}
                 />
               )}

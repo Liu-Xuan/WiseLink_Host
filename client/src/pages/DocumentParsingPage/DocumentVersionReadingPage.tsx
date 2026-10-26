@@ -30,12 +30,14 @@ import { documentAssessmentExactSourceRoute, documentAssessmentReturnParams, doc
   documentWorkbenchPanelRoute, readDocumentWorkbenchPanel } from './document-workbench-panel';
 import DocumentAssessmentWorkspace, { type AssessmentSourceSelection } from './DocumentAssessmentWorkspace';
 import { writeReviewDraft } from '@client/src/features/review/review-draft-store';
+import { readDocumentWorkItemLocator } from './document-analysis-route';
 
 export default function DocumentVersionReadingPage() {
   const { documentVersionId = '' } = useParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const requestedWorkItem = readDocumentWorkItemLocator(searchParams);
   const requestedRun = searchParams.get('parseRunId') || null;
   const requestedSource = searchParams.get('sourceRef') || null;
   const wikiSemantic = searchParams.get('semanticRevision');
@@ -50,7 +52,7 @@ export default function DocumentVersionReadingPage() {
   const workbenchPanel = readDocumentWorkbenchPanel(searchParams, pinnedWiki ? 'interpretation' : 'reader');
   const unboundEvidence = searchParams.getAll('unboundEvidence').length === 1 &&
     searchParams.get('unboundEvidence') === '1';
-  const returnTarget = documentAssessmentReturnTarget(searchParams, documentVersionId) ?? readingReturnTarget(
+  const returnTarget = documentAssessmentReturnTarget(searchParams, documentVersionId, requestedWorkItem.workItemId ?? '') ?? readingReturnTarget(
     searchParams,
     documentVersionId,
     requestedRun,
@@ -218,7 +220,7 @@ export default function DocumentVersionReadingPage() {
   const currentStatus = status?.documentVersionId === documentVersionId ? status : null;
   const savedLinks = useDocumentReadingLinks(currentStatus, refresh, JSON.stringify([
     documentVersionId, requestedRun ?? currentStatus?.publishedRun?.parseRunId,
-  ]));
+  ]), requestedWorkItem);
   assessmentDraftRef.current = savedLinks.assessment
     ? `document-assessment:${savedLinks.sessionGeneration}:${documentVersionId}:${savedLinks.assessment.document.workItemId}` : null;
   const currentReading = readingNavigation === readingIdentity && reading?.documentVersionId === documentVersionId && (!requestedRun || reading.parseRunId === requestedRun) ? reading : null;
@@ -515,7 +517,7 @@ export default function DocumentVersionReadingPage() {
     {sourceNavigationError ? <p role="alert">{sourceNavigationError}{manualSourceVersion ? <Link
       to={`/document-versions/${encodeURIComponent(manualSourceVersion)}`}>手动核对该版本原件（未登记解析位置）</Link> : null}</p> : null}
     {currentStatus && parseError ? <p role="alert">{parseError}</p> : null}
-    {savedLinks.error ? <p className="document-reading-link-error" role="alert">{savedLinks.error}
+    {savedLinks.error && workbenchPanel.panel !== 'assessment' ? <p className="document-reading-link-error" role="alert">{savedLinks.error}
       {' '}<Button size="sm" variant="ghost" onClick={() => setRefresh(value => value + 1)}>重试</Button></p> : null}
     {wikiRequested && !pinnedWiki ? <p role="alert">文档 Wiki 的确切版本参数不完整或有重复，请从 Wiki 成员链接重新打开。</p> : null}
     {currentReading && activeSourceRef ? <aside className="document-reading-location" aria-label="检索命中来源">

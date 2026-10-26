@@ -114,7 +114,7 @@ describe('canonical host assessment client', () => {
     request.mockImplementationOnce(async () => { invalidateCanonicalHostClientSession(); return { status: 200, data: response }; });
     await expect(readSavedDocumentReading(input)).rejects.toThrow('OBSOLETE');
     request.mockResolvedValueOnce({ status: 403, data: {} });
-    await expect(readSavedDocumentReading(input)).rejects.toMatchObject({ statusCode: 404 });
+    await expect(readSavedDocumentReading(input)).rejects.toMatchObject({ statusCode: 403 });
   });
 
   it('reads saved source activity candidates at an exact revision and preserves missing results', async () => {
@@ -490,14 +490,15 @@ describe('canonical host assessment client', () => {
   );
 
   it.each([403, 404])(
-    'normalizes lightweight denial HTTP %s without invalidating the account',
+    'preserves lightweight denial HTTP %s without invalidating the account',
     async (status) => {
       const generation = getCanonicalHostClientSessionGeneration();
       request.mockRejectedValue({ response: { status, data: {} } });
       await expect(
         getCanonicalLibraryQuicklook('WI-DENIED'),
       ).rejects.toMatchObject({
-        code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+        code: status === 403 ? 'CANONICAL_OBJECT_ACCESS_DENIED' : 'CANONICAL_WORK_ITEM_NOT_FOUND',
+        statusCode: status,
       });
       expect(getCanonicalHostClientSessionGeneration()).toBe(generation);
       expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
@@ -679,7 +680,7 @@ describe('canonical host assessment client', () => {
     await expect(requireOfficialOauthSession()).resolves.toBeUndefined();
     await expect(
       getDocumentParsingPage('WI-FORBIDDEN', ''),
-    ).rejects.toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND' });
+    ).rejects.toMatchObject({ code: 'CANONICAL_OBJECT_ACCESS_DENIED', statusCode: 403 });
     expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
     await expect(requireOfficialOauthSession()).resolves.toBeUndefined();
     expect(request).toHaveBeenCalledTimes(2);
@@ -1218,8 +1219,8 @@ describe('canonical host assessment client', () => {
     const promise = getDocumentParsingPage('WI-DIRECT-ID', '');
 
     await expect(promise).rejects.toMatchObject({
-      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
-      statusCode: 404,
+      code: 'CANONICAL_OBJECT_ACCESS_DENIED',
+      statusCode: 403,
     });
     await promise.catch((error) => {
       expect(isCanonicalObjectNotFound(error)).toBe(true);
@@ -1240,12 +1241,32 @@ describe('canonical host assessment client', () => {
     });
   });
 
+  it.each(['resolved', 'rejected'] as const)('preserves the real assessment scope denial safely (%s)', async mode => {
+    const data = { error: { code: 'CANONICAL_CODEX_REQUEST_SCOPE_MISMATCH',
+      message: 'private request scope and source body', details: 'private details', stack: 'private stack' } };
+    const response = { status: 403, data };
+    if (mode === 'resolved') request.mockResolvedValueOnce(response); else request.mockRejectedValueOnce({ response });
+    const error = await getDocumentParsingPage('WI-SCOPED', '').catch(reason => reason);
+    expect(error).toMatchObject({ statusCode: 403, code: 'CANONICAL_CODEX_REQUEST_SCOPE_MISMATCH' });
+    expect(error.message).toContain('请求范围未通过校验');
+    expect(error.message).not.toContain('private'); expect(error.details).toBeUndefined();
+    expect(isCanonicalObjectNotFound(error)).toBe(true);
+  });
+
+  it('preserves an explicit missing-work code without returning the denial response body', async () => {
+    request.mockRejectedValueOnce({ response: { status: 404,
+      data: { error: { code: 'WORK_ITEM_NOT_FOUND', message: 'private object identity' } } } });
+    const error = await getCanonicalLibraryQuicklook('WI-MISSING').catch(reason => reason);
+    expect(error).toMatchObject({ statusCode: 404, code: 'WORK_ITEM_NOT_FOUND' });
+    expect(error.message).not.toContain('private'); expect(isCanonicalObjectNotFound(error)).toBe(true);
+  });
+
   it('normalizes a fulfilled LibraryIndex 403 without exposing object existence', async () => {
     request.mockResolvedValue({ status: 403, data: { message: 'forbidden' } });
 
     await expect(getLibraryIndex('WI-DIRECT-ID')).rejects.toMatchObject({
-      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
-      statusCode: 404,
+      code: 'CANONICAL_OBJECT_ACCESS_DENIED',
+      statusCode: 403,
     });
   });
 
@@ -1272,8 +1293,8 @@ describe('canonical host assessment client', () => {
         comment: 'review',
       }),
     ).rejects.toMatchObject({
-      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
-      statusCode: 404,
+      code: 'CANONICAL_OBJECT_ACCESS_DENIED',
+      statusCode: 403,
     });
   });
 
@@ -1504,7 +1525,7 @@ describe('canonical host assessment client', () => {
       request.mockResolvedValueOnce({ status, data: {} });
       await expect(
         adoptConfigurationEvidenceCandidate('WI-SB-1001', 'CAND-1', 7),
-      ).rejects.toMatchObject({ statusCode: 404 });
+      ).rejects.toMatchObject({ statusCode: status });
       expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
       expect(request).toHaveBeenCalledTimes(1);
     },
@@ -1580,7 +1601,7 @@ describe('canonical host assessment client', () => {
       response: { status: 403, data: {} },
     });
     await expect(getCurrentReviewConversation('WI-SB-1001')).rejects.toMatchObject({
-      statusCode: 404,
+      statusCode: 403,
     });
   });
 

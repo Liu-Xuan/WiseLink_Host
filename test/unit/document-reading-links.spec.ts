@@ -74,7 +74,7 @@ it('opens saved assessment and Wiki for the selected historical version, never t
   expect(mockCatalogue).toHaveBeenCalledWith({ search: '737-SL-34-258', normalizedFamily: 'SL', limit: 50, cursor: undefined }, signal);
   expect(mockQuicklook).toHaveBeenCalledWith('WI-OLD', signal);
   expect(mockKnowledge).toHaveBeenCalledWith({ subjectKind: 'WORK_ITEM', subjectId: 'WI-OLD', workRef: 'JAWR-OLD' }, signal);
-  expect(links.assessmentRoute).toBe('/work-items/WI-OLD/analysis?panel=assessment&documentVersionId=DV-FAM-1');
+  expect(links.assessmentRoute).toBe('/document-versions/DV-FAM-1?workItemId=WI-OLD&panel=assessment');
   expect(links.wikiRoute).toBe('/knowledge?subjectKind=WORK_ITEM&subjectId=WI-OLD&workRef=JAWR-OLD&scope=ALL');
   expect(links.error).toBeNull();
   expect(links.assessment?.document.documentVersionId).toBe('DV-FAM-1');
@@ -122,6 +122,24 @@ it('does not substitute another family or version when the selected version is a
   mockCatalogue.mockResolvedValue(libraryDocuments(['FAM']));
   await expect(readDocumentReadingLinks(status('missing-version'), new AbortController().signal)).rejects.toThrow('未返回此文档版本');
   expect(mockQuicklook).not.toHaveBeenCalled();
+});
+
+it('authorizes the explicit task independently instead of substituting a newer task for the same version', async () => {
+  mockQuicklook.mockResolvedValue(saved('WI-PINNED', 'JAWR-PINNED'));
+  mockKnowledge.mockResolvedValue(wiki('WI-PINNED', 'JAWR-PINNED'));
+  const links = await readDocumentReadingLinks(status(), new AbortController().signal, undefined, 'WI-PINNED');
+  expect(mockCatalogue).not.toHaveBeenCalled();
+  expect(mockQuicklook.mock.calls[0][0]).toBe('WI-PINNED');
+  expect(links.assessment?.document.workItemId).toBe('WI-PINNED');
+  expect(links.assessmentRoute).toContain('workItemId=WI-PINNED');
+});
+
+it.each(['workItemId', 'documentVersionId', 'familyId'] as const)('rejects an explicit task with a conflicting %s', async field => {
+  const response = saved('WI-PINNED', 'JAWR-PINNED'); response.document[field] = 'FOREIGN';
+  mockQuicklook.mockResolvedValue(response);
+  await expect(readDocumentReadingLinks(status(), new AbortController().signal, undefined, 'WI-PINNED'))
+    .rejects.toThrow('与当前文档版本不一致');
+  expect(mockCatalogue).not.toHaveBeenCalled(); expect(mockKnowledge).not.toHaveBeenCalled();
 });
 
 it.each(['workItemId', 'documentVersionId', 'familyId'] as const)('rejects mismatched saved assessment %s', async (field) => {

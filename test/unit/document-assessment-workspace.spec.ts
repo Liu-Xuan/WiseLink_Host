@@ -124,6 +124,41 @@ it('shows a verified work with no saved result and waits for independent page au
   expect(mockApi.mock.calls.filter(call => writes.test(call[0]))).toEqual([]);
 });
 
+it('uses an explicit task only after an independent same-version Quicklook and page read', async () => {
+  mockApi.mockImplementation(async (name: string, ...args: unknown[]) => {
+    if (name === 'getCanonicalLibraryDocuments') throw new Error('Pinned task must not be replaced by a catalogue task');
+    return assessmentFixtureRead(name, ...args);
+  });
+  await mount('panel=assessment&workItemId=WI-OLD&returnDocumentVersionId=DV-FAM-1&returnLibraryQuery=mode%3Dtasks%26workItemId%3DWI-RETURN');
+  expect(calls('getCanonicalLibraryQuicklook')[0][1]).toBe('WI-OLD');
+  expect(calls('getDocumentParsingPage')[0][1]).toBe('WI-OLD');
+  expect(calls('getCanonicalLibraryDocuments')).toHaveLength(0);
+  expect(container.querySelector('.document-assessment-content')).not.toBeNull();
+  expect(mockApi.mock.calls.filter(call => writes.test(call[0]))).toEqual([]);
+});
+
+it('rejects an ambiguous explicit task without reading or substituting any assessment', async () => {
+  await mount('panel=assessment&workItemId=WI-OLD&workItemId=WI-NEW');
+  expect(container.textContent).toContain('评估工作定位参数无效或重复');
+  expect(calls('getCanonicalLibraryQuicklook')).toHaveLength(0);
+  expect(calls('getDocumentParsingPage')).toHaveLength(0);
+  expect(container.querySelector('.document-assessment-content')).toBeNull();
+});
+
+it('shows an independent assessment denial once and keeps the original reader available', async () => {
+  const message = '当前评估的请求范围未通过校验，请刷新后重试；持续失败时请联系维护人员。';
+  mockApi.mockImplementation(async (name: string, ...args: unknown[]) => {
+    if (name === 'getDocumentParsingPage') throw Object.assign(new Error(message),
+      { statusCode: 403, code: 'CANONICAL_CODEX_REQUEST_SCOPE_MISMATCH' });
+    return assessmentFixtureRead(name, ...args);
+  });
+  await mount('panel=assessment&workItemId=WI-OLD');
+  expect([...container.querySelectorAll('[role="alert"]')].filter(node => node.textContent === message)).toHaveLength(1);
+  expect(container.querySelector('.document-assessment-content')).toBeNull();
+  await panel('原文'); expect(container.querySelector('.source-reader-workspace')).not.toBeNull();
+  expect(mockApi.mock.calls.filter(call => writes.test(call[0]))).toEqual([]);
+});
+
 it('pauses the single working read and real review polling when their retained panels are hidden', async () => {
   jest.useFakeTimers();
   mockApi.mockImplementation(async (name: string, ...args: unknown[]) => {

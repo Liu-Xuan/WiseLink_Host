@@ -39,6 +39,7 @@ import {
 } from '../../database/schema';
 import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import { isOpenClawAutomaticReviewConfigured } from './configured-development-service-scope.authorization';
+import { canonicalCodexWorkItemScope } from './canonical-host-executor-policy';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { ACTION_ATTEMPT_REQUEST_ORIGIN } from '../action-attempt/action-attempt.types';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
@@ -404,6 +405,11 @@ export class CanonicalHostInitialAnalysisStatusService {
       if (error instanceof UnauthorizedException &&
           error.message === 'OFFICIAL_OAUTH_SESSION_REQUIRED')
         return { contextRef: null, reason: 'OFFICIAL_OAUTH_SESSION_REQUIRED' };
+      // Browser document access was authorized separately. An execution-scope
+      // mismatch makes this optional admission unavailable, not the document.
+      if (error instanceof Error && 'code' in error && 'statusCode' in error &&
+          error.code === 'CANONICAL_CODEX_REQUEST_SCOPE_MISMATCH' && error.statusCode === 403)
+        return { contextRef: null, reason: error.code };
       throw error;
     }
   }
@@ -522,6 +528,9 @@ export class CanonicalHostInitialAnalysisStatusService {
     actorUserId: string;
   }): Promise<CanonicalInitialAnalysisReadModel> {
     const status = await this.project({...input,browserActorUserId:input.actorUserId});
+    const codexScope = canonicalCodexWorkItemScope();
+    const executorAllowsContinuation = !codexScope ||
+      (codexScope.workItemId === input.workItem.workItemId && codexScope.requestId === input.workItem.requestId);
     const execution = activeConfigurationEvidenceReevaluation(input.workItem)
       ? configurationEvidenceShadow(input.workItem)
       : input.workItem;
@@ -552,7 +561,7 @@ export class CanonicalHostInitialAnalysisStatusService {
     let cancelled: Awaited<ReturnType<typeof this.cancelledContinuationBinding>> = null;
     let continuationDiagnosticCode: CanonicalInitialAnalysisReadModel['continuationDiagnosticCode'];
     let queuedContinuationRequest: CanonicalInitialAnalysisReadModel['queuedContinuationRequest'];
-    if (!active && ['CANCELLED', 'FAILED', 'TIMED_OUT'].includes(
+    if (executorAllowsContinuation && !active && ['CANCELLED', 'FAILED', 'TIMED_OUT'].includes(
       status.stages.jobAid.attemptStatus ?? '',
     )) {
       try {
@@ -564,7 +573,7 @@ export class CanonicalHostInitialAnalysisStatusService {
         continuationDiagnosticCode = 'OFFICIAL_OAUTH_SESSION_REQUIRED';
       }
     }
-    if (status.stages.jobAid.attemptStatus === 'QUEUED' && status.stages.jobAid.requestId &&
+    if (executorAllowsContinuation && status.stages.jobAid.attemptStatus === 'QUEUED' && status.stages.jobAid.requestId &&
         process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1') {
       try {
         const pending = await this.queuedContinuationBinding(input,status.stages.jobAid.requestId);
@@ -578,6 +587,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       }
     }
     const automatic =
+      executorAllowsContinuation &&
       !continuationDiagnosticCode &&
       status.status !== 'NOT_READY' &&
       !active &&

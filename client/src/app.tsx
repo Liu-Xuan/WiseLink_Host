@@ -8,6 +8,7 @@ import TranslationGlossaryPage from './pages/TranslationGlossaryPage/Translation
 import DerivedSummaryListPage from './features/derived-summary/DerivedSummaryListPage';
 import DerivedSummaryComposePage from './features/derived-summary/DerivedSummaryComposePage';
 import DerivedSummaryReadingPage from './features/derived-summary/DerivedSummaryReadingPage';
+import WorkItemAnalysisRedirect from './pages/DocumentParsingPage/WorkItemAnalysisRedirect';
 
 // Route chunks load on demand. AppContainer, identity providers and the
 // QueryClient stay mounted above the lazy boundary so navigation does not
@@ -32,9 +33,6 @@ const EngineeringSituationVisualPreviewPage = lazy(
 );
 const EngineeringTimelinePage = lazy(
   () => import('./pages/EngineeringTimelinePage/EngineeringTimelinePage'),
-);
-const DocumentParsingPage = lazy(
-  () => import('./pages/DocumentParsingPage/DocumentParsingPage'),
 );
 const LegacyDocumentWorkbenchRoute = lazy(
   () => import('./pages/DocumentParsingPage/LegacyDocumentWorkbenchRoute'),
@@ -220,7 +218,7 @@ const RoutesComponent = () => {
         <Route path="knowledge" element={<KnowledgeEntry />} />
         <Route
           path="work-items/:workItemId/analysis"
-          element={<DocumentParsingPage />}
+          element={<WorkItemAnalysisRedirect />}
         />
         <Route
           path="work-items/:workItemId/documents"

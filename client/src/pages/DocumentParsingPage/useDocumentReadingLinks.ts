@@ -18,7 +18,8 @@ interface LinksSnapshot {
 }
 
 /** Keep related saved views inside the same version and browser session. */
-export function useDocumentReadingLinks(status: DocumentParsingStatus | null, refresh: number, readingScope = '') {
+export function useDocumentReadingLinks(status: DocumentParsingStatus | null, refresh: number, readingScope = '',
+  locator: { workItemId: string | null; error: string | null } = { workItemId: null, error: null }) {
   const [session, setSession] = useState(getCanonicalHostClientSessionGeneration);
   const [retry, setRetry] = useState(0);
   const [snapshot, setSnapshot] = useState<LinksSnapshot | null>(null);
@@ -27,7 +28,7 @@ export function useDocumentReadingLinks(status: DocumentParsingStatus | null, re
   const controllerRef = useRef<AbortController | null>(null);
   const identity: string = JSON.stringify([
     status?.documentVersionId, status?.familyId, status?.documentCode,
-    status?.normalizedFamily, session,
+    status?.normalizedFamily, session, locator.workItemId, locator.error,
   ]);
   const refreshSavedWork = useCallback(() => {
     setRetry(value => value + 1);
@@ -44,6 +45,12 @@ export function useDocumentReadingLinks(status: DocumentParsingStatus | null, re
   }), []);
   useEffect(() => {
     if (!status || isCanonicalHostClientSessionAuthenticationRequired()) return;
+    if (locator.error) {
+      setLoadingIdentity(null);
+      setSnapshot({ identity, links: { ...EMPTY_DOCUMENT_READING_LINKS,
+        assessmentNote: locator.error, wikiNote: locator.error, error: locator.error } });
+      return;
+    }
     const controller: AbortController = new AbortController();
     controllerRef.current = controller;
     const readingEpoch: number = ++epoch.current;
@@ -57,7 +64,7 @@ export function useDocumentReadingLinks(status: DocumentParsingStatus | null, re
       setSnapshot({ identity, links });
       setLoadingIdentity(null);
     };
-    void readDocumentReadingLinks(status, controller.signal, receive).then((links: DocumentReadingLinks) => {
+    void readDocumentReadingLinks(status, controller.signal, receive, locator.workItemId ?? undefined).then((links: DocumentReadingLinks) => {
       receive(links);
     }).catch((reason: unknown) => {
       if (!current()) return;

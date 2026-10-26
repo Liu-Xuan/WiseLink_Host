@@ -6,6 +6,7 @@ import {
 import type { DocumentParsingStatus } from '@shared/document-parsing.interface';
 import type { CanonicalLibraryDocumentSummary, CanonicalLibraryQuicklookResponse } from '@shared/api.interface';
 import type { EngineeringKnowledgeRead } from '@shared/engineering-issue-search.interface';
+import { documentVersionAnalysisRoute } from './document-analysis-route';
 
 export interface DocumentReadingLinks {
   assessmentRoute: string | null;
@@ -37,13 +38,16 @@ export async function readDocumentReadingLinks(
   status: DocumentParsingStatus,
   signal: AbortSignal,
   onAssociation?: (links: DocumentReadingLinks) => void,
+  requestedWorkItemId?: string,
 ): Promise<DocumentReadingLinks> {
-  const document = await readExactLibraryFamily(status, signal);
-  const version = document?.versions.find((item) =>
-    item.documentVersionId === status.documentVersionId);
-  if (!version) throw new Error('资料库未返回此文档版本的评估关联，请刷新重试。');
-  if (!version.readerWorkItemId) return EMPTY_DOCUMENT_READING_LINKS;
-  const workItemId = version.readerWorkItemId;
+  let workItemId: string | undefined = requestedWorkItemId;
+  if (workItemId === undefined) {
+    const document = await readExactLibraryFamily(status, signal);
+    const version = document?.versions.find((item) => item.documentVersionId === status.documentVersionId);
+    if (!version) throw new Error('资料库未返回此文档版本的评估关联，请刷新重试。');
+    if (!version.readerWorkItemId) return EMPTY_DOCUMENT_READING_LINKS;
+    workItemId = version.readerWorkItemId;
+  }
   const saved = await getCanonicalLibraryQuicklook(workItemId, signal);
   if (signal.aborted) throw new Error('评估关联读取已取消。');
   if (saved.document.workItemId !== workItemId ||
@@ -59,8 +63,7 @@ export async function readDocumentReadingLinks(
   const links: DocumentReadingLinks = {
     ...EMPTY_DOCUMENT_READING_LINKS,
     assessment: saved,
-    assessmentRoute: `/work-items/${encodeURIComponent(workItemId)}/analysis?${
-      new URLSearchParams({ panel: 'assessment', documentVersionId: status.documentVersionId })}`,
+    assessmentRoute: documentVersionAnalysisRoute(status.documentVersionId, workItemId, 'assessment'),
     assessmentNote: saved.result ? '查看同版本评估工作' : '查看此版本关联的评估工作与运行状态',
   };
   const canReadWiki: boolean = Boolean(saved.result?.jobAidRoundCompletion && saved.result.readingResult);

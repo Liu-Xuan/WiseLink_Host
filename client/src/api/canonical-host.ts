@@ -105,7 +105,7 @@ export async function readTranslationRevisions(
         requestGeneration,
       );
     if (response.status === 403 || response.status === 404)
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     return response.data;
   } catch (error) {
     throw normalizedDirectObjectError(error, requestGeneration);
@@ -139,7 +139,7 @@ export async function saveTranslationRevision(
         requestGeneration,
       );
     if (response.status === 403 || response.status === 404)
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     return response.data;
   } catch (error) {
     throw normalizedDirectObjectError(error, requestGeneration);
@@ -460,7 +460,7 @@ export async function getLibraryIndex(
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(
@@ -582,7 +582,7 @@ async function readCanonicalLibrary<T>(input: {
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(
@@ -912,7 +912,7 @@ export async function readDocumentVersionOriginal(
       method: 'GET', responseType: 'arraybuffer', signal,
     });
     if (response.status === 401) throw clientLoginRequired('SESSION_REQUIRED', generation);
-    if (response.status === 403 || response.status === 404) throw canonicalObjectNotFound();
+    if (response.status === 403 || response.status === 404) throw canonicalObjectAccessError(response.data, response.status);
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(null, 'DOCUMENT_ORIGINAL_READ_FAILED', response.status);
     }
@@ -1078,7 +1078,7 @@ export async function readDocumentParseImage(documentVersionId: string, parseRun
       method: 'GET', responseType: 'arraybuffer', signal,
     });
     if (response.status === 401) throw clientLoginRequired('SESSION_REQUIRED', generation);
-    if (response.status === 403 || response.status === 404) throw canonicalObjectNotFound();
+    if (response.status === 403 || response.status === 404) throw canonicalObjectAccessError(response.data, response.status);
     if (response.status < 200 || response.status >= 300) throw backendResponseError(null, 'DOCUMENT_PARSE_IMAGE_READ_FAILED', response.status);
     if (signal?.aborted || generation !== clientSessionGeneration) throw new Error('DOCUMENT_PARSE_IMAGE_READ_OBSOLETE');
     const type = String(response.headers?.['content-type'] ?? '').split(';')[0].trim().toLowerCase();
@@ -1241,7 +1241,7 @@ export async function getInitialAnalysisStatus(
         requestGeneration,
       );
     if (response.status === 403 || response.status === 404)
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(
         response.data,
@@ -1274,7 +1274,7 @@ export async function requestInitialAnalysisContinuation(
         requestGeneration,
       );
     if (response.status === 403 || response.status === 404)
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     if (response.status < 200 || response.status >= 300)
       throw backendResponseError(
         response.data,
@@ -1431,7 +1431,7 @@ export async function getDocumentParsingPage(
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     if (response.status < 200 || response.status >= 300) {
       const readError = backendResponseError(
@@ -1614,7 +1614,7 @@ async function overallRegenerationRequest<T>(input: {
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     if (response.status === 409) throw overallRegenerationConflict();
     if (response.status < 200 || response.status >= 300) {
@@ -1665,7 +1665,7 @@ export async function getStructuredContentPage(
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(
@@ -1703,7 +1703,7 @@ export async function getRelatedContextPreview(
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(response.data, 'RELATED_CONTEXT_UNAVAILABLE');
@@ -1781,7 +1781,7 @@ async function applicabilitySelectionReviewRequest<T>(input: {
       throw oauthProtectedLoginRequired(response.data,
         'APPLICABILITY_SELECTION_LOGIN_REQUIRED', requestGeneration);
     if (response.status === 403 || response.status === 404)
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     if (response.status < 200 || response.status >= 300)
       throw backendResponseError(response.data,
         'APPLICABILITY_SELECTION_REVIEW_UNAVAILABLE', response.status);
@@ -1810,7 +1810,7 @@ export async function getConfigurationEvidenceStatus(
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(
@@ -1846,7 +1846,7 @@ export async function adoptConfigurationEvidenceCandidate(
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(
@@ -1880,7 +1880,7 @@ async function applicabilitySelectionRequest(input: {
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(
@@ -2007,7 +2007,7 @@ async function reviewConversationRequest<T>(input: {
         response.data, 'REVIEW_CONVERSATION_UNAVAILABLE', response.status,
       );
       if (denial.code === 'REVIEW_EXTERNAL_DELEGATION_REQUIRED') throw denial;
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(
@@ -2062,7 +2062,8 @@ function normalizedDirectObjectError(
   if (status === 401) {
     requireCanonicalHostClientAuthentication(requestGeneration);
   }
-  if (status === 403 || status === 404) return canonicalObjectNotFound();
+  if ((status === 403 || status === 404) && isRecord(error) && isRecord(error.response))
+    return canonicalObjectAccessError(error.response.data, status);
   return error;
 }
 
@@ -2165,7 +2166,9 @@ function reviewOauthSessionRequired(
 }
 
 export function isCanonicalObjectNotFound(error: unknown): boolean {
-  return isRecord(error) && error.code === 'CANONICAL_WORK_ITEM_NOT_FOUND';
+  // Existing consumers clear inaccessible content on either denial; retain the actual status and Host code.
+  return isRecord(error) && (error.code === 'CANONICAL_WORK_ITEM_NOT_FOUND' ||
+    error.statusCode === 403 || error.statusCode === 404);
 }
 
 function responseStatus(error: unknown): number | null {
@@ -2175,14 +2178,20 @@ function responseStatus(error: unknown): number | null {
   return typeof response.status === 'number' ? response.status : null;
 }
 
-function canonicalObjectNotFound(): Error & {
-  code: string;
-  statusCode: number;
-} {
-  return Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
-    code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
-    statusCode: 404,
-  });
+function canonicalObjectAccessError(data: unknown, statusCode: number): CanonicalHostClientError {
+  const envelope: unknown = isRecord(data) && isRecord(data.error) ? data.error : data;
+  const payload: Record<string, unknown> = isRecord(envelope) ? envelope : {};
+  // Preserve only a bounded diagnostic token. Denials never expose response bodies, stacks or object existence.
+  const rawCode: string | null = nonEmptyString(payload.code) ?? nonEmptyString(payload.message);
+  const code: string = rawCode && /^[A-Z][A-Z0-9_]{0,127}$/u.test(rawCode) ? rawCode
+    : statusCode === 403 ? 'CANONICAL_OBJECT_ACCESS_DENIED' : 'CANONICAL_WORK_ITEM_NOT_FOUND';
+  const message: string = code === 'CANONICAL_CODEX_REQUEST_SCOPE_MISMATCH'
+    ? '当前评估的请求范围未通过校验，请刷新后重试；持续失败时请联系维护人员。'
+    : code === 'DIALOGUE_BROWSER_IDENTITY_MISMATCH'
+      ? '当前登录身份与已有会话不一致，请重新登录后重试。'
+      : statusCode === 403 ? '当前请求未获准，请核对登录身份与读取权限。'
+        : '当前对象不可访问，请返回资料库核对。';
+  return Object.assign(new Error(message), { code, statusCode });
 }
 
 function overallRegenerationConflict(): Error & {
@@ -2293,7 +2302,7 @@ export async function recordEngineerReview(
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     return response.data;
   } catch (error) {
@@ -2319,7 +2328,7 @@ export async function queryParsedUnits(
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     return response.data;
   } catch (error) {
@@ -2346,7 +2355,7 @@ export async function confirmIntegratedOverallForAeo(
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(
@@ -2384,7 +2393,7 @@ export async function generateAeoCandidate(
       );
     }
     if (response.status === 403 || response.status === 404) {
-      throw canonicalObjectNotFound();
+      throw canonicalObjectAccessError(response.data, response.status);
     }
     return response.data;
   } catch (error) {

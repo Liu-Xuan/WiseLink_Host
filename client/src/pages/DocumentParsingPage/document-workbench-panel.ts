@@ -34,7 +34,7 @@ import { exactDocumentSourceRoute } from '@client/src/features/matter/matter-nav
 import { readingReturnTarget } from '@client/src/features/matter/reading-return';
 
 
-const ASSESSMENT_READING_KEYS = new Set(['documentVersionId', 'panel', 'assessmentTab', 'assessmentCriterion',
+const ASSESSMENT_READING_KEYS = new Set(['documentVersionId', 'workItemId', 'panel', 'assessmentTab', 'assessmentCriterion',
   'assessmentIssue', 'assessmentScroll', 'parseRunId', 'sourceRef']);
 function readingToken(value: string | null): value is string {
   return Boolean(value && value.trim() === value && value.length <= 512 && !/[\u0000-\u001f\u007f]/u.test(value));
@@ -46,7 +46,7 @@ export function documentAssessmentReturnParams(documentVersionId: string, origin
   if (!readingToken(documentVersionId)) throw new Error('评估返回对象无效。');
   const nested: URLSearchParams = new URLSearchParams({ documentVersionId, panel: 'assessment',
     assessmentTab: readDocumentAssessmentTab(origin).tab, assessmentScroll: String(Math.max(0, Math.min(9999999, Math.round(scroll)))) });
-  for (const key of ['assessmentCriterion', 'assessmentIssue', 'parseRunId', 'sourceRef']) {
+  for (const key of ['workItemId', 'assessmentCriterion', 'assessmentIssue', 'parseRunId', 'sourceRef']) {
     if (origin.getAll(key).length === 1 && readingToken(origin.get(key))) nested.set(key, origin.get(key)!);
   }
   const returns: string[] = [...origin.keys()].filter(key => key.startsWith('return'));
@@ -82,7 +82,7 @@ export function documentAssessmentReturnTarget(params: URLSearchParams, document
     nested.get('panel') !== 'assessment' || readDocumentAssessmentTab(nested).error ||
     [...nested.keys()].some(key => !ASSESSMENT_READING_KEYS.has(key) && !key.startsWith('return') ||
       key.startsWith('returnAssessment') || nested.getAll(key).length !== 1)) return null;
-  for (const key of ['assessmentCriterion', 'assessmentIssue', 'parseRunId', 'sourceRef'])
+  for (const key of ['workItemId', 'assessmentCriterion', 'assessmentIssue', 'parseRunId', 'sourceRef'])
     if (nested.has(key) && !readingToken(nested.get(key))) return null;
   if (nested.has('assessmentScroll') && !/^\d{1,7}$/u.test(nested.get('assessmentScroll')!)) return null;
   if ([...nested.keys()].some(key => key.startsWith('return')) &&

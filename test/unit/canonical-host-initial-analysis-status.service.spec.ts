@@ -38,11 +38,117 @@ import {
   withStagedBaseRules,
 } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 import * as automaticScope from '../../server/modules/canonical-host/configured-development-service-scope.authorization';
+import { CanonicalHostApplicabilityInputProducer } from '../../server/modules/canonical-host/canonical-host-applicability-input.producer';
+import { CanonicalHostVerticalService } from '../../server/modules/canonical-host/canonical-host-vertical.service';
+import type { CanonicalHostActor } from '../../server/modules/canonical-host/canonical-host.types';
 
 const HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('CanonicalHost initial-analysis status projection', () => {
+  describe('authorized library browser outside the first CODEX intake', () => {
+    const config = {
+      WL_MODEL_EXECUTOR: 'CODEX', WL_CODEX_RUNTIME_APP_ID: 'app_codexbrowsertest',
+      WL_CODEX_SERVICE_SCOPE_ENABLED: '1', WL_CODEX_GATEWAY_AUTH_MODE: 'API_KEY',
+      WL_CODEX_SERVICE_SCOPE_ENV: 'UAT', WL_CODEX_SERVICE_PRINCIPAL_ID: 'service:codex-browser-test',
+      WL_CODEX_SERVICE_TENANT_ID: 'tenant-1', WL_CODEX_SERVICE_WORK_ITEM_ID: 'WI-first-live',
+      WL_CODEX_SERVICE_REQUEST_ID: 'REQ-first-live', WL_CODEX_SERVICE_AUTO_QUEUE_ENABLED: '1',
+      WL_JOBAID_PROBLEM_V2_ENABLED: '1', WL_TRANSLATION_V2_ENABLED: '1',
+    };
+    const previous = new Map<string, string | undefined>();
+    beforeEach(() => {
+      for (const [key, value] of Object.entries(config)) {
+        previous.set(key, process.env[key]); process.env[key] = value;
+      }
+    });
+    afterEach(() => {
+      for (const [key, value] of previous) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+      previous.clear(); jest.restoreAllMocks();
+    });
+
+    function harness() {
+      const projection = parsedWorkItem();
+      projection.classification.normalizedFamily = 'FTD';
+      const owner = ownerRow(projection);
+      const query = (values: unknown[]) => {
+        const chain = { where: () => chain, orderBy: () => chain, innerJoin: () => chain,
+          limit: async () => values };
+        return chain;
+      };
+      const db = {
+        execute: async () => [{ service: false }],
+        select: () => ({ from: (table: unknown) => {
+          if (table === workItemTable) return query([{ ...owner, model: null }]);
+          if (table === dmDocumentParseRun) return query([{ id: 'published-original' }]);
+          if (table === autoWorkItemAuthorization) return query([{ workItemId: projection.workItemId }]);
+          if (table === translationWorkspace) return query([]);
+          throw new Error('UNEXPECTED_BROWSER_QUERY');
+        } }),
+        selectDistinctOn: () => ({ from: () => ({ where: () => ({ orderBy: async () => [] }) }) }),
+      };
+      const leaseAuthority = { authorizeActiveLease: jest.fn() };
+      const executionScope = new automaticScope.ConfiguredDevelopmentCanonicalServiceScopeAuthorization(leaseAuthority as never);
+      const applicability = new CanonicalHostApplicabilityInputProducer({} as never, {} as never,
+        {} as never, executionScope, {} as never);
+      const withVerifiedReviewServiceSql = jest.fn(async (operation: () => Promise<unknown>) => operation());
+      const status = new CanonicalHostInitialAnalysisStatusService(db as never, {} as never,
+        undefined, undefined, applicability, { withVerifiedReviewServiceSql } as never);
+      const registrar = { getTenantScopedByWorkItemId: jest.fn().mockResolvedValue(projection) };
+      const authorize = jest.fn().mockResolvedValue({ action: 'READ_DOCUMENT_PARSING', allowed: true,
+        actorFingerprint: HASH, decisionId: 'decision-library', decisionHash: HASH,
+        permissionSnapshotVersion: projection.permissionSnapshotVersion });
+      const actor: CanonicalHostActor = { userId: 'owner-test', tenantId: 'tenant-1',
+        appId: 'app_17bzc551rsg', roles: [], env: 'test' };
+      const page = new CanonicalHostVerticalService(registrar as never, {} as never, { authorize },
+        { freshRead: async () => ({ permissionSnapshotVersion: projection.permissionSnapshotVersion }) },
+        {} as never, { inspectSourcePackage: async () => ({ sourceKind: 'FROZEN2' }) } as never,
+        { status: () => ({}) } as never, {} as never, null,
+        undefined, undefined, undefined, undefined, undefined, status);
+      return { projection, applicability, executionScope, leaseAuthority, status, page, actor,
+        registrar, authorize, withVerifiedReviewServiceSql };
+    }
+
+    it('reads the authorized page while the real optional execution-admission chain still rejects its scope', async () => {
+      const h = harness();
+      await expect(h.applicability.readOriginalAdmissionContext({ workItemId: h.projection.workItemId,
+        tenantId: h.actor.tenantId, documentVersionId: h.projection.source.documentVersionId }))
+        .rejects.toMatchObject({ code: 'CANONICAL_CODEX_REQUEST_SCOPE_MISMATCH', statusCode: 403 });
+      const result = await h.page.page({ workItemId: h.projection.workItemId }, h.actor);
+      expect(result).toMatchObject({ status: 'FRESH_READ', workItem: h.projection,
+        initialAnalysis: { continuationOperations: [], canRequestBlockTranslation: false,
+          stages: { applicability: { status: 'WAITING_INPUT', terminalCode: 'CANONICAL_CODEX_REQUEST_SCOPE_MISMATCH' } } },
+        readAuthorization: { action: 'READ_DOCUMENT_PARSING' } });
+      expect(h.authorize).toHaveBeenCalledWith(expect.objectContaining({ actor: h.actor,
+        action: 'READ_DOCUMENT_PARSING', workItemId: h.projection.workItemId }));
+      expect(h.registrar.getTenantScopedByWorkItemId).toHaveBeenCalledWith({
+        workItemId: h.projection.workItemId, tenantId: h.actor.tenantId });
+      expect(h.withVerifiedReviewServiceSql).toHaveBeenCalledWith(expect.any(Function), h.actor.userId);
+      expect(h.leaseAuthority.authorizeActiveLease).not.toHaveBeenCalled();
+    });
+
+    it('keeps browser access denial ahead of all projection and execution checks', async () => {
+      const h = harness(); const denied = new ForbiddenException('DOCUMENT_READ_NOT_AUTHORIZED');
+      h.authorize.mockRejectedValue(denied);
+      await expect(h.page.page({ workItemId: h.projection.workItemId }, h.actor)).rejects.toBe(denied);
+      expect(denied.getStatus()).toBe(403);
+      expect(h.registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
+      expect(h.withVerifiedReviewServiceSql).not.toHaveBeenCalled();
+    });
+
+    it('keeps both execution and service reads outside the CODEX intake rejected', async () => {
+      const h = harness();
+      for (const operation of [
+        () => h.executionScope.authorizeOpenClawWorkItem({ operation: 'BEGIN_DYNAMIC', workItemId: h.projection.workItemId }),
+        () => h.executionScope.authorizeWorkItemRead({ transport: 'READONLY_MCP', operation: 'READ_STATUS',
+          workItemId: h.projection.workItemId }),
+        () => h.status.project({ workItem: h.projection, tenantId: h.actor.tenantId }),
+      ]) await expect(operation()).rejects.toMatchObject({ code: 'CANONICAL_CODEX_REQUEST_SCOPE_MISMATCH', statusCode: 403 });
+      expect(h.leaseAuthority.authorizeActiveLease).not.toHaveBeenCalled();
+    });
+  });
+
   describe('original applicability browser admission', () => {
     const oldMode = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
     beforeEach(() => { process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '1'; });
