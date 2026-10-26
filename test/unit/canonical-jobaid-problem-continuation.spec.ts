@@ -131,13 +131,15 @@ describe('JobAid continuation requests', () => {
       .rejects.toThrow('JOBAID_REQUEST_SCOPE_CHANGED');
   });
 
-  it.each(['success', 'read-missing', 'read-other-revision', 'overview-stale', 'artifact-failure', 'ack-lost'] as const)(
-    'program initial projects only independently read saved work and recovers without another analysis: %s', async scenario => {
+  it.each((['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1'] as const).flatMap(executionMode =>
+    (['success', 'read-missing', 'read-other-revision', 'overview-stale', 'artifact-failure', 'ack-lost'] as const)
+      .map(scenario => ({executionMode, scenario}))))(
+    'program initial $executionMode independently reads saved work and recovers: $scenario', async ({executionMode, scenario}) => {
       const h = harness();
       await h.service.enqueueContinuation(h.current(), TENANT, 'permission', REQUEST_1,
-        'INITIAL_PROBLEM_ASSESSMENT', undefined, undefined, undefined, {modelRef: 'miaoda/glm-5.3'});
+        'INITIAL_PROBLEM_ASSESSMENT', undefined, undefined, undefined, {modelRef: 'miaoda/glm-5.3', executionMode});
       const started = await h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT', REQUEST_1);
-      expect(started.modelInput.executionMode).toBe('PROGRAM_CONTROLLED_V1');
+      expect(started.modelInput.executionMode).toBe(executionMode);
       const preparedTask = parseJobAidProblemTask(started.task);
       expect(started.task.executionModel?.modelRef).toBe('miaoda/glm-5.3');
       expect(preparedTask.modelInput.programOriginal?.binding).toEqual(preparedTask.modelInput.documentOverview.original?.binding);
@@ -1471,6 +1473,10 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
     reserve: jest.fn(async (input: ReserveActionAttemptInput) => {
       const operationRef = `AQ-CONTINUATION-${rows.size + 1}`;
       const actionAttemptId = `ATT-CONTINUATION-${rows.size + 1}`;
+      const executionModel = input.programControlled ? input.programControlled.executionMode === 'PROGRAM_AGENT_V1'
+        ? {...taskModelSelection(input.programControlled.modelRef), schemaVersion: 'wiselink.3_1.execution_model_selection.v2' as const,
+          maxOutputTokens: 131072, settingsRevision: 4}
+        : taskModelSelection(input.programControlled.modelRef) : undefined;
       const envelope = sealTaskEnvelope({
         schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
         actionAttemptId,
@@ -1485,14 +1491,14 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
         sourceRefs: input.sourceRefs!,
         allowedConnectors: input.allowedConnectors ?? [],
         hostResolvedMissingInputs: [],
-        ...(input.programControlled ? {executionModel: taskModelSelection(input.programControlled.modelRef)} : {}),
+        ...(executionModel ? {executionModel} : {}),
         modelInput: await input.buildModelInput({
           attemptId: actionAttemptId,
           operationRef,
           triggerRequestId: 'TRIGGER-CONTINUATION',
           attemptNo: rows.size + 1,
           createdAt: new Date('2026-09-09T00:00:00.000Z'),
-        }),
+        }, executionModel),
         deadline: '2026-09-09T01:00:00.000Z',
         idempotencyKey: input.idempotencyKey,
       });

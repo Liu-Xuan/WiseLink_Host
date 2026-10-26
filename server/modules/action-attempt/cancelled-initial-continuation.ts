@@ -1,6 +1,8 @@
+import { isProgramAssessmentMode } from '../canonical-host/program-agent-policy';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, eq, sql } from 'drizzle-orm';
 import type {
+  CanonicalAssessmentExecutionMode,
   CanonicalExecutionModelSelection,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
@@ -34,6 +36,7 @@ export interface CancelledInitialContinuationBinding {
     requestId: string;
     inputHash: string;
     deadline: string;
+    executionMode?: CanonicalAssessmentExecutionMode;
     executionModel: CanonicalExecutionModelSelection;
   };
 }
@@ -109,7 +112,7 @@ export async function readBrowserInitialContinuationClaim(
     const task = parseTaskEnvelope(String(next.taskEnvelopeJson));
     const request = readInitialAnalysisRequestInput(task);
     const model = readStoredExecutionModel(next.executionModelJson);
-    if (!request || (blocked && request.executionMode !== 'PROGRAM_CONTROLLED_V1') ||
+    if (!request || (blocked && !isProgramAssessmentMode(request.executionMode)) ||
         !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(request.requestId) ||
         !request.originalParseRunId || !model ||
         task.actionAttemptId !== next.attemptId || task.operationRef !== next.operationRef ||
@@ -121,7 +124,8 @@ export async function readBrowserInitialContinuationClaim(
         canonicalJson(task.executionModel) !== canonicalJson(model) ||
         canonicalJson(task.sourceRefs[0]) !== canonicalJson(jobAidSourceFileReference(projection))) return null;
     return {attemptId:next.attemptId,requestId:request.requestId,inputHash:task.inputHash,
-      deadline:task.deadline,executionModel:model};
+      deadline:task.deadline,executionModel:model,
+      ...(request.executionMode ? {executionMode:request.executionMode} : {})};
   } catch { return null; }
 }
 

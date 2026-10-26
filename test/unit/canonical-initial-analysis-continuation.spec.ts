@@ -305,12 +305,12 @@ describe('owner-requested initial continuation', () => {
     );
   });
 
-  it('queues explicit program/model intent only for a new initial assessment', async () => {
+  it.each(['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1'] as const)('queues exact %s model intent only for a new initial assessment', async executionMode => {
     const h = harness();
-    const command = {...request, operation: 'EVALUATE_JOBAID', executionMode: 'PROGRAM_CONTROLLED_V1', modelRef: 'miaoda/glm-5.3'};
+    const command = {...request, operation: 'EVALUATE_JOBAID', executionMode, modelRef: 'miaoda/glm-5.3'};
     await h.send(command);
     expect(h.jobAid.enqueueContinuation).toHaveBeenCalledWith(h.workItem, actor.tenantId, 'permission-1',
-      request.requestId, 'INITIAL_PROBLEM_ASSESSMENT', undefined, undefined, undefined, {modelRef: 'miaoda/glm-5.3'});
+      request.requestId, 'INITIAL_PROBLEM_ASSESSMENT', undefined, undefined, undefined, {modelRef: 'miaoda/glm-5.3', executionMode});
     await expect(h.send({...command, operation: 'SYNTHESIZE_OVERALL'})).rejects.toThrow('PROGRAM_SCOPE_INVALID');
     await expect(h.send({...command, modelRef: undefined})).rejects.toThrow('PROGRAM_SCOPE_INVALID');
   });

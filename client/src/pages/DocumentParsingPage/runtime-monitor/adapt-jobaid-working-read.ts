@@ -101,7 +101,8 @@ export function adaptJobAidWorkingRead(
     else researchAttempts.unshift(dynamic);
   }
   const researchExecution = dynamic ?? latest;
-  const program = dynamic?.executionMode === 'PROGRAM_CONTROLLED_V1';
+  const agent: boolean = dynamic?.executionMode === 'PROGRAM_AGENT_V1';
+  const program = dynamic?.executionMode === 'PROGRAM_CONTROLLED_V1' || agent;
   const ownWork = work?.actionAttemptId === dynamic?.attemptId ? work : null;
   const stopped = dynamic?.status !== 'SUCCEEDED' && read.activity?.attemptRef === dynamic?.attemptRef
     ? read.activity?.consumerStopped : null;
@@ -131,7 +132,8 @@ export function adaptJobAidWorkingRead(
     coverage: read.currentInputChanged ? {label:'Host 标记输入已有变化',tone:'wait'} : 'Host 未标记输入变化',
     coverageScope: '仅当前 JobAid 工作输入；本读模型不提供全部业务来源覆盖',
     business: '工程工作；正式意见另行读取',
-    summary: [program ? `程序控制评估；本次未启用自主调查。${programState}` : '',
+    summary: [program
+      ? `${agent ? '程序 Agent 评估' : '程序控制评估；本次未启用自主调查'}。${programState}` : '',
       work ? `已保存工作 ${work.workRevision}（请求 ${work.requestId}，尝试 ${work.actionAttemptId}），执行观察另列` : '尚未取得已保存工作'].filter(Boolean).join('。'),
     requestCoverage: dynamic ? '本次读取返回的调查尝试，有限观察' : '仅最新调查尝试，非完整请求集合',
     requestCompleteness: dynamic ? 'partial' : 'latest_only',

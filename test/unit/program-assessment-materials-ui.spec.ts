@@ -6,7 +6,7 @@ import {
   assessmentPageFixture,
   assessmentWorkingFixture,
 } from './fixtures/document-assessment-workspace';
-import { programMaterialsFixture } from './fixtures/program-assessment-materials';
+import { programAgentMaterialsFixture, programMaterialsFixture } from './fixtures/program-assessment-materials';
 import type { JobAidProgramMaterialsRead } from '@shared/jobaid-problem-assessment.interface';
 
 const mockIdentity = jest.fn(),
@@ -34,6 +34,7 @@ jest.mock('@client/src/features/review/RevisionTimeline', () => ({
   __esModule: true,
   default: () => null,
 }));
+jest.mock('@client/src/pages/DocumentParsingPage/work-item-process-workspace.css', () => ({}));
 const { JSDOM } = require('jsdom');
 const prior = new Map<string, PropertyDescriptor | undefined>();
 let dom: InstanceType<typeof JSDOM>, root: Root, container: HTMLDivElement;
@@ -151,14 +152,14 @@ it.each(['PREPARED_NOT_CONFIRMED_SENT', 'RESPONSE_RECEIVED'] as const)(
   },
 );
 
-it('connects the exact selected program attempt to the actual process section without eager material reads', async () => {
+it.each(['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1'] as const)('connects the exact selected %s attempt to the actual process section without eager material reads', async (executionMode) => {
   const page = assessmentPageFixture(),
     working = assessmentWorkingFixture();
   working.selectedExecution = {
     actionType: 'OPENCLAW_DYNAMIC_EVALUATION',
     attemptId: 'ATT-selected',
     attemptRef: 'AQ-ATT-selected',
-    executionMode: 'PROGRAM_CONTROLLED_V1',
+    executionMode,
     programMaterialsAvailable: true,
     status: 'RUNNING',
     createdAt: '2026-10-24T00:00:00Z',
@@ -166,7 +167,14 @@ it('connects the exact selected program attempt to the actual process section wi
     completedAt: null,
   };
   mockRead.mockResolvedValueOnce(
-    programMaterialsFixture(page.workItem.workItemId, 'ATT-selected'),
+    executionMode === 'PROGRAM_AGENT_V1'
+      ? {
+          ...programAgentMaterialsFixture(),
+          workItemId: page.workItem.workItemId,
+          attemptId: 'ATT-selected',
+          attemptRef: 'AQ-ATT-selected',
+        }
+      : programMaterialsFixture(page.workItem.workItemId, 'ATT-selected'),
   );
   await act(async () =>
     root.render(
@@ -174,11 +182,17 @@ it('connects the exact selected program attempt to the actual process section wi
     ),
   );
   expect(mockRead).not.toHaveBeenCalled();
+  if (executionMode === 'PROGRAM_AGENT_V1') {
+    expect(container.textContent).toContain('程序 Agent 评估');
+    expect(container.textContent).not.toContain('自主调查未启用');
+  } else expect(container.textContent).toContain('程序评估 · 自主调查未启用');
   await click('查看本次材料');
   expect(mockRead.mock.calls[0].slice(0, 2)).toEqual([
     page.workItem.workItemId,
     'ATT-selected',
   ]);
+  if (executionMode === 'PROGRAM_AGENT_V1')
+    expect(container.textContent).toContain('本次资料目录');
 });
 
 it('does not invent materials without an available snapshot and shows the exact unavailable reason after an explicit read', async () => {
@@ -289,4 +303,15 @@ it('rejects an unrelated snapshot and keeps document text inert', async () => {
   expect(container.textContent).toContain(
     '<img src="invalid" onerror="write()">',
   );
+});
+
+it('shows a saved Agent v2 private snapshot and keeps directory preparation distinct from actual reads', async () => {
+  mockRead.mockResolvedValueOnce(programAgentMaterialsFixture());
+  await render();
+  await click('查看本次材料');
+  expect(container.textContent).toContain('本次资料目录');
+  expect(container.textContent).toContain('本次私有原文快照');
+  expect(container.textContent).toContain('私有原文完整保留：例外条件尚未核实。');
+  expect(container.textContent).toContain('目录和私有原文准备记录不表示已读取或已引用');
+  expect(container.textContent).not.toContain('暂不能展示');
 });

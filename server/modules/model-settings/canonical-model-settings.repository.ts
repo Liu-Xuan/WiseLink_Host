@@ -17,13 +17,14 @@ import { readStoredExecutionModel } from './canonical-execution-model';
 export type StoredCanonicalModelSetting = Pick<
   typeof canonicalModelSetting.$inferSelect,
   'tenantId' | 'modelRef' | 'revision' | 'updatedAt'
->;
+> & { outputBudgetsJson?: unknown };
 
 const selection = {
   tenantId: canonicalModelSetting.tenantId,
   modelRef: canonicalModelSetting.modelRef,
   revision: canonicalModelSetting.revision,
   updatedAt: canonicalModelSetting.updatedAt,
+  outputBudgetsJson: canonicalModelSetting.outputBudgetsJson,
 };
 
 @Injectable()
@@ -111,6 +112,7 @@ export class CanonicalModelSettingsRepository {
     actorUserId: string;
     expectedRevision: number;
     modelRef: string;
+    maxOutputTokens?: number;
   }): Promise<StoredCanonicalModelSetting> {
     // The platform transaction supplies the actor and roles. The RPC accepts
     // no actor or parsing settings and preserves the table's write-deny RLS.
@@ -119,13 +121,15 @@ export class CanonicalModelSettingsRepository {
       modelRef: string;
       revision: number;
       updatedAt: Date | string;
+      outputBudgetsJson: unknown;
     }>(sql`
       SELECT tenant_id AS "tenantId", model_ref AS "modelRef",
-             revision, updated_at AS "updatedAt"
-      FROM workspace_aadkpkjef3slu.canonical_model_setting_compare_and_set(
+             revision, updated_at AS "updatedAt", output_budgets_json AS "outputBudgetsJson"
+      FROM workspace_aadkpkjef3slu.canonical_model_setting_compare_and_set_with_output_budget(
         ${input.tenantId}::varchar,
         ${input.modelRef}::varchar,
-        ${input.expectedRevision}::integer
+        ${input.expectedRevision}::integer,
+        ${input.maxOutputTokens ?? null}::bigint
       )
     `);
     if (!rows[0])

@@ -35,6 +35,11 @@ const MATERIAL_GROUPS = [
 
 const MATERIAL_LABELS: Record<string, string> = {
   content: '正文',
+  originalBinding: '准确原版本',
+  units: '原文单元',
+  payload: '原文内容',
+  originalUnits: '原文单元目录',
+  previousWorkRevisionRef: '既有工作修订',
   binding: '准确版本',
   title: '标题',
   question: '问题',
@@ -86,6 +91,7 @@ const TECHNICAL_MATERIAL_KEYS: ReadonlySet<string> = new Set([
   'schemaVersion',
   'purpose',
   'executionMode',
+  'unitId',
   'sourceRefId',
   'sourceRefIds',
   'evidenceRef',
@@ -187,13 +193,24 @@ export function ProgramMaterialsContent({
   const request: Record<string, unknown> | null = materialRecord(
     read.snapshot?.modelRequest,
   );
-  const input: Record<string, unknown> | null = materialRecord(
-    materials?.modelInput,
-  );
+  const agent: boolean = read.executionMode === 'PROGRAM_AGENT_V1';
+  const preparedInput: Record<string, unknown> | null = materialRecord(materials?.modelInput);
+  const originalInput: Record<string, unknown> | null = materialRecord(materials?.originalInput);
+  const input: Record<string, unknown> | null = agent ? {
+    directory: materials?.directory,
+    privateOriginal: originalInput?.programOriginal,
+    previousUnderstandingAndChanges: preparedInput?.previousUnderstandingAndChanges,
+  } : preparedInput;
+  const groups: ReadonlyArray<readonly [string, string]> = agent ? [
+    ['directory', '本次资料目录'],
+    ['privateOriginal', '本次私有原文快照'],
+    ['previousUnderstandingAndChanges', '既有认识与变化'],
+  ] : MATERIAL_GROUPS;
   if (
     !input ||
-    !MATERIAL_GROUPS.every(([key]) => materialRecord(input[key])) ||
-    typeof materialRecord(input.continuousOriginal)?.content !== 'string' ||
+    !groups.every(([key]) => materialRecord(input[key])) ||
+    (agent ? materials?.version !== 2 || request?.version !== 2
+      : typeof materialRecord(input.continuousOriginal)?.content !== 'string') ||
     typeof request?.body !== 'string'
   )
     return <p role="alert">本次快照缺少完整材料或准确原请求，暂不能展示。</p>;
@@ -214,11 +231,12 @@ export function ProgramMaterialsContent({
         </p>
         <p>以下保留本次准备时的内容与版本，不跳转为最新资料。</p>
       </header>
-      {MATERIAL_GROUPS.map(([key, label]) => (
+      {agent && <p>本次模型先取得资料目录，再按需读取；目录和私有原文准备记录不表示已读取或已引用。</p>}
+      {groups.map(([key, label]) => (
         <details
           key={key}
           className="rounded-md border p-3"
-          open={key === 'continuousOriginal'}
+          open={key === 'continuousOriginal' || key === 'privateOriginal'}
         >
           <summary className="cursor-pointer font-medium">{label}</summary>
           <div className="mt-3">
@@ -322,7 +340,7 @@ function ProgramMaterialsRead({
         if (
           read.workItemId !== props.workItemId ||
           read.attemptId !== props.attemptId ||
-          read.executionMode !== 'PROGRAM_CONTROLLED_V1' ||
+          !['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1'].includes(read.executionMode) ||
           (props.attemptRef && read.attemptRef !== props.attemptRef) ||
           (props.executionModel &&
             read.executionModel.modelRef !== props.executionModel.modelRef)

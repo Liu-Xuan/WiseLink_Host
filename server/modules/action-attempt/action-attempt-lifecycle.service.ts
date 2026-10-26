@@ -68,7 +68,9 @@ export class ActionAttemptLifecycleService {
     assertReservationInput(input);
     if (input.programControlled && input.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION')
       throw conflict('ACTION_ATTEMPT_PROGRAM_REQUEST_INVALID');
-    const programModel = input.programControlled ? taskModelSelection(input.programControlled.modelRef, now) : undefined;
+    // Validate the requested route, but do not consult new settings before
+    // returning an already sealed idempotent request.
+    if (input.programControlled) taskModelSelection(input.programControlled.modelRef, now);
     const binding = await this.repository.readWorkItemBinding({
       workItemId: input.workItemId,
       tenantId: input.tenantId,
@@ -117,12 +119,10 @@ export class ActionAttemptLifecycleService {
       input.deadlineAt ??
       new Date(now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS);
     const priority = input.priority ?? DEFAULT_PRIORITY;
-    const executionModel = programModel ?? await this.modelSettings.captureForWorkItem(
-      input.tenantId,
-      input.workItemId,
-      now,
-    );
-    const modelInput = await input.buildModelInput(identity);
+    const executionModel = input.programControlled
+      ? await this.modelSettings.captureForExplicitProgram(input.tenantId, input.programControlled.modelRef, now, input.programControlled.executionMode)
+      : await this.modelSettings.captureForWorkItem(input.tenantId, input.workItemId, now);
+    const modelInput = await input.buildModelInput(identity, executionModel);
     const task = parseTaskEnvelope(
       canonicalJson(
         sealTaskEnvelope({
@@ -1097,7 +1097,8 @@ function assertReplay(
   input: ReserveActionAttemptInput,
 ): void {
   const task = validatedTask(row);
-  if ((task.modelInput.executionMode === 'PROGRAM_CONTROLLED_V1') !== !!input.programControlled ||
+  if (task.modelInput.executionMode !== (input.programControlled
+    ? input.programControlled.executionMode ?? 'PROGRAM_CONTROLLED_V1' : undefined) ||
       (input.programControlled && (task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
         task.executionModel?.modelRef !== input.programControlled.modelRef)))
     throw conflict('ACTION_ATTEMPT_IDEMPOTENCY_PAYLOAD_MISMATCH');

@@ -378,8 +378,9 @@ export class JobAidWorkRepository {
           ${actionAttempt.operationRef} AS "attemptRef", ${actionAttempt.reviewActivityJson} AS "activityJson",
           ${actionAttempt.actionType} AS "actionType", ${actionAttempt.createdAt} AS "createdAt",
           ${actionAttempt.startedAt} AS "startedAt", ${actionAttempt.completedAt} AS "completedAt",
-          CASE WHEN ${actionAttempt.taskEnvelopeJson}::jsonb->'modelInput'->>'executionMode' = 'PROGRAM_CONTROLLED_V1'
-            THEN 'PROGRAM_CONTROLLED_V1' ELSE NULL END AS "executionMode",
+          CASE WHEN ${actionAttempt.taskEnvelopeJson}::jsonb->'modelInput'->>'executionMode'
+            IN ('PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1')
+            THEN ${actionAttempt.taskEnvelopeJson}::jsonb->'modelInput'->>'executionMode' ELSE NULL END AS "executionMode",
           ${actionAttempt.executionModelJson}::jsonb AS "executionModel"
         FROM ${actionAttempt}
         WHERE ${actionAttempt.tenantId} = ${input.tenantId}

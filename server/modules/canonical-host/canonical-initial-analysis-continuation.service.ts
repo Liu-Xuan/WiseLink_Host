@@ -1,3 +1,4 @@
+import { isProgramAssessmentMode } from './program-agent-policy';
 import type { Request } from 'express';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import {
@@ -54,7 +55,7 @@ const command = z.strictObject({
   requestId: z.string().uuid(),
   expectedRevision: z.number().int().positive(),
   operation: z.enum(['TRANSLATE', 'EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL']),
-  executionMode: z.literal('PROGRAM_CONTROLLED_V1').optional(),
+  executionMode: z.enum(['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1']).optional(),
   modelRef: z.string().min(1).max(160).optional(),
   retranslateBlockIds: z
     .array(z.string().min(1).max(200))
@@ -109,8 +110,10 @@ export class CanonicalInitialAnalysisContinuationService {
   ): Promise<CanonicalInitialAnalysisContinuationReceipt> {
     const input = command.parse(raw);
     if ((input.executionMode !== undefined || input.modelRef !== undefined) &&
-        (input.operation !== 'EVALUATE_JOBAID' || input.executionMode !== 'PROGRAM_CONTROLLED_V1' || !input.modelRef))
+        (input.operation !== 'EVALUATE_JOBAID' || !isProgramAssessmentMode(input.executionMode) || !input.modelRef))
       throw continuationConflict('PROGRAM_SCOPE_INVALID');
+    if (input.executionMode === 'PROGRAM_AGENT_V1' && input.modelRef !== 'miaoda/glm-5.3')
+      throw continuationConflict('PROGRAM_AGENT_MODEL_UNSUPPORTED');
     if (input.operation !== 'TRANSLATE' && input.retranslateBlockIds)
       throw continuationConflict('BLOCK_SCOPE_REQUIRES_TRANSLATION');
     const { workItem, permissionSnapshotVersion } =
@@ -151,7 +154,7 @@ export class CanonicalInitialAnalysisContinuationService {
       )
         throw continuationConflict('REQUEST_SCOPE_CHANGED');
       if (existing.status === 'QUEUED' && input.operation === 'EVALUATE_JOBAID' &&
-          input.executionMode === 'PROGRAM_CONTROLLED_V1' && this.initial.queuedContinuationBinding) {
+          isProgramAssessmentMode(input.executionMode) && this.initial.queuedContinuationBinding) {
         const pending = await this.initial.queuedContinuationBinding({tenantId:actor.tenantId,
           actorUserId:actor.userId,workItem},input.requestId);
         if (pending.blocked) {
@@ -268,7 +271,7 @@ export class CanonicalInitialAnalysisContinuationService {
               authorizedKnowledgeSession,
               undefined,
               cancelledGuard,
-              input.executionMode ? {modelRef: input.modelRef!} : undefined,
+              input.executionMode ? {modelRef: input.modelRef!, executionMode: input.executionMode} : undefined,
             )
           : this.jobAid.enqueueContinuation(
               workItem,
@@ -279,7 +282,7 @@ export class CanonicalInitialAnalysisContinuationService {
                 ? 'INITIAL_PROBLEM_ASSESSMENT'
                 : 'OVERALL_CONSISTENCY',
               authorizedKnowledgeSession,
-              undefined, undefined, input.executionMode ? {modelRef: input.modelRef!} : undefined,
+              undefined, undefined, input.executionMode ? {modelRef: input.modelRef!, executionMode: input.executionMode} : undefined,
             );
     const reserved = cancelled
       ? await this.sessions!.withVerifiedReviewServiceSql(reserve, actor.userId)

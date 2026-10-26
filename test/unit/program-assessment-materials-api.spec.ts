@@ -2,7 +2,7 @@ import {
   invalidateCanonicalHostClientSession,
   readProgramAssessmentMaterials,
 } from '@client/src/api/canonical-host';
-import { programMaterialsFixture } from './fixtures/program-assessment-materials';
+import { programAgentMaterialsFixture, programMaterialsFixture } from './fixtures/program-assessment-materials';
 const mockRequest = jest.fn();
 jest.mock('@lark-apaas/client-toolkit/utils/getAxiosForBackend', () => ({
   axiosForBackend: (input: unknown) => mockRequest(input),
@@ -96,8 +96,14 @@ it.each([403, 404])(
     await expect(
       readProgramAssessmentMaterials('WI-material', 'ATT-material'),
     ).rejects.toMatchObject({
-      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
-      statusCode: 404,
+      code: status === 403 ? 'CANONICAL_OBJECT_ACCESS_DENIED' : 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: status,
     });
   },
 );
+
+it('accepts the exact saved Agent v2 material through the existing GET', async () => {
+  const read = programAgentMaterialsFixture();
+  mockRequest.mockResolvedValueOnce({status: 200, data: read});
+  expect(await readProgramAssessmentMaterials(read.workItemId, read.attemptId)).toBe(read);
+});

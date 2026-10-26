@@ -5,7 +5,7 @@ import * as stored from '../../../server/modules/tdms-source/tdms-stored-runtime
 import { tdmsSavedNativeContext } from '../../../server/modules/tdms-source/tdms-native-saved-work';
 
 describe('program input native evidence membership', () => {
-  it.each(['authorized','source-not-retained','object-revoked'] as const)('%s keeps exact program membership separate from current object rights', async scenario => {
+  it.each(['authorized','mode-mismatch','source-not-retained','object-revoked'] as const)('%s keeps exact program membership separate from current object rights', async scenario => {
     const f=tdmsRuntimeFixture();
     const context=await f.adapter.discover(f.principal,f.binding);
     const result=await f.adapter.read(f.principal,{context,evidenceRefs:[context.projection.selectedSetApprovedRefs[0]!],
@@ -17,7 +17,7 @@ describe('program input native evidence membership', () => {
     const database={execute:jest.fn(async (query:SQL) => {
       const rendered=new PgDialect().sqlToQuery(query);queries.push(rendered);
       if(rendered.sql.includes('AS "documentVersionId"')) return [{documentVersionId:f.binding.documentVersionId,owner:f.binding.actorUserId,revision:3}];
-      if(rendered.sql.includes('AS retained')) return [{retained:scenario!=='source-not-retained'}];
+      if(rendered.sql.includes('AS retained')) return [{retained:!['mode-mismatch','source-not-retained'].includes(scenario)}];
       return [];
     })};
     const objectAccess={freshRead:jest.fn(async()=>({allowed:scenario!=='object-revoked',action:'READ_WORK_ITEM',
@@ -34,7 +34,15 @@ describe('program input native evidence membership', () => {
       else {
         expect(membership?.params).toContain('program-exact-1');
         expect(membership?.sql).toContain("a.actor_user_id='service:openclaw-main'");
-        expect(membership?.sql).toContain('PROGRAM_CONTROLLED_V1');
+        const modeSql: string=membership!.sql.replace(/\s+/gu,' ');
+        const outerModePath: string="a.task_envelope_json::jsonb#>>'{modelInput,executionMode}'";
+        const innerModePath: string="a.task_envelope_json::jsonb#>>'{modelInput,modelInput,executionMode}'";
+        expect(modeSql).toContain(`${outerModePath} IN ('PROGRAM_CONTROLLED_V1','PROGRAM_AGENT_V1')`);
+        expect(modeSql).toContain(`${innerModePath} =${outerModePath}`);
+        expect(membership?.params).toEqual(expect.arrayContaining([
+          f.actor.tenantId,f.binding.workItemId,f.binding.documentVersionId,f.binding.actorUserId,
+        ]));
+        expect(membership?.sql).toContain("a.task_input_hash=a.task_envelope_json::jsonb->>'inputHash'");
         expect(membership?.sql).toContain('ASSESSMENT_SOURCES_READ');
         expect(membership?.sql).not.toContain('assessment_work_revision');
       }

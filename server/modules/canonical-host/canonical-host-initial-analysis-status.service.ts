@@ -1,3 +1,4 @@
+import { isProgramAssessmentMode } from './program-agent-policy';
 import {
   matchesInitialContinuationOwner,
   readCancelledInitialContinuation,
@@ -203,7 +204,7 @@ export class CanonicalHostInitialAnalysisStatusService {
           !['COMMITTING', 'SUCCEEDED'].includes(record.status) ||
           (record.status === 'SUCCEEDED' && !record.projectionApplied) ||
           record.documentVersionId !== input.workItem.source.documentVersionId ||
-          prepared.executionMode !== 'PROGRAM_CONTROLLED_V1' || task.actionAttemptId !== record.attemptId ||
+          !isProgramAssessmentMode(prepared.executionMode) || task.actionAttemptId !== record.attemptId ||
           task.inputHash !== record.taskInputHash || task.tenantId !== input.tenantId ||
           task.workItemId !== input.workItem.workItemId ||
           savedWork.workRevisionRef !== deterministicOverall.basedOnJobAidWorkRevisionRef ||
@@ -579,7 +580,7 @@ export class CanonicalHostInitialAnalysisStatusService {
         const pending = await this.queuedContinuationBinding(input,status.stages.jobAid.requestId);
         const queued = pending.binding?.queuedRequest;
         if (pending.blocked && queued) queuedContinuationRequest = {requestId:queued.requestId,
-          operation:'EVALUATE_JOBAID',executionMode:'PROGRAM_CONTROLLED_V1',
+          operation:'EVALUATE_JOBAID',executionMode:queued.executionMode ?? 'PROGRAM_CONTROLLED_V1',
           modelRef:queued.executionModel.modelRef,modelName:queued.executionModel.displayName};
       } catch (error) {
         if (!(error instanceof UnauthorizedException && error.message === 'OFFICIAL_OAUTH_SESSION_REQUIRED')) throw error;

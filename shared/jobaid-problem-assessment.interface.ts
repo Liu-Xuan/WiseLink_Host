@@ -234,7 +234,7 @@ export interface JobAidProgramMaterialsRead {
   workItemId: string;
   attemptId: string;
   attemptRef: string;
-  executionMode: 'PROGRAM_CONTROLLED_V1';
+  executionMode: import('./api.interface').CanonicalAssessmentExecutionMode;
   executionModel: import('./api.interface').CanonicalExecutionModelSelection;
   preparedAt: string;
   submissionEvidence: 'PREPARED_NOT_CONFIRMED_SENT' | 'RESPONSE_RECEIVED';

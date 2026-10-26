@@ -1,3 +1,4 @@
+import { canonicalJson } from '../../../server/modules/action-attempt/action-attempt-envelope';
 import type { JobAidProgramMaterialsRead } from '@shared/jobaid-problem-assessment.interface';
 
 export function programMaterialsFixture(
@@ -89,4 +90,31 @@ export function programMaterialsFixture(
       },
     },
   };
+}
+
+/** Synthetic v2 snapshot: its directory is not a model source-read receipt. */
+export function programAgentMaterialsFixture(): JobAidProgramMaterialsRead {
+  const read = programMaterialsFixture();
+  const binding = {documentVersionId: 'DV-historic', parseRunId: 'PR-historic', parseRevision: 4,
+    sourceArtifactId: 'ART-historic', sourceSha256: 'a'.repeat(64), sourceByteLength: 123};
+  const originalInput = {executionMode: 'PROGRAM_AGENT_V1', previousWork: null,
+    programOriginal: {binding, units: [{unitId: 'u1', kind: 'paragraph', sourceRefIds: ['SR-historic'],
+      payload: {text: '私有原文完整保留：例外条件尚未核实。'}}], sourceLocators: [{sourceRefId: 'SR-historic'}],
+      coverage: {knownPageCount: 1, readPageIndexes: [0], unresolvedRanges: []}, findings: []},
+    availableSources: [{ref: 'DOCUMENT_ORIGINAL:DV-historic:PR-historic:SR-historic', kind: 'DOCUMENT_PASSAGE',
+      versionLabel: 'PR-historic', locator: 'page 1'}], deliveredEvidence: []};
+  const directory = {schemaVersion: 'wiselink.program-agent-directory.v1', originalBinding: binding,
+    sources: originalInput.availableSources, originalUnits: [{unitId: 'u1', sourceRefIds: ['SR-historic']}],
+    previousWorkRevisionRef: null};
+  const executionModel = {...read.executionModel, schemaVersion: 'wiselink.3_1.execution_model_selection.v2' as const,
+    maxOutputTokens: 131072, settingsRevision: 4};
+  const agentPolicy = {schemaVersion: 'wiselink.program-agent-policy.v1', maxModelRequests: null,
+    maxOutputTokens: 131072, maxToolCalls: null, timeoutSeconds: 3600};
+  return {...read, executionMode: 'PROGRAM_AGENT_V1', executionModel, snapshot: {
+    materials: {version: 2, originalInput, directory, previousWorkRead: null,
+      modelInput: {previousUnderstandingAndChanges: {previousWork: null}}, deliveredEvidenceRefs: []},
+    modelRequest: {version: 2, executionModel, materialCheckpoint: 'program-agent-materials', agentPolicy,
+      body: JSON.stringify({messages: [{role: 'system', content: 'Synthetic read-only tools'},
+        {role: 'user', content: canonicalJson(directory)}]})},
+  }};
 }

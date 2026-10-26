@@ -1,3 +1,4 @@
+import { buildProgramAgentPolicy, isProgramAssessmentMode, readProgramAgentPolicy, type ProgramAssessmentAdmission } from './program-agent-policy';
 import { canonicalHostExecutor, assertCanonicalCodexWorkItem } from './canonical-host-executor-policy';
 import { assertProgramCompleteIssueCoverage, parseProgramMaterialSnapshot, programMaterialsObservation } from './program-assessment-materials';
 import { exactProgramWorkRead, latestProgramProgress } from './program-controlled-assessment';
@@ -247,7 +248,7 @@ export class CanonicalJobAidProblemService {
         : 'OPENCLAW_OVERALL_SYNTHESIS';
     const idempotencyKey = problemIdempotencyKey(workItem, purpose, requestId);
     let originalParseRunId: string | undefined;
-    let programControlled: { modelRef: string } | undefined;
+    let programControlled: ProgramAssessmentAdmission | undefined;
     if (requestId !== undefined || canonicalHostExecutor() === 'CODEX') {
       const existing = await this.attempts.readRequest({
         tenantId: scope.tenantId,
@@ -264,8 +265,11 @@ export class CanonicalJobAidProblemService {
         const sealedTask = parseTaskEnvelope(existing.taskEnvelopeJson);
         const sealedRequest = readInitialAnalysisRequestInput(sealedTask);
         originalParseRunId = sealedRequest?.originalParseRunId;
-        if (sealedTask.modelInput.executionMode === 'PROGRAM_CONTROLLED_V1')
-          programControlled = { modelRef: sealedTask.executionModel!.modelRef };
+        if (isProgramAssessmentMode(sealedTask.modelInput.executionMode))
+          programControlled = { modelRef: sealedTask.executionModel!.modelRef,
+            executionMode: sealedTask.modelInput.executionMode,
+            ...(sealedTask.modelInput.executionMode === 'PROGRAM_AGENT_V1'
+              ? {agentPolicy: readProgramAgentPolicy(sealedTask.modelInput.agentPolicy)} : {}) };
         if (
           !['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
             existing.status,
@@ -575,7 +579,7 @@ export class CanonicalJobAidProblemService {
     },
     expectedOriginal?: {parseRunId:string;parseRevision:number},
     cancelledInitialContinuation?: CancelledInitialContinuationGuard,
-    programControlled?: { modelRef: string },
+    programControlled?: ProgramAssessmentAdmission,
   ) {
     if (programControlled && (purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || activeConfigurationEvidenceReevaluation(workItem)))
       throw new Error('JOBAID_PROGRAM_SCOPE_INVALID');
@@ -595,7 +599,8 @@ export class CanonicalJobAidProblemService {
     });
     if (existing) {
       const task = parseTaskEnvelope(existing.taskEnvelopeJson);
-      if ((task.modelInput.executionMode === 'PROGRAM_CONTROLLED_V1') !== !!programControlled ||
+      if (task.modelInput.executionMode !== (programControlled
+          ? programControlled.executionMode ?? 'PROGRAM_CONTROLLED_V1' : undefined) ||
           (programControlled && task.executionModel?.modelRef !== programControlled.modelRef))
         throw new Error('JOBAID_REQUEST_SCOPE_CHANGED');
       return continuationReceipt(existing, purpose);
@@ -647,9 +652,15 @@ export class CanonicalJobAidProblemService {
           ? { replacement: authorizedKnowledgeSession }
           : {}),
       },
-      buildModelInput: async () =>
-        buildInitialAnalysisRequestInput({ taskType, requestId, originalParseRunId: original.parseRunId,
-          ...(programControlled ? {executionMode: 'PROGRAM_CONTROLLED_V1', modelRef: programControlled.modelRef} : {}) }),
+      buildModelInput: async (_identity, capturedExecutionModel) => {
+        const executionMode = programControlled?.executionMode ?? 'PROGRAM_CONTROLLED_V1';
+        if (programControlled && executionMode === 'PROGRAM_AGENT_V1' && !capturedExecutionModel)
+          throw new Error('JOBAID_PROGRAM_AGENT_MODEL_BINDING_INVALID');
+        return buildInitialAnalysisRequestInput({ taskType, requestId, originalParseRunId: original.parseRunId,
+          ...(programControlled ? {executionMode, modelRef: programControlled.modelRef,
+            ...(executionMode === 'PROGRAM_AGENT_V1' && capturedExecutionModel
+              ? {agentPolicy: buildProgramAgentPolicy(capturedExecutionModel)} : {})} : {}) });
+      },
     });
     return {
       attemptRef: reserved.task.operationRef,
@@ -812,7 +823,7 @@ export class CanonicalJobAidProblemService {
     requestContext = false,
     nativeAdmission?: {scope:CanonicalVerifiedServiceScope;taskContextRef:string},
     reviewCaller?: TdmsReviewCaller,
-    programControlled?: { modelRef: string },
+    programControlled?: ProgramAssessmentAdmission,
   ): Promise<JobAidProblemTaskInput> {
     const readScope = new UnifiedArtifactReadScope(this.artifactStore);
     if (!this.originalReader) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
@@ -1059,9 +1070,12 @@ export class CanonicalJobAidProblemService {
       coverage: original.original.coverage, findings: original.structuredSource.findings };
     if (programControlled) {
       if (purpose !== 'INITIAL_PROBLEM_ASSESSMENT') throw new Error('JOBAID_PROGRAM_SCOPE_INVALID');
-      taskInput.executionMode = 'PROGRAM_CONTROLLED_V1';
+      const executionMode = programControlled.executionMode ?? 'PROGRAM_CONTROLLED_V1';
+      taskInput.executionMode = executionMode;
       taskInput.requestedModelRef = programControlled.modelRef;
-      taskInput.modelInput.executionMode = 'PROGRAM_CONTROLLED_V1';
+      taskInput.modelInput.executionMode = executionMode;
+      if (executionMode === 'PROGRAM_AGENT_V1')
+        taskInput.agentPolicy = readProgramAgentPolicy(programControlled.agentPolicy);
       taskInput.modelInput.programOriginal = { binding: original.original.binding, coverage: original.original.coverage,
         units: original.structuredSource.units, sourceLocators: original.structuredSource.sourceLocators,
         findings: original.structuredSource.findings };
@@ -2106,7 +2120,7 @@ export class CanonicalJobAidProblemService {
     leaseGeneration: number; phase: 'MATERIALS_READY' | 'MODEL_RESPONSE_SAVED'; checkpointRef: string;
     materialSnapshotJson?: string}) {
     const {row, task, taskInput, scope} = await this.authorizedAttempt(input.attemptRef, 'READ_ASSESSMENT_SOURCES', input.workItemId);
-    if (taskInput.executionMode !== 'PROGRAM_CONTROLLED_V1') throw new Error('JOBAID_PROGRAM_MODE_REQUIRED');
+    if (!isProgramAssessmentMode(taskInput.executionMode)) throw new Error('JOBAID_PROGRAM_MODE_REQUIRED');
     assertJobAidWorkFence(row, {...input, principalId: scope.principalId});
     const evidence = mergeTdmsReadEvidence(taskInput.sourceCatalog, resolvedTdmsReadEvidence(row.reviewActivityJson));
     await this.assertSourcesAuthorized(evidence, taskInput, scope.tenantId, scope.workItemId, scope);
@@ -2141,7 +2155,7 @@ export class CanonicalJobAidProblemService {
       throw new Error('JOBAID_PROGRAM_MATERIALS_UNAVAILABLE');
     const task = parseTaskEnvelope(row.taskEnvelopeJson), input = parseJobAidProblemTask(task);
     const observation = programMaterialsObservation(row.reviewActivityJson);
-    if (input.executionMode !== 'PROGRAM_CONTROLLED_V1' || !observation || !task.executionModel ||
+    if (!isProgramAssessmentMode(input.executionMode) || !observation || !task.executionModel ||
         task.actionAttemptId !== row.attemptId || task.inputHash !== row.taskInputHash || task.workItemId !== workItemId ||
         task.tenantId !== actor.tenantId || task.operationRef !== row.operationRef || task.documentVersionId !== row.documentVersionId)
       throw new Error('JOBAID_PROGRAM_MATERIALS_UNAVAILABLE');
@@ -2157,7 +2171,7 @@ export class CanonicalJobAidProblemService {
         stored.taskInputHash !== row.taskInputHash) throw new Error('JOBAID_PROGRAM_MATERIALS_BINDING_INVALID');
     const snapshot = parseProgramMaterialSnapshot(stored.snapshot, task, input, evidence);
     return {schemaVersion: 'wiselink.program-assessment-materials-read.v1', workItemId,
-      attemptId: row.attemptId, attemptRef: row.operationRef, executionMode: 'PROGRAM_CONTROLLED_V1',
+      attemptId: row.attemptId, attemptRef: row.operationRef, executionMode: input.executionMode,
       executionModel: task.executionModel, preparedAt: observation.observedAt,
       submissionEvidence: latestProgramProgress(row.reviewActivityJson)?.phase === 'MODEL_RESPONSE_SAVED'
         ? 'RESPONSE_RECEIVED' : 'PREPARED_NOT_CONFIRMED_SENT', snapshot};
@@ -2420,7 +2434,7 @@ export class CanonicalJobAidProblemService {
       workItemId: scope.workItemId,
       actorUserId: taskInput.actorUserId,
     });
-    if (workRevisionRef && (requestId || taskInput.executionMode !== 'PROGRAM_CONTROLLED_V1' ||
+    if (workRevisionRef && (requestId || !isProgramAssessmentMode(taskInput.executionMode) ||
         workRevisionRef !== taskInput.previousWork?.workRevisionRef))
       throw new Error('JOBAID_PROGRAM_BASELINE_READ_INVALID');
     const revision = workRevisionRef ? history.find(item => item.workRevisionRef === workRevisionRef) ?? null
@@ -2443,7 +2457,7 @@ export class CanonicalJobAidProblemService {
       );
     if (workRevisionRef && (!revision || canonicalJson(revision) !== canonicalJson(taskInput.previousWork)))
       throw new Error('JOBAID_PROGRAM_BASELINE_READ_CHANGED');
-    if (!workRevisionRef && revision && taskInput.executionMode === 'PROGRAM_CONTROLLED_V1' && readFence) {
+    if (!workRevisionRef && revision && isProgramAssessmentMode(taskInput.executionMode) && readFence) {
       if (!requestId || revision.actionAttemptId !== row.attemptId || revision.requestId !== requestId)
         throw new Error('JOBAID_PROGRAM_READ_BINDING_INVALID');
       await this.work.recordWorkRead({row, actorUserId: taskInput.actorUserId,
@@ -2531,7 +2545,7 @@ export class CanonicalJobAidProblemService {
       workItemId: input.scope.workItemId,
     });
     const isOverall = prepared.task.taskType === 'OPENCLAW_OVERALL_SYNTHESIS';
-    const isProgram = taskInput.executionMode === 'PROGRAM_CONTROLLED_V1';
+    const isProgram = isProgramAssessmentMode(taskInput.executionMode);
     const committed = isOverall
       ? current.integratedAssessment?.overallSynthesis
       : (activeConfigurationEvidenceReevaluation(current)?.stagedBundle
@@ -3029,9 +3043,9 @@ export class CanonicalJobAidProblemService {
         actionType: execution.actionType,
         executionMode: execution.executionMode ?? null,
         executionModel: execution.executionModel ?? null,
-        programMaterialsAvailable: execution.executionMode === 'PROGRAM_CONTROLLED_V1' &&
+        programMaterialsAvailable: isProgramAssessmentMode(execution.executionMode) &&
           !!programMaterialsObservation(execution.activityJson),
-        programProgress: execution.executionMode === 'PROGRAM_CONTROLLED_V1'
+        programProgress: isProgramAssessmentMode(execution.executionMode)
           ? latestProgramProgress(execution.activityJson) : null,
         attemptId: execution.attemptId,
         attemptRef: execution.attemptRef,

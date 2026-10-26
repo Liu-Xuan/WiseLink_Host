@@ -2898,13 +2898,24 @@ export interface CanonicalTaskModelOptions {
 }
 
 /** Routing metadata, never provider credentials or a browser-supplied endpoint. */
-export interface CanonicalExecutionModelSelection {
+export interface CanonicalLegacyExecutionModelSelection {
   modelRef: string;
   displayName: string;
   providerKind: 'BUILT_IN' | 'CUSTOM';
   settingsRevision: number;
   selectedAt: string;
 }
+
+/** Candidate wire contract; Native compatibility must precede producer enablement. */
+export interface CanonicalBudgetedExecutionModelSelection
+  extends CanonicalLegacyExecutionModelSelection {
+  schemaVersion: 'wiselink.3_1.execution_model_selection.v2';
+  maxOutputTokens: number;
+}
+
+export type CanonicalExecutionModelSelection =
+  | CanonicalLegacyExecutionModelSelection
+  | CanonicalBudgetedExecutionModelSelection;
 
 export interface CanonicalModelSettingsReadModel {
   status: 'CONFIGURED' | 'UNAVAILABLE';
@@ -2915,11 +2926,15 @@ export interface CanonicalModelSettingsReadModel {
   canManage: boolean;
   managementStatus: 'CONFIGURED' | 'ROLE_NOT_CONFIGURED';
   effectiveFor: 'NEW_ANALYSIS_TASKS_ONLY';
+  /** Exact model keys only; absent budgets never inherit the default model's value. */
+  outputBudgets?: Record<string, number>;
 }
 
 export interface UpdateCanonicalModelSettingsRequest {
   expectedRevision: number;
   modelRef: string;
+  /** Optional manager-owned change; ordinary model-only saves remain supported. */
+  maxOutputTokens?: number;
 }
 
 /** Browser-safe view of the same initial-analysis projection; no control refs. */
@@ -2936,7 +2951,7 @@ export interface CanonicalInitialAnalysisReadModel {
   queuedContinuationRequest?: {
     requestId: string;
     operation: 'EVALUATE_JOBAID';
-    executionMode: 'PROGRAM_CONTROLLED_V1';
+    executionMode: CanonicalAssessmentExecutionMode;
     modelRef: string;
     modelName: string;
   };
@@ -2953,7 +2968,18 @@ export interface CanonicalInitialAnalysisReadModel {
   candidateOnly: true;
 }
 
-export type CanonicalAssessmentExecutionMode = 'PROGRAM_CONTROLLED_V1';
+export type CanonicalAssessmentExecutionMode =
+  | 'PROGRAM_CONTROLLED_V1'
+  | 'PROGRAM_AGENT_V1';
+
+/** Host-sealed policy for one new Agent attempt; null removes count hard caps. */
+export interface CanonicalProgramAgentPolicy {
+  schemaVersion: 'wiselink.program-agent-policy.v1';
+  maxModelRequests: null;
+  maxOutputTokens: number;
+  maxToolCalls: null;
+  timeoutSeconds: 3600;
+}
 
 export interface CanonicalInitialAnalysisContinuationRequest {
   requestId: string;

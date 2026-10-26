@@ -1,3 +1,4 @@
+import { assertProgramAgentPolicyModel, isProgramAssessmentMode } from './program-agent-policy';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { overallModelEvidenceRegistry } from './overall-assessment-reading';
 import type { JobAidProgramMaterialsRead } from '@shared/jobaid-problem-assessment.interface';
@@ -12,8 +13,57 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function exactKeys(value: Record<string, unknown>, keys: string[]): void {
+  if (Object.keys(value).length !== keys.length || keys.some(key => !Object.hasOwn(value, key)))
+    throw new Error('JOBAID_PROGRAM_MATERIALS_BINDING_INVALID');
+}
+
+function parseProgramAgentMaterialSnapshot(
+  value: unknown,
+  task: OpenClawTaskEnvelope,
+  input: JobAidProblemTaskInput,
+): JobAidProgramMaterialsRead['snapshot'] {
+  const snapshot = object(value), materials = object(snapshot.materials), modelRequest = object(snapshot.modelRequest);
+  exactKeys(snapshot, ['materials', 'modelRequest']);
+  exactKeys(materials, ['version', 'originalInput', 'directory', 'previousWorkRead', 'modelInput', 'deliveredEvidenceRefs']);
+  exactKeys(modelRequest, ['version', 'body', 'executionModel', 'materialCheckpoint', 'agentPolicy']);
+  const original = input.modelInput.programOriginal;
+  const policy = assertProgramAgentPolicyModel(input.agentPolicy, task.executionModel);
+  if (!original || materials.version !== 2 || modelRequest.version !== 2 ||
+      modelRequest.materialCheckpoint !== 'program-agent-materials' ||
+      canonicalJson(materials.originalInput) !== canonicalJson(input.modelInput) ||
+      canonicalJson(modelRequest.executionModel) !== canonicalJson(task.executionModel) ||
+      canonicalJson(modelRequest.agentPolicy) !== canonicalJson(policy) || typeof modelRequest.body !== 'string')
+    throw new Error('JOBAID_PROGRAM_MATERIALS_BINDING_INVALID');
+  assertProgramAgentPolicyModel(modelRequest.agentPolicy, task.executionModel);
+  const directory = {
+    schemaVersion: 'wiselink.program-agent-directory.v1',
+    originalBinding: original.binding,
+    sources: input.modelInput.availableSources.map(source => ({ref: source.ref, kind: source.kind,
+      ...(typeof source.locator === 'string' ? {locator: source.locator} : {}),
+      ...(typeof source.versionLabel === 'string' ? {versionLabel: source.versionLabel} : {})})),
+    originalUnits: original.units.map(unit => ({unitId: unit.unitId, sourceRefIds: [...unit.sourceRefIds]})),
+    previousWorkRevisionRef: input.modelInput.previousWork?.workRevisionRef ?? null,
+  };
+  if (canonicalJson(materials.directory) !== canonicalJson(directory) ||
+      canonicalJson(materials.deliveredEvidenceRefs) !==
+        canonicalJson(input.modelInput.deliveredEvidence.map(item => item.evidenceRef)))
+    throw new Error('JOBAID_PROGRAM_MATERIALS_SOURCE_MISMATCH');
+  const previous = materials.previousWorkRead === null ? null : object(object(materials.previousWorkRead).revision);
+  if (canonicalJson(previous) !== canonicalJson(input.previousWork) ||
+      canonicalJson(materials.modelInput) !== canonicalJson({previousUnderstandingAndChanges: {previousWork: input.previousWork}}))
+    throw new Error('JOBAID_PROGRAM_MATERIALS_PREVIOUS_WORK_MISMATCH');
+  const request = object(JSON.parse(modelRequest.body));
+  if (!Array.isArray(request.messages) || request.messages.length !== 2 ||
+      object(request.messages[1]).role !== 'user' || object(request.messages[1]).content !== canonicalJson(directory))
+    throw new Error('JOBAID_PROGRAM_MATERIALS_REQUEST_MISMATCH');
+  // Registration retains the exact private snapshot; a directory is not a body READ.
+  return {materials, modelRequest};
+}
+
 export function parseProgramMaterialSnapshot(value: unknown, task: OpenClawTaskEnvelope,
   input: JobAidProblemTaskInput, evidence: AssessmentEvidence[] = input.sourceCatalog): JobAidProgramMaterialsRead['snapshot'] {
+  if (input.executionMode === 'PROGRAM_AGENT_V1') return parseProgramAgentMaterialSnapshot(value, task, input);
   const snapshot = object(value), materials = object(snapshot.materials), modelRequest = object(snapshot.modelRequest);
   if (Object.keys(snapshot).some(key => !['materials', 'modelRequest'].includes(key)) ||
       input.executionMode !== 'PROGRAM_CONTROLLED_V1' || !task.executionModel || materials.version !== 1 ||
@@ -69,7 +119,7 @@ export function programMaterialsObservation(activityJson: string | null | undefi
 
 /** Completing a round accounts for every previous issue; retaining it implicitly is insufficient. */
 export function assertProgramCompleteIssueCoverage(command: unknown, input: JobAidProblemTaskInput): void {
-  if (input.executionMode !== 'PROGRAM_CONTROLLED_V1') return;
+  if (!isProgramAssessmentMode(input.executionMode)) return;
   const value = object(command);
   if (!['COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS'].includes(String(value.roundCompletion))) return;
   const acknowledged = new Set([

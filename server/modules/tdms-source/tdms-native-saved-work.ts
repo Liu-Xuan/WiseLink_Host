@@ -116,8 +116,10 @@ export async function tdmsSavedNativeContext(input: {
         AND a.task_envelope_json::jsonb#>>'{modelInput,actorUserId}'=${binding.actorUserId}
         AND a.action_type='OPENCLAW_DYNAMIC_EVALUATION'
         AND a.task_input_hash=a.task_envelope_json::jsonb->>'inputHash'
-        AND a.task_envelope_json::jsonb#>>'{modelInput,executionMode}'='PROGRAM_CONTROLLED_V1'
-        AND a.task_envelope_json::jsonb#>>'{modelInput,modelInput,executionMode}'='PROGRAM_CONTROLLED_V1'
+        AND a.task_envelope_json::jsonb#>>'{modelInput,executionMode}'
+          IN ('PROGRAM_CONTROLLED_V1','PROGRAM_AGENT_V1')
+        AND a.task_envelope_json::jsonb#>>'{modelInput,modelInput,executionMode}'
+          =a.task_envelope_json::jsonb#>>'{modelInput,executionMode}'
         AND a.task_envelope_json::jsonb#>>'{modelInput,modelInput,purpose}'='INITIAL_PROBLEM_ASSESSMENT'
         AND (
           EXISTS (SELECT 1 FROM jsonb_array_elements(a.task_envelope_json::jsonb#>'{modelInput,sourceCatalog}') e

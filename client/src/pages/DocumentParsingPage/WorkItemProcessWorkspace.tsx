@@ -116,7 +116,9 @@ export function AssessmentProcessDetails({
   const current = working?.current ?? null;
   const latest = working?.latestAttempt ?? null;
   const selected = working?.selectedExecution;
-  const program: boolean = selected?.executionMode === 'PROGRAM_CONTROLLED_V1';
+  const agent: boolean = selected?.executionMode === 'PROGRAM_AGENT_V1';
+  const program: boolean =
+    selected?.executionMode === 'PROGRAM_CONTROLLED_V1' || agent;
   const progress: ProcessProgressFact | null = latestProcessProgress(working);
   const resultPending: boolean =
     working?.executionStatus === 'UNKNOWN' ||
@@ -169,7 +171,7 @@ export function AssessmentProcessDetails({
         </p>
         {program ? (
           <p>
-            执行方式：程序评估 · 自主调查未启用
+            执行方式：{agent ? '程序 Agent 评估' : '程序评估 · 自主调查未启用'}
             {selected.executionModel
               ? ` · 本次模型：${selected.executionModel.displayName}`
               : ''}

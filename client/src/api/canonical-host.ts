@@ -1314,7 +1314,7 @@ export async function readProgramAssessmentMaterials(
     throw new Error('PROGRAM_ASSESSMENT_MATERIALS_OBSOLETE');
   if (result.schemaVersion !== 'wiselink.program-assessment-materials-read.v1' ||
       result.workItemId !== workItemId || result.attemptId !== attemptId ||
-      result.executionMode !== 'PROGRAM_CONTROLLED_V1' || typeof result.attemptRef !== 'string' || !result.attemptRef ||
+      !['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1'].includes(result.executionMode) || typeof result.attemptRef !== 'string' || !result.attemptRef ||
       !result.executionModel || !Number.isFinite(Date.parse(result.preparedAt)) ||
       !isRecord(result.snapshot) || !isRecord(result.snapshot.materials) || !isRecord(result.snapshot.modelRequest) ||
       !['PREPARED_NOT_CONFIRMED_SENT', 'RESPONSE_RECEIVED'].includes(result.submissionEvidence))

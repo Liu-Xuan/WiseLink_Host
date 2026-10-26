@@ -1,9 +1,12 @@
+import { buildProgramAgentPolicy } from '../../server/modules/canonical-host/program-agent-policy';
 import {
   canonicalJson,
   sealResultEnvelope,
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 import { fixedModelSettings } from '../support/fixed-model-settings';
-import type { OpenClawResultEnvelope } from '../../server/modules/action-attempt/action-attempt-envelope.types';
+import type { OpenClawResultEnvelope, OpenClawTaskEnvelope } from '../../server/modules/action-attempt/action-attempt-envelope.types';
+import { CANONICAL_EXECUTION_MODEL_V2_SCHEMA } from '../../server/modules/model-settings/canonical-model-output-budget';
+import { buildInitialAnalysisRequestInput } from '../../server/modules/action-attempt/initial-analysis-request';
 import { ActionAttemptLifecycleService } from '../../server/modules/action-attempt/action-attempt-lifecycle.service';
 import type {
   ActionAttemptRow,
@@ -158,6 +161,86 @@ describe('ActionAttemptLifecycleService', () => {
       .rejects.toThrow('ACTION_ATTEMPT_IDEMPOTENCY_PAYLOAD_MISMATCH');
     await expect(service.reserve({...input, programControlled: {modelRef: 'miaoda/minimax-m3'}}))
       .rejects.toThrow('ACTION_ATTEMPT_IDEMPOTENCY_PAYLOAD_MISMATCH');
+  });
+
+  it('seals one configured program budget and replays it after settings change without recapture', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const models = fixedModelSettings();
+    const snapshot = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM 5.3',
+      providerKind: 'BUILT_IN' as const, settingsRevision: 8,
+      selectedAt: '2026-10-26T00:00:00Z', schemaVersion: CANONICAL_EXECUTION_MODEL_V2_SCHEMA,
+      maxOutputTokens: 131072 };
+    const capture = jest.spyOn(models, 'captureForExplicitProgram').mockResolvedValue(snapshot);
+    const service = new ActionAttemptLifecycleService(repository as never, models);
+    const input = { ...reservationInput(async () => ({ executionMode: 'PROGRAM_AGENT_V1',
+      requestedModelRef: 'miaoda/glm-5.3', agentPolicy: buildProgramAgentPolicy(snapshot) })),
+      programControlled: { modelRef: 'miaoda/glm-5.3', executionMode: 'PROGRAM_AGENT_V1' as const } };
+    const first = await service.reserve(input);
+    const originalBytes = repository.requiredRow().taskEnvelopeJson;
+    capture.mockResolvedValue({ ...snapshot, settingsRevision: 9, maxOutputTokens: 64000 });
+    const replay = await service.reserve(input);
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture.mock.calls[0][3]).toBe('PROGRAM_AGENT_V1');
+    expect(first.task.executionModel).toEqual(snapshot);
+    expect(replay.task).toEqual(first.task);
+    expect(repository.requiredRow().taskEnvelopeJson).toBe(originalBytes);
+    expect(JSON.parse(repository.requiredRow().executionModelJson!)).toEqual(snapshot);
+  });
+
+  it('never upgrades a legacy request on replay after the budget capture becomes available', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const models = fixedModelSettings();
+    const capture = jest.spyOn(models, 'captureForExplicitProgram');
+    const service = new ActionAttemptLifecycleService(repository as never, models);
+    const input = { ...reservationInput(async () => ({ executionMode: 'PROGRAM_CONTROLLED_V1',
+      requestedModelRef: 'miaoda/glm-5.3' })), programControlled: { modelRef: 'miaoda/glm-5.3' } };
+    const original = await service.reserve(input);
+    const originalBytes = repository.requiredRow().taskEnvelopeJson;
+    capture.mockRejectedValue(new Error('new settings must not be read during replay'));
+    const replay = await service.reserve(input);
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(Object.keys(replay.task.executionModel!)).toHaveLength(5);
+    expect(replay.task.inputHash).toBe(original.task.inputHash);
+    expect(repository.requiredRow().taskEnvelopeJson).toBe(originalBytes);
+  });
+
+  it('retains the accepted output budget while preparing the full input before its first claim', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const prepareInput = jest.fn(async (_row: ActionAttemptRow, task: OpenClawTaskEnvelope): Promise<ActionAttemptRow> => {
+      repository.row = { ...repository.requiredRow(), taskEnvelopeJson: canonicalJson(task),
+        taskInputHash: task.inputHash };
+      return repository.requiredRow();
+    });
+    Object.assign(repository, { prepareInitialRequestInput: prepareInput });
+    const models = fixedModelSettings();
+    const snapshot = { modelRef: 'miaoda/glm-5.3', displayName: 'GLM 5.3',
+      providerKind: 'BUILT_IN' as const, settingsRevision: 8,
+      selectedAt: '2026-10-26T00:00:00Z', schemaVersion: CANONICAL_EXECUTION_MODEL_V2_SCHEMA,
+      maxOutputTokens: 131072 };
+    const capture = jest.spyOn(models, 'captureForExplicitProgram').mockResolvedValue(snapshot);
+    let prepared = false;
+    const requestId = '11111111-1111-4111-8111-111111111111';
+    const build = async () => prepared
+      ? { schemaVersion: 'wiselink.jobaid-problem-task.v3', executionMode: 'PROGRAM_AGENT_V1',
+          requestedModelRef: 'miaoda/glm-5.3', agentPolicy: buildProgramAgentPolicy(snapshot) }
+      : buildInitialAnalysisRequestInput({ taskType: 'OPENCLAW_DYNAMIC_EVALUATION', requestId,
+          executionMode: 'PROGRAM_AGENT_V1', modelRef: 'miaoda/glm-5.3', agentPolicy: buildProgramAgentPolicy(snapshot) });
+    const input = { ...reservationInput(build),
+      idempotencyKey: `openclaw-v2:dynamic:WI-test:DV-test:${requestId}`,
+      programControlled: { modelRef: 'miaoda/glm-5.3', executionMode: 'PROGRAM_AGENT_V1' as const } };
+    const service = new ActionAttemptLifecycleService(repository as never, models);
+    const accepted = await service.reserve(input);
+    const frozenModel = repository.requiredRow().executionModelJson;
+    capture.mockRejectedValue(new Error('do not refresh settings in preparation'));
+    prepared = true;
+    const claimed = await service.reserveAndClaim(input);
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(prepareInput).toHaveBeenCalledTimes(1);
+    expect(claimed.task.executionModel).toEqual(accepted.task.executionModel);
+    expect(repository.requiredRow().executionModelJson).toBe(frozenModel);
+    expect(claimed.task.deadline).toBe(accepted.task.deadline);
+    expect(claimed.task.modelInput.agentPolicy).toEqual(accepted.task.modelInput.agentPolicy);
+    expect(claimed.task.modelInput.schemaVersion).toBe('wiselink.jobaid-problem-task.v3');
   });
 
   it('captures the WorkItem selection once and preserves it through a resumed claim', async () => {

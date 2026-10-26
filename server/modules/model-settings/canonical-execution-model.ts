@@ -1,5 +1,9 @@
 import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
 import { canonicalModelError } from './canonical-model-catalog';
+import {
+  CANONICAL_EXECUTION_MODEL_V2_SCHEMA,
+  validOutputTokens,
+} from './canonical-model-output-budget';
 
 export function parseExecutionModel(
   value: unknown,
@@ -13,6 +17,8 @@ export function parseExecutionModel(
     'settingsRevision',
     'selectedAt',
   ];
+  const budgeted = Object.hasOwn(row, 'schemaVersion');
+  if (budgeted) keys.push('schemaVersion', 'maxOutputTokens');
   if (
     Object.keys(row).length !== keys.length ||
     keys.some((key) => !(key in row)) ||
@@ -29,7 +35,9 @@ export function parseExecutionModel(
     !Number.isSafeInteger(row.settingsRevision) ||
     row.settingsRevision < 0 ||
     typeof row.selectedAt !== 'string' ||
-    !Number.isFinite(Date.parse(row.selectedAt))
+    !Number.isFinite(Date.parse(row.selectedAt)) ||
+    (budgeted && (row.schemaVersion !== CANONICAL_EXECUTION_MODEL_V2_SCHEMA ||
+      !validOutputTokens(row.maxOutputTokens)))
   )
     invalid();
   return row as unknown as CanonicalExecutionModelSelection;

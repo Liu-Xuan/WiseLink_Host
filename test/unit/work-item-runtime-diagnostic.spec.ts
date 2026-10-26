@@ -48,10 +48,10 @@ it('renders the actual custom element, refreshes through parent and preserves se
   expect((element() as unknown as { view: string }).view).toBe('flow');
 });
 
-it('opens the normal assessment panel for a sealed program execution without a business action', async () => {
+it.each(['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1'] as const)('opens the normal assessment panel for a sealed %s execution without a business action', async executionMode => {
   const read = reading();
   read.data = { ...read.data!, selectedExecution: {
-    actionType: 'OPENCLAW_DYNAMIC_EVALUATION', executionMode: 'PROGRAM_CONTROLLED_V1',
+    actionType: 'OPENCLAW_DYNAMIC_EVALUATION', executionMode,
     attemptId: 'program-attempt', attemptRef: 'AQ-program', status: 'RUNNING',
     createdAt: '2026-10-25T05:00:00Z', startedAt: '2026-10-25T05:01:00Z', completedAt: null,
   } };

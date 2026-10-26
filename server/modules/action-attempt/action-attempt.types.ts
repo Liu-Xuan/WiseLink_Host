@@ -1,3 +1,4 @@
+import type { CanonicalAssessmentExecutionMode, CanonicalExecutionModelSelection } from '@shared/api.interface';
 import type { CancelledInitialContinuationGuard } from './cancelled-initial-continuation';
 import type {
   ActionAttemptStatus,
@@ -31,7 +32,7 @@ export interface ReserveActionAttemptInput {
   baseRevision: number;
   idempotencyKey: string;
   /** Explicit new initial-program request; never changes the WorkItem model pin. */
-  programControlled?: { modelRef: string };
+  programControlled?: { modelRef: string; executionMode?: CanonicalAssessmentExecutionMode };
   priority?: number;
   maxAttempts?: number;
   deadlineAt?: Date;
@@ -46,6 +47,7 @@ export interface ReserveActionAttemptInput {
   hostResolvedMissingInputs?: OpenClawTaskEnvelope['hostResolvedMissingInputs'];
   buildModelInput(
     identity: NewActionAttemptIdentity,
+    capturedExecutionModel?: CanonicalExecutionModelSelection,
   ): Promise<Record<string, unknown>>;
 }
 

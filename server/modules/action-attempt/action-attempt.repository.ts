@@ -1,3 +1,4 @@
+import { isProgramAssessmentMode } from '../canonical-host/program-agent-policy';
 import { assertAutomaticWorkItemAttemptLeaseBinding, automaticWorkItemTaskLease } from './automatic-work-item-attempt-lease';
 import { assertCancelledInitialContinuation, cancelledContinuationConflict, type CancelledInitialContinuationGuard } from './cancelled-initial-continuation';
 import { randomUUID } from 'node:crypto';
@@ -403,7 +404,7 @@ export class ActionAttemptRepository {
         // prepared request must not insert its old model after a pending model
         // selection changed while it was awaiting that preparation.
         const requestTask = JSON.parse(String(attempt.taskEnvelopeJson)) as OpenClawTaskEnvelope;
-        const explicitProgram = requestTask.modelInput?.executionMode === 'PROGRAM_CONTROLLED_V1';
+        const explicitProgram = isProgramAssessmentMode(requestTask.modelInput?.executionMode);
         if (explicitProgram && (attempt.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
             requestTask.modelInput.schemaVersion !== 'wiselink.3_1.initial_analysis_request.v1' ||
             requestTask.executionModel?.modelRef !== requestTask.modelInput.modelRef ||

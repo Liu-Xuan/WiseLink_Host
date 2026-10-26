@@ -48,7 +48,7 @@ interface ContinuationState {
 /** New program requests choose a model; historical continuations keep their binding. */
 export default function InitialAnalysisContinueButton(props: Props) {
   if (props.queuedRequest) return <ContinuationRequestButton {...props} />;
-  return props.executionMode === 'PROGRAM_CONTROLLED_V1' &&
+  return (props.executionMode === 'PROGRAM_CONTROLLED_V1' || props.executionMode === 'PROGRAM_AGENT_V1') &&
     props.operation === 'EVALUATE_JOBAID' ? (
     <ProgramContinuation {...props} />
   ) : (
@@ -158,7 +158,7 @@ function ContinuationRequestButton(
               }
             : props.modelChoice
             ? {
-                executionMode: 'PROGRAM_CONTROLLED_V1',
+                executionMode: props.executionMode ?? 'PROGRAM_CONTROLLED_V1',
                 modelRef: props.modelChoice.value,
               }
             : {}),

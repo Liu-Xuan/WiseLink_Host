@@ -29,7 +29,10 @@ export function diagnosticNavigationPanel(
     const record = node.requests.find((item) => item.id === detail.ref);
     if (!record || record.recordKind !== detail.recordKind) return null;
     if (record.recordKind === 'attempt' ? detail.attemptId !== record.id || Boolean(detail.requestId) : detail.requestId !== record.id || Boolean(detail.attemptId)) return null;
-    if (record.executionMode === 'PROGRAM_CONTROLLED_V1') return 'assessment';
+    if (
+      record.executionMode === 'PROGRAM_CONTROLLED_V1' ||
+      record.executionMode === 'PROGRAM_AGENT_V1'
+    ) return 'assessment';
   } else {
     const refs = detail.kind === 'artifact' ? node.outputs : detail.kind === 'source' ? node.inputRefs : [];
     if (!refs.some((item) => item.ref === detail.ref)) return null;

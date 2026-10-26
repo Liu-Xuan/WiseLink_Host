@@ -445,9 +445,11 @@ async function renderQueued(value = queuedInitial(), onQueued = jest.fn()): Prom
   })));
 }
 
-it('resumes the Host-proven queued request by explicit click with its original UUID and model', async () => {
+it.each(['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1'] as const)('resumes the Host-proven %s queued request with its original UUID and model', async executionMode => {
   mockCatalog = { ...mockCatalog, data: null, ready: false, error: 'unavailable' };
-  await renderQueued();
+  const queued = queuedInitial();
+  queued.queuedContinuationRequest!.executionMode = executionMode;
+  await renderQueued(queued);
   expect(mockRequest).not.toHaveBeenCalled();
   expect(container.querySelector('select')).toBeNull();
   expect(container.textContent).toContain('已受理请求模型：GLM 5.3');
@@ -459,7 +461,7 @@ it('resumes the Host-proven queued request by explicit click with its original U
   expect(mockRequest).toHaveBeenCalledTimes(1);
   expect(mockRequest.mock.calls[0]).toEqual(['WI-test', {
     requestId: '11111111-1111-4111-8111-111111111111', expectedRevision: 7,
-    operation: 'EVALUATE_JOBAID', executionMode: 'PROGRAM_CONTROLLED_V1', modelRef: 'miaoda/glm-5.3',
+    operation: 'EVALUATE_JOBAID', executionMode, modelRef: 'miaoda/glm-5.3',
   }]);
   expect(container.textContent).not.toContain('继续已受理请求');
 });
