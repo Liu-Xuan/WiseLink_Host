@@ -6,7 +6,7 @@ import type {
 } from '@shared/api.interface';
 import { actionAttempt, workItem } from '../../database/schema';
 import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
-import { canonicalJson, parseTaskEnvelope } from './action-attempt-envelope';
+import { canonicalJson, parseStoredResultEnvelope, parseTaskEnvelope } from './action-attempt-envelope';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { matchesCancelledAttempt } from '../work-item/cancelled-auto-processing-lease';
 import { parseAutomaticWorkItemCancellation } from '../canonical-host/automatic-work-item-cancellation';
@@ -29,6 +29,13 @@ export interface CancelledInitialContinuationBinding {
   terminalInputHash: string;
   terminalRequestId: string;
   executionModel: CanonicalExecutionModelSelection;
+  queuedRequest?: {
+    attemptId: string;
+    requestId: string;
+    inputHash: string;
+    deadline: string;
+    executionModel: CanonicalExecutionModelSelection;
+  };
 }
 export interface CancelledInitialContinuationGuard {
   binding: CancelledInitialContinuationBinding;
@@ -47,7 +54,8 @@ export async function readBrowserInitialContinuationClaim(
     sourceFileSha256: string; sourceByteLength: number;
     expectedWorkItemRevision: number; now: Date;
   },
-): Promise<{ attemptId: string; requestId: string } | null> {
+  blocked?: { rows: readonly (typeof actionAttempt.$inferSelect)[] },
+): Promise<NonNullable<CancelledInitialContinuationBinding['queuedRequest']> | null> {
   let projection: CanonicalWorkItemProjection;
   try { projection = JSON.parse(owner.projectionJson ?? 'null') as CanonicalWorkItemProjection; }
   catch { return null; }
@@ -56,7 +64,7 @@ export async function readBrowserInitialContinuationClaim(
         actorUserId:input.actorUserId,workItem:projection}) ||
       owner.workItemId !== input.workItemId || owner.requestId !== input.requestId ||
       owner.revision !== input.expectedWorkItemRevision ||
-      grant.status !== 'WAITING' || grant.grantKind !== 'MIAODA_CANONICAL_PARSE_REQUEST' ||
+      grant.status !== (blocked ? 'BLOCKED' : 'WAITING') || grant.grantKind !== 'MIAODA_CANONICAL_PARSE_REQUEST' ||
       !Number.isSafeInteger(grant.leaseGeneration) || grant.leaseGeneration < 1 ||
       grant.leaseOwner !== null || grant.leaseToken !== null || grant.leaseExpiresAt !== null ||
       grant.completedAt !== null || grant.completedLeaseGeneration !== null || grant.completedLeaseTokenHash !== null ||
@@ -72,7 +80,7 @@ export async function readBrowserInitialContinuationClaim(
       Number(grant.sourceByteLength) !== Number(owner.sourceByteLength) ||
       Number(grant.sourceByteLength) !== input.sourceByteLength) return null;
 
-  const rows = await database.select().from(actionAttempt).where(and(
+  const rows = blocked?.rows ?? await database.select().from(actionAttempt).where(and(
     eq(actionAttempt.tenantId,input.tenantId),eq(actionAttempt.workItemId,owner.workItemId),
   )).for('update');
   const queued = rows.filter(row => row.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' && row.status === 'QUEUED');
@@ -85,7 +93,7 @@ export async function readBrowserInitialContinuationClaim(
       history.some(row => ['QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING'].includes(row.status) ||
         row.createdAt >= next.createdAt ||
         (row.actionType === next.actionType && row.attemptNo >= next.attemptNo)) ||
-      next.createdAt < grant.blockedAt || !grant.updatedAt || grant.updatedAt < next.createdAt ||
+      next.createdAt < grant.blockedAt || !grant.updatedAt || (!blocked && grant.updatedAt < next.createdAt) ||
       next.subjectKind !== 'WORK_ITEM' || next.requestOrigin !== 'OPENCLAW_MCP_V1' ||
       (next.actorUserId !== owner.requestedByUserId && next.actorUserId !== 'service:openclaw-main') ||
       next.documentVersionId !== owner.documentVersionId ||
@@ -101,7 +109,8 @@ export async function readBrowserInitialContinuationClaim(
     const task = parseTaskEnvelope(String(next.taskEnvelopeJson));
     const request = readInitialAnalysisRequestInput(task);
     const model = readStoredExecutionModel(next.executionModelJson);
-    if (!request || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(request.requestId) ||
+    if (!request || (blocked && request.executionMode !== 'PROGRAM_CONTROLLED_V1') ||
+        !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(request.requestId) ||
         !request.originalParseRunId || !model ||
         task.actionAttemptId !== next.attemptId || task.operationRef !== next.operationRef ||
         task.taskType !== next.actionType || task.tenantId !== owner.tenantId || task.workItemId !== owner.workItemId ||
@@ -111,7 +120,8 @@ export async function readBrowserInitialContinuationClaim(
         task.idempotencyKey !== next.idempotencyKey || task.inputHash !== next.taskInputHash ||
         canonicalJson(task.executionModel) !== canonicalJson(model) ||
         canonicalJson(task.sourceRefs[0]) !== canonicalJson(jobAidSourceFileReference(projection))) return null;
-    return {attemptId:next.attemptId,requestId:request.requestId};
+    return {attemptId:next.attemptId,requestId:request.requestId,inputHash:task.inputHash,
+      deadline:task.deadline,executionModel:model};
   } catch { return null; }
 }
 
@@ -124,6 +134,7 @@ export async function readCancelledInitialContinuation(
     workItem: CanonicalWorkItemProjection;
   },
   lock = false,
+  queuedRequestId?: string,
 ) {
   const ownerQuery = database
     .select()
@@ -190,28 +201,36 @@ export async function readCancelledInitialContinuation(
       ),
     );
   const rows = await (lock ? query.for('share') : query);
-  const target = [...rows].sort(
+  const queuedRequest = queuedRequestId ? await readBrowserInitialContinuationClaim(database, owner, grant, {
+    tenantId:input.tenantId,workItemId:owner.workItemId,requestId:owner.requestId,actorUserId:input.actorUserId,
+    documentId:owner.documentId,documentVersionId:owner.documentVersionId,sourceArtifactId:owner.sourceArtifactId,
+    sourceFileSha256:owner.sourceFileSha256,sourceByteLength:Number(owner.sourceByteLength),
+    expectedWorkItemRevision:owner.revision,now:new Date(),
+  }, {rows}) : null;
+  if (queuedRequestId && (!queuedRequest || queuedRequest.requestId !== queuedRequestId)) return null;
+  const history = queuedRequest ? rows.filter(row => row.attemptId !== queuedRequest.attemptId) : rows;
+  const target = [...history].sort(
     (a, b) =>
       b.createdAt.getTime() - a.createdAt.getTime() ||
       b.attemptNo - a.attemptNo,
   )[0];
   const model = grant.blockedCode === CANCELLED_INITIAL_QUEUE_CODE
     ? readStoredExecutionModel(owner.analysisModelJson)
-    : effectiveFailedContinuationModel(owner.analysisModelJson, rows);
+    : effectiveFailedContinuationModel(owner.analysisModelJson, history);
   if (
     !target ||
     !model ||
     !(grant.blockedCode === CANCELLED_INITIAL_QUEUE_CODE
       ? matchesCancellation(target, owner, model)
       : matchesFailedAttempt(target, owner, grant.blockedAt)) ||
-    rows.some(
+    history.some(
       (row) =>
         row.attemptId !== target.attemptId &&
         (row.createdAt.getTime() >= target.createdAt.getTime() ||
           (row.actionType === target.actionType &&
             row.attemptNo > target.attemptNo)),
     ) ||
-    rows.some((row) =>
+    history.some((row) =>
       ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
         row.status,
       ),
@@ -232,6 +251,7 @@ export async function readCancelledInitialContinuation(
       terminalInputHash: target.taskInputHash!,
       terminalRequestId: target.triggerRequestId!,
       executionModel: model,
+      ...(queuedRequest ? {queuedRequest} : {}),
     },
   };
 }
@@ -244,6 +264,7 @@ export async function assertCancelledInitialContinuation(
     database,
     guard.binding,
     true,
+    guard.binding.queuedRequest?.requestId,
   );
   if (
     !value ||
@@ -255,7 +276,8 @@ export async function assertCancelledInitialContinuation(
     value.binding.terminalInputHash !== guard.binding.terminalInputHash ||
     value.binding.terminalRequestId !== guard.binding.terminalRequestId ||
     canonicalJson(value.binding.executionModel) !==
-      canonicalJson(guard.binding.executionModel)
+      canonicalJson(guard.binding.executionModel) ||
+    canonicalJson(value.binding.queuedRequest ?? null) !== canonicalJson(guard.binding.queuedRequest ?? null)
   )
     throw cancelledContinuationConflict();
   const source = await new MiaodaDocumentVersionSourceResolver(
@@ -369,8 +391,6 @@ function matchesFailedAttempt(
     blockedAt.getTime() < target.completedAt.getTime() ||
     target.commitStartedAt !== null ||
     target.projectionApplied ||
-    target.resultEnvelopeJson !== null ||
-    target.resultContentHash !== null ||
     target.leaseOwner !== null ||
     target.leaseToken !== null ||
     target.leaseExpiresAt !== null
@@ -379,7 +399,7 @@ function matchesFailedAttempt(
   try {
     const task = parseTaskEnvelope(String(target.taskEnvelopeJson));
     const targetModel = readStoredExecutionModel(target.executionModelJson);
-    return (
+    const taskMatches = (
       !!targetModel &&
       task.actionAttemptId === target.attemptId &&
       task.operationRef === target.operationRef &&
@@ -393,6 +413,15 @@ function matchesFailedAttempt(
       task.inputHash === target.taskInputHash &&
       canonicalJson(task.executionModel) === canonicalJson(targetModel)
     );
+    if (!taskMatches) return false;
+    if (target.resultEnvelopeJson !== null || target.resultContentHash !== null) {
+      if (target.status !== 'FAILED' || !target.resultEnvelopeJson || !target.resultContentHash) return false;
+      const result = parseStoredResultEnvelope({value:target.resultEnvelopeJson,task});
+      return result.contentHash === target.resultContentHash && result.status === 'FAILED' &&
+        result.businessOutcome === 'NOT_PRODUCED' && result.candidateStatus === null && result.modelOutput === null &&
+        result.outputArtifactRefs.length === 0 && result.errorCode === target.terminalReason;
+    }
+    return true;
   } catch {
     return false;
   }

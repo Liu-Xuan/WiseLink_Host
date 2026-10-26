@@ -416,3 +416,78 @@ it('keeps a historical continuation model and ignores an old-session receipt', a
   expect(onQueued).not.toHaveBeenCalled();
   expect(container.textContent).not.toContain('接续请求已保存');
 });
+
+function queuedInitial(): CanonicalInitialAnalysisReadModel {
+  const value = initial();
+  return {
+    ...value,
+    status: 'BUSY',
+    continuationOperations: [],
+    stages: { ...value.stages, jobAid: { status: 'BUSY', terminalCode: null } },
+    queuedContinuationRequest: {
+      requestId: '11111111-1111-4111-8111-111111111111',
+      operation: 'EVALUATE_JOBAID',
+      executionMode: 'PROGRAM_CONTROLLED_V1',
+      modelRef: 'miaoda/glm-5.3',
+      modelName: 'GLM 5.3',
+    },
+  };
+}
+
+async function renderQueued(value = queuedInitial(), onQueued = jest.fn()): Promise<void> {
+  const data = working();
+  data.executionStatus = 'QUEUED';
+  await act(async () => root.render(createElement(InitialAnalysisProgress, {
+    workItemId: 'WI-test', sessionGeneration: mockSession, initial: value, working: data,
+    timeline: { schemaVersion: 'wiselink.3_1.timeline_projection.v0.candidate', workItemId: 'WI-test',
+      events: [], boundary: { onlyServerObservedEvents: true, note: 'fixture' } },
+    onRevisionChanged: onQueued, onAccessLost: jest.fn(),
+  })));
+}
+
+it('resumes the Host-proven queued request by explicit click with its original UUID and model', async () => {
+  mockCatalog = { ...mockCatalog, data: null, ready: false, error: 'unavailable' };
+  await renderQueued();
+  expect(mockRequest).not.toHaveBeenCalled();
+  expect(container.querySelector('select')).toBeNull();
+  expect(container.textContent).toContain('已受理请求模型：GLM 5.3');
+  expect(button('继续已受理请求').disabled).toBe(false);
+  expect(container.textContent).not.toContain('开始程序评估');
+  mockRequest.mockResolvedValueOnce({ status: 'QUEUED', replayed: true });
+  mockStatus.mockResolvedValueOnce({ ...queuedInitial(), queuedContinuationRequest: undefined });
+  await act(async () => { button('继续已受理请求').click(); button('继续已受理请求').click(); });
+  expect(mockRequest).toHaveBeenCalledTimes(1);
+  expect(mockRequest.mock.calls[0]).toEqual(['WI-test', {
+    requestId: '11111111-1111-4111-8111-111111111111', expectedRevision: 7,
+    operation: 'EVALUATE_JOBAID', executionMode: 'PROGRAM_CONTROLLED_V1', modelRef: 'miaoda/glm-5.3',
+  }]);
+  expect(container.textContent).not.toContain('继续已受理请求');
+});
+
+it('keeps the same queued payload after an uncertain resume response and revision change', async () => {
+  mockRequest.mockRejectedValueOnce(new Error('transport interrupted'));
+  await renderQueued();
+  await act(async () => button('继续已受理请求').click());
+  const original = structuredClone(mockRequest.mock.calls[0]);
+  await renderQueued({ ...queuedInitial(), workItemRevision: 8 });
+  expect(container.textContent).toContain('原请求结果待核');
+  mockRequest.mockResolvedValueOnce({ status: 'QUEUED', replayed: true });
+  await act(async () => button('核对原请求结果').click());
+  expect(mockRequest.mock.calls[1]).toEqual(original);
+  expect(mockRequest).toHaveBeenCalledTimes(2);
+});
+
+it('does not offer queue recovery without a Host hint and discards stale-session resume receipts', async () => {
+  await renderQueued({ ...queuedInitial(), queuedContinuationRequest: undefined });
+  expect(container.textContent).not.toContain('继续已受理请求');
+  expect(mockRequest).not.toHaveBeenCalled();
+  let finish!: (value: unknown) => void;
+  mockRequest.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const onQueued = jest.fn();
+  await renderQueued(queuedInitial(), onQueued);
+  await act(async () => button('继续已受理请求').click());
+  mockSession = 2;
+  await act(async () => finish({ status: 'QUEUED', replayed: true }));
+  expect(onQueued).not.toHaveBeenCalled();
+  expect(container.textContent).not.toContain('已恢复原请求');
+});

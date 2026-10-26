@@ -505,6 +505,17 @@ export class CanonicalHostInitialAnalysisStatusService {
       (await readCancelledInitialContinuation(this.db, input))?.binding ?? null, input.actorUserId);
   }
 
+  async queuedContinuationBinding(input: {tenantId:string;actorUserId:string;workItem:CanonicalWorkItemProjection}, requestId: string) {
+    if (!this.sessions) return {status:null,blocked:false,binding:null};
+    return this.sessions.withVerifiedReviewServiceSql(async () => {
+      const [grant] = await this.db.select({status:autoWorkItemAuthorization.status}).from(autoWorkItemAuthorization)
+        .where(and(eq(autoWorkItemAuthorization.tenantId,input.tenantId),
+          eq(autoWorkItemAuthorization.workItemId,input.workItem.workItemId))).limit(1);
+      if (grant?.status !== 'BLOCKED') return {status:grant?.status ?? null,blocked:false,binding:null};
+      return {status:grant.status,blocked:true,binding:(await readCancelledInitialContinuation(this.db,input,false,requestId))?.binding ?? null};
+    },input.actorUserId);
+  }
+
   async projectForBrowser(input: {
     workItem: CanonicalWorkItemProjection;
     tenantId: string;
@@ -540,6 +551,7 @@ export class CanonicalHostInitialAnalysisStatusService {
     );
     let cancelled: Awaited<ReturnType<typeof this.cancelledContinuationBinding>> = null;
     let continuationDiagnosticCode: CanonicalInitialAnalysisReadModel['continuationDiagnosticCode'];
+    let queuedContinuationRequest: CanonicalInitialAnalysisReadModel['queuedContinuationRequest'];
     if (!active && ['CANCELLED', 'FAILED', 'TIMED_OUT'].includes(
       status.stages.jobAid.attemptStatus ?? '',
     )) {
@@ -549,6 +561,19 @@ export class CanonicalHostInitialAnalysisStatusService {
         if (!(error instanceof UnauthorizedException &&
           error.message === 'OFFICIAL_OAUTH_SESSION_REQUIRED')) throw error;
         // Keep the terminal state when no verified request identity is available.
+        continuationDiagnosticCode = 'OFFICIAL_OAUTH_SESSION_REQUIRED';
+      }
+    }
+    if (status.stages.jobAid.attemptStatus === 'QUEUED' && status.stages.jobAid.requestId &&
+        process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1') {
+      try {
+        const pending = await this.queuedContinuationBinding(input,status.stages.jobAid.requestId);
+        const queued = pending.binding?.queuedRequest;
+        if (pending.blocked && queued) queuedContinuationRequest = {requestId:queued.requestId,
+          operation:'EVALUATE_JOBAID',executionMode:'PROGRAM_CONTROLLED_V1',
+          modelRef:queued.executionModel.modelRef,modelName:queued.executionModel.displayName};
+      } catch (error) {
+        if (!(error instanceof UnauthorizedException && error.message === 'OFFICIAL_OAUTH_SESSION_REQUIRED')) throw error;
         continuationDiagnosticCode = 'OFFICIAL_OAUTH_SESSION_REQUIRED';
       }
     }
@@ -648,6 +673,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       analysisModel: readStoredExecutionModel(root?.model),
       nextOperation: status.nextOperation,
       continuationOperations,
+      ...(queuedContinuationRequest ? {queuedContinuationRequest} : {}),
       ...(continuationDiagnosticCode ? { continuationDiagnosticCode } : {}),
       canRequestBlockTranslation: canTranslate,
       translationWork,

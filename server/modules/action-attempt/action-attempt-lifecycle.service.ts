@@ -22,6 +22,7 @@ import type {
   OpenClawTaskEnvelope,
 } from './action-attempt-envelope.types';
 import { ActionAttemptRepository } from './action-attempt.repository';
+import type { CancelledInitialContinuationGuard } from './cancelled-initial-continuation';
 import {
   assertPreparedInitialAnalysisInput,
   readInitialAnalysisRequestInput,
@@ -707,6 +708,10 @@ export class ActionAttemptLifecycleService {
         await this.repository.readByAttemptId(prepared.row.attemptId),
       ),
     );
+  }
+
+  async releaseQueuedInitialContinuation(guard: CancelledInitialContinuationGuard): Promise<boolean> {
+    return this.repository.releaseQueuedInitialContinuation(guard);
   }
 
   async requestCancel(input: {

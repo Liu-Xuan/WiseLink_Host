@@ -1,5 +1,5 @@
 import { assertAutomaticWorkItemAttemptLeaseBinding, automaticWorkItemTaskLease } from './automatic-work-item-attempt-lease';
-import { assertCancelledInitialContinuation, type CancelledInitialContinuationGuard } from './cancelled-initial-continuation';
+import { assertCancelledInitialContinuation, cancelledContinuationConflict, type CancelledInitialContinuationGuard } from './cancelled-initial-continuation';
 import { randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -29,6 +29,7 @@ import type {
 } from '@shared/api.interface';
 import { canonicalJson } from './action-attempt-envelope';
 import { INITIAL_ANALYSIS_REQUEST_SCHEMA } from './initial-analysis-request';
+import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import type {
   OpenClawActionTaskType,
@@ -1065,6 +1066,25 @@ export class ActionAttemptRepository {
       )
       .returning({ attemptId: actionAttempt.attemptId });
     return updated.length === 1;
+  }
+
+  async releaseQueuedInitialContinuation(guard: CancelledInitialContinuationGuard): Promise<boolean> {
+    if (!guard.binding.queuedRequest) throw cancelledContinuationConflict();
+    return this.db.transaction(async transaction => {
+      const [owner] = await transaction.select({workItemId:workItem.workItemId}).from(workItem).where(and(
+        eq(workItem.tenantId,guard.binding.tenantId),eq(workItem.workItemId,guard.binding.workItem.workItemId),
+      )).limit(1).for('update');
+      if (!owner) throw cancelledContinuationConflict();
+      const [grant] = await transaction.select({status:autoWorkItemAuthorization.status}).from(autoWorkItemAuthorization)
+        .where(and(eq(autoWorkItemAuthorization.tenantId,guard.binding.tenantId),
+          eq(autoWorkItemAuthorization.workItemId,owner.workItemId))).limit(1).for('update');
+      // A read-after-release replay is handled before this transaction. A
+      // changed or missing locked grant needs a fresh read, never a success.
+      if (grant?.status !== 'BLOCKED') throw cancelledContinuationConflict();
+      const release = await assertCancelledInitialContinuation(transaction as PostgresJsDatabase,guard);
+      await release();
+      return true;
+    });
   }
 
   async requestCancel(input: {

@@ -192,7 +192,9 @@ test('native owner requests one exact terminal successor atomically under real r
         const rows = await db.select().from(actionAttempt).where(and(eq(actionAttempt.tenantId, tenantId), eq(actionAttempt.workItemId, item.workItemId)))
           .orderBy(desc(actionAttempt.attemptNo));
         return projectCanonicalHostInitialAnalysisStatus(item, rows.map(row => ({ attemptId: row.attemptId, actionType: row.actionType,
-          attemptRef: row.operationRef, status: row.status, terminalCode: row.terminalReason })),
+          attemptRef: row.operationRef, status: row.status, terminalCode: row.terminalReason,
+          requestId: JSON.parse(row.taskEnvelopeJson).modelInput.requestId,
+          executionModel: JSON.parse(row.executionModelJson) })),
         { originalPublished: true, englishAssessmentEnabled: true });
       };
       const jobAid = { enqueueContinuation: async (item, tenantId, _permission, requestId, _purpose, knowledge, _original, guard, programControlled) => {
@@ -309,6 +311,112 @@ test('native owner requests one exact terminal successor atomically under real r
         expectedWorkItemRevision:3,leaseOwner:codexConfiguration.WL_CODEX_SERVICE_PRINCIPAL_ID,
         leaseToken:randomUUID(),now:new Date(),leaseExpiresAt:new Date(Date.now()+60000),preserveExecutorOwnership:true,
       })));
+      async function persistedFailure(stranded = false) {
+        await seed('FAILED',5,true);
+        const [old] = await admin`SELECT * FROM action_attempt WHERE attempt_no=2`;
+        const task = JSON.parse(old.task_envelope_json);
+        const result = sealResultEnvelope({schemaVersion:'wiselink.3_1.openclaw_result_envelope.v1',
+          actionAttemptId:task.actionAttemptId,operationRef:task.operationRef,taskType:task.taskType,
+          workItemId:WI,baseRevision:3,status:'FAILED',businessOutcome:'NOT_PRODUCED',candidateStatus:null,
+          modelOutput:null,outputArtifactRefs:[],sourceRefs:task.sourceRefs,factsConsidered:[],missingInputs:[],
+          conflicts:[],warnings:[],modelVersion:'glm-5.3',promptVersion:'wiselink-jobaid-problem@v3',
+          skillVersion:'wiselink-research-and-synthesize@r09.c240',
+          toolVersions:{'model-executor':'CODEX','jobaid-problem-protocol':'3'},
+          runMetrics:{durationMs:95000,inputUnits:120,outputUnits:16384},
+          errorCode:'JOBAID_MODEL_OUTPUT_LENGTH',errorDetail:null});
+        await admin`UPDATE action_attempt SET result_envelope_json=${canonicalJson(result)},
+          result_content_hash=${result.contentHash},terminal_reason=${result.errorCode} WHERE attempt_no=2`;
+        oldRows = await admin`SELECT * FROM action_attempt ORDER BY attempt_no`;
+        const id=randomUUID(), req=request();
+        const send=() => browser(req,() => continuation.request(WI,{requestId:id,expectedRevision:3,
+          operation:'EVALUATE_JOBAID',executionMode:'PROGRAM_CONTROLLED_V1',modelRef:MODEL.modelRef},req));
+        if (stranded) {
+          // Existing immutable QUEUED intent from the previously accepted
+          // browser route; subsequent GET/POST use the actual current controller.
+          await asService(() => jobAid.enqueueContinuation(projection,TENANT,PERMISSION,id,
+            'INITIAL_PROBLEM_ASSESSMENT',undefined,undefined,undefined,{modelRef:MODEL.modelRef}));
+          assert.equal((await snapshot()).grant[0].status,'BLOCKED');
+        } else assert.equal((await send()).replayed,false);
+        return {id,send,result};
+      }
+      await additionTest('persisted FAILED normal new browser request releases once without changing its original result',async () => {
+        const queued=await persistedFailure();
+        const before=await snapshot();
+        assert.equal(before.grant[0].status,'WAITING');assert.equal(before.grant[0].lease_generation,5);
+        assert.deepEqual(before.attempts.filter(row=>row.attempt_no<=2),[...oldRows]);
+        assert.equal((await queued.send()).replayed,true);
+        assert.deepEqual(await snapshot(),before);
+        assert.equal((await admin`SELECT count(*)::integer AS n FROM fixture_grant_release_count`)[0].n,1);
+      });
+      await additionTest('persisted FAILED already accepted UUID shows a read-only hint and exact owner POST releases to normal CODEX gen6',async () => {
+        const queued=await persistedFailure(true);
+        const before=await snapshot();
+        const hint=(await read()).queuedContinuationRequest;
+        assert.deepEqual(hint,{requestId:queued.id,operation:'EVALUATE_JOBAID',executionMode:'PROGRAM_CONTROLLED_V1',
+          modelRef:MODEL.modelRef,modelName:MODEL.displayName});
+        assert.deepEqual(await snapshot(),before,'GET cannot release or change queued intent');
+        const receipt=await queued.send();
+        assert.equal(receipt.replayed,true);assert.equal(receipt.requestId,queued.id);
+        const released=await snapshot();
+        assert.equal(released.grant[0].status,'WAITING');assert.equal(released.grant[0].lease_generation,5);
+        assert.deepEqual(released.attempts,before.attempts);
+        for (const key of ['blocked_code','blocked_at','blocked_lease_token_hash','blocked_lease_generation'])
+          assert.deepEqual(released.grant[0][key],before.grant[0][key]);
+        assert.equal((await admin`SELECT count(*)::integer AS n FROM fixture_grant_release_count`)[0].n,1);
+        assert.equal((await read()).queuedContinuationRequest,undefined);
+        assert.equal((await queued.send()).replayed,true);assert.deepEqual(await snapshot(),released);
+        const claimed=await withCodex(() => asService(() => dispatch.nextWorkItem()));
+        assert.equal(claimed.status,'CLAIMED');assert.equal(claimed.leaseGeneration,6);
+        assert.equal(claimed.requestId,projection.requestId);
+        const after=await snapshot();
+        assert.equal((await queued.send()).replayed,true);assert.deepEqual(await snapshot(),after);
+        const oldRow=await asService(() => repo.readByOperationRef('AQ-old-2'));
+        await assert.rejects(asService(() => db.transaction(transaction => assertAutomaticWorkItemAttemptLease(
+          transaction,oldRow,codexConfiguration.WL_CODEX_SERVICE_PRINCIPAL_ID,true))),/AUTO_WORK_ITEM_ATTEMPT_LEASE_REJECTED/u);
+        const {contentHash:_hash,...oldResult}=queued.result;
+        const changed=sealResultEnvelope({...oldResult,errorCode:'DIFFERENT_LATE_FAILURE'});
+        await assert.rejects(asService(() => lifecycle.prepareCommit({tenantId:TENANT,workItemId:WI,
+          principalId:codexConfiguration.WL_CODEX_SERVICE_PRINCIPAL_ID,attemptRef:oldRow.operationRef,
+          leaseToken:randomUUID(),leaseGeneration:1,result:changed})),/RESULT.*(?:MISMATCH|CHANGED)/u);
+        assert.deepEqual(await snapshot(),after);
+      });
+      await additionTest('persisted FAILED read then changed grant returns conflict until a fresh exact replay',async () => {
+        const queued=await persistedFailure(true);
+        const lookup=initial.queuedContinuationBinding.bind(initial);
+        let raced;
+        initial.queuedContinuationBinding=async (...args) => {
+          const pending=await lookup(...args);
+          assert.equal(pending.blocked,true);
+          await admin`UPDATE auto_work_item_authorization SET status='WAITING'`;
+          raced=await snapshot();
+          return pending;
+        };
+        try { await assert.rejects(queued.send(),error=>error.getStatus()===409 &&
+          error.message==='INITIAL_CONTINUATION_CANCELLED_BINDING_CHANGED'); }
+        finally { initial.queuedContinuationBinding=lookup; }
+        assert.deepEqual(await snapshot(),raced);
+        const count=(await admin`SELECT count(*)::integer AS n FROM fixture_grant_release_count`)[0].n;
+        assert.equal((await queued.send()).replayed,true);assert.deepEqual(await snapshot(),raced);
+        assert.equal((await admin`SELECT count(*)::integer AS n FROM fixture_grant_release_count`)[0].n,count);
+      });
+      for (const failure of ['result-hash','result-body','queued-executed','concurrent-active','source-changed',
+        'missing-grant','unexpected-grant'])
+        await additionTest('persisted FAILED queued continuation rejects without writes: '+failure,async () => {
+          const queued=await persistedFailure(true);
+          if (failure==='result-hash') await admin`UPDATE action_attempt SET result_content_hash=${'e'.repeat(64)} WHERE attempt_no=2`;
+          if (failure==='result-body') await admin`UPDATE action_attempt SET result_envelope_json='{}' WHERE attempt_no=2`;
+          if (failure==='queued-executed') await admin`UPDATE action_attempt SET claim_count=1 WHERE attempt_no=3`;
+          if (failure==='concurrent-active') await admin`UPDATE action_attempt SET status='RUNNING' WHERE attempt_no=1`;
+          if (failure==='source-changed') sourceCurrent=false;
+          if (failure==='missing-grant') await admin`DELETE FROM auto_work_item_authorization`;
+          if (failure==='unexpected-grant') await admin`UPDATE auto_work_item_authorization SET status='COMPLETED',
+            completed_lease_token_hash=${'a'.repeat(64)},completed_lease_generation=5,completed_at=clock_timestamp()`;
+          const before=await snapshot();
+          if (failure!=='source-changed') assert.equal((await read()).queuedContinuationRequest,undefined);
+          await assert.rejects(queued.send(),/INITIAL_CONTINUATION_CANCELLED_BINDING_CHANGED/u);
+          assert.deepEqual(await snapshot(),before);
+          assert.equal((await admin`SELECT count(*)::integer AS n FROM fixture_grant_release_count`)[0].n,0);
+        });
       await additionTest('CODEX normal BLOCK gen2 -> real browser UUID -> NEXT gen3 preserves predecessor and original intake', async () => {
         const queued=await browserSuccessor();
         const before=await snapshot();

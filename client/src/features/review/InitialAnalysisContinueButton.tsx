@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type {
   CanonicalAssessmentExecutionMode,
   CanonicalInitialAnalysisContinuationRequest,
+  CanonicalInitialAnalysisReadModel,
 } from '@shared/api.interface';
 import {
   getCanonicalHostClientSessionGeneration,
@@ -22,6 +23,7 @@ interface Props {
   disabled?: boolean;
   onQueued: () => void;
   onAccessLost?: () => void;
+  queuedRequest?: NonNullable<CanonicalInitialAnalysisReadModel['queuedContinuationRequest']>;
 }
 
 interface ProgramModelChoice {
@@ -45,6 +47,7 @@ interface ContinuationState {
 
 /** New program requests choose a model; historical continuations keep their binding. */
 export default function InitialAnalysisContinueButton(props: Props) {
+  if (props.queuedRequest) return <ContinuationRequestButton {...props} />;
   return props.executionMode === 'PROGRAM_CONTROLLED_V1' &&
     props.operation === 'EVALUATE_JOBAID' ? (
     <ProgramContinuation {...props} />
@@ -86,6 +89,7 @@ function ContinuationRequestButton(
     props.operation,
     props.blockIds ?? [],
     props.executionMode ?? null,
+    props.queuedRequest ?? null,
   ]);
   const currentKey = useRef(key);
   currentKey.current = key;
@@ -144,10 +148,15 @@ function ContinuationRequestButton(
       pending.current = {
         key,
         input: {
-          requestId: crypto.randomUUID(),
+          requestId: props.queuedRequest ? props.queuedRequest.requestId : crypto.randomUUID(),
           expectedRevision: props.expectedRevision,
           operation: props.operation,
-          ...(props.modelChoice
+          ...(props.queuedRequest
+            ? {
+                executionMode: props.queuedRequest.executionMode,
+                modelRef: props.queuedRequest.modelRef,
+              }
+            : props.modelChoice
             ? {
                 executionMode: 'PROGRAM_CONTROLLED_V1',
                 modelRef: props.modelChoice.value,
@@ -158,7 +167,7 @@ function ContinuationRequestButton(
             : {}),
         },
         modelName:
-          props.modelChoice?.displayName ?? props.analysisModelName ?? null,
+          props.queuedRequest?.modelName ?? props.modelChoice?.displayName ?? props.analysisModelName ?? null,
       };
     const request = pending.current;
     if (!request) return;
@@ -208,7 +217,9 @@ function ContinuationRequestButton(
         modelRef: request.input.modelRef ?? null,
         modelName: request.modelName,
         message: active
-          ? props.modelChoice
+          ? props.queuedRequest
+            ? `已恢复原请求的等待流程，本次仍使用 ${request.modelName}。`
+            : props.modelChoice
             ? `程序评估请求已保存，本次使用 ${request.modelName}；已保存工作继续可读。`
             : '接续请求已保存，将沿用本事项的模型继续；已保存内容仍保留。'
           : receipt.status === 'SUCCEEDED'
@@ -272,6 +283,10 @@ function ContinuationRequestButton(
             。 这次选择只用于新评估；首次提交另建请求，旧请求与历史成果保留。
           </p>
         </>
+      ) : props.queuedRequest ? (
+        <p className="wl-initial-analysis-note">
+          已受理请求模型：{props.queuedRequest.modelName}。继续执行同一请求，原有记录保留。
+        </p>
       ) : (
         <p className="wl-initial-analysis-note">
           将沿用本事项模型

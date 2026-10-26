@@ -2932,6 +2932,14 @@ export interface CanonicalInitialAnalysisReadModel {
   status: AilyInitialAnalysisStatus['status'];
   nextOperation: AilyInitialAnalysisOperation | null;
   continuationOperations?: CanonicalInitialAnalysisContinuationRequest['operation'][];
+  /** Exact accepted, unexecuted request whose original blocked grant can be released by its owner. */
+  queuedContinuationRequest?: {
+    requestId: string;
+    operation: 'EVALUATE_JOBAID';
+    executionMode: 'PROGRAM_CONTROLLED_V1';
+    modelRef: string;
+    modelName: string;
+  };
   /** Only the optional cancelled-continuation lookup lacked a verified session. */
   continuationDiagnosticCode?: 'OFFICIAL_OAUTH_SESSION_REQUIRED';
   canRequestBlockTranslation?: boolean;

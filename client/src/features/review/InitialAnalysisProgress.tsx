@@ -158,9 +158,26 @@ export default function InitialAnalysisProgress(props: Props) {
           事项绑定模型：{value.analysisModel.displayName}
         </span>
       ) : null}
+      {value?.queuedContinuationRequest ? (
+        <InitialAnalysisContinueButton
+          key={value.queuedContinuationRequest.requestId}
+          workItemId={props.workItemId}
+          expectedRevision={value.workItemRevision}
+          operation={value.queuedContinuationRequest.operation}
+          executionMode={value.queuedContinuationRequest.executionMode}
+          queuedRequest={value.queuedContinuationRequest}
+          label="继续已受理请求"
+          onQueued={() => {
+            void refresh();
+            props.onRevisionChanged();
+          }}
+          onAccessLost={props.onAccessLost}
+        />
+      ) : null}
       {value?.continuationOperations
         ?.filter(
-          (operation) => operation !== 'EVALUATE_JOBAID' || !assessmentBusy,
+          (operation) => operation !== 'EVALUATE_JOBAID' ||
+            (!assessmentBusy && !value.queuedContinuationRequest),
         )
         .map((operation) => (
           <InitialAnalysisContinueButton

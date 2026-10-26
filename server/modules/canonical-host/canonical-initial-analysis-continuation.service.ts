@@ -6,6 +6,7 @@ import {
 } from './automatic-work-item-source-authorization.port';
 import {
   type CancelledInitialContinuationGuard,
+  type CancelledInitialContinuationBinding,
   cancelledContinuationConflict,
 } from '../action-attempt/cancelled-initial-continuation';
 import {
@@ -149,6 +150,17 @@ export class CanonicalInitialAnalysisContinuationService {
           JSON.stringify(input.retranslateBlockIds)
       )
         throw continuationConflict('REQUEST_SCOPE_CHANGED');
+      if (existing.status === 'QUEUED' && input.operation === 'EVALUATE_JOBAID' &&
+          input.executionMode === 'PROGRAM_CONTROLLED_V1' && this.initial.queuedContinuationBinding) {
+        const pending = await this.initial.queuedContinuationBinding({tenantId:actor.tenantId,
+          actorUserId:actor.userId,workItem},input.requestId);
+        if (pending.blocked) {
+          if (!pending.binding || input.expectedRevision !== workItem.revision) throw cancelledContinuationConflict();
+          const guard = this.continuationGuard(pending.binding,actor,workItem,permissionSnapshotVersion,httpRequest);
+          await this.sessions!.withVerifiedReviewServiceSql(
+            () => this.attempts.releaseQueuedInitialContinuation(guard),actor.userId);
+        } else if (pending.status !== 'WAITING' && pending.status !== 'LEASED') throw cancelledContinuationConflict();
+      }
       return {
         requestId: input.requestId,
         operation: input.operation,
@@ -235,15 +247,63 @@ export class CanonicalInitialAnalysisContinuationService {
       input.operation === 'TRANSLATE'
         ? undefined
         : await this.currentKnowledgeSession(actor, session);
-    if (
-      cancelled &&
-      (!this.sessions || !httpRequest || !this.sourceAuthorization)
-    )
-      throw cancelledContinuationConflict();
-    const cancelledGuard: CancelledInitialContinuationGuard | undefined =
-      cancelled
-        ? {
-            binding: cancelled,
+    const cancelledGuard = cancelled
+      ? this.continuationGuard(cancelled, actor, workItem, permissionSnapshotVersion, httpRequest)
+      : undefined;
+    const reserve = () =>
+      input.operation === 'TRANSLATE'
+        ? this.translation.enqueueContinuation(
+            workItem,
+            actor.tenantId,
+            input.requestId,
+            requestedBlocks,
+          )
+        : cancelledGuard
+          ? this.jobAid.enqueueContinuation(
+              workItem,
+              actor.tenantId,
+              permissionSnapshotVersion,
+              input.requestId,
+              'INITIAL_PROBLEM_ASSESSMENT',
+              authorizedKnowledgeSession,
+              undefined,
+              cancelledGuard,
+              input.executionMode ? {modelRef: input.modelRef!} : undefined,
+            )
+          : this.jobAid.enqueueContinuation(
+              workItem,
+              actor.tenantId,
+              permissionSnapshotVersion,
+              input.requestId,
+              input.operation === 'EVALUATE_JOBAID'
+                ? 'INITIAL_PROBLEM_ASSESSMENT'
+                : 'OVERALL_CONSISTENCY',
+              authorizedKnowledgeSession,
+              undefined, undefined, input.executionMode ? {modelRef: input.modelRef!} : undefined,
+            );
+    const reserved = cancelled
+      ? await this.sessions!.withVerifiedReviewServiceSql(reserve, actor.userId)
+      : await reserve();
+    return {
+      requestId: input.requestId,
+      operation: input.operation,
+      status: 'status' in reserved ? String(reserved.status) : 'QUEUED',
+      replayed: !reserved.created,
+      candidateOnly: true,
+    };
+  }
+
+  private continuationGuard(
+    binding: CancelledInitialContinuationBinding,
+    actor: CanonicalHostActor,
+    workItem: CanonicalWorkItemProjection,
+    permissionSnapshotVersion: string,
+    httpRequest?: Request,
+  ): CancelledInitialContinuationGuard {
+    if (!this.sessions || !httpRequest || !this.sourceAuthorization) throw cancelledContinuationConflict();
+    const workItemId = workItem.workItemId;
+    return {
+      binding,
             authorize: async (database: PostgresJsDatabase) => {
               if (!this.sessions || !httpRequest || !this.sourceAuthorization)
                 throw cancelledContinuationConflict();
@@ -299,48 +359,6 @@ export class CanonicalInitialAnalysisContinuationService {
               )
                 throw cancelledContinuationConflict();
             },
-          }
-        : undefined;
-    const reserve = () =>
-      input.operation === 'TRANSLATE'
-        ? this.translation.enqueueContinuation(
-            workItem,
-            actor.tenantId,
-            input.requestId,
-            requestedBlocks,
-          )
-        : cancelledGuard
-          ? this.jobAid.enqueueContinuation(
-              workItem,
-              actor.tenantId,
-              permissionSnapshotVersion,
-              input.requestId,
-              'INITIAL_PROBLEM_ASSESSMENT',
-              authorizedKnowledgeSession,
-              undefined,
-              cancelledGuard,
-              input.executionMode ? {modelRef: input.modelRef!} : undefined,
-            )
-          : this.jobAid.enqueueContinuation(
-              workItem,
-              actor.tenantId,
-              permissionSnapshotVersion,
-              input.requestId,
-              input.operation === 'EVALUATE_JOBAID'
-                ? 'INITIAL_PROBLEM_ASSESSMENT'
-                : 'OVERALL_CONSISTENCY',
-              authorizedKnowledgeSession,
-              undefined, undefined, input.executionMode ? {modelRef: input.modelRef!} : undefined,
-            );
-    const reserved = cancelled
-      ? await this.sessions!.withVerifiedReviewServiceSql(reserve, actor.userId)
-      : await reserve();
-    return {
-      requestId: input.requestId,
-      operation: input.operation,
-      status: 'status' in reserved ? String(reserved.status) : 'QUEUED',
-      replayed: !reserved.created,
-      candidateOnly: true,
     };
   }
 
