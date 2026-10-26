@@ -52,6 +52,51 @@ class TerminalRejected(RuntimeError):
     """Fixed diagnostic only; never include a provider error body or secret."""
 
 
+async def _await_until_deadline(coro, deadline):
+    """Python 3.10 total-deadline wait; external cancellation stays cancellation."""
+    loop = asyncio.get_running_loop()
+    if loop.time() >= deadline:
+        coro.close()
+        raise TimeoutError
+    task = asyncio.create_task(coro)
+    cancellation_requested = False
+
+    def expire():
+        nonlocal cancellation_requested
+        if not task.done():
+            cancellation_requested = True
+            task.cancel()
+
+    # Cancel at the original absolute instant, before a same-turn completion
+    # can overtake the caller resuming from a relative wait timeout.
+    timer = loop.call_at(deadline, expire)
+    try:
+        # wait() drains the child without confusing its CancelledError with
+        # a new cancellation of this caller during cleanup.
+        await asyncio.wait({task})
+        if cancellation_requested and task.cancelled():
+            # asyncio.TimeoutError is a different type on Python 3.10.
+            raise TimeoutError from None
+        return task.result()
+    except asyncio.CancelledError:
+        timer.cancel()
+        if not cancellation_requested:
+            task.cancel()
+        # A caller cancellation must also stop generation before evidence is
+        # sealed. Consume a cleanup error without replacing that cancellation.
+        while not task.done():
+            try:
+                await asyncio.wait({task})
+            except asyncio.CancelledError:
+                # Repeated caller cancellation still propagates after drain.
+                pass
+        if not task.cancelled():
+            task.exception()
+        raise
+    finally:
+        timer.cancel()
+
+
 class RawChatTerminal:
     def __init__(self):
         self.receipt = {"schemaVersion": CONTRACT, "basis": "openai-sdk-raw-chat",
@@ -270,8 +315,7 @@ async def dispatch_litellm_candidate(*, client_request_bytes: bytes,
     try:
         # This is the remaining sealed total deadline, not a renewed per-read
         # timeout. A slow stream cannot extend it by producing another chunk.
-        async with asyncio.timeout_at(total_deadline):
-            await generate()
+        await _await_until_deadline(generate(), total_deadline)
     except TimeoutError:
         capture["cancelled"] = True
         error_code = "ADAPTER_DEADLINE_EXPIRED_UNKNOWN"
