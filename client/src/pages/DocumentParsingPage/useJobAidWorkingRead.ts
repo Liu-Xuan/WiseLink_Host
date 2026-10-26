@@ -41,6 +41,8 @@ export function jobAidReadAfterFailure(
 export function isTemporaryJobAidReadFailure(
   failure: Pick<CanonicalHostClientError, 'statusCode' | 'code'>,
 ): boolean {
+  if (failure.statusCode === 200 && failure.code === 'k_func_ec_500002593')
+    return true;
   if (typeof failure.statusCode === 'number')
     return failure.statusCode >= 500 && failure.statusCode < 600;
   return ['ERR_NETWORK', 'ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET'].includes(

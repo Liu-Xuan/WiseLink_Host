@@ -1433,6 +1433,15 @@ export async function getDocumentParsingPage(
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectAccessError(response.data, response.status);
     }
+    // This observed platform function failure uses HTTP 200 without a page body.
+    // Keep its real transport status and diagnostic code; never expose the envelope.
+    if (response.status === 200 && isRecord(response.data) &&
+        response.data.code === 'k_func_ec_500002593') {
+      readFailureSummary = { ...summarizeCanonicalDocumentReadFailure({ response }), code: response.data.code };
+      throw Object.assign(new Error('评估读取暂时失败，请重新读取。'), {
+        code: response.data.code, statusCode: response.status, retryable: true,
+      });
+    }
     if (response.status < 200 || response.status >= 300) {
       const readError = backendResponseError(
         response.data,

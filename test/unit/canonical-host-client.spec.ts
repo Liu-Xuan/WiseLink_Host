@@ -69,6 +69,7 @@ import { logger } from '@lark-apaas/client-toolkit/logger';
 import { libraryMetadata } from './fixtures/canonical-library';
 import { savedDocumentReadingFixture } from './fixtures/saved-document-reading';
 import { isRevokedMatterError } from '@client/src/features/matter/matter-read-error';
+import documentParsingPlatformError from './fixtures/document-parsing-platform-error.json';
 
 describe('canonical host assessment client', () => {
   it.each(['resolved-401', 'resolved-403', 'resolved-404', 'rejected-401', 'rejected-403', 'rejected-404'])(
@@ -1259,6 +1260,26 @@ describe('canonical host assessment client', () => {
     const error = await getCanonicalLibraryQuicklook('WI-MISSING').catch(reason => reason);
     expect(error).toMatchObject({ statusCode: 404, code: 'WORK_ITEM_NOT_FOUND' });
     expect(error.message).not.toContain('private'); expect(isCanonicalObjectNotFound(error)).toBe(true);
+  });
+
+  it('rejects the observed HTTP200 platform envelope instead of returning a successful assessment page', async () => {
+    const generation = getCanonicalHostClientSessionGeneration();
+    request.mockResolvedValueOnce({ status: 200, data: documentParsingPlatformError });
+    const error = await getDocumentParsingPage('WI-PLATFORM-FAILURE', '').catch(reason => reason);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toMatchObject({ code: documentParsingPlatformError.code, statusCode: 200, retryable: true });
+    expect(error.message).toBe('评估读取暂时失败，请重新读取。');
+    expect(error.message).not.toContain(documentParsingPlatformError.msg);
+    expect(error.response).toBeUndefined(); expect(error.details).toBeUndefined();
+    expect(logger.error).toHaveBeenCalledWith('读取文档与解析投影失败，未确认当前资料状态',
+      expect.objectContaining({ code: documentParsingPlatformError.code, statusCode: 200 }));
+    expect(JSON.stringify(jest.mocked(logger.error).mock.calls)).not.toContain(documentParsingPlatformError.msg);
+    expect(getCanonicalHostClientSessionGeneration()).toBe(generation);
+    expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
+    const page = { workItem: { workItemId: 'WI-PLATFORM-FAILURE' }, status: 'FRESH_READ' };
+    request.mockResolvedValueOnce({ status: 200, data: page });
+    await expect(getDocumentParsingPage('WI-PLATFORM-FAILURE', '')).resolves.toBe(page);
+    expect(request).toHaveBeenCalledTimes(2);
   });
 
   it('normalizes a fulfilled LibraryIndex 403 without exposing object existence', async () => {

@@ -9,6 +9,8 @@ import { documentAssessmentReturnTarget } from '../../client/src/pages/DocumentP
 import { readingReturnTarget } from '../../client/src/features/matter/reading-return';
 import { wikiGuideReturnRoute } from '../../client/src/lib/wiki-guide-route';
 import { readReviewDraft } from '../../client/src/features/review/review-draft-store';
+import { isTemporaryJobAidReadFailure } from '../../client/src/pages/DocumentParsingPage/useJobAidWorkingRead';
+import documentParsingPlatformError from './fixtures/document-parsing-platform-error.json';
 
 const mockApi = jest.fn();
 jest.mock('@client/src/api/canonical-host', () => {
@@ -156,6 +158,63 @@ it('shows an independent assessment denial once and keeps the original reader av
   expect([...container.querySelectorAll('[role="alert"]')].filter(node => node.textContent === message)).toHaveLength(1);
   expect(container.querySelector('.document-assessment-content')).toBeNull();
   await panel('原文'); expect(container.querySelector('.source-reader-workspace')).not.toBeNull();
+  expect(mockApi.mock.calls.filter(call => writes.test(call[0]))).toEqual([]);
+});
+
+it('treats only the observed HTTP200 platform code as temporary without widening authorization rejection', () => {
+  expect(isTemporaryJobAidReadFailure({ statusCode: 200, code: documentParsingPlatformError.code })).toBe(true);
+  for (const statusCode of [401, 403, 404])
+    expect(isTemporaryJobAidReadFailure({ statusCode, code: documentParsingPlatformError.code })).toBe(false);
+  expect(isTemporaryJobAidReadFailure({ statusCode: 200, code: 'k_func_ec_500002594' })).toBe(false);
+});
+
+it('keeps the first platform failure out of the workspace and recovers through an explicit retry', async () => {
+  let unavailable = true;
+  mockApi.mockImplementation(async (name: string, ...args: unknown[]) => {
+    if (name === 'getDocumentParsingPage' && unavailable)
+      throw Object.assign(new Error('评估读取暂时失败，请重新读取。'), {
+        statusCode: 200, code: documentParsingPlatformError.code, retryable: true,
+      });
+    return assessmentFixtureRead(name, ...args);
+  });
+  await mount('panel=assessment&workItemId=WI-OLD');
+  expect(container.querySelector('.document-assessment-content')).toBeNull();
+  expect(container.textContent).toContain('评估读取暂时失败，请重新读取。');
+  expect(button('刷新评估').disabled).toBe(false);
+  unavailable = false; await click('刷新评估');
+  expect(container.querySelector('.document-assessment-content')).not.toBeNull();
+  expect(calls('getDocumentParsingPage')).toHaveLength(2);
+  expect(mockApi.mock.calls.filter(call => writes.test(call[0]))).toEqual([]);
+});
+
+it.each([403, 404])('preserves drafts through the platform failure and retry, then clears them on real HTTP%i rejection', async statusCode => {
+  let mode: 'success' | 'platform' | 'denied' = 'success';
+  mockApi.mockImplementation(async (name: string, ...args: unknown[]) => {
+    if (name === 'getDocumentParsingPage' && mode === 'platform')
+      throw Object.assign(new Error('评估读取暂时失败，请重新读取。'), {
+        statusCode: 200, code: documentParsingPlatformError.code, retryable: true,
+      });
+    if (name === 'getDocumentParsingPage' && mode === 'denied')
+      throw Object.assign(new Error('当前请求未获准。'), { statusCode });
+    return assessmentFixtureRead(name, ...args);
+  });
+  await mount(); const editor = draft();
+  await input(editor, '合成草稿：平台暂时读取失败后仍保留'); editor.setSelectionRange(2, 7);
+  const scroller = editor.closest<HTMLElement>('.document-assessment-content > .wl-retained-panel')!;
+  scroller.scrollTop = 248;
+  const scope = JSON.parse(container.querySelector('.document-assessment-workspace')!.getAttribute('data-assessment-scope')!);
+  mode = 'platform'; await click('刷新评估');
+  expect(draft()).toBe(editor); expect(editor.value).toContain('仍保留');
+  expect(editor.selectionStart).toBe(2); expect(editor.selectionEnd).toBe(7); expect(scroller.scrollTop).toBe(248);
+  expect(container.querySelector<HTMLFieldSetElement>('.document-assessment-content')!.disabled).toBe(true);
+  expect(container.textContent).toContain('评估读取暂时失败，请重新读取。');
+  mode = 'success'; await click('刷新评估');
+  expect(draft()).toBe(editor); expect(editor.value).toContain('仍保留');
+  expect(container.querySelector<HTMLFieldSetElement>('.document-assessment-content')!.disabled).toBe(false);
+  expect(container.textContent).not.toContain('评估读取暂时失败，请重新读取。');
+  mode = 'denied'; await click('刷新评估');
+  expect(container.querySelector('.document-assessment-content')).toBeNull(); expect(container.contains(editor)).toBe(false);
+  expect(readReviewDraft(`document-assessment:${scope[0]}:${scope[1]}:${scope[2]}`)).toBe('');
   expect(mockApi.mock.calls.filter(call => writes.test(call[0]))).toEqual([]);
 });
 
