@@ -6,6 +6,7 @@ import { normalizeProgramListBrief } from '../skills/wiselink-research-and-synth
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const finished = new Set(['COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS']);
 const error = code => ({ status: 'REJECTED', code });
+const inlineReference = /\[\[([^\[\]\r\n]+)\]\]/gu;
 
 export const programAgentTools = Object.freeze([
   { name: 'read_sources', description: 'Read exact selected Host source references, with purpose.',
@@ -41,11 +42,25 @@ export function validateProgramAgentCandidate(workJson, deliveredRefs, previousI
     violations.push('WORK_REQUIRED_FIELDS_INVALID');
   for (const problem of jobAidWorkTypeErrors(work).slice(0, 12))
     violations.push(`WORK_SHAPE_INVALID:${problem.path}`);
+  for (const issue of Array.isArray(work.issues) ? work.issues : []) {
+    if (!record(issue) || typeof issue.issueKey !== 'string' ||
+        !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(issue.issueKey.trim()) ||
+        typeof issue.question !== 'string' || !issue.question.trim() ||
+        typeof issue.body !== 'string' || !issue.body.trim())
+      violations.push('ISSUE_REQUIRED_FIELDS_INVALID');
+    if (typeof issue?.body === 'string') {
+      if (![...issue.body.matchAll(inlineReference)].length)
+        violations.push('ISSUE_BODY_REFERENCE_REQUIRED');
+      const remainder = issue.body.replace(inlineReference, '');
+      if (remainder.includes('[[') || remainder.includes(']]'))
+        violations.push('ISSUE_BODY_REFERENCE_MALFORMED');
+    }
+  }
   const known = new Set(deliveredRefs);
   const cited = new Set();
   const visit = (value, key = '') => {
     if (typeof value === 'string') {
-      for (const match of value.matchAll(/\[\[([^\]]+)\]\]/gu)) cited.add(match[1]);
+      for (const match of value.matchAll(inlineReference)) cited.add(match[1]);
       if (['evidenceRef', 'methodRef'].includes(key) && value.trim()) cited.add(value);
     } else if (Array.isArray(value)) {
       for (const item of value) {
@@ -67,7 +82,7 @@ export function validateProgramAgentCandidate(workJson, deliveredRefs, previousI
 }
 
 export function createProgramAgentSession({ materials, readAssessmentSources, readAssessmentWork,
-  maxToolCalls, canContinue = () => true }) {
+  maxToolCalls, canContinue = () => true, persistToolResult = async () => {} }) {
   const input = materials.originalInput;
   const sources = new Map(input.availableSources.map(item => [item.ref, item]));
   const units = new Map(input.programOriginal.units.map(item => [item.unitId, item]));
@@ -83,45 +98,66 @@ export function createProgramAgentSession({ materials, readAssessmentSources, re
   const exactArgs = (args, keys) => Object.keys(args).length === keys.length &&
     keys.every(key => Object.hasOwn(args, key));
   async function callTool(name, args) {
-    if (!canContinue()) return error('GENERATION_DEADLINE_OR_HEARTBEAT');
-    if (busy || calls >= maxToolCalls) return error(busy ? 'TOOL_BUSY' : 'TOOL_CALL_LIMIT');
-    if (!programAgentTools.some(tool => tool.name === name) || !record(args)) return error('TOOL_NOT_ALLOWED');
+    const complete = async (observation, entry, refs = []) => {
+      // The gateway's existing private ledger must close before citation
+      // authority or AVAILABLE audit is granted. Persistence failure is fatal.
+      await persistToolResult({ name, arguments: args, observation });
+      for (const ref of refs) delivered.add(ref);
+      if (entry) audit.push(entry);
+      return observation;
+    };
+    const reject = code => complete(error(code));
+    if (!canContinue()) return reject('GENERATION_DEADLINE_OR_HEARTBEAT');
+    if (busy || calls >= maxToolCalls) return reject(busy ? 'TOOL_BUSY' : 'TOOL_CALL_LIMIT');
+    if (!programAgentTools.some(tool => tool.name === name) || !record(args)) return reject('TOOL_NOT_ALLOWED');
     busy = true; calls++;
     try {
       if (name === 'read_sources') {
         if (!exactArgs(args, ['sourceRefs', 'purpose']) || !unique(args.sourceRefs) ||
             args.sourceRefs.length < 1 || args.sourceRefs.length > 96 ||
             args.sourceRefs.some(ref => !sources.has(ref)) ||
-            typeof args.purpose !== 'string' || !args.purpose.trim()) return error('SOURCE_SELECTION_INVALID');
+            typeof args.purpose !== 'string' || !args.purpose.trim()) return reject('SOURCE_SELECTION_INVALID');
         const packet = await readJobAidSourceBatches({ sourceRefs: args.sourceRefs,
           purpose: args.purpose, context: 'EXACT' }, readAssessmentSources);
-        // Statement v3 may have authorized root-context closure beyond the
-        // requested refs. This first candidate does not yet model that closure.
-        if (packet?.schemaVersion === 'wiselink.jobaid-source-read.v3')
-          return error('SOURCE_STATEMENT_SCOPE_UNSUPPORTED');
         const requested = new Set(args.sourceRefs);
+        const allowed = new Set(requested);
+        // readJobAidSourceBatches already validates the complete v3 records,
+        // root/context bindings and quote locators. Only the bound directory
+        // and this exact selection's mandatory closure are admitted here.
+        const statements = packet?.schemaVersion === 'wiselink.jobaid-source-read.v3'
+          ? packet.sourceStatements : [];
+        for (const statement of statements) {
+          const hint = sources.get(statement.ref)?.sourceStatement;
+          if (!requested.has(statement.ref) || !hint ||
+              !isDeepStrictEqual(hint.reference, statement.reference) ||
+              ['sourceSchemaVersion', 'semanticFieldsAvailability', 'scopeBasis', 'sourceBinding'].some(key =>
+                hint[key] !== undefined && !isDeepStrictEqual(hint[key], statement[key])) ||
+              (hint.label !== undefined && hint.label !== statement.statement.label))
+            throw new Error('SOURCE_READ_INCOMPLETE');
+          for (const ref of [...statement.rootRefs, ...statement.requiredContextRootRefs]) allowed.add(ref);
+        }
         if (packet?.status !== 'AVAILABLE' || packet.scope !== 'EXACT' ||
             packet.completeRequestedScope !== true || !unique(packet.sourceRefs) ||
-            !Array.isArray(packet.evidence) || packet.sourceRefs.length !== requested.size ||
-            packet.sourceRefs.some(ref => !requested.has(ref)) ||
-            packet.evidence.length !== requested.size ||
-            new Set(packet.evidence.map(item => item?.evidenceRef)).size !== requested.size ||
+            !Array.isArray(packet.evidence) || args.sourceRefs.some(ref => !packet.sourceRefs.includes(ref)) ||
+            packet.sourceRefs.some(ref => !allowed.has(ref)) ||
+            packet.evidence.length !== packet.sourceRefs.length ||
+            new Set(packet.evidence.map(item => item?.evidenceRef)).size !== packet.sourceRefs.length ||
             packet.evidence.some(item => {
               const source = sources.get(item?.evidenceRef);
-              return !source || !requested.has(item.evidenceRef) || typeof item.excerpt !== 'string' ||
+              return !source || !packet.sourceRefs.includes(item.evidenceRef) || typeof item.excerpt !== 'string' ||
                 item.kind !== source.kind ||
                 (source.versionLabel !== undefined && item.versionLabel !== source.versionLabel) ||
-                (source.locator !== undefined && item.locator !== source.locator);
+                (source.locator !== undefined && item.locator !== source.locator) ||
+                (source.sourceStatement && !statements.some(statement => statement.ref === item.evidenceRef));
             }))
-          return error('SOURCE_READ_INCOMPLETE');
-        for (const ref of args.sourceRefs) delivered.add(ref);
-        audit.push({ name, status: 'AVAILABLE', refs: [...args.sourceRefs] });
-        return packet;
+          throw new Error('SOURCE_READ_INCOMPLETE');
+        const refs = packet.evidence.map(item => item.evidenceRef);
+        return await complete(packet, { name, status: 'AVAILABLE', refs }, refs);
       }
       if (name === 'read_private_units') {
         if (!exactArgs(args, ['unitIds']) || !unique(args.unitIds) ||
             args.unitIds.length < 1 || args.unitIds.length > 16 ||
-            args.unitIds.some(id => !units.has(id))) return error('UNIT_SELECTION_INVALID');
+            args.unitIds.some(id => !units.has(id))) return reject('UNIT_SELECTION_INVALID');
         const selected = args.unitIds.map(id => {
           const unit = structuredClone(units.get(id));
           const uncitableSourceRefIds = unit.sourceRefIds.filter(ref =>
@@ -131,35 +167,32 @@ export function createProgramAgentSession({ materials, readAssessmentSources, re
           return { ...unit, locators: unit.sourceRefIds.map(ref => structuredClone(locators.get(ref))),
             uncitableSourceRefIds };
         });
-        audit.push({ name, status: 'AVAILABLE', unitCount: selected.length });
-        return { status: 'AVAILABLE', originalBinding: structuredClone(input.programOriginal.binding), units: selected,
+        return await complete({ status: 'AVAILABLE', originalBinding: structuredClone(input.programOriginal.binding), units: selected,
           coverage: structuredClone(input.programOriginal.coverage),
           findings: structuredClone(input.programOriginal.findings),
           taskContext: { methodBinding: structuredClone(input.methodBinding),
             documentOverview: structuredClone(input.documentOverview),
             discussion: structuredClone(input.discussion ?? null),
             contextPackage: structuredClone(input.contextPackage ?? null) },
-          instruction: 'Unit IDs and uncitable sourceRefIds are not citation references. Read exact source refs for citable evidence.' };
+          instruction: 'Unit IDs and uncitable sourceRefIds are not citation references. Read exact source refs for citable evidence.' },
+        { name, status: 'AVAILABLE', unitCount: selected.length });
       }
       if (name === 'read_previous_work') {
         if (!exactArgs(args, ['workRevisionRef']) || !previous ||
-            args.workRevisionRef !== previous.workRevisionRef) return error('WORK_SELECTION_INVALID');
+            args.workRevisionRef !== previous.workRevisionRef) return reject('WORK_SELECTION_INVALID');
         const packet = await readAssessmentWork({ workRevisionRef: previous.workRevisionRef });
         if (packet?.revision?.workRevisionRef !== previous.workRevisionRef ||
             packet.revision.workRevision !== previous.workRevision ||
             !Array.isArray(packet.revision.content?.issues) ||
             (materials.previousWorkRead && !isDeepStrictEqual(packet.revision, materials.previousWorkRead.revision)))
-          return error('WORK_READ_MISMATCH');
-        audit.push({ name, status: 'AVAILABLE', workRevisionRef: previous.workRevisionRef });
-        return packet;
+          throw new Error('WORK_READ_MISMATCH');
+        return await complete(packet, { name, status: 'AVAILABLE', workRevisionRef: previous.workRevisionRef });
       }
       if (!exactArgs(args, ['workJson']) || typeof args.workJson !== 'string')
-        return error('CANDIDATE_ARGUMENTS_INVALID');
+        return reject('CANDIDATE_ARGUMENTS_INVALID');
       const result = validateProgramAgentCandidate(args.workJson, delivered, previous?.content?.issues ?? []);
-      audit.push({ name, status: result.status });
-      return result;
-    } catch { return error('BOUND_READ_UNAVAILABLE'); }
-    finally { busy = false; }
+      return await complete(result, { name, status: result.status });
+    } finally { busy = false; }
   }
   return { tools: programAgentTools, callTool, deliveredRefs: () => [...delivered], audit: () => structuredClone(audit),
     validateFinal: workJson => validateProgramAgentCandidate(workJson, delivered, previous?.content?.issues ?? []) };

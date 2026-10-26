@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "wiselink.jobaid-source-read.v3",
+  "sourceStatements": [
+    {
+      "ref": "DOCUMENT_ACTIVITY:DRA-synthetic-001:2:statement-synthetic-001",
+      "reference": {
+        "runRef": "DRA-synthetic-001",
+        "candidateRevision": 2,
+        "statementId": "statement-synthetic-001"
+      },
+      "sourceBinding": {
+        "original": {
+          "documentVersionId": "document_version_synthetic_001",
+          "parseRunId": "parse_synthetic_001",
+          "parseRevision": 3,
+          "sourceArtifactId": "artifact_synthetic_001",
+          "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sourceByteLength": 512
+        },
+        "semanticRevision": 2
+      },
+      "candidateOnly": true,
+      "sourceSchemaVersion": "wiselink.document.activity-candidate.v2",
+      "statement": {
+        "statementId": "statement-synthetic-001",
+        "statementKey": "synthetic-inspection",
+        "label": "Source-reported inspection completion and conditional repeat",
+        "quotes": [
+          {
+            "anchorId": "a1",
+            "start": 0,
+            "end": 120,
+            "text": "For P/N SYN-001 only, the source reports inspection completed in 2030; this statement does not verify current execution."
+          },
+          {
+            "anchorId": "a2",
+            "start": 0,
+            "end": 58,
+            "text": "If cracks are found, repeat the inspection within 30 days."
+          }
+        ],
+        "subject": { "raw": "P/N SYN-001", "quoteIndex": 0 },
+        "action": { "raw": "inspection", "quoteIndex": 0 },
+        "modality": { "raw": "reports", "quoteIndex": 0, "meaning": "REPORTED", "negationQuoteIndexes": [0] },
+        "status": { "raw": "completed", "quoteIndex": 0, "meaning": "SOURCE_REPORTED_COMPLETED" },
+        "times": [
+          { "role": "OCCURRED", "precision": "YEAR", "expression": "CALENDAR", "raw": "2030", "quoteIndex": 0 },
+          { "role": "TARGET", "precision": "UNKNOWN", "expression": "RELATIVE", "raw": "within 30 days", "quoteIndex": 1 }
+        ],
+        "technicalIds": [{ "raw": "SYN-001", "quoteIndex": 0, "kind": "PART_NUMBER" }],
+        "scope": {
+          "sectionIds": ["section-synthetic-1"],
+          "conditions": [{ "raw": "If cracks are found", "quoteIndex": 1, "kind": "CONDITION", "appliesTo": "STATEMENT", "sectionIds": [] }],
+          "completeness": "DELIVERED_SCOPE_ONLY"
+        },
+        "limitations": ["Synthetic source assertion only; current execution has not been verified."]
+      },
+      "semanticFieldsAvailability": "V2_CAPTURED_FIELDS_ONLY",
+      "scopeBasis": "ACTUAL_DELIVERED_RUN_SCOPE",
+      "rootRefs": [
+        "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u1",
+        "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u2"
+      ],
+      "requiredContextRootRefs": [
+        "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u1",
+        "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u2"
+      ],
+      "quoteLocators": [
+        { "quoteIndex": 0, "anchorId": "a1", "sourceUnitId": "u1", "payloadPath": "/payload/text", "sourceRefIds": ["parse_synthetic_001_u1"], "rootRefs": ["DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u1"] },
+        { "quoteIndex": 1, "anchorId": "a2", "sourceUnitId": "u2", "payloadPath": "/payload/text", "sourceRefIds": ["parse_synthetic_001_u2"], "rootRefs": ["DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u2"] }
+      ]
+    }
+  ],
+  "activityContexts": [
+    {
+      "runRef": "DRA-synthetic-001",
+      "candidateRevision": 2,
+      "readCoverage": {
+        "status": "DELIVERED_RANGES_ONLY",
+        "selection": { "sectionIds": ["section-synthetic-1"] },
+        "deliveredRanges": [{ "sectionId": "section-synthetic-1", "offset": 0, "unitIds": ["u1", "u2"], "anchorIds": ["a1", "a2"], "nextOffset": null }],
+        "sourceCoverage": {
+          "knownPageCount": 2,
+          "readPageIndexes": [0],
+          "unresolvedRanges": [{ "pageIndexes": [1], "unitIds": [], "reason": "UNREAD", "message": "The second synthetic page has not been delivered." }]
+        }
+      },
+      "sourceContext": {
+        "schemaVersion": "wiselink.document.activity-source-context.v1",
+        "sourceBinding": {
+          "original": {
+            "documentVersionId": "document_version_synthetic_001",
+            "parseRunId": "parse_synthetic_001",
+            "parseRevision": 3,
+            "sourceArtifactId": "artifact_synthetic_001",
+            "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sourceByteLength": 512
+          },
+          "semanticRevision": 2
+        },
+        "profile": { "profileRef": "synthetic-profile-v1", "selectionBasis": "NOT_RECORDED", "family": null, "issuer": null },
+        "sections": [{ "sectionId": "section-synthetic-1", "parentSectionId": null, "titleRaw": null, "roleKey": null, "headingUnitId": null, "deliveredUnitIds": ["u1", "u2"], "contextForSectionIds": [] }],
+        "organizationWarnings": []
+      }
+    }
+  ],
+  "status": "AVAILABLE",
+  "sourceRefs": [
+    "DOCUMENT_ACTIVITY:DRA-synthetic-001:2:statement-synthetic-001",
+    "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u1",
+    "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u2"
+  ],
+  "evidence": [
+    {
+      "evidenceRef": "DOCUMENT_ACTIVITY:DRA-synthetic-001:2:statement-synthetic-001",
+      "kind": "PRIOR_RESULT",
+      "title": "来源声明候选 · 解析修订 3",
+      "versionLabel": "parse_synthetic_001",
+      "excerpt": "Source-reported inspection completion and conditional repeat",
+      "locator": null,
+      "originalEvidenceRefs": [
+        "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u1",
+        "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u2"
+      ],
+      "sourceContext": { "resultRef": "DRA-synthetic-001", "resultRevision": 2 },
+      "sourceStatement": {
+        "reference": { "runRef": "DRA-synthetic-001", "candidateRevision": 2, "statementId": "statement-synthetic-001" },
+        "sourceBinding": {
+          "original": {
+            "documentVersionId": "document_version_synthetic_001",
+            "parseRunId": "parse_synthetic_001",
+            "parseRevision": 3,
+            "sourceArtifactId": "artifact_synthetic_001",
+            "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sourceByteLength": 512
+          },
+          "semanticRevision": 2
+        }
+      }
+    },
+    {
+      "evidenceRef": "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u1",
+      "kind": "DOCUMENT_PASSAGE",
+      "title": "原文 · 解析修订 3",
+      "versionLabel": "parse_synthetic_001",
+      "excerpt": "For P/N SYN-001 only, the source reports inspection completed in 2030; this statement does not verify current execution.",
+      "locator": "{\"parseRunId\":\"parse_synthetic_001\",\"sourceRefId\":\"parse_synthetic_001_u1\",\"pageStart\":0,\"normalizedPath\":\"/synthetic/section[1]/paragraph[1]\"}"
+    },
+    {
+      "evidenceRef": "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u2",
+      "kind": "DOCUMENT_PASSAGE",
+      "title": "原文 · 解析修订 3",
+      "versionLabel": "parse_synthetic_001",
+      "excerpt": "If cracks are found, repeat the inspection within 30 days.",
+      "locator": "{\"parseRunId\":\"parse_synthetic_001\",\"sourceRefId\":\"parse_synthetic_001_u2\",\"pageStart\":0,\"normalizedPath\":\"/synthetic/section[1]/paragraph[2]\"}"
+    }
+  ],
+  "scope": "EXACT",
+  "completeRequestedScope": true
+}

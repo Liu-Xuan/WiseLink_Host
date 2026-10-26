@@ -53,8 +53,8 @@ test('private units preserve unknown fields while source receipts alone grant ci
     readAssessmentSources: async ({ sourceRefs }) => ({ status: 'AVAILABLE', scope: 'EXACT',
       completeRequestedScope: true, sourceRefs, evidence: [changed] }),
     readAssessmentWork: async () => null, maxToolCalls: 3 });
-  assert.equal((await mismatched.callTool('read_sources', { sourceRefs: [f.modelInput.availableSources[0].ref],
-    purpose: 'x' })).code, 'SOURCE_READ_INCOMPLETE');
+  await assert.rejects(mismatched.callTool('read_sources', { sourceRefs: [f.modelInput.availableSources[0].ref],
+    purpose: 'x' }), /SOURCE_READ_INCOMPLETE/u);
   assert.deepEqual(mismatched.deliveredRefs(), []);
   assert.equal(session.validateFinal(JSON.stringify({ ...f.work, listBrief: ['Paragraph one', 'Paragraph two'] })).status, 'VALID');
 });

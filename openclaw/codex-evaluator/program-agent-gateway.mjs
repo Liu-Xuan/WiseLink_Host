@@ -171,8 +171,6 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
   let heartbeatFailure = false, dispatchFailed = false;
   const canContinue = () => !heartbeatFailure && !dispatchFailed &&
     Date.now() < Date.parse(generationDeadlineAt);
-  const session = createProgramAgentSession({ materials, readAssessmentSources, readAssessmentWork,
-    maxToolCalls: policy.maxToolCalls, canContinue });
   const task = materials.originalInput;
   const prompt = `Produce one complete Chinese engineering work candidate for ${task.purpose}.\n` +
     `Scope: ${JSON.stringify({ documentTitle: task.documentOverview?.title ?? null,
@@ -221,6 +219,9 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
   const token = randomBytes(32).toString('base64url');
   const brokerToken = randomBytes(32).toString('base64url');
   let count = 0, toolCount = 0;
+  const session = createProgramAgentSession({ materials, readAssessmentSources, readAssessmentWork,
+    maxToolCalls: policy.maxToolCalls, canContinue,
+    persistToolResult: observation => ledger.writeOnce(`tool-${++toolCount}.result`, observation) });
   let broker, provider, child, heartbeatTimer;
   const report = [];
   let dispatchQueue = Promise.resolve();
@@ -239,8 +240,6 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
           try { await heartbeat?.(); }
           catch { heartbeatFailure = true; fail('PROGRAM_AGENT_HEARTBEAT_FAILED'); }
           const observation = await session.callTool(message.params?.name, message.params?.arguments);
-          await ledger.writeOnce(`tool-${++toolCount}.result`, { name: message.params?.name,
-            arguments: message.params?.arguments, observation });
           value = { content: [{ type: 'text', text: JSON.stringify(observation) }], isError: false };
         }
         send(response, value ? 200 : 400, Buffer.from(JSON.stringify(value ?? { error: 'method_not_allowed' })));

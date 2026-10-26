@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "wiselink.jobaid-source-read.v3",
+  "sourceStatements": [],
+  "activityContexts": [],
+  "status": "AVAILABLE",
+  "sourceRefs": [
+    "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u1",
+    "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u2"
+  ],
+  "evidence": [
+    {
+      "evidenceRef": "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u1",
+      "kind": "DOCUMENT_PASSAGE",
+      "title": "原文 · 解析修订 3",
+      "versionLabel": "parse_synthetic_001",
+      "excerpt": "For P/N SYN-001 only, the source reports inspection completed in 2030; this statement does not verify current execution.",
+      "locator": "{\"parseRunId\":\"parse_synthetic_001\",\"sourceRefId\":\"parse_synthetic_001_u1\",\"pageStart\":0,\"normalizedPath\":\"/synthetic/section[1]/paragraph[1]\"}"
+    },
+    {
+      "evidenceRef": "DOCUMENT_ORIGINAL:document_version_synthetic_001:parse_synthetic_001:parse_synthetic_001_u2",
+      "kind": "DOCUMENT_PASSAGE",
+      "title": "原文 · 解析修订 3",
+      "versionLabel": "parse_synthetic_001",
+      "excerpt": "If cracks are found, repeat the inspection within 30 days.",
+      "locator": "{\"parseRunId\":\"parse_synthetic_001\",\"sourceRefId\":\"parse_synthetic_001_u2\",\"pageStart\":0,\"normalizedPath\":\"/synthetic/section[1]/paragraph[2]\"}"
+    }
+  ],
+  "scope": "PAGE",
+  "completeRequestedScope": true
+}
