@@ -4,6 +4,77 @@ import { readJobAidSourceBatches } from './run-jobaid-problem-assessment.mjs';
 export const PROGRAM_ASSESSMENT_MODE = 'PROGRAM_CONTROLLED_V1';
 const fail = code => { throw new Error(`PROGRAM_ASSESSMENT_MATERIALS_${code}`); };
 
+export function normalizeProgramListBrief(before) {
+  if (!Array.isArray(before) || before.length === 0 ||
+      !before.every(item => typeof item === 'string' && item.trim().length > 0)) return null;
+  const after = before.join('\n\n');
+  return { before, after };
+}
+
+/** Proposal-only directory. No source read or original payload enters its prompt.
+ * The exact Host task stays private for bound, on-demand reads. */
+export async function prepareProgramAgentMaterials(input, options) {
+  const original = input.programOriginal;
+  if (input.executionMode !== PROGRAM_ASSESSMENT_MODE || !original?.binding ||
+      !Array.isArray(original.units) || !original.units.length ||
+      !Array.isArray(original.sourceLocators) || !original.coverage || !Array.isArray(original.findings)) fail('ORIGINAL_REQUIRED');
+  const binding = original.binding;
+  if (!binding.documentVersionId || !binding.parseRunId || !Number.isSafeInteger(binding.parseRevision) ||
+      binding.parseRevision < 1 || binding.documentVersionId !== options.assessmentBinding?.documentVersionId ||
+      !isDeepStrictEqual(binding, input.documentOverview?.original?.binding)) fail('BINDING_MISMATCH');
+  const sourceRefs = new Set(input.availableSources.map(source => source.ref));
+  const locators = new Set(original.sourceLocators.map(locator => locator.sourceRefId));
+  const primaryPrefix = `DOCUMENT_ORIGINAL:${binding.documentVersionId}:${binding.parseRunId}:`;
+  const primary = input.availableSources.filter(source => source.kind === 'DOCUMENT_PASSAGE' &&
+    (source.ref.startsWith(primaryPrefix) ||
+      (source.documentVersionId === binding.documentVersionId && source.parseRunId === binding.parseRunId)));
+  if (!primary.length || primary.some(source => {
+    let locator;
+    try { locator = JSON.parse(source.locator); } catch { return true; }
+    return source.documentVersionId !== binding.documentVersionId ||
+      source.parseRunId !== binding.parseRunId || !source.sourceRefId ||
+      source.ref !== `${primaryPrefix}${source.sourceRefId}` ||
+      source.carrierRangeRef !== source.ref || source.versionLabel !== binding.parseRunId ||
+      locator.parseRunId !== binding.parseRunId || locator.sourceRefId !== source.sourceRefId ||
+      !locators.has(source.sourceRefId);
+  })) fail('ORIGINAL_EVIDENCE_MISMATCH');
+  if (sourceRefs.size !== input.availableSources.length ||
+      original.units.some(unit => typeof unit?.unitId !== 'string' || !unit.unitId ||
+        !unit.payload || typeof unit.payload !== 'object' || Array.isArray(unit.payload) ||
+        !Array.isArray(unit.sourceRefIds) || unit.sourceRefIds.some(ref => !locators.has(ref))) ||
+      new Set(original.units.map(unit => unit.unitId)).size !== original.units.length ||
+      locators.size !== original.sourceLocators.length) fail('DIRECTORY_INVALID');
+  let previousWorkRead = null;
+  if (input.previousWork) {
+    previousWorkRead = await options.assessmentCheckpoint.readOptional('program-previous-work-read');
+    if (!previousWorkRead) {
+      await options.heartbeat?.();
+      previousWorkRead = await options.readAssessmentWork({ workRevisionRef: input.previousWork.workRevisionRef });
+      const revision = previousWorkRead?.revision;
+      if (revision?.workRevisionRef !== input.previousWork.workRevisionRef ||
+          revision.workRevision !== input.previousWork.workRevision ||
+          !Array.isArray(revision.content?.issues)) fail('PREVIOUS_WORK_READ_MISMATCH');
+      await options.assessmentCheckpoint.writeOnce('program-previous-work-read', previousWorkRead);
+    }
+    if (previousWorkRead.revision?.workRevisionRef !== input.previousWork.workRevisionRef ||
+        previousWorkRead.revision.workRevision !== input.previousWork.workRevision) fail('PREVIOUS_WORK_READ_MISMATCH');
+  }
+  const directory = {
+    schemaVersion: 'wiselink.native.program_agent_directory.proposal.v1',
+    originalBinding: structuredClone(binding),
+    sources: input.availableSources.map(source => ({ ref: source.ref, kind: source.kind,
+      ...(typeof source.locator === 'string' ? { locator: source.locator } : {}),
+      ...(typeof source.versionLabel === 'string' ? { versionLabel: source.versionLabel } : {}) })),
+    originalUnits: original.units.map(unit => ({ unitId: unit.unitId,
+      sourceRefIds: [...unit.sourceRefIds] })),
+    previousWorkRevisionRef: input.previousWork?.workRevisionRef ?? null,
+  };
+  return { version: 2, originalInput: structuredClone(input), directory,
+    previousWorkRead, modelInput: { previousUnderstandingAndChanges: {
+      previousWork: previousWorkRead?.revision ?? input.previousWork ?? null } },
+    deliveredEvidenceRefs: input.deliveredEvidence.map(item => item.evidenceRef) };
+}
+
 /** Full source bodies remain in the existing private checkpoint. The model view
  * removes only duplicate original excerpts, keeping an exact unit/locator map. */
 export async function prepareProgramAssessmentMaterials(input, options) {

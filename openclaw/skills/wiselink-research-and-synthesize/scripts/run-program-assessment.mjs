@@ -1,27 +1,21 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { prepareProgramAssessmentMaterials, PROGRAM_ASSESSMENT_MODE } from './program-assessment-materials.mjs';
+import { prepareProgramAssessmentMaterials, prepareProgramAgentMaterials, normalizeProgramListBrief, PROGRAM_ASSESSMENT_MODE } from './program-assessment-materials.mjs';
 import { parseJobAidWorkJson, validateJobAidProblemInput } from './run-jobaid-problem-assessment.mjs';
 import { JOBAID_WORK_UPDATE_SHAPE, jobAidWorkTypeErrors } from './jobaid-work-shape.mjs';
 import { JOBAID_SEMANTIC_GUIDANCE, SOURCE_CONTENT_SYNTHESIS_GUIDANCE } from './jobaid-problem-guidance.mjs';
 import { actualModelVersion, assertHostedModelGatewayReady, executionModelHeaders,
   isFunctionResponseContentSupported, summarizeHostedReviewModelOutputShape } from './run-hosted-review-turn.mjs';
 import { canonicalJson, canonicalSha256, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION,
-  WISELINK_PROFILE_REF, WISELINK_SKILL_VERSION } from './validate-payload.mjs';
+  WISELINK_PROFILE_REF, WISELINK_SKILL_VERSION, validateExecutionModelSelection } from './validate-payload.mjs';
 import { hostedGatewayTransportFailureDiagnostic } from './request-hosted-gateway.mjs';
 import { modelExecutor, modelExecutorProvenance, modelGatewayEndpoint, modelGatewayHeaders, requestModelGateway, codexParentRunRecorder } from './model-executor.mjs';
+import { runProgramAgentGateway } from '../../../codex-evaluator/program-agent-gateway.mjs';
+import { validateProgramAgentCandidate } from '../../../codex-evaluator/program-agent-session.mjs';
 
 const OUTPUT_FUNCTION = 'return_wiselink_program_assessment';
 const POLICY = { version: 1, loopPolicyVersion: 'program-controlled-v1', maxModelRequests: 1 };
-function normalizeProgramListBrief(before) {
-  if (!Array.isArray(before) || before.length === 0 ||
-      !before.every(item => typeof item === 'string' && item.trim().length > 0)) return null;
-  // This limited rule treats listBrief text items as ordered paragraphs only.
-  // Trim only to test emptiness. Preserve every item verbatim in the output.
-  const after = before.join('\n\n');
-  return { before, after };
-}
 function codexLengthFailure(error) {
   const value = error?.codexTerminalFailure;
   const keys = ['code', 'requestId', 'runDirectory', 'transportSummaryRef', 'modelVersion',
@@ -234,12 +228,21 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
     await checkpoint.writeOnce('assessment-round-1.result', responseRecord);
     if (heartbeatFailure) throw heartbeatFailure;
   }
+  return finishProgramAssessment({ operation, responseRecord, usesCodex, options, checkpoint,
+    codexRecoveryRequestId, hostBinding, modelInput, materials, body, request,
+    argsHash, enabled, recordProgress, provenanceFor, readOriginalRun });
+}
+
+async function finishProgramAssessment({ operation, responseRecord, usesCodex, options, checkpoint,
+  codexRecoveryRequestId, hostBinding, modelInput, materials, body, request,
+  argsHash, enabled, recordProgress, provenanceFor, readOriginalRun,
+  agentMode = false, agentSession = null }) {
   const { raw, status, ok } = responseRecord.value;
-  if (usesCodex && (typeof raw !== 'string' ||
+  if (usesCodex && !agentMode && (typeof raw !== 'string' ||
       responseRecord.value.codexReceipt?.requestId !== codexRecoveryRequestId ||
       responseRecord.value.codexReceipt.responseSha256 !== createHash('sha256').update(raw).digest('hex')))
     throw new Error('PROGRAM_ASSESSMENT_CODEX_RECEIPT_MISMATCH');
-  if (usesCodex && options.reconcileProgramModelRequest) {
+  if (usesCodex && !agentMode && options.reconcileProgramModelRequest) {
     await options.reconcileProgramModelRequest(async () => {
       const started = await checkpoint.readOptional('assessment-round-1.started');
       if (started?.argsHash !== argsHash || started.codexRecoveryRequestId !== codexRecoveryRequestId)
@@ -331,6 +334,8 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
       ...(rejectionDetails ?? { category: 'JSON_PARSE', path: parsingPath }) });
     throw terminal('JOBAID_WORK_JSON_INVALID');
   }
+  if (agentMode && agentSession?.validateFinal(JSON.stringify(work)).status !== 'VALID')
+    throw terminal('JOBAID_WORK_VALIDATION_FAILED');
   const previousIssues = materials.modelInput.previousUnderstandingAndChanges.previousWork?.content?.issues ?? [];
   const acknowledged = new Set([...work.issues.map(issue => issue.issueKey),
     ...(work.unchangedIssueKeys ?? []), ...(work.retiredIssues ?? []).map(issue => issue.issueKey)]);
@@ -346,7 +351,7 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
     field: 'work.listBrief', before: normalization.before, after: normalization.after,
   });
   await checkpoint.writeOnceOrEqual('program-work-candidate', work);
-  await recordProgress('MODEL_RESPONSE_SAVED', 'assessment-round-1.result');
+  await recordProgress('MODEL_RESPONSE_SAVED', agentMode ? 'program-agent-candidate.result' : 'assessment-round-1.result');
   let saveRequest = await checkpoint.readOptional('program-save-request');
   if (!saveRequest) {
     saveRequest = { requestId: randomUUID(), expectedWorkRevision: modelInput.expectedWorkRevision,
@@ -418,7 +423,7 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
     if (!isDeepStrictEqual(previousReadback.revision, revision))
       throw new Error('PROGRAM_ASSESSMENT_SAVED_WORK_READBACK_CHANGED');
   } else await checkpoint.writeOnce('program-work-readback', readback);
-  if (usesCodex) await checkpoint.writeOnceOrEqual('program-receipt-links', {
+  if (usesCodex && !agentMode) await checkpoint.writeOnceOrEqual('program-receipt-links', {
     assessmentBinding: hostBinding, modelRequestId: codexRecoveryRequestId, modelArgsHash: argsHash,
     modelResponseSha256: responseRecord.value.codexReceipt.responseSha256,
     runDirectory: responseRecord.value.codexReceipt.runDirectory,
@@ -429,4 +434,159 @@ export async function invokeHostedProgramAssessment({ operation, modelInput }, o
   const execution = { output: { workRevisionRef: revision.workRevisionRef }, provenance };
   await checkpoint.writeOnce('program-execution', execution);
   return execution;
+}
+
+const AGENT_POLICY_VERSION = 'wiselink.native.program_agent_policy.proposal.v1';
+function assertProgramAgentPolicy(value) {
+  const keys = ['schemaVersion', 'maxModelRequests', 'maxOutputTokens', 'maxToolCalls', 'timeoutSeconds'];
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      Object.keys(value).length !== keys.length || keys.some(key => !Object.hasOwn(value, key)) ||
+      value.schemaVersion !== AGENT_POLICY_VERSION ||
+      keys.slice(1).some(key => !Number.isSafeInteger(value[key]) || value[key] < 1) ||
+      value.maxModelRequests > 24 || value.maxToolCalls > 64 || value.timeoutSeconds > 3600)
+    throw new Error('PROGRAM_AGENT_POLICY_INVALID');
+  return structuredClone(value);
+}
+
+/** Proposal-only entry. No consumer or Host begin task selects this mode.
+ * The old public entry and all of its durable request keys stay unchanged. */
+export async function invokeHostedProgramAssessmentAgent({ operation, modelInput }, options, dependencies = {}) {
+  if (options?.modelExecutor !== 'CODEX' || !options?.agentPolicy ||
+      (typeof dependencies.providerDispatch !== 'function' && typeof dependencies.runCodexAgent !== 'function'))
+    throw new Error('PROGRAM_AGENT_NOT_ENABLED');
+  const policy = assertProgramAgentPolicy(options.agentPolicy);
+  modelInput = structuredClone(modelInput);
+  options = { ...options, executionModel: structuredClone(options.executionModel) };
+  validateExecutionModelSelection(options.executionModel);
+  validateJobAidProblemInput(modelInput);
+  const checkpoint = options.assessmentCheckpoint;
+  const hostBinding = options.assessmentBinding;
+  if (operation !== 'EVALUATE_JOBAID' || modelInput.executionMode !== PROGRAM_ASSESSMENT_MODE ||
+      modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || !checkpoint ||
+      !options.sessionDiscriminator || options.executionModel?.modelRef !== 'miaoda/glm-5.3' ||
+      ['attemptRef', 'actionAttemptId', 'workItemId', 'documentVersionId'].some(key =>
+        typeof hostBinding?.[key] !== 'string' || !hostBinding[key]) ||
+      !Number.isSafeInteger(hostBinding.baseRevision) || hostBinding.baseRevision < 0 ||
+      ['readAssessmentSources', 'readAssessmentWork', 'saveAssessmentWork', 'recordAssessmentProgramProgress']
+        .some(key => typeof options[key] !== 'function'))
+    throw new Error('PROGRAM_AGENT_CAPABILITY_REQUIRED');
+  const hostDeadline = Date.parse(options.taskDeadline);
+  if (!Number.isFinite(hostDeadline)) throw new Error('PROGRAM_AGENT_DEADLINE_INVALID');
+  if (await checkpoint.readOptional('assessment-enabled') ||
+      await checkpoint.readOptional('program-model-input') ||
+      await checkpoint.readOptional('assessment-round-1.started'))
+    throw new Error('PROGRAM_AGENT_LEGACY_CHECKPOINT_REJECTED');
+  const binding = { operation, modelInput, sessionDiscriminator: options.sessionDiscriminator,
+    executionModel: options.executionModel, modelExecutor: 'CODEX', assessmentBinding: hostBinding,
+    agentPolicy: policy };
+  let enabled = await checkpoint.readOptional('program-agent-enabled');
+  if (!enabled && (await Promise.all(['program-execution', 'program-save-request', 'program-work-candidate',
+    'program-agent-run', 'program-agent-candidate.started', 'program-agent-candidate.result']
+    .map(key => checkpoint.readOptional(key)))).some(value => value !== null && value !== undefined))
+    throw new Error('PROGRAM_AGENT_ORPHAN_CHECKPOINT_REJECTED');
+  if (enabled && (!isDeepStrictEqual(enabled.binding, binding) ||
+      !isDeepStrictEqual(enabled.generationPolicy, policy)))
+    throw new Error('PROGRAM_AGENT_CHECKPOINT_BINDING_MISMATCH');
+  if (!enabled) {
+    enabled = { version: 1, binding, generationPolicy: policy, startedAt: Date.now() };
+    await checkpoint.writeOnce('program-agent-enabled', enabled);
+  }
+  if (!Number.isSafeInteger(enabled.startedAt) || enabled.startedAt < 0)
+    throw new Error('PROGRAM_AGENT_CHECKPOINT_BINDING_MISMATCH');
+  const generationDeadlineAt = new Date(Math.min(hostDeadline,
+    enabled.startedAt + policy.timeoutSeconds * 1000)).toISOString();
+  const priorExecution = await checkpoint.readOptional('program-execution');
+  if (priorExecution) return priorExecution;
+  let materials = await checkpoint.readOptional('program-agent-materials');
+  if (!materials) {
+    materials = await prepareProgramAgentMaterials(modelInput, options);
+    await checkpoint.writeOnce('program-agent-materials', materials);
+  }
+  if (!isDeepStrictEqual(materials.originalInput, modelInput) || materials.version !== 2)
+    throw new Error('PROGRAM_AGENT_MATERIALS_BINDING_MISMATCH');
+  const request = { model: `openclaw/${WISELINK_PROFILE_REF}`,
+    messages: [{ role: 'system', content: 'Form a candidate using read-only bound material tools. Return no Host action.' },
+      { role: 'user', content: canonicalJson(materials.directory) }],
+    tools: [{ type: 'function', function: { name: OUTPUT_FUNCTION,
+      parameters: { type: 'object', additionalProperties: false, required: ['workJson'],
+        properties: { workJson: { type: 'string' } } } } }],
+    tool_choice: 'auto', parallel_tool_calls: false, n: 1, stream: false };
+  const body = canonicalJson(request);
+  const modelRequest = { version: 2, body, executionModel: options.executionModel,
+    materialCheckpoint: 'program-agent-materials', agentPolicy: policy };
+  await checkpoint.writeOnceOrEqual('program-agent-model-input', modelRequest);
+  const argsHash = canonicalSha256({ body, executionModel: options.executionModel, agentPolicy: policy });
+  const recordProgress = async (phase, key, snapshot) => {
+    if (!await checkpoint.readOptional(`program-progress-${phase}`)) {
+      const receipt = await options.recordAssessmentProgramProgress({ phase,
+        checkpointRef: `initial:${options.sessionDiscriminator}:${key}`,
+        ...(snapshot === undefined ? {} : { materialSnapshotJson: snapshot }) });
+      await checkpoint.writeOnce(`program-progress-${phase}`, receipt);
+    }
+  };
+  // A real fd9 Host rejects this version-2 material snapshot. Only synthetic
+  // hooks may acknowledge it until the Host owner defines a new literal mode.
+  await recordProgress('MATERIALS_READY', 'program-agent-materials', JSON.stringify({ materials, modelRequest }));
+  const requestId = `program-agent:${hostBinding.attemptRef}:candidate-1`;
+  const candidateBinding = { hostBinding, requestBodySha256: createHash('sha256').update(body).digest('hex'),
+    argsHash, executionModel: options.executionModel, agentPolicy: policy, generationDeadlineAt };
+  let responseRecord = await checkpoint.readOptional('program-agent-candidate.result');
+  const freshCandidate = !responseRecord;
+  if (responseRecord && responseRecord.argsHash !== argsHash)
+    throw new Error('PROGRAM_AGENT_CANDIDATE_BINDING_MISMATCH');
+  if (!responseRecord) {
+    const onRunPrepared = async prepared => {
+      await checkpoint.writeOnceOrEqual('program-agent-run', { requestId,
+        runDirectory: prepared.runDirectory, bindingSha256: prepared.bindingSha256, argsHash });
+      await checkpoint.writeOnceOrEqual('program-agent-candidate.started', { requestId, argsHash });
+    };
+    const run = dependencies.runCodexAgent ?? runProgramAgentGateway;
+    const value = await run({ requestId, binding: candidateBinding, materials, policy,
+      executionModel: options.executionModel, codexOptions: options.codexOptions,
+      generationDeadlineAt, heartbeat: options.heartbeat,
+      readAssessmentSources: options.readAssessmentSources,
+      readAssessmentWork: options.readAssessmentWork,
+      providerDispatch: dependencies.providerDispatch, onRunPrepared });
+    responseRecord = { argsHash, finishedAt: new Date().toISOString(), value };
+  }
+  const agentReceipt = responseRecord.value;
+  const runLink = await checkpoint.readOptional('program-agent-run');
+  const catalogue = new Set(modelInput.availableSources.map(source => source.ref));
+  const deliveredFromTools = new Set((Array.isArray(agentReceipt?.toolAudit) ? agentReceipt.toolAudit : [])
+    .filter(item => item?.name === 'read_sources' && item.status === 'AVAILABLE')
+    .flatMap(item => Array.isArray(item.refs) ? item.refs : []));
+  if (!agentReceipt || agentReceipt.version !== 1 || agentReceipt.requestId !== requestId ||
+      !isDeepStrictEqual(agentReceipt.binding, candidateBinding) ||
+      !isDeepStrictEqual(agentReceipt.executionModel, options.executionModel) ||
+      !isDeepStrictEqual(agentReceipt.policy, policy) ||
+      agentReceipt.generationDeadlineAt !== generationDeadlineAt ||
+      agentReceipt.status !== 200 || agentReceipt.ok !== true ||
+      typeof agentReceipt.raw !== 'string' ||
+      agentReceipt.responseSha256 !== createHash('sha256').update(agentReceipt.raw).digest('hex') ||
+      !Number.isSafeInteger(agentReceipt.dispatchCount) || agentReceipt.dispatchCount < 1 ||
+      agentReceipt.dispatchCount > policy.maxModelRequests ||
+      !Array.isArray(agentReceipt.dispatches) ||
+      agentReceipt.dispatches.length !== agentReceipt.dispatchCount ||
+      agentReceipt.dispatches.some((item, index) => item.ordinal !== index + 1 ||
+        item.maxOutputTokens !== policy.maxOutputTokens) ||
+      !Array.isArray(agentReceipt.deliveredRefs) || !Array.isArray(agentReceipt.toolAudit) ||
+      new Set(agentReceipt.deliveredRefs).size !== agentReceipt.deliveredRefs.length ||
+      agentReceipt.deliveredRefs.some(ref => !catalogue.has(ref) || !deliveredFromTools.has(ref)) ||
+      deliveredFromTools.size !== agentReceipt.deliveredRefs.length ||
+      !runLink || runLink.requestId !== requestId || runLink.argsHash !== argsHash ||
+      runLink.runDirectory !== agentReceipt.runDirectory ||
+      runLink.bindingSha256 !== agentReceipt.bindingSha256)
+    throw new Error('PROGRAM_AGENT_RECEIPT_INVALID');
+  if (freshCandidate) await checkpoint.writeOnce('program-agent-candidate.result', responseRecord);
+  const prior = materials.modelInput.previousUnderstandingAndChanges.previousWork;
+  const agentSession = { validateFinal: workJson => validateProgramAgentCandidate(workJson,
+    agentReceipt.deliveredRefs, prior?.content?.issues ?? []) };
+  const provenanceFor = (modelVersion, runMetrics) => ({ modelVersion,
+    promptVersion: `wiselink-jobaid-problem@v${modelInput.schemaVersion.endsWith('.v3') ? '3' : '2'}`,
+    skillVersion: WISELINK_SKILL_VERSION,
+    toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION,
+      ...modelExecutorProvenance(options), 'program-agent-candidate': 'proposal-v1' }, runMetrics });
+  return finishProgramAssessment({ operation, responseRecord, usesCodex: true, options, checkpoint,
+    codexRecoveryRequestId: requestId, hostBinding, modelInput, materials, body,
+    request, argsHash, enabled, recordProgress, provenanceFor, agentMode: true, agentSession });
 }
