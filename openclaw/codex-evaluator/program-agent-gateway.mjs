@@ -239,6 +239,16 @@ export async function runProgramAgentGateway({ requestId, binding, materials, po
       previousWorkRevisionRef: task.previousWork?.workRevisionRef ?? null })}\n` +
     `Read exact source references or private original units on demand; unit IDs and uncitable IDs are not citations.\n` +
     `read_private_units also returns the bound task context, original coverage and findings.\n` +
+    `Each issue.body must contain an inline citation: put the exact complete evidenceRef inside ` +
+    `[[double brackets]] near the supported text. Copy it verbatim from this session's successful ` +
+    `read_sources result; bare refs and basisRefs/checkedEvidenceRefs do not replace body citations.\n` +
+    `read_private_units supplies content and locators only; it does not grant citation authority. ` +
+    `Before citing a directory source ref, read that exact ref with read_sources. ` +
+    `Do not substitute unitId/sourceRefId values for an evidenceRef; ` +
+    `use only the exact evidenceRef returned by successful read_sources.\n` +
+    `The Host computes numeric risk scores and risk grades. Do not write calculated scores or grades ` +
+    `in candidate prose, including issue bodies, headlines, listBrief or overview. ` +
+    `Preserve supported severity/likelihood labels and their evidence instead.\n` +
     `Call validate_candidate for repair feedback. Do not save, finish Host work, use shell/web, or claim approval.\n` +
     `Required work schema: ${represent(JOBAID_WORK_UPDATE_SHAPE)}\n` +
     `${JOBAID_SEMANTIC_GUIDANCE}\n${SOURCE_CONTENT_SYNTHESIS_GUIDANCE}\n` +

@@ -7,6 +7,9 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const finished = new Set(['COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS']);
 const error = code => ({ status: 'REJECTED', code });
 const inlineReference = /\[\[([^\[\]\r\n]+)\]\]/gu;
+const repairLimits = { bodyPaths: 8, references: 8, pathsPerReference: 4, refChars: 512, pathChars: 256 };
+const fieldPath = (path, key) => /^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(key)
+  ? `${path}.${key}` : `${path}[${JSON.stringify(key)}]`;
 
 export const programAgentTools = Object.freeze([
   { name: 'read_sources', description: 'Read exact selected Host source references, with purpose.',
@@ -26,7 +29,7 @@ export const programAgentTools = Object.freeze([
 
 /** This check is repeated after the CLI closes. A model-visible VALID reply is
  * never proof that the final candidate is the same value. */
-export function validateProgramAgentCandidate(workJson, deliveredRefs, previousIssues = []) {
+export function validateProgramAgentCandidate(workJson, deliveredRefs, previousIssues = [], directoryRefs = []) {
   let work;
   try { work = parseJobAidWorkJson(workJson); }
   catch { return { status: 'REPAIR_REQUIRED', violations: ['WORK_JSON_INVALID'] }; }
@@ -34,6 +37,8 @@ export function validateProgramAgentCandidate(workJson, deliveredRefs, previousI
   const normalized = normalizeProgramListBrief(work.listBrief);
   if (normalized) work.listBrief = normalized.after;
   const violations = [];
+  const missingBodyPaths = [];
+  let missingBodyCount = 0;
   if (work.schemaVersion !== 'wiselink.jobaid-problem-work.v3' || !finished.has(work.roundCompletion) ||
       !Array.isArray(work.issues) ||
       ['headline', 'listBrief', 'overview', 'completionReason', 'changeSummary']
@@ -42,43 +47,76 @@ export function validateProgramAgentCandidate(workJson, deliveredRefs, previousI
     violations.push('WORK_REQUIRED_FIELDS_INVALID');
   for (const problem of jobAidWorkTypeErrors(work).slice(0, 12))
     violations.push(`WORK_SHAPE_INVALID:${problem.path}`);
-  for (const issue of Array.isArray(work.issues) ? work.issues : []) {
+  for (const [index, issue] of (Array.isArray(work.issues) ? work.issues : []).entries()) {
     if (!record(issue) || typeof issue.issueKey !== 'string' ||
         !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(issue.issueKey.trim()) ||
         typeof issue.question !== 'string' || !issue.question.trim() ||
         typeof issue.body !== 'string' || !issue.body.trim())
       violations.push('ISSUE_REQUIRED_FIELDS_INVALID');
     if (typeof issue?.body === 'string') {
-      if (![...issue.body.matchAll(inlineReference)].length)
+      if (![...issue.body.matchAll(inlineReference)].length) {
         violations.push('ISSUE_BODY_REFERENCE_REQUIRED');
+        missingBodyCount++;
+        if (missingBodyPaths.length < repairLimits.bodyPaths) missingBodyPaths.push(`work.issues[${index}].body`);
+      }
       const remainder = issue.body.replace(inlineReference, '');
       if (remainder.includes('[[') || remainder.includes(']]'))
         violations.push('ISSUE_BODY_REFERENCE_MALFORMED');
     }
   }
   const known = new Set(deliveredRefs);
+  const directory = new Set(directoryRefs);
   const cited = new Set();
-  const visit = (value, key = '') => {
+  const missingDetails = new Map();
+  const cite = (ref, path) => {
+    cited.add(ref);
+    if (known.has(ref) || ref.length > repairLimits.refChars) return;
+    let detail = missingDetails.get(ref);
+    if (!detail && missingDetails.size < repairLimits.references) {
+      detail = { ref, availableInDirectory: directory.has(ref), fieldPaths: [] };
+      missingDetails.set(ref, detail);
+    }
+    if (!detail || detail.fieldPaths.includes(path)) return;
+    if (path.length > repairLimits.pathChars || detail.fieldPaths.length >= repairLimits.pathsPerReference)
+      detail.pathsTruncated = true;
+    else detail.fieldPaths.push(path);
+  };
+  const visit = (value, key = '', path = 'work') => {
     if (typeof value === 'string') {
-      for (const match of value.matchAll(inlineReference)) cited.add(match[1]);
-      if (['evidenceRef', 'methodRef'].includes(key) && value.trim()) cited.add(value);
+      for (const match of value.matchAll(inlineReference)) cite(match[1], path);
+      if (['evidenceRef', 'methodRef'].includes(key) && value.trim()) cite(value, path);
     } else if (Array.isArray(value)) {
-      for (const item of value) {
-        if (['basisRefs', 'evidenceRefs', 'checkedEvidenceRefs'].includes(key) && typeof item === 'string') cited.add(item);
-        else visit(item);
+      for (const [index, item] of value.entries()) {
+        const itemPath = `${path}[${index}]`;
+        if (['basisRefs', 'evidenceRefs', 'checkedEvidenceRefs'].includes(key) && typeof item === 'string') {
+          cite(item, itemPath);
+        } else visit(item, '', itemPath);
       }
     } else if (record(value)) {
-      for (const [name, item] of Object.entries(value)) visit(item, name);
+      for (const [name, item] of Object.entries(value)) visit(item, name, fieldPath(path, name));
     }
   };
   visit(work);
-  if ([...cited].some(ref => !known.has(ref))) violations.push('UNDELIVERED_EVIDENCE_REF');
+  const missingRefs = [...cited].filter(ref => !known.has(ref));
+  if (missingRefs.length) violations.push('UNDELIVERED_EVIDENCE_REF');
   const covered = new Set([...(Array.isArray(work.issues) ? work.issues : []).map(item => item?.issueKey),
     ...(Array.isArray(work.unchangedIssueKeys) ? work.unchangedIssueKeys : []),
     ...(Array.isArray(work.retiredIssues) ? work.retiredIssues : []).map(item => item?.issueKey)]);
   if (previousIssues.some(issue => !covered.has(issue.issueKey))) violations.push('PREVIOUS_ISSUE_COVERAGE_REQUIRED');
-  return violations.length ? { status: 'REPAIR_REQUIRED', violations: [...new Set(violations)] }
-    : { status: 'VALID', violations: [] };
+  if (!violations.length) return { status: 'VALID', violations: [] };
+  const repairHints = [];
+  if (missingBodyCount) repairHints.push({ code: 'ISSUE_BODY_REFERENCE_REQUIRED',
+    message: 'Add [[exact delivered evidenceRef]] inside each listed body near its supporting text. ' +
+      'Copy the complete value from a successful read_sources result; bare refs or basisRefs alone ' +
+      'do not satisfy this rule.',
+    fieldPaths: missingBodyPaths, omittedPathCount: missingBodyCount - missingBodyPaths.length });
+  if (missingRefs.length) repairHints.push({ code: 'UNDELIVERED_EVIDENCE_REF',
+    message: 'Private-unit reads do not grant citation authority. For availableInDirectory=true, ' +
+      'read that exact ref with read_sources before citing. For false, remove or correct the ref ' +
+      'using the existing directory; do not invent one.',
+    missingReferences: [...missingDetails.values()], omittedReferenceCount: missingRefs.length - missingDetails.size });
+  return { status: 'REPAIR_REQUIRED', violations: [...new Set(violations)],
+    ...(repairHints.length ? { repairHints } : {}) };
 }
 
 export function createProgramAgentSession({ materials, readAssessmentSources, readAssessmentWork,
@@ -192,10 +230,12 @@ export function createProgramAgentSession({ materials, readAssessmentSources, re
       }
       if (!exactArgs(args, ['workJson']) || typeof args.workJson !== 'string')
         return reject('CANDIDATE_ARGUMENTS_INVALID');
-      const result = validateProgramAgentCandidate(args.workJson, delivered, previous?.content?.issues ?? []);
+      const result = validateProgramAgentCandidate(args.workJson, delivered,
+        previous?.content?.issues ?? [], sources.keys());
       return await complete(result, { name, status: result.status });
     } finally { busy = false; }
   }
   return { tools: programAgentTools, callTool, deliveredRefs: () => [...delivered], audit: () => structuredClone(audit),
-    validateFinal: workJson => validateProgramAgentCandidate(workJson, delivered, previous?.content?.issues ?? []) };
+    validateFinal: workJson => validateProgramAgentCandidate(workJson, delivered,
+      previous?.content?.issues ?? [], sources.keys()) };
 }
