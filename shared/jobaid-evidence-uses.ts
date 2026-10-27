@@ -10,7 +10,7 @@ export interface EvidenceUse {
 
 /** Typed uses and explicit citations in known prose; bare text and unknown fields are not refs. */
 export function collectIssueEvidenceUses(issue: Pick<JobAidProblemIssue,
-  'issueKey' | 'question' | 'body' | 'riskScenarios' | 'measures' | 'otherClassifications' | 'openQuestions' | 'requirementHandling' | 'sourceDependencies' | 'premiseRefs'
+  'issueKey' | 'question' | 'body' | 'riskScenarios' | 'measures' | 'otherClassifications' | 'openQuestions' | 'requirementHandling' | 'sourceDependencies' | 'premiseRefs' | 'methodUsage'
 >): EvidenceUse[] {
   const uses: EvidenceUse[] = [];
   const add = (refs: string[], position: string, role: EvidenceUse['role']) => {
@@ -33,6 +33,10 @@ export function collectIssueEvidenceUses(issue: Pick<JobAidProblemIssue,
   issue.requirementHandling.forEach((item, index) => {
     add([item.methodRef], `requirementHandling/${index}/methodRef`, 'METHOD');
     add(item.basisRefs, `requirementHandling/${index}/basisRefs`, 'REQUIREMENT');
+  });
+  issue.methodUsage?.forEach((item, index) => {
+    add([item.methodRef], `methodUsage/${index}/methodRef`, 'METHOD');
+    add(item.basisRefs, `methodUsage/${index}/basisRefs`, 'METHOD');
   });
   add(issue.sourceDependencies, 'sourceDependencies', 'DEPENDENCY');
   add(issue.premiseRefs, 'premiseRefs', 'PREMISE');

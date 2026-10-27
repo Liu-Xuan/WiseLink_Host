@@ -624,7 +624,7 @@ export class CanonicalHostOpenClawMcpService {
 
     server.registerTool('validate_assessment_work', {
       title: '校验程序评估候选',
-      description: '仅 PROGRAM_AGENT_V1：在同一保存授权、来源、工作版本和有效 lease 下只读校验候选，返回有界语义字段路径。不会保存、登记已读、续租或正式采用；VALID 不替代后续 SAVE 的重新授权和 CAS。',
+      description: '仅 PROGRAM_AGENT_V1：在同一保存授权、来源、工作版本和有效 lease 下只读校验候选，返回有界内容字段路径；新 RC1 任务另返回绑定精确候选的 ruleset/findings，语义充分性保持 NOT_MACHINE_ASSESSED。不会保存、登记已读、续租或正式采用；VALID 不替代后续 SAVE 的重新授权和 CAS。',
       inputSchema: z.object({
         attemptRef, workItemId: mcpWorkItemId, leaseToken, leaseGeneration,
         expectedWorkRevision: z.number().int().min(0),

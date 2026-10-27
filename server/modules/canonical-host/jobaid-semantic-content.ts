@@ -32,19 +32,51 @@ export class JobAidSemanticValidationError extends Error {
 export function inspectJobAidSemanticContent(
   work: Pick<JobAidProblemWorkContent, 'issues' | 'roundCompletion'>,
   evidence: AssessmentEvidence[],
+  explicitMethodUsage = false,
+  submittedIssueKeys?: readonly string[],
 ): SemanticInspection {
   const violations: JobAidSemanticViolation[] = [];
   let omittedViolationCount = 0;
-  const report = (code: JobAidSemanticViolationCode, fieldPaths: string[], message: string): void => {
-    if (violations.length < MAX_SEMANTIC_DIAGNOSTICS) violations.push({ code, fieldPaths, message });
+  const record = (code: JobAidSemanticViolationCode, fieldPaths: string[], message: string): void => {
+    if (violations.length < MAX_SEMANTIC_DIAGNOSTICS) violations.push({ code, fieldPaths, message,
+      ...(explicitMethodUsage ? {
+        ruleId: code === 'JOBAID_SEMANTIC_REQUIREMENT_BODY_LOCATION_REQUIRED'
+          ? 'WLCHK.SOURCE.EXACT_BINDING' as const : 'WLCHK.METHOD.KNOWN_RULE' as const,
+        itemId: 'ENG-METHOD-01' as const,
+        // These paths are constructed above, never inferred from exception text.
+        fieldPath: fieldPaths[0].replace(/^work/u, '').replace(/\[(\d+)\]/gu, '/$1').replace(/\./gu, '/'),
+      } : {}),
+    });
     else omittedViolationCount++;
   };
   const registry = new Map(evidence.map((item: AssessmentEvidence) => [item.evidenceRef, item]));
   for (const [issueIndex, issue] of work.issues.entries()) {
     const issuePath = 'work.issues[' + issueIndex + ']';
+    const submittedIndex = submittedIssueKeys?.indexOf(issue.issueKey);
+    const report = (code: JobAidSemanticViolationCode, paths: string[], message: string): void => {
+      record(code, paths.map(path => submittedIndex === undefined || !path.startsWith(issuePath)
+        ? path : submittedIndex < 0 ? 'work.issues'
+          : path.replace(issuePath, 'work.issues[' + submittedIndex + ']')),
+      submittedIndex === -1
+        ? `合并结果中的问题 ${JSON.stringify(issue.issueKey)} 须在 issues 中显式重提交完整内容：${message}`
+        : message);
+    };
     const usedMethods = new Set(collectIssueEvidenceUses(issue).map(use => use.evidenceRef)
       .filter(ref => registry.get(ref)?.kind === 'METHOD_CLAUSE'));
+    const usages = new Map(issue.methodUsage?.map(item => [item.methodRef, item]) ?? []);
     let unresolved = false;
+    if (explicitMethodUsage) {
+      if (!Array.isArray(issue.methodUsage)) report('JOBAID_METHOD_USAGE_INVALID',
+        [issuePath + '.methodUsage'], 'RC1 合并结果须声明真实方法用途；不可默填或保留未经本轮升级的问题。');
+      for (const ref of usedMethods) if (!usages.has(ref)) report('JOBAID_METHOD_USAGE_INVALID',
+        [issuePath + '.methodUsage'], '每个引用的方法条款须声明用途；仅参考不产生业务处置义务。');
+      for (const [usageIndex, usage] of (issue.methodUsage ?? []).entries()) {
+        if (usage.usage === 'APPLIED' && !usage.basisRefs.some(ref => registry.has(ref) && registry.get(ref)?.kind !== 'METHOD_CLAUSE'))
+          report('JOBAID_METHOD_USAGE_INVALID', [issuePath + '.methodUsage[' + usageIndex + '].basisRefs'],
+            '实际采用须关联应用对象依据；方法原文不证明业务输入。');
+        if (usage.usage === 'UNDETERMINED') unresolved = true;
+      }
+    }
     for (const [riskIndex, risk] of issue.riskScenarios.entries()) {
       const riskPath = issuePath + '.riskScenarios[' + riskIndex + ']';
       for (const [dimension, proposal] of [['SEVERITY', risk.severity], ['LIKELIHOOD', risk.likelihood]] as const) {
@@ -67,6 +99,9 @@ export function inspectJobAidSemanticContent(
           [proposalPath + '.definitionMatch', proposalPath + '.label'],
           '等级和 definitionQuote 须匹配本任务已交付方法的同一维度定义，不自行补造方法定义。');
         usedMethods.add(match.methodRef);
+        if (explicitMethodUsage && usages.get(match.methodRef)?.usage !== 'APPLIED')
+          report('JOBAID_METHOD_USAGE_APPLIED_REQUIRED', [proposalPath + '.definitionMatch', issuePath + '.methodUsage'],
+            'definitionMatch 已表示采用该准确条款；对应 methodUsage 必须为 APPLIED，不由 Host 静默改值。');
         if (!proposal.basisRefs.some(ref => registry.has(ref) && registry.get(ref)?.kind !== 'METHOD_CLAUSE'))
           report(dimension === 'SEVERITY' ? 'JOBAID_SEMANTIC_SEVERITY_BUSINESS_BASIS_REQUIRED'
             : 'JOBAID_SEMANTIC_LIKELIHOOD_BUSINESS_BASIS_REQUIRED', [proposalPath + '.basisRefs'],
@@ -96,7 +131,7 @@ export function inspectJobAidSemanticContent(
           '已承接或有依据的不适用判断须有已交付的业务依据，不能只引用方法条款。');
       if (['CONDITIONS_UNCONFIRMED', 'NOT_YET_ADDRESSED', 'CONFLICT'].includes(row.treatment)) unresolved = true;
     }
-    if (usedMethods.size)
+    if (!explicitMethodUsage && usedMethods.size)
       report('JOBAID_SEMANTIC_USED_METHOD_DISPOSITION_REQUIRED', [issuePath + '.requirementHandling'],
         '本问题实际使用的方法须在 requirementHandling 说明对应要求、适用条件及处置。');
     if (unresolved && (work.roundCompletion === 'COMPLETE' || issue.openQuestions.length === 0))
@@ -111,7 +146,9 @@ export function inspectJobAidSemanticContent(
 export function assertJobAidSemanticContent(
   work: Pick<JobAidProblemWorkContent, 'issues' | 'roundCompletion'>,
   evidence: AssessmentEvidence[],
+  explicitMethodUsage = false,
+  submittedIssueKeys?: readonly string[],
 ): void {
-  const inspection = inspectJobAidSemanticContent(work, evidence);
+  const inspection = inspectJobAidSemanticContent(work, evidence, explicitMethodUsage, submittedIssueKeys);
   if (inspection.violations.length) throw new JobAidSemanticValidationError(inspection);
 }

@@ -1,3 +1,5 @@
+import type { JobAidChecklistBinding } from '@shared/jobaid-checklist.interface';
+import { assertJobAidChecklistBinding } from './jobaid-checklist-binding';
 import { assertProgramAgentPolicyModel, isProgramAssessmentMode, readProgramAgentPolicy } from './program-agent-policy';
 import type { JobAidPreparationScope, JobAidPreparationView } from './jobaid-preparation-view';
 import { automaticWorkItemTaskLease, type AutomaticWorkItemTaskLease } from '../action-attempt/automatic-work-item-attempt-lease';
@@ -85,6 +87,7 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
     findings: import('@shared/canonical-translation-v2.interface').TranslationStructuredSource['findings'];
   };
   contentValidationVersion?: 'jobaid-semantic.v1';
+  checklistBinding?: JobAidChecklistBinding;
   /** Metadata only. A directory and approval provenance are not a body READ. */
   tdmsContext?: Pick<TdmsRuntimeTaskContext, 'schemaVersion' | 'projection'>;
   tdmsReviewContext?: TdmsReviewContext;
@@ -148,7 +151,7 @@ export interface JobAidProblemModelInput extends Record<string, unknown> {
 }
 
 export type JobAidProblemModelWorkContent = Pick<JobAidProblemWorkContent,
-  'schemaVersion' | 'headline' | 'listBrief' | 'roundCompletion' | 'completionReason' | 'changeSummary' | 'unchangedExplanation'> & {
+  'schemaVersion' | 'headline' | 'listBrief' | 'roundCompletion' | 'completionReason' | 'changeSummary' | 'unchangedExplanation' | 'checklistResults'> & {
   overview: string;
   issues: Array<Omit<JobAidProblemIssue, 'issueRef' | 'sourceDependencies' | 'premiseRefs' | 'legacyCriterionRefs' | 'riskScenarios'> & { riskScenarios: Array<Omit<JobAidProblemIssue['riskScenarios'][number], 'gradeMeaning'>> }>;
 };
@@ -159,6 +162,7 @@ export function jobAidProblemModelWorkContent(content: JobAidProblemWorkContent)
     listBrief: content.listBrief, overview: content.understanding,
     roundCompletion: content.roundCompletion, completionReason: content.completionReason,
     changeSummary: content.changeSummary, unchangedExplanation: content.unchangedExplanation,
+    ...(content.checklistResults ? { checklistResults: structuredClone(content.checklistResults) } : {}),
     issues: content.issues.map(({ issueRef: _ref, sourceDependencies: _deps, premiseRefs: _premises, legacyCriterionRefs: _legacy, ...issue }) => ({ ...structuredClone(issue), riskScenarios: issue.riskScenarios.map(({ gradeMeaning: _meaning, ...risk }) => structuredClone(risk)) })),
   };
 }
@@ -168,6 +172,7 @@ export interface JobAidProblemTaskInput extends Record<string, unknown> {
   requestedModelRef?: string;
   agentPolicy?: CanonicalProgramAgentPolicy;
   contentValidationVersion?: 'jobaid-semantic.v1';
+  checklistBinding?: JobAidChecklistBinding;
   /** Exact existing Review input selection, retained only in the trusted wrapper. */
   preparationScope?: JobAidPreparationScope;
   /** Sealed by Host for new automatic work only; absent on manual/historical tasks. */
@@ -216,6 +221,10 @@ export function parseJobAidProblemTask(
     throw new Error('JOBAID_PROGRAM_MODEL_BINDING_INVALID');
   if (input.executionMode === 'PROGRAM_AGENT_V1')
     assertProgramAgentPolicyModel(input.agentPolicy, task.executionModel);
+  if (input.checklistBinding && (input.checklistBinding.goal.workItemId !== task.workItemId ||
+      input.checklistBinding.goal.documentVersionId !== task.documentVersionId ||
+      input.checklistBinding.goal.basedOnWorkItemRevision !== task.inputRevision))
+    throw new Error('JOBAID_CHECKLIST_BINDING_INVALID');
   if (input.tdmsContext && (input.tdmsContext.binding.taskContextRef !== task.operationRef ||
       input.tdmsContext.binding.tenantId !== task.tenantId || input.tdmsContext.binding.workItemId !== task.workItemId ||
       input.tdmsContext.binding.documentVersionId !== task.documentVersionId)) throw new Error('JOBAID_TDMS_TASK_BINDING_INVALID');
@@ -242,6 +251,13 @@ export function assertJobAidProblemTaskBinding(
     !isJobAidMethodBinding(input.modelInput.methodBinding)
   )
     throw new Error('JOBAID_TASK_BINDING_INVALID');
+  if (canonicalJson(input.checklistBinding ?? null) !== canonicalJson(input.modelInput.checklistBinding ?? null))
+    throw new Error('JOBAID_CHECKLIST_BINDING_INVALID');
+  if (input.checklistBinding) {
+    assertJobAidChecklistBinding(input.checklistBinding);
+    if (input.executionMode !== 'PROGRAM_AGENT_V1' || input.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT')
+      throw new Error('JOBAID_CHECKLIST_BINDING_INVALID');
+  }
   if (input.executionMode !== input.modelInput.executionMode ||
       (input.executionMode !== undefined && (!isProgramAssessmentMode(input.executionMode) ||
         input.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || !input.requestedModelRef ||

@@ -1,3 +1,5 @@
+import { buildJobAidChecklistBinding } from './jobaid-checklist-binding';
+import { jobAidChecklistFeedback } from './jobaid-checklist-feedback';
 import { buildProgramAgentPolicy, isProgramAssessmentMode, readProgramAgentPolicy, type ProgramAssessmentAdmission } from './program-agent-policy';
 import { canonicalHostExecutor, assertCanonicalCodexWorkItem } from './canonical-host-executor-policy';
 import { assertProgramCompleteIssueCoverage, parseProgramMaterialSnapshot, programMaterialsObservation } from './program-assessment-materials';
@@ -1077,8 +1079,12 @@ export class CanonicalJobAidProblemService {
       taskInput.executionMode = executionMode;
       taskInput.requestedModelRef = programControlled.modelRef;
       taskInput.modelInput.executionMode = executionMode;
-      if (executionMode === 'PROGRAM_AGENT_V1')
+      if (executionMode === 'PROGRAM_AGENT_V1') {
         taskInput.agentPolicy = readProgramAgentPolicy(programControlled.agentPolicy);
+        taskInput.checklistBinding = buildJobAidChecklistBinding({ workItemId: workItem.workItemId,
+          documentVersionId: workItem.source.documentVersionId, basedOnWorkItemRevision: workItem.revision });
+        taskInput.modelInput.checklistBinding = structuredClone(taskInput.checklistBinding);
+      }
       taskInput.modelInput.programOriginal = { binding: original.original.binding, coverage: original.original.coverage,
         units: original.structuredSource.units, sourceLocators: original.structuredSource.sourceLocators,
         findings: original.structuredSource.findings };
@@ -2409,6 +2415,7 @@ export class CanonicalJobAidProblemService {
     await this.assertNativeTaskAuthorized(taskInput,scope);
     return {
       contentValidationVersion: taskInput.contentValidationVersion,
+      ...(taskInput.checklistBinding ? { checklistBinding: taskInput.checklistBinding } : {}),
       methodBinding: taskInput.modelInput.methodBinding,
       workItemId: scope.workItemId,
       previous: previous?.content ?? null,
@@ -2506,6 +2513,10 @@ export class CanonicalJobAidProblemService {
         expectedWorkRevision: input.expectedWorkRevision, previousWorkRevisionRef: snapshot.previous?.workRevisionRef ?? null,
       },
       violations, omittedViolationCount,
+      ...(taskInput.checklistBinding ? { feedback: jobAidChecklistFeedback({
+        checklistBinding: taskInput.checklistBinding, taskRef: row.operationRef, taskBaselineHash: row.taskInputHash!,
+        basedOnWorkItemRevision: task.inputRevision, workJson: input.workJson, violations,
+      }) } : {}),
     };
   }
 
@@ -2611,7 +2622,7 @@ export class CanonicalJobAidProblemService {
         workItemId: input.scope.workItemId, actorUserId: taskInput.actorUserId});
       const selected = saved.find(item => item.workRevisionRef === finish.workRevisionRef);
       if (!selected) throw new Error('JOBAID_OVERALL_WORK_REQUIRED');
-      assertJobAidSemanticContent(selected.content, selected.content.evidence);
+      assertJobAidSemanticContent(selected.content, selected.content.evidence, !!selected.content.checklistBinding);
     }
     const prepared = await this.attempts.prepareCommit({
       attemptRef: input.scope.attemptRef,

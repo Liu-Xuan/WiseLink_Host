@@ -1,3 +1,5 @@
+import { parseJobAidChecklistResults, parseJobAidMethodUsage, assertJobAidCandidateMeasureFields } from './jobaid-checklist-content';
+import { assertJobAidChecklistBinding } from './jobaid-checklist-binding';
 import type {
   AssessmentEvidence,
   AssessmentReadingResult,
@@ -44,10 +46,27 @@ export function assertJobAidIssueEditScope(
   }
   for (const field of [
     'understanding',
-    'roundCompletion', 'completionReason', 'methodBinding',
+    'roundCompletion', 'completionReason', 'methodBinding', 'checklistBinding',
   ] as const) {
     if (canonicalJson(previous[field]) !== canonicalJson(next[field]))
       throw new Error(`REVIEW_WORK_OUT_OF_SCOPE:${field}`);
+  }
+  const previousResults = previous.checklistResults ?? [];
+  const nextResults = next.checklistResults ?? [];
+  if (canonicalJson(previousResults.map(row => row.itemId).sort()) !==
+      canonicalJson(nextResults.map(row => row.itemId).sort()))
+    throw new Error('REVIEW_WORK_OUT_OF_SCOPE:checklistResults');
+  for (const beforeResult of previousResults) {
+    const afterResult = nextResults.find(row => row.itemId === beforeResult.itemId)!;
+    if (canonicalJson(beforeResult) === canonicalJson(afterResult)) continue;
+    // A checklist row can follow an explicit edit only when its whole subject
+    // was authorized. Mixed rows require a broader Review, never inferred scope.
+    const refs = [...beforeResult.resultRefs, ...afterResult.resultRefs];
+    if (!beforeResult.resultRefs.length || !afterResult.resultRefs.length ||
+        !refs.every(ref => allowed.has(ref.issueKey)) ||
+        !refs.some(ref => canonicalJson(before.get(ref.issueKey) ?? null) !==
+          canonicalJson(after.get(ref.issueKey) ?? null)))
+      throw new Error('REVIEW_WORK_OUT_OF_SCOPE:checklistResults');
   }
 }
 
@@ -100,6 +119,7 @@ export type JobAidWorkValidationContext = (
   | { matterId: string; workItemId?: never }
 ) & {
   contentValidationVersion?: 'jobaid-semantic.v1';
+  checklistBinding?: JobAidProblemWorkContent['checklistBinding'];
   methodBinding: JobAidProblemWorkContent['methodBinding'];
   previous: JobAidProblemWorkContent | null;
   /** Used only when validating an already persisted revision. */
@@ -118,7 +138,13 @@ export function materializeJobAidWork(
   context: JobAidWorkValidationContext,
 ): JobAidProblemWorkContent {
   const value = object(raw, 'WORK');
-  exact(value, ['schemaVersion', 'issues', 'headline', 'listBrief', 'overview', 'roundCompletion', 'completionReason', 'changeSummary', 'unchangedExplanation', 'unchangedIssueKeys', 'retiredIssues', 'inputDispositions', 'reviewConditionDelta']);
+  exact(value, ['schemaVersion', 'issues', 'headline', 'listBrief', 'overview', 'roundCompletion', 'completionReason', 'changeSummary', 'unchangedExplanation', 'unchangedIssueKeys', 'retiredIssues', 'inputDispositions', 'reviewConditionDelta', 'checklistResults']);
+  const checklistBinding = context.checklistBinding ?? context.previous?.checklistBinding;
+  if (checklistBinding) {
+    assertJobAidChecklistBinding(checklistBinding);
+    if (context.workItemId !== checklistBinding.goal.workItemId) fail('CHECKLIST_SUBJECT_MISMATCH');
+  }
+  else if (value.checklistResults !== undefined) fail('CHECKLIST_BINDING_REQUIRED');
   if (!isJobAidMethodBinding(context.methodBinding)) fail('METHOD_BINDING_INVALID');
   const subjectId = text(context.matterId ?? context.workItemId, 'SUBJECT');
   if (context.matterId !== undefined && context.workItemId !== undefined)
@@ -157,12 +183,15 @@ export function materializeJobAidWork(
     },
   );
   const updates = array(value.issues, 'ISSUES').map(
-    (item): JobAidProblemIssue => {
+    (item, issueIndex): JobAidProblemIssue => {
       const issue = object(item, 'ISSUE');
       const issueKey = key(issue.issueKey);
       const issueRef =
         prior.get(issueKey)?.issueRef ?? `${subjectId}:issue:${issueKey}`;
-      exact(issue, ['issueKey', 'question', 'body', 'riskScenarios', 'measures', 'otherClassifications', 'openQuestions', 'requirementHandling']);
+      exact(issue, ['issueKey', 'question', 'body', 'riskScenarios', 'measures', 'otherClassifications', 'openQuestions', 'requirementHandling', 'methodUsage']);
+      if (!checklistBinding && issue.methodUsage !== undefined) fail('CHECKLIST_BINDING_REQUIRED');
+      const methodUsage = checklistBinding
+        ? parseJobAidMethodUsage(issue.methodUsage, issueIndex, context.evidence, context.readSourceRefs) : undefined;
       const body = text(issue.body, 'ISSUE_BODY');
       const citations = [...body.matchAll(/\[\[([^\[\]\r\n]+)\]\]/gu)].map(match => match[1]);
       if (!citations.length) fail('BODY_CITATIONS_REQUIRED');
@@ -228,7 +257,8 @@ export function materializeJobAidWork(
         };
       });
       const measures = array(issue.measures ?? [], 'MEASURES').map(
-        (rawMeasure) => {
+        (rawMeasure, measureIndex) => {
+          if (checklistBinding) assertJobAidCandidateMeasureFields(rawMeasure, `/issues/${issueIndex}/measures/${measureIndex}`);
           const measure = object(rawMeasure, 'MEASURE');
           const basisRefs = refs(measure.basisRefs, 'MEASURE_BASIS');
           const status = choice(
@@ -321,6 +351,7 @@ export function materializeJobAidWork(
         otherClassifications,
         openQuestions,
         requirementHandling,
+        ...(methodUsage ? { methodUsage } : {}),
         sourceDependencies,
         premiseRefs,
 
@@ -408,7 +439,16 @@ export function materializeJobAidWork(
     )
   )
     fail('OPEN_QUESTIONS_REQUIRE_QUALIFIED_COMPLETION');
-  if (context.contentValidationVersion) assertJobAidSemanticContent({issues: updates, roundCompletion}, context.evidence);
+  const checklistResults = checklistBinding ? parseJobAidChecklistResults(
+    value.checklistResults !== undefined ? value.checklistResults
+      : (canonicalJson(context.previous?.checklistBinding ?? null) === canonicalJson(checklistBinding)
+        ? context.previous?.checklistResults : undefined), checklistBinding, issues, roundCompletion,
+    context.evidence, context.readSourceRefs,
+    value.checklistResults !== undefined && canonicalJson(value.checklistResults) !== canonicalJson(context.previous?.checklistResults ?? null)
+      ? context.currentDeliveredSourceRefs : undefined) : undefined;
+  if (checklistBinding || context.contentValidationVersion) assertJobAidSemanticContent(
+    {issues: checklistBinding ? issues : updates, roundCompletion}, context.evidence,
+    !!checklistBinding, checklistBinding ? changedKeys : undefined);
   const unchangedExplanation = text(
     value.unchangedExplanation === undefined
       ? '未提交的问题和总体字段按既有工作保留；保留不代表本批重新验证。'
@@ -450,6 +490,7 @@ export function materializeJobAidWork(
     changeSummary,
     unchangedExplanation,
     methodBinding: structuredClone(context.methodBinding),
+    ...(checklistBinding ? { checklistBinding: structuredClone(checklistBinding), checklistResults } : {}),
     evidence: structuredClone(
       context.evidence.filter((item) => read.has(item.evidenceRef)),
     ),

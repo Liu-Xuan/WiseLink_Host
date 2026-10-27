@@ -1639,7 +1639,9 @@
             "status": ["VALID", "REPAIR_REQUIRED"],
             "contentValidationVersion": "jobaid-semantic.v1",
             "bindingFields": ["attemptRef", "actionAttemptId", "workItemId", "documentVersionId", "inputRevision", "baseRevision", "expectedWorkRevision", "previousWorkRevisionRef"],
-            "violations": "最多32条现有 semantic v1 的 code、候选 fieldPaths 和固定修复说明；omittedViolationCount 明确剩余条数，不返回来源正文或历史内容。",
+            "violations": "最多32条确定性内容诊断，保留原 code、fieldPaths 和固定说明；RC1 新规则附 ruleId/itemId/fieldPath（workJson 根 JSON Pointer），省略数由 omittedViolationCount 表达。未知授权、事务及技术错误不转换为可修内容结果。",
+            "feedback": "仅封存 checklistBinding 的新 PROGRAM_AGENT 初评返回 RC1 信封：contractVersion=0.1.0-rc1；ruleset 含 definitionId/version/contentHash 与 validatorBuildRef；candidateBinding 含原 taskRef/taskBaselineHash/basedOnWorkItemRevision 和精确 UTF-8 workJson 的 sha256 candidateDigest；checkPhase=PRECHECK；findings 保留 code、ruleId、itemId、fieldPath、reason、checkNature、assessment、disposition、retryability、recoveryScope。自然语言相关性/充分性/因果和方法适用性为 NOT_MACHINE_ASSESSED，不因它自动再跑模型。",
+            "checklistWorkContract": "Host 在原 taskInput/modelInput 封存 RC1 定义与默认三项 INCLUDE/五项 WHEN_TRIGGERED，候选不得提交 checklistBinding。workJson 顶层 checklistResults 按原 itemId 提交 itemApplicability/outcome/resultRefs/basisRefs；resultRefs={issueKey,fieldPath} 解析合并后的问题，首轮可指 /body。issues[].methodUsage={methodRef,usage,basisRefs} 使用准确 METHOD_CLAUSE evidenceRef；definitionMatch 对应用途必须 APPLIED，引用方法不强制新增处置行。原 requirementHandling 的正文定位和来源约束保留。OPEN/CONFLICT 不自动完成或正式采用；真实 SAVE 与准确 revision READ 保留这些字段。",
             "schemaAuthority": "共享类型 JobAidWorkValidationResult"
           },
           "authorization": "复用 SAVE_ASSESSMENT_WORK 服务授权、actor/RLS 与 source→grant→attempt 锁顺序；核对封存方法/来源、准确历史工作、持久读取回执、有效 lease、WorkItem base revision 与工作 revision，返回前重新授权并检查状态。",
@@ -1772,7 +1774,9 @@
             "status": ["VALID", "REPAIR_REQUIRED"],
             "contentValidationVersion": "jobaid-semantic.v1",
             "bindingFields": ["attemptRef", "actionAttemptId", "workItemId", "documentVersionId", "inputRevision", "baseRevision", "expectedWorkRevision", "previousWorkRevisionRef"],
-            "violations": "最多32条现有 semantic v1 的 code、候选 fieldPaths 和固定修复说明；omittedViolationCount 明确剩余条数，不返回来源正文或历史内容。",
+            "violations": "最多32条确定性内容诊断，保留原 code、fieldPaths 和固定说明；RC1 新规则附 ruleId/itemId/fieldPath（workJson 根 JSON Pointer），省略数由 omittedViolationCount 表达。未知授权、事务及技术错误不转换为可修内容结果。",
+            "feedback": "仅封存 checklistBinding 的新 PROGRAM_AGENT 初评返回 RC1 信封：contractVersion=0.1.0-rc1；ruleset 含 definitionId/version/contentHash 与 validatorBuildRef；candidateBinding 含原 taskRef/taskBaselineHash/basedOnWorkItemRevision 和精确 UTF-8 workJson 的 sha256 candidateDigest；checkPhase=PRECHECK；findings 保留 code、ruleId、itemId、fieldPath、reason、checkNature、assessment、disposition、retryability、recoveryScope。自然语言相关性/充分性/因果和方法适用性为 NOT_MACHINE_ASSESSED，不因它自动再跑模型。",
+            "checklistWorkContract": "Host 在原 taskInput/modelInput 封存 RC1 定义与默认三项 INCLUDE/五项 WHEN_TRIGGERED，候选不得提交 checklistBinding。workJson 顶层 checklistResults 按原 itemId 提交 itemApplicability/outcome/resultRefs/basisRefs；resultRefs={issueKey,fieldPath} 解析合并后的问题，首轮可指 /body。issues[].methodUsage={methodRef,usage,basisRefs} 使用准确 METHOD_CLAUSE evidenceRef；definitionMatch 对应用途必须 APPLIED，引用方法不强制新增处置行。原 requirementHandling 的正文定位和来源约束保留。OPEN/CONFLICT 不自动完成或正式采用；真实 SAVE 与准确 revision READ 保留这些字段。",
             "schemaAuthority": "共享类型 JobAidWorkValidationResult"
           },
           "authorization": "复用 SAVE_ASSESSMENT_WORK 服务授权、actor/RLS 与 source→grant→attempt 锁顺序；核对封存方法/来源、准确历史工作、持久读取回执、有效 lease、WorkItem base revision 与工作 revision，返回前重新授权并检查状态。",

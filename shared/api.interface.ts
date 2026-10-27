@@ -1,3 +1,4 @@
+export type { JobAidChecklistBinding, JobAidChecklistResult, JobAidMethodUsage, JobAidChecklistFeedback } from './jobaid-checklist.interface';
 export type {
   JobAidProgramMaterialsRead,
   JobAidWorkValidationRequest,

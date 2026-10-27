@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { buildJobAidChecklistBinding } from '@server/modules/canonical-host/jobaid-checklist-binding';
 import 'reflect-metadata';
 import { McpServer } from '@modelcontextprotocol/server';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
@@ -84,7 +87,7 @@ describe('JobAid semantic feedback', () => {
 /** Only the persistence/authority ports are constructed; validation and SAVE materialization are real. */
 function validationFixture() {
   const row = {
-    attemptId: 'ATT-validation', operationRef: 'AQ-validation', taskInputHash: 'sealed-input',
+    attemptId: 'ATT-validation', operationRef: 'AQ-validation', taskInputHash: 'a'.repeat(64),
     workItemId: 'WI-validation', tenantId: 'tenant-validation', documentVersionId: 'DV-validation',
     inputRevision: 4, baseRevision: 4, status: 'RUNNING', reviewActivityJson: '[]',
     leaseOwner: 'service-validation', leaseToken: '00000000-0000-4000-8000-000000000001',
@@ -230,4 +233,33 @@ it('registers a strictly scoped read-only MCP preview with no model-supplied aut
       expect(definition?.inputSchema.safeParse({ ...h.request, [field]: 'untrusted' }).success).toBe(false);
     expect(definition?.inputSchema.safeParse({ ...h.request, workItemId: undefined }).success).toBe(false);
   } finally { register.mockRestore(); }
+});
+
+
+describe('RC1 uses the existing Host preview and error path', () => {
+  it('returns the exact production feedback fixture and binds a changed final candidate again', async () => {
+    const h = validationFixture();
+    const fixture = JSON.parse(readFileSync(resolve(__dirname, '../fixtures/jobaid-rc1-precheck-repair.fixture.json'), 'utf8'));
+    const binding = buildJobAidChecklistBinding({workItemId:h.row.workItemId,
+      documentVersionId:h.row.documentVersionId,basedOnWorkItemRevision:h.row.inputRevision});
+    Object.assign(h.taskInput, {checklistBinding:binding});
+    Object.assign(h.taskInput.modelInput, {checklistBinding:structuredClone(binding)});
+    const before = JSON.stringify({row:h.row, task:h.taskInput});
+    const result = await h.service.validateWork(fixture.request);
+    expect(result).toEqual(fixture.result);
+    expect(JSON.stringify({row:h.row, task:h.taskInput})).toBe(before);
+    for (const writer of [h.save,h.recordSourceRead,h.recordWorkRead,h.recordProgramProgress]) expect(writer).not.toHaveBeenCalled();
+    const command = JSON.parse(fixture.request.workJson);
+    command.checklistResults[2].basisRefs = [source.evidenceRef];
+    const changed = {...fixture.request, workJson:JSON.stringify(command)};
+    const valid = await h.service.validateWork(changed);
+    expect(valid.status).toBe('VALID');
+    expect(valid.feedback!.candidateBinding.candidateDigest).not.toBe(result.feedback!.candidateBinding.candidateDigest);
+    expect(valid.feedback!.findings.every(item => item.assessment === 'NOT_MACHINE_ASSESSED')).toBe(true);
+    expect(() => materializeJobAidWork(command, {...context,checklistBinding:binding})).not.toThrow();
+    command.checklistResults[2].resultRefs[0].issueKey = 'missing';
+    const final = await h.service.validateWork({...changed,workJson:JSON.stringify(command)});
+    expect(final.status).toBe('REPAIR_REQUIRED');
+    expect(final.violations[0].fieldPath).toBe('/checklistResults/2/resultRefs/0');
+  });
 });

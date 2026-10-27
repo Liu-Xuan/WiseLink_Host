@@ -1,0 +1,118 @@
+{
+  "fixtureNature": "SYNTHETIC_EXPECTATION_NOT_EXECUTION_RECEIPT",
+  "request": {
+    "attemptRef": "AQ-validation",
+    "workItemId": "WI-validation",
+    "leaseToken": "00000000-0000-4000-8000-000000000001",
+    "leaseGeneration": 1,
+    "expectedWorkRevision": 0,
+    "workJson": "{\"schemaVersion\":\"wiselink.jobaid-problem-work.v3\",\"headline\":\"持续条件仍待核查\",\"listBrief\":\"五秒条件尚未确认。\",\"overview\":\"五秒条件尚未确认。\",\"roundCompletion\":\"COMPLETE\",\"completionReason\":\"本轮调查完整，实施尚在后续阶段。\",\"changeSummary\":\"保留条件和实施阶段。\",\"issues\":[{\"issueKey\":\"condition\",\"question\":\"何时满足条件？\",\"body\":\"五秒条件尚未确认。 [[source:synthetic:condition]] [[method:risk]]\",\"requirementHandling\":[{\"methodRef\":\"method:risk\",\"requirement\":\"核对条件\",\"conditions\":[],\"treatment\":\"LATER_BUSINESS_STAGE\",\"basisRefs\":[],\"explanation\":\"后续实施时仍须核实。\",\"bodyQuote\":\"五秒条件尚未确认。\"}],\"methodUsage\":[{\"methodRef\":\"method:risk\",\"usage\":\"REFERENCE_ONLY\",\"basisRefs\":[]}]}],\"checklistResults\":[{\"itemId\":\"ENG-SCOPE-01\",\"itemApplicability\":\"APPLICABLE\",\"outcome\":\"ANSWERED\",\"resultRefs\":[{\"issueKey\":\"condition\",\"fieldPath\":\"/body\"}],\"basisRefs\":[\"source:synthetic:condition\"]},{\"itemId\":\"ENG-SCOPE-02\",\"itemApplicability\":\"APPLICABLE\",\"outcome\":\"ANSWERED\",\"resultRefs\":[{\"issueKey\":\"condition\",\"fieldPath\":\"/body\"}],\"basisRefs\":[\"source:synthetic:condition\"]},{\"itemId\":\"ENG-EVIDENCE-01\",\"itemApplicability\":\"APPLICABLE\",\"outcome\":\"ANSWERED\",\"resultRefs\":[{\"issueKey\":\"condition\",\"fieldPath\":\"/body\"}],\"basisRefs\":[\"source:synthetic:not-delivered\"]},{\"itemId\":\"ENG-METHOD-01\",\"itemApplicability\":\"APPLICABLE\",\"outcome\":\"ANSWERED\",\"resultRefs\":[{\"issueKey\":\"condition\",\"fieldPath\":\"/body\"}],\"basisRefs\":[\"source:synthetic:condition\"]},{\"itemId\":\"ENG-RISK-01\",\"itemApplicability\":\"APPLICABLE\",\"outcome\":\"ANSWERED\",\"resultRefs\":[{\"issueKey\":\"condition\",\"fieldPath\":\"/body\"}],\"basisRefs\":[\"source:synthetic:condition\"]},{\"itemId\":\"ENG-ACTION-01\",\"itemApplicability\":\"APPLICABLE\",\"outcome\":\"ANSWERED\",\"resultRefs\":[{\"issueKey\":\"condition\",\"fieldPath\":\"/body\"}],\"basisRefs\":[\"source:synthetic:condition\"]},{\"itemId\":\"ENG-STATUS-01\",\"itemApplicability\":\"APPLICABLE\",\"outcome\":\"ANSWERED\",\"resultRefs\":[{\"issueKey\":\"condition\",\"fieldPath\":\"/body\"}],\"basisRefs\":[\"source:synthetic:condition\"]},{\"itemId\":\"ENG-CLOSE-01\",\"itemApplicability\":\"APPLICABLE\",\"outcome\":\"ANSWERED\",\"resultRefs\":[{\"issueKey\":\"condition\",\"fieldPath\":\"/body\"}],\"basisRefs\":[\"source:synthetic:condition\"]}]}"
+  },
+  "result": {
+    "schemaVersion": "wiselink.jobaid-work-validation.v1",
+    "status": "REPAIR_REQUIRED",
+    "contentValidationVersion": "jobaid-semantic.v1",
+    "binding": {
+      "attemptRef": "AQ-validation",
+      "actionAttemptId": "ATT-validation",
+      "workItemId": "WI-validation",
+      "documentVersionId": "DV-validation",
+      "inputRevision": 4,
+      "baseRevision": 4,
+      "expectedWorkRevision": 0,
+      "previousWorkRevisionRef": null
+    },
+    "violations": [
+      {
+        "code": "JOBAID_CHECKLIST_SOURCE_NOT_DELIVERED",
+        "fieldPaths": [
+          "/checklistResults/2/basisRefs/0"
+        ],
+        "fieldPath": "/checklistResults/2/basisRefs/0",
+        "ruleId": "WLCHK.SOURCE.REGISTERED_REFERENCE",
+        "itemId": "ENG-EVIDENCE-01",
+        "message": "只能引用本任务获授权且实际交付的来源及其准确上下文。"
+      }
+    ],
+    "omittedViolationCount": 0,
+    "feedback": {
+      "contractVersion": "0.1.0-rc1",
+      "ruleset": {
+        "definitionId": "wiselink.engineering-assessment",
+        "definitionVersion": "0.1.0-rc1",
+        "definitionContentHash": "sha256:c5fc3dacfb8195ff16f29180332805a64263849a45c28203e67c1ea19f92d479",
+        "validatorBuildRef": "wiselink.jobaid-checklist-validator.rc1.2"
+      },
+      "candidateBinding": {
+        "taskRef": "AQ-validation",
+        "taskBaselineHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "basedOnWorkItemRevision": 4,
+        "candidateDigest": "sha256:5bd89fc0cdf4792a14d99542ce08010c34c2fb9dda7d796d45052f23d6e8072c"
+      },
+      "checkPhase": "PRECHECK",
+      "findings": [
+        {
+          "code": "JOBAID_CHECKLIST_SOURCE_NOT_DELIVERED",
+          "ruleId": "WLCHK.SOURCE.REGISTERED_REFERENCE",
+          "itemId": "ENG-EVIDENCE-01",
+          "fieldPath": "/checklistResults/2/basisRefs/0",
+          "reason": "只能引用本任务获授权且实际交付的来源及其准确上下文。",
+          "checkNature": "DETERMINISTIC",
+          "assessment": "VIOLATED",
+          "disposition": "BLOCK",
+          "retryability": "REPAIRABLE",
+          "recoveryScope": "CANDIDATE"
+        },
+        {
+          "code": null,
+          "ruleId": "WLCHK.EVIDENCE.SUPPORTS_CLAIM",
+          "itemId": null,
+          "fieldPath": null,
+          "reason": "证据是否相关、充分、独立，结论强度是否适当；Host标NOT_MACHINE_ASSESSED。",
+          "checkNature": "SEMANTIC_REVIEW",
+          "assessment": "NOT_MACHINE_ASSESSED",
+          "disposition": "REVIEW",
+          "retryability": "NONE",
+          "recoveryScope": "CANDIDATE"
+        },
+        {
+          "code": null,
+          "ruleId": "WLCHK.MEASURE.CLAIM_BOUNDARY",
+          "itemId": null,
+          "fieldPath": null,
+          "reason": "候选预期、采用、实施、效果验证分开；记录的对象/时间/条件不被外推。",
+          "checkNature": "SEMANTIC_REVIEW",
+          "assessment": "NOT_MACHINE_ASSESSED",
+          "disposition": "REVIEW",
+          "retryability": "NONE",
+          "recoveryScope": "CANDIDATE"
+        },
+        {
+          "code": null,
+          "ruleId": "WLCHK.ANALYSIS.SUFFICIENT",
+          "itemId": null,
+          "fieldPath": null,
+          "reason": "是否完成任务要求的实质分析，未决是否具体、必要调查是否到位。",
+          "checkNature": "SEMANTIC_REVIEW",
+          "assessment": "NOT_MACHINE_ASSESSED",
+          "disposition": "REVIEW",
+          "retryability": "NONE",
+          "recoveryScope": "CANDIDATE"
+        },
+        {
+          "code": null,
+          "ruleId": "WLCHK.METHOD.APPLICABILITY",
+          "itemId": null,
+          "fieldPath": null,
+          "reason": "检查项触发、方法使用及适用理由由智能体提出判断；Host不充当通用自然语言裁判。",
+          "checkNature": "SEMANTIC_REVIEW",
+          "assessment": "NOT_MACHINE_ASSESSED",
+          "disposition": "REVIEW",
+          "retryability": "NONE",
+          "recoveryScope": "CANDIDATE"
+        }
+      ],
+      "semanticNotAssessedByHost": true
+    }
+  }
+}

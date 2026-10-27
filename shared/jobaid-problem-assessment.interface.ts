@@ -1,3 +1,4 @@
+import type { JobAidChecklistBinding, JobAidChecklistResult, JobAidMethodUsage, JobAidChecklistFeedback, JobAidChecklistItemId, JobAidChecklistRuleId } from './jobaid-checklist.interface';
 import type { JobAidActivityRead } from './jobaid-activity.interface';
 import type {
   AssessmentEvidence,
@@ -28,6 +29,15 @@ export interface JobAidWorkValidationRequest {
 }
 
 export type JobAidSemanticViolationCode =
+  | 'JOBAID_CHECKLIST_AUTHORITY_FIELD_FORBIDDEN'
+  | 'JOBAID_CHECKLIST_STRUCTURE_INVALID'
+  | 'JOBAID_CHECKLIST_COVERAGE_REQUIRED'
+  | 'JOBAID_CHECKLIST_RESULT_REF_INVALID'
+  | 'JOBAID_CHECKLIST_SOURCE_NOT_DELIVERED'
+  | 'JOBAID_CHECKLIST_OUTCOME_INVALID'
+  | 'JOBAID_CHECKLIST_OPEN_QUESTION_REQUIRED'
+  | 'JOBAID_METHOD_USAGE_INVALID'
+  | 'JOBAID_METHOD_USAGE_APPLIED_REQUIRED'
   | 'JOBAID_SEMANTIC_SEVERITY_DEFINITION_REQUIRED'
   | 'JOBAID_SEMANTIC_LIKELIHOOD_DEFINITION_REQUIRED'
   | 'JOBAID_SEMANTIC_SEVERITY_DEFINITION_NOT_DELIVERED'
@@ -44,6 +54,9 @@ export type JobAidSemanticViolationCode =
 /** Paths refer only to the submitted candidate; no source or historical text is returned. */
 export interface JobAidSemanticViolation {
   code: JobAidSemanticViolationCode;
+  ruleId?: JobAidChecklistRuleId;
+  itemId?: JobAidChecklistItemId;
+  fieldPath?: string;
   fieldPaths: string[];
   message: string;
 }
@@ -64,6 +77,8 @@ export interface JobAidWorkValidationResult {
   };
   violations: JobAidSemanticViolation[];
   omittedViolationCount: number;
+  /** Present only for tasks sealed with RC1; legacy diagnostics retain their original contract. */
+  feedback?: JobAidChecklistFeedback;
 }
 
 /** Model-facing context saved in the existing versioned assessment task input. */
@@ -202,6 +217,7 @@ export interface JobAidProblemIssue {
     reason: string;
   }>;
   requirementHandling: JobAidRequirementHandling[];
+  methodUsage?: JobAidMethodUsage[];
   sourceDependencies: string[];
   premiseRefs: string[];
   legacyCriterionRefs?: string[];
@@ -222,6 +238,8 @@ export interface JobAidProblemWorkContent {
   changeSummary: string;
   unchangedExplanation: string;
   methodBinding: JobAidMethodBinding;
+  checklistBinding?: JobAidChecklistBinding;
+  checklistResults?: JobAidChecklistResult[];
   /** All actual inputs, including important premises not eventually cited. */
   evidence: AssessmentEvidence[];
   readSourceRefs: string[];
