@@ -1,3 +1,6 @@
+import { ReviewCandidateValidationError, rethrowReviewCandidateError } from './review-candidate-validation';
+import type { CodexReviewExecutionPolicyV1 } from '@shared/api.interface';
+import { canonicalHostExecutor, canonicalExecutorRuntime } from './canonical-host-executor-policy';
 import type { JobAidProblemTaskInput } from './jobaid-problem-task';
 import { assertJobAidProblemTaskBinding } from './jobaid-problem-task';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
@@ -81,7 +84,7 @@ export interface ReviewTurnTaskContract {
   /** Host-private business basis. Only context is projected into the model. */
   matterContext?: FrozenMatterReviewContext;
   jobAidContext?: JobAidProblemTaskInput;
-  executionPolicy: {
+  executionPolicy: CodexReviewExecutionPolicyV1 | {
     runtimeAppId: typeof REVIEW_RUNTIME_APP_ID;
     profileRef: typeof REVIEW_PROFILE_REF;
     modelPolicyRef: typeof REVIEW_MODEL_POLICY_REF;
@@ -113,7 +116,7 @@ export interface ReviewTurnCandidateContract {
   matterWorkingDelta?: MatterWorkingDeltaProposal | null;
   jobAidWorkingDelta?: Record<string, unknown> | null;
   runtime: {
-    runtimeAppId: typeof REVIEW_RUNTIME_APP_ID;
+    runtimeAppId: string;
     profileRef: typeof REVIEW_PROFILE_REF;
   };
 }
@@ -314,7 +317,9 @@ export function parseReviewTurnTaskContract(
     record.executionPolicy,
     'REVIEW_TASK_EXECUTION_POLICY_INVALID',
   );
+  const codex = executionPolicy.schemaVersion === 'wiselink.3_1.review_execution.v1';
   exactKeys(executionPolicy, [
+    ...(codex ? ['schemaVersion', 'executor'] : []),
     'runtimeAppId',
     'profileRef',
     'modelPolicyRef',
@@ -322,7 +327,10 @@ export function parseReviewTurnTaskContract(
     'toolPolicyRef',
   ]);
   if (
-    executionPolicy.runtimeAppId !== REVIEW_RUNTIME_APP_ID ||
+    (codex ? (isMatter || executionPolicy.executor !== 'CODEX' ||
+      typeof executionPolicy.runtimeAppId !== 'string' || !executionPolicy.runtimeAppId.trim() ||
+      executionPolicy.runtimeAppId === REVIEW_RUNTIME_APP_ID)
+      : executionPolicy.runtimeAppId !== REVIEW_RUNTIME_APP_ID) ||
     executionPolicy.profileRef !== REVIEW_PROFILE_REF ||
     executionPolicy.modelPolicyRef !== REVIEW_MODEL_POLICY_REF ||
     executionPolicy.skillPolicyRef !== REVIEW_SKILL_POLICY_REF ||
@@ -364,10 +372,31 @@ export function parseReviewTurnCandidateContract(input: {
   ) {
     fail('REVIEW_RESULT_OUTCOME_INVALID');
   }
-  assertNoDuplicateJsonKeys(result.modelOutput);
+  if (task.executionPolicy.skillPolicyRef !== REVIEW_SKILL_POLICY_REF ||
+      result.toolVersions['wiselink-openclaw-engineering-assessment'] !== REVIEW_MCP_PACKAGE_VERSION ||
+      !result.promptVersion.trim() || !isCanonicalHostOpenClawSkillVersionCompatible(result.skillVersion) ||
+      ('executor' in task.executionPolicy && result.toolVersions['model-executor'] !== task.executionPolicy.executor))
+    fail('REVIEW_RESULT_PROVENANCE_INVALID');
+  return parseReviewTurnCandidatePayload(result.modelOutput, task);
+}
+
+/** Pure shared parser. No synthetic ResultEnvelope, activity, or persistence. */
+export function parseReviewTurnCandidatePayload(candidateJson: string,
+  task: ReviewTurnTaskContract): ReviewTurnCandidateContract {
+  try { return parseReviewCandidatePayload(candidateJson, task); }
+  catch (error) { rethrowReviewCandidateError(error); }
+}
+
+function parseReviewCandidatePayload(candidateJson: string,
+  task: ReviewTurnTaskContract): ReviewTurnCandidateContract {
+  try { assertNoDuplicateJsonKeys(candidateJson); }
+  catch (error) {
+    if (!(error instanceof Error)) throw error;
+    throw new ReviewCandidateValidationError('REVIEW_RESULT_MODEL_OUTPUT_JSON_INVALID', [''], error.message);
+  }
   let raw: unknown;
   try {
-    raw = JSON.parse(result.modelOutput) as unknown;
+    raw = JSON.parse(candidateJson) as unknown;
   } catch {
     fail('REVIEW_RESULT_MODEL_OUTPUT_JSON_INVALID');
   }
@@ -405,6 +434,9 @@ export function parseReviewTurnCandidateContract(input: {
   ) {
     fail('REVIEW_RESULT_BINDING_INVALID');
   }
+  if ('executor' in task.executionPolicy && !isJobAid &&
+      record.schemaVersion !== 'wiselink.3_1.review_turn_candidate.v1.c3')
+    fail('REVIEW_CODEX_CANDIDATE_VERSION_REQUIRED');
   if (
     isMatter &&
     record.schemaVersion !== 'wiselink.3_1.review_turn_candidate.v1.c4'
@@ -542,13 +574,8 @@ export function parseReviewTurnCandidateContract(input: {
   );
   exactKeys(runtime, ['runtimeAppId', 'profileRef']);
   if (
-    runtime.runtimeAppId !== REVIEW_RUNTIME_APP_ID ||
-    runtime.profileRef !== REVIEW_PROFILE_REF ||
-    result.toolVersions['wiselink-openclaw-engineering-assessment'] !==
-      REVIEW_MCP_PACKAGE_VERSION ||
-    !result.promptVersion.trim() ||
-    task.executionPolicy.skillPolicyRef !== REVIEW_SKILL_POLICY_REF ||
-    !isCanonicalHostOpenClawSkillVersionCompatible(result.skillVersion)
+    runtime.runtimeAppId !== task.executionPolicy.runtimeAppId ||
+    runtime.profileRef !== task.executionPolicy.profileRef
   ) {
     fail('REVIEW_RESULT_PROVENANCE_INVALID');
   }
@@ -1040,4 +1067,25 @@ function assertSubset(values: string[], allowed: string[], code: string): void {
 
 function fail(code: string): never {
   throw Object.assign(new Error(code), { code, statusCode: 400 });
+}
+
+/** Only task builders call this; persisted envelopes are never normalized. */
+export function newReviewExecutionPolicy(toolPolicyRef: ReviewTurnTaskContract['executionPolicy']['toolPolicyRef']):
+  ReviewTurnTaskContract['executionPolicy'] {
+  const common = { profileRef: REVIEW_PROFILE_REF, modelPolicyRef: REVIEW_MODEL_POLICY_REF,
+    skillPolicyRef: REVIEW_SKILL_POLICY_REF };
+  if (canonicalHostExecutor() === 'CODEX') {
+    if (toolPolicyRef === REVIEW_MATTER_TOOL_POLICY_REF) fail('CANONICAL_CODEX_OPERATION_NOT_SUPPORTED');
+    return { ...common, schemaVersion: 'wiselink.3_1.review_execution.v1', executor: 'CODEX',
+      runtimeAppId: canonicalExecutorRuntime('CODEX').runtimeAppId, toolPolicyRef };
+  }
+  return { ...common, runtimeAppId: REVIEW_RUNTIME_APP_ID, toolPolicyRef };
+}
+
+export function assertCurrentReviewExecutionPolicy(task: ReviewTurnTaskContract): void {
+  const policy = task.executionPolicy;
+  if ('executor' in policy) {
+    if (canonicalHostExecutor() !== 'CODEX' || policy.runtimeAppId !== canonicalExecutorRuntime('CODEX').runtimeAppId)
+      fail('REVIEW_TASK_EXECUTION_POLICY_INVALID');
+  } else if (canonicalHostExecutor() !== 'HOSTED') fail('REVIEW_TASK_EXECUTION_POLICY_INVALID');
 }

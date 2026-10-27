@@ -1625,7 +1625,101 @@
       "post": {
         "operationId": "handleOpenClawMcp",
         "summary": "OpenClaw 专用 ActionAttempt 队列与候选评估 MCP 入口",
-        "x-wiselink-assessment-validation": {
+        "x-wiselink-review-validation": {
+        "tools": [
+          {
+            "name": "validate_review_turn_candidate",
+            "input": {
+              "required": [
+                "attemptRef",
+                "workItemId",
+                "leaseToken",
+                "leaseGeneration",
+                "candidateJson"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "workItemId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "candidateJson": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 1000000,
+                  "description": "Exact candidate JSON; no trimming or ResultEnvelope"
+                }
+              }
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false
+            },
+            "responseVersion": "wiselink.3_1.review_turn_validation.v1",
+            "status": [
+              "VALID",
+              "REPAIR_REQUIRED"
+            ],
+            "checkPhase": "PRECHECK",
+            "errors": "Authorization/source/fence/version/technical failures remain errors, never repair feedback"
+          },
+          {
+            "name": "read_review_saved_work",
+            "input": {
+              "required": [
+                "attemptRef",
+                "workItemId",
+                "workRevisionRef"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "workItemId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "workRevisionRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              }
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false
+            },
+            "responseVersion": "wiselink.3_1.review_saved_work_read.v1",
+            "executionStatus": "SUCCEEDED",
+            "content": "Full exact JobAidWorkRevision bound to the original c5 UPDATE APPLIED receipt; no current-head substitution"
+          }
+        ],
+        "executionPolicy": "New CODEX classic/c5 tasks seal strict seven-field wiselink.3_1.review_execution.v1. Classic task c2 requires candidate c3; c5 requires c5. Original five-field Hosted tasks and Matter remain unchanged. Preview never replaces ResultEnvelope/CAS or exact recovery."
+      },
+      "x-wiselink-assessment-validation": {
           "tool": "validate_assessment_work",
           "executionMode": "PROGRAM_AGENT_V1",
           "input": {
@@ -1760,7 +1854,101 @@
       "post": {
         "operationId": "handleCodexMcp",
         "summary": "Codex 专用 ActionAttempt 队列与候选评估 MCP 入口",
-        "x-wiselink-assessment-validation": {
+        "x-wiselink-review-validation": {
+        "tools": [
+          {
+            "name": "validate_review_turn_candidate",
+            "input": {
+              "required": [
+                "attemptRef",
+                "workItemId",
+                "leaseToken",
+                "leaseGeneration",
+                "candidateJson"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "workItemId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "leaseToken": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "leaseGeneration": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "candidateJson": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 1000000,
+                  "description": "Exact candidate JSON; no trimming or ResultEnvelope"
+                }
+              }
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false
+            },
+            "responseVersion": "wiselink.3_1.review_turn_validation.v1",
+            "status": [
+              "VALID",
+              "REPAIR_REQUIRED"
+            ],
+            "checkPhase": "PRECHECK",
+            "errors": "Authorization/source/fence/version/technical failures remain errors, never repair feedback"
+          },
+          {
+            "name": "read_review_saved_work",
+            "input": {
+              "required": [
+                "attemptRef",
+                "workItemId",
+                "workRevisionRef"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "attemptRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "workItemId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "workRevisionRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              }
+            },
+            "annotations": {
+              "readOnlyHint": true,
+              "destructiveHint": false,
+              "idempotentHint": true,
+              "openWorldHint": false
+            },
+            "responseVersion": "wiselink.3_1.review_saved_work_read.v1",
+            "executionStatus": "SUCCEEDED",
+            "content": "Full exact JobAidWorkRevision bound to the original c5 UPDATE APPLIED receipt; no current-head substitution"
+          }
+        ],
+        "executionPolicy": "New CODEX classic/c5 tasks seal strict seven-field wiselink.3_1.review_execution.v1. Classic task c2 requires candidate c3; c5 requires c5. Original five-field Hosted tasks and Matter remain unchanged. Preview never replaces ResultEnvelope/CAS or exact recovery."
+      },
+      "x-wiselink-assessment-validation": {
           "tool": "validate_assessment_work",
           "executionMode": "PROGRAM_AGENT_V1",
           "input": {

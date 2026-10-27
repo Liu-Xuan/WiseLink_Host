@@ -934,6 +934,21 @@ export class CanonicalHostOpenClawMcpService {
         textResult(await this.attemptStatus.status(selectedAttemptRef, workItemId)),
     );
 
+    server.registerTool('validate_review_turn_candidate', {
+      title: '校验当前评审候选',
+      description: '对 RUNNING 原任务的完整 candidateJson 复用正式 commit 前的纯校验；重新核来源、授权与 lease fence，返回有字段路径的候选反馈。无保存、已读记录、续租或正式采用。技术/授权失败不返回 VALID。',
+      inputSchema: z.object({ attemptRef, workItemId: mcpWorkItemId, leaseToken, leaseGeneration,
+        candidateJson: z.string().min(2).max(1_000_000) }).strict(),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    }, async input => textResult(await this.review.validateCandidate(input)));
+
+    server.registerTool('read_review_saved_work', {
+      title: '读取评审准确保存正文',
+      description: '只读原 c5 UPDATE SUCCEEDED/APPLIED 回执绑定的完整工作版本；重新授权，严格匹配 attempt/WI/ref，不用 latest、摘要或 commit 回执冒充正文。无 READ journal 或续租。',
+      inputSchema: z.object({ attemptRef, workItemId: mcpWorkItemId, workRevisionRef: attemptRef }).strict(),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    }, async input => textResult(await this.review.readSavedWork(input)));
+
     server.registerTool(
       'commit_review_turn_candidate',
       {

@@ -25,7 +25,7 @@ const config = {
   WL_CODEX_SERVICE_TENANT_ID: 'tenant-test', WL_CODEX_SERVICE_WORK_ITEM_ID: 'WI-new',
   WL_CODEX_SERVICE_REQUEST_ID: 'REQ-intake-new', WL_CODEX_SERVICE_AUTO_QUEUE_ENABLED: '1',
 };
-const keys = [...Object.keys(config), ...Object.keys(config).filter(key => key.startsWith('WL_CODEX_'))
+const keys = ['WL_CODEX_SERVICE_SUCCESSOR_REVIEW_ENABLED', 'WL_OPENCLAW_SERVICE_SUCCESSOR_REVIEW_ENABLED', ...Object.keys(config), ...Object.keys(config).filter(key => key.startsWith('WL_CODEX_'))
   .map(key => key.replace('WL_CODEX_', 'WL_OPENCLAW_'))];
 const before = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 
@@ -53,24 +53,25 @@ describe('single active Host executor', () => {
     expect(canonicalExecutorRuntime()).toEqual({ runtime: 'CODEX', runtimeAppId: 'app_17gr74pbere' });
   });
 
-  it('rejects CODEX legacy-runtime domains before any delegation or attempt lookup', async () => {
+  it('keeps Applicability unsupported and Review unavailable without its existing explicit successor scope', async () => {
     Object.assign(process.env, config);
     const authority = { authorizeReviewDelegation: jest.fn(), authorizeReviewAttempt: jest.fn(),
       authorizePendingReview: jest.fn(), authorizeSuccessorOverall: jest.fn(), authorizeActiveLease: jest.fn() };
     const scope = new ConfiguredDevelopmentCanonicalServiceScopeAuthorization(authority as never);
-    const operations = [
-      () => scope.authorizeOpenClawReview({ operation: 'BEGIN_REVIEW', workItemId: 'WI-new',
-        reviewConversationRef: 'review-new', requestId: 'review-request' }),
+    for (const operation of [
       () => scope.authorizeOpenClawApplicabilityContext({ operation: 'BEGIN_APPLICABILITY',
         applicabilityContextRef: 'applicability-new', requestId: 'applicability-request' }),
+      () => scope.authorizeOpenClawAttempt({ operation: 'COMMIT_APPLICABILITY', attemptRef: 'AQ-new', workItemId: 'WI-new' }),
+    ]) await expect(operation()).rejects.toMatchObject({ code: 'CANONICAL_CODEX_OPERATION_NOT_SUPPORTED', statusCode: 403 });
+    for (const operation of [
+      () => scope.authorizeOpenClawReview({ operation: 'BEGIN_REVIEW', workItemId: 'WI-new',
+        reviewConversationRef: 'review-new', requestId: 'review-request' }),
       () => scope.authorizeOpenClawWorkItem({ operation: 'GET_PENDING_REVIEW_TURN', workItemId: 'WI-new' }),
-      () => scope.authorizeOpenClawWorkItem({ operation: 'BEGIN_OVERALL', workItemId: 'WI-new',
-        successorReviewTurnRef: 'review-new' }),
-      ...(['COMMIT_APPLICABILITY', 'GET_REVIEW_CONTEXT', 'READ_REVIEW_SOURCE_REFS', 'COMMIT_REVIEW'] as const)
-        .map(operation => () => scope.authorizeOpenClawAttempt({ operation, attemptRef: 'AQ-new', workItemId: 'WI-new' })),
-    ];
-    for (const operation of operations) await expect(operation()).rejects.toMatchObject({
-      code: 'CANONICAL_CODEX_OPERATION_NOT_SUPPORTED', statusCode: 403 });
+      () => scope.authorizeOpenClawWorkItem({ operation: 'BEGIN_OVERALL', workItemId: 'WI-new', successorReviewTurnRef: 'review-new' }),
+    ]) await expect(operation()).rejects.toMatchObject({ code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE' });
+    for (const operation of ['GET_REVIEW_CONTEXT', 'READ_REVIEW_SOURCE_REFS', 'COMMIT_REVIEW'] as const)
+      await expect(scope.authorizeOpenClawAttempt({ operation, attemptRef: 'AQ-new', workItemId: 'WI-new' }))
+        .rejects.toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND', statusCode: 404 });
     for (const method of Object.values(authority)) expect(method).not.toHaveBeenCalled();
   });
 

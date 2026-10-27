@@ -113,7 +113,8 @@ export class AutomaticWorkItemDispatchService {
   ): Promise<NextAutoWorkItemResult> {
     assertNextWorkItemInput(input);
     const codexScope = canonicalCodexWorkItemScope();
-    if (codexScope && (input?.reviewAfterWorkItemId || input?.documentAfterRef))
+    if (codexScope && (input?.documentAfterRef ||
+        (input?.reviewAfterWorkItemId && input.reviewAfterWorkItemId !== codexScope.workItemId)))
       throw new Error('CANONICAL_CODEX_EXACT_SCOPE_REQUIRED');
     if (input?.resumeWorkItemId) assertCanonicalCodexWorkItem(input.resumeWorkItemId);
     const scope = await this.serviceScope.authorizeOpenClawAutoWorkItemQueue();
@@ -193,19 +194,19 @@ export class AutomaticWorkItemDispatchService {
       };
     }
 
-    if (codexScope || input?.resumeWorkItemId) return { status: 'IDLE' };
+    if (input?.resumeWorkItemId) return { status: 'IDLE' };
     if (canonicalExecutorSetting('SERVICE_SUCCESSOR_REVIEW_ENABLED') !== '1')
-      return this.nextDocumentDelivery(scope, input?.documentAfterRef);
+      return codexScope ? { status: 'IDLE' } : this.nextDocumentDelivery(scope, input?.documentAfterRef);
     if (!this.reviewConversations || !this.jobAidWork)
       throw new Error('AUTO_WORK_ITEM_REVIEW_DISCOVERY_UNAVAILABLE');
     const subjects = await this.workItems.listCompletedAutoProcessingReviewSubjects({
       tenantId: scope.tenantId,
-      ...(input?.reviewAfterWorkItemId
-        ? { afterWorkItemId: input.reviewAfterWorkItemId }
-        : {}),
-      limit: REVIEW_DISCOVERY_PAGE_SIZE,
+      ...(codexScope ? { workItemId: codexScope.workItemId } : input?.reviewAfterWorkItemId
+        ? { afterWorkItemId: input.reviewAfterWorkItemId } : {}),
+      limit: codexScope ? 1 : REVIEW_DISCOVERY_PAGE_SIZE,
     });
     for (const subject of subjects) {
+      assertCanonicalCodexWorkItem(subject.authorization.workItemId, subject.authorization.requestId);
       const workItemId = subject.authorization.workItemId;
       const turn = await this.reviewConversations.loadPendingOpenClawTurn({
         tenantId: scope.tenantId,
@@ -270,6 +271,7 @@ export class AutomaticWorkItemDispatchService {
         reviewAfterWorkItemId: workItemId,
       };
     }
+    if (codexScope) return { status: 'IDLE' };
     return subjects.length === REVIEW_DISCOVERY_PAGE_SIZE
       ? { status: 'IDLE', reviewAfterWorkItemId: subjects[subjects.length - 1].authorization.workItemId }
       : this.nextDocumentDelivery(scope, input?.documentAfterRef);

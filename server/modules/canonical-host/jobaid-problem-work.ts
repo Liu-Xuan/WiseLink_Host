@@ -1,3 +1,4 @@
+import { ReviewCandidateValidationError } from './review-candidate-validation';
 import { parseJobAidChecklistResults, parseJobAidMethodUsage, assertJobAidCandidateMeasureFields } from './jobaid-checklist-content';
 import { assertJobAidChecklistBinding } from './jobaid-checklist-binding';
 import type {
@@ -32,7 +33,7 @@ export function assertJobAidIssueEditScope(
   for (const key of new Set([...before.keys(), ...after.keys()])) {
     if (!allowed.has(key) &&
       canonicalJson(before.get(key) ?? null) !== canonicalJson(after.get(key) ?? null))
-      throw new Error(`REVIEW_ISSUE_OUT_OF_SCOPE:${key}`);
+      throw new ReviewCandidateValidationError('REVIEW_ISSUE_OUT_OF_SCOPE', ['/jobAidWorkingDelta/issues'], `REVIEW_ISSUE_OUT_OF_SCOPE:${key}`);
   }
   const targetChanged = [...allowed].some((key) =>
     canonicalJson(before.get(key) ?? null) !== canonicalJson(after.get(key) ?? null));
@@ -41,7 +42,7 @@ export function assertJobAidIssueEditScope(
   if (!targetChanged) {
     for (const field of ['headline', 'listBrief'] as const) {
       if (canonicalJson(previous[field]) !== canonicalJson(next[field]))
-        throw new Error(`REVIEW_WORK_OUT_OF_SCOPE:${field}`);
+        throw new ReviewCandidateValidationError('REVIEW_WORK_OUT_OF_SCOPE', ['/jobAidWorkingDelta/' + field], `REVIEW_WORK_OUT_OF_SCOPE:${field}`);
     }
   }
   for (const field of [
@@ -49,13 +50,13 @@ export function assertJobAidIssueEditScope(
     'roundCompletion', 'completionReason', 'methodBinding', 'checklistBinding',
   ] as const) {
     if (canonicalJson(previous[field]) !== canonicalJson(next[field]))
-      throw new Error(`REVIEW_WORK_OUT_OF_SCOPE:${field}`);
+      throw new ReviewCandidateValidationError('REVIEW_WORK_OUT_OF_SCOPE', ['/jobAidWorkingDelta/' + field], `REVIEW_WORK_OUT_OF_SCOPE:${field}`);
   }
   const previousResults = previous.checklistResults ?? [];
   const nextResults = next.checklistResults ?? [];
   if (canonicalJson(previousResults.map(row => row.itemId).sort()) !==
       canonicalJson(nextResults.map(row => row.itemId).sort()))
-    throw new Error('REVIEW_WORK_OUT_OF_SCOPE:checklistResults');
+    throw new ReviewCandidateValidationError('REVIEW_WORK_OUT_OF_SCOPE', ['/jobAidWorkingDelta/checklistResults'], 'REVIEW_WORK_OUT_OF_SCOPE:checklistResults');
   for (const beforeResult of previousResults) {
     const afterResult = nextResults.find(row => row.itemId === beforeResult.itemId)!;
     if (canonicalJson(beforeResult) === canonicalJson(afterResult)) continue;
@@ -66,7 +67,7 @@ export function assertJobAidIssueEditScope(
         !refs.every(ref => allowed.has(ref.issueKey)) ||
         !refs.some(ref => canonicalJson(before.get(ref.issueKey) ?? null) !==
           canonicalJson(after.get(ref.issueKey) ?? null)))
-      throw new Error('REVIEW_WORK_OUT_OF_SCOPE:checklistResults');
+      throw new ReviewCandidateValidationError('REVIEW_WORK_OUT_OF_SCOPE', ['/jobAidWorkingDelta/checklistResults'], 'REVIEW_WORK_OUT_OF_SCOPE:checklistResults');
   }
 }
 

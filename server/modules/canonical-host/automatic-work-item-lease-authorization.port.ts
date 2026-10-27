@@ -31,17 +31,23 @@ export interface AutomaticWorkItemLeaseAuthorizationPort {
     tenantId: string;
     principalId: string;
     workItemId: string;
+    /** Trusted executor configuration, never caller input. */
+    expectedIntakeRequestId?: string;
   }): Promise<AuthorizedSuccessorReviewDelegation>;
   authorizeSuccessorOverall?(input: {
     tenantId: string;
     principalId: string;
     workItemId: string;
+    /** Trusted executor configuration, never caller input. */
+    expectedIntakeRequestId?: string;
     reviewTurnRef: string;
   }): Promise<AuthorizedSuccessorReviewDelegation>;
   authorizeReviewDelegation?(input: {
     tenantId: string;
     principalId: string;
     workItemId: string;
+    /** Trusted executor configuration, never caller input. */
+    expectedIntakeRequestId?: string;
     reviewConversationRef: string;
     requestId: string;
   }): Promise<AuthorizedSuccessorReviewDelegation>;
@@ -49,6 +55,8 @@ export interface AutomaticWorkItemLeaseAuthorizationPort {
     tenantId: string;
     principalId: string;
     workItemId: string;
+    /** Trusted executor configuration, never caller input. */
+    expectedIntakeRequestId?: string;
     attemptRef: string;
   }): Promise<AuthorizedSuccessorReviewDelegation | null>;
   authorizeActiveLease(

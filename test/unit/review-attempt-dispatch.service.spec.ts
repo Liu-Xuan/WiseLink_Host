@@ -205,3 +205,18 @@ function setup() {
     row: () => row,
   };
 }
+
+it('checks an existing sealed executor contract before claiming, without rebuilding or rewriting it', async () => {
+  const harness = setup();
+  const buildInput = jest.fn(async () => ({ modelInput: { question: 'Original sealed input' }, sourceRefs: [] }));
+  await harness.service.prepareAndClaim({ ...request, buildInput });
+  const original = canonicalJson(harness.row());
+  const claims = harness.lifecycle.reserveAndClaim.mock.calls.length;
+  const assertTask = jest.fn(() => { throw new Error('REVIEW_TASK_EXECUTION_POLICY_INVALID'); });
+  await expect(harness.service.prepareAndClaim({ ...request, buildInput, assertTask }))
+    .rejects.toThrow('REVIEW_TASK_EXECUTION_POLICY_INVALID');
+  expect(assertTask).toHaveBeenCalledTimes(1);
+  expect(buildInput).toHaveBeenCalledTimes(1);
+  expect(harness.lifecycle.reserveAndClaim).toHaveBeenCalledTimes(claims);
+  expect(canonicalJson(harness.row())).toBe(original);
+});

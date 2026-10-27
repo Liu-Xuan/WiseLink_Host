@@ -1,4 +1,4 @@
-import { ConfiguredDevelopmentCanonicalServiceScopeAuthorization, isOpenClawAutomaticReviewConfigured } from '../../server/modules/canonical-host/configured-development-service-scope.authorization';
+import { ConfiguredDevelopmentCanonicalServiceScopeAuthorization, isOpenClawAutomaticReviewConfigured, isOpenClawSuccessorReviewConfigured } from '../../server/modules/canonical-host/configured-development-service-scope.authorization';
 
 const KEYS = [
   'WL_OPENCLAW_SERVICE_SCOPE_ENABLED',
@@ -49,7 +49,7 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
     // An idle queue probe must not require a Review conversation that does not exist yet.
     await expect(service.authorizeOpenClawWorkItem(pending)).resolves.toMatchObject({workItemId:'WI-ftd'});
     await expect(service.authorizeOpenClawWorkItem({...pending,workItemId:'WI-other'}))
-      .rejects.toMatchObject({statusCode:404});
+      .rejects.toMatchObject({code:'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',statusCode:503});
     await expect(service.authorizeOpenClawAttempt({operation:'COMMIT_REVIEW',attemptRef:'AQ-1',workItemId:'WI-ftd'}))
       .rejects.toMatchObject({statusCode:404});
     process.env.WL_OPENCLAW_REVIEW_ADDITIONAL_CONVERSATION_BINDING=
@@ -186,7 +186,9 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
     process.env.WL_OPENCLAW_SERVICE_MATTER_IDS = JSON.stringify(['MAT-second']);
     await expect(service.authorizeOpenClawMatterAttempt({ operation: 'CLAIM', matterId: 'MAT-first', attemptRef: 'AQ-one' }))
       .rejects.toMatchObject({ statusCode: 404 });
-    await expect(service.authorizeDocumentWork({ documentVersionId: 'DV-test' })).rejects.toMatchObject({ statusCode: 503 });
+    await expect(service.authorizeDocumentWork({ documentVersionId: 'DV-test' })).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND', statusCode: 404,
+    });
     await expect(service.authorizeWorkItemRead({ transport: 'READONLY_MCP', operation: 'READ_STATUS', workItemId: 'WI-test' }))
       .rejects.toMatchObject({ statusCode: 503 });
     delete process.env.WL_OPENCLAW_SERVICE_MATTER_ACTOR_ID;
@@ -479,3 +481,45 @@ function configure(): void {
   process.env.WL_OPENCLAW_DEVELOPMENT_RUN_TOKEN =
     '0f8fad5b-d9cb-469f-a165-70867728950e';
 }
+
+
+it('CODEX successor authorization binds configured intake separately on every actual Review/Overall entry', async () => {
+  const config = { WL_MODEL_EXECUTOR: 'CODEX', WL_CODEX_RUNTIME_APP_ID: 'app_syntheticcodex',
+    WL_CODEX_SERVICE_SCOPE_ENABLED: '1', WL_CODEX_GATEWAY_AUTH_MODE: 'API_KEY', WL_CODEX_SERVICE_SCOPE_ENV: 'UAT',
+    WL_CODEX_SERVICE_PRINCIPAL_ID: 'service:codex-synthetic', WL_CODEX_SERVICE_TENANT_ID: 'tenant-1',
+    WL_CODEX_SERVICE_WORK_ITEM_ID: 'WI-synthetic', WL_CODEX_SERVICE_REQUEST_ID: 'intake-original',
+    WL_CODEX_SERVICE_AUTO_QUEUE_ENABLED: '1', WL_CODEX_SERVICE_SUCCESSOR_REVIEW_ENABLED: '1' };
+  const before = Object.fromEntries(Object.keys(config).map(key => [key, process.env[key]]));
+  Object.assign(process.env, config);
+  const delegation = { tenantId: 'tenant-1', principalId: 'service:codex-synthetic', workItemId: 'WI-synthetic',
+    actorUserId: 'actor-1', documentId: 'DOC-synthetic', documentVersionId: 'DV-synthetic', sourceArtifactId: 'ART-synthetic',
+    sourceFileSha256: 'a'.repeat(64), sourceByteLength: 1, reviewConversationRef: 'RC-synthetic', reviewTurnRef: 'RT-synthetic',
+    requestId: 'review-independent', inputRevision: 7, overallRequested: true };
+  const adapter = { authorizeReviewDelegation: jest.fn().mockResolvedValue(delegation),
+    authorizePendingReview: jest.fn().mockResolvedValue(delegation), authorizeSuccessorOverall: jest.fn().mockResolvedValue(delegation),
+    authorizeReviewAttempt: jest.fn().mockResolvedValue(delegation), authorizeActiveLease: jest.fn() };
+  const service = new ConfiguredDevelopmentCanonicalServiceScopeAuthorization(adapter);
+  try {
+    expect(isOpenClawAutomaticReviewConfigured({ tenantId: 'tenant-1', workItemId: 'WI-synthetic' })).toBe(false);
+    expect(isOpenClawSuccessorReviewConfigured('tenant-1', 'WI-synthetic')).toBe(true);
+    expect(isOpenClawSuccessorReviewConfigured('tenant-1', 'WI-other')).toBe(false);
+    await service.authorizeOpenClawReview({ operation: 'BEGIN_REVIEW', workItemId: 'WI-synthetic',
+      reviewConversationRef: 'RC-synthetic', requestId: 'review-independent' });
+    await service.authorizeOpenClawWorkItem({ operation: 'GET_PENDING_REVIEW_TURN', workItemId: 'WI-synthetic' });
+    await service.authorizeOpenClawWorkItem({ operation: 'BEGIN_OVERALL', workItemId: 'WI-synthetic', successorReviewTurnRef: 'RT-synthetic' });
+    for (const operation of ['READ_STATUS', 'READ_DEEP_LINK'] as const)
+      await service.authorizeWorkItemRead({ transport: 'READONLY_MCP', operation, workItemId: 'WI-synthetic', successorReviewTurnRef: 'RT-synthetic' });
+    for (const operation of ['COMMIT_REVIEW', 'GET_REVIEW_CONTEXT', 'READ_REVIEW_SOURCE_REFS', 'COMMIT_OVERALL',
+      'RESUME_OVERALL', 'GET_ACTION_ATTEMPT_STATUS', 'HEARTBEAT_ATTEMPT'] as const)
+      await service.authorizeOpenClawAttempt({ operation, workItemId: 'WI-synthetic', attemptRef: 'AQ-synthetic' });
+    for (const callback of [adapter.authorizeReviewDelegation, adapter.authorizePendingReview,
+      adapter.authorizeSuccessorOverall, adapter.authorizeReviewAttempt])
+      for (const [input] of callback.mock.calls) expect(input).toMatchObject({ workItemId: 'WI-synthetic', expectedIntakeRequestId: 'intake-original' });
+    expect(adapter.authorizeReviewDelegation).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'review-independent' }));
+    await expect(service.authorizeOpenClawReview({ operation: 'BEGIN_REVIEW', workItemId: 'WI-other',
+      reviewConversationRef: 'RC-synthetic', requestId: 'review-independent' })).rejects.toThrow('CANONICAL_CODEX_REQUEST_SCOPE_MISMATCH');
+    expect(adapter.authorizeActiveLease).not.toHaveBeenCalled();
+  } finally {
+    for (const key of Object.keys(config)) { if (before[key] === undefined) delete process.env[key]; else process.env[key] = before[key]; }
+  }
+});

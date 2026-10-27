@@ -1,3 +1,4 @@
+export type { CodexReviewExecutionPolicyV1, ValidateReviewTurnCandidateRequest, ValidateReviewTurnCandidateResult, ReadReviewSavedWorkRequest, ReadReviewSavedWorkResult } from './review-turn-validation.interface';
 export type { JobAidChecklistBinding, JobAidChecklistResult, JobAidMethodUsage, JobAidChecklistFeedback } from './jobaid-checklist.interface';
 export type {
   JobAidProgramMaterialsRead,
@@ -180,7 +181,7 @@ export interface ReviewTurnAssistantCandidate {
   warnings: string[];
   actionAttemptRef: string;
   provenance: {
-    runtimeAppId: 'app_17c3zn24kv2';
+    runtimeAppId: string;
     profileRef: 'wiselink-engineering';
     modelVersion: string;
     promptVersion: string;

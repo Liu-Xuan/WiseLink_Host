@@ -438,9 +438,24 @@ export class ReviewConversationRepository {
   async loadSuccessorOverallAuthorizationMetadata(input: {
     reviewTurnRef:string;tenantId:string;actorId:string;workItemId:string;
   }) {
-    const [pointer]=await this.db.select({reviewConversationId:reviewTurn.reviewConversationId})
-      .from(reviewTurn).where(and(eq(reviewTurn.reviewTurnId,input.reviewTurnRef),
-        eq(reviewTurn.tenantId,input.tenantId),eq(reviewTurn.actorId,input.actorId),eq(reviewTurn.workItemId,input.workItemId))).limit(1);
+    assertOpenClawActorContext(input.actorId);
+    // Discovery runs under the service SQL identity. Bind the already-authorized
+    // actor in this same statement, just as the metadata read below does; a
+    // separate SET or reliance on a previous pooled connection is insufficient.
+    const [pointer] = await this.db.execute<{ reviewConversationId: string }>(sql`
+      WITH actor_context AS MATERIALIZED (
+        SELECT set_config('app.user_id', ${input.actorId}, TRUE) AS actor_id
+      )
+      SELECT selected.review_conversation_id AS "reviewConversationId"
+      FROM actor_context CROSS JOIN LATERAL (
+        SELECT candidate_turn.review_conversation_id
+        FROM review_turn AS candidate_turn
+        WHERE candidate_turn.review_turn_id = ${input.reviewTurnRef}
+          AND candidate_turn.tenant_id = ${input.tenantId}
+          AND candidate_turn.actor_id = actor_context.actor_id
+          AND candidate_turn.work_item_id = ${input.workItemId}
+        LIMIT 1
+      ) selected`);
     if(!pointer) return null;
     return this.loadActorBoundOpenClawTurn({...input,reviewConversationId:pointer.reviewConversationId,
       reviewTurnId:input.reviewTurnRef},this.db,true);

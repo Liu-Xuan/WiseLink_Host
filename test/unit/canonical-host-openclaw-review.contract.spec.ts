@@ -1,3 +1,5 @@
+import { newReviewExecutionPolicy, parseReviewTurnCandidatePayload, assertCurrentReviewExecutionPolicy } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
+import { ReviewCandidateValidationError } from '../../server/modules/canonical-host/review-candidate-validation';
 import {
   sealResultEnvelope,
   sealTaskEnvelope,
@@ -516,3 +518,45 @@ function reviewResult(
     errorDetail: null,
   });
 }
+
+
+describe('versioned CODEX Review policy and shared pure payload validation', () => {
+  it('seals exactly seven fields, rejects c2 candidates and mixed provenance without rewriting Hosted seals', () => {
+    const keys = ['WL_MODEL_EXECUTOR', 'WL_CODEX_RUNTIME_APP_ID'];
+    const before = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+    try {
+      process.env.WL_MODEL_EXECUTOR = 'CODEX';
+      process.env.WL_CODEX_RUNTIME_APP_ID = 'app_syntheticcodex';
+      const task = reviewTask();
+      const original = JSON.stringify(task);
+      expect(() => assertCurrentReviewExecutionPolicy(task)).toThrow('REVIEW_TASK_EXECUTION_POLICY_INVALID');
+      expect(JSON.stringify(task)).toBe(original);
+      task.executionPolicy = newReviewExecutionPolicy(REVIEW_TOOL_POLICY_REF);
+      expect(Object.keys(task.executionPolicy).sort()).toEqual(
+        ['schemaVersion', 'executor', 'runtimeAppId', 'profileRef', 'modelPolicyRef', 'skillPolicyRef', 'toolPolicyRef'].sort());
+      expect(parseReviewTurnTaskContract(task).executionPolicy).toEqual(task.executionPolicy);
+      expect(() => parseReviewTurnTaskContract({ ...task, executionPolicy: { ...task.executionPolicy, extra: true } })).toThrow();
+      const candidate = JSON.parse(reviewResult(task).modelOutput!);
+      candidate.runtime.runtimeAppId = 'app_syntheticcodex';
+      candidate.schemaVersion = 'wiselink.3_1.review_turn_candidate.v1.c3';
+      expect(parseReviewTurnCandidatePayload(JSON.stringify(candidate), task).runtime.runtimeAppId).toBe('app_syntheticcodex');
+      expect(() => parseReviewTurnCandidatePayload(JSON.stringify({ ...candidate,
+        schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c2' }), task)).toThrow('REVIEW_CODEX_CANDIDATE_VERSION_REQUIRED');
+      expect(() => parseReviewTurnCandidatePayload(JSON.stringify({ ...candidate,
+        runtime: { ...candidate.runtime, runtimeAppId: REVIEW_RUNTIME_APP_ID } }), task)).toThrow('REVIEW_RESULT_PROVENANCE_INVALID');
+      task.context.purpose = 'CHAT';
+      expect(parseReviewTurnCandidatePayload(JSON.stringify({ ...candidate, responseType: 'CLARIFYING_QUESTION' }), task)).toBeDefined();
+      try {
+        parseReviewTurnCandidatePayload(JSON.stringify({ ...candidate, responseType: 'REVIEW_ACTION_DRAFT' }), task);
+        throw new Error('Expected CHAT mutation rejection');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ReviewCandidateValidationError);
+        expect((error as ReviewCandidateValidationError).fieldPaths).toContain('/responseType');
+      }
+      expect(() => newReviewExecutionPolicy('wiselink-openclaw-engineering-assessment@1.2.0#interactive-matter-review-c4'))
+        .toThrow('CANONICAL_CODEX_OPERATION_NOT_SUPPORTED');
+    } finally {
+      for (const key of keys) { if (before[key] === undefined) delete process.env[key]; else process.env[key] = before[key]; }
+    }
+  });
+});

@@ -88,6 +88,13 @@ export function assertCanonicalHostOpenClawRuntimePolicy(
   task: OpenClawTaskEnvelope,
 ): void {
   const policy = CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY;
+  if (task.taskType === 'OPENCLAW_INTERACTIVE_REVIEW') {
+    const executionPolicy = task.modelInput.executionPolicy as { schemaVersion?: unknown; executor?: unknown } | undefined;
+    const executor = executionPolicy?.schemaVersion === 'wiselink.3_1.review_execution.v1' ? 'CODEX' : 'HOSTED';
+    if ((result.toolVersions['model-executor'] ?? 'HOSTED') !== executor)
+      throw policyError('CANONICAL_RESULT_EXECUTOR_MISMATCH');
+  }
+
   if (isSavedWorkReconciliationResult(result)) {
     const marker = task.modelInput.savedWorkReconciliation as { executionKind?: unknown; modelRequests?: unknown; workRevisionRef?: unknown } | undefined;
     let output: unknown;

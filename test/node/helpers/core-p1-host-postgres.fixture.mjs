@@ -857,6 +857,10 @@ export async function startCoreP1HostFixture({
               args.attemptRef,
               args.requestId,
               args.workItemId,
+              args.leaseToken !== undefined && args.leaseGeneration !== undefined
+                ? { leaseToken: args.leaseToken, leaseGeneration: args.leaseGeneration }
+                : undefined,
+              args.workRevisionRef,
             );
           case 'read_assessment_sources':
             return problem.readSources(args);
@@ -1006,6 +1010,7 @@ export async function startCoreP1HostFixture({
       modelSettingsRepository,
       problem,
       reviewService,
+      overall,
       dispatch,
       serviceScope,
       tenantId,
@@ -1101,6 +1106,7 @@ export async function startCoreP1HostFixture({
         text,
         targetIssueKeys,
         purpose = 'CHAT',
+        executionRequested = false, overallRequested = false, requestedModel,
       }) {
         return new Promise((resolve, reject) =>
           sqlContext.use(
@@ -1131,7 +1137,8 @@ export async function startCoreP1HostFixture({
                     userMessage: text,
                     currentRevision: current.revision,
                     targetIssueKeys,
-                    purpose,
+                    purpose, executionRequested, overallRequested, requestedModel,
+                    ...(purpose === 'UPDATE_ASSESSMENT' ? { expectedInputRevision: current.revision } : {}),
                   });
                   return turn;
                 })

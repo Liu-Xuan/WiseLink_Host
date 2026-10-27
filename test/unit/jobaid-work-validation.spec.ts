@@ -232,6 +232,21 @@ it('registers a strictly scoped read-only MCP preview with no model-supplied aut
     for (const field of ['tenantId', 'actorUserId', 'sourceCatalog', 'deliveredSourceRefs', 'requestId'])
       expect(definition?.inputSchema.safeParse({ ...h.request, [field]: 'untrusted' }).success).toBe(false);
     expect(definition?.inputSchema.safeParse({ ...h.request, workItemId: undefined }).success).toBe(false);
+    const review = registered.get('validate_review_turn_candidate')!;
+    const saved = registered.get('read_review_saved_work')!;
+    expect(review.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true });
+    expect(saved.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true });
+    const preview = { attemptRef: 'AQ-review', workItemId: 'WI-review', leaseToken: h.request.leaseToken,
+      leaseGeneration: 1, candidateJson: ' {} ' };
+    expect(review.inputSchema.safeParse(preview).success).toBe(true);
+    expect(review.inputSchema.safeParse({ ...preview, workJson: '{}' }).success).toBe(false);
+    expect(review.inputSchema.safeParse({ ...preview, actorUserId: 'actor-forged' }).success).toBe(false);
+    expect(review.inputSchema.safeParse({ ...preview, leaseGeneration: 0 }).success).toBe(false);
+    const exact = { attemptRef: 'AQ-review', workItemId: 'WI-review', workRevisionRef: 'AWR-exact' };
+    expect(saved.inputSchema.safeParse(exact).success).toBe(true);
+    expect(saved.inputSchema.safeParse({ ...exact, leaseToken: h.request.leaseToken }).success).toBe(false);
+    expect(saved.inputSchema.safeParse({ ...exact, workRevisionRef: undefined }).success).toBe(false);
+
   } finally { register.mockRestore(); }
 });
 

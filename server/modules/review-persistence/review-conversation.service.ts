@@ -19,6 +19,7 @@ import { CanonicalModelSettingsService } from '../model-settings/canonical-model
 import { taskModelSelection } from '../model-settings/canonical-model-catalog';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
+import { canonicalCodexWorkItemScope } from '../canonical-host/canonical-host-executor-policy';
 import {
   isOpenClawAutomaticReviewConfigured,
   isOpenClawSuccessorReviewConfigured,
@@ -622,16 +623,20 @@ export class ReviewConversationService {
   ): Promise<boolean> {
     if (
       matter ||
-      !isOpenClawSuccessorReviewConfigured(conversation.tenantId) ||
+      !isOpenClawSuccessorReviewConfigured(conversation.tenantId, conversation.workItemId) ||
       !this.workItems
     )
       return false;
-    return this.workItems.hasReadableAutoProcessingCompletion({
+    const input = {
       tenantId: conversation.tenantId,
       actorUserId: conversation.actorId,
       workItemId: conversation.workItemId,
       revision,
-    });
+    };
+    const exact = canonicalCodexWorkItemScope();
+    if (!exact) return this.workItems.hasReadableAutoProcessingCompletion(input);
+    const completion = await this.workItems.readReadableAutoProcessingCompletion(input);
+    return completion !== null && completion.requestId === exact.requestId;
   }
 
   private async authorize(

@@ -23,7 +23,7 @@ import type {
   ActionAttemptRow,
   ReserveAndClaimResult,
 } from './action-attempt.types';
-import type { ActionEnvelopeArtifactRef } from './action-attempt-envelope.types';
+import type { ActionEnvelopeArtifactRef, OpenClawTaskEnvelope } from './action-attempt-envelope.types';
 
 const REVIEW_TASK_TYPE = 'OPENCLAW_INTERACTIVE_REVIEW';
 export const REVIEW_ACTIVE_EXECUTION_STATUSES = [
@@ -157,6 +157,8 @@ export class ReviewAttemptDispatchService {
       documentVersionId: string;
       executionModel?: CanonicalExecutionModelSelection;
       leaseOwner: string;
+      /** Validate the sealed executor contract before any existing task is claimed. */
+      assertTask?: (task: OpenClawTaskEnvelope) => void;
       buildInput(identity: {attemptId: string; operationRef: string; createdAt: Date}): Promise<{
         modelInput: Record<string, unknown>;
         allowedConnectors?: string[];
@@ -253,6 +255,7 @@ export class ReviewAttemptDispatchService {
     if (!row?.taskEnvelopeJson)
       throw dispatchConflict('REVIEW_INPUT_PREPARATION_INCOMPLETE');
     const task = parseTaskEnvelope(row.taskEnvelopeJson);
+    input.assertTask?.(task);
     return this.lifecycle.reserveAndClaim({
       workItemId: input.workItemId,
       taskType: REVIEW_TASK_TYPE,

@@ -625,3 +625,15 @@ describe('successor Review exact delegation', () => {
     await expect(state.adapter.authorizeReviewAttempt(input)).rejects.toMatchObject({ statusCode: 404 });
   });
 });
+
+
+it('rejects a trusted intake mismatch before reading Review prose or sources and retains original grant identity', async () => {
+  const state = successorFixture();
+  await expect(state.adapter.authorizeReviewDelegation({ ...successorInput, expectedIntakeRequestId: 'other-intake' }))
+    .rejects.toMatchObject({ statusCode: 404 });
+  expect(state.conversations.loadOpenClawTurnAuthorizationMetadata).not.toHaveBeenCalled();
+  expect(state.sourceAuthorization.authorizeSourceRead).not.toHaveBeenCalled();
+  await expect(state.adapter.authorizeReviewDelegation({ ...successorInput, expectedIntakeRequestId: REQUEST_ID }))
+    .resolves.toMatchObject({ requestId: 'REQ-review', actorUserId: ACTOR_ID });
+  expect(state.sourceAuthorization.authorizeSourceRead).toHaveBeenCalledWith(expect.objectContaining({ requestId: REQUEST_ID }));
+});

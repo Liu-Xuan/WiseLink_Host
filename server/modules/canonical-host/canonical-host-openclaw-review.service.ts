@@ -1,3 +1,10 @@
+import { createHash } from 'node:crypto';
+import type { ValidateReviewTurnCandidateRequest, ValidateReviewTurnCandidateResult,
+  ReadReviewSavedWorkRequest, ReadReviewSavedWorkResult, ReviewValidationBinding,
+  ReviewValidationViolation } from '@shared/review-turn-validation.interface';
+import { JobAidSemanticValidationError } from './jobaid-semantic-content';
+import { jobAidChecklistFeedback } from './jobaid-checklist-feedback';
+import { ReviewCandidateValidationError } from './review-candidate-validation';
 import type { TdmsReviewCaller } from '../tdms-source/tdms-review-delegation';
 import {
   DialogueAssessmentRepository,
@@ -47,10 +54,13 @@ import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.reposito
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { CanonicalHostCommonContextService } from './canonical-host-common-context.service';
-import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
+import { preflightCanonicalHostOpenClawResult, parseCanonicalHostOpenClawAttemptTask, parseCanonicalHostOpenClawStoredResult } from './canonical-host-openclaw-runtime-policy';
 import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
 import {
+  newReviewExecutionPolicy,
+  assertCurrentReviewExecutionPolicy,
   parseReviewTurnCandidateContract,
+  parseReviewTurnCandidatePayload,
   parseReviewTurnTaskContract,
   reviewJobAidTargetIssueKeys,
   REVIEW_ALLOWED_OPERATIONS,
@@ -269,6 +279,7 @@ export class CanonicalHostOpenClawReviewService {
             executionModel: binding.turn.requestedModel,
             leaseOwner: scope.principalId,
             buildInput,
+            assertTask: (task) => assertCurrentReviewExecutionPolicy(parseReviewTurnTaskContract(task.modelInput)),
           })
         : await this.beginLegacyTurn(
             binding,
@@ -276,6 +287,7 @@ export class CanonicalHostOpenClawReviewService {
             scopedWorkItem.projection,
             buildInput,
           );
+    assertCurrentReviewExecutionPolicy(parseReviewTurnTaskContract(claim.task.modelInput));
     return {
       attemptRef: claim.attemptRef,
       status: claim.status,
@@ -440,27 +452,8 @@ export class CanonicalHostOpenClawReviewService {
       : this.aily.start(actor, attemptRef, input.requestKey, input.query);
   }
 
-  async commit(
-    attemptRef: string,
-    leaseToken: string,
-    leaseGeneration: number,
-    resultEnvelope: unknown,
-    workItemId?: string,
-  ): Promise<CommitReviewTurnResult | ActionAttemptTerminalProjection> {
-    const authorized = await this.requiredReviewAttempt(
-      attemptRef,
-      'COMMIT_REVIEW',
-      true,
-      workItemId,
-    );
-    const { result } = preflightCanonicalHostOpenClawResult({
-      row: authorized.row,
-      result: resultEnvelope,
-    });
-    const candidate = parseReviewTurnCandidateContract({
-      result,
-      task: authorized.contract,
-    });
+  /** Shared with final commit before its first write boundary. */
+  private prepareReviewCandidate(authorized: AuthorizedReviewAttempt, candidate: ReviewTurnCandidateContract) {
     if (
       authorized.turn.purpose === 'CHAT' &&
       (candidate.reviewActionDraft ||
@@ -469,7 +462,8 @@ export class CanonicalHostOpenClawReviewService {
         candidate.affectedItemIds.length ||
         candidate.responseType === 'RESYNTHESIS_RESULT')
     )
-      throw reviewConflict('REVIEW_CHAT_ASSESSMENT_MUTATION_FORBIDDEN');
+      throw new ReviewCandidateValidationError('REVIEW_CHAT_ASSESSMENT_MUTATION_FORBIDDEN',
+        ['/responseType', '/jobAidWorkingDelta', '/reviewActionDraft', '/affectedItemIds'], undefined, 409);
     const matterContext = authorized.contract.matterContext;
     const readRefs = resolvedReviewSourceRefs(authorized.row.reviewActivityJson);
     const decision=authorized.contract.jobAidContext ? this.jobAid!.reviewDecision(
@@ -483,7 +477,8 @@ export class CanonicalHostOpenClawReviewService {
         (ref) => !readRefs.has(ref),
       )
     )
-      throw reviewConflict('REVIEW_MATTER_CITED_SOURCE_NOT_READ');
+      throw new ReviewCandidateValidationError('REVIEW_MATTER_CITED_SOURCE_NOT_READ',
+        ['/sourceRefs', '/candidateEvidenceRefs'], undefined, 409);
     const unchangedUpdate = authorized.contract.jobAidContext &&
       authorized.turn.purpose === 'UPDATE_ASSESSMENT' && candidate.jobAidWorkingDelta === null;
     if (unchangedUpdate && !authorized.turn.assistantCandidate) {
@@ -494,7 +489,7 @@ export class CanonicalHostOpenClawReviewService {
         item.reviewTurnId === authorized.contract.reviewTurnRef,
       );
       if (requiredContributions.some((item) => !readRefs.has(item.evidenceRef)))
-        throw reviewConflict('REVIEW_JOBAID_CONTRIBUTION_NOT_READ');
+        throw new ReviewCandidateValidationError('REVIEW_JOBAID_CONTRIBUTION_NOT_READ', ['/jobAidWorkingDelta'], undefined, 409);
     }
     // This set belongs to this decision, before prepareCommit seals its result.
     // It must never be rebuilt from activities appended after that boundary.
@@ -518,6 +513,110 @@ export class CanonicalHostOpenClawReviewService {
         reviewJobAidTargetIssueKeys(authorized.contract),
         decision?.catalog,
       );
+    return { decisionReadRefs, matterCommand };
+  }
+
+  async validateCandidate(input: ValidateReviewTurnCandidateRequest): Promise<ValidateReviewTurnCandidateResult> {
+    const authorized = await this.requiredReviewAttempt(input.attemptRef, 'COMMIT_REVIEW', true, input.workItemId);
+    if (authorized.contract.matterContext) throw reviewConflict('REVIEW_VALIDATION_MODE_NOT_SUPPORTED');
+    const fence = { principalId: authorized.scope.principalId,
+      leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration };
+    assertReviewValidationFence(authorized.row, fence);
+    if (authorized.contract.jobAidContext) await this.jobAid!.reviewValidationSnapshot({
+      ...authorized, task: authorized.contract.jobAidContext, ...input });
+    let violations: ReviewValidationViolation[] = [];
+    let semanticError: JobAidSemanticValidationError | undefined;
+    let omittedViolationCount = 0;
+    try {
+      const candidate = parseReviewTurnCandidatePayload(input.candidateJson, authorized.contract);
+      this.prepareReviewCandidate(authorized, candidate);
+    } catch (error) {
+      if (error instanceof ReviewCandidateValidationError) violations = [error.violation()];
+      else if (error instanceof JobAidSemanticValidationError) {
+        semanticError = error;
+        omittedViolationCount = error.omittedViolationCount;
+        violations = error.violations.map(violation => ({ code: violation.code,
+          fieldPaths: violation.fieldPaths.map(reviewWorkFieldPath), message: violation.message,
+          ...(violation.ruleId ? { ruleId: violation.ruleId } : {}),
+          ...(violation.itemId ? { itemId: violation.itemId } : {}),
+          disposition: 'BLOCK', retryability: 'REPAIRABLE', recoveryScope: 'CANDIDATE' }));
+      } else throw error;
+    }
+    // Revocation, new work, expiry or changed delivery supersede any candidate feedback.
+    const fresh = await this.requiredReviewAttempt(input.attemptRef, 'COMMIT_REVIEW', true, input.workItemId);
+    assertSameReviewValidationScope(authorized, fresh);
+    assertReviewValidationFence(fresh.row, fence);
+    if (fresh.contract.jobAidContext) await this.jobAid!.reviewValidationSnapshot({
+      ...fresh, task: fresh.contract.jobAidContext, ...input });
+    assertReviewValidationFence(fresh.row, fence);
+    const task = authorized.contract.jobAidContext;
+    const binding = task?.checklistBinding ?? task?.previousWork?.content.checklistBinding;
+    const checklist = binding ? jobAidChecklistFeedback({ checklistBinding: binding,
+      taskRef: input.attemptRef, taskBaselineHash: authorized.task.inputHash,
+      basedOnWorkItemRevision: authorized.task.baseRevision, workJson: input.candidateJson,
+      violations: (semanticError?.violations ?? []).map(violation => ({ ...violation,
+        fieldPath: violation.fieldPath ? '/jobAidWorkingDelta' + violation.fieldPath : undefined })) }) : undefined;
+    return { schemaVersion: 'wiselink.3_1.review_turn_validation.v1', checkPhase: 'PRECHECK',
+      status: violations.length ? 'REPAIR_REQUIRED' : 'VALID',
+      binding: { ...reviewValidationBinding(authorized), leaseGeneration: input.leaseGeneration,
+        basis: task ? { kind: 'JOBAID', workRevisionRef: task.previousWork?.workRevisionRef ?? null,
+          workRevision: task.modelInput.expectedWorkRevision } : { kind: 'CLASSIC' } },
+      candidateDigest: 'sha256:' + createHash('sha256').update(input.candidateJson, 'utf8').digest('hex'),
+      violations, omittedViolationCount,
+      ...(checklist ? { checklistFeedback: { contractVersion: checklist.contractVersion,
+        ruleset: checklist.ruleset, findings: checklist.findings,
+        semanticNotAssessedByHost: checklist.semanticNotAssessedByHost } } : {}),
+    };
+  }
+
+  async readSavedWork(input: ReadReviewSavedWorkRequest): Promise<ReadReviewSavedWorkResult> {
+    const authorized = await this.requiredReviewAttempt(input.attemptRef, 'COMMIT_REVIEW', true, input.workItemId);
+    const receipt = requiredSavedReviewReceipt(authorized, input.workRevisionRef);
+    const revision = await this.jobAid!.readSavedReviewWork({ row: authorized.row,
+      task: authorized.contract.jobAidContext!, workRevisionRef: input.workRevisionRef,
+      reviewCaller: authorized.reviewCaller });
+    if (revision.workRevisionRef !== receipt.workRevisionRef || revision.workRevision !== receipt.workRevision ||
+        revision.workItemId !== authorized.row.workItemId || revision.documentVersionId !== authorized.row.documentVersionId ||
+        revision.actionAttemptId !== authorized.row.attemptId || revision.basedOnWorkItemRevision !== authorized.row.baseRevision ||
+        revision.requestId !== `review-turn:${authorized.contract.reviewTurnRef}` ||
+        revision.previousWorkRevisionRef !== (authorized.contract.jobAidContext!.previousWork?.workRevisionRef ?? null))
+      throw reviewConflict('REVIEW_SAVED_WORK_READ_BINDING_MISMATCH');
+    const fresh = await this.requiredReviewAttempt(input.attemptRef, 'COMMIT_REVIEW', true, input.workItemId);
+    assertSameReviewValidationScope(authorized, fresh, false);
+    if (canonicalJson(requiredSavedReviewReceipt(fresh, input.workRevisionRef)) !== canonicalJson(receipt) ||
+        fresh.row.resultContentHash !== authorized.row.resultContentHash)
+      throw reviewConflict('REVIEW_SAVED_WORK_READ_BINDING_MISMATCH');
+    // Recheck complete saved evidence too, without manufacturing a READ journal entry.
+    const confirmed = await this.jobAid!.readSavedReviewWork({ row: fresh.row,
+      task: fresh.contract.jobAidContext!, workRevisionRef: input.workRevisionRef, reviewCaller: fresh.reviewCaller });
+    if (canonicalJson(confirmed) !== canonicalJson(revision))
+      throw reviewConflict('REVIEW_SAVED_WORK_READ_BINDING_MISMATCH');
+    return { schemaVersion: 'wiselink.3_1.review_saved_work_read.v1', executionStatus: 'SUCCEEDED',
+      binding: { ...reviewValidationBinding(authorized), resultContentHash: authorized.row.resultContentHash! }, revision };
+  }
+
+  async commit(
+    attemptRef: string,
+    leaseToken: string,
+    leaseGeneration: number,
+    resultEnvelope: unknown,
+    workItemId?: string,
+  ): Promise<CommitReviewTurnResult | ActionAttemptTerminalProjection> {
+    const authorized = await this.requiredReviewAttempt(
+      attemptRef,
+      'COMMIT_REVIEW',
+      true,
+      workItemId,
+    );
+    const { result } = preflightCanonicalHostOpenClawResult({
+      row: authorized.row,
+      result: resultEnvelope,
+    });
+    const candidate = parseReviewTurnCandidateContract({
+      result,
+      task: authorized.contract,
+    });
+    const { decisionReadRefs, matterCommand } = this.prepareReviewCandidate(authorized, candidate);
     assertReviewCommitFence({
       row: authorized.row,
       principalId: authorized.scope.principalId,
@@ -974,8 +1073,9 @@ export class CanonicalHostOpenClawReviewService {
     ) {
       throw reviewNotFound();
     }
-    const task = parseTaskEnvelope(row.taskEnvelopeJson);
+    const task = parseCanonicalHostOpenClawAttemptTask(row);
     const contract = parseReviewTurnTaskContract(task.modelInput);
+    assertCurrentReviewExecutionPolicy(contract);
     await this.assertCurrentConversationScope(
       scope,
       contract.reviewConversationRef,
@@ -1228,13 +1328,7 @@ export class CanonicalHostOpenClawReviewService {
         },
         aily,
       },
-      executionPolicy: {
-        runtimeAppId: REVIEW_RUNTIME_APP_ID,
-        profileRef: REVIEW_PROFILE_REF,
-        modelPolicyRef: REVIEW_MODEL_POLICY_REF,
-        skillPolicyRef: REVIEW_SKILL_POLICY_REF,
-        toolPolicyRef: REVIEW_TOOL_POLICY_REF,
-      },
+      executionPolicy: newReviewExecutionPolicy(REVIEW_TOOL_POLICY_REF),
     });
   }
 
@@ -1442,13 +1536,7 @@ export class CanonicalHostOpenClawReviewService {
       allowedAdoptedInputRefs,
       attachmentRefs: [...attachmentContext.attachmentRefs],
       context,
-      executionPolicy: {
-        runtimeAppId: REVIEW_RUNTIME_APP_ID,
-        profileRef: REVIEW_PROFILE_REF,
-        modelPolicyRef: REVIEW_MODEL_POLICY_REF,
-        skillPolicyRef: REVIEW_SKILL_POLICY_REF,
-        toolPolicyRef: REVIEW_TOOL_POLICY_REF,
-      },
+      executionPolicy: newReviewExecutionPolicy(REVIEW_TOOL_POLICY_REF),
     });
   }
 
@@ -1699,13 +1787,7 @@ export class CanonicalHostOpenClawReviewService {
           attachmentRefs: attachments.attachmentRefs,
         },
       },
-      executionPolicy: {
-        runtimeAppId: REVIEW_RUNTIME_APP_ID,
-        profileRef: REVIEW_PROFILE_REF,
-        modelPolicyRef: REVIEW_MODEL_POLICY_REF,
-        skillPolicyRef: REVIEW_SKILL_POLICY_REF,
-        toolPolicyRef: REVIEW_JOBAID_TOOL_POLICY_REF,
-      },
+      executionPolicy: newReviewExecutionPolicy(REVIEW_JOBAID_TOOL_POLICY_REF),
     });
   }
 
@@ -1926,13 +2008,7 @@ export class CanonicalHostOpenClawReviewService {
           })),
         },
       },
-      executionPolicy: {
-        runtimeAppId: REVIEW_RUNTIME_APP_ID,
-        profileRef: REVIEW_PROFILE_REF,
-        modelPolicyRef: REVIEW_MODEL_POLICY_REF,
-        skillPolicyRef: REVIEW_SKILL_POLICY_REF,
-        toolPolicyRef: REVIEW_MATTER_TOOL_POLICY_REF,
-      },
+      executionPolicy: newReviewExecutionPolicy(REVIEW_MATTER_TOOL_POLICY_REF),
     });
   }
 
@@ -2238,8 +2314,8 @@ function assistantCandidate(
     warnings: [...candidate.warnings],
     actionAttemptRef: attemptRef,
     provenance: {
-      runtimeAppId: REVIEW_RUNTIME_APP_ID,
-      profileRef: REVIEW_PROFILE_REF,
+      runtimeAppId: candidate.runtime.runtimeAppId,
+      profileRef: candidate.runtime.profileRef,
       modelVersion: result.modelVersion,
       promptVersion: result.promptVersion,
       skillVersion: result.skillVersion,
@@ -2406,4 +2482,51 @@ function reviewConflict(code: string): Error & {
   statusCode: number;
 } {
   return Object.assign(new Error(code), { code, statusCode: 409 });
+}
+
+function reviewValidationBinding(authorized: AuthorizedReviewAttempt): ReviewValidationBinding {
+  const { row, task, contract } = authorized;
+  return { attemptRef: task.operationRef, actionAttemptId: row.attemptId, workItemId: task.workItemId,
+    documentVersionId: task.documentVersionId, inputRevision: task.inputRevision, baseRevision: task.baseRevision,
+    reviewConversationRef: contract.reviewConversationRef, reviewTurnRef: contract.reviewTurnRef,
+    requestId: contract.requestId, taskInputHash: task.inputHash };
+}
+
+function assertReviewValidationFence(row: ActionAttemptRow,
+  fence: { principalId: string; leaseToken: string; leaseGeneration: number }): void {
+  if (row.status !== 'RUNNING') throw reviewConflict(`ACTION_ATTEMPT_ALREADY_${row.status}`);
+  if (!row.deadlineAt || !Number.isFinite(row.deadlineAt.getTime()))
+    throw reviewConflict('ACTION_ATTEMPT_DEADLINE_EXCEEDED');
+  assertReviewCommitFence({ row, ...fence });
+}
+
+function assertSameReviewValidationScope(before: AuthorizedReviewAttempt, after: AuthorizedReviewAttempt,
+  compareDelivery = true): void {
+  if (canonicalJson(reviewValidationBinding(before)) !== canonicalJson(reviewValidationBinding(after)) ||
+      before.scope.principalId !== after.scope.principalId || before.scope.appId !== after.scope.appId ||
+      before.scope.tenantId !== after.scope.tenantId || before.scope.authorizationFingerprint !== after.scope.authorizationFingerprint ||
+      before.row.actorUserId !== after.row.actorUserId ||
+      (compareDelivery && before.row.reviewActivityJson !== after.row.reviewActivityJson))
+    throw reviewConflict('REVIEW_VALIDATION_SCOPE_CHANGED');
+}
+
+function requiredSavedReviewReceipt(authorized: AuthorizedReviewAttempt, workRevisionRef: string) {
+  const { row, contract, turn } = authorized;
+  const candidate = turn.assistantCandidate;
+  const receipt = candidate?.jobAidWorkingUpdate;
+  if (row.status !== 'SUCCEEDED' || !contract.jobAidContext || turn.purpose !== 'UPDATE_ASSESSMENT' ||
+      !receipt || receipt.status !== 'APPLIED' || !receipt.workRevisionRef)
+    throw reviewConflict('REVIEW_SAVED_WORK_READ_NOT_AVAILABLE');
+  const result = parseCanonicalHostOpenClawStoredResult({ row, task: authorized.task });
+  const original = parseReviewTurnCandidateContract({ result, task: contract });
+  if (!original.jobAidWorkingDelta || candidate!.actionAttemptRef !== row.operationRef ||
+      candidate!.provenance.resultContentHash !== result.contentHash || receipt.workRevisionRef !== workRevisionRef ||
+      !Number.isSafeInteger(receipt.workRevision) || receipt.workRevision < 1)
+    throw reviewConflict('REVIEW_SAVED_WORK_READ_BINDING_MISMATCH');
+  return receipt;
+}
+
+function reviewWorkFieldPath(path: string): string {
+  return '/jobAidWorkingDelta' + path.replace(/^work/u, '')
+    .replace(/\[(\d+)\]/gu, '/$1').replace(/\./gu, '/');
 }

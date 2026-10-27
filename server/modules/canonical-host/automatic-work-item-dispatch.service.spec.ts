@@ -520,6 +520,74 @@ describe('AutomaticWorkItemDispatchService', () => {
     }
   });
 
+  it('CODEX exact cursor discovers the same saved successor without tenant pagination or document fallback', async () => {
+    const config = { WL_MODEL_EXECUTOR: 'CODEX', WL_CODEX_RUNTIME_APP_ID: 'app_syntheticcodex',
+      WL_CODEX_SERVICE_PRINCIPAL_ID: 'service:codex-synthetic', WL_CODEX_SERVICE_WORK_ITEM_ID: WORK_ITEM_ID,
+      WL_CODEX_SERVICE_REQUEST_ID: REQUEST_ID, WL_CODEX_SERVICE_AUTO_QUEUE_ENABLED: '1',
+      WL_CODEX_SERVICE_SUCCESSOR_REVIEW_ENABLED: '1' };
+    const previous = Object.fromEntries(Object.keys(config).map(key => [key, process.env[key]]));
+    Object.assign(process.env, config);
+    try {
+      const workItems = repositoryDouble([]);
+      workItems.listCompletedAutoProcessingReviewSubjects.mockResolvedValue([
+        { authorization: authorization({ status: 'COMPLETED' }), workItem: workItemRow() },
+      ] as never);
+      workItems.loadTenantScopedProjection.mockResolvedValue({
+        projection: { integratedAssessment: { overallSynthesis: {
+          basedOnJobAidWorkRevisionRef: 'JAWR-OLD',
+        } } },
+      } as never);
+      const conversations = {
+        loadPendingOpenClawTurn: jest.fn().mockResolvedValue(null),
+        listSuccessorOverallTurnBindings: jest.fn().mockResolvedValue([{ turn: {
+          reviewTurnId: 'RT-EXPLICIT', assistantCandidate: { jobAidWorkingUpdate: {
+            status: 'APPLIED', workRevisionRef: 'JAWR-NEW',
+          } },
+        } }]),
+      };
+      const jobAidWork = { latestForRuntime: jest.fn().mockResolvedValue({
+        workRevisionRef: 'JAWR-NEW', content: { roundCompletion: 'COMPLETE' },
+      }) };
+      const attempts = { readLatestByExactIdempotency: jest.fn().mockResolvedValue(null) };
+      const serviceScope = {
+        authorizeOpenClawAutoWorkItemQueue: jest.fn().mockResolvedValue({
+          principalId: 'service:codex-synthetic', appId: 'app_17bzc551rsg',
+          tenantId: TENANT_ID, authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+        }),
+        authorizeOpenClawWorkItem: jest.fn().mockResolvedValue({
+          principalId: 'service:codex-synthetic', tenantId: TENANT_ID, workItemId: WORK_ITEM_ID,
+        }),
+      };
+      const service = new AutomaticWorkItemDispatchService(
+        workItems as unknown as MiaodaWorkItemRepository,
+        sourceDouble() as unknown as MiaodaDocumentVersionSourceResolver,
+        serviceScope as unknown as CanonicalServiceScopeAuthorizationPort,
+        undefined, undefined, undefined,
+        conversations as unknown as ReviewConversationRepository,
+        jobAidWork as unknown as JobAidWorkRepository,
+        attempts as unknown as ActionAttemptRepository,
+      );
+      await expect(service.nextWorkItem({ reviewAfterWorkItemId: WORK_ITEM_ID })).resolves.toEqual({
+        status: 'OVERALL_PENDING', workItemId: WORK_ITEM_ID,
+        reviewTurnRef: 'RT-EXPLICIT', workRevisionRef: 'JAWR-NEW',
+        reviewAfterWorkItemId: WORK_ITEM_ID,
+      });
+      expect(serviceScope.authorizeOpenClawWorkItem).toHaveBeenCalledWith({
+        operation: 'BEGIN_OVERALL', workItemId: WORK_ITEM_ID,
+        successorReviewTurnRef: 'RT-EXPLICIT',
+      });
+      expect(workItems.listCompletedAutoProcessingReviewSubjects).toHaveBeenCalledWith({ tenantId: TENANT_ID,
+        workItemId: WORK_ITEM_ID, limit: 1 });
+      await expect(service.nextWorkItem({ reviewAfterWorkItemId: 'WI-other' })).rejects.toThrow('CANONICAL_CODEX_EXACT_SCOPE_REQUIRED');
+      // A valid wire cursor must still be rejected by the CODEX exact-WI boundary.
+      await expect(service.nextWorkItem({ documentAfterRef: 'acquisition:other' })).rejects.toThrow('CANONICAL_CODEX_EXACT_SCOPE_REQUIRED');
+      attempts.readLatestByExactIdempotency.mockResolvedValue({ status: 'FAILED' });
+      await expect(service.nextWorkItem({ reviewAfterWorkItemId: WORK_ITEM_ID })).resolves.toEqual({ status: 'IDLE' });
+    } finally {
+      for (const key of Object.keys(config)) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
+    }
+  });
+
   it('restricts expired-lease recovery to that exact WorkItem', async () => {
     const workItems = repositoryDouble([]);
     const other = candidate();

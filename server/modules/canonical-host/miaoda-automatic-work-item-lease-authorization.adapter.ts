@@ -38,6 +38,8 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
     tenantId: string;
     principalId: string;
     workItemId: string;
+    /** Trusted executor configuration, never caller input. */
+    expectedIntakeRequestId?: string;
   }) {
     const [binding] =
       await this.workItems.listCompletedAutoProcessingReviewSubjects({
@@ -65,6 +67,8 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
       tenantId: string;
       principalId: string;
       workItemId: string;
+      /** Trusted executor configuration, never caller input. */
+      expectedIntakeRequestId?: string;
       reviewConversationRef: string;
       requestId: string;
     },
@@ -86,6 +90,7 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
     if (!binding) throw workItemNotFound();
     const { authorization: grant, workItem: row } = binding;
     if (
+      (input.expectedIntakeRequestId !== undefined && grant.requestId !== input.expectedIntakeRequestId) ||
       grant.status !== 'COMPLETED' ||
       grant.grantKind !== 'MIAODA_CANONICAL_PARSE_REQUEST' ||
       grant.tenantId !== input.tenantId ||
@@ -217,6 +222,8 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
     tenantId: string;
     principalId: string;
     workItemId: string;
+    /** Trusted executor configuration, never caller input. */
+    expectedIntakeRequestId?: string;
     reviewTurnRef: string;
   }): Promise<AuthorizedSuccessorReviewDelegation> {
     const [subject] =
@@ -256,6 +263,8 @@ export class MiaodaAutomaticWorkItemLeaseAuthorizationAdapter implements Automat
     tenantId: string;
     principalId: string;
     workItemId: string;
+    /** Trusted executor configuration, never caller input. */
+    expectedIntakeRequestId?: string;
     attemptRef: string;
   }): Promise<AuthorizedSuccessorReviewDelegation | null> {
     if (!this.attempts) throw workItemNotFound();

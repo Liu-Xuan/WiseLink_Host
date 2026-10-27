@@ -2,6 +2,7 @@ import { ReviewConversationService } from '../../server/modules/review-persisten
 import { fixedModelSettings } from '../support/fixed-model-settings';
 import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
 import * as executorScope from '../../server/modules/canonical-host/configured-development-service-scope.authorization';
+import * as executorPolicy from '../../server/modules/canonical-host/canonical-host-executor-policy';
 
 const actor = {
   principalKind: 'FINAL_USER',
@@ -463,6 +464,7 @@ describe('ReviewConversationService session and ACL boundary', () => {
   });
 
   it('shows dynamic execution only for the current owner readable completion receipt', async () => {
+    jest.spyOn(executorPolicy, 'canonicalCodexWorkItemScope').mockReturnValue(null);
     jest
       .spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured')
       .mockReturnValue(false);
@@ -491,6 +493,66 @@ describe('ReviewConversationService session and ACL boundary', () => {
       workItemId: 'WI-1',
       revision: 7,
     });
+    expect(setup.workItems.readReadableAutoProcessingCompletion).not.toHaveBeenCalled();
+  });
+
+  it.each([null, 'intake-A'])('rejects CODEX availability and append for intake %s instead of B', async (requestId: string | null) => {
+    jest.spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(false);
+    jest.spyOn(executorScope, 'isOpenClawSuccessorReviewConfigured').mockReturnValue(true);
+    jest.spyOn(executorPolicy, 'canonicalCodexWorkItemScope').mockReturnValue({
+      workItemId: 'WI-1', requestId: 'intake-B',
+    });
+    const setup = makeService();
+    setup.objectAccess.freshRead.mockImplementation(async ({ action }) => ({ ...grant, action }));
+    setup.conversations.loadCurrent.mockResolvedValue({ conversation, turns: [] });
+    setup.conversations.loadById.mockResolvedValue({ conversation, turns: [] });
+    setup.workItems.hasReadableAutoProcessingCompletion.mockResolvedValue(true);
+    setup.workItems.readReadableAutoProcessingCompletion.mockResolvedValue(
+      requestId === null ? null : { requestId },
+    );
+    expect((await setup.service.current('WI-1', {} as never)).conversation
+      ?.automaticExecutionAvailable).toBe(false);
+    await expect(setup.service.appendTextTurn('WI-1', 'RC-1', {
+      requestId: 'review-request', userMessage: 'Update the candidate',
+      purpose: 'UPDATE_ASSESSMENT', executionMode: 'AUTOMATIC', expectedInputRevision: 7,
+    }, {} as never)).rejects.toMatchObject({
+      code: 'REVIEW_AUTOMATIC_EXECUTION_UNAVAILABLE', statusCode: 503,
+    });
+    expect(setup.workItems.readReadableAutoProcessingCompletion).toHaveBeenLastCalledWith({
+      tenantId: 'tenant-1', actorUserId: 'actor-1', workItemId: 'WI-1', revision: 7,
+    });
+    expect(setup.workItems.hasReadableAutoProcessingCompletion).not.toHaveBeenCalled();
+    expect(setup.conversations.appendTextTurn).not.toHaveBeenCalled();
+    expect(setup.attachments.ingest).not.toHaveBeenCalled();
+  });
+
+  it('permits CODEX availability and a new automatic turn for the exact readable intake', async () => {
+    jest.spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(false);
+    jest.spyOn(executorScope, 'isOpenClawSuccessorReviewConfigured').mockReturnValue(true);
+    jest.spyOn(executorPolicy, 'canonicalCodexWorkItemScope').mockReturnValue({
+      workItemId: 'WI-1', requestId: 'intake-B',
+    });
+    const setup = makeService();
+    setup.objectAccess.freshRead.mockImplementation(async ({ action }) => ({ ...grant, action }));
+    setup.conversations.loadCurrent.mockResolvedValue({ conversation, turns: [] });
+    setup.conversations.loadById
+      .mockResolvedValueOnce({ conversation, turns: [] })
+      .mockResolvedValueOnce({ conversation, turns: [turn] });
+    setup.conversations.appendTextTurn.mockResolvedValue({ turn, replayed: false });
+    setup.workItems.readReadableAutoProcessingCompletion.mockResolvedValue({ requestId: 'intake-B' });
+    expect((await setup.service.current('WI-1', {} as never)).conversation
+      ?.automaticExecutionAvailable).toBe(true);
+    await setup.service.appendTextTurn('WI-1', 'RC-1', {
+      requestId: 'request-1', userMessage: turn.userMessage,
+      purpose: 'UPDATE_ASSESSMENT', executionMode: 'AUTOMATIC', expectedInputRevision: 7,
+    }, {} as never);
+    expect(setup.conversations.appendTextTurn).toHaveBeenCalledWith(expect.objectContaining({
+      executionRequested: true,
+    }));
+    expect(setup.workItems.readReadableAutoProcessingCompletion).toHaveBeenLastCalledWith({
+      tenantId: 'tenant-1', actorUserId: 'actor-1', workItemId: 'WI-1', revision: 7,
+    });
+    expect(setup.workItems.hasReadableAutoProcessingCompletion).not.toHaveBeenCalled();
   });
 
   it('derives tenant, actor and revision only from session + fresh ACL', async () => {
@@ -966,6 +1028,7 @@ function makeService() {
   const models = fixedModelSettings();
   const workItems = {
     hasReadableAutoProcessingCompletion: jest.fn().mockResolvedValue(false),
+    readReadableAutoProcessingCompletion: jest.fn().mockResolvedValue(null),
   };
   return {
     service: new ReviewConversationService(

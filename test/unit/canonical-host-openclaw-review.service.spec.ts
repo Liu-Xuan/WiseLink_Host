@@ -27,6 +27,7 @@ import {
   parseReviewTurnTaskContract,
 } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 import { CanonicalHostOpenClawReviewService } from '../../server/modules/canonical-host/canonical-host-openclaw-review.service';
+import { CanonicalJobAidProblemService } from '../../server/modules/canonical-host/canonical-jobaid-problem.service';
 import { assertCurrentReviewAttemptScope } from '../../server/modules/canonical-host/canonical-host-openclaw-review-scope';
 import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
 import { CanonicalHostCommonContextService } from '../../server/modules/canonical-host/canonical-host-common-context.service';
@@ -2243,6 +2244,8 @@ async function c309ReviewHarness() {
   );
   const jobAid = {
     enabledForNewTasks: () => true,
+    // Use the production pure activity/catalog reader; never invent a delivered ref.
+    reviewDecision: jest.fn(CanonicalJobAidProblemService.prototype.reviewDecision),
     admitReviewSources: jest.fn(async () => undefined),
     assertReviewNativeInTransaction: jest.fn(async () => undefined),
     prepareReview: jest.fn(async (input: { evidence: AssessmentEvidence[] }) =>
@@ -2723,5 +2726,52 @@ describe('C309 scoped-0828 service commit', () => {
       f.h.executor.database,
     );
     expect(f.jobAid.assertReviewWorkUnchanged).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('shared Review no-write validation', () => {
+  it('uses final candidate bytes, shares commit rejection, and never writes activity or reservations', async () => {
+    const h = reviewHarness();
+    const claim = await h.service.begin('RC-1', 'request-1');
+    const result = h.result(claim.task, { 'wiselink-openclaw-engineering-assessment': '1.2.0' });
+    const request = { attemptRef: claim.attemptRef, workItemId: claim.task.workItemId,
+      leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration, candidateJson: result.modelOutput! };
+    const before = JSON.stringify(await h.attempts.readScoped());
+    const reserved = h.attempts.reserveAndClaim.mock.calls.length;
+    const valid = await h.service.validateCandidate(request);
+    expect(valid).toMatchObject({ schemaVersion: 'wiselink.3_1.review_turn_validation.v1', status: 'VALID',
+      binding: { requestId: 'request-1', basis: { kind: 'CLASSIC' } }, violations: [] });
+    const spaced = await h.service.validateCandidate({ ...request, candidateJson: ' ' + request.candidateJson });
+    expect(spaced.candidateDigest).not.toBe(valid.candidateDigest);
+    const candidate = JSON.parse(request.candidateJson);
+    const bad = { ...request, candidateJson: JSON.stringify({ ...candidate, answer: '' }) };
+    const repair = await h.service.validateCandidate(bad);
+    expect(repair.violations).toEqual([expect.objectContaining({ code: 'REVIEW_RESULT_ANSWER_REQUIRED', fieldPaths: ['/answer'] })]);
+    const { contentHash: _hash, ...fields } = result;
+    await expect(h.service.commit(claim.attemptRef, claim.leaseToken, claim.leaseGeneration,
+      sealResultEnvelope({ ...fields, modelOutput: bad.candidateJson }))).rejects.toThrow('REVIEW_RESULT_ANSWER_REQUIRED');
+    expect(JSON.stringify(await h.attempts.readScoped())).toBe(before);
+    expect(h.attempts.reserveAndClaim).toHaveBeenCalledTimes(reserved);
+    expect(h.attempts.prepareCommit).not.toHaveBeenCalled();
+    expect(h.conversations.persistOpenClawAssistantCandidate).not.toHaveBeenCalled();
+    expect(h.dispatch.recordEvidenceActivity).not.toHaveBeenCalled();
+    h.expireLease();
+    await expect(h.service.validateCandidate(bad)).rejects.toThrow('ACTION_ATTEMPT_LEASE_EXPIRED');
+  });
+
+  it('rejects changed authorization and COMMITTING even if candidate content is repairable', async () => {
+    const h = reviewHarness();
+    const claim = await h.service.begin('RC-1', 'request-1');
+    const request = { attemptRef: claim.attemptRef, workItemId: claim.task.workItemId,
+      leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration, candidateJson: '{}' };
+    h.serviceScope.authorizeOpenClawAttempt.mockResolvedValueOnce({ ...verifiedScope(), attemptRef: claim.attemptRef })
+      .mockResolvedValueOnce({ ...verifiedScope(), attemptRef: claim.attemptRef, authorizationFingerprint: 'changed' });
+    await expect(h.service.validateCandidate(request)).rejects.toThrow('REVIEW_VALIDATION_SCOPE_CHANGED');
+    h.markCommittingAndExpireLease();
+    await expect(h.service.validateCandidate(request)).rejects.toThrow('ACTION_ATTEMPT_ALREADY_COMMITTING');
+    await expect(h.service.readSavedWork({ attemptRef: claim.attemptRef, workItemId: claim.task.workItemId,
+      workRevisionRef: 'AWR-not-saved' })).rejects.toThrow('REVIEW_SAVED_WORK_READ_NOT_AVAILABLE');
+    expect(h.attempts.prepareCommit).not.toHaveBeenCalled();
   });
 });

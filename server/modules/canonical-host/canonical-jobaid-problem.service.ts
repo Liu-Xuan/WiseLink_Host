@@ -1414,6 +1414,59 @@ export class CanonicalJobAidProblemService {
     );
   }
 
+  /** The same SAVE locks and source predicates, with no read receipt or lease mutation. */
+  async reviewValidationSnapshot(input: { row: ActionAttemptRow; task: JobAidProblemTaskInput;
+    scope: CanonicalVerifiedServiceScope; reviewCaller?: TdmsReviewCaller;
+    leaseToken: string; leaseGeneration: number }) {
+    const { row, task, scope, reviewCaller } = input;
+    this.assertReviewCaller(task, reviewCaller);
+    const decision = this.reviewDecision(task, row.reviewActivityJson);
+    const snapshot = await this.work.readValidationSnapshot({
+      row, actorUserId: task.actorUserId, sourceBindings: task.sourceBindings, reviewCaller,
+      fence: { principalId: scope.principalId, leaseToken: input.leaseToken,
+        leaseGeneration: input.leaseGeneration, automaticLeaseRequired: false },
+      expectedWorkRevision: task.modelInput.expectedWorkRevision,
+      expectedPreviousWorkRevisionRef: task.previousWork?.workRevisionRef ?? null,
+      assertNativeAuthorized: async (database) => {
+        await this.assertReviewNativeInTransaction(task, reviewCaller, row.tenantId, database, decision.evidence);
+        const assertNative = reviewCaller ? (evidence: AssessmentEvidence[]) =>
+          this.assertReviewNativeInTransaction(task, reviewCaller, row.tenantId, database,
+            [...evidence, ...decision.evidence]) : undefined;
+        await this.assertEvidenceOwned(decision.catalog, row.tenantId, task.actorUserId,
+          row.workItemId, database, assertNative);
+        await this.assertSourceStatementReferences(decision.catalog,
+          { tenantId: row.tenantId, actorUserId: task.actorUserId }, database);
+      },
+    });
+    if (canonicalJson(snapshot.previous) !== canonicalJson(task.previousWork))
+      throw new Error('JOBAID_PROGRAM_BASELINE_READ_CHANGED');
+    // The snapshot is authoritative for delivered refs; concurrent journal changes
+    // are retried as a technical fence failure, never synthesized as delivery.
+    if (snapshot.reviewActivityJson !== row.reviewActivityJson)
+      throw new Error('REVIEW_VALIDATION_DELIVERY_CHANGED');
+    return snapshot;
+  }
+
+  /** Complete saved body under the original actor and optional TDMS saved verifier. */
+  async readSavedReviewWork(input: { row: ActionAttemptRow; task: JobAidProblemTaskInput;
+    workRevisionRef: string; reviewCaller?: TdmsReviewCaller }): Promise<JobAidWorkRevision> {
+    const { row, task, reviewCaller } = input;
+    this.assertReviewCaller(task, reviewCaller);
+    return this.work.withActorTransaction(task.actorUserId, async (database) => {
+      const revision = await this.work.readByRefForRuntimeInTransaction({ tenantId: row.tenantId,
+        actorUserId: task.actorUserId, workItemId: row.workItemId, workRevisionRef: input.workRevisionRef }, database);
+      if (!revision) throw new Error('REVIEW_SAVED_WORK_READ_BINDING_MISMATCH');
+      const assertNative = reviewCaller ? (evidence: AssessmentEvidence[]) =>
+        this.assertReviewNativeInTransaction(task, reviewCaller, row.tenantId, database, evidence) : undefined;
+      await this.assertReviewNativeInTransaction(task, reviewCaller, row.tenantId, database, revision.content.evidence);
+      await this.assertEvidenceOwned(revision.content.evidence, row.tenantId, task.actorUserId,
+        row.workItemId, database, assertNative);
+      await this.assertSourceStatementReferences(revision.content.evidence,
+        { tenantId: row.tenantId, actorUserId: task.actorUserId }, database);
+      return revision;
+    });
+  }
+
   prepareReviewWork(
     task: JobAidProblemTaskInput,
     workItemId: string,

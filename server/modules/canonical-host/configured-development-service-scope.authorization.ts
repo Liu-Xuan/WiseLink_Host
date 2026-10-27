@@ -23,8 +23,7 @@ import {
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
 
-// Applicability and Review still seal the original runtime identity. The first
-// CODEX rollout must not mint or consume those legacy contracts as a new app.
+// Applicability remains on its original Hosted-only execution contract.
 function assertInitialCodexOperation(): void {
   if (canonicalHostExecutor() === 'CODEX') throw Object.assign(
     new Error('CANONICAL_CODEX_OPERATION_NOT_SUPPORTED'),
@@ -170,6 +169,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       return successorReviewScope(
         await this.automaticLeaseAuthorization.authorizeSuccessorOverall({
           ...config,
+          ...trustedReviewIntake(input.workItemId),
           workItemId: input.workItemId,
           reviewTurnRef: input.successorReviewTurnRef,
         }),
@@ -327,8 +327,6 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     workItemId: string;
     successorReviewTurnRef?: string;
   }): Promise<CanonicalVerifiedServiceScope> {
-    if (input.operation === 'GET_PENDING_REVIEW_TURN' || input.successorReviewTurnRef)
-      assertInitialCodexOperation();
     if (input.operation === 'BEGIN_OVERALL' && input.successorReviewTurnRef) {
       const config = requiredSuccessorReviewConfig();
       if (!this.automaticLeaseAuthorization?.authorizeSuccessorOverall)
@@ -336,6 +334,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       return successorReviewScope(
         await this.automaticLeaseAuthorization.authorizeSuccessorOverall({
           ...config,
+          ...trustedReviewIntake(input.workItemId),
           workItemId: input.workItemId,
           reviewTurnRef: input.successorReviewTurnRef,
         }),
@@ -360,6 +359,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       return successorReviewScope(
         await this.automaticLeaseAuthorization.authorizePendingReview({
           ...config,
+          ...trustedReviewIntake(input.workItemId),
           workItemId: input.workItemId,
         }),
       );
@@ -376,7 +376,6 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     reviewConversationRef: string;
     requestId: string;
   }): Promise<CanonicalVerifiedServiceScope> {
-    assertInitialCodexOperation();
     if (!input.reviewConversationRef.trim() || !input.requestId.trim()) {
       throw scopeNotFound();
     }
@@ -394,6 +393,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       return successorReviewScope(
         await this.automaticLeaseAuthorization.authorizeReviewDelegation({
           ...config,
+          ...trustedReviewIntake(input.workItemId),
           workItemId: input.workItemId,
           reviewConversationRef: input.reviewConversationRef,
           requestId: input.requestId,
@@ -490,8 +490,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     attemptRef: string;
     workItemId?: string;
   }): Promise<CanonicalVerifiedOpenClawAttemptScope> {
-    if (['COMMIT_APPLICABILITY', 'GET_REVIEW_CONTEXT', 'READ_REVIEW_SOURCE_REFS', 'COMMIT_REVIEW']
-      .includes(input.operation)) assertInitialCodexOperation();
+    if (input.operation === 'COMMIT_APPLICABILITY') assertInitialCodexOperation();
     if (!input.attemptRef.trim()) throw scopeNotFound();
     const config = configuredStaticWorkItemScope();
     if (config) {
@@ -559,6 +558,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       const delegation =
         await this.automaticLeaseAuthorization.authorizeReviewAttempt({
           ...successorConfig,
+          ...trustedReviewIntake(input.workItemId),
           workItemId: input.workItemId,
           attemptRef: input.attemptRef,
         });
@@ -699,6 +699,7 @@ export function isOpenClawAutomaticReviewConfigured(input: {
   reviewConversationId?: string;
 }): boolean {
   try {
+    if (canonicalCodexWorkItemScope()) return false;
     const config = requiredConfig();
     const additional =
       input.reviewConversationId === undefined
@@ -1000,8 +1001,11 @@ function scopeNotFound(): Error & { code: string; statusCode: number } {
 
 export function isOpenClawSuccessorReviewConfigured(
   tenantId?: string,
+  workItemId?: string,
 ): boolean {
   try {
+    const exact = canonicalCodexWorkItemScope();
+    if (exact && workItemId !== undefined && workItemId !== exact.workItemId) return false;
     const config = requiredSuccessorReviewConfig();
     return tenantId === undefined || tenantId === config.tenantId;
   } catch (error) {
@@ -1061,4 +1065,12 @@ function automaticWorkItemScopeFingerprint(
     lease.documentId, lease.documentVersionId, lease.sourceArtifactId, lease.sourceFileSha256,
     String(lease.sourceByteLength), String(lease.leaseGeneration), lease.leaseExpiresAt,
   ]);
+}
+
+/** A Review request is not the intake request. Bind the latter only from configuration. */
+function trustedReviewIntake(workItemId: string): { expectedIntakeRequestId?: string } {
+  const exact = canonicalCodexWorkItemScope();
+  if (!exact) return {};
+  assertCanonicalCodexWorkItem(workItemId);
+  return { expectedIntakeRequestId: exact.requestId };
 }
